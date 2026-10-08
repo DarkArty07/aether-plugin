@@ -63,9 +63,9 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'))
 }
 
-function appendRecord(record) {
-  fs.mkdirSync(dataDir(), { recursive: true })
-  fs.appendFileSync(path.join(dataDir(), 'runs.jsonl'), JSON.stringify(record) + '\n')
+function appendRecord(record, dir = dataDir()) {
+  fs.mkdirSync(dir, { recursive: true })
+  fs.appendFileSync(path.join(dir, 'runs.jsonl'), JSON.stringify(record) + '\n')
 }
 
 // Keeps Aether's directories out of git without touching the project's .gitignore.

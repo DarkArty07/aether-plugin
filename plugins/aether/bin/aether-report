@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-report --run <id> [--session <id>] [--no-tests]
+// aether-report finalize --run <id> [--session <id>] [--no-tests]
+// aether-report price <claude -p json output> [--main-model <id>]
+
+const fs = require('node:fs')
+const path = require('node:path')
+const lib = path.join(__dirname, '..', 'lib')
+const { report, finalize } = require(path.join(lib, 'report.js'))
+const { loadPrices, priceModelUsage } = require(path.join(lib, 'prices.js'))
+
+const USAGE =
+  'usage: aether-report [finalize] --run <id> [--session <id>] [--no-tests] | aether-report price <claude-json> [--main-model <id>]'
+
+// The value after a flag, or null when the flag is absent.
+function value(args, flag) {
+  const i = args.indexOf(flag)
+  if (i === -1) return null
+  const next = args[i + 1]
+  if (next === undefined || next.startsWith('--')) throw new Error(`${flag} needs a value`)
+  return next
+}
+
+function main(argv) {
+  if (argv[0] === 'price') {
+    if (!argv[1] || argv[1].startsWith('--')) throw new Error(USAGE)
+    const output = JSON.parse(fs.readFileSync(argv[1], 'utf8'))
+    return priceModelUsage(output, loadPrices(), { mainModel: value(argv, '--main-model') })
+  }
+  const finalizing = argv[0] === 'finalize'
+  const rest = finalizing ? argv.slice(1) : argv
+  const runId = value(rest, '--run')
+  if (!runId) throw new Error(USAGE)
+  const options = { session: value(rest, '--session'), tests: !rest.includes('--no-tests') }
+  return finalizing ? finalize(process.cwd(), runId, options) : report(process.cwd(), runId, options)
+}
+
+try {
+  process.stdout.write(JSON.stringify(main(process.argv.slice(2))) + '\n')
+} catch (err) {
+  process.stdout.write(JSON.stringify({ error: err.message }) + '\n')
+  process.exit(1)
+}
