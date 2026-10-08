@@ -1,0 +1,68 @@
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { makeRepo, compile, commitIn } = require('./helpers.js')
+const { task, plan } = require('./plan-fixtures.js')
+const { ensure, diffPackage } = require('../plugins/aether/lib/worktrees.js')
+
+test('ensure creates the unit worktree and branch from the integration branch', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const r = ensure(repo.dir, args.runId, 'task-1')
+  assert.equal(r.created, true)
+  assert.equal(r.branch, `aether/${args.runId}/task-1`)
+  assert.equal(r.path, path.join(args.repoRoot, '.aether', 'worktrees', args.runId, 'task-1'))
+  assert.equal(repo.git('-C', r.path, 'branch', '--show-current'), r.branch)
+  assert.equal(repo.git('rev-parse', r.branch), repo.git('rev-parse', 'feature/x'))
+  assert.ok(fs.existsSync(path.join(r.path, '.aether-tmp')))
+  assert.match(fs.readFileSync(path.join(repo.dir, '.git', 'info', 'exclude'), 'utf8'), /^\.aether-tmp\/$/m)
+  assert.equal(repo.git('-C', r.path, 'status', '--porcelain'), '')
+  assert.deepEqual(ensure(repo.dir, args.runId, 'task-1'), { ...r, created: false })
+})
+
+test('ensure recreates a worktree whose directory was deleted by hand', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const first = ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, first.path, 'src/t1/kept.txt', 'x\n', 'unit work')
+  fs.rmSync(first.path, { recursive: true, force: true })
+  const again = ensure(repo.dir, args.runId, 'task-1')
+  assert.equal(again.created, true)
+  assert.equal(fs.readFileSync(path.join(again.path, 'src', 't1', 'kept.txt'), 'utf8'), 'x\n')
+})
+
+test('ensure replaces a leftover directory that is not a worktree', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const leftover = path.join(args.repoRoot, '.aether', 'worktrees', args.runId, 'task-2')
+  fs.mkdirSync(leftover, { recursive: true })
+  fs.writeFileSync(path.join(leftover, 'junk.txt'), 'x')
+  const r = ensure(repo.dir, args.runId, 'task-2')
+  assert.equal(r.created, true)
+  assert.equal(fs.existsSync(path.join(leftover, 'junk.txt')), false)
+  assert.equal(repo.git('-C', leftover, 'branch', '--show-current'), r.branch)
+})
+
+test('ensure refuses tasks outside the run and invalid ids', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  assert.throws(() => ensure(repo.dir, args.runId, 'task-9'), /task-9 is not in run/)
+  assert.throws(() => ensure(repo.dir, args.runId, '../x'), /invalid task id/)
+  assert.throws(() => ensure(repo.dir, '20990101-000000-ffff', 'task-1'), /has no graph.json/)
+})
+
+test('diffPackage writes the unit diff against its base', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'module.exports = 1\n', 'add a')
+  const pkg = diffPackage(repo.dir, args.runId, 'task-1')
+  assert.equal(pkg.path, path.join(args.runDir, 'packages', 'task-1.diff'))
+  assert.equal(pkg.base, repo.git('rev-parse', 'feature/x'))
+  const text = fs.readFileSync(pkg.path, 'utf8')
+  assert.match(text, /## Commits\n[0-9a-f]+ add a/)
+  assert.match(text, /\+module\.exports = 1/)
+})
