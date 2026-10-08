@@ -183,6 +183,9 @@ function merge(cwd, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
   if (!task) throw new Error(`${taskId} is not in run ${runId}`)
   const integration = graph.integration.worktree
   const branch = run.unitBranch(runId, taskId)
+  if (!isDirectory(integration)) {
+    return { merged: false, reason: 'missing-integration', detail: `the integration worktree ${integration} is missing` }
+  }
   const current = currentBranch(integration)
   if (current !== graph.integration.branch) {
     return {

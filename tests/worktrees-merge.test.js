@@ -124,3 +124,19 @@ test('merge reports uncommitted work when the unit committed nothing', (t) => {
   assert.equal(r.reason, 'empty')
   assert.deepEqual(r.uncommitted, ['src/t1/a.js'])
 })
+
+test('merge says so when the integration worktree is gone', (t) => {
+  const repo = makeRepo(t)
+  const integration = path.join(repo.dir, '.worktrees', 'int')
+  repo.git('worktree', 'add', '-q', '-b', 'feature/int', integration)
+  fs.writeFileSync(path.join(integration, 'plan.md'), plan([task(1), task(2)]))
+  const args = compile({ ...repo, dir: integration }, plan([task(1), task(2)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  fs.rmSync(integration, { recursive: true, force: true })
+  assert.deepEqual(merge(repo.dir, args.runId, 'task-1'), {
+    merged: false,
+    reason: 'missing-integration',
+    detail: `the integration worktree ${integration} is missing`,
+  })
+})
