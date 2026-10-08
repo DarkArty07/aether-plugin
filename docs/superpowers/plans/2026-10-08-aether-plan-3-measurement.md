@@ -192,3 +192,22 @@ A real headless swarm ran on a two-task fixture, with the plugin, a Sonnet main 
 - **`--session`:** when it names a session last written before the run began, the report says "not found".
 - **Missing integration worktree:** the tests then report exit code `null`, with no note saying why.
 - **Opus fast mode:** fast-mode requests are priced at normal rates.
+
+**Earlier deferred minors closed in Plan 3.** Each was fixed with a test that failed first, except the documentation change.
+
+| Commit | Minor | Plan |
+|---|---|---|
+| `428af09` | Workflow args that list a task twice are refused | 2 |
+| `e5eb72c` | A sweep saves each unit's unmerged or uncommitted work as a patch, and keeps a unit it cannot save, so two failed closes no longer lose work | 2 |
+| `af5b9a1` | A merge with a missing integration worktree says so, instead of a bare `ENOENT` | 1 |
+| `ad90e11` | A merge that git refuses before merging is `merge-failed`, not `conflict` | 1 |
+| `d6aeffb` | The git excludes are anchored to the worktree root, and the old unanchored lines are replaced | 1 |
+| `35662ca` | The `swarm` skill explains `closeError` | 2 |
+
+**Still deferred from earlier plans:**
+- **Parser strictness**, such as other dashes, the case of `Area`, and fenced `**Spec:**`.
+- **Repository layouts:** bare repositories, separate git directories and submodules.
+- **Git's locale:** git is not translated on this machine, so no test can fail first.
+- **A `Setup command` field.**
+- **Permissions outside bypass mode**, still unverified.
+- **`reset --hard` after failed tests:** no change needed. The merge refuses a dirty integration worktree, so the reset only undoes the merge's own commit.
