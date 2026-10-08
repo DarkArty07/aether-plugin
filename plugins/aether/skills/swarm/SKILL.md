@@ -46,7 +46,8 @@ The workflow returns:
   - `status`: `merged`, `blocked`, `skipped` or `not-run`;
   - `tiers`: the tier path, such as `["haiku", "sonnet"]`;
   - `rounds`: each attempt, with the implementer's report, the supervisor's verdict, findings and ruling, and the merge outcome;
-  - `commit`, `reason`, `question` and `patch`.
+  - `commit`, `reason`, `question` and `patch`;
+  - `closeError`, when the unit could not be closed. The final sweep then removes it, after saving its work as a patch.
 - **`finalReview`:** a `status` of `done`, `skipped` or `failed`. When it is done, it also has the `verdict`, `findings`, `declined` and `summary`.
 - **`cleanup`:** what the sweep removed. Its `remaining` lists must be empty.
 - **`agents`:** the agent count, by role and by model.
