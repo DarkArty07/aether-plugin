@@ -1,7 +1,7 @@
 {
   "name": "aether",
   "version": "0.1.0",
-  "description": "Aether mode for Claude Code: a Designer on Opus, with plans checked and prepared for a parallel swarm of Haiku, Sonnet and Opus implementers.",
+  "description": "Aether mode for Claude Code: a Designer on Opus checks plans and runs them as a parallel swarm of Haiku, Sonnet and Opus implementers, each attempt supervised and every merge made one at a time.",
   "author": {
     "name": "DarkArty07"
   }

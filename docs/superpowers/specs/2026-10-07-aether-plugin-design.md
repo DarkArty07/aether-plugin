@@ -1,7 +1,7 @@
 # Aether: design spec (v0.1)
 
 - **Date:** 2026-10-07
-- **Status:** Draft for owner review
+- **Status:** Approved by the owner on 2026-10-07. Amended the same day (A10), and on 2026-10-08 by Plan 2 (§7, §8, §9 and §11).
 - **Method:** superpowers brainstorming (architectural path). After approval, Phase 0 checks (§13), then superpowers `writing-plans`.
 - **Background:** [README](../../../README.md), [Aether retrospective](../../aether-retrospective.md), [Claude Code research](../../claude-code-research.md), [Decisions](../../decisions.md)
 
@@ -10,7 +10,7 @@
 Aether is a Claude Code plugin that adds an opt-in **Aether mode** on top of superpowers. The main session, the Designer, runs on Opus and designs with superpowers. When it pays off, the Designer hands an approved plan to a parallel swarm:
 
 - implementers run on Haiku 5.5 by default, and move up to Sonnet or Opus when a task is critical or fails review;
-- reviewers check each unit independently;
+- a supervisor on Sonnet reviews each attempt independently and rules on it;
 - a serialized queue merges approved units;
 - code deletes each unit's worktree as soon as the unit is done.
 
@@ -73,9 +73,9 @@ aether-plugin/
 | `swarm` | Skill, loaded by the Designer on demand | Procedure to compile a plan, launch a run, handle its report, relaunch pending units and finish |
 | `aether-session-start` | bin, run by the SessionStart hook | Prints the bootstrap as `additionalContext` and runs `aether-wt sweep --stale` in the current repository |
 | `aether-plan` | bin | Parses a superpowers plan with Aether fields, validates it, computes waves, writes briefs and `graph.json`, and prints the run arguments |
-| `aether-wt` | bin | Unit worktrees and branches: `ensure`, `diff`, `merge`, `remove`, `sweep`. Keeps `.aether/` out of git |
+| `aether-wt` | bin | Unit worktrees and branches: `ensure`, `diff` (a unit's review package, or the whole run's with `--final`), `merge`, `remove`, `sweep` (`--finish` also deletes the run directory). Keeps `.aether/` out of git |
 | `aether-report` | bin | Quality, cost and speed report for a run, and a persistent run record. `finalize` deletes the run directory |
-| `implementer`, `reviewer`, `supervisor` | Agents | Role prompts. The implementer and reviewer prompts adapt superpowers' implementer and task-reviewer templates (MIT, notice kept in `NOTICE`) |
+| `implementer`, `supervisor`, `reviewer` | Agents | Role prompts, adapted from superpowers' implementer, task-reviewer and code-reviewer templates (MIT, notice kept in `NOTICE`). The supervisor reviews each attempt and rules on it; the reviewer does the final review |
 | `ops` | Agent | The workflow's hands: runs one given `aether-wt` command and returns its JSON. A workflow script has no shell of its own. It is a mechanism, not a role |
 | `/aether:run` | Workflow | The swarm: waves, unit pipeline, escalation ladder, merge queue, final review, cleanup |
 | Usage meter | Mod on `turn.step` and `turn.complete` | Records each model request: agent, model, tokens, time |
@@ -89,7 +89,7 @@ aether-plugin/
    - **Architectural:** spec (owner approval), plan with Aether fields (owner approval), then the execution choice. superpowers already offers subagent-driven and native execution; Aether mode adds the swarm. The Designer recommends one with a quality, cost and speed reason, and the owner confirms.
 3. **Swarm:** the Designer creates the integration worktree with superpowers `using-git-worktrees`, runs `aether-plan compile`, and launches `/aether:run` with the printed arguments. The run works in the background. In v0.1 the Designer does not edit the integration worktree while a run is active.
 4. **Report:** the Designer reads the result and saves it as `runDir/result.json`. It then fixes small final-review findings itself or relaunches pending units with `aether-plan compile --only <tasks>`, and brings blocked questions to the owner.
-5. **Finish:** `aether-report finalize`, then superpowers `finishing-a-development-branch` with the owner.
+5. **Finish:** `aether-report finalize` (until Plan 3 delivers it, `aether-wt sweep --run <id> --finish`), then superpowers `finishing-a-development-branch` with the owner.
 
 ## 6. Plan extensions
 
@@ -141,66 +141,102 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 
 ## 7. Swarm executor (`/aether:run`)
 
-**Input.** `aether-plan compile` prints the `args`:
-- run fields: `runId`, `repoRoot`, `runDir`, the integration `branch` and `worktree`, `testCommand`, `ladder`, `maxAgents`;
-- `waves`: lists of task ids;
-- per task: `title`, `brief` (a file path), `tier`, `area`, `owns`.
+*Amended by Plan 2 (2026-10-08).* The executor below is what Plan 2 built. Compared with the first draft:
+- one supervisor call per attempt both reviews and rules, replacing the separate review and triage calls;
+- the supervisors' memory and the implementers' reports live in the script's state, not in ledger or report files;
+- merge failures are routed by kind;
+- the final review reads a package written by `aether-wt diff <run> --final`;
+- the workflow's sweep keeps the run directory, which the Designer deletes with `--finish`.
 
-**Waves.** Waves run in order; the units of a wave run in parallel. A unit that depends on a blocked unit is skipped and reported.
+**Input.** `aether-plan compile` prints the `args`, which the workflow takes as an object or as a JSON string. It checks them before any agent starts.
+- Run fields: `runId`, `repoRoot`, `runDir`, `plan`, `spec`, `testCommand`, `ladder` and `maxAgents`.
+- The integration `branch` and `worktree`, plus `base`: the integration branch's commit at compile time.
+- `waves`: lists of task ids.
+- Per task: `title`, `brief` (a file path), `tier`, `area`, `owns` and `dependsOn`.
+
+**Waves.** Waves run in order; the units of a wave run in parallel. A unit whose dependency is not merged is skipped and reported.
 
 **Unit pipeline.**
-1. **Implement.** An `implementer` agent runs on the unit's current tier.
+1. **Implement.** A fresh `implementer` agent runs on the unit's current tier.
    - It runs `aether-wt ensure <run> <task>`. The command is idempotent and prints the unit's worktree path; the branch is `aether/<run>/<task>`, created from the integration branch.
-   - It works only in that worktree. It writes the task's tests from the brief, watches them fail, writes the code until they pass, commits, and writes its full report to `runDir/reports/<task>.md`.
-   - It returns `{status, commits, tests, concerns, question}`, with status `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT` or `BLOCKED`.
-2. **Review.** A `reviewer` agent on Sonnet gets its diff package from `aether-wt diff`. It returns `{spec: PASS|FAIL, quality: APPROVED|CHANGES, findings: [{severity, title, file, evidence}]}`. A unit passes when spec is PASS and there are no Critical or Important findings. Minor findings go to the area ledger and to the final review.
-3. **Triage** (on a failed review, `NEEDS_CONTEXT` or `BLOCKED`). A `supervisor` agent on Sonnet reads the area ledger and returns `{action: retry|escalate|block, reason, question}`. It records the decision as a `Ruling:` line in the area ledger. The script enforces the ladder (§8): a retry beyond the current tier's budget becomes an escalation, and an escalation past Opus becomes a block.
-4. **Merge.** Approved units enter one queue, serialized by a promise chain, so only one merge runs at a time. An `ops` agent runs `aether-wt merge <run> <task>`, which:
-   - refuses to start when the integration worktree has uncommitted changes;
+   - It works only in that worktree. It writes the brief's tests, watches them fail, writes the code until they pass, and commits.
+   - It runs `aether-wt diff <run> <task>`, which writes the review package `runDir/packages/<task>.diff`.
+   - It returns `{status, summary, head, tests, concerns, question}`, with status `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT` or `BLOCKED`. This structured report is the whole report; there is no report file.
+   - Later attempts continue in the same worktree. Their prompt carries every earlier attempt's report, ruling, findings and merge outcome.
+2. **Supervise.** One `supervisor` agent on Sonnet per attempt. It is read-only.
+   - It checks that the package's Head matches the reported `head`.
+   - It reviews the package against the brief, for spec compliance and for quality, after superpowers' task reviewer.
+   - It returns `{verdict: approve|retry|escalate|block, findings: [{severity, title, file, evidence}], ruling, guidance, question}`.
+   - `NEEDS_CONTEXT` and `BLOCKED` reports go to it too. It answers from the brief or the repository with a retry, escalates, or blocks with a question for the Designer.
+   - An approval that still lists a critical or important finding counts as a retry. Minor findings go to the final review.
+   - The script enforces the ladder (§8): a retry beyond the current tier's budget becomes an escalation, and an escalation past the last tier with budget becomes a block.
+3. **Merge.** Approved units enter one queue, serialized by a promise chain, so only one merge runs at a time. An `ops` agent runs `aether-wt merge <run> <task>`, which:
+   - refuses to start when the integration worktree has uncommitted changes, or is not on the integration branch;
    - checks that the diff touches only the unit's `owns` paths;
    - merges with `--no-ff` into the integration branch and runs the test command;
    - undoes its own merge if the tests fail, and prints JSON.
 
-   A conflict or a test failure sends the unit back to step 1 once, with the conflict context. A second failure blocks it.
-5. **Close.** After a merge or a block, an `ops` agent runs `aether-wt remove <run> <task>`. For a blocked unit, its diff is saved first as `runDir/patches/<task>.patch`.
+   The script routes a failed merge by its kind:
+   - **A conflict or failing tests:** one retry on the same tier, outside the ladder, with the conflict or the test output. A second failure blocks the unit.
+   - **Changes outside `owns`, or nothing committed:** a failed attempt; the ladder decides what follows.
+   - **A dirty or switched integration worktree, or a failed command:** the unit is blocked.
+4. **Close.** Every unit that started is closed by an `ops` agent with `aether-wt remove <run> <task>`, after a merge, a block or the end of the budget.
+   - Unmerged work is saved first as `runDir/patches/<task>.patch`.
+   - Closes share the merge queue, and a failed close is retried once.
 
-**Final review.** A `reviewer` agent on Opus reviews the whole integration diff against the base, using superpowers' final code-review criteria.
+**Final review.** It runs when at least one unit merged and the agent budget allows.
+- An `ops` agent runs `aether-wt diff <run> --final`. It writes `runDir/packages/final.diff`, which covers everything from `base` to the tip of the integration branch.
+- A read-only `reviewer` agent on Opus reviews that package against the plan and the spec, after superpowers' code reviewer.
+- It returns a verdict (`ready`, `ready-with-fixes` or `not-ready`), findings, the behaviors it declined to judge, and a summary.
 
-**Cleanup.** A `finally` block always runs an `ops` agent with `aether-wt sweep --run <id>`, and reports anything left behind.
+**Cleanup.** A `finally` block always runs an `ops` agent with `aether-wt sweep --run <id>`, retried once if it fails.
+- It reports anything left behind.
+- It keeps the run directory, so that blocked units' patches survive. The Designer deletes the directory with `aether-wt sweep --run <id> --finish`, until Plan 3's `finalize` takes over.
 
-**Result.** The run returns:
-- per unit: status, tier path (for example `haiku → sonnet`), rounds, review verdicts and merge commit;
-- blocked units, with their questions;
-- the final review findings;
-- every `Ruling:` line;
-- the agent count.
+**Result.** The run returns `{runId, units, finalReview, cleanup, agents, error}`.
+- `units`, one per task:
+  - `status`: `merged`, `blocked`, `skipped` or `not-run`;
+  - the tier path, such as `["haiku", "sonnet"]`;
+  - `rounds`: each attempt's report, verdict, findings, ruling, guidance and merge outcome;
+  - the merge `commit`, and the `reason`, `question` and `patch` of an unmerged unit.
+- `finalReview`: with a `status` of `done`, `skipped` or `failed`.
+- `cleanup`: what the sweep removed and what `remaining` it found.
+- `agents`: the agent count, in total, by role and by model.
+- `error`: set only when the script itself failed.
 
-**Supervisors.** There is one supervisor role per area. Each triage call is a fresh Sonnet agent whose memory is the area ledger, `runDir/areas/<area>.md`. Areas progress in parallel; merges are serialized for the whole run.
+**Supervisors.** There is one supervisor role per area.
+- Each call is a fresh Sonnet agent. Its memory is the area's last ten rulings, which the script passes to every later call in that area.
+- Areas progress in parallel; merges are serialized for the whole run.
 
-**Limits.** The script counts its `agent()` calls and starts no new unit after `maxAgents`. It never calls `Date.now()` or `Math.random()`, as the workflow runtime requires.
+**Limits.**
+- The script counts its `agent()` calls. After `maxAgents`, it starts no new attempt and no final review: the remaining units are reported as `not-run`. Work already started still finishes and is closed, and cleanup always runs.
+- It never calls `Date.now()` or `Math.random()`, as the workflow runtime requires.
 
 **Runtime API (confirmed in Phase 0).** Every call has the form `agent(prompt, { agentType, model, phase, label, schema })`, and every call passes an `agentType`, because an agent without one gets every tool, MCP connector tools included. `parallel()` takes an array of functions that return promises. `agent()` resolves to `null` on a terminal failure and can reject; both count as a failed attempt.
 
 ## 8. Model routing and escalation
 
 - The initial tier comes from the plan.
-- **Default ladder per unit:** Haiku 2 attempts, Sonnet 2, Opus 1, then blocked. Triage may escalate early but cannot exceed the budget.
-- Fix rounds continue in the same worktree. A new tier starts a fresh implementer that reads the previous report, as superpowers' fix loop does.
-- Reviews run on Sonnet; the final review runs on Opus. Batched or risk-based review is deferred until the trial shows what reviews cost.
-- **Effort** is set in each agent definition, because the owner's default `xhigh` would otherwise apply to Haiku: implementer and ops `medium`; reviewer and supervisor `high`.
-- **maxTurns:** implementer 60, reviewer 25, supervisor 15, ops 5.
+- **Default ladder per unit:** Haiku 2 attempts, Sonnet 2, Opus 1, then blocked.
+  - The supervisor may escalate early but cannot exceed the budget.
+  - A tier whose budget is 0 is skipped.
+  - The one retry after a merge conflict or failing merge tests does not count against the ladder.
+- Every attempt is a fresh implementer. Fix rounds continue in the same worktree, and the prompt carries the earlier attempts' reports, rulings and findings, as superpowers' fix loop does.
+- Unit reviews run on the Sonnet supervisor; the final review runs on Opus. Batched or risk-based review is deferred until the trial shows what reviews cost.
+- **Effort** is set in each agent definition, because the owner's default `xhigh` would otherwise apply to Haiku: implementer `medium`, ops `low`, supervisor and reviewer `high`.
+- **maxTurns:** implementer 60, supervisor 25, reviewer 30, ops 5. The supervisor took the unit reviewer's budget when the two merged.
 - Implementer prompts point to brief files instead of embedding the plan. This keeps requests under Haiku's 100K-token price tier.
 
 ## 9. Cleanup (A7)
 
 **Locations.** All are excluded through `.git/info/exclude`, so the project's `.gitignore` is untouched.
 - Unit worktrees: `<repo>/.aether/worktrees/<run>/<task>`.
-- Run directory: `<repo>/.aether/runs/<run>/`, holding `state.json`, graph, briefs, reports, ledgers, patches and result. `aether-plan compile` creates it.
+- Run directory: `<repo>/.aether/runs/<run>/`, holding `state.json`, the graph, briefs, review packages, patches and the saved result. `aether-plan compile` creates it.
 - Implementer temporary files: `<unit worktree>/.aether-tmp/`, deleted with the worktree.
 
 **Lifecycle.**
 - A unit worktree and its branch live from `ensure` until a merge or a block (§7, step 5).
-- The run directory lives until `aether-report finalize`, which first writes the persistent record.
+- The run directory lives until `aether-report finalize`, which first writes the persistent record. Until Plan 3 delivers it, `aether-wt sweep --run <id> --finish` deletes the directory, without a record.
 
 **Safety nets.**
 - `sweep --run` runs in the workflow's `finally` block.
@@ -241,8 +277,9 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 |---|---|
 | `agent()` returns null (stopped, API error) | Counts as a failed attempt on the ladder |
 | Usage limit reached | The workflow pauses and resumes on its own in an interactive subscription session. In any other session the attempt fails |
-| Merge conflict, or failing tests at merge | The merge is undone. The unit goes back to implement once, with context; a second failure blocks it |
-| Ownership violation at merge | The merge is refused and the unit goes to triage |
+| Merge conflict, or failing tests at merge | The merge is undone. The unit goes back to implement once on the same tier, with context; a second failure blocks it |
+| Changes outside `owns`, or nothing committed, at merge | The merge is refused, and the attempt counts as failed on the ladder |
+| Integration worktree dirty or on another branch at merge | The merge is refused and the unit is blocked, with the reason |
 | Invalid plan | `aether-plan compile` refuses, with one message per problem |
 | Run stopped by the owner | The `finally` block may not run. The SessionStart sweep and a manual `aether-wt sweep --run <id>` cover it |
 
@@ -275,7 +312,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 - Plan 2, Swarm: steps 4 and 6.
 - Plan 3, Measurement and trial: steps 5 and 7.
 
-Each plan is written after the previous one is merged.
+Each plan is written after the previous one is merged. Plan 1 was merged on 2026-10-08. Plan 2 was built the same day, and its smoke run is recorded in the plan.
 1. Skeleton: manifest, `NOTICE`, SessionStart hook, `using-aether`, the `aether-mode` shell function, validation.
 2. `aether-plan`, with tests.
 3. `aether-wt`, with tests: ensure, diff, merge, remove, sweep, and the safety rules.

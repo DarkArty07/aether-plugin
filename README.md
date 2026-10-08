@@ -12,8 +12,13 @@ the same method, rebuilt on a harness made for software.
 
 Version 0.1 is in progress. The current design is
 [docs/superpowers/specs/2026-10-07-aether-plugin-design.md](docs/superpowers/specs/2026-10-07-aether-plugin-design.md).
-The rest of this README still records the decisions of 2026-10-05. Plan 1 (foundation)
-adds plan checking, unit worktrees and their cleanup.
+The rest of this README still records the decisions of 2026-10-05.
+
+- Plan 1 (foundation) added plan checking, unit worktrees and their cleanup.
+- Plan 2 (swarm) adds `/aether:run`. The plan's tasks run in parallel on their tiers,
+  with a supervisor for every attempt, one merge at a time, a final review on Opus,
+  and cleanup.
+- Plan 3 (measurement and trial) is next.
 
 ## Use Aether mode
 

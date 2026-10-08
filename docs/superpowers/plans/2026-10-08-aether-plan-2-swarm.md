@@ -104,3 +104,20 @@
 - Strict validation passes.
 - The smoke run meets its expectations.
 - The Designer has self-reviewed the branch, and the branch is merged to `main`.
+
+## Smoke run record (2026-10-08)
+
+- **Fixture:** a throwaway Node.js repository with a two-task contract plan (`slugify` and `countWords`), in one wave, on Haiku, in area `text`. The integration worktree was separate from the main checkout, as superpowers creates one.
+- **Session:** headless `claude -p` on Sonnet, with the plugin, `enableWorkflows` and bypassed permissions. superpowers and the MCP connectors were off.
+- **Outcome:**
+  - Both units merged on their first Haiku attempt. The supervisor approved both, with one minor finding.
+  - The Opus final review returned `ready-with-fixes`, with three minor findings and five declined-to-judge lines.
+  - `node --test` passed 5/5 on the integration branch.
+  - No Aether worktree or `aether/*` branch was left, and `aether-wt sweep --run <id> --finish` emptied `.aether/runs/`.
+- **Agents:** 11 in total: 2 implementers, 2 supervisors, 6 ops and 1 reviewer. By model: 8 Haiku, 2 Sonnet and 1 Opus.
+- **Time:** about 1 min 40 s of wall clock, from compile to result.
+- **Cost at list prices** (Claude Code's `costUSD`): $0.315 in total.
+  - Sonnet $0.191: the main session and the supervisors.
+  - Opus $0.117: the final review.
+  - Haiku $0.007: the implementers and ops.
+- **For Plan 3:** on a plan this small, review is the cost. The supervisors and the final review cost about 40 times what the Haiku implementers did, which matches the risk in spec §14. The trial must measure this on a larger plan before the review policy changes.
