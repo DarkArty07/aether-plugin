@@ -138,4 +138,110 @@ function merge(cwd, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
   return { merged: true, commit: head(integration) }
 }
 
-module.exports = { ensure, diffPackage, merge }
+function removeWorktreeDir(mainRoot, worktree) {
+  assertInside(worktree, run.aetherDir(mainRoot))
+  if (!fs.existsSync(worktree)) return false
+  const r = git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true })
+  if (r.status !== 0) fs.rmSync(worktree, { recursive: true, force: true })
+  return true
+}
+
+function listAetherBranches(mainRoot, runId = null) {
+  const ref = runId ? `refs/heads/aether/${runId}` : 'refs/heads/aether'
+  const out = git(['for-each-ref', '--format=%(refname:short)', ref], mainRoot).stdout
+  return out === '' ? [] : out.split('\n').filter((b) => b.startsWith('aether/'))
+}
+
+function removeUnit(cwd, runId, taskId, { keepPatch = false } = {}) {
+  run.assertRunId(runId)
+  run.assertTaskId(taskId)
+  const { mainRoot } = repoPaths(cwd)
+  const worktree = run.unitWorktree(mainRoot, runId, taskId)
+  const branch = run.unitBranch(runId, taskId)
+  const hasBranch = branchExists(mainRoot, branch)
+  let patch = null
+  if (keepPatch && hasBranch) {
+    const base = unitBase(mainRoot, loadGraph(mainRoot, runId), branch)
+    patch = path.join(run.runDir(mainRoot, runId), 'patches', `${taskId}.patch`)
+    fs.mkdirSync(path.dirname(patch), { recursive: true })
+    fs.writeFileSync(patch, git(['diff', '--binary', `${base}..${branch}`], mainRoot).stdout + '\n')
+  }
+  removeWorktreeDir(mainRoot, worktree)
+  git(['worktree', 'prune'], mainRoot)
+  if (hasBranch) git(['branch', '-D', branch], mainRoot)
+  return { removed: true, patch }
+}
+
+function sweepRun(cwd, runId) {
+  run.assertRunId(runId)
+  const { mainRoot } = repoPaths(cwd)
+  const dir = run.worktreesDir(mainRoot, runId)
+  const removedWorktrees = []
+  if (fs.existsSync(dir)) {
+    for (const name of fs.readdirSync(dir)) {
+      const worktree = path.join(dir, name)
+      if (removeWorktreeDir(mainRoot, worktree)) removedWorktrees.push(worktree)
+    }
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+  git(['worktree', 'prune'], mainRoot)
+  const removedBranches = []
+  for (const branch of listAetherBranches(mainRoot, runId)) {
+    git(['branch', '-D', branch], mainRoot)
+    removedBranches.push(branch)
+  }
+  return {
+    removedWorktrees,
+    removedBranches,
+    remaining: {
+      worktrees: fs.existsSync(dir) ? fs.readdirSync(dir) : [],
+      branches: listAetherBranches(mainRoot, runId),
+    },
+  }
+}
+
+function latestMtime(dir) {
+  let latest = fs.statSync(dir).mtimeMs
+  for (const entry of fs.readdirSync(dir, { recursive: true })) {
+    const stat = fs.lstatSync(path.join(dir, entry))
+    if (stat.mtimeMs > latest) latest = stat.mtimeMs
+  }
+  return latest
+}
+
+// Removes runs that were never finalized and have been untouched for `hours`,
+// plus leftovers whose run directory is already gone.
+function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
+  const { mainRoot } = repoPaths(cwd)
+  const ids = new Set()
+  for (const sub of ['runs', 'worktrees']) {
+    const dir = path.join(run.aetherDir(mainRoot), sub)
+    if (fs.existsSync(dir)) {
+      for (const name of fs.readdirSync(dir)) if (run.isRunId(name)) ids.add(name)
+    }
+  }
+  for (const branch of listAetherBranches(mainRoot)) {
+    const id = branch.split('/')[1]
+    if (run.isRunId(id)) ids.add(id)
+  }
+  const swept = []
+  for (const id of [...ids].sort()) {
+    const dir = run.runDir(mainRoot, id)
+    const stale = !fs.existsSync(dir) || now - latestMtime(dir) > hours * 3600 * 1000
+    if (!stale) continue
+    const result = sweepRun(cwd, id)
+    run.appendRecord({
+      runId: id,
+      status: 'abandoned',
+      sweptAt: new Date(now).toISOString(),
+      repo: mainRoot,
+      removedWorktrees: result.removedWorktrees.length,
+      removedBranches: result.removedBranches.length,
+    })
+    fs.rmSync(dir, { recursive: true, force: true })
+    swept.push(id)
+  }
+  return { swept }
+}
+
+module.exports = { ensure, diffPackage, merge, removeUnit, sweepRun, sweepStale }
