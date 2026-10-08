@@ -67,9 +67,19 @@ test('records main and agent requests with the agent type, and writes part 0 whe
     agents: { 'agent-1': { type: 'aether:implementer', description: 'task-1: implement on haiku (attempt 1)' } },
   })
   expect(part.entries).toEqual([
-    { t: 1000, ms: 0, agent: null, model: 'claude-opus-5-5', input: 10, output: 5, cacheRead: 100, cacheWrite: 50 },
-    { t: 1000, ms: 0, agent: 'agent-1', model: 'claude-haiku-5-5', input: 10, output: 5, cacheRead: 100, cacheWrite: 50 },
+    { t: 1000, ms: 0, agent: null, model: 'claude-opus-5-5', effort: null, input: 10, output: 5, cacheRead: 100, cacheWrite: 50 },
+    { t: 1000, ms: 0, agent: 'agent-1', model: 'claude-haiku-5-5', effort: null, input: 10, output: 5, cacheRead: 100, cacheWrite: 50 },
   ])
+})
+
+test('an entry records the effort its request went out with, or null when the event has none', async ($, on) => {
+  const writes = stubs(on)
+  await step($, { effort: 'xhigh' })
+  await step($, { model: 'claude-haiku-5-5', agentId: 'agent-1', effort: 'medium' })
+  await step($)
+  await endTurn($)
+  const part = files(writes)['/home/u/.local/share/aether-plugin/usage/s1/0.json']
+  expect(part.entries.map((entry) => entry.effort)).toEqual(['xhigh', 'medium', null])
 })
 
 test('AETHER_DATA_DIR overrides the data directory, and session end writes what is pending', async ($, on) => {

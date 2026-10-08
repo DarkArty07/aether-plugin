@@ -17,6 +17,7 @@ let writing = false
 let pending = false
 
 const tokens = (value) => (Number.isFinite(value) ? value : 0)
+const effortOf = (value) => (typeof value === 'string' && value !== '' ? value : null)
 
 async function init($) {
   const session = await $.session.id()
@@ -102,6 +103,7 @@ export function register(on) {
           ms: started === null ? null : ended - started,
           agent: e.agentId || null,
           model: usage.model || e.model || null,
+          effort: effortOf(e.effort),
           input: tokens(usage.input_tokens),
           output: tokens(usage.output_tokens),
           cacheRead: tokens(usage.cache_read_input_tokens),
