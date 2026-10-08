@@ -125,6 +125,8 @@ It is injected at SessionStart, as in v0.1, and becomes the Lead's rules:
   - that it cannot talk to the owner, so it works in rounds with the reply format of §7.4;
   - the superpowers skills to load: `superpowers:brainstorming`, from "Propose 2-3 approaches" onward, and `superpowers:writing-plans`;
   - the Aether plan rules moved from the bootstrap: the fields, the tier rubric, the `## Aether Execution` section, contract tasks (A10) and `aether-plan check`;
+  - that no plan task owns a file under `docs/superpowers/specs/` or `docs/superpowers/plans/`, because the guard refuses every writer but the Designer (§7.6). The spec and plan updates a change needs are the Designer's own edits: those the plan needs when it writes the plan, and later ones when the Lead asks;
+  - that a long `aether-voice` output, which Claude Code saves to a file, is read in full;
   - to stop when the plan is committed, because the Lead runs the execution handoff;
   - never to implement product code.
 
@@ -174,6 +176,7 @@ It is injected at SessionStart, as in v0.1, and becomes the Lead's rules:
 - **Denial:** a `permissionDecision` of `deny`, whose reason tells the agent to hand the change to the Designer. Anything else prints nothing, which lets the normal permission flow decide.
 - **Fails open:** malformed input prints nothing and exits with 0. The guard protects a route, not a security boundary.
 - **Not covered:** Bash commands that write those files. The bootstrap forbids it, and the trial checks for it.
+- **Consequence for plans:** the swarm's implementers are refused too, so no plan task may own a spec or plan file (§7.3). The first run of this plan found the gap: its Task 5 edited the v0.1 spec's status line.
 
 ### 7.7 Smaller changes
 

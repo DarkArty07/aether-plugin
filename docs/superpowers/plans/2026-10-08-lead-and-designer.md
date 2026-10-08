@@ -497,6 +497,7 @@ git commit -m "feat(aether): add aether-guard so that only the Designer writes s
      - The code you need. Read what the design needs; do not sweep whole trees.
      - Keep what the owner said apart from what you assume.
      - If `aether-voice` fails, work from the confirmed understanding and say so in your reply.
+     - If Claude Code saves the output to a file because it is long, read that file in full.
   3. **You cannot talk to the owner.**
      - Work in rounds. Wherever superpowers says to ask, present or get approval, end your turn with the reply format, copied verbatim from the hand-off protocol: `## For the owner`, `## For the Lead`, and the line `- Stage: approaches | design | spec | plan | question | blocked`.
      - When you are resumed, the owner's answer arrives verbatim through the Lead. Continue from where you stopped.
@@ -514,7 +515,8 @@ git commit -m "feat(aether): add aether-guard so that only the Designer writes s
      - the tier rubric (haiku, sonnet, opus), as in v0.1;
      - contract tasks per A10: Interfaces, failing tests in full, acceptance, no implementation code;
      - the `## Aether Execution` section after Global Constraints, with the test command, the ladder and the max agents;
-     - `aether-plan check <plan.md>` must pass before the owner reviews the plan.
+     - `aether-plan check <plan.md>` must pass before the owner reviews the plan;
+     - no task owns a file under `docs/superpowers/specs/` or `docs/superpowers/plans/`, because `aether-guard` refuses every writer but the Designer. The Designer makes the spec and plan updates a change needs itself: those the plan needs when it writes the plan, and later ones when the Lead asks.
   6. **Rules.**
      - Commit only your spec and plan files.
      - When an answer from the owner contradicts the confirmed understanding, reply with Stage `question`.
@@ -1018,3 +1020,38 @@ The evaluation states the verdict, the threats to validity (one run per configur
 git add docs/evaluations/trial-3 docs/evaluations/*-trial-3.md
 git commit -m "docs(aether): record trial 3, the Lead and the Designer against an Opus main session"
 ```
+
+## Execution record
+
+### Run `20261008-134400-d48f`: Tasks 1, 2 and 5 on the swarm (2026-10-08)
+
+**Units:**
+- Tasks 1 and 2 merged on Haiku, each on its first attempt.
+- The supervisor blocked Task 5 (Sonnet) on a plan defect. Its 0.2.0 version bump broke `tests/report.test.js:110`, which hard-coded `'0.1.0'` and which no task owned. The rest of the diff met the brief.
+
+**Time and cost:**
+- 5 min 19 s from compile to the saved result, of which the swarm took 3 min 52 s. 14 agents.
+- $2.03 at list prices for the window:
+  - Opus $1.63: the main session $0.98 for 6 requests, and the final reviewer about $0.65;
+  - Sonnet $0.38; Haiku $0.02.
+
+**Task 5.** The Designer applied its patch, with three changes (`b4b3673`):
+- the finalize test reads the version from the manifest;
+- the research row states the verified effort order;
+- A17 is marked as pending its trial.
+
+**Final review (Opus): not-ready**, with 1 critical, 2 important and 6 minor findings.
+- **Critical:** the branch registers the guard before the Designer exists, because Tasks 3 and 4 were outside the run. This is expected: the branch is not finished before they are in.
+- **Important, Task 5's version bump:** fixed in `b4b3673`.
+- **Important, the guard refuses the swarm's implementers too,** so on 0.2 a task that owns a spec or plan file can never merge. Fixed by a rule in spec §7.3 and §7.6 and in Task 3's contract: no task owns those files, and the Designer makes those updates itself.
+- **Minor, fixed in `fad5eff`:**
+  - meta, compaction and tool records are left out whatever their origin;
+  - unreadable folders and transcripts give a clear exit 1;
+  - two guard tests pin Review Focus 4.
+- **Minor, handled in Task 3:** a long `aether-voice` output, which Claude Code saves to a file, is read in full. Smoke S11 checks it.
+- **Minor, accepted:** `--session` followed by another flag counts as no value; the guard normalizes Windows separators.
+- **Declined lines:** the Designer agrees with all nine.
+  - Bash writes, and case or symlink variants, are outside the guard's scope (§7.6).
+  - The literal `agent_type` is checked by smoke S9.
+  - The session id after `/clear` is the platform's behavior.
+  - The rest are cosmetic, or outside the diff.
