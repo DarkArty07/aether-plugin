@@ -162,3 +162,33 @@ A real headless swarm ran on a two-task fixture, with the plugin, a Sonnet main 
 - **A run killed late:** this run was killed after its units had merged and closed. It left only its run directory and an empty worktrees folder, and the same sweep removed both.
 - **An active run is kept:** in the first attempt the kill missed (`setsid` had forked), so the run kept working. The sweep left that run alone because its files were still changing. This is the intended protection.
 - **Not Aether's files:** Claude Code keeps each workflow's state under `~/.claude/projects/<project>/<session>/workflows/`, even with `--no-session-persistence`. It cleans them by `cleanupPeriodDays`. The trial's harness deletes the folders its sessions create.
+
+## Post-review record (2026-10-08)
+
+**Execution.** The Designer implemented every task inline, with TDD and without delegation.
+- Each test was watched failing first.
+- The mod's tests run with `claude plugin test`; everything else runs with `node --test`.
+- A spike on a throwaway mod confirmed the event shapes before the meter was written. The spike was deleted afterwards.
+
+**Rulings made during execution.** Each ruling ends with its cost if it proves wrong.
+- **Usage files:** one directory per session, in parts of 1,000 entries, instead of a single `usage-<session>.json`. One file would hit the mod API's 4 MiB write limit in a long session, and a reloaded mod would overwrite it. *Cost if wrong:* the report reads a directory instead of a file.
+- **Measuring relaunches:** a relaunch keeps the run's first compile time and archives the previous result as `result-<k>.json`, and the report adds the launches up. The plan said nothing about relaunches, but without this a relaunch would hide the first launch's cost and outcomes. *Cost if wrong:* a small rename in `aether-plan`.
+- **The trial's cost figure:** the trial compares Claude Code's `costUSD`, and the meter's OpenRouter pricing serves as the breakdown. They use the same rates, but only `costUSD` knows the real cache-write lifetimes (see the execution record). *Cost if wrong:* the two figures differ by about 3–5%.
+- **`aether-report price`:** added to price sessions that run without the plugin, which the trial's normal mode needs. *Cost if wrong:* one small command to drop.
+
+**Review.** A self-review of the whole branch by the Designer, without delegation, as the owner asked, with two findings taken from the trial itself.
+
+**Fixes** (`a9eaf2c`, node suite 110/110, mod tests 5/5):
+
+| Id | Fix |
+|---|---|
+| R1 | The usage files grew without bound, and the report read them all. The report now reads only the sessions written to since the run began, and the SessionStart hook deletes usage sessions not written to for 30 days. Tests: "report reads only the usage sessions written to since the run began", "pruneUsage deletes …" and "session start deletes usage sessions older than 30 days" (RED → GREEN) |
+| R2 | In the trial, the Designer passed the compiled JSON quoted once more, and the workflow refused its first launch. The workflow now unwraps up to two layers of JSON. Test: "args encoded as JSON twice still run …" (RED → GREEN) |
+| R3 | In the trial, the Designer ran `finalize` before its last fix, so the record missed that fix. The `swarm` skill now says that `finalize` records the run as it stands, so the critical and important findings come first. This fix is in the prompt only |
+
+**Deferred minors:**
+- **Meter memory:** the meter keeps every entry of the session in memory, including parts already written.
+- **Cache-write lifetimes:** the report prices them with the main-session/agent heuristic, about 3% low against `costUSD`.
+- **`--session`:** when it names a session last written before the run began, the report says "not found".
+- **Missing integration worktree:** the tests then report exit code `null`, with no note saying why.
+- **Opus fast mode:** fast-mode requests are priced at normal rates.
