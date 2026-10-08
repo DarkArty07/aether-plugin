@@ -1,0 +1,29 @@
+#!/usr/bin/env node
+'use strict'
+
+// SessionStart hook: injects the using-aether bootstrap and sweeps stale runs
+// in the session's repository.
+
+const fs = require('node:fs')
+const path = require('node:path')
+
+const root = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..')
+
+function bootstrap() {
+  const raw = fs.readFileSync(path.join(root, 'skills', 'using-aether', 'SKILL.md'), 'utf8')
+  return raw.replace(/^---\n[\s\S]*?\n---\n/, '').trim()
+}
+
+function sweepNote() {
+  try {
+    const { sweepStale } = require(path.join(root, 'lib', 'worktrees.js'))
+    const { swept } = sweepStale(process.cwd())
+    return swept.length ? `Aether swept ${swept.length} stale run(s): ${swept.join(', ')}.` : ''
+  } catch (err) {
+    if (/not a git repository/i.test(err.message)) return ''
+    return `Aether could not sweep stale runs: ${err.message}`
+  }
+}
+
+const context = ['Aether mode is active.', bootstrap(), sweepNote()].filter(Boolean).join('\n\n')
+process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) + '\n')
