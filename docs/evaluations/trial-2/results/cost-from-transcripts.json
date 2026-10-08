@@ -1,0 +1,83 @@
+{
+ "note": "Every request priced at the plugin's OpenRouter rates with its real cache-write lifetime, from the session transcripts (harness/price-transcripts.py).",
+ "aether": {
+  "pricing": "OpenRouter list prices, Anthropic endpoint, snapshot 2026-10-07",
+  "totalUsd": 4.1732,
+  "byModel": {
+   "claude-opus-5-5": {
+    "requests": 56,
+    "usd": 3.2112,
+    "cacheWrite5m": 68361,
+    "cacheWrite1h": 120820,
+    "promptsOver200k": 0
+   },
+   "claude-haiku-5-5": {
+    "requests": 59,
+    "usd": 0.0254,
+    "cacheWrite5m": 76647,
+    "cacheWrite1h": 0,
+    "promptsOver200k": 0
+   },
+   "claude-sonnet-5-5": {
+    "requests": 67,
+    "usd": 0.9365,
+    "cacheWrite5m": 175645,
+    "cacheWrite1h": 0,
+    "promptsOver200k": 0
+   }
+  },
+  "phases": [
+   {
+    "from": null,
+    "to": "2026-10-08T17:21:04.184Z",
+    "usd": 0.3193,
+    "what": "the Designer reads the spec and the plan, and compiles"
+   },
+   {
+    "from": "2026-10-08T17:21:04.184Z",
+    "to": "2026-10-08T17:32:15.788Z",
+    "usd": 2.0952,
+    "what": "the run: compile to saved result, the swarm included"
+   },
+   {
+    "from": "2026-10-08T17:32:15.788Z",
+    "to": "2026-10-08T17:35:25Z",
+    "usd": 1.0111,
+    "what": "the Designer fixes the final review findings; the meter had flushed up to here when finalize ran"
+   },
+   {
+    "from": "2026-10-08T17:35:25Z",
+    "to": null,
+    "usd": 0.7476,
+    "what": "the Designer checks in a browser and finalizes; still in the meter buffer when finalize ran"
+   }
+  ]
+ },
+ "normal": {
+  "pricing": "OpenRouter list prices, Anthropic endpoint, snapshot 2026-10-07",
+  "totalUsd": 21.9507,
+  "byModel": {
+   "claude-opus-5-5": {
+    "requests": 96,
+    "usd": 8.3478,
+    "cacheWrite5m": 191261,
+    "cacheWrite1h": 222336,
+    "promptsOver200k": 13
+   },
+   "claude-sonnet-5-5": {
+    "requests": 343,
+    "usd": 13.5589,
+    "cacheWrite5m": 1246193,
+    "cacheWrite1h": 0,
+    "promptsOver200k": 74
+   },
+   "claude-haiku-5-5": {
+    "requests": 35,
+    "usd": 0.0441,
+    "cacheWrite5m": 143095,
+    "cacheWrite1h": 0,
+    "promptsOver200k": 0
+   }
+  }
+ }
+}

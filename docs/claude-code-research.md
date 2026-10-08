@@ -235,8 +235,19 @@ Measured on Claude Code 2.1.294 while building and running the swarm. Real headl
 | Mods: `agent.spawn` | It fires for workflow agents too, with `subagentType` set to the `agentType` (such as `aether:implementer`). `next(e)` resolves to `{ model, agentId }`, where `agentId` matches the agent's `turn.step` events. `claude plugin validate --strict` fails a gating hook that has no `.catch`. `.catch(($, e, next) => next(e))` is replay-safe. |
 | Mods: API | `$.session.id()`, `$.session.version()` and `$.clock.now()` are async. `$.env.get` reads the process environment. `$.fs.write` creates directories and is not atomic. Limits: 4 MiB per file, and 10 s of a hook's own time. |
 | Mods: tests | `claude plugin test <dir>` runs `*.test.ts` files with `claude-code/testing`: stubs per call or event, `mock.clock`, `mock.env`, and `$.turn.step(...)` read to its end. No session or network is involved. |
-| Cost accounting | The meter's token totals match `modelUsage` exactly, model by model. Claude Code's `costUSD` uses the same rates as OpenRouter and the real cache-write lifetimes. Pricing the meter's tokens with "1 hour for the main session, 5 minutes for agents" came out 3% low in the smoke run, because some agent writes are billed at 1 hour. The `-p` output's `usage.cache_creation` splits `ephemeral_1h` and `ephemeral_5m` for the main session's last turn only. |
+| Cost accounting | The meter's token totals match `modelUsage` exactly, model by model. Claude Code's `costUSD` uses the real cache-write lifetimes and OpenRouter's rates, with one exception found in trial 2: Sonnet 5.5 cache reads (see below). Pricing the meter's tokens with "1 hour for the main session, 5 minutes for agents" came out 3% low in the smoke run, because some agent writes are billed at 1 hour. The `-p` output's `usage.cache_creation` splits `ephemeral_1h` and `ephemeral_5m` for the main session's last turn only. |
 | `claude -p` flags | `--no-session-persistence` keeps no transcript. `--max-budget-usd` caps a run's spend. `--strict-mcp-config`, with `ENABLE_CLAUDEAI_MCP_SERVERS=false`, keeps connectors out. |
+
+## Trial 2 findings (2026-10-08)
+
+From the transcripts of [trial 2](evaluations/2026-10-08-trial-2.md), on Claude Code 2.1.294.
+
+| Topic | Result |
+|---|---|
+| Cache lifetimes in the transcripts | Each assistant message's `usage.cache_creation` splits `ephemeral_5m_input_tokens` from `ephemeral_1h_input_tokens`. This holds for the main session and for every subagent and workflow agent, under `<session>/subagents/`. Pricing each request from them matched `costUSD` exactly for Opus and Haiku. |
+| Cache lifetimes in practice | In both trial-2 sessions, every main-session cache write was billed at 1 hour and every agent write at 5 minutes. |
+| Sonnet 5.5 cache reads | `costUSD` charges them at $0.20 per million tokens. OpenRouter charges $0.10 on every endpoint, Anthropic's included. Every other rate matches. The plugin follows OpenRouter, the owner's basis (A6). |
+| Prompts over 200,000 tokens | `costUSD` charged them at the normal rates for Opus and Sonnet 5.5. Trial 2's normal run had 87. OpenRouter lists a long-prompt tier only for Haiku 5.5, from 100,000 tokens. |
 
 ## OpenRouter prices
 
