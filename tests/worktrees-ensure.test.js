@@ -46,6 +46,17 @@ test('ensure replaces a leftover directory that is not a worktree', (t) => {
   assert.equal(repo.git('-C', leftover, 'branch', '--show-current'), r.branch)
 })
 
+test('ensure refuses to delete a directory that has a .git entry git does not list', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const odd = path.join(args.repoRoot, '.aether', 'worktrees', args.runId, 'task-2')
+  fs.mkdirSync(odd, { recursive: true })
+  fs.writeFileSync(path.join(odd, '.git'), 'gitdir: /nonexistent\n')
+  fs.writeFileSync(path.join(odd, 'work.txt'), 'keep me\n')
+  assert.throws(() => ensure(repo.dir, args.runId, 'task-2'), /refusing to remove/)
+  assert.equal(fs.readFileSync(path.join(odd, 'work.txt'), 'utf8'), 'keep me\n')
+})
+
 test('ensure refuses tasks outside the run and invalid ids', (t) => {
   const repo = makeRepo(t)
   const args = compile(repo, plan([task(1), task(2)]))

@@ -86,3 +86,41 @@ test('merge works when the repository path contains spaces', (t) => {
   commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
   assert.equal(merge(repo.dir, args.runId, 'task-1').merged, true)
 })
+
+test('merge sees both sides of a rename, so a unit cannot move a file it does not own', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, repo.dir, 'src/t2/shared.js', 'shared\n', 'task 2 owns this')
+  repo.git('-C', unit.path, 'merge', '-q', 'feature/x')
+  fs.mkdirSync(path.join(unit.path, 'src', 't1'), { recursive: true })
+  repo.git('-C', unit.path, 'mv', 'src/t2/shared.js', 'src/t1/shared.js')
+  repo.git('-C', unit.path, 'commit', '-q', '-m', 'move it')
+  assert.deepEqual(merge(repo.dir, args.runId, 'task-1'), { merged: false, reason: 'ownership', files: ['src/t2/shared.js'] })
+})
+
+test('merge accepts owned files with non-ASCII names', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/café.md', 'hola\n', 'add café')
+  assert.equal(merge(repo.dir, args.runId, 'task-1').merged, true)
+})
+
+test('merge refuses when the integration worktree is on another branch', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  repo.git('switch', '-q', 'main')
+  const before = repo.git('rev-parse', 'main')
+  assert.deepEqual(merge(repo.dir, args.runId, 'task-1'), {
+    merged: false,
+    reason: 'wrong-branch',
+    detail: 'the integration worktree is on main, not feature/x',
+  })
+  assert.equal(repo.git('rev-parse', 'main'), before)
+})
+
+test('merge reports uncommitted work when the unit committed nothing', (t) => {
+  const { repo, args, unit } = setup(t)
+  fs.mkdirSync(path.join(unit.path, 'src', 't1'), { recursive: true })
+  fs.writeFileSync(path.join(unit.path, 'src', 't1', 'a.js'), 'one\n')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.reason, 'empty')
+  assert.deepEqual(r.uncommitted, ['src/t1/a.js'])
+})

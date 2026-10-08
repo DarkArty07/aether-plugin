@@ -90,6 +90,13 @@ function age(dir, hours) {
   fs.utimesSync(dir, when, when)
 }
 
+// Ages a run's directory and, when it has unit worktrees, those too.
+function ageRun(args, hours) {
+  age(args.runDir, hours)
+  const worktrees = path.join(args.repoRoot, '.aether', 'worktrees', args.runId)
+  if (fs.existsSync(worktrees)) age(worktrees, hours)
+}
+
 module.exports = {
   PLUGIN,
   PLAN_BIN,
@@ -103,4 +110,5 @@ module.exports = {
   commitIn,
   useDataDir,
   age,
+  ageRun,
 }

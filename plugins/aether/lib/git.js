@@ -5,12 +5,18 @@
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
-function git(args, cwd, { allowFail = false } = {}) {
-  const r = spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+// stdout and stderr come back trimmed. With raw: true, stdout is returned untrimmed, because
+// leading spaces (porcelain status) and trailing newlines (patches) are part of the data, and
+// `bytes` holds the exact bytes, which decoding them as text could alter.
+function git(args, cwd, { allowFail = false, raw = false } = {}) {
+  const r = spawnSync('git', args, { cwd, encoding: raw ? 'buffer' : 'utf8', maxBuffer: 64 * 1024 * 1024 })
   if (r.error) throw r.error
-  const result = { status: r.status, stdout: r.stdout.trim(), stderr: r.stderr.trim() }
+  const stdout = raw ? r.stdout.toString('utf8') : r.stdout.trim()
+  const stderr = (raw ? r.stderr.toString('utf8') : r.stderr).trim()
+  const result = { status: r.status, stdout, stderr }
+  if (raw) result.bytes = r.stdout
   if (r.status !== 0 && !allowFail) {
-    throw new Error(`git ${args.join(' ')} failed: ${result.stderr || result.stdout}`)
+    throw new Error(`git ${args.join(' ')} failed: ${stderr || stdout.trim()}`)
   }
   return result
 }

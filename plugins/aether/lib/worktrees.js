@@ -2,11 +2,12 @@
 
 // Unit worktrees: create, package for review, merge, remove and sweep.
 // Only paths under <repo>/.aether/ and branches under aether/ are touched.
+// Git's worktree registry is never pruned as a whole: Aether removes only its own entries, by path.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { git, repoPaths, head } = require('./git.js')
+const { git, repoPaths, currentBranch, head } = require('./git.js')
 const { matchesAny } = require('./globs.js')
 const run = require('./run.js')
 
@@ -17,10 +18,36 @@ function loadGraph(mainRoot, runId) {
   return run.readJson(file)
 }
 
-function assertInside(target, root) {
+function isInside(target, root) {
   const rel = path.relative(root, target)
-  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw new Error(`refusing to touch ${target}: it is outside ${root}`)
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
+}
+
+function assertInside(target, root) {
+  if (!isInside(target, root)) throw new Error(`refusing to touch ${target}: it is outside ${root}`)
+}
+
+// Unit worktrees live in <repo>/.aether/worktrees/<run>/<task>.
+function unitsDir(mainRoot) {
+  return path.join(run.aetherDir(mainRoot), 'worktrees')
+}
+
+// Unlike fs.existsSync, this counts a dangling symlink as present.
+function exists(target) {
+  try {
+    fs.lstatSync(target)
+    return true
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false
+    throw err
+  }
+}
+
+function isDirectory(target) {
+  try {
+    return fs.statSync(target).isDirectory()
+  } catch {
+    return false
   }
 }
 
@@ -32,6 +59,47 @@ function unitBase(mainRoot, graph, branch) {
   return git(['merge-base', graph.integration.branch, branch], mainRoot).stdout
 }
 
+// The entries of NUL-terminated git output (-z), without the empty ones.
+function nulEntries(text) {
+  return text.split('\0').filter((entry) => entry !== '')
+}
+
+// Every worktree in git's registry, including entries whose directory is gone.
+function registeredWorktrees(mainRoot) {
+  const out = git(['worktree', 'list', '--porcelain', '-z'], mainRoot, { raw: true }).stdout
+  return nulEntries(out)
+    .filter((field) => field.startsWith('worktree '))
+    .map((field) => field.slice('worktree '.length))
+}
+
+// The registered worktrees under .aether/worktrees/, or under .aether/worktrees/<run>/ for one run.
+function aetherWorktrees(mainRoot, runId = null) {
+  const root = runId ? run.worktreesDir(mainRoot, runId) : unitsDir(mainRoot)
+  return registeredWorktrees(mainRoot).filter((worktree) => isInside(worktree, root))
+}
+
+// True when `dir` is itself the root of a git worktree. In any other directory of the repository,
+// git commands would act on the enclosing checkout instead.
+function isWorktreeRoot(dir) {
+  if (!isDirectory(dir)) return false
+  const top = git(['rev-parse', '--show-toplevel'], dir, { allowFail: true })
+  return top.status === 0 && top.stdout === fs.realpathSync(dir)
+}
+
+// Uncommitted and untracked files of a unit worktree. A rename lists both of its paths.
+function uncommittedFiles(worktree) {
+  const status = git(['status', '--porcelain', '-z', '--untracked-files=all'], worktree, { raw: true })
+  const entries = nulEntries(status.stdout)
+  const files = []
+  for (let i = 0; i < entries.length; i++) {
+    const [x, y] = entries[i]
+    files.push(entries[i].slice(3))
+    // A rename or a copy is followed by its source path.
+    if ((x === 'R' || x === 'C' || y === 'R' || y === 'C') && i + 1 < entries.length) files.push(entries[++i])
+  }
+  return files
+}
+
 function ensure(cwd, runId, taskId) {
   run.assertRunId(runId)
   run.assertTaskId(taskId)
@@ -41,17 +109,19 @@ function ensure(cwd, runId, taskId) {
   run.ensureExcluded(gitCommonDir)
   const worktree = run.unitWorktree(mainRoot, runId, taskId)
   const branch = run.unitBranch(runId, taskId)
-  if (fs.existsSync(worktree)) {
-    const top = git(['rev-parse', '--show-toplevel'], worktree, { allowFail: true })
-    if (top.status === 0 && top.stdout === worktree) return { path: worktree, branch, created: false }
-    // A leftover directory that is not this unit's worktree.
-    assertInside(worktree, run.aetherDir(mainRoot))
+  if (exists(worktree)) {
+    if (registeredWorktrees(mainRoot).includes(worktree)) return { path: worktree, branch, created: false }
+    if (exists(path.join(worktree, '.git'))) {
+      throw new Error(`refusing to remove ${worktree}: it has a .git entry but git does not list it as a worktree`)
+    }
+    // A leftover directory that is not a worktree.
+    assertInside(worktree, unitsDir(mainRoot))
     fs.rmSync(worktree, { recursive: true, force: true })
   }
-  git(['worktree', 'prune'], mainRoot)
   fs.mkdirSync(path.dirname(worktree), { recursive: true })
-  if (branchExists(mainRoot, branch)) git(['worktree', 'add', worktree, branch], mainRoot)
-  else git(['worktree', 'add', '-b', branch, worktree, graph.integration.branch], mainRoot)
+  // --force also reuses a registry entry of this path whose directory was deleted by hand.
+  if (branchExists(mainRoot, branch)) git(['worktree', 'add', '--force', worktree, branch], mainRoot)
+  else git(['worktree', 'add', '--force', '-b', branch, worktree, graph.integration.branch], mainRoot)
   fs.mkdirSync(path.join(worktree, '.aether-tmp'), { recursive: true })
   return { path: worktree, branch, created: true }
 }
@@ -84,9 +154,10 @@ function diffPackage(cwd, runId, taskId) {
   return { path: file, base }
 }
 
+// Both sides of a rename are listed, and names are not quoted, whatever characters they hold.
 function changedFiles(mainRoot, base, branch) {
-  const out = git(['diff', '--name-only', `${base}..${branch}`], mainRoot).stdout
-  return out === '' ? [] : out.split('\n')
+  const args = ['-c', 'core.quotePath=false', 'diff', '--name-only', '--no-renames', '-z', `${base}..${branch}`]
+  return nulEntries(git(args, mainRoot, { raw: true }).stdout)
 }
 
 // Merges one unit into the integration branch. Callers serialize merges.
@@ -98,21 +169,41 @@ function merge(cwd, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
   if (!task) throw new Error(`${taskId} is not in run ${runId}`)
   const integration = graph.integration.worktree
   const branch = run.unitBranch(runId, taskId)
+  const current = currentBranch(integration)
+  if (current !== graph.integration.branch) {
+    return {
+      merged: false,
+      reason: 'wrong-branch',
+      detail: `the integration worktree is on ${current || 'a detached HEAD'}, not ${graph.integration.branch}`,
+    }
+  }
   if (git(['status', '--porcelain', '--untracked-files=no'], integration).stdout !== '') {
     return { merged: false, reason: 'dirty-integration', detail: 'the integration worktree has uncommitted changes' }
   }
   const base = unitBase(mainRoot, graph, branch)
   const files = changedFiles(mainRoot, base, branch)
-  if (files.length === 0) return { merged: false, reason: 'empty', detail: `${branch} has no changes to merge` }
+  if (files.length === 0) {
+    const result = { merged: false, reason: 'empty', detail: `${branch} has no changes to merge` }
+    // Work that was never committed is not merged; say where it is.
+    const worktree = run.unitWorktree(mainRoot, runId, taskId)
+    const uncommitted = isWorktreeRoot(worktree) ? uncommittedFiles(worktree) : []
+    if (uncommitted.length > 0) result.uncommitted = uncommitted
+    return result
+  }
   const outside = files.filter((f) => !matchesAny(f, task.owns))
   if (outside.length) return { merged: false, reason: 'ownership', files: outside }
 
   const before = head(integration)
   const attempt = git(['merge', '--no-ff', '--no-edit', '-m', `Merge ${branch}`, branch], integration, { allowFail: true })
   if (attempt.status !== 0) {
-    const unmerged = git(['diff', '--name-only', '--diff-filter=U'], integration, { allowFail: true }).stdout
+    const unmerged = nulEntries(
+      git(['-c', 'core.quotePath=false', 'diff', '--name-only', '--diff-filter=U', '-z'], integration, {
+        allowFail: true,
+        raw: true,
+      }).stdout,
+    )
     git(['merge', '--abort'], integration, { allowFail: true })
-    return { merged: false, reason: 'conflict', files: unmerged ? unmerged.split('\n') : [], detail: attempt.stderr || attempt.stdout }
+    return { merged: false, reason: 'conflict', files: unmerged, detail: attempt.stderr || attempt.stdout }
   }
 
   const tests = spawnSync(graph.testCommand, {
@@ -138,20 +229,63 @@ function merge(cwd, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
   return { merged: true, commit: head(integration) }
 }
 
-function removeWorktreeDir(mainRoot, worktree) {
-  assertInside(worktree, run.aetherDir(mainRoot))
-  if (!fs.existsSync(worktree)) return false
-  const r = git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true })
-  if (r.status !== 0) fs.rmSync(worktree, { recursive: true, force: true })
-  return true
+// Drops one registry entry, and the directory with it when it is there. Works for a missing directory.
+function unregisterWorktree(mainRoot, worktree) {
+  return git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true }).status === 0
 }
 
-function listAetherBranches(mainRoot, runId = null) {
-  const ref = runId ? `refs/heads/aether/${runId}` : 'refs/heads/aether'
-  const out = git(['for-each-ref', '--format=%(refname:short)', ref], mainRoot).stdout
-  return out === '' ? [] : out.split('\n').filter((b) => b.startsWith('aether/'))
+// Removes one unit worktree: git drops its registry entry and its directory, then whatever is
+// left on disk is deleted by hand. Returns true when neither the entry nor the directory remains.
+function removeWorktreePath(mainRoot, worktree, registered) {
+  assertInside(worktree, unitsDir(mainRoot))
+  let unregistered = !registered || unregisterWorktree(mainRoot, worktree)
+  if (exists(worktree)) fs.rmSync(worktree, { recursive: true, force: true })
+  // Git refuses a worktree whose directory is broken, but not one whose directory is gone.
+  if (!unregistered) unregistered = unregisterWorktree(mainRoot, worktree)
+  return unregistered && !exists(worktree)
 }
 
+// True when everything on `branch` is already in the integration branch.
+function isMerged(mainRoot, graph, branch) {
+  const r = git(['merge-base', '--is-ancestor', branch, graph.integration.branch], mainRoot, { allowFail: true })
+  return r.status === 0
+}
+
+// Branches under aether/ (or aether/<run>/) with the commit each one points to.
+function aetherBranches(mainRoot, runId = null) {
+  const pattern = runId ? `refs/heads/aether/${runId}` : 'refs/heads/aether'
+  const out = git(['for-each-ref', '--format=%(objectname) %(refname)', pattern], mainRoot).stdout
+  if (out === '') return []
+  return out
+    .split('\n')
+    .map((line) => {
+      const space = line.indexOf(' ')
+      return { branch: line.slice(space + 1).replace(/^refs\/heads\//, ''), tip: line.slice(0, space) }
+    })
+    .filter(({ branch }) => branch.startsWith('aether/'))
+}
+
+// Saves the unit's work that is not in the integration branch as a patch for `git apply`.
+// When the worktree is there, the patch also covers its uncommitted and untracked files.
+function writePatch(mainRoot, graph, runId, taskId, worktree) {
+  const branch = run.unitBranch(runId, taskId)
+  const base = unitBase(mainRoot, graph, branch)
+  let diff
+  if (worktree) {
+    git(['add', '-A'], worktree)
+    diff = git(['diff', '--binary', '--cached', base], worktree, { raw: true })
+  } else {
+    diff = git(['diff', '--binary', `${base}..${branch}`], mainRoot, { raw: true })
+  }
+  const file = path.join(run.runDir(mainRoot, runId), 'patches', `${taskId}.patch`)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, diff.bytes)
+  return file
+}
+
+// Removes a unit's worktree and branch. The unit's work is saved as a patch first when the caller
+// asks for it, when the branch is not merged into the integration branch, or when the worktree
+// holds uncommitted or untracked files.
 function removeUnit(cwd, runId, taskId, { keepPatch = false } = {}) {
   run.assertRunId(runId)
   run.assertTaskId(taskId)
@@ -159,17 +293,26 @@ function removeUnit(cwd, runId, taskId, { keepPatch = false } = {}) {
   const worktree = run.unitWorktree(mainRoot, runId, taskId)
   const branch = run.unitBranch(runId, taskId)
   const hasBranch = branchExists(mainRoot, branch)
+  const inWorktree = isWorktreeRoot(worktree)
   let patch = null
-  if (keepPatch && hasBranch) {
-    const base = unitBase(mainRoot, loadGraph(mainRoot, runId), branch)
-    patch = path.join(run.runDir(mainRoot, runId), 'patches', `${taskId}.patch`)
-    fs.mkdirSync(path.dirname(patch), { recursive: true })
-    fs.writeFileSync(patch, git(['diff', '--binary', `${base}..${branch}`], mainRoot).stdout + '\n')
+  if (hasBranch) {
+    const graph = loadGraph(mainRoot, runId)
+    if (keepPatch || !isMerged(mainRoot, graph, branch) || (inWorktree && uncommittedFiles(worktree).length > 0)) {
+      patch = writePatch(mainRoot, graph, runId, taskId, inWorktree ? worktree : null)
+    }
   }
-  removeWorktreeDir(mainRoot, worktree)
-  git(['worktree', 'prune'], mainRoot)
+  removeWorktreePath(mainRoot, worktree, registeredWorktrees(mainRoot).includes(worktree))
   if (hasBranch) git(['branch', '-D', branch], mainRoot)
   return { removed: true, patch }
+}
+
+// The worktrees of a run: those in git's registry, plus any directory left in the run's folder.
+function runWorktrees(mainRoot, runId) {
+  const dir = run.worktreesDir(mainRoot, runId)
+  const registered = new Set(aetherWorktrees(mainRoot, runId))
+  const paths = new Set(registered)
+  if (isDirectory(dir)) for (const name of fs.readdirSync(dir)) paths.add(path.join(dir, name))
+  return { paths: [...paths].sort(), registered }
 }
 
 function sweepRun(cwd, runId) {
@@ -177,16 +320,16 @@ function sweepRun(cwd, runId) {
   const { mainRoot } = repoPaths(cwd)
   const dir = run.worktreesDir(mainRoot, runId)
   const removedWorktrees = []
-  if (fs.existsSync(dir)) {
-    for (const name of fs.readdirSync(dir)) {
-      const worktree = path.join(dir, name)
-      if (removeWorktreeDir(mainRoot, worktree)) removedWorktrees.push(worktree)
-    }
+  const { paths, registered } = runWorktrees(mainRoot, runId)
+  for (const worktree of paths) {
+    if (removeWorktreePath(mainRoot, worktree, registered.has(worktree))) removedWorktrees.push(worktree)
+  }
+  if (exists(dir)) {
+    assertInside(dir, unitsDir(mainRoot))
     fs.rmSync(dir, { recursive: true, force: true })
   }
-  git(['worktree', 'prune'], mainRoot)
   const removedBranches = []
-  for (const branch of listAetherBranches(mainRoot, runId)) {
+  for (const { branch } of aetherBranches(mainRoot, runId)) {
     git(['branch', '-D', branch], mainRoot)
     removedBranches.push(branch)
   }
@@ -194,23 +337,38 @@ function sweepRun(cwd, runId) {
     removedWorktrees,
     removedBranches,
     remaining: {
-      worktrees: fs.existsSync(dir) ? fs.readdirSync(dir) : [],
-      branches: listAetherBranches(mainRoot, runId),
+      worktrees: runWorktrees(mainRoot, runId).paths.map((worktree) => path.basename(worktree)),
+      branches: aetherBranches(mainRoot, runId).map(({ branch }) => branch),
     },
   }
 }
 
-function latestMtime(dir) {
-  let latest = fs.statSync(dir).mtimeMs
-  for (const entry of fs.readdirSync(dir, { recursive: true })) {
-    const stat = fs.lstatSync(path.join(dir, entry))
-    if (stat.mtimeMs > latest) latest = stat.mtimeMs
+// True when `dir`, or anything inside it, was modified at or after `cutoff` (ms since the epoch).
+// Symlinks are not followed, and the walk stops at the first recent entry.
+function modifiedSince(dir, cutoff) {
+  const pending = [dir]
+  while (pending.length > 0) {
+    const current = pending.pop()
+    let stat
+    try {
+      stat = fs.lstatSync(current)
+    } catch {
+      continue // gone since it was listed
+    }
+    if (stat.mtimeMs >= cutoff) return true
+    if (!stat.isDirectory()) continue
+    try {
+      for (const name of fs.readdirSync(current)) pending.push(path.join(current, name))
+    } catch {
+      // unreadable or gone: nothing more to learn from it
+    }
   }
-  return latest
+  return false
 }
 
-// Removes runs that were never finalized and have been untouched for `hours`,
-// plus leftovers whose run directory is already gone.
+// Removes runs that were never finalized and have had no activity for `hours`, plus leftovers
+// whose run directory is already gone. Activity is any change in the run directory or in the
+// run's unit worktrees. Each removal is recorded first, with the tip of every branch it deletes.
 function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
   const { mainRoot } = repoPaths(cwd)
   const ids = new Set()
@@ -220,24 +378,33 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
       for (const name of fs.readdirSync(dir)) if (run.isRunId(name)) ids.add(name)
     }
   }
-  for (const branch of listAetherBranches(mainRoot)) {
+  for (const worktree of aetherWorktrees(mainRoot)) {
+    const id = path.relative(unitsDir(mainRoot), worktree).split(path.sep)[0]
+    if (run.isRunId(id)) ids.add(id)
+  }
+  for (const { branch } of aetherBranches(mainRoot)) {
     const id = branch.split('/')[1]
     if (run.isRunId(id)) ids.add(id)
   }
+  const cutoff = now - hours * 3600 * 1000
   const swept = []
   for (const id of [...ids].sort()) {
     const dir = run.runDir(mainRoot, id)
-    const stale = !fs.existsSync(dir) || now - latestMtime(dir) > hours * 3600 * 1000
-    if (!stale) continue
-    const result = sweepRun(cwd, id)
+    const worktreesDir = run.worktreesDir(mainRoot, id)
+    const active = fs.existsSync(dir) && (modifiedSince(dir, cutoff) || modifiedSince(worktreesDir, cutoff))
+    if (active) continue
+    const branches = aetherBranches(mainRoot, id)
     run.appendRecord({
       runId: id,
       status: 'abandoned',
       sweptAt: new Date(now).toISOString(),
       repo: mainRoot,
-      removedWorktrees: result.removedWorktrees.length,
-      removedBranches: result.removedBranches.length,
+      removedWorktrees: runWorktrees(mainRoot, id).paths.length,
+      removedBranches: branches.length,
+      branches,
     })
+    sweepRun(cwd, id)
+    assertInside(dir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(dir, { recursive: true, force: true })
     swept.push(id)
   }
