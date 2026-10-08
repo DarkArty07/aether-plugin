@@ -2433,3 +2433,38 @@ Expected: `/home/darkarty/.config/fish/functions/aether-mode.fish`.
 
 - **Plan 2, Swarm:** agents (`implementer`, `reviewer`, `supervisor`, `ops`) with the `NOTICE` for the prompts adapted from superpowers, the `/aether:run` workflow with harness scenarios, the `swarm` skill, and the `using-aether` update that offers the swarm at the plan handoff.
 - **Plan 3, Measurement and trial:** the usage meter mod, `config/prices.json`, `aether-report`, and the comparison trial against normal mode. The version is then tagged `aether--v0.1.0`.
+
+## Post-review record (2026-10-07)
+
+**Execution.** The Designer ran this plan inline. Following the owner's instruction, every file was copied verbatim from the code blocks above, and each task's RED and GREEN steps were still run.
+
+**Review.** Two independent reviewers, Claude Haiku 5.5 and Claude Sonnet 5.5, reviewed the whole branch. Both answered "With fixes". Both probed the code in throwaway repositories.
+
+**Fixes.** The Designer wrote contract tests for each fix, following decision A10. Sonnet implemented F1–F6 in `e32731a`; Haiku implemented F7–F12 in `afa0df3`. Haiku found F12 while it worked. The suite now has 71 tests, all passing. The code blocks above remain the plan as written, so the fixes live only in these commits.
+
+| Id | Fix |
+|---|---|
+| F1 | The ownership check sees both paths of a rename, and non-ASCII names come back unquoted |
+| F2 | `merge` refuses when the integration worktree is on another branch |
+| F3 | `removeUnit` keeps the committed, uncommitted and untracked work of an unmerged unit in an exact patch. An `empty` merge result lists the unit's uncommitted files |
+| F4 | The stale sweep counts unit worktree activity, and writes the abandoned record, with branch tips, before deleting anything |
+| F5 | Aether no longer runs a repository-wide `git worktree prune` |
+| F6 | `ensure` refuses to delete a directory that has a `.git` entry git does not list |
+| F7 | Unrecognized task headings, gaps in task numbers, and unclosed fences are errors |
+| F8 | `--only` normalizes ids, warns about dependencies outside the selection, skips the chain rule, and refuses empty or missing values. `--run` needs a value |
+| F9 | Several dependencies on one line are refused |
+| F10 | Invalid `Owns` entries are refused |
+| F11 | The `using-aether` example follows A10 |
+| F12 | `**Aether:**` blocks inside fenced code are ignored |
+
+**Deferred minors** (for Plan 2 or later):
+- **Parser strictness:** other Unicode dashes, capitals in `Area`, the case of `**Aether:**`, the message for `none — reason`, a fence line with an info string closing a block, and `**Spec:**` read from fenced code.
+- **Merge results:** every failed `git merge` is labelled `conflict`, and the merge message is custom.
+- **Undo after failed tests:** use `reset --keep` instead of `reset --hard`.
+- **Repository layouts:** `mainRoot` is wrong for bare, separate-git-dir and submodule layouts. `git worktree list -z` needs git 2.36 or later.
+- **Locale:** the SessionStart hook matches git's English error text; set `LC_ALL=C` in `git.js`.
+- **Missing integration worktree:** it gives an unclear ENOENT.
+- **Exclusions:** the patterns in `.git/info/exclude` are not anchored to the root.
+- **Docs:** the README's bash snippet does not quote the path, and some README sections still describe the 2026-10-05 design.
+- **Overlap check:** it over-reports disjoint wildcards in one directory.
+- **Test gaps:** spaces in paths for compile and ensure, and `hooks.json` with a plugin root that contains spaces.
