@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { makeRepo, compile, commitIn } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
-const { ensure, diffPackage } = require('../plugins/aether/lib/worktrees.js')
+const { ensure, diffPackage, finalPackage, merge } = require('../plugins/aether/lib/worktrees.js')
 
 test('ensure creates the unit worktree and branch from the integration branch', (t) => {
   const repo = makeRepo(t)
@@ -75,5 +75,23 @@ test('diffPackage writes the unit diff against its base', (t) => {
   assert.equal(pkg.base, repo.git('rev-parse', 'feature/x'))
   const text = fs.readFileSync(pkg.path, 'utf8')
   assert.match(text, /## Commits\n[0-9a-f]+ add a/)
+  assert.match(text, /\+module\.exports = 1/)
+})
+
+test('finalPackage writes the integration diff from the base recorded at compile time', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'module.exports = 1\n', 'add a')
+  assert.equal(merge(repo.dir, args.runId, 'task-1').merged, true)
+  const pkg = finalPackage(repo.dir, args.runId)
+  assert.deepEqual(pkg, {
+    path: path.join(args.runDir, 'packages', 'final.diff'),
+    base: args.integration.base,
+    head: repo.git('rev-parse', 'feature/x'),
+  })
+  const text = fs.readFileSync(pkg.path, 'utf8')
+  assert.match(text, /^# Review package: run \S+ \(feature\/x\)\n/)
+  assert.match(text, /## Commits\n[0-9a-f]+ Merge aether\/\S+\/task-1\n[0-9a-f]+ add a/)
   assert.match(text, /\+module\.exports = 1/)
 })

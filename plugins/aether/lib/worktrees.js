@@ -126,17 +126,13 @@ function ensure(cwd, runId, taskId) {
   return { path: worktree, branch, created: true }
 }
 
-function diffPackage(cwd, runId, taskId) {
-  run.assertTaskId(taskId)
-  const { mainRoot } = repoPaths(cwd)
-  const graph = loadGraph(mainRoot, runId)
-  const branch = run.unitBranch(runId, taskId)
-  const base = unitBase(mainRoot, graph, branch)
-  const range = `${base}..${branch}`
+// Writes runDir/packages/<name>.diff for a reviewer: commits, stat and diff of base..tip.
+function writePackage(mainRoot, runId, name, title, base, tip) {
+  const range = `${base}..${tip}`
   const text = [
-    `# Review package: ${taskId} (${branch})`,
+    `# Review package: ${title}`,
     `Base: ${base}`,
-    `Head: ${git(['rev-parse', branch], mainRoot).stdout}`,
+    `Head: ${git(['rev-parse', tip], mainRoot).stdout}`,
     '',
     '## Commits',
     git(['log', '--oneline', range], mainRoot).stdout,
@@ -148,10 +144,28 @@ function diffPackage(cwd, runId, taskId) {
     git(['diff', '-U10', range], mainRoot).stdout,
     '',
   ].join('\n')
-  const file = path.join(run.runDir(mainRoot, runId), 'packages', `${taskId}.diff`)
+  const file = path.join(run.runDir(mainRoot, runId), 'packages', `${name}.diff`)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, text)
-  return { path: file, base }
+  return file
+}
+
+function diffPackage(cwd, runId, taskId) {
+  run.assertTaskId(taskId)
+  const { mainRoot } = repoPaths(cwd)
+  const graph = loadGraph(mainRoot, runId)
+  const branch = run.unitBranch(runId, taskId)
+  const base = unitBase(mainRoot, graph, branch)
+  return { path: writePackage(mainRoot, runId, taskId, `${taskId} (${branch})`, base, branch), base }
+}
+
+// The whole run's change on the integration branch, from the base recorded at compile time.
+function finalPackage(cwd, runId) {
+  const { mainRoot } = repoPaths(cwd)
+  const graph = loadGraph(mainRoot, runId)
+  const { branch, base } = graph.integration
+  const tip = git(['rev-parse', branch], mainRoot).stdout
+  return { path: writePackage(mainRoot, runId, 'final', `run ${runId} (${branch})`, base, tip), base, head: tip }
 }
 
 // Both sides of a rename are listed, and names are not quoted, whatever characters they hold.
@@ -417,4 +431,4 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
   return { swept }
 }
 
-module.exports = { ensure, diffPackage, merge, removeUnit, sweepRun, sweepStale }
+module.exports = { ensure, diffPackage, finalPackage, merge, removeUnit, sweepRun, sweepStale }

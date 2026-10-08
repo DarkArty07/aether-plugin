@@ -60,3 +60,12 @@ test('aether-wt sweep --run --finish deletes the run directory', (t) => {
   assert.equal(r.status, 0, r.stdout)
   assert.equal(fs.existsSync(args.runDir), false)
 })
+
+test('aether-wt diff <run> --final writes the package of the whole run', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const r = runBin(WT_BIN, ['diff', args.runId, '--final'], repo.dir)
+  assert.equal(r.status, 0, r.stdout)
+  assert.equal(r.json.path, path.join(args.runDir, 'packages', 'final.diff'))
+  assert.equal(r.json.base, args.integration.base)
+})
