@@ -8,7 +8,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 const { parsePlan, buildGraph, renderBrief } = require(path.join(lib, 'plan.js'))
-const { repoPaths, currentBranch } = require(path.join(lib, 'git.js'))
+const { repoPaths, currentBranch, head } = require(path.join(lib, 'git.js'))
 const run = require(path.join(lib, 'run.js'))
 
 const USAGE = 'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main]'
@@ -81,7 +81,7 @@ function compile(planArg, rest) {
     runDir: dir,
     plan: planPath,
     spec: parsed.spec,
-    integration: { branch, worktree: repo.worktree },
+    integration: { branch, worktree: repo.worktree, base: head(process.cwd()) },
     testCommand: parsed.execution.testCommand,
     ladder: parsed.execution.ladder,
     maxAgents: parsed.execution.maxAgents,

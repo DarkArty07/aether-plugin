@@ -33,7 +33,7 @@ test('compile writes the graph, briefs and state for the integration branch', (t
   assert.match(args.runId, /^\d{8}-\d{6}-[0-9a-f]{4}$/)
   assert.equal(args.repoRoot, repo.dir)
   assert.equal(args.runDir, path.join(repo.dir, '.aether', 'runs', args.runId))
-  assert.deepEqual(args.integration, { branch: 'feature/x', worktree: repo.dir })
+  assert.deepEqual(args.integration, { branch: 'feature/x', worktree: repo.dir, base: repo.git('rev-parse', 'HEAD') })
   assert.deepEqual(args.waves, [['task-1', 'task-3'], ['task-2']])
   assert.equal(args.testCommand, 'true')
   assert.deepEqual(args.ladder, { haiku: 2, sonnet: 2, opus: 1 })
