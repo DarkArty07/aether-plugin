@@ -315,7 +315,8 @@ function runWorktrees(mainRoot, runId) {
   return { paths: [...paths].sort(), registered }
 }
 
-function sweepRun(cwd, runId) {
+// Removes a run's unit worktrees and branches. With `finish`, the run directory goes too.
+function sweepRun(cwd, runId, { finish = false } = {}) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
   const dir = run.worktreesDir(mainRoot, runId)
@@ -332,6 +333,11 @@ function sweepRun(cwd, runId) {
   for (const { branch } of aetherBranches(mainRoot, runId)) {
     git(['branch', '-D', branch], mainRoot)
     removedBranches.push(branch)
+  }
+  const runDir = run.runDir(mainRoot, runId)
+  if (finish && exists(runDir)) {
+    assertInside(runDir, path.join(run.aetherDir(mainRoot), 'runs'))
+    fs.rmSync(runDir, { recursive: true, force: true })
   }
   return {
     removedWorktrees,

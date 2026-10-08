@@ -131,3 +131,12 @@ test('Aether leaves the registration of an unrelated worktree alone', (t) => {
   fs.renameSync(moved, userWt)
   assert.equal(repo.git('-C', userWt, 'branch', '--show-current'), 'user/topic')
 })
+
+test('sweepRun with finish also deletes the run directory', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  ensure(repo.dir, args.runId, 'task-1')
+  const r = sweepRun(repo.dir, args.runId, { finish: true })
+  assert.deepEqual(r.remaining, { worktrees: [], branches: [] })
+  assert.equal(fs.existsSync(args.runDir), false)
+})

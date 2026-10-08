@@ -10,10 +10,10 @@
 const path = require('node:path')
 const wt = require(path.join(__dirname, '..', 'lib', 'worktrees.js'))
 
-const USAGE = 'usage: aether-wt ensure|diff|merge|remove <run> <task> [--keep-patch] | aether-wt sweep --run <id> | --stale [--hours N]'
+const USAGE = 'usage: aether-wt ensure|diff|merge|remove <run> <task> [--keep-patch] | aether-wt sweep --run <id> [--finish] | --stale [--hours N]'
 
 function sweep(rest) {
-  if (rest[0] === '--run') return wt.sweepRun(process.cwd(), rest[1])
+  if (rest[0] === '--run') return wt.sweepRun(process.cwd(), rest[1], { finish: rest.includes('--finish') })
   if (rest[0] === '--stale') {
     const hours = rest[1] === '--hours' ? Number(rest[2]) : 24
     if (!Number.isFinite(hours) || hours <= 0) throw new Error('--hours needs a positive number')

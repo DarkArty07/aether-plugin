@@ -52,3 +52,11 @@ test('aether-wt sweep --stale accepts an hour limit', (t) => {
   assert.equal(r.status, 0, r.stdout)
   assert.deepEqual(r.json, { swept: [args.runId] })
 })
+
+test('aether-wt sweep --run --finish deletes the run directory', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const r = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
+  assert.equal(r.status, 0, r.stdout)
+  assert.equal(fs.existsSync(args.runDir), false)
+})
