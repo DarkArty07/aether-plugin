@@ -35,6 +35,8 @@ It prints one line of JSON: the run's arguments. Warnings go to stderr. Keep the
 
 Run the `aether:run` workflow with that JSON as its args, unchanged. The run works in the background, and the progress view shows its phases.
 
+In a headless session (`claude -p`), Claude Code stops background work 10 minutes after the last turn, and that includes the run. Start such a session with `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, which waits for the run however long it takes.
+
 While it runs:
 - do not edit the integration worktree;
 - do not run `aether-wt` commands for this run.

@@ -227,7 +227,7 @@ Measured on Claude Code 2.1.294 while building and running the swarm. Real headl
 | Topic | Result |
 |---|---|
 | Workflow `meta` | `phases: [{ title, detail }]` is accepted. Each `agent()` call's `phase` places it in the progress view, and its `label` becomes the agent's `description` in `agent.spawn`. |
-| Workflows under `claude -p` | The session waits for the workflow and returns its result. The output's `duration_ms` covers only the main session's turns, so time a run from outside. |
+| Workflows under `claude -p` | The session waits for the workflow and returns its result. The output's `duration_ms` covers only the main session's turns, so time a run from outside. It waits at most 10 minutes after the last turn and then stops background work, workflows included. Trial 2's first Aether run was stopped this way during its final review. `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` waits indefinitely. |
 | Workflow state on disk | Claude Code keeps each workflow's state under `~/.claude/projects/<project>/<session>/workflows/`: the script copy, the run file and the agents' metadata. This happens even with `--no-session-persistence`. `cleanupPeriodDays` governs those files, not Aether. |
 | A killed session | SIGTERM to the session's process group stops its workflow too, and the script's `finally` does not run. The leftovers stay until the SessionStart sweep or a manual `aether-wt sweep --run`. |
 | Mods: layout | `hooks.json` gets `"modules": ["./register.js"]`, which can sit beside settings hooks. The module is ESM and exports `register(on)`. When the plugin is loaded with `--plugin-dir`, Claude Code writes `.claude-plugin/types/` and a `tsconfig.json` into the plugin directory, so ignore both in git. |
