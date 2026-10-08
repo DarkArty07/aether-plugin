@@ -344,6 +344,11 @@ Each plan is written after the previous one is merged. Plans 1, 2 and 3 were bui
 
 **Gate to the published project (A9).** Aether mode costs less and takes less wall-clock time than normal mode. Both runs end with tests green and no unresolved Critical or Important findings.
 
+*Trial 1 (2026-10-08) met the v0.1 acceptance and passed the gate.*
+- Every unit merged, the tests passed on the integration branch, and the cleanup acceptance held after `finalize` and after a killed run followed by a new session. The report showed time, cost and quality.
+- Aether mode took 6 min 11 s and $1.98, against normal mode's 24 min 25 s and $5.60. Both passed a hidden 33-case acceptance suite.
+- See `docs/evaluations/2026-10-08-trial-1.md`.
+
 **Out of scope for v0.1:**
 - notifications (Telegram, push);
 - a write-time ownership guard (the merge-time check is in);

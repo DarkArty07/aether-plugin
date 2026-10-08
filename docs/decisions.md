@@ -170,6 +170,6 @@ The owner took these with the [design spec](superpowers/specs/2026-10-07-aether-
 | A6 | Cost is judged at API list prices from OpenRouter. | Decided; `config/prices.json` |
 | A7 | Unit worktrees, unit branches and temporary files are deleted as soon as they stop being used, in code. | Decided; built and tested, including after a killed run |
 | A8 | Aether mode is chosen per session with the `aether-mode` shell function, which loads the plugin and turns on dynamic workflows. | Decided; built |
-| A9 | The prototype becomes the published project only if a trial shows lower cost and lower wall-clock time than normal mode, at equal quality. | Decided; see `docs/evaluations/` |
+| A9 | The prototype becomes the published project only if a trial shows lower cost and lower wall-clock time than normal mode, at equal quality. | Decided. Trial 1 (2026-10-08) passed the gate: 3.9 times faster and 2.8 times cheaper at equal quality. See [the evaluation](evaluations/2026-10-08-trial-1.md) |
 | A10 | Swarm plans state each task's contract (Interfaces, exact failing tests, acceptance), not its implementation code. | Decided |
 
