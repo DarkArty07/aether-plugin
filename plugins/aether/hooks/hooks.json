@@ -1,4 +1,5 @@
 {
+  "description": "Aether: the SessionStart bootstrap and stale-run sweep, and the usage meter mod",
   "hooks": {
     "SessionStart": [
       {
@@ -11,5 +12,8 @@
         ]
       }
     ]
-  }
+  },
+  "modules": [
+    "./register.js"
+  ]
 }
