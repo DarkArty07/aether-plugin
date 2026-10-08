@@ -1,0 +1,14 @@
+{
+  "name": "snake3d",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A 3D snake game for the browser, built with three.js",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  }
+}

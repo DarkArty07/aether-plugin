@@ -12,7 +12,7 @@ else
   EXTRA=()
 fi
 start=$(date +%s.%N)
-AETHER_DATA_DIR="$F/data" ENABLE_CLAUDEAI_MCP_SERVERS=false timeout 10800 claude -p "$(cat "$T/harness/prompt-$MODE.txt")" "${COMMON[@]}" "${EXTRA[@]}" > "$F/out.json" 2> "$F/err.txt"
+CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 AETHER_DATA_DIR="$F/data" ENABLE_CLAUDEAI_MCP_SERVERS=false timeout 10800 claude -p "$(cat "$T/harness/prompt-$MODE.txt")" "${COMMON[@]}" "${EXTRA[@]}" > "$F/out.json" 2> "$F/err.txt"
 code=$?
 end=$(date +%s.%N)
 printf '{"mode": "%s", "exit": %s, "start": %s, "end": %s}\n' "$MODE" "$code" "$start" "$end" > "$F/timing.json"

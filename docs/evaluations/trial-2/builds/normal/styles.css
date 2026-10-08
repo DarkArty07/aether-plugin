@@ -1,0 +1,504 @@
+/* Snake 3D, "Abyssal Bloom": a full-window canvas with a HUD of quiet glass panels over it.
+   The colors come from THEME.colors (src/render/theme.js): createHud sets them on #hud as
+   --hud-text, --hud-panel, --accent, --food, --danger and --background, each also as an
+   --*-rgb triplet for translucent tints. The fallbacks below mirror the theme's values. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  background: #050e1b; /* THEME.colors.background */
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  outline: none;
+}
+
+/* The HUD never takes a click or a touch: the game listens on the window. */
+#hud {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  color: var(--hud-text, #e3f6ff);
+  font-family: "Trebuchet MS", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+.hud [hidden] {
+  display: none !important;
+}
+
+.hud {
+  --gap: clamp(10px, 2.2vmin, 24px);
+  --glass: rgba(var(--hud-panel-rgb, 7, 26, 44), 0.62);
+  --glass-shadow: 0 8px 28px rgba(2, 8, 16, 0.38), inset 0 0 0 1px rgba(var(--accent-rgb, 70, 228, 255), 0.09);
+  position: absolute;
+  inset: 0;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--gap)) calc(env(safe-area-inset-right, 0px) + var(--gap))
+    calc(env(safe-area-inset-bottom, 0px) + var(--gap)) calc(env(safe-area-inset-left, 0px) + var(--gap));
+  text-shadow: 0 1px 3px rgba(2, 8, 16, 0.7);
+}
+
+/* Dims the scene behind a panel. */
+.hud-scrim {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  background: radial-gradient(ellipse at 50% 45%, rgba(var(--background-rgb, 5, 14, 27), 0.3) 0%, rgba(var(--background-rgb, 5, 14, 27), 0.74) 100%);
+}
+
+.hud[data-panel] .hud-scrim {
+  opacity: 1;
+}
+
+.hud[data-panel="ready"] .hud-scrim {
+  opacity: 0.7;
+}
+
+.hud[data-panel="over"] .hud-scrim {
+  background: radial-gradient(ellipse at 50% 45%, rgba(var(--danger-rgb, 255, 79, 94), 0.12) 0%, rgba(var(--background-rgb, 5, 14, 27), 0.76) 100%);
+}
+
+/* Readouts along the top edge: score on the left, level in the middle, best on the right. */
+.hud-bar {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: var(--gap);
+  max-width: 56rem;
+  margin-inline: auto;
+}
+
+.readout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  width: max-content;
+  max-width: 100%;
+  padding: 0.5em 0.95em 0.55em;
+  border-radius: 1.1em;
+  font-size: clamp(0.8rem, 0.62rem + 0.9vmin, 1.1rem);
+  line-height: 1;
+  color: var(--hud-text, #e3f6ff);
+  background: var(--glass);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(8px) saturate(1.25);
+  backdrop-filter: blur(8px) saturate(1.25);
+}
+
+.readout-level {
+  align-items: center;
+}
+
+.readout-best {
+  align-items: flex-end;
+  justify-self: end;
+}
+
+.readout-label {
+  font-size: max(0.7em, 10.5px);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent, #46e4ff);
+}
+
+.readout-value {
+  display: inline-block;
+  font-size: 1.75em;
+  font-weight: 700;
+  line-height: 1.05;
+  transform-origin: left center;
+}
+
+.readout-best .readout-value {
+  transform-origin: right center;
+}
+
+.readout-score .readout-value.pop {
+  animation: score-pop 0.32s ease-out;
+}
+
+.readout-level.level-up {
+  animation: level-up 1.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The best readout warms up while the panel announces a new best. */
+.hud[data-new-best] .readout-best .readout-value {
+  color: var(--food, #ffa63d);
+  text-shadow: 0 0 14px rgba(var(--food-rgb, 255, 166, 61), 0.55), 0 1px 3px rgba(2, 8, 16, 0.7);
+}
+
+/* "Level N" toast, a little below the readouts. */
+.hud-toast {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(env(safe-area-inset-top, 0px) + clamp(76px, 16vh, 160px));
+  opacity: 0;
+  text-align: center;
+  font-size: clamp(1.6rem, 1rem + 3.4vmin, 3.2rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent, #46e4ff);
+  text-shadow: 0 0 22px rgba(var(--accent-rgb, 70, 228, 255), 0.6), 0 2px 6px rgba(2, 8, 16, 0.7);
+}
+
+.hud-toast.show {
+  animation: toast 1.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The panel for the title, pause, game-over and won screens. */
+.hud-panel {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(100% - 2 * var(--gap), 36rem);
+  height: fit-content;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.6rem, 1.8vmin, 1rem);
+  padding: clamp(1.4rem, 4vmin, 2.6rem) clamp(1.2rem, 4vmin, 2.4rem);
+  text-align: center;
+  border-radius: 1.75rem;
+  background: rgba(var(--hud-panel-rgb, 7, 26, 44), 0.64);
+  box-shadow: 0 24px 80px rgba(2, 8, 16, 0.55), 0 0 90px rgba(var(--accent-rgb, 70, 228, 255), 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  backdrop-filter: blur(12px) saturate(1.2);
+}
+
+.hud-panel.enter {
+  animation: panel-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.hud[data-panel="over"] .hud-panel {
+  box-shadow: 0 24px 80px rgba(2, 8, 16, 0.55), 0 0 90px rgba(var(--danger-rgb, 255, 79, 94), 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.panel-kicker,
+.panel-badge,
+.panel-title,
+.panel-stats,
+.panel-hint {
+  margin: 0;
+}
+
+.panel-kicker {
+  font-size: clamp(0.72rem, 0.62rem + 0.5vmin, 0.9rem);
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--accent, #46e4ff);
+}
+
+.panel-title {
+  font-size: clamp(1.9rem, 1.1rem + 3.6vmin, 3.4rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  text-wrap: balance;
+}
+
+.hud[data-panel="ready"] .panel-title,
+.hud[data-panel="won"] .panel-title {
+  color: transparent;
+  background: linear-gradient(100deg, var(--hud-text, #e3f6ff) 0%, var(--accent, #46e4ff) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: none;
+  filter: drop-shadow(0 0 18px rgba(var(--accent-rgb, 70, 228, 255), 0.4));
+}
+
+.hud[data-panel="won"] .panel-title {
+  background-image: linear-gradient(100deg, var(--accent, #46e4ff) 0%, var(--food, #ffa63d) 100%);
+  filter: drop-shadow(0 0 18px rgba(var(--food-rgb, 255, 166, 61), 0.4));
+}
+
+.hud[data-panel="over"] .panel-title {
+  color: var(--danger, #ff4f5e);
+  text-shadow: 0 0 26px rgba(var(--danger-rgb, 255, 79, 94), 0.5), 0 2px 6px rgba(2, 8, 16, 0.7);
+}
+
+.panel-hint {
+  max-width: 26rem;
+  font-size: clamp(0.92rem, 0.8rem + 0.6vmin, 1.12rem);
+  line-height: 1.5;
+  color: rgba(var(--hud-text-rgb, 227, 246, 255), 0.82);
+  text-wrap: pretty;
+}
+
+.hud[data-panel="ready"] .panel-hint {
+  animation: breathe 2.6s ease-in-out infinite;
+}
+
+.panel-stats {
+  display: flex;
+  gap: 1.6rem;
+  justify-content: center;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2em;
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent, #46e4ff);
+}
+
+.stat-value {
+  font-size: clamp(1.4rem, 1rem + 1.6vmin, 2rem);
+  font-weight: 700;
+}
+
+/* The new-best mark: an amber lure with sparkles, the scene's one warm color. */
+.panel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75em;
+  padding: 0.5em 1.2em;
+  border-radius: 999px;
+  font-size: clamp(0.82rem, 0.7rem + 0.6vmin, 1.05rem);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--hud-panel, #071a2c);
+  text-shadow: none;
+  background: linear-gradient(135deg, #ffd27a, var(--food, #ffa63d));
+  box-shadow: 0 0 26px rgba(var(--food-rgb, 255, 166, 61), 0.6);
+  animation: badge-in 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) both, badge-glow 1.8s ease-in-out 0.6s infinite;
+}
+
+.panel-badge::before,
+.panel-badge::after {
+  content: "";
+  width: 0.5em;
+  height: 0.5em;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes score-pop {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.2);
+    color: var(--food, #ffa63d);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes level-up {
+  0% {
+    transform: scale(1);
+    box-shadow: var(--glass-shadow);
+  }
+  22% {
+    transform: scale(1.22);
+    color: var(--accent, #46e4ff);
+    box-shadow: 0 0 42px 6px rgba(var(--accent-rgb, 70, 228, 255), 0.5), inset 0 0 0 1px rgba(var(--accent-rgb, 70, 228, 255), 0.45);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: var(--glass-shadow);
+  }
+}
+
+@keyframes toast {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.9);
+  }
+  18% {
+    opacity: 1;
+    transform: none;
+  }
+  70% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1.03);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes badge-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes badge-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(var(--food-rgb, 255, 166, 61), 0.45);
+  }
+  50% {
+    box-shadow: 0 0 40px 4px rgba(var(--food-rgb, 255, 166, 61), 0.8);
+  }
+}
+
+/* Short screens (a phone on its side): tighten the panel. */
+@media (max-height: 480px) {
+  .hud-panel {
+    gap: 0.5rem;
+    padding-block: 1rem;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .readout,
+  .hud-panel {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .readout {
+    background: rgba(var(--hud-panel-rgb, 7, 26, 44), 0.86);
+  }
+
+  .hud-panel {
+    background: rgba(var(--hud-panel-rgb, 7, 26, 44), 0.92);
+  }
+}
+
+/* Reduced motion: no movement, no pulsing. The feedback still shows, as a fade or a color change. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-scrim {
+    transition: none;
+  }
+
+  .hud-panel.enter {
+    animation-name: fade-in;
+  }
+
+  .readout-score .readout-value.pop {
+    animation-name: score-tint;
+  }
+
+  .readout-level.level-up {
+    animation-name: level-tint;
+  }
+
+  .hud-toast.show {
+    animation-name: toast-fade;
+  }
+
+  .hud[data-panel="ready"] .panel-hint {
+    animation: none;
+  }
+
+  .panel-badge {
+    animation: none;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes score-tint {
+    0%,
+    100% {
+      color: inherit;
+    }
+    35% {
+      color: var(--food, #ffa63d);
+    }
+  }
+
+  @keyframes level-tint {
+    0%,
+    100% {
+      box-shadow: var(--glass-shadow);
+    }
+    22% {
+      color: var(--accent, #46e4ff);
+      box-shadow: 0 0 42px 6px rgba(var(--accent-rgb, 70, 228, 255), 0.5), inset 0 0 0 1px rgba(var(--accent-rgb, 70, 228, 255), 0.45);
+    }
+  }
+
+  @keyframes toast-fade {
+    0% {
+      opacity: 0;
+    }
+    18%,
+    70% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}

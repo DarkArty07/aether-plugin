@@ -33,11 +33,27 @@ No quality drop was found, and the owner kept the split. Its saving is meant for
 | | Aether mode | Normal mode |
 |---|---|---|
 | Wall clock | 6 min 11 s | 24 min 25 s |
-| Cost (list prices, the same rates as OpenRouter) | $1.98 | $5.60 |
+| Cost, Claude Code's list prices | $1.98 | $5.60 |
 | Hidden acceptance suite | 33/33 | 33/33 |
 | Open critical or important findings | 0 | 0 |
 
 The gate to the published project (A9) passes: Aether mode was 3.9 times faster and 2.8 times cheaper, at equal quality on the spec. Normal mode's heavier review left its build somewhat more hardened beyond the spec. One trial on a small fixture is a first data point, not a proof.
+
+**Trial 2** ([evaluation](docs/evaluations/2026-10-08-trial-2.md)) ran an 8-task plan for a three.js snake game, judged on graphics quality, creativity, playability and 3D quality:
+
+| | Aether mode | Normal mode |
+|---|---|---|
+| Wall clock | 18 min 06 s | 2 h 18 min |
+| Cost at OpenRouter prices | $4.17 | $21.95 |
+| Hidden suite | 25/25 | 24/25 |
+| Browser checks | 12/13 | 13/13 |
+| Grade on the four criteria | 23/40 | 32/40 |
+
+Aether mode was faster and cheaper again, but its quality was not equal. The transcripts point to two plugin settings:
+- Aether's implementers run at a fixed `medium` effort, where normal mode's ran at `xhigh`;
+- its briefs carry the plan's contract without the spec's quality bar.
+
+The owner judged that the normal build's extra quality does not justify its time and cost. The next work raises Aether's quality with techniques that keep its time and cost. The evaluation [lists them](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost).
 
 The design is [docs/superpowers/specs/2026-10-07-aether-plugin-design.md](docs/superpowers/specs/2026-10-07-aether-plugin-design.md).
 
@@ -130,7 +146,7 @@ Node.js 22 with no dependencies. The workflow's tests run its script in a harnes
 
 - [Design spec](docs/superpowers/specs/2026-10-07-aether-plugin-design.md): components, the swarm executor, routing, cleanup and measurement.
 - [Plans](docs/superpowers/plans/): Plan 1 (foundation), Plan 2 (swarm) and Plan 3 (measurement and trial), each with its review and execution record.
-- [Evaluations](docs/evaluations/): the trial against normal mode.
+- [Evaluations](docs/evaluations/): the trials against normal mode, with their fixtures, harnesses and results. Trial 2 keeps both builds, playable.
 - [Claude Code research](docs/claude-code-research.md): the verified capabilities and limits this design relies on, and the prices.
 - [Decisions](docs/decisions.md): D1–D15 from the first design session, with their updates, and A1–A10 from the spec.
 - [Aether Agents retrospective](docs/aether-retrospective.md): what Aether was, and what failed and why.
@@ -161,7 +177,9 @@ Aether Plugin answers each failure:
 
 ## Roadmap
 
-These are deferred until the trial justifies them:
+**Next:** raise Aether's quality at its current time and cost, with [trial 2's techniques](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost), then rerun trial 2 in Aether mode.
+
+These are deferred until the trials justify them:
 - non-Anthropic models through the Aether Router;
 - notifications;
 - several parallel attempts on critical units;

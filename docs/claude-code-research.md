@@ -227,7 +227,7 @@ Measured on Claude Code 2.1.294 while building and running the swarm. Real headl
 | Topic | Result |
 |---|---|
 | Workflow `meta` | `phases: [{ title, detail }]` is accepted. Each `agent()` call's `phase` places it in the progress view, and its `label` becomes the agent's `description` in `agent.spawn`. |
-| Workflows under `claude -p` | The session waits for the workflow and returns its result. The output's `duration_ms` covers only the main session's turns, so time a run from outside. |
+| Workflows under `claude -p` | The session waits for the workflow and returns its result. The output's `duration_ms` covers only the main session's turns, so time a run from outside. It waits at most 10 minutes after the last turn and then stops background work, workflows included. Trial 2's first Aether run was stopped this way during its final review. `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` waits indefinitely. |
 | Workflow state on disk | Claude Code keeps each workflow's state under `~/.claude/projects/<project>/<session>/workflows/`: the script copy, the run file and the agents' metadata. This happens even with `--no-session-persistence`. `cleanupPeriodDays` governs those files, not Aether. |
 | A killed session | SIGTERM to the session's process group stops its workflow too, and the script's `finally` does not run. The leftovers stay until the SessionStart sweep or a manual `aether-wt sweep --run`. |
 | Mods: layout | `hooks.json` gets `"modules": ["./register.js"]`, which can sit beside settings hooks. The module is ESM and exports `register(on)`. When the plugin is loaded with `--plugin-dir`, Claude Code writes `.claude-plugin/types/` and a `tsconfig.json` into the plugin directory, so ignore both in git. |
@@ -235,7 +235,7 @@ Measured on Claude Code 2.1.294 while building and running the swarm. Real headl
 | Mods: `agent.spawn` | It fires for workflow agents too, with `subagentType` set to the `agentType` (such as `aether:implementer`). `next(e)` resolves to `{ model, agentId }`, where `agentId` matches the agent's `turn.step` events. `claude plugin validate --strict` fails a gating hook that has no `.catch`. `.catch(($, e, next) => next(e))` is replay-safe. |
 | Mods: API | `$.session.id()`, `$.session.version()` and `$.clock.now()` are async. `$.env.get` reads the process environment. `$.fs.write` creates directories and is not atomic. Limits: 4 MiB per file, and 10 s of a hook's own time. |
 | Mods: tests | `claude plugin test <dir>` runs `*.test.ts` files with `claude-code/testing`: stubs per call or event, `mock.clock`, `mock.env`, and `$.turn.step(...)` read to its end. No session or network is involved. |
-| Cost accounting | The meter's token totals match `modelUsage` exactly, model by model. Claude Code's `costUSD` uses the same rates as OpenRouter and the real cache-write lifetimes. Pricing the meter's tokens with "1 hour for the main session, 5 minutes for agents" came out 3% low in the smoke run, because some agent writes are billed at 1 hour. The `-p` output's `usage.cache_creation` splits `ephemeral_1h` and `ephemeral_5m` for the main session's last turn only. |
+| Cost accounting | The meter's token totals match `modelUsage` exactly, model by model. Claude Code's `costUSD` uses the real cache-write lifetimes and OpenRouter's rates, with one exception found in trial 2: Sonnet 5.5 cache reads (see below). Pricing the meter's tokens with "1 hour for the main session, 5 minutes for agents" came out 3% low in the smoke run, because some agent writes are billed at 1 hour. The `-p` output's `usage.cache_creation` splits `ephemeral_1h` and `ephemeral_5m` for the main session's last turn only. |
 | `claude -p` flags | `--no-session-persistence` keeps no transcript. `--max-budget-usd` caps a run's spend. `--strict-mcp-config`, with `ENABLE_CLAUDEAI_MCP_SERVERS=false`, keeps connectors out. |
 
 ## Lead and Designer findings (2026-10-08)
@@ -249,6 +249,17 @@ Facts the Lead and Designer split relies on, from Claude Code's documentation.
 | Skill model and fork | A skill's `model` applies for one turn only. `context: fork` runs the skill in a fresh context. | https://code.claude.com/docs/en/skills |
 | Window and effort | `autoCompactWindow` (or `--autocompact`, or `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, from 100K to 1M tokens) sets the window at which auto-compaction runs; Aether keeps the 1M window and leaves it unset. Effort resolves in this order: an explicit choice (`CLAUDE_CODE_EFFORT_LEVEL`, then `--effort` or `/effort`), then the settings (`modelSettings`, `effortLevel`), then the model's default. A subagent's or a skill's `effort` overrides the session's level, but not `CLAUDE_CODE_EFFORT_LEVEL`. | https://code.claude.com/docs/en/model-config, https://code.claude.com/docs/en/sub-agents |
 | Advisor | `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` turns the advisor tool off. Each consultation reads the whole conversation uncached, about $2.60 per call at 650K tokens on Opus. | https://code.claude.com/docs/en/advisor |
+
+## Trial 2 findings (2026-10-08)
+
+From the transcripts of [trial 2](evaluations/2026-10-08-trial-2.md), on Claude Code 2.1.294.
+
+| Topic | Result |
+|---|---|
+| Cache lifetimes in the transcripts | Each assistant message's `usage.cache_creation` splits `ephemeral_5m_input_tokens` from `ephemeral_1h_input_tokens`. This holds for the main session and for every subagent and workflow agent, under `<session>/subagents/`. Pricing each request from them matched `costUSD` exactly for Opus and Haiku. |
+| Cache lifetimes in practice | In both trial-2 sessions, every main-session cache write was billed at 1 hour and every agent write at 5 minutes. |
+| Sonnet 5.5 cache reads | `costUSD` charges them at $0.20 per million tokens. OpenRouter charges $0.10 on every endpoint, Anthropic's included. Every other rate matches. The plugin follows OpenRouter, the owner's basis (A6). |
+| Prompts over 200,000 tokens | `costUSD` charged them at the normal rates for Opus and Sonnet 5.5. Trial 2's normal run had 87. OpenRouter lists a long-prompt tier only for Haiku 5.5, from 100,000 tokens. |
 
 ## OpenRouter prices
 

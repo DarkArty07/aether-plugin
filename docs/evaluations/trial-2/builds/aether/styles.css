@@ -1,0 +1,135 @@
+/* Midnight Neon: near-black indigo, mint snake, coral food, cyan accents. */
+:root {
+  --bg: #07071a;
+  --panel: rgba(10, 10, 36, 0.78);
+  --text: #e8f4ff;
+  --muted: #9aa6d8;
+  --accent: #4de1ff;
+  --snake: #2bf0a0;
+  --food: #ff3d7f;
+  --gold: #ffd166;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: block;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.hud-root { position: absolute; inset: 0; }
+
+.hud-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+}
+
+.hud-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 0;
+  max-width: 140px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid rgba(77, 225, 255, 0.35);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 14px rgba(77, 225, 255, 0.18);
+}
+
+.hud-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hud-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--snake);
+  text-shadow: 0 0 10px rgba(43, 240, 160, 0.7);
+}
+
+.hud-stat:nth-child(2) .hud-value { color: var(--gold); text-shadow: 0 0 10px rgba(255, 209, 102, 0.6); }
+.hud-stat:nth-child(3) .hud-value { color: var(--accent); text-shadow: 0 0 10px rgba(77, 225, 255, 0.6); }
+
+.hud-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(88vw, 420px);
+  padding: 28px 22px;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 18px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 32px rgba(77, 225, 255, 0.3), inset 0 0 24px rgba(58, 47, 143, 0.4);
+}
+
+.hud-panel[hidden], .hud-badge[hidden] { display: none; }
+
+.hud-title {
+  margin: 0 0 12px;
+  font-size: clamp(1.8rem, 9vw, 2.8rem);
+  letter-spacing: 0.1em;
+  color: var(--snake);
+  text-shadow: 0 0 18px rgba(43, 240, 160, 0.8);
+}
+
+.hud-panel[data-kind="over"] { border-color: var(--food); box-shadow: 0 0 32px rgba(255, 61, 127, 0.35); }
+.hud-panel[data-kind="over"] .hud-title { color: var(--food); text-shadow: 0 0 18px rgba(255, 61, 127, 0.8); }
+.hud-panel[data-kind="won"] { border-color: var(--gold); }
+.hud-panel[data-kind="won"] .hud-title { color: var(--gold); text-shadow: 0 0 18px rgba(255, 209, 102, 0.8); }
+
+.hud-badge {
+  margin: 0 0 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-shadow: 0 0 12px rgba(255, 209, 102, 0.8);
+}
+
+.hud-hint {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+@media (max-width: 420px) {
+  .hud-bar { padding: 8px; gap: 6px; }
+  .hud-value { font-size: 1.25rem; }
+}
