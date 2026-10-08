@@ -1,6 +1,6 @@
 # Decisions
 
-The decisions D1–D15 were taken in the design session of 2026-10-05. The design spec of 2026-10-07 updated several of them, as each one's **Update** says, and added A1–A10 (at the end). Each decision has a status:
+The decisions D1–D15 were taken in the design session of 2026-10-05. The design spec of 2026-10-07 updated several of them, as each one's **Update** says, and added A1–A10 (at the end). The [Lead and Designer spec](superpowers/specs/2026-10-08-lead-and-designer-design.md) of 2026-10-08 updated A4, A5 and A8, and added A11–A17. Each decision has a status:
 
 - **Decided**: settled.
 - **Direction**: agreed in principle; details still open.
@@ -165,11 +165,17 @@ The owner took these with the [design spec](superpowers/specs/2026-10-07-aether-
 | A1 | Name **Aether Plugin**; plugin id `aether`; folder and repository slug `aether-plugin`. "Claude Code" stays out of the name. | Decided |
 | A2 | superpowers is the base and the authority on practice and approval gates. Aether adds only the multi-agent organization. The exceptions are parallel implementation and contract plans (A10). | Decided |
 | A3 | ECC is out for now. | Decided |
-| A4 | Roles, top down: the owner; the Designer (the main session, on Opus); supervisors (Sonnet); implementers (Haiku by default, Sonnet or Opus when escalated); and the Opus final reviewer. | Decided; built 2026-10-08 |
-| A5 | The Designer may implement, review and fix work itself. Handing work to the swarm is a quality, cost and speed decision. | Decided |
+| A4 | Roles, top down: the owner; the Designer (the main session, on Opus); supervisors (Sonnet); implementers (Haiku by default, Sonnet or Opus when escalated); and the Opus final reviewer. | Decided; built 2026-10-08; updated by A11–A16 (2026-10-08) |
+| A5 | The Designer may implement, review and fix work itself. Handing work to the swarm is a quality, cost and speed decision. | Decided; updated by A11–A16 (2026-10-08) |
 | A6 | Cost is judged at API list prices from OpenRouter. | Decided; `config/prices.json` |
 | A7 | Unit worktrees, unit branches and temporary files are deleted as soon as they stop being used, in code. | Decided; built and tested, including after a killed run |
-| A8 | Aether mode is chosen per session with the `aether-mode` shell function, which loads the plugin and turns on dynamic workflows. | Decided; built |
+| A8 | Aether mode is chosen per session with the `aether-mode` shell function, which loads the plugin and turns on dynamic workflows. | Decided; built; updated by A11–A16 (2026-10-08) |
 | A9 | The prototype becomes the published project only if a trial shows lower cost and lower wall-clock time than normal mode, at equal quality. | Decided. Trial 1 (2026-10-08) passed the gate: 3.9 times faster and 2.8 times cheaper at equal quality. See [the evaluation](evaluations/2026-10-08-trial-1.md) |
 | A10 | Swarm plans state each task's contract (Interfaces, exact failing tests, acceptance), not its implementation code. | Decided |
-
+| A11 | The main session is the **Lead**: Sonnet 5.5 at `xhigh`, with the 1M window. It holds the conversation, explores, chooses the route, runs the execution and reports. It may design and implement spikes and bounded work. | Decided; built 2026-10-08 |
+| A12 | The **Designer** is the plugin agent `aether:designer`: Opus 5.5 at `max`, in its own context, with a 1-hour prompt cache. It does the architectural design: approaches, design, spec and plan. Among agents it has the final word on design; the Lead has it on route and process. | Decided; built 2026-10-08 |
+| A13 | The hand-off happens when the owner confirms the Lead's written understanding, the "write back your understanding" step of superpowers brainstorming, on the architectural path. From then on the Lead relays both ways and does not design. | Decided; built 2026-10-08 |
+| A14 | Only the Designer writes specs and plans. A PreToolUse hook (`aether-guard`) refuses Write, Edit, MultiEdit and NotebookEdit under `docs/superpowers/specs/` and `docs/superpowers/plans/` to every other agent, the main session included. | Decided; built 2026-10-08 |
+| A15 | Long tool loops leave the Lead's context (R6): the swarm, superpowers subagent-driven development, or one subagent with a self-contained brief. | Decided; built 2026-10-08 |
+| A16 | `aether-mode` launches the Lead with `--model sonnet --effort xhigh` and turns the advisor tool off. | Decided; built 2026-10-08 |
+| A17 | The split is kept only if a design trial shows lower cost at equal quality (§11). If quality drops, the split is not merged. | Decided; trial 3 pending |

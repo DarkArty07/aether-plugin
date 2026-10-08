@@ -107,7 +107,9 @@ test('finalize appends the record with versions, then removes the run and its le
   assert.equal(record.status, 'finalized')
   assert.equal(record.finalizedAt, iso(T0 + 40 * MIN))
   assert.equal(record.repo, repo.dir)
-  assert.deepEqual(record.versions, { aether: '0.1.0', superpowers: '6.4.1', claudeCode: '2.1.294' })
+  // The aether version comes from the manifest, so a version bump does not break this test.
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', '.claude-plugin', 'plugin.json'), 'utf8'))
+  assert.deepEqual(record.versions, { aether: manifest.version, superpowers: '6.4.1', claudeCode: '2.1.294' })
   close(record.report.cost.run.usd, 26.5)
   assert.deepEqual(out.cleanup.remaining, { worktrees: [], branches: [] })
   assert.equal(fs.existsSync(args.runDir), false)

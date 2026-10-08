@@ -2,8 +2,9 @@
 
 A plugin for Claude Code that adds an opt-in **Aether mode**: a parallel swarm of agents that implements an approved plan.
 
-- **The Designer** is the main session, on Opus. It designs with [superpowers](https://github.com/obra/superpowers) and has the final say among the agents.
-- **Handing work to the swarm:** when parallel work pays off, the Designer hands the plan to `/aether:run`. In the swarm:
+- **The Lead** is the main session, on Sonnet at `xhigh`. It holds the conversation with the owner, explores, chooses the route and runs the execution. It may design and implement spikes and bounded work.
+- **The Designer** is the agent `aether:designer`, on Opus at `max`, in its own context. It designs with [superpowers](https://github.com/obra/superpowers): approaches, design, spec and plan. Among the agents it has the final say on design. Only the Designer writes specs and plans.
+- **The swarm:** when parallel work pays off, the Lead hands the plan to `/aether:run`. In the swarm:
   - implementers work on Haiku by default and move up to Sonnet or Opus when a task is critical or keeps failing;
   - a supervisor on Sonnet reviews every attempt;
   - approved units merge one at a time;
@@ -14,7 +15,7 @@ Without the plugin, Claude Code keeps working in normal mode, with superpowers a
 
 ## Status
 
-Version 0.1.
+Version 0.2. Trial 3, the design trial that decides whether the Lead and Designer split is kept (A17), is pending.
 
 - **Plan 1, foundation:** plan checking, unit worktrees and their cleanup.
 - **Plan 2, the swarm:** the workflow and its agents.
@@ -36,9 +37,12 @@ The design is [docs/superpowers/specs/2026-10-07-aether-plugin-design.md](docs/s
 ## How it works
 
 ```text
-owner ── approves the spec and the plan
+owner ── confirms the Lead's understanding, approves the spec and the plan
   │
-Designer (main session, Opus, superpowers)
+Lead (main session, Sonnet, xhigh): conversation, route, relay, execution
+  │  hand-off once the owner confirms the understanding
+  ▼
+Designer (aether:designer, Opus, max): approaches, design, spec, plan
   │  writes the plan with Aether fields: tier, area, owned files, dependencies
   │  aether-plan check / compile
   ▼
@@ -56,8 +60,11 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 
 | Piece | What it does |
 |---|---|
-| `using-aether` skill | Injected at session start. The Designer's rules: route each task by quality, cost and speed; add Aether fields to plans; offer the swarm at the plan handoff |
-| `swarm` skill | The Designer's procedure: compile, launch, read the result, report, relaunch, finalize |
+| `using-aether` skill | Injected at session start. The Lead's rules: the routes, the hand-off to the Designer, the relay of both sides, and when to offer the swarm |
+| `aether:designer` | The Designer agent: Opus at `max`, with a 1-hour prompt cache. It does the architectural design and writes the specs and plans |
+| `aether-voice` | Prints the owner's own words from a session, for the Designer to read; it writes no file |
+| `aether-guard` | A PreToolUse hook that refuses Write, Edit, MultiEdit and NotebookEdit under `docs/superpowers/specs/` and `docs/superpowers/plans/` to every agent but the Designer |
+| `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |
 | `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
 | `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `remove` (saves unmerged work as a patch), `sweep` |
 | `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review, and cleanup in `finally` |
@@ -74,7 +81,7 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 - git 2.36 or later;
 - the superpowers plugin.
 
-Aether mode is chosen per session. `aether-mode` loads the plugin and turns on dynamic workflows. `claude` stays in normal mode.
+Aether mode is chosen per session. `aether-mode` loads the plugin, turns on dynamic workflows, starts the Lead on Sonnet at `xhigh`, and turns the advisor tool off. `claude` stays in normal mode.
 
 In fish:
 
@@ -82,9 +89,9 @@ In fish:
 
 In bash or zsh:
 
-    aether-mode() { claude --plugin-dir /path/to/aether-plugin/plugins/aether --settings '{"enableWorkflows": true}' "$@"; }
+    aether-mode() { CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 claude --plugin-dir /path/to/aether-plugin/plugins/aether --settings '{"enableWorkflows": true}' --model sonnet --effort xhigh "$@"; }
 
-Then work as you would with superpowers. When a plan is ready, the Designer offers three ways to execute it: superpowers' two (subagent-driven or native) and the swarm, and recommends one. The swarm needs:
+Then work as you would with superpowers. When a plan is ready, the Lead offers three ways to execute it: superpowers' two (subagent-driven or native) and the swarm, and recommends one. The swarm needs:
 - **a plan with Aether fields** on every task:
 
       **Aether:**
@@ -94,7 +101,7 @@ Then work as you would with superpowers. When a plan is ready, the Designer offe
       - Depends on: none
 
 - **an `## Aether Execution` section**, holding the test command, the ladder and the agent budget;
-- **a separate integration worktree on a feature branch.** The Designer creates it with superpowers' `using-git-worktrees`;
+- **a separate integration worktree on a feature branch.** The Lead creates it with superpowers' `using-git-worktrees`;
 - **permissions that let the agents run `git`, `aether-wt` and the tests**, and edit files under `.aether/worktrees/`, without asking each time.
 
 Data lives in `~/.local/share/aether-plugin/` (or `AETHER_DATA_DIR`):

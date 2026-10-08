@@ -1,7 +1,7 @@
 # Aether: design spec (v0.1)
 
 - **Date:** 2026-10-07
-- **Status:** Approved by the owner on 2026-10-07. Amended the same day (A10), and on 2026-10-08 by Plan 2 (§7, §8, §9 and §11) and Plan 3 (§3, §4, §5, §9, §10 and §12).
+- **Status:** Approved by the owner on 2026-10-07. Amended the same day (A10), and on 2026-10-08 by Plan 2 (§7, §8, §9 and §11) and Plan 3 (§3, §4, §5, §9, §10 and §12). Roles and the launcher amended on 2026-10-08 by the [Lead and Designer spec](2026-10-08-lead-and-designer-design.md) (A4, A5, A8; §1, §4, §5).
 - **Method:** superpowers brainstorming (architectural path). After approval, Phase 0 checks (§13), then superpowers `writing-plans`.
 - **Background:** [README](../../../README.md), [Aether retrospective](../../aether-retrospective.md), [Claude Code research](../../claude-code-research.md), [Decisions](../../decisions.md)
 

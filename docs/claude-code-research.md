@@ -238,6 +238,18 @@ Measured on Claude Code 2.1.294 while building and running the swarm. Real headl
 | Cost accounting | The meter's token totals match `modelUsage` exactly, model by model. Claude Code's `costUSD` uses the same rates as OpenRouter and the real cache-write lifetimes. Pricing the meter's tokens with "1 hour for the main session, 5 minutes for agents" came out 3% low in the smoke run, because some agent writes are billed at 1 hour. The `-p` output's `usage.cache_creation` splits `ephemeral_1h` and `ephemeral_5m` for the main session's last turn only. |
 | `claude -p` flags | `--no-session-persistence` keeps no transcript. `--max-budget-usd` caps a run's spend. `--strict-mcp-config`, with `ENABLE_CLAUDEAI_MCP_SERVERS=false`, keeps connectors out. |
 
+## Lead and Designer findings (2026-10-08)
+
+Facts the Lead and Designer split relies on, from Claude Code's documentation.
+
+| Topic | Result | Source |
+|---|---|---|
+| Hook inputs | Hooks that fire inside a subagent receive `agent_id` and `agent_type`. `aether-guard` reads them to tell the Designer from every other agent. | https://code.claude.com/docs/en/hooks |
+| Subagent fields | A subagent's frontmatter accepts `skills`, which loads the named skills into it, and `experimental.cacheTtl`, which sets the prompt-cache lifetime (`1h`). Subagents can use the Skill tool. | https://code.claude.com/docs/en/sub-agents |
+| Skill model and fork | A skill's `model` applies for one turn only. `context: fork` runs the skill in a fresh context. | https://code.claude.com/docs/en/skills |
+| Window and effort | `autoCompactWindow` (or `--autocompact`, or `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, from 100K to 1M tokens) sets the window at which auto-compaction runs; Aether keeps the 1M window and leaves it unset. Effort resolves in this order: an explicit choice (`CLAUDE_CODE_EFFORT_LEVEL`, then `--effort` or `/effort`), then the settings (`modelSettings`, `effortLevel`), then the model's default. A subagent's or a skill's `effort` overrides the session's level, but not `CLAUDE_CODE_EFFORT_LEVEL`. | https://code.claude.com/docs/en/model-config, https://code.claude.com/docs/en/sub-agents |
+| Advisor | `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` turns the advisor tool off. Each consultation reads the whole conversation uncached, about $2.60 per call at 650K tokens on Opus. | https://code.claude.com/docs/en/advisor |
+
 ## OpenRouter prices
 
 The snapshot of 2026-10-07, rechecked on 2026-10-08 and unchanged. It covers the Anthropic endpoint, in USD per million tokens. The plugin's copy is `plugins/aether/config/prices.json`.
