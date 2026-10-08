@@ -27,6 +27,9 @@ test('session start injects the Aether bootstrap', (t) => {
   assert.match(context, /# Aether mode/)
   assert.match(context, /aether-plan check/)
   assert.doesNotMatch(context, /disable-model-invocation/)
+  // At the plan handoff the swarm is offered next to superpowers' own execution options.
+  assert.match(context, /`aether:swarm` skill/)
+  assert.doesNotMatch(context, /arrives in a later version/)
 })
 
 test('session start sweeps stale runs and says so', (t) => {

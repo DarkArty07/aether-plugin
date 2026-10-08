@@ -54,4 +54,8 @@ Add this section after Global Constraints:
 
 Run `aether-plan check <plan.md>`. It prints JSON with the waves, or with every error, and it refuses plans shaped as a chain. Fix the errors before you ask the owner to review the plan.
 
-The swarm executor (`/aether:run`) arrives in a later version. Until then, offer superpowers' own execution options at the plan handoff.
+### 4. Offer the swarm at the plan handoff
+
+At the handoff, superpowers offers subagent-driven and native execution. Aether mode adds a third option, the swarm: `/aether:run` implements the plan's tasks in parallel on their tiers, with a supervisor for every attempt, one merge at a time, a final review on Opus, and cleanup.
+
+Recommend one of the three with a quality, cost and speed reason, and let the owner choose. When the owner picks the swarm, load the `aether:swarm` skill and follow it.
