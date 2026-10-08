@@ -157,6 +157,7 @@ test('missing or invalid args throw before any agent starts', async (t) => {
     { ...args, waves: [['task-9']] },
     { ...args, runId: '../evil' },
     { ...args, maxAgents: 0 },
+    { ...args, waves: [['task-1', 'task-2'], ['task-1']] },
   ]
   for (const input of bad) {
     const run = await runWorkflow(input)

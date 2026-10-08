@@ -109,11 +109,15 @@ function readArgs(raw) {
   if (!Array.isArray(input.waves) || !input.waves.every(Array.isArray)) bad.push('waves')
   if (!input.tasks || typeof input.tasks !== 'object') bad.push('tasks')
   if (bad.length) throw new Error(`aether:run args are missing or invalid: ${bad.join(', ')}`)
+  const seen = new Set()
   for (const id of input.waves.flat()) {
     const t = input.tasks[id]
     const complete =
       TASK_ID.test(id) && t && text(t.title) && text(t.brief) && TIERS.includes(t.tier) && text(t.area) && Array.isArray(t.owns) && Array.isArray(t.dependsOn)
     if (!complete) throw new Error(`aether:run args: ${id} is not a complete task`)
+    // A task listed twice would run as two units in the same worktree.
+    if (seen.has(id)) throw new Error(`aether:run args: ${id} appears more than once in the waves`)
+    seen.add(id)
   }
   return input
 }
