@@ -121,3 +121,37 @@
   - Opus $0.117: the final review.
   - Haiku $0.007: the implementers and ops.
 - **For Plan 3:** on a plan this small, review is the cost. The supervisors and the final review cost about 40 times what the Haiku implementers did, which matches the risk in spec §14. The trial must measure this on a larger plan before the review policy changes.
+
+## Post-review record (2026-10-08)
+
+**Execution.** The Designer implemented every task inline, with TDD and without delegation, as the owner asked. Each test was watched failing first. For the workflow, three deliberate mutations confirmed that its tests catch defects:
+- merges not serialized;
+- no approval gate;
+- a merge retry that spends the ladder.
+
+**Rulings made during execution.** Each ruling ends with its cost if it proves wrong.
+- `aether-wt diff <run> --final` was added, though the plan did not list it, so the read-only Opus reviewer can see `base..HEAD`. *Cost if wrong:* one small command to drop.
+- `NEEDS_CONTEXT` and `BLOCKED` reports go to the supervisor (spec §7) instead of blocking at once. A supervisor can answer from the brief or the repository, or escalate. *Cost if wrong:* one Sonnet call per such report.
+- There are no report or area-ledger files. Reports travel in the implementers' structured output, and each area's memory is its last ten rulings, kept by the script. *Cost if wrong:* per-attempt reports are not on disk for a relaunch, though the result carries them.
+- The implementer writes its own review package, and the read-only supervisor checks that the package's Head matches the reported commit. This saves one ops agent per attempt. *Cost if wrong:* a stale package costs one retry.
+- The one retry after a conflict or failing merge tests runs on the same tier, outside the ladder. *Cost if wrong:* at most one extra attempt per unit.
+- Merges and closes share one queue. A failed close or sweep is retried once. The workflow's sweep keeps the run directory, so blocked units' patches survive. *Cost if wrong:* closes wait behind a merge's test run.
+- Agent budgets differ from the first draft of spec §8: supervisor 25 turns, final reviewer 30, ops effort `low`. The spec now records them. *Cost if wrong:* a few turns or a little reasoning per call.
+
+**Review.** A self-review of the whole branch, `f9f91d1..089afc6`, by the Designer: the owner asked for no delegation. An author's self-review is weaker than an independent one; the owner can ask for an independent review before relying on the swarm.
+
+**Fixes** (`1ad09fc`, suite 87/87):
+
+| Id | Fix |
+|---|---|
+| R1 | `aether-plan compile` warns when the integration worktree is the main checkout. In that case the unit worktrees under `.aether/worktrees/` sit inside it, and a test command that searches the whole tree runs their unfinished tests at merge time. Test: "compile warns when the integration worktree is the main checkout, and not from a linked worktree" (RED → GREEN) |
+| R2 | The implementer sets up its fresh worktree before it runs any test, for example with `npm ci`. This fix is in the prompt only: plans have no setup-command field yet |
+| R3 | The `swarm` skill asks for a separate integration worktree. When the session started inside the integration worktree, it also asks to add the main checkout with `/add-dir`. Behavior outside bypass mode is unverified |
+
+**Deferred minors** (for Plan 3 or later):
+- **Duplicate task ids:** duplicate ids in the args are not rejected.
+- **Failed closes:** `closeError` is not described in the skill or the spec. After two failed closes, the final sweep deletes the unit's branch without a patch.
+- **Permissions:** workflow agents' behavior outside bypass mode is not yet verified. Plan 3's trial should run in the owner's normal permission mode.
+- **Timing:** `claude -p` reports the main turn's `duration_ms`, not the workflow's wall clock. `aether-report` must time the run itself.
+- **Review cost:** on small plans, review dominates the cost. In the smoke run, the supervisors and the final review cost about 40 times what the implementers did. The trial measures this on a larger plan.
+- **Setup command:** a `Setup command` field in Aether Execution would let `ensure` prepare unit worktrees in code instead of by prompt.
