@@ -38,6 +38,13 @@ test('parsePlan ignores headings inside fenced code', () => {
   assert.match(parsed.tasks[0].text, /### Task 99: not a task either/)
 })
 
+test('parsePlan ignores Aether blocks inside fenced code', () => {
+  const md = plan([
+    ['### Task 1: Example only', '', '```markdown', '**Aether:**', '- Tier: haiku — x', '- Area: core', '- Owns: `a/**`', '- Depends on: none', '```'].join('\n'),
+  ])
+  assert.ok(parsePlan(md).errors.includes('Task 1: missing the **Aether:** block.'))
+})
+
 test('parsePlan accepts dash and case variants', () => {
   const parsed = parsePlan(plan([
     task(1),
@@ -75,6 +82,37 @@ test('parsePlan requires the Aether Execution section, tasks, and unique task nu
   assert.ok(empty.errors.includes('The plan has no "## Aether Execution" section.'))
   assert.ok(empty.errors.includes('The plan has no "### Task N: ..." headings.'))
   assert.ok(parsePlan(plan([task(1), task(1)])).errors.includes('Task 1 appears more than once.'))
+})
+
+test('parsePlan refuses headings that look like tasks but do not match the format', () => {
+  const md = plan([task(1), '### Task 2 — Second title\n', '### **Task 3:** Third title\n'])
+  const { errors } = parsePlan(md)
+  assert.ok(errors.includes('Unrecognized task heading: "### Task 2 — Second title". Use "### Task N: Title".'))
+  assert.ok(errors.includes('Unrecognized task heading: "### **Task 3:** Third title". Use "### Task N: Title".'))
+})
+
+test('parsePlan requires task numbers 1..N without gaps', () => {
+  const { errors } = parsePlan(plan([task(1), task(3)]))
+  assert.ok(errors.includes('Task numbers must run from 1 without gaps; missing: Task 2.'))
+})
+
+test('parsePlan reports a code fence that is never closed', () => {
+  const md = plan([task(1), ['### Task 2: Open fence', '', '```js', 'const x = 1'].join('\n')])
+  const line = md.split('\n').indexOf('```js') + 1
+  assert.ok(parsePlan(md).errors.includes(`A code fence opened at line ${line} is never closed.`))
+})
+
+test('parsePlan refuses several dependencies on one line', () => {
+  const { errors } = parsePlan(plan([task(1), task(2), task(3, { depends: 'Task 1 — a; Task 2 — b' })]))
+  assert.ok(errors.includes('Task 3: write one "Depends on:" line per dependency.'))
+})
+
+test('parsePlan refuses Owns entries that are not relative paths or globs', () => {
+  const { errors } = parsePlan(plan([task(1, { owns: '`src/a/**`, `/abs/x.js`, `../up/y.js`, src/b/x.js (new file)' })]))
+  assert.ok(errors.includes('Task 1: Owns entry "/abs/x.js" is not a relative path or glob.'))
+  assert.ok(errors.includes('Task 1: Owns entry "../up/y.js" is not a relative path or glob.'))
+  assert.ok(errors.includes('Task 1: Owns entry "src/b/x.js (new file)" is not a relative path or glob.'))
+  assert.ok(!errors.some((e) => e.includes('"src/a/**"')))
 })
 
 test('buildGraph layers tasks into waves', () => {
@@ -126,6 +164,24 @@ test('buildGraph with only keeps the named tasks and drops dependencies outside 
   assert.deepEqual(graph.errors, [])
   assert.deepEqual(graph.waves, [['task-2', 'task-3']])
   assert.deepEqual(buildGraph(parsed, { only: ['task-7'] }).errors, ['--only names task-7, which is not in the plan.'])
+})
+
+test('buildGraph with only skips the chain rule and warns about dependencies outside the selection', () => {
+  const parsed = parsePlan(plan([
+    task(1),
+    task(2),
+    task(3, { depends: 'Task 1 — a' }),
+    task(4, { depends: 'Task 3 — b' }),
+    task(5, { depends: 'Task 4 — c' }),
+  ]))
+  const graph = buildGraph(parsed, { only: ['3', 'task-4', 'task-5'] })
+  assert.deepEqual(graph.errors, [])
+  assert.deepEqual(graph.waves, [['task-3'], ['task-4'], ['task-5']])
+  assert.deepEqual(graph.warnings, ['Task 3 depends on Task 1, which is outside the selection; it is assumed to be merged already.'])
+})
+
+test('buildGraph refuses an empty selection', () => {
+  assert.deepEqual(buildGraph(parsePlan(plan([task(1), task(2)])), { only: [] }).errors, ['The selection names no tasks.'])
 })
 
 test('renderBrief carries the task text, its fields and the global constraints', () => {

@@ -18,9 +18,14 @@ function fail(errors, warnings = []) {
   process.exit(1)
 }
 
-function option(args, name) {
+// The value after a flag, or null when the flag is absent. A flag with no value,
+// or with another flag where its value belongs, fails with the given message.
+function flagValue(args, name, message) {
   const i = args.indexOf(name)
-  return i === -1 ? null : args[i + 1]
+  if (i === -1) return null
+  const value = args[i + 1]
+  if (value === undefined || value.startsWith('--')) fail([message])
+  return value
 }
 
 function load(planArg) {
@@ -40,8 +45,10 @@ function check(planArg) {
 
 function compile(planArg, rest) {
   const { planPath, parsed } = load(planArg)
-  const onlyArg = option(rest, '--only')
-  const only = onlyArg ? onlyArg.split(',').map((s) => s.trim()).filter(Boolean) : null
+  // Every check runs before anything is written, so a refused compile leaves no run behind.
+  const onlyValue = flagValue(rest, '--only', '--only needs a comma-separated list of tasks, such as task-2,task-3.')
+  const only = onlyValue === null ? null : onlyValue.split(',').map((s) => s.trim()).filter(Boolean)
+  const runValue = flagValue(rest, '--run', '--run needs a run id.')
   const graph = buildGraph(parsed, { only })
   const errors = [...parsed.errors, ...graph.errors]
   if (errors.length) fail(errors, graph.warnings)
@@ -53,7 +60,7 @@ function compile(planArg, rest) {
     fail([`refusing to compile on ${branch}: run aether-plan from the integration worktree, or pass --allow-main`])
   }
 
-  const runId = option(rest, '--run') || run.newRunId()
+  const runId = runValue === null ? run.newRunId() : runValue
   run.assertRunId(runId)
   const dir = run.runDir(repo.mainRoot, runId)
   run.ensureExcluded(repo.gitCommonDir)

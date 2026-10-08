@@ -25,7 +25,7 @@ Costs are judged at API list prices, in USD per million input/output tokens: Opu
 When you write a plan with superpowers `writing-plans`, put this block right after each task heading:
 
     **Aether:**
-    - Tier: haiku — the task carries complete code
+    - Tier: haiku — exact tests and interfaces pin the task down
     - Area: backend
     - Owns: `src/api/**`, `tests/api.test.js`
     - Depends on: none

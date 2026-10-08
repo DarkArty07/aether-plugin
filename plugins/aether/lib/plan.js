@@ -8,31 +8,37 @@ const { normalizePattern, patternsOverlap } = require('./globs.js')
 const TIERS = ['haiku', 'sonnet', 'opus']
 const DASH = String.raw`\s+(?:—|–|--|-)\s+`
 const TASK_HEADING = /^###\s+Task\s+(\d+)\s*:\s*(.+?)\s*$/i
+// any heading that tries to name a task, well formed or not
+const TASK_LOOKALIKE = /^#{1,6}\s+\W*task\s*\d/i
 const LEVEL2 = /^##\s+\S/
 const DEFAULT_LADDER = { haiku: 2, sonnet: 2, opus: 1 }
 const DEFAULT_MAX_AGENTS = 200
+const MAX_LISTED_GAPS = 20
 
 function stripTicks(text) {
   return String(text).trim().replace(/^`(.*)`$/, '$1').trim()
 }
 
-// true for every line inside a fenced code block, fences included
+// true for every line inside a fenced code block, fences included; unclosedAt
+// is the 1-based line of a fence still open at the end of the file, or null
 function codeMask(lines) {
   const mask = []
   let fence = null
-  for (const line of lines) {
-    const m = line.match(/^\s*(`{3,}|~{3,})/)
+  let openedAt = 0
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*(`{3,}|~{3,})/)
     if (fence) {
       mask.push(true)
       if (m && m[1][0] === fence[0] && m[1].length >= fence.length) fence = null
     } else if (m) {
       fence = m[1]
+      openedAt = i + 1
       mask.push(true)
     } else {
       mask.push(false)
     }
   }
-  return mask
+  return { mask, unclosedAt: fence ? openedAt : null }
 }
 
 function parseSpec(lines) {
@@ -73,9 +79,18 @@ function parseExecution(body, errors) {
   return execution
 }
 
-function parseAetherFields(task, body, errors) {
+// An Owns entry is a relative path or glob: no absolute path, no ".." segment,
+// no whitespace, no backtick and no brackets.
+function isOwnsEntry(entry) {
+  if (entry.startsWith('/') || entry.split('/').includes('..')) return false
+  return !/[\s`{}()[\]]/.test(entry)
+}
+
+// bodyCode marks the body lines that sit inside fenced code. Those lines are
+// never part of the Aether block, the same as headings inside fences.
+function parseAetherFields(task, body, bodyCode, errors) {
   const label = `Task ${task.number}`
-  const start = body.findIndex((line) => line.trim() === '**Aether:**')
+  const start = body.findIndex((line, j) => !bodyCode[j] && line.trim() === '**Aether:**')
   if (start === -1) {
     errors.push(`${label}: missing the **Aether:** block.`)
     return
@@ -84,7 +99,10 @@ function parseAetherFields(task, body, errors) {
   let sawDepends = false
   let tierError = false
   let areaError = false
-  for (const line of body.slice(start + 1)) {
+  let ownsError = false
+  for (let j = start + 1; j < body.length; j++) {
+    if (bodyCode[j]) continue
+    const line = body[j]
     if (line.trim() === '') {
       if (sawField) break
       continue
@@ -109,24 +127,47 @@ function parseAetherFields(task, body, errors) {
         errors.push(`${label}: Area must be lowercase letters, digits and dashes.`)
       }
     } else if ((m = line.match(/^\s*-\s*Owns:\s*(.*?)\s*$/i))) {
-      task.owns = m[1].split(',').map(normalizePattern).filter(Boolean)
+      task.owns = []
+      for (const entry of m[1].split(',').map(normalizePattern).filter(Boolean)) {
+        if (isOwnsEntry(entry)) task.owns.push(entry)
+        else {
+          ownsError = true
+          errors.push(`${label}: Owns entry "${entry}" is not a relative path or glob.`)
+        }
+      }
     } else if ((m = line.match(/^\s*-\s*Depends on:\s*(.*?)\s*$/i))) {
       sawDepends = true
       if (/^none$/i.test(m[1])) continue
       const dm = m[1].match(new RegExp(String.raw`^Task\s+(\d+)` + DASH + '(.+)$', 'i'))
-      if (dm) task.dependsOn.push({ number: Number(dm[1]), reason: dm[2] })
-      else errors.push(`${label}: "Depends on: ${m[1]}" needs the form "Task N — reason".`)
+      if (dm) {
+        task.dependsOn.push({ number: Number(dm[1]), reason: dm[2] })
+        if (/[;,]\s*Task\s+\d+/i.test(dm[2])) errors.push(`${label}: write one "Depends on:" line per dependency.`)
+      } else errors.push(`${label}: "Depends on: ${m[1]}" needs the form "Task N — reason".`)
     }
   }
   if (!task.tier && !tierError) errors.push(`${label}: missing Tier.`)
   if (!task.area && !areaError) errors.push(`${label}: missing Area.`)
-  if (task.owns.length === 0) errors.push(`${label}: missing Owns.`)
+  if (task.owns.length === 0 && !ownsError) errors.push(`${label}: missing Owns.`)
   if (!sawDepends) errors.push(`${label}: missing "Depends on" (use "Depends on: none" for an independent task).`)
+}
+
+// Task numbers run from 1 up to the highest number in use, with no gaps. The
+// listing is capped so that one absurd number cannot flood the message.
+function checkNumbers(numbers, errors) {
+  for (const n of numbers) if (n < 1) errors.push(`Task numbers must run from 1 without gaps; Task ${n} is not allowed.`)
+  const max = Math.max(...numbers)
+  const gaps = max - numbers.filter((n) => n >= 1).length
+  if (gaps === 0) return
+  const present = new Set(numbers)
+  const listed = []
+  for (let n = 1; n <= max && listed.length < MAX_LISTED_GAPS; n++) if (!present.has(n)) listed.push(`Task ${n}`)
+  const more = gaps > listed.length ? `, and ${gaps - listed.length} more` : ''
+  errors.push(`Task numbers must run from 1 without gaps; missing: ${listed.join(', ')}${more}.`)
 }
 
 function parsePlan(markdown) {
   const lines = String(markdown).replace(/\r\n/g, '\n').split('\n')
-  const code = codeMask(lines)
+  const { mask: code, unclosedAt } = codeMask(lines)
   const isTaskHeading = (i) => !code[i] && TASK_HEADING.test(lines[i])
   const isLevel2 = (i) => !code[i] && LEVEL2.test(lines[i])
   const endOfBlock = (from) => {
@@ -138,18 +179,24 @@ function parsePlan(markdown) {
     return start === -1 ? null : lines.slice(start + 1, endOfBlock(start + 1))
   }
   const errors = []
+  if (unclosedAt !== null) errors.push(`A code fence opened at line ${unclosedAt} is never closed.`)
   const constraints = section(/^##\s+Global Constraints\s*$/i)
   const globalConstraints = constraints ? constraints.join('\n').trim() || null : null
   const execution = parseExecution(section(/^##\s+Aether Execution\s*$/i), errors)
   const tasks = []
   const seen = new Set()
   for (let i = 0; i < lines.length; i++) {
-    if (!isTaskHeading(i)) continue
+    if (code[i]) continue
+    if (!TASK_HEADING.test(lines[i])) {
+      if (TASK_LOOKALIKE.test(lines[i])) errors.push(`Unrecognized task heading: "${lines[i].trim()}". Use "### Task N: Title".`)
+      continue
+    }
     const m = lines[i].match(TASK_HEADING)
     const number = Number(m[1])
     if (seen.has(number)) errors.push(`Task ${number} appears more than once.`)
     seen.add(number)
-    const body = lines.slice(i + 1, endOfBlock(i + 1))
+    const bodyEnd = endOfBlock(i + 1)
+    const body = lines.slice(i + 1, bodyEnd)
     const task = {
       number,
       title: m[2],
@@ -160,24 +207,29 @@ function parsePlan(markdown) {
       owns: [],
       dependsOn: [],
     }
-    parseAetherFields(task, body, errors)
+    parseAetherFields(task, body, code.slice(i + 1, bodyEnd), errors)
     tasks.push(task)
   }
   if (tasks.length === 0) errors.push('The plan has no "### Task N: ..." headings.')
+  else checkNumbers([...seen], errors)
   return { tasks, execution, globalConstraints, spec: parseSpec(lines), errors }
 }
 
 function buildGraph(parsed, { only = null } = {}) {
+  if (only && only.length === 0) return { waves: [], tasks: {}, errors: ['The selection names no tasks.'], warnings: [] }
   const errors = []
   const warnings = []
   const known = new Set(parsed.tasks.map((t) => t.number))
   let selected = parsed.tasks
   if (only) {
-    const wanted = new Set(only)
-    for (const id of wanted) {
-      if (!known.has(Number(String(id).replace(/^task-/, '')))) errors.push(`--only names ${id}, which is not in the plan.`)
+    const wanted = new Set()
+    for (const id of only) {
+      // "3" and "task-3" name the same task
+      const m = String(id).match(/^(?:task-)?(\d+)$/i)
+      if (m && known.has(Number(m[1]))) wanted.add(Number(m[1]))
+      else errors.push(`--only names ${id}, which is not in the plan.`)
     }
-    selected = parsed.tasks.filter((t) => wanted.has(`task-${t.number}`))
+    selected = parsed.tasks.filter((t) => wanted.has(t.number))
   }
   const ids = new Set(selected.map((t) => `task-${t.number}`))
   const nodes = {}
@@ -186,6 +238,7 @@ function buildGraph(parsed, { only = null } = {}) {
     for (const d of t.dependsOn) {
       if (!known.has(d.number)) errors.push(`Task ${t.number} depends on Task ${d.number}, which is not in the plan.`)
       else if (ids.has(`task-${d.number}`)) deps.push(`task-${d.number}`)
+      else warnings.push(`Task ${t.number} depends on Task ${d.number}, which is outside the selection; it is assumed to be merged already.`)
     }
     nodes[`task-${t.number}`] = {
       number: t.number,
@@ -229,10 +282,11 @@ function buildGraph(parsed, { only = null } = {}) {
     }
   }
 
+  // A relaunch judges its selection, not the shape of the whole plan.
   const count = Object.keys(nodes).length
-  if (count >= 3 && waves.length === count) {
+  if (!only && count >= 3 && waves.length === count) {
     errors.push('The plan is a chain: every wave holds one task. Decompose it again so independent tasks can run in parallel (decision D6).')
-  } else if (count >= 2 && count / waves.length < 1.5) {
+  } else if (!only && count >= 2 && count / waves.length < 1.5) {
     warnings.push(`Low parallelism: ${count} tasks in ${waves.length} waves (average ${(count / waves.length).toFixed(2)} per wave).`)
   }
   return { waves, tasks: nodes, errors, warnings }
