@@ -245,6 +245,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 
 **Safety rules.**
 - `aether-wt` only touches paths under `<repo>/.aether/` and branches under `aether/`, and refuses any other target.
+- `remove` and `sweep --run` first save a unit's unmerged or uncommitted work as `runDir/patches/<task>.patch`. A sweep keeps a unit whose work it cannot save, and the run directory with it. A stale sweep records the branch tips first (Plan 3).
 - It never deletes the integration branch or its worktree.
 
 **Acceptance.** After `finalize`:

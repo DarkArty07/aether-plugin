@@ -73,7 +73,7 @@ Report to the owner from it:
   - Fix the critical and important ones: yourself, with TDD on the integration branch, or by relaunching.
   - Report the minor ones to the owner as deferred.
   - Rule on each `declined` line.
-- **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree.
+- **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep first saves each unit's unmerged or uncommitted work as a patch. A unit whose work it cannot save stays in place for you to handle.
 
 To relaunch, keep the run id and name the tasks:
 

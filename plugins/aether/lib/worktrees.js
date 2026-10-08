@@ -329,33 +329,62 @@ function runWorktrees(mainRoot, runId) {
   return { paths: [...paths].sort(), registered }
 }
 
-// Removes a run's unit worktrees and branches. With `finish`, the run directory goes too.
+// Saves, as removeUnit does, the work of each unit of a run that is not merged or not committed.
+// Returns the patch files, and the units whose work could not be saved (their base is unknown).
+function savePatches(mainRoot, runId) {
+  const patches = []
+  const kept = new Set()
+  const graphFile = path.join(run.runDir(mainRoot, runId), 'graph.json')
+  if (!exists(graphFile)) return { patches, kept }
+  const graph = run.readJson(graphFile)
+  for (const { branch } of aetherBranches(mainRoot, runId)) {
+    const taskId = branch.split('/')[2]
+    const worktree = run.unitWorktree(mainRoot, runId, taskId)
+    const inWorktree = isWorktreeRoot(worktree)
+    try {
+      if (!isMerged(mainRoot, graph, branch) || (inWorktree && uncommittedFiles(worktree).length > 0)) {
+        patches.push(writePatch(mainRoot, graph, runId, taskId, inWorktree ? worktree : null))
+      }
+    } catch {
+      kept.add(taskId)
+    }
+  }
+  return { patches, kept }
+}
+
+// Removes a run's unit worktrees and branches, after saving their unsaved work as patches. A unit
+// whose work cannot be saved is kept, and so is the run directory then. With `finish`, the run
+// directory goes too.
 function sweepRun(cwd, runId, { finish = false } = {}) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
   const dir = run.worktreesDir(mainRoot, runId)
+  const { patches, kept } = savePatches(mainRoot, runId)
   const removedWorktrees = []
   const { paths, registered } = runWorktrees(mainRoot, runId)
   for (const worktree of paths) {
+    if (kept.has(path.basename(worktree))) continue
     if (removeWorktreePath(mainRoot, worktree, registered.has(worktree))) removedWorktrees.push(worktree)
   }
-  if (exists(dir)) {
+  if (exists(dir) && kept.size === 0) {
     assertInside(dir, unitsDir(mainRoot))
     fs.rmSync(dir, { recursive: true, force: true })
   }
   const removedBranches = []
   for (const { branch } of aetherBranches(mainRoot, runId)) {
+    if (kept.has(branch.split('/')[2])) continue
     git(['branch', '-D', branch], mainRoot)
     removedBranches.push(branch)
   }
   const runDir = run.runDir(mainRoot, runId)
-  if (finish && exists(runDir)) {
+  if (finish && kept.size === 0 && exists(runDir)) {
     assertInside(runDir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(runDir, { recursive: true, force: true })
   }
   return {
     removedWorktrees,
     removedBranches,
+    patches,
     remaining: {
       worktrees: runWorktrees(mainRoot, runId).paths.map((worktree) => path.basename(worktree)),
       branches: aetherBranches(mainRoot, runId).map(({ branch }) => branch),
