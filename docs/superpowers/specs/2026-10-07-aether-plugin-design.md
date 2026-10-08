@@ -180,7 +180,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
    The script routes a failed merge by its kind:
    - **A conflict or failing tests:** one retry on the same tier, outside the ladder, with the conflict or the test output. A second failure blocks the unit.
    - **Changes outside `owns`, or nothing committed:** a failed attempt; the ladder decides what follows.
-   - **A dirty or switched integration worktree, or a failed command:** the unit is blocked.
+   - **A dirty, switched or missing integration worktree, a merge that git refused before merging (`merge-failed`, such as an untracked file in the way), or a failed command:** the unit is blocked, with the detail.
 4. **Close.** Every unit that started is closed by an `ops` agent with `aether-wt remove <run> <task>`, after a merge, a block or the end of the budget.
    - Unmerged work is saved first as `runDir/patches/<task>.patch`.
    - Closes share the merge queue, and a failed close is retried once.

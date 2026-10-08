@@ -220,7 +220,9 @@ function merge(cwd, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
       }).stdout,
     )
     git(['merge', '--abort'], integration, { allowFail: true })
-    return { merged: false, reason: 'conflict', files: unmerged, detail: attempt.stderr || attempt.stdout }
+    // Without unmerged files, git refused before merging, as for an untracked file in the way.
+    const reason = unmerged.length > 0 ? 'conflict' : 'merge-failed'
+    return { merged: false, reason, files: unmerged, detail: attempt.stderr || attempt.stdout }
   }
 
   const tests = spawnSync(graph.testCommand, {

@@ -140,3 +140,16 @@ test('merge says so when the integration worktree is gone', (t) => {
     detail: `the integration worktree ${integration} is missing`,
   })
 })
+
+test('merge reports a failed merge that is not a conflict as merge-failed', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  // An untracked file in the integration worktree stands where the unit's file would go.
+  fs.mkdirSync(path.join(repo.dir, 'src', 't1'), { recursive: true })
+  fs.writeFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'local\n')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, false)
+  assert.equal(r.reason, 'merge-failed')
+  assert.match(r.detail, /would be overwritten/)
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'utf8'), 'local\n')
+})
