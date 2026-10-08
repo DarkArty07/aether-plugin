@@ -1,0 +1,11 @@
+{
+  "name": "aether-plugin",
+  "private": true,
+  "description": "Aether Plugin for Claude Code: development scripts. The plugin itself is plugins/aether and has no dependencies.",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "test:mod": "claude plugin test plugins/aether",
+    "validate": "claude plugin validate plugins/aether --strict",
+    "check": "npm test --silent && npm run --silent test:mod && npm run --silent validate"
+  }
+}

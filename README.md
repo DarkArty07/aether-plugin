@@ -105,9 +105,10 @@ Data lives in `~/.local/share/aether-plugin/` (or `AETHER_DATA_DIR`):
 
 The plugin is `plugins/aether/`; nothing outside it is loaded. To try a change, point `--plugin-dir` at a worktree's `plugins/aether`.
 
-    node --test "tests/*.test.js"                # bins, libraries and workflow scenarios
-    claude plugin test plugins/aether            # the usage meter mod
-    claude plugin validate plugins/aether --strict
+    npm test              # node --test "tests/*.test.js": bins, libraries and workflow scenarios
+    npm run test:mod      # claude plugin test plugins/aether: the usage meter mod
+    npm run validate      # claude plugin validate plugins/aether --strict
+    npm run check         # all three
 
 Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens.
 
