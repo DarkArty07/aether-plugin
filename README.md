@@ -1,9 +1,7 @@
-# Multi-Agent Software Development for Claude Code (Prototype)
+# Aether Plugin
 
-> Working name. The final name and identity will come later.
-
-A spec-driven multi-agent system for software development, built as a Claude Code
-plugin. You state your intent once. A design agent clarifies it and writes the spec.
+A spec-driven multi-agent system for software development, built as a plugin for
+Claude Code. You state your intent once. A design agent clarifies it and writes the spec.
 An orchestrator then runs a swarm of agents in parallel, each on the model its task
 needs, and keeps you informed on Telegram.
 
@@ -12,8 +10,25 @@ the same method, rebuilt on a harness made for software.
 
 ## Status
 
-Prototype. Nothing is implemented yet. This README records the decisions taken on
-2026-10-05.
+Version 0.1 is in progress. The current design is
+[docs/superpowers/specs/2026-10-07-aether-plugin-design.md](docs/superpowers/specs/2026-10-07-aether-plugin-design.md).
+The rest of this README still records the decisions of 2026-10-05. Plan 1 (foundation)
+adds plan checking, unit worktrees and their cleanup.
+
+## Use Aether mode
+
+Aether mode is chosen per session. `aether-mode` loads the plugin and turns on dynamic
+workflows; `claude` stays in normal mode, with superpowers alone.
+
+In fish:
+
+    ln -s (realpath scripts/aether-mode.fish) ~/.config/fish/functions/aether-mode.fish
+
+In bash or zsh:
+
+    aether-mode() { claude --plugin-dir /path/to/aether-plugin/plugins/aether --settings '{"enableWorkflows": true}' "$@"; }
+
+Run the tests with `node --test "tests/*.test.js"`. They need Node.js 22 and no dependencies.
 
 ## Lessons from Aether Agents
 
