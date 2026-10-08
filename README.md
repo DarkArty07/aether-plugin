@@ -45,7 +45,7 @@ Aether mode was faster and cheaper again, but its quality was not equal. The tra
 - Aether's implementers run at a fixed `medium` effort, where normal mode's ran at `xhigh`;
 - its briefs carry the plan's contract without the spec's quality bar.
 
-The evaluation's first follow-up changes both. Whether A9 stands, or waits for a rerun of trial 2 after those changes, is the owner's decision.
+The owner judged that the normal build's extra quality does not justify its time and cost. The next work raises Aether's quality with techniques that keep its time and cost. The evaluation [lists them](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost).
 
 The design is [docs/superpowers/specs/2026-10-07-aether-plugin-design.md](docs/superpowers/specs/2026-10-07-aether-plugin-design.md).
 
@@ -163,7 +163,9 @@ Aether Plugin answers each failure:
 
 ## Roadmap
 
-These are deferred until the trial justifies them:
+**Next:** raise Aether's quality at its current time and cost, with [trial 2's techniques](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost), then rerun trial 2 in Aether mode.
+
+These are deferred until the trials justify them:
 - non-Anthropic models through the Aether Router;
 - notifications;
 - several parallel attempts on critical units;
