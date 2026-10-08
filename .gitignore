@@ -1,0 +1,10 @@
+# Worktrees for developing the plugin (superpowers using-git-worktrees)
+.worktrees/
+
+# superpowers subagent-driven-development workspace
+.superpowers/
+
+# Aether runs, if Aether mode is used on this repository
+.aether/
+
+node_modules/
