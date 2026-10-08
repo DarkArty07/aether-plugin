@@ -17,8 +17,11 @@ The whole run is then reviewed as one change. You prepare the run, launch it, an
 - **The plan.** The owner has approved it, every task has Aether fields, and `aether-plan check <plan.md>` passes.
 - **The integration worktree.**
   - Create it with superpowers `using-git-worktrees`, on a feature branch. Never run the swarm on `main`.
+  - Keep it separate from the main checkout. The unit worktrees live under the main checkout's `.aether/worktrees/`, and a test command that searches the whole tree would run their unfinished tests at merge time. `aether-plan compile` warns when the two are the same.
   - Commit the plan there, and leave the worktree clean. A merge refuses to start while the integration worktree has uncommitted changes.
-- **Permissions.** The run's agents use Bash (`git`, `aether-wt` and the test command) and edit files under `.aether/worktrees/`. A session that asks permission for each call stalls the swarm. Check that the permission mode or allow rules cover these calls, and tell the owner what you rely on.
+- **Permissions.** The run's agents use Bash (`git`, `aether-wt` and the test command) and edit files under `.aether/worktrees/`. A session that asks permission for each call stalls the swarm.
+  - Check that the permission mode or allow rules cover these calls, and tell the owner what you rely on.
+  - The unit worktrees are under the main checkout. If this session started inside the integration worktree, add the main checkout with `/add-dir <repoRoot>`, so the agents may read and edit there.
 
 ## 2. Compile
 

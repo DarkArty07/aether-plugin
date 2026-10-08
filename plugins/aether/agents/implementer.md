@@ -20,12 +20,13 @@ Read the brief first. It is the task text from the plan: the files you own, the 
 1. Run the `aether-wt ensure` command from the message. Work only inside the unit worktree it prints.
    - Never edit the integration worktree, the main checkout, or another unit's worktree.
    - Temporary files go in the worktree's `.aether-tmp/` folder and nowhere else.
-2. Write the tests the brief gives. Run them and watch them fail for the reason the brief expects.
-3. Write the code that makes them pass, within the brief's Interfaces. Change only the files your task owns.
-4. While iterating, run the focused tests. Run the project's whole test command once before you commit.
-5. Commit in the worktree, with a message that says what the change does.
-6. Review your own diff (below), fix what you find, and commit again.
-7. Run the `aether-wt diff` command from the message, then report.
+2. Set up the worktree the way the project needs before you run any test. A fresh worktree has no installed dependencies: for example, run `npm ci` when the project has a `package-lock.json` and the worktree has no `node_modules`.
+3. Write the tests the brief gives. Run them and watch them fail for the reason the brief expects.
+4. Write the code that makes them pass, within the brief's Interfaces. Change only the files your task owns.
+5. While iterating, run the focused tests. Run the project's whole test command once before you commit.
+6. Commit in the worktree, with a message that says what the change does.
+7. Review your own diff (below), fix what you find, and commit again.
+8. Run the `aether-wt diff` command from the message, then report.
 
 When earlier attempts exist, the worktree holds their work and the message lists what the supervisor found. Fix those findings; do not start over unless they say so.
 

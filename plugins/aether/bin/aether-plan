@@ -90,7 +90,13 @@ function compile(planArg, rest) {
   }
   run.writeJson(path.join(dir, 'graph.json'), args)
   run.writeJson(path.join(dir, 'state.json'), { runId, status: 'compiled', plan: planPath, compiledAt: new Date().toISOString() })
-  for (const warning of graph.warnings) process.stderr.write(`warning: ${warning}\n`)
+  const warnings = [...graph.warnings]
+  if (repo.worktree === repo.mainRoot) {
+    warnings.push(
+      'the integration worktree is the main checkout, so the unit worktrees under .aether/worktrees/ sit inside it, and a test command that searches the whole tree also runs their unfinished tests at merge time. Prefer a separate integration worktree (superpowers using-git-worktrees).',
+    )
+  }
+  for (const warning of warnings) process.stderr.write(`warning: ${warning}\n`)
   process.stdout.write(JSON.stringify(args) + '\n')
 }
 
