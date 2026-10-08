@@ -51,3 +51,11 @@ test('the Designer prompt holds the hand-off protocol and the plan rules', () =>
   assert.match(body, /cannot talk to the owner/i)
   assert.match(body, /never implement product code/i)
 })
+
+test('the swarm agents run at their set effort: implementers at xhigh, ops at low, reviews at high', () => {
+  // Trial 2 found that implementers at medium were one of two causes of its quality gap (2026-10-08).
+  assert.equal(field(agentFile('implementer').front, 'effort'), 'xhigh')
+  assert.equal(field(agentFile('ops').front, 'effort'), 'low')
+  assert.equal(field(agentFile('supervisor').front, 'effort'), 'high')
+  assert.equal(field(agentFile('reviewer').front, 'effort'), 'high')
+})

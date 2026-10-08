@@ -225,6 +225,8 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 - Every attempt is a fresh implementer. Fix rounds continue in the same worktree, and the prompt carries the earlier attempts' reports, rulings and findings, as superpowers' fix loop does.
 - Unit reviews run on the Sonnet supervisor; the final review runs on Opus. Batched or risk-based review is deferred until the trial shows what reviews cost.
 - **Effort** is set in each agent definition, because the owner's default `xhigh` would otherwise apply to Haiku: implementer `medium`, ops `low`, supervisor and reviewer `high`.
+  - *Amended on 2026-10-08:* the implementer runs at `xhigh`, on every tier. Trial 2 found that `medium` was one of the two causes of its quality gap.
+  - Effort per task, with a ladder of model-and-effort steps, is the next sub-project; trial 3 left two candidate designs for it.
 - **maxTurns:** implementer 60, supervisor 25, reviewer 30, ops 5. The supervisor took the unit reviewer's budget when the two merged.
 - Implementer prompts point to brief files instead of embedding the plan. This keeps requests under Haiku's 100K-token price tier.
 

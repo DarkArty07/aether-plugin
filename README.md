@@ -179,6 +179,10 @@ Aether Plugin answers each failure:
 
 **Next:** raise Aether's quality at its current time and cost, with [trial 2's techniques](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost), then rerun trial 2 in Aether mode.
 
+**Effort.**
+- Since 2026-10-08, implementers run at `xhigh` on every tier; before, they ran at `medium`.
+- Effort per task is the next sub-project. [Trial 3](docs/evaluations/2026-10-08-trial-3.md) left two complete candidate designs for it.
+
 These are deferred until the trials justify them:
 - non-Anthropic models through the Aether Router;
 - notifications;
