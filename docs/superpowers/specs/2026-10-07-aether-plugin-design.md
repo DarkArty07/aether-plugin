@@ -25,14 +25,15 @@ Taken by the owner on 2026-10-07.
 | ID | Decision |
 |---|---|
 | A1 | Project name **Aether Plugin**. Plugin id `aether`. Folder and future repository slug `aether-plugin`. The name leaves out "Claude Code", following Anthropic's branding guidelines and D15; descriptions may say "a plugin for Claude Code". |
-| A2 | superpowers is the base, and the authority on engineering practice and on owner approval gates. Aether adds only the multi-agent organization that superpowers does not cover. When the two conflict, superpowers wins, with one exception: Aether implements units in parallel, because per-unit worktrees and disjoint file ownership remove the conflict that superpowers guards against. |
+| A2 | superpowers is the base, and the authority on engineering practice and on owner approval gates. Aether adds only the multi-agent organization that superpowers does not cover. When the two conflict, superpowers wins, with two exceptions. First, Aether implements units in parallel, because per-unit worktrees and disjoint file ownership remove the conflict that superpowers guards against. Second, swarm plans leave out the implementation code (A10). |
 | A3 | ECC is out for now. |
 | A4 | Roles, top down: owner; Designer (main session, Opus, final authority among agents); supervisors (Sonnet); implementers (Haiku by default, Sonnet or Opus when escalated); reviewers (Sonnet, and Opus for the final review). Plugin code enforces whatever must always happen the same way. |
 | A5 | The Designer may implement, review and fix work itself. Handing work to the swarm is a quality, cost and speed decision, not a rule. superpowers' paths (spike, bounded, architectural) and its approval gates apply unchanged: bounded work still gets a short in-chat design and the owner's yes. |
 | A6 | Cost is judged at API list prices from OpenRouter, even though the owner uses a subscription. |
 | A7 | Hard requirement: unit worktrees, unit branches and temporary files are deleted as soon as they stop being used. Code enforces this. |
-| A8 | Aether mode is chosen per session by loading the plugin with `claude --plugin-dir`, through an `aether` shell function. Normal mode does not load the plugin. |
+| A8 | Aether mode is chosen per session by loading the plugin with `claude --plugin-dir`, through an `aether-mode` shell function (not `aether`, which is the installed Aether Agents CLI). The function also passes `--settings '{"enableWorkflows": true}'`, because dynamic workflows are off by default on the owner's plan (Phase 0). Normal mode loads neither. |
 | A9 | The prototype becomes the published project only if a trial shows lower cost and lower wall-clock time than normal mode, at equal quality (§13). |
+| A10 | Each task in a plan meant for the swarm states the contract: its Interfaces block, its exact failing tests and its acceptance. The implementation code itself is written by the implementer, not by the Designer in the plan (§6). Complete code in the plan concentrates the work in the Designer and leaves the swarm only copying, which gains neither speed nor cost. Code that is already written and verified is applied directly by the Designer. |
 
 ## 3. Repository and versioning
 
@@ -57,7 +58,8 @@ aether-plugin/
 └── tests/                            # bin, mod and workflow tests, fixtures; not shipped
 ```
 
-- **Daily use:** `aether` runs `claude --plugin-dir <repo>/plugins/aether`. The main checkout stays on `main`, so the function always loads the reviewed version.
+- **Daily use:** `aether-mode` runs `claude --plugin-dir <repo>/plugins/aether --settings '{"enableWorkflows": true}'`. The main checkout stays on `main`, so the function always loads the reviewed version.
+- **Data directory:** `~/.local/share/aether-plugin/` holds usage files and run records. It is a fixed path because mods cannot read `CLAUDE_PLUGIN_DATA` (Phase 0). It is kept apart from `~/.local/share/aether/`, which belongs to the installed Aether Agents.
 - **Development:** changes are made in superpowers worktrees and tried by pointing `--plugin-dir` at the worktree's `plugins/aether`. Mods reload on save; skills, agents and hooks reload with `/reload-plugins`.
 - **Versions:** semver in `plugin.json`, starting at 0.1.0. Tags are made with `claude plugin tag plugins/aether` (`aether--v0.1.0`). No release candidates or release locks.
 - **Publishing (later):** a root `.claude-plugin/marketplace.json` that lists `./plugins/aether`.
@@ -80,7 +82,7 @@ aether-plugin/
 
 ## 5. End-to-end flow
 
-1. The owner runs `aether`. The SessionStart hook injects `using-aether` and reports any stale-run cleanup it did.
+1. The owner runs `aether-mode`. The SessionStart hook injects `using-aether` and reports any stale-run cleanup it did.
 2. superpowers brainstorming classifies the objective:
    - **Spike:** investigate, then recommend.
    - **Bounded:** short design and the owner's yes. The Designer then implements it itself with TDD, or hands it to one implementer when the work is mechanical and large.
@@ -91,7 +93,15 @@ aether-plugin/
 
 ## 6. Plan extensions
 
-Plans follow superpowers `writing-plans` completely, including complete code in every step. That is what makes Haiku's "transcription plus testing" viable. Aether adds fields that superpowers' own executors ignore, so an Aether plan can still run in normal mode.
+Plans follow superpowers `writing-plans`, with one change for tasks that go to the swarm (A10). Each task gives:
+- its files;
+- its **Interfaces** block, with exact names, signatures and types;
+- its **failing tests**, written out in full;
+- its acceptance.
+
+The implementation step says "make these tests pass within the Interfaces", without code. The implementer writes the tests from the plan first, watches them fail, and then writes the code. Everything else in `writing-plans` still applies, including "no placeholders" for every requirement. A part that needs the Designer's judgment down to the code is usually better done by the Designer directly.
+
+Aether adds fields that superpowers' own executors ignore, so an Aether plan can still run in normal mode.
 
 Per task, right after the task heading:
 
@@ -125,8 +135,8 @@ Plan-level section, after Global Constraints:
 It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 
 **Tier rubric.** The Designer decides and states the reason.
-- **haiku** (default): the task carries complete code or an exact contract, and touches few files.
-- **sonnet:** frontend and UI, integration across several files, prose-only specification, or tests that are hard to write.
+- **haiku** (default): exact tests and interfaces pin the task down, and it touches few files.
+- **sonnet:** frontend and UI, integration across several files, or behavior that the tests cannot pin down exactly.
 - **opus:** security and auth, data migrations or destructive operations, concurrency, core architecture.
 
 ## 7. Swarm executor (`/aether:run`)
@@ -141,7 +151,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 **Unit pipeline.**
 1. **Implement.** An `implementer` agent runs on the unit's current tier.
    - It runs `aether-wt ensure <run> <task>`. The command is idempotent and prints the unit's worktree path; the branch is `aether/<run>/<task>`, created from the integration branch.
-   - It works only in that worktree, follows TDD, commits, and writes its full report to `runDir/reports/<task>.md`.
+   - It works only in that worktree. It writes the task's tests from the brief, watches them fail, writes the code until they pass, commits, and writes its full report to `runDir/reports/<task>.md`.
    - It returns `{status, commits, tests, concerns, question}`, with status `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT` or `BLOCKED`.
 2. **Review.** A `reviewer` agent on Sonnet gets its diff package from `aether-wt diff`. It returns `{spec: PASS|FAIL, quality: APPROVED|CHANGES, findings: [{severity, title, file, evidence}]}`. A unit passes when spec is PASS and there are no Critical or Important findings. Minor findings go to the area ledger and to the final review.
 3. **Triage** (on a failed review, `NEEDS_CONTEXT` or `BLOCKED`). A `supervisor` agent on Sonnet reads the area ledger and returns `{action: retry|escalate|block, reason, question}`. It records the decision as a `Ruling:` line in the area ledger. The script enforces the ladder (§8): a retry beyond the current tier's budget becomes an escalation, and an escalation past Opus becomes a block.
@@ -168,6 +178,8 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 **Supervisors.** There is one supervisor role per area. Each triage call is a fresh Sonnet agent whose memory is the area ledger, `runDir/areas/<area>.md`. Areas progress in parallel; merges are serialized for the whole run.
 
 **Limits.** The script counts its `agent()` calls and starts no new unit after `maxAgents`. It never calls `Date.now()` or `Math.random()`, as the workflow runtime requires.
+
+**Runtime API (confirmed in Phase 0).** Every call has the form `agent(prompt, { agentType, model, phase, label, schema })`, and every call passes an `agentType`, because an agent without one gets every tool, MCP connector tools included. `parallel()` takes an array of functions that return promises. `agent()` resolves to `null` on a terminal failure and can reject; both count as a failed attempt.
 
 ## 8. Model routing and escalation
 
@@ -205,7 +217,8 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 
 ## 10. Measurement
 
-- **Usage meter.** The mod writes one entry per model request to `usage-<session>.json` in the plugin data directory, rewriting the file on each `turn.complete`. Each entry holds the agent id, model, input, output, cache read and cache write tokens, and time.
+- **Usage meter.** The mod writes one entry per model request to `usage-<session>.json` in `~/.local/share/aether-plugin/`, rewriting the file on each `turn.complete`. Each entry holds the agent id, model, input, output, cache read and cache write tokens, and time. Phase 0 confirmed that `turn.step` exposes all of these.
+- **Cross-check.** Claude Code computes its own list-price cost per model (`costUSD`, `costBasis: "list"`). The report compares its total with that figure where one is available.
 - **Prices.** `config/prices.json` holds the OpenRouter snapshot of 2026-10-07 for the Anthropic endpoint, with its source URLs. Values are USD per million tokens. Haiku's higher prices apply to requests whose prompt exceeds 100K tokens.
 
   | Model | Input | Output | Cache read | Cache write (5 min) | Cache write (1 h) |
@@ -248,6 +261,8 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 ## 13. Scope and phases
 
 **Phase 0: check platform assumptions.** This follows superpowers' spike path. Findings go to `docs/claude-code-research.md` and may amend this spec before the plan is written.
+
+*Done on 2026-10-07:* S1–S5 confirmed. S6 is untested, and the design does not rely on it. Workflows needed `enableWorkflows`, which led to the change in A8. Details are in the [research doc](../../claude-code-research.md#phase-0-findings-2026-10-07).
 - S1. Can workflow `agent()` use a plugin agent type, and does it honor that type's tools, effort and maxTurns? What are the signatures of `agent()`, `parallel()` and `phase()`?
 - S2. Do workflow agents' Bash calls see the plugin's `bin/` on `PATH`?
 - S3. Does `turn.step` fire for workflow agents with an agent id, model and usage? Where can a mod write files?
@@ -255,8 +270,13 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 - S5. Do the plugin's SessionStart context and superpowers' bootstrap both arrive?
 - S6. Does a workflow's `finally` block run when the owner stops the run?
 
-**Implementation**, after Phase 0 and the written plan:
-1. Skeleton: manifest, `NOTICE`, SessionStart hook, `using-aether`, the `aether` shell function, validation.
+**Implementation.** Three plans, each producing software that works and can be tested on its own:
+- Plan 1, Foundation: steps 1–3.
+- Plan 2, Swarm: steps 4 and 6.
+- Plan 3, Measurement and trial: steps 5 and 7.
+
+Each plan is written after the previous one is merged.
+1. Skeleton: manifest, `NOTICE`, SessionStart hook, `using-aether`, the `aether-mode` shell function, validation.
 2. `aether-plan`, with tests.
 3. `aether-wt`, with tests: ensure, diff, merge, remove, sweep, and the safety rules.
 4. Agents and `/aether:run`, with harness scenarios.
@@ -289,6 +309,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 - **Review cost** may dominate when Haiku implements: an estimated 5× the cost of a Haiku unit. The trial measures it before the review policy changes.
 - **Per-merge test runs** may dominate wall-clock time on slow test suites. The trial measures it.
 - **Subscription usage limits** during large runs: the workflow waits for the reset, and the report shows the wait.
+- **MCP connector context.** The owner's claude.ai connectors add their instructions and tools to subagents and workflow agents, which raises every agent's cost (Phase 0). Agents with an `agentType` limit the tools, but the instructions still arrive. The trial measures the effect.
 - **Phase 0 may invalidate parts of §7.** The fallbacks are prompts embedded in `agent()` calls instead of agent types, and absolute paths to the bin tools instead of `PATH`.
 
 ## 15. Documents to update

@@ -201,9 +201,28 @@ The owner's local gateway, at commit `43f9915`:
     (`ANTHROPIC_CUSTOM_HEADERS`), because `Authorization` then carries the claude.ai
     login.
 
+## Phase 0 findings (2026-10-07)
+
+Measured on Claude Code 2.1.293 with a throwaway plugin. The tests ran headless sessions (`claude -p`) with Haiku as the main model and bypassed permissions. The plugin was deleted afterwards. Each finding answers one of the questions S1–S6 in the [design spec](superpowers/specs/2026-10-07-aether-plugin-design.md#13-scope-and-phases), or is new.
+
+| Question | Result |
+|---|---|
+| Are dynamic workflows available? (new) | **Not by default on this plan.** No `Workflow` tool, no plugin or project workflow commands, and no bundled `/deep-research`. The `enableWorkflows: true` setting turns them on, and passing it with `--settings` for one session was enough. |
+| S1. Workflow `agent()` options | `agent(prompt, { agentType, model, phase, label, schema })` works. With `agentType: '<plugin>:<agent>'` the agent's prompt and its `tools` are applied: tools narrowed to Bash, plus `StructuredOutput` when a schema is given. An agent without `agentType` gets the full default tool set, including MCP connector tools. `parallel()` takes an array of functions that return promises. `agent()` resolves to `null` on a terminal failure and may reject. |
+| S1. Subagents through the Agent tool | Plugin agent definitions apply `model`, `effort`, `tools` and the prompt body. |
+| S2. Plugin `bin/` on `PATH` | Yes, for subagents and for workflow agents. |
+| S3. `turn.step` | Fires for the main session, subagents and workflow agents. The event carries `turnId`, `index`, `model`, `effort`, `messageCount` and, for agents, `agentId`. The result's `usage` has `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` and `model`. |
+| S3. Where a mod can write | `$.fs.write` to an absolute path outside the plugin works. `$.env.get('CLAUDE_PLUGIN_DATA')` returned nothing for a `--plugin-dir` plugin, so a mod needs a fixed data directory. |
+| S4. Model aliases | `haiku` resolves to `claude-haiku-5-5` and `sonnet` to `claude-sonnet-5-5`, both for subagents and for workflow agents. |
+| S5. SessionStart context | A plugin's SessionStart `additionalContext` and superpowers' bootstrap both reach the session. |
+| S6. `finally` when the owner stops a run | Not tested: stopping a run needs an interactive session. The design does not rely on it. |
+| `agent.spawn` (new) | Fires for subagents and for workflow agents (`subagentType: "workflow-subagent"` when no type is given). Fields: `tool_use_id`, `prompt`, `description`, `subagentType`, `provider`, `parentModel`, `permissionMode`, `background`, `fork`, and `model` when one is set. `next({ ...e, model })` changed a Sonnet-defined agent to Haiku, and `{ deny }` refused a spawn with the mod's message. |
+| Cost accounting (new) | `claude -p --output-format json` reports `modelUsage` per model with `costUSD` and `costBasis: "list"`. The main session's cache writes were billed at the 1-hour rate. |
+| MCP connectors (new) | claude.ai connector tools and instructions also reach subagents and untyped workflow agents. This adds context, and therefore cost, to every agent. |
+
 ## Still to verify
 
 - Whether `agent.spawn` accepts non-Anthropic model IDs (prototype step 1).
-- Whether workflow agents fire `agent.spawn` and `SubagentStop`.
+- Whether a workflow's `finally` block runs when the owner stops the run.
 - Whether `$.env.set` at `session.start` can set `ANTHROPIC_BASE_URL`.
 - How to declare each model's context window in a mixed session.
