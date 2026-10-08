@@ -52,10 +52,15 @@ The workflow returns:
 - **`agents`:** the agent count, by role and by model.
 - **`error`:** set only when the script itself failed.
 
-Save the result as `<runDir>/result.json`. Then report to the owner:
+Save the result as `<runDir>/result.json`, then run `aether-report --run <runId>` from the integration worktree. It prints JSON:
+- **`speed`:** the run's window, from compile to the saved result, and the swarm's own span;
+- **`cost`:** USD at OpenRouter prices, by model and by role, from the usage meter;
+- **`quality`:** the units merged, escalated and blocked, every finding by severity, the final review, and the test command's result on the integration branch.
+
+Report to the owner from it:
 - the units merged, escalated and blocked;
-- the final verdict;
-- the agent count by model.
+- the final verdict and the tests;
+- the time and the cost by model.
 
 ## 5. Act on it
 
@@ -76,9 +81,11 @@ To relaunch, keep the run id and name the tasks:
 
 Then launch `aether:run` again with the new JSON. Tasks outside the selection are assumed to be merged already.
 
+A relaunch keeps the run's first compile time, and keeps the previous launch's result as `result-<k>.json`. Save each launch's result as `result.json` again: the report adds every launch up.
+
 ## 6. Finish
 
 Finish when every unit is merged, the final review has no open critical or important finding, and the test command passes on the integration branch.
 
-1. Run `aether-wt sweep --run <runId> --finish`. It deletes the run's directory, so first save what you still need from `result.json` and the patches.
+1. Run `aether-report finalize --run <runId>` from the integration worktree. It appends the report to `runs.jsonl` in the plugin's data directory, with the aether, superpowers and Claude Code versions. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
 2. Use superpowers `finishing-a-development-branch` with the owner.

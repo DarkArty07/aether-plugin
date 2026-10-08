@@ -89,7 +89,23 @@ function compile(planArg, rest) {
     tasks,
   }
   run.writeJson(path.join(dir, 'graph.json'), args)
-  run.writeJson(path.join(dir, 'state.json'), { runId, status: 'compiled', plan: planPath, compiledAt: new Date().toISOString() })
+  // A relaunch of a run keeps its first compile time, so the report covers every launch, and keeps
+  // the previous launch's result as result-<k>.json.
+  const statePath = path.join(dir, 'state.json')
+  const previous = fs.existsSync(statePath) ? run.readJson(statePath) : null
+  const resultPath = path.join(dir, 'result.json')
+  if (fs.existsSync(resultPath)) {
+    let k = 1
+    while (fs.existsSync(path.join(dir, `result-${k}.json`))) k++
+    fs.renameSync(resultPath, path.join(dir, `result-${k}.json`))
+  }
+  run.writeJson(statePath, {
+    runId,
+    status: 'compiled',
+    plan: planPath,
+    compiledAt: previous && previous.compiledAt ? previous.compiledAt : new Date().toISOString(),
+    launches: previous ? (previous.launches || 1) + 1 : 1,
+  })
   const warnings = [...graph.warnings]
   if (repo.worktree === repo.mainRoot) {
     warnings.push(

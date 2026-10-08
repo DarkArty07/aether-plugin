@@ -117,26 +117,64 @@ function countFindings(findings) {
   return counts
 }
 
-// Unit outcomes, escalations, every supervisor finding and the final review, from the saved result.
-function qualityOf(result) {
-  if (!result) {
-    const unknown = ['units', 'merged', 'blocked', 'skipped', 'notRun', 'escalated', 'attempts', 'agents', 'findings', 'finalReview']
+// The saved results of every launch, oldest first: result-1.json, result-2.json, ..., result.json.
+function readResults(dir) {
+  const archived = fs
+    .readdirSync(dir)
+    .map((name) => /^result-(\d+)\.json$/.exec(name))
+    .filter(Boolean)
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+    .map((m) => run.readJson(path.join(dir, m[0])))
+  const latest = readIfThere(path.join(dir, 'result.json'))
+  return latest ? [...archived, latest] : archived
+}
+
+// Unit outcomes, escalations, every supervisor finding and the final reviews, over every launch.
+// A unit's latest launch gives its status; attempts and findings add up across launches, and a unit
+// counts as escalated when a launch moved it up a tier or a relaunch started it on another tier.
+function qualityOf(results) {
+  if (results.length === 0) {
+    const unknown = ['launches', 'units', 'merged', 'blocked', 'skipped', 'notRun', 'escalated', 'attempts', 'agents', 'findings', 'finalReview']
     return Object.fromEntries(unknown.map((key) => [key, null]))
   }
-  const units = result.units || []
-  const count = (status) => units.filter((unit) => unit.status === status).length
-  const review = result.finalReview || null
+  const units = new Map()
+  const reviewFindings = []
+  let agents = null
+  let review = null
+  let reviews = 0
+  for (const result of results) {
+    for (const unit of result.units || []) {
+      const before = units.get(unit.id)
+      const tiers = unit.tiers || []
+      units.set(unit.id, {
+        status: unit.status,
+        firstTier: before ? before.firstTier : tiers[0],
+        escalated: Boolean(before && before.escalated) || tiers.length > 1 || Boolean(before && tiers[0] && tiers[0] !== before.firstTier),
+        attempts: (before ? before.attempts : 0) + (unit.attempts || 0),
+        findings: [...(before ? before.findings : []), ...(unit.rounds || []).flatMap((round) => round.findings || [])],
+      })
+    }
+    if (result.agents) agents = (agents || 0) + (result.agents.total || 0)
+    if (result.finalReview) {
+      review = result.finalReview
+      if (result.finalReview.status === 'done') reviews++
+      reviewFindings.push(...(result.finalReview.findings || []))
+    }
+  }
+  const all = [...units.values()]
+  const count = (status) => all.filter((unit) => unit.status === status).length
   return {
-    units: units.length,
+    launches: results.length,
+    units: all.length,
     merged: count('merged'),
     blocked: count('blocked'),
     skipped: count('skipped'),
     notRun: count('not-run'),
-    escalated: units.filter((unit) => (unit.tiers || []).length > 1).length,
-    attempts: units.reduce((sum, unit) => sum + (unit.attempts || 0), 0),
-    agents: result.agents ? result.agents.total : null,
-    findings: countFindings(units.flatMap((unit) => (unit.rounds || []).flatMap((round) => round.findings || []))),
-    finalReview: review ? { status: review.status, verdict: review.verdict || null, findings: countFindings(review.findings) } : null,
+    escalated: all.filter((unit) => unit.escalated).length,
+    attempts: all.reduce((sum, unit) => sum + unit.attempts, 0),
+    agents,
+    findings: countFindings(all.flatMap((unit) => unit.findings)),
+    finalReview: review ? { status: review.status, verdict: review.verdict || null, findings: countFindings(reviewFindings), reviews } : null,
   }
 }
 
@@ -162,12 +200,13 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   const graph = run.readJson(graphFile)
   const state = readIfThere(path.join(dir, 'state.json'))
   const resultFile = path.join(dir, 'result.json')
-  const result = readIfThere(resultFile)
+  const results = readResults(dir)
+  const saved = fs.existsSync(resultFile)
   const notes = []
-  if (!result) notes.push('no result.json in the run directory: save the workflow result there for quality counts and the end of the window')
+  if (!saved) notes.push('no result.json in the run directory: save the workflow result there for quality counts and the end of the window')
 
   const start = state && state.compiledAt ? Date.parse(state.compiledAt) : fs.statSync(graphFile).mtimeMs
-  const end = result ? fs.statSync(resultFile).mtimeMs : now
+  const end = saved ? fs.statSync(resultFile).mtimeMs : now
   const sessions = readUsage(dataDir)
   let usage = null
   if (session) {
@@ -196,7 +235,7 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     cost: usage
       ? { basis: `${prices.basis}, ${prices.snapshot}`, run: summarize(usage, inRun, prices), session: summarize(usage, usage.entries, prices) }
       : null,
-    quality: { ...qualityOf(result), tests: tests ? runTests(graph) : null },
+    quality: { ...qualityOf(results), tests: tests ? runTests(graph) : null },
     notes,
   }
 }

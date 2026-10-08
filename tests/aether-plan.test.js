@@ -112,3 +112,23 @@ test('compile warns when the integration worktree is the main checkout, and not 
   assert.equal(r.json.integration.worktree, linked)
   assert.doesNotMatch(r.stderr, /main checkout/)
 })
+
+test('compile --run on an existing run keeps its first compile time and archives the last result', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([task(1), task(2)]))
+  const first = runBin(PLAN_BIN, ['compile', file], repo.dir).json
+  const statePath = path.join(first.runDir, 'state.json')
+  const firstState = JSON.parse(fs.readFileSync(statePath, 'utf8'))
+  assert.equal(firstState.launches, 1)
+  for (const launch of [1, 2]) {
+    fs.writeFileSync(path.join(first.runDir, 'result.json'), `{"launch":${launch}}`)
+    const r = runBin(PLAN_BIN, ['compile', file, '--run', first.runId, '--only', 'task-2'], repo.dir)
+    assert.equal(r.status, 0, r.stdout)
+  }
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
+  assert.equal(state.compiledAt, firstState.compiledAt)
+  assert.equal(state.launches, 3)
+  assert.equal(fs.readFileSync(path.join(first.runDir, 'result-1.json'), 'utf8'), '{"launch":1}')
+  assert.equal(fs.readFileSync(path.join(first.runDir, 'result-2.json'), 'utf8'), '{"launch":2}')
+  assert.equal(fs.existsSync(path.join(first.runDir, 'result.json')), false)
+})

@@ -6,6 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { useDataDir, tempDir } = require('./helpers.js')
 const { T0, MIN, OPUS, SONNET, HAIKU, sampleUsage, finishedRun } = require('./report-fixtures.js')
+const { writeJson } = require('../plugins/aether/lib/run.js')
 const { report, finalize } = require('../plugins/aether/lib/report.js')
 const { ensure } = require('../plugins/aether/lib/worktrees.js')
 
@@ -56,8 +57,9 @@ test('report counts quality from the saved result, and runs the tests at integra
     escalated: 1,
     attempts: 5,
     agents: 12,
+    launches: 1,
     findings: { critical: 1, important: 2, minor: 2 },
-    finalReview: { status: 'done', verdict: 'ready-with-fixes', findings: { critical: 0, important: 1, minor: 2 } },
+    finalReview: { status: 'done', verdict: 'ready-with-fixes', findings: { critical: 0, important: 1, minor: 2 }, reviews: 1 },
     tests: { command: 'true', exitCode: 0, passed: true, timedOut: false },
   })
 })
@@ -120,4 +122,27 @@ test('a session whose only part is unreadable is skipped, not fatal', (t) => {
   fs.mkdirSync(path.join(dataDir, 'usage', 'empty'))
   const { repo, args } = finishedRun(t)
   assert.equal(report(repo.dir, args.runId, { tests: false }).usage.session, 'run-session')
+})
+
+test('report adds up every launch of a relaunched run', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  // aether-plan compile --run archived the first launch's result; the relaunch merged task-3 on sonnet
+  fs.renameSync(path.join(args.runDir, 'result.json'), path.join(args.runDir, 'result-1.json'))
+  const minor = { severity: 'minor', title: 't', file: 'f', evidence: 'e' }
+  const file = path.join(args.runDir, 'result.json')
+  writeJson(file, {
+    units: [{ id: 'task-3', status: 'merged', tiers: ['sonnet'], attempts: 1, rounds: [{ verdict: 'approve', findings: [minor] }] }],
+    finalReview: { status: 'done', verdict: 'ready', findings: [] },
+    agents: { total: 5 },
+  })
+  fs.utimesSync(file, new Date(T0 + 50 * MIN), new Date(T0 + 50 * MIN))
+  const { quality, speed } = report(repo.dir, args.runId, { tests: false })
+  assert.equal(speed.run.end, iso(T0 + 50 * MIN))
+  assert.deepEqual(
+    { launches: quality.launches, units: quality.units, merged: quality.merged, blocked: quality.blocked, escalated: quality.escalated, attempts: quality.attempts, agents: quality.agents },
+    { launches: 2, units: 3, merged: 3, blocked: 0, escalated: 2, attempts: 6, agents: 17 },
+  )
+  assert.deepEqual(quality.findings, { critical: 1, important: 2, minor: 3 })
+  assert.deepEqual(quality.finalReview, { status: 'done', verdict: 'ready', findings: { critical: 0, important: 1, minor: 2 }, reviews: 2 })
 })
