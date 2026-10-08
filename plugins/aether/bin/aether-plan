@@ -1,0 +1,97 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-plan check <plan.md>
+// aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main]
+
+const fs = require('node:fs')
+const path = require('node:path')
+const lib = path.join(__dirname, '..', 'lib')
+const { parsePlan, buildGraph, renderBrief } = require(path.join(lib, 'plan.js'))
+const { repoPaths, currentBranch } = require(path.join(lib, 'git.js'))
+const run = require(path.join(lib, 'run.js'))
+
+const USAGE = 'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main]'
+
+function fail(errors, warnings = []) {
+  process.stdout.write(JSON.stringify({ ok: false, errors, warnings }) + '\n')
+  process.exit(1)
+}
+
+function option(args, name) {
+  const i = args.indexOf(name)
+  return i === -1 ? null : args[i + 1]
+}
+
+function load(planArg) {
+  if (!planArg) fail([USAGE])
+  const planPath = path.resolve(planArg)
+  if (!fs.existsSync(planPath)) fail([`plan not found: ${planPath}`])
+  return { planPath, parsed: parsePlan(fs.readFileSync(planPath, 'utf8')) }
+}
+
+function check(planArg) {
+  const { parsed } = load(planArg)
+  const graph = buildGraph(parsed)
+  const errors = [...parsed.errors, ...graph.errors]
+  if (errors.length) fail(errors, graph.warnings)
+  process.stdout.write(JSON.stringify({ ok: true, tasks: Object.keys(graph.tasks).length, waves: graph.waves, warnings: graph.warnings }) + '\n')
+}
+
+function compile(planArg, rest) {
+  const { planPath, parsed } = load(planArg)
+  const onlyArg = option(rest, '--only')
+  const only = onlyArg ? onlyArg.split(',').map((s) => s.trim()).filter(Boolean) : null
+  const graph = buildGraph(parsed, { only })
+  const errors = [...parsed.errors, ...graph.errors]
+  if (errors.length) fail(errors, graph.warnings)
+
+  const repo = repoPaths(process.cwd())
+  const branch = currentBranch(process.cwd())
+  if (!branch) fail(['the integration worktree has a detached HEAD; check out the integration branch first'])
+  if (['main', 'master'].includes(branch) && !rest.includes('--allow-main')) {
+    fail([`refusing to compile on ${branch}: run aether-plan from the integration worktree, or pass --allow-main`])
+  }
+
+  const runId = option(rest, '--run') || run.newRunId()
+  run.assertRunId(runId)
+  const dir = run.runDir(repo.mainRoot, runId)
+  run.ensureExcluded(repo.gitCommonDir)
+
+  const tasks = {}
+  for (const t of parsed.tasks) {
+    const id = `task-${t.number}`
+    if (!graph.tasks[id]) continue
+    const brief = path.join(dir, 'briefs', `${id}.md`)
+    fs.mkdirSync(path.dirname(brief), { recursive: true })
+    fs.writeFileSync(brief, renderBrief(t, { planPath, spec: parsed.spec, globalConstraints: parsed.globalConstraints }))
+    tasks[id] = { ...graph.tasks[id], brief }
+  }
+
+  const args = {
+    runId,
+    repoRoot: repo.mainRoot,
+    runDir: dir,
+    plan: planPath,
+    spec: parsed.spec,
+    integration: { branch, worktree: repo.worktree },
+    testCommand: parsed.execution.testCommand,
+    ladder: parsed.execution.ladder,
+    maxAgents: parsed.execution.maxAgents,
+    waves: graph.waves,
+    tasks,
+  }
+  run.writeJson(path.join(dir, 'graph.json'), args)
+  run.writeJson(path.join(dir, 'state.json'), { runId, status: 'compiled', plan: planPath, compiledAt: new Date().toISOString() })
+  for (const warning of graph.warnings) process.stderr.write(`warning: ${warning}\n`)
+  process.stdout.write(JSON.stringify(args) + '\n')
+}
+
+const [command, planArg, ...rest] = process.argv.slice(2)
+try {
+  if (command === 'check') check(planArg)
+  else if (command === 'compile') compile(planArg, rest)
+  else fail([USAGE])
+} catch (err) {
+  fail([err.message])
+}
