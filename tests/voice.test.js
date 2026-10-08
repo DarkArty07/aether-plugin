@@ -136,3 +136,45 @@ test('aether-voice fails clearly without a session id or a transcript', (t) => {
   assert.equal(r.status, 1)
   assert.match(r.stderr, /no transcript for session nope/i)
 })
+
+// From the final review of run 20261008-134400-d48f.
+test('meta, compaction and tool records are left out even when they carry a human origin', () => {
+  const lines = [
+    human('a compaction summary', undefined, { isCompactSummary: true }),
+    human('a skill load', undefined, { isMeta: true }),
+    human('a tool result', undefined, { toolUseResult: { stdout: 'x' } }),
+    human('the owner'),
+  ]
+  assert.deepEqual(ownerMessages(lines).map((m) => m.text), ['the owner'])
+})
+
+test('findTranscript skips folders it cannot read instead of throwing', (t) => {
+  const config = tempDir(t, 'aether-config-')
+  const locked = path.join(config, 'projects', '-a-locked')
+  const open = path.join(config, 'projects', '-b-open')
+  fs.mkdirSync(locked, { recursive: true })
+  fs.mkdirSync(open, { recursive: true })
+  fs.writeFileSync(path.join(config, 'projects', 'stray-file'), '')
+  fs.writeFileSync(path.join(open, 'abc.jsonl'), '')
+  fs.chmodSync(locked, 0o000)
+  try {
+    assert.equal(findTranscript('abc', { configDir: config }), path.join(open, 'abc.jsonl'))
+  } finally {
+    fs.chmodSync(locked, 0o755)
+  }
+})
+
+test('aether-voice fails clearly when it cannot read the transcript', (t) => {
+  if (process.getuid && process.getuid() === 0) return t.skip('root reads any file')
+  const config = transcript(t, 'locked', [human('x')])
+  const file = path.join(config, 'projects', '-repo', 'locked.jsonl')
+  fs.chmodSync(file, 0o000)
+  try {
+    const r = voice(['--session', 'locked'], { CLAUDE_CONFIG_DIR: config })
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /cannot read the transcript of session locked/)
+    assert.doesNotMatch(r.stderr, /\n\s+at /, 'no stack trace')
+  } finally {
+    fs.chmodSync(file, 0o644)
+  }
+})

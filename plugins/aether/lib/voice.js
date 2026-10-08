@@ -11,8 +11,10 @@ const DEFAULT_MAX_CHARS = 8000
 
 function isOwnerRecord(record) {
   if (record.type !== 'user' || record.isSidechain === true) return false
+  // Skill loads, compaction summaries and tool results are never the owner, whatever their origin says.
+  if (record.isMeta || record.isCompactSummary || record.toolUseResult !== undefined) return false
   if ('origin' in record) return Boolean(record.origin) && record.origin.kind === 'human'
-  return !record.isMeta && !record.isCompactSummary && record.toolUseResult === undefined
+  return true
 }
 
 function textOf(content) {
@@ -63,10 +65,20 @@ function findTranscript(sessionId, { configDir } = {}) {
   if (typeof sessionId !== 'string' || !sessionId || sessionId.includes('/') || sessionId.includes('..')) return null
   const base = configDir || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
   const projects = path.join(base, 'projects')
-  if (!fs.existsSync(projects)) return null
-  for (const folder of fs.readdirSync(projects).sort()) {
+  let folders
+  try {
+    folders = fs.readdirSync(projects).sort()
+  } catch {
+    return null
+  }
+  for (const folder of folders) {
     const candidate = path.join(projects, folder, `${sessionId}.jsonl`)
-    if (fs.statSync(candidate, { throwIfNoEntry: false })?.isFile()) return candidate
+    // A folder that cannot be read is skipped, not fatal.
+    try {
+      if (fs.statSync(candidate, { throwIfNoEntry: false })?.isFile()) return candidate
+    } catch {
+      continue
+    }
   }
   return null
 }

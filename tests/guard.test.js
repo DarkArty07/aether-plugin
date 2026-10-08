@@ -101,3 +101,10 @@ test('hooks.json runs aether-guard before Write, Edit, MultiEdit and NotebookEdi
   assert.equal(hooks.hooks.SessionStart[0].matcher, 'startup|clear|compact')
   assert.deepEqual(hooks.modules, ['./register.js'])
 })
+
+// From the final review of run 20261008-134400-d48f: pin Review Focus 4.
+test('a missing cwd falls back to the process cwd, and ".." is resolved before the check', () => {
+  assert.ok(decide({ tool_name: 'Write', tool_input: { file_path: 'docs/superpowers/specs/x.md', content: 'x' } }))
+  assert.ok(decide(call('Write', { file_path: '/repo/x/../docs/superpowers/specs/a.md', content: 'x' })))
+  assert.equal(decide(call('Write', { file_path: '/repo/docs/superpowers/specs/../notes.md', content: 'x' })), null)
+})
