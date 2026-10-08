@@ -261,6 +261,16 @@ From the transcripts of [trial 2](evaluations/2026-10-08-trial-2.md), on Claude 
 | Sonnet 5.5 cache reads | `costUSD` charges them at $0.20 per million tokens. OpenRouter charges $0.10 on every endpoint, Anthropic's included. Every other rate matches. The plugin follows OpenRouter, the owner's basis (A6). |
 | Prompts over 200,000 tokens | `costUSD` charged them at the normal rates for Opus and Sonnet 5.5. Trial 2's normal run had 87. OpenRouter lists a long-prompt tier only for Haiku 5.5, from 100,000 tokens. |
 
+## Effort per task findings (2026-10-08)
+
+From the effort probe of the [effort per task plan](superpowers/plans/2026-10-08-effort-per-task.md), on Claude Code 2.1.295.
+
+| Topic | Result |
+|---|---|
+| A call's effort against the agent file's | A workflow `agent()` call with `effort: 'high'` on `aether:ops`, whose file sets `low`, ran at `high`. One with `effort: 'medium'` on `aether:implementer`, whose file sets `xhigh`, ran at `medium`. |
+| A call with no effort | An `aether:ops` call that named no effort ran at `low`. |
+| Where the effort is recorded | Each assistant line of a workflow agent's transcript carries `effort` and `perTurnEffort`. The usage meter's agent ids are the transcripts' ids. |
+
 ## OpenRouter prices
 
 The snapshot of 2026-10-07, rechecked on 2026-10-08 and unchanged. It covers the Anthropic endpoint, in USD per million tokens. The plugin's copy is `plugins/aether/config/prices.json`.
