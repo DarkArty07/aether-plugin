@@ -136,3 +136,29 @@
 - The killed-run cleanup and the trial are recorded.
 - The documents are current.
 - `main` holds the work, and the tag exists.
+
+## Execution record
+
+### Measurement smoke run (2026-10-08)
+
+A real headless swarm ran on a two-task fixture, with the plugin, a Sonnet main session, and `AETHER_DATA_DIR` inside the fixture.
+
+- **The meter:**
+  - It recorded 34 requests and learned every workflow agent's type (`aether:implementer`, `aether:supervisor`, `aether:ops`, `aether:reviewer`) and its label from `agent.spawn`.
+  - Its token totals match Claude Code's `modelUsage` exactly, model by model.
+- **The report:**
+  - It picked the right session and timed the swarm at 58.5 s, inside a session of 88 s.
+  - It priced the run at $0.298, against Claude Code's list cost of $0.307. The rates are the same as OpenRouter's. The 3% gap is the cache-write lifetime, which the usage does not split: Claude Code bills some agents' cache writes at the 1-hour rate as well.
+  - Decision: comparisons use Claude Code's `costUSD`, which knows the real lifetimes, and the meter supplies the breakdown by role.
+- **`finalize`:** it wrote the record with the aether 0.1.0, superpowers 6.4.1 and Claude Code 2.1.294 versions, and left no run directory, worktree or `aether/*` branch.
+
+### Cleanup after a killed run (v0.1 acceptance)
+
+- **A run killed while its units worked:**
+  - The session's process group got SIGTERM 17 s after launch.
+  - It left two unit worktrees, each with one unmerged commit, their two `aether/*` branches, and the run directory. The workflow's `finally` does not run when the process dies.
+  - Nothing moved afterwards.
+- **Swept by a new session:** the leftovers were aged past 24 hours, and a new headless session with the plugin was started in the repository. Its SessionStart sweep removed both worktrees, both branches and the run directory. It wrote an `abandoned` record with both branch tips, and both commits stay recoverable.
+- **A run killed late:** this run was killed after its units had merged and closed. It left only its run directory and an empty worktrees folder, and the same sweep removed both.
+- **An active run is kept:** in the first attempt the kill missed (`setsid` had forked), so the run kept working. The sweep left that run alone because its files were still changing. This is the intended protection.
+- **Not Aether's files:** Claude Code keeps each workflow's state under `~/.claude/projects/<project>/<session>/workflows/`, even with `--no-session-persistence`. It cleans them by `cleanupPeriodDays`. The trial's harness deletes the folders its sessions create.
