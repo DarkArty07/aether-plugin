@@ -5,7 +5,9 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { git, repoPaths } = require('./git.js')
+const { spawnSync } = require('node:child_process')
+const { git, repoPaths, head } = require('./git.js')
+const { matchesAny } = require('./globs.js')
 const run = require('./run.js')
 
 function loadGraph(mainRoot, runId) {
@@ -82,4 +84,58 @@ function diffPackage(cwd, runId, taskId) {
   return { path: file, base }
 }
 
-module.exports = { ensure, diffPackage }
+function changedFiles(mainRoot, base, branch) {
+  const out = git(['diff', '--name-only', `${base}..${branch}`], mainRoot).stdout
+  return out === '' ? [] : out.split('\n')
+}
+
+// Merges one unit into the integration branch. Callers serialize merges.
+function merge(cwd, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
+  run.assertTaskId(taskId)
+  const { mainRoot } = repoPaths(cwd)
+  const graph = loadGraph(mainRoot, runId)
+  const task = graph.tasks[taskId]
+  if (!task) throw new Error(`${taskId} is not in run ${runId}`)
+  const integration = graph.integration.worktree
+  const branch = run.unitBranch(runId, taskId)
+  if (git(['status', '--porcelain', '--untracked-files=no'], integration).stdout !== '') {
+    return { merged: false, reason: 'dirty-integration', detail: 'the integration worktree has uncommitted changes' }
+  }
+  const base = unitBase(mainRoot, graph, branch)
+  const files = changedFiles(mainRoot, base, branch)
+  if (files.length === 0) return { merged: false, reason: 'empty', detail: `${branch} has no changes to merge` }
+  const outside = files.filter((f) => !matchesAny(f, task.owns))
+  if (outside.length) return { merged: false, reason: 'ownership', files: outside }
+
+  const before = head(integration)
+  const attempt = git(['merge', '--no-ff', '--no-edit', '-m', `Merge ${branch}`, branch], integration, { allowFail: true })
+  if (attempt.status !== 0) {
+    const unmerged = git(['diff', '--name-only', '--diff-filter=U'], integration, { allowFail: true }).stdout
+    git(['merge', '--abort'], integration, { allowFail: true })
+    return { merged: false, reason: 'conflict', files: unmerged ? unmerged.split('\n') : [], detail: attempt.stderr || attempt.stdout }
+  }
+
+  const tests = spawnSync(graph.testCommand, {
+    cwd: integration,
+    shell: true,
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  if (tests.status !== 0) {
+    // Undo only the merge commit this call created.
+    const reverted = git(['rev-parse', 'HEAD^1'], integration).stdout === before
+    if (reverted) git(['reset', '--hard', before], integration)
+    return {
+      merged: false,
+      reason: 'tests',
+      exitCode: tests.status,
+      timedOut: Boolean(tests.error && tests.error.code === 'ETIMEDOUT'),
+      reverted,
+      output: `${tests.stdout || ''}${tests.stderr || ''}`.slice(-4000),
+    }
+  }
+  return { merged: true, commit: head(integration) }
+}
+
+module.exports = { ensure, diffPackage, merge }
