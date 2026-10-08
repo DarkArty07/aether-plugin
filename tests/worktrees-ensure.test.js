@@ -18,7 +18,7 @@ test('ensure creates the unit worktree and branch from the integration branch', 
   assert.equal(repo.git('-C', r.path, 'branch', '--show-current'), r.branch)
   assert.equal(repo.git('rev-parse', r.branch), repo.git('rev-parse', 'feature/x'))
   assert.ok(fs.existsSync(path.join(r.path, '.aether-tmp')))
-  assert.match(fs.readFileSync(path.join(repo.dir, '.git', 'info', 'exclude'), 'utf8'), /^\.aether-tmp\/$/m)
+  assert.match(fs.readFileSync(path.join(repo.dir, '.git', 'info', 'exclude'), 'utf8'), /^\/\.aether-tmp\/$/m)
   assert.equal(repo.git('-C', r.path, 'status', '--porcelain'), '')
   assert.deepEqual(ensure(repo.dir, args.runId, 'task-1'), { ...r, created: false })
 })
@@ -94,4 +94,14 @@ test('finalPackage writes the integration diff from the base recorded at compile
   assert.match(text, /^# Review package: run \S+ \(feature\/x\)\n/)
   assert.match(text, /## Commits\n[0-9a-f]+ Merge aether\/\S+\/task-1\n[0-9a-f]+ add a/)
   assert.match(text, /\+module\.exports = 1/)
+})
+
+test('Aether hides only its own folders at the root, not a project folder of the same name', (t) => {
+  const repo = makeRepo(t)
+  compile(repo, plan([task(1), task(2)]))
+  fs.mkdirSync(path.join(repo.dir, 'docs', '.aether'), { recursive: true })
+  fs.writeFileSync(path.join(repo.dir, 'docs', '.aether', 'notes.md'), 'x')
+  const status = repo.git('status', '--porcelain', '--untracked-files=all')
+  assert.match(status, /docs\/\.aether\/notes\.md/)
+  assert.doesNotMatch(status, /^\?\? \.aether\//m)
 })

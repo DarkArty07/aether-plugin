@@ -23,7 +23,7 @@ test('ensureExcluded adds the patterns once', (t) => {
   const dir = tempDir(t)
   ensureExcluded(dir)
   ensureExcluded(dir)
-  assert.equal(fs.readFileSync(path.join(dir, 'info', 'exclude'), 'utf8'), '.aether/\n.aether-tmp/\n')
+  assert.equal(fs.readFileSync(path.join(dir, 'info', 'exclude'), 'utf8'), '/.aether/\n/.aether-tmp/\n')
 })
 
 test('ensureExcluded keeps the existing content', (t) => {
@@ -31,5 +31,13 @@ test('ensureExcluded keeps the existing content', (t) => {
   fs.mkdirSync(path.join(dir, 'info'))
   fs.writeFileSync(path.join(dir, 'info', 'exclude'), 'node_modules')
   ensureExcluded(dir)
-  assert.equal(fs.readFileSync(path.join(dir, 'info', 'exclude'), 'utf8'), 'node_modules\n.aether/\n.aether-tmp/\n')
+  assert.equal(fs.readFileSync(path.join(dir, 'info', 'exclude'), 'utf8'), 'node_modules\n/.aether/\n/.aether-tmp/\n')
+})
+
+test('ensureExcluded anchors the unanchored patterns that earlier versions wrote', (t) => {
+  const dir = tempDir(t)
+  fs.mkdirSync(path.join(dir, 'info'))
+  fs.writeFileSync(path.join(dir, 'info', 'exclude'), 'node_modules\n.aether/\n.aether-tmp/\n')
+  ensureExcluded(dir)
+  assert.equal(fs.readFileSync(path.join(dir, 'info', 'exclude'), 'utf8'), 'node_modules\n/.aether/\n/.aether-tmp/\n')
 })

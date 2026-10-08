@@ -9,7 +9,10 @@ const crypto = require('node:crypto')
 
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK_ID = /^task-\d+$/
-const EXCLUDES = ['.aether/', '.aether-tmp/']
+// Anchored to the worktree's root, so a project folder of the same name deeper down stays visible.
+const EXCLUDES = ['/.aether/', '/.aether-tmp/']
+// The unanchored lines earlier versions wrote, and what replaces each.
+const LEGACY_EXCLUDES = { '.aether/': '/.aether/', '.aether-tmp/': '/.aether-tmp/' }
 
 function isRunId(id) {
   return RUN_ID.test(String(id))
@@ -73,11 +76,12 @@ function ensureExcluded(gitCommonDir) {
   const file = path.join(gitCommonDir, 'info', 'exclude')
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
-  const present = new Set(current.split('\n').map((line) => line.trim()))
+  const lines = current === '' ? [] : current.replace(/\n$/, '').split('\n')
+  const updated = lines.map((line) => LEGACY_EXCLUDES[line.trim()] || line)
+  const present = new Set(updated.map((line) => line.trim()))
   const missing = EXCLUDES.filter((pattern) => !present.has(pattern))
-  if (missing.length === 0) return
-  const separator = current === '' || current.endsWith('\n') ? '' : '\n'
-  fs.appendFileSync(file, separator + missing.join('\n') + '\n')
+  if (missing.length === 0 && updated.every((line, i) => line === lines[i])) return
+  fs.writeFileSync(file, [...updated, ...missing].join('\n') + '\n')
 }
 
 module.exports = {
