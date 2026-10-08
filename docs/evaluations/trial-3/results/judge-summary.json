@@ -1,0 +1,1 @@
+{"q2": {"X": {"captured": 10, "missed": 0, "contradicted": 0}, "Y": {"captured": 9, "missed": 0, "contradicted": 1}}, "q3": {"X-then-Y": "X", "Y-then-X": "Y"}, "judge_usd": 2.1533}

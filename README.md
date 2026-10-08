@@ -15,7 +15,14 @@ Without the plugin, Claude Code keeps working in normal mode, with superpowers a
 
 ## Status
 
-Version 0.2. Trial 3, the design trial that decides whether the Lead and Designer split is kept (A17), is pending.
+Version 0.2: the Lead on Sonnet holds the conversation, and the Designer on Opus writes specs and plans.
+
+**Trial 3** ([evaluation](docs/evaluations/2026-10-08-trial-3.md)) ran the same design request with the Lead and Designer split and with an Opus main session:
+- the split's design captured all ten items of the owner's hidden intent, against nine;
+- the blind pairwise judgment was a tie;
+- in that short design session it cost the same at OpenRouter prices: $10.67 against $10.23.
+
+No quality drop was found, and the owner kept the split. Its saving is meant for long sessions, which the trial does not measure.
 
 - **Plan 1, foundation:** plan checking, unit worktrees and their cleanup.
 - **Plan 2, the swarm:** the workflow and its agents.

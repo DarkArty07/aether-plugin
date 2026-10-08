@@ -30,8 +30,8 @@ def ask(prompt, timeout=600):
     with tempfile.TemporaryDirectory(prefix='aether-owner-') as cwd:
         out = subprocess.run(
             ['claude', '-p', '--model', 'sonnet', '--effort', 'high', '--output-format', 'json',
-             '--setting-sources', 'project', '--tools', '', '--strict-mcp-config', '--system-prompt', SYSTEM, prompt],
-            cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
+             '--setting-sources', 'project', '--tools', '', '--strict-mcp-config', '--system-prompt', SYSTEM],
+            input=prompt, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
     data = json.loads(out.stdout)
     return data.get('result', '').strip(), data.get('total_cost_usd', 0.0)
 

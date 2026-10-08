@@ -1055,3 +1055,27 @@ git commit -m "docs(aether): record trial 3, the Lead and the Designer against a
   - The literal `agent_type` is checked by smoke S9.
   - The session id after `/clear` is the platform's behavior.
   - The rest are cosmetic, or outside the diff.
+
+### Tasks 3 and 4: the Designer and the Lead's bootstrap (2026-10-08)
+
+The Designer wrote both prompts inline, because they depend on context from the design conversation. The owner approved them before they were applied, with TDD (`e709ccf` and `20978f7`).
+
+### The smoke run, Task 6 (2026-10-08)
+
+Every check, S0 and S7–S13, passes in run 2. Run 1 found three harness faults, fixed before run 2:
+- waiting for the turn that a finished background agent starts;
+- the cumulative cost;
+- the owner's messages carrying no `origin` field in SDK sessions.
+
+Run 2 cost $4.41: the Lead $0.43, the Designer $3.98. See `docs/evaluations/2026-10-08-lead-designer-smoke.md`.
+
+### Trial 3, Task 7 (2026-10-08)
+
+**No quality drop was found:**
+- both plans pass `aether-plan check`;
+- the split's design captured 10 of the 10 intent items, against 9 for the Opus main session;
+- the blind pairwise judgment was a tie, with position bias in both orders.
+
+**Cost:** in this short design session the split cost the same at OpenRouter prices: $10.67 against $10.23.
+
+The owner kept the split. The first run of the new configuration hit the subscription's session limit, and reran in full after the reset. See `docs/evaluations/2026-10-08-trial-3.md`.

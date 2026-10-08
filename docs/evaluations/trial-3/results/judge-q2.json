@@ -1,0 +1,106 @@
+{
+ "X": [
+  {
+   "item": 1,
+   "mark": "captured",
+   "quote": "Haiku implementers run at `xhigh` by default."
+  },
+  {
+   "item": 2,
+   "mark": "captured",
+   "quote": "Each task's effort is set now, in the plan. The Designer chooses it by the task's complexity, on the task's Tier line."
+  },
+  {
+   "item": 3,
+   "mark": "captured",
+   "quote": "The ladder is a list of model+effort rungs, written in the plan. It raises the effort first and then the model, where the data supports it"
+  },
+  {
+   "item": 4,
+   "mark": "captured",
+   "quote": "Sonnet and Opus never implement below `high`. `sonnet low`, `sonnet medium`, `opus low` and `opus medium` are refused"
+  },
+  {
+   "item": 5,
+   "mark": "captured",
+   "quote": "ops stays on Haiku `low`"
+  },
+  {
+   "item": 6,
+   "mark": "captured",
+   "quote": "the supervisor runs on Sonnet `xhigh`. Trial 1 found Aether's per-attempt review shallower than normal mode's, and this deepens it"
+  },
+  {
+   "item": 7,
+   "mark": "captured",
+   "quote": "The workflow passes the model and the effort on every `agent()` call. The effort in an agent file is only its default."
+  },
+  {
+   "item": 8,
+   "mark": "captured",
+   "quote": "Plans that carry only a tier keep working with defaults, and so does the old ladder form."
+  },
+  {
+   "item": 9,
+   "mark": "captured",
+   "quote": "The usage meter records each request's effort. `aether-report` shows each agent's effort, and the cost by model and effort."
+  },
+  {
+   "item": 10,
+   "mark": "captured",
+   "quote": "A real smoke run checks, in the agents' transcripts, that the effort reaches each agent."
+  }
+ ],
+ "Y": [
+  {
+   "item": 1,
+   "mark": "captured",
+   "quote": "Haiku implements at `xhigh` by default."
+  },
+  {
+   "item": 2,
+   "mark": "captured",
+   "quote": "Each task's effort is chosen by its complexity, and the plan declares it."
+  },
+  {
+   "item": 3,
+   "mark": "captured",
+   "quote": "its ladder raises the effort before it raises the model"
+  },
+  {
+   "item": 4,
+   "mark": "captured",
+   "quote": "Sonnet never implements at `low` or `medium`: Haiku at `xhigh` does as well for much less."
+  },
+  {
+   "item": 5,
+   "mark": "captured",
+   "quote": "Ops stays at `low`."
+  },
+  {
+   "item": 6,
+   "mark": "captured",
+   "quote": "The supervisor's effort can be raised, to close the review-depth gap that trial 1 found."
+  },
+  {
+   "item": 7,
+   "mark": "contradicted",
+   "quote": "Ops and final-reviewer calls pass no effort."
+  },
+  {
+   "item": 8,
+   "mark": "captured",
+   "quote": "Plans written for v0.1 run unchanged, on the defaults."
+  },
+  {
+   "item": 9,
+   "mark": "captured",
+   "quote": "The usage meter records each agent's effort, and `aether-report` shows it."
+  },
+  {
+   "item": 10,
+   "mark": "captured",
+   "quote": "A minimal real run checks, from the transcripts, that each call's effort reaches the agent."
+  }
+ ]
+}

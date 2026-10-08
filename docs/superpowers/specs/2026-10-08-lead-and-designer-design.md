@@ -1,7 +1,7 @@
 # Aether: the Lead and the Designer (design spec)
 
 - **Date:** 2026-10-08
-- **Status:** Draft for the owner's review.
+- **Status:** Approved by the owner on 2026-10-08, and built the same day. Trial 3 found no quality drop, and the owner kept the split; see [the evaluation](../../evaluations/2026-10-08-trial-3.md).
 - **Method:** superpowers brainstorming, architectural path, in Aether mode. The design was agreed with the owner in conversation on 2026-10-08.
 - **Amends:** the [v0.1 spec](2026-10-07-aether-plugin-design.md): decisions A4, A5 and A8, and §1, §4 and §5.
 - **Branch:** `feature/lead-designer`, in the worktree `.worktrees/lead-designer`.

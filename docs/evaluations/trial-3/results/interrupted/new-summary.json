@@ -1,0 +1,49 @@
+{
+ "name": "new",
+ "session_id": "e75d46fd-5f0e-41c8-ba7c-3ed83717569d",
+ "stop": "error result: success",
+ "turns": 5,
+ "owner_messages": 3,
+ "cost_usd": 1.8967596999999998,
+ "costs": [
+  0.3277764,
+  0.6404713,
+  1.2577115,
+  1.4474021,
+  1.8967596999999998
+ ],
+ "model_ms": 398425,
+ "wall_s": 656.8,
+ "model_usage_last": {
+  "claude-sonnet-5-5": {
+   "inputTokens": 82,
+   "outputTokens": 46033,
+   "cacheReadInputTokens": 2139577,
+   "cacheCreationInputTokens": 146795,
+   "webSearchRequests": 0,
+   "costUSD": 1.3537549,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 128000,
+   "thinkingTokens": 22210,
+   "canonicalModel": "claude-sonnet-5-5",
+   "provider": "firstParty",
+   "costBasis": "list"
+  },
+  "claude-opus-5-5": {
+   "inputTokens": 16,
+   "outputTokens": 2496,
+   "cacheReadInputTokens": 287504,
+   "cacheCreationInputTokens": 54440,
+   "webSearchRequests": 0,
+   "costUSD": 0.5430048,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 128000,
+   "thinkingTokens": 654,
+   "canonicalModel": "claude-opus-5-5",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "owner_simulator_usd": 0.0466,
+ "exit_code": 1
+}
