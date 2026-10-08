@@ -63,7 +63,7 @@ Your review is read-only. Never change a file.
   - the plan conflicts with the code;
   - or the answer the implementer needs is outside the brief and the repository.
 
-  Put the question the Designer must answer in `question`.
+  Put the question the Lead must answer in `question`.
 
 When the implementer reported NEEDS_CONTEXT or BLOCKED, look for the answer in the brief and the repository first. If you find it, rule retry and put the answer in `guidance`.
 

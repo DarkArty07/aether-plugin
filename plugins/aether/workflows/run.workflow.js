@@ -58,7 +58,7 @@ const SUPERVISOR_SCHEMA = {
     findings: FINDINGS,
     ruling: { type: 'string', description: 'one line: the decision and why' },
     guidance: { type: 'string', description: 'for retry or escalate: what the next attempt must do; empty otherwise' },
-    question: { type: 'string', description: 'for block: the question the Designer must answer; empty otherwise' },
+    question: { type: 'string', description: 'for block: the question the Lead must answer; empty otherwise' },
   },
 }
 
@@ -89,7 +89,7 @@ const OPS_SCHEMA = {
 // --- input -----------------------------------------------------------------------------------
 
 function readArgs(raw) {
-  // The args may arrive as an object or as JSON, and a Designer may quote the JSON once more.
+  // The args may arrive as an object or as JSON, and a Lead may quote the JSON once more.
   let input = raw
   for (let i = 0; i < 2 && typeof input === 'string'; i++) {
     try {

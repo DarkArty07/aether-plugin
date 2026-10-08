@@ -18,7 +18,7 @@ function start(cwd, data) {
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr }
 }
 
-test('session start injects the Aether bootstrap', (t) => {
+test('session start injects the Lead bootstrap', (t) => {
   const repo = makeRepo(t)
   const r = start(repo.dir, tempDir(t, 'aether-data-'))
   assert.equal(r.status, 0, r.stderr)
@@ -26,8 +26,14 @@ test('session start injects the Aether bootstrap', (t) => {
   const context = r.out.hookSpecificOutput.additionalContext
   assert.match(context, /^Aether mode is active\./)
   assert.match(context, /# Aether mode/)
-  assert.match(context, /aether-plan check/)
   assert.doesNotMatch(context, /disable-model-invocation/)
+  // The main session is the Lead, and the Designer is the agent that designs.
+  assert.match(context, /You are the \*\*Lead\*\*/)
+  assert.doesNotMatch(context, /You are the \*\*Designer\*\*/)
+  assert.match(context, /aether:designer/)
+  assert.match(context, /aether-voice --session/)
+  assert.match(context, /SendMessage/)
+  assert.match(context, /## For the owner/)
   // At the plan handoff the swarm is offered next to superpowers' own execution options.
   assert.match(context, /`aether:swarm` skill/)
   assert.doesNotMatch(context, /arrives in a later version/)

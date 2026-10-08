@@ -10,7 +10,7 @@ The swarm runs a plan's tasks as units. Each unit:
 - is supervised after every attempt;
 - is merged into the integration branch, one merge at a time.
 
-The whole run is then reviewed as one change. You prepare the run, launch it, and act on its result. You stay the Designer: the run's agents decide inside their unit, and you decide everything else.
+The whole run is then reviewed as one change. You prepare the run, launch it, and act on its result. You stay the Lead: the run's agents decide inside their unit, the Designer decides the design, and you decide everything else.
 
 ## 1. Prepare
 
@@ -65,13 +65,13 @@ Report to the owner from it:
 
 ## 5. Act on it
 
-- **Blocked with a question:** answer it from the spec and the plan when you can; otherwise bring it to the owner. Then fix the plan task and relaunch the unit.
-- **Blocked by a merge failure or a spent ladder:** read the rounds. Fix the work yourself when it is bounded, or fix the plan task and relaunch it.
+- **Blocked with a question:** answer it from the spec and the plan when you can; otherwise bring it to the owner. Then ask the Designer to fix the plan task (resume it, or start one with the plan path), and relaunch the unit.
+- **Blocked by a merge failure or a spent ladder:** read the rounds. Fix the work yourself when the fix is short; otherwise send it to a subagent, or ask the Designer to fix the plan task and relaunch it.
 - **Skipped or not-run:** relaunch these once their dependencies are merged.
 - **Patches:** `<runDir>/patches/<task>.patch` holds a unit's unmerged work. Read it before you apply it with `git apply`.
 - **Final review findings:** handle them as superpowers handles a final review.
   - Re-grade each finding by its effect.
-  - Fix the critical and important ones: yourself, with TDD on the integration branch, or by relaunching.
+  - Fix the critical and important ones: a short fix yourself, with TDD on the integration branch; a longer one through a subagent or a relaunch; a design-level one through the Designer.
   - Report the minor ones to the owner as deferred.
   - Rule on each `declined` line.
 - **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep first saves each unit's unmerged or uncommitted work as a patch. A unit whose work it cannot save stays in place for you to handle.
