@@ -1,0 +1,98 @@
+[
+ {
+  "role": "owner",
+  "text": "Quiero una librería pequeña y una herramienta de línea de comandos para Node.js 22, sin dependencias, para llevar mi lista de lectura. Debe permitir añadir un libro, marcar un libro como leído y listar los libros que aún no he leído. Quiero que primero lo diseñemos bien antes de construirlo."
+ },
+ {
+  "role": "agent",
+  "text": "El repo está casi vacío: solo `.gitignore` y `README.md`, con un único commit `base`. Node es v22.23.2. No hay código ni convenciones que respetar.\n\nLo que ya me has dicho es esto:\n- **Qué:** una librería pequeña y un CLI sobre ella, para llevar tu lista de lectura.\n- **Operaciones:** añadir un libro, marcar un libro como leído y listar los que aún no has leído.\n- **Restricciones:** Node.js 22 y cero dependencias.\n- **Proceso:** diseñar bien antes de construir.\n\nNo me has dicho dónde viven los datos, y es lo que más condiciona el diseño. Mi pregunta: **¿dónde quieres que se guarde la lista?**\n\n- **A) Un único archivo JSON en tu directorio de datos de usuario**, por ejemplo `~/.local/share/lectura/libros.json`. Es una lista personal y global, y el CLI funciona igual desde cualquier carpeta. La librería recibe la ruta como parámetro, así que se puede probar con un archivo temporal. Es lo que te recomiendo.\n- **B) Un archivo en el directorio actual**, como `./libros.json`. Tendrías una lista distinta por carpeta, algo parecido a un `.git`.\n- **C) Como A, pero con la ruta configurable** con una variable de entorno o un flag como `--archivo`. Es lo mismo que A con un poco más de superficie."
+ },
+ {
+  "role": "owner",
+  "text": "A) pero la ruta es `~/.reading-list.json`, un único archivo JSON en mi home. Sin configuración extra, la librería recibe la ruta como parámetro."
+ },
+ {
+  "role": "agent",
+  "text": "Entendido: `~/.reading-list.json` en tu home, un único archivo, sin configuración. La librería recibe la ruta como parámetro y el CLI le pasa esa.\n\nLa siguiente pregunta es qué es un libro y cómo lo señalas al marcarlo como leído. **¿Qué datos tiene cada libro y cómo lo identificas?**\n\n- **A) Solo título y autor opcional, e identificación por número.** El CLI lista cada libro con un número (`1  Dune — Frank Herbert`) y marcas con `leido 1`. Es cómodo de escribir. El riesgo es que el número depende del orden, así que habría que guardar un `id` estable en el archivo y no usar la posición en pantalla. Es lo que te recomiendo.\n- **B) Solo título y autor opcional, e identificación por título.** Marcas con `leido \"Dune\"`. No hay ids, pero hay que decidir qué pasa con títulos repetidos o con coincidencias parciales.\n- **C) Como A, con campos extra** como fecha de lectura, notas o valoración. Más útil a largo plazo, pero añade superficie que no has pedido."
+ },
+ {
+  "role": "owner",
+  "text": "Voy con A, pero con una corrección: el libro tiene título y autor, los dos obligatorios, y nada más. Identificación por número con un `id` estable guardado en el archivo. La salida es texto plano, un libro por línea."
+ },
+ {
+  "role": "agent",
+  "text": "Este es el entendimiento que tengo. Separo lo que me has dicho de lo que he supuesto yo.\n\n**Lo que has dicho**\n- Quieres una librería pequeña y un CLI sobre ella, en Node.js 22 y sin dependencias, para llevar tu lista de lectura personal.\n- Hay tres operaciones: añadir un libro, marcar un libro como leído y listar los libros que aún no has leído.\n- Los datos están en un único archivo JSON, `~/.reading-list.json`, en tu home. Sin configuración extra.\n- La librería recibe la ruta del archivo como parámetro.\n- Un libro tiene título y autor, los dos obligatorios, y nada más.\n- Cada libro tiene un `id` estable guardado en el archivo. Lo identificas por ese número al marcarlo como leído.\n- La salida es texto plano, un libro por línea.\n- Diseñamos primero y construimos después.\n\n**Lo que he supuesto (corrígeme lo que no encaje)**\n1. El `id` es un entero que crece desde 1 y nunca se reutiliza.\n2. Si el archivo no existe, la lista está vacía y se crea al añadir el primer libro.\n3. Si el archivo existe pero no es un JSON válido, el CLI falla con un error claro y no lo sobrescribe.\n4. Marcar un `id` que no existe es un error con código de salida distinto de 0.\n5. Marcar un libro que ya estaba leído no se trata como error. Lo dejo para que lo decida el diseño.\n6. Solo existe el listado de pendientes. No hay listado de leídos ni de todos, y tampoco borrar o editar, porque no los has pedido.\n7. Los comandos y mensajes del CLI van en español, por ejemplo `añadir`, `leido` y `pendientes`. El nombre exacto de los comandos lo fija el diseño.\n8. El formato de cada línea será algo como `3  Dune — Frank Herbert`, con el `id` delante.\n9. Usará módulos ES, `node:fs` y `node:test` para las pruebas. Sin transpilar ni compilar.\n\n**Éxito:** puedes añadir libros, marcar uno por su `id` y ver solo los pendientes desde cualquier carpeta. El `id` no cambia aunque marques otros libros. La librería se prueba con un archivo temporal, sin tocar tu home.\n\n¿Es correcto? Si me das el visto bueno, o me indicas qué corregir, paso el diseño al Designer, que propondrá 2-3 enfoques con una recomendación."
+ },
+ {
+  "role": "owner",
+  "text": "Sí, es correcto. Lo de marcar un libro ya leído: que no sea error, que no haga nada. Adelante con los enfoques."
+ },
+ {
+  "role": "agent",
+  "text": "El Designer ya está trabajando en los 2-3 enfoques. Incluí tu decisión de que marcar un libro ya leído no haga nada. Cuando responda te muestro su propuesta tal cual."
+ },
+ {
+  "role": "owner",
+  "text": "Perfecto, espero la propuesta del Designer."
+ },
+ {
+  "role": "agent",
+  "text": "El Designer sigue trabajando y todavía no ha respondido. En cuanto llegue su propuesta te la enseño tal como la escriba."
+ },
+ {
+  "role": "owner",
+  "text": "Vale, quedo a la espera. Avísame cuando llegue la propuesta."
+ },
+ {
+  "role": "agent",
+  "text": "Sigo esperando al Designer. Cuando termine me llega un aviso automático y te traigo su propuesta enseguida."
+ },
+ {
+  "role": "owner",
+  "text": "Vale, sigo aquí. Cuando llegue la propuesta del Designer, enséñamela."
+ },
+ {
+  "role": "agent",
+  "text": "El Designer sigue trabajando y todavía no ha entregado nada, así que no tengo propuesta que enseñarte. Cuando termine me llega un aviso automático y te la muestro tal como la escriba."
+ },
+ {
+  "role": "owner",
+  "text": "Vale, no tengo prisa. Avísame cuando el Designer termine y me enseñas los enfoques."
+ },
+ {
+  "role": "agent",
+  "text": "Perfecto. El Designer sigue en marcha y aún no hay propuesta. Cuando termine te enseño los enfoques tal como los escriba."
+ },
+ {
+  "role": "owner",
+  "text": "Vale, sigo esperando. Enséñame los enfoques cuando el Designer los entregue."
+ },
+ {
+  "role": "agent",
+  "text": "El Designer sigue en ejecución: empezó hace unos 33 segundos y aún no ha terminado. Todavía no hay propuesta. Cuando termine me llega un aviso automático y te enseño los enfoques tal como los escriba."
+ },
+ {
+  "role": "owner",
+  "text": "Vale, espero. Enséñame los enfoques cuando lleguen."
+ },
+ {
+  "role": "agent",
+  "text": "Sigo esperando al Designer. Aún no ha entregado los enfoques, y en cuanto lleguen te los enseño tal cual."
+ },
+ {
+  "role": "owner",
+  "text": "Vale, sin prisa. Cuando el Designer termine, enséñame los enfoques con su recomendación."
+ },
+ {
+  "role": "agent",
+  "text": "Entendido. El Designer todavía no ha terminado, así que no tengo nada que mostrarte. Cuando entregue, te enseño los enfoques con su recomendación tal como los escriba."
+ },
+ {
+  "role": "owner",
+  "text": "Vale, sigo aquí. Cuando el Designer termine, enséñame los enfoques con su recomendación."
+ },
+ {
+  "role": "agent",
+  "text": "El Designer sigue sin terminar, así que todavía no hay enfoques que enseñarte. Me llegará un aviso automático cuando acabe, y entonces te los muestro con su recomendación tal como los escriba."
+ }
+]

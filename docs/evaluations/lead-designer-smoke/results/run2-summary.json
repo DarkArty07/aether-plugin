@@ -1,0 +1,53 @@
+{
+ "name": "smoke",
+ "session_id": "129ca0c5-7cc6-4f48-b6be-eca30cf4ba7c",
+ "stop": "DONE",
+ "turns": 9,
+ "owner_messages": 7,
+ "cost_usd": 4.412550599999999,
+ "costs": [
+  0.11327920000000002,
+  0.13559120000000002,
+  0.17926940000000002,
+  1.064868,
+  1.115402,
+  2.9299038000000004,
+  2.9694336000000003,
+  4.378193,
+  4.412550599999999
+ ],
+ "model_ms": 122392,
+ "wall_s": 1390.6,
+ "model_usage_last": {
+  "claude-sonnet-5-5": {
+   "inputTokens": 36,
+   "outputTokens": 12031,
+   "cacheReadInputTokens": 697693,
+   "cacheCreationInputTokens": 42688,
+   "webSearchRequests": 0,
+   "costUSD": 0.4306726,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 128000,
+   "thinkingTokens": 1715,
+   "canonicalModel": "claude-sonnet-5-5",
+   "provider": "firstParty",
+   "costBasis": "list"
+  },
+  "claude-opus-5-5": {
+   "inputTokens": 32,
+   "outputTokens": 128321,
+   "cacheReadInputTokens": 1206090,
+   "cacheCreationInputTokens": 146764,
+   "webSearchRequests": 0,
+   "costUSD": 3.9818780000000005,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 128000,
+   "thinkingTokens": 108263,
+   "canonicalModel": "claude-opus-5-5",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "owner_simulator_usd": 0.1193,
+ "exit_code": 0
+}
