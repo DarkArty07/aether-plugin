@@ -87,5 +87,5 @@ A relaunch keeps the run's first compile time, and keeps the previous launch's r
 
 Finish when every unit is merged, the final review has no open critical or important finding, and the test command passes on the integration branch.
 
-1. Run `aether-report finalize --run <runId>` from the integration worktree. It appends the report to `runs.jsonl` in the plugin's data directory, with the aether, superpowers and Claude Code versions. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
+1. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first. It appends the report to `runs.jsonl` in the plugin's data directory, with the aether, superpowers and Claude Code versions. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
 2. Use superpowers `finishing-a-development-branch` with the owner.

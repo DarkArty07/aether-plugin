@@ -4,7 +4,8 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const { spawnSync } = require('node:child_process')
-const { SESSION_BIN, PLUGIN, makeRepo, compile, tempDir, ageRun } = require('./helpers.js')
+const path = require('node:path')
+const { SESSION_BIN, PLUGIN, makeRepo, compile, tempDir, ageRun, age } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { ensure } = require('../plugins/aether/lib/worktrees.js')
 
@@ -47,4 +48,17 @@ test('session start works outside a git repository', (t) => {
   const r = start(tempDir(t), tempDir(t, 'aether-data-'))
   assert.equal(r.status, 0, r.stderr)
   assert.doesNotMatch(r.out.hookSpecificOutput.additionalContext, /swept|could not sweep/)
+})
+
+test('session start deletes usage sessions older than 30 days', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-data-')
+  for (const session of ['old', 'recent']) {
+    fs.mkdirSync(path.join(data, 'usage', session), { recursive: true })
+    fs.writeFileSync(path.join(data, 'usage', session, '0.json'), '{"entries": []}')
+  }
+  age(path.join(data, 'usage', 'old'), 24 * 31)
+  const r = start(repo.dir, data)
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual(fs.readdirSync(path.join(data, 'usage')), ['recent'])
 })

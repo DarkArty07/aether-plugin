@@ -69,12 +69,15 @@ function parseCommand(prompt) {
 
 // The args as the stubs see them. Invalid input is the workflow's to reject, not the harness's.
 function parseLeniently(args) {
-  if (typeof args !== 'string') return args
-  try {
-    return JSON.parse(args)
-  } catch {
-    return null
+  let value = args
+  for (let i = 0; i < 2 && typeof value === 'string'; i++) {
+    try {
+      value = JSON.parse(value)
+    } catch {
+      return null
+    }
   }
+  return value
 }
 
 // Lets the other units' calls start before this one goes on.

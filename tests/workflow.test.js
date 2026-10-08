@@ -221,3 +221,10 @@ test('a dirty integration worktree or a failed merge command blocks the unit at 
   assert.equal(run.calls.filter((c) => c.role === 'implementer').length, 2)
   assert.equal(run.result.finalReview.status, 'skipped')
 })
+
+test('args encoded as JSON twice still run, as a Designer may pass them quoted', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(JSON.stringify(JSON.stringify(args)))
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.units.every((u) => u.status === 'merged'), true)
+})

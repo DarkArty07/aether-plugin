@@ -13,6 +13,7 @@ const { loadPrices, priceEntry } = require('./prices.js')
 const { sweepRun } = require('./worktrees.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
+const DAY_MS = 24 * 3600 * 1000
 
 const iso = (ms) => new Date(ms).toISOString()
 const zeroTokens = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
@@ -21,13 +22,27 @@ function readIfThere(file) {
   return fs.existsSync(file) ? run.readJson(file) : null
 }
 
-// Every usage session under <dataDir>/usage, as { session, claudeCode, agents, entries }, with its
-// parts merged in order. A part that cannot be read is skipped, and so is a session with no entries.
-function readUsage(dataDir) {
+// The newest modification time of a session's usage directory and its parts, or null.
+function lastWritten(dir) {
+  try {
+    let newest = fs.statSync(dir).mtimeMs
+    for (const name of fs.readdirSync(dir)) newest = Math.max(newest, fs.statSync(path.join(dir, name)).mtimeMs)
+    return newest
+  } catch {
+    return null
+  }
+}
+
+// Every usage session under <dataDir>/usage written to at or after `since`, as
+// { session, claudeCode, agents, entries }, with its parts merged in order. A part that cannot be
+// read is skipped, and so is a session with no entries.
+function readUsage(dataDir, { since = 0 } = {}) {
   const root = path.join(dataDir, 'usage')
   const sessions = new Map()
   if (!fs.existsSync(root)) return sessions
   for (const session of fs.readdirSync(root)) {
+    const written = lastWritten(path.join(root, session))
+    if (written === null || written < since) continue
     let names
     try {
       names = fs.readdirSync(path.join(root, session))
@@ -207,7 +222,7 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
 
   const start = state && state.compiledAt ? Date.parse(state.compiledAt) : fs.statSync(graphFile).mtimeMs
   const end = saved ? fs.statSync(resultFile).mtimeMs : now
-  const sessions = readUsage(dataDir)
+  const sessions = readUsage(dataDir, { since: start })
   let usage = null
   if (session) {
     usage = sessions.get(session) || null
@@ -238,6 +253,21 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     quality: { ...qualityOf(results), tests: tests ? runTests(graph) : null },
     notes,
   }
+}
+
+// Deletes the usage sessions not written to for `days` (the usage meter's files never shrink).
+function pruneUsage(dataDir, { days = 30, now = Date.now() } = {}) {
+  const root = path.join(dataDir, 'usage')
+  const pruned = []
+  if (!fs.existsSync(root)) return { pruned }
+  for (const session of fs.readdirSync(root).sort()) {
+    const dir = path.join(root, session)
+    const written = lastWritten(dir)
+    if (written === null || now - written < days * DAY_MS) continue
+    fs.rmSync(dir, { recursive: true, force: true })
+    pruned.push(session)
+  }
+  return { pruned }
 }
 
 function aetherVersion() {
@@ -274,4 +304,4 @@ function finalize(cwd, runId, options = {}) {
   return { record, cleanup: sweepRun(cwd, runId, { finish: true }) }
 }
 
-module.exports = { readUsage, pickSession, report, finalize }
+module.exports = { readUsage, pickSession, report, finalize, pruneUsage }

@@ -89,10 +89,11 @@ const OPS_SCHEMA = {
 // --- input -----------------------------------------------------------------------------------
 
 function readArgs(raw) {
+  // The args may arrive as an object or as JSON, and a Designer may quote the JSON once more.
   let input = raw
-  if (typeof raw === 'string') {
+  for (let i = 0; i < 2 && typeof input === 'string'; i++) {
     try {
-      input = JSON.parse(raw)
+      input = JSON.parse(input)
     } catch {
       input = null
     }
