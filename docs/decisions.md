@@ -1,6 +1,6 @@
 # Decisions
 
-All decisions were taken in the design session of 2026-10-05. Each one has a status:
+The decisions D1–D15 were taken in the design session of 2026-10-05. The design spec of 2026-10-07 updated several of them, as each one's **Update** says, and added A1–A10 (at the end). Each decision has a status:
 
 - **Decided**: settled.
 - **Direction**: agreed in principle; details still open.
@@ -27,12 +27,16 @@ be forked, but plugins, hooks, mods and workflows allow deep customization.
 - independent review;
 - saved learnings.
 
+**Update (2026-10-07).** superpowers replaces Spec Kit as the method: brainstorming, specs, `writing-plans`, test-driven development, verification and reviews. It is the authority on engineering practice and on the owner's approval gates (A2).
+
 ## D3. A plugin plus the Aether Router, with no wrapper
 
 **Decided.** The plugin holds the behavior and chooses the models; the router gives
 access to the providers. The only setup outside the plugin is pointing
 `ANTHROPIC_BASE_URL` at the router in the user's settings, which a plugin setup command
 can write.
+
+**Update (2026-10-07).** Phase 1 does not need the router. Aether Plugin v0.1 runs on Claude models alone, through the owner's own Claude Code login. The router and non-Anthropic models (D4, D9, D10) wait for a later phase.
 
 ## D4. Non-Anthropic models are required
 
@@ -51,6 +55,8 @@ keep up with Claude Code releases.
 The tentative split is Opus for the design agent and Sonnet below it. The mechanism is
 the `agent.spawn` mod, which is **Pending** until prototype step 1 confirms it.
 
+**Update (2026-10-07, built 2026-10-08).** Each plan task carries a tier (`haiku`, `sonnet` or `opus`) with its reason. The workflow enforces an escalation ladder per unit: by default Haiku 2 attempts, Sonnet 2, Opus 1, then blocked. Haiku implements by default; a Sonnet supervisor reviews every attempt; Opus does the final review. The workflow passes each agent's model directly, so no mod is needed for routing.
+
 ## D6. Swarm for speed and quality
 
 **Direction.**
@@ -67,6 +73,12 @@ the `agent.spawn` mod, which is **Pending** until prototype step 1 confirms it.
   critical or frontend units, several attempts run in parallel and the best one is kept.
 - **The orchestrator.** A dynamic workflow script is the current direction. Agent teams
   still have to be evaluated (**Pending**).
+
+**Update (2026-10-07, built 2026-10-08).** The orchestrator is the `/aether:run` dynamic workflow.
+- `aether-plan` refuses chain-shaped plans, and tasks of a wave that own overlapping files.
+- Waves run in order, and the units of a wave run in parallel, each in its own worktree.
+- Merges are serialized, and a final review covers the whole run.
+- Several parallel attempts per unit are deferred. Agent teams were not needed.
 
 ## D7. Mechanism in code, judgment in the model
 
@@ -87,7 +99,7 @@ affordable.
 
 ## D10. Claude models through the subscription pass-through
 
-**Pending.** When only `ANTHROPIC_BASE_URL` is set, Claude Code keeps sending the
+**Pending**; not needed for phase 1 (see D3's update). When only `ANTHROPIC_BASE_URL` is set, Claude Code keeps sending the
 user's claude.ai login, and the gateway forwards Claude requests unchanged. That keeps
 Claude traffic on the official client and the user's own subscription. It needs two
 router changes:
@@ -99,7 +111,7 @@ Prototype step 2 tests it.
 
 ## D11. Our own Telegram layer
 
-**Decided**; scope pending. Nothing is inherited from Hermes. A small layer handles
+**Deferred (2026-10-07).** Notifications are out of scope for v0.1. The original decision: **Decided**; scope pending. Nothing is inherited from Hermes. A small layer handles
 notices and monitors, driven by hooks so the model never chooses how to report. If
 two-way chat is ever needed, there is an official two-way Telegram channel plugin, in
 research preview.
@@ -124,7 +136,11 @@ should avoid Aether's release machinery.
 
 A dedicated MCP server is added only if structured state turns out to be necessary.
 
+**Update (2026-10-07).** Specs and plans live in `docs/superpowers/specs/` and `docs/superpowers/plans/`, where superpowers writes them.
+
 ## D15. Name and identity
+
+**Update (2026-10-07).** The project is named **Aether Plugin** (A1). The folder and the future repository are `aether-plugin`, and the plugin id is `aether`. The text below records the earlier working name.
 
 **Decided** for now. The working name is "Multi-Agent Software Development for Claude
 Code (Prototype)" and the repository is `multiagent-dev-prototype`. "Claude Code"
@@ -139,3 +155,21 @@ A real identity comes later, inspired by Isaac Asimov and retrofuturism. Ideas s
 
 These names are already used by agent or developer projects: Weft, Plano, Tutti,
 Plinth, Obra, Seldon, Positron, Trantor, Prime Radiant and `specswarm`.
+
+## Decisions of the design spec (2026-10-07)
+
+The owner took these with the [design spec](superpowers/specs/2026-10-07-aether-plugin-design.md), which states each one in full.
+
+| ID | Decision | Status |
+|---|---|---|
+| A1 | Name **Aether Plugin**; plugin id `aether`; folder and repository slug `aether-plugin`. "Claude Code" stays out of the name. | Decided |
+| A2 | superpowers is the base and the authority on practice and approval gates. Aether adds only the multi-agent organization. The exceptions are parallel implementation and contract plans (A10). | Decided |
+| A3 | ECC is out for now. | Decided |
+| A4 | Roles, top down: the owner; the Designer (the main session, on Opus); supervisors (Sonnet); implementers (Haiku by default, Sonnet or Opus when escalated); and the Opus final reviewer. | Decided; built 2026-10-08 |
+| A5 | The Designer may implement, review and fix work itself. Handing work to the swarm is a quality, cost and speed decision. | Decided |
+| A6 | Cost is judged at API list prices from OpenRouter. | Decided; `config/prices.json` |
+| A7 | Unit worktrees, unit branches and temporary files are deleted as soon as they stop being used, in code. | Decided; built and tested, including after a killed run |
+| A8 | Aether mode is chosen per session with the `aether-mode` shell function, which loads the plugin and turns on dynamic workflows. | Decided; built |
+| A9 | The prototype becomes the published project only if a trial shows lower cost and lower wall-clock time than normal mode, at equal quality. | Decided; see `docs/evaluations/` |
+| A10 | Swarm plans state each task's contract (Interfaces, exact failing tests, acceptance), not its implementation code. | Decided |
+

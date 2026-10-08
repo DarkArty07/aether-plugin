@@ -220,9 +220,41 @@ Measured on Claude Code 2.1.293 with a throwaway plugin. The tests ran headless 
 | Cost accounting (new) | `claude -p --output-format json` reports `modelUsage` per model with `costUSD` and `costBasis: "list"`. The main session's cache writes were billed at the 1-hour rate. |
 | MCP connectors (new) | claude.ai connector tools and instructions also reach subagents and untyped workflow agents. This adds context, and therefore cost, to every agent. |
 
+## Plans 2 and 3 findings (2026-10-08)
+
+Measured on Claude Code 2.1.294 while building and running the swarm. Real headless runs used throwaway fixtures that were deleted afterwards.
+
+| Topic | Result |
+|---|---|
+| Workflow `meta` | `phases: [{ title, detail }]` is accepted. Each `agent()` call's `phase` places it in the progress view, and its `label` becomes the agent's `description` in `agent.spawn`. |
+| Workflows under `claude -p` | The session waits for the workflow and returns its result. The output's `duration_ms` covers only the main session's turns, so time a run from outside. |
+| Workflow state on disk | Claude Code keeps each workflow's state under `~/.claude/projects/<project>/<session>/workflows/`: the script copy, the run file and the agents' metadata. This happens even with `--no-session-persistence`. `cleanupPeriodDays` governs those files, not Aether. |
+| A killed session | SIGTERM to the session's process group stops its workflow too, and the script's `finally` does not run. The leftovers stay until the SessionStart sweep or a manual `aether-wt sweep --run`. |
+| Mods: layout | `hooks.json` gets `"modules": ["./register.js"]`, which can sit beside settings hooks. The module is ESM and exports `register(on)`. When the plugin is loaded with `--plugin-dir`, Claude Code writes `.claude-plugin/types/` and a `tsconfig.json` into the plugin directory, so ignore both in git. |
+| Mods: `turn.step` | A hook is an async generator: `const r = yield* next(e)`. `e` has `turnId`, `index`, `model`, `effort`, `messageCount`, and `agentId` for agents. `r.usage` has input, output, cache-read and cache-creation tokens and the model. It does not split cache writes by lifetime. |
+| Mods: `agent.spawn` | It fires for workflow agents too, with `subagentType` set to the `agentType` (such as `aether:implementer`). `next(e)` resolves to `{ model, agentId }`, where `agentId` matches the agent's `turn.step` events. `claude plugin validate --strict` fails a gating hook that has no `.catch`. `.catch(($, e, next) => next(e))` is replay-safe. |
+| Mods: API | `$.session.id()`, `$.session.version()` and `$.clock.now()` are async. `$.env.get` reads the process environment. `$.fs.write` creates directories and is not atomic. Limits: 4 MiB per file, and 10 s of a hook's own time. |
+| Mods: tests | `claude plugin test <dir>` runs `*.test.ts` files with `claude-code/testing`: stubs per call or event, `mock.clock`, `mock.env`, and `$.turn.step(...)` read to its end. No session or network is involved. |
+| Cost accounting | The meter's token totals match `modelUsage` exactly, model by model. Claude Code's `costUSD` uses the same rates as OpenRouter and the real cache-write lifetimes. Pricing the meter's tokens with "1 hour for the main session, 5 minutes for agents" came out 3% low in the smoke run, because some agent writes are billed at 1 hour. The `-p` output's `usage.cache_creation` splits `ephemeral_1h` and `ephemeral_5m` for the main session's last turn only. |
+| `claude -p` flags | `--no-session-persistence` keeps no transcript. `--max-budget-usd` caps a run's spend. `--strict-mcp-config`, with `ENABLE_CLAUDEAI_MCP_SERVERS=false`, keeps connectors out. |
+
+## OpenRouter prices
+
+The snapshot of 2026-10-07, rechecked on 2026-10-08 and unchanged. It covers the Anthropic endpoint, in USD per million tokens. The plugin's copy is `plugins/aether/config/prices.json`.
+
+| Model | Input | Output | Cache read | Cache write 5 min | Cache write 1 h |
+|---|---|---|---|---|---|
+| Opus 5.5 | 4.00 | 20.00 | 0.20 | 5.00 | 8.00 |
+| Sonnet 5.5 | 2.00 | 10.00 | 0.10 | 2.50 | 4.00 |
+| Haiku 5.5 | 0.10 | 0.50 | 0.01 | 0.125 | 0.20 |
+| Haiku 5.5, prompt of 100,000 tokens or more | 0.50 | 2.50 | 0.05 | 0.625 | 1.00 |
+
+- **Sources:** `https://openrouter.ai/api/v1/models/anthropic/<slug>/endpoints`, with the slugs `claude-opus-5.5`, `claude-sonnet-5.5` and `claude-haiku-5.5`.
+- **Opus fast mode:** Opus 5.5 also has a "fast" endpoint at twice these prices. The usage meter cannot tell fast-mode requests apart.
+
 ## Still to verify
 
 - Whether `agent.spawn` accepts non-Anthropic model IDs (prototype step 1).
-- Whether a workflow's `finally` block runs when the owner stops the run.
+- Whether a workflow's `finally` block runs when the owner stops the run from the interactive progress view. It does not run when the session's process is killed (2026-10-08).
 - Whether `$.env.set` at `session.start` can set `ANTHROPIC_BASE_URL`.
 - How to declare each model's context window in a mixed session.

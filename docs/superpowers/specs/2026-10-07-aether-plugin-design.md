@@ -1,7 +1,7 @@
 # Aether: design spec (v0.1)
 
 - **Date:** 2026-10-07
-- **Status:** Approved by the owner on 2026-10-07. Amended the same day (A10), and on 2026-10-08 by Plan 2 (§7, §8, §9 and §11).
+- **Status:** Approved by the owner on 2026-10-07. Amended the same day (A10), and on 2026-10-08 by Plan 2 (§7, §8, §9 and §11) and Plan 3 (§3, §4, §5, §9, §10 and §12).
 - **Method:** superpowers brainstorming (architectural path). After approval, Phase 0 checks (§13), then superpowers `writing-plans`.
 - **Background:** [README](../../../README.md), [Aether retrospective](../../aether-retrospective.md), [Claude Code research](../../claude-code-research.md), [Decisions](../../decisions.md)
 
@@ -48,12 +48,13 @@ aether-plugin/
 │   ├── .claude-plugin/plugin.json    # name "aether", version "0.1.0"
 │   ├── NOTICE                        # superpowers MIT notice for adapted prompts
 │   ├── hooks/hooks.json              # SessionStart hook and the mods module
-│   ├── hooks/register.js             # usage meter mod
+│   ├── hooks/register.js             # usage meter mod, with its usage.test.ts
 │   ├── skills/using-aether/SKILL.md
 │   ├── skills/swarm/SKILL.md
 │   ├── agents/implementer.md, reviewer.md, supervisor.md, ops.md
 │   ├── workflows/run.workflow.js     # /aether:run
 │   ├── bin/aether-plan, aether-wt, aether-report, aether-session-start
+│   ├── lib/                          # plan, git, globs, run, worktrees, prices, report
 │   └── config/prices.json
 └── tests/                            # bin, mod and workflow tests, fixtures; not shipped
 ```
@@ -74,7 +75,7 @@ aether-plugin/
 | `aether-session-start` | bin, run by the SessionStart hook | Prints the bootstrap as `additionalContext` and runs `aether-wt sweep --stale` in the current repository |
 | `aether-plan` | bin | Parses a superpowers plan with Aether fields, validates it, computes waves, writes briefs and `graph.json`, and prints the run arguments |
 | `aether-wt` | bin | Unit worktrees and branches: `ensure`, `diff` (a unit's review package, or the whole run's with `--final`), `merge`, `remove`, `sweep` (`--finish` also deletes the run directory). Keeps `.aether/` out of git |
-| `aether-report` | bin | Quality, cost and speed report for a run, and a persistent run record. `finalize` deletes the run directory |
+| `aether-report` | bin | Quality, cost and speed report for a run, over every launch of it. `finalize` writes the persistent record, then deletes the run's leftovers and directory. `price` prices any `claude -p` JSON output |
 | `implementer`, `supervisor`, `reviewer` | Agents | Role prompts, adapted from superpowers' implementer, task-reviewer and code-reviewer templates (MIT, notice kept in `NOTICE`). The supervisor reviews each attempt and rules on it; the reviewer does the final review |
 | `ops` | Agent | The workflow's hands: runs one given `aether-wt` command and returns its JSON. A workflow script has no shell of its own. It is a mechanism, not a role |
 | `/aether:run` | Workflow | The swarm: waves, unit pipeline, escalation ladder, merge queue, final review, cleanup |
@@ -89,7 +90,7 @@ aether-plugin/
    - **Architectural:** spec (owner approval), plan with Aether fields (owner approval), then the execution choice. superpowers already offers subagent-driven and native execution; Aether mode adds the swarm. The Designer recommends one with a quality, cost and speed reason, and the owner confirms.
 3. **Swarm:** the Designer creates the integration worktree with superpowers `using-git-worktrees`, runs `aether-plan compile`, and launches `/aether:run` with the printed arguments. The run works in the background. In v0.1 the Designer does not edit the integration worktree while a run is active.
 4. **Report:** the Designer reads the result and saves it as `runDir/result.json`. It then fixes small final-review findings itself or relaunches pending units with `aether-plan compile --only <tasks>`, and brings blocked questions to the owner.
-5. **Finish:** `aether-report finalize` (until Plan 3 delivers it, `aether-wt sweep --run <id> --finish`), then superpowers `finishing-a-development-branch` with the owner.
+5. **Finish:** `aether-report finalize`, then superpowers `finishing-a-development-branch` with the owner.
 
 ## 6. Plan extensions
 
@@ -191,7 +192,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 
 **Cleanup.** A `finally` block always runs an `ops` agent with `aether-wt sweep --run <id>`, retried once if it fails.
 - It reports anything left behind.
-- It keeps the run directory, so that blocked units' patches survive. The Designer deletes the directory with `aether-wt sweep --run <id> --finish`, until Plan 3's `finalize` takes over.
+- It keeps the run directory, so that blocked units' patches survive. `aether-report finalize` deletes it once the Designer is done with the run.
 
 **Result.** The run returns `{runId, units, finalReview, cleanup, agents, error}`.
 - `units`, one per task:
@@ -236,7 +237,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 
 **Lifecycle.**
 - A unit worktree and its branch live from `ensure` until a merge or a block (§7, step 5).
-- The run directory lives until `aether-report finalize`, which first writes the persistent record. Until Plan 3 delivers it, `aether-wt sweep --run <id> --finish` deletes the directory, without a record.
+- The run directory lives until `aether-report finalize`, which first writes the persistent record. `aether-wt sweep --run <id> --finish` deletes it without a record.
 
 **Safety nets.**
 - `sweep --run` runs in the workflow's `finally` block.
@@ -253,9 +254,16 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 
 ## 10. Measurement
 
-- **Usage meter.** The mod writes one entry per model request to `usage-<session>.json` in `~/.local/share/aether-plugin/`, rewriting the file on each `turn.complete`. Each entry holds the agent id, model, input, output, cache read and cache write tokens, and time. Phase 0 confirmed that `turn.step` exposes all of these.
-- **Cross-check.** Claude Code computes its own list-price cost per model (`costUSD`, `costBasis: "list"`). The report compares its total with that figure where one is available.
-- **Prices.** `config/prices.json` holds the OpenRouter snapshot of 2026-10-07 for the Anthropic endpoint, with its source URLs. Values are USD per million tokens. Haiku's higher prices apply to requests whose prompt exceeds 100K tokens.
+*Amended by Plan 3 (2026-10-08).*
+
+- **Usage meter.** The mod (`hooks/register.js`) observes `turn.step` for every request of the main session, subagents and workflow agents.
+  - Each entry holds the time the request ended, its duration, the agent id (`null` for the main session), the model, and the input, output, cache-read and cache-write tokens.
+  - `agent.spawn` teaches it each agent's type and label, such as `aether:implementer` and `task-3: implement on haiku (attempt 1)`.
+  - Entries go to `usage/<session>/<n>.json` in the data directory, in parts of up to 1,000 entries. Each part holds `{ session, part, claudeCode, agents, entries }`.
+  - Writes are serialized, and happen on `turn.complete`, on `session.end` and every 20 entries. A reloaded mod starts after the parts already on disk.
+  - The meter only observes: a failure never touches a request.
+- **Cross-check.** The meter's tokens match Claude Code's `modelUsage` exactly. Claude Code's `costUSD` uses the same rates as OpenRouter, with the real cache-write lifetimes. The meter's usage does not split them, so the report bills the main session's writes at 1 hour and agents' at 5 minutes, which came out 3% low in the smoke run. `aether-report price` prices any `claude -p` JSON output both ways. The trial compares the two modes on `costUSD`.
+- **Prices.** `config/prices.json` holds the OpenRouter snapshot of 2026-10-07 for the Anthropic endpoint, with its source URLs. It was rechecked on 2026-10-08, unchanged. Values are USD per million tokens. Haiku's higher prices apply to a whole request once its prompt (input plus cache reads and writes) reaches 100,000 tokens.
 
   | Model | Input | Output | Cache read | Cache write (5 min) | Cache write (1 h) |
   |---|---|---|---|---|---|
@@ -264,11 +272,17 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
   | Haiku 5.5 | 0.10 | 0.50 | 0.01 | 0.125 | 0.20 |
   | Haiku 5.5, prompt over 100K | 0.50 | 2.50 | 0.05 | 0.625 | 1.00 |
 
-- **Report** (`aether-report --run <id>`):
-  - speed: wall-clock time of the run and of the whole session;
-  - cost: tokens and USD by model;
-  - quality: units merged, escalated and blocked; review findings by severity; final-review verdict; tests at integration.
-- **Persistent record.** `finalize` appends one line per run to `runs.jsonl` in the plugin data directory, including the superpowers and aether versions.
+- **Report** (`aether-report --run <id> [--session <id>] [--no-tests]`):
+  - **The window:** from the run's first compile to the time its latest result was saved. A relaunch with `aether-plan compile --run` keeps the first compile time and archives the previous `result.json` as `result-<k>.json`.
+  - **The session:** without `--session`, the report uses the usage session that ran the most `aether:` agents in the window.
+  - **Speed:** the window, the swarm's own span (from its first agent request to its last), and the session's span.
+  - **Cost:** USD and tokens at OpenRouter prices, by model and by role, for the window and for the whole session.
+  - **Quality**, over every launch:
+    - units merged, blocked, skipped and not run;
+    - escalations and attempts;
+    - every supervisor finding, and the final reviews, by severity;
+    - the test command, run on the integration branch.
+- **Persistent record.** `finalize` appends one line per run to `runs.jsonl` in the plugin data directory, with the report and the aether, superpowers and Claude Code versions. Then it sweeps the run with `--finish`.
 - **Baseline.** The same objective and plan run in normal mode, Opus with superpowers `subagent-driven-development`, each mode in a fresh session. The comparison goes to `docs/evaluations/`.
 
 ## 11. Error handling
@@ -286,7 +300,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 ## 12. Testing
 
 - **bin tools:** test-first with `node --test`, run from `tests/`. Fixtures are throwaway git repositories created in temporary directories.
-- **Mods:** `claude plugin test` with stubbed events.
+- **Mods:** `claude plugin test plugins/aether` runs `hooks/usage.test.ts` with stubbed events and calls.
 - **Plugin:** `claude plugin validate plugins/aether --strict`.
 - **Workflow logic:**
   - A Node harness runs the body of `run.workflow.js` with stubbed runtime functions (`agent`, `parallel`, `phase`, `log`, `args`), matching the signatures that Phase 0 confirms.
@@ -312,7 +326,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 - Plan 2, Swarm: steps 4 and 6.
 - Plan 3, Measurement and trial: steps 5 and 7.
 
-Each plan is written after the previous one is merged. Plan 1 was merged on 2026-10-08. Plan 2 was built the same day, and its smoke run is recorded in the plan.
+Each plan is written after the previous one is merged. Plans 1, 2 and 3 were built on 2026-10-08, and each plan records its smoke runs and review. The trial is in `docs/evaluations/`.
 1. Skeleton: manifest, `NOTICE`, SessionStart hook, `using-aether`, the `aether-mode` shell function, validation.
 2. `aether-plan`, with tests.
 3. `aether-wt`, with tests: ensure, diff, merge, remove, sweep, and the safety rules.
