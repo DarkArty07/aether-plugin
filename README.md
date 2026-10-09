@@ -107,6 +107,7 @@ A lane runs Aether's own calls on another coding plan the owner pays for, while 
 - **The Designer** can run its rounds on agy too, each round a transaction that may change only specs and plans.
 - **Report.** `aether-report` shows each group's quota consumed and the dollars at list price, apart from native Claude.
 - **Off for one run:** `aether-plan compile <plan.md> --no-lanes`.
+- **Linux only.** Lanes need Linux, because stopping a lane's processes reads `/proc`.
 
 ## Use Aether mode
 
