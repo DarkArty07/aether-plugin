@@ -3,7 +3,7 @@
 - **Date:** 2026-10-09
 - **Status:** Written from the design the owner was shown on 2026-10-09 (approach A, six sections, amendments a–e). Sub-project 1 of 4.
 - **Method:** superpowers brainstorming, architectural path, in Aether mode. The Lead's session is `7081714f-a148-4285-9b89-ad41d50a98f3`.
-- **Amends:** the [Lead and Designer spec](2026-10-08-lead-and-designer-design.md) (the relay and the reply format) and the [lanes spec](2026-10-08-lanes-design.md) (the Designer's structured output). It updates decisions A2, A13, A14 and A22, and adds A23–A25.
+- **Amends:** the [Lead and Designer spec](2026-10-08-lead-and-designer-design.md) (the relay and the reply format) and the [lanes spec](2026-10-08-lanes-design.md) (the Designer's structured output). It updates decisions D2, A2, A13, A14 and A22, and adds A23–A25.
 - **Branch:** `feature/autonomy`, in the worktree `.worktrees/autonomy`. Plugin version 0.5.0.
 
 ## 0. Criterios del dueño
@@ -153,7 +153,7 @@ Sirve a: C1, C6.
 
 ### 5.1 Starting
 
-**R10. The permission is the confirmation.** The owner's permission to work for hours, in their own words, confirms the intent and the ceilings. The Lead writes the intent (the owner's quotes and C1..Cn) in the diary, runs `start`, and begins. It asks the owner only when the intent is materially ambiguous and no default can be defended. Without that permission there is no run: the Lead decides the design rounds and stops at the plan with a short brief (§5.5).
+**R10. The permission is the confirmation.** The owner's permission to work for hours, in their own words, confirms the intent and the ceilings. The Lead writes the intent (the owner's quotes and C1..Cn) in the diary, runs `start`, and begins. It asks the owner only when the intent is materially ambiguous and no default can be defended. Without that permission there is no run: the Lead decides the design rounds and stops at the plan with a short brief (R23).
 
 Sirve a: C3, C4.
 
