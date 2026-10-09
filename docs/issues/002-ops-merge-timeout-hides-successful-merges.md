@@ -3,6 +3,7 @@
 **Type:** bug
 **Date:** 2026-10-09
 **Found in:** the first real swarm run of a 12-task plan (7 waves) on an application repository
+**Status:** open (2026-10-09). Sub-project 2: run the deterministic `aether-wt` commands in code, not through a model. The first run of 0.5.0 did not hit the timeout; it hit issue 004 instead.
 
 ## Summary
 

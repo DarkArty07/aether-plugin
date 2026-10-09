@@ -3,6 +3,7 @@
 **Type:** limitation and feature request
 **Date:** 2026-10-09
 **Found in:** a live trial of two parallel Aether-mode sessions
+**Status:** partly addressed in 0.5.0 (2026-10-09). The verifiable grant, a registry of the owner's quoted words that any Lead can check with `aether-autonomy`, is the base this needs. Open: a Lead driving another Lead across sessions, the spawn helper and the peer protocol (sub-project 4).
 
 ## Summary
 
