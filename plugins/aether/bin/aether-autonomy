@@ -77,7 +77,7 @@ function main(argv) {
     const quote = value(rest, '--quote')
     if (!cls || !quote) throw new Error(USAGE)
     const session = getSession(rest, true)
-    const scope = value(rest, '--scope') || 'repo'
+    const scope = value(rest, '--scope') ?? 'repo'
     ensureExcluded(gitCommonDir)
     const res = autonomy.grant(mainRoot, { class: cls, quote, session, scope })
     if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }

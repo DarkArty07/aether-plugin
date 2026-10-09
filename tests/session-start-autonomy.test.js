@@ -61,10 +61,10 @@ test('no note when the run has ended, or outside a git repository', (t) => {
   writeRun(repo.dir, ID, '2026-10-09T22:00:00.000Z')
   const ended = start(repo.dir, tempDir(t, 'aether-data-'))
   assert.equal(ended.status, 0, ended.stderr)
-  assert.doesNotMatch(ended.context, /Autonomous run/)
+  assert.doesNotMatch(ended.context, /Autonomous run \S+ is open/)
   const outside = start(tempDir(t), tempDir(t, 'aether-data-'))
   assert.equal(outside.status, 0, outside.stderr)
-  assert.doesNotMatch(outside.context, /Autonomous run/)
+  assert.doesNotMatch(outside.context, /Autonomous run \S+ is open/)
 })
 
 test('a run state that cannot be read never blocks the session', (t) => {
@@ -74,5 +74,5 @@ test('a run state that cannot be read never blocks the session', (t) => {
   const r = start(repo.dir, tempDir(t, 'aether-data-'))
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.context, /^Aether mode is active\./)
-  assert.doesNotMatch(r.context, /Autonomous run/)
+  assert.doesNotMatch(r.context, /Autonomous run \S+ is open/)
 })

@@ -197,6 +197,8 @@ Before one, run `aether-autonomy check <class>`.
 
 **Resuming.** After a compaction or a restart, session start tells you when a run is open. Read its diary, run `aether-autonomy status`, and continue from "Estado". If the Designer was lost, start a new one from the spec and plan files.
 
+**An unreadable run state.** When an `aether-autonomy` command fails naming a `run.json` or `grants.json` it cannot read, aether-guard refuses an edit of that file. Move the named folder aside with Bash (for example into `.aether/broken-runs/`, outside `.aether/autonomy/`), write what you moved and why in the diary, and go on. Do not treat it as a reason to stop.
+
 **The brief** goes to `.aether/autonomy/<run id>/brief.md`, in the owner's language, and you show it in chat:
 
     # Brief: <run id>

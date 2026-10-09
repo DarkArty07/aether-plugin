@@ -132,6 +132,7 @@ test('bad input exits 1 with an error', (t) => {
     [['grant', '--class', 'push', '--quote'], '--quote needs a value'],
     [['grant', '--class', 'merge-main', '--quote', MERGE, '--scope'], '--scope needs a value'],
     [['grant', '--class', 'merge-main', '--quote', MERGE, '--scope', 'wrong'], 'unknown scope: wrong'],
+    [['grant', '--class', 'merge-main', '--quote', MERGE, '--scope', ''], 'unknown scope: '],
     [['revoke', '--class', 'merge-main'], USAGE],
     [['revoke', '--quote', REVOKE], USAGE],
     [['revoke', '--class', 'merge-main', '--quote'], '--quote needs a value'],
