@@ -1,6 +1,7 @@
 'use strict'
 
-// Unit worktrees: create, package for review, merge, remove and sweep.
+// Unit worktrees: create, package for review, merge, remove and sweep. The sweep also stops the
+// processes of lane calls and removes the copies and Designer states they leave.
 // Only paths under <repo>/.aether/ and branches under aether/ are touched.
 // Git's worktree registry is never pruned as a whole: Aether removes only its own entries, by path.
 
@@ -10,6 +11,7 @@ const { spawnSync } = require('node:child_process')
 const { git, repoPaths, currentBranch, head } = require('./git.js')
 const { matchesAny } = require('./globs.js')
 const run = require('./run.js')
+const { killGroup } = require('./lanes.js')
 
 function loadGraph(mainRoot, runId) {
   run.assertRunId(runId)
@@ -30,6 +32,16 @@ function assertInside(target, root) {
 // Unit worktrees live in <repo>/.aether/worktrees/<run>/<task>.
 function unitsDir(mainRoot) {
   return path.join(run.aetherDir(mainRoot), 'worktrees')
+}
+
+// A read-only lane role's disposable copies live in <repo>/.aether/lanes/<run>/<call>.
+function laneCopiesRoot(mainRoot) {
+  return path.join(run.aetherDir(mainRoot), 'lanes')
+}
+
+// A Designer's state lives in <repo>/.aether/design/<id>.
+function designsDir(mainRoot) {
+  return path.join(run.aetherDir(mainRoot), 'design')
 }
 
 // Unlike fs.existsSync, this counts a dangling symlink as present.
@@ -253,10 +265,10 @@ function unregisterWorktree(mainRoot, worktree) {
   return git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true }).status === 0
 }
 
-// Removes one unit worktree: git drops its registry entry and its directory, then whatever is
-// left on disk is deleted by hand. Returns true when neither the entry nor the directory remains.
-function removeWorktreePath(mainRoot, worktree, registered) {
-  assertInside(worktree, unitsDir(mainRoot))
+// Removes one worktree under `root`: git drops its registry entry and its directory, then whatever
+// is left on disk is deleted by hand. Returns true when neither the entry nor the directory remains.
+function removeWorktreePath(mainRoot, worktree, registered, root = unitsDir(mainRoot)) {
+  assertInside(worktree, root)
   let unregistered = !registered || unregisterWorktree(mainRoot, worktree)
   if (exists(worktree)) fs.rmSync(worktree, { recursive: true, force: true })
   // Git refuses a worktree whose directory is broken, but not one whose directory is gone.
@@ -357,12 +369,61 @@ function savePatches(mainRoot, runId) {
   return { patches, kept }
 }
 
+// Stops the processes of a run's lane calls: the lane's own and the agy it started, by their pid
+// files, when they carry the call's marker. Returns the calls where something was stopped.
+function stopLaneProcesses(mainRoot, runId) {
+  const lanesDir = path.join(run.runDir(mainRoot, runId), 'lanes')
+  const stopped = []
+  if (!isDirectory(lanesDir)) return stopped
+  for (const call of fs.readdirSync(lanesDir).sort()) {
+    const dir = path.join(lanesDir, call)
+    if (!isDirectory(dir)) continue
+    const marker = `${runId}/${call}`
+    const results = ['pid', 'agy.pid'].map((name) => killGroup(path.join(dir, name), marker))
+    if (results.some((result) => result.killed)) stopped.push(call)
+  }
+  return stopped
+}
+
+// The lane copies of a run: those in git's registry, plus any directory left in the run's folder.
+function laneCopyNames(mainRoot, runId) {
+  const dir = path.join(laneCopiesRoot(mainRoot), runId)
+  const names = new Set()
+  for (const worktree of registeredWorktrees(mainRoot)) {
+    if (isInside(worktree, dir)) names.add(path.relative(dir, worktree).split(path.sep)[0])
+  }
+  if (isDirectory(dir)) for (const name of fs.readdirSync(dir)) names.add(name)
+  return [...names].sort()
+}
+
+// Removes a run's lane copies and their folder. Only the copies' own registry entries are dropped,
+// by path: git's registry is not pruned as a whole, so another worktree that happens to be
+// unreachable keeps its entry.
+function removeLaneCopies(mainRoot, runId) {
+  const root = laneCopiesRoot(mainRoot)
+  const dir = path.join(root, runId)
+  const registered = new Set(registeredWorktrees(mainRoot))
+  const removed = []
+  for (const name of laneCopyNames(mainRoot, runId)) {
+    const copy = path.join(dir, name)
+    if (removeWorktreePath(mainRoot, copy, registered.has(copy), root)) removed.push(name)
+  }
+  if (exists(dir)) {
+    assertInside(dir, root)
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+  return { removed, remaining: laneCopyNames(mainRoot, runId) }
+}
+
 // Removes a run's unit worktrees and branches, after saving their unsaved work as patches. A unit
 // whose work cannot be saved is kept, and so is the run directory then. With `finish`, the run
-// directory goes too.
+// directory goes too. The run's lane processes are stopped and its lane copies removed first, so
+// nothing is still writing when the units are saved.
 function sweepRun(cwd, runId, { finish = false } = {}) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
+  const stopped = stopLaneProcesses(mainRoot, runId)
+  const copies = removeLaneCopies(mainRoot, runId)
   const dir = run.worktreesDir(mainRoot, runId)
   const { patches, kept } = savePatches(mainRoot, runId)
   const removedWorktrees = []
@@ -394,6 +455,7 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
       worktrees: runWorktrees(mainRoot, runId).paths.map((worktree) => path.basename(worktree)),
       branches: aetherBranches(mainRoot, runId).map(({ branch }) => branch),
     },
+    lanes: { stopped, removed: copies.removed, remaining: copies.remaining },
   }
 }
 
@@ -420,13 +482,38 @@ function modifiedSince(dir, cutoff) {
   return false
 }
 
+// Removes the Designer states that nothing has modified since `cutoff`, after stopping the lane
+// process of each (its pid file, and the agy's if it left one). Returns the removed ids, sorted.
+function sweepDesigns(mainRoot, cutoff) {
+  const root = designsDir(mainRoot)
+  const removed = []
+  if (!isDirectory(root)) return removed
+  for (const id of fs.readdirSync(root).sort()) {
+    const dir = path.join(root, id)
+    let stat
+    try {
+      stat = fs.lstatSync(dir)
+    } catch {
+      continue // gone since it was listed
+    }
+    if (!stat.isDirectory() || modifiedSince(dir, cutoff)) continue
+    for (const name of ['pid', 'agy.pid']) killGroup(path.join(dir, name), `design/${id}`)
+    assertInside(dir, root)
+    fs.rmSync(dir, { recursive: true, force: true })
+    removed.push(id)
+  }
+  return removed
+}
+
 // Removes runs that were never finalized and have had no activity for `hours`, plus leftovers
 // whose run directory is already gone. Activity is any change in the run directory or in the
 // run's unit worktrees. Each removal is recorded first, with the tip of every branch it deletes.
+// It also removes the Designer states untouched for `hours`, and lists them as `designs` when
+// there were any.
 function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
   const { mainRoot } = repoPaths(cwd)
   const ids = new Set()
-  for (const sub of ['runs', 'worktrees']) {
+  for (const sub of ['runs', 'worktrees', 'lanes']) {
     const dir = path.join(run.aetherDir(mainRoot), sub)
     if (fs.existsSync(dir)) {
       for (const name of fs.readdirSync(dir)) if (run.isRunId(name)) ids.add(name)
@@ -462,7 +549,21 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     fs.rmSync(dir, { recursive: true, force: true })
     swept.push(id)
   }
-  return { swept }
+  const designs = sweepDesigns(mainRoot, cutoff)
+  return designs.length > 0 ? { swept, designs } : { swept }
 }
 
-module.exports = { ensure, diffPackage, finalPackage, merge, removeUnit, sweepRun, sweepStale }
+module.exports = {
+  ensure,
+  diffPackage,
+  finalPackage,
+  merge,
+  removeUnit,
+  sweepRun,
+  sweepStale,
+  loadGraph,
+  uncommittedFiles,
+  changedFiles,
+  unitBase,
+  isWorktreeRoot,
+}
