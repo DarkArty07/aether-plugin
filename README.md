@@ -3,7 +3,7 @@
 A plugin for Claude Code that adds an opt-in **Aether mode**: a parallel swarm of agents that implements an approved plan.
 
 - **The Lead** is the main session, on Sonnet at `xhigh`. It holds the conversation with the owner, explores, chooses the route and runs the execution. It may design and implement spikes and bounded work.
-- **The Designer** is the agent `aether:designer`, on Opus at `max`, in its own context. It designs with [superpowers](https://github.com/obra/superpowers): approaches, design, spec and plan. Among the agents it has the final say on design. Only the Designer writes specs and plans.
+- **The Designer** is the agent `aether:designer`, on Opus at `xhigh`, in its own context. It designs with [superpowers](https://github.com/obra/superpowers): approaches, design, spec and plan. Among the agents it has the final say on design. Only the Designer writes specs and plans.
 - **The swarm:** when parallel work pays off, the Lead hands the plan to `/aether:run`. In the swarm:
   - implementers work on Haiku by default and move up to Sonnet or Opus when a task is critical or keeps failing;
   - a supervisor on Sonnet reviews every attempt;
@@ -65,7 +65,7 @@ owner ── confirms the Lead's understanding, approves the spec and the plan
 Lead (main session, Sonnet, xhigh): conversation, route, relay, execution
   │  hand-off once the owner confirms the understanding
   ▼
-Designer (aether:designer, Opus, max): approaches, design, spec, plan
+Designer (aether:designer, Opus, xhigh): approaches, design, spec, plan
   │  writes the plan with Aether fields: tier and effort, area, owned files, dependencies
   │  aether-plan check / compile
   ▼
@@ -84,7 +84,7 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 | Piece | What it does |
 |---|---|
 | `using-aether` skill | Injected at session start. The Lead's rules: the routes, the hand-off to the Designer, the relay of both sides, and when to offer the swarm |
-| `aether:designer` | The Designer agent: Opus at `max`, with a 1-hour prompt cache. It does the architectural design and writes the specs and plans |
+| `aether:designer` | The Designer agent: Opus at `xhigh`, with a 1-hour prompt cache. It does the architectural design and writes the specs and plans |
 | `aether-voice` | Prints the owner's own words from a session, for the Designer to read; it writes no file |
 | `aether-guard` | A PreToolUse hook that refuses Write, Edit, MultiEdit and NotebookEdit under `docs/superpowers/specs/` and `docs/superpowers/plans/` to every agent but the Designer |
 | `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |

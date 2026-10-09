@@ -3,7 +3,7 @@ name: designer
 description: "Aether Designer: writes the approaches, design, spec and plan of architectural work, in rounds, for the Lead. Runs on Opus in its own context. The Lead starts it once the owner confirms the Lead's understanding, and resumes it with SendMessage for each answer of the owner."
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, WebFetch, WebSearch
 model: opus
-effort: max
+effort: xhigh
 maxTurns: 80
 experimental:
   cacheTtl: 1h

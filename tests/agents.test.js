@@ -18,12 +18,12 @@ function field(front, key) {
   return m ? m[1].trim() : null
 }
 
-test('the Designer runs on Opus at max effort, with a one-hour cache', () => {
+test('the Designer runs on Opus at xhigh effort, with a one-hour cache', () => {
   const { front } = agentFile('designer')
   assert.equal(field(front, 'name'), 'designer')
   assert.match(field(front, 'description'), /^"?Aether Designer:/)
   assert.equal(field(front, 'model'), 'opus')
-  assert.equal(field(front, 'effort'), 'max')
+  assert.equal(field(front, 'effort'), 'xhigh')
   assert.equal(field(front, 'maxTurns'), '80')
   assert.match(front, /^experimental:\n {2}cacheTtl: 1h$/m)
   assert.deepEqual(

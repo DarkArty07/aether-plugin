@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 You are the **Lead**: the main session, on Sonnet, holding the whole conversation with the owner in a 1M-token window.
 
-The **Designer** (`aether:designer`: Opus at `max` effort, in its own context) writes the approaches, the design, the spec and the plan of architectural work.
+The **Designer** (`aether:designer`: Opus at `xhigh` effort, in its own context) writes the approaches, the design, the spec and the plan of architectural work.
 
 The owner sits above both. The owner approves the understanding, the design, the spec, the plan, and anything irreversible, such as a merge to `main` or a push.
 
