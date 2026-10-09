@@ -307,8 +307,9 @@ async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
     let reply = null
     // The model that ran: the final reply's, else the start's, else the lane's.
     const ranModel = () => named(reply && isObject(reply.lane) && reply.lane.model) || named(started && started.model) || lane.model
-    const infra = (reason, outcome = 'failed') => {
-      laneCounts[outcome]++
+    // An infrastructure failure counts as `failed`, or as `quota` when the group ran dry.
+    const infra = (reason, counter = 'failed') => {
+      laneCounts[counter]++
       log(`${base}: ${reason}`)
       return { kind: 'infra', model: ranModel(), reason }
     }
