@@ -226,7 +226,7 @@ function windowUsed(before, after, window) {
   return (Math.max(0, a.remaining - b.remaining) * 100).toFixed(1)
 }
 
-function laneLine(state, n, usage, quotaBefore, quotaAfter, groupLabel) {
+function laneLine(state, usage, quotaBefore, quotaAfter, groupLabel) {
   const tokens = lanes.laneTokens(usage)
   const count = tokens.input + tokens.output + tokens.cacheRead
   const usd = priceEntry({ model: state.agyModel, ...tokens, agent: 'lane' }, loadPrices())
@@ -350,7 +350,7 @@ async function runRound({ mainRoot, state, config, harness, adapter, input, quot
     return answer(4, failed)
   }
   const groupLabel = harness.groups[state.group] ?? state.group
-  const lane = laneLine(state, n, usage, quotaBefore, quotaAfter, groupLabel)
+  const lane = laneLine(state, usage, quotaBefore, quotaAfter, groupLabel)
   return { exitCode: 0, stdout: replyText(parsed.structured, lane) }
 }
 
