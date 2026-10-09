@@ -186,11 +186,107 @@ function changedFiles(mainRoot, base, branch) {
   return nulEntries(git(args, mainRoot, { raw: true }).stdout)
 }
 
-// Merges one unit into the integration branch. Callers serialize merges.
-function merge(cwd, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
+// ---- The merge lock ----
+// A merge commits on the integration branch before it runs the tests, and resets the branch when they
+// fail. For its whole duration it holds <runDir>/merging, {pid, time}, so that the checks of a lane
+// call read the branch and the integration worktree only between merges. A lock whose process is
+// gone, or that is older than 30 minutes, is stale.
+
+const MERGE_LOCK_STALE_MS = 30 * 60 * 1000
+const MERGE_WAIT_MS = 30 * 60 * 1000
+const MERGE_POLL_MS = 200
+
+function mergeLockFile(mainRoot, runId) {
+  return path.join(run.runDir(mainRoot, runId), 'merging')
+}
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return err.code === 'EPERM'
+  }
+}
+
+// The lock's {pid, time}, or null when there is none. A lock that cannot be read yet, because its
+// holder is still writing it, has no pid and dates from its file.
+function readMergeLock(file) {
+  let stat
+  try {
+    stat = fs.statSync(file)
+  } catch {
+    return null
+  }
+  let lock = null
+  try {
+    lock = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    // Read as a lock without a pid.
+  }
+  return {
+    pid: Number.isInteger(lock?.pid) && lock.pid > 0 ? lock.pid : null,
+    time: typeof lock?.time === 'number' ? lock.time : stat.mtimeMs,
+  }
+}
+
+function isFreshLock(lock) {
+  return lock !== null && Date.now() - lock.time < MERGE_LOCK_STALE_MS && (lock.pid === null || processAlive(lock.pid))
+}
+
+// Takes the lock for this process, once no fresh lock is held. A stale lock is replaced.
+function takeMergeLock(file) {
+  for (;;) {
+    const mine = { pid: process.pid, time: Date.now() }
+    try {
+      fs.writeFileSync(file, JSON.stringify(mine), { flag: 'wx' })
+      return mine
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err
+    }
+    if (isFreshLock(readMergeLock(file))) sleepSync(MERGE_POLL_MS)
+    else fs.rmSync(file, { force: true })
+  }
+}
+
+// Drops the lock while it is still this one: a lock replaced as stale belongs to its new holder.
+function dropMergeLock(file, mine) {
+  const lock = readMergeLock(file)
+  if (lock && lock.pid === mine.pid && lock.time === mine.time) fs.rmSync(file, { force: true })
+}
+
+// Returns what read() reads while no merge of the run holds the lock. A read that a merge began
+// during is read again after it. After 30 minutes of waiting it reads anyway.
+function betweenMerges(mainRoot, runId, read) {
+  const file = mergeLockFile(mainRoot, runId)
+  const deadline = Date.now() + MERGE_WAIT_MS
+  for (;;) {
+    while (isFreshLock(readMergeLock(file)) && Date.now() < deadline) sleepSync(MERGE_POLL_MS)
+    const value = read()
+    if (!isFreshLock(readMergeLock(file)) || Date.now() >= deadline) return value
+  }
+}
+
+// Merges one unit into the integration branch, holding the run's merge lock throughout. Callers
+// serialize merges; the lock is for the lane checks that read the branch meanwhile.
+function merge(cwd, runId, taskId, options = {}) {
   run.assertTaskId(taskId)
   const { mainRoot } = repoPaths(cwd)
   const graph = loadGraph(mainRoot, runId)
+  const file = mergeLockFile(mainRoot, runId)
+  const lock = takeMergeLock(file)
+  try {
+    return mergeUnit(mainRoot, graph, runId, taskId, options)
+  } finally {
+    dropMergeLock(file, lock)
+  }
+}
+
+function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
   const task = graph.tasks[taskId]
   if (!task) throw new Error(`${taskId} is not in run ${runId}`)
   const integration = graph.integration.worktree
@@ -558,6 +654,7 @@ module.exports = {
   diffPackage,
   finalPackage,
   merge,
+  betweenMerges,
   removeUnit,
   sweepRun,
   sweepStale,

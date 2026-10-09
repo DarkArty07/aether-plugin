@@ -10,7 +10,7 @@ const path = require('node:path')
 const { git, repoPaths } = require('./git.js')
 const { matchesAny } = require('./globs.js')
 const run = require('./run.js')
-const { ensure, loadGraph, uncommittedFiles, changedFiles, unitBase, isWorktreeRoot, diffPackage } = require('./worktrees.js')
+const { ensure, loadGraph, uncommittedFiles, changedFiles, unitBase, isWorktreeRoot, diffPackage, betweenMerges } = require('./worktrees.js')
 
 const COMMIT_MESSAGE = 'lanes: commit the work the external agent left uncommitted'
 const CALL_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
@@ -107,15 +107,16 @@ function integrationState(mainRoot, graph) {
 }
 
 // What a check compares against: the unit worktree (null without a task or a worktree) and the
-// integration worktree and branch, as they are before a lane call starts.
+// integration worktree and branch, as they are before a lane call starts. A merge whose tests fail
+// commits and then resets the branch, so this reads between merges, as checkIntegration does.
 function snapshot(cwd, runId, { taskId = null } = {}) {
   const { mainRoot } = repoPaths(cwd)
   const graph = loadGraph(mainRoot, runId)
   if (taskId !== null) run.assertTaskId(taskId)
-  return {
+  return betweenMerges(mainRoot, runId, () => ({
     unit: taskId === null ? null : unitState(mainRoot, runId, taskId),
     integration: integrationState(mainRoot, graph),
-  }
+  }))
 }
 
 // The integration worktree must look as it did, and the branch may only have moved forward, as a
@@ -123,7 +124,7 @@ function snapshot(cwd, runId, { taskId = null } = {}) {
 function checkIntegration(cwd, runId, before) {
   const { mainRoot } = repoPaths(cwd)
   const graph = loadGraph(mainRoot, runId)
-  const now = integrationState(mainRoot, graph)
+  const now = betweenMerges(mainRoot, runId, () => integrationState(mainRoot, graph))
   if (now.status !== before.integration.status) {
     return { ok: false, detail: 'the integration worktree changed during the lane call' }
   }
