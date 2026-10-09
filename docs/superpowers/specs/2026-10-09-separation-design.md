@@ -5,6 +5,7 @@
 - **Method:** superpowers brainstorming, architectural path, in Aether mode. The Lead's session is `7081714f-a148-4285-9b89-ad41d50a98f3`.
 - **Amends:** decision A8 (how `aether-mode` loads the plugin), the README's "Use Aether mode" and "Development" sections, and `scripts/refresh-lanes.js` (where the key lives). Adds A26.
 - **Branch:** `feature/separation`, in the worktree `.worktrees/separation`. Plugin version 0.6.0.
+- **Superseded in part (0.7.0):** the installer, the launcher and `aether-mode --dev` give way to Claude Code's own plugin commands. See the [installable plugin spec](2026-10-09-installable-plugin-design.md).
 
 ## 0. Criterios del dueño
 
