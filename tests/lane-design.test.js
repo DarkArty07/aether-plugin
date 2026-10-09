@@ -252,6 +252,20 @@ test('design start changes nothing when the role is off, the quota is low, super
   }
 })
 
+test('design reply changes nothing when the Claude group is at or below the reserve', (t) => {
+  const { repo, env } = designSetup(t)
+  const id = idOf(design(repo, env, ['start', '--session', 'lead-1', '--cwd', repo.dir], `FAKE-AGY: answer ${REPLY('approaches')}`).stdout)
+  const head = fx.git(repo.dir, 'rev-parse', 'HEAD')
+  fs.writeFileSync(env.FAKE_AGY_QUOTA_FILE, JSON.stringify({ 'Gemini Models': [0.9, 0.9], 'Claude and GPT models': [0.9, 0.05] }))
+  const r = design(repo, env, ['reply', id], `A.\nFAKE-AGY: write docs/superpowers/specs/z.md z\nFAKE-AGY: answer ${REPLY('design')}`)
+  assert.deepEqual([r.status, lastJson(r.stdout)], [3, { unavailable: 'quota' }])
+  assert.equal(fx.agyTurns(env).length, 1)
+  assert.equal(fx.git(repo.dir, 'rev-parse', 'HEAD'), head)
+  assert.equal(fx.git(repo.dir, 'status', '--porcelain', '--untracked-files=all'), '')
+  const state = JSON.parse(fs.readFileSync(path.join(repo.dir, '.aether', 'design', id, 'state.json'), 'utf8'))
+  assert.deepEqual([state.status, state.rounds.length], ['open', 1])
+})
+
 test('a resume that comes back in a new conversation is undone, and list and end manage the open designs', (t) => {
   const { repo, env } = designSetup(t)
   const id = idOf(design(repo, env, ['start', '--session', 'lead-1', '--cwd', repo.dir], `FAKE-AGY: answer ${REPLY('approaches')}`).stdout)

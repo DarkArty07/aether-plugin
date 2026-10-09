@@ -459,6 +459,8 @@ async function reply(args, input) {
   const skills = state.conversation === null ? superpowersSkills() : null
   if (state.conversation === null && !skills) return unavailable('superpowers')
   const quotaBefore = readQuota(adapter, state.group)
+  // The reserve is the owner's, for agy by hand, in every round as in the first.
+  if (!lanes.usable(quotaBefore, config.reserve)) return unavailable('quota')
   return runRound({ mainRoot, state, config, harness, adapter, input, quotaBefore, skills })
 }
 
