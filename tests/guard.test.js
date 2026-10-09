@@ -108,3 +108,41 @@ test('a missing cwd falls back to the process cwd, and ".." is resolved before t
   assert.ok(decide(call('Write', { file_path: '/repo/x/../docs/superpowers/specs/a.md', content: 'x' })))
   assert.equal(decide(call('Write', { file_path: '/repo/docs/superpowers/specs/../notes.md', content: 'x' })), null)
 })
+
+const GRANTS = '/repo/.aether/autonomy/grants.json'
+const RUN_STATE = '/repo/.aether/autonomy/auto-20261009-200000-ab12/run.json'
+
+test('no agent may write the autonomy registry or a run state, the Designer included', () => {
+  const agents = [{}, designer, { agent_id: 'a3', agent_type: 'aether:implementer' }]
+  for (const file of [GRANTS, RUN_STATE]) {
+    for (const agent of agents) {
+      for (const [tool, input] of [
+        ['Write', { file_path: file, content: '{}' }],
+        ['Edit', { file_path: file, old_string: 'a', new_string: 'b' }],
+        ['MultiEdit', { file_path: file, edits: [] }],
+      ]) {
+        const d = decide(call(tool, input, agent))
+        assert.ok(d, `${tool} on ${file} by ${agent.agent_type || 'the Lead'}`)
+        assert.match(d.reason, /written only by aether-autonomy/)
+        assert.ok(d.reason.includes(file), 'the reason names the file')
+      }
+    }
+  }
+  assert.ok(decide(call('NotebookEdit', { notebook_path: GRANTS, new_source: 'x' })))
+  assert.ok(decide({ ...call('Write', { file_path: 'autonomy/grants.json', content: '{}' }), cwd: '/repo/.aether' }))
+})
+
+test('the diary, the brief and lookalike paths stay writable', () => {
+  for (const file of [
+    '/repo/.aether/autonomy/auto-20261009-200000-ab12/diary.md',
+    '/repo/.aether/autonomy/auto-20261009-200000-ab12/brief.md',
+    '/repo/.aether/autonomy/auto-20261009-200000-ab12/run.json.bak',
+    '/repo/.aether/autonomy/auto-20261009-200000-ab12/sub/run.json',
+    '/repo/.aether/autonomy/x/grants.json',
+    '/repo/.aether/autonomy-old/grants.json',
+    '/repo/.aether/grants.json',
+  ]) {
+    assert.equal(decide(call('Write', { file_path: file, content: 'x' })), null, file)
+  }
+})
+
