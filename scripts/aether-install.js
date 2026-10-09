@@ -189,7 +189,7 @@ function main(argv, { env = process.env, repoDir = path.join(__dirname, '..') } 
     if (command === 'rollback') return { exitCode: 0, stdout: rollback(installed) }
     return { exitCode: 0, stdout: status(installed, repoDir) }
   } catch (error) {
-    const message = error instanceof Refusal ? error.message : `aether-install: ${error.message}`
+    const message = error instanceof Refusal ? error.message : `aether-install: ${errorLines(String(error.message)) || 'unknown error'}`
     return { exitCode: 1, stdout: `${message}\n` }
   }
 }

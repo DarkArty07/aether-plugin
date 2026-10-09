@@ -14,6 +14,9 @@ function aether-mode --description 'Claude Code in Aether mode'
                 return 1
             end
             set repo $tree
+        else if not test -e $repo/.git
+            echo "aether-mode: this installed copy has no dev-tree, so --dev has nothing to load" >&2
+            return 1
         end
     end
     env CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 claude --plugin-dir $repo/plugins/aether --settings '{"enableWorkflows": true}' --model sonnet --effort xhigh $argv

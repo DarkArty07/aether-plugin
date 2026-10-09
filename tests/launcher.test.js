@@ -154,6 +154,15 @@ test('aether-mode --dev refuses a development tree that is gone, and never falls
   assert.match(r.stderr, /^aether-mode: the development tree that .*dev-tree points to is gone$/m)
 })
 
+test('aether-mode --dev refuses an installed copy that has no dev-tree, and never falls back to the release', { skip: NO_FISH }, (t) => {
+  const l = layout(t)
+  fs.rmSync(path.join(l.version, 'dev-tree'))
+  const r = aetherMode(l, ['--dev', '-p', 'hi'])
+  assert.equal(r.status, 1)
+  assert.equal(r.claude, null)
+  assert.match(r.stderr, /^aether-mode: this installed copy has no dev-tree, so --dev has nothing to load$/m)
+})
+
 test('run from the repository, aether-mode loads its plugins/aether, with or without --dev', { skip: NO_FISH }, (t) => {
   const l = layout(t)
   fs.rmSync(path.join(l.fn, 'aether-mode.fish'))

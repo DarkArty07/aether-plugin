@@ -140,6 +140,8 @@ In bash or zsh, after the same `install`:
 
     aether-mode() { CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 claude --plugin-dir "$(realpath ~/.local/share/aether-plugin/installed/current)/plugins/aether" --settings '{"enableWorkflows": true}' --model sonnet --effort xhigh "$@"; }
 
+With `AETHER_DATA_DIR` set, use it in place of `~/.local/share/aether-plugin` in these two lines.
+
 `node scripts/aether-install.js` has three commands:
 - `install [<version>]` installs the release tagged `aether--v<version>`, or the latest one, and makes it current. The release that was current becomes the previous one. The next `aether-mode` session loads it; a running session keeps the release it started with.
 - `rollback` swaps the current and the previous release.
@@ -182,13 +184,13 @@ Node.js 22 with no dependencies. The workflow's tests run its script in a harnes
 ### Release
 
 A release reaches `aether-mode` only when it is installed:
-1. bump `"version"` in `plugins/aether/.claude-plugin/plugin.json`;
+1. bump `"version"` in `plugins/aether/.claude-plugin/plugin.json`, and with it the version that `tests/launcher.test.js` pins and the `Version 0.x` status line of this README;
 2. run `npm run check`;
 3. merge to `main`;
 4. in the main checkout, run `claude plugin tag plugins/aether`, which creates the tag `aether--v<version>`;
 5. run `node scripts/aether-install.js install`.
 
-`node scripts/aether-install.js rollback` goes back to the previous release. If the script cannot run, swap the links by hand: in `~/.local/share/aether-plugin/installed/`, point `current` at the directory `previous` names, and `previous` at the one `current` named.
+`node scripts/aether-install.js rollback` goes back to the previous release. If the script cannot run, swap the links by hand: in `~/.local/share/aether-plugin/installed/`, point `current` at the directory `previous` names, and `previous` at the one `current` named. Each link's target is the bare directory name, for example `ln -sfn 0.5.0-4130f86 current` run inside `installed/`; an absolute target works for the launcher, but `status` and `rollback` cannot read it.
 
 ## Documentation
 
