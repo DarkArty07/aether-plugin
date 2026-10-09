@@ -1,0 +1,35 @@
+{
+  "reserve": 0.05,
+  "harnesses": {
+    "agy": {
+      "command": "agy",
+      "maxParallel": 4,
+      "waitSeconds": 540,
+      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200, "designer": 1800 },
+      "groups": { "gemini": "Gemini Models", "claude": "Claude and GPT models" },
+      "models": {
+        "gemini-3.8-flash": {
+          "group": "gemini",
+          "replaces": "haiku",
+          "roles": ["implementer"],
+          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
+          "aa": { "slug": "gemini-3-8-flash", "intelligence": 40.9, "terminalBench": 0.2, "checked": "2026-10-08" }
+        },
+        "claude-sonnet-5-5": {
+          "group": "claude",
+          "replaces": "sonnet",
+          "roles": ["implementer", "supervisor"],
+          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
+          "aa": { "slug": "claude-sonnet-5-5-high", "intelligence": 46.8, "terminalBench": 0.44, "checked": "2026-10-08" }
+        },
+        "claude-opus-5-5": {
+          "group": "claude",
+          "replaces": "opus",
+          "roles": ["implementer", "reviewer", "designer"],
+          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
+          "aa": { "slug": "claude-opus-5-5-high", "intelligence": 53.6, "terminalBench": 0.57, "checked": "2026-10-08" }
+        }
+      }
+    }
+  }
+}
