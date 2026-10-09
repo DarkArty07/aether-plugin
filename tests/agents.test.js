@@ -32,12 +32,17 @@ test('the Designer runs on Opus at xhigh effort, with a one-hour cache', () => {
   )
 })
 
-test('the Designer prompt holds the hand-off protocol and the plan rules', () => {
-  const { body } = agentFile('designer')
+test('the Designer prompt holds the hand-off protocol, the Decide line and the plan rules', () => {
+  const { front, body } = agentFile('designer')
+  assert.match(field(front, 'description'), /resumes it with SendMessage with each decision/)
   for (const needle of [
-    '## For the owner',
+    '## Decision',
     '## For the Lead',
     '- Stage: approaches | design | spec | plan | question | blocked',
+    '- Decide: lead — <reason> | owner — uncovered | conflict | irreversible: <reason>',
+    '`LEAD DECISION`',
+    '`OWNER ANSWER`',
+    '`Sirve a: C2`',
     'aether-voice --session',
     'superpowers:brainstorming',
     'superpowers:writing-plans',
@@ -50,6 +55,10 @@ test('the Designer prompt holds the hand-off protocol and the plan rules', () =>
   }
   assert.match(body, /cannot talk to the owner/i)
   assert.match(body, /never implement product code/i)
+  assert.match(body, /as the owner's delegate/)
+  assert.doesNotMatch(body, /## For the owner/)
+  assert.doesNotMatch(body, /Waiting for/)
+  assert.doesNotMatch(body, /The owner approves each of them/)
 })
 
 test('the swarm agents run at their set effort: implementers at xhigh, ops at low, reviews at high', () => {
