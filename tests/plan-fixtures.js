@@ -7,6 +7,7 @@ function task(n, options = {}) {
   const {
     title = `Task ${n} title`,
     tier = 'haiku — complete code',
+    review = null,
     area = 'core',
     owns = `\`src/t${n}/**\``,
     depends = 'none',
@@ -17,6 +18,7 @@ function task(n, options = {}) {
     '',
     '**Aether:**',
     `- Tier: ${tier}`,
+    ...(review === null ? [] : [`- Review: ${review}`]),
     `- Area: ${area}`,
     `- Owns: ${owns}`,
     ...dependsLines,

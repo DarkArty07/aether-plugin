@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { parsePlan, buildGraph, renderBrief } = require('../plugins/aether/lib/plan.js')
+const { EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, parsePlan, buildGraph, renderBrief } = require('../plugins/aether/lib/plan.js')
 const { task, plan } = require('./plan-fixtures.js')
 
 test('parsePlan reads tasks, Aether fields, execution, constraints and spec', () => {
@@ -66,8 +66,8 @@ test('parsePlan reports missing and malformed Aether fields', () => {
   ], { execution: ['- Ladder: haiku 2, sonnet 2'] })
   const { errors } = parsePlan(md)
   assert.ok(errors.includes('Task 1: missing the **Aether:** block.'))
-  assert.ok(errors.includes('Task 2: Tier must be haiku, sonnet or opus followed by " — reason".'))
-  assert.ok(errors.includes('Task 3: Tier must be haiku, sonnet or opus followed by " — reason".'))
+  assert.ok(errors.includes('Task 2: Tier must be haiku, sonnet or opus, optionally followed by an effort (low, medium, high, xhigh or max), then " — reason".'))
+  assert.ok(errors.includes('Task 3: Tier must be haiku, sonnet or opus, optionally followed by an effort (low, medium, high, xhigh or max), then " — reason".'))
   assert.ok(errors.includes('Task 3: Area must be lowercase letters, digits and dashes.'))
   assert.ok(errors.includes('Task 3: "Depends on: Task 1" needs the form "Task N — reason".'))
   assert.ok(errors.includes('Task 4: missing Area.'))
@@ -191,4 +191,99 @@ test('renderBrief carries the task text, its fields and the global constraints',
   assert.match(brief, /- Owns: src\/t1\/\*\*/)
   assert.match(brief, /## Global Constraints\n\n- Node 22\./)
   assert.match(brief, /### Task 1: Task 1 title/)
+})
+
+const TIER_MESSAGE = 'Tier must be haiku, sonnet or opus, optionally followed by an effort (low, medium, high, xhigh or max), then " — reason".'
+const REVIEW_MESSAGE = 'Review must be high, xhigh or max, then " — reason".'
+
+test('plan.js exports the effort levels in order and the two defaults', () => {
+  assert.deepEqual(EFFORTS, ['low', 'medium', 'high', 'xhigh', 'max'])
+  assert.equal(DEFAULT_EFFORT, 'xhigh')
+  assert.equal(DEFAULT_REVIEW, 'high')
+})
+
+test('parsePlan reads an optional effort on the Tier line, in any case and dash form', () => {
+  const parsed = parsePlan(plan([
+    task(1),
+    task(2, { tier: 'Haiku MEDIUM — renames one field' }),
+    task(3, { tier: 'sonnet high - wiring the tests pin down' }),
+    task(4, { tier: 'opus max -- a migration that needs the deepest look' }),
+    task(5, { tier: 'haiku low — a constant the tests pin down' }),
+  ]))
+  assert.deepEqual(parsed.errors, [])
+  assert.deepEqual(
+    parsed.tasks.map((t) => [t.tier, t.effort, t.tierReason]),
+    [
+      ['haiku', null, 'complete code'],
+      ['haiku', 'medium', 'renames one field'],
+      ['sonnet', 'high', 'wiring the tests pin down'],
+      ['opus', 'max', 'a migration that needs the deepest look'],
+      ['haiku', 'low', 'a constant the tests pin down'],
+    ],
+  )
+})
+
+test('parsePlan keeps a reason that starts with an effort word as the reason', () => {
+  const parsed = parsePlan(plan([task(1, { tier: 'haiku — high stakes, but the tests pin it down' })]))
+  assert.deepEqual(parsed.errors, [])
+  assert.equal(parsed.tasks[0].effort, null)
+  assert.equal(parsed.tasks[0].tierReason, 'high stakes, but the tests pin it down')
+})
+
+test('parsePlan refuses an unknown effort, extra words, and Sonnet or Opus below high', () => {
+  const { errors } = parsePlan(plan([
+    task(1, { tier: 'haiku turbo — x' }),
+    task(2, { tier: 'sonnet medium — x' }),
+    task(3, { tier: 'opus low — x' }),
+    task(4, { tier: 'sonnet high effort — x' }),
+  ]))
+  assert.deepEqual(errors, [
+    `Task 1: ${TIER_MESSAGE}`,
+    'Task 2: sonnet medium is not used for implementers; Sonnet and Opus run at high, xhigh or max.',
+    'Task 3: opus low is not used for implementers; Sonnet and Opus run at high, xhigh or max.',
+    `Task 4: ${TIER_MESSAGE}`,
+  ])
+})
+
+test('parsePlan reads an optional Review line, and refuses one below high, unknown, or without a reason', () => {
+  const parsed = parsePlan(plan([
+    task(1),
+    task(2, { review: 'XHIGH — file-system edge cases the tests do not cover' }),
+    task(3, { review: 'max - a parser whose inputs the tests cannot list' }),
+  ]))
+  assert.deepEqual(parsed.errors, [])
+  assert.deepEqual(
+    parsed.tasks.map((t) => [t.review, t.reviewReason]),
+    [
+      [null, null],
+      ['xhigh', 'file-system edge cases the tests do not cover'],
+      ['max', 'a parser whose inputs the tests cannot list'],
+    ],
+  )
+  const { errors } = parsePlan(plan([task(1, { review: 'medium — x' }), task(2, { review: 'xhigh' }), task(3, { review: 'deep — x' })]))
+  assert.deepEqual(errors, [`Task 1: ${REVIEW_MESSAGE}`, `Task 2: ${REVIEW_MESSAGE}`, `Task 3: ${REVIEW_MESSAGE}`])
+})
+
+test('buildGraph resolves each task to its effort and review, with xhigh and high as the defaults', () => {
+  const graph = buildGraph(parsePlan(plan([
+    task(1),
+    task(2, { tier: 'haiku medium — renames one field', review: 'xhigh — input parsing' }),
+    task(3, { tier: 'sonnet — UI states' }),
+  ])))
+  assert.deepEqual(graph.errors, [])
+  assert.deepEqual(
+    ['task-1', 'task-2', 'task-3'].map((id) => [graph.tasks[id].tier, graph.tasks[id].effort, graph.tasks[id].review]),
+    [
+      ['haiku', 'xhigh', 'high'],
+      ['haiku', 'medium', 'xhigh'],
+      ['sonnet', 'xhigh', 'high'],
+    ],
+  )
+})
+
+test('renderBrief names the starting rung on its Tier line', () => {
+  const parsed = parsePlan(plan([task(1), task(2, { tier: 'sonnet high — wiring the tests pin down' })]))
+  const options = { planPath: '/p/plan.md', spec: parsed.spec, globalConstraints: parsed.globalConstraints }
+  assert.match(renderBrief(parsed.tasks[0], options), /^- Tier: haiku xhigh — complete code$/m)
+  assert.match(renderBrief(parsed.tasks[1], options), /^- Tier: sonnet high — wiring the tests pin down$/m)
 })
