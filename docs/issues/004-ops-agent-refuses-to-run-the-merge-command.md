@@ -34,3 +34,11 @@ For one unit (task 11, documents only), the `aether:ops` agent (Haiku, low effor
 ## Environment
 
 Claude Code 2.1.295, Aether plugin 0.3, Linux (WSL2). The ops agent ran on Haiku at low effort.
+
+## Update, 2026-10-09: it happened again, after an explicit instruction from the owner
+
+- In the first run of the 0.5.0 plan (9 tasks), 3 of 9 merges were refused by the Haiku ops agent: "it came from a computed task text, which the harness marks as carrying no user authority". The owner had said "ya comienza a implementarlo lo veo bien" just before the launch, and the refusal quoted that same sentence as not enough. So an explicit instruction does not prevent it.
+- Several `aether-wt remove` calls were refused the same way (`closeError` on four merged units).
+- 42 of the run's 60 agents were ops agents, which also used up the run's agent cap (`maxAgents` 60) and put the final review at risk.
+- The three approved units were saved as patches by the final sweep. The Lead applied them by hand (`git apply`), the tests passed, and the run ended with a "not ready" final review whose critical and important findings were all consequences of the three missing merges.
+- This is the case for proposal 1: run the deterministic `aether-wt` commands in code, not through a model.
