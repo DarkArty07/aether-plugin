@@ -177,7 +177,7 @@ function designNote({ brainstorming, writingPlans }) {
     `- Run aether-voice as ${PLUGIN_BIN}/aether-voice and aether-plan as ${PLUGIN_BIN}/aether-plan.`,
     '- Commit only files under docs/superpowers/specs/ and docs/superpowers/plans/. A change to any other file undoes your whole round.',
     `- ${WORKDIR_RULE}`,
-    '- Your reply goes in the structured output your harness asks for: forOwner is the text of "For the owner"; stage, waitingFor and files are the bullets of "For the Lead".',
+    '- Your reply goes in the structured output your harness asks for: decision is the text of "Decision"; stage, decide and files are the bullets of "For the Lead".',
   ].join('\n')
 }
 
@@ -286,12 +286,12 @@ function laneLine(state, usage, quotaBefore, quotaAfter, groupLabel) {
 
 function replyText(structured, lane) {
   return [
-    '## For the owner',
-    String(structured.forOwner),
+    '## Decision',
+    String(structured.decision),
     '',
     '## For the Lead',
     `- Stage: ${structured.stage}`,
-    `- Waiting for: ${structured.waitingFor}`,
+    `- Decide: ${structured.decide}`,
     `- Files: ${structured.files}`,
     lane,
     '',

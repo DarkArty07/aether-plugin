@@ -55,7 +55,8 @@ test("the bin's role schemas are the workflow's, and the Designer's is fixed", (
   assert.deepEqual(schemas.IMPLEMENTER_SCHEMA, workflow.IMPLEMENTER_SCHEMA)
   assert.deepEqual(schemas.SUPERVISOR_SCHEMA, workflow.SUPERVISOR_SCHEMA)
   assert.deepEqual(schemas.REVIEW_SCHEMA, workflow.REVIEW_SCHEMA)
-  assert.deepEqual(schemas.DESIGNER_SCHEMA.required, ['forOwner', 'stage', 'waitingFor', 'files'])
+  assert.deepEqual(schemas.DESIGNER_SCHEMA.required, ['decision', 'stage', 'decide', 'files'])
+  assert.deepEqual(Object.keys(schemas.DESIGNER_SCHEMA.properties), ['decision', 'stage', 'decide', 'files'])
   assert.deepEqual(schemas.DESIGNER_SCHEMA.properties.stage.enum, ['approaches', 'design', 'spec', 'plan', 'question', 'blocked'])
 })
 

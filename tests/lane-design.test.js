@@ -10,7 +10,7 @@ const { makeRepo, tempDir, commitIn } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 const { WORKDIR_RULE } = require('../plugins/aether/lib/lane-calls.js')
 
-const REPLY = (stage) => JSON.stringify({ forOwner: 'Two approaches: A and B. I recommend A.', stage, waitingFor: 'a choice between A and B', files: 'none' })
+const REPLY = (stage) => JSON.stringify({ decision: 'Two approaches: A and B. I recommend A.', stage, decide: 'lead — the owner asked for the simplest', files: 'none' })
 
 // A designer worktree (a repository on a feature branch), the lane environment, and a Claude config
 // directory whose installed superpowers has the two skills.
@@ -59,12 +59,12 @@ test('design start runs a round on agy, keeps its commit of the spec, and prints
   assert.equal(
     r.stdout,
     [
-      '## For the owner',
+      '## Decision',
       'Two approaches: A and B. I recommend A.',
       '',
       '## For the Lead',
       '- Stage: approaches',
-      '- Waiting for: a choice between A and B',
+      '- Decide: lead — the owner asked for the simplest',
       '- Files: none',
       `- Lane: agy claude-opus-5-5-high, design ${id}; this round 1700 tokens, $0.01 at list price; Claude and GPT models used 0.0 % of the 5 h window and 0.0 % of the weekly one`,
       '',
@@ -80,6 +80,7 @@ test('design start runs a round on agy, keeps its commit of the spec, and prints
   assert.ok(sent.includes(`superpowers:brainstorming is ${path.join(install, 'skills', 'brainstorming', 'SKILL.md')}`))
   assert.ok(sent.includes(`superpowers:writing-plans is ${path.join(install, 'skills', 'writing-plans', 'SKILL.md')}`))
   assert.ok(sent.includes('A change to any other file undoes your whole round.'))
+  assert.ok(sent.includes('- Your reply goes in the structured output your harness asks for: decision is the text of "Decision"; stage, decide and files are the bullets of "For the Lead".'))
   assert.ok(sent.includes(WORKDIR_RULE))
   assert.ok(sent.endsWith(handoff))
   assert.equal(fx.git(repo.dir, 'log', '-1', '--format=%s'), 'docs: widgets spec')
