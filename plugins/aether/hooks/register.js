@@ -1,6 +1,7 @@
 // Aether usage meter (spec §10). Records every model request of the session (the main session's,
 // subagents' and workflow agents') with its tokens and timing, so aether-report can price a run.
 // It only observes: a failure here never changes, delays past a write, or blocks a request.
+// It also saves each aether-lane payload an ops agent carries to the file its marker names (lanes spec §6.1).
 //
 // Files: <data dir>/usage/<session>/<n>.json, each { session, part, claudeCode, agents, entries }
 // with up to PART_SIZE entries. A reloaded module starts after the parts already on disk.
@@ -15,6 +16,9 @@ let ready = null
 let written = 0
 let writing = false
 let pending = false
+
+const PAYLOAD_MARKER = /^=== aether-lane payload: (.+) ===$/m
+const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(task-\d+-\d+-(implement|supervise)|final-review)\/prompt\.md$/
 
 const tokens = (value) => (Number.isFinite(value) ? value : 0)
 const effortOf = (value) => (typeof value === 'string' && value !== '' ? value : null)
@@ -79,8 +83,40 @@ async function flush($) {
   }
 }
 
+// The payload of an ops prompt and the file its first marker names, or null when the prompt
+// carries no marker or the marker names a place a lane does not write.
+function lanePayload(e) {
+  if (e.subagentType !== 'aether:ops' || typeof e.prompt !== 'string') return null
+  const marker = PAYLOAD_MARKER.exec(e.prompt)
+  if (!marker) return null
+  const path = marker[1]
+  if (!path.startsWith('/') || path.split('/').some((segment) => segment === '.' || segment === '..')) return null
+  if (!PAYLOAD_PATH.test(path)) return null
+  const end = marker.index + marker[0].length
+  return { path, payload: e.prompt.slice(e.prompt.charAt(end) === '\n' ? end + 1 : end) }
+}
+
+// Writes the payload, then the spawn record beside it. A failure leaves the spawn unchanged.
+async function saveLanePayload($, e) {
+  try {
+    const lane = lanePayload(e)
+    if (!lane) return
+    await $.fs.write(lane.path, lane.payload)
+    const workflow = e.workflow || {}
+    const spawn = {
+      session: await $.session.id(),
+      workflowRunId: workflow.runId ?? null,
+      agentIndex: workflow.agentIndex ?? null,
+    }
+    await $.fs.write(`${lane.path.slice(0, lane.path.lastIndexOf('/'))}/spawn.json`, JSON.stringify(spawn))
+  } catch {
+    // The lane finds no payload and reports it; the spawn goes on.
+  }
+}
+
 export function register(on) {
   on('agent.spawn', async ($, e, next) => {
+    await saveLanePayload($, e)
     const result = await next(e)
     if (result && result.agentId) agents[result.agentId] = { type: e.subagentType || null, description: e.description || null }
     return result
