@@ -1,6 +1,6 @@
 # Decisions
 
-The decisions D1–D15 were taken in the design session of 2026-10-05. The design spec of 2026-10-07 updated several of them, as each one's **Update** says, and added A1–A10 (at the end). The [Lead and Designer spec](superpowers/specs/2026-10-08-lead-and-designer-design.md) of 2026-10-08 updated A4, A5 and A8, and added A11–A17. Each decision has a status:
+The decisions D1–D15 were taken in the design session of 2026-10-05. The design spec of 2026-10-07 updated several of them, as each one's **Update** says, and added A1–A10 (at the end). The [Lead and Designer spec](superpowers/specs/2026-10-08-lead-and-designer-design.md) of 2026-10-08 updated A4, A5 and A8, and added A11–A17. The [effort per task spec](superpowers/specs/2026-10-08-effort-per-task-design.md) of 2026-10-08 updated D5 and added A18. Each decision has a status:
 
 - **Decided**: settled.
 - **Direction**: agreed in principle; details still open.
@@ -56,6 +56,8 @@ The tentative split is Opus for the design agent and Sonnet below it. The mechan
 the `agent.spawn` mod, which is **Pending** until prototype step 1 confirms it.
 
 **Update (2026-10-07, built 2026-10-08).** Each plan task carries a tier (`haiku`, `sonnet` or `opus`) with its reason. The workflow enforces an escalation ladder per unit: by default Haiku 2 attempts, Sonnet 2, Opus 1, then blocked. Haiku implements by default; a Sonnet supervisor reviews every attempt; Opus does the final review. The workflow passes each agent's model directly, so no mod is needed for routing.
+
+**Update (2026-10-08, effort per task).** The task also chooses its implementer's effort, on its Tier line: `xhigh` by default on every model, lowered where the tests pin the work, and `max` only with a reason. A failed attempt runs again at `xhigh`, and an escalation runs the next model at `xhigh`. A task's Review line can raise its supervisor's effort from `high`. See A18.
 
 ## D6. Swarm for speed and quality
 
@@ -179,3 +181,4 @@ The owner took these with the [design spec](superpowers/specs/2026-10-07-aether-
 | A15 | Long tool loops leave the Lead's context (R6): the swarm, superpowers subagent-driven development, or one subagent with a self-contained brief. | Decided; built 2026-10-08 |
 | A16 | `aether-mode` launches the Lead with `--model sonnet --effort xhigh` and turns the advisor tool off. | Decided; built 2026-10-08 |
 | A17 | The split is kept only if a design trial shows lower cost at equal quality (§11). If quality drops, the split is not merged. | Decided. Trial 3 (2026-10-08) found no quality drop: 10 of 10 intent items against 9, and a tie in the blind pairwise judgment. In that short design session the split cost the same: $10.67 against $10.23. The owner kept the split. See [the evaluation](evaluations/2026-10-08-trial-3.md) |
+| A18 | **Effort per task.** Each plan task sets its implementer's effort by its complexity, `xhigh` by default on every model. Sonnet and Opus never run below `high`, and `max` needs a reason. Every later attempt runs at `xhigh`, or stays at a declared `max`. The supervisor reviews at `high`, raised per task by a Review line; ops stays at `low`, and the final reviewer at `high`. The workflow passes the effort on every call, and `aether-report` measures cost and time by effort. | Decided 2026-10-08; see the [spec](superpowers/specs/2026-10-08-effort-per-task-design.md) |

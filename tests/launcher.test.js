@@ -19,9 +19,9 @@ test('the README shows the same launch for bash and zsh', () => {
   assert.ok(read('README.md').includes(LINE))
 })
 
-test('the manifest is version 0.2.0 and names the Lead and the Designer', () => {
+test('the manifest is version 0.3.0 and names the Lead and the Designer', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.2.0')
+  assert.equal(manifest.version, '0.3.0')
   assert.match(manifest.description, /the Lead on Sonnet/)
   assert.match(manifest.description, /the Designer on Opus/)
 })

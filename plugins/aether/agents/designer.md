@@ -73,15 +73,23 @@ When the Lead asks you for a bounded design, give the short design in one round,
 Put this block right after each task heading:
 
     **Aether:**
-    - Tier: haiku — exact tests and interfaces pin the task down
+    - Tier: haiku high — a mechanical parser that exact tests pin down
+    - Review: xhigh — malformed input that the tests do not list
     - Area: backend
     - Owns: `src/api/**`, `tests/api.test.js`
     - Depends on: none
 
-- **Tier** is `haiku`, `sonnet` or `opus`, then " — " and the reason:
+- **Tier** is `haiku`, `sonnet` or `opus`, optionally followed by the implementer's effort, then " — " and the reason for both:
   - `haiku` (default): exact tests and interfaces pin the task down, and it touches few files;
   - `sonnet`: frontend and UI work, integration across several files, or behavior the tests cannot pin down exactly;
   - `opus`: security and auth, data migrations or destructive operations, concurrency, or core architecture.
+- **The effort** is `xhigh` when the Tier line names none. Weigh each task's complexity, and name an effort only when it should differ:
+  - lower it where the tests pin the work completely, for speed: `haiku high` or `haiku medium` for mechanical work, `sonnet high` or `opus high` for well-tested wiring. Haiku thinks about 47 s per answer at `xhigh`, and 15 s at `high`;
+  - name `max` only with a reason the task needs it: it thinks for 4 to 9 minutes per answer;
+  - Sonnet and Opus never run below `high`: Haiku at `xhigh` does that work for far less.
+
+  A failed attempt runs again at `xhigh`, so a lowered effort costs one attempt at most.
+- **Review** is optional: `high`, `xhigh` or `max`, then " — " and the reason. It sets the supervisor's effort for every attempt at the task, which is `high` without it. Use `xhigh` where behavior beyond the tests matters: UI states, input parsing, the file system, security, data loss or concurrency.
 - **Area** is a lowercase slug. Each area has its own supervisor.
 - **Owns** lists the files or globs (`*`, `**`, `?`) the task may change. Tasks in the same wave must not own overlapping paths.
 - **Depends on** is `none`, or one line per dependency in the form `Task N — reason`. Independence is the default, and every dependency needs a reason.

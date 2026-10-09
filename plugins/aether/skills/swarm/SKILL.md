@@ -6,7 +6,7 @@ description: Use in Aether mode to run an approved plan that has Aether fields a
 # Running the swarm
 
 The swarm runs a plan's tasks as units. Each unit:
-- gets its own worktree, and works on its tier;
+- gets its own worktree, and works on its model and effort;
 - is supervised after every attempt;
 - is merged into the integration branch, one merge at a time.
 
@@ -46,8 +46,8 @@ While it runs:
 The workflow returns:
 - **`units`:** one entry per task, with:
   - `status`: `merged`, `blocked`, `skipped` or `not-run`;
-  - `tiers`: the tier path, such as `["haiku", "sonnet"]`;
-  - `rounds`: each attempt, with the implementer's report, the supervisor's verdict, findings and ruling, and the merge outcome;
+  - `tiers`: the rungs it ran on, each a model and an effort, such as `["haiku medium", "haiku xhigh", "sonnet xhigh"]`. A higher effort on the same model is a climb; another model is an escalation;
+  - `rounds`: each attempt, with its rung (`tier`), the implementer's report, the supervisor's verdict, findings, ruling and effort (`reviewEffort`), and the merge outcome;
   - `commit`, `reason`, `question` and `patch`;
   - `closeError`, when the unit could not be closed. The final sweep then removes it, after saving its work as a patch.
 - **`finalReview`:** a `status` of `done`, `skipped` or `failed`. When it is done, it also has the `verdict`, `findings`, `declined` and `summary`.
@@ -57,13 +57,16 @@ The workflow returns:
 
 Save the result as `<runDir>/result.json`, then run `aether-report --run <runId>` from the integration worktree. It prints JSON:
 - **`speed`:** the run's window, from compile to the saved result, and the swarm's own span;
-- **`cost`:** USD at OpenRouter prices, by model and by role, from the usage meter;
-- **`quality`:** the units merged, escalated and blocked, every finding by severity, the final review, and the test command's result on the integration branch.
+- **`cost`:** USD at OpenRouter prices, from the usage meter:
+  - by model, and by role;
+  - `byEffort`: by role, model and effort, with the output tokens and the model time of each;
+  - `agents`, in `cost.run`: each agent of the run, with its label, model, effort, cost and time;
+- **`quality`:** the units merged, climbed, escalated and blocked, every finding by severity, the final review, and the test command's result on the integration branch.
 
 Report to the owner from it:
-- the units merged, escalated and blocked;
+- the units merged, climbed, escalated and blocked;
 - the final verdict and the tests;
-- the time and the cost by model.
+- the time and the cost by model, and the implementers' and supervisors' cost and time by effort.
 
 ## 5. Act on it
 

@@ -104,14 +104,14 @@ Every step you take re-reads the whole conversation, so long loops do not belong
 
 ## Plans
 
-The Designer writes plans with the Aether fields (Tier, Area, Owns, Depends on, and the `## Aether Execution` section), and checks them with `aether-plan check`.
+The Designer writes plans with the Aether fields (Tier with its effort, an optional Review, Area, Owns, Depends on, and the `## Aether Execution` section), and checks them with `aether-plan check`.
 
 ## Offer the swarm at the plan handoff
 
 When the owner approves the plan, you run the execution handoff. superpowers offers subagent-driven and native execution.
 
 Aether mode adds a third option, the swarm. `/aether:run` implements the plan's tasks:
-- in parallel, on their tiers;
+- in parallel, each on its model and effort;
 - with a supervisor for every attempt;
 - with one merge at a time;
 - with a final review on Opus, and cleanup.
