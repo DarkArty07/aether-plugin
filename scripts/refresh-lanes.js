@@ -5,11 +5,12 @@
 //
 // Refreshes the Artificial Analysis figures of the lane table from the Artificial Analysis API.
 // Prints each figure that changed; with --write, also writes the table back. The API key comes
-// from ARTIFICIAL_ANALYSIS_API_KEY, or else from the main checkout's .env, and is never printed.
+// from ARTIFICIAL_ANALYSIS_API_KEY, or else from .env in the data directory (AETHER_DATA_DIR, or
+// ~/.local/share/aether-plugin), and is never printed.
 
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
-const { repoPaths } = require('../plugins/aether/lib/git.js')
 
 const KEY = 'ARTIFICIAL_ANALYSIS_API_KEY'
 const MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
@@ -64,12 +65,17 @@ function unquote(value) {
   return quoted ? quoted[2] : value
 }
 
+// The .env file of the data directory: AETHER_DATA_DIR when set, else ~/.local/share/aether-plugin.
+function keyFile(env) {
+  return path.join(env.AETHER_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'aether-plugin'), '.env')
+}
+
 // The .env text to look in: the one given, none when the environment already has the key, or else
-// the main checkout's .env (null when that file does not exist).
+// the data directory's .env (null when that file does not exist).
 function envFileFor(env, envFile) {
   if (envFile !== undefined) return envFile
   if (env[KEY]) return null
-  const file = path.join(repoPaths(process.cwd()).mainRoot, '.env')
+  const file = keyFile(env)
   try {
     return fs.readFileSync(file, 'utf8')
   } catch (err) {
@@ -95,7 +101,7 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
 
   const key = keyFrom(env, envFileFor(env, envFile))
   if (!key) {
-    return { exitCode: 1, stdout: "ARTIFICIAL_ANALYSIS_API_KEY is not set, and the main checkout's .env does not have it.\n" }
+    return { exitCode: 1, stdout: `${KEY} is not set, and ${keyFile(env)} does not have it.\n` }
   }
 
   const config = JSON.parse(fs.readFileSync(args.configPath, 'utf8'))
@@ -114,7 +120,7 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   return { exitCode: 0, stdout }
 }
 
-module.exports = { refresh, keyFrom, main }
+module.exports = { refresh, keyFrom, keyFile, main }
 
 if (require.main === module) {
   main(process.argv.slice(2)).then(({ exitCode, stdout }) => {
