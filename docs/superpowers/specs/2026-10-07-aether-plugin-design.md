@@ -1,7 +1,7 @@
 # Aether: design spec (v0.1)
 
 - **Date:** 2026-10-07
-- **Status:** Approved by the owner on 2026-10-07. Amended the same day (A10), and on 2026-10-08 by Plan 2 (§7, §8, §9 and §11) and Plan 3 (§3, §4, §5, §9, §10 and §12). Roles and the launcher amended on 2026-10-08 by the [Lead and Designer spec](2026-10-08-lead-and-designer-design.md) (A4, A5, A8; §1, §4, §5). Effort per task amended on 2026-10-08 by the [effort per task spec](2026-10-08-effort-per-task-design.md) (§6, §7, §8, §10 and §12), built in version 0.3.0.
+- **Status:** Approved by the owner on 2026-10-07. Amended the same day (A10), and on 2026-10-08 by Plan 2 (§7, §8, §9 and §11) and Plan 3 (§3, §4, §5, §9, §10 and §12). Roles and the launcher amended on 2026-10-08 by the [Lead and Designer spec](2026-10-08-lead-and-designer-design.md) (A4, A5, A8; §1, §4, §5). Effort per task amended on 2026-10-08 by the [effort per task spec](2026-10-08-effort-per-task-design.md) (§6, §7, §8, §10 and §12), built in version 0.3.0. Lanes amended on 2026-10-08 by the [lanes spec](2026-10-08-lanes-design.md) (A4; §4, §7, §8, §9, §10 and §11), to be built in version 0.4.0.
 - **Method:** superpowers brainstorming (architectural path). After approval, Phase 0 checks (§13), then superpowers `writing-plans`.
 - **Background:** [README](../../../README.md), [Aether retrospective](../../aether-retrospective.md), [Claude Code research](../../claude-code-research.md), [Decisions](../../decisions.md)
 
