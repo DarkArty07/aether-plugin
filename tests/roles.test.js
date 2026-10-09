@@ -22,3 +22,20 @@ test('the swarm reports to the Lead', () => {
 test('the swarm skill sends plan fixes to the Designer', () => {
   assert.match(read('skills', 'swarm', 'SKILL.md'), /ask the Designer to fix the plan task/i)
 })
+
+test('in an autonomous run the swarm checks the ceilings, records its cost, and leaves unauthorized steps to the brief', () => {
+  const swarm = read('skills', 'swarm', 'SKILL.md')
+  for (const needle of [
+    'aether-autonomy status',
+    'aether-autonomy spend <lanes.totals.run.totalUsd> --source <runId>',
+    'aether-autonomy check merge-main',
+    'aether-autonomy check push',
+    '"Espera tu sí"',
+    'Defer the minor ones',
+    'as the owner\'s delegate',
+  ]) {
+    assert.ok(swarm.includes(needle), needle)
+  }
+  assert.ok(!swarm.includes('Use superpowers `finishing-a-development-branch` with the owner.'))
+  assert.ok(!swarm.includes('Report the minor ones to the owner as deferred.'))
+})
