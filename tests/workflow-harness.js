@@ -2,11 +2,13 @@
 
 // Runs the swarm workflow (plugins/aether/workflows/run.workflow.js) in Node with the workflow
 // runtime's functions stubbed. Agents answer from scripted handlers, so a test checks the
-// control flow and the order of calls without spending tokens.
+// control flow and the order of calls without spending tokens. Ops commands for aether-wt and
+// aether-lane answer as the bins would; a lane handler can replace the aether-lane answers.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { PLUGIN } = require('./helpers.js')
+const lanes = require('../plugins/aether/lib/lanes.js')
 
 const SCRIPT = path.join(PLUGIN, 'workflows', 'run.workflow.js')
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
@@ -50,21 +52,81 @@ function aetherWt(call, state) {
   }
 }
 
+const LEVEL = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
+const GROUP = { 'gemini-3.8-flash': 'gemini', 'claude-sonnet-5-5': 'claude', 'claude-opus-5-5': 'claude' }
+
+// The lane block of a finished call, built from the flags its start was given.
+function laneOf(started) {
+  return {
+    harness: 'agy',
+    model: `${started.model}-${LEVEL[started.effort]}`,
+    group: GROUP[started.model],
+    effort: started.effort,
+    durationMs: 1000,
+    usage: { input: 1000, output: 200, thinking: 0, cacheRead: 500, total: 1200 },
+    conversation: `conv-${started.call}`,
+  }
+}
+
+// What aether-lane prints for a finished call, with the digest it computes.
+function laneAnswer({ status = 'ok', result = null, lane, detail = '', files = null }) {
+  const answer = { done: true, status, result, lane, detail }
+  if (files) answer.files = files
+  answer.digest = lanes.resultDigest({ result, lane })
+  return answer
+}
+
+// What a clean aether-lane prints: every group usable, every call started, and every wait done
+// with the role's default answer.
+function aetherLane(call, defaults) {
+  switch (call.command.verb) {
+    case 'status':
+      return { harnesses: { agy: { installed: true, version: '1.3.2', groups: { gemini: { usable: true }, claude: { usable: true } } } } }
+    case 'start':
+      return { started: true, model: `${call.lane.model}-${LEVEL[call.lane.effort]}`, group: GROUP[call.lane.model] }
+    case 'wait':
+    case 'result': {
+      if (!call.started) return { error: `no such lane call: ${call.lane.call}` }
+      const role = call.started.role
+      const result = defaults[role]({ role, unit: call.started.task || null, n: 1, lane: call.started })
+      return laneAnswer({ result, lane: laneOf(call.started) })
+    }
+    case 'stop':
+      return { stopped: [call.lane.call] }
+    default:
+      throw new Error(`unexpected aether-lane command: ${call.command.line}`)
+  }
+}
+
 // Default answers: every implementer finishes, every supervisor approves, the final reviewer
 // passes, and every ops command succeeds.
 function defaultHandlers(state) {
-  return {
+  const defaults = {
     implementer: () => ({ status: 'DONE', summary: 'Implemented the brief.', head: 'abc1234', tests: '3/3 pass', concerns: '', question: '' }),
     supervisor: () => ({ verdict: 'approve', findings: [], ruling: 'Approve: the diff meets the brief.', guidance: '', question: '' }),
     reviewer: () => ({ verdict: 'ready', findings: [], declined: [], summary: 'Ready to merge.' }),
     ops: (call) => aetherWt(call, state),
   }
+  defaults.lane = (call) => aetherLane(call, defaults)
+  return defaults
 }
 
 function parseCommand(prompt) {
-  const m = prompt.match(/aether-wt ([a-z]+)((?: [^\s']+)*)/)
+  const m = prompt.match(/(aether-wt|aether-lane) ([a-z]+)((?: [^\s']+)*)/)
   if (!m) return null
-  return { line: m[0], verb: m[1], rest: m[2].trim().split(' ').filter(Boolean) }
+  return { tool: m[1], line: m[0], verb: m[2], rest: m[3].trim().split(' ').filter(Boolean) }
+}
+
+// The run, the call and the --flags of an aether-lane command.
+function laneFlags(rest) {
+  const flags = { run: rest[0], call: rest[1] }
+  for (let i = 2; i < rest.length; i += 2) flags[rest[i].replace(/^--/, '')] = rest[i + 1]
+  return flags
+}
+
+function payloadOf(prompt) {
+  const m = /^=== aether-lane payload: (.+) ===$/m.exec(prompt)
+  return m ? { path: m[1], text: prompt.slice(m.index + m[0].length + 1) } : null
 }
 
 // The args as the stubs see them. Invalid input is the workflow's to reject, not the harness's.
@@ -88,12 +150,17 @@ function tick() {
 // Runs the workflow with `args`. A handler in `overrides` replaces the default for its role and
 // gets (call, fallback): `call` describes the agent call, with `n` counting this role's calls for
 // the unit (ops: for the unit and command); `fallback` is the default handler. An ops handler
-// returns what aether-wt would print, or null for an agent that failed.
+// returns what aether-wt would print, or null for an agent that failed. `overrides.lane` answers
+// aether-lane commands the same way, and may also return a string, printed as it is.
+//
+// An aether-lane call also carries `lane` (its run, call and flags), `payload` ({ path, text }, for
+// a start), `digestOk` (for a start: whether --digest matches the payload) and `started` (for a
+// wait, result or stop: the flags its start was given).
 //
 // Resolves to { result, error, calls, events, logs, maxActive }. `events` holds "start <key>" and
 // "end <key>" lines in order, where <key> is the role (and ops command) plus the unit.
 async function runWorkflow(args, overrides = {}) {
-  const state = { args: parseLeniently(args), merged: new Set() }
+  const state = { args: parseLeniently(args), merged: new Set(), lanes: {} }
   const defaults = defaultHandlers(state)
   const calls = []
   const events = []
@@ -104,8 +171,10 @@ async function runWorkflow(args, overrides = {}) {
   async function agent(prompt, opts = {}) {
     if (!opts.agentType) throw new Error('every agent call needs an agentType')
     const role = opts.agentType.replace(/^aether:/, '')
-    if (!defaults[role]) throw new Error(`unknown agent type: ${opts.agentType}`)
+    if (!['implementer', 'supervisor', 'reviewer', 'ops'].includes(role)) throw new Error(`unknown agent type: ${opts.agentType}`)
     const unitMatch = (opts.label || '').match(/^(task-\d+):/)
+    const command = role === 'ops' ? parseCommand(prompt) : null
+    const isLane = Boolean(command && command.tool === 'aether-lane')
     const call = {
       role,
       model: opts.model,
@@ -115,9 +184,16 @@ async function runWorkflow(args, overrides = {}) {
       schema: opts.schema,
       prompt,
       unit: unitMatch ? unitMatch[1] : null,
-      command: role === 'ops' ? parseCommand(prompt) : null,
+      command,
+      lane: isLane ? laneFlags(command.rest) : null,
+      payload: isLane ? payloadOf(prompt) : null,
     }
-    const kind = call.command ? `${role}:${call.command.verb}` : role
+    if (isLane && command.verb === 'start') {
+      call.digestOk = Boolean(call.payload) && lanes.digest(call.payload.text) === call.lane.digest
+      state.lanes[call.lane.call] = call.lane
+    }
+    if (isLane && command.verb !== 'start') call.started = state.lanes[call.lane.call] || null
+    const kind = command ? (isLane ? `ops:lane-${command.verb}` : `ops:${command.verb}`) : role
     call.n = calls.filter((c) => c.unit === call.unit && c.kind === kind).length + 1
     call.kind = kind
     calls.push(call)
@@ -127,9 +203,10 @@ async function runWorkflow(args, overrides = {}) {
     events.push(`start ${key}`)
     try {
       await tick()
-      const handler = overrides[role] || defaults[role]
-      const answer = await handler(call, defaults[role])
+      const handler = isLane ? overrides.lane || defaults.lane : overrides[role] || defaults[role]
+      const answer = await handler(call, isLane ? defaults.lane : defaults[role])
       if (role !== 'ops' || answer === null) return answer
+      if (typeof answer === 'string') return { exitCode: 0, stdout: answer }
       return { exitCode: answer.error ? 1 : 0, stdout: `${JSON.stringify(answer)}\n` }
     } finally {
       await tick()
@@ -153,4 +230,4 @@ async function runWorkflow(args, overrides = {}) {
   return { result, error, calls, events, logs, maxActive }
 }
 
-module.exports = { runWorkflow }
+module.exports = { runWorkflow, laneAnswer, laneOf }
