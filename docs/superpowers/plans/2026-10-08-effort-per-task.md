@@ -58,7 +58,7 @@
 | `plugins/aether/lib/report.js`, `tests/report.test.js`, `tests/report-fixtures.js` | 3 | `byEffort`, `cost.run.agents`, `climbed`, and escalations by model |
 | `scripts/check-effort.js`, `tests/check-effort.test.js` | 4 | The transcript check (new) |
 | `plugins/aether/workflows/run.workflow.js`, `plugins/aether/agents/supervisor.md`, `tests/workflow.test.js`, `tests/workflow-harness.js` | 5 | Effort per call, the rule, rungs in labels, prompts, logs and results |
-| `plugins/aether/agents/designer.md`, both skills, `README.md`, `docs/decisions.md`, `plugin.json` | 6 | The Designer's rubric, the documents and version 0.3.0 |
+| `plugins/aether/agents/designer.md`, both skills, `README.md`, `docs/decisions.md`, `plugin.json`, `tests/launcher.test.js` | 6 | The Designer's rubric, the documents, and version 0.3.0 with the test that pins it |
 
 ## Before the swarm: the effort probe
 
@@ -1084,7 +1084,7 @@ git commit -m "feat(aether): pass each call's effort, and raise it to xhigh afte
 **Aether:**
 - Tier: haiku — the exact text of every change is given, and the task applies it
 - Area: docs
-- Owns: `plugins/aether/agents/designer.md`, `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `README.md`, `docs/decisions.md`, `plugins/aether/.claude-plugin/plugin.json`
+- Owns: `plugins/aether/agents/designer.md`, `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `README.md`, `docs/decisions.md`, `plugins/aether/.claude-plugin/plugin.json`, `tests/launcher.test.js`
 - Depends on: Task 1 — documents the effort on the Tier line, the Review line and their refusals
 - Depends on: Task 2 — documents that the usage meter records each request's effort
 - Depends on: Task 3 — documents `byEffort`, the agents list and `climbed`
@@ -1098,10 +1098,11 @@ git commit -m "feat(aether): pass each call's effort, and raise it to xhigh afte
 - Modify: `README.md`
 - Modify: `docs/decisions.md`
 - Modify: `plugins/aether/.claude-plugin/plugin.json`
+- Test: `tests/launcher.test.js`, whose manifest test pins the version
 
 **Interfaces:**
 - Consumes: the plan syntax of Task 1, the report fields of Task 3, the result fields of Task 5, and the script of Task 4, as their documents describe them below.
-- Produces: no code. Each replacement below is exact, and nothing else in these files changes.
+- Produces: no product code. The one test change pins the new version. Each replacement below is exact, and nothing else in these files changes.
 
 - [ ] **Step 1: The Designer's rubric**
 
@@ -1322,28 +1323,56 @@ Add this row at the end of the decisions table, after the A17 row:
 | A18 | **Effort per task.** Each plan task sets its implementer's effort by its complexity, `xhigh` by default on every model. Sonnet and Opus never run below `high`, and `max` needs a reason. Every later attempt runs at `xhigh`, or stays at a declared `max`. The supervisor reviews at `high`, raised per task by a Review line; ops stays at `low`, and the final reviewer at `high`. The workflow passes the effort on every call, and `aether-report` measures cost and time by effort. | Decided 2026-10-08; see the [spec](superpowers/specs/2026-10-08-effort-per-task-design.md) |
 ```
 
-- [ ] **Step 6: The version**
+- [ ] **Step 6: The version, test first**
 
-In `plugins/aether/.claude-plugin/plugin.json`, change `"version": "0.2.0"` to `"version": "0.3.0"`.
+In `tests/launcher.test.js`, replace:
+
+```js
+test('the manifest is version 0.2.0 and names the Lead and the Designer', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
+  assert.equal(manifest.version, '0.2.0')
+```
+
+with:
+
+```js
+test('the manifest is version 0.3.0 and names the Lead and the Designer', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
+  assert.equal(manifest.version, '0.3.0')
+```
+
+Nothing else in `tests/launcher.test.js` changes.
+
+Run: `node --test tests/launcher.test.js`
+Expected: FAIL. The manifest test finds `0.2.0`.
+
+Then, in `plugins/aether/.claude-plugin/plugin.json`, change `"version": "0.2.0"` to `"version": "0.3.0"`.
+
+Run: `node --test tests/launcher.test.js`
+Expected: PASS.
 
 - [ ] **Step 7: Run the checks**
 
 Run: `npm test && npm run validate`
-Expected: PASS, including `tests/session-start.test.js`, `tests/agents.test.js` and `tests/roles.test.js`.
+Expected: PASS, including `tests/launcher.test.js`, `tests/session-start.test.js`, `tests/agents.test.js` and `tests/roles.test.js`.
 
 Run: `grep -c '"version": "0.3.0"' plugins/aether/.claude-plugin/plugin.json`
 Expected: `1`.
 
+Run: `git grep -n '0\.2\.0' -- tests plugins README.md docs/decisions.md`
+Expected: no output. Nothing else pins the old version.
+
 - [ ] **Step 8: Commit**
 
 ```bash
-git add plugins/aether/agents/designer.md plugins/aether/skills/using-aether/SKILL.md plugins/aether/skills/swarm/SKILL.md README.md docs/decisions.md plugins/aether/.claude-plugin/plugin.json
+git add plugins/aether/agents/designer.md plugins/aether/skills/using-aether/SKILL.md plugins/aether/skills/swarm/SKILL.md README.md docs/decisions.md plugins/aether/.claude-plugin/plugin.json tests/launcher.test.js
 git commit -m "docs(aether): document effort per task, and bump the plugin to 0.3.0"
 ```
 
 **Acceptance:**
 - `npm test` and `npm run validate` pass.
 - Every replacement above is in place, and nothing else in these files changed.
+- `tests/launcher.test.js` pins version 0.3.0, and no tracked file under `tests/` or `plugins/`, nor `README.md` or `docs/decisions.md`, still names `0.2.0`.
 
 ## After the swarm: the end-to-end check
 
