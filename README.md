@@ -204,3 +204,7 @@ These are deferred until the trials justify them:
 - several parallel attempts on critical units;
 - risk-based review;
 - marketplace publishing.
+
+## License
+
+Aether Plugin is open source under the [MIT License](LICENSE). The implementer, supervisor and reviewer agents adapt prompt templates of [superpowers](https://github.com/obra/superpowers), also under the MIT License; [`plugins/aether/NOTICE`](plugins/aether/NOTICE) has the details. The plugin directory carries its own copy of the license.

@@ -6,6 +6,8 @@ agents/supervisor.md, agents/reviewer.md) adapt the implementer, task-reviewer
 and code-reviewer prompt templates of superpowers
 (https://github.com/obra/superpowers), used under the MIT License below.
 
+The rest of the project is released under the MIT License, see LICENSE.
+
 MIT License
 
 Copyright (c) 2025 Jesse Vincent
