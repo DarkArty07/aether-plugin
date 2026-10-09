@@ -1,0 +1,36 @@
+# The ops agent can refuse to run `aether-wt merge`, and the unit is then reported as blocked
+
+**Type:** bug (reliability of a model step that should be deterministic)
+**Date:** 2026-10-09
+**Found in:** the fourth launch of a 12-task plan on an application repository
+
+## Summary
+
+For one unit (task 11, documents only), the `aether:ops` agent (Haiku, low effort) did not run the merge command the workflow gave it. It answered, in Spanish, that it had not executed `aether-wt merge <run> task-11`, because the command had been "computed by the workflow script, not written by the user" and it "merges a worktree into the main branch". The workflow read that text as unreadable output and marked the unit `blocked` with "merge failed", although nothing had been tried. The merge target was the run's integration branch, not `main`.
+
+## Evidence
+
+- In the same launch, the merges of tasks 9 and 10 through the same agent and the same prompt ran fine. Only the third one was refused, so the behaviour is intermittent.
+- The unit's supervisor had already ruled `approve`. The work was saved as a patch by the final sweep, and the Lead applied it by hand after the whole test command passed.
+- The failure text names the cause (the agent declined), but the workflow logs it as "unreadable output".
+
+## Impact
+
+- An approved unit is reported as failed, and its dependents (here the PR task) are skipped.
+- The cause is a model's judgement on a command that needs none. It cannot be fixed by a retry because the ladder is for implementer failures, not for ops.
+- The agent's reasoning ("computed by the script") is a prompt-injection reflex that a workflow cannot rely on to stay quiet.
+
+## Proposals
+
+1. **Do not run merges through a model.** `aether-wt merge`, `ensure`, `diff` and `sweep` are deterministic commands. The workflow script should run them in code (a child process), not through an agent. This also removes the 120-second timeout problem (see issue 002) and the haiku cost of 60 to 70 ops calls per run.
+2. If an agent must run it, the prompt should say who authorizes the command and that its target is the integration branch of the run, and the workflow should treat "I did not run it" as a retry of the ops step, not as a failed merge.
+3. Distinguish "command not run" from "command failed" in the result, so the Lead can see the difference at a glance.
+
+## Acceptance
+
+- A merge is never reported as failed when it was not attempted.
+- A regression test covers an ops reply that says it did not run the command.
+
+## Environment
+
+Claude Code 2.1.295, Aether plugin 0.3, Linux (WSL2). The ops agent ran on Haiku at low effort.
