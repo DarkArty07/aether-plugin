@@ -235,7 +235,7 @@ Sirve a: C4.
 
 Sirve a: C4.
 
-**R14.** `aether-plan compile`, when `lanesEnabled()` is off, behaves as with `--no-lanes`, and writes one line to stderr:
+**R14.** `aether-plan compile`, when `lanesEnabled()` is off, behaves as with `--no-lanes`. Unless `--no-lanes` was given, it also writes one line to stderr:
 - for reason `option`: `aether-plan: lanes are off: the aether plugin's lanes option is not on`;
 - for reason `platform`: `aether-plan: lanes are off: lanes need Linux`.
 
@@ -344,7 +344,9 @@ These are the only files this work changes (C5):
 | `plugins/aether/lib/report.js` | One note's text (R23) |
 | `plugins/aether/skills/swarm/SKILL.md` | Two bullets (R18) |
 | `scripts/aether-install.js`, `scripts/aether-mode.fish`, `tests/aether-install.test.js` | Deleted (R19) |
-| `tests/launcher.test.js`, `tests/session-start.test.js`, `tests/session-start-autonomy.test.js`, `tests/guard.test.js`, `tests/run.test.js`, `tests/lanes.test.js`, `tests/aether-plan.test.js`, `tests/lane-design.test.js`, `tests/session.test.js` (new), `tests/helpers.js` | Tests (§14) |
+| `tests/launcher.test.js`, `tests/session-start.test.js`, `tests/session-start-autonomy.test.js`, `tests/guard.test.js`, `tests/run.test.js`, `tests/lanes.test.js`, `tests/aether-plan.test.js`, `tests/lane-design.test.js`, `tests/roles.test.js`, `tests/report.test.js`, `tests/helpers.js`, `tests/lane-fixtures.js`, `tests/session.test.js` (new), `tests/manifest.test.js` (new) | Tests (§14) |
+| `tests/fixtures/fake-model.js`, `tests/fake-model.test.js` | New: the local fake model that the acceptance checks use (§14) |
+| `docs/evaluations/2026-10-09-installable/A1-install.md` … `A6-owner-copy.md` | New: the acceptance evidence (§14) |
 | `package.json` | `validate` (R3) |
 | `README.md` | The guide (R24) |
 | `docs/claude-code-research.md`, `docs/decisions.md` | The facts of §2 and the decisions (R25) |
@@ -477,14 +479,19 @@ function lanesEnabled(env = process.env, platform = process.platform)
 
 **Validation:** `npm run validate`, with both manifests.
 
-**Acceptance (the Lead, with the probe technique of §2).** A throwaway clone of the branch goes in a scratch directory, with a throwaway tag in that clone only. The checks use a scratch `CLAUDE_CONFIG_DIR` and a local fake model on a free random port, checked free before binding and never a fixed port. No request reaches Anthropic.
+**Acceptance, as tasks of the plan, with the probe technique of §2.**
+- A throwaway clone of the branch goes in a scratch directory, with a throwaway tag in that clone only.
+- The checks use a scratch `CLAUDE_CONFIG_DIR`, and the fake model `tests/fixtures/fake-model.js`, which binds port 0 so the system picks a free port; never a fixed port.
+- No model request reaches Anthropic.
+- Each check's evidence goes into `docs/evaluations/2026-10-09-installable/`.
+- The `platform` outcome of `design start` is covered by the unit test of `lanesEnabled`, because a test on Linux cannot run the bin on another platform.
 
 | | Check | Criterion |
 |---|---|---|
 | A1 | Two installs succeed, and `claude plugin list` shows `aether@aether-plugin` enabled with superpowers:<br>- `claude plugin marketplace add <clone>` then `claude plugin install aether@aether-plugin`;<br>- the pinned form of §10, with `file://` and the throwaway tag, then `claude plugin install aether@aether-plugin --config lanes=true`.<br>Without the official marketplace, the dependency error of F12 appears. | C1, C4 |
 | A2 | `claude --agent aether:lead --effort xhigh`, run from bash and from fish, sends its first request with:<br>- model Sonnet and effort `xhigh`;<br>- the plain system prompt and all 20 tools;<br>- `Aether mode is active` in the context.<br>The marker exists, and the main session, a subagent and a workflow agent see `AETHER_LANES` in Bash. | C2, C3 |
 | A3 | A plain `claude` session with Aether installed sends a first request with:<br>- no `Aether mode is active`;<br>- no `aether:` agent lines;<br>- no change to the data directory.<br>The guard allows a spec write. The footprint is measured (R10). | C3 |
-| A4 | In an Aether session that writes a spec through a `general-purpose` subagent, the guard denies the write. Usage parts are written under `<scratch config>/plugins/data/aether-aether-plugin/usage/`, and `aether-report` reads them from there. A `/clear` in that session gives a SessionStart with `agent_type: "aether:lead"` and a new marker. | C3, C4 |
+| A4 | In an Aether session that writes a spec through a `general-purpose` subagent, the guard denies the write. Usage parts are written under `<scratch config>/plugins/data/aether-aether-plugin/usage/`, and `aether-report` reads them from there. A resumed session gets the lanes line and keeps its marker. A `/clear` in that session gives a SessionStart with `agent_type: "aether:lead"` and a new marker; if headless mode cannot run `/clear`, that check is recorded as not verifiable headless. | C3, C4 |
 | A5 | Changing the pinned `ref` and running `claude plugin update` moves between two throwaway tags and back, and the data directory survives. | C1, C7 |
 | A6 | `git tag`, `git ls-remote` and the checksums of `~/.local/share/aether-plugin/installed/` are as before. `fish -c 'functions aether-mode'` still points into the installed copy. | C6 |
 
