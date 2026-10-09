@@ -66,7 +66,7 @@ Lead (main session, Sonnet, xhigh): conversation, route, relay, execution
   │  hand-off once the owner confirms the understanding
   ▼
 Designer (aether:designer, Opus, max): approaches, design, spec, plan
-  │  writes the plan with Aether fields: tier, area, owned files, dependencies
+  │  writes the plan with Aether fields: tier and effort, area, owned files, dependencies
   │  aether-plan check / compile
   ▼
 /aether:run (dynamic workflow)
@@ -118,7 +118,7 @@ Then work as you would with superpowers. When a plan is ready, the Lead offers t
 - **a plan with Aether fields** on every task:
 
       **Aether:**
-      - Tier: haiku — exact tests and interfaces pin the task down
+      - Tier: haiku high — exact tests and interfaces pin the task down
       - Area: backend
       - Owns: `src/api/**`, `tests/api.test.js`
       - Depends on: none
@@ -164,14 +164,14 @@ Aether Plugin answers each failure:
 - Claude Code is the harness.
 - The workflow enforces budgets, the ladder and serialized merges in code.
 - Blocked units come back with their question.
-- Each task's tier picks its model.
+- Each task's tier picks its model and its effort.
 - `aether-plan` refuses chain-shaped plans.
 
 ## Principles
 
 1. **Mechanism in code, judgment in the model.** Anything that must always happen the same way (status, retries, budgets, cleanup) is code, never a prompt instruction.
 2. **Bounded autonomy.** Every run has an agent budget and a verifiable definition of done. Work that hits a real question comes back blocked, with the question.
-3. **The task chooses the model.** Tiers in the plan set the start, and failures move a unit up the ladder.
+3. **The task chooses the model and its effort.** Each task's Tier line sets the start. A failed attempt runs again at `xhigh`, and then on a stronger model.
 4. **Contracts first, then the swarm.** Plans give interfaces, failing tests and file ownership. Units are independent by default, and every dependency needs a reason.
 5. **superpowers is the method.** Aether adds only the multi-agent organization.
 
@@ -179,9 +179,11 @@ Aether Plugin answers each failure:
 
 **Next:** raise Aether's quality at its current time and cost, with [trial 2's techniques](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost), then rerun trial 2 in Aether mode.
 
-**Effort.**
-- Since 2026-10-08, implementers run at `xhigh` on every tier; before, they ran at `medium`.
-- Effort per task is the next sub-project. [Trial 3](docs/evaluations/2026-10-08-trial-3.md) left two complete candidate designs for it.
+**Effort.** Since version 0.3.0, each plan task sets its implementer's effort on its Tier line, by the task's complexity ([spec](docs/superpowers/specs/2026-10-08-effort-per-task-design.md)).
+- The default is `xhigh` on every model. The Designer lowers it where the tests pin the work, and names `max` only with a reason.
+- A failed attempt runs again at `xhigh`, then moves up the ladder.
+- The supervisor reviews at `high`, and a task's Review line can raise it.
+- `aether-report` shows the cost and the time of each role, model and effort. `scripts/check-effort.js` checks, from a session's transcripts, that each agent ran at the effort its call asked for.
 
 These are deferred until the trials justify them:
 - non-Anthropic models through the Aether Router;
