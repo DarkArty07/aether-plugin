@@ -262,6 +262,15 @@ test("a round's agy gets an allowlisted environment, without the Lead's Claude s
   assert.deepEqual([seen.HOME, seen.AETHER_LANE_CALL], [env.HOME, `design/${onlyDesignId(repo)}`])
 })
 
+test('a non-clean round whose /usage cannot be read afterwards is failed, not quota', (t) => {
+  const { repo, env } = designSetup(t)
+  const r = design(repo, env, ['start', '--session', 'lead-1', '--cwd', repo.dir], `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} unreadable\nFAKE-AGY: exit-error`)
+  assert.equal(r.status, 4, r.stdout + r.stderr)
+  assert.deepEqual([lastJson(r.stdout).failed, lastJson(r.stdout).undone], ['failed', true])
+  const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
+  assert.deepEqual([entry.status, entry.quotaAfter], ['failed', null])
+})
+
 test("once a round's agy exits, the commands it left running in sessions of their own are ended", (t) => {
   const { repo, env } = designSetup(t)
   const pidFile = path.join(tempDir(t), 'detached.pid')

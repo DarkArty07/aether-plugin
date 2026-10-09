@@ -279,7 +279,8 @@ function failedDetail(reason, stderr) {
 }
 
 // The status, result and detail of a finished call, from the checks and agy's output, in that order.
-function judge(cwd, info, before, parsed, quotaAfter, reserve, stderr) {
+// quotaRead says whether /usage could be read after the call: only a reading can find the group dry.
+function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, stderr) {
   const { runId, role, task } = info
   const integration = work.checkIntegration(cwd, runId, before)
   if (!integration.ok) return { status: 'blocked', detail: integration.detail }
@@ -288,7 +289,7 @@ function judge(cwd, info, before, parsed, quotaAfter, reserve, stderr) {
     if (!unit.ok) return { status: 'blocked', detail: unit.detail }
   }
   if (!parsed.clean) {
-    if (!lanes.usable(quotaAfter, reserve)) return { status: 'quota', detail: parsed.reason }
+    if (quotaRead && !lanes.usable(quotaAfter, reserve)) return { status: 'quota', detail: parsed.reason }
     return { status: 'failed', detail: failedDetail(parsed.reason, stderr) }
   }
   if (role === 'implementer') {
@@ -316,6 +317,7 @@ async function runCall(cwd, runId, call) {
   let outcome
   let parsed = { usage: NO_USAGE, conversation: null }
   let quotaAfter = null
+  let quotaRead = false
   try {
     const { config, adapter } = harnessSettings()
     const schema = ROLE_SCHEMAS[role]
@@ -338,13 +340,15 @@ async function runCall(cwd, runId, call) {
     lanes.killMarked(paths.marker)
     try {
       quotaAfter = adapter.quota().groups[group] ?? null
+      quotaRead = true
     } catch {
+      // An unreadable /usage is an infrastructure failure, not a verdict on the quota.
       quotaAfter = null
     }
     const stdout = readTextOrEmpty(paths.agyStdout)
     const stderr = readTextOrEmpty(paths.agyStderr)
     parsed = adapter.parse({ stdout, stderr, exitCode }, { required: schema.required })
-    outcome = judge(cwd, info, before, parsed, quotaAfter, config.reserve, stderr)
+    outcome = judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, config.reserve, stderr)
   } catch (err) {
     outcome = { status: 'failed', detail: `runner: ${err.message}` }
   } finally {

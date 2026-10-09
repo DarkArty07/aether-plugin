@@ -307,10 +307,11 @@ function previousCumulative(rounds, conversation) {
   return earlier ? earlier.cumulative : null
 }
 
-function judge(files, parsed, quotaAfter, reserve) {
+// quotaRead says whether /usage could be read after the round: only a reading can find the group dry.
+function judge(files, parsed, { quotaAfter, quotaRead }, reserve) {
   const outside = files.filter((file) => !ALLOWED_PREFIXES.some((prefix) => file.startsWith(prefix)))
   if (outside.length > 0) return { status: 'violation', files: outside, detail: 'changes outside specs and plans' }
-  if (!parsed.clean) return { status: lanes.usable(quotaAfter, reserve) ? 'failed' : 'quota', detail: parsed.reason }
+  if (!parsed.clean) return { status: quotaRead && !lanes.usable(quotaAfter, reserve) ? 'quota' : 'failed', detail: parsed.reason }
   return { status: 'ok', detail: '' }
 }
 
@@ -341,8 +342,15 @@ async function runRound({ mainRoot, state, config, harness, adapter, input, quot
   } catch (err) {
     parsed = { clean: false, reason: err.message, structured: null, usage: NO_USAGE, conversation: null }
   }
-  const quotaAfter = readQuota(adapter, state.group)
-  const outcome = judge(changedPaths(top, start), parsed, quotaAfter, config.reserve)
+  let quotaAfter = null
+  let quotaRead = false
+  try {
+    quotaAfter = adapter.quota().groups[state.group] ?? null
+    quotaRead = true
+  } catch {
+    // An unreadable /usage is an infrastructure failure, not a verdict on the quota.
+  }
+  const outcome = judge(changedPaths(top, start), parsed, { quotaAfter, quotaRead }, config.reserve)
   const saved = outcome.status === 'ok' ? null : undoRound(top, start, startBranch, backup)
 
   const time = Date.now()

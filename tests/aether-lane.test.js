@@ -217,6 +217,15 @@ test("a non-clean call is quota when the group fell under the reserve, failed ot
   assert.match(fx.git(unitDir(failed.args), 'status', '--porcelain', '--untracked-files=all'), /src\/t1\/half\.js/)
 })
 
+test('a non-clean call whose /usage cannot be read afterwards is failed, not quota', (t) => {
+  const env = fx.laneEnv(t)
+  const { done } = implement(t, [`FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} unreadable`, 'FAKE-AGY: exit-error'], { env })
+  assert.deepEqual([done.status, done.result], ['failed', null])
+  assert.match(done.detail, /^exit 1: model not found/)
+  const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
+  assert.deepEqual([entry.status, entry.quotaAfter], ['failed', null])
+})
+
 test('a supervisor call reviews in a disposable copy of the unit branch, then the copy is removed', (t) => {
   const { args, unit } = preparedUnit(t)
   const env = fx.laneEnv(t)
