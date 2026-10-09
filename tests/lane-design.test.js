@@ -133,8 +133,9 @@ test('a round that changes anything outside specs and plans is undone whole, and
     ].join('\n'),
   )
   assert.equal(r.status, 4, r.stdout + r.stderr)
-  const backup = `refs/aether/design/${onlyDesignId(repo)}/round-1`
-  assert.deepEqual(lastJson(r.stdout), { failed: 'violation', files: ['notes.txt', 'src/x.js'], undone: true, backup })
+  const id = onlyDesignId(repo)
+  const backup = `refs/aether/design/${id}/round-1`
+  assert.deepEqual(lastJson(r.stdout), { failed: 'violation', files: ['notes.txt', 'src/x.js'], undone: true, backup, design: id })
   assert.equal(fx.git(repo.dir, 'rev-parse', 'HEAD'), start)
   assert.equal(fx.git(repo.dir, 'status', '--porcelain'), '')
   assert.equal(fs.readFileSync(path.join(repo.dir, 'cache', 'keep.txt'), 'utf8'), 'keep\n')
@@ -163,7 +164,7 @@ test('an undone round first keeps everything the undo removes, commits included,
   const id = onlyDesignId(repo)
   const backup = `refs/aether/design/${id}/round-1`
   const out = lastJson(r.stdout)
-  assert.deepEqual([out.failed, out.undone, out.backup], ['failed', true, backup])
+  assert.deepEqual([out.failed, out.undone, out.backup, out.design], ['failed', true, backup, id])
   assert.equal(fx.git(repo.dir, 'rev-parse', 'HEAD'), start)
   assert.equal(fx.git(repo.dir, 'status', '--porcelain', '--untracked-files=all'), '')
   assert.equal(fs.existsSync(path.join(repo.dir, 'docs', 'superpowers', 'plans', 'b.md')), false)
@@ -183,8 +184,26 @@ test('an undone round that left nothing beyond its start makes no backup ref', (
   const r = design(repo, env, ['start', '--session', 'lead-1', '--cwd', repo.dir], 'FAKE-AGY: timeout')
   assert.equal(r.status, 4, r.stdout + r.stderr)
   const out = lastJson(r.stdout)
-  assert.deepEqual([out.failed, out.undone, Object.hasOwn(out, 'backup')], ['failed', true, false])
+  assert.deepEqual([out.failed, out.undone, Object.hasOwn(out, 'backup'), out.design], ['failed', true, false, onlyDesignId(repo)])
   assert.equal(backupRefs(repo), '')
+})
+
+test('a round that breaks after its design opened names the design, and one whose backup fails is left as it was', (t) => {
+  const { repo, env } = designSetup(t)
+  Object.assign(env, { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' })
+  repo.git('config', '--unset', 'user.name')
+  repo.git('config', '--unset', 'user.email')
+  repo.git('config', 'user.useConfigOnly', 'true')
+  const start = fx.git(repo.dir, 'rev-parse', 'HEAD')
+  const r = design(repo, env, ['start', '--session', 'lead-1', '--cwd', repo.dir], 'FAKE-AGY: write notes.txt loose\nFAKE-AGY: timeout')
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  const id = onlyDesignId(repo)
+  const out = lastJson(r.stdout)
+  assert.equal(out.design, id)
+  assert.match(out.error, /commit-tree/)
+  assert.equal(fx.git(repo.dir, 'rev-parse', 'HEAD'), start)
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'notes.txt'), 'utf8'), 'loose\n')
+  assert.deepEqual(lastJson(design(repo, env, ['end', id]).stdout), { ended: id })
 })
 
 // Starts a first round in the background whose agy edits README.md and then sleeps, and resolves
@@ -278,7 +297,7 @@ test('a resume that comes back in a new conversation is undone, and list and end
   )
   assert.equal(r.status, 4, r.stdout + r.stderr)
   const out = lastJson(r.stdout)
-  assert.deepEqual([out.failed, out.undone], ['failed', true])
+  assert.deepEqual([out.failed, out.undone, out.design], ['failed', true, id])
   assert.match(out.detail, /conversation/)
   assert.equal(fx.git(repo.dir, 'rev-parse', 'HEAD'), before)
   const listed = lastJson(design(repo, env, ['list']).stdout)

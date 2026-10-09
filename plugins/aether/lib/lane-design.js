@@ -394,6 +394,8 @@ async function runRound({ mainRoot, state, config, harness, adapter, input, quot
     else failed.detail = outcome.detail
     failed.undone = true
     if (saved) failed.backup = saved
+    // The Lead ends the lane design when it moves to the native Designer, so it needs the id.
+    failed.design = state.id
     return answer(4, failed)
   }
   const groupLabel = harness.groups[state.group] ?? state.group
@@ -444,7 +446,12 @@ async function start(args, input) {
   const id = newDesignId(mainRoot)
   const state = { id, session, cwd: workdir, conversation: null, agyModel: lane.agyModel, group: lane.group, status: 'open', rounds: [] }
   run.writeJson(stateFile(designDir(mainRoot, id)), state)
-  return runRound({ mainRoot, state, config, harness, adapter, input, quotaBefore, skills })
+  try {
+    return await runRound({ mainRoot, state, config, harness, adapter, input, quotaBefore, skills })
+  } catch (err) {
+    // The design is open from here on; the Lead needs its id to end it.
+    return answer(1, { error: err.message, design: id })
+  }
 }
 
 async function reply(args, input) {

@@ -70,7 +70,10 @@ Before the confirmation, explore and converse freely. After it, you no longer de
         EOF
 
    - **Exit 0:** it printed the Designer's first reply, in the format below, with one more line in "For the Lead": `- Lane: ...`, which names the design id. Keep the id.
-   - **Exit 3** (`{"unavailable": ...}`): nothing changed. Start the native Designer instead: the Agent tool with `subagent_type` `aether:designer`, in the background, with the same message.
+   - **Any other exit:** start the native Designer instead: the Agent tool with `subagent_type` `aether:designer`, in the background, with the same message. When the output names a `design`, end that lane design with `aether-lane design end <id>`.
+     - **Exit 3** (`{"unavailable": ...}`): nothing changed, and no lane design was opened.
+     - **Exit 4** (`{"failed": ..., "undone": true, "design": "<id>"}`): the first round failed and was undone.
+     - **Exit 1** (`{"error": ...}`): the command broke, and the round may not have been undone. Check the working directory with `git status`, and tell the owner what the round left there.
 4. Tell the owner the Designer is working, and keep its design id or its agent id.
 
 ## The relay
@@ -102,8 +105,8 @@ The Designer ends every round with this reply:
 - **A Designer on a lane:**
   - While a round runs, do not edit the Designer's working directory, and let nothing else edit it: no fix of yours, no subagent, no swarm. Ask the owner not to edit it by hand either. A round that fails is undone whole, and the undo also removes whatever else changed there during the round.
   - An undone round keeps all of its work first, in the git ref that its exit 4 names as `backup` (`refs/aether/design/<id>/round-<n>`). When that work holds more than the Designer's, tell the owner, and bring it back from the ref only on the owner's word.
-  - Exit 3 or 4 from `aether-lane design reply` means the round did not happen or was undone. Start the native Designer from the spec and plan files, the last reply the owner saw and the owner's latest answer, and keep that design native.
-  - When the owner approves the plan, or the design is dropped, run `aether-lane design end <id>`.
+  - Any exit but 0 from `aether-lane design reply` moves the design to the native Designer, as at the hand-off: exit 3 (`{"unavailable": ...}`) means the round did not happen, exit 4 (`{"failed": ...}`) that it was undone, and exit 1 (`{"error": ...}`) that the command broke, with the same `git status` check. Start the native Designer from the spec and plan files, the last reply the owner saw and the owner's latest answer, and keep that design native.
+  - Run `aether-lane design end <id>` whenever a lane design moves to the native Designer, and when the owner approves the plan or the design is dropped. The id is the one in the `- Lane:` line, or the `design` of the failed command's output.
   - `aether-lane design list` shows the open designs, for a lost id.
 
 ## Your own tool work
