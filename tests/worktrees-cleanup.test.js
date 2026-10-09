@@ -4,9 +4,11 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawn } = require('node:child_process')
 const { makeRepo, compile, commitIn, useDataDir, age, ageRun, tempDir } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
-const { ensure, merge, removeUnit, sweepRun, sweepStale } = require('../plugins/aether/lib/worktrees.js')
+const { ensure, merge, removeUnit, diffPackage, sweepRun, sweepStale } = require('../plugins/aether/lib/worktrees.js')
+const { prepareReader } = require('../plugins/aether/lib/lane-work.js')
 
 test('removeUnit deletes the worktree and branch, and can keep a patch', (t) => {
   const repo = makeRepo(t)
@@ -170,4 +172,127 @@ test('sweepRun keeps a unit whose unmerged work it cannot save', (t) => {
   assert.deepEqual(r.remaining, { worktrees: ['task-1'], branches: [`aether/${args.runId}/task-1`] })
   assert.ok(fs.existsSync(path.join(unit.path, 'src', 't1', 'a.js')))
   assert.ok(fs.existsSync(args.runDir))
+})
+
+// A long-running process in its own group, marked as a lane call's.
+function laneProcess(t, marker) {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, AETHER_LANE_CALL: marker },
+  })
+  const exited = new Promise((resolve) => child.on('exit', resolve))
+  t.after(() => {
+    try {
+      process.kill(-child.pid, 'SIGKILL')
+    } catch {
+      // already gone
+    }
+  })
+  return { pid: child.pid, exited }
+}
+
+test("sweepRun stops a run's lane processes and removes its lane copies", async (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1').path
+  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'add a')
+  diffPackage(repo.dir, args.runId, 'task-1')
+  const copy = prepareReader(repo.dir, args.runId, 'task-1-1-supervise', { taskId: 'task-1' })
+  const lane = laneProcess(t, `${args.runId}/task-1-1-implement`)
+  const dir = path.join(args.runDir, 'lanes', 'task-1-1-implement')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'pid'), String(lane.pid))
+  const r = sweepRun(repo.dir, args.runId)
+  assert.deepEqual(r.lanes, { stopped: ['task-1-1-implement'], removed: ['task-1-1-supervise'], remaining: [] })
+  await lane.exited
+  assert.equal(fs.existsSync(copy.workdir), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'lanes', args.runId)), false)
+  assert.equal(repo.git('worktree', 'list').includes('.aether/lanes'), false)
+  assert.deepEqual(r.remaining, { worktrees: [], branches: [] })
+})
+
+test('sweepStale removes a Designer state untouched for a day, with its process, and keeps a fresh one', async (t) => {
+  useDataDir(t)
+  const repo = makeRepo(t)
+  const designs = path.join(repo.dir, '.aether', 'design')
+  const old = path.join(designs, '20261007-100000-aaaa')
+  const fresh = path.join(designs, '20261008-100000-bbbb')
+  for (const dir of [old, fresh]) {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'state.json'), '{}')
+  }
+  const lane = laneProcess(t, 'design/20261007-100000-aaaa')
+  fs.writeFileSync(path.join(old, 'pid'), String(lane.pid))
+  age(old, 48)
+  assert.deepEqual(sweepStale(repo.dir), { swept: [], designs: ['20261007-100000-aaaa'] })
+  await lane.exited
+  assert.equal(fs.existsSync(old), false)
+  assert.equal(fs.existsSync(fresh), true)
+})
+
+test('sweepStale cleans lane copies whose run directory is already gone', (t) => {
+  useDataDir(t)
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1').path
+  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'add a')
+  diffPackage(repo.dir, args.runId, 'task-1')
+  const copy = prepareReader(repo.dir, args.runId, 'task-1-1-supervise', { taskId: 'task-1' })
+  fs.rmSync(args.runDir, { recursive: true, force: true })
+  assert.deepEqual(sweepStale(repo.dir), { swept: [args.runId] })
+  assert.equal(fs.existsSync(copy.workdir), false)
+})
+
+test('sweepRun drops the registration of a lane copy whose directory was deleted, and only that one', (t) => {
+  const repo = makeRepo(t)
+  const userWt = path.join(tempDir(t, 'aether-user-wt-'), 'wt')
+  repo.git('worktree', 'add', '-q', '-b', 'user/topic', userWt)
+  const moved = userWt + '-away'
+  fs.renameSync(userWt, moved)
+  const args = compile(repo, plan([task(1)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1').path
+  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'add a')
+  diffPackage(repo.dir, args.runId, 'task-1')
+  const copy = prepareReader(repo.dir, args.runId, 'task-1-1-supervise', { taskId: 'task-1' })
+  fs.rmSync(copy.workdir, { recursive: true, force: true })
+  const r = sweepRun(repo.dir, args.runId)
+  assert.deepEqual(r.lanes, { stopped: [], removed: ['task-1-1-supervise'], remaining: [] })
+  assert.equal(repo.git('worktree', 'list').includes('.aether/lanes'), false)
+  fs.renameSync(moved, userWt)
+  assert.equal(repo.git('-C', userWt, 'branch', '--show-current'), 'user/topic')
+})
+
+test('sweepRun reports no lane activity for a run that never used a lane', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  ensure(repo.dir, args.runId, 'task-1')
+  assert.deepEqual(sweepRun(repo.dir, args.runId).lanes, { stopped: [], removed: [], remaining: [] })
+})
+
+test('sweepRun leaves a process alone when its pid file names one that is not the call\'s', async (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  const stranger = laneProcess(t, `${args.runId}/some-other-call`)
+  const dir = path.join(args.runDir, 'lanes', 'task-1-1-implement')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'agy.pid'), String(stranger.pid))
+  assert.deepEqual(sweepRun(repo.dir, args.runId).lanes.stopped, [])
+  process.kill(stranger.pid, 0)
+})
+
+test('sweepStale keeps a design state that something touched recently, and ignores loose files in design/', (t) => {
+  useDataDir(t)
+  const repo = makeRepo(t)
+  const designs = path.join(repo.dir, '.aether', 'design')
+  const busy = path.join(designs, '20261008-100000-cccc')
+  fs.mkdirSync(busy, { recursive: true })
+  fs.writeFileSync(path.join(busy, 'state.json'), '{}')
+  fs.writeFileSync(path.join(designs, 'note.txt'), 'not a design')
+  age(busy, 48)
+  // One file inside was written just now: the state is in use.
+  fs.writeFileSync(path.join(busy, 'state.json'), '{"round":2}')
+  assert.deepEqual(sweepStale(repo.dir), { swept: [] })
+  assert.equal(fs.existsSync(busy), true)
+  assert.equal(fs.existsSync(path.join(designs, 'note.txt')), true)
 })
