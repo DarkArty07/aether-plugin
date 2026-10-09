@@ -8,7 +8,7 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { git, repoPaths } = require('./git.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
@@ -95,16 +95,60 @@ function changedPaths(top, start) {
   return [...paths].sort()
 }
 
-// Puts the worktree back at the round's starting commit, on the branch it started on, and removes
-// what the round created. A round starts clean, so this never touches earlier work; ignored files
-// survive because clean runs without -x.
-function undoRound(top, start, startBranch) {
+// The ref that keeps what the undo of round n of design id removes. The name is stable: the Lead
+// and the owner recover a round's work from it.
+function backupRef(id, n) {
+  return `refs/aether/design/${id}/round-${n}`
+}
+
+// git with its index at indexFile, so staging the worktree for a backup leaves its own index alone.
+function gitWithIndex(args, cwd, indexFile) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_INDEX_FILE: indexFile } })
+  if (r.error) throw r.error
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr.trim()}`)
+  return r.stdout.trim()
+}
+
+// Keeps everything an undo would remove as a commit at ref: its tree is the worktree as it is, with
+// tracked changes and untracked files but not ignored ones, and its parents are HEAD and the tip of
+// the branch the round started on, when that tip moved elsewhere. Nothing is kept when nothing would
+// be lost. Returns the ref, or null. Anything may have changed the worktree during the round, the
+// owner and the Lead included, so this runs before every undo.
+function saveRound(top, start, startBranch, { ref, indexDir, message }) {
+  const headCommit = git(['rev-parse', 'HEAD'], top).stdout
+  const branchTip = startBranch ? git(['rev-parse', '--verify', '--quiet', `refs/heads/${startBranch}`], top, { allowFail: true }).stdout : ''
+  const parents = [...new Set([headCommit, branchTip].filter((commit) => commit !== '' && commit !== start))]
+  if (parents.length === 0 && !isDirty(top)) return null
+  if (!parents.includes(headCommit)) parents.unshift(headCommit)
+  // The temporary index lives in the design's directory, under .aether/, which git ignores. A design
+  // ended during the round has lost that directory, so it is made again and dropped afterwards.
+  const made = !fs.existsSync(indexDir)
+  fs.mkdirSync(indexDir, { recursive: true })
+  const indexFile = path.join(indexDir, 'backup.index')
+  try {
+    gitWithIndex(['read-tree', 'HEAD'], top, indexFile)
+    gitWithIndex(['add', '-A'], top, indexFile)
+    const tree = gitWithIndex(['write-tree'], top, indexFile)
+    const commit = git(['commit-tree', tree, ...parents.flatMap((parent) => ['-p', parent]), '-m', message], top).stdout
+    git(['update-ref', ref, commit], top)
+    return ref
+  } finally {
+    fs.rmSync(made ? indexDir : indexFile, { recursive: true, force: true })
+  }
+}
+
+// Saves the round's work (saveRound), then puts the worktree back at the round's starting commit, on
+// the branch it started on, and removes what the round created. Ignored files survive because clean
+// runs without -x. Returns the backup ref, or null when there was nothing to keep.
+function undoRound(top, start, startBranch, backup) {
+  const saved = saveRound(top, start, startBranch, backup)
   const branch = git(['branch', '--show-current'], top, { allowFail: true }).stdout
   if (branch !== startBranch) {
     git(['checkout', '-q', '-f', ...(startBranch ? [startBranch] : ['--detach', start])], top, { allowFail: true })
   }
   git(['reset', '-q', '--hard', start], top)
   git(['clean', '-fdq'], top)
+  return saved
 }
 
 // ---- Superpowers ----
@@ -281,9 +325,10 @@ async function runRound({ mainRoot, state, config, harness, adapter, input, quot
   const startedAt = Date.now()
   const timeoutSeconds = harness.timeouts[ROLE]
   const argv = adapter.argv({ model: state.agyModel, schemaFile, timeoutSeconds, prompt, conversation: state.conversation })
+  const backup = { ref: backupRef(state.id, n), indexDir: dir, message: `aether: design ${state.id}, round ${n}, kept before its undo` }
   let parsed
   try {
-    const onInterrupt = () => undoRound(top, start, startBranch)
+    const onInterrupt = () => undoRound(top, start, startBranch, backup)
     const exitCode = await runAgy(argv, { cwd: state.cwd, dir, marker, timeoutSeconds, onInterrupt })
     parsed = adapter.parse(
       { stdout: readTextOrEmpty(path.join(dir, 'agy.stdout')), stderr: readTextOrEmpty(path.join(dir, 'agy.stderr')), exitCode },
@@ -294,7 +339,7 @@ async function runRound({ mainRoot, state, config, harness, adapter, input, quot
   }
   const quotaAfter = readQuota(adapter, state.group)
   const outcome = judge(changedPaths(top, start), parsed, quotaAfter, config.reserve)
-  if (outcome.status !== 'ok') undoRound(top, start, startBranch)
+  const saved = outcome.status === 'ok' ? null : undoRound(top, start, startBranch, backup)
 
   const time = Date.now()
   const usage = adapter.usageDelta(previousCumulative(state.rounds, parsed.conversation), parsed.usage)
@@ -312,6 +357,7 @@ async function runRound({ mainRoot, state, config, harness, adapter, input, quot
     quotaAfter,
     detail: outcome.detail,
     ...(outcome.files ? { files: outcome.files } : {}),
+    ...(saved ? { backup: saved } : {}),
   })
   // `end` removes the directory while a round runs; the round must not bring it back.
   if (fs.existsSync(stateFile(dir))) run.writeJson(stateFile(dir), state)
@@ -347,6 +393,7 @@ async function runRound({ mainRoot, state, config, harness, adapter, input, quot
     if (outcome.status === 'violation') failed.files = outcome.files
     else failed.detail = outcome.detail
     failed.undone = true
+    if (saved) failed.backup = saved
     return answer(4, failed)
   }
   const groupLabel = harness.groups[state.group] ?? state.group

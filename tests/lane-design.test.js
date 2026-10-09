@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const { makeRepo, tempDir, commitIn } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
@@ -36,6 +36,12 @@ function design(repo, env, args, input = '') {
 }
 const lastJson = (stdout) => JSON.parse(stdout.trim().split('\n').pop())
 const idOf = (stdout) => /design (\d{8}-\d{6}-[0-9a-f]{4});/.exec(stdout)[1]
+const onlyDesignId = (repo) => {
+  const ids = fs.readdirSync(path.join(repo.dir, '.aether', 'design'))
+  assert.equal(ids.length, 1)
+  return ids[0]
+}
+const backupRefs = (repo) => fx.git(repo.dir, 'for-each-ref', '--format=%(refname)', 'refs/aether/')
 
 test('design start runs a round on agy, keeps its commit of the spec, and prints the reply with its Lane line', (t) => {
   const { repo, env, install } = designSetup(t)
@@ -127,10 +133,102 @@ test('a round that changes anything outside specs and plans is undone whole, and
     ].join('\n'),
   )
   assert.equal(r.status, 4, r.stdout + r.stderr)
-  assert.deepEqual(lastJson(r.stdout), { failed: 'violation', files: ['notes.txt', 'src/x.js'], undone: true })
+  const backup = `refs/aether/design/${onlyDesignId(repo)}/round-1`
+  assert.deepEqual(lastJson(r.stdout), { failed: 'violation', files: ['notes.txt', 'src/x.js'], undone: true, backup })
   assert.equal(fx.git(repo.dir, 'rev-parse', 'HEAD'), start)
   assert.equal(fx.git(repo.dir, 'status', '--porcelain'), '')
   assert.equal(fs.readFileSync(path.join(repo.dir, 'cache', 'keep.txt'), 'utf8'), 'keep\n')
+  assert.equal(fx.git(repo.dir, 'show', `${backup}:src/x.js`), 'code')
+  assert.equal(fx.git(repo.dir, 'show', `${backup}:notes.txt`), 'loose')
+  assert.notEqual(spawnSync('git', ['cat-file', '-e', `${backup}:cache/keep.txt`], { cwd: repo.dir }).status, 0)
+})
+
+test('an undone round first keeps everything the undo removes, commits included, in its backup ref', (t) => {
+  const { repo, env } = designSetup(t)
+  commitIn(repo, repo.dir, 'docs/superpowers/specs/a.md', 'first\n', 'spec a')
+  const start = fx.git(repo.dir, 'rev-parse', 'HEAD')
+  const r = design(
+    repo,
+    env,
+    ['start', '--session', 'lead-1', '--cwd', repo.dir],
+    [
+      'FAKE-AGY: write docs/superpowers/specs/s.md committed',
+      'FAKE-AGY: commit spec s',
+      'FAKE-AGY: write docs/superpowers/specs/a.md edited',
+      'FAKE-AGY: write docs/superpowers/plans/b.md created',
+      'FAKE-AGY: timeout',
+    ].join('\n'),
+  )
+  assert.equal(r.status, 4, r.stdout + r.stderr)
+  const id = onlyDesignId(repo)
+  const backup = `refs/aether/design/${id}/round-1`
+  const out = lastJson(r.stdout)
+  assert.deepEqual([out.failed, out.undone, out.backup], ['failed', true, backup])
+  assert.equal(fx.git(repo.dir, 'rev-parse', 'HEAD'), start)
+  assert.equal(fx.git(repo.dir, 'status', '--porcelain', '--untracked-files=all'), '')
+  assert.equal(fs.existsSync(path.join(repo.dir, 'docs', 'superpowers', 'plans', 'b.md')), false)
+  assert.equal(fx.git(repo.dir, 'show', `${backup}:docs/superpowers/specs/a.md`), 'edited')
+  assert.equal(fx.git(repo.dir, 'show', `${backup}:docs/superpowers/plans/b.md`), 'created')
+  assert.equal(fx.git(repo.dir, 'show', `${backup}:docs/superpowers/specs/s.md`), 'committed')
+  assert.equal(fx.git(repo.dir, 'log', '-1', '--format=%s', `${backup}^1`), 'spec s')
+  assert.equal(fx.git(repo.dir, 'rev-parse', `${backup}^1^`), start)
+  assert.equal(backupRefs(repo), backup)
+  const state = JSON.parse(fs.readFileSync(path.join(repo.dir, '.aether', 'design', id, 'state.json'), 'utf8'))
+  assert.equal(state.rounds[0].backup, backup)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'design', id, 'backup.index')), false)
+})
+
+test('an undone round that left nothing beyond its start makes no backup ref', (t) => {
+  const { repo, env } = designSetup(t)
+  const r = design(repo, env, ['start', '--session', 'lead-1', '--cwd', repo.dir], 'FAKE-AGY: timeout')
+  assert.equal(r.status, 4, r.stdout + r.stderr)
+  const out = lastJson(r.stdout)
+  assert.deepEqual([out.failed, out.undone, Object.hasOwn(out, 'backup')], ['failed', true, false])
+  assert.equal(backupRefs(repo), '')
+})
+
+// Starts a first round in the background whose agy edits README.md and then sleeps, and resolves
+// once agy is running and the edit is there.
+async function sleepingRound(repo, env) {
+  const prompt = ['FAKE-AGY: write README.md edited', 'FAKE-AGY: sleep 30', `FAKE-AGY: answer ${REPLY('approaches')}`].join('\n')
+  const bin = spawn(process.execPath, [fx.LANE_BIN, 'design', 'start', '--session', 'lead-1', '--cwd', repo.dir], {
+    cwd: repo.dir,
+    env: { ...process.env, ...env },
+    stdio: ['pipe', 'pipe', 'ignore'],
+  })
+  let stdout = ''
+  bin.stdout.on('data', (chunk) => (stdout += chunk))
+  const exited = new Promise((resolve) => bin.once('close', (code) => resolve({ code, stdout })))
+  bin.stdin.end(prompt)
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 50))
+  const deadline = Date.now() + 15000
+  while (fs.readFileSync(path.join(repo.dir, 'README.md'), 'utf8') !== 'edited\n' && Date.now() < deadline) await pause()
+  const id = onlyDesignId(repo)
+  while (!fs.existsSync(path.join(repo.dir, '.aether', 'design', id, 'pid')) && Date.now() < deadline) await pause()
+  return { bin, exited, id }
+}
+
+test('a design bin told to stop during a round stops agy and undoes the round, keeping it in the backup ref', async (t) => {
+  const { repo, env } = designSetup(t)
+  const start = fx.git(repo.dir, 'rev-parse', 'HEAD')
+  const { bin, exited, id } = await sleepingRound(repo, env)
+  bin.kill('SIGTERM')
+  assert.equal((await exited).code, 143)
+  assert.equal(fx.git(repo.dir, 'rev-parse', 'HEAD'), start)
+  assert.equal(fx.git(repo.dir, 'status', '--porcelain', '--untracked-files=all'), '')
+  assert.equal(fx.git(repo.dir, 'show', `refs/aether/design/${id}/round-1:README.md`), 'edited')
+})
+
+test('a design ended during its round is undone into its backup ref, and its directory stays gone', async (t) => {
+  const { repo, env } = designSetup(t)
+  const { exited, id } = await sleepingRound(repo, env)
+  assert.deepEqual(lastJson(design(repo, env, ['end', id]).stdout), { ended: id })
+  const { code, stdout } = await exited
+  assert.equal(code, 4, stdout)
+  assert.equal(lastJson(stdout).backup, `refs/aether/design/${id}/round-1`)
+  assert.equal(fx.git(repo.dir, 'show', `refs/aether/design/${id}/round-1:README.md`), 'edited')
+  assert.equal(fx.git(repo.dir, 'status', '--porcelain', '--untracked-files=all'), '')
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'design', id)), false)
 })
 
 test('design start changes nothing when the role is off, the quota is low, superpowers is missing or the worktree is dirty', (t) => {

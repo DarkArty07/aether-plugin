@@ -100,6 +100,8 @@ The Designer ends every round with this reply:
 - **A lost id:** after a compaction or in a new session, start a new Designer with the spec and plan paths and the owner's latest decision. The files are the source of truth.
 - **Later changes:** any change to a spec or a plan also goes to the Designer. That includes a plan task that a blocked unit shows to be wrong.
 - **A Designer on a lane:**
+  - While a round runs, do not edit the Designer's working directory, and let nothing else edit it: no fix of yours, no subagent, no swarm. Ask the owner not to edit it by hand either. A round that fails is undone whole, and the undo also removes whatever else changed there during the round.
+  - An undone round keeps all of its work first, in the git ref that its exit 4 names as `backup` (`refs/aether/design/<id>/round-<n>`). When that work holds more than the Designer's, tell the owner, and bring it back from the ref only on the owner's word.
   - Exit 3 or 4 from `aether-lane design reply` means the round did not happen or was undone. Start the native Designer from the spec and plan files, the last reply the owner saw and the owner's latest answer, and keep that design native.
   - When the owner approves the plan, or the design is dropped, run `aether-lane design end <id>`.
   - `aether-lane design list` shows the open designs, for a lost id.
