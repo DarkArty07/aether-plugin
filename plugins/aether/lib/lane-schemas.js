@@ -59,11 +59,17 @@ const REVIEW_SCHEMA = {
 
 const DESIGNER_SCHEMA = {
   type: 'object',
-  required: ['forOwner', 'stage', 'waitingFor', 'files'],
+  required: ['decision', 'stage', 'decide', 'files'],
   properties: {
-    forOwner: { type: 'string', description: 'the text of "For the owner", as the Lead shows it' },
+    decision: {
+      type: 'string',
+      description: 'the text of "Decision", in the owner\'s language: what the round produced, the options, the recommendation, and what must be decided',
+    },
     stage: { type: 'string', enum: ['approaches', 'design', 'spec', 'plan', 'question', 'blocked'] },
-    waitingFor: { type: 'string', description: 'what the owner must decide' },
+    decide: {
+      type: 'string',
+      description: 'who closes the round: "lead — <reason>", or "owner — uncovered: <reason>", "owner — conflict: <reason>" or "owner — irreversible: <reason>"',
+    },
     files: { type: 'string', description: 'paths and commits, or none' },
   },
 }
