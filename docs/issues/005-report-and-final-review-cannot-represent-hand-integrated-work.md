@@ -4,6 +4,7 @@
 **Date:** 2026-10-09
 **Found in:** the first real swarm run of a 12-task plan, over four launches
 **Status:** open (2026-10-09). Sub-project 2. The first run of 0.5.0 showed it again: the final review could not see the three units whose merges were refused.
+**GitHub:** [#5](https://github.com/DarkArty07/aether-plugin/issues/5) (private repository)
 
 ## Summary
 

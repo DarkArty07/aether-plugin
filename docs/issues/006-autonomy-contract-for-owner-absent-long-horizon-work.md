@@ -4,6 +4,7 @@
 **Date:** 2026-10-09
 **Found in:** an overnight trial with two Lead sessions on two projects, while the owner slept
 **Status:** partly addressed in 0.5.0 (2026-10-09). Done, in a lean form: standing authorizations recorded from the owner's verified quotes, with a session or repository scope; the three classes of action; a run state with a diary; ceilings of time and cost; the morning brief; resuming after a compaction; fallbacks that never reach the owner; the Lead as the owner's delegate. Not done, on purpose: enforcing the classes in a hook (proposal 2). Open: Telegram alerts (sub-project 3), the peer protocol and parallel Leads (sub-project 4), health checks on shared services, an append-only ledger shared by every session.
+**GitHub:** [#6](https://github.com/DarkArty07/aether-plugin/issues/6) (private repository)
 
 ## What the owner wants
 

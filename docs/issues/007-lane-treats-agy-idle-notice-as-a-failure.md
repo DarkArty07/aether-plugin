@@ -4,6 +4,7 @@
 **Date:** 2026-10-09
 **Found in:** the first swarm run of Aether 0.5.0 (plan: the Lead's autonomy, 9 tasks), with real agy
 **Status:** open (2026-10-09). Sub-project 2.
+**GitHub:** [#7](https://github.com/DarkArty07/aether-plugin/issues/7) (private repository)
 
 ## Summary
 

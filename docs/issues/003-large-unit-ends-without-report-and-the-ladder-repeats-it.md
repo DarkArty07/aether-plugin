@@ -4,6 +4,7 @@
 **Date:** 2026-10-09
 **Found in:** the third launch of a 12-task plan on an application repository
 **Status:** open (2026-10-09). Sub-project 2. Not seen in the first run of 0.5.0, whose largest unit was one library and its tests.
+**GitHub:** [#3](https://github.com/DarkArty07/aether-plugin/issues/3) (private repository)
 
 ## Summary
 
