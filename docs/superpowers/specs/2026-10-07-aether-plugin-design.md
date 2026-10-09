@@ -1,7 +1,7 @@
 # Aether: design spec (v0.1)
 
 - **Date:** 2026-10-07
-- **Status:** Approved by the owner on 2026-10-07. Amended the same day (A10), and on 2026-10-08 by Plan 2 (§7, §8, §9 and §11) and Plan 3 (§3, §4, §5, §9, §10 and §12). Roles and the launcher amended on 2026-10-08 by the [Lead and Designer spec](2026-10-08-lead-and-designer-design.md) (A4, A5, A8; §1, §4, §5).
+- **Status:** Approved by the owner on 2026-10-07. Amended the same day (A10), and on 2026-10-08 by Plan 2 (§7, §8, §9 and §11) and Plan 3 (§3, §4, §5, §9, §10 and §12). Roles and the launcher amended on 2026-10-08 by the [Lead and Designer spec](2026-10-08-lead-and-designer-design.md) (A4, A5, A8; §1, §4, §5). Effort per task amended on 2026-10-08 by the [effort per task spec](2026-10-08-effort-per-task-design.md) (§6, §7, §8, §10 and §12), built in version 0.3.0.
 - **Method:** superpowers brainstorming (architectural path). After approval, Phase 0 checks (§13), then superpowers `writing-plans`.
 - **Background:** [README](../../../README.md), [Aether retrospective](../../aether-retrospective.md), [Claude Code research](../../claude-code-research.md), [Decisions](../../decisions.md)
 
@@ -111,6 +111,7 @@ Per task, right after the task heading:
 
 **Aether:**
 - Tier: sonnet — interactive UI states the tests cannot fully pin down
+- Review: xhigh — the form's error and loading states go beyond the tests
 - Area: frontend
 - Owns: `web/src/login/**`, `web/tests/login.test.tsx`
 - Depends on: Task 1 — uses the auth client Task 1 creates
@@ -129,6 +130,7 @@ Plan-level section, after Global Constraints:
 
 `aether-plan compile` refuses a plan when:
 - a task lacks Tier, Area, Owns or Depends on, or a dependency lacks its reason;
+- a Tier line names an unknown effort, or puts Sonnet or Opus below `high`; or a Review line is below `high`, or has no reason (since 0.3.0);
 - a dependency names a missing task, or the dependencies form a cycle;
 - two tasks in the same wave own overlapping paths;
 - the plan is a chain: three or more tasks and every wave holds one task (decision D6).
@@ -140,9 +142,15 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 - **sonnet:** frontend and UI, integration across several files, or behavior that the tests cannot pin down exactly.
 - **opus:** security and auth, data migrations or destructive operations, concurrency, core architecture.
 
+**Effort** (*amended by the [effort per task spec](2026-10-08-effort-per-task-design.md), version 0.3.0*). The Tier line may name the implementer's effort after the model, as in `- Tier: haiku medium — <reason>`.
+- Without one, the task starts at `xhigh`, on every model.
+- The Designer lowers it where the tests pin the work completely, for speed, and names `max` only with a reason.
+- Sonnet and Opus never run below `high`.
+- An optional `- Review: <effort> — <reason>` line sets the supervisor's effort for every attempt at the task: `high`, `xhigh` or `max`. Without it, the supervisor reviews at `high`.
+
 ## 7. Swarm executor (`/aether:run`)
 
-*Amended by Plan 2 (2026-10-08).* The executor below is what Plan 2 built. Compared with the first draft:
+*Amended by Plan 2 (2026-10-08), and by the [effort per task spec](2026-10-08-effort-per-task-design.md) (2026-10-08, version 0.3.0).* The executor below is what Plan 2 built, with each call's effort added in 0.3.0. Compared with the first draft:
 - one supervisor call per attempt both reviews and rules, replacing the separate review and triage calls;
 - the supervisors' memory and the implementers' reports live in the script's state, not in ledger or report files;
 - merge failures are routed by kind;
@@ -153,24 +161,24 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 - Run fields: `runId`, `repoRoot`, `runDir`, `plan`, `spec`, `testCommand`, `ladder` and `maxAgents`.
 - The integration `branch` and `worktree`, plus `base`: the integration branch's commit at compile time.
 - `waves`: lists of task ids.
-- Per task: `title`, `brief` (a file path), `tier`, `area`, `owns` and `dependsOn`.
+- Per task: `title`, `brief` (a file path), `tier` (the model), `effort`, `review`, `area`, `owns` and `dependsOn`. A task whose `effort` or `review` is not an effort level is refused, so args compiled before 0.3.0 do not run.
 
 **Waves.** Waves run in order; the units of a wave run in parallel. A unit whose dependency is not merged is skipped and reported.
 
 **Unit pipeline.**
-1. **Implement.** A fresh `implementer` agent runs on the unit's current tier.
+1. **Implement.** A fresh `implementer` agent runs on the unit's current rung: the attempt's model, at the effort §8 gives it.
    - It runs `aether-wt ensure <run> <task>`. The command is idempotent and prints the unit's worktree path; the branch is `aether/<run>/<task>`, created from the integration branch.
    - It works only in that worktree. It writes the brief's tests, watches them fail, writes the code until they pass, and commits.
    - It runs `aether-wt diff <run> <task>`, which writes the review package `runDir/packages/<task>.diff`.
    - It returns `{status, summary, head, tests, concerns, question}`, with status `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT` or `BLOCKED`. This structured report is the whole report; there is no report file.
    - Later attempts continue in the same worktree. Their prompt carries every earlier attempt's report, ruling, findings and merge outcome.
-2. **Supervise.** One `supervisor` agent on Sonnet per attempt. It is read-only.
+2. **Supervise.** One `supervisor` agent on Sonnet per attempt, at the task's `review` effort. It is read-only.
    - It checks that the package's Head matches the reported `head`.
    - It reviews the package against the brief, for spec compliance and for quality, after superpowers' task reviewer.
    - It returns `{verdict: approve|retry|escalate|block, findings: [{severity, title, file, evidence}], ruling, guidance, question}`.
    - `NEEDS_CONTEXT` and `BLOCKED` reports go to it too. It answers from the brief or the repository with a retry, escalates, or blocks with a question for the Designer.
    - An approval that still lists a critical or important finding counts as a retry. Minor findings go to the final review.
-   - The script enforces the ladder (§8): a retry beyond the current tier's budget becomes an escalation, and an escalation past the last tier with budget becomes a block.
+   - The script enforces the ladder (§8): a retry beyond the current model's budget becomes an escalation, and an escalation past the last model with budget becomes a block. The prompt's Ladder section names the rung that a retry and an escalation would run.
 3. **Merge.** Approved units enter one queue, serialized by a promise chain, so only one merge runs at a time. An `ops` agent runs `aether-wt merge <run> <task>`, which:
    - refuses to start when the integration worktree has uncommitted changes, or is not on the integration branch;
    - checks that the diff touches only the unit's `owns` paths;
@@ -178,7 +186,7 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
    - undoes its own merge if the tests fail, and prints JSON.
 
    The script routes a failed merge by its kind:
-   - **A conflict or failing tests:** one retry on the same tier, outside the ladder, with the conflict or the test output. A second failure blocks the unit.
+   - **A conflict or failing tests:** one retry on the same model and effort, outside the ladder, with the conflict or the test output. A second failure blocks the unit.
    - **Changes outside `owns`, or nothing committed:** a failed attempt; the ladder decides what follows.
    - **A dirty, switched or missing integration worktree, a merge that git refused before merging (`merge-failed`, such as an untracked file in the way), or a failed command:** the unit is blocked, with the detail.
 4. **Close.** Every unit that started is closed by an `ops` agent with `aether-wt remove <run> <task>`, after a merge, a block or the end of the budget.
@@ -197,8 +205,8 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 **Result.** The run returns `{runId, units, finalReview, cleanup, agents, error}`.
 - `units`, one per task:
   - `status`: `merged`, `blocked`, `skipped` or `not-run`;
-  - the tier path, such as `["haiku", "sonnet"]`;
-  - `rounds`: each attempt's report, verdict, findings, ruling, guidance and merge outcome;
+  - `tiers`, the rungs it ran on, such as `["haiku medium", "haiku xhigh", "sonnet xhigh"]`;
+  - `rounds`: each attempt's rung (`tier`), report, verdict, findings, ruling, guidance, supervisor effort (`reviewEffort`) and merge outcome;
   - the merge `commit`, and the `reason`, `question` and `patch` of an unmerged unit.
 - `finalReview`: with a `status` of `done`, `skipped` or `failed`.
 - `cleanup`: what the sweep removed and what `remaining` it found.
@@ -213,20 +221,22 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 - The script counts its `agent()` calls. After `maxAgents`, it starts no new attempt and no final review: the remaining units are reported as `not-run`. Work already started still finishes and is closed, and cleanup always runs.
 - It never calls `Date.now()` or `Math.random()`, as the workflow runtime requires.
 
-**Runtime API (confirmed in Phase 0).** Every call has the form `agent(prompt, { agentType, model, phase, label, schema })`, and every call passes an `agentType`, because an agent without one gets every tool, MCP connector tools included. `parallel()` takes an array of functions that return promises. `agent()` resolves to `null` on a terminal failure and can reject; both count as a failed attempt.
+**Runtime API (confirmed in Phase 0).** Every call has the form `agent(prompt, { agentType, model, effort, phase, label, schema })`, and every call passes an `agentType`, because an agent without one gets every tool, MCP connector tools included. `parallel()` takes an array of functions that return promises. `agent()` resolves to `null` on a terminal failure and can reject; both count as a failed attempt. A call's `effort` overrides the effort in the agent file, as the effort probe showed on 2026-10-08.
 
 ## 8. Model routing and escalation
 
-- The initial tier comes from the plan.
+- The initial tier, a model and an effort, comes from the plan.
 - **Default ladder per unit:** Haiku 2 attempts, Sonnet 2, Opus 1, then blocked.
   - The supervisor may escalate early but cannot exceed the budget.
-  - A tier whose budget is 0 is skipped.
+  - A model whose budget is 0 is skipped.
   - The one retry after a merge conflict or failing merge tests does not count against the ladder.
 - Every attempt is a fresh implementer. Fix rounds continue in the same worktree, and the prompt carries the earlier attempts' reports, rulings and findings, as superpowers' fix loop does.
 - Unit reviews run on the Sonnet supervisor; the final review runs on Opus. Batched or risk-based review is deferred until the trial shows what reviews cost.
-- **Effort** is set in each agent definition, because the owner's default `xhigh` would otherwise apply to Haiku: implementer `medium`, ops `low`, supervisor and reviewer `high`.
-  - *Amended on 2026-10-08:* the implementer runs at `xhigh`, on every tier. Trial 2 found that `medium` was one of the two causes of its quality gap.
-  - Effort per task, with a ladder of model-and-effort steps, is the next sub-project; trial 3 left two candidate designs for it.
+- **Effort** (*amended by the [effort per task spec](2026-10-08-effort-per-task-design.md), built in 0.3.0*). The workflow passes the effort on every call. The agent files keep theirs only as defaults: implementer `xhigh`, supervisor and reviewer `high`, ops `low`.
+  - **Implementers:** the first attempt on the task's own model runs at the task's effort, `xhigh` unless the plan names another. Every later attempt runs at `xhigh`: a retry, and every attempt on a model the unit escalated to. A declared `max` stays `max` on the task's model.
+  - **Supervisors** run at the task's `review` effort: `high`, unless its Review line raises it.
+  - **Ops** runs at `low`, and the final reviewer at `high`.
+  - **Before 0.3.0,** every implementer ran at `medium`, then from 2026-10-08 at `xhigh` on every tier. Trial 2 found that `medium` was one of the two causes of its quality gap.
 - **maxTurns:** implementer 60, supervisor 25, reviewer 30, ops 5. The supervisor took the unit reviewer's budget when the two merged.
 - Implementer prompts point to brief files instead of embedding the plan. This keeps requests under Haiku's 100K-token price tier.
 
@@ -257,11 +267,11 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 
 ## 10. Measurement
 
-*Amended by Plan 3 (2026-10-08).*
+*Amended by Plan 3 (2026-10-08), and by the [effort per task spec](2026-10-08-effort-per-task-design.md) (2026-10-08, version 0.3.0).*
 
 - **Usage meter.** The mod (`hooks/register.js`) observes `turn.step` for every request of the main session, subagents and workflow agents.
-  - Each entry holds the time the request ended, its duration, the agent id (`null` for the main session), the model, and the input, output, cache-read and cache-write tokens.
-  - `agent.spawn` teaches it each agent's type and label, such as `aether:implementer` and `task-3: implement on haiku (attempt 1)`.
+  - Each entry holds the time the request ended, its duration, the agent id (`null` for the main session), the model, the effort the request went out with, and the input, output, cache-read and cache-write tokens. The effort is `null` when the event names none, as in entries written before 0.3.0.
+  - `agent.spawn` teaches it each agent's type and label, such as `aether:implementer` and `task-3: implement on haiku xhigh (attempt 1)`.
   - Entries go to `usage/<session>/<n>.json` in the data directory, in parts of up to 1,000 entries. Each part holds `{ session, part, claudeCode, agents, entries }`.
   - Writes are serialized, and happen on `turn.complete`, on `session.end` and every 20 entries. A reloaded mod starts after the parts already on disk.
   - The meter only observes: a failure never touches a request.
@@ -280,11 +290,14 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
   - **The session:** without `--session`, the report uses the usage session that ran the most `aether:` agents in the window.
   - **Speed:** the window, the swarm's own span (from its first agent request to its last), and the session's span.
   - **Cost:** USD and tokens at OpenRouter prices, by model and by role, for the window and for the whole session.
+    - `byEffort`, keyed `<role> <model> <effort>`, gives each key's USD, requests, output tokens and summed request time. A missing model or effort reads `unknown`.
+    - `cost.run.agents` lists each agent of the window, the main session included, with its label, model, effort, requests, USD, output tokens and time.
   - **Quality**, over every launch:
     - units merged, blocked, skipped and not run;
-    - escalations and attempts;
+    - escalations (a change of model), climbs (a higher effort on the same model), and attempts;
     - every supervisor finding, and the final reviews, by severity;
     - the test command, run on the integration branch.
+- **Effort check.** `scripts/check-effort.js <session-dir> [--report <file>]` is a development script, outside the plugin. It checks, from a session's transcripts, that each `aether:` agent ran at the effort its call asked for. With `--report`, it also checks that the report agrees.
 - **Persistent record.** `finalize` appends one line per run to `runs.jsonl` in the plugin data directory, with the report and the aether, superpowers and Claude Code versions. Then it sweeps the run with `--finish`.
 - **Baseline.** The same objective and plan run in normal mode, Opus with superpowers `subagent-driven-development`, each mode in a fresh session. The comparison goes to `docs/evaluations/`.
 
@@ -308,7 +321,11 @@ It warns, without refusing, when the average wave holds fewer than 1.5 tasks.
 - **Workflow logic:**
   - A Node harness runs the body of `run.workflow.js` with stubbed runtime functions (`agent`, `parallel`, `phase`, `log`, `args`), matching the signatures that Phase 0 confirms.
   - Scenarios cover parallel waves, escalation, blocked dependencies, a merge conflict and cleanup in `finally`. Each scenario compares the trace of calls with an expected trace, without spending tokens.
+  - Since 0.3.0 the harness records each call's effort too. The scenarios cover the first attempt at the task's effort, the retries at `xhigh`, a declared `max`, and the supervisor's Ladder section.
   - One real smoke run completes the check.
+- **Effort:** two real runs check it (effort per task spec §9):
+  - a probe in the Lead's session checks that a call's effort overrides the agent file's;
+  - a one-task end-to-end run checks the built chain with `scripts/check-effort.js`.
 - **Behavior:** `claude plugin eval` cases check that the bootstrap adds the swarm option at the plan handoff, that bounded work still asks for approval, and that plans get Aether fields.
 - **End to end:** the trial in §13.
 

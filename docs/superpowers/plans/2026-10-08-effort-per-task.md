@@ -1444,7 +1444,7 @@ test('greet names the person', () => {
 **Acceptance:** `npm test` passes.
 ````
 
-**2. The run.** Run this in the background, or with a 10-minute timeout:
+**2. The run.** Run this in the background, or with a 10-minute timeout. The child's `PATH` starts with the integration worktree's `plugins/aether/bin`. A session started by `aether-mode` has `main`'s first, and without the prefix the child runs `main`'s `aether-plan` (see the execution record).
 
 ```bash
 PROMPT="You are checking a new build of the aether plugin, in Aether mode. Work from this directory, the integration worktree, and change no file except the two below.
@@ -1455,7 +1455,7 @@ PROMPT="You are checking a new build of the aether plugin, in Aether mode. Work 
 5. Reply with the runId and nothing else."
 (
   cd "$F/.worktrees/check" &&
-  env -u CLAUDE_CODE_EFFORT_LEVEL AETHER_DATA_DIR="$S/data" ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
+  env -u CLAUDE_CODE_EFFORT_LEVEL PATH="$REPO/plugins/aether/bin:$PATH" AETHER_DATA_DIR="$S/data" ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
     claude -p "$PROMPT" --model sonnet --plugin-dir "$REPO/plugins/aether" --settings '{"enableWorkflows": true}' \
       --permission-mode bypassPermissions --strict-mcp-config --max-budget-usd 3 --output-format json > "$S/session.json"
 )
@@ -1505,3 +1505,56 @@ node -e 'const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"
 - The final review has no open critical or important finding.
 - The end-to-end check passed, and its finding is recorded.
 - The owner then finishes the branch with superpowers `finishing-a-development-branch`, and decides on the local tag `aether--v0.3.0`.
+
+## Execution record
+
+### The effort probe (2026-10-08)
+
+It passed, in the Lead's session, before the swarm:
+- a call's effort beat the agent file's: `aether:ops` asked for `high` ran at `high`, and `aether:implementer` asked for `medium` ran at `medium`;
+- a call that named no effort ran at its agent file's effort: `aether:ops` at `low`.
+
+The finding is in `docs/claude-code-research.md`, under "Effort per task findings".
+
+### Run `20261008-175847-2c2a` (2026-10-08)
+
+**Launch 1:**
+- Tasks 1 to 5 merged, each on its first attempt and on its own tier: four on Haiku, and Task 5 on Sonnet. No unit escalated.
+- 26 agents, 10 min 36 s, and $2.17 at OpenRouter prices.
+- The supervisor blocked Task 6 on a plan defect. Its bump to 0.3.0 broke `tests/launcher.test.js`, which pinned `0.2.0` and which no task owned. The rest of its diff met the brief. The Designer gave Task 6 that test (`476d2bf`).
+
+**Launch 2** (`--only task-6`):
+- Attempt 1 failed. The Haiku implementer's reply left out the required `concerns` and `question` fields, and the runtime stopped it with "StructuredOutput retry cap (5) exceeded".
+- Attempt 2 verified the same commit, and the unit merged.
+- The second Opus final review covered the whole change again, for about $1.90: more than all the implementation.
+
+**Both launches:**
+- 34 agents;
+- about 19 minutes of wall-clock time, the plan fix included;
+- $4.52 at OpenRouter prices: Opus $3.02, Sonnet $1.33, Haiku $0.16.
+
+**Final reviews (Opus):** `ready-with-fixes`, twice, with no critical finding.
+- **Important:** Task 6's unowned test, the plan defect above, fixed in `476d2bf`.
+- **Fixed by the Lead:** `README.md` line 18 now says "Version 0.3: ... and each plan task sets its implementer's effort" (`e6decc4`).
+- **Minor, deferred.** None of them is an open defect of this plan:
+  1. `scripts/check-effort.js` has three unguarded `JSON.parse` calls, for meta files, transcript lines and the `--report` file. A malformed file gives a stack trace and empty stdout, instead of the one line of JSON.
+  2. `run.workflow.js` (its `meta`, lines 6 and 15) and `implementer.md`'s description still say "tier" where they mean the rung.
+  3. When the ladder gives the task's own model 0 attempts, `run.workflow.js` logs `escalating from haiku medium to sonnet xhigh`: `Math.max(used[model], 1)` invents an attempt for the log.
+  4. `report.js` declares its own `EFFORTS` list, although `lib/plan.js` exports one.
+  5. No test ties the Designer's documented `**Aether:**` block to `parsePlan`, and `tests/launcher.test.js` pins A11 to A17 but not A18.
+
+### The end-to-end check (2026-10-08)
+
+- **It passed.** A one-task fixture plan ran headless on the branch's plugin.
+  - `check-effort.js` exited 0: the implementer ran at `medium`, the supervisor at `xhigh` (from `Review: xhigh`), the final reviewer at `high`, and ops at `low`.
+  - The report's `byEffort` held the four expected `aether:` keys.
+  - The run took about 1 minute and $0.13 at OpenRouter prices, and its final review said `ready`.
+  - It is recorded in `docs/claude-code-research.md` (`2cf34cf`).
+- **A plan defect, fixed in step 2.** The first attempt failed, for $0.09. The plan's `claude -p` inherited the parent's `PATH`, and a session started by `aether-mode` has `main`'s `plugins/aether/bin` first. So the child ran `main`'s 0.2.0 `aether-plan`, which refused `Tier: haiku medium`. The rerun put `PATH="$REPO/plugins/aether/bin:$PATH"` in the child's `env`, and step 2 now does so.
+- The fixtures, sessions and outputs were deleted.
+
+### Lessons for plans
+
+- **A version bump owns every test that pins the version.** This defect came twice: here, and in Task 5 of the Lead and Designer plan. Before giving a task a bump, grep the tests for the old version, and give that task those files.
+- **A child session that tests a new build sets its own `PATH`,** so that its bins come from that build and not from `main`.
+- **A relaunch repeats the whole final review.** Here that cost about $1.90 for one small unit, more than all the implementation. A final review that covers only what a relaunch merged would fit the balance of quality, cost and speed better. It is a candidate follow-up, not part of this plan.

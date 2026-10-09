@@ -1,7 +1,7 @@
 # Effort per task in the Aether swarm: design spec
 
 - **Date:** 2026-10-08
-- **Status:** approach A, approved by the owner on 2026-10-08: "Yo también digo que es mejor xhigh por defecto y bajarlo o subirlo o cambiar de modelo de acuerdo a la tarea. Ya comienza a implementarlo". The owner asked to start at once, so this spec and its plan go to the owner together.
+- **Status:** approach A, approved by the owner on 2026-10-08: "Yo también digo que es mejor xhigh por defecto y bajarlo o subirlo o cambiar de modelo de acuerdo a la tarea. Ya comienza a implementarlo". The owner asked to start at once, so this spec and its plan go to the owner together. Built on 2026-10-08 as version 0.3.0, on `feature/effort-per-task`. The effort probe and the end-to-end check passed; see the plan's execution record.
 - **Method:** superpowers brainstorming (architectural path), then superpowers `writing-plans`.
 - **Plan:** [2026-10-08-effort-per-task.md](../plans/2026-10-08-effort-per-task.md)
 - **Amends, once built:** the [plugin design spec](2026-10-07-aether-plugin-design.md), §6, §7, §8, §10 and §12 (see §13).
