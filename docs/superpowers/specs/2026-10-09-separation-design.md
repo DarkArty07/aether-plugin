@@ -93,7 +93,7 @@ Sirve a: C2, C1
 - no tag of the form: `no aether--v* tag in <main checkout>.`
 - the named tag does not exist: `no tag aether--v<version>.`
 - the tag's manifest disagrees: `aether--v<version> holds plugin version <found>, not <version>.` (`<found>` is `none` when the manifest is missing or has no version);
-- the extraction fails: `cannot extract aether--v<version>: <git's or tar's error, trimmed>`;
+- the extraction fails: `cannot extract aether--v<version>: <git's or tar's error, trimmed, its lines joined by "; ">`;
 - any other error: `aether-install: <message>`.
 
 Sirve a: C2, C6
@@ -136,7 +136,7 @@ Verified in the code on 2026-10-09; nothing here changes.
 The Lead runs it, all of it, with no question to the owner. The plan's "After the swarm" section holds each command, its check and its undo.
 
 **R15. The order.** Switching the owner's fish link happens only after the rehearsal and the fake-`claude` check pass.
-1. **Rehearsal, with no tokens and nothing of the owner's touched:** a local clone (`git clone --local`, no network) with a temporary `aether--v0.6.0` tag; a temporary data directory and fish function path; a fake `claude` that prints its arguments. Install 0.5.0 and 0.6.0; run the launcher with and without `--dev`; `rollback` twice; `status`; `claude plugin validate --strict` and the SessionStart hook on the installed copy.
+1. **Rehearsal, with no tokens and nothing of the owner's touched:** a local clone (`git clone --no-hardlinks`, no network) with a temporary `aether--v0.6.0` tag; a temporary data directory and fish function path; a fake `claude` that prints its arguments. Install 0.5.0 and 0.6.0; run the launcher with and without `--dev`; `rollback` twice; `status`; `claude plugin validate --strict` and the SessionStart hook on the installed copy.
 2. **Pin the owner to 0.5.0 before the merge:** install 0.5.0 (today's `main`, `4130f86`) into the real data directory with the branch's installer, check it with the fake `claude`, then switch the fish link. Behavior is identical to today. Undo: link the function back to `<repo>/scripts/aether-mode.fish`.
 3. **Merge to `main`,** under the owner's authorization of this session. Check that the owner's launcher still loads the installed 0.5.0: the first proof of C1.
 4. **Move the key** to the data directory; check that it is there with mode 600 and gone from the repository.
@@ -185,4 +185,6 @@ Sirve a: C1, C2, C3, C4, C5
 - Every tagged launcher since 0.1.0 computes the plugin as `$repo/plugins/aether` from its own resolved path.
 - `.env` is excluded by `.git/info/exclude` only, not by `.gitignore`.
 - In fish, `fish --no-config -c '<script>' a b` passes `a b` as `$argv`, and `--no-config` leaves the user's function directory out.
+- `git clone --local` of the repository into the session's scratchpad fails with "Invalid cross-device link" (another filesystem); `git clone --no-hardlinks` works.
+- A dry run of the plan in a throwaway clone (its exact edits applied, with throwaway code for Tasks 1 and 3) passed all 349 tests and `claude plugin validate --strict`, and the plan's rehearsal block (M1) ran as written.
 - The proposed launcher was run in fish with a fake `claude`: the release, `--dev`, `--dev` not first, a dev tree that is gone, the launcher run from a repository, and a data directory whose path holds a space all behaved as R10–R11 say.
