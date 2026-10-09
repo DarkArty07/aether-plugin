@@ -132,3 +132,26 @@ test('compile --run on an existing run keeps its first compile time and archives
   assert.equal(fs.readFileSync(path.join(first.runDir, 'result-2.json'), 'utf8'), '{"launch":2}')
   assert.equal(fs.existsSync(path.join(first.runDir, 'result.json')), false)
 })
+
+test('compile gives every task its effort and review, and the brief its starting rung', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([task(1), task(2, { tier: 'sonnet high — wiring the tests pin down', review: 'xhigh — UI states' })]))
+  const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(
+    ['task-1', 'task-2'].map((id) => [r.json.tasks[id].tier, r.json.tasks[id].effort, r.json.tasks[id].review]),
+    [
+      ['haiku', 'xhigh', 'high'],
+      ['sonnet', 'high', 'xhigh'],
+    ],
+  )
+  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Tier: haiku xhigh — complete code$/m)
+})
+
+test('check refuses Sonnet below high with its message, and no other', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([task(1), task(2, { tier: 'sonnet medium — x' })]))
+  const r = runBin(PLAN_BIN, ['check', file], repo.dir)
+  assert.equal(r.status, 1)
+  assert.deepEqual(r.json.errors, ['Task 2: sonnet medium is not used for implementers; Sonnet and Opus run at high, xhigh or max.'])
+})

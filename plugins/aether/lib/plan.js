@@ -6,6 +6,13 @@
 const { normalizePattern, patternsOverlap } = require('./globs.js')
 
 const TIERS = ['haiku', 'sonnet', 'opus']
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+const DEFAULT_EFFORT = 'xhigh'
+const DEFAULT_REVIEW = 'high'
+// Sonnet and Opus never implement at low or medium.
+const EFFORTS_BELOW_HIGH = ['low', 'medium']
+// A Review line names the reviewer's effort, which is never below high.
+const REVIEW_EFFORTS = ['high', 'xhigh', 'max']
 const DASH = String.raw`\s+(?:—|–|--|-)\s+`
 const TASK_HEADING = /^###\s+Task\s+(\d+)\s*:\s*(.+?)\s*$/i
 // any heading that tries to name a task, well formed or not
@@ -86,6 +93,19 @@ function isOwnsEntry(entry) {
   return !/[\s`{}()[\]]/.test(entry)
 }
 
+// The Tier line is a model, an optional effort, the dash and the reason. The
+// result is null when the line does not read that way.
+function parseTierLine(line) {
+  const m = line.match(new RegExp(String.raw`^\s*-\s*Tier:\s*(\w+)(?:\s+(\w+))?` + DASH + String.raw`(.+?)\s*$`, 'i'))
+  if (!m) return null
+  const tier = m[1].toLowerCase()
+  if (!TIERS.includes(tier)) return null
+  if (m[2] === undefined) return { tier, effort: null, reason: m[3] }
+  const effort = m[2].toLowerCase()
+  if (!EFFORTS.includes(effort)) return null
+  return { tier, effort, reason: m[3] }
+}
+
 // bodyCode marks the body lines that sit inside fenced code. Those lines are
 // never part of the Aether block, the same as headings inside fences.
 function parseAetherFields(task, body, bodyCode, errors) {
@@ -111,13 +131,25 @@ function parseAetherFields(task, body, bodyCode, errors) {
     sawField = true
     let m
     if (/^\s*-\s*Tier:/i.test(line)) {
-      m = line.match(new RegExp(String.raw`^\s*-\s*Tier:\s*(\w+)` + DASH + String.raw`(.+?)\s*$`, 'i'))
-      if (m && TIERS.includes(m[1].toLowerCase())) {
-        task.tier = m[1].toLowerCase()
-        task.tierReason = m[2]
-      } else {
+      const tierLine = parseTierLine(line)
+      if (tierLine === null) {
         tierError = true
-        errors.push(`${label}: Tier must be haiku, sonnet or opus followed by " — reason".`)
+        errors.push(`${label}: Tier must be haiku, sonnet or opus, optionally followed by an effort (low, medium, high, xhigh or max), then " — reason".`)
+      } else if (tierLine.tier !== 'haiku' && EFFORTS_BELOW_HIGH.includes(tierLine.effort)) {
+        tierError = true
+        errors.push(`${label}: ${tierLine.tier} ${tierLine.effort} is not used for implementers; Sonnet and Opus run at high, xhigh or max.`)
+      } else {
+        task.tier = tierLine.tier
+        task.effort = tierLine.effort
+        task.tierReason = tierLine.reason
+      }
+    } else if (/^\s*-\s*Review:/i.test(line)) {
+      const reviewLine = line.match(new RegExp(String.raw`^\s*-\s*Review:\s*(\w+)` + DASH + String.raw`(.+?)\s*$`, 'i'))
+      if (reviewLine && REVIEW_EFFORTS.includes(reviewLine[1].toLowerCase())) {
+        task.review = reviewLine[1].toLowerCase()
+        task.reviewReason = reviewLine[2]
+      } else {
+        errors.push(`${label}: Review must be high, xhigh or max, then " — reason".`)
       }
     } else if ((m = line.match(/^\s*-\s*Area:\s*(.*?)\s*$/i))) {
       if (/^[a-z0-9][a-z0-9-]*$/.test(m[1])) {
@@ -203,6 +235,9 @@ function parsePlan(markdown) {
       text: [lines[i], ...body].join('\n').trim(),
       tier: null,
       tierReason: null,
+      effort: null,
+      review: null,
+      reviewReason: null,
       area: null,
       owns: [],
       dependsOn: [],
@@ -245,6 +280,8 @@ function buildGraph(parsed, { only = null } = {}) {
       title: t.title,
       tier: t.tier,
       tierReason: t.tierReason,
+      effort: t.effort ?? DEFAULT_EFFORT,
+      review: t.review ?? DEFAULT_REVIEW,
       area: t.area,
       owns: t.owns,
       dependsOn: deps,
@@ -298,7 +335,7 @@ function renderBrief(task, { planPath, spec, globalConstraints }) {
     '',
     `- Plan: ${planPath}`,
     `- Spec: ${spec || 'not named in the plan'}`,
-    `- Tier: ${task.tier} — ${task.tierReason}`,
+    `- Tier: ${task.tier} ${task.effort ?? DEFAULT_EFFORT} — ${task.tierReason}`,
     `- Area: ${task.area}`,
     `- Owns: ${task.owns.join(', ')}`,
     '',
@@ -310,4 +347,4 @@ function renderBrief(task, { planPath, spec, globalConstraints }) {
   return parts.join('\n')
 }
 
-module.exports = { TIERS, parsePlan, buildGraph, renderBrief }
+module.exports = { TIERS, EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, parsePlan, buildGraph, renderBrief }
