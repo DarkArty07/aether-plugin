@@ -2,7 +2,7 @@
 'use strict'
 
 // SessionStart hook: injects the using-aether bootstrap, sweeps stale runs
-// in the session's repository, and prunes old usage files.
+// in the session's repository, and prunes old usage files and lane logs.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -25,17 +25,20 @@ function sweepNote() {
   }
 }
 
-// The usage meter's files grow with every session; sessions not written to for 30 days go.
-function pruneUsage() {
+// The usage meter's files grow with every session, and so does the lane log: sessions not written to
+// for 30 days go, from both.
+function pruneOldFiles() {
   try {
     const { pruneUsage: prune } = require(path.join(root, 'lib', 'report.js'))
+    const { pruneLog } = require(path.join(root, 'lib', 'lanes.js'))
     const { dataDir } = require(path.join(root, 'lib', 'run.js'))
     prune(dataDir(), { days: 30 })
+    pruneLog(dataDir(), { days: 30 })
   } catch {
     // Pruning is housekeeping: it never blocks the session.
   }
 }
 
-pruneUsage()
+pruneOldFiles()
 const context = ['Aether mode is active.', bootstrap(), sweepNote()].filter(Boolean).join('\n\n')
 process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) + '\n')
