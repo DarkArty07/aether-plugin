@@ -39,9 +39,9 @@ function sampleResult(runId) {
 }
 
 // One request, priced simply: a million tokens of one kind.
-function entry(minutes, model, agent, kind, ms = 1000) {
+function entry(minutes, model, agent, kind, ms = 1000, effort = null) {
   const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, [kind]: 1e6 }
-  return { t: T0 + minutes * MIN, ms, agent, model, ...tokens }
+  return { t: T0 + minutes * MIN, ms, agent, model, effort, ...tokens }
 }
 
 const OPUS = 'claude-opus-5-5'
@@ -55,20 +55,21 @@ function writeUsage(dataDir, session, parts) {
 }
 
 // The run's session, in two parts: main requests before, during and after the run, and one
-// request from each aether agent. Another session has main requests during the run.
+// request from each aether agent, at its effort. Another session has main requests during the run.
 function sampleUsage(dataDir) {
+  const implementer = { type: 'aether:implementer', description: 'task-1: implement on haiku medium (attempt 1)' }
   writeUsage(dataDir, 'run-session', [
     {
-      agents: { i1: { type: 'aether:implementer', description: 'task-1: implement on haiku (attempt 1)' } },
-      entries: [entry(-5, OPUS, null, 'input'), entry(1, OPUS, null, 'input'), entry(5, HAIKU, 'i1', 'output', MIN)],
+      agents: { i1: implementer },
+      entries: [entry(-5, OPUS, null, 'input'), entry(1, OPUS, null, 'input'), entry(5, HAIKU, 'i1', 'output', MIN, 'medium')],
     },
     {
       agents: {
-        i1: { type: 'aether:implementer', description: 'task-1: implement on haiku (attempt 1)' },
-        s1: { type: 'aether:supervisor', description: 'task-1: supervise attempt 1' },
+        i1: implementer,
+        s1: { type: 'aether:supervisor', description: 'task-1: supervise attempt 1 on sonnet xhigh' },
         r1: { type: 'aether:reviewer', description: 'final review' },
       },
-      entries: [entry(10, SONNET, 's1', 'input'), entry(20, OPUS, 'r1', 'output', 2 * MIN), entry(31, OPUS, null, 'input')],
+      entries: [entry(10, SONNET, 's1', 'input', 1000, 'xhigh'), entry(20, OPUS, 'r1', 'output', 2 * MIN, 'high'), entry(31, OPUS, null, 'input')],
     },
   ])
   writeUsage(dataDir, 'other-session', [{ agents: {}, entries: [entry(2, SONNET, null, 'input'), entry(3, SONNET, null, 'input'), entry(4, SONNET, null, 'input')] }])

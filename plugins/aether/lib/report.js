@@ -17,6 +17,13 @@ const DAY_MS = 24 * 3600 * 1000
 
 const iso = (ms) => new Date(ms).toISOString()
 const zeroTokens = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+// A rung is `<model> <effort>`; a bare model, as results saved before efforts were recorded name it, has no effort.
+const modelOf = (rung) => rung.split(' ')[0]
+const rankOf = (rung) => EFFORTS.indexOf(rung.split(' ')[1])
+// One rung climbs from another when both name the same model and the later one has a higher effort.
+const climbsFrom = (before, after) => modelOf(before) === modelOf(after) && rankOf(before) >= 0 && rankOf(after) > rankOf(before)
 
 function readIfThere(file) {
   return fs.existsSync(file) ? run.readJson(file) : null
@@ -103,15 +110,19 @@ function addTokens(into, entry) {
 }
 
 function summarize(usage, entries, prices) {
-  const total = { usd: 0, requests: 0, tokens: zeroTokens(), byModel: {}, byRole: {}, unpriced: [] }
+  const total = { usd: 0, requests: 0, tokens: zeroTokens(), byModel: {}, byRole: {}, byEffort: {}, unpriced: [] }
   for (const entry of entries) {
     const model = entry.model || 'unknown'
     const role = typeOf(usage, entry)
     const byModel = (total.byModel[model] ||= { usd: 0, requests: 0, tokens: zeroTokens() })
     const byRole = (total.byRole[role] ||= { usd: 0, requests: 0 })
+    const byEffort = (total.byEffort[`${role} ${model} ${entry.effort || 'unknown'}`] ||= { usd: 0, requests: 0, outputTokens: 0, ms: 0 })
     total.requests++
     byModel.requests++
     byRole.requests++
+    byEffort.requests++
+    byEffort.outputTokens += entry.output || 0
+    byEffort.ms += entry.ms || 0
     addTokens(total.tokens, entry)
     addTokens(byModel.tokens, entry)
     const usd = priceEntry(entry, prices)
@@ -122,8 +133,51 @@ function summarize(usage, entries, prices) {
     total.usd += usd
     byModel.usd += usd
     byRole.usd += usd
+    byEffort.usd += usd
   }
   return total
+}
+
+// One item per agent that made requests in the window, the main session as agent null, in the order
+// of each one's first request. Its model and effort list the distinct values its requests named.
+function agentsOf(usage, entries, prices) {
+  const byAgent = new Map()
+  for (const entry of entries) {
+    const agent = entry.agent || null
+    if (!byAgent.has(agent)) {
+      const info = agent ? usage.agents[agent] || {} : {}
+      byAgent.set(agent, {
+        agent,
+        type: typeOf(usage, entry),
+        label: info.description || null,
+        models: new Set(),
+        efforts: new Set(),
+        requests: 0,
+        usd: 0,
+        outputTokens: 0,
+        ms: 0,
+      })
+    }
+    const item = byAgent.get(agent)
+    if (entry.model) item.models.add(entry.model)
+    if (entry.effort) item.efforts.add(entry.effort)
+    item.requests++
+    item.outputTokens += entry.output || 0
+    item.ms += entry.ms || 0
+    item.usd += priceEntry(entry, prices) || 0
+  }
+  const joined = (values) => (values.size > 0 ? [...values].join(', ') : null)
+  return [...byAgent.values()].map(({ agent, type, label, models, efforts, requests, usd, outputTokens, ms }) => ({
+    agent,
+    type,
+    label,
+    model: joined(models),
+    effort: joined(efforts),
+    requests,
+    usd,
+    outputTokens,
+    ms,
+  }))
 }
 
 function countFindings(findings) {
@@ -144,12 +198,13 @@ function readResults(dir) {
   return latest ? [...archived, latest] : archived
 }
 
-// Unit outcomes, escalations, every supervisor finding and the final reviews, over every launch.
-// A unit's latest launch gives its status; attempts and findings add up across launches, and a unit
-// counts as escalated when a launch moved it up a tier or a relaunch started it on another tier.
+// Unit outcomes, escalations, climbs, every supervisor finding and the final reviews, over every launch.
+// A unit's latest launch gives its status; attempts and findings add up across launches. A unit counts
+// as escalated when a launch moved it to another model or a relaunch started it on another model, and
+// as climbed when a launch raised its effort on one model.
 function qualityOf(results) {
   if (results.length === 0) {
-    const unknown = ['launches', 'units', 'merged', 'blocked', 'skipped', 'notRun', 'escalated', 'attempts', 'agents', 'findings', 'finalReview']
+    const unknown = ['launches', 'units', 'merged', 'blocked', 'skipped', 'notRun', 'escalated', 'climbed', 'attempts', 'agents', 'findings', 'finalReview']
     return Object.fromEntries(unknown.map((key) => [key, null]))
   }
   const units = new Map()
@@ -161,10 +216,12 @@ function qualityOf(results) {
     for (const unit of result.units || []) {
       const before = units.get(unit.id)
       const tiers = unit.tiers || []
+      const models = tiers.map(modelOf)
       units.set(unit.id, {
         status: unit.status,
-        firstTier: before ? before.firstTier : tiers[0],
-        escalated: Boolean(before && before.escalated) || tiers.length > 1 || Boolean(before && tiers[0] && tiers[0] !== before.firstTier),
+        firstModel: before ? before.firstModel : models[0],
+        escalated: Boolean(before && before.escalated) || new Set(models).size > 1 || Boolean(before && models[0] && models[0] !== before.firstModel),
+        climbed: Boolean(before && before.climbed) || tiers.some((rung, i) => i > 0 && climbsFrom(tiers[i - 1], rung)),
         attempts: (before ? before.attempts : 0) + (unit.attempts || 0),
         findings: [...(before ? before.findings : []), ...(unit.rounds || []).flatMap((round) => round.findings || [])],
       })
@@ -186,6 +243,7 @@ function qualityOf(results) {
     skipped: count('skipped'),
     notRun: count('not-run'),
     escalated: all.filter((unit) => unit.escalated).length,
+    climbed: all.filter((unit) => unit.climbed).length,
     attempts: all.reduce((sum, unit) => sum + unit.attempts, 0),
     agents,
     findings: countFindings(all.flatMap((unit) => unit.findings)),
@@ -248,7 +306,11 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
       session: usage ? span(usage.entries) : null,
     },
     cost: usage
-      ? { basis: `${prices.basis}, ${prices.snapshot}`, run: summarize(usage, inRun, prices), session: summarize(usage, usage.entries, prices) }
+      ? {
+          basis: `${prices.basis}, ${prices.snapshot}`,
+          run: { ...summarize(usage, inRun, prices), agents: agentsOf(usage, inRun, prices) },
+          session: summarize(usage, usage.entries, prices),
+        }
       : null,
     quality: { ...qualityOf(results), tests: tests ? runTests(graph) : null },
     notes,

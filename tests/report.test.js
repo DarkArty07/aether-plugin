@@ -55,6 +55,7 @@ test('report counts quality from the saved result, and runs the tests at integra
     skipped: 0,
     notRun: 0,
     escalated: 1,
+    climbed: 0,
     attempts: 5,
     agents: 12,
     launches: 1,
@@ -71,6 +72,7 @@ test('report says so when the tests fail at integration, or when nothing was mea
   assert.equal(r.quality.tests.passed, false)
   assert.equal(r.quality.tests.exitCode, 1)
   assert.equal(r.quality.units, null)
+  assert.equal(r.quality.climbed, null)
   assert.equal(r.cost, null)
   assert.deepEqual(r.usage, { session: null, claudeCode: null, runRequests: 0, sessionRequests: 0 })
   assert.match(r.notes.join('\n'), /no usage recorded/)
@@ -169,4 +171,105 @@ test('pruneUsage deletes the usage sessions not written to within the retention 
   assert.equal(fs.existsSync(path.join(dataDir, 'usage', 'other-session')), false)
   assert.ok(fs.existsSync(path.join(dataDir, 'usage', 'run-session')))
   assert.deepEqual(pruneUsage(path.join(dataDir, 'nowhere'), { days: 30 }), { pruned: [] })
+})
+
+test('report gives cost, output tokens and time by role, model and effort', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  const { cost } = report(repo.dir, args.runId, { tests: false })
+  const byEffort = cost.run.byEffort
+  assert.deepEqual(Object.keys(byEffort).sort(), [
+    'aether:implementer claude-haiku-5-5 medium',
+    'aether:reviewer claude-opus-5-5 high',
+    'aether:supervisor claude-sonnet-5-5 xhigh',
+    'main claude-opus-5-5 unknown',
+  ])
+  const implementer = byEffort['aether:implementer claude-haiku-5-5 medium']
+  close(implementer.usd, 0.5)
+  assert.deepEqual([implementer.requests, implementer.outputTokens, implementer.ms], [1, 1e6, MIN])
+  const reviewer = byEffort['aether:reviewer claude-opus-5-5 high']
+  close(reviewer.usd, 20)
+  assert.deepEqual([reviewer.requests, reviewer.outputTokens, reviewer.ms], [1, 1e6, 2 * MIN])
+  const main = byEffort['main claude-opus-5-5 unknown']
+  close(main.usd, 4)
+  assert.deepEqual([main.requests, main.outputTokens], [1, 0])
+  // The whole session also counts the main requests before and after the run, which carry no effort.
+  assert.equal(cost.session.byEffort['main claude-opus-5-5 unknown'].requests, 3)
+})
+
+test('report lists each agent of the run in the order of its first request, with its label, model and effort', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  const { cost } = report(repo.dir, args.runId, { tests: false })
+  const { agents } = cost.run
+  assert.deepEqual(
+    agents.map(({ usd, ...rest }) => rest),
+    [
+      { agent: null, type: 'main', label: null, model: OPUS, effort: null, requests: 1, outputTokens: 0, ms: 1000 },
+      { agent: 'i1', type: 'aether:implementer', label: 'task-1: implement on haiku medium (attempt 1)', model: HAIKU, effort: 'medium', requests: 1, outputTokens: 1e6, ms: MIN },
+      { agent: 's1', type: 'aether:supervisor', label: 'task-1: supervise attempt 1 on sonnet xhigh', model: SONNET, effort: 'xhigh', requests: 1, outputTokens: 0, ms: 1000 },
+      { agent: 'r1', type: 'aether:reviewer', label: 'final review', model: OPUS, effort: 'high', requests: 1, outputTokens: 1e6, ms: 2 * MIN },
+    ],
+  )
+  close(agents[0].usd, 4)
+  close(agents[3].usd, 20)
+  assert.equal(cost.session.agents, undefined)
+})
+
+test('an agent that ran at several efforts lists them in the order it used them', (t) => {
+  const dataDir = useDataDir(t)
+  const at = (minutes, effort) => ({ t: T0 + minutes * MIN, ms: 1000, agent: 'a1', model: HAIKU, effort, input: 0, output: 1, cacheRead: 0, cacheWrite: 0 })
+  writeUsage(dataDir, 'one-agent', [
+    {
+      agents: { a1: { type: 'aether:implementer', description: 'task-1: implement on haiku medium (attempt 1)' } },
+      entries: [at(1, 'medium'), at(2, 'xhigh'), at(3, 'medium'), at(4, null)],
+    },
+  ])
+  const { repo, args } = finishedRun(t)
+  const [item] = report(repo.dir, args.runId, { session: 'one-agent', tests: false }).cost.run.agents
+  assert.deepEqual([item.agent, item.model, item.effort, item.requests, item.outputTokens], ['a1', HAIKU, 'medium, xhigh', 4, 4])
+})
+
+test('report counts climbs apart from escalations, from the rungs in each unit\'s tiers', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  const file = path.join(args.runDir, 'result.json')
+  writeJson(file, {
+    units: [
+      { id: 'task-1', status: 'merged', tiers: ['haiku medium', 'haiku xhigh'], attempts: 2, rounds: [] },
+      { id: 'task-2', status: 'merged', tiers: ['haiku xhigh', 'sonnet xhigh'], attempts: 3, rounds: [] },
+      { id: 'task-3', status: 'merged', tiers: ['sonnet high', 'sonnet xhigh', 'opus xhigh'], attempts: 3, rounds: [] },
+    ],
+    finalReview: { status: 'done', verdict: 'ready', findings: [] },
+    agents: { total: 9 },
+  })
+  fs.utimesSync(file, new Date(T0 + 30 * MIN), new Date(T0 + 30 * MIN))
+  const { quality } = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual([quality.climbed, quality.escalated], [2, 2])
+})
+
+test('a relaunch on the same model is no escalation, and a relaunch on another model is one', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  writeJson(path.join(args.runDir, 'result-1.json'), {
+    units: [
+      { id: 'task-1', status: 'merged', tiers: ['haiku xhigh'], attempts: 1, rounds: [] },
+      { id: 'task-2', status: 'blocked', tiers: ['haiku medium'], attempts: 1, rounds: [] },
+      { id: 'task-3', status: 'blocked', tiers: ['haiku xhigh'], attempts: 1, rounds: [] },
+    ],
+    agents: { total: 6 },
+  })
+  const file = path.join(args.runDir, 'result.json')
+  writeJson(file, {
+    units: [
+      { id: 'task-2', status: 'merged', tiers: ['haiku medium'], attempts: 1, rounds: [] },
+      { id: 'task-3', status: 'merged', tiers: ['sonnet xhigh'], attempts: 1, rounds: [] },
+    ],
+    agents: { total: 4 },
+  })
+  fs.utimesSync(file, new Date(T0 + 30 * MIN), new Date(T0 + 30 * MIN))
+  const { quality } = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual([quality.launches, quality.escalated, quality.climbed], [2, 1, 0])
 })
