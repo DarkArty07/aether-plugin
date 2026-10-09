@@ -41,18 +41,19 @@ function assertFlags(args) {
   }
 }
 
+// Number(raw), except that an empty or blank value is not a number.
 function parseNumber(raw, name) {
-  if (raw === '' || raw.trim() === '') throw new Error(`invalid ${name}: ${raw}`)
-  const n = Number(raw)
+  const n = raw.trim() === '' ? NaN : Number(raw)
   if (!Number.isFinite(n)) throw new Error(`invalid ${name}: ${raw}`)
   return n
 }
 
+// --session, or else CLAUDE_CODE_SESSION_ID; an empty value counts as none.
 function getSession(args, required = false) {
   const flag = value(args, '--session')
   const env = process.env.CLAUDE_CODE_SESSION_ID
   const id = flag !== null ? flag : env
-  if (!id || id === '') {
+  if (!id) {
     if (required) throw new Error('no session id; pass --session <id> or set CLAUDE_CODE_SESSION_ID')
     return null
   }
@@ -96,7 +97,7 @@ function main(argv) {
 
   if (sub === 'check') {
     const cls = rest[0]
-    if (!cls || cls.startsWith('--')) throw new Error(USAGE)
+    if (cls === undefined || cls.startsWith('--')) throw new Error(USAGE)
     const session = getSession(rest, false)
     const res = autonomy.check(mainRoot, cls, { session })
     if (!res) return { code: 2, out: { covered: false, class: cls } }
@@ -133,7 +134,7 @@ function main(argv) {
 
   if (sub === 'spend') {
     const rawAmount = rest[0]
-    if (!rawAmount || rawAmount.startsWith('--')) throw new Error(USAGE)
+    if (rawAmount === undefined || rawAmount.startsWith('--')) throw new Error(USAGE)
     const amount = parseNumber(rawAmount, 'spend')
     const source = value(rest, '--source')
     if (!source) throw new Error(USAGE)
