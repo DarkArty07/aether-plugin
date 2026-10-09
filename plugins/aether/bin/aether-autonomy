@@ -1,0 +1,162 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-autonomy grant  --class <class> --quote <text> [--session <id>] [--scope repo|session]
+// aether-autonomy revoke --class <class> --quote <text> [--session <id>]
+// aether-autonomy check  <class> [--session <id>]
+// aether-autonomy list
+// aether-autonomy start  --quote <text> [--session <id>] [--hours N] [--usd N]
+// aether-autonomy spend  <usd> --source <label>
+// aether-autonomy status
+// aether-autonomy end    --outcome done|ceiling|incomplete
+
+const path = require('node:path')
+const lib = path.join(__dirname, '..', 'lib')
+const { repoPaths } = require(path.join(lib, 'git.js'))
+const { ensureExcluded } = require(path.join(lib, 'run.js'))
+const autonomy = require(path.join(lib, 'autonomy.js'))
+
+const USAGE =
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete'
+
+// The value after a flag, or null when the flag is absent.
+function value(args, flag) {
+  const i = args.indexOf(flag)
+  if (i === -1) return null
+  const next = args[i + 1]
+  if (next === undefined || next.startsWith('--')) throw new Error(`${flag} needs a value`)
+  return next
+}
+
+// Every flag that appears in args must be followed by a value.
+function assertFlags(args) {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith('--')) {
+      const next = args[i + 1]
+      if (next === undefined || next.startsWith('--')) {
+        throw new Error(`${args[i]} needs a value`)
+      }
+      i++
+    }
+  }
+}
+
+// Number(raw), except that an empty or blank value is not a number.
+function parseNumber(raw, name) {
+  const n = raw.trim() === '' ? NaN : Number(raw)
+  if (!Number.isFinite(n)) throw new Error(`invalid ${name}: ${raw}`)
+  return n
+}
+
+// --session, or else CLAUDE_CODE_SESSION_ID; an empty value counts as none.
+function getSession(args, required = false) {
+  const flag = value(args, '--session')
+  const env = process.env.CLAUDE_CODE_SESSION_ID
+  const id = flag !== null ? flag : env
+  if (!id) {
+    if (required) throw new Error('no session id; pass --session <id> or set CLAUDE_CODE_SESSION_ID')
+    return null
+  }
+  return id
+}
+
+function main(argv) {
+  const sub = argv[0]
+  const rest = argv.slice(1)
+
+  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'spend', 'status', 'end'].includes(sub)) {
+    throw new Error(USAGE)
+  }
+
+  assertFlags(rest)
+
+  const { mainRoot, gitCommonDir } = repoPaths(process.cwd())
+
+  if (sub === 'grant') {
+    const cls = value(rest, '--class')
+    const quote = value(rest, '--quote')
+    if (!cls || !quote) throw new Error(USAGE)
+    const session = getSession(rest, true)
+    const scope = value(rest, '--scope') || 'repo'
+    ensureExcluded(gitCommonDir)
+    const res = autonomy.grant(mainRoot, { class: cls, quote, session, scope })
+    if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }
+    return { code: 0, out: { granted: res.grant } }
+  }
+
+  if (sub === 'revoke') {
+    const cls = value(rest, '--class')
+    const quote = value(rest, '--quote')
+    if (!cls || !quote) throw new Error(USAGE)
+    const session = getSession(rest, true)
+    ensureExcluded(gitCommonDir)
+    const res = autonomy.revoke(mainRoot, { class: cls, quote, session })
+    if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }
+    return { code: 0, out: { revoked: res.revocation } }
+  }
+
+  if (sub === 'check') {
+    const cls = rest[0]
+    if (cls === undefined || cls.startsWith('--')) throw new Error(USAGE)
+    const session = getSession(rest, false)
+    const res = autonomy.check(mainRoot, cls, { session })
+    if (!res) return { code: 2, out: { covered: false, class: cls } }
+    return { code: 0, out: { covered: true, class: cls, grant: res } }
+  }
+
+  if (sub === 'list') {
+    return { code: 0, out: autonomy.list(mainRoot) }
+  }
+
+  if (sub === 'start') {
+    const quote = value(rest, '--quote')
+    if (!quote) throw new Error(USAGE)
+    const rawHours = value(rest, '--hours')
+    const rawUsd = value(rest, '--usd')
+    const hours = rawHours !== null ? parseNumber(rawHours, 'ceiling') : null
+    const usd = rawUsd !== null ? parseNumber(rawUsd, 'ceiling') : null
+    const session = getSession(rest, true)
+    ensureExcluded(gitCommonDir)
+    const res = autonomy.start(mainRoot, { quote, session, hours, usd })
+    if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }
+    return {
+      code: 0,
+      out: {
+        started: {
+          id: res.run.id,
+          runFile: res.runFile,
+          diary: res.diary,
+          ceilings: res.run.ceilings,
+        },
+      },
+    }
+  }
+
+  if (sub === 'spend') {
+    const rawAmount = rest[0]
+    if (rawAmount === undefined || rawAmount.startsWith('--')) throw new Error(USAGE)
+    const amount = parseNumber(rawAmount, 'spend')
+    const source = value(rest, '--source')
+    if (!source) throw new Error(USAGE)
+    return { code: 0, out: autonomy.spend(mainRoot, amount, source) }
+  }
+
+  if (sub === 'status') {
+    return { code: 0, out: autonomy.status(mainRoot) }
+  }
+
+  if (sub === 'end') {
+    const outcome = value(rest, '--outcome')
+    if (!outcome) throw new Error(USAGE)
+    return { code: 0, out: { ended: autonomy.end(mainRoot, outcome) } }
+  }
+}
+
+try {
+  const { code, out } = main(process.argv.slice(2))
+  process.stdout.write(JSON.stringify(out) + '\n')
+  process.exit(code)
+} catch (err) {
+  process.stdout.write(JSON.stringify({ error: err.message }) + '\n')
+  process.exit(1)
+}
