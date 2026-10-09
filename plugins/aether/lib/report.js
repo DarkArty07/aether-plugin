@@ -222,8 +222,8 @@ function qualityOf(results) {
       const models = tiers.map(modelOf)
       units.set(unit.id, {
         status: unit.status,
-        firstModel: before ? before.firstModel : models[0],
-        escalated: Boolean(before && before.escalated) || new Set(models).size > 1 || Boolean(before && models[0] && models[0] !== before.firstModel),
+        firstModel: (before && before.firstModel) || models[0],
+        escalated: Boolean(before && before.escalated) || new Set(models).size > 1 || Boolean(before && before.firstModel && models[0] && models[0] !== before.firstModel),
         climbed: Boolean(before && before.climbed) || tiers.some((rung, i) => i > 0 && climbsFrom(tiers[i - 1], rung)),
         attempts: (before ? before.attempts : 0) + (unit.attempts || 0),
         findings: [...(before ? before.findings : []), ...(unit.rounds || []).flatMap((round) => round.findings || [])],

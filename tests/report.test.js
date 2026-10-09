@@ -275,6 +275,30 @@ test('a relaunch on the same model is no escalation, and a relaunch on another m
   assert.deepEqual([quality.launches, quality.escalated, quality.climbed], [2, 1, 0])
 })
 
+test('a unit skipped in the first launch and run in the relaunch is no escalation', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  writeJson(path.join(args.runDir, 'result-1.json'), {
+    units: [
+      { id: 'task-1', status: 'merged', tiers: ['haiku xhigh'], attempts: 1, rounds: [] },
+      { id: 'task-2', status: 'skipped', tiers: [], attempts: 0, rounds: [] },
+      { id: 'task-3', status: 'skipped', tiers: [], attempts: 0, rounds: [] },
+    ],
+    agents: { total: 3 },
+  })
+  const file = path.join(args.runDir, 'result.json')
+  writeJson(file, {
+    units: [
+      { id: 'task-2', status: 'merged', tiers: ['haiku xhigh'], attempts: 1, rounds: [] },
+      { id: 'task-3', status: 'merged', tiers: ['sonnet xhigh'], attempts: 1, rounds: [] },
+    ],
+    agents: { total: 4 },
+  })
+  fs.utimesSync(file, new Date(T0 + 30 * MIN), new Date(T0 + 30 * MIN))
+  const { quality } = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual([quality.launches, quality.escalated, quality.climbed], [2, 0, 0])
+})
+
 test('report adds the lanes: calls, tokens and dollars by group, model and role, quota per window, and the share the plans covered', (t) => {
   const dataDir = useDataDir(t)
   sampleUsage(dataDir)
