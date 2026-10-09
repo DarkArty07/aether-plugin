@@ -1,7 +1,7 @@
 'use strict'
 
-// Speed, cost and quality of a swarm run (spec §10), from its run directory, the usage meter's
-// files and the saved result; and finalize, which records the run and removes what is left of it.
+// Speed, cost, quality and lanes of a swarm run (spec §10), from its run directory, the usage meter's
+// files, the lane log and the saved result; and finalize, which records the run and removes what is left of it.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -10,6 +10,7 @@ const { spawnSync } = require('node:child_process')
 const { repoPaths } = require('./git.js')
 const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
+const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
@@ -17,6 +18,8 @@ const DAY_MS = 24 * 3600 * 1000
 
 const iso = (ms) => new Date(ms).toISOString()
 const zeroTokens = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
+const laneZeroTokens = () => ({ input: 0, output: 0, cacheRead: 0 })
+const LANE_STATUSES = ['ok', 'failed', 'quota', 'violation', 'blocked']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
 // A rung is `<model> <effort>`; a bare model, as results saved before efforts were recorded name it, has no effort.
@@ -251,6 +254,111 @@ function qualityOf(results) {
   }
 }
 
+const splitLog = (entries) => ({
+  calls: entries.filter((entry) => entry.kind === 'call'),
+  readings: entries.filter((entry) => entry.kind === 'reading'),
+})
+
+// A lane call's dollars at list price. A model with no price counts $0, and is noted once.
+function laneDollars(call, tokens, prices, notes) {
+  const usd = priceEntry({ model: call.model, ...tokens, agent: 'lane' }, prices)
+  if (usd !== null) return usd
+  const note = `no price for lane model ${call.model}`
+  if (!notes.includes(note)) notes.push(note)
+  return 0
+}
+
+// A group's quota readings: each reading's own, and each call's before and after the call. quotaConsumed sorts them.
+function groupReadings(group, calls, readings) {
+  const points = []
+  const add = (time, quota) => {
+    if (quota && quota.windows) points.push({ time, windows: quota.windows })
+  }
+  for (const reading of readings) add(reading.time, reading.groups && reading.groups[group])
+  for (const call of calls) {
+    if (call.group !== group) continue
+    add(call.startedAt, call.quotaBefore)
+    add(call.time, call.quotaAfter)
+  }
+  return points
+}
+
+// Calls, tokens and dollars by group, model and role, and each group's quota windows.
+function summarizeLanes(calls, readings, prices, notes) {
+  const summary = { calls: 0, usd: 0, tokens: laneZeroTokens(), groups: {}, byModel: {}, byRole: {} }
+  for (const call of calls) {
+    const tokens = laneTokens(call.usage ?? {})
+    const usd = laneDollars(call, tokens, prices, notes)
+    summary.calls++
+    summary.usd += usd
+    addTokens(summary.tokens, tokens)
+    const group = (summary.groups[call.group] ||= { calls: 0, usd: 0, tokens: laneZeroTokens(), quota: {} })
+    group.calls++
+    group.usd += usd
+    addTokens(group.tokens, tokens)
+    const model = (summary.byModel[call.model] ||= { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, usd: 0 })
+    model.calls++
+    model.usd += usd
+    if (LANE_STATUSES.includes(call.status)) model[call.status]++
+    const role = (summary.byRole[call.role] ||= { calls: 0, usd: 0 })
+    role.calls++
+    role.usd += usd
+  }
+  for (const [name, group] of Object.entries(summary.groups)) {
+    group.quota = quotaConsumed(groupReadings(name, calls, readings))
+  }
+  return summary
+}
+
+// The agy version of the latest reading that names one, or null.
+function versionOf(readings) {
+  const named = readings.filter((reading) => reading.version).sort((a, b) => b.time - a.time)
+  return named.length > 0 ? named[0].version : null
+}
+
+// Every launch's agy rounds, counted by the agy model that served them, and the lanes' overflow.
+function launchesOf(results) {
+  const attempts = {}
+  let overflow = 0
+  for (const result of results) {
+    overflow += (result.lanes && result.lanes.overflow) || 0
+    for (const unit of result.units || []) {
+      for (const round of unit.rounds || []) {
+        if (typeof round.provider !== 'string' || !round.provider.startsWith('agy ')) continue
+        const tally = (attempts[round.provider.slice('agy '.length)] ||= { attempts: 0, approved: 0 })
+        tally.attempts++
+        if (round.verdict === 'approve') tally.approved++
+      }
+    }
+  }
+  return { attempts, overflow }
+}
+
+// What the plans covered: the lanes' dollars beside the native dollars, and the lanes' share of both.
+function totalsOf(nativeUsd, lanesUsd) {
+  const totalUsd = nativeUsd + lanesUsd
+  return { nativeUsd, lanesUsd, totalUsd, coveredShare: totalUsd === 0 ? 0 : lanesUsd / totalUsd }
+}
+
+// The lane log's share of the run, the run's calls being those inside its window, and of the usage session.
+function laneReport({ dataDir, runId, start, end, usage, results, prices, notes, cost }) {
+  const entries = readLog(dataDir)
+  const isRunEntry = (entry) => entry.run === runId && (entry.kind === 'reading' || (entry.time >= start && entry.time <= end))
+  const runLog = splitLog(entries.filter(isRunEntry))
+  const sessionLog = usage ? splitLog(entries.filter((entry) => entry.session === usage.session)) : null
+  const run = summarizeLanes(runLog.calls, runLog.readings, prices, notes)
+  const session = sessionLog ? summarizeLanes(sessionLog.calls, sessionLog.readings, prices, notes) : null
+  return {
+    version: versionOf([...runLog.readings, ...(sessionLog ? sessionLog.readings : [])]),
+    run: { ...run, ...launchesOf(results) },
+    session,
+    totals: {
+      run: totalsOf(cost ? cost.run.usd : 0, run.usd),
+      session: cost && session ? totalsOf(cost.session.usd, session.usd) : null,
+    },
+  }
+}
+
 // Runs the plan's test command in the integration worktree.
 function runTests(graph) {
   const r = spawnSync(graph.testCommand, {
@@ -290,6 +398,14 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   }
   if (!usage) notes.push('no usage recorded during the run: is the usage meter loaded (aether-mode)?')
   const inRun = usage ? usage.entries.filter((entry) => within(entry, start, end)) : []
+  const cost = usage
+    ? {
+        basis: `${prices.basis}, ${prices.snapshot}`,
+        run: { ...summarize(usage, inRun, prices), agents: agentsOf(usage, inRun, prices) },
+        session: summarize(usage, usage.entries, prices),
+      }
+    : null
+  const lanes = laneReport({ dataDir, runId, start, end, usage, results, prices, notes, cost })
 
   return {
     runId,
@@ -305,13 +421,8 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
       swarm: usage ? span(inRun.filter((entry) => isAether(usage, entry))) : null,
       session: usage ? span(usage.entries) : null,
     },
-    cost: usage
-      ? {
-          basis: `${prices.basis}, ${prices.snapshot}`,
-          run: { ...summarize(usage, inRun, prices), agents: agentsOf(usage, inRun, prices) },
-          session: summarize(usage, usage.entries, prices),
-        }
-      : null,
+    cost,
+    lanes,
     quality: { ...qualityOf(results), tests: tests ? runTests(graph) : null },
     notes,
   }
@@ -353,13 +464,15 @@ function superpowersVersion() {
 function finalize(cwd, runId, options = {}) {
   const { now = Date.now(), dataDir = run.dataDir() } = options
   const r = report(cwd, runId, { ...options, dataDir })
+  const versions = { aether: aetherVersion(), superpowers: superpowersVersion(), claudeCode: r.usage.claudeCode }
+  if (r.lanes.version) versions.agy = r.lanes.version
   const record = {
     runId,
     status: 'finalized',
     finalizedAt: iso(now),
     repo: repoPaths(cwd).mainRoot,
     plan: r.plan,
-    versions: { aether: aetherVersion(), superpowers: superpowersVersion(), claudeCode: r.usage.claudeCode },
+    versions,
     report: r,
   }
   run.appendRecord(record, dataDir)

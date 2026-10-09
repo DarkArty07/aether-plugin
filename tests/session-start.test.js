@@ -8,6 +8,7 @@ const path = require('node:path')
 const { SESSION_BIN, PLUGIN, makeRepo, compile, tempDir, ageRun, age } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { ensure } = require('../plugins/aether/lib/worktrees.js')
+const { appendLog, logFile } = require('../plugins/aether/lib/lanes.js')
 
 function start(cwd, data) {
   const r = spawnSync(process.execPath, [SESSION_BIN], {
@@ -67,4 +68,17 @@ test('session start deletes usage sessions older than 30 days', (t) => {
   const r = start(repo.dir, data)
   assert.equal(r.status, 0, r.stderr)
   assert.deepEqual(fs.readdirSync(path.join(data, 'usage')), ['recent'])
+})
+
+test('session start prunes lane logs not written to for 30 days', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-data-')
+  appendLog(data, 'old-session', { kind: 'reading', time: 1 })
+  appendLog(data, 'new-session', { kind: 'reading', time: 2 })
+  const old = new Date(Date.now() - 31 * 24 * 3600 * 1000)
+  fs.utimesSync(logFile(data, 'old-session'), old, old)
+  const r = start(repo.dir, data)
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(fs.existsSync(logFile(data, 'old-session')), false)
+  assert.equal(fs.existsSync(logFile(data, 'new-session')), true)
 })

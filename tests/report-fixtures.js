@@ -8,6 +8,7 @@ const path = require('node:path')
 const { makeRepo, compile } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { readJson, writeJson } = require('../plugins/aether/lib/run.js')
+const { appendLog } = require('../plugins/aether/lib/lanes.js')
 
 const T0 = Date.parse('2026-10-08T01:00:00.000Z')
 const MIN = 60 * 1000
@@ -91,4 +92,84 @@ function finishedRun(t, { result = true, testCommand = 'true' } = {}) {
   return { repo, args }
 }
 
-module.exports = { T0, MIN, OPUS, SONNET, HAIKU, sampleResult, sampleUsage, writeUsage, finishedRun }
+const GEMINI = 'gemini-3.8-flash-high'
+const AGY_SONNET = 'claude-sonnet-5-5-high'
+const AGY_OPUS = 'claude-opus-5-5-high'
+const quota = (fiveHour, fiveReset, weekly, weeklyReset) => ({
+  windows: { '5h': { remaining: fiveHour, resetsAt: fiveReset }, weekly: { remaining: weekly, resetsAt: weeklyReset } },
+})
+
+// The run session's lane log: a reading and three lane calls of the run, then one Designer round of
+// another design in the same session. Each call's tokens are a million of one or two kinds.
+function sampleLaneLog(dataDir, runId) {
+  const at = (minutes) => T0 + minutes * MIN
+  const call = (minutes, startedMinutes, fields) =>
+    appendLog(dataDir, 'run-session', {
+      kind: 'call',
+      time: at(minutes),
+      startedAt: at(startedMinutes),
+      harness: 'agy',
+      conversation: 'c',
+      detail: '',
+      durationMs: (minutes - startedMinutes) * MIN,
+      ...fields,
+    })
+  appendLog(dataDir, 'run-session', {
+    kind: 'reading',
+    time: at(1),
+    run: runId,
+    design: null,
+    harness: 'agy',
+    version: '1.3.2',
+    groups: { gemini: quota(0.9, 'R1', 0.96, 'W1'), claude: quota(0.97, 'R2', 0.98, 'W2') },
+  })
+  call(6, 3, {
+    run: runId, design: null, call: 'task-1-1-implement', role: 'implementer', task: 'task-1', model: GEMINI, group: 'gemini', effort: 'xhigh', status: 'ok',
+    usage: { input: 1e6, output: 0, thinking: 0, cacheRead: 0, total: 1e6 },
+    quotaBefore: quota(0.9, 'R1', 0.96, 'W1'), quotaAfter: quota(0.85, 'R1', 0.95, 'W1'),
+  })
+  call(9, 7, {
+    run: runId, design: null, call: 'task-1-1-supervise', role: 'supervisor', task: 'task-1', model: AGY_SONNET, group: 'claude', effort: 'high', status: 'ok',
+    usage: { input: 0, output: 1e6, thinking: 0, cacheRead: 0, total: 1e6 },
+    quotaBefore: quota(0.97, 'R2', 0.98, 'W2'), quotaAfter: quota(0.95, 'R2', 0.975, 'W2'),
+  })
+  call(12, 10, {
+    run: runId, design: null, call: 'task-2-1-implement', role: 'implementer', task: 'task-2', model: GEMINI, group: 'gemini', effort: 'xhigh', status: 'failed',
+    usage: { input: 1e6, output: 0, thinking: 0, cacheRead: 1e6, total: 1e6 },
+    quotaBefore: quota(0.85, 'R1', 0.95, 'W1'), quotaAfter: quota(0.7, 'R3', 0.94, 'W1'),
+  })
+  call(40, 35, {
+    run: null, design: '20261008-020000-beef', call: 'round-1', role: 'designer', task: null, model: AGY_OPUS, group: 'claude', effort: 'xhigh', status: 'ok',
+    usage: { input: 0, output: 1e6, thinking: 0, cacheRead: 0, total: 1e6 },
+    quotaBefore: quota(0.95, 'R2', 0.975, 'W2'), quotaAfter: quota(0.9, 'R2', 0.97, 'W2'),
+  })
+}
+
+// A saved result whose rounds name their providers, with two calls that found the lanes full.
+function laneResult(runId) {
+  const result = sampleResult(runId)
+  result.units[0].rounds = [
+    { verdict: 'retry', findings: [], provider: `agy ${GEMINI}` },
+    { verdict: 'approve', findings: [], provider: `agy ${GEMINI}` },
+  ]
+  result.units[0].attempts = 2
+  result.lanes = { calls: 3, ok: 2, failed: 1, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 2, dry: [] }
+  return result
+}
+
+module.exports = {
+  T0,
+  MIN,
+  OPUS,
+  SONNET,
+  HAIKU,
+  GEMINI,
+  AGY_SONNET,
+  AGY_OPUS,
+  sampleResult,
+  sampleUsage,
+  writeUsage,
+  finishedRun,
+  sampleLaneLog,
+  laneResult,
+}

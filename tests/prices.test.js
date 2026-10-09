@@ -66,3 +66,19 @@ test('priceModelUsage prices a claude -p modelUsage beside its list cost, with 1
   close(r.listUsd, 12.61)
   assert.deepEqual(r.byModel['claude-haiku-5-5'].tokens, { input: 0, output: 1e6, cacheRead: 1e6, cacheWrite: 1e6 })
 })
+
+test("Gemini 3.8 Flash has OpenRouter's prices, and agy's model ids price as their families", () => {
+  assert.deepEqual(prices.models['gemini-3.8-flash'], {
+    ids: ['gemini-3.8-flash'],
+    input: 0.75,
+    output: 3.75,
+    cacheRead: 0.075,
+    cacheWrite5m: 0.041667,
+    cacheWrite1h: 0.041667,
+  })
+  assert.equal(prices.sources['gemini-3.8-flash'], 'https://openrouter.ai/api/v1/models/google/gemini-3.8-flash/endpoints')
+  assert.equal(ratesFor(prices, 'gemini-3.8-flash-high').family, 'gemini-3.8-flash')
+  assert.equal(ratesFor(prices, 'claude-opus-5-5-high').family, 'opus')
+  assert.equal(ratesFor(prices, 'claude-sonnet-5-5-medium').family, 'sonnet')
+  close(priceEntry({ model: 'gemini-3.8-flash-high', input: 1e6, output: 1e6, cacheRead: 1e6, cacheWrite: 0, agent: 'lane' }, prices), 0.75 + 3.75 + 0.075)
+})
