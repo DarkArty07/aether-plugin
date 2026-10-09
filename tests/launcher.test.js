@@ -19,11 +19,12 @@ test('the README shows the same launch for bash and zsh', () => {
   assert.ok(read('README.md').includes(LINE))
 })
 
-test('the manifest is version 0.3.0 and names the Lead and the Designer', () => {
+test('the manifest is version 0.4.0 and names the Lead, the Designer and the lanes', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.3.0')
+  assert.equal(manifest.version, '0.4.0')
   assert.match(manifest.description, /the Lead on Sonnet/)
   assert.match(manifest.description, /the Designer on Opus/)
+  assert.match(manifest.description, /Lanes run its calls on other coding plans/)
 })
 
 test('the documents record the decisions and the verified facts', () => {
@@ -39,4 +40,21 @@ test('the documents record the decisions and the verified facts', () => {
   const v01 = read('docs', 'superpowers', 'specs', '2026-10-07-aether-plugin-design.md')
   const status = v01.split('\n').find((line) => line.startsWith('- **Status:**'))
   assert.match(status, /2026-10-08-lead-and-designer-design\.md/)
+})
+
+test('the documents record the lanes: decisions, facts, and the skills that use them', () => {
+  const decisions = read('docs', 'decisions.md')
+  for (const id of ['A20', 'A21', 'A22']) assert.match(decisions, new RegExp(`^\\| ${id} \\|`, 'm'), id)
+  assert.match(decisions, /\*\*Update \(2026-10-08, lanes\)\.\*\*/)
+  const research = read('docs', 'claude-code-research.md')
+  assert.match(research, /^## Lanes findings \(2026-10-08\)$/m)
+  for (const fact of ['remaining_fraction', '--dangerously-skip-permissions', 'AGENTS.md', 'structured_output']) assert.ok(research.includes(fact), fact)
+  const lead = read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md')
+  for (const text of ['aether-lane design start --session', 'aether-lane design reply', 'aether-lane design end', '**Exit 3**', 'SendMessage']) {
+    assert.ok(lead.includes(text), text)
+  }
+  const swarm = read('plugins', 'aether', 'skills', 'swarm', 'SKILL.md')
+  for (const text of ['--no-lanes', 'laneFailure', '`aether-lane`', 'Blocked by a lane']) assert.ok(swarm.includes(text), text)
+  assert.match(read('README.md'), /^### Lanes$/m)
+  assert.match(read('README.md'), /^Version 0\.4: /m)
 })

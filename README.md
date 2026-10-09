@@ -15,7 +15,7 @@ Without the plugin, Claude Code keeps working in normal mode, with superpowers a
 
 ## Status
 
-Version 0.3: the Lead on Sonnet holds the conversation, the Designer on Opus writes specs and plans, and each plan task sets its implementer's effort.
+Version 0.4: the Lead on Sonnet holds the conversation, the Designer on Opus writes specs and plans, each plan task sets its implementer's effort, and lanes run the swarm's calls and the Designer's rounds on other coding plans while their quota lasts.
 
 **Trial 3** ([evaluation](docs/evaluations/2026-10-08-trial-3.md)) ran the same design request with the Lead and Designer split and with an Opus main session:
 - the split's design captured all ten items of the owner's hidden intent, against nine;
@@ -95,6 +95,18 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 | Usage meter | A mod that records every model request: agent, model, tokens and time |
 | `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `price` prices any `claude -p` JSON output |
 | SessionStart hook | Injects the bootstrap, sweeps runs left untouched for 24 hours, and deletes usage files not written to for 30 days |
+
+### Lanes
+
+A lane runs Aether's own calls on another coding plan the owner pays for, while that plan's quota lasts. The first is agy, the Antigravity CLI. See the [lanes spec](docs/superpowers/specs/2026-10-08-lanes-design.md).
+
+- **Who takes a call.** `plugins/aether/config/lanes.json` names one external model per native model and role: Gemini 3.8 Flash for Haiku implementers, and agy's own Sonnet 5.5 and Opus 5.5 for the rest. agy's `high` runs Claude's `high` and `xhigh`; calls at `max`, and `ops`, are always native.
+- **Quota.** A group is used while both its windows, 5 hours and weekly, stay above a 5% reserve.
+- **Fallback.** When agy is missing, out of quota or fails, the same call runs on Aether's own agent, without spending the ladder.
+- **Containment.** agy runs with `--dangerously-skip-permissions` in the unit's worktree. Git checks catch changes outside the task's Owns, to the integration worktree and branch, and from read-only roles. It is not contained beyond that; the owner accepted this for 0.4.0.
+- **The Designer** can run its rounds on agy too, each round a transaction that may change only specs and plans.
+- **Report.** `aether-report` shows each group's quota consumed and the dollars at list price, apart from native Claude.
+- **Off for one run:** `aether-plan compile <plan.md> --no-lanes`.
 
 ## Use Aether mode
 

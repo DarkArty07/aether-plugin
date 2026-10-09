@@ -53,7 +53,7 @@ Before the confirmation, explore and converse freely. After it, you no longer de
 
 **How:**
 1. Read your session id with `echo $CLAUDE_CODE_SESSION_ID`.
-2. Start the Agent tool with `subagent_type` `aether:designer`, in the background, with this message:
+2. Write the hand-off message:
 
         You are the Designer for <topic>.
         Path: architectural. Working directory: <path>.
@@ -63,7 +63,15 @@ Before the confirmation, explore and converse freely. After it, you no longer de
         This round: <what to produce>
 
    In the first round, "This round" is "propose 2-3 approaches with your recommendation".
-3. Tell the owner the Designer is working, and keep the agent's id.
+3. Start the Designer on its lane when one is free. Run this with the Bash tool in the background (`run_in_background`), with the message on stdin:
+
+        aether-lane design start --session <session id> --cwd <working directory> <<'EOF'
+        <the hand-off message>
+        EOF
+
+   - **Exit 0:** it printed the Designer's first reply, in the format below, with one more line in "For the Lead": `- Lane: ...`, which names the design id. Keep the id.
+   - **Exit 3** (`{"unavailable": ...}`): nothing changed. Start the native Designer instead: the Agent tool with `subagent_type` `aether:designer`, in the background, with the same message.
+4. Tell the owner the Designer is working, and keep its design id or its agent id.
 
 ## The relay
 
@@ -79,7 +87,7 @@ The Designer ends every round with this reply:
 
 **The relay rules:**
 1. Show "For the owner" as written. One line of framing is allowed; a paraphrase of the design is not.
-2. Send the owner's answer with SendMessage, verbatim. Add context only when the owner refers to something the Designer cannot see.
+2. Send the owner's answer verbatim: with SendMessage to a native Designer, or with `aether-lane design reply <id>` and the answer on stdin, in the background, to a Designer on a lane. Add context only when the owner refers to something the Designer cannot see.
 3. After the hand-off, design questions go to the Designer. The Lead answers questions about process, cost and status itself.
 4. The Lead never writes or edits a spec or a plan; aether-guard refuses it.
 
@@ -91,6 +99,10 @@ The Designer ends every round with this reply:
 - **`maxTurns`:** resume a Designer that stopped there.
 - **A lost id:** after a compaction or in a new session, start a new Designer with the spec and plan paths and the owner's latest decision. The files are the source of truth.
 - **Later changes:** any change to a spec or a plan also goes to the Designer. That includes a plan task that a blocked unit shows to be wrong.
+- **A Designer on a lane:**
+  - Exit 3 or 4 from `aether-lane design reply` means the round did not happen or was undone. Start the native Designer from the spec and plan files, the last reply the owner saw and the owner's latest answer, and keep that design native.
+  - When the owner approves the plan, or the design is dropped, run `aether-lane design end <id>`.
+  - `aether-lane design list` shows the open designs, for a lost id.
 
 ## Your own tool work
 
