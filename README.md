@@ -15,7 +15,7 @@ Without the plugin, Claude Code keeps working in normal mode, with superpowers a
 
 ## Status
 
-Version 0.2: the Lead on Sonnet holds the conversation, and the Designer on Opus writes specs and plans.
+Version 0.3: the Lead on Sonnet holds the conversation, the Designer on Opus writes specs and plans, and each plan task sets its implementer's effort.
 
 **Trial 3** ([evaluation](docs/evaluations/2026-10-08-trial-3.md)) ran the same design request with the Lead and Designer split and with an Opus main session:
 - the split's design captured all ten items of the owner's hidden intent, against nine;
