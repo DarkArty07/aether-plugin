@@ -273,6 +273,22 @@ From the effort probe of the [effort per task plan](superpowers/plans/2026-10-08
 | The end-to-end check | 2026-10-08: `check-effort.js` passed on a one-task swarm run of version 0.3.0. The implementer ran at `medium`, the supervisor at `xhigh`, the final reviewer at `high` and ops at `low`. The run took 1 minute and cost $0.13 at OpenRouter prices. |
 | The check inside an Aether-mode session | A `claude -p` child inherits the parent's `PATH`, and a session started by `aether-mode` has `main`'s `plugins/aether/bin` first. The child then ran `main`'s `aether-plan`, which refused the new `haiku medium` Tier line. Put the branch's `plugins/aether/bin` first on the child's `PATH` (`PATH="$REPO/plugins/aether/bin:$PATH"`) when the check runs from such a session. |
 
+## Lanes findings (2026-10-08)
+
+From the verification run for the [lanes spec](superpowers/specs/2026-10-08-lanes-design.md): agy 1.3.2, 24 calls in throwaway directories, and Claude Code's mod API types.
+
+| Topic | Result |
+|---|---|
+| Quota | `agy -p "/usage" --output-format json` costs no tokens. `command.data.groups[]` holds each group's `name` and `buckets`, and each bucket its `window` (`5h` or `weekly`), `remaining_fraction` and `reset_time`. The groups are "Gemini Models" and "Claude and GPT models". The meter is coarse: about 170K tokens of small Gemini calls did not move it. |
+| Results | The JSON holds `status`, `response`, `usage` (`input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens`, `total_tokens`), `conversation_id` and `duration_seconds`. With `--json-schema`, `structured_output` holds the object, and it works together with file edits. `input_tokens` excludes cache reads, and usage is cumulative per conversation. |
+| Failures | `status` and the exit code are not enough. A print timeout and a missing `--conversation` both exit 0 with `SUCCESS`; only stderr, an empty `response` or another `conversation_id` shows them. An invalid model exits 1 with `ERROR`, and an unknown flag exits 2. |
+| Containment | `--sandbox` does not contain agy: its file tools wrote outside the working directory, with or without `--dangerously-skip-permissions`, and its terminal became read-only even inside it. Lanes do not use it. |
+| Instructions | agy loads `AGENTS.md` and `GEMINI.md`, not `CLAUDE.md`, and reads a file such as a `SKILL.md` by its absolute path. |
+| Concurrency | Four calls at once succeeded; more were not tried. |
+| Cache | On Claude models a resumed conversation reads the cache; on Gemini it did not. |
+| Waiting in Bash | A subagent's Bash call waited about 9 minutes and returned. Past the default 120 s a call moves to the background, so long calls set `timeout` explicitly. |
+| Mods and workflow agents | `agent.spawn` fires for each workflow agent with its full `prompt`, which a hook can read but not rewrite. `$.process` runs host commands, and a `turn.step` hook can answer without calling the model; neither is used yet. |
+
 ## OpenRouter prices
 
 The snapshot of 2026-10-07, rechecked on 2026-10-08 and unchanged. It covers the Anthropic endpoint, in USD per million tokens. The plugin's copy is `plugins/aether/config/prices.json`.
@@ -286,6 +302,7 @@ The snapshot of 2026-10-07, rechecked on 2026-10-08 and unchanged. It covers the
 
 - **Sources:** `https://openrouter.ai/api/v1/models/anthropic/<slug>/endpoints`, with the slugs `claude-opus-5.5`, `claude-sonnet-5.5` and `claude-haiku-5.5`.
 - **Opus fast mode:** Opus 5.5 also has a "fast" endpoint at twice these prices. The usage meter cannot tell fast-mode requests apart.
+- **Gemini 3.8 Flash** (`https://openrouter.ai/api/v1/models/google/gemini-3.8-flash/endpoints`, snapshot 2026-10-08), for lanes: input 0.75, output 3.75, cache read 0.075. Reasoning is priced as output.
 
 ## Still to verify
 
@@ -293,3 +310,6 @@ The snapshot of 2026-10-07, rechecked on 2026-10-08 and unchanged. It covers the
 - Whether a workflow's `finally` block runs when the owner stops the run from the interactive progress view. It does not run when the session's process is killed (2026-10-08).
 - Whether `$.env.set` at `session.start` can set `ANTHROPIC_BASE_URL`.
 - How to declare each model's context window in a mixed session.
+- What agy prints when a quota group runs out. Lanes treat any non-clean result as a failure and read `/usage`.
+- Whether agy takes more than four calls at once.
+- Whether files under `~/.gemini` feed agy's context.
