@@ -270,6 +270,8 @@ From the effort probe of the [effort per task plan](superpowers/plans/2026-10-08
 | A call's effort against the agent file's | A workflow `agent()` call with `effort: 'high'` on `aether:ops`, whose file sets `low`, ran at `high`. One with `effort: 'medium'` on `aether:implementer`, whose file sets `xhigh`, ran at `medium`. |
 | A call with no effort | An `aether:ops` call that named no effort ran at `low`. |
 | Where the effort is recorded | Each assistant line of a workflow agent's transcript carries `effort` and `perTurnEffort`. The usage meter's agent ids are the transcripts' ids. |
+| The end-to-end check | 2026-10-08: `check-effort.js` passed on a one-task swarm run of version 0.3.0. The implementer ran at `medium`, the supervisor at `xhigh`, the final reviewer at `high` and ops at `low`. The run took 1 minute and cost $0.13 at OpenRouter prices. |
+| The check inside an Aether-mode session | A `claude -p` child inherits the parent's `PATH`, and a session started by `aether-mode` has `main`'s `plugins/aether/bin` first. The child then ran `main`'s `aether-plan`, which refused the new `haiku medium` Tier line. Put the branch's `plugins/aether/bin` first on the child's `PATH` (`PATH="$REPO/plugins/aether/bin:$PATH"`) when the check runs from such a session. |
 
 ## OpenRouter prices
 
