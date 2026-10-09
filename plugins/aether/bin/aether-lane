@@ -13,8 +13,21 @@ const fs = require('node:fs')
 const path = require('node:path')
 const calls = require(path.join(__dirname, '..', 'lib', 'lane-calls.js'))
 
-const USAGE =
-  'usage: aether-lane status <run> | start <run> <call> --role <role> --model <lane model> --effort <effort> --digest <digest> [--task <task>] | wait <run> <call> [--max <seconds>] | result <run> <call> | stop <run> [<call>] | design ...'
+// Each command's usage. <run>, and <call> where it is not in brackets, are required.
+const COMMANDS = {
+  status: 'status <run>',
+  start: 'start <run> <call> --role <role> --model <lane model> --effort <effort> --digest <digest> [--task <task>]',
+  wait: 'wait <run> <call> [--max <seconds>]',
+  result: 'result <run> <call>',
+  stop: 'stop <run> [<call>]',
+}
+const USAGE = `usage: aether-lane ${Object.values(COMMANDS).join(' | ')} | design ...`
+
+// Throws the command's own usage when an argument it requires is missing.
+function requireArgs(verb, runId, call) {
+  const needsCall = COMMANDS[verb].split(' ').includes('<call>')
+  if (runId === undefined || (needsCall && call === undefined)) throw new Error(`usage: aether-lane ${COMMANDS[verb]}`)
+}
 
 // The value after each --name in args, keyed by name.
 function flags(args) {
@@ -37,6 +50,7 @@ function maxSeconds(value) {
 async function command(argv) {
   const [verb, runId, call, ...rest] = argv
   const cwd = process.cwd()
+  if (Object.hasOwn(COMMANDS, verb)) requireArgs(verb, runId, call)
   if (verb === 'status') return calls.status(cwd, runId)
   if (verb === 'start') return calls.start(cwd, runId, call, flags(rest))
   if (verb === 'wait') return calls.wait(cwd, runId, call, { maxSeconds: maxSeconds(flags(rest).max) })

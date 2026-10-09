@@ -120,6 +120,7 @@ function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = pro
         usage: usageOf(data),
         conversation: conversationOf(data),
         response: typeof data?.response === 'string' ? data.response : '',
+        error: data?.error ? String(data.error) : '',
       }
     },
 

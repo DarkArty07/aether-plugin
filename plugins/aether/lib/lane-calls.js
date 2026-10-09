@@ -79,6 +79,7 @@ function callPaths(cwd, runId, call) {
     agyStdout: file('agy.stdout'),
     agyStderr: file('agy.stderr'),
     result: file('result.json'),
+    stopped: file('stopped'),
   }
 }
 
@@ -273,9 +274,20 @@ function runAgy(argv, { workdir, marker, paths, timeoutSeconds, onSpawn }) {
   })
 }
 
-function failedDetail(reason, stderr) {
-  const text = stderr.slice(0, STDERR_DETAIL_CHARS)
-  return text.trim() === '' ? reason : `${reason}\n${text}`
+// The reason, then what stderr adds, each text once. agy can print its error both in its JSON, which
+// the reason quotes, and on stderr: stderr then keeps it, and the reason drops its quote.
+function failedDetail({ reason, error }, stderr) {
+  const text = stderr
+    .trim()
+    .split('\n')
+    .filter((line) => line.trim() === '' || !reason.includes(line.trim()))
+    .join('\n')
+    .trim()
+    .slice(0, STDERR_DETAIL_CHARS)
+  if (text === '') return reason
+  const quote = error ? `: ${error}` : ''
+  const head = quote !== '' && text.includes(error) && reason.endsWith(quote) ? reason.slice(0, -quote.length) : reason
+  return `${head}\n${text}`
 }
 
 // The status, result and detail of a finished call, from the checks and agy's output, in that order.
@@ -290,7 +302,7 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
   }
   if (!parsed.clean) {
     if (quotaRead && !lanes.usable(quotaAfter, reserve)) return { status: 'quota', detail: parsed.reason }
-    return { status: 'failed', detail: failedDetail(parsed.reason, stderr) }
+    return { status: 'failed', detail: failedDetail(parsed, stderr) }
   }
   if (role === 'implementer') {
     const owns = work.checkOwns(cwd, runId, task)
@@ -302,6 +314,32 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
 }
 
 const NO_USAGE = { input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }
+
+// A call's lane-log entry, in the one shape the report reads, for the runner and for stop alike.
+function callEntry(info, { time, status, usage, conversation, quotaAfter, detail }) {
+  return {
+    kind: 'call',
+    time,
+    startedAt: info.startedAt,
+    session: info.session,
+    run: info.runId,
+    design: null,
+    call: info.call,
+    role: info.role,
+    task: info.task,
+    harness: HARNESS,
+    model: info.model,
+    group: info.group,
+    effort: info.effort,
+    status,
+    durationMs: time - info.startedAt,
+    usage,
+    conversation,
+    quotaBefore: info.quotaBefore,
+    quotaAfter,
+    detail,
+  }
+}
 
 async function runCall(cwd, runId, call) {
   const paths = callPaths(cwd, runId, call)
@@ -374,28 +412,11 @@ async function runCall(cwd, runId, call) {
     conversation: parsed.conversation,
   }
   try {
-    lanes.appendLog(run.dataDir(), info.session, {
-      kind: 'call',
-      time,
-      startedAt: info.startedAt,
-      session: info.session,
-      run: runId,
-      design: null,
-      call,
-      role,
-      task,
-      harness: HARNESS,
-      model: info.model,
-      group,
-      effort: info.effort,
-      status: outcome.status,
-      durationMs: lane.durationMs,
-      usage: lane.usage,
-      conversation: lane.conversation,
-      quotaBefore: info.quotaBefore,
-      quotaAfter,
-      detail: outcome.detail,
-    })
+    lanes.appendLog(
+      run.dataDir(),
+      info.session,
+      callEntry(info, { time, status: outcome.status, usage: lane.usage, conversation: lane.conversation, quotaAfter, detail: outcome.detail }),
+    )
   } catch {
     // A log that cannot be written must not keep the result from the workflow.
   }
@@ -440,6 +461,18 @@ function result(cwd, runId, call) {
   return done
 }
 
+// The log entry of a call that stop ended before its runner wrote a result, written once. The usage is
+// what agy reported, when it got as far as reporting; zeros otherwise.
+function logStopped(paths) {
+  const info = readJsonOrNull(paths.call)
+  if (!info || fs.existsSync(paths.result) || fs.existsSync(paths.stopped)) return
+  const time = Date.now()
+  fs.writeFileSync(paths.stopped, `${time}\n`)
+  const reported = createAgy().parse({ stdout: readTextOrEmpty(paths.agyStdout), stderr: '', exitCode: 0 })
+  const detail = 'stopped by aether-lane stop before the call had a result'
+  lanes.appendLog(run.dataDir(), info.session, callEntry(info, { time, status: 'stopped', usage: reported.usage, conversation: reported.conversation, quotaAfter: null, detail }))
+}
+
 function stop(cwd, runId, call = null) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
@@ -456,7 +489,13 @@ function stop(cwd, runId, call = null) {
   }
   const stopped = []
   for (const name of calls) {
-    if (killCall(callPaths(cwd, runId, name))) stopped.push(name)
+    const paths = callPaths(cwd, runId, name)
+    if (killCall(paths)) stopped.push(name)
+    try {
+      logStopped(paths)
+    } catch {
+      // A log that cannot be written must not keep stop from ending the call.
+    }
     work.removeReader(cwd, runId, name)
   }
   return { stopped }

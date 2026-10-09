@@ -273,7 +273,7 @@ test("the final reviewer reads a disposable copy of the integration branch with 
 test("stop kills a running call's runner and agy, and wait then reports it unfinished", async (t) => {
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t)
-  const digest = fx.writePrompt(args, IMPLEMENT, `FAKE-AGY: sleep 60\nFAKE-AGY: answer ${DONE}`)
+  const digest = fx.writePrompt(args, IMPLEMENT, `FAKE-AGY: sleep 60\nFAKE-AGY: answer ${DONE}`, { session: 's-1' })
   fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env)
   const dir = path.join(args.runDir, 'lanes', IMPLEMENT)
   const runner = Number(fs.readFileSync(path.join(dir, 'pid'), 'utf8'))
@@ -289,6 +289,58 @@ test("stop kills a running call's runner and agy, and wait then reports it unfin
   assert.deepEqual([fx.alive(runner), fx.alive(agy)], [false, false])
   assert.deepEqual(fx.lane(args, 'wait', [IMPLEMENT, '--max', '1'], env).json, { done: false })
   assert.deepEqual(fx.lane(args, 'stop', [IMPLEMENT], env).json, { stopped: [] })
+
+  // The stopped call has its log entry, in the runner's shape, and only one however often stop runs.
+  const entries = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'call')
+  assert.equal(entries.length, 1)
+  const [entry] = entries
+  assert.deepEqual(
+    [entry.session, entry.run, entry.design, entry.call, entry.role, entry.task, entry.harness, entry.model, entry.group, entry.effort, entry.status],
+    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-high', 'gemini', 'xhigh', 'stopped'],
+  )
+  assert.deepEqual([entry.usage, entry.conversation, entry.quotaAfter], [{ input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }, null, null])
+  assert.equal(entry.quotaBefore.windows['5h'].remaining, 0.9)
+  assert.ok(entry.startedAt <= entry.time && entry.durationMs === entry.time - entry.startedAt)
+  assert.equal(typeof entry.detail, 'string')
+})
+
+test("stop logs the usage agy reported when agy finished but the runner wrote no result", (t) => {
+  const { args, env, done } = implement(t, ['FAKE-AGY: usage 3000 400 0 700', `FAKE-AGY: answer ${DONE}`])
+  assert.equal(done.status, 'ok', done.detail)
+  // A runner that died between agy's end and its result leaves agy's output and no result.
+  fs.rmSync(path.join(args.runDir, 'lanes', IMPLEMENT, 'result.json'))
+  assert.deepEqual(fx.lane(args, 'stop', [IMPLEMENT], env).json, { stopped: [] })
+  const stopped = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'call' && e.status === 'stopped')
+  assert.equal(stopped.length, 1)
+  assert.deepEqual([stopped[0].usage, stopped[0].conversation], [done.lane.usage, done.lane.conversation])
+})
+
+test('stop of a call that finished, or never started, logs nothing', (t) => {
+  const { args, env, done } = implement(t, [`FAKE-AGY: answer ${DONE}`])
+  assert.equal(done.status, 'ok', done.detail)
+  fx.lane(args, 'stop', [IMPLEMENT], env)
+  fx.lane(args, 'stop', ['task-1-2-implement'], env)
+  assert.deepEqual(lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'call').map((e) => e.status), ['ok'])
+})
+
+test('a command without its run id answers with its usage', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t)
+  const bare = (verb, ...rest) => runBin(fx.LANE_BIN, [verb, ...rest], args.repoRoot, env)
+  assert.deepEqual([bare('status').status, bare('status').json], [1, { error: 'usage: aether-lane status <run>' }])
+  assert.deepEqual(bare('stop').json, { error: 'usage: aether-lane stop <run> [<call>]' })
+  assert.deepEqual(bare('result', args.runId).json, { error: 'usage: aether-lane result <run> <call>' })
+  assert.deepEqual(bare('wait').json, { error: 'usage: aether-lane wait <run> <call> [--max <seconds>]' })
+})
+
+test("a failed call's detail holds agy's error text once, whether stderr repeats it as is or after a prefix", (t) => {
+  const text = `model not found: nope. ${'Available models are listed by agy models. '.repeat(10)}`.trim()
+  const same = implement(t, [`FAKE-AGY: exit-error ${text}`, `FAKE-AGY: stderr ${text}`])
+  assert.deepEqual([same.done.status, same.done.detail], ['failed', `exit 1: ${text}`])
+  const prefixed = implement(t, [`FAKE-AGY: exit-error ${text}`, `FAKE-AGY: stderr Error: ${text}`])
+  assert.deepEqual([prefixed.done.status, prefixed.done.detail], ['failed', `exit 1\nError: ${text}`])
+  const timeout = implement(t, ['FAKE-AGY: timeout'])
+  assert.equal(timeout.done.detail, 'stderr: [agy] print timeout 10s reached, returning partial output')
 })
 
 test("stop also ends the commands agy started in sessions of their own, found by the call's marker, and nothing else", { timeout: 60000 }, async (t) => {

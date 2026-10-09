@@ -13,7 +13,9 @@
 //   env <absolute path>                 writes its environment there, as a JSON object
 //   answer <json>                       the structured output
 //   usage <input> <output> <thinking> <cacheRead>   this turn's tokens (default 1000 200 0 500)
-//   exit-error                          agy's answer to an invalid model: exit 1, status ERROR
+//   exit-error [<text...>]              agy's answer to an invalid model: exit 1, status ERROR, with
+//                                       <text> as its error (default: model not found: <model>)
+//   stderr <text...>                    the stderr line of exit-error (default: Error: model not found)
 //   timeout                             agy's answer to a print timeout: exit 0, empty response
 //   new-conversation                    a resume that silently starts a new conversation
 //
@@ -76,6 +78,8 @@ if (prompt === '/usage') {
 let structured = null
 let turn = [1000, 200, 0, 500]
 let mode = 'answer'
+let errorText = null
+let stderrText = 'Error: model not found'
 let fresh = false
 for (const line of prompt.split('\n')) {
   if (!line.startsWith('FAKE-AGY: ')) continue
@@ -101,14 +105,17 @@ for (const line of prompt.split('\n')) {
     turn = rest.map(Number)
   } else if (verb === 'exit-error' || verb === 'timeout') {
     mode = verb
+    if (verb === 'exit-error' && rest.length > 0) errorText = rest.join(' ')
+  } else if (verb === 'stderr') {
+    stderrText = rest.join(' ')
   } else if (verb === 'new-conversation') {
     fresh = true
   }
 }
 
 if (mode === 'exit-error') {
-  print({ conversation_id: '', status: 'ERROR', error: `model not found: ${flag('--model')}`, response: '', usage: zero() })
-  process.stderr.write('Error: model not found\n')
+  print({ conversation_id: '', status: 'ERROR', error: errorText ?? `model not found: ${flag('--model')}`, response: '', usage: zero() })
+  process.stderr.write(`${stderrText}\n`)
   process.exit(1)
 }
 

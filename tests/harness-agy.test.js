@@ -124,10 +124,12 @@ test('parse accepts only a clean result: exit 0, SUCCESS, no stderr, a response 
     usage: { input: 1000, output: 200, thinking: 0, cacheRead: 8132, total: 1200 },
     conversation: 'c-1',
     response: '{"verdict":"approve","toolAction":"respond","toolSummary":"done"}',
+    error: '',
   })
   const reason = (raw, options = {}) => agy.parse(raw, { required: ['verdict'], ...options }).reason
   const invalidModel = JSON.stringify({ conversation_id: '', status: 'ERROR', error: 'model not found: x', response: '', usage: ZERO })
   assert.equal(reason({ stdout: invalidModel, stderr: 'Error: model not found\n', exitCode: 1 }), 'exit 1: model not found: x')
+  assert.equal(agy.parse({ stdout: invalidModel, stderr: '', exitCode: 1 }).error, 'model not found: x')
   assert.equal(reason({ stdout: '', stderr: 'invalid schema', exitCode: 1 }), 'exit 1')
   assert.equal(reason({ stdout: 'not json', stderr: '', exitCode: 0 }), 'unreadable output')
   assert.equal(reason({ stdout: success({ status: 'ERROR', error: 'boom' }), stderr: '', exitCode: 0 }), 'status ERROR: boom')
