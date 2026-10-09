@@ -22,7 +22,11 @@ function tempDir(t, prefix = 'aether-test-') {
 }
 
 function run(command, args, cwd, env = {}) {
-  const r = spawnSync(command, args, { cwd, encoding: 'utf8', env: { ...process.env, AETHER_LANES_CONFIG: NO_LANES_CONFIG, ...env } })
+  const r = spawnSync(command, args, {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, AETHER_LANES_CONFIG: NO_LANES_CONFIG, ...env },
+  })
   if (r.error) throw r.error
   return r
 }
