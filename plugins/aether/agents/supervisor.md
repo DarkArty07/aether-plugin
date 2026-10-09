@@ -53,10 +53,10 @@ Your review is read-only. Never change a file.
 ## Rule on it
 
 - **approve:** the diff meets the brief, and you have no critical or important finding. The workflow then merges it.
-- **retry:** the attempt has findings the same model can fix. Put what the next attempt must do in `guidance`.
+- **retry:** the attempt has findings that another attempt on the same model can fix. Put what the next attempt must do in `guidance`.
 - **escalate:** a stronger model is needed:
   - the same mistakes repeat;
-  - the task is beyond this tier;
+  - the task is beyond this model, even at a higher effort;
   - or the implementer reported BLOCKED because the work is too hard.
 - **block:** no model can finish the unit with what it has:
   - the brief is wrong or incomplete;
@@ -69,7 +69,8 @@ When the implementer reported NEEDS_CONTEXT or BLOCKED, look for the answer in t
 
 Stay consistent with the earlier rulings in this area. Write `ruling` as one line: the decision and why.
 
-The workflow enforces the ladder:
-- a retry past the tier's attempts moves up a tier;
-- an escalation past the last tier blocks;
+The workflow enforces the ladder. The Ladder section of your message names the model and the effort each verdict would run next:
+- a retry stays on the same model while the model has attempts left, at `xhigh`, or at `max` when the task asked for it;
+- a retry past the model's attempts, and an escalation, move to the next model with attempts, at `xhigh`;
+- a retry or an escalation past the last model blocks the unit;
 - an approval that still lists a critical or important finding counts as a retry.

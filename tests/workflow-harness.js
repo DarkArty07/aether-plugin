@@ -109,6 +109,7 @@ async function runWorkflow(args, overrides = {}) {
     const call = {
       role,
       model: opts.model,
+      effort: opts.effort,
       label: opts.label,
       phase: opts.phase,
       schema: opts.schema,
