@@ -2,7 +2,7 @@
 'use strict'
 
 // aether-plan check <plan.md>
-// aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main]
+// aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes]
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -10,8 +10,10 @@ const lib = path.join(__dirname, '..', 'lib')
 const { parsePlan, buildGraph, renderBrief } = require(path.join(lib, 'plan.js'))
 const { repoPaths, currentBranch, head } = require(path.join(lib, 'git.js'))
 const run = require(path.join(lib, 'run.js'))
+const lanes = require(path.join(lib, 'lanes.js'))
 
-const USAGE = 'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main]'
+const USAGE =
+  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes]'
 
 function fail(errors, warnings = []) {
   process.stdout.write(JSON.stringify({ ok: false, errors, warnings }) + '\n')
@@ -52,6 +54,12 @@ function compile(planArg, rest) {
   const graph = buildGraph(parsed, { only })
   const errors = [...parsed.errors, ...graph.errors]
   if (errors.length) fail(errors, graph.warnings)
+  // A lane table that loadConfig refuses throws here, before anything is written.
+  const laneArgs = rest.includes('--no-lanes')
+    ? null
+    : lanes.lanesArgs(lanes.loadConfig(lanes.configPath()), {
+        installed: (name, harness) => lanes.commandInstalled(harness.command),
+      })
 
   const repo = repoPaths(process.cwd())
   const branch = currentBranch(process.cwd())
@@ -87,6 +95,7 @@ function compile(planArg, rest) {
     maxAgents: parsed.execution.maxAgents,
     waves: graph.waves,
     tasks,
+    lanes: laneArgs,
   }
   run.writeJson(path.join(dir, 'graph.json'), args)
   // A relaunch of a run keeps its first compile time, so the report covers every launch, and keeps

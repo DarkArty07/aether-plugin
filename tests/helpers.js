@@ -12,6 +12,8 @@ const PLUGIN = path.join(__dirname, '..', 'plugins', 'aether')
 const PLAN_BIN = path.join(PLUGIN, 'bin', 'aether-plan')
 const WT_BIN = path.join(PLUGIN, 'bin', 'aether-wt')
 const SESSION_BIN = path.join(PLUGIN, 'bin', 'aether-session-start')
+// A lane table that does not exist, so a bin run by a test sees no lanes unless the test names a table.
+const NO_LANES_CONFIG = path.join(os.tmpdir(), 'aether-no-lanes', 'lanes.json')
 
 function tempDir(t, prefix = 'aether-test-') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)))
@@ -20,7 +22,7 @@ function tempDir(t, prefix = 'aether-test-') {
 }
 
 function run(command, args, cwd, env = {}) {
-  const r = spawnSync(command, args, { cwd, encoding: 'utf8', env: { ...process.env, ...env } })
+  const r = spawnSync(command, args, { cwd, encoding: 'utf8', env: { ...process.env, AETHER_LANES_CONFIG: NO_LANES_CONFIG, ...env } })
   if (r.error) throw r.error
   return r
 }
@@ -102,6 +104,7 @@ module.exports = {
   PLAN_BIN,
   WT_BIN,
   SESSION_BIN,
+  NO_LANES_CONFIG,
   tempDir,
   makeRepo,
   writePlan,

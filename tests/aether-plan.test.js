@@ -4,8 +4,9 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { PLAN_BIN, makeRepo, writePlan, runBin } = require('./helpers.js')
+const { PLAN_BIN, makeRepo, writePlan, runBin, tempDir, NO_LANES_CONFIG, compile } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
+const { CONFIG_FILE, loadConfig, lanesArgs } = require('../plugins/aether/lib/lanes.js')
 
 test('check prints the waves of a valid plan', (t) => {
   const repo = makeRepo(t)
@@ -154,4 +155,56 @@ test('check refuses Sonnet below high with its message, and no other', (t) => {
   const r = runBin(PLAN_BIN, ['check', file], repo.dir)
   assert.equal(r.status, 1)
   assert.deepEqual(r.json.errors, ['Task 2: sonnet medium is not used for implementers; Sonnet and Opus run at high, xhigh or max.'])
+})
+
+// A lane table whose agy is `command`, in a temporary directory.
+function laneTable(t, command) {
+  const dir = tempDir(t)
+  const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))
+  config.harnesses.agy.command = command(dir)
+  const file = path.join(dir, 'lanes.json')
+  fs.writeFileSync(file, JSON.stringify(config))
+  return file
+}
+function executable(dir) {
+  const exe = path.join(dir, 'agy')
+  fs.writeFileSync(exe, '#!/bin/sh\nexit 0\n')
+  fs.chmodSync(exe, 0o755)
+  return exe
+}
+
+test('compile gives the run its lanes when the table and the harness are there, and none with --no-lanes', (t) => {
+  const repo = makeRepo(t)
+  const md = writePlan(repo.dir, plan([task(1)]))
+  const file = laneTable(t, executable)
+  const on = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file })
+  assert.equal(on.status, 0, on.stdout + on.stderr)
+  assert.deepEqual(on.json.lanes, lanesArgs(loadConfig(file), { installed: () => true }))
+  assert.equal(Object.keys(on.json).pop(), 'lanes')
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(on.json.runDir, 'graph.json'), 'utf8')).lanes, on.json.lanes)
+  const off = runBin(PLAN_BIN, ['compile', md, '--no-lanes'], repo.dir, { AETHER_LANES_CONFIG: file })
+  assert.equal(off.status, 0, off.stdout + off.stderr)
+  assert.equal(off.json.lanes, null)
+})
+
+test('compile gives no lanes when the harness is missing or there is no table', (t) => {
+  const repo = makeRepo(t)
+  const md = writePlan(repo.dir, plan([task(1)]))
+  const missing = laneTable(t, (dir) => path.join(dir, 'no-agy'))
+  assert.equal(runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: missing }).json.lanes, null)
+  assert.equal(runBin(PLAN_BIN, ['compile', md], repo.dir).json.lanes, null)
+  assert.equal(fs.existsSync(NO_LANES_CONFIG), false)
+  assert.equal(compile(repo, plan([task(1)])).lanes, null)
+})
+
+test('compile refuses a broken lane table before writing anything', (t) => {
+  const repo = makeRepo(t)
+  const md = writePlan(repo.dir, plan([task(1)]))
+  const file = path.join(tempDir(t), 'lanes.json')
+  fs.writeFileSync(file, '{')
+  const r = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file })
+  assert.equal(r.status, 1)
+  assert.equal(r.json.ok, false)
+  assert.ok(r.json.errors[0].startsWith(`lanes config ${file}: `), r.json.errors[0])
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'runs')), false)
 })
