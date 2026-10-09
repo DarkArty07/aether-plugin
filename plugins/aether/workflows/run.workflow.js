@@ -18,6 +18,7 @@ export const meta = {
 // The script never reads the clock or random numbers: the runtime replays a resumed run call by call.
 
 const TIERS = ['haiku', 'sonnet', 'opus']
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK_ID = /^task-\d+$/
 const BLOCKING = ['critical', 'important']
@@ -113,7 +114,16 @@ function readArgs(raw) {
   for (const id of input.waves.flat()) {
     const t = input.tasks[id]
     const complete =
-      TASK_ID.test(id) && t && text(t.title) && text(t.brief) && TIERS.includes(t.tier) && text(t.area) && Array.isArray(t.owns) && Array.isArray(t.dependsOn)
+      TASK_ID.test(id) &&
+      t &&
+      text(t.title) &&
+      text(t.brief) &&
+      TIERS.includes(t.tier) &&
+      EFFORTS.includes(t.effort) &&
+      EFFORTS.includes(t.review) &&
+      text(t.area) &&
+      Array.isArray(t.owns) &&
+      Array.isArray(t.dependsOn)
     if (!complete) throw new Error(`aether:run args: ${id} is not a complete task`)
     // A task listed twice would run as two units in the same worktree.
     if (seen.has(id)) throw new Error(`aether:run args: ${id} appears more than once in the waves`)
@@ -143,12 +153,12 @@ const list = (files) => (files && files.length ? files.join(', ') : 'unknown fil
 const message = (err) => (err && err.message ? err.message : String(err))
 
 // One agent call. A rejection counts as a failed agent, like a null result.
-async function call(role, model, prompt, { phase, label, schema }) {
+async function call(role, model, effort, prompt, { phase, label, schema }) {
   agents.total++
   agents.byRole[role] = (agents.byRole[role] || 0) + 1
   agents.byModel[model] = (agents.byModel[model] || 0) + 1
   try {
-    return await agent(prompt, { agentType: `aether:${role}`, model, phase, label, schema })
+    return await agent(prompt, { agentType: `aether:${role}`, model, effort, phase, label, schema })
   } catch (err) {
     log(`${label}: the agent failed: ${message(err)}`)
     return null
@@ -168,7 +178,7 @@ function opsPrompt(command) {
 // Runs one aether-wt command through the ops agent. Returns the JSON the command printed, or
 // { error } when the agent, the command or its output failed.
 async function ops(command, { phase, label }) {
-  const reply = await call('ops', 'haiku', opsPrompt(command), { phase, label, schema: OPS_SCHEMA })
+  const reply = await call('ops', 'haiku', 'low', opsPrompt(command), { phase, label, schema: OPS_SCHEMA })
   if (!reply) return { error: 'the ops agent failed' }
   const lines = String(reply.stdout || '').trim().split('\n')
   let out = null
@@ -200,10 +210,10 @@ function roundLines(round) {
   return lines
 }
 
-function implementerPrompt(unit, task, tier, context) {
+function implementerPrompt(unit, task, rung, context) {
   const lines = [
     `You are implementing ${unit.id}: ${task.title}.`,
-    `Run ${runId}, attempt ${unit.attempts}, on ${tier}.`,
+    `Run ${runId}, attempt ${unit.attempts}, on ${rung}.`,
     '',
     `Brief: ${task.brief}`,
     'Read the brief first. It holds the task text from the plan: the files you own, the interfaces, the tests to write first, and the acceptance.',
@@ -222,9 +232,9 @@ function implementerPrompt(unit, task, tier, context) {
   return lines.join('\n')
 }
 
-function supervisorPrompt(unit, task, tier, report, used) {
+function supervisorPrompt(unit, task, rung, report, used, model) {
   const lines = [
-    `You supervise ${unit.id}: ${task.title} (area ${task.area}), run ${runId}. Attempt ${unit.attempts} ran on ${tier}.`,
+    `You supervise ${unit.id}: ${task.title} (area ${task.area}), run ${runId}. Attempt ${unit.attempts} ran on ${rung}.`,
     '',
     `Brief: ${task.brief}`,
     `Review package: ${runDir}/packages/${unit.id}.diff`,
@@ -250,7 +260,7 @@ function supervisorPrompt(unit, task, tier, report, used) {
     '',
     '## Ladder',
     `Attempts used: ${TIERS.map((t) => `${t} ${used[t]}/${ladder[t]}`).join(', ')}.`,
-    `A retry stays on ${tier} while it has attempts left, then moves up. Escalate moves up now.`,
+    ladderOutlook(task, model, used),
   )
   return lines.join('\n')
 }
@@ -316,6 +326,22 @@ function nextTier(tier) {
   return TIERS.slice(TIERS.indexOf(tier) + 1).find((t) => ladder[t] > 0) || null
 }
 
+// The effort of an implementer's attempt (spec §7); `attempt` counts the attempts on `model`.
+// The task's own effort applies on the task's model only: always when it is max, else on the first attempt.
+// Every other attempt, and every attempt on a model the unit escalated to, runs at xhigh.
+function effortFor(task, model, attempt) {
+  if (model === task.tier && (task.effort === 'max' || attempt === 1)) return task.effort
+  return 'xhigh'
+}
+
+// The end of the supervisor's message: the rung a retry and an escalation would run next.
+function ladderOutlook(task, model, used) {
+  const up = nextTier(model)
+  const retryRung = used[model] < ladder[model] ? `${model} ${effortFor(task, model, used[model] + 1)}` : up && `${up} xhigh`
+  const outlook = (verb, rung) => (rung ? `${verb} runs on ${rung}.` : `${verb} blocks the unit: the ladder is spent.`)
+  return `${outlook('A retry', retryRung)} ${outlook('Escalate', up && `${up} xhigh`)}`
+}
+
 function finish(unit, status, reason = null, question = null) {
   unit.status = status
   unit.reason = reason
@@ -332,34 +358,40 @@ async function work(unit, task) {
   const dep = task.dependsOn.find((d) => units[d] && units[d].status !== 'merged')
   if (dep) return finish(unit, 'skipped', `${dep} is ${units[dep].status}`)
   const used = { haiku: 0, sonnet: 0, opus: 0 }
-  let tier = task.tier
+  let model = task.tier
+  let effort = null
   let context = null
-  // A conflict or a failing merge gets one retry on the same tier, outside the ladder.
+  // A conflict or a failing merge gets one retry on the same model and effort, outside the ladder.
   let mergeRetry = false
   let mergeRetried = false
   for (;;) {
-    if (!mergeRetry && used[tier] >= ladder[tier]) {
-      const next = nextTier(tier)
+    if (!mergeRetry && used[model] >= ladder[model]) {
+      const next = nextTier(model)
       if (!next) return finish(unit, 'blocked', 'the ladder is spent')
-      log(`${unit.id}: escalating from ${tier} to ${next}`)
-      tier = next
+      // A model with no attempts at all never ran: name the rung its first attempt would have had.
+      log(`${unit.id}: escalating from ${model} ${effortFor(task, model, Math.max(used[model], 1))} to ${next} xhigh`)
+      model = next
     }
     if (agents.total >= maxAgents) return finish(unit, 'not-run', 'the agent budget is spent')
-    if (!mergeRetry) used[tier]++
+    if (!mergeRetry) {
+      used[model]++
+      effort = effortFor(task, model, used[model])
+    }
     mergeRetry = false
     unit.attempts++
-    if (unit.tiers[unit.tiers.length - 1] !== tier) unit.tiers.push(tier)
+    const rung = `${model} ${effort}`
+    if (unit.tiers[unit.tiers.length - 1] !== rung) unit.tiers.push(rung)
     const n = unit.attempts
 
-    const report = await call('implementer', tier, implementerPrompt(unit, task, tier, context), {
+    const report = await call('implementer', model, effort, implementerPrompt(unit, task, rung, context), {
       phase: 'Implement',
-      label: `${unit.id}: implement on ${tier} (attempt ${n})`,
+      label: `${unit.id}: implement on ${rung} (attempt ${n})`,
       schema: IMPLEMENTER_SCHEMA,
     })
     context = null
     const round = {
       attempt: n,
-      tier,
+      tier: rung,
       status: report ? report.status : 'FAILED',
       summary: report ? report.summary : 'The implementer agent failed.',
       head: report ? report.head : '',
@@ -367,6 +399,7 @@ async function work(unit, task) {
       concerns: report ? report.concerns : '',
       question: report ? report.question : '',
       verdict: null,
+      reviewEffort: null,
       findings: [],
       ruling: '',
       guidance: '',
@@ -375,9 +408,10 @@ async function work(unit, task) {
     unit.rounds.push(round)
     if (!report) continue
 
-    const review = await call('supervisor', 'sonnet', supervisorPrompt(unit, task, tier, report, used), {
+    round.reviewEffort = task.review
+    const review = await call('supervisor', 'sonnet', task.review, supervisorPrompt(unit, task, rung, report, used, model), {
       phase: 'Supervise',
-      label: `${unit.id}: supervise attempt ${n}`,
+      label: `${unit.id}: supervise attempt ${n} on sonnet ${task.review}`,
       schema: SUPERVISOR_SCHEMA,
     })
     if (!review) {
@@ -394,10 +428,10 @@ async function work(unit, task) {
 
     if (round.verdict === 'block') return finish(unit, 'blocked', round.ruling, review.question || report.question)
     if (round.verdict === 'escalate') {
-      const next = nextTier(tier)
+      const next = nextTier(model)
       if (!next) return finish(unit, 'blocked', 'the ladder is spent')
-      log(`${unit.id}: escalating from ${tier} to ${next}`)
-      tier = next
+      log(`${unit.id}: escalating from ${rung} to ${next} xhigh`)
+      model = next
       continue
     }
     if (round.verdict !== 'approve') continue
@@ -446,7 +480,7 @@ async function reviewRun() {
   if (agents.total >= maxAgents) return { status: 'skipped', reason: 'the agent budget is spent' }
   const pkg = await ops(`aether-wt diff ${runId} --final`, { phase: 'Final review', label: 'final review: package' })
   if (pkg.error) return { status: 'failed', reason: `package: ${pkg.error}` }
-  const review = await call('reviewer', 'opus', reviewerPrompt(pkg), { phase: 'Final review', label: 'final review', schema: REVIEW_SCHEMA })
+  const review = await call('reviewer', 'opus', 'high', reviewerPrompt(pkg), { phase: 'Final review', label: 'final review', schema: REVIEW_SCHEMA })
   if (!review) return { status: 'failed', reason: 'the reviewer agent failed' }
   return { status: 'done', ...review }
 }
