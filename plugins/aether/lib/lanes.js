@@ -277,6 +277,24 @@ function pruneLog(dataDir, { days = 30, now = Date.now() } = {}) {
   return { pruned: pruned.sort() }
 }
 
+// What a lane's runner and agy may inherit. agy needs only HOME and PATH to sign in (agy 1.3.2,
+// 2026-10-09); the rest keeps locales, terminals and temporary directories working. Anything named
+// like a secret stays out, whatever its prefix: agy ran `env` once, and its output reaches the model.
+const ENV_NAMES = ['HOME', 'PATH', 'LANG', 'TERM', 'TMPDIR', 'TZ', 'USER', 'LOGNAME', 'SHELL']
+const ENV_PREFIXES = ['LC_', 'XDG_', 'AETHER_']
+const ENV_SECRET = /TOKEN|KEY|SECRET/i
+
+// The allowlisted part of env, with AETHER_LANE_CALL set to marker.
+function laneEnv(env, marker) {
+  const out = {}
+  for (const [name, value] of Object.entries(env)) {
+    if (ENV_SECRET.test(name)) continue
+    if (ENV_NAMES.includes(name) || ENV_PREFIXES.some((prefix) => name.startsWith(prefix))) out[name] = value
+  }
+  out.AETHER_LANE_CALL = marker
+  return out
+}
+
 function procRead(pid, name) {
   try {
     return fs.readFileSync(`/proc/${pid}/${name}`, 'utf8')
@@ -433,6 +451,7 @@ module.exports = {
   appendLog,
   readLog,
   pruneLog,
+  laneEnv,
   killGroup,
   killMarked,
 }

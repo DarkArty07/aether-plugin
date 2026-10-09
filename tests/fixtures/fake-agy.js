@@ -10,16 +10,17 @@
 //   sleep <seconds>                     waits before answering
 //   detach <pid file> <seconds>         starts `sleep <seconds>` in a session of its own, as agy starts
 //                                       its commands, and writes its pid to <pid file>
+//   env <absolute path>                 writes its environment there, as a JSON object
 //   answer <json>                       the structured output
 //   usage <input> <output> <thinking> <cacheRead>   this turn's tokens (default 1000 200 0 500)
 //   exit-error                          agy's answer to an invalid model: exit 1, status ERROR
 //   timeout                             agy's answer to a print timeout: exit 0, empty response
 //   new-conversation                    a resume that silently starts a new conversation
 //
-// "/usage" as the prompt prints the quota. FAKE_AGY_QUOTA_FILE, when it exists, holds
+// "/usage" as the prompt prints the quota. AETHER_FAKE_AGY_QUOTA_FILE, when it exists, holds
 // { "<group name>": [<5h remaining>, <weekly remaining>] }; otherwise every window is at 0.9.
-// FAKE_AGY_LOG, when set, gets one JSON line per call: { argv, cwd, marker, files, head }.
-// FAKE_AGY_STATE, when set, is a directory that keeps each conversation's running usage.
+// AETHER_FAKE_AGY_LOG, when set, gets one JSON line per call: { argv, cwd, marker, files, head }.
+// AETHER_FAKE_AGY_STATE, when set, is a directory that keeps each conversation's running usage.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -34,11 +35,11 @@ const zero = () => ({ input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cac
 const print = (value) => process.stdout.write(`${JSON.stringify(value)}\n`)
 
 function log() {
-  if (!process.env.FAKE_AGY_LOG) return
+  if (!process.env.AETHER_FAKE_AGY_LOG) return
   const tmp = path.join(process.cwd(), '.aether-tmp')
   const head = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' })
   fs.appendFileSync(
-    process.env.FAKE_AGY_LOG,
+    process.env.AETHER_FAKE_AGY_LOG,
     `${JSON.stringify({
       argv,
       cwd: process.cwd(),
@@ -59,7 +60,7 @@ if (argv[0] === '--version') {
 const prompt = flag('-p') || ''
 
 if (prompt === '/usage') {
-  const file = process.env.FAKE_AGY_QUOTA_FILE
+  const file = process.env.AETHER_FAKE_AGY_QUOTA_FILE
   const quota = file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : { 'Gemini Models': [0.9, 0.9], 'Claude and GPT models': [0.9, 0.9] }
   const groups = Object.entries(quota).map(([name, [fiveHour, weekly]]) => ({
     name,
@@ -92,6 +93,8 @@ for (const line of prompt.split('\n')) {
     const child = spawn('sleep', [rest[1]], { detached: true, stdio: 'ignore' })
     fs.writeFileSync(rest[0], `${child.pid}\n`)
     child.unref()
+  } else if (verb === 'env') {
+    fs.writeFileSync(rest[0], JSON.stringify(process.env))
   } else if (verb === 'answer') {
     structured = JSON.parse(rest.join(' '))
   } else if (verb === 'usage') {
@@ -115,8 +118,8 @@ if (asked && fresh) process.stderr.write(`[agy] conversation ${asked} not found,
 
 // Usage is cumulative per conversation, as agy reports it.
 let totals = turn
-if (process.env.FAKE_AGY_STATE) {
-  const file = path.join(process.env.FAKE_AGY_STATE, `${id}.json`)
+if (process.env.AETHER_FAKE_AGY_STATE) {
+  const file = path.join(process.env.AETHER_FAKE_AGY_STATE, `${id}.json`)
   const before = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [0, 0, 0, 0]
   totals = before.map((value, i) => value + turn[i])
   fs.writeFileSync(file, JSON.stringify(totals))

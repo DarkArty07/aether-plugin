@@ -13,7 +13,7 @@ const { git, repoPaths } = require('./git.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
 const { createAgy } = require('./harness/agy.js')
-const { roleBody, claudeMdSections } = require('./lane-calls.js')
+const { roleBody, claudeMdSections, WORKDIR_RULE } = require('./lane-calls.js')
 const { DESIGNER_SCHEMA } = require('./lane-schemas.js')
 const { priceEntry, loadPrices } = require('./prices.js')
 
@@ -176,6 +176,7 @@ function designNote({ brainstorming, writingPlans }) {
     `- You have no Skill tool. Where your role says to load a superpowers skill, read its SKILL.md and follow it: superpowers:brainstorming is ${brainstorming}, and superpowers:writing-plans is ${writingPlans}. Files those skills mention sit beside them.`,
     `- Run aether-voice as ${PLUGIN_BIN}/aether-voice and aether-plan as ${PLUGIN_BIN}/aether-plan.`,
     '- Commit only files under docs/superpowers/specs/ and docs/superpowers/plans/. A change to any other file undoes your whole round.',
+    `- ${WORKDIR_RULE}`,
     '- Your reply goes in the structured output your harness asks for: forOwner is the text of "For the owner"; stage, waitingFor and files are the bullets of "For the Lead".',
   ].join('\n')
 }
@@ -221,7 +222,7 @@ function runAgy(argv, { cwd, dir, marker, timeoutSeconds, onInterrupt }) {
       cwd,
       detached: true,
       stdio: ['ignore', out, err],
-      env: { ...process.env, AETHER_LANE_CALL: marker },
+      env: lanes.laneEnv(process.env, marker),
     })
   } finally {
     fs.closeSync(out)

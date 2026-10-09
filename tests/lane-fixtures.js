@@ -27,13 +27,13 @@ function laneEnv(t, { command = FAKE_AGY, quota = null, mutate = null } = {}) {
     AETHER_LANES_CONFIG: configFile,
     AETHER_DATA_DIR: path.join(dir, 'data'),
     HOME: path.join(dir, 'home'),
-    FAKE_AGY_LOG: path.join(dir, 'agy.log'),
-    FAKE_AGY_STATE: path.join(dir, 'agy-state'),
-    FAKE_AGY_QUOTA_FILE: path.join(dir, 'quota.json'),
+    AETHER_FAKE_AGY_LOG: path.join(dir, 'agy.log'),
+    AETHER_FAKE_AGY_STATE: path.join(dir, 'agy-state'),
+    AETHER_FAKE_AGY_QUOTA_FILE: path.join(dir, 'quota.json'),
   }
   fs.mkdirSync(env.HOME, { recursive: true })
-  fs.mkdirSync(env.FAKE_AGY_STATE, { recursive: true })
-  if (quota) fs.writeFileSync(env.FAKE_AGY_QUOTA_FILE, JSON.stringify(quota))
+  fs.mkdirSync(env.AETHER_FAKE_AGY_STATE, { recursive: true })
+  if (quota) fs.writeFileSync(env.AETHER_FAKE_AGY_QUOTA_FILE, JSON.stringify(quota))
   return env
 }
 
@@ -68,9 +68,9 @@ function waitDone(args, call, env, seconds = 60) {
 }
 
 function agyCalls(env) {
-  if (!fs.existsSync(env.FAKE_AGY_LOG)) return []
+  if (!fs.existsSync(env.AETHER_FAKE_AGY_LOG)) return []
   return fs
-    .readFileSync(env.FAKE_AGY_LOG, 'utf8')
+    .readFileSync(env.AETHER_FAKE_AGY_LOG, 'utf8')
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line))
@@ -126,6 +126,12 @@ function killQuietly(pid) {
   }
 }
 
+// Whether a variable may reach a lane: the allowlist, and nothing named like a secret.
+function allowedEnvName(name) {
+  const listed = ['HOME', 'PATH', 'LANG', 'TERM', 'TMPDIR', 'TZ', 'USER', 'LOGNAME', 'SHELL'].includes(name) || /^(LC_|XDG_|AETHER_)/.test(name)
+  return listed && !/TOKEN|KEY|SECRET/i.test(name)
+}
+
 // Waits up to `seconds` for file to exist, polling.
 async function waitForFile(file, seconds = 15) {
   const deadline = Date.now() + seconds * 1000
@@ -149,5 +155,6 @@ module.exports = {
   alive,
   ownSession,
   killQuietly,
+  allowedEnvName,
   waitForFile,
 }

@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const schemas = require('../plugins/aether/lib/lane-schemas.js')
-const { buildPrompt, LANE_NOTES } = require('../plugins/aether/lib/lane-calls.js')
+const { buildPrompt, LANE_NOTES, WORKDIR_RULE } = require('../plugins/aether/lib/lane-calls.js')
 const { PLUGIN, WT_BIN, runBin, commitIn, tempDir } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 
@@ -79,6 +79,8 @@ test('buildPrompt puts the role, the lane note and the CLAUDE.md files before th
   assert.match(LANE_NOTES.implementer, /^## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code\./)
   assert.match(LANE_NOTES.supervisor, /Your review is read-only: do not run commands, and do not change any file\./)
   assert.match(LANE_NOTES.reviewer, /^## You run in an external harness\n\nYou are the Aether final reviewer/)
+  assert.equal(WORKDIR_RULE, 'Work only inside the working directory you are given: do not run `env` or `ps`, and do not search outside that directory.')
+  for (const role of ['implementer', 'supervisor', 'reviewer']) assert.ok(LANE_NOTES[role].includes(WORKDIR_RULE), role)
 })
 
 test("status reads each group's windows, marks a group under the reserve unusable, and logs the reading", (t) => {
@@ -139,6 +141,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   assert.deepEqual(JSON.parse(fs.readFileSync(fx.argAfter(turn.argv, '--json-schema'), 'utf8')), schemas.IMPLEMENTER_SCHEMA)
   assert.ok(turn.argv[1].startsWith(fx.roleBody('implementer')))
   assert.ok(turn.argv[1].includes(LANE_NOTES.implementer))
+  assert.ok(turn.argv[1].includes(WORKDIR_RULE))
   assert.ok(turn.argv[1].endsWith(message))
 
   const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
@@ -153,6 +156,32 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   const dir = path.join(args.runDir, 'lanes', IMPLEMENT)
   assert.deepEqual([fs.existsSync(path.join(dir, 'pid')), fs.existsSync(path.join(dir, 'agy.pid'))], [false, false])
   assert.deepEqual(fx.lane(args, 'result', [IMPLEMENT], env).json, done)
+})
+
+test("agy gets an allowlisted environment, never the caller's tokens, keys or secrets", (t) => {
+  const envFile = path.join(tempDir(t), 'agy-env.json')
+  const env = {
+    ...fx.laneEnv(t),
+    LANG: 'C.UTF-8',
+    LC_ALL: 'C.UTF-8',
+    TZ: 'UTC',
+    XDG_CONFIG_HOME: '/tmp/xdg',
+    CLAUDE_CODE_MESSAGING_TOKEN: 'secret',
+    ORCA_AGENT_HOOK_TOKEN: 'secret',
+    ORCA_PANE_KEY: 'secret',
+    GIT_CONFIG_GLOBAL: '/nowhere',
+    STARSHIP_SHELL: 'fish',
+    AETHER_TEST_TOKEN: 'secret',
+    UNLISTED: 'x',
+  }
+  const { args, done } = implement(t, [`FAKE-AGY: env ${envFile}`, `FAKE-AGY: answer ${DONE}`], { env })
+  assert.equal(done.status, 'ok', done.detail)
+  const seen = JSON.parse(fs.readFileSync(envFile, 'utf8'))
+  assert.deepEqual(Object.keys(seen).filter((name) => !fx.allowedEnvName(name)), [])
+  assert.deepEqual(
+    [seen.HOME, seen.PATH, seen.LANG, seen.LC_ALL, seen.TZ, seen.XDG_CONFIG_HOME, seen.AETHER_DATA_DIR, seen.AETHER_LANE_CALL],
+    [env.HOME, process.env.PATH, 'C.UTF-8', 'C.UTF-8', 'UTC', '/tmp/xdg', env.AETHER_DATA_DIR, `${args.runId}/${IMPLEMENT}`],
+  )
 })
 
 test('work agy leaves uncommitted inside Owns is committed by the runner', (t) => {
@@ -177,7 +206,7 @@ test('a change to the integration worktree blocks the unit', (t) => {
 test("a non-clean call is quota when the group fell under the reserve, failed otherwise, and agy's partial work stays uncommitted", (t) => {
   const env = fx.laneEnv(t)
   const low = JSON.stringify({ 'Gemini Models': [0.01, 0.9], 'Claude and GPT models': [0.9, 0.9] })
-  const quota = implement(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error'], { env })
+  const quota = implement(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error'], { env })
   assert.deepEqual([quota.done.status, quota.done.result], ['quota', null])
   assert.match(quota.done.detail, /^exit 1: model not found/)
   assert.match(fx.git(unitDir(quota.args), 'status', '--porcelain', '--untracked-files=all'), /src\/t1\/partial\.js/)
@@ -242,6 +271,10 @@ test("stop kills a running call's runner and agy, and wait then reports it unfin
   const deadline = Date.now() + 15000
   while (!fs.existsSync(path.join(dir, 'agy.pid')) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
   const agy = Number(fs.readFileSync(path.join(dir, 'agy.pid'), 'utf8'))
+  // The runner runs on the allowlisted environment too.
+  const runnerEnv = fs.readFileSync(`/proc/${runner}/environ`, 'utf8').split('\0').filter(Boolean).map((entry) => entry.slice(0, entry.indexOf('=')))
+  assert.deepEqual(runnerEnv.filter((name) => !fx.allowedEnvName(name)), [])
+  assert.ok(runnerEnv.includes('AETHER_LANE_CALL'))
   assert.deepEqual(fx.lane(args, 'stop', [IMPLEMENT], env).json, { stopped: [IMPLEMENT] })
   await new Promise((resolve) => setTimeout(resolve, 300))
   assert.deepEqual([fx.alive(runner), fx.alive(agy)], [false, false])

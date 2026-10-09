@@ -31,13 +31,14 @@ const ROLE_SCHEMAS = {
   reviewer: schemas.REVIEW_SCHEMA,
 }
 
+// The one rule every lane note carries: agy once ran `env`, `ps` and a search of the home directory
+// on a vague prompt, and what it reads goes to its model provider.
+const WORKDIR_RULE = 'Work only inside the working directory you are given: do not run `env` or `ps`, and do not search outside that directory.'
+
 const LANE_NOTES = {
-  implementer:
-    '## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether-tmp/brief.md. Skip the `aether-wt ensure` and `aether-wt diff` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit\'s worktree. Every other rule of your role holds. Answer with the structured output your harness asks for.',
-  supervisor:
-    '## You run in an external harness\n\nYou are an Aether supervisor, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the unit\'s branch; the brief and the review package are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. Every other rule of your role holds. Answer with the structured output your harness asks for.',
-  reviewer:
-    '## You run in an external harness\n\nYou are the Aether final reviewer, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. Every other rule of your role holds. Answer with the structured output your harness asks for.',
+  implementer: `## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether-tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+  supervisor: `## You run in an external harness\n\nYou are an Aether supervisor, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+  reviewer: `## You run in an external harness\n\nYou are the Aether final reviewer, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
 }
 
 // ---- Prompts ----
@@ -219,7 +220,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
     cwd,
     detached: true,
     stdio: 'ignore',
-    env: { ...process.env, AETHER_LANE_CALL: paths.marker },
+    env: lanes.laneEnv(process.env, paths.marker),
   })
   runner.unref()
   fs.writeFileSync(paths.pid, `${runner.pid}\n`)
@@ -248,7 +249,7 @@ function runAgy(argv, { workdir, marker, paths, timeoutSeconds, onSpawn }) {
       cwd: workdir,
       detached: true,
       stdio: ['ignore', out, err],
-      env: { ...process.env, AETHER_LANE_CALL: marker },
+      env: lanes.laneEnv(process.env, marker),
     })
   } finally {
     fs.closeSync(out)
@@ -457,4 +458,4 @@ function stop(cwd, runId, call = null) {
   return { stopped }
 }
 
-module.exports = { LANE_NOTES, roleBody, claudeMdSections, buildPrompt, status, start, wait, result, stop, runCall }
+module.exports = { WORKDIR_RULE, LANE_NOTES, roleBody, claudeMdSections, buildPrompt, status, start, wait, result, stop, runCall }

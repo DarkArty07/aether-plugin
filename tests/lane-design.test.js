@@ -8,6 +8,7 @@ const { spawn, spawnSync } = require('node:child_process')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const { makeRepo, tempDir, commitIn } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
+const { WORKDIR_RULE } = require('../plugins/aether/lib/lane-calls.js')
 
 const REPLY = (stage) => JSON.stringify({ forOwner: 'Two approaches: A and B. I recommend A.', stage, waitingFor: 'a choice between A and B', files: 'none' })
 
@@ -79,6 +80,7 @@ test('design start runs a round on agy, keeps its commit of the spec, and prints
   assert.ok(sent.includes(`superpowers:brainstorming is ${path.join(install, 'skills', 'brainstorming', 'SKILL.md')}`))
   assert.ok(sent.includes(`superpowers:writing-plans is ${path.join(install, 'skills', 'writing-plans', 'SKILL.md')}`))
   assert.ok(sent.includes('A change to any other file undoes your whole round.'))
+  assert.ok(sent.includes(WORKDIR_RULE))
   assert.ok(sent.endsWith(handoff))
   assert.equal(fx.git(repo.dir, 'log', '-1', '--format=%s'), 'docs: widgets spec')
   assert.equal(fx.git(repo.dir, 'status', '--porcelain'), '')
@@ -250,6 +252,16 @@ test('a design ended during its round is undone into its backup ref, and its dir
   assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'design', id)), false)
 })
 
+test("a round's agy gets an allowlisted environment, without the Lead's Claude settings or any token", (t) => {
+  const { repo, env } = designSetup(t)
+  const envFile = path.join(tempDir(t), 'agy-env.json')
+  const r = design(repo, { ...env, ORCA_AGENT_LAUNCH_TOKEN: 'secret' }, ['start', '--session', 'lead-1', '--cwd', repo.dir], `FAKE-AGY: env ${envFile}\nFAKE-AGY: answer ${REPLY('approaches')}`)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  const seen = JSON.parse(fs.readFileSync(envFile, 'utf8'))
+  assert.deepEqual(Object.keys(seen).filter((name) => !fx.allowedEnvName(name)), [])
+  assert.deepEqual([seen.HOME, seen.AETHER_LANE_CALL], [env.HOME, `design/${onlyDesignId(repo)}`])
+})
+
 test("once a round's agy exits, the commands it left running in sessions of their own are ended", (t) => {
   const { repo, env } = designSetup(t)
   const pidFile = path.join(tempDir(t), 'detached.pid')
@@ -285,7 +297,7 @@ test('design reply changes nothing when the Claude group is at or below the rese
   const { repo, env } = designSetup(t)
   const id = idOf(design(repo, env, ['start', '--session', 'lead-1', '--cwd', repo.dir], `FAKE-AGY: answer ${REPLY('approaches')}`).stdout)
   const head = fx.git(repo.dir, 'rev-parse', 'HEAD')
-  fs.writeFileSync(env.FAKE_AGY_QUOTA_FILE, JSON.stringify({ 'Gemini Models': [0.9, 0.9], 'Claude and GPT models': [0.9, 0.05] }))
+  fs.writeFileSync(env.AETHER_FAKE_AGY_QUOTA_FILE, JSON.stringify({ 'Gemini Models': [0.9, 0.9], 'Claude and GPT models': [0.9, 0.05] }))
   const r = design(repo, env, ['reply', id], `A.\nFAKE-AGY: write docs/superpowers/specs/z.md z\nFAKE-AGY: answer ${REPLY('design')}`)
   assert.deepEqual([r.status, lastJson(r.stdout)], [3, { unavailable: 'quota' }])
   assert.equal(fx.agyTurns(env).length, 1)

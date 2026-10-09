@@ -264,6 +264,40 @@ test('killGroup stops a process group that carries the marker, and leaves any ot
   assert.deepEqual(lanes.killGroup(path.join(dir, 'missing'), marker), { killed: false, pid: null })
 })
 
+test('laneEnv keeps only the allowlisted variables, drops any named like a secret, and sets the marker', () => {
+  const kept = {
+    HOME: '/home/u',
+    PATH: '/usr/bin',
+    LANG: 'C.UTF-8',
+    LC_ALL: 'C.UTF-8',
+    TERM: 'xterm',
+    TMPDIR: '/tmp',
+    TZ: 'UTC',
+    USER: 'u',
+    LOGNAME: 'u',
+    SHELL: '/bin/sh',
+    XDG_CONFIG_HOME: '/home/u/.config',
+    AETHER_DATA_DIR: '/data',
+    AETHER_LANES_CONFIG: '/lanes.json',
+  }
+  const dropped = {
+    CLAUDE_CODE_MESSAGING_TOKEN: 'x',
+    CLAUDE_CONFIG_DIR: '/c',
+    ORCA_AGENT_HOOK_TOKEN: 'x',
+    ORCA_PANE_KEY: 'x',
+    GIT_CONFIG_GLOBAL: '/g',
+    GIT_DIR: '/g',
+    STARSHIP_SHELL: 'fish',
+    OPENAI_API_KEY: 'x',
+    AETHER_API_KEY: 'x',
+    AETHER_SECRET: 'x',
+    AETHER_session_token: 'x',
+    XDG_SESSION_TOKEN: 'x',
+    EDITOR: 'vim',
+  }
+  assert.deepEqual(lanes.laneEnv({ ...kept, ...dropped, AETHER_LANE_CALL: 'old/call' }, 'run/call'), { ...kept, AETHER_LANE_CALL: 'run/call' })
+})
+
 function alive(pid) {
   try {
     const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
