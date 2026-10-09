@@ -249,6 +249,32 @@ test("stop kills a running call's runner and agy, and wait then reports it unfin
   assert.deepEqual(fx.lane(args, 'stop', [IMPLEMENT], env).json, { stopped: [] })
 })
 
+test("stop also ends the commands agy started in sessions of their own, found by the call's marker, and nothing else", { timeout: 60000 }, async (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t)
+  const pidFile = path.join(tempDir(t), 'detached.pid')
+  const digest = fx.writePrompt(args, IMPLEMENT, `FAKE-AGY: detach ${pidFile} 120\nFAKE-AGY: sleep 60\nFAKE-AGY: answer ${DONE}`)
+  fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env)
+  await fx.waitForFile(pidFile)
+  const detached = Number(fs.readFileSync(pidFile, 'utf8'))
+  t.after(() => fx.killQuietly(detached))
+  const loose = fx.ownSession(t, `${args.runId}/${IMPLEMENT}`)
+  const sibling = fx.ownSession(t, `${args.runId}/task-1-1-supervise`)
+  const unmarked = fx.ownSession(t, null)
+  assert.deepEqual(fx.lane(args, 'stop', [IMPLEMENT], env).json, { stopped: [IMPLEMENT] })
+  await loose.exited
+  assert.deepEqual([fx.alive(detached), fx.alive(sibling.pid), fx.alive(unmarked.pid)], [false, true, true])
+})
+
+test('once agy exits, the runner ends the commands agy left running in sessions of their own', (t) => {
+  const pidFile = path.join(tempDir(t), 'detached.pid')
+  const { done } = implement(t, [`FAKE-AGY: detach ${pidFile} 120`, 'FAKE-AGY: write src/t1/a.js one', `FAKE-AGY: answer ${DONE}`])
+  const detached = Number(fs.readFileSync(pidFile, 'utf8'))
+  t.after(() => fx.killQuietly(detached))
+  assert.equal(done.status, 'ok', done.detail)
+  assert.equal(fx.alive(detached), false)
+})
+
 test('wait gives up after --max, and a new start of the same call never returns the old result', (t) => {
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t)

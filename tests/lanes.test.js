@@ -263,3 +263,46 @@ test('killGroup stops a process group that carries the marker, and leaves any ot
 
   assert.deepEqual(lanes.killGroup(path.join(dir, 'missing'), marker), { killed: false, pid: null })
 })
+
+function alive(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+    return stat[stat.lastIndexOf(')') + 2] !== 'Z'
+  } catch {
+    return false
+  }
+}
+
+test('killMarked ends every process that carries the marker, or a marker under a prefix, with its process group, and nothing else', { timeout: 30000 }, async (t) => {
+  // A run id no other test file uses: every test process scans the same /proc.
+  const run = `20980101-000000-${process.pid.toString(16).slice(-4).padStart(4, '0')}`
+  // A marked leader in a session of its own, with an unmarked child in its group.
+  const dir = tempDir(t)
+  const childFile = path.join(dir, 'child.pid')
+  const leaderScript = `const c = require('node:child_process').spawn('sleep', ['120'], { stdio: 'ignore', env: { PATH: process.env.PATH } }); require('node:fs').writeFileSync(${JSON.stringify(childFile)}, String(c.pid)); setInterval(() => {}, 1000)`
+  const env = { ...process.env, AETHER_LANE_CALL: `${run}/task-1-1-implement` }
+  const leader = spawn(process.execPath, ['-e', leaderScript], { detached: true, stdio: 'ignore', env })
+  const leaderExited = new Promise((resolve) => leader.on('exit', resolve))
+  t.after(() => {
+    try {
+      process.kill(-leader.pid, 'SIGKILL')
+    } catch {
+      // already gone
+    }
+  })
+  const deadline = Date.now() + 15000
+  while (!fs.existsSync(childFile) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
+  const groupChild = Number(fs.readFileSync(childFile, 'utf8'))
+  const sibling = sleeper(t, `${run}/final-review`)
+  const otherRun = sleeper(t, '20980101-000001-ffff/task-1-1-implement')
+  const unmarked = sleeper(t, null)
+
+  assert.deepEqual(lanes.killMarked(`${run}/task-1-1-implement`), [`${run}/task-1-1-implement`])
+  await leaderExited
+  assert.deepEqual([alive(groupChild), alive(sibling.pid)], [false, true])
+  assert.deepEqual(lanes.killMarked(`${run}/`, { prefix: true }), [`${run}/final-review`])
+  await sibling.exited
+  assert.deepEqual([alive(otherRun.pid), alive(unmarked.pid)], [true, true])
+  assert.deepEqual(lanes.killMarked(`${run}/`, { prefix: true }), [])
+  assert.deepEqual(lanes.killMarked(''), [])
+})

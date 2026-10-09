@@ -11,7 +11,7 @@ const { spawnSync } = require('node:child_process')
 const { git, repoPaths, currentBranch, head } = require('./git.js')
 const { matchesAny } = require('./globs.js')
 const run = require('./run.js')
-const { killGroup } = require('./lanes.js')
+const { killGroup, killMarked } = require('./lanes.js')
 
 function loadGraph(mainRoot, runId) {
   run.assertRunId(runId)
@@ -466,19 +466,22 @@ function savePatches(mainRoot, runId) {
 }
 
 // Stops the processes of a run's lane calls: the lane's own and the agy it started, by their pid
-// files, when they carry the call's marker. Returns the calls where something was stopped.
+// files, when they carry the call's marker; then every process marked as any call of the run, since
+// agy starts its commands in sessions of their own. Returns the calls where something was stopped.
 function stopLaneProcesses(mainRoot, runId) {
   const lanesDir = path.join(run.runDir(mainRoot, runId), 'lanes')
-  const stopped = []
-  if (!isDirectory(lanesDir)) return stopped
-  for (const call of fs.readdirSync(lanesDir).sort()) {
-    const dir = path.join(lanesDir, call)
-    if (!isDirectory(dir)) continue
-    const marker = `${runId}/${call}`
-    const results = ['pid', 'agy.pid'].map((name) => killGroup(path.join(dir, name), marker))
-    if (results.some((result) => result.killed)) stopped.push(call)
+  const stopped = new Set()
+  if (isDirectory(lanesDir)) {
+    for (const call of fs.readdirSync(lanesDir).sort()) {
+      const dir = path.join(lanesDir, call)
+      if (!isDirectory(dir)) continue
+      const marker = `${runId}/${call}`
+      const results = ['pid', 'agy.pid'].map((name) => killGroup(path.join(dir, name), marker))
+      if (results.some((result) => result.killed)) stopped.add(call)
+    }
   }
-  return stopped
+  for (const marker of killMarked(`${runId}/`, { prefix: true })) stopped.add(marker.slice(runId.length + 1))
+  return [...stopped].sort()
 }
 
 // The lane copies of a run: those in git's registry, plus any directory left in the run's folder.
@@ -579,7 +582,8 @@ function modifiedSince(dir, cutoff) {
 }
 
 // Removes the Designer states that nothing has modified since `cutoff`, after stopping the lane
-// process of each (its pid file, and the agy's if it left one). Returns the removed ids, sorted.
+// processes of each (its pid file, the agy's if it left one, and every process marked as the
+// design's). Returns the removed ids, sorted.
 function sweepDesigns(mainRoot, cutoff) {
   const root = designsDir(mainRoot)
   const removed = []
@@ -594,6 +598,7 @@ function sweepDesigns(mainRoot, cutoff) {
     }
     if (!stat.isDirectory() || modifiedSince(dir, cutoff)) continue
     for (const name of ['pid', 'agy.pid']) killGroup(path.join(dir, name), `design/${id}`)
+    killMarked(`design/${id}`)
     assertInside(dir, root)
     fs.rmSync(dir, { recursive: true, force: true })
     removed.push(id)

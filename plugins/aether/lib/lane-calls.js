@@ -148,11 +148,13 @@ function status(cwd, runId) {
 
 // ---- start ----
 
-// Ends whatever an earlier launch of this call left running, so its runner cannot write over this one.
+// Ends whatever a launch of this call left running: the runner and agy by their pid files, then
+// every process that carries the call's marker, since agy starts its commands in sessions of their own.
 function killCall(paths) {
   const runner = lanes.killGroup(paths.pid, paths.marker)
   const agy = lanes.killGroup(paths.agyPid, paths.marker)
-  return runner.killed || agy.killed
+  const marked = lanes.killMarked(paths.marker)
+  return runner.killed || agy.killed || marked.length > 0
 }
 
 function clearCallDir(paths) {
@@ -331,6 +333,8 @@ async function runCall(cwd, runId, call) {
       },
     })
     killAgyGroup(agyPid)
+    // What agy started in sessions of its own outlives its group; nothing may write after the checks.
+    lanes.killMarked(paths.marker)
     try {
       quotaAfter = adapter.quota().groups[group] ?? null
     } catch {

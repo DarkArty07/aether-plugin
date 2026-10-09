@@ -5,7 +5,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { PLUGIN, tempDir, makeRepo, compile, runBin } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
@@ -106,4 +106,48 @@ function alive(pid) {
   }
 }
 
-module.exports = { LANE_BIN, FAKE_AGY, laneEnv, laneRun, writePrompt, lane, waitDone, agyCalls, agyTurns, argAfter, roleBody, git, alive }
+// A long-running process in a session of its own (detached: setsid), as agy starts its commands,
+// with the lane marker in its environment, or without one when marker is null. Killed when the test ends.
+function ownSession(t, marker) {
+  const env = { ...process.env }
+  delete env.AETHER_LANE_CALL
+  if (marker) env.AETHER_LANE_CALL = marker
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore', env })
+  const exited = new Promise((resolve) => child.on('exit', resolve))
+  t.after(() => killQuietly(child.pid))
+  return { pid: child.pid, exited }
+}
+
+function killQuietly(pid) {
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    // already gone
+  }
+}
+
+// Waits up to `seconds` for file to exist, polling.
+async function waitForFile(file, seconds = 15) {
+  const deadline = Date.now() + seconds * 1000
+  while (!fs.existsSync(file) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
+  if (!fs.existsSync(file)) throw new Error(`${file} did not appear in ${seconds} s`)
+}
+
+module.exports = {
+  LANE_BIN,
+  FAKE_AGY,
+  laneEnv,
+  laneRun,
+  writePrompt,
+  lane,
+  waitDone,
+  agyCalls,
+  agyTurns,
+  argAfter,
+  roleBody,
+  git,
+  alive,
+  ownSession,
+  killQuietly,
+  waitForFile,
+}

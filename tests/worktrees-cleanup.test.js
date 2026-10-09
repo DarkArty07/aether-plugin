@@ -174,13 +174,13 @@ test('sweepRun keeps a unit whose unmerged work it cannot save', (t) => {
   assert.ok(fs.existsSync(args.runDir))
 })
 
-// A long-running process in its own group, marked as a lane call's.
+// A long-running process in a session and group of its own, marked as a lane call's, or unmarked
+// when marker is null.
 function laneProcess(t, marker) {
-  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, AETHER_LANE_CALL: marker },
-  })
+  const env = { ...process.env }
+  delete env.AETHER_LANE_CALL
+  if (marker) env.AETHER_LANE_CALL = marker
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore', env })
   const exited = new Promise((resolve) => child.on('exit', resolve))
   t.after(() => {
     try {
@@ -212,7 +212,7 @@ test("sweepRun stops a run's lane processes and removes its lane copies", async 
   assert.deepEqual(r.remaining, { worktrees: [], branches: [] })
 })
 
-test('sweepStale removes a Designer state untouched for a day, with its process, and keeps a fresh one', async (t) => {
+test('sweepStale removes a Designer state untouched for a day, with its process, and keeps a fresh one', { timeout: 30000 }, async (t) => {
   useDataDir(t)
   const repo = makeRepo(t)
   const designs = path.join(repo.dir, '.aether', 'design')
@@ -224,11 +224,15 @@ test('sweepStale removes a Designer state untouched for a day, with its process,
   }
   const lane = laneProcess(t, 'design/20261007-100000-aaaa')
   fs.writeFileSync(path.join(old, 'pid'), String(lane.pid))
+  // A command agy started in a session of its own, which only its marker finds.
+  const loose = laneProcess(t, 'design/20261007-100000-aaaa')
+  const freshLane = laneProcess(t, 'design/20261008-100000-bbbb')
   age(old, 48)
   assert.deepEqual(sweepStale(repo.dir), { swept: [], designs: ['20261007-100000-aaaa'] })
-  await lane.exited
+  await Promise.all([lane.exited, loose.exited])
   assert.equal(fs.existsSync(old), false)
   assert.equal(fs.existsSync(fresh), true)
+  process.kill(freshLane.pid, 0)
 })
 
 test('sweepStale cleans lane copies whose run directory is already gone', (t) => {
@@ -273,12 +277,35 @@ test('sweepRun reports no lane activity for a run that never used a lane', (t) =
 test('sweepRun leaves a process alone when its pid file names one that is not the call\'s', async (t) => {
   const repo = makeRepo(t)
   const args = compile(repo, plan([task(1)]))
-  const stranger = laneProcess(t, `${args.runId}/some-other-call`)
+  // Another run's call: the sweep of this run ends every call of this run, whatever names it.
+  const stranger = laneProcess(t, '20990101-000000-abcd/task-1-1-implement')
   const dir = path.join(args.runDir, 'lanes', 'task-1-1-implement')
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'agy.pid'), String(stranger.pid))
   assert.deepEqual(sweepRun(repo.dir, args.runId).lanes.stopped, [])
   process.kill(stranger.pid, 0)
+})
+
+// Whether pid is a live process, not a zombie.
+function alive(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+    return stat[stat.lastIndexOf(')') + 2] !== 'Z'
+  } catch {
+    return false
+  }
+}
+
+test("sweepRun ends every process marked as one of the run's calls, in sessions of their own and without pid files, and nothing else", { timeout: 30000 }, async (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  const implement = laneProcess(t, `${args.runId}/task-1-1-implement`)
+  const review = laneProcess(t, `${args.runId}/final-review`)
+  const otherRun = laneProcess(t, '20990101-000000-abcd/task-1-1-implement')
+  const unmarked = laneProcess(t, null)
+  assert.deepEqual(sweepRun(repo.dir, args.runId).lanes.stopped, ['final-review', 'task-1-1-implement'])
+  await Promise.all([implement.exited, review.exited])
+  assert.deepEqual([alive(otherRun.pid), alive(unmarked.pid)], [true, true])
 })
 
 test('sweepStale keeps a design state that something touched recently, and ignores loose files in design/', (t) => {

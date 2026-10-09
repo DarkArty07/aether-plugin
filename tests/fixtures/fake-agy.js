@@ -8,6 +8,8 @@
 //   write-abs <absolute path> <text...> writes "<text>\n" to an absolute path
 //   commit <message...>                 git add -A and git commit in the working directory
 //   sleep <seconds>                     waits before answering
+//   detach <pid file> <seconds>         starts `sleep <seconds>` in a session of its own, as agy starts
+//                                       its commands, and writes its pid to <pid file>
 //   answer <json>                       the structured output
 //   usage <input> <output> <thinking> <cacheRead>   this turn's tokens (default 1000 200 0 500)
 //   exit-error                          agy's answer to an invalid model: exit 1, status ERROR
@@ -21,7 +23,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 
 const argv = process.argv.slice(2)
 const flag = (name) => {
@@ -86,6 +88,10 @@ for (const line of prompt.split('\n')) {
     spawnSync('git', ['commit', '-q', '-m', rest.join(' ')], { encoding: 'utf8' })
   } else if (verb === 'sleep') {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(rest[0]) * 1000)
+  } else if (verb === 'detach') {
+    const child = spawn('sleep', [rest[1]], { detached: true, stdio: 'ignore' })
+    fs.writeFileSync(rest[0], `${child.pid}\n`)
+    child.unref()
   } else if (verb === 'answer') {
     structured = JSON.parse(rest.join(' '))
   } else if (verb === 'usage') {

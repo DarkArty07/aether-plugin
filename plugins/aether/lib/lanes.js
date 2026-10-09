@@ -1,7 +1,8 @@
 'use strict'
 
 // The lane library: the table of external harnesses that take over native calls, harness detection,
-// the quota and token readings they leave, the lane log, and the group kill that stops a lane process.
+// the quota and token readings they leave, the lane log, and the kills that stop a lane's processes:
+// by the group of a pid file, and by the marker in their environment.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -296,6 +297,86 @@ function isRunning(pid) {
   return state !== null && state !== 'Z'
 }
 
+// The process group from /proc/<pid>/stat, or null when the process is gone.
+function procGroup(pid) {
+  const stat = procRead(pid, 'stat')
+  if (stat === null) return null
+  const group = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[2])
+  return group > 0 ? group : null
+}
+
+const MARKER_PREFIX = 'AETHER_LANE_CALL='
+
+// The value of AETHER_LANE_CALL in a process's environment, or null.
+function markerOf(pid) {
+  const environ = procRead(pid, 'environ')
+  if (environ === null) return null
+  const entry = environ.split('\0').find((item) => item.startsWith(MARKER_PREFIX))
+  return entry === undefined ? null : entry.slice(MARKER_PREFIX.length)
+}
+
+function ownedBy(pid, uid) {
+  try {
+    return fs.statSync(`/proc/${pid}`).uid === uid
+  } catch {
+    return false
+  }
+}
+
+// This user's live processes, this one aside, whose AETHER_LANE_CALL is marker or, with prefix,
+// starts with it. agy starts its commands in sessions of their own, so the marker every lane process
+// inherits is the only thread to all of them. Reads /proc: Linux only.
+function markedProcesses(marker, { prefix = false } = {}) {
+  if (typeof marker !== 'string' || marker === '') return []
+  let names
+  try {
+    names = fs.readdirSync('/proc')
+  } catch {
+    return []
+  }
+  const uid = process.getuid()
+  const found = []
+  for (const name of names) {
+    if (!/^\d+$/.test(name)) continue
+    const pid = Number(name)
+    if (pid === process.pid || !ownedBy(pid, uid)) continue
+    const value = markerOf(pid)
+    if (value === null || !(prefix ? value.startsWith(marker) : value === marker)) continue
+    if (isRunning(pid)) found.push({ pid, marker: value })
+  }
+  return found
+}
+
+function signalQuietly(target, signal) {
+  try {
+    process.kill(target, signal)
+  } catch {
+    // Gone already, or not ours to signal.
+  }
+}
+
+// Signals each process and its process group, never this process's own group.
+function signalMarked(found, signal) {
+  const own = procGroup(process.pid)
+  for (const { pid } of found) {
+    const group = procGroup(pid)
+    signalQuietly(pid, signal)
+    if (group !== null && group !== 1 && group !== own) signalQuietly(-group, signal)
+  }
+}
+
+// Ends every process markedProcesses finds, with its process group: SIGTERM, then, after the wait
+// killGroup gives, SIGKILL to those still marked and alive. Returns the markers it found, sorted.
+function killMarked(marker, { prefix = false } = {}) {
+  const found = markedProcesses(marker, { prefix })
+  if (found.length === 0) return []
+  signalMarked(found, 'SIGTERM')
+  const deadline = Date.now() + KILL_WAIT_MS
+  while (found.some(({ pid }) => isRunning(pid)) && Date.now() < deadline) sleepSync(KILL_POLL_MS)
+  signalMarked(markedProcesses(marker, { prefix }), 'SIGKILL')
+  return [...new Set(found.map((entry) => entry.marker))].sort()
+}
+
 function isLaneProcess(pid, marker) {
   const environ = procRead(pid, 'environ')
   if (environ === null || !environ.split('\0').includes(`AETHER_LANE_CALL=${marker}`)) return false
@@ -353,4 +434,5 @@ module.exports = {
   readLog,
   pruneLog,
   killGroup,
+  killMarked,
 }

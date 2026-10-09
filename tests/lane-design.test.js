@@ -250,6 +250,16 @@ test('a design ended during its round is undone into its backup ref, and its dir
   assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'design', id)), false)
 })
 
+test("once a round's agy exits, the commands it left running in sessions of their own are ended", (t) => {
+  const { repo, env } = designSetup(t)
+  const pidFile = path.join(tempDir(t), 'detached.pid')
+  const r = design(repo, env, ['start', '--session', 'lead-1', '--cwd', repo.dir], `FAKE-AGY: detach ${pidFile} 120\nFAKE-AGY: answer ${REPLY('approaches')}`)
+  const detached = Number(fs.readFileSync(pidFile, 'utf8'))
+  t.after(() => fx.killQuietly(detached))
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(fx.alive(detached), false)
+})
+
 test('design start changes nothing when the role is off, the quota is low, superpowers is missing or the worktree is dirty', (t) => {
   const off = designSetup(t, { mutate: (c) => (c.harnesses.agy.models['claude-opus-5-5'].roles = ['implementer', 'reviewer']) })
   const low = designSetup(t, { quota: { 'Gemini Models': [0.9, 0.9], 'Claude and GPT models': [0.9, 0.02] } })

@@ -231,6 +231,7 @@ function runAgy(argv, { cwd, dir, marker, timeoutSeconds, onInterrupt }) {
     let timer = null
     const onSignal = () => {
       lanes.killGroup(pidFile, marker)
+      lanes.killMarked(marker)
       try {
         onInterrupt()
       } finally {
@@ -254,6 +255,8 @@ function runAgy(argv, { cwd, dir, marker, timeoutSeconds, onInterrupt }) {
     child.once('exit', (code, signal) => {
       settle()
       killExitedGroup(child.pid)
+      // What agy started in sessions of its own outlives its group; nothing may write after the round's check.
+      lanes.killMarked(marker)
       fs.rmSync(pidFile, { force: true })
       resolve(code ?? 128 + (os.constants.signals[signal] || 0))
     })
@@ -478,6 +481,7 @@ function end(args) {
   const dir = designDir(mainRoot, id)
   if (!fs.existsSync(dir)) return noOpenDesign(id)
   lanes.killGroup(path.join(dir, 'pid'), `design/${id}`)
+  lanes.killMarked(`design/${id}`)
   fs.rmSync(dir, { recursive: true, force: true })
   return answer(0, { ended: id })
 }
