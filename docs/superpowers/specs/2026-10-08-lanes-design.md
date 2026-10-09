@@ -1,7 +1,7 @@
 # Aether: lanes, external coding harnesses in the swarm (design spec)
 
 - **Date:** 2026-10-08
-- **Status:** Draft, for the owner's review. The owner approved the design in conversation on 2026-10-08 ("apruebo todo"). This spec writes that design down and folds in the agy verification run the same night.
+- **Status:** Approved by the owner on 2026-10-08 ("ya comienza a implementar"), with the ruling on the residual risk recorded in §7.4. The owner approved the design in conversation the same day ("apruebo todo"). This spec writes that design down and folds in the agy verification run the same night.
 - **Working name:** "lanes". The owner has not chosen the final name; renaming is a text change.
 - **Method:** superpowers brainstorming, architectural path, in Aether mode: the Lead held the conversation, and the Designer wrote the approaches, the design and this spec.
 - **Amends:**
@@ -141,7 +141,7 @@ A workflow script has no shell, no file system and no clock. It can only start a
 
        { "done": true, "status": "ok" | "failed" | "quota" | "violation" | "blocked",
          "result": <the role's schema object, or null>, "lane": { harness, model, group, effort, durationMs, usage, conversation },
-         "detail": "<why, for anything but ok>", "warnings": [ ... ], "digest": "<digest of result and lane>" }
+         "detail": "<why, for anything but ok>", "digest": "<digest of result and lane>" }
 
    The script checks the digest. On a mismatch, it calls `ops` once with `aether-lane result <run> <call>`, which prints the stored result again. A second mismatch is a failed lane call.
 7. **`stop`.** Whenever the script gives up on a lane call (the wait cap, an `ops` that failed, a digest that fails twice), it calls `ops` with `aether-lane stop <run> <call>` before anything else runs in that workspace. `stop` kills the call's process group and removes its disposable worktree, so agy never writes beside a native attempt.
@@ -248,7 +248,8 @@ Before the call the runner records a snapshot; after it, it compares:
 | The unit worktree, for a supervisor | `HEAD` and `git status` are unchanged | `blocked`: the verdict is discarded and the unit is blocked |
 | The integration worktree | `git status` is unchanged; it must stay clean during a run | `blocked` (a final review: `failed`) |
 | The integration branch | Its tip after the call contains its tip before it, since merges only move it forward | `blocked` (a final review: `failed`) |
-| The main checkout | `HEAD` and `git status` are unchanged | A **warning** in the result and in the run's result. It is not undone or blocked, because the owner may be working there. The Lead tells the owner. |
+
+The branch check is how "the integration worktree did not change" is read while other units merge: their merges move the tip forward, and only a rewind or a rewrite fails it.
 
 ### 7.4 What agy can still touch: the residual risk
 
@@ -259,14 +260,18 @@ With `--dangerously-skip-permissions` and no working sandbox, agy acts with the 
 | Its own unit worktree, outside Owns | **Yes.** The attempt fails |
 | The integration worktree | **Yes.** The unit is blocked |
 | The integration branch, rewritten or reset through the shared repository | **Yes.** The unit is blocked |
-| The main checkout, its files or `HEAD` | **Detected** and reported as a warning; not undone |
+| The main checkout, its files or `HEAD` | **No** |
 | Sibling unit worktrees and their branches | **Partly.** A change outside the sibling's Owns is refused at the sibling's merge. A change inside them reaches the sibling's supervisor in its package. Neither is traced to the agent that made it |
 | The run directory (briefs, packages, state) | **Partly.** Packages are written by code; briefs are not checked |
-| Other branches and tags of the repository | **No**, except `main` through the main checkout's `HEAD` |
+| Other branches and tags of the repository, `main` included | **No** |
 | Anything else under the home directory: other repositories, `~/.claude`, `~/.gemini`, `~/.ssh`, `~/.config` | **No** |
 | Actions over the network: `git push`, publishing a package, HTTP calls | **No.** This repository has no remote |
 
-The owner accepted `--dangerously-skip-permissions` before the spike showed that `--sandbox` does not contain agy. **This table is the residual risk for the owner to accept or change at this review.** Real containment would mean running agy in a mount namespace (for example `bwrap`), with only the worktree, `/tmp` and `~/.gemini` writable. It is out of scope here and can be added if the owner asks.
+**The owner accepted this residual risk for version 0.4.0** on 2026-10-08: "más tarde contenemos, podría ser en versiones futuras; por el momento no es necesario".
+- The checks stay the ones the owner approved: Owns, the integration worktree and branch, and the read-only copies.
+- A main-checkout check that the spec draft added was dropped.
+
+**Future work:** real containment, by running agy in a mount namespace (for example `bwrap`) with only the worktree, `/tmp` and `~/.gemini` writable.
 
 ### 7.5 Cleanup (A7)
 
@@ -291,7 +296,6 @@ The cleanup acceptance of the v0.1 spec §9 now also covers `.aether/lanes/`.
 | A clean result with poor work | The supervisor rules on it as on any attempt: approve, retry, escalate or block |
 | `violation`: changes outside Owns | A failed attempt on the ladder. The next attempt gets the list and must revert those files, as after a refused merge today |
 | `blocked`: the integration worktree or branch changed, or a read-only call changed the unit worktree | The unit is blocked with the detail. For the final reviewer, the review is `failed` with the detail |
-| A warning: the main checkout changed | Reported in the unit's round and in the run's result; the run goes on |
 | A supervisor or reviewer lane fails for any infrastructure reason | The same review runs native at once. The attempt is not lost |
 | The owner stops the run | The sweep in the `finally` block or at the next SessionStart kills the lane processes and removes the copies |
 
@@ -324,7 +328,6 @@ In short: an infrastructure failure never costs the unit an attempt, and poor wo
   A non-clean result and a timeout also undo the round and exit with 4. Because a round starts clean, undoing it never touches earlier work. `aether-guard` does not see agy, and this check takes its place for the Designer.
 - **Fallback.** On exit 3 or 4, the Lead starts the native Designer from the spec and plan files, the last reply the owner saw and the owner's latest answer (Lead and Designer spec §6.3). From then on that design stays native. The agy conversation would miss the native rounds.
 - **State.** Each design's state lives in `<repo>/.aether/design/<id>/` (`state.json`: the id, session, worktree, conversation, and the rounds with their usage and quota readings). The Lead runs `aether-lane design end <id>` when the owner approves the plan or the design is dropped. `aether-lane design list` prints the open designs, for a Lead that lost the id. `sweep --stale` removes a state untouched for 24 hours and kills its process.
-- **Main checkout.** A change in the main checkout during a round is reported in the Lane line, as in §7.3.
 
 ## 10. Measurement: quota and dollars
 
@@ -362,7 +365,7 @@ For each group and window, consumption in a run (or in a design) is the sum of t
 - **`lanes`,** per harness:
   - `groups`: label, tokens by kind, dollars, and quota consumed per window, with resets;
   - `byModel`: calls; outcomes (`ok`, `failed`, `quota`, `violation`, `blocked`); implementer attempts and how many the supervisor approved at their first review; dollars;
-  - `byRole`, `overflow` (calls that found `maxParallel` full), and `warnings`.
+  - `byRole`, and `overflow` (calls that found `maxParallel` full).
 - **Totals,** for the window and for the session: native dollars, lane dollars, their sum, and the share the plans covered.
 - **The session's figures include the Designer's agy rounds,** so a design session's cost shows on the next report.
 - `finalize` adds the lane summary and agy's version to the run's record in `runs.jsonl`.
@@ -440,7 +443,7 @@ The plan format and `aether-plan check` do not change.
 - **Implement, supervise and the final review** try the lane when there is one, and handle each kind as §8 says.
 - **Prompts** gain the lane variants of §6.5.
 - **Each round** records `provider` (`native`, or `agy <agy id>`), and `laneFailure` when a lane began the attempt and the native agent finished it.
-- **The result** gains `lanes`: calls by outcome, overflow, dry groups by wave, and warnings.
+- **The result** gains `lanes`: calls by outcome, overflow, and dry groups by wave.
 - **`effortFor`, the ladder, the merge queue and the cleanup** are unchanged.
 - **`opsPrompt`** asks for the Bash timeout of 600000 on lane commands.
 
@@ -451,7 +454,7 @@ The plan format and `aether-plan check` do not change.
 - **`ops` (agent).** Its description names `aether-lane` besides `aether-wt`. Its rules do not change: one command, run once.
 - **`aether-report` and `config/prices.json`:** as §10 describes.
 - **`using-aether`.** The hand-off tries `aether-lane design start` first, as §9 describes: the relay through `design reply`, the fallback to the native Designer, and `design end`.
-- **`swarm`.** `--no-lanes`, the lane lines of the report, and how to read warnings and lane failures.
+- **`swarm`.** `--no-lanes`, the lane lines of the report, and how to read lane failures.
 - **`plugin.json`:** version 0.4.0.
 
 ## 12. Testing and acceptance
@@ -460,7 +463,7 @@ The plan format and `aether-plan check` do not change.
 - **The adapter:** command lines; `/usage` and result parsing on fixtures shaped like the spike's outputs, including every failure shape of §4; usage deltas; the clean-result rules of §6.3.
 - **Routing:** the table, levels, `max`, roles turned off, the reserve and dry groups.
 - **The digest:** the same values in the script, the bin and the tests.
-- **A fake `agy`,** a Node script first on the `PATH` in tests, acts out what a scenario asks: a clean result with edits, edits outside Owns, a write to the integration worktree, the main checkout or a supervisor's real worktree, a print timeout with partial output, a silent new conversation, an error exit, a quota failure, and a slow call. With it, the tests cover:
+- **A fake `agy`,** a Node script first on the `PATH` in tests, acts out what a scenario asks: a clean result with edits, edits outside Owns, a write to the integration worktree or a supervisor's real worktree, a print timeout with partial output, a silent new conversation, an error exit, a quota failure, and a slow call. With it, the tests cover:
   - `start`, `wait`, `result` and `stop`, including the killed process group;
   - the unit worktree and the disposable copy;
   - every check of §7.3;
@@ -500,7 +503,7 @@ The plan format and `aether-plan check` do not change.
 - A second harness. The adapter and the table are its contract.
 - Spending free quota on extra calls, such as a second review. Lanes replace paid calls and never add calls, as the owner confirmed on 2026-10-08.
 - Gemini beyond implementers of the Haiku tier, and Gemini models other than 3.8 Flash.
-- OS-level containment of agy (§7.4).
+- OS-level containment of agy: future work, by the owner's ruling (§7.4).
 - `agy plugin import` of superpowers or Aether.
 - Lane settings per plan or per task.
 - **An `ops` with no LLM.** The mod API lets a `turn.step` hook answer a step without calling the model, and `$.process.run` runs a command for up to ten minutes outside the hook's time budget. A mod could therefore answer `aether:ops` calls by itself, which would take the LLM out of every `ops` call, those of `aether-wt` included. It is not verified, and it changes `ops` for everything, so it is a later spike of its own.
