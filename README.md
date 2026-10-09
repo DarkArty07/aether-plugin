@@ -2,7 +2,7 @@
 
 A plugin for Claude Code that adds an opt-in **Aether mode**: a parallel swarm of agents that implements an approved plan.
 
-- **The Lead** is the main session, on Sonnet at `xhigh`. It holds the conversation with the owner, explores, chooses the route and runs the execution. It may design and implement spikes and bounded work.
+- **The Lead** is the main session, on Sonnet at `xhigh`. It holds the conversation with the owner, explores, chooses the route and runs the execution. It decides as the owner's delegate: it closes the Designer's rounds with the owner's intent, and brings the owner only what that intent does not settle. It may design and implement spikes and bounded work.
 - **The Designer** is the agent `aether:designer`, on Opus at `xhigh`, in its own context. It designs with [superpowers](https://github.com/obra/superpowers): approaches, design, spec and plan. Among the agents it has the final say on design. Only the Designer writes specs and plans.
 - **The swarm:** when parallel work pays off, the Lead hands the plan to `/aether:run`. In the swarm:
   - implementers work on Haiku by default and move up to Sonnet or Opus when a task is critical or keeps failing;
@@ -15,7 +15,7 @@ Without the plugin, Claude Code keeps working in normal mode, with superpowers a
 
 ## Status
 
-Version 0.4: the Lead on Sonnet holds the conversation, the Designer on Opus writes specs and plans, each plan task sets its implementer's effort, and lanes run the swarm's calls and the Designer's rounds on other coding plans while their quota lasts.
+Version 0.5: the Lead on Sonnet holds the conversation and decides as the owner's delegate, the Designer on Opus writes specs and plans, each plan task sets its implementer's effort, and lanes run the swarm's calls and the Designer's rounds on other coding plans while their quota lasts. With the owner's permission, the Lead works for hours within ceilings of time and cost and ends with a brief, and it never asks again for what the owner authorized ([autonomy spec](docs/superpowers/specs/2026-10-09-lead-autonomy-design.md)).
 
 **Trial 3** ([evaluation](docs/evaluations/2026-10-08-trial-3.md)) ran the same design request with the Lead and Designer split and with an Opus main session:
 - the split's design captured all ten items of the owner's hidden intent, against nine;
@@ -60,9 +60,9 @@ The design is [docs/superpowers/specs/2026-10-07-aether-plugin-design.md](docs/s
 ## How it works
 
 ```text
-owner ── confirms the Lead's understanding, approves the spec and the plan
+owner ── confirms the Lead's understanding, may give permission to work for hours, reviews the brief
   │
-Lead (main session, Sonnet, xhigh): conversation, route, relay, execution
+Lead (main session, Sonnet, xhigh): conversation, route, decisions as the owner's delegate, execution
   │  hand-off once the owner confirms the understanding
   ▼
 Designer (aether:designer, Opus, xhigh): approaches, design, spec, plan
@@ -83,10 +83,11 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 
 | Piece | What it does |
 |---|---|
-| `using-aether` skill | Injected at session start. The Lead's rules: the routes, the hand-off to the Designer, the relay of both sides, and when to offer the swarm |
+| `using-aether` skill | Injected at session start. The Lead's rules: the routes, the hand-off to the Designer, deciding with the Designer as the owner's delegate, fallbacks, autonomous runs and the execution method |
 | `aether:designer` | The Designer agent: Opus at `xhigh`, with a 1-hour prompt cache. It does the architectural design and writes the specs and plans |
 | `aether-voice` | Prints the owner's own words from a session, for the Designer to read; it writes no file |
-| `aether-guard` | A PreToolUse hook that refuses Write, Edit, MultiEdit and NotebookEdit under `docs/superpowers/specs/` and `docs/superpowers/plans/` to every agent but the Designer |
+| `aether-guard` | A PreToolUse hook that refuses Write, Edit, MultiEdit and NotebookEdit under `docs/superpowers/specs/` and `docs/superpowers/plans/` to every agent but the Designer, and on the autonomy registry and run states to every agent |
+| `aether-autonomy` | The owner's standing authorizations, verified against their own words (`grant`, `revoke`, `check`, `list`), and an autonomous run's state and ceilings (`start`, `spend`, `status`, `end`) |
 | `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |
 | `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
 | `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `remove` (saves unmerged work as a patch), `sweep` |
@@ -94,7 +95,7 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
 | Usage meter | A mod that records every model request: agent, model, tokens and time |
 | `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `price` prices any `claude -p` JSON output |
-| SessionStart hook | Injects the bootstrap, sweeps runs left untouched for 24 hours, and deletes usage files not written to for 30 days |
+| SessionStart hook | Injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files not written to for 30 days, and points a new Lead to an open autonomous run |
 
 ### Lanes
 
@@ -108,6 +109,17 @@ A lane runs Aether's own calls on another coding plan the owner pays for, while 
 - **Report.** `aether-report` shows each group's quota consumed and the dollars at list price, apart from native Claude.
 - **Off for one run:** `aether-plan compile <plan.md> --no-lanes`.
 - **Linux only.** Lanes need Linux, because stopping a lane's processes reads `/proc`.
+
+### Autonomy
+
+The Lead decides as the owner's delegate, and the owner's reviews are two: the permission to work at the start, and the brief at the end. See the [autonomy spec](docs/superpowers/specs/2026-10-09-lead-autonomy-design.md).
+
+- **Deciding.** The Designer's reply says who closes each round (`Decide: lead` or `owner`). The Lead closes what the owner's intent covers. Only what it does not cover, what conflicts with it, and unauthorized irreversible actions reach the owner. Failures with a defined fallback, such as a lane out of quota, never do.
+- **Standing authorizations.** When the owner authorizes a class of irreversible action in general words, the Lead records it with `aether-autonomy grant`, quoting the owner. The quote is checked against the owner's own messages in the session's transcript, and checked again when read. The classes are `merge-main`, `push`, `publish`, `deploy`, `delete`, `credentials` and `paid-call`. Everything local and reversible proceeds without asking.
+- **Autonomous runs.** The owner's permission to work for hours starts a run (`aether-autonomy start`), with ceilings of 8 hours and US$ 50 unless the owner names others. The Lead keeps a diary, keeps working while work remains, stops when done, at a ceiling or honestly, and writes a brief: what it did, decided and found, what waits for the owner's yes, what it did not finish, proposals, and time and cost.
+- **Cost.** A run's figure covers the swarm and the lanes, as `aether-report` prices them; the Lead's own turns are not added up. The time ceiling is the real guard.
+- **Permissions.** A permission prompt stops a run like a question. Start a session meant for an autonomous run with a permission mode or allow rules that cover its tools; Aether never turns permissions off.
+- **Files.** `.aether/autonomy/` in the repository's main checkout holds `grants.json`, and for each run `run.json`, `diary.md` and `brief.md`. Only `aether-autonomy` writes `grants.json` and `run.json`.
 
 ## Use Aether mode
 
@@ -127,7 +139,7 @@ In bash or zsh:
 
     aether-mode() { CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 claude --plugin-dir /path/to/aether-plugin/plugins/aether --settings '{"enableWorkflows": true}' --model sonnet --effort xhigh "$@"; }
 
-Then work as you would with superpowers. When a plan is ready, the Lead offers three ways to execute it: superpowers' two (subagent-driven or native) and the swarm, and recommends one. The swarm needs:
+Then work as you would with superpowers. The Lead decides the design with your intent and stops at the plan with a short brief, recommending one of three ways to execute it: superpowers' two (subagent-driven or native) and the swarm. Give it permission to work for hours, and it runs to the end, chooses the method itself, and gives you the brief. The swarm needs:
 - **a plan with Aether fields** on every task:
 
       **Aether:**
@@ -143,6 +155,8 @@ Then work as you would with superpowers. When a plan is ready, the Lead offers t
 Data lives in `~/.local/share/aether-plugin/` (or `AETHER_DATA_DIR`):
 - `usage/<session>/` holds the usage meter's files, kept for 30 days;
 - `runs.jsonl` holds one record per finalized or abandoned run.
+
+The autonomy registry and run states live in the repository itself, under `.aether/autonomy/` in its main checkout.
 
 ## Development
 

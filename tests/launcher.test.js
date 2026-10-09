@@ -19,12 +19,13 @@ test('the README shows the same launch for bash and zsh', () => {
   assert.ok(read('README.md').includes(LINE))
 })
 
-test('the manifest is version 0.4.0 and names the Lead, the Designer and the lanes', () => {
+test('the manifest is version 0.5.0 and names the Lead, the Designer, the lanes and the autonomy', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.4.0')
+  assert.equal(manifest.version, '0.5.0')
   assert.match(manifest.description, /the Lead on Sonnet/)
   assert.match(manifest.description, /the Designer on Opus/)
   assert.match(manifest.description, /Lanes run its calls on other coding plans/)
+  assert.match(manifest.description, /decides as the owner's delegate/)
 })
 
 test('the documents record the decisions and the verified facts', () => {
@@ -56,5 +57,17 @@ test('the documents record the lanes: decisions, facts, and the skills that use 
   const swarm = read('plugins', 'aether', 'skills', 'swarm', 'SKILL.md')
   for (const text of ['--no-lanes', 'laneFailure', '`aether-lane`', 'Blocked by a lane']) assert.ok(swarm.includes(text), text)
   assert.match(read('README.md'), /^### Lanes$/m)
-  assert.match(read('README.md'), /^Version 0\.4: /m)
+  assert.match(read('README.md'), /^Version 0\.5: /m)
+})
+
+test('the documents record the autonomy: decisions, the README, and no per-stage gates', () => {
+  const decisions = read('docs', 'decisions.md')
+  for (const id of ['A23', 'A24', 'A25']) assert.match(decisions, new RegExp(`^\\| ${id} \\|`, 'm'), id)
+  assert.match(decisions, /\*\*Update \(2026-10-09, autonomy\)\.\*\*/)
+  const readme = read('README.md')
+  assert.match(readme, /^### Autonomy$/m)
+  assert.ok(readme.includes('| `aether-autonomy` |'))
+  assert.ok(readme.includes('docs/superpowers/specs/2026-10-09-lead-autonomy-design.md'))
+  assert.doesNotMatch(readme, /approves the spec and the plan/)
+  assert.doesNotMatch(readme, /the relay of both sides/)
 })
