@@ -42,14 +42,17 @@ function conversationOf(data) {
   return typeof data?.conversation_id === 'string' && data.conversation_id !== '' ? data.conversation_id : null
 }
 
+// A stderr line agy prints as a notice, not as an error: it started background tasks and waits for them.
+const NOTICE = /^root agent idle; waiting up to \S+ for \d+ background task\(s\)$/
+
 // The first rule a run fails, in order, or null when it is clean.
 function failureReason({ stderr, exitCode }, data, { conversation, required }) {
   const detail = data?.error ? `: ${data.error}` : ''
   if (exitCode !== 0) return `exit ${exitCode}${detail}`
   if (!data) return 'unreadable output'
   if (data.status !== 'SUCCESS') return `status ${data.status}${detail}`
-  const stderrLine = (stderr || '').trim().split('\n')[0].trim()
-  if (stderrLine !== '') return `stderr: ${stderrLine.slice(0, 300)}`
+  const stderrLine = (stderr || '').split('\n').map((line) => line.trim()).find((line) => line !== '' && !NOTICE.test(line))
+  if (stderrLine !== undefined) return `stderr: ${stderrLine.slice(0, 300)}`
   if (typeof data.response !== 'string' || data.response.trim() === '') return 'empty response'
   const structured = data.structured_output
   if (!isPlainObject(structured) || required.some((key) => !Object.hasOwn(structured, key))) return 'no structured output'

@@ -115,6 +115,21 @@ test('argv runs one print-mode turn with the model, the schema, the timeout and,
   assert.deepEqual(agy.argv({ model: 'm', schemaFile: 's', timeoutSeconds: 10, prompt: 'P', conversation: 'c-1' }).slice(-2), ['--conversation', 'c-1'])
 })
 
+test('parse ignores the idle notice agy prints while it waits for background tasks, and still fails on any other stderr line', () => {
+  const agy = createAgy({ groups: GROUPS })
+  const idle = 'root agent idle; waiting up to 45m0s for 1 background task(s)\n'
+  const parse = (stdout, stderr) => agy.parse({ stdout, stderr, exitCode: 0 }, { required: ['verdict'] })
+  assert.equal(parse(success(), idle).clean, true)
+  assert.equal(parse(success(), idle).reason, null)
+  assert.equal(parse(success(), idle + idle.replace('1 background', '2 background')).reason, null)
+  assert.equal(
+    parse(success(), idle + '[agy] print timeout 900s reached, returning partial output\n').reason,
+    'stderr: [agy] print timeout 900s reached, returning partial output',
+  )
+  assert.equal(parse(success({ response: '' }), idle).reason, 'empty response')
+  assert.equal(parse(success({ structured_output: undefined }), idle).reason, 'no structured output')
+})
+
 test('parse accepts only a clean result: exit 0, SUCCESS, no stderr, a response and the structured output', () => {
   const agy = createAgy({ groups: GROUPS })
   assert.deepEqual(agy.parse({ stdout: success(), stderr: '', exitCode: 0 }, { required: ['verdict'] }), {

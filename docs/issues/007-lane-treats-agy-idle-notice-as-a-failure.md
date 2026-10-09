@@ -3,7 +3,7 @@
 **Type:** bug (lane failure classification)
 **Date:** 2026-10-09
 **Found in:** the first swarm run of Aether 0.5.0 (plan: the Lead's autonomy, 9 tasks), with real agy
-**Status:** open (2026-10-09). Sub-project 2.
+**Status:** fixed on local `main` (2026-10-09), not pushed yet: `lib/harness/agy.js` ignores the "root agent idle; waiting up to … for N background task(s)" notice and still fails on any other stderr line, an empty response or a report without structure. Close this issue when the push lands. Not verified with a live agy call: the notice cannot be triggered on demand, so the test uses the exact line seen.
 **GitHub:** [#7](https://github.com/DarkArty07/aether-plugin/issues/7) (private repository)
 
 ## Summary
