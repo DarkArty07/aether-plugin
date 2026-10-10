@@ -57,21 +57,4 @@ const REVIEW_SCHEMA = {
   },
 }
 
-const DESIGNER_SCHEMA = {
-  type: 'object',
-  required: ['decision', 'stage', 'decide', 'files'],
-  properties: {
-    decision: {
-      type: 'string',
-      description: 'the text of "Decision", in the owner\'s language: what the round produced, the options, the recommendation, and what must be decided',
-    },
-    stage: { type: 'string', enum: ['approaches', 'design', 'spec', 'plan', 'question', 'blocked'] },
-    decide: {
-      type: 'string',
-      description: 'who closes the round: "lead — <reason>", or "owner — uncovered: <reason>", "owner — conflict: <reason>" or "owner — irreversible: <reason>"',
-    },
-    files: { type: 'string', description: 'paths and commits, or none' },
-  },
-}
-
-module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA, DESIGNER_SCHEMA }
+module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA }

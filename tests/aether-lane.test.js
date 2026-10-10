@@ -48,16 +48,13 @@ function preparedUnit(t) {
   return { repo, args, unit }
 }
 
-test("the bin's role schemas are the workflow's, and the Designer's is fixed", () => {
+test("the bin's role schemas are the workflow's", () => {
   const source = fs.readFileSync(path.join(PLUGIN, 'workflows', 'run.workflow.js'), 'utf8')
   const block = source.slice(source.indexOf('const FINDINGS = {'), source.indexOf('const OPS_SCHEMA = {'))
   const workflow = new Function(`${block}; return { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA }`)()
   assert.deepEqual(schemas.IMPLEMENTER_SCHEMA, workflow.IMPLEMENTER_SCHEMA)
   assert.deepEqual(schemas.SUPERVISOR_SCHEMA, workflow.SUPERVISOR_SCHEMA)
   assert.deepEqual(schemas.REVIEW_SCHEMA, workflow.REVIEW_SCHEMA)
-  assert.deepEqual(schemas.DESIGNER_SCHEMA.required, ['decision', 'stage', 'decide', 'files'])
-  assert.deepEqual(Object.keys(schemas.DESIGNER_SCHEMA.properties), ['decision', 'stage', 'decide', 'files'])
-  assert.deepEqual(schemas.DESIGNER_SCHEMA.properties.stage.enum, ['approaches', 'design', 'spec', 'plan', 'question', 'blocked'])
 })
 
 test('buildPrompt puts the role, the lane note and the CLAUDE.md files before the message', (t) => {

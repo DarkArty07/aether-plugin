@@ -6,10 +6,8 @@
 // aether-lane wait <run> <call> [--max <seconds>]
 // aether-lane result <run> <call>
 // aether-lane stop <run> [<call>]
-// aether-lane design start|reply|end|list ...
 // aether-lane _runner <run> <call>   (internal: the detached runner that start launches)
 
-const fs = require('node:fs')
 const path = require('node:path')
 const calls = require(path.join(__dirname, '..', 'lib', 'lane-calls.js'))
 
@@ -21,7 +19,7 @@ const COMMANDS = {
   result: 'result <run> <call>',
   stop: 'stop <run> [<call>]',
 }
-const USAGE = `usage: aether-lane ${Object.values(COMMANDS).join(' | ')} | design ...`
+const USAGE = `usage: aether-lane ${Object.values(COMMANDS).join(' | ')}`
 
 // Throws the command's own usage when an argument it requires is missing.
 function requireArgs(verb, runId, call) {
@@ -63,13 +61,6 @@ async function main() {
   const argv = process.argv.slice(2)
   if (argv[0] === '_runner') {
     await calls.runCall(process.cwd(), argv[1], argv[2])
-    return
-  }
-  if (argv[0] === 'design') {
-    const input = argv[1] === 'start' || argv[1] === 'reply' ? fs.readFileSync(0, 'utf8') : ''
-    const { exitCode, stdout } = await require(path.join(__dirname, '..', 'lib', 'lane-design.js')).main(argv.slice(1), { input })
-    process.stdout.write(stdout)
-    process.exitCode = exitCode
     return
   }
   process.stdout.write(`${JSON.stringify(await command(argv))}\n`)
