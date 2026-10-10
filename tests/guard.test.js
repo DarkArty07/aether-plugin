@@ -5,8 +5,9 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { PLUGIN } = require('./helpers.js')
+const { PLUGIN, tempDir } = require('./helpers.js')
 const { decide } = require('../plugins/aether/lib/guard.js')
+const { markSession } = require('../plugins/aether/lib/session.js')
 
 const GUARD_BIN = path.join(PLUGIN, 'bin', 'aether-guard')
 const SPEC = '/repo/docs/superpowers/specs/2026-10-08-x-design.md'
@@ -70,12 +71,17 @@ test('other tools and malformed input get no decision', () => {
   assert.equal(decide({}), null)
 })
 
-function guard(stdin) {
-  return spawnSync(process.execPath, [GUARD_BIN], { input: stdin, encoding: 'utf8' })
+// Runs the bin in a data directory where session s1 is an Aether session, unless marked is false.
+function guard(t, stdin, { marked = true } = {}) {
+  const data = tempDir(t, 'aether-data-')
+  if (marked) markSession(data, 's1')
+  const env = { ...process.env, AETHER_DATA_DIR: data }
+  return spawnSync(process.execPath, [GUARD_BIN], { input: stdin, encoding: 'utf8', env })
 }
+const inSession = (input) => ({ session_id: 's1', ...input })
 
-test('aether-guard prints a deny decision for the main session', () => {
-  const r = guard(JSON.stringify(call('Write', { file_path: SPEC, content: 'x' })))
+test('aether-guard prints a deny decision for the main session', (t) => {
+  const r = guard(t, JSON.stringify(inSession(call('Write', { file_path: SPEC, content: 'x' }))))
   assert.equal(r.status, 0, r.stderr)
   const out = JSON.parse(r.stdout)
   assert.equal(out.hookSpecificOutput.hookEventName, 'PreToolUse')
@@ -83,9 +89,9 @@ test('aether-guard prints a deny decision for the main session', () => {
   assert.match(out.hookSpecificOutput.permissionDecisionReason, /aether:designer/)
 })
 
-test('aether-guard stays silent when it allows, and on input it cannot read', () => {
-  for (const stdin of [JSON.stringify(call('Write', { file_path: SPEC, content: 'x' }, designer)), '', 'not json', '[]']) {
-    const r = guard(stdin)
+test('aether-guard stays silent when it allows, and on input it cannot read', (t) => {
+  for (const stdin of [JSON.stringify(inSession(call('Write', { file_path: SPEC, content: 'x' }, designer))), '', 'not json', '[]']) {
+    const r = guard(t, stdin)
     assert.equal(r.status, 0, r.stderr)
     assert.equal(r.stdout, '')
   }
@@ -98,7 +104,7 @@ test('hooks.json runs aether-guard before Write, Edit, MultiEdit and NotebookEdi
   assert.equal(entries[0].matcher, 'Write|Edit|MultiEdit|NotebookEdit')
   assert.deepEqual(entries[0].hooks, [{ type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/bin/aether-guard"' }])
   // The SessionStart hook and the usage meter stay as they were.
-  assert.equal(hooks.hooks.SessionStart[0].matcher, 'startup|clear|compact')
+  assert.equal(hooks.hooks.SessionStart[0].matcher, 'startup|resume|clear|compact')
   assert.deepEqual(hooks.modules, ['./register.js'])
 })
 
@@ -143,6 +149,41 @@ test('the diary, the brief and lookalike paths stay writable', () => {
     '/repo/.aether/grants.json',
   ]) {
     assert.equal(decide(call('Write', { file_path: file, content: 'x' })), null, file)
+  }
+})
+
+test('outside an Aether session the guard allows what it would refuse, autonomy files included', (t) => {
+  for (const input of [
+    call('Write', { file_path: SPEC, content: 'x' }),
+    call('Edit', { file_path: PLAN, old_string: 'a', new_string: 'b' }, { agent_id: 'a2', agent_type: 'general-purpose' }),
+    call('Write', { file_path: '/repo/.aether/autonomy/grants.json', content: '{}' }),
+  ]) {
+    const r = guard(t, JSON.stringify(inSession(input)), { marked: false })
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(r.stdout, '')
+  }
+})
+
+test('in an Aether session every agent but the Designer is refused, general-purpose and workflow agents included', (t) => {
+  const whos = [
+    {},
+    { agent_type: 'aether:lead' },
+    { agent_id: 'a2', agent_type: 'general-purpose' },
+    { agent_id: 'a3', agent_type: 'workflow-subagent' },
+    { agent_id: 'a4', agent_type: 'aether:implementer' },
+  ]
+  for (const who of whos) {
+    const r = guard(t, JSON.stringify(inSession(call('Write', { file_path: SPEC, content: 'x' }, who))))
+    assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, 'deny', JSON.stringify(who))
+  }
+  assert.equal(guard(t, JSON.stringify(inSession(call('Write', { file_path: SPEC, content: 'x' }, designer)))).stdout, '')
+})
+
+test('a session id that is missing or could leave the data directory counts as no Aether session', (t) => {
+  for (const id of [undefined, '', '../s1', 'a/b', 42]) {
+    const r = guard(t, JSON.stringify({ ...call('Write', { file_path: SPEC, content: 'x' }), session_id: id }))
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(r.stdout, '', String(id))
   }
 })
 

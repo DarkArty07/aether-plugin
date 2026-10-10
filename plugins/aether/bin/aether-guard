@@ -5,19 +5,23 @@
 // on specs and plans unless the writer is the Designer. Always exits with 0.
 
 const fs = require('node:fs')
+const { dataDir } = require('../lib/run.js')
+const { isAetherSession } = require('../lib/session.js')
 const { decide } = require('../lib/guard.js')
 
 try {
   const input = JSON.parse(fs.readFileSync(0, 'utf8'))
-  const decision = decide(input)
-  if (decision) {
-    process.stdout.write(JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: decision.reason,
-      },
-    }) + '\n')
+  if (input && isAetherSession(dataDir(), input.session_id)) {
+    const decision = decide(input)
+    if (decision) {
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: decision.reason,
+        },
+      }) + '\n')
+    }
   }
 } catch {
   // Unreadable input allows the tool call.
