@@ -132,6 +132,19 @@ test('compile takes a spec.md beside a Spec Kit tasks.md as the spec, when the p
   assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Spec: specs\/001-demo\/spec\.md$/m)
 })
 
+test('compile reads a Spec line that links a file beside the plan as that file, named from the worktree', (t) => {
+  // The Aether preset's tasks.md links its spec as [spec.md](spec.md), relative to the plan's folder.
+  const repo = makeRepo(t)
+  const file = path.join(repo.dir, 'specs', '004-linked', 'tasks.md')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(path.join(path.dirname(file), 'spec.md'), '# Demo\n')
+  fs.writeFileSync(file, specKitTasks([task(1), task(2)], { spec: '**Spec:** [spec.md](spec.md)' }))
+  const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.spec, 'specs/004-linked/spec.md')
+  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Spec: specs\/004-linked\/spec\.md$/m)
+})
+
 test('compile keeps a Spec line over a spec.md beside the plan, and names no spec when there is neither', (t) => {
   const repo = makeRepo(t)
   const named = path.join(repo.dir, 'specs', '002-named', 'tasks.md')

@@ -37,15 +37,29 @@ function load(planArg) {
   return { planPath, parsed: parsePlan(fs.readFileSync(planPath, 'utf8')) }
 }
 
-// A spec.md beside the plan stands in when the plan has no Spec line (Spec Kit's layout). It is named the
-// way a Spec line names a file, relative to the integration worktree where the run reads it; a file outside
-// that worktree is named by its full path.
-function siblingSpec(planPath, worktree) {
-  const file = path.join(path.dirname(planPath), 'spec.md')
+function isFile(file) {
   const stat = fs.statSync(file, { throwIfNoEntry: false })
-  if (!stat || !stat.isFile()) return null
+  return Boolean(stat && stat.isFile())
+}
+
+// A file is named the way a Spec line names it: relative to the integration worktree, where the run
+// reads it, or by its full path when it is outside that worktree.
+function nameInWorktree(file, worktree) {
   const rel = path.relative(worktree, file)
   return rel.split(path.sep)[0] === '..' ? file : rel
+}
+
+// The spec a plan names. A Spec line's path is read from the worktree; when nothing is there but the
+// file sits beside the plan, as the Aether preset's [spec.md](spec.md) does, that file is the spec.
+// Without a Spec line, a spec.md beside the plan stands in (Spec Kit's layout).
+function planSpec(parsedSpec, planPath, worktree) {
+  if (parsedSpec) {
+    if (path.isAbsolute(parsedSpec) || isFile(path.join(worktree, parsedSpec))) return parsedSpec
+    const beside = path.join(path.dirname(planPath), parsedSpec)
+    return isFile(beside) ? nameInWorktree(beside, worktree) : parsedSpec
+  }
+  const sibling = path.join(path.dirname(planPath), 'spec.md')
+  return isFile(sibling) ? nameInWorktree(sibling, worktree) : null
 }
 
 function check(planArg) {
@@ -93,8 +107,7 @@ function compile(planArg, rest) {
   const dir = run.runDir(repo.mainRoot, runId)
   run.ensureExcluded(repo.gitCommonDir)
 
-  // A Spec line wins; without one, the spec.md beside the plan is the spec.
-  const spec = parsed.spec ?? siblingSpec(planPath, repo.worktree)
+  const spec = planSpec(parsed.spec, planPath, repo.worktree)
   const tasks = {}
   for (const t of parsed.tasks) {
     const id = `task-${t.number}`
