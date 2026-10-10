@@ -5,7 +5,9 @@
 // by the group of a pid file, and by the marker in their environment.
 
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+const { HARNESS_NAMES } = require('./harness/index.js')
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'lanes.json')
 const ROLES = ['implementer', 'supervisor', 'reviewer']
@@ -71,7 +73,15 @@ function validateConfig(config) {
     throw new Error('reserve must be a number from 0 to 1')
   }
   if (!isObject(config.harnesses)) throw new Error('harnesses must be an object')
-  for (const [name, harness] of Object.entries(config.harnesses)) validateHarness(name, harness)
+  // A group key names one quota, so two harnesses must not share one.
+  const owners = new Map()
+  for (const [name, harness] of Object.entries(config.harnesses)) {
+    validateHarness(name, harness)
+    for (const group of Object.keys(harness.groups)) {
+      if (owners.has(group)) throw new Error(`group ${group} is used by harnesses ${owners.get(group)} and ${name}: group keys are unique across the table`)
+      owners.set(group, name)
+    }
+  }
 }
 
 // The table at file, or null when there is none. Throws when the table is not JSON or breaks a rule.
@@ -96,11 +106,20 @@ function isExecutableFile(file) {
   }
 }
 
+// The absolute path where command is an executable: itself when it is absolute, else the first match on
+// PATH. Null when there is none.
+function commandPath(command, env = process.env) {
+  if (path.isAbsolute(command)) return isExecutableFile(command) ? command : null
+  for (const dir of (env.PATH || '').split(path.delimiter)) {
+    if (dir === '') continue
+    const file = path.resolve(dir, command)
+    if (isExecutableFile(file)) return file
+  }
+  return null
+}
+
 function commandInstalled(command, env = process.env) {
-  if (path.isAbsolute(command)) return isExecutableFile(command)
-  return (env.PATH || '')
-    .split(path.delimiter)
-    .some((dir) => dir !== '' && isExecutableFile(path.join(dir, command)))
+  return commandPath(command, env) !== null
 }
 
 // The lane for a native call: the first model that replaces model and serves role, at effort's level.
@@ -120,36 +139,59 @@ function waitRounds(harness, role) {
   return Math.ceil(harness.timeouts[role] / harness.waitSeconds) + 1
 }
 
-// For each role that some model serves, the first model of each native model it replaces.
-function nativeCalls(harness) {
-  const calls = {}
-  for (const role of CALLED_ROLES) {
-    for (const [id, entry] of Object.entries(harness.models)) {
-      if (!entry.roles.includes(role)) continue
-      calls[role] = calls[role] || {}
-      if (!calls[role][entry.replaces]) calls[role][entry.replaces] = { model: id, group: entry.group }
-    }
+// The known names in a comma-separated list: trimmed, lowercased, each once, in order.
+function harnessNames(text) {
+  const names = []
+  for (const part of String(text ?? '').split(',')) {
+    const name = part.trim().toLowerCase()
+    if (HARNESS_NAMES.includes(name) && !names.includes(name)) names.push(name)
   }
-  return calls
+  return names
 }
 
-// The arguments the run takes from the first installed harness, or null when none is installed.
-function lanesArgs(config, { installed }) {
+// The harnesses the owner enabled, in the order given, or agy alone when none valid is given.
+function enabledHarnesses(env = process.env) {
+  const names = harnessNames(env.AETHER_LANE_HARNESSES)
+  return names.length > 0 ? names : ['agy']
+}
+
+// The arguments the run takes from the enabled harnesses that are installed, or null when none gives a call.
+// Each native call goes to the first of them, in the order enabled, with a model that serves its role and
+// replaces the native model. harness is the first harness that gave a call; harnesses lists each one that
+// did. A role's wait is the largest among the listed harnesses that serve it, or among all listed when none does.
+function lanesArgs(config, { installed, enabled = enabledHarnesses() }) {
   if (!config) return null
-  for (const [name, harness] of Object.entries(config.harnesses)) {
-    if (!installed(name, harness)) continue
-    return {
-      harness: name,
-      maxParallel: harness.maxParallel,
-      waits: {
-        implementer: waitRounds(harness, 'implementer'),
-        supervisor: waitRounds(harness, 'supervisor'),
-        reviewer: waitRounds(harness, 'reviewer'),
-      },
-      calls: nativeCalls(harness),
+  const calls = {}
+  const listed = []
+  for (const name of enabled) {
+    const harness = Object.hasOwn(config.harnesses, name) ? config.harnesses[name] : null
+    if (!harness || !installed(name, harness)) continue
+    let gave = false
+    for (const role of CALLED_ROLES) {
+      for (const [id, entry] of Object.entries(harness.models)) {
+        if (!entry.roles.includes(role)) continue
+        calls[role] = calls[role] || {}
+        if (calls[role][entry.replaces]) continue
+        calls[role][entry.replaces] = { model: id, group: entry.group, harness: name }
+        gave = true
+      }
     }
+    if (gave) listed.push(name)
   }
-  return null
+  if (listed.length === 0) return null
+  const waitOf = (role) => {
+    const serving = listed.filter((name) => Object.values(config.harnesses[name].models).some((entry) => entry.roles.includes(role)))
+    const pool = serving.length > 0 ? serving : listed
+    return Math.max(...pool.map((name) => waitRounds(config.harnesses[name], role)))
+  }
+  return {
+    harness: listed[0],
+    harnesses: listed,
+    maxParallel: config.harnesses[listed[0]].maxParallel,
+    maxParallelByHarness: Object.fromEntries(listed.map((name) => [name, config.harnesses[name].maxParallel])),
+    waits: { implementer: waitOf('implementer'), supervisor: waitOf('supervisor'), reviewer: waitOf('reviewer') },
+    calls,
+  }
 }
 
 // FNV-1a, 32-bit, over UTF-16 code units, then the length.
@@ -181,6 +223,8 @@ function resultDigest({ result, lane }) {
 }
 
 function usable(groupQuota, reserve) {
+  // A harness that cannot report its quota is used until a call fails for quota.
+  if (isObject(groupQuota) && groupQuota.unknown === true) return true
   if (!groupQuota || !isObject(groupQuota.windows)) return false
   const windows = Object.values(groupQuota.windows)
   return windows.length > 0 && windows.every((window) => window.remaining > reserve)
@@ -292,13 +336,31 @@ const ENV_NAMES = ['HOME', 'PATH', 'LANG', 'TERM', 'TMPDIR', 'TZ', 'USER', 'LOGN
 const ENV_PREFIXES = ['LC_', 'XDG_', 'AETHER_']
 const ENV_SECRET = /TOKEN|KEY|SECRET/i
 
-// The allowlisted part of env, with AETHER_LANE_CALL set to marker.
+// The allowlisted part of env, with AETHER_LANE_CALL set to marker, and the variables that keep the
+// owner's credentials out of a lane.
 function laneEnv(env, marker) {
   const out = {}
   for (const [name, value] of Object.entries(env)) {
     if (ENV_SECRET.test(name)) continue
     if (ENV_NAMES.includes(name) || ENV_PREFIXES.some((prefix) => name.startsWith(prefix))) out[name] = value
   }
+  // HOME stays, because each CLI keeps its own login there; these variables keep the owner's git, GitHub,
+  // package-registry and cloud credentials out of the lane, and git inside a lane cannot reach any remote,
+  // which lanes never need.
+  const noCredentials = path.join(os.tmpdir(), 'aether-lane-no-credentials')
+  Object.assign(out, {
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'protocol.allow',
+    GIT_CONFIG_VALUE_0: 'never',
+    GH_CONFIG_DIR: noCredentials,
+    DOCKER_CONFIG: noCredentials,
+    CLOUDSDK_CONFIG: noCredentials,
+    NPM_CONFIG_USERCONFIG: '/dev/null',
+    AWS_CONFIG_FILE: '/dev/null',
+    AWS_SHARED_CREDENTIALS_FILE: '/dev/null',
+    KUBECONFIG: '/dev/null',
+  })
   out.AETHER_LANE_CALL = marker
   return out
 }
@@ -447,7 +509,9 @@ module.exports = {
   configPath,
   lanesEnabled,
   loadConfig,
+  commandPath,
   commandInstalled,
+  enabledHarnesses,
   laneFor,
   lanesArgs,
   digest,

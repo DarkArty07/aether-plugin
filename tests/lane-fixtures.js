@@ -127,8 +127,24 @@ function killQuietly(pid) {
   }
 }
 
-// Whether a variable may reach a lane: the allowlist, and nothing named like a secret.
+// The variables laneEnv sets for every lane. GIT_CONFIG_KEY_0 names a key, not a secret.
+const LANE_VARIABLES = [
+  'GIT_TERMINAL_PROMPT',
+  'GIT_CONFIG_COUNT',
+  'GIT_CONFIG_KEY_0',
+  'GIT_CONFIG_VALUE_0',
+  'GH_CONFIG_DIR',
+  'DOCKER_CONFIG',
+  'CLOUDSDK_CONFIG',
+  'NPM_CONFIG_USERCONFIG',
+  'AWS_CONFIG_FILE',
+  'AWS_SHARED_CREDENTIALS_FILE',
+  'KUBECONFIG',
+]
+
+// Whether a variable may reach a lane: the allowlist, or a variable laneEnv sets, and nothing else named like a secret.
 function allowedEnvName(name) {
+  if (LANE_VARIABLES.includes(name)) return true
   const listed = ['HOME', 'PATH', 'LANG', 'TERM', 'TMPDIR', 'TZ', 'USER', 'LOGNAME', 'SHELL'].includes(name) || /^(LC_|XDG_|AETHER_)/.test(name)
   return listed && !/TOKEN|KEY|SECRET/i.test(name)
 }

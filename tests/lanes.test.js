@@ -3,14 +3,38 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { tempDir } = require('./helpers.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 
 const close = (a, b) => Math.abs(a - b) < 1e-9
 const shipped = () => lanes.loadConfig(lanes.CONFIG_FILE)
 const LEVELS = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
+
+// A second harness of two models, the first replacing sonnet for implementers and reviewers, the second
+// replacing haiku for supervisors. Its implementer wait is longer than agy's, and its reviewer wait is 5 rounds.
+function codexHarness(group = 'codex') {
+  return {
+    command: 'codex',
+    maxParallel: 2,
+    waitSeconds: 300,
+    timeouts: { implementer: 3000, supervisor: 900, reviewer: 1200, designer: 1800 },
+    groups: { [group]: 'Codex Models' },
+    models: {
+      'gpt-codex': { group, replaces: 'sonnet', roles: ['implementer', 'reviewer'], levels: LEVELS },
+      'gpt-mini': { group, replaces: 'haiku', roles: ['supervisor'], levels: LEVELS },
+    },
+  }
+}
+
+// The shipped table with the codex harness added.
+function twoHarnesses() {
+  const config = shipped()
+  config.harnesses.codex = codexHarness()
+  return config
+}
 
 function writeConfig(t, mutate) {
   const config = JSON.parse(fs.readFileSync(lanes.CONFIG_FILE, 'utf8'))
@@ -134,24 +158,118 @@ test('a role left out of a model turns that lane off', (t) => {
 test('lanesArgs gives the run its lanes when the harness is installed, and null otherwise', () => {
   const c = shipped()
   const seen = []
-  const args = lanes.lanesArgs(c, { installed: (name, harness) => (seen.push([name, harness.command]), true) })
+  const args = lanes.lanesArgs(c, { enabled: ['agy'], installed: (name, harness) => (seen.push([name, harness.command]), true) })
   assert.deepEqual(seen, [['agy', 'agy']])
   assert.deepEqual(args, {
     harness: 'agy',
+    harnesses: ['agy'],
     maxParallel: 4,
+    maxParallelByHarness: { agy: 4 },
     waits: { implementer: 6, supervisor: 3, reviewer: 4 },
     calls: {
       implementer: {
-        haiku: { model: 'gemini-3.8-flash', group: 'gemini' },
-        sonnet: { model: 'claude-sonnet-5-5', group: 'claude' },
-        opus: { model: 'claude-opus-5-5', group: 'claude' },
+        haiku: { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' },
+        sonnet: { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' },
+        opus: { model: 'claude-opus-5-5', group: 'claude', harness: 'agy' },
       },
-      supervisor: { sonnet: { model: 'claude-sonnet-5-5', group: 'claude' } },
-      reviewer: { opus: { model: 'claude-opus-5-5', group: 'claude' } },
+      supervisor: { sonnet: { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' } },
+      reviewer: { opus: { model: 'claude-opus-5-5', group: 'claude', harness: 'agy' } },
     },
   })
-  assert.equal(lanes.lanesArgs(c, { installed: () => false }), null)
-  assert.equal(lanes.lanesArgs(null, { installed: () => true }), null)
+  assert.equal(lanes.lanesArgs(c, { enabled: ['agy'], installed: () => false }), null)
+  assert.equal(lanes.lanesArgs(null, { enabled: ['agy'], installed: () => true }), null)
+  assert.equal(lanes.lanesArgs(c, { enabled: ['grok'], installed: () => true }), null)
+})
+
+test('lanesArgs takes each native call from the first enabled, installed harness with a model for it, in the order enabled', () => {
+  const c = twoHarnesses()
+  const everywhere = () => true
+  const codexFirst = lanes.lanesArgs(c, { enabled: ['codex', 'agy'], installed: everywhere })
+  assert.deepEqual(codexFirst, {
+    harness: 'codex',
+    harnesses: ['codex', 'agy'],
+    maxParallel: 2,
+    maxParallelByHarness: { codex: 2, agy: 4 },
+    waits: { implementer: 11, supervisor: 4, reviewer: 5 },
+    calls: {
+      implementer: {
+        haiku: { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' },
+        sonnet: { model: 'gpt-codex', group: 'codex', harness: 'codex' },
+        opus: { model: 'claude-opus-5-5', group: 'claude', harness: 'agy' },
+      },
+      supervisor: {
+        haiku: { model: 'gpt-mini', group: 'codex', harness: 'codex' },
+        sonnet: { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' },
+      },
+      reviewer: {
+        sonnet: { model: 'gpt-codex', group: 'codex', harness: 'codex' },
+        opus: { model: 'claude-opus-5-5', group: 'claude', harness: 'agy' },
+      },
+    },
+  })
+
+  // Enabled the other way round, agy takes sonnet for implementers, and codex keeps the calls agy has no model for.
+  const agyFirst = lanes.lanesArgs(c, { enabled: ['agy', 'codex'], installed: everywhere })
+  assert.equal(agyFirst.harness, 'agy')
+  assert.deepEqual(agyFirst.harnesses, ['agy', 'codex'])
+  assert.equal(agyFirst.maxParallel, 4)
+  assert.equal(agyFirst.calls.implementer.sonnet.model, 'claude-sonnet-5-5')
+  assert.equal(agyFirst.calls.implementer.sonnet.harness, 'agy')
+  assert.equal(agyFirst.calls.reviewer.sonnet.harness, 'codex')
+
+  // Only codex enabled: its calls alone, and no call for a native model it has no model for.
+  const onlyCodex = lanes.lanesArgs(c, { enabled: ['codex'], installed: everywhere })
+  assert.deepEqual(onlyCodex.harnesses, ['codex'])
+  assert.equal(onlyCodex.calls.implementer.haiku, undefined)
+  assert.equal(onlyCodex.calls.reviewer.opus, undefined)
+  assert.deepEqual(onlyCodex.maxParallelByHarness, { codex: 2 })
+
+  // A harness not installed gives no calls, and a harness not in the table is skipped.
+  const agyMissing = lanes.lanesArgs(c, { enabled: ['codex', 'agy'], installed: (name) => name !== 'agy' })
+  assert.deepEqual(agyMissing.harnesses, ['codex'])
+  assert.equal(agyMissing.calls.implementer.haiku, undefined)
+  assert.equal(lanes.lanesArgs(c, { enabled: ['grok'], installed: everywhere }), null)
+  assert.equal(lanes.lanesArgs(c, { enabled: [], installed: everywhere }), null)
+})
+
+test('lanesArgs gives each role the largest wait among the listed harnesses that serve it', () => {
+  const c = twoHarnesses()
+  // codex serves no reviewer model: the reviewer wait is agy's, though codex's own wait would be 11 rounds.
+  c.harnesses.codex.models['gpt-codex'].roles = ['implementer']
+  c.harnesses.codex.timeouts.reviewer = 3000
+  const args = lanes.lanesArgs(c, { enabled: ['codex', 'agy'], installed: () => true })
+  assert.deepEqual(args.harnesses, ['codex', 'agy'])
+  assert.deepEqual(args.waits, { implementer: 11, supervisor: 4, reviewer: 4 })
+})
+
+test('lanesArgs reads the enabled harnesses from AETHER_LANE_HARNESSES when none are given', (t) => {
+  const previous = process.env.AETHER_LANE_HARNESSES
+  t.after(() => {
+    if (previous === undefined) delete process.env.AETHER_LANE_HARNESSES
+    else process.env.AETHER_LANE_HARNESSES = previous
+  })
+  process.env.AETHER_LANE_HARNESSES = 'codex'
+  assert.equal(lanes.lanesArgs(twoHarnesses(), { installed: () => true }).harness, 'codex')
+  process.env.AETHER_LANE_HARNESSES = 'nope'
+  assert.equal(lanes.lanesArgs(twoHarnesses(), { installed: () => true }).harness, 'agy')
+})
+
+test('enabledHarnesses reads AETHER_LANE_HARNESSES: known names, trimmed, lowercased, each once, in order', () => {
+  assert.deepEqual(lanes.enabledHarnesses({}), ['agy'])
+  assert.deepEqual(lanes.enabledHarnesses({ AETHER_LANE_HARNESSES: '' }), ['agy'])
+  assert.deepEqual(lanes.enabledHarnesses({ AETHER_LANE_HARNESSES: 'nope, ,' }), ['agy'])
+  assert.deepEqual(lanes.enabledHarnesses({ AETHER_LANE_HARNESSES: ' Codex , grok,codex,AGY,nope,cursor ' }), ['codex', 'grok', 'agy', 'cursor'])
+  assert.deepEqual(lanes.enabledHarnesses({ AETHER_LANE_HARNESSES: 'cursor' }), ['cursor'])
+})
+
+test('loadConfig refuses two harnesses that use one group key, and accepts distinct keys', (t) => {
+  const shared = writeConfig(t, (c) => (c.harnesses.codex = codexHarness('gemini')))
+  assert.throws(
+    () => lanes.loadConfig(shared),
+    (err) => err.message.startsWith(`lanes config ${shared}: `) && err.message.includes('group gemini is used by harnesses agy and codex: group keys are unique across the table'),
+  )
+  const distinct = writeConfig(t, (c) => (c.harnesses.codex = codexHarness()))
+  assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex'])
 })
 
 test('commandInstalled finds an absolute executable or a name on the PATH', (t) => {
@@ -192,6 +310,27 @@ test('a group is usable while every window stays above the reserve', () => {
   assert.equal(lanes.usable(q(0.01, 0.9), 0.05), false)
   assert.equal(lanes.usable({ windows: {} }, 0.05), false)
   assert.equal(lanes.usable(null, 0.05), false)
+})
+
+test('a group whose quota a harness cannot report is usable until a call fails for quota', () => {
+  assert.equal(lanes.usable({ unknown: true }, 0.05), true)
+  assert.equal(lanes.usable({ unknown: false }, 0.05), false)
+})
+
+test('commandPath gives the absolute path where a command is found, or null', (t) => {
+  const dir = tempDir(t)
+  const exe = path.join(dir, 'agy')
+  fs.writeFileSync(exe, '#!/bin/sh\n')
+  fs.chmodSync(exe, 0o755)
+  const plain = path.join(dir, 'plain')
+  fs.writeFileSync(plain, '')
+  fs.chmodSync(plain, 0o644)
+  assert.equal(lanes.commandPath(exe, {}), exe)
+  assert.equal(lanes.commandPath(plain, {}), null)
+  assert.equal(lanes.commandPath(path.join(dir, 'missing'), {}), null)
+  assert.equal(lanes.commandPath('agy', { PATH: `/nowhere${path.delimiter}${dir}` }), exe)
+  assert.equal(lanes.commandPath('agy', { PATH: `${path.delimiter}${dir}` }), exe)
+  assert.equal(lanes.commandPath('agy', { PATH: '/nowhere' }), null)
 })
 
 test('quotaConsumed adds the drops between readings of one reset time, and counts resets apart', () => {
@@ -296,7 +435,35 @@ test('laneEnv keeps only the allowlisted variables, drops any named like a secre
     XDG_SESSION_TOKEN: 'x',
     EDITOR: 'vim',
   }
-  assert.deepEqual(lanes.laneEnv({ ...kept, ...dropped, AETHER_LANE_CALL: 'old/call' }, 'run/call'), { ...kept, AETHER_LANE_CALL: 'run/call' })
+  assert.deepEqual(lanes.laneEnv({ ...kept, ...dropped, AETHER_LANE_CALL: 'old/call' }, 'run/call'), { ...kept, ...NO_CREDENTIALS, AETHER_LANE_CALL: 'run/call' })
+  assert.deepEqual(lanes.laneEnv({}, 'm'), { ...NO_CREDENTIALS, AETHER_LANE_CALL: 'm' })
+})
+
+// What laneEnv sets on top of the allowlist: git prompts off and no protocol but none, and the owner's
+// credential files pointed at nothing. HOME is not among them: each CLI keeps its login there.
+const NO_CREDENTIALS = {
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_CONFIG_COUNT: '1',
+  GIT_CONFIG_KEY_0: 'protocol.allow',
+  GIT_CONFIG_VALUE_0: 'never',
+  GH_CONFIG_DIR: path.join(os.tmpdir(), 'aether-lane-no-credentials'),
+  DOCKER_CONFIG: path.join(os.tmpdir(), 'aether-lane-no-credentials'),
+  CLOUDSDK_CONFIG: path.join(os.tmpdir(), 'aether-lane-no-credentials'),
+  NPM_CONFIG_USERCONFIG: '/dev/null',
+  AWS_CONFIG_FILE: '/dev/null',
+  AWS_SHARED_CREDENTIALS_FILE: '/dev/null',
+  KUBECONFIG: '/dev/null',
+}
+
+test('git inside a lane cannot reach a remote, and keeps HOME', (t) => {
+  const repo = tempDir(t)
+  const init = spawnSync('git', ['init', '-q', '-b', 'main', repo], { encoding: 'utf8' })
+  assert.equal(init.status, 0, init.stderr)
+  const env = lanes.laneEnv({ ...process.env, HOME: '/home/u' }, 'm')
+  assert.equal(env.HOME, '/home/u')
+  const denied = spawnSync('git', ['ls-remote', repo], { cwd: repo, encoding: 'utf8', env })
+  assert.notEqual(denied.status, 0)
+  assert.match(denied.stderr, /not allowed/)
 })
 
 function alive(pid) {

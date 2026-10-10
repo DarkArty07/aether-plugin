@@ -14,9 +14,8 @@ const run = require('./run.js')
 const lanes = require('./lanes.js')
 const work = require('./lane-work.js')
 const schemas = require('./lane-schemas.js')
-const { createAgy } = require('./harness/agy.js')
+const { createAdapter } = require('./harness/index.js')
 
-const HARNESS = 'agy'
 const BIN = path.join(__dirname, '..', 'bin', 'aether-lane')
 const AGENTS_DIR = path.join(__dirname, '..', 'agents')
 const CALL_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
@@ -35,11 +34,19 @@ const ROLE_SCHEMAS = {
 // on a vague prompt, and what it reads goes to its model provider.
 const WORKDIR_RULE = 'Work only inside the working directory you are given: do not run `env` or `ps`, and do not search outside that directory.'
 
-const LANE_NOTES = {
-  implementer: `## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether-tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
-  supervisor: `## You run in an external harness\n\nYou are an Aether supervisor, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
-  reviewer: `## You run in an external harness\n\nYou are the Aether final reviewer, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+// The note of each role's lane call, naming the harness that runs it.
+const LANE_NOTE_TEXT = {
+  implementer: (harness) => `## You run in an external harness\n\nYou are an Aether implementer, run by the ${harness} CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether-tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+  supervisor: (harness) => `## You run in an external harness\n\nYou are an Aether supervisor, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+  reviewer: (harness) => `## You run in an external harness\n\nYou are the Aether final reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
 }
+
+// The lane note of role, naming the harness that runs the call. agy is the default, as it was before harnesses.
+function laneNote(role, harness = 'agy') {
+  return LANE_NOTE_TEXT[role](harness)
+}
+
+const LANE_NOTES = { implementer: laneNote('implementer'), supervisor: laneNote('supervisor'), reviewer: laneNote('reviewer') }
 
 // ---- Prompts ----
 
@@ -55,8 +62,19 @@ function claudeMdSections(workdir, home) {
   return files.filter((file) => fs.existsSync(file)).map((file) => `## Instructions from ${file}\n\n${fs.readFileSync(file, 'utf8').trimEnd()}`)
 }
 
-function buildPrompt({ role, message, workdir, home, note }) {
-  return [roleBody(role), note ?? LANE_NOTES[role], ...claudeMdSections(workdir, home), message].join('\n\n')
+function buildPrompt({ role, message, workdir, home, note, harness = 'agy' }) {
+  return [roleBody(role), note ?? laneNote(role, harness), ...claudeMdSections(workdir, home), message].join('\n\n')
+}
+
+// The section that asks a harness for its answer as JSON, for a harness that takes the schema in its prompt.
+function answerSection(role) {
+  return ['## Your answer', 'End your answer with one JSON object that matches this schema, and nothing after it:', `\`\`\`json\n${JSON.stringify(ROLE_SCHEMAS[role], null, 2)}\n\`\`\``].join('\n\n')
+}
+
+// The prompt a call's harness reads: buildPrompt's, and for a harness with schemaInPrompt, the answer section last.
+function callPrompt({ harness, adapter, role, message, workdir, home }) {
+  const prompt = buildPrompt({ role, message, workdir, home, harness })
+  return adapter.schemaInPrompt === true ? `${prompt}\n\n${answerSection(role)}` : prompt
 }
 
 // ---- The call directory ----
@@ -101,13 +119,32 @@ function readTextOrEmpty(file) {
 
 // ---- The table and the adapter ----
 
-function harnessSettings() {
+function loadTable() {
   const file = lanes.configPath()
   const config = lanes.loadConfig(file)
   if (!config) throw new Error(`no lane table: ${file}`)
-  const harness = config.harnesses[HARNESS]
-  if (!harness) throw new Error(`the lane table has no ${HARNESS} harness`)
-  return { config, harness, adapter: createAgy({ command: harness.command, groups: harness.groups }) }
+  return config
+}
+
+// The table, the entry of harness name in it, and that harness's adapter.
+function harnessSettings(name) {
+  const config = loadTable()
+  if (!Object.hasOwn(config.harnesses, name)) throw new Error(`the lane table has no ${name} harness`)
+  const harness = config.harnesses[name]
+  return { config, harness, adapter: createAdapter(name, harness) }
+}
+
+// The harness whose table entry has the lane model id. Lane model ids are unique across the table.
+function harnessOfModel(config, model) {
+  const owners = Object.keys(config.harnesses).filter((name) => Object.hasOwn(config.harnesses[name].models, model))
+  if (owners.length === 0) throw new Error(`no harness in the lane table has the model ${model}`)
+  if (owners.length > 1) throw new Error(`the model ${model} is in more than one harness: ${owners.join(', ')}`)
+  return owners[0]
+}
+
+// The harness a call runs on, as start recorded it. A call that predates the record ran on agy, the only harness then.
+function callHarness(info) {
+  return typeof info?.harness === 'string' ? info.harness : 'agy'
 }
 
 // The table's entry for a lane model that serves role at effort, or null.
@@ -119,21 +156,28 @@ function laneModel(harness, role, model, effort) {
 
 // ---- status ----
 
-function status(cwd, runId) {
-  run.assertRunId(runId)
-  repoPaths(cwd)
-  const { config, adapter } = harnessSettings()
-  if (!adapter.installed()) return { harnesses: { [HARNESS]: { installed: false, version: null, groups: {} } } }
+// One enabled harness's status: its command and where it is, and when it is installed, its version and
+// the usable groups with the windows each reported. Its reading goes to the lane log.
+function harnessStatus(name, settings, reserve, runId) {
+  const found = lanes.commandPath(settings.command)
+  const base = { enabled: true, command: settings.command, path: found, installed: found !== null }
+  if (!base.installed) return { ...base, version: null, groups: {} }
+  let adapter
+  try {
+    adapter = createAdapter(name, settings)
+  } catch (err) {
+    return { ...base, version: null, error: err.message, groups: {} }
+  }
   const version = adapter.version()
   let quota
   try {
     quota = adapter.quota()
   } catch (err) {
-    return { harnesses: { [HARNESS]: { installed: true, version, error: err.message, groups: {} } } }
+    return { ...base, version, error: err.message, groups: {} }
   }
   const groups = {}
   for (const [group, reading] of Object.entries(quota.groups)) {
-    groups[group] = { usable: lanes.usable(reading, config.reserve), windows: reading.windows }
+    groups[group] = { usable: lanes.usable(reading, reserve), windows: reading.windows }
   }
   lanes.appendLog(run.dataDir(), null, {
     kind: 'reading',
@@ -141,11 +185,24 @@ function status(cwd, runId) {
     session: null,
     run: runId,
     design: null,
-    harness: HARNESS,
+    harness: name,
     version,
     groups: quota.groups,
   })
-  return { harnesses: { [HARNESS]: { installed: true, version, groups } } }
+  return { ...base, version, groups }
+}
+
+// Every harness of the table: an enabled one with its status, a disabled one by its command alone.
+function status(cwd, runId) {
+  run.assertRunId(runId)
+  repoPaths(cwd)
+  const config = loadTable()
+  const enabled = lanes.enabledHarnesses()
+  const harnesses = {}
+  for (const [name, settings] of Object.entries(config.harnesses)) {
+    harnesses[name] = enabled.includes(name) ? harnessStatus(name, settings, config.reserve, runId) : { enabled: false, command: settings.command }
+  }
+  return { harnesses }
 }
 
 // ---- start ----
@@ -181,7 +238,10 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   if (!fs.existsSync(paths.prompt)) return { unavailable: 'prompt' }
   const message = fs.readFileSync(paths.prompt, 'utf8')
   if (lanes.digest(message) !== digest) return { unavailable: 'digest' }
-  const { config, harness, adapter } = harnessSettings()
+  const name = harnessOfModel(loadTable(), model)
+  // A harness the owner did not enable in AETHER_LANE_HARNESSES runs no call, even when a model names it.
+  if (!lanes.enabledHarnesses().includes(name)) return { unavailable: 'harness' }
+  const { config, harness, adapter } = harnessSettings(name)
   const lane = CALLED_ROLES.includes(role) ? laneModel(harness, role, model, effort) : null
   if (!lane) return { unavailable: 'role' }
   if (!adapter.installed()) return { unavailable: 'not-installed' }
@@ -207,6 +267,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
     call,
     role,
     task: unitTask,
+    harness: name,
     model: lane.agyModel,
     laneModel: model,
     group: lane.group,
@@ -327,7 +388,7 @@ function callEntry(info, { time, status, usage, conversation, quotaAfter, detail
     call: info.call,
     role: info.role,
     task: info.task,
-    harness: HARNESS,
+    harness: callHarness(info),
     model: info.model,
     group: info.group,
     effort: info.effort,
@@ -345,6 +406,7 @@ async function runCall(cwd, runId, call) {
   const paths = callPaths(cwd, runId, call)
   const info = JSON.parse(fs.readFileSync(paths.call, 'utf8'))
   const { role, task, workdir, group } = info
+  const harness = callHarness(info)
   let agyPid = null
   const onSignal = () => {
     if (agyPid !== null) killAgyGroup(agyPid)
@@ -357,12 +419,12 @@ async function runCall(cwd, runId, call) {
   let quotaAfter = null
   let quotaRead = false
   try {
-    const { config, adapter } = harnessSettings()
+    const { config, adapter } = harnessSettings(harness)
     const schema = ROLE_SCHEMAS[role]
     fs.writeFileSync(paths.schema, `${JSON.stringify(schema, null, 2)}\n`)
     const before = work.snapshot(cwd, runId, { taskId: role === 'reviewer' ? null : task })
     const message = fs.readFileSync(paths.prompt, 'utf8')
-    const prompt = buildPrompt({ role, message, workdir, home: os.homedir() })
+    const prompt = callPrompt({ harness, adapter, role, message, workdir, home: os.homedir() })
     const argv = adapter.argv({ model: info.model, schemaFile: paths.schema, timeoutSeconds: info.timeoutSeconds, prompt })
     const exitCode = await runAgy(argv, {
       workdir,
@@ -403,7 +465,7 @@ async function runCall(cwd, runId, call) {
   const time = Date.now()
   const result = outcome.status === 'ok' ? outcome.result : null
   const lane = {
-    harness: HARNESS,
+    harness,
     model: info.model,
     group,
     effort: info.effort,
@@ -444,7 +506,7 @@ function finishedResult(paths) {
 async function wait(cwd, runId, call, { maxSeconds = null } = {}) {
   const paths = callPaths(cwd, runId, call)
   if (!fs.existsSync(paths.call)) throw new Error(`no such lane call: ${call}`)
-  const seconds = maxSeconds ?? harnessSettings().harness.waitSeconds
+  const seconds = maxSeconds ?? harnessSettings(callHarness(readJsonOrNull(paths.call))).harness.waitSeconds
   const deadline = Date.now() + seconds * 1000
   for (;;) {
     const done = finishedResult(paths)
@@ -468,7 +530,7 @@ function logStopped(paths) {
   if (!info || fs.existsSync(paths.result) || fs.existsSync(paths.stopped)) return
   const time = Date.now()
   fs.writeFileSync(paths.stopped, `${time}\n`)
-  const reported = createAgy().parse({ stdout: readTextOrEmpty(paths.agyStdout), stderr: '', exitCode: 0 })
+  const reported = harnessSettings(callHarness(info)).adapter.parse({ stdout: readTextOrEmpty(paths.agyStdout), stderr: '', exitCode: 0 })
   const detail = 'stopped by aether-lane stop before the call had a result'
   lanes.appendLog(run.dataDir(), info.session, callEntry(info, { time, status: 'stopped', usage: reported.usage, conversation: reported.conversation, quotaAfter: null, detail }))
 }

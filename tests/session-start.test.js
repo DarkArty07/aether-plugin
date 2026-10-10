@@ -16,7 +16,7 @@ const AETHER = { hook_event_name: 'SessionStart', session_id: 's1', source: 'sta
 // The hook's environment, without what a surrounding session may have set.
 function hookEnv(data, extra = {}) {
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }
-  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'AETHER_LANES']) delete env[key]
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'AETHER_LANES']) delete env[key]
   return { ...env, ...extra }
 }
 
@@ -152,7 +152,7 @@ test('an Aether session is marked, gets the lanes line, and gets the context', (
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.out.hookSpecificOutput.additionalContext, /^Aether mode is active\./)
   assert.equal(JSON.parse(fs.readFileSync(path.join(data, 'sessions', 's1.json'), 'utf8')).session, 's1')
-  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_LANES=off\n')
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_LANES=off\nexport AETHER_LANE_HARNESSES=agy\n')
 })
 
 test('the lanes line is on only when the lanes option is exactly true, and is appended', (t) => {
@@ -161,7 +161,23 @@ test('the lanes line is on only when the lanes option is exactly true, and is ap
     const envFile = path.join(tempDir(t), 'env.sh')
     fs.writeFileSync(envFile, 'export OTHER=1\n')
     start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_LANES: value } })
-    assert.equal(fs.readFileSync(envFile, 'utf8'), `export OTHER=1\n${line}`, value)
+    assert.equal(fs.readFileSync(envFile, 'utf8'), `export OTHER=1\n${line}export AETHER_LANE_HARNESSES=agy\n`, value)
+  }
+})
+
+test('the harness line keeps the known names of the option, in order, or is agy when none is valid', (t) => {
+  const repo = makeRepo(t)
+  const cases = [
+    ['agy,codex', 'agy,codex'],
+    [' Grok , nope,CURSOR,grok,codex', 'grok,cursor,codex'],
+    ['', 'agy'],
+    ['nope, ,', 'agy'],
+  ]
+  for (const [value, list] of cases) {
+    const envFile = path.join(tempDir(t), 'env.sh')
+    const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_HARNESSES: value } })
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(fs.readFileSync(envFile, 'utf8'), `export AETHER_LANES=off\nexport AETHER_LANE_HARNESSES=${list}\n`, JSON.stringify(value))
   }
 })
 
@@ -173,7 +189,7 @@ test('a resumed Aether session is marked and gets the lanes line, with no output
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, '')
   assert.equal(fs.existsSync(path.join(data, 'sessions', 's1.json')), true)
-  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_LANES=off\n')
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_LANES=off\nexport AETHER_LANE_HARNESSES=agy\n')
 })
 
 test('without CLAUDE_ENV_FILE the context says the lanes are off', (t) => {
