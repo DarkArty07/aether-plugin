@@ -122,7 +122,7 @@ The owner may give you permission to work for hours, for example «trabaja por h
 - **Topes:** the hours and the dollars, with their source.
 - **Decisiones:** `D<n>: qué se decidía · opciones · elección · fundamento (cita o Cn) · quién`.
 - **Descubrimientos.**
-- **Espera tu sí:** `acción · clase · el comando exacto que se ejecutará`.
+- **Espera tu sí:** `acción · clase · por qué · si dices que no · cómo se revierte · el comando exacto que se ejecutará`.
 - **Propuestas:** what goes beyond the intent; it is not worked.
 - **Estado:** the current step, the Judge's and the Writer's agent ids, the spec and the plan, the swarm runs, and the next step.
 
