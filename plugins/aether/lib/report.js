@@ -4,7 +4,6 @@
 // files, the lane log and the saved result; and finalize, which records the run and removes what is left of it.
 
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { repoPaths } = require('./git.js')
@@ -447,24 +446,11 @@ function aetherVersion() {
   return run.readJson(path.join(__dirname, '..', '.claude-plugin', 'plugin.json')).version
 }
 
-function superpowersVersion() {
-  const config = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
-  try {
-    const installed = run.readJson(path.join(config, 'plugins', 'installed_plugins.json'))
-    for (const [id, installs] of Object.entries(installed.plugins || {})) {
-      if (id.startsWith('superpowers@') && Array.isArray(installs) && installs[0]) return installs[0].version || null
-    }
-  } catch {
-    // superpowers is not installed here, or its record cannot be read
-  }
-  return null
-}
-
 // Records the run in runs.jsonl, then removes its worktrees, branches and run directory.
 function finalize(cwd, runId, options = {}) {
   const { now = Date.now(), dataDir = run.dataDir() } = options
   const r = report(cwd, runId, { ...options, dataDir })
-  const versions = { aether: aetherVersion(), superpowers: superpowersVersion(), claudeCode: r.usage.claudeCode }
+  const versions = { aether: aetherVersion(), claudeCode: r.usage.claudeCode }
   if (r.lanes.version) versions.agy = r.lanes.version
   const record = {
     runId,
