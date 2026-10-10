@@ -368,8 +368,8 @@ function laneEnv(env, marker) {
     if (ENV_NAMES.includes(name) || ENV_PREFIXES.some((prefix) => name.startsWith(prefix))) out[name] = value
   }
   // HOME stays, because each CLI keeps its own login there; these variables keep the owner's git, GitHub,
-  // package-registry and cloud credentials out of the lane, and git inside a lane cannot reach any remote,
-  // which lanes never need.
+  // package-registry and cloud credentials out of the lane. A plain git command in a lane cannot reach a remote,
+  // which prevents accidents; it does not stop an agent that overrides the setting, as `git -c protocol.allow=always` does.
   const noCredentials = path.join(os.tmpdir(), 'aether-lane-no-credentials')
   Object.assign(out, {
     GIT_TERMINAL_PROMPT: '0',
