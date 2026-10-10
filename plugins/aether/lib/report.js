@@ -11,6 +11,7 @@ const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
 const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
+const { judge } = require('./baseline.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
 const DAY_MS = 24 * 3600 * 1000
@@ -380,8 +381,18 @@ function laneReport({ dataDir, runId, start, end, usage, results, prices, notes,
   }
 }
 
-// Runs the plan's test command in the integration worktree.
-function runTests(graph) {
+// The run's test baseline, or null when it is missing or unreadable.
+function baselineOf(dir) {
+  try {
+    return readIfThere(path.join(dir, 'baseline.json'))
+  } catch {
+    return null
+  }
+}
+
+// Runs the plan's test command in the integration worktree. It counts as known failures only when it failed
+// and the run's baseline judges its output: every failure it names was failing before the run.
+function runTests(graph, dir) {
   const r = spawnSync(graph.testCommand, {
     cwd: graph.integration.worktree,
     shell: true,
@@ -389,7 +400,12 @@ function runTests(graph) {
     timeout: TEST_TIMEOUT_MS,
     maxBuffer: 64 * 1024 * 1024,
   })
-  return { command: graph.testCommand, exitCode: r.status, passed: r.status === 0, timedOut: Boolean(r.error && r.error.code === 'ETIMEDOUT') }
+  const timedOut = Boolean(r.error && r.error.code === 'ETIMEDOUT')
+  // A run that timed out or was killed did not finish, so its output cannot show that only known tests fail.
+  const finished = !timedOut && r.status !== null
+  const output = `${r.stdout || ''}\n${r.stderr || ''}`
+  const knownFailuresOnly = finished && r.status !== 0 && judge(baselineOf(dir), { exitCode: r.status, output }).pass
+  return { command: graph.testCommand, exitCode: r.status, passed: r.status === 0, timedOut, knownFailuresOnly }
 }
 
 // The RADAR figures for the owner's five goals, each read from the report's own figures. A figure whose
@@ -413,6 +429,7 @@ function radarOf({ speed, cost, lanes, quality }) {
       merged: quality.merged,
       blocked: quality.blocked,
       testsPassed: quality.tests ? quality.tests.passed : null,
+      testsKnownFailuresOnly: quality.tests ? quality.tests.knownFailuresOnly : null,
       findings: quality.findings,
       finalVerdict: quality.finalReview ? quality.finalReview.verdict : null,
     },
@@ -460,7 +477,7 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     swarm: usage ? span(inRun.filter((entry) => isAether(usage, entry))) : null,
     session: usage ? span(usage.entries) : null,
   }
-  const quality = { ...qualityOf(results), tests: tests ? runTests(graph) : null }
+  const quality = { ...qualityOf(results), tests: tests ? runTests(graph, dir) : null }
 
   return {
     runId,

@@ -63,7 +63,7 @@ test('report counts quality from the saved result, and runs the tests at integra
     launches: 1,
     findings: { critical: 1, important: 2, minor: 2 },
     finalReview: { status: 'done', verdict: 'ready-with-fixes', findings: { critical: 0, important: 1, minor: 2 }, reviews: 1 },
-    tests: { command: 'true', exitCode: 0, passed: true, timedOut: false },
+    tests: { command: 'true', exitCode: 0, passed: true, timedOut: false, knownFailuresOnly: false },
   })
 })
 
@@ -459,7 +459,14 @@ test('report gives the RADAR figures from the run, its lanes, its cost and its q
   close(radar.affordable.totalUsd, nativeUsd + lanesUsd)
   close(radar.affordable.nativeUsd, nativeUsd)
   close(radar.affordable.lanesUsd, lanesUsd)
-  assert.deepEqual(radar.robust, { merged: 2, blocked: 1, testsPassed: true, findings: { critical: 1, important: 2, minor: 2 }, finalVerdict: 'ready-with-fixes' })
+  assert.deepEqual(radar.robust, {
+    merged: 2,
+    blocked: 1,
+    testsPassed: true,
+    testsKnownFailuresOnly: false,
+    findings: { critical: 1, important: 2, minor: 2 },
+    finalVerdict: 'ready-with-fixes',
+  })
 })
 
 test('a RADAR figure is null where nothing measured it: no usage and no saved result', (t) => {
@@ -471,7 +478,7 @@ test('a RADAR figure is null where nothing measured it: no usage and no saved re
     autonomous: { questions: null },
     delegation: { laneCalls: 0, nativeUsd: null, lanesUsd: 0, laneShare: null, byHarness: {} },
     affordable: { totalUsd: null, nativeUsd: null, lanesUsd: 0 },
-    robust: { merged: null, blocked: null, testsPassed: null, findings: null, finalVerdict: null },
+    robust: { merged: null, blocked: null, testsPassed: null, testsKnownFailuresOnly: null, findings: null, finalVerdict: null },
   })
 })
 
@@ -486,7 +493,7 @@ test('with usage but no saved result, the cost and lane figures are known and th
   close(radar.delegation.nativeUsd, 6.5)
   close(radar.affordable.nativeUsd, 6.5)
   close(radar.affordable.totalUsd, 6.5)
-  assert.deepEqual(radar.robust, { merged: null, blocked: null, testsPassed: null, findings: null, finalVerdict: null })
+  assert.deepEqual(radar.robust, { merged: null, blocked: null, testsPassed: null, testsKnownFailuresOnly: null, findings: null, finalVerdict: null })
 })
 
 test('the note for a run with no usage tells how to start an Aether session', (t) => {
@@ -495,7 +502,6 @@ test('the note for a run with no usage tells how to start an Aether session', (t
   const r = report(repo.dir, args.runId)
   assert.ok(r.notes.includes('no usage recorded during the run: was the session started with claude --agent aether:lead?'), r.notes.join('\n'))
 })
-
 
 test('the lane log gives each harness its newest version, and lanes.version stays the agy version', (t) => {
   const dataDir = useDataDir(t)
@@ -561,3 +567,32 @@ test('report counts the rounds of every lane harness by model, and a native roun
     'cursor-test-1': { attempts: 1, approved: 0 },
   })
 })
+
+test('the test command is known-failures-only when it fails on what the baseline lists, and on nothing else', (t) => {
+  useDataDir(t)
+  const command = "echo 'not ok 1 - adds'; exit 1"
+  const { repo, args } = finishedRun(t, { result: false, testCommand: command })
+  const baseline = path.join(args.runDir, 'baseline.json')
+  writeJson(baseline, { recordedAt: iso(T0), exitCode: 1, signatures: ['adds'], timedOut: false })
+  const { quality, radar } = report(repo.dir, args.runId)
+  assert.deepEqual(quality.tests, { command, exitCode: 1, passed: false, timedOut: false, knownFailuresOnly: true })
+  assert.equal(radar.robust.testsKnownFailuresOnly, true)
+  writeJson(baseline, { recordedAt: iso(T0), exitCode: 1, signatures: ['other'], timedOut: false })
+  assert.equal(report(repo.dir, args.runId).quality.tests.knownFailuresOnly, false)
+  fs.rmSync(baseline)
+  assert.equal(report(repo.dir, args.runId).quality.tests.knownFailuresOnly, false)
+})
+
+test('the test command is not known-failures-only when it passed, or was killed rather than finished', (t) => {
+  useDataDir(t)
+  const judged = (testCommand) => {
+    const { repo, args } = finishedRun(t, { result: false, testCommand })
+    writeJson(path.join(args.runDir, 'baseline.json'), { recordedAt: iso(T0), exitCode: 1, signatures: ['adds'], timedOut: false })
+    return report(repo.dir, args.runId).quality.tests
+  }
+  assert.equal(judged('true').knownFailuresOnly, false)
+  // A command killed by a signal did not finish, so its output cannot show that only known tests fail.
+  const killed = judged("echo 'not ok 1 - adds'; kill -9 $$")
+  assert.deepEqual([killed.exitCode, killed.timedOut, killed.knownFailuresOnly], [null, false, false])
+})
+
