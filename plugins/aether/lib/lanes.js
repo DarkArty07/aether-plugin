@@ -73,13 +73,19 @@ function validateConfig(config) {
     throw new Error('reserve must be a number from 0 to 1')
   }
   if (!isObject(config.harnesses)) throw new Error('harnesses must be an object')
-  // A group key names one quota, so two harnesses must not share one.
+  // A group key names one quota, so two harnesses must not share one. A model id names one lane, so it must not be
+  // in two harnesses either: start could not tell which of them takes its calls.
   const owners = new Map()
+  const modelOwners = new Map()
   for (const [name, harness] of Object.entries(config.harnesses)) {
     validateHarness(name, harness)
     for (const group of Object.keys(harness.groups)) {
       if (owners.has(group)) throw new Error(`group ${group} is used by harnesses ${owners.get(group)} and ${name}: group keys are unique across the table`)
       owners.set(group, name)
+    }
+    for (const id of Object.keys(harness.models)) {
+      if (modelOwners.has(id)) throw new Error(`model ${id} is in harnesses ${modelOwners.get(id)} and ${name}: model ids are unique across the table`)
+      modelOwners.set(id, name)
     }
   }
 }
