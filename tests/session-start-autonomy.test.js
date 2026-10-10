@@ -7,13 +7,13 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { SESSION_BIN, PLUGIN, makeRepo, tempDir } = require('./helpers.js')
 
-function start(cwd, data) {
-  const r = spawnSync(process.execPath, [SESSION_BIN], {
-    cwd,
-    encoding: 'utf8',
-    env: { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data },
-  })
-  return { status: r.status, context: r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : null, stderr: r.stderr }
+const AETHER = { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup', agent_type: 'aether:lead' }
+
+function start(cwd, data, input = AETHER) {
+  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'AETHER_LANES']) delete env[key]
+  const r = spawnSync(process.execPath, [SESSION_BIN], { cwd, encoding: 'utf8', input: JSON.stringify(input), env })
+  return { status: r.status, stdout: r.stdout, context: r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : null, stderr: r.stderr }
 }
 
 // A run state as `aether-autonomy start` writes it; returns the run's diary path.
@@ -75,4 +75,12 @@ test('a run state that cannot be read never blocks the session', (t) => {
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.context, /^Aether mode is active\./)
   assert.doesNotMatch(r.context, /Autonomous run \S+ is open/)
+})
+
+test('a session that is not Aether gets no note about an open run', (t) => {
+  const repo = makeRepo(t)
+  writeRun(repo.dir, ID, null)
+  const r = start(repo.dir, tempDir(t, 'aether-data-'), { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout, '')
 })

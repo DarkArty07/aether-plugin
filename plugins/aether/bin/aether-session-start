@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 'use strict'
 
-// SessionStart hook: injects the using-aether bootstrap, points to an open
-// autonomous run, sweeps stale runs in the session's repository, and prunes
-// old usage files and lane logs.
+// SessionStart hook. It acts only for the Lead (agent_type aether:lead): any other session
+// gets no output, no file and no sweep. For the Lead it marks the session, hands the lanes
+// option to the session's commands through CLAUDE_ENV_FILE, and, on startup, clear and
+// compact, injects the using-aether bootstrap, points to an open autonomous run, sweeps
+// stale runs in the session's repository, and prunes old usage files, lane logs and
+// session markers.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -40,20 +43,78 @@ function autonomyNote() {
   }
 }
 
-// The usage meter's files grow with every session, and so does the lane log: sessions not written to
-// for 30 days go, from both.
+// The usage meter's files grow with every session, and so do the lane log and the session
+// markers: sessions not written to for 30 days go, from all three.
 function pruneOldFiles() {
   try {
     const { pruneUsage: prune } = require(path.join(root, 'lib', 'report.js'))
     const { pruneLog } = require(path.join(root, 'lib', 'lanes.js'))
+    const { pruneSessions } = require(path.join(root, 'lib', 'session.js'))
     const { dataDir } = require(path.join(root, 'lib', 'run.js'))
     prune(dataDir(), { days: 30 })
     pruneLog(dataDir(), { days: 30 })
+    pruneSessions(dataDir(), { days: 30 })
   } catch {
     // Pruning is housekeeping: it never blocks the session.
   }
 }
 
-pruneOldFiles()
-const context = ['Aether mode is active.', bootstrap(), sweepNote(), autonomyNote()].filter(Boolean).join('\n\n')
-process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) + '\n')
+// The hook's input, or null when stdin is unreadable or is not a JSON object.
+function readInput() {
+  try {
+    const input = JSON.parse(fs.readFileSync(0, 'utf8'))
+    return input !== null && typeof input === 'object' && !Array.isArray(input) ? input : null
+  } catch {
+    return null
+  }
+}
+
+// Marks the session; returns the reason it could not, or '' when it did.
+function mark(sessionId) {
+  try {
+    const { markSession } = require(path.join(root, 'lib', 'session.js'))
+    const { dataDir } = require(path.join(root, 'lib', 'run.js'))
+    markSession(dataDir(), sessionId)
+    return ''
+  } catch (err) {
+    return (err && err.message) || String(err)
+  }
+}
+
+// Appends the lanes line to CLAUDE_ENV_FILE; returns false when it could not.
+function passLanes() {
+  const file = process.env.CLAUDE_ENV_FILE
+  if (!file) return false
+  try {
+    fs.appendFileSync(file, `export AETHER_LANES=${process.env.CLAUDE_PLUGIN_OPTION_LANES === 'true' ? 'on' : 'off'}\n`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function main() {
+  const input = readInput()
+  if (!input) return
+  const { LEAD_AGENT } = require(path.join(root, 'lib', 'session.js'))
+  if (input.agent_type !== LEAD_AGENT) return
+
+  const markFailure = mark(input.session_id)
+  const lanesPassed = passLanes()
+
+  const source = input.source === undefined ? 'startup' : input.source
+  if (!['startup', 'clear', 'compact'].includes(source)) return
+
+  pruneOldFiles()
+  const context = [
+    'Aether mode is active.',
+    bootstrap(),
+    lanesPassed ? '' : "Aether could not pass the lanes option to this session's commands, so lanes are off.",
+    markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
+    sweepNote(),
+    autonomyNote(),
+  ].filter(Boolean).join('\n\n')
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) + '\n')
+}
+
+main()
