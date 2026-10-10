@@ -53,8 +53,39 @@ function unitBranch(runId, taskId) {
   return `aether/${runId}/${taskId}`
 }
 
-function dataDir() {
-  return process.env.AETHER_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'aether-plugin')
+function toId(s) {
+  return String(s).replace(/[^A-Za-z0-9_-]/g, '-')
+}
+
+function safeRealpath(p) {
+  try {
+    return fs.realpathSync(p)
+  } catch {
+    return p
+  }
+}
+
+function dataDir(env = process.env, root = path.join(__dirname, '..')) {
+  if (env && env.AETHER_DATA_DIR) return env.AETHER_DATA_DIR
+
+  const configDir = (env && env.CLAUDE_CONFIG_DIR) || path.join(os.homedir(), '.claude')
+  const pluginsRoot = (env && env.CLAUDE_CODE_PLUGIN_CACHE_DIR) || path.join(configDir, 'plugins')
+
+  const realPluginsRoot = safeRealpath(pluginsRoot)
+  const realPluginRoot = safeRealpath(root)
+  const cacheDir = path.join(realPluginsRoot, 'cache')
+  const rel = path.relative(cacheDir, realPluginRoot)
+
+  let id = toId('aether@inline')
+  if (!rel.startsWith('..') && !path.isAbsolute(rel) && rel !== '') {
+    const parts = rel.split(path.sep)
+    if (parts.length === 3 && parts.every((p) => p && p !== '.' && p !== '..')) {
+      const [marketplace, plugin] = parts
+      id = toId(`${plugin}@${marketplace}`)
+    }
+  }
+
+  return path.join(pluginsRoot, 'data', id)
 }
 
 function writeJson(file, value) {
