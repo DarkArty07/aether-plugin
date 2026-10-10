@@ -37,6 +37,17 @@ function load(planArg) {
   return { planPath, parsed: parsePlan(fs.readFileSync(planPath, 'utf8')) }
 }
 
+// A spec.md beside the plan stands in when the plan has no Spec line (Spec Kit's layout). It is named the
+// way a Spec line names a file, relative to the integration worktree where the run reads it; a file outside
+// that worktree is named by its full path.
+function siblingSpec(planPath, worktree) {
+  const file = path.join(path.dirname(planPath), 'spec.md')
+  const stat = fs.statSync(file, { throwIfNoEntry: false })
+  if (!stat || !stat.isFile()) return null
+  const rel = path.relative(worktree, file)
+  return rel.split(path.sep)[0] === '..' ? file : rel
+}
+
 function check(planArg) {
   const { parsed } = load(planArg)
   const graph = buildGraph(parsed)
@@ -82,13 +93,15 @@ function compile(planArg, rest) {
   const dir = run.runDir(repo.mainRoot, runId)
   run.ensureExcluded(repo.gitCommonDir)
 
+  // A Spec line wins; without one, the spec.md beside the plan is the spec.
+  const spec = parsed.spec ?? siblingSpec(planPath, repo.worktree)
   const tasks = {}
   for (const t of parsed.tasks) {
     const id = `task-${t.number}`
     if (!graph.tasks[id]) continue
     const brief = path.join(dir, 'briefs', `${id}.md`)
     fs.mkdirSync(path.dirname(brief), { recursive: true })
-    fs.writeFileSync(brief, renderBrief(t, { planPath, spec: parsed.spec, globalConstraints: parsed.globalConstraints }))
+    fs.writeFileSync(brief, renderBrief(t, { planPath, spec, globalConstraints: parsed.globalConstraints }))
     tasks[id] = { ...graph.tasks[id], brief }
   }
 
@@ -97,7 +110,7 @@ function compile(planArg, rest) {
     repoRoot: repo.mainRoot,
     runDir: dir,
     plan: planPath,
-    spec: parsed.spec,
+    spec,
     integration: { branch, worktree: repo.worktree, base: head(process.cwd()) },
     testCommand: parsed.execution.testCommand,
     ladder: parsed.execution.ladder,
@@ -127,7 +140,7 @@ function compile(planArg, rest) {
   const warnings = [...graph.warnings]
   if (repo.worktree === repo.mainRoot) {
     warnings.push(
-      'the integration worktree is the main checkout, so the unit worktrees under .aether/worktrees/ sit inside it, and a test command that searches the whole tree also runs their unfinished tests at merge time. Prefer a separate integration worktree (superpowers using-git-worktrees).',
+      'the integration worktree is the main checkout, so the unit worktrees under .aether/worktrees/ sit inside it, and a test command that searches the whole tree also runs their unfinished tests at merge time. Prefer a separate integration worktree (git worktree add <path> -b <branch>).',
     )
   }
   for (const warning of warnings) process.stderr.write(`warning: ${warning}\n`)
