@@ -25,6 +25,11 @@ const LANE_ROLES = ['implementer', 'supervisor', 'reviewer']
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK_ID = /^task-\d+$/
 const BLOCKING = ['critical', 'important']
+// The verdicts the schemas allow. A harness may answer with another one, which the script checks for.
+const VERDICTS = ['approve', 'retry', 'escalate', 'block']
+const REVIEW_VERDICTS = ['ready', 'ready-with-fixes', 'not-ready']
+const NOT_A_VERDICT = 'The verdict was not one of approve, retry, escalate or block, so it counts as retry.'
+const NOT_A_REVIEW_VERDICT = 'The verdict was not one of ready, ready-with-fixes or not-ready, so it counts as not-ready.'
 const AREA_MEMORY = 10
 // The failures a unit keeps (its `failures`): an attempt without a report, or a retry or an escalation
 // with the titles of its blocking findings. The same failure can stop a unit early (see work()).
@@ -136,6 +141,9 @@ function readArgs(raw) {
   if (!RUN_ID.test(String(input.runId))) bad.push('runId')
   for (const key of ['repoRoot', 'runDir', 'testCommand']) if (!text(input[key])) bad.push(key)
   for (const key of ['branch', 'worktree', 'base']) if (!text(input.integration && input.integration[key])) bad.push(`integration.${key}`)
+  // The base of the run's first launch. Args compiled before relaunches lack it, and that is accepted.
+  const firstBase = input.integration && input.integration.firstBase
+  if (firstBase !== undefined && firstBase !== null && !text(firstBase)) bad.push('integration.firstBase')
   if (!input.ladder || !TIERS.every((t) => Number.isInteger(input.ladder[t]) && input.ladder[t] >= 0)) bad.push('ladder')
   if (!Number.isInteger(input.maxAgents) || input.maxAgents < 1) bad.push('maxAgents')
   if (!Array.isArray(input.waves) || !input.waves.every(Array.isArray)) bad.push('waves')
@@ -573,6 +581,10 @@ function remember(area, line) {
   rulings[area] = [...(rulings[area] || []), line].slice(-AREA_MEMORY)
 }
 
+// The findings of a supervisor's or reviewer's answer. A harness may answer with any shape, so only an array
+// counts, and within it only the entries that are objects.
+const findingsOf = (value) => (Array.isArray(value) ? value.filter(isObject) : [])
+
 // The failure of a retry or an escalation: its blocking findings' titles, sorted and written the same way,
 // so that the same findings compare equal whatever their case or spacing. A verdict without a blocking
 // finding is named as such, so a stop on it says what repeated.
@@ -729,10 +741,15 @@ async function work(unit, task) {
       round.ruling = 'The supervisor agent failed.'
       continue
     }
-    round.findings = review.findings || []
+    round.findings = findingsOf(review.findings)
     round.ruling = review.ruling || ''
     round.guidance = review.guidance || ''
     round.verdict = review.verdict
+    // A verdict the script does not know counts as a retry, and the ruling says so.
+    if (!VERDICTS.includes(round.verdict)) {
+      round.verdict = 'retry'
+      round.ruling = [round.ruling, NOT_A_VERDICT].filter(Boolean).join(' ')
+    }
     // An approval is only as good as its findings.
     if (round.verdict === 'approve' && round.findings.some((f) => BLOCKING.includes(f.severity))) round.verdict = 'retry'
     remember(task.area, `${unit.id} attempt ${n}: ${round.verdict}. ${round.ruling}`)
@@ -795,19 +812,40 @@ async function runUnit(id) {
   if (unit.attempts > 0) await close(unit)
 }
 
+// A relaunch is a launch after the run's first one: its firstBase, the base of the first launch, differs
+// from its base. A first launch has the two equal, or no firstBase at all.
+function isRelaunch() {
+  const { firstBase } = integration
+  return typeof firstBase === 'string' && firstBase !== '' && firstBase !== integration.base
+}
+
 // The final review's model and effort follow the run's risk, judged from the tasks of the merged units:
 // Opus at xhigh for an opus task or an xhigh or max review; Sonnet at high for a small run of haiku
-// tasks that all ask for high reviews; Opus at high otherwise.
+// tasks that all ask for high reviews; Opus at high otherwise. A relaunch's review covers the earlier
+// launches too, so it is never Sonnet: Opus at high, unless the xhigh rules apply.
 function reviewPlan() {
   const merged = Object.values(units).filter((u) => u.status === 'merged')
   const opus = merged.find((u) => tasks[u.id].tier === 'opus')
   if (opus) return { model: 'opus', effort: 'xhigh', reason: `${opus.id} is tier opus` }
   const deep = merged.find((u) => ['xhigh', 'max'].includes(tasks[u.id].review))
   if (deep) return { model: 'opus', effort: 'xhigh', reason: `${deep.id} reviews at ${tasks[deep.id].review}` }
+  if (isRelaunch()) return { model: 'opus', effort: 'high', reason: 'a relaunch: the final review covers the earlier launches too' }
   if (merged.length <= 3 && merged.every((u) => tasks[u.id].tier === 'haiku' && tasks[u.id].review === 'high')) {
     return { model: 'sonnet', effort: 'high', reason: 'a small all-haiku run with high reviews' }
   }
   return { model: 'opus', effort: 'high', reason: 'the merged work is not a small all-haiku run' }
+}
+
+// The final review's answer as the run reports it, with its findings and verdict checked as a supervisor's
+// are. A verdict the script does not know counts as not-ready, and the summary says so.
+function reviewResult(review) {
+  const answer = isObject(review) ? review : {}
+  const checked = { ...answer, findings: findingsOf(answer.findings) }
+  if (!REVIEW_VERDICTS.includes(answer.verdict)) {
+    checked.verdict = 'not-ready'
+    checked.summary = [answer.summary || '', NOT_A_REVIEW_VERDICT].filter(Boolean).join(' ')
+  }
+  return checked
 }
 
 async function reviewRun() {
@@ -832,7 +870,7 @@ async function reviewRun() {
       phase: 'Final review',
       base: `final review via ${harness} ${lane.model}`,
     })
-    if (outcome.kind === 'ok') return { status: 'done', provider: `${harness} ${outcome.lane.model}`, ...chosen, ...outcome.result }
+    if (outcome.kind === 'ok') return { status: 'done', provider: `${harness} ${outcome.lane.model}`, ...chosen, ...reviewResult(outcome.result) }
     if (outcome.kind === 'blocked') return { status: 'failed', reason: `lane: ${outcome.detail}`, ...chosen }
   }
   // The label names the model and effort: scripts/check-effort.js expects the reviewer to run at the effort it names.
@@ -842,7 +880,7 @@ async function reviewRun() {
     schema: REVIEW_SCHEMA,
   })
   if (!review) return { status: 'failed', reason: 'the reviewer agent failed', ...chosen }
-  return { status: 'done', provider: 'native', ...chosen, ...review }
+  return { status: 'done', provider: 'native', ...chosen, ...reviewResult(review) }
 }
 
 // --- run -------------------------------------------------------------------------------------
