@@ -8,10 +8,10 @@
 const PATTERNS = [
   /^\s*not ok \d+ - (.+)$/, // TAP and node:test, also for a file or a suite
   /^\s*[✕×✗] (.+)$/, // Jest and Vitest, in verbose output
-  /^FAILED (.+?)(?: - .*)?$/, // pytest's short summary
+  /^FAILED (?!\()(.+?)(?: - .*)?$/, // pytest's short summary; not unittest's closing "FAILED (failures=N)"
   /^\s*--- FAIL: (\S+)/, // Go, subtests included
   /^\s*FAIL\s+(\S+)/, // Jest and Vitest, for a file that failed, and Go, for a package (a bare Go FAIL names nothing)
-  /^ERROR (.+?)(?: - .*)?$/, // pytest's short summary, for a module that fails to import
+  /^ERROR (.+?\.py(?:::.+?)?)(?: - .*)?$/, // pytest's short summary, for a module or test that errors; not a log line
   /^(?:FAIL|ERROR): (\S+ \([^)]*\))/, // Python unittest, by test and class
 ]
 

@@ -163,3 +163,15 @@ test('judge treats a baseline with no signatures as one with no known failures',
     new: ['a'],
   })
 })
+
+test("unittest's closing FAILED line and log lines that start with ERROR name no failure", () => {
+  assert.deepEqual(failureSignatures('FAILED (failures=2)\nFAILED (errors=1, failures=3)'), [])
+  assert.deepEqual(failureSignatures('ERROR connecting to the database\nERROR 2026-10-10T10:00:00Z retrying'), [])
+  assert.deepEqual(failureSignatures('ERROR tests/test_b.py - ImportError: no module\nERROR tests/test_a.py::test_x[a b] - fixture missing'), [
+    'tests/test_a.py::test_x[a b]',
+    'tests/test_b.py',
+  ])
+  // A known unittest failure passes again when the closing count changes with it.
+  const baseline = { signatures: failureSignatures('FAIL: test_a (pkg.T)\nFAIL: test_b (pkg.T)\nFAILED (failures=2)') }
+  assert.deepEqual(judge(baseline, { exitCode: 1, output: 'FAIL: test_a (pkg.T)\nFAILED (failures=1)' }), { pass: true, known: ['test_a (pkg.T)'] })
+})
