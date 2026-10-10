@@ -1544,7 +1544,7 @@ Measured on Claude Code 2.1.296 with throwaway plugins, an isolated `CLAUDE_CONF
 - Consumes:
   - the plan's "Acceptance kit" section, K0–K7;
   - the fake model in script mode (Task 7);
-  - the `aether:lead` agent (Task 5) and the session-start gate (Task 8).
+  - the `aether:lead` agent (Task 5), the session-start gate (Task 8), and the usage meter's `agent.offer` rule (Task 4).
 - Produces: the evidence file, in the K7 format.
 
 **Set-up:**
@@ -1568,19 +1568,25 @@ Measured on Claude Code 2.1.296 with throwaway plugins, an isolated `CLAUDE_CONF
 3. **The Lead's first request:** the first saved request of the bash session, the one whose first message holds `ACCEPT-MAIN`, has:
    - `model` `claude-sonnet-5-5`, and `output_config.effort` `xhigh`;
    - `Aether mode is active` in its messages, directly or in a persisted-output preview.
-4. **The system prompt and the tools.** Run a plain session, `<S>/c -p ACCEPT-PLAIN` from `<S>`. Its first request has:
+4. **Aether's agents are offered to the Lead.**
+   - **Where to look:** on Claude Code 2.1.296 the agents the Lead may start are listed in the first message of a request, one line per agent, such as `- aether:designer: Aether Designer: …`. The `Agent` tool's description does not carry them: the design probe found the tools identical with Aether on and off (spec F21). So read the messages of the Lead's first request from check 3.
+   - **Expect** a line beginning `- aether:designer:`, `- aether:implementer:`, `- aether:supervisor:`, `- aether:reviewer:` and `- aether:ops:`, and no line beginning `- aether:lead:`.
+   - **Record** whether the `Agent` tool's description in `tools` names any `aether:` agent. This is for the record only: it neither passes nor fails the check.
+   - **If the listing is somewhere else** on this Claude Code version, find where the first request carries the offered agents, check the same names there, and say where you looked.
+   - **The other direction:** Task 13 (A3) checks that a normal session lists none of these lines. The two results together show that the gate works both ways.
+5. **The system prompt and the tools.** Run a plain session, `<S>/c -p ACCEPT-PLAIN` from `<S>`. Its first request has:
    - the same `system` text as the Lead's first request;
    - the same set of tool names, 20 of them, `Agent`, `Workflow`, `SendMessage` and `Skill` among them.
-5. **The marker:** `<S>/cfg/plugins/data/aether-aether-plugin/sessions/` holds one `.json` file per Aether session: two, after checks 1 and 2.
-6. **The lanes line reaches every agent:** `<S>/bash.txt` holds, for each of the two sessions:
+6. **The marker:** `<S>/cfg/plugins/data/aether-aether-plugin/sessions/` holds one `.json` file per Aether session: two, after checks 1 and 2.
+7. **The lanes line reaches every agent:** `<S>/bash.txt` holds, for each of the two sessions:
    - `main lanes=off plan=yes`;
    - `sub lanes=off`;
    - `wf lanes=off`.
    If the workflow line is missing, read `<S>/fake/fake.log` for the workflow agent's requests, and record what happened.
-7. **Stop:** K6.
+8. **Stop:** K6.
 
 - [ ] **Step 1:** Do the set-up.
-- [ ] **Step 2:** Run checks 1–7, recording as you go.
+- [ ] **Step 2:** Run checks 1–8, recording as you go.
 - [ ] **Step 3:** Write `docs/evaluations/2026-10-09-installable/A2-start.md` in the K7 format.
 - [ ] **Step 4:** Commit. `git add docs/evaluations/2026-10-09-installable/A2-start.md && git commit -m "test(aether): acceptance A2, the native start"`
 
