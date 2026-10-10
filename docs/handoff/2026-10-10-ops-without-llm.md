@@ -3,7 +3,7 @@
 - **Date:** 2026-10-10
 - **From:** the Lead (Claude Sonnet, an Aether session) and the owner, DarkArty07. The owner writes Spanish; code and documents in this repository are English.
 - **To:** a cloud agent. It sees only this repository on GitHub, so everything it needs is here. The Lead's local memory and scratch files are not available to it.
-- **Repository state:** `main` at the commit that adds this file. Plugin version **0.7.0** (`plugins/aether/.claude-plugin/plugin.json`). The 0.7.0 work ("installable plugin for anyone") is merged; it is **not tagged, not published and not installed** by the owner yet.
+- **Repository state:** `main` at the commit that adds this file. Plugin version **0.7.0** (`plugins/aether/.claude-plugin/plugin.json`). The 0.7.0 work ("installable plugin for anyone") is merged and tagged: `aether--v0.6.0` and `aether--v0.7.0` are on origin. It is **not published as a release and not installed** by the owner yet.
 
 ## 1. The task, in one paragraph
 
@@ -104,7 +104,9 @@ Source: `https://raw.githubusercontent.com/anthropics/claude-code/main/mods/type
 
 ## 9. Context that is not in the code
 
-- **Merged, waiting for the owner:** tagging `aether--v0.7.0` (`claude plugin tag plugins/aether`), the owner's own switch from the old fish launcher to the marketplace install (README "Upgrading from 0.6"), `/advisor off` if an advisor is configured, and pushing the tags. Do none of them.
+- **Done:** the merge to `main`, and the tags `aether--v0.6.0` and `aether--v0.7.0`, pushed on 2026-10-10 at the owner's word.
+- **Waiting for the owner, on their machine (not yours to do):** their own switch from the old fish launcher to the marketplace install (README "Upgrading from 0.6"), and `/advisor off` if an advisor is configured. Do not tag again, and do not move or delete these tags.
+- **Open GitHub issues** #1–#7 on this repository are the project's backlog. #2 and #4 are this task. #7 (the lane's idle notice counted as a failure) is fixed in 0.6.0. The 8 successful real agy lane calls of run `20261009-181450-2c4e` (Gemini 3.8 Flash and Sonnet) showed no false failure, which is live evidence for it; the other 4 ended on a real quota limit. It can likely be closed with that evidence, which is the owner's call.
 - **Deferred minor findings of the 0.7.0 final review:** the mod and `dataDir()` are two implementations of the data-directory rule (a symlinked `~/.claude` could make `aether-report` say "no usage recorded"); the A8/A16 rows of `docs/decisions.md` join old and new text without a full stop; the README says "first message" where the measurement is `messages[1]`; installing prints "1 userConfig option not yet set" for `lanes` although it defaults to false; a pinned marketplace `ref` change was fetched only by a session with network traffic on.
 - **Bigger proposals, not started:** the 19.8 KB session bootstrap reaches the Lead as a 2 KB preview plus a file path (Claude Code 2.1.296), so a fresh Lead knows its rules only by opening that file; warn when an advisor is configured; hide `aether:run` and `aether:swarm` from normal sessions; a macOS CI run once the repository is public; a script that moves the 0.6.0 history into the new data directory.
 - **Known defect, not fixed:** `aether-lane design start --cwd <dir>` runs `git rev-parse` in the process's working directory instead of `<dir>`, so it exits 1 from a shell that is not inside a repository.
