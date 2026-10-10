@@ -39,3 +39,16 @@ test('in an autonomous run the swarm checks the ceilings, records its cost, and 
   assert.ok(!swarm.includes('Use superpowers `finishing-a-development-branch` with the owner.'))
   assert.ok(!swarm.includes('Report the minor ones to the owner as deferred.'))
 })
+
+test('the swarm checks for the Workflow tool, and runs lanes only with the option on', () => {
+  const swarm = read('skills', 'swarm', 'SKILL.md')
+  const workflows =
+    "- **Workflows.** The run is a dynamic workflow. When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session, and offer superpowers' execution methods meanwhile.\n"
+  const lanes =
+    "- **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, with `agy` installed, the run sends calls to it while its quota lasts (`plugins/aether/config/lanes.json`). agy runs with `--dangerously-skip-permissions` in the unit's worktree. Otherwise every call is native, and `aether-plan compile` says why on stderr. `aether-plan compile <plan.md> --no-lanes` runs everything native.\n"
+  assert.ok(swarm.includes(workflows))
+  assert.ok(swarm.includes(lanes))
+  assert.ok(swarm.indexOf(workflows) < swarm.indexOf(lanes))
+  assert.ok(!swarm.includes('the owner accepted that risk for 0.4.0'))
+})
+

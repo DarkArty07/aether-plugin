@@ -396,7 +396,7 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   } else {
     usage = pickSession(sessions, start, end)
   }
-  if (!usage) notes.push('no usage recorded during the run: is the usage meter loaded (aether-mode)?')
+  if (!usage) notes.push('no usage recorded during the run: was the session started with claude --agent aether:lead?')
   const inRun = usage ? usage.entries.filter((entry) => within(entry, start, end)) : []
   const cost = usage
     ? {
