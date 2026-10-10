@@ -124,3 +124,23 @@ Result: PASS
 All seven checks match their expected values. No difference was found, so nothing was fixed or changed.
 
 Result: PASS
+
+## Re-run after the whole run merged
+
+The checks above ran when only task-10 had merged. The final review (important finding) asked for them again once every task had merged, so that C6 covers the riskier acceptance probes of tasks 11 to 15.
+
+Context: HEAD `c005ef4` (the merge of task-14), the integration branch with all sixteen tasks merged. The same seven commands, read-only, run by the Lead:
+
+| # | Command | Output | Matches the expected value of its check above |
+|---|---|---|---|
+| 1 | `git tag --list 'aether--v*'` | `aether--v0.1.0` to `aether--v0.6.0`, six tags, no `aether--v0.7*` | yes |
+| 2 | `git rev-parse 'aether--v0.6.0^{commit}'` | `0d2dd38d49448f871d8b03c6414a050962bc7090` | yes |
+| 3 | `git rev-parse refs/remotes/origin/main` | `4130f868357dcca13aadea594fc78eb765d6df49` | yes |
+| 4 | `readlink ~/.local/share/aether-plugin/installed/current` | `0.6.0-0d2dd38` | yes |
+| 5 | `readlink ~/.local/share/aether-plugin/installed/previous` | `0.5.0-4130f86` | yes |
+| 6 | the content hash of `installed/0.6.0-0d2dd38` | `976dd3fdb212b5d107c137dca1648b691e0fddb29396f4891327f80b2b2bf166  -` | yes |
+| 7 | `readlink ~/.config/fish/functions/aether-mode.fish` | `/home/darkarty/.local/share/aether-plugin/installed/current/scripts/aether-mode.fish` | yes |
+
+Nothing was published, pushed or tagged by the run, and the owner's installed 0.6.0 copy is intact after tasks 11 to 15.
+
+Result: PASS
