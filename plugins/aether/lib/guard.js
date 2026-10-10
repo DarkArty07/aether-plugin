@@ -235,15 +235,61 @@ function matchCommand(command, depth, wanted = null) {
   return null
 }
 
+// Reads the delimiter of a heredoc whose "<<" ends just before start, and queues it. Its quotes come off,
+// and a "-" before it means the body's leading tabs are ignored. Returns the index of the last character read.
+function readHeredoc(command, start, heredocs) {
+  let i = start
+  const strip = command[i] === '-'
+  if (strip) i++
+  while (command[i] === ' ' || command[i] === '\t') i++
+  let word = ''
+  while (i < command.length && !/[\s;&|()<>]/.test(command[i])) {
+    const ch = command[i]
+    if (ch === "'" || ch === '"') {
+      const close = command.indexOf(ch, i + 1)
+      const stop = close === -1 ? command.length : close
+      word += command.slice(i + 1, stop)
+      i = stop + 1
+    } else if (ch === '\\' && i + 1 < command.length) {
+      word += command[i + 1]
+      i += 2
+    } else {
+      word += ch
+      i++
+    }
+  }
+  if (word === '') return start - 1
+  heredocs.push({ word, strip })
+  return i - 1
+}
+
+// Skips the bodies of the heredocs that a command line started, from start, the index after its newline.
+// Each body runs up to the line equal to its delimiter. Returns the index of the last character skipped.
+function skipHeredocBodies(command, start, heredocs) {
+  let pos = start
+  for (const { word, strip } of heredocs) {
+    while (pos < command.length) {
+      const end = command.indexOf('\n', pos)
+      const line = command.slice(pos, end === -1 ? command.length : end)
+      pos = end === -1 ? command.length : end + 1
+      if ((strip ? line.replace(/^\t+/, '') : line) === word) break
+    }
+  }
+  return pos - 1
+}
+
 // The segments of a command, each a list of shell words. Separators are && || ; | & newlines, ( ) and
 // backquotes, and a { or } that stands alone as a word, none of them inside quotes. A backslash takes
-// the next character literally, and quotes come off the words.
+// the next character literally, and quotes come off the words. A heredoc body is text: it runs from the
+// line after the command line that starts it, up to its delimiter.
 function segmentsOf(command) {
   const segments = []
   let words = []
   // null between words; a quoted empty string is still a word.
   let word = null
   let quote = null
+  // The heredocs that the current command line started, whose bodies follow its newline.
+  const heredocs = []
   const endWord = () => {
     if (word !== null) words.push(word)
     word = null
@@ -272,7 +318,10 @@ function segmentsOf(command) {
       word = word ?? ''
     } else if (ch === ' ' || ch === '\t' || ch === '\r') {
       endWord()
-    } else if (ch === '\n' || ch === ';' || ch === '(' || ch === ')' || ch === '`') {
+    } else if (ch === '\n') {
+      endSegment()
+      if (heredocs.length > 0) i = skipHeredocBodies(command, i + 1, heredocs.splice(0))
+    } else if (ch === ';' || ch === '(' || ch === ')' || ch === '`') {
       endSegment()
     } else if (ch === '|' || ch === '&') {
       // A doubled operator, || && or |&, is one separator.
@@ -281,6 +330,13 @@ function segmentsOf(command) {
     } else if ((ch === '{' || ch === '}') && word === null && (next === undefined || /[\s;&|()]/.test(next))) {
       // A brace that stands alone as a word is a group, which the segment ends at.
       endSegment()
+    } else if (ch === '<' && next === '<' && command[i + 2] === '<') {
+      // A here-string: the word after it is read as a word, and it has no body.
+      endWord()
+      i += 2
+    } else if (ch === '<' && next === '<') {
+      endWord()
+      i = readHeredoc(command, i + 2, heredocs)
     } else {
       word = (word ?? '') + ch
     }

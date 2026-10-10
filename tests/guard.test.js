@@ -354,6 +354,24 @@ test('a forced removal is risky only when its target is the root, a home, a pare
   }
 })
 
+test('a heredoc body is text, and the command line after its delimiter is still read', () => {
+  assert.equal(irreversibleClass('cat > release.sh <<EOF\nnpm publish\nEOF'), null)
+  assert.equal(irreversibleClass("cat > release.sh <<'EOF'\nnpm publish\nEOF"), null)
+  assert.equal(irreversibleClass('cat > release.sh <<"EOF"\nnpm publish\nEOF'), null)
+  assert.equal(irreversibleClass('cat > release.sh <<-EOF\n\tnpm publish\n\tEOF'), null)
+  assert.equal(irreversibleClass('cat <<EOF\nnpm publish\nEOF\ngit push'), 'push')
+  assert.equal(irreversibleClass("cat <<'EOF' > release.sh\nnpm publish\nEOF\n\ngit push origin main"), 'push')
+  assert.equal(irreversibleClass('cat <<EOF\nnpm publish\nEOFX\nEOF\ngit push origin'), 'push')
+  assert.equal(irreversibleClass('cat <<EOF; npm publish\nbody\nEOF'), 'publish')
+  assert.equal(irreversibleClass('cat <<A <<B\nx\nA\nnpm publish\nB'), null)
+  // A body with no delimiter runs to the end of the command.
+  assert.equal(irreversibleClass('cat <<EOF\nnpm publish\n'), null)
+  // A here-string has no body, and "<<" inside quotes is text.
+  assert.equal(irreversibleClass('cat <<< x\ngit push'), 'push')
+  assert.equal(irreversibleClass('cat <<<"x"\ngit push'), 'push')
+  assert.equal(irreversibleClass('echo "<<EOF"\ngit push'), 'push')
+})
+
 test('irreversibleClass gives null to dry runs, quoted text, look-alikes and harmless forms', () => {
   for (const command of [
     'git push --dry-run',
