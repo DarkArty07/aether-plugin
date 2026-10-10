@@ -30,6 +30,30 @@
           "aa": { "slug": "claude-opus-5-5-high", "intelligence": 53.6, "terminalBench": 0.57, "checked": "2026-10-08" }
         }
       }
+    },
+    "codex": {
+      "command": "codex",
+      "maxParallel": 2,
+      "waitSeconds": 540,
+      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
+      "groups": { "codex": "Codex plan" },
+      "models": {}
+    },
+    "grok": {
+      "command": "grok",
+      "maxParallel": 2,
+      "waitSeconds": 540,
+      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
+      "groups": { "grok": "Grok plan" },
+      "models": {}
+    },
+    "cursor": {
+      "command": "cursor-agent",
+      "maxParallel": 2,
+      "waitSeconds": 540,
+      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
+      "groups": { "cursor": "Cursor plan" },
+      "models": {}
     }
   }
 }

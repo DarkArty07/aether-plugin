@@ -254,6 +254,26 @@ test('lanesArgs reads the enabled harnesses from AETHER_LANE_HARNESSES when none
   assert.equal(lanes.lanesArgs(twoHarnesses(), { installed: () => true }).harness, 'agy')
 })
 
+test('idleHarnesses names each enabled harness that gives no call, with the reason, in the enabled order', () => {
+  const config = twoHarnesses()
+  config.harnesses.grok = { ...codexHarness(), command: 'grok', groups: { grok: 'Grok plan' }, models: {} }
+  const installed = (name) => name !== 'cursor'
+  assert.deepEqual(lanes.idleHarnesses(config, { installed, enabled: ['agy', 'codex', 'grok', 'cursor'] }).map((h) => h.name), ['grok', 'cursor'])
+  assert.deepEqual(lanes.idleHarnesses(config, { installed, enabled: ['grok'] }), [{ name: 'grok', reason: 'has no models in the lane table yet' }])
+  assert.deepEqual(lanes.idleHarnesses(config, { installed: () => false, enabled: ['codex'] }), [{ name: 'codex', reason: `is not installed: ${config.harnesses.codex.command} was not found` }])
+  delete config.harnesses.grok
+  assert.deepEqual(lanes.idleHarnesses(config, { installed, enabled: ['grok'] }), [{ name: 'grok', reason: 'has no entry in the lane table' }])
+  assert.deepEqual(lanes.idleHarnesses(null, { installed, enabled: ['agy'] }), [])
+})
+
+test('the shipped table has codex, grok and cursor without models, so none of them takes a call until the owner adds its models', () => {
+  const config = shipped()
+  assert.deepEqual(Object.keys(config.harnesses), ['agy', 'codex', 'grok', 'cursor'])
+  for (const name of ['codex', 'grok', 'cursor']) assert.deepEqual(config.harnesses[name].models, {}, name)
+  assert.deepEqual(config.harnesses.cursor.command, 'cursor-agent')
+  assert.deepEqual(lanes.lanesArgs(config, { installed: () => true, enabled: ['codex', 'grok', 'cursor', 'agy'] }).harnesses, ['agy'])
+})
+
 test('enabledHarnesses reads AETHER_LANE_HARNESSES: known names, trimmed, lowercased, each once, in order', () => {
   assert.deepEqual(lanes.enabledHarnesses({}), ['agy'])
   assert.deepEqual(lanes.enabledHarnesses({ AETHER_LANE_HARNESSES: '' }), ['agy'])
@@ -269,7 +289,7 @@ test('loadConfig refuses two harnesses that use one group key, and accepts disti
     (err) => err.message.startsWith(`lanes config ${shared}: `) && err.message.includes('group gemini is used by harnesses agy and codex: group keys are unique across the table'),
   )
   const distinct = writeConfig(t, (c) => (c.harnesses.codex = codexHarness()))
-  assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex'])
+  assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor'])
 })
 
 test('commandInstalled finds an absolute executable or a name on the PATH', (t) => {

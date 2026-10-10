@@ -574,13 +574,14 @@ function remember(area, line) {
 }
 
 // The failure of a retry or an escalation: its blocking findings' titles, sorted and written the same way,
-// so that the same findings compare equal whatever their case or spacing.
+// so that the same findings compare equal whatever their case or spacing. A verdict without a blocking
+// finding is named as such, so a stop on it says what repeated.
 function findingsFailure(findings) {
   const titles = findings
     .filter((f) => BLOCKING.includes(f.severity))
     .map((f) => String(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim())
     .sort()
-  return `${FINDINGS_PREFIX}${titles.join(' | ')}`
+  return `${FINDINGS_PREFIX}${titles.length > 0 ? titles.join(' | ') : '(no blocking finding)'}`
 }
 
 // One attempt's implementer: on a lane when there is one, native otherwise. After the lane's

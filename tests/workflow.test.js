@@ -255,6 +255,16 @@ test('the same findings three times block the unit, whatever the case and spacin
   assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet'])
 })
 
+test('a retry without a blocking finding, three times, stops the unit and says so', async (t) => {
+  const args = threeTasks(t)
+  const bare = { verdict: 'retry', findings: [], ruling: 'Retry.', guidance: 'try again', question: '' }
+  const run = await runWorkflow(args, { supervisor: (call, approve) => (call.unit === 'task-2' ? bare : approve(call)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[1]
+  assert.equal(unit.reason, 'the same findings came back 3 times: (no blocking finding); the task needs a split or a redesign')
+  assert.deepEqual(unit.failures, Array(3).fill('findings: (no blocking finding)'))
+})
+
 test('a dirty integration worktree or a failed merge command blocks the unit at once', async (t) => {
   const args = threeTasks(t)
   const run = await runWorkflow(args, {

@@ -249,6 +249,25 @@ test('compile gives no lanes when the harness is missing or there is no table', 
   assert.equal(compile(repo, plan([task(1)])).lanes, null)
 })
 
+test('compile names each enabled harness that gives no call, and why, on stderr', (t) => {
+  const repo = makeRepo(t)
+  const md = writePlan(repo.dir, plan([task(1)]))
+  const file = laneTable(t, executable)
+  const bin = tempDir(t)
+  for (const name of ['codex', 'grok']) {
+    fs.writeFileSync(path.join(bin, name), '#!/bin/sh\nexit 0\n')
+    fs.chmodSync(path.join(bin, name), 0o755)
+  }
+  const env = { AETHER_LANES_CONFIG: file, AETHER_LANE_HARNESSES: 'codex,agy,cursor', PATH: `${bin}${path.delimiter}${process.env.PATH}` }
+  const r = runBin(PLAN_BIN, ['compile', md], repo.dir, env)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(r.json.lanes.harnesses, ['agy'])
+  assert.ok(r.stderr.includes('aether-plan: lanes: codex is enabled but has no models in the lane table yet\n'), r.stderr)
+  assert.ok(r.stderr.includes('aether-plan: lanes: cursor is enabled but is not installed: cursor-agent was not found\n'), r.stderr)
+  // grok is installed but not enabled, and agy gives calls: neither is named.
+  assert.ok(!/lanes: (grok|agy) /.test(r.stderr), r.stderr)
+})
+
 test('compile refuses a broken lane table before writing anything', (t) => {
   const repo = makeRepo(t)
   const md = writePlan(repo.dir, plan([task(1)]))

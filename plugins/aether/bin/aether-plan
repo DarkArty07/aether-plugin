@@ -120,11 +120,15 @@ function compile(planArg, rest) {
     )
   }
   // A lane table that loadConfig refuses throws here, before anything is written.
-  const laneArgs = rest.includes('--no-lanes') || !enabled.on
-    ? null
-    : lanes.lanesArgs(lanes.loadConfig(lanes.configPath()), {
-        installed: (name, harness) => lanes.commandInstalled(harness.command),
-      })
+  let laneArgs = null
+  if (!rest.includes('--no-lanes') && enabled.on) {
+    const config = lanes.loadConfig(lanes.configPath())
+    const installed = (name, harness) => lanes.commandInstalled(harness.command)
+    laneArgs = lanes.lanesArgs(config, { installed })
+    for (const { name, reason } of lanes.idleHarnesses(config, { installed })) {
+      process.stderr.write(`aether-plan: lanes: ${name} is enabled but ${reason}\n`)
+    }
+  }
 
   const repo = repoPaths(process.cwd())
   const branch = currentBranch(process.cwd())

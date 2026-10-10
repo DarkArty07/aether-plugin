@@ -25,7 +25,7 @@ In an autonomous run (see the `using-aether` skill), what this skill says to tel
   - Check that the permission mode or allow rules cover these calls, and write down what you rely on: tell the owner, or in a run, note it in the diary.
   - The unit worktrees are under the main checkout. If this session started inside the integration worktree, add the main checkout with `/add-dir <repoRoot>`, so the agents may read and edit there.
 - **Workflows.** The run is a dynamic workflow. When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session, and offer to build the plan with subagents meanwhile.
-- **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, with `agy` installed, the run sends calls to it while its quota lasts (`plugins/aether/config/lanes.json`). agy runs with `--dangerously-skip-permissions` in the unit's worktree. Otherwise every call is native, and `aether-plan compile` says why on stderr. `aether-plan compile <plan.md> --no-lanes` runs everything native.
+- **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, the run sends calls to the external harnesses that the `harnesses` option enables (agy by default; also codex, grok and cursor), in the owner's order, when the harness's CLI is installed and while its quota lasts. `plugins/aether/config/lanes.json` names each harness's models. These CLIs run without permission prompts (agy with `--dangerously-skip-permissions`) in the unit's transactional worktree, with the owner's git, GitHub, registry and cloud credentials kept out of their environment. Otherwise every call is native, and `aether-plan compile` says why on stderr; it also names each enabled harness that takes no call, and why. `aether-plan compile <plan.md> --no-lanes` runs everything native.
 
 ## 2. Compile
 
@@ -56,10 +56,11 @@ The workflow returns:
   - `status`: `merged`, `blocked`, `skipped` or `not-run`;
   - `tiers`: the rungs it ran on, each a model and an effort, such as `["haiku medium", "haiku xhigh", "sonnet xhigh"]`. A higher effort on the same model is a climb; another model is an escalation;
   - `rounds`: each attempt, with its rung (`tier`), the implementer's report, the supervisor's verdict, findings, ruling and effort (`reviewEffort`), and the merge outcome;
-  - `provider` and `reviewProvider` in each round: `native`, or `agy <model>` for the lane that ran the attempt and its review. `laneFailure`: set when agy began the attempt and the native agent finished it, with the model and the reason;
+  - `provider` and `reviewProvider` in each round: `native`, or `<harness> <model>`, such as `agy gemini-3.8-flash`, for the lane that ran the attempt and its review. `laneFailure`: set when a lane began the attempt and the native agent finished it, with the harness, the model and the reason;
+  - `failures`: the failed attempts in order, `no report` or the blocking findings of a retry or an escalation. A unit stops when it ends twice in a row without a report, or gets the same findings three times: the reason asks for a split or a redesign;
   - `commit`, `reason`, `question` and `patch`;
   - `closeError`, when the unit could not be closed. The final sweep then removes it, after saving its work as a patch.
-- **`finalReview`:** a `status` of `done`, `skipped` or `failed`. When it is done, it also has the `verdict`, `findings`, `declined` and `summary`.
+- **`finalReview`:** a `status` of `done`, `skipped` or `failed`. When it is done, it also has the `verdict`, `findings`, `declined` and `summary`. `reviewModel` and `reviewEffort` say what it ran on, which follows the run's risk: Opus at `xhigh` when a merged task is tier opus or reviews at `xhigh` or `max`, Sonnet at `high` for at most three haiku tasks that review at `high`, and Opus at `high` otherwise.
 - **`cleanup`:** what the sweep removed. Its `remaining` lists must be empty.
 - **`agents`:** the agent count, by role and by model.
 - **`lanes`:** the lane calls by outcome (`ok`, `failed`, `quota`, `violation`, `blocked`, `unavailable`), the `overflow`, and each wave's `dry` groups. It is null when the run had no lanes.
@@ -72,7 +73,8 @@ Save the result as `<runDir>/result.json`, then run `aether-report --run <runId>
   - `byEffort`: by role, model and effort, with the output tokens and the model time of each;
   - `agents`, in `cost.run`: each agent of the run, with its label, model, effort, cost and time;
 - **`quality`:** the units merged, climbed, escalated and blocked, every finding by severity, the final review, and the test command's result on the integration branch.
-- **`lanes`:** each group's calls, tokens, dollars and quota consumed per window, by model and by role, and `totals`: native dollars, lane dollars and the share the plans covered.
+- **`lanes`:** each group's calls, tokens, dollars and quota consumed per window, by model, by role and by harness (`byHarness`), and `totals`: native dollars, lane dollars and the share the plans covered.
+- **`radar`:** the figures of the owner's five goals: `rapid` (the run's time, attempts, climbs and escalations), `autonomous` (questions that reached the owner), `delegation` (lane calls, by harness, and the share the plans covered), `affordable` (dollars) and `robust` (merged, blocked, tests, findings and the final verdict). A figure that was not measured is null.
 
 In an autonomous run, record the run's cost after every launch:
 
@@ -84,7 +86,8 @@ Report from it, to the owner or, in a run, to the diary:
 - the units merged, climbed, escalated and blocked;
 - the final verdict and the tests;
 - the time and the cost by model, and the implementers' and supervisors' cost and time by effort;
-- the lanes, in these lines:
+- the RADAR figures, one line per goal;
+- the lanes, in these lines, one block per harness that ran:
 
       Lanes (agy)
         Gemini Models:          5 h 34 % · weekly 8 %  · 1.2M tokens · $2.10 at list price
@@ -96,7 +99,8 @@ Report from it, to the owner or, in a run, to the diary:
 
 - **Blocked with a question:** answer it from the owner's intent, the spec and the plan when they cover it. Otherwise it goes to the owner: outside a run, ask them; in an autonomous run, it waits in the diary's "Espera tu sí" or "Decisiones", and the other units go on. Then ask the Writer to fix the plan task, have the Judge review the fix, and relaunch the unit.
 - **Blocked by a merge failure or a spent ladder:** read the rounds. Fix the work yourself when the fix is short; otherwise send it to a subagent, or ask the Writer to fix the plan task and relaunch it. These have a fallback, so they never go to the owner.
-- **Blocked by a lane:** a reason that starts with `lane:` means agy changed the integration worktree or branch, or a read-only copy changed the unit. Check the integration worktree with `git status` and the branch with `git log` before you relaunch.
+- **Blocked by a repeated failure:** the unit ended twice without a report, or got the same findings three times (see its `failures`). The task is too large or cut wrong: ask the Writer to split it, have the Judge review the split, and relaunch. This never goes to the owner either.
+- **Blocked by a lane:** a reason that starts with `lane:` means a lane changed the integration worktree or branch, or a read-only copy changed the unit. Check the integration worktree with `git status` and the branch with `git log` before you relaunch.
 - **Skipped or not-run:** relaunch these once their dependencies are merged.
 - **Patches:** `<runDir>/patches/<task>.patch` holds a unit's unmerged work. Read it before you apply it with `git apply`.
 - **Final review findings:** handle them as a final review is handled.
@@ -118,7 +122,7 @@ A relaunch keeps the run's first compile time, and keeps the previous launch's r
 
 Finish when every unit is merged, the final review has no open critical or important finding, and the test command passes on the integration branch.
 
-1. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first, and in a run record the last cost with `aether-autonomy spend` before it. It appends the report to `runs.jsonl` in the plugin's data directory, with the Aether and Claude Code versions, and agy's when a lane ran. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
+1. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first, and in a run record the last cost with `aether-autonomy spend` before it. It appends the report to `runs.jsonl` in the plugin's data directory, with the Aether and Claude Code versions, and agy's when an agy lane ran. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
 2. Finish the branch yourself, as the owner's delegate:
    - **merge to `main`** only when `aether-autonomy check merge-main` passes, or the owner authorized this merge once in their own words;
    - **push or open a pull request** only when `aether-autonomy check push` passes, or the owner authorized it once;

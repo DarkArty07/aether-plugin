@@ -194,6 +194,23 @@ function lanesArgs(config, { installed, enabled = enabledHarnesses() }) {
   }
 }
 
+// The enabled harnesses that give the run no call, each with the reason: no entry in the table, a command
+// that is not installed, no models yet, or models whose calls an earlier harness takes. Compile names them,
+// so that no harness the owner enabled stays dry without notice.
+function idleHarnesses(config, { installed, enabled = enabledHarnesses() }) {
+  if (!config) return []
+  const listed = lanesArgs(config, { installed, enabled })?.harnesses ?? []
+  return enabled
+    .filter((name) => !listed.includes(name))
+    .map((name) => {
+      const harness = Object.hasOwn(config.harnesses, name) ? config.harnesses[name] : null
+      if (!harness) return { name, reason: 'has no entry in the lane table' }
+      if (!installed(name, harness)) return { name, reason: `is not installed: ${harness.command} was not found` }
+      if (Object.keys(harness.models).length === 0) return { name, reason: 'has no models in the lane table yet' }
+      return { name, reason: 'takes no call: an earlier harness takes every call its models could' }
+    })
+}
+
 // FNV-1a, 32-bit, over UTF-16 code units, then the length.
 function digest(text) {
   let hash = 0x811c9dc5
@@ -512,6 +529,7 @@ module.exports = {
   commandPath,
   commandInstalled,
   enabledHarnesses,
+  idleHarnesses,
   laneFor,
   lanesArgs,
   digest,

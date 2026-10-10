@@ -136,7 +136,14 @@ test("status reads each group's windows, marks a group under the reserve unusabl
   assert.equal(readings.length, 1)
   assert.deepEqual([readings[0].run, readings[0].version, readings[0].harness, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', 'agy', ['claude', 'gemini']])
   const missing = fx.lane(args, 'status', [], fx.laneEnv(t, { command: '/nowhere/agy' }))
-  assert.deepEqual(missing.json, { harnesses: { agy: { enabled: true, command: '/nowhere/agy', path: null, installed: false, version: null, groups: {} } } })
+  assert.deepEqual(missing.json, {
+    harnesses: {
+      agy: { enabled: true, command: '/nowhere/agy', path: null, installed: false, version: null, groups: {} },
+      codex: { enabled: false, command: 'codex' },
+      grok: { enabled: false, command: 'grok' },
+      cursor: { enabled: false, command: 'cursor-agent' },
+    },
+  })
 })
 
 test('status lists every harness of the table: an enabled one with its command, path and install, a disabled one by its command only', (t) => {

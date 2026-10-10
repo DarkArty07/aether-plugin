@@ -92,7 +92,9 @@ Irreversible actions, and the choices only the owner can make, reach the owner a
 
 «acción · clase · por qué · si dices que no · cómo se revierte · el comando exacto»
 
-When aether-guard refuses a Bash command as irreversible, it appends the command to `.aether/pending.jsonl` in the main checkout. Put each entry in the list.
+aether-guard watches your Bash commands, and your agents', for the irreversible classes (`push`, `merge-main`, `publish`, `deploy`, `delete`, `credentials`). A command that no grant covers is appended to `.aether/pending.jsonl` in the main checkout, with its `mode`:
+- `enforce`, when the session runs with `AETHER_IRREVERSIBLE=enforce`: the command was refused. Put the entry in the list.
+- `log`, the default while the guard is being proven: the command ran. Report it under "Hice"; if it should have waited for the owner, say so in "Decidí".
 
 The classes and `aether-autonomy check` are under "Irreversible actions" in "Autonomous runs".
 
