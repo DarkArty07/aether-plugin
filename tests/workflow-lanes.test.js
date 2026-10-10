@@ -205,6 +205,22 @@ test('a supervisor lane that fails hands the same review to the native superviso
   assert.equal(run.result.lanes.failed, 1)
 })
 
+test('a supervisor lane answer with an unknown verdict and findings that are a string counts as a retry, as a native answer does', async (t) => {
+  const run = await runWorkflow(lanesRun(t), {
+    lane: (call, fallback) =>
+      isCall(call, 'wait', 'task-1-1-supervise')
+        ? finished(call, { result: { verdict: 'approved', findings: 'see ruling', ruling: 'Looks right.', guidance: '', question: '' } })
+        : fallback(call),
+  })
+  ok(run)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'merged')
+  assert.deepEqual(unit.rounds.map((r) => r.verdict), ['retry', 'approve'])
+  assert.deepEqual(unit.rounds[0].findings, [])
+  assert.match(unit.rounds[0].ruling, /^Looks right\. The verdict was not one of approve, retry, escalate or block, so it counts as retry\.$/)
+  assert.equal(starts(run, 'supervisor').length, 2)
+})
+
 test('changes outside Owns cost the attempt, and the next one is told to revert them', async (t) => {
   const run = await runWorkflow(lanesRun(t), {
     lane: (call, fallback) =>
