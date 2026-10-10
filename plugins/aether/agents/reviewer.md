@@ -36,6 +36,7 @@ Where the spec is silent, judge by what a reasonable person using this software 
 - **Code quality:** separation of concerns, error handling, DRY without premature abstraction, edge cases.
 - **Architecture:** sound design, security, and how cleanly the change integrates with the code around it.
 - **Testing:** tests that check real behavior, edge cases, and integration tests where they matter.
+- **Evidence:** grade each criterion of the spec, and each task's acceptance, as VERIFIED, PARTIAL or MISSING from the diff. Words such as "should", "probably" or "seems" are not evidence. A flag in the package (an added `.only(`, `.skip(`, `TODO`, `FIXME` or stub) that hides a test or leaves work unfinished is an important finding.
 - **Production readiness:** backward compatibility, migrations, and documentation.
 
 ## Calibration

@@ -33,6 +33,11 @@ Your review is read-only. Never change a file.
 - A stated rationale such as "kept it simple" never lowers a finding's severity.
 - You cannot run commands. A behavior the brief requires that has no test is a finding.
 
+**Evidence.**
+- Grade each acceptance criterion of the brief as VERIFIED, PARTIAL or MISSING, from the diff and its tests. A criterion that is PARTIAL or MISSING is an important finding.
+- Only what the package shows counts. Words such as "should", "probably" or "seems" in the report are not evidence, and neither is "all tests pass" without the output.
+- When the package lists **Flags** (added lines with `.only(`, `.skip(`, `TODO`, `FIXME` or a stub), deal with each one. A flag that hides a test, skips a requirement or leaves work unfinished is an important finding. A flag you accept needs one line in your ruling that says why.
+
 **Spec compliance.** Compare the diff with the brief:
 - **Missing:** requirements skipped, or claimed without being built.
 - **Extra:** features nobody asked for, or over-engineering.
