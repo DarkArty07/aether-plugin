@@ -8,9 +8,9 @@
 // it. Always exits with 0.
 
 const fs = require('node:fs')
-const { dataDir } = require('../lib/run.js')
+const { dataDir, ensureExcluded } = require('../lib/run.js')
 const { isAetherSession } = require('../lib/session.js')
-const { decide, irreversibleClass } = require('../lib/guard.js')
+const { decide, irreversibleClass, redactCommand } = require('../lib/guard.js')
 
 // A Bash call: null to allow, or { reason } to deny. Any error allows the command. The guard runs on
 // every Bash call, so the modules that read git and the grants load only for an irreversible command.
@@ -23,10 +23,12 @@ function decideBash(input) {
     const { appendPending } = require('../lib/pending.js')
     const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
     // Outside a git repository this throws, and the command is allowed unrecorded.
-    const { mainRoot } = repoPaths(cwd)
+    const { mainRoot, gitCommonDir } = repoPaths(cwd)
     if (check(mainRoot, cls, { session: input.session_id }) !== null) return null
     const mode = process.env.AETHER_IRREVERSIBLE === 'enforce' ? 'enforce' : 'log'
-    const entry = { time: Date.now(), session: input.session_id, class: cls, command: input.tool_input.command, cwd: input.cwd, mode }
+    const entry = { time: Date.now(), session: input.session_id, class: cls, command: redactCommand(input.tool_input.command, cls), cwd: input.cwd, mode }
+    // The list holds the command, so git must ignore its directory before the first line is written.
+    ensureExcluded(gitCommonDir)
     // A command that cannot be recorded is allowed: a refusal the owner cannot see is not kept.
     if (!appendPending(mainRoot, entry)) return null
     if (mode === 'log') return null

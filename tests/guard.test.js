@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { PLUGIN, tempDir, makeRepo } = require('./helpers.js')
-const { decide, irreversibleClass } = require('../plugins/aether/lib/guard.js')
+const { decide, irreversibleClass, redactCommand } = require('../plugins/aether/lib/guard.js')
 const { markSession } = require('../plugins/aether/lib/session.js')
 const { pendingFile, readPending } = require('../plugins/aether/lib/pending.js')
 const autonomy = require('../plugins/aether/lib/autonomy.js')
@@ -486,6 +486,38 @@ test('irreversibleClass classes the script that a shell or eval runs, down to th
   }
 })
 
+test('redactCommand keeps only the subcommand of a credentials command', () => {
+  assert.equal(redactCommand('gh secret set STRIPE_KEY --body sk_live_x', 'credentials'), 'gh secret set [arguments redacted]')
+  assert.equal(redactCommand('sudo gh auth login --with-token < token.txt', 'credentials'), 'gh auth login [arguments redacted]')
+  assert.equal(redactCommand('aws configure', 'credentials'), 'aws configure [arguments redacted]')
+  assert.equal(redactCommand('npm test && bash -c "npm token create"', 'credentials'), 'npm token create [arguments redacted]')
+})
+
+test('redactCommand replaces a secret variable, a secret flag and a URL user-info', () => {
+  assert.equal(redactCommand('NPM_TOKEN=abc npm publish', 'publish'), 'NPM_TOKEN=[redacted] npm publish')
+  assert.equal(redactCommand('npm publish --otp 123456', 'publish'), 'npm publish --otp [redacted]')
+  assert.equal(redactCommand('git push https://me:ghp_x@github.com/o/r.git main', 'push'), 'git push https://[redacted]@github.com/o/r.git main')
+})
+
+test('redactCommand covers every secret name and flag, both forms of a flag, and keeps the rest as it is spelled', () => {
+  assert.equal(
+    redactCommand('export db_pass=x my_secret="a b" API_KEY=k NODE_ENV=prod npm   publish', 'publish'),
+    'export db_pass=[redacted] my_secret=[redacted] API_KEY=[redacted] NODE_ENV=prod npm   publish',
+  )
+  assert.equal(
+    redactCommand('npm publish --passwd x --secret=y --api-key k --auth=a --token t --body b', 'publish'),
+    'npm publish --passwd [redacted] --secret=[redacted] --api-key [redacted] --auth=[redacted] --token [redacted] --body [redacted]',
+  )
+  assert.equal(redactCommand('npm   publish --otp 123456  --tag  next', 'publish'), 'npm   publish --otp [redacted]  --tag  next')
+  assert.equal(redactCommand('git push https://user@host.example/x.git', 'push'), 'git push https://[redacted]@host.example/x.git')
+})
+
+test('redactCommand leaves a command with nothing to redact as it is', () => {
+  for (const command of ['git push origin main', 'npm publish --tag next', 'rm -rf build', 'NODE_ENV=prod npm run build', 'git log --author=me', 'echo "a; b"']) {
+    assert.equal(redactCommand(command, irreversibleClass(command)), command)
+  }
+})
+
 const PUSH_QUOTE = 'apruebo push a origin main en esta ocasion'
 const REASON = (cls) =>
   `Aether added this ${cls} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".`
@@ -602,4 +634,44 @@ test('a grant registry that cannot be read allows the command and records nothin
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, '')
   assert.equal(fs.existsSync(pendingFile(repo.dir)), false)
+})
+
+test('the first record keeps .aether/ out of git, so the owner\'s list is not committed', (t) => {
+  const repo = makeRepo(t)
+  const r = guardBash(t, 'git push origin main', { cwd: repo.dir })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(readPending(repo.dir).length, 1)
+  assert.ok(fs.readFileSync(path.join(repo.dir, '.git', 'info', 'exclude'), 'utf8').split('\n').includes('/.aether/'))
+  assert.equal(repo.git('status', '--porcelain'), '')
+})
+
+test('a git exclude file that cannot be written still lets the command through, and nothing is recorded', (t) => {
+  const repo = makeRepo(t)
+  const exclude = path.join(repo.dir, '.git', 'info', 'exclude')
+  fs.rmSync(exclude, { force: true })
+  fs.mkdirSync(exclude)
+  const r = guardBash(t, 'git push origin main', { cwd: repo.dir, mode: 'enforce' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout, '')
+  assert.equal(fs.existsSync(pendingFile(repo.dir)), false)
+})
+
+test('the owner\'s list records a credentials command without its arguments, and never the secret', (t) => {
+  const repo = makeRepo(t)
+  const r = guardBash(t, 'gh secret set STRIPE_KEY --body sk_live_x', { cwd: repo.dir })
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual(readPending(repo.dir).map((e) => [e.class, e.command]), [['credentials', 'gh secret set [arguments redacted]']])
+  assert.equal(fs.readFileSync(pendingFile(repo.dir), 'utf8').includes('sk_live_x'), false)
+})
+
+test('the owner\'s list records a push without its URL password and a publish without its secret values', (t) => {
+  const repo = makeRepo(t)
+  guardBash(t, 'git push https://me:ghp_x@github.com/o/r.git main', { cwd: repo.dir })
+  guardBash(t, 'NPM_TOKEN=s3cretvalue npm publish --otp 424242', { cwd: repo.dir })
+  assert.deepEqual(readPending(repo.dir).map((e) => e.command), [
+    'git push https://[redacted]@github.com/o/r.git main',
+    'NPM_TOKEN=[redacted] npm publish --otp [redacted]',
+  ])
+  const file = fs.readFileSync(pendingFile(repo.dir), 'utf8')
+  for (const secret of ['ghp_x', 's3cretvalue', '424242']) assert.equal(file.includes(secret), false, secret)
 })

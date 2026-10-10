@@ -3,8 +3,9 @@
 // The aether-guard decisions. decide: only the main session, the Lead and the Writer write specs,
 // plans and tasks, and autonomy files are kept to aether-autonomy. Protected: docs/superpowers/specs/
 // and plans/ (the old place), specs/NNN-<topic>/ spec.md, plan.md and tasks.md (Spec Kit), and
-// .specify/memory/constitution.md. irreversibleClass: the irreversible class of a Bash command.
-// Both are pure: they read a PreToolUse hook's JSON and never touch the file system.
+// .specify/memory/constitution.md. irreversibleClass: the irreversible class of a Bash command, and
+// redactCommand: the command as the owner's list keeps it, without its secret values.
+// All are pure: they read a PreToolUse hook's JSON and never touch the file system.
 
 const path = require('node:path')
 
@@ -293,4 +294,28 @@ function irreversibleClass(command) {
   return found === null ? null : found.cls
 }
 
-module.exports = { decide, irreversibleClass }
+// The secret values that the owner's list must not keep: a NAME=value word whose name holds one of these,
+// a value after a secret flag (as "--flag value" or "--flag=value"), and the user-info of a URL.
+const SECRET_NAME = /TOKEN|KEY|SECRET|PASS|AUTH/i
+const SECRET_ASSIGNMENT = /(^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=("[^"]*"|'[^']*'|[^\s;&|()]*)/g
+const SECRET_FLAG = /(^|\s)(--(?:token|password|passwd|secret|otp|api-key|auth|body))(=|\s+)("[^"]*"|'[^']*'|[^\s;&|()]*)/g
+const URL_USER_INFO = /([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/@]+@/g
+
+// The command with its secret values replaced, and the rest of it spelled as it was.
+function redactValues(command) {
+  return command
+    .replace(SECRET_ASSIGNMENT, (match, lead, name) => (SECRET_NAME.test(name) ? `${lead}${name}=[redacted]` : match))
+    .replace(SECRET_FLAG, (match, lead, flag, sep) => `${lead}${flag}${sep}[redacted]`)
+    .replace(URL_USER_INFO, '$1[redacted]@')
+}
+
+// The command as the owner's list keeps it. A credentials command keeps only its subcommand, since its
+// arguments are the secret; any other command keeps its spelling, with its secret values redacted.
+function redactCommand(command, cls) {
+  if (typeof command !== 'string') return ''
+  if (cls !== 'credentials') return redactValues(command)
+  const found = matchCommand(command, 0, cls)
+  return found === null ? '[redacted]' : [...found.head, '[arguments redacted]'].join(' ')
+}
+
+module.exports = { decide, irreversibleClass, redactCommand }
