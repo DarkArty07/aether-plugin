@@ -11,6 +11,7 @@ const calls = require('../plugins/aether/lib/lane-calls.js')
 const { buildPrompt, LANE_NOTES, WORKDIR_RULE } = calls
 const { registerAdapter, unregisterAdapter } = require('../plugins/aether/lib/harness/index.js')
 const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
+const { parseRun, unknownQuota } = require('../plugins/aether/lib/harness/structured.js')
 const { PLUGIN, WT_BIN, runBin, commitIn, tempDir } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 
@@ -59,6 +60,64 @@ function useEnv(t, env) {
 // A harness adapter for this process only: the runner is another process, and loads only the bundled adapters.
 function fakeCodex() {
   return { name: 'codex', installed: () => true, version: () => '9.1.0', quota: () => ({ groups: { codex: { unknown: true } } }) }
+}
+
+// The structured output the fake agy printed as its answer, as text, or nothing when it printed none.
+function readFakeAnswer(stdout) {
+  let data = null
+  try {
+    data = JSON.parse(stdout)
+  } catch {
+    // Not JSON: nothing was answered.
+  }
+  const answer = data?.structured_output === undefined ? '' : JSON.stringify(data.structured_output)
+  return { answer, usage: { input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }, outside: data?.error ? String(data.error) : '' }
+}
+
+// A harness that reports no quota, as codex, grok and cursor do, run on the fake agy: its output is read by
+// structured.js's parseRun, so a quota line in its stderr is a quota failure.
+function unknownQuotaHarness({ command, groups }) {
+  return {
+    ...createAgy({ command, groups }),
+    name: 'codex',
+    schemaInPrompt: true,
+    quota: () => unknownQuota(groups),
+    argv: ({ model, prompt }) => [command, '-p', prompt, '--model', model, '--output-format', 'json'],
+    parse: (raw, { required = [] } = {}) => parseRun(raw, readFakeAnswer, required),
+  }
+}
+
+// Runs one implementer call on the codex harness, from the prompt lines after its first line, as start would
+// have recorded it, and returns the call's result with the environment it ran in.
+async function runCodexCall(t, lines) {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
+  useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
+  registerAdapter('codex', unknownQuotaHarness)
+  t.after(() => unregisterAdapter('codex'))
+  const { workdir } = work.prepareImplementer(args.repoRoot, args.runId, 'task-1')
+  fx.writePrompt(args, IMPLEMENT, ['You are implementing task-1: Task 1 title.', ...lines].join('\n'))
+  const dir = path.join(args.runDir, 'lanes', IMPLEMENT)
+  const info = {
+    runId: args.runId,
+    call: IMPLEMENT,
+    role: 'implementer',
+    task: 'task-1',
+    harness: 'codex',
+    model: 'gpt-codex',
+    laneModel: 'gpt-codex',
+    group: 'codex',
+    effort: 'high',
+    level: 'high',
+    timeoutSeconds: 60,
+    workdir,
+    quotaBefore: null,
+    session: null,
+    startedAt: Date.now(),
+  }
+  fs.writeFileSync(path.join(dir, 'call.json'), `${JSON.stringify(info)}\n`)
+  await calls.runCall(args.repoRoot, args.runId, IMPLEMENT)
+  return { env, done: JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8')) }
 }
 
 // Starts an implementer call on a fresh run and waits for it. `lines` is the payload after its
@@ -397,6 +456,17 @@ test('a non-clean call whose /usage cannot be read afterwards is failed, not quo
   assert.match(done.detail, /^exit 1: model not found/)
   const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
   assert.deepEqual([entry.status, entry.quotaAfter], ['failed', null])
+})
+
+test('a quota failure of a harness that reports no quota is quota, and its other failures stay failed', async (t) => {
+  // codex's quota is unknown, so only the quota line of its output can say it ran dry.
+  const quota = await runCodexCall(t, ['FAKE-AGY: stderr Error: usage limit reached', 'FAKE-AGY: exit-error'])
+  assert.deepEqual([quota.done.status, quota.done.result, quota.done.detail], ['quota', null, 'quota: Error: usage limit reached'])
+  const logged = lanes.readLog(quota.env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
+  assert.deepEqual([logged.status, logged.harness, logged.detail], ['quota', 'codex', 'quota: Error: usage limit reached'])
+
+  const other = await runCodexCall(t, ['FAKE-AGY: stderr Error: model not found', 'FAKE-AGY: exit-error'])
+  assert.deepEqual([other.done.status, other.done.detail], ['failed', 'exit 1: Error: model not found'])
 })
 
 test('a supervisor call reviews in a disposable copy of the unit branch, then the copy is removed', (t) => {
