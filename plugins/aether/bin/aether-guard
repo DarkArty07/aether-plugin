@@ -2,7 +2,8 @@
 'use strict'
 
 // aether-guard: PreToolUse hook. Denies Write, Edit, MultiEdit and NotebookEdit
-// on specs and plans unless the writer is the Designer. Always exits with 0.
+// on specs, plans, tasks and the constitution unless the writer is the main session,
+// the Lead or the Writer. Always exits with 0.
 
 const fs = require('node:fs')
 const { dataDir } = require('../lib/run.js')

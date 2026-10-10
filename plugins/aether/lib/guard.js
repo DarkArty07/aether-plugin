@@ -1,15 +1,22 @@
 'use strict'
 
-// The aether-guard decision: only the Designer may write specs and plans,
-// and autonomy files are kept to aether-autonomy.
+// The aether-guard decision: only the main session, the Lead and the Writer write specs, plans
+// and tasks, and autonomy files are kept to aether-autonomy.
+// Protected: docs/superpowers/specs/ and plans/ (the old place), specs/NNN-<topic>/ spec.md,
+// plan.md and tasks.md (Spec Kit), and .specify/memory/constitution.md.
 // Pure: it reads a PreToolUse hook's JSON and never touches the file system.
 
 const path = require('node:path')
 
 const CHECKED_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
-const PROTECTED = /(^|\/)docs\/superpowers\/(specs|plans)\//
+const PROTECTED = [
+  /(^|\/)docs\/superpowers\/(specs|plans)\//,
+  /(^|\/)specs\/\d{3}-[^/]+\/(spec|plan|tasks)\.md$/,
+  /(^|\/)\.specify\/memory\/constitution\.md$/,
+]
 const AUTONOMY_PROTECTED = /(^|\/)\.aether\/autonomy\/(grants\.json|[^/]+\/run\.json)$/
-const DESIGNER = 'aether:designer'
+const LEAD = 'aether:lead'
+const WRITER = 'aether:writer'
 
 // decide(input) gives null to allow, or { reason } to deny.
 function decide(input) {
@@ -28,12 +35,23 @@ function decide(input) {
     }
   }
 
-  if (!PROTECTED.test(normalized)) return null
-  if (input.agent_type === DESIGNER) return null
+  if (!PROTECTED.some((re) => re.test(normalized))) return null
+  if (mayWriteDocs(input)) return null
 
   return {
-    reason: `In Aether mode only the Designer writes specs and plans. Hand this change to the aether:designer agent (resume it with SendMessage, or start one with the spec or plan path) instead of editing ${resolved} yourself.`,
+    reason: `In Aether mode only the Lead and the Writer write specs, plans and tasks. Hand this change to the Lead, or to the aether:writer agent, instead of editing ${resolved} yourself.`,
   }
+}
+
+// The main session's hook input names no agent. An input that names one, by agent_id or agent_type,
+// may write only when its agent_type is the Lead's or the Writer's.
+function mayWriteDocs(input) {
+  if (input.agent_type === LEAD || input.agent_type === WRITER) return true
+  return isBlank(input.agent_id) && isBlank(input.agent_type)
+}
+
+function isBlank(value) {
+  return value === undefined || value === null || value === ''
 }
 
 function isObject(value) {
