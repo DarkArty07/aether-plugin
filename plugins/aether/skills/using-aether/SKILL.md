@@ -164,7 +164,7 @@ Before one, run `aether-autonomy check <class>`.
 - Words that withdraw one: `aether-autonomy revoke --class <class> --quote "<their words>"`.
 - `aether-autonomy list` shows the registry. The registry and each run's `run.json` are written only by `aether-autonomy`; aether-guard refuses edits to them.
 
-**Done** when every criterion has its evidence in the diary (a test, an output or a file), the test command passes on the integration branch, and the final review leaves no open critical or important finding. Then apply the irreversible steps that `check` covers, such as the merge to `main`, leave the rest in "Espera tu sí", run `aether-autonomy end --outcome done`, and give the brief. Stop there: no extra improvements.
+**Done** when every criterion has its evidence in the diary (a test, an output or a file), the test command passes on the integration branch, or fails only on the run's baseline, and the final review leaves no open critical or important finding. Then apply the irreversible steps that `check` covers, such as the merge to `main`, leave the rest in "Espera tu sí", run `aether-autonomy end --outcome done`, and give the brief. Stop there: no extra improvements.
 
 **Repetition.** When a line of work repeats without progress (the same task redesigned twice, the same unit relaunched twice without success, a third correction round on the same finding), stop it. Note the defect in the diary, take the smallest reversible path (defer that task), and go on with the rest.
 
@@ -202,7 +202,7 @@ Before one, run `aether-autonomy check <class>`.
 
 Supuestos are ordered by how likely the owner is to veto them, the most likely first.
 
-"Hice" names the branch and the commits. "Decidí" gives each decision with its grounds, above all where you departed from the Judge. "No terminé" says what was tried and why it stopped. The owner's «sí» to an item of "Espera tu sí" authorizes that action once, and you run it; if their words are general, also record a grant.
+"Hice" names the branch and the commits. "Decidí" gives each decision with its grounds, above all where you departed from the Judge. "No terminé" says what was tried and why it stopped. The owner's «sí» to an item of "Espera tu sí" authorizes that action once, and you run it; if their words are general, also record a grant. When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even that action until a grant covers it: record the owner's reply as a session grant for its class (`aether-autonomy grant --class <class> --scope session --quote "<their words>"`), run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
 
 **Every brief,** in a run or not, opens with "Espera tu sí" and "Supuestos". Outside a run the brief is short: the intent, the spec and plan paths with about five lines of each, the decisions, the list, the assumptions, what you did not verify, and the RADAR lines that apply. Outside a run you stop at the plan, and "Espera tu sí" holds the plan's execution with the method you recommend.
 
