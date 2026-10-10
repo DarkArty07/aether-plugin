@@ -265,6 +265,90 @@ test('a retry without a blocking finding, three times, stops the unit and says s
   assert.deepEqual(unit.failures, Array(3).fill('findings: (no blocking finding)'))
 })
 
+// The sentences the script adds to a ruling or a summary when a verdict is not one it knows.
+const NOT_A_VERDICT = 'The verdict was not one of approve, retry, escalate or block, so it counts as retry.'
+const NOT_A_REVIEW_VERDICT = 'The verdict was not one of ready, ready-with-fixes or not-ready, so it counts as not-ready.'
+
+test('findings that are not an array count as none, and the unit goes on with its ladder', async (t) => {
+  const args = threeTasks(t)
+  const shapes = ['see ruling', { severity: 'important', title: 'missing edge case', file: 'src/t2/a.js', evidence: 'line 3' }, null]
+  for (const findings of shapes) {
+    const run = await runWorkflow(args, {
+      supervisor: (call, approve) => (call.unit === 'task-2' && call.n === 1 ? { ...retry('gap'), findings } : approve(call)),
+    })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    const unit = run.result.units[1]
+    assert.equal(unit.status, 'merged', JSON.stringify(findings))
+    assert.deepEqual(unit.rounds[0].findings, [], JSON.stringify(findings))
+    assert.deepEqual(unit.failures, ['findings: (no blocking finding)'])
+    assert.equal(attemptsOf(run, 'task-2').length, 2)
+  }
+})
+
+test('findings keep only the entries that are objects', async (t) => {
+  const run = await runWorkflow(threeTasks(t), {
+    supervisor: (call, approve) =>
+      call.unit === 'task-2' && call.n === 1
+        ? { ...retry('missing edge case'), findings: ['the parser drops a row', null, 7, finding('missing edge case')] }
+        : approve(call),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[1]
+  assert.deepEqual(unit.rounds[0].findings, [finding('missing edge case')])
+  assert.deepEqual(unit.failures, ['findings: missing edge case'])
+  assert.equal(unit.status, 'merged')
+})
+
+test('a verdict that is not one of the four counts as a retry, and the ruling says so', async (t) => {
+  for (const verdict of ['approved', 'Approve']) {
+    const run = await runWorkflow(threeTasks(t), {
+      supervisor: (call, approve) =>
+        call.unit === 'task-2' && call.n === 1 ? { verdict, findings: [], ruling: 'Looks right.', guidance: '', question: '' } : approve(call),
+    })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    const unit = run.result.units[1]
+    assert.equal(unit.status, 'merged', verdict)
+    assert.deepEqual(unit.rounds.map((r) => r.verdict), ['retry', 'approve'], verdict)
+    assert.equal(unit.rounds[0].ruling, `Looks right. ${NOT_A_VERDICT}`)
+    // The next attempt reads the ruling, and the unit merges once, on the approval.
+    assert.match(attemptsOf(run, 'task-2')[1].prompt, /Supervisor: retry\. Looks right\. The verdict was not one of approve/)
+    assert.equal(run.calls.filter((c) => c.kind === 'ops:merge' && c.unit === 'task-2').length, 1)
+  }
+})
+
+test('an unknown verdict every time stops the unit as repeated findings, before the ladder is spent', async (t) => {
+  const run = await runWorkflow(threeTasks(t), {
+    supervisor: (call, approve) =>
+      call.unit === 'task-2' ? { verdict: 'approved', findings: [], ruling: 'Fine.', guidance: '', question: '' } : approve(call),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[1]
+  assert.equal(unit.status, 'blocked')
+  assert.equal(unit.reason, 'the same findings came back 3 times: (no blocking finding); the task needs a split or a redesign')
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet'])
+  assert.equal(run.calls.some((c) => c.kind === 'ops:merge' && c.unit === 'task-2'), false)
+})
+
+test('a final review with findings that are not an array, or an unknown verdict, is checked the same way', async (t) => {
+  const odd = await runWorkflow(threeTasks(t), {
+    reviewer: () => ({ verdict: 'approved', findings: 'see ruling', declined: [], summary: 'Looks fine.' }),
+  })
+  assert.equal(odd.error, null, odd.error && odd.error.stack)
+  assert.equal(odd.result.finalReview.status, 'done')
+  assert.deepEqual(odd.result.finalReview.findings, [])
+  assert.equal(odd.result.finalReview.verdict, 'not-ready')
+  assert.equal(odd.result.finalReview.summary, `Looks fine. ${NOT_A_REVIEW_VERDICT}`)
+  assert.deepEqual(odd.events.slice(-2), ['start ops:sweep', 'end ops:sweep'])
+
+  const mixed = await runWorkflow(threeTasks(t), {
+    reviewer: () => ({ verdict: 'ready-with-fixes', findings: ['a stray line', finding('naming drift')], declined: [], summary: 'Mostly fine.' }),
+  })
+  assert.equal(mixed.error, null, mixed.error && mixed.error.stack)
+  assert.deepEqual(mixed.result.finalReview.findings, [finding('naming drift')])
+  assert.equal(mixed.result.finalReview.verdict, 'ready-with-fixes')
+  assert.equal(mixed.result.finalReview.summary, 'Mostly fine.')
+})
+
 test('a dirty integration worktree or a failed merge command blocks the unit at once', async (t) => {
   const args = threeTasks(t)
   const run = await runWorkflow(args, {
