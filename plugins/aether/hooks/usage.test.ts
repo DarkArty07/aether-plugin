@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { dataDirFrom } from './register.js'
 
 // Tests for the usage meter in register.js. Run them with `claude plugin test plugins/aether`.
 
@@ -7,7 +8,7 @@ type Write = { path: string; text: string }
 const USAGE = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 50 }
 
 // Answers what the meter asks Claude Code for, and keeps every file it writes.
-function stubs(on, { env = { HOME: '/home/u' } as Record<string, string>, existing = [] as string[], failWrites = false } = {}) {
+function stubs(on, { env = { HOME: '/home/u', AETHER_DATA_DIR: '/home/u/aether-data' } as Record<string, string>, existing = [] as string[], failWrites = false, marked = true as boolean | 'deny' } = {}) {
   const writes: Write[] = []
   mock.clock(on, { now: 1000 })
   mock.env(on, env)
@@ -25,6 +26,9 @@ function stubs(on, { env = { HOME: '/home/u' } as Record<string, string>, existi
   on('turn.step', async function* ($, e) {
     return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: { ...USAGE, model: e.model } }
   })
+  on('fs.exists', ($, e) => (marked === 'deny' ? { deny: 'no access' } : { value: marked === true && e.path.endsWith('/sessions/s1.json') }))
+  on('agent.offer', () => ({ isOffered: true }))
+  on('classic.SessionStart', () => ({}))
   return writes
 }
 
@@ -59,7 +63,7 @@ test('records main and agent requests with the agent type, and writes part 0 whe
   await step($)
   await step($, { model: 'claude-haiku-5-5', agentId: 'agent-1' })
   await endTurn($)
-  const part = files(writes)['/home/u/.local/share/aether-plugin/usage/s1/0.json']
+  const part = files(writes)['/home/u/aether-data/usage/s1/0.json']
   expect(part).toMatchObject({
     session: 's1',
     part: 0,
@@ -78,7 +82,7 @@ test('an entry records the effort its request went out with, or null when the ev
   await step($, { model: 'claude-haiku-5-5', agentId: 'agent-1', effort: 'medium' })
   await step($)
   await endTurn($)
-  const part = files(writes)['/home/u/.local/share/aether-plugin/usage/s1/0.json']
+  const part = files(writes)['/home/u/aether-data/usage/s1/0.json']
   expect(part.entries.map((entry) => entry.effort)).toEqual(['xhigh', 'medium', null])
 })
 
@@ -94,8 +98,8 @@ test('parts already on disk are kept: this instance writes after them', async ($
   await step($)
   await endTurn($)
   const latest = files(writes)
-  expect(Object.keys(latest)).toEqual(['/home/u/.local/share/aether-plugin/usage/s1/2.json'])
-  expect(latest['/home/u/.local/share/aether-plugin/usage/s1/2.json'].part).toBe(2)
+  expect(Object.keys(latest)).toEqual(['/home/u/aether-data/usage/s1/2.json'])
+  expect(latest['/home/u/aether-data/usage/s1/2.json'].part).toBe(2)
 })
 
 test('more than 1,000 entries roll over to a second part', { timeoutMs: 60000 }, async ($, on) => {
@@ -103,9 +107,9 @@ test('more than 1,000 entries roll over to a second part', { timeoutMs: 60000 },
   for (let i = 0; i < 1001; i++) await step($, { index: i })
   await endTurn($)
   const latest = files(writes)
-  expect(latest['/home/u/.local/share/aether-plugin/usage/s1/0.json'].entries.length).toBe(1000)
-  expect(latest['/home/u/.local/share/aether-plugin/usage/s1/1.json'].entries.length).toBe(1)
-  expect(latest['/home/u/.local/share/aether-plugin/usage/s1/1.json'].part).toBe(1)
+  expect(latest['/home/u/aether-data/usage/s1/0.json'].entries.length).toBe(1000)
+  expect(latest['/home/u/aether-data/usage/s1/1.json'].entries.length).toBe(1)
+  expect(latest['/home/u/aether-data/usage/s1/1.json'].part).toBe(1)
 })
 
 test('a failing write changes nothing in the request', async ($, on) => {
@@ -179,4 +183,72 @@ test('a failing payload write does not stop the spawn', async ($, on) => {
   stubs(on, { failWrites: true })
   const answer = await spawnOps($, opsPrompt(MARKER(`${LANE_DIR}/prompt.md`), 'payload'))
   expect(answer.agentId).toBe('agent-1')
+})
+
+test('a session that is not Aether records nothing and saves no lane payload', async ($, on) => {
+  const writes = stubs(on, { marked: false })
+  await step($)
+  await spawnOps($, opsPrompt(MARKER(`${LANE_DIR}/prompt.md`), 'payload'))
+  await endTurn($)
+  await $.session.end({ reason: 'other' })
+  expect(writes).toEqual([])
+})
+
+test('SessionStart from aether:lead makes the session Aether before its marker is read', async ($, on) => {
+  const writes = stubs(on, { marked: false })
+  await $.classic.SessionStart({ hook_event_name: 'SessionStart', session_id: 's1', source: 'startup', agent_type: 'aether:lead' })
+  await step($)
+  await endTurn($)
+  expect(Object.keys(files(writes))).toEqual(['/home/u/aether-data/usage/s1/0.json'])
+})
+
+test('SessionStart from another agent leaves the session to its marker', async ($, on) => {
+  const writes = stubs(on, { marked: false })
+  await $.classic.SessionStart({ hook_event_name: 'SessionStart', session_id: 's1', source: 'startup', agent_type: 'Explore' })
+  await step($)
+  await endTurn($)
+  expect(writes).toEqual([])
+})
+
+test('a meter loaded mid-session finds the marker and records', async ($, on) => {
+  const writes = stubs(on)
+  await step($)
+  await endTurn($)
+  expect(Object.keys(files(writes))).toEqual(['/home/u/aether-data/usage/s1/0.json'])
+})
+
+test('a marker check that fails counts as not Aether', async ($, on) => {
+  const writes = stubs(on, { marked: 'deny' })
+  await step($)
+  await endTurn($)
+  expect(writes).toEqual([])
+})
+
+const offer = ($, agent: string) => $.agent.offer({ agent, description: 'd', source: 'plugin' })
+
+test('outside Aether every aether agent is withheld, and other agents are offered', async ($, on) => {
+  stubs(on, { marked: false })
+  expect(await offer($, 'aether:designer')).toEqual({ isOffered: false })
+  expect(await offer($, 'aether:implementer')).toEqual({ isOffered: false })
+  expect(await offer($, 'aether:lead')).toEqual({ isOffered: false })
+  expect(await offer($, 'general-purpose')).toEqual({ isOffered: true })
+})
+
+test('in Aether only the Lead is withheld', async ($, on) => {
+  stubs(on)
+  expect(await offer($, 'aether:lead')).toEqual({ isOffered: false })
+  expect(await offer($, 'aether:designer')).toEqual({ isOffered: true })
+  expect(await offer($, 'Explore')).toEqual({ isOffered: true })
+})
+
+test('dataDirFrom follows the installable spec R11', () => {
+  const cached = '/h/.claude/plugins/cache/aether-plugin/aether/0.7.0'
+  expect(dataDirFrom({ env: { AETHER_DATA_DIR: '/d', HOME: '/h' }, root: cached, name: 'aether' })).toBe('/d')
+  expect(dataDirFrom({ env: { HOME: '/h' }, root: cached, name: 'aether' })).toBe('/h/.claude/plugins/data/aether-aether-plugin')
+  expect(dataDirFrom({ env: { HOME: '/h', CLAUDE_CONFIG_DIR: '/c/' }, root: '/c/plugins/cache/aether-plugin/aether/0.7.0/', name: 'aether' })).toBe('/c/plugins/data/aether-aether-plugin')
+  expect(dataDirFrom({ env: { HOME: '/h', CLAUDE_CODE_PLUGIN_CACHE_DIR: '/p' }, root: '/p/cache/my.market/aether/1.0.0', name: 'aether' })).toBe('/p/data/aether-my-market')
+  expect(dataDirFrom({ env: { HOME: '/h' }, root: '/repo/plugins/aether', name: 'aether' })).toBe('/h/.claude/plugins/data/aether-inline')
+  expect(dataDirFrom({ env: { HOME: '/h' }, root: '/work/cache/aether-plugin/aether/0.7.0', name: 'aether' })).toBe('/h/.claude/plugins/data/aether-inline')
+  expect(dataDirFrom({ env: { HOME: '/h' }, root: `${cached}/bin`, name: 'aether' })).toBe('/h/.claude/plugins/data/aether-inline')
+  expect(dataDirFrom({ env: { HOME: '/h' }, root: undefined, name: undefined })).toBe('/h/.claude/plugins/data/aether-inline')
 })
