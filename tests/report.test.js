@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { useDataDir, tempDir, age } = require('./helpers.js')
+const { useDataDir, age } = require('./helpers.js')
 const { T0, MIN, OPUS, SONNET, HAIKU, GEMINI, sampleUsage, writeUsage, finishedRun, sampleLaneLog, laneResult } = require('./report-fixtures.js')
 const { writeJson } = require('../plugins/aether/lib/run.js')
 const { appendLog } = require('../plugins/aether/lib/lanes.js')
@@ -92,15 +92,6 @@ test('report uses the session it is given, and refuses one that does not exist o
 test('finalize appends the record with versions, then removes the run and its leftovers', (t) => {
   const dataDir = useDataDir(t)
   sampleUsage(dataDir)
-  const config = tempDir(t, 'aether-claude-config-')
-  fs.mkdirSync(path.join(config, 'plugins'))
-  fs.writeFileSync(
-    path.join(config, 'plugins', 'installed_plugins.json'),
-    JSON.stringify({ version: 2, plugins: { 'superpowers@claude-plugins-official': [{ scope: 'user', version: '6.4.1' }] } }),
-  )
-  const previous = process.env.CLAUDE_CONFIG_DIR
-  process.env.CLAUDE_CONFIG_DIR = config
-  t.after(() => (previous === undefined ? delete process.env.CLAUDE_CONFIG_DIR : (process.env.CLAUDE_CONFIG_DIR = previous)))
   const { repo, args } = finishedRun(t)
   const unit = ensure(repo.dir, args.runId, 'task-2')
   const out = finalize(repo.dir, args.runId, { tests: false, now: T0 + 40 * MIN })
@@ -112,7 +103,7 @@ test('finalize appends the record with versions, then removes the run and its le
   assert.equal(record.repo, repo.dir)
   // The aether version comes from the manifest, so a version bump does not break this test.
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.deepEqual(record.versions, { aether: manifest.version, superpowers: '6.4.1', claudeCode: '2.1.294' })
+  assert.deepEqual(record.versions, { aether: manifest.version, claudeCode: '2.1.294' })
   close(record.report.cost.run.usd, 26.5)
   assert.deepEqual(out.cleanup.remaining, { worktrees: [], branches: [] })
   assert.equal(fs.existsSync(args.runDir), false)

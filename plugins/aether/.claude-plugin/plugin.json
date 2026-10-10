@@ -1,19 +1,13 @@
 {
   "name": "aether",
   "version": "0.7.0",
-  "description": "Aether mode for Claude Code: the Lead on Sonnet holds the conversation, the Designer on Opus writes specs and plans, and a parallel swarm of Haiku, Sonnet and Opus implementers builds them, each attempt supervised and every merge made one at a time. Lanes run its calls on other coding plans, such as agy, while their quota lasts. The Lead decides as the owner's delegate and, with the owner's permission, works for hours and ends with a brief.",
+  "description": "Aether mode for Claude Code, built for RADAR: rapid, autonomous, delegating, affordable and robust. The Lead on Sonnet is the owner's right hand: it understands the intent, writes the spec, and orchestrates. A Writer on Sonnet writes plans and tasks in Spec Kit's layout, and a Judge on Opus reviews them. A parallel swarm of Haiku, Sonnet and Opus implementers builds them, each attempt supervised and every merge made one at a time. Lanes run its calls on other coding plans, such as agy, while their quota lasts. With the owner's permission, the Lead works for hours and ends with a brief.",
   "author": {
     "name": "DarkArty07"
   },
   "license": "MIT",
   "repository": "https://github.com/DarkArty07/aether-plugin",
   "homepage": "https://github.com/DarkArty07/aether-plugin",
-  "dependencies": [
-    {
-      "name": "superpowers",
-      "marketplace": "claude-plugins-official"
-    }
-  ],
   "userConfig": {
     "lanes": {
       "type": "boolean",

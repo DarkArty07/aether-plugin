@@ -109,10 +109,10 @@ test('the installer and the fish launcher are gone', () => {
 test('the manifest is version 0.7.0, and the README says so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
   assert.equal(manifest.version, '0.7.0')
-  assert.match(manifest.description, /the Lead on Sonnet/)
-  assert.match(manifest.description, /the Designer on Opus/)
+  assert.match(manifest.description, /built for RADAR/)
+  assert.match(manifest.description, /the owner's right hand/)
+  assert.match(manifest.description, /a Judge on Opus reviews them/)
   assert.match(manifest.description, /Lanes run its calls on other coding plans/)
-  assert.match(manifest.description, /decides as the owner's delegate/)
   assert.match(README(), /^Version 0\.7: /m)
 })
 
