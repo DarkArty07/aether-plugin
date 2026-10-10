@@ -192,12 +192,27 @@ function harnessStatus(name, settings, reserve, runId) {
   return { ...base, version, groups }
 }
 
+// The harnesses the owner enabled: AETHER_LANE_HARNESSES where the session's exports reach, else the ones
+// the run's compile listed. The usage meter mod runs aether-lane in Claude Code's own environment, which the
+// session's exports do not reach (decision A30), so there the run's graph carries the owner's list.
+function enabledFor(cwd, runId) {
+  if (process.env.AETHER_LANE_HARNESSES !== undefined) return lanes.enabledHarnesses()
+  try {
+    const graph = run.readJson(path.join(run.runDir(repoPaths(cwd).mainRoot, runId), 'graph.json'))
+    const listed = graph?.lanes?.harnesses
+    if (Array.isArray(listed) && listed.length > 0) return listed
+  } catch {
+    // No graph, or one that cannot be read: the default list.
+  }
+  return lanes.enabledHarnesses()
+}
+
 // Every harness of the table: an enabled one with its status, a disabled one by its command alone.
 function status(cwd, runId) {
   run.assertRunId(runId)
   repoPaths(cwd)
   const config = loadTable()
-  const enabled = lanes.enabledHarnesses()
+  const enabled = enabledFor(cwd, runId)
   const harnesses = {}
   for (const [name, settings] of Object.entries(config.harnesses)) {
     harnesses[name] = enabled.includes(name) ? harnessStatus(name, settings, config.reserve, runId) : { enabled: false, command: settings.command }
@@ -239,8 +254,8 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   const message = fs.readFileSync(paths.prompt, 'utf8')
   if (lanes.digest(message) !== digest) return { unavailable: 'digest' }
   const name = harnessOfModel(loadTable(), model)
-  // A harness the owner did not enable in AETHER_LANE_HARNESSES runs no call, even when a model names it.
-  if (!lanes.enabledHarnesses().includes(name)) return { unavailable: 'harness' }
+  // A harness the owner did not enable runs no call, even when a model names it.
+  if (!enabledFor(cwd, runId).includes(name)) return { unavailable: 'harness' }
   const { config, harness, adapter } = harnessSettings(name)
   const lane = CALLED_ROLES.includes(role) ? laneModel(harness, role, model, effort) : null
   if (!lane) return { unavailable: 'role' }

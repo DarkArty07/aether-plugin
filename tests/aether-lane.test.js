@@ -181,6 +181,27 @@ test('start refuses a model of a harness the lanes option does not enable, and n
   assert.equal(fs.existsSync(path.join(args.runDir, 'lanes', IMPLEMENT, 'call.json')), false)
 })
 
+test("without AETHER_LANE_HARNESSES, as where the mod runs aether-lane, status and start read the run's compiled list", (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const graphFile = path.join(args.runDir, 'graph.json')
+  const graph = JSON.parse(fs.readFileSync(graphFile, 'utf8'))
+  fs.writeFileSync(graphFile, JSON.stringify({ ...graph, lanes: { harness: 'codex', harnesses: ['codex'] } }))
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry('/nowhere/codex')) })
+  useEnv(t, env)
+  const previous = process.env.AETHER_LANE_HARNESSES
+  delete process.env.AETHER_LANE_HARNESSES
+  t.after(() => {
+    if (previous !== undefined) process.env.AETHER_LANE_HARNESSES = previous
+  })
+  const out = calls.status(repo.dir, args.runId)
+  assert.deepEqual([out.harnesses.codex.enabled, out.harnesses.agy.enabled], [true, false])
+  const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
+  const flagsOf = { role: 'implementer', task: 'task-1', effort: 'high', digest }
+  // agy's model is refused, since the run listed codex alone; codex's passes that check and stops at its install.
+  assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { ...flagsOf, model: 'gemini-3.8-flash' }), { unavailable: 'harness' })
+  assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { ...flagsOf, model: 'gpt-codex' }), { unavailable: 'not-installed' })
+})
+
 test('start takes the harness from the model, and records it in the call', (t) => {
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
