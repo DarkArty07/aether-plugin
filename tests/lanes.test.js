@@ -54,14 +54,14 @@ test('the shipped table names one lane model per native model, with its group, r
   assert.equal(agy.command, 'agy')
   assert.equal(agy.maxParallel, 4)
   assert.equal(agy.waitSeconds, 540)
-  assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200, designer: 1800 })
+  assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200 })
   assert.deepEqual(agy.groups, { gemini: 'Gemini Models', claude: 'Claude and GPT models' })
   assert.deepEqual(
     Object.entries(agy.models).map(([id, m]) => [id, m.group, m.replaces, m.roles, m.levels]),
     [
       ['gemini-3.8-flash', 'gemini', 'haiku', ['implementer'], LEVELS],
       ['claude-sonnet-5-5', 'claude', 'sonnet', ['implementer', 'supervisor'], LEVELS],
-      ['claude-opus-5-5', 'claude', 'opus', ['implementer', 'reviewer', 'designer'], LEVELS],
+      ['claude-opus-5-5', 'claude', 'opus', ['implementer', 'reviewer'], LEVELS],
     ],
   )
   assert.deepEqual(agy.models['gemini-3.8-flash'].aa, { slug: 'gemini-3-8-flash', intelligence: 40.9, terminalBench: 0.2, checked: '2026-10-08' })
@@ -81,10 +81,11 @@ test('loadConfig refuses a table it cannot trust, naming the file and the field'
     [(c) => (c.reserve = 2), /reserve/],
     [(c) => (c.harnesses.agy.maxParallel = 0), /maxParallel/],
     [(c) => (c.harnesses.agy.waitSeconds = 'soon'), /waitSeconds/],
-    [(c) => (c.harnesses.agy.timeouts.designer = -1), /timeouts/],
+    [(c) => (c.harnesses.agy.timeouts.reviewer = -1), /timeouts/],
     [(c) => (c.harnesses.agy.models['gemini-3.8-flash'].group = 'other'), /gemini-3\.8-flash.*group/],
     [(c) => (c.harnesses.agy.models['gemini-3.8-flash'].replaces = 'gpt'), /gemini-3\.8-flash.*replaces/],
     [(c) => (c.harnesses.agy.models['gemini-3.8-flash'].roles = ['ops']), /gemini-3\.8-flash.*roles/],
+    [(c) => (c.harnesses.agy.models['claude-opus-5-5'].roles = ['implementer', 'designer']), /claude-opus-5-5.*roles/],
     [(c) => (c.harnesses.agy.models['claude-opus-5-5'].levels.xhigh = 'max'), /claude-opus-5-5.*levels/],
   ]
   for (const [mutate, pattern] of bad) {
@@ -117,7 +118,7 @@ test('laneFor maps a native call to its lane model and level, and keeps max and 
   })
   assert.equal(lanes.laneFor(c, 'implementer', 'sonnet', 'xhigh').agyModel, 'claude-sonnet-5-5-high')
   assert.equal(lanes.laneFor(c, 'reviewer', 'opus', 'high').agyModel, 'claude-opus-5-5-high')
-  assert.equal(lanes.laneFor(c, 'designer', 'opus', 'xhigh').agyModel, 'claude-opus-5-5-high')
+  assert.equal(lanes.laneFor(c, 'designer', 'opus', 'xhigh'), null)
   assert.equal(lanes.laneFor(c, 'implementer', 'opus', 'max'), null)
   assert.equal(lanes.laneFor(c, 'supervisor', 'haiku', 'high'), null)
   assert.equal(lanes.laneFor(c, 'reviewer', 'sonnet', 'high'), null)
@@ -126,8 +127,8 @@ test('laneFor maps a native call to its lane model and level, and keeps max and 
 })
 
 test('a role left out of a model turns that lane off', (t) => {
-  const file = writeConfig(t, (c) => (c.harnesses.agy.models['claude-opus-5-5'].roles = ['implementer', 'reviewer']))
-  assert.equal(lanes.laneFor(lanes.loadConfig(file), 'designer', 'opus', 'xhigh'), null)
+  const file = writeConfig(t, (c) => (c.harnesses.agy.models['claude-opus-5-5'].roles = ['implementer']))
+  assert.equal(lanes.laneFor(lanes.loadConfig(file), 'reviewer', 'opus', 'xhigh'), null)
 })
 
 test('lanesArgs gives the run its lanes when the harness is installed, and null otherwise', () => {

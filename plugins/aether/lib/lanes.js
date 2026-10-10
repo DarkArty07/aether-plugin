@@ -8,7 +8,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'lanes.json')
-const ROLES = ['implementer', 'supervisor', 'reviewer', 'designer']
+const ROLES = ['implementer', 'supervisor', 'reviewer']
 const NATIVE_MODELS = ['haiku', 'sonnet', 'opus']
 const LEVEL_NAMES = ['low', 'medium', 'high', 'xhigh']
 const LEVEL_VALUES = ['low', 'medium', 'high']
@@ -40,7 +40,7 @@ function validateModel(harness, id, model, groups) {
   if (typeof model.group !== 'string' || !Object.hasOwn(groups, model.group)) fail('group', 'must name one of the groups')
   if (!NATIVE_MODELS.includes(model.replaces)) fail('replaces', 'must be haiku, sonnet or opus')
   if (!Array.isArray(model.roles) || model.roles.length === 0 || !model.roles.every((role) => ROLES.includes(role))) {
-    fail('roles', 'must be a non-empty list of implementer, supervisor, reviewer or designer')
+    fail('roles', 'must be a non-empty list of implementer, supervisor or reviewer')
   }
   if (!isObject(model.levels) || !LEVEL_NAMES.every((level) => LEVEL_VALUES.includes(model.levels[level]))) {
     fail('levels', 'must map low, medium, high and xhigh to low, medium or high')
