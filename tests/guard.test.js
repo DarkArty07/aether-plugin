@@ -739,3 +739,15 @@ test('the owner\'s list records a push without its URL password and a publish wi
   const file = fs.readFileSync(pendingFile(repo.dir), 'utf8')
   for (const secret of ['ghp_x', 's3cretvalue', '424242']) assert.equal(file.includes(secret), false, secret)
 })
+
+test('a command run by its path is classed by its name, wrappers and shells included', () => {
+  assert.equal(irreversibleClass('/usr/bin/git push'), 'push')
+  assert.equal(irreversibleClass('./node_modules/.bin/vercel --prod'), 'deploy')
+  assert.equal(irreversibleClass('/usr/bin/sudo /usr/bin/npm publish'), 'publish')
+  assert.equal(irreversibleClass("/bin/sh -c 'git push origin main'"), 'push')
+  assert.equal(irreversibleClass('/usr/bin/git status'), null)
+  assert.equal(irreversibleClass('/opt/tools/rm-cache --all'), null)
+  // An assignment whose value is a path is still an assignment.
+  assert.equal(irreversibleClass('PATH=/usr/bin:/bin git push'), 'push')
+  assert.equal(irreversibleClass('GIT_DIR=/x/.git /usr/bin/git push'), 'push')
+})

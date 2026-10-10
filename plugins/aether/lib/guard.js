@@ -169,13 +169,19 @@ function skipOptions(words, i, valued) {
   return at
 }
 
+// A command's name: the last part of a path such as /usr/bin/git, or the word itself.
+function nameOf(word) {
+  return word.includes('/') ? path.posix.basename(word) : word
+}
+
 // The words that the wrappers in front of a command leave: sudo, env, timeout, nice, exec and the plain
 // wrappers, each with its options, and NAME=value assignments. timeout also takes its duration.
 function dropWrappers(words) {
   let i = 0
   while (i < words.length) {
-    const word = words[i]
-    if (ASSIGNMENT.test(word)) i++
+    // An assignment is read as it is written; a wrapper by its name, so /usr/bin/sudo is sudo.
+    const word = nameOf(words[i])
+    if (ASSIGNMENT.test(words[i])) i++
     else if (word === 'sudo') i = skipOptions(words, i + 1, SUDO_VALUED)
     else if (word === 'env') i = skipOptions(words, i + 1, ENV_VALUED)
     else if (word === 'timeout') i = skipOptions(words, i + 1, TIMEOUT_VALUED) + 1
@@ -228,7 +234,9 @@ function subcommandOf(words) {
 // The match of one command's words: its class and the words of its subcommand, or null. A shell or eval
 // is matched by the script it runs, one level deeper. When wanted is given, only that class matches.
 function matchWords(words, depth, wanted) {
-  const command = dropGitOptions(dropWrappers(words))
+  const unwrapped = dropWrappers(words)
+  // A command run by its path, such as /usr/bin/git, is matched by its name.
+  const command = dropGitOptions(unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped)
   const script = scriptOf(command)
   if (script !== null) return depth < MAX_NESTING ? matchCommand(script, depth + 1, wanted) : null
   const found = subcommandOf(command)
