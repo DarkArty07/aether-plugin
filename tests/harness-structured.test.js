@@ -2,7 +2,16 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { defaultExec, extractJsonObject, missingField, quotaLine, usageOf } = require('../plugins/aether/lib/harness/structured.js')
+const {
+  defaultExec,
+  extractJsonObject,
+  missingField,
+  parseJson,
+  parseRun,
+  quotaLine,
+  stringsIn,
+  usageOf,
+} = require('../plugins/aether/lib/harness/structured.js')
 
 test('extractJsonObject reads the object in prose and the one in a fenced json block', () => {
   assert.deepEqual(extractJsonObject('Here is the result: {"verdict":"approve"} as asked.'), { verdict: 'approve' })
@@ -68,6 +77,56 @@ test("usageOf gives agy's shape, zero where unknown, and a total of input plus o
   assert.deepEqual(usageOf({ input: 10, output: 5, total: 99 }), { input: 10, output: 5, thinking: 0, cacheRead: 0, total: 99 })
   assert.deepEqual(usageOf({ input: '10', output: null }), { input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 })
   assert.deepEqual(usageOf(), { input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 })
+})
+
+// What an adapter's read of a run gives: the answer, the usage and the stdout outside the answer.
+const ZERO = { input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }
+const reads = (answer, outside = '') => () => ({ answer, usage: ZERO, outside })
+const NO_ANSWER = reads('')
+
+test('parseRun calls a clean answer clean, whatever its text and stderr say about limits', () => {
+  const answer = '{"verdict":"approve"} The rate limit of the API is documented.'
+  assert.deepEqual(parseRun({ stdout: 'x', stderr: 'Rate limit reached\n', exitCode: 0 }, reads(answer, 'usage limit'), ['verdict']), {
+    clean: true,
+    reason: null,
+    structured: { verdict: 'approve' },
+    usage: ZERO,
+    conversation: null,
+  })
+})
+
+test('parseRun reads a run that did not exit 0 by its quota lines first, then its exit, then its answer', () => {
+  const reason = (raw, read = NO_ANSWER) => parseRun(raw, read).reason
+  assert.equal(reason({ stdout: '', stderr: 'Rate limit reached\n', exitCode: 1 }), 'quota: Rate limit reached')
+  assert.equal(reason({ stdout: '', stderr: 'Rate limit reached\n', exitCode: 0 }), 'quota: Rate limit reached')
+  assert.equal(reason({ stdout: '', stderr: '', exitCode: 1 }, reads('', 'usage limit reached')), 'quota: usage limit reached')
+  assert.equal(reason({ stdout: '', stderr: '', exitCode: 0 }, reads('', 'usage limit reached')), 'no result')
+  assert.equal(reason({ stdout: '', stderr: 'error: sandbox denied\n', exitCode: 1 }, reads('', 'no limit here')), 'exit 1: error: sandbox denied')
+  assert.equal(reason({ stdout: '', stderr: '', exitCode: 0 }), 'no result')
+  assert.equal(reason({ stdout: '', stderr: '', exitCode: 0 }, reads('no json here')), 'no structured output')
+})
+
+test('parseRun reads a missing required field as missing, even when the answer talks about limits', () => {
+  assert.equal(parseRun({ stdout: '', stderr: '', exitCode: 0 }, reads('{"verdict":"approve"} rate limit'), ['files']).reason, 'missing files')
+})
+
+test('parseRun gives a run whose exit is not known the reason exit unknown, and never calls it clean', () => {
+  assert.equal(parseRun({ stdout: '', stderr: '' }, reads('{"verdict":"approve"}'), ['verdict']).reason, 'exit unknown')
+  assert.equal(parseRun({ stdout: '', stderr: 'boom\n', exitCode: null }, NO_ANSWER).reason, 'exit unknown: boom')
+  assert.equal(parseRun(undefined, NO_ANSWER).reason, 'exit unknown')
+})
+
+test('parseRun quotes at most 200 characters of a quota line', () => {
+  const line = `rate limit ${'x'.repeat(300)}`
+  assert.equal(parseRun({ stdout: '', stderr: line, exitCode: 1 }, NO_ANSWER).reason, `quota: ${line.slice(0, 200)}`)
+})
+
+test('stringsIn gives every string of a JSON value at any depth, and parseJson undefined for text that is not JSON', () => {
+  assert.deepEqual(stringsIn({ a: 'x', b: ['y', { c: 'z' }], n: 1, t: null }), ['x', 'y', 'z'])
+  assert.deepEqual(stringsIn('s'), ['s'])
+  assert.deepEqual(stringsIn(5), [])
+  assert.deepEqual(parseJson('{"a":1}'), { a: 1 })
+  assert.equal(parseJson('nope'), undefined)
 })
 
 test('defaultExec runs argv without a shell, and throws when the command cannot start', () => {

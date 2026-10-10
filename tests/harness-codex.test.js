@@ -101,6 +101,36 @@ test('parse fails a quota message in stderr or stdout before any other rule', ()
   assert.deepEqual([limited.clean, limited.reason], [false, 'quota: Error: usage limit reached'])
 })
 
+test('a clean answer stays clean, whatever the command output or the answer text says about limits', () => {
+  const codex = createCodex({ groups: GROUPS })
+  const commandOutput = { type: 'item.completed', item: { id: 'item_2', type: 'command_execution', aggregated_output: '# pass 429\n', exit_code: 0 } }
+  const limitTalk = message('{"verdict":"approve","summary":"done"} The rate limit of the API is documented.')
+  for (const stdout of [jsonl(commandOutput, message(APPROVE), turn(CODEX_USAGE)), jsonl(limitTalk, turn(CODEX_USAGE))]) {
+    const parsed = codex.parse({ stdout, stderr: '', exitCode: 0 }, { required: ['verdict'] })
+    assert.deepEqual([parsed.clean, parsed.reason], [true, null])
+  }
+})
+
+test('a non-zero codex run is a quota failure for a quota line on stderr or in an error event, and quotes only the message', () => {
+  const codex = createCodex({ groups: GROUPS })
+  assert.equal(codex.parse({ stdout: '', stderr: 'Rate limit reached\n', exitCode: 1 }).reason, 'quota: Rate limit reached')
+  const error = jsonl({ type: 'error', message: 'usage limit reached' })
+  assert.equal(codex.parse({ stdout: error, stderr: '', exitCode: 1 }).reason, 'quota: usage limit reached')
+  const failed = jsonl({ type: 'turn.failed', error: { message: 'You have hit your usage limit' } })
+  assert.equal(codex.parse({ stdout: failed, stderr: '', exitCode: 1 }).reason, 'quota: You have hit your usage limit')
+})
+
+test('a non-zero codex run with no quota text gives its exit and the first stderr line', () => {
+  const codex = createCodex({ groups: GROUPS })
+  const stdout = jsonl({ type: 'error', message: 'sandbox denied' })
+  assert.equal(codex.parse({ stdout, stderr: 'error: sandbox denied\n', exitCode: 2 }).reason, 'exit 2: error: sandbox denied')
+})
+
+test('parse without an exit code is a non-zero exit, exit unknown', () => {
+  const codex = createCodex({ groups: GROUPS })
+  assert.equal(codex.parse({ stdout: jsonl(message(APPROVE), turn(CODEX_USAGE)), stderr: '' }, { required: ['verdict'] }).reason, 'exit unknown')
+})
+
 test('parse fails empty output as no result, and an answer with no JSON as no structured output', () => {
   const codex = createCodex({ groups: GROUPS })
   assert.deepEqual(codex.parse({ stdout: '', stderr: '', exitCode: 0 }, { required: ['verdict'] }), {

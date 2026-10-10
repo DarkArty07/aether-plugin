@@ -3,21 +3,27 @@
 // The Grok harness: the headless command line, and a run judged from the one JSON object grok prints.
 
 const { commandInstalled } = require('../lanes.js')
-const { defaultExec, extractJsonObject, parseRun, readVersion, unknownQuota, usageOf } = require('./structured.js')
+const { defaultExec, extractJsonObject, parseRun, readVersion, stringsIn, unknownQuota, usageOf } = require('./structured.js')
 
 // Grok's answer is the first of these fields that holds a string.
 const ANSWER_FIELDS = ['result', 'response', 'text', 'output']
 
 // Grok prints one JSON object: its answer is the first string among ANSWER_FIELDS, and its usage is the usage
-// object. The names are Spec Kit 1.1.3's, not yet checked against the installed grok: correct them here if the
-// real output differs.
+// object. Every other field is outside the answer, where a quota line may sit; without an object, all of the output
+// is outside it. The names are Spec Kit 1.1.3's, not yet checked against the installed grok: correct them here if
+// the real output differs.
 function readGrok(stdout) {
-  const data = extractJsonObject(stdout) ?? {}
+  const data = extractJsonObject(stdout)
+  if (data === null) return { answer: '', usage: usageOf({}), outside: stdout }
   const field = ANSWER_FIELDS.find((name) => typeof data[name] === 'string')
   const usage = data.usage ?? {}
   return {
     answer: field === undefined ? '' : data[field],
     usage: usageOf({ input: usage.input_tokens, output: usage.output_tokens, total: usage.total_tokens }),
+    outside: Object.entries(data)
+      .filter(([key]) => key !== field)
+      .flatMap(([, value]) => stringsIn(value))
+      .join('\n'),
   }
 }
 

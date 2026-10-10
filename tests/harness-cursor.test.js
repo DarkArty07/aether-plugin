@@ -90,12 +90,30 @@ test('parse fails a non-zero exit with the first non-empty stderr line', () => {
   assert.equal(cursor.parse({ stdout, stderr: '', exitCode: 4 }).reason, 'exit 4')
 })
 
-test('parse fails a quota message in stderr or stdout before any other rule', () => {
+test('parse reads a quota line in stderr first, and in stdout only outside the answer of a run that did not exit 0', () => {
   const cursor = createCursor({ groups: GROUPS })
   const stdout = printed({ result: APPROVE })
   assert.equal(cursor.parse({ stdout, stderr: 'Error: rate limit exceeded\n', exitCode: 1 }).reason, 'quota: Error: rate limit exceeded')
   const limited = JSON.stringify({ type: 'error', message: 'Too many requests' })
-  assert.equal(cursor.parse({ stdout: limited, stderr: '', exitCode: 0 }).reason, 'quota: {"type":"error","message":"Too many requests"}')
+  // The stdout quota check runs only for a run that did not exit 0, and quotes the message, not the JSON line.
+  assert.equal(cursor.parse({ stdout: limited, stderr: '', exitCode: 1 }).reason, 'quota: Too many requests')
+  assert.equal(cursor.parse({ stdout: limited, stderr: '', exitCode: 0 }).reason, 'no result')
+})
+
+test('a clean answer stays clean, whatever it says about limits', () => {
+  const cursor = createCursor({ groups: GROUPS })
+  const result = `${APPROVE} The rate limit of the API is documented.`
+  const parsed = cursor.parse({ stdout: printed({ result }), stderr: '', exitCode: 0 }, { required: ['verdict'] })
+  assert.deepEqual([parsed.clean, parsed.reason], [true, null])
+})
+
+test('a non-zero cursor run reads limit words in its result as an exit, and in its other fields as a quota', () => {
+  const cursor = createCursor({ groups: GROUPS })
+  const result = printed({ result: 'the rate limit is documented' })
+  assert.equal(cursor.parse({ stdout: result, stderr: 'Error: not logged in\n', exitCode: 1 }).reason, 'exit 1: Error: not logged in')
+  const failed = printed({ result: APPROVE, message: 'Too many requests' })
+  assert.equal(cursor.parse({ stdout: failed, stderr: '', exitCode: 1 }).reason, 'quota: Too many requests')
+  assert.equal(cursor.parse({ stdout: printed({ result: APPROVE }), stderr: '' }).reason, 'exit unknown')
 })
 
 test('parse fails empty or unreadable output as no result, with zero usage', () => {

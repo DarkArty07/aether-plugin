@@ -3,33 +3,34 @@
 // The Codex harness: the headless exec command line, and a run judged from the JSON events codex prints.
 
 const { commandInstalled } = require('../lanes.js')
-const { defaultExec, parseObject, parseRun, readVersion, unknownQuota, usageOf } = require('./structured.js')
+const { defaultExec, parseJson, parseRun, readVersion, stringsIn, unknownQuota, usageOf } = require('./structured.js')
 
-// Codex prints one JSON event per line. Lines that are not JSON are skipped.
-function codexEvents(stdout) {
-  const events = []
-  for (const line of stdout.split('\n')) {
-    const event = parseObject(line.trim())
-    if (event !== null) events.push(event)
-  }
-  return events
-}
-
-// The answer is the text of the last item.completed event whose item is an agent_message, and the usage is
-// that of the last turn.completed event that has one. The field names are Spec Kit 1.1.3's, not yet checked
-// against the installed codex: correct them here if the real events differ.
+// The answer is the text of the last item.completed event whose item is an agent_message, and the usage is that of
+// the last turn.completed event that has one. Codex prints one JSON event per line. Every other event, and every
+// line that is not JSON, is outside the answer: a quota line may sit there, in an error or turn.failed event. The
+// field names are Spec Kit 1.1.3's, not yet checked against the installed codex: correct them here if the real
+// events differ.
 function readCodex(stdout) {
   let answer = ''
   let usage = {}
-  for (const event of codexEvents(stdout)) {
-    if (event.type === 'item.completed' && event.item?.type === 'agent_message' && typeof event.item.text === 'string') {
-      answer = event.item.text
+  const outside = []
+  for (const line of stdout.split('\n')) {
+    const event = parseJson(line.trim())
+    if (event === undefined) {
+      outside.push(line)
+      continue
     }
-    if (event.type === 'turn.completed' && typeof event.usage === 'object' && event.usage !== null) usage = event.usage
+    if (event?.type === 'item.completed' && event.item?.type === 'agent_message') {
+      if (typeof event.item.text === 'string') answer = event.item.text
+      continue
+    }
+    if (event?.type === 'turn.completed' && typeof event.usage === 'object' && event.usage !== null) usage = event.usage
+    outside.push(...stringsIn(event))
   }
   return {
     answer,
     usage: usageOf({ input: usage.input_tokens, output: usage.output_tokens, cacheRead: usage.cached_input_tokens }),
+    outside: outside.join('\n'),
   }
 }
 

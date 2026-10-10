@@ -1,13 +1,16 @@
 'use strict'
 
 // What the Codex, Grok and Cursor harnesses share: running a command, reading its version, finding the JSON
-// object in an answer, and judging a run in one fixed order: quota, exit, answer, JSON object, required fields.
+// object in an answer, and judging a run: a clean answer is clean whatever else the output says, and a failed
+// run is classed by its quota lines, its exit, its answer, its JSON object and its required fields, in that order.
 
 const { spawnSync } = require('node:child_process')
 
 // The words of a quota or rate-limit error. A line of an answer or of command output can match too.
 const QUOTA_LINE = /rate.?limit|quota|usage limit|too many requests|\b429\b/i
-// Reasons quote a stderr or quota line; a longer line would bloat the lane log.
+// Reasons quote a quota line in at most QUOTE_LIMIT characters, and a stderr line in at most LINE_LIMIT, so a
+// long line cannot bloat the lane log.
+const QUOTE_LIMIT = 200
 const LINE_LIMIT = 300
 
 // Runs argv without a shell. A spawn that fails or times out throws; otherwise the exit status and output come back.
@@ -21,14 +24,27 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+// The JSON value text holds, or undefined when it is not JSON.
+function parseJson(text) {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
 // The object text holds, or null when it is not a JSON object.
 function parseObject(text) {
-  try {
-    const value = JSON.parse(text)
-    return isPlainObject(value) ? value : null
-  } catch {
-    return null
-  }
+  const value = parseJson(text)
+  return isPlainObject(value) ? value : null
+}
+
+// Every string in a JSON value, at any depth, in order.
+function stringsIn(value) {
+  if (typeof value === 'string') return [value]
+  if (Array.isArray(value)) return value.flatMap(stringsIn)
+  if (isPlainObject(value)) return Object.values(value).flatMap(stringsIn)
+  return []
 }
 
 // The index of the brace that closes the one at start, or -1. Braces inside JSON strings do not count.
@@ -111,27 +127,37 @@ function usageOf({ input, output, thinking, cacheRead, total } = {}) {
   }
 }
 
-// The verdict on one run, from its raw output. extract(stdout) gives the answer text and the usage, which
-// are kept whatever the verdict. The rules run in this order and the first one that fails gives the reason.
+const quotaReason = (line) => `quota: ${line.slice(0, QUOTE_LIMIT)}`
+
+// The verdict on one run, from its raw output. extract(stdout) gives the answer text, the usage and the stdout
+// outside the answer, where a quota line may sit; the usage is kept whatever the verdict. A run that exits 0 with
+// a JSON object in its answer and every required field is clean, and no quota line is looked for in it. Any other
+// run fails by the first rule that holds: a quota line in stderr; for a run that did not exit 0, a quota line
+// outside the answer; its exit; no result; no structured output; a missing field.
 function parseRun(raw, extract, required = []) {
   const stdout = typeof raw?.stdout === 'string' ? raw.stdout : ''
   const stderr = typeof raw?.stderr === 'string' ? raw.stderr : ''
   const exitCode = raw?.exitCode
-  const { answer, usage } = extract(stdout)
+  const { answer, usage, outside } = extract(stdout)
+  const structured = answer.trim() === '' ? null : extractJsonObject(answer)
+  const missing = structured === null ? null : missingField(structured, required)
+  if (exitCode === 0 && structured !== null && missing === null) {
+    return { clean: true, reason: null, structured, usage, conversation: null }
+  }
   const failed = (reason) => ({ clean: false, reason, structured: null, usage, conversation: null })
-  // A quota line is checked first: a run that hit its limit may also exit non-zero.
-  const quota = quotaLine(stderr) ?? quotaLine(stdout)
-  if (quota !== null) return failed(`quota: ${quota.slice(0, LINE_LIMIT)}`)
+  const stderrQuota = quotaLine(stderr)
+  if (stderrQuota !== null) return failed(quotaReason(stderrQuota))
   if (exitCode !== 0) {
+    const outsideQuota = quotaLine(outside)
+    if (outsideQuota !== null) return failed(quotaReason(outsideQuota))
+    // An exit that is not a number, such as none at all or a signal, is not known to be 0.
+    const code = Number.isInteger(exitCode) ? exitCode : 'unknown'
     const line = firstLine(stderr)
-    return failed(`exit ${exitCode}${line === null ? '' : `: ${line.slice(0, LINE_LIMIT)}`}`)
+    return failed(`exit ${code}${line === null ? '' : `: ${line.slice(0, LINE_LIMIT)}`}`)
   }
   if (answer.trim() === '') return failed('no result')
-  const structured = extractJsonObject(answer)
   if (structured === null) return failed('no structured output')
-  const missing = missingField(structured, required)
-  if (missing !== null) return failed(`missing ${missing}`)
-  return { clean: true, reason: null, structured, usage, conversation: null }
+  return failed(`missing ${missing}`)
 }
 
 // The first line of `<command> --version`, or null when the command fails or prints nothing.
@@ -155,10 +181,12 @@ module.exports = {
   defaultExec,
   extractJsonObject,
   missingField,
+  parseJson,
   parseObject,
   parseRun,
   quotaLine,
   readVersion,
+  stringsIn,
   unknownQuota,
   usageOf,
 }

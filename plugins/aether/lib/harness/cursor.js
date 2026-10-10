@@ -3,17 +3,23 @@
 // The Cursor harness: the headless command line, and a run judged from the one JSON object cursor-agent prints.
 
 const { commandInstalled } = require('../lanes.js')
-const { defaultExec, extractJsonObject, parseRun, readVersion, unknownQuota, usageOf } = require('./structured.js')
+const { defaultExec, extractJsonObject, parseRun, readVersion, stringsIn, unknownQuota, usageOf } = require('./structured.js')
 
-// Cursor prints one JSON object: its answer is the result field, and its usage is the usage object. The names
-// are Spec Kit 1.1.3's, not yet checked against the installed cursor-agent: correct them here if the real
+// Cursor prints one JSON object: its answer is the result field, and its usage is the usage object. Every other
+// field is outside the answer, where a quota line may sit; without an object, all of the output is outside it. The
+// names are Spec Kit 1.1.3's, not yet checked against the installed cursor-agent: correct them here if the real
 // output differs.
 function readCursor(stdout) {
-  const data = extractJsonObject(stdout) ?? {}
+  const data = extractJsonObject(stdout)
+  if (data === null) return { answer: '', usage: usageOf({}), outside: stdout }
   const usage = data.usage ?? {}
   return {
     answer: typeof data.result === 'string' ? data.result : '',
     usage: usageOf({ input: usage.input_tokens, output: usage.output_tokens, total: usage.total_tokens }),
+    outside: Object.entries(data)
+      .filter(([key]) => key !== 'result')
+      .flatMap(([, value]) => stringsIn(value))
+      .join('\n'),
   }
 }
 

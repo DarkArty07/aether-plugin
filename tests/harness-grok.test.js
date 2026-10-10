@@ -93,12 +93,31 @@ test('parse fails a non-zero exit with the first non-empty stderr line', () => {
   assert.equal(grok.parse({ stdout, stderr: '', exitCode: 3 }).reason, 'exit 3')
 })
 
-test('parse fails a quota message in stderr or stdout before any other rule', () => {
+test('parse reads a quota line in stderr first, and in stdout only outside the answer of a run that did not exit 0', () => {
   const grok = createGrok({ groups: GROUPS })
   const stdout = printed({ result: APPROVE })
   assert.equal(grok.parse({ stdout, stderr: 'Error: 429 Too Many Requests\n', exitCode: 1 }).reason, 'quota: Error: 429 Too Many Requests')
   const limited = JSON.stringify({ error: 'You exceeded your current quota' })
-  assert.equal(grok.parse({ stdout: limited, stderr: '', exitCode: 0 }).reason, 'quota: {"error":"You exceeded your current quota"}')
+  // The stdout quota check runs only for a run that did not exit 0, and quotes the message, not the JSON line.
+  assert.equal(grok.parse({ stdout: limited, stderr: '', exitCode: 1 }).reason, 'quota: You exceeded your current quota')
+  assert.equal(grok.parse({ stdout: limited, stderr: '', exitCode: 0 }).reason, 'no result')
+})
+
+test('a clean answer stays clean, whatever the other fields and the answer say about limits', () => {
+  const grok = createGrok({ groups: GROUPS })
+  const result = `${APPROVE} The rate limit of the API is documented.`
+  const parsed = grok.parse({ stdout: printed({ result, error: 'rate limit exceeded' }), stderr: '', exitCode: 0 }, { required: ['verdict'] })
+  assert.deepEqual([parsed.clean, parsed.reason], [true, null])
+})
+
+test('a non-zero grok run reads limit words in its answer as an exit, and in its other fields as a quota', () => {
+  const grok = createGrok({ groups: GROUPS })
+  const answer = printed({ result: 'the rate limit is documented' })
+  assert.equal(grok.parse({ stdout: answer, stderr: 'Error: unknown model\n', exitCode: 1 }).reason, 'exit 1: Error: unknown model')
+  assert.equal(grok.parse({ stdout: answer, stderr: '', exitCode: 1 }).reason, 'exit 1')
+  const failed = printed({ result: APPROVE, error: 'rate limit exceeded' })
+  assert.equal(grok.parse({ stdout: failed, stderr: '', exitCode: 1 }).reason, 'quota: rate limit exceeded')
+  assert.equal(grok.parse({ stdout: printed({ result: APPROVE }), stderr: '' }).reason, 'exit unknown')
 })
 
 test('parse fails empty or unreadable output as no result, with zero usage', () => {
