@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const { makeRepo, compile } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
-const { runWorkflow, laneAnswer, laneOf } = require('./workflow-harness.js')
+const { runWorkflow, laneAnswer, laneOf, HARNESS_OF } = require('./workflow-harness.js')
 
 const LANES = {
   harness: 'agy',
@@ -18,7 +18,7 @@ const LANES = {
       opus: { model: 'claude-opus-5-5', group: 'claude' },
     },
     supervisor: { sonnet: { model: 'claude-sonnet-5-5', group: 'claude' } },
-    reviewer: { opus: { model: 'claude-opus-5-5', group: 'claude' } },
+    reviewer: { sonnet: { model: 'claude-sonnet-5-5', group: 'claude' }, opus: { model: 'claude-opus-5-5', group: 'claude' } },
   },
 }
 
@@ -103,14 +103,15 @@ test('with every group usable, the implementer, the supervisor and the final rev
   assert.equal(supervise.label, 'task-1: supervise attempt 1 via agy claude-sonnet-5-5: start')
   assert.ok(supervise.payload.text.includes('\nReview package: .aether-tmp/package.diff\n'))
   assert.ok(supervise.payload.text.includes(`\nUnit worktree: the current directory, a disposable copy of branch aether/${args.runId}/task-1\n`))
+  // A one-unit run of haiku work with a high review: the final review is Sonnet at high.
   assert.deepEqual([review.lane.call, review.lane.role, review.lane.task, review.lane.model, review.lane.effort], [
     'final-review',
     'reviewer',
     undefined,
-    'claude-opus-5-5',
+    'claude-sonnet-5-5',
     'high',
   ])
-  assert.equal(review.label, 'final review via agy claude-opus-5-5: start')
+  assert.equal(review.label, 'final review via agy claude-sonnet-5-5: start')
   assert.ok(review.payload.text.includes('Review package: .aether-tmp/package.diff (base '))
   assert.equal(native(run, 'implementer').length + native(run, 'supervisor').length + native(run, 'reviewer').length, 0)
   const unit = run.result.units[0]
@@ -120,7 +121,7 @@ test('with every group usable, the implementer, the supervisor and the final rev
     'agy claude-sonnet-5-5-high',
     null,
   ])
-  assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'agy claude-opus-5-5-high'])
+  assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'agy claude-sonnet-5-5-high'])
   assert.deepEqual(run.result.lanes, { calls: 3, ok: 3, failed: 0, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 0, dry: [{ wave: 1, groups: [] }] })
   assert.equal(run.result.agents.total, run.calls.length)
 })
@@ -186,7 +187,7 @@ test('an attempt agy leaves for lack of quota goes on native, in the same attemp
   assert.ok(attempt.prompt.includes(`aether-wt ensure ${args.runId} task-1`))
   const unit = run.result.units[0]
   assert.equal(unit.attempts, 1)
-  assert.deepEqual([unit.rounds[0].provider, unit.rounds[0].laneFailure], ['native', { model: 'gemini-3.8-flash-high', reason: 'its quota ran out' }])
+  assert.deepEqual([unit.rounds[0].provider, unit.rounds[0].laneFailure], ['native', { harness: 'agy', model: 'gemini-3.8-flash-high', reason: 'its quota ran out' }])
   assert.equal(run.calls.some((c) => c.kind === 'ops:lane-stop'), false)
   assert.equal(run.result.lanes.quota, 1)
 })
@@ -224,6 +225,23 @@ test('changes outside Owns cost the attempt, and the next one is told to revert 
   assert.equal(second.lane.call, 'task-1-2-implement')
   assert.ok(second.payload.text.includes(summary))
   assert.equal(run.result.lanes.violation, 1)
+  assert.deepEqual(unit.failures, ['no report'])
+})
+
+test('two changes outside Owns in a row block the unit: each counts as an attempt without a report', async (t) => {
+  const run = await runWorkflow(lanesRun(t), {
+    lane: (call, fallback) =>
+      call.command.verb === 'wait' && call.lane.call.endsWith('-implement')
+        ? finished(call, { status: 'violation', detail: 'changes outside Owns', files: ['other/x.js'] })
+        : fallback(call),
+  })
+  ok(run)
+  const unit = run.result.units[0]
+  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks'])
+  assert.equal(unit.attempts, 2)
+  assert.deepEqual(unit.failures, ['no report', 'no report'])
+  assert.equal(run.calls.some((c) => c.kind === 'ops:lane-start' && c.lane.role === 'supervisor'), false)
+  assert.equal(run.result.lanes.violation, 2)
 })
 
 test('a lane that finds the integration worktree changed blocks the unit', async (t) => {
@@ -263,7 +281,7 @@ test('when the waits run out, the lane call is stopped and the same attempt goes
   const stops = run.calls.filter((c) => c.kind === 'ops:lane-stop')
   assert.deepEqual(stops.map((c) => [c.lane.call, c.label]), [['task-1-1-implement', 'task-1: implement on haiku xhigh via agy gemini-3.8-flash (attempt 1): stop']])
   assert.ok(run.calls.indexOf(stops[0]) < run.calls.indexOf(native(run, 'implementer')[0]))
-  assert.deepEqual(run.result.units[0].rounds[0].laneFailure, { model: 'gemini-3.8-flash-high', reason: 'the wait cap ran out' })
+  assert.deepEqual(run.result.units[0].rounds[0].laneFailure, { harness: 'agy', model: 'gemini-3.8-flash-high', reason: 'the wait cap ran out' })
   assert.equal(run.result.units[0].attempts, 1)
   assert.equal(run.result.lanes.failed, 1)
 })
@@ -284,7 +302,7 @@ test('a result whose digest does not match is printed once more, then given up',
   })
   ok(twice)
   assert.deepEqual(twice.calls.filter((c) => c.kind === 'ops:lane-stop').map((c) => c.lane.call), ['task-1-1-implement'])
-  assert.deepEqual(twice.result.units[0].rounds[0].laneFailure, { model: 'gemini-3.8-flash-high', reason: 'the result digest did not match' })
+  assert.deepEqual(twice.result.units[0].rounds[0].laneFailure, { harness: 'agy', model: 'gemini-3.8-flash-high', reason: 'the result digest did not match' })
 })
 
 test('a start the ops agent fails is stopped, and the same attempt goes native', async (t) => {
@@ -294,7 +312,7 @@ test('a start the ops agent fails is stopped, and the same attempt goes native',
   ok(run)
   assert.deepEqual(run.calls.filter((c) => c.kind === 'ops:lane-stop').map((c) => c.lane.call), ['task-1-1-implement'])
   assert.equal(native(run, 'implementer').length, 1)
-  assert.deepEqual(run.result.units[0].rounds[0].laneFailure, { model: 'gemini-3.8-flash', reason: 'start failed: the ops agent failed' })
+  assert.deepEqual(run.result.units[0].rounds[0].laneFailure, { harness: 'agy', model: 'gemini-3.8-flash', reason: 'start failed: the ops agent failed' })
   assert.deepEqual([run.result.lanes.calls, run.result.lanes.failed], [2, 1])
 })
 
@@ -304,7 +322,8 @@ test('calls at max effort stay native', async (t) => {
   assert.equal(starts(run, 'implementer').length + starts(run, 'supervisor').length, 0)
   assert.deepEqual(native(run, 'implementer').map((c) => c.effort), ['max'])
   assert.deepEqual(native(run, 'supervisor').map((c) => c.effort), ['max'])
-  assert.equal(starts(run, 'reviewer').length, 1)
+  // A max review makes the final review Opus at xhigh, which has a lane.
+  assert.deepEqual(starts(run, 'reviewer').map((c) => [c.lane.model, c.lane.effort]), [['claude-opus-5-5', 'xhigh']])
 })
 
 test('a call that finds maxParallel lane calls in flight runs native, and is counted as overflow', async (t) => {
@@ -321,7 +340,7 @@ test('a final review lane that fails goes native, and one that finds the integra
     lane: (call, fallback) => (isCall(call, 'wait', 'final-review') ? finished(call, { status: 'failed', detail: 'exit 1' }) : fallback(call)),
   })
   ok(failed)
-  assert.deepEqual(native(failed, 'reviewer').map((c) => [c.model, c.effort]), [['opus', 'high']])
+  assert.deepEqual(native(failed, 'reviewer').map((c) => [c.model, c.effort]), [['sonnet', 'high']])
   assert.deepEqual([failed.result.finalReview.status, failed.result.finalReview.provider], ['done', 'native'])
 
   const blocked = await runWorkflow(lanesRun(t), {
@@ -329,7 +348,12 @@ test('a final review lane that fails goes native, and one that finds the integra
       isCall(call, 'wait', 'final-review') ? finished(call, { status: 'blocked', detail: 'the integration branch was rewound or rewritten during the lane call' }) : fallback(call),
   })
   ok(blocked)
-  assert.deepEqual(blocked.result.finalReview, { status: 'failed', reason: 'lane: the integration branch was rewound or rewritten during the lane call' })
+  assert.deepEqual(blocked.result.finalReview, {
+    status: 'failed',
+    reason: 'lane: the integration branch was rewound or rewritten during the lane call',
+    reviewModel: 'sonnet',
+    reviewEffort: 'high',
+  })
   assert.equal(native(blocked, 'reviewer').length, 0)
 })
 
@@ -373,4 +397,162 @@ test('a lane call holds its place under maxParallel until its stop settles', asy
   assert.equal(most, 1)
   assert.deepEqual(native(run, 'supervisor').map((c) => c.unit), ['task-2'])
   assert.deepEqual(run.result.units.map((u) => u.status), ['merged', 'merged'])
+})
+
+// Every call of a lanes block on one harness (null leaves the field out).
+const onHarness = (calls, harness) =>
+  Object.fromEntries(Object.entries(calls).map(([role, byModel]) => [role, Object.fromEntries(Object.entries(byModel).map(([model, lane]) => [model, { ...lane, harness }]))]))
+
+// Two harnesses: agy runs the Gemini and Claude models, and codex runs GPT-5.5, which the sonnet tier's implementer uses.
+const TWO = {
+  ...LANES,
+  harnesses: ['agy', 'codex'],
+  maxParallelByHarness: { codex: 1 },
+  calls: {
+    ...LANES.calls,
+    implementer: {
+      haiku: LANES.calls.implementer.haiku,
+      sonnet: { model: 'gpt-5.5-codex', group: 'openai', harness: 'codex' },
+      opus: LANES.calls.implementer.opus,
+    },
+  },
+}
+const SONNET = { tier: 'sonnet high — wiring the tests pin down' }
+
+// An aether-lane status reading with agy's groups usable; `more` adds the other harnesses' readings.
+const reading = (more = {}) => ({
+  harnesses: { agy: { installed: true, version: '1.3.2', groups: { gemini: { usable: true }, claude: { usable: true } } }, ...more },
+})
+const TWO_STATUS = reading({ codex: { installed: true, groups: { openai: { usable: true } } } })
+
+// A lane override that answers the status with `status`, and counts the lane calls in flight per harness:
+// a call is in flight from its start until its wait is done or its stop returns.
+function watch(status) {
+  const live = new Map()
+  const most = { agy: 0, codex: 0 }
+  const lane = (call, fallback) => {
+    if (call.command.verb === 'status') return status
+    const answer = fallback(call)
+    const id = call.lane.call
+    if (call.command.verb === 'start' && answer.started === true) {
+      const harness = HARNESS_OF[call.lane.model] || 'agy'
+      live.set(id, harness)
+      most[harness] = Math.max(most[harness], [...live.values()].filter((h) => h === harness).length)
+    }
+    if (call.command.verb === 'stop' || (call.command.verb === 'wait' && answer.done === true)) live.delete(id)
+    return answer
+  }
+  return { lane, most }
+}
+
+test('the optional harness fields are refused when malformed, and null counts as absent', async (t) => {
+  const bad = [
+    { ...LANES, harnesses: 'agy' },
+    { ...LANES, harnesses: ['agy', ''] },
+    { ...LANES, maxParallelByHarness: { codex: 0 } },
+    { ...LANES, maxParallelByHarness: ['codex'] },
+    { ...LANES, calls: { ...LANES.calls, supervisor: { sonnet: { model: 'claude-sonnet-5-5', group: 'claude', harness: 7 } } } },
+  ]
+  for (const lanes of bad) {
+    const run = await runWorkflow(lanesRun(t, [task(1)], lanes))
+    assert.equal(run.error && run.error.message, 'aether:run args: lanes is invalid')
+    assert.equal(run.calls.length, 0)
+  }
+  const absent = await runWorkflow(lanesRun(t, [task(1)], { ...LANES, harnesses: null, maxParallelByHarness: null, calls: onHarness(LANES.calls, null) }))
+  ok(absent)
+  assert.equal(absent.result.units[0].status, 'merged')
+})
+
+test('args that name the one harness on every call run exactly as args without the new fields', async (t) => {
+  const args = lanesRun(t, [task(1), task(2)])
+  const named = { ...args, lanes: { ...LANES, harnesses: ['agy'], maxParallelByHarness: { agy: LANES.maxParallel }, calls: onHarness(LANES.calls, 'agy') } }
+  const plain = await runWorkflow(args)
+  const same = await runWorkflow(named)
+  ok(plain)
+  ok(same)
+  const rounds = (run) => run.result.units.map((u) => u.rounds.map((r) => [r.provider, r.reviewProvider, r.laneFailure]))
+  assert.deepEqual(kinds(same), kinds(plain))
+  assert.deepEqual(rounds(same), rounds(plain))
+  assert.deepEqual(same.result.lanes, plain.result.lanes)
+  assert.deepEqual(same.result.finalReview, plain.result.finalReview)
+})
+
+test('two harnesses: each call runs on its own harness, and its provider and labels name that harness', async (t) => {
+  const run = await runWorkflow(lanesRun(t, [task(1, SONNET), task(2, SONNET)], { ...TWO, maxParallelByHarness: { codex: 2 } }), {
+    lane: watch(TWO_STATUS).lane,
+  })
+  ok(run)
+  assert.deepEqual(run.result.units.map((u) => u.rounds.map((r) => [r.provider, r.reviewProvider])), [
+    [['codex gpt-5.5-codex-high', 'agy claude-sonnet-5-5-high']],
+    [['codex gpt-5.5-codex-high', 'agy claude-sonnet-5-5-high']],
+  ])
+  assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'agy claude-opus-5-5-high'])
+  assert.deepEqual(starts(run, 'implementer').map((c) => c.lane.model), ['gpt-5.5-codex', 'gpt-5.5-codex'])
+  assert.equal(starts(run, 'implementer')[0].label, 'task-1: implement on sonnet high via codex gpt-5.5-codex (attempt 1): start')
+  assert.equal(native(run, 'implementer').length, 0)
+  assert.deepEqual(run.result.lanes.dry, [{ wave: 1, groups: [] }])
+})
+
+test("quota is read per harness: a group dry on one harness leaves the other harness's groups on lanes", async (t) => {
+  const run = await runWorkflow(lanesRun(t, [task(1, SONNET)], TWO), {
+    lane: (call, fallback) => (call.command.verb === 'status' ? reading({ codex: { installed: true, groups: { openai: { usable: false } } } }) : fallback(call)),
+  })
+  ok(run)
+  assert.deepEqual(native(run, 'implementer').map((c) => [c.model, c.effort]), [['sonnet', 'high']])
+  assert.equal(starts(run, 'implementer').length, 0)
+  assert.equal(starts(run, 'supervisor').length, 1)
+  assert.deepEqual(run.result.lanes.dry, [{ wave: 1, groups: ['codex/openai'] }])
+  assert.equal(run.result.units[0].rounds[0].provider, 'native')
+
+  // A harness missing from the reading, or not installed, is dry for its groups.
+  for (const more of [{}, { codex: { installed: false, groups: { openai: { usable: true } } } }]) {
+    const missing = await runWorkflow(lanesRun(t, [task(1, SONNET)], TWO), { lane: (call, fallback) => (call.command.verb === 'status' ? reading(more) : fallback(call)) })
+    ok(missing)
+    assert.equal(starts(missing, 'implementer').length, 0)
+    assert.deepEqual(missing.result.lanes.dry, [{ wave: 1, groups: ['codex/openai'] }])
+  }
+})
+
+test('the cap on calls in flight applies per harness: a second codex call finds codex full and runs native', async (t) => {
+  const watched = watch(TWO_STATUS)
+  const run = await runWorkflow(lanesRun(t, [task(1, SONNET), task(2, SONNET)], TWO), { lane: watched.lane })
+  ok(run)
+  assert.equal(watched.most.codex, 1)
+  assert.equal(starts(run, 'implementer').length, 1)
+  assert.deepEqual(native(run, 'implementer').map((c) => c.unit), ['task-2'])
+  assert.ok(run.result.lanes.overflow >= 1)
+  assert.deepEqual(run.result.units.map((u) => u.status), ['merged', 'merged'])
+})
+
+test('a harness with its own cap runs that many calls at once, while the harnesses without one share maxParallel', async (t) => {
+  const watched = watch(TWO_STATUS)
+  const run = await runWorkflow(lanesRun(t, [task(1, SONNET), task(2, SONNET)], { ...TWO, maxParallel: 1, maxParallelByHarness: { codex: 2 } }), {
+    lane: watched.lane,
+  })
+  ok(run)
+  assert.equal(watched.most.codex, 2)
+  assert.equal(watched.most.agy, 1)
+  assert.equal(native(run, 'implementer').length, 0)
+  assert.deepEqual(run.result.units.map((u) => u.status), ['merged', 'merged'])
+})
+
+test('an attempt on codex that stops before it finishes names codex in its record and in the context it hands on', async (t) => {
+  const run = await runWorkflow(lanesRun(t, [task(1, SONNET)], TWO), {
+    lane: (call, fallback) => {
+      if (call.command.verb === 'status') return TWO_STATUS
+      if (call.command.verb === 'wait' && call.lane.call === 'task-1-1-implement') return finished(call, { status: 'failed', detail: 'exit 1: model not found' })
+      return fallback(call)
+    },
+  })
+  ok(run)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'merged')
+  assert.deepEqual(unit.rounds[0].laneFailure, { harness: 'codex', model: 'gpt-5.5-codex-high', reason: 'exit 1: model not found' })
+  assert.equal(run.calls.find((c) => c.kind === 'ops:lane-wait' && c.lane.call === 'task-1-1-implement').label, 'task-1: implement on sonnet high via codex gpt-5.5-codex (attempt 1): wait 1')
+  const [attempt] = native(run, 'implementer')
+  assert.ok(
+    attempt.prompt.endsWith(
+      '## An external agent began this attempt\ncodex gpt-5.5-codex-high stopped before it finished: exit 1: model not found. Its uncommitted work, if any, is in the worktree. Continue from it.',
+    ),
+  )
 })
