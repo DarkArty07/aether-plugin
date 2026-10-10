@@ -149,17 +149,38 @@ test("a merge stopped at its timeout says that its merge commit may be on the in
   })
 })
 
-for (const answer of [{ exitCode: 127, stdout: '', stderr: "/usr/bin/env: 'node': No such file or directory" }, { exitCode: 1, stdout: '\n', stderr: 'SyntaxError' }]) {
-  test(`a bin that failed without printing anything never ran as an Aether bin: the model runs the prompt (exit ${answer.exitCode})`, async ($, on) => {
-    const { runs, counts } = stubs(on, { answer })
+for (const stderr of ['SyntaxError: Unexpected token', "Error: Cannot find module '/p/bin/aether-wt'"]) {
+  test(`a bin that failed to load changed nothing: the model runs the prompt, step after step (${stderr.split(':')[0]})`, async ($, on) => {
+    const { runs, counts } = stubs(on, { answer: { exitCode: 1, stdout: '', stderr } })
     await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
-    const { chunks, result } = await step($)
+    const first = await step($)
+    expect(first.chunks.some((c) => c.kind === 'tool')).toBe(false)
+    expect(first.result.answer).toBe('from the model')
+    await step($, { index: 1, messageCount: 9 })
     expect(runs.length).toBe(1)
-    expect(chunks.some((c) => c.kind === 'tool')).toBe(false)
-    expect(result.answer).toBe('from the model')
-    expect(counts.modelSteps).toBe(1)
+    expect(counts.modelSteps).toBe(2)
   })
 }
+
+test('a bin that ended without its line, killed for instance, is reported, and the model never runs it', async ($, on) => {
+  const { counts } = stubs(on, { answer: { exitCode: 1, stdout: '', stderr: '' } })
+  await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
+  const { chunks } = await step($)
+  const { input } = answered(chunks)
+  expect(input.exitCode).toBe(1)
+  expect(JSON.parse(input.stdout.trim())).toEqual({
+    error: 'aether-wt merge exited 1 and printed nothing; its merge commit may be on the integration branch without its tests: check its git log before a relaunch',
+  })
+  await step($, { index: 1, messageCount: 9 })
+  expect(counts.modelSteps).toBe(0)
+})
+
+test("a bin's last line on standard error goes into that report", async ($, on) => {
+  stubs(on, { answer: { exitCode: 137, stdout: '\n', stderr: 'warning: something\nKilled\n' } })
+  await spawn($, opsPrompt(`aether-wt remove ${RUN} task-1`))
+  const { chunks } = await step($)
+  expect(JSON.parse(answered(chunks).input.stdout.trim())).toEqual({ error: 'aether-wt remove exited 137 and printed nothing (Killed); what it changed is unknown' })
+})
 
 test('a command $.process.run refuses goes to the model, which the meter records', async ($, on) => {
   const { runs, writes, counts } = stubs(on, { answer: { deny: 'process.run is not allowed' } })

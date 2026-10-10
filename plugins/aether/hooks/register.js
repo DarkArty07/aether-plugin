@@ -6,9 +6,10 @@
 // It answers the ops agents of aether:run itself (decision A30): when a workflow spawns aether:ops with a
 // prompt that ops-command.mjs accepts, the agent's first step runs that aether-wt or aether-lane command with
 // $.process.run, no shell, and ends the agent with the StructuredOutput call aether:run's schema asks for,
-// without a model request. Any other prompt, and a command that $.process.run refuses or cannot start, or
-// that fails without printing anything, goes to the model as before. Once the mod has run an agent's
-// command, the agent's model never runs it: a command still running at its timeout is reported as stopped.
+// without a model request. Any workflow in an Aether session gets that answer, for any repository and run
+// the prompt names. Any other prompt, a command that $.process.run refuses or cannot start, and a bin that
+// fails to load go to the model as before. Otherwise, once the mod has run an agent's command, the agent's
+// model never runs it: a command still running at its timeout, or ended without its line, is reported.
 //
 // Only an Aether session is metered (installable spec R9): one whose Lead started it (classic.SessionStart
 // with agent_type aether:lead), or one that has a marker <data dir>/sessions/<session>.json, which only
@@ -30,6 +31,8 @@ const STRUCTURED_OUTPUT = 'StructuredOutput'
 const TIMED_OUT = 124
 // An ops agent whose command the mod ran (in a session's `ops`).
 const ANSWERED = 'answered'
+// What node prints when a bin fails to load: a node too old for its syntax, or a missing file.
+const LOAD_FAILURE = /\b(SyntaxError|Cannot find module)\b/
 const SESSION_ID = /^[A-Za-z0-9-]+$/
 
 // session id → { id, aether, dataDir, ready, entries, agents, written, writing, pending, ops }
@@ -231,6 +234,13 @@ async function saveLanePayload($, e, session) {
   }
 }
 
+// What a command that ran but returned no result may have left behind.
+function leftBehind(command) {
+  // aether-wt merge commits the merge before it runs the tests, and reverts only after them.
+  if (command.args[0] === 'merge') return 'its merge commit may be on the integration branch without its tests: check its git log before a relaunch'
+  return 'what it changed is unknown'
+}
+
 // The command an ops agent carries, when the mod may run it, else null. Only an agent a workflow spawned
 // with a schema has the StructuredOutput tool the answer calls; aether:run always passes one.
 function opsCommand(e) {
@@ -292,9 +302,19 @@ export function register(on) {
       }
       try {
         out = await $.process.run(['node', `${$.plugin.root}/bin/${command.bin}`, ...command.args], { cwd: command.cwd, timeoutMs: command.timeoutMs })
-        // The bins print a JSON line whenever they run. A failure with no output is a bin that never ran,
-        // such as node too old for it: the model runs the prompt through the Bash tool's environment.
-        if (out.exitCode !== 0 && (typeof out.stdout !== 'string' || out.stdout.trim() === '')) out = null
+        // The bins print a JSON line whenever they finish. A failure without it is a bin that failed to load,
+        // which changed nothing, so the model runs the prompt through the Bash tool's environment; or one
+        // that ended mid-way, killed for instance, which is reported and never run again.
+        if (out.exitCode !== 0 && (typeof out.stdout !== 'string' || out.stdout.trim() === '')) {
+          const stderr = typeof out.stderr === 'string' ? out.stderr.trim() : ''
+          if (LOAD_FAILURE.test(stderr)) {
+            out = null
+          } else {
+            const last = stderr === '' ? '' : ` (${stderr.split('\n').pop().trim().slice(0, 200)})`
+            const error = `${command.bin} ${command.args[0]} exited ${out.exitCode} and printed nothing${last}; ${leftBehind(command)}`
+            out = { exitCode: out.exitCode, stdout: `${JSON.stringify({ error })}\n` }
+          }
+        }
       } catch (err) {
         // Stopped at its timeout, the command ran: report it, and leave nothing for the model to run again.
         let ended = null
@@ -305,12 +325,7 @@ export function register(on) {
         }
         const stopped = /still running after/.test(String(err && err.message)) || (began !== null && ended !== null && ended - began >= command.timeoutMs)
         if (stopped) {
-          // aether-wt merge commits the merge before it runs the tests, and reverts only after them.
-          const changed =
-            command.args[0] === 'merge'
-              ? 'its merge commit may be on the integration branch without its tests: check its git log before a relaunch'
-              : 'what it changed is unknown'
-          const error = `${command.bin} ${command.args[0]} was still running after ${command.timeoutMs / 1000} s and was stopped; ${changed}`
+          const error = `${command.bin} ${command.args[0]} was still running after ${command.timeoutMs / 1000} s and was stopped; ${leftBehind(command)}`
           out = { exitCode: TIMED_OUT, stdout: `${JSON.stringify({ error })}\n` }
         }
       }
@@ -323,7 +338,7 @@ export function register(on) {
         yield { kind: 'stop', stopReason: 'tool_use', usage: null }
         return { turnId: e.turnId, index: e.index, answer: '', toolUses: [{ name: STRUCTURED_OUTPUT, input }], stopReason: 'tool_use', usage: null }
       }
-      // $.process.run refused or could not start the command, or the bin never ran: the model runs the prompt.
+      // $.process.run refused or could not start the command, or the bin failed to load: the model runs the prompt.
     }
     let started = null
     try {
