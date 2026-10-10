@@ -53,4 +53,31 @@ function plan(tasks, { execution = ['- Test command: `true`'] } = {}) {
   ].join('\n')
 }
 
-module.exports = { task, plan }
+// A Spec Kit tasks.md as Aether's Writer produces it: an optional Spec line, the
+// Aether sections, a checklist index with one line per task, then the task sections.
+function specKitTasks(tasks, { spec = '**Spec:** [spec.md](spec.md)' } = {}) {
+  const checklist = tasks.map((text) => {
+    const [, n, title] = text.match(/^### Task (\d+): (.+)$/m)
+    return `- [ ] T${n.padStart(3, '0')} [P] [US1] ${title} → Task ${n}`
+  })
+  return [
+    '# Demo Tasks',
+    '',
+    ...(spec ? [spec, ''] : []),
+    '## Global Constraints',
+    '',
+    '- Node 22.',
+    '',
+    '## Aether Execution',
+    '',
+    '- Test command: `true`',
+    '',
+    '## Checklist',
+    '',
+    ...checklist,
+    '',
+    ...tasks,
+  ].join('\n')
+}
+
+module.exports = { task, plan, specKitTasks }

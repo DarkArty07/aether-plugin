@@ -3,7 +3,26 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, parsePlan, buildGraph, renderBrief } = require('../plugins/aether/lib/plan.js')
-const { task, plan } = require('./plan-fixtures.js')
+const { task, plan, specKitTasks } = require('./plan-fixtures.js')
+
+test('parsePlan reads a Spec Kit tasks.md, and its checklist is never read as a task', () => {
+  const parsed = parsePlan(specKitTasks([
+    task(1),
+    task(2, { depends: 'Task 1 — uses it' }),
+    task(3),
+  ]))
+  assert.deepEqual(parsed.errors, [])
+  assert.deepEqual(parsed.tasks.map((t) => t.number), [1, 2, 3])
+  assert.deepEqual(parsed.tasks.map((t) => t.title), ['Task 1 title', 'Task 2 title', 'Task 3 title'])
+  assert.deepEqual(parsed.tasks[1].dependsOn, [{ number: 1, reason: 'uses it' }])
+  assert.ok(parsed.tasks.every((t) => !t.text.includes('- [ ] T')), 'a checklist line leaked into a task')
+  assert.equal(parsed.spec, 'spec.md')
+  assert.equal(parsed.globalConstraints, '- Node 22.')
+  assert.equal(parsed.execution.testCommand, 'true')
+  const graph = buildGraph(parsed)
+  assert.deepEqual(graph.errors, [])
+  assert.deepEqual(graph.waves, [['task-1', 'task-3'], ['task-2']])
+})
 
 test('parsePlan reads tasks, Aether fields, execution, constraints and spec', () => {
   const parsed = parsePlan(plan([
