@@ -23,7 +23,7 @@ test('the same failure with another number, duration, timing or spacing is one s
   assert.deepEqual(failureSignatures('not ok 12 - adds  1 + 2 # time=5.2ms\nnot ok 3 - adds 1 + 2  \n'), ['adds 1 + 2'])
 })
 
-test('Jest and Vitest failures are named, without their durations', () => {
+test('Jest and Vitest failures are named by test and by file, without their durations', () => {
   const output = [
     ' PASS  src/a.test.js',
     ' FAIL  src/b.test.js',
@@ -32,7 +32,64 @@ test('Jest and Vitest failures are named, without their durations', () => {
     '  × multiplies (12ms)',
     '  ✗ divides [3ms]',
   ].join('\n')
-  assert.deepEqual(failureSignatures(output), ['divides', 'multiplies', 'subtracts 2 - 1'])
+  assert.deepEqual(failureSignatures(output), ['divides', 'multiplies', 'src/b.test.js', 'subtracts 2 - 1'])
+})
+
+test('a Jest suite, a pytest module and a Go package that fail to run are named by their file or package', () => {
+  assert.deepEqual(failureSignatures(' FAIL  src/b.test.js\n  ● Test suite failed to run\n'), ['src/b.test.js'])
+  assert.deepEqual(failureSignatures('ERROR tests/test_b.py - ImportError: No module named b\n'), ['tests/test_b.py'])
+  assert.deepEqual(failureSignatures('FAIL\tgithub.com/x/pkg [build failed]\nFAIL\n'), ['github.com/x/pkg'])
+})
+
+test('Python unittest failures are named by their test and class', () => {
+  const output = [
+    'FAIL: test_one (tests.test_a.TestA.test_one)',
+    'Traceback (most recent call last):',
+    'ERROR: test_two (tests.test_a.TestA.test_two)',
+  ].join('\n')
+  assert.deepEqual(failureSignatures(output), ['test_one (tests.test_a.TestA.test_one)', 'test_two (tests.test_a.TestA.test_two)'])
+})
+
+test('colour codes on a FAIL line do not hide the file it names', () => {
+  assert.deepEqual(failureSignatures('\x1b[1m\x1b[41m FAIL \x1b[49m\x1b[22m \x1b[2msrc/b.test.js\x1b[22m\n'), ['src/b.test.js'])
+})
+
+test('judge blocks a run that breaks a whole suite, module or package, when its other failure is known', () => {
+  assert.deepEqual(judge({ signatures: ['adds 1 + 2'] }, { exitCode: 1, output: '  ✕ adds 1 + 2 (3 ms)\n FAIL  src/b.test.js\n  ● Test suite failed to run\n' }), {
+    pass: false,
+    reason: 'new failures',
+    new: ['src/b.test.js'],
+  })
+  assert.deepEqual(judge({ signatures: ['tests/test_a.py::test_one'] }, { exitCode: 1, output: 'FAILED tests/test_a.py::test_one - AssertionError\nERROR tests/test_b.py - ImportError: boom\n' }), {
+    pass: false,
+    reason: 'new failures',
+    new: ['tests/test_b.py'],
+  })
+  assert.deepEqual(judge({ signatures: ['TestAdd'] }, { exitCode: 1, output: '--- FAIL: TestAdd (0.01s)\nFAIL\tgithub.com/x/pkg [build failed]\nFAIL\n' }), {
+    pass: false,
+    reason: 'new failures',
+    new: ['github.com/x/pkg'],
+  })
+})
+
+test('judge passes a run whose suite, module or package fails as it did in the baseline', () => {
+  assert.deepEqual(judge({ signatures: ['src/b.test.js'] }, { exitCode: 1, output: ' FAIL  src/b.test.js\n  ● Test suite failed to run\n' }), {
+    pass: true,
+    known: ['src/b.test.js'],
+  })
+  assert.deepEqual(judge({ signatures: ['tests/test_b.py'] }, { exitCode: 1, output: 'ERROR tests/test_b.py - ImportError: boom\n' }), {
+    pass: true,
+    known: ['tests/test_b.py'],
+  })
+  assert.deepEqual(judge({ signatures: ['github.com/x/pkg'] }, { exitCode: 1, output: 'FAIL\tgithub.com/x/pkg [build failed]\nFAIL\n' }), {
+    pass: true,
+    known: ['github.com/x/pkg'],
+  })
+})
+
+test('judge blocks a run with an unnamed TAP failure as unparsed, even when its named failures are known', () => {
+  assert.deepEqual(judge({ signatures: ['a'] }, { exitCode: 1, output: 'not ok 1 - a\nnot ok 3\n' }), { pass: false, reason: 'unparsed' })
+  assert.deepEqual(judge({ signatures: ['a'] }, { exitCode: 1, output: '\x1b[31mnot ok 3\x1b[39m\n' }), { pass: false, reason: 'unparsed' })
 })
 
 test('colour codes that a runner prints when forced do not hide a failure name', () => {

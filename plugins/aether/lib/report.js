@@ -11,6 +11,7 @@ const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
 const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
+const { judge } = require('./baseline.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
 const DAY_MS = 24 * 3600 * 1000
@@ -321,13 +322,19 @@ function summarizeLanes(calls, readings, prices, notes) {
   return summary
 }
 
-// The agy version of the latest reading that names one, or null.
-function versionOf(readings) {
+// The version that the newest reading of each harness names, by harness. A reading with no harness is agy's.
+function versionsOf(readings) {
+  const newest = new Map()
   const named = readings.filter((reading) => reading.version).sort((a, b) => b.time - a.time)
-  return named.length > 0 ? named[0].version : null
+  for (const reading of named) {
+    const harness = reading.harness || LEGACY_HARNESS
+    if (!newest.has(harness)) newest.set(harness, reading.version)
+  }
+  return Object.fromEntries(newest)
 }
 
-// Every launch's agy rounds, counted by the agy model that served them, and the lanes' overflow.
+// Every launch's lane rounds, counted by the model that served them, and the lanes' overflow. A lane round's
+// provider is "<harness> <model>"; a native round's is "native", which counts nowhere.
 function launchesOf(results) {
   const attempts = {}
   let overflow = 0
@@ -335,8 +342,9 @@ function launchesOf(results) {
     overflow += (result.lanes && result.lanes.overflow) || 0
     for (const unit of result.units || []) {
       for (const round of unit.rounds || []) {
-        if (typeof round.provider !== 'string' || !round.provider.startsWith('agy ')) continue
-        const tally = (attempts[round.provider.slice('agy '.length)] ||= { attempts: 0, approved: 0 })
+        const lane = typeof round.provider === 'string' ? /^\S+ (.+)$/.exec(round.provider) : null
+        if (!lane) continue
+        const tally = (attempts[lane[1]] ||= { attempts: 0, approved: 0 })
         tally.attempts++
         if (round.verdict === 'approve') tally.approved++
       }
@@ -352,6 +360,7 @@ function totalsOf(nativeUsd, lanesUsd) {
 }
 
 // The lane log's share of the run, the run's calls being those inside its window, and of the usage session.
+// The versions are each harness's, and version is agy's.
 function laneReport({ dataDir, runId, start, end, usage, results, prices, notes, cost }) {
   const entries = readLog(dataDir)
   const isRunEntry = (entry) => entry.run === runId && (entry.kind === 'reading' || (entry.time >= start && entry.time <= end))
@@ -359,8 +368,10 @@ function laneReport({ dataDir, runId, start, end, usage, results, prices, notes,
   const sessionLog = usage ? splitLog(entries.filter((entry) => entry.session === usage.session)) : null
   const run = summarizeLanes(runLog.calls, runLog.readings, prices, notes)
   const session = sessionLog ? summarizeLanes(sessionLog.calls, sessionLog.readings, prices, notes) : null
+  const versions = versionsOf([...runLog.readings, ...(sessionLog ? sessionLog.readings : [])])
   return {
-    version: versionOf([...runLog.readings, ...(sessionLog ? sessionLog.readings : [])]),
+    version: versions.agy ?? null,
+    versions,
     run: { ...run, ...launchesOf(results) },
     session,
     totals: {
@@ -370,8 +381,18 @@ function laneReport({ dataDir, runId, start, end, usage, results, prices, notes,
   }
 }
 
-// Runs the plan's test command in the integration worktree.
-function runTests(graph) {
+// The run's test baseline, or null when it is missing or unreadable.
+function baselineOf(dir) {
+  try {
+    return readIfThere(path.join(dir, 'baseline.json'))
+  } catch {
+    return null
+  }
+}
+
+// Runs the plan's test command in the integration worktree. It counts as known failures only when it failed
+// and the run's baseline judges its output: every failure it names was failing before the run.
+function runTests(graph, dir) {
   const r = spawnSync(graph.testCommand, {
     cwd: graph.integration.worktree,
     shell: true,
@@ -379,7 +400,12 @@ function runTests(graph) {
     timeout: TEST_TIMEOUT_MS,
     maxBuffer: 64 * 1024 * 1024,
   })
-  return { command: graph.testCommand, exitCode: r.status, passed: r.status === 0, timedOut: Boolean(r.error && r.error.code === 'ETIMEDOUT') }
+  const timedOut = Boolean(r.error && r.error.code === 'ETIMEDOUT')
+  // A run that timed out or was killed did not finish, so its output cannot show that only known tests fail.
+  const finished = !timedOut && r.status !== null
+  const output = `${r.stdout || ''}\n${r.stderr || ''}`
+  const knownFailuresOnly = finished && r.status !== 0 && judge(baselineOf(dir), { exitCode: r.status, output }).pass
+  return { command: graph.testCommand, exitCode: r.status, passed: r.status === 0, timedOut, knownFailuresOnly }
 }
 
 // The RADAR figures for the owner's five goals, each read from the report's own figures. A figure whose
@@ -403,6 +429,7 @@ function radarOf({ speed, cost, lanes, quality }) {
       merged: quality.merged,
       blocked: quality.blocked,
       testsPassed: quality.tests ? quality.tests.passed : null,
+      testsKnownFailuresOnly: quality.tests ? quality.tests.knownFailuresOnly : null,
       findings: quality.findings,
       finalVerdict: quality.finalReview ? quality.finalReview.verdict : null,
     },
@@ -450,7 +477,7 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     swarm: usage ? span(inRun.filter((entry) => isAether(usage, entry))) : null,
     session: usage ? span(usage.entries) : null,
   }
-  const quality = { ...qualityOf(results), tests: tests ? runTests(graph) : null }
+  const quality = { ...qualityOf(results), tests: tests ? runTests(graph, dir) : null }
 
   return {
     runId,
@@ -494,7 +521,8 @@ function finalize(cwd, runId, options = {}) {
   const { now = Date.now(), dataDir = run.dataDir() } = options
   const r = report(cwd, runId, { ...options, dataDir })
   const versions = { aether: aetherVersion(), claudeCode: r.usage.claudeCode }
-  if (r.lanes.version) versions.agy = r.lanes.version
+  // One version per lane harness that the lane log saw: agy's among them, as versions.agy.
+  Object.assign(versions, r.lanes.versions)
   const record = {
     runId,
     status: 'finalized',
