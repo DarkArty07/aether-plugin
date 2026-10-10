@@ -35,6 +35,8 @@ From the integration worktree:
 
 It prints one line of JSON: the run's arguments. Warnings go to stderr. Keep the `runId`; every later command needs it.
 
+Compile also runs the plan's test command once, in the integration worktree, and keeps the failing tests it names as the run's baseline (`baseline.json` in the run's folder). From then on a merge is blocked only by a failure that is not in the baseline, and a merge that passes with known failures lists them as `knownFailures`. Give the Bash call a timeout that fits the test command. A relaunch keeps the baseline it has. `--no-baseline` skips it, and then any failing test blocks a merge.
+
 ## 3. Launch
 
 In an autonomous run, run `aether-autonomy status` first. When its `stop` is not null, launch nothing, and end the run as the `using-aether` skill says.

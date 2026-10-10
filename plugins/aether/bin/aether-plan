@@ -2,18 +2,20 @@
 'use strict'
 
 // aether-plan check <plan.md>
-// aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes]
+// aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline]
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const lib = path.join(__dirname, '..', 'lib')
 const { parsePlan, buildGraph, renderBrief } = require(path.join(lib, 'plan.js'))
 const { repoPaths, currentBranch, head } = require(path.join(lib, 'git.js'))
 const run = require(path.join(lib, 'run.js'))
 const lanes = require(path.join(lib, 'lanes.js'))
+const baseline = require(path.join(lib, 'baseline.js'))
 
 const USAGE =
-  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes]'
+  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline]'
 
 function fail(errors, warnings = []) {
   process.stdout.write(JSON.stringify({ ok: false, errors, warnings }) + '\n')
@@ -70,6 +72,35 @@ function check(planArg) {
   process.stdout.write(JSON.stringify({ ok: true, tasks: Object.keys(graph.tasks).length, waves: graph.waves, warnings: graph.warnings }) + '\n')
 }
 
+const BASELINE_TIMEOUT_MS = 10 * 60 * 1000
+
+// Runs the test command once, in the integration worktree, before the run's first merge. The failing
+// tests it names are the baseline: a merge is blocked only by a failure that is not among them.
+function recordBaseline(cwd, testCommand) {
+  const r = spawnSync(testCommand, {
+    cwd,
+    shell: true,
+    encoding: 'utf8',
+    timeout: BASELINE_TIMEOUT_MS,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  return {
+    recordedAt: new Date().toISOString(),
+    exitCode: r.status,
+    // A newline between the two streams keeps the last line of one from joining the first of the other.
+    signatures: baseline.failureSignatures(`${r.stdout || ''}\n${r.stderr || ''}`),
+    timedOut: Boolean(r.error && r.error.code === 'ETIMEDOUT'),
+  }
+}
+
+function baselineMessage({ exitCode, signatures }) {
+  if (exitCode === 0) return 'the test command passed'
+  if (signatures.length > 0) {
+    return `${signatures.length} failing tests already fail before the run; only new failures block a merge`
+  }
+  return 'the test command failed and names no test, so any failure blocks a merge'
+}
+
 function compile(planArg, rest) {
   const { planPath, parsed } = load(planArg)
   // Every check runs before anything is written, so a refused compile leaves no run behind.
@@ -106,6 +137,9 @@ function compile(planArg, rest) {
   run.assertRunId(runId)
   const dir = run.runDir(repo.mainRoot, runId)
   run.ensureExcluded(repo.gitCommonDir)
+  // Read before the graph is written: a relaunch's graph keeps the first launch's base.
+  const graphFile = path.join(dir, 'graph.json')
+  const priorIntegration = fs.existsSync(graphFile) ? run.readJson(graphFile).integration : null
 
   const spec = planSpec(parsed.spec, planPath, repo.worktree)
   const tasks = {}
@@ -118,13 +152,20 @@ function compile(planArg, rest) {
     tasks[id] = { ...graph.tasks[id], brief }
   }
 
+  // Units branch from the current head, but the run's first launch is where its changes begin.
+  const base = head(process.cwd())
   const args = {
     runId,
     repoRoot: repo.mainRoot,
     runDir: dir,
     plan: planPath,
     spec,
-    integration: { branch, worktree: repo.worktree, base: head(process.cwd()) },
+    integration: {
+      branch,
+      worktree: repo.worktree,
+      base,
+      firstBase: priorIntegration?.firstBase || priorIntegration?.base || base,
+    },
     testCommand: parsed.execution.testCommand,
     ladder: parsed.execution.ladder,
     maxAgents: parsed.execution.maxAgents,
@@ -132,7 +173,14 @@ function compile(planArg, rest) {
     tasks,
     lanes: laneArgs,
   }
-  run.writeJson(path.join(dir, 'graph.json'), args)
+  // Recorded once per run, before its first merge. A relaunch keeps the baseline it already has.
+  const baselineFile = path.join(dir, 'baseline.json')
+  if (!rest.includes('--no-baseline') && !fs.existsSync(baselineFile)) {
+    const recorded = recordBaseline(repo.worktree, parsed.execution.testCommand)
+    run.writeJson(baselineFile, recorded)
+    process.stderr.write(`aether-plan: test baseline: ${baselineMessage(recorded)}\n`)
+  }
+  run.writeJson(graphFile, args)
   // A relaunch of a run keeps its first compile time, so the report covers every launch, and keeps
   // the previous launch's result as result-<k>.json.
   const statePath = path.join(dir, 'state.json')
