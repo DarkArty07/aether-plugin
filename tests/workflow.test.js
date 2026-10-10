@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
-const { makeRepo, compile } = require('./helpers.js')
+const { makeRepo, compile, commitIn } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { runWorkflow } = require('./workflow-harness.js')
 
@@ -524,4 +524,59 @@ test('the final review judges only the merged units: a blocked opus task does no
   assert.equal(run.result.units[0].status, 'blocked')
   assert.equal(run.result.units[1].status, 'merged')
   assert.deepEqual(reviewOf(run), ['sonnet high'])
+})
+
+// A relaunch as aether-plan compiles it: the run's first launch, the integration branch moved on by hand,
+// then the tasks named by `only` again. The relaunch keeps the first launch's base as its firstBase.
+function relaunchOf(t, tasks, only) {
+  const repo = makeRepo(t)
+  const first = compile(repo, plan(tasks))
+  commitIn(repo, repo.dir, 'src/by-hand.js', 'by hand\n', 'integrated by hand')
+  return compile(repo, plan(tasks), ['--run', first.runId, '--only', only])
+}
+
+test('a relaunch of one haiku task never reviews on Sonnet: the final review covers the earlier launches too', async (t) => {
+  // task-1 was an opus task in the first launch; the relaunch runs task-2 alone, a small all-haiku run.
+  const args = relaunchOf(t, [task(1, { tier: 'opus high — the parser design' }), task(2)], 'task-2')
+  assert.deepEqual(args.waves, [['task-2']])
+  assert.notEqual(args.integration.firstBase, args.integration.base)
+  const run = await runWorkflow(args)
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(reviewOf(run), ['opus high'])
+  assert.equal(run.calls.find((c) => c.role === 'reviewer').label, 'final review on opus high')
+  assert.deepEqual([run.result.finalReview.reviewModel, run.result.finalReview.reviewEffort], ['opus', 'high'])
+  assert.deepEqual(reviewLog(run), ['final review on opus high: a relaunch: the final review covers the earlier launches too'])
+})
+
+test('a relaunch that merges an opus task, or a task that reviews at xhigh, keeps Opus at xhigh with the same reason', async (t) => {
+  const opus = await runWorkflow(relaunchOf(t, [task(1, { tier: 'opus high — the parser design' }), task(2)], 'task-1'))
+  assert.equal(opus.error, null, opus.error && opus.error.stack)
+  assert.deepEqual(reviewOf(opus), ['opus xhigh'])
+  assert.deepEqual(reviewLog(opus), ['final review on opus xhigh: task-1 is tier opus'])
+
+  const deep = await runWorkflow(relaunchOf(t, [task(1), task(2, { review: 'xhigh — input parsing the tests leave open' })], 'task-2'))
+  assert.equal(deep.error, null, deep.error && deep.error.stack)
+  assert.deepEqual(reviewOf(deep), ['opus xhigh'])
+  assert.deepEqual(reviewLog(deep), ['final review on opus xhigh: task-2 reviews at xhigh'])
+})
+
+test('a first launch reviews on Sonnet as before, whether its firstBase equals its base or is missing', async (t) => {
+  const args = threeTasks(t)
+  const { firstBase, ...noFirstBase } = args.integration
+  assert.equal(firstBase, args.integration.base)
+  for (const integration of [args.integration, noFirstBase]) {
+    const run = await runWorkflow({ ...args, integration })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    assert.deepEqual(reviewOf(run), ['sonnet high'])
+    assert.deepEqual(reviewLog(run), ['final review on sonnet high: a small all-haiku run with high reviews'])
+  }
+})
+
+test('a firstBase that is not a non-empty string is refused before any agent starts', async (t) => {
+  const args = threeTasks(t)
+  for (const firstBase of [7, '', {}]) {
+    const run = await runWorkflow({ ...args, integration: { ...args.integration, firstBase } })
+    assert.equal(run.error && run.error.message, 'aether:run args are missing or invalid: integration.firstBase', JSON.stringify(firstBase))
+    assert.equal(run.calls.length, 0)
+  }
 })

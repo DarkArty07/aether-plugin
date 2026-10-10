@@ -141,6 +141,9 @@ function readArgs(raw) {
   if (!RUN_ID.test(String(input.runId))) bad.push('runId')
   for (const key of ['repoRoot', 'runDir', 'testCommand']) if (!text(input[key])) bad.push(key)
   for (const key of ['branch', 'worktree', 'base']) if (!text(input.integration && input.integration[key])) bad.push(`integration.${key}`)
+  // The base of the run's first launch. Args compiled before relaunches lack it, and that is accepted.
+  const firstBase = input.integration && input.integration.firstBase
+  if (firstBase !== undefined && firstBase !== null && !text(firstBase)) bad.push('integration.firstBase')
   if (!input.ladder || !TIERS.every((t) => Number.isInteger(input.ladder[t]) && input.ladder[t] >= 0)) bad.push('ladder')
   if (!Number.isInteger(input.maxAgents) || input.maxAgents < 1) bad.push('maxAgents')
   if (!Array.isArray(input.waves) || !input.waves.every(Array.isArray)) bad.push('waves')
@@ -809,15 +812,24 @@ async function runUnit(id) {
   if (unit.attempts > 0) await close(unit)
 }
 
+// A relaunch is a launch after the run's first one: its firstBase, the base of the first launch, differs
+// from its base. A first launch has the two equal, or no firstBase at all.
+function isRelaunch() {
+  const { firstBase } = integration
+  return typeof firstBase === 'string' && firstBase !== '' && firstBase !== integration.base
+}
+
 // The final review's model and effort follow the run's risk, judged from the tasks of the merged units:
 // Opus at xhigh for an opus task or an xhigh or max review; Sonnet at high for a small run of haiku
-// tasks that all ask for high reviews; Opus at high otherwise.
+// tasks that all ask for high reviews; Opus at high otherwise. A relaunch's review covers the earlier
+// launches too, so it is never Sonnet: Opus at high, unless the xhigh rules apply.
 function reviewPlan() {
   const merged = Object.values(units).filter((u) => u.status === 'merged')
   const opus = merged.find((u) => tasks[u.id].tier === 'opus')
   if (opus) return { model: 'opus', effort: 'xhigh', reason: `${opus.id} is tier opus` }
   const deep = merged.find((u) => ['xhigh', 'max'].includes(tasks[u.id].review))
   if (deep) return { model: 'opus', effort: 'xhigh', reason: `${deep.id} reviews at ${tasks[deep.id].review}` }
+  if (isRelaunch()) return { model: 'opus', effort: 'high', reason: 'a relaunch: the final review covers the earlier launches too' }
   if (merged.length <= 3 && merged.every((u) => tasks[u.id].tier === 'haiku' && tasks[u.id].review === 'high')) {
     return { model: 'sonnet', effort: 'high', reason: 'a small all-haiku run with high reviews' }
   }
