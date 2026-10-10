@@ -17,7 +17,7 @@ test('the documents record the lanes: decisions, facts, and the skills that use 
   assert.match(research, /^## Lanes findings \(2026-10-08\)$/m)
   for (const fact of ['remaining_fraction', '--dangerously-skip-permissions', 'AGENTS.md', 'structured_output']) assert.ok(research.includes(fact), fact)
   const lead = read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md')
-  for (const text of ['aether-lane design start --session', 'aether-lane design reply', 'aether-lane design end', '**Exit 3**', 'SendMessage']) {
+  for (const text of ['`aether:judge`', '`aether:writer`', 'At most two revisions per document', '.aether/pending.jsonl', 'SendMessage']) {
     assert.ok(lead.includes(text), text)
   }
   const swarm = read('plugins', 'aether', 'skills', 'swarm', 'SKILL.md')

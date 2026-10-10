@@ -39,28 +39,37 @@ test('session start injects the Lead bootstrap', (t) => {
   assert.match(context, /^Aether mode is active\./)
   assert.match(context, /# Aether mode/)
   assert.doesNotMatch(context, /disable-model-invocation/)
-  // The main session is the Lead, and the Designer is the agent that designs.
+  // The main session is the Lead: the owner's right hand, with a Writer and a Judge.
   assert.match(context, /You are the \*\*Lead\*\*/)
-  assert.doesNotMatch(context, /You are the \*\*Designer\*\*/)
-  assert.match(context, /aether:designer/)
-  assert.match(context, /aether-voice --session/)
-  assert.match(context, /SendMessage/)
-  // The Lead decides with the owner's intent, records authorizations, and runs autonomously.
-  assert.match(context, /## Decision/)
-  assert.match(context, /- Decide: lead/)
-  assert.match(context, /`LEAD DECISION`/)
-  assert.match(context, /`OWNER ANSWER`/)
+  assert.match(context, /the owner's right hand/)
+  assert.match(context, /`aether:judge`/)
+  assert.match(context, /`aether:writer`/)
+  assert.match(context, /`aether:specify`/)
+  assert.match(context, /## RADAR/)
+  assert.match(context, /## Writing and judging/)
+  assert.match(context, /At most two revisions per document/)
+  // The owner gets one list of what is irreversible or only the owner can decide.
+  assert.match(context, /## The owner's list/)
+  assert.match(context, /\.aether\/pending\.jsonl/)
   assert.match(context, /## Fallbacks never reach the owner/)
+  // The Lead runs autonomously, records authorizations, and reports in a brief.
   assert.match(context, /## Autonomous runs/)
   assert.match(context, /aether-autonomy start --quote/)
   assert.match(context, /aether-autonomy check <class>/)
   assert.match(context, /aether-autonomy grant --class <class> --quote/)
   assert.match(context, /--scope session/)
   assert.match(context, /# Brief: <run id>/)
+  assert.match(context, /## Espera tu sí/)
+  assert.match(context, /## Supuestos/)
+  // The Designer and the old relay are gone.
+  assert.doesNotMatch(context, /aether:designer/)
+  assert.doesNotMatch(context, /LEAD DECISION/)
+  assert.doesNotMatch(context, /aether-lane design/)
+  assert.doesNotMatch(context, /## Decision/)
   assert.doesNotMatch(context, /## For the owner/)
   assert.doesNotMatch(context, /Waiting for/)
   assert.doesNotMatch(context, /## The relay/)
-  // At the plan handoff the swarm is offered next to superpowers' own execution options.
+  // The execution method offers the swarm.
   assert.match(context, /`aether:swarm` skill/)
   assert.doesNotMatch(context, /arrives in a later version/)
 })
