@@ -10,7 +10,7 @@ The swarm runs a plan's tasks as units. Each unit:
 - is supervised after every attempt;
 - is merged into the integration branch, one merge at a time.
 
-The whole run is then reviewed as one change. You prepare the run, launch it, and act on its result. You stay the Lead: the run's agents decide inside their unit, the Designer decides the design, and you decide everything else, as the owner's delegate.
+The whole run is then reviewed as one change. You prepare the run, launch it, and act on its result. You stay the Lead: the run's agents decide inside their unit, the Judge rules on the design, and you decide everything else, as the owner's delegate.
 
 In an autonomous run (see the `using-aether` skill), what this skill says to tell or report to the owner goes to the run's diary, and from there to the brief.
 
@@ -18,13 +18,13 @@ In an autonomous run (see the `using-aether` skill), what this skill says to tel
 
 - **The plan.** It is approved, by you as the owner's delegate or by the owner; every task has Aether fields; and `aether-plan check <plan.md>` passes.
 - **The integration worktree.**
-  - Create it with superpowers `using-git-worktrees`, on a feature branch. Never run the swarm on `main`.
+  - Create it with `git worktree add <path> -b <feature branch>`, on a feature branch. Never run the swarm on `main`.
   - Keep it separate from the main checkout. The unit worktrees live under the main checkout's `.aether/worktrees/`, and a test command that searches the whole tree would run their unfinished tests at merge time. `aether-plan compile` warns when the two are the same.
   - Commit the plan there, and leave the worktree clean. A merge refuses to start while the integration worktree has uncommitted changes.
 - **Permissions.** The run's agents use Bash (`git`, `aether-wt`, `aether-lane` and the test command) and edit files under `.aether/worktrees/`. A session that asks permission for each call stalls the swarm, and an autonomous run waits at the first prompt.
   - Check that the permission mode or allow rules cover these calls, and write down what you rely on: tell the owner, or in a run, note it in the diary.
   - The unit worktrees are under the main checkout. If this session started inside the integration worktree, add the main checkout with `/add-dir <repoRoot>`, so the agents may read and edit there.
-- **Workflows.** The run is a dynamic workflow. When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session, and offer superpowers' execution methods meanwhile.
+- **Workflows.** The run is a dynamic workflow. When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session, and offer to build the plan with subagents meanwhile.
 - **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, with `agy` installed, the run sends calls to it while its quota lasts (`plugins/aether/config/lanes.json`). agy runs with `--dangerously-skip-permissions` in the unit's worktree. Otherwise every call is native, and `aether-plan compile` says why on stderr. `aether-plan compile <plan.md> --no-lanes` runs everything native.
 
 ## 2. Compile
@@ -92,14 +92,14 @@ Report from it, to the owner or, in a run, to the diary:
 
 ## 5. Act on it
 
-- **Blocked with a question:** answer it from the owner's intent, the spec and the plan when they cover it. Otherwise it goes to the owner: outside a run, ask them; in an autonomous run, it waits in the diary's "Espera tu sí" or "Decisiones", and the other units go on. Then ask the Designer to fix the plan task (resume it, or start one with the plan path), and relaunch the unit.
-- **Blocked by a merge failure or a spent ladder:** read the rounds. Fix the work yourself when the fix is short; otherwise send it to a subagent, or ask the Designer to fix the plan task and relaunch it. These have a fallback, so they never go to the owner.
+- **Blocked with a question:** answer it from the owner's intent, the spec and the plan when they cover it. Otherwise it goes to the owner: outside a run, ask them; in an autonomous run, it waits in the diary's "Espera tu sí" or "Decisiones", and the other units go on. Then ask the Writer to fix the plan task, have the Judge review the fix, and relaunch the unit.
+- **Blocked by a merge failure or a spent ladder:** read the rounds. Fix the work yourself when the fix is short; otherwise send it to a subagent, or ask the Writer to fix the plan task and relaunch it. These have a fallback, so they never go to the owner.
 - **Blocked by a lane:** a reason that starts with `lane:` means agy changed the integration worktree or branch, or a read-only copy changed the unit. Check the integration worktree with `git status` and the branch with `git log` before you relaunch.
 - **Skipped or not-run:** relaunch these once their dependencies are merged.
 - **Patches:** `<runDir>/patches/<task>.patch` holds a unit's unmerged work. Read it before you apply it with `git apply`.
-- **Final review findings:** handle them as superpowers handles a final review.
+- **Final review findings:** handle them as a final review is handled.
   - Re-grade each finding by its effect.
-  - Fix the critical and important ones: a short fix yourself, with TDD on the integration branch; a longer one through a subagent or a relaunch; a design-level one through the Designer.
+  - Fix the critical and important ones: a short fix yourself, with TDD on the integration branch; a longer one through a subagent or a relaunch; a design-level one through the Writer and the Judge.
   - Defer the minor ones: list them in the report, or in a run in the brief. They are not worked.
   - Rule on each `declined` line.
 - **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep first saves each unit's unmerged or uncommitted work as a patch. A unit whose work it cannot save stays in place for you to handle.
@@ -116,9 +116,9 @@ A relaunch keeps the run's first compile time, and keeps the previous launch's r
 
 Finish when every unit is merged, the final review has no open critical or important finding, and the test command passes on the integration branch.
 
-1. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first, and in a run record the last cost with `aether-autonomy spend` before it. It appends the report to `runs.jsonl` in the plugin's data directory, with the aether, superpowers and Claude Code versions. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
-2. Use superpowers `finishing-a-development-branch`, and choose its option yourself, as the owner's delegate:
+1. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first, and in a run record the last cost with `aether-autonomy spend` before it. It appends the report to `runs.jsonl` in the plugin's data directory, with the versions of Aether, of its dependency plugin and of Claude Code. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
+2. Finish the branch yourself, as the owner's delegate:
    - **merge to `main`** only when `aether-autonomy check merge-main` passes, or the owner authorized this merge once in their own words;
    - **push or open a pull request** only when `aether-autonomy check push` passes, or the owner authorized it once;
    - **discard** never on your own: it deletes work (class `delete`);
-   - otherwise **keep the branch**, and put the exact command of the step it waits for in "Espera tu sí" of the diary, or outside a run in your report to the owner.
+   - otherwise **keep the branch**, and put the exact command of the step it waits for in "Espera tu sí" of the diary, or, outside a run, in the list of irreversible actions of your brief.
