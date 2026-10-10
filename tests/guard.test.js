@@ -487,6 +487,10 @@ test('irreversibleClass drops the exec prefixes and their options, past sudo and
     'env -i git push',
     'env -u NAME git push',
     'env -u BAR -i FOO=1 git push',
+    'sudo -g staff -C 5 -D /x git push',
+    'sudo -p "%p" -h host git push',
+    'timeout --kill-after 5 30 git push',
+    'timeout -k5 30 git push',
   ]) {
     assert.equal(irreversibleClass(command), 'push', command)
   }
@@ -545,6 +549,12 @@ test('redactCommand keeps only the subcommand of a credentials command', () => {
   assert.equal(redactCommand('sudo gh auth login --with-token < token.txt', 'credentials'), 'gh auth login [arguments redacted]')
   assert.equal(redactCommand('aws configure', 'credentials'), 'aws configure [arguments redacted]')
   assert.equal(redactCommand('npm test && bash -c "npm token create"', 'credentials'), 'npm token create [arguments redacted]')
+})
+
+test('redactCommand keeps only the subcommand of a credentials segment, even in a command of another class', () => {
+  assert.equal(redactCommand('git push origin main && gh auth login --with-token', 'push'), 'gh auth login [arguments redacted]')
+  assert.equal(redactCommand('git push && gh secret set NAME -b sk_live_x', 'push'), 'gh secret set [arguments redacted]')
+  assert.equal(redactCommand('git push; bash -c "gh secret set NAME -b sk_live_x"', 'push'), 'gh secret set [arguments redacted]')
 })
 
 test('redactCommand replaces a secret variable, a secret flag and a URL user-info', () => {

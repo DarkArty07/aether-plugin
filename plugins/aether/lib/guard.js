@@ -377,13 +377,14 @@ function redactValues(command) {
     .replace(URL_USER_INFO, '$1[redacted]@')
 }
 
-// The command as the owner's list keeps it. A credentials command keeps only its subcommand, since its
-// arguments are the secret; any other command keeps its spelling, with its secret values redacted.
+// The command as the owner's list keeps it. A command with a credentials segment keeps only that segment's
+// subcommand, whatever the command's class, since the arguments of a credentials command are the secret.
+// Any other command keeps its spelling, with its secret values redacted.
 function redactCommand(command, cls) {
   if (typeof command !== 'string') return ''
-  if (cls !== 'credentials') return redactValues(command)
-  const found = matchCommand(command, 0, cls)
-  return found === null ? '[redacted]' : [...found.head, '[arguments redacted]'].join(' ')
+  const credentials = matchCommand(command, 0, 'credentials')
+  if (credentials !== null) return [...credentials.head, '[arguments redacted]'].join(' ')
+  return cls === 'credentials' ? '[redacted]' : redactValues(command)
 }
 
 module.exports = { decide, irreversibleClass, redactCommand }
