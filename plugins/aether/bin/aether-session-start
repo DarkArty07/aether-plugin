@@ -81,12 +81,16 @@ function mark(sessionId) {
   }
 }
 
-// Appends the lanes line to CLAUDE_ENV_FILE; returns false when it could not.
+// Appends the lanes line and the harness list to CLAUDE_ENV_FILE; returns false when it could not. The
+// list is the option's known names, or agy when none is valid: lanes.js reads it the same way.
 function passLanes() {
   const file = process.env.CLAUDE_ENV_FILE
   if (!file) return false
   try {
-    fs.appendFileSync(file, `export AETHER_LANES=${process.env.CLAUDE_PLUGIN_OPTION_LANES === 'true' ? 'on' : 'off'}\n`)
+    const { enabledHarnesses } = require(path.join(root, 'lib', 'lanes.js'))
+    const harnesses = enabledHarnesses({ AETHER_LANE_HARNESSES: process.env.CLAUDE_PLUGIN_OPTION_HARNESSES })
+    const lanes = `export AETHER_LANES=${process.env.CLAUDE_PLUGIN_OPTION_LANES === 'true' ? 'on' : 'off'}\n`
+    fs.appendFileSync(file, `${lanes}export AETHER_LANE_HARNESSES=${harnesses.join(',')}\n`)
     return true
   } catch {
     return false

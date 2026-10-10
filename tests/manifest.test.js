@@ -38,6 +38,13 @@ test('the manifest declares superpowers and the lanes option, off by default', (
         "Run Aether's calls on agy while its quota lasts. Off by default: agy runs with --dangerously-skip-permissions and spends another plan's quota. Linux only.",
       default: false,
     },
+    harnesses: {
+      type: 'string',
+      title: 'Lane harnesses',
+      description:
+        "The external harnesses lanes may use, comma-separated, in order of preference: agy, codex, grok, cursor. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
+      default: 'agy',
+    },
   })
 })
 
