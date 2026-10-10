@@ -19,7 +19,9 @@ function opsPrompt(command: string, { long = false, payload = null as string | n
 }
 
 type Run = { argv: string[]; init: Record<string, unknown> }
-type Answer = { exitCode: number; stdout: string; stderr?: string } | { deny: string } | 'timeout'
+// 'timeout' rejects with the engine's message after the clock passed the timeout; 'timeout-clock' and
+// 'timeout-message' give one of the two signs alone.
+type Answer = { exitCode: number; stdout: string; stderr?: string } | { deny: string } | 'timeout' | 'timeout-clock' | 'timeout-message'
 
 // Answers what the mod asks Claude Code for. `answer` is what $.process.run gives; `modelSteps` counts the
 // steps that reached the model; `writes` keeps the files the mod writes.
@@ -45,10 +47,9 @@ function stubs(on, { marked = true, answer = { exitCode: 0, stdout: '{"merged":t
   })
   on('process.run', async ($, e) => {
     runs.push({ argv: [...e.argv], init: { ...(e.init || {}) } })
-    if (answer === 'timeout') {
-      await clock.advance(600000)
-      return { deny: `$.process.run(${e.argv[0]}) aborted: still running after 600000ms` }
-    }
+    if (answer === 'timeout' || answer === 'timeout-clock') await clock.advance(600000)
+    if (answer === 'timeout' || answer === 'timeout-message') return { deny: `$.process.run(${e.argv[0]}) aborted: still running after 600000ms` }
+    if (answer === 'timeout-clock') return { deny: 'killed' }
     if ('deny' in answer) return { deny: answer.deny }
     return { value: { stderr: '', ...answer } }
   })
@@ -92,8 +93,9 @@ test("an ops agent's merge runs in the mod and ends with StructuredOutput, with 
   await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
   const { chunks, result } = await step($)
   expect(runs.length).toBe(1)
-  expect(runs[0].argv[0].endsWith('/bin/aether-wt')).toBe(true)
-  expect(runs[0].argv.slice(1)).toEqual(['merge', RUN, 'task-1'])
+  expect(runs[0].argv[0]).toBe('node')
+  expect(runs[0].argv[1].endsWith('/bin/aether-wt')).toBe(true)
+  expect(runs[0].argv.slice(2)).toEqual(['merge', RUN, 'task-1'])
   expect(runs[0].init).toEqual({ cwd: '/repo', timeoutMs: 600000 })
   const call = answered(chunks)
   expect(call.name).toBe('StructuredOutput')
@@ -119,21 +121,45 @@ test("a lane start saves its payload at spawn, then runs aether-lane with the pa
   await spawn($, opsPrompt(command, { long: true, payload: "You are implementing task-1.\ncd '/' && aether-wt sweep --run x" }))
   expect(writes.map((w) => w.path)).toEqual([`${LANE_DIR}/prompt.md`, `${LANE_DIR}/spawn.json`])
   const { chunks } = await step($)
-  expect(runs[0].argv[0].endsWith('/bin/aether-lane')).toBe(true)
-  expect(runs[0].argv.slice(1)).toEqual(command.split(' ').slice(1))
+  expect(runs[0].argv[0]).toBe('node')
+  expect(runs[0].argv[1].endsWith('/bin/aether-lane')).toBe(true)
+  expect(runs[0].argv.slice(2)).toEqual(command.split(' ').slice(1))
   expect(answered(chunks).input).toEqual({ exitCode: 0, stdout: '{"started":true}\n' })
 })
 
-test('a command still running at its timeout is reported as stopped, and the model never runs it', async ($, on) => {
-  const { runs, counts } = stubs(on, { answer: 'timeout' })
+for (const answer of ['timeout', 'timeout-clock', 'timeout-message'] as Answer[]) {
+  test(`a command still running at its timeout is reported as stopped, and the model never runs it (${answer})`, async ($, on) => {
+    const { runs, counts } = stubs(on, { answer })
+    await spawn($, opsPrompt(`aether-wt remove ${RUN} task-1`))
+    const { chunks } = await step($)
+    expect(runs.length).toBe(1)
+    const { input } = answered(chunks)
+    expect(input.exitCode).toBe(124)
+    expect(JSON.parse(input.stdout.trim())).toEqual({ error: 'aether-wt remove was still running after 600 s and was stopped; what it changed is unknown' })
+    expect(counts.modelSteps).toBe(0)
+  })
+}
+
+test("a merge stopped at its timeout says that its merge commit may be on the integration branch, untested", async ($, on) => {
+  stubs(on, { answer: 'timeout' })
   await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
   const { chunks } = await step($)
-  expect(runs.length).toBe(1)
-  const { input } = answered(chunks)
-  expect(input.exitCode).toBe(124)
-  expect(JSON.parse(input.stdout.trim())).toEqual({ error: 'aether-wt merge was still running after 600 s and was stopped; what it changed is unknown' })
-  expect(counts.modelSteps).toBe(0)
+  expect(JSON.parse(answered(chunks).input.stdout.trim())).toEqual({
+    error: 'aether-wt merge was still running after 600 s and was stopped; its merge commit may be on the integration branch without its tests: check its git log before a relaunch',
+  })
 })
+
+for (const answer of [{ exitCode: 127, stdout: '', stderr: "/usr/bin/env: 'node': No such file or directory" }, { exitCode: 1, stdout: '\n', stderr: 'SyntaxError' }]) {
+  test(`a bin that failed without printing anything never ran as an Aether bin: the model runs the prompt (exit ${answer.exitCode})`, async ($, on) => {
+    const { runs, counts } = stubs(on, { answer })
+    await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
+    const { chunks, result } = await step($)
+    expect(runs.length).toBe(1)
+    expect(chunks.some((c) => c.kind === 'tool')).toBe(false)
+    expect(result.answer).toBe('from the model')
+    expect(counts.modelSteps).toBe(1)
+  })
+}
 
 test('a command $.process.run refuses goes to the model, which the meter records', async ($, on) => {
   const { runs, writes, counts } = stubs(on, { answer: { deny: 'process.run is not allowed' } })
@@ -147,14 +173,27 @@ test('a command $.process.run refuses goes to the model, which the meter records
   expect(parts(writes)['/home/u/aether-data/usage/s1/0.json'].entries.map((e) => e.agent)).toEqual(['agent-1'])
 })
 
-test('only the first step is answered: a later step of the same agent goes to the model', async ($, on) => {
+test('an answered agent that takes another step is ended without the model, which would run the command again', async ($, on) => {
   const { runs, counts } = stubs(on)
   await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
   await step($)
-  const later = await step($, { index: 1, messageCount: 9 })
+  for (const index of [1, 2]) {
+    const later = await step($, { index, messageCount: 9 })
+    expect(later.chunks.some((c) => c.kind === 'tool')).toBe(false)
+    expect(later.result).toMatchObject({ stopReason: 'end_turn', toolUses: [], usage: null })
+    expect(later.result.answer).toBe('Not run again: the Aether mod already ran this command, and its answer was not taken.')
+  }
   expect(runs.length).toBe(1)
-  expect(later.result.answer).toBe('from the model')
-  expect(counts.modelSteps).toBe(1)
+  expect(counts.modelSteps).toBe(0)
+})
+
+test('an agent the mod passed to the model stays with the model', async ($, on) => {
+  const { runs, counts } = stubs(on, { answer: { deny: 'process.run is not allowed' } })
+  await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
+  await step($)
+  await step($, { index: 1, messageCount: 9 })
+  expect(runs.length).toBe(1)
+  expect(counts.modelSteps).toBe(2)
 })
 
 test('a first step with another index, or of another agent, goes to the model', async ($, on) => {

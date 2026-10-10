@@ -1,9 +1,11 @@
 // The command of an aether:ops prompt, for the mod to run without a model (register.js).
-// Pure: no $, no I/O. It reads only the prompt that aether:run's opsPrompt builds (run.workflow.js),
-// line for line, and only the commands the workflow sends. Anything else is null, and the model
-// path runs the prompt as before. The text after a lane's payload marker is data, never parsed.
+// Pure: no $, no I/O. It reads only prompts of the shape aether:run's opsPrompt builds (run.workflow.js),
+// line for line, either first line with any command, and only the commands the workflow sends, every
+// argument checked. Anything else is null, and the model path runs the prompt as before. The text after
+// a lane's payload marker is data, never parsed.
 
-// The longest $.process.run allows. The model path's Bash call had 120 s for aether-wt (issue 002).
+// The longest $.process.run allows. The model path's Bash call had 120 s for aether-wt (issue 002). A merge
+// runs the plan's tests for up to 15 minutes, so one whose tests outlast this is stopped before its revert.
 export const OPS_TIMEOUT_MS = 600000
 
 const FIRST_LINES = [

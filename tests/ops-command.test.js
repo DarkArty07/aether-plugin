@@ -7,7 +7,7 @@ const { makeRepo, compile } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { runWorkflow } = require('./workflow-harness.js')
 
-const MODULE = path.join(__dirname, '..', 'plugins', 'aether', 'hooks', 'ops-command.js')
+const MODULE = path.join(__dirname, '..', 'plugins', 'aether', 'hooks', 'ops-command.mjs')
 
 let parseOpsPrompt
 let OPS_TIMEOUT_MS

@@ -93,11 +93,22 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 | `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `remove` (saves unmerged work as a patch), `sweep` |
 | `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review, and cleanup in `finally` |
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
-| Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the swarm's `aether-wt` and `aether-lane` commands itself, without a model (see below). In any other session it records and runs nothing, and does not offer Aether's agents |
+| Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the workflow's own `aether-wt` and `aether-lane` commands itself, without a model (see below). In any other session it records and runs nothing, and does not offer Aether's agents |
 | `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `price` prices any `claude -p` JSON output |
 | SessionStart hook | In an Aether session: marks the session, passes the lanes option to its commands, injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files not written to for 30 days, and points a new Lead to an open autonomous run. In any other session it does nothing |
 
-**Ops without a model.** The workflow has no shell, so it hands each `aether-wt` and `aether-lane` command to an `ops` agent. In an Aether session the mod answers that agent itself: it checks the prompt against the closed list of commands the workflow sends (`hooks/ops-command.js`), runs the command with `$.process.run`, with no shell, and returns its exit code and output, with no model request. Anything else, and any session where `$.process.run` is refused or cannot start it, falls back to the Haiku `ops` agent, as before. So the mod now calls `$.process.run`; `claude plugin validate` lists it. If your organization's policy refuses that call, the agent path runs; a policy that refuses the whole mod also turns off the usage meter. See [decision A30](docs/decisions.md).
+**Ops without a model.** The workflow has no shell, so it hands each of its own `aether-wt` and `aether-lane` commands (`merge`, `remove`, `diff --final`, `sweep` and the lane commands) to an `ops` agent. In an Aether session the mod answers that agent itself, with no model request:
+- it checks the prompt against the closed list of commands the workflow sends (`hooks/ops-command.mjs`);
+- it runs the command with `node` and `$.process.run`, with no shell;
+- it returns the command's exit code and output.
+
+Anything else falls back to the Haiku `ops` agent, as before: another prompt, a refused `$.process.run`, a command it cannot start, or a bin that fails without printing anything. Implementers still run `aether-wt ensure` and `diff` with their own Bash tool. What changes for these commands:
+- **Permissions.** The session's permission rules and mode, and Bash `PreToolUse` hooks, no longer apply to them.
+- **Environment.** They run in Claude Code's own environment, and so does what they start: the plan's test command, inside a merge, and agy. Exports from `CLAUDE_ENV_FILE` and `PATH` entries only your shell profile adds do not reach them. Make the test command work without them.
+- **The 10-minute limit.** A merge whose tests outlast 10 minutes is stopped after its merge commit and before its revert, and the error says so.
+- **The capability.** The mod now calls `$.process.run`, and `claude plugin validate` lists it. If your organization's policy refuses that call, the agent path runs. A policy that refuses the whole mod also turns off the usage meter, lanes (the mod saves their prompts), and the hiding of Aether's agents in other sessions.
+
+See [decision A30](docs/decisions.md).
 
 ### Lanes
 

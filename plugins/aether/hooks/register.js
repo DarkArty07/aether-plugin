@@ -3,11 +3,12 @@
 // The meter only observes: a failure in it never changes, delays past a write, or blocks a request.
 // It also saves each aether-lane payload an ops agent carries to the file its marker names (lanes spec §6.1).
 //
-// It answers aether:run's ops agents itself (decision A30): when the workflow spawns aether:ops with a prompt
-// that ops-command.js accepts, the agent's first step runs that aether-wt or aether-lane command with
-// $.process.run, no shell, and ends the agent with the StructuredOutput the workflow asked for, without a
-// model request. Any other prompt, or a command $.process.run refuses or cannot start, goes to the model as
-// before. A command still running at its timeout is reported as stopped, never run again.
+// It answers the ops agents of aether:run itself (decision A30): when a workflow spawns aether:ops with a
+// prompt that ops-command.mjs accepts, the agent's first step runs that aether-wt or aether-lane command with
+// $.process.run, no shell, and ends the agent with the StructuredOutput call aether:run's schema asks for,
+// without a model request. Any other prompt, and a command that $.process.run refuses or cannot start, or
+// that fails without printing anything, goes to the model as before. Once the mod has run an agent's
+// command, the agent's model never runs it: a command still running at its timeout is reported as stopped.
 //
 // Only an Aether session is metered (installable spec R9): one whose Lead started it (classic.SessionStart
 // with agent_type aether:lead), or one that has a marker <data dir>/sessions/<session>.json, which only
@@ -17,7 +18,7 @@
 // Files: <data dir>/usage/<session>/<n>.json, each { session, part, claudeCode, agents, entries }
 // with up to PART_SIZE entries. A reloaded module starts after the parts already on disk.
 
-import { parseOpsPrompt } from './ops-command.js'
+import { parseOpsPrompt } from './ops-command.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -27,10 +28,13 @@ const OPS = 'aether:ops'
 const STRUCTURED_OUTPUT = 'StructuredOutput'
 // The exit code of a command the mod stopped at its timeout, as timeout(1) gives.
 const TIMED_OUT = 124
+// An ops agent whose command the mod ran (in a session's `ops`).
+const ANSWERED = 'answered'
 const SESSION_ID = /^[A-Za-z0-9-]+$/
 
 // session id → { id, aether, dataDir, ready, entries, agents, written, writing, pending, ops }
-// `ops` holds each ops agent's command until its first step: agent id → { cwd, bin, args, timeoutMs }.
+// `ops` holds each ops agent's command until its first step, agent id → { cwd, bin, args, timeoutMs },
+// then ANSWERED once the mod has run it.
 const sessions = new Map()
 
 const PAYLOAD_MARKER = /^=== aether-lane payload: (.+) ===$/m
@@ -227,8 +231,8 @@ async function saveLanePayload($, e, session) {
   }
 }
 
-// The command an ops agent of the workflow carries, when the mod may run it, else null. Only an agent
-// a workflow spawned has the StructuredOutput tool the answer calls.
+// The command an ops agent carries, when the mod may run it, else null. Only an agent a workflow spawned
+// with a schema has the StructuredOutput tool the answer calls; aether:run always passes one.
 function opsCommand(e) {
   if (e.subagentType !== OPS || !e.workflow) return null
   try {
@@ -269,6 +273,14 @@ export function register(on) {
     const state = await aetherSession($)
     if (!state) return yield* next(e)
     const command = e.agentId ? state.ops.get(e.agentId) : undefined
+    if (command === ANSWERED) {
+      // The agent goes on after the mod's answer, so its answer was not taken. The model would run the
+      // command a second time: end the agent instead, and let the workflow see an ops failure.
+      const answer = 'Not run again: the Aether mod already ran this command, and its answer was not taken.'
+      yield { kind: 'text', index: 0, text: answer }
+      yield { kind: 'stop', stopReason: 'end_turn', usage: null }
+      return { turnId: e.turnId, index: e.index, answer, toolUses: [], stopReason: 'end_turn', usage: null }
+    }
     if (command) state.ops.delete(e.agentId)
     if (command && e.index === 0) {
       let out = null
@@ -279,7 +291,10 @@ export function register(on) {
         began = null
       }
       try {
-        out = await $.process.run([`${$.plugin.root}/bin/${command.bin}`, ...command.args], { cwd: command.cwd, timeoutMs: command.timeoutMs })
+        out = await $.process.run(['node', `${$.plugin.root}/bin/${command.bin}`, ...command.args], { cwd: command.cwd, timeoutMs: command.timeoutMs })
+        // The bins print a JSON line whenever they run. A failure with no output is a bin that never ran,
+        // such as node too old for it: the model runs the prompt through the Bash tool's environment.
+        if (out.exitCode !== 0 && (typeof out.stdout !== 'string' || out.stdout.trim() === '')) out = null
       } catch (err) {
         // Stopped at its timeout, the command ran: report it, and leave nothing for the model to run again.
         let ended = null
@@ -290,19 +305,25 @@ export function register(on) {
         }
         const stopped = /still running after/.test(String(err && err.message)) || (began !== null && ended !== null && ended - began >= command.timeoutMs)
         if (stopped) {
-          const error = `${command.bin} ${command.args[0]} was still running after ${command.timeoutMs / 1000} s and was stopped; what it changed is unknown`
+          // aether-wt merge commits the merge before it runs the tests, and reverts only after them.
+          const changed =
+            command.args[0] === 'merge'
+              ? 'its merge commit may be on the integration branch without its tests: check its git log before a relaunch'
+              : 'what it changed is unknown'
+          const error = `${command.bin} ${command.args[0]} was still running after ${command.timeoutMs / 1000} s and was stopped; ${changed}`
           out = { exitCode: TIMED_OUT, stdout: `${JSON.stringify({ error })}\n` }
         }
       }
       if (out) {
         // The answer the model would give: one StructuredOutput call. It records no usage.
+        state.ops.set(e.agentId, ANSWERED)
         const input = { exitCode: out.exitCode, stdout: out.stdout }
         yield { kind: 'tool', index: 0, id: `toolu_aether_ops_${e.agentId}`, name: STRUCTURED_OUTPUT }
         yield { kind: 'input', index: 0, json: JSON.stringify(input) }
         yield { kind: 'stop', stopReason: 'tool_use', usage: null }
         return { turnId: e.turnId, index: e.index, answer: '', toolUses: [{ name: STRUCTURED_OUTPUT, input }], stopReason: 'tool_use', usage: null }
       }
-      // $.process.run refused or could not start the command: the model runs the prompt.
+      // $.process.run refused or could not start the command, or the bin never ran: the model runs the prompt.
     }
     let started = null
     try {
