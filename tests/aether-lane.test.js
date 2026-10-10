@@ -6,7 +6,11 @@ const fs = require('node:fs')
 const path = require('node:path')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const schemas = require('../plugins/aether/lib/lane-schemas.js')
-const { buildPrompt, LANE_NOTES, WORKDIR_RULE } = require('../plugins/aether/lib/lane-calls.js')
+const work = require('../plugins/aether/lib/lane-work.js')
+const calls = require('../plugins/aether/lib/lane-calls.js')
+const { buildPrompt, LANE_NOTES, WORKDIR_RULE } = calls
+const { registerAdapter, unregisterAdapter } = require('../plugins/aether/lib/harness/index.js')
+const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
 const { PLUGIN, WT_BIN, runBin, commitIn, tempDir } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 
@@ -26,6 +30,36 @@ const flags = (digest, { role = 'implementer', task = 'task-1', model = 'gemini-
   digest,
 ]
 const unitDir = (args) => path.join(args.repoRoot, '.aether', 'worktrees', args.runId, 'task-1')
+
+// A table entry for a second harness of one model, which replaces sonnet and serves implementers.
+function codexEntry(command, group = 'codex') {
+  const levels = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
+  return {
+    command,
+    maxParallel: 1,
+    waitSeconds: 60,
+    timeouts: { implementer: 60, supervisor: 60, reviewer: 60, designer: 60 },
+    groups: { [group]: `${group} models` },
+    models: { [`gpt-${group}`]: { group, replaces: 'sonnet', roles: ['implementer'], levels } },
+  }
+}
+
+// Sets this process's environment to env for one test, and puts each variable back after it.
+function useEnv(t, env) {
+  for (const [name, value] of Object.entries(env)) {
+    const previous = process.env[name]
+    t.after(() => {
+      if (previous === undefined) delete process.env[name]
+      else process.env[name] = previous
+    })
+    process.env[name] = value
+  }
+}
+
+// A harness adapter for this process only: the runner is another process, and loads only the bundled adapters.
+function fakeCodex() {
+  return { name: 'codex', installed: () => true, version: () => '9.1.0', quota: () => ({ groups: { codex: { unknown: true } } }) }
+}
 
 // Starts an implementer call on a fresh run and waits for it. `lines` is the payload after its
 // first line, or a function of the run's args that returns it.
@@ -84,19 +118,130 @@ test('buildPrompt puts the role, the lane note and the CLAUDE.md files before th
   for (const role of ['implementer', 'supervisor', 'reviewer']) assert.ok(LANE_NOTES[role].includes(WORKDIR_RULE), role)
 })
 
+test("a lane note names the harness that runs the call, and agy's notes read as they always did", (t) => {
+  const home = tempDir(t)
+  const workdir = tempDir(t)
+  const prompt = buildPrompt({ role: 'reviewer', message: 'M', workdir, home, harness: 'codex' })
+  assert.ok(prompt.includes('You are the Aether final reviewer, run by the codex CLI rather than Claude Code.'))
+  assert.equal(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }), buildPrompt({ role: 'reviewer', message: 'M', workdir, home, harness: 'agy' }))
+  assert.ok(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }).includes(LANE_NOTES.reviewer))
+})
+
 test("status reads each group's windows, marks a group under the reserve unusable, and logs the reading", (t) => {
   const env = fx.laneEnv(t, { quota: { 'Gemini Models': [0.04, 0.9], 'Claude and GPT models': [0.9, 0.9] } })
   const { args } = fx.laneRun(t)
   const r = fx.lane(args, 'status', [], env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const agy = r.json.harnesses.agy
-  assert.deepEqual([agy.installed, agy.version, agy.groups.gemini.usable, agy.groups.claude.usable], [true, '1.3.2', false, true])
+  assert.deepEqual([agy.enabled, agy.path, agy.installed, agy.version, agy.groups.gemini.usable, agy.groups.claude.usable], [true, fx.FAKE_AGY, true, '1.3.2', false, true])
   assert.deepEqual(agy.groups.claude.windows['5h'], { remaining: 0.9, resetsAt: '2026-10-09T05:53:31Z' })
   const readings = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading')
   assert.equal(readings.length, 1)
-  assert.deepEqual([readings[0].run, readings[0].version, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', ['claude', 'gemini']])
+  assert.deepEqual([readings[0].run, readings[0].version, readings[0].harness, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', 'agy', ['claude', 'gemini']])
   const missing = fx.lane(args, 'status', [], fx.laneEnv(t, { command: '/nowhere/agy' }))
-  assert.deepEqual(missing.json, { harnesses: { agy: { installed: false, version: null, groups: {} } } })
+  assert.deepEqual(missing.json, { harnesses: { agy: { enabled: true, command: '/nowhere/agy', path: null, installed: false, version: null, groups: {} } } })
+})
+
+test('status lists every harness of the table: an enabled one with its command, path and install, a disabled one by its command only', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, {
+    mutate: (c) => {
+      c.harnesses.codex = codexEntry('/nowhere/codex')
+      c.harnesses.grok = codexEntry('/nowhere/grok', 'grok')
+    },
+  })
+  const alone = fx.lane(args, 'status', [], { ...env, AETHER_LANE_HARNESSES: 'agy' })
+  assert.equal(alone.status, 0, alone.stdout + alone.stderr)
+  assert.deepEqual([alone.json.harnesses.agy.enabled, alone.json.harnesses.agy.path, alone.json.harnesses.agy.installed], [true, fx.FAKE_AGY, true])
+  assert.deepEqual(alone.json.harnesses.codex, { enabled: false, command: '/nowhere/codex' })
+  assert.deepEqual(alone.json.harnesses.grok, { enabled: false, command: '/nowhere/grok' })
+
+  // grok is enabled but not installed: no path, no version and no groups, and no adapter is loaded for it.
+  const grok = fx.lane(args, 'status', [], { ...env, AETHER_LANE_HARNESSES: 'grok' })
+  assert.equal(grok.status, 0, grok.stdout + grok.stderr)
+  assert.deepEqual(grok.json.harnesses.grok, { enabled: true, command: '/nowhere/grok', path: null, installed: false, version: null, groups: {} })
+  assert.deepEqual(grok.json.harnesses.agy, { enabled: false, command: fx.FAKE_AGY })
+})
+
+test('status reads each enabled harness through its own adapter, and logs one reading per installed harness, named', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
+  useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
+  registerAdapter('codex', () => fakeCodex())
+  t.after(() => unregisterAdapter('codex'))
+  const out = calls.status(repo.dir, args.runId)
+  assert.deepEqual([out.harnesses.codex.enabled, out.harnesses.codex.installed, out.harnesses.codex.version, out.harnesses.codex.groups.codex.usable], [true, true, '9.1.0', true])
+  assert.deepEqual([out.harnesses.agy.enabled, out.harnesses.agy.version], [true, '1.3.2'])
+  assert.deepEqual(lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading').map((e) => e.harness).sort(), ['agy', 'codex'])
+})
+
+test('start refuses a model of a harness the lanes option does not enable, and names the table when no harness has the model', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry('/nowhere/codex')) })
+  const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
+  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest, { model: 'gpt-codex' })], { ...env, AETHER_LANE_HARNESSES: 'agy' }).json, { unavailable: 'harness' })
+  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest, { model: 'nope-1' })], env).json, { error: 'no harness in the lane table has the model nope-1' })
+  assert.equal(fs.existsSync(path.join(args.runDir, 'lanes', IMPLEMENT, 'call.json')), false)
+})
+
+test('start takes the harness from the model, and records it in the call', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
+  useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
+  registerAdapter('codex', () => fakeCodex())
+  t.after(() => unregisterAdapter('codex'))
+  // The runner it starts is another process and cannot load this adapter: the test ends the call itself.
+  t.after(() => {
+    try {
+      calls.stop(args.repoRoot, args.runId, IMPLEMENT)
+    } catch {
+      // the repository is gone already
+    }
+  })
+  const digest = fx.writePrompt(args, IMPLEMENT, 'You are implementing task-1: Task 1 title.')
+  assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { role: 'implementer', task: 'task-1', model: 'gpt-codex', effort: 'high', digest }), {
+    started: true,
+    model: 'gpt-codex-high',
+    group: 'codex',
+  })
+  const info = JSON.parse(fs.readFileSync(path.join(args.runDir, 'lanes', IMPLEMENT, 'call.json'), 'utf8'))
+  assert.deepEqual([info.harness, info.laneModel, info.model, info.group], ['codex', 'gpt-codex', 'gpt-codex-high', 'codex'])
+})
+
+test('a harness that takes the schema in its prompt gets the answer section at the end of it, and agy does not', async (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
+  useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
+  // The fake agy answers for it, from the same code as agy's adapter, with the schema flag in its prompt.
+  registerAdapter('codex', ({ command, groups }) => Object.assign(createAgy({ command, groups }), { schemaInPrompt: true }))
+  t.after(() => unregisterAdapter('codex'))
+  const { workdir } = work.prepareImplementer(args.repoRoot, args.runId, 'task-1')
+  fx.writePrompt(args, IMPLEMENT, `You are implementing task-1: Task 1 title.\nFAKE-AGY: answer ${DONE}`)
+  const dir = path.join(args.runDir, 'lanes', IMPLEMENT)
+  const info = {
+    runId: args.runId,
+    call: IMPLEMENT,
+    role: 'implementer',
+    task: 'task-1',
+    harness: 'codex',
+    model: 'gpt-codex-high',
+    laneModel: 'gpt-codex',
+    group: 'codex',
+    effort: 'high',
+    timeoutSeconds: 60,
+    workdir,
+    quotaBefore: null,
+    session: null,
+    startedAt: Date.now(),
+  }
+  fs.writeFileSync(path.join(dir, 'call.json'), `${JSON.stringify(info)}\n`)
+  await calls.runCall(args.repoRoot, args.runId, IMPLEMENT)
+  const done = JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8'))
+  assert.deepEqual([done.status, done.lane.harness], ['ok', 'codex'], done.detail)
+  const [turn] = fx.agyTurns(env)
+  const section = `## Your answer\n\nEnd your answer with one JSON object that matches this schema, and nothing after it:\n\n\`\`\`json\n${JSON.stringify(schemas.IMPLEMENTER_SCHEMA, null, 2)}\n\`\`\``
+  assert.ok(turn.argv[1].endsWith(`\n\n${section}`))
+  assert.ok(turn.argv[1].includes('You are an Aether implementer, run by the codex CLI rather than Claude Code.'))
 })
 
 test('start refuses, changing nothing, when the prompt, digest, role, harness or quota does not allow the call', (t) => {
@@ -144,6 +289,8 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   assert.ok(turn.argv[1].includes(LANE_NOTES.implementer))
   assert.ok(turn.argv[1].includes(WORKDIR_RULE))
   assert.ok(turn.argv[1].endsWith(message))
+  // agy takes the schema as a flag, so its prompt carries no answer section.
+  assert.equal(turn.argv[1].includes('## Your answer'), false)
 
   const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
   assert.deepEqual(
