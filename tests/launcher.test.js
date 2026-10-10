@@ -23,7 +23,7 @@ test('the documents record the lanes: decisions, facts, and the skills that use 
   const swarm = read('plugins', 'aether', 'skills', 'swarm', 'SKILL.md')
   for (const text of ['--no-lanes', 'laneFailure', '`aether-lane`', 'Blocked by a lane']) assert.ok(swarm.includes(text), text)
   assert.match(read('README.md'), /^### Lanes$/m)
-  assert.match(read('README.md'), /^Version 0\.7: /m)
+  assert.match(read('README.md'), /^Version 0\.8: /m)
 })
 
 test('the documents record the autonomy: decisions, the README, and no per-stage gates', () => {
@@ -54,7 +54,6 @@ test('the README installs Aether with Claude Code, and starts it with one native
   const lines = [
     'claude plugin install aether --marketplace DarkArty07/aether-plugin',
     '/plugin install aether --marketplace DarkArty07/aether-plugin',
-    'claude plugin marketplace add anthropics/claude-plugins-official',
     '--config lanes=true',
     'claude --agent aether:lead --effort xhigh',
     '{ "agent": "aether:lead", "effortLevel": "xhigh" }',
@@ -106,14 +105,27 @@ test('the installer and the fish launcher are gone', () => {
   }
 })
 
-test('the manifest is version 0.7.0, and the README says so', () => {
+test('the manifest is version 0.8.0, and the README says so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.7.0')
+  assert.equal(manifest.version, '0.8.0')
   assert.match(manifest.description, /built for RADAR/)
   assert.match(manifest.description, /the owner's right hand/)
   assert.match(manifest.description, /a Judge on Opus reviews them/)
   assert.match(manifest.description, /Lanes run its calls on other coding plans/)
-  assert.match(README(), /^Version 0\.7: /m)
+  assert.match(README(), /^Version 0\.8: /m)
+})
+
+test('the documents record RADAR: the roadmap, decisions A31-A38, and a README without superpowers as a requirement', () => {
+  const decisions = read('docs', 'decisions.md')
+  for (let n = 31; n <= 38; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  assert.match(decisions, /\*\*Update \(2026-10-10, RADAR\)\.\*\*/)
+  assert.ok(fs.existsSync(path.join(ROOT, 'docs', 'roadmap', '2026-10-10-radar.md')))
+  const readme = README()
+  for (const text of ['**Rápido**', '**Autónomo**', '**Delegación**', '**Asequible**', '**Robusto**', '`aether:writer`', '`aether:judge`', 'specs/NNN-<topic>/', 'AETHER_IRREVERSIBLE=enforce', '`harnesses`']) {
+    assert.ok(readme.includes(text), text)
+  }
+  assert.ok(!section(readme, '### Requirements').includes('superpowers'))
+  assert.ok(!readme.includes('aether:designer'))
 })
 
 test('no file of the plugin names a machine path, the old launcher or a shell', () => {
