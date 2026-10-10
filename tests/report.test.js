@@ -53,6 +53,7 @@ test('report counts quality from the saved result, and runs the tests at integra
     units: 3,
     merged: 2,
     blocked: 1,
+    questions: 1,
     skipped: 0,
     notRun: 0,
     escalated: 1,
@@ -74,6 +75,8 @@ test('report says so when the tests fail at integration, or when nothing was mea
   assert.equal(r.quality.tests.exitCode, 1)
   assert.equal(r.quality.units, null)
   assert.equal(r.quality.climbed, null)
+  assert.equal(r.quality.questions, null)
+  assert.equal(r.radar.robust.testsPassed, false)
   assert.equal(r.cost, null)
   assert.deepEqual(r.usage, { session: null, claudeCode: null, runRequests: 0, sessionRequests: 0 })
   assert.match(r.notes.join('\n'), /no usage recorded/)
@@ -352,6 +355,7 @@ test('a run without lane calls reports empty lanes, and an unpriced lane model i
   assert.equal(empty.lanes.totals.run.lanesUsd, 0)
   assert.equal(empty.lanes.totals.run.coveredShare, 0)
   assert.deepEqual([empty.lanes.version, empty.lanes.run.groups, empty.lanes.run.overflow], [null, {}, 0])
+  assert.deepEqual(empty.lanes.run.byHarness, {})
   appendLog(dataDir, 'run-session', {
     kind: 'call', time: T0 + 5 * MIN, startedAt: T0 + 4 * MIN, session: 'run-session', run: args.runId, design: null, call: 'task-1-1-implement',
     role: 'implementer', task: 'task-1', harness: 'agy', model: 'mystery-1-high', group: 'gemini', effort: 'xhigh', status: 'ok', durationMs: MIN,
@@ -370,6 +374,128 @@ test('finalize records the agy version the lane log saw', (t) => {
   sampleLaneLog(dataDir, args.runId)
   const { record } = finalize(repo.dir, args.runId, { dataDir, tests: false })
   assert.equal(record.versions.agy, '1.3.2')
+})
+
+test('report counts a question only when the unit\'s latest launch ends it blocked with one', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  writeJson(path.join(args.runDir, 'result-1.json'), {
+    units: [
+      { id: 'task-1', status: 'blocked', tiers: ['haiku'], attempts: 1, question: 'Which format?', rounds: [] },
+      { id: 'task-2', status: 'blocked', tiers: ['haiku'], attempts: 1, rounds: [] },
+    ],
+    agents: { total: 2 },
+  })
+  const file = path.join(args.runDir, 'result.json')
+  writeJson(file, {
+    units: [
+      { id: 'task-1', status: 'blocked', tiers: ['haiku'], attempts: 1, rounds: [] },
+      { id: 'task-2', status: 'blocked', tiers: ['haiku'], attempts: 1, question: 'Which API?', rounds: [] },
+      { id: 'task-3', status: 'blocked', tiers: ['haiku'], attempts: 1, question: '', rounds: [] },
+      { id: 'task-4', status: 'merged', tiers: ['haiku'], attempts: 1, question: 'Which tier?', rounds: [] },
+    ],
+    agents: { total: 4 },
+  })
+  fs.utimesSync(file, new Date(T0 + 30 * MIN), new Date(T0 + 30 * MIN))
+  const { quality } = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual([quality.blocked, quality.questions], [3, 1])
+})
+
+test('report splits the lane calls by harness, and a call with no harness counts as agy', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  sampleLaneLog(dataDir, args.runId)
+  // Two codex calls, and one call logged before the harness was named. Each is a million output tokens of haiku: $0.50.
+  const at = (minutes) => T0 + minutes * MIN
+  const call = (minutes, fields) =>
+    appendLog(dataDir, 'run-session', {
+      kind: 'call',
+      time: at(minutes),
+      startedAt: at(minutes - 1),
+      session: 'run-session',
+      run: args.runId,
+      design: null,
+      role: 'implementer',
+      task: 'task-3',
+      model: HAIKU,
+      group: 'codex',
+      effort: 'high',
+      durationMs: MIN,
+      usage: { input: 0, output: 1e6, thinking: 0, cacheRead: 0, total: 1e6 },
+      conversation: 'c',
+      quotaBefore: null,
+      quotaAfter: null,
+      detail: '',
+      ...fields,
+    })
+  call(15, { harness: 'codex', call: 'task-3-1-implement', status: 'ok' })
+  call(18, { harness: 'codex', call: 'task-3-2-implement', status: 'quota' })
+  call(21, { call: 'task-3-1-supervise', role: 'supervisor', status: 'failed' })
+  const r = report(repo.dir, args.runId, { dataDir, tests: false })
+  const { byHarness } = r.lanes.run
+  assert.deepEqual(Object.keys(byHarness).sort(), ['agy', 'codex'])
+  assert.deepEqual(
+    { ...byHarness.codex, usd: 0 },
+    { calls: 2, ok: 1, failed: 0, quota: 1, violation: 0, blocked: 0, usd: 0, tokens: { input: 0, output: 2e6, cacheRead: 0 } },
+  )
+  close(byHarness.codex.usd, 1)
+  assert.deepEqual(
+    { ...byHarness.agy, usd: 0 },
+    { calls: 4, ok: 2, failed: 2, quota: 0, violation: 0, blocked: 0, usd: 0, tokens: { input: 2e6, output: 2e6, cacheRead: 1e6 } },
+  )
+  close(byHarness.agy.usd, 12.075)
+  assert.equal(r.lanes.session.byHarness.agy.calls, 5)
+  assert.deepEqual(r.radar.delegation.byHarness, { agy: 4, codex: 2 })
+})
+
+test('report gives the RADAR figures from the run, its lanes, its cost and its quality', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  sampleLaneLog(dataDir, args.runId)
+  const { radar } = report(repo.dir, args.runId, { dataDir })
+  const nativeUsd = 26.5
+  const lanesUsd = 11.575
+  assert.deepEqual(Object.keys(radar), ['rapid', 'autonomous', 'delegation', 'affordable', 'robust'])
+  assert.deepEqual(radar.rapid, { runMs: 30 * MIN, attempts: 5, climbed: 0, escalated: 1 })
+  assert.deepEqual(radar.autonomous, { questions: 1 })
+  assert.equal(radar.delegation.laneCalls, 3)
+  close(radar.delegation.nativeUsd, nativeUsd)
+  close(radar.delegation.lanesUsd, lanesUsd)
+  close(radar.delegation.laneShare, lanesUsd / (nativeUsd + lanesUsd))
+  assert.deepEqual(radar.delegation.byHarness, { agy: 3 })
+  close(radar.affordable.totalUsd, nativeUsd + lanesUsd)
+  close(radar.affordable.nativeUsd, nativeUsd)
+  close(radar.affordable.lanesUsd, lanesUsd)
+  assert.deepEqual(radar.robust, { merged: 2, blocked: 1, testsPassed: true, findings: { critical: 1, important: 2, minor: 2 }, finalVerdict: 'ready-with-fixes' })
+})
+
+test('a RADAR figure is null where nothing measured it: no usage and no saved result', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t, { result: false })
+  const { radar } = report(repo.dir, args.runId, { tests: false, now: T0 + 10 * MIN })
+  assert.deepEqual(radar, {
+    rapid: { runMs: 10 * MIN, attempts: null, climbed: null, escalated: null },
+    autonomous: { questions: null },
+    delegation: { laneCalls: 0, nativeUsd: null, lanesUsd: 0, laneShare: null, byHarness: {} },
+    affordable: { totalUsd: null, nativeUsd: null, lanesUsd: 0 },
+    robust: { merged: null, blocked: null, testsPassed: null, findings: null, finalVerdict: null },
+  })
+})
+
+test('with usage but no saved result, the cost and lane figures are known and the quality figures are null', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t, { result: false })
+  const { radar } = report(repo.dir, args.runId, { dataDir, tests: false, now: T0 + 12 * MIN })
+  assert.deepEqual(radar.rapid, { runMs: 12 * MIN, attempts: null, climbed: null, escalated: null })
+  assert.deepEqual(radar.autonomous, { questions: null })
+  assert.deepEqual([radar.delegation.laneCalls, radar.delegation.lanesUsd, radar.delegation.laneShare, radar.delegation.byHarness], [0, 0, 0, {}])
+  close(radar.delegation.nativeUsd, 6.5)
+  close(radar.affordable.nativeUsd, 6.5)
+  close(radar.affordable.totalUsd, 6.5)
+  assert.deepEqual(radar.robust, { merged: null, blocked: null, testsPassed: null, findings: null, finalVerdict: null })
 })
 
 test('the note for a run with no usage tells how to start an Aether session', (t) => {

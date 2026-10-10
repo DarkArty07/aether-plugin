@@ -17,9 +17,11 @@ test('aether-report --run prints the report, and --no-tests skips the tests', (t
   assert.equal(r.status, 0, r.stdout)
   assert.equal(r.json.usage.session, 'run-session')
   assert.equal(r.json.quality.tests.passed, true)
+  assert.equal(r.json.radar.robust.testsPassed, true)
   r = runBin(REPORT_BIN, ['--run', args.runId, '--no-tests', '--session', 'other-session'], repo.dir)
   assert.equal(r.status, 0, r.stdout)
   assert.equal(r.json.quality.tests, null)
+  assert.equal(r.json.radar.robust.testsPassed, null)
   assert.equal(r.json.usage.session, 'other-session')
 })
 

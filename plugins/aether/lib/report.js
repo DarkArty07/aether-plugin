@@ -1,7 +1,7 @@
 'use strict'
 
-// Speed, cost, quality and lanes of a swarm run (spec §10), from its run directory, the usage meter's
-// files, the lane log and the saved result; and finalize, which records the run and removes what is left of it.
+// Speed, cost, quality, lanes and the RADAR figures of a swarm run (spec §10), from its run directory, the
+// usage meter's files, the lane log and the saved result; and finalize, which records the run and removes what is left of it.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -20,6 +20,8 @@ const iso = (ms) => new Date(ms).toISOString()
 const zeroTokens = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
 const laneZeroTokens = () => ({ input: 0, output: 0, cacheRead: 0 })
 const LANE_STATUSES = ['ok', 'failed', 'quota', 'violation', 'blocked']
+// A lane-log call with no harness counts as agy's: entries written before the log named the harness did.
+const LEGACY_HARNESS = 'agy'
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
 // A rung is `<model> <effort>`; a bare model, as results saved before efforts were recorded name it, has no effort.
@@ -201,13 +203,16 @@ function readResults(dir) {
   return latest ? [...archived, latest] : archived
 }
 
-// Unit outcomes, escalations, climbs, every supervisor finding and the final reviews, over every launch.
-// A unit's latest launch gives its status; attempts and findings add up across launches. A unit counts
+// A question the owner must answer: a string that is not blank.
+const isQuestion = (question) => typeof question === 'string' && question.trim() !== ''
+
+// Unit outcomes, escalations, climbs, questions, every supervisor finding and the final reviews, over every launch.
+// A unit's latest launch gives its status and its question; attempts and findings add up across launches. A unit counts
 // as escalated when a launch moved it to another model or a relaunch started it on another model, and
 // as climbed when a launch raised its effort on one model.
 function qualityOf(results) {
   if (results.length === 0) {
-    const unknown = ['launches', 'units', 'merged', 'blocked', 'skipped', 'notRun', 'escalated', 'climbed', 'attempts', 'agents', 'findings', 'finalReview']
+    const unknown = ['launches', 'units', 'merged', 'blocked', 'questions', 'skipped', 'notRun', 'escalated', 'climbed', 'attempts', 'agents', 'findings', 'finalReview']
     return Object.fromEntries(unknown.map((key) => [key, null]))
   }
   const units = new Map()
@@ -222,6 +227,7 @@ function qualityOf(results) {
       const models = tiers.map(modelOf)
       units.set(unit.id, {
         status: unit.status,
+        question: unit.question,
         firstModel: (before && before.firstModel) || models[0],
         escalated: Boolean(before && before.escalated) || new Set(models).size > 1 || Boolean(before && before.firstModel && models[0] && models[0] !== before.firstModel),
         climbed: Boolean(before && before.climbed) || tiers.some((rung, i) => i > 0 && climbsFrom(tiers[i - 1], rung)),
@@ -243,6 +249,7 @@ function qualityOf(results) {
     units: all.length,
     merged: count('merged'),
     blocked: count('blocked'),
+    questions: all.filter((unit) => unit.status === 'blocked' && isQuestion(unit.question)).length,
     skipped: count('skipped'),
     notRun: count('not-run'),
     escalated: all.filter((unit) => unit.escalated).length,
@@ -283,9 +290,9 @@ function groupReadings(group, calls, readings) {
   return points
 }
 
-// Calls, tokens and dollars by group, model and role, and each group's quota windows.
+// Calls, tokens and dollars by group, model, role and harness, and each group's quota windows.
 function summarizeLanes(calls, readings, prices, notes) {
-  const summary = { calls: 0, usd: 0, tokens: laneZeroTokens(), groups: {}, byModel: {}, byRole: {} }
+  const summary = { calls: 0, usd: 0, tokens: laneZeroTokens(), groups: {}, byModel: {}, byRole: {}, byHarness: {} }
   for (const call of calls) {
     const tokens = laneTokens(call.usage ?? {})
     const usd = laneDollars(call, tokens, prices, notes)
@@ -303,6 +310,11 @@ function summarizeLanes(calls, readings, prices, notes) {
     const role = (summary.byRole[call.role] ||= { calls: 0, usd: 0 })
     role.calls++
     role.usd += usd
+    const harness = (summary.byHarness[call.harness || LEGACY_HARNESS] ||= { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, usd: 0, tokens: laneZeroTokens() })
+    harness.calls++
+    harness.usd += usd
+    addTokens(harness.tokens, tokens)
+    if (LANE_STATUSES.includes(call.status)) harness[call.status]++
   }
   for (const [name, group] of Object.entries(summary.groups)) {
     group.quota = quotaConsumed(groupReadings(name, calls, readings))
@@ -371,6 +383,33 @@ function runTests(graph) {
   return { command: graph.testCommand, exitCode: r.status, passed: r.status === 0, timedOut: Boolean(r.error && r.error.code === 'ETIMEDOUT') }
 }
 
+// The RADAR figures for the owner's five goals, each read from the report's own figures. A figure whose
+// source was not measured is null: without usage there are no native dollars or share, and without a saved
+// result there are no quality counts.
+function radarOf({ speed, cost, lanes, quality }) {
+  const nativeUsd = cost ? cost.run.usd : null
+  const byHarness = Object.fromEntries(Object.entries(lanes.run.byHarness).map(([name, harness]) => [name, harness.calls]))
+  return {
+    rapid: { runMs: speed.run.ms, attempts: quality.attempts, climbed: quality.climbed, escalated: quality.escalated },
+    autonomous: { questions: quality.questions },
+    delegation: {
+      laneCalls: lanes.run.calls,
+      nativeUsd,
+      lanesUsd: lanes.totals.run.lanesUsd,
+      laneShare: cost ? lanes.totals.run.coveredShare : null,
+      byHarness,
+    },
+    affordable: { totalUsd: cost ? lanes.totals.run.totalUsd : null, nativeUsd, lanesUsd: lanes.totals.run.lanesUsd },
+    robust: {
+      merged: quality.merged,
+      blocked: quality.blocked,
+      testsPassed: quality.tests ? quality.tests.passed : null,
+      findings: quality.findings,
+      finalVerdict: quality.finalReview ? quality.finalReview.verdict : null,
+    },
+  }
+}
+
 // The run's window starts when the plan was compiled and ends when the result was saved, or now.
 function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDir(), prices = loadPrices(), now = Date.now() } = {}) {
   run.assertRunId(runId)
@@ -407,6 +446,13 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     : null
   const lanes = laneReport({ dataDir, runId, start, end, usage, results, prices, notes, cost })
 
+  const speed = {
+    run: { start: iso(start), end: iso(end), ms: end - start },
+    swarm: usage ? span(inRun.filter((entry) => isAether(usage, entry))) : null,
+    session: usage ? span(usage.entries) : null,
+  }
+  const quality = { ...qualityOf(results), tests: tests ? runTests(graph) : null }
+
   return {
     runId,
     plan: graph.plan,
@@ -416,14 +462,11 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
       runRequests: inRun.length,
       sessionRequests: usage ? usage.entries.length : 0,
     },
-    speed: {
-      run: { start: iso(start), end: iso(end), ms: end - start },
-      swarm: usage ? span(inRun.filter((entry) => isAether(usage, entry))) : null,
-      session: usage ? span(usage.entries) : null,
-    },
+    speed,
     cost,
     lanes,
-    quality: { ...qualityOf(results), tests: tests ? runTests(graph) : null },
+    quality,
+    radar: radarOf({ speed, cost, lanes, quality }),
     notes,
   }
 }
