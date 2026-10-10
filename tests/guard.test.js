@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { PLUGIN, tempDir, makeRepo } = require('./helpers.js')
-const { decide, irreversibleClass } = require('../plugins/aether/lib/guard.js')
+const { decide, irreversibleClass, redactCommand } = require('../plugins/aether/lib/guard.js')
 const { markSession } = require('../plugins/aether/lib/session.js')
 const { pendingFile, readPending } = require('../plugins/aether/lib/pending.js')
 const autonomy = require('../plugins/aether/lib/autonomy.js')
@@ -311,14 +311,12 @@ test('irreversibleClass gives the class of each listed form', () => {
       'git clean -fdx',
       'git clean --force',
       'rm -rf /',
-      'rm -rf /tmp/build',
       'rm -fr ~',
       'rm -rf ~/x',
       'rm -rf $HOME',
       'rm -r -f $HOME/x',
       'rm --recursive --force "/"',
       'rm -rf ..',
-      'rm -rf ../x',
     ],
     credentials: [
       'gh auth login',
@@ -334,6 +332,62 @@ test('irreversibleClass gives the class of each listed form', () => {
   for (const [cls, commands] of Object.entries(forms)) {
     for (const command of commands) assert.equal(irreversibleClass(command), cls, command)
   }
+})
+
+test('a forced removal is risky only when its target is the root, a home, a parent or the current directory, or one of their children', () => {
+  for (const target of [
+    '/', '/*', '/etc', '/etc/', '/etc/*', '/home/',
+    '~', '~/', '~/*', '~/.ssh', '~/.ssh/*',
+    '$HOME', '$HOME/', '$HOME/*', '$HOME/.ssh',
+    '${HOME}', '${HOME}/*', '${HOME}/.ssh',
+    '..', '../', '../..', '../*', '../../*',
+    '.', './', './*', '*',
+  ]) {
+    assert.equal(irreversibleClass(`rm -rf ${target}`), 'delete', target)
+  }
+  // A deeper path, such as a build folder or a unit's worktree, is not risky.
+  for (const target of [
+    '/tmp/build', '/tmp/build/', '/repo/.aether/worktrees/run/unit', '../x', '../../x', '~/x/y', '~/.ssh/id_rsa',
+    '$HOME/x/y', '${HOME}/x/y', './dist', './dist/*', 'build', 'build/*', '*.log', '..x', '.hidden',
+  ]) {
+    assert.equal(irreversibleClass(`rm -rf ${target}`), null, target)
+  }
+})
+
+test('a dry run of a publish or a deploy is not irreversible, and the other classes still are', () => {
+  for (const command of [
+    'npm publish --dry-run',
+    'npm publish --dry-run=true',
+    'cargo publish --dry-run',
+    'kubectl apply -f x.yaml --dry-run=client',
+    'kubectl delete pod x --dry-run=server',
+    'helm install web ./chart --dry-run',
+    'netlify deploy --prod --dry-run',
+    'bash -c "npm publish --dry-run"',
+  ]) {
+    assert.equal(irreversibleClass(command), null, command)
+  }
+  assert.equal(irreversibleClass('npm publish --tag next'), 'publish')
+  assert.equal(irreversibleClass('kubectl apply -f x.yaml'), 'deploy')
+  assert.equal(irreversibleClass('gh pr merge 1 --dry-run'), 'merge-main')
+})
+
+test('a heredoc body is text, and the command line after its delimiter is still read', () => {
+  assert.equal(irreversibleClass('cat > release.sh <<EOF\nnpm publish\nEOF'), null)
+  assert.equal(irreversibleClass("cat > release.sh <<'EOF'\nnpm publish\nEOF"), null)
+  assert.equal(irreversibleClass('cat > release.sh <<"EOF"\nnpm publish\nEOF'), null)
+  assert.equal(irreversibleClass('cat > release.sh <<-EOF\n\tnpm publish\n\tEOF'), null)
+  assert.equal(irreversibleClass('cat <<EOF\nnpm publish\nEOF\ngit push'), 'push')
+  assert.equal(irreversibleClass("cat <<'EOF' > release.sh\nnpm publish\nEOF\n\ngit push origin main"), 'push')
+  assert.equal(irreversibleClass('cat <<EOF\nnpm publish\nEOFX\nEOF\ngit push origin'), 'push')
+  assert.equal(irreversibleClass('cat <<EOF; npm publish\nbody\nEOF'), 'publish')
+  assert.equal(irreversibleClass('cat <<A <<B\nx\nA\nnpm publish\nB'), null)
+  // A body with no delimiter runs to the end of the command.
+  assert.equal(irreversibleClass('cat <<EOF\nnpm publish\n'), null)
+  // A here-string has no body, and "<<" inside quotes is text.
+  assert.equal(irreversibleClass('cat <<< x\ngit push'), 'push')
+  assert.equal(irreversibleClass('cat <<<"x"\ngit push'), 'push')
+  assert.equal(irreversibleClass('echo "<<EOF"\ngit push'), 'push')
 })
 
 test('irreversibleClass gives null to dry runs, quoted text, look-alikes and harmless forms', () => {
@@ -379,6 +433,153 @@ test('irreversibleClass reads each segment, past sudo, env and assignments, and 
   assert.equal(irreversibleClass('"git" push'), 'push')
   assert.equal(irreversibleClass("git 'push' origin"), 'push')
   assert.equal(irreversibleClass('git \\\npush'), 'push')
+})
+
+test('irreversibleClass reads past git options before the subcommand', () => {
+  for (const command of [
+    'git -C ../other push',
+    'git -c user.name=x push origin main',
+    'git -c k=v -C ../other push',
+    'git --git-dir=.git/x push',
+    'git --git-dir .git/x push',
+    'git --work-tree=../wt push',
+    'git --work-tree ../wt push',
+    'git --no-pager push',
+    'git --namespace ns --exec-path=/p -C x push',
+    'sudo git -C ../other push',
+  ]) {
+    assert.equal(irreversibleClass(command), 'push', command)
+  }
+  assert.equal(irreversibleClass('git -C ../other branch -D old'), 'delete')
+  assert.equal(irreversibleClass('git --no-pager reset --hard'), 'delete')
+  assert.equal(irreversibleClass('git -C ../other status'), null)
+})
+
+test('a local git merge is not irreversible, and the push that publishes it is', () => {
+  assert.equal(irreversibleClass('git merge feature/x'), null)
+  assert.equal(irreversibleClass('git -C ../other merge main'), null)
+  assert.equal(irreversibleClass('git --no-pager merge --no-ff x'), null)
+  assert.equal(irreversibleClass('git merge main && git push'), 'push')
+})
+
+test('irreversibleClass drops the exec prefixes and their options, past sudo and env too', () => {
+  for (const command of [
+    'timeout 30 git push',
+    'timeout -s KILL 30 git push',
+    'timeout -s9 30 git push',
+    'timeout -k 5 --signal=TERM 30 git push',
+    'timeout --preserve-status 30 git push',
+    'nice git push',
+    'nice -n 10 git push',
+    'nice -10 git push',
+    'nohup git push origin main',
+    'time git push',
+    'time -p git push',
+    'command git push',
+    'command -p git push',
+    'exec git push',
+    'exec -a NAME git push',
+    'nohup nice -n 5 timeout 10 git push',
+    'sudo -u root git push',
+    'sudo -H -E git push',
+    'sudo -- git push',
+    'sudo -u root env -u X FOO=1 git push',
+    'env -i git push',
+    'env -u NAME git push',
+    'env -u BAR -i FOO=1 git push',
+    'sudo -g staff -C 5 -D /x git push',
+    'sudo -p "%p" -h host git push',
+    'timeout --kill-after 5 30 git push',
+    'timeout -k5 30 git push',
+  ]) {
+    assert.equal(irreversibleClass(command), 'push', command)
+  }
+  assert.equal(irreversibleClass('timeout 30 npm publish'), 'publish')
+  assert.equal(irreversibleClass('nice -n 10 npm publish'), 'publish')
+  assert.equal(irreversibleClass('timeout 30 git status'), null)
+  assert.equal(irreversibleClass('nice -n 10 echo git push'), null)
+})
+
+test('irreversibleClass reads a subshell, a group, a substitution and a background job as segments', () => {
+  assert.equal(irreversibleClass('(cd x && git push)'), 'push')
+  assert.equal(irreversibleClass('{ git push; }'), 'push')
+  assert.equal(irreversibleClass('{ echo x; } && npm publish'), 'publish')
+  assert.equal(irreversibleClass('echo $(git push)'), 'push')
+  assert.equal(irreversibleClass('echo `git push`'), 'push')
+  assert.equal(irreversibleClass('echo x & git push'), 'push')
+  assert.equal(irreversibleClass('npm publish&'), 'publish')
+  // Quoted, or inside a word, the same characters are text.
+  assert.equal(irreversibleClass('echo "(git push)"'), null)
+  assert.equal(irreversibleClass("echo '`git push`'"), null)
+  assert.equal(irreversibleClass('find . -exec echo {} \\;'), null)
+  assert.equal(irreversibleClass('echo a{git,push}'), null)
+  assert.equal(irreversibleClass('echo ${HOME}'), null)
+})
+
+// A command that runs the script `git push` through `levels` nested `bash -c` calls.
+const nested = (script, levels) => (levels === 0 ? script : `bash -c ${JSON.stringify(nested(script, levels - 1))}`)
+
+test('irreversibleClass classes the script that a shell or eval runs, down to three levels of nesting', () => {
+  for (const command of [
+    'bash -c "git push"',
+    "sh -c 'git push origin main'",
+    'bash -lc "git push"',
+    'bash -xc "git push"',
+    'bash --norc -c "git push"',
+    'sudo bash -c "git push"',
+    'bash -c "git status; git push"',
+    'eval "git push"',
+    'eval git push',
+    'eval "eval \'git push\'"',
+  ]) {
+    assert.equal(irreversibleClass(command), 'push', command)
+  }
+  assert.equal(irreversibleClass('zsh -c "npm publish"'), 'publish')
+  assert.equal(irreversibleClass('dash -c "npm publish"'), 'publish')
+  assert.equal(irreversibleClass(nested('git push', 1)), 'push')
+  assert.equal(irreversibleClass(nested('git push', 3)), 'push')
+  assert.equal(irreversibleClass(nested('git push', 4)), null)
+  for (const command of ['bash -c "echo git push"', 'bash script.sh', 'sh deploy.sh git push', 'bash -c', 'eval']) {
+    assert.equal(irreversibleClass(command), null, command)
+  }
+})
+
+test('redactCommand keeps only the subcommand of a credentials command', () => {
+  assert.equal(redactCommand('gh secret set STRIPE_KEY --body sk_live_x', 'credentials'), 'gh secret set [arguments redacted]')
+  assert.equal(redactCommand('sudo gh auth login --with-token < token.txt', 'credentials'), 'gh auth login [arguments redacted]')
+  assert.equal(redactCommand('aws configure', 'credentials'), 'aws configure [arguments redacted]')
+  assert.equal(redactCommand('npm test && bash -c "npm token create"', 'credentials'), 'npm token create [arguments redacted]')
+})
+
+test('redactCommand keeps only the subcommand of a credentials segment, even in a command of another class', () => {
+  assert.equal(redactCommand('git push origin main && gh auth login --with-token', 'push'), 'gh auth login [arguments redacted]')
+  assert.equal(redactCommand('git push && gh secret set NAME -b sk_live_x', 'push'), 'gh secret set [arguments redacted]')
+  assert.equal(redactCommand('git push; bash -c "gh secret set NAME -b sk_live_x"', 'push'), 'gh secret set [arguments redacted]')
+})
+
+test('redactCommand replaces a secret variable, a secret flag and a URL user-info', () => {
+  assert.equal(redactCommand('NPM_TOKEN=abc npm publish', 'publish'), 'NPM_TOKEN=[redacted] npm publish')
+  assert.equal(redactCommand('npm publish --otp 123456', 'publish'), 'npm publish --otp [redacted]')
+  assert.equal(redactCommand('git push https://me:ghp_x@github.com/o/r.git main', 'push'), 'git push https://[redacted]@github.com/o/r.git main')
+})
+
+test('redactCommand covers every secret name and flag, both forms of a flag, and keeps the rest as it is spelled', () => {
+  assert.equal(
+    redactCommand('export db_pass=x my_secret="a b" API_KEY=k NODE_ENV=prod npm   publish', 'publish'),
+    'export db_pass=[redacted] my_secret=[redacted] API_KEY=[redacted] NODE_ENV=prod npm   publish',
+  )
+  assert.equal(
+    redactCommand('npm publish --passwd x --secret=y --api-key k --auth=a --token t --body b', 'publish'),
+    'npm publish --passwd [redacted] --secret=[redacted] --api-key [redacted] --auth=[redacted] --token [redacted] --body [redacted]',
+  )
+  assert.equal(redactCommand('npm   publish --otp 123456  --tag  next', 'publish'), 'npm   publish --otp [redacted]  --tag  next')
+  assert.equal(redactCommand('git push https://user@host.example/x.git', 'push'), 'git push https://[redacted]@host.example/x.git')
+})
+
+test('redactCommand leaves a command with nothing to redact as it is', () => {
+  for (const command of ['git push origin main', 'npm publish --tag next', 'rm -rf build', 'NODE_ENV=prod npm run build', 'git log --author=me', 'echo "a; b"']) {
+    assert.equal(redactCommand(command, irreversibleClass(command)), command)
+  }
 })
 
 const PUSH_QUOTE = 'apruebo push a origin main en esta ocasion'
@@ -497,4 +698,44 @@ test('a grant registry that cannot be read allows the command and records nothin
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, '')
   assert.equal(fs.existsSync(pendingFile(repo.dir)), false)
+})
+
+test('the first record keeps .aether/ out of git, so the owner\'s list is not committed', (t) => {
+  const repo = makeRepo(t)
+  const r = guardBash(t, 'git push origin main', { cwd: repo.dir })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(readPending(repo.dir).length, 1)
+  assert.ok(fs.readFileSync(path.join(repo.dir, '.git', 'info', 'exclude'), 'utf8').split('\n').includes('/.aether/'))
+  assert.equal(repo.git('status', '--porcelain'), '')
+})
+
+test('a git exclude file that cannot be written still lets the command through, and nothing is recorded', (t) => {
+  const repo = makeRepo(t)
+  const exclude = path.join(repo.dir, '.git', 'info', 'exclude')
+  fs.rmSync(exclude, { force: true })
+  fs.mkdirSync(exclude)
+  const r = guardBash(t, 'git push origin main', { cwd: repo.dir, mode: 'enforce' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout, '')
+  assert.equal(fs.existsSync(pendingFile(repo.dir)), false)
+})
+
+test('the owner\'s list records a credentials command without its arguments, and never the secret', (t) => {
+  const repo = makeRepo(t)
+  const r = guardBash(t, 'gh secret set STRIPE_KEY --body sk_live_x', { cwd: repo.dir })
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual(readPending(repo.dir).map((e) => [e.class, e.command]), [['credentials', 'gh secret set [arguments redacted]']])
+  assert.equal(fs.readFileSync(pendingFile(repo.dir), 'utf8').includes('sk_live_x'), false)
+})
+
+test('the owner\'s list records a push without its URL password and a publish without its secret values', (t) => {
+  const repo = makeRepo(t)
+  guardBash(t, 'git push https://me:ghp_x@github.com/o/r.git main', { cwd: repo.dir })
+  guardBash(t, 'NPM_TOKEN=s3cretvalue npm publish --otp 424242', { cwd: repo.dir })
+  assert.deepEqual(readPending(repo.dir).map((e) => e.command), [
+    'git push https://[redacted]@github.com/o/r.git main',
+    'NPM_TOKEN=[redacted] npm publish --otp [redacted]',
+  ])
+  const file = fs.readFileSync(pendingFile(repo.dir), 'utf8')
+  for (const secret of ['ghp_x', 's3cretvalue', '424242']) assert.equal(file.includes(secret), false, secret)
 })
