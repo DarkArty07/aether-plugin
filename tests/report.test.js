@@ -496,3 +496,68 @@ test('the note for a run with no usage tells how to start an Aether session', (t
   assert.ok(r.notes.includes('no usage recorded during the run: was the session started with claude --agent aether:lead?'), r.notes.join('\n'))
 })
 
+
+test('the lane log gives each harness its newest version, and lanes.version stays the agy version', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  sampleLaneLog(dataDir, args.runId)
+  const reading = (minutes, harness, version) =>
+    appendLog(dataDir, 'run-session', { kind: 'reading', time: T0 + minutes * MIN, run: args.runId, design: null, harness, version, groups: {} })
+  reading(2, 'codex', '0.40.0')
+  reading(3, 'grok', '0.9.1')
+  reading(4, 'codex', '0.41.0')
+  reading(5, 'cursor', null)
+  const r = report(repo.dir, args.runId, { dataDir, tests: false })
+  assert.deepEqual(r.lanes.versions, { agy: '1.3.2', codex: '0.41.0', grok: '0.9.1' })
+  assert.equal(r.lanes.version, '1.3.2')
+})
+
+test("a lane reading that names no harness is agy's, and the newest agy reading wins", (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  const reading = (minutes, fields) =>
+    appendLog(dataDir, 'run-session', { kind: 'reading', time: T0 + minutes * MIN, run: args.runId, design: null, groups: {}, ...fields })
+  reading(1, { version: '1.2.0' })
+  let r = report(repo.dir, args.runId, { dataDir, tests: false })
+  assert.deepEqual([r.lanes.version, r.lanes.versions], ['1.2.0', { agy: '1.2.0' }])
+  reading(2, { harness: 'agy', version: '1.3.2' })
+  r = report(repo.dir, args.runId, { dataDir, tests: false })
+  assert.deepEqual(r.lanes.versions, { agy: '1.3.2' })
+})
+
+test('finalize records the version of each lane harness the log saw, agy as before', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  sampleLaneLog(dataDir, args.runId)
+  appendLog(dataDir, 'run-session', { kind: 'reading', time: T0 + 2 * MIN, run: args.runId, design: null, harness: 'codex', version: '0.41.0', groups: {} })
+  const { record } = finalize(repo.dir, args.runId, { dataDir, tests: false })
+  assert.equal(record.versions.agy, '1.3.2')
+  assert.equal(record.versions.codex, '0.41.0')
+  assert.deepEqual(Object.keys(record.versions).sort(), ['aether', 'agy', 'claudeCode', 'codex'])
+})
+
+test('report counts the rounds of every lane harness by model, and a native round counts nowhere', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  const round = (provider, verdict) => ({ verdict, findings: [], provider })
+  const file = path.join(args.runDir, 'result.json')
+  writeJson(file, {
+    units: [
+      { id: 'task-1', status: 'merged', tiers: [], attempts: 2, rounds: [round('codex gpt-test-1', 'retry'), round('codex gpt-test-1', 'approve')] },
+      { id: 'task-2', status: 'merged', tiers: [], attempts: 1, rounds: [round('grok grok-test-1', 'approve')] },
+      { id: 'task-3', status: 'merged', tiers: [], attempts: 2, rounds: [round('cursor cursor-test-1', 'retry'), round('native', 'approve')] },
+    ],
+    finalReview: { status: 'done', verdict: 'ready', findings: [] },
+    agents: { total: 5 },
+  })
+  fs.utimesSync(file, new Date(T0 + 30 * MIN), new Date(T0 + 30 * MIN))
+  const { lanes } = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual(lanes.run.attempts, {
+    'gpt-test-1': { attempts: 2, approved: 1 },
+    'grok-test-1': { attempts: 1, approved: 1 },
+    'cursor-test-1': { attempts: 1, approved: 0 },
+  })
+})
