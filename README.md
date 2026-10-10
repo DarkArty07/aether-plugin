@@ -15,7 +15,7 @@ Without the plugin, Claude Code keeps working in normal mode, with superpowers a
 
 ## Status
 
-Version 0.6: the Lead on Sonnet holds the conversation and decides as the owner's delegate, the Designer on Opus writes specs and plans, each plan task sets its implementer's effort, and lanes run the swarm's calls and the Designer's rounds on other coding plans while their quota lasts. With the owner's permission, the Lead works for hours within ceilings of time and cost and ends with a brief, and it never asks again for what the owner authorized ([autonomy spec](docs/superpowers/specs/2026-10-09-lead-autonomy-design.md)). The copy the owner runs is an installed release, apart from the project: work on the plugin never changes it until the next install ([separation spec](docs/superpowers/specs/2026-10-09-separation-design.md)).
+Version 0.7: the Lead on Sonnet holds the conversation and decides as the owner's delegate, the Designer on Opus writes specs and plans, each plan task sets its implementer's effort, and lanes run the swarm's calls and the Designer's rounds on other coding plans while their quota lasts. With the owner's permission, the Lead works for hours within ceilings of time and cost and ends with a brief, and it never asks again for what the owner authorized ([autonomy spec](docs/superpowers/specs/2026-10-09-lead-autonomy-design.md)). Since 0.7, Aether installs with Claude Code's own plugin commands and starts with `claude --agent aether:lead --effort xhigh`; plain `claude` stays normal mode ([installable plugin spec](docs/superpowers/specs/2026-10-09-installable-plugin-design.md)).
 
 **Trial 3** ([evaluation](docs/evaluations/2026-10-08-trial-3.md)) ran the same design request with the Lead and Designer split and with an Opus main session:
 - the split's design captured all ten items of the owner's hidden intent, against nine;
@@ -86,16 +86,16 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 | `using-aether` skill | Injected at session start. The Lead's rules: the routes, the hand-off to the Designer, deciding with the Designer as the owner's delegate, fallbacks, autonomous runs and the execution method |
 | `aether:designer` | The Designer agent: Opus at `xhigh`, with a 1-hour prompt cache. It does the architectural design and writes the specs and plans |
 | `aether-voice` | Prints the owner's own words from a session, for the Designer to read; it writes no file |
-| `aether-guard` | A PreToolUse hook that refuses Write, Edit, MultiEdit and NotebookEdit under `docs/superpowers/specs/` and `docs/superpowers/plans/` to every agent but the Designer, and on the autonomy registry and run states to every agent |
+| `aether-guard` | A PreToolUse hook that, in an Aether session, refuses Write, Edit, MultiEdit and NotebookEdit under `docs/superpowers/specs/` and `docs/superpowers/plans/` to every agent but the Designer, and on the autonomy registry and run states to every agent. In any other session it allows everything |
 | `aether-autonomy` | The owner's standing authorizations, verified against their own words (`grant`, `revoke`, `check`, `list`), and an autonomous run's state and ceilings (`start`, `spend`, `status`, `end`) |
 | `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |
 | `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
 | `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `remove` (saves unmerged work as a patch), `sweep` |
 | `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review, and cleanup in `finally` |
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
-| Usage meter | A mod that records every model request: agent, model, tokens and time |
+| Usage meter | A mod that records every model request of an Aether session: agent, model, tokens and time. In any other session it records nothing and does not offer Aether's agents |
 | `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `price` prices any `claude -p` JSON output |
-| SessionStart hook | Injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files not written to for 30 days, and points a new Lead to an open autonomous run |
+| SessionStart hook | In an Aether session: marks the session, passes the lanes option to its commands, injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files not written to for 30 days, and points a new Lead to an open autonomous run. In any other session it does nothing |
 
 ### Lanes
 
@@ -108,6 +108,7 @@ A lane runs Aether's own calls on another coding plan the owner pays for, while 
 - **The Designer** can run its rounds on agy too, each round a transaction that may change only specs and plans.
 - **Report.** `aether-report` shows each group's quota consumed and the dollars at list price, apart from native Claude.
 - **Off for one run:** `aether-plan compile <plan.md> --no-lanes`.
+- **Off by default.** Lanes run only when the plugin's `lanes` option is on (see Options).
 - **Linux only.** Lanes need Linux, because stopping a lane's processes reads `/proc`.
 
 ### Autonomy
@@ -123,31 +124,38 @@ The Lead decides as the owner's delegate, and the owner's reviews are two: the p
 
 ## Use Aether mode
 
-**Requirements:**
+### Requirements
+
 - Claude Code 2.1.294 or later;
 - Node.js 22;
 - git 2.36 or later;
-- the superpowers plugin.
+- superpowers, which Claude Code installs with Aether from its official marketplace.
 
-Aether mode is chosen per session. `aether-mode` loads the installed release of the plugin, turns on dynamic workflows, starts the Lead on Sonnet at `xhigh`, and turns the advisor tool off. `claude` stays in normal mode.
+### Install
 
-The copy you run is a release, installed apart from the project: work in the repository, merges to `main` included, never changes it until you install another release. From a clone, install the latest release from its tags, with no network, then link the launcher from the installed copy. In fish:
+    claude plugin install aether --marketplace DarkArty07/aether-plugin
 
-    node scripts/aether-install.js install
-    ln -sfn ~/.local/share/aether-plugin/installed/current/scripts/aether-mode.fish ~/.config/fish/functions/aether-mode.fish
+Add `--config lanes=true` to turn the lanes on (see Options). In a session, `/plugin install aether --marketplace DarkArty07/aether-plugin` does the same and lets you choose the scope.
 
-In bash or zsh, after the same `install`:
+If Claude Code says that `superpowers@claude-plugins-official` is not installed, add Claude Code's official marketplace, which it adds by itself at your first interactive session, and install again:
 
-    aether-mode() { CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 claude --plugin-dir "$(realpath ~/.local/share/aether-plugin/installed/current)/plugins/aether" --settings '{"enableWorkflows": true}' --model sonnet --effort xhigh "$@"; }
+    claude plugin marketplace add anthropics/claude-plugins-official
 
-With `AETHER_DATA_DIR` set, use it in place of `~/.local/share/aether-plugin` in these two lines.
+### Start
 
-`node scripts/aether-install.js` has three commands:
-- `install [<version>]` installs the release tagged `aether--v<version>`, or the latest one, and makes it current. The release that was current becomes the previous one. The next `aether-mode` session loads it; a running session keeps the release it started with.
-- `rollback` swaps the current and the previous release.
-- `status` shows the current and the previous release, and the latest tag.
+Aether mode is chosen per session:
 
-`aether-mode --dev`, in fish, loads the repository's development tree instead of the installed release, to try the plugin itself on purpose.
+    claude --agent aether:lead --effort xhigh
+
+The Lead is the agent `aether:lead`, on Sonnet. `--effort xhigh` sets its effort, because a plugin cannot. The command is the same in every shell.
+
+To make Aether mode the default in one repository, put this in its `.claude/settings.local.json`:
+
+    { "agent": "aether:lead", "effortLevel": "xhigh" }
+
+Plain `claude` then starts Aether mode there, and `claude --agent claude` starts normal mode, with the repository's `effortLevel`.
+
+Plain `claude` stays normal mode: the plugin is dormant there. Its hooks do nothing, its usage meter records nothing, and its agents are not offered.
 
 Then work as you would with superpowers. The Lead decides the design with your intent and stops at the plan with a short brief, recommending one of three ways to execute it: superpowers' two (subagent-driven or native) and the swarm. Give it permission to work for hours, and it runs to the end, chooses the method itself, and gives you the brief. The swarm needs:
 - **a plan with Aether fields** on every task:
@@ -162,35 +170,99 @@ Then work as you would with superpowers. The Lead decides the design with your i
 - **a separate integration worktree on a feature branch.** The Lead creates it with superpowers' `using-git-worktrees`;
 - **permissions that let the agents run `git`, `aether-wt` and the tests**, and edit files under `.aether/worktrees/`, without asking each time.
 
-Data lives in `~/.local/share/aether-plugin/` (or `AETHER_DATA_DIR`):
+### Options
+
+`lanes`, off by default, runs Aether's calls on agy while its quota lasts. agy runs with `--dangerously-skip-permissions` and spends another plan's quota, so you turn it on yourself. Lanes run only on Linux. Turn it on at install with `--config lanes=true`, or later in `/plugin` → Installed → aether → Configure options. `claude plugin configure aether@aether-plugin` shows the options and which are unset.
+
+### What you set yourself
+
+A plugin cannot set these, so you do:
+
+| Need | Step |
+|---|---|
+| The Lead at `xhigh` | `--effort xhigh` in the start command, or `effortLevel` in the repository's settings |
+| Dynamic workflows, for the swarm | Nothing on most paid plans. On Pro, turn on Dynamic workflows in `/config` once |
+| No advisor in Aether mode (each call rereads the whole conversation, uncached) | Nothing unless you configured one. If you did, run `/advisor off` |
+| Permissions for the swarm | Allow rules for `git`, `aether-wt`, `aether-lane` and the test command, and edits under `.aether/worktrees/` |
+| superpowers | Nothing when Claude Code's official marketplace is added, as it is after your first interactive session. Otherwise: `claude plugin marketplace add anthropics/claude-plugins-official` |
+
+### Platforms
+
+| Platform | Status | What degrades |
+|---|---|---|
+| Linux, WSL included | Supported, verified | Nothing. Lanes run when the option is on and `agy` is installed |
+| macOS | Supported by design: Aether needs only Node.js 22 and git. Not verified on a Mac | Lanes stay off: they read `/proc` |
+| Windows, native | Not verified, not claimed. Hooks run through Git Bash | Lanes stay off |
+
+### Update, pin, roll back and uninstall
+
+- **Update:** `claude plugin update aether@aether-plugin`, then start a new session. To update on its own, turn on auto-update for the `aether-plugin` marketplace in `/plugin` → Marketplaces.
+- **Pin a release, or roll back:** in `~/.claude/settings.json`, give the marketplace's source a `ref`, a release tag:
+
+      "extraKnownMarketplaces": {
+        "aether-plugin": { "source": { "source": "github", "repo": "DarkArty07/aether-plugin", "ref": "aether--v0.7.0" } }
+      }
+
+  Then start any session, which fetches that tag, and run `claude plugin update aether@aether-plugin`. Set the `ref` to a newer tag, or remove it, to move forward again.
+- **Never remove the marketplace to change versions:** removing it uninstalls Aether and deletes its data.
+- **Uninstall:** `claude plugin uninstall aether@aether-plugin` also deletes Aether's data directory. Add `--keep-data` to keep it.
+
+### Data
+
+Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AETHER_DATA_DIR` to use another directory.
 - `usage/<session>/` holds the usage meter's files, kept for 30 days;
 - `runs.jsonl` holds one record per finalized or abandoned run;
-- `installed/` holds the installed releases, one directory per version, and the `current` and `previous` links;
-- `.env` holds the Artificial Analysis API key that `scripts/refresh-lanes.js` reads when `ARTIFICIAL_ANALYSIS_API_KEY` is not set.
+- the lane log is kept for 30 days;
+- `sessions/` marks the Aether sessions, kept for 30 days.
 
 The autonomy registry and run states live in the repository itself, under `.aether/autonomy/` in its main checkout.
 
+### Upgrading from 0.6
+
+Version 0.6 ran from `aether-mode`, a fish function that loaded a copy installed by `scripts/aether-install.js` under `~/.local/share/aether-plugin/installed/`. Both are gone from the repository, and your installed 0.6 copy keeps working until you remove it.
+
+- **Installing from your clone's path works, but is not a release:** `claude plugin marketplace add <clone>` loads the working tree in place. Every edit or branch switch changes Aether at the next session, and a path cannot be pinned to a tag.
+- **A pinned copy from your clone, with no push:** once the release is merged and tagged locally (`claude plugin tag plugins/aether`), add to `~/.claude/settings.json`:
+
+      "extraKnownMarketplaces": {
+        "aether-plugin": {
+          "source": { "source": "git", "url": "file:///path/to/aether-plugin", "ref": "aether--v0.7.0" }
+        }
+      }
+
+  Start any `claude` session, which clones it, then run:
+
+      claude plugin install aether@aether-plugin --config lanes=true
+
+  Move between releases by changing `ref`, as in "Update, pin, roll back and uninstall". Once the repository is pushed, the source may become `{ "source": "github", "repo": "DarkArty07/aether-plugin", "ref": "aether--v<version>" }`.
+- **Meanwhile `aether-mode` keeps loading 0.6:** it passes `--plugin-dir`, which replaces the installed plugin for that session.
+- **Your history stays in `~/.local/share/aether-plugin/`:** `runs.jsonl`, `usage/` and the lane log. Move them into `~/.claude/plugins/data/aether-aether-plugin/` to keep one history.
+- **Removing the old copy is your call:** delete `~/.config/fish/functions/aether-mode.fish` and `~/.local/share/aether-plugin/installed/` when you no longer need them.
+- **The advisor:** `aether-mode` turned it off for Aether sessions. If you configured an advisor, run `/advisor off`.
+
 ## Development
 
-The plugin is `plugins/aether/`; nothing outside it is loaded. The main checkout no longer feeds `aether-mode`: a session loads the installed release, and the `bin/` on its `PATH` is that release's. To try a branch, run its bins by path (`node <worktree>/plugins/aether/bin/aether-plan check <plan>`), point `--plugin-dir` at the worktree's `plugins/aether`, or start the session with `aether-mode --dev`, which loads the main checkout.
+The plugin is `plugins/aether/`, and the repository's `.claude-plugin/marketplace.json` lists it. An installed release is a copy in Claude Code's plugin cache, so work in the repository never changes it until you update. To try a branch:
 
-    npm test              # node --test "tests/*.test.js": bins, libraries and workflow scenarios
+    claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort xhigh
+
+That loads the tree for one session, in place of the installed release. Its data goes to `~/.claude/plugins/data/aether-inline/`, and its options are set apart, under `pluginConfigs["aether@inline"]` in your settings. The bins of a branch run by path: `node <worktree>/plugins/aether/bin/aether-plan check <plan>`.
+
+    npm test              # node --test "tests/*.test.js": bins, libraries, workflow scenarios and the fake model
     npm run test:mod      # claude plugin test plugins/aether: the usage meter mod
-    npm run validate      # claude plugin validate plugins/aether --strict
+    npm run validate      # claude plugin validate, on the plugin and on the marketplace
     npm run check         # all three
 
-Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens.
+Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens. `scripts/refresh-lanes.js` updates the lane table from Artificial Analysis; it reads `ARTIFICIAL_ANALYSIS_API_KEY`, or else the `.env` file its header comment names.
 
 ### Release
 
-A release reaches `aether-mode` only when it is installed:
-1. bump `"version"` in `plugins/aether/.claude-plugin/plugin.json`, and with it the version that `tests/launcher.test.js` pins and the `Version 0.x` status line of this README;
+1. bump `"version"` in `plugins/aether/.claude-plugin/plugin.json`, the version that `tests/launcher.test.js` pins, and the `Version 0.x` status line of this README;
 2. run `npm run check`;
 3. merge to `main`;
 4. in the main checkout, run `claude plugin tag plugins/aether`, which creates the tag `aether--v<version>`;
-5. run `node scripts/aether-install.js install`.
-
-`node scripts/aether-install.js rollback` goes back to the previous release. If the script cannot run, swap the links by hand: in `~/.local/share/aether-plugin/installed/`, point `current` at the directory `previous` names, and `previous` at the one `current` named. Each link's target is the bare directory name, for example `ln -sfn 0.5.0-4130f86 current` run inside `installed/`; an absolute target works for the launcher, but `status` and `rollback` cannot read it.
+5. push `main` and the tag;
+6. users update with `claude plugin update aether@aether-plugin`.
 
 ## Documentation
 
