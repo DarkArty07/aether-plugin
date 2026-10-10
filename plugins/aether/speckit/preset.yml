@@ -1,0 +1,44 @@
+schema_version: "1.0"
+
+preset:
+  id: "aether"
+  name: "Aether"
+  version: "0.8.0"
+  description: "Aether mode: specs, plans and tasks that a supervised swarm builds, written without stopping to ask"
+  author: "DarkArty07"
+  repository: "https://github.com/DarkArty07/aether-plugin"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.6.0"
+
+provides:
+  templates:
+    - type: "command"
+      name: "speckit.specify"
+      file: "commands/speckit.specify.md"
+      description: "Aether specify - write spec.md from the confirmed intent, without stopping to ask"
+      replaces: "speckit.specify"
+
+    - type: "command"
+      name: "speckit.plan"
+      file: "commands/speckit.plan.md"
+      description: "Aether plan - write plan.md for an approved spec"
+      replaces: "speckit.plan"
+
+    - type: "command"
+      name: "speckit.tasks"
+      file: "commands/speckit.tasks.md"
+      description: "Aether tasks - write tasks.md that aether-plan check accepts"
+      replaces: "speckit.tasks"
+
+    - type: "command"
+      name: "speckit.constitution"
+      file: "commands/speckit.constitution.md"
+      description: "Aether constitution - create or update the project principles, without stopping to ask"
+      replaces: "speckit.constitution"
+
+tags:
+  - "aether"
+  - "swarm"
+  - "autonomous"
