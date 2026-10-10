@@ -18,7 +18,7 @@ const LANES = {
       opus: { model: 'claude-opus-5-5', group: 'claude' },
     },
     supervisor: { sonnet: { model: 'claude-sonnet-5-5', group: 'claude' } },
-    reviewer: { opus: { model: 'claude-opus-5-5', group: 'claude' } },
+    reviewer: { sonnet: { model: 'claude-sonnet-5-5', group: 'claude' }, opus: { model: 'claude-opus-5-5', group: 'claude' } },
   },
 }
 
@@ -103,14 +103,15 @@ test('with every group usable, the implementer, the supervisor and the final rev
   assert.equal(supervise.label, 'task-1: supervise attempt 1 via agy claude-sonnet-5-5: start')
   assert.ok(supervise.payload.text.includes('\nReview package: .aether-tmp/package.diff\n'))
   assert.ok(supervise.payload.text.includes(`\nUnit worktree: the current directory, a disposable copy of branch aether/${args.runId}/task-1\n`))
+  // A one-unit run of haiku work with a high review: the final review is Sonnet at high.
   assert.deepEqual([review.lane.call, review.lane.role, review.lane.task, review.lane.model, review.lane.effort], [
     'final-review',
     'reviewer',
     undefined,
-    'claude-opus-5-5',
+    'claude-sonnet-5-5',
     'high',
   ])
-  assert.equal(review.label, 'final review via agy claude-opus-5-5: start')
+  assert.equal(review.label, 'final review via agy claude-sonnet-5-5: start')
   assert.ok(review.payload.text.includes('Review package: .aether-tmp/package.diff (base '))
   assert.equal(native(run, 'implementer').length + native(run, 'supervisor').length + native(run, 'reviewer').length, 0)
   const unit = run.result.units[0]
@@ -120,7 +121,7 @@ test('with every group usable, the implementer, the supervisor and the final rev
     'agy claude-sonnet-5-5-high',
     null,
   ])
-  assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'agy claude-opus-5-5-high'])
+  assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'agy claude-sonnet-5-5-high'])
   assert.deepEqual(run.result.lanes, { calls: 3, ok: 3, failed: 0, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 0, dry: [{ wave: 1, groups: [] }] })
   assert.equal(run.result.agents.total, run.calls.length)
 })
@@ -321,7 +322,8 @@ test('calls at max effort stay native', async (t) => {
   assert.equal(starts(run, 'implementer').length + starts(run, 'supervisor').length, 0)
   assert.deepEqual(native(run, 'implementer').map((c) => c.effort), ['max'])
   assert.deepEqual(native(run, 'supervisor').map((c) => c.effort), ['max'])
-  assert.equal(starts(run, 'reviewer').length, 1)
+  // A max review makes the final review Opus at xhigh, which has a lane.
+  assert.deepEqual(starts(run, 'reviewer').map((c) => [c.lane.model, c.lane.effort]), [['claude-opus-5-5', 'xhigh']])
 })
 
 test('a call that finds maxParallel lane calls in flight runs native, and is counted as overflow', async (t) => {
@@ -338,7 +340,7 @@ test('a final review lane that fails goes native, and one that finds the integra
     lane: (call, fallback) => (isCall(call, 'wait', 'final-review') ? finished(call, { status: 'failed', detail: 'exit 1' }) : fallback(call)),
   })
   ok(failed)
-  assert.deepEqual(native(failed, 'reviewer').map((c) => [c.model, c.effort]), [['opus', 'high']])
+  assert.deepEqual(native(failed, 'reviewer').map((c) => [c.model, c.effort]), [['sonnet', 'high']])
   assert.deepEqual([failed.result.finalReview.status, failed.result.finalReview.provider], ['done', 'native'])
 
   const blocked = await runWorkflow(lanesRun(t), {
@@ -346,7 +348,12 @@ test('a final review lane that fails goes native, and one that finds the integra
       isCall(call, 'wait', 'final-review') ? finished(call, { status: 'blocked', detail: 'the integration branch was rewound or rewritten during the lane call' }) : fallback(call),
   })
   ok(blocked)
-  assert.deepEqual(blocked.result.finalReview, { status: 'failed', reason: 'lane: the integration branch was rewound or rewritten during the lane call' })
+  assert.deepEqual(blocked.result.finalReview, {
+    status: 'failed',
+    reason: 'lane: the integration branch was rewound or rewritten during the lane call',
+    reviewModel: 'sonnet',
+    reviewEffort: 'high',
+  })
   assert.equal(native(blocked, 'reviewer').length, 0)
 })
 

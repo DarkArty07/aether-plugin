@@ -763,29 +763,53 @@ async function runUnit(id) {
   if (unit.attempts > 0) await close(unit)
 }
 
+// The final review's model and effort follow the run's risk, judged from the tasks of the merged units:
+// Opus at xhigh for an opus task or an xhigh or max review; Sonnet at high for a small run of haiku
+// tasks that all ask for high reviews; Opus at high otherwise.
+function reviewPlan() {
+  const merged = Object.values(units).filter((u) => u.status === 'merged')
+  const opus = merged.find((u) => tasks[u.id].tier === 'opus')
+  if (opus) return { model: 'opus', effort: 'xhigh', reason: `${opus.id} is tier opus` }
+  const deep = merged.find((u) => ['xhigh', 'max'].includes(tasks[u.id].review))
+  if (deep) return { model: 'opus', effort: 'xhigh', reason: `${deep.id} reviews at ${tasks[deep.id].review}` }
+  if (merged.length <= 3 && merged.every((u) => tasks[u.id].tier === 'haiku' && tasks[u.id].review === 'high')) {
+    return { model: 'sonnet', effort: 'high', reason: 'a small all-haiku run with high reviews' }
+  }
+  return { model: 'opus', effort: 'high', reason: 'the merged work is not a small all-haiku run' }
+}
+
 async function reviewRun() {
   if (!Object.values(units).some((u) => u.status === 'merged')) return { status: 'skipped', reason: 'no unit merged' }
   if (agents.total >= maxAgents) return { status: 'skipped', reason: 'the agent budget is spent' }
+  const { model, effort, reason } = reviewPlan()
+  log(`final review on ${model} ${effort}: ${reason}`)
+  // Every result that names a review carries the model and effort it was run on, or would have been.
+  const chosen = { reviewModel: model, reviewEffort: effort }
   const pkg = await ops(`aether-wt diff ${runId} --final`, { phase: 'Final review', label: 'final review: package' })
-  if (pkg.error) return { status: 'failed', reason: `package: ${pkg.error}` }
-  const lane = laneFor('reviewer', 'opus', 'high')
+  if (pkg.error) return { status: 'failed', reason: `package: ${pkg.error}`, ...chosen }
+  const lane = laneFor('reviewer', model, effort)
   if (lane) {
     const outcome = await laneCall({
       role: 'reviewer',
       id: 'final-review',
       task: null,
       lane,
-      effort: 'high',
+      effort,
       prompt: reviewerPrompt(pkg, { lane: true }),
       phase: 'Final review',
       base: `final review via agy ${lane.model}`,
     })
-    if (outcome.kind === 'ok') return { status: 'done', provider: `agy ${outcome.lane.model}`, ...outcome.result }
-    if (outcome.kind === 'blocked') return { status: 'failed', reason: `lane: ${outcome.detail}` }
+    if (outcome.kind === 'ok') return { status: 'done', provider: `agy ${outcome.lane.model}`, ...chosen, ...outcome.result }
+    if (outcome.kind === 'blocked') return { status: 'failed', reason: `lane: ${outcome.detail}`, ...chosen }
   }
-  const review = await call('reviewer', 'opus', 'high', reviewerPrompt(pkg), { phase: 'Final review', label: 'final review', schema: REVIEW_SCHEMA })
-  if (!review) return { status: 'failed', reason: 'the reviewer agent failed' }
-  return { status: 'done', provider: 'native', ...review }
+  // The label names the model and effort: scripts/check-effort.js expects the reviewer to run at the effort it names.
+  const review = await call('reviewer', model, effort, reviewerPrompt(pkg), {
+    phase: 'Final review',
+    label: `final review on ${model} ${effort}`,
+    schema: REVIEW_SCHEMA,
+  })
+  if (!review) return { status: 'failed', reason: 'the reviewer agent failed', ...chosen }
+  return { status: 'done', provider: 'native', ...chosen, ...review }
 }
 
 // --- run -------------------------------------------------------------------------------------
