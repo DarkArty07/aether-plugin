@@ -18,47 +18,59 @@ function field(front, key) {
   return m ? m[1].trim() : null
 }
 
-test('the Designer runs on Opus at xhigh effort, with a one-hour cache', () => {
-  const { front } = agentFile('designer')
-  assert.equal(field(front, 'name'), 'designer')
-  assert.match(field(front, 'description'), /^"?Aether Designer:/)
+test('the Judge runs on Opus at high effort, and can only read', () => {
+  const { front } = agentFile('judge')
+  assert.equal(field(front, 'name'), 'judge')
+  assert.match(field(front, 'description'), /^"?Aether Judge:/)
   assert.equal(field(front, 'model'), 'opus')
-  assert.equal(field(front, 'effort'), 'xhigh')
-  assert.equal(field(front, 'maxTurns'), '80')
-  assert.match(front, /^experimental:\n {2}cacheTtl: 1h$/m)
+  assert.equal(field(front, 'effort'), 'high')
+  assert.equal(field(front, 'maxTurns'), '30')
   assert.deepEqual(
     field(front, 'tools').split(',').map((s) => s.trim()),
-    ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Skill', 'WebFetch', 'WebSearch'],
+    ['Read', 'Grep', 'Glob'],
   )
 })
 
-test('the Designer prompt holds the hand-off protocol, the Decide line and the plan rules', () => {
-  const { front, body } = agentFile('designer')
-  assert.match(field(front, 'description'), /resumes it with SendMessage with each decision/)
+test('the Judge rules with evidence, in a short fixed format', () => {
+  const { body } = agentFile('judge')
   for (const needle of [
-    '## Decision',
-    '## For the Lead',
-    '- Stage: approaches | design | spec | plan | question | blocked',
-    '- Decide: lead — <reason> | owner — uncovered | conflict | irreversible: <reason>',
-    '`LEAD DECISION`',
-    '`OWNER ANSWER`',
-    '`Sirve a: C2`',
-    'aether-voice --session',
-    'superpowers:brainstorming',
-    'superpowers:writing-plans',
+    '## Verdict',
+    '## Findings',
+    '## Open questions',
+    'approve | revise | reject',
+    '[blocking | major | minor]',
+    'A false approval costs 10-100x more than a false rejection.',
+    'at most 10 findings and 400 words',
+  ]) {
+    assert.ok(body.includes(needle), `the prompt mentions ${needle}`)
+  }
+})
+
+test('the Writer runs on Sonnet at xhigh effort, and writes plans with Aether fields', () => {
+  const { front, body } = agentFile('writer')
+  assert.equal(field(front, 'name'), 'writer')
+  assert.equal(field(front, 'model'), 'sonnet')
+  assert.equal(field(front, 'effort'), 'xhigh')
+  assert.equal(field(front, 'maxTurns'), '60')
+  assert.deepEqual(
+    field(front, 'tools').split(',').map((s) => s.trim()),
+    ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Skill'],
+  )
+  for (const needle of [
+    '`aether:plan`',
+    '`aether:tasks`',
     '**Aether:**',
     '## Aether Execution',
     'aether-plan check',
     'Task N — reason',
+    'specs/NNN-<topic>/tasks.md',
   ]) {
     assert.ok(body.includes(needle), `the prompt mentions ${needle}`)
   }
-  assert.match(body, /cannot talk to the owner/i)
-  assert.match(body, /never implement product code/i)
-  assert.match(body, /as the owner's delegate/)
-  assert.doesNotMatch(body, /## For the owner/)
-  assert.doesNotMatch(body, /Waiting for/)
-  assert.doesNotMatch(body, /The owner approves each of them/)
+})
+
+test('the Designer is gone', () => {
+  assert.equal(fs.existsSync(path.join(PLUGIN, 'agents', 'designer.md')), false)
 })
 
 test('the swarm agents run at their set effort: implementers at xhigh, ops at low, reviews at high', () => {
