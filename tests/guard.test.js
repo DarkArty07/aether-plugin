@@ -354,6 +354,24 @@ test('a forced removal is risky only when its target is the root, a home, a pare
   }
 })
 
+test('a dry run of a publish or a deploy is not irreversible, and the other classes still are', () => {
+  for (const command of [
+    'npm publish --dry-run',
+    'npm publish --dry-run=true',
+    'cargo publish --dry-run',
+    'kubectl apply -f x.yaml --dry-run=client',
+    'kubectl delete pod x --dry-run=server',
+    'helm install web ./chart --dry-run',
+    'netlify deploy --prod --dry-run',
+    'bash -c "npm publish --dry-run"',
+  ]) {
+    assert.equal(irreversibleClass(command), null, command)
+  }
+  assert.equal(irreversibleClass('npm publish --tag next'), 'publish')
+  assert.equal(irreversibleClass('kubectl apply -f x.yaml'), 'deploy')
+  assert.equal(irreversibleClass('gh pr merge 1 --dry-run'), 'merge-main')
+})
+
 test('a heredoc body is text, and the command line after its delimiter is still read', () => {
   assert.equal(irreversibleClass('cat > release.sh <<EOF\nnpm publish\nEOF'), null)
   assert.equal(irreversibleClass("cat > release.sh <<'EOF'\nnpm publish\nEOF"), null)

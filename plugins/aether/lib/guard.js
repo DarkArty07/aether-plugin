@@ -109,6 +109,9 @@ const SUBCOMMANDS = [
   ],
 ]
 
+// A dry run of a publish or a deploy changes nothing, so it is not irreversible.
+const DRY_RUN_CLASSES = new Set(['publish', 'deploy'])
+
 // The subcommands that also depend on the arguments after them.
 const WITH_ARGS = [
   // A dry run changes nothing, so it is not a push.
@@ -201,16 +204,23 @@ function scriptOf(words) {
   return null
 }
 
-// The class of the first subcommand that the words start with, with the words of that subcommand.
+// Whether a class's command is a dry run, by its arguments: --dry-run, or --dry-run= with a value.
+function isDryRun(cls, args) {
+  return DRY_RUN_CLASSES.has(cls) && args.some((a) => a === '--dry-run' || a.startsWith('--dry-run='))
+}
+
+// The class of the first subcommand that the words start with, with the words of that subcommand. A dry
+// run does not match, and the search goes on.
 function subcommandOf(words) {
   for (const [cls, subcommands] of SUBCOMMANDS) {
     for (const sub of subcommands) {
-      if (argsAfter(words, sub) !== null) return { cls, head: sub.split(' ') }
+      const args = argsAfter(words, sub)
+      if (args !== null && !isDryRun(cls, args)) return { cls, head: sub.split(' ') }
     }
   }
   for (const [cls, subcommand, test] of WITH_ARGS) {
     const args = argsAfter(words, subcommand)
-    if (args !== null && test(args)) return { cls, head: subcommand.split(' ') }
+    if (args !== null && test(args) && !isDryRun(cls, args)) return { cls, head: subcommand.split(' ') }
   }
   return null
 }
