@@ -30,6 +30,7 @@ const VERDICTS = ['approve', 'retry', 'escalate', 'block']
 const REVIEW_VERDICTS = ['ready', 'ready-with-fixes', 'not-ready']
 const NOT_A_VERDICT = 'The verdict was not one of approve, retry, escalate or block, so it counts as retry.'
 const NOT_A_REVIEW_VERDICT = 'The verdict was not one of ready, ready-with-fixes or not-ready, so it counts as not-ready.'
+const NOT_A_LIST = 'The findings were not a list, so the approval counts as a retry.'
 const AREA_MEMORY = 10
 // The failures a unit keeps (its `failures`): an attempt without a report, or a retry or an escalation
 // with the titles of its blocking findings. The same failure can stop a unit early (see work()).
@@ -749,6 +750,11 @@ async function work(unit, task) {
     if (!VERDICTS.includes(round.verdict)) {
       round.verdict = 'retry'
       round.ruling = [round.ruling, NOT_A_VERDICT].filter(Boolean).join(' ')
+    }
+    // An approval whose findings are not a list cannot show that nothing blocks it.
+    if (round.verdict === 'approve' && !Array.isArray(review.findings)) {
+      round.verdict = 'retry'
+      round.ruling = [round.ruling, NOT_A_LIST].filter(Boolean).join(' ')
     }
     // An approval is only as good as its findings.
     if (round.verdict === 'approve' && round.findings.some((f) => BLOCKING.includes(f.severity))) round.verdict = 'retry'

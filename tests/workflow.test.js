@@ -316,6 +316,20 @@ test('a verdict that is not one of the four counts as a retry, and the ruling sa
   }
 })
 
+test('an approval whose findings are not a list counts as a retry, and the ruling says so', async (t) => {
+  for (const findings of ['none', null, { severity: 'minor' }]) {
+    const run = await runWorkflow(threeTasks(t), {
+      supervisor: (call, approve) =>
+        call.unit === 'task-2' && call.n === 1 ? { verdict: 'approve', findings, ruling: 'Done.', guidance: '', question: '' } : approve(call),
+    })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    const unit = run.result.units[1]
+    assert.deepEqual(unit.rounds.map((r) => r.verdict), ['retry', 'approve'], JSON.stringify(findings))
+    assert.equal(unit.rounds[0].ruling, 'Done. The findings were not a list, so the approval counts as a retry.')
+    assert.equal(unit.status, 'merged')
+  }
+})
+
 test('an unknown verdict every time stops the unit as repeated findings, before the ladder is spent', async (t) => {
   const run = await runWorkflow(threeTasks(t), {
     supervisor: (call, approve) =>
