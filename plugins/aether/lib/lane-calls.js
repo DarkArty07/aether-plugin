@@ -147,11 +147,11 @@ function callHarness(info) {
   return typeof info?.harness === 'string' ? info.harness : 'agy'
 }
 
-// The table's entry for a lane model that serves role at effort, or null.
+// The table's entry for a lane model that serves role at effort: its group, its id and the level effort maps to, or null.
 function laneModel(harness, role, model, effort) {
   const entry = Object.hasOwn(harness.models, model) ? harness.models[model] : null
   if (!entry || !entry.roles.includes(role) || !Object.hasOwn(entry.levels, effort)) return null
-  return { group: entry.group, agyModel: `${model}-${entry.levels[effort]}` }
+  return { group: entry.group, id: model, level: entry.levels[effort] }
 }
 
 // ---- status ----
@@ -267,6 +267,8 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
     return { unavailable: 'quota' }
   }
   if (!lanes.usable(quotaBefore, config.reserve)) return { unavailable: 'quota' }
+  // The model the harness takes as --model: the adapter names it from the lane model id and its level.
+  const passed = adapter.modelArg({ model: lane.id, level: lane.level })
 
   killCall(paths)
   clearCallDir(paths)
@@ -283,8 +285,9 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
     role,
     task: unitTask,
     harness: name,
-    model: lane.agyModel,
-    laneModel: model,
+    model: passed,
+    laneModel: lane.id,
+    level: lane.level,
     group: lane.group,
     effort,
     timeoutSeconds: harness.timeouts[role],
@@ -301,7 +304,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   })
   runner.unref()
   fs.writeFileSync(paths.pid, `${runner.pid}\n`)
-  return { started: true, model: lane.agyModel, group: lane.group }
+  return { started: true, model: passed, group: lane.group }
 }
 
 // ---- The runner ----
@@ -445,7 +448,7 @@ async function runCall(cwd, runId, call) {
     const before = work.snapshot(cwd, runId, { taskId: role === 'reviewer' ? null : task })
     const message = fs.readFileSync(paths.prompt, 'utf8')
     const prompt = callPrompt({ harness, adapter, role, message, workdir, home: os.homedir() })
-    const argv = adapter.argv({ model: info.model, schemaFile: paths.schema, timeoutSeconds: info.timeoutSeconds, prompt })
+    const argv = adapter.argv({ model: info.laneModel, level: info.level, schemaFile: paths.schema, timeoutSeconds: info.timeoutSeconds, prompt })
     const exitCode = await runAgy(argv, {
       workdir,
       marker: paths.marker,

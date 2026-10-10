@@ -45,19 +45,25 @@ test('codex reports its quota as unknown for each group, without running the CLI
   assert.deepEqual(calls, [])
 })
 
-test('argv runs one headless exec with the prompt, the model, JSON events and a workspace-write sandbox', () => {
+test('argv runs one headless exec with the prompt, the model, its reasoning effort, JSON events and a workspace-write sandbox', () => {
   const codex = createCodex({ command: '/opt/codex', groups: GROUPS })
-  assert.deepEqual(codex.argv({ model: 'gpt-5-codex', schemaFile: '/r/schema.json', timeoutSeconds: 2700, prompt: 'P' }), [
+  assert.deepEqual(codex.argv({ model: 'gpt-5-codex', level: 'high', schemaFile: '/r/schema.json', timeoutSeconds: 2700, prompt: 'P' }), [
     '/opt/codex',
     'exec',
     'P',
     '--model',
     'gpt-5-codex',
+    '-c',
+    'model_reasoning_effort=high',
     '--json',
     '--sandbox',
     'workspace-write',
   ])
-  assert.equal(createCodex({ groups: GROUPS }).argv({ model: 'm', prompt: 'P' })[0], 'codex')
+  assert.equal(createCodex({ groups: GROUPS }).argv({ model: 'm', level: 'low', prompt: 'P' })[0], 'codex')
+})
+
+test('modelArg gives codex the bare model id, since its effort goes in its own flag', () => {
+  assert.equal(createCodex({ groups: GROUPS }).modelArg({ model: 'gpt-5-codex', level: 'high' }), 'gpt-5-codex')
 })
 
 test('parse reads a clean run: the last agent message is the answer, its JSON the structured output, the turn its usage', () => {

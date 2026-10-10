@@ -59,7 +59,13 @@ function useEnv(t, env) {
 
 // A harness adapter for this process only: the runner is another process, and loads only the bundled adapters.
 function fakeCodex() {
-  return { name: 'codex', installed: () => true, version: () => '9.1.0', quota: () => ({ groups: { codex: { unknown: true } } }) }
+  return {
+    name: 'codex',
+    installed: () => true,
+    version: () => '9.1.0',
+    quota: () => ({ groups: { codex: { unknown: true } } }),
+    modelArg: ({ model }) => model,
+  }
 }
 
 // The structured output the fake agy printed as its answer, as text, or nothing when it printed none.
@@ -82,7 +88,8 @@ function unknownQuotaHarness({ command, groups }) {
     name: 'codex',
     schemaInPrompt: true,
     quota: () => unknownQuota(groups),
-    argv: ({ model, prompt }) => [command, '-p', prompt, '--model', model, '--output-format', 'json'],
+    modelArg: ({ model }) => model,
+    argv: ({ model, level, prompt }) => [command, '-p', prompt, '--model', model, '-c', `model_reasoning_effort=${level}`, '--output-format', 'json'],
     parse: (raw, { required = [] } = {}) => parseRun(raw, readFakeAnswer, required),
   }
 }
@@ -313,21 +320,22 @@ test('start takes the harness from the model, and records it in the call', (t) =
     }
   })
   const digest = fx.writePrompt(args, IMPLEMENT, 'You are implementing task-1: Task 1 title.')
+  // codex takes the bare model id as --model; the level goes to it as its reasoning effort.
   assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { role: 'implementer', task: 'task-1', model: 'gpt-codex', effort: 'high', digest }), {
     started: true,
-    model: 'gpt-codex-high',
+    model: 'gpt-codex',
     group: 'codex',
   })
   const info = JSON.parse(fs.readFileSync(path.join(args.runDir, 'lanes', IMPLEMENT, 'call.json'), 'utf8'))
-  assert.deepEqual([info.harness, info.laneModel, info.model, info.group], ['codex', 'gpt-codex', 'gpt-codex-high', 'codex'])
+  assert.deepEqual([info.harness, info.laneModel, info.level, info.model, info.group], ['codex', 'gpt-codex', 'high', 'gpt-codex', 'codex'])
 })
 
 test('a harness that takes the schema in its prompt gets the answer section at the end of it, and agy does not', async (t) => {
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
   useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
-  // The fake agy answers for it, from the same code as agy's adapter, with the schema flag in its prompt.
-  registerAdapter('codex', ({ command, groups }) => Object.assign(createAgy({ command, groups }), { schemaInPrompt: true }))
+  // The fake agy answers for it, as a codex adapter would be answered, with the answer section in its prompt.
+  registerAdapter('codex', unknownQuotaHarness)
   t.after(() => unregisterAdapter('codex'))
   const { workdir } = work.prepareImplementer(args.repoRoot, args.runId, 'task-1')
   fx.writePrompt(args, IMPLEMENT, `You are implementing task-1: Task 1 title.\nFAKE-AGY: answer ${DONE}`)
@@ -338,10 +346,11 @@ test('a harness that takes the schema in its prompt gets the answer section at t
     role: 'implementer',
     task: 'task-1',
     harness: 'codex',
-    model: 'gpt-codex-high',
+    model: 'gpt-codex',
     laneModel: 'gpt-codex',
     group: 'codex',
     effort: 'high',
+    level: 'high',
     timeoutSeconds: 60,
     workdir,
     quotaBefore: null,
@@ -353,6 +362,7 @@ test('a harness that takes the schema in its prompt gets the answer section at t
   const done = JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8'))
   assert.deepEqual([done.status, done.lane.harness], ['ok', 'codex'], done.detail)
   const [turn] = fx.agyTurns(env)
+  assert.deepEqual([fx.argAfter(turn.argv, '--model'), fx.argAfter(turn.argv, '-c')], ['gpt-codex', 'model_reasoning_effort=high'])
   const section = `## Your answer\n\nEnd your answer with one JSON object that matches this schema, and nothing after it:\n\n\`\`\`json\n${JSON.stringify(schemas.IMPLEMENTER_SCHEMA, null, 2)}\n\`\`\``
   assert.ok(turn.argv[1].endsWith(`\n\n${section}`))
   assert.ok(turn.argv[1].includes('You are an Aether implementer, run by the codex CLI rather than Claude Code.'))

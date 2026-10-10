@@ -52,6 +52,23 @@ test('argv runs one trusted, headless prompt with the model and JSON output', ()
   assert.equal(createCursor({ groups: GROUPS }).argv({ model: 'm', prompt: 'P' })[0], 'cursor-agent')
 })
 
+test('modelArg gives cursor the bare model id, and argv takes no effort: the table level is not used until a real call shows how', () => {
+  const cursor = createCursor({ command: 'cursor-agent', groups: GROUPS })
+  assert.equal(cursor.modelArg({ model: 'gpt-5', level: 'high' }), 'gpt-5')
+  assert.deepEqual(cursor.argv({ model: 'gpt-5', level: 'high', prompt: 'P' }), [
+    'cursor-agent',
+    '-p',
+    '--trust',
+    '--approve-mcps',
+    '--force',
+    'P',
+    '--model',
+    'gpt-5',
+    '--output-format',
+    'json',
+  ])
+})
+
 test('parse reads a clean run: the result field is the answer, its JSON the structured output, the usage object the usage', () => {
   const cursor = createCursor({ groups: GROUPS })
   assert.deepEqual(cursor.parse({ stdout: printed({ result: APPROVE }), stderr: '', exitCode: 0 }, { required: ['verdict'] }), {
