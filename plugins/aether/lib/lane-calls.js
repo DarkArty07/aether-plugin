@@ -382,6 +382,9 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
     if (quotaRead && quotaAfter?.unknown === true && parsed.reason?.startsWith('quota: ')) return { status: 'quota', detail: parsed.reason }
     return { status: 'failed', detail: failedDetail(parsed, stderr) }
   }
+  // A clean run whose answer breaks its role's schema is failed before the implementer's head is added to it.
+  const problem = schemas.validate(ROLE_SCHEMAS[role], parsed.structured)
+  if (problem !== null) return { status: 'failed', detail: `invalid answer: ${problem}` }
   if (role === 'implementer') {
     const owns = work.checkOwns(cwd, runId, task)
     if (!owns.ok) return { status: 'violation', files: owns.files, detail: 'changes outside Owns' }

@@ -150,6 +150,36 @@ test("the bin's role schemas are the workflow's", () => {
   assert.deepEqual(schemas.REVIEW_SCHEMA, workflow.REVIEW_SCHEMA)
 })
 
+test('validate gives the first problem of an answer in a few words, and null for a valid one', () => {
+  const retry = { verdict: 'retry', findings: [], ruling: 'Retry.', guidance: 'Fix it.', question: '' }
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, retry), null)
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, { ...retry, findings: 'see ruling' }), 'findings must be an array')
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, { ...retry, verdict: 'approved' }), 'verdict must be one of approve, retry, escalate, block')
+  assert.equal(
+    schemas.validate(schemas.SUPERVISOR_SCHEMA, { ...retry, findings: [{ severity: 'major', title: 't', file: 'a.js:1', evidence: 'e' }] }),
+    'findings[0].severity must be one of critical, important, minor',
+  )
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, { ...retry, findings: [{ severity: 'minor', title: 't', file: 'a.js:1' }] }), 'missing findings[0].evidence')
+  const { question, ...unanswered } = retry
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, unanswered), 'missing question')
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, 'approve'), 'must be an object')
+  assert.equal(schemas.validate({ type: ['string', 'null'] }, null), null)
+  assert.equal(schemas.validate({ type: ['string', 'null'] }, 1), 'must be a string or null')
+})
+
+test('each role schema accepts the answer its role gives, and validate throws for a keyword the schemas do not use', () => {
+  assert.equal(schemas.validate(schemas.IMPLEMENTER_SCHEMA, JSON.parse(DONE)), null)
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, JSON.parse(APPROVE)), null)
+  assert.equal(schemas.validate(schemas.REVIEW_SCHEMA, JSON.parse(READY)), null)
+  const block = { verdict: 'block', findings: [{ severity: 'critical', title: 't', file: 'a.js:3', evidence: 'e' }], ruling: 'Block.', guidance: '', question: 'Which?' }
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, block), null)
+  assert.throws(() => schemas.validate({ type: 'string', minLength: 1 }, 'x'), /unsupported schema keyword: minLength/)
+  assert.throws(
+    () => schemas.validate({ type: 'object', properties: { a: { type: 'array', items: { type: 'string', pattern: '.' } } } }, { a: [] }),
+    /unsupported schema keyword: pattern/,
+  )
+})
+
 test('buildPrompt puts the role, the lane note and the CLAUDE.md files before the message', (t) => {
   const home = tempDir(t)
   const work = tempDir(t)
@@ -467,6 +497,37 @@ test('a quota failure of a harness that reports no quota is quota, and its other
 
   const other = await runCodexCall(t, ['FAKE-AGY: stderr Error: model not found', 'FAKE-AGY: exit-error'])
   assert.deepEqual([other.done.status, other.done.detail], ['failed', 'exit 1: Error: model not found'])
+})
+
+test("an answer that breaks its role's schema fails the call with the problem, and a valid answer of each role passes", async (t) => {
+  // The two answers a supervisor could give the workflow: a findings string, and a verdict outside the enum.
+  const { args } = preparedUnit(t)
+  const env = fx.laneEnv(t)
+  const call = 'task-1-1-supervise'
+  const retry ={ verdict: 'retry', findings: [], ruling: 'Retry.', guidance: 'Fix it.', question: '' }
+  for (const [fields, detail] of [
+    [{ findings: 'see ruling' }, 'invalid answer: findings must be an array'],
+    [{ verdict: 'approved' }, 'invalid answer: verdict must be one of approve, retry, escalate, block'],
+  ]) {
+    const digest = fx.writePrompt(args, call, `Review task-1.\nFAKE-AGY: answer ${JSON.stringify({ ...retry, ...fields })}`)
+    fx.lane(args, 'start', [call, ...flags(digest, { role: 'supervisor', model: 'claude-sonnet-5-5', effort: 'high' })], env)
+    const done = fx.waitDone(args, call, env)
+    assert.deepEqual([done.status, done.result, done.detail], ['failed', null, detail])
+  }
+
+  const approve = fx.writePrompt(args, call, `Review task-1.\nFAKE-AGY: answer ${APPROVE}`)
+  fx.lane(args, 'start', [call, ...flags(approve, { role: 'supervisor', model: 'claude-sonnet-5-5', effort: 'high' })], env)
+  assert.deepEqual(fx.waitDone(args, call, env).result, JSON.parse(APPROVE))
+})
+
+test('an implementer answer that breaks its schema fails before its head is added, on a harness whose quota is unknown', async (t) => {
+  const invalid = JSON.stringify({ status: 'FINISHED', summary: 'Wrote it.', head: '', tests: '1/1 pass', concerns: '', question: '' })
+  const failed = await runCodexCall(t, [`FAKE-AGY: answer ${invalid}`])
+  assert.deepEqual([failed.done.status, failed.done.result, failed.done.detail], ['failed', null, 'invalid answer: status must be one of DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, BLOCKED'])
+
+  const valid = await runCodexCall(t, [`FAKE-AGY: write src/t1/a.js one`, `FAKE-AGY: commit add a`, `FAKE-AGY: answer ${DONE}`])
+  assert.deepEqual([valid.done.status, valid.done.result.status], ['ok', 'DONE'])
+  assert.match(valid.done.result.head, /^[0-9a-f]{40}$/)
 })
 
 test('a supervisor call reviews in a disposable copy of the unit branch, then the copy is removed', (t) => {
