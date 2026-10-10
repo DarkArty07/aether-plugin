@@ -170,6 +170,17 @@ Then work as you would with superpowers. The Lead decides the design with your i
 - **a separate integration worktree on a feature branch.** The Lead creates it with superpowers' `using-git-worktrees`;
 - **permissions that let the agents run `git`, `aether-wt` and the tests**, and edit files under `.aether/worktrees/`, without asking each time.
 
+### What Aether adds to a normal session
+
+Measured on Claude Code 2.1.296 with Aether 0.7.0, in a session started without `--agent aether:lead`, against the same session with Aether disabled:
+- the first request grows by 431 characters, all in the first message: the `aether:run` and `aether:swarm` entries of the skills list;
+- the system prompt and the tools are unchanged;
+- `claude plugin details` estimates about 100 tokens always on;
+- the eight commands of `bin/` are on the Bash tool's `PATH`;
+- each session start, and each `Write`, `Edit`, `MultiEdit` or `NotebookEdit` call, runs one short `node` process that finds no Aether session and exits.
+
+Nothing is injected, refused, recorded or written.
+
 ### Options
 
 `lanes`, off by default, runs Aether's calls on agy while its quota lasts. agy runs with `--dangerously-skip-permissions` and spends another plan's quota, so you turn it on yourself. Lanes run only on Linux. Turn it on at install with `--config lanes=true`, or later in `/plugin` → Installed → aether → Configure options. `claude plugin configure aether@aether-plugin` shows the options and which are unset.

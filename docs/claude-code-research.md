@@ -319,6 +319,33 @@ Measured on Claude Code 2.1.296 with throwaway plugins, an isolated `CLAUDE_CONF
 | F22 | An agent's `skills` frontmatter preloads nothing when the agent is the main session. | Measured |
 | F23 | In a repository whose local settings set `"agent": "<plugin>:lead"`, the command `claude --agent claude` starts a default session: the default model, the plain system prompt, and `agent_type: "claude"`. The repository's `effortLevel` still applies. | Measured |
 
+### Dormant footprint of 0.7.0
+
+Measured on Claude Code 2.1.296 on 2026-10-09 (acceptance A3, `docs/evaluations/2026-10-09-installable/A3-dormant.md`). Aether 0.7.0 was installed from a throwaway clone at its tag into an isolated `CLAUDE_CONFIG_DIR`, with the fake model on `127.0.0.1`. The session ran from a plain git repository without `--agent`, so it is a normal session. `<S>` is the scratch directory, and `<S>/c` runs `claude` with `CLAUDE_CONFIG_DIR` set to `<S>/cfg` and `ANTHROPIC_BASE_URL` set to the fake model.
+
+The commands (checks 2 to 5):
+
+    cd <S>/work && <S>/c -p ACCEPT-NORMAL --allowedTools Write
+    cd <S>/work && <S>/c -p ACCEPT-NORMAL --allowedTools Write --settings '{"enabledPlugins":{"aether@aether-plugin":false}}'
+    <S>/c plugin details aether@aether-plugin
+    ls <S>/cfg/plugins/cache/aether-plugin/aether/0.7.0/bin | wc -l
+
+The first request of each of the two sessions, in characters of each field's JSON as sent:
+
+| Part | Aether enabled | Aether disabled | Difference |
+|---|---|---|---|
+| `system` | 6,009 | 6,009 | 0 |
+| `tools` (20 tools) | 46,677 | 46,677 | 0 |
+| `messages` | 17,453 | 17,022 | +431 |
+
+- **Where:** `system` and `tools` are identical. The 431 characters are in `messages[1]`, the entry that carries the session's opening context: the session-start context of superpowers, the environment, and the lists of agents and skills. `messages[0]`, the prompt and its reminders, is identical.
+- **The lines present only with Aether enabled:** two skill entries, 429 characters of text with their line breaks (431 as JSON): `- aether:run: Aether swarm: runs a plan compiled by aether-plan in parallel waves, ...` (224 characters) and `- aether:swarm: Use in Aether mode to run an approved plan that has Aether fields as a parallel swarm ...` (203).
+- **What is absent:** `Aether mode is active`, and any line for `aether:designer`, `aether:implementer`, `aether:ops`, `aether:reviewer`, `aether:supervisor` or `aether:lead`. The agent list names only Claude Code's own agents. In F21, 0.6.0 added 4,280 characters to the same first message.
+- **The static estimate:** `claude plugin details aether@aether-plugin` gives `Always-on: ~100 tok`. Its inventory is 2 skills, 6 agents and 2 hooks, each skill and agent under 20 tokens always on. It lists the agents, which a normal session is not offered. The measured growth, 431 characters, is about 108 tokens at four characters a token.
+- **The commands on `PATH`:** `bin/` of the installed copy holds 8 files. From the Bash tool of a normal session, `command -v` resolved all eight, `aether-autonomy`, `aether-guard`, `aether-lane`, `aether-plan`, `aether-report`, `aether-session-start`, `aether-voice` and `aether-wt`, into that directory, which was on `PATH`. The probe ran with the 0.6.0 `bin/` directory that the outer session had on `PATH` removed, because it came first and answered.
+- **The data directory:** `<S>/cfg/plugins/data/aether-aether-plugin/` did not exist before the first normal session. After it, and after the disabled session, it exists and is empty: Claude Code creates the directory of each enabled plugin, superpowers' too. There is no `sessions/` and no `usage/`.
+- **The hooks, run directly** with `AETHER_DATA_DIR` in the scratch directory, for a payload without `agent_type` and for one with `agent_type: "claude"`: `aether-session-start` exits 0 with no output, and `aether-guard` exits 0 with no output on a spec write. Neither writes a file.
+- **The whole request body** differs by 448 characters: 431 in `messages`, and 17 in `safeguards`, where `--settings` changes the `flagSettings` path. `metadata` differs only in the session id.
 
 ## OpenRouter prices
 
