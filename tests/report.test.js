@@ -371,3 +371,11 @@ test('finalize records the agy version the lane log saw', (t) => {
   const { record } = finalize(repo.dir, args.runId, { dataDir, tests: false })
   assert.equal(record.versions.agy, '1.3.2')
 })
+
+test('the note for a run with no usage tells how to start an Aether session', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t, { result: false, testCommand: 'false' })
+  const r = report(repo.dir, args.runId)
+  assert.ok(r.notes.includes('no usage recorded during the run: was the session started with claude --agent aether:lead?'), r.notes.join('\n'))
+})
+
