@@ -381,6 +381,111 @@ test('irreversibleClass reads each segment, past sudo, env and assignments, and 
   assert.equal(irreversibleClass('git \\\npush'), 'push')
 })
 
+test('irreversibleClass reads past git options before the subcommand', () => {
+  for (const command of [
+    'git -C ../other push',
+    'git -c user.name=x push origin main',
+    'git -c k=v -C ../other push',
+    'git --git-dir=.git/x push',
+    'git --git-dir .git/x push',
+    'git --work-tree=../wt push',
+    'git --work-tree ../wt push',
+    'git --no-pager push',
+    'git --namespace ns --exec-path=/p -C x push',
+    'sudo git -C ../other push',
+  ]) {
+    assert.equal(irreversibleClass(command), 'push', command)
+  }
+  assert.equal(irreversibleClass('git -C ../other branch -D old'), 'delete')
+  assert.equal(irreversibleClass('git --no-pager reset --hard'), 'delete')
+  assert.equal(irreversibleClass('git -C ../other status'), null)
+})
+
+test('a local git merge is not irreversible, and the push that publishes it is', () => {
+  assert.equal(irreversibleClass('git merge feature/x'), null)
+  assert.equal(irreversibleClass('git -C ../other merge main'), null)
+  assert.equal(irreversibleClass('git --no-pager merge --no-ff x'), null)
+  assert.equal(irreversibleClass('git merge main && git push'), 'push')
+})
+
+test('irreversibleClass drops the exec prefixes and their options, past sudo and env too', () => {
+  for (const command of [
+    'timeout 30 git push',
+    'timeout -s KILL 30 git push',
+    'timeout -s9 30 git push',
+    'timeout -k 5 --signal=TERM 30 git push',
+    'timeout --preserve-status 30 git push',
+    'nice git push',
+    'nice -n 10 git push',
+    'nice -10 git push',
+    'nohup git push origin main',
+    'time git push',
+    'time -p git push',
+    'command git push',
+    'command -p git push',
+    'exec git push',
+    'exec -a NAME git push',
+    'nohup nice -n 5 timeout 10 git push',
+    'sudo -u root git push',
+    'sudo -H -E git push',
+    'sudo -- git push',
+    'sudo -u root env -u X FOO=1 git push',
+    'env -i git push',
+    'env -u NAME git push',
+    'env -u BAR -i FOO=1 git push',
+  ]) {
+    assert.equal(irreversibleClass(command), 'push', command)
+  }
+  assert.equal(irreversibleClass('timeout 30 npm publish'), 'publish')
+  assert.equal(irreversibleClass('nice -n 10 npm publish'), 'publish')
+  assert.equal(irreversibleClass('timeout 30 git status'), null)
+  assert.equal(irreversibleClass('nice -n 10 echo git push'), null)
+})
+
+test('irreversibleClass reads a subshell, a group, a substitution and a background job as segments', () => {
+  assert.equal(irreversibleClass('(cd x && git push)'), 'push')
+  assert.equal(irreversibleClass('{ git push; }'), 'push')
+  assert.equal(irreversibleClass('{ echo x; } && npm publish'), 'publish')
+  assert.equal(irreversibleClass('echo $(git push)'), 'push')
+  assert.equal(irreversibleClass('echo `git push`'), 'push')
+  assert.equal(irreversibleClass('echo x & git push'), 'push')
+  assert.equal(irreversibleClass('npm publish&'), 'publish')
+  // Quoted, or inside a word, the same characters are text.
+  assert.equal(irreversibleClass('echo "(git push)"'), null)
+  assert.equal(irreversibleClass("echo '`git push`'"), null)
+  assert.equal(irreversibleClass('find . -exec echo {} \\;'), null)
+  assert.equal(irreversibleClass('echo a{git,push}'), null)
+  assert.equal(irreversibleClass('echo ${HOME}'), null)
+})
+
+// A command that runs the script `git push` through `levels` nested `bash -c` calls.
+const nested = (script, levels) => (levels === 0 ? script : `bash -c ${JSON.stringify(nested(script, levels - 1))}`)
+
+test('irreversibleClass classes the script that a shell or eval runs, down to three levels of nesting', () => {
+  for (const command of [
+    'bash -c "git push"',
+    "sh -c 'git push origin main'",
+    'bash -lc "git push"',
+    'bash -xc "git push"',
+    'bash --norc -c "git push"',
+    'sudo bash -c "git push"',
+    'bash -c "git status; git push"',
+    'eval "git push"',
+    'eval git push',
+    'eval "eval \'git push\'"',
+  ]) {
+    assert.equal(irreversibleClass(command), 'push', command)
+  }
+  assert.equal(irreversibleClass('zsh -c "npm publish"'), 'publish')
+  assert.equal(irreversibleClass('dash -c "npm publish"'), 'publish')
+  assert.equal(irreversibleClass(nested('git push', 1)), 'push')
+  assert.equal(irreversibleClass(nested('git push', 3)), 'push')
+  assert.equal(irreversibleClass(nested('git push', 4)), null)
+  for (const command of ['bash -c "echo git push"', 'bash script.sh', 'sh deploy.sh git push', 'bash -c', 'eval']) {
+    assert.equal(irreversibleClass(command), null, command)
+  }
+})
+
 const PUSH_QUOTE = 'apruebo push a origin main en esta ocasion'
 const REASON = (cls) =>
   `Aether added this ${cls} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".`
