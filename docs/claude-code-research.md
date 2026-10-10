@@ -289,6 +289,37 @@ From the verification run for the [lanes spec](superpowers/specs/2026-10-08-lane
 | Waiting in Bash | A subagent's Bash call waited about 9 minutes and returned. Past the default 120 s a call moves to the background, so long calls set `timeout` explicitly. |
 | Mods and workflow agents | `agent.spawn` fires for each workflow agent with its full `prompt`, which a hook can read but not rewrite. `$.process` runs host commands, and a `turn.step` hook can answer without calling the model; neither is used yet. |
 
+## Installable plugin findings (2026-10-09)
+
+Measured on Claude Code 2.1.296 with throwaway plugins, an isolated `CLAUDE_CONFIG_DIR`, and a local fake model (`tests/fixtures/fake-model.js`) that binds port 0, so the system picks a free port; no fixed port is ever used, and no model request reaches Anthropic. Check that a port is free before binding any other local server.
+
+| # | Fact | Source |
+|---|---|---|
+| F1 | `claude --agent <plugin>:<agent>` with an agent whose body is empty runs the main session on the agent's model, here Sonnet. Claude Code's system prompt stays unchanged (5,921 characters, as in a plain session), and the session keeps the same 20 tools, `Agent`, `Workflow`, `SendMessage` and `Skill` among them. | Measured |
+| F2 | An agent with a body replaces the whole system prompt: 154 characters instead of 5,921. | Measured |
+| F3 | An agent's `effort` frontmatter does not apply to the main session, which stays at `medium`, Sonnet 5.5's default. `--effort xhigh` sets the main session to `xhigh`, and subagents that set no effort of their own follow it. | Measured |
+| F4 | `"agent": "<plugin>:lead"` and `"effortLevel": "xhigh"` in a repository's `.claude/settings.local.json` give the same session as the flags, `agent_type` included. | Measured |
+| F5 | A SessionStart hook receives `agent_type: "<plugin>:lead"` when the session was started with `--agent`, and no `agent_type` without it. | Measured |
+| F6 | Hooks that fire inside plugin subagents, `general-purpose` subagents and workflow agents (with an `agentType`, and without one as `workflow-subagent`) receive the session's own `session_id`. Their `agent_type` is the subagent's type. | Measured |
+| F7 | `export` lines that a SessionStart hook appends to `CLAUDE_ENV_FILE` reach the Bash commands of the main session, of subagents and of workflow agents. | Measured |
+| F8 | Hook processes receive `CLAUDE_PLUGIN_DATA`: `<plugins root>/data/<id>`, where `<id>` is the plugin id with each character other than a letter, digit, `_` or `-` replaced by `-`. That is `aether-aether-plugin` for `aether@aether-plugin`, and `aether-inline` for a `--plugin-dir` copy. Hooks also receive `CLAUDE_PLUGIN_OPTION_<KEY>`. Bash commands receive neither. | Measured (Bash: documented) |
+| F9 | A mod loads from a copied marketplace install, as from `--plugin-dir`. In a mod:<br>- `$.env.get('CLAUDE_PLUGIN_DATA')` is `null`;<br>- `$.plugin.name` and `$.plugin.root` are properties, and the root of a marketplace install is its version directory in the plugin cache;<br>- `register(on, options)` receives the `userConfig` values;<br>- `classic.SessionStart` carries `agent_type`;<br>- `agent.offer` fires once for each agent offered, with `e.agent` such as `aether:designer`. | Measured |
+| F10 | Returning `{ isOffered: false }` from `agent.offer` withholds that agent. | Documented |
+| F11 | `claude plugin install <p> --config lanes=true` stores `pluginConfigs["<id>"].options.lanes = true` in user settings. Hooks then see `CLAUDE_PLUGIN_OPTION_LANES=true`, and the mod receives `{ lanes: true }`. | Measured |
+| F12 | A dependency `{ "name": "superpowers", "marketplace": "claude-plugins-official" }` resolves when the root marketplace lists `claude-plugins-official` in `allowCrossMarketplaceDependenciesOn`.<br>- With the official marketplace added, the install works, and adding that marketplace even installed superpowers by itself.<br>- Without it, the install succeeds with a warning, and the plugin fails to load with `Dependency "superpowers@claude-plugins-official" is not installed — run claude plugin install superpowers@claude-plugins-official, or check that its marketplace is added`.<br>Claude Code adds the official marketplace at a user's first interactive session. | Measured (the last sentence: documented) |
+| F13 | A marketplace added from a local path loads the plugin in place, from the working tree: no copy and no pin. `claude plugin marketplace add` refuses `<path>#<ref>` ("Path does not exist") and `file://…#<ref>` ("Invalid marketplace source format"). | Measured |
+| F14 | A `git` marketplace with a `file://` URL and a `ref`, declared under `extraKnownMarketplaces` in user settings, is cloned at the next session start, and installs a copy of that tag into the plugin cache. Changing the `ref`, starting a session and running `claude plugin update` moved the plugin from 0.0.1 to 0.0.2 and back. The data directory survived each move. | Measured |
+| F15 | `claude plugin marketplace add owner/repo#<ref>` pins a GitHub marketplace to a tag, and `claude plugin install <p> --marketplace owner/repo` adds the marketplace and installs in one command (2.1.292 or later). Removing a marketplace uninstalls its plugins and deletes their data. | Documented |
+| F16 | A `--plugin-dir` copy replaces an installed plugin of the same name for that session: only the development copy's mod ran. | Measured |
+| F17 | After an update, the previous version's directory stays for 14 days. A pinned `version` keeps users on it until the author changes it. Auto-update is off by default for third-party marketplaces. | Documented |
+| F18 | Dynamic workflows are available on paid plans; on Pro they are turned on once, in `/config`. With `enableWorkflows: true` the `Workflow` tool is present. | Documented (the tool: measured) |
+| F19 | A plugin's settings honor only `agent` and `subagentStatusLine`. A plugin cannot set environment variables, permissions, effort or the advisor. | Documented |
+| F20 | The advisor is off unless the user configures it. `/advisor off` or `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` turns it off. | Documented |
+| F21 | The 0.6.0 plugin, installed and enabled, in a plain session that is not Aether mode:<br>- the first message grows by 4,280 characters: "Aether mode is active", a 2 KB preview of the bootstrap (Claude Code saved the 19.8 KB context to a file), five agent lines, `aether:run` and `aether:swarm`;<br>- the system prompt and tools stay unchanged;<br>- `claude plugin details` estimates about 405 tokens always on: agents about 270, skills about 130;<br>- eight executables are on `PATH`. | Measured |
+| F22 | An agent's `skills` frontmatter preloads nothing when the agent is the main session. | Measured |
+| F23 | In a repository whose local settings set `"agent": "<plugin>:lead"`, the command `claude --agent claude` starts a default session: the default model, the plain system prompt, and `agent_type: "claude"`. The repository's `effortLevel` still applies. | Measured |
+
+
 ## OpenRouter prices
 
 The snapshot of 2026-10-07, rechecked on 2026-10-08 and unchanged. It covers the Anthropic endpoint, in USD per million tokens. The plugin's copy is `plugins/aether/config/prices.json`.
