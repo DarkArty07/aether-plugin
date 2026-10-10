@@ -22,10 +22,14 @@ function normalize(name) {
     .trim()
 }
 
+// Colour codes that a runner prints when it is told to colour its output, such as with FORCE_COLOR.
+const ANSI_COLOR = /\x1b\[[0-9;]*m/g
+
 // The sorted, unique names of the failing tests that the output names.
 function failureSignatures(output) {
   const names = new Set()
-  for (const line of String(output ?? '').split(/\r?\n/)) {
+  for (const raw of String(output ?? '').split(/\r?\n/)) {
+    const line = raw.replace(ANSI_COLOR, '')
     for (const pattern of PATTERNS) {
       const match = pattern.exec(line)
       if (!match) continue

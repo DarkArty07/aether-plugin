@@ -12,6 +12,7 @@ const { git, repoPaths, currentBranch, head } = require('./git.js')
 const { matchesAny } = require('./globs.js')
 const run = require('./run.js')
 const { killGroup, killMarked } = require('./lanes.js')
+const { judge } = require('./baseline.js')
 
 function loadGraph(mainRoot, runId) {
   run.assertRunId(runId)
@@ -138,7 +139,56 @@ function ensure(cwd, runId, taskId) {
   return { path: worktree, branch, created: true }
 }
 
-// Writes runDir/packages/<name>.diff for a reviewer: commits, stat and diff of base..tip.
+// Added lines that suggest unfinished work: a focused or skipped test, a TODO, a FIXME, a stub.
+const FLAG = /\.only\(|\.skip\(|\bTODO\b|\bFIXME\b|not implemented/i
+const MAX_FLAGS = 50
+const MAX_FLAG_LENGTH = 160
+
+// The flagged added lines of base..tip, as `- <file>:<line in the new file>: <text>`.
+function flaggedLines(mainRoot, base, tip) {
+  // --no-prefix keeps file names as they are, and --no-color keeps the parsed text free of escapes.
+  const out = git(['-c', 'core.quotePath=false', 'diff', '-U0', '--no-prefix', '--no-color', `${base}..${tip}`], mainRoot).stdout
+  const flags = []
+  let file = ''
+  let line = 0
+  let inHunk = false
+  for (const text of out.split('\n')) {
+    if (text.startsWith('diff --git ')) {
+      inHunk = false
+      continue
+    }
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text)
+    if (hunk) {
+      inHunk = true
+      line = Number(hunk[1])
+      continue
+    }
+    // Before the first hunk, +++ names the file. Inside a hunk, a line that starts with + is content,
+    // even one that starts with +++.
+    if (!inHunk) {
+      if (text.startsWith('+++ ')) file = text.slice(4) === '/dev/null' ? '' : text.slice(4).replace(/\t$/, '')
+      continue
+    }
+    if (text.startsWith('+')) {
+      const added = text.slice(1)
+      if (FLAG.test(added)) flags.push(`- ${file}:${line}: ${added.trim().slice(0, MAX_FLAG_LENGTH)}`)
+      line++
+    } else if (text.startsWith(' ')) {
+      line++
+    }
+  }
+  return flags
+}
+
+// The Flags section of a package, or no lines when there is nothing to flag.
+function flagsSection(flags) {
+  if (flags.length === 0) return []
+  const shown = flags.slice(0, MAX_FLAGS)
+  if (flags.length > MAX_FLAGS) shown.push(`- ... and ${flags.length - MAX_FLAGS} more`)
+  return ['## Flags', ...shown, '']
+}
+
+// Writes runDir/packages/<name>.diff for a reviewer: commits, stat, flags and diff of base..tip.
 function writePackage(mainRoot, runId, name, title, base, tip) {
   const range = `${base}..${tip}`
   const text = [
@@ -152,6 +202,7 @@ function writePackage(mainRoot, runId, name, title, base, tip) {
     '## Stat',
     git(['diff', '--stat', range], mainRoot).stdout,
     '',
+    ...flagsSection(flaggedLines(mainRoot, base, tip)),
     '## Diff',
     git(['diff', '-U10', range], mainRoot).stdout,
     '',
@@ -171,11 +222,13 @@ function diffPackage(cwd, runId, taskId) {
   return { path: writePackage(mainRoot, runId, taskId, `${taskId} (${branch})`, base, branch), base }
 }
 
-// The whole run's change on the integration branch, from the base recorded at compile time.
+// The whole run's change on the integration branch, from the first launch's base, so that a relaunch
+// does not drop the changes of the launches before it.
 function finalPackage(cwd, runId) {
   const { mainRoot } = repoPaths(cwd)
   const graph = loadGraph(mainRoot, runId)
-  const { branch, base } = graph.integration
+  const { branch } = graph.integration
+  const base = graph.integration.firstBase || graph.integration.base
   const tip = git(['rev-parse', branch], mainRoot).stdout
   return { path: writePackage(mainRoot, runId, 'final', `run ${runId} (${branch})`, base, tip), base, head: tip }
 }
@@ -286,6 +339,16 @@ function merge(cwd, runId, taskId, options = {}) {
   }
 }
 
+// The run's test baseline, or null when it is missing or unreadable.
+function readBaseline(mainRoot, runId) {
+  try {
+    const baseline = run.readJson(path.join(run.runDir(mainRoot, runId), 'baseline.json'))
+    return baseline && Array.isArray(baseline.signatures) ? baseline : null
+  } catch {
+    return null
+  }
+}
+
 function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
   const task = graph.tasks[taskId]
   if (!task) throw new Error(`${taskId} is not in run ${runId}`)
@@ -341,10 +404,15 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
     maxBuffer: 64 * 1024 * 1024,
   })
   if (tests.status !== 0) {
+    // A run that was killed (timed out, or its output overflowed the buffer) did not finish, so its
+    // output cannot show that only known tests fail. Such a run is undone without the baseline.
+    const output = `${tests.stdout || ''}\n${tests.stderr || ''}`
+    const verdict = tests.status === null ? { pass: false } : judge(readBaseline(mainRoot, runId), { exitCode: tests.status, output })
+    if (verdict.pass) return { merged: true, commit: head(integration), knownFailures: verdict.known }
     // Undo only the merge commit this call created.
     const reverted = git(['rev-parse', 'HEAD^1'], integration).stdout === before
     if (reverted) git(['reset', '--hard', before], integration)
-    return {
+    const result = {
       merged: false,
       reason: 'tests',
       exitCode: tests.status,
@@ -352,6 +420,8 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
       reverted,
       output: `${tests.stdout || ''}${tests.stderr || ''}`.slice(-4000),
     }
+    if (verdict.reason === 'new failures') result.newFailures = verdict.new
+    return result
   }
   return { merged: true, commit: head(integration) }
 }

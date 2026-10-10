@@ -153,3 +153,87 @@ test('merge reports a failed merge that is not a conflict as merge-failed', (t) 
   assert.match(r.detail, /would be overwritten/)
   assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'utf8'), 'local\n')
 })
+
+// A test command that reports each name as a failing TAP test, then exits 1.
+function failingTests(...names) {
+  return `printf '${names.map((name, i) => `not ok ${i + 1} - ${name}\\n`).join('')}'; exit 1`
+}
+
+function setTestCommand(runDir, command) {
+  const file = path.join(runDir, 'graph.json')
+  const graph = JSON.parse(fs.readFileSync(file, 'utf8'))
+  graph.testCommand = command
+  fs.writeFileSync(file, JSON.stringify(graph))
+}
+
+function writeBaseline(runDir, signatures) {
+  const baseline = { recordedAt: new Date().toISOString(), exitCode: 1, signatures, timedOut: false }
+  fs.writeFileSync(path.join(runDir, 'baseline.json'), JSON.stringify(baseline))
+}
+
+test('merge keeps a unit whose failing tests all already fail in the baseline, and names them', (t) => {
+  const { repo, args, unit } = setup(t)
+  setTestCommand(args.runDir, failingTests('known'))
+  writeBaseline(args.runDir, ['known'])
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  assert.deepEqual(merge(repo.dir, args.runId, 'task-1'), {
+    merged: true,
+    commit: repo.git('rev-parse', 'HEAD'),
+    knownFailures: ['known'],
+  })
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'utf8'), 'one\n')
+})
+
+test('merge undoes a unit that adds a failure the baseline does not list, and names it', (t) => {
+  const { repo, args, unit } = setup(t)
+  setTestCommand(args.runDir, failingTests('known', 'fresh'))
+  writeBaseline(args.runDir, ['known'])
+  const before = repo.git('rev-parse', 'HEAD')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, false)
+  assert.equal(r.reason, 'tests')
+  assert.equal(r.reverted, true)
+  assert.deepEqual(r.newFailures, ['fresh'])
+  assert.equal(repo.git('rev-parse', 'HEAD'), before)
+  assert.equal(fs.existsSync(path.join(repo.dir, 'src', 't1', 'a.js')), false)
+})
+
+test('merge without a baseline undoes a failing unit, as before', (t) => {
+  const { repo, args, unit } = setup(t)
+  setTestCommand(args.runDir, failingTests('known'))
+  fs.rmSync(path.join(args.runDir, 'baseline.json'), { force: true })
+  const before = repo.git('rev-parse', 'HEAD')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const { output, ...r } = merge(repo.dir, args.runId, 'task-1')
+  assert.match(output, /not ok 1 - known/)
+  assert.deepEqual(r, { merged: false, reason: 'tests', exitCode: 1, timedOut: false, reverted: true })
+  assert.equal(repo.git('rev-parse', 'HEAD'), before)
+})
+
+test('merge undoes a unit whose failure names no test, even with a baseline', (t) => {
+  const { repo, args, unit } = setup(t)
+  setTestCommand(args.runDir, 'echo boom; exit 3')
+  writeBaseline(args.runDir, ['known'])
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, false)
+  assert.equal(r.reason, 'tests')
+  assert.equal(r.reverted, true)
+  assert.equal(r.newFailures, undefined)
+})
+
+test('merge does not judge a test run that timed out, even when its output names only known failures', (t) => {
+  const { repo, args, unit } = setup(t)
+  // `exec` makes sleep the process that the timeout stops.
+  setTestCommand(args.runDir, "printf 'not ok 1 - known\\n'; exec sleep 30")
+  writeBaseline(args.runDir, ['known'])
+  const before = repo.git('rev-parse', 'HEAD')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const r = merge(repo.dir, args.runId, 'task-1', { timeoutMs: 500 })
+  assert.match(r.output, /not ok 1 - known/)
+  assert.equal(r.merged, false)
+  assert.equal(r.timedOut, true)
+  assert.equal(r.newFailures, undefined)
+  assert.equal(repo.git('rev-parse', 'HEAD'), before)
+})

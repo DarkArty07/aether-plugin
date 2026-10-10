@@ -35,6 +35,11 @@ test('Jest and Vitest failures are named, without their durations', () => {
   assert.deepEqual(failureSignatures(output), ['divides', 'multiplies', 'subtracts 2 - 1'])
 })
 
+test('colour codes that a runner prints when forced do not hide a failure name', () => {
+  const output = '\x1b[31m  ✕\x1b[39m subtracts (5 ms)\n\x1b[31mnot ok 2 - adds\x1b[39m\n'
+  assert.deepEqual(failureSignatures(output), ['adds', 'subtracts'])
+})
+
 test('pytest failures are named by their node id', () => {
   const output = [
     '=========== short test summary info ===========',

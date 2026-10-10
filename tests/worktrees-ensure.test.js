@@ -96,6 +96,60 @@ test('finalPackage writes the integration diff from the base recorded at compile
   assert.match(text, /\+module\.exports = 1/)
 })
 
+test('the package flags the added lines that suggest unfinished work, by file and line', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.test.js', "test.only('adds', () => {})\n// TODO wire it\nconst x = 1\n", 'add tests')
+  const text = fs.readFileSync(diffPackage(repo.dir, args.runId, 'task-1').path, 'utf8')
+  assert.equal(
+    text.slice(text.indexOf('## Flags'), text.indexOf('## Diff')),
+    "## Flags\n- src/t1/a.test.js:1: test.only('adds', () => {})\n- src/t1/a.test.js:2: // TODO wire it\n\n",
+  )
+  assert.ok(text.indexOf('## Stat') < text.indexOf('## Flags'))
+})
+
+test('a unit with no unfinished work has no Flags section', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'module.exports = 1\n', 'add a')
+  const text = fs.readFileSync(diffPackage(repo.dir, args.runId, 'task-1').path, 'utf8')
+  assert.doesNotMatch(text, /^## Flags$/m)
+})
+
+test('the Flags section lists at most 50 lines and cuts each line to 160 characters', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1')
+  const lines = [`// TODO ${'x'.repeat(300)}`, ...Array.from({ length: 51 }, (_, i) => `// TODO ${i + 1}`)]
+  commitIn(repo, unit.path, 'src/t1/many.js', lines.join('\n') + '\n', 'add many')
+  const text = fs.readFileSync(diffPackage(repo.dir, args.runId, 'task-1').path, 'utf8')
+  const section = text.slice(text.indexOf('## Flags'), text.indexOf('## Diff')).split('\n')
+  const entries = section.filter((line) => line.startsWith('- src/'))
+  assert.equal(entries.length, 50)
+  assert.equal(entries[0], `- src/t1/many.js:1: // TODO ${'x'.repeat(152)}`)
+  assert.equal(entries[1], '- src/t1/many.js:2: // TODO 1')
+  assert.ok(section.includes('- ... and 2 more'))
+})
+
+test('finalPackage covers the run from its first launch, not only from the last relaunch', (t) => {
+  const repo = makeRepo(t)
+  const first = compile(repo, plan([task(1), task(2)]))
+  const unit = ensure(repo.dir, first.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'module.exports = 1\n', 'add a')
+  assert.equal(merge(repo.dir, first.runId, 'task-1').merged, true)
+  commitIn(repo, repo.dir, 'src/t2/by-hand.js', 'by hand\n', 'integrated by hand')
+  const relaunch = compile(repo, plan([task(1), task(2)]), ['--run', first.runId])
+  assert.equal(relaunch.integration.base, repo.git('rev-parse', 'HEAD'))
+  const pkg = finalPackage(repo.dir, first.runId)
+  assert.equal(pkg.base, first.integration.base)
+  const text = fs.readFileSync(pkg.path, 'utf8')
+  assert.match(text, new RegExp(`^Base: ${first.integration.base}$`, 'm'))
+  assert.match(text, /## Commits\n[0-9a-f]+ integrated by hand\n[0-9a-f]+ Merge aether\/\S+\/task-1\n[0-9a-f]+ add a/)
+  assert.match(text, /\+module\.exports = 1/)
+})
+
 test('Aether hides only its own folders at the root, not a project folder of the same name', (t) => {
   const repo = makeRepo(t)
   compile(repo, plan([task(1), task(2)]))
