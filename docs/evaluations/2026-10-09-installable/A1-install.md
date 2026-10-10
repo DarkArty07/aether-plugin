@@ -191,3 +191,18 @@ The fake model had logged three model requests in `<S>/fake/fake.log` (from the 
 **PASS**
 
 Result: PASS
+
+## Check 5, run afterwards: the GitHub form
+
+Check 5 above was SKIPPED because the repository was private and not pushed. It was run on 2026-10-10 by the Lead, once `main` and the tags `aether--v0.6.0` and `aether--v0.7.0` were on origin, in a scratch `CLAUDE_CONFIG_DIR` (nothing under the real `~/.claude`), with no model request:
+
+```
+claude plugin marketplace add "DarkArty07/aether-plugin#aether--v0.7.0"   -> Successfully added marketplace: aether-plugin
+claude plugin marketplace add anthropics/claude-plugins-official         -> Successfully added marketplace: claude-plugins-official
+claude plugin install aether@aether-plugin --config lanes=true           -> Successfully installed plugin: aether@aether-plugin (scope: user) (+ 1 dependency: superpowers)
+claude plugin list                                                       -> aether@aether-plugin 0.7.0 enabled; superpowers@claude-plugins-official 6.4.1 enabled
+```
+
+The installed copy is `plugins/cache/aether-plugin/aether/0.7.0` and holds `agents/lead.md`. The repository was private, and the clone used the machine's own GitHub credentials.
+
+Result: PASS
