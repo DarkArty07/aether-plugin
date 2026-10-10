@@ -1,0 +1,17 @@
+{
+  "name": "aether-plugin",
+  "owner": {
+    "name": "DarkArty07"
+  },
+  "description": "Aether Plugin: an opt-in Aether mode for Claude Code, a Lead, a Designer and a supervised swarm.",
+  "allowCrossMarketplaceDependenciesOn": [
+    "claude-plugins-official"
+  ],
+  "plugins": [
+    {
+      "name": "aether",
+      "source": "./plugins/aether",
+      "description": "Aether mode: the Lead on Sonnet, the Designer on Opus, and a parallel swarm that implements approved plans. Start it with claude --agent aether:lead --effort xhigh."
+    }
+  ]
+}

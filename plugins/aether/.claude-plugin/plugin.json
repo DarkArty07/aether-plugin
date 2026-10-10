@@ -7,5 +7,19 @@
   },
   "license": "MIT",
   "repository": "https://github.com/DarkArty07/aether-plugin",
-  "homepage": "https://github.com/DarkArty07/aether-plugin"
+  "homepage": "https://github.com/DarkArty07/aether-plugin",
+  "dependencies": [
+    {
+      "name": "superpowers",
+      "marketplace": "claude-plugins-official"
+    }
+  ],
+  "userConfig": {
+    "lanes": {
+      "type": "boolean",
+      "title": "Lanes",
+      "description": "Run Aether's calls on agy while its quota lasts. Off by default: agy runs with --dangerously-skip-permissions and spends another plan's quota. Linux only.",
+      "default": false
+    }
+  }
 }
