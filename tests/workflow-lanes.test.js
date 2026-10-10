@@ -224,6 +224,23 @@ test('changes outside Owns cost the attempt, and the next one is told to revert 
   assert.equal(second.lane.call, 'task-1-2-implement')
   assert.ok(second.payload.text.includes(summary))
   assert.equal(run.result.lanes.violation, 1)
+  assert.deepEqual(unit.failures, ['no report'])
+})
+
+test('two changes outside Owns in a row block the unit: each counts as an attempt without a report', async (t) => {
+  const run = await runWorkflow(lanesRun(t), {
+    lane: (call, fallback) =>
+      call.command.verb === 'wait' && call.lane.call.endsWith('-implement')
+        ? finished(call, { status: 'violation', detail: 'changes outside Owns', files: ['other/x.js'] })
+        : fallback(call),
+  })
+  ok(run)
+  const unit = run.result.units[0]
+  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks'])
+  assert.equal(unit.attempts, 2)
+  assert.deepEqual(unit.failures, ['no report', 'no report'])
+  assert.equal(run.calls.some((c) => c.kind === 'ops:lane-start' && c.lane.role === 'supervisor'), false)
+  assert.equal(run.result.lanes.violation, 2)
 })
 
 test('a lane that finds the integration worktree changed blocks the unit', async (t) => {

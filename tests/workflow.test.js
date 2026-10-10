@@ -16,6 +16,7 @@ function threeTasks(t) {
 const finding = (title) => ({ severity: 'important', title, file: 'src/t2/a.js', evidence: 'line 3' })
 const retry = (title) => ({ verdict: 'retry', findings: [finding(title)], ruling: `Retry: ${title}.`, guidance: `fix ${title}`, question: '' })
 const attemptsOf = (run, unit) => run.calls.filter((c) => c.role === 'implementer' && c.unit === unit)
+const NO_REPORT_REASON = 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks'
 
 test('two waves, all approved: merges run one at a time, the dependent unit waits, then review and cleanup', async (t) => {
   const args = threeTasks(t)
@@ -180,6 +181,7 @@ test('an approval that still lists an important finding counts as a retry', asyn
   assert.equal(attemptsOf(run, 'task-1').length, 2)
   assert.match(attemptsOf(run, 'task-1')[1].prompt, /missing edge case/)
   assert.deepEqual(run.result.units[0].rounds.map((r) => r.verdict), ['retry', 'approve'])
+  assert.deepEqual(run.result.units[0].failures, ['findings: missing edge case'])
   assert.equal(run.result.units[0].status, 'merged')
 })
 
@@ -195,15 +197,62 @@ test('an ownership refusal at merge sends the unit back with the files outside i
   assert.equal(run.result.units[1].status, 'merged')
 })
 
-test('a failed implementer counts as an attempt, and a spent ladder blocks the unit', async (t) => {
-  const args = { ...threeTasks(t), ladder: { haiku: 1, sonnet: 1, opus: 0 } }
+test('a failed implementer counts as an attempt, and the next attempt runs', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, { implementer: (call, done) => (call.unit === 'task-2' && call.n === 1 ? null : done(call)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[1]
+  assert.equal(unit.status, 'merged')
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku'])
+  assert.deepEqual(unit.rounds.map((r) => [r.status, r.summary]), [
+    ['FAILED', 'The implementer agent failed.'],
+    ['DONE', 'Implemented the brief.'],
+  ])
+  assert.deepEqual(unit.failures, ['no report'])
+})
+
+test('an implementer that returns no report twice blocks the unit after two attempts, with the failures kept', async (t) => {
+  const args = threeTasks(t)
   const run = await runWorkflow(args, { implementer: (call, done) => (call.unit === 'task-2' ? null : done(call)) })
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
-  assert.equal(unit.status, 'blocked')
-  assert.deepEqual(unit.tiers, ['haiku xhigh', 'sonnet xhigh'])
-  assert.match(unit.reason, /ladder/)
+  assert.deepEqual([unit.status, unit.reason], ['blocked', NO_REPORT_REASON])
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku'])
+  assert.deepEqual(unit.tiers, ['haiku xhigh'])
+  assert.deepEqual(unit.failures, ['no report', 'no report'])
   assert.equal(run.calls.some((c) => c.role === 'supervisor' && c.unit === 'task-2'), false)
+  assert.equal(run.result.units[0].status, 'merged')
+})
+
+test('different findings each time keep the ladder: every rung runs, then the ladder is spent', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    supervisor: (call, approve) => (call.unit === 'task-2' ? retry(`gap ${call.n}`) : approve(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[1]
+  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent'])
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'sonnet', 'opus'])
+  assert.deepEqual(unit.failures, ['findings: gap 1', 'findings: gap 2', 'findings: gap 3', 'findings: gap 4', 'findings: gap 5'])
+})
+
+test('the same findings three times block the unit, whatever the case and spacing of their titles', async (t) => {
+  const args = threeTasks(t)
+  const titles = ['Missing  edge case', 'missing edge case', ' MISSING EDGE\tCASE ']
+  // A minor finding does not take part in the comparison.
+  const withMinor = (title) => ({
+    ...retry(title),
+    findings: [...retry(title).findings, { severity: 'minor', title: 'naming nit', file: 'src/t2/a.js', evidence: 'x' }],
+  })
+  const run = await runWorkflow(args, {
+    supervisor: (call, approve) => (call.unit === 'task-2' ? withMinor(titles[Math.min(call.n, titles.length) - 1]) : approve(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[1]
+  assert.equal(unit.status, 'blocked')
+  assert.equal(unit.reason, 'the same findings came back 3 times: missing edge case; the task needs a split or a redesign')
+  assert.deepEqual(unit.failures, ['findings: missing edge case', 'findings: missing edge case', 'findings: missing edge case'])
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet'])
 })
 
 test('a dirty integration worktree or a failed merge command blocks the unit at once', async (t) => {

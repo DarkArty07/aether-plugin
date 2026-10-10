@@ -26,6 +26,10 @@ const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK_ID = /^task-\d+$/
 const BLOCKING = ['critical', 'important']
 const AREA_MEMORY = 10
+// The failures a unit keeps (its `failures`): an attempt without a report, or a retry or an escalation
+// with the titles of its blocking findings. The same failure can stop a unit early (see work()).
+const NO_REPORT = 'no report'
+const FINDINGS_PREFIX = 'findings: '
 
 const FINDINGS = {
   type: 'array',
@@ -162,7 +166,7 @@ const lanes = input.lanes || null
 const units = {}
 for (const id of waves.flat()) {
   const t = tasks[id]
-  units[id] = { id, title: t.title, area: t.area, status: 'pending', tiers: [], attempts: 0, rounds: [], commit: null, reason: null, question: null, patch: null }
+  units[id] = { id, title: t.title, area: t.area, status: 'pending', tiers: [], attempts: 0, rounds: [], failures: [], commit: null, reason: null, question: null, patch: null }
 }
 const agents = { total: 0, byRole: {}, byModel: {} }
 // The supervisors' shared memory: the latest rulings of each area.
@@ -540,6 +544,16 @@ function remember(area, line) {
   rulings[area] = [...(rulings[area] || []), line].slice(-AREA_MEMORY)
 }
 
+// The failure of a retry or an escalation: its blocking findings' titles, sorted and written the same way,
+// so that the same findings compare equal whatever their case or spacing.
+function findingsFailure(findings) {
+  const titles = findings
+    .filter((f) => BLOCKING.includes(f.severity))
+    .map((f) => String(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim())
+    .sort()
+  return `${FINDINGS_PREFIX}${titles.join(' | ')}`
+}
+
 // One attempt's implementer: on a lane when there is one, native otherwise. After the lane's
 // infrastructure failure, or when it does not start, the same attempt runs native. Resolves to
 // { report, provider, laneFailure }, with `failure` (the round's summary) when the lane's changes
@@ -663,8 +677,16 @@ async function work(unit, task) {
       laneFailure: attempt.laneFailure,
     }
     unit.rounds.push(round)
-    // A failed implementer, or a lane's changes outside Owns: the attempt failed, and the ladder decides.
-    if (!report) continue
+    // A failed implementer, or a lane's changes outside Owns: the attempt failed, and the ladder decides,
+    // unless the unit has now ended twice without a report, which means it is too large for one attempt.
+    if (!report) {
+      unit.failures.push(NO_REPORT)
+      const recent = unit.failures.slice(-2)
+      if (recent.length === 2 && recent.every((f) => f === NO_REPORT)) {
+        return finish(unit, 'blocked', 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks')
+      }
+      continue
+    }
 
     round.reviewEffort = task.review
     const checked = await supervise(unit, task, rung, report, used, model)
@@ -684,6 +706,15 @@ async function work(unit, task) {
     remember(task.area, `${unit.id} attempt ${n}: ${round.verdict}. ${round.ruling}`)
 
     if (round.verdict === 'block') return finish(unit, 'blocked', round.ruling, review.question || report.question)
+    // The same findings three times in one unit: the ladder would only send them round again.
+    if (round.verdict === 'retry' || round.verdict === 'escalate') {
+      const failure = findingsFailure(round.findings)
+      unit.failures.push(failure)
+      if (unit.failures.filter((f) => f === failure).length >= 3) {
+        const titles = failure.slice(FINDINGS_PREFIX.length)
+        return finish(unit, 'blocked', `the same findings came back 3 times: ${titles}; the task needs a split or a redesign`)
+      }
+    }
     if (round.verdict === 'escalate') {
       const next = nextTier(model)
       if (!next) return finish(unit, 'blocked', 'the ladder is spent')
