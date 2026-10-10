@@ -311,14 +311,12 @@ test('irreversibleClass gives the class of each listed form', () => {
       'git clean -fdx',
       'git clean --force',
       'rm -rf /',
-      'rm -rf /tmp/build',
       'rm -fr ~',
       'rm -rf ~/x',
       'rm -rf $HOME',
       'rm -r -f $HOME/x',
       'rm --recursive --force "/"',
       'rm -rf ..',
-      'rm -rf ../x',
     ],
     credentials: [
       'gh auth login',
@@ -333,6 +331,26 @@ test('irreversibleClass gives the class of each listed form', () => {
   }
   for (const [cls, commands] of Object.entries(forms)) {
     for (const command of commands) assert.equal(irreversibleClass(command), cls, command)
+  }
+})
+
+test('a forced removal is risky only when its target is the root, a home, a parent or the current directory, or one of their children', () => {
+  for (const target of [
+    '/', '/*', '/etc', '/etc/', '/etc/*', '/home/',
+    '~', '~/', '~/*', '~/.ssh', '~/.ssh/*',
+    '$HOME', '$HOME/', '$HOME/*', '$HOME/.ssh',
+    '${HOME}', '${HOME}/*', '${HOME}/.ssh',
+    '..', '../', '../..', '../*', '../../*',
+    '.', './', './*', '*',
+  ]) {
+    assert.equal(irreversibleClass(`rm -rf ${target}`), 'delete', target)
+  }
+  // A deeper path, such as a build folder or a unit's worktree, is not risky.
+  for (const target of [
+    '/tmp/build', '/tmp/build/', '/repo/.aether/worktrees/run/unit', '../x', '../../x', '~/x/y', '~/.ssh/id_rsa',
+    '$HOME/x/y', '${HOME}/x/y', './dist', './dist/*', 'build', 'build/*', '*.log', '..x', '.hidden',
+  ]) {
+    assert.equal(irreversibleClass(`rm -rf ${target}`), null, target)
   }
 })
 

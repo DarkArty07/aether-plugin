@@ -122,8 +122,10 @@ const WITH_ARGS = [
 ]
 
 const SHORT_FLAGS = /^-[A-Za-z]+$/
-// Targets that would reach the home directory, the root, or a path above the work.
-const RISKY_TARGET = /^(\/|~(\/|$)|\$HOME(\/|$)|\$\{HOME\}(\/|$)|\.\.(\/|$))/
+// Targets that reach the root, the home directory, a parent or the current directory, and nothing deeper:
+// "/", an absolute path with one component, "~" or $HOME with at most one component below it, only ".."
+// components, and "." or "*". Each may end in "/" or "/*".
+const RISKY_TARGET = /^(\/\*?|\/[^/]+(\/|\/\*)?|(~|\$HOME|\$\{HOME\})(\/|\/\*|\/[^/]+(\/|\/\*)?)?|\.\.(\/\.\.)*(\/|\/\*)?|\.(\/\*?)?|\*)$/
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
 
 // The long flag, or a short-flag cluster such as -rf that holds one of the letters.
