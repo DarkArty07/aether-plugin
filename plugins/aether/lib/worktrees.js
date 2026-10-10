@@ -1,7 +1,7 @@
 'use strict'
 
 // Unit worktrees: create, package for review, merge, remove and sweep. The sweep also stops the
-// processes of lane calls and removes the copies and Designer states they leave.
+// processes of lane calls and removes the copies they leave.
 // Only paths under <repo>/.aether/ and branches under aether/ are touched.
 // Git's worktree registry is never pruned as a whole: Aether removes only its own entries, by path.
 
@@ -37,11 +37,6 @@ function unitsDir(mainRoot) {
 // A read-only lane role's disposable copies live in <repo>/.aether/lanes/<run>/<call>.
 function laneCopiesRoot(mainRoot) {
   return path.join(run.aetherDir(mainRoot), 'lanes')
-}
-
-// A Designer's state lives in <repo>/.aether/design/<id>.
-function designsDir(mainRoot) {
-  return path.join(run.aetherDir(mainRoot), 'design')
 }
 
 // Unlike fs.existsSync, this counts a dangling symlink as present.
@@ -581,36 +576,9 @@ function modifiedSince(dir, cutoff) {
   return false
 }
 
-// Removes the Designer states that nothing has modified since `cutoff`, after stopping the lane
-// processes of each (its pid file, the agy's if it left one, and every process marked as the
-// design's). Returns the removed ids, sorted.
-function sweepDesigns(mainRoot, cutoff) {
-  const root = designsDir(mainRoot)
-  const removed = []
-  if (!isDirectory(root)) return removed
-  for (const id of fs.readdirSync(root).sort()) {
-    const dir = path.join(root, id)
-    let stat
-    try {
-      stat = fs.lstatSync(dir)
-    } catch {
-      continue // gone since it was listed
-    }
-    if (!stat.isDirectory() || modifiedSince(dir, cutoff)) continue
-    for (const name of ['pid', 'agy.pid']) killGroup(path.join(dir, name), `design/${id}`)
-    killMarked(`design/${id}`)
-    assertInside(dir, root)
-    fs.rmSync(dir, { recursive: true, force: true })
-    removed.push(id)
-  }
-  return removed
-}
-
 // Removes runs that were never finalized and have had no activity for `hours`, plus leftovers
 // whose run directory is already gone. Activity is any change in the run directory or in the
 // run's unit worktrees. Each removal is recorded first, with the tip of every branch it deletes.
-// It also removes the Designer states untouched for `hours`, and lists them as `designs` when
-// there were any.
 function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
   const { mainRoot } = repoPaths(cwd)
   const ids = new Set()
@@ -650,8 +618,7 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     fs.rmSync(dir, { recursive: true, force: true })
     swept.push(id)
   }
-  const designs = sweepDesigns(mainRoot, cutoff)
-  return designs.length > 0 ? { swept, designs } : { swept }
+  return { swept }
 }
 
 module.exports = {

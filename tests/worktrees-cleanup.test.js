@@ -212,29 +212,6 @@ test("sweepRun stops a run's lane processes and removes its lane copies", async 
   assert.deepEqual(r.remaining, { worktrees: [], branches: [] })
 })
 
-test('sweepStale removes a Designer state untouched for a day, with its process, and keeps a fresh one', { timeout: 30000 }, async (t) => {
-  useDataDir(t)
-  const repo = makeRepo(t)
-  const designs = path.join(repo.dir, '.aether', 'design')
-  const old = path.join(designs, '20261007-100000-aaaa')
-  const fresh = path.join(designs, '20261008-100000-bbbb')
-  for (const dir of [old, fresh]) {
-    fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, 'state.json'), '{}')
-  }
-  const lane = laneProcess(t, 'design/20261007-100000-aaaa')
-  fs.writeFileSync(path.join(old, 'pid'), String(lane.pid))
-  // A command agy started in a session of its own, which only its marker finds.
-  const loose = laneProcess(t, 'design/20261007-100000-aaaa')
-  const freshLane = laneProcess(t, 'design/20261008-100000-bbbb')
-  age(old, 48)
-  assert.deepEqual(sweepStale(repo.dir), { swept: [], designs: ['20261007-100000-aaaa'] })
-  await Promise.all([lane.exited, loose.exited])
-  assert.equal(fs.existsSync(old), false)
-  assert.equal(fs.existsSync(fresh), true)
-  process.kill(freshLane.pid, 0)
-})
-
 test('sweepStale cleans lane copies whose run directory is already gone', (t) => {
   useDataDir(t)
   const repo = makeRepo(t)
@@ -306,20 +283,4 @@ test("sweepRun ends every process marked as one of the run's calls, in sessions 
   assert.deepEqual(sweepRun(repo.dir, args.runId).lanes.stopped, ['final-review', 'task-1-1-implement'])
   await Promise.all([implement.exited, review.exited])
   assert.deepEqual([alive(otherRun.pid), alive(unmarked.pid)], [true, true])
-})
-
-test('sweepStale keeps a design state that something touched recently, and ignores loose files in design/', (t) => {
-  useDataDir(t)
-  const repo = makeRepo(t)
-  const designs = path.join(repo.dir, '.aether', 'design')
-  const busy = path.join(designs, '20261008-100000-cccc')
-  fs.mkdirSync(busy, { recursive: true })
-  fs.writeFileSync(path.join(busy, 'state.json'), '{}')
-  fs.writeFileSync(path.join(designs, 'note.txt'), 'not a design')
-  age(busy, 48)
-  // One file inside was written just now: the state is in use.
-  fs.writeFileSync(path.join(busy, 'state.json'), '{"round":2}')
-  assert.deepEqual(sweepStale(repo.dir), { swept: [] })
-  assert.equal(fs.existsSync(busy), true)
-  assert.equal(fs.existsSync(path.join(designs, 'note.txt')), true)
 })
