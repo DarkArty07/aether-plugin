@@ -93,9 +93,11 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 | `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `remove` (saves unmerged work as a patch), `sweep` |
 | `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review, and cleanup in `finally` |
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
-| Usage meter | A mod that records every model request of an Aether session: agent, model, tokens and time. In any other session it records nothing and does not offer Aether's agents |
+| Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the swarm's `aether-wt` and `aether-lane` commands itself, without a model (see below). In any other session it records and runs nothing, and does not offer Aether's agents |
 | `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `price` prices any `claude -p` JSON output |
 | SessionStart hook | In an Aether session: marks the session, passes the lanes option to its commands, injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files not written to for 30 days, and points a new Lead to an open autonomous run. In any other session it does nothing |
+
+**Ops without a model.** The workflow has no shell, so it hands each `aether-wt` and `aether-lane` command to an `ops` agent. In an Aether session the mod answers that agent itself: it checks the prompt against the closed list of commands the workflow sends (`hooks/ops-command.js`), runs the command with `$.process.run`, with no shell, and returns its exit code and output, with no model request. Anything else, and any session where `$.process.run` is refused or cannot start it, falls back to the Haiku `ops` agent, as before. So the mod now calls `$.process.run`; `claude plugin validate` lists it. If your organization's policy refuses that call, the agent path runs; a policy that refuses the whole mod also turns off the usage meter. See [decision A30](docs/decisions.md).
 
 ### Lanes
 
@@ -261,7 +263,7 @@ The plugin is `plugins/aether/`, and the repository's `.claude-plugin/marketplac
 That loads the tree for one session, in place of the installed release. Its data goes to `~/.claude/plugins/data/aether-inline/`, and its options are set apart, under `pluginConfigs["aether@inline"]` in your settings. The bins of a branch run by path: `node <worktree>/plugins/aether/bin/aether-plan check <plan>`.
 
     npm test              # node --test "tests/*.test.js": bins, libraries, workflow scenarios and the fake model
-    npm run test:mod      # claude plugin test plugins/aether: the usage meter mod
+    npm run test:mod      # claude plugin test plugins/aether: the mod (usage meter and ops)
     npm run validate      # claude plugin validate, on the plugin and on the marketplace
     npm run check         # all three
 
