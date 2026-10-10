@@ -208,3 +208,29 @@ test('compile refuses a broken lane table before writing anything', (t) => {
   assert.ok(r.json.errors[0].startsWith(`lanes config ${file}: `), r.json.errors[0])
   assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'runs')), false)
 })
+
+test('compile runs native, and says why on stderr, when the lanes option is off', (t) => {
+  const repo = makeRepo(t)
+  const md = writePlan(repo.dir, plan([task(1)]))
+  const file = laneTable(t, executable)
+  for (const value of ['off', '']) {
+    const r = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_LANES: value })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.equal(r.json.lanes, null)
+    assert.ok(r.stderr.includes("aether-plan: lanes are off: the aether plugin's lanes option is not on\n"), r.stderr)
+  }
+  const quiet = runBin(PLAN_BIN, ['compile', md, '--no-lanes'], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_LANES: 'off' })
+  assert.equal(quiet.status, 0, quiet.stdout + quiet.stderr)
+  assert.equal(quiet.json.lanes, null)
+  assert.ok(!quiet.stderr.includes('lanes are off'), quiet.stderr)
+})
+
+test('with the lanes option off, a broken lane table is not even read', (t) => {
+  const repo = makeRepo(t)
+  const md = writePlan(repo.dir, plan([task(1)]))
+  const file = path.join(tempDir(t), 'lanes.json')
+  fs.writeFileSync(file, '{')
+  const r = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_LANES: 'off' })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.lanes, null)
+})

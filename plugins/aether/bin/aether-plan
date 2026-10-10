@@ -54,8 +54,17 @@ function compile(planArg, rest) {
   const graph = buildGraph(parsed, { only })
   const errors = [...parsed.errors, ...graph.errors]
   if (errors.length) fail(errors, graph.warnings)
+  // With the plugin's lanes option off, or off Linux, the run is native and the lane table is not read.
+  const enabled = lanes.lanesEnabled()
+  if (!rest.includes('--no-lanes') && !enabled.on) {
+    process.stderr.write(
+      enabled.reason === 'platform'
+        ? 'aether-plan: lanes are off: lanes need Linux\n'
+        : "aether-plan: lanes are off: the aether plugin's lanes option is not on\n",
+    )
+  }
   // A lane table that loadConfig refuses throws here, before anything is written.
-  const laneArgs = rest.includes('--no-lanes')
+  const laneArgs = rest.includes('--no-lanes') || !enabled.on
     ? null
     : lanes.lanesArgs(lanes.loadConfig(lanes.configPath()), {
         installed: (name, harness) => lanes.commandInstalled(harness.command),

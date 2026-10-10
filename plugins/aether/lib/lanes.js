@@ -21,6 +21,14 @@ function configPath() {
   return process.env.AETHER_LANES_CONFIG || CONFIG_FILE
 }
 
+// Whether lanes may run at all: the plugin's lanes option reached this process as AETHER_LANES=on,
+// and the platform is Linux (agy's command sessions are killed by process group and /proc).
+function lanesEnabled(env = process.env, platform = process.platform) {
+  if (env.AETHER_LANES !== 'on') return { on: false, reason: 'option' }
+  if (platform !== 'linux') return { on: false, reason: 'platform' }
+  return { on: true, reason: null }
+}
+
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const isInteger = (value, min) => Number.isInteger(value) && value >= min
 
@@ -437,6 +445,7 @@ module.exports = {
   CONFIG_FILE,
   ROLES,
   configPath,
+  lanesEnabled,
   loadConfig,
   commandInstalled,
   laneFor,

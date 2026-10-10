@@ -340,3 +340,13 @@ test('killMarked ends every process that carries the marker, or a marker under a
   assert.deepEqual(lanes.killMarked(`${run}/`, { prefix: true }), [])
   assert.deepEqual(lanes.killMarked(''), [])
 })
+
+test('lanesEnabled: lanes are on only when AETHER_LANES is on, and only on Linux', () => {
+  assert.deepEqual(lanes.lanesEnabled({ AETHER_LANES: 'on' }, 'linux'), { on: true, reason: null })
+  assert.deepEqual(lanes.lanesEnabled({ AETHER_LANES: 'on' }, 'darwin'), { on: false, reason: 'platform' })
+  assert.deepEqual(lanes.lanesEnabled({ AETHER_LANES: 'on' }, 'win32'), { on: false, reason: 'platform' })
+  for (const value of [undefined, '', 'off', 'ON', 'true', '1']) {
+    assert.deepEqual(lanes.lanesEnabled({ AETHER_LANES: value }, 'linux'), { on: false, reason: 'option' }, String(value))
+  }
+  assert.deepEqual(lanes.lanesEnabled({}, 'darwin'), { on: false, reason: 'option' })
+})

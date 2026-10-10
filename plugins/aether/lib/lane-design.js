@@ -436,6 +436,8 @@ function newDesignId(mainRoot) {
 async function start(args, input) {
   const { session, cwd } = flags(args)
   if (typeof session !== 'string' || session === '' || typeof cwd !== 'string' || cwd === '') throw new Error(USAGE)
+  const enabled = lanes.lanesEnabled()
+  if (!enabled.on) return unavailable(enabled.reason === 'platform' ? 'platform' : 'off')
   const workdir = path.resolve(cwd)
   const { mainRoot, gitCommonDir } = repoPaths(process.cwd())
   const config = lanes.loadConfig(lanes.configPath())

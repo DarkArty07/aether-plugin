@@ -338,3 +338,13 @@ test('a resume that comes back in a new conversation is undone, and list and end
   assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'design', id)), false)
   assert.deepEqual(lastJson(design(repo, env, ['list']).stdout), { designs: [] })
 })
+
+test('design start answers unavailable "off", before anything else, when the lanes option is off', (t) => {
+  const { repo, env } = designSetup(t)
+  env.AETHER_LANES = 'off'
+  const r = design(repo, env, ['start', '--session', 'lead-1', '--cwd', repo.dir], 'FAKE-AGY: answer {}')
+  assert.equal(r.status, 3, r.stdout + r.stderr)
+  assert.deepEqual(lastJson(r.stdout), { unavailable: 'off' })
+  assert.equal(fs.existsSync(env.AETHER_FAKE_AGY_LOG), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'design')), false)
+})
