@@ -38,7 +38,8 @@ function createCodex({ command = 'codex', groups = {}, exec = defaultExec, env =
   return {
     name: 'codex',
 
-    // The CLI takes no JSON schema on its command line, so the lane runner states the schema in the prompt.
+    // Recent Codex versions take --output-schema, but this adapter keeps the schema in the prompt until a real
+    // call checks the installed version, so the lane runner states the schema there.
     schemaInPrompt: true,
 
     installed() {
@@ -49,10 +50,13 @@ function createCodex({ command = 'codex', groups = {}, exec = defaultExec, env =
       return unknownQuota(groups)
     },
 
-    // One headless exec turn. The schema file and the timeout are not passed: the schema is in the prompt,
-    // and the lane runner ends the run at its own timeout.
-    argv({ model, prompt }) {
-      return [command, 'exec', prompt, '--model', model, '--json', '--sandbox', 'workspace-write']
+    // The model is the bare lane model id: codex takes its effort in its own flag, not in the name.
+    modelArg: ({ model }) => model,
+
+    // One headless exec turn, at the lane level's reasoning effort. The schema file and the timeout are not passed:
+    // the schema is in the prompt, and the lane runner ends the run at its own timeout.
+    argv({ model, level, prompt }) {
+      return [command, 'exec', prompt, '--model', model, '-c', `model_reasoning_effort=${level}`, '--json', '--sandbox', 'workspace-write']
     },
 
     parse(raw, { required = [] } = {}) {

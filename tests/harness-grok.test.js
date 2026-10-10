@@ -50,6 +50,12 @@ test('argv runs one headless prompt that approves its actions, with the model an
   assert.equal(createGrok({ groups: GROUPS }).argv({ model: 'm', prompt: 'P' })[0], 'grok')
 })
 
+test('modelArg gives grok the bare model id, and argv takes no effort: the table level is not used until a real call shows how', () => {
+  const grok = createGrok({ command: 'grok', groups: GROUPS })
+  assert.equal(grok.modelArg({ model: 'grok-4', level: 'high' }), 'grok-4')
+  assert.deepEqual(grok.argv({ model: 'grok-4', level: 'high', prompt: 'P' }), ['grok', '-p', 'P', '--always-approve', '--model', 'grok-4', '--output-format', 'json'])
+})
+
 test('parse reads a clean run: the result field is the answer, its JSON the structured output, the usage object the usage', () => {
   const grok = createGrok({ groups: GROUPS })
   assert.deepEqual(grok.parse({ stdout: printed({ result: APPROVE }), stderr: '', exitCode: 0 }, { required: ['verdict'] }), {

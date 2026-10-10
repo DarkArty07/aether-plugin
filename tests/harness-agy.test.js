@@ -98,7 +98,7 @@ test('quota fails loudly on a failed or unreadable /usage', () => {
 
 test('argv runs one print-mode turn with the model, the schema, the timeout and, to resume, the conversation', () => {
   const agy = createAgy({ command: 'agy', groups: GROUPS })
-  assert.deepEqual(agy.argv({ model: 'gemini-3.8-flash-high', schemaFile: '/r/schema.json', timeoutSeconds: 2700, prompt: 'P' }), [
+  assert.deepEqual(agy.argv({ model: 'gemini-3.8-flash', level: 'high', schemaFile: '/r/schema.json', timeoutSeconds: 2700, prompt: 'P' }), [
     'agy',
     '-p',
     'P',
@@ -112,7 +112,11 @@ test('argv runs one print-mode turn with the model, the schema, the timeout and,
     '--print-timeout',
     '2700s',
   ])
-  assert.deepEqual(agy.argv({ model: 'm', schemaFile: 's', timeoutSeconds: 10, prompt: 'P', conversation: 'c-1' }).slice(-2), ['--conversation', 'c-1'])
+  assert.deepEqual(agy.argv({ model: 'm', level: 'low', schemaFile: 's', timeoutSeconds: 10, prompt: 'P', conversation: 'c-1' }).slice(-2), ['--conversation', 'c-1'])
+})
+
+test('modelArg gives agy the model id and the level as one name, as agy takes them', () => {
+  assert.equal(createAgy({ groups: GROUPS }).modelArg({ model: 'gemini-3.8-flash', level: 'high' }), 'gemini-3.8-flash-high')
 })
 
 test('parse ignores the idle notice agy prints while it waits for background tasks, and still fails on any other stderr line', () => {

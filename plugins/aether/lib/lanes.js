@@ -73,13 +73,19 @@ function validateConfig(config) {
     throw new Error('reserve must be a number from 0 to 1')
   }
   if (!isObject(config.harnesses)) throw new Error('harnesses must be an object')
-  // A group key names one quota, so two harnesses must not share one.
+  // A group key names one quota, so two harnesses must not share one. A model id names one lane, so it must not be
+  // in two harnesses either: start could not tell which of them takes its calls.
   const owners = new Map()
+  const modelOwners = new Map()
   for (const [name, harness] of Object.entries(config.harnesses)) {
     validateHarness(name, harness)
     for (const group of Object.keys(harness.groups)) {
       if (owners.has(group)) throw new Error(`group ${group} is used by harnesses ${owners.get(group)} and ${name}: group keys are unique across the table`)
       owners.set(group, name)
+    }
+    for (const id of Object.keys(harness.models)) {
+      if (modelOwners.has(id)) throw new Error(`model ${id} is in harnesses ${modelOwners.get(id)} and ${name}: model ids are unique across the table`)
+      modelOwners.set(id, name)
     }
   }
 }
@@ -362,8 +368,8 @@ function laneEnv(env, marker) {
     if (ENV_NAMES.includes(name) || ENV_PREFIXES.some((prefix) => name.startsWith(prefix))) out[name] = value
   }
   // HOME stays, because each CLI keeps its own login there; these variables keep the owner's git, GitHub,
-  // package-registry and cloud credentials out of the lane, and git inside a lane cannot reach any remote,
-  // which lanes never need.
+  // package-registry and cloud credentials out of the lane. A plain git command in a lane cannot reach a remote,
+  // which prevents accidents; it does not stop an agent that overrides the setting, as `git -c protocol.allow=always` does.
   const noCredentials = path.join(os.tmpdir(), 'aether-lane-no-credentials')
   Object.assign(out, {
     GIT_TERMINAL_PROMPT: '0',

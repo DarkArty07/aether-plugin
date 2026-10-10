@@ -38,9 +38,13 @@ function createCursor({ command = 'cursor-agent', groups = {}, exec = defaultExe
       return unknownQuota(groups)
     },
 
+    // The model is the bare lane model id.
+    modelArg: ({ model }) => model,
+
     // One headless turn, trusted and with its MCP servers approved, since no one answers its prompts. The
     // schema file and the timeout are not passed: the schema is in the prompt, and the lane runner ends the
-    // run at its own timeout.
+    // run at its own timeout. The level is not passed: the table's levels are not used for cursor until a real
+    // call shows how the CLI takes an effort.
     argv({ model, prompt }) {
       return [command, '-p', '--trust', '--approve-mcps', '--force', prompt, '--model', model, '--output-format', 'json']
     },

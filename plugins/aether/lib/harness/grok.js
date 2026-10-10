@@ -42,8 +42,12 @@ function createGrok({ command = 'grok', groups = {}, exec = defaultExec, env = p
       return unknownQuota(groups)
     },
 
+    // The model is the bare lane model id.
+    modelArg: ({ model }) => model,
+
     // One headless turn that approves the actions it takes. The schema file and the timeout are not passed:
-    // the schema is in the prompt, and the lane runner ends the run at its own timeout.
+    // the schema is in the prompt, and the lane runner ends the run at its own timeout. The level is not passed:
+    // the table's levels are not used for grok until a real call shows how the CLI takes an effort.
     argv({ model, prompt }) {
       return [command, '-p', prompt, '--always-approve', '--model', model, '--output-format', 'json']
     },

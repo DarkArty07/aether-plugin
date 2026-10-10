@@ -292,6 +292,22 @@ test('loadConfig refuses two harnesses that use one group key, and accepts disti
   assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor'])
 })
 
+test('loadConfig refuses one model id in two harnesses, and accepts distinct ids', (t) => {
+  // claude-opus-5-5 is agy's model; codex lists it too, with its own group, so the id is in two harnesses.
+  const twice = writeConfig(t, (c) => {
+    c.harnesses.codex = codexHarness()
+    c.harnesses.codex.models['claude-opus-5-5'] = { group: 'codex', replaces: 'opus', roles: ['reviewer'], levels: LEVELS }
+  })
+  assert.throws(
+    () => lanes.loadConfig(twice),
+    (err) =>
+      err.message.startsWith(`lanes config ${twice}: `) &&
+      err.message.includes('model claude-opus-5-5 is in harnesses agy and codex: model ids are unique across the table'),
+  )
+  const distinct = writeConfig(t, (c) => (c.harnesses.codex = codexHarness()))
+  assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor'])
+})
+
 test('commandInstalled finds an absolute executable or a name on the PATH', (t) => {
   const dir = tempDir(t)
   const exe = path.join(dir, 'agy')
