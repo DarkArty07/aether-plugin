@@ -19,8 +19,12 @@ test('the swarm reports to the Lead', () => {
   }
 })
 
-test('the swarm skill sends plan fixes to the Designer', () => {
-  assert.match(read('skills', 'swarm', 'SKILL.md'), /ask the Designer to fix the plan task/i)
+test('the swarm skill sends plan fixes to the Writer and the Judge', () => {
+  const swarm = read('skills', 'swarm', 'SKILL.md')
+  assert.match(swarm, /ask the Writer to fix the plan task/)
+  assert.match(swarm, /have the Judge review the fix/)
+  assert.doesNotMatch(swarm, /superpowers/)
+  assert.doesNotMatch(swarm, /\bthe Designer\b/)
 })
 
 test('in an autonomous run the swarm checks the ceilings, records its cost, and leaves unauthorized steps to the brief', () => {
@@ -43,9 +47,9 @@ test('in an autonomous run the swarm checks the ceilings, records its cost, and 
 test('the swarm checks for the Workflow tool, and runs lanes only with the option on', () => {
   const swarm = read('skills', 'swarm', 'SKILL.md')
   const workflows =
-    "- **Workflows.** The run is a dynamic workflow. When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session, and offer superpowers' execution methods meanwhile.\n"
+    "- **Workflows.** The run is a dynamic workflow. When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session, and offer to build the plan with subagents meanwhile.\n"
   const lanes =
-    "- **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, with `agy` installed, the run sends calls to it while its quota lasts (`plugins/aether/config/lanes.json`). agy runs with `--dangerously-skip-permissions` in the unit's worktree. Otherwise every call is native, and `aether-plan compile` says why on stderr. `aether-plan compile <plan.md> --no-lanes` runs everything native.\n"
+    "- **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, the run sends calls to the external harnesses that the `harnesses` option enables (agy by default; also codex, grok and cursor), in the owner's order, when the harness's CLI is installed and while its quota lasts. `plugins/aether/config/lanes.json` names each harness's models. These CLIs run without permission prompts (agy with `--dangerously-skip-permissions`) in the unit's transactional worktree, with the owner's git, GitHub, registry and cloud credentials kept out of their environment. Otherwise every call is native, and `aether-plan compile` says why on stderr; it also names each enabled harness that takes no call, and why. `aether-plan compile <plan.md> --no-lanes` runs everything native.\n"
   assert.ok(swarm.includes(workflows))
   assert.ok(swarm.includes(lanes))
   assert.ok(swarm.indexOf(workflows) < swarm.indexOf(lanes))

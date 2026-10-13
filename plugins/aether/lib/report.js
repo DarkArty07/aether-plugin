@@ -1,10 +1,9 @@
 'use strict'
 
-// Speed, cost, quality and lanes of a swarm run (spec §10), from its run directory, the usage meter's
-// files, the lane log and the saved result; and finalize, which records the run and removes what is left of it.
+// Speed, cost, quality, lanes and the RADAR figures of a swarm run (spec §10), from its run directory, the
+// usage meter's files, the lane log and the saved result; and finalize, which records the run and removes what is left of it.
 
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { repoPaths } = require('./git.js')
@@ -12,6 +11,7 @@ const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
 const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
+const { judge } = require('./baseline.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
 const DAY_MS = 24 * 3600 * 1000
@@ -20,6 +20,8 @@ const iso = (ms) => new Date(ms).toISOString()
 const zeroTokens = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
 const laneZeroTokens = () => ({ input: 0, output: 0, cacheRead: 0 })
 const LANE_STATUSES = ['ok', 'failed', 'quota', 'violation', 'blocked']
+// A lane-log call with no harness counts as agy's: entries written before the log named the harness did.
+const LEGACY_HARNESS = 'agy'
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
 // A rung is `<model> <effort>`; a bare model, as results saved before efforts were recorded name it, has no effort.
@@ -201,13 +203,16 @@ function readResults(dir) {
   return latest ? [...archived, latest] : archived
 }
 
-// Unit outcomes, escalations, climbs, every supervisor finding and the final reviews, over every launch.
-// A unit's latest launch gives its status; attempts and findings add up across launches. A unit counts
+// A question the owner must answer: a string that is not blank.
+const isQuestion = (question) => typeof question === 'string' && question.trim() !== ''
+
+// Unit outcomes, escalations, climbs, questions, every supervisor finding and the final reviews, over every launch.
+// A unit's latest launch gives its status and its question; attempts and findings add up across launches. A unit counts
 // as escalated when a launch moved it to another model or a relaunch started it on another model, and
 // as climbed when a launch raised its effort on one model.
 function qualityOf(results) {
   if (results.length === 0) {
-    const unknown = ['launches', 'units', 'merged', 'blocked', 'skipped', 'notRun', 'escalated', 'climbed', 'attempts', 'agents', 'findings', 'finalReview']
+    const unknown = ['launches', 'units', 'merged', 'blocked', 'questions', 'skipped', 'notRun', 'escalated', 'climbed', 'attempts', 'agents', 'findings', 'finalReview']
     return Object.fromEntries(unknown.map((key) => [key, null]))
   }
   const units = new Map()
@@ -222,6 +227,7 @@ function qualityOf(results) {
       const models = tiers.map(modelOf)
       units.set(unit.id, {
         status: unit.status,
+        question: unit.question,
         firstModel: (before && before.firstModel) || models[0],
         escalated: Boolean(before && before.escalated) || new Set(models).size > 1 || Boolean(before && before.firstModel && models[0] && models[0] !== before.firstModel),
         climbed: Boolean(before && before.climbed) || tiers.some((rung, i) => i > 0 && climbsFrom(tiers[i - 1], rung)),
@@ -243,6 +249,7 @@ function qualityOf(results) {
     units: all.length,
     merged: count('merged'),
     blocked: count('blocked'),
+    questions: all.filter((unit) => unit.status === 'blocked' && isQuestion(unit.question)).length,
     skipped: count('skipped'),
     notRun: count('not-run'),
     escalated: all.filter((unit) => unit.escalated).length,
@@ -283,9 +290,9 @@ function groupReadings(group, calls, readings) {
   return points
 }
 
-// Calls, tokens and dollars by group, model and role, and each group's quota windows.
+// Calls, tokens and dollars by group, model, role and harness, and each group's quota windows.
 function summarizeLanes(calls, readings, prices, notes) {
-  const summary = { calls: 0, usd: 0, tokens: laneZeroTokens(), groups: {}, byModel: {}, byRole: {} }
+  const summary = { calls: 0, usd: 0, tokens: laneZeroTokens(), groups: {}, byModel: {}, byRole: {}, byHarness: {} }
   for (const call of calls) {
     const tokens = laneTokens(call.usage ?? {})
     const usd = laneDollars(call, tokens, prices, notes)
@@ -303,6 +310,11 @@ function summarizeLanes(calls, readings, prices, notes) {
     const role = (summary.byRole[call.role] ||= { calls: 0, usd: 0 })
     role.calls++
     role.usd += usd
+    const harness = (summary.byHarness[call.harness || LEGACY_HARNESS] ||= { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, usd: 0, tokens: laneZeroTokens() })
+    harness.calls++
+    harness.usd += usd
+    addTokens(harness.tokens, tokens)
+    if (LANE_STATUSES.includes(call.status)) harness[call.status]++
   }
   for (const [name, group] of Object.entries(summary.groups)) {
     group.quota = quotaConsumed(groupReadings(name, calls, readings))
@@ -310,13 +322,19 @@ function summarizeLanes(calls, readings, prices, notes) {
   return summary
 }
 
-// The agy version of the latest reading that names one, or null.
-function versionOf(readings) {
+// The version that the newest reading of each harness names, by harness. A reading with no harness is agy's.
+function versionsOf(readings) {
+  const newest = new Map()
   const named = readings.filter((reading) => reading.version).sort((a, b) => b.time - a.time)
-  return named.length > 0 ? named[0].version : null
+  for (const reading of named) {
+    const harness = reading.harness || LEGACY_HARNESS
+    if (!newest.has(harness)) newest.set(harness, reading.version)
+  }
+  return Object.fromEntries(newest)
 }
 
-// Every launch's agy rounds, counted by the agy model that served them, and the lanes' overflow.
+// Every launch's lane rounds, counted by the model that served them, and the lanes' overflow. A lane round's
+// provider is "<harness> <model>"; a native round's is "native", which counts nowhere.
 function launchesOf(results) {
   const attempts = {}
   let overflow = 0
@@ -324,8 +342,9 @@ function launchesOf(results) {
     overflow += (result.lanes && result.lanes.overflow) || 0
     for (const unit of result.units || []) {
       for (const round of unit.rounds || []) {
-        if (typeof round.provider !== 'string' || !round.provider.startsWith('agy ')) continue
-        const tally = (attempts[round.provider.slice('agy '.length)] ||= { attempts: 0, approved: 0 })
+        const lane = typeof round.provider === 'string' ? /^\S+ (.+)$/.exec(round.provider) : null
+        if (!lane) continue
+        const tally = (attempts[lane[1]] ||= { attempts: 0, approved: 0 })
         tally.attempts++
         if (round.verdict === 'approve') tally.approved++
       }
@@ -341,6 +360,7 @@ function totalsOf(nativeUsd, lanesUsd) {
 }
 
 // The lane log's share of the run, the run's calls being those inside its window, and of the usage session.
+// The versions are each harness's, and version is agy's.
 function laneReport({ dataDir, runId, start, end, usage, results, prices, notes, cost }) {
   const entries = readLog(dataDir)
   const isRunEntry = (entry) => entry.run === runId && (entry.kind === 'reading' || (entry.time >= start && entry.time <= end))
@@ -348,8 +368,10 @@ function laneReport({ dataDir, runId, start, end, usage, results, prices, notes,
   const sessionLog = usage ? splitLog(entries.filter((entry) => entry.session === usage.session)) : null
   const run = summarizeLanes(runLog.calls, runLog.readings, prices, notes)
   const session = sessionLog ? summarizeLanes(sessionLog.calls, sessionLog.readings, prices, notes) : null
+  const versions = versionsOf([...runLog.readings, ...(sessionLog ? sessionLog.readings : [])])
   return {
-    version: versionOf([...runLog.readings, ...(sessionLog ? sessionLog.readings : [])]),
+    version: versions.agy ?? null,
+    versions,
     run: { ...run, ...launchesOf(results) },
     session,
     totals: {
@@ -359,8 +381,18 @@ function laneReport({ dataDir, runId, start, end, usage, results, prices, notes,
   }
 }
 
-// Runs the plan's test command in the integration worktree.
-function runTests(graph) {
+// The run's test baseline, or null when it is missing or unreadable.
+function baselineOf(dir) {
+  try {
+    return readIfThere(path.join(dir, 'baseline.json'))
+  } catch {
+    return null
+  }
+}
+
+// Runs the plan's test command in the integration worktree. It counts as known failures only when it failed
+// and the run's baseline judges its output: every failure it names was failing before the run.
+function runTests(graph, dir) {
   const r = spawnSync(graph.testCommand, {
     cwd: graph.integration.worktree,
     shell: true,
@@ -368,7 +400,40 @@ function runTests(graph) {
     timeout: TEST_TIMEOUT_MS,
     maxBuffer: 64 * 1024 * 1024,
   })
-  return { command: graph.testCommand, exitCode: r.status, passed: r.status === 0, timedOut: Boolean(r.error && r.error.code === 'ETIMEDOUT') }
+  const timedOut = Boolean(r.error && r.error.code === 'ETIMEDOUT')
+  // A run that timed out or was killed did not finish, so its output cannot show that only known tests fail.
+  const finished = !timedOut && r.status !== null
+  const output = `${r.stdout || ''}\n${r.stderr || ''}`
+  const knownFailuresOnly = finished && r.status !== 0 && judge(baselineOf(dir), { exitCode: r.status, output }).pass
+  return { command: graph.testCommand, exitCode: r.status, passed: r.status === 0, timedOut, knownFailuresOnly }
+}
+
+// The RADAR figures for the owner's five goals, each read from the report's own figures. A figure whose
+// source was not measured is null: without usage there are no native dollars or share, and without a saved
+// result there are no quality counts.
+function radarOf({ speed, cost, lanes, quality }) {
+  const nativeUsd = cost ? cost.run.usd : null
+  const byHarness = Object.fromEntries(Object.entries(lanes.run.byHarness).map(([name, harness]) => [name, harness.calls]))
+  return {
+    rapid: { runMs: speed.run.ms, attempts: quality.attempts, climbed: quality.climbed, escalated: quality.escalated },
+    autonomous: { questions: quality.questions },
+    delegation: {
+      laneCalls: lanes.run.calls,
+      nativeUsd,
+      lanesUsd: lanes.totals.run.lanesUsd,
+      laneShare: cost ? lanes.totals.run.coveredShare : null,
+      byHarness,
+    },
+    affordable: { totalUsd: cost ? lanes.totals.run.totalUsd : null, nativeUsd, lanesUsd: lanes.totals.run.lanesUsd },
+    robust: {
+      merged: quality.merged,
+      blocked: quality.blocked,
+      testsPassed: quality.tests ? quality.tests.passed : null,
+      testsKnownFailuresOnly: quality.tests ? quality.tests.knownFailuresOnly : null,
+      findings: quality.findings,
+      finalVerdict: quality.finalReview ? quality.finalReview.verdict : null,
+    },
+  }
 }
 
 // The run's window starts when the plan was compiled and ends when the result was saved, or now.
@@ -407,6 +472,13 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     : null
   const lanes = laneReport({ dataDir, runId, start, end, usage, results, prices, notes, cost })
 
+  const speed = {
+    run: { start: iso(start), end: iso(end), ms: end - start },
+    swarm: usage ? span(inRun.filter((entry) => isAether(usage, entry))) : null,
+    session: usage ? span(usage.entries) : null,
+  }
+  const quality = { ...qualityOf(results), tests: tests ? runTests(graph, dir) : null }
+
   return {
     runId,
     plan: graph.plan,
@@ -416,14 +488,11 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
       runRequests: inRun.length,
       sessionRequests: usage ? usage.entries.length : 0,
     },
-    speed: {
-      run: { start: iso(start), end: iso(end), ms: end - start },
-      swarm: usage ? span(inRun.filter((entry) => isAether(usage, entry))) : null,
-      session: usage ? span(usage.entries) : null,
-    },
+    speed,
     cost,
     lanes,
-    quality: { ...qualityOf(results), tests: tests ? runTests(graph) : null },
+    quality,
+    radar: radarOf({ speed, cost, lanes, quality }),
     notes,
   }
 }
@@ -447,25 +516,13 @@ function aetherVersion() {
   return run.readJson(path.join(__dirname, '..', '.claude-plugin', 'plugin.json')).version
 }
 
-function superpowersVersion() {
-  const config = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
-  try {
-    const installed = run.readJson(path.join(config, 'plugins', 'installed_plugins.json'))
-    for (const [id, installs] of Object.entries(installed.plugins || {})) {
-      if (id.startsWith('superpowers@') && Array.isArray(installs) && installs[0]) return installs[0].version || null
-    }
-  } catch {
-    // superpowers is not installed here, or its record cannot be read
-  }
-  return null
-}
-
 // Records the run in runs.jsonl, then removes its worktrees, branches and run directory.
 function finalize(cwd, runId, options = {}) {
   const { now = Date.now(), dataDir = run.dataDir() } = options
   const r = report(cwd, runId, { ...options, dataDir })
-  const versions = { aether: aetherVersion(), superpowers: superpowersVersion(), claudeCode: r.usage.claudeCode }
-  if (r.lanes.version) versions.agy = r.lanes.version
+  const versions = { aether: aetherVersion(), claudeCode: r.usage.claudeCode }
+  // One version per lane harness that the lane log saw: agy's among them, as versions.agy.
+  Object.assign(versions, r.lanes.versions)
   const record = {
     runId,
     status: 'finalized',

@@ -25,7 +25,17 @@ const LANE_ROLES = ['implementer', 'supervisor', 'reviewer']
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK_ID = /^task-\d+$/
 const BLOCKING = ['critical', 'important']
+// The verdicts the schemas allow. A harness may answer with another one, which the script checks for.
+const VERDICTS = ['approve', 'retry', 'escalate', 'block']
+const REVIEW_VERDICTS = ['ready', 'ready-with-fixes', 'not-ready']
+const NOT_A_VERDICT = 'The verdict was not one of approve, retry, escalate or block, so it counts as retry.'
+const NOT_A_REVIEW_VERDICT = 'The verdict was not one of ready, ready-with-fixes or not-ready, so it counts as not-ready.'
+const NOT_A_LIST = 'The findings were not a list, so the approval counts as a retry.'
 const AREA_MEMORY = 10
+// The failures a unit keeps (its `failures`): an attempt without a report, or a retry or an escalation
+// with the titles of its blocking findings. The same failure can stop a unit early (see work()).
+const NO_REPORT = 'no report'
+const FINDINGS_PREFIX = 'findings: '
 
 const FINDINGS = {
   type: 'array',
@@ -101,12 +111,18 @@ function validLanes(lanes) {
   const count = (value) => Number.isInteger(value) && value >= 1
   if (!isObject(lanes) || !named(lanes.harness) || !count(lanes.maxParallel)) return false
   if (!isObject(lanes.waits) || !LANE_ROLES.every((role) => count(lanes.waits[role]))) return false
+  // The optional fields: the harnesses the run uses, a cap per harness, and a harness on a call. Null or missing is absent.
+  const absent = (value) => value === undefined || value === null
+  if (!absent(lanes.harnesses) && !(Array.isArray(lanes.harnesses) && lanes.harnesses.every(named))) return false
+  if (!absent(lanes.maxParallelByHarness) && !(isObject(lanes.maxParallelByHarness) && Object.values(lanes.maxParallelByHarness).every(count))) return false
   if (!isObject(lanes.calls)) return false
   return Object.entries(lanes.calls).every(
     ([role, byModel]) =>
       LANE_ROLES.includes(role) &&
       isObject(byModel) &&
-      Object.entries(byModel).every(([model, lane]) => TIERS.includes(model) && isObject(lane) && named(lane.model) && named(lane.group)),
+      Object.entries(byModel).every(
+        ([model, lane]) => TIERS.includes(model) && isObject(lane) && named(lane.model) && named(lane.group) && (absent(lane.harness) || named(lane.harness)),
+      ),
   )
 }
 
@@ -126,6 +142,9 @@ function readArgs(raw) {
   if (!RUN_ID.test(String(input.runId))) bad.push('runId')
   for (const key of ['repoRoot', 'runDir', 'testCommand']) if (!text(input[key])) bad.push(key)
   for (const key of ['branch', 'worktree', 'base']) if (!text(input.integration && input.integration[key])) bad.push(`integration.${key}`)
+  // The base of the run's first launch. Args compiled before relaunches lack it, and that is accepted.
+  const firstBase = input.integration && input.integration.firstBase
+  if (firstBase !== undefined && firstBase !== null && !text(firstBase)) bad.push('integration.firstBase')
   if (!input.ladder || !TIERS.every((t) => Number.isInteger(input.ladder[t]) && input.ladder[t] >= 0)) bad.push('ladder')
   if (!Number.isInteger(input.maxAgents) || input.maxAgents < 1) bad.push('maxAgents')
   if (!Array.isArray(input.waves) || !input.waves.every(Array.isArray)) bad.push('waves')
@@ -162,7 +181,7 @@ const lanes = input.lanes || null
 const units = {}
 for (const id of waves.flat()) {
   const t = tasks[id]
-  units[id] = { id, title: t.title, area: t.area, status: 'pending', tiers: [], attempts: 0, rounds: [], commit: null, reason: null, question: null, patch: null }
+  units[id] = { id, title: t.title, area: t.area, status: 'pending', tiers: [], attempts: 0, rounds: [], failures: [], commit: null, reason: null, question: null, patch: null }
 }
 const agents = { total: 0, byRole: {}, byModel: {} }
 // The supervisors' shared memory: the latest rulings of each area.
@@ -171,9 +190,10 @@ const rulings = {}
 let queue = Promise.resolve()
 // The lane calls by outcome, the calls that found the lanes full, and each wave's dry groups.
 const laneCounts = lanes ? { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 0, dry: [] } : null
-// The groups without quota until the next wave's reading, and the lane calls in flight.
+// The groups without quota until the next wave's reading (keyed by harness and group, see groupKey),
+// and the lane calls in flight by pool (see poolOf).
 let dryGroups = new Set()
-let lanesInFlight = 0
+const lanesInFlight = new Map()
 
 // --- agents ----------------------------------------------------------------------------------
 
@@ -241,6 +261,20 @@ function serialized(task) {
 
 // --- lanes -----------------------------------------------------------------------------------
 
+// A call runs on its own harness, or the run's. Each harness has its own groups of quota.
+const harnessOf = (lane) => lane.harness || lanes.harness
+const groupKey = (harness, group) => JSON.stringify([harness, group])
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key)
+// The harnesses the calls name. With more than one, a dry group is named harness/group in the records.
+const harnessNames = lanes ? new Set([lanes.harness, ...Object.values(lanes.calls).flatMap((byModel) => Object.values(byModel).map(harnessOf))]) : null
+const groupLabel = (harness, group) => (harnessNames.size > 1 ? `${harness}/${group}` : group)
+// The pool a call counts against: its harness's own cap in maxParallelByHarness, else the pool all
+// harnesses without one share, capped at maxParallel.
+const SHARED = ''
+const poolOf = (lane) => (lanes.maxParallelByHarness && hasOwn(lanes.maxParallelByHarness, harnessOf(lane)) ? harnessOf(lane) : SHARED)
+const capOf = (pool) => (pool === SHARED ? lanes.maxParallel : lanes.maxParallelByHarness[pool])
+const inFlightOf = (pool) => lanesInFlight.get(pool) || 0
+
 // The digest and the canonical JSON of lib/lanes.js, written out because a workflow has no modules.
 // FNV-1a, 32-bit, over UTF-16 code units, then the length.
 function digest(text) {
@@ -266,26 +300,33 @@ function canonicalJson(value) {
   return JSON.stringify(sortKeys(value))
 }
 
-// Each wave starts with a quota reading. A group is dry for the wave unless the harness is
-// installed and the group usable; a failed reading leaves every group dry.
+// Each wave starts with a quota reading. A group is dry for the wave unless its harness is installed
+// in the reading and the group usable there; a harness missing from the reading leaves its groups dry,
+// and a failed reading leaves every group dry.
 async function readQuota(wave) {
   const out = await ops(`aether-lane status ${runId}`, { phase: 'Implement', label: `wave ${wave}: lane quota`, long: true })
-  const harness = !out.error && isObject(out.harnesses) ? out.harnesses[lanes.harness] : null
-  const usable = (group) =>
-    isObject(harness) && harness.installed === true && isObject(harness.groups) && isObject(harness.groups[group]) && harness.groups[group].usable === true
-  const groups = new Set(Object.values(lanes.calls).flatMap((byModel) => Object.values(byModel).map((lane) => lane.group)))
-  dryGroups = new Set([...groups].filter((group) => !usable(group)))
-  laneCounts.dry.push({ wave, groups: [...dryGroups].sort() })
+  const readings = !out.error && isObject(out.harnesses) ? out.harnesses : {}
+  const usable = (harness, group) => {
+    const reading = hasOwn(readings, harness) ? readings[harness] : null
+    return isObject(reading) && reading.installed === true && isObject(reading.groups) && isObject(reading.groups[group]) && reading.groups[group].usable === true
+  }
+  const pairs = new Map()
+  for (const byModel of Object.values(lanes.calls)) {
+    for (const lane of Object.values(byModel)) pairs.set(groupKey(harnessOf(lane), lane.group), [harnessOf(lane), lane.group])
+  }
+  const dry = [...pairs.values()].filter(([harness, group]) => !usable(harness, group))
+  dryGroups = new Set(dry.map(([harness, group]) => groupKey(harness, group)))
+  laneCounts.dry.push({ wave, groups: dry.map(([harness, group]) => groupLabel(harness, group)).sort() })
 }
 
 // The lane that takes a call, or null for a native call: no lanes, effort max, no lane for the
-// role and model, or a dry group. A call that finds maxParallel lane calls in flight runs native
-// too, and counts as overflow.
+// role and model, or a dry group. A call that finds its pool full runs native too, and counts as overflow.
 function laneFor(role, model, effort) {
   if (!lanes || effort === 'max') return null
   const lane = lanes.calls[role] ? lanes.calls[role][model] : null
-  if (!lane || dryGroups.has(lane.group)) return null
-  if (lanesInFlight >= lanes.maxParallel) {
+  if (!lane || dryGroups.has(groupKey(harnessOf(lane), lane.group))) return null
+  const pool = poolOf(lane)
+  if (inFlightOf(pool) >= capOf(pool)) {
     laneCounts.overflow++
     return null
   }
@@ -299,7 +340,8 @@ function laneFor(role, model, effort) {
 // { kind: 'blocked', detail }, { kind: 'unavailable', reason } when it did not start, or
 // { kind: 'infra', model, reason } for an infrastructure failure, which the native agent takes over.
 async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
-  lanesInFlight++
+  const pool = poolOf(lane)
+  lanesInFlight.set(pool, inFlightOf(pool) + 1)
   try {
     const laneOps = (command, step, payload = null) => ops(`aether-lane ${command}`, { phase, label: `${base}: ${step}`, payload, long: true })
     const named = (value) => (typeof value === 'string' && value !== '' ? value : null)
@@ -324,7 +366,7 @@ async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
     started = await laneOps(`start ${runId} ${id} ${flags}`, 'start', { path: `${runDir}/lanes/${id}/prompt.md`, text: prompt })
     if (!started.error && started.unavailable) {
       laneCounts.unavailable++
-      if (started.unavailable === 'quota') dryGroups.add(lane.group)
+      if (started.unavailable === 'quota') dryGroups.add(groupKey(harnessOf(lane), lane.group))
       log(`${base}: unavailable (${started.unavailable})`)
       return { kind: 'unavailable', reason: started.unavailable }
     }
@@ -349,7 +391,7 @@ async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
         laneCounts.ok++
         return { kind: 'ok', result: reply.result, lane: reply.lane }
       case 'quota':
-        dryGroups.add(lane.group)
+        dryGroups.add(groupKey(harnessOf(lane), lane.group))
         return infra('its quota ran out', 'quota')
       case 'failed':
         return infra(String(reply.detail || 'failed'))
@@ -363,7 +405,7 @@ async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
     // A status the runner never writes, or ok without a result: the native agent takes the call.
     return infra(`an unexpected result with status ${String(reply.status).slice(0, 40)}`)
   } finally {
-    lanesInFlight--
+    lanesInFlight.set(pool, inFlightOf(pool) - 1)
   }
 }
 
@@ -540,6 +582,21 @@ function remember(area, line) {
   rulings[area] = [...(rulings[area] || []), line].slice(-AREA_MEMORY)
 }
 
+// The findings of a supervisor's or reviewer's answer. A harness may answer with any shape, so only an array
+// counts, and within it only the entries that are objects.
+const findingsOf = (value) => (Array.isArray(value) ? value.filter(isObject) : [])
+
+// The failure of a retry or an escalation: its blocking findings' titles, sorted and written the same way,
+// so that the same findings compare equal whatever their case or spacing. A verdict without a blocking
+// finding is named as such, so a stop on it says what repeated.
+function findingsFailure(findings) {
+  const titles = findings
+    .filter((f) => BLOCKING.includes(f.severity))
+    .map((f) => String(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim())
+    .sort()
+  return `${FINDINGS_PREFIX}${titles.length > 0 ? titles.join(' | ') : '(no blocking finding)'}`
+}
+
 // One attempt's implementer: on a lane when there is one, native otherwise. After the lane's
 // infrastructure failure, or when it does not start, the same attempt runs native. Resolves to
 // { report, provider, laneFailure }, with `failure` (the round's summary) when the lane's changes
@@ -549,6 +606,7 @@ async function implement(unit, task, model, effort, rung, context) {
   let laneFailure = null
   const lane = laneFor('implementer', model, effort)
   if (lane) {
+    const harness = harnessOf(lane)
     const outcome = await laneCall({
       role: 'implementer',
       id: `${unit.id}-${n}-implement`,
@@ -557,20 +615,20 @@ async function implement(unit, task, model, effort, rung, context) {
       effort,
       prompt: implementerPrompt(unit, task, rung, context, { lane: true }),
       phase: 'Implement',
-      base: `${unit.id}: implement on ${rung} via agy ${lane.model} (attempt ${n})`,
+      base: `${unit.id}: implement on ${rung} via ${harness} ${lane.model} (attempt ${n})`,
     })
-    if (outcome.kind === 'ok') return { report: outcome.result, provider: `agy ${outcome.lane.model}`, laneFailure }
+    if (outcome.kind === 'ok') return { report: outcome.result, provider: `${harness} ${outcome.lane.model}`, laneFailure }
     if (outcome.kind === 'blocked') return { blocked: outcome.detail }
     if (outcome.kind === 'violation') {
       const failure = `The external agent changed files outside the task's Owns: ${list(outcome.files)}. Revert those changes.`
-      return { report: null, failure, provider: `agy ${outcome.model}`, laneFailure }
+      return { report: null, failure, provider: `${harness} ${outcome.model}`, laneFailure }
     }
     if (outcome.kind === 'infra') {
-      laneFailure = { model: outcome.model, reason: outcome.reason }
+      laneFailure = { harness, model: outcome.model, reason: outcome.reason }
       context = [
         ...(context ? [...context, ''] : []),
         '## An external agent began this attempt',
-        `agy ${outcome.model} stopped before it finished: ${outcome.reason}. Its uncommitted work, if any, is in the worktree. Continue from it.`,
+        `${harness} ${outcome.model} stopped before it finished: ${outcome.reason}. Its uncommitted work, if any, is in the worktree. Continue from it.`,
       ]
     }
   }
@@ -588,6 +646,7 @@ async function supervise(unit, task, rung, report, used, model) {
   const n = unit.attempts
   const lane = laneFor('supervisor', 'sonnet', task.review)
   if (lane) {
+    const harness = harnessOf(lane)
     const outcome = await laneCall({
       role: 'supervisor',
       id: `${unit.id}-${n}-supervise`,
@@ -596,9 +655,9 @@ async function supervise(unit, task, rung, report, used, model) {
       effort: task.review,
       prompt: supervisorPrompt(unit, task, rung, report, used, model, { lane: true }),
       phase: 'Supervise',
-      base: `${unit.id}: supervise attempt ${n} via agy ${lane.model}`,
+      base: `${unit.id}: supervise attempt ${n} via ${harness} ${lane.model}`,
     })
-    if (outcome.kind === 'ok') return { review: outcome.result, provider: `agy ${outcome.lane.model}` }
+    if (outcome.kind === 'ok') return { review: outcome.result, provider: `${harness} ${outcome.lane.model}` }
     if (outcome.kind === 'blocked') return { blocked: outcome.detail }
   }
   const review = await call('supervisor', 'sonnet', task.review, supervisorPrompt(unit, task, rung, report, used, model), {
@@ -663,8 +722,16 @@ async function work(unit, task) {
       laneFailure: attempt.laneFailure,
     }
     unit.rounds.push(round)
-    // A failed implementer, or a lane's changes outside Owns: the attempt failed, and the ladder decides.
-    if (!report) continue
+    // A failed implementer, or a lane's changes outside Owns: the attempt failed, and the ladder decides,
+    // unless the unit has now ended twice without a report, which means it is too large for one attempt.
+    if (!report) {
+      unit.failures.push(NO_REPORT)
+      const recent = unit.failures.slice(-2)
+      if (recent.length === 2 && recent.every((f) => f === NO_REPORT)) {
+        return finish(unit, 'blocked', 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks')
+      }
+      continue
+    }
 
     round.reviewEffort = task.review
     const checked = await supervise(unit, task, rung, report, used, model)
@@ -675,15 +742,34 @@ async function work(unit, task) {
       round.ruling = 'The supervisor agent failed.'
       continue
     }
-    round.findings = review.findings || []
+    round.findings = findingsOf(review.findings)
     round.ruling = review.ruling || ''
     round.guidance = review.guidance || ''
     round.verdict = review.verdict
+    // A verdict the script does not know counts as a retry, and the ruling says so.
+    if (!VERDICTS.includes(round.verdict)) {
+      round.verdict = 'retry'
+      round.ruling = [round.ruling, NOT_A_VERDICT].filter(Boolean).join(' ')
+    }
+    // An approval whose findings are not a list cannot show that nothing blocks it.
+    if (round.verdict === 'approve' && !Array.isArray(review.findings)) {
+      round.verdict = 'retry'
+      round.ruling = [round.ruling, NOT_A_LIST].filter(Boolean).join(' ')
+    }
     // An approval is only as good as its findings.
     if (round.verdict === 'approve' && round.findings.some((f) => BLOCKING.includes(f.severity))) round.verdict = 'retry'
     remember(task.area, `${unit.id} attempt ${n}: ${round.verdict}. ${round.ruling}`)
 
     if (round.verdict === 'block') return finish(unit, 'blocked', round.ruling, review.question || report.question)
+    // The same findings three times in one unit: the ladder would only send them round again.
+    if (round.verdict === 'retry' || round.verdict === 'escalate') {
+      const failure = findingsFailure(round.findings)
+      unit.failures.push(failure)
+      if (unit.failures.filter((f) => f === failure).length >= 3) {
+        const titles = failure.slice(FINDINGS_PREFIX.length)
+        return finish(unit, 'blocked', `the same findings came back 3 times: ${titles}; the task needs a split or a redesign`)
+      }
+    }
     if (round.verdict === 'escalate') {
       const next = nextTier(model)
       if (!next) return finish(unit, 'blocked', 'the ladder is spent')
@@ -732,29 +818,75 @@ async function runUnit(id) {
   if (unit.attempts > 0) await close(unit)
 }
 
+// A relaunch is a launch after the run's first one: its firstBase, the base of the first launch, differs
+// from its base. A first launch has the two equal, or no firstBase at all.
+function isRelaunch() {
+  const { firstBase } = integration
+  return typeof firstBase === 'string' && firstBase !== '' && firstBase !== integration.base
+}
+
+// The final review's model and effort follow the run's risk, judged from the tasks of the merged units:
+// Opus at xhigh for an opus task or an xhigh or max review; Sonnet at high for a small run of haiku
+// tasks that all ask for high reviews; Opus at high otherwise. A relaunch's review covers the earlier
+// launches too, so it is never Sonnet: Opus at high, unless the xhigh rules apply.
+function reviewPlan() {
+  const merged = Object.values(units).filter((u) => u.status === 'merged')
+  const opus = merged.find((u) => tasks[u.id].tier === 'opus')
+  if (opus) return { model: 'opus', effort: 'xhigh', reason: `${opus.id} is tier opus` }
+  const deep = merged.find((u) => ['xhigh', 'max'].includes(tasks[u.id].review))
+  if (deep) return { model: 'opus', effort: 'xhigh', reason: `${deep.id} reviews at ${tasks[deep.id].review}` }
+  if (isRelaunch()) return { model: 'opus', effort: 'high', reason: 'a relaunch: the final review covers the earlier launches too' }
+  if (merged.length <= 3 && merged.every((u) => tasks[u.id].tier === 'haiku' && tasks[u.id].review === 'high')) {
+    return { model: 'sonnet', effort: 'high', reason: 'a small all-haiku run with high reviews' }
+  }
+  return { model: 'opus', effort: 'high', reason: 'the merged work is not a small all-haiku run' }
+}
+
+// The final review's answer as the run reports it, with its findings and verdict checked as a supervisor's
+// are. A verdict the script does not know counts as not-ready, and the summary says so.
+function reviewResult(review) {
+  const answer = isObject(review) ? review : {}
+  const checked = { ...answer, findings: findingsOf(answer.findings) }
+  if (!REVIEW_VERDICTS.includes(answer.verdict)) {
+    checked.verdict = 'not-ready'
+    checked.summary = [answer.summary || '', NOT_A_REVIEW_VERDICT].filter(Boolean).join(' ')
+  }
+  return checked
+}
+
 async function reviewRun() {
   if (!Object.values(units).some((u) => u.status === 'merged')) return { status: 'skipped', reason: 'no unit merged' }
   if (agents.total >= maxAgents) return { status: 'skipped', reason: 'the agent budget is spent' }
+  const { model, effort, reason } = reviewPlan()
+  log(`final review on ${model} ${effort}: ${reason}`)
+  // Every result that names a review carries the model and effort it was run on, or would have been.
+  const chosen = { reviewModel: model, reviewEffort: effort }
   const pkg = await ops(`aether-wt diff ${runId} --final`, { phase: 'Final review', label: 'final review: package' })
-  if (pkg.error) return { status: 'failed', reason: `package: ${pkg.error}` }
-  const lane = laneFor('reviewer', 'opus', 'high')
+  if (pkg.error) return { status: 'failed', reason: `package: ${pkg.error}`, ...chosen }
+  const lane = laneFor('reviewer', model, effort)
   if (lane) {
+    const harness = harnessOf(lane)
     const outcome = await laneCall({
       role: 'reviewer',
       id: 'final-review',
       task: null,
       lane,
-      effort: 'high',
+      effort,
       prompt: reviewerPrompt(pkg, { lane: true }),
       phase: 'Final review',
-      base: `final review via agy ${lane.model}`,
+      base: `final review via ${harness} ${lane.model}`,
     })
-    if (outcome.kind === 'ok') return { status: 'done', provider: `agy ${outcome.lane.model}`, ...outcome.result }
-    if (outcome.kind === 'blocked') return { status: 'failed', reason: `lane: ${outcome.detail}` }
+    if (outcome.kind === 'ok') return { status: 'done', provider: `${harness} ${outcome.lane.model}`, ...chosen, ...reviewResult(outcome.result) }
+    if (outcome.kind === 'blocked') return { status: 'failed', reason: `lane: ${outcome.detail}`, ...chosen }
   }
-  const review = await call('reviewer', 'opus', 'high', reviewerPrompt(pkg), { phase: 'Final review', label: 'final review', schema: REVIEW_SCHEMA })
-  if (!review) return { status: 'failed', reason: 'the reviewer agent failed' }
-  return { status: 'done', provider: 'native', ...review }
+  // The label names the model and effort: scripts/check-effort.js expects the reviewer to run at the effort it names.
+  const review = await call('reviewer', model, effort, reviewerPrompt(pkg), {
+    phase: 'Final review',
+    label: `final review on ${model} ${effort}`,
+    schema: REVIEW_SCHEMA,
+  })
+  if (!review) return { status: 'failed', reason: 'the reviewer agent failed', ...chosen }
+  return { status: 'done', provider: 'native', ...chosen, ...reviewResult(review) }
 }
 
 // --- run -------------------------------------------------------------------------------------

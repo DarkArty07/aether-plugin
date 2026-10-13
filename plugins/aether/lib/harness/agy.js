@@ -63,6 +63,8 @@ function failureReason({ stderr, exitCode }, data, { conversation, required }) {
 
 function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = process.env } = {}) {
   const keyOfGroup = new Map(Object.entries(groups).map(([key, name]) => [name, key]))
+  // agy's name for a lane model at a level: the model id and the level joined by a dash.
+  const modelArg = ({ model, level }) => `${model}-${level}`
 
   return {
     name: 'agy',
@@ -70,6 +72,8 @@ function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = pro
     installed() {
       return commandInstalled(command, env)
     },
+
+    modelArg,
 
     // The windows of each configured group, keyed by the group's key in the table.
     quota() {
@@ -92,14 +96,14 @@ function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = pro
       return { groups: reported }
     },
 
-    // One print-mode turn, resuming conversation when it is given.
-    argv({ model, schemaFile, timeoutSeconds, prompt, conversation = null }) {
+    // One print-mode turn, resuming conversation when it is given. The model is the lane model id at its level.
+    argv({ model, level, schemaFile, timeoutSeconds, prompt, conversation = null }) {
       const args = [
         command,
         '-p',
         prompt,
         '--model',
-        model,
+        modelArg({ model, level }),
         '--output-format',
         'json',
         '--json-schema',

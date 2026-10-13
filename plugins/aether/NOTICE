@@ -6,6 +6,10 @@ agents/supervisor.md, agents/reviewer.md) adapt the implementer, task-reviewer
 and code-reviewer prompt templates of superpowers
 (https://github.com/obra/superpowers), used under the MIT License below.
 
+The Aether preset (speckit/) and the specify, plan, tasks and constitution skills adapt the lean preset of Spec Kit (https://github.com/github/spec-kit), Copyright GitHub, Inc., used under the MIT License below.
+
+The judge, supervisor and reviewer agents, and parts of the workflow and of aether-guard, adapt rules and patterns of oh-my-claudecode (https://github.com/Yeachan-Heo/oh-my-claudecode), Copyright (c) 2025 Yeachan Heo, used under the MIT License below.
+
 The rest of the project is released under the MIT License, see LICENSE.
 
 MIT License

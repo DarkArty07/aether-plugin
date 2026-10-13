@@ -2,18 +2,20 @@
 'use strict'
 
 // aether-plan check <plan.md>
-// aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes]
+// aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline]
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const lib = path.join(__dirname, '..', 'lib')
 const { parsePlan, buildGraph, renderBrief } = require(path.join(lib, 'plan.js'))
 const { repoPaths, currentBranch, head } = require(path.join(lib, 'git.js'))
 const run = require(path.join(lib, 'run.js'))
 const lanes = require(path.join(lib, 'lanes.js'))
+const baseline = require(path.join(lib, 'baseline.js'))
 
 const USAGE =
-  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes]'
+  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline]'
 
 function fail(errors, warnings = []) {
   process.stdout.write(JSON.stringify({ ok: false, errors, warnings }) + '\n')
@@ -37,12 +39,66 @@ function load(planArg) {
   return { planPath, parsed: parsePlan(fs.readFileSync(planPath, 'utf8')) }
 }
 
+function isFile(file) {
+  const stat = fs.statSync(file, { throwIfNoEntry: false })
+  return Boolean(stat && stat.isFile())
+}
+
+// A file is named the way a Spec line names it: relative to the integration worktree, where the run
+// reads it, or by its full path when it is outside that worktree.
+function nameInWorktree(file, worktree) {
+  const rel = path.relative(worktree, file)
+  return rel.split(path.sep)[0] === '..' ? file : rel
+}
+
+// The spec a plan names. A Spec line's path is read from the worktree; when nothing is there but the
+// file sits beside the plan, as the Aether preset's [spec.md](spec.md) does, that file is the spec.
+// Without a Spec line, a spec.md beside the plan stands in (Spec Kit's layout).
+function planSpec(parsedSpec, planPath, worktree) {
+  if (parsedSpec) {
+    if (path.isAbsolute(parsedSpec) || isFile(path.join(worktree, parsedSpec))) return parsedSpec
+    const beside = path.join(path.dirname(planPath), parsedSpec)
+    return isFile(beside) ? nameInWorktree(beside, worktree) : parsedSpec
+  }
+  const sibling = path.join(path.dirname(planPath), 'spec.md')
+  return isFile(sibling) ? nameInWorktree(sibling, worktree) : null
+}
+
 function check(planArg) {
   const { parsed } = load(planArg)
   const graph = buildGraph(parsed)
   const errors = [...parsed.errors, ...graph.errors]
   if (errors.length) fail(errors, graph.warnings)
   process.stdout.write(JSON.stringify({ ok: true, tasks: Object.keys(graph.tasks).length, waves: graph.waves, warnings: graph.warnings }) + '\n')
+}
+
+const BASELINE_TIMEOUT_MS = 10 * 60 * 1000
+
+// Runs the test command once, in the integration worktree, before the run's first merge. The failing
+// tests it names are the baseline: a merge is blocked only by a failure that is not among them.
+function recordBaseline(cwd, testCommand) {
+  const r = spawnSync(testCommand, {
+    cwd,
+    shell: true,
+    encoding: 'utf8',
+    timeout: BASELINE_TIMEOUT_MS,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  return {
+    recordedAt: new Date().toISOString(),
+    exitCode: r.status,
+    // A newline between the two streams keeps the last line of one from joining the first of the other.
+    signatures: baseline.failureSignatures(`${r.stdout || ''}\n${r.stderr || ''}`),
+    timedOut: Boolean(r.error && r.error.code === 'ETIMEDOUT'),
+  }
+}
+
+function baselineMessage({ exitCode, signatures }) {
+  if (exitCode === 0) return 'the test command passed'
+  if (signatures.length > 0) {
+    return `${signatures.length} failing tests already fail before the run; only new failures block a merge`
+  }
+  return 'the test command failed and names no test, so any failure blocks a merge'
 }
 
 function compile(planArg, rest) {
@@ -64,11 +120,15 @@ function compile(planArg, rest) {
     )
   }
   // A lane table that loadConfig refuses throws here, before anything is written.
-  const laneArgs = rest.includes('--no-lanes') || !enabled.on
-    ? null
-    : lanes.lanesArgs(lanes.loadConfig(lanes.configPath()), {
-        installed: (name, harness) => lanes.commandInstalled(harness.command),
-      })
+  let laneArgs = null
+  if (!rest.includes('--no-lanes') && enabled.on) {
+    const config = lanes.loadConfig(lanes.configPath())
+    const installed = (name, harness) => lanes.commandInstalled(harness.command)
+    laneArgs = lanes.lanesArgs(config, { installed })
+    for (const { name, reason } of lanes.idleHarnesses(config, { installed })) {
+      process.stderr.write(`aether-plan: lanes: ${name} is enabled but ${reason}\n`)
+    }
+  }
 
   const repo = repoPaths(process.cwd())
   const branch = currentBranch(process.cwd())
@@ -81,24 +141,35 @@ function compile(planArg, rest) {
   run.assertRunId(runId)
   const dir = run.runDir(repo.mainRoot, runId)
   run.ensureExcluded(repo.gitCommonDir)
+  // Read before the graph is written: a relaunch's graph keeps the first launch's base.
+  const graphFile = path.join(dir, 'graph.json')
+  const priorIntegration = fs.existsSync(graphFile) ? run.readJson(graphFile).integration : null
 
+  const spec = planSpec(parsed.spec, planPath, repo.worktree)
   const tasks = {}
   for (const t of parsed.tasks) {
     const id = `task-${t.number}`
     if (!graph.tasks[id]) continue
     const brief = path.join(dir, 'briefs', `${id}.md`)
     fs.mkdirSync(path.dirname(brief), { recursive: true })
-    fs.writeFileSync(brief, renderBrief(t, { planPath, spec: parsed.spec, globalConstraints: parsed.globalConstraints }))
+    fs.writeFileSync(brief, renderBrief(t, { planPath, spec, globalConstraints: parsed.globalConstraints }))
     tasks[id] = { ...graph.tasks[id], brief }
   }
 
+  // Units branch from the current head, but the run's first launch is where its changes begin.
+  const base = head(process.cwd())
   const args = {
     runId,
     repoRoot: repo.mainRoot,
     runDir: dir,
     plan: planPath,
-    spec: parsed.spec,
-    integration: { branch, worktree: repo.worktree, base: head(process.cwd()) },
+    spec,
+    integration: {
+      branch,
+      worktree: repo.worktree,
+      base,
+      firstBase: priorIntegration?.firstBase || priorIntegration?.base || base,
+    },
     testCommand: parsed.execution.testCommand,
     ladder: parsed.execution.ladder,
     maxAgents: parsed.execution.maxAgents,
@@ -106,7 +177,14 @@ function compile(planArg, rest) {
     tasks,
     lanes: laneArgs,
   }
-  run.writeJson(path.join(dir, 'graph.json'), args)
+  // Recorded once per run, before its first merge. A relaunch keeps the baseline it already has.
+  const baselineFile = path.join(dir, 'baseline.json')
+  if (!rest.includes('--no-baseline') && !fs.existsSync(baselineFile)) {
+    const recorded = recordBaseline(repo.worktree, parsed.execution.testCommand)
+    run.writeJson(baselineFile, recorded)
+    process.stderr.write(`aether-plan: test baseline: ${baselineMessage(recorded)}\n`)
+  }
+  run.writeJson(graphFile, args)
   // A relaunch of a run keeps its first compile time, so the report covers every launch, and keeps
   // the previous launch's result as result-<k>.json.
   const statePath = path.join(dir, 'state.json')
@@ -127,7 +205,7 @@ function compile(planArg, rest) {
   const warnings = [...graph.warnings]
   if (repo.worktree === repo.mainRoot) {
     warnings.push(
-      'the integration worktree is the main checkout, so the unit worktrees under .aether/worktrees/ sit inside it, and a test command that searches the whole tree also runs their unfinished tests at merge time. Prefer a separate integration worktree (superpowers using-git-worktrees).',
+      'the integration worktree is the main checkout, so the unit worktrees under .aether/worktrees/ sit inside it, and a test command that searches the whole tree also runs their unfinished tests at merge time. Prefer a separate integration worktree (git worktree add <path> -b <branch>).',
     )
   }
   for (const warning of warnings) process.stderr.write(`warning: ${warning}\n`)

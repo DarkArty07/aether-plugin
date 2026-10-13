@@ -53,12 +53,14 @@ function aetherWt(call, state) {
 }
 
 const LEVEL = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
-const GROUP = { 'gemini-3.8-flash': 'gemini', 'claude-sonnet-5-5': 'claude', 'claude-opus-5-5': 'claude' }
+const GROUP = { 'gemini-3.8-flash': 'gemini', 'claude-sonnet-5-5': 'claude', 'claude-opus-5-5': 'claude', 'gpt-5.5-codex': 'openai' }
+// The harness that runs a model when it is not agy's. A lane call names only its model, so this stands in for aether-lane's choice.
+const HARNESS_OF = { 'gpt-5.5-codex': 'codex' }
 
 // The lane block of a finished call, built from the flags its start was given.
 function laneOf(started) {
   return {
-    harness: 'agy',
+    harness: HARNESS_OF[started.model] || 'agy',
     model: `${started.model}-${LEVEL[started.effort]}`,
     group: GROUP[started.model],
     effort: started.effort,
@@ -230,4 +232,4 @@ async function runWorkflow(args, overrides = {}) {
   return { result, error, calls, events, logs, maxActive }
 }
 
-module.exports = { runWorkflow, laneAnswer, laneOf }
+module.exports = { runWorkflow, laneAnswer, laneOf, HARNESS_OF }

@@ -6,7 +6,12 @@ const fs = require('node:fs')
 const path = require('node:path')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const schemas = require('../plugins/aether/lib/lane-schemas.js')
-const { buildPrompt, LANE_NOTES, WORKDIR_RULE } = require('../plugins/aether/lib/lane-calls.js')
+const work = require('../plugins/aether/lib/lane-work.js')
+const calls = require('../plugins/aether/lib/lane-calls.js')
+const { buildPrompt, LANE_NOTES, WORKDIR_RULE } = calls
+const { registerAdapter, unregisterAdapter } = require('../plugins/aether/lib/harness/index.js')
+const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
+const { parseRun, unknownQuota } = require('../plugins/aether/lib/harness/structured.js')
 const { PLUGIN, WT_BIN, runBin, commitIn, tempDir } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 
@@ -26,6 +31,101 @@ const flags = (digest, { role = 'implementer', task = 'task-1', model = 'gemini-
   digest,
 ]
 const unitDir = (args) => path.join(args.repoRoot, '.aether', 'worktrees', args.runId, 'task-1')
+
+// A table entry for a second harness of one model, which replaces sonnet and serves implementers.
+function codexEntry(command, group = 'codex') {
+  const levels = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
+  return {
+    command,
+    maxParallel: 1,
+    waitSeconds: 60,
+    timeouts: { implementer: 60, supervisor: 60, reviewer: 60, designer: 60 },
+    groups: { [group]: `${group} models` },
+    models: { [`gpt-${group}`]: { group, replaces: 'sonnet', roles: ['implementer'], levels } },
+  }
+}
+
+// Sets this process's environment to env for one test, and puts each variable back after it.
+function useEnv(t, env) {
+  for (const [name, value] of Object.entries(env)) {
+    const previous = process.env[name]
+    t.after(() => {
+      if (previous === undefined) delete process.env[name]
+      else process.env[name] = previous
+    })
+    process.env[name] = value
+  }
+}
+
+// A harness adapter for this process only: the runner is another process, and loads only the bundled adapters.
+function fakeCodex() {
+  return {
+    name: 'codex',
+    installed: () => true,
+    version: () => '9.1.0',
+    quota: () => ({ groups: { codex: { unknown: true } } }),
+    modelArg: ({ model }) => model,
+  }
+}
+
+// The structured output the fake agy printed as its answer, as text, or nothing when it printed none.
+function readFakeAnswer(stdout) {
+  let data = null
+  try {
+    data = JSON.parse(stdout)
+  } catch {
+    // Not JSON: nothing was answered.
+  }
+  const answer = data?.structured_output === undefined ? '' : JSON.stringify(data.structured_output)
+  return { answer, usage: { input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }, outside: data?.error ? String(data.error) : '' }
+}
+
+// A harness that reports no quota, as codex, grok and cursor do, run on the fake agy: its output is read by
+// structured.js's parseRun, so a quota line in its stderr is a quota failure.
+function unknownQuotaHarness({ command, groups }) {
+  return {
+    ...createAgy({ command, groups }),
+    name: 'codex',
+    schemaInPrompt: true,
+    quota: () => unknownQuota(groups),
+    modelArg: ({ model }) => model,
+    argv: ({ model, level, prompt }) => [command, '-p', prompt, '--model', model, '-c', `model_reasoning_effort=${level}`, '--output-format', 'json'],
+    parse: (raw, { required = [] } = {}) => parseRun(raw, readFakeAnswer, required),
+  }
+}
+
+// Runs one implementer call on the codex harness, from the prompt lines after its first line, as start would
+// have recorded it, and returns the call's result with the environment it ran in.
+async function runCodexCall(t, lines) {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
+  useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
+  registerAdapter('codex', unknownQuotaHarness)
+  t.after(() => unregisterAdapter('codex'))
+  const { workdir } = work.prepareImplementer(args.repoRoot, args.runId, 'task-1')
+  fx.writePrompt(args, IMPLEMENT, ['You are implementing task-1: Task 1 title.', ...lines].join('\n'))
+  const dir = path.join(args.runDir, 'lanes', IMPLEMENT)
+  const info = {
+    runId: args.runId,
+    call: IMPLEMENT,
+    role: 'implementer',
+    task: 'task-1',
+    harness: 'codex',
+    model: 'gpt-codex',
+    laneModel: 'gpt-codex',
+    group: 'codex',
+    effort: 'high',
+    level: 'high',
+    timeoutSeconds: 60,
+    workdir,
+    quotaBefore: null,
+    session: null,
+    startedAt: Date.now(),
+  }
+  fs.writeFileSync(path.join(dir, 'call.json'), `${JSON.stringify(info)}\n`)
+  await calls.runCall(args.repoRoot, args.runId, IMPLEMENT)
+  return { env, done: JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8')) }
+}
 
 // Starts an implementer call on a fresh run and waits for it. `lines` is the payload after its
 // first line, or a function of the run's args that returns it.
@@ -48,16 +148,43 @@ function preparedUnit(t) {
   return { repo, args, unit }
 }
 
-test("the bin's role schemas are the workflow's, and the Designer's is fixed", () => {
+test("the bin's role schemas are the workflow's", () => {
   const source = fs.readFileSync(path.join(PLUGIN, 'workflows', 'run.workflow.js'), 'utf8')
   const block = source.slice(source.indexOf('const FINDINGS = {'), source.indexOf('const OPS_SCHEMA = {'))
   const workflow = new Function(`${block}; return { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA }`)()
   assert.deepEqual(schemas.IMPLEMENTER_SCHEMA, workflow.IMPLEMENTER_SCHEMA)
   assert.deepEqual(schemas.SUPERVISOR_SCHEMA, workflow.SUPERVISOR_SCHEMA)
   assert.deepEqual(schemas.REVIEW_SCHEMA, workflow.REVIEW_SCHEMA)
-  assert.deepEqual(schemas.DESIGNER_SCHEMA.required, ['decision', 'stage', 'decide', 'files'])
-  assert.deepEqual(Object.keys(schemas.DESIGNER_SCHEMA.properties), ['decision', 'stage', 'decide', 'files'])
-  assert.deepEqual(schemas.DESIGNER_SCHEMA.properties.stage.enum, ['approaches', 'design', 'spec', 'plan', 'question', 'blocked'])
+})
+
+test('validate gives the first problem of an answer in a few words, and null for a valid one', () => {
+  const retry = { verdict: 'retry', findings: [], ruling: 'Retry.', guidance: 'Fix it.', question: '' }
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, retry), null)
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, { ...retry, findings: 'see ruling' }), 'findings must be an array')
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, { ...retry, verdict: 'approved' }), 'verdict must be one of approve, retry, escalate, block')
+  assert.equal(
+    schemas.validate(schemas.SUPERVISOR_SCHEMA, { ...retry, findings: [{ severity: 'major', title: 't', file: 'a.js:1', evidence: 'e' }] }),
+    'findings[0].severity must be one of critical, important, minor',
+  )
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, { ...retry, findings: [{ severity: 'minor', title: 't', file: 'a.js:1' }] }), 'missing findings[0].evidence')
+  const { question, ...unanswered } = retry
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, unanswered), 'missing question')
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, 'approve'), 'must be an object')
+  assert.equal(schemas.validate({ type: ['string', 'null'] }, null), null)
+  assert.equal(schemas.validate({ type: ['string', 'null'] }, 1), 'must be a string or null')
+})
+
+test('each role schema accepts the answer its role gives, and validate throws for a keyword the schemas do not use', () => {
+  assert.equal(schemas.validate(schemas.IMPLEMENTER_SCHEMA, JSON.parse(DONE)), null)
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, JSON.parse(APPROVE)), null)
+  assert.equal(schemas.validate(schemas.REVIEW_SCHEMA, JSON.parse(READY)), null)
+  const block = { verdict: 'block', findings: [{ severity: 'critical', title: 't', file: 'a.js:3', evidence: 'e' }], ruling: 'Block.', guidance: '', question: 'Which?' }
+  assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, block), null)
+  assert.throws(() => schemas.validate({ type: 'string', minLength: 1 }, 'x'), /unsupported schema keyword: minLength/)
+  assert.throws(
+    () => schemas.validate({ type: 'object', properties: { a: { type: 'array', items: { type: 'string', pattern: '.' } } } }, { a: [] }),
+    /unsupported schema keyword: pattern/,
+  )
 })
 
 test('buildPrompt puts the role, the lane note and the CLAUDE.md files before the message', (t) => {
@@ -84,19 +211,161 @@ test('buildPrompt puts the role, the lane note and the CLAUDE.md files before th
   for (const role of ['implementer', 'supervisor', 'reviewer']) assert.ok(LANE_NOTES[role].includes(WORKDIR_RULE), role)
 })
 
+test("a lane note names the harness that runs the call, and agy's notes read as they always did", (t) => {
+  const home = tempDir(t)
+  const workdir = tempDir(t)
+  const prompt = buildPrompt({ role: 'reviewer', message: 'M', workdir, home, harness: 'codex' })
+  assert.ok(prompt.includes('You are the Aether final reviewer, run by the codex CLI rather than Claude Code.'))
+  assert.equal(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }), buildPrompt({ role: 'reviewer', message: 'M', workdir, home, harness: 'agy' }))
+  assert.ok(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }).includes(LANE_NOTES.reviewer))
+})
+
 test("status reads each group's windows, marks a group under the reserve unusable, and logs the reading", (t) => {
   const env = fx.laneEnv(t, { quota: { 'Gemini Models': [0.04, 0.9], 'Claude and GPT models': [0.9, 0.9] } })
   const { args } = fx.laneRun(t)
   const r = fx.lane(args, 'status', [], env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const agy = r.json.harnesses.agy
-  assert.deepEqual([agy.installed, agy.version, agy.groups.gemini.usable, agy.groups.claude.usable], [true, '1.3.2', false, true])
+  assert.deepEqual([agy.enabled, agy.path, agy.installed, agy.version, agy.groups.gemini.usable, agy.groups.claude.usable], [true, fx.FAKE_AGY, true, '1.3.2', false, true])
   assert.deepEqual(agy.groups.claude.windows['5h'], { remaining: 0.9, resetsAt: '2026-10-09T05:53:31Z' })
   const readings = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading')
   assert.equal(readings.length, 1)
-  assert.deepEqual([readings[0].run, readings[0].version, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', ['claude', 'gemini']])
+  assert.deepEqual([readings[0].run, readings[0].version, readings[0].harness, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', 'agy', ['claude', 'gemini']])
   const missing = fx.lane(args, 'status', [], fx.laneEnv(t, { command: '/nowhere/agy' }))
-  assert.deepEqual(missing.json, { harnesses: { agy: { installed: false, version: null, groups: {} } } })
+  assert.deepEqual(missing.json, {
+    harnesses: {
+      agy: { enabled: true, command: '/nowhere/agy', path: null, installed: false, version: null, groups: {} },
+      codex: { enabled: false, command: 'codex' },
+      grok: { enabled: false, command: 'grok' },
+      cursor: { enabled: false, command: 'cursor-agent' },
+    },
+  })
+})
+
+test('status lists every harness of the table: an enabled one with its command, path and install, a disabled one by its command only', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, {
+    mutate: (c) => {
+      c.harnesses.codex = codexEntry('/nowhere/codex')
+      c.harnesses.grok = codexEntry('/nowhere/grok', 'grok')
+    },
+  })
+  const alone = fx.lane(args, 'status', [], { ...env, AETHER_LANE_HARNESSES: 'agy' })
+  assert.equal(alone.status, 0, alone.stdout + alone.stderr)
+  assert.deepEqual([alone.json.harnesses.agy.enabled, alone.json.harnesses.agy.path, alone.json.harnesses.agy.installed], [true, fx.FAKE_AGY, true])
+  assert.deepEqual(alone.json.harnesses.codex, { enabled: false, command: '/nowhere/codex' })
+  assert.deepEqual(alone.json.harnesses.grok, { enabled: false, command: '/nowhere/grok' })
+
+  // grok is enabled but not installed: no path, no version and no groups, and no adapter is loaded for it.
+  const grok = fx.lane(args, 'status', [], { ...env, AETHER_LANE_HARNESSES: 'grok' })
+  assert.equal(grok.status, 0, grok.stdout + grok.stderr)
+  assert.deepEqual(grok.json.harnesses.grok, { enabled: true, command: '/nowhere/grok', path: null, installed: false, version: null, groups: {} })
+  assert.deepEqual(grok.json.harnesses.agy, { enabled: false, command: fx.FAKE_AGY })
+})
+
+test('status reads each enabled harness through its own adapter, and logs one reading per installed harness, named', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
+  useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
+  registerAdapter('codex', () => fakeCodex())
+  t.after(() => unregisterAdapter('codex'))
+  const out = calls.status(repo.dir, args.runId)
+  assert.deepEqual([out.harnesses.codex.enabled, out.harnesses.codex.installed, out.harnesses.codex.version, out.harnesses.codex.groups.codex.usable], [true, true, '9.1.0', true])
+  assert.deepEqual([out.harnesses.agy.enabled, out.harnesses.agy.version], [true, '1.3.2'])
+  assert.deepEqual(lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading').map((e) => e.harness).sort(), ['agy', 'codex'])
+})
+
+test('start refuses a model of a harness the lanes option does not enable, and names the table when no harness has the model', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry('/nowhere/codex')) })
+  const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
+  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest, { model: 'gpt-codex' })], { ...env, AETHER_LANE_HARNESSES: 'agy' }).json, { unavailable: 'harness' })
+  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest, { model: 'nope-1' })], env).json, { error: 'no harness in the lane table has the model nope-1' })
+  assert.equal(fs.existsSync(path.join(args.runDir, 'lanes', IMPLEMENT, 'call.json')), false)
+})
+
+test("without AETHER_LANE_HARNESSES, as where the mod runs aether-lane, status and start read the run's compiled list", (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const graphFile = path.join(args.runDir, 'graph.json')
+  const graph = JSON.parse(fs.readFileSync(graphFile, 'utf8'))
+  fs.writeFileSync(graphFile, JSON.stringify({ ...graph, lanes: { harness: 'codex', harnesses: ['codex'] } }))
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry('/nowhere/codex')) })
+  useEnv(t, env)
+  const previous = process.env.AETHER_LANE_HARNESSES
+  delete process.env.AETHER_LANE_HARNESSES
+  t.after(() => {
+    if (previous !== undefined) process.env.AETHER_LANE_HARNESSES = previous
+  })
+  const out = calls.status(repo.dir, args.runId)
+  assert.deepEqual([out.harnesses.codex.enabled, out.harnesses.agy.enabled], [true, false])
+  const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
+  const flagsOf = { role: 'implementer', task: 'task-1', effort: 'high', digest }
+  // agy's model is refused, since the run listed codex alone; codex's passes that check and stops at its install.
+  assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { ...flagsOf, model: 'gemini-3.8-flash' }), { unavailable: 'harness' })
+  assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { ...flagsOf, model: 'gpt-codex' }), { unavailable: 'not-installed' })
+})
+
+test('start takes the harness from the model, and records it in the call', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
+  useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
+  registerAdapter('codex', () => fakeCodex())
+  t.after(() => unregisterAdapter('codex'))
+  // The runner it starts is another process and cannot load this adapter: the test ends the call itself.
+  t.after(() => {
+    try {
+      calls.stop(args.repoRoot, args.runId, IMPLEMENT)
+    } catch {
+      // the repository is gone already
+    }
+  })
+  const digest = fx.writePrompt(args, IMPLEMENT, 'You are implementing task-1: Task 1 title.')
+  // codex takes the bare model id as --model; the level goes to it as its reasoning effort.
+  assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { role: 'implementer', task: 'task-1', model: 'gpt-codex', effort: 'high', digest }), {
+    started: true,
+    model: 'gpt-codex',
+    group: 'codex',
+  })
+  const info = JSON.parse(fs.readFileSync(path.join(args.runDir, 'lanes', IMPLEMENT, 'call.json'), 'utf8'))
+  assert.deepEqual([info.harness, info.laneModel, info.level, info.model, info.group], ['codex', 'gpt-codex', 'high', 'gpt-codex', 'codex'])
+})
+
+test('a harness that takes the schema in its prompt gets the answer section at the end of it, and agy does not', async (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
+  useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
+  // The fake agy answers for it, as a codex adapter would be answered, with the answer section in its prompt.
+  registerAdapter('codex', unknownQuotaHarness)
+  t.after(() => unregisterAdapter('codex'))
+  const { workdir } = work.prepareImplementer(args.repoRoot, args.runId, 'task-1')
+  fx.writePrompt(args, IMPLEMENT, `You are implementing task-1: Task 1 title.\nFAKE-AGY: answer ${DONE}`)
+  const dir = path.join(args.runDir, 'lanes', IMPLEMENT)
+  const info = {
+    runId: args.runId,
+    call: IMPLEMENT,
+    role: 'implementer',
+    task: 'task-1',
+    harness: 'codex',
+    model: 'gpt-codex',
+    laneModel: 'gpt-codex',
+    group: 'codex',
+    effort: 'high',
+    level: 'high',
+    timeoutSeconds: 60,
+    workdir,
+    quotaBefore: null,
+    session: null,
+    startedAt: Date.now(),
+  }
+  fs.writeFileSync(path.join(dir, 'call.json'), `${JSON.stringify(info)}\n`)
+  await calls.runCall(args.repoRoot, args.runId, IMPLEMENT)
+  const done = JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8'))
+  assert.deepEqual([done.status, done.lane.harness], ['ok', 'codex'], done.detail)
+  const [turn] = fx.agyTurns(env)
+  assert.deepEqual([fx.argAfter(turn.argv, '--model'), fx.argAfter(turn.argv, '-c')], ['gpt-codex', 'model_reasoning_effort=high'])
+  const section = `## Your answer\n\nEnd your answer with one JSON object that matches this schema, and nothing after it:\n\n\`\`\`json\n${JSON.stringify(schemas.IMPLEMENTER_SCHEMA, null, 2)}\n\`\`\``
+  assert.ok(turn.argv[1].endsWith(`\n\n${section}`))
+  assert.ok(turn.argv[1].includes('You are an Aether implementer, run by the codex CLI rather than Claude Code.'))
 })
 
 test('start refuses, changing nothing, when the prompt, digest, role, harness or quota does not allow the call', (t) => {
@@ -144,6 +413,8 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   assert.ok(turn.argv[1].includes(LANE_NOTES.implementer))
   assert.ok(turn.argv[1].includes(WORKDIR_RULE))
   assert.ok(turn.argv[1].endsWith(message))
+  // agy takes the schema as a flag, so its prompt carries no answer section.
+  assert.equal(turn.argv[1].includes('## Your answer'), false)
 
   const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
   assert.deepEqual(
@@ -225,6 +496,48 @@ test('a non-clean call whose /usage cannot be read afterwards is failed, not quo
   assert.match(done.detail, /^exit 1: model not found/)
   const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
   assert.deepEqual([entry.status, entry.quotaAfter], ['failed', null])
+})
+
+test('a quota failure of a harness that reports no quota is quota, and its other failures stay failed', async (t) => {
+  // codex's quota is unknown, so only the quota line of its output can say it ran dry.
+  const quota = await runCodexCall(t, ['FAKE-AGY: stderr Error: usage limit reached', 'FAKE-AGY: exit-error'])
+  assert.deepEqual([quota.done.status, quota.done.result, quota.done.detail], ['quota', null, 'quota: Error: usage limit reached'])
+  const logged = lanes.readLog(quota.env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
+  assert.deepEqual([logged.status, logged.harness, logged.detail], ['quota', 'codex', 'quota: Error: usage limit reached'])
+
+  const other = await runCodexCall(t, ['FAKE-AGY: stderr Error: model not found', 'FAKE-AGY: exit-error'])
+  assert.deepEqual([other.done.status, other.done.detail], ['failed', 'exit 1: Error: model not found'])
+})
+
+test("an answer that breaks its role's schema fails the call with the problem, and a valid answer of each role passes", async (t) => {
+  // The two answers a supervisor could give the workflow: a findings string, and a verdict outside the enum.
+  const { args } = preparedUnit(t)
+  const env = fx.laneEnv(t)
+  const call = 'task-1-1-supervise'
+  const retry ={ verdict: 'retry', findings: [], ruling: 'Retry.', guidance: 'Fix it.', question: '' }
+  for (const [fields, detail] of [
+    [{ findings: 'see ruling' }, 'invalid answer: findings must be an array'],
+    [{ verdict: 'approved' }, 'invalid answer: verdict must be one of approve, retry, escalate, block'],
+  ]) {
+    const digest = fx.writePrompt(args, call, `Review task-1.\nFAKE-AGY: answer ${JSON.stringify({ ...retry, ...fields })}`)
+    fx.lane(args, 'start', [call, ...flags(digest, { role: 'supervisor', model: 'claude-sonnet-5-5', effort: 'high' })], env)
+    const done = fx.waitDone(args, call, env)
+    assert.deepEqual([done.status, done.result, done.detail], ['failed', null, detail])
+  }
+
+  const approve = fx.writePrompt(args, call, `Review task-1.\nFAKE-AGY: answer ${APPROVE}`)
+  fx.lane(args, 'start', [call, ...flags(approve, { role: 'supervisor', model: 'claude-sonnet-5-5', effort: 'high' })], env)
+  assert.deepEqual(fx.waitDone(args, call, env).result, JSON.parse(APPROVE))
+})
+
+test('an implementer answer that breaks its schema fails before its head is added, on a harness whose quota is unknown', async (t) => {
+  const invalid = JSON.stringify({ status: 'FINISHED', summary: 'Wrote it.', head: '', tests: '1/1 pass', concerns: '', question: '' })
+  const failed = await runCodexCall(t, [`FAKE-AGY: answer ${invalid}`])
+  assert.deepEqual([failed.done.status, failed.done.result, failed.done.detail], ['failed', null, 'invalid answer: status must be one of DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, BLOCKED'])
+
+  const valid = await runCodexCall(t, [`FAKE-AGY: write src/t1/a.js one`, `FAKE-AGY: commit add a`, `FAKE-AGY: answer ${DONE}`])
+  assert.deepEqual([valid.done.status, valid.done.result.status], ['ok', 'DONE'])
+  assert.match(valid.done.result.head, /^[0-9a-f]{40}$/)
 })
 
 test('a supervisor call reviews in a disposable copy of the unit branch, then the copy is removed', (t) => {

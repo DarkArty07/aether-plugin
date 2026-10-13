@@ -21,6 +21,15 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-guard\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-guard\""
+          }
+        ]
       }
     ]
   },

@@ -57,21 +57,79 @@ const REVIEW_SCHEMA = {
   },
 }
 
-const DESIGNER_SCHEMA = {
-  type: 'object',
-  required: ['decision', 'stage', 'decide', 'files'],
-  properties: {
-    decision: {
-      type: 'string',
-      description: 'the text of "Decision", in the owner\'s language: what the round produced, the options, the recommendation, and what must be decided',
-    },
-    stage: { type: 'string', enum: ['approaches', 'design', 'spec', 'plan', 'question', 'blocked'] },
-    decide: {
-      type: 'string',
-      description: 'who closes the round: "lead — <reason>", or "owner — uncovered: <reason>", "owner — conflict: <reason>" or "owner — irreversible: <reason>"',
-    },
-    files: { type: 'string', description: 'paths and commits, or none' },
-  },
+// The keywords the role schemas use. A schema with any other keyword makes validate throw, so a later schema
+// change is noticed instead of being checked wrongly.
+const KEYWORDS = ['type', 'enum', 'required', 'properties', 'items', 'description']
+
+const TYPE_NAMES = { string: 'a string', number: 'a number', integer: 'an integer', boolean: 'a boolean', array: 'an array', object: 'an object', null: 'null' }
+
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+// Throws for a keyword the validator does not support, in the schema or in any schema under it.
+function checkKeywords(schema) {
+  for (const key of Object.keys(schema)) {
+    if (!KEYWORDS.includes(key)) throw new Error(`unsupported schema keyword: ${key}`)
+  }
+  for (const sub of Object.values(schema.properties ?? {})) checkKeywords(sub)
+  if (schema.items !== undefined) checkKeywords(schema.items)
 }
 
-module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA, DESIGNER_SCHEMA }
+function typeMatches(type, value) {
+  switch (type) {
+    case 'string':
+      return typeof value === 'string'
+    case 'number':
+      return typeof value === 'number' && Number.isFinite(value)
+    case 'integer':
+      return Number.isInteger(value)
+    case 'boolean':
+      return typeof value === 'boolean'
+    case 'array':
+      return Array.isArray(value)
+    case 'object':
+      return isPlainObject(value)
+    case 'null':
+      return value === null
+    default:
+      throw new Error(`unsupported schema type: ${type}`)
+  }
+}
+
+// The field's name in a message: where is the path so far, and the empty path is the answer itself.
+const fieldPath = (where, key) => (where === '' ? key : `${where}.${key}`)
+
+// The first problem of value under schema, in a few words, or null. where is the path of value so far.
+function problemOf(schema, value, where) {
+  const lead = where === '' ? '' : `${where} `
+  const types = schema.type === undefined ? [] : [].concat(schema.type)
+  if (types.length > 0 && !types.some((type) => typeMatches(type, value))) {
+    return `${lead}must be ${types.map((type) => TYPE_NAMES[type] ?? type).join(' or ')}`
+  }
+  if (schema.enum !== undefined && !schema.enum.includes(value)) return `${lead}must be one of ${schema.enum.join(', ')}`
+  if (isPlainObject(value)) {
+    for (const field of schema.required ?? []) {
+      if (!Object.hasOwn(value, field)) return `missing ${fieldPath(where, field)}`
+    }
+    for (const [key, sub] of Object.entries(schema.properties ?? {})) {
+      if (!Object.hasOwn(value, key)) continue
+      const problem = problemOf(sub, value[key], fieldPath(where, key))
+      if (problem !== null) return problem
+    }
+  }
+  if (Array.isArray(value) && schema.items !== undefined) {
+    for (let i = 0; i < value.length; i++) {
+      const problem = problemOf(schema.items, value[i], `${where}[${i}]`)
+      if (problem !== null) return problem
+    }
+  }
+  return null
+}
+
+// The first problem of an answer under a role schema, in a few words, or null when the answer is valid.
+// Throws for a keyword the validator does not support.
+function validate(schema, value) {
+  checkKeywords(schema)
+  return problemOf(schema, value, '')
+}
+
+module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA, validate }

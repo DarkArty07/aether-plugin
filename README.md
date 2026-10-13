@@ -1,21 +1,40 @@
 # Aether Plugin
 
-A plugin for Claude Code that adds an opt-in **Aether mode**: a parallel swarm of agents that implements an approved plan.
+A plugin for Claude Code that adds an opt-in **Aether mode**: an accountable orchestrator, the Lead, that turns the owner's intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans the owner pays for, and reports in one brief.
 
-- **The Lead** is the main session, on Sonnet at `xhigh`. It holds the conversation with the owner, explores, chooses the route and runs the execution. It decides as the owner's delegate: it closes the Designer's rounds with the owner's intent, and brings the owner only what that intent does not settle. It may design and implement spikes and bounded work.
-- **The Designer** is the agent `aether:designer`, on Opus at `xhigh`, in its own context. It designs with [superpowers](https://github.com/obra/superpowers): approaches, design, spec and plan. Among the agents it has the final say on design. Only the Designer writes specs and plans.
+Aether serves five goals, **RADAR**:
+- **Rápido** (fast): fast, cheap models do the bulk of the work, and nothing iterates without end;
+- **Autónomo** (autonomous): the owner is not asked about trivial things, and every irreversible step reaches them in one list;
+- **Delegación** (delegation): work goes to other coding harnesses (agy, Codex, Grok, Cursor) while their quota lasts;
+- **Asequible** (affordable): each role runs on the cheapest model and effort that does it well;
+- **Robusto** (robust): quality code, checked by tests, evidence and independent reviews.
+
+The roles:
+- **The Lead** is the main session, on Sonnet at `xhigh`, and the owner's right hand, not a messenger. It owns the outcome: a good design, a correct implementation and a correct deployment. It understands the intent, writes the spec, decides as the owner's delegate, chooses whether to do the work itself or hand it to the system, and tells the owner of better options, scope and costs. Its work shows in its briefs and reports.
+- **The Writer** (`aether:writer`, Sonnet at `xhigh`) writes the plan and the tasks from the Lead's spec.
+- **The Judge** (`aether:judge`, Opus at `high`, read-only) reviews the spec, the plan and the tasks, and rules `approve`, `revise` or `reject`. Sonnet writes; Opus decides.
 - **The swarm:** when parallel work pays off, the Lead hands the plan to `/aether:run`. In the swarm:
   - implementers work on Haiku by default and move up to Sonnet or Opus when a task is critical or keeps failing;
-  - a supervisor on Sonnet reviews every attempt;
-  - approved units merge one at a time;
-  - Opus reviews the whole run;
+  - a supervisor on Sonnet reviews every attempt, and grades each criterion from evidence;
+  - approved units merge one at a time, and only a test failure that is new undoes a merge;
+  - a unit that fails the same way again stops, and asks for a split;
+  - a final review, on Opus or Sonnet by the run's risk, covers the whole run;
   - code deletes every unit worktree and branch as soon as it is no longer used.
+- **Lanes** run the swarm's calls on other coding harnesses while their quota lasts: agy today, and Codex, Grok and Cursor once the owner turns each one on.
 
-Without the plugin, Claude Code keeps working in normal mode, with superpowers alone. Aether Plugin is the successor to [Aether Agents](https://github.com/DarkArty07/Aether-Agents): the same method, rebuilt on a harness made for software.
+Specs, plans and tasks follow the layout of [GitHub Spec Kit](https://github.com/github/spec-kit), `specs/NNN-<topic>/`, through an Aether preset shipped in the plugin. Spec Kit's own CLI is not required, and neither is superpowers. Plain `claude` stays normal mode. Aether Plugin is the successor to [Aether Agents](https://github.com/DarkArty07/Aether-Agents): the same method, rebuilt on a harness made for software.
 
 ## Status
 
-Version 0.7: the Lead on Sonnet holds the conversation and decides as the owner's delegate, the Designer on Opus writes specs and plans, each plan task sets its implementer's effort, and lanes run the swarm's calls and the Designer's rounds on other coding plans while their quota lasts. With the owner's permission, the Lead works for hours within ceilings of time and cost and ends with a brief, and it never asks again for what the owner authorized ([autonomy spec](docs/superpowers/specs/2026-10-09-lead-autonomy-design.md)). Since 0.7, Aether installs with Claude Code's own plugin commands and starts with `claude --agent aether:lead --effort xhigh`; plain `claude` stays normal mode ([installable plugin spec](docs/superpowers/specs/2026-10-09-installable-plugin-design.md)).
+Version 0.8: RADAR ([roadmap](docs/roadmap/2026-10-10-radar.md)). What changed since 0.7:
+- **The Lead is the accountable orchestrator.** It writes the spec; the Writer, on Sonnet, writes the plan and the tasks; the Judge, on Opus, reviews them. The Writer and the Judge replace the Designer, the most expensive link of 0.7.
+- **Spec Kit replaces superpowers.** Specs, plans and tasks live in `specs/NNN-<topic>/`, with the Aether preset, and superpowers is no longer a dependency.
+- **One list for the owner.** Irreversible actions, and the choices only the owner can make, reach the owner as one list at the top of every brief («Espera tu sí»). aether-guard records every irreversible Bash command that no grant covers in that list.
+- **Fewer wasted rounds.** A merge is blocked only by a test that fails and did not fail before the run. A unit stops when the same failure repeats. The final review follows the run's risk. Reviews grade each criterion from evidence, and flag added lines that look unfinished.
+- **Delegation.** Lanes can run on Codex, Grok and Cursor besides agy, each turned on by the owner, with the owner's credentials kept out of their environment.
+- **RADAR in the report.** `aether-report` gives a figure for each goal, and the lanes by harness.
+
+Version 0.7 made the Lead decide as the owner's delegate and work for hours within ceilings of time and cost ([autonomy spec](docs/superpowers/specs/2026-10-09-lead-autonomy-design.md)), and made Aether install with Claude Code's own plugin commands and start with `claude --agent aether:lead --effort xhigh`; plain `claude` stays normal mode ([installable plugin spec](docs/superpowers/specs/2026-10-09-installable-plugin-design.md)).
 
 **Trial 3** ([evaluation](docs/evaluations/2026-10-08-trial-3.md)) ran the same design request with the Lead and Designer split and with an Opus main session:
 - the split's design captured all ten items of the owner's hidden intent, against nine;
@@ -55,41 +74,44 @@ Aether mode was faster and cheaper again, but its quality was not equal. The tra
 
 The owner judged that the normal build's extra quality does not justify its time and cost. The next work raises Aether's quality with techniques that keep its time and cost. The evaluation [lists them](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost).
 
-The design is [docs/superpowers/specs/2026-10-07-aether-plugin-design.md](docs/superpowers/specs/2026-10-07-aether-plugin-design.md).
+The first design is [docs/superpowers/specs/2026-10-07-aether-plugin-design.md](docs/superpowers/specs/2026-10-07-aether-plugin-design.md); the [RADAR roadmap](docs/roadmap/2026-10-10-radar.md) is the current direction.
 
 ## How it works
 
 ```text
-owner ── confirms the Lead's understanding, may give permission to work for hours, reviews the brief
+owner ── states the intent, may give permission to work for hours, answers one list, reviews the brief
   │
-Lead (main session, Sonnet, xhigh): conversation, route, decisions as the owner's delegate, execution
-  │  hand-off once the owner confirms the understanding
+Lead (main session, Sonnet, xhigh): the intent, the spec, the route, decisions as the owner's delegate, the outcome
+  │  specs/NNN-<topic>/spec.md
   ▼
-Designer (aether:designer, Opus, xhigh): approaches, design, spec, plan
-  │  writes the plan with Aether fields: tier and effort, area, owned files, dependencies
-  │  aether-plan check / compile
+Writer (aether:writer, Sonnet, xhigh) ⇄ Judge (aether:judge, Opus, high, read-only)
+  │  plan.md and tasks.md, with Aether fields: tier and effort, area, owned files, dependencies
+  │  aether-plan check / compile (and the run's test baseline)
   ▼
 /aether:run (dynamic workflow)
-  ├─ wave 1: units in parallel, each in its own git worktree
+  ├─ wave 1: units in parallel, each in its own git worktree, native or on a lane
   │    implementer (haiku → sonnet → opus) ⇄ supervisor (sonnet): approve, retry, escalate or block
-  ├─ merges, one at a time, with the tests run at every merge
+  │    the same findings three times, or two attempts without a report, stop the unit
+  ├─ merges, one at a time; only a test failure outside the baseline undoes one
   ├─ wave 2 …
-  ├─ final review (opus) of everything merged
+  ├─ final review of everything merged (opus or sonnet, by the run's risk)
   └─ cleanup: no unit worktree or aether/* branch is left behind
   │
-aether-report: speed, cost (OpenRouter prices) and quality
+aether-report: speed, cost (OpenRouter prices), quality, lanes by harness, and the RADAR figures
 aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 ```
 
 | Piece | What it does |
 |---|---|
-| `using-aether` skill | Injected at session start. The Lead's rules: the routes, the hand-off to the Designer, deciding with the Designer as the owner's delegate, fallbacks, autonomous runs and the execution method |
-| `aether:designer` | The Designer agent: Opus at `xhigh`, with a 1-hour prompt cache. It does the architectural design and writes the specs and plans |
-| `aether-voice` | Prints the owner's own words from a session, for the Designer to read; it writes no file |
-| `aether-guard` | A PreToolUse hook that, in an Aether session, refuses Write, Edit, MultiEdit and NotebookEdit under `docs/superpowers/specs/` and `docs/superpowers/plans/` to every agent but the Designer, and on the autonomy registry and run states to every agent. In any other session it allows everything |
+| `using-aether` skill | Injected at session start. The Lead's rules: its role, RADAR, the method on Spec Kit's layout, writing with the Writer and judging with the Judge, assumptions, the owner's list, fallbacks, autonomous runs and the execution method |
+| `aether:writer` | The Writer agent: Sonnet at `xhigh`. It writes `plan.md` and `tasks.md` from the Lead's spec, with the Aether fields, and checks them with `aether-plan check` |
+| `aether:judge` | The Judge agent: Opus at `high`, read-only. It reviews a spec, a plan or tasks, and rules `approve`, `revise` or `reject`, with at most ten findings |
+| Aether preset | `plugins/aether/speckit/`: Spec Kit's specify, plan, tasks and constitution commands adapted to Aether, also shipped as the skills `aether:specify`, `aether:plan`, `aether:tasks` and `aether:constitution` |
+| `aether-voice` | Prints the owner's own words from a session, so a quote can be checked; it writes no file |
+| `aether-guard` | A PreToolUse hook. In an Aether session it refuses Write, Edit, MultiEdit and NotebookEdit on specs, plans and tasks (`specs/NNN-<topic>/`, and the old `docs/superpowers/`) and on the constitution to every agent but the Lead and the Writer, and on the autonomy registry and run states to every agent. Before Bash, it records an irreversible command that no grant covers in the owner's list, `.aether/pending.jsonl`, and refuses it when `AETHER_IRREVERSIBLE=enforce`. In any other session it allows everything |
 | `aether-autonomy` | The owner's standing authorizations, verified against their own words (`grant`, `revoke`, `check`, `list`), and an autonomous run's state and ceilings (`start`, `spend`, `status`, `end`) |
 | `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |
-| `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
+| `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves, and records the run's test baseline. It reads a Spec Kit `tasks.md`, and the `spec.md` beside it. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
 | `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `remove` (saves unmerged work as a patch), `sweep` |
 | `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review, and cleanup in `finally` |
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
@@ -112,24 +134,30 @@ See [decision A30](docs/decisions.md).
 
 ### Lanes
 
-A lane runs Aether's own calls on another coding plan the owner pays for, while that plan's quota lasts. The first is agy, the Antigravity CLI. See the [lanes spec](docs/superpowers/specs/2026-10-08-lanes-design.md).
+A lane runs Aether's own calls on another coding plan the owner pays for, while that plan's quota lasts. agy, the Antigravity CLI, was the first; Codex, Grok and Cursor have adapters too. See the [lanes spec](docs/superpowers/specs/2026-10-08-lanes-design.md) and phase 2b of the [RADAR roadmap](docs/roadmap/2026-10-10-radar.md).
 
-- **Who takes a call.** `plugins/aether/config/lanes.json` names one external model per native model and role: Gemini 3.8 Flash for Haiku implementers, and agy's own Sonnet 5.5 and Opus 5.5 for the rest. agy's `high` runs Claude's `high` and `xhigh`; calls at `max`, and `ops`, are always native.
-- **Quota.** A group is used while both its windows, 5 hours and weekly, stay above a 5% reserve.
-- **Fallback.** When agy is missing, out of quota or fails, the same call runs on Aether's own agent, without spending the ladder.
-- **Containment.** agy runs with `--dangerously-skip-permissions` in the unit's worktree. Git checks catch changes outside the task's Owns, to the integration worktree and branch, and from read-only roles. It is not contained beyond that; the owner accepted this for 0.4.0.
-- **The Designer** can run its rounds on agy too, each round a transaction that may change only specs and plans.
-- **Report.** `aether-report` shows each group's quota consumed and the dollars at list price, apart from native Claude.
+- **Which harnesses.** The plugin's `harnesses` option lists the harnesses lanes may use, in order of preference; the default is `agy`. A call goes to the first one whose CLI is installed and whose table entry has a model for the call's native model and role.
+- **Who takes a call.** `plugins/aether/config/lanes.json` names the external models of each harness. For agy: Gemini 3.8 Flash for Haiku implementers, and agy's own Sonnet 5.5 and Opus 5.5 for the rest. agy's `high` runs Claude's `high` and `xhigh`; calls at `max`, and `ops`, are always native. Codex, Grok and Cursor have entries without models: their model ids depend on your account and the CLI's version, so you add them once you have checked them (below).
+- **Quota.** An agy group is used while both its windows, 5 hours and weekly, stay above a 5% reserve. Codex, Grok and Cursor report no quota: each is used until a call fails for quota, which leaves it dry until the next wave.
+- **Fallback.** When a harness is missing, out of quota or fails, the same call runs on Aether's own agent, without spending the ladder. `aether-plan compile` names each enabled harness that takes no call, and why.
+- **Containment.** A lane works without permission prompts in the unit's worktree: agy with `--dangerously-skip-permissions`, Codex in its `workspace-write` sandbox, Grok with `--always-approve`, Cursor with `--force`. Git checks catch changes outside the task's Owns, to the integration worktree and branch, and from read-only roles. The lane's environment drops variables named like tokens, keys and secrets, points `gh`, `npm`, `docker`, `gcloud`, `aws` and `kubectl` away from your credentials, and sets git's `protocol.allow` to `never`, so a plain git command in the lane cannot reach a remote. Your home directory stays, because each CLI keeps its own login there. So this prevents accidents, not an agent that overrides these settings or goes looking for your files. Nothing undoes a network action, so you turn on each harness yourself.
+- **Report.** `aether-report` shows each group's quota consumed and the dollars at list price, apart from native Claude, and each harness's calls.
 - **Off for one run:** `aether-plan compile <plan.md> --no-lanes`.
 - **Off by default.** Lanes run only when the plugin's `lanes` option is on (see Options).
 - **Linux only.** Lanes need Linux, because stopping a lane's processes reads `/proc`.
+
+**Turning on Codex, Grok or Cursor.** Their adapters follow Spec Kit's command lines, but no call has run on a real CLI yet. For each one:
+1. find its models in the CLI's own list, and make one real headless call per role with the command line of its adapter (`plugins/aether/lib/harness/<name>.js`); correct the adapter's field names if the CLI's JSON differs;
+2. copy `plugins/aether/config/lanes.json`, add the models to the harness's entry, each with `group`, `replaces`, `roles` and `levels` like agy's, and set `AETHER_LANES_CONFIG` to the copy in the shell that starts Claude Code. Codex takes the level as its reasoning effort; Grok and Cursor ignore it for now;
+3. add the harness to the `harnesses` option, such as `agy,codex`.
 
 ### Autonomy
 
 The Lead decides as the owner's delegate, and the owner's reviews are two: the permission to work at the start, and the brief at the end. See the [autonomy spec](docs/superpowers/specs/2026-10-09-lead-autonomy-design.md).
 
-- **Deciding.** The Designer's reply says who closes each round (`Decide: lead` or `owner`). The Lead closes what the owner's intent covers. Only what it does not cover, what conflicts with it, and unauthorized irreversible actions reach the owner. Failures with a defined fallback, such as a lane out of quota, never do.
+- **Deciding.** The Lead closes what the owner's intent covers, and rules on the Judge's findings within it. Only what the intent does not cover, what conflicts with it, and irreversible actions that no grant covers reach the owner, as one list at the top of the brief («Espera tu sí»). Failures with a defined fallback, such as a lane out of quota, never do.
 - **Standing authorizations.** When the owner authorizes a class of irreversible action in general words, the Lead records it with `aether-autonomy grant`, quoting the owner. The quote is checked against the owner's own messages in the session's transcript, and checked again when read. The classes are `merge-main`, `push`, `publish`, `deploy`, `delete`, `credentials` and `paid-call`. Everything local and reversible proceeds without asking.
+- **Irreversible commands.** In an Aether session, aether-guard reads every Bash command, the agents' included. A push, a `gh pr merge`, a publish, a deploy, a forced delete or a credentials command that no grant covers is appended to `.aether/pending.jsonl`, the owner's list, with secrets in its arguments redacted. A local `git merge` is not recorded: git undoes it, and the push that would publish it is recorded. By default it only records them, while the guard is being proven; with `AETHER_IRREVERSIBLE=enforce` in the shell that starts Claude Code, it also refuses them.
 - **Autonomous runs.** The owner's permission to work for hours starts a run (`aether-autonomy start`), with ceilings of 8 hours and US$ 50 unless the owner names others. The Lead keeps a diary, keeps working while work remains, stops when done, at a ceiling or honestly, and writes a brief: what it did, decided and found, what waits for the owner's yes, what it did not finish, proposals, and time and cost.
 - **Cost.** A run's figure covers the swarm and the lanes, as `aether-report` prices them; the Lead's own turns are not added up. The time ceiling is the real guard.
 - **Permissions.** A permission prompt stops a run like a question. Start a session meant for an autonomous run with a permission mode or allow rules that cover its tools; Aether never turns permissions off. The exception is the workflow's own `aether-wt` and `aether-lane` commands, which the mod runs without the session's permission rules (see Ops without a model).
@@ -142,7 +170,7 @@ The Lead decides as the owner's delegate, and the owner's reviews are two: the p
 - Claude Code 2.1.294 or later;
 - Node.js 22;
 - git 2.36 or later;
-- superpowers, which Claude Code installs with Aether from its official marketplace.
+- for lanes, the CLI of each harness you turn on: `agy`, `codex`, `grok` or `cursor-agent`.
 
 ### Install
 
@@ -150,9 +178,9 @@ The Lead decides as the owner's delegate, and the owner's reviews are two: the p
 
 Add `--config lanes=true` to turn the lanes on (see Options). In a session, `/plugin install aether --marketplace DarkArty07/aether-plugin` does the same and lets you choose the scope.
 
-If Claude Code says that `superpowers@claude-plugins-official` is not installed, add Claude Code's official marketplace, which it adds by itself at your first interactive session, and install again:
+Aether 0.8 no longer needs superpowers. If you keep it for other work, it still enters every session where it is enabled and asks for its own skills, so turn it off for an Aether session:
 
-    claude plugin marketplace add anthropics/claude-plugins-official
+    claude --agent aether:lead --effort xhigh --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'
 
 ### Start
 
@@ -170,7 +198,7 @@ Plain `claude` then starts Aether mode there, and `claude --agent claude` starts
 
 Plain `claude` stays normal mode: the plugin is dormant there. Its hooks do nothing, its usage meter records nothing, and its agents are not offered.
 
-Then work as you would with superpowers. The Lead decides the design with your intent and stops at the plan with a short brief, recommending one of three ways to execute it: superpowers' two (subagent-driven or native) and the swarm. Give it permission to work for hours, and it runs to the end, chooses the method itself, and gives you the brief. The swarm needs:
+Then tell the Lead what you want. It writes back its understanding, writes the spec, has the Writer write the plan and the tasks and the Judge review them, and stops at the plan with a short brief that opens with what waits for your yes and recommends how to build it: itself, one subagent, or the swarm. Give it permission to work for hours, and it runs to the end, chooses the method itself, and gives you the brief. The swarm needs:
 - **a plan with Aether fields** on every task:
 
       **Aether:**
@@ -180,7 +208,7 @@ Then work as you would with superpowers. The Lead decides the design with your i
       - Depends on: none
 
 - **an `## Aether Execution` section**, holding the test command, the ladder and the agent budget;
-- **a separate integration worktree on a feature branch.** The Lead creates it with superpowers' `using-git-worktrees`;
+- **a separate integration worktree on a feature branch.** The Lead creates it with `git worktree add <path> -b <branch>`;
 - **permissions that let the agents run `git`, `aether-wt` and the tests**, and edit files under `.aether/worktrees/`, without asking each time.
 
 ### What Aether adds to a normal session
@@ -192,11 +220,14 @@ Measured on Claude Code 2.1.296 with Aether 0.7.0, in a session started without 
 - the eight commands of `bin/` are on the Bash tool's `PATH`;
 - each session start, and each `Write`, `Edit`, `MultiEdit` or `NotebookEdit` call, runs one short `node` process that finds no Aether session and exits.
 
-Nothing is injected, refused, recorded or written.
+Nothing is injected, refused, recorded or written. Version 0.8, not yet measured this way, adds two things: the entries of the four preset skills (`aether:specify`, `aether:plan`, `aether:tasks` and `aether:constitution`) in the skills list, whose descriptions are 459 characters; and the same short `node` process before each `Bash` call.
 
 ### Options
 
-`lanes`, off by default, runs Aether's calls on agy while its quota lasts. agy runs with `--dangerously-skip-permissions` and spends another plan's quota, so you turn it on yourself. Lanes run only on Linux. Turn it on at install with `--config lanes=true`, or later in `/plugin` → Installed → aether → Configure options. `claude plugin configure aether@aether-plugin` shows the options and which are unset.
+- `lanes`, off by default, runs Aether's calls on other coding harnesses while their quota lasts. They work without permission prompts and spend another plan's quota, so you turn it on yourself. Lanes run only on Linux.
+- `harnesses`, `agy` by default, lists the harnesses lanes may use, comma-separated, in order of preference: `agy`, `codex`, `grok`, `cursor`. Add one only once its models are in the lane table (see Lanes).
+
+Set them at install with `--config lanes=true`, or later in `/plugin` → Installed → aether → Configure options. `claude plugin configure aether@aether-plugin` shows the options and which are unset.
 
 ### What you set yourself
 
@@ -208,13 +239,15 @@ A plugin cannot set these, so you do:
 | Dynamic workflows, for the swarm | Nothing on most paid plans. On Pro, turn on Dynamic workflows in `/config` once |
 | No advisor in Aether mode (each call rereads the whole conversation, uncached) | Nothing unless you configured one. If you did, run `/advisor off` |
 | Permissions for the swarm | Allow rules for `git`, `aether-wt`, `aether-lane` and the test command, and edits under `.aether/worktrees/` |
-| superpowers | Nothing when Claude Code's official marketplace is added, as it is after your first interactive session. Otherwise: `claude plugin marketplace add anthropics/claude-plugins-official` |
+| superpowers off in Aether sessions, if you keep it for other work | `--settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'` in the start command |
+| Irreversible commands refused, not only recorded | `AETHER_IRREVERSIBLE=enforce` in the shell that starts Claude Code |
+| Lanes on Codex, Grok or Cursor | Their models in your copy of the lane table, `AETHER_LANES_CONFIG`, and the `harnesses` option (see Lanes) |
 
 ### Platforms
 
 | Platform | Status | What degrades |
 |---|---|---|
-| Linux, WSL included | Supported, verified | Nothing. Lanes run when the option is on and `agy` is installed |
+| Linux, WSL included | Supported, verified | Nothing. Lanes run when the option is on and a harness's CLI is installed |
 | macOS | Supported by design: Aether needs only Node.js 22 and git. Not verified on a Mac | Lanes stay off: they read `/proc` |
 | Windows, native | Not verified, not claimed. Hooks run through Git Bash | Lanes stay off |
 
@@ -240,7 +273,7 @@ Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AE
 - the lane log is kept for 30 days;
 - `sessions/` marks the Aether sessions, kept for 30 days.
 
-The autonomy registry and run states live in the repository itself, under `.aether/autonomy/` in its main checkout.
+The autonomy registry and run states live in the repository itself, under `.aether/autonomy/` in its main checkout, and so does the owner's list of irreversible commands, `.aether/pending.jsonl`.
 
 ### Upgrading from 0.6
 
@@ -291,11 +324,12 @@ Node.js 22 with no dependencies. The workflow's tests run its script in a harnes
 
 ## Documentation
 
+- [RADAR roadmap](docs/roadmap/2026-10-10-radar.md): the five goals, the owner's list, and the phases of version 0.8.
 - [Design spec](docs/superpowers/specs/2026-10-07-aether-plugin-design.md): components, the swarm executor, routing, cleanup and measurement.
-- [Plans](docs/superpowers/plans/): Plan 1 (foundation), Plan 2 (swarm) and Plan 3 (measurement and trial), each with its review and execution record.
+- [Specs](docs/superpowers/specs/) and [plans](docs/superpowers/plans/) up to 0.7, written with superpowers: Plan 1 (foundation), Plan 2 (swarm) and Plan 3 (measurement and trial), each with its review and execution record, and the later specs. New work goes to `specs/NNN-<topic>/`.
 - [Evaluations](docs/evaluations/): the trials against normal mode, with their fixtures, harnesses and results. Trial 2 keeps both builds, playable.
 - [Claude Code research](docs/claude-code-research.md): the verified capabilities and limits this design relies on, and the prices.
-- [Decisions](docs/decisions.md): D1–D15 from the first design session, with their updates, and A1–A10 from the spec.
+- [Decisions](docs/decisions.md): D1–D15 from the first design session, with their updates, and A1–A38 from the specs and the RADAR roadmap.
 - [Aether Agents retrospective](docs/aether-retrospective.md): what Aether was, and what failed and why.
 
 ## Lessons from Aether Agents
@@ -320,25 +354,27 @@ Aether Plugin answers each failure:
 2. **Bounded autonomy.** Every run has an agent budget and a verifiable definition of done. Work that hits a real question comes back blocked, with the question.
 3. **The task chooses the model and its effort.** Each task's Tier line sets the start. A failed attempt runs again at `xhigh`, and then on a stronger model.
 4. **Contracts first, then the swarm.** Plans give interfaces, failing tests and file ownership. Units are independent by default, and every dependency needs a reason.
-5. **superpowers is the method.** Aether adds only the multi-agent organization.
+5. **Sonnet writes, Opus decides.** The expensive model judges the spec, the plan and the work; the cheaper ones write them.
+6. **One list for the owner.** What is irreversible, and what only the owner can choose, waits for the owner's yes in one list. Everything else proceeds, and every failure with a fallback is handled without asking.
+7. **RADAR.** Every change is weighed against the five goals: fast, autonomous, delegated, affordable and robust.
 
 ## Roadmap
 
-**Next:** raise Aether's quality at its current time and cost, with [trial 2's techniques](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost), then rerun trial 2 in Aether mode.
+**Now:** the [RADAR roadmap](docs/roadmap/2026-10-10-radar.md). Version 0.8 builds its phases 1, 2a and 2b. What remains waits for the owner: a real call per harness and role on Codex, Grok and Cursor, and turning each one on; a measured design session with the Writer and the Judge against the 0.7 Designer; and a rerun of trial 2 in Aether mode with [its techniques](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost).
 
 **Effort.** Since version 0.3.0, each plan task sets its implementer's effort on its Tier line, by the task's complexity ([spec](docs/superpowers/specs/2026-10-08-effort-per-task-design.md)).
-- The default is `xhigh` on every model. The Designer lowers it where the tests pin the work, and names `max` only with a reason.
+- The default is `xhigh` on every model. The Writer lowers it where the tests pin the work, and names `max` only with a reason.
 - A failed attempt runs again at `xhigh`, then moves up the ladder.
 - The supervisor reviews at `high`, and a task's Review line can raise it.
 - `aether-report` shows the cost and the time of each role, model and effort. `scripts/check-effort.js` checks, from a session's transcripts, that each agent ran at the effort its call asked for.
 
 These are deferred until the trials justify them:
-- non-Anthropic models through the Aether Router;
+- the Judge on a lane, and Codex as a second opinion;
+- hiding the preset skills in normal sessions;
 - notifications;
 - several parallel attempts on critical units;
-- risk-based review;
 - marketplace publishing.
 
 ## License
 
-Aether Plugin is open source under the [MIT License](LICENSE). The implementer, supervisor and reviewer agents adapt prompt templates of [superpowers](https://github.com/obra/superpowers), also under the MIT License; [`plugins/aether/NOTICE`](plugins/aether/NOTICE) has the details. The plugin directory carries its own copy of the license.
+Aether Plugin is open source under the [MIT License](LICENSE). The implementer, supervisor and reviewer agents adapt prompt templates of [superpowers](https://github.com/obra/superpowers), the Aether preset adapts [GitHub Spec Kit](https://github.com/github/spec-kit)'s templates, and several pieces port ideas from [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode), all under the MIT License; [`plugins/aether/NOTICE`](plugins/aether/NOTICE) has the details. The plugin directory carries its own copy of the license.

@@ -4,8 +4,8 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { PLAN_BIN, makeRepo, writePlan, runBin, tempDir, NO_LANES_CONFIG, compile } = require('./helpers.js')
-const { task, plan } = require('./plan-fixtures.js')
+const { PLAN_BIN, makeRepo, writePlan, runBin, tempDir, NO_LANES_CONFIG, compile, commitIn } = require('./helpers.js')
+const { task, plan, specKitTasks } = require('./plan-fixtures.js')
 const { CONFIG_FILE, loadConfig, lanesArgs } = require('../plugins/aether/lib/lanes.js')
 
 test('check prints the waves of a valid plan', (t) => {
@@ -34,7 +34,8 @@ test('compile writes the graph, briefs and state for the integration branch', (t
   assert.match(args.runId, /^\d{8}-\d{6}-[0-9a-f]{4}$/)
   assert.equal(args.repoRoot, repo.dir)
   assert.equal(args.runDir, path.join(repo.dir, '.aether', 'runs', args.runId))
-  assert.deepEqual(args.integration, { branch: 'feature/x', worktree: repo.dir, base: repo.git('rev-parse', 'HEAD') })
+  const head = repo.git('rev-parse', 'HEAD')
+  assert.deepEqual(args.integration, { branch: 'feature/x', worktree: repo.dir, base: head, firstBase: head })
   assert.deepEqual(args.waves, [['task-1', 'task-3'], ['task-2']])
   assert.equal(args.testCommand, 'true')
   assert.deepEqual(args.ladder, { haiku: 2, sonnet: 2, opus: 1 })
@@ -106,12 +107,63 @@ test('compile warns when the integration worktree is the main checkout, and not 
   let r = runBin(PLAN_BIN, ['compile', file], repo.dir)
   assert.equal(r.status, 0, r.stdout)
   assert.match(r.stderr, /warning: the integration worktree is the main checkout/)
+  assert.ok(r.stderr.includes('Prefer a separate integration worktree (git worktree add <path> -b <branch>).\n'), r.stderr)
+  assert.doesNotMatch(r.stderr, /using-git-worktrees/)
   const linked = path.join(repo.dir, '.worktrees', 'feature-y')
   repo.git('worktree', 'add', '-q', '-b', 'feature/y', linked)
   r = runBin(PLAN_BIN, ['compile', path.join(linked, 'plan.md')], linked)
   assert.equal(r.status, 0, r.stdout)
   assert.equal(r.json.integration.worktree, linked)
   assert.doesNotMatch(r.stderr, /main checkout/)
+})
+
+test('compile takes a spec.md beside a Spec Kit tasks.md as the spec, when the plan names none', (t) => {
+  const repo = makeRepo(t)
+  const dir = path.join(repo.dir, 'specs', '001-demo')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'spec.md'), '# Demo\n')
+  const file = path.join(dir, 'tasks.md')
+  fs.writeFileSync(file, specKitTasks([task(1), task(2, { depends: 'Task 1 — uses it' }), task(3)], { spec: null }))
+  const checked = runBin(PLAN_BIN, ['check', file], repo.dir)
+  assert.equal(checked.status, 0, checked.stdout)
+  assert.deepEqual(checked.json, { ok: true, tasks: 3, waves: [['task-1', 'task-3'], ['task-2']], warnings: [] })
+  const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.spec, 'specs/001-demo/spec.md')
+  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Spec: specs\/001-demo\/spec\.md$/m)
+})
+
+test('compile reads a Spec line that links a file beside the plan as that file, named from the worktree', (t) => {
+  // The Aether preset's tasks.md links its spec as [spec.md](spec.md), relative to the plan's folder.
+  const repo = makeRepo(t)
+  const file = path.join(repo.dir, 'specs', '004-linked', 'tasks.md')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(path.join(path.dirname(file), 'spec.md'), '# Demo\n')
+  fs.writeFileSync(file, specKitTasks([task(1), task(2)], { spec: '**Spec:** [spec.md](spec.md)' }))
+  const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.spec, 'specs/004-linked/spec.md')
+  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Spec: specs\/004-linked\/spec\.md$/m)
+})
+
+test('compile keeps a Spec line over a spec.md beside the plan, and names no spec when there is neither', (t) => {
+  const repo = makeRepo(t)
+  const named = path.join(repo.dir, 'specs', '002-named', 'tasks.md')
+  fs.mkdirSync(path.dirname(named), { recursive: true })
+  fs.writeFileSync(path.join(path.dirname(named), 'spec.md'), '# Demo\n')
+  fs.writeFileSync(named, specKitTasks([task(1), task(2)], { spec: '**Spec:** `docs/spec.md`' }))
+  let r = runBin(PLAN_BIN, ['compile', named], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.spec, 'docs/spec.md')
+  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Spec: docs\/spec\.md$/m)
+
+  const bare = path.join(repo.dir, 'specs', '003-bare', 'tasks.md')
+  fs.mkdirSync(path.dirname(bare), { recursive: true })
+  fs.writeFileSync(bare, specKitTasks([task(1), task(2)], { spec: null }))
+  r = runBin(PLAN_BIN, ['compile', bare], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.spec, null)
+  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Spec: not named in the plan$/m)
 })
 
 test('compile --run on an existing run keeps its first compile time and archives the last result', (t) => {
@@ -197,6 +249,25 @@ test('compile gives no lanes when the harness is missing or there is no table', 
   assert.equal(compile(repo, plan([task(1)])).lanes, null)
 })
 
+test('compile names each enabled harness that gives no call, and why, on stderr', (t) => {
+  const repo = makeRepo(t)
+  const md = writePlan(repo.dir, plan([task(1)]))
+  const file = laneTable(t, executable)
+  const bin = tempDir(t)
+  for (const name of ['codex', 'grok']) {
+    fs.writeFileSync(path.join(bin, name), '#!/bin/sh\nexit 0\n')
+    fs.chmodSync(path.join(bin, name), 0o755)
+  }
+  const env = { AETHER_LANES_CONFIG: file, AETHER_LANE_HARNESSES: 'codex,agy,cursor', PATH: `${bin}${path.delimiter}${process.env.PATH}` }
+  const r = runBin(PLAN_BIN, ['compile', md], repo.dir, env)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(r.json.lanes.harnesses, ['agy'])
+  assert.ok(r.stderr.includes('aether-plan: lanes: codex is enabled but has no models in the lane table yet\n'), r.stderr)
+  assert.ok(r.stderr.includes('aether-plan: lanes: cursor is enabled but is not installed: cursor-agent was not found\n'), r.stderr)
+  // grok is installed but not enabled, and agy gives calls: neither is named.
+  assert.ok(!/lanes: (grok|agy) /.test(r.stderr), r.stderr)
+})
+
 test('compile refuses a broken lane table before writing anything', (t) => {
   const repo = makeRepo(t)
   const md = writePlan(repo.dir, plan([task(1)]))
@@ -233,4 +304,74 @@ test('with the lanes option off, a broken lane table is not even read', (t) => {
   const r = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_LANES: 'off' })
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.equal(r.json.lanes, null)
+})
+
+// A Test command line of a plan that prints each name as a failing TAP test, then exits 1.
+function failingCommand(...names) {
+  const script = [...names.map((name, i) => `console.log('not ok ${i + 1} - ${name}')`), 'process.exit(1)'].join('; ')
+  return `- Test command: \`"${process.execPath}" -e "${script}"\``
+}
+
+test('compile records the test baseline of a passing test command', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([task(1), task(2)]))
+  const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  const { recordedAt, ...baseline } = JSON.parse(fs.readFileSync(path.join(r.json.runDir, 'baseline.json'), 'utf8'))
+  assert.match(recordedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+  assert.deepEqual(baseline, { exitCode: 0, signatures: [], timedOut: false })
+  assert.match(r.stderr, /^aether-plan: test baseline: the test command passed$/m)
+})
+
+test('compile records the failing tests of a failing test command, on stderr only', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([task(1), task(2)], { execution: [failingCommand('a', 'b')] }))
+  const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.stdout.trim().split('\n').length, 1)
+  const { recordedAt, ...baseline } = JSON.parse(fs.readFileSync(path.join(r.json.runDir, 'baseline.json'), 'utf8'))
+  assert.match(recordedAt, /^\d{4}-\d{2}-\d{2}T/)
+  assert.deepEqual(baseline, { exitCode: 1, signatures: ['a', 'b'], timedOut: false })
+  assert.match(
+    r.stderr,
+    /^aether-plan: test baseline: 2 failing tests already fail before the run; only new failures block a merge$/m,
+  )
+})
+
+test('compile says that a failing test command which names no test blocks any failure', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([task(1), task(2)], { execution: ['- Test command: `echo boom; exit 3`'] }))
+  const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  const baseline = JSON.parse(fs.readFileSync(path.join(r.json.runDir, 'baseline.json'), 'utf8'))
+  assert.deepEqual([baseline.exitCode, baseline.signatures], [3, []])
+  assert.match(
+    r.stderr,
+    /^aether-plan: test baseline: the test command failed and names no test, so any failure blocks a merge$/m,
+  )
+})
+
+test('compile --no-baseline records no baseline', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([task(1), task(2)], { execution: [failingCommand('a')] }))
+  const r = runBin(PLAN_BIN, ['compile', file, '--no-baseline'], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(fs.existsSync(path.join(r.json.runDir, 'baseline.json')), false)
+  assert.doesNotMatch(r.stderr, /test baseline/)
+})
+
+test('a relaunch keeps the first baseline, and its firstBase stays the first launch base', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([task(1), task(2)], { execution: [failingCommand('a')] }))
+  const first = runBin(PLAN_BIN, ['compile', file], repo.dir).json
+  const baselineFile = path.join(first.runDir, 'baseline.json')
+  const firstBaseline = fs.readFileSync(baselineFile, 'utf8')
+  commitIn(repo, repo.dir, 'src/t1/a.js', 'by hand\n', 'integrated by hand')
+  const second = runBin(PLAN_BIN, ['compile', file, '--run', first.runId], repo.dir)
+  assert.equal(second.status, 0, second.stdout + second.stderr)
+  assert.equal(fs.readFileSync(baselineFile, 'utf8'), firstBaseline)
+  assert.equal(second.json.integration.firstBase, first.integration.base)
+  assert.equal(second.json.integration.base, repo.git('rev-parse', 'HEAD'))
+  const third = runBin(PLAN_BIN, ['compile', file, '--run', first.runId], repo.dir)
+  assert.equal(third.json.integration.firstBase, first.integration.base)
 })
