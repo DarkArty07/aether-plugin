@@ -3,7 +3,7 @@
 **Type:** bug (reliability of a model step that should be deterministic)
 **Date:** 2026-10-09
 **Found in:** the fourth launch of a 12-task plan on an application repository
-**Status:** open (2026-10-09), and reproduced in the first run of 0.5.0 (see the update at the end). Sub-project 2.
+**Status:** partly addressed in 0.8.0 (2026-10-13). Done: in an Aether session the mod runs the workflow's `aether-wt` and `aether-lane` commands without a model, so no agent can refuse them (A30, PR #8). Open: when the mod cannot run them, the `ops` agent is the fallback and can still refuse; the workflow then reports `unreadable output` and blocks the unit, and no regression test covers a reply that says the command was not run.
 **GitHub:** [#4](https://github.com/DarkArty07/aether-plugin/issues/4) (private repository)
 
 ## Summary

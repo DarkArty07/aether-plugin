@@ -3,7 +3,7 @@
 **Type:** bug and plan-sizing gap
 **Date:** 2026-10-09
 **Found in:** the third launch of a 12-task plan on an application repository
-**Status:** open (2026-10-09). Sub-project 2. Not seen in the first run of 0.5.0, whose largest unit was one library and its tests.
+**Status:** partly addressed in 0.8.0 (2026-10-13). Done: a unit stops when it ends twice in a row without its report, with a reason that asks for a split, or when it gets the same blocking findings three times (A36), so the ladder no longer pays for the same failure again. Open: the supervisor does not review the diff an attempt leaves without a report, and `aether-plan check` does not warn about a task that is likely too large.
 **GitHub:** [#3](https://github.com/DarkArty07/aether-plugin/issues/3) (private repository)
 
 ## Summary
