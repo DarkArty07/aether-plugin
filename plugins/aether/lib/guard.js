@@ -1,7 +1,8 @@
 'use strict'
 
 // The aether-guard decisions. decide: only the main session, the Lead and the Writer write specs,
-// plans and tasks, and autonomy files are kept to aether-autonomy. Protected: docs/superpowers/specs/
+// plans and tasks, the Examiner writes only its exam under .aether-exam/, and autonomy files are kept
+// to aether-autonomy. Protected: docs/superpowers/specs/
 // and plans/ (the old place), specs/NNN-<topic>/ spec.md, plan.md and tasks.md (Spec Kit), and
 // .specify/memory/constitution.md. irreversibleClass: the irreversible class of a Bash command, and
 // redactCommand: the command as the owner's list keeps it, without its secret values.
@@ -18,6 +19,8 @@ const PROTECTED = [
 const AUTONOMY_PROTECTED = /(^|\/)\.aether\/autonomy\/(grants\.json|[^/]+\/run\.json)$/
 const LEAD = 'aether:lead'
 const WRITER = 'aether:writer'
+const EXAMINER = 'aether:examiner'
+const EXAM_PATH = /(^|\/)\.aether-exam\//
 
 // decide(input) gives null to allow, or { reason } to deny.
 function decide(input) {
@@ -33,6 +36,13 @@ function decide(input) {
   if (AUTONOMY_PROTECTED.test(normalized)) {
     return {
       reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end) instead of editing ${resolved}.`,
+    }
+  }
+
+  // The Examiner's exam must stay out of the repository and of the swarm's sight, so it writes nothing else.
+  if (input.agent_type === EXAMINER && !EXAM_PATH.test(normalized)) {
+    return {
+      reason: `In Aether mode the Examiner writes only its exam, under .aether-exam/ at the repository root. Write ${path.basename(resolved)} there instead of ${resolved}.`,
     }
   }
 

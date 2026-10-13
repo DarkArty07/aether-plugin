@@ -366,20 +366,16 @@ function finishWriter(cwd, worktree, feature, seatLabel) {
 }
 
 // Writes the Examiner's answer beside its test files and stores the exam where the swarm does not see it.
-function finishExaminer(mainRoot, worktree, feature, result) {
+function finishExaminer(mainRoot, worktree, feature, result, dataDir) {
   const dir = path.join(worktree, EXAM_DIR)
-  for (const t of result.tests) {
-    for (const file of t.files) {
-      if (path.isAbsolute(file) || file.split(/[\\/]/).includes('..') || !fs.existsSync(path.join(dir, file))) {
-        return { ok: false, detail: `test ${t.id} names ${file}, which is not under ${EXAM_DIR}/` }
-      }
-    }
-  }
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'exam.json'), `${JSON.stringify(result, null, 2)}\n`)
-  const exam = require('./exam.js')
-  const stored = exam.store(mainRoot, feature, dir)
-  return { ok: true, stored: stored.dir }
+  try {
+    const stored = require('./exam.js').store(mainRoot, feature, dir, { dataDir })
+    return { ok: true, stored: stored.dir }
+  } catch (err) {
+    return { ok: false, detail: `the exam cannot be stored: ${err.message}` }
+  }
 }
 
 // ---- A round ----
@@ -468,7 +464,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, message, extern
         const done = finishWriter(cwd, worktree, feature, label)
         outcome = done.ok ? { status: 'ok', text: writerText(parsed.structured, done), result: { ...parsed.structured, commit: done.commit } } : { status: 'failed', detail: done.detail }
       } else if (seat === 'examiner') {
-        const done = finishExaminer(mainRoot, worktree, feature, parsed.structured)
+        const done = finishExaminer(mainRoot, worktree, feature, parsed.structured, dataDir)
         outcome = done.ok ? { status: 'ok', text: examinerText(parsed.structured, done), result: parsed.structured, stored: done.stored } : { status: 'failed', detail: done.detail }
       } else {
         outcome = { status: 'ok', text: judgeText(parsed.structured), result: parsed.structured }
@@ -557,6 +553,8 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   if ((seat === 'writer' || seat === 'examiner') && feature === null) throw new Error(`the ${seat} needs --feature specs/NNN-<topic>`)
   const cwd = path.resolve(callerCwd, opts.cwd ?? '.')
   const { worktree: top, mainRoot, gitCommonDir } = repoPaths(cwd)
+  // Before any answer: a native Examiner writes its exam under .aether-exam/ in this checkout, and git must not see it.
+  run.ensureExcluded(gitCommonDir)
   const choice = lanes.seatsChoice(env)
   const session = opts.session
   const dataDir = run.dataDir(env)
@@ -592,7 +590,6 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     note('native', { reason: 'no-external', tried: chosen.tried })
     return unavailable(seat, 'no-external', { choice: choice.name, tried: chosen.tried, native: chosen.native })
   }
-  run.ensureExcluded(gitCommonDir)
   const { external } = chosen
   const message = typeof input === 'function' ? await input() : input
   if (message.trim() === '') throw new Error('the message is empty: give it on stdin')
