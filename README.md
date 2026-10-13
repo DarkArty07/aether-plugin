@@ -93,9 +93,22 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 | `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `remove` (saves unmerged work as a patch), `sweep` |
 | `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review, and cleanup in `finally` |
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
-| Usage meter | A mod that records every model request of an Aether session: agent, model, tokens and time. In any other session it records nothing and does not offer Aether's agents |
+| Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the workflow's own `aether-wt` and `aether-lane` commands itself, without a model (see below). In any other session it records and runs nothing, and does not offer Aether's agents |
 | `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `price` prices any `claude -p` JSON output |
 | SessionStart hook | In an Aether session: marks the session, passes the lanes option to its commands, injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files not written to for 30 days, and points a new Lead to an open autonomous run. In any other session it does nothing |
+
+**Ops without a model.** The workflow has no shell, so it hands each of its own `aether-wt` and `aether-lane` commands (`merge`, `remove`, `diff --final`, `sweep` and the lane commands) to an `ops` agent. In an Aether session the mod answers that agent itself, with no model request:
+- it checks the prompt against the closed list of commands the workflow sends (`hooks/ops-command.mjs`);
+- it runs the command with `node` and `$.process.run`, with no shell;
+- it returns the command's exit code and output.
+
+Any workflow in an Aether session gets that answer, for any repository and run its prompt names. Anything else falls back to the Haiku `ops` agent, as before: another prompt, a refused `$.process.run`, a command it cannot start, or a bin that fails to load. A command that ran and gave no result, stopped at the timeout or killed, is reported as an error and never handed to the model. Implementers still run `aether-wt ensure` and `diff` with their own Bash tool. What changes for these commands:
+- **Permissions.** The session's permission rules and mode, and Bash `PreToolUse` hooks, no longer apply to them. What bounds them is the closed list and the Aether session's mark.
+- **Environment.** They run in Claude Code's own environment, and so does what they start: the plan's test command, inside a merge, and agy. Exports from `CLAUDE_ENV_FILE` and `PATH` entries only your shell profile adds do not reach them. Make the test command work without them. `aether-lane status` also looks for agy on that `PATH`; if it is not there, the run's lanes stay dry and every call runs native.
+- **The 10-minute limit.** A merge whose tests outlast 10 minutes is stopped after its merge commit and before its revert, and the error says so.
+- **The capability.** The mod now calls `$.process.run`, and `claude plugin validate` lists it. If your organization's policy refuses that call, the agent path runs. A policy that refuses the whole mod also turns off the usage meter, lanes (the mod saves their prompts), and the hiding of Aether's agents in other sessions.
+
+See [decision A30](docs/decisions.md).
 
 ### Lanes
 
@@ -119,7 +132,7 @@ The Lead decides as the owner's delegate, and the owner's reviews are two: the p
 - **Standing authorizations.** When the owner authorizes a class of irreversible action in general words, the Lead records it with `aether-autonomy grant`, quoting the owner. The quote is checked against the owner's own messages in the session's transcript, and checked again when read. The classes are `merge-main`, `push`, `publish`, `deploy`, `delete`, `credentials` and `paid-call`. Everything local and reversible proceeds without asking.
 - **Autonomous runs.** The owner's permission to work for hours starts a run (`aether-autonomy start`), with ceilings of 8 hours and US$ 50 unless the owner names others. The Lead keeps a diary, keeps working while work remains, stops when done, at a ceiling or honestly, and writes a brief: what it did, decided and found, what waits for the owner's yes, what it did not finish, proposals, and time and cost.
 - **Cost.** A run's figure covers the swarm and the lanes, as `aether-report` prices them; the Lead's own turns are not added up. The time ceiling is the real guard.
-- **Permissions.** A permission prompt stops a run like a question. Start a session meant for an autonomous run with a permission mode or allow rules that cover its tools; Aether never turns permissions off.
+- **Permissions.** A permission prompt stops a run like a question. Start a session meant for an autonomous run with a permission mode or allow rules that cover its tools; Aether never turns permissions off. The exception is the workflow's own `aether-wt` and `aether-lane` commands, which the mod runs without the session's permission rules (see Ops without a model).
 - **Files.** `.aether/autonomy/` in the repository's main checkout holds `grants.json`, and for each run `run.json`, `diary.md` and `brief.md`. Only `aether-autonomy` writes `grants.json` and `run.json`.
 
 ## Use Aether mode
@@ -261,7 +274,7 @@ The plugin is `plugins/aether/`, and the repository's `.claude-plugin/marketplac
 That loads the tree for one session, in place of the installed release. Its data goes to `~/.claude/plugins/data/aether-inline/`, and its options are set apart, under `pluginConfigs["aether@inline"]` in your settings. The bins of a branch run by path: `node <worktree>/plugins/aether/bin/aether-plan check <plan>`.
 
     npm test              # node --test "tests/*.test.js": bins, libraries, workflow scenarios and the fake model
-    npm run test:mod      # claude plugin test plugins/aether: the usage meter mod
+    npm run test:mod      # claude plugin test plugins/aether: the mod (usage meter and ops)
     npm run validate      # claude plugin validate, on the plugin and on the marketplace
     npm run check         # all three
 
