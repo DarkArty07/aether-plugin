@@ -26,7 +26,14 @@ Specs, plans and tasks follow the layout of [GitHub Spec Kit](https://github.com
 
 ## Status
 
-Version 0.8: RADAR ([roadmap](docs/roadmap/2026-10-10-radar.md)). What changed since 0.7:
+Version 0.9: the design seats ([spec](specs/001-design-seats/spec.md)). What changed since 0.8:
+- **Design seats.** The Judge, the Writer and a new Examiner can each be taken by a stronger model of another harness, such as Gemini 4 Argon on agy, round by round, with Aether's own agent as the fallback. The `seats` option chooses who: `native`, `balanced` (the default) or `robust`. This is superdelegation upward: RADAR's Delegación now counts the seats as well as the volume.
+- **The Examiner.** It writes acceptance tests from the spec and the plan's public interfaces, which the swarm never sees, and `aether-exam` runs them at the end of a run. A failing test is a blocking finding.
+- **Whoever writes a document does not judge it.** A seat never takes the model that wrote what it reviews.
+- **Measured before it is trusted.** A harness compares each external seat with its native agent; the Judge's part runs on seeded defects and scores them without a model. It has not run with real models yet.
+- **Fable stays out** until Fable 5.5: Opus 5.5 does this work for less than half the price.
+
+Version 0.8 brought RADAR ([roadmap](docs/roadmap/2026-10-10-radar.md)). What changed from 0.7:
 - **The Lead is the accountable orchestrator.** It writes the spec; the Writer, on Sonnet, writes the plan and the tasks; the Judge, on Opus, reviews them. The Writer and the Judge replace the Designer, the most expensive link of 0.7.
 - **Spec Kit replaces superpowers.** Specs, plans and tasks live in `specs/NNN-<topic>/`, with the Aether preset, and superpowers is no longer a dependency.
 - **One list for the owner.** Irreversible actions, and the choices only the owner can make, reach the owner as one list at the top of every brief («Espera tu sí»). aether-guard records every irreversible Bash command that no grant covers in that list.
@@ -85,8 +92,10 @@ Lead (main session, Sonnet, xhigh): the intent, the spec, the route, decisions a
   │  specs/NNN-<topic>/spec.md
   ▼
 Writer (aether:writer, Sonnet, xhigh) ⇄ Judge (aether:judge, Opus, high, read-only)
+  │  each seat native or, by the seats option, on a stronger model of another harness (aether-lane seat)
   │  plan.md and tasks.md, with Aether fields: tier and effort, area, owned files, dependencies
   │  aether-plan check / compile (and the run's test baseline)
+  │  Examiner (aether:examiner, Opus, high): the hidden exam, kept outside the repository (aether-exam store)
   ▼
 /aether:run (dynamic workflow)
   ├─ wave 1: units in parallel, each in its own git worktree, native or on a lane
@@ -97,18 +106,23 @@ Writer (aether:writer, Sonnet, xhigh) ⇄ Judge (aether:judge, Opus, high, read-
   ├─ final review of everything merged (opus or sonnet, by the run's risk)
   └─ cleanup: no unit worktree or aether/* branch is left behind
   │
+aether-exam run: the hidden exam on the integration branch; a failing test is a blocking finding
+  │
 aether-report: speed, cost (OpenRouter prices), quality, lanes by harness, and the RADAR figures
 aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 ```
 
 | Piece | What it does |
 |---|---|
-| `using-aether` skill | Injected at session start. The Lead's rules: its role, RADAR, the method on Spec Kit's layout, writing with the Writer and judging with the Judge, assumptions, the owner's list, fallbacks, autonomous runs and the execution method |
+| `using-aether` skill | Injected at session start. The Lead's rules: its role, RADAR, the method on Spec Kit's layout, writing with the Writer and judging with the Judge, the design seats and the exam, assumptions, the owner's list, fallbacks, autonomous runs and the execution method |
 | `aether:writer` | The Writer agent: Sonnet at `xhigh`. It writes `plan.md` and `tasks.md` from the Lead's spec, with the Aether fields, and checks them with `aether-plan check` |
 | `aether:judge` | The Judge agent: Opus at `high`, read-only. It reviews a spec, a plan or tasks, and rules `approve`, `revise` or `reject`, with at most ten findings |
+| `aether:examiner` | The Examiner agent: Opus at `high`. It writes the hidden acceptance exam of an approved spec and plan under `.aether-exam/`, one command per test, without reading `tasks.md` |
+| `aether-lane seat` | One round of a design seat (`judge`, `writer` or `examiner`) on the external model the `seats` option puts first, in a disposable worktree of the commit; exit 3 or 4 hands the round to the native agent |
+| `aether-exam` | Keeps an exam outside the repository (`store`), runs it on a commit in a disposable worktree (`run`), and lists the kept ones (`list`) |
 | Aether preset | `plugins/aether/speckit/`: Spec Kit's specify, plan, tasks and constitution commands adapted to Aether, also shipped as the skills `aether:specify`, `aether:plan`, `aether:tasks` and `aether:constitution` |
 | `aether-voice` | Prints the owner's own words from a session, so a quote can be checked; it writes no file |
-| `aether-guard` | A PreToolUse hook. In an Aether session it refuses Write, Edit, MultiEdit and NotebookEdit on specs, plans and tasks (`specs/NNN-<topic>/`, and the old `docs/superpowers/`) and on the constitution to every agent but the Lead and the Writer, and on the autonomy registry and run states to every agent. Before Bash, it records an irreversible command that no grant covers in the owner's list, `.aether/pending.jsonl`, and refuses it when `AETHER_IRREVERSIBLE=enforce`. In any other session it allows everything |
+| `aether-guard` | A PreToolUse hook. In an Aether session it refuses Write, Edit, MultiEdit and NotebookEdit on specs, plans and tasks (`specs/NNN-<topic>/`, and the old `docs/superpowers/`) and on the constitution to every agent but the Lead and the Writer, on the autonomy registry and run states to every agent, and on everything outside `.aether-exam/` to the Examiner. Before Bash, it records an irreversible command that no grant covers in the owner's list, `.aether/pending.jsonl`, and refuses it when `AETHER_IRREVERSIBLE=enforce`. In any other session it allows everything |
 | `aether-autonomy` | The owner's standing authorizations, verified against their own words (`grant`, `revoke`, `check`, `list`), and an autonomous run's state and ceilings (`start`, `spend`, `status`, `end`) |
 | `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |
 | `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves, and records the run's test baseline. It reads a Spec Kit `tasks.md`, and the `spec.md` beside it. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
@@ -116,8 +130,8 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 | `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review, and cleanup in `finally` |
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
 | Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the workflow's own `aether-wt` and `aether-lane` commands itself, without a model (see below). In any other session it records and runs nothing, and does not offer Aether's agents |
-| `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `price` prices any `claude -p` JSON output |
-| SessionStart hook | In an Aether session: marks the session, passes the lanes option to its commands, injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files not written to for 30 days, and points a new Lead to an open autonomous run. In any other session it does nothing |
+| `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `--seats` counts the design seats' rounds and who answered them; `price` prices any `claude -p` JSON output |
+| SessionStart hook | In an Aether session: marks the session, passes the lanes and seats options to its commands, injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files not written to for 30 days, and points a new Lead to an open autonomous run. In any other session it does nothing |
 
 **Ops without a model.** The workflow has no shell, so it hands each of its own `aether-wt` and `aether-lane` commands (`merge`, `remove`, `diff --final`, `sweep` and the lane commands) to an `ops` agent. In an Aether session the mod answers that agent itself, with no model request:
 - it checks the prompt against the closed list of commands the workflow sends (`hooks/ops-command.mjs`);
@@ -150,6 +164,24 @@ A lane runs Aether's own calls on another coding plan the owner pays for, while 
 1. find its models in the CLI's own list, and make one real headless call per role with the command line of its adapter (`plugins/aether/lib/harness/<name>.js`); correct the adapter's field names if the CLI's JSON differs;
 2. copy `plugins/aether/config/lanes.json`, add the models to the harness's entry, each with `group`, `replaces`, `roles` and `levels` like agy's, and set `AETHER_LANES_CONFIG` to the copy in the shell that starts Claude Code. Codex takes the level as its reasoning effort; Grok and Cursor ignore it for now;
 3. add the harness to the `harnesses` option, such as `agy,codex`.
+
+### Design seats
+
+The Judge, the Writer and the Examiner are seats. Each can be taken, one round at a time, by a stronger model of another harness the owner pays for, in place of Aether's own agent. See [spec 001](specs/001-design-seats/spec.md) and decisions A39–A43.
+
+| `seats` | Judge | Writer | Examiner |
+|---|---|---|---|
+| `native` | Opus, native | Sonnet, native | off |
+| `balanced` (default) | Gemini 4 Argon on agy, then Opus | Sonnet, native | Argon on agy, then Opus |
+| `robust` | Opus, native | Argon on agy, then Sonnet | Opus, native |
+
+- **What changes.** Only the design. The swarm's models and efforts still follow each task's Tier and Review, the ladder and the run's risk; the Writer, whoever takes its seat, writes those lines with the same rules.
+- **Who takes a seat.** The first model on the seat's list whose harness is enabled (`lanes` on, and the harness in `harnesses`), installed and with quota left, and that is not the model that wrote what the round reviews. Otherwise the native agent. The lists are `designSeats` in `plugins/aether/config/lanes.json`; change them in your copy, with `AETHER_LANES_CONFIG`.
+- **A round.** `aether-lane seat` runs it in a disposable worktree of the commit, with the lanes' environment. Git decides what it may change: the Judge nothing, the Writer `plan.md` and `tasks.md`, the Examiner `.aether-exam/`. Its answer must match the seat's schema, and an external Writer's tasks must pass `aether-plan check`. Anything else undoes the round, keeps a breaking one at `refs/aether/seat/<id>/round-1`, and the native agent does the same round from the files. That never reaches the owner.
+- **The exam.** The Examiner writes it after the plan is approved, from the spec and the plan's public interfaces, never from `tasks.md`. `aether-exam` keeps it in the plugin's data directory, out of the repository and the swarm's worktrees, and runs it on the integration branch at the end. A test that fails runs once more; a failing test is a blocking finding, a flaky one a minor finding. No hook guards reads of the exam, so its protection is against accidents, not against an agent that goes looking for it.
+- **Argon.** Gemini 4 Argon became generally available on 2026-10-13. On agy it needs Google AI Ultra. Its agy name (`gemini-4-argon` plus the level) and its quota group are not verified yet: a wrong one fails the round in seconds, and the native agent takes it. To put Argon on the swarm's final review too, add `"reviewer"` to its `roles` and `"replaces": "opus"`, listed before agy's Opus.
+- **Measured before it is trusted.** [`docs/evaluations/seats/`](docs/evaluations/seats/README.md) compares each external seat with its native agent. Its Judge part gives both the same documents with seeded defects and scores them without a model. Until it runs, `balanced` trusts Argon as Judge on the owner's rule: if quality drops, the seat goes back to Opus.
+- **Fable** stays out until Fable 5.5 (A43).
 
 ### Autonomy
 
@@ -226,6 +258,7 @@ Nothing is injected, refused, recorded or written. Version 0.8, not yet measured
 
 - `lanes`, off by default, runs Aether's calls on other coding harnesses while their quota lasts. They work without permission prompts and spend another plan's quota, so you turn it on yourself. Lanes run only on Linux.
 - `harnesses`, `agy` by default, lists the harnesses lanes may use, comma-separated, in order of preference: `agy`, `codex`, `grok`, `cursor`. Add one only once its models are in the lane table (see Lanes).
+- `seats`, `balanced` by default, chooses who takes the design seats: `native`, `balanced` or `robust` (see Design seats). An external model takes a seat only with `lanes` on.
 
 Set them at install with `--config lanes=true`, or later in `/plugin` → Installed → aether → Configure options. `claude plugin configure aether@aether-plugin` shows the options and which are unset.
 
@@ -242,6 +275,7 @@ A plugin cannot set these, so you do:
 | superpowers off in Aether sessions, if you keep it for other work | `--settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'` in the start command |
 | Irreversible commands refused, not only recorded | `AETHER_IRREVERSIBLE=enforce` in the shell that starts Claude Code |
 | Lanes on Codex, Grok or Cursor | Their models in your copy of the lane table, `AETHER_LANES_CONFIG`, and the `harnesses` option (see Lanes) |
+| Gemini 4 Argon in the design seats | Google AI Ultra on agy, and `lanes` on (see Design seats) |
 
 ### Platforms
 
@@ -329,7 +363,8 @@ Node.js 22 with no dependencies. The workflow's tests run its script in a harnes
 - [Specs](docs/superpowers/specs/) and [plans](docs/superpowers/plans/) up to 0.7, written with superpowers: Plan 1 (foundation), Plan 2 (swarm) and Plan 3 (measurement and trial), each with its review and execution record, and the later specs. New work goes to `specs/NNN-<topic>/`.
 - [Evaluations](docs/evaluations/): the trials against normal mode, with their fixtures, harnesses and results. Trial 2 keeps both builds, playable.
 - [Claude Code research](docs/claude-code-research.md): the verified capabilities and limits this design relies on, and the prices.
-- [Decisions](docs/decisions.md): D1–D15 from the first design session, with their updates, and A1–A38 from the specs and the RADAR roadmap.
+- [Decisions](docs/decisions.md): D1–D15 from the first design session, with their updates, and A1–A43 from the specs and the RADAR roadmap.
+- [Spec 001, design seats](specs/001-design-seats/spec.md), with its [plan](specs/001-design-seats/plan.md), and its [evaluation](docs/evaluations/seats/README.md).
 - [Aether Agents retrospective](docs/aether-retrospective.md): what Aether was, and what failed and why.
 
 ## Lessons from Aether Agents
@@ -354,13 +389,15 @@ Aether Plugin answers each failure:
 2. **Bounded autonomy.** Every run has an agent budget and a verifiable definition of done. Work that hits a real question comes back blocked, with the question.
 3. **The task chooses the model and its effort.** Each task's Tier line sets the start. A failed attempt runs again at `xhigh`, and then on a stronger model.
 4. **Contracts first, then the swarm.** Plans give interfaces, failing tests and file ownership. Units are independent by default, and every dependency needs a reason.
-5. **Sonnet writes, Opus decides.** The expensive model judges the spec, the plan and the work; the cheaper ones write them.
+5. **Sonnet writes, Opus decides, and a stronger model may take either seat.** The expensive model judges the spec, the plan and the work; the cheaper ones write them. Whoever writes a document never judges it.
 6. **One list for the owner.** What is irreversible, and what only the owner can choose, waits for the owner's yes in one list. Everything else proceeds, and every failure with a fallback is handled without asking.
 7. **RADAR.** Every change is weighed against the five goals: fast, autonomous, delegated, affordable and robust.
 
 ## Roadmap
 
-**Now:** the [RADAR roadmap](docs/roadmap/2026-10-10-radar.md). Version 0.8 builds its phases 1, 2a and 2b. What remains waits for the owner: a real call per harness and role on Codex, Grok and Cursor, and turning each one on; a measured design session with the Writer and the Judge against the 0.7 Designer; and a rerun of trial 2 in Aether mode with [its techniques](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost).
+**Now:** version 0.9 adds the design seats. What it leaves for the owner: the first real round of Argon on agy, which checks its name and quota group, and the seats' measurement ([evaluation](docs/evaluations/seats/README.md)).
+
+The [RADAR roadmap](docs/roadmap/2026-10-10-radar.md): version 0.8 builds its phases 1, 2a and 2b. What remains waits for the owner: a real call per harness and role on Codex, Grok and Cursor, and turning each one on; a measured design session with the Writer and the Judge against the 0.7 Designer; and a rerun of trial 2 in Aether mode with [its techniques](docs/evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost).
 
 **Effort.** Since version 0.3.0, each plan task sets its implementer's effort on its Tier line, by the task's complexity ([spec](docs/superpowers/specs/2026-10-08-effort-per-task-design.md)).
 - The default is `xhigh` on every model. The Writer lowers it where the tests pin the work, and names `max` only with a reason.
@@ -369,7 +406,7 @@ Aether Plugin answers each failure:
 - `aether-report` shows the cost and the time of each role, model and effort. `scripts/check-effort.js` checks, from a session's transcripts, that each agent ran at the effort its call asked for.
 
 These are deferred until the trials justify them:
-- the Judge on a lane, and Codex as a second opinion;
+- a second opinion from another provider on high-risk documents, and a rescue seat for a stopped unit;
 - hiding the preset skills in normal sessions;
 - notifications;
 - several parallel attempts on critical units;
