@@ -1,11 +1,16 @@
 {
   "reserve": 0.05,
+  "designSeats": {
+    "native": { "judge": [], "writer": [], "examiner": false },
+    "balanced": { "judge": ["agy/gemini-4-argon"], "writer": [], "examiner": ["agy/gemini-4-argon"] },
+    "robust": { "judge": [], "writer": ["agy/gemini-4-argon"], "examiner": [] }
+  },
   "harnesses": {
     "agy": {
       "command": "agy",
       "maxParallel": 4,
       "waitSeconds": 540,
-      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
+      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200, "judge": 1200, "writer": 2700, "examiner": 1800 },
       "groups": { "gemini": "Gemini Models", "claude": "Claude and GPT models" },
       "models": {
         "gemini-3.8-flash": {
@@ -28,6 +33,12 @@
           "roles": ["implementer", "reviewer"],
           "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
           "aa": { "slug": "claude-opus-5-5-high", "intelligence": 53.6, "terminalBench": 0.57, "checked": "2026-10-08" }
+        },
+        "gemini-4-argon": {
+          "group": "gemini",
+          "roles": ["judge", "writer", "examiner"],
+          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
+          "note": "Gemini 4 Argon, generally available 2026-10-13; on agy for Google AI Ultra. Its agy name and quota group are not verified yet: a wrong one fails the round, and the native agent takes the seat."
         }
       }
     },

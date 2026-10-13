@@ -512,6 +512,47 @@ function pruneUsage(dataDir, { days = 30, now = Date.now() } = {}) {
   return { pruned }
 }
 
+// The design seats' rounds (lib/seats.js), from the lane log: per seat, how many rounds an external model
+// answered, how many went to the native agent and why, and per model the calls and dollars; for the lanes,
+// the same summary as a run's. A round is one `aether-lane seat`: an external call, or a native answer.
+function seatsReport({ dataDir = run.dataDir(), session = null, since = 0, prices = loadPrices() } = {}) {
+  const ofSession = (entry) => session === null || entry.session === session
+  const entries = readLog(dataDir, { since }).filter(ofSession)
+  const calls = entries.filter((entry) => entry.kind === 'call' && typeof entry.seat === 'string')
+  const answers = entries.filter((entry) => entry.kind === 'seat')
+  const notes = []
+  const bySeat = {}
+  const seatOf = (name) => (bySeat[name] ||= { rounds: 0, external: 0, native: 0, off: 0, reasons: {}, models: {} })
+  for (const call of calls) {
+    const seat = seatOf(call.seat)
+    seat.rounds++
+    const model = (seat.models[`${call.harness} ${call.model}`] ||= { rounds: 0, ok: 0 })
+    model.rounds++
+    if (call.status === 'ok') {
+      seat.external++
+      model.ok++
+    } else {
+      seat.native++
+      seat.reasons[`external ${call.status}`] = (seat.reasons[`external ${call.status}`] || 0) + 1
+    }
+  }
+  for (const answer of answers) {
+    const seat = seatOf(answer.seat)
+    if (answer.status === 'off') {
+      seat.off++
+      continue
+    }
+    seat.rounds++
+    seat.native++
+    const reason = answer.reason || 'unknown'
+    seat.reasons[reason] = (seat.reasons[reason] || 0) + 1
+  }
+  const rounds = Object.values(bySeat).reduce((sum, seat) => sum + seat.rounds, 0)
+  const external = Object.values(bySeat).reduce((sum, seat) => sum + seat.external, 0)
+  const lanes = summarizeLanes(calls, [], prices, notes)
+  return { session, since, rounds, external, externalShare: rounds === 0 ? null : external / rounds, bySeat, lanes, notes }
+}
+
 function aetherVersion() {
   return run.readJson(path.join(__dirname, '..', '.claude-plugin', 'plugin.json')).version
 }
@@ -536,4 +577,4 @@ function finalize(cwd, runId, options = {}) {
   return { record, cleanup: sweepRun(cwd, runId, { finish: true }) }
 }
 
-module.exports = { readUsage, pickSession, report, finalize, pruneUsage }
+module.exports = { readUsage, pickSession, report, finalize, pruneUsage, seatsReport }

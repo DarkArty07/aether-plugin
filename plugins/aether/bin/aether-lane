@@ -6,10 +6,14 @@
 // aether-lane wait <run> <call> [--max <seconds>]
 // aether-lane result <run> <call>
 // aether-lane stop <run> [<call>]
+// aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--feature specs/NNN-<topic>] [--cwd <dir>]
+//   (the message on stdin; exit 0 an external answer, 3 the native agent takes the round, 4 the external round
+//   failed and was undone, 1 the command broke)
 // aether-lane _runner <run> <call>   (internal: the detached runner that start launches)
 
 const path = require('node:path')
 const calls = require(path.join(__dirname, '..', 'lib', 'lane-calls.js'))
+const seats = require(path.join(__dirname, '..', 'lib', 'seats.js'))
 
 // Each command's usage. <run>, and <call> where it is not in brackets, are required.
 const COMMANDS = {
@@ -19,7 +23,7 @@ const COMMANDS = {
   result: 'result <run> <call>',
   stop: 'stop <run> [<call>]',
 }
-const USAGE = `usage: aether-lane ${Object.values(COMMANDS).join(' | ')}`
+const USAGE = `usage: aether-lane ${Object.values(COMMANDS).join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')}`
 
 // Throws the command's own usage when an argument it requires is missing.
 function requireArgs(verb, runId, call) {
@@ -57,10 +61,30 @@ async function command(argv) {
   throw new Error(USAGE)
 }
 
+// All of stdin, read only when a round needs it.
+function readStdin() {
+  if (process.stdin.isTTY) return Promise.resolve('')
+  return new Promise((resolve, reject) => {
+    let data = ''
+    process.stdin.setEncoding('utf8')
+    process.stdin.on('data', (chunk) => {
+      data += chunk
+    })
+    process.stdin.once('end', () => resolve(data))
+    process.stdin.once('error', reject)
+  })
+}
+
 async function main() {
   const argv = process.argv.slice(2)
   if (argv[0] === '_runner') {
     await calls.runCall(process.cwd(), argv[1], argv[2])
+    return
+  }
+  if (argv[0] === 'seat') {
+    const { exitCode, value } = await seats.seatCommand(argv.slice(1), { input: readStdin })
+    process.stdout.write(`${JSON.stringify(value)}\n`)
+    process.exitCode = exitCode
     return
   }
   process.stdout.write(`${JSON.stringify(await command(argv))}\n`)

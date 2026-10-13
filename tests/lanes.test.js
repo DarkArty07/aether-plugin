@@ -78,7 +78,7 @@ test('the shipped table names one lane model per native model, with its group, r
   assert.equal(agy.command, 'agy')
   assert.equal(agy.maxParallel, 4)
   assert.equal(agy.waitSeconds, 540)
-  assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200 })
+  assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200, judge: 1200, writer: 2700, examiner: 1800 })
   assert.deepEqual(agy.groups, { gemini: 'Gemini Models', claude: 'Claude and GPT models' })
   assert.deepEqual(
     Object.entries(agy.models).map(([id, m]) => [id, m.group, m.replaces, m.roles, m.levels]),
@@ -86,8 +86,14 @@ test('the shipped table names one lane model per native model, with its group, r
       ['gemini-3.8-flash', 'gemini', 'haiku', ['implementer'], LEVELS],
       ['claude-sonnet-5-5', 'claude', 'sonnet', ['implementer', 'supervisor'], LEVELS],
       ['claude-opus-5-5', 'claude', 'opus', ['implementer', 'reviewer'], LEVELS],
+      ['gemini-4-argon', 'gemini', undefined, ['judge', 'writer', 'examiner'], LEVELS],
     ],
   )
+  assert.deepEqual(config.designSeats, {
+    native: { judge: [], writer: [], examiner: false },
+    balanced: { judge: ['agy/gemini-4-argon'], writer: [], examiner: ['agy/gemini-4-argon'] },
+    robust: { judge: [], writer: ['agy/gemini-4-argon'], examiner: [] },
+  })
   assert.deepEqual(agy.models['gemini-3.8-flash'].aa, { slug: 'gemini-3-8-flash', intelligence: 40.9, terminalBench: 0.2, checked: '2026-10-08' })
 })
 
@@ -123,6 +129,60 @@ test('loadConfig refuses a table it cannot trust, naming the file and the field'
   const broken = path.join(tempDir(t), 'broken.json')
   fs.writeFileSync(broken, '{')
   assert.throws(() => lanes.loadConfig(broken), (err) => err.message.startsWith(`lanes config ${broken}: `))
+})
+
+test('loadConfig refuses design seats it cannot trust, naming the choice and the seat', (t) => {
+  const bad = [
+    [(c) => (c.designSeats = []), /designSeats must be an object/],
+    [(c) => (c.designSeats.cheap = { judge: [] }), /designSeats\.cheap: the choice must be native, balanced or robust/],
+    [(c) => (c.designSeats.balanced.designer = []), /designSeats\.balanced: designer is not judge, writer or examiner/],
+    [(c) => (c.designSeats.balanced.judge = false), /designSeats\.balanced\.judge: only the examiner can be off/],
+    [(c) => (c.designSeats.balanced.judge = 'agy/gemini-4-argon'), /designSeats\.balanced\.judge must be a list/],
+    [(c) => (c.designSeats.balanced.judge = ['gemini-4-argon']), /must be <harness>\/<model>/],
+    [(c) => (c.designSeats.balanced.judge = ['codex/gemini-4-argon']), /codex\/gemini-4-argon is not a model in the table/],
+    [(c) => (c.designSeats.robust.writer = ['agy/claude-opus-5-5']), /agy\/claude-opus-5-5 does not list writer in its roles/],
+    [(c) => (c.harnesses.agy.models['gemini-4-argon'].replaces = 'gpt'), /gemini-4-argon.*replaces/],
+    [(c) => (c.harnesses.agy.models['gemini-4-argon'].roles = ['judge', 'reviewer']), /gemini-4-argon.*replaces/],
+    [(c) => (c.harnesses.agy.timeouts.judge = 0), /timeouts must give an integer of at least 1 for each seat/],
+  ]
+  for (const [mutate, pattern] of bad) {
+    const file = writeConfig(t, mutate)
+    assert.throws(
+      () => lanes.loadConfig(file),
+      (err) => err.message.startsWith(`lanes config ${file}: `) && pattern.test(err.message),
+      String(pattern),
+    )
+  }
+  const without = writeConfig(t, (c) => {
+    delete c.designSeats
+    delete c.harnesses.agy.timeouts.writer
+  })
+  const config = lanes.loadConfig(without)
+  assert.deepEqual(lanes.seatList(config, 'balanced', 'judge'), [])
+  assert.equal(lanes.seatTimeout(config.harnesses.agy, 'writer'), 2700)
+})
+
+test('seatsChoice takes native, balanced or robust, and balanced for anything else, which it marks unknown', () => {
+  assert.deepEqual(lanes.seatsChoice({}), { name: 'balanced', known: true })
+  assert.deepEqual(lanes.seatsChoice({ AETHER_SEATS: 'native' }), { name: 'native', known: true })
+  assert.deepEqual(lanes.seatsChoice({ AETHER_SEATS: ' ROBUST ' }), { name: 'robust', known: true })
+  assert.deepEqual(lanes.seatsChoice({ AETHER_SEATS: 'cheap' }), { name: 'balanced', known: false })
+  const c = shipped()
+  assert.equal(lanes.seatList(c, 'native', 'examiner'), false)
+  assert.deepEqual(lanes.seatList(c, 'robust', 'writer'), ['agy/gemini-4-argon'])
+  assert.deepEqual(lanes.seatList(null, 'robust', 'writer'), [])
+})
+
+test('a model that only takes seats gets no swarm call', () => {
+  const c = shipped()
+  for (const role of ['implementer', 'supervisor', 'reviewer']) {
+    for (const model of ['haiku', 'sonnet', 'opus']) {
+      const lane = lanes.laneFor(c, role, model, 'high')
+      assert.notEqual(lane && lane.model, 'gemini-4-argon', `${role} ${model}`)
+    }
+  }
+  const args = lanes.lanesArgs(c, { installed: () => true, enabled: ['agy'] })
+  assert.equal(JSON.stringify(args.calls).includes('gemini-4-argon'), false)
 })
 
 test('laneFor maps a native call to its lane model and level, and keeps max and unlisted roles native', () => {
