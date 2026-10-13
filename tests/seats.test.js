@@ -265,3 +265,96 @@ test("aether-report --seats counts each seat's rounds, who answered, and why the
   assert.equal(report.lanes.byRole.judge.calls, 2)
   assert.deepEqual(report.notes, ['no price for lane model gemini-4-argon-high'])
 })
+
+// ---- The Writer ----
+
+const { task, specKitTasks } = require('./plan-fixtures.js')
+
+const WRITER_ANSWER = {
+  plan: `${FEATURE}/plan.md`,
+  tasks: `${FEATURE}/tasks.md`,
+  commit: 'abc123',
+  check: '{"ok":true}',
+  assumptions: ['Node 22'],
+  questions: [],
+}
+
+// Files the fake Writer copies into its worktree: a plan, and a tasks.md that passes or fails aether-plan check.
+function writerFiles(t, { valid = true } = {}) {
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-writer-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const plan = path.join(dir, 'plan.md')
+  const tasks = path.join(dir, 'tasks.md')
+  fs.writeFileSync(plan, '# Plan\n\n## Design\n\nOne task.\n')
+  const body = valid ? specKitTasks([task(1)]) : specKitTasks([task(1), task(2, { owns: '`src/t1/**`' })])
+  fs.writeFileSync(tasks, body)
+  return { plan, tasks }
+}
+
+function writerInput(files, { extra = '' } = {}) {
+  return [
+    `Write the plan and the tasks of ${FEATURE}.`,
+    `FAKE-AGY: copy ${files.plan} ${FEATURE}/plan.md`,
+    `FAKE-AGY: copy ${files.tasks} ${FEATURE}/tasks.md`,
+    extra,
+    'FAKE-AGY: commit plan and tasks',
+    `FAKE-AGY: answer ${JSON.stringify(WRITER_ANSWER)}`,
+    '',
+  ].join('\n')
+}
+
+test("an external Writer writes the plan and the tasks, and Aether checks and commits them in the Lead's checkout", (t) => {
+  const repo = seatRepo(t)
+  const env = { ...laneEnv(t), AETHER_SEATS: 'robust' }
+  const files = writerFiles(t)
+  const before = repo.git('rev-parse', 'HEAD')
+  const r = seat(repo.dir, ['writer', '--session', 's1', '--author', 'sonnet', '--feature', FEATURE], env, writerInput(files))
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  const head = repo.git('rev-parse', 'HEAD')
+  assert.notEqual(head, before)
+  assert.equal(repo.git('log', '-1', '--format=%s'), 'docs(specs): plan and tasks of 001-demo, by agy/gemini-4-argon')
+  assert.equal(repo.git('show', '--name-only', '--format=', 'HEAD'), `${FEATURE}/plan.md\n${FEATURE}/tasks.md`)
+  assert.equal(fs.readFileSync(path.join(repo.dir, FEATURE, 'tasks.md'), 'utf8'), fs.readFileSync(files.tasks, 'utf8'))
+  assert.equal(repo.git('status', '--porcelain'), '')
+  assert.equal(r.json.result.commit, head, 'the commit is the one in the Lead checkout, not the worktree')
+  assert.ok(r.json.answer.startsWith(`## Plan and tasks\n- Plan: ${FEATURE}/plan.md\n- Tasks: ${FEATURE}/tasks.md\n- Commit: ${head}\n- aether-plan check: {"ok":true`), r.json.answer)
+  assert.ok(r.json.answer.includes('## Assumptions\n- Node 22\n## Open questions\n- none\n- Lane: agy gemini-4-argon-high'))
+
+  const prompt = argAfter(agyTurns(env)[0].argv, '-p')
+  assert.ok(prompt.includes('You are the Aether Writer, run by the agy CLI rather than Claude Code.'))
+  assert.ok(prompt.includes('## The skill aether:plan'))
+  assert.ok(prompt.includes('## The skill aether:tasks'))
+  assert.ok(prompt.includes(path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-plan')))
+})
+
+test('a Writer whose tasks fail aether-plan check, or that leaves none, gives the round back, and the checkout is as it was', (t) => {
+  const repo = seatRepo(t)
+  const env = { ...laneEnv(t), AETHER_SEATS: 'robust' }
+  const before = repo.git('rev-parse', 'HEAD')
+  const failing = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], env, writerInput(writerFiles(t, { valid: false })))
+  assert.equal(failing.status, 4, failing.stdout)
+  assert.equal(failing.json.failed, 'failed')
+  assert.match(failing.json.detail, /^aether-plan check failed: /)
+  assert.equal(failing.json.native.agent, 'aether:writer')
+
+  const none = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], env, `FAKE-AGY: answer ${JSON.stringify(WRITER_ANSWER)}\n`)
+  assert.equal(none.status, 4)
+  assert.equal(none.json.detail, `the round left no ${FEATURE}/tasks.md`)
+
+  const code = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], env, writerInput(writerFiles(t), { extra: 'FAKE-AGY: write src/app.js code' }))
+  assert.equal(code.status, 4)
+  assert.equal(code.json.failed, 'violation')
+  assert.deepEqual(code.json.files, ['src/app.js'])
+
+  assert.equal(repo.git('rev-parse', 'HEAD'), before)
+  assert.equal(repo.git('status', '--porcelain'), '')
+  assert.equal(fs.existsSync(path.join(repo.dir, FEATURE, 'tasks.md')), false)
+})
+
+test('the balanced choice keeps the Writer native', (t) => {
+  const repo = seatRepo(t)
+  const r = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], laneEnv(t), writerInput(writerFiles(t)))
+  assert.equal(r.status, 3)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.deepEqual(r.json.native, seats.NATIVE.writer)
+})
