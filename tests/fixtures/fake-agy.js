@@ -6,6 +6,7 @@
 //
 //   write <relative path> <text...>     writes "<text>\n" under the working directory
 //   write-abs <absolute path> <text...> writes "<text>\n" to an absolute path
+//   copy <absolute path> <relative path>  copies a file into the working directory
 //   commit <message...>                 git add -A and git commit in the working directory
 //   sleep <seconds>                     waits before answering
 //   detach <pid file> <seconds>         starts `sleep <seconds>` in a session of its own, as agy starts
@@ -88,6 +89,10 @@ for (const line of prompt.split('\n')) {
     const target = verb === 'write' ? path.join(process.cwd(), rest[0]) : rest[0]
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.writeFileSync(target, `${rest.slice(1).join(' ')}\n`)
+  } else if (verb === 'copy') {
+    const target = path.join(process.cwd(), rest[1])
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.copyFileSync(rest[0], target)
   } else if (verb === 'commit') {
     spawnSync('git', ['add', '-A'], { encoding: 'utf8' })
     spawnSync('git', ['commit', '-q', '-m', rest.join(' ')], { encoding: 'utf8' })

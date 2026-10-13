@@ -25,7 +25,7 @@ test('the repository is a marketplace that lists the aether plugin', () => {
   })
 })
 
-test('the manifest has no dependencies, and declares the lanes option, off by default', () => {
+test('the manifest has no dependencies, and declares the lanes option, off by default, and the seats option, balanced', () => {
   const manifest = json(PLUGIN, '.claude-plugin', 'plugin.json')
   assert.equal(manifest.name, 'aether')
   assert.equal('dependencies' in manifest, false)
@@ -43,6 +43,13 @@ test('the manifest has no dependencies, and declares the lanes option, off by de
       description:
         "The external harnesses lanes may use, comma-separated, in order of preference: agy, codex, grok, cursor. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
       default: 'agy',
+    },
+    seats: {
+      type: 'string',
+      title: 'Design seats',
+      description:
+        "Who takes the Judge, the Writer and the Examiner: native (Aether's own agents, as in 0.8), balanced (Gemini 4 Argon on agy judges and examines; the Writer stays native) or robust (Argon writes the plan, and the Judge stays native on Opus). An external model takes a seat only with lanes on, its harness enabled and its quota left; otherwise the native agent takes it. Only the design seats change: the swarm's models and efforts still follow each task's Tier and Review.",
+      default: 'balanced',
     },
   })
 })

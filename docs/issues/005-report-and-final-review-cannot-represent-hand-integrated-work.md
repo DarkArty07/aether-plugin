@@ -3,7 +3,7 @@
 **Type:** bug and reporting gap
 **Date:** 2026-10-09
 **Found in:** the first real swarm run of a 12-task plan, over four launches
-**Status:** open (2026-10-09). Sub-project 2. The first run of 0.5.0 showed it again: the final review could not see the three units whose merges were refused.
+**Status:** partly addressed in 0.8.0 (2026-10-13). Done: the final review's package covers the whole run, from the first launch's base (`firstBase`) to the integration head, and a relaunch's final review is never on Sonnet. Open: the Lead cannot record a unit it integrated by hand, so the report still counts that unit as it ended in the swarm (deferred in the RADAR roadmap); a reviewer that stops without its answer is reported as `failed`, not as a verdict, but the reason does not say it ran out of turns.
 **GitHub:** [#5](https://github.com/DarkArty07/aether-plugin/issues/5) (private repository)
 
 ## Summary

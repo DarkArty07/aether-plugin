@@ -57,6 +57,65 @@ const REVIEW_SCHEMA = {
   },
 }
 
+// The answers of the design seats (lib/seats.js) when a lane harness takes them. The Judge's carries what its
+// agent file's indented block says; seats.js prints it back in that format for the Lead.
+const JUDGE_SCHEMA = {
+  type: 'object',
+  required: ['verdict', 'findings', 'openQuestions'],
+  properties: {
+    verdict: { type: 'string', enum: ['approve', 'revise', 'reject'] },
+    findings: {
+      type: 'array',
+      description: 'at most 10',
+      items: {
+        type: 'object',
+        required: ['severity', 'title', 'evidence', 'fix'],
+        properties: {
+          severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
+          title: { type: 'string' },
+          evidence: { type: 'string', description: 'a quote of the document in backticks, or file:line in the code' },
+          fix: { type: 'string' },
+        },
+      },
+    },
+    openQuestions: { type: 'array', items: { type: 'string' } },
+  },
+}
+
+const WRITER_SCHEMA = {
+  type: 'object',
+  required: ['plan', 'tasks', 'commit', 'check', 'assumptions', 'questions'],
+  properties: {
+    plan: { type: 'string', description: 'the path of plan.md' },
+    tasks: { type: 'string', description: 'the path of tasks.md' },
+    commit: { type: 'string', description: 'your commit of plan.md and tasks.md' },
+    check: { type: 'string', description: 'what aether-plan check printed' },
+    assumptions: { type: 'array', items: { type: 'string' } },
+    questions: { type: 'array', items: { type: 'string' } },
+  },
+}
+
+const EXAMINER_SCHEMA = {
+  type: 'object',
+  required: ['tests', 'notes'],
+  properties: {
+    tests: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'criterion', 'command', 'files'],
+        properties: {
+          id: { type: 'string', description: 'a short kebab-case name' },
+          criterion: { type: 'string', description: 'the criterion or requirement of the spec it proves, such as C2 or R5' },
+          command: { type: 'string', description: 'the shell command that runs this test from the repository root; exit 0 means it passes' },
+          files: { type: 'array', items: { type: 'string' }, description: 'the files it needs, relative to .aether-exam/' },
+        },
+      },
+    },
+    notes: { type: 'string', description: 'what the exam cannot check, and why' },
+  },
+}
+
 // The keywords the role schemas use. A schema with any other keyword makes validate throw, so a later schema
 // change is noticed instead of being checked wrongly.
 const KEYWORDS = ['type', 'enum', 'required', 'properties', 'items', 'description']
@@ -132,4 +191,4 @@ function validate(schema, value) {
   return problemOf(schema, value, '')
 }
 
-module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA, validate }
+module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA, JUDGE_SCHEMA, WRITER_SCHEMA, EXAMINER_SCHEMA, validate }

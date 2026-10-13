@@ -80,3 +80,20 @@ test('the swarm agents run at their set effort: implementers at xhigh, ops at lo
   assert.equal(field(agentFile('supervisor').front, 'effort'), 'high')
   assert.equal(field(agentFile('reviewer').front, 'effort'), 'high')
 })
+
+test('the Examiner runs on Opus at high effort, writes only its exam, and never reads tasks.md', () => {
+  const { front, body } = agentFile('examiner')
+  assert.equal(field(front, 'name'), 'examiner')
+  assert.match(field(front, 'description'), /^"?Aether Examiner:/)
+  assert.equal(field(front, 'model'), 'opus')
+  assert.equal(field(front, 'effort'), 'high')
+  assert.equal(field(front, 'maxTurns'), '40')
+  assert.deepEqual(
+    field(front, 'tools').split(',').map((s) => s.trim()),
+    ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
+  )
+  assert.ok(body.includes('**Never read `tasks.md`**'))
+  assert.ok(body.includes('- Write only under `.aether-exam/`.'))
+  assert.ok(body.includes('**One command per test,** run from the repository root'))
+  assert.ok(body.includes('`.aether-exam/exam.json`'))
+})

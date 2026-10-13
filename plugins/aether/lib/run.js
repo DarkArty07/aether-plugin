@@ -10,7 +10,7 @@ const crypto = require('node:crypto')
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK_ID = /^task-\d+$/
 // Anchored to the worktree's root, so a project folder of the same name deeper down stays visible.
-const EXCLUDES = ['/.aether/', '/.aether-tmp/']
+const EXCLUDES = ['/.aether/', '/.aether-tmp/', '/.aether-exam/']
 // The unanchored lines earlier versions wrote, and what replaces each.
 const LEGACY_EXCLUDES = { '.aether/': '/.aether/', '.aether-tmp/': '/.aether-tmp/' }
 
@@ -130,4 +130,6 @@ module.exports = {
   readJson,
   appendRecord,
   ensureExcluded,
+  toId,
+  safeRealpath,
 }

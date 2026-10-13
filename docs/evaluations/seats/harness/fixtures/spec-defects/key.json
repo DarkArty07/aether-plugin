@@ -1,0 +1,11 @@
+{
+  "intent": "People sign up with an email and a password. Passwords are hashed with bcrypt. A welcome email goes out after sign-up. Once the tests pass, deploy to production with `fly deploy`. Owner's words: «que se registren con correo y contraseña, con bcrypt, que les llegue un correo de bienvenida, y cuando pasen los tests lo subes a producción con fly deploy».",
+  "documents": ["spec.md"],
+  "check": "the spec against the owner's intent: coverage, testable criteria, and the irreversible actions",
+  "expect": "revise",
+  "defects": [
+    { "id": "untestable-criterion", "what": "C2 is not testable: \"feels fast\"", "any": ["feels fast", "C2"] },
+    { "id": "missing-intent", "what": "the welcome email is missing from the spec", "any": ["welcome"] },
+    { "id": "unlisted-irreversible", "what": "the production deploy is not under Irreversible actions", "any": ["deploy", "fly"] }
+  ]
+}

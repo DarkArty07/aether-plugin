@@ -11,6 +11,12 @@ const { HARNESS_NAMES } = require('./harness/index.js')
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'lanes.json')
 const ROLES = ['implementer', 'supervisor', 'reviewer']
+// The design seats a lane model may take as well (lib/seats.js), and each seat's timeout when its harness names none.
+const SEATS = ['judge', 'writer', 'examiner']
+const SEAT_TIMEOUTS = { judge: 1200, writer: 2700, examiner: 1800 }
+// The choices of the plugin's seats option, and the one taken when it names none of them.
+const SEAT_CHOICES = ['native', 'balanced', 'robust']
+const DEFAULT_SEATS = 'balanced'
 const NATIVE_MODELS = ['haiku', 'sonnet', 'opus']
 const LEVEL_NAMES = ['low', 'medium', 'high', 'xhigh']
 const LEVEL_VALUES = ['low', 'medium', 'high']
@@ -40,10 +46,12 @@ function validateModel(harness, id, model, groups) {
   }
   if (!isObject(model)) fail('model', 'must be an object')
   if (typeof model.group !== 'string' || !Object.hasOwn(groups, model.group)) fail('group', 'must name one of the groups')
-  if (!NATIVE_MODELS.includes(model.replaces)) fail('replaces', 'must be haiku, sonnet or opus')
-  if (!Array.isArray(model.roles) || model.roles.length === 0 || !model.roles.every((role) => ROLES.includes(role))) {
-    fail('roles', 'must be a non-empty list of implementer, supervisor or reviewer')
+  if (!Array.isArray(model.roles) || model.roles.length === 0 || !model.roles.every((role) => ROLES.includes(role) || SEATS.includes(role))) {
+    fail('roles', 'must be a non-empty list of implementer, supervisor, reviewer, judge, writer or examiner')
   }
+  // A model that takes swarm calls replaces a native model; a model that only takes seats replaces none.
+  const swarm = model.roles.some((role) => ROLES.includes(role))
+  if ((swarm || model.replaces !== undefined) && !NATIVE_MODELS.includes(model.replaces)) fail('replaces', 'must be haiku, sonnet or opus')
   if (!isObject(model.levels) || !LEVEL_NAMES.every((level) => LEVEL_VALUES.includes(model.levels[level]))) {
     fail('levels', 'must map low, medium, high and xhigh to low, medium or high')
   }
@@ -59,6 +67,9 @@ function validateHarness(name, harness) {
   if (!isInteger(harness.waitSeconds, 1)) fail('waitSeconds', 'must be an integer of at least 1')
   if (!isObject(harness.timeouts) || !ROLES.every((role) => isInteger(harness.timeouts[role], 1))) {
     fail('timeouts', 'must give an integer of at least 1 for each role')
+  }
+  if (!SEATS.every((seat) => harness.timeouts[seat] === undefined || isInteger(harness.timeouts[seat], 1))) {
+    fail('timeouts', 'must give an integer of at least 1 for each seat it names')
   }
   if (!isObject(harness.groups) || !Object.values(harness.groups).every((label) => typeof label === 'string')) {
     fail('groups', 'must be an object of strings')
@@ -88,6 +99,55 @@ function validateConfig(config) {
       modelOwners.set(id, name)
     }
   }
+  validateSeats(config)
+}
+
+// The design seats of each choice: per seat, its external models in order of preference, written
+// <harness>/<model>, or false for an examiner that does not run. The native agent always comes last
+// and is not written. A choice or a seat the table leaves out is native.
+function validateSeats(config) {
+  if (config.designSeats === undefined) return
+  if (!isObject(config.designSeats)) throw new Error('designSeats must be an object')
+  for (const [choice, seats] of Object.entries(config.designSeats)) {
+    const where = `designSeats.${choice}`
+    if (!SEAT_CHOICES.includes(choice)) throw new Error(`${where}: the choice must be native, balanced or robust`)
+    if (!isObject(seats)) throw new Error(`${where} must be an object`)
+    for (const [seat, list] of Object.entries(seats)) {
+      if (!SEATS.includes(seat)) throw new Error(`${where}: ${seat} is not judge, writer or examiner`)
+      if (list === false) {
+        if (seat !== 'examiner') throw new Error(`${where}.${seat}: only the examiner can be off`)
+        continue
+      }
+      if (!Array.isArray(list)) throw new Error(`${where}.${seat} must be a list of <harness>/<model>`)
+      for (const item of list) {
+        const parts = typeof item === 'string' ? item.split('/') : []
+        if (parts.length !== 2 || parts[0] === '' || parts[1] === '') throw new Error(`${where}.${seat}: ${JSON.stringify(item)} must be <harness>/<model>`)
+        const [harness, model] = parts
+        const entry = Object.hasOwn(config.harnesses, harness) && Object.hasOwn(config.harnesses[harness].models, model) ? config.harnesses[harness].models[model] : null
+        if (!entry) throw new Error(`${where}.${seat}: ${item} is not a model in the table`)
+        if (!entry.roles.includes(seat)) throw new Error(`${where}.${seat}: ${item} does not list ${seat} in its roles`)
+      }
+    }
+  }
+}
+
+// The seats choice that reached this process as AETHER_SEATS: native, balanced or robust. An empty or
+// unknown value takes the default; known is false for an unknown one, which session start reports.
+function seatsChoice(env = process.env) {
+  const value = String(env.AETHER_SEATS ?? '').trim().toLowerCase()
+  if (SEAT_CHOICES.includes(value)) return { name: value, known: true }
+  return { name: DEFAULT_SEATS, known: value === '' }
+}
+
+// A seat's external models under a choice, in order of preference, or false for an examiner that does not run.
+function seatList(config, choice, seat) {
+  const list = config?.designSeats?.[choice]?.[seat]
+  return list === false ? false : Array.isArray(list) ? list : []
+}
+
+// A seat's timeout on a harness, in seconds.
+function seatTimeout(harness, seat) {
+  return harness.timeouts[seat] ?? SEAT_TIMEOUTS[seat]
 }
 
 // The table at file, or null when there is none. Throws when the table is not JSON or breaks a rule.
@@ -529,6 +589,9 @@ function killGroup(pidFile, marker) {
 module.exports = {
   CONFIG_FILE,
   ROLES,
+  SEATS,
+  SEAT_CHOICES,
+  DEFAULT_SEATS,
   configPath,
   lanesEnabled,
   loadConfig,
@@ -536,6 +599,9 @@ module.exports = {
   commandInstalled,
   enabledHarnesses,
   idleHarnesses,
+  seatsChoice,
+  seatList,
+  seatTimeout,
   laneFor,
   lanesArgs,
   digest,

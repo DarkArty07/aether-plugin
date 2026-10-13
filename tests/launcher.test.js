@@ -23,7 +23,7 @@ test('the documents record the lanes: decisions, facts, and the skills that use 
   const swarm = read('plugins', 'aether', 'skills', 'swarm', 'SKILL.md')
   for (const text of ['--no-lanes', 'laneFailure', '`aether-lane`', 'Blocked by a lane']) assert.ok(swarm.includes(text), text)
   assert.match(read('README.md'), /^### Lanes$/m)
-  assert.match(read('README.md'), /^Version 0\.8: /m)
+  assert.match(read('README.md'), /^Version 0\.9: /m)
 })
 
 test('the documents record the autonomy: decisions, the README, and no per-stage gates', () => {
@@ -105,14 +105,15 @@ test('the installer and the fish launcher are gone', () => {
   }
 })
 
-test('the manifest is version 0.8.0, and the README says so', () => {
+test('the manifest is version 0.9.0, and the README says so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.8.0')
+  assert.equal(manifest.version, '0.9.0')
   assert.match(manifest.description, /built for RADAR/)
   assert.match(manifest.description, /the owner's right hand/)
   assert.match(manifest.description, /a Judge on Opus reviews them/)
   assert.match(manifest.description, /Lanes run its calls on other coding plans/)
-  assert.match(README(), /^Version 0\.8: /m)
+  assert.match(manifest.description, /the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner/)
+  assert.match(README(), /^Version 0\.9: /m)
 })
 
 test('the documents record RADAR: the roadmap, decisions A31-A38, and a README without superpowers as a requirement', () => {
@@ -152,4 +153,20 @@ test('the documents record the decisions and the verified facts', () => {
   const v01 = read('docs', 'superpowers', 'specs', '2026-10-07-aether-plugin-design.md')
   const status = v01.split('\n').find((line) => line.startsWith('- **Status:**'))
   assert.match(status, /2026-10-08-lead-and-designer-design\.md/)
+})
+
+test('the documents record the design seats: decisions A39-A43, the README, the skill and the evaluation', () => {
+  const decisions = read('docs', 'decisions.md')
+  for (let n = 39; n <= 43; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  const readme = README()
+  assert.match(readme, /^### Design seats$/m)
+  for (const text of ['`aether:examiner`', '`aether-lane seat`', '`aether-exam`', '`seats`, `balanced` by default', 'docs/evaluations/seats/README.md', 'specs/001-design-seats/spec.md', 'Fable']) {
+    assert.ok(readme.includes(text), text)
+  }
+  const lead = read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md')
+  for (const text of ['## The design seats', 'aether-lane seat <judge|writer|examiner>', '--author', 'aether-exam store', 'aether-exam run', 'aether-report --seats', 'seat/<id>', '`aether:examiner`']) {
+    assert.ok(lead.includes(text), text)
+  }
+  assert.ok(fs.existsSync(path.join(ROOT, 'docs', 'evaluations', 'seats', 'harness', 'judge-defects.js')))
+  assert.ok(fs.existsSync(path.join(ROOT, 'specs', '001-design-seats', 'plan.md')))
 })

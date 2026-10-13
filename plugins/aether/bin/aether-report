@@ -4,15 +4,16 @@
 // aether-report --run <id> [--session <id>] [--no-tests]
 // aether-report finalize --run <id> [--session <id>] [--no-tests]
 // aether-report price <claude -p json output> [--main-model <id>]
+// aether-report --seats [--session <id>] [--since <ms>]
 
 const fs = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
-const { report, finalize } = require(path.join(lib, 'report.js'))
+const { report, finalize, seatsReport } = require(path.join(lib, 'report.js'))
 const { loadPrices, priceModelUsage } = require(path.join(lib, 'prices.js'))
 
 const USAGE =
-  'usage: aether-report [finalize] --run <id> [--session <id>] [--no-tests] | aether-report price <claude-json> [--main-model <id>]'
+  'usage: aether-report [finalize] --run <id> [--session <id>] [--no-tests] | aether-report --seats [--session <id>] [--since <ms>] | aether-report price <claude-json> [--main-model <id>]'
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -28,6 +29,11 @@ function main(argv) {
     if (!argv[1] || argv[1].startsWith('--')) throw new Error(USAGE)
     const output = JSON.parse(fs.readFileSync(argv[1], 'utf8'))
     return priceModelUsage(output, loadPrices(), { mainModel: value(argv, '--main-model') })
+  }
+  if (argv.includes('--seats')) {
+    const since = value(argv, '--since')
+    if (since !== null && !(Number(since) >= 0)) throw new Error('--since needs a time in milliseconds')
+    return seatsReport({ session: value(argv, '--session'), since: since === null ? 0 : Number(since) })
   }
   const finalizing = argv[0] === 'finalize'
   const rest = finalizing ? argv.slice(1) : argv
