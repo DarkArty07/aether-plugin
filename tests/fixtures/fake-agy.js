@@ -21,7 +21,8 @@
 //   new-conversation                    a resume that silently starts a new conversation
 //
 // "/usage" as the prompt prints the quota. AETHER_FAKE_AGY_QUOTA_FILE, when it exists, holds
-// { "<group name>": [<5h remaining>, <weekly remaining>] }; otherwise every window is at 0.9.
+// { "<group name>": [<5h remaining>, <weekly remaining>, <5h reset>, <weekly reset>] }, the resets being optional (null
+// or missing gives the old fixed times); otherwise every window is at 0.9.
 // AETHER_FAKE_AGY_LOG, when set, gets one JSON line per call: { argv, cwd, marker, files, head }.
 // AETHER_FAKE_AGY_STATE, when set, is a directory that keeps each conversation's running usage.
 
@@ -65,11 +66,11 @@ const prompt = flag('-p') || ''
 if (prompt === '/usage') {
   const file = process.env.AETHER_FAKE_AGY_QUOTA_FILE
   const quota = file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : { 'Gemini Models': [0.9, 0.9], 'Claude and GPT models': [0.9, 0.9] }
-  const groups = Object.entries(quota).map(([name, [fiveHour, weekly]]) => ({
+  const groups = Object.entries(quota).map(([name, [fiveHour, weekly, fiveHourReset, weeklyReset]]) => ({
     name,
     buckets: [
-      { id: `${name}-weekly`, window: 'weekly', remaining_fraction: weekly, reset_time: '2026-10-14T03:35:44Z' },
-      { id: `${name}-5h`, window: '5h', remaining_fraction: fiveHour, reset_time: '2026-10-09T05:53:31Z' },
+      { id: `${name}-weekly`, window: 'weekly', remaining_fraction: weekly, reset_time: weeklyReset ?? '2026-10-14T03:35:44Z' },
+      { id: `${name}-5h`, window: '5h', remaining_fraction: fiveHour, reset_time: fiveHourReset ?? '2026-10-09T05:53:31Z' },
     ],
   }))
   print({ conversation_id: '', status: 'SUCCESS', response: 'quota', usage: zero(), command: { name: 'usage', data: { groups } } })

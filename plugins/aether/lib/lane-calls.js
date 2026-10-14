@@ -12,6 +12,9 @@ const { spawn } = require('node:child_process')
 const { repoPaths } = require('./git.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
+const marks = require('./lane-marks.js')
+const order = require('./lane-order.js')
+const readings = require('./lane-readings.js')
 const work = require('./lane-work.js')
 const schemas = require('./lane-schemas.js')
 const { createAdapter } = require('./harness/index.js')
@@ -237,6 +240,26 @@ function clearCallDir(paths) {
   }
 }
 
+// The group's reading from the harness's saved or fresh reading, or null when the reading fails or does not carry the
+// group: an unknown group (R8), which never holds a call back and never leaves a mark.
+function readGroup(adapter, { harness, settings, group, dataDir }) {
+  try {
+    return readings.readGroups(adapter, { harness, settings, dataDir }).groups[group] ?? null
+  } catch {
+    return null
+  }
+}
+
+// Leaves the dry mark of a group, from the reading that shows it dry or, when a call ended for quota with nothing
+// that shows it, from none. A mark that cannot be written changes nothing: the group goes unmarked this time.
+function holdDry(dataDir, { harness, group, reading, config, now }) {
+  try {
+    marks.markDry(dataDir, { harness, group, reading, reserve: config.reserve, now, minutes: config.dryMarkMinutes })
+  } catch {
+    // The next start or call that finds the group dry marks it.
+  }
+}
+
 function prepareWorkspace(cwd, runId, call, role, task) {
   if (role === 'implementer') return work.prepareImplementer(cwd, runId, task).workdir
   return work.prepareReader(cwd, runId, call, { taskId: role === 'supervisor' ? task : null }).workdir
@@ -260,13 +283,16 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   const lane = CALLED_ROLES.includes(role) ? laneModel(harness, role, model, effort) : null
   if (!lane) return { unavailable: 'role' }
   if (!adapter.installed()) return { unavailable: 'not-installed' }
-  let quotaBefore
-  try {
-    quotaBefore = adapter.quota().groups[lane.group] ?? null
-  } catch {
+  const dataDir = run.dataDir()
+  // A group a live mark holds is not read and its mark is not renewed: it is held until the mark's end.
+  if (marks.liveMark(dataDir, name, lane.group) !== null) return { unavailable: 'quota' }
+  // A reading that fails leaves the group unknown (R8), so the call starts: a harness that is broken fails the call
+  // and the call goes native like any other failure. Only a reading that shows the group under the reserve holds it.
+  const quotaBefore = readGroup(adapter, { harness: name, settings: harness, group: lane.group, dataDir })
+  if (quotaBefore !== null && !lanes.usable(quotaBefore, config.reserve)) {
+    holdDry(dataDir, { harness: name, group: lane.group, reading: quotaBefore, config, now: Date.now() })
     return { unavailable: 'quota' }
   }
-  if (!lanes.usable(quotaBefore, config.reserve)) return { unavailable: 'quota' }
   // The model the harness takes as --model: the adapter names it from the lane model id and its level.
   const passed = adapter.modelArg({ model: lane.id, level: lane.level })
 
@@ -430,6 +456,12 @@ function callEntry(info, { time, status, usage, conversation, quotaAfter, detail
   }
 }
 
+// What a finished call tells of its group: the group view of its final reading, as the order rule reads it.
+function quotaSummary(reading, { reserve, now, mark }) {
+  const { usable, unknown, remaining, resetsAt, priority, usedPercentAbsent } = order.groupView(reading, { reserve, now, mark })
+  return { usable, unknown, remaining, resetsAt, priority, usedPercentAbsent }
+}
+
 async function runCall(cwd, runId, call) {
   const paths = callPaths(cwd, runId, call)
   const info = JSON.parse(fs.readFileSync(paths.call, 'utf8'))
@@ -444,10 +476,14 @@ async function runCall(cwd, runId, call) {
 
   let outcome
   let parsed = { usage: NO_USAGE, conversation: null }
+  let config = null
   let quotaAfter = null
   let quotaRead = false
+  const dataDir = run.dataDir()
   try {
-    const { config, adapter } = harnessSettings(harness)
+    const settings = harnessSettings(harness)
+    const { adapter } = settings
+    config = settings.config
     const schema = ROLE_SCHEMAS[role]
     fs.writeFileSync(paths.schema, `${JSON.stringify(schema, null, 2)}\n`)
     const before = work.snapshot(cwd, runId, { taskId: role === 'reviewer' ? null : task })
@@ -467,7 +503,8 @@ async function runCall(cwd, runId, call) {
     // What agy started in sessions of its own outlives its group; nothing may write after the checks.
     lanes.killMarked(paths.marker)
     try {
-      quotaAfter = adapter.quota().groups[group] ?? null
+      // A fresh reading, which also renews the one kept for the starts that follow.
+      quotaAfter = readings.readGroups(adapter, { harness, settings: settings.harness, dataDir, fresh: true }).groups[group] ?? null
       quotaRead = true
     } catch {
       // An unreadable /usage is an infrastructure failure, not a verdict on the quota.
@@ -501,9 +538,13 @@ async function runCall(cwd, runId, call) {
     usage: parsed.usage,
     conversation: parsed.conversation,
   }
+  // A call that ended for quota holds its group, from its final reading: until the reset when that reading shows the
+  // group under the reserve, for the default length otherwise. The summary below is taken after the mark.
+  if (outcome.status === 'quota') holdDry(dataDir, { harness, group, reading: quotaAfter, config, now: time })
+  if (quotaRead) lane.quota = quotaSummary(quotaAfter, { reserve: config.reserve, now: time, mark: marks.liveMark(dataDir, harness, group, time) })
   try {
     lanes.appendLog(
-      run.dataDir(),
+      dataDir,
       info.session,
       callEntry(info, { time, status: outcome.status, usage: lane.usage, conversation: lane.conversation, quotaAfter, detail: outcome.detail }),
     )
