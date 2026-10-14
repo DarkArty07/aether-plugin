@@ -73,6 +73,27 @@ test('skips a last line grok is still writing, and takes the newest line by its 
   assert.equal(readGrokQuota({ logFile: shuffled, now: IN_1041_PERIOD }).usedPercent, 40)
 })
 
+test('a line from the future, a clock that ran ahead, does not pin the reading; a line a little ahead still counts', (t) => {
+  const real = billingLine({ ts: IN_1041_PERIOD - 60000, percent: 80, pid: 777 })
+  const ahead = billingLine({ ts: IN_1041_PERIOD + 24 * 3600 * 1000, percent: 10, pid: 888 })
+  const logFile = writeLog(t, [ahead, real])
+  const reading = readGrokQuota({ logFile, now: IN_1041_PERIOD })
+  assert.deepEqual([reading.usedPercent, reading.source.pid, reading.source.ageMinutes], [80, 777, 1])
+  // A few minutes ahead is skew between two clocks that read the same time, and the newest line by ts still wins.
+  const skewed = writeLog(t, [real, billingLine({ ts: IN_1041_PERIOD + 2 * 60000, percent: 30, pid: 999 })])
+  assert.equal(readGrokQuota({ logFile: skewed, now: IN_1041_PERIOD }).usedPercent, 30)
+  // Only a line from the future: there is no reading, not the future one.
+  assert.equal(readGrokQuota({ logFile: writeLog(t, [ahead]), now: IN_1041_PERIOD }), null)
+})
+
+test('a refresh is not satisfied by a line from the future: the UI goes on until grok writes a line of its own', async (t) => {
+  const ahead = billingLine({ ts: IN_1041_PERIOD + 24 * 3600 * 1000, percent: 10, pid: 888 })
+  const ui = fakeUi(t, { writeAfterMs: 1500, percent: 60, logLines: [ahead] })
+  const reading = await refreshGrokQuota(options(ui))
+  assert.deepEqual([reading.usedPercent, reading.source.ts], [60, new Date(IN_1041_PERIOD + 1500).toISOString()])
+  assert.deepEqual(ui.stops.map((stop) => stop.at), [IN_1041_PERIOD + 1500])
+})
+
 test('reads only the last megabyte of the log', (t) => {
   const filler = `${JSON.stringify({ ts: '2026-10-14T05:50:00.000Z', msg: 'filler', ctx: { text: 'x'.repeat(1000) } })}\n`
   const logFile = writeLog(t, [LINE_1041])

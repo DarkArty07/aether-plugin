@@ -25,6 +25,10 @@ const BILLING_MESSAGE = 'billing: fetched credits config'
 const ABSENT_USED_PERCENT = 0
 // The log grows by megabytes, and grok writes these lines when its UI starts: the newest is near the end.
 const TAIL_BYTES = 1024 * 1024
+// How far ahead of now a line's time may be and still count. grok writes its lines with the clock this process reads,
+// so only a clock that ran ahead and was set back leaves a line further ahead; such a line would win over every real
+// one until its time came.
+const CLOCK_SKEW_MS = 5 * 60 * 1000
 const TIMEOUT_MS = 20000
 const POLL_MS = 250
 // What lanes.killMarked waits between SIGTERM and SIGKILL. A refresh polls for no longer than its timeout less
@@ -90,10 +94,12 @@ function billingEntries(text) {
   return entries
 }
 
-// The newest billing entry of text by its time, the later line on a tie, or null.
-function newestEntry(text) {
+// The newest billing entry of text by its time, the later line on a tie, or null. Entries after notAfter (ms) are left
+// out.
+function newestEntry(text, { notAfter = Infinity } = {}) {
   let newest = null
   for (const item of billingEntries(text)) {
+    if (item.time > notAfter) continue
     if (newest === null || item.time >= newest.time) newest = item
   }
   return newest
@@ -126,11 +132,12 @@ function readingOf({ entry, time }, now, logFile = null, { absentUsed = ABSENT_U
 }
 
 // The newest reading in the last megabyte of grok's log at now (ms), or null when there is no log, no billing line,
-// or the newest one is unreadable or from a period that has ended.
+// or the newest one is unreadable or from a period that has ended. A line from more than CLOCK_SKEW_MS in the future
+// is not read, so the newest line that is not in the future decides.
 function readGrokQuota({ logFile = defaultLogFile(), now = Date.now(), absentUsed = ABSENT_USED_PERCENT } = {}) {
   const text = tailText(logFile)
   if (text === null) return null
-  const newest = newestEntry(text)
+  const newest = newestEntry(text, { notAfter: now + CLOCK_SKEW_MS })
   return newest === null ? null : readingOf(newest, now, logFile, { absentUsed })
 }
 
