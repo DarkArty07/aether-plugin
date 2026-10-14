@@ -179,9 +179,12 @@ test('the documents record the design seats: decisions A39-A43, the README, the 
 
 test('the documents record the super Lead: A48, the three paths in the README, and no text that says the Lead runs on Sonnet as a fact', () => {
   const decisions = read('docs', 'decisions.md')
-  const rows = decisions.split('\n').filter((line) => line.startsWith('| A48 |'))
+  const lines = decisions.split('\n')
+  const rows = lines.filter((line) => line.startsWith('| A48 |'))
   assert.equal(rows.length, 1)
-  assert.equal(decisions.trimEnd().split('\n').pop(), rows[0], 'A48 is the last row')
+  // A later decision (A49...) may follow it: A48 only has to come after A47.
+  const a47 = lines.findIndex((line) => line.startsWith('| A47 |'))
+  assert.ok(a47 >= 0 && lines.indexOf(rows[0]) > a47, 'A48 comes after A47')
   for (const text of ['three paths', 'specs/003-super-lead/spec.md', '2026-10-14', 'never inherited', 'never a fork', 'Fable 5.1 excluded (A43)', 'first 2,000 characters']) {
     assert.ok(rows[0].includes(text), text)
   }
