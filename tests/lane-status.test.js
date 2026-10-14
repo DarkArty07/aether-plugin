@@ -132,6 +132,28 @@ test("the wave's quota step, status --refresh, refreshes a stale grok reading ov
   assert.deepEqual(sessions(grokLog), [])
 })
 
+test("the wave's quota step uses grok's ACP answer itself, with no line in grok's log", (t) => {
+  const grokLog = path.join(tempDir(t), 'acp.log')
+  const { args, env, logFile } = statusEnv(t, { ageMinutes: 45 })
+  // No AETHER_FAKE_ACP_LOG_LINES: the fake leaves nothing in grok's log, so only the answer can carry the new reading.
+  const withFake = { ...env, AETHER_FAKE_ACP_LOG: grokLog, AETHER_FAKE_ACP_END_IN_HOURS: '48' }
+  const r = fx.lane(args, 'status', ['--refresh'], withFake)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  const grok = r.json.harnesses.grok
+  assert.deepEqual([grok.refreshed, grok.refreshMethod, grok.groups.grok.source.method, grok.groups.grok.source.ageMinutes], [true, 'acp', 'acp', 0])
+  assert.ok(Math.abs(grok.groups.grok.priority - 1 / 48) < 0.001, String(grok.groups.grok.priority))
+  assert.equal(fs.readFileSync(logFile, 'utf8').trim().split('\n').length, 1, 'the log still holds its one old line')
+  const [reading] = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading' && e.harness === 'grok')
+  assert.equal(reading.groups.grok.source.method, 'acp', 'the reading in the lane log is the answer too')
+
+  // With no log at all grok is not unknown, and goes first in the order.
+  fs.rmSync(logFile)
+  const noLog = fx.lane(args, 'status', ['--refresh'], withFake)
+  assert.equal(noLog.status, 0, noLog.stdout + noLog.stderr)
+  assert.deepEqual([noLog.json.harnesses.grok.refreshMethod, noLog.json.harnesses.grok.groups.grok.unknown], ['acp', false])
+  assert.deepEqual(noLog.json.order.implementer.haiku.ordered.map((e) => [e.model, e.state]), [['grok-4.7', 'priority'], ['gemini-3.8-flash', 'priority']])
+})
+
 test('a status run by hand does not refresh, even when the reading is stale, and only --refresh is accepted after the run', (t) => {
   const grokLog = path.join(tempDir(t), 'acp.log')
   const { args, env, logFile } = statusEnv(t, { ageMinutes: 45 })

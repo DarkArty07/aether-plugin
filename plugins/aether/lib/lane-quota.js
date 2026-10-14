@@ -184,8 +184,9 @@ function needsRefresh(name, settings, { now, dataDir }) {
 
 // The quota step of a wave: refreshes each enabled, installed harness of the table that has a refresher (grok today)
 // and whose reading is missing, unknown or older than its life (quotaLifeMinutes, 30 minutes by default); a fresh
-// reading is left alone. Only the harnesses it tried are in the answer, each as { refreshed, method }, method being
-// 'acp', 'ui' or null. Never throws. now and dataDir are for tests.
+// reading is left alone. Only the harnesses it tried are in the answer, each as { refreshed, method, reading }, method
+// being 'acp', 'ui' or null, and reading the new reading or null: whoever shows the view uses it, as quotaReport does,
+// so that an answer grok gave over ACP does not depend on a line in grok's log. Never throws. now and dataDir are for tests.
 async function refreshStale({ config, enabled, refreshers = REFRESHERS, now = Date.now, dataDir = null }) {
   const done = {}
   for (const name of enabled) {
@@ -194,8 +195,8 @@ async function refreshStale({ config, enabled, refreshers = REFRESHERS, now = Da
       const settings = config.harnesses[name]
       if (!lanes.commandInstalled(settings.command)) continue
       if (!needsRefresh(name, settings, { now: now(), dataDir: dataDir ?? run.dataDir() })) continue
-      const { refreshed, method } = await refresh(refreshers, name, settings)
-      done[name] = { refreshed, method }
+      const { reading, refreshed, method } = await refresh(refreshers, name, settings)
+      done[name] = { refreshed, method, reading }
     } catch {
       // A harness that cannot be checked is left as it is.
     }

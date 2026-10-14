@@ -60,11 +60,13 @@ function wantsRefresh(args) {
   throw new Error(`usage: aether-lane ${COMMANDS.status}`)
 }
 
-// The view of status, with each harness the quota step refreshed marked as such.
+// The view of status, with each harness the quota step refreshed marked as such. The reading the refresh took is the
+// harness's reading in the view, so that grok's answer over ACP does not depend on a line in its log.
 async function statusCommand(cwd, runId, args) {
   const refresh = wantsRefresh(args)
   const refreshed = refresh ? await calls.refreshStale(cwd, runId) : {}
-  const view = calls.status(cwd, runId)
+  const latest = Object.fromEntries(Object.entries(refreshed).map(([name, done]) => [name, done.reading]))
+  const view = calls.status(cwd, runId, { latest })
   for (const [name, done] of Object.entries(refreshed)) {
     if (Object.hasOwn(view.harnesses, name)) Object.assign(view.harnesses[name], { refreshed: done.refreshed, refreshMethod: done.method })
   }

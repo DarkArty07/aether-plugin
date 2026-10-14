@@ -147,14 +147,14 @@ test('the wave step refreshes grok when its reading is missing, unknown or older
   assert.deepEqual(await quota.refreshStale({ config, enabled: ['agy', 'grok'], refreshers }), {})
   assert.deepEqual(asked, [])
   grok.groups = { grok: grokReading(31) }
-  assert.deepEqual(await quota.refreshStale({ config, enabled: ['agy', 'grok'], refreshers }), { grok: { refreshed: true, method: 'ui' } })
+  assert.deepEqual(await quota.refreshStale({ config, enabled: ['agy', 'grok'], refreshers }), { grok: { refreshed: true, method: 'ui', reading: grokReading(0) } })
   grok.groups = { grok: { unknown: true, windows: {} } }
   const viaAcp = { grok: async () => ({ ...grokReading(0), source: { method: 'acp', log: null, ts: new Date(NOW).toISOString(), pid: null, version: '1.0.52', ageMinutes: 0 } }) }
-  assert.deepEqual(await quota.refreshStale({ config, enabled: ['grok'], refreshers: viaAcp }), { grok: { refreshed: true, method: 'acp' } })
+  assert.deepEqual(await quota.refreshStale({ config, enabled: ['grok'], refreshers: viaAcp }), { grok: { refreshed: true, method: 'acp', reading: await viaAcp.grok() } })
   grok.groups = { grok: grokReading(45) }
-  assert.deepEqual(await quota.refreshStale({ config, enabled: ['grok'], refreshers: { grok: async () => null } }), { grok: { refreshed: false, method: null } })
+  assert.deepEqual(await quota.refreshStale({ config, enabled: ['grok'], refreshers: { grok: async () => null } }), { grok: { refreshed: false, method: null, reading: null } })
   grok.fail = true
-  assert.deepEqual(await quota.refreshStale({ config, enabled: ['grok'], refreshers: { grok: async () => { throw new Error('boom') } } }), { grok: { refreshed: false, method: null } })
+  assert.deepEqual(await quota.refreshStale({ config, enabled: ['grok'], refreshers: { grok: async () => { throw new Error('boom') } } }), { grok: { refreshed: false, method: null, reading: null } })
   assert.equal(asked.length, 1)
   // A harness that is not enabled, not in the table or not installed is left alone.
   assert.deepEqual(await quota.refreshStale({ config, enabled: ['codex', 'nope'], refreshers: { codex: async () => grokReading(0), nope: async () => grokReading(0) } }), {})
