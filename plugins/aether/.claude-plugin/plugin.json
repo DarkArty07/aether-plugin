@@ -1,7 +1,7 @@
 {
   "name": "aether",
-  "version": "0.9.1",
-  "description": "Aether mode for Claude Code, built for RADAR: rapid, autonomous, delegating, affordable and robust. The Lead on Sonnet is the owner's right hand: it understands the intent, writes the spec, and orchestrates. A Writer on Sonnet writes plans and tasks in Spec Kit's layout, and a Judge on Opus reviews them. A parallel swarm of Haiku, Sonnet and Opus implementers builds them, each attempt supervised and every merge made one at a time. Lanes run its calls on other coding plans, such as agy, while their quota lasts, and the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner, who writes a hidden acceptance exam. With the owner's permission, the Lead works for hours and ends with a brief.",
+  "version": "0.10.0",
+  "description": "Aether mode for Claude Code, built for RADAR: rapid, autonomous, delegating, affordable and robust. The Lead starts on Sonnet and is the owner's right hand: it understands the intent, writes the spec, and orchestrates along three paths: itself, delegate tasks on models it chooses, or the swarm. A Writer on Sonnet writes plans and tasks in Spec Kit's layout, and a Judge on Opus reviews them. A parallel swarm of Haiku, Sonnet and Opus implementers builds them, each attempt supervised and every merge made one at a time. Lanes run its calls on other coding plans, such as agy, while their quota lasts, and the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner, who writes a hidden acceptance exam. With the owner's permission, the Lead works for hours and ends with a brief.",
   "author": {
     "name": "DarkArty07"
   },
@@ -18,7 +18,7 @@
     "harnesses": {
       "type": "string",
       "title": "Lane harnesses",
-      "description": "The external harnesses lanes may use, comma-separated, in order of preference: agy, codex, grok, cursor. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
+      "description": "The external harnesses lanes may use, comma-separated: agy, codex, grok, cursor. The quota decides the order of the candidates; the order of this option breaks ties between equal priorities and orders the groups with no reading. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
       "default": "agy"
     },
     "ops": {

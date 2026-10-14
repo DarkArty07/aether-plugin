@@ -289,6 +289,7 @@ test("every ops prompt of a real workflow run parses to the command the harness 
     }
   }
   assert.deepEqual([...seen].sort(), [
+    'aether-lane choice',
     'aether-lane result',
     'aether-lane start',
     'aether-lane status',

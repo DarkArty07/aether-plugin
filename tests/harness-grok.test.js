@@ -26,12 +26,35 @@ function stubExec(answers) {
 }
 const ok = (stdout) => ({ status: 0, stdout, stderr: '' })
 
-test('grok reports its quota as unknown for each group, without running the CLI', () => {
+test('grok reports its quota as unknown for each group when its log has no reading, without running the CLI', (t) => {
   const { exec, calls } = stubExec([])
-  const grok = createGrok({ groups: GROUPS, exec })
+  const grok = createGrok({ groups: GROUPS, exec, logFile: path.join(tempDir(t), 'unified.jsonl') })
   assert.equal(grok.name, 'grok')
   assert.equal(grok.schemaInPrompt, true)
   assert.deepEqual(grok.quota(), { groups: { grok: { unknown: true, windows: {} } } })
+  assert.deepEqual(calls, [])
+})
+
+test("quota gives each group the newest reading of grok's log, with its age, for as long as its period lasts", (t) => {
+  const { exec, calls } = stubExec([])
+  const logFile = path.join(tempDir(t), 'unified.jsonl')
+  fs.writeFileSync(logFile, fs.readFileSync(path.join(__dirname, 'fixtures', 'grok-billing.jsonl')))
+  let now = Date.parse('2026-10-14T06:00:00Z')
+  const grok = createGrok({ groups: { grok: 'Grok plan', other: 'Other' }, exec, logFile, now: () => now })
+  const reading = {
+    windows: { weekly: { remaining: 1, resetsAt: '2026-10-17T09:08:51.805Z' } },
+    source: { log: logFile, ts: '2026-10-14T05:45:16.241Z', pid: 531322, version: '1.0.41', ageMinutes: 14 },
+    usedPercent: null,
+    usedPercentAbsent: true,
+  }
+  assert.deepEqual(grok.quota(), { groups: { grok: reading, other: reading } })
+  // Two days later the reading is old but its period still runs: it keeps its values, and its age says how old it is.
+  now = Date.parse('2026-10-16T06:00:00Z')
+  const later = grok.quota().groups.grok
+  assert.deepEqual([later.windows, later.source.ageMinutes], [reading.windows, 2894])
+  // Once the period has ended the reading is worth nothing.
+  now = Date.parse('2026-10-17T09:08:52Z')
+  assert.deepEqual(grok.quota(), { groups: { grok: { unknown: true, windows: {} }, other: { unknown: true, windows: {} } } })
   assert.deepEqual(calls, [])
 })
 
@@ -50,10 +73,40 @@ test('argv runs one headless prompt that approves its actions, with the model an
   assert.equal(createGrok({ groups: GROUPS }).argv({ model: 'm', prompt: 'P' })[0], 'grok')
 })
 
-test('modelArg gives grok the bare model id, and argv takes no effort: the table level is not used until a real call shows how', () => {
+test('modelArg gives grok the bare model id, and argv takes the table level as --reasoning-effort', () => {
   const grok = createGrok({ command: 'grok', groups: GROUPS })
   assert.equal(grok.modelArg({ model: 'grok-4', level: 'high' }), 'grok-4')
-  assert.deepEqual(grok.argv({ model: 'grok-4', level: 'high', prompt: 'P' }), ['grok', '-p', 'P', '--always-approve', '--model', 'grok-4', '--output-format', 'json'])
+  assert.deepEqual(grok.argv({ model: 'grok-4', level: 'high', prompt: 'P' }), [
+    'grok',
+    '-p',
+    'P',
+    '--always-approve',
+    '--model',
+    'grok-4',
+    '--reasoning-effort',
+    'high',
+    '--output-format',
+    'json',
+  ])
+})
+
+test('parse reads the stdout grok 1.0.41 prints: the text, the usage with reasoning and cache tokens', () => {
+  const grok = createGrok({ groups: GROUPS })
+  // The text joins the words of every turn, so the answer's JSON is the last object after the prose.
+  const stdout = JSON.stringify({
+    text: `I'll read the file and answer.${APPROVE}`,
+    stopReason: 'end_turn',
+    usage: { input_tokens: 20086, cache_read_input_tokens: 1152, output_tokens: 54, reasoning_tokens: 48, total_tokens: 21292 },
+    num_turns: 2,
+    total_cost_usd: 0.0279,
+  })
+  assert.deepEqual(grok.parse({ stdout, stderr: '', exitCode: 0 }, { required: ['verdict'] }), {
+    clean: true,
+    reason: null,
+    structured: { verdict: 'approve', summary: 'done' },
+    usage: { input: 20086, output: 54, thinking: 48, cacheRead: 1152, total: 21292 },
+    conversation: null,
+  })
 })
 
 test('parse reads a clean run: the result field is the answer, its JSON the structured output, the usage object the usage', () => {

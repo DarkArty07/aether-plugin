@@ -27,7 +27,8 @@ function lanesRun(t, tasks = [task(1)], lanes = LANES) {
 }
 
 const ok = (run) => assert.equal(run.error, null, run.error && run.error.stack)
-const kinds = (run) => run.calls.map((c) => c.kind)
+// The ops commands in order, without the lane choices the workflow logs after each decision (see workflow-order.test.js).
+const kinds = (run) => run.calls.map((c) => c.kind).filter((kind) => kind !== 'ops:lane-choice')
 const starts = (run, role) => run.calls.filter((c) => c.kind === 'ops:lane-start' && (!role || c.lane.role === role))
 const native = (run, role) => run.calls.filter((c) => c.role === role)
 const isCall = (call, verb, id) => call.command.verb === verb && call.lane.call === id
@@ -139,12 +140,18 @@ test("a group the wave's reading finds unusable sends its calls native for that 
   assert.equal(run.result.units[0].rounds[0].provider, 'native')
 })
 
-test('a failed quota reading leaves every group dry for that wave', async (t) => {
+test('a failed quota reading leaves every group with no reading: the calls still try their lanes, and start decides', async (t) => {
   const run = await runWorkflow(lanesRun(t), { lane: (call, fallback) => (call.command.verb === 'status' ? null : fallback(call)) })
   ok(run)
-  assert.equal(starts(run).length, 0)
-  assert.deepEqual(run.result.lanes.dry, [{ wave: 1, groups: ['claude', 'gemini'] }])
-  assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'native'])
+  assert.equal(starts(run).length, 3)
+  assert.deepEqual(run.result.lanes.dry, [{ wave: 1, groups: [] }])
+  assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'agy claude-sonnet-5-5-high'])
+  // And when start finds no quota, each call goes native, as it did when the reading failed before.
+  const dry = await runWorkflow(lanesRun(t), { lane: (call, fallback) => (call.command.verb === 'status' ? null : call.command.verb === 'start' ? { unavailable: 'quota' } : fallback(call)) })
+  ok(dry)
+  assert.equal(starts(dry).length, 2, "the final review finds the Claude group dry already")
+  assert.deepEqual([dry.result.lanes.unavailable, dry.result.lanes.calls], [2, 0])
+  assert.deepEqual([dry.result.finalReview.status, dry.result.finalReview.provider], ['done', 'native'])
 })
 
 test('a start that finds no quota runs the same attempt native, and leaves the group dry until the next wave', async (t) => {
@@ -520,13 +527,17 @@ test("quota is read per harness: a group dry on one harness leaves the other har
   assert.deepEqual(run.result.lanes.dry, [{ wave: 1, groups: ['codex/openai'] }])
   assert.equal(run.result.units[0].rounds[0].provider, 'native')
 
-  // A harness missing from the reading, or not installed, is dry for its groups.
-  for (const more of [{}, { codex: { installed: false, groups: { openai: { usable: true } } } }]) {
-    const missing = await runWorkflow(lanesRun(t, [task(1, SONNET)], TWO), { lane: (call, fallback) => (call.command.verb === 'status' ? reading(more) : fallback(call)) })
-    ok(missing)
-    assert.equal(starts(missing, 'implementer').length, 0)
-    assert.deepEqual(missing.result.lanes.dry, [{ wave: 1, groups: ['codex/openai'] }])
-  }
+  // A harness found not installed is dry for its groups; one missing from the reading has no reading, and is tried.
+  const notInstalled = await runWorkflow(lanesRun(t, [task(1, SONNET)], TWO), {
+    lane: (call, fallback) => (call.command.verb === 'status' ? reading({ codex: { installed: false, groups: { openai: { usable: true } } } }) : fallback(call)),
+  })
+  ok(notInstalled)
+  assert.equal(starts(notInstalled, 'implementer').length, 0)
+  assert.deepEqual(notInstalled.result.lanes.dry, [{ wave: 1, groups: ['codex/openai'] }])
+  const missing = await runWorkflow(lanesRun(t, [task(1, SONNET)], TWO), { lane: (call, fallback) => (call.command.verb === 'status' ? reading({}) : fallback(call)) })
+  ok(missing)
+  assert.equal(starts(missing, 'implementer').length, 1)
+  assert.deepEqual(missing.result.lanes.dry, [{ wave: 1, groups: [] }])
 })
 
 test('the cap on calls in flight applies per harness: a second codex call finds codex full and runs native', async (t) => {

@@ -276,7 +276,20 @@ function qualityOf(results, adopted = {}) {
 const splitLog = (entries) => ({
   calls: entries.filter((entry) => entry.kind === 'call'),
   readings: entries.filter((entry) => entry.kind === 'reading'),
+  choices: entries.filter((entry) => entry.kind === 'choice'),
 })
+
+// What each lane call chose, in the order of the log: the lane that took it (null when none did), its reason, and the candidates.
+const choicesOf = (choices) =>
+  choices.map((entry) => ({
+    call: entry.call,
+    role: entry.role,
+    tier: entry.tier,
+    effort: entry.effort,
+    picked: entry.picked,
+    reason: entry.reason,
+    candidates: entry.candidates,
+  }))
 
 // A lane call's dollars at list price. A model with no price counts $0, and is noted once.
 function laneDollars(call, tokens, prices, notes) {
@@ -288,10 +301,11 @@ function laneDollars(call, tokens, prices, notes) {
 }
 
 // A group's quota readings: each reading's own, and each call's before and after the call. quotaConsumed sorts them.
+// A point keeps whether its reading read the share as 0% used.
 function groupReadings(group, calls, readings) {
   const points = []
   const add = (time, quota) => {
-    if (quota && quota.windows) points.push({ time, windows: quota.windows })
+    if (quota && quota.windows) points.push({ time, windows: quota.windows, usedPercentAbsent: Boolean(quota.usedPercentAbsent) })
   }
   for (const reading of readings) add(reading.time, reading.groups && reading.groups[group])
   for (const call of calls) {
@@ -302,8 +316,38 @@ function groupReadings(group, calls, readings) {
   return points
 }
 
-// Calls, tokens and dollars by group, model, role and harness, and each group's quota windows.
-function summarizeLanes(calls, readings, prices, notes) {
+// A group's balance from its quota points, in time order: each window's first and last remaining, the latest
+// reading's latest reset that reads as a date, and whether the latest reading read its share as 0% used. Null without a reading.
+// A window that is not an object is skipped, as quotaConsumed does, and an unknown reading (no windows) is not the latest:
+// the reset and the 0%-used flag come from the latest reading that still has a window, like the balance at the end.
+function balanceOf(points) {
+  if (points.length === 0) return null
+  const sorted = [...points].sort((a, b) => a.time - b.time)
+  const windowsOf = (point) => Object.entries(point.windows).filter(([, window]) => window)
+  const start = {}
+  const end = {}
+  for (const point of sorted) {
+    for (const [name, window] of windowsOf(point)) {
+      if (!Object.hasOwn(start, name)) start[name] = window.remaining
+      end[name] = { remaining: window.remaining, resetsAt: window.resetsAt }
+    }
+  }
+  const latest = sorted.findLast((point) => windowsOf(point).length > 0) ?? sorted[sorted.length - 1]
+  const resets = windowsOf(latest)
+    .map(([, window]) => (typeof window.resetsAt === 'string' ? Date.parse(window.resetsAt) : NaN))
+    .filter((ms) => !Number.isNaN(ms))
+  return {
+    start,
+    end,
+    nextReset: resets.length > 0 ? iso(Math.max(...resets)) : null,
+    usedPercentAbsent: latest.usedPercentAbsent,
+  }
+}
+
+// Calls, tokens and dollars by group, model, role and harness, and each group's quota windows and balance.
+// With a window (the run's), a group the run read but never called is listed with no calls, and the balance counts only
+// the readings inside the window: one logged later, such as by a hand-run status, is not the run's saldo al terminar.
+function summarizeLanes(calls, readings, prices, notes, window = null) {
   const summary = { calls: 0, usd: 0, tokens: laneZeroTokens(), groups: {}, byModel: {}, byRole: {}, byHarness: {} }
   for (const call of calls) {
     const tokens = laneTokens(call.usage ?? {})
@@ -328,8 +372,15 @@ function summarizeLanes(calls, readings, prices, notes) {
     addTokens(harness.tokens, tokens)
     if (LANE_STATUSES.includes(call.status)) harness[call.status]++
   }
+  const balanceReadings = window ? readings.filter((reading) => reading.time >= window.start && reading.time <= window.end) : readings
+  if (window) {
+    for (const reading of balanceReadings) {
+      for (const name of Object.keys(reading.groups ?? {})) summary.groups[name] ||= { calls: 0, usd: 0, tokens: laneZeroTokens(), quota: {} }
+    }
+  }
   for (const [name, group] of Object.entries(summary.groups)) {
     group.quota = quotaConsumed(groupReadings(name, calls, readings))
+    group.balance = balanceOf(groupReadings(name, calls, balanceReadings))
   }
   return summary
 }
@@ -378,13 +429,13 @@ function laneReport({ dataDir, runId, start, end, usage, results, prices, notes,
   const isRunEntry = (entry) => entry.run === runId && (entry.kind === 'reading' || (entry.time >= start && entry.time <= end))
   const runLog = splitLog(entries.filter(isRunEntry))
   const sessionLog = usage ? splitLog(entries.filter((entry) => entry.session === usage.session)) : null
-  const run = summarizeLanes(runLog.calls, runLog.readings, prices, notes)
+  const run = summarizeLanes(runLog.calls, runLog.readings, prices, notes, { start, end })
   const session = sessionLog ? summarizeLanes(sessionLog.calls, sessionLog.readings, prices, notes) : null
   const versions = versionsOf([...runLog.readings, ...(sessionLog ? sessionLog.readings : [])])
   return {
     version: versions.agy ?? null,
     versions,
-    run: { ...run, ...launchesOf(results) },
+    run: { ...run, ...launchesOf(results), choices: choicesOf(runLog.choices) },
     session,
     totals: {
       run: totalsOf(cost ? cost.run.usd : 0, run.usd),
@@ -435,6 +486,7 @@ function radarOf({ speed, cost, lanes, quality }) {
       lanesUsd: lanes.totals.run.lanesUsd,
       laneShare: cost ? lanes.totals.run.coveredShare : null,
       byHarness,
+      byGroup: Object.fromEntries(Object.entries(lanes.run.groups).map(([name, group]) => [name, { calls: group.calls, balance: group.balance }])),
     },
     affordable: { totalUsd: cost ? lanes.totals.run.totalUsd : null, nativeUsd, lanesUsd: lanes.totals.run.lanesUsd },
     robust: {

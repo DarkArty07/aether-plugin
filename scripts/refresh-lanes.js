@@ -120,7 +120,7 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   return { exitCode: 0, stdout }
 }
 
-module.exports = { refresh, keyFrom, keyFile, main }
+module.exports = { refresh, keyFrom, keyFile, envFileFor, KEY, MODELS_URL, main }
 
 if (require.main === module) {
   main(process.argv.slice(2)).then(({ exitCode, stdout }) => {

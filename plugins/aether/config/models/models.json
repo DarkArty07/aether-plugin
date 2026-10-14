@@ -1,0 +1,374 @@
+{
+  "generatedAt": "2026-10-14",
+  "source": "https://artificialanalysis.ai/api/v2/data/llms/models",
+  "harnesses": ["claude","agy","grok"],
+  "since": "2026-01-01",
+  "listedOn": {"claude":"2026-10-14","agy":"2026-10-13","grok":"2026-10-13"},
+  "rules": {
+    "newest": "Only the newest generation of each line is used (Sonnet 5.5, not Sonnet 5); the older ones are superseded.",
+    "offered": "Only a model the CLI of a chosen harness lists is in, whatever Artificial Analysis lists; a model only the lane table names is not offered.",
+    "profiled": "Every model has a profile written from its maker's pages, with its sources and the date checked; without one the build exits 1."
+  },
+  "models": [
+    {
+      "harness": "claude",
+      "model": "claude-haiku-5-5",
+      "alias": "haiku",
+      "family": "claude-haiku-5-5",
+      "name": "Claude Haiku 5.5",
+      "maker": "Anthropic",
+      "released": "2026-10-07",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [
+        {"effort":"low","intelligence":29.5,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":145.4,"ttftSeconds":3.84},
+        {"effort":"medium","intelligence":34.5,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":147.9,"ttftSeconds":6.69},
+        {"effort":"high","intelligence":37.8,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":153.4,"ttftSeconds":14.35},
+        {"effort":"xhigh","intelligence":41.2,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":164.2,"ttftSeconds":41.19},
+        {"effort":"max","intelligence":43.4,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":239.3,"ttftSeconds":232.91}
+      ],
+      "lane": null,
+      "profile": {
+        "purpose": "\"For high-volume, latency-sensitive tasks such as classification, extraction, and routing.\" Its model page adds: \"built for high-volume, latency-sensitive work such as classification, routing, extraction, and subagent tasks.\" Comparative latency: fastest.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "defaultEffort": "medium",
+        "price": {
+          "input": 0.1,
+          "output": 0.5,
+          "note": "per million tokens for a prompt up to 100,000 tokens; a prompt over 100,000 tokens pays $0.50 in and $2.50 out, five times as much, and the length counts every input token, cache reads and writes included; cache reads at $0.01 ($0.05 over 100,000), batch at 50% off"
+        },
+        "knowledgeCutoff": "2026-06",
+        "availability": "Claude API id claude-haiku-5-5; released 2026-10-07, not retired before 2027-10-07. Claude API, Amazon Bedrock, Google Cloud, Microsoft Foundry and Claude Platform on AWS. Each harness takes the efforts its entry lists.",
+        "caveats": [
+          "Adaptive thinking is on by default and effort is its main control; thinking can be disabled only at high effort or below, and a request that disables it at xhigh or max returns a 400 error.",
+          "At low effort in long agent prompts the model is more likely to skip a search, stop early, or skip a check (Anthropic's effort page): start at medium.",
+          "Its tokenizer counts the same text as about 30% more tokens than Claude Haiku 4.5.",
+          "It is the only current Claude model priced by prompt length; the others include the full 1M window at one price."
+        ],
+        "sources": [
+          "https://platform.claude.com/docs/en/models/overview",
+          "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+          "https://platform.claude.com/docs/en/about-claude/pricing",
+          "https://platform.claude.com/docs/en/build-with-claude/effort"
+        ],
+        "checked": "2026-10-14"
+      }
+    },
+    {
+      "harness": "claude",
+      "model": "claude-sonnet-5-5",
+      "alias": "sonnet",
+      "family": "claude-sonnet-5-5",
+      "name": "Claude Sonnet 5.5",
+      "maker": "Anthropic",
+      "released": "2026-09-28",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [
+        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":88.6,"ttftSeconds":0.65},
+        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":88.7,"ttftSeconds":0.59},
+        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":89.6,"ttftSeconds":4.92},
+        {"effort":"xhigh","intelligence":51.9,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":94.3,"ttftSeconds":16.74},
+        {"effort":"max","intelligence":56,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":133.1,"ttftSeconds":272.11}
+      ],
+      "lane": null,
+      "profile": {
+        "purpose": "\"The best combination of speed and intelligence.\" Comparative latency: fast.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "defaultEffort": "high",
+        "price": {"input":2,"output":10,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
+        "knowledgeCutoff": "2026-06",
+        "availability": "Claude API id claude-sonnet-5-5; not retired before 2027-09-28. Each harness takes the efforts its entry lists.",
+        "caveats": ["Adaptive thinking: the model decides how much to think, steered by effort."],
+        "sources": ["https://platform.claude.com/docs/en/models/overview"],
+        "checked": "2026-10-13"
+      }
+    },
+    {
+      "harness": "claude",
+      "model": "claude-opus-5-5",
+      "alias": "opus",
+      "family": "claude-opus-5-5",
+      "name": "Claude Opus 5.5",
+      "maker": "Anthropic",
+      "released": "2026-09-22",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [
+        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":69.8,"ttftSeconds":2.76},
+        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":68.8,"ttftSeconds":8.56},
+        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":69.3,"ttftSeconds":17.13},
+        {"effort":"xhigh","intelligence":56,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":75.2,"ttftSeconds":58.32},
+        {"effort":"max","intelligence":57.6,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":96.4,"ttftSeconds":480.02}
+      ],
+      "lane": null,
+      "profile": {
+        "purpose": "\"For long-running agentic coding and knowledge work.\" Anthropic's advice: start here for most workloads, and move to Fable 5.1 when evals on Opus 5.5 at higher effort still fall short. Comparative latency: moderate.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "defaultEffort": "medium",
+        "price": {"input":4,"output":20,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
+        "knowledgeCutoff": "2026-06",
+        "availability": "Claude API id claude-opus-5-5; not retired before 2027-09-22. Each harness takes the efforts its entry lists.",
+        "caveats": ["Thinking is always on (adaptive)."],
+        "sources": ["https://platform.claude.com/docs/en/models/overview"],
+        "checked": "2026-10-13"
+      }
+    },
+    {
+      "harness": "agy",
+      "model": "claude-sonnet-5-5",
+      "family": "claude-sonnet-5-5",
+      "name": "Claude Sonnet 5.5",
+      "maker": "Anthropic",
+      "released": "2026-09-28",
+      "effortVia": "id",
+      "efforts": ["low","medium","high"],
+      "ids": {"low":"claude-sonnet-5-5-low","medium":"claude-sonnet-5-5-medium","high":"claude-sonnet-5-5-high"},
+      "scores": [
+        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":88.6,"ttftSeconds":0.65},
+        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":88.7,"ttftSeconds":0.59},
+        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":89.6,"ttftSeconds":4.92}
+      ],
+      "lane": {"roles":["implementer","supervisor"],"replaces":"sonnet"},
+      "profile": {
+        "purpose": "\"The best combination of speed and intelligence.\" Comparative latency: fast.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "defaultEffort": "high",
+        "price": {"input":2,"output":10,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
+        "knowledgeCutoff": "2026-06",
+        "availability": "Claude API id claude-sonnet-5-5; not retired before 2027-09-28. Each harness takes the efforts its entry lists.",
+        "caveats": ["Adaptive thinking: the model decides how much to think, steered by effort."],
+        "sources": ["https://platform.claude.com/docs/en/models/overview"],
+        "checked": "2026-10-13"
+      }
+    },
+    {
+      "harness": "agy",
+      "model": "claude-opus-5-5",
+      "family": "claude-opus-5-5",
+      "name": "Claude Opus 5.5",
+      "maker": "Anthropic",
+      "released": "2026-09-22",
+      "effortVia": "id",
+      "efforts": ["low","medium","high"],
+      "ids": {"low":"claude-opus-5-5-low","medium":"claude-opus-5-5-medium","high":"claude-opus-5-5-high"},
+      "scores": [
+        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":69.8,"ttftSeconds":2.76},
+        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":68.8,"ttftSeconds":8.56},
+        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":69.3,"ttftSeconds":17.13}
+      ],
+      "lane": {"roles":["implementer","reviewer"],"replaces":"opus"},
+      "profile": {
+        "purpose": "\"For long-running agentic coding and knowledge work.\" Anthropic's advice: start here for most workloads, and move to Fable 5.1 when evals on Opus 5.5 at higher effort still fall short. Comparative latency: moderate.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "defaultEffort": "medium",
+        "price": {"input":4,"output":20,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
+        "knowledgeCutoff": "2026-06",
+        "availability": "Claude API id claude-opus-5-5; not retired before 2027-09-22. Each harness takes the efforts its entry lists.",
+        "caveats": ["Thinking is always on (adaptive)."],
+        "sources": ["https://platform.claude.com/docs/en/models/overview"],
+        "checked": "2026-10-13"
+      }
+    },
+    {
+      "harness": "agy",
+      "model": "gemini-3.8-flash",
+      "family": "gemini-3-8-flash",
+      "name": "Gemini 3.8 Flash",
+      "maker": "Google",
+      "released": "2026-09-02",
+      "effortVia": "id",
+      "efforts": ["low","medium","high"],
+      "ids": {"low":"gemini-3.8-flash-low","medium":"gemini-3.8-flash-medium","high":"gemini-3.8-flash-high"},
+      "scores": [
+        {
+          "effort": "low",
+          "intelligence": 33.5,
+          "coding": 73.5,
+          "terminalBench": 0.101,
+          "priceInput": 0.75,
+          "priceOutput": 3.75,
+          "tokensPerSecond": null,
+          "ttftSeconds": null
+        },
+        {
+          "effort": "medium",
+          "intelligence": 39.8,
+          "coding": 74.1,
+          "terminalBench": 0.197,
+          "priceInput": 0.75,
+          "priceOutput": 3.75,
+          "tokensPerSecond": null,
+          "ttftSeconds": null
+        },
+        {
+          "effort": "high",
+          "intelligence": 40.9,
+          "coding": 76.3,
+          "terminalBench": 0.197,
+          "priceInput": 0.75,
+          "priceOutput": 3.75,
+          "tokensPerSecond": 137.9,
+          "ttftSeconds": 14.41
+        }
+      ],
+      "lane": {"roles":["implementer"],"replaces":"haiku"},
+      "profile": {
+        "purpose": "\"Google's most intelligent Flash model, engineered for long-horizon software engineering, autonomous agents, and complex enterprise workflows.\"",
+        "contextTokens": 1048576,
+        "maxOutputTokens": 65536,
+        "defaultEffort": null,
+        "price": {"input":0.75,"output":3.75,"note":"per million tokens, from OpenRouter and Artificial Analysis; Google's model page does not state a price"},
+        "knowledgeCutoff": null,
+        "availability": "Gemini API id gemini-3.8-flash, stable. On agy it is offered at low, medium and high.",
+        "caveats": ["The effort `minimal` is not supported and returns an error.","Knowledge cutoff and price are not on Google's model page."],
+        "sources": ["https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash","https://ai.google.dev/gemini-api/docs/models"],
+        "checked": "2026-10-13"
+      }
+    },
+    {
+      "harness": "grok",
+      "model": "grok-4.7",
+      "family": "grok-4-7",
+      "name": "Grok 4.7",
+      "maker": "xAI (SpaceXAI)",
+      "released": "2026-09-21",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh"],
+      "scores": [
+        {"effort":"low","intelligence":42.2,"terminalBench":0.162,"priceInput":2,"priceOutput":6,"tokensPerSecond":59.8,"ttftSeconds":2.6},
+        {"effort":"high","intelligence":46.3,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":65.3,"ttftSeconds":9.14},
+        {"effort":"xhigh","intelligence":46.4,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":62.9,"ttftSeconds":14.93}
+      ],
+      "lane": {"roles":["implementer"],"replaces":"haiku"},
+      "profile": {
+        "purpose": "\"Frontier model, built for coding, agentic tasks, and knowledge work.\" The default model of Grok Build.",
+        "contextTokens": 500000,
+        "maxOutputTokens": null,
+        "defaultEffort": "high",
+        "price": {
+          "input": 2,
+          "output": 6,
+          "note": "per million tokens on the xAI API; cached input and long-context rates are not on the docs page; the US regional endpoint adds 10%"
+        },
+        "knowledgeCutoff": "2026-05",
+        "availability": "xAI API (id grok-4.7), Grok Build (default), Cursor on all plans, OpenRouter, Vercel and Cloudflare gateways.",
+        "caveats": ["The docs say there is no text output limit.","Artificial Analysis measured low, high and xhigh, not medium."],
+        "sources": ["https://docs.x.ai/developers/grok-4-7"],
+        "checked": "2026-10-13"
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "harness": "claude",
+      "model": "claude-fable-5-1",
+      "alias": "fable",
+      "family": "claude-fable-5-1",
+      "name": "Claude Fable 5.1",
+      "maker": "Anthropic",
+      "released": "2026-09-01",
+      "reason": "The owner keeps Fable out until Fable 5.5 (decision A43).",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": {"input":10,"output":50},
+      "scores": [
+        {"effort":"low","intelligence":46.8,"coding":75.2,"terminalBench":0.404,"priceInput":10,"priceOutput":50,"tokensPerSecond":48.3,"ttftSeconds":0.52},
+        {"effort":"medium","intelligence":48.9,"coding":77.1,"terminalBench":0.449,"priceInput":10,"priceOutput":50,"tokensPerSecond":50.6,"ttftSeconds":2.11},
+        {"effort":"high","intelligence":51.2,"coding":79.1,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":47.3,"ttftSeconds":2.4},
+        {"effort":"xhigh","intelligence":53.2,"coding":80.7,"terminalBench":0.551,"priceInput":10,"priceOutput":50,"tokensPerSecond":51.6,"ttftSeconds":37},
+        {"effort":"max","intelligence":53.4,"coding":81.6,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":65.1,"ttftSeconds":167.93}
+      ],
+      "profile": {
+        "purpose": "\"For demanding reasoning and long-horizon agentic work.\" Anthropic's advice: for most workloads start with Opus 5.5, and use Fable 5.1 for demanding reasoning and long-horizon agentic work, or when evals on Opus 5.5 at higher effort still fall short. Comparative latency: slower.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "defaultEffort": "high",
+        "price": {"input":10,"output":50,"note":"per million tokens; cache reads at 2.5% of the input price ($0.25), batch at 50% off"},
+        "knowledgeCutoff": "2026-06",
+        "availability": "Claude API id claude-fable-5-1; released 2026-09-01, not retired before 2027-09-01. Claude API, Amazon Bedrock, Google Cloud, Microsoft Foundry and Claude Platform on AWS. Each harness takes the efforts its entry lists.",
+        "caveats": [
+          "Thinking is always on (adaptive), and it is the only thinking mode.",
+          "Forced tool use returns an error, and only Fable 5.1 and Mythos 5.1 can read its thinking blocks, which editing earlier turns invalidates.",
+          "Claude Mythos 5.1 has the same capabilities and the same price, and is offered only to organizations Anthropic's verification programs have verified."
+        ],
+        "sources": [
+          "https://platform.claude.com/docs/en/models/overview",
+          "https://platform.claude.com/docs/en/models/fable-5-1/overview",
+          "https://platform.claude.com/docs/en/about-claude/pricing",
+          "https://platform.claude.com/docs/en/build-with-claude/effort"
+        ],
+        "checked": "2026-10-14"
+      }
+    }
+  ],
+  "notOffered": [
+    {
+      "harness": "agy",
+      "model": "gemini-4-argon",
+      "name": "Gemini 4 Argon",
+      "maker": "Google",
+      "roles": ["judge","writer","examiner"],
+      "reason": "named by the lane table, and not listed by agy models",
+      "profile": {
+        "purpose": "A flagship reasoning model, with a unified 1M context window and long decodes up to 1M tokens.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 1000000,
+        "defaultEffort": null,
+        "price": {
+          "input": 2,
+          "output": 10,
+          "note": "per million tokens through 2026-11-30, and according to press reports double from 2026-12-01; Artificial Analysis lists 2 and 10"
+        },
+        "knowledgeCutoff": null,
+        "availability": "Stable in the Gemini API (id gemini-4-argon). Rolled out on 2026-10-13 to Google AI Pro and Ultra in the Gemini app. In Antigravity (agy) the press says AI Ultra only; `agy models` does not list it on the owner's plan (Pro). The owner expects it for Pro soon.",
+        "caveats": [
+          "Not offered on agy yet, so the design seats that name it fall back to the native agent.",
+          "Inputs, outputs, effort levels and cutoff are not on the pages read."
+        ],
+        "sources": ["https://ai.google.dev/gemini-api/docs/models","https://www.androidpolice.com/gemini-4-argon-available-pro-ultra-subscribers/"],
+        "checked": "2026-10-13"
+      }
+    }
+  ],
+  "withoutFigures": [
+    {
+      "harness": "grok",
+      "model": "grok-4.7-build-fast",
+      "name": "Grok 4.7 Fast",
+      "maker": "xAI (SpaceXAI)",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh"],
+      "lane": null,
+      "note": "offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it",
+      "profile": {
+        "purpose": "The same Grok 4.7 served on faster infrastructure: faster and dearer, not a different or smaller model.",
+        "contextTokens": 500000,
+        "maxOutputTokens": null,
+        "defaultEffort": "high",
+        "price": {
+          "input": 4,
+          "output": 12,
+          "note": "2x the Grok 4.7 token rates (1.5x for long-context requests), per the docs; billed through the plan in Cursor and Grok Build, not through the API"
+        },
+        "knowledgeCutoff": "2026-05",
+        "availability": "Only in Cursor and Grok Build, billed through the plan there; not in Grok Build's free tier; not on the public xAI API.",
+        "caveats": [
+          "Not a cheap lane: it is billed through the plan at twice the token price of Grok 4.7, and the lane table does not list it.",
+          "xAI's page does not give the model id and does not mention `build-fast`: that this id is the Fast variant rests on the owner's word and on `grok models` listing it.",
+          "The docs do not state the speed multiple; third-party sites say about 2x output speed.",
+          "Artificial Analysis has no entry for it, so it has no scores here; its quality is Grok 4.7's."
+        ],
+        "sources": ["https://docs.x.ai/developers/grok-4-7"],
+        "checked": "2026-10-13"
+      }
+    }
+  ],
+  "superseded": [{"harness":"grok","id":"grok-4.6","supersededBy":"grok-4.7"},{"harness":"grok","id":"grok-4.5","supersededBy":"grok-4.7"}],
+  "outOfScope": [{"harness":"agy","model":"gpt-oss-120b","reason":"Artificial Analysis lists gpt-oss-120b, released 2025-08-05, before 2026-01-01"}]
+}

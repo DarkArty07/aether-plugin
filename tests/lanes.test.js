@@ -228,20 +228,21 @@ test('lanesArgs gives the run its lanes when the harness is installed, and null 
     waits: { implementer: 6, supervisor: 3, reviewer: 4 },
     calls: {
       implementer: {
-        haiku: { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' },
-        sonnet: { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' },
-        opus: { model: 'claude-opus-5-5', group: 'claude', harness: 'agy' },
+        haiku: [{ model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' }],
+        sonnet: [{ model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' }],
+        opus: [{ model: 'claude-opus-5-5', group: 'claude', harness: 'agy' }],
       },
-      supervisor: { sonnet: { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' } },
-      reviewer: { opus: { model: 'claude-opus-5-5', group: 'claude', harness: 'agy' } },
+      supervisor: { sonnet: [{ model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' }] },
+      reviewer: { opus: [{ model: 'claude-opus-5-5', group: 'claude', harness: 'agy' }] },
     },
   })
   assert.equal(lanes.lanesArgs(c, { enabled: ['agy'], installed: () => false }), null)
   assert.equal(lanes.lanesArgs(null, { enabled: ['agy'], installed: () => true }), null)
-  assert.equal(lanes.lanesArgs(c, { enabled: ['grok'], installed: () => true }), null)
+  // cursor ships without models, so on its own it gives no calls.
+  assert.equal(lanes.lanesArgs(c, { enabled: ['cursor'], installed: () => true }), null)
 })
 
-test('lanesArgs takes each native call from the first enabled, installed harness with a model for it, in the order enabled', () => {
+test('lanesArgs lists every enabled, installed harness with a model for each call, harnesses in the order enabled', () => {
   const c = twoHarnesses()
   const everywhere = () => true
   const codexFirst = lanes.lanesArgs(c, { enabled: ['codex', 'agy'], installed: everywhere })
@@ -253,29 +254,31 @@ test('lanesArgs takes each native call from the first enabled, installed harness
     waits: { implementer: 11, supervisor: 4, reviewer: 5 },
     calls: {
       implementer: {
-        haiku: { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' },
-        sonnet: { model: 'gpt-codex', group: 'codex', harness: 'codex' },
-        opus: { model: 'claude-opus-5-5', group: 'claude', harness: 'agy' },
+        haiku: [{ model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' }],
+        sonnet: [
+          { model: 'gpt-codex', group: 'codex', harness: 'codex' },
+          { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' },
+        ],
+        opus: [{ model: 'claude-opus-5-5', group: 'claude', harness: 'agy' }],
       },
       supervisor: {
-        haiku: { model: 'gpt-mini', group: 'codex', harness: 'codex' },
-        sonnet: { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' },
+        haiku: [{ model: 'gpt-mini', group: 'codex', harness: 'codex' }],
+        sonnet: [{ model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' }],
       },
       reviewer: {
-        sonnet: { model: 'gpt-codex', group: 'codex', harness: 'codex' },
-        opus: { model: 'claude-opus-5-5', group: 'claude', harness: 'agy' },
+        sonnet: [{ model: 'gpt-codex', group: 'codex', harness: 'codex' }],
+        opus: [{ model: 'claude-opus-5-5', group: 'claude', harness: 'agy' }],
       },
     },
   })
 
-  // Enabled the other way round, agy takes sonnet for implementers, and codex keeps the calls agy has no model for.
+  // Enabled the other way round, agy comes first for the sonnet implementer, and codex stays a candidate after it.
   const agyFirst = lanes.lanesArgs(c, { enabled: ['agy', 'codex'], installed: everywhere })
   assert.equal(agyFirst.harness, 'agy')
   assert.deepEqual(agyFirst.harnesses, ['agy', 'codex'])
   assert.equal(agyFirst.maxParallel, 4)
-  assert.equal(agyFirst.calls.implementer.sonnet.model, 'claude-sonnet-5-5')
-  assert.equal(agyFirst.calls.implementer.sonnet.harness, 'agy')
-  assert.equal(agyFirst.calls.reviewer.sonnet.harness, 'codex')
+  assert.deepEqual(agyFirst.calls.implementer.sonnet.map((lane) => `${lane.harness}/${lane.model}`), ['agy/claude-sonnet-5-5', 'codex/gpt-codex'])
+  assert.deepEqual(agyFirst.calls.reviewer.sonnet.map((lane) => `${lane.harness}/${lane.model}`), ['codex/gpt-codex'])
 
   // Only codex enabled: its calls alone, and no call for a native model it has no model for.
   const onlyCodex = lanes.lanesArgs(c, { enabled: ['codex'], installed: everywhere })
@@ -288,8 +291,16 @@ test('lanesArgs takes each native call from the first enabled, installed harness
   const agyMissing = lanes.lanesArgs(c, { enabled: ['codex', 'agy'], installed: (name) => name !== 'agy' })
   assert.deepEqual(agyMissing.harnesses, ['codex'])
   assert.equal(agyMissing.calls.implementer.haiku, undefined)
-  assert.equal(lanes.lanesArgs(c, { enabled: ['grok'], installed: everywhere }), null)
+  assert.deepEqual(agyMissing.calls.implementer.sonnet.map((lane) => lane.harness), ['codex'])
+  assert.equal(lanes.lanesArgs(c, { enabled: ['cursor'], installed: everywhere }), null)
   assert.equal(lanes.lanesArgs(c, { enabled: [], installed: everywhere }), null)
+})
+
+test('two models of one harness for the same call are both candidates, in the order of the table', () => {
+  const c = shipped()
+  c.harnesses.agy.models['gemini-3.9-flash'] = { ...c.harnesses.agy.models['gemini-3.8-flash'] }
+  const args = lanes.lanesArgs(c, { enabled: ['agy'], installed: () => true })
+  assert.deepEqual(args.calls.implementer.haiku.map((lane) => lane.model), ['gemini-3.8-flash', 'gemini-3.9-flash'])
 })
 
 test('lanesArgs gives each role the largest wait among the listed harnesses that serve it', () => {
@@ -326,12 +337,34 @@ test('idleHarnesses names each enabled harness that gives no call, with the reas
   assert.deepEqual(lanes.idleHarnesses(null, { installed, enabled: ['agy'] }), [])
 })
 
-test('the shipped table has codex, grok and cursor without models, so none of them takes a call until the owner adds its models', () => {
+test('idleHarnesses names a harness whose models serve no swarm role', () => {
+  const config = twoHarnesses()
+  config.harnesses.codex.models = { 'gpt-judge': { group: 'codex', roles: ['judge'], levels: LEVELS } }
+  assert.deepEqual(lanes.idleHarnesses(config, { installed: () => true, enabled: ['agy', 'codex'] }), [
+    { name: 'codex', reason: 'takes no swarm call: none of its models serves implementer, supervisor or reviewer' },
+  ])
+  // A harness that is enabled later is no longer idle because an earlier one has models for the same calls.
+  assert.deepEqual(lanes.idleHarnesses(twoHarnesses(), { installed: () => true, enabled: ['codex', 'agy'] }), [])
+})
+
+test('the shipped table has codex and cursor without models, and grok with grok-4.7 at the haiku tier', () => {
   const config = shipped()
   assert.deepEqual(Object.keys(config.harnesses), ['agy', 'codex', 'grok', 'cursor'])
-  for (const name of ['codex', 'grok', 'cursor']) assert.deepEqual(config.harnesses[name].models, {}, name)
+  for (const name of ['codex', 'cursor']) assert.deepEqual(config.harnesses[name].models, {}, name)
   assert.deepEqual(config.harnesses.cursor.command, 'cursor-agent')
-  assert.deepEqual(lanes.lanesArgs(config, { installed: () => true, enabled: ['codex', 'grok', 'cursor', 'agy'] }).harnesses, ['agy'])
+  // grok-4.7-build-fast is the same model faster and twice the price: it is not a lane model.
+  assert.deepEqual(Object.keys(config.harnesses.grok.models), ['grok-4.7'])
+  const args = lanes.lanesArgs(config, { installed: () => true, enabled: ['codex', 'grok', 'cursor', 'agy'] })
+  // codex and cursor take no call; for the haiku implementer grok comes first and Gemini after it, agy takes the rest.
+  assert.deepEqual(args.harnesses, ['grok', 'agy'])
+  assert.deepEqual(args.calls.implementer.haiku, [
+    { model: 'grok-4.7', group: 'grok', harness: 'grok' },
+    { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' },
+  ])
+  assert.deepEqual(args.calls.implementer.sonnet.map((lane) => lane.harness), ['agy'])
+  assert.deepEqual(args.calls.implementer.opus.map((lane) => lane.harness), ['agy'])
+  assert.deepEqual(args.calls.supervisor.sonnet.map((lane) => lane.harness), ['agy'])
+  assert.deepEqual(args.calls.reviewer.opus.map((lane) => lane.harness), ['agy'])
 })
 
 test('enabledHarnesses reads AETHER_LANE_HARNESSES: known names, trimmed, lowercased, each once, in order', () => {
@@ -613,4 +646,71 @@ test('lanesEnabled: lanes are on only when AETHER_LANES is on, and only on Linux
     assert.deepEqual(lanes.lanesEnabled({ AETHER_LANES: value }, 'linux'), { on: false, reason: 'option' }, String(value))
   }
   assert.deepEqual(lanes.lanesEnabled({}, 'darwin'), { on: false, reason: 'option' })
+})
+
+test('the table takes a model id exactly when the lane choice can log it: the table, lane-choice.js and the mod agree (R16)', async (t) => {
+  const choice = require('../plugins/aether/lib/lane-choice.js')
+  const { parseOpsPrompt } = await import(path.join(__dirname, '..', 'plugins', 'aether', 'hooks', 'ops-command.mjs'))
+  const inTable = (id) => {
+    const file = writeConfig(t, (c) => {
+      c.harnesses.agy.models[id] = c.harnesses.agy.models['gemini-3.8-flash']
+      delete c.harnesses.agy.models['gemini-3.8-flash']
+    })
+    try {
+      lanes.loadConfig(file)
+      return true
+    } catch (err) {
+      assert.match(err.message, /model .*: id must/, id)
+      return false
+    }
+  }
+  const logs = (id) => {
+    const item = `agy:${id}:0.5:picked`
+    const read = (() => {
+      try {
+        choice.parseOrder(item)
+        choice.parsePick(`agy:${id}`)
+        return true
+      } catch {
+        return false
+      }
+    })()
+    const command = `aether-lane choice 20261014-060800-ab12 task-1-1-implement --role implementer --tier haiku --effort high --pick agy:${id} --order ${item}`
+    const prompt = ['Run this command with the Bash tool, once, exactly as written:', '', `cd '/repo' && ${command}`, '', 'Then return its exit code and its complete standard output, exactly as printed. Do not run anything else, and do not fix or retry anything.'].join('\n')
+    assert.equal(parseOpsPrompt(prompt) !== null, read, `${id}: lib and mod agree`)
+    return read
+  }
+  const shippedIds = Object.values(shipped().harnesses).flatMap((h) => Object.keys(h.models))
+  assert.ok(shippedIds.length > 0)
+  for (const id of shippedIds) assert.equal(logs(id), true, `shipped ${id}`)
+  assert.doesNotThrow(() => lanes.loadConfig(lanes.CONFIG_FILE))
+  const ids = ['m1', 'gpt-5.1', 'a_b', 'x-ai/grok-5', 'gpt-5@high', 'o3:high', '-x', '.x', '_x', 'x y', 'x;y', 'x$y', "x'y", 'é', 'x\\y', 'x/', 'a::b']
+  for (const id of ids) assert.equal(inTable(id), logs(id), id)
+  assert.equal(inTable('x-ai/grok-5'), false)
+  assert.equal(inTable('gpt-5@high'), false)
+})
+
+test('the table gives the life of a harness reading and the length of a dry mark, and refuses a bad one', (t) => {
+  const config = shipped()
+  assert.equal(config.dryMarkMinutes, 60)
+  assert.deepEqual(Object.fromEntries(Object.entries(config.harnesses).map(([name, h]) => [name, h.quotaLifeMinutes])), { agy: 10, codex: 10, grok: 30, cursor: 10 })
+  assert.doesNotThrow(() => lanes.loadConfig(writeConfig(t, (c) => (c.harnesses.agy.quotaLifeMinutes = 0))))
+  assert.doesNotThrow(() => lanes.loadConfig(writeConfig(t, (c) => (delete c.harnesses.agy.quotaLifeMinutes, delete c.dryMarkMinutes))))
+  for (const [mutate, message] of [
+    [(c) => (c.dryMarkMinutes = 0), 'dryMarkMinutes must be an integer of at least 1'],
+    [(c) => (c.dryMarkMinutes = '60'), 'dryMarkMinutes must be an integer of at least 1'],
+    [(c) => (c.dryMarkMinutes = 10081), 'dryMarkMinutes must be at most 10080, a week'],
+    [(c) => (c.harnesses.agy.quotaLifeMinutes = -1), 'harness agy: quotaLifeMinutes must be an integer of at least 0'],
+    [(c) => (c.harnesses.grok.quotaLifeMinutes = 1.5), 'harness grok: quotaLifeMinutes must be an integer of at least 0'],
+  ]) {
+    const file = writeConfig(t, mutate)
+    assert.throws(() => lanes.loadConfig(file), (err) => err.message === `lanes config ${file}: ${message}`)
+  }
+})
+
+test('usable follows the rule of lane-order: a balance that is unknown is used until a call fails', () => {
+  const window = (remaining) => ({ windows: { weekly: { remaining, resetsAt: '2026-10-17T09:08:51.805Z' } } })
+  assert.equal(lanes.usable(window(null), 0.05), true)
+  assert.equal(lanes.usable(window(0.06), 0.05), true)
+  assert.equal(lanes.usable(window(0.05), 0.05), false)
 })

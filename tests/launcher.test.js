@@ -105,14 +105,15 @@ test('the installer and the fish launcher are gone', () => {
   }
 })
 
-test('the manifest is version 0.9.1, and the README says so', () => {
+test('the manifest is version 0.10.0, and the README says so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.9.1')
+  assert.equal(manifest.version, '0.10.0')
   assert.match(manifest.description, /built for RADAR/)
   assert.match(manifest.description, /the owner's right hand/)
   assert.match(manifest.description, /a Judge on Opus reviews them/)
   assert.match(manifest.description, /Lanes run its calls on other coding plans/)
   assert.match(manifest.description, /the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner/)
+  assert.match(README(), /^Version 0\.10\.0: /m)
   assert.match(README(), /^Version 0\.9\.1: /m)
   assert.match(README(), /^Version 0\.9: /m)
 })
@@ -175,4 +176,38 @@ test('the documents record the design seats: decisions A39-A43, the README, the 
   }
   assert.ok(fs.existsSync(path.join(ROOT, 'docs', 'evaluations', 'seats', 'harness', 'judge-defects.js')))
   assert.ok(fs.existsSync(path.join(ROOT, 'specs', '001-design-seats', 'plan.md')))
+})
+
+test('the documents record the super Lead: A48, the three paths in the README, and no text that says the Lead runs on Sonnet as a fact', () => {
+  const decisions = read('docs', 'decisions.md')
+  const lines = decisions.split('\n')
+  const rows = lines.filter((line) => line.startsWith('| A48 |'))
+  assert.equal(rows.length, 1)
+  // A later decision (A49...) may follow it: A48 only has to come after A47.
+  const a47 = lines.findIndex((line) => line.startsWith('| A47 |'))
+  assert.ok(a47 >= 0 && lines.indexOf(rows[0]) > a47, 'A48 comes after A47')
+  for (const text of ['three paths', 'specs/003-super-lead/spec.md', '2026-10-14', 'never inherited', 'never a fork', 'Fable 5.1 excluded (A43)', 'first 2,000 characters']) {
+    assert.ok(rows[0].includes(text), text)
+  }
+  for (const id of ['A11', 'A15', 'A16']) {
+    assert.match(decisions, new RegExp(`^\\| ${id} \\|.*updated by A48`, 'mi'), id)
+  }
+  assert.match(decisions, /^\*\*Update \(2026-10-14, super Lead; D5 updated by A48\)\.\*\*/m)
+  const readme = README()
+  assert.match(readme, /^\*\*The three paths\.\*\*/m)
+  for (const text of ['**Direct:**', '**Delegate task:**', '**Swarm:**', 'the route and the path (direct, delegate task, swarm)', 'a delegate task on a model it names, or the swarm']) {
+    assert.ok(readme.includes(text), text)
+  }
+  for (const text of ['main session, on Sonnet', 'main session, Sonnet', '`aether:lead`, on Sonnet', 'itself, one subagent, or the swarm']) {
+    assert.ok(!readme.includes(text), `the README no longer says "${text}"`)
+  }
+  for (const file of [[ROOT, '.claude-plugin', 'marketplace.json'], [PLUGIN, '.claude-plugin', 'plugin.json']]) {
+    const description = fs.readFileSync(path.join(...file), 'utf8')
+    assert.match(description, /starts on Sonnet|starting on Sonnet/, file.join('/'))
+    assert.ok(description.includes('three paths'), file.join('/'))
+    assert.ok(!description.includes('Lead on Sonnet'), file.join('/'))
+  }
+  for (const skill of ['using-aether', 'swarm']) {
+    assert.ok(!read('plugins', 'aether', 'skills', skill, 'SKILL.md').includes('the main session, on Sonnet'), skill)
+  }
 })
