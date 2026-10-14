@@ -247,6 +247,29 @@ function salvageUnit(cwd, runId, taskId) {
   return { salvaged: true, files, committed, left, head: git(['rev-parse', branch], mainRoot).stdout, package: packagePath }
 }
 
+// Records a unit the Lead integrated by hand (issue 005), so that the report and finalize agree with the branch.
+// The commit must be in the integration branch: this command believes no one's word about the work itself.
+function adoptUnit(cwd, runId, taskId, { commit, reason } = {}) {
+  run.assertRunId(runId)
+  run.assertTaskId(taskId)
+  const { mainRoot } = repoPaths(cwd)
+  const graph = loadGraph(mainRoot, runId)
+  if (!graph.tasks[taskId]) throw new Error(`${taskId} is not in run ${runId}`)
+  if (typeof commit !== 'string' || commit === '') throw new Error('adopt needs --commit <sha>, the commit of the integration branch that holds the unit')
+  if (typeof reason !== 'string' || reason.trim() === '') throw new Error('adopt needs --reason <why the unit was integrated by hand>')
+  const resolved = /^[0-9A-Za-z][0-9A-Za-z._/-]*$/.test(commit) ? git(['rev-parse', '--verify', '--quiet', `${commit}^{commit}`], mainRoot, { allowFail: true }) : null
+  if (!resolved || resolved.status !== 0) throw new Error(`${commit} is not a commit of this repository`)
+  const sha = resolved.stdout
+  if (git(['merge-base', '--is-ancestor', sha, graph.integration.branch], mainRoot, { allowFail: true }).status !== 0) {
+    throw new Error(`${sha.slice(0, 10)} is not in the integration branch ${graph.integration.branch}`)
+  }
+  const file = path.join(run.runDir(mainRoot, runId), 'adopted.json')
+  const adopted = exists(file) ? run.readJson(file) : {}
+  adopted[taskId] = { commit: sha, reason: reason.trim(), at: new Date().toISOString() }
+  run.writeJson(file, adopted)
+  return { adopted: true, task: taskId, commit: sha, reason: adopted[taskId].reason, units: Object.keys(adopted).sort() }
+}
+
 // The whole run's change on the integration branch, from the first launch's base, so that a relaunch
 // does not drop the changes of the launches before it.
 function finalPackage(cwd, runId) {
@@ -725,6 +748,7 @@ module.exports = {
   ensure,
   diffPackage,
   salvageUnit,
+  adoptUnit,
   finalPackage,
   merge,
   betweenMerges,

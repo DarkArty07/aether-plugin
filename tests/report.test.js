@@ -9,7 +9,7 @@ const { T0, MIN, OPUS, SONNET, HAIKU, GEMINI, sampleUsage, writeUsage, finishedR
 const { writeJson } = require('../plugins/aether/lib/run.js')
 const { appendLog } = require('../plugins/aether/lib/lanes.js')
 const { report, finalize, pruneUsage } = require('../plugins/aether/lib/report.js')
-const { ensure } = require('../plugins/aether/lib/worktrees.js')
+const { ensure, adoptUnit } = require('../plugins/aether/lib/worktrees.js')
 
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`)
 const iso = (ms) => new Date(ms).toISOString()
@@ -52,6 +52,9 @@ test('report counts quality from the saved result, and runs the tests at integra
   assert.deepEqual(quality, {
     units: 3,
     merged: 2,
+    adopted: 0,
+    integrated: 2,
+    adoptedUnits: [],
     blocked: 1,
     questions: 1,
     skipped: 0,
@@ -461,6 +464,7 @@ test('report gives the RADAR figures from the run, its lanes, its cost and its q
   close(radar.affordable.lanesUsd, lanesUsd)
   assert.deepEqual(radar.robust, {
     merged: 2,
+    adopted: 0,
     blocked: 1,
     testsPassed: true,
     testsKnownFailuresOnly: false,
@@ -478,7 +482,7 @@ test('a RADAR figure is null where nothing measured it: no usage and no saved re
     autonomous: { questions: null },
     delegation: { laneCalls: 0, nativeUsd: null, lanesUsd: 0, laneShare: null, byHarness: {} },
     affordable: { totalUsd: null, nativeUsd: null, lanesUsd: 0 },
-    robust: { merged: null, blocked: null, testsPassed: null, testsKnownFailuresOnly: null, findings: null, finalVerdict: null },
+    robust: { merged: null, adopted: null, blocked: null, testsPassed: null, testsKnownFailuresOnly: null, findings: null, finalVerdict: null },
   })
 })
 
@@ -493,7 +497,7 @@ test('with usage but no saved result, the cost and lane figures are known and th
   close(radar.delegation.nativeUsd, 6.5)
   close(radar.affordable.nativeUsd, 6.5)
   close(radar.affordable.totalUsd, 6.5)
-  assert.deepEqual(radar.robust, { merged: null, blocked: null, testsPassed: null, testsKnownFailuresOnly: null, findings: null, finalVerdict: null })
+  assert.deepEqual(radar.robust, { merged: null, adopted: null, blocked: null, testsPassed: null, testsKnownFailuresOnly: null, findings: null, finalVerdict: null })
 })
 
 test('the note for a run with no usage tells how to start an Aether session', (t) => {
@@ -596,3 +600,31 @@ test('the test command is not known-failures-only when it passed, or was killed 
   assert.deepEqual([killed.exitCode, killed.timedOut, killed.knownFailuresOnly], [null, false, false])
 })
 
+
+test('report counts a unit the Lead adopted as integrated, with how, and no longer as blocked', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  // task-3 ended blocked in the swarm; the Lead integrated it by hand, and its commit is on the branch.
+  const sha = repo.git('rev-parse', 'HEAD')
+  adoptUnit(repo.dir, args.runId, 'task-3', { commit: sha, reason: 'applied its saved patch by hand' })
+  const r = report(repo.dir, args.runId, { tests: false })
+  const { quality } = r
+  assert.deepEqual(
+    { units: quality.units, merged: quality.merged, adopted: quality.adopted, integrated: quality.integrated, blocked: quality.blocked, questions: quality.questions },
+    { units: 3, merged: 2, adopted: 1, integrated: 3, blocked: 0, questions: 0 },
+  )
+  assert.deepEqual(quality.adoptedUnits, [{ id: 'task-3', commit: sha, reason: 'applied its saved patch by hand', was: 'blocked' }])
+  assert.ok(r.notes.some((n) => n === `task-3 was integrated by hand at ${sha.slice(0, 10)}: applied its saved patch by hand`), r.notes.join('\n'))
+  assert.deepEqual([r.radar.robust.merged, r.radar.robust.adopted, r.radar.robust.blocked], [2, 1, 0])
+})
+
+test('a unit the swarm merged is not counted as adopted, and a report with no adoption has none', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  const sha = repo.git('rev-parse', 'HEAD')
+  const none = report(repo.dir, args.runId, { tests: false }).quality
+  assert.deepEqual([none.adopted, none.integrated, none.adoptedUnits], [0, 2, []])
+  adoptUnit(repo.dir, args.runId, 'task-1', { commit: sha, reason: 'redundant' })
+  const same = report(repo.dir, args.runId, { tests: false }).quality
+  assert.deepEqual([same.merged, same.adopted, same.integrated, same.adoptedUnits], [2, 0, 2, []])
+})

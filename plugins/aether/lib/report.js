@@ -210,9 +210,11 @@ const isQuestion = (question) => typeof question === 'string' && question.trim()
 // A unit's latest launch gives its status and its question; attempts and findings add up across launches. A unit counts
 // as escalated when a launch moved it to another model or a relaunch started it on another model, and
 // as climbed when a launch raised its effort on one model.
-function qualityOf(results) {
+// `adopted` maps a task to the Lead's record of integrating it by hand (aether-wt adopt). A unit the swarm merged
+// is not counted as adopted; any other counts as integrated, and as the swarm's status no longer.
+function qualityOf(results, adopted = {}) {
   if (results.length === 0) {
-    const unknown = ['launches', 'units', 'merged', 'blocked', 'questions', 'skipped', 'notRun', 'escalated', 'climbed', 'attempts', 'agents', 'findings', 'finalReview']
+    const unknown = ['launches', 'units', 'merged', 'adopted', 'integrated', 'adoptedUnits', 'blocked', 'questions', 'skipped', 'notRun', 'escalated', 'climbed', 'attempts', 'agents', 'findings', 'finalReview']
     return Object.fromEntries(unknown.map((key) => [key, null]))
   }
   const units = new Map()
@@ -242,12 +244,22 @@ function qualityOf(results) {
       reviewFindings.push(...(result.finalReview.findings || []))
     }
   }
+  const adoptedUnits = []
+  for (const [id, record] of Object.entries(adopted || {})) {
+    const unit = units.get(id) || { status: null, question: null, firstModel: undefined, escalated: false, climbed: false, attempts: 0, findings: [] }
+    if (unit.status === 'merged' || !record || typeof record !== 'object') continue
+    adoptedUnits.push({ id, commit: record.commit, reason: record.reason, was: unit.status || 'not-run' })
+    units.set(id, { ...unit, status: 'adopted', question: null })
+  }
   const all = [...units.values()]
   const count = (status) => all.filter((unit) => unit.status === status).length
   return {
     launches: results.length,
     units: all.length,
     merged: count('merged'),
+    adopted: count('adopted'),
+    integrated: count('merged') + count('adopted'),
+    adoptedUnits,
     blocked: count('blocked'),
     questions: all.filter((unit) => unit.status === 'blocked' && isQuestion(unit.question)).length,
     skipped: count('skipped'),
@@ -427,6 +439,7 @@ function radarOf({ speed, cost, lanes, quality }) {
     affordable: { totalUsd: cost ? lanes.totals.run.totalUsd : null, nativeUsd, lanesUsd: lanes.totals.run.lanesUsd },
     robust: {
       merged: quality.merged,
+      adopted: quality.adopted,
       blocked: quality.blocked,
       testsPassed: quality.tests ? quality.tests.passed : null,
       testsKnownFailuresOnly: quality.tests ? quality.tests.knownFailuresOnly : null,
@@ -477,7 +490,11 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     swarm: usage ? span(inRun.filter((entry) => isAether(usage, entry))) : null,
     session: usage ? span(usage.entries) : null,
   }
-  const quality = { ...qualityOf(results), tests: tests ? runTests(graph, dir) : null }
+  const adopted = readIfThere(path.join(dir, 'adopted.json')) || {}
+  const quality = { ...qualityOf(results, adopted), tests: tests ? runTests(graph, dir) : null }
+  for (const unit of quality.adoptedUnits || []) {
+    notes.push(`${unit.id} was integrated by hand at ${String(unit.commit).slice(0, 10)}: ${unit.reason}`)
+  }
 
   return {
     runId,
