@@ -105,4 +105,4 @@ Ordenados de más a menos probable que quieras vetarlos.
 - Los asientos del swarm (implementer, supervisor, reviewer): ya tienen lanes; la elección no los cambia (supuesto 5).
 - El Rescate de unidades detenidas, la segunda opinión en documentos de riesgo y el Meta-ingeniero: usan este mismo mecanismo y pueden venir después.
 - Modelos para Codex, Grok y Cursor: siguen vacíos hasta una llamada real en tu máquina.
-- Llevar el objetivo del spec a cada brief (causa 2 del trial 2): es código pequeño en `lib/plan.js`, sin asientos, y conviene como cambio aparte.
+- Llevar el objetivo del spec a cada brief (causa 2 del trial 2): es código pequeño en `lib/plan.js`, sin asientos, y conviene como cambio aparte. Hecho en 0.9.1 (A47).

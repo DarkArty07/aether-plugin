@@ -4,6 +4,7 @@
 **Date:** 2026-10-09
 **Found in:** the fourth launch of a 12-task plan on an application repository
 **Status:** partly addressed in 0.8.0 (2026-10-13). Done: in an Aether session the mod runs the workflow's `aether-wt` and `aether-lane` commands without a model, so no agent can refuse them (A30, PR #8). Open: when the mod cannot run them, the `ops` agent is the fallback and can still refuse; the workflow then reports `unreadable output` and blocks the unit, and no regression test covers a reply that says the command was not run.
+**Update 2026-10-13, 0.9.1:** a reply that is not the command's JSON now reads `unreadable output from <command> (the ops agent may have refused or not run it): <text>`, and a regression test covers a reply that says the command was not run (A46). The `ops` option turns the mod's answers off for a project that needs them off. Still open: the fallback agent can still refuse; it is only reported better.
 **GitHub:** [#4](https://github.com/DarkArty07/aether-plugin/issues/4) (private repository)
 
 ## Summary

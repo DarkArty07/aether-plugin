@@ -26,6 +26,13 @@ Specs, plans and tasks follow the layout of [GitHub Spec Kit](https://github.com
 
 ## Status
 
+Version 0.9.1: the gaps that 0.8.0 left open in issues 002 to 005 ([decisions](docs/decisions.md) A44–A47). What changed since 0.9:
+- **Salvage before a retry.** An implementer that ends without its report no longer costs a blind retry: `aether-wt salvage` commits what the task owns that it left uncommitted, and the supervisor reviews that work.
+- **Hand-integrated units are recorded.** `aether-wt adopt <run> <task> --commit <sha> --reason <text>` makes the report count a unit the Lead integrated by hand as `adopted`, not blocked.
+- **A brief carries the spec's intent and criteria,** and `aether-plan check` warns about a task that owns more than 6 paths, or the whole tree.
+- **The `ops` option** turns the mod's answers to the workflow's ops commands off, for a project whose tests need the shell's environment.
+- **Clearer failures.** A merge asked of the model path carries the long Bash timeout, an ops reply that is not the command's output names a refusal as the likely cause, and a reviewer that gives no answer is reported as incomplete with its reason.
+
 Version 0.9: the design seats ([spec](specs/001-design-seats/spec.md)). What changed since 0.8:
 - **Design seats.** The Judge, the Writer and a new Examiner can each be taken by a stronger model of another harness, such as Gemini 4 Argon on agy, round by round, with Aether's own agent as the fallback. The `seats` option chooses who: `native`, `balanced` (the default) or `robust`. This is superdelegation upward: RADAR's Delegación now counts the seats as well as the volume.
 - **The Examiner.** It writes acceptance tests from the spec and the plan's public interfaces, which the swarm never sees, and `aether-exam` runs them at the end of a run. A failing test is a blocking finding.
@@ -126,7 +133,7 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 | `aether-autonomy` | The owner's standing authorizations, verified against their own words (`grant`, `revoke`, `check`, `list`), and an autonomous run's state and ceilings (`start`, `spend`, `status`, `end`) |
 | `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |
 | `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves, and records the run's test baseline. It reads a Spec Kit `tasks.md`, and the `spec.md` beside it. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
-| `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `remove` (saves unmerged work as a patch), `sweep` |
+| `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `salvage` (commits what a unit that ended without its report left, and writes its package), `adopt` (records a unit the Lead integrated by hand), `remove` (saves unmerged work as a patch), `sweep` |
 | `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review, and cleanup in `finally` |
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
 | Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the workflow's own `aether-wt` and `aether-lane` commands itself, without a model (see below). In any other session it records and runs nothing, and does not offer Aether's agents |
@@ -138,7 +145,7 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 - it runs the command with `node` and `$.process.run`, with no shell;
 - it returns the command's exit code and output.
 
-Any workflow in an Aether session gets that answer, for any repository and run its prompt names. Anything else falls back to the Haiku `ops` agent, as before: another prompt, a refused `$.process.run`, a command it cannot start, or a bin that fails to load. A command that ran and gave no result, stopped at the timeout or killed, is reported as an error and never handed to the model. Implementers still run `aether-wt ensure` and `diff` with their own Bash tool. What changes for these commands:
+With the `ops` option off, none of this happens: every ops agent runs on the model path. Any workflow in an Aether session gets that answer, for any repository and run its prompt names. Anything else falls back to the Haiku `ops` agent, as before: another prompt, a refused `$.process.run`, a command it cannot start, or a bin that fails to load. A command that ran and gave no result, stopped at the timeout or killed, is reported as an error and never handed to the model. Implementers still run `aether-wt ensure` and `diff` with their own Bash tool. What changes for these commands:
 - **Permissions.** The session's permission rules and mode, and Bash `PreToolUse` hooks, no longer apply to them. What bounds them is the closed list and the Aether session's mark.
 - **Environment.** They run in Claude Code's own environment, and so does what they start: the plan's test command, inside a merge, and agy. Exports from `CLAUDE_ENV_FILE` and `PATH` entries only your shell profile adds do not reach them. Make the test command work without them. `aether-lane status` also looks for agy on that `PATH`; if it is not there, the run's lanes stay dry and every call runs native.
 - **The 10-minute limit.** A merge whose tests outlast 10 minutes is stopped after its merge commit and before its revert, and the error says so.
@@ -258,6 +265,7 @@ Nothing is injected, refused, recorded or written. Version 0.8, not yet measured
 
 - `lanes`, off by default, runs Aether's calls on other coding harnesses while their quota lasts. They work without permission prompts and spend another plan's quota, so you turn it on yourself. Lanes run only on Linux.
 - `harnesses`, `agy` by default, lists the harnesses lanes may use, comma-separated, in order of preference: `agy`, `codex`, `grok`, `cursor`. Add one only once its models are in the lane table (see Lanes).
+- `ops`, on by default, lets the mod run the swarm's own `aether-wt` and `aether-lane` commands without a model (see Ops without a model). Turn it off when your project's test command needs your shell's environment: the Haiku `ops` agent then runs them with the Bash tool, as before 0.8.
 - `seats`, `balanced` by default, chooses who takes the design seats: `native`, `balanced` or `robust` (see Design seats). An external model takes a seat only with `lanes` on.
 
 Set them at install with `--config lanes=true`, or later in `/plugin` → Installed → aether → Configure options. `claude plugin configure aether@aether-plugin` shows the options and which are unset.

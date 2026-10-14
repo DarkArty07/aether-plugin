@@ -35,6 +35,7 @@ const word = (expected) => (token) => token === expected
 const COMMANDS = {
   'aether-wt': [
     { checks: [word('merge'), is(RUN), is(TASK)] },
+    { checks: [word('salvage'), is(RUN), is(TASK)] },
     { checks: [word('remove'), is(RUN), is(TASK)] },
     { checks: [word('diff'), is(RUN), word('--final')] },
     { checks: [word('sweep'), word('--run'), is(RUN)] },

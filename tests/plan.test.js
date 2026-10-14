@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, parsePlan, buildGraph, renderBrief } = require('../plugins/aether/lib/plan.js')
+const { EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, MAX_OWNED_PATHS, parsePlan, buildGraph, renderBrief, specObjective } = require('../plugins/aether/lib/plan.js')
 const { task, plan, specKitTasks } = require('./plan-fixtures.js')
 
 test('parsePlan reads a Spec Kit tasks.md, and its checklist is never read as a task', () => {
@@ -305,4 +305,83 @@ test('renderBrief names the starting rung on its Tier line', () => {
   const options = { planPath: '/p/plan.md', spec: parsed.spec, globalConstraints: parsed.globalConstraints }
   assert.match(renderBrief(parsed.tasks[0], options), /^- Tier: haiku xhigh — complete code$/m)
   assert.match(renderBrief(parsed.tasks[1], options), /^- Tier: sonnet high — wiring the tests pin down$/m)
+})
+
+// Issue 003: a task that owns many paths is the one that ends without its report.
+const paths = (n) => Array.from({ length: n }, (_, i) => `\`src/big/f${i}.js\``).join(', ')
+
+test('buildGraph warns about a task that owns more paths than one implementer can finish', () => {
+  const parsed = parsePlan(plan([task(1, { owns: paths(MAX_OWNED_PATHS + 1) }), task(2)]))
+  const graph = buildGraph(parsed)
+  assert.deepEqual(graph.errors, [])
+  assert.deepEqual(graph.warnings, [
+    `Task 1 owns ${MAX_OWNED_PATHS + 1} paths; a task that large often ends without its report and the ladder repeats the failure (issue 003). Consider splitting it.`,
+  ])
+})
+
+test('buildGraph does not warn at the limit, and warns about an owner of the whole tree', () => {
+  assert.deepEqual(buildGraph(parsePlan(plan([task(1, { owns: paths(MAX_OWNED_PATHS) }), task(2)]))).warnings, [])
+  const whole = buildGraph(parsePlan(plan([task(1, { owns: '`**`' }), task(2, { owns: '`src/t2/**`' })])))
+  assert.deepEqual(whole.warnings, ['Task 1 owns the whole tree (`**`); name the paths it needs (issue 003). Consider splitting it.'])
+})
+
+test('buildGraph with only judges the size of the selected tasks only', () => {
+  const parsed = parsePlan(plan([task(1, { owns: paths(MAX_OWNED_PATHS + 2) }), task(2)]))
+  assert.deepEqual(buildGraph(parsed, { only: ['task-2'] }).warnings, [])
+})
+
+// Trial 2: a brief that holds only the contract leaves out the spec's quality bar.
+const SPEC = [
+  '# Feature: Snake',
+  '',
+  '- Date: 2026-10-14',
+  '- Status: Draft',
+  '- Intent: a snake game that looks and feels good.',
+  '  - «the owner wants it playful, with real animation»',
+  '- Another: not part of the intent',
+  '',
+  '## Context',
+  '',
+  'Long background that the brief does not need.',
+  '',
+  '## Criteria',
+  '',
+  '- C1: It looks good. Evidence: a person plays it.',
+  '- C2: It runs at 60 fps. Evidence: a frame-time test.',
+  '',
+  '## Requirements',
+  '',
+  '- R1: something',
+].join('\n')
+
+test('specObjective takes the intent with its quotes and the criteria, and nothing else', () => {
+  const objective = specObjective(SPEC)
+  assert.equal(
+    objective,
+    [
+      '- Intent: a snake game that looks and feels good.',
+      '  - «the owner wants it playful, with real animation»',
+      '',
+      '- C1: It looks good. Evidence: a person plays it.',
+      '- C2: It runs at 60 fps. Evidence: a frame-time test.',
+    ].join('\n'),
+  )
+})
+
+test('specObjective is null without an intent or criteria, and is bounded', () => {
+  assert.equal(specObjective('# Feature\n\n## Context\n\ntext\n'), null)
+  assert.equal(specObjective(null), null)
+  const long = `- Intent: ${'x'.repeat(5000)}\n`
+  const bounded = specObjective(long)
+  assert.ok(bounded.length <= 2000, String(bounded.length))
+  assert.ok(bounded.endsWith('…'))
+})
+
+test('renderBrief puts the spec objective before the task, and nothing when there is none', () => {
+  const parsed = parsePlan(plan([task(1)]))
+  const options = { planPath: '/p/plan.md', spec: 'specs/001-x/spec.md', globalConstraints: parsed.globalConstraints }
+  const withObjective = renderBrief(parsed.tasks[0], { ...options, objective: '- Intent: be good.' })
+  assert.match(withObjective, /## What the spec asks for\n\n.*\n\n- Intent: be good\.\n\n## Task/s)
+  assert.ok(withObjective.indexOf('## What the spec asks for') < withObjective.indexOf('## Task'))
+  assert.equal(renderBrief(parsed.tasks[0], options).includes('What the spec asks for'), false)
 })

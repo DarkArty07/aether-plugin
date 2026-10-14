@@ -4,6 +4,7 @@
 **Date:** 2026-10-09
 **Found in:** the first real swarm run of a 12-task plan (7 waves) on an application repository
 **Status:** partly addressed in 0.8.0 (2026-10-13). Done: in an Aether session the mod runs `aether-wt merge` itself, without a model, with a 10-minute limit in place of Bash's 120 s (A30, PR #8). Open: when the mod cannot run it (a policy that refuses `$.process.run`, or no `node`), the `ops` agent is the fallback and still runs the merge with Bash's default timeout; no path checks the integration branch for the unit's merge commit before it reports `blocked`, including a merge the mod stops at its limit after the merge commit; and a ten-minute merge, the acceptance's case, still reaches that limit.
+**Update 2026-10-13, 0.9.1:** when the model path runs a merge, the workflow now asks for the 600000 ms Bash timeout (A46), so a four-minute merge is no longer backgrounded and reported as unreadable. Still open: no path checks the integration branch for the unit's merge commit before it reports `blocked`. A merge the mod stops at its limit leaves a merge commit whose tests did not finish, so counting it as merged needs the owner's decision.
 **GitHub:** [#2](https://github.com/DarkArty07/aether-plugin/issues/2) (private repository)
 
 ## Summary

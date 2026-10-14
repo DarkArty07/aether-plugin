@@ -146,6 +146,43 @@ test('compile reads a Spec line that links a file beside the plan as that file, 
   assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Spec: specs\/004-linked\/spec\.md$/m)
 })
 
+test("compile puts the spec's intent and criteria in every brief, and no section when the spec has none or is missing", (t) => {
+  const repo = makeRepo(t)
+  const dir = path.join(repo.dir, 'specs', '002-quality')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(
+    path.join(dir, 'spec.md'),
+    ['# Quality', '', '- Intent: a game that feels alive.', '  - «mas creativo, mas divertido»', '', '## Criteria', '', '- C1: It animates. Evidence: a person plays it.', ''].join('\n'),
+  )
+  const file = path.join(dir, 'tasks.md')
+  fs.writeFileSync(file, specKitTasks([task(1), task(2)], { spec: null }))
+  const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  for (const id of ['task-1', 'task-2']) {
+    const brief = fs.readFileSync(r.json.tasks[id].brief, 'utf8')
+    assert.match(brief, /^## What the spec asks for$/m)
+    assert.ok(brief.includes('- Intent: a game that feels alive.'), brief)
+    assert.ok(brief.includes('«mas creativo, mas divertido»'), brief)
+    assert.ok(brief.includes('- C1: It animates.'), brief)
+    assert.ok(brief.indexOf('## What the spec asks for') < brief.indexOf('## Task'))
+  }
+
+  // A spec with neither, and a spec that is named but missing, add nothing.
+  const bare = path.join(repo.dir, 'specs', '003-bare')
+  fs.mkdirSync(bare, { recursive: true })
+  fs.writeFileSync(path.join(bare, 'spec.md'), '# Bare\n\nOnly prose.\n')
+  const bareTasks = path.join(bare, 'tasks.md')
+  fs.writeFileSync(bareTasks, specKitTasks([task(1), task(2)], { spec: null }))
+  const none = runBin(PLAN_BIN, ['compile', bareTasks], repo.dir)
+  assert.equal(none.status, 0, none.stdout + none.stderr)
+  assert.equal(fs.readFileSync(none.json.tasks['task-1'].brief, 'utf8').includes('What the spec asks for'), false)
+  const named = path.join(repo.dir, 'plan-missing.md')
+  fs.writeFileSync(named, specKitTasks([task(1), task(2)], { spec: '**Spec:** `docs/nowhere.md`' }))
+  const missing = runBin(PLAN_BIN, ['compile', named], repo.dir)
+  assert.equal(missing.status, 0, missing.stdout + missing.stderr)
+  assert.equal(fs.readFileSync(missing.json.tasks['task-1'].brief, 'utf8').includes('What the spec asks for'), false)
+})
+
 test('compile keeps a Spec line over a spec.md beside the plan, and names no spec when there is neither', (t) => {
   const repo = makeRepo(t)
   const named = path.join(repo.dir, 'specs', '002-named', 'tasks.md')
@@ -249,6 +286,18 @@ test('compile gives no lanes when the harness is missing or there is no table', 
   assert.equal(compile(repo, plan([task(1)])).lanes, null)
 })
 
+// The first executable called `name` on the host's PATH.
+function onPath(name) {
+  for (const dir of process.env.PATH.split(path.delimiter)) {
+    const file = path.join(dir, name)
+    try {
+      fs.accessSync(file, fs.constants.X_OK)
+      return file
+    } catch {}
+  }
+  throw new Error(`${name} is not on the PATH`)
+}
+
 test('compile names each enabled harness that gives no call, and why, on stderr', (t) => {
   const repo = makeRepo(t)
   const md = writePlan(repo.dir, plan([task(1)]))
@@ -258,7 +307,9 @@ test('compile names each enabled harness that gives no call, and why, on stderr'
     fs.writeFileSync(path.join(bin, name), '#!/bin/sh\nexit 0\n')
     fs.chmodSync(path.join(bin, name), 0o755)
   }
-  const env = { AETHER_LANES_CONFIG: file, AETHER_LANE_HARNESSES: 'codex,agy,cursor', PATH: `${bin}${path.delimiter}${process.env.PATH}` }
+  // The PATH is the stubs and git alone: a host that has cursor-agent installed must not change what is not found.
+  fs.symlinkSync(onPath('git'), path.join(bin, 'git'))
+  const env = { AETHER_LANES_CONFIG: file, AETHER_LANE_HARNESSES: 'codex,agy,cursor', PATH: bin }
   const r = runBin(PLAN_BIN, ['compile', md], repo.dir, env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.deepEqual(r.json.lanes.harnesses, ['agy'])

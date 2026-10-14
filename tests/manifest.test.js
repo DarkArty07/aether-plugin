@@ -25,7 +25,7 @@ test('the repository is a marketplace that lists the aether plugin', () => {
   })
 })
 
-test('the manifest has no dependencies, and declares the lanes option, off by default, and the seats option, balanced', () => {
+test('the manifest has no dependencies, and declares the lanes option, off by default, the ops option, on, and the seats option, balanced', () => {
   const manifest = json(PLUGIN, '.claude-plugin', 'plugin.json')
   assert.equal(manifest.name, 'aether')
   assert.equal('dependencies' in manifest, false)
@@ -43,6 +43,13 @@ test('the manifest has no dependencies, and declares the lanes option, off by de
       description:
         "The external harnesses lanes may use, comma-separated, in order of preference: agy, codex, grok, cursor. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
       default: 'agy',
+    },
+    ops: {
+      type: 'boolean',
+      title: 'Ops in the mod',
+      description:
+        "Run the swarm's own aether-wt and aether-lane commands in the mod, without a model. On by default. Turn it off when your project's test command needs your shell's environment, which the mod's does not have: the Haiku ops agent then runs them with the Bash tool, as before 0.8.",
+      default: true,
     },
     seats: {
       type: 'string',

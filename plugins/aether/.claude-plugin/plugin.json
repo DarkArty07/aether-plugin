@@ -1,6 +1,6 @@
 {
   "name": "aether",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Aether mode for Claude Code, built for RADAR: rapid, autonomous, delegating, affordable and robust. The Lead on Sonnet is the owner's right hand: it understands the intent, writes the spec, and orchestrates. A Writer on Sonnet writes plans and tasks in Spec Kit's layout, and a Judge on Opus reviews them. A parallel swarm of Haiku, Sonnet and Opus implementers builds them, each attempt supervised and every merge made one at a time. Lanes run its calls on other coding plans, such as agy, while their quota lasts, and the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner, who writes a hidden acceptance exam. With the owner's permission, the Lead works for hours and ends with a brief.",
   "author": {
     "name": "DarkArty07"
@@ -20,6 +20,12 @@
       "title": "Lane harnesses",
       "description": "The external harnesses lanes may use, comma-separated, in order of preference: agy, codex, grok, cursor. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
       "default": "agy"
+    },
+    "ops": {
+      "type": "boolean",
+      "title": "Ops in the mod",
+      "description": "Run the swarm's own aether-wt and aether-lane commands in the mod, without a model. On by default. Turn it off when your project's test command needs your shell's environment, which the mod's does not have: the Haiku ops agent then runs them with the Bash tool, as before 0.8.",
+      "default": true
     },
     "seats": {
       "type": "string",

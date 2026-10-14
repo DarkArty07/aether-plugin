@@ -201,6 +201,9 @@ const quote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`
 const list = (files) => (files && files.length ? files.join(', ') : 'unknown files')
 const message = (err) => (err && err.message ? err.message : String(err))
 
+// Why each rejected call failed, by label, for the reasons a result reports.
+const failedBecause = new Map()
+
 // One agent call. A rejection counts as a failed agent, like a null result.
 async function call(role, model, effort, prompt, { phase, label, schema }) {
   agents.total++
@@ -210,6 +213,7 @@ async function call(role, model, effort, prompt, { phase, label, schema }) {
     return await agent(prompt, { agentType: `aether:${role}`, model, effort, phase, label, schema })
   } catch (err) {
     log(`${label}: the agent failed: ${message(err)}`)
+    failedBecause.set(label, message(err))
     return null
   }
 }
@@ -247,7 +251,11 @@ async function ops(command, { phase, label, payload = null, long = false }) {
   } catch {
     out = null
   }
-  if (!out || typeof out !== 'object') return { error: `unreadable output from ${command}: ${String(reply.stdout).slice(0, 300)}` }
+  // The bins print one JSON line. Anything else is an agent that did not run the command, as a refusal does
+  // (issue 004), so the error says that instead of leaving it to be guessed from the text.
+  if (!out || typeof out !== 'object') {
+    return { error: `unreadable output from ${command} (the ops agent may have refused or not run it): ${String(reply.stdout).slice(0, 300)}` }
+  }
   if (out.error) return { error: out.error }
   if (reply.exitCode !== 0) return { error: `${command} exited with ${reply.exitCode}` }
   return out
@@ -668,6 +676,32 @@ async function supervise(unit, task, rung, report, used, model) {
   return { review, provider: 'native' }
 }
 
+// The report of an attempt that ended without one, rebuilt from its worktree: `aether-wt salvage` commits what the
+// task owns and writes the package. Null when there is nothing on the branch, or the command failed; the attempt
+// is then a missing report, as before. Its files are the unit's own, so it needs no place in the merge queue.
+async function salvage(unit) {
+  const out = await ops(`aether-wt salvage ${runId} ${unit.id}`, { phase: 'Implement', label: `${unit.id}: salvage` })
+  if (out.error) {
+    log(`${unit.id}: no report, and the salvage failed: ${out.error}`)
+    return null
+  }
+  const files = Array.isArray(out.files) ? out.files : []
+  if (out.salvaged !== true || files.length === 0) {
+    log(`${unit.id}: no report, nothing to salvage${Array.isArray(out.left) && out.left.length ? ` (left outside Owns: ${list(out.left)})` : ''}`)
+    return null
+  }
+  log(`${unit.id}: no report, ${files.length} changed files on the unit branch`)
+  const left = Array.isArray(out.left) && out.left.length ? ` Files outside the task's Owns were left uncommitted: ${list(out.left)}.` : ''
+  return {
+    status: 'DONE_WITH_CONCERNS',
+    summary: `The implementer ended without its report. The unit branch holds ${files.length} changed files: ${list(files)}.`,
+    head: typeof out.head === 'string' ? out.head : '',
+    tests: 'not reported: run the test command yourself',
+    concerns: `This report was rebuilt from the branch, not written by the implementer, so every claim in it is yours to verify.${left}`,
+    question: '',
+  }
+}
+
 // The unit loop. Returns when the unit is merged, blocked, skipped or not run.
 async function work(unit, task) {
   const dep = task.dependsOn.find((d) => units[d] && units[d].status !== 'merged')
@@ -701,7 +735,17 @@ async function work(unit, task) {
     const attempt = await implement(unit, task, model, effort, rung, context)
     context = null
     if (attempt.blocked !== undefined) return finish(unit, 'blocked', `lane: ${attempt.blocked}`)
-    const { report } = attempt
+    let { report } = attempt
+    // An attempt that ended without its report may still hold the work (issue 003): when the attempt did not fail
+    // on its own changes outside Owns, what it left is committed and goes to the supervisor, which is the gate.
+    let salvaged = false
+    if (!report && !attempt.failure) {
+      const saved = await salvage(unit)
+      if (saved) {
+        report = saved
+        salvaged = true
+      }
+    }
     const round = {
       attempt: n,
       tier: rung,
@@ -720,6 +764,7 @@ async function work(unit, task) {
       provider: attempt.provider,
       reviewProvider: null,
       laneFailure: attempt.laneFailure,
+      salvaged,
     }
     unit.rounds.push(round)
     // A failed implementer, or a lane's changes outside Owns: the attempt failed, and the ladder decides,
@@ -779,7 +824,8 @@ async function work(unit, task) {
     }
     if (round.verdict !== 'approve') continue
 
-    const out = await serialized(() => ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge` }))
+    // A merge runs the plan's whole test command, so its Bash call, when the model runs it, needs the long timeout (issue 002).
+    const out = await serialized(() => ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true }))
     if (out.merged) {
       unit.commit = out.commit
       return finish(unit, 'merged')
@@ -885,7 +931,12 @@ async function reviewRun() {
     label: `final review on ${model} ${effort}`,
     schema: REVIEW_SCHEMA,
   })
-  if (!review) return { status: 'failed', reason: 'the reviewer agent failed', ...chosen }
+  if (!review) {
+    // A reviewer that stops at its turn limit gives no answer: say so, never a verdict (issue 005).
+    const why = failedBecause.get(`final review on ${model} ${effort}`)
+    const reason = why ? `the reviewer agent failed: ${why}` : 'the reviewer ended without its answer; it may have run out of turns on a diff too large for it'
+    return { status: 'failed', reason, ...chosen }
+  }
   return { status: 'done', provider: 'native', ...chosen, ...reviewResult(review) }
 }
 

@@ -16,7 +16,7 @@ const AETHER = { hook_event_name: 'SessionStart', session_id: 's1', source: 'sta
 // The hook's environment, without what a surrounding session may have set.
 function hookEnv(data, extra = {}) {
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }
-  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'AETHER_LANES']) delete env[key]
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'AETHER_LANES']) delete env[key]
   return { ...env, ...extra }
 }
 
@@ -239,4 +239,18 @@ test('session start prunes session markers not written to for 30 days', (t) => {
   fs.utimesSync(path.join(data, 'sessions', 'old.json'), old, old)
   start(repo.dir, data)
   assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')).sort(), ['s1.json'])
+})
+
+test('session start marks the session ops-off only when the ops option is false', (t) => {
+  const repo = makeRepo(t)
+  const off = tempDir(t, 'aether-data-')
+  assert.equal(start(repo.dir, off, { env: { CLAUDE_PLUGIN_OPTION_OPS: 'false' } }).status, 0)
+  assert.equal(fs.existsSync(path.join(off, 'sessions', 's1.json')), true)
+  assert.equal(fs.existsSync(path.join(off, 'sessions', 's1.ops-off')), true)
+  for (const env of [{}, { CLAUDE_PLUGIN_OPTION_OPS: 'true' }]) {
+    const on = tempDir(t, 'aether-data-')
+    assert.equal(start(repo.dir, on, { env }).status, 0)
+    assert.equal(fs.existsSync(path.join(on, 'sessions', 's1.json')), true)
+    assert.equal(fs.existsSync(path.join(on, 'sessions', 's1.ops-off')), false)
+  }
 })

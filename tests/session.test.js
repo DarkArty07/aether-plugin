@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { LEAD_AGENT, markerFile, markSession, isAetherSession, pruneSessions } = require('../plugins/aether/lib/session.js')
+const { LEAD_AGENT, markerFile, markSession, isAetherSession, opsOffFile, pruneSessions } = require('../plugins/aether/lib/session.js')
 
 test('the Lead agent is aether:lead', () => {
   assert.equal(LEAD_AGENT, 'aether:lead')
@@ -56,4 +56,26 @@ test('pruneSessions deletes markers not written to for the given days, and only 
 
 test('pruneSessions with no sessions directory deletes nothing', (t) => {
   assert.deepEqual(pruneSessions(path.join(tempDir(t), 'none')), [])
+})
+
+test('markSession with the ops option off also writes <id>.ops-off, and with it on takes a stale one away', (t) => {
+  const data = tempDir(t)
+  assert.equal(opsOffFile(data, 's1'), path.join(data, 'sessions', 's1.ops-off'))
+  markSession(data, 's1', 1, { opsInMod: false })
+  assert.equal(fs.existsSync(opsOffFile(data, 's1')), true)
+  assert.equal(isAetherSession(data, 's1'), true)
+  // The same session resumed with the option back on.
+  markSession(data, 's1', 2, { opsInMod: true })
+  assert.equal(fs.existsSync(opsOffFile(data, 's1')), false)
+  markSession(data, 's2', 3)
+  assert.equal(fs.existsSync(opsOffFile(data, 's2')), false)
+})
+
+test('pruneSessions deletes the ops-off file of a session it prunes', (t) => {
+  const data = tempDir(t)
+  markSession(data, 'old', 1, { opsInMod: false })
+  const when = new Date(Date.now() - 40 * 24 * 3600 * 1000)
+  for (const name of ['old.json', 'old.ops-off']) fs.utimesSync(path.join(data, 'sessions', name), when, when)
+  assert.deepEqual(pruneSessions(data, { days: 30 }), ['old'])
+  assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')), [])
 })

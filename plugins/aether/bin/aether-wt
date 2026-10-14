@@ -4,13 +4,15 @@
 // aether-wt ensure <run> <task>
 // aether-wt diff <run> <task> | aether-wt diff <run> --final
 // aether-wt merge <run> <task>
+// aether-wt salvage <run> <task>
+// aether-wt adopt <run> <task> --commit <sha> --reason <text>
 // aether-wt remove <run> <task> [--keep-patch]
 // aether-wt sweep --run <id> [--finish] | --stale [--hours N]
 
 const path = require('node:path')
 const wt = require(path.join(__dirname, '..', 'lib', 'worktrees.js'))
 
-const USAGE = 'usage: aether-wt ensure|diff|merge|remove <run> <task> [--keep-patch] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N]'
+const USAGE = 'usage: aether-wt ensure|diff|merge|salvage|remove <run> <task> | aether-wt adopt <run> <task> --commit <sha> --reason <text> [--keep-patch] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N]'
 
 function sweep(rest) {
   if (rest[0] === '--run') return wt.sweepRun(process.cwd(), rest[1], { finish: rest.includes('--finish') })
@@ -22,6 +24,13 @@ function sweep(rest) {
   throw new Error(USAGE)
 }
 
+// The value after a flag, or undefined when the flag is absent or has no value.
+function flag(args, name) {
+  const i = args.indexOf(name)
+  const value = i === -1 ? undefined : args[i + 1]
+  return value === undefined || value.startsWith('--') ? undefined : value
+}
+
 const [command, ...rest] = process.argv.slice(2)
 try {
   let result
@@ -29,6 +38,8 @@ try {
   else if (command === 'diff' && rest[1] === '--final') result = wt.finalPackage(process.cwd(), rest[0])
   else if (command === 'diff') result = wt.diffPackage(process.cwd(), rest[0], rest[1])
   else if (command === 'merge') result = wt.merge(process.cwd(), rest[0], rest[1])
+  else if (command === 'salvage') result = wt.salvageUnit(process.cwd(), rest[0], rest[1])
+  else if (command === 'adopt') result = wt.adoptUnit(process.cwd(), rest[0], rest[1], { commit: flag(rest, '--commit'), reason: flag(rest, '--reason') })
   else if (command === 'remove') result = wt.removeUnit(process.cwd(), rest[0], rest[1], { keepPatch: rest.includes('--keep-patch') })
   else if (command === 'sweep') result = sweep(rest)
   else throw new Error(USAGE)
