@@ -16,8 +16,9 @@ export const meta = {
 // The script keeps the ladder, the agent budget and every unit's history; agents only judge and act.
 // Every agent call names its agentType, so no agent gets the session's full tool set.
 // The script never reads the clock or random numbers: the runtime replays a resumed run call by call.
-// With lanes in the args, a call may run on an external harness through aether-lane instead, and
-// falls back to the native agent whenever the lane cannot take it or fails it.
+// With lanes in the args, a call walks its candidate lanes in the order of their quota, and may run on
+// an external harness through aether-lane instead; it falls back to the native agent whenever no lane
+// takes it or the lane fails it.
 
 const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -105,7 +106,7 @@ const OPS_SCHEMA = {
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 // The lanes aether-plan compile prints: the harness, its cap on calls in flight, the wait cap per
-// role, and the lane of each role and native model.
+// role, and the candidate lanes of each role and native model: a list, or one lane in the args of an older compile.
 function validLanes(lanes) {
   const named = (value) => typeof value === 'string' && value !== ''
   const count = (value) => Number.isInteger(value) && value >= 1
@@ -116,13 +117,11 @@ function validLanes(lanes) {
   if (!absent(lanes.harnesses) && !(Array.isArray(lanes.harnesses) && lanes.harnesses.every(named))) return false
   if (!absent(lanes.maxParallelByHarness) && !(isObject(lanes.maxParallelByHarness) && Object.values(lanes.maxParallelByHarness).every(count))) return false
   if (!isObject(lanes.calls)) return false
+  const validLane = (lane) => isObject(lane) && named(lane.model) && named(lane.group) && (absent(lane.harness) || named(lane.harness))
+  const validCandidates = (planned) => (Array.isArray(planned) ? planned.length > 0 && planned.every(validLane) : validLane(planned))
   return Object.entries(lanes.calls).every(
     ([role, byModel]) =>
-      LANE_ROLES.includes(role) &&
-      isObject(byModel) &&
-      Object.entries(byModel).every(
-        ([model, lane]) => TIERS.includes(model) && isObject(lane) && named(lane.model) && named(lane.group) && (absent(lane.harness) || named(lane.harness)),
-      ),
+      LANE_ROLES.includes(role) && isObject(byModel) && Object.entries(byModel).every(([model, planned]) => TIERS.includes(model) && validCandidates(planned)),
   )
 }
 
@@ -190,10 +189,15 @@ const rulings = {}
 let queue = Promise.resolve()
 // The lane calls by outcome, the calls that found the lanes full, and each wave's dry groups.
 const laneCounts = lanes ? { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 0, dry: [] } : null
-// The groups without quota until the next wave's reading (keyed by harness and group, see groupKey),
-// and the lane calls in flight by pool (see poolOf).
-let dryGroups = new Set()
+// What the last quota step found, keyed by harness and group (see groupKey): the view of each group, with the final
+// reading of each lane call merged in since; the harnesses it found not installed; and the groups that ran out of
+// quota in the run since then. Then the lane calls in flight by pool (see poolOf).
+let groupViews = new Map()
+let notInstalled = new Set()
+let dryInRun = new Set()
 const lanesInFlight = new Map()
+// The logs of the calls' lane choices, which no call waits for; the run waits for all of them before it returns.
+const choiceLogs = []
 
 // --- agents ----------------------------------------------------------------------------------
 
@@ -273,8 +277,16 @@ function serialized(task) {
 const harnessOf = (lane) => lane.harness || lanes.harness
 const groupKey = (harness, group) => JSON.stringify([harness, group])
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key)
+// The candidate lanes of a role and native model: a list, or the one lane of an older compile's args.
+const asCandidates = (planned) => (Array.isArray(planned) ? planned : [planned])
+function candidatesFor(role, tier) {
+  const byTier = lanes.calls[role]
+  return isObject(byTier) && hasOwn(byTier, tier) ? asCandidates(byTier[tier]) : []
+}
+// Every lane the calls name, over all roles and native models.
+const plannedLanes = lanes ? Object.values(lanes.calls).flatMap((byTier) => Object.values(byTier).flatMap(asCandidates)) : []
 // The harnesses the calls name. With more than one, a dry group is named harness/group in the records.
-const harnessNames = lanes ? new Set([lanes.harness, ...Object.values(lanes.calls).flatMap((byModel) => Object.values(byModel).map(harnessOf))]) : null
+const harnessNames = lanes ? new Set([lanes.harness, ...plannedLanes.map(harnessOf)]) : null
 const groupLabel = (harness, group) => (harnessNames.size > 1 ? `${harness}/${group}` : group)
 // The pool a call counts against: its harness's own cap in maxParallelByHarness, else the pool all
 // harnesses without one share, capped at maxParallel.
@@ -308,47 +320,162 @@ function canonicalJson(value) {
   return JSON.stringify(sortKeys(value))
 }
 
-// Each wave starts with a quota reading. A group is dry for the wave unless its harness is installed
-// in the reading and the group usable there; a harness missing from the reading leaves its groups dry,
-// and a failed reading leaves every group dry.
-async function readQuota(wave) {
-  const out = await ops(`aether-lane status ${runId}`, { phase: 'Implement', label: `wave ${wave}: lane quota`, long: true })
-  const readings = !out.error && isObject(out.harnesses) ? out.harnesses : {}
-  const usable = (harness, group) => {
-    const reading = hasOwn(readings, harness) ? readings[harness] : null
-    return isObject(reading) && reading.installed === true && isObject(reading.groups) && isObject(reading.groups[group]) && reading.groups[group].usable === true
-  }
-  const pairs = new Map()
-  for (const byModel of Object.values(lanes.calls)) {
-    for (const lane of Object.values(byModel)) pairs.set(groupKey(harnessOf(lane), lane.group), [harnessOf(lane), lane.group])
-  }
-  const dry = [...pairs.values()].filter(([harness, group]) => !usable(harness, group))
-  dryGroups = new Set(dry.map(([harness, group]) => groupKey(harness, group)))
-  laneCounts.dry.push({ wave, groups: dry.map(([harness, group]) => groupLabel(harness, group)).sort() })
+// Why a group leaves its candidates out, with the reasons and the precedence of lib/lane-order.js: its harness was
+// found not installed, it has a dry mark, it ran out of quota in the run, or it is under the reserve. Null when it
+// does not. A group with no view has no reading, and is not left out.
+function exclusionOf(harness, group) {
+  const key = groupKey(harness, group)
+  const view = groupViews.get(key) || null
+  if (notInstalled.has(harness)) return 'not-installed'
+  if (view && view.mark !== undefined && view.mark !== null) return 'marked'
+  if (dryInRun.has(key) || (view && view.dryInRun === true)) return 'dry'
+  if (view && view.usable === false) return 'reserve'
+  return null
 }
 
-// The lane that takes a call, or null for a native call: no lanes, effort max, no lane for the
-// role and model, or a dry group. A call that finds its pool full runs native too, and counts as overflow.
-function laneFor(role, model, effort) {
-  if (!lanes || effort === 'max') return null
-  const lane = lanes.calls[role] ? lanes.calls[role][model] : null
-  if (!lane || dryGroups.has(groupKey(harnessOf(lane), lane.group))) return null
-  const pool = poolOf(lane)
-  if (inFlightOf(pool) >= capOf(pool)) {
-    laneCounts.overflow++
-    return null
+// The quota step of each wave (R6): `aether-lane status --refresh` renews the readings that need it and gives
+// the view of each group. Its answer replaces the views and the harnesses found not installed, and ends what ran
+// dry in the waves before; a step that fails leaves all of it as it was. It runs before the wave's units start,
+// so never while a lane call holds a place in a pool.
+async function readQuota(wave) {
+  const out = await ops(`aether-lane status ${runId} --refresh`, { phase: 'Implement', label: `wave ${wave}: lane quota`, long: true })
+  if (!out.error && isObject(out.harnesses)) {
+    groupViews = new Map()
+    notInstalled = new Set()
+    dryInRun = new Set()
+    for (const [harness, reading] of Object.entries(out.harnesses)) {
+      if (!isObject(reading)) continue
+      if (reading.installed === false) notInstalled.add(harness)
+      if (!isObject(reading.groups)) continue
+      for (const [group, view] of Object.entries(reading.groups)) if (isObject(view)) groupViews.set(groupKey(harness, group), view)
+    }
+  } else {
+    log(`wave ${wave}: the lane quota step failed, so each group keeps what the run knew of it: ${out.error || 'the answer has no harnesses'}`)
   }
-  return lane
+  // The wave's record: the groups that leave some candidate out.
+  const dry = new Map()
+  for (const lane of plannedLanes) {
+    const harness = harnessOf(lane)
+    if (exclusionOf(harness, lane.group) !== null) dry.set(groupKey(harness, lane.group), groupLabel(harness, lane.group))
+  }
+  laneCounts.dry.push({ wave, groups: [...dry.values()].sort() })
+}
+
+// A reset as aether-lane status writes it, an ISO time in UTC with milliseconds: as text, it sorts as the time does.
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+
+// The order of a call's candidates (R9 to R12): orderCandidates of lib/lane-order.js, copied by hand because a
+// workflow has no modules, and held to the same cases (tests/lane-order-cases.js, tests/workflow-order.test.js).
+// A candidate its group leaves out goes to `excluded`, with why (see exclusionOf). The others go first by priority,
+// the highest first, a tie to the nearer reset (one that is not an ISO time goes after), then in the order of the
+// candidates; after them, in the order of the candidates, the ones whose group has no reading or no priority.
+// Each entry is { harness, model, lane, index, priority, resetsAt, absent, why }.
+function orderOf(candidates) {
+  const ranked = []
+  const unranked = []
+  const excluded = []
+  candidates.forEach((lane, index) => {
+    const harness = harnessOf(lane)
+    const key = groupKey(harness, lane.group)
+    const view = groupViews.get(key) || null
+    const priority = view && typeof view.priority === 'number' && Number.isFinite(view.priority) ? view.priority : null
+    const resetsAt = view && view.resetsAt !== undefined && view.resetsAt !== null ? view.resetsAt : null
+    const absent = Boolean(view && view.usedPercentAbsent === true)
+    const entry = { harness, model: lane.model, lane, index, priority, resetsAt, absent, why: exclusionOf(harness, lane.group) }
+    if (entry.why !== null) excluded.push(entry)
+    else if (view && view.unknown !== true && priority !== null) ranked.push(entry)
+    else unranked.push({ ...entry, priority: null })
+  })
+  const resetOf = (entry) => (typeof entry.resetsAt === 'string' && ISO_TIME.test(entry.resetsAt) ? entry.resetsAt : null)
+  ranked.sort((a, b) => {
+    if (a.priority !== b.priority) return b.priority - a.priority
+    const [resetA, resetB] = [resetOf(a), resetOf(b)]
+    if (resetA !== resetB) {
+      if (resetA === null) return 1
+      if (resetB === null) return -1
+      return resetA < resetB ? -1 : 1
+    }
+    return a.index - b.index
+  })
+  return { ordered: [...ranked, ...unranked], excluded }
+}
+
+// A priority in a choice's order: a decimal without trailing zeros. JavaScript writes the smallest numbers with
+// an exponent, which the order's grammar does not take.
+function rankOf(priority) {
+  if (priority === null) return 'unknown'
+  const text = String(priority)
+  return /e/i.test(text) ? priority.toFixed(15).replace(/0+$/, '').replace(/\.$/, '') : text
+}
+
+// The outcome of a start that was unavailable: `unavailable-` and its reason, in lower case, with hyphens between words.
+const unavailableOutcome = (reason) => `unavailable-${String(reason).toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown'}`
+
+// Logs where a call went (R16): `aether-lane choice` writes the decision to the lane log. No call waits for it,
+// the run waits for all of them before it returns, and it never rejects: a log that fails is noted, and changes
+// nothing in the run. Its ops agent counts in agents.total from the moment it starts.
+async function logChoice({ role, tier, effort, id, phase, label }, pick, items) {
+  const notLogged = (why) => log(`${label}: the lane choice was not logged: ${why}`)
+  try {
+    const command = `aether-lane choice ${runId} ${id} --role ${role} --tier ${tier} --effort ${effort} --pick ${pick} --order ${items.join('/')}`
+    const out = await ops(command, { phase, label: `${label}: lane choice` })
+    if (out.error) notLogged(out.error)
+    else if (out.logged !== true) notLogged(`an unexpected answer: ${JSON.stringify(out).slice(0, 200)}`)
+  } catch (err) {
+    notLogged(message(err))
+  }
+}
+
+// One call's walk over its candidate lanes (R13). Null, with nothing logged, at effort max or with no candidate for
+// the role and native model. Otherwise it tries the ordered candidates in turn: one whose pool is full is passed
+// over, one whose start is unavailable, for any reason, gives way to the next, and with any other outcome that
+// lane took the call: it resolves to { lane, outcome } (see laneCall). With no lane left it resolves to null, for
+// the native agent, and counts as overflow when a full pool passed a candidate over. `build(lane)` gives the
+// call's { task, prompt, base } on that lane. The decision is logged once the walk ends, without waiting for it.
+async function laneWalk({ role, tier, effort, id, phase, label, build }) {
+  if (!lanes || effort === 'max') return null
+  const candidates = candidatesFor(role, tier)
+  if (candidates.length === 0) return null
+  const { ordered, excluded } = orderOf(candidates)
+  const outcomes = ordered.map(() => 'untried')
+  let taken = null
+  for (let i = 0; i < ordered.length && !taken; i++) {
+    const { lane } = ordered[i]
+    const pool = poolOf(lane)
+    if (inFlightOf(pool) >= capOf(pool)) {
+      outcomes[i] = 'pool-full'
+      continue
+    }
+    const outcome = await laneCall({ role, id, lane, effort, phase, ...build(lane) })
+    if (outcome.kind === 'unavailable') {
+      outcomes[i] = unavailableOutcome(outcome.reason)
+      continue
+    }
+    outcomes[i] = 'picked'
+    taken = { lane, outcome }
+  }
+  if (!taken && outcomes.includes('pool-full')) laneCounts.overflow++
+  const absent = (entry) => (entry.absent ? ':absent' : '')
+  const items = [
+    ...ordered.map((entry, i) => `${entry.harness}:${entry.model}:${rankOf(entry.priority)}:${outcomes[i]}${absent(entry)}`),
+    ...excluded.map((entry) => `${entry.harness}:${entry.model}:excluded:${entry.why}${absent(entry)}`),
+  ]
+  const pick = taken ? `${harnessOf(taken.lane)}:${taken.lane.model}` : 'native'
+  choiceLogs.push(logChoice({ role, tier, effort, id, phase, label }, pick, items))
+  return taken
 }
 
 // One call on a lane (lanes spec §6.1): start it with its prompt as the payload, wait for its result,
 // check the result's digest, and stop the call whenever the script gives up on it. It counts as in
-// flight from before its first await until it settles, so call it right after laneFor.
+// flight from before its first await until it settles, so laneWalk calls it right after it finds the pool with room.
+// A start unavailable for lack of quota, or a result of status quota, leaves the group dry until the next quota
+// step reads it again, and the final reading a result carries (lane.quota) goes into the group's view.
 // Resolves to { kind: 'ok', result, lane }, { kind: 'violation', files, model },
 // { kind: 'blocked', detail }, { kind: 'unavailable', reason } when it did not start, or
 // { kind: 'infra', model, reason } for an infrastructure failure, which the native agent takes over.
 async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
   const pool = poolOf(lane)
+  const group = groupKey(harnessOf(lane), lane.group)
   lanesInFlight.set(pool, inFlightOf(pool) + 1)
   try {
     const laneOps = (command, step, payload = null) => ops(`aether-lane ${command}`, { phase, label: `${base}: ${step}`, payload, long: true })
@@ -374,7 +501,7 @@ async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
     started = await laneOps(`start ${runId} ${id} ${flags}`, 'start', { path: `${runDir}/lanes/${id}/prompt.md`, text: prompt })
     if (!started.error && started.unavailable) {
       laneCounts.unavailable++
-      if (started.unavailable === 'quota') dryGroups.add(groupKey(harnessOf(lane), lane.group))
+      if (started.unavailable === 'quota') dryInRun.add(group)
       log(`${base}: unavailable (${started.unavailable})`)
       return { kind: 'unavailable', reason: started.unavailable }
     }
@@ -392,6 +519,8 @@ async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
       if (!again.error) reply = again
       if (!digestMatches(reply)) return await giveUp('the result digest did not match')
     }
+    // The group's reading as the call ended orders the candidates of the calls that follow.
+    if (isObject(reply.lane) && isObject(reply.lane.quota)) groupViews.set(group, { ...(groupViews.get(group) || {}), ...reply.lane.quota })
 
     switch (reply.status) {
       case 'ok':
@@ -399,7 +528,7 @@ async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
         laneCounts.ok++
         return { kind: 'ok', result: reply.result, lane: reply.lane }
       case 'quota':
-        dryGroups.add(groupKey(harnessOf(lane), lane.group))
+        dryInRun.add(group)
         return infra('its quota ran out', 'quota')
       case 'failed':
         return infra(String(reply.detail || 'failed'))
@@ -605,26 +734,30 @@ function findingsFailure(findings) {
   return `${FINDINGS_PREFIX}${titles.length > 0 ? titles.join(' | ') : '(no blocking finding)'}`
 }
 
-// One attempt's implementer: on a lane when there is one, native otherwise. After the lane's
-// infrastructure failure, or when it does not start, the same attempt runs native. Resolves to
+// One attempt's implementer: on a lane when one takes it, native otherwise. After the lane's
+// infrastructure failure, or when no lane starts, the same attempt runs native. Resolves to
 // { report, provider, laneFailure }, with `failure` (the round's summary) when the lane's changes
 // fell outside Owns, or to { blocked } with the lane's detail.
 async function implement(unit, task, model, effort, rung, context) {
   const n = unit.attempts
+  const label = `${unit.id}: implement on ${rung} (attempt ${n})`
   let laneFailure = null
-  const lane = laneFor('implementer', model, effort)
-  if (lane) {
-    const harness = harnessOf(lane)
-    const outcome = await laneCall({
-      role: 'implementer',
-      id: `${unit.id}-${n}-implement`,
+  const walked = await laneWalk({
+    role: 'implementer',
+    tier: model,
+    effort,
+    id: `${unit.id}-${n}-implement`,
+    phase: 'Implement',
+    label,
+    build: (lane) => ({
       task: unit.id,
-      lane,
-      effort,
       prompt: implementerPrompt(unit, task, rung, context, { lane: true }),
-      phase: 'Implement',
-      base: `${unit.id}: implement on ${rung} via ${harness} ${lane.model} (attempt ${n})`,
-    })
+      base: `${unit.id}: implement on ${rung} via ${harnessOf(lane)} ${lane.model} (attempt ${n})`,
+    }),
+  })
+  if (walked) {
+    const { lane, outcome } = walked
+    const harness = harnessOf(lane)
     if (outcome.kind === 'ok') return { report: outcome.result, provider: `${harness} ${outcome.lane.model}`, laneFailure }
     if (outcome.kind === 'blocked') return { blocked: outcome.detail }
     if (outcome.kind === 'violation') {
@@ -642,29 +775,32 @@ async function implement(unit, task, model, effort, rung, context) {
   }
   const report = await call('implementer', model, effort, implementerPrompt(unit, task, rung, context), {
     phase: 'Implement',
-    label: `${unit.id}: implement on ${rung} (attempt ${n})`,
+    label,
     schema: IMPLEMENTER_SCHEMA,
   })
   return { report, provider: 'native', laneFailure }
 }
 
-// One attempt's review: on a lane when there is one, and native otherwise or after any lane outcome
+// One attempt's review: on a lane when one takes it, and native otherwise or after any lane outcome
 // but ok and blocked. Resolves to { review, provider }, or to { blocked } with the lane's detail.
 async function supervise(unit, task, rung, report, used, model) {
   const n = unit.attempts
-  const lane = laneFor('supervisor', 'sonnet', task.review)
-  if (lane) {
-    const harness = harnessOf(lane)
-    const outcome = await laneCall({
-      role: 'supervisor',
-      id: `${unit.id}-${n}-supervise`,
+  const walked = await laneWalk({
+    role: 'supervisor',
+    tier: 'sonnet',
+    effort: task.review,
+    id: `${unit.id}-${n}-supervise`,
+    phase: 'Supervise',
+    label: `${unit.id}: supervise attempt ${n}`,
+    build: (lane) => ({
       task: unit.id,
-      lane,
-      effort: task.review,
       prompt: supervisorPrompt(unit, task, rung, report, used, model, { lane: true }),
-      phase: 'Supervise',
-      base: `${unit.id}: supervise attempt ${n} via ${harness} ${lane.model}`,
-    })
+      base: `${unit.id}: supervise attempt ${n} via ${harnessOf(lane)} ${lane.model}`,
+    }),
+  })
+  if (walked) {
+    const { lane, outcome } = walked
+    const harness = harnessOf(lane)
     if (outcome.kind === 'ok') return { review: outcome.result, provider: `${harness} ${outcome.lane.model}` }
     if (outcome.kind === 'blocked') return { blocked: outcome.detail }
   }
@@ -909,19 +1045,18 @@ async function reviewRun() {
   const chosen = { reviewModel: model, reviewEffort: effort }
   const pkg = await ops(`aether-wt diff ${runId} --final`, { phase: 'Final review', label: 'final review: package' })
   if (pkg.error) return { status: 'failed', reason: `package: ${pkg.error}`, ...chosen }
-  const lane = laneFor('reviewer', model, effort)
-  if (lane) {
+  const walked = await laneWalk({
+    role: 'reviewer',
+    tier: model,
+    effort,
+    id: 'final-review',
+    phase: 'Final review',
+    label: 'final review',
+    build: (lane) => ({ task: null, prompt: reviewerPrompt(pkg, { lane: true }), base: `final review via ${harnessOf(lane)} ${lane.model}` }),
+  })
+  if (walked) {
+    const { lane, outcome } = walked
     const harness = harnessOf(lane)
-    const outcome = await laneCall({
-      role: 'reviewer',
-      id: 'final-review',
-      task: null,
-      lane,
-      effort,
-      prompt: reviewerPrompt(pkg, { lane: true }),
-      phase: 'Final review',
-      base: `final review via ${harness} ${lane.model}`,
-    })
     if (outcome.kind === 'ok') return { status: 'done', provider: `${harness} ${outcome.lane.model}`, ...chosen, ...reviewResult(outcome.result) }
     if (outcome.kind === 'blocked') return { status: 'failed', reason: `lane: ${outcome.detail}`, ...chosen }
   }
@@ -954,6 +1089,8 @@ try {
 } catch (err) {
   error = message(err)
 } finally {
+  // The lane choices no call waited for: the run returns, and sweeps, only after every one of them ended.
+  await Promise.all(choiceLogs)
   const command = `aether-wt sweep --run ${runId}`
   cleanup = await ops(command, { phase: 'Cleanup', label: 'cleanup' })
   if (cleanup.error) cleanup = await ops(command, { phase: 'Cleanup', label: 'cleanup again' })
