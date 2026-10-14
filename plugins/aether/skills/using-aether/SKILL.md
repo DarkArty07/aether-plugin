@@ -264,7 +264,7 @@ Before one, run `aether-autonomy check <class>`.
     ## RADAR
     - Rápido: <tiempo, reintentos y subidas de modelo>
     - Autónomo: <veces que te interrumpí y por qué>
-    - Delegación: <llamadas y tokens en otros harness; asientos ocupados por modelos externos, de cuántas rondas>
+    - Delegación: <llamadas y tokens en otros harness; por grupo de cuota, el saldo al empezar y al terminar y su próximo reinicio (aether-report: lanes.run.groups.<grupo>.balance); asientos ocupados por modelos externos, de cuántas rondas>
     - Asequible: <US$, cuota usada, y el modelo y el esfuerzo de cada tarea delegada>
     - Robusto: <tests, examen, hallazgos, veredictos del Juez>
     ## Hice

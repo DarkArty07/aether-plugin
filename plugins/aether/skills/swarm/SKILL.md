@@ -25,7 +25,7 @@ In an autonomous run (see the `using-aether` skill), what this skill says to tel
   - Check that the permission mode or allow rules cover these calls, and write down what you rely on: tell the owner, or in a run, note it in the diary.
   - The unit worktrees are under the main checkout. If this session started inside the integration worktree, add the main checkout with `/add-dir <repoRoot>`, so the agents may read and edit there.
 - **Workflows.** The run is a dynamic workflow. When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session, and offer to build it meanwhile task by task, each as a delegate task: on Sonnet, or on Opus when its Tier is opus.
-- **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, the run sends calls to the external harnesses that the `harnesses` option enables (agy by default; also codex, grok and cursor), in the owner's order, when the harness's CLI is installed and while its quota lasts. `${CLAUDE_PLUGIN_ROOT}/config/lanes.json` names each harness's models. These CLIs run without permission prompts (agy with `--dangerously-skip-permissions`) in the unit's transactional worktree, with the owner's git, GitHub, registry and cloud credentials kept out of their environment. Otherwise every call is native, and `aether-plan compile` says why on stderr; it also names each enabled harness that takes no call, and why. `aether-plan compile <plan.md> --no-lanes` runs everything native.
+- **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, the run sends calls to the external harnesses that the `harnesses` option enables (agy by default; also codex, grok and cursor), when the harness's CLI is installed and while its quota lasts, each call to the candidate whose quota is most at risk of being lost first (the README's Lanes section has the rule). `${CLAUDE_PLUGIN_ROOT}/config/lanes.json` names each harness's models. These CLIs run without permission prompts (agy with `--dangerously-skip-permissions`) in the unit's transactional worktree, with the owner's git, GitHub, registry and cloud credentials kept out of their environment. Otherwise every call is native, and `aether-plan compile` says why on stderr; it also names each enabled harness that takes no call, and why. `aether-plan compile <plan.md> --no-lanes` runs everything native. `aether-lane quota` shows the readings, and `aether-lane status <runId>` the order of each role's candidates and the dry marks. A candidate whose start is unavailable passes the call to the next one; the native agent takes it only when none is left.
 
 ## 2. Compile
 
@@ -64,7 +64,7 @@ The workflow returns:
 - **`finalReview`:** a `status` of `done`, `skipped` or `failed`. When it is done, it also has the `verdict`, `findings`, `declined` and `summary`. A `failed` review has a `reason`: the reviewer ended without its answer, which may be a diff too large for its turns, or it failed with an error's text. That is never a verdict. `reviewModel` and `reviewEffort` say what it ran on, which follows the run's risk: Opus at `xhigh` when a merged task is tier opus or reviews at `xhigh` or `max`, Sonnet at `high` for at most three haiku tasks that review at `high`, and Opus at `high` otherwise.
 - **`cleanup`:** what the sweep removed. Its `remaining` lists must be empty.
 - **`agents`:** the agent count, by role and by model.
-- **`lanes`:** the lane calls by outcome (`ok`, `failed`, `quota`, `violation`, `blocked`, `unavailable`), the `overflow`, and each wave's `dry` groups. It is null when the run had no lanes.
+- **`lanes`:** the lane calls by outcome (`ok`, `failed`, `quota`, `violation`, `blocked`, `unavailable`), the `overflow` (calls that went native because every pool was full), and each wave's `dry` groups. It is null when the run had no lanes.
 - **`error`:** set only when the script itself failed.
 
 Save the result as `<runDir>/result.json`, then run `aether-report --run <runId>` from the integration worktree. It prints JSON:
@@ -74,7 +74,7 @@ Save the result as `<runDir>/result.json`, then run `aether-report --run <runId>
   - `byEffort`: by role, model and effort, with the output tokens and the model time of each;
   - `agents`, in `cost.run`: each agent of the run, with its label, model, effort, cost and time;
 - **`quality`:** the units merged, adopted (see §5), climbed, escalated and blocked, `integrated` (merged and adopted), every finding by severity, the final review, and the test command's result on the integration branch. Each adopted unit is also a line in `notes`.
-- **`lanes`:** each group's calls, tokens, dollars and quota consumed per window, by model, by role and by harness (`byHarness`), and `totals`: native dollars, lane dollars and the share the plans covered.
+- **`lanes`:** each group's calls, tokens, dollars and quota consumed per window, its `balance` (the share left of each window at the start and the end of the run, and the next reset; `usedPercentAbsent` when a share was read as 0% used), what every call chose (`run.choices`), by model, by role and by harness (`byHarness`), and `totals`: native dollars, lane dollars and the share the plans covered.
 - **`radar`:** the figures of the owner's five goals: `rapid` (the run's time, attempts, climbs and escalations), `autonomous` (questions that reached the owner), `delegation` (lane calls, by harness, and the share the plans covered), `affordable` (dollars) and `robust` (merged, blocked, tests, findings and the final verdict). A figure that was not measured is null.
 
 In an autonomous run, record the run's cost after every launch:
@@ -93,6 +93,8 @@ Report from it, to the owner or, in a run, to the diary:
       Lanes (agy)
         Gemini Models:          5 h 34 % · weekly 8 %  · 1.2M tokens · $2.10 at list price
         Claude and GPT models:  5 h 61 % · weekly 12 % · 3.4M tokens · $9.80
+      Lanes (grok)
+        Grok plan:              weekly 100 % → 97 % · resets 2026-10-17 09:08 UTC · 1 call · $0.04
       Native Claude:            $3.40
       Total at list price: $15.30; the plans covered $11.90 (78 %)
 
