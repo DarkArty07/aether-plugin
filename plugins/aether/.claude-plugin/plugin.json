@@ -18,7 +18,7 @@
     "harnesses": {
       "type": "string",
       "title": "Lane harnesses",
-      "description": "The external harnesses lanes may use, comma-separated, in order of preference: agy, codex, grok, cursor. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
+      "description": "The external harnesses lanes may use, comma-separated: agy, codex, grok, cursor. The quota decides the order of the candidates; the order of this option breaks ties between equal priorities and orders the groups with no reading. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
       "default": "agy"
     },
     "ops": {

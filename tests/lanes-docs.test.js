@@ -9,6 +9,8 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const lanes = require('../plugins/aether/lib/lanes.js')
+const { ACP_TIMEOUT_MS } = require('../plugins/aether/lib/harness/grok-acp.js')
+const { STALE_MS, TIMEOUT_MS } = require('../plugins/aether/lib/harness/grok-quota.js')
 
 const ROOT = path.join(__dirname, '..')
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8')
@@ -52,6 +54,7 @@ test("the README says that Grok's quota is read over ACP with its UI as the fall
       'A `status` run by hand does not refresh.',
       'A line without `creditUsagePercent` is read as 0% used',
       '**Adding a harness.**',
+      '`HARNESS_NAMES` and `FACTORY` of `plugins/aether/lib/harness/index.js`',
       "`quotaCost: 'process'`",
       'or `unknown` when it cannot read them',
     ],
@@ -60,13 +63,21 @@ test("the README says that Grok's quota is read over ACP with its UI as the fall
 })
 
 test('the documents do not call the reader of Grok provisional any more', () => {
-  for (const file of [['README.md'], ['docs', 'decisions.md']]) assert.ok(!/provisional/i.test(read(...file).split('\n').filter((line) => /grok/i.test(line) && /quota|reader/i.test(line)).join('\n')), file.join('/'))
+  // The README before spec 002 (9f0370c) said "Grok's is interim, until another method turns up".
+  const stopgap = /provisional|interim|until another method/i
+  for (const file of [['README.md'], ['docs', 'decisions.md']]) assert.ok(!stopgap.test(read(...file).split('\n').filter((line) => /grok/i.test(line) && /quota|reader/i.test(line)).join('\n')), file.join('/'))
+  assert.ok(stopgap.test("Grok's is interim, until another method turns up"))
 })
 
 test("the lengths the README gives are the table's: 10 minutes for agy, 30 for grok, 60 for a dry mark", () => {
   const config = lanes.loadConfig(lanes.CONFIG_FILE)
   assert.deepEqual([config.harnesses.agy.quotaLifeMinutes, config.harnesses.grok.quotaLifeMinutes, config.dryMarkMinutes, config.reserve], [10, 30, 60, 0.05])
-  includesAll(read('README.md'), ['(`quotaLifeMinutes`: 10 minutes for agy, 30 for grok)', 'otherwise for 60 minutes (`dryMarkMinutes`)', 'above a 5% reserve (`reserve` in the table)'], 'the README')
+  includesAll(read('README.md'), ['(`quotaLifeMinutes`: 10 minutes)', 'a finished agy call and `aether-lane quota` take a fresh reading', 'its 30 minutes (`quotaLifeMinutes`)', 'otherwise for 60 minutes (`dryMarkMinutes`)', 'above a 5% reserve (`reserve` in the table)'], 'the README')
+})
+
+test("the limits the README gives for Grok's reading are the code's: 10 seconds over ACP, 20 for the UI, 30 minutes before a log line is stale", () => {
+  assert.deepEqual([ACP_TIMEOUT_MS, TIMEOUT_MS, STALE_MS], [10000, 20000, 30 * 60 * 1000])
+  includesAll(read('README.md'), [`(${ACP_TIMEOUT_MS / 1000} seconds at most)`, `for a few seconds (${TIMEOUT_MS / 1000} at most)`, `they call it stale after ${STALE_MS / 60000} minutes`], 'the README')
 })
 
 test('the swarm skill and the brief name the order, the balance of each group and the choices of the run', () => {

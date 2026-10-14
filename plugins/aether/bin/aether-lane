@@ -11,7 +11,8 @@
 // aether-lane choice <run> <call> --role <role> --tier <tier> --effort <effort> --pick <native|harness:model> --order <order>
 //   (logs which lane took a call and why; the workflow has no files, so it hands the decision to this command)
 // aether-lane quota [<harness>...] [--refresh] [--json]   (no run: each harness's quota as text, or as JSON;
-//   --refresh first opens grok's UI for a few seconds, with no prompt, to take a new reading)
+//   --refresh first asks grok over ACP for a new reading, and opens its UI for a few seconds, with no prompt,
+//   only if that gives none)
 // aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--feature specs/NNN-<topic>] [--cwd <dir>]
 //   (the message on stdin; exit 0 an external answer, 3 the native agent takes the round, 4 the external round
 //   failed and was undone, 1 the command broke)
