@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const order = require('../plugins/aether/lib/lane-order.js')
-const { NOW, READINGS, GEMINI, CLAUDE_LOW, GROK, CASES } = require('./lane-order-cases.js')
+const { NOW, READINGS, GEMINI, CLAUDE_LOW, GROK, HALF_READING, HALF, NO_LONGEST_READING, NO_LONGEST, CASES } = require('./lane-order-cases.js')
 
 const RESERVE = 0.05
 const view = (reading, extra = {}) => order.groupView(reading, { reserve: RESERVE, now: NOW, ...extra })
@@ -73,6 +73,23 @@ test('a group is usable when every window is above the reserve and no mark holds
   assert.equal(view(windows(0.9, 0.06)).priority, view(windows(0.9, 0.9)).priority)
 })
 
+test('a window known to be under the reserve holds its group even when another window of it has no balance (R10)', () => {
+  const half = view(HALF_READING)
+  for (const key of Object.keys(HALF)) assert.deepEqual(half[key], HALF[key], key)
+  assert.equal(order.readingUsable(HALF_READING, RESERVE), false)
+  // With the known window above the reserve, the group is used until a call fails, as when no window has a balance.
+  const windows = (weekly, fiveHour) => ({ windows: { weekly: { remaining: weekly, resetsAt: '2026-10-20T00:00:00Z' }, '5h': { remaining: fiveHour, resetsAt: '2026-10-14T10:00:00Z' } } })
+  assert.deepEqual([view(windows(0.5, null)).unknown, view(windows(0.5, null)).usable], [true, true])
+  assert.equal(order.readingUsable(windows(0.5, null), RESERVE), true)
+  // The same holds whichever window is the one with no balance, and exactly at the reserve is not above it.
+  assert.equal(view(windows(null, 0.04)).usable, false)
+  assert.equal(order.readingUsable(windows(null, 0.04), RESERVE), false)
+  assert.equal(view(windows(0.05, null)).usable, false)
+  assert.equal(order.readingUsable(windows(0.05, null), RESERVE), false)
+  // A mark holds the group in any case.
+  assert.equal(view(windows(0.5, null), { mark: { until: NOW + 1 } }).usable, false)
+})
+
 test('a reading that is missing, unknown, empty or without a balance is a group with no reading, usable until a call fails', () => {
   for (const reading of [null, undefined, { unknown: true, windows: {} }, { windows: {} }]) {
     const g = view(reading)
@@ -92,6 +109,20 @@ test('a window whose reset cannot be read keeps its balance for usability and gi
   const g = view({ windows: { weekly: { remaining: 0.5, resetsAt: 'soon' } } })
   assert.deepEqual([g.unknown, g.usable, g.priority, g.resetsAt], [false, true, null, null])
   assert.equal(g.windows.weekly.resetsAt, 'soon')
+})
+
+test('a group whose longest window has no readable reset has no priority, and the 5 h window does not stand in for it (A4)', () => {
+  const g = view(NO_LONGEST_READING)
+  for (const key of Object.keys(NO_LONGEST)) assert.deepEqual(g[key], NO_LONGEST[key], key)
+  assert.equal(g.windowName, null)
+  // Each window keeps its own priority.
+  assert.equal(g.windows['5h'].priority, 0.149589)
+  assert.equal(g.windows.weekly.priority, null)
+  // Which window has the unreadable reset does not matter, and a reset in the wrong format is unreadable too.
+  const short = view({ windows: { weekly: { remaining: 1, resetsAt: '2026-10-21T03:35:44Z' }, '5h': { remaining: 1, resetsAt: 'soon' } } })
+  assert.deepEqual([short.priority, short.windowName, short.usable], [null, null, true])
+  // With every reset readable, the longest one still gives the priority.
+  assert.equal(view({ windows: { weekly: { remaining: 1, resetsAt: '2026-10-21T03:35:44Z' }, '5h': { remaining: 1, resetsAt: '2026-10-14T12:49:06Z' } } }).windowName, 'weekly')
 })
 
 test('readingUsable is the rule that start and the judge of a call use', () => {

@@ -13,6 +13,7 @@ const work = require('../plugins/aether/lib/lane-work.js')
 const calls = require('../plugins/aether/lib/lane-calls.js')
 const { registerAdapter, unregisterAdapter } = require('../plugins/aether/lib/harness/index.js')
 const fx = require('./lane-fixtures.js')
+const { tempDir } = require('./helpers.js')
 
 const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote it.', head: '', tests: '1/1 pass', concerns: '', question: '' })
 const IMPLEMENT = 'task-1-1-implement'
@@ -135,6 +136,37 @@ test('a call that fails while /usage omits its group is failed, not quota: the g
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null)
   assert.deepEqual(marks.liveMarks(env.AETHER_DATA_DIR), [])
   assert.equal(done.lane.quota.usable, true)
+})
+
+// The fake agy, except that its /usage lists the Gemini group with an empty bucket list.
+function agyWithEmptyBuckets(t) {
+  const file = path.join(tempDir(t, 'agy-empty-buckets-'), 'agy')
+  const script = `#!${process.execPath}
+const { spawnSync } = require('node:child_process')
+const args = process.argv.slice(2)
+const result = spawnSync(${JSON.stringify(fx.FAKE_AGY)}, args, { encoding: 'utf8' })
+let out = result.stdout
+if (args[1] === '/usage') {
+  const data = JSON.parse(out)
+  data.command.data.groups.find((group) => group.name === 'Gemini Models').buckets = []
+  out = JSON.stringify(data)
+}
+process.stdout.write(out)
+process.stderr.write(result.stderr)
+process.exit(result.status)
+`
+  fs.writeFileSync(file, script, { mode: 0o755 })
+  return file
+}
+
+test('a group that /usage lists with no buckets is unknown: a start goes ahead, and a call that fails there is failed, not quota (R8)', (t) => {
+  const env = fx.laneEnv(t, { command: agyWithEmptyBuckets(t) })
+  const done = runCall(t, ['FAKE-AGY: write src/t1/half.js half', 'FAKE-AGY: timeout'], env)
+  assert.equal(done.status, 'failed', done.detail)
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null)
+  assert.deepEqual(marks.liveMarks(env.AETHER_DATA_DIR), [])
+  assert.equal(done.lane.quota.usable, true)
+  assert.equal(done.lane.quota.unknown, true)
 })
 
 test('a call of a harness that reports no quota, which ends for a quota line in its output, holds its group for the default length', async (t) => {

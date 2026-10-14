@@ -92,11 +92,12 @@ function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = pro
         for (const bucket of group.buckets) {
           windows[bucket.window] = { remaining: bucket.remaining_fraction, resetsAt: bucket.reset_time }
         }
-        reported[key] = { windows }
+        if (Object.keys(windows).length > 0) reported[key] = { windows }
       }
-      // A table group that /usage does not list has no reading: unknown, never absent. An absent group would be judged
-      // as a quota failure by the runner (a call that fails there would leave a mark), and it would keep the saved
-      // reading from holding for its life, since that needs every group of the table.
+      // A table group that /usage does not list, or lists with no buckets, has no reading: unknown, never absent and
+      // never without windows. An absent group, or one with no windows, would be judged as a quota failure by the runner
+      // (a call that fails there would leave a mark), and an absent one would keep the saved reading from holding for
+      // its life, since that needs every group of the table.
       for (const key of keyOfGroup.values()) {
         if (!Object.hasOwn(reported, key)) reported[key] = { unknown: true, windows: {} }
       }
