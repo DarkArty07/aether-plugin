@@ -442,7 +442,8 @@ function buildModels(index, profiles = {}) {
 
   const models = []
   const excluded = []
-  for (const family of index.families.filter((entry) => entry.current)) {
+  // The owner's exclusion wins over a family being superseded: an excluded offer of any family is kept, with its reason.
+  for (const family of index.families) {
     const profile = profileOf(family.family)
     for (const offer of family.available) {
       if (offer.excluded) {
@@ -464,6 +465,7 @@ function buildModels(index, profiles = {}) {
         })
         continue
       }
+      if (!family.current) continue
       models.push({
         harness: offer.harness,
         model: offer.model,
@@ -485,8 +487,9 @@ function buildModels(index, profiles = {}) {
 
   // The offered models AA has no entry for: they have no figures, and the lane table may not name them.
   const noEntry = index.unmatched.filter((entry) => entry.reason === NO_ENTRY)
-  // An excluded model AA has no entry for is excluded all the same, without a price or scores.
-  for (const entry of noEntry.filter((item) => item.excluded)) {
+  // An excluded model AA has no entry for, or has one released before `since`, is excluded all the same,
+  // without a price or scores.
+  for (const entry of index.unmatched.filter((item) => item.excluded)) {
     excluded.push({
       harness: entry.harness,
       model: entry.model,
@@ -529,13 +532,13 @@ function buildModels(index, profiles = {}) {
     .filter((family) => !family.current)
     .flatMap((family) => {
       const successor = index.families.find((other) => other.family === family.supersededBy)
-      return family.available.map((offer) => ({
+      return family.available.filter((offer) => !offer.excluded).map((offer) => ({
         harness: offer.harness,
         id: offer.model,
         supersededBy: successor?.available.find((other) => other.harness === offer.harness)?.model ?? family.supersededBy,
       }))
     })
-  const outOfScope = index.unmatched.filter((entry) => entry.reason !== NO_ENTRY).map(({ harness, model, reason }) => ({ harness, model, reason }))
+  const outOfScope = index.unmatched.filter((entry) => entry.reason !== NO_ENTRY && !entry.excluded).map(({ harness, model, reason }) => ({ harness, model, reason }))
 
   return {
     generatedAt: index.generatedAt,
@@ -748,6 +751,8 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   }
   const unlisted = missingListings(harnessModels, args.harnesses)
   if (unlisted.length > 0) return { exitCode: 1, stdout: `${unlisted.join('\n')}\n` }
+  const bad = badListings(harnessModels, args.harnesses)
+  if (bad.length > 0) return { exitCode: 1, stdout: `${bad.join('\n')}\n` }
   if (!args.from) {
     const key = keyFrom(env, envFileFor(env, envFile))
     if (!key) {
@@ -817,6 +822,30 @@ function missingListings(listings, harnesses) {
     .map((name) => `no listing captured for ${name}: capture it ${CAPTURE[name]} and add it to harness-models.json`)
 }
 
+// One line per listing entry the script cannot read, for the chosen harnesses. A listing is an id (a string) or,
+// for a harness whose effort is a flag, an object with a string `id`; `excluded`, when it is there, is the
+// reason the owner keeps the model out, a non-empty string (a silent miss would put the model into use).
+// A harness whose effort is in the id (agy, Cursor) lists ids only: each id is a model at an effort.
+function badListings(listings, harnesses) {
+  const problems = []
+  for (const name of harnesses) {
+    const listing = listings.harnesses?.[name]
+    if (!Array.isArray(listing?.models)) continue
+    for (const listed of listing.models) {
+      if (typeof listed === 'string') continue
+      const shown = JSON.stringify(listed)
+      if (listing.effortVia === 'id') {
+        problems.push(`${name} lists ${shown} in harness-models.json: its effort is in the id, so it lists ids as strings; an object ({id, alias, excluded}) is for the harnesses whose effort is a flag`)
+      } else if (listed === null || typeof listed !== 'object' || typeof listed.id !== 'string' || listed.id === '') {
+        problems.push(`${name} lists ${shown} in harness-models.json with no id: a model is an id (a string) or an object with a non-empty string id`)
+      } else if (Object.hasOwn(listed, 'excluded') && (typeof listed.excluded !== 'string' || listed.excluded.trim() === '')) {
+        problems.push(`${name} lists ${listed.id} in harness-models.json with an excluded that is not a non-empty string (${JSON.stringify(listed.excluded)}): give the reason the owner keeps it out, or remove the field`)
+      }
+    }
+  }
+  return problems
+}
+
 // The date as the person running the script reads it (the local one, not UTC's).
 function localDate(date) {
   const pad = (number) => String(number).padStart(2, '0')
@@ -830,10 +859,10 @@ function summary(index) {
   })
   const named = (entries) => entries.map((entry) => `${entry.harness}/${entry.model}`).join(', ') || 'none'
   const noFigures = index.unmatched.filter((entry) => entry.reason === NO_ENTRY && !entry.excluded)
-  const outOfScope = index.unmatched.filter((entry) => entry.reason !== NO_ENTRY)
+  const outOfScope = index.unmatched.filter((entry) => entry.reason !== NO_ENTRY && !entry.excluded)
   const excluded = [
-    ...index.families.filter((family) => family.current).flatMap((family) => family.available.filter((entry) => entry.excluded)),
-    ...index.unmatched.filter((entry) => entry.reason === NO_ENTRY && entry.excluded),
+    ...index.families.flatMap((family) => family.available.filter((entry) => entry.excluded)),
+    ...index.unmatched.filter((entry) => entry.excluded),
   ]
   return (
     `${index.count} families (${index.variantCount} variants) are offered by ${index.harnesses.join(', ')}, of the ${index.releasedCount} released since ${index.since}; ${index.currentCount} are current.\n` +
@@ -845,7 +874,7 @@ function summary(index) {
   )
 }
 
-module.exports = { buildIndex, buildModels, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, readProfiles, main }
+module.exports = { buildIndex, buildModels, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, badListings, readProfiles, main }
 
 if (require.main === module) {
   main(process.argv.slice(2)).then(({ exitCode, stdout }) => {
