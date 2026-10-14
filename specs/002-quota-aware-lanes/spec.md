@@ -1,7 +1,7 @@
 # Lanes por cuota: primero el cómputo que se perdería
 
 - Date: 2026-10-13
-- Status: Draft, revision 4 (after the Judge's `revise` of revisions 1 to 3)
+- Status: Approved by the Judge on 2026-10-13 (revision 4, after `revise` on revisions 1 to 3). Open for the owner: A3.
 - Intent: que cada llamada del swarm que un lane puede tomar vaya primero a la cuota externa que más riesgo corre de perderse en su reinicio, leída por Aether sin preguntar, como diseño sostenible del plugin: la superdelegación de RADAR (C3). En palabras del dueño:
   - «La cuenta que se debe de usar primero es la más próxima a vencerse, es decir, en esto usualmente dan por semana. Si el reinicio semanal de una cuenta viene antes que el de otra pero no se ha gastado, se tiene que usar la que podría desperdiciar cómputo.»
   - «tú mismo respóndete, entre grok y agy dime cuál cuota se reinicia antes»
