@@ -26,6 +26,14 @@ Specs, plans and tasks follow the layout of [GitHub Spec Kit](https://github.com
 
 ## Status
 
+Version 0.10.0: quota-aware lanes ([spec](specs/002-quota-aware-lanes/spec.md)) and the super Lead ([spec](specs/003-super-lead/spec.md)), [decisions](docs/decisions.md) A48–A49. What changed since 0.9.1:
+- **The quota most at risk goes first.** Every call a lane can take has a list of candidates, ordered by the share left of each group's longest window divided by the hours to its reset. A start that finds its group dry passes the call to the next candidate, and the call runs native only when none is left (see Lanes).
+- **Dry marks outlive the run.** A call that ends for quota leaves a mark in the plugin's data directory: until the reset when a reading confirms it, and otherwise for 60 minutes.
+- **Grok's quota is read over ACP,** in about a second, with no UI and no model call; opening its UI stays as the fallback. Grok 4.7 takes Haiku implementer calls when `grok` is in `harnesses`.
+- **The balance is visible.** `aether-lane quota` and `aether-lane status <run>` give each group's windows, priority and dry mark, and `aether-report` gives each group's balance at the start and the end of a run, and its next reset.
+- **The Lead's three paths.** For each piece of work the Lead works directly, starts a delegate task, or runs the swarm, and it chooses and states the model and the effort of every delegate task, from the models index that ships with the plugin (`plugins/aether/config/models/`).
+- **`scripts/aether-lead`** starts Aether mode under a short name, with permissions bypassed and with aether-guard refusing an irreversible command that no grant covers (`AETHER_IRREVERSIBLE=enforce`).
+
 Version 0.9.1: the gaps that 0.8.0 left open in issues 002 to 005 ([decisions](docs/decisions.md) A44–A47). What changed since 0.9:
 - **Salvage before a retry.** An implementer that ends without its report no longer costs a blind retry: `aether-wt salvage` commits what the task owns that it left uncommitted, and the supervisor reviews that work.
 - **Hand-integrated units are recorded.** `aether-wt adopt <run> <task> --commit <sha> --reason <text>` makes the report count a unit the Lead integrated by hand as `adopted`, not blocked.
