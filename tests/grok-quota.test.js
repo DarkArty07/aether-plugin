@@ -3,10 +3,11 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
-const { readGrokQuota, refreshGrokQuota } = require('../plugins/aether/lib/harness/grok-quota.js')
+const { ABSENT_USED_PERCENT, newestEntry, readingOf, readGrokQuota, refreshGrokQuota } = require('../plugins/aether/lib/harness/grok-quota.js')
 
 // Two real lines of ~/.grok/logs/unified.jsonl: grok 1.0.13 with creditUsagePercent 21, and grok 1.0.41 without it.
 const [LINE_1013, LINE_1041] = fs.readFileSync(path.join(__dirname, 'fixtures', 'grok-billing.jsonl'), 'utf8').trim().split('\n')
@@ -118,6 +119,7 @@ function fakeUi(t, { writeAfterMs = 500, exitAfterMs = null, percent = 30, logLi
   }
 }
 
+// By default ACP gives nothing, so a test of the fallback never starts a real grok.
 const options = (ui, extra = {}) => ({
   command: 'grok',
   logFile: ui.logFile,
@@ -125,6 +127,7 @@ const options = (ui, extra = {}) => ({
   env: { HOME: '/home/someone', PATH: '/usr/bin', XAI_API_KEY: 'secret', GROK_AUTH: 'x' },
   now: ui.now,
   wait: ui.wait,
+  acp: async () => null,
   launch: ui.launch,
   stop: ui.stop,
   ...extra,
@@ -217,7 +220,7 @@ setInterval(() => {}, 1000)
   )
   fs.chmodSync(fakeGrok, 0o755)
   const started = Date.now()
-  const reading = await refreshGrokQuota({ command: fakeGrok, logFile, lockFile: path.join(dir, 'lock'), env: process.env, timeoutMs: 15000 })
+  const reading = await refreshGrokQuota({ command: fakeGrok, logFile, lockFile: path.join(dir, 'lock'), env: process.env, timeoutMs: 15000, acp: async () => null })
   assert.ok(reading !== null, 'no reading')
   const ran = JSON.parse(fs.readFileSync(pidFile, 'utf8'))
   assert.deepEqual([ran.tty, ran.argv[0], ran.argv[2], ran.updater, reading.source.pid], [true, '--cwd', '--no-alt-screen', '1', ran.pid])
@@ -232,4 +235,193 @@ setInterval(() => {}, 1000)
     state = null
   }
   assert.ok(state === null || state === 'Z', `the fake grok is still running: ${state}`)
+})
+
+// ---- spec 002, A3: a missing creditUsagePercent, in one place ----
+
+test('a missing creditUsagePercent is read by one constant, and the other reading the owner may choose is its one-line change', (t) => {
+  assert.equal(ABSENT_USED_PERCENT, 0)
+  const entry = newestEntry(LINE_1041)
+  const asNothingUsed = readingOf(entry, IN_1041_PERIOD)
+  assert.deepEqual([asNothingUsed.windows.weekly.remaining, asNothingUsed.usedPercent, asNothingUsed.usedPercentAbsent], [1, null, true])
+  // The balance unknown, the reset known: what the constant becomes if grok 1.0.41 never gives the field after real use.
+  const asUnknown = readingOf(entry, IN_1041_PERIOD, null, { absentUsed: null })
+  assert.deepEqual(asUnknown.windows, { weekly: { remaining: null, resetsAt: '2026-10-17T09:08:51.805Z' } })
+  assert.deepEqual([asUnknown.usedPercent, asUnknown.usedPercentAbsent], [null, true])
+  // A line that has the field is read the same either way.
+  const given = newestEntry(LINE_1013)
+  assert.equal(readingOf(given, IN_1013_PERIOD, null, { absentUsed: null }).windows.weekly.remaining, 0.79)
+  const logFile = writeLog(t, [LINE_1041])
+  assert.equal(readGrokQuota({ logFile, now: IN_1041_PERIOD, absentUsed: null }).windows.weekly.remaining, null)
+  assert.equal(readGrokQuota({ logFile, now: IN_1041_PERIOD }).windows.weekly.remaining, 1)
+})
+
+// ---- the session folder each refresh leaves ----
+
+// A throwaway home with a grok sessions folder holding the folder of another temporary directory and one of a project.
+function homeWithSessions(t) {
+  const home = tempDir(t)
+  const sessions = path.join(home, '.grok', 'sessions')
+  const other = path.join(sessions, encodeURIComponent(path.join(os.tmpdir(), 'aether-grok-quota-OTHER1')))
+  const project = path.join(sessions, encodeURIComponent('/home/me/project'))
+  for (const folder of [other, project]) {
+    fs.mkdirSync(folder, { recursive: true })
+    fs.writeFileSync(path.join(folder, 'session.json'), '{}')
+  }
+  fs.writeFileSync(path.join(sessions, 'session_search.sqlite'), 'x')
+  return { home, sessions, other, project }
+}
+
+// The UI grok opens writes a session folder named after the directory it started in.
+function launchWithSession(ui, sessions, seen) {
+  return (options) => {
+    const folder = path.join(sessions, encodeURIComponent(options.cwd))
+    fs.mkdirSync(folder, { recursive: true })
+    fs.writeFileSync(path.join(folder, 'session.json'), '{}')
+    seen.push(folder)
+    return ui.launch(options)
+  }
+}
+
+test('a refresh removes the session folder of its own temporary directory after the UI ends, and no other folder', async (t) => {
+  const { home, sessions, other, project } = homeWithSessions(t)
+  const ui = fakeUi(t, { logLines: [LINE_1041] })
+  const seen = []
+  const stoppedWhileThere = []
+  const stop = (child, marker) => {
+    stoppedWhileThere.push(fs.existsSync(seen[0]))
+    return ui.stop(child, marker)
+  }
+  const reading = await refreshGrokQuota(options(ui, { env: { HOME: home, PATH: '/usr/bin' }, launch: launchWithSession(ui, sessions, seen), stop }))
+  assert.notEqual(reading, null)
+  assert.equal(seen.length, 1)
+  assert.match(path.basename(seen[0]), /^%2F.*aether-grok-quota-/)
+  assert.deepEqual(stoppedWhileThere, [true], 'the folder is removed after the UI ends, not before')
+  assert.equal(fs.existsSync(seen[0]), false)
+  assert.equal(fs.existsSync(other), true, 'the folder of another temporary directory stays')
+  assert.equal(fs.existsSync(project), true)
+  assert.equal(fs.existsSync(path.join(sessions, 'session_search.sqlite')), true)
+})
+
+test('a refresh that gives no reading, or whose UI exits or throws, still removes its session folder', async (t) => {
+  const { home, sessions, other } = homeWithSessions(t)
+  const env = { HOME: home, PATH: '/usr/bin' }
+  const timedOut = fakeUi(t, { writeAfterMs: null })
+  const seenA = []
+  assert.equal(await refreshGrokQuota(options(timedOut, { env, launch: launchWithSession(timedOut, sessions, seenA) })), null)
+  const exits = fakeUi(t, { writeAfterMs: null, exitAfterMs: 1000 })
+  const seenB = []
+  assert.equal(await refreshGrokQuota(options(exits, { env, launch: launchWithSession(exits, sessions, seenB) })), null)
+  const throws = fakeUi(t)
+  const seenC = []
+  const launch = (o) => {
+    launchWithSession(throws, sessions, seenC)(o)
+    throw new Error('spawn failed')
+  }
+  assert.equal(await refreshGrokQuota(options(throws, { env, launch })), null)
+  assert.equal(seenA.length + seenB.length + seenC.length, 3)
+  for (const folder of [...seenA, ...seenB, ...seenC]) assert.equal(fs.existsSync(folder), false, folder)
+  assert.deepEqual(fs.readdirSync(sessions).sort(), [path.basename(other), '%2Fhome%2Fme%2Fproject', 'session_search.sqlite'].sort())
+})
+
+// ---- the refresh over ACP, and the UI as its fallback ----
+
+// What readBillingViaAcp gives for the config of grok 1.0.41's line: no creditUsagePercent.
+const [ACP_INITIALIZE, , ACP_BILLING] = fs.readFileSync(path.join(__dirname, 'fixtures', 'grok-acp-billing.jsonl'), 'utf8').trim().split('\n')
+const acpAnswer = (at, extra = {}) => ({ config: JSON.parse(ACP_BILLING).result.config, subscriptionTier: 'SuperGrok', version: JSON.parse(ACP_INITIALIZE).result._meta.agentVersion, at, ...extra })
+
+test('a refresh asks grok over ACP first, reads its config as a log line is read, and opens no UI when the answer comes', async (t) => {
+  const ui = fakeUi(t, { logLines: [LINE_1041] })
+  const asked = []
+  const acp = async (request) => {
+    asked.push(request)
+    return acpAnswer(IN_1041_PERIOD + 800)
+  }
+  const reading = await refreshGrokQuota(options(ui, { acp, timeoutMs: 20000 }))
+  assert.deepEqual(reading.windows, { weekly: { remaining: 1, resetsAt: '2026-10-17T09:08:51.805Z' } })
+  assert.deepEqual([reading.usedPercent, reading.usedPercentAbsent], [null, true])
+  assert.deepEqual(reading.source, { method: 'acp', log: null, ts: new Date(IN_1041_PERIOD + 800).toISOString(), pid: null, version: '1.0.52', ageMinutes: 0 })
+  assert.equal(asked.length, 1)
+  assert.deepEqual([asked[0].command, asked[0].timeoutMs, asked[0].env.HOME, asked[0].now === ui.now], ['grok', 10000, '/home/someone', true])
+  assert.equal(ui.launches.length, 0, 'no UI is opened')
+  assert.equal(fs.existsSync(ui.lockFile), false)
+})
+
+test('the same config is read the same through ACP and through the log, and a given percent counts', async (t) => {
+  const ui = fakeUi(t)
+  const given = acpAnswer(IN_1041_PERIOD + 10)
+  given.config.creditUsagePercent = 40
+  const reading = await refreshGrokQuota(options(ui, { acp: async () => given }))
+  assert.deepEqual([reading.windows.weekly.remaining, reading.usedPercent, reading.usedPercentAbsent], [0.6, 40, false])
+  const absent = readingOf(newestEntry(LINE_1041), IN_1041_PERIOD + 10)
+  const viaAcp = await refreshGrokQuota(options(ui, { acp: async () => acpAnswer(IN_1041_PERIOD) }))
+  assert.deepEqual(viaAcp.windows, absent.windows)
+  // The answer of a period that has ended is no reading: the fallback runs.
+  const ended = acpAnswer(IN_1041_PERIOD)
+  ended.config.currentPeriod.end = '2026-10-14T05:00:00+00:00'
+  const late = fakeUi(t, { writeAfterMs: null })
+  assert.equal(await refreshGrokQuota(options(late, { acp: async () => ended })), null)
+  assert.equal(late.launches.length, 1)
+})
+
+test('when ACP gives no answer, an error or no config, the refresh opens the UI and reads the line it writes', async (t) => {
+  const thrown = async () => {
+    throw new Error('acp broke')
+  }
+  for (const acp of [async () => null, async () => undefined, thrown, async () => ({ config: null, at: IN_1041_PERIOD }), async () => ({ config: {}, version: '1.0.52', at: IN_1041_PERIOD })]) {
+    const ui = fakeUi(t, { logLines: [LINE_1041] })
+    const reading = await refreshGrokQuota(options(ui, { acp }))
+    assert.equal(ui.launches.length, 1)
+    assert.deepEqual([reading.usedPercent, reading.source.method, reading.source.ts], [30, undefined, new Date(IN_1041_PERIOD + 500).toISOString()])
+    assert.equal(ui.stops.length, 1)
+    assert.equal(fs.existsSync(ui.lockFile), false)
+  }
+})
+
+test('the UI fallback is judged from when it starts, so a line grok wrote during the ACP attempt is not its reading', async (t) => {
+  const ui = fakeUi(t, { writeAfterMs: null })
+  const acp = async () => {
+    await ui.wait(3000)
+    fs.appendFileSync(ui.logFile, `${billingLine({ ts: ui.now(), percent: 77 })}\n`)
+    await ui.wait(1000)
+    return null
+  }
+  assert.equal(await refreshGrokQuota(options(ui, { acp, timeoutMs: 20000 })), null)
+  assert.equal(ui.launches.length, 1)
+  assert.ok(ui.stops[0].at - IN_1041_PERIOD >= 4000 + 17750, 'the UI has its own 20 s, after the time ACP took')
+})
+
+test('a refresh started while another runs, whether it asks over ACP or opens the UI, waits for it and takes the line it left', async (t) => {
+  const ui = fakeUi(t, { writeAfterMs: null })
+  let asks = 0
+  // grok leaves the same line in its log when it answers _x.ai/billing.
+  const acp = async () => {
+    asks += 1
+    await ui.wait(1000)
+    fs.appendFileSync(ui.logFile, `${billingLine({ ts: ui.now(), percent: 12 })}\n`)
+    return acpAnswer(ui.now())
+  }
+  const [first, second] = await Promise.all([refreshGrokQuota(options(ui, { acp })), refreshGrokQuota(options(ui, { acp }))])
+  assert.equal(asks, 1)
+  assert.equal(ui.launches.length, 0)
+  assert.deepEqual([first.source.method, second.usedPercent, second.windows.weekly.remaining], ['acp', 12, 0.88])
+  assert.equal(fs.existsSync(ui.lockFile), false)
+})
+
+test('a refresh started while another falls back to the UI waits for all of it, past the time the UI alone is given', async (t) => {
+  // ACP takes its whole 10 s and gives nothing; the UI then writes its line 15 s after it opens, 25 s after the start.
+  const ui = fakeUi(t, { writeAfterMs: 15000, percent: 12 })
+  let asks = 0
+  const acp = async () => {
+    asks += 1
+    // One turn first, so that the second refresh starts on the clock as it was, before ACP's 10 s pass.
+    await Promise.resolve()
+    await ui.wait(10000)
+    return null
+  }
+  const [first, second] = await Promise.all([refreshGrokQuota(options(ui, { acp })), refreshGrokQuota(options(ui, { acp }))])
+  assert.equal(asks, 1)
+  assert.equal(ui.launches.length, 1)
+  assert.deepEqual([first.usedPercent, second.usedPercent], [12, 12])
+  assert.equal(fs.existsSync(ui.lockFile), false)
 })
