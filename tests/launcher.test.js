@@ -105,15 +105,21 @@ test('the installer and the fish launcher are gone', () => {
   }
 })
 
-test('the manifest is version 0.9.0, and the README says so', () => {
+test('the manifest is version 0.9.1, and the README says so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.9.0')
+  assert.equal(manifest.version, '0.9.1')
   assert.match(manifest.description, /built for RADAR/)
   assert.match(manifest.description, /the owner's right hand/)
   assert.match(manifest.description, /a Judge on Opus reviews them/)
   assert.match(manifest.description, /Lanes run its calls on other coding plans/)
   assert.match(manifest.description, /the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner/)
+  assert.match(README(), /^Version 0\.9\.1: /m)
   assert.match(README(), /^Version 0\.9: /m)
+})
+
+test('the decisions record the 0.9.1 fixes, A44-A47', () => {
+  const decisions = read('docs', 'decisions.md')
+  for (let n = 44; n <= 47; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
 })
 
 test('the documents record RADAR: the roadmap, decisions A31-A38, and a README without superpowers as a requirement', () => {
