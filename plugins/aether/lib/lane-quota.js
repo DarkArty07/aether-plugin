@@ -1,18 +1,25 @@
 'use strict'
 
-// `aether-lane quota`: each harness's quota, for whoever needs the figure (the owner, the Lead, a script), with no
-// run. Per group: each window's share left, its reset in UTC and local time, the hours to it, the priority (the
-// share left per hour to the reset, with at least one hour), whether it is usable above the table's reserve, and
-// where the reading came from and how old it is. --refresh first takes a new grok reading by opening grok's UI.
+// The one view of a quota group that `aether-lane quota` and `aether-lane status` share, and the quota step of a wave.
+// Per group: each window's share left, its reset in UTC and local time, the hours to it, the priority (the share left
+// per hour to the reset, with at least one hour; lane-order.js's rule), whether it is usable above the table's reserve
+// and the live dry mark, and where the reading came from and how old it is. A reading that fails is no reading: each
+// group of its harness is unknown, with the error, and nothing else breaks. --refresh first asks grok for a new
+// reading, over ACP and then through its UI; refreshStale is the same step for a wave, which only refreshes what is stale.
 
 const lanes = require('./lanes.js')
+const marks = require('./lane-marks.js')
+const order = require('./lane-order.js')
+const readings = require('./lane-readings.js')
+const run = require('./run.js')
 const { createAdapter } = require('./harness/index.js')
 const { STALE_MS, TIMEOUT_MS, refreshGrokQuota } = require('./harness/grok-quota.js')
 
 const USAGE = 'quota [<harness>...] [--refresh] [--json]'
-const HOUR_MS = 3600 * 1000
+const MINUTE_MS = 60 * 1000
 
-// The harnesses whose reading --refresh renews before it is read, each with what renews it.
+// The harnesses whose reading --refresh and a wave's quota step renew, each with what renews it: a function of the
+// harness's table entry that gives the new reading, or null when there is none.
 const REFRESHERS = {
   grok: (settings) => refreshGrokQuota({ command: settings.command }),
 }
@@ -45,43 +52,62 @@ function localTime(ms) {
 }
 
 const round = (value, digits) => Number(value.toFixed(digits))
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
-// One window with the hours to its reset and its priority.
-function windowView({ remaining, resetsAt }, now) {
-  const reset = Date.parse(resetsAt)
-  if (!Number.isFinite(reset) || typeof remaining !== 'number') return { remaining, resetsAt, hoursLeft: null, priority: null }
-  const hoursLeft = (reset - now) / HOUR_MS
+// How long a harness's reading stays fresh: its table entry's quotaLifeMinutes, or grok's 30 minutes.
+function lifeMsOf(settings) {
+  const minutes = Number.isFinite(settings?.quotaLifeMinutes) ? settings.quotaLifeMinutes : STALE_MS / MINUTE_MS
+  return minutes * MINUTE_MS
+}
+
+// Where a group's reading came from. A reading with a source of its own keeps it (grok's log line or its answer over
+// ACP); one without that has windows was read from the CLI at readAt, as agy's /usage is. A reading with neither has
+// no source.
+function sourceOf(reading, windows, { command, now, readAt, lifeMs }) {
+  if (!isObject(reading)) return null
+  let source
+  if (isObject(reading.source)) {
+    source = { ...reading.source, stale: reading.source.ageMinutes * MINUTE_MS > lifeMs }
+  } else if (Object.keys(windows).length > 0) {
+    const at = Number.isFinite(readAt) ? readAt : now
+    source = { command, ts: new Date(at).toISOString(), ageMinutes: Math.max(0, Math.floor((now - at) / MINUTE_MS)), stale: false }
+  } else {
+    return null
+  }
+  if (reading.usedPercentAbsent !== undefined) Object.assign(source, { usedPercent: reading.usedPercent, usedPercentAbsent: reading.usedPercentAbsent })
+  return source
+}
+
+// One group as `quota` and `status` show it: the numbers of lane-order.js's view, the group's label, the local time of
+// each reset and the source. reading is the group's reading as an adapter gives it; mark is its live dry mark, if any.
+function groupView(label, reading, { reserve, now, command, mark = null, readAt = now, lifeMs = STALE_MS }) {
+  const view = order.groupView(reading, { reserve, now, mark })
+  const windows = Object.fromEntries(
+    Object.entries(view.windows).map(([name, w]) => [name, w.hoursLeft === null ? w : { ...w, resetsLocal: localTime(Date.parse(w.resetsAt)) }]),
+  )
   return {
-    remaining,
-    resetsAt: new Date(reset).toISOString(),
-    resetsLocal: localTime(reset),
-    hoursLeft: round(hoursLeft, 1),
-    priority: round(remaining / Math.max(1, hoursLeft), 6),
+    label: label ?? null,
+    unknown: view.unknown,
+    usable: view.usable,
+    priority: view.priority,
+    remaining: view.remaining,
+    resetsAt: view.resetsAt,
+    usedPercentAbsent: view.usedPercentAbsent,
+    mark: view.mark,
+    windows,
+    source: sourceOf(reading, windows, { command, now, readAt, lifeMs }),
   }
 }
 
-// One group's reading as the command shows it. A group's priority is its longest window's: the one that resets last.
-function groupView(label, reading, { reserve, now, command }) {
-  const view = { label: label ?? null, unknown: reading?.unknown === true, usable: lanes.usable(reading, reserve) }
-  if (view.unknown) return { ...view, priority: null, windows: {}, source: null }
-  const windows = Object.fromEntries(Object.entries(reading?.windows ?? {}).map(([name, w]) => [name, windowView(w, now)]))
-  const longest = Object.values(windows)
-    .filter((w) => w.priority !== null)
-    .sort((a, b) => Date.parse(b.resetsAt) - Date.parse(a.resetsAt))[0]
-  // A reading with no source of its own was read just now from the CLI, as agy's /usage is.
-  const source = reading.source
-    ? { ...reading.source, stale: reading.source.ageMinutes * 60000 > STALE_MS }
-    : { command, ts: new Date(now).toISOString(), ageMinutes: 0, stale: false }
-  if (reading.usedPercentAbsent !== undefined) Object.assign(source, { usedPercent: reading.usedPercent, usedPercentAbsent: reading.usedPercentAbsent })
-  return { ...view, priority: longest ? longest.priority : null, windows, source }
-}
-
-// One harness of the table: whether it is installed, its version, and each group's reading. A reading that fails
-// is the harness's error, not the command's.
-function harnessView(name, settings, { reserve, now, refreshed }) {
+// One harness of the table: whether it is installed, its version, and the view of each group. The reading is the
+// kept one when fresh is false and the harness keeps its readings (lane-readings.js), a new one otherwise; latest, a
+// reading a refresh just took, is used instead of asking the adapter. A reading that fails leaves every group of the
+// table's entry unknown, with the error, and the harness with it: it is the harness's error, not the caller's.
+// onRead({ groups, readAt }, version) is told of each reading that was taken, as the adapter gave it.
+function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fresh = true, latest = null, onRead = null, refreshed, refreshMethod }) {
   const found = lanes.commandPath(settings.command)
   const base = { command: settings.command, path: found, installed: found !== null }
-  if (refreshed !== undefined) base.refreshed = refreshed
+  if (refreshed !== undefined) Object.assign(base, { refreshed, refreshMethod: refreshMethod ?? null })
   if (!base.installed) return { ...base, version: null, groups: {} }
   let adapter
   try {
@@ -89,22 +115,98 @@ function harnessView(name, settings, { reserve, now, refreshed }) {
   } catch (err) {
     return { ...base, version: null, error: err.message, groups: {} }
   }
-  const version = adapter.version()
-  let quota
+  let version = null
   try {
-    quota = adapter.quota()
+    version = adapter.version()
+  } catch {
+    // A version that cannot be read is no reason to lose the quota.
+  }
+  const keys = Object.keys(settings.groups ?? {})
+  const lifeMs = lifeMsOf(settings)
+  const markOf = (key) => marks.liveMark(dataDir, name, key, now)
+
+  let read
+  try {
+    // A refresh's reading is the plan's one reading, and a plan's groups share it, as grok's adapter gives it.
+    read = latest !== null ? { groups: Object.fromEntries(keys.map((key) => [key, { ...latest }])), readAt: now } : readings.readGroups(adapter, { harness: name, settings, dataDir, now, fresh })
   } catch (err) {
-    return { ...base, version, error: err.message, groups: {} }
+    const groups = {}
+    for (const key of keys) {
+      groups[key] = { ...groupView(settings.groups[key], { unknown: true, windows: {} }, { reserve, now, command: settings.command, mark: markOf(key), lifeMs }), error: err.message }
+    }
+    return { ...base, version, error: err.message, groups }
+  }
+  if (onRead !== null) {
+    try {
+      onRead({ groups: read.groups, readAt: read.readAt }, version)
+    } catch {
+      // Whoever listens may fail without taking the view with it.
+    }
   }
   const groups = {}
-  for (const [key, reading] of Object.entries(quota.groups)) {
-    groups[key] = groupView(settings.groups[key], reading, { reserve, now, command: settings.command })
+  for (const key of new Set([...keys, ...Object.keys(read.groups ?? {})])) {
+    const reading = Object.hasOwn(read.groups ?? {}, key) ? read.groups[key] : { unknown: true, windows: {} }
+    groups[key] = groupView(settings.groups?.[key], reading, { reserve, now, command: settings.command, mark: markOf(key), readAt: read.readAt, lifeMs })
   }
   return { ...base, version, groups }
 }
 
-// The report of the harnesses named, or of every installed harness of the table when none is.
-async function quotaReport({ names = [], refresh = false, now = Date.now, refreshers = REFRESHERS } = {}) {
+// Asks a harness's refresher for a new reading. Never throws: a refresher that throws gave none.
+async function refresh(refreshers, name, settings) {
+  let reading = null
+  try {
+    reading = await refreshers[name](settings)
+  } catch {
+    reading = null
+  }
+  if (!isObject(reading)) return { reading: null, refreshed: false, method: null }
+  return { reading, refreshed: true, method: reading.source?.method === 'acp' ? 'acp' : 'ui' }
+}
+
+// Whether a harness's reading is missing, unknown for some group of its table entry, or older than its life.
+function needsRefresh(name, settings, { now, dataDir }) {
+  const keys = Object.keys(settings.groups ?? {})
+  if (keys.length === 0) return false
+  let read
+  try {
+    read = readings.readGroups(createAdapter(name, settings), { harness: name, settings, dataDir, now, fresh: false })
+  } catch {
+    return true
+  }
+  const lifeMs = lifeMsOf(settings)
+  return keys.some((key) => {
+    const reading = read.groups?.[key]
+    if (!isObject(reading) || order.groupView(reading, { reserve: 0, now }).unknown) return true
+    const age = reading.source?.ageMinutes
+    return typeof age === 'number' && age * MINUTE_MS > lifeMs
+  })
+}
+
+// The quota step of a wave: refreshes each enabled, installed harness of the table that has a refresher (grok today)
+// and whose reading is missing, unknown or older than its life (quotaLifeMinutes, 30 minutes by default); a fresh
+// reading is left alone. Only the harnesses it tried are in the answer, each as { refreshed, method }, method being
+// 'acp', 'ui' or null. Never throws. now and dataDir are for tests.
+async function refreshStale({ config, enabled, refreshers = REFRESHERS, now = Date.now, dataDir = null }) {
+  const done = {}
+  for (const name of enabled) {
+    try {
+      if (!Object.hasOwn(refreshers, name) || !Object.hasOwn(config.harnesses, name)) continue
+      const settings = config.harnesses[name]
+      if (!lanes.commandInstalled(settings.command)) continue
+      if (!needsRefresh(name, settings, { now: now(), dataDir: dataDir ?? run.dataDir() })) continue
+      const { refreshed, method } = await refresh(refreshers, name, settings)
+      done[name] = { refreshed, method }
+    } catch {
+      // A harness that cannot be checked is left as it is.
+    }
+  }
+  return done
+}
+
+// The report of the harnesses named, or of every installed harness of the table when none is. It reads each harness
+// anew (a `quota` is a deliberate reading); with refresh it first asks the harnesses that have a refresher for a
+// new reading, and shows that one.
+async function quotaReport({ names = [], refresh: refreshFirst = false, now = Date.now, refreshers = REFRESHERS, dataDir = run.dataDir() } = {}) {
   const file = lanes.configPath()
   const config = lanes.loadConfig(file)
   if (!config) throw new Error(`no lane table: ${file}`)
@@ -116,11 +218,19 @@ async function quotaReport({ names = [], refresh = false, now = Date.now, refres
       continue
     }
     const settings = config.harnesses[name]
-    let refreshed
-    if (refresh && Object.hasOwn(refreshers, name) && lanes.commandInstalled(settings.command)) {
-      refreshed = (await refreshers[name](settings)) !== null
+    let asked = { reading: null, refreshed: undefined, method: undefined }
+    if (refreshFirst && Object.hasOwn(refreshers, name) && lanes.commandInstalled(settings.command)) {
+      asked = await refresh(refreshers, name, settings)
     }
-    harnesses[name] = harnessView(name, settings, { reserve: config.reserve, now: now(), refreshed })
+    harnesses[name] = harnessView(name, settings, {
+      reserve: config.reserve,
+      now: now(),
+      dataDir,
+      fresh: true,
+      latest: asked.reading,
+      refreshed: asked.refreshed,
+      refreshMethod: asked.method,
+    })
   }
   return { time: new Date(now()).toISOString(), reserve: config.reserve, harnesses }
 }
@@ -130,8 +240,14 @@ const percent = (fraction) => `${round(fraction * 100, 1)}%`
 function sourceLine(source) {
   const age = `${source.ageMinutes} min old`
   const stale = source.stale ? ' (stale: --refresh takes a new one)' : ''
-  if (source.log === undefined) return `source: ${source.command}, read now`
+  if (source.method === undefined && source.log === undefined) {
+    return `source: ${source.command}, read ${source.ageMinutes === 0 ? 'now' : `${source.ageMinutes} min ago`}`
+  }
   const where = [source.pid === null ? null : `pid ${source.pid}`, source.version === null ? null : `grok ${source.version}`].filter(Boolean).join(', ')
+  if (source.method === 'acp') {
+    const absent = source.usedPercentAbsent ? '; the answer has no creditUsagePercent, read as 0% used' : ''
+    return `source: grok's answer to _x.ai/billing at ${utcTime(Date.parse(source.ts))}${where ? `, ${where}` : ''}, ${age}${stale}${absent}`
+  }
   const absent = source.usedPercentAbsent ? '; the line has no creditUsagePercent, read as 0% used' : ''
   return `source: grok's log ${source.log}, line of ${utcTime(Date.parse(source.ts))}${where ? ` (${where})` : ''}, ${age}${stale}${absent}`
 }
@@ -140,6 +256,20 @@ function windowLine(name, w) {
   if (w.priority === null) return `${name}: unreadable window`
   const when = w.hoursLeft >= 0 ? `in ${w.hoursLeft} h` : `${-w.hoursLeft} h ago`
   return `${name}: ${percent(w.remaining)} left, resets ${utcTime(Date.parse(w.resetsAt))} (${w.resetsLocal}), ${when}, priority ${w.priority}`
+}
+
+// Why a dry mark holds: its reset, when a reading showed the group under the reserve, or the minutes it was given.
+function markReason(mark) {
+  if (mark.confirmed) return 'its reset'
+  if (!Number.isFinite(mark.at)) return 'after a call ended for quota'
+  const minutes = Math.round((mark.until - mark.at) / MINUTE_MS)
+  return `${minutes} minute${minutes === 1 ? '' : 's'} after a call ended for quota`
+}
+
+// How the refresh of a harness went, in the words of grok's two methods: ACP first, its UI when ACP gave nothing.
+function refreshLine(h) {
+  if (!h.refreshed) return `  refresh: no new reading (grok gave none over ACP, and its UI none within ${TIMEOUT_MS / 1000} s)`
+  return h.refreshMethod === 'acp' ? '  refresh: grok answered _x.ai/billing' : "  refresh: grok's UI wrote a new reading"
 }
 
 // The report as text for people.
@@ -160,20 +290,21 @@ function formatReport(report, { refreshable = Object.keys(REFRESHERS) } = {}) {
       continue
     }
     lines.push(`${name} (${[h.version, h.path].filter(Boolean).join(', ')})`)
-    if (h.refreshed !== undefined) {
-      lines.push(h.refreshed ? "  refresh: grok's UI wrote a new reading" : `  refresh: no new reading within ${TIMEOUT_MS / 1000} s`)
-    }
+    if (h.refreshed !== undefined) lines.push(refreshLine(h))
     if (h.error) lines.push(`  error: ${h.error}`)
     for (const [key, g] of Object.entries(h.groups)) {
       const label = g.label === null ? key : `${key}, "${g.label}"`
-      if (g.unknown) {
-        const hint = refreshable.includes(name) ? "; --refresh opens grok's UI to take a reading" : ''
+      if (g.mark) {
+        lines.push(`  ${label}: not usable, dry mark until ${utcTime(g.mark.until)}, ${markReason(g.mark)}`)
+      } else if (g.unknown) {
+        const hint = refreshable.includes(name) ? `; --refresh asks ${name} for one` : ''
         lines.push(`  ${label}: unknown, used until a call fails for quota (no reading${hint})`)
         continue
+      } else {
+        lines.push(`  ${label}: ${g.usable ? 'usable' : 'not usable'}, priority ${g.priority ?? 'none'}`)
       }
-      lines.push(`  ${label}: ${g.usable ? 'usable' : 'not usable'}, priority ${g.priority ?? 'none'}`)
       for (const [windowName, w] of Object.entries(g.windows)) lines.push(`    ${windowLine(windowName, w)}`)
-      lines.push(`    ${sourceLine(g.source)}`)
+      if (g.source) lines.push(`    ${sourceLine(g.source)}`)
     }
   }
   return `${lines.join('\n')}\n`
@@ -181,9 +312,9 @@ function formatReport(report, { refreshable = Object.keys(REFRESHERS) } = {}) {
 
 // The command: the report as text, or as JSON with --json.
 async function quotaCommand(args, options = {}) {
-  const { names, refresh, json } = parseArgs(args)
-  const report = await quotaReport({ ...options, names, refresh })
+  const { names, refresh: refreshFirst, json } = parseArgs(args)
+  const report = await quotaReport({ ...options, names, refresh: refreshFirst })
   return json ? `${JSON.stringify(report)}\n` : formatReport(report)
 }
 
-module.exports = { USAGE, quotaCommand, quotaReport, formatReport, localTime }
+module.exports = { USAGE, quotaCommand, quotaReport, formatReport, localTime, groupView, harnessView, refreshStale }
