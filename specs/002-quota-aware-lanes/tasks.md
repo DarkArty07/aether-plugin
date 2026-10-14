@@ -791,7 +791,7 @@ Protocolo (probado con grok 1.0.52 el 2026-10-14; las líneas reales están en e
 
 Fixtures y doble:
 - `tests/fixtures/grok-acp-billing.jsonl`: tres líneas, las respuestas reales de grok 1.0.52 (la de `initialize` recortada, la notificación y la de `_x.ai/billing`).
-- `tests/fixtures/fake-grok-acp.js`: un ejecutable de Node que hace de `grok agent stdio`; repite esas líneas y se comporta según `AETHER_FAKE_ACP_MODE` (`answer`, `garbage`, `silent`, `error`, `no-config`, `exit-after-initialize`), anota en `AETHER_FAKE_ACP_LOG` lo que ve, y con `AETHER_FAKE_ACP_END_IN_HOURS` y `AETHER_FAKE_ACP_LOG_LINES` responde por un periodo en curso y deja en un archivo la línea `billing: fetched credits config` que grok deja en su log (las tareas 11 y 12 los usan).
+- `tests/fixtures/fake-grok-acp.js`: un ejecutable de Node que hace de `grok agent stdio`; repite esas líneas y se comporta según `AETHER_FAKE_ACP_MODE` (`answer`, `garbage`, `silent`, `error`, `no-config`, `exit-after-initialize`), anota en `AETHER_FAKE_ACP_LOG` lo que ve, y con `AETHER_FAKE_ACP_END_IN_HOURS` y `AETHER_FAKE_ACP_LOG_LINES` responde por un periodo en curso y deja en un archivo la línea `billing: fetched credits config` que grok deja en su log (la tarea 12 los usa).
 
 **Tests (write first):**
 

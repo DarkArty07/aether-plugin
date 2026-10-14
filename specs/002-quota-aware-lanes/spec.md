@@ -1,7 +1,7 @@
 # Lanes por cuota: primero el cómputo que se perdería
 
 - Date: 2026-10-13
-- Status: Approved by the Judge on 2026-10-13 (revision 4, after `revise` on revisions 1 to 3). Open for the owner: A3. Amended by spec 003 (R12, approved by the Judge on 2026-10-14): the models index moved to `plugins/aether/config/models/models.json`. Amended on 2026-10-14 by the Lead, for the Judge: R5 reads Grok's quota with the ACP request `_x.ai/billing`, the other method the owner asked for, and keeps opening the UI only as a fallback (Context, C5, scenario 6, R3, R5, R20, Proposals, A2, A3).
+- Status: Approved by the Judge on 2026-10-13 (revision 4, after `revise` on revisions 1 to 3). Open for the owner: A3. Amended by spec 003 (R12, approved by the Judge on 2026-10-14): the models index moved to `plugins/aether/config/models/models.json`. Plan and tasks approved by the Judge on 2026-10-14 (second review, with the amendments below). Amended on 2026-10-14 by the Lead: R5 reads Grok's quota with the ACP request `_x.ai/billing`, the other method the owner asked for, and keeps opening the UI only as a fallback (Context, C5, scenario 6, R3, R5, R20, Proposals, A2, A3).
 - Intent: que cada llamada del swarm que un lane puede tomar vaya primero a la cuota externa que más riesgo corre de perderse en su reinicio, leída por Aether sin preguntar, como diseño sostenible del plugin: la superdelegación de RADAR (C3). En palabras del dueño:
   - «La cuenta que se debe de usar primero es la más próxima a vencerse, es decir, en esto usualmente dan por semana. Si el reinicio semanal de una cuenta viene antes que el de otra pero no se ha gastado, se tiene que usar la que podría desperdiciar cómputo.»
   - «tú mismo respóndete, entre grok y agy dime cuál cuota se reinicia antes»
