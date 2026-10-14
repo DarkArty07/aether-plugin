@@ -96,6 +96,17 @@ test('the report shows a live dry mark on its group, and the text says until whe
   assert.ok(text.includes('  claude, "Claude and GPT models": usable, priority '), text)
 })
 
+test('a mark file with an end that is not a time does not stop the report: the mark is ignored', async (t) => {
+  const dataDir = useTable(t)
+  fakeHarness(t, 'agy', { gemini: both(1, 1), claude: both(0.5, 0.5, '2026-10-16T04:41:07Z') })
+  fs.mkdirSync(marks.marksDir(dataDir), { recursive: true })
+  fs.writeFileSync(marks.markFile(dataDir, 'agy', 'gemini'), JSON.stringify({ harness: 'agy', group: 'gemini', at: NOW, until: 1e300, confirmed: false }))
+  fs.writeFileSync(marks.markFile(dataDir, 'agy', 'claude'), JSON.stringify({ harness: 'agy', group: 'claude', at: NOW, until: 8.64e15, confirmed: true }))
+  const r = await report()
+  assert.deepEqual([r.harnesses.agy.groups.gemini.mark, r.harnesses.agy.groups.gemini.usable, r.harnesses.agy.groups.claude.mark], [null, true, null])
+  assert.doesNotThrow(() => quota.formatReport(r))
+})
+
 test('quota reads a harness whose reading launches a process each time, and the kept reading serves a status for its life', async (t) => {
   const dataDir = useTable(t)
   const agy = fakeHarness(t, 'agy', { gemini: both(1, 1), claude: both(1, 1) }, { cost: 'process' })

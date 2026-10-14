@@ -17,8 +17,24 @@ function writeAtomic(file, value) {
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
   const tmp = `${file}.${process.pid}.${Date.now()}.${++writeCounter}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n')
-  fs.renameSync(tmp, file)
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n')
+    fs.renameSync(tmp, file)
+  } finally {
+    // After a rename that worked the temporary file is gone; after one that failed it must not stay.
+    fs.rmSync(tmp, { force: true })
+  }
+}
+
+// A window whose reset was ahead when the reading was taken and has come since has refilled: the reading that shows
+// it is no longer true. A reset already behind the reading was not waiting for anything, and is left alone.
+function hasReset(groups, readAt, now) {
+  return Object.values(groups).some((group) =>
+    Object.values(isObject(group) && isObject(group.windows) ? group.windows : {}).some((window) => {
+      const resetsAt = isObject(window) && typeof window.resetsAt === 'string' ? Date.parse(window.resetsAt) : NaN
+      return resetsAt > readAt && resetsAt <= now
+    }),
+  )
 }
 
 function isObject(value) {
@@ -28,7 +44,8 @@ function isObject(value) {
 // Reads a harness's quota through its adapter. settings is its entry in the table ({ groups, quotaLifeMinutes? }).
 // When adapter.quotaCost === 'process' and quotaLifeMinutes is not 0, the reading is saved to cacheFile and served
 // while now - readAt < life and readAt <= now and the cached reading has all groups in settings.groups.
-// fresh: true always reads fresh and renews the saved reading. If adapter.quota() throws, nothing is written.
+// fresh: true always reads fresh and renews the saved reading. If adapter.quota() throws, nothing is written; if
+// the save fails, the reading is returned all the same. A saved reading with a window whose reset has come since it was taken is not served.
 function readGroups(adapter, { harness, settings = {}, dataDir, now = Date.now(), fresh = false } = {}) {
   const quotaLife = settings.quotaLifeMinutes !== undefined ? settings.quotaLifeMinutes : DEFAULT_LIFE_MINUTES
   const shouldCache = adapter.quotaCost === 'process' && quotaLife > 0 && typeof dataDir === 'string'
@@ -47,7 +64,8 @@ function readGroups(adapter, { harness, settings = {}, dataDir, now = Date.now()
           data.readAt <= now &&
           now - data.readAt < lifeMs &&
           isObject(data.groups) &&
-          requiredGroups.every((g) => Object.hasOwn(data.groups, g))
+          requiredGroups.every((g) => Object.hasOwn(data.groups, g)) &&
+          !hasReset(data.groups, data.readAt, now)
         ) {
           return { groups: data.groups, readAt: data.readAt, cached: true }
         }
@@ -62,11 +80,11 @@ function readGroups(adapter, { harness, settings = {}, dataDir, now = Date.now()
   const groups = result.groups
 
   if (shouldCache) {
-    writeAtomic(file, {
-      harness,
-      readAt,
-      groups,
-    })
+    try {
+      writeAtomic(file, { harness, readAt, groups })
+    } catch {
+      // A reading that cannot be kept is still a good reading for this call.
+    }
   }
 
   return { groups, readAt, cached: false }
