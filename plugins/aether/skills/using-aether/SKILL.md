@@ -112,7 +112,7 @@ Haiku's prices rise five times when a prompt exceeds 100K tokens.
 
 - **On every Agent call for a delegate task, pass `model` and `effort`,** and say the model, the effort and why in the message that launches it. After `/model` or `/effort`, your own model and effort are not what a delegate needs. A delegate task is never a fork: a fork always runs on your model and ignores `model`.
 - **Effort:** Haiku `medium` for listings and lookups, `high` for mechanical edits; Sonnet `high`, or `xhigh` where the behavior matters beyond its tests (input parsing, the file system, security, data loss, concurrency); Opus `high`, or `xhigh` for hard debugging. `max` only with a reason the task needs it: it thinks for minutes per answer.
-- **Climb on failure:** start at the cheapest model that can do the task. When a delegate task fails, because it ends without the work or its work still fails its tests after one round of fixes, run it again one model up (Haiku, Sonnet, Opus) at `xhigh`, as the swarm's ladder does. A delegate task starts on Sonnet, where a swarm task starts on its Tier, because it has no supervisor and no ladder of its own: a plan task you build as a delegate task runs on Sonnet, or on Opus when its Tier is opus.
+- **Climb on failure:** start at the cheapest model that can do the task. When a delegate task fails, because it ends without the work or its work still fails its tests after one round of fixes, run it again one model up (Haiku, Sonnet, Opus) at `xhigh`, as the swarm's ladder does. Coding starts on Sonnet, where a swarm task starts on its Tier, because a delegate task has no supervisor and no ladder of its own: a plan task you build as a delegate task runs on Sonnet, or on Opus when its Tier is opus. Listings, lookups, explorers and mechanical edits start on Haiku.
 - **Fixed models:** Aether's own agents keep the model and effort of their definition: pass neither when you start `aether:judge`, `aether:writer`, `aether:examiner` or `aether:reviewer`. A resumed agent keeps its model. The swarm's agents take their task's Tier and Review from the workflow.
 - **Quota:** lanes and seats spend other plans' quota, first the one most at risk of being wasted at its reset. `aether-lane quota` reads each harness's quota: read it yourself, and never ask the owner for a date or a balance.
 - **Other CLIs:** never run agy, grok, codex or cursor-agent with a prompt or an approval flag from your own shell, and never read their credentials: lanes and seats run them. A real call to validate one is a `paid-call`: give the owner the exact command to run with `!`.
@@ -150,7 +150,7 @@ A native agent of the author's own model (`sameModelAsAuthor` in the output) is 
 
 **The native Examiner** writes `.aether-exam/` in this checkout, which git does not see. When it ends, run `aether-exam store specs/NNN-<topic>`: it keeps the exam outside the repository and removes the folder, so the swarm never sees it.
 
-**The exam.** When the swarm's run ends, run `aether-exam run specs/NNN-<topic> --ref <the integration branch>`. A test that fails is a blocking finding of the brief, with the criterion it proves, and goes into the next fix. A flaky one is a minor finding. When you think a test is wrong, say why in "Decidí"; never ignore one silently.
+**The exam.** When the build ends (the swarm's run, or the last delegate task of a plan), run `aether-exam run specs/NNN-<topic> --ref <the branch that holds the build>`. A test that fails is a blocking finding of the brief, with the criterion it proves, and goes into the next fix. A flaky one is a minor finding. When you think a test is wrong, say why in "Decidí"; never ignore one silently.
 
 **Recording.** Each external round's `- Lane:` line gives its dollars: record them with `aether-autonomy spend <usd> --source seat/<id>`; when it says `$?`, record nothing. `aether-report --seats --session <session id>` counts the seats' rounds for the brief's Delegación line.
 
@@ -179,6 +179,7 @@ A failure that already has a defined fallback is handled at once and recorded in
 - a design seat whose external model cannot run or fails (exit 3, 4 or 1 of `aether-lane seat`): the native agent takes the same round;
 - a Judge, a Writer or an Examiner that fails, replies without the format, stops at `maxTurns` or is lost: start it again from the files and your last decision;
 - a swarm unit blocked by a merge failure or a spent ladder, or skipped: the `aether:swarm` skill, §5;
+- a delegate task that fails: run it again one model up, as "Models" says; after Opus, the repetition rule of "Autonomous runs" applies: defer the task;
 - a command that leaves a worktree dirty: keep its changes in a stash, and go on.
 
 When the same fallback fails twice on the same step, the repetition rule of "Autonomous runs" applies.
@@ -205,17 +206,17 @@ The owner may give you permission to work for hours, for example «trabaja por h
 
 Outside a run there is no diary: what this skill says to note in it goes in your next reply to the owner, or in the short brief.
 
-**Keep going.** While a run is open, never end a turn unless something pending will wake you (a seat round or a native Judge, Writer or Examiner in the background, a lane call, a swarm workflow, a background command) or the run has ended. If nothing is pending and work remains, do the next step in the same turn. An open run with nothing pending is the session waiting for the owner, which is what a run exists to avoid.
+**Keep going.** While a run is open, never end a turn unless something pending will wake you (a seat round or a native Judge, Writer or Examiner in the background, a delegate task, a lane call, a swarm workflow, a background command) or the run has ended. If nothing is pending and work remains, do the next step in the same turn. An open run with nothing pending is the session waiting for the owner, which is what a run exists to avoid.
 
 **Scope.** Compare everything new with the intent. What goes beyond it goes to "Propuestas" and is not worked. Minor findings of the final review are deferred.
 
-**Ceilings.** Run `aether-autonomy status` before each seat round and before each swarm launch or relaunch. When its `stop` is not null, start nothing new. Let what is running finish, or save it as patches, and never leave a merge half done. Then run `aether-autonomy end --outcome ceiling` and give the brief.
+**Ceilings.** Run `aether-autonomy status` before each seat round, each delegate task, and each swarm launch or relaunch. When its `stop` is not null, start nothing new. Let what is running finish (a swarm run or a delegate task), or save it as patches, and never leave a merge half done. Then run `aether-autonomy end --outcome ceiling` and give the brief.
 
 **Cost.** After each swarm launch, record the figure with `aether-autonomy spend <usd> --source <label>`:
 - `lanes.totals.run.totalUsd` from `aether-report --run <runId>`, with the swarm's run id as the label;
 - each external seat round's dollars, as "The design seats" says.
 
-A new figure for a label already recorded replaces the old one. The figure covers the swarm, the lanes and the external seats, not your own turns, nor the native Judge's, Writer's and Examiner's: the 8-hour ceiling is the real guard.
+A new figure for a label already recorded replaces the old one. The figure covers the swarm, the lanes and the external seats, not your own turns, nor the native Judge's, Writer's and Examiner's, nor your delegate tasks': the 8-hour ceiling is the real guard.
 
 **Irreversible actions.** These classes need the owner's authorization. Everything local and reversible goes ahead without asking.
 
@@ -240,7 +241,7 @@ Before one, run `aether-autonomy check <class>`.
 - Words that withdraw one: `aether-autonomy revoke --class <class> --quote "<their words>"`.
 - `aether-autonomy list` shows the registry. The registry and each run's `run.json` are written only by `aether-autonomy`; aether-guard refuses edits to them.
 
-**Done** when every criterion has its evidence in the diary (a test, an output or a file), the test command passes on the integration branch, or fails only on the run's baseline, the exam has no failing test, and the final review leaves no open critical or important finding. Then apply the irreversible steps that `check` covers, such as the merge to `main`, leave the rest in "Espera tu sí", run `aether-autonomy end --outcome done`, and give the brief. Stop there: no extra improvements.
+**Done** when every criterion has its evidence in the diary (a test, an output or a file), the test command passes on the branch that holds the build, or fails only on the swarm run's baseline (a build by delegate tasks has no baseline, so its tests must pass), the exam has no failing test, and no critical or important finding stays open: from the swarm's final review, or, for a plan built by delegate tasks, from your review of their diffs. Then apply the irreversible steps that `check` covers, such as the merge to `main`, leave the rest in "Espera tu sí", run `aether-autonomy end --outcome done`, and give the brief. Stop there: no extra improvements.
 
 **Repetition.** When a line of work repeats without progress (the same task redesigned twice, the same unit relaunched twice without success, a third correction round on the same finding), stop it. Note the defect in the diary, take the smallest reversible path (defer that task), and go on with the rest.
 
@@ -274,7 +275,7 @@ Before one, run `aether-autonomy check <class>`.
     ## Propuestas
     ## Tiempo y costo
     - Trabajó solo <h> h de <tope> h, y te consultó <n> veces.
-    - US$ <gasto> de US$ <tope>. La cifra cubre el swarm, las lanes y los asientos externos; no cubre los turnos del Lead ni de los asientos nativos.
+    - US$ <gasto> de US$ <tope>. La cifra cubre el swarm, las lanes y los asientos externos; no cubre los turnos del Lead, ni los de los asientos nativos, ni los de las tareas delegadas.
 
 Supuestos are ordered by how likely the owner is to veto them, the most likely first.
 

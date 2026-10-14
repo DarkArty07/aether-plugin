@@ -111,7 +111,7 @@ Report from it, to the owner or, in a run, to the diary:
 - **Patches:** `<runDir>/patches/<task>.patch` holds a unit's unmerged work. Read it before you apply it with `git apply`.
 - **Final review findings:** handle them as a final review is handled.
   - Re-grade each finding by its effect.
-  - Fix the critical and important ones: a short fix yourself, with TDD on the integration branch; a longer one through a delegate task (on Opus when Sonnet already failed at it) or a relaunch; a design-level one through the Writer and the Judge.
+  - Fix the critical and important ones: a short fix yourself on the integration branch, with its test, when it fits the direct path; a longer one through a delegate task (on Opus when Sonnet already failed at it) or a relaunch; a design-level one through the Writer and the Judge.
   - Defer the minor ones: list them in the report, or in a run in the brief. They are not worked.
   - Rule on each `declined` line.
 - **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep first saves each unit's unmerged or uncommitted work as a patch. A unit whose work it cannot save stays in place for you to handle.
