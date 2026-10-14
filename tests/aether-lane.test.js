@@ -787,5 +787,5 @@ test('quota prints the same for people, and marks a grok reading older than 30 m
   // A reading of a period that has ended is no reading: grok is unknown, and --refresh is named as the way to one.
   const ended = quotaEnv(t, { endHours: -1 })
   const unknown = runBin(fx.LANE_BIN, ['quota', 'grok'], ended.dir, ended.env)
-  assert.ok(unknown.stdout.includes(`grok, "Grok plan": unknown, used until a call fails for quota (no reading; --refresh opens grok's UI to take a reading)`), unknown.stdout)
+  assert.ok(unknown.stdout.includes(`grok, "Grok plan": unknown, used until a call fails for quota (no reading; --refresh asks grok for one)`), unknown.stdout)
 })
