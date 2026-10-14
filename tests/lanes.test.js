@@ -624,3 +624,20 @@ test('lanesEnabled: lanes are on only when AETHER_LANES is on, and only on Linux
   }
   assert.deepEqual(lanes.lanesEnabled({}, 'darwin'), { on: false, reason: 'option' })
 })
+
+test('the table gives the life of a harness reading and the length of a dry mark, and refuses a bad one', (t) => {
+  const config = shipped()
+  assert.equal(config.dryMarkMinutes, 60)
+  assert.deepEqual(Object.fromEntries(Object.entries(config.harnesses).map(([name, h]) => [name, h.quotaLifeMinutes])), { agy: 10, codex: 10, grok: 30, cursor: 10 })
+  assert.doesNotThrow(() => lanes.loadConfig(writeConfig(t, (c) => (c.harnesses.agy.quotaLifeMinutes = 0))))
+  assert.doesNotThrow(() => lanes.loadConfig(writeConfig(t, (c) => (delete c.harnesses.agy.quotaLifeMinutes, delete c.dryMarkMinutes))))
+  for (const [mutate, message] of [
+    [(c) => (c.dryMarkMinutes = 0), 'dryMarkMinutes must be an integer of at least 1'],
+    [(c) => (c.dryMarkMinutes = '60'), 'dryMarkMinutes must be an integer of at least 1'],
+    [(c) => (c.harnesses.agy.quotaLifeMinutes = -1), 'harness agy: quotaLifeMinutes must be an integer of at least 0'],
+    [(c) => (c.harnesses.grok.quotaLifeMinutes = 1.5), 'harness grok: quotaLifeMinutes must be an integer of at least 0'],
+  ]) {
+    const file = writeConfig(t, mutate)
+    assert.throws(() => lanes.loadConfig(file), (err) => err.message === `lanes config ${file}: ${message}`)
+  }
+})
