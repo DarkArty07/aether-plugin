@@ -1,6 +1,6 @@
 ---
 name: using-aether
-description: Aether mode bootstrap for the Lead, injected at session start. Covers the Lead's role as the owner's right hand, RADAR, the method on Spec Kit's layout, writing with the Writer and judging with the Judge, the design seats and the exam, assumptions, the owner's list, the three paths (direct, delegate task, swarm) and the choice of model, fallbacks, autonomous runs, the Lead's own tool work and the execution method.
+description: Aether mode bootstrap for the Lead, injected at session start. Covers the Lead's role as the owner's right hand, RADAR, the method on Spec Kit's layout, writing with the Writer and judging with the Judge, the design seats and the exam, assumptions, the owner's list, the three paths (direct, delegate task, swarm) and the choice of model, fallbacks, autonomous runs and the execution method.
 disable-model-invocation: true
 ---
 
