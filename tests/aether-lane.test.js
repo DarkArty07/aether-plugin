@@ -227,18 +227,16 @@ test("status reads each group's windows, marks a group under the reserve unusabl
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const agy = r.json.harnesses.agy
   assert.deepEqual([agy.enabled, agy.path, agy.installed, agy.version, agy.groups.gemini.usable, agy.groups.claude.usable], [true, fx.FAKE_AGY, true, '1.3.2', false, true])
-  assert.deepEqual(agy.groups.claude.windows['5h'], { remaining: 0.9, resetsAt: '2026-10-09T05:53:31Z' })
+  assert.deepEqual([agy.groups.claude.windows['5h'].remaining, agy.groups.claude.windows['5h'].resetsAt], [0.9, '2026-10-09T05:53:31.000Z'])
   const readings = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading')
   assert.equal(readings.length, 1)
   assert.deepEqual([readings[0].run, readings[0].version, readings[0].harness, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', 'agy', ['claude', 'gemini']])
   const missing = fx.lane(args, 'status', [], fx.laneEnv(t, { command: '/nowhere/agy' }))
-  assert.deepEqual(missing.json, {
-    harnesses: {
-      agy: { enabled: true, command: '/nowhere/agy', path: null, installed: false, version: null, groups: {} },
-      codex: { enabled: false, command: 'codex' },
-      grok: { enabled: false, command: 'grok' },
-      cursor: { enabled: false, command: 'cursor-agent' },
-    },
+  assert.deepEqual(missing.json.harnesses, {
+    agy: { enabled: true, command: '/nowhere/agy', path: null, installed: false, version: null, groups: {} },
+    codex: { enabled: false, command: 'codex' },
+    grok: { enabled: false, command: 'grok' },
+    cursor: { enabled: false, command: 'cursor-agent' },
   })
 })
 
@@ -653,7 +651,7 @@ test('a command without its run id answers with its usage', (t) => {
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t)
   const bare = (verb, ...rest) => runBin(fx.LANE_BIN, [verb, ...rest], args.repoRoot, env)
-  assert.deepEqual([bare('status').status, bare('status').json], [1, { error: 'usage: aether-lane status <run>' }])
+  assert.deepEqual([bare('status').status, bare('status').json], [1, { error: 'usage: aether-lane status <run> [--refresh]' }])
   assert.deepEqual(bare('stop').json, { error: 'usage: aether-lane stop <run> [<call>]' })
   assert.deepEqual(bare('result', args.runId).json, { error: 'usage: aether-lane result <run> <call>' })
   assert.deepEqual(bare('wait').json, { error: 'usage: aether-lane wait <run> <call> [--max <seconds>]' })
