@@ -74,6 +74,27 @@ test('session start injects the Lead bootstrap', (t) => {
   assert.doesNotMatch(context, /arrives in a later version/)
 })
 
+test('session start gives the bootstrap the plugin folder, the way Claude Code does for a skill', (t) => {
+  const repo = makeRepo(t)
+  const r = start(repo.dir, tempDir(t, 'aether-data-'))
+  assert.equal(r.status, 0, r.stderr)
+  const context = r.out.hookSpecificOutput.additionalContext
+  assert.doesNotMatch(context, /\$\{CLAUDE_PLUGIN_ROOT\}/)
+  assert.ok(context.includes(`${PLUGIN}/config/models/models.json`), 'the bootstrap names the models index by its absolute path')
+  assert.ok(context.includes(`${PLUGIN}/config/prices.json`), 'the bootstrap names the price table by its absolute path')
+})
+
+test('the plugin folder is put into the bootstrap as it is, even with characters that replace patterns use', (t) => {
+  const repo = makeRepo(t)
+  const copy = path.join(tempDir(t), 'a$&b$1', 'aether')
+  fs.cpSync(PLUGIN, copy, { recursive: true })
+  const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_PLUGIN_ROOT: copy } })
+  assert.equal(r.status, 0, r.stderr)
+  const context = r.out.hookSpecificOutput.additionalContext
+  assert.doesNotMatch(context, /\$\{CLAUDE_PLUGIN_ROOT\}/)
+  assert.ok(context.includes(`${copy}/config/models/models.json`))
+})
+
 test('session start sweeps stale runs and says so', (t) => {
   const repo = makeRepo(t)
   const args = compile(repo, plan([task(1), task(2)]))

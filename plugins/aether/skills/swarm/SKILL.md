@@ -24,8 +24,8 @@ In an autonomous run (see the `using-aether` skill), what this skill says to tel
 - **Permissions.** The run's agents use Bash (`git`, `aether-wt`, `aether-lane` and the test command) and edit files under `.aether/worktrees/`. A session that asks permission for each call stalls the swarm, and an autonomous run waits at the first prompt.
   - Check that the permission mode or allow rules cover these calls, and write down what you rely on: tell the owner, or in a run, note it in the diary.
   - The unit worktrees are under the main checkout. If this session started inside the integration worktree, add the main checkout with `/add-dir <repoRoot>`, so the agents may read and edit there.
-- **Workflows.** The run is a dynamic workflow. When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session, and offer to build the plan with subagents meanwhile.
-- **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, the run sends calls to the external harnesses that the `harnesses` option enables (agy by default; also codex, grok and cursor), in the owner's order, when the harness's CLI is installed and while its quota lasts. `plugins/aether/config/lanes.json` names each harness's models. These CLIs run without permission prompts (agy with `--dangerously-skip-permissions`) in the unit's transactional worktree, with the owner's git, GitHub, registry and cloud credentials kept out of their environment. Otherwise every call is native, and `aether-plan compile` says why on stderr; it also names each enabled harness that takes no call, and why. `aether-plan compile <plan.md> --no-lanes` runs everything native.
+- **Workflows.** The run is a dynamic workflow. When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session, and offer to build it meanwhile task by task, each as a delegate task: on Sonnet, or on Opus when its Tier is opus.
+- **Lanes.** When the owner turned on the plugin's `lanes` option, on Linux, the run sends calls to the external harnesses that the `harnesses` option enables (agy by default; also codex, grok and cursor), in the owner's order, when the harness's CLI is installed and while its quota lasts. `${CLAUDE_PLUGIN_ROOT}/config/lanes.json` names each harness's models. These CLIs run without permission prompts (agy with `--dangerously-skip-permissions`) in the unit's transactional worktree, with the owner's git, GitHub, registry and cloud credentials kept out of their environment. Otherwise every call is native, and `aether-plan compile` says why on stderr; it also names each enabled harness that takes no call, and why. `aether-plan compile <plan.md> --no-lanes` runs everything native.
 
 ## 2. Compile
 
@@ -99,7 +99,7 @@ Report from it, to the owner or, in a run, to the diary:
 ## 5. Act on it
 
 - **Blocked with a question:** answer it from the owner's intent, the spec and the plan when they cover it. Otherwise it goes to the owner: outside a run, ask them; in an autonomous run, it waits in the diary's "Espera tu sí" or "Decisiones", and the other units go on. Then ask the Writer to fix the plan task, have the Judge review the fix, and relaunch the unit.
-- **Blocked by a merge failure or a spent ladder:** read the rounds. Fix the work yourself when the fix is short; otherwise send it to a subagent, or ask the Writer to fix the plan task and relaunch it. These have a fallback, so they never go to the owner.
+- **Blocked by a merge failure or a spent ladder:** read the rounds. Fix the work yourself when it fits the direct path; otherwise send it to a delegate task, on the model the `using-aether` Models section picks, or ask the Writer to fix the plan task and relaunch it. These have a fallback, so they never go to the owner.
 - **Blocked by a repeated failure:** the unit ended twice without a report, or got the same findings three times (see its `failures`). The task is too large or cut wrong: ask the Writer to split it, have the Judge review the split, and relaunch. This never goes to the owner either.
 - **Blocked by a lane:** a reason that starts with `lane:` means a lane changed the integration worktree or branch, or a read-only copy changed the unit. Check the integration worktree with `git status` and the branch with `git log` before you relaunch.
 - **Skipped or not-run:** relaunch these once their dependencies are merged.
@@ -111,7 +111,7 @@ Report from it, to the owner or, in a run, to the diary:
 - **Patches:** `<runDir>/patches/<task>.patch` holds a unit's unmerged work. Read it before you apply it with `git apply`.
 - **Final review findings:** handle them as a final review is handled.
   - Re-grade each finding by its effect.
-  - Fix the critical and important ones: a short fix yourself, with TDD on the integration branch; a longer one through a subagent or a relaunch; a design-level one through the Writer and the Judge.
+  - Fix the critical and important ones: a short fix yourself, with TDD on the integration branch; a longer one through a delegate task (on Opus when Sonnet already failed at it) or a relaunch; a design-level one through the Writer and the Judge.
   - Defer the minor ones: list them in the report, or in a run in the brief. They are not worked.
   - Rule on each `declined` line.
 - **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep first saves each unit's unmerged or uncommitted work as a patch. A unit whose work it cannot save stays in place for you to handle.

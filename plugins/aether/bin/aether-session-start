@@ -13,9 +13,11 @@ const path = require('node:path')
 
 const root = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..')
 
+// Claude Code replaces ${CLAUDE_PLUGIN_ROOT} in a skill's content but not in a hook's additionalContext,
+// so the bootstrap gets the plugin folder's absolute path here, where the Lead can read the files it names.
 function bootstrap() {
   const raw = fs.readFileSync(path.join(root, 'skills', 'using-aether', 'SKILL.md'), 'utf8')
-  return raw.replace(/^---\n[\s\S]*?\n---\n/, '').trim()
+  return raw.replace(/^---\n[\s\S]*?\n---\n/, '').trim().split('${CLAUDE_PLUGIN_ROOT}').join(root)
 }
 
 function sweepNote() {
