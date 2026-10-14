@@ -8,6 +8,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { HARNESS_NAMES } = require('./harness/index.js')
+const { readingUsable } = require('./lane-order.js')
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'lanes.json')
 const ROLES = ['implementer', 'supervisor', 'reviewer']
@@ -228,9 +229,11 @@ function enabledHarnesses(env = process.env) {
 }
 
 // The arguments the run takes from the enabled harnesses that are installed, or null when none gives a call.
-// Each native call goes to the first of them, in the order enabled, with a model that serves its role and
-// replaces the native model. harness is the first harness that gave a call; harnesses lists each one that
-// did. A role's wait is the largest among the listed harnesses that serve it, or among all listed when none does.
+// calls[role][model] lists every candidate for that native call: each model of an enabled, installed harness
+// that serves the role and replaces the native model, the harnesses in the order enabled and each one's models
+// in the order of the table. Which candidate takes a call is decided later, from the quota (lane-order.js).
+// harness is the first harness that gave a call; harnesses lists each one that did. A role's wait is the
+// largest among the listed harnesses that serve it, or among all listed when none does.
 function lanesArgs(config, { installed, enabled = enabledHarnesses() }) {
   if (!config) return null
   const calls = {}
@@ -243,8 +246,8 @@ function lanesArgs(config, { installed, enabled = enabledHarnesses() }) {
       for (const [id, entry] of Object.entries(harness.models)) {
         if (!entry.roles.includes(role)) continue
         calls[role] = calls[role] || {}
-        if (calls[role][entry.replaces]) continue
-        calls[role][entry.replaces] = { model: id, group: entry.group, harness: name }
+        calls[role][entry.replaces] = calls[role][entry.replaces] || []
+        calls[role][entry.replaces].push({ model: id, group: entry.group, harness: name })
         gave = true
       }
     }
@@ -267,8 +270,8 @@ function lanesArgs(config, { installed, enabled = enabledHarnesses() }) {
 }
 
 // The enabled harnesses that give the run no call, each with the reason: no entry in the table, a command
-// that is not installed, no models yet, or models whose calls an earlier harness takes. Compile names them,
-// so that no harness the owner enabled stays dry without notice.
+// that is not installed, no models yet, or models that serve no swarm role. Compile names them, so that no
+// harness the owner enabled stays dry without notice.
 function idleHarnesses(config, { installed, enabled = enabledHarnesses() }) {
   if (!config) return []
   const listed = lanesArgs(config, { installed, enabled })?.harnesses ?? []
@@ -279,7 +282,7 @@ function idleHarnesses(config, { installed, enabled = enabledHarnesses() }) {
       if (!harness) return { name, reason: 'has no entry in the lane table' }
       if (!installed(name, harness)) return { name, reason: `is not installed: ${harness.command} was not found` }
       if (Object.keys(harness.models).length === 0) return { name, reason: 'has no models in the lane table yet' }
-      return { name, reason: 'takes no call: an earlier harness takes every call its models could' }
+      return { name, reason: 'takes no swarm call: none of its models serves implementer, supervisor or reviewer' }
     })
 }
 
@@ -311,12 +314,10 @@ function resultDigest({ result, lane }) {
   return digest(canonicalJson({ result, lane }))
 }
 
+// Whether a group's reading lets its lane take a call: the one rule, in lane-order.js. A group that cannot report
+// its quota, or a window without a balance, is used until a call fails for quota.
 function usable(groupQuota, reserve) {
-  // A harness that cannot report its quota is used until a call fails for quota.
-  if (isObject(groupQuota) && groupQuota.unknown === true) return true
-  if (!groupQuota || !isObject(groupQuota.windows)) return false
-  const windows = Object.values(groupQuota.windows)
-  return windows.length > 0 && windows.every((window) => window.remaining > reserve)
+  return readingUsable(groupQuota, reserve)
 }
 
 // What each window consumed between consecutive readings that share its reset time, and how often it reset.
