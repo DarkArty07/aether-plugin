@@ -55,9 +55,9 @@ function aetherWt(call, state) {
 }
 
 const LEVEL = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
-const GROUP = { 'gemini-3.8-flash': 'gemini', 'claude-sonnet-5-5': 'claude', 'claude-opus-5-5': 'claude', 'gpt-5.5-codex': 'openai' }
+const GROUP = { 'gemini-3.8-flash': 'gemini', 'claude-sonnet-5-5': 'claude', 'claude-opus-5-5': 'claude', 'gpt-5.5-codex': 'openai', 'grok-4.7': 'grok' }
 // The harness that runs a model when it is not agy's. A lane call names only its model, so this stands in for aether-lane's choice.
-const HARNESS_OF = { 'gpt-5.5-codex': 'codex' }
+const HARNESS_OF = { 'gpt-5.5-codex': 'codex', 'grok-4.7': 'grok' }
 
 // The lane block of a finished call, built from the flags its start was given.
 function laneOf(started) {
@@ -97,6 +97,8 @@ function aetherLane(call, defaults) {
     }
     case 'stop':
       return { stopped: [call.lane.call] }
+    case 'choice':
+      return { logged: true }
     default:
       throw new Error(`unexpected aether-lane command: ${call.command.line}`)
   }
