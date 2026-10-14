@@ -419,15 +419,17 @@ test('mergeReadme replaces only what is between the markers, makes a missing REA
   assert.equal(mergeReadme('# Title\nno markers\n', 'new table'), null)
 })
 
-// A directory with the inputs of a build: the raw list, the lane table, the harness listings, the profiles and a README.
+// A directory with the inputs of a build: the raw list, the lane table, the harness listings and the profiles
+// in `out` (where the data files go), and a README in `docs`.
 function workDir(t) {
   const dir = tempDir(t, 'models-index-')
   fs.writeFileSync(path.join(dir, 'raw.json'), JSON.stringify(RAW))
   fs.writeFileSync(path.join(dir, 'lanes.json'), JSON.stringify(LANES))
   fs.mkdirSync(path.join(dir, 'out'))
+  fs.mkdirSync(path.join(dir, 'docs'))
   fs.writeFileSync(path.join(dir, 'out', 'harness-models.json'), JSON.stringify(LISTINGS))
   fs.writeFileSync(path.join(dir, 'out', 'profiles.json'), JSON.stringify(PROFILES))
-  fs.writeFileSync(path.join(dir, 'out', 'README.md'), '# Mine\n\nkept\n\n<!-- models-index:start -->\nold\n<!-- models-index:end -->\n\nalso kept\n')
+  fs.writeFileSync(path.join(dir, 'docs', 'README.md'), '# Mine\n\nkept\n\n<!-- models-index:start -->\nold\n<!-- models-index:end -->\n\nalso kept\n')
   return dir
 }
 
@@ -435,7 +437,7 @@ const NOW = () => new Date(2026, 9, 13, 12, 0, 0).getTime()
 
 test('main builds from a saved list with no key, writes only with --write, and keeps the README text it did not generate', async (t) => {
   const dir = workDir(t)
-  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--harnesses', 'cursor,grok,codex,agy']
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'cursor,grok,codex,agy']
 
   const dry = await main(args, { env: {}, fetch: async () => assert.fail('no request without a key'), now: NOW })
   assert.equal(dry.exitCode, 0)
@@ -448,8 +450,9 @@ test('main builds from a saved list with no key, writes only with --write, and k
 
   const wrote = await main([...args, '--write'], { env: {}, now: NOW })
   assert.equal(wrote.exitCode, 0)
-  // One data file is written: no index.json and no current.json.
-  assert.deepEqual(fs.readdirSync(path.join(dir, 'out')).sort(), ['README.md', 'harness-models.json', 'models.json', 'profiles.json'])
+  // The three data files go to --out and the README to --docs; there is no index.json and no current.json, and no README in --out.
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'out')).sort(), ['harness-models.json', 'models.json', 'profiles.json'])
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'docs')), ['README.md'])
   const file = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'models.json'), 'utf8'))
   assert.equal(file.generatedAt, '2026-10-13')
   assert.deepEqual(file.harnesses, ['agy', 'codex', 'grok', 'cursor'])
@@ -460,7 +463,7 @@ test('main builds from a saved list with no key, writes only with --write, and k
   assert.equal(file.models[0].profile.purpose, '"Model acme-1-5 is for tests."')
   assert.equal(file.withoutFigures[0].name, 'Model acme-1.5-build-fast')
   assert.equal(file.notOffered[0].name, 'Model ghost-9')
-  const readme = fs.readFileSync(path.join(dir, 'out', 'README.md'), 'utf8')
+  const readme = fs.readFileSync(path.join(dir, 'docs', 'README.md'), 'utf8')
   assert.ok(readme.startsWith('# Mine\n\nkept\n\n<!-- models-index:start -->\n## Rules'))
   assert.ok(readme.endsWith('<!-- models-index:end -->\n\nalso kept\n'))
   assert.ok(readme.includes('## Models in use'))
@@ -470,12 +473,12 @@ test('main builds from a saved list with no key, writes only with --write, and k
 test('a model without a profile is listed, with an exit code of 1, and is marked in the README', async (t) => {
   const dir = workDir(t)
   fs.writeFileSync(path.join(dir, 'out', 'profiles.json'), JSON.stringify({ profiles: { 'acme-1-5': profile('Acme 1.5'), 'ghost-9': profile('Ghost') } }))
-  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--harnesses', 'agy,codex,grok,cursor']
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'agy,codex,grok,cursor']
   const result = await main([...args, '--write'], { env: {}, now: NOW })
   assert.equal(result.exitCode, 1)
   assert.match(result.stdout, /Without a profile \(3\): edge-1, acme-1\.5-build-fast, auto\./)
   // The files are written all the same, so the model is in models.json and the README names what is missing.
-  assert.ok(fs.readFileSync(path.join(dir, 'out', 'README.md'), 'utf8').includes('**no profile: read the maker\'s page and add it to profiles.json**'))
+  assert.ok(fs.readFileSync(path.join(dir, 'docs', 'README.md'), 'utf8').includes('**no profile: read the maker\'s page and add it to profiles.json**'))
   assert.deepEqual(missingProfiles(buildModels(build(), {})), ['acme-1-5', 'edge-1', 'acme-1.5-build-fast', 'auto', 'ghost-9'])
   assert.deepEqual(missingProfiles(buildModels(build(), PROFILES.profiles)), [])
   assert.deepEqual(readProfiles(path.join(dir, 'nowhere.json')), {})
@@ -484,7 +487,7 @@ test('a model without a profile is listed, with an exit code of 1, and is marked
 test('a chosen harness with no listing in harness-models.json is named, with how to capture it, before anything is asked or written', async (t) => {
   const dir = workDir(t)
   fs.writeFileSync(path.join(dir, 'out', 'harness-models.json'), JSON.stringify({ capturedAt: '2026-10-13', harnesses: { agy: LISTINGS.harnesses.agy } }))
-  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--harnesses', 'agy,codex,cursor,grok']
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'agy,codex,cursor,grok']
   const result = await main([...args, '--write'], { env: {}, now: NOW })
   assert.deepEqual(result, {
     exitCode: 1,
@@ -500,7 +503,7 @@ test('a chosen harness with no listing in harness-models.json is named, with how
 
 test('main without --from asks the API with the key, never prints it, and says why when it cannot', async (t) => {
   const dir = workDir(t)
-  const args = ['--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out')]
+  const args = ['--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs')]
   const seen = []
   const fetch = async (url, init) => {
     seen.push([url, init.headers['x-api-key']])
@@ -512,8 +515,8 @@ test('main without --from asks the API with the key, never prints it, and says w
   assert.equal(live.exitCode, 0)
   assert.deepEqual(seen, [['https://artificialanalysis.ai/api/v2/data/llms/models', 'secret-key']])
   assert.equal(live.stdout.includes('secret-key'), false)
-  for (const file of ['models.json', 'README.md']) {
-    assert.equal(fs.readFileSync(path.join(dir, 'out', file), 'utf8').includes('secret-key'), false)
+  for (const file of [path.join('out', 'models.json'), path.join('docs', 'README.md')]) {
+    assert.equal(fs.readFileSync(path.join(dir, file), 'utf8').includes('secret-key'), false)
   }
 
   const none = await main(args, { env: { AETHER_DATA_DIR: dir }, fetch, now: NOW })
@@ -528,8 +531,8 @@ test('main without --from asks the API with the key, never prints it, and says w
 
 test('main refuses a README with no markers before it writes anything, and a bad date or flag is a usage error', async (t) => {
   const dir = workDir(t)
-  fs.writeFileSync(path.join(dir, 'out', 'README.md'), '# No markers here\n')
-  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out')]
+  fs.writeFileSync(path.join(dir, 'docs', 'README.md'), '# No markers here\n')
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs')]
   const refused = await main([...args, '--write'], { env: {}, now: NOW })
   assert.equal(refused.exitCode, 1)
   assert.match(refused.stdout, /has no <!-- models-index:start --> and <!-- models-index:end --> lines to write between/)
@@ -543,12 +546,14 @@ test('main refuses a README with no markers before it writes anything, and a bad
 })
 
 test('the committed models.json and README are in the shape the script writes, and every model has a profile', () => {
-  const dir = path.join(__dirname, '..', 'docs', 'models')
+  const dir = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models')
+  const docs = path.join(__dirname, '..', 'docs', 'models')
   const text = fs.readFileSync(path.join(dir, 'models.json'), 'utf8')
   const file = JSON.parse(text)
   assert.equal(`${serialize(file)}\n`, text)
-  // The folder has the one generated data file, and no copy of it.
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['README.md', 'harness-models.json', 'models.json', 'profiles.json'])
+  // The data ships with the plugin, in its config folder: the one generated data file, and no copy of it. docs/models has the reading copy and nothing else.
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['harness-models.json', 'models.json', 'profiles.json'])
+  assert.deepEqual(fs.readdirSync(docs), ['README.md'])
 
   // Rule 2: the models are those of the chosen harnesses, each with a listing, and the listings are of no other harness.
   const listings = JSON.parse(fs.readFileSync(path.join(dir, 'harness-models.json'), 'utf8'))
@@ -585,7 +590,7 @@ test('the committed models.json and README are in the shape the script writes, a
   for (const entry of file.models) assert.equal(entry.profile.purpose, profiles[entry.family].purpose, entry.model)
 
   // The README's generated part is made from models.json alone.
-  const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf8')
+  const readme = fs.readFileSync(path.join(docs, 'README.md'), 'utf8')
   const start = '<!-- models-index:start -->\n'
   assert.ok(readme.includes(start) && readme.includes('\n<!-- models-index:end -->'))
   assert.equal(renderGenerated(file), readme.slice(readme.indexOf(start) + start.length, readme.indexOf('\n<!-- models-index:end -->')))

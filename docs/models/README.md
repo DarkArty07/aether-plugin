@@ -1,6 +1,6 @@
 # Models released since 2026-01
 
-The LLMs our harnesses offer, from Artificial Analysis (AA) figures and the harnesses' own listings, so a session reads this folder and not an API. [`models.json`](models.json) is the list an orchestrator reads: each model in use with its harness, the id to pass to the CLI, its efforts, its scores and its profile. The rest of this page is its reading copy.
+The LLMs our harnesses offer, from Artificial Analysis (AA) figures and the harnesses' own listings, so a session reads files and not an API. The data lives in the plugin, so it ships with it and a session in any project reads it: [`models.json`](../../plugins/aether/config/models/models.json) is the list an orchestrator reads (each model in use with its harness, the id to pass to the CLI, its efforts, its scores and its profile), [`profiles.json`](../../plugins/aether/config/models/profiles.json) says what each model is for, and [`harness-models.json`](../../plugins/aether/config/models/harness-models.json) holds what each harness's CLI listed. This folder has only this page, the reading copy of the list.
 
 ## Refresh
 
@@ -9,7 +9,7 @@ node scripts/build-models-index.js --write                  # AA API: ARTIFICIAL
 node scripts/build-models-index.js --from raw.json --write  # a saved AA answer, no network
 ```
 
-It rewrites `models.json` and the generated part below, and exits 1 when a model has no profile. Grouping: an AA slug ending in an effort (`-low`, `-high`, `-max`, `-reasoning`...) joins the slug without it when AA's name names that effort; a date or any other word makes a family of its own.
+It rewrites `models.json` (in `--out`, default `plugins/aether/config/models`) and the generated part below (in `--docs`, default `docs/models`), and exits 1 when a model has no profile. Grouping: an AA slug ending in an effort (`-low`, `-high`, `-max`, `-reasoning`...) joins the slug without it when AA's name names that effort; a date or any other word makes a family of its own.
 
 ## Add a harness
 

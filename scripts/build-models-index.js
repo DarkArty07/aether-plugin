@@ -2,7 +2,7 @@
 'use strict'
 
 // Usage: node scripts/build-models-index.js [--from <raw.json>] [--since 2026-01-01] [--harnesses agy,grok] [--write]
-//                                           [--lanes <lanes.json>] [--harness <file>] [--profiles <file>] [--out <dir>]
+//                                           [--lanes <lanes.json>] [--harness <file>] [--profiles <file>] [--out <dir>] [--docs <dir>]
 //
 // Builds the list of the models our harnesses offer, from the Artificial Analysis (AA) models list: the
 // families released since a date, each with its effort variants, of which the ones that are the newest of
@@ -10,10 +10,11 @@
 // Without --from it asks the AA API (the key comes from where refresh-lanes.js looks for it, and is
 // never printed); with --from it reads a saved answer of the same API. It prints a short summary; with
 // --write it also writes models.json (the models in use, each with its scores at the efforts its harness
-// takes and its profile, and what was left out) and the generated part of README.md, in docs/models (or
-// --out). profiles.json, kept by hand, says what each model is for; a model in use without one is listed
-// and the exit code is 1. The harness models come from harness-models.json next to them: what each CLI
-// listed on a date, kept as a file because the CLIs need a login and a network to list them.
+// takes and its profile, and what was left out) in --out, which is the plugin's config/models folder (it
+// ships with the plugin, so a session in any project reads it), and the generated part of README.md in
+// --docs (docs/models). profiles.json, kept by hand, says what each model is for; a model in use without
+// one is listed and the exit code is 1. The harness models come from harness-models.json next to models.json:
+// what each CLI listed on a date, kept as a file because the CLIs need a login and a network to list them.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -21,9 +22,10 @@ const { keyFrom, keyFile, envFileFor, KEY, MODELS_URL } = require('./refresh-lan
 
 const DEFAULT_SINCE = '2026-01-01'
 const DEFAULT_LANES = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'lanes.json')
-const DEFAULT_OUT = path.join(__dirname, '..', 'docs', 'models')
+const DEFAULT_OUT = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models')
+const DEFAULT_DOCS = path.join(__dirname, '..', 'docs', 'models')
 const USAGE =
-  'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--harnesses agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--harness <file>] [--out <dir>]'
+  'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--harnesses agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--harness <file>] [--out <dir>] [--docs <dir>]'
 const HARNESSES = ['agy', 'codex', 'grok', 'cursor']
 // The chosen harnesses, whose models the index keeps. Another comes in with --harnesses once its listing is in harness-models.json.
 const DEFAULT_HARNESSES = ['agy', 'grok']
@@ -632,8 +634,8 @@ function readJson(file) {
 }
 
 function parseArgs(argv) {
-  const args = { from: null, since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, harness: null, out: DEFAULT_OUT, harnesses: DEFAULT_HARNESSES.join(','), profiles: null }
-  const flags = { '--from': 'from', '--since': 'since', '--lanes': 'lanes', '--harness': 'harness', '--harnesses': 'harnesses', '--profiles': 'profiles', '--out': 'out' }
+  const args = { from: null, since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, harness: null, out: DEFAULT_OUT, docs: DEFAULT_DOCS, harnesses: DEFAULT_HARNESSES.join(','), profiles: null }
+  const flags = { '--from': 'from', '--since': 'since', '--lanes': 'lanes', '--harness': 'harness', '--harnesses': 'harnesses', '--profiles': 'profiles', '--out': 'out', '--docs': 'docs' }
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--write') args.write = true
     else if (flags[argv[i]] && i + 1 < argv.length) args[flags[argv[i]]] = argv[++i]
@@ -644,6 +646,7 @@ function parseArgs(argv) {
   if (args.harnesses.length === 0 || !args.harnesses.every((name) => HARNESSES.includes(name))) return null
   args.harnesses = HARNESSES.filter((name) => args.harnesses.includes(name))
   args.out = path.resolve(args.out)
+  args.docs = path.resolve(args.docs)
   args.harness = path.resolve(args.harness ?? path.join(args.out, 'harness-models.json'))
   args.profiles = path.resolve(args.profiles ?? path.join(args.out, 'profiles.json'))
   args.lanes = path.resolve(args.lanes)
@@ -693,11 +696,12 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   }
   const exitCode = missing.length > 0 ? 1 : 0
   if (args.write) {
-    const readmeFile = path.join(args.out, 'README.md')
+    const readmeFile = path.join(args.docs, 'README.md')
     const existing = fs.existsSync(readmeFile) ? fs.readFileSync(readmeFile, 'utf8') : null
     const readme = mergeReadme(existing, renderGenerated(file))
     if (readme === null) return { exitCode: 1, stdout: `${readmeFile} has no ${README_START} and ${README_END} lines to write between.\n` }
     fs.mkdirSync(args.out, { recursive: true })
+    fs.mkdirSync(args.docs, { recursive: true })
     const modelsFile = path.join(args.out, 'models.json')
     fs.writeFileSync(modelsFile, `${serialize(file)}\n`)
     fs.writeFileSync(readmeFile, readme)
