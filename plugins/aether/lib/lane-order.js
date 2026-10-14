@@ -46,6 +46,7 @@ function groupView(reading, { reserve, now, mark = null }) {
   let longest = null
   let longestTime = -Infinity
   let longestName = null
+  let resetUnreadable = false
 
   if (hasWindowsObj) {
     for (const [name, win] of rawWinEntries) {
@@ -75,11 +76,19 @@ function groupView(reading, { reserve, now, mark = null }) {
 
       windows[name] = { remaining, resetsAt, hoursLeft, priority }
 
-      if (resetTime !== null && resetTime > longestTime) {
+      if (resetTime === null) resetUnreadable = true
+      else if (resetTime > longestTime) {
         longestTime = resetTime
         longestName = name
         longest = windows[name]
       }
+    }
+    // A window whose reset cannot be read may be the longest, so no other window can stand in for it: the 5 h window
+    // would give a priority about ten times any weekly group's, against A4. The group has none, as when its only
+    // window has no readable reset, and is ordered with the groups that have no reading.
+    if (resetUnreadable) {
+      longest = null
+      longestName = null
     }
   }
 

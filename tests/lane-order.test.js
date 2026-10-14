@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const order = require('../plugins/aether/lib/lane-order.js')
-const { NOW, READINGS, GEMINI, CLAUDE_LOW, GROK, HALF_READING, HALF, CASES } = require('./lane-order-cases.js')
+const { NOW, READINGS, GEMINI, CLAUDE_LOW, GROK, HALF_READING, HALF, NO_LONGEST_READING, NO_LONGEST, CASES } = require('./lane-order-cases.js')
 
 const RESERVE = 0.05
 const view = (reading, extra = {}) => order.groupView(reading, { reserve: RESERVE, now: NOW, ...extra })
@@ -109,6 +109,20 @@ test('a window whose reset cannot be read keeps its balance for usability and gi
   const g = view({ windows: { weekly: { remaining: 0.5, resetsAt: 'soon' } } })
   assert.deepEqual([g.unknown, g.usable, g.priority, g.resetsAt], [false, true, null, null])
   assert.equal(g.windows.weekly.resetsAt, 'soon')
+})
+
+test('a group whose longest window has no readable reset has no priority, and the 5 h window does not stand in for it (A4)', () => {
+  const g = view(NO_LONGEST_READING)
+  for (const key of Object.keys(NO_LONGEST)) assert.deepEqual(g[key], NO_LONGEST[key], key)
+  assert.equal(g.windowName, null)
+  // Each window keeps its own priority.
+  assert.equal(g.windows['5h'].priority, 0.149589)
+  assert.equal(g.windows.weekly.priority, null)
+  // Which window has the unreadable reset does not matter, and a reset in the wrong format is unreadable too.
+  const short = view({ windows: { weekly: { remaining: 1, resetsAt: '2026-10-21T03:35:44Z' }, '5h': { remaining: 1, resetsAt: 'soon' } } })
+  assert.deepEqual([short.priority, short.windowName, short.usable], [null, null, true])
+  // With every reset readable, the longest one still gives the priority.
+  assert.equal(view({ windows: { weekly: { remaining: 1, resetsAt: '2026-10-21T03:35:44Z' }, '5h': { remaining: 1, resetsAt: '2026-10-14T12:49:06Z' } } }).windowName, 'weekly')
 })
 
 test('readingUsable is the rule that start and the judge of a call use', () => {
