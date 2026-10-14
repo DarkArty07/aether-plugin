@@ -318,20 +318,23 @@ function groupReadings(group, calls, readings) {
 
 // A group's balance from its quota points, in time order: each window's first and last remaining, the latest
 // reading's latest reset that reads as a date, and whether the latest reading read its share as 0% used. Null without a reading.
+// A window that is not an object is skipped, as quotaConsumed does, and an unknown reading (no windows) is not the latest:
+// the reset and the 0%-used flag come from the latest reading that still has a window, like the balance at the end.
 function balanceOf(points) {
   if (points.length === 0) return null
   const sorted = [...points].sort((a, b) => a.time - b.time)
+  const windowsOf = (point) => Object.entries(point.windows).filter(([, window]) => window)
   const start = {}
   const end = {}
   for (const point of sorted) {
-    for (const [name, window] of Object.entries(point.windows)) {
+    for (const [name, window] of windowsOf(point)) {
       if (!Object.hasOwn(start, name)) start[name] = window.remaining
       end[name] = { remaining: window.remaining, resetsAt: window.resetsAt }
     }
   }
-  const latest = sorted[sorted.length - 1]
-  const resets = Object.values(latest.windows)
-    .map((window) => (typeof window.resetsAt === 'string' ? Date.parse(window.resetsAt) : NaN))
+  const latest = sorted.findLast((point) => windowsOf(point).length > 0) ?? sorted[sorted.length - 1]
+  const resets = windowsOf(latest)
+    .map(([, window]) => (typeof window.resetsAt === 'string' ? Date.parse(window.resetsAt) : NaN))
     .filter((ms) => !Number.isNaN(ms))
   return {
     start,
@@ -342,7 +345,9 @@ function balanceOf(points) {
 }
 
 // Calls, tokens and dollars by group, model, role and harness, and each group's quota windows and balance.
-function summarizeLanes(calls, readings, prices, notes) {
+// With a window (the run's), a group the run read but never called is listed with no calls, and the balance counts only
+// the readings inside the window: one logged later, such as by a hand-run status, is not the run's saldo al terminar.
+function summarizeLanes(calls, readings, prices, notes, window = null) {
   const summary = { calls: 0, usd: 0, tokens: laneZeroTokens(), groups: {}, byModel: {}, byRole: {}, byHarness: {} }
   for (const call of calls) {
     const tokens = laneTokens(call.usage ?? {})
@@ -367,10 +372,15 @@ function summarizeLanes(calls, readings, prices, notes) {
     addTokens(harness.tokens, tokens)
     if (LANE_STATUSES.includes(call.status)) harness[call.status]++
   }
+  const balanceReadings = window ? readings.filter((reading) => reading.time >= window.start && reading.time <= window.end) : readings
+  if (window) {
+    for (const reading of balanceReadings) {
+      for (const name of Object.keys(reading.groups ?? {})) summary.groups[name] ||= { calls: 0, usd: 0, tokens: laneZeroTokens(), quota: {} }
+    }
+  }
   for (const [name, group] of Object.entries(summary.groups)) {
-    const points = groupReadings(name, calls, readings)
-    group.quota = quotaConsumed(points)
-    group.balance = balanceOf(points)
+    group.quota = quotaConsumed(groupReadings(name, calls, readings))
+    group.balance = balanceOf(groupReadings(name, calls, balanceReadings))
   }
   return summary
 }
@@ -419,7 +429,7 @@ function laneReport({ dataDir, runId, start, end, usage, results, prices, notes,
   const isRunEntry = (entry) => entry.run === runId && (entry.kind === 'reading' || (entry.time >= start && entry.time <= end))
   const runLog = splitLog(entries.filter(isRunEntry))
   const sessionLog = usage ? splitLog(entries.filter((entry) => entry.session === usage.session)) : null
-  const run = summarizeLanes(runLog.calls, runLog.readings, prices, notes)
+  const run = summarizeLanes(runLog.calls, runLog.readings, prices, notes, { start, end })
   const session = sessionLog ? summarizeLanes(sessionLog.calls, sessionLog.readings, prices, notes) : null
   const versions = versionsOf([...runLog.readings, ...(sessionLog ? sessionLog.readings : [])])
   return {
