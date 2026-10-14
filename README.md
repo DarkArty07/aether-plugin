@@ -10,7 +10,7 @@ Aether serves five goals, **RADAR**:
 - **Robusto** (robust): quality code, checked by tests, evidence and independent reviews.
 
 The roles:
-- **The Lead** is the main session, on Sonnet at `xhigh`, and the owner's right hand, not a messenger. It owns the outcome: a good design, a correct implementation and a correct deployment. It understands the intent, writes the spec, decides as the owner's delegate, chooses whether to do the work itself or hand it to the system, and tells the owner of better options, scope and costs. Its work shows in its briefs and reports.
+- **The Lead** is the main session, starting on Sonnet at `xhigh` (the owner may switch with `/model` or `/effort`), and the owner's right hand, not a messenger. It owns the outcome: a good design, a correct implementation and a correct deployment. It understands the intent, writes the spec, decides as the owner's delegate, chooses whether to do the work itself or hand it to the system, and tells the owner of better options, scope and costs. Its work shows in its briefs and reports.
 - **The Writer** (`aether:writer`, Sonnet at `xhigh`) writes the plan and the tasks from the Lead's spec.
 - **The Judge** (`aether:judge`, Opus at `high`, read-only) reviews the spec, the plan and the tasks, and rules `approve`, `revise` or `reject`. Sonnet writes; Opus decides.
 - **The swarm:** when parallel work pays off, the Lead hands the plan to `/aether:run`. In the swarm:
@@ -92,10 +92,15 @@ The first design is [docs/superpowers/specs/2026-10-07-aether-plugin-design.md](
 
 ## How it works
 
+**The three paths.** The Lead takes one of three paths for each piece of work, and chooses the model of every delegate task for quality, cost and speed:
+- **Direct:** a very bounded change, about five tool calls and no edit-test-fix loop. The Lead does it inline, on the model it runs on.
+- **Delegate task:** bounded work that is still a real task, such as an edit-test-fix loop, a cleanup, a research sweep, or each task of a plan of one or two tasks. One subagent in the background, with a self-contained brief, on the model and effort the Lead names for it and says why. It is never inherited from the session.
+- **Swarm:** long, costly or complex work: an approved plan of three or more tasks, or with a task of Tier opus. `/aether:run`, with each task on its Tier.
+
 ```text
 owner ── states the intent, may give permission to work for hours, answers one list, reviews the brief
   │
-Lead (main session, Sonnet, xhigh): the intent, the spec, the route, decisions as the owner's delegate, the outcome
+Lead (main session, starts on Sonnet, xhigh): the intent, the spec, the route and the path (direct, delegate task, swarm), decisions as the owner's delegate, the outcome
   │  specs/NNN-<topic>/spec.md
   ▼
 Writer (aether:writer, Sonnet, xhigh) ⇄ Judge (aether:judge, Opus, high, read-only)
@@ -121,7 +126,7 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 
 | Piece | What it does |
 |---|---|
-| `using-aether` skill | Injected at session start. The Lead's rules: its role, RADAR, the method on Spec Kit's layout, writing with the Writer and judging with the Judge, the design seats and the exam, assumptions, the owner's list, fallbacks, autonomous runs and the execution method |
+| `using-aether` skill | Injected at session start. The Lead's rules: its role, RADAR, the method on Spec Kit's layout, writing with the Writer and judging with the Judge, the design seats and the exam, assumptions, the owner's list, the three paths (direct, delegate task, swarm) and the choice of model for each delegate task, fallbacks, autonomous runs and the execution method |
 | `aether:writer` | The Writer agent: Sonnet at `xhigh`. It writes `plan.md` and `tasks.md` from the Lead's spec, with the Aether fields, and checks them with `aether-plan check` |
 | `aether:judge` | The Judge agent: Opus at `high`, read-only. It reviews a spec, a plan or tasks, and rules `approve`, `revise` or `reject`, with at most ten findings |
 | `aether:examiner` | The Examiner agent: Opus at `high`. It writes the hidden acceptance exam of an approved spec and plan under `.aether-exam/`, one command per test, without reading `tasks.md` |
@@ -229,7 +234,7 @@ Aether mode is chosen per session:
 
     claude --agent aether:lead --effort xhigh
 
-The Lead is the agent `aether:lead`, on Sonnet. `--effort xhigh` sets its effort, because a plugin cannot. The command is the same in every shell.
+The Lead is the agent `aether:lead`, which starts on Sonnet; the owner may switch with `/model`. `--effort xhigh` sets its effort, because a plugin cannot. The command is the same in every shell.
 
 To make Aether mode the default in one repository, put this in its `.claude/settings.local.json`:
 
@@ -239,7 +244,7 @@ Plain `claude` then starts Aether mode there, and `claude --agent claude` starts
 
 Plain `claude` stays normal mode: the plugin is dormant there. Its hooks do nothing, its usage meter records nothing, and its agents are not offered.
 
-Then tell the Lead what you want. It writes back its understanding, writes the spec, has the Writer write the plan and the tasks and the Judge review them, and stops at the plan with a short brief that opens with what waits for your yes and recommends how to build it: itself, one subagent, or the swarm. Give it permission to work for hours, and it runs to the end, chooses the method itself, and gives you the brief. The swarm needs:
+Then tell the Lead what you want. It writes back its understanding, writes the spec, has the Writer write the plan and the tasks and the Judge review them, and stops at the plan with a short brief that opens with what waits for your yes and recommends how to build it: itself, a delegate task on a model it names, or the swarm. Give it permission to work for hours, and it runs to the end, chooses the method itself, and gives you the brief. The swarm needs:
 - **a plan with Aether fields** on every task:
 
       **Aether:**
