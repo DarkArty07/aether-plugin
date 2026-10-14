@@ -65,6 +65,9 @@ function validateHarness(name, harness) {
   if (typeof harness.command !== 'string' || harness.command === '') fail('command', 'must be a non-empty string')
   if (!isInteger(harness.maxParallel, 1)) fail('maxParallel', 'must be an integer of at least 1')
   if (!isInteger(harness.waitSeconds, 1)) fail('waitSeconds', 'must be an integer of at least 1')
+  if (harness.quotaLifeMinutes !== undefined && !isInteger(harness.quotaLifeMinutes, 0)) {
+    fail('quotaLifeMinutes', 'must be an integer of at least 0')
+  }
   if (!isObject(harness.timeouts) || !ROLES.every((role) => isInteger(harness.timeouts[role], 1))) {
     fail('timeouts', 'must give an integer of at least 1 for each role')
   }
@@ -82,6 +85,9 @@ function validateConfig(config) {
   if (!isObject(config)) throw new Error('the table must be an object')
   if (typeof config.reserve !== 'number' || !(config.reserve >= 0 && config.reserve <= 1)) {
     throw new Error('reserve must be a number from 0 to 1')
+  }
+  if (config.dryMarkMinutes !== undefined && !isInteger(config.dryMarkMinutes, 1)) {
+    throw new Error('dryMarkMinutes must be an integer of at least 1')
   }
   if (!isObject(config.harnesses)) throw new Error('harnesses must be an object')
   // A group key names one quota, so two harnesses must not share one. A model id names one lane, so it must not be

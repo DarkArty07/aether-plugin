@@ -68,6 +68,7 @@ function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = pro
 
   return {
     name: 'agy',
+    quotaCost: 'process',
 
     installed() {
       return commandInstalled(command, env)
