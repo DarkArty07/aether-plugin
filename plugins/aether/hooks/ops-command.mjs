@@ -23,9 +23,17 @@ const RUN = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK = /^task-\d+$/
 const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review)$/
 const ROLES = ['implementer', 'supervisor', 'reviewer']
+const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/
 const DIGEST = /^[0-9a-f]{8}:\d+$/
+
+// The tokens of `aether-lane choice`, copied from lib/lane-choice.js, which this file cannot import: a
+// plain token (no space, `;`, `$` or quote), and `/` joins the items of an order. The two copies must agree;
+// tests/ops-command-lanes.test.js checks what lib reads and refuses against this parser.
+const PICK = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
+const ORDER_ITEM = /[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*:(?:\d{1,15}(?:\.\d{1,15})?|unknown|excluded):(?:picked|pool-full|untried|reserve|marked|not-installed|dry|unavailable-[a-z]+(?:-[a-z]+)*)(?::absent)?/.source
+const ORDER = new RegExp(`^${ORDER_ITEM}(?:/${ORDER_ITEM})*$`)
 
 const is = (pattern) => (token) => pattern.test(token)
 const oneOf = (values) => (token) => values.includes(token)
@@ -42,6 +50,12 @@ const COMMANDS = {
   ],
   'aether-lane': [
     { checks: [word('status'), is(RUN)] },
+    // The wave's quota step: it asks for the refresh explicitly.
+    { checks: [word('status'), is(RUN), word('--refresh')] },
+    // The decision of one call, logged: no payload, the flags in the order the workflow writes them.
+    {
+      checks: [word('choice'), is(RUN), is(CALL), word('--role'), oneOf(ROLES), word('--tier'), oneOf(TIERS), word('--effort'), oneOf(EFFORTS), word('--pick'), is(PICK), word('--order'), is(ORDER)],
+    },
     {
       payload: true,
       checks: [word('start'), is(RUN), is(CALL), word('--role'), oneOf(ROLES), word('--task'), is(TASK), word('--model'), is(MODEL), word('--effort'), oneOf(EFFORTS), word('--digest'), is(DIGEST)],
