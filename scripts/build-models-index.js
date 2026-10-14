@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 'use strict'
 
-// Usage: node scripts/build-models-index.js [--from <raw.json>] [--since 2026-01-01] [--write]
-//                                           [--lanes <lanes.json>] [--harness <file>] [--out <dir>]
+// Usage: node scripts/build-models-index.js [--from <raw.json>] [--since 2026-01-01] [--harnesses agy,grok] [--write]
+//                                           [--lanes <lanes.json>] [--harness <file>] [--profiles <file>] [--out <dir>]
 //
-// Builds the offline index of the models released since a date, with every effort variant of each,
-// from the Artificial Analysis (AA) models list, and says which of them our harnesses reach.
+// Builds the list of the models our harnesses offer, from the Artificial Analysis (AA) models list: the
+// families released since a date, each with its effort variants, of which the ones that are the newest of
+// their line and that the CLI of a chosen harness lists are the models in use.
 // Without --from it asks the AA API (the key comes from where refresh-lanes.js looks for it, and is
-// never printed); with --from it reads a saved answer of the same API. It prints a short summary;
-// with --write it also writes index.json and the generated part of README.md, in docs/models (or
-// --out). The harness models come from harness-models.json next to them: what each CLI listed on a
-// date, kept as a file because the CLIs need a login and a network to list them.
+// never printed); with --from it reads a saved answer of the same API. It prints a short summary; with
+// --write it also writes models.json (the models in use, each with its scores at the efforts its harness
+// takes and its profile, and what was left out) and the generated part of README.md, in docs/models (or
+// --out). profiles.json, kept by hand, says what each model is for; a model in use without one is listed
+// and the exit code is 1. The harness models come from harness-models.json next to them: what each CLI
+// listed on a date, kept as a file because the CLIs need a login and a network to list them.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -20,8 +23,10 @@ const DEFAULT_SINCE = '2026-01-01'
 const DEFAULT_LANES = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'lanes.json')
 const DEFAULT_OUT = path.join(__dirname, '..', 'docs', 'models')
 const USAGE =
-  'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--write] [--lanes <lanes.json>] [--harness <file>] [--out <dir>]'
+  'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--harnesses agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--harness <file>] [--out <dir>]'
 const HARNESSES = ['agy', 'codex', 'grok', 'cursor']
+// The chosen harnesses, whose models the index keeps. Another comes in with --harnesses once its listing is in harness-models.json.
+const DEFAULT_HARNESSES = ['agy', 'grok']
 const LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 // From the least to the most effort. default is a reasoning model with no level named, and none is
 // the harness's word for no reasoning; both sit under the named levels.
@@ -30,16 +35,32 @@ const ORDER = ['non-reasoning-low', 'non-reasoning', 'non-reasoning-medium', 'no
 const SUFFIX = /-(non-reasoning-low-effort|non-reasoning|reasoning|adaptive|minimal|low|medium|high|xhigh|max)$/
 // The ends of a harness model id that carry the effort, for the harnesses that put it in the id.
 const EFFORT_TOKEN = /-(extra-high|xhigh|none|minimal|low|medium|high|max)$/
-const RULE =
-  "A slug ending in -minimal, -low, -medium, -high, -xhigh, -max, -adaptive, -reasoning or -non-reasoning joins the family of the slug without it when its name names that effort in parentheses and the slug without it is not another model's; a date stamp or any other word stays in the family slug, so each dated release is a family of its own."
+// The three rules of the folder, written into models.json. What marks a family current: of the families of
+// one line, the one released last. A line is the creator and the slug without its version and date numbers
+// (and without "preview"), so claude-sonnet-5 and claude-sonnet-5-5 are one line, and a size (31b) or a tier
+// (flash-lite) is not a version and makes a line of its own.
+const RULES = {
+  newest: 'Only the newest generation of each line is used (Sonnet 5.5, not Sonnet 5); the older ones are superseded.',
+  offered: 'Only a model the CLI of a chosen harness lists is in, whatever Artificial Analysis lists; a model only the lane table names is not offered.',
+  profiled: "Every model has a profile written from its maker's pages, with its sources and the date checked; without one the build exits 1.",
+}
+// How to capture the listing of each harness into harness-models.json.
+const CAPTURE = {
+  agy: 'with `agy models`',
+  codex: 'from the `models` of ~/.codex/models_cache.json (codex has no command that lists them)',
+  grok: 'with `grok models`',
+  cursor: 'with `cursor-agent --list-models`',
+}
 const NO_ENTRY = 'no Artificial Analysis entry'
 const README_START = '<!-- models-index:start -->'
 const README_END = '<!-- models-index:end -->'
 
-// The index: the families released since `since`, each with its effort variants and the harness
-// models that reach it, and the harness models no family took. `models` is the AA list as the API
-// gives it; nothing here reads a file or the network.
-function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels = {}, generatedAt = null } = {}) {
+// The index: the families released since `since` that a chosen harness offers, each with its effort
+// variants and the harness models that reach it, and the harness models no family took. `models` is
+// the AA list as the API gives it; nothing here reads a file or the network. `offeredOnly: false`
+// keeps every released family, offered or not (the grouping rules do not depend on it).
+function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels = {}, generatedAt = null, harnesses = DEFAULT_HARNESSES, offeredOnly = true } = {}) {
+  harnesses = HARNESSES.filter((name) => harnesses.includes(name))
   const all = groupFamilies(models)
   const families = new Map()
   for (const [key, entries] of all) {
@@ -47,8 +68,15 @@ function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels =
     if (family) families.set(key, family)
   }
 
+  // A model is in the index when the harness's own CLI lists it. A model only the lane table names is not offered.
   const unmatched = []
-  for (const entry of harnessEntries(lanes, harnessModels)) {
+  const notOffered = []
+  for (const entry of harnessEntries(lanes, harnessModels, harnesses)) {
+    if (entry.detail.listing === 'not-listed') {
+      const listedBy = harnessModels.harnesses?.[entry.harness]?.listedBy ?? `${entry.harness}'s CLI`
+      notOffered.push({ harness: entry.harness, model: entry.model, roles: entry.detail.roles, reason: `named by the lane table, and not listed by ${listedBy}` })
+      continue
+    }
     const found = findFamily(entry.model, all)
     const family = found && families.get(found.key)
     if (family) {
@@ -61,20 +89,24 @@ function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels =
     }
   }
 
-  const list = [...families.values()].sort((a, b) => compare(b.releaseDate, a.releaseDate) || compare(a.family, b.family))
+  // The lines are read among every family AA lists, so a family a newer generation replaced is superseded
+  // even when no harness offers the newer one. Only the families a harness offers are kept.
+  const released = [...families.values()].sort((a, b) => compare(b.releaseDate, a.releaseDate) || compare(a.family, b.family))
+  markCurrent(released)
+  const list = offeredOnly ? released.filter((family) => family.available.length > 0) : released
   return {
     generatedAt,
     source: MODELS_URL,
     since,
+    harnesses,
+    releasedCount: released.length,
     count: list.length,
+    currentCount: list.filter((family) => family.current).length,
     variantCount: list.reduce((sum, family) => sum + family.variants.length, 0),
-    rule: RULE,
-    harnessListings: {
-      capturedAt: harnessModels.capturedAt ?? null,
-      listedBy: Object.fromEntries(HARNESSES.map((name) => [name, harnessModels.harnesses?.[name]?.listedBy ?? null])),
-    },
+    listedOn: harnessModels.capturedAt ?? null,
     families: list,
     unmatched,
+    notOffered,
   }
 }
 
@@ -169,6 +201,9 @@ function familyRecord(key, entries, since) {
     name: bare.stem,
     creator: bare.creator,
     releaseDate: earliest(released),
+    line: null,
+    current: true,
+    supersededBy: null,
     variants: released.map(variantRecord),
     available: [],
   }
@@ -186,6 +221,31 @@ function variantRecord(entry) {
     priceOutput: measured(entry.pricing.price_1m_output_tokens, 4),
     tokensPerSecond: measured(entry.tokensPerSecond, 1),
     ttftSeconds: measured(entry.ttftSeconds, 2),
+  }
+}
+
+// The line a family belongs to, written without the creator.
+function lineOf(family) {
+  const words = family.family.split('-').filter((word) => !/^\d+$/.test(word) && word !== 'preview')
+  return words.join('-')
+}
+
+// Sets line, current and supersededBy on each family, in place. The newest of a line is the one released last
+// (the lower slug on a tie); the others name it in supersededBy.
+function markCurrent(list) {
+  const lines = new Map()
+  for (const family of list) {
+    const key = `${family.creator ?? 'Unknown'}|${lineOf(family)}`
+    if (!lines.has(key)) lines.set(key, [])
+    lines.get(key).push(family)
+  }
+  for (const members of lines.values()) {
+    const newest = [...members].sort((a, b) => compare(b.releaseDate, a.releaseDate) || compare(a.family, b.family))[0]
+    for (const family of members) {
+      family.line = lineOf(family)
+      family.current = family === newest
+      family.supersededBy = family === newest ? null : newest.family
+    }
   }
 }
 
@@ -219,9 +279,9 @@ function compare(a, b) {
 
 // The models each harness offers, as listed by its CLI and as named by the lane table, one entry
 // per model in harness order. `detail` is what the index records about it.
-function harnessEntries(lanes, listings) {
+function harnessEntries(lanes, listings, harnesses = HARNESSES) {
   const entries = []
-  for (const harness of HARNESSES) {
+  for (const harness of HARNESSES.filter((name) => harnesses.includes(name))) {
     const listing = listings.harnesses?.[harness] ?? {}
     const lane = lanes.harnesses?.[harness]?.models ?? {}
     const effortVia = listing.effortVia ?? null
@@ -245,6 +305,7 @@ function harnessEntries(lanes, listings) {
           listing: found.listing,
           inLaneTable,
           roles: entry?.roles ?? [],
+          replaces: entry?.replaces ?? null,
           levels: entry?.levels ?? null,
           aaSlug: entry?.aa?.slug ?? null,
         },
@@ -334,119 +395,212 @@ function findFamily(model, all) {
   return null
 }
 
-// JSON with a two-space indent, where each record that holds no list of records (a variant, an
-// available entry, an unmatched entry) is on one line, so a grep finds the whole record.
+// JSON with a two-space indent, where an object or a list that fits in 150 characters is on one line, so a
+// grep finds a whole record (a score, a price) and a longer one is a line per key.
 function serialize(value, depth = 0) {
+  const flat = JSON.stringify(value)
+  if (value === null || typeof value !== 'object' || flat.length <= 150) return flat
   const pad = '  '.repeat(depth)
-  if (Array.isArray(value)) {
-    if (value.length === 0) return '[]'
-    const items = value.map((item) => (isFlat(item) ? JSON.stringify(item) : serialize(item, depth + 1)))
-    return `[\n${items.map((item) => `${pad}  ${item}`).join(',\n')}\n${pad}]`
-  }
-  if (value !== null && typeof value === 'object') {
-    const keys = Object.keys(value)
-    if (keys.length === 0) return '{}'
-    return `{\n${keys.map((key) => `${pad}  ${JSON.stringify(key)}: ${serialize(value[key], depth + 1)}`).join(',\n')}\n${pad}}`
-  }
-  return JSON.stringify(value)
+  const list = Array.isArray(value)
+  const parts = list
+    ? value.map((item) => serialize(item, depth + 1))
+    : Object.keys(value).map((key) => `${JSON.stringify(key)}: ${serialize(value[key], depth + 1)}`)
+  return `${list ? '[' : '{'}\n${parts.map((part) => `${pad}  ${part}`).join(',\n')}\n${pad}${list ? ']' : '}'}`
 }
 
-function isFlat(value) {
-  if (value === null || typeof value !== 'object') return true
-  if (Array.isArray(value)) return value.every(isFlat)
-  return Object.values(value).every((item) => !(Array.isArray(item) && item.some((entry) => entry !== null && typeof entry === 'object')))
+// models.json: the models in use, which are the current families a chosen harness offers, one entry per
+// harness model, each with the scores of the efforts that harness takes and its profile (what its maker
+// says it is for); and what was left out, with why. A session reads this to choose a model.
+function buildModels(index, profiles = {}) {
+  const profileOf = (key) => profiles[key] ?? null
+  const laneOf = (entry) => (entry.inLaneTable ? { roles: entry.roles, replaces: entry.replaces } : null)
+  const byHarness = (a, b) => HARNESSES.indexOf(a.harness) - HARNESSES.indexOf(b.harness)
+
+  const models = []
+  for (const family of index.families.filter((entry) => entry.current)) {
+    const profile = profileOf(family.family)
+    for (const offer of family.available) {
+      models.push({
+        harness: offer.harness,
+        model: offer.model,
+        family: family.family,
+        name: family.name,
+        maker: profile?.maker ?? family.creator,
+        released: family.releaseDate,
+        effortVia: offer.effortVia,
+        efforts: offer.efforts,
+        ...(offer.ids ? { ids: offer.ids } : {}),
+        ...(offer.fastIds ? { fastIds: offer.fastIds } : {}),
+        scores: offeredVariants(family, [offer]).map(scoreRecord),
+        lane: laneOf(offer),
+        profile: profileRecord(profile),
+      })
+    }
+  }
+
+  // The offered models AA has no entry for: they have no figures, and the lane table may not name them.
+  const withoutFigures = index.unmatched
+    .filter((entry) => entry.reason === NO_ENTRY)
+    .map((entry) => ({
+      harness: entry.harness,
+      model: entry.model,
+      name: profileOf(entry.model)?.name ?? entry.model,
+      maker: profileOf(entry.model)?.maker ?? null,
+      effortVia: entry.effortVia,
+      efforts: entry.efforts,
+      lane: laneOf(entry),
+      note: `offered, with ${NO_ENTRY}, so no figures${entry.inLaneTable ? '' : '; not a lane: the lane table does not list it'}`,
+      profile: profileRecord(profileOf(entry.model)),
+    }))
+  const notOffered = index.notOffered.map((entry) => ({
+    harness: entry.harness,
+    model: entry.model,
+    name: profileOf(entry.model)?.name ?? entry.model,
+    maker: profileOf(entry.model)?.maker ?? null,
+    roles: entry.roles,
+    reason: entry.reason,
+    profile: profileRecord(profileOf(entry.model)),
+  }))
+
+  // A superseded model is named by the id its harness lists, and by the successor's id on the same harness when it offers one.
+  const superseded = index.families
+    .filter((family) => !family.current)
+    .flatMap((family) => {
+      const successor = index.families.find((other) => other.family === family.supersededBy)
+      return family.available.map((offer) => ({
+        harness: offer.harness,
+        id: offer.model,
+        supersededBy: successor?.available.find((other) => other.harness === offer.harness)?.model ?? family.supersededBy,
+      }))
+    })
+  const outOfScope = index.unmatched.filter((entry) => entry.reason !== NO_ENTRY).map(({ harness, model, reason }) => ({ harness, model, reason }))
+
+  return {
+    generatedAt: index.generatedAt,
+    source: index.source,
+    harnesses: index.harnesses,
+    since: index.since,
+    listedOn: index.listedOn,
+    rules: RULES,
+    models: models.sort(byHarness),
+    notOffered,
+    withoutFigures,
+    superseded: superseded.sort(byHarness),
+    outOfScope,
+  }
 }
 
-// The part of README.md that comes from the index: the tables by creator, what our harnesses
-// reach, and what they offer that no family took.
-function renderGenerated(index) {
+// The scores of a variant as models.json keeps them: AA's slug and label are in the index, not here.
+function scoreRecord(variant) {
+  return {
+    effort: variant.effort,
+    intelligence: variant.intelligence,
+    ...(variant.coding === null ? {} : { coding: variant.coding }),
+    terminalBench: variant.terminalBench,
+    priceInput: variant.priceInput,
+    priceOutput: variant.priceOutput,
+    tokensPerSecond: variant.tokensPerSecond,
+    ttftSeconds: variant.ttftSeconds,
+  }
+}
+
+// The part of a profile that goes into models.json; the name and the maker are fields of the model itself.
+const PROFILE_FIELDS = ['purpose', 'contextTokens', 'maxOutputTokens', 'defaultEffort', 'price', 'knowledgeCutoff', 'availability', 'caveats', 'sources', 'checked']
+function profileRecord(profile) {
+  return profile ? Object.fromEntries(PROFILE_FIELDS.map((field) => [field, profile[field] ?? null])) : null
+}
+
+// The variants of a family whose effort one of the offers takes. When none matches (AA names no level, or
+// names others than the harness does), all of them: the figures are then the family's, not a harness's.
+function offeredVariants(family, offers = family.available) {
+  const taken = new Set(offers.flatMap((entry) => entry.efforts))
+  const offered = family.variants.filter((variant) => taken.has(variant.effort))
+  return offered.length > 0 ? offered : family.variants
+}
+
+// The part of README.md that comes from models.json: the rules, a table of the models in use, what each
+// is for, and what was left out.
+function renderGenerated(file) {
   const lines = [
-    '## Families by creator',
+    '## Rules',
     '',
-    `${index.count} families and ${index.variantCount} variants released since ${index.since}, generated on ${index.generatedAt} from ${index.source}; ` +
-      `harness models as listed on ${index.harnessListings.capturedAt}. ` +
-      'Best intelligence and best terminal-bench name the effort that scored it (the lowest, on a tie). Price and tokens/s are of the best-intelligence variant when it has them, else of the highest effort that does. `*` after a harness: the model is in the lane table.',
+    ...Object.values(file.rules).map((rule, at) => `${at + 1}. ${rule}`),
+    '',
+    '## Models in use',
+    '',
+    '| Model | Harness | Efforts taken | Intelligence | Terminal-bench | $/M in/out | Tokens/s |',
+    '|---|---|---|---:|---:|---:|---:|',
+    ...file.models.map(tableRow),
+    '',
+    `Generated on ${file.generatedAt} from ${file.source}; the harnesses' listings are of ${file.listedOn}. Scores are at the highest effort the harness takes that AA scored (\`models.json\` has each effort); \`*\`: in the lane table.`,
+    '',
+    "## What each is for (`profiles.json`, from the maker's pages)",
+    '',
+    ...file.models.map((entry) => profileLine(entry, null)),
+    ...file.withoutFigures.map((entry) => profileLine(entry, 'no figures')),
+    ...file.notOffered.map((entry) => profileLine(entry, 'not offered')),
+    '',
+    '## Left out',
     '',
   ]
-  const byCreator = new Map()
-  for (const family of index.families) {
-    const creator = family.creator ?? 'Unknown'
-    if (!byCreator.has(creator)) byCreator.set(creator, [])
-    byCreator.get(creator).push(family)
-  }
-  for (const creator of [...byCreator.keys()].sort((a, b) => compare(a.toLowerCase(), b.toLowerCase()))) {
-    const rows = byCreator.get(creator)
-    lines.push(
-      `| ${cell(creator)} (${rows.length}) | Released | Efforts | Best intelligence | Best terminal-bench | $/M in/out | Tokens/s | Reached through |`,
-      '|---|---|---|---:|---:|---:|---:|---|',
-    )
-    for (const family of rows) lines.push(familyRow(family))
-    lines.push('')
-  }
-
-  const reachable = index.families.filter((family) => family.available.length > 0)
-  lines.push(
-    '## Reachable through our harnesses',
-    '',
-    `${reachable.length} of the ${index.count} families, newest first, with each harness model and the efforts it takes. ` +
-      '`*` is in the lane table. A match is exact unless it says otherwise: `~` is a guess (a rewritten name), and a note says when the CLI does not list the model. ' +
-      'On agy and Cursor the effort is part of the id (`ids` in index.json has each one); on codex and grok it is a flag.',
-    '',
-  )
-  for (const family of reachable) {
-    const entries = family.available.map((entry) => {
-      const notes = [
-        entry.match === 'guess' ? '~' : '',
-        entry.listing === 'hidden' ? ' (hidden)' : entry.listing === 'not-listed' ? ' (not listed by the CLI)' : '',
-        entry.fastIds ? ' +fast' : '',
-      ].join('')
-      return `${entry.harness}${entry.inLaneTable ? '*' : ''} \`${entry.model}\`${notes} ${entry.efforts.join('/') || '–'}`
-    })
-    lines.push(`- ${cell(family.name)} \`${family.family}\`: ${entries.join('; ')}`)
-  }
-
-  lines.push('', '## Harness models no family took', '')
-  for (const harness of HARNESSES) {
-    const own = index.unmatched.filter((entry) => entry.harness === harness)
-    if (own.length === 0) continue
-    const none = own.filter((entry) => entry.reason === NO_ENTRY).map((entry) => `\`${entry.model}\``)
-    const old = own.filter((entry) => entry.reason !== NO_ENTRY).map((entry) => `\`${entry.model}\``)
-    const parts = []
-    if (none.length > 0) parts.push(`no AA entry: ${none.join(', ')}`)
-    if (old.length > 0) parts.push(`released before ${index.since}: ${old.join(', ')}`)
-    lines.push(`- ${harness}: ${parts.join('; ')}`)
+  const left = [
+    ['Not offered', file.notOffered.map((entry) => `${entry.harness} \`${entry.model}\`${entry.roles.length > 0 ? ` (${entry.roles.join(', ')})` : ''}: ${entry.reason}`)],
+    ['No figures', file.withoutFigures.map((entry) => `${entry.harness} \`${entry.model}\`: ${entry.note}`)],
+    ['Superseded, not to be used', supersededGroups(file.superseded)],
+    ['Out of scope', file.outOfScope.map((entry) => `${entry.harness} \`${entry.model}\`: ${entry.reason}`)],
+  ]
+  for (const [title, items] of left) {
+    if (items.length > 0) lines.push(`- ${title}: ${items.join('; ')}.`)
   }
   return lines.join('\n')
 }
 
-function familyRow(family) {
-  const best = (field) => {
-    let top = null
-    for (const variant of family.variants) {
-      if (variant[field] !== null && (top === null || variant[field] > top[field])) top = variant
-    }
-    return top
+// The superseded models as "harness `old`, `older` by `new`", one group per harness and successor.
+function supersededGroups(superseded) {
+  const groups = new Map()
+  for (const old of superseded) {
+    const key = `${old.harness} ${old.supersededBy}`
+    if (!groups.has(key)) groups.set(key, { harness: old.harness, by: old.supersededBy, ids: [] })
+    groups.get(key).ids.push(`\`${old.id}\``)
   }
-  const bestIntelligence = best('intelligence')
-  const bestTerminal = best('terminalBench')
-  const byEffortDesc = [...family.variants].reverse()
-  const priced = [bestIntelligence, ...byEffortDesc].find((variant) => variant && variant.priceInput !== null && variant.priceOutput !== null)
-  const timed = [bestIntelligence, ...byEffortDesc].find((variant) => variant && variant.tokensPerSecond !== null)
-  const several = family.variants.length > 1
-  const scored = (variant, field) => (variant ? `${variant[field]}${several ? ` (${variant.effort})` : ''}` : '–')
-  const reached = HARNESSES.filter((name) => family.available.some((entry) => entry.harness === name)).map((name) =>
-    family.available.some((entry) => entry.harness === name && entry.inLaneTable) ? `${name}*` : name,
-  )
+  return [...groups.values()].map((group) => `${group.harness} ${group.ids.join(', ')} by \`${group.by}\``)
+}
+
+// A model as a row of the table: its figures are those of the highest effort its harness takes that AA scored;
+// price and speed come from that effort, or from the nearest below it that has them.
+function tableRow(entry) {
+  const down = [...entry.scores].reverse()
+  const top = down.find((score) => score.intelligence !== null) ?? down[0]
+  const below = top ? down.slice(down.indexOf(top)) : []
+  const priced = below.find((score) => score.priceInput !== null && score.priceOutput !== null)
+  const timed = below.find((score) => score.tokensPerSecond !== null)
+  const figure = (value) => (value === null || value === undefined ? '–' : String(value))
   return [
-    `${cell(family.name)} \`${family.family}\``,
-    family.releaseDate,
-    family.variants.map((variant) => variant.effort).join(', '),
-    scored(bestIntelligence, 'intelligence'),
-    scored(bestTerminal, 'terminalBench'),
+    `${cell(entry.name)} \`${entry.model}\``,
+    `${entry.harness}${entry.lane ? '*' : ''}`,
+    entry.efforts.join(', ') || '–',
+    figure(top?.intelligence),
+    figure(top?.terminalBench),
     priced ? `${priced.priceInput} / ${priced.priceOutput}` : '–',
-    timed ? String(timed.tokensPerSecond) : '–',
-    reached.join(', ') || '–',
+    figure(timed?.tokensPerSecond),
   ].reduce((row, value) => `${row} ${value} |`, '|')
+}
+
+// A model as a line of the README: what it is for, its limits, price and where it runs.
+function profileLine(entry, state) {
+  const head = `- **${cell(entry.name)}** \`${entry.model}\` (${[entry.harness, state].filter(Boolean).join(', ')})`
+  const profile = entry.profile
+  if (!profile) return `${head}: **no profile: read the maker's page and add it to profiles.json**`
+  const tokens = (count) => (count === null || count === undefined ? '–' : count >= 1e6 ? `${Number((count / 1e6).toFixed(2))}M` : `${Math.round(count / 1000)}K`)
+  const price = profile.price && profile.price.input !== null ? `$${profile.price.input} / $${profile.price.output} per M` : "price: the host's"
+  const facts = [
+    `context ${tokens(profile.contextTokens)}, output ${tokens(profile.maxOutputTokens)}`,
+    `default effort ${profile.defaultEffort ?? '–'}`,
+    price,
+    `cutoff ${profile.knowledgeCutoff ?? '–'}`,
+  ].join('; ')
+  const caveats = (profile.caveats ?? []).map((text) => ` ${text}`).join('')
+  return `${head}, ${entry.maker}: ${profile.purpose} ${facts}. ${profile.availability}${caveats} (checked ${profile.checked})`
 }
 
 function cell(text) {
@@ -478,16 +632,20 @@ function readJson(file) {
 }
 
 function parseArgs(argv) {
-  const args = { from: null, since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, harness: null, out: DEFAULT_OUT }
-  const flags = { '--from': 'from', '--since': 'since', '--lanes': 'lanes', '--harness': 'harness', '--out': 'out' }
+  const args = { from: null, since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, harness: null, out: DEFAULT_OUT, harnesses: DEFAULT_HARNESSES.join(','), profiles: null }
+  const flags = { '--from': 'from', '--since': 'since', '--lanes': 'lanes', '--harness': 'harness', '--harnesses': 'harnesses', '--profiles': 'profiles', '--out': 'out' }
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--write') args.write = true
     else if (flags[argv[i]] && i + 1 < argv.length) args[flags[argv[i]]] = argv[++i]
     else return null
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(args.since)) return null
+  args.harnesses = args.harnesses.split(',').map((name) => name.trim().toLowerCase()).filter((name) => name !== '')
+  if (args.harnesses.length === 0 || !args.harnesses.every((name) => HARNESSES.includes(name))) return null
+  args.harnesses = HARNESSES.filter((name) => args.harnesses.includes(name))
   args.out = path.resolve(args.out)
   args.harness = path.resolve(args.harness ?? path.join(args.out, 'harness-models.json'))
+  args.profiles = path.resolve(args.profiles ?? path.join(args.out, 'profiles.json'))
   args.lanes = path.resolve(args.lanes)
   return args
 }
@@ -496,14 +654,17 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   const args = parseArgs(argv)
   if (!args) return { exitCode: 2, stdout: `${USAGE}\n` }
 
-  let lanes, harnessModels, body
+  let lanes, harnessModels, profiles, body
   try {
     lanes = readJson(args.lanes)
     harnessModels = readJson(args.harness)
+    profiles = readProfiles(args.profiles)
     if (args.from) body = readJson(path.resolve(args.from))
   } catch (err) {
     return { exitCode: 1, stdout: `${err.message}\n` }
   }
+  const unlisted = missingListings(harnessModels, args.harnesses)
+  if (unlisted.length > 0) return { exitCode: 1, stdout: `${unlisted.join('\n')}\n` }
   if (!args.from) {
     const key = keyFrom(env, envFileFor(env, envFile))
     if (!key) {
@@ -522,21 +683,53 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   if (!models) return { exitCode: 1, stdout: 'Artificial Analysis gave no list of models.\n' }
 
   const generatedAt = localDate(new Date(now()))
-  const index = buildIndex(models, { since: args.since, lanes, harnessModels, generatedAt })
+  const index = buildIndex(models, { since: args.since, lanes, harnessModels, generatedAt, harnesses: args.harnesses })
 
+  const file = buildModels(index, profiles)
+  const missing = missingProfiles(file)
   let stdout = summary(index)
+  if (missing.length > 0) {
+    stdout += `Without a profile (${missing.length}): ${missing.join(', ')}. Read each maker's page and add it to ${args.profiles}.\n`
+  }
+  const exitCode = missing.length > 0 ? 1 : 0
   if (args.write) {
     const readmeFile = path.join(args.out, 'README.md')
     const existing = fs.existsSync(readmeFile) ? fs.readFileSync(readmeFile, 'utf8') : null
-    const readme = mergeReadme(existing, renderGenerated(index))
+    const readme = mergeReadme(existing, renderGenerated(file))
     if (readme === null) return { exitCode: 1, stdout: `${readmeFile} has no ${README_START} and ${README_END} lines to write between.\n` }
     fs.mkdirSync(args.out, { recursive: true })
-    const indexFile = path.join(args.out, 'index.json')
-    fs.writeFileSync(indexFile, `${serialize(index)}\n`)
+    const modelsFile = path.join(args.out, 'models.json')
+    fs.writeFileSync(modelsFile, `${serialize(file)}\n`)
     fs.writeFileSync(readmeFile, readme)
-    stdout += `written to ${indexFile} and ${readmeFile}\n`
+    stdout += `written to ${modelsFile} and ${readmeFile}\n`
   }
-  return { exitCode: 0, stdout }
+  return { exitCode, stdout }
+}
+
+// The profiles of a profiles.json text's object, or {} when the file is not there.
+function readProfiles(file) {
+  if (!fs.existsSync(file)) return {}
+  const data = readJson(file)
+  return data && typeof data.profiles === 'object' && data.profiles !== null ? data.profiles : {}
+}
+
+// What of models.json has no profile, as the keys to research and add to profiles.json: a model in use is
+// keyed by its family, the others by their harness model id.
+function missingProfiles(file) {
+  const keys = [
+    ...file.models.filter((entry) => entry.profile === null).map((entry) => entry.family),
+    ...file.withoutFigures.filter((entry) => entry.profile === null).map((entry) => entry.model),
+    ...file.notOffered.filter((entry) => entry.profile === null).map((entry) => entry.model),
+  ]
+  return [...new Set(keys)]
+}
+
+// One line per chosen harness that has no listing in harness-models.json: a harness with none would be read as
+// offering nothing, and the index would be empty of it without a word.
+function missingListings(listings, harnesses) {
+  return harnesses
+    .filter((name) => !Array.isArray(listings.harnesses?.[name]?.models))
+    .map((name) => `no listing captured for ${name}: capture it ${CAPTURE[name]} and add it to harness-models.json`)
 }
 
 // The date as the person running the script reads it (the local one, not UTC's).
@@ -546,19 +739,23 @@ function localDate(date) {
 }
 
 function summary(index) {
-  const reached = HARNESSES.map((name) => {
+  const reached = index.harnesses.map((name) => {
     const count = index.families.filter((family) => family.available.some((entry) => entry.harness === name)).length
     return `${name} ${count}`
   })
-  const unmatched = index.unmatched.map((entry) => `${entry.harness}/${entry.model}`)
+  const named = (entries) => entries.map((entry) => `${entry.harness}/${entry.model}`).join(', ') || 'none'
+  const noFigures = index.unmatched.filter((entry) => entry.reason === NO_ENTRY)
+  const outOfScope = index.unmatched.filter((entry) => entry.reason !== NO_ENTRY)
   return (
-    `${index.count} families, ${index.variantCount} variants released since ${index.since}.\n` +
-    `Reached by harness (families): ${reached.join(', ')}.\n` +
-    `Unmatched harness models (${unmatched.length}): ${unmatched.join(', ') || 'none'}.\n`
+    `${index.count} families (${index.variantCount} variants) are offered by ${index.harnesses.join(', ')}, of the ${index.releasedCount} released since ${index.since}; ${index.currentCount} are current.\n` +
+    `Offered by harness (families): ${reached.join(', ')}.\n` +
+    `Offered with no figures (${noFigures.length}): ${named(noFigures)}.\n` +
+    `Offered and out of scope, released before ${index.since} (${outOfScope.length}): ${named(outOfScope)}.\n` +
+    `Named by the lane table and not offered (${index.notOffered.length}): ${named(index.notOffered)}.\n`
   )
 }
 
-module.exports = { buildIndex, renderGenerated, mergeReadme, serialize, findFamily, splitId, main }
+module.exports = { buildIndex, buildModels, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, readProfiles, main }
 
 if (require.main === module) {
   main(process.argv.slice(2)).then(({ exitCode, stdout }) => {

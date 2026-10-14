@@ -1,0 +1,128 @@
+{
+  "about": "What each model is for, as its maker says it, so an orchestrator knows which model it is using. Written by hand from the maker's own pages (sources), never from memory or from the scores. A model in models.json without an entry here fails the test. Keys: the AA family key when there is one, else the harness model id. `purpose` quotes the maker; `caveats` is what the maker's pages do not settle. models.json copies every field but name, maker, inputs, outputs and efforts.",
+  "checked": "2026-10-13",
+  "profiles": {
+    "claude-sonnet-5-5": {
+      "name": "Claude Sonnet 5.5",
+      "maker": "Anthropic",
+      "purpose": "\"The best combination of speed and intelligence.\" Comparative latency: fast.",
+      "contextTokens": 1000000,
+      "maxOutputTokens": 128000,
+      "inputs": ["text","image"],
+      "outputs": ["text"],
+      "defaultEffort": "high",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": {"input":2,"output":10,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
+      "knowledgeCutoff": "2026-06",
+      "availability": "Claude API id claude-sonnet-5-5; not retired before 2027-09-28. Through agy it takes low, medium and high only.",
+      "caveats": ["Adaptive thinking: the model decides how much to think, steered by effort."],
+      "sources": ["https://platform.claude.com/docs/en/models/overview"],
+      "checked": "2026-10-13"
+    },
+    "claude-opus-5-5": {
+      "name": "Claude Opus 5.5",
+      "maker": "Anthropic",
+      "purpose": "\"For long-running agentic coding and knowledge work.\" Anthropic's advice: start here for most workloads, and move to Fable 5.1 when evals on Opus 5.5 at higher effort still fall short. Comparative latency: moderate.",
+      "contextTokens": 1000000,
+      "maxOutputTokens": 128000,
+      "inputs": ["text","image"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": {"input":4,"output":20,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
+      "knowledgeCutoff": "2026-06",
+      "availability": "Claude API id claude-opus-5-5; not retired before 2027-09-22. Through agy it takes low, medium and high only.",
+      "caveats": ["Thinking is always on (adaptive)."],
+      "sources": ["https://platform.claude.com/docs/en/models/overview"],
+      "checked": "2026-10-13"
+    },
+    "gemini-3-8-flash": {
+      "name": "Gemini 3.8 Flash",
+      "maker": "Google",
+      "purpose": "\"Google's most intelligent Flash model, engineered for long-horizon software engineering, autonomous agents, and complex enterprise workflows.\"",
+      "contextTokens": 1048576,
+      "maxOutputTokens": 65536,
+      "inputs": ["text","image","video","audio","pdf"],
+      "outputs": ["text"],
+      "defaultEffort": null,
+      "efforts": ["low","medium","high"],
+      "price": {"input":0.75,"output":3.75,"note":"per million tokens, from OpenRouter and Artificial Analysis; Google's model page does not state a price"},
+      "knowledgeCutoff": null,
+      "availability": "Gemini API id gemini-3.8-flash, stable. On agy it is offered at low, medium and high.",
+      "caveats": ["The effort `minimal` is not supported and returns an error.","Knowledge cutoff and price are not on Google's model page."],
+      "sources": ["https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash","https://ai.google.dev/gemini-api/docs/models"],
+      "checked": "2026-10-13"
+    },
+    "gemini-4-argon": {
+      "name": "Gemini 4 Argon",
+      "maker": "Google",
+      "purpose": "A flagship reasoning model, with a unified 1M context window and long decodes up to 1M tokens.",
+      "contextTokens": 1000000,
+      "maxOutputTokens": 1000000,
+      "inputs": [],
+      "outputs": [],
+      "defaultEffort": null,
+      "efforts": [],
+      "price": {
+        "input": 2,
+        "output": 10,
+        "note": "per million tokens through 2026-11-30, and according to press reports double from 2026-12-01; Artificial Analysis lists 2 and 10"
+      },
+      "knowledgeCutoff": null,
+      "availability": "Stable in the Gemini API (id gemini-4-argon). Rolled out on 2026-10-13 to Google AI Pro and Ultra in the Gemini app. In Antigravity (agy) the press says AI Ultra only; `agy models` does not list it on the owner's plan (Pro). The owner expects it for Pro soon.",
+      "caveats": [
+        "Not offered on agy yet, so the design seats that name it fall back to the native agent.",
+        "Inputs, outputs, effort levels and cutoff are not on the pages read."
+      ],
+      "sources": ["https://ai.google.dev/gemini-api/docs/models","https://www.androidpolice.com/gemini-4-argon-available-pro-ultra-subscribers/"],
+      "checked": "2026-10-13"
+    },
+    "grok-4-7": {
+      "name": "Grok 4.7",
+      "maker": "xAI (SpaceXAI)",
+      "purpose": "\"Frontier model, built for coding, agentic tasks, and knowledge work.\" The default model of Grok Build.",
+      "contextTokens": 500000,
+      "maxOutputTokens": null,
+      "inputs": ["text","image"],
+      "outputs": ["text"],
+      "defaultEffort": "high",
+      "efforts": ["low","medium","high","xhigh"],
+      "price": {
+        "input": 2,
+        "output": 6,
+        "note": "per million tokens on the xAI API; cached input and long-context rates are not on the docs page; the US regional endpoint adds 10%"
+      },
+      "knowledgeCutoff": "2026-05",
+      "availability": "xAI API (id grok-4.7), Grok Build (default), Cursor on all plans, OpenRouter, Vercel and Cloudflare gateways.",
+      "caveats": ["The docs say there is no text output limit.","Artificial Analysis measured low, high and xhigh, not medium."],
+      "sources": ["https://docs.x.ai/developers/grok-4-7"],
+      "checked": "2026-10-13"
+    },
+    "grok-4.7-build-fast": {
+      "name": "Grok 4.7 Fast",
+      "maker": "xAI (SpaceXAI)",
+      "purpose": "The same Grok 4.7 served on faster infrastructure: faster and dearer, not a different or smaller model.",
+      "contextTokens": 500000,
+      "maxOutputTokens": null,
+      "inputs": ["text","image"],
+      "outputs": ["text"],
+      "defaultEffort": "high",
+      "efforts": ["low","medium","high","xhigh"],
+      "price": {
+        "input": 4,
+        "output": 12,
+        "note": "2x the Grok 4.7 token rates (1.5x for long-context requests), per the docs; billed through the plan in Cursor and Grok Build, not through the API"
+      },
+      "knowledgeCutoff": "2026-05",
+      "availability": "Only in Cursor and Grok Build, billed through the plan there; not in Grok Build's free tier; not on the public xAI API.",
+      "caveats": [
+        "Not a cheap lane: it is billed through the plan at twice the token price of Grok 4.7, and the lane table does not list it.",
+        "xAI's page does not give the model id and does not mention `build-fast`: that this id is the Fast variant rests on the owner's word and on `grok models` listing it.",
+        "The docs do not state the speed multiple; third-party sites say about 2x output speed.",
+        "Artificial Analysis has no entry for it, so it has no scores here; its quality is Grok 4.7's."
+      ],
+      "sources": ["https://docs.x.ai/developers/grok-4-7"],
+      "checked": "2026-10-13"
+    }
+  }
+}
