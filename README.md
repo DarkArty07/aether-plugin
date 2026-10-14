@@ -206,7 +206,7 @@ The Lead decides as the owner's delegate, and the owner's reviews are two: the p
 - **Irreversible commands.** In an Aether session, aether-guard reads every Bash command, the agents' included. A push, a `gh pr merge`, a publish, a deploy, a forced delete or a credentials command that no grant covers is appended to `.aether/pending.jsonl`, the owner's list, with secrets in its arguments redacted. A local `git merge` is not recorded: git undoes it, and the push that would publish it is recorded. By default it only records them, while the guard is being proven; with `AETHER_IRREVERSIBLE=enforce` in the shell that starts Claude Code, it also refuses them.
 - **Autonomous runs.** The owner's permission to work for hours starts a run (`aether-autonomy start`), with ceilings of 8 hours and US$ 50 unless the owner names others. The Lead keeps a diary, keeps working while work remains, stops when done, at a ceiling or honestly, and writes a brief: what it did, decided and found, what waits for the owner's yes, what it did not finish, proposals, and time and cost.
 - **Cost.** A run's figure covers the swarm and the lanes, as `aether-report` prices them; the Lead's own turns are not added up. The time ceiling is the real guard.
-- **Permissions.** A permission prompt stops a run like a question. Start a session meant for an autonomous run with a permission mode or allow rules that cover its tools; Aether never turns permissions off. The exception is the workflow's own `aether-wt` and `aether-lane` commands, which the mod runs without the session's permission rules (see Ops without a model).
+- **Permissions.** A permission prompt stops a run like a question. Start a session meant for an autonomous run with a permission mode or allow rules that cover its tools. The plugin never turns permissions off; `scripts/aether-lead` starts the session with them bypassed, and with irreversible commands refused (see Start). The exception is the workflow's own `aether-wt` and `aether-lane` commands, which the mod runs without the session's permission rules (see Ops without a model).
 - **Files.** `.aether/autonomy/` in the repository's main checkout holds `grants.json`, and for each run `run.json`, `diary.md` and `brief.md`. Only `aether-autonomy` writes `grants.json` and `run.json`.
 
 ## Use Aether mode
@@ -228,7 +228,7 @@ Aether 0.8 no longer needs superpowers. If you keep it for other work, it still 
 
     claude --agent aether:lead --effort xhigh --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'
 
-`scripts/aether-lead` runs that command for you (see Start).
+`scripts/aether-lead` runs that command for you, with permissions bypassed (see Start).
 
 ### Start
 
@@ -238,7 +238,7 @@ Aether mode is chosen per session:
 
 The Lead is the agent `aether:lead`, which starts on Sonnet; the owner may switch with `/model`. `--effort xhigh` sets its effort, because a plugin cannot. The command is the same in every shell.
 
-To type less, `scripts/aether-lead` in a clone of this repository runs the command of Install, with superpowers turned off for the session, and passes on every argument. It is one `exec claude`, with no setup of its own, so it is the same in bash, fish and zsh. Link it once, under any name on your `PATH`:
+To type less, `scripts/aether-lead` in a clone of this repository runs the command of Install, with superpowers turned off for the session, and passes on every argument. It also starts the session with `--permission-mode bypassPermissions`, so neither the Lead nor the swarm's agents stop at a permission prompt. With no prompts, aether-guard is the only check left on a push, a merge to `main` or a forced delete, so the launcher sets `AETHER_IRREVERSIBLE=enforce`: the guard refuses an irreversible command that no grant covers, instead of only recording it. A value already set in your shell is kept, so `AETHER_IRREVERSIBLE=log aether-lead` only records them. For a session that asks before each tool call, run the command of Install instead. The launcher is one `exec claude` after that default, with no setup of its own, so it is the same in bash, fish and zsh. Link it once, under any name on your `PATH`:
 
     ln -s "$PWD/scripts/aether-lead" ~/.local/bin/aether-lead
 
@@ -294,9 +294,9 @@ A plugin cannot set these, so you do:
 | The Lead at `xhigh` | `--effort xhigh` in the start command, or `effortLevel` in the repository's settings |
 | Dynamic workflows, for the swarm | Nothing on most paid plans. On Pro, turn on Dynamic workflows in `/config` once |
 | No advisor in Aether mode (each call rereads the whole conversation, uncached) | Nothing unless you configured one. If you did, run `/advisor off` |
-| Permissions for the swarm | Allow rules for `git`, `aether-wt`, `aether-lane` and the test command, and edits under `.aether/worktrees/` |
+| Permissions for the swarm | Allow rules for `git`, `aether-wt`, `aether-lane` and the test command, and edits under `.aether/worktrees/`; `scripts/aether-lead` bypasses permissions instead |
 | superpowers off in Aether sessions, if you keep it for other work | `--settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'` in the start command |
-| Irreversible commands refused, not only recorded | `AETHER_IRREVERSIBLE=enforce` in the shell that starts Claude Code |
+| Irreversible commands refused, not only recorded | `AETHER_IRREVERSIBLE=enforce` in the shell that starts Claude Code; `scripts/aether-lead` sets it |
 | Lanes on Codex, Grok or Cursor | Their models in your copy of the lane table, `AETHER_LANES_CONFIG`, and the `harnesses` option (see Lanes) |
 | Gemini 4 Argon in the design seats | Google AI Ultra on agy, and `lanes` on (see Design seats) |
 
