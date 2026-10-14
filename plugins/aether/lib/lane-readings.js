@@ -26,12 +26,13 @@ function writeAtomic(file, value) {
   }
 }
 
-// A window whose reset has come is a window that has refilled: the reading that shows it is no longer true.
-function hasReset(groups, now) {
+// A window whose reset was ahead when the reading was taken and has come since has refilled: the reading that shows
+// it is no longer true. A reset already behind the reading was not waiting for anything, and is left alone.
+function hasReset(groups, readAt, now) {
   return Object.values(groups).some((group) =>
     Object.values(isObject(group) && isObject(group.windows) ? group.windows : {}).some((window) => {
       const resetsAt = isObject(window) && typeof window.resetsAt === 'string' ? Date.parse(window.resetsAt) : NaN
-      return resetsAt <= now
+      return resetsAt > readAt && resetsAt <= now
     }),
   )
 }
@@ -44,7 +45,7 @@ function isObject(value) {
 // When adapter.quotaCost === 'process' and quotaLifeMinutes is not 0, the reading is saved to cacheFile and served
 // while now - readAt < life and readAt <= now and the cached reading has all groups in settings.groups.
 // fresh: true always reads fresh and renews the saved reading. If adapter.quota() throws, nothing is written; if
-// the save fails, the reading is returned all the same. A saved reading with a window whose resetsAt has come is not served.
+// the save fails, the reading is returned all the same. A saved reading with a window whose reset has come since it was taken is not served.
 function readGroups(adapter, { harness, settings = {}, dataDir, now = Date.now(), fresh = false } = {}) {
   const quotaLife = settings.quotaLifeMinutes !== undefined ? settings.quotaLifeMinutes : DEFAULT_LIFE_MINUTES
   const shouldCache = adapter.quotaCost === 'process' && quotaLife > 0 && typeof dataDir === 'string'
@@ -64,7 +65,7 @@ function readGroups(adapter, { harness, settings = {}, dataDir, now = Date.now()
           now - data.readAt < lifeMs &&
           isObject(data.groups) &&
           requiredGroups.every((g) => Object.hasOwn(data.groups, g)) &&
-          !hasReset(data.groups, now)
+          !hasReset(data.groups, data.readAt, now)
         ) {
           return { groups: data.groups, readAt: data.readAt, cached: true }
         }

@@ -138,6 +138,11 @@ test('a kept reading is not served once one of its windows has reset: the group 
   const after = read(adapter, dataDir, { now: NOW + 2 * MIN })
   assert.deepEqual([after.cached, adapter.reads, after.groups.gemini.windows['5h'].remaining], [false, 2, 1])
   assert.equal(read(adapter, dataDir, { now: NOW + 3 * MIN }).cached, true, 'the new reading is kept')
+  // A reset that was already behind the reading when it was taken is not one that came since.
+  const behind = tempDir(t)
+  const stale = { quota: () => ({ groups: { gemini: ending(0.5, '2026-10-01T00:00:00Z'), claude: ending(0.5, '2026-10-01T00:00:00Z') } }), quotaCost: 'process' }
+  read(stale, behind)
+  assert.equal(read(stale, behind, { now: NOW + MIN }).cached, true)
 })
 
 test('a reading whose save fails is still returned, and the failed save leaves no temporary file', (t) => {
