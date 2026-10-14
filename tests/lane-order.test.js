@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const order = require('../plugins/aether/lib/lane-order.js')
-const { NOW, READINGS, GEMINI, CLAUDE_LOW, GROK, CASES } = require('./lane-order-cases.js')
+const { NOW, READINGS, GEMINI, CLAUDE_LOW, GROK, HALF_READING, HALF, CASES } = require('./lane-order-cases.js')
 
 const RESERVE = 0.05
 const view = (reading, extra = {}) => order.groupView(reading, { reserve: RESERVE, now: NOW, ...extra })
@@ -71,6 +71,23 @@ test('a group is usable when every window is above the reserve and no mark holds
   assert.deepEqual([marked.usable, marked.mark], [false, mark])
   // Only the longest window sets the priority; the 5 h window counts for usability alone.
   assert.equal(view(windows(0.9, 0.06)).priority, view(windows(0.9, 0.9)).priority)
+})
+
+test('a window known to be under the reserve holds its group even when another window of it has no balance (R10)', () => {
+  const half = view(HALF_READING)
+  for (const key of Object.keys(HALF)) assert.deepEqual(half[key], HALF[key], key)
+  assert.equal(order.readingUsable(HALF_READING, RESERVE), false)
+  // With the known window above the reserve, the group is used until a call fails, as when no window has a balance.
+  const windows = (weekly, fiveHour) => ({ windows: { weekly: { remaining: weekly, resetsAt: '2026-10-20T00:00:00Z' }, '5h': { remaining: fiveHour, resetsAt: '2026-10-14T10:00:00Z' } } })
+  assert.deepEqual([view(windows(0.5, null)).unknown, view(windows(0.5, null)).usable], [true, true])
+  assert.equal(order.readingUsable(windows(0.5, null), RESERVE), true)
+  // The same holds whichever window is the one with no balance, and exactly at the reserve is not above it.
+  assert.equal(view(windows(null, 0.04)).usable, false)
+  assert.equal(order.readingUsable(windows(null, 0.04), RESERVE), false)
+  assert.equal(view(windows(0.05, null)).usable, false)
+  assert.equal(order.readingUsable(windows(0.05, null), RESERVE), false)
+  // A mark holds the group in any case.
+  assert.equal(view(windows(0.5, null), { mark: { until: NOW + 1 } }).usable, false)
 })
 
 test('a reading that is missing, unknown, empty or without a balance is a group with no reading, usable until a call fails', () => {
