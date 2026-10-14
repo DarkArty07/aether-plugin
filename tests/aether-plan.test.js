@@ -249,6 +249,18 @@ test('compile gives no lanes when the harness is missing or there is no table', 
   assert.equal(compile(repo, plan([task(1)])).lanes, null)
 })
 
+// The first executable called `name` on the host's PATH.
+function onPath(name) {
+  for (const dir of process.env.PATH.split(path.delimiter)) {
+    const file = path.join(dir, name)
+    try {
+      fs.accessSync(file, fs.constants.X_OK)
+      return file
+    } catch {}
+  }
+  throw new Error(`${name} is not on the PATH`)
+}
+
 test('compile names each enabled harness that gives no call, and why, on stderr', (t) => {
   const repo = makeRepo(t)
   const md = writePlan(repo.dir, plan([task(1)]))
@@ -258,7 +270,9 @@ test('compile names each enabled harness that gives no call, and why, on stderr'
     fs.writeFileSync(path.join(bin, name), '#!/bin/sh\nexit 0\n')
     fs.chmodSync(path.join(bin, name), 0o755)
   }
-  const env = { AETHER_LANES_CONFIG: file, AETHER_LANE_HARNESSES: 'codex,agy,cursor', PATH: `${bin}${path.delimiter}${process.env.PATH}` }
+  // The PATH is the stubs and git alone: a host that has cursor-agent installed must not change what is not found.
+  fs.symlinkSync(onPath('git'), path.join(bin, 'git'))
+  const env = { AETHER_LANES_CONFIG: file, AETHER_LANE_HARNESSES: 'codex,agy,cursor', PATH: bin }
   const r = runBin(PLAN_BIN, ['compile', md], repo.dir, env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.deepEqual(r.json.lanes.harnesses, ['agy'])
