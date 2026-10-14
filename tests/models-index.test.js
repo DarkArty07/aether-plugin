@@ -245,9 +245,10 @@ test('a model only the lane table names is not offered: it is in notOffered, wit
   assert.equal(index.families.some((entry) => entry.available.some((offer) => offer.model === 'ghost-9')), false)
 })
 
-test('by default only agy and grok are read, and a model is in the index only when its CLI lists it', () => {
+test('by default the native harness and the lanes agy and grok are read, and a model is in the index only when its CLI lists it', () => {
   const index = buildIndex(RAW, { since: '2026-01-01', lanes: LANES, harnessModels: LISTINGS, generatedAt: '2026-10-13' })
-  assert.deepEqual(index.harnesses, ['agy', 'grok'])
+  // LISTINGS has no claude listing, so the native harness offers nothing here.
+  assert.deepEqual(index.harnesses, ['claude', 'agy', 'grok'])
   assert.equal(index.releasedCount, 5)
   assert.deepEqual(index.families.map((entry) => entry.family), ['acme-1'])
   assert.deepEqual(index.families[0].available.map((offer) => offer.harness), ['agy'])
@@ -348,7 +349,10 @@ test('models.json lists the current models a harness offers, one per harness mod
   // Neither the rules nor the superseded and unmatched records are repeated per model.
   assert.equal(JSON.stringify(file.models).includes('Only the newest'), false)
   assert.deepEqual(Object.keys(file.rules), ['newest', 'offered', 'profiled'])
-  assert.deepEqual([file.generatedAt, file.since, file.listedOn, file.harnesses], ['2026-10-13', '2026-01-01', '2026-10-13', ALL])
+  // The listings' day is per harness; a file with one day for all gives it to each.
+  assert.deepEqual([file.generatedAt, file.since, file.harnesses], ['2026-10-13', '2026-01-01', ALL])
+  assert.deepEqual(file.listedOn, { agy: '2026-10-13', codex: '2026-10-13', grok: '2026-10-13', cursor: '2026-10-13' })
+  assert.deepEqual(file.excluded, [])
 })
 
 test('a model is scored on the efforts its harness takes, not on every effort AA measured, and carries its ids and its lane', () => {
@@ -419,15 +423,17 @@ test('mergeReadme replaces only what is between the markers, makes a missing REA
   assert.equal(mergeReadme('# Title\nno markers\n', 'new table'), null)
 })
 
-// A directory with the inputs of a build: the raw list, the lane table, the harness listings, the profiles and a README.
-function workDir(t) {
+// A directory with the inputs of a build: the raw list, the lane table, the harness listings and the profiles
+// in `out` (where the data files go), and a README in `docs`.
+function workDir(t, { raw = RAW, lanes = LANES, listings = LISTINGS, profiles = PROFILES } = {}) {
   const dir = tempDir(t, 'models-index-')
-  fs.writeFileSync(path.join(dir, 'raw.json'), JSON.stringify(RAW))
-  fs.writeFileSync(path.join(dir, 'lanes.json'), JSON.stringify(LANES))
+  fs.writeFileSync(path.join(dir, 'raw.json'), JSON.stringify(raw))
+  fs.writeFileSync(path.join(dir, 'lanes.json'), JSON.stringify(lanes))
   fs.mkdirSync(path.join(dir, 'out'))
-  fs.writeFileSync(path.join(dir, 'out', 'harness-models.json'), JSON.stringify(LISTINGS))
-  fs.writeFileSync(path.join(dir, 'out', 'profiles.json'), JSON.stringify(PROFILES))
-  fs.writeFileSync(path.join(dir, 'out', 'README.md'), '# Mine\n\nkept\n\n<!-- models-index:start -->\nold\n<!-- models-index:end -->\n\nalso kept\n')
+  fs.mkdirSync(path.join(dir, 'docs'))
+  fs.writeFileSync(path.join(dir, 'out', 'harness-models.json'), JSON.stringify(listings))
+  fs.writeFileSync(path.join(dir, 'out', 'profiles.json'), JSON.stringify(profiles))
+  fs.writeFileSync(path.join(dir, 'docs', 'README.md'), '# Mine\n\nkept\n\n<!-- models-index:start -->\nold\n<!-- models-index:end -->\n\nalso kept\n')
   return dir
 }
 
@@ -435,7 +441,7 @@ const NOW = () => new Date(2026, 9, 13, 12, 0, 0).getTime()
 
 test('main builds from a saved list with no key, writes only with --write, and keeps the README text it did not generate', async (t) => {
   const dir = workDir(t)
-  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--harnesses', 'cursor,grok,codex,agy']
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'cursor,grok,codex,agy']
 
   const dry = await main(args, { env: {}, fetch: async () => assert.fail('no request without a key'), now: NOW })
   assert.equal(dry.exitCode, 0)
@@ -448,8 +454,10 @@ test('main builds from a saved list with no key, writes only with --write, and k
 
   const wrote = await main([...args, '--write'], { env: {}, now: NOW })
   assert.equal(wrote.exitCode, 0)
-  // One data file is written: no index.json and no current.json.
-  assert.deepEqual(fs.readdirSync(path.join(dir, 'out')).sort(), ['README.md', 'harness-models.json', 'models.json', 'profiles.json'])
+  // The three data files go to --out and the README to --docs; there is no index.json and no current.json, and no README in --out.
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'out')).sort(), ['harness-models.json', 'models.json', 'profiles.json'])
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'docs')), ['README.md'])
+  assert.match(wrote.stdout, new RegExp(`written to ${path.join(dir, 'out', 'models.json')} and ${path.join(dir, 'docs', 'README.md')}`))
   const file = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'models.json'), 'utf8'))
   assert.equal(file.generatedAt, '2026-10-13')
   assert.deepEqual(file.harnesses, ['agy', 'codex', 'grok', 'cursor'])
@@ -460,7 +468,7 @@ test('main builds from a saved list with no key, writes only with --write, and k
   assert.equal(file.models[0].profile.purpose, '"Model acme-1-5 is for tests."')
   assert.equal(file.withoutFigures[0].name, 'Model acme-1.5-build-fast')
   assert.equal(file.notOffered[0].name, 'Model ghost-9')
-  const readme = fs.readFileSync(path.join(dir, 'out', 'README.md'), 'utf8')
+  const readme = fs.readFileSync(path.join(dir, 'docs', 'README.md'), 'utf8')
   assert.ok(readme.startsWith('# Mine\n\nkept\n\n<!-- models-index:start -->\n## Rules'))
   assert.ok(readme.endsWith('<!-- models-index:end -->\n\nalso kept\n'))
   assert.ok(readme.includes('## Models in use'))
@@ -470,12 +478,12 @@ test('main builds from a saved list with no key, writes only with --write, and k
 test('a model without a profile is listed, with an exit code of 1, and is marked in the README', async (t) => {
   const dir = workDir(t)
   fs.writeFileSync(path.join(dir, 'out', 'profiles.json'), JSON.stringify({ profiles: { 'acme-1-5': profile('Acme 1.5'), 'ghost-9': profile('Ghost') } }))
-  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--harnesses', 'agy,codex,grok,cursor']
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'agy,codex,grok,cursor']
   const result = await main([...args, '--write'], { env: {}, now: NOW })
   assert.equal(result.exitCode, 1)
   assert.match(result.stdout, /Without a profile \(3\): edge-1, acme-1\.5-build-fast, auto\./)
   // The files are written all the same, so the model is in models.json and the README names what is missing.
-  assert.ok(fs.readFileSync(path.join(dir, 'out', 'README.md'), 'utf8').includes('**no profile: read the maker\'s page and add it to profiles.json**'))
+  assert.ok(fs.readFileSync(path.join(dir, 'docs', 'README.md'), 'utf8').includes('**no profile: read the maker\'s page and add it to profiles.json**'))
   assert.deepEqual(missingProfiles(buildModels(build(), {})), ['acme-1-5', 'edge-1', 'acme-1.5-build-fast', 'auto', 'ghost-9'])
   assert.deepEqual(missingProfiles(buildModels(build(), PROFILES.profiles)), [])
   assert.deepEqual(readProfiles(path.join(dir, 'nowhere.json')), {})
@@ -484,23 +492,26 @@ test('a model without a profile is listed, with an exit code of 1, and is marked
 test('a chosen harness with no listing in harness-models.json is named, with how to capture it, before anything is asked or written', async (t) => {
   const dir = workDir(t)
   fs.writeFileSync(path.join(dir, 'out', 'harness-models.json'), JSON.stringify({ capturedAt: '2026-10-13', harnesses: { agy: LISTINGS.harnesses.agy } }))
-  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--harnesses', 'agy,codex,cursor,grok']
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'claude,agy,codex,cursor,grok']
   const result = await main([...args, '--write'], { env: {}, now: NOW })
   assert.deepEqual(result, {
     exitCode: 1,
     stdout:
+      'no listing captured for claude: capture it by hand from `claude --help` (its --model aliases and its --effort levels; Claude Code has no command that lists models) and add it to harness-models.json\n' +
       'no listing captured for codex: capture it from the `models` of ~/.codex/models_cache.json (codex has no command that lists them) and add it to harness-models.json\n' +
       'no listing captured for grok: capture it with `grok models` and add it to harness-models.json\n' +
       'no listing captured for cursor: capture it with `cursor-agent --list-models` and add it to harness-models.json\n',
   })
   assert.equal(fs.existsSync(path.join(dir, 'out', 'models.json')), false)
+  assert.equal(fs.readFileSync(path.join(dir, 'docs', 'README.md'), 'utf8').includes('## Rules'), false)
   assert.deepEqual(missingListings(LISTINGS, ['agy', 'codex', 'grok', 'cursor']), [])
   assert.equal(missingListings({ harnesses: { agy: {} } }, ['agy']).length, 1)
 })
 
 test('main without --from asks the API with the key, never prints it, and says why when it cannot', async (t) => {
   const dir = workDir(t)
-  const args = ['--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out')]
+  // LISTINGS has no claude listing: this test reads the lanes.
+  const args = ['--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'agy,grok']
   const seen = []
   const fetch = async (url, init) => {
     seen.push([url, init.headers['x-api-key']])
@@ -512,8 +523,8 @@ test('main without --from asks the API with the key, never prints it, and says w
   assert.equal(live.exitCode, 0)
   assert.deepEqual(seen, [['https://artificialanalysis.ai/api/v2/data/llms/models', 'secret-key']])
   assert.equal(live.stdout.includes('secret-key'), false)
-  for (const file of ['models.json', 'README.md']) {
-    assert.equal(fs.readFileSync(path.join(dir, 'out', file), 'utf8').includes('secret-key'), false)
+  for (const file of [path.join('out', 'models.json'), path.join('docs', 'README.md')]) {
+    assert.equal(fs.readFileSync(path.join(dir, file), 'utf8').includes('secret-key'), false)
   }
 
   const none = await main(args, { env: { AETHER_DATA_DIR: dir }, fetch, now: NOW })
@@ -528,8 +539,8 @@ test('main without --from asks the API with the key, never prints it, and says w
 
 test('main refuses a README with no markers before it writes anything, and a bad date or flag is a usage error', async (t) => {
   const dir = workDir(t)
-  fs.writeFileSync(path.join(dir, 'out', 'README.md'), '# No markers here\n')
-  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out')]
+  fs.writeFileSync(path.join(dir, 'docs', 'README.md'), '# No markers here\n')
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'agy,grok']
   const refused = await main([...args, '--write'], { env: {}, now: NOW })
   assert.equal(refused.exitCode, 1)
   assert.match(refused.stdout, /has no <!-- models-index:start --> and <!-- models-index:end --> lines to write between/)
@@ -542,19 +553,184 @@ test('main refuses a README with no markers before it writes anything, and a bad
   assert.equal((await main(['--bogus'], { env: {} })).exitCode, 2)
 })
 
+
+// The native harness. A made-up maker, Zeta, with a line offered by claude (an alias, five efforts) and by agy (three
+// efforts in the id), a line the owner keeps out, a line with its own efforts, a plain-string line and a ghost AA lacks.
+const FIVE = ['low', 'medium', 'high', 'xhigh', 'max']
+const family5 = (slug, name, scores, options = {}) =>
+  FIVE.map((effort, at) =>
+    aa(effort === 'max' ? slug : `${slug}-${effort}`, `${name} (${effort[0].toUpperCase()}${effort.slice(1)})`, { creator: 'Zeta', date: '2026-09-01', intelligence: scores[at], ...options }),
+  )
+const NATIVE_RAW = [
+  ...family5('zeta-2', 'Zeta 2', [36, 41, 47, 52, 56]),
+  ...family5('zeta-big-2', 'Zeta Big 2', [47, 49, 51, 53, 53.4], { input: 10, output: 50, tps: 50 }),
+  aa('zeta-lite-1-low', 'Zeta Lite 1 (Low)', { creator: 'Zeta', intelligence: 20 }),
+  aa('zeta-lite-1-medium', 'Zeta Lite 1 (Medium)', { creator: 'Zeta', intelligence: 25 }),
+  aa('zeta-lite-1-high', 'Zeta Lite 1 (High)', { creator: 'Zeta', intelligence: 30 }),
+  aa('zeta-plain-1', 'Zeta Plain 1 (High)', { creator: 'Zeta', intelligence: 33 }),
+]
+const NATIVE_LANES = { harnesses: { agy: { models: { 'zeta-2': { replaces: 'sonnet', roles: ['implementer'], levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' } } } } } }
+const NATIVE_LISTINGS = {
+  harnesses: {
+    claude: {
+      capturedAt: '2026-10-14',
+      listedBy: 'claude --help',
+      effortVia: 'flag',
+      efforts: FIVE,
+      models: [
+        { id: 'zeta-2', alias: 'zeta' },
+        { id: 'zeta-big-2', alias: 'big', excluded: 'Kept out until Zeta Big 3 (decision X1).' },
+        { id: 'zeta-lite-1', alias: 'lite', efforts: ['low', 'medium'] },
+        'zeta-plain-1',
+        { id: 'zeta-ghost-1', alias: 'ghost', excluded: 'Also kept out.' },
+      ],
+    },
+    agy: { capturedAt: '2026-10-13', listedBy: 'agy models', effortVia: 'id', models: ['zeta-2-low', 'zeta-2-medium', 'zeta-2-high'] },
+    grok: { capturedAt: '2026-10-13', listedBy: 'grok models', effortVia: 'flag', efforts: ['low', 'high'], models: [] },
+  },
+}
+const NATIVE_PROFILES = { profiles: Object.fromEntries(['zeta-2', 'zeta-big-2', 'zeta-lite-1', 'zeta-plain-1', 'zeta-ghost-1'].map((key) => [key, profile(`Model ${key}`)])) }
+const native = (extra = {}) =>
+  buildIndex(NATIVE_RAW, { since: '2026-01-01', lanes: NATIVE_LANES, harnessModels: NATIVE_LISTINGS, generatedAt: '2026-10-14', harnesses: ['claude', 'agy'], ...extra })
+const nativeFile = () => buildModels(native(), NATIVE_PROFILES.profiles)
+
+test('claude is the first harness and a default one; its entries carry the alias, the five efforts and a null lane', () => {
+  const defaults = buildIndex(NATIVE_RAW, { since: '2026-01-01', lanes: NATIVE_LANES, harnessModels: NATIVE_LISTINGS, generatedAt: '2026-10-14' })
+  assert.deepEqual(defaults.harnesses, ['claude', 'agy', 'grok'])
+  // The order of the harnesses is the native one first, whatever order they are asked for.
+  assert.deepEqual(native({ harnesses: ['agy', 'claude'] }).harnesses, ['claude', 'agy'])
+
+  const file = nativeFile()
+  assert.deepEqual(
+    file.models.map((entry) => `${entry.harness}/${entry.model}`),
+    ['claude/zeta-2', 'claude/zeta-lite-1', 'claude/zeta-plain-1', 'agy/zeta-2'],
+  )
+  const [zeta] = file.models
+  assert.equal(zeta.alias, 'zeta')
+  assert.deepEqual(zeta.efforts, FIVE)
+  // AA scored all five efforts, and the entry keeps each one's figures and price.
+  assert.deepEqual(zeta.scores.map((score) => [score.effort, score.intelligence, score.priceInput, score.priceOutput]), FIVE.map((effort, at) => [effort, [36, 41, 47, 52, 56][at], 2, 10]))
+  assert.equal(zeta.lane, null)
+  assert.equal(zeta.effortVia, 'flag')
+  assert.equal('ids' in zeta, false)
+  assert.equal(zeta.maker, 'Acme Labs')
+  assert.equal(zeta.released, '2026-09-01')
+})
+
+test('a model of the native harness shares its profile with the same family on agy, which keeps its three efforts, its ids and its lane', () => {
+  const [claude, , , agy] = nativeFile().models
+  assert.deepEqual([claude.harness, agy.harness, claude.family, agy.family], ['claude', 'agy', 'zeta-2', 'zeta-2'])
+  assert.deepEqual(claude.profile, agy.profile)
+  assert.equal(claude.profile.purpose, '"Model zeta-2 is for tests."')
+  assert.equal('alias' in agy, false)
+  assert.deepEqual(agy.efforts, ['low', 'medium', 'high'])
+  assert.deepEqual(agy.scores.map((score) => score.effort), ['low', 'medium', 'high'])
+  assert.deepEqual(agy.ids, { low: 'zeta-2-low', medium: 'zeta-2-medium', high: 'zeta-2-high' })
+  assert.deepEqual(agy.lane, { roles: ['implementer'], replaces: 'sonnet' })
+})
+
+test('a listing is a string or an object: a string has no alias and takes the harness efforts, an object may have its own', () => {
+  const [, lite, plain] = nativeFile().models
+  assert.deepEqual([lite.model, lite.alias, lite.efforts], ['zeta-lite-1', 'lite', ['low', 'medium']])
+  assert.deepEqual(lite.scores.map((score) => score.effort), ['low', 'medium'])
+  assert.deepEqual([plain.model, 'alias' in plain, plain.efforts], ['zeta-plain-1', false, FIVE])
+  const offers = family(native(), 'zeta-plain-1').available
+  assert.deepEqual(offers.map((offer) => [offer.harness, offer.listing, 'alias' in offer, 'excluded' in offer]), [['claude', 'listed', false, false]])
+  const zeta = family(native(), 'zeta-2').available.map((offer) => [offer.harness, offer.alias ?? null])
+  assert.deepEqual(zeta, [['claude', 'zeta'], ['agy', null]])
+})
+
+test('a listed model marked excluded is in the excluded list with its reason, price, scores and profile, and not among the models', () => {
+  const file = nativeFile()
+  assert.equal(file.models.some((entry) => entry.model === 'zeta-big-2' || entry.model === 'zeta-ghost-1'), false)
+  assert.deepEqual(file.excluded.map((entry) => [entry.harness, entry.model, entry.alias]), [['claude', 'zeta-big-2', 'big'], ['claude', 'zeta-ghost-1', 'ghost']])
+  const [big, ghost] = file.excluded
+  assert.deepEqual([big.name, big.maker, big.reason], ['Zeta Big 2', 'Acme Labs', 'Kept out until Zeta Big 3 (decision X1).'])
+  assert.deepEqual(big.price, { input: 10, output: 50 })
+  assert.deepEqual(big.scores.map((score) => [score.effort, score.intelligence]), FIVE.map((effort, at) => [effort, [47, 49, 51, 53, 53.4][at]]))
+  assert.equal(big.profile.purpose, '"Model zeta-big-2 is for tests."')
+  assert.deepEqual(big.efforts, FIVE)
+  // A model AA has no entry for is excluded all the same, with no price and no scores, and is not one without figures.
+  assert.deepEqual([ghost.price, ghost.scores, ghost.reason, ghost.name], [null, [], 'Also kept out.', 'Model zeta-ghost-1'])
+  assert.equal(ghost.profile.purpose, '"Model zeta-ghost-1 is for tests."')
+  assert.deepEqual(file.withoutFigures, [])
+  // An excluded model needs a profile like any other, so the build exits 1 without one.
+  assert.deepEqual(missingProfiles(buildModels(native(), {})), ['zeta-2', 'zeta-lite-1', 'zeta-plain-1', 'zeta-big-2', 'zeta-ghost-1'])
+  assert.deepEqual(missingProfiles(file), [])
+  // A file without the list is still read as one with none.
+  assert.deepEqual(missingProfiles({ models: [], withoutFigures: [], notOffered: [] }), [])
+})
+
+test('the README shows the native rows with no star, and lists the excluded model under Left out with its profile', () => {
+  const text = renderGenerated(nativeFile())
+  assert.ok(text.includes('| Zeta 2 `zeta-2` | claude | low, medium, high, xhigh, max | 56 | – | 2 / 10 | 100 |'))
+  assert.ok(text.includes('| Zeta 2 `zeta-2` | agy* | low, medium, high | 47 | – | 2 / 10 | 100 |'))
+  assert.equal(text.includes('claude*'), false)
+  assert.equal(text.includes('| Zeta Big 2 `zeta-big-2` |'), false)
+  assert.ok(text.includes('- **Zeta 2** `zeta-2` (claude, alias `zeta`), Acme Labs: "Model zeta-2 is for tests."'))
+  assert.ok(text.includes('- **Zeta Big 2** `zeta-big-2` (claude, alias `big`, excluded), Acme Labs: "Model zeta-big-2 is for tests."'))
+  assert.ok(text.includes('- Excluded, not used: claude `zeta-big-2` (`big`): Kept out until Zeta Big 3 (decision X1); claude `zeta-ghost-1` (`ghost`): Also kept out.'))
+  // The listings' days differ, so each harness gives its own.
+  assert.ok(text.includes("the harnesses' listings are of claude 2026-10-14, agy 2026-10-13."))
+})
+
+test('main reads the native harness by default, writes the data to --out and the README to --docs, and says what is excluded', async (t) => {
+  const dir = workDir(t, { raw: NATIVE_RAW, lanes: NATIVE_LANES, listings: NATIVE_LISTINGS, profiles: NATIVE_PROFILES })
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs')]
+  const dry = await main(args, { env: {}, now: NOW })
+  assert.equal(dry.exitCode, 0)
+  assert.match(dry.stdout, /are offered by claude, agy, grok, of the/)
+  assert.match(dry.stdout, /Offered by harness \(families\): claude 4, agy 1, grok 0\./)
+  assert.match(dry.stdout, /Offered with no figures \(0\): none\./)
+  assert.match(dry.stdout, /Offered and excluded by the owner \(2\): claude\/zeta-big-2, claude\/zeta-ghost-1\./)
+
+  const wrote = await main([...args, '--write'], { env: {}, now: NOW })
+  assert.equal(wrote.exitCode, 0)
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'out')).sort(), ['harness-models.json', 'models.json', 'profiles.json'])
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'docs')), ['README.md'])
+  const file = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'models.json'), 'utf8'))
+  assert.deepEqual(file.harnesses, ['claude', 'agy', 'grok'])
+  assert.deepEqual(file.listedOn, { claude: '2026-10-14', agy: '2026-10-13', grok: '2026-10-13' })
+  assert.deepEqual(file.excluded.map((entry) => entry.model), ['zeta-big-2', 'zeta-ghost-1'])
+  assert.equal(`${serialize(file)}\n`, fs.readFileSync(path.join(dir, 'out', 'models.json'), 'utf8'))
+  assert.ok(fs.readFileSync(path.join(dir, 'docs', 'README.md'), 'utf8').includes('- Excluded, not used: claude `zeta-big-2`'))
+})
+
+test("without --out the profiles are read from the plugin's config folder", async (t) => {
+  const dir = workDir(t, { raw: NATIVE_RAW, lanes: NATIVE_LANES, listings: NATIVE_LISTINGS })
+  // The harness listing is the test's own; the profiles come from the default folder, which has none of the made-up models.
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--harness', path.join(dir, 'out', 'harness-models.json'), '--harnesses', 'claude']
+  const result = await main(args, { env: {}, now: NOW })
+  assert.equal(result.exitCode, 1)
+  assert.ok(result.stdout.includes(`add it to ${path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models', 'profiles.json')}`), result.stdout)
+  assert.equal(fs.existsSync(path.join(dir, 'out', 'models.json')), false)
+})
+
+const ROOT = path.join(__dirname, '..')
+const CONFIG = path.join(ROOT, 'plugins', 'aether', 'config', 'models')
+const DOCS = path.join(ROOT, 'docs', 'models')
+const idOf = (listed) => (typeof listed === 'string' ? listed : listed.id)
+const readCommitted = () => ({
+  text: fs.readFileSync(path.join(CONFIG, 'models.json'), 'utf8'),
+  listings: JSON.parse(fs.readFileSync(path.join(CONFIG, 'harness-models.json'), 'utf8')),
+  profiles: readProfiles(path.join(CONFIG, 'profiles.json')),
+  readme: fs.readFileSync(path.join(DOCS, 'README.md'), 'utf8'),
+})
+
 test('the committed models.json and README are in the shape the script writes, and every model has a profile', () => {
-  const dir = path.join(__dirname, '..', 'docs', 'models')
-  const text = fs.readFileSync(path.join(dir, 'models.json'), 'utf8')
+  const { text, listings, profiles, readme } = readCommitted()
   const file = JSON.parse(text)
   assert.equal(`${serialize(file)}\n`, text)
-  // The folder has the one generated data file, and no copy of it.
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['README.md', 'harness-models.json', 'models.json', 'profiles.json'])
+  // The data ships with the plugin, in its config folder; docs/models has the reading copy and nothing else.
+  assert.deepEqual(fs.readdirSync(CONFIG).sort(), ['harness-models.json', 'models.json', 'profiles.json'])
+  assert.deepEqual(fs.readdirSync(DOCS), ['README.md'])
 
-  // Rule 2: the models are those of the chosen harnesses, each with a listing, and the listings are of no other harness.
-  const listings = JSON.parse(fs.readFileSync(path.join(dir, 'harness-models.json'), 'utf8'))
+  // Rule 2: the models are those of the chosen harnesses, each with a listing and the day it was captured, and the listings are of no other harness.
   assert.ok(file.harnesses.length > 0)
   assert.deepEqual(missingListings(listings, file.harnesses), [])
   assert.deepEqual(Object.keys(listings.harnesses).sort(), [...file.harnesses].sort())
+  for (const [name, listing] of Object.entries(listings.harnesses)) assert.match(listing.capturedAt, /^\d{4}-\d{2}-\d{2}$/, name)
+  assert.deepEqual(file.listedOn, Object.fromEntries(file.harnesses.map((name) => [name, listings.harnesses[name].capturedAt])))
   assert.deepEqual(Object.keys(file.rules), ['newest', 'offered', 'profiled'])
   assert.ok(file.models.length > 0)
   for (const entry of file.models) {
@@ -566,28 +742,99 @@ test('the committed models.json and README are in the shape the script writes, a
     assert.ok(entry.scores.every((score) => entry.efforts.includes(score.effort)), where)
     if (entry.effortVia === 'id') assert.deepEqual(Object.keys(entry.ids), entry.efforts, where)
     else assert.equal('ids' in entry, false, where)
-    assert.ok(listings.harnesses[entry.harness].models.some((listed) => listed.startsWith(entry.model)), where)
+    assert.ok(listings.harnesses[entry.harness].models.some((listed) => idOf(listed).startsWith(entry.model)), where)
   }
   // Rule 1: a superseded model is not among the models in use, and its successor is.
   const inUse = new Set(file.models.map((entry) => `${entry.harness}/${entry.model}`))
   for (const old of file.superseded) assert.equal(inUse.has(`${old.harness}/${old.id}`), false, old.id)
   for (const out of file.outOfScope) assert.equal(inUse.has(`${out.harness}/${out.model}`), false, out.model)
+  // A model the owner keeps out is not in use, and was listed with its reason.
+  for (const out of file.excluded) {
+    assert.equal(inUse.has(`${out.harness}/${out.model}`), false, out.model)
+    assert.equal(listings.harnesses[out.harness].models.find((listed) => idOf(listed) === out.model).excluded, out.reason, out.model)
+  }
 
   // Rule 3: every model has a profile, from the maker's pages, with its sources and the date they were read.
   assert.deepEqual(missingProfiles(file), [])
-  for (const entry of [...file.models, ...file.withoutFigures, ...file.notOffered]) {
+  for (const entry of [...file.models, ...file.excluded, ...file.withoutFigures, ...file.notOffered]) {
     assert.ok(typeof entry.profile.purpose === 'string' && entry.profile.purpose !== '', entry.model)
     assert.ok(Array.isArray(entry.profile.sources) && entry.profile.sources.length > 0 && entry.profile.sources.every((url) => /^https:\/\//.test(url)), entry.model)
     assert.match(entry.profile.checked, /^\d{4}-\d{2}-\d{2}$/, entry.model)
   }
   // The profiles are the ones the file was built from.
-  const profiles = readProfiles(path.join(dir, 'profiles.json'))
-  for (const entry of file.models) assert.equal(entry.profile.purpose, profiles[entry.family].purpose, entry.model)
+  for (const entry of [...file.models, ...file.excluded]) assert.equal(entry.profile.purpose, profiles[entry.family].purpose, entry.model)
 
   // The README's generated part is made from models.json alone.
-  const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf8')
   const start = '<!-- models-index:start -->\n'
   assert.ok(readme.includes(start) && readme.includes('\n<!-- models-index:end -->'))
   assert.equal(renderGenerated(file), readme.slice(readme.indexOf(start) + start.length, readme.indexOf('\n<!-- models-index:end -->')))
-  assert.ok(readme.split('\n').length < 60, 'the README is short')
+  assert.ok(readme.split('\n').length < 80, 'the README is short')
+  // The hand-written part points at the three files where they are now, and says where the native listing comes from.
+  for (const name of ['models', 'profiles', 'harness-models']) {
+    const link = `../../plugins/aether/config/models/${name}.json`
+    assert.ok(readme.includes(`(${link})`), link)
+    assert.ok(fs.existsSync(path.join(DOCS, link)), link)
+  }
+  assert.ok(readme.includes('`claude --help`'))
+})
+
+test('the committed index has the native harness: aliases, five efforts, no lane, profiles shared with agy, and Fable 5.1 excluded', () => {
+  const { text, listings, profiles, readme } = readCommitted()
+  const file = JSON.parse(text)
+  assert.equal(file.harnesses[0], 'claude')
+  const claude = listings.harnesses.claude
+  assert.deepEqual([claude.listedBy, claude.effortVia, claude.efforts, claude.capturedAt], ['claude --help', 'flag', FIVE, '2026-10-14'])
+  assert.deepEqual(claude.models.map((listed) => [listed.id, listed.alias]), [['claude-haiku-5-5', 'haiku'], ['claude-sonnet-5-5', 'sonnet'], ['claude-opus-5-5', 'opus'], ['claude-fable-5-1', 'fable']])
+  // The lanes keep the day they were captured.
+  assert.equal(listings.harnesses.agy.capturedAt, '2026-10-13')
+  assert.equal(listings.harnesses.grok.capturedAt, '2026-10-13')
+
+  const natives = file.models.filter((entry) => entry.harness === 'claude')
+  assert.deepEqual(natives.map((entry) => [entry.model, entry.alias]).sort(), [['claude-haiku-5-5', 'haiku'], ['claude-opus-5-5', 'opus'], ['claude-sonnet-5-5', 'sonnet']])
+  for (const entry of natives) {
+    assert.deepEqual(entry.efforts, FIVE, entry.model)
+    assert.deepEqual(entry.scores.map((score) => score.effort), FIVE, entry.model)
+    assert.ok(entry.scores.every((score) => score.intelligence !== null && score.priceInput !== null && score.priceOutput !== null), entry.model)
+    assert.equal(entry.lane, null, entry.model)
+    assert.equal(entry.effortVia, 'flag', entry.model)
+    assert.equal(entry.profile.purpose, profiles[entry.family].purpose, entry.model)
+  }
+  // An agy entry of the same family has the same profile, no alias, and only the efforts agy takes.
+  const shared = file.models.filter((entry) => entry.harness === 'agy' && entry.family.startsWith('claude-'))
+  assert.deepEqual(shared.map((entry) => entry.family).sort(), ['claude-opus-5-5', 'claude-sonnet-5-5'])
+  for (const agy of shared) {
+    const twin = natives.find((entry) => entry.family === agy.family)
+    assert.deepEqual(twin.profile, agy.profile, agy.family)
+    assert.equal('alias' in agy, false, agy.family)
+    assert.deepEqual(agy.efforts, ['low', 'medium', 'high'], agy.family)
+    // The shared profile does not say what one harness takes: each entry lists its own efforts.
+    assert.doesNotMatch(profiles[agy.family].availability, /agy|only/, agy.family)
+  }
+
+  // Fable 5.1 is listed, kept out, and not among the models.
+  assert.equal(file.models.some((entry) => entry.model === 'claude-fable-5-1'), false)
+  assert.equal(file.excluded.length, 1)
+  const [fable] = file.excluded
+  assert.deepEqual([fable.harness, fable.model, fable.alias, fable.name, fable.maker], ['claude', 'claude-fable-5-1', 'fable', 'Claude Fable 5.1', 'Anthropic'])
+  assert.equal(fable.reason, 'The owner keeps Fable out until Fable 5.5 (decision A43).')
+  assert.deepEqual(fable.price, { input: 10, output: 50 })
+  assert.deepEqual(fable.scores.map((score) => score.effort), FIVE)
+  assert.deepEqual([fable.profile.price.input, fable.profile.price.output], [10, 50])
+
+  // The profile side of the maker's words: each purpose has the maker's description, ignoring case.
+  const says = {
+    'claude-haiku-5-5': 'high-volume, latency-sensitive tasks such as classification, extraction, and routing',
+    'claude-sonnet-5-5': 'the best combination of speed and intelligence',
+    'claude-opus-5-5': 'long-running agentic coding and knowledge work',
+    'claude-fable-5-1': 'demanding reasoning and long-horizon agentic work',
+  }
+  for (const [key, words] of Object.entries(says)) assert.ok(profiles[key].purpose.toLowerCase().includes(words), key)
+  // Haiku's price says it rises for a prompt over 100K tokens.
+  assert.match(profiles['claude-haiku-5-5'].price.note, /over 100,000 tokens/)
+
+  // The README has the native rows without a star, and Fable under Left out.
+  assert.ok(readme.includes('| Claude Sonnet 5.5 `claude-sonnet-5-5` | claude | low, medium, high, xhigh, max |'))
+  assert.ok(readme.includes('| Claude Sonnet 5.5 `claude-sonnet-5-5` | agy* | low, medium, high |'))
+  assert.equal(readme.includes('claude*'), false)
+  assert.ok(readme.includes('- Excluded, not used: claude `claude-fable-5-1` (`fable`): The owner keeps Fable out until Fable 5.5 (decision A43).'))
 })
