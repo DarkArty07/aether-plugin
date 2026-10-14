@@ -175,7 +175,7 @@ The classes and `aether-autonomy check` are under "Irreversible actions" in "Aut
 ## Fallbacks never reach the owner
 
 A failure that already has a defined fallback is handled at once and recorded in the diary. It is never a question for the owner, and it never waits in "Espera tu sí". The owner said it twice: «siempre con fallback hacia nosotros»; «que me lo tengas que preguntar es una falla de diseño». These have one:
-- a lane that is missing, out of quota or failing: the same call runs native;
+- a lane that is missing or out of quota at its start: the call goes to the next candidate, and runs native only when none is left; a lane that fails after it started: the same call runs native;
 - a design seat whose external model cannot run or fails (exit 3, 4 or 1 of `aether-lane seat`): the native agent takes the same round;
 - a Judge, a Writer or an Examiner that fails, replies without the format, stops at `maxTurns` or is lost: start it again from the files and your last decision;
 - a swarm unit blocked by a merge failure or a spent ladder, or skipped: the `aether:swarm` skill, §5;
