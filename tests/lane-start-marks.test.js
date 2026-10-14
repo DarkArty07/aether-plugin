@@ -185,3 +185,17 @@ test("a finished call reports its group's final reading: whether it is usable, i
   assert.equal(failed.status, 'failed')
   assert.equal(failed.lane.quota, undefined)
 })
+
+test('the runner writes its mark and its kept reading where start and status look, also when only CLAUDE_CONFIG_DIR names the data directory (R14)', (t) => {
+  const env = fx.laneEnv(t)
+  const config = path.join(path.dirname(env.AETHER_DATA_DIR), 'config')
+  delete env.AETHER_DATA_DIR
+  env.CLAUDE_CONFIG_DIR = config
+  const dataDir = require('../plugins/aether/lib/run.js').dataDir({ CLAUDE_CONFIG_DIR: config })
+  const low = JSON.stringify(groupQuota([0.9, 0.01, null, FUTURE]))
+  const quota = runCall(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error'], env)
+  assert.equal(quota.status, 'quota', quota.detail)
+  const mark = marks.liveMark(dataDir, 'agy', 'gemini')
+  assert.deepEqual([mark && mark.confirmed, mark && mark.until], [true, Date.parse(FUTURE)])
+  assert.equal(fs.existsSync(path.join(dataDir, 'lanes', 'quota', 'agy.json')), true, 'the kept reading is renewed there too')
+})

@@ -335,7 +335,9 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
     cwd,
     detached: true,
     stdio: 'ignore',
-    env: lanes.laneEnv(process.env, paths.marker),
+    // laneEnv drops CLAUDE_CONFIG_DIR and CLAUDE_CODE_PLUGIN_CACHE_DIR, which the data directory may come from: the
+    // runner is told where it is, so its marks and readings land where start and status look.
+    env: { ...lanes.laneEnv(process.env, paths.marker), AETHER_DATA_DIR: dataDir },
   })
   runner.unref()
   fs.writeFileSync(paths.pid, `${runner.pid}\n`)
