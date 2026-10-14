@@ -381,8 +381,10 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
   }
   if (!parsed.clean) {
     if (quotaRead && !lanes.usable(quotaAfter, reserve)) return { status: 'quota', detail: parsed.reason }
-    // A harness that reports no quota can only show it ran dry in its output: a quota reason then ends the call as quota.
-    if (quotaRead && quotaAfter?.unknown === true && parsed.reason?.startsWith('quota: ')) return { status: 'quota', detail: parsed.reason }
+    // A harness that reports no quota can only show it ran dry in its output, and so can grok, whose reading comes
+    // from a log its headless calls do not update: a quota reason then ends the call as quota. agy's reasons never
+    // start with `quota: `, so its reading alone decides.
+    if (quotaRead && parsed.reason?.startsWith('quota: ')) return { status: 'quota', detail: parsed.reason }
     return { status: 'failed', detail: failedDetail(parsed, stderr) }
   }
   // Changes outside Owns are a violation whatever the answer says, so they are checked first.

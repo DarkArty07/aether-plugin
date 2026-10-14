@@ -238,7 +238,8 @@ test('lanesArgs gives the run its lanes when the harness is installed, and null 
   })
   assert.equal(lanes.lanesArgs(c, { enabled: ['agy'], installed: () => false }), null)
   assert.equal(lanes.lanesArgs(null, { enabled: ['agy'], installed: () => true }), null)
-  assert.equal(lanes.lanesArgs(c, { enabled: ['grok'], installed: () => true }), null)
+  // cursor ships without models, so on its own it gives no calls.
+  assert.equal(lanes.lanesArgs(c, { enabled: ['cursor'], installed: () => true }), null)
 })
 
 test('lanesArgs takes each native call from the first enabled, installed harness with a model for it, in the order enabled', () => {
@@ -288,7 +289,7 @@ test('lanesArgs takes each native call from the first enabled, installed harness
   const agyMissing = lanes.lanesArgs(c, { enabled: ['codex', 'agy'], installed: (name) => name !== 'agy' })
   assert.deepEqual(agyMissing.harnesses, ['codex'])
   assert.equal(agyMissing.calls.implementer.haiku, undefined)
-  assert.equal(lanes.lanesArgs(c, { enabled: ['grok'], installed: everywhere }), null)
+  assert.equal(lanes.lanesArgs(c, { enabled: ['cursor'], installed: everywhere }), null)
   assert.equal(lanes.lanesArgs(c, { enabled: [], installed: everywhere }), null)
 })
 
@@ -326,12 +327,21 @@ test('idleHarnesses names each enabled harness that gives no call, with the reas
   assert.deepEqual(lanes.idleHarnesses(null, { installed, enabled: ['agy'] }), [])
 })
 
-test('the shipped table has codex, grok and cursor without models, so none of them takes a call until the owner adds its models', () => {
+test('the shipped table has codex and cursor without models, and grok with grok-4.7 at the haiku tier', () => {
   const config = shipped()
   assert.deepEqual(Object.keys(config.harnesses), ['agy', 'codex', 'grok', 'cursor'])
-  for (const name of ['codex', 'grok', 'cursor']) assert.deepEqual(config.harnesses[name].models, {}, name)
+  for (const name of ['codex', 'cursor']) assert.deepEqual(config.harnesses[name].models, {}, name)
   assert.deepEqual(config.harnesses.cursor.command, 'cursor-agent')
-  assert.deepEqual(lanes.lanesArgs(config, { installed: () => true, enabled: ['codex', 'grok', 'cursor', 'agy'] }).harnesses, ['agy'])
+  // grok-4.7-build-fast is the same model faster and twice the price: it is not a lane model.
+  assert.deepEqual(Object.keys(config.harnesses.grok.models), ['grok-4.7'])
+  const args = lanes.lanesArgs(config, { installed: () => true, enabled: ['codex', 'grok', 'cursor', 'agy'] })
+  // codex and cursor take no call; grok takes the implementer calls for haiku, agy the rest.
+  assert.deepEqual(args.harnesses, ['grok', 'agy'])
+  assert.deepEqual(args.calls.implementer.haiku, { model: 'grok-4.7', group: 'grok', harness: 'grok' })
+  assert.equal(args.calls.implementer.sonnet.harness, 'agy')
+  assert.equal(args.calls.implementer.opus.harness, 'agy')
+  assert.equal(args.calls.supervisor.sonnet.harness, 'agy')
+  assert.equal(args.calls.reviewer.opus.harness, 'agy')
 })
 
 test('enabledHarnesses reads AETHER_LANE_HARNESSES: known names, trimmed, lowercased, each once, in order', () => {

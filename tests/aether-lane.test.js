@@ -96,11 +96,11 @@ function unknownQuotaHarness({ command, groups }) {
 
 // Runs one implementer call on the codex harness, from the prompt lines after its first line, as start would
 // have recorded it, and returns the call's result with the environment it ran in.
-async function runCodexCall(t, lines) {
+async function runCodexCall(t, lines, { harness = unknownQuotaHarness } = {}) {
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t, { mutate: (c) => (c.harnesses.codex = codexEntry(fx.FAKE_AGY)) })
   useEnv(t, { ...env, AETHER_LANE_HARNESSES: 'agy,codex' })
-  registerAdapter('codex', unknownQuotaHarness)
+  registerAdapter('codex', harness)
   t.after(() => unregisterAdapter('codex'))
   const { workdir } = work.prepareImplementer(args.repoRoot, args.runId, 'task-1')
   fx.writePrompt(args, IMPLEMENT, ['You are implementing task-1: Task 1 title.', ...lines].join('\n'))
@@ -509,6 +509,18 @@ test('a quota failure of a harness that reports no quota is quota, and its other
   assert.deepEqual([other.done.status, other.done.detail], ['failed', 'exit 1: Error: model not found'])
 })
 
+test("a quota line in the output ends the call as quota when the harness's reading still shows quota left, as grok's log does", async (t) => {
+  // grok's reading comes from the log of its UI, which a headless call does not update: it still shows 80% left.
+  const logged = (settings) => ({
+    ...unknownQuotaHarness(settings),
+    quota: () => ({ groups: { codex: { windows: { weekly: { remaining: 0.8, resetsAt: '2026-10-17T09:08:51.805Z' } } } } }),
+  })
+  const quota = await runCodexCall(t, ['FAKE-AGY: stderr Error: usage limit reached', 'FAKE-AGY: exit-error'], { harness: logged })
+  assert.deepEqual([quota.done.status, quota.done.detail], ['quota', 'quota: Error: usage limit reached'])
+  const other = await runCodexCall(t, ['FAKE-AGY: stderr Error: model not found', 'FAKE-AGY: exit-error'], { harness: logged })
+  assert.deepEqual([other.done.status, other.done.detail], ['failed', 'exit 1: Error: model not found'])
+})
+
 test("an answer that breaks its role's schema fails the call with the problem, and a valid answer of each role passes", async (t) => {
   // The two answers a supervisor could give the workflow: a findings string, and a verdict outside the enum.
   const { args } = preparedUnit(t)
@@ -697,4 +709,83 @@ test('wait gives up after --max, and a new start of the same call never returns 
   assert.deepEqual(fx.lane(args, 'wait', [IMPLEMENT, '--max', '1'], env).json, { done: false })
   const second = fx.waitDone(args, IMPLEMENT, env)
   assert.notEqual(second.lane.conversation, first.lane.conversation)
+})
+
+// ---- quota ----
+
+// A lane table whose agy is the fake agy, whose grok is a fake that only prints its version, and whose codex and
+// cursor are not installed; grok's log, under the test's HOME, holds one billing line written ageMinutes ago.
+function quotaEnv(t, { ageMinutes = 5, percent = 30, endHours = 50, agyQuota = null } = {}) {
+  const dir = tempDir(t)
+  const fakeGrok = path.join(dir, 'grok')
+  fs.writeFileSync(fakeGrok, '#!/bin/sh\necho "grok 1.0.52 (test) [stable]"\n')
+  fs.chmodSync(fakeGrok, 0o755)
+  const env = fx.laneEnv(t, {
+    quota: agyQuota,
+    mutate: (c) => {
+      c.harnesses.grok.command = fakeGrok
+      c.harnesses.codex.command = '/nowhere/codex'
+      c.harnesses.cursor.command = '/nowhere/cursor-agent'
+    },
+  })
+  const logFile = path.join(env.HOME, '.grok', 'logs', 'unified.jsonl')
+  fs.mkdirSync(path.dirname(logFile), { recursive: true })
+  const entry = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'grok-billing.jsonl'), 'utf8').trim().split('\n')[1])
+  entry.ts = new Date(Date.now() - ageMinutes * 60000).toISOString()
+  entry.ctx.config.currentPeriod.end = new Date(Date.now() + endHours * 3600000).toISOString()
+  if (percent !== null) entry.ctx.config.creditUsagePercent = percent
+  fs.writeFileSync(logFile, `${JSON.stringify(entry)}\n`)
+  return { env, dir, fakeGrok, logFile }
+}
+
+test("quota, with no run, gives each group's windows, reset, hours left, priority, usability and source, as JSON", (t) => {
+  const { env, dir, fakeGrok, logFile } = quotaEnv(t, { agyQuota: { 'Gemini Models': [0.9, 0.04], 'Claude and GPT models': [0.5, 0.8] } })
+  const r = runBin(fx.LANE_BIN, ['quota', 'grok', 'agy', '--json'], dir, env)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(Object.keys(r.json.harnesses), ['grok', 'agy'])
+  assert.equal(r.json.reserve, 0.05)
+  const grok = r.json.harnesses.grok
+  assert.deepEqual([grok.installed, grok.path, grok.version, grok.refreshed], [true, fakeGrok, 'grok 1.0.52 (test) [stable]', undefined])
+  const group = grok.groups.grok
+  assert.deepEqual([group.label, group.unknown, group.usable], ['Grok plan', false, true])
+  const weekly = group.windows.weekly
+  assert.equal(weekly.remaining, 0.7)
+  assert.ok(Math.abs(weekly.hoursLeft - 50) <= 0.1, String(weekly.hoursLeft))
+  assert.ok(Math.abs(weekly.priority - 0.7 / 50) < 0.0001, String(weekly.priority))
+  assert.equal(group.priority, weekly.priority)
+  assert.match(weekly.resetsLocal, /^\d{4}-\d\d-\d\d \d\d:\d\d UTC[+-]\d+/)
+  assert.deepEqual([group.source.log, group.source.ageMinutes, group.source.stale, group.source.usedPercent, group.source.usedPercentAbsent], [logFile, 5, false, 30, false])
+  // agy's groups come from its /usage, read now; a weekly window under the reserve makes its group unusable.
+  const agy = r.json.harnesses.agy
+  assert.deepEqual([agy.groups.gemini.usable, agy.groups.claude.usable], [false, true])
+  assert.deepEqual(agy.groups.claude.windows['5h'].remaining, 0.5)
+  assert.deepEqual([agy.groups.claude.source.command, agy.groups.claude.source.ageMinutes, agy.groups.claude.source.stale], [fx.FAKE_AGY, 0, false])
+  // With no harness named, it lists the installed harnesses of the table.
+  const all = runBin(fx.LANE_BIN, ['quota', '--json'], dir, env)
+  assert.deepEqual(Object.keys(all.json.harnesses), ['agy', 'grok'])
+  const named = runBin(fx.LANE_BIN, ['quota', 'codex', 'nope', '--json'], dir, env)
+  assert.deepEqual(named.json.harnesses, {
+    codex: { command: '/nowhere/codex', path: null, installed: false, version: null, groups: {} },
+    nope: { error: 'the lane table has no nope harness', groups: {} },
+  })
+  assert.deepEqual(runBin(fx.LANE_BIN, ['quota', '--now'], dir, env).json, { error: 'usage: aether-lane quota [<harness>...] [--refresh] [--json]' })
+})
+
+test('quota prints the same for people, and marks a grok reading older than 30 minutes stale, keeping its values', (t) => {
+  const { env, dir, logFile } = quotaEnv(t, { ageMinutes: 45, percent: null })
+  const r = runBin(fx.LANE_BIN, ['quota', 'grok', 'agy'], dir, env)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  const text = r.stdout
+  assert.match(text, /^Lane quota at \d{4}-\d\d-\d\d \d\d:\d\d UTC \(\d{4}-\d\d-\d\d \d\d:\d\d UTC[+-]\d+[^)]*\); reserve 5%\n/)
+  assert.match(text, /\n {2}grok, "Grok plan": usable, priority 0\.0\d+\n/)
+  assert.match(text, /\n {4}weekly: 100% left, resets \d{4}-\d\d-\d\d \d\d:\d\d UTC \(\d{4}-[^)]+ UTC[+-]\d+[^)]*\), in (49\.9|50) h, priority 0\.02(00\d+)?\n/)
+  assert.ok(text.includes(`source: grok's log ${logFile}, line of `), text)
+  assert.ok(text.includes('(pid 531322, grok 1.0.41), 45 min old (stale: --refresh takes a new one); the line has no creditUsagePercent, read as 0% used'), text)
+  assert.match(text, /\n {2}gemini, "Gemini Models": usable, priority [\d.]+\n {4}weekly: 90% left, /)
+  assert.ok(text.includes(`source: ${fx.FAKE_AGY}, read now`), text)
+
+  // A reading of a period that has ended is no reading: grok is unknown, and --refresh is named as the way to one.
+  const ended = quotaEnv(t, { endHours: -1 })
+  const unknown = runBin(fx.LANE_BIN, ['quota', 'grok'], ended.dir, ended.env)
+  assert.ok(unknown.stdout.includes(`grok, "Grok plan": unknown, used until a call fails for quota (no reading; --refresh opens grok's UI to take a reading)`), unknown.stdout)
 })

@@ -6,6 +6,8 @@
 // aether-lane wait <run> <call> [--max <seconds>]
 // aether-lane result <run> <call>
 // aether-lane stop <run> [<call>]
+// aether-lane quota [<harness>...] [--refresh] [--json]   (no run: each harness's quota as text, or as JSON;
+//   --refresh first opens grok's UI for a few seconds, with no prompt, to take a new reading)
 // aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--feature specs/NNN-<topic>] [--cwd <dir>]
 //   (the message on stdin; exit 0 an external answer, 3 the native agent takes the round, 4 the external round
 //   failed and was undone, 1 the command broke)
@@ -14,6 +16,7 @@
 const path = require('node:path')
 const calls = require(path.join(__dirname, '..', 'lib', 'lane-calls.js'))
 const seats = require(path.join(__dirname, '..', 'lib', 'seats.js'))
+const quota = require(path.join(__dirname, '..', 'lib', 'lane-quota.js'))
 
 // Each command's usage. <run>, and <call> where it is not in brackets, are required.
 const COMMANDS = {
@@ -23,7 +26,7 @@ const COMMANDS = {
   result: 'result <run> <call>',
   stop: 'stop <run> [<call>]',
 }
-const USAGE = `usage: aether-lane ${Object.values(COMMANDS).join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')}`
+const USAGE = `usage: aether-lane ${[...Object.values(COMMANDS), quota.USAGE].join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')}`
 
 // Throws the command's own usage when an argument it requires is missing.
 function requireArgs(verb, runId, call) {
@@ -79,6 +82,10 @@ async function main() {
   const argv = process.argv.slice(2)
   if (argv[0] === '_runner') {
     await calls.runCall(process.cwd(), argv[1], argv[2])
+    return
+  }
+  if (argv[0] === 'quota') {
+    process.stdout.write(await quota.quotaCommand(argv.slice(1)))
     return
   }
   if (argv[0] === 'seat') {
