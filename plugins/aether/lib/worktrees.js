@@ -218,6 +218,35 @@ function diffPackage(cwd, runId, taskId) {
   return { path: writePackage(mainRoot, runId, taskId, `${taskId} (${branch})`, base, branch), base }
 }
 
+// A unit whose implementer ended without its report may still hold the work (issue 003). This commits what
+// the task owns that the attempt left uncommitted, and writes the package its supervisor reviews. A file outside
+// Owns is left where it is and named: the merge's ownership check is the judge of those, not this command.
+function salvageUnit(cwd, runId, taskId) {
+  run.assertRunId(runId)
+  run.assertTaskId(taskId)
+  const { mainRoot } = repoPaths(cwd)
+  const graph = loadGraph(mainRoot, runId)
+  const task = graph.tasks[taskId]
+  if (!task) throw new Error(`${taskId} is not in run ${runId}`)
+  const worktree = run.unitWorktree(mainRoot, runId, taskId)
+  const branch = run.unitBranch(runId, taskId)
+  const nothing = { salvaged: false, files: [], committed: [], left: [], head: null, package: null }
+  if (!branchExists(mainRoot, branch) || !isWorktreeRoot(worktree)) return { ...nothing, reason: 'no-worktree' }
+  const pending = uncommittedFiles(worktree)
+  const committed = pending.filter((file) => matchesAny(file, task.owns))
+  const left = pending.filter((file) => !committed.includes(file))
+  if (committed.length > 0) {
+    // -A with paths also stages a deletion. Without an identity of its own, the repository's commit would fail.
+    git(['add', '-A', '--', ...committed], worktree)
+    const identity = git(['config', 'user.email'], worktree, { allowFail: true }).stdout === '' ? ['-c', 'user.name=Aether', '-c', 'user.email=aether@localhost'] : []
+    git([...identity, 'commit', '--no-verify', '-q', '-m', `aether: ${taskId} work saved without its report`], worktree)
+  }
+  const files = changedFiles(mainRoot, unitBase(mainRoot, graph, branch), branch)
+  if (files.length === 0) return { ...nothing, committed, left }
+  const { path: packagePath } = diffPackage(cwd, runId, taskId)
+  return { salvaged: true, files, committed, left, head: git(['rev-parse', branch], mainRoot).stdout, package: packagePath }
+}
+
 // The whole run's change on the integration branch, from the first launch's base, so that a relaunch
 // does not drop the changes of the launches before it.
 function finalPackage(cwd, runId) {
@@ -695,6 +724,7 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
 module.exports = {
   ensure,
   diffPackage,
+  salvageUnit,
   finalPackage,
   merge,
   betweenMerges,

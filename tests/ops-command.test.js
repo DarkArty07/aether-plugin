@@ -39,6 +39,7 @@ test('the timeout is the longest $.process.run allows, ten minutes', () => {
 test('every aether-wt command the workflow sends parses to its argument vector', () => {
   const forms = [
     [`aether-wt merge ${RUN} task-1`, ['merge', RUN, 'task-1']],
+    [`aether-wt salvage ${RUN} task-3`, ['salvage', RUN, 'task-3']],
     [`aether-wt remove ${RUN} task-12`, ['remove', RUN, 'task-12']],
     [`aether-wt diff ${RUN} --final`, ['diff', RUN, '--final']],
     [`aether-wt sweep --run ${RUN}`, ['sweep', '--run', RUN]],
