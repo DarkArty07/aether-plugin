@@ -1,7 +1,7 @@
 # Lanes por cuota: primero el cómputo que se perdería
 
 - Date: 2026-10-13
-- Status: Approved by the Judge on 2026-10-13 (revision 4, after `revise` on revisions 1 to 3). Open for the owner: A3.
+- Status: Approved by the Judge on 2026-10-13 (revision 4, after `revise` on revisions 1 to 3). Open for the owner: A3. Amended by spec 003 (R12, approved by the Judge on 2026-10-14): the models index moved to `plugins/aether/config/models/models.json`.
 - Intent: que cada llamada del swarm que un lane puede tomar vaya primero a la cuota externa que más riesgo corre de perderse en su reinicio, leída por Aether sin preguntar, como diseño sostenible del plugin: la superdelegación de RADAR (C3). En palabras del dueño:
   - «La cuenta que se debe de usar primero es la más próxima a vencerse, es decir, en esto usualmente dan por semana. Si el reinicio semanal de una cuenta viene antes que el de otra pero no se ha gastado, se tiene que usar la que podría desperdiciar cómputo.»
   - «tú mismo respóndete, entre grok y agy dime cuál cuota se reinicia antes»
@@ -25,7 +25,7 @@ Lo que se encontró el 2026-10-13/14:
 - **grok:** `grok -p /usage` no da la cuota (manda el texto al modelo). Al abrir su interfaz, grok escribe en `~/.grok/logs/unified.jsonl` líneas `billing: fetched credits config` con `pid`, `ts` y `currentPeriod` (`USAGE_PERIOD_TYPE_WEEKLY`, del 2026-10-10 09:08:51 UTC al 2026-10-17 09:08:51 UTC; el ancla es el sábado 09:08:51 UTC desde el 5 de septiembre). En grok 1.0.13 traían `creditUsagePercent` (21, 22, 23 y 100); las dos lecturas de 1.0.41 no lo traen. grok busca actualizaciones al arrancar salvo con `GROK_DISABLE_AUTOUPDATER`.
 - Con esas lecturas el orden correcto para una llamada de nivel haiku es Grok 4.7 (≈0.013 por hora), luego Gemini 3.8 Flash (≈0.006 por hora); la de nivel sonnet u opus va al nativo hasta el 16, porque Claude en agy está bajo la reserva.
 
-Los modelos de la tabla de lanes siguen las tres reglas del índice de modelos (`docs/models/models.json`): solo la generación más nueva de cada línea, solo lo que el CLI del harness lista, y cada modelo con su perfil escrito desde las páginas de su fabricante.
+Los modelos de la tabla de lanes siguen las tres reglas del índice de modelos (`plugins/aether/config/models/models.json`): solo la generación más nueva de cada línea, solo lo que el CLI del harness lista, y cada modelo con su perfil escrito desde las páginas de su fabricante.
 
 ## Criteria
 
@@ -71,7 +71,7 @@ Orden y elección:
 Visibilidad:
 - R15. `aether-lane status` muestra, por grupo, lo mismo que R7 más su marca de agotado, y, por rol y nivel, el orden de candidatos que resulta. Sirve a: C2, C6.
 - R16. Cada llamada registra en el diario de lanes el orden de candidatos con su prioridad y la razón por la que se eligió el suyo, o por la que fue al siguiente o al nativo. Sirve a: C6.
-- R17. Un test sobre los archivos del repo comprueba que cada modelo de la tabla de lanes con un rol del swarm (implementer, supervisor, reviewer) está en `docs/models/models.json` como vigente, ofrecido por su harness y con perfil; y que cada modelo que solo nombran los asientos de diseño (`designSeats`) está ahí como modelo en uso o en `notOffered`, con perfil. Sirve a: C4.
+- R17. Un test sobre los archivos del repo comprueba que cada modelo de la tabla de lanes con un rol del swarm (implementer, supervisor, reviewer) está en `plugins/aether/config/models/models.json` como vigente, ofrecido por su harness y con perfil; y que cada modelo que solo nombran los asientos de diseño (`designSeats`) está ahí como modelo en uso o en `notOffered`, con perfil. Sirve a: C4.
 - R18. `aether-report` y el brief dan, por grupo, las llamadas de la corrida, el saldo al empezar y al terminar y su próximo reinicio: es la cifra de Delegación que RADAR pide en cada brief. Sirve a: C6.
 
 Sostenibilidad y pruebas:
