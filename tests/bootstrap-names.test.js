@@ -202,10 +202,14 @@ test("each rubric quote is contained, ignoring case, in the purpose of its model
   }
 })
 
-test('the first 1,800 characters of the injected context carry the order to read it whole, the three paths and the model rule', (t) => {
-  const opening = injectedContext(t).slice(0, 1800)
-  for (const text of ['Read this whole bootstrap before you act', 'Direct', 'Delegate task', 'Swarm', 'model']) {
-    assert.ok(opening.includes(text), `the opening has "${text}"`)
+// The preview a long context gets is cut at about 2,000 characters, so what R1 needs must be inside the first 1,800.
+const OPENING = 1800
+const opening = (t) => injectedContext(t).slice(0, OPENING)
+
+test('the first 1,800 characters of the injected context carry R1: read it whole, the model it starts on and how to move it, the three paths', (t) => {
+  const head = opening(t)
+  for (const text of ['Read this whole bootstrap before you act', 'Read that file in full', 'You start on Sonnet', '/model', '/effort', 'never let a subagent inherit', '**Direct:**', '**Delegate task:**', '**Swarm:**']) {
+    assert.ok(head.includes(text), `the first ${OPENING} characters have "${text}"`)
   }
 })
 
@@ -227,8 +231,8 @@ test('the sources of the bootstrap and the swarm skill name no path of this repo
 })
 
 test("the model the bootstrap says the Lead starts on is the model of the Lead agent", (t) => {
-  const started = /You start on (\w+)/.exec(injectedContext(t))
-  assert.ok(started, 'the bootstrap says what the Lead starts on')
+  const started = /You start on (\w+)/.exec(opening(t))
+  assert.ok(started, `the first ${OPENING} characters say what the Lead starts on`)
   const lead = /^model: (\S+)$/m.exec(read('agents', 'lead.md'))
   assert.ok(lead, 'agents/lead.md has a model')
   assert.equal(started[1].toLowerCase(), lead[1].toLowerCase())

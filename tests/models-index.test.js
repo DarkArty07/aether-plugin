@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { buildIndex, buildModels, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, readProfiles, main } = require('../scripts/build-models-index.js')
+const { buildIndex, buildModels, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, badListings, readProfiles, main } = require('../scripts/build-models-index.js')
 
 function aa(slug, name, { creator = 'Acme', date = '2026-03-01', intelligence = null, terminalBench = null, input = 2, output = 10, tps = 100, ttft = 5 } = {}) {
   return {
@@ -762,7 +762,16 @@ test('the committed models.json and README are in the shape the script writes, a
     assert.match(entry.profile.checked, /^\d{4}-\d{2}-\d{2}$/, entry.model)
   }
   // The profiles are the ones the file was built from.
-  for (const entry of [...file.models, ...file.excluded]) assert.equal(entry.profile.purpose, profiles[entry.family].purpose, entry.model)
+  // Every profile field models.json carries is a copy of the profile's own, so a stale copy of any of them fails here.
+  const keyed = [
+    ...[...file.models, ...file.excluded].map((entry) => [entry, entry.family]),
+    ...[...file.withoutFigures, ...file.notOffered].map((entry) => [entry, entry.model]),
+  ]
+  for (const [entry, key] of keyed) {
+    const fields = Object.keys(entry.profile)
+    assert.ok(fields.includes('purpose') && fields.includes('price') && fields.includes('availability') && fields.includes('sources') && fields.includes('checked'), `${entry.model}: the fields are there`)
+    for (const field of fields) assert.deepEqual(entry.profile[field], profiles[key][field] ?? null, `${entry.harness}/${entry.model}: ${field} is the profile's`)
+  }
 
   // The README's generated part is made from models.json alone.
   const start = '<!-- models-index:start -->\n'
@@ -837,4 +846,148 @@ test('the committed index has the native harness: aliases, five efforts, no lane
   assert.ok(readme.includes('| Claude Sonnet 5.5 `claude-sonnet-5-5` | agy* | low, medium, high |'))
   assert.equal(readme.includes('claude*'), false)
   assert.ok(readme.includes('- Excluded, not used: claude `claude-fable-5-1` (`fable`): The owner keeps Fable out until Fable 5.5 (decision A43).'))
+})
+
+// The listings of NATIVE_LISTINGS with changes to the `claude` and `agy` entries (each change is merged into its harness).
+const withListings = (change) => {
+  const { claude, agy, grok } = NATIVE_LISTINGS.harnesses
+  return { harnesses: { claude: { ...claude, ...change.claude }, agy: { ...agy, ...change.agy }, grok } }
+}
+const WRITE_ARGS = (dir) => ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'claude,agy', '--write']
+
+test('a harness whose effort is in the id lists ids only: an object there is an error that says so, and nothing is written', async (t) => {
+  const object = { id: 'zeta-2-low', excluded: 'Kept out.' }
+  const listings = withListings({ agy: { models: ['zeta-2-medium', object] } })
+  assert.deepEqual(badListings(NATIVE_LISTINGS, ['claude', 'agy', 'grok']), [])
+  const [problem, ...rest] = badListings(listings, ['claude', 'agy'])
+  assert.equal(rest.length, 0)
+  assert.ok(problem.startsWith('agy lists {"id":"zeta-2-low","excluded":"Kept out."}'), problem)
+  assert.match(problem, /its effort is in the id, so it lists ids as strings/)
+  // The same object on a harness whose effort is a flag is fine, and a harness that is not chosen is not read.
+  assert.deepEqual(badListings(withListings({ claude: { models: [object] } }), ['claude']), [])
+  assert.deepEqual(badListings(listings, ['claude']), [])
+
+  const dir = workDir(t, { raw: NATIVE_RAW, lanes: NATIVE_LANES, listings, profiles: NATIVE_PROFILES })
+  const result = await main(WRITE_ARGS(dir), { env: {}, now: NOW })
+  assert.equal(result.exitCode, 1)
+  assert.match(result.stdout, /^agy lists .*its effort is in the id/)
+  assert.equal(fs.existsSync(path.join(dir, 'out', 'models.json')), false)
+  assert.ok(fs.readFileSync(path.join(dir, 'docs', 'README.md'), 'utf8').includes('\nold\n'), 'the README was not touched')
+})
+
+test('an excluded that is there and is not a non-empty string is an error with a clear message, not a model put into use', async (t) => {
+  for (const excluded of ['', '   ', 5, true, null, ['why'], {}]) {
+    const claude = { models: [{ id: 'zeta-2', alias: 'zeta' }, { id: 'zeta-big-2', alias: 'big', excluded }] }
+    const [problem, ...rest] = badListings(withListings({ claude }), ['claude', 'agy'])
+    assert.equal(rest.length, 0, JSON.stringify(excluded))
+    assert.match(problem, /^claude lists zeta-big-2 in harness-models\.json with an excluded that is not a non-empty string/, JSON.stringify(excluded))
+    assert.ok(problem.includes(`(${JSON.stringify(excluded)})`), problem)
+
+    const dir = workDir(t, { raw: NATIVE_RAW, lanes: NATIVE_LANES, listings: withListings({ claude }), profiles: NATIVE_PROFILES })
+    const result = await main(WRITE_ARGS(dir), { env: {}, now: NOW })
+    assert.equal(result.exitCode, 1, JSON.stringify(excluded))
+    assert.match(result.stdout, /zeta-big-2 in harness-models\.json with an excluded that is not a non-empty string/)
+    assert.match(result.stdout, /give the reason the owner keeps it out, or remove the field/)
+    assert.equal(fs.existsSync(path.join(dir, 'out', 'models.json')), false, JSON.stringify(excluded))
+  }
+})
+
+test('an object listing with no id, or an entry that is not a string or an object, is an error and not a TypeError', async (t) => {
+  for (const listed of [{ alias: 'x' }, { id: '' }, { id: 7 }, {}, null, 7]) {
+    const claude = { models: [{ id: 'zeta-2', alias: 'zeta' }, listed] }
+    const [problem, ...rest] = badListings(withListings({ claude }), ['claude', 'agy'])
+    assert.equal(rest.length, 0, JSON.stringify(listed))
+    assert.match(problem, /with no id: a model is an id \(a string\) or an object with a non-empty string id$/, JSON.stringify(listed))
+    assert.ok(problem.startsWith(`claude lists ${JSON.stringify(listed)} `), problem)
+
+    const dir = workDir(t, { raw: NATIVE_RAW, lanes: NATIVE_LANES, listings: withListings({ claude }), profiles: NATIVE_PROFILES })
+    const result = await main(WRITE_ARGS(dir), { env: {}, now: NOW })
+    assert.equal(result.exitCode, 1, JSON.stringify(listed))
+    assert.match(result.stdout, /with no id/)
+    assert.equal(fs.existsSync(path.join(dir, 'out', 'models.json')), false)
+  }
+})
+
+// A model the owner excluded stays excluded, with its reason, when it is also superseded or released before the date.
+const KEPT_RAW = [
+  ...NATIVE_RAW,
+  aa('zeta-1', 'Zeta 1 (High)', { creator: 'Zeta', date: '2026-03-01', intelligence: 30 }),
+  aa('zeta-old-1', 'Zeta Old 1', { creator: 'Zeta', date: '2025-06-01', intelligence: 10 }),
+  aa('zeta-dusty-1', 'Zeta Dusty 1', { creator: 'Zeta', date: '2025-06-01', intelligence: 10 }),
+]
+const KEPT_LISTINGS = withListings({
+  claude: {
+    models: [
+      ...NATIVE_LISTINGS.harnesses.claude.models,
+      { id: 'zeta-1', alias: 'one', excluded: 'Superseded and kept out all the same.' },
+      { id: 'zeta-old-1', alias: 'old', excluded: 'Old and kept out all the same.' },
+      'zeta-dusty-1',
+    ],
+  },
+  agy: { models: [...NATIVE_LISTINGS.harnesses.agy.models, 'zeta-1-high'] },
+})
+const KEPT_PROFILES = { profiles: { ...NATIVE_PROFILES.profiles, 'zeta-1': profile('Model zeta-1'), 'zeta-old-1': profile('Model zeta-old-1') } }
+const kept = () => buildModels(buildIndex(KEPT_RAW, { since: '2026-01-01', lanes: NATIVE_LANES, harnessModels: KEPT_LISTINGS, generatedAt: '2026-10-14', harnesses: ['claude', 'agy'] }), KEPT_PROFILES.profiles)
+
+test('an excluded model that is also superseded or out of scope stays excluded with its reason, and is in neither of those lists', () => {
+  const file = kept()
+  const names = (list) => list.map((entry) => `${entry.harness}/${entry.model ?? entry.id}`)
+  assert.deepEqual(names(file.excluded).sort(), ['claude/zeta-1', 'claude/zeta-big-2', 'claude/zeta-ghost-1', 'claude/zeta-old-1'])
+  const one = file.excluded.find((entry) => entry.model === 'zeta-1')
+  assert.deepEqual([one.alias, one.family, one.reason], ['one', 'zeta-1', 'Superseded and kept out all the same.'])
+  assert.deepEqual(one.price, { input: 2, output: 10 })
+  assert.equal(one.profile.purpose, '"Model zeta-1 is for tests."')
+  const old = file.excluded.find((entry) => entry.model === 'zeta-old-1')
+  assert.deepEqual([old.alias, old.reason, old.price, old.scores], ['old', 'Old and kept out all the same.', null, []])
+  assert.equal(old.profile.purpose, '"Model zeta-old-1 is for tests."')
+  // Not in use, and not in the lists it would have gone to; the other harness's superseded and the other out-of-scope stay there.
+  assert.equal(file.models.some((entry) => entry.harness === 'claude' && ['zeta-1', 'zeta-old-1', 'zeta-dusty-1'].includes(entry.model)), false)
+  assert.deepEqual(names(file.superseded), ['agy/zeta-1'])
+  assert.deepEqual(names(file.outOfScope), ['claude/zeta-dusty-1'])
+  assert.deepEqual(missingProfiles(file), [])
+  const text = renderGenerated(file)
+  assert.ok(text.includes('claude `zeta-1` (`one`): Superseded and kept out all the same'))
+  assert.ok(text.includes('claude `zeta-old-1` (`old`): Old and kept out all the same'))
+  assert.ok(text.includes('- Superseded, not to be used: agy `zeta-1` by `zeta-2`'))
+  assert.ok(text.includes('- Out of scope: claude `zeta-dusty-1`:'))
+  assert.equal(text.includes('`zeta-old-1`: Artificial Analysis lists'), false)
+})
+
+test('main counts a superseded or out-of-scope excluded model among the excluded ones, and not among the out of scope', async (t) => {
+  const dir = workDir(t, { raw: KEPT_RAW, lanes: NATIVE_LANES, listings: KEPT_LISTINGS, profiles: KEPT_PROFILES })
+  const result = await main(WRITE_ARGS(dir), { env: {}, now: NOW })
+  assert.equal(result.exitCode, 0, result.stdout)
+  assert.match(result.stdout, /Offered and excluded by the owner \(4\): .*claude\/zeta-1.*claude\/zeta-old-1/)
+  assert.match(result.stdout, /Offered and out of scope, released before 2026-01-01 \(1\): claude\/zeta-dusty-1\./)
+  const file = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'models.json'), 'utf8'))
+  assert.deepEqual(file.excluded.map((entry) => entry.model).sort(), ['zeta-1', 'zeta-big-2', 'zeta-ghost-1', 'zeta-old-1'])
+})
+
+test('without --docs the README is written to docs/models next to the script', async (t) => {
+  // The script finds its folders from its own place, so a copy in a throwaway tree has a docs/models of its own.
+  const tree = tempDir(t, 'models-index-tree-')
+  fs.mkdirSync(path.join(tree, 'scripts'))
+  for (const name of ['build-models-index.js', 'refresh-lanes.js']) fs.copyFileSync(path.join(ROOT, 'scripts', name), path.join(tree, 'scripts', name))
+  fs.mkdirSync(path.join(tree, 'docs', 'models'), { recursive: true })
+  fs.writeFileSync(path.join(tree, 'docs', 'models', 'README.md'), '# Mine\n\n<!-- models-index:start -->\nold\n<!-- models-index:end -->\n\nkept\n')
+  const copy = require(path.join(tree, 'scripts', 'build-models-index.js'))
+  const dir = workDir(t, { raw: NATIVE_RAW, lanes: NATIVE_LANES, listings: NATIVE_LISTINGS, profiles: NATIVE_PROFILES })
+  const real = fs.readFileSync(path.join(DOCS, 'README.md'), 'utf8')
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--write']
+  const result = await copy.main(args, { env: {}, now: NOW })
+  assert.equal(result.exitCode, 0, result.stdout)
+  const readme = path.join(tree, 'docs', 'models', 'README.md')
+  assert.ok(result.stdout.includes(`written to ${path.join(dir, 'out', 'models.json')} and ${readme}`), result.stdout)
+  const text = fs.readFileSync(readme, 'utf8')
+  assert.ok(text.startsWith('# Mine\n') && text.endsWith('\nkept\n'))
+  assert.ok(text.includes('## Models in use') && !text.includes('\nold\n'))
+  // The copy wrote into its own tree: neither the repository's README nor the work folder's was touched.
+  assert.equal(fs.readFileSync(path.join(DOCS, 'README.md'), 'utf8'), real)
+  assert.ok(fs.readFileSync(path.join(dir, 'docs', 'README.md'), 'utf8').includes('\nold\n'))
+})
+
+test('the README says an object listing is for the harnesses whose effort is a flag, and the ids of the others are strings', () => {
+  const readme = fs.readFileSync(path.join(DOCS, 'README.md'), 'utf8')
+  assert.ok(readme.includes('for a harness whose effort is a flag (claude, grok, codex), an object `{id, alias, efforts, listed, excluded}`'))
+  assert.ok(readme.includes('A harness whose effort is in the id (agy, cursor) lists ids as strings only, and the script exits 1 on an object there'))
 })
