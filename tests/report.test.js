@@ -480,7 +480,7 @@ test('a RADAR figure is null where nothing measured it: no usage and no saved re
   assert.deepEqual(radar, {
     rapid: { runMs: 10 * MIN, attempts: null, climbed: null, escalated: null },
     autonomous: { questions: null },
-    delegation: { laneCalls: 0, nativeUsd: null, lanesUsd: 0, laneShare: null, byHarness: {} },
+    delegation: { laneCalls: 0, nativeUsd: null, lanesUsd: 0, laneShare: null, byHarness: {}, byGroup: {} },
     affordable: { totalUsd: null, nativeUsd: null, lanesUsd: 0 },
     robust: { merged: null, adopted: null, blocked: null, testsPassed: null, testsKnownFailuresOnly: null, findings: null, finalVerdict: null },
   })
@@ -627,4 +627,79 @@ test('a unit the swarm merged is not counted as adopted, and a report with no ad
   adoptUnit(repo.dir, args.runId, 'task-1', { commit: sha, reason: 'redundant' })
   const same = report(repo.dir, args.runId, { tests: false }).quality
   assert.deepEqual([same.merged, same.adopted, same.integrated, same.adoptedUnits], [2, 0, 2, []])
+})
+
+// ---- spec 002, R16 and R18: the balance of each group, and what each call chose ----
+
+// A grok group's reading in the shape the adapter gives, read as 0% used, and a window of agy's.
+const grokGroup = (remaining, extra = {}) => ({ windows: { weekly: { remaining, resetsAt: '2026-10-17T09:08:51.805Z' } }, usedPercent: null, usedPercentAbsent: true, ...extra })
+const agyGroup = (weekly, fiveHour) => ({ windows: { weekly: { remaining: weekly, resetsAt: '2026-10-21T03:35:44.000Z' }, '5h': { remaining: fiveHour, resetsAt: iso(T0 + 4 * 3600 * 1000) } } })
+
+function choiceEntry(runId, minutes, fields) {
+  return { kind: 'choice', time: T0 + minutes * MIN, session: null, run: runId, design: null, tier: 'haiku', effort: 'xhigh', ...fields }
+}
+
+test('report gives, per group, the balance at the start and at the end of the run, the next reset, and the calls', (t) => {
+  const dataDir = useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  const at = (minutes) => T0 + minutes * MIN
+  const call = (minutes, startedMinutes, fields) =>
+    appendLog(dataDir, 'run-session', { kind: 'call', time: at(minutes), startedAt: at(startedMinutes), conversation: 'c', detail: '', durationMs: (minutes - startedMinutes) * MIN, usage: { input: 1e6, output: 0, thinking: 0, cacheRead: 0, total: 1e6 }, ...fields })
+  appendLog(dataDir, 'run-session', { kind: 'reading', time: at(1), run: args.runId, design: null, harness: 'grok', version: '1.0.52', groups: { grok: grokGroup(1) } })
+  appendLog(dataDir, 'run-session', { kind: 'reading', time: at(1), run: args.runId, design: null, harness: 'agy', version: '1.3.2', groups: { gemini: agyGroup(1, 1) } })
+  call(8, 5, { run: args.runId, design: null, call: 'task-1-1-implement', role: 'implementer', task: 'task-1', harness: 'grok', model: 'grok-4.7', group: 'grok', effort: 'xhigh', status: 'ok', quotaBefore: grokGroup(1), quotaAfter: grokGroup(0.97) })
+  call(15, 10, { run: args.runId, design: null, call: 'task-2-1-implement', role: 'implementer', task: 'task-2', harness: 'agy', model: GEMINI, group: 'gemini', effort: 'xhigh', status: 'ok', quotaBefore: agyGroup(1, 1), quotaAfter: agyGroup(0.99, 0.8) })
+  const { lanes, radar } = report(repo.dir, args.runId, { dataDir, tests: false })
+  const { grok, gemini } = lanes.run.groups
+  assert.deepEqual(grok.balance, {
+    start: { weekly: 1 },
+    end: { weekly: { remaining: 0.97, resetsAt: '2026-10-17T09:08:51.805Z' } },
+    nextReset: '2026-10-17T09:08:51.805Z',
+    usedPercentAbsent: true,
+  })
+  assert.equal(grok.calls, 1)
+  assert.deepEqual(gemini.balance, {
+    start: { weekly: 1, '5h': 1 },
+    end: { weekly: { remaining: 0.99, resetsAt: '2026-10-21T03:35:44.000Z' }, '5h': { remaining: 0.8, resetsAt: iso(T0 + 4 * 3600 * 1000) } },
+    nextReset: '2026-10-21T03:35:44.000Z',
+    usedPercentAbsent: false,
+  })
+  assert.deepEqual(radar.delegation.byGroup, { grok: { calls: 1, balance: grok.balance }, gemini: { calls: 1, balance: gemini.balance } })
+})
+
+test('a reset that cannot be read as a time gives no next reset, and a group with no reading gives no balance', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  sampleLaneLog(dataDir, args.runId)
+  const { run } = report(repo.dir, args.runId, { dataDir, tests: false }).lanes
+  // The sample log writes its resets as R1, W1: the balance still gives the shares, and no next reset.
+  assert.deepEqual(run.groups.gemini.balance.start, { '5h': 0.9, weekly: 0.96 })
+  assert.deepEqual(run.groups.gemini.balance.end, { '5h': { remaining: 0.7, resetsAt: 'R3' }, weekly: { remaining: 0.94, resetsAt: 'W1' } })
+  assert.equal(run.groups.gemini.balance.nextReset, null)
+  appendLog(dataDir, 'run-session', { kind: 'call', time: T0 + 14 * MIN, startedAt: T0 + 13 * MIN, run: args.runId, design: null, call: 'task-9-1-implement', role: 'implementer', task: 'task-9', harness: 'codex', model: 'gpt-codex', group: 'codex', effort: 'high', status: 'failed', usage: {}, quotaBefore: null, quotaAfter: null, detail: '', durationMs: MIN })
+  const again = report(repo.dir, args.runId, { dataDir, tests: false }).lanes.run
+  assert.equal(again.groups.codex.balance, null)
+})
+
+test('report lists what each lane call chose: the call, the lane that took it or none, the reason, and the candidates in order', (t) => {
+  const dataDir = useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  const candidates = [
+    { harness: 'grok', model: 'grok-4.7', state: 'priority', priority: 0.013331, outcome: 'picked', usedPercentAbsent: true },
+    { harness: 'agy', model: 'gemini-3.8-flash', state: 'priority', priority: 0.006044, outcome: 'untried', usedPercentAbsent: false },
+  ]
+  const native = [{ harness: 'agy', model: 'claude-sonnet-5-5', state: 'excluded', priority: null, outcome: 'reserve', usedPercentAbsent: false }]
+  appendLog(dataDir, null, choiceEntry(args.runId, 12, { call: 'task-1-1-supervise', role: 'supervisor', tier: 'sonnet', effort: 'high', picked: null, candidates: native, reason: 'native: no candidate is usable: agy claude-sonnet-5-5 is under the reserve' }))
+  appendLog(dataDir, null, choiceEntry(args.runId, 4, { call: 'task-1-1-implement', role: 'implementer', picked: { harness: 'grok', model: 'grok-4.7' }, candidates, reason: 'took grok grok-4.7, first in order (grok grok-4.7 0.013331, agy gemini-3.8-flash 0.006044)' }))
+  // Another run's choice, and one after the run ended, are not this run's.
+  appendLog(dataDir, null, choiceEntry('20261001-000000-aaaa', 5, { call: 'task-1-1-implement', role: 'implementer', picked: null, candidates: native, reason: 'x' }))
+  appendLog(dataDir, null, choiceEntry(args.runId, 45, { call: 'task-3-1-implement', role: 'implementer', picked: null, candidates: native, reason: 'late' }))
+  const { run } = report(repo.dir, args.runId, { dataDir, tests: false }).lanes
+  assert.deepEqual(run.choices, [
+    { call: 'task-1-1-implement', role: 'implementer', tier: 'haiku', effort: 'xhigh', picked: { harness: 'grok', model: 'grok-4.7' }, reason: 'took grok grok-4.7, first in order (grok grok-4.7 0.013331, agy gemini-3.8-flash 0.006044)', candidates },
+    { call: 'task-1-1-supervise', role: 'supervisor', tier: 'sonnet', effort: 'high', picked: null, reason: 'native: no candidate is usable: agy claude-sonnet-5-5 is under the reserve', candidates: native },
+  ])
+  const empty = report(repo.dir, args.runId, { dataDir: useDataDir(t), tests: false }).lanes.run
+  assert.deepEqual(empty.choices, [])
 })

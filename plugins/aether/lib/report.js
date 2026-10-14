@@ -276,7 +276,20 @@ function qualityOf(results, adopted = {}) {
 const splitLog = (entries) => ({
   calls: entries.filter((entry) => entry.kind === 'call'),
   readings: entries.filter((entry) => entry.kind === 'reading'),
+  choices: entries.filter((entry) => entry.kind === 'choice'),
 })
+
+// What each lane call chose, in the order of the log: the lane that took it (null when none did), its reason, and the candidates.
+const choicesOf = (choices) =>
+  choices.map((entry) => ({
+    call: entry.call,
+    role: entry.role,
+    tier: entry.tier,
+    effort: entry.effort,
+    picked: entry.picked,
+    reason: entry.reason,
+    candidates: entry.candidates,
+  }))
 
 // A lane call's dollars at list price. A model with no price counts $0, and is noted once.
 function laneDollars(call, tokens, prices, notes) {
@@ -288,10 +301,11 @@ function laneDollars(call, tokens, prices, notes) {
 }
 
 // A group's quota readings: each reading's own, and each call's before and after the call. quotaConsumed sorts them.
+// A point keeps whether its reading read the share as 0% used.
 function groupReadings(group, calls, readings) {
   const points = []
   const add = (time, quota) => {
-    if (quota && quota.windows) points.push({ time, windows: quota.windows })
+    if (quota && quota.windows) points.push({ time, windows: quota.windows, usedPercentAbsent: Boolean(quota.usedPercentAbsent) })
   }
   for (const reading of readings) add(reading.time, reading.groups && reading.groups[group])
   for (const call of calls) {
@@ -302,7 +316,32 @@ function groupReadings(group, calls, readings) {
   return points
 }
 
-// Calls, tokens and dollars by group, model, role and harness, and each group's quota windows.
+// A group's balance from its quota points, in time order: each window's first and last remaining, the latest
+// reading's latest reset that reads as a date, and whether the latest reading read its share as 0% used. Null without a reading.
+function balanceOf(points) {
+  if (points.length === 0) return null
+  const sorted = [...points].sort((a, b) => a.time - b.time)
+  const start = {}
+  const end = {}
+  for (const point of sorted) {
+    for (const [name, window] of Object.entries(point.windows)) {
+      if (!Object.hasOwn(start, name)) start[name] = window.remaining
+      end[name] = { remaining: window.remaining, resetsAt: window.resetsAt }
+    }
+  }
+  const latest = sorted[sorted.length - 1]
+  const resets = Object.values(latest.windows)
+    .map((window) => (typeof window.resetsAt === 'string' ? Date.parse(window.resetsAt) : NaN))
+    .filter((ms) => !Number.isNaN(ms))
+  return {
+    start,
+    end,
+    nextReset: resets.length > 0 ? iso(Math.max(...resets)) : null,
+    usedPercentAbsent: latest.usedPercentAbsent,
+  }
+}
+
+// Calls, tokens and dollars by group, model, role and harness, and each group's quota windows and balance.
 function summarizeLanes(calls, readings, prices, notes) {
   const summary = { calls: 0, usd: 0, tokens: laneZeroTokens(), groups: {}, byModel: {}, byRole: {}, byHarness: {} }
   for (const call of calls) {
@@ -329,7 +368,9 @@ function summarizeLanes(calls, readings, prices, notes) {
     if (LANE_STATUSES.includes(call.status)) harness[call.status]++
   }
   for (const [name, group] of Object.entries(summary.groups)) {
-    group.quota = quotaConsumed(groupReadings(name, calls, readings))
+    const points = groupReadings(name, calls, readings)
+    group.quota = quotaConsumed(points)
+    group.balance = balanceOf(points)
   }
   return summary
 }
@@ -384,7 +425,7 @@ function laneReport({ dataDir, runId, start, end, usage, results, prices, notes,
   return {
     version: versions.agy ?? null,
     versions,
-    run: { ...run, ...launchesOf(results) },
+    run: { ...run, ...launchesOf(results), choices: choicesOf(runLog.choices) },
     session,
     totals: {
       run: totalsOf(cost ? cost.run.usd : 0, run.usd),
@@ -435,6 +476,7 @@ function radarOf({ speed, cost, lanes, quality }) {
       lanesUsd: lanes.totals.run.lanesUsd,
       laneShare: cost ? lanes.totals.run.coveredShare : null,
       byHarness,
+      byGroup: Object.fromEntries(Object.entries(lanes.run.groups).map(([name, group]) => [name, { calls: group.calls, balance: group.balance }])),
     },
     affordable: { totalUsd: cost ? lanes.totals.run.totalUsd : null, nativeUsd, lanesUsd: lanes.totals.run.lanesUsd },
     robust: {
