@@ -657,6 +657,7 @@ test('the table gives the life of a harness reading and the length of a dry mark
   for (const [mutate, message] of [
     [(c) => (c.dryMarkMinutes = 0), 'dryMarkMinutes must be an integer of at least 1'],
     [(c) => (c.dryMarkMinutes = '60'), 'dryMarkMinutes must be an integer of at least 1'],
+    [(c) => (c.dryMarkMinutes = 10081), 'dryMarkMinutes must be at most 10080, a week'],
     [(c) => (c.harnesses.agy.quotaLifeMinutes = -1), 'harness agy: quotaLifeMinutes must be an integer of at least 0'],
     [(c) => (c.harnesses.grok.quotaLifeMinutes = 1.5), 'harness grok: quotaLifeMinutes must be an integer of at least 0'],
   ]) {

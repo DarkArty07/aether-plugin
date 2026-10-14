@@ -9,6 +9,13 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const DEFAULT_MARK_MINUTES = 60
+// The longest a mark can legitimately hold: a confirmed mark lasts until a window resets, and the longest window is
+// the weekly one. A day is added for the clock of whoever reports the reset. A mark beyond this is damaged, or was
+// written under a clock far ahead, and is no mark.
+const MAX_MARK_MS = 8 * 24 * 60 * 60 * 1000
+// A lock held longer than this belongs to a process that died inside it.
+const LOCK_STALE_MS = 10 * 1000
+const LOCK_WAIT_MS = 2 * 1000
 
 function marksDir(dataDir) {
   return path.join(dataDir, 'lanes', 'marks')
@@ -44,6 +51,41 @@ function writeAtomic(targetPath, content) {
   }
 }
 
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+// Runs fn while holding an exclusive lock file next to the mark, so that two calls ending together do not each read the
+// mark, compare, and let the shorter write come last. The lock never fails a call: if it cannot be taken within
+// LOCK_WAIT_MS, fn runs without it, as a mark that may be shortened is better than none.
+function withLock(target, fn) {
+  const lock = `${target}.lock`
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  const deadline = Date.now() + LOCK_WAIT_MS
+  let held = false
+  while (!held && Date.now() < deadline) {
+    try {
+      fs.closeSync(fs.openSync(lock, 'wx'))
+      held = true
+    } catch (err) {
+      if (err.code !== 'EEXIST') break
+      try {
+        if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) fs.unlinkSync(lock)
+        else sleep(5)
+      } catch {}
+    }
+  }
+  try {
+    return fn()
+  } finally {
+    if (held) {
+      try {
+        fs.unlinkSync(lock)
+      } catch {}
+    }
+  }
+}
+
 function liveMark(dataDir, harness, group, now = Date.now()) {
   const file = markFile(dataDir, harness, group)
   let raw
@@ -60,7 +102,7 @@ function liveMark(dataDir, harness, group, now = Date.now()) {
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   if (typeof data.until !== 'number' || !Number.isFinite(data.until)) return null
-  if (data.until <= now) return null
+  if (data.until <= now || data.until > now + MAX_MARK_MS) return null
   return data
 }
 
@@ -90,7 +132,7 @@ function liveMarks(dataDir, now = Date.now()) {
     }
     if (!data || typeof data !== 'object' || Array.isArray(data)) continue
     if (typeof data.until !== 'number' || !Number.isFinite(data.until)) continue
-    if (data.until <= now) continue
+    if (data.until <= now || data.until > now + MAX_MARK_MS) continue
     result.push(data)
   }
   result.sort((a, b) => {
@@ -115,7 +157,7 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
       const underReserve = windows.filter((w) => w.remaining <= reserve)
       if (underReserve.length > 0) {
         const resets = underReserve.map((w) => parseDate(w.resetsAt))
-        const allLegibleAndFuture = resets.every((ms) => Number.isFinite(ms) && ms > now)
+        const allLegibleAndFuture = resets.every((ms) => Number.isFinite(ms) && ms > now && ms <= now + MAX_MARK_MS)
         if (allLegibleAndFuture) {
           confirmed = true
           until = Math.max(...resets)
@@ -140,18 +182,21 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
     usedPercentAbsent,
   }
 
-  const existing = liveMark(dataDir, harness, group, now)
-  if (existing && typeof existing.until === 'number' && existing.until >= candidate.until) {
-    return existing
-  }
-
-  writeAtomic(markFile(dataDir, harness, group), JSON.stringify(candidate, null, 2) + '\n')
-  return candidate
+  const file = markFile(dataDir, harness, group)
+  return withLock(file, () => {
+    const existing = liveMark(dataDir, harness, group, now)
+    if (existing && typeof existing.until === 'number' && existing.until >= candidate.until) {
+      return existing
+    }
+    writeAtomic(file, JSON.stringify(candidate, null, 2) + '\n')
+    return candidate
+  })
 }
 
 module.exports = {
   DEFAULT_MARK_MINUTES,
   marksDir,
+  MAX_MARK_MS,
   markFile,
   markDry,
   liveMark,

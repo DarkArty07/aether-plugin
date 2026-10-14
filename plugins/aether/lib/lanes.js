@@ -90,6 +90,8 @@ function validateConfig(config) {
   if (config.dryMarkMinutes !== undefined && !isInteger(config.dryMarkMinutes, 1)) {
     throw new Error('dryMarkMinutes must be an integer of at least 1')
   }
+  // A mark longer than the weekly window, the longest a quota lasts, would be read as damaged and ignored.
+  if (config.dryMarkMinutes > 7 * 24 * 60) throw new Error('dryMarkMinutes must be at most 10080, a week')
   if (!isObject(config.harnesses)) throw new Error('harnesses must be an object')
   // A group key names one quota, so two harnesses must not share one. A model id names one lane, so it must not be
   // in two harnesses either: start could not tell which of them takes its calls.
