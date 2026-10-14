@@ -14,6 +14,7 @@ const run = require('./run.js')
 const lanes = require('./lanes.js')
 const marks = require('./lane-marks.js')
 const order = require('./lane-order.js')
+const quota = require('./lane-quota.js')
 const readings = require('./lane-readings.js')
 const work = require('./lane-work.js')
 const schemas = require('./lane-schemas.js')
@@ -159,40 +160,15 @@ function laneModel(harness, role, model, effort) {
 
 // ---- status ----
 
-// One enabled harness's status: its command and where it is, and when it is installed, its version and
-// the usable groups with the windows each reported. Its reading goes to the lane log.
-function harnessStatus(name, settings, reserve, runId) {
-  const found = lanes.commandPath(settings.command)
-  const base = { enabled: true, command: settings.command, path: found, installed: found !== null }
-  if (!base.installed) return { ...base, version: null, groups: {} }
-  let adapter
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+// The run's graph, or null when there is none or it cannot be read.
+function readGraph(cwd, runId) {
   try {
-    adapter = createAdapter(name, settings)
-  } catch (err) {
-    return { ...base, version: null, error: err.message, groups: {} }
+    return run.readJson(path.join(run.runDir(repoPaths(cwd).mainRoot, runId), 'graph.json'))
+  } catch {
+    return null
   }
-  const version = adapter.version()
-  let quota
-  try {
-    quota = adapter.quota()
-  } catch (err) {
-    return { ...base, version, error: err.message, groups: {} }
-  }
-  const groups = {}
-  for (const [group, reading] of Object.entries(quota.groups)) {
-    groups[group] = { usable: lanes.usable(reading, reserve), windows: reading.windows }
-  }
-  lanes.appendLog(run.dataDir(), null, {
-    kind: 'reading',
-    time: Date.now(),
-    session: null,
-    run: runId,
-    design: null,
-    harness: name,
-    version,
-    groups: quota.groups,
-  })
-  return { ...base, version, groups }
 }
 
 // The harnesses the owner enabled: AETHER_LANE_HARNESSES where the session's exports reach, else the ones
@@ -200,27 +176,60 @@ function harnessStatus(name, settings, reserve, runId) {
 // session's exports do not reach (decision A30), so there the run's graph carries the owner's list.
 function enabledFor(cwd, runId) {
   if (process.env.AETHER_LANE_HARNESSES !== undefined) return lanes.enabledHarnesses()
-  try {
-    const graph = run.readJson(path.join(run.runDir(repoPaths(cwd).mainRoot, runId), 'graph.json'))
-    const listed = graph?.lanes?.harnesses
-    if (Array.isArray(listed) && listed.length > 0) return listed
-  } catch {
-    // No graph, or one that cannot be read: the default list.
-  }
+  const listed = readGraph(cwd, runId)?.lanes?.harnesses
+  if (Array.isArray(listed) && listed.length > 0) return listed
   return lanes.enabledHarnesses()
 }
 
-// Every harness of the table: an enabled one with its status, a disabled one by its command alone.
+// The order of the candidates of each call the run's graph names: for each role and native model of lanes.calls, what
+// lane-order.js's rule makes of them over the groups' views. A plan of an older compile has one lane, not a list, per
+// call, and lanes.harness is the harness of a lane that names none. A graph with no lanes gives {}.
+function orderOf(cwd, runId, harnesses) {
+  const planned = readGraph(cwd, runId)?.lanes
+  if (!isObject(planned) || !isObject(planned.calls)) return {}
+  const byRole = {}
+  for (const [role, byTier] of Object.entries(planned.calls)) {
+    if (!isObject(byTier)) continue
+    byRole[role] = {}
+    for (const tier of Object.keys(byTier)) {
+      byRole[role][tier] = order.orderCandidates(order.candidatesOf(planned.calls, role, tier, planned.harness ?? null), harnesses)
+    }
+  }
+  return byRole
+}
+
+// Every harness of the table: an enabled one with the view of each of its groups (lane-quota.js), a disabled one by its
+// command alone; then the order of the run's candidates and the live dry marks. It never refreshes: the reading is the
+// one kept for its life, and grok's is its log's last line, however old. Each reading it takes goes to the lane log.
 function status(cwd, runId) {
   run.assertRunId(runId)
   repoPaths(cwd)
   const config = loadTable()
   const enabled = enabledFor(cwd, runId)
+  const dataDir = run.dataDir()
+  const now = Date.now()
   const harnesses = {}
   for (const [name, settings] of Object.entries(config.harnesses)) {
-    harnesses[name] = enabled.includes(name) ? harnessStatus(name, settings, config.reserve, runId) : { enabled: false, command: settings.command }
+    if (!enabled.includes(name)) {
+      harnesses[name] = { enabled: false, command: settings.command }
+      continue
+    }
+    const onRead = ({ groups }, version) => {
+      lanes.appendLog(dataDir, null, { kind: 'reading', time: now, session: null, run: runId, design: null, harness: name, version, groups })
+    }
+    harnesses[name] = { enabled: true, ...quota.harnessView(name, settings, { reserve: config.reserve, now, dataDir, fresh: false, onRead }) }
   }
-  return { harnesses }
+  return { time: new Date(now).toISOString(), harnesses, order: orderOf(cwd, runId, harnesses), marks: marks.liveMarks(dataDir, now) }
+}
+
+// The wave's quota step: renews the reading of each enabled harness that has a way to renew it (grok, over ACP and then
+// through its UI) and whose reading is missing, unknown or older than its life. Only `status --refresh` calls it, and
+// nobody calls it from start or the runner. A harness that cannot be refreshed leaves its reading as it is; the answer
+// names the harnesses it tried, each as { refreshed, method }.
+async function refreshStale(cwd, runId) {
+  run.assertRunId(runId)
+  repoPaths(cwd)
+  return quota.refreshStale({ config: loadTable(), enabled: enabledFor(cwd, runId) })
 }
 
 // ---- start ----
@@ -632,4 +641,4 @@ function stop(cwd, runId, call = null) {
   return { stopped }
 }
 
-module.exports = { WORKDIR_RULE, LANE_NOTES, roleBody, claudeMdSections, buildPrompt, status, start, wait, result, stop, runCall }
+module.exports = { WORKDIR_RULE, LANE_NOTES, roleBody, claudeMdSections, buildPrompt, status, refreshStale, start, wait, result, stop, runCall }
