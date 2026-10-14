@@ -19,6 +19,9 @@ const SEAT_TIMEOUTS = { judge: 1200, writer: 2700, examiner: 1800 }
 const SEAT_CHOICES = ['native', 'balanced', 'robust']
 const DEFAULT_SEATS = 'balanced'
 const NATIVE_MODELS = ['haiku', 'sonnet', 'opus']
+// A model id is written into the lane choice (lib/lane-choice.js, hooks/ops-command.mjs), where ':' and '/' separate
+// the fields and the items; those copies take only these characters, so the table takes no more.
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const LEVEL_NAMES = ['low', 'medium', 'high', 'xhigh']
 const LEVEL_VALUES = ['low', 'medium', 'high']
 const CALLED_ROLES = ['implementer', 'supervisor', 'reviewer']
@@ -45,6 +48,7 @@ function validateModel(harness, id, model, groups) {
   const fail = (field, problem) => {
     throw new Error(`harness ${harness}, model ${id}: ${field} ${problem}`)
   }
+  if (!MODEL_ID.test(id)) fail('id', 'must start with a letter or digit and use only letters, digits, ".", "_" and "-": the lane choice cannot log any other')
   if (!isObject(model)) fail('model', 'must be an object')
   if (typeof model.group !== 'string' || !Object.hasOwn(groups, model.group)) fail('group', 'must name one of the groups')
   if (!Array.isArray(model.roles) || model.roles.length === 0 || !model.roles.every((role) => ROLES.includes(role) || SEATS.includes(role))) {

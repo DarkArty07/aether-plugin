@@ -648,6 +648,48 @@ test('lanesEnabled: lanes are on only when AETHER_LANES is on, and only on Linux
   assert.deepEqual(lanes.lanesEnabled({}, 'darwin'), { on: false, reason: 'option' })
 })
 
+test('the table takes a model id exactly when the lane choice can log it: the table, lane-choice.js and the mod agree (R16)', async (t) => {
+  const choice = require('../plugins/aether/lib/lane-choice.js')
+  const { parseOpsPrompt } = await import(path.join(__dirname, '..', 'plugins', 'aether', 'hooks', 'ops-command.mjs'))
+  const inTable = (id) => {
+    const file = writeConfig(t, (c) => {
+      c.harnesses.agy.models[id] = c.harnesses.agy.models['gemini-3.8-flash']
+      delete c.harnesses.agy.models['gemini-3.8-flash']
+    })
+    try {
+      lanes.loadConfig(file)
+      return true
+    } catch (err) {
+      assert.match(err.message, /model .*: id must/, id)
+      return false
+    }
+  }
+  const logs = (id) => {
+    const item = `agy:${id}:0.5:picked`
+    const read = (() => {
+      try {
+        choice.parseOrder(item)
+        choice.parsePick(`agy:${id}`)
+        return true
+      } catch {
+        return false
+      }
+    })()
+    const command = `aether-lane choice 20261014-060800-ab12 task-1-1-implement --role implementer --tier haiku --effort high --pick agy:${id} --order ${item}`
+    const prompt = ['Run this command with the Bash tool, once, exactly as written:', '', `cd '/repo' && ${command}`, '', 'Then return its exit code and its complete standard output, exactly as printed. Do not run anything else, and do not fix or retry anything.'].join('\n')
+    assert.equal(parseOpsPrompt(prompt) !== null, read, `${id}: lib and mod agree`)
+    return read
+  }
+  const shippedIds = Object.values(shipped().harnesses).flatMap((h) => Object.keys(h.models))
+  assert.ok(shippedIds.length > 0)
+  for (const id of shippedIds) assert.equal(logs(id), true, `shipped ${id}`)
+  assert.doesNotThrow(() => lanes.loadConfig(lanes.CONFIG_FILE))
+  const ids = ['m1', 'gpt-5.1', 'a_b', 'x-ai/grok-5', 'gpt-5@high', 'o3:high', '-x', '.x', '_x', 'x y', 'x;y', 'x$y', "x'y", 'é', 'x\\y', 'x/', 'a::b']
+  for (const id of ids) assert.equal(inTable(id), logs(id), id)
+  assert.equal(inTable('x-ai/grok-5'), false)
+  assert.equal(inTable('gpt-5@high'), false)
+})
+
 test('the table gives the life of a harness reading and the length of a dry mark, and refuses a bad one', (t) => {
   const config = shipped()
   assert.equal(config.dryMarkMinutes, 60)
