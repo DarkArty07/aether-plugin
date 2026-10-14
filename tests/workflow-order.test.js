@@ -136,6 +136,51 @@ test('a start that is unavailable runs the same call on the next candidate, and 
   assert.deepEqual(run.result.units[0].rounds.map((r) => r.provider.split(' ')[0]), ['agy', 'agy'])
 })
 
+test('a start that is unavailable frees its place in the pool, so the next candidate finds room (R13)', async (t) => {
+  const lanes = lanesWith({ implementer: { haiku: [FLASH, GROK_47] } }, { maxParallel: 1 })
+  const run = await runWorkflow(lanesRun(t, [task(1)], lanes), {
+    lane: withLane(status(TODAY), (call) => (call.command.verb === 'start' && call.lane.model === 'grok-4.7' ? { unavailable: 'workspace' } : undefined)),
+  })
+  ok(run)
+  assert.deepEqual(starts(run).map((s) => s.lane.model), ['grok-4.7', 'gemini-3.8-flash'])
+  assert.deepEqual(choices(run).map((c) => c.pick), ['agy:gemini-3.8-flash'])
+  assert.deepEqual(native(run, 'implementer'), [])
+  assert.equal(run.result.lanes.overflow, 0)
+})
+
+test('only a start unavailable for quota dries its group: one unavailable for the workspace is tried again by the next attempt and the next wave', async (t) => {
+  const lanes = lanesWith({ implementer: { haiku: [GROK_47, FLASH] } })
+  const run = await runWorkflow(lanesRun(t, [task(1), task(2, { depends: 'Task 1 — it builds on task 1' })], lanes), {
+    supervisor: retryOnce,
+    lane: withLane(status(TODAY), (call) => (call.command.verb === 'start' && call.lane.model === 'grok-4.7' ? { unavailable: 'workspace' } : undefined)),
+  })
+  ok(run)
+  // The second attempt of task 1 is in the same wave as the first, so no quota step has cleared anything between them.
+  const grok = starts(run).filter((s) => s.lane.model === 'grok-4.7').map((s) => s.lane.call)
+  assert.deepEqual(grok, ['task-1-1-implement', 'task-1-2-implement', 'task-2-1-implement', 'task-2-2-implement'])
+  assert.ok(choices(run).every((c) => !c.order.includes('excluded:dry')), choices(run).map((c) => c.order).join('\n'))
+})
+
+test('a quota step that fails leaves the views and the groups that ran dry as the last wave left them', async (t) => {
+  const lanes = lanesWith({ implementer: { haiku: [GROK_47, FLASH] } })
+  let steps = 0
+  const run = await runWorkflow(lanesRun(t, [task(1), task(2, { depends: 'Task 1 — it builds on task 1' })], lanes), {
+    lane: withLane(
+      (call, fallback) => (call.command.verb === 'status' ? (++steps === 1 ? { harnesses: TODAY } : { error: 'status failed' }) : fallback(call)),
+      (call) => (call.command.verb === 'start' && call.lane.model === 'grok-4.7' ? { unavailable: 'quota' } : undefined),
+    ),
+  })
+  ok(run)
+  assert.equal(steps, 2)
+  assert.deepEqual(starts(run).map((s) => [s.lane.call, s.lane.model]), [
+    ['task-1-1-implement', 'grok-4.7'],
+    ['task-1-1-implement', 'gemini-3.8-flash'],
+    ['task-2-1-implement', 'gemini-3.8-flash'],
+  ])
+  // Gemini keeps the priority wave 1 read for it (a wiped view would leave it without one), and grok stays out.
+  assert.equal(choices(run)[1].order, 'agy:gemini-3.8-flash:0.006044:picked/grok:grok-4.7:excluded:dry:absent')
+})
+
 test('a call that ends for quota keeps its group out of the rest of the run, and the same attempt goes on native', async (t) => {
   const lanes = lanesWith({ implementer: { haiku: [GROK_47, FLASH] } })
   const run = await runWorkflow(lanesRun(t, [task(1)], lanes), {
@@ -197,14 +242,14 @@ test('the quota step never runs while a lane call holds a place, and runs once p
   assert.deepEqual(quota.map((c) => c.command.rest), [[run.result.runId, '--refresh'], [run.result.runId, '--refresh']])
 })
 
-test('a call never waits for the log of its choice, and the run returns only after every log ended', async (t) => {
+test('a call never waits for the log of its choice, and the run returns only after every log ended', { timeout: 30000 }, async (t) => {
   const lanes = lanesWith({ implementer: { haiku: [FLASH, GROK_47] }, supervisor: { sonnet: [SONNET] } })
-  // The log of every choice waits for the first merge; if a call waited for its log, the merge would never come, and the
-  // gate lets the log go after 300 ms so that the test fails instead of hanging.
+  // The log of every choice waits for the first merge; if a call waited for its log, the merge would never come. The gate holds
+  // until that merge and no clock decides it, so load cannot fail the test; the timeout of the test, long on
+  // purpose, makes a call that waits fail instead of hang.
   let release
   const gate = new Promise((resolve) => {
     release = resolve
-    setTimeout(resolve, 300)
   })
   const run = await runWorkflow(lanesRun(t, [task(1)], lanes), {
     lane: (call, fallback) => (call.command.verb === 'choice' ? gate.then(() => ({ logged: true })) : status(TODAY)(call, fallback)),
