@@ -51,6 +51,14 @@ function usageWithout(name) {
   return JSON.stringify(data)
 }
 
+// A group /usage lists with an empty bucket list has no reading either, and must come back the same way: with no
+// windows it would be judged dry by the runner, which holds a group for 60 minutes without having read it so.
+function usageWithEmptyBuckets(name) {
+  const data = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'))
+  data.command.data.groups.find((group) => group.name === name).buckets = []
+  return JSON.stringify(data)
+}
+
 test('a table group that /usage does not list is unknown, with no windows, and the listed one keeps its windows', () => {
   const exec = () => ({ status: 0, stdout: usageWithout('Claude and GPT models'), stderr: '' })
   const { groups } = createAgy({ command: '/opt/agy', groups: GROUPS, exec }).quota()
@@ -73,4 +81,28 @@ test('a /usage that omits a table group is still read once inside the reading li
   assert.equal(first.cached, false)
   assert.equal(second.cached, true)
   assert.deepEqual(second.groups.claude, { unknown: true, windows: {} })
+})
+
+test('a table group that /usage lists with no buckets is unknown, with no windows, and the other one keeps its windows', () => {
+  const exec = () => ({ status: 0, stdout: usageWithEmptyBuckets('Gemini Models'), stderr: '' })
+  const { groups } = createAgy({ command: '/opt/agy', groups: GROUPS, exec }).quota()
+  assert.deepEqual(groups.gemini, { unknown: true, windows: {} })
+  assert.equal(groups.claude.windows.weekly.remaining, 0.0017788000404834747)
+  assert.deepEqual(Object.keys(groups).sort(), ['claude', 'gemini'])
+})
+
+test('a /usage that lists a table group with no buckets is still read once inside the reading life', (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-usage-empty-'))
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }))
+  let reads = 0
+  const exec = () => (reads++, { status: 0, stdout: usageWithEmptyBuckets('Gemini Models'), stderr: '' })
+  const adapter = createAgy({ command: '/opt/agy', groups: GROUPS, exec })
+  const settings = { quotaLifeMinutes: 10, groups: GROUPS }
+  const at = Date.parse('2026-10-14T12:00:00Z')
+  const first = readings.readGroups(adapter, { harness: 'agy', settings, dataDir, now: at })
+  const second = readings.readGroups(adapter, { harness: 'agy', settings, dataDir, now: at + 5 * 60 * 1000 })
+  assert.equal(reads, 1)
+  assert.equal(first.cached, false)
+  assert.equal(second.cached, true)
+  assert.deepEqual(second.groups.gemini, { unknown: true, windows: {} })
 })
