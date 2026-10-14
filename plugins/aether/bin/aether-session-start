@@ -74,7 +74,8 @@ function mark(sessionId) {
   try {
     const { markSession } = require(path.join(root, 'lib', 'session.js'))
     const { dataDir } = require(path.join(root, 'lib', 'run.js'))
-    markSession(dataDir(), sessionId)
+    // The ops option is on unless it is exactly false: the mod reads the session's ops-off file.
+    markSession(dataDir(), sessionId, Date.now(), { opsInMod: process.env.CLAUDE_PLUGIN_OPTION_OPS !== 'false' })
     return ''
   } catch (err) {
     return (err && err.message) || String(err)

@@ -25,7 +25,7 @@ type Answer = { exitCode: number; stdout: string; stderr?: string } | { deny: st
 
 // Answers what the mod asks Claude Code for. `answer` is what $.process.run gives; `modelSteps` counts the
 // steps that reached the model; `writes` keeps the files the mod writes.
-function stubs(on, { marked = true, answer = { exitCode: 0, stdout: '{"merged":true,"commit":"abc"}\n', stderr: '' } as Answer } = {}) {
+function stubs(on, { marked = true, opsOff = false, answer = { exitCode: 0, stdout: '{"merged":true,"commit":"abc"}\n', stderr: '' } as Answer } = {}) {
   const runs: Run[] = []
   const writes: { path: string; text: string }[] = []
   const counts = { modelSteps: 0 }
@@ -34,7 +34,7 @@ function stubs(on, { marked = true, answer = { exitCode: 0, stdout: '{"merged":t
   on('session.id', () => ({ value: 's1' }))
   on('session.version', () => ({ value: { version: '2.1.296', base: '2.1.296', builtAt: '2026-10-09T00:00:00Z' } }))
   on('fs.list', () => ({ value: [] }))
-  on('fs.exists', ($, e) => ({ value: marked && e.path.endsWith('/sessions/s1.json') }))
+  on('fs.exists', ($, e) => ({ value: (marked && e.path.endsWith('/sessions/s1.json')) || (opsOff && e.path.endsWith('/sessions/s1.ops-off')) }))
   on('fs.write', ($, e) => {
     writes.push({ path: e.path, text: e.text })
     return { value: undefined }
@@ -250,4 +250,13 @@ test('outside an Aether session an ops prompt is never run by the mod', async ($
   expect(runs.length).toBe(0)
   expect(counts.modelSteps).toBe(1)
   expect(writes).toEqual([])
+})
+
+test('with the ops option off the session never has its commands run by the mod, and the model path answers', async ($, on) => {
+  const { runs, counts } = stubs(on, { opsOff: true })
+  await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
+  const { chunks } = await step($)
+  expect(runs).toEqual([])
+  expect(counts.modelSteps).toBe(1)
+  expect(chunks.some((c) => c.kind === 'tool')).toBe(false)
 })

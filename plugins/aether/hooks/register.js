@@ -101,7 +101,7 @@ async function readDataDir($) {
 function sessionOf(id) {
   let state = sessions.get(id)
   if (!state) {
-    state = { id, aether: undefined, dataDir: null, ready: null, entries: [], agents: {}, written: 0, writing: false, pending: false, ops: new Map() }
+    state = { id, aether: undefined, opsOff: undefined, dataDir: null, ready: null, entries: [], agents: {}, written: 0, writing: false, pending: false, ops: new Map() }
     sessions.set(id, state)
   }
   return state
@@ -241,6 +241,21 @@ function leftBehind(command) {
   return 'what it changed is unknown'
 }
 
+// Whether the session's ops option is off: the session-start hook leaves <id>.ops-off beside the marker. The first
+// answer is kept; a failed or refused check counts as on, which is the default.
+async function opsOff($, state) {
+  if (state.opsOff !== undefined) return state.opsOff
+  let off = false
+  try {
+    state.dataDir ??= readDataDir($)
+    off = (await $.fs.exists(`${await state.dataDir}/sessions/${state.id}.ops-off`)) === true
+  } catch {
+    off = false
+  }
+  state.opsOff = off
+  return off
+}
+
 // The command an ops agent carries, when the mod may run it, else null. Only an agent a workflow spawned
 // with a schema has the StructuredOutput tool the answer calls; aether:run always passes one.
 function opsCommand(e) {
@@ -274,7 +289,7 @@ export function register(on) {
     if (result && result.agentId) {
       state.agents[result.agentId] = { type: e.subagentType || null, description: e.description || null }
       const command = opsCommand(e)
-      if (command) state.ops.set(result.agentId, command)
+      if (command && !(await opsOff($, state))) state.ops.set(result.agentId, command)
     }
     return result
   }).catch(($, e, next) => next(e))
