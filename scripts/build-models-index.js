@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 'use strict'
 
-// Usage: node scripts/build-models-index.js [--from <raw.json>] [--since 2026-01-01] [--harnesses agy,grok] [--write]
+// Usage: node scripts/build-models-index.js [--from <raw.json>] [--since 2026-01-01] [--harnesses claude,agy,grok] [--write]
 //                                           [--lanes <lanes.json>] [--harness <file>] [--profiles <file>] [--out <dir>] [--docs <dir>]
 //
 // Builds the list of the models our harnesses offer, from the Artificial Analysis (AA) models list: the
 // families released since a date, each with its effort variants, of which the ones that are the newest of
-// their line and that the CLI of a chosen harness lists are the models in use.
+// their line and that the CLI of a chosen harness lists are the models in use. The harnesses are the
+// native one (claude) and the lanes (agy, grok by default; codex and cursor on request).
 // Without --from it asks the AA API (the key comes from where refresh-lanes.js looks for it, and is
 // never printed); with --from it reads a saved answer of the same API. It prints a short summary; with
 // --write it also writes models.json (the models in use, each with its scores at the efforts its harness
-// takes and its profile, and what was left out) in --out, which is the plugin's config/models folder (it
-// ships with the plugin, so a session in any project reads it), and the generated part of README.md in
-// --docs (docs/models). profiles.json, kept by hand, says what each model is for; a model in use without
-// one is listed and the exit code is 1. The harness models come from harness-models.json next to models.json:
-// what each CLI listed on a date, kept as a file because the CLIs need a login and a network to list them.
+// takes and its profile, the models the owner keeps out, and what was left out) in --out, which is the
+// plugin's config/models folder (it ships with the plugin, so a session in any project reads it), and the
+// generated part of README.md in --docs (docs/models). profiles.json, kept by hand, says what each model is
+// for; a model in use or excluded without one is listed and the exit code is 1. The harness models come from
+// harness-models.json next to models.json: what each CLI listed on a date (per harness), kept as a file
+// because the CLIs need a login and a network to list them.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -25,10 +27,11 @@ const DEFAULT_LANES = path.join(__dirname, '..', 'plugins', 'aether', 'config', 
 const DEFAULT_OUT = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models')
 const DEFAULT_DOCS = path.join(__dirname, '..', 'docs', 'models')
 const USAGE =
-  'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--harnesses agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--harness <file>] [--out <dir>] [--docs <dir>]'
-const HARNESSES = ['agy', 'codex', 'grok', 'cursor']
+  'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--harnesses claude,agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--harness <file>] [--out <dir>] [--docs <dir>]'
+// claude is the native harness, the first: its models are not lanes. The others are lanes.
+const HARNESSES = ['claude', 'agy', 'codex', 'grok', 'cursor']
 // The chosen harnesses, whose models the index keeps. Another comes in with --harnesses once its listing is in harness-models.json.
-const DEFAULT_HARNESSES = ['agy', 'grok']
+const DEFAULT_HARNESSES = ['claude', 'agy', 'grok']
 const LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 // From the least to the most effort. default is a reasoning model with no level named, and none is
 // the harness's word for no reasoning; both sit under the named levels.
@@ -48,6 +51,7 @@ const RULES = {
 }
 // How to capture the listing of each harness into harness-models.json.
 const CAPTURE = {
+  claude: 'by hand from `claude --help` (its --model aliases and its --effort levels; Claude Code has no command that lists models)',
   agy: 'with `agy models`',
   codex: 'from the `models` of ~/.codex/models_cache.json (codex has no command that lists them)',
   grok: 'with `grok models`',
@@ -105,11 +109,16 @@ function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels =
     count: list.length,
     currentCount: list.filter((family) => family.current).length,
     variantCount: list.reduce((sum, family) => sum + family.variants.length, 0),
-    listedOn: harnessModels.capturedAt ?? null,
+    listedOn: Object.fromEntries(harnesses.map((name) => [name, captureDate(harnessModels, name)])),
     families: list,
     unmatched,
     notOffered,
   }
+}
+
+// The day a harness's listing was captured: its own date, or the file's when the file has one for all.
+function captureDate(listings, harness) {
+  return listings.harnesses?.[harness]?.capturedAt ?? listings.capturedAt ?? null
 }
 
 // Every AA entry, grouped by family key. A map from the key to its entries, each with the pieces
@@ -305,6 +314,8 @@ function harnessEntries(lanes, listings, harnesses = HARNESSES) {
           ids: found.ids,
           fastIds: found.fastIds,
           listing: found.listing,
+          ...(found.alias ? { alias: found.alias } : {}),
+          ...(found.excluded ? { excluded: found.excluded } : {}),
           inLaneTable,
           roles: entry?.roles ?? [],
           replaces: entry?.replaces ?? null,
@@ -356,15 +367,24 @@ function splitId(listed) {
   return { model: thinking ? `${rest}-thinking` : rest, effort, fast }
 }
 
-// The models of a harness that takes the effort in a flag (codex, grok): each listed id is a model.
-// A model's own efforts win over the harness's.
+// The models of a harness that takes the effort in a flag (claude, codex, grok): each listed id is a model.
+// A listing is an id (a string) or an object: {id, alias, efforts, listed, excluded}. A model's own efforts
+// win over the harness's; the alias is the name the CLI takes in place of the id (claude --model sonnet);
+// `excluded` is the reason the owner keeps a listed model out of use.
 function listedByFlag(listing) {
   const result = new Map()
   for (const listed of listing.models ?? []) {
+    const object = typeof listed === 'string' ? {} : listed
     const model = typeof listed === 'string' ? listed : listed.id
-    const efforts = typeof listed === 'string' ? listing.efforts : (listed.efforts ?? listing.efforts)
-    const hidden = typeof listed !== 'string' && listed.listed === false
-    result.set(model, { efforts: sortEfforts(new Set(efforts ?? [])), ids: null, fastIds: null, listing: hidden ? 'hidden' : 'listed' })
+    const efforts = object.efforts ?? listing.efforts
+    result.set(model, {
+      efforts: sortEfforts(new Set(efforts ?? [])),
+      ids: null,
+      fastIds: null,
+      listing: object.listed === false ? 'hidden' : 'listed',
+      alias: typeof object.alias === 'string' && object.alias !== '' ? object.alias : null,
+      excluded: typeof object.excluded === 'string' && object.excluded !== '' ? object.excluded : null,
+    })
   }
   return result
 }
@@ -412,19 +432,42 @@ function serialize(value, depth = 0) {
 
 // models.json: the models in use, which are the current families a chosen harness offers, one entry per
 // harness model, each with the scores of the efforts that harness takes and its profile (what its maker
-// says it is for); and what was left out, with why. A session reads this to choose a model.
+// says it is for); the listed models the owner keeps out (`excluded`, with the reason, the AA price and
+// scores when AA has them, and the profile); and what was left out, with why. A session reads this to
+// choose a model. A model a native harness lists has `alias` (the name its CLI takes) and a null lane.
 function buildModels(index, profiles = {}) {
   const profileOf = (key) => profiles[key] ?? null
   const laneOf = (entry) => (entry.inLaneTable ? { roles: entry.roles, replaces: entry.replaces } : null)
   const byHarness = (a, b) => HARNESSES.indexOf(a.harness) - HARNESSES.indexOf(b.harness)
 
   const models = []
+  const excluded = []
   for (const family of index.families.filter((entry) => entry.current)) {
     const profile = profileOf(family.family)
     for (const offer of family.available) {
+      if (offer.excluded) {
+        const scores = offeredVariants(family, [offer]).map(scoreRecord)
+        excluded.push({
+          harness: offer.harness,
+          model: offer.model,
+          ...(offer.alias ? { alias: offer.alias } : {}),
+          family: family.family,
+          name: family.name,
+          maker: profile?.maker ?? family.creator,
+          released: family.releaseDate,
+          reason: offer.excluded,
+          effortVia: offer.effortVia,
+          efforts: offer.efforts,
+          price: priceOf(scores),
+          scores,
+          profile: profileRecord(profile),
+        })
+        continue
+      }
       models.push({
         harness: offer.harness,
         model: offer.model,
+        ...(offer.alias ? { alias: offer.alias } : {}),
         family: family.family,
         name: family.name,
         maker: profile?.maker ?? family.creator,
@@ -441,8 +484,25 @@ function buildModels(index, profiles = {}) {
   }
 
   // The offered models AA has no entry for: they have no figures, and the lane table may not name them.
-  const withoutFigures = index.unmatched
-    .filter((entry) => entry.reason === NO_ENTRY)
+  const noEntry = index.unmatched.filter((entry) => entry.reason === NO_ENTRY)
+  // An excluded model AA has no entry for is excluded all the same, without a price or scores.
+  for (const entry of noEntry.filter((item) => item.excluded)) {
+    excluded.push({
+      harness: entry.harness,
+      model: entry.model,
+      ...(entry.alias ? { alias: entry.alias } : {}),
+      name: profileOf(entry.model)?.name ?? entry.model,
+      maker: profileOf(entry.model)?.maker ?? null,
+      reason: entry.excluded,
+      effortVia: entry.effortVia,
+      efforts: entry.efforts,
+      price: null,
+      scores: [],
+      profile: profileRecord(profileOf(entry.model)),
+    })
+  }
+  const withoutFigures = noEntry
+    .filter((entry) => !entry.excluded)
     .map((entry) => ({
       harness: entry.harness,
       model: entry.model,
@@ -485,11 +545,18 @@ function buildModels(index, profiles = {}) {
     listedOn: index.listedOn,
     rules: RULES,
     models: models.sort(byHarness),
+    excluded: excluded.sort(byHarness),
     notOffered,
     withoutFigures,
     superseded: superseded.sort(byHarness),
     outOfScope,
   }
+}
+
+// The price of an excluded model: the first score, from the highest effort down, that has one.
+function priceOf(scores) {
+  const priced = [...scores].reverse().find((score) => score.priceInput !== null && score.priceOutput !== null)
+  return priced ? { input: priced.priceInput, output: priced.priceOutput } : null
 }
 
 // The scores of a variant as models.json keeps them: AA's slug and label are in the index, not here.
@@ -520,8 +587,9 @@ function offeredVariants(family, offers = family.available) {
   return offered.length > 0 ? offered : family.variants
 }
 
-// The part of README.md that comes from models.json: the rules, a table of the models in use, what each
-// is for, and what was left out.
+// The part of README.md that comes from models.json: the rules, a table of the models in use (the native
+// harness's rows have no `*`: they are not lanes), what each is for, and what was left out, the excluded
+// models first.
 function renderGenerated(file) {
   const lines = [
     '## Rules',
@@ -534,11 +602,12 @@ function renderGenerated(file) {
     '|---|---|---|---:|---:|---:|---:|',
     ...file.models.map(tableRow),
     '',
-    `Generated on ${file.generatedAt} from ${file.source}; the harnesses' listings are of ${file.listedOn}. Scores are at the highest effort the harness takes that AA scored (\`models.json\` has each effort); \`*\`: in the lane table.`,
+    `Generated on ${file.generatedAt} from ${file.source}; the harnesses' listings are of ${listedText(file.listedOn)}. Scores are at the highest effort the harness takes that AA scored (\`models.json\` has each effort); \`*\`: in the lane table.`,
     '',
     "## What each is for (`profiles.json`, from the maker's pages)",
     '',
     ...file.models.map((entry) => profileLine(entry, null)),
+    ...(file.excluded ?? []).map((entry) => profileLine(entry, 'excluded')),
     ...file.withoutFigures.map((entry) => profileLine(entry, 'no figures')),
     ...file.notOffered.map((entry) => profileLine(entry, 'not offered')),
     '',
@@ -546,6 +615,7 @@ function renderGenerated(file) {
     '',
   ]
   const left = [
+    ['Excluded, not used', (file.excluded ?? []).map((entry) => `${entry.harness} \`${entry.model}\`${entry.alias ? ` (\`${entry.alias}\`)` : ''}: ${entry.reason.replace(/\.$/, '')}`)],
     ['Not offered', file.notOffered.map((entry) => `${entry.harness} \`${entry.model}\`${entry.roles.length > 0 ? ` (${entry.roles.join(', ')})` : ''}: ${entry.reason}`)],
     ['No figures', file.withoutFigures.map((entry) => `${entry.harness} \`${entry.model}\`: ${entry.note}`)],
     ['Superseded, not to be used', supersededGroups(file.superseded)],
@@ -555,6 +625,15 @@ function renderGenerated(file) {
     if (items.length > 0) lines.push(`- ${title}: ${items.join('; ')}.`)
   }
   return lines.join('\n')
+}
+
+// The days the listings were captured: one date when every harness has the same, else a date per harness.
+function listedText(listedOn) {
+  if (listedOn === null || listedOn === undefined) return '–'
+  if (typeof listedOn === 'string') return listedOn
+  const dates = new Set(Object.values(listedOn))
+  if (dates.size === 1) return [...dates][0] ?? '–'
+  return Object.entries(listedOn).map(([name, date]) => `${name} ${date ?? '–'}`).join(', ')
 }
 
 // The superseded models as "harness `old`, `older` by `new`", one group per harness and successor.
@@ -590,7 +669,8 @@ function tableRow(entry) {
 
 // A model as a line of the README: what it is for, its limits, price and where it runs.
 function profileLine(entry, state) {
-  const head = `- **${cell(entry.name)}** \`${entry.model}\` (${[entry.harness, state].filter(Boolean).join(', ')})`
+  const where = [entry.harness, entry.alias ? `alias \`${entry.alias}\`` : null, state].filter(Boolean).join(', ')
+  const head = `- **${cell(entry.name)}** \`${entry.model}\` (${where})`
   const profile = entry.profile
   if (!profile) return `${head}: **no profile: read the maker's page and add it to profiles.json**`
   const tokens = (count) => (count === null || count === undefined ? '–' : count >= 1e6 ? `${Number((count / 1e6).toFixed(2))}M` : `${Math.round(count / 1000)}K`)
@@ -718,10 +798,11 @@ function readProfiles(file) {
 }
 
 // What of models.json has no profile, as the keys to research and add to profiles.json: a model in use is
-// keyed by its family, the others by their harness model id.
+// keyed by its family (an excluded one too, when AA has it), the others by their harness model id.
 function missingProfiles(file) {
   const keys = [
     ...file.models.filter((entry) => entry.profile === null).map((entry) => entry.family),
+    ...(file.excluded ?? []).filter((entry) => entry.profile === null).map((entry) => entry.family ?? entry.model),
     ...file.withoutFigures.filter((entry) => entry.profile === null).map((entry) => entry.model),
     ...file.notOffered.filter((entry) => entry.profile === null).map((entry) => entry.model),
   ]
@@ -748,14 +829,19 @@ function summary(index) {
     return `${name} ${count}`
   })
   const named = (entries) => entries.map((entry) => `${entry.harness}/${entry.model}`).join(', ') || 'none'
-  const noFigures = index.unmatched.filter((entry) => entry.reason === NO_ENTRY)
+  const noFigures = index.unmatched.filter((entry) => entry.reason === NO_ENTRY && !entry.excluded)
   const outOfScope = index.unmatched.filter((entry) => entry.reason !== NO_ENTRY)
+  const excluded = [
+    ...index.families.filter((family) => family.current).flatMap((family) => family.available.filter((entry) => entry.excluded)),
+    ...index.unmatched.filter((entry) => entry.reason === NO_ENTRY && entry.excluded),
+  ]
   return (
     `${index.count} families (${index.variantCount} variants) are offered by ${index.harnesses.join(', ')}, of the ${index.releasedCount} released since ${index.since}; ${index.currentCount} are current.\n` +
     `Offered by harness (families): ${reached.join(', ')}.\n` +
     `Offered with no figures (${noFigures.length}): ${named(noFigures)}.\n` +
     `Offered and out of scope, released before ${index.since} (${outOfScope.length}): ${named(outOfScope)}.\n` +
-    `Named by the lane table and not offered (${index.notOffered.length}): ${named(index.notOffered)}.\n`
+    `Named by the lane table and not offered (${index.notOffered.length}): ${named(index.notOffered)}.\n` +
+    (excluded.length > 0 ? `Offered and excluded by the owner (${excluded.length}): ${named(excluded)}.\n` : '')
   )
 }
 

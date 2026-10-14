@@ -1,7 +1,20 @@
 {
-  "capturedAt": "2026-10-13",
   "harnesses": {
+    "claude": {
+      "capturedAt": "2026-10-14",
+      "listedBy": "claude --help",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "note": "The native harness: Claude Code has no command that lists models, so this is captured by hand from claude --help. Its --model takes an alias for the latest model of a line or a model's full name (the help gives the aliases fable, opus and sonnet as examples; haiku is the alias Aether's agents already use) and its --effort takes low, medium, high, xhigh and max. Each id is the Claude API id the alias resolves to.",
+      "models": [
+        {"id":"claude-haiku-5-5","alias":"haiku"},
+        {"id":"claude-sonnet-5-5","alias":"sonnet"},
+        {"id":"claude-opus-5-5","alias":"opus"},
+        {"id":"claude-fable-5-1","alias":"fable","excluded":"The owner keeps Fable out until Fable 5.5 (decision A43)."}
+      ]
+    },
     "agy": {
+      "capturedAt": "2026-10-13",
       "listedBy": "agy models",
       "effortVia": "id",
       "models": [
@@ -18,6 +31,7 @@
       ]
     },
     "grok": {
+      "capturedAt": "2026-10-13",
       "listedBy": "grok models",
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh"],
