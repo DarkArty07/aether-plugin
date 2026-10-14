@@ -126,6 +126,17 @@ test('a call that ends for quota holds its group until the reset when its final 
   assert.deepEqual(marks.liveMarks(other.AETHER_DATA_DIR), [])
 })
 
+test('a call that fails while /usage omits its group is failed, not quota: the group is unknown and nothing is held (plan P5, R8)', (t) => {
+  const env = fx.laneEnv(t)
+  // Only the Claude group is listed: the final reading has no entry for the call's group, Gemini.
+  const omits = JSON.stringify({ 'Claude and GPT models': [0.9, 0.9] })
+  const done = runCall(t, ['FAKE-AGY: write src/t1/half.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${omits}`, 'FAKE-AGY: timeout'], env)
+  assert.equal(done.status, 'failed', done.detail)
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null)
+  assert.deepEqual(marks.liveMarks(env.AETHER_DATA_DIR), [])
+  assert.equal(done.lane.quota.usable, true)
+})
+
 test('a call of a harness that reports no quota, which ends for a quota line in its output, holds its group for the default length', async (t) => {
   // codex stands for any harness without a reader: only the output can say it ran dry, and the group has no balance.
   const { args } = fx.laneRun(t)

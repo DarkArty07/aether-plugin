@@ -94,6 +94,12 @@ function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = pro
         }
         reported[key] = { windows }
       }
+      // A table group that /usage does not list has no reading: unknown, never absent. An absent group would be judged
+      // as a quota failure by the runner (a call that fails there would leave a mark), and it would keep the saved
+      // reading from holding for its life, since that needs every group of the table.
+      for (const key of keyOfGroup.values()) {
+        if (!Object.hasOwn(reported, key)) reported[key] = { unknown: true, windows: {} }
+      }
       return { groups: reported }
     },
 
