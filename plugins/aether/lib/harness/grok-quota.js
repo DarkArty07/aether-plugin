@@ -16,7 +16,7 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const lanes = require('../lanes.js')
 const run = require('../run.js')
-const { ACP_TIMEOUT_MS, readBillingViaAcp } = require('./grok-acp.js')
+const { ACP_TIMEOUT_MS, readBillingViaAcp, undoWhenKilled } = require('./grok-acp.js')
 
 const BILLING_MESSAGE = 'billing: fetched credits config'
 // What a billing config without creditUsagePercent says about the week: the share used, in percent. The only place
@@ -307,6 +307,17 @@ async function openAndRead({ command, logFile, env, sessionsDir, started, pollUn
   const term = laneVariables.TERM && laneVariables.TERM !== 'dumb' ? laneVariables.TERM : 'xterm-256color'
   const childEnv = { ...laneVariables, TERM: term, GROK_DISABLE_AUTOUPDATER: '1' }
   let child = null
+  // Ends the UI and removes what it left. After the UI is ended, so that grok writes nothing more into the folder. It
+  // runs on the way out of the refresh, or from a signal that ends the process; run twice it does no harm.
+  const clear = () => {
+    try {
+      if (child) stop(child, marker)
+    } finally {
+      removeSessionFolder(sessionsDir, dir, realDir)
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  const release = undoWhenKilled(clear)
   try {
     child = launch({ command, cwd: dir, env: childEnv })
     if (!child) return null
@@ -320,13 +331,8 @@ async function openAndRead({ command, logFile, env, sessionsDir, started, pollUn
   } catch {
     return null
   } finally {
-    try {
-      if (child) stop(child, marker)
-    } finally {
-      // After the UI is ended, so that grok writes nothing more into the folder.
-      removeSessionFolder(sessionsDir, dir, realDir)
-      fs.rmSync(dir, { recursive: true, force: true })
-    }
+    release()
+    clear()
   }
 }
 
@@ -346,7 +352,8 @@ async function readViaAcp({ command, env, acpTimeoutMs, now, acp }) {
 // UI is opened with no prompt, for up to timeoutMs from the moment it starts, and the line it writes is the reading.
 // The lock, and so whoever waits on it, lasts the whole refresh: acpTimeoutMs + timeoutMs. A refresh started while
 // another runs waits for it and takes its reading, so only one grok starts. Never run it inside a lane call: it takes
-// up to acpTimeoutMs + timeoutMs. acp, launch, stop, now and wait are for tests; sessionsDir is where the UI's session
+// up to acpTimeoutMs + timeoutMs. If the process is ended by SIGTERM, SIGINT or SIGHUP meanwhile, the agent or the UI,
+// its directories and the lock are removed before it exits with 143. acp, launch, stop, now and wait are for tests; sessionsDir is where the UI's session
 // folder for its temporary directory is removed.
 async function refreshGrokQuota({
   command = 'grok',
@@ -371,6 +378,8 @@ async function refreshGrokQuota({
     return null
   }
   if (!lock.taken) return awaitHolder({ lockFile, logFile, holder: lock.holder, deadline, now, wait })
+  // Registered before the agent or the UI, so that a signal takes the lock back last, when they are ended.
+  const release = undoWhenKilled(() => fs.rmSync(lockFile, { force: true }))
   try {
     const viaAcp = await readViaAcp({ command, env, acpTimeoutMs, now, acp })
     if (viaAcp !== null) return viaAcp
@@ -379,6 +388,7 @@ async function refreshGrokQuota({
     const pollUntil = uiStarted + Math.max(0, timeoutMs - KILL_WAIT_MS)
     return await openAndRead({ command, logFile, env, sessionsDir, started: uiStarted, pollUntil, now, launch, stop, wait })
   } finally {
+    release()
     fs.rmSync(lockFile, { force: true })
   }
 }

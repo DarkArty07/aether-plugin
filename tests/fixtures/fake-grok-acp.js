@@ -10,8 +10,13 @@
 //   error                   answers _x.ai/billing with a JSON-RPC error
 //   no-config               answers _x.ai/billing with a result that has no config
 //   exit-after-initialize   answers initialize and exits
-// AETHER_FAKE_ACP_LOG, when set, gets one JSON line when it starts ({ argv, cwd, cwdFiles, pid, updater, marker,
-// secret }) and one for each request it reads ({ request, params }).
+//   stubborn                never answers _x.ai/billing, ignores SIGTERM (and logs that it got it), does not exit when its
+//                           input ends, and starts a child in its group that ignores SIGTERM and carries no marker
+//   leaver                  as stubborn, but the agent itself exits on SIGTERM, leaving its child (no marker) in its group
+//   escaper                 as stubborn, but its child is in a session of its own and carries the marker
+// AETHER_FAKE_ACP_LOG, when set, gets one JSON line when it starts ({ argv, cwd, cwdFiles, pid, pgid, updater, marker,
+// secret }), one for each request it reads ({ request, params }), and in the three stubborn modes one for its child
+// ({ child }) and one for each SIGTERM ({ signal }).
 // The period in the fixture ended in October 2026. To answer for a period that is still running, and to leave in grok's
 // log the line the real grok leaves when it answers, a test sets:
 //   AETHER_FAKE_ACP_END_IN_HOURS   the answer's currentPeriod.end is this many hours from now
@@ -20,6 +25,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const readline = require('node:readline')
+const { spawn } = require('node:child_process')
 
 const [initialize, notification, billing] = fs.readFileSync(path.join(__dirname, 'grok-acp-billing.jsonl'), 'utf8').trim().split('\n')
 const mode = process.env.AETHER_FAKE_ACP_MODE || 'answer'
@@ -33,10 +39,23 @@ log({
   cwd: process.cwd(),
   cwdFiles: fs.readdirSync(process.cwd()),
   pid: process.pid,
+  pgid: Number(fs.readFileSync('/proc/self/stat', 'utf8').split(') ')[1].split(' ')[2]),
   updater: process.env.GROK_DISABLE_AUTOUPDATER ?? null,
   marker: process.env.AETHER_LANE_CALL ?? null,
   secret: process.env.XAI_API_KEY ?? null,
 })
+
+if (mode === 'stubborn' || mode === 'leaver' || mode === 'escaper') {
+  process.on('SIGTERM', () => {
+    log({ signal: 'SIGTERM' })
+    if (mode === 'leaver') process.exit(0)
+  })
+  setInterval(() => {}, 1000)
+  const env = { ...process.env }
+  if (mode !== 'escaper') delete env.AETHER_LANE_CALL
+  const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { detached: mode === 'escaper', stdio: 'ignore', env })
+  log({ child: child.pid })
+}
 
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   let message
@@ -52,7 +71,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     out(notification)
     if (mode === 'exit-after-initialize') process.exit(0)
   } else if (message.method === '_x.ai/billing') {
-    if (mode === 'silent') return
+    if (mode === 'silent' || mode === 'stubborn' || mode === 'leaver' || mode === 'escaper') return
     if (mode === 'error') return out(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Method not found' } }))
     if (mode === 'no-config') return out(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { subscription_tier: 'SuperGrok' } }))
     const hours = Number(process.env.AETHER_FAKE_ACP_END_IN_HOURS)

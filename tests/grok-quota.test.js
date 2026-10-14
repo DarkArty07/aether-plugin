@@ -5,6 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { spawn } = require('node:child_process')
 const { tempDir } = require('./helpers.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const { ABSENT_USED_PERCENT, newestEntry, readingOf, readGrokQuota, refreshGrokQuota } = require('../plugins/aether/lib/harness/grok-quota.js')
@@ -241,7 +242,7 @@ setInterval(() => {}, 1000)
   )
   fs.chmodSync(fakeGrok, 0o755)
   const started = Date.now()
-  const reading = await refreshGrokQuota({ command: fakeGrok, logFile, lockFile: path.join(dir, 'lock'), env: process.env, timeoutMs: 15000, acp: async () => null })
+  const reading = await refreshGrokQuota({ command: fakeGrok, logFile, lockFile: path.join(dir, 'lock'), sessionsDir: path.join(dir, 'sessions'), env: { ...process.env, HOME: dir }, timeoutMs: 15000, acp: async () => null })
   assert.ok(reading !== null, 'no reading')
   const ran = JSON.parse(fs.readFileSync(pidFile, 'utf8'))
   assert.deepEqual([ran.tty, ran.argv[0], ran.argv[2], ran.updater, reading.source.pid], [true, '--cwd', '--no-alt-screen', '1', ran.pid])
@@ -256,6 +257,101 @@ setInterval(() => {}, 1000)
     state = null
   }
   assert.ok(state === null || state === 'Z', `the fake grok is still running: ${state}`)
+})
+
+// ---- a refresh whose process is ended by a signal ----
+
+const QUOTA_MODULE = path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'harness', 'grok-quota.js')
+const FAKE_ACP = path.join(__dirname, 'fixtures', 'fake-grok-acp.js')
+
+// Whether a process is gone, or a zombie its new parent has not reaped yet.
+function gone(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+    return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0] === 'Z'
+  } catch {
+    return true
+  }
+}
+
+async function until(check, ms = 8000) {
+  for (let i = 0; i < ms / 50 && !check(); i++) await new Promise((resolve) => setTimeout(resolve, 50))
+  return check()
+}
+
+// refreshGrokQuota in a process of its own, with its own HOME, data directory and TMPDIR. acp false leaves the ACP
+// attempt to the real code; true gives nothing over ACP, so that the UI opens.
+function startRefresh(t, { command, acp, files, env }) {
+  const script = `require(${JSON.stringify(QUOTA_MODULE)}).refreshGrokQuota({ command: ${JSON.stringify(command)}, env: process.env, ${acp ? 'acp: async () => null, ' : ''}timeoutMs: 30000, acpTimeoutMs: 30000, ...${JSON.stringify(files)} })`
+  const child = spawn(process.execPath, ['-e', script], { env: { ...process.env, ...env }, stdio: 'ignore' })
+  t.after(() => child.kill('SIGKILL'))
+  return { child, exited: new Promise((resolve) => child.on('exit', (code, sig) => resolve({ code, sig }))) }
+}
+
+test('a refresh whose process is ended by a signal while grok answers over ACP ends the agent and removes the directory and the lock', async (t) => {
+  fs.chmodSync(FAKE_ACP, 0o755)
+  const dir = tempDir(t)
+  const tmp = path.join(dir, 'tmp')
+  fs.mkdirSync(tmp)
+  const acpLog = path.join(dir, 'acp.log')
+  const entries = () => (fs.existsSync(acpLog) ? fs.readFileSync(acpLog, 'utf8').trim().split('\n').map((line) => JSON.parse(line)) : [])
+  const files = { logFile: path.join(dir, 'unified.jsonl'), lockFile: path.join(dir, 'lock'), sessionsDir: path.join(dir, 'sessions') }
+  const env = { HOME: dir, TMPDIR: tmp, AETHER_DATA_DIR: path.join(dir, 'data'), AETHER_FAKE_ACP_MODE: 'stubborn', AETHER_FAKE_ACP_LOG: acpLog }
+  const { child, exited } = startRefresh(t, { command: FAKE_ACP, acp: false, files, env })
+  assert.equal(await until(() => entries().some((entry) => entry.child !== undefined)), true, 'the agent did not start')
+  assert.equal(fs.existsSync(files.lockFile), true, 'the lock is held')
+  child.kill('SIGTERM')
+  assert.deepEqual(await exited, { code: 143, sig: null })
+  const [agent, ...rest] = entries()
+  const grandchild = rest.find((entry) => entry.child !== undefined).child
+  assert.equal(await until(() => gone(agent.pid) && gone(grandchild)), true, 'the agent and its child')
+  assert.deepEqual(fs.readdirSync(tmp), [])
+  assert.equal(fs.existsSync(files.lockFile), false)
+})
+
+test("a refresh whose process is ended by a signal while grok's UI runs ends the UI and removes the directory, the session folder and the lock", { skip: lanes.commandPath('script') === null, timeout: 30000 }, async (t) => {
+  const dir = tempDir(t)
+  const sessionsDir = path.join(dir, 'sessions')
+  const pidFile = path.join(dir, 'grok.pid')
+  const fakeGrok = path.join(dir, 'grok')
+  // A grok that makes its session folder, as the real one does, and waits forever.
+  fs.writeFileSync(
+    fakeGrok,
+    `#!${process.execPath}
+const fs = require('node:fs')
+const path = require('node:path')
+const folder = path.join(${JSON.stringify(sessionsDir)}, encodeURIComponent(process.cwd()))
+fs.mkdirSync(folder, { recursive: true })
+fs.writeFileSync(path.join(folder, 'session.json'), '{}')
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid))
+setInterval(() => {}, 1000)
+`,
+  )
+  fs.chmodSync(fakeGrok, 0o755)
+  const tmp = path.join(dir, 'tmp')
+  fs.mkdirSync(tmp)
+  const files = { logFile: path.join(dir, 'unified.jsonl'), lockFile: path.join(dir, 'lock'), sessionsDir }
+  const { child, exited } = startRefresh(t, { command: fakeGrok, acp: true, files, env: { HOME: dir, TMPDIR: tmp, AETHER_DATA_DIR: path.join(dir, 'data') } })
+  assert.equal(await until(() => fs.existsSync(pidFile) && fs.readdirSync(sessionsDir).length === 1, 15000), true, 'the UI did not start')
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+  child.kill('SIGINT')
+  assert.deepEqual(await exited, { code: 143, sig: null })
+  assert.equal(await until(() => gone(pid)), true, 'the fake grok is still running')
+  assert.deepEqual(fs.readdirSync(tmp), [], 'the temporary directory')
+  assert.deepEqual(fs.readdirSync(sessionsDir), [], 'the session folder')
+  assert.equal(fs.existsSync(files.lockFile), false)
+})
+
+test('the signal handlers are in place only while a refresh holds the lock, one set whatever it does, and none for one that waits', async (t) => {
+  const count = () => ['SIGTERM', 'SIGINT', 'SIGHUP'].map((signal) => process.listenerCount(signal))
+  const before = count()
+  const during = []
+  const ui = fakeUi(t, { logLines: [LINE_1041] })
+  const first = refreshGrokQuota(options(ui, { acp: async () => (during.push(count()), null) }))
+  const second = refreshGrokQuota(options(ui))
+  await Promise.all([first, second])
+  assert.deepEqual(during, [before.map((n) => n + 1)])
+  assert.deepEqual(count(), before)
 })
 
 // ---- spec 002, A3: a missing creditUsagePercent, in one place ----
@@ -343,6 +439,34 @@ test('a refresh that gives no reading, or whose UI exits or throws, still remove
   assert.equal(seenA.length + seenB.length + seenC.length, 3)
   for (const folder of [...seenA, ...seenB, ...seenC]) assert.equal(fs.existsSync(folder), false, folder)
   assert.deepEqual(fs.readdirSync(sessions).sort(), [path.basename(other), '%2Fhome%2Fme%2Fproject', 'session_search.sqlite'].sort())
+})
+
+test('the session folder grok names after the realpath of the temporary directory is removed too, when TMPDIR is a symlink', async (t) => {
+  const { home, sessions } = homeWithSessions(t)
+  const base = tempDir(t)
+  fs.mkdirSync(path.join(base, 'real'))
+  fs.symlinkSync(path.join(base, 'real'), path.join(base, 'link'))
+  const saved = process.env.TMPDIR
+  process.env.TMPDIR = path.join(base, 'link')
+  t.after(() => {
+    if (saved === undefined) delete process.env.TMPDIR
+    else process.env.TMPDIR = saved
+  })
+  const ui = fakeUi(t, { logLines: [LINE_1041] })
+  const seen = []
+  // grok asks the system for its directory, which gives the real path, and names the session folder after it.
+  const launch = (o) => {
+    const folder = path.join(sessions, encodeURIComponent(fs.realpathSync(o.cwd)))
+    fs.mkdirSync(folder, { recursive: true })
+    fs.writeFileSync(path.join(folder, 'session.json'), '{}')
+    seen.push({ cwd: o.cwd, folder })
+    return ui.launch(o)
+  }
+  assert.notEqual(await refreshGrokQuota(options(ui, { env: { HOME: home, PATH: '/usr/bin' }, launch })), null)
+  assert.equal(seen.length, 1)
+  assert.notEqual(seen[0].folder, path.join(sessions, encodeURIComponent(seen[0].cwd)), 'the two names differ')
+  assert.equal(fs.existsSync(seen[0].folder), false)
+  assert.equal(fs.existsSync(seen[0].cwd), false)
 })
 
 // ---- the refresh over ACP, and the UI as its fallback ----
