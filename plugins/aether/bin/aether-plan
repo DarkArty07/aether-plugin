@@ -8,7 +8,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const lib = path.join(__dirname, '..', 'lib')
-const { parsePlan, buildGraph, renderBrief } = require(path.join(lib, 'plan.js'))
+const { parsePlan, buildGraph, renderBrief, specObjective } = require(path.join(lib, 'plan.js'))
 const { repoPaths, currentBranch, head } = require(path.join(lib, 'git.js'))
 const run = require(path.join(lib, 'run.js'))
 const lanes = require(path.join(lib, 'lanes.js'))
@@ -146,13 +146,22 @@ function compile(planArg, rest) {
   const priorIntegration = fs.existsSync(graphFile) ? run.readJson(graphFile).integration : null
 
   const spec = planSpec(parsed.spec, planPath, repo.worktree)
+  // The spec's intent and criteria go into every brief (trial 2). A spec that cannot be read adds nothing.
+  let objective = null
+  if (spec) {
+    try {
+      objective = specObjective(fs.readFileSync(path.isAbsolute(spec) ? spec : path.join(repo.worktree, spec), 'utf8'))
+    } catch {
+      objective = null
+    }
+  }
   const tasks = {}
   for (const t of parsed.tasks) {
     const id = `task-${t.number}`
     if (!graph.tasks[id]) continue
     const brief = path.join(dir, 'briefs', `${id}.md`)
     fs.mkdirSync(path.dirname(brief), { recursive: true })
-    fs.writeFileSync(brief, renderBrief(t, { planPath, spec, globalConstraints: parsed.globalConstraints }))
+    fs.writeFileSync(brief, renderBrief(t, { planPath, spec, globalConstraints: parsed.globalConstraints, objective }))
     tasks[id] = { ...graph.tasks[id], brief }
   }
 

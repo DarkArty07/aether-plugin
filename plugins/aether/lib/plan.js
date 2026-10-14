@@ -57,6 +57,37 @@ function parseSpec(lines) {
   return stripTicks(value) || null
 }
 
+// Issue 003: one task that owns this many paths, or the whole tree, is the kind that ends without its report.
+const MAX_OWNED_PATHS = 6
+const WHOLE_TREE = new Set(['**', '*', '**/*'])
+
+// What a brief carries of its spec (trial 2: a brief with only the contract leaves out the quality bar): the
+// intent, with the owner's quotes under it, and the criteria. Null when the spec has neither. Bounded.
+const MAX_OBJECTIVE_CHARS = 2000
+
+function specObjective(markdown) {
+  if (typeof markdown !== 'string') return null
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n')
+  const parts = []
+  const intent = lines.findIndex((line) => /^-\s*Intent:/i.test(line))
+  if (intent !== -1) {
+    const block = [lines[intent]]
+    // The quotes and notes under the intent are indented, or its text wraps.
+    for (let i = intent + 1; i < lines.length && /^\s+\S/.test(lines[i]); i++) block.push(lines[i])
+    parts.push(block.join('\n'))
+  }
+  const heading = lines.findIndex((line) => /^##\s+Criteria\s*$/i.test(line))
+  if (heading !== -1) {
+    let end = lines.findIndex((line, i) => i > heading && /^##\s/.test(line))
+    if (end === -1) end = lines.length
+    const body = lines.slice(heading + 1, end).join('\n').trim()
+    if (body) parts.push(body)
+  }
+  if (parts.length === 0) return null
+  const text = parts.join('\n\n')
+  return text.length > MAX_OBJECTIVE_CHARS ? `${text.slice(0, MAX_OBJECTIVE_CHARS - 1)}…` : text
+}
+
 function parseExecution(body, errors) {
   const execution = { testCommand: null, ladder: { ...DEFAULT_LADDER }, maxAgents: DEFAULT_MAX_AGENTS }
   if (body === null) {
@@ -288,6 +319,16 @@ function buildGraph(parsed, { only = null } = {}) {
     }
   }
 
+  for (const node of Object.values(nodes)) {
+    const whole = node.owns.find((pattern) => WHOLE_TREE.has(pattern))
+    if (whole) warnings.push(`Task ${node.number} owns the whole tree (\`${whole}\`); name the paths it needs (issue 003). Consider splitting it.`)
+    else if (node.owns.length > MAX_OWNED_PATHS) {
+      warnings.push(
+        `Task ${node.number} owns ${node.owns.length} paths; a task that large often ends without its report and the ladder repeats the failure (issue 003). Consider splitting it.`,
+      )
+    }
+  }
+
   // Layer the dependency graph into waves (Kahn's algorithm).
   const waves = []
   const placed = new Set()
@@ -329,7 +370,7 @@ function buildGraph(parsed, { only = null } = {}) {
   return { waves, tasks: nodes, errors, warnings }
 }
 
-function renderBrief(task, { planPath, spec, globalConstraints }) {
+function renderBrief(task, { planPath, spec, globalConstraints, objective = null }) {
   const parts = [
     `# Brief: Task ${task.number}: ${task.title}`,
     '',
@@ -343,8 +384,18 @@ function renderBrief(task, { planPath, spec, globalConstraints }) {
     '',
   ]
   if (globalConstraints) parts.push('## Global Constraints', '', globalConstraints, '')
+  if (objective) {
+    parts.push(
+      '## What the spec asks for',
+      '',
+      "This is the spec's intent and criteria. Your task serves them: the quality bar is the spec's, not only the tests'.",
+      '',
+      objective,
+      '',
+    )
+  }
   parts.push('## Task', '', task.text, '')
   return parts.join('\n')
 }
 
-module.exports = { TIERS, EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, parsePlan, buildGraph, renderBrief }
+module.exports = { TIERS, EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, MAX_OWNED_PATHS, parsePlan, buildGraph, renderBrief, specObjective }
