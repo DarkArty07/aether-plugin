@@ -214,6 +214,8 @@ Aether 0.8 no longer needs superpowers. If you keep it for other work, it still 
 
     claude --agent aether:lead --effort xhigh --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'
 
+`scripts/aether-lead` runs that command for you (see Start).
+
 ### Start
 
 Aether mode is chosen per session:
@@ -221,6 +223,12 @@ Aether mode is chosen per session:
     claude --agent aether:lead --effort xhigh
 
 The Lead is the agent `aether:lead`, on Sonnet. `--effort xhigh` sets its effort, because a plugin cannot. The command is the same in every shell.
+
+To type less, `scripts/aether-lead` in a clone of this repository runs the command of Install, with superpowers turned off for the session, and passes on every argument. It is one `exec claude`, with no setup of its own, so it is the same in bash, fish and zsh. Link it once, under any name on your `PATH`:
+
+    ln -s "$PWD/scripts/aether-lead" ~/.local/bin/aether-lead
+
+Then `aether-lead` starts Aether mode, `aether-lead --resume` resumes a session and `aether-lead -p "<task>"` runs one task. Without a clone, a shell alias of the same command does the same.
 
 To make Aether mode the default in one repository, put this in its `.claude/settings.local.json`:
 
@@ -338,7 +346,7 @@ The plugin is `plugins/aether/`, and the repository's `.claude-plugin/marketplac
 
     claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort xhigh
 
-That loads the tree for one session, in place of the installed release. Its data goes to `~/.claude/plugins/data/aether-inline/`, and its options are set apart, under `pluginConfigs["aether@inline"]` in your settings. The bins of a branch run by path: `node <worktree>/plugins/aether/bin/aether-plan check <plan>`.
+That loads the tree for one session, in place of the installed release; with the launcher it is `aether-lead --plugin-dir <worktree>/plugins/aether`. Its data goes to `~/.claude/plugins/data/aether-inline/`, and its options are set apart, under `pluginConfigs["aether@inline"]` in your settings. The bins of a branch run by path: `node <worktree>/plugins/aether/bin/aether-plan check <plan>`.
 
     npm test              # node --test "tests/*.test.js": bins, libraries, workflow scenarios and the fake model
     npm run test:mod      # claude plugin test plugins/aether: the mod (usage meter and ops)
