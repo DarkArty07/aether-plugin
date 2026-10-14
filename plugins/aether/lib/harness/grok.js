@@ -1,7 +1,7 @@
 'use strict'
 
 // The Grok harness: the headless command line, a run judged from the one JSON object grok prints, and the quota
-// read from the log grok's UI writes (grok-quota.js).
+// read from the log grok writes when it fetches its credits config (grok-quota.js).
 
 const { commandInstalled } = require('../lanes.js')
 const { defaultExec, extractJsonObject, parseRun, readVersion, stringsIn, unknownQuota, usageOf } = require('./structured.js')
@@ -50,7 +50,8 @@ function createGrok({ command = 'grok', groups = {}, exec = defaultExec, env = p
 
     // The newest reading of grok's log, for each group of the table, since the plan has one quota. It stays valid,
     // with its age in source.ageMinutes, until its period ends; no reading, or one of an ended period, is unknown.
-    // It only reads the log: a refresh opens grok's UI for seconds, which must not happen while a call holds a slot.
+    // It only reads the log: a refresh asks grok over ACP for seconds, and opens its UI only if that gives nothing, which
+    // must not happen while a call holds a slot.
     quota() {
       const reading = readGrokQuota({ logFile, now: now() })
       if (reading === null) return unknownQuota(groups)

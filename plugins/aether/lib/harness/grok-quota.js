@@ -16,7 +16,7 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const lanes = require('../lanes.js')
 const run = require('../run.js')
-const { ACP_TIMEOUT_MS, readBillingViaAcp } = require('./grok-acp.js')
+const { ACP_TIMEOUT_MS, readBillingViaAcp, undoWhenKilled } = require('./grok-acp.js')
 
 const BILLING_MESSAGE = 'billing: fetched credits config'
 // What a billing config without creditUsagePercent says about the week: the share used, in percent. The only place
@@ -25,6 +25,10 @@ const BILLING_MESSAGE = 'billing: fetched credits config'
 const ABSENT_USED_PERCENT = 0
 // The log grows by megabytes, and grok writes these lines when its UI starts: the newest is near the end.
 const TAIL_BYTES = 1024 * 1024
+// How far ahead of now a line's time may be and still count. grok writes its lines with the clock this process reads,
+// so only a clock that ran ahead and was set back leaves a line further ahead; such a line would win over every real
+// one until its time came.
+const CLOCK_SKEW_MS = 5 * 60 * 1000
 const TIMEOUT_MS = 20000
 const POLL_MS = 250
 // What lanes.killMarked waits between SIGTERM and SIGKILL. A refresh polls for no longer than its timeout less
@@ -90,10 +94,12 @@ function billingEntries(text) {
   return entries
 }
 
-// The newest billing entry of text by its time, the later line on a tie, or null.
-function newestEntry(text) {
+// The newest billing entry of text by its time, the later line on a tie, or null. Entries after notAfter (ms) are left
+// out.
+function newestEntry(text, { notAfter = Infinity } = {}) {
   let newest = null
   for (const item of billingEntries(text)) {
+    if (item.time > notAfter) continue
     if (newest === null || item.time >= newest.time) newest = item
   }
   return newest
@@ -126,11 +132,12 @@ function readingOf({ entry, time }, now, logFile = null, { absentUsed = ABSENT_U
 }
 
 // The newest reading in the last megabyte of grok's log at now (ms), or null when there is no log, no billing line,
-// or the newest one is unreadable or from a period that has ended.
+// or the newest one is unreadable or from a period that has ended. A line from more than CLOCK_SKEW_MS in the future
+// is not read, so the newest line that is not in the future decides.
 function readGrokQuota({ logFile = defaultLogFile(), now = Date.now(), absentUsed = ABSENT_USED_PERCENT } = {}) {
   const text = tailText(logFile)
   if (text === null) return null
-  const newest = newestEntry(text)
+  const newest = newestEntry(text, { notAfter: now + CLOCK_SKEW_MS })
   return newest === null ? null : readingOf(newest, now, logFile, { absentUsed })
 }
 
@@ -300,6 +307,17 @@ async function openAndRead({ command, logFile, env, sessionsDir, started, pollUn
   const term = laneVariables.TERM && laneVariables.TERM !== 'dumb' ? laneVariables.TERM : 'xterm-256color'
   const childEnv = { ...laneVariables, TERM: term, GROK_DISABLE_AUTOUPDATER: '1' }
   let child = null
+  // Ends the UI and removes what it left. After the UI is ended, so that grok writes nothing more into the folder. It
+  // runs on the way out of the refresh, or from a signal that ends the process; run twice it does no harm.
+  const clear = () => {
+    try {
+      if (child) stop(child, marker)
+    } finally {
+      removeSessionFolder(sessionsDir, dir, realDir)
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  const release = undoWhenKilled(clear)
   try {
     child = launch({ command, cwd: dir, env: childEnv })
     if (!child) return null
@@ -313,13 +331,8 @@ async function openAndRead({ command, logFile, env, sessionsDir, started, pollUn
   } catch {
     return null
   } finally {
-    try {
-      if (child) stop(child, marker)
-    } finally {
-      // After the UI is ended, so that grok writes nothing more into the folder.
-      removeSessionFolder(sessionsDir, dir, realDir)
-      fs.rmSync(dir, { recursive: true, force: true })
-    }
+    release()
+    clear()
   }
 }
 
@@ -339,7 +352,8 @@ async function readViaAcp({ command, env, acpTimeoutMs, now, acp }) {
 // UI is opened with no prompt, for up to timeoutMs from the moment it starts, and the line it writes is the reading.
 // The lock, and so whoever waits on it, lasts the whole refresh: acpTimeoutMs + timeoutMs. A refresh started while
 // another runs waits for it and takes its reading, so only one grok starts. Never run it inside a lane call: it takes
-// up to acpTimeoutMs + timeoutMs. acp, launch, stop, now and wait are for tests; sessionsDir is where the UI's session
+// up to acpTimeoutMs + timeoutMs. If the process is ended by SIGTERM, SIGINT or SIGHUP meanwhile, the agent or the UI,
+// its directories and the lock are removed before it exits with 143. acp, launch, stop, now and wait are for tests; sessionsDir is where the UI's session
 // folder for its temporary directory is removed.
 async function refreshGrokQuota({
   command = 'grok',
@@ -364,6 +378,8 @@ async function refreshGrokQuota({
     return null
   }
   if (!lock.taken) return awaitHolder({ lockFile, logFile, holder: lock.holder, deadline, now, wait })
+  // Registered before the agent or the UI, so that a signal takes the lock back last, when they are ended.
+  const release = undoWhenKilled(() => fs.rmSync(lockFile, { force: true }))
   try {
     const viaAcp = await readViaAcp({ command, env, acpTimeoutMs, now, acp })
     if (viaAcp !== null) return viaAcp
@@ -372,6 +388,7 @@ async function refreshGrokQuota({
     const pollUntil = uiStarted + Math.max(0, timeoutMs - KILL_WAIT_MS)
     return await openAndRead({ command, logFile, env, sessionsDir, started: uiStarted, pollUntil, now, launch, stop, wait })
   } finally {
+    release()
     fs.rmSync(lockFile, { force: true })
   }
 }

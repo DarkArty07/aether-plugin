@@ -201,7 +201,8 @@ function orderOf(cwd, runId, harnesses) {
 // Every harness of the table: an enabled one with the view of each of its groups (lane-quota.js), a disabled one by its
 // command alone; then the order of the run's candidates and the live dry marks. It never refreshes: the reading is the
 // one kept for its life, and grok's is its log's last line, however old. Each reading it takes goes to the lane log.
-function status(cwd, runId) {
+// latest maps a harness to the reading a refresh just took, which its view uses in place of asking its adapter.
+function status(cwd, runId, { latest = {} } = {}) {
   run.assertRunId(runId)
   repoPaths(cwd)
   const config = loadTable()
@@ -217,7 +218,7 @@ function status(cwd, runId) {
     const onRead = ({ groups }, version) => {
       lanes.appendLog(dataDir, null, { kind: 'reading', time: now, session: null, run: runId, design: null, harness: name, version, groups })
     }
-    harnesses[name] = { enabled: true, ...quota.harnessView(name, settings, { reserve: config.reserve, now, dataDir, fresh: false, onRead }) }
+    harnesses[name] = { enabled: true, ...quota.harnessView(name, settings, { reserve: config.reserve, now, dataDir, fresh: false, latest: latest[name] ?? null, onRead }) }
   }
   return { time: new Date(now).toISOString(), harnesses, order: orderOf(cwd, runId, harnesses), marks: marks.liveMarks(dataDir, now) }
 }
@@ -225,7 +226,7 @@ function status(cwd, runId) {
 // The wave's quota step: renews the reading of each enabled harness that has a way to renew it (grok, over ACP and then
 // through its UI) and whose reading is missing, unknown or older than its life. Only `status --refresh` calls it, and
 // nobody calls it from start or the runner. A harness that cannot be refreshed leaves its reading as it is; the answer
-// names the harnesses it tried, each as { refreshed, method }.
+// names the harnesses it tried, each as { refreshed, method, reading }.
 async function refreshStale(cwd, runId) {
   run.assertRunId(runId)
   repoPaths(cwd)

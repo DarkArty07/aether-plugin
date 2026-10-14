@@ -97,6 +97,35 @@ function ask(child, { waitMs, now }) {
   })
 }
 
+// What to undo when a signal ends this process while a refresh runs: the agent, the directory, the lock. A killed
+// parent would otherwise leave them, and the agent with whatever it started. One set of handlers serves every refresh
+// in the process, as lane-calls.js and seats.js register theirs; they are in place only while something is to undo.
+const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP']
+const undoOnSignal = new Set()
+
+// Undoes, newest first, whatever is registered, then ends the process as a signal does.
+function onSignal() {
+  for (const undo of [...undoOnSignal].reverse()) {
+    try {
+      undo()
+    } catch {
+      // Whatever stays is harmless: the next refresh takes over a left-over lock.
+    }
+  }
+  process.exit(143)
+}
+
+// Registers undo to run if SIGTERM, SIGINT or SIGHUP arrives. Returns the function that takes it back out; call it
+// when the work is done.
+function undoWhenKilled(undo) {
+  if (undoOnSignal.size === 0) for (const signal of SIGNALS) process.on(signal, onSignal)
+  undoOnSignal.add(undo)
+  return () => {
+    undoOnSignal.delete(undo)
+    if (undoOnSignal.size === 0) for (const signal of SIGNALS) process.removeListener(signal, onSignal)
+  }
+}
+
 function signalGroup(pid, signal) {
   if (!Number.isInteger(pid) || pid <= 0) return
   try {
@@ -139,6 +168,7 @@ function stopAgent({ child, dir, marker }) {
 async function readBillingViaAcp({ command = 'grok', env = process.env, timeoutMs = ACP_TIMEOUT_MS, now = Date.now } = {}) {
   // The marker uses the real clock, not now: it must tell this agent from every other, whatever clock a test gives.
   const session = { child: null, dir: null, marker: `grok-acp/${process.pid}-${Date.now()}` }
+  const release = undoWhenKilled(() => stopAgent(session))
   try {
     const grok = lanes.commandPath(command, env)
     if (grok === null) return null
@@ -154,6 +184,7 @@ async function readBillingViaAcp({ command = 'grok', env = process.env, timeoutM
   } catch {
     return null
   } finally {
+    release()
     stopAgent(session)
   }
 }
@@ -161,4 +192,5 @@ async function readBillingViaAcp({ command = 'grok', env = process.env, timeoutM
 module.exports = {
   ACP_TIMEOUT_MS,
   readBillingViaAcp,
+  undoWhenKilled,
 }
