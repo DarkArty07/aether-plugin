@@ -21,6 +21,9 @@ const LEVEL2 = /^##\s+\S/
 const DEFAULT_LADDER = { haiku: 2, sonnet: 2, opus: 1 }
 const DEFAULT_MAX_AGENTS = 200
 const MAX_LISTED_GAPS = 20
+// A requirement id is R<n>; a top-level item of the spec's Requirements section starts with one.
+const REQUIREMENT_ID = /^R\d+$/
+const REQUIREMENT_ITEM = /^-\s+\*{0,2}(R\d+)\b/
 
 function stripTicks(text) {
   return String(text).trim().replace(/^`(.*)`$/, '$1').trim()
@@ -198,6 +201,9 @@ function parseAetherFields(task, body, bodyCode, errors) {
           errors.push(`${label}: Owns entry "${entry}" is not a relative path or glob.`)
         }
       }
+    } else if ((m = line.match(/^\s*-\s*Serves:\s*(.*?)\s*$/i))) {
+      // Tokens are requirement ids, separated by commas or spaces. traceability judges them, not the parser.
+      task.serves.push(...m[1].split(/[\s,]+/).filter(Boolean).map((token) => token.toUpperCase()))
     } else if ((m = line.match(/^\s*-\s*Depends on:\s*(.*?)\s*$/i))) {
       sawDepends = true
       if (/^none$/i.test(m[1])) continue
@@ -272,6 +278,7 @@ function parsePlan(markdown) {
       area: null,
       owns: [],
       dependsOn: [],
+      serves: [],
     }
     parseAetherFields(task, body, code.slice(i + 1, bodyEnd), errors)
     tasks.push(task)
@@ -279,6 +286,44 @@ function parsePlan(markdown) {
   if (tasks.length === 0) errors.push('The plan has no "### Task N: ..." headings.')
   else checkNumbers([...seen], errors)
   return { tasks, execution, globalConstraints, spec: parseSpec(lines), errors }
+}
+
+// The requirement ids of a spec: the top-level items of its Requirements section, in order, each once.
+// Indented items and items in other sections are not requirements.
+function requirementsOf(specMarkdown) {
+  const lines = String(specMarkdown).replace(/\r\n/g, '\n').split('\n')
+  const start = lines.findIndex((line) => /^##\s+Requirements\s*$/i.test(line))
+  if (start === -1) return []
+  let end = lines.findIndex((line, i) => i > start && /^##\s/.test(line))
+  if (end === -1) end = lines.length
+  const ids = []
+  for (const line of lines.slice(start + 1, end)) {
+    const m = line.match(REQUIREMENT_ITEM)
+    if (m && !ids.includes(m[1])) ids.push(m[1])
+  }
+  return ids
+}
+
+// Each task must serve a requirement the spec has, and each requirement needs a task. A missing or
+// unknown id is an error; a requirement with no task is only a warning. No requirements, nothing to trace.
+function traceability(parsed, requirements) {
+  const errors = []
+  const warnings = []
+  if (requirements.length === 0) return { errors, warnings }
+  const known = new Set(requirements)
+  const served = new Set()
+  for (const t of parsed.tasks) {
+    if (t.serves.length === 0) {
+      errors.push(`Task ${t.number} serves no requirement: add a "- Serves: R1" line to its Aether block.`)
+    }
+    for (const token of t.serves) {
+      if (!REQUIREMENT_ID.test(token)) errors.push(`Task ${t.number}: "${token}" in Serves is not a requirement id such as R1.`)
+      else if (!known.has(token)) errors.push(`Task ${t.number} serves ${token}, which the spec does not have.`)
+      else served.add(token)
+    }
+  }
+  for (const id of requirements) if (!served.has(id)) warnings.push(`${id} has no task that serves it.`)
+  return { errors, warnings }
 }
 
 function buildGraph(parsed, { only = null } = {}) {
@@ -398,4 +443,16 @@ function renderBrief(task, { planPath, spec, globalConstraints, objective = null
   return parts.join('\n')
 }
 
-module.exports = { TIERS, EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, MAX_OWNED_PATHS, parsePlan, buildGraph, renderBrief, specObjective }
+module.exports = {
+  TIERS,
+  EFFORTS,
+  DEFAULT_EFFORT,
+  DEFAULT_REVIEW,
+  MAX_OWNED_PATHS,
+  parsePlan,
+  buildGraph,
+  renderBrief,
+  specObjective,
+  requirementsOf,
+  traceability,
+}

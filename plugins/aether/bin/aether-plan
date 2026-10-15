@@ -8,7 +8,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const lib = path.join(__dirname, '..', 'lib')
-const { parsePlan, buildGraph, renderBrief, specObjective } = require(path.join(lib, 'plan.js'))
+const { parsePlan, buildGraph, renderBrief, specObjective, requirementsOf, traceability } = require(path.join(lib, 'plan.js'))
 const { repoPaths, currentBranch, head } = require(path.join(lib, 'git.js'))
 const run = require(path.join(lib, 'run.js'))
 const lanes = require(path.join(lib, 'lanes.js'))
@@ -64,12 +64,36 @@ function planSpec(parsedSpec, planPath, worktree) {
   return isFile(sibling) ? nameInWorktree(sibling, worktree) : null
 }
 
+// The top of the working tree a check runs in; the working directory itself outside a git repository.
+function worktreeOf(cwd) {
+  try {
+    return repoPaths(cwd).worktree
+  } catch {
+    return cwd
+  }
+}
+
+// The requirement ids of the spec the plan names, read from the same file compile reads. Empty when
+// there is no spec or it cannot be read: a check without a spec traces nothing.
+function specRequirements(parsedSpec, planPath) {
+  const worktree = worktreeOf(process.cwd())
+  const spec = planSpec(parsedSpec, planPath, worktree)
+  if (!spec) return []
+  try {
+    return requirementsOf(fs.readFileSync(path.isAbsolute(spec) ? spec : path.join(worktree, spec), 'utf8'))
+  } catch {
+    return []
+  }
+}
+
 function check(planArg) {
-  const { parsed } = load(planArg)
+  const { planPath, parsed } = load(planArg)
   const graph = buildGraph(parsed)
-  const errors = [...parsed.errors, ...graph.errors]
-  if (errors.length) fail(errors, graph.warnings)
-  process.stdout.write(JSON.stringify({ ok: true, tasks: Object.keys(graph.tasks).length, waves: graph.waves, warnings: graph.warnings }) + '\n')
+  const trace = traceability(parsed, specRequirements(parsed.spec, planPath))
+  const errors = [...parsed.errors, ...graph.errors, ...trace.errors]
+  const warnings = [...graph.warnings, ...trace.warnings]
+  if (errors.length) fail(errors, warnings)
+  process.stdout.write(JSON.stringify({ ok: true, tasks: Object.keys(graph.tasks).length, waves: graph.waves, warnings }) + '\n')
 }
 
 const BASELINE_TIMEOUT_MS = 10 * 60 * 1000
