@@ -12,13 +12,14 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 
 | Piece | What it does |
 |---|---|
-| `using-aether` skill | Injected at session start. The Lead's rules: its role, RADAR, the method on Spec Kit's layout, writing with the Writer and judging with the Judge, the design seats and the exam, assumptions, the owner's list, the three paths (direct, delegate task, swarm) and the choice of model for each delegate task, fallbacks, autonomous runs and the execution method |
+| `using-aether` skill | Injected at session start. The Lead's rules: its role, RADAR, the method on Spec Kit's layout, the clarifying questions, the intent card and `/aether:design` with what to do for each of its four results, the exam, assumptions, the owner's list, the three paths (direct, delegate task, swarm) and the choice of model for each delegate task, fallbacks, the rules of autonomous runs that hold outside a run (the irreversible classes, the grants, the repetition rule and the short brief) and the execution method |
+| `autonomous-runs` skill | The Lead's procedure for a run of hours, loaded when the owner gives permission to work for hours or session start reports an open run: the start, the permission warnings, the diary, the rule of working on, the ceilings, the cost record, when a run is done, the honest stop, resuming and the brief |
 | `aether:lead` | The Lead agent: the main session of Aether mode, started with `claude --agent aether:lead --effort xhigh`. It is not a subagent. It starts on Sonnet, and its rules are the `using-aether` skill's |
-| `aether:writer` | The Writer agent: Sonnet at `xhigh`. It writes `plan.md` and `tasks.md` from the Lead's spec, with the Aether fields, and checks them with `aether-plan check` |
-| `aether:judge` | The Judge agent: Opus at `high`, read-only. It reviews a spec, a plan or tasks, and rules `approve`, `revise` or `reject`, with at most ten findings |
+| `aether:writer` | The Writer agent: Sonnet at `high`. It writes `spec.md` from the intent card, and `plan.md` and `tasks.md` from the approved spec, with the Aether fields and a `Serves` line on each task, and checks them with `aether-plan check`. An external Writer in a seat keeps its own level |
+| `aether:judge` | The Judge agent: Opus at `high`, read-only. It reviews a spec, a plan or tasks, and rules `approve`, `revise` or `reject`, with at most ten findings, each typed `missing`, `extra` or `wrong`: what goes beyond the owner's intent is a defect, as much as what is missing |
 | `aether:examiner` | The Examiner agent: Opus at `high`. It writes the hidden acceptance exam of an approved spec and plan under `.aether-exam/`, one command per test, without reading `tasks.md` |
 | `aether-lane` | The commands of lanes: `status`, `start`, `wait`, `result`, `stop`, `choice` and `quota`, which run a call on another harness's model, log which lane took it, and read each harness's quota. Whether a run uses them depends on the `lanes` option, off by default; see [Options](../guide/options.md#options) |
-| `aether-lane seat` | One round of a design seat (`judge`, `writer` or `examiner`) on the external model the `seats` option puts first, in a disposable worktree of the commit; exit 3 or 4 hands the round to the native agent |
+| `aether-lane seat` | One round of a design seat (`judge`, `writer` or `examiner`) on the external model the `seats` option puts first, in a disposable worktree of the commit; exit 3 or 4 hands the round to the native agent. `/aether:design` runs a round in steps instead: `aether-lane seat-start` launches it, `seat-wait` waits for it within one ops call and `seat-stop` ends it |
 | `aether-exam` | Keeps an exam outside the repository (`store`), runs it on a commit in a disposable worktree (`run`), and lists the kept ones (`list`) |
 | Aether preset | `plugins/aether/speckit/`: Spec Kit's specify, plan, tasks and constitution commands adapted to Aether, also shipped as the skills `aether:specify`, `aether:plan`, `aether:tasks` and `aether:constitution` |
 | `aether-voice` | Prints the owner's own words from a session, so a quote can be checked; it writes no file |
@@ -27,7 +28,8 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |
 | `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves, and records the run's test baseline. It reads a Spec Kit `tasks.md`, and the `spec.md` beside it. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
 | `aether-wt` | Unit worktrees and branches: `ensure`, `diff`, `merge` (ownership check, then the tests; undone if they fail), `salvage` (commits what a unit that ended without its report left, and writes its package), `adopt` (records a unit the Lead integrated by hand), `remove` (saves unmerged work as a patch), `sweep` |
-| `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review, and cleanup in `finally` |
+| `/aether:design` | The design workflow: from the intent card in `specs/NNN-<topic>/intent.md` to an approved spec, plan and tasks and the exam, with the Writer, the Judge and the Examiner in seat rounds and at most two revisions per document, and one result, `approved`, `clarify`, `dispute` or `failed`. It needs the Workflow tool |
+| `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review (which also flags what is extra), and cleanup in `finally` |
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
 | Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the workflow's own `aether-wt` and `aether-lane` commands itself, without a model (see [Ops without a model](../guide/ops.md)). In any other session it records and runs nothing, and does not offer Aether's agents |
 | `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `--seats` counts the design seats' rounds and who answered them; `price` prices any `claude -p` JSON output |
@@ -36,7 +38,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 
 ## What Aether adds to a normal session
 
-Today, in 0.10.0, the plugin has the nine commands of `bin/`, and they are on the Bash tool's `PATH`; the measurement below, taken at 0.7.0, counted eight.
+Today, in 0.11.0, the plugin has the nine commands of `bin/`, and they are on the Bash tool's `PATH`; the measurement below, taken at 0.7.0, counted eight.
 
 Measured on Claude Code 2.1.296 with Aether 0.7.0, on 2026-10-09 (`docs/evaluations/2026-10-09-installable/A3-dormant.md`), in a session started without `--agent aether:lead`, against the same session with Aether disabled:
 - the first request grows by 431 characters, all in the first message: the `aether:run` and `aether:swarm` entries of the skills list;
@@ -45,4 +47,4 @@ Measured on Claude Code 2.1.296 with Aether 0.7.0, on 2026-10-09 (`docs/evaluati
 - the commands of `bin/` are on the Bash tool's `PATH`;
 - each session start, and each `Write`, `Edit`, `MultiEdit` or `NotebookEdit` call, runs one short `node` process that finds no Aether session and exits.
 
-Nothing is injected, refused, recorded or written. Versions 0.8 to 0.10 were not measured this way. They add two things, read from the plugin and not measured: the entries of the four preset skills (`aether:specify`, `aether:plan`, `aether:tasks` and `aether:constitution`) in the skills list, whose descriptions are 459 characters; and the same short `node` process before each `Bash` call.
+Nothing is injected, refused, recorded or written. Versions 0.8 to 0.11 were not measured this way. They add three things, read from the plugin and not measured: the entries of the four preset skills (`aether:specify`, `aether:plan`, `aether:tasks` and `aether:constitution`) in the skills list, whose descriptions are 459 characters; the entry of the `aether:autonomous-runs` skill, added in 0.11.0, whose description is 223 characters; and the same short `node` process before each `Bash` call.
