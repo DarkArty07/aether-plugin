@@ -269,6 +269,7 @@ test('the spec, the plan and the tasks keep their rule, and the Examiner keeps i
   - los hallazgos de `JUDGE_SCHEMA` ganan `type` (`enum: ['missing', 'extra', 'wrong']`), obligatorio; `judgeText` imprime `N. [severity] [type] title — evidence — fix`; la nota del Juez externo pide el tipo.
   - `WRITER_SCHEMA` gana las propiedades opcionales `complexity` (string) y `disagreements` (lista de strings, `each finding you did not apply, with why`); su `required` no cambia.
   - `SPEC_WRITER_SCHEMA` nuevo y exportado: `required: ['spec', 'commit', 'clarify', 'assumptions', 'questions']`; propiedades `spec`, `commit` (strings), `clarify` (lista: cada marca `[NEEDS CLARIFICATION: ...]` que quedó), `assumptions`, `proposals`, `questions`, `disagreements` (listas de strings). `seats.js` lo usa para el Writer con `--doc spec`.
+  - `REVISION_SCHEMA` nuevo y exportado: `required: ['document', 'commit', 'assumptions', 'questions']`; propiedades `document` (la ruta del documento corregido; `tasks.md` si es un plan) y `commit` (strings), `assumptions`, `questions` y `disagreements` (listas de strings). Solo lo usa el workflow, para el Writer nativo que corrige un documento del diseño corto.
 
 **Tests (write first):** en `tests/seats.test.js` (existente): `JUDGE_ANSWER` gana `type: 'missing'` y la línea esperada del test del Juez externo pasa a `1. [major] [missing] Task 3 is too large — ...`. Nuevo `tests/seats-design.test.js`:
 
@@ -395,6 +396,8 @@ test('the Judge answer needs a type for each finding, and its text shows it (R9)
   assert.deepEqual(schemas.JUDGE_SCHEMA.properties.findings.items.properties.type.enum, ['missing', 'extra', 'wrong'])
   assert.ok(schemas.JUDGE_SCHEMA.properties.findings.items.required.includes('type'))
   assert.deepEqual(schemas.SPEC_WRITER_SCHEMA.required, ['spec', 'commit', 'clarify', 'assumptions', 'questions'])
+  assert.deepEqual(schemas.REVISION_SCHEMA.required, ['document', 'commit', 'assumptions', 'questions'])
+  assert.ok('disagreements' in schemas.REVISION_SCHEMA.properties)
   assert.ok(!schemas.WRITER_SCHEMA.required.includes('complexity'))
   assert.ok('complexity' in schemas.WRITER_SCHEMA.properties && 'disagreements' in schemas.WRITER_SCHEMA.properties)
 })
@@ -725,9 +728,9 @@ test('a payload is saved only where a lane call or a seat round reads it', () =>
 
 **Interfaces:**
 
-`workflows/design.workflow.js`: `export const meta = { name: 'design', description, phases: [Spec, Plan, Exam] }`, sin imports, sin `Date` ni `Math.random`. Copia a mano lo que necesita de `run.workflow.js` (`OPS_SCHEMA`, el armado del mensaje de ops, `digest`) y de `lib/lane-schemas.js` (`JUDGE_SCHEMA`, `WRITER_SCHEMA`, `SPEC_WRITER_SCHEMA`, `EXAMINER_SCHEMA`: copias exactas, un test las iguala).
+`workflows/design.workflow.js`: `export const meta = { name: 'design', description, phases: [Spec, Plan, Exam] }`, sin imports, sin `Date` ni `Math.random`. Copia a mano lo que necesita de `run.workflow.js` (`OPS_SCHEMA`, el armado del mensaje de ops, `digest`) y de `lib/lane-schemas.js` (`JUDGE_SCHEMA`, `WRITER_SCHEMA`, `SPEC_WRITER_SCHEMA`, `REVISION_SCHEMA`, `EXAMINER_SCHEMA`: copias exactas, un test las iguala).
 
-**Args** (objeto o JSON, hasta dos veces entrecomillado): `feature` (`specs/NNN-<topic>`), `session` (`/^[A-Za-z0-9-]+$/`), `repoRoot` (ruta absoluta sin comilla simple), `seats` (`native|balanced|robust`), `lanes` (`on|off`), `harnesses` (`/^[a-z]+(,[a-z]+)*$/`); `mode` `full` (por defecto) o `short`; en `short`, además `document` e `intent` (texto) y `author` (por defecto `sonnet`). Si falta o es inválido: `throw new Error('aether:design args are missing or invalid: <campos>')`.
+**Args** (objeto o JSON, hasta dos veces entrecomillado): `feature` (`specs/NNN-<topic>`), `session` (`/^[A-Za-z0-9-]+$/`), `repoRoot` (ruta absoluta sin comilla simple), `seats` (`native|balanced|robust`), `lanes` (`on|off`), `harnesses` (`/^[a-z]+(,[a-z]+)*$/`); `mode` `full` (por defecto) o `short`; en `short`, además `document` (una de `<feature>/spec.md`, `<feature>/plan.md`, `<feature>/tasks.md` o `<feature>/design.md`), `intent` (texto) y `author` (por defecto `sonnet`). Si falta o es inválido: `throw new Error('aether:design args are missing or invalid: <campos>')`.
 
 **Llamadas.** Agentes nativos: `agent(prompt, { agentType: 'aether:<role>', model, effort, phase, label, schema })` con juez `opus high`, writer `sonnet high`, examiner `opus high` (iguales a `seats.NATIVE` y a los frontmatter). Ops, por un ayudante como el de `run`, como mensaje `cd '<repoRoot>' && <comando>` (primera línea larga solo para `seat-wait`), con `aether:ops` en `haiku low`:
 - `aether-lane seat-start judge|examiner --session S --author A --feature F --seats C --lanes L --harnesses H --digest D` y `aether-lane seat-start writer --session S --feature F --doc spec|plan --seats C --lanes L --harnesses H --digest D`, con payload `{ path: '<repoRoot>/.aether-tmp/seats/<session>/message.md', text: <el mensaje> }`;
@@ -736,14 +739,14 @@ test('a payload is saved only where a lane call or a seat round reads it', () =>
 
 **Etiquetas** (los tests las usan): `<doc>: <seat> <paso>` con `doc` en `spec`, `plan`, `design`, `exam` y paso `write`, `review N`, `revision N`, más ` (retry)` en el reintento; las de ops: `<etiqueta de la ronda>: start`, `: wait K`, `: stop`; `plan: check`; `exam: store`.
 
-**Una ronda** (`seat`, `doc`, `message`): `seat-start`; con `error`, sin `started`, o `exitCode` 3 (con `native` no nulo), 4, 1, o un asiento que no termina, corre al agente nativo con **el mismo mensaje**; `exitCode` 3 con `value.native` nulo (el examinador apagado) la omite; con `exitCode` 0 y `value.result` objeto usa la respuesta externa. Una respuesta nativa nula o fuera del esquema es un fallo: se reintenta una vez; el segundo es `failed`.
+**Una ronda** (`seat`, `doc`, `message`): `seat-start`; con `error`, sin `started`, o `exitCode` 3 (con `native` no nulo), 4, 1, o un asiento que no termina, corre al agente nativo con **el mismo mensaje** (más la línea del nativo, abajo); `exitCode` 3 con `value.native` nulo (el examinador apagado) la omite; con `exitCode` 0 y `value.result` objeto usa la respuesta externa. Una respuesta nativa nula o fuera del esquema es un fallo: se reintenta una vez; el segundo es `failed`.
 
-**Flujo `full`:** (1) Writer de la spec (`--doc spec`); si `clarify` no está vacío termina con `clarify`; (2) Juez de la spec, hasta 3 revisiones del Juez y 2 del Writer; (3) Writer de plan y tareas (`--doc plan`), luego `aether-plan check`; si falla, un reintento del Writer con los errores en el mensaje; (4) Juez del plan igual que (2), con la salida de `check` en su mensaje; (5) Examinador (`--feature F`); nativo, luego `aether-exam store`. `--author` del Juez y del Examinador es el modelo que escribió el documento: `sonnet` para el Writer nativo, o el `model` de la respuesta externa. **Flujo `short`:** solo el Juez de `document` (`doc` `design`, `--author` de los args), con el Writer nativo para corregir.
+**Flujo `full`:** (1) Writer de la spec (`--doc spec`); si `clarify` no está vacío termina con `clarify`; (2) Juez de la spec, hasta 3 revisiones del Juez y 2 del Writer; (3) Writer de plan y tareas (`--doc plan`), luego `aether-plan check`; si falla, un reintento del Writer con los errores en el mensaje; (4) Juez del plan igual que (2), con la salida de `check` en su mensaje; (5) Examinador (`--feature F`); nativo, luego `aether-exam store`, que corre por ops desde `repoRoot`. `--author` del Juez y del Examinador es el modelo que escribió el documento: `sonnet` para el Writer nativo, o el `model` de la respuesta externa. **Flujo `short`:** solo el Juez de `document`, con `--author` de los args (tras una corrección, `sonnet`, el modelo del Writer nativo) y `doc` según el archivo: `spec` para `spec.md`, `plan` para `plan.md` y `tasks.md`, `design` para `design.md`; hasta 3 revisiones del Juez y 2 del Writer. El Writer que corrige es siempre el nativo, sin ronda de asiento, y responde con `REVISION_SCHEMA` (`<doc>: writer revision N`). Con `plan.md` o `tasks.md`, `aether-plan check` corre antes de la primera revisión y tras cada corrección (con el reintento del Writer con los errores, nativo también), el Juez recibe su salida, y al aprobar corre el paso del examinador de `full`: un plan cambiado tiene examen nuevo, y `exam` va en el resultado. Con `spec.md` o `design.md` no hay `check` ni examen. Así pasa por aquí un cambio posterior a una spec, un plan o las tareas, y la corrección tras una parada en la etapa del plan.
 
-**Mensajes** (cada uno lleva, literal): la frase de alcance de las Global Constraints. Writer de la spec: `<feature>/intent.md`, `aether:specify`, `[NEEDS CLARIFICATION: <question>]`. Juez de la spec: `<feature>/spec.md`, `<feature>/intent.md`, `each criterion comes from the owner's words`, una marca `[NEEDS CLARIFICATION` que quede es un hallazgo `wrong`, y pide `severity`, `type`, `title`, `evidence` y `fix`; en la 2.ª y 3.ª revisión, `Your earlier verdict:` con su texto y `What changed:` con la respuesta del Writer. Writer del plan: `<feature>/spec.md`, `aether:plan`, `aether:tasks`, `## Gate`, `## Complexity`, `Serves`. Juez del plan: `Complexity table`, `aether-plan check printed:` y su JSON. Revisión del Writer: el veredicto con sus hallazgos y que escriba `disagreements`. Examinador: `<feature>/intent.md` y `never tasks.md`.
+**Mensajes** (cada uno lleva, literal): la frase de alcance de las Global Constraints. Writer de la spec: `<feature>/intent.md`, `aether:specify`, `[NEEDS CLARIFICATION: <question>]`. Juez de la spec: `<feature>/spec.md`, `<feature>/intent.md`, `each criterion comes from the owner's words`, una marca `[NEEDS CLARIFICATION` que quede es un hallazgo `wrong`, y pide `severity`, `type`, `title`, `evidence` y `fix`; en la 2.ª y 3.ª revisión, `Your earlier verdict:` con su texto y `What changed:` con la respuesta del Writer. Writer del plan: `<feature>/spec.md`, `aether:plan`, `aether:tasks`, `## Gate`, `## Complexity`, `Serves`. Juez del plan: `Complexity table`, `aether-plan check printed:` y su JSON. Revisión del Writer: el veredicto con sus hallazgos y que escriba `disagreements`. Examinador: `<feature>/intent.md` y `never tasks.md`. **Línea del nativo:** un agente nativo recibe el mensaje de la ronda, idéntico al del asiento externo, y al final `Your checkout is <repoRoot>: the paths above are relative to it.` (como `run.workflow.js` nombra rutas absolutas en los mensajes de sus agentes); el examinador además `Write the exam under <repoRoot>/.aether-exam/ and nothing else.`. El asiento externo trabaja en su worktree desechable y no recibe esa línea.
 
 **Resultado** (siempre): `{ status, mode, feature, verdicts, rounds }` con `verdicts[]` = `{ document, round, seat, verdict, text }` (`seat` es `native` o `<harness> <model>`; `text` es el del asiento externo tal cual, o el nativo en el formato `## Verdict\n<v>\n## Findings\n<N. [severity] [type] title — evidence — fix, o none>\n## Open questions\n<- q, o - none>`) y `rounds[]` = `{ document, seat, provider, id, lane, note }` (`provider` `native`, `<harness> <model>` u `off`; `lane` la línea `- Lane:` o `null`). Además:
-- `approved`: `spec`, `plan`, `tasks` (rutas; en `short`, `document`), `complexity` (de la respuesta del Writer del plan o `''`), `proposals` (de la del Writer de la spec o `[]`), `exam` = `{ status: 'stored', dir }` | `{ status: 'off' }` | `{ status: 'failed', reason }` (en `full`).
+- `approved`: `spec`, `plan`, `tasks` (rutas; en `short`, `document`), `complexity` (de la respuesta del Writer del plan o `''`), `proposals` (de la del Writer de la spec o `[]`), `exam` = `{ status: 'stored', dir }` | `{ status: 'off' }` | `{ status: 'failed', reason }` (en `full`, y en `short` sobre `plan.md` o `tasks.md`).
 - `clarify`: `spec` y `questions` (las marcas, tal cual).
 - `dispute`: `dispute = { document, kind: 'limit' | 'reject', judge: { verdict, text }, writer: { disagreements, assumptions } | null, direction: <texto del veredicto que rechaza> | null }`; `limit` si la tercera revisión no aprueba, `reject` en cualquier revisión.
 - `failed`: `failed = { step, reason }` con `step` uno de `spec-writer`, `spec-judge`, `plan-writer`, `plan-check`, `plan-judge`, `design-judge`, `design-writer`.
@@ -881,7 +884,10 @@ for (const [exit, wait] of [
     const run = await go(ARGS, { ops: waitFor('judge', () => wait) })
     assert.equal(run.error, null)
     assert.equal(run.result.status, 'approved')
-    assert.equal(run.calls.find((c) => c.role === 'judge').prompt, startOf(run, 'judge').payload.text)
+    const message = startOf(run, 'judge').payload.text
+    const native = run.calls.find((c) => c.role === 'judge').prompt
+    assert.ok(native.startsWith(message), 'the same message')
+    assert.equal(native.slice(message.length).trim(), 'Your checkout is /repo: the paths above are relative to it.')
   })
 }
 
@@ -982,6 +988,8 @@ test('the messages carry what each seat needs, and the scope instruction', async
   for (const text of [`${FEATURE}/spec.md`, 'aether:plan', 'aether:tasks', '## Gate', '## Complexity', 'Serves']) assert.ok(prompt('plan: writer write').includes(text), text)
   assert.ok(prompt('plan: judge review 1').includes('Complexity table'))
   assert.ok(prompt('exam: examiner').includes(`${FEATURE}/intent.md`) && prompt('exam: examiner').includes('never tasks.md'))
+  assert.ok(prompt('exam: examiner').includes('Write the exam under /repo/.aether-exam/ and nothing else.'))
+  assert.ok(prompt('spec: writer write').includes('Your checkout is /repo: the paths above are relative to it.'))
 })
 
 test('a short design runs only the Judge, with the Writer to correct it, and the author of the Lead', async () => {
@@ -997,7 +1005,30 @@ test('a short design runs only the Judge, with the Writer to correct it, and the
   let n = 0
   const revised = await go(SHORT, { judge: (call, fallback) => (++n === 1 ? { verdict: 'revise', findings: [finding('gap')], openQuestions: [] } : fallback(call)) })
   assert.deepEqual(nativeCalls(revised).map((c) => c.label), ['design: judge review 1', 'design: writer revision 1', 'design: judge review 2'])
+  assert.deepEqual(revised.calls.find((c) => c.label === 'design: writer revision 1').schema, schemas.REVISION_SCHEMA)
+  assert.equal(startOf(revised, 'writer'), undefined, 'the Writer of a short design is the native one, with no seat round')
   assert.equal(revised.result.status, 'approved')
+})
+
+test('a short design on plan.md runs only the Judge, the Writer revises, and the changed plan gets a new exam when the Examiner runs (later changes)', async () => {
+  const PLAN = { ...SHORT, document: `${FEATURE}/plan.md` }
+  const examiner = waitFor('examiner', () => ({ done: true, exitCode: 3, value: nativeSeat('examiner') }))
+  let n = 0
+  const revise = (call, fallback) => (++n === 1 ? { verdict: 'revise', findings: [finding('gap')], openQuestions: [] } : fallback(call))
+  const run = await go(PLAN, { ops: examiner, judge: revise })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  assert.deepEqual(nativeCalls(run).map((c) => c.label), ['plan: judge review 1', 'plan: writer revision 1', 'plan: judge review 2', 'exam: examiner'])
+  assert.deepEqual(run.calls.find((c) => c.label === 'plan: writer revision 1').schema, schemas.REVISION_SCHEMA)
+  assert.equal(startOf(run, 'writer'), undefined)
+  assert.equal(opsCalls(run, 'check').length, 2, 'before the first review and after the revision')
+  assert.deepEqual(run.result.verdicts.map((v) => [v.document, v.round]), [['plan', 1], ['plan', 2]])
+  assert.deepEqual(run.result.exam, { status: 'stored', dir: '/data/exams/007-demo' })
+  assert.deepEqual((await go(PLAN)).result.exam, { status: 'off' }, 'the native choice runs no Examiner')
+  const spec = await go({ ...SHORT, document: `${FEATURE}/spec.md` })
+  assert.equal(spec.result.status, 'approved')
+  assert.equal(opsCalls(spec, 'check').length, 0)
+  assert.equal('exam' in spec.result, false)
 })
 
 test('every ops prompt is one the mod runs without a model, and every payload goes where the mod saves it', async () => {
@@ -1015,7 +1046,7 @@ test('every ops prompt is one the mod runs without a model, and every payload go
 
 test('the args are checked', async () => {
   const bad = (change) => go({ ...ARGS, ...change }).then((run) => run.error && run.error.message)
-  for (const change of [{ feature: 'docs/x' }, { session: 'a b' }, { repoRoot: 'repo' }, { seats: 'all' }, { lanes: 'maybe' }, { harnesses: 'AGY' }, { mode: 'short' }]) {
+  for (const change of [{ feature: 'docs/x' }, { session: 'a b' }, { repoRoot: 'repo' }, { seats: 'all' }, { lanes: 'maybe' }, { harnesses: 'AGY' }, { mode: 'short' }, { mode: 'short', document: `${FEATURE}/other.md`, intent: 'i' }]) {
     assert.match(await bad(change), /^aether:design args are missing or invalid: /, JSON.stringify(change))
   }
 })
@@ -1035,7 +1066,7 @@ test('the args are checked', async () => {
 
 **Interfaces:**
 
-- `agents/writer.md`: `effort: high`. Entradas: la tarjeta `specs/NNN-<topic>/intent.md` cuando el mensaje pide la spec. "How you work": cuando pide la spec, carga la skill `aether:specify`, salta sus pasos 1 y 2 (la carpeta y la tarjeta existen), escribe `spec.md` y lo commitea; cuando pide plan y tareas, como hoy. Reglas del plan: la compuerta `## Gate` y la tabla `## Complexity`; el campo `- **Serves** lists the requirement ids of the spec that the task serves, such as \`- Serves: R1, R3\`; a task that serves no requirement does not belong in the plan.` Respuesta: cuando el mensaje pide la salida estructurada, ahí van `spec`/`plan`/`tasks`, `commit`, `clarify`, `assumptions`, `proposals`, `complexity`, `questions` y `disagreements` (cada hallazgo que no aplicó, con el porqué). Reglas: la frase de alcance. Todo lo que el test existente exige se queda.
+- `agents/writer.md`: `effort: high`. Entradas: la tarjeta `specs/NNN-<topic>/intent.md` cuando el mensaje pide la spec. "How you work": cuando pide la spec, carga la skill `aether:specify`, salta sus pasos 1 y 2 (la carpeta y la tarjeta existen), escribe `spec.md` y lo commitea; cuando pide plan y tareas, como hoy. Cuando pide corregir un documento tras el veredicto del Juez (`spec.md`, `plan.md`, `tasks.md` o `design.md`): arregla cada hallazgo sin empezar de nuevo, commitea solo ese documento (`plan.md` y `tasks.md` juntos si es un plan), corre `aether-plan check` si cambió `tasks.md`, y responde en la salida estructurada con `document`, `commit`, `assumptions`, `questions` y `disagreements`. Reglas del plan: la compuerta `## Gate` y la tabla `## Complexity`; el campo `- **Serves** lists the requirement ids of the spec that the task serves, such as \`- Serves: R1, R3\`; a task that serves no requirement does not belong in the plan.` Respuesta: cuando el mensaje pide la salida estructurada, ahí van `spec`/`plan`/`tasks`, `commit`, `clarify`, `assumptions`, `proposals`, `complexity`, `questions` y `disagreements` (cada hallazgo que no aplicó, con el porqué). Reglas: la frase de alcance. Todo lo que el test existente exige se queda.
 - `agents/judge.md`: la línea de hallazgos pasa a `1. [blocking | major | minor] [missing | extra | wrong] <title> — <evidence> — <fix>` y una sección `## Finding types` con `**missing**` (la intención del dueño, o lo que el documento mismo necesita, no está cubierto), `**extra**` (el documento va más allá de la intención: un criterio que no sale de las palabras del dueño, un requisito que no sirve a ningún criterio, una tarea que no sirve a ningún requisito, o una abstracción, opción, archivo o dependencia que ningún requisito pide) y `**wrong**` (incorrecto, inseguro, imposible de probar, o contradice las palabras del dueño), y la frase `What goes beyond the owner's intent is a defect, as much as what is missing.` En "How you review": `On a spec, check that each criterion comes from the owner's words in the intent card (\`intent.md\`).` y `On a plan with its tasks, check each row of the Complexity table (does the requirement it names ask for what it justifies, and is the simpler alternative really worse?) and the coherence of spec, plan and tasks: duplicates, ambiguity, requirements without a measure, and contradictions.` Cuando el mensaje pide la salida estructurada, la da ahí con el mismo contenido. Reglas: la frase de alcance.
 - `agents/examiner.md`: la frase de alcance en "Rules".
 - `agents/reviewer.md`: en "What to check", una viñeta `- **Extra:** features nobody asked for, or over-engineering. A behavior or file that neither the plan nor the spec asks for is a finding, whether or not it works.` Nada más cambia.
@@ -1075,7 +1106,7 @@ test('the Judge types every finding and counts what is beyond the intent as a de
 
 test('the Writer starts at high (R11), writes the spec from the card, and ties each task to a requirement', () => {
   assert.match(agent('writer'), /^effort: high$/m)
-  has('writer', ['`specs/NNN-<topic>/intent.md`', 'load the skill `aether:specify`', 'skip its steps 1 and 2', '## Gate', '## Complexity', '`- Serves: R1, R3`', 'disagreements', '**Aether:**', '`aether:plan`'])
+  has('writer', ["When the message asks you to revise a document after the Judge's verdict", '`specs/NNN-<topic>/intent.md`', 'load the skill `aether:specify`', 'skip its steps 1 and 2', '## Gate', '## Complexity', '`- Serves: R1, R3`', 'disagreements', '**Aether:**', '`aether:plan`'])
 })
 
 test('the final reviewer marks what is extra, and keeps the rest of its method (R12, R13)', () => {
@@ -1255,10 +1286,12 @@ Commit the folder and `.specify/feature.json`: an external seat reads the commit
 It writes the spec, has the Judge review it, writes the plan and the tasks, has the Judge review them, and has the Examiner write the exam. At most two revisions per document. Each round takes the models of the `seats` choice first and the native agent last, and a seat that cannot run goes to the native agent without you. It ends with one result, in `status`:
 - `approved`: the paths of the spec, plan and tasks, every verdict of the Judge as given, the Complexity table, the Proposals and the exam. Read the verdicts and the table, then choose the path to build it (see "The three paths"). The Proposals are not worked.
 - `clarify`: questions the card did not settle, each marked `[NEEDS CLARIFICATION]`. Ask the owner them as one list, write the answers into the card, commit, and launch again. In an autonomous run a `clarify` does not stop the work: take the reversible side of each as an assumption, put the question in "Espera tu sí", and launch again.
-- `dispute`: a third review that did not approve, with both positions, or a `reject`, with the Judge's direction. Rethink the card around the direction, or put both positions and their cost in the owner's list. Never override the Judge silently.
-- `failed`: the step and why. Launch again once; the same failure twice follows the repetition rule of "Autonomous runs". When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session.
+- `dispute`: a third review that did not approve, with both positions, or a `reject`, with the Judge's direction. At the spec stage, rethink the card around the direction, or put both positions and their cost in the owner's list; at the plan stage, change the plan or the tasks and launch in short mode (see "Later changes"). Never override the Judge silently.
+- `failed`: the step and why. Launch again once (in full mode for a spec step, in short mode on the changed document for a plan step, so an approved spec is never rewritten); the same failure twice follows the repetition rule of "Autonomous runs". When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session.
 
-**A short design** is for a bounded change that touches security or auth, data migrations or destructive operations, concurrency, or core architecture. Write it in `specs/NNN-<topic>/design.md`, commit it, and launch with `"mode": "short"`, `"document": "specs/NNN-<topic>/design.md"`, `"intent"` (the understanding the owner confirmed, with their words) and `"author"` (the model you run on) added to the args. Only the Judge's rounds run.
+**A short design** is for a bounded change that touches security or auth, data migrations or destructive operations, concurrency, or core architecture. Write it in `specs/NNN-<topic>/design.md`, commit it, and launch with `"mode": "short"`, `"document": "specs/NNN-<topic>/design.md"`, `"intent"` (the understanding the owner confirmed, with their words) and `"author"` (the model you run on) added to the args. Only the Judge's rounds run, and the Writer corrects.
+
+**Later changes.** A later change to a spec, a plan or the tasks, and a fix after a stop at the plan stage, goes through `/aether:design` in short mode on the changed document: `"mode": "short"` and `"document"` set to its path, `specs/NNN-<topic>/spec.md`, `plan.md`, `tasks.md` or `design.md`. You or the Writer make the change, and the Judge reviews it. A changed plan gets a new exam, when the seats choice runs the Examiner. A launch in full mode is only for a stop at the spec stage, so an approved spec is never rewritten.
 
 **Records.** Each entry of `rounds` that has a `lane` line spent another plan's quota: in an autonomous run, record its dollars with `aether-autonomy spend <usd> --source seat/<id>`; when the line says `$?`, record nothing. `aether-report --seats --session <session id>` counts the seats' rounds for the brief's Delegación line.
 
@@ -1301,7 +1334,7 @@ test('the bootstrap sends the Lead to /aether:design, and no longer describes th
 
 test('the Lead asks at most five questions, writes the card, and acts on each of the four results (R4, R5, R14)', () => {
   const section = designing()
-  for (const text of ['at most five questions, one at a time', 'hard to reverse, surprising, or a real trade-off', '`specs/NNN-<topic>/intent.md`', 'Only you write the card: aether-guard refuses every other writer', "the owner's words, quoted as they said them", 'what is out', 'the answers to the clarifying questions', '- `approved`:', '- `clarify`:', '- `dispute`:', '- `failed`:', 'take the reversible side of each as an assumption, put the question in "Espera tu sí"', 'Never override the Judge silently']) {
+  for (const text of ['at most five questions, one at a time', 'hard to reverse, surprising, or a real trade-off', '`specs/NNN-<topic>/intent.md`', 'Only you write the card: aether-guard refuses every other writer', "the owner's words, quoted as they said them", 'what is out', 'the answers to the clarifying questions', '- `approved`:', '- `clarify`:', '- `dispute`:', '- `failed`:', 'take the reversible side of each as an assumption, put the question in "Espera tu sí"', 'Never override the Judge silently', '**Later changes.**', 'a fix after a stop at the plan stage', 'A changed plan gets a new exam', 'an approved spec is never rewritten']) {
     assert.ok(section.includes(text), text)
   }
 })
@@ -1337,9 +1370,9 @@ test('the bootstrap carries the scope instruction and weighs less than the 29,47
 - `plugins/aether/.claude-plugin/plugin.json`: `version` `0.11.0`.
 - `README.md`: la línea `Version 0.11.0 ([changelog](docs/changelog.md))`.
 - `docs/changelog.md`: una entrada nueva arriba que empieza `Version 0.11.0: aether:design ([spec](../specs/005-aether-design/spec.md)), [decisions](../docs/decisions.md) A50–A54.` y cuenta qué cambió: `/aether:design`, la tarjeta, los frenos, el Writer en `high`, la revisión final con la línea Extra y el bootstrap partido con la skill `autonomous-runs`.
-- `docs/decisions.md`: filas `A50` a `A54` (el workflow y la ronda de asiento por pasos; la tarjeta y las preguntas; los frenos: compuerta, tabla, trazabilidad, tipos del Juez y alcance; el Writer en `high`; la partición del bootstrap), cada una en el formato de las filas anteriores; `A50` cita `specs/005-aether-design/spec.md`.
+- `docs/decisions.md`: filas `A50` a `A54` (el workflow y la ronda de asiento por pasos; la tarjeta y las preguntas; los frenos: compuerta, tabla, trazabilidad, tipos del Juez y alcance; el Writer en `high`; la partición del bootstrap), cada una en el formato de las filas anteriores; `A50` cita `specs/005-aether-design/spec.md` y registra, con la frase `the Workflow tool`, que el diseño ahora exige la herramienta Workflow (antes solo necesitaba al Lead): con workflows apagados el Lead se lo dice al dueño y no diseña a mano.
 - `docs/index.md` y toda página que diga `A1–A49` dicen `A1–A54`. `docs/roadmap.md`: su línea `**Now:**` y su `description` nombran la versión 0.11.0.
-- `docs/getting-started.md` y `docs/methodology.md` describen el flujo nuevo en lugar del que el Lead conducía: preguntas de aclaración (a lo más cinco), la tarjeta `intent.md`, `/aether:design` con sus cuatro resultados y los frenos (compuerta, tabla `Complexity`, `[NEEDS CLARIFICATION]`, tipos de hallazgo, trazabilidad con `Serves`); el Writer de `aether:writer` ya no aparece como `xhigh`. `docs/guide/design-seats.md` dice que los asientos corren dentro de `/aether:design`, por pasos. `docs/guide/autonomy.md` nombra la skill `autonomous-runs`. `docs/reference/components.md`: filas para `/aether:design` y la skill `autonomous-runs`, y las filas de `using-aether`, `aether:writer` y `aether:judge` al día; "Today, in 0.10.0" pasa a 0.11.0.
+- `docs/getting-started.md` y `docs/methodology.md` describen el flujo nuevo en lugar del que el Lead conducía: preguntas de aclaración (a lo más cinco), la tarjeta `intent.md`, `/aether:design` con sus cuatro resultados y los frenos (compuerta, tabla `Complexity`, `[NEEDS CLARIFICATION]`, tipos de hallazgo, trazabilidad con `Serves`); el `aether:writer` nativo ya no aparece como `xhigh` (el Writer externo lo conserva). `docs/guide/design-seats.md` dice que los asientos corren dentro de `/aether:design`, por pasos. `docs/guide/autonomy.md` nombra la skill `autonomous-runs`. `docs/reference/components.md`: filas para `/aether:design` y la skill `autonomous-runs`, y las filas de `using-aether`, `aether:writer` y `aether:judge` al día; "Today, in 0.10.0" pasa a 0.11.0.
 - `tests/docs-facts.test.js`: la prueba de nombres `aether:<name>` toma como conocidos también los workflows de `plugins/aether/workflows/*.workflow.js` (en vez de solo `run`); una prueba nueva exige que `docs/reference/components.md` nombre, en código, cada skill de `plugins/aether/skills/` (`<nombre>` o `aether:<nombre>`) y cada workflow (`/aether:<nombre>`); otra, que `docs/getting-started.md` y `docs/methodology.md` nombren `/aether:design` e `intent.md`, y que `methodology.md` nombre `Complexity` y `NEEDS CLARIFICATION`; otra, que las filas `A50` a `A54` existan y que el primer `Version` del changelog nombre `specs/005-aether-design`.
 - `tests/launcher.test.js`: el test del manifiesto espera `0.11.0`, y sus aserciones sobre `Version 0.10.0:`, `Version 0.9.1:` y `Version 0.9:` siguen (el changelog las conserva).
 
@@ -1367,10 +1400,11 @@ test('R15: the pages describe the design flow and the brakes', () => {
 test('R15: the decisions A50 to A54 are recorded and the changelog opens with 0.11.0 and its spec', () => {
   const decisions = read('docs/decisions.md')
   for (let n = 50; n <= 54; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
-  assert.ok(decisions.split('\n').find((line) => line.startsWith('| A50 |')).includes('specs/005-aether-design/spec.md'))
+  const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
+  assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
   assert.ok(first.startsWith('Version 0.11.0: ') && first.includes('specs/005-aether-design'), first)
 })
 ```
 
-**Acceptance:** `npm test` pasa completo, con la prueba de hechos de la 004 y sus enlaces, anclas y comandos; el manifiesto dice `0.11.0`; el README, el changelog y el roadmap dicen la misma versión; ninguna página dice `A1–A49`; ningún texto dice que el Writer corre en `xhigh`; no se sube, no se empuja ni se fusiona nada.
+**Acceptance:** `npm test` pasa completo, con la prueba de hechos de la 004 y sus enlaces, anclas y comandos; el manifiesto dice `0.11.0`; el README, el changelog y el roadmap dicen la misma versión; ninguna página dice `A1–A49`; ningún texto dice que el `aether:writer` nativo corre en `xhigh` (el Writer externo conserva `xhigh`, R11); no se sube, no se empuja ni se fusiona nada.
