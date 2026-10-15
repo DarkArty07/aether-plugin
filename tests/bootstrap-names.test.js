@@ -1,8 +1,9 @@
 'use strict'
 
-// Everything the Lead's bootstrap and the swarm skill name must exist: commands, subcommands, agents,
-// skills, files, prices and quotes. The sources are the context the session-start hook injects (run as
-// the Lead) and the swarm skill with ${CLAUDE_PLUGIN_ROOT} resolved the way Claude Code resolves it.
+// Everything the Lead's bootstrap, the swarm skill and the autonomous-runs skill name must exist: commands,
+// subcommands, agents, skills, workflows, files, prices and quotes. The sources are the context the session-start
+// hook injects (run as the Lead), and the two skills, the swarm one with ${CLAUDE_PLUGIN_ROOT} resolved the way
+// Claude Code resolves it.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -25,6 +26,7 @@ const RUN_FILES = /^(run|result|result-[\w-]+|grants|baseline)\.json$/
 // The text of the SKILL.md sources, as committed.
 const USING_SOURCE = read('skills', 'using-aether', 'SKILL.md')
 const SWARM_SOURCE = read('skills', 'swarm', 'SKILL.md')
+const RUNS_SOURCE = read('skills', 'autonomous-runs', 'SKILL.md')
 
 // The context the hook injects for the Lead, as the session-start tests run it.
 function injectedContext(t) {
@@ -45,6 +47,7 @@ function sources(t) {
   return [
     ['the injected context', injectedContext(t)],
     ['the swarm skill', resolvedSwarm()],
+    ['the autonomous-runs skill', RUNS_SOURCE],
   ].map(([name, text]) => [name, text.split(PLUGIN).join('<PLUGIN>')])
 }
 
@@ -128,16 +131,17 @@ test('every subcommand shown in code appears in the usage its command prints wit
   }
 })
 
-test('every aether:<name> is an agent, a skill or the run workflow', (t) => {
+test('every aether:<name> is an agent, a skill or a workflow', (t) => {
   for (const [name, text] of sources(t)) {
     const names = new Set([...text.matchAll(/(?<![\w-])aether:([a-z][a-z-]*)/g)].map((m) => m[1]))
-    assert.ok(names.size >= 2, `${name} names agents or skills`)
+    // The autonomous-runs skill names one workflow, /aether:design: one name shows the pattern finds names.
+    assert.ok(names.size >= 1, `${name} names agents, skills or workflows`)
     for (const n of names) {
       const found =
         fs.existsSync(path.join(PLUGIN, 'agents', `${n}.md`)) ||
         fs.existsSync(path.join(PLUGIN, 'skills', n, 'SKILL.md')) ||
-        (n === 'run' && fs.existsSync(path.join(PLUGIN, 'workflows', 'run.workflow.js')))
-      assert.ok(found, `${name}: aether:${n} is an agent, a skill or the workflow run`)
+        fs.existsSync(path.join(PLUGIN, 'workflows', `${n}.workflow.js`))
+      assert.ok(found, `${name}: aether:${n} is an agent, a skill or a workflow`)
     }
   }
 })
@@ -215,7 +219,7 @@ test('the first 1,800 characters of the injected context carry R1: read it whole
 
 test('the bootstrap has The three paths and Models after the route, and the paths name the plan sizes', (t) => {
   const context = injectedContext(t)
-  const order = ['## The route by size and risk', '## The three paths', '## Models', '## Writing and judging'].map((h) => context.indexOf(`\n${h}\n`))
+  const order = ['## The route by size and risk', '## The three paths', '## Models', '## Designing'].map((h) => context.indexOf(`\n${h}\n`))
   assert.ok(order.every((at) => at >= 0), 'the four sections are there')
   assert.deepEqual(order, [...order].sort((a, b) => a - b))
   const paths = section(context, 'The three paths')
