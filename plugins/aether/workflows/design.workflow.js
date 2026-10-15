@@ -206,12 +206,19 @@ const MESSAGE_PATH = `${repoRoot}/.aether-tmp/seats/${session}/message.md`
 // Every verdict of the Judge as it was given, and every round with who took it.
 const verdicts = []
 const rounds = []
+// Every open question of every Writer answer (a first write, a check retry or a correction, external or native), in
+// order and without duplicates, for the Lead: the Writer has no other channel to it.
+const writerQuestions = []
 
 // --- agents ----------------------------------------------------------------------------------
 
 const quote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`
 const message = (err) => (err && err.message ? err.message : String(err))
 const listOf = (value) => (Array.isArray(value) ? value.map(String) : [])
+
+function keepQuestions(answer) {
+  for (const question of listOf(answer.questions)) if (!writerQuestions.includes(question)) writerQuestions.push(question)
+}
 
 // One agent call. A rejection counts as an agent that ended without an answer, like a null result.
 async function call(role, model, effort, prompt, { phase, label, schema }) {
@@ -325,7 +332,10 @@ async function nativeAnswer({ seat, base, text, schema, phase }) {
   ]
   for (const [label, attempt] of attempts) {
     const answer = await call(seat, model, effort, attempt, { phase, label, schema })
-    if (answer !== null && fits(schema, answer, { required: seat !== 'writer' })) return { answer }
+    if (answer !== null && fits(schema, answer, { required: seat !== 'writer' })) {
+      if (seat === 'writer') keepQuestions(answer)
+      return { answer }
+    }
     log(`${label}: ${answer === null ? 'no answer' : 'an answer that does not fit its schema'}`)
   }
   return { failed: `the native ${seat} ended twice without an answer that fits its schema (${base})` }
@@ -391,6 +401,7 @@ async function seatRound({ seat, doc, step, text, schema, phase, author = null, 
     if (reply.exitCode === 0 && isObject(value.result) && fits(schema, value.result, { required: seat !== 'writer' })) {
       record.provider = `${value.harness} ${value.model}`
       record.lane = typeof value.lane === 'string' ? value.lane : null
+      if (seat === 'writer') keepQuestions(value.result)
       return { answer: value.result, text: String(value.answer), seat: record.provider, model: String(value.model), value }
     }
     if (reply.exitCode === 3 && value.native === null && seat === 'examiner') {
@@ -669,4 +680,4 @@ async function short() {
 const outcome = mode === 'full' ? await full() : await short()
 log(`${feature}: ${outcome.status}`)
 const { status, ...fields } = outcome
-return { status, mode, feature, verdicts, rounds, ...fields }
+return { status, mode, feature, verdicts, rounds, ...(writerQuestions.length > 0 ? { writerQuestions } : {}), ...fields }
