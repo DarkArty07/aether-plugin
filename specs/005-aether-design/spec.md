@@ -1,7 +1,7 @@
 # aether:design: el Lead entrega la intención y el diseño corre solo
 
 - Date: 2026-10-15
-- Status: Draft, revisión 2 (tras el `revise` del Juez del 2026-10-15)
+- Status: Aprobada por el Juez el 2026-10-15 (revisión 2, tras el `revise` de la revisión 1). La revisión 3 aplica sus tres hallazgos menores (R2, R11 y la clase de la etiqueta), y el Juez los revisa junto con el plan.
 - Intent: que el Lead deje de conducir el diseño. Que entregue la intención del dueño y que el diseño corra solo hasta el plan aprobado, como ya corre la construcción en `aether:run`, sin que vuelva la sobreingeniería. Sale en la versión siguiente. En palabras del dueño (2026-10-15):
   - «el agente principal se sautraba porque tneia que hacer todo entender al usuario orquestar saber que agente entra en cada cosa, y en la arqueictura te doy el trbajao organizate me ocurria que el swarm hacia sobreingnieria»
   - «mi idea original era el lead pasa la tarea el swarm se orgnaiza con supervisor designer judge etc etc. Pero no se si eso haria sobreingienria d eneuvo, lo que quiero es descargar al lead para evitar que falle, acutlmaente no ha fallado pero por experiencia ya me paso antes que el lead tenia tantas responsabilidades que incumnplia algunas»
@@ -85,7 +85,7 @@ Lo que hay hoy, en `main` (122755a, 0.10.0):
   - Un asiento nunca toma el modelo que escribió el documento (A41).
   - Una ronda de asiento externo se lanza y se espera por pasos que caben, cada uno, dentro del tope de una llamada de ops, como ya se hace con las lanes.
   - En la ronda de la spec, un Writer externo escribe solo `spec.md`; en la del plan, solo `plan.md` y `tasks.md`.
-  - El Lead le pasa a `/aether:design` su id de sesión y la opción de asientos, así que el workflow no los lee del entorno del agente ops.
+  - El Lead le pasa a `/aether:design` su id de sesión y la opción de asientos, así que el workflow no los lee del entorno del agente ops. `aether-lane seat` hoy lee la opción de `AETHER_SEATS` (`lib/lanes.js:150`); el plan nombra cómo le llega: una bandera, o un prefijo de entorno que acepte el mod de ops.
   - El Lead no decide ni lanza ninguna ronda.
 
   Sirve a: C1.
@@ -122,7 +122,7 @@ Lo que hay hoy, en `main` (122755a, 0.10.0):
 
   Sirve a: C2.
 - R10. El Writer, el Juez, el Examinador y el bootstrap del Lead llevan una instrucción de alcance: entregar lo pedido, al alcance pedido. Lo que ayudaría y nadie pidió se menciona al final; no se hace. Sirve a: C2.
-- R11. El Writer arranca en esfuerzo `high`, no en `xhigh`, también cuando un asiento externo cae a él. Sirve a: C2.
+- R11. El Writer nativo arranca en esfuerzo `high`, no en `xhigh`, también cuando un asiento externo cae a él. El nivel de un Writer externo no cambia, porque la guía citada es de Sonnet 5.5; hoy ese nivel sale de la misma tabla (`lib/seats.js:96`), así que el plan los separa. Sirve a: C2.
 - R12. La revisión final marca lo que sobra, como el supervisor: features que nadie pidió y sobreingeniería. El resto de su método no cambia. Sirve a: C2, C3.
 - R13. Las unidades, la escalera, el supervisor, los merges y la limpieza de `aether:run` se comportan como en 0.10.0. Las pruebas del swarm pasan sin cambios. Sirve a: C3.
 - R14. El bootstrap del Lead cambia así:
@@ -182,7 +182,7 @@ Lo que hay hoy, en `main` (122755a, 0.10.0):
 
 - Subir la rama y abrir el pull request · `push` · `git push -u origin feat/aether-design && gh pr create --base main --head feat/aether-design --title "aether:design: el Lead entrega la intención y el diseño corre solo (0.11.0)"`.
 - Fusionar el pull request a `main`, que publica 0.11.0 porque la instalación sigue `ref: main` · `merge-main` · `gh pr merge <número> --merge`.
-- Etiquetar la versión, como las anteriores (`aether--v0.9.1`) · `publish` · `git tag aether--v0.11.0 <commit de la fusión> && git push origin aether--v0.11.0`.
+- Etiquetar la versión, como las anteriores (`aether--v0.9.1`) · `push`, que es como aether-guard clasifica cualquier `git push` (`lib/guard.js:128`) · `git tag aether--v0.11.0 <commit de la fusión> && git push origin aether--v0.11.0`.
 
 ## Out of scope
 
