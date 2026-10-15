@@ -286,6 +286,65 @@ test('every ops prompt is one the mod runs without a model, and every payload go
   }
 })
 
+test('the questions of every Writer answer reach the Lead as writerQuestions, in order and without duplicates', async () => {
+  const writer = (call, fallback) => {
+    if (call.label === 'spec: writer write') return { ...SPEC_ANSWER, questions: ['Q1. which database?'] }
+    if (call.label === 'plan: writer write') return { ...PLAN_ANSWER, questions: ['Q2. is the spec wrong on R3?', 'Q1. which database?'] }
+    return fallback(call)
+  }
+  const run = await go(ARGS, { writer })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  assert.deepEqual(run.result.writerQuestions, ['Q1. which database?', 'Q2. is the spec wrong on R3?'])
+})
+
+test('the questions of an external Writer answer, a check retry and a correction are kept too', async () => {
+  const docs = {}
+  let n = 0
+  let checks = 0
+  const ops = (call, fallback) => {
+    const out = fallback(call)
+    const [verb, id] = [call.command.verb, call.command.rest[0]]
+    if (verb === 'check') return ++checks === 1 ? { raw: { exitCode: 1, stdout: `${JSON.stringify({ ok: false, errors: ['e'], warnings: [] })}\n` } } : CHECK_OK
+    if (verb === 'seat-start' && id === 'writer') docs[out.id] = flag(call, '--doc')
+    if (verb === 'seat-wait' && docs[id] === 'spec') {
+      return { done: true, exitCode: 0, value: { seat: 'writer', id, harness: 'agy', model: 'gemini-4-argon', answer: 'x', result: { ...SPEC_ANSWER, questions: ['external spec'] }, lane: '- Lane: agy gemini-4-argon-high' } }
+    }
+    return out
+  }
+  const writer = (call, fallback) => {
+    if (call.label === 'plan: writer write') return { ...PLAN_ANSWER, questions: ['plan first'] }
+    if (call.label === 'plan: writer write (retry)') return { ...PLAN_ANSWER, questions: ['plan retry', 'plan first'] }
+    if (call.label === 'plan: writer revision 1') return { document: `${FEATURE}/tasks.md`, commit: 'c3', assumptions: [], questions: ['correction'], disagreements: [] }
+    return fallback(call)
+  }
+  const judge = (call, fallback) => (call.label === 'plan: judge review 1' ? { verdict: 'revise', findings: [finding('gap')], openQuestions: [] } : fallback(call))
+  const run = await go({ ...ARGS, seats: 'balanced', lanes: 'on' }, { ops, writer, judge })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  assert.ok(nativeCalls(run).some((c) => c.label === 'plan: writer revision 1'))
+  assert.deepEqual(run.result.writerQuestions, ['external spec', 'plan first', 'plan retry', 'correction'])
+})
+
+test('a design that ends failed still carries the questions the Writer raised before it', async () => {
+  const failing = (call, fallback) => (call.command.verb === 'check' ? { raw: { exitCode: 1, stdout: `${JSON.stringify({ ok: false, errors: ['e'], warnings: [] })}\n` } } : fallback(call))
+  const writer = (call, fallback) => (call.label.startsWith('plan: writer') ? { ...PLAN_ANSWER, questions: [`asked in ${call.label}`] } : fallback(call))
+  const run = await go(ARGS, { ops: failing, writer })
+  assert.equal(run.result.status, 'failed')
+  assert.deepEqual(run.result.writerQuestions, ['asked in plan: writer write', 'asked in plan: writer write (retry)'])
+})
+
+test('a design whose Writers raise no questions has no writerQuestions key', async () => {
+  for (const args of [ARGS, SHORT, { ...SHORT, document: `${FEATURE}/plan.md` }]) {
+    const run = await go(args)
+    assert.equal(run.result.status, 'approved')
+    assert.equal('writerQuestions' in run.result, false)
+  }
+  const failed = await go(ARGS, { writer: () => null })
+  assert.equal(failed.result.status, 'failed')
+  assert.equal('writerQuestions' in failed.result, false)
+})
+
 test('the args are checked', async () => {
   const bad = (change) => go({ ...ARGS, ...change }).then((run) => run.error && run.error.message)
   for (const change of [{ feature: 'docs/x' }, { session: 'a b' }, { repoRoot: 'repo' }, { seats: 'all' }, { lanes: 'maybe' }, { harnesses: 'AGY' }, { mode: 'short' }, { mode: 'short', document: `${FEATURE}/other.md`, intent: 'i' }]) {
