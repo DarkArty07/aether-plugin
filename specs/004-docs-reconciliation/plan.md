@@ -171,6 +171,8 @@ Comando: `npm test` (`node --test "tests/*.test.js"`). Cada unidad lo deja verde
 | R13 | `git diff --stat` sobre la rama: solo los archivos de la lista; la Task 13 nombra cada aserción que cambia, y la Task 20 lo verifica |
 | R14 | `npm run check` en la Task 20 y en la rama de integración |
 
+**Paso del Lead para C1.** Terminado el swarm, el Lead lanza ese revisor como una tarea delegada (Sonnet a `high`, en un worktree desechable de la rama de integración) con `CLAUDE_CONFIG_DIR=$(mktemp -d)`; su salida, comando por comando, va al brief del Lead y no al repositorio.
+
 ## Assumptions
 
 - **P1 · Idioma.** Este plan y las tareas, en español; las páginas, las pruebas y los comentarios, en inglés (A1 de la spec: el dueño lo confirmó). Es la regla de los planes 001 y 002. Reversible.
@@ -187,6 +189,7 @@ Comando: `npm test` (`node --test "tests/*.test.js"`). Cada unidad lo deja verde
 
 ## Risks
 
+- **Quitar una sección de un texto que la tiene dos veces.** Mientras el README y las páginas guardan el mismo texto (olas 1 a 3), una prueba que lo quita del conjunto con `String.replace` quita solo la primera copia y deja la otra: «only Upgrading from 0.6 names…» lee cada archivo sin su propia sección (hallazgo 1 del Juez, en la Task 13). Una prueba nueva de este tipo debe hacer lo mismo.
 - **Una página de la ola 1 con un defecto frena a docs-facts (Task 15) en la ola 2.** Es la señal buscada: la unidad se bloquea con el nombre del defecto, el Lead relanza la página y después la Task 15. Las demás unidades de la ola 2 no dependen de eso.
 - **Perder texto al mover.** Se cubre por tres lados: la comprobación exacta del changelog (Task 10), los lectores corridos sin el README (Task 13) y la verificación fila por fila de D1 (Task 20). Lo que el README tenía y ninguna prueba nombra lo atrapa la Task 20.
 - **Una cadena fijada se escapa de una página** y la reducción del README la deja sin casa. La Task 13 corre los tres lectores sin el README antes de que la Task 16 lo reduzca; si falta una cadena, la unidad se bloquea con su nombre y se corrige la página.

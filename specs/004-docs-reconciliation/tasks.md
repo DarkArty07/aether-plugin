@@ -234,7 +234,7 @@ console.log(`${spec.page}: ok`)
 - [ ] T013 [P] [US4] Las tres pruebas que leen el README leen el README y las páginas in tests/launcher.test.js, tests/lanes-docs.test.js y tests/start-command.test.js → Task 13
 - [ ] T014 [P] [US4] La frase de la skill `swarm` y la prueba que la fija in plugins/aether/skills/swarm/SKILL.md y tests/roles.test.js → Task 14
 - [ ] T015 [P] [US4] La prueba de hechos in tests/docs-facts.test.js → Task 15
-- [ ] T016 [US1] El README como puerta, R1 en la prueba de hechos y el enlace del retrospectivo in README.md → Task 16
+- [ ] T016 [US1] El README como puerta, R1 en la prueba de hechos y el enlace del retrospectivo in README.md, tests/docs-facts.test.js, docs/aether-retrospective.md → Task 16
 - [ ] T017 [P] [US4] Auditoría de lanes, seats, ops y options in docs/guide/lanes.md → Task 17
 - [ ] T018 [P] [US4] Auditoría de la guía de inicio, la solución de problemas, autonomía y mantenimiento in docs/getting-started.md → Task 18
 - [ ] T019 [P] [US4] Auditoría de propósito, metodología, piezas y README in docs/methodology.md → Task 19
@@ -797,7 +797,7 @@ Archivo `docs/reference/components.md`, front matter `title: Components`, `order
 ```
 
 - **The pieces:** la tabla `| Piece | What it does |` del README (líneas 135–154), una fila por pieza, con la cabecera exacta `| Piece | What it does |`. Corregida contra el árbol: cada pieza existe (los nueve archivos de `plugins/aether/bin/`, los ocho agentes de `plugins/aether/agents/`, las seis skills, el hook de inicio, el mod). La fila `| \`aether-autonomy\` |` conserva ese comienzo exacto. Si falta una pieza que existe (por ejemplo `aether-session-start`), se añade una fila.
-- **What Aether adds to a normal session:** las líneas 279–288, con la corrección de R12: «the nine commands of `bin/`» (hoy son nueve), y la medición **fechada**: la versión de Claude Code, la de Aether y la fecha en que se midió (la de `docs/evaluations/2026-10-09-installable/A3-dormant.md`), en una frase que dice que 0.8 a 0.10 no se midieron así. La medición no se retira.
+- **What Aether adds to a normal session:** las líneas 279–288, con la corrección de R12 dicha como un hecho de hoy y **fuera** de lo medido, en una frase propia que contiene «the nine commands of `bin/`» (hoy son nueve), y la medición **fechada**: la versión de Claude Code, la de Aether y la fecha en que se midió (la de `docs/evaluations/2026-10-09-installable/A3-dormant.md`), en una frase que dice que 0.8 a 0.10 no se midieron así. La medición no se retira.
 - Enlaces: [Methodology](../methodology.md), [Options](../guide/options.md#options).
 
 Fuentes: `plugins/aether/bin/`, `agents/`, `skills/`, `hooks/hooks.json`, `workflows/`; `docs/evaluations/2026-10-09-installable/A3-dormant.md`; README de 122755a líneas 135–154 y 279–288.
@@ -1131,7 +1131,15 @@ Los cambios, como diff sobre cada archivo. Todas las aserciones que no aparecen 
 -  const upgrading = section(readme, '### Upgrading from 0.6')
 -  const rest = readme.replace(upgrading, '')
 +  const upgrading = section(page('docs/guide/maintenance.md'), '### Upgrading from 0.6')
-+  const rest = README().replace(upgrading, '')
++  // Until Task 16 lands, the README holds a copy of this section too: each file is read without its own.
++  const without = (text) => {
++    const start = text.indexOf('\n### Upgrading from 0.6\n')
++    if (start < 0) return text
++    const after = text.slice(start + 1)
++    const next = after.slice(1).search(/\n##+ /)
++    return text.slice(0, start) + (next < 0 ? '' : after.slice(next + 1))
++  }
++  const rest = DOC_FILES.map((file) => without(page(file))).join('\n')
    for (const old of ['aether-mode', 'aether-install', '.local/share/aether-plugin']) assert.ok(!rest.includes(old), old)
    for (const text of ['"source": "git"', '"url": "file://', '"ref": "aether--v0.7.0"', 'claude plugin install aether@aether-plugin --config lanes=true', '/advisor off']) {
      assert.ok(upgrading.includes(text), text)
