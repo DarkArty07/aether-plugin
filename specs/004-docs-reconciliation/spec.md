@@ -1,7 +1,7 @@
 # 004 · Conciliación de la documentación: propósito, README, metodología y guía de quien acaba de instalar
 
 - **Date:** 2026-10-15
-- **Status:** Draft (revisión 3, tras dos `revise` del Judge)
+- **Status:** Approved (revisión 3; el Judge aprobó en la tercera revisión)
 - **Intent:** «quiero que despliegues el swarm para que vayan arreglando la documentación incluido el readme, nosotros haremos los sprites, y como aún no sabemos cómo vamos a hacer la landing page solo se encargará el swarm de conciliar documentación, propósito, readme, metodología y documentación para personas que recién lo instalan que irá conectado a la página de documentación que también va conectado a la landing page». Antes, el dueño dividió las piezas así: «en el readme explicamos la instalación que es etc, en el landing page más de lo que es que busca y cómo, y en la página de documentación necesitamos ir manejando cómo se usa, es como la guía de usuario».
 
 ## Criteria
@@ -51,7 +51,7 @@
   - cada `aether-*` entre acentos graves, en posición de comando (el comando solo, o seguido de sus argumentos), existe en `plugins/aether/bin/` o en la lista de excepciones; no se miran los fragmentos que contienen `@`, `/` o `--v` (rutas, marketplaces y etiquetas), y la lista de excepciones tiene `aether-lead` (que vive en `scripts/`), `aether-plugin` (el nombre del marketplace y del repositorio), `aether-aether-plugin` y `aether-inline` (directorios de datos) y los nombres retirados que se citan como tales (`aether-mode`);
   - cada `aether:<nombre>` es un agente de `plugins/aether/agents/`, una skill de `plugins/aether/skills/` o `aether:run`;
   - la tabla de `docs/guide/options.md` coincide con `userConfig` de `plugins/aether/.claude-plugin/plugin.json` (opciones y valores por defecto), y ninguna página repite, en la forma de R6, un valor distinto;
-  - la versión de la línea `Version X.Y.Z` del README y la del primer encabezado de `docs/changelog.md` es la del manifiesto;
+  - la versión de la línea `Version X.Y.Z` del README y la de la primera línea `Version X.Y.Z:` de `docs/changelog.md` es la del manifiesto;
   - el README cumple R1.
   Sirve a: C2, C3, C5.
 - R12. Las afirmaciones ya conocidas por desactualizadas se corrigen: «Roadmap → Now: version 0.9»; la lista de decisiones «A1–A43» (hoy llega a A49); «the eight commands of `bin/`» (hoy son nueve); la medición «What Aether adds to a normal session», hecha con 0.7.0, que se fecha y se mueve (R7), no se retira; y el resto de lo que la revisión final encuentre. Sirve a: C3.
@@ -72,7 +72,7 @@
 
 ## Assumptions
 
-- A1. Las páginas se escriben en inglés, como el resto de los documentos del repositorio, y conservan los términos de producto en español (RADAR, «Espera tu sí»). Base: convención del repositorio. Reversible: P1. Va a la lista del dueño porque es un trade-off real (el primer público de la guía de usuario).
+- A1. Las páginas se escriben en inglés, como el resto de los documentos del repositorio, y conservan los términos de producto en español (RADAR, «Espera tu sí»). Base: convención del repositorio. Reversible: P1. El dueño lo confirmó el 2026-10-15: «toda la documentación en inglés»; la versión en español queda fuera (P1).
 - A2. Se documenta lo que existe en `origin/main` en 122755a (0.10.0), no la rama local `feat/grok-lane`, que va 56 commits atrás. Base: GitHub es la fuente de verdad y el PR #12 ya está fusionado. Reversible.
 - A3. El nombre y la ubicación de las páginas son los de R3 a R9. Base: los cuatro cubos que pidió el dueño (propósito, README, metodología, documentación de quien recién instala) más lo que ya vive en el README. Reversible: mover una página cambia enlaces, no contenido.
 - A4. El tope de 160 líneas del README es una guía de lectura en una o dos pantallas, no una cifra del dueño. Base: hoy tiene 451 líneas y mezcla cinco públicos. Reversible.
