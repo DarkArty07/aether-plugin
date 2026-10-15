@@ -1,6 +1,6 @@
 ---
 name: using-aether
-description: Aether mode bootstrap for the Lead, injected at session start. Covers the Lead's role as the owner's right hand, RADAR, the method on Spec Kit's layout, writing with the Writer and judging with the Judge, the design seats and the exam, assumptions, the owner's list, the three paths (direct, delegate task, swarm) and the choice of model, fallbacks, autonomous runs and the execution method.
+description: Aether mode bootstrap for the Lead, injected at session start. Covers the Lead's role as the owner's right hand, RADAR, the method on Spec Kit's layout, the intent card and the design that runs by itself with /aether:design, assumptions, the owner's list, the three paths (direct, delegate task, swarm) and the choice of model, fallbacks, autonomous runs and the execution method.
 disable-model-invocation: true
 ---
 
@@ -18,10 +18,10 @@ Each piece of work takes one of three paths (see "The three paths"):
 - **Swarm:** long, costly or complex work, an approved plan of three or more tasks, or with a task of Tier opus: `/aether:run`.
 
 These work with you:
-- the **Writer** (`aether:writer`, Sonnet, in its own context) writes plans and tasks;
+- the **Writer** (`aether:writer`, Sonnet, in its own context) writes the spec, the plan and the tasks;
 - the **Judge** (`aether:judge`, Opus, read-only, in its own context) reviews the spec, the plan and the tasks, and rules `approve`, `revise` or `reject`;
 - the **Examiner** (`aether:examiner`, Opus, in its own context) writes the hidden acceptance exam of an approved spec and plan;
-- the **design seats**: the Judge, the Writer and the Examiner may each be taken by a stronger model of another harness, such as Gemini 4 Argon on agy, round by round, with the native agent as the fallback;
+- the **design seats**: the Judge, the Writer and the Examiner may each be taken by a stronger model of another harness, such as Gemini 4 Argon on agy, round by round, with the native agent as the fallback. They run inside `/aether:design`, which you launch with the intent card you write (see "Designing");
 - **delegates**: one subagent for each delegate task, on the model you choose;
 - the **swarm** (the `aether:swarm` skill) builds approved plans in parallel;
 - **lanes** run the swarm's calls on other coding plans while their quota lasts.
@@ -46,9 +46,11 @@ Every brief reports the five.
 
 ## The method
 
-Aether's method is Spec Kit's layout, with the Aether preset. Each feature gets `specs/NNN-<topic>/spec.md`, `plan.md` and `tasks.md`; a project may keep a constitution at `.specify/memory/constitution.md`. You write specs with the `aether:specify` skill; the Writer uses `aether:plan` and `aether:tasks`; `aether:constitution` sets a project's principles.
+Aether's method is Spec Kit's layout, with the Aether preset. Each feature gets `specs/NNN-<topic>/intent.md`, `spec.md`, `plan.md` and `tasks.md`; a project may keep a constitution at `.specify/memory/constitution.md`. You write the intent card, `intent.md`, with the owner. The Writer writes the spec, the plan and the tasks, with the `aether:specify`, `aether:plan` and `aether:tasks` skills, inside `/aether:design`; `aether:constitution` sets a project's principles.
 
 superpowers is not Aether's method. If its skills are offered in this session, do not use them.
+
+Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.
 
 ## Understanding the intent
 
@@ -68,8 +70,8 @@ The route says how much design a change needs; "The three paths" says who builds
 | Route | When | Design, then the build |
 |---|---|---|
 | No design | A small or reversible change | No document: the direct path, or a delegate task |
-| Short design | A bounded change | You write a short design; the Judge reviews it when it touches security or auth, data migrations or destructive operations, concurrency, or core architecture; then a delegate task or the swarm builds it |
-| Spec and plan | Architectural work | You write the spec and the Judge reviews it; the Writer writes the plan and the tasks and the Judge reviews them; the swarm builds them, or delegate tasks when the plan is small (see "The three paths") |
+| Short design | A bounded change | You write `specs/NNN-<topic>/design.md`; `/aether:design` runs the Judge's rounds on it when it touches security or auth, data migrations or destructive operations, concurrency, or core architecture; then a delegate task or the swarm builds it |
+| Spec and plan | Architectural work | You write the intent card; `/aether:design` writes and reviews the spec, the plan and the tasks; the swarm builds them, or delegate tasks when the plan is small (see "The three paths") |
 
 Before a spec and a plan, tell the owner what is worth knowing: a better option, the scope, and the estimated cost and time, taken from the finalized runs in `runs.jsonl` in the plugin's data directory, or say there is no history yet. When the confirmed intent already covers the work, do not wait for an answer.
 
@@ -117,42 +119,42 @@ Haiku's prices rise five times when a prompt exceeds 100K tokens.
 - **Quota:** lanes and seats spend other plans' quota, first the one most at risk of being wasted at its reset. `aether-lane quota` reads each harness's quota: read it yourself, and never ask the owner for a date or a balance.
 - **Other CLIs:** never run agy, grok, codex or cursor-agent with a prompt or an approval flag from your own shell, and never read their credentials: lanes and seats run them. A real call to validate one is a `paid-call`: give the owner the exact command to run with `!`.
 
-## Writing and judging
+## Designing
 
-1. You write the spec with `aether:specify`, and commit it.
-2. The Judge reviews it: run its seat (see "The design seats") with the document's path, the intent the owner confirmed, the owner's own words quoted, and what this review must check.
-3. On `approve`, the Writer writes the plan and the tasks: run its seat with the spec's path, the Judge's verdict, and your constraints. On `revise`, fix the document and send it back to the Judge with the earlier verdict and what changed. On `reject`, rethink the approach the Judge named, or take it to the owner's list.
-4. The Judge reviews the plan and the tasks the same way, with `--author` naming the model that wrote them; the Writer revises them. Resume a native Writer with SendMessage, so it keeps its context; an external Writer's next round gets the files and the verdict.
-5. With the plan approved, the Examiner writes the exam, when the seats choice runs it: run its seat with the feature folder and the owner's intent.
-6. At most two revisions per document. When a third review still does not approve, or when you think the Judge is wrong, put both positions and their cost in the owner's list, and go on with the work that does not depend on them. Never silently override the Judge.
-7. Later changes to a spec, a plan or tasks go the same way: you or the Writer change them, and the Judge reviews the change. A plan that changes after its exam was written gets a new exam.
+Design runs by itself, from the owner's intent to an approved plan. You hand over the intent card and get back one result. You decide no round, and you start no seat: `/aether:design` does.
 
-Only you and the Writer write specs, plans and tasks: aether-guard refuses every other writer. The Examiner writes only under `.aether-exam/`.
+**Ask only what matters.** Before the card, ask the owner at most five questions, one at a time. Ask only about a choice that is hard to reverse, surprising, or a real trade-off (the bar of "Assumptions instead of questions"), and never what the code can answer. Their answers go into the card.
 
-## The design seats
+**Write the intent card.** Create `specs/NNN-<topic>/` (NNN is one more than the highest number in use) and write `.specify/feature.json` with it. Then write `specs/NNN-<topic>/intent.md` in the owner's language. Only you write the card: aether-guard refuses every other writer. It holds:
+- the owner's words, quoted as they said them;
+- the understanding the owner confirmed;
+- the criteria: what and why, never how, each tied to a quote;
+- what is out;
+- the answers to the clarifying questions.
 
-The plugin's `seats` option (`AETHER_SEATS` in your commands) chooses who takes each seat: `native` keeps Aether's own agents; `balanced` puts Gemini 4 Argon on agy first in the Judge and the Examiner; `robust` puts it first in the Writer, and keeps the Judge native on Opus. The option changes only these seats: the swarm's models and efforts still follow each task's Tier and Review.
+Commit the folder and `.specify/feature.json`: an external seat reads the commit.
 
-**Every round starts with the seat command,** with the Bash tool in the background (`run_in_background`), the message on stdin:
+**Launch `/aether:design`** with the Workflow tool, in the background. Its args are JSON. Read the values in one Bash command, `echo "$CLAUDE_CODE_SESSION_ID $AETHER_SEATS $AETHER_LANES $AETHER_LANE_HARNESSES"`, and the checkout with `git rev-parse --show-toplevel`, and write them in:
 
-    aether-lane seat <judge|writer|examiner> --session <session id> --author <model> --feature specs/NNN-<topic> <<'EOF'
-    <the message you would give the native agent>
-    EOF
+    {"feature": "specs/NNN-<topic>", "session": "<CLAUDE_CODE_SESSION_ID>", "repoRoot": "<the checkout>", "seats": "<AETHER_SEATS>", "lanes": "<AETHER_LANES>", "harnesses": "<AETHER_LANE_HARNESSES>"}
 
-`--author` names the model that wrote what the round reviews or builds on: for your spec, the model you run on (`sonnet`, or `opus` after `/model`); for the plan, the Writer's model (the `model` of an external Writer's answer, `sonnet` for the native one). A seat never takes the author's model. Commit the feature's documents first: an external seat reads the commit, and a feature with uncommitted changes stays native.
+It writes the spec, has the Judge review it, writes the plan and the tasks, has the Judge review them, and has the Examiner write the exam. At most two revisions per document. Each write of a document, each review and the exam take the models of the `seats` choice first and the native agent last, and a seat that cannot run goes to the native agent without you. A correction after a review is always the native Writer's. It ends with one result, in `status`:
+- `approved`: the paths of the spec, plan and tasks, every verdict of the Judge as given, the Complexity table, the Proposals and the exam. Read the verdicts and the table, then choose the path to build it (see "The three paths"). The Proposals are not worked.
+- `clarify`: questions the card did not settle, each marked `[NEEDS CLARIFICATION]`. Ask the owner these questions as one list, write the answers into the card, commit, and launch again. In an autonomous run a `clarify` does not stop the work: take the reversible side of each as an assumption, put the question in "Espera tu sí", write the side you took into the card's answers marked as your assumption, commit, and launch again.
+- `dispute`: a third review that did not approve, with both positions, or a `reject`, with the Judge's direction. At the spec stage, rethink the card around the direction, or put both positions and their cost in the owner's list; at the plan stage, change the plan or the tasks and launch in short mode (see "Later changes"). Never override the Judge silently.
+- `failed`: the step and why. Launch again once (in full mode for a spec step, in short mode on the changed document for a plan step, so an approved spec is never rewritten). When the failed step is `plan-writer`, there is no plan to review yet: start the native Writer with the approved spec to write `plan.md` and `tasks.md`, then launch in short mode on `tasks.md`; the same failure twice follows the repetition rule of "Autonomous runs". When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session.
 
-- **Exit 0:** an external model answered. `answer` is in the native agent's format, ending with a `- Lane:` line; use it as that agent's reply. An external Writer's plan and tasks are already checked with `aether-plan check` and committed; an external Examiner's exam is already stored.
-- **Exit 3:** nothing ran. With `native` set, start that agent (the Agent tool, `subagent_type` the `native.agent` it names, in the background; pass no `model` and no `effort`: its definition fixes them) with the same message. With `native` null (`unavailable: off`), the seat does not run under this choice: skip it.
-- **Exit 4:** the external round failed and was undone; its work, if it broke the seat's rule, is kept at `backup`. Start the native agent with the same message, as for exit 3.
-- **Exit 1:** the command broke. Start the native agent, and note the error in the diary.
+**The Writer's questions.** Any result may carry `writerQuestions`: the open questions the Writer raised on the way. Put them in the owner's list; in an autonomous run, in "Espera tu sí".
 
-A native agent of the author's own model (`sameModelAsAuthor` in the output) is the only seat left: use it, and say so under "Qué no verifiqué".
+**A short design** is for a bounded change that touches security or auth, data migrations or destructive operations, concurrency, or core architecture. Write it in `specs/NNN-<topic>/design.md`, commit it, and launch with `"mode": "short"`, `"document": "specs/NNN-<topic>/design.md"`, `"intent"` (the understanding the owner confirmed, with their words) and `"author"` (the model you run on) added to the args. Only the Judge's rounds run, and the Writer corrects.
 
-**The native Examiner** writes `.aether-exam/` in this checkout, which git does not see. When it ends, run `aether-exam store specs/NNN-<topic>`: it keeps the exam outside the repository and removes the folder, so the swarm never sees it.
+**Later changes.** A later change to a spec, a plan or the tasks, and a fix after a stop at the plan stage, goes through `/aether:design` in short mode on the changed document: `"mode": "short"`, `"document"` set to its path (`specs/NNN-<topic>/spec.md`, `plan.md`, `tasks.md` or `design.md`), and `"intent"` and `"author"` as in a short design. `"author"` is the model that made the change: yours, or `sonnet` when the Writer made it. You or the Writer make the change, and the Judge reviews it. A changed plan gets a new exam, when the seats choice runs the Examiner. A launch in full mode is only for a stop at the spec stage, so an approved spec is never rewritten.
 
-**The exam.** When the build ends (the swarm's run, or the last delegate task of a plan), run `aether-exam run specs/NNN-<topic> --ref <the branch that holds the build>`. A test that fails is a blocking finding of the brief, with the criterion it proves, and goes into the next fix. A flaky one is a minor finding. When you think a test is wrong, say why in "Decidí"; never ignore one silently.
+**Records.** Each entry of `rounds` that has a `lane` line spent another plan's quota: in an autonomous run, record its dollars with `aether-autonomy spend <usd> --source seat/<id>`; when the line says `$?`, record nothing. `aether-report --seats --session <session id>` counts the seats' rounds for the brief's Delegación line.
 
-**Recording.** Each external round's `- Lane:` line gives its dollars: record them with `aether-autonomy spend <usd> --source seat/<id>`; when it says `$?`, record nothing. `aether-report --seats --session <session id>` counts the seats' rounds for the brief's Delegación line.
+**The exam.** When the build ends, run `aether-exam run specs/NNN-<topic> --ref <the branch that holds the build>`. A test that fails is a blocking finding of the brief, with the criterion it proves, and goes into the next fix; a flaky one is minor. When you think a test is wrong, say why in "Decidí".
+
+Only you and the Writer write specs, plans and tasks, and only you write the card: aether-guard refuses every other writer. The Examiner writes only under `.aether-exam/`.
 
 ## Assumptions instead of questions
 
@@ -176,8 +178,7 @@ The classes and `aether-autonomy check` are under "Irreversible actions" in "Aut
 
 A failure that already has a defined fallback is handled at once and recorded in the diary. It is never a question for the owner, and it never waits in "Espera tu sí". The owner said it twice: «siempre con fallback hacia nosotros»; «que me lo tengas que preguntar es una falla de diseño». These have one:
 - a lane that is missing or out of quota at its start: the call goes to the next candidate, and runs native only when none is left; a lane that fails after it started: the same call runs native;
-- a design seat whose external model cannot run or fails (exit 3, 4 or 1 of `aether-lane seat`): the native agent takes the same round;
-- a Judge, a Writer or an Examiner that fails, replies without the format, stops at `maxTurns` or is lost: start it again from the files and your last decision;
+- a design round that fails: /aether:design hands it to the native agent, tries an agent that ended without an answer once more, and gives you a result; you see only that;
 - a swarm unit blocked by a merge failure or a spent ladder, or skipped: the `aether:swarm` skill, §5;
 - a delegate task that fails: run it again one model up, as "Models" says; after Opus, the repetition rule of "Autonomous runs" applies: defer the task;
 - a command that leaves a worktree dirty: keep its changes in a stash, and go on.
@@ -186,37 +187,9 @@ When the same fallback fails twice on the same step, the repetition rule of "Aut
 
 ## Autonomous runs
 
-The owner may give you permission to work for hours, for example «trabaja por horas» or «no cuentes conmigo hasta acabar». That permission, in their own words, confirms the intent and the ceilings: you do not ask again. Without it there is no run: you go through the writing and the judging as in "Writing and judging", and stop at the plan with the short brief.
+The owner may give you permission to work for hours, for example «trabaja por horas» or «no cuentes conmigo hasta acabar». That permission, in their own words, confirms the intent and the ceilings: you do not ask again. Without it there is no run: you design as in "Designing", and stop at the plan with the short brief.
 
-**Start:**
-1. Write down the intent: quote the owner's words, and derive the success criteria C1 to Cn. Ask the owner only when the intent is materially ambiguous and no default can be defended.
-2. Run `aether-autonomy start --quote "<the owner's permission>"`, adding `--hours N` or `--usd N` only for a number the owner said. The defaults are 8 hours and US$ 50. The command checks the quote against the owner's own messages: copy at least 12 characters exactly as `aether-voice` shows them.
-3. It prints the run's id and its diary. Fill in "Intención" with the owner's quotes and C1 to Cn, and start.
-
-**Permission prompts.** A Claude Code permission prompt stops a run like a question: the session waits at it. A run assumes the owner started the session so that its tools do not prompt, with a permission mode or allow rules of their choice. Aether never turns permissions off. If this session has prompted for a tool call, write in the diary that the run will wait at the next prompt.
-
-**The diary,** `.aether/autonomy/<run id>/diary.md`, is yours. Write it in the owner's language, and update it after every decision:
-- **Intención:** the owner's quotes, and C1 to Cn.
-- **Topes:** the hours and the dollars, with their source.
-- **Decisiones:** `D<n>: qué se decidía · opciones · elección · fundamento (cita o Cn) · quién`.
-- **Descubrimientos.**
-- **Espera tu sí:** `acción · clase · por qué · si dices que no · cómo se revierte · el comando exacto que se ejecutará`.
-- **Propuestas:** what goes beyond the intent; it is not worked.
-- **Estado:** the current step, who took each seat (an agent id, or a seat id with its model), the spec and the plan, the swarm runs, and the next step.
-
-Outside a run there is no diary: what this skill says to note in it goes in your next reply to the owner, or in the short brief.
-
-**Keep going.** While a run is open, never end a turn unless something pending will wake you (a seat round or a native Judge, Writer or Examiner in the background, a delegate task, a lane call, a swarm workflow, a background command) or the run has ended. If nothing is pending and work remains, do the next step in the same turn. An open run with nothing pending is the session waiting for the owner, which is what a run exists to avoid.
-
-**Scope.** Compare everything new with the intent. What goes beyond it goes to "Propuestas" and is not worked. Minor findings of the final review are deferred.
-
-**Ceilings.** Run `aether-autonomy status` before each seat round, each delegate task, and each swarm launch or relaunch. When its `stop` is not null, start nothing new. Let what is running finish (a swarm run or a delegate task), or save it as patches, and never leave a merge half done. Then run `aether-autonomy end --outcome ceiling` and give the brief.
-
-**Cost.** After each swarm launch, record the figure with `aether-autonomy spend <usd> --source <label>`:
-- `lanes.totals.run.totalUsd` from `aether-report --run <runId>`, with the swarm's run id as the label;
-- each external seat round's dollars, as "The design seats" says.
-
-A new figure for a label already recorded replaces the old one. The figure covers the swarm, the lanes and the external seats, not your own turns, nor the native Judge's, Writer's and Examiner's, nor your delegate tasks': the 8-hour ceiling is the real guard.
+When the owner gives that permission, or session start says a run is open, load the `aether:autonomous-runs` skill and follow it.
 
 **Irreversible actions.** These classes need the owner's authorization. Everything local and reversible goes ahead without asking.
 
@@ -240,48 +213,11 @@ Before one, run `aether-autonomy check <class>`.
 - A specific action («fusiona el del router») or a bare «sí»: that action, once. Note it in the diary, not in the registry.
 - Words that withdraw one: `aether-autonomy revoke --class <class> --quote "<their words>"`.
 - `aether-autonomy list` shows the registry. The registry and each run's `run.json` are written only by `aether-autonomy`; aether-guard refuses edits to them.
-
-**Done** when every criterion has its evidence in the diary (a test, an output or a file), the test command passes on the branch that holds the build, or fails only on the swarm run's baseline (a build by delegate tasks has no baseline, so its tests must pass), the exam has no failing test, and no critical or important finding stays open: from the swarm's final review, or, for a plan built by delegate tasks, from your review of their diffs. Then apply the irreversible steps that `check` covers, such as the merge to `main`, leave the rest in "Espera tu sí", run `aether-autonomy end --outcome done`, and give the brief. Stop there: no extra improvements.
+- When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even an action the owner approved with a «sí» until a grant covers it: record their reply as a session grant for its class, run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
 
 **Repetition.** When a line of work repeats without progress (the same task redesigned twice, the same unit relaunched twice without success, a third correction round on the same finding), stop it. Note the defect in the diary, take the smallest reversible path (defer that task), and go on with the rest.
 
-**Honest stop.** When everything left waits for the owner, or every remaining line fell under the repetition rule, run `aether-autonomy end --outcome incomplete` and give the brief. Say what is missing and why.
-
-**Resuming.** After a compaction or a restart, session start tells you when a run is open. Read its diary, run `aether-autonomy status`, and continue from "Estado". If a seat's agent was lost, run its seat again from the files.
-
-**An unreadable run state.** When an `aether-autonomy` command fails naming a `run.json` or `grants.json` it cannot read, aether-guard refuses an edit of that file. Move the named folder aside with Bash (for example into `.aether/broken-runs/`, outside `.aether/autonomy/`), write what you moved and why in the diary, and go on. Do not treat it as a reason to stop.
-
-**The brief** goes to `.aether/autonomy/<run id>/brief.md`, in the owner's language, and you show it in chat:
-
-    # Brief: <run id>
-    **Resultado:** cumplida | parcial | no terminada — <el tope alcanzado, si lo hubo>
-    ## Espera tu sí
-    - <acción> · <clase> · <por qué> · si dices que no: <qué pasa> · se revierte: <cómo> · se ejecutará: `<comando exacto>`
-    ## Supuestos
-    - <supuesto> · <base> · <reversible o no>
-    ## Criterios
-    - C1 <criterio>: cumplido | parcial | no — <evidencia>
-    ## RADAR
-    - Rápido: <tiempo, reintentos y subidas de modelo>
-    - Autónomo: <veces que te interrumpí y por qué>
-    - Delegación: <llamadas y tokens en otros harness; por grupo de cuota, el saldo al empezar y al terminar y su próximo reinicio (aether-report: lanes.run.groups.<grupo>.balance); asientos ocupados por modelos externos, de cuántas rondas>
-    - Asequible: <US$, cuota usada, y el modelo y el esfuerzo de cada tarea delegada>
-    - Robusto: <tests, examen, hallazgos, veredictos del Juez>
-    ## Hice
-    ## Decidí
-    ## Descubrí
-    ## Qué no verifiqué
-    ## No terminé
-    ## Propuestas
-    ## Tiempo y costo
-    - Trabajó solo <h> h de <tope> h, y te consultó <n> veces.
-    - US$ <gasto> de US$ <tope>. La cifra cubre el swarm, las lanes y los asientos externos; no cubre los turnos del Lead, ni los de los asientos nativos, ni los de las tareas delegadas.
-
-Supuestos are ordered by how likely the owner is to veto them, the most likely first.
-
-"Hice" names the branch and the commits. "Decidí" gives each decision with its grounds, above all where you departed from the Judge. "No terminé" says what was tried and why it stopped. The owner's «sí» to an item of "Espera tu sí" authorizes that action once, and you run it; if their words are general, also record a grant. When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even that action until a grant covers it: record the owner's reply as a session grant for its class (`aether-autonomy grant --class <class> --scope session --quote "<their words>"`), run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
-
-**Every brief,** in a run or not, opens with "Espera tu sí" and "Supuestos". Outside a run the brief is short: the intent, the spec and plan paths with about five lines of each, the decisions, the list, the assumptions, what you did not verify, and the RADAR lines that apply. Outside a run you stop at the plan, and "Espera tu sí" holds the plan's execution with the method you recommend.
+**Every brief,** in a run or not, opens with "Espera tu sí" and "Supuestos". Supuestos are ordered by how likely the owner is to veto them, the most likely first. Outside a run the brief is short: the intent, the spec and plan paths with about five lines of each, the decisions, the list, the assumptions, what you did not verify, and the RADAR lines that apply. Outside a run you stop at the plan, and "Espera tu sí" holds the plan's execution with the method you recommend.
 
 ## Plans
 

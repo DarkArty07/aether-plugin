@@ -16,11 +16,21 @@
 // aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--feature specs/NNN-<topic>] [--cwd <dir>]
 //   (the message on stdin; exit 0 an external answer, 3 the native agent takes the round, 4 the external round
 //   failed and was undone, 1 the command broke)
+// aether-lane seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>]
+//   --seats <native|balanced|robust> --lanes <on|off> --harnesses <h1,h2> --digest <digest>
+//   (the same round as seat, in the background: the message is the file the mod saved at <checkout>/.aether-tmp/seats/<session>/message.md,
+//   and the options come in flags because the mod's bins have none of the session's exports; prints { started, id },
+//   or { unavailable: message | digest } when the file is missing or is not the one the digest names)
+// aether-lane seat-wait <id> [--max <seconds>]   (the round's { done, exitCode, value }, with seat's exit and answer as
+//   exitCode and value, or { done: false } when it still runs after --max seconds, by default 540)
+// aether-lane seat-stop <id>   (ends the round, its harness and its worktree; prints { stopped })
 // aether-lane _runner <run> <call>   (internal: the detached runner that start launches)
+// aether-lane _seat <id>   (internal: the detached runner that seat-start launches)
 
 const path = require('node:path')
 const calls = require(path.join(__dirname, '..', 'lib', 'lane-calls.js'))
 const seats = require(path.join(__dirname, '..', 'lib', 'seats.js'))
+const seatCalls = require(path.join(__dirname, '..', 'lib', 'seat-calls.js'))
 const quota = require(path.join(__dirname, '..', 'lib', 'lane-quota.js'))
 const choice = require(path.join(__dirname, '..', 'lib', 'lane-choice.js'))
 const run = require(path.join(__dirname, '..', 'lib', 'run.js'))
@@ -34,7 +44,7 @@ const COMMANDS = {
   stop: 'stop <run> [<call>]',
   choice: 'choice <run> <call> --role <role> --tier <tier> --effort <effort> --pick <native|harness:model> --order <order>',
 }
-const USAGE = `usage: aether-lane ${[...Object.values(COMMANDS), quota.USAGE].join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')}`
+const USAGE = `usage: aether-lane ${[...Object.values(COMMANDS), quota.USAGE].join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')} | ${Object.values(seatCalls.COMMANDS).join(' | ')}`
 
 // Throws the command's own usage when an argument it requires is missing.
 function requireArgs(verb, runId, call) {
@@ -80,6 +90,14 @@ function maxSeconds(value) {
   return seconds
 }
 
+// seat-wait and seat-stop, which take the round's id and, for wait, --max.
+function seatRoundCommand(verb, cwd, [id, ...rest]) {
+  const name = verb.slice('seat-'.length)
+  if (id === undefined) throw new Error(`usage: aether-lane ${seatCalls.COMMANDS[name]}`)
+  if (name === 'stop') return seatCalls.stop(cwd, id)
+  return seatCalls.wait(cwd, id, { maxSeconds: maxSeconds(flags(rest).max) })
+}
+
 async function command(argv) {
   const [verb, runId, call, ...rest] = argv
   const cwd = process.cwd()
@@ -90,6 +108,8 @@ async function command(argv) {
   if (verb === 'result') return calls.result(cwd, runId, call)
   if (verb === 'stop') return calls.stop(cwd, runId, call ?? null)
   if (verb === 'choice') return choice.logChoice(run.dataDir(), runId, call, flags(rest))
+  if (verb === 'seat-start') return seatCalls.start(cwd, { ...flags(argv.slice(2)), seat: runId }, { env: process.env })
+  if (verb === 'seat-wait' || verb === 'seat-stop') return seatRoundCommand(verb, cwd, argv.slice(1))
   throw new Error(USAGE)
 }
 
@@ -111,6 +131,10 @@ async function main() {
   const argv = process.argv.slice(2)
   if (argv[0] === '_runner') {
     await calls.runCall(process.cwd(), argv[1], argv[2])
+    return
+  }
+  if (argv[0] === '_seat') {
+    await seatCalls.runSeat(process.cwd(), argv[1])
     return
   }
   if (argv[0] === 'quota') {

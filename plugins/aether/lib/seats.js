@@ -28,17 +28,24 @@ const EXAM_DIR = '.aether-exam'
 // Each seat's native agent, with the model and effort its agent file sets, and that model's id.
 const NATIVE = {
   judge: { agent: 'aether:judge', model: 'opus', effort: 'high', id: 'claude-opus-5-5' },
-  writer: { agent: 'aether:writer', model: 'sonnet', effort: 'xhigh', id: 'claude-sonnet-5-5' },
+  writer: { agent: 'aether:writer', model: 'sonnet', effort: 'high', id: 'claude-sonnet-5-5' },
   examiner: { agent: 'aether:examiner', model: 'opus', effort: 'high', id: 'claude-opus-5-5' },
 }
+
+// The effort an external round asks of its harness. The Writer's differs from the native one: the native Writer
+// starts at high and the Lead raises it when a round needs more, but an external Writer has no one to raise it.
+const EXTERNAL_EFFORT = { judge: 'high', writer: 'xhigh', examiner: 'high' }
 
 // The Claude Code model aliases an --author may give, with the ids lane models use for the same model.
 const ALIASES = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
 
 const SCHEMAS = { judge: schemas.JUDGE_SCHEMA, writer: schemas.WRITER_SCHEMA, examiner: schemas.EXAMINER_SCHEMA }
 
+// The schema of a seat's answer: the Writer's depends on the document it writes.
+const schemaFor = (seat, doc) => (seat === 'writer' && doc === 'spec' ? schemas.SPEC_WRITER_SCHEMA : SCHEMAS[seat])
+
 const USAGE =
-  'usage: aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--feature specs/NNN-<topic>] [--cwd <dir>] (the message on stdin)'
+  'usage: aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--feature specs/NNN-<topic>] [--doc <spec|plan>] [--id <seat id>] [--cwd <dir>] (the message on stdin)'
 
 const NO_USAGE = { input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }
 
@@ -93,7 +100,7 @@ function chooseSeat(config, { choice, seat, author = null, enabled = [], install
       tried.push({ model: item, reason: 'quota' })
       continue
     }
-    const effort = NATIVE[seat].effort
+    const effort = EXTERNAL_EFFORT[seat]
     return {
       external: {
         harness: harnessName,
@@ -164,9 +171,9 @@ function removeWorktree(mainRoot, worktree) {
 }
 
 // Whether a changed path is one the seat may change.
-function allowedFor(seat, feature) {
+function allowedFor(seat, feature, doc) {
   if (seat === 'writer') {
-    const own = [`${feature}/plan.md`, `${feature}/tasks.md`]
+    const own = doc === 'spec' ? [`${feature}/spec.md`] : [`${feature}/plan.md`, `${feature}/tasks.md`]
     return (file) => own.includes(file)
   }
   if (seat === 'examiner') return (file) => file.startsWith(`${EXAM_DIR}/`)
@@ -183,10 +190,23 @@ function skillBody(name) {
 }
 
 // The note that tells the role it runs in an external harness, and what changes for it there.
-function seatNote(seat, harness, feature) {
+function seatNote(seat, harness, feature, doc) {
   const head = `## You run in an external harness\n\n`
   if (seat === 'judge') {
-    return `${head}You are the Aether Judge, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the repository at the commit under review. Your review is read-only: read files and run read-only commands such as \`git log\` or \`grep\`, but never change, create or delete a file; any change undoes your review. ${WORKDIR_RULE} Every other rule of your role holds. Your answer is the structured output your harness asks for, in place of the indented block your role describes: verdict, findings (each with severity, title, evidence and fix; at most ${MAX_FINDINGS}) and openQuestions.`
+    return `${head}You are the Aether Judge, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the repository at the commit under review. Your review is read-only: read files and run read-only commands such as \`git log\` or \`grep\`, but never change, create or delete a file; any change undoes your review. ${WORKDIR_RULE} Every other rule of your role holds. Your answer is the structured output your harness asks for, in place of the indented block your role describes: verdict, findings (each with severity, type, title, evidence and fix; at most ${MAX_FINDINGS}) and openQuestions. Each finding's type says what is wrong: \`missing\` (the document lacks something it needs), \`extra\` (it has something nobody asked for) or \`wrong\` (it says something that is not so).`
+  }
+  if (seat === 'writer' && doc === 'spec') {
+    return [
+      `${head}You are the Aether Writer, run by the ${harness} CLI rather than Claude Code, and this round writes the spec only. The current directory is a disposable copy of the repository. Your role above holds, with these changes:`,
+      '- You have no Skill tool. Where your role says to load the skill aether:specify, follow its text, which is below. Do not write a plan or tasks, and do not run aether-plan.',
+      `- Change only \`${feature}/spec.md\`, and commit it. A change to any other file undoes your whole round.`,
+      `- ${WORKDIR_RULE}`,
+      '- Your reply goes in the structured output your harness asks for: spec is its path, commit is your commit, clarify lists each [NEEDS CLARIFICATION: ...] mark left in the spec, and assumptions, proposals, questions and disagreements are lists.',
+      '',
+      '## The skill aether:specify',
+      '',
+      skillBody('specify'),
+    ].join('\n')
   }
   if (seat === 'writer') {
     return [
@@ -209,13 +229,13 @@ function seatNote(seat, harness, feature) {
   return `${head}You are the Aether Examiner, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the repository. Write the exam under \`${EXAM_DIR}/\` in the current directory, and nothing else: a change outside it undoes your round. Never read \`tasks.md\`. ${WORKDIR_RULE} Every other rule of your role holds. Your answer is the structured output your harness asks for: tests (each with id, criterion, command and files) and notes.`
 }
 
-function answerSection(seat) {
-  return ['## Your answer', 'End your answer with one JSON object that matches this schema, and nothing after it:', `\`\`\`json\n${JSON.stringify(SCHEMAS[seat], null, 2)}\n\`\`\``].join('\n\n')
+function answerSection(seat, doc) {
+  return ['## Your answer', 'End your answer with one JSON object that matches this schema, and nothing after it:', `\`\`\`json\n${JSON.stringify(schemaFor(seat, doc), null, 2)}\n\`\`\``].join('\n\n')
 }
 
-function seatPrompt({ seat, harness, adapter, message, workdir, feature }) {
-  const parts = [roleBody(seat), seatNote(seat, harness, feature), ...claudeMdSections(workdir, os.homedir()), message]
-  if (adapter.schemaInPrompt === true) parts.push(answerSection(seat))
+function seatPrompt({ seat, harness, adapter, message, workdir, feature, doc = 'plan' }) {
+  const parts = [roleBody(seat), seatNote(seat, harness, feature, doc), ...claudeMdSections(workdir, os.homedir()), message]
+  if (adapter.schemaInPrompt === true) parts.push(answerSection(seat, doc))
   return parts.join('\n\n')
 }
 
@@ -291,7 +311,7 @@ function laneLine({ harness, modelArg, id, usage, quotaBefore, quotaAfter, group
 
 // The Judge's answer in the format of its own agent file.
 function judgeText(result) {
-  const findings = result.findings.length === 0 ? ['none'] : result.findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.title} — ${f.evidence} — ${f.fix}`)
+  const findings = result.findings.length === 0 ? ['none'] : result.findings.map((f, i) => `${i + 1}. [${f.severity}] [${f.type}] ${f.title} — ${f.evidence} — ${f.fix}`)
   const questions = result.openQuestions.length === 0 ? ['- none'] : result.openQuestions.map((q) => `- ${q}`)
   return ['## Verdict', result.verdict, '## Findings', ...findings, '## Open questions', ...questions].join('\n')
 }
@@ -304,6 +324,21 @@ function writerText(result, done) {
     `- Tasks: ${done.tasks}`,
     `- Commit: ${done.commit}`,
     `- aether-plan check: ${done.check}`,
+    '## Assumptions',
+    ...list(result.assumptions),
+    '## Open questions',
+    ...list(result.questions),
+  ].join('\n')
+}
+
+function specText(result, done) {
+  const list = (items) => (items.length === 0 ? ['- none'] : items.map((item) => `- ${item}`))
+  return [
+    '## Spec',
+    `- Spec: ${done.spec}`,
+    `- Commit: ${done.commit}`,
+    '## Clarify',
+    ...list(result.clarify),
     '## Assumptions',
     ...list(result.assumptions),
     '## Open questions',
@@ -365,6 +400,28 @@ function finishWriter(cwd, worktree, feature, seatLabel) {
   return { ok: true, plan: files[0], tasks: files[1], commit: git(['rev-parse', 'HEAD'], cwd).stdout, check: printed }
 }
 
+// Copies the Writer's spec.md into the Lead's checkout and commits it there, without aether-plan: a spec has
+// no check. Returns { ok, ... } or { ok: false, detail }; on a failure the checkout is put back.
+function finishSpec(cwd, worktree, feature, seatLabel) {
+  const file = `${feature}/spec.md`
+  if (!fs.existsSync(path.join(worktree, file))) return { ok: false, detail: `the round left no ${file}` }
+  if (git(['status', '--porcelain', '--', file], cwd).stdout !== '') {
+    return { ok: false, detail: `${file} changed in the Lead's checkout during the round` }
+  }
+  fs.mkdirSync(path.dirname(path.join(cwd, file)), { recursive: true })
+  fs.copyFileSync(path.join(worktree, file), path.join(cwd, file))
+  if (git(['status', '--porcelain', '--', file], cwd).stdout !== '') {
+    git(['add', '--', file], cwd)
+    const committed = git(['commit', '-q', '-m', `docs(specs): spec of ${path.basename(feature)}, by ${seatLabel}`, '--', file], cwd, { allowFail: true })
+    if (committed.status !== 0) {
+      git(['reset', '-q', '--', file], cwd, { allowFail: true })
+      restore(cwd, [file])
+      return { ok: false, detail: `the commit failed: ${committed.stderr || committed.stdout}` }
+    }
+  }
+  return { ok: true, spec: file, commit: git(['rev-parse', 'HEAD'], cwd).stdout }
+}
+
 // Writes the Examiner's answer beside its test files and stores the exam where the swarm does not see it.
 function finishExaminer(mainRoot, worktree, feature, result, dataDir) {
   const dir = path.join(worktree, EXAM_DIR)
@@ -397,13 +454,13 @@ function logEntry(dataDir, session, entry) {
 
 // One round of seat on its external model. Returns the reply: exit 0 with the answer, or exit 4 with
 // what failed. The worktree is removed whatever happens.
-async function runRound({ cwd, mainRoot, seat, session, feature, message, external, config, adapter, choiceName, dataDir }) {
-  const id = `${seat}-${run.newRunId()}`
+async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, config, adapter, choiceName, dataDir }) {
+  const id = givenId ?? `${seat}-${run.newRunId()}`
   const dir = path.join(run.aetherDir(mainRoot), 'seats', id)
   const worktree = path.join(dir, 'wt')
   const marker = `seat/${id}`
   const settings = config.harnesses[external.harness]
-  const schema = SCHEMAS[seat]
+  const schema = schemaFor(seat, doc)
   const modelArg = adapter.modelArg({ model: external.model, level: external.level })
   const label = `${external.harness}/${external.model}`
   fs.mkdirSync(dir, { recursive: true })
@@ -426,7 +483,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, message, extern
   try {
     const schemaFile = path.join(dir, 'schema.json')
     fs.writeFileSync(schemaFile, `${JSON.stringify(schema, null, 2)}\n`)
-    const prompt = seatPrompt({ seat, harness: external.harness, adapter, message, workdir: worktree, feature })
+    const prompt = seatPrompt({ seat, harness: external.harness, adapter, message, workdir: worktree, feature, doc })
     fs.writeFileSync(path.join(dir, 'prompt.md'), prompt)
     const argv = adapter.argv({ model: external.model, level: external.level, schemaFile, timeoutSeconds: external.timeoutSeconds, prompt })
     const exitCode = await runHarness(argv, {
@@ -448,7 +505,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, message, extern
       // An unreadable quota is an infrastructure failure, not a verdict on the quota.
     }
     parsed = adapter.parse({ stdout: readTextOrEmpty(path.join(dir, 'stdout')), stderr: readTextOrEmpty(path.join(dir, 'stderr')), exitCode }, { required: schema.required })
-    const allowed = allowedFor(seat, feature)
+    const allowed = allowedFor(seat, feature, doc)
     const outside = changedPaths(worktree, start).filter((file) => !allowed(file))
     if (outside.length > 0) {
       const backup = saveRound(worktree, backupRef(id), dir, `aether: seat ${id}, kept because it changed files outside its seat`)
@@ -460,6 +517,9 @@ async function runRound({ cwd, mainRoot, seat, session, feature, message, extern
       const problem = schemas.validate(schema, parsed.structured) ?? answerProblem(seat, parsed.structured)
       if (problem !== null) {
         outcome = { status: 'failed', detail: `invalid answer: ${problem}` }
+      } else if (seat === 'writer' && doc === 'spec') {
+        const done = finishSpec(cwd, worktree, feature, label)
+        outcome = done.ok ? { status: 'ok', text: specText(parsed.structured, done), result: { ...parsed.structured, commit: done.commit } } : { status: 'failed', detail: done.detail }
       } else if (seat === 'writer') {
         const done = finishWriter(cwd, worktree, feature, label)
         outcome = done.ok ? { status: 'ok', text: writerText(parsed.structured, done), result: { ...parsed.structured, commit: done.commit } } : { status: 'failed', detail: done.detail }
@@ -532,6 +592,8 @@ function flags(args) {
   return out
 }
 
+const SEAT_ID = /^(judge|writer|examiner)-\d{8}-\d{6}-[0-9a-f]{4}$/
+
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 // The native answer the Lead acts on: the seat's agent, unless the choice turns the seat off.
@@ -551,6 +613,12 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   const feature = opts.feature ? relative(opts.feature).replace(/\/+$/, '') : null
   if (feature !== null && !FEATURE.test(feature)) throw new Error(`--feature must be specs/NNN-<topic>, not ${opts.feature}`)
   if ((seat === 'writer' || seat === 'examiner') && feature === null) throw new Error(`the ${seat} needs --feature specs/NNN-<topic>`)
+  if (opts.doc !== undefined) {
+    if (seat !== 'writer') throw new Error('--doc applies to the writer only')
+    if (opts.doc !== 'spec' && opts.doc !== 'plan') throw new Error(`--doc must be spec or plan, not ${opts.doc}`)
+  }
+  const doc = seat === 'writer' ? (opts.doc ?? 'plan') : null
+  if (opts.id !== undefined && !(SEAT_ID.test(opts.id) && opts.id.startsWith(`${seat}-`))) throw new Error(`--id must be ${seat}-YYYYMMDD-HHMMSS-xxxx`)
   const cwd = path.resolve(callerCwd, opts.cwd ?? '.')
   const { worktree: top, mainRoot, gitCommonDir } = repoPaths(cwd)
   // Before any answer: a native Examiner writes its exam under .aether-exam/ in this checkout, and git must not see it.
@@ -599,6 +667,8 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     seat,
     session,
     feature,
+    doc,
+    id: opts.id,
     message,
     external,
     config,
@@ -608,4 +678,4 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   })
 }
 
-module.exports = { NATIVE, EXAM_DIR, USAGE, authorModel, chooseSeat, changedPaths, judgeText, seatPrompt, seatCommand }
+module.exports = { NATIVE, EXTERNAL_EFFORT, EXAM_DIR, USAGE, authorModel, chooseSeat, changedPaths, judgeText, seatPrompt, seatCommand }

@@ -46,11 +46,11 @@ test('the Judge rules with evidence, in a short fixed format', () => {
   }
 })
 
-test('the Writer runs on Sonnet at xhigh effort, and writes plans with Aether fields', () => {
+test('the Writer runs on Sonnet at high effort, and writes plans with Aether fields', () => {
   const { front, body } = agentFile('writer')
   assert.equal(field(front, 'name'), 'writer')
   assert.equal(field(front, 'model'), 'sonnet')
-  assert.equal(field(front, 'effort'), 'xhigh')
+  assert.equal(field(front, 'effort'), 'high')
   assert.equal(field(front, 'maxTurns'), '60')
   assert.deepEqual(
     field(front, 'tools').split(',').map((s) => s.trim()),

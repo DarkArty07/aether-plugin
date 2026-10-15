@@ -4,6 +4,7 @@
 **Date:** 2026-10-14
 **Found in:** the swarm run that built spec 002 (run `20261014-105117-b854`), in a session started with `aether-lead --plugin-dir <repo>/plugins/aether` while the marketplace release 0.9.0 was installed and enabled
 **Status:** open
+**GitHub:** [#13](https://github.com/DarkArty07/aether-plugin/issues/13) (private repository)
 
 ## Summary
 

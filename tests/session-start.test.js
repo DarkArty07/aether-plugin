@@ -46,7 +46,7 @@ test('session start injects the Lead bootstrap', (t) => {
   assert.match(context, /`aether:writer`/)
   assert.match(context, /`aether:specify`/)
   assert.match(context, /## RADAR/)
-  assert.match(context, /## Writing and judging/)
+  assert.match(context, /## Designing/)
   assert.match(context, /At most two revisions per document/)
   // The owner gets one list of what is irreversible or only the owner can decide.
   assert.match(context, /## The owner's list/)
@@ -54,13 +54,9 @@ test('session start injects the Lead bootstrap', (t) => {
   assert.match(context, /## Fallbacks never reach the owner/)
   // The Lead runs autonomously, records authorizations, and reports in a brief.
   assert.match(context, /## Autonomous runs/)
-  assert.match(context, /aether-autonomy start --quote/)
   assert.match(context, /aether-autonomy check <class>/)
   assert.match(context, /aether-autonomy grant --class <class> --quote/)
   assert.match(context, /--scope session/)
-  assert.match(context, /# Brief: <run id>/)
-  assert.match(context, /## Espera tu sí/)
-  assert.match(context, /## Supuestos/)
   // The Designer and the old relay are gone.
   assert.doesNotMatch(context, /aether:designer/)
   assert.doesNotMatch(context, /LEAD DECISION/)

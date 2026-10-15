@@ -14,13 +14,26 @@ const { STALE_MS, TIMEOUT_MS } = require('../plugins/aether/lib/harness/grok-quo
 
 const ROOT = path.join(__dirname, '..')
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8')
+// Spec 004: the README is the way in, and the guide to lanes lives in docs/. `docs()` is the README and the pages of
+// R3 to R9 as one text, for the strings that were once searched in the README alone.
+const DOC_FILES = [
+  'README.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/guide/options.md',
+  'docs/guide/lanes.md', 'docs/guide/design-seats.md', 'docs/guide/autonomy.md', 'docs/guide/ops.md',
+  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/reference/components.md', 'docs/changelog.md',
+  'docs/contributing.md', 'docs/roadmap.md', 'docs/index.md',
+]
+const docs = () => DOC_FILES.map((file) => read(...file.split('/'))).join('\n')
 const includesAll = (text, phrases, where) => {
   for (const phrase of phrases) assert.ok(text.includes(phrase), `${where} lacks: ${phrase}`)
 }
 
-test("the README's Lanes section explains the order of the candidates, the dry marks, the kept readings and what the report shows", () => {
-  const readme = read('README.md')
-  const section = readme.slice(readme.indexOf('### Lanes'), readme.indexOf('### Design seats'))
+test("the Lanes section of the guide explains the order of the candidates, the dry marks, the kept readings and what the report shows", () => {
+  const page = read('docs', 'guide', 'lanes.md')
+  assert.ok(page.includes('\n### Lanes\n'), 'the Lanes page has ### Lanes')
+  const start = page.indexOf('### Lanes')
+  const rest = page.slice(start + '### Lanes'.length)
+  const end = rest.search(/\n##+ /)
+  const section = end < 0 ? rest : rest.slice(0, end)
   assert.ok(section.length > 1000)
   includesAll(
     section,
@@ -37,12 +50,12 @@ test("the README's Lanes section explains the order of the candidates, the dry m
       '`lanes.run.choices`',
       '`aether-lane status <run>`',
     ],
-    'the README Lanes section',
+    'the Lanes section of the guide',
   )
 })
 
-test("the README says that Grok's quota is read over ACP with its UI as the fallback, who refreshes it, and how to add a harness with its reader", () => {
-  const readme = read('README.md')
+test("the documents say that Grok's quota is read over ACP with its UI as the fallback, who refreshes it, and how to add a harness with its reader", () => {
+  const readme = docs()
   includesAll(
     readme,
     [
@@ -58,26 +71,26 @@ test("the README says that Grok's quota is read over ACP with its UI as the fall
       "`quotaCost: 'process'`",
       'or `unknown` when it cannot read them',
     ],
-    'the README',
+    'the documents',
   )
 })
 
 test('the documents do not call the reader of Grok provisional any more', () => {
   // The README before spec 002 (9f0370c) said "Grok's is interim, until another method turns up".
   const stopgap = /provisional|interim|until another method/i
-  for (const file of [['README.md'], ['docs', 'decisions.md']]) assert.ok(!stopgap.test(read(...file).split('\n').filter((line) => /grok/i.test(line) && /quota|reader/i.test(line)).join('\n')), file.join('/'))
+  for (const [name, text] of [['the README and the pages', docs()], ['docs/decisions.md', read('docs', 'decisions.md')]]) assert.ok(!stopgap.test(text.split('\n').filter((line) => /grok/i.test(line) && /quota|reader/i.test(line)).join('\n')), name)
   assert.ok(stopgap.test("Grok's is interim, until another method turns up"))
 })
 
-test("the lengths the README gives are the table's: 10 minutes for agy, 30 for grok, 60 for a dry mark", () => {
+test("the lengths the documents give are the table's: 10 minutes for agy, 30 for grok, 60 for a dry mark", () => {
   const config = lanes.loadConfig(lanes.CONFIG_FILE)
   assert.deepEqual([config.harnesses.agy.quotaLifeMinutes, config.harnesses.grok.quotaLifeMinutes, config.dryMarkMinutes, config.reserve], [10, 30, 60, 0.05])
-  includesAll(read('README.md'), ['(`quotaLifeMinutes`: 10 minutes)', 'a finished agy call and `aether-lane quota` take a fresh reading', 'its 30 minutes (`quotaLifeMinutes`)', 'otherwise for 60 minutes (`dryMarkMinutes`)', 'above a 5% reserve (`reserve` in the table)'], 'the README')
+  includesAll(docs(), ['(`quotaLifeMinutes`: 10 minutes)', 'a finished agy call and `aether-lane quota` take a fresh reading', 'its 30 minutes (`quotaLifeMinutes`)', 'otherwise for 60 minutes (`dryMarkMinutes`)', 'above a 5% reserve (`reserve` in the table)'], 'the documents')
 })
 
-test("the limits the README gives for Grok's reading are the code's: 10 seconds over ACP, 20 for the UI, 30 minutes before a log line is stale", () => {
+test("the limits the documents give for Grok's reading are the code's: 10 seconds over ACP, 20 for the UI, 30 minutes before a log line is stale", () => {
   assert.deepEqual([ACP_TIMEOUT_MS, TIMEOUT_MS, STALE_MS], [10000, 20000, 30 * 60 * 1000])
-  includesAll(read('README.md'), [`(${ACP_TIMEOUT_MS / 1000} seconds at most)`, `for a few seconds (${TIMEOUT_MS / 1000} at most)`, `they call it stale after ${STALE_MS / 60000} minutes`], 'the README')
+  includesAll(docs(), [`(${ACP_TIMEOUT_MS / 1000} seconds at most)`, `for a few seconds (${TIMEOUT_MS / 1000} at most)`, `they call it stale after ${STALE_MS / 60000} minutes`], 'the documents')
 })
 
 test('the swarm skill and the brief name the order, the balance of each group and the choices of the run', () => {
@@ -86,5 +99,5 @@ test('the swarm skill and the brief name the order, the balance of each group an
     ['each call to the candidate whose quota is most at risk of being lost first', '`aether-lane status <runId>`', 'its `balance`', 'what every call chose (`run.choices`)', 'Lanes (grok)'],
     'the swarm skill',
   )
-  includesAll(read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md'), ['- Delegación: <llamadas y tokens en otros harness; por grupo de cuota, el saldo al empezar y al terminar y su próximo reinicio (aether-report: lanes.run.groups.<grupo>.balance)'], 'the bootstrap')
+  includesAll(read('plugins', 'aether', 'skills', 'autonomous-runs', 'SKILL.md'), ['- Delegación: <llamadas y tokens en otros harness; por grupo de cuota, el saldo al empezar y al terminar y su próximo reinicio (aether-report: lanes.run.groups.<grupo>.balance)'], 'the autonomous-runs skill')
 })

@@ -77,13 +77,18 @@ test('the launcher works from fish, the owner\'s shell', (t) => {
   assert.deepEqual(argsOf(r), [...OWN_ARGS, '--version'])
 })
 
-test('the README shows the same settings as the launcher, and the launcher\'s name', () => {
-  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8')
-  assert.ok(readme.includes(`--settings '${SETTINGS}'`), 'the README names the settings the launcher passes')
-  assert.ok(readme.includes('scripts/aether-lead'), 'the README names the launcher')
-  const start = readme.slice(readme.indexOf('### Start'), readme.indexOf('### What Aether adds'))
+test('the documents show the same settings as the launcher, and the launcher\'s name', () => {
+  // Spec 004: the README is the way in; the complete start is in the getting-started guide.
+  const guide = fs.readFileSync(path.join(ROOT, 'docs', 'getting-started.md'), 'utf8')
+  const readme = [fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8'), guide].join('\n')
+  assert.ok(readme.includes(`--settings '${SETTINGS}'`), 'the documents name the settings the launcher passes')
+  assert.ok(readme.includes('scripts/aether-lead'), 'the documents name the launcher')
+  assert.ok(guide.includes('\n### Start\n'), 'the guide has ### Start')
+  const rest = guide.slice(guide.indexOf('### Start') + '### Start'.length)
+  const end = rest.search(/\n##+ /)
+  const start = end < 0 ? rest : rest.slice(0, end)
   for (const text of ['--permission-mode bypassPermissions', 'AETHER_IRREVERSIBLE=enforce', 'AETHER_IRREVERSIBLE=log aether-lead']) {
-    assert.ok(start.includes(text), `the README's Start says the launcher's ${text}`)
+    assert.ok(start.includes(text), `the guide's Start says the launcher's ${text}`)
   }
   assert.ok(fs.readFileSync(LAUNCHER, 'utf8').includes(SETTINGS), 'the launcher carries them')
 })

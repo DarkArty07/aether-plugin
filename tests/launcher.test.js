@@ -9,6 +9,18 @@ const { PLUGIN } = require('./helpers.js')
 const ROOT = path.join(__dirname, '..')
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8')
 
+// Spec 004: the README is the way in, and what it used to hold lives in the pages of docs/. `docs()` is the README
+// and those pages as one text, for an assertion that looks for a string anywhere; an assertion about a heading or a
+// section reads the page that keeps it (`page()`).
+const DOC_FILES = [
+  'README.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/guide/options.md',
+  'docs/guide/lanes.md', 'docs/guide/design-seats.md', 'docs/guide/autonomy.md', 'docs/guide/ops.md',
+  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/reference/components.md', 'docs/changelog.md',
+  'docs/contributing.md', 'docs/roadmap.md', 'docs/index.md',
+]
+const page = (file) => read(...file.split('/'))
+const docs = () => DOC_FILES.map(page).join('\n')
+
 test('the documents record the lanes: decisions, facts, and the skills that use them', () => {
   const decisions = read('docs', 'decisions.md')
   for (const id of ['A20', 'A21', 'A22']) assert.match(decisions, new RegExp(`^\\| ${id} \\|`, 'm'), id)
@@ -17,39 +29,40 @@ test('the documents record the lanes: decisions, facts, and the skills that use 
   assert.match(research, /^## Lanes findings \(2026-10-08\)$/m)
   for (const fact of ['remaining_fraction', '--dangerously-skip-permissions', 'AGENTS.md', 'structured_output']) assert.ok(research.includes(fact), fact)
   const lead = read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md')
-  for (const text of ['`aether:judge`', '`aether:writer`', 'At most two revisions per document', '.aether/pending.jsonl', 'SendMessage']) {
+  for (const text of ['`aether:judge`', '`aether:writer`', 'At most two revisions per document', '.aether/pending.jsonl']) {
     assert.ok(lead.includes(text), text)
   }
   const swarm = read('plugins', 'aether', 'skills', 'swarm', 'SKILL.md')
   for (const text of ['--no-lanes', 'laneFailure', '`aether-lane`', 'Blocked by a lane']) assert.ok(swarm.includes(text), text)
-  assert.match(read('README.md'), /^### Lanes$/m)
-  assert.match(read('README.md'), /^Version 0\.9: /m)
+  assert.match(page('docs/guide/lanes.md'), /^### Lanes$/m)
+  assert.match(page('docs/changelog.md'), /^Version 0\.9: /m)
 })
 
 test('the documents record the autonomy: decisions, the README, and no per-stage gates', () => {
   const decisions = read('docs', 'decisions.md')
   for (const id of ['A23', 'A24', 'A25']) assert.match(decisions, new RegExp(`^\\| ${id} \\|`, 'm'), id)
   assert.match(decisions, /\*\*Update \(2026-10-09, autonomy\)\.\*\*/)
-  const readme = read('README.md')
-  assert.match(readme, /^### Autonomy$/m)
-  assert.ok(readme.includes('| `aether-autonomy` |'))
+  const readme = docs()
+  assert.match(page('docs/guide/autonomy.md'), /^### Autonomy$/m)
+  assert.ok(page('docs/reference/components.md').includes('| `aether-autonomy` |'))
+  // docs/guide/autonomy.md links this as ../../docs/..., which keeps the full path.
   assert.ok(readme.includes('docs/superpowers/specs/2026-10-09-lead-autonomy-design.md'))
   assert.doesNotMatch(readme, /approves the spec and the plan/)
   assert.doesNotMatch(readme, /the relay of both sides/)
 })
 
-const README = () => read('README.md')
+const README = docs
 
-// A README section: from its heading to the next heading of level 2 or 3.
+// A section of a page: from its heading to the next heading of level 2 or 3.
 function section(text, heading) {
   const start = text.indexOf(`\n${heading}\n`)
-  assert.ok(start >= 0, `the README has ${heading}`)
+  assert.ok(start >= 0, `the page has ${heading}`)
   const rest = text.slice(start + heading.length + 2)
   const end = rest.search(/\n##+ /)
   return end < 0 ? rest : rest.slice(0, end)
 }
 
-test('the README installs Aether with Claude Code, and starts it with one native command', () => {
+test('the documents install Aether with Claude Code, and start it with one native command', () => {
   const readme = README()
   const lines = [
     'claude plugin install aether --marketplace DarkArty07/aether-plugin',
@@ -70,29 +83,42 @@ test('the README installs Aether with Claude Code, and starts it with one native
     'Never remove the marketplace to change versions',
     'claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort xhigh',
     'claude plugin tag plugins/aether',
+    // docs/changelog.md links this as ../docs/..., which keeps the full path.
     'docs/superpowers/specs/2026-10-09-installable-plugin-design.md',
   ]
   for (const line of lines) assert.ok(readme.includes(line), line)
 })
 
-test('the guide has its parts in order', () => {
-  const readme = README()
-  const headings = [
-    '## Use Aether mode', '### Requirements', '### Install', '### Start', '### Options', '### What you set yourself',
-    '### Platforms', '### Update, pin, roll back and uninstall', '### Data', '### Upgrading from 0.6', '## Development', '### Release',
+test('the guide has its parts in order, each page keeping its own in their order', () => {
+  // The twelve headings of the guide, in their old order, with the page that keeps each now.
+  const parts = [
+    ['## Use Aether mode', 'docs/getting-started.md'], ['### Requirements', 'docs/getting-started.md'],
+    ['### Install', 'docs/getting-started.md'], ['### Start', 'docs/getting-started.md'],
+    ['### Options', 'docs/guide/options.md'], ['### What you set yourself', 'docs/guide/options.md'],
+    ['### Platforms', 'docs/guide/maintenance.md'], ['### Update, pin, roll back and uninstall', 'docs/guide/maintenance.md'],
+    ['### Data', 'docs/guide/maintenance.md'], ['### Upgrading from 0.6', 'docs/guide/maintenance.md'],
+    ['## Development', 'docs/contributing.md'], ['### Release', 'docs/contributing.md'],
   ]
-  let at = -1
-  for (const h of headings) {
-    const i = readme.indexOf(`\n${h}\n`)
-    assert.ok(i > at, `${h} comes after the part before it`)
-    at = i
+  const at = {}
+  for (const [h, file] of parts) {
+    const i = page(file).indexOf(`\n${h}\n`)
+    assert.ok(i >= 0, `${file} has ${h}`)
+    assert.ok(i > (at[file] ?? -1), `${h} comes after the part before it in ${file}`)
+    at[file] = i
   }
 })
 
 test('only "Upgrading from 0.6" names the old launcher, installer and data directory', () => {
-  const readme = README()
-  const upgrading = section(readme, '### Upgrading from 0.6')
-  const rest = readme.replace(upgrading, '')
+  const upgrading = section(page('docs/guide/maintenance.md'), '### Upgrading from 0.6')
+  // Each file is read without its own "Upgrading from 0.6", so the check holds whichever page keeps it.
+  const without = (text) => {
+    const start = text.indexOf('\n### Upgrading from 0.6\n')
+    if (start < 0) return text
+    const after = text.slice(start + 1)
+    const next = after.slice(1).search(/\n##+ /)
+    return text.slice(0, start) + (next < 0 ? '' : after.slice(next + 1))
+  }
+  const rest = DOC_FILES.map((file) => without(page(file))).join('\n')
   for (const old of ['aether-mode', 'aether-install', '.local/share/aether-plugin']) assert.ok(!rest.includes(old), old)
   for (const text of ['"source": "git"', '"url": "file://', '"ref": "aether--v0.7.0"', 'claude plugin install aether@aether-plugin --config lanes=true', '/advisor off']) {
     assert.ok(upgrading.includes(text), text)
@@ -105,17 +131,18 @@ test('the installer and the fish launcher are gone', () => {
   }
 })
 
-test('the manifest is version 0.10.0, and the README says so', () => {
+test('the manifest is version 0.11.0, and the documents say so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.10.0')
+  assert.equal(manifest.version, '0.11.0')
   assert.match(manifest.description, /built for RADAR/)
   assert.match(manifest.description, /the owner's right hand/)
   assert.match(manifest.description, /a Judge on Opus reviews them/)
   assert.match(manifest.description, /Lanes run its calls on other coding plans/)
   assert.match(manifest.description, /the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner/)
-  assert.match(README(), /^Version 0\.10\.0: /m)
-  assert.match(README(), /^Version 0\.9\.1: /m)
-  assert.match(README(), /^Version 0\.9: /m)
+  assert.match(page('docs/changelog.md'), /^Version 0\.11\.0: /m)
+  assert.match(page('docs/changelog.md'), /^Version 0\.10\.0: /m)
+  assert.match(page('docs/changelog.md'), /^Version 0\.9\.1: /m)
+  assert.match(page('docs/changelog.md'), /^Version 0\.9: /m)
 })
 
 test('the decisions record the 0.9.1 fixes, A44-A47', () => {
@@ -123,7 +150,7 @@ test('the decisions record the 0.9.1 fixes, A44-A47', () => {
   for (let n = 44; n <= 47; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
 })
 
-test('the documents record RADAR: the roadmap, decisions A31-A38, and a README without superpowers as a requirement', () => {
+test('the documents record RADAR: the roadmap, decisions A31-A38, and documents without superpowers as a requirement', () => {
   const decisions = read('docs', 'decisions.md')
   for (let n = 31; n <= 38; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   assert.match(decisions, /\*\*Update \(2026-10-10, RADAR\)\.\*\*/)
@@ -132,7 +159,9 @@ test('the documents record RADAR: the roadmap, decisions A31-A38, and a README w
   for (const text of ['**Rápido**', '**Autónomo**', '**Delegación**', '**Asequible**', '**Robusto**', '`aether:writer`', '`aether:judge`', 'specs/NNN-<topic>/', 'AETHER_IRREVERSIBLE=enforce', '`harnesses`']) {
     assert.ok(readme.includes(text), text)
   }
-  assert.ok(!section(readme, '### Requirements').includes('superpowers'))
+  for (const [file, heading] of [['README.md', '## Requirements'], ['docs/getting-started.md', '### Requirements']]) {
+    assert.ok(!section(page(file), heading).includes('superpowers'), `${file} ${heading}`)
+  }
   assert.ok(!readme.includes('aether:designer'))
 })
 
@@ -166,19 +195,19 @@ test('the documents record the design seats: decisions A39-A43, the README, the 
   const decisions = read('docs', 'decisions.md')
   for (let n = 39; n <= 43; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const readme = README()
-  assert.match(readme, /^### Design seats$/m)
+  assert.match(page('docs/guide/design-seats.md'), /^### Design seats$/m)
   for (const text of ['`aether:examiner`', '`aether-lane seat`', '`aether-exam`', '`seats`, `balanced` by default', 'docs/evaluations/seats/README.md', 'specs/001-design-seats/spec.md', 'Fable']) {
     assert.ok(readme.includes(text), text)
   }
   const lead = read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md')
-  for (const text of ['## The design seats', 'aether-lane seat <judge|writer|examiner>', '--author', 'aether-exam store', 'aether-exam run', 'aether-report --seats', 'seat/<id>', '`aether:examiner`']) {
+  for (const text of ['/aether:design', 'aether-exam run', 'aether-report --seats', 'seat/<id>', '`aether:examiner`']) {
     assert.ok(lead.includes(text), text)
   }
   assert.ok(fs.existsSync(path.join(ROOT, 'docs', 'evaluations', 'seats', 'harness', 'judge-defects.js')))
   assert.ok(fs.existsSync(path.join(ROOT, 'specs', '001-design-seats', 'plan.md')))
 })
 
-test('the documents record the super Lead: A48, the three paths in the README, and no text that says the Lead runs on Sonnet as a fact', () => {
+test('the documents record the super Lead: A48, the three paths in the documents, and no text that says the Lead runs on Sonnet as a fact', () => {
   const decisions = read('docs', 'decisions.md')
   const lines = decisions.split('\n')
   const rows = lines.filter((line) => line.startsWith('| A48 |'))
@@ -194,7 +223,7 @@ test('the documents record the super Lead: A48, the three paths in the README, a
   }
   assert.match(decisions, /^\*\*Update \(2026-10-14, super Lead; D5 updated by A48\)\.\*\*/m)
   const readme = README()
-  assert.match(readme, /^\*\*The three paths\.\*\*/m)
+  assert.match(page('docs/methodology.md'), /^\*\*The three paths\.\*\*/m)
   for (const text of ['**Direct:**', '**Delegate task:**', '**Swarm:**', 'the route and the path (direct, delegate task, swarm)', 'a delegate task on a model it names, or the swarm']) {
     assert.ok(readme.includes(text), text)
   }

@@ -36,7 +36,7 @@ function writeRun(mainRoot, id, ended) {
 }
 
 const ID = 'auto-20261009-200000-ab12'
-const note = (diary) => `Autonomous run ${ID} is open: read ${diary} and run \`aether-autonomy status\` before anything else.`
+const note = (diary) => `Autonomous run ${ID} is open: load the aether:autonomous-runs skill, then read ${diary} and run \`aether-autonomy status\` before anything else.`
 
 test('session start points a new Lead to the open autonomous run', (t) => {
   const repo = makeRepo(t)

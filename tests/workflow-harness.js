@@ -4,13 +4,17 @@
 // runtime's functions stubbed. Agents answer from scripted handlers, so a test checks the
 // control flow and the order of calls without spending tokens. Ops commands for aether-wt and
 // aether-lane answer as the bins would; a lane handler can replace the aether-lane answers.
+// Another workflow of the plugin runs the same way, with the roles, the command reader and the
+// default answers its test gives (see runWorkflow's options).
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { PLUGIN } = require('./helpers.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 
-const SCRIPT = path.join(PLUGIN, 'workflows', 'run.workflow.js')
+const WORKFLOWS = path.join(PLUGIN, 'workflows')
+const SWARM_SCRIPT = 'run.workflow.js'
+const SWARM_ROLES = ['implementer', 'supervisor', 'reviewer', 'ops']
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
 
 // The runtime replays a resumed run by repeating its calls, so a workflow may not read the
@@ -26,9 +30,9 @@ function NoDate() {
 NoDate.now = forbidden('Date.now()')
 const NoRandomMath = Object.create(Math, { random: { value: forbidden('Math.random()') } })
 
-function loadWorkflow() {
-  const source = fs.readFileSync(SCRIPT, 'utf8')
-  if (!source.startsWith('export const meta = {')) throw new Error('run.workflow.js must start with `export const meta = {`')
+function loadWorkflow(script) {
+  const source = fs.readFileSync(path.join(WORKFLOWS, script), 'utf8')
+  if (!source.startsWith('export const meta = {')) throw new Error(`${script} must start with \`export const meta = {\``)
   const body = source.replace('export const meta', 'const meta')
   if (/^\s*(import|export)\b|\bimport\s*\(/m.test(body)) throw new Error('a workflow cannot import modules')
   return new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'Date', 'Math', 'require', 'process', body)
@@ -153,7 +157,7 @@ function tick() {
   return new Promise((resolve) => setImmediate(resolve))
 }
 
-// Runs the workflow with `args`. A handler in `overrides` replaces the default for its role and
+// Runs the swarm workflow with `args`. A handler in `overrides` replaces the default for its role and
 // gets (call, fallback): `call` describes the agent call, with `n` counting this role's calls for
 // the unit (ops: for the unit and command); `fallback` is the default handler. An ops handler
 // returns what aether-wt would print, or null for an agent that failed. `overrides.lane` answers
@@ -165,9 +169,19 @@ function tick() {
 //
 // Resolves to { result, error, calls, events, logs, maxActive }. `events` holds "start <key>" and
 // "end <key>" lines in order, where <key> is the role (and ops command) plus the unit.
-async function runWorkflow(args, overrides = {}) {
+//
+// `options.script` runs another workflow of plugins/aether/workflows/ instead, with no lane bookkeeping:
+// - `roles` are the agent types it may call, as aether:<role>;
+// - `commandOf(prompt)` reads an ops call's command, as `call.command` ({ verb, ... }); `call.kind` is ops:<verb>,
+//   and `call.payload` is the payload the prompt carries, or null;
+// - `defaults(state)` makes the run's default handlers, one set per run.
+// An ops handler may then also return { raw: { exitCode, stdout } }, which the workflow gets as it is.
+async function runWorkflow(args, overrides = {}, options = {}) {
+  const custom = Boolean(options.script)
+  const script = custom ? options.script : SWARM_SCRIPT
+  const roles = custom ? options.roles : SWARM_ROLES
   const state = { args: parseLeniently(args), merged: new Set(), lanes: {} }
-  const defaults = defaultHandlers(state)
+  const defaults = custom ? options.defaults(state) : defaultHandlers(state)
   const calls = []
   const events = []
   const logs = []
@@ -177,10 +191,10 @@ async function runWorkflow(args, overrides = {}) {
   async function agent(prompt, opts = {}) {
     if (!opts.agentType) throw new Error('every agent call needs an agentType')
     const role = opts.agentType.replace(/^aether:/, '')
-    if (!['implementer', 'supervisor', 'reviewer', 'ops'].includes(role)) throw new Error(`unknown agent type: ${opts.agentType}`)
+    if (!roles.includes(role)) throw new Error(`unknown agent type: ${opts.agentType}`)
     const unitMatch = (opts.label || '').match(/^(task-\d+):/)
-    const command = role === 'ops' ? parseCommand(prompt) : null
-    const isLane = Boolean(command && command.tool === 'aether-lane')
+    const command = role === 'ops' ? (custom ? options.commandOf(prompt) : parseCommand(prompt)) : null
+    const isLane = !custom && Boolean(command && command.tool === 'aether-lane')
     const call = {
       role,
       model: opts.model,
@@ -192,7 +206,7 @@ async function runWorkflow(args, overrides = {}) {
       unit: unitMatch ? unitMatch[1] : null,
       command,
       lane: isLane ? laneFlags(command.rest) : null,
-      payload: isLane ? payloadOf(prompt) : null,
+      payload: isLane || (custom && role === 'ops') ? payloadOf(prompt) : null,
     }
     if (isLane && command.verb === 'start') {
       call.digestOk = Boolean(call.payload) && lanes.digest(call.payload.text) === call.lane.digest
@@ -212,6 +226,7 @@ async function runWorkflow(args, overrides = {}) {
       const handler = isLane ? overrides.lane || defaults.lane : overrides[role] || defaults[role]
       const answer = await handler(call, isLane ? defaults.lane : defaults[role])
       if (role !== 'ops' || answer === null) return answer
+      if (custom && answer.raw) return answer.raw
       if (typeof answer === 'string') return { exitCode: 0, stdout: answer }
       return { exitCode: answer.error ? 1 : 0, stdout: `${JSON.stringify(answer)}\n` }
     } finally {
@@ -229,7 +244,7 @@ async function runWorkflow(args, overrides = {}) {
   let result = null
   let error = null
   try {
-    result = await loadWorkflow()(agent, parallel, pipeline, phase, log, args, NoDate, NoRandomMath, undefined, undefined)
+    result = await loadWorkflow(script)(agent, parallel, pipeline, phase, log, args, NoDate, NoRandomMath, undefined, undefined)
   } catch (err) {
     error = err
   }

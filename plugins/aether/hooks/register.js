@@ -1,7 +1,8 @@
 // Aether usage meter (spec §10). Records every model request of an Aether session (the main session's,
 // subagents' and workflow agents') with its tokens and timing, so aether-report can price a run.
 // The meter only observes: a failure in it never changes, delays past a write, or blocks a request.
-// It also saves each aether-lane payload an ops agent carries to the file its marker names (lanes spec §6.1).
+// It also saves each aether-lane payload an ops agent carries to the file its marker names (lanes spec §6.1):
+// a lane call's prompt, or a design round's message to <repo>/.aether-tmp/seats/<session>/message.md.
 //
 // It answers the ops agents of aether:run itself (decision A30): when a workflow spawns aether:ops with a
 // prompt that ops-command.mjs accepts, the agent's first step runs that aether-wt or aether-lane command with
@@ -19,7 +20,7 @@
 // Files: <data dir>/usage/<session>/<n>.json, each { session, part, claudeCode, agents, entries }
 // with up to PART_SIZE entries. A reloaded module starts after the parts already on disk.
 
-import { parseOpsPrompt } from './ops-command.mjs'
+import { PAYLOAD_PATH, parseOpsPrompt } from './ops-command.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -41,7 +42,6 @@ const SESSION_ID = /^[A-Za-z0-9-]+$/
 const sessions = new Map()
 
 const PAYLOAD_MARKER = /^=== aether-lane payload: (.+) ===$/m
-const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(task-\d+-\d+-(implement|supervise)|final-review)\/prompt\.md$/
 
 const tokens = (value) => (Number.isFinite(value) ? value : 0)
 const effortOf = (value) => (typeof value === 'string' && value !== '' ? value : null)
