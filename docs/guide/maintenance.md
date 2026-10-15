@@ -34,7 +34,7 @@ This page covers what keeping an installed Aether running involves: where it run
 
 ### Data
 
-Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/` (under `$CLAUDE_CONFIG_DIR/plugins/data/` when that is set; a session that loads it with `--plugin-dir` uses `aether-inline` there instead). Set `AETHER_DATA_DIR` to use another directory.
+Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AETHER_DATA_DIR` to use another directory. The default follows `CLAUDE_CONFIG_DIR` when that is set, and a session that loads the plugin with `--plugin-dir` uses `aether-inline` there instead.
 - `usage/<session>/` holds the usage meter's files, kept for 30 days;
 - `runs.jsonl` holds one record per finalized or abandoned run;
 - the lane log is kept for 30 days;
