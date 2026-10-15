@@ -1,4 +1,4 @@
-# 010: aether-autonomy cannot verify an owner's message sent mid-turn
+# 014: aether-autonomy cannot verify an owner's message sent mid-turn
 
 - **Date:** 2026-10-15
 - **Found by:** the Lead in session 777d41c2, while preparing spec 005.
