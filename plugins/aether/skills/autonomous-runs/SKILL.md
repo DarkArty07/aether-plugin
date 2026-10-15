@@ -23,15 +23,15 @@ The owner may give you permission to work for hours, for example «trabaja por h
 - **Descubrimientos.**
 - **Espera tu sí:** `acción · clase · por qué · si dices que no · cómo se revierte · el comando exacto que se ejecutará`.
 - **Propuestas:** what goes beyond the intent; it is not worked.
-- **Estado:** the current step, who took each seat (an agent id, or a seat id with its model), the spec and the plan, the swarm runs, and the next step.
+- **Estado:** the current step, each `/aether:design` launch and its result (who took each round is in its `rounds`), the spec and the plan, the swarm runs, and the next step.
 
 Outside a run there is no diary: what this skill says to note in it goes in your next reply to the owner, or in the short brief.
 
-**Keep going.** While a run is open, never end a turn unless something pending will wake you (a seat round or a native Judge, Writer or Examiner in the background, a delegate task, a lane call, a swarm workflow, a background command) or the run has ended. If nothing is pending and work remains, do the next step in the same turn. An open run with nothing pending is the session waiting for the owner, which is what a run exists to avoid.
+**Keep going.** While a run is open, never end a turn unless something pending will wake you (a `/aether:design` workflow or a native Writer you started, a delegate task, a lane call, a swarm workflow, a background command) or the run has ended. If nothing is pending and work remains, do the next step in the same turn. An open run with nothing pending is the session waiting for the owner, which is what a run exists to avoid.
 
 **Scope.** Compare everything new with the intent. What goes beyond it goes to "Propuestas" and is not worked. Minor findings of the final review are deferred.
 
-**Ceilings.** Run `aether-autonomy status` before each seat round, each delegate task, and each swarm launch or relaunch. When its `stop` is not null, start nothing new. Let what is running finish (a swarm run or a delegate task), or save it as patches, and never leave a merge half done. Then run `aether-autonomy end --outcome ceiling` and give the brief.
+**Ceilings.** Run `aether-autonomy status` before each `/aether:design` launch or relaunch, each delegate task, and each swarm launch or relaunch. When its `stop` is not null, start nothing new. Let what is running finish (a swarm run or a delegate task), or save it as patches, and never leave a merge half done. Then run `aether-autonomy end --outcome ceiling` and give the brief.
 
 **Cost.** After each swarm launch, record the figure with `aether-autonomy spend <usd> --source <label>`:
 - `lanes.totals.run.totalUsd` from `aether-report --run <runId>`, with the swarm's run id as the label;
@@ -43,7 +43,7 @@ A new figure for a label already recorded replaces the old one. The figure cover
 
 **Honest stop.** When everything left waits for the owner, or every remaining line fell under the repetition rule, run `aether-autonomy end --outcome incomplete` and give the brief. Say what is missing and why.
 
-**Resuming.** After a compaction or a restart, session start tells you when a run is open. Read its diary, run `aether-autonomy status`, and continue from "Estado". If a seat's agent was lost, run its seat again from the files.
+**Resuming.** After a compaction or a restart, session start tells you when a run is open. Read its diary, run `aether-autonomy status`, and continue from "Estado". If a `/aether:design` launch was lost, launch it again as the bootstrap's `failed` result says.
 
 **An unreadable run state.** When an `aether-autonomy` command fails naming a `run.json` or `grants.json` it cannot read, aether-guard refuses an edit of that file. Move the named folder aside with Bash (for example into `.aether/broken-runs/`, outside `.aether/autonomy/`), write what you moved and why in the diary, and go on. Do not treat it as a reason to stop.
 

@@ -20,13 +20,13 @@ Each section below says what you see, why it happens and what to do, with the ex
 
 [Getting started](../getting-started.md#start) has the whole start, and `scripts/aether-lead` runs the same command with permissions bypassed, superpowers off for the session, and irreversible commands refused. When even a session started this way shows nothing of Aether, `claude plugin list` shows whether `aether@aether-plugin` is installed and enabled, and [Getting started](../getting-started.md#install) installs it.
 
-## The swarm does not start
+## The design or the swarm does not start
 
-**What you see.** The Lead cannot launch `/aether:run`, or says that workflows are off.
+**What you see.** The Lead cannot launch `/aether:design` or `/aether:run`, or says that workflows are off.
 
-**Why.** The swarm is a dynamic workflow. A session with dynamic workflows off has no `Workflow` tool, so there is nothing for the Lead to launch.
+**Why.** `/aether:design` and the swarm are dynamic workflows. A session with dynamic workflows off has no `Workflow` tool, so there is nothing for the Lead to launch.
 
-**What to do.** Turn on Dynamic workflows in `/config` and start a new session. Meanwhile the Lead offers to build the plan task by task, each as a delegate task: on Sonnet, or on Opus when the task's Tier is opus.
+**What to do.** Turn on Dynamic workflows in `/config` and start a new session. Meanwhile the Lead does not design by hand. If a plan is already approved, the Lead offers to build it task by task, each as a delegate task: on Sonnet, or on Opus when the task's Tier is opus.
 
 Three other causes end in a swarm that is not running:
 - **A compile on `main`.** `aether-plan compile` stops with `refusing to compile on main: run aether-plan from the integration worktree, or pass --allow-main`. The swarm never runs on `main`: create an integration worktree on a feature branch with `git worktree add <path> -b <feature branch>`, and compile from it.

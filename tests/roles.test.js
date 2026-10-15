@@ -19,10 +19,10 @@ test('the swarm reports to the Lead', () => {
   }
 })
 
-test('the swarm skill sends plan fixes to the Writer and the Judge', () => {
+test('the swarm skill sends plan fixes to the Writer and to /aether:design in short mode', () => {
   const swarm = read('skills', 'swarm', 'SKILL.md')
-  assert.match(swarm, /ask the Writer to fix the plan task/)
-  assert.match(swarm, /have the Judge review the fix/)
+  assert.match(swarm, /have the Writer fix the plan task/)
+  assert.match(swarm, /review the fix in short mode on `tasks\.md`/)
   assert.doesNotMatch(swarm, /superpowers/)
   assert.doesNotMatch(swarm, /\bthe Designer\b/)
 })
