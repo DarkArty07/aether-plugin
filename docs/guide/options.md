@@ -15,7 +15,7 @@ Aether has four options, set when you install the plugin or later, and a few set
 | Option | Default | Set it | What it does |
 |---|---|---|---|
 | `lanes` | off | `--config lanes=true` at install, or `claude plugin configure aether@aether-plugin` or `/plugin` → Installed → aether → Configure options later | Runs Aether's calls on other coding harnesses while their quota lasts: see [Lanes](lanes.md#lanes) |
-| `harnesses` | `agy` | `--config harnesses=agy,codex` at install, or `claude plugin configure aether@aether-plugin` or `/plugin` → Installed → aether → Configure options later | Lists the harnesses lanes may use, comma-separated: see [Lanes](lanes.md#lanes) |
+| `harnesses` | `agy` | `--config harnesses=agy,grok` at install, or `claude plugin configure aether@aether-plugin` or `/plugin` → Installed → aether → Configure options later | Lists the harnesses lanes may use, comma-separated: see [Lanes](lanes.md#lanes) |
 | `ops` | on | `--config ops=false` at install, or `claude plugin configure aether@aether-plugin` or `/plugin` → Installed → aether → Configure options later | Lets the mod run the swarm's own `aether-wt` and `aether-lane` commands without a model: see [Ops without a model](ops.md) |
 | `seats` | `balanced` | `--config seats=robust` at install, or `claude plugin configure aether@aether-plugin` or `/plugin` → Installed → aether → Configure options later | Chooses who takes the Judge, the Writer and the Examiner: see [Design seats](design-seats.md#design-seats) |
 
@@ -40,5 +40,5 @@ A plugin cannot set these, so you do:
 | Permissions for the swarm | Allow rules for `git`, `aether-wt`, `aether-lane` and the test command, and edits under `.aether/worktrees/`; `scripts/aether-lead` bypasses permissions instead |
 | superpowers off in Aether sessions, if you keep it for other work | `--settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'` in the start command |
 | Irreversible commands refused, not only recorded | `AETHER_IRREVERSIBLE=enforce` in the shell that starts Claude Code; `scripts/aether-lead` sets it |
-| Lanes on Codex, Grok or Cursor | Their models in your copy of the lane table, `AETHER_LANES_CONFIG`, and the `harnesses` option (see [Lanes](lanes.md#lanes)) |
+| Lanes on Codex, Grok or Cursor | Codex and Cursor: their models in your copy of the lane table, `AETHER_LANES_CONFIG` set to that copy, and the `harnesses` option. Grok: its model, `grok-4.7`, is already in the lane table, so it needs only `grok` in the `harnesses` option (see [Lanes](lanes.md#lanes)) |
 | Gemini 4 Argon in the design seats | Google AI Ultra on agy, and `lanes` on (see [Design seats](design-seats.md#design-seats)) |
