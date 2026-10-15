@@ -4,9 +4,9 @@
 - **From:** the Lead, Claude Code on Opus 5.5 at `max`, in an Aether session on 0.10.0 that worked on its own overnight. The owner granted the run with «ire a dormir trbaja autonomamente», and asked that every delegate run on Sonnet or Haiku, never Opus. Aether's own agents ran on their definitions.
 - **To:** the next session.
 - **Repository state:**
-  - `feat/aether-design` holds spec 005's design and build, the final review's fixes and the 0.11.0 bump. It also holds spec 004, the reconciled documentation (`docs/reconcile-0.10.0`, merged at `35bc7bb`), and issues 010 to 013 (`docs/issues-swarm-0.10.0`, merged at `d4e74dd`). It goes to `main` through this release's pull request, tagged `aether--v0.11.0`.
+  - `feat/aether-design` holds spec 005's design and build, the final review's fixes and the 0.11.0 bump. It also holds spec 004, the reconciled documentation (`docs/reconcile-0.10.0`, merged at `35bc7bb`), and issues 010 to 013 (`docs/issues-swarm-0.10.0`, merged at `d4e74dd`). It reached `main` through PR #21 (`b6fccb6`), tagged `aether--v0.11.0`.
   - Its checks: `npm test` 971 of 971, `npm run check` exit 0, and spec 005's hidden exam 7 of 11 (see §2).
-- **Installed plugin:** 0.10.0 until the marketplace updates from `main`.
+- **Installed plugin:** 0.11.0, updated from `main` after the merge.
 
 ## 1. What was done
 
@@ -27,21 +27,22 @@
 - [Issue 014](../issues/014-autonomy-cannot-verify-an-owner-message-sent-mid-turn.md): a message the owner sends mid-turn does not count for `aether-autonomy`, so this run kept a manual diary.
 - [Issue 015](../issues/015-one-odd-quota-reading-marks-a-lane-group-dry-for-three-days.md): one odd reading marked agy's Gemini group dry for three days. The mark was deleted with the owner's yes.
 - [Issue 016](../issues/016-agy-does-not-offer-gemini-4-argon-so-every-external-seat-falls-back.md): agy 1.3.5 does not offer Gemini 4 Argon, so the `balanced` seats are native in practice. agy moved to 1.3.6 the same day; whether it offers Argon is not checked.
+- [Issue 017](../issues/017-revoking-a-one-time-grant-removes-every-grant-of-its-class.md): revoking a one-time grant removes every grant of its class (`lib/autonomy.js:157`). Found when this release's session grants were revoked.
 
 ## 3. What is left
 
 - **Not verified:** a real `/aether:design` run with live agents (the workflow runtime honoring the explicit `model` and `effort`, and the ops mod creating the payload folder); the Lead's one question at a time (R5) and the Writer's judgment on `[NEEDS CLARIFICATION]`, reviewed only as text; and A7's measurement against session 5ef557b7, to be made by hand.
 - The 31 minor findings the review slices deferred, in `.aether/autonomy/manual-20261015/menores-diferidos.md` (local, not in git).
-- The Proposals of spec 005 (P1 to P8), and issues 008 and 010 to 016.
+- The Proposals of spec 005 (P1 to P8), and issues 008 and 010 to 017.
 
 ## 4. What waits for the owner
 
 - **The first design on 0.11.0.** The next design request runs `/aether:design` for real. It is the test this build could not make.
 - **Spec 004's last check:** follow [Getting started](../getting-started.md) with a real model. Its C1 stays partial until then.
-- **Leftovers:**
-  - the release's integration worktree, once its session ends: `git worktree remove .worktrees/aether-design && git branch -d feat/aether-design` (from `main`);
-  - the local branch `brand/pixel-art-tool`: session 5ef557b7's pixel-art tool with its issue 009, kept out of `main` with the brand assets. Delete it with `git branch -D brand/pixel-art-tool` when it is no longer wanted.
+- **Leftover:** the local branch `brand/pixel-art-tool`. It holds session 5ef557b7's pixel-art tool with its issue 009, kept out of `main` with the brand assets. Delete it with `git branch -D brand/pixel-art-tool` when it is no longer wanted. The other worktrees and merged local branches were removed after the release.
 
 ## 5. How to run things
 
 As in [the second handoff](2026-10-14-super-lead-built.md) §5. To move the installed plugin to the latest `main`, run `claude plugin marketplace update aether-plugin`, then `claude plugin update aether@aether-plugin`, then start a new session with `aether-lead`.
+
+Since 2026-10-15, a standing grant covers every push in this repository: «apruebo otod los push de este repo», shown by `aether-autonomy list`. Merges to `main` and deletions still need the owner's yes each time. Do not revoke a `push` grant, because issue 017 would remove this one with it.
