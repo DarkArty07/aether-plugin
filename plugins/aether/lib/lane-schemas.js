@@ -69,9 +69,10 @@ const JUDGE_SCHEMA = {
       description: 'at most 10',
       items: {
         type: 'object',
-        required: ['severity', 'title', 'evidence', 'fix'],
+        required: ['severity', 'type', 'title', 'evidence', 'fix'],
         properties: {
           severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
+          type: { type: 'string', enum: ['missing', 'extra', 'wrong'], description: 'missing: the document lacks something it needs; extra: it has something nobody asked for; wrong: it says something that is not so' },
           title: { type: 'string' },
           evidence: { type: 'string', description: 'a quote of the document in backticks, or file:line in the code' },
           fix: { type: 'string' },
@@ -92,6 +93,36 @@ const WRITER_SCHEMA = {
     check: { type: 'string', description: 'what aether-plan check printed' },
     assumptions: { type: 'array', items: { type: 'string' } },
     questions: { type: 'array', items: { type: 'string' } },
+    complexity: { type: 'string', description: 'the complexity the plan adds beyond the spec, and why it is needed; empty if none' },
+    disagreements: { type: 'array', items: { type: 'string' }, description: 'each finding you did not apply, with why' },
+  },
+}
+
+// The Writer's answer for the spec alone (--doc spec): spec.md, no plan and no tasks.
+const SPEC_WRITER_SCHEMA = {
+  type: 'object',
+  required: ['spec', 'commit', 'clarify', 'assumptions', 'questions'],
+  properties: {
+    spec: { type: 'string', description: 'the path of spec.md' },
+    commit: { type: 'string', description: 'your commit of spec.md' },
+    clarify: { type: 'array', items: { type: 'string' }, description: 'each [NEEDS CLARIFICATION: ...] mark left in the spec' },
+    assumptions: { type: 'array', items: { type: 'string' } },
+    proposals: { type: 'array', items: { type: 'string' }, description: 'what you propose beyond what the owner asked, each with why' },
+    questions: { type: 'array', items: { type: 'string' } },
+    disagreements: { type: 'array', items: { type: 'string' }, description: 'each finding you did not apply, with why' },
+  },
+}
+
+// The native Writer's answer when it corrects one document of the short design (the workflow uses it).
+const REVISION_SCHEMA = {
+  type: 'object',
+  required: ['document', 'commit', 'assumptions', 'questions'],
+  properties: {
+    document: { type: 'string', description: 'the path of the corrected document; tasks.md for a plan' },
+    commit: { type: 'string', description: 'your commit of the corrected document' },
+    assumptions: { type: 'array', items: { type: 'string' } },
+    questions: { type: 'array', items: { type: 'string' } },
+    disagreements: { type: 'array', items: { type: 'string' }, description: 'each finding you did not apply, with why' },
   },
 }
 
@@ -191,4 +222,4 @@ function validate(schema, value) {
   return problemOf(schema, value, '')
 }
 
-module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA, JUDGE_SCHEMA, WRITER_SCHEMA, EXAMINER_SCHEMA, validate }
+module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA, JUDGE_SCHEMA, WRITER_SCHEMA, SPEC_WRITER_SCHEMA, REVISION_SCHEMA, EXAMINER_SCHEMA, validate }
