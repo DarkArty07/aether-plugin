@@ -34,9 +34,6 @@
 // One word is not a count: the article in "the commands of `bin/`", which docs/reference/components.md writes in the list
 // of what the 0.7.0 measurement found, and whose number it does not repeat there (the measurement counted eight, bin/ has
 // nine). Any other word before "commands of `bin/`" is read as a count, and an unknown one fails.
-//
-// Until Task 16 reduces the README, the three tests that read text the old README still holds wrong (the paths, the
-// count of bin/ and the range of decisions) read the pages only.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -355,11 +352,9 @@ test("R11: the README's Version line and the changelog's first Version line are 
   assert.equal(changelog[1], manifest().version, "the changelog's first Version line")
 })
 
-// These three tests read the pages only: until Task 16 the README still holds the stale text it replaces, and Task 16
-// makes them read FILES.
 test('C3: the repository paths in code spans exist', () => {
   const roots = ['plugins/', 'scripts/', 'tests/', 'docs/', 'specs/']
-  for (const rel of PAGES) {
+  for (const rel of FILES) {
     for (const span of codeSpans(read(rel))) {
       const word = span.trim().split(/\s+/)[0].replace(/[.,;:)]+$/, '')
       if (!roots.some((root) => word.startsWith(root)) || /[<*{$[]/.test(word) || word in PATH_EXCEPTIONS) continue
@@ -372,7 +367,7 @@ const NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, 
 
 test('R12: the count of commands of bin/ that the pages give is the count of its files', () => {
   let seen = 0
-  for (const rel of PAGES) {
+  for (const rel of FILES) {
     for (const m of read(rel).matchAll(/\b(\w+) commands of `bin\/`/g)) {
       if (m[1].toLowerCase() === 'the') continue // "the commands of `bin/`" gives no count (see the header)
       seen++
@@ -385,7 +380,7 @@ test('R12: the count of commands of bin/ that the pages give is the count of its
 test('R12: the range of decisions the pages name runs to the last decision', () => {
   const last = Math.max(...[...read('docs/decisions.md').matchAll(/^\| A(\d+) \|/gm)].map((m) => Number(m[1])))
   let seen = 0
-  for (const rel of PAGES) {
+  for (const rel of FILES) {
     for (const m of read(rel).matchAll(/\bA1[–-]A(\d+)\b/g)) {
       seen++
       assert.equal(Number(m[1]), last, `${rel} says A1-A${m[1]}, and the last decision is A${last}`)
@@ -398,4 +393,62 @@ test("R12: the roadmap's Now line names the manifest's version", () => {
   const now = read('docs/roadmap.md').split('\n').find((line) => line.startsWith('**Now:**'))
   assert.ok(now, 'docs/roadmap.md has a line that starts with **Now:**')
   assert.ok(now.includes(`version ${manifest().version}`), `the Now line names version ${manifest().version}`)
+})
+
+test('R1: the README is the way in: at most 160 lines, and its parts in order', () => {
+  const lines = read(README).split('\n')
+  assert.ok(lines.length <= 160, `the README has ${lines.length} lines, and the most is 160`)
+  const at = (pattern, what) => {
+    const i = lines.findIndex((line) => pattern.test(line))
+    assert.ok(i >= 0, `the README has ${what}`)
+    return i
+  }
+  const title = at(/^# \S/, 'a title')
+  const hero = at(/^<!-- hero: .* -->$/, 'the comment <!-- hero: ... --> for the mascot')
+  const version = at(/^Version \d+\.\d+\.\d+\b.*\]\(docs\/changelog\.md\)/, 'a line "Version X.Y.Z" that links docs/changelog.md')
+  assert.ok(hero < 10, 'the comment for the mascot is at the top')
+  assert.ok(
+    lines.slice(title + 1, version).some((line) => /\S/.test(line) && !line.startsWith('<!--')),
+    'a paragraph that says what Aether is comes before the Version line',
+  )
+  const order = [
+    title,
+    hero,
+    version,
+    ...['Rápido', 'Autónomo', 'Delegación', 'Asequible', 'Robusto'].map((goal) => at(new RegExp(`^- \\*\\*${goal}\\*\\*`), `the goal ${goal}, on one line`)),
+    at(/^## Requirements$/, '## Requirements'),
+    at(/^## Install$/, '## Install'),
+    at(/^## First start$/, '## First start'),
+    at(/^## Where to go$/, '## Where to go'),
+    at(/^## License$/, '## License'),
+  ]
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), 'the parts come in the order of R1')
+  const section = (heading) => {
+    const rest = lines.slice(lines.indexOf(heading) + 1)
+    const end = rest.findIndex((line) => /^## /.test(line))
+    return (end < 0 ? rest : rest.slice(0, end)).join('\n')
+  }
+  assert.ok(section('## Install').includes('claude plugin install aether --marketplace DarkArty07/aether-plugin'), 'Install has the command')
+  const start = section('## First start')
+  for (const need of ['claude --agent aether:lead --effort xhigh', 'scripts/aether-lead', '`claude`', 'normal mode', 'repository']) {
+    assert.ok(start.includes(need), `First start has "${need}"`)
+  }
+  const where = section('## Where to go')
+  for (const target of ['docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/index.md']) {
+    assert.ok(where.includes(`](${target})`), `Where to go links ${target}`)
+  }
+})
+
+test('R1: the README holds no history by version, no trial and no upgrade guide', () => {
+  const text = read(README)
+  assert.equal(text.split('\n').filter((line) => /^Version \d/.test(line)).length, 1, 'one Version line, and no history by version')
+  for (const gone of ['## Status', 'Trial 1', 'Trial 2', 'Trial 3', 'Wall clock', 'Upgrading from 0.6']) {
+    assert.ok(!text.includes(gone), `the README no longer has "${gone}"`)
+  }
+})
+
+test('R13: the retrospective links the principles in the purpose page, not in the README', () => {
+  const text = read('docs/aether-retrospective.md')
+  assert.ok(text.includes('(purpose.md#principles)'), 'the retrospective links purpose.md#principles')
+  assert.ok(!text.includes('README.md#principles'), 'the retrospective no longer links README.md#principles')
 })

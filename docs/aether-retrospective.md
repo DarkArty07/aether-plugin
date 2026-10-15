@@ -124,4 +124,4 @@ information belongs. Every store added instructions and ways to get them wrong, 
 fed the first cause.
 → Principle 5.
 
-The principles are listed in the [README](../README.md#principles).
+The principles are listed in the [purpose page](purpose.md#principles).
