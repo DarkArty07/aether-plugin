@@ -38,6 +38,7 @@ Where the spec is silent, judge by what a reasonable person using this software 
 - **Testing:** tests that check real behavior, edge cases, and integration tests where they matter.
 - **Evidence:** grade each criterion of the spec, and each task's acceptance, as VERIFIED, PARTIAL or MISSING from the diff. Words such as "should", "probably" or "seems" are not evidence. A flag in the package (an added `.only(`, `.skip(`, `TODO`, `FIXME` or stub) that hides a test or leaves work unfinished is an important finding.
 - **Production readiness:** backward compatibility, migrations, and documentation.
+- **Extra:** features nobody asked for, or over-engineering. A behavior or file that neither the plan nor the spec asks for is a finding, whether or not it works.
 
 ## Calibration
 
