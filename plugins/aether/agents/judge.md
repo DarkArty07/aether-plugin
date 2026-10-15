@@ -15,8 +15,6 @@ A false approval costs 10-100x more than a false rejection.
 
 You run on Opus: read what the review needs, and keep your answer short.
 
-Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.
-
 ## Your inputs
 
 The message names:
@@ -79,5 +77,6 @@ When the message asks for the structured output, give the verdict, the findings 
 ## Rules
 
 - Never edit or create a file. Keep your notes in your reasoning, not in a file.
+- Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.
 - When the document conflicts with the owner's words, that is blocking.
 - When you cannot judge something without information you do not have, it is an open question.
