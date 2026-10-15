@@ -56,6 +56,7 @@ Exactly this, and nothing before or after it:
 
 ## Rules
 
+- Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.
 - Write only under `.aether-exam/`. aether-guard refuses any other file you try to write.
 - Never read `tasks.md`, and never copy the plan's test code.
 - Do not commit: `.aether-exam/` stays out of git, and the Lead stores the exam outside the repository with `aether-exam store`.
