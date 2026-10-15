@@ -1,11 +1,12 @@
 'use strict'
 
-// The aether-guard decisions. decide: only the main session, the Lead and the Writer write specs,
-// plans and tasks, the Examiner writes only its exam under .aether-exam/, and autonomy files are kept
-// to aether-autonomy. Protected: docs/superpowers/specs/
+// The aether-guard decisions. decide: only the main session and the Lead write the intent card, only the
+// main session, the Lead and the Writer write specs, plans and tasks, the Examiner writes only its exam
+// under .aether-exam/, and autonomy files are kept to aether-autonomy. Protected: docs/superpowers/specs/
 // and plans/ (the old place), specs/NNN-<topic>/ spec.md, plan.md and tasks.md (Spec Kit), and
-// .specify/memory/constitution.md. irreversibleClass: the irreversible class of a Bash command, and
-// redactCommand: the command as the owner's list keeps it, without its secret values.
+// .specify/memory/constitution.md. The intent card is specs/NNN-<topic>/intent.md. irreversibleClass: the
+// irreversible class of a Bash command, and redactCommand: the command as the owner's list keeps it,
+// without its secret values.
 // All are pure: they read a PreToolUse hook's JSON and never touch the file system.
 
 const path = require('node:path')
@@ -21,6 +22,7 @@ const LEAD = 'aether:lead'
 const WRITER = 'aether:writer'
 const EXAMINER = 'aether:examiner'
 const EXAM_PATH = /(^|\/)\.aether-exam\//
+const INTENT_CARD = /(^|\/)specs\/\d{3}-[^/]+\/intent\.md$/
 
 // decide(input) gives null to allow, or { reason } to deny.
 function decide(input) {
@@ -46,6 +48,14 @@ function decide(input) {
     }
   }
 
+  // The owner's own words in the intent card are the Lead's to write, and no one else's.
+  if (INTENT_CARD.test(normalized)) {
+    if (isLeadOrMainSession(input)) return null
+    return {
+      reason: `In Aether mode only the Lead writes the intent card (intent.md): it holds the owner's own words. Hand a change to the Lead instead of editing ${resolved} yourself.`,
+    }
+  }
+
   if (!PROTECTED.some((re) => re.test(normalized))) return null
   if (mayWriteDocs(input)) return null
 
@@ -57,7 +67,12 @@ function decide(input) {
 // The main session's hook input names no agent. An input that names one, by agent_id or agent_type,
 // may write only when its agent_type is the Lead's or the Writer's.
 function mayWriteDocs(input) {
-  if (input.agent_type === LEAD || input.agent_type === WRITER) return true
+  return input.agent_type === WRITER || isLeadOrMainSession(input)
+}
+
+// The Lead, or the main session: an input that names no agent at all.
+function isLeadOrMainSession(input) {
+  if (input.agent_type === LEAD) return true
   return isBlank(input.agent_id) && isBlank(input.agent_type)
 }
 
