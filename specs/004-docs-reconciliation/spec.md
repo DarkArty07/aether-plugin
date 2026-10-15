@@ -34,7 +34,7 @@
 - R10. Cada página nueva empieza con front matter YAML de tres claves: `title`, `description` y `order` (entero), y todos sus enlaces internos son relativos y resuelven, anclas incluidas. Sirve a: C5.
 - R11. `tests/docs-facts.test.js` (Node, sin dependencias, `node:test`) comprueba, contra el árbol: que cada página de R3 a R9 existe y tiene el front matter de R10; que los enlaces y las anclas internas del README y de `docs/` que esta spec crea resuelven; que cada bin `aether-*` que la documentación nombra existe en `plugins/aether/bin/`; que cada agente `aether:*` nombrado existe en `plugins/aether/agents/`; que las opciones nombradas y sus valores por defecto coinciden con `userConfig` de `plugins/aether/.claude-plugin/plugin.json`; que la versión que dice el README es la del manifiesto; y que el README cumple R1. Sirve a: C2, C3, C5.
 - R12. Las afirmaciones ya conocidas por desactualizadas se corrigen: «Roadmap → Now: version 0.9»; la lista de decisiones «A1–A43» (hoy llega a A49); la medición «What Aether adds to a normal session», hecha con 0.7.0 (se fecha o se retira); y el resto de lo que la revisión final encuentre. Sirve a: C3.
-- R13. Los cambios se limitan a `README.md`, `docs/index.md`, `docs/getting-started.md`, `docs/purpose.md`, `docs/methodology.md`, `docs/changelog.md`, `docs/contributing.md`, `docs/guide/**`, `docs/reference/**` y `tests/docs-facts.test.js`. No se toca `plugins/aether/**`, `scripts/**`, `docs/decisions.md`, `docs/evaluations/**`, `docs/issues/**`, `docs/handoff/**`, `docs/superpowers/**`, `docs/roadmap/**` ni `specs/00[1-3]-*`. Sirve a: C4.
+- R13. Los cambios se limitan a `README.md`, `docs/index.md`, `docs/getting-started.md`, `docs/purpose.md`, `docs/methodology.md`, `docs/changelog.md`, `docs/contributing.md`, `docs/guide/**`, `docs/reference/**` y `tests/docs-facts.test.js`. No se toca `plugins/aether/**`, `scripts/**`, `docs/decisions.md`, `docs/evaluations/**`, `docs/issues/**`, `docs/handoff/**`, `docs/superpowers/**`, `docs/roadmap/**` ni `specs/00[1-3]-*`. La única excepción es una línea de `docs/aether-retrospective.md`: su enlace a `../README.md#principles` pasa a `purpose.md#principles` (A9). Sirve a: C4.
 
 ## Proposals
 
@@ -53,7 +53,7 @@
 - A6. Los documentos históricos (decisiones, ensayos, issues, handoffs, specs 001–003) no se editan. Base: son registro, no guía. Reversible.
 - A7. El front matter usa solo `title`, `description` y `order`, un subconjunto que cualquier generador de sitios lee. Base: aún no hay generador elegido. Reversible.
 - A8. La landing no se escribe aquí. Cuando exista, enlazará a `docs/purpose.md`, `docs/methodology.md` y `docs/getting-started.md`, que son las rutas estables. Base: el dueño dijo «aún no sabemos cómo vamos a hacer la landing page». Reversible.
-- A9. El README conserva su inglés y sus anclas no se mantienen: ningún documento actual enlaza a una ancla del README. Base: `grep` de los enlaces a `README.md#` en `docs/` y `specs/`, que el Writer verifica antes de mover secciones. Reversible.
+- A9. Un solo documento enlaza a una ancla del README: `docs/aether-retrospective.md`, línea 127, a `../README.md#principles`. Como los principios pasan a `docs/purpose.md#principles` (R4), ese enlace se corrige, y es el único cambio permitido en un documento histórico (R13). Base: `grep -rn 'README.md#'` en `docs/`, `specs/` y `plugins/`, que el Writer repite antes de mover secciones. Reversible.
 
 ## Irreversible actions
 
