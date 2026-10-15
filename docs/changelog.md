@@ -13,7 +13,7 @@ order: 31
 ## Status
 
 Version 0.10.0: quota-aware lanes ([spec](../specs/002-quota-aware-lanes/spec.md)) and the super Lead ([spec](../specs/003-super-lead/spec.md)), [decisions](../docs/decisions.md) A48–A49. What changed since 0.9.1:
-- **The quota most at risk goes first.** Every call a lane can take has a list of candidates, ordered by the share left of each group's longest window divided by the hours to its reset. A start that finds its group dry passes the call to the next candidate, and the call runs native only when none is left (see Lanes).
+- **The quota most at risk goes first.** Every call a lane can take has a list of candidates, ordered by the share left of each group's longest window divided by the hours to its reset. A start that finds its group dry passes the call to the next candidate, and the call runs native only when none is left (see [Lanes](guide/lanes.md#lanes)).
 - **Dry marks outlive the run.** A call that ends for quota leaves a mark in the plugin's data directory: until the reset when a reading confirms it, and otherwise for 60 minutes.
 - **Grok's quota is read over ACP,** in about a second, with no UI and no model call; opening its UI stays as the fallback. Grok 4.7 takes Haiku implementer calls when `grok` is in `harnesses`.
 - **The balance is visible.** `aether-lane quota` and `aether-lane status <run>` give each group's windows, priority and dry mark, and `aether-report` gives each group's balance at the start and the end of a run, and its next reset.

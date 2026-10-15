@@ -14,12 +14,11 @@ Aether has four options, set when you install the plugin or later, and a few set
 
 | Option | Default | Set it | What it does |
 |---|---|---|---|
-| `lanes` | off | `--config lanes=true` at install, or `claude plugin configure aether@aether-plugin` or `/plugin` → Installed → aether → Configure options later | Runs Aether's calls on other coding harnesses while their quota lasts: see [Lanes](lanes.md#lanes) |
-| `harnesses` | `agy` | `--config harnesses=agy,grok` at install, or `claude plugin configure aether@aether-plugin` or `/plugin` → Installed → aether → Configure options later | Lists the harnesses lanes may use, comma-separated: see [Lanes](lanes.md#lanes) |
-| `ops` | on | `--config ops=false` at install, or `claude plugin configure aether@aether-plugin` or `/plugin` → Installed → aether → Configure options later | Lets the mod run the swarm's own `aether-wt` and `aether-lane` commands without a model: see [Ops without a model](ops.md) |
-| `seats` | `balanced` | `--config seats=robust` at install, or `claude plugin configure aether@aether-plugin` or `/plugin` → Installed → aether → Configure options later | Chooses who takes the Judge, the Writer and the Examiner: see [Design seats](design-seats.md#design-seats) |
+| `lanes` | off | `--config lanes=true` at install, or `/plugin` → Installed → aether → Configure options later | Runs Aether's calls on other coding harnesses while their quota lasts: see [Lanes](lanes.md#lanes) |
+| `harnesses` | `agy` | `--config harnesses=agy,grok` at install, or `/plugin` → Installed → aether → Configure options later | Lists the harnesses lanes may use, comma-separated: see [Lanes](lanes.md#lanes) |
+| `ops` | on | `--config ops=false` at install, or `/plugin` → Installed → aether → Configure options later | Lets the mod run the swarm's own `aether-wt` and `aether-lane` commands without a model: see [Ops without a model](ops.md) |
+| `seats` | `balanced` | `--config seats=robust` at install, or `/plugin` → Installed → aether → Configure options later | Chooses who takes the Judge, the Writer and the Examiner: see [Design seats](design-seats.md#design-seats) |
 
-`claude plugin configure aether@aether-plugin` shows the options and which are unset.
 
 - `lanes`, off by default, runs Aether's calls on other coding harnesses while their quota lasts. They work without permission prompts and spend another plan's quota, so you turn it on yourself. Lanes run only on Linux.
 - `harnesses`, `agy` by default, lists the harnesses lanes may use, comma-separated: `agy`, `codex`, `grok`, `cursor`. The quota decides the order of the candidates; the order of this option breaks ties between equal priorities and orders the groups with no reading. Add one only once its models are in the lane table (see [Lanes](lanes.md#lanes)).

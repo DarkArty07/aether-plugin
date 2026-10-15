@@ -93,7 +93,7 @@ Write `farewell(name)` in `src/farewell.js`. It returns `Goodbye, <name>!`.
 - Max agents: 20
 ```
 
-Then run the plan checker on it:
+Then run the plan checker on it. Inside a session it is on the `PATH`; outside one it is not, so use its path, as the paragraph after the output explains:
 
 ```
 aether-plan check tasks.md
@@ -119,7 +119,7 @@ claude --agent aether:lead --effort xhigh
 
 The Lead is the agent `aether:lead`, which starts on Sonnet; the owner may switch with `/model`. `--effort xhigh` sets its effort, because a plugin cannot. The command is the same in every shell.
 
-To type less, `scripts/aether-lead` in a clone of this repository runs the command of Install, with superpowers turned off for the session, and passes on every argument. It also starts the session with `--permission-mode bypassPermissions`, so neither the Lead nor the swarm's agents stop at a permission prompt. With no prompts, aether-guard is the only check left on a push, a merge to `main` or a forced delete, so the launcher sets `AETHER_IRREVERSIBLE=enforce`: the guard refuses an irreversible command that no grant covers, instead of only recording it. A value already set in your shell is kept, so `AETHER_IRREVERSIBLE=log aether-lead` only records them. For a session that asks before each tool call, run the command of Install instead. The launcher is one `exec claude` after that default, with no setup of its own, so it is the same in bash, fish and zsh. Link it once, under any name on your `PATH`:
+To type less, `scripts/aether-lead` in a clone of this repository runs the command of Install, with superpowers turned off for the session, and passes on every argument. It also starts the session with `--permission-mode bypassPermissions`, so neither the Lead nor the swarm's agents stop at a permission prompt. With no prompts, aether-guard is the only check left on a push, a `gh pr merge` or a forced delete, so the launcher sets `AETHER_IRREVERSIBLE=enforce`: the guard refuses an irreversible command that no grant covers, instead of only recording it. A value already set in your shell is kept, so `AETHER_IRREVERSIBLE=log aether-lead` only records them. For a session that asks before each tool call, run the command of Install instead. The launcher is one `exec claude` after that default, with no setup of its own, so it is the same in bash, fish and zsh. Link it once, under any name on your `PATH`:
 
 ```
 ln -s "$PWD/scripts/aether-lead" ~/.local/bin/aether-lead
@@ -146,7 +146,7 @@ Tell the Lead what you want. What it does with the request depends on its size, 
 3. **It writes the spec.** The Lead writes `specs/NNN-<topic>/spec.md` and commits it. A small or reversible change needs no document: the Lead does it itself, or hands it to one delegate. (`using-aether`, «The route by size and risk» and «Writing and judging».)
 4. **The Judge reviews the spec.** The Judge, on Opus and read-only, rules `approve`, `revise` or `reject`. With `seats`, `balanced` by default, and the lanes on, a stronger model of another harness may take the seat; otherwise the native Judge does (see [Design seats](guide/design-seats.md#design-seats)). A document gets at most two revisions; after that the Lead puts both positions on your list instead of overriding the Judge. (`using-aether`, «Writing and judging» and «The design seats».)
 5. **The Writer writes the plan and the tasks, and the Judge reviews them.** The plan and the tasks follow Spec Kit's layout, with the Aether fields on every task, and the Writer checks them with `aether-plan check`. (`using-aether`, «Writing and judging» and «Plans».)
-6. **The Lead chooses how to build it, and says why.** Itself, for a very bounded change; a delegate task, one subagent on a model the Lead names with its reason, for real but bounded work and for a plan of one or two tasks; or the swarm, `/aether:run`, for a plan of three or more tasks or one with a task on Opus. (`using-aether`, «The three paths».)
+6. **The Lead chooses how to build it, and says why.** The direct path, the Lead itself, for a very bounded change; a delegate task, one subagent on a model the Lead names with its reason, for real but bounded work and for a plan of one or two tasks; or the swarm, `/aether:run`, for a plan of three or more tasks or one with a task on Opus. (`using-aether`, «The three paths».)
 7. **It stops at the plan with a short brief.** Without your permission to work for hours, the Lead stops here. The brief opens with what waits for your yes, and recommends how to build it: itself, a delegate task on a model it names, or the swarm. Your yes starts the build. (`using-aether`, «Autonomous runs» and «The execution method».)
 
 Give it permission to work for hours (see [Work for hours](#work-for-hours)), and it runs to the end, chooses the method itself, and gives you the brief.
@@ -162,7 +162,7 @@ The swarm needs:
 
 - **an `## Aether Execution` section**, holding the test command, the ladder and the agent budget;
 - **a separate integration worktree on a feature branch.** The Lead creates it with `git worktree add <path> -b <branch>`;
-- **permissions that let the agents run `git`, `aether-wt` and the tests**, and edit files under `.aether/worktrees/`, without asking each time.
+- **permissions that let the agents run `git`, `aether-wt`, `aether-lane` and the tests**, and edit files under `.aether/worktrees/`, without asking each time.
 
 How the method works from end to end is in [Methodology](methodology.md); what Aether is for is in [Purpose](purpose.md). Lanes, the other coding plans a swarm can use, are in [Lanes](guide/lanes.md#lanes).
 

@@ -25,7 +25,7 @@ Node.js 22 with no dependencies. The workflow's tests run its script in a harnes
 
 ### Release
 
-1. bump `"version"` in `plugins/aether/.claude-plugin/plugin.json`, the version that `tests/launcher.test.js` pins, the `Version X.Y.Z` line of the README, and the first `Version X.Y.Z:` line of the [changelog](changelog.md); tests/docs-facts.test.js checks the last two;
+1. bump `"version"` in `plugins/aether/.claude-plugin/plugin.json`, the version that `tests/launcher.test.js` pins, the `Version X.Y.Z` line of the README, and the first `Version X.Y.Z:` line of the [changelog](changelog.md); tests/docs-facts.test.js checks the last two; turn the changelog's `## Unreleased` entry into part of that new `Version X.Y.Z:` line;
 2. run `npm run check`;
 3. merge to `main`;
 4. in the main checkout, run `claude plugin tag plugins/aether`, which creates the tag `aether--v<version>`;

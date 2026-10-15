@@ -2,7 +2,7 @@
 
 <!-- hero: the mascot animation goes here -->
 
-A plugin for Claude Code that adds an opt-in **Aether mode**: an accountable orchestrator, the Lead, that turns the owner's intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans the owner pays for, and reports in one brief. The Lead writes the spec, the Writer writes the plan and the tasks, and the Judge reviews the spec, the plan and the tasks; then the swarm builds the plan in parallel. Plain `claude` stays normal mode.
+A plugin for Claude Code that adds an opt-in **Aether mode**: an accountable orchestrator, the Lead, that turns the owner's intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans the owner pays for, and reports in one brief. The Lead writes the spec, the Writer writes the plan and the tasks, and the Judge reviews the spec, the plan and the tasks; then the Lead builds the plan itself, through delegate tasks, or with the swarm in parallel. Plain `claude` stays normal mode.
 
 Version 0.10.0 ([changelog](docs/changelog.md))
 

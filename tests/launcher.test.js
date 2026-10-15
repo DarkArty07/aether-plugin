@@ -45,6 +45,7 @@ test('the documents record the autonomy: decisions, the README, and no per-stage
   const readme = docs()
   assert.match(page('docs/guide/autonomy.md'), /^### Autonomy$/m)
   assert.ok(page('docs/reference/components.md').includes('| `aether-autonomy` |'))
+  // docs/guide/autonomy.md links this as ../../docs/..., which keeps the full path.
   assert.ok(readme.includes('docs/superpowers/specs/2026-10-09-lead-autonomy-design.md'))
   assert.doesNotMatch(readme, /approves the spec and the plan/)
   assert.doesNotMatch(readme, /the relay of both sides/)
@@ -82,6 +83,7 @@ test('the documents install Aether with Claude Code, and start it with one nativ
     'Never remove the marketplace to change versions',
     'claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort xhigh',
     'claude plugin tag plugins/aether',
+    // docs/changelog.md links this as ../docs/..., which keeps the full path.
     'docs/superpowers/specs/2026-10-09-installable-plugin-design.md',
   ]
   for (const line of lines) assert.ok(readme.includes(line), line)
@@ -108,7 +110,7 @@ test('the guide has its parts in order, each page keeping its own in their order
 
 test('only "Upgrading from 0.6" names the old launcher, installer and data directory', () => {
   const upgrading = section(page('docs/guide/maintenance.md'), '### Upgrading from 0.6')
-  // Until Task 16 lands, the README holds a copy of this section too: each file is read without its own.
+  // Each file is read without its own "Upgrading from 0.6", so the check holds whichever page keeps it.
   const without = (text) => {
     const start = text.indexOf('\n### Upgrading from 0.6\n')
     if (start < 0) return text
@@ -137,9 +139,9 @@ test('the manifest is version 0.10.0, and the documents say so', () => {
   assert.match(manifest.description, /a Judge on Opus reviews them/)
   assert.match(manifest.description, /Lanes run its calls on other coding plans/)
   assert.match(manifest.description, /the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner/)
-  assert.match(README(), /^Version 0\.10\.0: /m)
-  assert.match(README(), /^Version 0\.9\.1: /m)
-  assert.match(README(), /^Version 0\.9: /m)
+  assert.match(page('docs/changelog.md'), /^Version 0\.10\.0: /m)
+  assert.match(page('docs/changelog.md'), /^Version 0\.9\.1: /m)
+  assert.match(page('docs/changelog.md'), /^Version 0\.9: /m)
 })
 
 test('the decisions record the 0.9.1 fixes, A44-A47', () => {
@@ -156,7 +158,9 @@ test('the documents record RADAR: the roadmap, decisions A31-A38, and documents 
   for (const text of ['**Rápido**', '**Autónomo**', '**Delegación**', '**Asequible**', '**Robusto**', '`aether:writer`', '`aether:judge`', 'specs/NNN-<topic>/', 'AETHER_IRREVERSIBLE=enforce', '`harnesses`']) {
     assert.ok(readme.includes(text), text)
   }
-  assert.ok(!section(page('docs/getting-started.md'), '### Requirements').includes('superpowers'))
+  for (const [file, heading] of [['README.md', '## Requirements'], ['docs/getting-started.md', '### Requirements']]) {
+    assert.ok(!section(page(file), heading).includes('superpowers'), `${file} ${heading}`)
+  }
   assert.ok(!readme.includes('aether:designer'))
 })
 

@@ -32,7 +32,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the workflow's own `aether-wt` and `aether-lane` commands itself, without a model (see [Ops without a model](../guide/ops.md)). In any other session it records and runs nothing, and does not offer Aether's agents |
 | `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `--seats` counts the design seats' rounds and who answered them; `price` prices any `claude -p` JSON output |
 | `aether-session-start` | The command that the SessionStart hook runs. It acts only for the Lead: in any other session it prints nothing and writes nothing |
-| SessionStart hook | In an Aether session: marks the session, passes the lanes and seats options to its commands, injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files not written to for 30 days, and points a new Lead to an open autonomous run. In any other session it does nothing |
+| SessionStart hook | In an Aether session: marks the session and passes the lanes, harnesses and seats options to its commands; on startup, clear and compact, but not on resume, it also injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files, lane logs and session markers not written to for 30 days, and points a new Lead to an open autonomous run. In any other session it does nothing |
 
 ## What Aether adds to a normal session
 

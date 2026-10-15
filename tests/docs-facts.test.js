@@ -134,6 +134,23 @@ const parseFrontMatter = (text) => {
   return { title: keys.title, description: keys.description, order: Number(keys.order) }
 }
 
+// The lines inside fenced blocks, the complement of proseLines: the commands a new user copies, and the method's diagram.
+const fencedLines = (text) => {
+  let fence = null
+  const out = []
+  for (const line of text.replace(/\r\n/g, '\n').split('\n')) {
+    if (fence) {
+      const close = line.match(/^\s*(`{3,}|~{3,})\s*$/)
+      if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null
+      else out.push(line)
+      continue
+    }
+    const open = line.match(/^\s*(`{3,}|~{3,})(.*)$/)
+    if (open && !(open[1][0] === '`' && open[2].includes('`'))) fence = { char: open[1][0], length: open[1].length }
+  }
+  return out
+}
+
 const codeSpans = (text) => proseLines(text).flatMap((line) => spansIn(line).map((span) => span.content))
 
 const commandsIn = (text) =>
@@ -430,7 +447,7 @@ test('R1: the README is the way in: at most 160 lines, and its parts in order', 
   }
   assert.ok(section('## Install').includes('claude plugin install aether --marketplace DarkArty07/aether-plugin'), 'Install has the command')
   const start = section('## First start')
-  for (const need of ['claude --agent aether:lead --effort xhigh', 'scripts/aether-lead', '`claude`', 'normal mode', 'repository']) {
+  for (const need of ['claude --agent aether:lead --effort xhigh', 'scripts/aether-lead', '`claude`', 'normal mode', '.claude/settings.local.json']) {
     assert.ok(start.includes(need), `First start has "${need}"`)
   }
   const where = section('## Where to go')
@@ -451,4 +468,27 @@ test('R13: the retrospective links the principles in the purpose page, not in th
   const text = read('docs/aether-retrospective.md')
   assert.ok(text.includes('(purpose.md#principles)'), 'the retrospective links purpose.md#principles')
   assert.ok(!text.includes('README.md#principles'), 'the retrospective no longer links README.md#principles')
+})
+
+test('R11: fenced blocks name known agents, skills and commands too', () => {
+  const known = new Set([
+    ...fs.readdirSync(path.join(PLUGIN, 'agents')).filter((file) => file.endsWith('.md')).map((file) => file.slice(0, -3)),
+    ...fs.readdirSync(path.join(PLUGIN, 'skills')),
+    'run',
+  ])
+  let seen = 0
+  for (const rel of FILES) {
+    for (const line of fencedLines(read(rel))) {
+      for (const name of line.matchAll(/\baether:([a-z][a-z0-9-]*)/g)) {
+        seen++
+        assert.ok(known.has(name[1]), `${rel}: aether:${name[1]} is not an agent, a skill or aether:run`)
+      }
+      const command = line.trim().match(/^(aether-[a-z0-9-]+)(?: |$)/)
+      if (command) {
+        seen++
+        assert.ok(bins().has(command[1]) || command[1] in EXCEPTIONS, `${rel}: ${command[1]} is not a file of plugins/aether/bin/`)
+      }
+    }
+  }
+  assert.ok(seen > 0, 'the fenced blocks name at least one agent or command, so the check reads something')
 })

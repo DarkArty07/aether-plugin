@@ -34,11 +34,13 @@ This page covers what keeping an installed Aether running involves: where it run
 
 ### Data
 
-Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AETHER_DATA_DIR` to use another directory.
+Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/` (under `$CLAUDE_CONFIG_DIR/plugins/data/` when that is set; a session that loads it with `--plugin-dir` uses `aether-inline` there instead). Set `AETHER_DATA_DIR` to use another directory.
 - `usage/<session>/` holds the usage meter's files, kept for 30 days;
 - `runs.jsonl` holds one record per finalized or abandoned run;
 - the lane log is kept for 30 days;
-- `sessions/` marks the Aether sessions, kept for 30 days.
+- `sessions/` marks the Aether sessions, kept for 30 days;
+- `exams/` holds the Examiner's hidden exams, one folder per repository and feature, so uninstalling without `--keep-data` deletes them;
+- `lanes/` also holds the dry marks (`lanes/marks/`) and the kept quota readings (`lanes/quota/`).
 
 The autonomy registry and run states live in the repository itself, under `.aether/autonomy/` in its main checkout, and so does the owner's list of irreversible commands, `.aether/pending.jsonl`.
 

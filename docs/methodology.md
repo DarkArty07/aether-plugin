@@ -18,7 +18,7 @@ This page describes how Aether turns an intent into a reviewed spec, a plan, a b
   - an implementer starts on the Tier its plan task names, Haiku for work that exact tests and interfaces pin down and that touches few files, and climbs the ladder to Sonnet and Opus when its attempts fail;
   - a supervisor on Sonnet reviews every attempt, and grades each criterion from evidence;
   - approved units merge one at a time, and only a test failure that is new undoes a merge;
-  - a unit that fails the same way again stops, and asks for a split;
+  - a unit whose supervisor returns the same findings three times, or that ends twice without its report, stops, and asks for a split or a redesign;
   - a final review, by `aether:reviewer`, on Opus or Sonnet by the run's risk, covers the whole run;
   - the workflow's own `aether-wt` and `aether-lane` commands go to an `ops` agent on Haiku at `low`, which the mod answers without a model request while `ops` is on (`ops`, on by default; see [Ops without a model](guide/ops.md));
   - code deletes every unit worktree and branch as soon as it is no longer used.
@@ -30,7 +30,7 @@ The owner sits above all of them: they confirm the Lead's understanding of what 
 ## The method, end to end
 
 1. **The intent.** The owner states what they want. The Lead explores the context, asks only what the code cannot answer, one question at a time, and writes back its understanding, keeping what the owner said apart from what it assumes. The owner confirms it, for example with «sí, es buena idea», or with permission to work for hours. From then on the Lead works on its own, and records what the intent does not cover as an assumption instead of asking. How far it goes on its own depends on that permission: step 6 says where the work waits for the owner.
-2. **The route.** The Lead chooses how much design the change needs (see [The route by size and risk](#the-route-by-size-and-risk)) and then who builds it, one of the three paths below.
+2. **The route.** The Lead chooses how much design the change needs (see [The route by size and risk](#the-route-by-size-and-risk)). Who builds it, one of the three paths below, is chosen at step 6 once the plan is approved, or at once when the route needs no design.
 3. **The spec.** The Lead writes `specs/NNN-<topic>/spec.md` in Spec Kit's format and commits it. The Judge reviews it.
 4. **The plan and the tasks.** On `approve`, the Writer writes `plan.md` and `tasks.md`, with the Aether fields, and checks them with `aether-plan check`. The Judge reviews them the same way.
 5. **The exam.** With the plan approved, the Examiner writes the hidden exam, when the `seats` choice runs it.
@@ -71,7 +71,7 @@ aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 
 The diagram shows the swarm path. The Judge reviews the spec before the Writer starts, and again the plan and the tasks the Writer produces; a delegate task replaces the `/aether:run` box when the plan has one or two tasks, none of them of Tier opus.
 
-Specs, plans and tasks follow the layout of [GitHub Spec Kit](https://github.com/github/spec-kit), `specs/NNN-<topic>/`, through an Aether preset shipped in the plugin. Spec Kit's own CLI is not required, and neither is superpowers. Plain `claude` stays normal mode. Aether Plugin is the successor to [Aether Agents](https://github.com/DarkArty07/Aether-Agents): the same method, rebuilt on a harness made for software.
+Specs, plans and tasks follow the layout of [GitHub Spec Kit](https://github.com/github/spec-kit), `specs/NNN-<topic>/`, through an Aether preset shipped in the plugin. Spec Kit's own CLI is not required, and neither is superpowers. Plain `claude` stays normal mode, unless a repository makes `aether:lead` its default agent (see [Start](getting-started.md#start)). Aether Plugin is the successor to [Aether Agents](https://github.com/DarkArty07/Aether-Agents): the same method, rebuilt on a harness made for software.
 
 ## The route by size and risk
 
