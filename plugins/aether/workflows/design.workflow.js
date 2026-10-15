@@ -376,7 +376,7 @@ async function awaitSeat(record, { seat, base, flags, text, phase }) {
 // One round of a seat (R2). The seat round answers, or the native agent takes the round with the same message: after
 // exit 3 (with a native agent), 4 or 1, a start that failed, or a round that did not finish. Exit 3 with no native
 // agent (the Examiner, off in the seats option) skips the round. `author` is the model that wrote the document under
-// review, so that no seat takes it; `doc` is the Writer's --doc. Resolves to { answer, text, seat, model, value } (seat:
+// review, so that no seat takes it; `writes` is the Writer's --doc (spec or plan). Resolves to { answer, text, seat, model, value } (seat:
 // 'native' or '<harness> <model>'; value: the external round's), { off: true }, or { failed }.
 async function seatRound({ seat, doc, step, text, schema, phase, author = null, writes = null }) {
   const base = step ? `${doc}: ${seat} ${step}` : `${doc}: ${seat}`
