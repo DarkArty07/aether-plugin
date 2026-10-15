@@ -1,8 +1,10 @@
-# 014: aether-autonomy cannot verify an owner's message sent mid-turn
+# aether-autonomy cannot verify an owner's message sent mid-turn
 
-- **Date:** 2026-10-15
-- **Found by:** the Lead in session 777d41c2, while preparing spec 005.
-- **Status:** open (test phase: recorded, not fixed).
+**Type:** bug (autonomy, verifying the owner's words)
+**Date:** 2026-10-15
+**Found in:** the Lead's session 777d41c2, while preparing spec 005
+**Status:** open
+**GitHub:** [#18](https://github.com/DarkArty07/aether-plugin/issues/18) (private repository)
 
 ## What happened
 
@@ -20,7 +22,7 @@ answered:
 {"verified":false,"reason":"the quote is not in the owner's messages of session 777d41c2-c46b-4e00-88a8-0cf950221da2"}
 ```
 
-## Expected
+## Acceptance
 
 A message the owner sends mid-turn counts as the owner's words, for `aether-autonomy start` and for `grant`.
 
@@ -34,6 +36,6 @@ The most natural way to grant a run cannot start one: typing «I'm going to slee
 - The default ceilings, counted by hand.
 - No irreversible action without the owner's yes.
 
-## Fix idea (not done)
+## Proposals
 
 `lib/voice.js` reads `queued_command` attachments as owner messages too, with their text and timestamp.

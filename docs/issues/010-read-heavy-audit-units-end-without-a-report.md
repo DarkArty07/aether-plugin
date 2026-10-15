@@ -4,6 +4,7 @@
 **Date:** 2026-10-15
 **Found in:** the run that reconciled the documentation (spec 004, run `20261015-011925-90a1`), units 17, 18 and 19
 **Status:** open. Related: issue 003, which this adds a second shape to.
+**GitHub:** [#14](https://github.com/DarkArty07/aether-plugin/issues/14) (private repository)
 
 ## Summary
 

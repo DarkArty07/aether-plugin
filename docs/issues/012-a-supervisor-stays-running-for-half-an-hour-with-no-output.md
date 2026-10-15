@@ -4,6 +4,7 @@
 **Date:** 2026-10-15
 **Found in:** the run of spec 004 (run `20261015-011925-90a1`), `task-2: supervise attempt 1`
 **Status:** open
+**GitHub:** [#16](https://github.com/DarkArty07/aether-plugin/issues/16) (private repository)
 
 ## Summary
 

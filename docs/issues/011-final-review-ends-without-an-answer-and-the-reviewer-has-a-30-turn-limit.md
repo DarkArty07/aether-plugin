@@ -4,6 +4,7 @@
 **Date:** 2026-10-15
 **Found in:** the run of spec 004 (run `20261015-011925-90a1`)
 **Status:** open. Related: issue 005, whose open part is a final review that cannot take a large package.
+**GitHub:** [#15](https://github.com/DarkArty07/aether-plugin/issues/15) (private repository)
 
 ## Summary
 

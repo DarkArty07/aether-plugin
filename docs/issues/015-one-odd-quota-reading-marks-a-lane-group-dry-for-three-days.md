@@ -1,8 +1,10 @@
-# 015: one odd quota reading marks a lane group dry for three days, and healthy readings do not lift it
+# One odd quota reading marks a lane group dry for three days, and healthy readings do not lift it
 
-- **Date:** 2026-10-15
-- **Found by:** the Lead in session 777d41c2, while reading the result of run `20261015-024936-ee31` (spec 005).
-- **Status:** open (test phase: recorded, not fixed).
+**Type:** bug (lanes, dry marks)
+**Date:** 2026-10-15
+**Found in:** the result of run `20261015-024936-ee31` (spec 005), in the Lead's session 777d41c2
+**Status:** open
+**GitHub:** [#19](https://github.com/DarkArty07/aether-plugin/issues/19) (private repository)
 
 ## What happened
 
@@ -25,7 +27,7 @@ The reading after the call is odd. It shows 1 % weekly with a reset three days l
 
 Every reading since then says the group is healthy: at 09:48 UTC, `aether-lane status` showed 97.4 % weekly and 97.9 % for 5 hours. `liveMark` keeps the mark anyway until its `until`, so the group stays out of every run until 2026-10-18 07:22 UTC.
 
-## Expected
+## Acceptance
 
 - A call that failed with `model not found` is `failed`, not `quota`.
 - A reading whose window resets in the past is not a confirmed reading.
@@ -37,9 +39,9 @@ For three days no Gemini lane runs, for any run or seat, while the plan has 97 %
 
 ## Workaround
 
-None used. Deleting `lanes/marks/agy__gemini.json` lifts the mark. That is a file outside the run, so it waits for the owner.
+Deleting `lanes/marks/agy__gemini.json` lifts the mark. The run did not, since the file is outside it. The mark was deleted with the owner's yes on 2026-10-15 at 23:05 UTC. `aether-lane quota agy` then showed the Gemini group usable, with 97.4 % weekly and 100 % for 5 hours.
 
-## Fix idea (not done)
+## Proposals
 
 - `judge()` checks the failure reason before the reading: a model or argument error is `failed`.
 - `markDry` refuses a reading with a window whose `resetsAt` is in the past.
