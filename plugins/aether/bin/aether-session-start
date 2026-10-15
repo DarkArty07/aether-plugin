@@ -39,7 +39,7 @@ function autonomyNote() {
     const run = openRun(mainRoot)
     if (!run) return ''
     const { diary } = runPaths(mainRoot, run.id)
-    return `Autonomous run ${run.id} is open: read ${diary} and run \`aether-autonomy status\` before anything else.`
+    return `Autonomous run ${run.id} is open: load the aether:autonomous-runs skill, then read ${diary} and run \`aether-autonomy status\` before anything else.`
   } catch {
     return ''
   }

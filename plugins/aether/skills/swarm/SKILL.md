@@ -12,7 +12,7 @@ The swarm runs a plan's tasks as units. Each unit:
 
 The whole run is then reviewed as one change. You prepare the run, launch it, and act on its result. You stay the Lead: the run's agents decide inside their unit, the Judge rules on the design, and you decide everything else, as the owner's delegate.
 
-In an autonomous run (see the `using-aether` skill), what this skill says to tell or report to the owner goes to the run's diary, and from there to the brief.
+In an autonomous run (see the `aether:autonomous-runs` skill), what this skill says to tell or report to the owner goes to the run's diary, and from there to the brief.
 
 ## 1. Prepare
 
@@ -39,7 +39,7 @@ Compile also runs the plan's test command once, in the integration worktree, and
 
 ## 3. Launch
 
-In an autonomous run, run `aether-autonomy status` first. When its `stop` is not null, launch nothing, and end the run as the `using-aether` skill says.
+In an autonomous run, run `aether-autonomy status` first. When its `stop` is not null, launch nothing, and end the run as the `aether:autonomous-runs` skill says.
 
 Run the `aether:run` workflow with that JSON as its args, unchanged. The run works in the background, and the progress view shows its phases.
 
