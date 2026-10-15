@@ -1,12 +1,12 @@
 ---
 title: Roadmap
-description: Where Aether stands at version 0.10.0, what waits for the owner, the effort rule per task and what is deferred.
+description: Where Aether stands at version 0.11.0, what waits for the owner, the effort rule per task and what is deferred.
 order: 32
 ---
 
 # Roadmap
 
-**Now:** version 0.10.0 adds quota-aware lanes and the super Lead. What it leaves for the owner: turning Grok on in the lanes, since `harnesses`, `agy` by default, keeps every lane off Grok until the owner accepts the risk of a harness that runs without permission prompts (Grok with `--always-approve`; see Containment in [Lanes](guide/lanes.md#lanes); [handoff](handoff/2026-10-14-quota-lanes-0.10.0.md), section 4). What 0.9 left for the owner has not been done and moved to the later items of the same handoff, because agy does not offer Gemini 4 Argon yet (sections 2 and 3): the first real round of Argon on agy, which checks its name and quota group, and the seats' measurement ([evaluation](evaluations/seats/README.md)).
+**Now:** version 0.11.0 adds `/aether:design`, which runs the design on its own, on top of 0.10.0's quota-aware lanes and super Lead. What it leaves for the owner: turning Grok on in the lanes, since `harnesses`, `agy` by default, keeps every lane off Grok until the owner accepts the risk of a harness that runs without permission prompts (Grok with `--always-approve`; see Containment in [Lanes](guide/lanes.md#lanes); [handoff](handoff/2026-10-14-quota-lanes-0.10.0.md), section 4). What 0.9 left for the owner has not been done and moved to the later items of the same handoff, because agy does not offer Gemini 4 Argon yet (sections 2 and 3): the first real round of Argon on agy, which checks its name and quota group, and the seats' measurement ([evaluation](evaluations/seats/README.md)).
 
 The [RADAR roadmap](roadmap/2026-10-10-radar.md): version 0.8 builds its phases 1, 2a and 2b. What remains waits for the owner: a real call per harness and role on Codex and Cursor, and turning each one on (Grok's one role was checked on 2026-10-13; turning it on is in Now above); a measured design session with the Writer and the Judge against the 0.7 Designer; and a rerun of trial 2 in Aether mode with [its techniques](evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost).
 

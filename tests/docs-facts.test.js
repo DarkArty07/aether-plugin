@@ -9,7 +9,7 @@
 //     `/` or `--v` in it: a path, a marketplace, a tag and a version flag are not a command in position. Its name must be
 //     a file of plugins/aether/bin/, or one of the exceptions below.
 //   - A plugin name is each aether:<name> inside a code span (`aether:<name>` is a pattern, not a name). It must be an
-//     agent of plugins/aether/agents/, a skill of plugins/aether/skills/ or aether:run. Prose outside a code span is not
+//     agent of plugins/aether/agents/, a skill of plugins/aether/skills/ or a workflow of plugins/aether/workflows/. Prose outside a code span is not
 //     read, so a sentence may name what it likes.
 //   - A repository path is the first word of a code span that starts with plugins/, scripts/, tests/, docs/ or specs/ and
 //     has no <, *, {, $ or [ (a pattern or a placeholder). It must exist, but for the exception below.
@@ -333,14 +333,14 @@ test('R11: every aether-* command in position is a file of plugins/aether/bin/ o
   }
 })
 
-test('R11: every aether:<name> is an agent, a skill or aether:run', () => {
+test('R11: every aether:<name> is an agent, a skill or a workflow', () => {
   const known = new Set([
     ...fs.readdirSync(path.join(PLUGIN, 'agents')).filter((file) => file.endsWith('.md')).map((file) => file.replace(/\.md$/, '')),
     ...fs.readdirSync(path.join(PLUGIN, 'skills')),
-    'run',
+    ...fs.readdirSync(path.join(PLUGIN, 'workflows')).filter((file) => file.endsWith('.workflow.js')).map((file) => file.replace(/\.workflow\.js$/, '')),
   ])
   for (const rel of FILES) {
-    for (const name of pluginNamesIn(read(rel))) assert.ok(known.has(name), `${rel} names aether:${name}, which is no agent, skill or aether:run`)
+    for (const name of pluginNamesIn(read(rel))) assert.ok(known.has(name), `${rel} names aether:${name}, which is no agent, skill or workflow`)
   }
 })
 
@@ -474,14 +474,14 @@ test('R11: fenced blocks name known agents, skills and commands too', () => {
   const known = new Set([
     ...fs.readdirSync(path.join(PLUGIN, 'agents')).filter((file) => file.endsWith('.md')).map((file) => file.slice(0, -3)),
     ...fs.readdirSync(path.join(PLUGIN, 'skills')),
-    'run',
+    ...fs.readdirSync(path.join(PLUGIN, 'workflows')).filter((file) => file.endsWith('.workflow.js')).map((file) => file.replace(/\.workflow\.js$/, '')),
   ])
   let seen = 0
   for (const rel of FILES) {
     for (const line of fencedLines(read(rel))) {
       for (const name of line.matchAll(/\baether:([a-z][a-z0-9-]*)/g)) {
         seen++
-        assert.ok(known.has(name[1]), `${rel}: aether:${name[1]} is not an agent, a skill or aether:run`)
+        assert.ok(known.has(name[1]), `${rel}: aether:${name[1]} is not an agent, a skill or a workflow`)
       }
       const command = line.trim().match(/^(aether-[a-z0-9-]+)(?: |$)/)
       if (command) {
@@ -491,4 +491,30 @@ test('R11: fenced blocks name known agents, skills and commands too', () => {
     }
   }
   assert.ok(seen > 0, 'the fenced blocks name at least one agent or command, so the check reads something')
+})
+
+test('R15: the components page names every skill and every workflow of the plugin', () => {
+  const components = read('docs/reference/components.md')
+  for (const skill of fs.readdirSync(path.join(PLUGIN, 'skills'))) {
+    assert.ok(components.includes(`\`${skill}\``) || components.includes(`\`aether:${skill}\``), `components.md names the skill ${skill}`)
+  }
+  for (const file of fs.readdirSync(path.join(PLUGIN, 'workflows')).filter((name) => name.endsWith('.workflow.js'))) {
+    assert.ok(components.includes(`\`/aether:${file.replace('.workflow.js', '')}\``), `components.md names /aether:${file}`)
+  }
+})
+
+test('R15: the pages describe the design flow and the brakes', () => {
+  for (const page of ['docs/getting-started.md', 'docs/methodology.md']) {
+    for (const text of ['/aether:design', 'intent.md']) assert.ok(read(page).includes(text), `${page} names ${text}`)
+  }
+  for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
+})
+
+test('R15: the decisions A50 to A54 are recorded and the changelog opens with 0.11.0 and its spec', () => {
+  const decisions = read('docs/decisions.md')
+  for (let n = 50; n <= 54; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
+  assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
+  const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
+  assert.ok(first.startsWith('Version 0.11.0: ') && first.includes('specs/005-aether-design'), first)
 })

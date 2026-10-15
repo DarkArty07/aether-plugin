@@ -6,11 +6,16 @@ order: 31
 
 # Changelog
 
-## Unreleased
-
-- The `swarm` skill's sentence about the rule that orders the lanes' candidates no longer sends the reader to the README's Lanes section: it names `docs/guide/lanes.md`. The plugin's version stays 0.10.0; the change reaches users with the next release.
-
 ## Status
+
+Version 0.11.0: aether:design ([spec](../specs/005-aether-design/spec.md)), [decisions](../docs/decisions.md) A50–A54. What changed since 0.10.0:
+- **The Lead no longer conducts the design.** `/aether:design` is a workflow that takes the owner's intent card to an approved spec, plan and tasks with no Lead turn in between: the Writer writes, the Judge reviews, the Writer corrects (at most twice per document), `aether-plan check` passes, and the Examiner writes the exam. It ends with one result, `approved`, `clarify`, `dispute` or `failed`. It needs the Workflow tool: with workflows off, the Lead says so and does not design by hand (see [Methodology](methodology.md#the-method-end-to-end)).
+- **The intent card.** After at most five questions, one at a time, the Lead writes `specs/NNN-<topic>/intent.md`: the owner's words, the understanding they confirmed, the criteria each tied to a quote, what is out, and the answers. Only the Lead writes it.
+- **The brakes against over-engineering.** The plan template has a gate and a `Complexity` table (violation, why it is needed, the simpler alternative rejected). Each task says which requirements it serves with `- Serves: R1`, and `aether-plan check` fails a task that serves none. The Judge types every finding `missing`, `extra` or `wrong`, and a choice the card leaves open is marked `[NEEDS CLARIFICATION]` and not guessed. The Writer, the Judge, the Examiner and the bootstrap carry one sentence of scope.
+- **The Writer runs at `high`.** The native `aether:writer` starts at `high`, not `xhigh`, also when an external seat falls back to it; an external Writer keeps its level.
+- **The final review marks what is extra.** `aether:reviewer` flags features nobody asked for and over-engineering, as the supervisor does. The rest of `/aether:run` is as it was.
+- **The bootstrap is split.** The procedure of autonomous runs moved from `using-aether` to the new `autonomous-runs` skill, which the Lead loads when the owner permits work for hours or session start reports an open run. The bootstrap is lighter, and the irreversible classes, the grant registry, the repetition rule and the short brief stay in it. A seat round runs in steps (`aether-lane seat-start`, `seat-wait` and `seat-stop`) that each fit in one ops call.
+- **A fix to a sentence.** The `swarm` skill's sentence about the rule that orders the lanes' candidates no longer sends the reader to the README's Lanes section: it names `docs/guide/lanes.md`.
 
 Version 0.10.0: quota-aware lanes ([spec](../specs/002-quota-aware-lanes/spec.md)) and the super Lead ([spec](../specs/003-super-lead/spec.md)), [decisions](../docs/decisions.md) A48–A49. What changed since 0.9.1:
 - **The quota most at risk goes first.** Every call a lane can take has a list of candidates, ordered by the share left of each group's longest window divided by the hours to its reset. A start that finds its group dry passes the call to the next candidate, and the call runs native only when none is left (see [Lanes](guide/lanes.md#lanes)).
