@@ -39,7 +39,9 @@ To install from a clone of this repository instead of GitHub, pass the clone's p
 
 ### Check that it worked
 
-None of these checks needs a model, so they cost nothing.
+None of these checks needs a model.
+
+To try the install without touching your own Claude Code configuration, run the install above and each command below with `CLAUDE_CONFIG_DIR` pointing at the same empty folder. A command run without it reads your own configuration, and one run with another folder finds nothing installed.
 
 Outside a session, in any shell, ask Claude Code which plugins are installed:
 
@@ -47,15 +49,15 @@ Outside a session, in any shell, ask Claude Code which plugins are installed:
 claude plugin list
 ```
 
-`aether@aether-plugin` is listed with its version and `Status: ✔ enabled`.
+`aether@aether-plugin` is listed with its version, and its `Status:` is `enabled`.
 
-Then ask which options the plugin has:
+Then, in the same shell, ask which options the plugin has:
 
 ```
 claude plugin configure aether@aether-plugin
 ```
 
-It shows the plugin's four options, `lanes`, `harnesses`, `ops` and `seats`, and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected. If you would rather try the install without touching your own Claude Code configuration, run these commands with `CLAUDE_CONFIG_DIR` pointing at an empty folder.
+It shows the plugin's four options, `lanes`, `harnesses`, `ops` and `seats`, and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
 
 Last, check that the plan format Aether builds from reads correctly. Save this two-task plan as `tasks.md` anywhere. It is what the Writer produces for a plan, shortened: every task has the Aether fields, and there is an `## Aether Execution` section.
 
@@ -105,7 +107,7 @@ It prints one line of JSON and exits 0 when the plan is sound. For this plan it 
 
 `waves` shows the swarm would run both tasks at the same time, because neither depends on the other and they own different files.
 
-The commands of the plugin's `bin/` folder are on the `PATH` of the Bash tool in a session that has the plugin, so inside a session you type `aether-plan check tasks.md`. Outside one, run the file by its path: in a clone of this repository, `node plugins/aether/bin/aether-plan check tasks.md`.
+The commands of the plugin's `bin/` folder are on the `PATH` of the Bash tool in a session that has the plugin, so inside a session you type `aether-plan check tasks.md`. In a shell outside a session they are not on the `PATH`, and you run the file by its path. In a clone of this repository that is `node plugins/aether/bin/aether-plan check tasks.md`. If you installed from GitHub, the plugin's copy is in the Claude config dir, and the path is `node ~/.claude/plugins/cache/aether-plugin/aether/<version>/bin/aether-plan check tasks.md`, where `<version>` is the one `claude plugin list` shows. If you set `CLAUDE_CONFIG_DIR`, write that folder in place of `~/.claude`. If you installed from a clone's path, the plugin loads from the clone itself, so the clone's path above is the one.
 
 ### Start
 
@@ -142,7 +144,7 @@ Tell the Lead what you want. What it does with the request depends on its size, 
 1. **It writes back its understanding.** The Lead explores the context, asks you only what the code cannot answer, one question at a time, and writes back what it understood, keeping what you said apart from what it assumes. It waits for your confirmation, for example «sí, es buena idea». A correction that leaves your intent as it was goes into the note; one that changes it gets a new note, written back once more. (`using-aether`, «Understanding the intent».)
 2. **It tells you what is worth knowing.** Before a spec and a plan it names a better option if it sees one, the scope, and the estimated cost and time from the runs finished so far, or says there is no history yet. (`using-aether`, «The route by size and risk».)
 3. **It writes the spec.** The Lead writes `specs/NNN-<topic>/spec.md` and commits it. A small or reversible change needs no document: the Lead does it itself, or hands it to one delegate. (`using-aether`, «The route by size and risk» and «Writing and judging».)
-4. **The Judge reviews the spec.** The Judge, on Opus and read-only, rules `approve`, `revise` or `reject`. With the `seats` option, `balanced` by default, and the lanes on, a stronger model of another harness may take the seat; otherwise the native Judge does (see [Design seats](guide/design-seats.md#design-seats)). A document gets at most two revisions; after that the Lead puts both positions on your list instead of overriding the Judge. (`using-aether`, «Writing and judging» and «The design seats».)
+4. **The Judge reviews the spec.** The Judge, on Opus and read-only, rules `approve`, `revise` or `reject`. With `seats`, `balanced` by default, and the lanes on, a stronger model of another harness may take the seat; otherwise the native Judge does (see [Design seats](guide/design-seats.md#design-seats)). A document gets at most two revisions; after that the Lead puts both positions on your list instead of overriding the Judge. (`using-aether`, «Writing and judging» and «The design seats».)
 5. **The Writer writes the plan and the tasks, and the Judge reviews them.** The plan and the tasks follow Spec Kit's layout, with the Aether fields on every task, and the Writer checks them with `aether-plan check`. (`using-aether`, «Writing and judging» and «Plans».)
 6. **The Lead chooses how to build it, and says why.** Itself, for a very bounded change; a delegate task, one subagent on a model the Lead names with its reason, for real but bounded work and for a plan of one or two tasks; or the swarm, `/aether:run`, for a plan of three or more tasks or one with a task on Opus. (`using-aether`, «The three paths».)
 7. **It stops at the plan with a short brief.** Without your permission to work for hours, the Lead stops here. The brief opens with what waits for your yes, and recommends how to build it: itself, a delegate task on a model it names, or the swarm. Your yes starts the build. (`using-aether`, «Autonomous runs» and «The execution method».)
@@ -186,7 +188,7 @@ The full contract, with the grants and the guard, is in [Autonomy](guide/autonom
 
 ## Read the brief
 
-Every brief opens with two sections, in this order, and the rest is for reference.
+The brief of a run has a fixed order. The first line under its title is the result: `**Resultado:**` with `cumplida`, `parcial` or `no terminada`, and the ceiling that was reached, if any. Then come the two sections that ask something of you, «Espera tu sí» and «Supuestos», then the criteria and the RADAR lines, and last the sections of reference. Read «Espera tu sí» first.
 
 **«Espera tu sí»** is your list: what only you can decide, and the irreversible actions nobody authorized. Each item has the same six parts:
 
@@ -196,7 +198,7 @@ Read it as: what the Lead wants to do, which class of irreversible action it is,
 
 **«Supuestos»** are what your intent did not cover and the Lead decided to assume: the assumption, its basis, and whether it can be reversed. They are ordered by how likely you are to veto them, the most likely first, so read from the top and stop when you agree with the rest.
 
-Then comes the result (`cumplida`, `parcial` or `no terminada`, with the ceiling that was reached, if any), the criteria with their evidence, and the **RADAR** lines, one for each of Aether's five goals:
+After them come «Criterios», the criteria with their evidence, and the **RADAR** lines, one for each of Aether's five goals:
 - **Rápido:** the time, the retries and the climbs to a stronger model;
 - **Autónomo:** how many times the Lead interrupted you, and why;
 - **Delegación:** the calls and tokens run on other harnesses, and the quota left;
@@ -216,6 +218,6 @@ The most common ones, each with its remedy. The full list is in [Troubleshooting
 
 - **The swarm does not start, and the session has no `Workflow` tool.** The swarm is a dynamic workflow, and workflows are off. Turn on Dynamic workflows in `/config` and start a new session. Meanwhile the Lead can build the plan task by task, each as a delegate task.
 - **The session stops and waits, and nothing is running.** A permission prompt of Claude Code is waiting for you, and a run waits at it like at a question. Answer it, and start the next session with a permission mode or allow rules that cover the tools, or with `scripts/aether-lead`.
-- **A command was refused, or it is on your list.** With `AETHER_IRREVERSIBLE=enforce`, aether-guard refuses a push, a merge to `main`, a publish, a deploy, a forced delete or a credentials command that no grant covers, and appends it to `.aether/pending.jsonl`. It reaches you in the brief's «Espera tu sí»; answer it there. With `AETHER_IRREVERSIBLE=log` the command ran and was only recorded.
+- **A command was refused, or it is on your list.** With `AETHER_IRREVERSIBLE=enforce`, aether-guard refuses a `git push`, a `gh pr merge`, a publish, a deploy, a forced delete or a credentials command that no grant covers, and appends it to `.aether/pending.jsonl`. It reaches you in the brief's «Espera tu sí»; answer it there. With `AETHER_IRREVERSIBLE=log` the command ran and was only recorded. A local `git merge` is not recorded either way: git undoes it, and the push that would publish it is recorded.
 - **`aether-plan check` prints `"ok":false`.** Its `errors` name the task and the rule: a missing `**Aether:**` block, a missing `## Aether Execution` section or `Test command`, or two tasks that run at the same time and own the same file. Fix what it names, and run it again.
 - **Nothing happens that looks like Aether.** The session was started with plain `claude`, where the plugin is dormant: its hooks do nothing and its agents are not offered. Start it with `claude --agent aether:lead --effort xhigh`, or with `scripts/aether-lead`.
