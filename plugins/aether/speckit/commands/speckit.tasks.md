@@ -37,6 +37,7 @@ Never stop to ask. Where a choice is open, pick a reasonable default and write i
    - Area: backend
    - Owns: `src/api/**`, `tests/api.test.js`
    - Depends on: none
+   - Serves: R1, R3
    ```
    The fields are:
    - **Tier:** `haiku`, `sonnet` or `opus`, then an optional effort (`low`, `medium`, `high`, `xhigh` or `max`), then " — " and the reason. Use `haiku` for work that exact tests and interfaces pin down, and that touches few files. Use `sonnet` for frontend and UI work, for integration across several files, or for behavior the tests cannot pin down exactly. Use `opus` for security and auth, data migrations or destructive operations, concurrency, and core architecture. The effort defaults to `xhigh`. Name a lower effort only where the tests pin the work down completely, such as `haiku high`. Sonnet and Opus never run below `high`. Name `max` only with a reason.
@@ -44,6 +45,7 @@ Never stop to ask. Where a choice is open, pick a reasonable default and write i
    - **Area:** a lowercase slug of letters, digits and dashes. Each area has its own supervisor.
    - **Owns:** the paths or globs (`*`, `**`, `?`) that the task may change, separated by commas. Use relative paths only.
    - **Depends on:** `none`, or one line per dependency in the form `- Depends on: Task N — reason`. Every dependency needs its reason.
+   - **Serves:** the requirements of the spec that the task builds, such as `- Serves: R1, R3`. Every task serves at least one requirement of the spec, and every requirement has a task. aether-plan check fails on a task that serves none, and on one that names a requirement the spec does not have. It warns about a requirement that no task serves.
 
    The fields are one list with no blank line between them. A blank line ends the block.
 
