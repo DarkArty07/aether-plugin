@@ -89,7 +89,7 @@ function seat(cwd, args, env, input = '') {
 
 const JUDGE_ANSWER = {
   verdict: 'revise',
-  findings: [{ severity: 'major', title: 'Task 3 is too large', evidence: '`Owns: src/**`', fix: 'split it by module' }],
+  findings: [{ severity: 'major', type: 'missing', title: 'Task 3 is too large', evidence: '`Owns: src/**`', fix: 'split it by module' }],
   openQuestions: ['Is the API public?'],
 }
 
@@ -108,7 +108,7 @@ test('an external Judge reviews the commit in a disposable worktree, and its ans
   assert.equal(r.json.model, 'gemini-4-argon')
   assert.deepEqual(r.json.result, JUDGE_ANSWER)
   assert.ok(
-    r.json.answer.startsWith('## Verdict\nrevise\n## Findings\n1. [major] Task 3 is too large — `Owns: src/**` — split it by module\n## Open questions\n- Is the API public?\n- Lane: agy gemini-4-argon-high, seat '),
+    r.json.answer.startsWith('## Verdict\nrevise\n## Findings\n1. [major] [missing] Task 3 is too large — `Owns: src/**` — split it by module\n## Open questions\n- Is the API public?\n- Lane: agy gemini-4-argon-high, seat '),
     r.json.answer,
   )
   assert.match(r.json.lane, /\$\? at list price; Gemini Models used 0\.0 % of the 5 h window and 0\.0 % of the weekly one$/)
