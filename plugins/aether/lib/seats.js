@@ -288,11 +288,23 @@ function readTextOrEmpty(file) {
 
 // ---- What a round leaves ----
 
-// The drop in a window's remaining fraction, in percent, or ? when it cannot be measured.
+// Whether the reset time `later` is not before the reset time `earlier`; false when either is not a time.
+function notBefore(later, earlier) {
+  const a = Date.parse(later)
+  const b = Date.parse(earlier)
+  return Number.isFinite(a) && Number.isFinite(b) && a >= b
+}
+
+// The drop in a window's remaining fraction, in percent, or ? when it cannot be measured. Two readings are of one
+// window when they share its reset time. agy gives a window with nothing used no reset time of its own, only the time
+// of the read plus the window's length, so a window that was full before the round is the same one after it when its
+// reset time did not move back.
 function windowUsed(before, after, window) {
   const a = before?.windows?.[window]
   const b = after?.windows?.[window]
-  if (!a || !b || typeof a.remaining !== 'number' || typeof b.remaining !== 'number' || a.resetsAt !== b.resetsAt) return '?'
+  if (!a || !b || typeof a.remaining !== 'number' || typeof b.remaining !== 'number') return '?'
+  const sameWindow = a.resetsAt === b.resetsAt || (a.remaining === 1 && notBefore(b.resetsAt, a.resetsAt))
+  if (!sameWindow) return '?'
   return (Math.max(0, a.remaining - b.remaining) * 100).toFixed(1)
 }
 
@@ -678,4 +690,4 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   })
 }
 
-module.exports = { NATIVE, EXTERNAL_EFFORT, EXAM_DIR, USAGE, authorModel, chooseSeat, changedPaths, judgeText, seatPrompt, seatCommand }
+module.exports = { NATIVE, EXTERNAL_EFFORT, EXAM_DIR, USAGE, authorModel, chooseSeat, changedPaths, judgeText, windowUsed, seatPrompt, seatCommand }

@@ -82,3 +82,17 @@ test("Gemini 3.8 Flash has OpenRouter's prices, and agy's model ids price as the
   assert.equal(ratesFor(prices, 'claude-sonnet-5-5-medium').family, 'sonnet')
   close(priceEntry({ model: 'gemini-3.8-flash-high', input: 1e6, output: 1e6, cacheRead: 1e6, cacheWrite: 0, agent: 'lane' }, prices), 0.75 + 3.75 + 0.075)
 })
+
+test("Gemini 4 Argon has OpenRouter's prices, and agy's levels of it price as the model", () => {
+  assert.deepEqual(prices.models['gemini-4-argon'], {
+    ids: ['gemini-4-argon'],
+    input: 2,
+    output: 10,
+    cacheRead: 0.1,
+    cacheWrite5m: 0.1875,
+    cacheWrite1h: 0.1875,
+  })
+  assert.equal(prices.sources['gemini-4-argon'], 'https://openrouter.ai/api/v1/models/google/gemini-4-argon/endpoints')
+  assert.equal(ratesFor(prices, 'gemini-4-argon-high').family, 'gemini-4-argon')
+  close(priceEntry({ model: 'gemini-4-argon-high', input: 1e6, output: 1e6, cacheRead: 1e6, cacheWrite: 0, agent: 'lane' }, prices), 2 + 10 + 0.1)
+})
