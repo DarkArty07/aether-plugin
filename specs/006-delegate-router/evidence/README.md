@@ -63,11 +63,11 @@ Un nivel es la capacidad medida por Artificial Analysis (AA) para un modelo a un
 
 | Grupo | Ventanas | Reinicia | Estado |
 |---|---|---|---|
-| agy · Gemini (Flash, Argon) | 5 h: 100 %, semanal: 100 % | 5 h en 5 h | **fuera por una marca seca vieja** |
+| agy · Gemini (Flash, Argon) | 5 h: 100 %, semanal: 100 % (lectura) | 5 h en 5 h | **fuera: marca seca, con razón** (las llamadas reales fueron rechazadas) |
 | agy · Claude y GPT (Sonnet, Opus) | semanal: **0 %**, 5 h: ilegible | en 1.1 h | sin cuota |
 | grok · Grok plan | semanal: 95 % | en 29.6 h | usable, prioridad 0.032 |
 
-- **Hallazgo:** una marca seca del 2026-10-14 (confirmada, hasta 2026-10-17 22:08 UTC), en el directorio de datos de desarrollo (`aether-inline`), deja fuera al grupo Gemini de agy aunque la lectura fresca dice 100 % en las dos ventanas: unas 43 horas de cuota libre sin usar. Nada levanta una marca por una lectura posterior con saldo. La release instalada no tiene marcas. Es candidato a issue (`docs/issues/018-…`).
+- **Hallazgo (corregido):** una marca seca del 2026-10-14 (confirmada, hasta 2026-10-17 22:08 UTC, en el directorio de datos de desarrollo `aether-inline`) se tomó primero por obsoleta, porque la lectura fresca decía 100 % en las dos ventanas. **Era al revés: la lectura miente.** Tres rondas reales del Judge del diseño (22:23, 22:25 y 22:27, con la release instalada y sin marca en su directorio de datos) llamaron a agy `gemini-4-argon` y las tres fueron rechazadas con `exit 3: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 163h22m27s.` (después, 163h20m6s y 163h18m24s), mientras `aether-lane quota agy` marcaba 98–99 % libre en las ventanas de 5 h y semanal. `/usage` muestra el grupo; el rechazo habla de un límite individual que `/usage` no muestra, y su reinicio (≈6.8 días) no coincide con el de la lectura. Nadie reconoce ese mensaje: las llamadas de lane del swarm (`lane-calls.js`) juzgan la cuota por la lectura posterior o por un motivo que empiece con «quota: », y los asientos de diseño (`seat-calls.js`) no dejan marca. Las tres rondas reintentaron un grupo agotado y el directorio de datos de la release instalada sigue sin marcas. **La verdad sobre un grupo de agy es el rechazo de la llamada, y trae su propio reinicio.**
 - Con el pool agy + grok, solo el nivel Haiku tiene dos grupos candidatos; Sonnet y Opus dependen del grupo Claude de agy (y de Argon, que hoy no es candidato fuera de los asientos de diseño).
 
 ## 6. Otros usos medidos (Propuestas, fuera del primer diseño)
@@ -79,9 +79,9 @@ Un nivel es la capacidad medida por Artificial Analysis (AA) para un modelo a un
 ## 7. Lo que falta o se espera ajustar
 
 1. `aether-lane start` exige un `<run>`: un delegado en un lane necesita una llamada sin run (de solo lectura primero).
-2. La marca seca obsoleta (sección 5).
+2. El rechazo explícito de cuota de agy, que nadie reconoce (sección 5): el router lo necesita para no reintentar un grupo agotado (R22b del spec).
 3. `levels` de `config/lanes.json` pasa de traducir esfuerzos por nombre a hacerlo por puntaje de AA, y la tabla de reemplazos por eje.
-4. Haiku low como decisor: solo se verificó que la llamada sale y vuelve; **su precisión no está medida**.
+4. Haiku low como decisor: solo se verificó que la llamada sale y vuelve; **su precisión no está medida** y su latencia tampoco en esta máquina: Artificial Analysis mide 3.84 s al primer token con esfuerzo bajo (6.69 s con medio).
 5. Lanzamientos en paralelo, `isolation: "worktree"` y un modelo real (sección 1).
 6. Fixtures de briefs reales con sus hechos esperados y una regresión de rubric (el replay las usa como base).
 7. Una opción del plugin para el proveedor del decisor y la llave, y su fila en `docs/guide/options.md`.
