@@ -1,0 +1,303 @@
+'use strict'
+
+// A read-only delegate of the Lead on agy or grok, outside a run: one call of the harness's CLI, with the model and
+// the native effort of the rung the router chose, in a disposable worktree of the current commit. It is judged from
+// outside, as a design seat's round is (lib/seats.js): anything the delegate changed undoes its answer, and the
+// worktree is removed whatever happens. This module writes no log entry and no quota mark: the bin does.
+
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { spawn } = require('node:child_process')
+const { git, repoPaths } = require('./git.js')
+const run = require('./run.js')
+const lanes = require('./lanes.js')
+const { readGroups } = require('./lane-readings.js')
+const { createAdapter } = require('./harness/index.js')
+const { WORKDIR_RULE } = require('./lane-calls.js')
+
+// The harnesses a delegate may run on (R19): codex and cursor are not among them.
+const HARNESSES = ['agy', 'grok']
+const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+const DEFAULT_TIMEOUT_SECONDS = 1200
+const KILL_GRACE_SECONDS = 60
+const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP']
+// What a delegate may leave in its worktree without breaking its rule: the temporary files of its tools.
+const TMP_DIR = '.aether-tmp/'
+
+const DELEGATE_SCHEMA = { type: 'object', required: ['answer'], additionalProperties: false, properties: { answer: { type: 'string' } } }
+
+const DELEGATE_NOTE = [
+  '## You run as a read-only delegate',
+  '',
+  'The current directory is a disposable copy of the repository. Your work is read-only: read files and run read-only commands such as `git log` or `grep`, but never change, create or delete a file, and never commit; any change undoes your answer.',
+  WORKDIR_RULE,
+  'Answer with one JSON object that matches this schema, and nothing else: {"answer": "<string>"}, where answer holds everything you found.',
+].join('\n')
+
+const NO_USAGE = { input: 0, output: 0, thinking: 0, cacheRead: 0 }
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasBalance(window) {
+  return isObject(window) && typeof window.remaining === 'number' && Number.isFinite(window.remaining)
+}
+
+// What each window lost between two readings of one group: only windows with a balance in both readings and the
+// same reset time, since a window that reset in between was refilled and its drop measures nothing.
+function quotaSpent(before, after) {
+  if (!isObject(before?.windows) || !isObject(after?.windows)) return []
+  const spent = []
+  for (const [window, a] of Object.entries(before.windows)) {
+    const b = after.windows[window]
+    if (!hasBalance(a) || !hasBalance(b) || a.resetsAt !== b.resetsAt) continue
+    spent.push({ window, fraction: Math.round(Math.max(0, a.remaining - b.remaining) * 1e4) / 1e4 })
+  }
+  return spent
+}
+
+// The CLI's argv for a rung. The rung's effort is the harness's native name and reaches the CLI as it is: the
+// levels of the lane table, which translate the swarm's efforts, are never read (R16).
+function delegateArgv(adapter, rung, { schemaFile, timeoutSeconds, prompt }) {
+  return adapter.argv({ model: rung.model, level: rung.effort, schemaFile, timeoutSeconds, prompt })
+}
+
+function answerSection() {
+  return ['## Your answer', 'End your answer with one JSON object that matches this schema, and nothing after it:', `\`\`\`json\n${JSON.stringify(DELEGATE_SCHEMA, null, 2)}\n\`\`\``].join('\n\n')
+}
+
+function delegatePrompt(adapter, task) {
+  const prompt = `${DELEGATE_NOTE}\n\nTask: ${task.description}\n\n${task.prompt}`
+  return adapter.schemaInPrompt === true ? `${prompt}\n\n${answerSection()}` : prompt
+}
+
+// ---- The worktree ----
+
+function nulList(args, cwd) {
+  return git(args, cwd, { raw: true })
+    .stdout.split('\0')
+    .filter((entry) => entry !== '')
+}
+
+// What the delegate changed in its worktree: files committed since start, and files changed or new (not ignored)
+// outside .aether-tmp/; and whether HEAD moved.
+function worktreeChanges(worktree, start) {
+  const head = git(['rev-parse', 'HEAD'], worktree).stdout
+  const files = new Set()
+  if (head !== start) for (const file of nulList(['diff', '--name-only', '--no-renames', '-z', start, head], worktree)) files.add(file)
+  for (const entry of nulList(['status', '--porcelain', '-z', '--untracked-files=all', '--no-renames'], worktree)) {
+    const file = entry.slice(3)
+    if (!file.startsWith(TMP_DIR)) files.add(file)
+  }
+  return { files: [...files].sort(), head, moved: head !== start }
+}
+
+function removeWorktree(mainRoot, worktree) {
+  git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true })
+  fs.rmSync(worktree, { recursive: true, force: true })
+  git(['worktree', 'prune'], mainRoot, { allowFail: true })
+}
+
+// ---- Running the CLI ----
+
+function killGroup(pid) {
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    // The group is already empty.
+  }
+}
+
+// Runs argv in cwd to its end, in a group of its own, killing the group when it outlives the timeout and its grace.
+// Resolves to its exit code.
+function runCli(argv, { cwd, marker, stdoutFile, stderrFile, timeoutSeconds, onSpawn }) {
+  const out = fs.openSync(stdoutFile, 'w')
+  const err = fs.openSync(stderrFile, 'w')
+  let child
+  try {
+    child = spawn(argv[0], argv.slice(1), { cwd, detached: true, stdio: ['ignore', out, err], env: lanes.laneEnv(process.env, marker) })
+  } finally {
+    fs.closeSync(out)
+    fs.closeSync(err)
+  }
+  return new Promise((resolve, reject) => {
+    let timer = null
+    child.once('error', (error) => {
+      clearTimeout(timer)
+      reject(new Error(`${argv[0]} did not start: ${error.message}`))
+    })
+    child.once('spawn', () => {
+      onSpawn(child.pid)
+      timer = setTimeout(() => killGroup(child.pid), (timeoutSeconds + KILL_GRACE_SECONDS) * 1000)
+    })
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer)
+      resolve(code ?? 128 + (os.constants.signals[signal] || 0))
+    })
+  })
+}
+
+function readTextOrEmpty(file) {
+  try {
+    return fs.readFileSync(file, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+// ---- A delegate ----
+
+function usageOf(usage) {
+  if (!isObject(usage)) return { ...NO_USAGE }
+  const count = (key) => (Number.isFinite(usage[key]) ? usage[key] : 0)
+  return { input: count('input'), output: count('output'), thinking: count('thinking'), cacheRead: count('cacheRead') }
+}
+
+// One read-only delegate of the task on the rung, in a disposable worktree of cwd's HEAD. Resolves to its Outcome;
+// throws only for an id that is not a plain name.
+async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adapter = null, now = Date.now }) {
+  if (typeof id !== 'string' || !ID.test(id)) throw new Error(`the delegate id must be a plain name (${ID}), not ${JSON.stringify(id)}`)
+  const startedAt = now()
+  let modelArg = rung.model
+  const settings = config?.harnesses?.[harness]
+  const outcome = (status, fields = {}) => ({
+    status,
+    text: '',
+    detail: '',
+    harness,
+    modelArg,
+    durationMs: now() - startedAt,
+    usage: { ...NO_USAGE },
+    quotaBefore: null,
+    quotaAfter: null,
+    quotaSpent: [],
+    ...fields,
+  })
+
+  // 1. Nothing is launched for a harness that is not a delegate's, not in the table, without the model, or not installed.
+  if (!HARNESSES.includes(harness)) return outcome('unavailable', { detail: `${harness} cannot run a delegate: only ${HARNESSES.join(' and ')} can` })
+  if (!isObject(settings)) return outcome('unavailable', { detail: `${harness} is not in the lane table` })
+  if (!isObject(settings.models) || !Object.hasOwn(settings.models, rung.model)) return outcome('unavailable', { detail: `${harness} has no model ${rung.model}` })
+  let cli = adapter
+  try {
+    cli ??= createAdapter(harness, settings)
+  } catch (err) {
+    return outcome('unavailable', { detail: err.message })
+  }
+  if (typeof cli.modelArg === 'function') modelArg = cli.modelArg({ model: rung.model, level: rung.effort })
+  if (!cli.installed()) return outcome('unavailable', { detail: `${harness} is not installed` })
+
+  // 2. The quota before, served from the saved reading while it holds.
+  let quotaBefore = null
+  try {
+    quotaBefore = readGroups(cli, { harness, settings, dataDir, now: now() }).groups[rung.group] ?? null
+  } catch {
+    // An unreadable quota leaves no reading, which is not usable.
+  }
+  if (!lanes.usable(quotaBefore, config.reserve)) {
+    const detail = quotaBefore === null ? `the quota of ${harness} group ${rung.group} cannot be read` : `${harness} group ${rung.group} is at or under the reserve`
+    return outcome('quota', { detail, quotaBefore })
+  }
+
+  // 3. The disposable worktree, the schema and the prompt.
+  let paths
+  try {
+    paths = repoPaths(cwd)
+  } catch (err) {
+    return outcome('failed', { detail: `delegate: ${err.message}`, quotaBefore })
+  }
+  const { worktree: top, mainRoot } = paths
+  const dir = path.join(run.aetherDir(mainRoot), 'delegates', id)
+  const worktree = path.join(dir, 'wt')
+  const marker = `delegate/${id}`
+  fs.mkdirSync(path.dirname(dir), { recursive: true })
+  try {
+    fs.mkdirSync(dir)
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err
+    return outcome('failed', { detail: `${dir} already exists: another delegate has the id ${id}`, quotaBefore })
+  }
+
+  let child = null
+  const cleanUp = () => {
+    if (child !== null) killGroup(child)
+    if (child !== null) lanes.killMarked(marker)
+    removeWorktree(mainRoot, worktree)
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+  const onSignal = (signal) => {
+    cleanUp()
+    process.exit(128 + (os.constants.signals[signal] || 15))
+  }
+  for (const signal of SIGNALS) process.on(signal, onSignal)
+
+  let result
+  let usage = { ...NO_USAGE }
+  let quotaAfter = null
+  try {
+    const start = git(['rev-parse', 'HEAD'], top).stdout
+    git(['worktree', 'add', '-q', '--detach', worktree, start], top)
+    const schemaFile = path.join(dir, 'schema.json')
+    fs.writeFileSync(schemaFile, `${JSON.stringify(DELEGATE_SCHEMA, null, 2)}\n`)
+    const timeoutSeconds = settings.timeouts?.reviewer ?? DEFAULT_TIMEOUT_SECONDS
+    const argv = delegateArgv(cli, rung, { schemaFile, timeoutSeconds, prompt: delegatePrompt(cli, task) })
+
+    // 4. The CLI, in its own process group, with an environment clean of credentials.
+    const stdoutFile = path.join(dir, 'stdout')
+    const stderrFile = path.join(dir, 'stderr')
+    const exitCode = await runCli(argv, {
+      cwd: worktree,
+      marker,
+      stdoutFile,
+      stderrFile,
+      timeoutSeconds,
+      onSpawn: (pid) => {
+        child = pid
+      },
+    })
+    killGroup(child)
+    lanes.killMarked(marker)
+
+    // 5. The quota after, read anew so the saved reading is renewed; then the verdict.
+    let quotaRead = false
+    try {
+      quotaAfter = readGroups(cli, { harness, settings, dataDir, now: now(), fresh: true }).groups[rung.group] ?? null
+      quotaRead = true
+    } catch {
+      // An unreadable quota is an infrastructure failure, not a verdict on the quota.
+    }
+    const parsed = cli.parse({ stdout: readTextOrEmpty(stdoutFile), stderr: readTextOrEmpty(stderrFile), exitCode }, { required: DELEGATE_SCHEMA.required })
+    usage = usageOf(parsed.usage)
+    const changes = worktreeChanges(worktree, start)
+    if (changes.files.length > 0 || changes.moved) {
+      const what = changes.files.length > 0 ? `changed ${changes.files.join(', ')}` : `moved HEAD from ${start} to ${changes.head}`
+      result = { status: 'violation', detail: `the read-only delegate ${what}` }
+    } else if (!parsed.clean) {
+      const quotaGone = (quotaRead && !lanes.usable(quotaAfter, config.reserve)) || String(parsed.reason).startsWith('quota: ')
+      result = { status: quotaGone ? 'quota' : 'failed', detail: parsed.reason }
+    } else if (typeof parsed.structured?.answer !== 'string') {
+      result = { status: 'failed', detail: 'invalid answer: answer is not a string' }
+    } else {
+      result = { status: 'ok', text: parsed.structured.answer }
+    }
+  } catch (err) {
+    result = { status: 'failed', detail: `delegate: ${err.message}` }
+  } finally {
+    // 6. Always: no process, no worktree and no temporary file outlives the delegate.
+    cleanUp()
+    for (const signal of SIGNALS) process.removeListener(signal, onSignal)
+  }
+
+  return outcome(result.status, {
+    text: result.status === 'ok' ? result.text : '',
+    detail: result.detail ?? '',
+    usage,
+    quotaBefore,
+    quotaAfter,
+    quotaSpent: quotaSpent(quotaBefore, quotaAfter),
+  })
+}
+
+module.exports = { DELEGATE_SCHEMA, DELEGATE_NOTE, quotaSpent, delegateArgv, runDelegate }
