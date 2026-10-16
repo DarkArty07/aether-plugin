@@ -40,4 +40,4 @@ A plugin cannot set these, so you do:
 | superpowers off in Aether sessions, if you keep it for other work | `--settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'` in the start command |
 | Irreversible commands refused, not only recorded | `AETHER_IRREVERSIBLE=enforce` in the shell that starts Claude Code; `scripts/aether-lead` sets it |
 | Lanes on Codex, Grok or Cursor | Codex and Cursor: their models in your copy of the lane table, `AETHER_LANES_CONFIG` set to that copy, and the `harnesses` option. Grok: its model, `grok-4.7`, is already in the lane table, so it needs only `grok` in the `harnesses` option (see [Lanes](lanes.md#lanes)) |
-| Gemini 4 Argon in the design seats | Google AI Ultra on agy, and `lanes` on (see [Design seats](design-seats.md#design-seats)) |
+| Gemini 4 Argon in the design seats | agy 1.3.6 or later, which lists it, and `lanes` on (see [Design seats](design-seats.md#design-seats)) |

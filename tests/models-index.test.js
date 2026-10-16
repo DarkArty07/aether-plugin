@@ -795,7 +795,7 @@ test('the committed index has the native harness: aliases, five efforts, no lane
   assert.deepEqual([claude.listedBy, claude.effortVia, claude.efforts, claude.capturedAt], ['claude --help', 'flag', FIVE, '2026-10-14'])
   assert.deepEqual(claude.models.map((listed) => [listed.id, listed.alias]), [['claude-haiku-5-5', 'haiku'], ['claude-sonnet-5-5', 'sonnet'], ['claude-opus-5-5', 'opus'], ['claude-fable-5-1', 'fable']])
   // The lanes keep the day they were captured.
-  assert.equal(listings.harnesses.agy.capturedAt, '2026-10-13')
+  assert.equal(listings.harnesses.agy.capturedAt, '2026-10-15')
   assert.equal(listings.harnesses.grok.capturedAt, '2026-10-13')
 
   const natives = file.models.filter((entry) => entry.harness === 'claude')
