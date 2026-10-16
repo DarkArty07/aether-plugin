@@ -6,18 +6,27 @@
 // holds a secret is never kept, never sent to a decider and never written to the report.
 //
 // `replay` asks `answersFor` for each row (the paid path, or a stub); `replayJournal` decides again the answers the
-// router already recorded, with the criterion in force, and calls nobody.
+// router already recorded, with the criterion in force, and calls nobody. Both decide as the router does: the reference
+// rung, the floor and the Claude rung of the decided level come from router-reference.js, the router's own functions,
+// and the floor is what the Lead asked for in the call, never the model that happened to run it.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { loadPrices, ratesFor, priceEntry } = require('./prices.js')
 const { decide, axisOf } = require('./router-criterion.js')
-const { levelOfRung, pickRung } = require('./router-rungs.js')
+const { askedOf, stanceOf, claudeRungAt, aliasOf: rungAliasOf } = require('./router-reference.js')
 const { createDecider, runHttp, DeciderError } = require('./router-deciders.js')
 
 const ALIASES = ['haiku', 'sonnet', 'opus']
+// The floor of a call whose reference rung the table does not measure (the router itself would fail on it).
 const FALLBACK_FLOOR = 'D'
+// The limit of one `claude -p` process of the paid replay, in seconds: a process starts, logs in and answers, which is
+// not the in-session call the `deadlines` option limits.
+const DEFAULT_TIMEOUT_S = 60
+const MAX_TIMEOUT_S = 300
+// The router never routes an agent of the plugin (the mod passes `aether:*` through untouched).
+const AETHER_AGENT_PREFIX = 'aether:'
 
 // Patterns of what must never leave the machine (the evidence extractor's list).
 const SECRET = [
@@ -174,6 +183,19 @@ function failureOf(error) {
   return { failure: 'exec' }
 }
 
+function finiteOrNull(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+// The limit of one `claude -p` process in ms, from the `--timeout` flag in seconds: the default when there is none, and
+// null for a value that is not a number above 0 and at most MAX_TIMEOUT_S.
+function parseTimeout(value) {
+  if (value === undefined) return DEFAULT_TIMEOUT_S * 1000
+  const text = String(value).trim()
+  const seconds = /^\d+(\.\d+)?$/.test(text) ? Number(text) : NaN
+  return seconds > 0 && seconds <= MAX_TIMEOUT_S ? Math.round(seconds * 1000) : null
+}
+
 // The flags that make `claude -p` the bare request the mod's Haiku decider sends: no tools, no customizations (CLAUDE.md,
 // settings, hooks, plugins, skills, MCP, memory), no session on disk and a one-line system prompt. `--bare` is left out
 // on purpose: it reads only ANTHROPIC_API_KEY, never the owner's login.
@@ -205,14 +227,19 @@ async function askHaiku(decider, task, criterion, deps) {
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true })
   }
-  let result
+  let reply
   try {
-    result = JSON.parse(stdout).result
+    reply = JSON.parse(stdout)
   } catch {
     throw new DeciderError('unreadable', 'claude -p did not give JSON')
   }
-  if (typeof result !== 'string') throw new DeciderError('unreadable', 'claude -p gave no result')
-  return decider.parse(result, criterion).answers
+  if (reply === null || typeof reply !== 'object') throw new DeciderError('unreadable', 'claude -p did not give JSON')
+  // What the call took and cost, as the CLI measured it, is told before the answer is read: a call whose answer cannot
+  // be read was made and paid for all the same.
+  const call = { durationMs: finiteOrNull(reply.duration_ms), costUsd: finiteOrNull(reply.total_cost_usd) }
+  if (typeof deps.onCall === 'function' && (call.durationMs !== null || call.costUsd !== null)) deps.onCall(call)
+  if (typeof reply.result !== 'string') throw new DeciderError('unreadable', 'claude -p gave no result')
+  return decider.parse(reply.result, criterion).answers
 }
 
 async function askJev(decider, task, criterion, deps) {
@@ -222,6 +249,7 @@ async function askJev(decider, task, criterion, deps) {
 }
 
 // The answers of one decider to one task, or { failure: <code> }. It spends money: only a caller that asked for it uses it.
+// `deps.onCall`, when given, is told { durationMs, costUsd } of a `claude -p` call (null for a figure it did not report).
 async function askDecider({ decider, task, criterion, deps = {} }) {
   try {
     const instance = createDecider(decider, { env: deps.env || process.env, dataDir: deps.dataDir })
@@ -243,22 +271,17 @@ function aliasOf(prices, model) {
   return found && ALIASES.includes(found.family) ? found.family : null
 }
 
-// The level of the rung the Lead ran on (on the answers' axis), or the fallback rung's when it named none.
-function floorOf({ rungs, fallback, lead, axis }) {
-  if (lead.model) {
-    const level = levelOfRung(rungs, { harness: 'claude', model: lead.model, effort: lead.effort }, axis)
-    if (level) return level
-  }
-  return levelOfRung(rungs, { harness: 'claude', model: fallback.alias, effort: fallback.effort }, axis) || FALLBACK_FLOOR
-}
-
-// Decides one set of answers for a Lead choice: { decision, rung } with rung null when no rung reaches the level.
-function decideFor({ criterion, rungs, fallback, lead, answers }) {
+// Decides one set of answers for a call, as the router does. `request` is what the Lead asked for in the call, its
+// `model` and `effort`, and nothing else: the reference rung is the one it names, or the fallback's. Gives the decision,
+// the Claude rung the call runs on and the cheapest Claude rung of the decided level (an external delegate's rescue),
+// both null when no rung reaches the level.
+function decideFor({ criterion, rungs, fallback, request, answers }) {
   const axis = axisOf(criterion, answers)
-  const floor = floorOf({ rungs, fallback, lead, axis })
-  const decided = decide(criterion, answers, { floor })
-  const rung = pickRung(rungs, { harness: 'claude', level: decided.level, axis: decided.axis })
-  return { decided, rung }
+  const asked = askedOf(request, rungs, criterion)
+  const { reference, floor } = stanceOf(rungs, { asked, standard: { alias: fallback.alias, effort: fallback.effort }, axis })
+  const decided = decide(criterion, answers, { floor: floor || FALLBACK_FLOOR })
+  const { claudeRung, sameLevel } = claudeRungAt(rungs, { reference, floor, level: decided.level, axis: decided.axis })
+  return { decided, rung: claudeRung, sameLevel }
 }
 
 function decisionOf(decided, rung) {
@@ -287,41 +310,84 @@ function reestimate(prices, reqs, alias) {
   return usd
 }
 
-function totalsOf(rows, skipped) {
+function medianOf(sorted) {
+  if (sorted.length === 0) return null
+  const middle = sorted.length >> 1
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
+}
+
+// The nearest-rank percentile of an ascending list.
+function percentileOf(sorted, p) {
+  return sorted.length === 0 ? null : sorted[Math.ceil(p * sorted.length) - 1]
+}
+
+// What the decider's own calls took and cost: how many rows have a call, the median and 90th percentile of their
+// duration, and the sum of their cost (null when no call reported one).
+function callTotals(rows) {
+  const calls = rows.map((row) => row.call).filter(Boolean)
+  const durations = calls.map((call) => call.durationMs).filter(Number.isFinite).sort((a, b) => a - b)
+  const costs = calls.map((call) => call.costUsd).filter(Number.isFinite)
+  return {
+    n: calls.length,
+    medianMs: medianOf(durations),
+    p90Ms: percentileOf(durations, 0.9),
+    costUsd: costs.length > 0 ? costs.reduce((total, cost) => total + cost, 0) : null,
+  }
+}
+
+// `skippedBy` counts the rows that were not decided, by why: 'aether-agent' (the router never routes it), 'secret' (the
+// prompt looks like one or is empty) and 'no-answers' (nobody gave answers for it).
+function totalsOf(rows, skippedBy) {
   return {
     n: rows.length,
-    skipped,
+    skipped: Object.values(skippedBy).reduce((total, count) => total + count, 0),
+    skippedBy,
     fallback: rows.filter((row) => row.fallback !== null).length,
     changed: rows.filter((row) => row.changed).length,
     leadUsd: sum(rows, (row) => row.lead.usd),
     deciderUsd: sum(rows, (row) => row.estimatedUsd),
+    call: callTotals(rows),
   }
 }
 
+// `answersFor(row, onCall)` gives the answers for a row, `{ failure }` when the decider failed, or null for a row nobody
+// answered; the paid path tells `onCall` what its call took and cost.
 async function replay({ rows, criterion, rungs, prices, answersFor, fallback }) {
   const out = []
-  let skipped = 0
+  const skipped = { 'aether-agent': 0, secret: 0, 'no-answers': 0 }
   for (const row of rows) {
+    if (typeof row.subagentType === 'string' && row.subagentType.startsWith(AETHER_AGENT_PREFIX)) {
+      skipped['aether-agent'] += 1
+      continue
+    }
     if (row.secret || !row.prompt) {
-      skipped += 1
+      skipped.secret += 1
       continue
     }
-    const answers = await answersFor(row)
+    let call = null
+    const answers = await answersFor(row, (measure) => {
+      call = measure
+    })
     if (answers === null || answers === undefined) {
-      skipped += 1
+      skipped['no-answers'] += 1
       continue
     }
+    // What ran is `lead`, to price and to compare; what the Lead asked for is `request`, the reference of the floor.
     const lead = {
       model: aliasOf(prices, row.modelParam) || aliasOf(prices, row.actual && row.actual.model),
       effort: row.effortParam || criterion.inheritedEffort,
       usd: row.actual ? row.actual.cost : null,
     }
-    const base = { id: row.id, description: row.description, lead }
+    const base = { id: row.id, description: row.description, lead, call }
     if (answers.failure) {
       out.push({ ...base, decision: null, estimatedUsd: lead.usd, fallback: `decider: ${answers.failure}`, changed: false })
       continue
     }
-    const { decided, rung } = decideFor({ criterion, rungs, fallback, lead, answers })
+    const { decided, rung } = decideFor({ criterion, rungs, fallback, request: { model: row.modelParam, effort: row.effortParam }, answers })
+    if (decided.flags.incoherent) {
+      out.push({ ...base, decision: null, estimatedUsd: lead.usd, fallback: 'decider: incoherent', changed: false })
+      continue
+    }
     if (!rung) {
       out.push({ ...base, decision: null, estimatedUsd: lead.usd, fallback: 'no rung', changed: false })
       continue
@@ -334,14 +400,30 @@ async function replay({ rows, criterion, rungs, prices, answersFor, fallback }) 
   return { rows: out, totals: totalsOf(out, skipped) }
 }
 
+// The rescue rung an entry recorded, { alias, effort }, or null.
+function rescueOf(rungs, rescue) {
+  const alias = rescue && rungAliasOf(rungs, rescue.model)
+  return alias ? { alias, effort: rescue.effort } : null
+}
+
+// Whether the decision moved from the one the journal recorded. A decision that ran on Claude is compared by its rung.
+// The replay has no quota and picks no harness, so one that went to another harness (its `alias` is null) is compared by
+// its level and by the Claude rung it falls back to when the entry kept one.
+function moved(previous, { decided, rung, sameLevel }) {
+  if (previous === null) return false
+  if (previous.harness === 'claude') return rung.alias !== previous.alias || rung.effort !== previous.effort
+  if (previous.level !== decided.level) return true
+  return previous.rescue !== null && (!sameLevel || previous.rescue.alias !== sameLevel.alias || previous.rescue.effort !== sameLevel.effort)
+}
+
 // Decides again the answers the journal holds, with the criterion in force. Nobody is called.
 function replayJournal({ entries, criterion, rungs, prices, fallback }) {
   const out = []
-  let skipped = 0
+  const skipped = { 'aether-agent': 0, secret: 0, 'no-answers': 0 }
   for (const entry of entries) {
     if (!entry || entry.kind !== 'decision') continue
     if (!entry.answers) {
-      skipped += 1
+      skipped['no-answers'] += 1
       continue
     }
     const requested = entry.requested || null
@@ -351,17 +433,23 @@ function replayJournal({ entries, criterion, rungs, prices, fallback }) {
       effort: (requested && requested.effort) || (asked && asked.effort) || criterion.inheritedEffort,
       usd: null,
     }
-    const previous = entry.decision
-      ? { level: entry.decision.level, alias: entry.decision.alias, effort: entry.decision.effort }
+    const recorded = entry.decision || null
+    const previous = recorded
+      ? { level: recorded.level, alias: recorded.alias, effort: recorded.effort, harness: recorded.harness || 'claude', rescue: rescueOf(rungs, entry.rescue) }
       : null
     const base = { id: entry.id, description: entry.description || '', lead, previous, estimatedUsd: null }
-    const { decided, rung } = decideFor({ criterion, rungs, fallback, lead, answers: entry.answers })
+    const request = requested || (asked ? { model: asked.alias, effort: asked.effort } : null)
+    const found = decideFor({ criterion, rungs, fallback, request, answers: entry.answers })
+    const { decided, rung } = found
+    if (decided.flags.incoherent) {
+      out.push({ ...base, decision: null, fallback: 'decider: incoherent', changed: false })
+      continue
+    }
     if (!rung) {
       out.push({ ...base, decision: null, fallback: 'no rung', changed: false })
       continue
     }
-    const changed = previous !== null && (rung.alias !== previous.alias || rung.effort !== previous.effort)
-    out.push({ ...base, decision: decisionOf(decided, rung), fallback: null, changed })
+    out.push({ ...base, decision: decisionOf(decided, rung), fallback: null, changed: moved(previous, found) })
   }
   return { rows: out, totals: totalsOf(out, skipped) }
 }
@@ -388,4 +476,4 @@ function formatReport(report) {
   return lines.join('\n')
 }
 
-module.exports = { SECRET, extractCorpus, askDecider, replay, replayJournal, formatReport }
+module.exports = { SECRET, extractCorpus, parseTimeout, askDecider, replay, replayJournal, formatReport }

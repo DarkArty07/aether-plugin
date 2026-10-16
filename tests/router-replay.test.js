@@ -10,6 +10,10 @@ const replay = require('../plugins/aether/lib/router-replay.js')
 const crit = require('../plugins/aether/lib/router-criterion.js')
 const { loadRungs } = require('../plugins/aether/lib/router-rungs.js')
 const { loadPrices } = require('../plugins/aether/lib/prices.js')
+const reference = require('../plugins/aether/lib/router-reference.js')
+const route = require('../plugins/aether/lib/route.js')
+const session = require('../plugins/aether/lib/session.js')
+const log = require('../plugins/aether/lib/router-log.js')
 
 const criterion = crit.loadCriterion()
 const rungs = loadRungs()
@@ -200,4 +204,228 @@ test('formatReport ends with the counts', async (t) => {
   const out = replay.formatReport(report)
   for (const line of ['delegations: 1', 'fallback: 1', 'changed: 0']) assert.ok(out.split('\n').includes(line), line)
   assert.ok(out.includes('toolu_1'))
+})
+
+// ---- fix G3: the replay decides as the router decides ----
+
+test('the reference rung, the floor and the Claude rung of a level are one function for the router and the replay', () => {
+  assert.deepEqual(reference.askedOf({ model: 'opus', effort: 'xhigh' }, rungs, criterion), { alias: 'opus', effort: 'xhigh' })
+  assert.deepEqual(reference.askedOf({ model: 'claude-opus-5-5', effort: null }, rungs, criterion), { alias: 'opus', effort: criterion.inheritedEffort }, 'an effort the Lead left out is the inherited one')
+  assert.equal(reference.askedOf({ model: null, effort: 'high' }, rungs, criterion), null, 'an effort alone names no rung')
+  assert.equal(reference.askedOf({ model: 'gpt-5', effort: 'high' }, rungs, criterion), null)
+  assert.equal(reference.askedOf(null, rungs, criterion), null)
+
+  const asked = { alias: 'opus', effort: 'xhigh' }
+  const standard = { alias: 'sonnet', effort: 'high' }
+  const withAsked = reference.stanceOf(rungs, { asked, standard, axis: 'general' })
+  assert.deepEqual(withAsked, { reference: asked, floor: 'D' })
+  const without = reference.stanceOf(rungs, { asked: null, standard, axis: 'general' })
+  assert.deepEqual(without, { reference: standard, floor: 'C' })
+
+  const atFloor = reference.claudeRungAt(rungs, { ...withAsked, level: 'D', axis: 'general' })
+  assert.deepEqual({ alias: atFloor.claudeRung.alias, effort: atFloor.claudeRung.effort }, { alias: 'opus', effort: 'xhigh' }, 'at the floor the call keeps the reference rung, although a cheaper rung has the same level')
+  assert.deepEqual({ alias: atFloor.sameLevel.alias, effort: atFloor.sameLevel.effort }, { alias: 'sonnet', effort: 'max' }, 'and the cheapest rung of the level is the one an external delegate falls back to')
+  const below = reference.claudeRungAt(rungs, { ...withAsked, level: 'A', axis: 'general' })
+  assert.deepEqual({ alias: below.claudeRung.alias, effort: below.claudeRung.effort }, { alias: 'haiku', effort: 'low' })
+  assert.equal(below.claudeRung, below.sameLevel)
+})
+
+const lookupRow = (over = {}) => ({
+  id: 'toolu_x', description: 'a delegation', subagentType: 'general-purpose', modelParam: null, effortParam: null, prompt: 'Find the header.', secret: false,
+  actual: { model: 'claude-opus-5-5', cost: 0.028, turns: 1, reqs: [[1000, 500, 20000, 2000, 0]] },
+  ...over,
+})
+const AUDIT = { shape: { choice: 'audit', confidence: 0.95 } }
+
+test('a decision kept at the Lead floor keeps the rung the Lead asked for: the same criterion changes nothing (history)', async () => {
+  const row = lookupRow({ modelParam: 'opus', effortParam: 'xhigh' })
+  const report = await replay.replay({ rows: [row], criterion, rungs, prices, fallback, answersFor: async () => answers(AUDIT) })
+  const [got] = report.rows
+  assert.equal(got.decision.level, 'D')
+  assert.deepEqual({ alias: got.decision.alias, effort: got.decision.effort }, { alias: 'opus', effort: 'xhigh' }, 'not the cheapest rung of level D')
+  assert.equal(got.changed, false)
+  assert.equal(got.estimatedUsd, got.lead.usd)
+  assert.equal(report.totals.changed, 0)
+})
+
+test('the floor is what the Lead asked in the call, never the model that ran: a call with no model has the fallback as the reference (history)', async () => {
+  const row = lookupRow()
+  const ran = await replay.replay({ rows: [row], criterion, rungs, prices, fallback, answersFor: async () => answers(AUDIT) })
+  const [got] = ran.rows
+  assert.deepEqual({ model: got.lead.model, effort: got.lead.effort }, { model: 'opus', effort: 'xhigh' }, 'what ran is still what the report shows')
+  assert.equal(got.decision.level, 'C', 'the floor is the fallback sonnet high, not the opus that ran')
+  assert.deepEqual({ alias: got.decision.alias, effort: got.decision.effort }, { alias: 'sonnet', effort: 'high' })
+  assert.equal(got.changed, true, 'the router would have rewritten the inherited opus xhigh')
+  const opus = await replay.replay({ rows: [row], criterion, rungs, prices, fallback: { alias: 'opus', effort: 'high' }, answersFor: async () => answers(AUDIT) })
+  assert.deepEqual({ alias: opus.rows[0].decision.alias, effort: opus.rows[0].decision.effort }, { alias: 'opus', effort: 'high' }, 'the fallback option is the reference')
+  const effortOnly = await replay.replay({ rows: [lookupRow({ effortParam: 'max' })], criterion, rungs, prices, fallback, answersFor: async () => answers(AUDIT) })
+  assert.equal(effortOnly.rows[0].decision.level, 'C', 'an effort with no model names no rung')
+})
+
+test('a delegation to an aether agent is never replayed: the router never routes it, so nothing is asked and nothing is saved', async (t) => {
+  const root = tempDir(t)
+  const proj = path.join(root, '-home-u-work')
+  fs.mkdirSync(proj, { recursive: true })
+  const call = (id, subagentType) => JSON.stringify({ type: 'assistant', timestamp: '2026-10-14T10:00:00Z', message: { content: [{ type: 'tool_use', id, name: 'Agent', input: { description: id, subagent_type: subagentType, prompt: `Review the package of ${id}.` } }] } })
+  fs.writeFileSync(path.join(proj, 'sess1.jsonl'), [call('toolu_j', 'aether:judge'), call('toolu_r', 'aether:reviewer'), call('toolu_w', 'aether:writer'), call('toolu_p', 'other-plugin:agent'), call('toolu_g', 'general-purpose')].join('\n') + '\n')
+  const rows = replay.extractCorpus({ projectsDir: root })
+  assert.deepEqual(rows.map((r) => r.subagentType), ['aether:judge', 'aether:reviewer', 'aether:writer', 'other-plugin:agent', 'general-purpose'], 'the extracted row keeps the subagent type')
+  const asked = []
+  const report = await replay.replay({ rows, criterion, rungs, prices, fallback, answersFor: async (row) => { asked.push(row.id); return answers() } })
+  assert.deepEqual(asked, ['toolu_p', 'toolu_g'], 'only the agents the router routes are asked')
+  assert.deepEqual(report.rows.map((r) => r.id), ['toolu_p', 'toolu_g'])
+  assert.equal(report.totals.n, 2)
+  assert.equal(report.totals.skipped, 3)
+  assert.equal(report.totals.skippedBy['aether-agent'], 3)
+})
+
+test('an answer that is not one of the criterion is a fallback, not a decision', async () => {
+  const bad = [
+    answers({ shape: { choice: 'banana', confidence: 0.95 } }),
+    answers({ edits_files: { noul: 1.5, confidence: 0.95 } }),
+    answers({ stakes: { score: 0.9, confidence: 7 } }),
+  ]
+  for (const wrong of bad) {
+    const report = await replay.replay({ rows: [lookupRow()], criterion, rungs, prices, fallback, answersFor: async () => wrong })
+    const [got] = report.rows
+    assert.equal(got.fallback, 'decider: incoherent', JSON.stringify(wrong))
+    assert.equal(got.decision, null)
+    assert.equal(got.changed, false)
+    assert.equal(got.estimatedUsd, got.lead.usd)
+    assert.equal(report.totals.fallback, 1)
+    assert.equal(report.totals.changed, 0)
+  }
+  const entries = [{ kind: 'decision', id: 'z', requested: null, asked: null, answers: bad[0], decision: { harness: 'claude', level: 'C', alias: 'sonnet', effort: 'high' }, description: 'odd' }]
+  const journal = replay.replayJournal({ entries, criterion, rungs, prices, fallback })
+  assert.equal(journal.rows[0].fallback, 'decider: incoherent')
+  assert.equal(journal.rows[0].decision, null)
+  assert.equal(journal.totals.fallback, 1)
+  assert.equal(journal.totals.changed, 0)
+})
+
+test('the journal of the router, decided again with its own criterion, changes nothing', async (t) => {
+  const NOW = Date.parse('2026-10-15T21:32:00-06:00')
+  const window = (remaining, hours) => ({ remaining, resetsAt: new Date(NOW + hours * 3600 * 1000).toISOString() })
+  const readings = { agy: { readAt: NOW - 120000, groups: { gemini: { windows: { '5h': window(1, 5), weekly: window(1, 60) } } } }, grok: { readAt: NOW - 60000, groups: { grok: { windows: { weekly: window(0.95, 29.6) } } } } }
+  const event = (over = {}) => ({ subagent_type: 'general-purpose', description: 'Audit the API usage in src/', prompt: 'Read src/ and report each call that skips the retry wrapper.', ...over })
+  const explore = answers({ shape: { choice: 'explore', confidence: 0.95 }, stakes: { score: 1.1, confidence: 0.95 }, edits_files: { noul: 0.03, confidence: 0.95 } })
+  const cases = [
+    ['plain, no request', {}, event(), explore],
+    ['a gate at the floor of opus xhigh', {}, event({ model: 'opus', effort: 'xhigh' }), answers(AUDIT)],
+    ['a gate at the floor of opus, effort inherited', {}, event({ model: 'opus' }), answers(AUDIT)],
+    ['a gate with no request', {}, event(), answers(AUDIT)],
+    ['low confidence at the floor of opus high', { fallback: { alias: 'opus', effort: 'high' } }, event(), answers({ shape: { choice: 'other', confidence: 0.3 } })],
+    ['low confidence at the floor of a request', {}, event({ model: 'sonnet', effort: 'medium' }), answers({ stakes: { score: 1, confidence: 0.2 } })],
+    ['below the request', {}, event({ model: 'opus', effort: 'xhigh' }), answers()],
+    ['an effort with no model', {}, event({ effort: 'max' }), answers(AUDIT)],
+    ['a read-only task sent to another harness', { lanes: true }, event(), explore],
+    ['a read-only task sent to another harness, with a request', { lanes: true }, event({ model: 'opus', effort: 'high' }), explore],
+    ['a read-only gate at the floor of sonnet medium, sent to another harness', { lanes: true }, event({ model: 'sonnet', effort: 'medium' }), answers(AUDIT)],
+  ]
+  let external = 0
+  for (const [name, change, ev, given] of cases) {
+    const dataDir = tempDir(t)
+    const settings = { mode: 'command', decider: 'haiku', fallback: { alias: 'sonnet', effort: 'high' }, deadlines: { haikuMs: 8000, jevMs: 3000, quotaMs: 3000 }, lanes: false, harnesses: ['agy', 'grok'], ...change }
+    session.markSession(dataDir, 's1', NOW, { router: settings })
+    let n = 0
+    const deps = { dataDir, now: () => NOW, sleep: async () => {}, newId: () => `r${++n}`, readings: () => readings, marks: () => [], renew: () => ({ started: false, running: false }), installed: () => true }
+    const first = await route.begin({ session: 's1', event: ev }, deps)
+    await route.finish({ id: first.id, answer: JSON.stringify(given) }, deps)
+    const entries = log.readJournal(dataDir)
+    const [entry] = entries.filter((e) => e.kind === 'decision')
+    const report = replay.replayJournal({ entries, criterion, rungs, prices, fallback: settings.fallback })
+    const [got] = report.rows
+    assert.equal(report.rows.length, 1, name)
+    assert.equal(got.changed, false, `${name}: the same criterion changes nothing`)
+    assert.equal(got.decision.level, entry.decision.level, name)
+    if (entry.decision.harness === 'claude') assert.deepEqual({ alias: got.decision.alias, effort: got.decision.effort }, { alias: entry.decision.alias, effort: entry.decision.effort }, name)
+    else {
+      assert.equal(entry.applied, 'external', name)
+      external += 1
+    }
+  }
+  assert.equal(external, 3, 'the three cases that go to another harness are replayed too')
+})
+
+test('an external pick is compared by its level and the Claude rung it falls back to, never by alias (scenario 12)', () => {
+  const entry = {
+    kind: 'decision', id: 'e', requested: null, asked: null, answers: answers({ shape: { choice: 'explore', confidence: 0.95 }, stakes: { score: 1.1, confidence: 0.95 } }), description: 'read src',
+    decision: { harness: 'grok', model: 'grok-4.7', alias: null, effort: 'low', level: 'B' },
+    rescue: { harness: 'claude', model: 'claude-haiku-5-5', effort: 'high' },
+  }
+  const same = replay.replayJournal({ entries: [entry], criterion, rungs, prices, fallback })
+  assert.equal(same.rows[0].changed, false)
+  assert.equal(same.totals.changed, 0)
+  assert.equal(same.rows[0].previous.harness, 'grok')
+  const noRescue = replay.replayJournal({ entries: [{ ...entry, rescue: undefined }], criterion, rungs, prices, fallback })
+  assert.equal(noRescue.rows[0].changed, false, 'an entry of record mode has no rescue: the level is compared')
+  const stricter = structuredClone(criterion)
+  stricter.base.explore = 'C'
+  const moved = replay.replayJournal({ entries: [entry], criterion: stricter, rungs, prices, fallback })
+  assert.equal(moved.rows[0].changed, true, 'a new level is a change')
+  assert.equal(moved.rows[0].decision.level, 'C')
+  const elsewhere = replay.replayJournal({ entries: [{ ...entry, rescue: { harness: 'claude', model: 'claude-sonnet-5-5', effort: 'low' } }], criterion, rungs, prices, fallback })
+  assert.equal(elsewhere.rows[0].changed, true, 'another rescue rung is a change')
+})
+
+// ---- fix G3: the paid call is measured, and has its own time ----
+
+test('the paid Haiku call reports the duration and the cost the CLI measured, whether or not the answer is readable', async () => {
+  const task = { description: 'find header', prompt: 'Find where the header is defined.' }
+  const calls = []
+  const seen = []
+  const reply = JSON.stringify({ type: 'result', result: JSON.stringify(answers()), duration_ms: 3840, total_cost_usd: 0.00123 })
+  const got = await replay.askDecider({ decider: 'haiku', task, criterion, deps: { execFile: stubExec(reply, calls), timeoutMs: 60000, onCall: (call) => seen.push(call) } })
+  assert.deepEqual(got, answers())
+  assert.deepEqual(seen, [{ durationMs: 3840, costUsd: 0.00123 }])
+  assert.equal(calls[0].options.timeout, 60000, 'the process gets the limit it was given')
+
+  const unreadable = []
+  const broken = await replay.askDecider({ decider: 'haiku', task, criterion, deps: { execFile: stubExec(JSON.stringify({ result: 'nope', duration_ms: 900, total_cost_usd: 0.0004 }), []), timeoutMs: 60000, onCall: (call) => unreadable.push(call) } })
+  assert.deepEqual(broken, { failure: 'unreadable' })
+  assert.deepEqual(unreadable, [{ durationMs: 900, costUsd: 0.0004 }], 'a call that was made and paid for is counted although its answer was not')
+
+  const none = []
+  await replay.askDecider({ decider: 'haiku', task, criterion, deps: { execFile: stubExec(JSON.stringify({ result: JSON.stringify(answers()) }), []), timeoutMs: 60000, onCall: (call) => none.push(call) } })
+  assert.deepEqual(none, [], 'a JSON with neither figure records nothing')
+  const half = []
+  await replay.askDecider({ decider: 'haiku', task, criterion, deps: { execFile: stubExec(JSON.stringify({ result: JSON.stringify(answers()), duration_ms: 1200, total_cost_usd: 'free' }), []), timeoutMs: 60000, onCall: (call) => half.push(call) } })
+  assert.deepEqual(half, [{ durationMs: 1200, costUsd: null }])
+})
+
+test('each row keeps the call it cost, and the report totals the latency (median and 90th percentile) and the cost of the decider', async () => {
+  const rows = Array.from({ length: 10 }, (_, i) => lookupRow({ id: `toolu_${i}`, modelParam: 'sonnet', effortParam: 'high' }))
+  const durations = [4000, 1000, 9000, 3000, 2000, 10000, 5000, 6000, 8000, 7000]
+  const report = await replay.replay({
+    rows, criterion, rungs, prices, fallback,
+    answersFor: async (row, onCall) => {
+      const i = Number(row.id.slice(6))
+      if (i === 9) {
+        onCall({ durationMs: durations[i], costUsd: 0.001 })
+        return { failure: 'unreadable' }
+      }
+      if (i !== 8) onCall({ durationMs: durations[i], costUsd: 0.002 })
+      else onCall({ durationMs: durations[i], costUsd: null })
+      return answers()
+    },
+  })
+  assert.deepEqual(report.rows[0].call, { durationMs: 4000, costUsd: 0.002 })
+  assert.deepEqual(report.rows[9].call, { durationMs: 7000, costUsd: 0.001 }, 'a failed row keeps its call')
+  assert.equal(report.rows.length, 10)
+  const total = report.totals.call
+  assert.equal(total.n, 10)
+  assert.equal(total.medianMs, 5500, 'the middle of 1000..10000')
+  assert.equal(total.p90Ms, 9000, 'nearest rank: the ninth of ten')
+  assert.ok(Math.abs(total.costUsd - (8 * 0.002 + 0.001)) < 1e-9, 'the row with no cost adds nothing')
+  const quiet = await replay.replay({ rows: [lookupRow()], criterion, rungs, prices, fallback, answersFor: async () => answers() })
+  assert.equal(quiet.rows[0].call, null)
+  assert.deepEqual(quiet.totals.call, { n: 0, medianMs: null, p90Ms: null, costUsd: null })
+})
+
+test('the replay has its own limit for one claude process: 60 seconds unless told, 300 at most, and a bad value is refused', () => {
+  assert.equal(replay.parseTimeout(undefined), 60000)
+  assert.equal(replay.parseTimeout('90'), 90000)
+  assert.equal(replay.parseTimeout('300'), 300000)
+  assert.equal(replay.parseTimeout('1.5'), 1500)
+  for (const bad of ['0', '-5', '301', '1000', 'abc', '', ' ', '10s', 'NaN', 'Infinity']) assert.equal(replay.parseTimeout(bad), null, JSON.stringify(bad))
 })

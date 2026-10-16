@@ -22,11 +22,11 @@ const { appendEntry } = require('./router-log.js')
 const { readAllMarks } = require('./router-marks.js')
 const { EXTERNAL, peekReadings, staleHarnesses, chooseHarness } = require('./router-quota.js')
 const { startRenewal, waitForReading } = require('./router-renewal.js')
-const { loadRungs, levelOfRung, pickRung } = require('./router-rungs.js')
+const { loadRungs } = require('./router-rungs.js')
+const { aliasOf, askedOf, claudeLevel, claudeId, stanceOf, claudeRungAt } = require('./router-reference.js')
 const { readRouterSettings } = require('./session.js')
 
 const OVERRIDE_PREFIX = 'ROUTER-OVERRIDE: '
-const CLAUDE_ALIASES = ['haiku', 'sonnet', 'opus']
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const EXCERPT_CHARS = 400
 const DEADLINE_OF = { haiku: 'haikuMs', jev: 'jevMs' }
@@ -217,37 +217,8 @@ function namedAgent(event) {
   return typeof type === 'string' && type !== '' && !PLAIN_AGENTS.includes(type) ? type : null
 }
 
-function claudeRow(table, alias, effort) {
-  return table.rungs.find((r) => r.harness === 'claude' && r.alias === alias && r.effort === effort) || null
-}
-
-// 'haiku' | 'sonnet' | 'opus' for an alias or a full Claude model id; null for anything else.
-function aliasOf(table, model) {
-  if (typeof model !== 'string' || !model) return null
-  if (CLAUDE_ALIASES.includes(model)) return model
-  const row = table.rungs.find((r) => r.harness === 'claude' && r.model === model && CLAUDE_ALIASES.includes(r.alias))
-  return row ? row.alias : null
-}
-
-// The rung the Lead asked for, { alias, effort }, or null when the call names no Claude model.
-function askedOf(event, table, criterion) {
-  const alias = aliasOf(table, event.model)
-  if (!alias) return null
-  const effort = typeof event.effort === 'string' && event.effort ? event.effort : criterion.inheritedEffort
-  return { alias, effort }
-}
-
-function claudeLevel(table, rung, axis) {
-  return levelOfRung(table, { harness: 'claude', model: rung.alias, effort: rung.effort }, axis)
-}
-
 function standardOf(settings) {
   return { alias: settings.fallback.alias, effort: settings.fallback.effort }
-}
-
-function claudeId(table, alias) {
-  const row = table.rungs.find((r) => r.harness === 'claude' && r.alias === alias)
-  return row ? row.model : alias
 }
 
 function ranOnOf(table, { args, external, requested }) {
@@ -399,9 +370,7 @@ async function conclude(ctx, d, result) {
 
   const answers = result.answers
   const floorAxis = criterionLib.axisOf(criterion, answers)
-  const askedLevel = asked ? claudeLevel(table, asked, floorAxis) : null
-  const reference = askedLevel ? asked : standardOf(settings)
-  const floor = askedLevel || claudeLevel(table, reference, floorAxis)
+  const { reference, floor } = stanceOf(table, { asked, standard: standardOf(settings), axis: floorAxis })
   const verdict = criterionLib.decide(criterion, answers, { floor })
   const { level, axis } = verdict
 
@@ -421,8 +390,7 @@ async function conclude(ctx, d, result) {
     }
   }
 
-  const sameLevel = pickRung(table, { harness: 'claude', level, axis }) || claudeRow(table, reference.alias, reference.effort)
-  const claudeRung = level === floor ? (claudeRow(table, reference.alias, reference.effort) || { model: claudeId(table, reference.alias), alias: reference.alias, effort: reference.effort, status: null }) : sameLevel
+  const { claudeRung, sameLevel } = claudeRungAt(table, { reference, floor, level, axis })
   const chosen = pick ? pick.rung : claudeRung
   const decision = {
     harness: pick ? pick.harness : 'claude',

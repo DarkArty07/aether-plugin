@@ -253,6 +253,62 @@ test('replay with a decider needs --paid, because it spends tokens or sends brie
   assert.ok(r.json.error.includes('--paid is required'))
 })
 
+test('replay --timeout is the limit of one claude process: 60 seconds unless told, at most 300, and a bad value is a usage error', (t) => {
+  const s = setup(t)
+  for (const bad of ['abc', '0', '-5', '301', '', '10s']) {
+    const r = s.run(['replay', '--journal', '--timeout', bad])
+    assert.equal(r.status, 1, JSON.stringify(bad))
+    assert.match(r.json.error, /--timeout/, JSON.stringify(bad))
+  }
+  assert.equal(s.run(['replay', '--journal', '--timeout']).status, 1, 'the flag needs a value')
+  for (const good of ['1', '60', '300', '2.5']) assert.equal(s.run(['replay', '--journal', '--timeout', good]).status, 0, good)
+  assert.match(s.run([]).json.error, /\[--timeout <seconds>\]/, 'the usage line lists it')
+})
+
+// A claude on PATH that is not the real one, and the only one the bin can find: no model is ever called.
+function fakeClaude(t, body) {
+  const bin = tempDir(t, 'aether-fake-claude-')
+  const file = path.join(bin, 'claude')
+  fs.writeFileSync(file, `#!${process.execPath}\nlet stdin = ''\nprocess.stdin.on('data', (chunk) => { stdin += chunk })\nprocess.stdin.on('end', () => { ${body} })\n`)
+  fs.chmodSync(file, 0o755)
+  return bin
+}
+
+function historyOf(t, calls) {
+  const root = tempDir(t, 'aether-history-')
+  const proj = path.join(root, '-home-u-work')
+  fs.mkdirSync(proj, { recursive: true })
+  const line = ([id, subagentType, extra]) => JSON.stringify({ type: 'assistant', timestamp: '2026-10-14T10:00:00Z', message: { content: [{ type: 'tool_use', id, name: 'Agent', input: { description: id, subagent_type: subagentType, prompt: `Find where ${id} is defined.`, ...extra } }] } })
+  fs.writeFileSync(path.join(proj, 'sess1.jsonl'), calls.map(line).join('\n') + '\n')
+  return root
+}
+
+test('the paid replay gives each claude process the --timeout it was told, records what the call cost and how long it took, and never asks an aether agent', (t) => {
+  const s = setup(t)
+  const history = historyOf(t, [['toolu_1', 'general-purpose', { model: 'opus' }], ['toolu_2', 'aether:judge', {}], ['toolu_3', 'Explore', {}]])
+  const reply = JSON.stringify({ type: 'result', result: JSON.stringify(answers()), duration_ms: 3840, total_cost_usd: 0.0021 })
+  const path1 = fakeClaude(t, `if (!stdin.includes('<brief>')) process.exit(3); process.stdout.write(${JSON.stringify(reply)})`)
+  const r = runBin(BIN, ['replay', '--projects', history, '--decider', 'haiku', '--paid', '--timeout', '5'], s.cwd, { ...s.env, PATH: path1 })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.totals.n, 2)
+  assert.equal(r.json.totals.skipped, 1)
+  assert.equal(r.json.totals.skippedBy['aether-agent'], 1)
+  assert.deepEqual(r.json.rows.map((row) => row.id), ['toolu_1', 'toolu_3'])
+  assert.deepEqual(r.json.rows[0].call, { durationMs: 3840, costUsd: 0.0021 })
+  assert.equal(r.json.totals.call.n, 2)
+  assert.equal(r.json.totals.call.medianMs, 3840)
+  assert.equal(r.json.totals.call.p90Ms, 3840)
+  assert.ok(Math.abs(r.json.totals.call.costUsd - 0.0042) < 1e-9)
+  assert.equal(r.json.rows[0].fallback, null)
+
+  const slow = fakeClaude(t, 'setTimeout(() => process.stdout.write("{}"), 4000)')
+  const started = Date.now()
+  const late = runBin(BIN, ['replay', '--projects', history, '--decider', 'haiku', '--paid', '--timeout', '1'], s.cwd, { ...s.env, PATH: slow })
+  assert.equal(late.status, 0, late.stdout + late.stderr)
+  assert.ok(Date.now() - started < 3900, 'the process was killed by the limit of 1 second')
+  assert.deepEqual(late.json.rows.map((row) => row.fallback), ['decider: timeout', 'decider: timeout'])
+})
+
 test('renew saves grok\'s reading where the router reads it, from an ACP answer that leaves no line in grok\'s log (R23)', (t) => {
   const s = setup(t)
   for (const args of [['renew'], ['renew', '--harness'], ['renew', '--harness', 'codex'], ['renew', '--harness', 'grok', '--now']]) {
