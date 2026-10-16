@@ -89,10 +89,11 @@ agy's reading is not reliable for its Gemini group: it showed 98 % while the cal
 A delegate runs on agy or Grok only when all of this holds:
 - the mode is `command`, the `lanes` option is on and the harness is in the `harnesses` option;
 - the task is read-only: the decider answered that it does not edit files, with enough confidence;
-- the Agent call does not ask for its own worktree with `isolation`;
+- the Agent call does not ask for its own worktree with `isolation`, and names no agent of its own: it has no `subagent_type`, or it is `general-purpose` or `Explore`, because agy and Grok would not get the instructions or the tool limits of a named agent;
+- the checkout has no uncommitted changes, because the delegate works on a copy of the last commit and would answer about older code; otherwise the task runs on Claude and the log says why;
 - the quota rule above picks a group that has a rung at the level.
 
-The delegate runs in a disposable worktree of the current commit. If it changed anything, its answer is undone. The mod hands the Lead the delegate's text as the agent's answer, with no model request. Codex and Cursor are not used by the router.
+The delegate runs in a disposable worktree of the current commit. If it changed anything there, its answer is undone. That check covers the copy only: a delegate that follows an absolute path into your checkout is not caught (see Containment in [Lanes](lanes.md#lanes)). The mod hands the Lead the delegate's text as the agent's answer, with no model request. Codex and Cursor are not used by the router.
 
 The effort is native. The router sends the harness's own effort to the CLI, and the `levels` of the swarm's lane table play no part in it.
 
@@ -106,6 +107,7 @@ The router always has Claude to go back to, and never asks the owner.
 - **An external delegate fails,** for any reason, including a quota refusal or the time limit. The agent runs on Claude, at the Claude rung of the same level that the router put on the call.
 - **No harness can serve the level.** The task runs on Claude at that level.
 - **A quota refusal** also leaves a mark, so the next decision does not try that group again until its reset.
+- **The router itself fails.** An internal error leaves the call as the Lead made it, and writes a decision entry whose fallback reads `internal: …`, so the report counts it and you can see that the router is broken.
 
 ## Override
 
@@ -117,7 +119,7 @@ Each part of what was asked, with its verdict and the adjustment that makes it w
 
 | Part | Verdict | Adjustment |
 |---|---|---|
-| C1. A decider picks what each delegate runs on | viable with an adjustment | The Agent call can be rewritten in `model` and `effort`, but the `agent.spawn` hook does not see `effort`, so the router acts on the call itself. In `record` the decider runs in the background; the engine was not tested with work after the hook returns, with parallel launches, with `isolation: "worktree"` or with a real model. |
+| C1. A decider picks what each delegate runs on | viable with an adjustment | The Agent call can be rewritten in `model` and `effort`, but the `agent.spawn` hook does not see `effort`, so the router acts on the call itself. In `record` the decider runs in the background; the engine was not tested with work after the hook returns, with parallel launches, with `isolation: "worktree"`, with a real model, or with the directory in which the engine starts a command (the external delegate takes it as its checkout). |
 | C2. It knows how to route because it is given the criterion | viable as is | The criterion is a readable file, and a regression of 14 briefs guards it. |
 | C3. The Lead only describes the task | viable with an adjustment | The override needs a fixed form, `ROUTER-OVERRIDE: <reason>`, that the skill of the Lead teaches. |
 | C4. Only the Lead's delegates | viable with an adjustment | The router filters by `subagent_type`. That the hook does not fire for the agents of a workflow is unchecked, so C4 does not depend on it. Recognizing the explicit quota refusal is the router's alone: the swarm and the seats do not change. |
