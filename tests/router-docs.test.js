@@ -23,11 +23,13 @@ test('C12: the guide has a viability row for each of C1 to C14 except C12, with 
   assert.equal(row(12), undefined, 'the design does not rate C12 itself')
 })
 
-test('C12: the two measurements asked before command becomes the default are named', () => {
+test('C12: the measurements asked before command becomes the default are given', () => {
   const c5 = row(5)
-  for (const text of ['3.84', 'latency', 'before command becomes the default']) assert.ok(c5.includes(text), `C5: ${text}`)
+  for (const text of ['3.84', 'median', 'p90', 'real delegations', 'agree']) assert.ok(c5.includes(text), `C5: ${text}`)
   const c9 = row(9)
-  for (const text of ['A49', 'owner', 'literal', 'refusal', 'issue 021', 'renewal', 'still valid', 'before command becomes the default']) assert.ok(c9.includes(text), `C9: ${text}`)
+  for (const text of ['A49', 'owner', 'literal', 'refusal', 'issue 021', 'renewal', '0.7 s', '5 s']) assert.ok(c9.includes(text), `C9: ${text}`)
+  const c11 = row(11)
+  for (const text of ['paid replay', 'both deciders', 'cheaper']) assert.ok(c11.includes(text), `C11: ${text}`)
 })
 
 test('the quota section gives the owner rule, and says that a reading with balance does not lift a mark', () => {

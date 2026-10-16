@@ -4,7 +4,7 @@
 **Date:** 2026-10-16
 **Found in:** the first run of the exam of `specs/006-delegate-router` on its build, the Lead's session 56b71739
 **Status:** open
-**GitHub:** not filed yet (private repository)
+**GitHub:** [#34](https://github.com/DarkArty07/aether-plugin/issues/34) (private repository)
 
 ## What happened
 

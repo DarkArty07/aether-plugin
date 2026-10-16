@@ -97,6 +97,49 @@ test('Jev parse gives the same normalized answers as Haiku, with the cost and th
   assert.throws(() => jev.parse('{"answers":{"shape":{"choice":"audit"}}}', criterion), (e) => e.code === 'unreadable')
 })
 
+// The reply of the real API, saved as it came (tests/fixtures/router/jev-reply.json): a noul question has the
+// probability alone, no confidence. The fixture above this one was written by hand and gave every noul a confidence.
+test('Jev gives a noul question the probability alone, and the margin from a coin flip is its confidence', () => {
+  const real = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'router', 'jev-reply.json'), 'utf8'))
+  const product = require('../plugins/aether/config/router/criterion.json')
+  const { decide } = require('../plugins/aether/lib/router-criterion.js')
+  const jev = d.createDecider('jev', { env: { OPENROUTER_API_KEY: 'sk-test' } })
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} is not ${b}`)
+
+  const parsed = jev.parse(JSON.stringify(real), product)
+  assert.deepEqual(Object.keys(parsed.answers), Object.keys(product.questions), 'every question of the criterion is answered')
+  assert.equal(parsed.answers.shape.choice, 'mechanical_edit')
+  assert.equal(parsed.answers.shape.confidence, 0.92, 'a choice keeps the confidence Jev gave')
+  assert.equal(parsed.answers.stakes.confidence, 0.82, 'a score keeps the confidence Jev gave')
+  assert.equal(parsed.answers.pinned_by_checks.noul, 0.11)
+  near(parsed.answers.pinned_by_checks.confidence, 0.78)
+  near(parsed.answers.edits_files.confidence, 0.9)
+  assert.equal(decide(product, parsed.answers, { floor: 'C' }).flags.incoherent, false, 'the criterion reads the answers')
+
+  const withEdits = (noul, extra = {}) => {
+    const body = JSON.parse(JSON.stringify(real))
+    body.answers.edits_files = { type: 'noul', noul, ...extra }
+    return jev.parse(JSON.stringify(body), product).answers
+  }
+  // read-only needs the probability of editing under 0.5 and a confidence of at least 0.5: a margin of 0.5 is 0.25 or less
+  assert.equal(decide(product, withEdits(0.02), { floor: 'C' }).readOnly, true)
+  assert.equal(decide(product, withEdits(0.25), { floor: 'C' }).readOnly, true)
+  assert.equal(decide(product, withEdits(0.3), { floor: 'C' }).readOnly, false, 'a probability near a coin flip is not read-only')
+  assert.equal(decide(product, withEdits(0.95), { floor: 'C' }).readOnly, false)
+  assert.equal(withEdits(0.05, { confidence: 0.4 }).edits_files.confidence, 0.4, 'a confidence Jev does give is kept')
+  const outOfRange = withEdits(1.5)
+  assert.equal(decide(product, outOfRange, { floor: 'C' }).flags.incoherent, true, 'a probability above 1 is incoherent')
+
+  // Only Jev has no confidence on a noul question: Haiku is asked for one, and an answer without it is unreadable.
+  const haiku = d.createDecider('haiku', {})
+  const noConfidence = JSON.stringify({ ...ANSWERS, edits_files: { noul: 0.05 } })
+  assert.throws(() => haiku.parse(noConfidence, criterion), (e) => e.code === 'unreadable')
+  // and a choice or a score without confidence is unreadable for Jev too
+  const broken = JSON.parse(JSON.stringify(real))
+  delete broken.answers.shape.confidence
+  assert.throws(() => jev.parse(JSON.stringify(broken), product), (e) => e.code === 'unreadable')
+})
+
 test('runHttp returns the body, and names each way it fails', async () => {
   const request = d.createDecider('jev', { env: { OPENROUTER_API_KEY: 'sk-test' } }).request(task, criterion, LIMIT)
   let seen
