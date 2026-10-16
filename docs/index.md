@@ -18,6 +18,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 
 - [Options](guide/options.md): every option the plugin has, its default and how to set it.
 - [Lanes](guide/lanes.md): delegating volume to other harnesses and their models, and how the quota is spent.
+- [Delegate router](guide/router.md): how the router picks the model, effort and harness of the Lead's delegate tasks, in which mode, by which criterion and quota rule, and what can and cannot be done as asked.
 - [Design seats](guide/design-seats.md): which model sits in the Judge, the Writer and the Examiner seats, and how to choose.
 - [Autonomy](guide/autonomy.md): how much the Lead does without asking, and the owner's grants that widen it.
 - [Ops](guide/ops.md): the work that runs as plain code with no model call.
