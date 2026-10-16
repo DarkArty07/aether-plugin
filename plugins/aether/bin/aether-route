@@ -136,7 +136,12 @@ async function delegateCommand(flags, dataDir) {
       fs.unlinkSync(route.externalFile(dataDir, flags.id))
     } catch {}
   }
-  return { ok, status: result.status, text: result.text, detail: result.detail, marked }
+  // Where the answer came from, for the Lead: Claude Code lists no tool uses or tokens for an agent the mod answers, and a
+  // Lead that sees 0 tool uses doubts an answer that was read from files.
+  const attribution = ok
+    ? `Aether router: this answer is from ${rung.model} at ${rung.effort} on ${harness}, run in a disposable copy of the checkout. Claude Code lists no tool uses or tokens for it because Aether handed you the answer without a Claude request.`
+    : null
+  return { ok, status: result.status, text: result.text, attribution, detail: result.detail, marked }
 }
 
 // The pattern of the ids route.js gives a delegation.

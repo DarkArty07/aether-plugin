@@ -394,3 +394,22 @@ test('register.js wires the router in the three hooks and keeps the meter and th
   assert.ok(source.includes('parseOpsPrompt'))
   assert.ok(!/from '\.\.\/lib|require\(/.test(fs.readFileSync(path.join(HOOKS, 'router.mjs'), 'utf8')), 'the mod does not import lib/')
 })
+
+test('the mod puts the delegate\'s attribution before its answer, so the Lead knows where it came from (real session T3)', async () => {
+  const external = { id: 'r1', harness: 'grok', model: 'grok-4.7', effort: 'low', group: 'grok', timeoutMs: 570000, fallback: { model: 'haiku', effort: 'high' } }
+  const attribution = 'Aether router: this answer is from grok-4.7 at low on grok, run in a disposable copy of the checkout.'
+  const router = createRouter()
+  const { $ } = make({ verbs: { begin: line({ ...PLAN, args: { model: 'haiku', effort: 'high' }, notes: ['n'], external }), spawn: SPAWNED('agent-9'), delegate: line({ ok: true, status: 'ok', text: 'The audit found 3 callers.', attribution }) } })
+  await router.toolCall($, EV, spawning(router, $, 'agent-9'), CTX)
+  const step = router.step($, { agentId: 'agent-9', index: 0, turnId: 't1' }, async function* () { return { answer: 'from model' } }, CTX)
+  const yielded = []
+  let finished
+  for (;;) {
+    const r = await step.next()
+    if (r.done) { finished = r.value; break }
+    yielded.push(r.value)
+  }
+  await router.drain()
+  assert.equal(finished.answer, `${attribution}\n\nThe audit found 3 callers.`)
+  assert.equal(yielded[0].text, finished.answer)
+})

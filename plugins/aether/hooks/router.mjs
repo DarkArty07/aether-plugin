@@ -208,7 +208,9 @@ export function createRouter() {
       let text = null
       try {
         const out = await route($, ctx, ['delegate', '--session', ctx.session, '--id', external.id], external.timeoutMs)
-        if (out.ok === true && typeof out.text === 'string' && out.text.trim() !== '') text = out.text
+        if (out.ok === true && typeof out.text === 'string' && out.text.trim() !== '') {
+          text = typeof out.attribution === 'string' && out.attribution !== '' ? `${out.attribution}\n\n${out.text}` : out.text
+        }
       } catch {
         text = null
       }

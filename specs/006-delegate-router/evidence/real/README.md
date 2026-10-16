@@ -1,4 +1,4 @@
-# Evidencia medida con modelos reales: el replay pagado y seis sesiones del Lead
+# Evidencia medida con modelos reales: el replay pagado y dos rondas de sesiones del Lead
 
 Medida el 2026-10-16 (hora local) con Claude Code 2.1.301, el plugin 0.12.0 instalado y el árbol de 0.12.1, Sonnet 5.5 como Lead, Haiku 5.5 y `typesafe/jev-1.14-20261014` como decisores, agy 1.4.0 y grok 1.0.60. El dueño aprobó el gasto de prueba («apruebo los gastos de prueba»), anotó su llave de OpenRouter en el `.env` del directorio de datos del plugin y pidió usar las sesiones reales. Esto cierra lo que `../README.md` §1 daba por «No cubierto» y lo que el diseño dejó para el dueño (C5, C8 y C11).
 
@@ -54,9 +54,9 @@ Total de las seis, lo que cuenta el CLI: US$ 0.845.
 
 ## 4. Lo que sigue sin medirse
 
-- Un delegado real en agy (su grupo Gemini tiene la marca de agotado del enjambre hasta 2026-10-22 y su grupo Claude no sirve ningún nivel).
-- El fallo real de un delegado externo en una sesión real (cuota, límite de tiempo): el respaldo a Claude se probó con harness simulados.
 - Semanas de uso: si el peldaño más barato hace el trabajo igual de bien. Es lo que `advise` y `command` muestran, delegación por delegación, en `aether-report --delegates`.
+- El fallo de un harness externo con el CLI real: la segunda ronda (§6) lo probó con un `grok` y un `agy` simulados que fallan o rechazan con la forma del real; ningún CLI real falló por sí solo.
+- Un Lead que escribe la anulación a `low`: a `xhigh` lo hizo bien, a `low` no (§6).
 
 ## 5. Cómo repetirlo
 
@@ -71,4 +71,29 @@ node real-session.js --tag s1 --plugin <árbol>/plugins/aether --options '{"rout
 node real-session.js --tag s3 --plugin <árbol>/plugins/aether --options '{"router":"command","lanes":"true","harnesses":"grok"}' --prewarm grok --prompt-file p-s3.txt
 ```
 
-`replay-summary.json` guarda los totales de los dos replays y el acuerdo. Las salidas completas (`haiku-full.json`, `jev-full.json`) llevan el título de cada delegación del dueño y no se guardan en el repositorio.
+Los prompts `p-t*.txt` son los de §6 (`p-t13` necesita el agente de `agent-doc-checker.md` en `.claude/agents/` del repositorio de la prueba, y `p-t5b` va con los `shims/`). `inspect-world.js` imprime lo que hizo el router en un mundo desechable (lo llama `real-session.js` al terminar); `--key none|bad`, `--seed-lanes`, `--launcher` y `--env NOMBRE=valor` de `real-session.js` son de la segunda ronda, y `shims/` guarda el `grok` y el `agy` que fallan (se usan con `--env AETHER_LANES_CONFIG=<tabla con sus rutas>`). `replay-summary.json` guarda los totales de los dos replays y el acuerdo. Las salidas completas (`haiku-full.json`, `jev-full.json`) llevan el título de cada delegación del dueño y no se guardan en el repositorio.
+
+## 6. Segunda ronda: fallos, anulación, la regla de cuota, agy real y una corrida completa (0.12.1 instalada)
+
+Dieciocho sesiones más, todas con el plugin 0.12.1 instalado (la mayoría con el Lead en `low`; las del lanzador `aether-lead`, en `xhigh`, como las usa el dueño), US$ 4.68 en total según el CLI (la corrida completa, US$ 2.66), más cuatro llamadas de lanes a agy.
+
+| Prueba | Qué se hizo | Resultado |
+|---|---|---|
+| T1a, T1b, T1c, T1d | `command` con el decisor roto: Jev sin llave, Jev con una llave rechazada, Haiku con un límite de 0.2 s, y Jev sin llave con `fallback=haiku:medium` | Respaldo en las cuatro: `decider: no-key`, `http`, `empty` (el motor no dijo «timeout») y `no-key`; el delegado corrió en Sonnet `high` (por defecto) o en Haiku `medium` (la opción); el lanzamiento no esperó más de 0.4 s |
+| T2, T2x | Pedir al Lead que anule el router | A `low`, el Lead pasó `model` y `effort` sin la línea `ROUTER-OVERRIDE`, el router los reemplazó (Haiku `high`) y el Lead dijo al dueño que había corrido en `medium`. A `xhigh` escribió la línea con su razón, el router la registró (`applied: kept`, sin llamar al decisor) y corrió en Haiku `medium`. Arreglo de la nota en 0.12.2 (incidencia 026) |
+| T3, T3b | `command` con agy y grok juntos | Con las marcas reales sembradas, agy-Gemini queda excluido por la marca aunque tiene 99.5 % de saldo, y gana Grok. Sin marcas, Grok es el rango 0 (95 %, se renueva en 16.8 h) y agy-Gemini el rango 1 (99.5 %, 155.9 h): la ventana semanal que se renueva primero. Los delegados corrieron en Grok real (16.8 s y 12.9 s) |
+| T4 | Solo agy | Un delegado real en `gemini-3.8-flash` `medium`: 148 s, 149 mil tokens de entrada, 0.16 % del semanal. La respuesta llegó al Lead |
+| T12 | Ocho decisiones a la vez con la lectura de agy vencida | Una renovación (`started`) y tres `running`: la cerradura funcionó. Cuatro decisiones esperaron los 3 s y fueron a Claude; cuatro encontraron la lectura renovada y fueron a agy `gemini-3.8-flash` `low`, y los cuatro terminaron ok en 13 a 19 s. Cada uno reporta 0.7 % del semanal gastado, pero cada llamada lee la ventana antes y después y las cuatro corrieron a la vez, así que cada una ve el gasto de las otras: ese 0.7 % es el de las cuatro juntas. Las ocho respuestas llegaron bien al Lead y el registro quedó íntegro |
+| T5a | Un `grok` cuyo delegado falla (simulado) | Falla a los 171 ms; el delegado corrió en Claude Haiku `high`, el peldaño Claude del mismo nivel; sin marca (no es un rechazo de cuota) |
+| T5c | Un `agy` que rechaza como el real (JSON con `error` por stdout, `exit 3`, «Resets in 2h10m»), con dos delegados seguidos | El primero fue a agy, recibió el rechazo, dejó la marca del router por 2 h 10 min y corrió en Claude. El segundo ni lo intentó: agy-Gemini «excluded (mark)» con 99.3 % de saldo. Una primera simulación puso el rechazo en stderr y el router no lo reconoció; el agy real lo da por stdout |
+| T13 | Un agente con nombre propio y `model: opus` en su definición | El router decidió Sonnet `high` (compuerta de auditoría) y lo reemplazó; el agente corrió en Sonnet. De 382 delegaciones del historial del dueño, 29 son de agentes con nombre ajenos a Aether (US$ 1.33 de lo que se conoce) |
+| T9 | El Lead corre `aether-route replay --paid` con `AETHER_IRREVERSIBLE=enforce` | La guarda lo clasificó `paid-call`, lo rechazó y lo anotó en `.aether/pending.jsonl`; el Lead lo informó sin rodearlo |
+| T10, T7 | El lanzador `aether-lead -p` con el plugin instalado: «ok», y un pedido natural en español | Arranca sin errores (US$ 0.06). Ante el pedido de tres cosas en un repositorio de 32 líneas, el Lead las hizo él, sin subagentes («escribir un brief habría costado más»), con un informe que abre con Espera tu sí y Supuestos |
+| T11, T6 | El examen oculto y el replay del registro | 15 de 15 sobre `main`. El replay del registro de tres sesiones reales no cambia nada, y con el criterio editado en una copia (`explore` a D, `implement` a A) mueve 2 de 3 delegaciones |
+
+### La corrida completa (T8)
+
+Un `aether-lead -p` en `xhigh` con el permiso «Trabaja por horas, no cuentes conmigo hasta acabar» y un tope de 1 hora y US$ 8, `router=command`, `seats=native`, y las marcas reales sembradas: tarjeta de intención, `/aether:design` (spec y plan, cada uno con una revisión y una aprobación del Juez, 9 min), el Examinador nativo (6 pruebas ocultas), `/aether:run` con dos tareas (4.8 min, 2 intentos, sin subidas), revisión final `ready` con un hallazgo menor, el examen 6 de 6, el informe de la corrida y el brief. Duró 14.6 min y quedó en `done`. Lo comprobé por mi cuenta: 22 de 22 pruebas en la rama de integración, `formatPercent(0.256)` da `"25.6%"`, `parseMoney("$1,234.50")` da `123450`, `pluralize(3, "person", "people")` da `"3 people"`, y el README tiene su sección. La fusión a `main` quedó esperando el visto bueno del dueño, como debe.
+
+- **Costo:** el enjambre US$ 1.01 (nativo 0.46, lanes 0.55); la sesión US$ 2.80 a precio de lista. Las cuatro llamadas de lanes fueron a agy `claude-sonnet-5-5` y bajaron el semanal del grupo Claude de agy de 45.4 % a 32.9 %; la tarea 2 corrió nativa porque el grupo Gemini tenía la marca de agotado.
+- **El router no se metió:** no hubo entradas en su registro (el Lead no lanzó delegados propios), y los agentes `aether:*` del diseño y del enjambre quedaron como estaban.

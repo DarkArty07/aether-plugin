@@ -1,0 +1,7 @@
+I have two independent lookups. Run them as two delegate tasks, one after the other: launch the second only after the first has answered. Use the Agent tool, subagent_type general-purpose, and pass no model and no effort.
+
+Task 1. Description: "Summarize readme". Brief: Read README.md and package.json and summarize this project in two short lines. Read only; edit nothing.
+
+Task 2. Description: "List util exports". Brief: Read src/util.js and list its exported functions, one line each. Read only; edit nothing.
+
+Then give me both answers in two lines.
