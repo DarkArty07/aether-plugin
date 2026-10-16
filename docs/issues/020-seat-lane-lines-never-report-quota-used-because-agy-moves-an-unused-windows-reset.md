@@ -4,7 +4,7 @@
 **Date:** 2026-10-15
 **Found in:** the Argon seat check of the Lead's session e328a606
 **Status:** open
-**GitHub:** pending
+**GitHub:** [#26](https://github.com/DarkArty07/aether-plugin/issues/26) (private repository)
 
 ## What happened
 
