@@ -213,6 +213,55 @@ test('peekReadings reads a grok answer with no reading as no reading, so its ren
   assert.equal(r.pick.harness, 'agy')
 })
 
+test('peekReadings takes the newest of the reading it reads and the router\'s own renewed one (R23)', (t) => {
+  const dataDir = tempDir(t)
+  const write = (file, value) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value))
+  }
+  const old = { gemini: gemini(0.5, 60) }
+  const renewed = { gemini: gemini(0.4, 60) }
+  write(readingsLib.cacheFile(dataDir, 'agy'), { harness: 'agy', readAt: NOW - 2 * MIN, groups: old })
+  write(quota.readingFile(dataDir, 'agy'), { readAt: NOW - 20 * MIN, groups: renewed })
+  const grokLog = { ...weekly(0.95, 29.6), source: { ageMinutes: 12 } }
+  const grokAcp = { ...weekly(0.9, 29.6), source: { method: 'acp', log: null, ageMinutes: 0 } }
+  write(quota.readingFile(dataDir, 'grok'), { readAt: NOW - MIN, groups: { grok: grokAcp } })
+  let log = { groups: { grok: { unknown: true, windows: {} } } }
+  const createAdapter = (name) => (name === 'agy'
+    ? { quotaCost: 'process', quota() { throw new Error('must not run') } }
+    : { quotaCost: 'log', quota: () => log })
+  const peek = () => quota.peekReadings({ dataDir, config, harnesses: ['agy', 'grok'], createAdapter, now: NOW })
+
+  assert.deepEqual(peek().agy, { readAt: NOW - 2 * MIN, groups: old }, 'agy as before: its saved reading is newer')
+  assert.deepEqual(peek().grok, { readAt: NOW - MIN, groups: { grok: grokAcp } }, 'grok\'s log has nothing: the renewed reading counts')
+  write(quota.readingFile(dataDir, 'agy'), { readAt: NOW - MIN, groups: renewed })
+  assert.deepEqual(peek().agy, { readAt: NOW - MIN, groups: renewed })
+  log = { groups: { grok: grokLog } }
+  assert.deepEqual(peek().grok, { readAt: NOW - MIN, groups: { grok: grokAcp } }, 'a log line 12 minutes old is older')
+  write(quota.readingFile(dataDir, 'grok'), { readAt: NOW - 40 * MIN, groups: { grok: grokAcp } })
+  assert.deepEqual(peek().grok, { readAt: NOW - 12 * MIN, groups: { grok: grokLog } }, 'a newer log line wins')
+})
+
+test('a router reading that is missing, unreadable or malformed is no reading', (t) => {
+  const createAdapter = (name) => (name === 'agy'
+    ? { quotaCost: 'process', quota() { throw new Error('must not run') } }
+    : { quotaCost: 'log', quota: () => ({ groups: { grok: { unknown: true, windows: {} } } }) })
+  for (const content of [null, '{ not json', '[]', 'null', JSON.stringify({ readAt: 'yesterday', groups: {} }), JSON.stringify({ readAt: NOW, groups: [] }), JSON.stringify({ readAt: NOW })]) {
+    const dataDir = tempDir(t)
+    if (content !== null) {
+      for (const harness of ['agy', 'grok']) {
+        fs.mkdirSync(path.dirname(quota.readingFile(dataDir, harness)), { recursive: true })
+        fs.writeFileSync(quota.readingFile(dataDir, harness), content)
+      }
+    }
+    const got = quota.peekReadings({ dataDir, config, harnesses: ['agy', 'grok'], createAdapter, now: NOW })
+    assert.deepEqual(got, { agy: null, grok: null }, String(content))
+  }
+  const dir = tempDir(t)
+  fs.mkdirSync(quota.readingFile(dir, 'grok'), { recursive: true })
+  assert.equal(quota.peekReadings({ dataDir: dir, config, harnesses: ['grok'], createAdapter, now: NOW }).grok, null, 'a directory in its place')
+})
+
 test('the life of a reading is the one of its harness, and staleHarnesses names those that are not valid', () => {
   assert.equal(quota.lifeMs(config, 'agy'), 10 * MIN)
   assert.equal(quota.lifeMs(config, 'grok'), 30 * MIN)

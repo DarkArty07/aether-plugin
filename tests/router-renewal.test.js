@@ -6,15 +6,74 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { PLUGIN, tempDir } = require('./helpers.js')
 const renewal = require('../plugins/aether/lib/router-renewal.js')
+const quota = require('../plugins/aether/lib/router-quota.js')
+const lanes = require('../plugins/aether/lib/lanes.js')
 
 const NOW = Date.parse('2026-10-15T22:30:00Z')
 const SEC = 1000
 const clock = () => { let t = 0; return { now: () => t, sleep: async (ms) => { t += ms }, slept: () => t } }
 
-test('renewalArgv is the step of aether-lane quota --refresh', () => {
-  assert.deepEqual(renewal.renewalArgv('grok'), [process.execPath, path.join(PLUGIN, 'bin', 'aether-lane'), 'quota', 'grok', '--refresh'])
-  assert.deepEqual(renewal.renewalArgv('agy', { node: 'node', pluginRoot: '/p' }), ['node', '/p/bin/aether-lane', 'quota', 'agy', '--refresh'])
+test('renewalArgv is the router\'s own renew verb, which saves the reading where the router reads it', () => {
+  assert.deepEqual(renewal.renewalArgv('grok'), [process.execPath, path.join(PLUGIN, 'bin', 'aether-route'), 'renew', '--harness', 'grok'])
+  assert.deepEqual(renewal.renewalArgv('agy', { node: 'node', pluginRoot: '/p' }), ['node', '/p/bin/aether-route', 'renew', '--harness', 'agy'])
   assert.deepEqual(renewal.RENEWABLE, ['agy', 'grok'])
+})
+
+const config = lanes.loadConfig(lanes.CONFIG_FILE)
+const MIN = 60 * SEC
+const weeklyIn = (hours) => ({ windows: { weekly: { remaining: 0.9, resetsAt: new Date(NOW + hours * 3600 * SEC).toISOString() } } })
+// grok's adapter reads only its log, and its log has nothing; agy's must not be asked by peekReadings.
+const peekAdapter = (name) => (name === 'agy'
+  ? { quotaCost: 'process', quota() { throw new Error('must not run') } }
+  : { quotaCost: 'log', quota: () => ({ groups: { grok: { unknown: true, windows: {} } } }) })
+const peek = (dataDir, now) => quota.peekReadings({ dataDir, config, harnesses: ['agy', 'grok'], createAdapter: peekAdapter, now })
+
+test('renewReading saves grok\'s refreshed reading where the router reads it, valid for its life (R23, A-6)', async (t) => {
+  const dataDir = tempDir(t)
+  const acp = { ...weeklyIn(48), source: { method: 'acp', log: null, ageMinutes: 0 } }
+  const asked = []
+  const refreshers = { grok: async (settings) => { asked.push(settings); return acp } }
+  const readGroups = () => { throw new Error('grok\'s adapter reads only its log: it is not asked') }
+  const saved = await renewal.renewReading({ harness: 'grok', settings: config.harnesses.grok, dataDir, now: () => NOW, refreshers, readGroups })
+  assert.deepEqual(saved, { readAt: NOW, groups: { grok: acp } })
+  assert.deepEqual(asked, [config.harnesses.grok])
+  const file = quota.readingFile(dataDir, 'grok')
+  assert.equal(file, path.join(dataDir, 'router', 'readings', 'grok.json'))
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { readAt: NOW, groups: { grok: acp } })
+  assert.deepEqual(fs.readdirSync(path.dirname(file)), ['grok.json'], 'no temporary file is left')
+
+  assert.deepEqual(peek(dataDir, NOW + 5 * MIN).grok, { readAt: NOW, groups: { grok: acp } })
+  assert.deepEqual(quota.staleHarnesses({ readings: peek(dataDir, NOW + 29 * MIN), config, harnesses: ['grok'], now: NOW + 29 * MIN }), [])
+  assert.deepEqual(quota.staleHarnesses({ readings: peek(dataDir, NOW + 30 * MIN), config, harnesses: ['grok'], now: NOW + 30 * MIN }), ['grok'], 'stale again once its life has passed')
+})
+
+test('renewReading takes agy\'s reading fresh through readGroups, and saves it too', async (t) => {
+  const dataDir = tempDir(t)
+  const groups = { gemini: weeklyIn(10), claude: weeklyIn(40) }
+  const calls = []
+  const adapter = { quotaCost: 'process' }
+  const createAdapter = (name, settings) => { calls.push(['create', name, settings]); return adapter }
+  const readGroups = (given, options) => { calls.push(['read', given, options]); return { groups, readAt: options.now, cached: false } }
+  const saved = await renewal.renewReading({ harness: 'agy', settings: config.harnesses.agy, dataDir, now: () => NOW, createAdapter, readGroups, refreshers: {} })
+  assert.deepEqual(saved, { readAt: NOW, groups })
+  assert.deepEqual(calls, [
+    ['create', 'agy', config.harnesses.agy],
+    ['read', adapter, { harness: 'agy', settings: config.harnesses.agy, dataDir, now: NOW, fresh: true }],
+  ])
+  assert.deepEqual(JSON.parse(fs.readFileSync(quota.readingFile(dataDir, 'agy'), 'utf8')), { readAt: NOW, groups })
+  assert.deepEqual(quota.staleHarnesses({ readings: peek(dataDir, NOW + 9 * MIN), config, harnesses: ['agy'], now: NOW + 9 * MIN }), [])
+  assert.deepEqual(quota.staleHarnesses({ readings: peek(dataDir, NOW + 10 * MIN), config, harnesses: ['agy'], now: NOW + 10 * MIN }), ['agy'])
+})
+
+test('renewReading writes nothing when no reading comes, and renews only agy and grok', async (t) => {
+  const dataDir = tempDir(t)
+  await assert.rejects(renewal.renewReading({ harness: 'grok', settings: config.harnesses.grok, dataDir, now: () => NOW, refreshers: { grok: async () => null } }), /no new reading/)
+  await assert.rejects(renewal.renewReading({ harness: 'grok', settings: config.harnesses.grok, dataDir, now: () => NOW, refreshers: { grok: async () => { throw new Error('acp down') } } }), /acp down/)
+  const failing = () => { throw new Error('agy /usage failed') }
+  await assert.rejects(renewal.renewReading({ harness: 'agy', settings: config.harnesses.agy, dataDir, now: () => NOW, createAdapter: () => ({}), readGroups: failing, refreshers: {} }), /agy \/usage failed/)
+  await assert.rejects(renewal.renewReading({ harness: 'codex', settings: config.harnesses.codex, dataDir, now: () => NOW }), /agy or grok/)
+  await assert.rejects(renewal.renewReading({ harness: 'agy', settings: undefined, dataDir, now: () => NOW }), /lane table/)
+  assert.equal(fs.existsSync(path.join(dataDir, 'router', 'readings')), false)
 })
 
 test('a renewal starts once, and a second decision that finds it running does not start another (R23)', (t) => {
