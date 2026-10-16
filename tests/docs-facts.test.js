@@ -30,6 +30,9 @@
 //     aether-mode           the 0.6 launcher, named as retired in "Upgrading from 0.6"
 //   Paths that do not exist (PATH_EXCEPTIONS):
 //     scripts/aether-install.js  the 0.6 installer, named as retired in "Upgrading from 0.6"
+//   Plugin names that are no agent, skill or workflow (AETHER_NAME skips them):
+//     custom:aether:<theme>      the value of the `theme` setting that selects a theme the plugin ships, which Claude
+//                                Code forms as custom:<plugin name>:<file name>; the launcher passes it
 //
 // One word is not a count: the article in "the commands of `bin/`", which docs/reference/components.md writes in the list
 // of what the 0.7.0 measurement found, and whose number it does not repeat there (the measurement counted eight, bin/ has
@@ -162,8 +165,11 @@ const commandsIn = (text) =>
       return command ? [command[1]] : []
     })
 
+// An aether:<name>, but not the one inside custom:aether:<theme>, which selects a theme (see the exceptions).
+const AETHER_NAME = /(?<!custom:)\baether:([a-z][a-z0-9-]*)/g
+
 const pluginNamesIn = (text) =>
-  codeSpans(text).flatMap((span) => [...span.matchAll(/\baether:([a-z][a-z0-9-]*)/g)].map((name) => name[1]))
+  codeSpans(text).flatMap((span) => [...span.matchAll(AETHER_NAME)].map((name) => name[1]))
 
 // GitHub's slug of a heading: link text kept, backticks gone, lowercase, only letters, marks, digits, - and _ stay, each
 // space a hyphen. The text of a heading is not trimmed of inner spaces, so "A - B" is "a---b" there too.
@@ -259,6 +265,8 @@ test('commands: an aether-* code span in position, alone or with arguments; not 
 
 test('plugin names: aether:<name> inside a code span', () => {
   assert.deepEqual(pluginNamesIn('Use `aether:judge`, `/aether:run` and `claude --agent aether:lead --effort xhigh`; `aether:<name>` is a pattern; aether:prose is not read.'), ['judge', 'run', 'lead'])
+  // The value of the theme setting names the plugin and a theme file, not an agent.
+  assert.deepEqual(pluginNamesIn('`{"theme":"custom:aether:aether"}` and `aether:lead`'), ['lead'])
 })
 
 test('anchors follow GitHub: lowercase, no punctuation, spaces to hyphens, repeats numbered, fences skipped', () => {
@@ -479,7 +487,7 @@ test('R11: fenced blocks name known agents, skills and commands too', () => {
   let seen = 0
   for (const rel of FILES) {
     for (const line of fencedLines(read(rel))) {
-      for (const name of line.matchAll(/\baether:([a-z][a-z0-9-]*)/g)) {
+      for (const name of line.matchAll(AETHER_NAME)) {
         seen++
         assert.ok(known.has(name[1]), `${rel}: aether:${name[1]} is not an agent, a skill or a workflow`)
       }

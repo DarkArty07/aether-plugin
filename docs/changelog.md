@@ -6,6 +6,10 @@ order: 31
 
 # Changelog
 
+## Unreleased
+
+- **A color theme, Aether.** The plugin ships `plugins/aether/themes/aether.json`: the violet of Claude Aether (`#8b5cf6`) in place of Claude's orange, also on the mascot of the welcome screen, a deep indigo for the messages, a color for each permission mode and for each of the eight subagent colors. `scripts/aether-lead` and the start command of Install select it in the session's `--settings`, so it applies only while an Aether session runs and is never written to the user's settings files; a plain `claude` session keeps the user's own theme. The facts test learns that `custom:aether:<theme>` is the value that selects a plugin theme, not an agent. The plugin's version stays 0.11.0 until a release.
+
 ## Status
 
 Version 0.11.0: aether:design ([spec](../specs/005-aether-design/spec.md)), [decisions](../docs/decisions.md) A50–A54. What changed since 0.10.0:

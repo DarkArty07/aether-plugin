@@ -12,7 +12,7 @@ const { tempDir } = require('./helpers.js')
 
 const ROOT = path.join(__dirname, '..')
 const LAUNCHER = path.join(ROOT, 'scripts', 'aether-lead')
-const SETTINGS = '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'
+const SETTINGS = '{"enabledPlugins":{"superpowers@claude-plugins-official":false},"theme":"custom:aether:aether"}'
 // The launcher's own arguments, in order, before the ones it passes on.
 const OWN_ARGS = ['--agent', 'aether:lead', '--effort', 'xhigh', '--permission-mode', 'bypassPermissions', '--settings', SETTINGS]
 
@@ -26,11 +26,30 @@ function fakeClaude(t) {
 
 const argsOf = (r) => r.stdout.split('\n').slice(0, -1)
 
-test('the launcher is executable and starts the Lead at xhigh, with permissions bypassed and superpowers off', (t) => {
+test('the launcher is executable and starts the Lead at xhigh, with permissions bypassed, superpowers off and the Aether theme', (t) => {
   const r = spawnSync(LAUNCHER, [], { encoding: 'utf8', env: { ...process.env, ...fakeClaude(t) } })
   assert.equal(r.status, 0, r.stderr)
   assert.deepEqual(argsOf(r), OWN_ARGS)
-  assert.deepEqual(JSON.parse(SETTINGS), { enabledPlugins: { 'superpowers@claude-plugins-official': false } })
+  assert.deepEqual(JSON.parse(SETTINGS), {
+    enabledPlugins: { 'superpowers@claude-plugins-official': false },
+    theme: 'custom:aether:aether',
+  })
+})
+
+// A plugin theme is selected as custom:<plugin name>:<file name>, measured on Claude Code 2.1.301. The theme is
+// only in the session's --settings, so a plain `claude` keeps the user's own theme.
+test('the theme the launcher selects is a file the plugin ships, and it sets only colors', () => {
+  const plugin = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'aether', '.claude-plugin', 'plugin.json'), 'utf8'))
+  const slug = JSON.parse(SETTINGS).theme
+  assert.equal(slug.slice(0, 'custom:'.length), 'custom:')
+  const [pluginName, file] = [slug.split(':')[1], slug.split(':')[2]]
+  assert.equal(pluginName, plugin.name, 'the slug names this plugin')
+  const theme = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'aether', 'themes', `${file}.json`), 'utf8'))
+  assert.equal(theme.name, 'Aether')
+  assert.equal(theme.base, 'dark')
+  const entries = Object.entries(theme.overrides)
+  assert.ok(entries.length > 0, 'the theme overrides something')
+  for (const [token, color] of entries) assert.match(color, /^#[0-9a-f]{6}$/, `${token} is a #rrggbb color`)
 })
 
 test('the launcher passes its arguments on, whole and after its own', (t) => {
