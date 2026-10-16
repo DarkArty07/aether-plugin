@@ -113,16 +113,17 @@
       "price": {
         "input": 2,
         "output": 10,
-        "note": "per million tokens through 2026-11-30, and according to press reports double from 2026-12-01; Artificial Analysis lists 2 and 10"
+        "note": "per million tokens through 2026-11-30 (cached input 0.1), and double from 2026-12-01 (cached input 0.2), by Google's pricing page, with one rate for every prompt size; OpenRouter and Artificial Analysis list 2 and 10 on 2026-10-15"
       },
       "knowledgeCutoff": null,
-      "availability": "Stable in the Gemini API (id gemini-4-argon). Rolled out on 2026-10-13 to Google AI Pro and Ultra in the Gemini app. In Antigravity (agy) the press says AI Ultra only; `agy models` does not list it on the owner's plan (Pro). The owner expects it for Pro soon.",
+      "availability": "Stable in the Gemini API (id gemini-4-argon). Rolled out on 2026-10-13 to Google AI Pro and Ultra in the Gemini app. `agy models` 1.3.6 lists it as gemini-4-argon-low, -medium and -high on the owner's machine from 2026-10-15, and the Judge, Examiner and Writer seats each ran a round on it that day.",
       "caveats": [
-        "Not offered on agy yet, so the design seats that name it fall back to the native agent.",
-        "Inputs, outputs, effort levels and cutoff are not on the pages read."
+        "agy takes it at low, medium and high; Aether's xhigh runs at high.",
+        "Not measured against the native Judge yet (R16 of spec 001): the seeded-defects harness found 6 of 6 defects in one round per fixture, which shows that it works, not that it matches Opus.",
+        "Inputs, outputs and cutoff are not on the pages read."
       ],
-      "sources": ["https://ai.google.dev/gemini-api/docs/models","https://www.androidpolice.com/gemini-4-argon-available-pro-ultra-subscribers/"],
-      "checked": "2026-10-13"
+      "sources": ["https://ai.google.dev/gemini-api/docs/models","https://ai.google.dev/gemini-api/docs/pricing","https://openrouter.ai/api/v1/models/google/gemini-4-argon/endpoints","https://www.androidpolice.com/gemini-4-argon-available-pro-ultra-subscribers/"],
+      "checked": "2026-10-15"
     },
     "grok-4-7": {
       "name": "Grok 4.7",

@@ -111,7 +111,7 @@ test('an external Judge reviews the commit in a disposable worktree, and its ans
     r.json.answer.startsWith('## Verdict\nrevise\n## Findings\n1. [major] [missing] Task 3 is too large — `Owns: src/**` — split it by module\n## Open questions\n- Is the API public?\n- Lane: agy gemini-4-argon-high, seat '),
     r.json.answer,
   )
-  assert.match(r.json.lane, /\$\? at list price; Gemini Models used 0\.0 % of the 5 h window and 0\.0 % of the weekly one$/)
+  assert.match(r.json.lane, /\$\d+\.\d{2} at list price; Gemini Models used 0\.0 % of the 5 h window and 0\.0 % of the weekly one$/)
 
   const [turn] = agyTurns(env)
   assert.equal(argAfter(turn.argv, '--model'), 'gemini-4-argon-high')
@@ -263,7 +263,7 @@ test("aether-report --seats counts each seat's rounds, who answered, and why the
   assert.equal(report.bySeat.examiner.rounds, 0)
   assert.equal(report.lanes.calls, 2)
   assert.equal(report.lanes.byRole.judge.calls, 2)
-  assert.deepEqual(report.notes, ['no price for lane model gemini-4-argon-high'])
+  assert.deepEqual(report.notes, [])
 })
 
 // ---- The Writer ----
@@ -357,4 +357,20 @@ test('the balanced choice keeps the Writer native', (t) => {
   assert.equal(r.status, 3)
   assert.equal(r.json.unavailable, 'no-external')
   assert.deepEqual(r.json.native, seats.NATIVE.writer)
+})
+
+// ---- The quota a round used ----
+
+test('windowUsed reads what a round used from a window agy held no reset time for while nothing was used', () => {
+  const at = (remaining, resetsAt) => ({ windows: { '5h': { remaining, resetsAt } } })
+  assert.equal(seats.windowUsed(at(0.9, '2026-10-16T04:00:00Z'), at(0.85, '2026-10-16T04:00:00Z'), '5h'), '5.0')
+  // A full window: agy's reset time is the time of the read plus the window's length, so it moves forward.
+  assert.equal(seats.windowUsed(at(1, '2026-10-16T04:38:00Z'), at(0.99, '2026-10-16T04:41:00Z'), '5h'), '1.0')
+  assert.equal(seats.windowUsed(at(1, '2026-10-16T04:38:00Z'), at(1, '2026-10-16T04:50:00Z'), '5h'), '0.0')
+  // A window that had been used, with another reset time, is another window.
+  assert.equal(seats.windowUsed(at(0.97, '2026-10-21T03:35:00Z'), at(1, '2026-10-22T23:50:00Z'), '5h'), '?')
+  // A full window whose reset time moved back, a time that is not one, and a missing window.
+  assert.equal(seats.windowUsed(at(1, '2026-10-16T04:50:00Z'), at(0.99, '2026-10-16T04:38:00Z'), '5h'), '?')
+  assert.equal(seats.windowUsed(at(1, null), at(0.99, '2026-10-16T04:38:00Z'), '5h'), '?')
+  assert.equal(seats.windowUsed(null, at(0.9, 'x'), '5h'), '?')
 })
