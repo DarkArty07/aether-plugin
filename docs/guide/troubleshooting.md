@@ -71,7 +71,7 @@ A command of one of these classes that no grant covers is appended to the list w
 - `enforce`: the command is refused, and the Lead puts the entry in the "Espera tu sí" of its brief. `scripts/aether-lead` sets it unless your shell already did.
 - anything else, `log` by default: the command is only recorded, and it runs. The Lead reports it under "Hice" in its brief.
 
-A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not recorded. Outside a git repository the command is allowed unrecorded. `aether-autonomy` has a seventh class, `paid-call`, for real paid model calls outside the swarm: the Lead honours it, but the guard does not detect it.
+A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not recorded. Outside a git repository the command is allowed unrecorded. `aether-autonomy` has a seventh class, `paid-call`, for real paid model calls outside the swarm: the Lead honours it, and the guard detects one command of it, the paid replay of the delegate router (`aether-route replay --paid`); any other paid call is not detected.
 
 **What to do.**
 - To let such an action run, say so to the Lead in your own words. A general authorization, such as «todos los merges a main», is recorded by the Lead with `aether-autonomy grant --class <class> --quote "<your words>"`, and holds in the repository until revoked; add `--scope session` for your words «en esta sesión». The quote must be at least 12 characters, found in your own messages of the session: a quote that is not there is rejected. `aether-autonomy list` shows the registry, and `aether-autonomy revoke --class <class> --quote "<your words>"` withdraws the grants of a class.
