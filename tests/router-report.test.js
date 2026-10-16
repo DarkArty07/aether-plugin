@@ -6,6 +6,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const log = require('../plugins/aether/lib/router-log.js')
+const route = require('../plugins/aether/lib/route.js')
+const session = require('../plugins/aether/lib/session.js')
 const { delegatesReport } = require('../plugins/aether/lib/router-report.js')
 const { loadPrices, priceEntry } = require('../plugins/aether/lib/prices.js')
 const { runBin } = require('./helpers.js')
@@ -59,13 +61,58 @@ test('each delegation shows its rung, reason, confidence, decider and what it co
   assert.equal(d4.costUsd, null)
 })
 
-test('an external delegate that did not end ok shows its fallback', (t) => {
+// An external decision as route.js writes it: the weekly window of grok renews first, so this read-only task leaves for grok.
+const NOW = Date.parse('2026-10-15T21:32:00-06:00')
+const ANSWERS = {
+  shape: { choice: 'explore', confidence: 0.95 },
+  stakes: { score: 1.1, confidence: 0.95 },
+  reads_a_lot: { score: 0.5, confidence: 0.9 },
+  pinned_by_checks: { noul: 0.2, confidence: 0.9 },
+  needs_judgment: { noul: 0.3, confidence: 0.9 },
+  edits_files: { noul: 0.03, confidence: 0.95 },
+  many_steps: { noul: 0.1, confidence: 0.9 },
+}
+async function externalDecision(dir, id) {
+  const router = { mode: 'command', decider: 'haiku', fallback: { alias: 'sonnet', effort: 'high' }, deadlines: { haikuMs: 8000, jevMs: 3000, quotaMs: 3000 }, lanes: true, harnesses: ['grok'] }
+  session.markSession(dir, 's1', NOW, { router })
+  const readings = { grok: { readAt: NOW - 60000, groups: { grok: { windows: { weekly: { remaining: 0.95, resetsAt: new Date(NOW + 29.6 * 3600000).toISOString() } } } } } }
+  const deps = { dataDir: dir, now: () => NOW, newId: () => id, readings: () => readings, marks: () => [], installed: () => true, renew: () => ({ started: true }), sleep: async () => {} }
+  const event = { subagent_type: 'general-purpose', description: 'Audit the API usage in src/', prompt: 'Read src/ and report each call that skips the retry wrapper.' }
+  const first = await route.begin({ session: 's1', event }, deps)
+  const plan = await route.finish({ id: first.id, answer: JSON.stringify(ANSWERS) }, deps)
+  assert.equal(plan.external.harness, 'grok', 'the fixture is an external decision')
+  return log.readJournal(dir).find((e) => e.kind === 'decision' && e.id === id)
+}
+const outcome = (id, status, over = {}) => ({ kind: 'outcome', id, time: 1100, session: 's1', harness: 'grok', model: 'grok-4.7', effort: 'low', status, durationMs: 10, usage: { input: 0, output: 0, thinking: 0, cacheRead: 0 }, quotaSpent: [], detail: '', ...over })
+
+test('an external delegate that did not end ok shows the Claude rung that reran it and what the rerun cost', async (t) => {
   const dir = tempDir(t)
-  log.appendEntry(dir, decision('e1', { applied: 'external', ranOn: { harness: 'claude', model: 'claude-haiku-5-5', effort: 'high' } }))
-  log.appendEntry(dir, { kind: 'outcome', id: 'e1', time: 1100, session: 's1', harness: 'agy', model: 'gemini-3.8-flash', effort: 'medium', status: 'quota', durationMs: 10, usage: { input: 0, output: 0, thinking: 0, cacheRead: 0 }, quotaSpent: [], detail: 'out of quota' })
-  const [row] = delegatesReport({ dataDir: dir, prices }).delegations
+  const entry = await externalDecision(dir, 'e1')
+  assert.deepEqual(entry.ranOn, { harness: 'grok', model: 'grok-4.7', effort: 'low' }, 'the decision names the external rung')
+  log.appendEntry(dir, { kind: 'spawn', id: 'e1', time: 1001, session: 's1', agentId: 'agent-2' })
+  log.appendEntry(dir, outcome('e1', 'quota', { detail: 'out of quota' }))
+  const rerun = { t: 1600, ms: 700, agent: 'agent-2', model: 'claude-haiku-5-5', effort: 'high', input: 3000, output: 800, cacheRead: 1000, cacheWrite: 0 }
+  fs.mkdirSync(path.join(dir, 'usage', 's1'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'usage', 's1', '0.json'), JSON.stringify({ session: 's1', part: 0, claudeCode: '2.1.301', agents: { 'agent-2': { type: 'general-purpose', description: 'Audit the API usage in src/' } }, entries: [rerun] }))
+  const { delegations: [row], totals } = delegatesReport({ dataDir: dir, prices })
   assert.equal(row.fallback, 'external quota')
-  assert.deepEqual(row.ranOn, { harness: 'claude', model: 'claude-haiku-5-5', effort: 'high' })
+  assert.deepEqual(row.ranOn, entry.rescue)
+  assert.deepEqual(row.ranOn, { harness: 'claude', model: 'claude-haiku-5-5', effort: 'high' }, 'what the agent ran on, not the rung that failed')
+  assert.ok(priceEntry(rerun, prices) > 0)
+  assert.ok(Math.abs(row.costUsd - priceEntry(rerun, prices)) < 1e-12, 'the rerun spent tokens')
+  assert.ok(Math.abs(totals.costUsd - priceEntry(rerun, prices)) < 1e-12)
+  assert.equal(totals.fallback, 1)
+})
+
+test('an external delegate that ended ok shows the rung it ran on and costs no tokens', async (t) => {
+  const dir = tempDir(t)
+  await externalDecision(dir, 'e3')
+  log.appendEntry(dir, outcome('e3', 'ok', { model: 'grok-4.7-low', quotaSpent: [{ window: 'weekly', fraction: 0.01 }] }))
+  const [row] = delegatesReport({ dataDir: dir, prices }).delegations
+  assert.equal(row.fallback, null)
+  assert.deepEqual(row.ranOn, { harness: 'grok', model: 'grok-4.7-low', effort: 'low' })
+  assert.equal(row.costUsd, null)
+  assert.deepEqual(row.quotaSpent, [{ window: 'weekly', fraction: 0.01 }])
 })
 
 test('per run it counts the delegations decided, overridden and in fallback', (t) => {

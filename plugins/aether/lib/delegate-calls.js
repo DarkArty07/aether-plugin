@@ -15,12 +15,11 @@ const lanes = require('./lanes.js')
 const { readGroups } = require('./lane-readings.js')
 const { createAdapter } = require('./harness/index.js')
 const { WORKDIR_RULE } = require('./lane-calls.js')
+const { KILL_GRACE_SECONDS, cliSeconds } = require('./delegate-limits.js')
 
 // The harnesses a delegate may run on (R19): codex and cursor are not among them.
 const HARNESSES = ['agy', 'grok']
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
-const DEFAULT_TIMEOUT_SECONDS = 1200
-const KILL_GRACE_SECONDS = 60
 const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP']
 // What a delegate may leave in its worktree without breaking its rule: the temporary files of its tools.
 const TMP_DIR = '.aether-tmp/'
@@ -241,7 +240,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     git(['worktree', 'add', '-q', '--detach', worktree, start], top)
     const schemaFile = path.join(dir, 'schema.json')
     fs.writeFileSync(schemaFile, `${JSON.stringify(DELEGATE_SCHEMA, null, 2)}\n`)
-    const timeoutSeconds = settings.timeouts?.reviewer ?? DEFAULT_TIMEOUT_SECONDS
+    const timeoutSeconds = cliSeconds(settings)
     const argv = delegateArgv(cli, rung, { schemaFile, timeoutSeconds, prompt: delegatePrompt(cli, task) })
 
     // 4. The CLI, in its own process group, with an environment clean of credentials.

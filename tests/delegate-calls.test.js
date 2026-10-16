@@ -7,6 +7,7 @@ const path = require('node:path')
 const { makeRepo } = require('./helpers.js')
 const { laneEnv } = require('./lane-fixtures.js')
 const delegate = require('../plugins/aether/lib/delegate-calls.js')
+const { CLI_MAX_SECONDS } = require('../plugins/aether/lib/delegate-limits.js')
 
 const readingsLib = require('../plugins/aether/lib/lane-readings.js')
 
@@ -51,7 +52,7 @@ test('a read-only delegate runs on agy with the model of the rung, and its answe
   assert.ok(Array.isArray(out.quotaSpent))
   const [call] = s.modelCalls()
   assert.equal(call.argv[call.argv.indexOf('--model') + 1], 'gemini-3.8-flash-medium')
-  assert.equal(call.argv[call.argv.indexOf('--print-timeout') + 1], '1200s')
+  assert.equal(call.argv[call.argv.indexOf('--print-timeout') + 1], `${CLI_MAX_SECONDS}s`, 'the reviewer timeout of the table, 1200 s, is cut to the most a delegate may run')
   assert.ok(call.argv.includes('--dangerously-skip-permissions'))
   assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', 'd-1', 'wt')))
   assert.equal(s.repo.git('rev-parse', 'HEAD'), head)

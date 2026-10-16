@@ -10,6 +10,7 @@ const session = require('../plugins/aether/lib/session.js')
 const log = require('../plugins/aether/lib/router-log.js')
 const readings = require('../plugins/aether/lib/lane-readings.js')
 const marks = require('../plugins/aether/lib/router-marks.js')
+const { EXTERNAL_LIMIT_MS } = require('../plugins/aether/lib/delegate-limits.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-route')
 const answers = (over = {}) => ({
@@ -98,7 +99,7 @@ test('delegate runs a read-only delegate on the external harness and records its
   const dataDir = lane.AETHER_DATA_DIR
   const external = (id, prompt) => {
     fs.mkdirSync(path.join(dataDir, 'router', 'external'), { recursive: true })
-    fs.writeFileSync(path.join(dataDir, 'router', 'external', `${id}.json`), JSON.stringify({ id, session: 's1', harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'gemini' }, task: { description: 'audit', prompt }, fallback: { model: 'haiku', effort: 'high' }, timeoutMs: 1320000 }))
+    fs.writeFileSync(path.join(dataDir, 'router', 'external', `${id}.json`), JSON.stringify({ id, session: 's1', harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'gemini' }, task: { description: 'audit', prompt }, fallback: { model: 'haiku', effort: 'high' }, timeoutMs: EXTERNAL_LIMIT_MS }))
   }
   const env = { ...lane }
   external('r1', 'Audit it.\nFAKE-AGY: answer {"answer": "found it"}')
