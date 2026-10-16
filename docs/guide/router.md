@@ -51,7 +51,7 @@ To change the criterion, edit the file. Then check it in two ways:
 1. `node --test tests/router-regression.test.js` decides 14 briefs again and names each one whose decision moved. The briefs are in `tests/fixtures/router/briefs.json`, each with its recorded answers and the decision expected. They are synthetic, because the design allowed that. To calibrate on real delegations, replace them with your own briefs, anonymized and with no client data.
 2. `aether-route replay --journal` decides again, with the criterion in force, the answers the router recorded for your real delegations. It calls no model, and shows what changed against what was decided then.
 
-`aether-route replay` can also read Claude Code's own history with answers you give it, or ask a decider about it with `--paid`, which makes a paid call on purpose.
+`aether-route replay` can also read Claude Code's own history with answers you give it, or ask a decider about it with `--paid`, which makes a paid call on purpose. Each `claude -p` process of the paid Haiku replay has 60 seconds by default (`--timeout <seconds>`, at most 300), apart from the `deadlines` option, and the replay reports the latency and the cost of those calls. The replay skips the Lead's `aether:*` calls, which the router never routes.
 
 ## Levels
 
