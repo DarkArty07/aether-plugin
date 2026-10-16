@@ -117,7 +117,7 @@ Each part of what was asked, with its verdict and the adjustment that makes it w
 
 | Part | Verdict | Adjustment |
 |---|---|---|
-| C1. A decider picks what each delegate runs on | viable with an adjustment | The Agent call can be rewritten in `model` and `effort`, but the spawn hook does not see `effort`, so the router acts on the call itself. In `record` the decider runs in the background; the engine was not tested with work after the hook returns, with parallel launches, with `isolation: "worktree"` or with a real model. |
+| C1. A decider picks what each delegate runs on | viable with an adjustment | The Agent call can be rewritten in `model` and `effort`, but the `agent.spawn` hook does not see `effort`, so the router acts on the call itself. In `record` the decider runs in the background; the engine was not tested with work after the hook returns, with parallel launches, with `isolation: "worktree"` or with a real model. |
 | C2. It knows how to route because it is given the criterion | viable as is | The criterion is a readable file, and a regression of 14 briefs guards it. |
 | C3. The Lead only describes the task | viable with an adjustment | The override needs a fixed form, `ROUTER-OVERRIDE: <reason>`, that the skill of the Lead teaches. |
 | C4. Only the Lead's delegates | viable with an adjustment | The router filters by `subagent_type`. That the hook does not fire for the agents of a workflow is unchecked, so C4 does not depend on it. Recognizing the explicit quota refusal is the router's alone: the swarm and the seats do not change. |
