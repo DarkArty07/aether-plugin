@@ -11,6 +11,7 @@ const log = require('../plugins/aether/lib/router-log.js')
 const readings = require('../plugins/aether/lib/lane-readings.js')
 const marks = require('../plugins/aether/lib/router-marks.js')
 const { EXTERNAL_LIMIT_MS } = require('../plugins/aether/lib/delegate-limits.js')
+const quota = require('../plugins/aether/lib/router-quota.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-route')
 const answers = (over = {}) => ({
@@ -180,6 +181,33 @@ test('replay with a decider needs --paid, because it spends tokens or sends brie
   const r = s.run(['replay', '--projects', s.cwd, '--decider', 'haiku'])
   assert.equal(r.status, 1)
   assert.ok(r.json.error.includes('--paid is required'))
+})
+
+test('renew saves grok\'s reading where the router reads it, from an ACP answer that leaves no line in grok\'s log (R23)', (t) => {
+  const s = setup(t)
+  for (const args of [['renew'], ['renew', '--harness'], ['renew', '--harness', 'codex'], ['renew', '--harness', 'grok', '--now']]) {
+    const r = s.run(args)
+    assert.equal(r.status, 1, args.join(' '))
+    assert.equal(typeof r.json.error, 'string', args.join(' '))
+  }
+  assert.match(s.run(['renew', '--harness', 'grok']).json.error, /no lane table/)
+
+  const fakeGrok = path.join(__dirname, 'fixtures', 'fake-grok-acp.js')
+  fs.chmodSync(fakeGrok, 0o755)
+  const lane = laneEnv(t, { mutate: (config) => { config.harnesses.grok.command = fakeGrok } })
+  const env = { ...lane, AETHER_FAKE_ACP_END_IN_HOURS: '48' }
+  const before = Date.now()
+  const r = runBin(BIN, ['renew', '--harness', 'grok'], s.cwd, env)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(Object.keys(r.json), ['renewed', 'harness', 'readAt'])
+  assert.equal(r.json.renewed, true)
+  assert.equal(r.json.harness, 'grok')
+  assert.ok(r.json.readAt >= before && r.json.readAt <= Date.now())
+  const config = JSON.parse(fs.readFileSync(lane.AETHER_LANES_CONFIG, 'utf8'))
+  const got = quota.peekReadings({ dataDir: lane.AETHER_DATA_DIR, config, harnesses: ['grok'], createAdapter: (name, settings) => require('../plugins/aether/lib/harness/grok.js').createGrok({ ...settings, env }) })
+  assert.equal(got.grok.readAt, r.json.readAt)
+  assert.equal(got.grok.groups.grok.source.method, 'acp')
+  assert.deepEqual(quota.staleHarnesses({ readings: got, config, harnesses: ['grok'], now: Date.now() }), [])
 })
 
 test('the executable bit is set and the commands page counts the bins', () => {

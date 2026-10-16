@@ -6,6 +6,7 @@
 // out, and a renewal of the reading is another module's work. The order of the swarm's quota policy is not used.
 
 const fs = require('node:fs')
+const path = require('node:path')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 const { groupView } = require('./lane-order.js')
 const readings = require('./lane-readings.js')
@@ -33,6 +34,29 @@ function savedReading(dataDir, harness) {
   }
 }
 
+// The router's own reading of a harness, which its background renewal saves (router-renewal.js renewReading): grok's
+// refresh answers over ACP and leaves no line in grok's log, so the reading the router waits for is kept here.
+function readingFile(dataDir, harness) {
+  return path.join(dataDir, 'router', 'readings', `${encodeURIComponent(harness)}.json`)
+}
+
+// The router's reading of a harness, whatever its age, or null when the file is missing, unreadable or malformed.
+function routerReading(dataDir, harness) {
+  try {
+    const data = JSON.parse(fs.readFileSync(readingFile(dataDir, harness), 'utf8'))
+    if (!isObject(data) || typeof data.readAt !== 'number' || !Number.isFinite(data.readAt) || !isObject(data.groups)) return null
+    return { readAt: data.readAt, groups: data.groups }
+  } catch {
+    return null
+  }
+}
+
+// The newer of two readings, either of which may be null; on a tie, the first.
+function newest(a, b) {
+  if (a === null || b === null) return a ?? b
+  return b.readAt > a.readAt ? b : a
+}
+
 // The reading of a harness whose adapter reads a log. Its age is the largest one a group gives. An answer with no
 // reading at all (every group unknown and none with an age) is not a reading taken now.
 function loggedReading(adapter, now) {
@@ -53,7 +77,8 @@ function loggedReading(adapter, now) {
   }
 }
 
-// The readings that already exist for the harnesses named. No process is launched (R23).
+// The readings that already exist for the harnesses named: for each, the newer of the one its adapter keeps (agy's saved
+// reading, grok's log) and the router's own. No process is launched (R23).
 function peekReadings({ dataDir, config, harnesses, createAdapter = defaultCreateAdapter, now = Date.now() }) {
   const result = {}
   for (const harness of harnesses) {
@@ -69,7 +94,8 @@ function peekReadings({ dataDir, config, harnesses, createAdapter = defaultCreat
       result[harness] = null
       continue
     }
-    result[harness] = adapter.quotaCost === 'process' ? savedReading(dataDir, harness) : loggedReading(adapter, now)
+    const kept = adapter.quotaCost === 'process' ? savedReading(dataDir, harness) : loggedReading(adapter, now)
+    result[harness] = newest(kept, routerReading(dataDir, harness))
   }
   return result
 }
@@ -161,4 +187,4 @@ function chooseHarness({ level, axis, rungs, config, enabled, installed, reading
   return { pick: first ? { harness: first.entry.harness, rung: first.rung } : null, considered }
 }
 
-module.exports = { EXTERNAL, lifeMs, peekReadings, staleHarnesses, chooseHarness }
+module.exports = { EXTERNAL, lifeMs, readingFile, peekReadings, staleHarnesses, chooseHarness }

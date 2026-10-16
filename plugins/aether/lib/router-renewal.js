@@ -1,15 +1,18 @@
 'use strict'
 
 // The router's background renewal of a harness's quota reading (R23, A-6). When a decision finds the reading of agy
-// or grok expired, it starts the same step as `aether-lane quota --refresh` in a process of its own, detached from the
-// hook that started it, and may wait a moment for the new reading. At most one renewal runs per harness at a time:
-// a lock, `<dataDir>/router/renewing/<harness>.json` holding `{ pid, since }`, is taken before the process is
-// launched, so two decisions at once start one renewal. The lock is all this module writes: it reads and writes no
-// readings and no marks.
+// or grok expired, it starts `aether-route renew` in a process of its own, detached from the hook that started it, and
+// may wait a moment for the new reading. At most one renewal runs per harness at a time: a lock,
+// `<dataDir>/router/renewing/<harness>.json` holding `{ pid, since }`, is taken before the process is launched, so two
+// decisions at once start one renewal. The renewal itself (renewReading) takes the reading as the lanes do and saves
+// it where the router reads it, `<dataDir>/router/readings/<harness>.json`; it writes no marks.
 
 const childProcess = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
+const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
+const { readGroups: defaultReadGroups } = require('./lane-readings.js')
+const { readingFile } = require('./router-quota.js')
 
 // A renewal lasts at most grok's 10 s over ACP and 20 s through its UI, or agy's 60 s: past this a lock belongs to a
 // process that died.
@@ -23,7 +26,56 @@ function lockFile(dataDir, harness) {
 }
 
 function renewalArgv(harness, { node = process.execPath, pluginRoot = path.join(__dirname, '..') } = {}) {
-  return [node, path.join(pluginRoot, 'bin', 'aether-lane'), 'quota', harness, '--refresh']
+  return [node, path.join(pluginRoot, 'bin', 'aether-route'), 'renew', '--harness', harness]
+}
+
+// What renews a harness whose adapter cannot take a new reading itself: grok's adapter only reads its log, and its
+// refresh asks grok over ACP, then through its UI (lane-quota.js does the same). Loaded only when a renewal runs.
+const REFRESHERS = {
+  grok: (settings) => require('./harness/grok-quota.js').refreshGrokQuota({ command: settings.command }),
+}
+
+let writeCounter = 0
+
+function writeAtomic(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const tmp = `${file}.${process.pid}.${Date.now()}.${++writeCounter}.tmp`
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(value) + '\n')
+    fs.renameSync(tmp, file)
+  } finally {
+    fs.rmSync(tmp, { force: true })
+  }
+}
+
+// Takes a new reading of one harness and saves it where the router reads it, as { readAt, groups }, the shape of
+// peekReadings. settings is the harness's entry in the lane table. A harness with a refresher gets its reading from it,
+// shared by every group of its entry, as the lanes show a refresh; any other is read fresh through its adapter
+// (readGroups with fresh: true, which also renews the reading the lanes keep). Resolves to what it saved; rejects,
+// writing nothing, when no reading came. now is a clock; createAdapter, readGroups and refreshers are for tests.
+async function renewReading({
+  harness,
+  settings,
+  dataDir,
+  now = Date.now,
+  createAdapter = defaultCreateAdapter,
+  readGroups = defaultReadGroups,
+  refreshers = REFRESHERS,
+}) {
+  if (!RENEWABLE.includes(harness)) throw new Error('the router renews only agy or grok')
+  if (settings === null || typeof settings !== 'object') throw new Error(`the lane table has no ${harness} harness`)
+  let saved
+  if (Object.hasOwn(refreshers, harness)) {
+    const reading = await refreshers[harness](settings)
+    if (reading === null || typeof reading !== 'object') throw new Error(`${harness} gave no new reading`)
+    const groups = Object.fromEntries(Object.keys(settings.groups ?? {}).map((key) => [key, { ...reading }]))
+    saved = { readAt: now(), groups }
+  } else {
+    const read = readGroups(createAdapter(harness, settings), { harness, settings, dataDir, now: now(), fresh: true })
+    saved = { readAt: read.readAt, groups: read.groups }
+  }
+  writeAtomic(readingFile(dataDir, harness), saved)
+  return saved
 }
 
 // Launches the renewal in a process that outlives its caller, and returns its pid. A process that cannot start has no
@@ -147,6 +199,7 @@ module.exports = {
   RENEWABLE,
   lockFile,
   renewalArgv,
+  renewReading,
   spawnRenewal,
   startRenewal,
   waitForReading,
