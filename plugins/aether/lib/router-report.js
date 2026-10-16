@@ -39,9 +39,13 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0, p
       const outcome = outcomes.get(entry.id)
       const agentId = spawn ? spawn.agentId || null : null
       const decision = entry.decision || null
+      const failed = Boolean(outcome) && outcome.status !== 'ok'
       let fallback = entry.fallback || null
-      if (!fallback && outcome && outcome.status !== 'ok') fallback = `external ${outcome.status}`
-      const ranOn = outcome && outcome.status === 'ok' ? { harness: outcome.harness, model: outcome.model, effort: outcome.effort } : entry.ranOn || null
+      if (!fallback && failed) fallback = `external ${outcome.status}`
+      // An external delegate that ended ok ran on its outcome's rung. One that did not was rerun by its agent on Claude,
+      // on the rescue rung the decision recorded, and that rerun spent tokens.
+      let ranOn = entry.ranOn || null
+      if (outcome) ranOn = failed ? entry.rescue || null : { harness: outcome.harness, model: outcome.model, effort: outcome.effort }
       return {
         id: entry.id,
         time: entry.time,
@@ -58,7 +62,7 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0, p
         fallback,
         ranOn,
         agentId,
-        costUsd: outcome ? null : costOf(agentId, entry.session, usage, prices),
+        costUsd: outcome && !failed ? null : costOf(agentId, entry.session, usage, prices),
         quotaSpent: outcome ? outcome.quotaSpent || null : null,
         durationMs: outcome ? outcome.durationMs : null,
       }

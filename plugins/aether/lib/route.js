@@ -17,6 +17,7 @@ const path = require('node:path')
 const lanes = require('./lanes.js')
 const criterionLib = require('./router-criterion.js')
 const deciders = require('./router-deciders.js')
+const { EXTERNAL_LIMIT_MS } = require('./delegate-limits.js')
 const { appendEntry } = require('./router-log.js')
 const { readAllMarks } = require('./router-marks.js')
 const { EXTERNAL, peekReadings, staleHarnesses, chooseHarness } = require('./router-quota.js')
@@ -28,8 +29,6 @@ const OVERRIDE_PREFIX = 'ROUTER-OVERRIDE: '
 const CLAUDE_ALIASES = ['haiku', 'sonnet', 'opus']
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const EXCERPT_CHARS = 400
-const DEFAULT_REVIEWER_TIMEOUT_S = 1200
-const EXTERNAL_GRACE_MS = 120000
 const DEADLINE_OF = { haiku: 'haikuMs', jev: 'jevMs' }
 
 // ---- the override and the files ----
@@ -322,11 +321,6 @@ async function quotaStep(d, settings, { level, axis }) {
   return { pick, quota, waitedMs }
 }
 
-function externalTimeoutMs(config, harness) {
-  const seconds = config?.harnesses?.[harness]?.timeouts?.reviewer ?? DEFAULT_REVIEWER_TIMEOUT_S
-  return seconds * 1000 + EXTERNAL_GRACE_MS
-}
-
 // ---- the decision ----
 
 // Closes a call: result is { answers, cost, deciderMs } or { failure, deciderMs }.
@@ -401,7 +395,7 @@ async function conclude(ctx, d, result) {
         model: pick.rung.model,
         effort: pick.rung.effort,
         group: pick.rung.group,
-        timeoutMs: externalTimeoutMs(d.lanesConfig(), pick.harness),
+        timeoutMs: EXTERNAL_LIMIT_MS,
         fallback: { model: rescue.alias, effort: rescue.effort },
       }
       writeJson(externalFile(d.dataDir, ctx.id), {
@@ -436,6 +430,8 @@ async function conclude(ctx, d, result) {
     quotaWaitMs,
     deciderCost: result.cost ?? null,
   })
+  // An external delegate that does not end ok runs again on Claude, on the rescue rung: the report reads it from here.
+  if (applied === 'external') entry.rescue = { harness: 'claude', model: claudeId(table, rescue.alias), effort: rescue.effort }
   appendEntry(d.dataDir, entry)
   return plan(ctx, { args, notes, external })
 }
