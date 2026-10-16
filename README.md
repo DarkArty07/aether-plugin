@@ -38,7 +38,7 @@ Aether serves five goals, **RADAR**.
 claude plugin install aether --marketplace DarkArty07/aether-plugin
 ```
 
-Add `--config lanes=true` to turn the lanes on (`lanes`, off by default; see [Options](docs/guide/options.md#options), which has the plugin's four options and how to set them).
+Add `--config lanes=true` to turn the lanes on (`lanes`, off by default; see [Options](docs/guide/options.md#options), which has the plugin's eight options and how to set them).
 
 ## First start
 
