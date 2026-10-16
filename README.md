@@ -1,12 +1,24 @@
+<p align="center"><img src="assets/readme/banner.png" alt="AETHER, a plugin for Claude Code: a marble Greek statue in a retro AETHER.EXE window with a 'needs your yes' dialog, in violet halftone over a cosmic background" width="100%"></p>
+
 # Aether Plugin
 
-<!-- hero: the mascot animation goes here -->
+<!-- hero: the mascot, struck by lightning, becomes Claude Aether, calls three crabs and shows a brief -->
+<p align="center"><img src="assets/readme/mascot.gif" alt="A pixel mascot is struck by lightning and becomes a cosmic purple Claude Aether, who calls three crabs and shows a brief on a retro monitor" width="400"></p>
 
-A plugin for Claude Code that adds an opt-in **Aether mode**: an accountable orchestrator, the Lead, that turns the owner's intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans the owner pays for, and reports in one brief. The Lead writes the owner's intent card and launches `/aether:design`, which runs the Writer and the Judge on their own until the spec, the plan and the tasks are approved; then the Lead builds the plan itself, through delegate tasks, or with the swarm in parallel. Plain `claude` stays normal mode.
+A plugin for Claude Code that adds an opt-in **Aether mode**: an accountable orchestrator, the Lead, that turns the owner's intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans the owner pays for, and reports in one brief.
+
+The Lead writes the owner's intent card and launches `/aether:design`, which runs the Writer and the Judge on their own until the spec, the plan and the tasks are approved. Then the Lead builds the plan itself, through delegate tasks, or with the swarm in parallel.
+
+Plain `claude` stays normal mode.
+
+<p align="center"><img src="https://img.shields.io/badge/version-0.11.0-blue" alt="version 0.11.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
 
 Version 0.11.0 ([changelog](docs/changelog.md))
 
-Aether serves five goals, **RADAR**:
+Aether serves five goals, **RADAR**.
+
+<p align="center"><img src="assets/readme/radar.png" alt="The five RADAR goals as five halftone cards: Rápido (lightning), Autónomo (an armillary sphere), Delegación (two marble hands passing an orb), Asequible (balance scales) and Robusto (Doric columns)" width="100%"></p>
+
 - **Rápido** (fast): fast, cheap models do the bulk of the work, and nothing iterates without end;
 - **Autónomo** (autonomous): the owner is not asked about trivial things, and every irreversible step reaches them in one list;
 - **Delegación** (delegation): work goes to other coding harnesses (agy, Codex, Grok, Cursor) while their quota lasts;
