@@ -3,7 +3,7 @@
 **Type:** bug (models index, documentation)
 **Date:** 2026-10-15
 **Found in:** the Argon seat check of the Lead's session e328a606
-**Status:** open
+**Status:** fixed in PR #27, not released yet. The agy listing is captured again (`harness-models.json`, 2026-10-15), `models.json` and `docs/models/README.md` are generated from it with Argon among the models in use, and its profile, the lane table's note, `design-seats.md`, `options.md` and the seats evaluation README say what is verified.
 **GitHub:** [#25](https://github.com/DarkArty07/aether-plugin/issues/25) (private repository)
 
 ## What happened

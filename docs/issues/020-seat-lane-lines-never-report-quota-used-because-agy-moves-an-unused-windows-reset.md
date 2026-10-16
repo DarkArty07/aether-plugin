@@ -3,7 +3,7 @@
 **Type:** bug (lane records, quota)
 **Date:** 2026-10-15
 **Found in:** the Argon seat check of the Lead's session e328a606
-**Status:** open
+**Status:** fixed in PR #27, not released yet. `windowUsed` in `lib/seats.js` takes a window that was full before the round as the same window after it when its reset time did not move back, and `tests/seats.test.js` covers the cases. `lanes.quotaConsumed`, which the report uses between readings, is not changed.
 **GitHub:** [#26](https://github.com/DarkArty07/aether-plugin/issues/26) (private repository)
 
 ## What happened

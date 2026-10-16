@@ -54,4 +54,4 @@ The external Examiner keeps the seat when it catches at least as many bugs with 
 
 ## Not yet measured
 
-As of 2026-10-13, none of these has run with real models: Gemini 4 Argon became generally available that day. Its name in agy (`gemini-4-argon` plus the level) and its quota group are not verified yet either. The first round on the owner's machine checks both.
+As of 2026-10-15, no external seat has been compared with its native agent. A first check ran that day: agy 1.3.6 offers `gemini-4-argon-low`, `-medium` and `-high`, the Judge harness above ran once per fixture with `--occupant external` (all three verdicts right, 6 of 6 seeded defects found, one real finding no fixture planted), and a Judge, an Examiner and a Writer round each ran through `aether-lane seat-start` and `seat-wait` in a throwaway repository (exit 0, no change outside the seat, the Writer's tasks passed `aether-plan check`). That shows the seats work on Argon; it is not the comparison above, which still needs the native runs and three rounds per fixture.

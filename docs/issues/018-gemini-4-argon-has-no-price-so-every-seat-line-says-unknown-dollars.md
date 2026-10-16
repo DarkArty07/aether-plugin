@@ -3,7 +3,7 @@
 **Type:** bug (prices, lane records)
 **Date:** 2026-10-15
 **Found in:** the Argon seat check of the Lead's session e328a606, after agy 1.3.6 began to offer the model
-**Status:** open
+**Status:** fixed in PR #27, not released yet. `config/prices.json` has `gemini-4-argon` at OpenRouter's rates (2 input, 10 output, 0.1 cache read, 0.1875 cache write, per million tokens), and `tests/prices.test.js` covers its id and a priced seat line. Google's pricing page doubles the rates from 2026-12-01 and the file holds one set: change the entry then.
 **GitHub:** [#24](https://github.com/DarkArty07/aether-plugin/issues/24) (private repository)
 
 ## What happened

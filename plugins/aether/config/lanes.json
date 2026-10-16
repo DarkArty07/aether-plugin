@@ -40,7 +40,7 @@
           "group": "gemini",
           "roles": ["judge", "writer", "examiner"],
           "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
-          "note": "Gemini 4 Argon, generally available 2026-10-13; on agy for Google AI Ultra. Its agy name and quota group are not verified yet: a wrong one fails the round, and the native agent takes the seat."
+          "note": "Gemini 4 Argon, generally available 2026-10-13. agy 1.3.6 lists it as gemini-4-argon-low, -medium and -high, and a round of each seat ran on it on 2026-10-15. Not measured against the native agent yet (docs/evaluations/seats)."
         }
       }
     },
