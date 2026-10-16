@@ -346,6 +346,36 @@ test('irreversibleClass gives the class of each listed form', () => {
   }
 })
 
+test('irreversibleClass gives paid-call to an aether-route replay with --paid, by name or by path, and to nothing else of aether-route', () => {
+  for (const command of [
+    'aether-route replay --projects ~/.claude/projects --decider haiku --paid',
+    'aether-route replay --paid --projects ~/.claude/projects --decider jev',
+    'aether-route replay --projects p --paid --decider haiku --since 5',
+    'node plugins/aether/bin/aether-route replay --projects p --decider haiku --paid',
+    'node /abs/plugins/aether/bin/aether-route replay --paid --projects p --decider jev',
+    'node --no-warnings ./plugins/aether/bin/aether-route replay --projects p --decider haiku --paid',
+    '/abs/plugins/aether/bin/aether-route replay --projects p --decider haiku --paid',
+    'cd x && FOO=1 node bin/aether-route replay --projects p --decider haiku --paid',
+    'bash -c "node bin/aether-route replay --projects p --decider haiku --paid"',
+  ]) {
+    assert.equal(irreversibleClass(command), 'paid-call', command)
+  }
+  for (const command of [
+    'aether-route replay --journal',
+    'aether-route replay --projects p --answers a.json',
+    'node plugins/aether/bin/aether-route replay --projects p --answers a.json',
+    'aether-route report',
+    'aether-route status --paid',
+    'aether-route replay-x --paid',
+    'node plugins/aether/bin/aether-route status',
+    'echo "aether-route replay --paid"',
+    "git commit -m 'aether-route replay --projects p --decider haiku --paid'",
+    'node other.js aether-route replay --paid',
+  ]) {
+    assert.equal(irreversibleClass(command), null, command)
+  }
+})
+
 test('a forced removal is risky only when its target is the root, a home, a parent or the current directory, or one of their children', () => {
   for (const target of [
     '/', '/*', '/etc', '/etc/', '/etc/*', '/home/',
