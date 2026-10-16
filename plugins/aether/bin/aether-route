@@ -5,13 +5,15 @@
 // aether-route finish --id <id> (--answer-file <file> | --failure <code>) [--session <id>]
 // aether-route decide --id <id>
 // aether-route delegate --id <id> [--session <id>]
+// aether-route spawn --id <id> --agent <agent id> [--session <id>]
 // aether-route replay (--journal | --projects <dir> [--project <substring>...] --answers <file> |
 //   --projects <dir> --decider <haiku|jev> --paid) [--session <id>] [--since <ms>] [--fallback <alias:effort>]
 // aether-route renew --harness <agy|grok>
 //
 // Decides how each delegate task of the Lead runs. begin, finish and decide are the router's three steps (the mod
 // asks the model between begin and finish); delegate runs a read-only delegate on agy or grok and records its
-// outcome; replay decides again over the journal or over the history; renew takes a new quota reading of agy or grok
+// outcome; spawn records which agent ran a delegation, so that the delegates report can price it; replay decides
+// again over the journal or over the history; renew takes a new quota reading of agy or grok
 // and saves it where the router reads it (a decision starts it in the background). Each prints one JSON line and
 // exits 0, except a wrong use or an error of its own, which prints { "error": <message> } and exits 1.
 
@@ -27,6 +29,7 @@ const VERBS = {
   finish: { usage: 'finish --id <id> (--answer-file <file> | --failure <code>) [--session <id>]', flags: ['id', 'answer-file', 'failure', 'session'], required: ['id'] },
   decide: { usage: 'decide --id <id>', flags: ['id'], required: ['id'] },
   delegate: { usage: 'delegate --id <id> [--session <id>]', flags: ['id', 'session'], required: ['id'] },
+  spawn: { usage: 'spawn --id <id> --agent <agent id> [--session <id>]', flags: ['id', 'agent', 'session'], required: ['id', 'agent'] },
   replay: {
     usage: 'replay (--journal | --projects <dir> [--project <substring>...] --answers <file> | --projects <dir> --decider <haiku|jev> --paid) [--session <id>] [--since <ms>] [--fallback <alias:effort>]',
     flags: ['journal', 'projects', 'project', 'answers', 'decider', 'paid', 'session', 'since', 'fallback'],
@@ -125,6 +128,16 @@ async function delegateCommand(flags, dataDir) {
   return { ok, status: result.status, text: result.text, detail: result.detail, marked }
 }
 
+// The pattern of the ids route.js gives a delegation.
+const ID = /^[A-Za-z0-9_-]+$/
+
+async function spawnCommand(flags, dataDir) {
+  if (!ID.test(flags.id) || flags.agent === '') throw new Error(`usage: aether-route ${VERBS.spawn.usage}\nthe id is letters, digits, - and _, and the agent id is not empty`)
+  const entry = { kind: 'spawn', id: flags.id, time: Date.now(), session: flags.session ?? null, agentId: flags.agent }
+  if (!lib('router-log.js').appendEntry(dataDir, entry)) throw new Error('cannot write the decision log')
+  return { spawned: true, id: entry.id, agentId: entry.agentId }
+}
+
 async function decideCommand(flags, dataDir) {
   return lib('route.js').decide({ id: flags.id }, { dataDir })
 }
@@ -185,7 +198,7 @@ async function renewCommand(flags, dataDir) {
   return { renewed: true, harness, readAt }
 }
 
-const COMMANDS = { begin: beginCommand, finish: finishCommand, decide: decideCommand, delegate: delegateCommand, replay: replayCommand, renew: renewCommand }
+const COMMANDS = { begin: beginCommand, finish: finishCommand, decide: decideCommand, delegate: delegateCommand, spawn: spawnCommand, replay: replayCommand, renew: renewCommand }
 
 async function main() {
   const [verb, ...args] = process.argv.slice(2)

@@ -123,6 +123,51 @@ test('delegate runs a read-only delegate on the external harness and records its
   assert.equal(outcomes[0].model, 'gemini-3.8-flash-medium')
 })
 
+test('spawn appends the link between a delegation and the agent that ran it, and rejects a wrong use (R27, R30)', (t) => {
+  const s = setup(t)
+  const before = Date.now()
+  const linked = s.run(['spawn', '--session', 's1', '--id', 'r-mpx1-1f2e', '--agent', 'agent-1'])
+  assert.equal(linked.status, 0, linked.stderr)
+  assert.deepEqual(linked.json, { spawned: true, id: 'r-mpx1-1f2e', agentId: 'agent-1' })
+  const [entry] = log.readJournal(s.dataDir)
+  assert.deepEqual(Object.keys(entry), ['kind', 'id', 'time', 'session', 'agentId'])
+  assert.equal(entry.kind, 'spawn')
+  assert.equal(entry.id, 'r-mpx1-1f2e')
+  assert.equal(entry.session, 's1')
+  assert.equal(entry.agentId, 'agent-1')
+  assert.ok(entry.time >= before && entry.time <= Date.now())
+  const bare = s.run(['spawn', '--id', 'r2', '--agent', 'agent-2'])
+  assert.equal(bare.status, 0, bare.stderr)
+  assert.equal(log.readJournal(s.dataDir)[1].session, null, 'without --session the entry holds null')
+
+  const written = log.readJournal(s.dataDir).length
+  const wrong = [
+    ['spawn'],
+    ['spawn', '--id', 'r3'],
+    ['spawn', '--agent', 'agent-3'],
+    ['spawn', '--id', 'r3', '--agent'],
+    ['spawn', '--id', 'r3', '--agent', ''],
+    ['spawn', '--id', '', '--agent', 'agent-3'],
+    ['spawn', '--id', '../x', '--agent', 'agent-3'],
+    ['spawn', '--id', 'a b', '--agent', 'agent-3'],
+    ['spawn', '--id', 'a/b', '--agent', 'agent-3'],
+    ['spawn', '--id', 'r3', '--agent', 'agent-3', '--now'],
+  ]
+  for (const args of wrong) {
+    const r = s.run(args)
+    assert.equal(r.status, 1, args.join(' '))
+    assert.equal(typeof r.json.error, 'string', args.join(' '))
+    assert.equal(r.json.spawned, undefined, args.join(' '))
+  }
+  assert.equal(log.readJournal(s.dataDir).length, written, 'a wrong use writes nothing')
+
+  const blocked = tempDir(t, 'aether-route-blocked-')
+  fs.writeFileSync(path.join(blocked, 'router'), 'a file where the log directory should be')
+  const lost = runBin(BIN, ['spawn', '--id', 'r4', '--agent', 'agent-4'], s.cwd, { AETHER_DATA_DIR: blocked })
+  assert.equal(lost.status, 1, 'an entry that could not be written is not reported as spawned')
+  assert.equal(typeof lost.json.error, 'string')
+})
+
 test('scenario 20: a refusal the router saw leaves its mark, and the next decision sends nothing to that group (R22, R22b)', (t) => {
   const lane = laneEnv(t)
   const repo = makeRepo(t)

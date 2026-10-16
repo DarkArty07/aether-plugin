@@ -61,6 +61,27 @@ test('each delegation shows its rung, reason, confidence, decider and what it co
   assert.equal(d4.costUsd, null)
 })
 
+test('the spawn that aether-route writes joins a decision to its agent: the report shows the agent and what its requests cost', (t) => {
+  const dir = tempDir(t)
+  log.appendEntry(dir, decision('j1'))
+  fs.mkdirSync(path.join(dir, 'usage', 's1'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'usage', 's1', '0.json'), JSON.stringify({ session: 's1', part: 0, claudeCode: '2.1.301', agents: { 'agent-1': { type: 'general-purpose', description: 'task j1' } }, entries: [USAGE_ENTRY] }))
+  const [before] = delegatesReport({ dataDir: dir, session: 's1', prices }).delegations
+  assert.equal(before.agentId, null, 'nothing links the decision to its agent yet')
+  assert.equal(before.costUsd, null)
+
+  const bin = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-route')
+  const spawned = runBin(bin, ['spawn', '--session', 's1', '--id', 'j1', '--agent', 'agent-1'], dir, { AETHER_DATA_DIR: dir })
+  assert.equal(spawned.status, 0, spawned.stderr)
+  assert.deepEqual(spawned.json, { spawned: true, id: 'j1', agentId: 'agent-1' })
+
+  const { delegations: [row], totals } = delegatesReport({ dataDir: dir, session: 's1', prices })
+  assert.equal(row.agentId, 'agent-1')
+  assert.ok(priceEntry(USAGE_ENTRY, prices) > 0)
+  assert.ok(Math.abs(row.costUsd - priceEntry(USAGE_ENTRY, prices)) < 1e-12)
+  assert.ok(Math.abs(totals.costUsd - priceEntry(USAGE_ENTRY, prices)) < 1e-12)
+})
+
 // An external decision as route.js writes it: the weekly window of grok renews first, so this read-only task leaves for grok.
 const NOW = Date.parse('2026-10-15T21:32:00-06:00')
 const ANSWERS = {

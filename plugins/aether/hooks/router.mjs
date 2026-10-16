@@ -8,10 +8,12 @@
 // and adds its notes to the call's result, for the Lead. In record mode (`background: true`) the call goes on as
 // the Lead made it and the decision is made in the background; drain() waits for that work.
 //
-// agent.spawn and turn.step: a plan with `external` names a delegate that runs on another harness. Its call is
-// remembered by its prompt, bound to the agent id at spawn, and at the agent's first step `aether-route delegate`
-// runs it: its text is the agent's answer, with no model request. A failed delegate is left to the model, at
-// the rung `finish` already put on the call.
+// agent.spawn and turn.step: every routed call that has an id is remembered by its prompt and bound to the agent
+// id at spawn. The spawn is recorded in the background with `aether-route spawn`, which joins the decision to the
+// agent so that the delegates report can price its requests. A plan with `external` names a delegate that runs on
+// another harness: its agent is also remembered, and at its first step `aether-route delegate` runs it: its text
+// is the agent's answer, with no model request. A failed delegate is left to the model, at the rung `finish`
+// already put on the call.
 //
 // Any failure of the router (an exception, a non-zero exit, a line that is not JSON, a skipped plan) leaves the
 // call as the Lead made it (R25).
@@ -25,6 +27,8 @@ const ROUTE_BIN = 'aether-route'
 const BEGIN_TIMEOUT_MS = 25000
 // finish holds the quota wait, 10 s, plus 5 s.
 const FINISH_TIMEOUT_MS = 15000
+// spawn appends one line to the log.
+const SPAWN_TIMEOUT_MS = 10000
 // decide of Jev, in the background, holds the decision and the quota wait, like begin.
 const DECIDE_TIMEOUT_MS = 25000
 // The Agent call's fields the router reads; only the defined ones are written.
@@ -90,13 +94,22 @@ function rewriteOf(plan) {
 
 const notesOf = (plan) => (Array.isArray(plan.notes) ? plan.notes.filter(isText) : [])
 
+// Records which agent ran a delegation. It never throws.
+async function recordSpawn($, ctx, id, agentId) {
+  try {
+    await route($, ctx, ['spawn', '--session', ctx.session, '--id', id, '--agent', agentId], SPAWN_TIMEOUT_MS)
+  } catch {
+    // The report shows no agent for this delegation; the agent already runs.
+  }
+}
+
 export function createRouter() {
   let written = 0
   // Work started in the background, until it settles.
   const background = new Set()
-  // prompt → the externals of the calls that carry it, oldest first, until their spawn binds them.
+  // prompt → the { id, external } of the routed calls that carry it, oldest first, until their spawn binds them.
   const byPrompt = new Map()
-  // agent id → its external, until its first step.
+  // agent id → its { id, external }, until its first step; only the agents of an external delegate.
   const byAgent = new Map()
 
   function track(work) {
@@ -104,10 +117,10 @@ export function createRouter() {
     work.finally(() => background.delete(work))
   }
 
-  function remember(prompt, external) {
-    if (typeof prompt !== 'string' || !isObject(external) || !isText(external.id)) return
+  function remember(prompt, id, external) {
+    if (typeof prompt !== 'string' || !isText(id)) return
     const waiting = byPrompt.get(prompt) ?? []
-    waiting.push(external)
+    waiting.push({ id, external })
     byPrompt.set(prompt, waiting)
   }
 
@@ -115,6 +128,8 @@ export function createRouter() {
     async toolCall($, e, next, ctx) {
       if (!isObject(e) || (typeof e.subagent_type === 'string' && e.subagent_type.startsWith('aether:'))) return next(e)
       let plan = null
+      // The id of the delegation, once begin has made one.
+      let id = null
       try {
         const input = {}
         for (const key of EVENT_FIELDS) if (e[key] !== undefined) input[key] = e[key]
@@ -125,9 +140,11 @@ export function createRouter() {
         if (begun.skip === true) {
           plan = null
         } else if (begun.background === true) {
+          id = begun.id
           track(decideInBackground($, ctx, begun, inputFile))
           plan = null
         } else if (begun.ask !== undefined) {
+          id = begun.id
           plan = await answerAsk($, ctx, begun, inputFile)
         } else {
           plan = begun
@@ -136,22 +153,31 @@ export function createRouter() {
       } catch {
         plan = null
       }
+      if (plan !== null && isText(plan.id)) id = plan.id
+      remember(e.prompt, id, plan !== null && isObject(plan.external) ? plan.external : null)
       if (plan === null) return next(e)
       const rewrite = rewriteOf(plan)
       const notes = notesOf(plan)
-      if (isObject(plan.external)) remember(e.prompt, plan.external)
       const result = await next(rewrite ? { ...e, ...rewrite } : e)
       // A refused call carries no context.
       if (notes.length === 0 || !isObject(result) || result.deny !== undefined) return result
       return { ...result, context: [...(Array.isArray(result.context) ? result.context : []), ...notes] }
     },
 
-    bind(e, agentId) {
-      if (!isObject(e) || typeof e.prompt !== 'string' || !isText(agentId)) return
-      const waiting = byPrompt.get(e.prompt)
-      if (!waiting) return
-      byAgent.set(agentId, waiting.shift())
-      if (waiting.length === 0) byPrompt.delete(e.prompt)
+    // The agent that spawned for a routed call: the call is found by its prompt. An external delegate is kept for the
+    // agent's first step, and every delegation is recorded with `aether-route spawn`, in the background.
+    bind($, e, agentId, ctx) {
+      try {
+        if (!isObject(e) || typeof e.prompt !== 'string' || !isText(agentId)) return
+        const waiting = byPrompt.get(e.prompt)
+        if (!waiting) return
+        const routed = waiting.shift()
+        if (waiting.length === 0) byPrompt.delete(e.prompt)
+        if (routed.external !== null) byAgent.set(agentId, routed)
+        track(recordSpawn($, ctx, routed.id, agentId))
+      } catch {
+        // The agent runs as it was going to.
+      }
     },
 
     has(agentId) {
@@ -159,7 +185,7 @@ export function createRouter() {
     },
 
     async *step($, e, next, ctx) {
-      const external = isObject(e) && e.index === 0 && isText(e.agentId) ? byAgent.get(e.agentId) : undefined
+      const external = isObject(e) && e.index === 0 && isText(e.agentId) ? byAgent.get(e.agentId)?.external : undefined
       if (!external) return yield* next(e)
       byAgent.delete(e.agentId)
       let text = null

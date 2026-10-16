@@ -18,8 +18,9 @@
 // of the aether plugin are not offered.
 //
 // It hands the Lead's delegates to the delegate router (router.mjs, spec 006): the Agent calls of an Aether
-// session whose subagent_type is not aether:*, and the first step of a delegate the router runs on another
-// harness. The router never breaks a call: any failure in it leaves the call as the Lead made it.
+// session whose subagent_type is not aether:*, the spawn of each routed delegate (which the router records, so
+// aether-report can price it), and the first step of a delegate the router runs on another harness. The router
+// never breaks a call: any failure in it leaves the call as the Lead made it.
 //
 // Files: <data dir>/usage/<session>/<n>.json, each { session, part, claudeCode, agents, entries }
 // with up to PART_SIZE entries. A reloaded module starts after the parts already on disk.
@@ -356,7 +357,9 @@ export function register(on) {
     const result = await next(e)
     if (result && result.agentId) {
       state.agents[result.agentId] = { type: e.subagentType || null, description: e.description || null }
-      router.bind(e, result.agentId)
+      // The delegate router links the agent to its decision (and keeps an external delegate for its first step).
+      const ctx = await routerContext($, state)
+      if (ctx) router.bind(routerCalls($), e, result.agentId, ctx)
       const command = opsCommand(e)
       if (command && !(await opsOff($, state))) state.ops.set(result.agentId, command)
     }
