@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>404 · Aether Plugin</title>
+<meta name="description" content="Esta página no existe. Vuelve al inicio de Aether Plugin. / This page does not exist. Go back to the Aether Plugin home.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0d0b1c">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230d0b1c'/%3E%3Cpath d='M16 5 27 16 16 27 5 16Z' fill='none' stroke='%23cba6f7' stroke-width='3'/%3E%3C/svg%3E">
+<!-- GitHub Pages serves this file at any missing path, so on http(s) the links must resolve from the site root, not from the broken URL. From file:// the relative links already work. -->
+<script>
+(function () {
+  if (location.protocol === 'file:') return;
+  var project = /\.github\.io$/.test(location.hostname) && /^\/aether-plugin(\/|$)/.test(location.pathname);
+  var b = document.createElement('base');
+  b.href = project ? '/aether-plugin/' : '/';
+  document.head.insertBefore(b, document.head.firstChild);
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+<style>
+.nf{min-height:100vh;display:flex;flex-direction:column}
+.nf-main{flex:1;display:grid;place-items:center;padding-block:48px}
+.nf-win{width:min(560px,100%);margin-inline:auto}
+.nf-body{padding:28px 24px 30px;display:grid;gap:14px}
+.nf-code{font:700 clamp(88px,22vw,160px)/.82 var(--display);color:var(--paper);filter:drop-shadow(0 0 28px rgba(132,102,214,.4))}
+.nf-t{font:700 clamp(26px,5vw,36px)/1 var(--display);letter-spacing:.04em;text-transform:uppercase;color:var(--pink)}
+.nf-en{font-size:14px;color:var(--dim)}
+.nf-btns{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px}
+</style>
+</head>
+<body class="nf">
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="index.html" aria-label="Aether Plugin"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">AETHER</span><span class="brand-sub">// PLUGIN</span></a>
+  </div>
+</header>
+<main class="nf-main">
+  <div class="wrap">
+    <div class="win nf-win">
+      <div class="win-title"><span>404.EXE</span><i class="boxes" aria-hidden="true"><b></b><b></b><b></b></i></div>
+      <div class="win-body nf-body">
+        <p class="tag">// 404 · NO ENCONTRADA</p>
+        <p class="nf-code" aria-hidden="true">404</p>
+        <h1 class="nf-t">Esta página no existe</h1>
+        <p class="mean">La dirección no lleva a ninguna parte de este sitio. Quizá el enlace está viejo o tiene un error.</p>
+        <p class="nf-en" lang="en">This page does not exist. The link may be old or mistyped.</p>
+        <div class="nf-btns">
+          <a class="btn btn-pink" href="index.html">Volver al inicio</a>
+          <a class="btn btn-line" href="index.html" lang="en">Back to home</a>
+        </div>
+      </div>
+      <div class="win-bar"><span>NOT FOUND</span><span>AETHER PLUGIN</span></div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
