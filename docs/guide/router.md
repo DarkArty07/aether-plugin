@@ -96,7 +96,7 @@ The delegate runs in a disposable worktree of the current commit. If it changed 
 
 The effort is native. The router sends the harness's own effort to the CLI, and the `levels` of the swarm's lane table play no part in it.
 
-The engine runs a delegate's command with a cap of ten minutes, so an external delegate has 570 seconds in all, and its CLI at most 360 seconds. The limits live in delegate-limits.js, in the plugin's `lib/`. A task that needs longer stays on Claude, through the fallback.
+The engine runs a delegate's command with a cap of ten minutes, so an external delegate has 570 seconds in all, and its CLI at most 360 seconds. The limits live in `plugins/aether/lib/delegate-limits.js`. A task that needs longer stays on Claude, through the fallback.
 
 ## Fallback
 
