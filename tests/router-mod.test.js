@@ -176,6 +176,11 @@ test('with notes and no rewrite the Lead is told and the call is unchanged (advi
   assert.deepEqual(result.context, ['Aether router: it would run on claude haiku at high.'])
 })
 
+// The engine resolves the spawn inside the tool's next: this next binds the agent to the call, as agent.spawn does.
+const spawning = (router, $, agentId, event = EV, ctx = CTX, spawned = []) => async (e) => {
+  spawned.push(router.bind($, event, agentId, ctx))
+  return { model: 'x', agentId }
+}
 const SPAWNED = (agentId, id = 'r1') => line({ spawned: true, id, agentId })
 const spawnArgv = (agentId, id = 'r1') => ['node', '/plugin/bin/aether-route', 'spawn', '--session', 's1', '--id', id, '--agent', agentId]
 const verbsRun = (calls) => calls.runs.map((r) => r.argv[2])
@@ -184,9 +189,7 @@ test('an external delegate is linked to its agent, then answered by the mod with
   const external = { id: 'r1', harness: 'grok', model: 'grok-4.7', effort: 'low', group: 'grok', timeoutMs: 570000, fallback: { model: 'haiku', effort: 'high' } }
   const router = createRouter()
   const { $, calls } = make({ verbs: { begin: line({ ...PLAN, args: { model: 'haiku', effort: 'high' }, notes: ['n'], external }), spawn: SPAWNED('agent-7'), delegate: line({ ok: true, status: 'ok', text: 'The audit found 3 callers.' }) } })
-  const { next } = recorder()
-  await router.toolCall($, EV, next, CTX)
-  router.bind($, EV, 'agent-7', CTX)
+  await router.toolCall($, EV, spawning(router, $, 'agent-7'), CTX)
   assert.equal(router.has('agent-7'), true)
   let modelSteps = 0
   const step = router.step($, { agentId: 'agent-7', index: 0, turnId: 't1' }, async function* () { modelSteps++; return { answer: 'from model' } }, CTX)
@@ -210,8 +213,7 @@ test('an external delegate is linked to its agent, then answered by the mod with
 
   const router2 = createRouter()
   const failing = make({ verbs: { begin: line({ ...PLAN, args: { model: 'haiku', effort: 'high' }, notes: ['n'], external }), spawn: SPAWNED('agent-8'), delegate: line({ ok: false, status: 'failed', text: '', detail: 'exit 1' }) } })
-  await router2.toolCall(failing.$, EV, recorder().next, CTX)
-  router2.bind(failing.$, EV, 'agent-8', CTX)
+  await router2.toolCall(failing.$, EV, spawning(router2, failing.$, 'agent-8'), CTX)
   let ran = 0
   const fallback = router2.step(failing.$, { agentId: 'agent-8', index: 0, turnId: 't2' }, async function* () { ran++; return { answer: 'from the Claude delegate' } }, CTX)
   const last = await fallback.next()
@@ -236,9 +238,9 @@ test('a routed delegate that runs on Claude is linked to its agent: the mod runs
     const gate = new Promise((resolve) => { release = resolve })
     const { $, calls } = make({ verbs: { ...verbs, spawn: gate.then(() => SPAWNED('agent-1')) } })
     const router = createRouter()
-    await router.toolCall($, EV, recorder().next, CTX)
-    const bound = router.bind($, EV, 'agent-1', CTX)
-    assert.equal(bound, undefined, `${name}: bind starts the work and returns, it does not wait for it`)
+    const bindings = []
+    await router.toolCall($, EV, spawning(router, $, 'agent-1', EV, CTX, bindings), CTX)
+    assert.deepEqual(bindings, [undefined], `${name}: bind starts the work and returns, it does not wait for it`)
     const spawns = calls.runs.filter((r) => r.argv[2] === 'spawn')
     assert.equal(spawns.length, 1, name)
     assert.deepEqual(spawns[0].argv, spawnArgv('agent-1'), name)
@@ -257,15 +259,57 @@ test('a routed delegate that runs on Claude is linked to its agent: the mod runs
 test('two calls with the same prompt are linked to their own agents, in order', async () => {
   const router = createRouter()
   const { $, calls } = make({ processes: [line({ ...PLAN, id: 'r1' }), line({ ...PLAN, id: 'r2' }), SPAWNED('agent-1', 'r1'), SPAWNED('agent-2', 'r2')] })
-  await router.toolCall($, EV, recorder().next, CTX)
-  await router.toolCall($, EV, recorder().next, CTX)
-  router.bind($, EV, 'agent-1', CTX)
-  router.bind($, EV, 'agent-2', CTX)
+  // Launched in parallel: both calls are remembered before either spawns, and the spawns come in the order of the calls.
+  let entered = 0
+  let open
+  const both = new Promise((resolve) => { open = resolve })
+  const parallel = (agentId) => async (e) => {
+    if (++entered === 2) open()
+    await both
+    return spawning(router, $, agentId)(e)
+  }
+  await Promise.all([router.toolCall($, EV, parallel('agent-1'), CTX), router.toolCall($, EV, parallel('agent-2'), CTX)])
   await router.drain()
   assert.deepEqual(calls.runs.slice(2).map((r) => r.argv), [spawnArgv('agent-1', 'r1'), spawnArgv('agent-2', 'r2')])
   router.bind($, EV, 'agent-3', CTX)
   await router.drain()
   assert.equal(calls.runs.length, 4, 'a spawn with no call waiting is left alone')
+})
+
+test('a call that never spawns leaves nothing in the queue: the same prompt launched again is linked to its own id', async () => {
+  const final = { ...PLAN, args: { model: 'haiku', effort: 'high' }, notes: ['n'] }
+  // Both ways the call goes on: with the plan's rewrite, and untouched in record mode (the plan is null there).
+  const cases = [
+    ['a final plan', (id) => line({ ...final, id }), []],
+    ['record mode', (id) => line({ ...PLAN, id, background: true, decide: true }), [line(PLAN)]],
+  ]
+  for (const [name, begin, decided] of cases) {
+    const router = createRouter()
+    const { $, calls } = make({ processes: [begin('r1'), ...decided, begin('r2'), ...decided, SPAWNED('agent-2', 'r2')] })
+    const denied = await router.toolCall($, EV, async () => ({ deny: 'ROUTER: relaunch it' }), CTX)
+    assert.deepEqual(denied, { deny: 'ROUTER: relaunch it' }, `${name}: a denied result is returned as it is`)
+    await router.toolCall($, EV, spawning(router, $, 'agent-2'), CTX)
+    await router.drain()
+    assert.deepEqual(calls.runs.filter((r) => r.argv[2] === 'spawn').map((r) => r.argv), [spawnArgv('agent-2', 'r2')], `${name}: the retry is linked to its own decision`)
+  }
+})
+
+test('a call whose next throws propagates the same error and leaves nothing in the queue', async () => {
+  const router = createRouter()
+  const { $, calls } = make({ processes: [line({ ...PLAN, id: 'r1', args: { model: 'haiku', effort: 'high' }, notes: ['n'] })] })
+  const boom = new Error('the tool failed')
+  await assert.rejects(router.toolCall($, EV, async () => { throw boom }, CTX), (err) => err === boom)
+  router.bind($, EV, 'agent-1', CTX)
+  await router.drain()
+  assert.deepEqual(verbsRun(calls), ['begin'], 'a spawn after the failed call links nothing')
+
+  // The same with no plan: the call goes on untouched and still leaves nothing behind.
+  const router2 = createRouter()
+  const background = make({ processes: [line({ ...PLAN, id: 'r1', background: true, decide: true }), line(PLAN)] })
+  await assert.rejects(router2.toolCall(background.$, EV, async () => { throw boom }, CTX), (err) => err === boom)
+  router2.bind(background.$, EV, 'agent-1', CTX)
+  await router2.drain()
+  assert.deepEqual(verbsRun(background.calls), ['begin', 'decide'])
 })
 
 test('an aether agent, a skipped plan and an unrouted prompt leave no spawn call (R9)', async () => {
@@ -307,11 +351,15 @@ test('a spawn verb that fails never breaks the spawn, the call or the delegate (
   for (const spawn of failures) {
     const router = createRouter()
     const { $ } = make({ verbs: { begin: line({ ...PLAN, args: { model: 'haiku', effort: 'high' }, notes: ['n'], external }), spawn, delegate: line({ ok: true, status: 'ok', text: 'answer' }) } })
-    const { seen, next } = recorder()
+    const seen = []
+    const next = async (event) => {
+      seen.push(event)
+      assert.doesNotThrow(() => router.bind($, EV, 'agent-7', CTX))
+      return { model: 'x', agentId: 'agent-7' }
+    }
     const result = await router.toolCall($, EV, next, CTX)
-    assert.equal(result.agentId, 'agent-1', 'the spawn is the engine\'s, and the router did not touch it')
+    assert.equal(result.agentId, 'agent-7', 'the spawn is the engine\'s, and the router did not touch it')
     assert.deepEqual(seen, [{ ...EV, model: 'haiku', effort: 'high' }])
-    assert.doesNotThrow(() => router.bind($, EV, 'agent-7', CTX))
     await assert.doesNotReject(router.drain())
     const step = router.step($, { agentId: 'agent-7', index: 0, turnId: 't' }, async function* () { return { answer: 'from model' } }, CTX)
     let last
