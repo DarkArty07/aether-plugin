@@ -1,5 +1,7 @@
 # Evidencia medida para el diseño del router de delegados
 
+> **Corrección del 2026-10-16.** Los costos en dólares de este archivo (por ejemplo $480.70, $296.16, $255.68 y «$255 en 98 tareas») y los scripts de `replay/` contaban cada petición una vez por línea de la transcripción. Claude Code escribe una línea por bloque de contenido de un mensaje y repite el uso del mensaje en cada una, así que una petición se contaba de 2 a 6 veces. Medido en 269 transcripciones de subagentes de esta máquina, las peticiones se contaban 2.18 veces y el costo 1.77 veces (US$ 974.82 contado así, US$ 550.24 contando cada petición una vez). Los dólares de abajo están, por tanto, inflados cerca de 1.8 veces; los porcentajes (62 %, 53 %, 55 %, 45 %) son razones entre cifras contadas igual y probablemente se mantienen, pero no se volvieron a medir. El arreglo está en `plugins/aether/lib/router-replay.js` (una petición por `message.id` y `requestId`); estos scripts no se tocaron.
+
 Medida el 2026-10-15 (hora local) con Claude Code 2.1.301, `typesafe/jev-1.14-20261014` y los registros de la máquina del dueño. **No es parte de los criterios de la tarjeta:** es lo que el diseño puede dar por cierto, cómo se midió y qué falta. Las sondas (`probes/`) y el arnés de replay (`replay/`) la reproducen; no llevan datos ni llaves.
 
 ## 1. Lo que el motor permite (sondas, modelo falso, sin llamadas pagadas)

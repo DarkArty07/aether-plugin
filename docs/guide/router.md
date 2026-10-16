@@ -137,7 +137,7 @@ Other uses of this architecture were found, each with the measurement behind it.
 
 1. **A second layer for the guard.** Of 57 commands (31 dangerous), the rules of `aether-guard` catch 14 (45 %) with no false positives. The rules plus Jev (`irreversible` of 0.7 or more) catch 28 of 31, also with none. For commands, Haiku at low effort suits better, because it does not take them off the machine.
 2. **A lint for plans.** The decider agrees with the Writer and the Judge in 55 % (22 of 40; 6 without confidence). It proposes lowering 17 tasks for lack of questions on concurrency, security and migrations. It would only be worth it to raise a level.
-3. **Graders.** The 98 tasks "Grade interview" are 53 % of the spend (about US$255), nearly all on inherited Opus. An A/B (about US$10) is needed before lowering them, which is why `evaluate` is a gate.
+3. **Graders.** The 98 tasks "Grade interview" are 53 % of the spend (US$255 as the first measurement counted it; that measurement counted each request about 1.8 times, so the real figure is about US$140), nearly all on inherited Opus. An A/B (about US$10) is needed before lowering them, which is why `evaluate` is a gate.
 4. **A record of the decider's hits,** once the replay exists, to feed 1 and 2.
 5. **An agy quota reading that includes the individual limit,** if some agy command offers it. Today only `/usage` shows the group, and the group can show a balance with the individual limit spent.
 6. **The swarm and the design seats recognizing agy's explicit refusal** and leaving the mark until the reset it says: see [issue 021](../issues/021-agy-refuses-with-individual-quota-reached-while-usage-shows-balance.md). It needs the owner's confirmation, because it changes what the confirmed scope leaves out.
