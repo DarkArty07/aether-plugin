@@ -20,6 +20,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | `aether:examiner` | The Examiner agent: Opus at `high`. It writes the hidden acceptance exam of an approved spec and plan under `.aether-exam/`, one command per test, without reading `tasks.md` |
 | `aether-lane` | The commands of lanes: `status`, `start`, `wait`, `result`, `stop`, `choice` and `quota`, which run a call on another harness's model, log which lane took it, and read each harness's quota. Whether a run uses them depends on the `lanes` option, off by default; see [Options](../guide/options.md#options) |
 | `aether-lane seat` | One round of a design seat (`judge`, `writer` or `examiner`) on the external model the `seats` option puts first, in a disposable worktree of the commit; exit 3 or 4 hands the round to the native agent. `/aether:design` runs a round in steps instead: `aether-lane seat-start` launches it, `seat-wait` waits for it within one ops call and `seat-stop` ends it |
+| `aether-route` | Decides how each delegate task of the Lead runs: `begin`, `finish` and `decide` for the router, `delegate` to run a read-only delegate on agy or grok, and `replay` over the history |
 | `aether-exam` | Keeps an exam outside the repository (`store`), runs it on a commit in a disposable worktree (`run`), and lists the kept ones (`list`) |
 | Aether preset | `plugins/aether/speckit/`: Spec Kit's specify, plan, tasks and constitution commands adapted to Aether, also shipped as the skills `aether:specify`, `aether:plan`, `aether:tasks` and `aether:constitution` |
 | `aether-voice` | Prints the owner's own words from a session, so a quote can be checked; it writes no file |
@@ -31,14 +32,14 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | `/aether:design` | The design workflow: from the intent card in `specs/NNN-<topic>/intent.md` to an approved spec, plan and tasks and the exam, with the Writer, the Judge and the Examiner in seat rounds and at most two revisions per document, and one result, `approved`, `clarify`, `dispute` or `failed`. It needs the Workflow tool |
 | `/aether:run` | The workflow: waves, the escalation ladder, the agent budget, the merge queue, the final review (which also flags what is extra), and cleanup in `finally` |
 | Agents | `implementer`, `supervisor`, `reviewer` (adapted from superpowers' templates, MIT) and `ops` |
-| Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the workflow's own `aether-wt` and `aether-lane` commands itself, without a model (see [Ops without a model](../guide/ops.md)). In any other session it records and runs nothing, and does not offer Aether's agents |
+| Usage meter and ops | A mod that records every model request of an Aether session: agent, model, tokens and time. It also runs the workflow's own `aether-wt` and `aether-lane` commands itself, without a model, and calls the router (`aether-route`) (see [Ops without a model](../guide/ops.md)). In any other session it records and runs nothing, and does not offer Aether's agents |
 | `aether-report` | Reports a run's speed, cost and quality; `finalize` records the run; `--seats` counts the design seats' rounds and who answered them; `price` prices any `claude -p` JSON output |
 | `aether-session-start` | The command that the SessionStart hook runs. It acts only for the Lead: in any other session it prints nothing and writes nothing |
 | SessionStart hook | In an Aether session: marks the session and passes the lanes, harnesses and seats options to its commands; on startup, clear and compact, but not on resume, it also injects the bootstrap, sweeps runs left untouched for 24 hours, deletes usage files, lane logs and session markers not written to for 30 days, and points a new Lead to an open autonomous run. In any other session it does nothing |
 
 ## What Aether adds to a normal session
 
-Today, in 0.11.0, the plugin has the nine commands of `bin/`, and they are on the Bash tool's `PATH`; the measurement below, taken at 0.7.0, counted eight.
+Today, in 0.11.0, the plugin has the ten commands of `bin/`, and they are on the Bash tool's `PATH`; the measurement below, taken at 0.7.0, counted eight.
 
 Measured on Claude Code 2.1.296 with Aether 0.7.0, on 2026-10-09 (`docs/evaluations/2026-10-09-installable/A3-dormant.md`), in a session started without `--agent aether:lead`, against the same session with Aether disabled:
 - the first request grows by 431 characters, all in the first message: the `aether:run` and `aether:swarm` entries of the skills list;
