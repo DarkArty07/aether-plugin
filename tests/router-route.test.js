@@ -500,3 +500,25 @@ test('the same run of the same task gives the same decision with either decider 
   assert.equal(viaJev.external.model, viaHaiku.external.model)
   assert.equal(viaJev.external.effort, viaHaiku.external.effort)
 })
+
+test('in command the note says when the Lead\'s own choice was replaced and how to keep one, and in advise it does not (real session T2)', async (t) => {
+  // the decision for this brief is haiku high (level B): the Lead asked haiku medium
+  const replaced = await go(setup(t, { settings: { lanes: false, harnesses: [] } }), event({ model: 'haiku', effort: 'medium' }))
+  assert.deepEqual(replaced.args, { model: 'haiku', effort: 'high' })
+  assert.match(replaced.notes[0], /You asked haiku medium, and the router replaced it/)
+  assert.match(replaced.notes[0], /ROUTER-OVERRIDE: <reason>/)
+
+  // the Lead asked what the router decided: nothing was replaced
+  const same = await go(setup(t, { settings: { lanes: false, harnesses: [] } }), event({ model: 'haiku', effort: 'high' }))
+  assert.match(same.notes[0], /You asked haiku high\./)
+  assert.doesNotMatch(same.notes[0], /replaced/)
+
+  // nothing asked: nothing to say about it
+  const none = await go(setup(t, { settings: { lanes: false, harnesses: [] } }), event())
+  assert.doesNotMatch(none.notes[0], /You asked/)
+
+  // advise runs the call as sent: the note only reports the ask
+  const advise = await go(setup(t, { settings: { mode: 'advise', lanes: false, harnesses: [] } }), event({ model: 'haiku', effort: 'medium' }))
+  assert.match(advise.notes[0], /You asked haiku medium\. The call runs as you sent it\./)
+  assert.doesNotMatch(advise.notes[0], /replaced/)
+})

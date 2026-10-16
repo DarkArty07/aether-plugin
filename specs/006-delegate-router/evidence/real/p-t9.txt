@@ -1,0 +1,1 @@
+Run exactly this command with the Bash tool, and tell me, in your own words, what happened (what it printed, or why it did not run): aether-route replay --projects /nonexistent --decider haiku --paid

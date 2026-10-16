@@ -6,8 +6,11 @@
 //
 //   node real-session.js --tag s1 --plugin <dir|installed> --prompt-file <file> [--options '{"router":"command"}']
 //        [--effort low] [--budget 2] [--timeout 900] [--prewarm grok,agy] [--world <dir>]
+//        [--key real|none|bad] [--seed-lanes] [--launcher] [--env NAME=value ...] [--cwd-sub <dir>]
 //
-// The key (Jev) is never copied: the data directory gets a symlink to the installed plugin's .env.
+// --key: real links the installed plugin's .env into the data directory (never copied); none leaves no key; bad writes a
+//   key that OpenRouter rejects. --seed-lanes copies the owner's lane marks and readings, so the router sees the real
+//   dry marks. --launcher starts the session with scripts/aether-lead, as the owner does.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -19,6 +22,16 @@ function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`)
   return i === -1 ? fallback : process.argv[i + 1]
 }
+function flag(name) {
+  return process.argv.includes(`--${name}`)
+}
+function all(name) {
+  const out = []
+  process.argv.forEach((a, i) => {
+    if (a === `--${name}`) out.push(process.argv[i + 1])
+  })
+  return out
+}
 
 const tag = arg('tag', 'real')
 const pluginArg = arg('plugin', 'installed')
@@ -28,7 +41,10 @@ const effort = arg('effort', 'low')
 const budget = arg('budget', '2')
 const timeoutS = Number(arg('timeout', '900'))
 const prewarm = (arg('prewarm', '') || '').split(',').filter(Boolean)
-const INSTALLED_ENV = path.join(os.homedir(), '.claude', 'plugins', 'data', 'aether-aether-plugin', '.env')
+const keyMode = arg('key', 'real')
+const REPO = path.resolve(__dirname, '..', '..', '..', '..')
+const REAL_DATA = path.join(os.homedir(), '.claude', 'plugins', 'data', 'aether-aether-plugin')
+const INSTALLED_ENV = path.join(REAL_DATA, '.env')
 
 const root = arg('world') || fs.mkdtempSync(path.join(os.tmpdir(), `aether-real-${tag}-`))
 const work = path.join(root, 'work')
@@ -61,7 +77,9 @@ if (!fs.existsSync(path.join(work, '.git'))) {
   git('commit', '-q', '-m', 'init')
 }
 
-if (fs.existsSync(INSTALLED_ENV) && !fs.existsSync(path.join(data, '.env'))) fs.symlinkSync(INSTALLED_ENV, path.join(data, '.env'))
+if (keyMode === 'real' && fs.existsSync(INSTALLED_ENV) && !fs.existsSync(path.join(data, '.env'))) fs.symlinkSync(INSTALLED_ENV, path.join(data, '.env'))
+if (keyMode === 'bad') fs.writeFileSync(path.join(data, '.env'), `OPENROUTER_API_KEY=sk-or-v1-${'0'.repeat(64)}\n`, { mode: 0o600 })
+if (flag('seed-lanes') && fs.existsSync(path.join(REAL_DATA, 'lanes'))) fs.cpSync(path.join(REAL_DATA, 'lanes'), path.join(data, 'lanes'), { recursive: true })
 
 const pluginDir = pluginArg === 'installed' ? null : path.resolve(pluginArg)
 const sessionId = crypto.randomUUID()
@@ -72,10 +90,18 @@ const baseEnv = {
   DISABLE_AUTOUPDATER: '1',
   AETHER_DATA_DIR: data,
 }
+if (process.env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS) baseEnv.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS = process.env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS
 for (const [name, value] of Object.entries(options)) baseEnv[`CLAUDE_PLUGIN_OPTION_${name.toUpperCase()}`] = String(value)
+for (const pair of all('env')) {
+  const eq = pair.indexOf('=')
+  baseEnv[pair.slice(0, eq)] = pair.slice(eq + 1)
+}
 
 function routeBin() {
-  return pluginDir ? path.join(pluginDir, 'bin', 'aether-route') : path.join(os.homedir(), '.claude', 'plugins', 'cache', 'aether-plugin', 'aether', fs.readdirSync(path.join(os.homedir(), '.claude', 'plugins', 'cache', 'aether-plugin', 'aether')).sort().pop(), 'bin', 'aether-route')
+  if (pluginDir) return path.join(pluginDir, 'bin', 'aether-route')
+  const base = path.join(os.homedir(), '.claude', 'plugins', 'cache', 'aether-plugin', 'aether')
+  const newest = fs.readdirSync(base).filter((v) => /^\d+\.\d+\.\d+$/.test(v)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop()
+  return path.join(base, newest, 'bin', 'aether-route')
 }
 
 ;(async () => {
@@ -84,11 +110,21 @@ function routeBin() {
     console.log(`prewarm ${harness}:`, (r.stdout || r.stderr || '').trim().slice(0, 300))
   }
   const prompt = fs.readFileSync(promptFile, 'utf8')
-  const args = ['-p', prompt, '--agent', 'aether:lead', '--effort', effort, '--session-id', sessionId, '--dangerously-skip-permissions', '--output-format', 'json', '--max-budget-usd', String(budget), '--settings', '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}']
-  if (pluginDir) args.push('--plugin-dir', pluginDir)
+  const common = ['-p', prompt, '--session-id', sessionId, '--output-format', 'json', '--max-budget-usd', String(budget)]
+  let cmd
+  let args
+  if (flag('launcher')) {
+    cmd = path.join(REPO, 'scripts', 'aether-lead')
+    args = [...common]
+    if (pluginDir) args.push('--plugin-dir', pluginDir)
+  } else {
+    cmd = path.join(os.homedir(), '.local', 'bin', 'claude')
+    args = [...common, '--agent', 'aether:lead', '--effort', effort, '--dangerously-skip-permissions', '--settings', '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}']
+    if (pluginDir) args.push('--plugin-dir', pluginDir)
+  }
   const started = Date.now()
   const r = await new Promise((resolve) => {
-    const child = spawn(path.join(os.homedir(), '.local', 'bin', 'claude'), args, { cwd: work, env: baseEnv, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(cmd, args, { cwd: work, env: baseEnv, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (c) => (stdout += c))
@@ -106,12 +142,15 @@ function routeBin() {
   try {
     parsed = JSON.parse(r.stdout)
   } catch {}
-  console.log(JSON.stringify({ tag, sessionId, root, exit: r.code, elapsedS, plugin: pluginDir || 'installed', options, effort }, null, 1))
+  console.log(JSON.stringify({ tag, sessionId, root, exit: r.code, elapsedS, plugin: pluginDir || 'installed', launcher: flag('launcher'), key: keyMode, options, effort }, null, 1))
   if (parsed) {
-    console.log('RESULT TEXT:', String(parsed.result).slice(0, 2500))
+    console.log('RESULT TEXT:', String(parsed.result).slice(0, 3000))
     console.log('COST/USAGE:', JSON.stringify({ total_cost_usd: parsed.total_cost_usd, num_turns: parsed.num_turns, duration_ms: parsed.duration_ms, is_error: parsed.is_error, subtype: parsed.subtype }))
   } else {
     console.log('STDOUT (not JSON):', r.stdout.slice(0, 1500))
   }
   if (r.stderr.trim()) console.log('STDERR:', r.stderr.slice(-1500))
+  console.log('--- inspect-world:')
+  const ins = spawnSync(process.execPath, [path.join(__dirname, 'inspect-world.js'), root], { encoding: 'utf8' })
+  console.log(ins.stdout || ins.stderr)
 })()

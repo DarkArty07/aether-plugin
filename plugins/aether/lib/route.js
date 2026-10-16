@@ -241,8 +241,15 @@ function rungText(rung) {
   return `${rung.harness} ${rung.model} ${rung.effort}`
 }
 
-function askedText(asked) {
-  return asked ? ` You asked ${asked.alias} ${asked.effort}.` : ''
+// What the Lead asked for, when it asked. In `command` a choice that differs from the decision was replaced: the note says
+// so and how to keep one, because a Lead that reads only "You asked haiku medium" has told the owner that is what ran.
+function askedText(mode, decision, asked) {
+  if (!asked) return ''
+  const kept = decision.harness === 'claude' && decision.alias === asked.alias && decision.effort === asked.effort
+  if (mode === 'command' && !kept) {
+    return ` You asked ${asked.alias} ${asked.effort}, and the router replaced it; this delegate runs as this note says. A choice of yours holds only with the line ROUTER-OVERRIDE: <reason> in the brief and model and effort passed.`
+  }
+  return ` You asked ${asked.alias} ${asked.effort}.`
 }
 
 function decisionNote(mode, { decision, fallback, asked }) {
@@ -250,7 +257,7 @@ function decisionNote(mode, { decision, fallback, asked }) {
   const lead = mode === 'command' ? `this task runs on ${where}` : `I would run this task on ${where}`
   const rescue = fallback ? `; if it fails it runs on claude ${fallback.alias} ${fallback.effort}` : ''
   const sent = mode === 'command' ? '' : ' The call runs as you sent it.'
-  return `Aether router: ${lead}${rescue}. Level ${decision.level} (${decision.axis}): ${decision.reason}.${askedText(asked)}${sent}`
+  return `Aether router: ${lead}${rescue}. Level ${decision.level} (${decision.axis}): ${decision.reason}.${askedText(mode, decision, asked)}${sent}`
 }
 
 function overrideNote(reason, args) {

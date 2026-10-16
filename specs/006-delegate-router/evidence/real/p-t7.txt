@@ -1,0 +1,5 @@
+En este repositorio necesito tres cosas:
+1. Dime qué hace cada archivo de src/.
+2. Haz que formatMoney lance un TypeError si los centavos no son un entero, y agrega sus pruebas.
+3. Revisa si el README describe bien lo que hace el código y dime qué le falta.
+Usa la ayuda (subagentes) que consideres conveniente y dime al final qué se hizo.
