@@ -1,8 +1,9 @@
 #!/bin/sh
 # Starts Aether mode: Claude Code with the Lead as the session's agent, at xhigh, with permissions
-# bypassed and superpowers off for the session. It is the README's start command and nothing else, so
-# it needs no setup and works the same from bash, fish or zsh. Every argument goes on to claude, after
-# the ones below:
+# bypassed, superpowers off and the plugin's own theme, Aether, for the session. The theme is in this
+# session's --settings only: it never reaches your settings files, so a plain `claude` keeps yours. It is
+# the README's start command and nothing else, so it needs no setup and works the same from bash, fish
+# or zsh. Every argument goes on to claude, after the ones below:
 #   aether-lead                       an interactive session
 #   aether-lead -p "<task>"           one run, no screen
 #   aether-lead --resume              the usual flags
@@ -13,5 +14,5 @@
 AETHER_IRREVERSIBLE="${AETHER_IRREVERSIBLE:-enforce}"
 export AETHER_IRREVERSIBLE
 exec claude --agent aether:lead --effort xhigh --permission-mode bypassPermissions \
-  --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}' \
+  --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false},"theme":"custom:aether:aether"}' \
   "$@"

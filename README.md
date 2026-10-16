@@ -36,7 +36,7 @@ Aether mode is chosen per session:
 claude --agent aether:lead --effort xhigh
 ```
 
-The Lead is the agent `aether:lead`, which starts on Sonnet; `--effort xhigh` sets its effort, because a plugin cannot. In a clone of this repository, `scripts/aether-lead` runs that command for you, with permissions bypassed and with aether-guard refusing an irreversible command that no grant covers.
+The Lead is the agent `aether:lead`, which starts on Sonnet; `--effort xhigh` sets its effort, because a plugin cannot. In a clone of this repository, `scripts/aether-lead` runs that command for you, with permissions bypassed and with aether-guard refusing an irreversible command that no grant covers. It also gives that session the plugin's own color theme, Aether, and only that session.
 
 Plain `claude` is the normal mode, and the plugin is dormant there, unless the repository sets the agent: put `{ "agent": "aether:lead", "effortLevel": "xhigh" }` in its `.claude/settings.local.json`.
 

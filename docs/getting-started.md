@@ -30,10 +30,10 @@ Add `--config lanes=true` to turn the lanes on (see [Options](guide/options.md#o
 Aether 0.8 no longer needs superpowers. If you keep it for other work, it still enters every session where it is enabled and asks for its own skills, so turn it off for an Aether session:
 
 ```
-claude --agent aether:lead --effort xhigh --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'
+claude --agent aether:lead --effort xhigh --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false},"theme":"custom:aether:aether"}'
 ```
 
-`scripts/aether-lead` runs that command for you, with permissions bypassed (see [Start](#start)).
+The `theme` entry gives that session the plugin's own color theme, Aether, and nothing else changes in your settings (see [Start](#start)). `scripts/aether-lead` runs that command for you, with permissions bypassed.
 
 To install from a clone of this repository instead of GitHub, pass the clone's path to `--marketplace`: the plugin then loads from that folder, in place. To update, pin, roll back or uninstall it, see [Update, pin, roll back and uninstall](guide/maintenance.md#update-pin-roll-back-and-uninstall).
 
@@ -136,6 +136,12 @@ To make Aether mode the default in one repository, put this in its `.claude/sett
 Plain `claude` then starts Aether mode there, and `claude --agent claude` starts normal mode, with the repository's `effortLevel`.
 
 Plain `claude` stays normal mode: the plugin is dormant there. Its hooks do nothing, its usage meter records nothing, and its agents are not offered.
+
+### The theme
+
+The plugin ships a color theme, Aether (`plugins/aether/themes/aether.json`): the violet of Claude Aether in place of Claude's orange, a deep indigo for the messages, and a color for each permission mode and for each of the eight subagent colors. The command of Install and the launcher select it in the session's `--settings`, so it applies while that session runs and is never written to your settings files. A plain `claude` session keeps your own theme.
+
+To have it in a repository where Aether mode is the default, add `"theme": "custom:aether:aether"` to the same `.claude/settings.local.json`. The `/theme` picker lists it as Aether, from aether; choosing it there sets it for every session of that account, which is what a session-only start avoids. The theme needs a terminal with true color. The syntax colors of code blocks and diffs are Claude Code's own and do not change with it.
 
 ## Your first request
 
