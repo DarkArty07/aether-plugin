@@ -1,8 +1,11 @@
 # Deploys site/ to GitHub Pages.
 #
+# It stays off until the repository variable PAGES_ENABLED is "true" (Settings > Secrets and variables > Actions >
+# Variables), so a repository that cannot use Pages yet does not get a red run on every push to site/.
+#
 # Before the first run, turn Pages on in the repository settings (Settings > Pages) and set the source to
-# "GitHub Actions". A private repository needs a plan that allows Pages; on a plan that does not, this workflow fails
-# at the deploy step. It uses no secrets: the job token is all it needs.
+# "GitHub Actions". A private repository needs a plan that allows Pages (or the repository has to be public).
+# It uses no secrets: the job token is all it needs.
 name: pages
 
 on:
@@ -25,6 +28,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ vars.PAGES_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +38,7 @@ jobs:
 
   deploy:
     needs: build
+    if: ${{ vars.PAGES_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

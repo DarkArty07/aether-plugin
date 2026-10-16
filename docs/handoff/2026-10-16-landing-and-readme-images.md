@@ -18,7 +18,7 @@ The images are 17 generated plates (`aer i gen`), turned into a 6-tone halftone 
 
 ## 2. What waits for the owner
 
-- **Pages is not on, and the repository is private.** A private repository needs a plan that allows Pages, or the repository has to be made public (the owner's call). Then Settings > Pages > Source: GitHub Actions, and run the workflow by hand or push a change to `site/`. Until then the deploy step fails.
+- **Pages is not on, and the repository is private.** A private repository needs a plan that allows Pages, or the repository has to be made public (the owner's call). Then Settings > Pages > Source: GitHub Actions, set the repository variable `PAGES_ENABLED` to `true`, and run the workflow by hand or push a change to `site/`. Until the variable is set both jobs are skipped, so `main` stays green. Enabling Pages through the API was tried on 2026-10-16 and answered 422, "Your current plan does not support GitHub Pages for this repository".
 - **The social card:** Settings > General > Social preview, upload `assets/readme/social.png` (1280x640).
 - **Link the site from the README** once it is live. It was left out on purpose.
 - **A release.** `main` carries, unreleased, PR #27 (the Argon price and index in `config/`) and PR #28 (the theme, listed under `## Unreleased` in the changelog). The installed 0.11.0 has no `themes/`. The steps are in `docs/contributing.md`, "Release"; `~/.local/bin/aether-lead` is a copy and needs copying again.
