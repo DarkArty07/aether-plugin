@@ -15,6 +15,7 @@ Un plugin desechable con un mod de cuatro ganchos, una sesión `claude -p` por c
 | ¿Se puede avisar al Lead? | Sí. Un `context` devuelto por `tool.call` llega a la siguiente petición del Lead, con lanzamientos en primer y en segundo plano. Un `deny` con motivo llega como error de la herramienta y no arranca ningún subagente. |
 | ¿Se puede contestar un delegado sin llamar a un modelo? | Sí. Contestando su primer `turn.step`, el delegado no hace ninguna petición al modelo y su texto vuelve al Lead como resultado del `Agent` (el mismo mecanismo que ya usa `aether:ops`). Si el mod no contesta, el delegado corre normal: el fallback nativo es gratis. |
 | ¿Qué puede hacer el gancho por sí mismo? | `$.model.complete({ model: 'haiku', effort: 'low' })` (la petición salió con ese modelo y esfuerzo y volvió el texto), `$.http.fetch` (probado contra loopback), `$.fs.read` de una ruta absoluta fuera del plugin y `$.process.run`. |
+| ¿Sigue vivo lo que el gancho inicia y no espera? | **Sí.** Con el gancho ya devuelto, un `$.clock.sleep` de 2.5 s escribió su archivo (2507 ms después) y un `$.model.complete` de Haiku bajo lanzado así salió al modelo y escribió su resultado. Modo `background` de las sondas; sostiene el modo «registra», que decide en segundo plano. |
 | **No cubierto** | Lanzamientos en paralelo; `isolation: "worktree"`; un modelo real; que `tool.call` no se dispare para los agentes de un workflow (el tipo de `agent.spawn` dice que el contenido de un agente de workflow no es reescribible). |
 
 ## 2. La historia de delegaciones (replay con Jev)

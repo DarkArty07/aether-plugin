@@ -38,6 +38,18 @@ export function register(on) {
     const m = await mode($)
     await logTo($, 'toolcall-in', { mode: m, keys: Object.keys(e), model: e.model, effort: e.effort, subagent_type: e.subagent_type })
     if (m === 'toolcall') return next({ ...e, model: 'haiku', effort: 'low' })
+    if (m === 'background') {
+      const dir = await $.env.get('PROBE_LOG')
+      const t0 = await $.clock.now()
+      ;(async () => {
+        try { await $.clock.sleep(2500); await $.fs.write(`${dir}/bg-sleep-done.json`, JSON.stringify({ afterMs: (await $.clock.now()) - t0 })) } catch (err) { try { await $.fs.write(`${dir}/bg-sleep-error.json`, JSON.stringify({ error: String(err && err.message) })) } catch (e2) { /* nothing more to do */ } }
+      })()
+      ;(async () => {
+        try { const c = await $.model.complete({ model: 'haiku', effort: 'low', prompt: 'PROBE-COMPLETE background decision', maxTokens: 20, timeoutMs: 8000 }); await $.fs.write(`${dir}/bg-complete-done.json`, JSON.stringify({ isAnswered: c.isAnswered, text: c.text, afterMs: (await $.clock.now()) - t0 })) } catch (err) { try { await $.fs.write(`${dir}/bg-complete-error.json`, JSON.stringify({ error: String(err && err.message) })) } catch (e2) { /* nothing more to do */ } }
+      })()
+      await logTo($, 'bg-hook-returned', { at: await $.clock.now() - t0 })
+      return next(e)
+    }
     if (m === 'deny') return { deny: 'ROUTER: this delegate is a lookup (stakes 1.2, conf 0.9); relaunch it with model haiku and effort medium, or add override: <reason> to the description' }
     if (m === 'context') {
       const r = await next(e)
@@ -50,6 +62,7 @@ export function register(on) {
   on('turn.step', async function* ($, e, next) {
     const m = await mode($)
     if (e.agentId) await logTo($, `step-agent-${e.index}`, { agentId: e.agentId, index: e.index, model: e.model, effort: e.effort })
+    if (m === 'background' && e.agentId && e.index === 0) { await $.clock.sleep(6000) }   // keep the session alive after the hook returned
     if (m === 'answer' && e.agentId && answered.has(e.agentId) && e.index === 0) {
       const text = 'LANE-ANSWER: the mod answered this delegate without a model call'
       yield { kind: 'text', index: 0, text }
