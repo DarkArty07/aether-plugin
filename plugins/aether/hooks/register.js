@@ -17,10 +17,16 @@
 // aether-session-start writes. In any other session the meter records and writes nothing, and the agents
 // of the aether plugin are not offered.
 //
+// It hands the Lead's delegates to the delegate router (router.mjs, spec 006): the Agent calls of an Aether
+// session whose subagent_type is not aether:*, the spawn of each routed delegate (which the router records, so
+// aether-report can price it), and the first step of a delegate the router runs on another harness. The router
+// never breaks a call: any failure in it leaves the call as the Lead made it.
+//
 // Files: <data dir>/usage/<session>/<n>.json, each { session, part, claudeCode, agents, entries }
 // with up to PART_SIZE entries. A reloaded module starts after the parts already on disk.
 
 import { PAYLOAD_PATH, parseOpsPrompt } from './ops-command.mjs'
+import { createRouter } from './router.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -40,6 +46,8 @@ const SESSION_ID = /^[A-Za-z0-9-]+$/
 // `ops` holds each ops agent's command until its first step, agent id → { cwd, bin, args, timeoutMs },
 // then ANSWERED once the mod has run it.
 const sessions = new Map()
+
+const router = createRouter()
 
 const PAYLOAD_MARKER = /^=== aether-lane payload: (.+) ===$/m
 
@@ -267,6 +275,58 @@ function opsCommand(e) {
   }
 }
 
+// The four calls the router makes, spelled here: the engine follows $ only into this file's own functions.
+function routerCalls($) {
+  return {
+    clock: { now: () => $.clock.now() },
+    fs: { write: (path, text) => $.fs.write(path, text) },
+    process: { run: (argv, init) => $.process.run(argv, init) },
+    model: { complete: (request) => $.model.complete(request) },
+  }
+}
+
+// What the router needs of an Aether session, or null when it cannot be read.
+async function routerContext($, state) {
+  try {
+    state.dataDir ??= readDataDir($)
+    return { session: state.id, dataDir: await state.dataDir, root: $.plugin.root }
+  } catch {
+    return null
+  }
+}
+
+// One step of the model, metered: its request's tokens and timing join the session's entries.
+async function* meteredStep($, state, e, next) {
+  let started = null
+  try {
+    started = await $.clock.now()
+  } catch {
+    started = null
+  }
+  const result = yield* next(e)
+  try {
+    const usage = result && result.usage
+    if (usage) {
+      const ended = await $.clock.now()
+      state.entries.push({
+        t: ended,
+        ms: started === null ? null : ended - started,
+        agent: e.agentId || null,
+        model: usage.model || e.model || null,
+        effort: effortOf(e.effort),
+        input: tokens(usage.input_tokens),
+        output: tokens(usage.output_tokens),
+        cacheRead: tokens(usage.cache_read_input_tokens),
+        cacheWrite: tokens(usage.cache_creation_input_tokens),
+      })
+      if (state.entries.length - state.written >= FLUSH_EVERY) await flush($, state)
+    }
+  } catch {
+    // Observing only.
+  }
+  return result
+}
+
 export function register(on) {
   on('classic.SessionStart', async ($, e, next) => {
     if (e && e.agent_type === LEAD && typeof e.session_id === 'string' && SESSION_ID.test(e.session_id)) {
@@ -281,6 +341,15 @@ export function register(on) {
     return next(e)
   }).catch(($, e, next) => next(e))
 
+  // The Lead's delegates go through the router; an aether:* agent is never routed (R9).
+  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    const state = await aetherSession($)
+    if (!state) return next(e)
+    const ctx = await routerContext($, state)
+    if (!ctx) return next(e)
+    return router.toolCall(routerCalls($), e, next, ctx)
+  }).catch(($, e, next) => next(e))
+
   on('agent.spawn', async ($, e, next) => {
     const state = await aetherSession($)
     if (!state) return next(e)
@@ -288,6 +357,9 @@ export function register(on) {
     const result = await next(e)
     if (result && result.agentId) {
       state.agents[result.agentId] = { type: e.subagentType || null, description: e.description || null }
+      // The delegate router links the agent to its decision (and keeps an external delegate for its first step).
+      const ctx = await routerContext($, state)
+      if (ctx) router.bind(routerCalls($), e, result.agentId, ctx)
       const command = opsCommand(e)
       if (command && !(await opsOff($, state))) state.ops.set(result.agentId, command)
     }
@@ -297,6 +369,11 @@ export function register(on) {
   on('turn.step', async function* ($, e, next) {
     const state = await aetherSession($)
     if (!state) return yield* next(e)
+    // A delegate the router runs on another harness: its first step is that harness's answer, or the model's.
+    if (router.has(e.agentId)) {
+      const ctx = await routerContext($, state)
+      if (ctx) return yield* router.step(routerCalls($), e, (event) => meteredStep($, state, event, next), ctx)
+    }
     const command = e.agentId ? state.ops.get(e.agentId) : undefined
     if (command === ANSWERED) {
       // The agent goes on after the mod's answer, so its answer was not taken. The model would run the
@@ -355,34 +432,7 @@ export function register(on) {
       }
       // $.process.run refused or could not start the command, or the bin failed to load: the model runs the prompt.
     }
-    let started = null
-    try {
-      started = await $.clock.now()
-    } catch {
-      started = null
-    }
-    const result = yield* next(e)
-    try {
-      const usage = result && result.usage
-      if (usage) {
-        const ended = await $.clock.now()
-        state.entries.push({
-          t: ended,
-          ms: started === null ? null : ended - started,
-          agent: e.agentId || null,
-          model: usage.model || e.model || null,
-          effort: effortOf(e.effort),
-          input: tokens(usage.input_tokens),
-          output: tokens(usage.output_tokens),
-          cacheRead: tokens(usage.cache_read_input_tokens),
-          cacheWrite: tokens(usage.cache_creation_input_tokens),
-        })
-        if (state.entries.length - state.written >= FLUSH_EVERY) await flush($, state)
-      }
-    } catch {
-      // Observing only.
-    }
-    return result
+    return yield* meteredStep($, state, e, next)
   })
 
   on('turn.complete', async ($, e, next) => {

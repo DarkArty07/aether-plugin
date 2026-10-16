@@ -1,0 +1,226 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-route begin --session <id> --input <file>
+// aether-route finish --id <id> (--answer-file <file> | --failure <code>) [--session <id>]
+// aether-route decide --id <id>
+// aether-route delegate --id <id> [--session <id>]
+// aether-route spawn --id <id> --agent <agent id> [--session <id>]
+// aether-route replay (--journal | --projects <dir> [--project <substring>...] --answers <file> |
+//   --projects <dir> --decider <haiku|jev> --paid) [--session <id>] [--since <ms>] [--fallback <alias:effort>]
+//   [--timeout <seconds>]
+// aether-route renew --harness <agy|grok>
+//
+// Decides how each delegate task of the Lead runs. begin, finish and decide are the router's three steps (the mod
+// asks the model between begin and finish); delegate runs a read-only delegate on agy or grok, records its outcome
+// (status ok, quota, failed, violation, unavailable or dirty, the last when the checkout has uncommitted work) and then
+// removes the file that holds the Lead's prompt; spawn records which agent ran a delegation, so that the delegates
+// report can price it; replay decides again over the journal or over the history (it skips the delegations to an
+// aether agent, which the router never routes, and with --paid gives each `claude -p` process --timeout seconds, 60 by
+// default and 300 at most, apart from the deadlines option, and records the duration and cost the call reports); renew
+// takes a new quota reading of agy or grok and saves it where the router reads it (a decision starts it in the
+// background). Each prints one JSON line and exits 0, except a wrong use or an error of its own, which prints
+// { "error": <message> } and exits 1.
+
+const fs = require('node:fs')
+const path = require('node:path')
+const { execFile } = require('node:child_process')
+const { promisify } = require('node:util')
+const lib = (name) => require(path.join(__dirname, '..', 'lib', name))
+const run = lib('run.js')
+
+const VERBS = {
+  begin: { usage: 'begin --session <id> --input <file>', flags: ['session', 'input'], required: ['session', 'input'] },
+  finish: { usage: 'finish --id <id> (--answer-file <file> | --failure <code>) [--session <id>]', flags: ['id', 'answer-file', 'failure', 'session'], required: ['id'] },
+  decide: { usage: 'decide --id <id>', flags: ['id'], required: ['id'] },
+  delegate: { usage: 'delegate --id <id> [--session <id>]', flags: ['id', 'session'], required: ['id'] },
+  spawn: { usage: 'spawn --id <id> --agent <agent id> [--session <id>]', flags: ['id', 'agent', 'session'], required: ['id', 'agent'] },
+  replay: {
+    usage: 'replay (--journal | --projects <dir> [--project <substring>...] --answers <file> | --projects <dir> --decider <haiku|jev> --paid) [--session <id>] [--since <ms>] [--fallback <alias:effort>] [--timeout <seconds>]',
+    flags: ['journal', 'projects', 'project', 'answers', 'decider', 'paid', 'session', 'since', 'fallback', 'timeout'],
+    booleans: ['journal', 'paid'],
+    repeatable: ['project'],
+    required: [],
+  },
+  renew: { usage: 'renew --harness <agy|grok>', flags: ['harness'], required: ['harness'] },
+}
+const USAGE = `usage: aether-route ${Object.values(VERBS).map((verb) => verb.usage).join(' | ')}`
+
+// The flags of one verb, keyed by name: a value, true for a boolean, an array for a repeatable one.
+function flagsOf(verb, args) {
+  const spec = VERBS[verb]
+  const out = {}
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    const name = arg.startsWith('--') ? arg.slice(2) : null
+    if (name === null || !spec.flags.includes(name)) throw new Error(`unexpected argument: ${arg}\nusage: aether-route ${spec.usage}`)
+    if (spec.booleans?.includes(name)) {
+      out[name] = true
+      continue
+    }
+    if (i + 1 >= args.length) throw new Error(`${arg} needs a value`)
+    const value = args[++i]
+    if (spec.repeatable?.includes(name)) (out[name] ??= []).push(value)
+    else out[name] = value
+  }
+  for (const name of spec.required) if (out[name] === undefined) throw new Error(`usage: aether-route ${spec.usage}`)
+  return out
+}
+
+function readText(file, what) {
+  try {
+    return fs.readFileSync(file, 'utf8')
+  } catch (err) {
+    throw new Error(`cannot read ${what} ${file}: ${err.message}`)
+  }
+}
+
+function readJsonFile(file, what) {
+  try {
+    return JSON.parse(readText(file, what))
+  } catch (err) {
+    if (err instanceof SyntaxError) throw new Error(`${what} ${file} is not JSON: ${err.message}`)
+    throw err
+  }
+}
+
+async function beginCommand(flags, dataDir) {
+  const event = readJsonFile(flags.input, 'the event')
+  return lib('route.js').begin({ session: flags.session, event }, { dataDir })
+}
+
+async function finishCommand(flags, dataDir) {
+  if ((flags['answer-file'] === undefined) === (flags.failure === undefined)) throw new Error(`usage: aether-route ${VERBS.finish.usage}`)
+  const input = flags.failure !== undefined ? { id: flags.id, failure: flags.failure } : { id: flags.id, answer: readText(flags['answer-file'], 'the answer file') }
+  return lib('route.js').finish(input, { dataDir })
+}
+
+async function delegateCommand(flags, dataDir) {
+  const route = lib('route.js')
+  const external = route.readExternal(dataDir, flags.id)
+  if (!external) return { ok: false, status: 'unavailable' }
+  const { harness, rung, task } = external
+  const result = await lib('delegate-calls.js').runDelegate({
+    cwd: process.cwd(),
+    id: flags.id,
+    harness,
+    rung,
+    task,
+    config: lib('lanes.js').loadConfig(),
+    dataDir,
+  })
+  const ok = result.status === 'ok'
+  let marked = null
+  if (!ok) {
+    const mark = lib('router-marks.js').markRefusal(dataDir, { harness, group: rung.group, text: result.detail })
+    marked = mark ? mark.until : null
+  }
+  const written = lib('router-log.js').appendEntry(dataDir, {
+    kind: 'outcome',
+    id: flags.id,
+    time: Date.now(),
+    session: flags.session ?? external.session ?? null,
+    status: result.status,
+    harness,
+    model: result.modelArg,
+    effort: rung.effort,
+    durationMs: result.durationMs,
+    usage: result.usage,
+    quotaSpent: result.quotaSpent,
+    detail: result.detail,
+    markedUntil: marked,
+  })
+  // The file keeps the Lead's whole prompt, which the log limits to an excerpt: it goes once the outcome is written.
+  if (written) {
+    try {
+      fs.unlinkSync(route.externalFile(dataDir, flags.id))
+    } catch {}
+  }
+  return { ok, status: result.status, text: result.text, detail: result.detail, marked }
+}
+
+// The pattern of the ids route.js gives a delegation.
+const ID = /^[A-Za-z0-9_-]+$/
+
+async function spawnCommand(flags, dataDir) {
+  if (!ID.test(flags.id) || flags.agent === '') throw new Error(`usage: aether-route ${VERBS.spawn.usage}\nthe id is letters, digits, - and _, and the agent id is not empty`)
+  const entry = { kind: 'spawn', id: flags.id, time: Date.now(), session: flags.session ?? null, agentId: flags.agent }
+  if (!lib('router-log.js').appendEntry(dataDir, entry)) throw new Error('cannot write the decision log')
+  return { spawned: true, id: entry.id, agentId: entry.agentId }
+}
+
+async function decideCommand(flags, dataDir) {
+  return lib('route.js').decide({ id: flags.id }, { dataDir })
+}
+
+// The answers for each row of the history: the file's map, or a decider that spends tokens or sends briefs out. A
+// `claude -p` process gets `timeoutMs` (the replay's own limit); Jev keeps the limit of the deadlines option.
+function answersSource(flags, { dataDir, deadlines, timeoutMs }) {
+  if (flags.answers !== undefined) {
+    const map = readJsonFile(flags.answers, 'the answers file')
+    return async (row) => (Object.hasOwn(map, row.id) ? map[row.id] : null)
+  }
+  const replay = lib('router-replay.js')
+  const criterion = lib('router-criterion.js').loadCriterion()
+  const deps = { execFile: promisify(execFile), fetch: globalThis.fetch, env: process.env, dataDir, timeoutMs: flags.decider === 'jev' ? deadlines.jevMs : timeoutMs }
+  return (row, onCall) => replay.askDecider({ decider: flags.decider, task: { description: row.description, prompt: row.prompt }, criterion, deps: { ...deps, onCall } })
+}
+
+async function replayCommand(flags, dataDir) {
+  const replay = lib('router-replay.js')
+  const sessionLib = lib('session.js')
+  const modes = [flags.journal !== undefined, flags.projects !== undefined].filter(Boolean).length
+  if (modes !== 1) throw new Error(`usage: aether-route ${VERBS.replay.usage}`)
+  const since = flags.since === undefined ? 0 : Number(flags.since)
+  if (!Number.isFinite(since) || since < 0) throw new Error('--since needs a number of milliseconds')
+  const timeoutMs = replay.parseTimeout(flags.timeout)
+  if (timeoutMs === null) throw new Error('--timeout needs a number of seconds above 0 and at most 300')
+  const common = {
+    criterion: lib('router-criterion.js').loadCriterion(),
+    rungs: lib('router-rungs.js').loadRungs(),
+    prices: lib('prices.js').loadPrices(),
+    fallback: sessionLib.parseFallback(flags.fallback ?? 'sonnet:high'),
+  }
+  if (flags.journal) {
+    const entries = lib('router-log.js').readJournal(dataDir, { session: flags.session ?? null, since })
+    return replay.replayJournal({ entries, ...common })
+  }
+  if ((flags.answers === undefined) === (flags.decider === undefined)) throw new Error(`usage: aether-route ${VERBS.replay.usage}`)
+  if (flags.decider !== undefined) {
+    if (!['haiku', 'jev'].includes(flags.decider)) throw new Error('--decider needs haiku or jev')
+    if (!flags.paid) throw new Error('--paid is required: this call spends tokens or sends briefs to a third party')
+  }
+  const rows = replay.extractCorpus({ projectsDir: flags.projects, projects: flags.project ?? null, prices: common.prices })
+    .filter((row) => (flags.session === undefined || row.session === flags.session) && !(Date.parse(row.ts) < since))
+  const answersFor = answersSource(flags, { dataDir, deadlines: sessionLib.parseDeadlines(), timeoutMs })
+  return replay.replay({ rows, ...common, answersFor })
+}
+
+async function renewCommand(flags, dataDir) {
+  const renewal = lib('router-renewal.js')
+  const harness = flags.harness
+  if (!renewal.RENEWABLE.includes(harness)) throw new Error('--harness needs agy or grok')
+  const lanes = lib('lanes.js')
+  const file = lanes.configPath()
+  const config = lanes.loadConfig(file)
+  if (!config) throw new Error(`no lane table: ${file}`)
+  const settings = config.harnesses?.[harness]
+  if (!settings) throw new Error(`the lane table has no ${harness} harness`)
+  if (!lanes.commandInstalled(settings.command)) throw new Error(`${harness} is not installed: ${settings.command}`)
+  const { readAt } = await renewal.renewReading({ harness, settings, dataDir })
+  return { renewed: true, harness, readAt }
+}
+
+const COMMANDS = { begin: beginCommand, finish: finishCommand, decide: decideCommand, delegate: delegateCommand, spawn: spawnCommand, replay: replayCommand, renew: renewCommand }
+
+async function main() {
+  const [verb, ...args] = process.argv.slice(2)
+  if (!Object.hasOwn(COMMANDS, verb)) throw new Error(USAGE)
+  const flags = flagsOf(verb, args)
+  process.stdout.write(`${JSON.stringify(await COMMANDS[verb](flags, run.dataDir()))}\n`)
+}
+
+main().catch((err) => {
+  process.stdout.write(`${JSON.stringify({ error: err.message })}\n`)
+  process.exitCode = 1
+})

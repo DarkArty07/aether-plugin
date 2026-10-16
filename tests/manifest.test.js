@@ -25,7 +25,7 @@ test('the repository is a marketplace that lists the aether plugin', () => {
   })
 })
 
-test('the manifest has no dependencies, and declares the lanes option, off by default, the ops option, on, and the seats option, balanced', () => {
+test('the manifest has no dependencies, and declares the lanes, harnesses, ops, seats, router, decider, fallback and deadlines options', () => {
   const manifest = json(PLUGIN, '.claude-plugin', 'plugin.json')
   assert.equal(manifest.name, 'aether')
   assert.equal('dependencies' in manifest, false)
@@ -57,6 +57,34 @@ test('the manifest has no dependencies, and declares the lanes option, off by de
       description:
         "Who takes the Judge, the Writer and the Examiner: native (Aether's own agents, as in 0.8), balanced (Gemini 4 Argon on agy judges and examines; the Writer stays native) or robust (Argon writes the plan, and the Judge stays native on Opus). An external model takes a seat only with lanes on, its harness enabled and its quota left; otherwise the native agent takes it. Only the design seats change: the swarm's models and efforts still follow each task's Tier and Review.",
       default: 'balanced',
+    },
+    router: {
+      type: 'string',
+      title: 'Delegate router',
+      description:
+        "Who chooses the model and effort of the Lead's delegate tasks: record (the Lead chooses, and Aether records what the decider would have chosen, in the background), advise (the Lead also gets the decider's choice as a notice) or command (the decider chooses, unless the Lead overrides it with a reason). It applies only to the Lead's delegate tasks, never to the swarm, the design seats or the aether agents. Default: record.",
+      default: 'record',
+    },
+    decider: {
+      type: 'string',
+      title: 'Router decider',
+      description:
+        'What decides for the router: haiku (Claude Haiku at low effort, with no outside service) or jev (typesafe/jev-1.14 on OpenRouter: it sends each delegate brief to a third party, and needs OPENROUTER_API_KEY in the environment or in the .env of the plugin data directory). Default: haiku.',
+      default: 'haiku',
+    },
+    fallback: {
+      type: 'string',
+      title: 'Router fallback rung',
+      description:
+        'The model and effort a delegate task runs on when the router cannot decide and the Lead asked for none, written as alias:effort. The aliases are haiku, sonnet and opus; the efforts are low, medium, high, xhigh and max. Default: sonnet:high.',
+      default: 'sonnet:high',
+    },
+    deadlines: {
+      type: 'string',
+      title: 'Router time limits',
+      description:
+        'How long the router waits, in seconds, for each decider and for the quota decision, written as haiku=8,jev=3,quota=3; a value above 10 counts as 10. In record mode nothing waits, because the decider runs in the background. Default: haiku=8,jev=3,quota=3.',
+      default: 'haiku=8,jev=3,quota=3',
     },
   })
 })

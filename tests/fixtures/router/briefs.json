@@ -1,0 +1,660 @@
+[
+  {
+    "id": "lookup-header",
+    "source": "synthetic",
+    "brief": {
+      "description": "Find the retry header",
+      "prompt": "In src/http/client.js and docs/api.md, report the name of the header that carries the retry count and the line where it is set. Report facts only."
+    },
+    "answers": {
+      "shape": {
+        "choice": "lookup",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 0.9,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.02,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.05,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "A",
+      "axis": "general",
+      "readOnly": true,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "explore-order",
+    "source": "synthetic",
+    "brief": {
+      "description": "Explain the order of hooks",
+      "prompt": "Read the hooks directory and explain in which order the session hooks run and what each one reads. Do not change files."
+    },
+    "answers": {
+      "shape": {
+        "choice": "explore",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 1.1,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.03,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.1,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "B",
+      "axis": "general",
+      "readOnly": true,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "survey-vendors",
+    "source": "synthetic",
+    "brief": {
+      "description": "Compare three email vendors",
+      "prompt": "Research the pricing and rate limits of three transactional email vendors on their public pages and summarize the differences in a table."
+    },
+    "answers": {
+      "shape": {
+        "choice": "survey",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 1.4,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 2,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.05,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.6,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "B",
+      "axis": "general",
+      "readOnly": true,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "rename-calls",
+    "source": "synthetic",
+    "brief": {
+      "description": "Rename a function across the project",
+      "prompt": "Rename fetchUser to loadUser in every file under src/ and update the imports. Change nothing else."
+    },
+    "answers": {
+      "shape": {
+        "choice": "mechanical_edit",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 1,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.98,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.2,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "A",
+      "axis": "code",
+      "readOnly": false,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "implement-endpoint",
+    "source": "synthetic",
+    "brief": {
+      "description": "Add a paginated endpoint",
+      "prompt": "Add GET /orders with limit and cursor parameters, store access, validation and tests, following the existing endpoints."
+    },
+    "answers": {
+      "shape": {
+        "choice": "implement",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 1.9,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.97,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.8,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "C",
+      "axis": "code",
+      "readOnly": false,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "debug-flaky",
+    "source": "synthetic",
+    "brief": {
+      "description": "Find why a test is flaky",
+      "prompt": "The checkout test fails one run in five. Find the cause, fix it and show the test passing twenty times in a row."
+    },
+    "answers": {
+      "shape": {
+        "choice": "debug",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 1.6,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.9,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.75,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "C",
+      "axis": "code",
+      "readOnly": false,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "audit-legal",
+    "source": "synthetic",
+    "brief": {
+      "description": "Check a contract summary against its source",
+      "prompt": "Compare the summary in docs/terms-summary.md with the contract text and list every clause the summary states wrongly or omits."
+    },
+    "answers": {
+      "shape": {
+        "choice": "audit",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 2.74,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.02,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.3,
+        "confidence": 0.95
+      }
+    },
+    "floor": "D",
+    "expected": {
+      "level": "D",
+      "axis": "general",
+      "readOnly": true,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": true
+    }
+  },
+  {
+    "id": "grade-interviews",
+    "source": "synthetic",
+    "brief": {
+      "description": "Grade interview answers",
+      "prompt": "Score the five interview transcripts in interviews/ from 1 to 5 against the rubric in rubric.md and justify each score in one line."
+    },
+    "answers": {
+      "shape": {
+        "choice": "evaluate",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 1.8,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.01,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.6,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "C",
+      "axis": "general",
+      "readOnly": true,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": true
+    }
+  },
+  {
+    "id": "design-architecture",
+    "source": "synthetic",
+    "brief": {
+      "description": "Choose a queue architecture",
+      "prompt": "Compare a database-backed queue with a managed broker for our job runner and recommend one with the trade-offs."
+    },
+    "answers": {
+      "shape": {
+        "choice": "design",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 2,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.1,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.3,
+        "confidence": 0.95
+      }
+    },
+    "floor": "B",
+    "expected": {
+      "level": "C",
+      "axis": "general",
+      "readOnly": true,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "vague-thoughts",
+    "source": "synthetic",
+    "brief": {
+      "description": "Think about the onboarding",
+      "prompt": "Think about how the onboarding could feel better and tell me what you come up with."
+    },
+    "answers": {
+      "shape": {
+        "choice": "other",
+        "confidence": 0.3
+      },
+      "stakes": {
+        "score": 1,
+        "confidence": 0.2
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.1,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.3,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "C",
+      "axis": "general",
+      "readOnly": false,
+      "lowConfidence": true,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "incoherent-shape",
+    "source": "synthetic",
+    "brief": {
+      "description": "A brief the decider mislabels",
+      "prompt": "Look at the build script and tell me whether the cache key is stable between machines."
+    },
+    "answers": {
+      "shape": {
+        "choice": "banana",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 1,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.1,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.3,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "C",
+      "axis": "general",
+      "readOnly": false,
+      "lowConfidence": false,
+      "incoherent": true,
+      "gate": false
+    }
+  },
+  {
+    "id": "security-edit",
+    "source": "synthetic",
+    "brief": {
+      "description": "Change the token check",
+      "prompt": "Replace the equality check on the session token in src/auth/session.js with the constant-time comparison already imported there."
+    },
+    "answers": {
+      "shape": {
+        "choice": "mechanical_edit",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 2.8,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.99,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.2,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "B",
+      "axis": "code",
+      "readOnly": false,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "spanish-survey",
+    "source": "synthetic",
+    "brief": {
+      "description": "Revisar opciones de facturación",
+      "prompt": "Revisa cómo facturan tres servicios de alojamiento en sus páginas públicas y resume las diferencias."
+    },
+    "answers": {
+      "shape": {
+        "choice": "survey",
+        "confidence": 0.48
+      },
+      "stakes": {
+        "score": 1.2,
+        "confidence": 0.9
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.05,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.3,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "C",
+      "axis": "general",
+      "readOnly": false,
+      "lowConfidence": true,
+      "incoherent": false,
+      "gate": false
+    }
+  },
+  {
+    "id": "lookup-big",
+    "source": "synthetic",
+    "brief": {
+      "description": "Find every use of a flag across a large repo",
+      "prompt": "List every place where the legacy_billing flag is read across the repository, with file and line, and say which ones guard payment code."
+    },
+    "answers": {
+      "shape": {
+        "choice": "lookup",
+        "confidence": 0.95
+      },
+      "stakes": {
+        "score": 2.6,
+        "confidence": 0.95
+      },
+      "reads_a_lot": {
+        "score": 0.5,
+        "confidence": 0.95
+      },
+      "pinned_by_checks": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "needs_judgment": {
+        "noul": 0.3,
+        "confidence": 0.95
+      },
+      "edits_files": {
+        "noul": 0.02,
+        "confidence": 0.95
+      },
+      "many_steps": {
+        "noul": 0.9,
+        "confidence": 0.95
+      }
+    },
+    "floor": "C",
+    "expected": {
+      "level": "C",
+      "axis": "general",
+      "readOnly": true,
+      "lowConfidence": false,
+      "incoherent": false,
+      "gate": false
+    }
+  }
+]
