@@ -39,7 +39,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 
 ## What Aether adds to a normal session
 
-Today, in 0.11.0, the plugin has the ten commands of `bin/`, and they are on the Bash tool's `PATH`; the measurement below, taken at 0.7.0, counted eight.
+Today, in 0.12.0, the plugin has the ten commands of `bin/`, and they are on the Bash tool's `PATH`; the measurement below, taken at 0.7.0, counted eight.
 
 Measured on Claude Code 2.1.296 with Aether 0.7.0, on 2026-10-09 (`docs/evaluations/2026-10-09-installable/A3-dormant.md`), in a session started without `--agent aether:lead`, against the same session with Aether disabled:
 - the first request grows by 431 characters, all in the first message: the `aether:run` and `aether:swarm` entries of the skills list;
@@ -48,4 +48,4 @@ Measured on Claude Code 2.1.296 with Aether 0.7.0, on 2026-10-09 (`docs/evaluati
 - the commands of `bin/` are on the Bash tool's `PATH`;
 - each session start, and each `Write`, `Edit`, `MultiEdit` or `NotebookEdit` call, runs one short `node` process that finds no Aether session and exits.
 
-Nothing is injected, refused, recorded or written. Versions 0.8 to 0.11 were not measured this way. They add three things, read from the plugin and not measured: the entries of the four preset skills (`aether:specify`, `aether:plan`, `aether:tasks` and `aether:constitution`) in the skills list, whose descriptions are 459 characters; the entry of the `aether:autonomous-runs` skill, added in 0.11.0, whose description is 223 characters; and the same short `node` process before each `Bash` call.
+Nothing is injected, refused, recorded or written. Versions 0.8 to 0.12 were not measured this way. They add four things, read from the plugin and not measured: the entries of the four preset skills (`aether:specify`, `aether:plan`, `aether:tasks` and `aether:constitution`) in the skills list, whose descriptions are 459 characters; the entry of the `aether:autonomous-runs` skill, added in 0.11.0, whose description is 223 characters; the same short `node` process before each `Bash` call; and, since 0.12.0, a mod hook before each `Agent` call that checks the session marker and, in a session that is not Aether's, hands the call on unchanged.
