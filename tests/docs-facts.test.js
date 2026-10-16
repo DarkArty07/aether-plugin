@@ -49,7 +49,7 @@ const README = 'README.md'
 const PAGES = [
   'docs/index.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/guide/options.md',
   'docs/guide/lanes.md', 'docs/guide/design-seats.md', 'docs/guide/autonomy.md', 'docs/guide/ops.md',
-  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/reference/components.md', 'docs/changelog.md',
+  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/router.md', 'docs/reference/components.md', 'docs/changelog.md',
   'docs/contributing.md', 'docs/roadmap.md',
 ]
 const FILES = [README, ...PAGES]
