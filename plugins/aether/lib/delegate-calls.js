@@ -202,7 +202,13 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   }
 
   // 3. The disposable worktree, the schema and the prompt.
-  const { worktree: top, mainRoot } = repoPaths(cwd)
+  let paths
+  try {
+    paths = repoPaths(cwd)
+  } catch (err) {
+    return outcome('failed', { detail: `delegate: ${err.message}`, quotaBefore })
+  }
+  const { worktree: top, mainRoot } = paths
   const dir = path.join(run.aetherDir(mainRoot), 'delegates', id)
   const worktree = path.join(dir, 'wt')
   const marker = `delegate/${id}`
