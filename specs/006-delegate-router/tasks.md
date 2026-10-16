@@ -981,7 +981,7 @@ test('a third decider joins by registering, without touching the criterion (R10)
 - Tier: sonnet high — varios archivos pequeños, la lectura de dos opciones con formato y tests existentes que cambian con precisión
 - Review: xhigh — los archivos de sesión, los valores mal escritos de las opciones y el texto del bootstrap que otras pruebas leen
 - Area: router-options
-- Owns: `plugins/aether/.claude-plugin/plugin.json`, `plugins/aether/lib/session.js`, `plugins/aether/bin/aether-session-start`, `tests/manifest.test.js`, `tests/router-settings.test.js`, `docs/guide/options.md`
+- Owns: `plugins/aether/.claude-plugin/plugin.json`, `plugins/aether/lib/session.js`, `plugins/aether/bin/aether-session-start`, `tests/manifest.test.js`, `tests/session-start.test.js`, `tests/router-settings.test.js`, `docs/guide/options.md`
 - Depends on: none
 - Serves: R11, R12
 
@@ -1043,7 +1043,7 @@ pruneSessions(...)    // also removes <id>.router.json with its marker
 
 Documentación: `docs/guide/options.md` pasa de «four options» a «eight options» (en la descripción de front matter y en el texto), agrega a la tabla las filas `router` (default `record`), `decider` (default `haiku`), `fallback` (default `sonnet:high`) y `deadlines` (default `haiku=8,jev=3,quota=3`) con la misma forma de las demás, y una viñeta por opción con las frases `` `router`, `record` by default ``, `` `decider`, `haiku` by default ``, `` `fallback`, `sonnet:high` by default `` y `` `deadlines`, `haiku=8,jev=3,quota=3` by default ``; no enlaza a páginas nuevas ni nombra `aether-route`. (`README.md` y `docs/getting-started.md` los cambia la tarea 15.)
 
-**Tests (write first):** `tests/router-settings.test.js`, y el cambio de `tests/manifest.test.js`.
+**Tests (write first):** `tests/router-settings.test.js`, el cambio de `tests/manifest.test.js` y un único cambio en `tests/session-start.test.js`: en la prueba `session start prunes session markers not written to for 30 days` la aserción `assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')).sort(), ['s1.json'])` pasa a esperar `['s1.json', 's1.router.json']`, porque un arranque por defecto escribe ahora el archivo del router (R11) junto a la marca de la sesión. Ninguna otra línea de ese archivo cambia.
 
 En `tests/manifest.test.js`, el test «the manifest has no dependencies, and declares the lanes option...» pasa a llamarse `the manifest has no dependencies, and declares the lanes, harnesses, ops, seats, router, decider, fallback and deadlines options` y su `deepEqual` agrega, tras `seats`, las claves `router`, `decider`, `fallback` y `deadlines` con los objetos de arriba, palabra por palabra.
 
@@ -1161,7 +1161,7 @@ test('session start writes the router file and adds the note of the mode, and no
 ```
 
 **Acceptance:**
-- `npm test` pasa completo, incluidos `tests/docs-facts.test.js` (la tabla de opciones coincide con `plugin.json`, opción por opción y por defecto) y `tests/session-start.test.js` y `tests/bootstrap-names.test.js` sin cambios.
+- `npm test` pasa completo, incluidos `tests/docs-facts.test.js` (la tabla de opciones coincide con `plugin.json`, opción por opción y por defecto) y `tests/bootstrap-names.test.js` sin cambios; `tests/session-start.test.js` cambia solo en esa aserción.
 - En una sesión con las opciones por defecto el contexto de arranque es el mismo de antes.
 - El peldaño estándar del fallback y los tiempos límite son opciones (R11) y no están en el criterio.
 
