@@ -3,6 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const replay = require('../plugins/aether/lib/router-replay.js')
@@ -61,6 +62,26 @@ test('extractCorpus finds each delegation with its real cost, and never keeps a 
   assert.equal(second.actual, null)
   assert.equal(second.effortParam, 'high')
   assert.deepEqual(replay.extractCorpus({ projectsDir: projects(t), projects: ['nothing-like-this'] }), [])
+})
+
+test('one request is counted once however many transcript lines repeat its usage', (t) => {
+  const root = tempDir(t)
+  const proj = path.join(root, '-home-u-work')
+  fs.mkdirSync(path.join(proj, 'sess1', 'subagents'), { recursive: true })
+  fs.writeFileSync(path.join(proj, 'sess1.jsonl'), JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'toolu_1', name: 'Agent', input: { prompt: 'Find it.' } }] } }) + '\n')
+  fs.writeFileSync(path.join(proj, 'sess1', 'subagents', 'agent-a.meta.json'), JSON.stringify({ toolUseId: 'toolu_1', agentType: 'general-purpose' }))
+  const line = (requestId, id, output, over = {}) => JSON.stringify({ type: 'assistant', requestId, message: { id, model: 'claude-opus-5-5', usage: { ...USAGE, output_tokens: output }, ...over } })
+  fs.writeFileSync(path.join(proj, 'sess1', 'subagents', 'agent-a.jsonl'), [
+    line('req_1', 'msg_1', 8),
+    line('req_1', 'msg_1', 8),
+    line('req_1', 'msg_1', 500),
+    line('req_2', 'msg_2', 500),
+    JSON.stringify({ type: 'assistant', message: { model: 'claude-opus-5-5', usage: USAGE } }),
+  ].join('\n') + '\n')
+  const [row] = replay.extractCorpus({ projectsDir: root })
+  assert.equal(row.actual.turns, 3, 'msg_1 once, msg_2 once, the line with no id as before')
+  assert.deepEqual(row.actual.reqs, [[1000, 500, 20000, 2000, 0], [1000, 500, 20000, 2000, 0], [1000, 500, 20000, 2000, 0]], 'the last line of a message holds its final usage')
+  assert.ok(Math.abs(row.actual.cost - 3 * 0.028) < 1e-9)
 })
 
 test('replay says what the decider would have chosen against what the Lead chose, and what each cost (C11)', async (t) => {
@@ -122,20 +143,55 @@ test('replayJournal decides the recorded answers again, and shows what the new c
   assert.equal(row.decision.alias, 'sonnet')
 })
 
-test('askDecider asks Haiku through claude -p, or Jev over HTTP, and a failure is a fallback', async () => {
+// An exec stub in the shape of promisify(execFile): a promise that carries the child, whose stdin the caller writes.
+function stubExec(reply, log) {
+  return (command, args, options) => {
+    const call = { command, args, options, stdin: null, cwdFiles: null, cwdExists: fs.existsSync(options.cwd) }
+    if (call.cwdExists) call.cwdFiles = fs.readdirSync(options.cwd)
+    log.push(call)
+    const promise = Promise.resolve({ stdout: reply })
+    promise.child = { stdin: { on() {}, end(data) { call.stdin = data } } }
+    return promise
+  }
+}
+
+test('askDecider asks Haiku through a bare claude -p, or Jev over HTTP, and a failure is a fallback', async () => {
   const text = JSON.stringify(answers())
-  let seen
-  const execFile = async (command, args) => { seen = { command, args }; return { stdout: JSON.stringify({ result: text }) } }
+  const calls = []
+  const execFile = stubExec(JSON.stringify({ result: text }), calls)
   const task = { description: 'find header', prompt: 'Find where the header is defined.' }
   const got = await replay.askDecider({ decider: 'haiku', task, criterion, deps: { execFile, timeoutMs: 8000 } })
   assert.deepEqual(got, answers())
+  const [seen] = calls
   assert.equal(seen.command, 'claude')
   for (const arg of ['-p', '--model', 'haiku', '--effort', 'low', '--output-format', 'json']) assert.ok(seen.args.includes(arg), arg)
-  const broken = await replay.askDecider({ decider: 'haiku', task, criterion, deps: { timeoutMs: 8000, execFile: async () => ({ stdout: JSON.stringify({ result: 'nope' }) }) } })
+  const broken = await replay.askDecider({ decider: 'haiku', task, criterion, deps: { timeoutMs: 8000, execFile: stubExec(JSON.stringify({ result: 'nope' }), []) } })
   assert.deepEqual(broken, { failure: 'unreadable' })
   const jev = await replay.askDecider({ decider: 'jev', task, criterion, deps: { timeoutMs: 3000, env: { OPENROUTER_API_KEY: 'k' }, fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ answers: answers() }) }) } })
   assert.deepEqual(jev, answers())
   assert.deepEqual(await replay.askDecider({ decider: 'jev', task, criterion, deps: { timeoutMs: 3000, env: {}, fetch: async () => { throw new Error('no') } } }), { failure: 'no-key' })
+})
+
+test('the Haiku replay is the bare decider request: stdin, an empty temporary directory, no tools, no settings, no session (R28)', async () => {
+  const calls = []
+  const execFile = stubExec(JSON.stringify({ result: JSON.stringify(answers()) }), calls)
+  const prompt = `Find the header.\n${'x'.repeat(300 * 1024)}`
+  const got = await replay.askDecider({ decider: 'haiku', task: { description: 'find header', prompt }, criterion, deps: { execFile, timeoutMs: 8000 } })
+  assert.deepEqual(got, answers())
+  const [seen] = calls
+  assert.ok(seen.stdin.includes('x'.repeat(1000)) && seen.stdin.includes('<brief>'), 'the whole prompt goes on stdin')
+  assert.ok(seen.args.every((arg) => arg.length < 1024), 'nothing large on argv')
+  assert.ok(!seen.args.includes(seen.stdin), 'the prompt is not an argument')
+  const at = (flag) => seen.args.indexOf(flag)
+  assert.equal(seen.args[at('--tools') + 1], '', 'no tools')
+  for (const flag of ['--safe-mode', '--strict-mcp-config', '--no-session-persistence', '--disable-slash-commands', '--system-prompt']) assert.ok(at(flag) !== -1, flag)
+  assert.ok(!seen.args.includes('--bare'), '--bare would need an API key')
+  assert.ok(seen.cwdExists, 'the cwd exists while the call runs')
+  assert.deepEqual(seen.cwdFiles, [], 'and it is empty')
+  assert.ok(path.resolve(seen.options.cwd).startsWith(path.resolve(os.tmpdir()) + path.sep), 'inside the temporary directory')
+  assert.equal(fs.existsSync(seen.options.cwd), false, 'removed afterwards')
+  await replay.askDecider({ decider: 'haiku', task: { description: 'd', prompt: 'p' }, criterion, deps: { execFile: (command, args, options) => { calls.push({ options }); const p = Promise.reject(new Error('boom')); p.catch(() => {}); p.child = { stdin: { on() {}, end() {} } }; return p }, timeoutMs: 8000 } })
+  assert.equal(fs.existsSync(calls[1].options.cwd), false, 'removed when the call fails too')
 })
 
 test('formatReport ends with the counts', async (t) => {
