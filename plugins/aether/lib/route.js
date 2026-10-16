@@ -366,7 +366,8 @@ async function conclude(ctx, d, result) {
   let pick = null
   if (verdict.readOnly && settings.lanes && !event.isolation && d.lanesConfig()) {
     const step = await quotaStep(d, settings, { level, axis })
-    ;({ pick, quota } = step)
+    pick = step.pick
+    quota = step.quota
     quotaWaitMs = step.waitedMs
   }
 
