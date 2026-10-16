@@ -535,9 +535,10 @@ peekReadings({ dataDir, config, harnesses, createAdapter = require('./harness/in
   -> { [harness]: { readAt: number, groups: { [group]: reading } } | null }
   // Only readings that already exist, and no process is launched (R23).
   // A harness whose adapter has quotaCost 'process' (agy): the file lane-readings.js saved (readings.cacheFile(dataDir, harness)), whatever its age; null when it is missing or unreadable.
-  // Any other harness (grok): adapter.quota(), which reads a log; readAt = now - the largest source.ageMinutes of its groups, in ms (now when none gives one); null when it throws.
+  // Any other harness (grok): adapter.quota(), which reads a log; readAt = now - the largest source.ageMinutes of its groups, in ms (now when a group has a reading but none gives an age); null when it throws.
+  // null also when every group of the answer is `unknown` and none carries `source.ageMinutes`: grok answers that (`unknownQuota`, with no `source`) when its log has no reading or the period of the reading has ended, and that is no reading, not a reading taken now (R23).
 staleHarnesses({ readings, config, harnesses, now }) -> string[]
-  // The harnesses of EXTERNAL named in `harnesses` whose reading is null, from the future (readAt > now), or as old as its life or older (now - readAt >= lifeMs). A reading that is not stale is valid (R23).
+  // The harnesses of EXTERNAL named in `harnesses` whose reading is null, from the future (readAt > now), as old as its life or older (now - readAt >= lifeMs), or with a window whose `resetsAt` is after `readAt` and not after `now` (the window has refilled since the reading: the same rule as `hasReset` in `readGroups` of `lane-readings.js`). A reading that is not stale is valid (R23).
 chooseHarness({ level, axis, rungs, config, enabled, installed, readings, marks, now })
   -> { pick: { harness, rung } | null, considered: Considered[] }
 ```
@@ -757,6 +758,21 @@ test('peekReadings gives null for a missing file and for a log that fails', (t) 
   assert.deepEqual(got, { agy: null, grok: null })
 })
 
+test('peekReadings reads a grok answer with no reading as no reading, so its renewal starts (R23)', (t) => {
+  const unknown = { groups: { grok: { unknown: true, windows: {} } } }
+  const createAdapter = (name) => (name === 'agy'
+    ? { quotaCost: 'process', quota() { throw new Error('must not run') } }
+    : { quotaCost: 'log', quota: () => unknown })
+  const got = quota.peekReadings({ dataDir: tempDir(t), config, harnesses: ['agy', 'grok'], createAdapter, now: NOW })
+  assert.equal(got.grok, null, 'unknownQuota has no source: it is not a reading taken now')
+  assert.deepEqual(quota.staleHarnesses({ readings: got, config, harnesses: ['grok'], now: NOW }), ['grok'])
+  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(1, 60) }), grok: got.grok } })
+  const k = find(r, 'grok', 'grok')
+  assert.equal(k.why, 'no-reading')
+  assert.equal(k.note, 'sin lectura; ninguna guardada')
+  assert.equal(r.pick.harness, 'agy')
+})
+
 test('the life of a reading is the one of its harness, and staleHarnesses names those that are not valid', () => {
   assert.equal(quota.lifeMs(config, 'agy'), 10 * MIN)
   assert.equal(quota.lifeMs(config, 'grok'), 30 * MIN)
@@ -766,6 +782,20 @@ test('the life of a reading is the one of its harness, and staleHarnesses names 
   assert.deepEqual(stale({ agy: { readAt: NOW - 10 * MIN, groups: {} }, grok: null }), ['agy', 'grok'], 'a reading as old as its life is not valid')
   assert.deepEqual(stale({ agy: { readAt: NOW + MIN, groups: {} }, grok: { readAt: NOW, groups: {} } }), ['agy'])
   assert.deepEqual(quota.staleHarnesses({ readings: { agy: null }, config, harnesses: ['agy', 'codex'], now: NOW }), ['agy'], 'only agy and grok are asked about')
+})
+
+test('a reading with a window that has reset since it was taken is not valid, as in readGroups (R23)', () => {
+  const at = (ms) => new Date(NOW + ms).toISOString()
+  const groups = (resetsAt) => ({ gemini: { windows: { weekly: { remaining: 0.9, resetsAt } } } })
+  const stale = (resetsAt) => quota.staleHarnesses({ readings: { agy: { readAt: NOW - 5 * MIN, groups: groups(resetsAt) } }, config, harnesses: ['agy'], now: NOW })
+  assert.deepEqual(stale(at(-2 * MIN)), ['agy'], 'the window reset between the reading and now')
+  assert.deepEqual(stale(at(0)), ['agy'], 'a reset at now has come')
+  assert.deepEqual(stale(at(-6 * MIN)), [], 'a reset already behind the reading was not waiting for anything')
+  assert.deepEqual(stale(at(2 * MIN)), [], 'a reset still ahead')
+  assert.deepEqual(stale('not a date'), [])
+  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: { windows: { '5h': win(1, 5), weekly: { remaining: 0.9, resetsAt: at(-2 * MIN) } } } }, NOW - 5 * MIN), grok: GROK } })
+  assert.equal(find(r, 'agy', 'gemini').why, 'no-reading', 'the refilled window makes the old balance untrue')
+  assert.equal(r.pick.harness, 'grok')
 })
 
 test('the module neither launches a process nor takes the order of A49 (R9, R21)', () => {
@@ -779,7 +809,7 @@ test('the module neither launches a process nor takes the order of A49 (R9, R21)
 **Acceptance:**
 - `npm test` pasa completo; las pruebas del swarm que usan `lane-order.js`, `lane-marks.js` y `lane-readings.js` pasan sin cambios.
 - `router-quota.js` no importa `child_process`, no lanza ningún proceso, no escribe ningún archivo y no llama a `orderCandidates` ni a `markDry`; de `lane-order.js` usa solo `groupView`. El texto del módulo, comentarios incluidos, no nombra `child_process`, `orderCandidates` ni `markDry` (lo vigila el último test).
-- Ningún grupo sin lectura vigente se elige, y ninguna lectura con saldo levanta una marca.
+- Ningún grupo sin lectura vigente se elige (ni el de grok cuyo registro no trae lectura, ni el de agy con una ventana que se reinició desde la lectura), y ninguna lectura con saldo levanta una marca.
 
 ### Task 4: Los decisores Haiku bajo y Jev
 
@@ -1336,10 +1366,10 @@ runDelegate({ cwd, id, harness, rung, task, config, dataDir, adapter = null, now
 - `Outcome = { status: 'ok'|'quota'|'failed'|'violation'|'unavailable', text, detail, harness, modelArg, durationMs, usage: { input, output, thinking, cacheRead }, quotaBefore, quotaAfter, quotaSpent }`; `text` es el `answer` del delegado solo cuando `status` es `ok`, y `''` en otro caso.
 - Pasos (modelados en `runRound` de `lib/seats.js`, que se lee y no se edita):
   1. `unavailable` sin lanzar nada si el harness no está en `config.harnesses`, no tiene modelo `rung.model`, o `adapter.installed()` es falso.
-  2. Lee la cuota del grupo con `adapter.quota().groups[rung.group]` (`quotaBefore`; una lectura que falla deja `null`). Si `lanes.usable(quotaBefore, config.reserve)` es falso → `quota`, sin lanzar el CLI.
+  2. Lee la cuota del grupo con `readGroups(adapter, { harness, settings: config.harnesses[harness], dataDir, now: now() })` de `lib/lane-readings.js` y toma `.groups[rung.group]` (`quotaBefore`; una lectura que falla deja `null`). `readGroups` sirve la lectura guardada mientras sea vigente (la que `route` acaba de dar por vigente, de modo que en agy no lanza `agy -p /usage` otra vez) y, si no, la lee y la guarda. Si `lanes.usable(quotaBefore, config.reserve)` es falso → `quota`, sin lanzar el CLI.
   3. Crea un worktree desechable y desacoplado de `HEAD` en `<mainRoot>/.aether/delegates/<id>/wt` (`git worktree add -q --detach`), escribe el esquema en `<mainRoot>/.aether/delegates/<id>/schema.json` y arma el prompt: `DELEGATE_NOTE`, una línea en blanco, `Task: <description>`, una línea en blanco y el `prompt` de la tarea; si el adaptador tiene `schemaInPrompt === true` añade la sección de respuesta con el esquema, como `callPrompt` de `lane-calls.js`.
   4. Corre `delegateArgv(adapter, rung, { schemaFile, timeoutSeconds, prompt })` en el worktree, en un grupo de procesos propio, con `lanes.laneEnv(process.env, 'delegate/<id>')` como entorno y la espera máxima de `config.harnesses[harness].timeouts.reviewer ?? 1200` segundos más 60 de gracia; al final mata el grupo y los procesos con el marcador.
-  5. Lee `quotaAfter`; juzga la salida con `adapter.parse(raw, { required: ['answer'] })`. Si el worktree cambió (`git status --porcelain` no vacío, ignorando `.aether-tmp/`, o `HEAD` distinto) → `violation` con `detail` que nombra los archivos. Si `parse` no fue limpio → `quota` cuando `quotaAfter` no es usable o el motivo empieza por `quota: `, y `failed` en otro caso, con el motivo en `detail`. Si no, `ok` con `text = structured.answer`.
+  5. Lee `quotaAfter` con `readGroups(adapter, { harness, settings: config.harnesses[harness], dataDir, now: now(), fresh: true })`, que lee de nuevo y renueva la lectura guardada, de modo que la siguiente decisión encuentra una lectura vigente (R23); juzga la salida con `adapter.parse(raw, { required: ['answer'] })`. Si el worktree cambió (`git status --porcelain` no vacío, ignorando `.aether-tmp/`, o `HEAD` distinto) → `violation` con `detail` que nombra los archivos. Si `parse` no fue limpio → `quota` cuando `quotaAfter` no es usable o el motivo empieza por `quota: `, y `failed` en otro caso, con el motivo en `detail`. Si no, `ok` con `text = structured.answer`.
   6. Siempre, borra el worktree (`git worktree remove --force`) y los archivos temporales, también ante una señal `SIGTERM`, `SIGINT` o `SIGHUP`.
 - Un rechazo explícito de cuota de agy («Individual quota reached … Resets in …») llega entero en `detail` con `status: 'failed'` (las lecturas de antes y después siguen sobre la reserva): este módulo no lo interpreta; lo reconoce `quotaRefusal` (tarea 13) y deja la marca el bin (tarea 10).
 - No escribe ninguna entrada de registro ni marca de cuota: eso lo hace el bin (tarea 10).
@@ -1356,6 +1386,8 @@ const path = require('node:path')
 const { makeRepo } = require('./helpers.js')
 const { laneEnv } = require('./lane-fixtures.js')
 const delegate = require('../plugins/aether/lib/delegate-calls.js')
+
+const readingsLib = require('../plugins/aether/lib/lane-readings.js')
 
 const GROUPS = { gemini: 'Gemini Models', claude: 'Claude and GPT models' }
 
@@ -1376,7 +1408,8 @@ function setup(t, { quota = null } = {}) {
   const repo = makeRepo(t)
   const calls = () => (fs.existsSync(env.AETHER_FAKE_AGY_LOG) ? fs.readFileSync(env.AETHER_FAKE_AGY_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [])
   const modelCalls = () => calls().filter((c) => c.argv.includes('--model'))
-  return { env, config, repo, dataDir: env.AETHER_DATA_DIR, modelCalls }
+  const usageCalls = () => calls().filter((c) => c.argv.includes('/usage'))
+  return { env, config, repo, dataDir: env.AETHER_DATA_DIR, modelCalls, usageCalls }
 }
 const rung = { model: 'gemini-3.8-flash', effort: 'medium', group: 'gemini' }
 const run = (s, prompt, over = {}) => delegate.runDelegate({
@@ -1470,6 +1503,19 @@ test('the id must be a plain name', async (t) => {
   await assert.rejects(run(s, 'Audit.', { id: '' }), /id/)
 })
 
+test('the quota goes through the saved reading: the one before is served from it, and the one after renews it (R23)', async (t) => {
+  const s = setup(t)
+  const first = await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "one"}')
+  assert.equal(first.status, 'ok', first.detail)
+  assert.equal(s.usageCalls().length, 2, 'no saved reading yet: the reading before and the one after')
+  const saved = JSON.parse(fs.readFileSync(readingsLib.cacheFile(s.dataDir, 'agy'), 'utf8'))
+  assert.equal(saved.harness, 'agy')
+  assert.ok(Object.hasOwn(saved.groups, 'gemini'), 'the reading after is saved')
+  const second = await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "two"}', { id: 'd-2' })
+  assert.equal(second.status, 'ok', second.detail)
+  assert.equal(s.usageCalls().length, 3, 'the reading before came from the saved one: only the reading after started agy')
+})
+
 test('quotaSpent is what each window lost between two readings of the same reset', () => {
   const win = (remaining, resetsAt = '2026-10-17T00:00:00Z') => ({ remaining, resetsAt })
   const before = { windows: { weekly: win(0.95), '5h': win(0.9, '2026-10-15T05:00:00Z') } }
@@ -1485,6 +1531,7 @@ test('quotaSpent is what each window lost between two readings of the same reset
 - `npm test` pasa completo, y `git worktree list` queda con una sola línea después de cada caso, incluso con `violation`, `failed` y `quota`.
 - Un delegado que cambia un archivo nunca deja el cambio en el repositorio del dueño; el prompt lleva `DELEGATE_NOTE`; nada de `lane-calls.js`, `seats.js` ni `harness/**` cambió.
 - El esfuerzo del peldaño llega al CLI con su nombre nativo y sin leer `levels` (R16).
+- La cuota se lee con `readGroups` de `lane-readings.js` (importado, no editado): un delegado de agy no lanza `/usage` para la lectura de antes cuando hay una vigente, y la de después deja la lectura guardada.
 
 ### Task 8: La política: `begin`, `finish`, `decide`, modos, anulación, compuertas, cuota y fallback
 
@@ -2373,7 +2420,7 @@ test('the executable bit is set and the commands page counts the bins', () => {
 createRouter() -> { toolCall($, e, next, ctx), bind(e, agentId), step($, e, next, ctx), drain() }   // ctx = { session, dataDir, root }; drain() -> Promise<void> resolves when all the background work has ended
 ```
 
-- `toolCall` (gancho `tool.call` de `Agent`): si `e.subagent_type` empieza por `aether:` → `next(e)` sin tocar nada. Si no: (1) escribe el evento (`subagent_type`, `description`, `prompt`, `model`, `effort`, `run_in_background`, `isolation`; solo los definidos) en `<dataDir>/router/in/<ahora>-<n>.json` con `$.fs.write`; (2) corre `$.process.run(['node', '<root>/bin/aether-route', 'begin', '--session', '<session>', '--input', '<archivo>'], { timeoutMs: 5000 })` y lee la última línea JSON de `stdout`; (3) **si el plan trae `background: true` (modo `record`, R7)**, no espera la decisión: lanza el trabajo en segundo plano, lo registra para `drain()` y llama `next(e)` con el evento tal cual. El trabajo es: con `ask`, llama `$.model.complete(...)` y sigue como en (4); con `decide: true`, corre `aether-route decide --id <id>` con `timeoutMs: 15000`. Atrapa todo error y nunca rechaza ni cambia lo que el Lead lanzó; (4) si no hay `background` y el plan trae `ask`, llama `$.model.complete({ model, effort, prompt, maxTokens, timeoutMs })` con los campos del descriptor (el lanzamiento espera hasta ese `timeoutMs`, el límite del decisor), escribe el texto en `<dataDir>/router/in/<ahora>-<n>.answer.txt` y corre `finish --id <id> --answer-file <archivo>` con `timeoutMs: 15000`; si `complete` lanza o `isAnswered` es falso corre `finish --id <id> --failure <timeout|empty>` (`timeout` cuando el mensaje o `reason` coincide con `/time/i`, `empty` en otro caso); (5) con el plan final llama `next(plan.args ? { ...e, ...plan.args } : e)` y, si hay `notes`, devuelve el resultado con `context: [...(result.context ?? []), ...notes]`; (6) si el plan trae `external`, recuerda `external` por el texto de `e.prompt`.
+- `toolCall` (gancho `tool.call` de `Agent`): si `e.subagent_type` empieza por `aether:` → `next(e)` sin tocar nada. Si no: (1) escribe el evento (`subagent_type`, `description`, `prompt`, `model`, `effort`, `run_in_background`, `isolation`; solo los definidos) en `<dataDir>/router/in/<ahora>-<n>.json` con `$.fs.write`; (2) corre `$.process.run(['node', '<root>/bin/aether-route', 'begin', '--session', '<session>', '--input', '<archivo>'], { timeoutMs: 25000 })` y lee la última línea JSON de `stdout`. El tope es de 25 s porque con Jev en `advise` y `command` `begin` incluye la decisión y la espera de cuota, y cada uno puede valer hasta 10 s (D11): 10 + 10 + 5 de margen; `$.process.run` no cuenta contra los 10 s de ejecución propia del gancho (F27). Con Haiku `begin` solo arma la petición; (3) **si el plan trae `background: true` (modo `record`, R7)**, no espera la decisión: lanza el trabajo en segundo plano, lo registra para `drain()` y llama `next(e)` con el evento tal cual. El trabajo es: con `ask`, llama `$.model.complete(...)` y sigue como en (4); con `decide: true`, corre `aether-route decide --id <id>` con `timeoutMs: 25000` (el decisor Jev y la espera de cuota, como `begin` de Jev). Atrapa todo error y nunca rechaza ni cambia lo que el Lead lanzó; (4) si no hay `background` y el plan trae `ask`, llama `$.model.complete({ model, effort, prompt, maxTokens, timeoutMs })` con los campos del descriptor (el lanzamiento espera hasta ese `timeoutMs`, el límite del decisor), escribe el texto en `<dataDir>/router/in/<ahora>-<n>.answer.txt` y corre `finish --id <id> --answer-file <archivo>` con `timeoutMs: 15000`; si `complete` lanza o `isAnswered` es falso corre `finish --id <id> --failure <timeout|empty>` (`timeout` cuando el mensaje o `reason` coincide con `/time/i`, `empty` en otro caso); (5) con el plan final llama `next(plan.args ? { ...e, ...plan.args } : e)` y, si hay `notes`, devuelve el resultado con `context: [...(result.context ?? []), ...notes]`; (6) si el plan trae `external`, recuerda `external` por el texto de `e.prompt`.
 - Cualquier falla (excepción, `exitCode` distinto de 0, salida que no es JSON, `plan.skip`) → `next(e)` sin cambios (R25).
 - `bind(e, agentId)` (llamado desde `agent.spawn` con su `e.prompt`): si el prompt coincide con uno recordado, liga ese `external` al `agentId`.
 - `step` (generador, gancho `turn.step`): si `e.index === 0` y `e.agentId` está ligado → corre `['node', '<root>/bin/aether-route', 'delegate', '--session', '<session>', '--id', '<external.id>']` con `timeoutMs: external.timeoutMs`; si responde `ok: true` y un `text` no vacío, cede `{ kind: 'text', index: 0, text }` y `{ kind: 'stop', stopReason: 'end_turn', usage: null }` y devuelve `{ turnId: e.turnId, index: e.index, answer: text, toolUses: [], stopReason: 'end_turn', usage: null }` (el delegado no hace ninguna petición al modelo); en cualquier otro caso (`ok` falso, excepción) cede lo que cede `next(e)` (el delegado corre en Claude con el peldaño que `finish` ya puso en la llamada, R26). Un agente no ligado: `yield* next(e)`.
@@ -2513,6 +2560,20 @@ test('a background decision that fails never reaches the Lead or the launch (R25
   const router = createRouter()
   await router.toolCall($, EV, recorder().next, CTX)
   await router.drain()
+})
+
+test('the processes get the time that the decider and the quota wait can take at their largest (10 s each, D11)', async () => {
+  const jev = make({ processes: [line({ ...PLAN, args: { model: 'haiku', effort: 'high' }, notes: ['n'] })] })
+  await createRouter().toolCall(jev.$, EV, recorder().next, CTX)
+  assert.equal(jev.calls.runs[0].init.timeoutMs, 25000, 'begin of Jev in advise or command holds the decision and the quota wait: 10 s + 10 s + 5 s of margin')
+  const haiku = make({ processes: [line(ASK), line(PLAN)] })
+  await createRouter().toolCall(haiku.$, EV, recorder().next, CTX)
+  assert.equal(haiku.calls.runs[1].init.timeoutMs, 15000, 'finish holds the quota wait: 10 s + 5 s')
+  const background = make({ processes: [line({ ...PLAN, background: true, decide: true }), line(PLAN)] })
+  const router = createRouter()
+  await router.toolCall(background.$, EV, recorder().next, CTX)
+  await router.drain()
+  assert.equal(background.calls.runs[1].init.timeoutMs, 25000, 'decide of Jev holds the decision and the quota wait')
 })
 
 test('a model that does not answer is a failure the bin turns into the fallback', async () => {
