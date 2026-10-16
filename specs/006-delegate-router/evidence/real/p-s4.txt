@@ -1,0 +1,7 @@
+Launch two delegate tasks in ONE message (two Agent tool calls, subagent_type general-purpose). Pass no model and no effort: the router picks them.
+
+Task A: its Agent call MUST set run_in_background to true. Description: "Check slug". Brief: Read src/util.js and say, in one sentence, what slug() does with accented letters. Read only; edit nothing.
+
+Task B: a normal foreground call. Description: "Add clamp tests". Brief: Add two more test cases for clamp() to tests/util.test.js (a value below the range, and lo greater than hi), run `npm test`, make it pass, and report the names of the tests you added.
+
+Wait until both have finished (you will be notified when the background one ends), then answer with two lines: "A: <first sentence of its result>" and "B: <first sentence of its result>".

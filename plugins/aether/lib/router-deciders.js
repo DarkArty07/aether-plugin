@@ -75,9 +75,16 @@ function finiteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
-// Reads one question's answer into its normalized form; null when it is missing or of the wrong type.
-function normalizeAnswer(type, raw) {
-  if (!isPlainObject(raw) || !finiteNumber(raw.confidence)) return null
+// Reads one question's answer into its normalized form; null when it is missing or of the wrong type. Jev answers a
+// noul question with the probability alone, no confidence (measured on the real API), so a decider that says so
+// (`marginConfidence`) gets one from the answer: how far the probability is from a coin flip, |2p - 1|. Haiku is asked
+// for a confidence on every question, and one it leaves out is an unreadable answer.
+function normalizeAnswer(type, raw, { marginConfidence = false } = {}) {
+  if (!isPlainObject(raw)) return null
+  if (type === 'noul' && marginConfidence && !finiteNumber(raw.confidence)) {
+    return finiteNumber(raw.noul) ? { noul: raw.noul, confidence: Math.abs(2 * raw.noul - 1) } : null
+  }
+  if (!finiteNumber(raw.confidence)) return null
   if (type === 'choice') return typeof raw.choice === 'string' && raw.choice ? { choice: raw.choice, confidence: raw.confidence } : null
   if (type === 'score') return finiteNumber(raw.score) ? { score: raw.score, confidence: raw.confidence } : null
   if (type === 'noul') return finiteNumber(raw.noul) ? { noul: raw.noul, confidence: raw.confidence } : null
@@ -85,12 +92,12 @@ function normalizeAnswer(type, raw) {
 }
 
 // Gives the answers of every question of the criterion, or throws 'unreadable' naming the first one that fails.
-function normalizeAnswers(rawAnswers, criterion) {
+function normalizeAnswers(rawAnswers, criterion, options) {
   if (!isPlainObject(rawAnswers)) throw new DeciderError('unreadable', 'the reply has no answers')
   const questions = criterion && isPlainObject(criterion.questions) ? criterion.questions : {}
   const answers = {}
   for (const [id, question] of Object.entries(questions)) {
-    const answer = normalizeAnswer(question && question.type, rawAnswers[id])
+    const answer = normalizeAnswer(question && question.type, rawAnswers[id], options)
     if (!answer) throw new DeciderError('unreadable', `the answer to "${id}" is missing or has the wrong type`)
     answers[id] = answer
   }
@@ -234,7 +241,7 @@ function createJev({ env = process.env, dataDir } = {}) {
         const detail = isPlainObject(body.error) && typeof body.error.message === 'string' ? body.error.message : JSON.stringify(body.error)
         throw new DeciderError('http', `OpenRouter answered with an error: ${snippet(detail, secret)}`)
       }
-      const answers = normalizeAnswers(body.answers, criterion)
+      const answers = normalizeAnswers(body.answers, criterion, { marginConfidence: true })
       const cost = body.usage && finiteNumber(body.usage.cost) ? body.usage.cost : null
       const model = typeof body.model === 'string' && body.model ? body.model : null
       return { answers, cost, model }

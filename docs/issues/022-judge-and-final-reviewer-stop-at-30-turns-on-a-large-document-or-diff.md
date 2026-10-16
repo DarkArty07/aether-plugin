@@ -4,7 +4,7 @@
 **Date:** 2026-10-16
 **Found in:** the build of `specs/006-delegate-router`, the Lead's session 56b71739: a 15-task plan review and a final review of 9 merged tasks
 **Status:** open; the Lead's workaround for this run is below; related to [issue 005](005-report-and-final-review-cannot-represent-hand-integrated-work.md), proposal 3
-**GitHub:** not filed yet (private repository)
+**GitHub:** [#33](https://github.com/DarkArty07/aether-plugin/issues/33) (private repository)
 
 ## What happened
 

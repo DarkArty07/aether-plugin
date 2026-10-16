@@ -1,0 +1,7 @@
+I have three independent tasks on this repository. Launch them as three delegate tasks IN ONE MESSAGE, so they run in parallel: three Agent tool calls with subagent_type general-purpose, each with the exact description and brief below. Pass no model and no effort: the router picks them. Wait for all three, then answer with exactly three lines: "1: <first sentence of its result>", "2: ...", "3: ...".
+
+Task 1. Description: "List util exports". Brief: List every exported function of src/util.js, one line each saying what it returns. Read only; edit nothing.
+
+Task 2. Description: "Add getWithRetry". Brief: In src/api.js add and export a function getWithRetry(url, tries) that calls get(url) and retries up to `tries` times when it throws, then rethrows the last error. Add a node:test test for it in tests/api.test.js that injects a failing-then-working get (no network). Run `npm test` and make it pass. Report what you changed.
+
+Task 3. Description: "Audit error handling". Brief: Audit the files under src/ for error-handling gaps (unhandled rejections, unchecked inputs, silent failures). Report each gap with its file and line and a one-line fix suggestion. Read only; edit nothing.

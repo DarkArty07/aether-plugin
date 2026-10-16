@@ -4,7 +4,7 @@
 **Date:** 2026-10-15
 **Found in:** the design of `specs/006-delegate-router`, the Lead's session 56b71739: three Judge seat rounds on Gemini 4 Argon
 **Status:** open
-**GitHub:** not filed yet (private repository)
+**GitHub:** [#32](https://github.com/DarkArty07/aether-plugin/issues/32) (private repository)
 
 ## What happened
 
