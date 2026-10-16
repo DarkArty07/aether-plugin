@@ -43,9 +43,11 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0, p
       let fallback = entry.fallback || null
       if (!fallback && failed) fallback = `external ${outcome.status}`
       // An external delegate that ended ok ran on its outcome's rung. One that did not was rerun by its agent on Claude,
-      // on the rescue rung the decision recorded, and that rerun spent tokens.
+      // on the rescue rung the decision recorded, and that rerun spent tokens. So was one with no outcome at all: the
+      // delegate bin died before it wrote one, and the mod ran the agent.
       let ranOn = entry.ranOn || null
       if (outcome) ranOn = failed ? entry.rescue || null : { harness: outcome.harness, model: outcome.model, effort: outcome.effort }
+      else if (entry.applied === 'external') ranOn = entry.rescue || null
       return {
         id: entry.id,
         time: entry.time,

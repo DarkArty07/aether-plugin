@@ -3,7 +3,8 @@
 // A read-only delegate of the Lead on agy or grok, outside a run: one call of the harness's CLI, with the model and
 // the native effort of the rung the router chose, in a disposable worktree of the current commit. It is judged from
 // outside, as a design seat's round is (lib/seats.js): anything the delegate changed undoes its answer, and the
-// worktree is removed whatever happens. This module writes no log entry and no quota mark: the bin does.
+// worktree is removed whatever happens. A checkout with uncommitted work is not delegated at all (the copy would
+// answer about older code). This module writes no log entry and no quota mark: the bin does.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -93,6 +94,21 @@ function worktreeChanges(worktree, start) {
   return { files: [...files].sort(), head, moved: head !== start }
 }
 
+// The paths of the checkout that are not committed: changed, staged or new (not ignored). The disposable copy is
+// built from HEAD, so it has none of them. --no-optional-locks keeps this read from touching the index of a
+// checkout the Lead is editing.
+function uncommittedPaths(top) {
+  return nulList(['--no-optional-locks', 'status', '--porcelain', '-z', '--no-renames'], top).map((entry) => entry.slice(3))
+}
+
+const NAMED_CHANGES = 5
+
+function dirtyDetail(files) {
+  const named = files.slice(0, NAMED_CHANGES).join(', ')
+  const rest = files.length > NAMED_CHANGES ? ` and ${files.length - NAMED_CHANGES} more` : ''
+  return `the checkout has uncommitted changes (${named}${rest}): the disposable copy is built from the last commit and would not see them, so the delegate would answer about older code`
+}
+
 function removeWorktree(mainRoot, worktree) {
   git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true })
   fs.rmSync(worktree, { recursive: true, force: true })
@@ -154,8 +170,9 @@ function usageOf(usage) {
   return { input: count('input'), output: count('output'), thinking: count('thinking'), cacheRead: count('cacheRead') }
 }
 
-// One read-only delegate of the task on the rung, in a disposable worktree of cwd's HEAD. Resolves to its Outcome;
-// throws only for an id that is not a plain name.
+// One read-only delegate of the task on the rung, in a disposable worktree of cwd's HEAD. Resolves to its Outcome,
+// whose status is ok, quota, failed, violation, unavailable (nothing launched) or dirty (the checkout has uncommitted
+// work; nothing launched, no quota read); throws only for an id that is not a plain name.
 async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adapter = null, now = Date.now }) {
   if (typeof id !== 'string' || !ID.test(id)) throw new Error(`the delegate id must be a plain name (${ID}), not ${JSON.stringify(id)}`)
   const startedAt = now()
@@ -188,7 +205,30 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   if (typeof cli.modelArg === 'function') modelArg = cli.modelArg({ model: rung.model, level: rung.effort })
   if (!cli.installed()) return outcome('unavailable', { detail: `${harness} is not installed` })
 
-  // 2. The quota before, served from the saved reading while it holds.
+  // 2. The checkout is committed. This comes before anything is read or launched: the Lead edits before it delegates,
+  // and a copy of HEAD would not hold those edits.
+  let paths
+  try {
+    paths = repoPaths(cwd)
+  } catch (err) {
+    return outcome('failed', { detail: `delegate: ${err.message}` })
+  }
+  const { worktree: top, mainRoot, gitCommonDir } = paths
+  try {
+    // Aether's own directories (a delegate going on at the same time has one in .aether/) are not the Lead's work.
+    run.ensureExcluded(gitCommonDir)
+  } catch {
+    // If git does not ignore them, they show below as changes, and the delegate runs on Claude.
+  }
+  let uncommitted
+  try {
+    uncommitted = uncommittedPaths(top)
+  } catch (err) {
+    return outcome('failed', { detail: `delegate: ${err.message}` })
+  }
+  if (uncommitted.length > 0) return outcome('dirty', { detail: dirtyDetail(uncommitted) })
+
+  // 3. The quota before, served from the saved reading while it holds.
   let quotaBefore = null
   try {
     quotaBefore = readGroups(cli, { harness, settings, dataDir, now: now() }).groups[rung.group] ?? null
@@ -200,14 +240,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     return outcome('quota', { detail, quotaBefore })
   }
 
-  // 3. The disposable worktree, the schema and the prompt.
-  let paths
-  try {
-    paths = repoPaths(cwd)
-  } catch (err) {
-    return outcome('failed', { detail: `delegate: ${err.message}`, quotaBefore })
-  }
-  const { worktree: top, mainRoot } = paths
+  // 4. The disposable worktree, the schema and the prompt.
   const dir = path.join(run.aetherDir(mainRoot), 'delegates', id)
   const worktree = path.join(dir, 'wt')
   const marker = `delegate/${id}`
@@ -243,7 +276,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     const timeoutSeconds = cliSeconds(settings)
     const argv = delegateArgv(cli, rung, { schemaFile, timeoutSeconds, prompt: delegatePrompt(cli, task) })
 
-    // 4. The CLI, in its own process group, with an environment clean of credentials.
+    // 5. The CLI, in its own process group, with an environment clean of credentials.
     const stdoutFile = path.join(dir, 'stdout')
     const stderrFile = path.join(dir, 'stderr')
     const exitCode = await runCli(argv, {
@@ -259,7 +292,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     killGroup(child)
     lanes.killMarked(marker)
 
-    // 5. The quota after, read anew so the saved reading is renewed; then the verdict.
+    // 6. The quota after, read anew so the saved reading is renewed; then the verdict.
     let quotaRead = false
     try {
       quotaAfter = readGroups(cli, { harness, settings, dataDir, now: now(), fresh: true }).groups[rung.group] ?? null
@@ -284,7 +317,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   } catch (err) {
     result = { status: 'failed', detail: `delegate: ${err.message}` }
   } finally {
-    // 6. Always: no process, no worktree and no temporary file outlives the delegate.
+    // 7. Always: no process, no worktree and no temporary file outlives the delegate.
     cleanUp()
     for (const signal of SIGNALS) process.removeListener(signal, onSignal)
   }

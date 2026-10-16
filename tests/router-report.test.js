@@ -125,6 +125,22 @@ test('an external delegate that did not end ok shows the Claude rung that reran 
   assert.equal(totals.fallback, 1)
 })
 
+test('an external delegation with no outcome entry shows the rescue rung: the delegate bin died and the agent ran again on Claude', async (t) => {
+  const dir = tempDir(t)
+  const entry = await externalDecision(dir, 'e4')
+  assert.deepEqual(entry.ranOn, { harness: 'grok', model: 'grok-4.7', effort: 'low' }, 'the decision names the external rung')
+  log.appendEntry(dir, { kind: 'spawn', id: 'e4', time: 1001, session: 's1', agentId: 'agent-3' })
+  const rerun = { t: 1600, ms: 700, agent: 'agent-3', model: 'claude-haiku-5-5', effort: 'high', input: 3000, output: 800, cacheRead: 1000, cacheWrite: 0 }
+  fs.mkdirSync(path.join(dir, 'usage', 's1'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'usage', 's1', '0.json'), JSON.stringify({ session: 's1', part: 0, claudeCode: '2.1.301', agents: { 'agent-3': { type: 'general-purpose', description: 'Audit the API usage in src/' } }, entries: [rerun] }))
+  const [row] = delegatesReport({ dataDir: dir, prices }).delegations
+  assert.deepEqual(row.ranOn, entry.rescue)
+  assert.deepEqual(row.ranOn, { harness: 'claude', model: 'claude-haiku-5-5', effort: 'high' })
+  assert.ok(Math.abs(row.costUsd - priceEntry(rerun, prices)) < 1e-12, 'the rerun spent tokens')
+  assert.equal(row.durationMs, null)
+  assert.equal(row.quotaSpent, null)
+})
+
 test('an external delegate that ended ok shows the rung it ran on and costs no tokens', async (t) => {
   const dir = tempDir(t)
   await externalDecision(dir, 'e3')

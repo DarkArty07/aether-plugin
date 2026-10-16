@@ -3,7 +3,7 @@
 // The delegate router's policy: how one delegate task of the Lead runs. `begin` takes the Agent call the mod caught,
 // `finish` closes it with the answer of a decider that needs the mod (Haiku) and `decide` with the HTTP decider (Jev)
 // of a call made in record mode. Each one gives a plan in one JSON object, and none of them throws: an internal error
-// is a plan with `error` and no change to the call.
+// is a plan with `error` and no change to the call, and a `decision` entry in the journal that says `internal: <why>`.
 //
 // The decision joins the criterion (the level and axis the answers give, never below the floor when the criterion
 // says so), the table of rungs (the Claude rung of that level), the quota (the weekly window that renews first among
@@ -30,6 +30,9 @@ const CLAUDE_ALIASES = ['haiku', 'sonnet', 'opus']
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const EXCERPT_CHARS = 400
 const DEADLINE_OF = { haiku: 'haikuMs', jev: 'jevMs' }
+// The agents whose call an external harness may take: the ones with no system prompt or tool limits of their own (R19).
+const PLAIN_AGENTS = ['general-purpose', 'Explore']
+const INTERNAL_MESSAGE_CHARS = 200
 
 // ---- the override and the files ----
 
@@ -147,6 +150,46 @@ function messageOf(err) {
   return err && typeof err.message === 'string' && err.message ? err.message : String(err)
 }
 
+// An internal error leaves the call as the Lead made it (R25) and, so that the owner can see the router is broken, one
+// `decision` entry in the journal: no decision, `fallback: 'internal: <message>'`, and `applied` as in any entry that
+// rewrote nothing. `known` holds what the step had read when it failed. Best effort: it never throws.
+function recordInternalError(deps, known, err) {
+  try {
+    const now = deps && typeof deps.now === 'function' ? deps.now() : Date.now()
+    const event = known.event && typeof known.event === 'object' ? known.event : {}
+    const settings = known.settings && typeof known.settings === 'object' ? known.settings : {}
+    const task = taskOf(event)
+    const requested = requestedOf(event)
+    const message = messageOf(err).replace(/\s+/g, ' ').trim().slice(0, INTERNAL_MESSAGE_CHARS)
+    const started = Number.isFinite(known.startedAt) ? known.startedAt : now
+    appendEntry(deps.dataDir, {
+      kind: 'decision',
+      id: isId(known.id) ? known.id : null,
+      time: started,
+      session: typeof known.session === 'string' ? known.session : null,
+      mode: typeof settings.mode === 'string' ? settings.mode : null,
+      decider: typeof settings.decider === 'string' ? settings.decider : null,
+      background: Boolean(known.background),
+      description: task.description,
+      task: { promptChars: task.prompt.length, excerpt: task.prompt.slice(0, EXCERPT_CHARS) },
+      requested,
+      asked: null,
+      override: null,
+      answers: null,
+      decision: null,
+      flags: null,
+      quota: null,
+      fallback: `internal: ${message}`,
+      applied: appliedWithoutRewrite(requested),
+      ranOn: null,
+      latencyMs: now - started,
+      deciderMs: null,
+      quotaWaitMs: 0,
+      deciderCost: null,
+    })
+  } catch {}
+}
+
 function isDeciderError(err) {
   return err instanceof deciders.DeciderError || (err && err.name === 'DeciderError' && typeof err.code === 'string')
 }
@@ -165,6 +208,13 @@ function requestedOf(event) {
   const model = typeof event.model === 'string' && event.model ? event.model : null
   const effort = typeof event.effort === 'string' && event.effort ? event.effort : null
   return model || effort ? { model, effort } : null
+}
+
+// The name of the agent the Lead sent the task to when that agent is not a plain one, or null. A user or plugin agent
+// has instructions and tool limits that agy and grok would not get, so its task stays on Claude.
+function namedAgent(event) {
+  const type = event.subagent_type
+  return typeof type === 'string' && type !== '' && !PLAIN_AGENTS.includes(type) ? type : null
 }
 
 function claudeRow(table, alias, effort) {
@@ -358,11 +408,17 @@ async function conclude(ctx, d, result) {
   let quota = null
   let quotaWaitMs = 0
   let pick = null
+  let reason = verdict.reason
   if (verdict.readOnly && settings.lanes && !event.isolation && d.lanesConfig()) {
-    const step = await quotaStep(d, settings, { level, axis })
-    pick = step.pick
-    quota = step.quota
-    quotaWaitMs = step.waitedMs
+    const agent = namedAgent(event)
+    if (agent !== null) {
+      reason = `${reason}; named agent ${agent} stays on Claude`
+    } else {
+      const step = await quotaStep(d, settings, { level, axis })
+      pick = step.pick
+      quota = step.quota
+      quotaWaitMs = step.waitedMs
+    }
   }
 
   const sameLevel = pickRung(table, { harness: 'claude', level, axis }) || claudeRow(table, reference.alias, reference.effort)
@@ -375,7 +431,7 @@ async function conclude(ctx, d, result) {
     effort: chosen.effort,
     level,
     axis,
-    reason: verdict.reason,
+    reason,
     confidence: verdict.confidence,
     status: chosen.status ?? null,
     readOnly: verdict.readOnly,
@@ -478,14 +534,17 @@ function makeDecider(ctx, d) {
 
 async function begin(input, deps) {
   let id = null
+  const known = { session: input && input.session, event: input && input.event }
   try {
     const event = input && input.event && typeof input.event === 'object' ? input.event : {}
     if (typeof event.subagent_type === 'string' && event.subagent_type.startsWith('aether:')) return skipPlan('aether-agent')
     const settings = deps.settings || readRouterSettings(deps.dataDir, input && input.session)
     if (!settings) return skipPlan('no-settings')
+    known.settings = settings
     const d = resolve(deps)
     id = d.newId()
     const ctx = { id, session: input.session, event, settings, startedAt: d.now(), background: false }
+    Object.assign(known, { id, startedAt: ctx.startedAt })
 
     const reason = overrideOf(event.prompt)
     if (reason !== null) return overridePlan(ctx, d, reason)
@@ -514,6 +573,7 @@ async function begin(input, deps) {
     pending()
     return { id, skip: false, ask, args: null, notes: [], external: null }
   } catch (err) {
+    recordInternalError(deps, known, err)
     return errorPlan(id, messageOf(err))
   }
 }
@@ -531,11 +591,13 @@ function contextOf(pending) {
 
 async function finish(input, deps) {
   const id = input && input.id
+  const known = { id }
   try {
     const pending = takePending(deps.dataDir, id)
     if (!pending) return errorPlan(id, 'unknown id')
     const d = resolve(deps)
     const ctx = contextOf(pending)
+    Object.assign(known, ctx)
     if (typeof input.failure === 'string' && input.failure) {
       return await conclude(ctx, d, { failure: input.failure, deciderMs: d.now() - ctx.startedAt })
     }
@@ -549,15 +611,18 @@ async function finish(input, deps) {
     }
     return await conclude(ctx, d, result)
   } catch (err) {
+    recordInternalError(deps, known, err)
     return errorPlan(id, messageOf(err))
   }
 }
 
 async function decide(input, deps) {
   const id = input && input.id
+  const known = { id }
   try {
     const waiting = isId(id) ? readJson(pendingFile(deps.dataDir, id)) : null
     if (!waiting || typeof waiting !== 'object') return errorPlan(id, 'unknown id')
+    Object.assign(known, contextOf(waiting))
     const d = resolve(deps)
     let decider = null
     let failure = null
@@ -575,6 +640,7 @@ async function decide(input, deps) {
     if (failure !== null) return await conclude(ctx, d, { failure, deciderMs: d.now() - ctx.startedAt })
     return await conclude(ctx, d, await askHttp(ctx, d, decider))
   } catch (err) {
+    recordInternalError(deps, known, err)
     return errorPlan(id, messageOf(err))
   }
 }

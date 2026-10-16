@@ -145,6 +145,38 @@ test('without a harness to take it, a decided delegate runs in Claude with an ex
   assert.equal(journal(off)[0].quotaWaitMs, 0)
 })
 
+test('a call goes to an external harness only when it names no agent, or names general-purpose or Explore (R19)', async (t) => {
+  const absent = event()
+  delete absent.subagent_type
+  for (const [name, ev] of [['no subagent_type', absent], ['an empty subagent_type', event({ subagent_type: '' })], ['general-purpose', event({ subagent_type: 'general-purpose' })], ['Explore', event({ subagent_type: 'Explore' })]]) {
+    const deps = setup(t)
+    const plan = await go(deps, ev)
+    assert.equal(plan.external?.harness, 'grok', name)
+    assert.equal(journal(deps)[0].applied, 'external', name)
+    assert.ok(!journal(deps)[0].decision.reason.includes('named agent'), name)
+  }
+  for (const type of ['code-reviewer', 'claude', 'plugin-x:auditor', 'explore']) {
+    const deps = setup(t)
+    const plan = await go(deps, event({ subagent_type: type }))
+    assert.equal(plan.external, null, `${type} keeps its own system prompt and tools: it stays on Claude`)
+    assert.deepEqual(plan.args, { model: 'haiku', effort: 'high' }, type)
+    assert.equal(fs.existsSync(path.join(deps.dataDir, 'router', 'external', `${plan.id}.json`)), false, type)
+    assert.deepEqual(deps.renewed, [], 'no quota is read for a task that cannot leave')
+    assert.ok(plan.notes[0].includes(type), `the note tells the Lead why: ${plan.notes[0]}`)
+    const [entry] = journal(deps)
+    assert.equal(entry.applied, 'rewritten', type)
+    assert.equal(entry.decision.harness, 'claude', type)
+    assert.equal(entry.quota, null, type)
+    assert.ok(entry.decision.reason.includes(`named agent ${type}`), `the log says why: ${entry.decision.reason}`)
+    assert.ok(entry.decision.reason.includes('stays on Claude'), type)
+    assert.equal(entry.fallback, null, 'not a failure')
+  }
+  const record = setup(t, { settings: { mode: 'record' } })
+  await go(record, event({ subagent_type: 'code-reviewer' }))
+  assert.equal(journal(record)[0].decision.harness, 'claude', 'record writes what the router would have done')
+  assert.ok(journal(record)[0].decision.reason.includes('named agent code-reviewer'))
+})
+
 test('R23: a group with no valid reading is out, its renewal starts once, and the quota step waits at most the limit', async (t) => {
   const deps = setup(t, { readings: { agy: { readAt: NOW - 11 * MIN, groups: { gemini: gemini(1, 5) } }, grok: null } })
   const plan = await go(deps, event())
@@ -373,6 +405,90 @@ test('R25: an internal error leaves the call intact and does not throw, and an u
   assert.equal(unknown.error, 'unknown id')
   assert.equal(unknown.args, null)
   assert.equal((await route.decide({ id: 'nope' }, setup(t))).error, 'unknown id')
+})
+
+test('R25: an internal error leaves a trace in the journal, and the delegates report counts it as a fallback', async (t) => {
+  const broken = { rungs: 'broken' }
+  const jev = { decider: 'jev' }
+  const key = { env: { OPENROUTER_API_KEY: 'k' }, fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ answers: answers() }) }) }
+
+  // begin: Jev decides inside it
+  const deps = setup(t, { settings: jev, rungs: broken, ...key })
+  const plan = await route.begin({ session: 's1', event: event({ prompt: `Read src/.\n${'x'.repeat(900)}` }) }, deps)
+  assert.equal(plan.args, null, 'the call stays as the Lead made it')
+  assert.equal(typeof plan.error, 'string')
+  assert.equal(plan.id, 'r1')
+  const [entry] = journal(deps)
+  assert.equal(entry.id, 'r1')
+  assert.equal(entry.session, 's1')
+  assert.equal(entry.mode, 'command')
+  assert.equal(entry.decider, 'jev')
+  assert.equal(entry.kind, 'decision')
+  assert.equal(entry.decision, null)
+  assert.equal(entry.applied, 'inherited')
+  assert.equal(entry.fallback, `internal: ${plan.error}`)
+  assert.equal(entry.description, 'Audit the API usage in src/')
+  assert.equal(entry.task.promptChars, event({ prompt: `Read src/.\n${'x'.repeat(900)}` }).prompt.length)
+  assert.equal(entry.task.excerpt.length, 400, 'an excerpt, not the whole prompt')
+  assert.equal(entry.requested, null)
+  assert.equal(entry.ranOn, null)
+
+  // the report counts it
+  const { delegatesReport } = require('../plugins/aether/lib/router-report.js')
+  const { delegations, totals } = delegatesReport({ dataDir: deps.dataDir, prices: require('../plugins/aether/lib/prices.js').loadPrices() })
+  assert.equal(delegations.length, 1)
+  assert.equal(delegations[0].fallback, entry.fallback)
+  assert.equal(totals.fallback, 1)
+  assert.equal(totals.decided, 0)
+
+  // what the Lead asked is 'kept'
+  const asked = setup(t, { settings: jev, rungs: broken, ...key })
+  await route.begin({ session: 's1', event: event({ model: 'opus', effort: 'high' }) }, asked)
+  assert.equal(journal(asked)[0].applied, 'kept')
+  assert.deepEqual(journal(asked)[0].requested, { model: 'opus', effort: 'high' })
+
+  // finish: the model's answer arrives and the policy fails
+  const viaHaiku = setup(t, { rungs: broken })
+  const began = await route.begin({ session: 's1', event: event() }, viaHaiku)
+  assert.equal(journal(viaHaiku).length, 0, 'begin of a Haiku decision decides nothing yet')
+  const finished = await route.finish({ id: began.id, answer: text() }, viaHaiku)
+  assert.equal(finished.args, null)
+  assert.equal(typeof finished.error, 'string')
+  const [late] = journal(viaHaiku)
+  assert.equal(late.id, began.id)
+  assert.equal(late.session, 's1')
+  assert.equal(late.decider, 'haiku')
+  assert.equal(late.fallback, `internal: ${finished.error}`)
+  assert.equal(late.decision, null)
+  assert.equal(late.applied, 'inherited')
+
+  // decide: record mode with Jev
+  const record = setup(t, { settings: { mode: 'record', ...jev }, rungs: broken, ...key })
+  const started = await route.begin({ session: 's1', event: event() }, record)
+  const decided = await route.decide({ id: started.id }, record)
+  assert.equal(decided.args, null)
+  assert.equal(typeof decided.error, 'string')
+  const [background] = journal(record)
+  assert.equal(background.mode, 'record')
+  assert.equal(background.background, true)
+  assert.equal(background.fallback, `internal: ${decided.error}`)
+  assert.equal(background.applied, 'inherited')
+
+  // a long, many-lined message is cut to one line of at most 200 characters
+  const noisy = setup(t, { settings: jev, ...key, installed: () => { throw new Error(`first line\n${'y'.repeat(500)}`) } })
+  const result = await route.begin({ session: 's1', event: event() }, noisy)
+  assert.equal(typeof result.error, 'string')
+  const [cut] = journal(noisy)
+  assert.ok(cut.fallback.startsWith('internal: first line y'), cut.fallback)
+  assert.ok(!cut.fallback.includes('\n'))
+  assert.equal(cut.fallback.length, 'internal: '.length + 200)
+
+  // a journal that cannot be written does not turn the error into an exception
+  const blocked = setup(t, { settings: jev, rungs: broken, ...key })
+  fs.writeFileSync(path.join(blocked.dataDir, 'router'), 'a file where the log directory should be')
+  const quiet = await route.begin({ session: 's1', event: event() }, blocked)
+  assert.equal(quiet.args, null)
+  assert.equal(typeof quiet.error, 'string')
 })
 
 test('the same run of the same task gives the same decision with either decider (C5)', async (t) => {

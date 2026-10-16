@@ -11,11 +11,12 @@
 // aether-route renew --harness <agy|grok>
 //
 // Decides how each delegate task of the Lead runs. begin, finish and decide are the router's three steps (the mod
-// asks the model between begin and finish); delegate runs a read-only delegate on agy or grok and records its
-// outcome; spawn records which agent ran a delegation, so that the delegates report can price it; replay decides
-// again over the journal or over the history; renew takes a new quota reading of agy or grok
-// and saves it where the router reads it (a decision starts it in the background). Each prints one JSON line and
-// exits 0, except a wrong use or an error of its own, which prints { "error": <message> } and exits 1.
+// asks the model between begin and finish); delegate runs a read-only delegate on agy or grok, records its outcome
+// (status ok, quota, failed, violation, unavailable or dirty, the last when the checkout has uncommitted work) and then
+// removes the file that holds the Lead's prompt; spawn records which agent ran a delegation, so that the delegates
+// report can price it; replay decides again over the journal or over the history; renew takes a new quota reading of
+// agy or grok and saves it where the router reads it (a decision starts it in the background). Each prints one JSON
+// line and exits 0, except a wrong use or an error of its own, which prints { "error": <message> } and exits 1.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -110,7 +111,7 @@ async function delegateCommand(flags, dataDir) {
     const mark = lib('router-marks.js').markRefusal(dataDir, { harness, group: rung.group, text: result.detail })
     marked = mark ? mark.until : null
   }
-  lib('router-log.js').appendEntry(dataDir, {
+  const written = lib('router-log.js').appendEntry(dataDir, {
     kind: 'outcome',
     id: flags.id,
     time: Date.now(),
@@ -125,6 +126,12 @@ async function delegateCommand(flags, dataDir) {
     detail: result.detail,
     markedUntil: marked,
   })
+  // The file keeps the Lead's whole prompt, which the log limits to an excerpt: it goes once the outcome is written.
+  if (written) {
+    try {
+      fs.unlinkSync(route.externalFile(dataDir, flags.id))
+    } catch {}
+  }
   return { ok, status: result.status, text: result.text, detail: result.detail, marked }
 }
 
