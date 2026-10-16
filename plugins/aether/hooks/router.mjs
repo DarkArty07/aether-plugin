@@ -118,10 +118,22 @@ export function createRouter() {
   }
 
   function remember(prompt, id, external) {
-    if (typeof prompt !== 'string' || !isText(id)) return
+    if (typeof prompt !== 'string' || !isText(id)) return null
     const waiting = byPrompt.get(prompt) ?? []
-    waiting.push({ id, external })
+    const routed = { id, external }
+    waiting.push(routed)
     byPrompt.set(prompt, waiting)
+    return routed
+  }
+
+  // The engine resolves a spawn inside the tool's next, so a record still queued when next ends never spawned.
+  function forget(prompt, routed) {
+    if (routed === null) return
+    const waiting = byPrompt.get(prompt)
+    if (!waiting) return
+    const at = waiting.indexOf(routed)
+    if (at !== -1) waiting.splice(at, 1)
+    if (waiting.length === 0) byPrompt.delete(prompt)
   }
 
   return {
@@ -154,11 +166,16 @@ export function createRouter() {
         plan = null
       }
       if (plan !== null && isText(plan.id)) id = plan.id
-      remember(e.prompt, id, plan !== null && isObject(plan.external) ? plan.external : null)
-      if (plan === null) return next(e)
-      const rewrite = rewriteOf(plan)
+      const routed = remember(e.prompt, id, plan !== null && isObject(plan.external) ? plan.external : null)
+      let result
+      try {
+        if (plan === null) return await next(e)
+        const rewrite = rewriteOf(plan)
+        result = await next(rewrite ? { ...e, ...rewrite } : e)
+      } finally {
+        forget(e.prompt, routed)
+      }
       const notes = notesOf(plan)
-      const result = await next(rewrite ? { ...e, ...rewrite } : e)
       // A refused call carries no context.
       if (notes.length === 0 || !isObject(result) || result.deny !== undefined) return result
       return { ...result, context: [...(Array.isArray(result.context) ? result.context : []), ...notes] }
