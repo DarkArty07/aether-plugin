@@ -121,6 +121,29 @@ test('delegate runs a read-only delegate on the external harness and records its
   const outcomes = log.readJournal(dataDir).filter((e) => e.kind === 'outcome')
   assert.deepEqual(outcomes.map((e) => [e.id, e.status, e.harness]), [['r1', 'ok', 'agy'], ['r2', 'failed', 'agy']])
   assert.equal(outcomes[0].model, 'gemini-3.8-flash-medium')
+  const kept = fs.readdirSync(path.join(dataDir, 'router', 'external'))
+  assert.deepEqual(kept, [], 'once the outcome is written the file with the Lead\'s whole prompt is gone, whether the delegate ended ok or not')
+})
+
+test('delegate with uncommitted work in the checkout ends dirty: the outcome is written, no mark is left, and the file with the prompt is removed', (t) => {
+  const lane = laneEnv(t)
+  const repo = makeRepo(t)
+  const dataDir = lane.AETHER_DATA_DIR
+  fs.writeFileSync(path.join(repo.dir, 'README.md'), 'fixture, edited and not committed\n')
+  fs.mkdirSync(path.join(dataDir, 'router', 'external'), { recursive: true })
+  const file = path.join(dataDir, 'router', 'external', 'r9.json')
+  fs.writeFileSync(file, JSON.stringify({ id: 'r9', session: 's1', harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'gemini' }, task: { description: 'audit', prompt: 'Audit it.\nFAKE-AGY: answer {"answer": "x"}' }, fallback: { model: 'haiku', effort: 'high' }, timeoutMs: EXTERNAL_LIMIT_MS }))
+  const r = runBin(BIN, ['delegate', '--id', 'r9', '--session', 's1'], repo.dir, { ...lane })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.json.ok, false, 'the mod then runs the same delegate in Claude')
+  assert.equal(r.json.status, 'dirty')
+  assert.match(r.json.detail, /uncommitted/)
+  assert.equal(r.json.marked, null)
+  assert.deepEqual(marks.readAllMarks(dataDir), [])
+  const [outcome] = log.readJournal(dataDir).filter((e) => e.kind === 'outcome')
+  assert.deepEqual([outcome.id, outcome.status, outcome.harness, outcome.markedUntil], ['r9', 'dirty', 'agy', null])
+  assert.match(outcome.detail, /README\.md/)
+  assert.equal(fs.existsSync(file), false)
 })
 
 test('spawn appends the link between a delegation and the agent that ran it, and rejects a wrong use (R27, R30)', (t) => {
@@ -180,11 +203,13 @@ test('scenario 20: a refusal the router saw leaves its mark, and the next decisi
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, JSON.stringify({ harness: 'agy', readAt: now, groups: { gemini: { windows: { '5h': win(0.98, 5), weekly: win(0.98, 60) } }, claude: { windows: { weekly: win(0.9, 40) } } } }))
   const env = { ...lane }
+  // The input files go outside the repository: a file left in it is uncommitted work, and the delegate would not run.
+  const scratch = tempDir(t, 'aether-route-scratch-')
   const decide = (name) => {
-    const input = path.join(repo.dir, `${name}.json`)
+    const input = path.join(scratch, `${name}.json`)
     fs.writeFileSync(input, JSON.stringify(event()))
     const began = runBin(BIN, ['begin', '--session', 's1', '--input', input], repo.dir, env)
-    const answer = path.join(repo.dir, `${name}.txt`)
+    const answer = path.join(scratch, `${name}.txt`)
     fs.writeFileSync(answer, JSON.stringify(answers()))
     return runBin(BIN, ['finish', '--id', began.json.id, '--answer-file', answer], repo.dir, env)
   }
