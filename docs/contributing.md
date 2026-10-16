@@ -31,3 +31,15 @@ Node.js 22 with no dependencies. The workflow's tests run its script in a harnes
 4. in the main checkout, run `claude plugin tag plugins/aether`, which creates the tag `aether--v<version>`;
 5. push `main` and the tag;
 6. users update with `claude plugin update aether@aether-plugin`.
+
+## The website
+
+`site/` is the project's landing page: static HTML, CSS and JavaScript with no build step and no dependencies, which also opens straight from `file://`. `index.html` holds the page and its Spanish copy, `app.js` holds both languages and the animations, `404.html` is the page GitHub Pages shows for a missing address, and `assets/` holds the images and the fonts with their licence texts. Nothing in it refers to a file outside `site/`.
+
+To preview it, serve the folder and open the address it prints:
+
+    python3 -m http.server -d site
+
+The workflow `.github/workflows/pages.yml` deploys it: on a push to `main` that changes `site/` or the workflow itself, and by hand from the Actions tab, it uploads `site/` and publishes it with GitHub Pages. It uses no secrets. Pages must be turned on once in the repository settings, with the source set to "GitHub Actions", and a private repository needs a plan that allows Pages. `tests/site.test.js` holds the folder to the rules above: every local link resolves, the only absolute addresses are this repository's and its Pages site, every image has an alt text, and no file is over 3 MB.
+
+The images of the README live in `assets/readme/`: `banner.png`, `radar.png`, `mascot.gif` and `social.png`, the card that the site shares. The concepts, plates and work files they came from stay out of the repository.
