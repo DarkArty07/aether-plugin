@@ -9,6 +9,7 @@
 // router already recorded, with the criterion in force, and calls nobody.
 
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { loadPrices, ratesFor, priceEntry } = require('./prices.js')
 const { decide, axisOf } = require('./router-criterion.js')
@@ -41,11 +42,13 @@ function readLines(file) {
   }
 }
 
-// The requests of one subagent transcript, priced as an agent's: { model, cost, turns, reqs }.
+// The requests of one subagent transcript, priced as an agent's: { model, cost, turns, reqs }. Claude Code writes one
+// line per content block of a message and repeats the message's usage on every one, so a request is counted once, by
+// its message id and request id, with the usage of its last line (the one that holds the final output tokens). A
+// line with neither id is a request of its own.
 function costOf(file, prices) {
-  let cost = 0
-  let model = null
-  const reqs = []
+  const requests = new Map()
+  let anonymous = 0
   for (const line of readLines(file)) {
     if (!line.includes('"usage"')) continue
     let entry
@@ -56,6 +59,13 @@ function costOf(file, prices) {
     }
     const message = entry && entry.message
     if (entry.type !== 'assistant' || !message || !message.usage) continue
+    const key = message.id || entry.requestId ? `${entry.requestId || ''}|${message.id || ''}` : `line|${anonymous++}`
+    requests.set(key, message)
+  }
+  let cost = 0
+  let model = null
+  const reqs = []
+  for (const message of requests.values()) {
     const usage = message.usage
     const creation = usage.cache_creation || {}
     const input = usage.input_tokens || 0
@@ -164,10 +174,37 @@ function failureOf(error) {
   return { failure: 'exec' }
 }
 
+// The flags that make `claude -p` the bare request the mod's Haiku decider sends: no tools, no customizations (CLAUDE.md,
+// settings, hooks, plugins, skills, MCP, memory), no session on disk and a one-line system prompt. `--bare` is left out
+// on purpose: it reads only ANTHROPIC_API_KEY, never the owner's login.
+const HAIKU_FLAGS = [
+  '--tools', '',
+  '--safe-mode',
+  '--strict-mcp-config',
+  '--disable-slash-commands',
+  '--no-session-persistence',
+  '--system-prompt', 'Reply to the message.',
+]
+
+// The brief goes on stdin (argv has a limit), from a fresh empty directory that is removed afterwards. `deps.execFile`
+// is `promisify(execFile)` or a stub of its shape: the promise carries the `child` whose stdin is written.
 async function askHaiku(decider, task, criterion, deps) {
   const descriptor = decider.request(task, criterion, { timeoutMs: deps.timeoutMs })
-  const args = ['-p', '--model', descriptor.model, '--effort', descriptor.effort, '--output-format', 'json', descriptor.prompt]
-  const { stdout } = await deps.execFile('claude', args, { timeout: descriptor.timeoutMs, env: deps.env || process.env, maxBuffer: 10 * 1024 * 1024 })
+  const args = ['-p', '--model', descriptor.model, '--effort', descriptor.effort, '--output-format', 'json', ...HAIKU_FLAGS]
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-replay-'))
+  let stdout
+  try {
+    const pending = deps.execFile('claude', args, { cwd, timeout: descriptor.timeoutMs, env: deps.env || process.env, maxBuffer: 10 * 1024 * 1024 })
+    const stdin = pending && pending.child && pending.child.stdin
+    if (!stdin) throw new TypeError('deps.execFile must give back the child process, to write the prompt on its stdin')
+    stdin.on('error', () => {
+      // a child that exits before reading its stdin fails the call itself
+    })
+    stdin.end(descriptor.prompt)
+    ;({ stdout } = await pending)
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true })
+  }
   let result
   try {
     result = JSON.parse(stdout).result
