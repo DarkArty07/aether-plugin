@@ -3,7 +3,7 @@
 **Type:** bug (lanes, quota)
 **Date:** 2026-10-15
 **Found in:** the design of `specs/006-delegate-router`, the Lead's session 56b71739: three Judge seat rounds on Gemini 4 Argon
-**Status:** fixed on the branch `worktree-agent-a53e7f9e50ca97646`, not released (decision A60). `lib/quota-refusal.js` recognizes the refusal and its reset; `lib/lane-calls.js` and `lib/seats.js` leave the mark of the refused group until that reset (proposal 1), `lib/lane-marks.js` keeps it against a later reading with balance (proposal 2), and a seat skips a marked group. agy's `/usage` is one group for Argon and Flash, so the table has `argon`, `flash` and `claude`. Proposal 3 (an agy command that shows the individual limit) is not answered; `tests/lane-refusal.test.js` covers the acceptance with agy's real message.
+**Status:** fixed in 0.12.5 (decision A60). `lib/quota-refusal.js` recognizes the refusal and its reset; `lib/lane-calls.js` and `lib/seats.js` leave the mark of the refused group until that reset (proposal 1), `lib/lane-marks.js` keeps it against a later reading with balance (proposal 2), and a seat skips a marked group. agy's `/usage` is one group for Argon and Flash, so the table has `argon`, `flash` and `claude`. Proposal 3 (an agy command that shows the individual limit) is not answered; `tests/lane-refusal.test.js` covers the acceptance with agy's real message.
 **GitHub:** [#32](https://github.com/DarkArty07/aether-plugin/issues/32) (private repository)
 
 ## What happened
