@@ -21,7 +21,7 @@ Aether serves five goals, **RADAR**.
 
 - **Rápido** (fast): fast, cheap models do the bulk of the work, and nothing iterates without end;
 - **Autónomo** (autonomous): the owner is not asked about trivial things, and every irreversible step reaches them in one list;
-- **Delegación** (delegation): work goes to other coding harnesses (agy, Codex, Grok, Cursor) while their quota lasts;
+- **Delegación** (delegation): work goes to other coding harnesses (agy, Codex, Grok, Cursor, Muse) while their quota lasts;
 - **Asequible** (affordable): each role runs on the cheapest model and effort that does it well;
 - **Robusto** (robust): quality code, checked by tests, evidence and independent reviews.
 
@@ -30,7 +30,7 @@ Aether serves five goals, **RADAR**.
 - Claude Code 2.1.294 or later;
 - Node.js 22;
 - git 2.36 or later;
-- for lanes, the CLI of each harness you turn on: `agy`, `codex`, `grok` or `cursor-agent`.
+- for lanes, the CLI of each harness you turn on: `agy`, `codex`, `grok`, `cursor-agent` or `muse`.
 
 ## Install
 
