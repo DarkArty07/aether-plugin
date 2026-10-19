@@ -96,7 +96,7 @@ test('replay says what the decider would have chosen against what the Lead chose
   assert.equal(report.totals.n, 1)
   assert.equal(report.totals.skipped, 1)
   const [row] = report.rows
-  assert.deepEqual({ model: row.lead.model, effort: row.lead.effort }, { model: 'opus', effort: 'xhigh' })
+  assert.deepEqual({ model: row.lead.model, effort: row.lead.effort }, { model: 'opus', effort: 'max' }, 'the call named no effort: the inherited one, the Lead\'s (A62)')
   assert.ok(Math.abs(row.lead.usd - 0.028) < 1e-9)
   assert.equal(row.decision.level, 'A')
   assert.equal(row.decision.alias, 'haiku')
@@ -214,6 +214,12 @@ test('the reference rung, the floor and the Claude rung of a level are one funct
   assert.equal(reference.askedOf({ model: null, effort: 'high' }, rungs, criterion), null, 'an effort alone names no rung')
   assert.equal(reference.askedOf({ model: 'gpt-5', effort: 'high' }, rungs, criterion), null)
   assert.equal(reference.askedOf(null, rungs, criterion), null)
+  // A62: the inherited effort is the Lead's, max; a Sonnet that names no effort has the floor of Sonnet max, level D (it was C at xhigh).
+  for (const [alias, floor] of [['haiku', 'B'], ['sonnet', 'D'], ['opus', 'D']]) {
+    const inherited = reference.askedOf({ model: alias, effort: null }, rungs, criterion)
+    assert.deepEqual(inherited, { alias, effort: 'max' }, `${alias} with no effort asks for max`)
+    assert.equal(reference.stanceOf(rungs, { asked: inherited, standard: fallback, axis: 'general' }).floor, floor, `the floor of ${alias} at max`)
+  }
 
   const asked = { alias: 'opus', effort: 'xhigh' }
   const standard = { alias: 'sonnet', effort: 'high' }
@@ -252,10 +258,10 @@ test('the floor is what the Lead asked in the call, never the model that ran: a 
   const row = lookupRow()
   const ran = await replay.replay({ rows: [row], criterion, rungs, prices, fallback, answersFor: async () => answers(AUDIT) })
   const [got] = ran.rows
-  assert.deepEqual({ model: got.lead.model, effort: got.lead.effort }, { model: 'opus', effort: 'xhigh' }, 'what ran is still what the report shows')
+  assert.deepEqual({ model: got.lead.model, effort: got.lead.effort }, { model: 'opus', effort: 'max' }, 'what ran is still what the report shows, with the inherited effort of the Lead (A62)')
   assert.equal(got.decision.level, 'C', 'the floor is the fallback sonnet high, not the opus that ran')
   assert.deepEqual({ alias: got.decision.alias, effort: got.decision.effort }, { alias: 'sonnet', effort: 'high' })
-  assert.equal(got.changed, true, 'the router would have rewritten the inherited opus xhigh')
+  assert.equal(got.changed, true, 'the router would have rewritten the inherited opus max')
   const opus = await replay.replay({ rows: [row], criterion, rungs, prices, fallback: { alias: 'opus', effort: 'high' }, answersFor: async () => answers(AUDIT) })
   assert.deepEqual({ alias: opus.rows[0].decision.alias, effort: opus.rows[0].decision.effort }, { alias: 'opus', effort: 'high' }, 'the fallback option is the reference')
   const effortOnly = await replay.replay({ rows: [lookupRow({ effortParam: 'max' })], criterion, rungs, prices, fallback, answersFor: async () => answers(AUDIT) })
