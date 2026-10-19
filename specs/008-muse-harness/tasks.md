@@ -7,18 +7,18 @@
 - **Base.** Se construye sobre la rama actual (`feat/muse-harness`). Si un archivo que una tarea nombra no existe y no es suyo, la tarea se detiene y lo dice. El plan es [plan.md](plan.md); lo medido, [evidence/](evidence/README.md).
 - **Idioma.** El código, los comentarios, los mensajes y los documentos del repositorio van en inglés; este archivo y el plan, en español. Un texto que un test fija (razón de un fallo, línea de órdenes, frase) va exactamente como la tarea lo escribe. La web va en español y en inglés, como ya está.
 - **Estilo.** Node.js 22 CommonJS con `'use strict'`, dos espacios, sin punto y coma ni dependencias de npm; los `.mjs` son ESM. Se copia el estilo de `lib/harness/cursor.js`, `codex.js` y `structured.js` (comentario de cabecera, funciones pequeñas, `module.exports` al final).
-- **Primero los tests.** Cada tarea escribe sus tests (rojo), implementa y deja `npm test` verde completo antes de reportar. Los tests existentes que una tarea cambia son los que dice; ninguna otra aserción existente cambia. Una tarea posee las pruebas que su propio cambio rompe.
+- **Primero los tests.** Cada tarea escribe sus tests (rojo), implementa y deja `npm test` verde completo antes de reportar. Los tests existentes que una tarea cambia son los que dice, con las aserciones que su propio cambio de datos rompe (la tarea las lista por archivo y línea); ninguna otra aserción existente cambia. Una tarea posee las pruebas que su propio cambio rompe.
 - **Sin llamadas reales.** Nadie corre `muse`, `agy`, `codex`, `grok` ni `cursor` de verdad, ni lee `~/.config/muse`, ni usa `META_API_KEY`. Los tests usan `tests/fixtures/fake-muse.js` o un `exec` inyectado. La llamada real es del Lead (plan D13) y no es una tarea.
 - **La forma supuesta.** Todo nombre de campo de la salida de `muse exec --json` que [evidence/README.md](evidence/README.md) §7 dice que no se midió (`allowance`, el objeto del fallo de `run.terminal.failed`) lleva el comentario `// Assumed from the MSP schema, not yet seen in a real call (spec R27).` junto al código que lo lee.
 - **Seguridad de la llamada (R9, R10, R12).** Ningún código del plugin pasa `--yolo`, `--disable-sandbox`, `--trust-workspace`, `--api-key-stdin` ni `--contributor-mode on`; ninguno lanza `muse login` ni abre archivos de credenciales de Muse. Un modelo `-contributor` no entra en la tabla ni se llama.
 - **El orden de los harness** es `agy, codex, grok, cursor, muse` en toda lista fija que los nombre. Las palabras «other harness» / «otro harness» en genérico no se tocan.
-- **Lo que no se toca.** El comportamiento de agy, codex, grok y cursor; el router de delegados (`router-*.js`, `delegate-calls.js`, `aether-route`); los asientos de diseño (`seats.js`, `designSeats`); `lane-order.js`, `lane-marks.js`, `lane-readings.js` y `lane-quota.js` (la tarea 8 los toca solo si una de sus pruebas muestra un fallo de Muse que no tiene otra salida).
+- **Lo que no se toca.** El comportamiento de agy, codex, grok y cursor; el router de delegados (`router-*.js`, `delegate-calls.js`, `aether-route`); los asientos de diseño (`seats.js`, `designSeats`); `lane-order.js`, `lane-readings.js` y `lane-quota.js`. `lane-calls.js` y `lane-marks.js` los toca solo la tarea 8, en los dos cambios que ella describe (plan D4).
 - **Nadie escribe bajo `specs/` ni `.specify/`** (aether-guard lo rechaza a los implementadores). Tampoco se publica: ni merge a `main`, ni push, ni tag, ni `claude plugin update`; la versión solo la sube la tarea 10.
 - **Vínculo con los requisitos.** Cada tarea lleva `- Serves: R<n>, ...` en su bloque Aether. `[USn]` en la lista es el escenario `n` de la spec. R26 a R28, R31 y R32 no son de ninguna tarea: son del Lead y del plan (plan D13, Proposals).
 - **Formas compartidas entre tareas** (las fija la tarea que las produce; las demás las importan):
   - **Adaptador.** `createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = process.env, dataDir = null, now = Date.now })` en `plugins/aether/lib/harness/muse.js`; `dataDir` nulo significa `require('../run.js').dataDir()` al usarlo.
-  - **Observación de cuota.** Archivo `<dataDir>/lanes/quota/muse-observed.json` con exactamente las claves `observedAt` (ms), `window` y `weekly` (cada una `{ usedPercent, resetsAtMs }` o `null`) y `exhaustedUntilMs` (ms o `null`).
-  - **Lectura de cuota.** `{ groups: { <clave>: { windows: { '5h': { remaining, resetsAt }, weekly: { remaining, resetsAt } }, source: { command: 'muse exec --json', ts, ageMinutes } } } }`; sin lectura, `{ unknown: true, windows: {} }`; con un límite agotado, una sola ventana `limit` con `remaining: 0`.
+  - **Observación de cuota.** Archivo `<dataDir>/lanes/quota/muse-observed.json` con exactamente las claves `observedAt` (ms), `window` y `weekly` (cada una `{ usedPercent, resetsAtMs }` o `null`). Un `parse` con `allowance` legible las escribe; un fallo con dato `quota` las sustituye por las de su propio `allowance` (o por `null`); cualquier otro `parse` no toca el archivo.
+  - **Lectura de cuota.** `{ groups: { <clave>: { windows: { '5h': { remaining, resetsAt }, weekly: { remaining, resetsAt } }, source: { command: 'muse exec --json', ts, ageMinutes } } } }` (`ts` = `observedAt` en ISO); sin lectura, `{ unknown: true, windows: {} }`. No hay ventana sintética.
   - **Razones.** `quota: muse <limitKind>, resets <ISO>` (solo con el dato `quota` del fallo), `muse <kind>: <message>`, `muse failed: <texto>`, `muse cancelled`, `exit <n>[: <línea de stderr>]`, `exit unknown`, `unreadable output`, `no result`, `no structured output`, `missing <campo>`.
   - **La `muse` simulada.** `tests/fixtures/fake-muse.js`, ejecutable, que la tarea 1 escribe y la tarea 8 usa (contrato en la tarea 1).
   - **Línea de órdenes de Muse** (la fija la tarea 1): `muse exec --json --provider meta --model <model> [--reasoning-effort <level>] [--output-schema <file>] --contributor-mode off --no-foreign-personal-context --disable-approval --disable-reminders --disable-request-user-input --max-model-steps 200 <prompt>`.
@@ -41,15 +41,18 @@
 - [ ] T007 [P] [US12] El nombre `muse` en el script del índice de modelos in scripts/build-models-index.js → Task 2
 - [ ] T008 [P] [US13] Perfiles de los tres modelos de Muse in plugins/aether/config/models/profiles.json → Task 3
 - [ ] T009 [P] [US2] Precios por token de `muse-spark-1.3` y `muse-wonder-1.0`, y el modelo sin precio in plugins/aether/config/prices.json → Task 3
-- [ ] T010 [P] [US13] Muse en la documentación in docs/guide/lanes.md → Task 4
+- [ ] T010 [P] [US13] Muse en las guías (`lanes.md`, `ops.md`, `troubleshooting.md`, `getting-started.md`) in docs/guide/lanes.md → Task 4
 - [ ] T011 [P] [US13] Muse en la web, en español y en inglés in site/index.html → Task 5
 - [ ] T012 [US1] `muse` en el registro de harnesses in plugins/aether/lib/harness/index.js → Task 6
-- [ ] T013 [US13] Muse en el panel `/harnesses` in plugins/aether/hooks/panel-view.mjs → Task 6
+- [ ] T013 [US13] Muse en la vista del panel `/harnesses` in plugins/aether/hooks/panel-view.mjs → Task 6
 - [ ] T014 [US1] [US2] La entrada `muse` de la tabla de lanes, la descripción de `harnesses` y la página de opciones in plugins/aether/config/lanes.json → Task 7
 - [ ] T015 [US2] [US3] [US4] [US5] [US6] [US7] [US8] [US9] [US10] [US11] Las formas de falla y la cuota de punta a punta con el runner real in tests/muse-lane.test.js → Task 8
 - [ ] T016 [US13] La prueba que falla si una lista fija de harnesses no nombra a Muse in tests/harness-lists.test.js → Task 9
 - [ ] T017 [P] [US13] Muse en los skills `using-aether` y `swarm` in plugins/aether/skills/using-aether/SKILL.md → Task 11
-- [ ] T018 [US15] La versión 0.13.0, el changelog, el handoff y la decisión in plugins/aether/.claude-plugin/plugin.json → Task 10
+- [ ] T018 [US15] La versión 0.13.0 y la línea `Now` del roadmap in plugins/aether/.claude-plugin/plugin.json → Task 10
+- [ ] T019 [P] [US13] Muse en el README, `CLAUDE.md` y las páginas de visión in README.md → Task 12
+- [ ] T020 [US13] El texto y las pruebas del mod del panel in plugins/aether/hooks/panel.jsx → Task 13
+- [ ] T021 [US15] El changelog, el handoff, la decisión y el rango de decisiones in docs/changelog.md → Task 14
 
 ### Task 1: El adaptador de Muse y su `muse` simulada
 
@@ -70,7 +73,7 @@ function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = p
 //   name: 'muse'                         (no schemaInPrompt, no quotaCost)
 //   installed(): boolean                 commandInstalled(command, env)
 //   version(): string|null               first x.y.z of `<command> --version` ("Muse Code 1.4.11 (1.4.11-R6667.1)" -> "1.4.11"); null on a non-zero exit, a throw or no match
-//   quota(): { groups }                  never throws; reads <dataDir>/lanes/quota/muse-observed.json (shapes in Global Constraints)
+//   quota(): { groups }                  never throws; reads <dataDir>/lanes/quota/muse-observed.json (shapes in Global Constraints); no synthetic window
 //   modelArg({ model, level }): string   the bare model id
 //   argv({ model, level, schemaFile, timeoutSeconds, prompt }): string[]   throws on a model matching /contributor/ or an empty model
 //   parse({ stdout, stderr, exitCode }, { required = [] } = {}): { clean, reason, structured, usage, conversation: null }
@@ -79,7 +82,7 @@ module.exports = { createMuse }
 ```
 
 - `argv`: `[command, 'exec', '--json', '--provider', 'meta', '--model', model, ...(level ? ['--reasoning-effort', level] : []), ...(schemaFile ? ['--output-schema', schemaFile] : []), '--contributor-mode', 'off', '--no-foreign-personal-context', '--disable-approval', '--disable-reminders', '--disable-request-user-input', '--max-model-steps', '200', prompt]`. Nunca otra bandera.
-- `parse` sigue las reglas de plan D3: el último registro con `payload_type` que empieza por `run.terminal.` decide el turno (`completed` o no); `run.usage` da el uso; la razón de un fallo sale por la primera regla que se cumple, en este orden: dato `quota` del fallo (`reason.quota` o `error.quota`), turno no completo, salida distinta de 0, sin registro terminal, texto vacío, sin objeto, falta un campo. El objeto del fallo vive en `payload.reason` o en `payload.error`, como objeto, como cadena JSON o como cadena suelta. `usage` es `{ input, output, thinking, cacheRead, total, models: [{ model, calls, input, output, thinking, cacheRead }], allowance }` (`total` = entrada + salida; sin registro `run.usage`, ceros, `models: []` y `allowance: null`). Cada `parse` guarda la observación (aun si el turno falló); un fallo de escritura nunca lanza.
+- `parse` sigue las reglas de plan D3: el último registro con `payload_type` que empieza por `run.terminal.` decide el turno (`completed` o no); `run.usage` da el uso; la razón de un fallo sale por la primera regla que se cumple, en este orden: dato `quota` del fallo (`reason.quota` o `error.quota`), turno no completo, salida distinta de 0, sin registro terminal, texto vacío, sin objeto, falta un campo. El objeto del fallo vive en `payload.reason` o en `payload.error`, como objeto, como cadena JSON o como cadena suelta. `usage` es `{ input, output, thinking, cacheRead, total, models: [{ model, calls, input, output, thinking, cacheRead }], allowance }` (`total` = entrada + salida; sin registro `run.usage`, ceros, `models: []` y `allowance: null`). La observación (plan D4): un `parse` con `allowance` legible guarda `{ observedAt, window, weekly }` (aun si el turno falló); un fallo con dato `quota` sustituye las ventanas guardadas por las de su propio `allowance` y, si no trae uno legible, por `null`; cualquier otro `parse` no toca el archivo. No hay ventana `limit` ni otro campo. Un fallo de escritura nunca lanza.
 - `tests/fixtures/fake-muse.js` (ejecutable, `#!/usr/bin/env node`, sin dependencias): con `--version` imprime `Muse Code 1.4.11 (1.4.11-R6667.1)` y sale 0. Con `exec`, lee el guion JSON de `AETHER_FAKE_MUSE_SCRIPT` (`{ stdout?, stderr?, exit?, files?: { <ruta relativa al cwd>: <texto> }, sleepMs?, child?: boolean }`); añade a `AETHER_FAKE_MUSE_LOG` una línea JSON `{ argv, cwd, metaApiKey: Boolean(process.env.META_API_KEY), home: process.env.HOME }`; escribe `files`; si `child`, lanza un hijo desprendido (`node -e "setInterval(()=>{},1000)"`) y escribe su pid en `AETHER_FAKE_MUSE_CHILD_PID`; espera `sleepMs`; imprime `stdout` y `stderr`; sale con `exit` (0 por defecto). Con otra cosa sale 2 con `unknown command` en stderr.
 - `tests/fixtures/muse/exec-json-echo.jsonl`: copia exacta de `specs/008-muse-harness/evidence/exec-json-echo.jsonl` (la salida medida del proveedor `echo`).
 
@@ -279,7 +282,7 @@ test('72 % used in the 5 h window and 40 % in the weekly one read as 28 % and 60
   assert.equal(reading.windows['5h'].resetsAt, new Date(NOW + 3 * HOUR).toISOString())
   assert.equal(reading.windows.weekly.resetsAt, new Date(NOW + 5 * 24 * HOUR).toISOString())
   assert.deepEqual([reading.source.command, reading.source.ageMinutes], ['muse exec --json', 0])
-  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(observedFile(dataDir), 'utf8'))).sort(), ['exhaustedUntilMs', 'observedAt', 'weekly', 'window'])
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(observedFile(dataDir), 'utf8'))).sort(), ['observedAt', 'weekly', 'window'])
   // The reading ages with the clock.
   const later = createMuse({ groups: GROUPS, dataDir, now: () => NOW + 7 * 60000 })
   assert.equal(later.quota().groups.muse.source.ageMinutes, 7)
@@ -297,24 +300,34 @@ test('an allowance in snake_case reads the same, over 100 % is nothing left, and
   assert.deepEqual(afterAll.quota(), { groups: { muse: { unknown: true, windows: {} } } })
 })
 
-test('a quota failure reads as a limit with nothing left until its reset, and a later healthy allowance replaces it', (t) => {
+test('a quota failure clears the windows kept before it, keeps no window of its own, and a later healthy allowance reads again', (t) => {
   const { dataDir, muse } = build(t)
+  run(muse, out(completed(ANSWER), usage(allowance(10, 10))))
+  assert.deepEqual(Object.keys(muse.quota().groups.muse.windows), ['5h', 'weekly'])
   const resets = NOW + 4 * HOUR
   run(muse, out(failed({ kind: 'modelError', message: 'limit', retryable: false, quota: { limitKind: 'tierLimit', resetsAtMs: resets } })), 1)
-  const reading = muse.quota().groups.muse
-  assert.deepEqual(Object.keys(reading.windows), ['limit'])
-  assert.deepEqual([reading.windows.limit.remaining, reading.windows.limit.resetsAt], [0, new Date(resets).toISOString()])
-  const after = createMuse({ groups: GROUPS, dataDir, now: () => resets + 1 })
-  assert.deepEqual(after.quota(), { groups: { muse: { unknown: true, windows: {} } } })
+  assert.deepEqual(muse.quota(), { groups: { muse: { unknown: true, windows: {} } } })
+  const kept = JSON.parse(fs.readFileSync(observedFile(dataDir), 'utf8'))
+  assert.deepEqual([kept.observedAt, kept.window, kept.weekly], [NOW, null, null])
+  assert.equal('exhaustedUntilMs' in kept, false)
   run(muse, out(completed(ANSWER), usage(allowance(10, 10))))
   assert.deepEqual(Object.keys(muse.quota().groups.muse.windows), ['5h', 'weekly'])
 })
 
-test('an environmentError or an authRequired failure leaves no exhausted reading', (t) => {
+test('a quota failure that brings its own allowance keeps that allowance, so a window with nothing left reads as nothing left', (t) => {
   const { muse } = build(t)
+  run(muse, out(failed({ kind: 'modelError', message: 'limit', retryable: false, quota: { limitKind: 'tierLimit', resetsAtMs: NOW + 4 * HOUR } }), usage(allowance(100, 40))), 1)
+  const reading = muse.quota().groups.muse
+  assert.equal(reading.windows['5h'].remaining, 0)
+  near(reading.windows.weekly.remaining, 0.6)
+})
+
+test('an environmentError or an authRequired failure does not touch what was observed', (t) => {
+  const { muse } = build(t)
+  run(muse, out(completed(ANSWER), usage(allowance(10, 10))))
   run(muse, out(failed({ kind: 'environmentError', message: 'bwrap failed', retryable: false })), 1)
   run(muse, out(failed({ kind: 'authRequired', message: 'sign in', retryable: false })), 1)
-  assert.equal(muse.quota().groups.muse.unknown, true)
+  assert.deepEqual(Object.keys(muse.quota().groups.muse.windows), ['5h', 'weekly'])
 })
 ```
 
@@ -339,6 +352,8 @@ test('an environmentError or an authRequired failure leaves no exhausted reading
 const HARNESSES = ['claude', 'agy', 'codex', 'grok', 'cursor', 'muse']   // muse added last
 const CAPTURE = { …, muse: 'with the model/list method of `muse serve` (no model call; the ids it lists, newest first)' }
 // DEFAULT_HARNESSES stays ['claude', 'agy', 'grok'] (plan D8: muse enters it once its listing is captured).
+// Line 10, the header comment that says which harnesses the lanes are ("agy, grok by default; codex and cursor on request"),
+// also names muse on request: the harness-lists test (task 9) fails on it otherwise.
 ```
 
 ```js
@@ -421,8 +436,8 @@ test('a line is the id without its version number, and the larger number wins', 
 ```
 
 **Acceptance:**
-- `tests/lane-models.test.js` pasa con la tabla actual (que todavía no tiene la entrada `muse`: la añade la tarea 7, que también añade a esta prueba la aserción de que la tabla la tiene) y falla, como las pruebas de arriba lo muestran, con un modelo sin listar, viejo, sin perfil, sin medición o `-contributor`.
-- `scripts/build-models-index.js` conoce `muse` en `HARNESSES` y `CAPTURE` y no cambia `DEFAULT_HARNESSES`; `npm test` está verde, con `tests/models-index.test.js` (el committed `models.json` no cambia).
+- `tests/lane-models.test.js` pasa con la tabla actual (que todavía no tiene la entrada `muse`: la añade la tarea 7; mientras no la tenga, el recorrido por modelo no recorre nada) y falla, como las pruebas de arriba lo muestran, con un modelo sin listar, viejo, sin perfil, sin medición o `-contributor`.
+- `scripts/build-models-index.js` conoce `muse` en `HARNESSES` y `CAPTURE` y en el comentario de la línea 10, y no cambia `DEFAULT_HARNESSES`; `npm test` está verde, con `tests/models-index.test.js` (el committed `models.json` no cambia).
 
 ### Task 3: Perfiles y precios de los modelos de Muse
 
@@ -510,21 +525,21 @@ En `tests/prices.test.js`, la aserción `Object.values(prices.sources).every((ur
 - `npm test` está verde, incluida la prueba del índice committed (`tests/models-index.test.js`), que no debe cambiar: los perfiles nuevos no están en `models.json`.
 - Ningún precio ni perfil se inventa: todo sale de la evidencia §4 y §8; lo que Meta no dice va como `null` y, en `caveats`, la frase `Prices come from a summary of Meta's pages, to be checked against the page.`
 
-### Task 4: Muse en la documentación
+### Task 4: Muse en las guías
 
 **Aether:**
 - Tier: sonnet high — prosa técnica que debe coincidir con lo que el código hace, y varias pruebas de documentos que la sujetan
 - Review: xhigh — cada afirmación del texto debe ser cierta respecto del adaptador y de la spec (privacidad, sandbox, fallbacks, cuota)
 - Area: docs
-- Owns: `README.md`, `CLAUDE.md`, `docs/guide/lanes.md`, `docs/guide/ops.md`, `docs/getting-started.md`, `docs/models/README.md`, `tests/muse-docs.test.js`, `tests/lanes-docs.test.js`
+- Owns: `docs/guide/lanes.md`, `docs/guide/ops.md`, `docs/guide/troubleshooting.md`, `docs/getting-started.md`, `tests/muse-docs.test.js`, `tests/lanes-docs.test.js`
 - Depends on: none
 - Serves: R20
 
 **Interfaces:**
 
-- Toda lista fija de harnesses de los archivos de arriba (los skills son de la tarea 11) pasa de `agy, codex, grok, cursor` a `agy, codex, grok, cursor, muse` (y «Agy, Codex, Grok and Cursor» a «Agy, Codex, Grok, Cursor and Muse»); todo número que los cuente («four harnesses», «cuatro») pasa a cinco o se reescribe sin número. Los puntos exactos están en [evidence/repo-map.md](evidence/repo-map.md) §5: `README.md:33`, `CLAUDE.md:30`, `docs/guide/lanes.md:15,19,33,47`, `docs/guide/ops.md:20`, `docs/getting-started.md:20`, `docs/models/README.md:16` (solo la parte a mano, nunca lo que está entre `<!-- models-index:start -->` y `<!-- models-index:end -->`).
-- `docs/guide/lanes.md` gana una sección `## Muse` (en inglés) que dice, de lo que el código hace: Muse Code es la CLI `muse` de Meta; corre `muse exec --json` sin aprobaciones y con el sandbox de Muse encendido y el workspace sin confianza; el modo contributor va apagado y no hay opción para encenderlo (Meta entrena con el contenido si está encendido); no carga reglas, skills ni memorias personales de otras herramientas; Aether no inicia sesión ni lee credenciales de Muse ni usa `META_API_KEY`; la cuota de suscripción (ventana de 5 h y semanal) se conoce por lo que Muse informa en la última llamada, y antes de ella es desconocida; cada forma de falla (no instalado, `authRequired`, cuota, `environmentError`, tiempo, `stepLimit`, salida ilegible, modelo que la cuenta no da) hace que la llamada corra en el agente nativo sin preguntar; un `environmentError` del sandbox no deja marca y la siguiente unidad lo prueba de nuevo; `maxParallel` es 1 hasta medir; la tabla de Muse no tiene modelos mientras no haya medición de Artificial Analysis, y `scripts/lane-smoke.js muse <modelo>` lo llama con el modelo explícito.
-- No se inventan nombres: todo `` `aether-<nombre>` `` en un code span es un archivo de `plugins/aether/bin/` (lo exige `tests/docs-facts.test.js`), el README no pasa de 160 líneas y la línea `Version` de `README.md` no se toca (la tarea 10 la sube).
+- Toda línea de estos archivos que la prueba de la tarea 9 marcaría (tres o más de `agy`, `codex`, `grok`, `cursor` y ningún `muse`) pasa a nombrar a Muse: una lista fija pasa de `agy, codex, grok, cursor` a `agy, codex, grok, cursor, muse` (y «Codex, Grok and Cursor» a «Codex, Grok, Cursor and Muse»); una línea que nombra a tres o más por otra razón gana una cláusula sobre Muse; todo número que los cuente («four harnesses», «cuatro») pasa a cinco o se reescribe sin número. Las líneas de hoy (comprobadas con la regla de la tarea 9): `docs/guide/lanes.md:15,19,20,23,33,35,47` (la 19, 20 y 23 son de agy, la cuota y la contención: una cláusula sobre Muse en cada una, p. ej. en la 23 «Muse with `--disable-approval` and its sandbox on»), `docs/guide/ops.md:20`, `docs/getting-started.md:20` (`` `agy`, `codex`, `grok`, `cursor-agent` or `muse` ``) y `docs/guide/troubleshooting.md:95` («A name that is not `agy`, `codex`, `grok`, `cursor` or `muse` is ignored»). Quien escribe corre la regla de la tarea 9 sobre sus archivos antes de reportar (copia su función `breaches` en un script temporal fuera de `tests/`).
+- `docs/guide/lanes.md` gana una sección `## Muse` (en inglés) que dice, de lo que el código hace: Muse Code es la CLI `muse` de Meta; corre `muse exec --json` sin aprobaciones y con el sandbox de Muse encendido y el workspace sin confianza; el modo contributor va apagado y no hay opción para encenderlo (Meta entrena con el contenido si está encendido); no carga reglas, skills ni memorias personales de otras herramientas; Aether no inicia sesión ni lee credenciales de Muse ni usa `META_API_KEY`; la cuota de suscripción (ventana de 5 h y semanal) se conoce por lo que Muse informa en la última llamada, y antes de ella es desconocida; un fallo por cuota deja la marca de 60 minutos que tienen los otros harness y la levanta una observación sana posterior; cada forma de falla (no instalado, `authRequired`, cuota, `environmentError`, tiempo, `stepLimit`, salida ilegible, modelo que la cuenta no da) hace que la llamada corra en el agente nativo sin preguntar; un `environmentError` del sandbox no deja marca y la siguiente unidad lo prueba de nuevo; `maxParallel` es 1 hasta medir; la tabla de Muse no tiene modelos mientras no haya medición de Artificial Analysis, y `scripts/lane-smoke.js muse <modelo>` lo llama con el modelo explícito.
+- No se inventan nombres: todo `` `aether-<nombre>` `` en un code span es un archivo de `plugins/aether/bin/` (lo exige `tests/docs-facts.test.js`).
 
 **Tests (write first):** `tests/muse-docs.test.js`, completo; y en `tests/lanes-docs.test.js` (línea 70) la aserción que fija la lista de cuatro pasa a la de cinco.
 
@@ -538,19 +553,17 @@ const path = require('node:path')
 
 const ROOT = path.join(__dirname, '..')
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
-const FIVE = /agy, codex, grok, cursor,? (?:and )?muse/i
+const OTHERS = ['agy', 'codex', 'grok', 'cursor']
+const FILES = ['docs/guide/lanes.md', 'docs/guide/ops.md', 'docs/guide/troubleshooting.md', 'docs/getting-started.md']
+const names = (line) => OTHERS.filter((name) => new RegExp(`\\b${name}`, 'i').test(line))
+const listsMuse = (text) => text.split('\n').some((line) => /\bmuse\b/i.test(line) && names(line).length >= 2)
 
 test('every guide that lists the harnesses lists Muse with them', () => {
-  for (const file of ['README.md', 'CLAUDE.md', 'docs/guide/lanes.md', 'docs/guide/ops.md', 'docs/getting-started.md']) {
-    assert.match(read(file), FIVE, file)
-  }
-  assert.match(read('docs/models/README.md'), /muse/i)
+  for (const file of FILES) assert.ok(listsMuse(read(file)), file)
 })
 
-test('no page counts the harnesses as four any more', () => {
-  for (const file of ['README.md', 'CLAUDE.md', 'docs/guide/lanes.md', 'docs/guide/ops.md', 'docs/getting-started.md']) {
-    assert.doesNotMatch(read(file), /\b(four|4) (external )?harnesses\b/i, file)
-  }
+test('no guide counts the harnesses as four any more', () => {
+  for (const file of FILES) assert.doesNotMatch(read(file), /\b(four|4) (external )?harnesses\b/i, file)
 })
 
 test('the lanes guide has a Muse section that says how a call runs, what it protects and where it falls back', () => {
@@ -562,10 +575,6 @@ test('the lanes guide has a Muse section that says how a call runs, what it prot
     assert.ok(section.includes(text), text)
   }
   assert.doesNotMatch(section, /--yolo[^.\n]*(pass|use)/i, 'the guide never says Aether passes --yolo')
-})
-
-test('the README stays within its limits', () => {
-  assert.ok(read('README.md').split('\n').length <= 160)
 })
 ```
 
@@ -584,7 +593,7 @@ test('the README stays within its limits', () => {
 
 **Interfaces:**
 
-- `site/index.html` (líneas ~137 y ~448 según [repo-map.md](evidence/repo-map.md) §5) y `site/app.js` (líneas ~42, 150, 205, 313 y 906, con el orden de nodos `order=['agy','grok','codex','cursor']` que pasa a `order=['agy','grok','codex','cursor','muse']`) nombran a Muse donde listan harnesses y donde dicen cuántos son, en español y en inglés. Si el diagrama de la web tiene un nodo por harness, Muse tiene el suyo con el mismo trato visual; `site/style.css` solo cambia si el nodo nuevo lo exige. La web sigue siendo HTML, CSS y JS sin construcción, y abre desde `file://`.
+- `site/index.html` (líneas 137, 448 y 478) y `site/app.js` (líneas 42, 150, 163, 205, 313, 326 y 906, con el orden de nodos `order=['agy','grok','codex','cursor']` que pasa a `order=['agy','grok','codex','cursor','muse']`; las líneas 163 y 326, y 478 del HTML, son la frase de requisitos «para los carriles, el CLI de cada harness que actives», con la lista de CLIs) nombran a Muse donde listan harnesses y donde dicen cuántos son, en español y en inglés. Si el diagrama de la web tiene un nodo por harness, Muse tiene el suyo con el mismo trato visual; `site/style.css` solo cambia si el nodo nuevo lo exige. La web sigue siendo HTML, CSS y JS sin construcción, y abre desde `file://`.
 
 **Tests (write first):** en `tests/site.test.js`, un caso nuevo (que usa las funciones de lectura que el archivo ya tiene o `fs`):
 
@@ -609,13 +618,13 @@ test('the site names Muse wherever it lists the harnesses, in both languages, an
 - `npm test` está verde, con las demás pruebas de `tests/site.test.js` sin cambios de aserción.
 - La web abre desde `file://` sin errores de consola (el implementador lo comprueba con `python3 -m http.server -d site` y lo dice en su informe).
 
-### Task 6: `muse` en el registro de harnesses y en el panel
+### Task 6: `muse` en el registro de harnesses y en la vista del panel
 
 **Aether:**
-- Tier: sonnet high — cambios en varios archivos del registro y del panel, atados por la prueba de conformidad
+- Tier: sonnet high — cambios en varios archivos del registro y de la vista del panel, atados por la prueba de conformidad
 - Review: xhigh — el panel tiene estados (cargando, listo, sin instalar) que las pruebas no cubren todos
 - Area: harness
-- Owns: `plugins/aether/lib/harness/index.js`, `tests/harness-index.test.js`, `plugins/aether/hooks/panel-view.mjs`, `plugins/aether/hooks/panel-layout.mjs`, `plugins/aether/hooks/panel.jsx`, `plugins/aether/hooks/panel.test.tsx`, `tests/panel-view.test.js`, `tests/panel-layout.test.js`, `tests/panel-conformance.test.js`, `tests/fixtures/panel/**`
+- Owns: `plugins/aether/lib/harness/index.js`, `tests/harness-index.test.js`, `plugins/aether/hooks/panel-*.mjs`, `tests/panel-*.test.js`, `tests/fixtures/panel/**`
 - Depends on: Task 1 — `createAdapter('muse', …)` carga `lib/harness/muse.js` y `createMuse`, que la tarea 1 escribe
 - Serves: R1, R17
 
@@ -630,15 +639,14 @@ export const HARNESS_NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
 export const READ_TIMEOUT_MS = { agy: 75000, grok: 45000, codex: 20000, cursor: 20000, muse: 20000 }
 ```
 
-- `panel.jsx` cambia su comentario «four harnesses» por «the harnesses» y no tiene otra lógica nueva (recorre `HARNESS_NAMES`). `panel-layout.mjs` pinta la lista sin cambios de lógica (`HARNESS_NAMES`); si algún ancho o recorte supone cuatro, se ajusta.
+- `panel-layout.mjs` pinta la lista sin cambios de lógica (`HARNESS_NAMES`); si algún ancho o recorte supone cuatro, se ajusta ahí (el glob `panel-*.mjs` lo cubre). `panel.jsx` y las pruebas del mod (`panel.test.tsx`) son de la tarea 13.
 - Fixtures: `tests/fixtures/panel/quota-muse.json` nuevo, con la forma exacta de `aether-lane quota --json muse` (como `quota-codex.json`, con el grupo `muse` de etiqueta `Muse subscription`, ventanas `5h` con `remaining 0.28` y `weekly` con `remaining 0.6`, `source: { command: 'muse exec --json', ts, ageMinutes: 4, stale: false }`); `quota-missing.json` gana la entrada `muse` (`command: "muse"`, `installed: false`, `groups: {}`).
 
 **Tests (write first):** cambios de aserción, exactos:
-- `tests/harness-index.test.js:13`: `assert.deepEqual(harnesses.HARNESS_NAMES, ['agy', 'codex', 'grok', 'cursor', 'muse'])`; caso nuevo: `createAdapter('muse', { command: 'muse', groups: { muse: 'Muse subscription' } }).name === 'muse'`, y que `createAdapter('muse', …)` con `registerAdapter('muse', …)` usa el registrado (como el caso de los demás).
-- `tests/panel-layout.test.js:30`: `const NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']`; el helper `quota()` lee `quota-${name}.json` de las cinco; un caso nuevo dibuja el panel con `settings({ harnesses: 'agy,muse' })` y el fixture `quota-muse.json`, y comprueba que hay una línea con el nombre `muse` y las líneas de sus ventanas `5h` y `weekly` con el mismo formato que el panel da a las de `agy` (el implementador toma el texto exacto de los casos vecinos de `agy`).
-- `tests/panel-view.test.js:159`: el caso «the real output of the bins reads» añade `muse`: `view.parseHarness(printed('quota-muse.json'), 'muse')` es `ok`, con `version` `1.4.11`, grupo `muse` con ventanas `[['5h', 0.28], ['weekly', 0.6]]` y `source` `{ ageMinutes: 4, stale: false }`.
+- `tests/harness-index.test.js:12-13`: el nombre del caso pasa a «the known harnesses are agy, codex, grok, cursor and muse, in that order» y `assert.deepEqual(harnesses.HARNESS_NAMES, ['agy', 'codex', 'grok', 'cursor', 'muse'])`; caso nuevo: `createAdapter('muse', { command: 'muse', groups: { muse: 'Muse subscription' } }).name === 'muse'`, y que `createAdapter('muse', …)` con `registerAdapter('muse', …)` usa el registrado (como el caso de los demás).
+- `tests/panel-layout.test.js:22`: `const NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']`; el helper `quota()` lee `quota-${name}.json` de las cinco; un caso nuevo dibuja el panel con `settings({ harnesses: 'agy,muse' })` y el fixture `quota-muse.json`, y comprueba que hay una línea con el nombre `muse` y las líneas de sus ventanas `5h` y `weekly` con el mismo formato que el panel da a las de `agy` (el implementador toma el texto exacto de los casos vecinos de `agy`). Los casos que listan los no habilitados («Not enabled, no quota reading: codex, cursor») pasan a incluir `muse` si el panel lo dibuja ahí.
+- `tests/panel-view.test.js:159`: el caso «the real output of the bins reads» añade `muse`: `view.parseHarness(printed('quota-muse.json'), 'muse')` es `ok`, con `version` `1.4.11`, grupo `muse` con ventanas `[['5h', 0.28], ['weekly', 0.6]]` y `source` `{ ageMinutes: 4, stale: false }`. **Líneas 187-188** (rompen con `quota-missing.json`): `Object.keys(missing.harnesses)` pasa a `['agy', 'grok', 'codex', 'cursor', 'muse']` («the real output lists the five it was asked for») y el `for (const name of [...])` de la línea 188 gana `'muse'`.
 - `tests/panel-conformance.test.js`: sin cambio de aserción (`view.HARNESS_NAMES` igual a `harness.HARNESS_NAMES` ya fija el cinco); el caso de `HARNESSES` en el entorno gana `'agy,muse'` y `'MUSE,agy'` (válidos, en ese orden) y `'muse,muse'` (una vez).
-- `plugins/aether/hooks/panel.test.tsx`: `NAMES` y `TIMEOUTS` con `muse`, y `REAL.muse` (el contenido de `quota-muse.json`) y la entrada `muse` en `MISSING`. Se corre además con `npm run test:mod` si Claude Code está disponible; si no, se dice en el informe.
 
 **Acceptance:**
 - `npm test` está verde (conformidad incluida). `lanes.harnessNames('agy,muse')` da `['agy', 'muse']`, descarta un nombre desconocido y los duplicados.
@@ -650,7 +658,7 @@ export const READ_TIMEOUT_MS = { agy: 75000, grok: 45000, codex: 20000, cursor: 
 - Tier: haiku high — una entrada de tabla y dos textos iguales entre sí, que las pruebas fijan
 - Review: xhigh — la tabla es la entrada de todo el orden de cuota y de los tiempos límite
 - Area: config
-- Owns: `plugins/aether/config/lanes.json`, `plugins/aether/.claude-plugin/plugin.json`, `docs/guide/options.md`, `tests/manifest.test.js`, `tests/lanes.test.js`, `tests/lane-models.test.js`
+- Owns: `plugins/aether/config/lanes.json`, `plugins/aether/.claude-plugin/plugin.json`, `docs/guide/options.md`, `tests/manifest.test.js`, `tests/lanes.test.js`, `tests/lane-fixtures.js`
 - Depends on: Task 6 — `lanes.js` valida los nombres de harness contra `HARNESS_NAMES` y `createAdapter('muse')` debe existir para que `aether-lane quota` lea la entrada
 - Serves: R8, R19, R2
 
@@ -670,8 +678,10 @@ export const READ_TIMEOUT_MS = { agy: 75000, grok: 45000, codex: 20000, cursor: 
 }
 ```
 
-- `plugin.json`, `userConfig.harnesses.description`: la lista pasa a `agy, codex, grok, cursor, muse`; el resto del texto no cambia. `docs/guide/options.md` (líneas ~28 y ~52): la fila de `harnesses` y el texto que la repite pasan a nombrar a Muse con la misma lista; `tests/manifest.test.js:44` compara los dos textos y la tarea los deja iguales.
-- `tests/lane-models.test.js` (de la tarea 2): la primera prueba gana `assert.ok(lanes.harnesses.muse, 'the table has a muse harness')` justo después de leer la tabla.
+- `plugin.json`, `userConfig.harnesses.description`: la lista pasa a `agy, codex, grok, cursor, muse`; el resto del texto no cambia. `docs/guide/options.md` (líneas ~28 y ~52): la fila de `harnesses` y el texto que la repite pasan a nombrar a Muse con la misma lista; `tests/manifest.test.js:44` compara los dos textos y la tarea los deja iguales (la propia línea 44 lleva el texto del manifiesto: cambia con él).
+- **Las aserciones existentes que la entrada nueva rompe** (comprobadas añadiéndola a la tabla; la tarea las cambia y no cambia ninguna otra):
+  - `tests/lanes.test.js:352-353` (el caso «the shipped table has codex and cursor without models…»): `Object.keys(config.harnesses)` pasa a `['agy', 'codex', 'grok', 'cursor', 'muse']`; `:385` y `:401` (`Object.keys(lanes.loadConfig(distinct).harnesses)`) igual; `:696`: el objeto de `quotaLifeMinutes` gana `muse: 30`.
+  - `tests/lane-fixtures.js` (`laneEnv`): antes de `mutate`, `if (config.harnesses.muse) config.harnesses.muse.command = '/nowhere/muse'`, como las pruebas ya hacen con codex y cursor. Sin esto, en una máquina con `muse` en el `PATH` (la del dueño) `aether-lane status` y `quota` leen también a Muse y rompen `tests/aether-lane.test.js:232` (una lectura registrada, no dos) y `:763` (`['agy', 'grok']`). La tarea 8 sobrescribe ese comando en su propio `mutate`.
 
 **Tests (write first):** en `tests/lanes.test.js` un caso nuevo (con las funciones que el archivo ya importa de `lanes.js`; los nombres exactos de los ayudantes los toma de los casos vecinos):
 
@@ -703,7 +713,7 @@ test('a Muse model of a synthetic table gives the swarm a candidate after agy, i
 ```
 
 **Acceptance:**
-- `npm test` está verde; `tests/manifest.test.js` pasa con la lista nueva en el manifiesto y en `options.md`, que quedan iguales.
+- `npm test` está verde, también con `muse` instalado en el `PATH` y sin él; `tests/manifest.test.js` pasa con la lista nueva en el manifiesto y en `options.md`, que quedan iguales.
 - `node plugins/aether/bin/aether-lane quota muse` con `muse` en el `PATH` (o sin él) corre sin romperse: sin él dice `not installed`; con él, el grupo `muse` sale desconocido.
 
 ### Task 8: Las formas de falla y la cuota de Muse, de punta a punta con el runner real
@@ -712,30 +722,34 @@ test('a Muse model of a synthetic table gives the swarm a candidate after agy, i
 - Tier: sonnet — pruebas de integración sobre el runner, la tabla, las marcas y el orden con procesos reales
 - Review: xhigh — procesos, archivos y marcas en disco: lo que las pruebas no listan puede dejar una marca falsa o una pregunta
 - Area: harness
-- Owns: `tests/muse-lane.test.js`, `plugins/aether/lib/lane-calls.js`, `plugins/aether/lib/lane-quota.js`, `plugins/aether/lib/lane-order.js`, `plugins/aether/lib/lane-marks.js`, `plugins/aether/lib/lane-readings.js`
+- Owns: `tests/muse-lane.test.js`, `tests/lane-marks.test.js`, `plugins/aether/lib/lane-calls.js`, `plugins/aether/lib/lane-marks.js`
 - Depends on: Task 1 — usa `createMuse` y `tests/fixtures/fake-muse.js`
 - Depends on: Task 7 — usa la entrada `muse` de la tabla real, que la prueba copia y cambia
 - Serves: R3, R4, R7, R11, R13, R14, R15, R16, R25
 
 **Interfaces:**
 
-- Esta tarea es de pruebas. Los archivos `lib/lane-*.js` que posee son solo para corregir un fallo que una de sus pruebas muestre en Muse y que no tenga otra salida (el plan no espera ninguno: `judge`, `holdDry`, `liftIfHealthy` y el orden ya cumplen R11, R13 y R15 con la razón que el adaptador da). Cualquier cambio ahí se explica en el informe.
+- Esta tarea es sobre todo de pruebas, con **dos cambios en código compartido** (plan D4), cada uno con su prueba escrita primero:
+  1. `plugins/aether/lib/lane-calls.js`, `runCall` (hoy líneas 531-542): `adapter.parse({ stdout, stderr, exitCode }, { required: schema.required })` pasa a correr **antes** de `readings.readGroups(adapter, { harness, settings: settings.harness, dataDir, fresh: true })`; hoy `quotaAfter` se lee en la línea 533 y el `parse` viene en la 541. Se leen `stdout` y `stderr` justo después de `lanes.killMarked(paths.marker)`, se hace el `parse`, se lee la cuota (con el mismo `try`/`catch` que hoy) y `judge(...)` recibe lo mismo que hoy. Lo demás de `runCall` no cambia. Para Muse, que guarda su observación dentro de `parse`, esto hace que la lectura de la llamada que trajo el `allowance` lo vea; para los otros harness el orden no cambia nada.
+  2. `plugins/aether/lib/lane-marks.js`, `liftable` (hoy líneas 178-185): después de la comprobación de `readAt < mark.at`, `const sourceTs = Date.parse(reading && reading.source && reading.source.ts)` y `if (Number.isFinite(sourceTs) && Number.isFinite(mark.at) && sourceTs < mark.at) return false`: una lectura cuya fuente es anterior a la marca no la levanta (sin `source.ts` legible la regla no aplica). El comentario de `liftable` lo dice.
+- Pruebas nuevas de `tests/lane-marks.test.js` (con el estilo de los casos vecinos): una marca de 60 minutos sin confirmar y una lectura sana con `source.ts` anterior a `mark.at` no la levanta (`liftIfHealthy` la devuelve); la misma lectura con `source.ts` posterior sí; una lectura sana sin `source` (o con `source.ts` ilegible) se comporta como hoy. Si un caso existente de marcas falla porque la lectura de su fixture trae un `source.ts` anterior a la marca, se mueve el `ts` del fixture, no la aserción, y se dice en el informe.
+- Cualquier otro cambio en `lib/lane-*.js` queda fuera de esta tarea: si una prueba muestra un fallo de Muse que no tiene otra salida, la tarea se detiene y lo dice.
 - Ayudantes de la prueba (los define el archivo): `museEnv(t, script, { models = true } = {})` → toma `fx.laneEnv(t, { mutate })` con `config.harnesses.muse = { ...config.harnesses.muse, command: FAKE_MUSE, waitSeconds: 60, timeouts: { implementer: 60, supervisor: 60, reviewer: 60 }, models: { 'muse-spark-1.3': { group: 'muse', replaces: 'sonnet', roles: ['implementer', 'supervisor', 'reviewer'], levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' } } } }`, `AETHER_LANE_HARNESSES: 'muse'`, `AETHER_FAKE_MUSE_SCRIPT` (el guion escrito en un archivo), `AETHER_FAKE_MUSE_LOG`, y `META_API_KEY: 'secret-key'` en el entorno del llamador. `runImplementer(t, script)` → `fx.laneRun(t)`, `fx.writePrompt`, `start` con `--role implementer --task task-1 --model muse-spark-1.3 --effort xhigh --digest …`, `fx.waitDone`. El patrón es el de `tests/lane-start-marks.test.js` (`flags`, `IMPLEMENT`, `DONE`).
 
 **Tests (write first):** `tests/muse-lane.test.js` cubre, cada uno en su propia prueba con la `muse` simulada:
 
-1. **Una unidad corre en Muse (US2, R3, R4).** Guion: `files: { 'src/t1/a.js': 'x' }`, `stdout` = turno completado con el objeto `DONE` del implementador y un `run.usage` con `allowance` 72 % y 40 %. Se espera `start.json.started === true`, `done.status === 'ok'`, el registro de la `muse` simulada tiene `cwd` igual al worktree de la unidad (`workdir` de `call.json`), `argv` contiene `exec`, `--json`, `--contributor-mode`, `off`, `--max-model-steps`, `200`, no contiene `--yolo` ni `--disable-sandbox` ni `--trust-workspace`, y `metaApiKey === false` (el entorno del runner no lleva la llave). `done.lane.usage.input` y `.total` son los del guion.
+1. **Una unidad corre en Muse (US2, R3, R4).** Guion: `files: { 'src/t1/a.js': 'x' }`, `stdout` = turno completado con el objeto `DONE` del implementador y un `run.usage` con `allowance` 72 % y 40 %. Se espera `start.json.started === true`, `done.status === 'ok'`, el registro de la `muse` simulada tiene `cwd` igual al worktree de la unidad (`workdir` de `call.json`), `argv` contiene `exec`, `--json`, `--contributor-mode`, `off`, `--max-model-steps`, `200`, no contiene `--yolo` ni `--disable-sandbox` ni `--trust-workspace`, y `metaApiKey === false` (el entorno del runner no lleva la llave). `done.lane.usage.input` y `.total` son los del guion, y `done.lane.quota` (la cuota de después de la llamada, que ve el `allowance` de esa misma llamada porque el `parse` corre antes de leerla) tiene `unknown === false` y `remaining` ≈ 0.6 (la ventana de más largo reinicio, la semanal con 40 % usado; la de 5 h queda en 0.28).
 2. **Salida estructurada (US3).** Un revisor: guion con el objeto del `REVIEW_SCHEMA` completo → `ok`; el mismo con un campo requerido menos → `failed` y `detail` que casa `/missing /`; con texto que no es el objeto → `failed` y `detail` `no structured output`.
 3. **No instalado (US4).** `command` apunta a un archivo que no existe → `start` da `{ unavailable: 'not-installed' }` y no se lanzó ningún proceso (el registro no existe); además `lanes.lanesArgs(config, { installed: (name, h) => lanes.commandInstalled(h.command), enabled: ['muse'] })` es `null` y `lanes.idleHarnesses(...)` dice `is not installed`.
 4. **Una prueba por forma de falla (US5, US8, US9, US10; R11, R13).** Para `authRequired`, `environmentError`, `stepLimit`, `modelError` (la cuenta no da `muse-wonder-full-1.0`), salida distinta de 0 sin registros (`exit: 2`, stderr `error: bad flag`) y salida ilegible (`stdout: 'hello'`, exit 0): `done.status === 'failed'`, `done.detail` casa la razón del adaptador (`muse authRequired: …`, `muse environmentError: …`, `muse stepLimit: …`, `muse modelError: …`, `exit 2: error: bad flag`, `unreadable output`), **no existe archivo de marca** bajo `lanes/marks/` para el grupo `muse`, y la `muse` simulada se lanzó una sola vez (no se repite la llamada, ni con el sandbox apagado: el registro tiene una línea y ningún `--disable-sandbox`). `authRequired` no deja ningún proceso de inicio de sesión (el registro solo tiene `exec`).
-5. **Cuota agotada (US6, R16).** Guion con `failed({ kind: 'modelError', message: 'limit', quota: { limitKind: 'tierLimit', resetsAtMs: <ahora + 4 h> } })`, exit 1: `done.status === 'quota'`, existe la marca `lanes/marks/muse__muse.json` (no confirmada, 60 min). Un `start` siguiente da `{ unavailable: 'quota' }` (la observación dice agotado hasta el reinicio). Después se escribe `muse-observed.json` con `observedAt: Date.now()`, `window: { usedPercent: 10, resetsAtMs: <+3 h> }`, `weekly: { usedPercent: 10, resetsAtMs: <+5 d> }`, `exhaustedUntilMs: null`: el siguiente `start` da `started: true` y la marca ya no existe (una lectura sana más reciente que la marca la levantó). Un guion cuyo mensaje dice «quota» y «429» pero sin dato `quota` da `failed`, no `quota`, y no deja marca.
+5. **Cuota agotada (US6, R16).** Guion con `failed({ kind: 'modelError', message: 'limit', quota: { limitKind: 'tierLimit', resetsAtMs: <ahora + 4 h> } })`, exit 1 y sin `allowance`: `done.status === 'quota'`, existe la marca `lanes/marks/muse__muse.json`, **no confirmada y de 60 minutos** (`confirmed === false`, `until - at` de 60 minutos: la vida de marca de los otros harness, sin ventana sintética) y `muse-observed.json` no tiene `exhaustedUntilMs` y tiene `window` y `weekly` en `null`. Un `start` siguiente da `{ unavailable: 'quota' }` (la marca está viva). Una observación **anterior a la marca** (`muse-observed.json` con `observedAt: mark.at - 1000` y ventanas sanas del 10 %) no la levanta: el `start` sigue dando `{ unavailable: 'quota' }` y el archivo de la marca sigue ahí. Después se escribe `muse-observed.json` con `observedAt: Date.now()` (posterior a la marca), `window: { usedPercent: 10, resetsAtMs: <+3 h> }` y `weekly: { usedPercent: 10, resetsAtMs: <+5 d> }`: el siguiente `start` da `started: true` y la marca ya no existe (una lectura sana más reciente que la marca la levantó). Un guion cuyo mensaje dice «quota» y «429» pero sin dato `quota` da `failed`, no `quota`, y no deja marca. Un guion con el dato `quota` y un `allowance` con la ventana de 5 h al 100 % da `quota` con la marca **confirmada** hasta ese reinicio (como en los otros harness).
 6. **Lectura de cuota (US7, R14).** Con una observación de 72 % y 40 % escrita, `aether-lane quota --json muse` (`runBin` del bin con el entorno de `museEnv`) da `harnesses.muse.installed === true`, `version === '1.4.11'`, `groups.muse.windows['5h'].remaining` ≈ 0.28 y `weekly.remaining` ≈ 0.6 con `resetsAt` y `resetsLocal`, y `groups.muse.source.command === 'muse exec --json'`; sin observación, `groups.muse.unknown === true` y el texto de `aether-lane quota muse` (sin `--json`) dice `unknown, used until a call fails for quota`; con la observación corrupta, lo mismo y el bin sale con 0.
 7. **El orden la trata como a los otros (US2, R15).** `order.orderCandidates` con dos candidatos `agy` y `muse` y las lecturas de `quotaReport`: con Muse al 28 % y un reinicio lejano, y agy sin lectura, Muse va primero (tiene lectura); con Muse al 97 % usado (`remaining` 0.03 < reserva 0.05) queda excluido con motivo `reserve`; con una marca viva queda excluido con motivo `marked`; con `installed: false`, `not-installed`. Los motivos exactos son los que `lane-order.js` ya devuelve para los otros harness.
 8. **Tiempo vencido (US10, R7).** Con `child: true` y `sleepMs: 120000`, `fx.lane(args, 'stop', [IMPLEMENT], env)` termina a la `muse` simulada y a su hijo: el pid de `AETHER_FAKE_MUSE_CHILD_PID` deja de estar vivo (`fx.alive`) y el registro de la llamada dice `stopped`. (El corte por tiempo límite es el del runner, ya probado para agy en `tests/aether-lane.test.js`; esta prueba comprueba que el grupo de Muse muere con sus hijos.)
 9. **La prueba real puede llamarlo (US12, R23).** `scripts/lane-smoke.js muse muse-spark-1.3` con un directorio en el `PATH` que contiene un enlace `muse` a la simulada (guion: crea `hello.txt` con `lane ok` y responde `{"status":"done","file":"hello.txt"}`) imprime `"ok":true` y sale 0; sin el segundo argumento sale 2 y dice `has no models in the lane table: give one as the second argument`.
 
 **Acceptance:**
-- `npm test` está verde, con `tests/muse-lane.test.js` entero; ninguna prueba toca el `~/.config/muse` ni la red.
+- `npm test` está verde, con `tests/muse-lane.test.js` y `tests/lane-marks.test.js` enteros; ninguna prueba toca el `~/.config/muse` ni la red. Los dos cambios de `lib/` son los de arriba y `git diff` de `lane-calls.js` y `lane-marks.js` no toca nada más.
 - Cada forma de falla de la spec (R11) tiene su prueba, y ninguna deja una marca salvo la de cuota con su dato.
 
 ### Task 9: La prueba que falla si una lista fija de harnesses no nombra a Muse
@@ -745,11 +759,14 @@ test('a Muse model of a synthetic table gives the swarm a candidate after agy, i
 - Review: xhigh — una regla que no encuentra una lista (falso negativo) deja el defecto que R21 quiere cerrar
 - Area: harness
 - Owns: `tests/harness-lists.test.js`
-- Depends on: Task 4 — la documentación ya nombra a Muse en sus listas
+- Depends on: Task 2 — el comentario y las listas de `scripts/build-models-index.js` ya nombran a Muse
+- Depends on: Task 4 — las guías ya nombran a Muse en sus listas
 - Depends on: Task 5 — la web ya nombra a Muse
-- Depends on: Task 6 — el registro y el panel ya incluyen a Muse
+- Depends on: Task 6 — el registro y la vista del panel ya incluyen a Muse
 - Depends on: Task 7 — el manifiesto y las opciones ya incluyen a Muse
 - Depends on: Task 11 — los skills ya nombran a Muse
+- Depends on: Task 12 — el README, `CLAUDE.md` y las páginas de visión ya nombran a Muse
+- Depends on: Task 13 — `panel.jsx` ya no cuenta cuatro harnesses
 - Serves: R21
 
 **Interfaces:**
@@ -764,7 +781,8 @@ const NAMES = ['agy', 'codex', 'grok', 'cursor']        // the harnesses a list 
 // EXCEPTIONS: { match: (file, line) => boolean, why: string }[]   every one with a reason
 ```
 
-- Excepciones obligatorias, cada una con su motivo escrito en la propia prueba: los registros históricos (`docs/decisions.md` salvo la fila de Muse, `docs/changelog.md` por debajo de la primera línea `Version `, `docs/handoff/`, `docs/issues/`, `docs/roadmap.md`, `docs/roadmap/`, `docs/evaluations/`, `specs/` salvo `specs/008-muse-harness/`), los fixtures capturados (`tests/fixtures/`), las pruebas de los otros adaptadores que nombran a los cuatro en una aserción del propio adaptador (`tests/harness-agy*.test.js`, `harness-codex`, `harness-grok`, `harness-cursor`), y esta propia prueba. Cualquier otra excepción que haga falta la escribe la tarea con su motivo en su informe; ninguna silencia un archivo entero sin motivo.
+- Excepciones obligatorias, cada una con su motivo escrito en la propia prueba: los registros históricos (`docs/decisions.md` salvo las líneas que nombran a Muse, `docs/changelog.md` por debajo de la primera línea `Version `, `docs/handoff/`, `docs/issues/`, `docs/roadmap.md`, `docs/roadmap/`, `docs/evaluations/`), todo `specs/` (documentos de diseño que describen los harnesses como eran al escribirse, y los del 008 que describen el cambio), los fixtures capturados (`tests/fixtures/`), los archivos de prueba (`tests/*.test.js`, esta incluida, y `plugins/aether/hooks/panel.test.tsx`: sus entradas son subconjuntos sintéticos de los harnesses y las listas reales las fijan las pruebas de conformidad, del registro, del manifiesto y de la tabla), y la línea de cabecera de `plugins/aether/lib/harness/structured.js` («What the Codex, Grok and Cursor harnesses share»: un comentario histórico de quién escribió esos ayudantes). Cualquier otra excepción que haga falta la escribe la tarea con su motivo en su informe; ninguna silencia un archivo de código o de documentación vivo sin motivo.
+- Cada línea viva que la regla marca hoy tiene dueño en otra tarea (comprobado con esta misma regla sobre el árbol de `feat/muse-harness`): guías (tarea 4), web (5), registro y vista del panel (6), manifiesto y opciones (7), skills (11), README y páginas de visión (12), `panel.jsx` (13) y `scripts/build-models-index.js` (2).
 - El router, los asientos y los delegados nombran a lo sumo dos harnesses (agy y grok), así que no entran por la regla (a) y no necesitan excepción; el texto «other harness» / «otro harness» no nombra a ninguno.
 
 **Tests (write first):** `tests/harness-lists.test.js`, completo:
@@ -786,11 +804,11 @@ const COUNT = /\b(four|cuatro|4)\s+(external\s+)?harnesses\b/i
 const EXCEPTIONS = [
   { match: (file) => file.startsWith('docs/handoff/') || file.startsWith('docs/issues/') || file.startsWith('docs/evaluations/'), why: 'records of what was true on their date' },
   { match: (file) => file === 'docs/roadmap.md' || file.startsWith('docs/roadmap/'), why: 'the roadmap records plans as they were written' },
-  { match: (file) => file.startsWith('specs/') && !file.startsWith('specs/008-muse-harness/'), why: 'earlier specs, plans and tasks are frozen with the harnesses of their time' },
+  { match: (file) => file.startsWith('specs/'), why: 'specs, plans and tasks are design records: they describe the harnesses as they were when written, and those of 008 describe the change itself' },
   { match: (file, line) => file === 'docs/decisions.md' && !/muse/i.test(line), why: 'a decision records what was decided then; A37 lists four harnesses because there were four' },
   { match: (file) => file.startsWith('tests/fixtures/'), why: 'captured output of the CLIs' },
-  { match: (file) => /^tests\/harness-(agy|codex|grok|cursor)/.test(file), why: 'the tests of one adapter name the others in their own assertions' },
-  { match: (file) => file === 'tests/harness-lists.test.js', why: 'this file names the harnesses to look for them' },
+  { match: (file) => /^tests\/[^/]+\.test\.js$/.test(file) || file === 'plugins/aether/hooks/panel.test.tsx', why: 'test inputs and expectations pick their own subsets of the harnesses (synthetic tables of two or three names); the real lists are fixed by the conformance, registry, manifest and lane table tests' },
+  { match: (file, line) => file === 'plugins/aether/lib/harness/structured.js' && line.startsWith('// What the Codex, Grok and Cursor harnesses share'), why: 'a header comment about who first shared these helpers; it is a history, not a list to keep complete' },
 ]
 
 function tracked() {
@@ -832,6 +850,9 @@ test('the rule finds a list of the harnesses without Muse and a count of four, a
   assert.equal(breaches('README.md', 'a call on another harness runs the same').length, 0)
   assert.equal(breaches('README.md', 'the router sends it to agy or grok').length, 0)
   assert.equal(breaches('docs/handoff/x.md', 'agy, codex, grok, cursor').length, 0)
+  assert.equal(breaches('specs/008-muse-harness/plan.md', 'agy, codex, grok, cursor').length, 0)
+  assert.equal(breaches('tests/lanes.test.js', "['agy', 'codex', 'grok', 'cursor']").length, 0)
+  assert.equal(breaches('plugins/aether/lib/harness/index.js', "['agy', 'codex', 'grok', 'cursor']").length, 1)
   assert.equal(breaches('docs/changelog.md', 'Version 0.13.0: x\nagy, codex, grok, cursor\nVersion 0.12.5: y\nagy, codex, grok, cursor').length, 1)
 })
 
@@ -843,49 +864,35 @@ test('no fixed list of the harnesses in the repository leaves Muse out, except t
 ```
 
 **Acceptance:**
-- `npm test` está verde con las tareas 4 a 7 integradas; si la prueba encuentra una lista que esas tareas no cubrieron, la tarea **no la edita** (no la posee): la añade como excepción solo si es un registro histórico con motivo, y en otro caso lo dice en su informe para que el Lead la corrija.
+- `npm test` está verde con las tareas 2 y 4 a 7, 11, 12 y 13 integradas; si la prueba encuentra una lista que esas tareas no cubrieron, la tarea **no la edita** (no la posee): la añade como excepción solo si es un registro histórico con motivo, y en otro caso lo dice en su informe para que el Lead la corrija.
 - La regla se ejercita con casos que deben fallar (primera prueba) además del recorrido del repositorio.
 
-### Task 10: La versión 0.13.0, el changelog, el handoff y la decisión
+### Task 10: La versión 0.13.0 y el changelog
 
 **Aether:**
-- Tier: sonnet high — registros que resumen el trabajo y pruebas de versión que los sujetan
-- Review: xhigh — la versión vive en cuatro lugares más una prueba, y un número de decisión que otra sesión puede haber tomado
+- Tier: sonnet high — la versión vive en cuatro lugares, la línea `Now` del roadmap y el changelog, y varias pruebas de hechos los comparan entre sí
+- Review: xhigh — `docs-facts` compara la versión del manifiesto con el README, el changelog y el roadmap: un lugar olvidado deja una prueba en rojo
 - Area: release
-- Owns: `plugins/aether/.claude-plugin/plugin.json`, `tests/launcher.test.js`, `tests/docs-facts.test.js`, `README.md`, `docs/changelog.md`, `docs/decisions.md`, `docs/handoff/2026-10-19-muse-harness-0.13.0.md`
+- Owns: `plugins/aether/.claude-plugin/plugin.json`, `tests/launcher.test.js`, `README.md`, `docs/roadmap.md`, `docs/changelog.md`, `tests/docs-facts.test.js`
 - Depends on: Task 7 — `plugin.json` ya tiene la descripción nueva de `harnesses`
-- Depends on: Task 4 — el README ya nombra a Muse en su lista
+- Depends on: Task 12 — el README ya nombra a Muse en su lista
+- Depends on: Task 14 — el handoff que el changelog enlaza existe y la decisión de Muse ya tiene su número
 - Serves: R29, R30
 
 **Interfaces:**
 
-- `plugin.json` `version`: `0.13.0`. `tests/launcher.test.js:136`: `assert.equal(manifest.version, '0.13.0')` y el nombre del caso («the manifest is version 0.13.0»); las líneas `Version 0.12.x:` del changelog que la prueba exige siguen presentes.
-- `README.md`: la línea `Version 0.13.0` (la única `Version`) y la insignia de la línea ~14 con 0.13.0.
-- `docs/changelog.md`: una entrada nueva primera, `Version 0.13.0: Muse Code, the fifth lane harness ([handoff](handoff/2026-10-19-muse-harness-0.13.0.md), [guide](guide/lanes.md#muse), [decisions](decisions.md) A<n>). What changed since 0.12.5:` con viñetas (en inglés) de lo hecho: el harness `muse`, la cuota por observación, el fallback en todas las formas de falla, la privacidad (contributor apagado, sin contexto ajeno), el sandbox encendido, `maxParallel` 1, la tabla sin modelos hasta una medición, los perfiles y precios, la regla de las listas (R21), y **qué no cambió** (los otros harness, el router, los asientos, las opciones salvo la descripción de `harnesses`); y la frase de que publicar es del dueño. No afirma la llamada real: si el Lead la hace después, añade su constancia.
-- `docs/decisions.md`: una fila nueva `| A<n> | **Muse Code is the fifth lane harness.** … |` con el siguiente número libre: se lee la última fila (`A62` hoy) y se usa la siguiente (`A63`); si otra sesión ya tomó el número en `main`, se usa el siguiente libre y se dice. La fila resume las decisiones del plan: suscripción y no llave (A-1), contributor apagado y sin contexto ajeno (R9), sandbox encendido (R10), cuota por observación (D4), tabla sin modelos hasta una medición (R23), lista de harnesses comprobada por una prueba (R21).
-- `docs/handoff/2026-10-19-muse-harness-0.13.0.md`: el estado al cerrar (qué quedó hecho, qué falta del Lead —L1 a L4 del plan—, lo no medido y cómo seguir), con el front matter que `docs-facts` exige a las páginas de `docs/` si lo exige a los handoffs (se copia el de `2026-10-19-lanes-marks-lead-max-0.12.5.md`).
-- `tests/docs-facts.test.js`: el caso `R15: the decisions A50 to A61 are recorded and the changelog opens with 0.12.5 and its handoff` pasa a abrir con 0.13.0 y su handoff: el rango de decisiones llega a la de Muse, y `first.startsWith('Version 0.13.0: ')` y `first.includes('handoff/2026-10-19-muse-harness-0.13.0.md')`.
+Estos seis archivos cambian juntos porque `tests/docs-facts.test.js` y `tests/launcher.test.js` comparan la versión del manifiesto con el README (línea `Version`), con la primera línea `Version X.Y.Z:` del changelog y con la línea `Now` del roadmap, y fijan el changelog en 0.12.5: separarlos dejaría un merge con una prueba en rojo.
 
-**Tests (write first):** los dos archivos de prueba cambian primero y fallan; la verdad se escribe después.
+- `plugin.json` `version`: `0.13.0`. `tests/launcher.test.js:134-136`: el nombre del caso («the manifest is version 0.13.0, and the documents say so») y `assert.equal(manifest.version, '0.13.0')`; las líneas `Version 0.12.x:` del changelog que la prueba exige siguen presentes.
+- `README.md`: la línea `Version 0.13.0` (la única `Version`) y la insignia de la línea ~14 con 0.13.0 (`version-0.13.0-blue`, `alt="version 0.13.0"`).
+- `docs/roadmap.md`: la descripción de la línea 3 («Where Aether stands at version 0.13.0, …») y la línea `**Now:**` de la línea 9, que pasa a empezar «version 0.13.0 adds Muse Code as the fifth lane harness (A<n>); it builds on 0.12.5, which …» con la `A<n>` que la tarea 14 escribió en `docs/decisions.md` (lo que hoy dice la línea sobre 0.12.5 se conserva, como historia de lo anterior). `tests/docs-facts.test.js` («R12: the roadmap's Now line names the manifest's version») exige que la línea contenga `version 0.13.0`. Lo demás de `docs/roadmap.md` no cambia.
+- `docs/changelog.md`: una entrada nueva primera, `Version 0.13.0: Muse Code, the fifth lane harness ([handoff](handoff/2026-10-19-muse-harness-0.13.0.md), [guide](guide/lanes.md#muse), [decisions](decisions.md) A<n>). What changed since 0.12.5:` con viñetas (en inglés) de lo hecho: el harness `muse`, la cuota por observación, el fallback en todas las formas de falla, la privacidad (contributor apagado, sin contexto ajeno), el sandbox encendido, `maxParallel` 1, la tabla sin modelos hasta una medición, los perfiles y precios, la regla de las listas (R21), los dos cambios compartidos (el `parse` antes de leer la cuota de la llamada; una marca no la levanta una lectura anterior a ella) y **qué no cambió** (los otros harness, el router, los asientos, las opciones salvo la descripción de `harnesses`); y la frase de que publicar es del dueño. No afirma la llamada real: si el Lead la hace después, añade su constancia.
+- `tests/docs-facts.test.js`: en el caso `R15: …` (línea ~540) la parte del changelog pasa a `first.startsWith('Version 0.13.0: ')` y `first.includes('handoff/2026-10-19-muse-harness-0.13.0.md')`, y su nombre dice «the changelog opens with 0.13.0 and its handoff». La parte de las decisiones es de la tarea 14.
 
-```js
-// tests/docs-facts.test.js: the case at line ~540 becomes
-test('R15: the decisions A50 to A<n> are recorded and the changelog opens with 0.13.0 and its handoff', () => {
-  const decisions = read('docs/decisions.md')
-  for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
-  const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
-  assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
-  const muse = decisions.split('\n').find((line) => line.startsWith(`| A${LAST_DECISION} |`))
-  assert.ok(/Muse Code/.test(muse) && /fifth lane harness/.test(muse))
-  const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.13.0: ') && first.includes('handoff/2026-10-19-muse-harness-0.13.0.md'), first)
-})
-```
-
-donde `LAST_DECISION` es la constante numérica del número libre que la tarea usó (63 si sigue libre). En `tests/launcher.test.js` el caso del manifiesto aserta `manifest.version === '0.13.0'`.
+**Tests (write first):** los dos archivos de prueba cambian primero y fallan; la verdad se escribe después. En `tests/launcher.test.js` el caso del manifiesto aserta `manifest.version === '0.13.0'`; en `tests/docs-facts.test.js`, la aserción del changelog de arriba.
 
 **Acceptance:**
-- `npm test` está verde; `plugin.json`, la fijación de `tests/launcher.test.js`, la línea `Version` del README y la primera línea `Version X.Y.Z:` del changelog dicen 0.13.0; `grep -rn "0\.12\.5" tests plugins README.md` solo encuentra registros históricos.
+- `npm test` está verde; `plugin.json`, la fijación de `tests/launcher.test.js`, la línea `Version` y la insignia del README, la línea `Now` del roadmap y la primera línea `Version X.Y.Z:` del changelog dicen 0.13.0; `grep -rn "0\.12\.5" tests plugins README.md` solo encuentra registros históricos.
 - Nada de merge, push, tag, publicación ni `claude plugin update`. El Lead corre después `npm run check` (plan D13, L4).
 
 ### Task 11: Muse en los skills `using-aether` y `swarm`
@@ -931,3 +938,108 @@ test('the swarm skill says a Muse call falls back to the native agent without as
 
 **Acceptance:**
 - `npm test` está verde; los demás skills y el resto de `using-aether` quedan byte a byte iguales (`git diff` solo toca esas líneas).
+
+### Task 12: Muse en el README, `CLAUDE.md` y las páginas de visión
+
+**Aether:**
+- Tier: sonnet high — prosa técnica corta que debe coincidir con lo que el código hace, y pruebas de documentos que la sujetan
+- Review: xhigh — el README tiene límites que `docs-facts` hace cumplir, y cada afirmación debe ser cierta
+- Area: docs
+- Owns: `README.md`, `CLAUDE.md`, `docs/methodology.md`, `docs/purpose.md`, `docs/models/README.md`, `tests/muse-docs-overview.test.js`
+- Depends on: none
+- Serves: R20
+
+**Interfaces:**
+
+- Las líneas de hoy que la prueba de la tarea 9 marca en estos archivos pasan a nombrar a Muse: `README.md:24` («work goes to other coding harnesses (agy, Codex, Grok, Cursor, Muse) while their quota lasts»), `README.md:33` (`` `agy`, `codex`, `grok`, `cursor-agent` or `muse` ``), `CLAUDE.md:30` (la lista entre paréntesis pasa a `agy, codex, grok, cursor, muse`), `docs/methodology.md:25` («agy today, and Codex, Grok, Cursor and Muse once the owner turns each one on»), `docs/purpose.md:26` (la misma frase que el README) y `docs/models/README.md:17` (`--harnesses claude,agy,grok,codex,muse`, con la frase de que Muse no está en `DEFAULT_HARNESSES` hasta que su listado esté capturado). En `docs/models/README.md:16` y en el resto, solo la parte a mano: nunca lo que está entre `<!-- models-index:start -->` y `<!-- models-index:end -->`. Todo número que cuente los harnesses pasa a cinco o se reescribe sin número.
+- El README no pasa de 160 líneas (`docs-facts` lo exige), no cambia su línea `Version` (la sube la tarea 10) y no cambia el orden de sus partes. Quien escribe corre la regla de la tarea 9 sobre sus archivos antes de reportar (copia su función `breaches` en un script temporal fuera de `tests/`).
+- No se inventan nombres: todo `` `aether-<nombre>` `` en un code span es un archivo de `plugins/aether/bin/`.
+
+**Tests (write first):** `tests/muse-docs-overview.test.js`, completo:
+
+```js
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const ROOT = path.join(__dirname, '..')
+const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
+const OTHERS = ['agy', 'codex', 'grok', 'cursor']
+const FILES = ['README.md', 'CLAUDE.md', 'docs/methodology.md', 'docs/purpose.md']
+const names = (line) => OTHERS.filter((name) => new RegExp(`\\b${name}`, 'i').test(line))
+const listsMuse = (text) => text.split('\n').some((line) => /\bmuse\b/i.test(line) && names(line).length >= 2)
+
+test('the overview pages that list the harnesses list Muse with them', () => {
+  for (const file of FILES) assert.ok(listsMuse(read(file)), file)
+  assert.match(read('docs/models/README.md'), /muse/i)
+})
+
+test('no overview page counts the harnesses as four any more', () => {
+  for (const file of [...FILES, 'docs/models/README.md']) {
+    assert.doesNotMatch(read(file), /\b(four|4) (external )?harnesses\b/i, file)
+  }
+})
+
+test('the README stays within its limits', () => {
+  assert.ok(read('README.md').split('\n').length <= 160)
+})
+```
+
+**Acceptance:**
+- `npm test` está verde, con `tests/docs-facts.test.js` sin cambios.
+- Nada afirma lo que no se midió como hecho.
+
+### Task 13: El texto y las pruebas del mod del panel
+
+**Aether:**
+- Tier: haiku high — un comentario y conteos de pruebas que el cambio de la tarea 6 deja en cinco
+- Review: xhigh — el panel tiene estados (cargando, listo, sin instalar) y estas pruebas no corren en `npm test`
+- Area: panel
+- Owns: `plugins/aether/hooks/panel.jsx`, `plugins/aether/hooks/panel.test.tsx`
+- Depends on: Task 6 — `HARNESS_NAMES` y `READ_TIMEOUT_MS` de `panel-view.mjs` ya incluyen a `muse`, y el fixture `quota-muse.json` existe
+- Serves: R17
+
+**Interfaces:**
+
+- `panel.jsx:21`: el comentario «its content with four harnesses installed» pasa a «its content with the harnesses installed». Ninguna otra línea de `panel.jsx` cambia (recorre `HARNESS_NAMES`).
+- `panel.test.tsx` (las pruebas del mod; las corre `npm run test:mod`, no `npm test`): `NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']` (línea 28) y `TIMEOUTS` con `muse: 20000` (línea 27); `REAL.muse`, con el contenido de `tests/fixtures/panel/quota-muse.json`, y la entrada `muse` en `MISSING` (`{"command":"muse","path":null,"installed":false,"version":null,"groups":{}}`, línea 17), con el comentario de la línea 8 sin «four»; cada número que cuenta las lecturas de los harnesses pasa de cuatro a cinco (cada apertura del panel lanza una lectura por harness más una de `aether-report`, o sea de cinco a seis llamadas): línea 249 (cinco `bin/aether-lane` y un `bin/aether-report`), 251 y 267 (cinco comandos `quota --json <nombre>`, con `muse`, ordenados), 366 y 567 (de 4 a 5 lecturas de `--refresh`), 573 (de 8 a 10), 554 (`['agy', 'codex', 'cursor', 'grok', 'muse']`), 504 (dos aperturas: de 10 a 12 ejecuciones), las cotas de las líneas 490 y 522 (`calls <= 5` y `calls > 5`: las llamadas de la primera apertura pasan de 5 a 6) y la línea 319, que pasa de `Not installed: codex, cursor` a `Not installed: codex, cursor, muse`. Quien escribe lee cada caso para decidir el número exacto; la regla es que `muse` cuenta como un harness más, con el mismo trato que `codex` y `cursor`.
+
+**Tests (write first):** los cambios de `panel.test.tsx` de arriba son los tests de esta tarea: se hacen primero (rojo, con `muse` en `HARNESS_NAMES`) y `panel.jsx` queda igual salvo su comentario.
+
+**Acceptance:**
+- `npm test` está verde. `npm run test:mod` pasa si Claude Code está disponible; si no, se dice en el informe y se revisan a mano los conteos contra `HARNESS_NAMES`.
+- `grep -n "four" plugins/aether/hooks/panel.jsx plugins/aether/hooks/panel.test.tsx` no encuentra el conteo de harnesses.
+
+### Task 14: La decisión, el rango de decisiones y el handoff
+
+**Aether:**
+- Tier: sonnet high — registros que resumen el trabajo y pruebas de hechos que los sujetan
+- Review: xhigh — un número de decisión que otra sesión puede haber tomado, y un rango que `docs-facts` compara con la última decisión
+- Area: release
+- Owns: `docs/decisions.md`, `docs/index.md`, `docs/handoff/2026-10-19-muse-harness-0.13.0.md`, `tests/docs-facts.test.js`
+- Depends on: none
+- Serves: R29, R30
+
+**Interfaces:**
+
+- `docs/decisions.md`: una fila nueva `| A<n> | **Muse Code is the fifth lane harness.** … |` con el siguiente número libre: se lee la última fila (`A62` hoy) y se usa la siguiente (`A63`); si otra sesión ya tomó el número en `main`, se usa el siguiente libre y se dice. La fila resume las decisiones del plan: suscripción y no llave (A-1), contributor apagado y sin contexto ajeno (R9), sandbox encendido (R10), cuota por observación con la marca de 60 minutos de los otros harness (D4, R16), tabla sin modelos hasta una medición (R23), lista de harnesses comprobada por una prueba (R21).
+- `docs/index.md:42`: `A1–A62` pasa a `A1–A<n>` (la misma `<n>`); `tests/docs-facts.test.js` («R12: the range of decisions the pages name runs to the last decision») lo compara con la última decisión de `docs/decisions.md`, así que la fila y el rango van en la misma tarea.
+- `docs/handoff/2026-10-19-muse-harness-0.13.0.md`: el estado al cerrar (qué quedó hecho, qué falta del Lead —L1 a L4 del plan—, lo no medido y cómo seguir), con el front matter que `docs-facts` exige a las páginas de `docs/` si lo exige a los handoffs (se copia el de `2026-10-19-lanes-marks-lead-max-0.12.5.md`). El changelog y la versión los hace la tarea 10, que enlaza este archivo.
+- `tests/docs-facts.test.js`: el caso `R15: …` (línea ~540) pasa a pedir las decisiones hasta la de Muse: su nombre dice «the decisions A50 to A<n> are recorded» y la parte del changelog **no cambia aquí** (sigue pidiendo 0.12.5 hasta la tarea 10).
+
+**Tests (write first):** el archivo de prueba cambia primero y falla; la verdad se escribe después.
+
+```js
+// tests/docs-facts.test.js: in the case at line ~540, the decisions part becomes
+//   (LAST_DECISION is the number this task used for the Muse decision: 63 if it is still free)
+  for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  const muse = decisions.split('\n').find((line) => line.startsWith(`| A${LAST_DECISION} |`))
+  assert.ok(/Muse Code/.test(muse) && /fifth lane harness/.test(muse))
+```
+
+**Acceptance:**
+- `npm test` está verde, con `docs-facts.test.js` entero (incluida «R12: the range of decisions the pages name runs to the last decision»).
+- Nada de merge, push, tag, publicación ni `claude plugin update`.
