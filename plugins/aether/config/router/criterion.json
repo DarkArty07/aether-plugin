@@ -1,7 +1,7 @@
 {
-  "about": "Read this file to see how the router turns a brief into a level. 'questions' are the seven questions asked about the brief, in the form the decider answers them. 'axis' lists the shapes of work scored on the code axis; every other shape uses the general axis. 'base' is the level each shape starts at (A smallest, D largest). 'adjust' raises the level one step for each question whose answer reaches 'atLeast'. 'gates' lists the shapes that never go below the level the Lead asked for. 'minConfidence' is the confidence below which an answer is not trusted and the Lead's level is kept. 'readOnly' says when the delegate may be limited to reading. 'inheritedEffort' is the effort a delegate inherits when the router only records or advises.",
+  "about": "Read this file to see how the router turns a brief into a level. 'questions' are the seven questions asked about the brief, in the form the decider answers them. 'axis' lists the shapes of work scored on the code axis; every other shape uses the general axis. 'base' is the level each shape starts at (A smallest, D largest). 'adjust' raises the level one step for each question whose answer reaches 'atLeast'. 'gates' lists the shapes that never go below the level the Lead asked for. 'minConfidence' is the confidence below which an answer is not trusted and the Lead's level is kept. 'readOnly' says when the delegate may be limited to reading. 'inheritedEffort' is the effort a delegate inherits when the router only records or advises; it is the effort the Lead starts at (A62), so a delegate that inherits gets the same.",
   "version": 1,
-  "inheritedEffort": "xhigh",
+  "inheritedEffort": "max",
   "minConfidence": {
     "shape": 0.5,
     "stakes": 0.4
