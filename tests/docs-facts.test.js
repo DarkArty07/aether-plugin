@@ -265,7 +265,7 @@ test('commands: an aether-* code span in position, alone or with arguments; not 
 })
 
 test('plugin names: aether:<name> inside a code span', () => {
-  assert.deepEqual(pluginNamesIn('Use `aether:judge`, `/aether:run` and `claude --agent aether:lead --effort xhigh`; `aether:<name>` is a pattern; aether:prose is not read.'), ['judge', 'run', 'lead'])
+  assert.deepEqual(pluginNamesIn('Use `aether:judge`, `/aether:run` and `claude --agent aether:lead --effort max`; `aether:<name>` is a pattern; aether:prose is not read.'), ['judge', 'run', 'lead'])
   // The value of the theme setting names the plugin and a theme file, not an agent.
   assert.deepEqual(pluginNamesIn('`{"theme":"custom:aether:aether"}` and `aether:lead`'), ['lead'])
 })
@@ -474,7 +474,7 @@ test('R1: the README is the way in: at most 160 lines, and its parts in order', 
   }
   assert.ok(section('## Install').includes('claude plugin install aether --marketplace DarkArty07/aether-plugin'), 'Install has the command')
   const start = section('## First start')
-  for (const need of ['claude --agent aether:lead --effort xhigh', 'scripts/aether-lead', '`claude`', 'normal mode', '.claude/settings.local.json']) {
+  for (const need of ['claude --agent aether:lead --effort max', 'scripts/aether-lead', '`claude`', 'normal mode', '.claude/settings.local.json']) {
     assert.ok(start.includes(need), `First start has "${need}"`)
   }
   const where = section('## Where to go')
