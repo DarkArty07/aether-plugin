@@ -537,9 +537,12 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A61 are recorded and the changelog opens with 0.12.5 and its handoff', () => {
+test('R15: the decisions A50 to A63 are recorded and the changelog opens with 0.12.5 and its handoff', () => {
   const decisions = read('docs/decisions.md')
-  for (let n = 50; n <= 61; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  const LAST_DECISION = 63
+  for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  const muse = decisions.split('\n').find((line) => line.startsWith(`| A${LAST_DECISION} |`))
+  assert.ok(/Muse Code/.test(muse) && /fifth lane harness/.test(muse))
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
