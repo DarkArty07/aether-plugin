@@ -508,6 +508,18 @@ test('a chosen harness with no listing in harness-models.json is named, with how
   assert.equal(missingListings({ harnesses: { agy: {} } }, ['agy']).length, 1)
 })
 
+test('a chosen muse with no listing is named, with how to capture it', async (t) => {
+  const dir = workDir(t)
+  fs.writeFileSync(path.join(dir, 'out', 'harness-models.json'), JSON.stringify({ capturedAt: '2026-10-13', harnesses: { claude: { models: [] } } }))
+  const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs'), '--harnesses', 'claude,muse']
+  const result = await main([...args, '--write'], { env: {}, now: NOW })
+  assert.deepEqual(result, {
+    exitCode: 1,
+    stdout: 'no listing captured for muse: capture it with the model/list method of `muse serve` (no model call; the ids it lists, newest first) and add it to harness-models.json\n',
+  })
+  assert.equal(fs.existsSync(path.join(dir, 'out', 'models.json')), false)
+})
+
 test('main without --from asks the API with the key, never prints it, and says why when it cannot', async (t) => {
   const dir = workDir(t)
   // LISTINGS has no claude listing: this test reads the lanes.
