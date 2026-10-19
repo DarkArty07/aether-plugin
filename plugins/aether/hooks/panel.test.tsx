@@ -5,16 +5,17 @@ import { cells } from './panel-view.mjs'
 // `claude plugin test plugins/aether`. The pure parts are also tested with node, in tests/panel-view.test.js and
 // tests/panel-layout.test.js, and the options against the libs in tests/panel-conformance.test.js.
 
-// What the bins printed on a machine with all four harnesses, as captured: `aether-lane quota --json <name>` for each
-// name (tests/fixtures/panel/quota-<name>.json), the same for four missing CLIs (quota-missing.json), and
+// What the bins printed on a machine with the harnesses, as captured: `aether-lane quota --json <name>` for each
+// name (tests/fixtures/panel/quota-<name>.json), the same for missing CLIs (quota-missing.json), and
 // `aether-report --delegates` over the router log of a run with Jev and agy (delegates.json).
 const REAL = {
   agy: {"time":"2026-10-17T02:14:36.782Z","reserve":0.05,"harnesses":{"agy":{"command":"agy","path":"/home/darkarty/.local/bin/agy","installed":true,"version":"1.4.0","groups":{"gemini":{"label":"Gemini Models","unknown":false,"usable":false,"priority":0.005952,"remaining":1,"resetsAt":"2026-10-24T02:14:35.000Z","usedPercentAbsent":false,"mark":{"harness":"agy","group":"gemini","at":1792131450120,"until":1792712790120,"confirmed":false,"resetsAt":null,"usedPercentAbsent":false},"windows":{"weekly":{"remaining":1,"resetsAt":"2026-10-24T02:14:35.000Z","hoursLeft":168,"priority":0.005952,"resetsLocal":"2026-10-23 20:14 UTC-6"},"5h":{"remaining":1,"resetsAt":"2026-10-17T07:14:35.000Z","hoursLeft":5,"priority":0.199954,"resetsLocal":"2026-10-17 01:14 UTC-6"}},"source":{"command":"agy","ts":"2026-10-17T02:14:30.852Z","ageMinutes":0,"stale":false}},"claude":{"label":"Claude and GPT models","unknown":false,"usable":true,"priority":0.002248,"remaining":0.3292155861854553,"resetsAt":"2026-10-23T04:41:07.000Z","usedPercentAbsent":false,"mark":null,"windows":{"weekly":{"remaining":0.3292155861854553,"resetsAt":"2026-10-23T04:41:07.000Z","hoursLeft":146.4,"priority":0.002248,"resetsLocal":"2026-10-22 22:41 UTC-6"},"5h":{"remaining":1,"resetsAt":"2026-10-17T07:14:35.000Z","hoursLeft":5,"priority":0.199954,"resetsLocal":"2026-10-17 01:14 UTC-6"}},"source":{"command":"agy","ts":"2026-10-17T02:14:30.852Z","ageMinutes":0,"stale":false}}}}}},
   codex: {"time":"2026-10-17T02:14:36.952Z","reserve":0.05,"harnesses":{"codex":{"command":"codex","path":"/home/darkarty/.local/bin/codex","installed":true,"version":"codex-cli 0.162.1","groups":{"codex":{"label":"Codex plan","unknown":true,"usable":true,"priority":null,"remaining":null,"resetsAt":null,"usedPercentAbsent":false,"mark":null,"windows":{},"source":null}}}}},
   grok: {"time":"2026-10-17T02:14:37.078Z","reserve":0.05,"harnesses":{"grok":{"command":"grok","path":"/home/darkarty/.local/bin/grok","installed":true,"version":"grok 1.0.60 (01a8e1c591c0) [stable]","groups":{"grok":{"label":"Grok plan","unknown":false,"usable":true,"priority":0.137599,"remaining":0.95,"resetsAt":"2026-10-17T09:08:51.805Z","usedPercentAbsent":false,"mark":null,"windows":{"weekly":{"remaining":0.95,"resetsAt":"2026-10-17T09:08:51.805Z","hoursLeft":6.9,"priority":0.137599,"resetsLocal":"2026-10-17 03:08 UTC-6"}},"source":{"log":"/home/darkarty/.grok/logs/unified.jsonl","ts":"2026-10-17T02:05:00.006Z","pid":2487262,"version":"1.0.60","ageMinutes":9,"stale":false,"usedPercent":5,"usedPercentAbsent":false}}}}}},
   cursor: {"time":"2026-10-17T02:14:37.854Z","reserve":0.05,"harnesses":{"cursor":{"command":"cursor-agent","path":"/home/darkarty/.local/bin/cursor-agent","installed":true,"version":"2026.09.28-64d2043","groups":{"cursor":{"label":"Cursor plan","unknown":true,"usable":true,"priority":null,"remaining":null,"resetsAt":null,"usedPercentAbsent":false,"mark":null,"windows":{},"source":null}}}}},
+  muse: {"time":"2026-10-19T20:00:00.000Z","reserve":0.05,"harnesses":{"muse":{"command":"muse","path":"/home/darkarty/.local/bin/muse","installed":true,"version":"1.4.11","groups":{"muse":{"label":"Muse subscription","unknown":false,"usable":true,"priority":0.002,"remaining":0.28,"resetsAt":"2026-10-19T23:00:00.000Z","usedPercentAbsent":false,"mark":null,"windows":{"5h":{"remaining":0.28,"resetsAt":"2026-10-19T23:00:00.000Z","hoursLeft":3,"priority":0.002,"resetsLocal":"2026-10-19 17:00 UTC-6"},"weekly":{"remaining":0.6,"resetsAt":"2026-10-24T20:00:00.000Z","hoursLeft":120,"priority":0.002,"resetsLocal":"2026-10-24 14:00 UTC-6"}},"source":{"command":"muse exec --json","ts":"2026-10-19T19:56:00.000Z","ageMinutes":4,"stale":false}}}}}},
 }
-const MISSING = {"time":"2026-10-17T02:14:37.940Z","reserve":0.05,"harnesses":{"agy":{"command":"agy","path":null,"installed":false,"version":null,"groups":{}},"grok":{"command":"grok","path":null,"installed":false,"version":null,"groups":{}},"codex":{"command":"codex","path":null,"installed":false,"version":null,"groups":{}},"cursor":{"command":"cursor-agent","path":null,"installed":false,"version":null,"groups":{}}}}
+const MISSING = {"time":"2026-10-17T02:14:37.940Z","reserve":0.05,"harnesses":{"agy":{"command":"agy","path":null,"installed":false,"version":null,"groups":{}},"grok":{"command":"grok","path":null,"installed":false,"version":null,"groups":{}},"codex":{"command":"codex","path":null,"installed":false,"version":null,"groups":{}},"cursor":{"command":"cursor-agent","path":null,"installed":false,"version":null,"groups":{}},"muse":{"command":"muse","path":null,"installed":false,"version":null,"groups":{}}}}
 const DELEGATES = {"delegations":[{"id":"r-mvb76f11-601c","time":1792169047189,"session":"735cdd24-3d94-4e7a-a057-38bbe366d36b","description":"formatMoney 1234 cents","mode":"command","decider":"haiku","requested":null,"override":null,"decision":{"harness":"claude","model":"claude-haiku-5-5","alias":"haiku","effort":"low","level":"A","axis":"general","reason":"shape lookup (0.85); stakes 0; base A","confidence":0.85,"status":"measured","readOnly":true},"reason":"shape lookup (0.85); stakes 0; base A","confidence":0.85,"applied":"rewritten","fallback":null,"ranOn":{"harness":"claude","model":"claude-haiku-5-5","effort":"low"},"agentId":"af6345dee0e062a9b","costUsd":0.003301475,"quotaSpent":null,"durationMs":null},{"id":"r-mvb76fl2-0049","time":1792169047910,"session":"735cdd24-3d94-4e7a-a057-38bbe366d36b","description":"slug with spaces","mode":"command","decider":"haiku","requested":null,"override":null,"decision":{"harness":"claude","model":"claude-haiku-5-5","alias":"haiku","effort":"high","level":"B","axis":"general","reason":"shape explore (0.6); stakes 0; base B","confidence":0.6,"status":"measured","readOnly":true},"reason":"shape explore (0.6); stakes 0; base B","confidence":0.6,"applied":"rewritten","fallback":null,"ranOn":{"harness":"claude","model":"claude-haiku-5-5","effort":"high"},"agentId":"a24e2741c60ac9ac8","costUsd":0.0033644649999999996,"quotaSpent":null,"durationMs":null},{"id":"r-mvb76g64-34f8","time":1792169048668,"session":"735cdd24-3d94-4e7a-a057-38bbe366d36b","description":"clamp below lo","mode":"command","decider":"haiku","requested":null,"override":null,"decision":{"harness":"claude","model":"claude-haiku-5-5","alias":"haiku","effort":"high","level":"B","axis":"general","reason":"shape explore (0.6); stakes 0; base B","confidence":0.6,"status":"measured","readOnly":true},"reason":"shape explore (0.6); stakes 0; base B","confidence":0.6,"applied":"rewritten","fallback":null,"ranOn":{"harness":"claude","model":"claude-haiku-5-5","effort":"high"},"agentId":"a8b9f4ffbd7ee6c38","costUsd":0.00255804,"quotaSpent":null,"durationMs":null},{"id":"r-mvb76gro-f4d9","time":1792169049445,"session":"735cdd24-3d94-4e7a-a057-38bbe366d36b","description":"api get return","mode":"command","decider":"haiku","requested":null,"override":null,"decision":{"harness":"claude","model":"claude-haiku-5-5","alias":"haiku","effort":"high","level":"B","axis":"general","reason":"shape explore (0.5); stakes 0; base B","confidence":0.5,"status":"measured","readOnly":true},"reason":"shape explore (0.5); stakes 0; base B","confidence":0.5,"applied":"rewritten","fallback":null,"ranOn":{"harness":"claude","model":"claude-haiku-5-5","effort":"high"},"agentId":"a70b4aca2247fbaa8","costUsd":0.002527795,"quotaSpent":null,"durationMs":null},{"id":"r-mvb76hbv-6c82","time":1792169050172,"session":"735cdd24-3d94-4e7a-a057-38bbe366d36b","description":"package name and version","mode":"command","decider":"haiku","requested":null,"override":null,"decision":{"harness":"agy","model":"gemini-3.8-flash","alias":null,"effort":"low","level":"A","axis":"general","reason":"shape lookup (0.95); stakes 0; base A","confidence":0.9,"status":"measured","readOnly":true},"reason":"shape lookup (0.95); stakes 0; base A","confidence":0.9,"applied":"external","fallback":null,"ranOn":{"harness":"agy","model":"gemini-3.8-flash-low","effort":"low"},"agentId":"a1347e69828191210","costUsd":null,"quotaSpent":[{"window":"weekly","fraction":0.0069},{"window":"5h","fraction":0.0059}],"durationMs":13004},{"id":"r-mvb76izp-f90f","time":1792169052325,"session":"735cdd24-3d94-4e7a-a057-38bbe366d36b","description":"list files under src","mode":"command","decider":"haiku","requested":null,"override":null,"decision":{"harness":"agy","model":"gemini-3.8-flash","alias":null,"effort":"low","level":"A","axis":"general","reason":"shape lookup (0.8); stakes 0; base A","confidence":0.8,"status":"measured","readOnly":true},"reason":"shape lookup (0.8); stakes 0; base A","confidence":0.8,"applied":"external","fallback":null,"ranOn":{"harness":"agy","model":"gemini-3.8-flash-low","effort":"low"},"agentId":"abf679147e85ce684","costUsd":null,"quotaSpent":[{"window":"weekly","fraction":0.007},{"window":"5h","fraction":0.0062}],"durationMs":19278},{"id":"r-mvb76hx6-920f","time":1792169050938,"session":"735cdd24-3d94-4e7a-a057-38bbe366d36b","description":"count util tests","mode":"command","decider":"haiku","requested":null,"override":null,"decision":{"harness":"agy","model":"gemini-3.8-flash","alias":null,"effort":"low","level":"A","axis":"general","reason":"shape lookup (0.85); stakes 0; base A","confidence":0.85,"status":"measured","readOnly":true},"reason":"shape lookup (0.85); stakes 0; base A","confidence":0.85,"applied":"external","fallback":null,"ranOn":{"harness":"agy","model":"gemini-3.8-flash-low","effort":"low"},"agentId":"a947c9f167c3c8b4a","costUsd":null,"quotaSpent":[{"window":"weekly","fraction":0.0076},{"window":"5h","fraction":0.012}],"durationMs":14720},{"id":"r-mvb76ihm-5148","time":1792169051674,"session":"735cdd24-3d94-4e7a-a057-38bbe366d36b","description":"README first line","mode":"command","decider":"haiku","requested":null,"override":null,"decision":{"harness":"agy","model":"gemini-3.8-flash","alias":null,"effort":"low","level":"A","axis":"general","reason":"shape lookup (0.9); stakes 0; base A","confidence":0.9,"status":"measured","readOnly":true},"reason":"shape lookup (0.9); stakes 0; base A","confidence":0.9,"applied":"external","fallback":null,"ranOn":{"harness":"agy","model":"gemini-3.8-flash-low","effort":"low"},"agentId":"a898a7fa5b1fe6ca6","costUsd":null,"quotaSpent":[{"window":"weekly","fraction":0.007},{"window":"5h","fraction":0.0062}],"durationMs":14347}],"totals":{"delegations":8,"decided":8,"overridden":0,"fallback":0,"inherited":0,"recorded":0,"costUsd":0.011751774999999999}}
 
 const SURFACES = ['terminal', 'desktop', 'vscode', 'mobile'] as const
@@ -24,8 +25,8 @@ const MIN = 60000
 const NOW = 1792169230000
 const WEEK = 7 * 24 * 60 * 60 * 1000
 // How long each read may run, written out here so that a change of the numbers in the mod fails a test.
-const TIMEOUTS = { agy: 75000, grok: 45000, codex: 20000, cursor: 20000 }
-const NAMES = ['agy', 'codex', 'grok', 'cursor'] as const
+const TIMEOUTS = { agy: 75000, grok: 45000, codex: 20000, cursor: 20000, muse: 20000 }
+const NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse'] as const
 const ESC = String.fromCharCode(0x1b)
 const UNSAFE = new RegExp(`[${String.fromCharCode(0)}-${String.fromCharCode(0x1f)}${String.fromCharCode(0x7f)}-${String.fromCharCode(0x9f)}${String.fromCharCode(0x200b)}-${String.fromCharCode(0x200f)}${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}${String.fromCharCode(0x202a)}-${String.fromCharCode(0x202e)}${String.fromCharCode(0x2060)}-${String.fromCharCode(0x2064)}${String.fromCharCode(0x2066)}-${String.fromCharCode(0x2069)}${String.fromCharCode(0xfeff)}]`)
 
@@ -246,9 +247,9 @@ test('every harness is read on its own, with its own timeout, and the delegates 
   await settled()
   const argv = (run: Run) => [run.argv[0], run.argv[1].split('/').slice(-2).join('/')]
   expect(runs.every((run) => run.argv[0] === 'node')).toBe(true)
-  expect(runs.map((run) => argv(run)[1]).sort()).toEqual(['bin/aether-lane', 'bin/aether-lane', 'bin/aether-lane', 'bin/aether-lane', 'bin/aether-report'])
+  expect(runs.map((run) => argv(run)[1]).sort()).toEqual(['bin/aether-lane', 'bin/aether-lane', 'bin/aether-lane', 'bin/aether-lane', 'bin/aether-lane', 'bin/aether-report'])
   const lanes = lane(runs)
-  expect(lanes.map((run) => run.args).sort()).toEqual([['quota', '--json', 'agy'], ['quota', '--json', 'codex'], ['quota', '--json', 'cursor'], ['quota', '--json', 'grok']])
+  expect(lanes.map((run) => run.args).sort()).toEqual([['quota', '--json', 'agy'], ['quota', '--json', 'codex'], ['quota', '--json', 'cursor'], ['quota', '--json', 'grok'], ['quota', '--json', 'muse']])
   for (const run of lanes) expect(run.init.timeoutMs).toBe(TIMEOUTS[run.name as string])
   const report = runs.find((run) => run.bin === 'aether-report') as Run
   expect(report.args).toEqual(['--delegates', '--since', String(NOW - WEEK)])
@@ -264,7 +265,7 @@ test('Renew readings reads every harness again with --refresh, with the same tim
   await ui.press({ key: 'renew' })
   await settled()
   const more = runs.slice(before)
-  expect(lane(more).map((run) => run.args).sort()).toEqual([['quota', '--json', 'agy', '--refresh'], ['quota', '--json', 'codex', '--refresh'], ['quota', '--json', 'cursor', '--refresh'], ['quota', '--json', 'grok', '--refresh']])
+  expect(lane(more).map((run) => run.args).sort()).toEqual([['quota', '--json', 'agy', '--refresh'], ['quota', '--json', 'codex', '--refresh'], ['quota', '--json', 'cursor', '--refresh'], ['quota', '--json', 'grok', '--refresh'], ['quota', '--json', 'muse', '--refresh']])
   for (const run of lane(more)) expect(run.init.timeoutMs).toBe(TIMEOUTS[run.name as string])
   expect(more.find((run) => run.bin === 'aether-report')?.args).toEqual(['--delegates', '--since', String(NOW - WEEK)])
   expectSettled(await paneRows(ui))
@@ -316,7 +317,7 @@ test('an enabled harness that is not installed says so, and the ones that are no
     const lines = await paneRows(await mount($, surface))
     expect(lines).toContain('agy  enabled, not installed')
     expect(lines).toContain('grok  enabled, not installed')
-    expect(lines).toContain('Not installed: codex, cursor')
+    expect(lines).toContain('Not installed: codex, cursor, muse')
   }
 })
 
@@ -363,7 +364,7 @@ test('Renew readings says Renewing… on the sections while it runs, and draws t
     const lines = await paneRows(ui)
     expect(lines).toContain('agy 1.4.0  Renewing…')
     expect(has(lines, /Gemini Models/)).toBe(true)
-    expect(refreshes(runs).length - before).toBe(4)
+    expect(refreshes(runs).length - before).toBe(5)
     held.open()
     await pressed
     await settled()
@@ -487,7 +488,7 @@ test('reopening while the first reads are still out leaves no section stuck, and
   const { runs } = stubs(on, {
     answer: async (run) => {
       calls += 1
-      const mine = calls <= 5
+      const mine = calls <= 6
       if (mine) await first.wait
       if (run.bin !== 'aether-lane') return printed(DELEGATES)
       const doc = real(run.name as string)
@@ -501,7 +502,7 @@ test('reopening while the first reads are still out leaves no section stuck, and
   await settled()
   const ui = await mount($, 'terminal')
   let lines = await paneRows(ui)
-  expect(runs.length).toBe(10)
+  expect(runs.length).toBe(12)
   expect(has(lines, /Gemini Models/)).toBe(true)
   expectSettled(lines)
   first.open()
@@ -519,7 +520,7 @@ test('reopening while the new reads are out keeps the old readings on show, as R
   stubs(on, {
     answer: async (run) => {
       calls += 1
-      if (calls > 5) await second.wait
+      if (calls > 6) await second.wait
       return run.bin === 'aether-lane' ? printed(real(run.name as string)) : printed(DELEGATES)
     },
   })
@@ -551,7 +552,7 @@ test('a Renew pressed while the first reads are out is not lost: one refresh of 
   expect(refreshes(runs).length).toBe(0)
   first.open()
   await settled()
-  expect(refreshes(runs).map((run) => run.name).sort()).toEqual(['agy', 'codex', 'cursor', 'grok'])
+  expect(refreshes(runs).map((run) => run.name).sort()).toEqual(['agy', 'codex', 'cursor', 'grok', 'muse'])
   expect(runs.filter((run) => run.bin === 'aether-report').length).toBe(2)
   expectSettled(await paneRows(ui))
 })
@@ -564,13 +565,13 @@ test('a Renew pressed while a Renew runs is one more refresh after it, not many,
   const ui = await mount($, 'terminal')
   await ui.press({ key: 'renew' })
   await settled()
-  expect(refreshes(runs).length).toBe(4)
+  expect(refreshes(runs).length).toBe(5)
   await ui.press({ key: 'renew' })
   await ui.press({ key: 'renew' })
   await ui.press({ key: 'renew' })
   held.open()
   await settled()
-  expect(refreshes(runs).length).toBe(8)
+  expect(refreshes(runs).length).toBe(10)
   expectSettled(await paneRows(ui))
 })
 
