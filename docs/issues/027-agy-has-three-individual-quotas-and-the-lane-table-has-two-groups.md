@@ -3,7 +3,7 @@
 **Type:** bug (lanes, quota, router)
 **Date:** 2026-10-19
 **Found in:** the owner's question of why a read-only delegate went to neither agy nor grok, in the Lead's session e591573c
-**Status:** fixed on the branch `worktree-agent-a53e7f9e50ca97646`, not released (decision A60), but its premise changed the same day: see «Update». The origin of the mark found in the owner's session was not traced.
+**Status:** fixed in 0.12.5 (decision A60), but its premise changed the same day: see «Update». The origin of the mark found in the owner's session was not traced.
 **GitHub:** not filed
 
 ## What happened
