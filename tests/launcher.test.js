@@ -131,14 +131,15 @@ test('the installer and the fish launcher are gone', () => {
   }
 })
 
-test('the manifest is version 0.12.3, and the documents say so', () => {
+test('the manifest is version 0.12.4, and the documents say so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.12.3')
+  assert.equal(manifest.version, '0.12.4')
   assert.match(manifest.description, /built for RADAR/)
   assert.match(manifest.description, /the owner's right hand/)
   assert.match(manifest.description, /a Judge on Opus reviews them/)
   assert.match(manifest.description, /Lanes run its calls on other coding plans/)
   assert.match(manifest.description, /the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner/)
+  assert.match(page('docs/changelog.md'), /^Version 0\.12\.4: /m)
   assert.match(page('docs/changelog.md'), /^Version 0\.12\.3: /m)
   assert.match(page('docs/changelog.md'), /^Version 0\.12\.2: /m)
   assert.match(page('docs/changelog.md'), /^Version 0\.12\.1: /m)
@@ -169,11 +170,18 @@ test('the documents record RADAR: the roadmap, decisions A31-A38, and documents 
   assert.ok(!readme.includes('aether:designer'))
 })
 
+// Two files of the plugin name fish, each with its reason: the launcher says it works the same from bash, fish and zsh,
+// and aether-first-setup gives the line that puts a directory on the PATH for each of those shells.
+const NAMES_FISH = { 'launcher/aether-lead': 'it says it is the same in every shell', 'lib/first-setup.js': 'the hint for the PATH is given for fish too' }
+
 test('no file of the plugin names a machine path, the old launcher or a shell', () => {
   const files = fs.readdirSync(PLUGIN, { recursive: true }).filter((f) => fs.statSync(path.join(PLUGIN, f)).isFile())
   for (const f of files) {
     const text = fs.readFileSync(path.join(PLUGIN, f), 'utf8')
-    for (const word of ['.local/share', 'aether-mode', 'fish']) assert.ok(!text.includes(word), `${f} names ${word}`)
+    for (const word of ['.local/share', 'aether-mode', 'fish']) {
+      if (word === 'fish' && f in NAMES_FISH) continue
+      assert.ok(!text.includes(word), `${f} names ${word}`)
+    }
   }
 })
 

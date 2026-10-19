@@ -342,6 +342,6 @@ test('renew saves grok\'s reading where the router reads it, from an ACP answer 
 test('the executable bit is set and the commands page counts the bins', () => {
   assert.ok(fs.statSync(BIN).mode & 0o111)
   const count = fs.readdirSync(path.join(PLUGIN, 'bin')).length
-  assert.equal(count, 10)
-  assert.ok(fs.readFileSync(path.join(__dirname, '..', 'docs', 'reference', 'components.md'), 'utf8').includes('the ten commands of `bin/`'))
+  assert.equal(count, 11)
+  assert.ok(fs.readFileSync(path.join(__dirname, '..', 'docs', 'reference', 'components.md'), 'utf8').includes('the eleven commands of `bin/`'))
 })

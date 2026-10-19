@@ -1,7 +1,9 @@
 'use strict'
 
-// scripts/aether-lead is the README's start command with a short name. These tests run it against a
-// fake `claude` that prints its arguments, so they spend no tokens and start no session.
+// The launcher is the README's start command with a short name. It ships in the plugin, at
+// plugins/aether/launcher/aether-lead, and scripts/aether-lead is a forwarder to it, so a link to the script of a clone
+// keeps working. These tests run both against a fake `claude` that prints its arguments, so they spend no tokens and
+// start no session.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -11,7 +13,9 @@ const { spawnSync } = require('node:child_process')
 const { tempDir } = require('./helpers.js')
 
 const ROOT = path.join(__dirname, '..')
+// The forwarder of a clone, the command the documents name, and the launcher it runs.
 const LAUNCHER = path.join(ROOT, 'scripts', 'aether-lead')
+const PLUGIN_LAUNCHER = path.join(ROOT, 'plugins', 'aether', 'launcher', 'aether-lead')
 const SETTINGS = '{"enabledPlugins":{"superpowers@claude-plugins-official":false},"theme":"custom:aether:aether"}'
 // The launcher's own arguments, in order, before the ones it passes on.
 const OWN_ARGS = ['--agent', 'aether:lead', '--effort', 'xhigh', '--permission-mode', 'bypassPermissions', '--settings', SETTINGS]
@@ -109,5 +113,58 @@ test('the documents show the same settings as the launcher, and the launcher\'s 
   for (const text of ['--permission-mode bypassPermissions', 'AETHER_IRREVERSIBLE=enforce', 'AETHER_IRREVERSIBLE=log aether-lead']) {
     assert.ok(start.includes(text), `the guide's Start says the launcher's ${text}`)
   }
-  assert.ok(fs.readFileSync(LAUNCHER, 'utf8').includes(SETTINGS), 'the launcher carries them')
+  assert.ok(fs.readFileSync(PLUGIN_LAUNCHER, 'utf8').includes(SETTINGS), 'the launcher carries them')
+})
+
+test('the plugin ships the launcher, executable and outside bin/, so it is not on the Bash tool\'s PATH', () => {
+  assert.ok(fs.statSync(PLUGIN_LAUNCHER).mode & 0o111, 'it is executable')
+  assert.ok(!fs.existsSync(path.join(ROOT, 'plugins', 'aether', 'bin', 'aether-lead')), 'it is not a command of bin/')
+  assert.ok(fs.readFileSync(PLUGIN_LAUNCHER, 'utf8').startsWith('#!/bin/sh\n'), 'it is POSIX sh')
+})
+
+test('the plugin\'s launcher and the forwarder start claude with the same arguments and the same environment', (t) => {
+  const args = ['-p', 'two words', '--resume', '--plugin-dir', '/some path/plugins/aether']
+  const run = (command, extra) => {
+    const r = spawnSync(command, args, { encoding: 'utf8', env: { ...process.env, ...fakeClaude(t), ...extra } })
+    assert.equal(r.status, 0, r.stderr)
+    return r.stdout
+  }
+  const direct = run(PLUGIN_LAUNCHER)
+  assert.deepEqual(argsOf({ stdout: direct }), [...OWN_ARGS, ...args])
+  assert.equal(run(LAUNCHER), direct)
+  const env = (command, value) => {
+    const dir = tempDir(t, 'aether-launcher-')
+    fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\nprintf "%s\\n" "${AETHER_IRREVERSIBLE-<unset>}"\n', { mode: 0o755 })
+    const base = { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH}` }
+    delete base.AETHER_IRREVERSIBLE
+    if (value !== undefined) base.AETHER_IRREVERSIBLE = value
+    return spawnSync(command, [], { encoding: 'utf8', env: base }).stdout
+  }
+  for (const value of [undefined, 'log']) assert.equal(env(LAUNCHER, value), env(PLUGIN_LAUNCHER, value))
+})
+
+// The forwarder runs the launcher by its own resolved path, so a link to it from anywhere finds the plugin.
+test('the forwarder is short, and runs the plugin\'s launcher through a link, from any directory', (t) => {
+  const text = fs.readFileSync(LAUNCHER, 'utf8')
+  assert.ok(fs.statSync(LAUNCHER).mode & 0o111, 'it is executable')
+  assert.ok(text.trimEnd().split('\n').length <= 6, 'a few lines')
+  assert.ok(text.includes('readlink -f'), 'it resolves its own path')
+  assert.ok(text.includes('plugins/aether/launcher/aether-lead'), 'it names the plugin\'s launcher')
+  assert.ok(!text.includes('--agent'), 'it carries no copy of the launcher')
+  const links = tempDir(t, 'aether-launcher-')
+  const first = path.join(links, 'aether-lead')
+  const second = path.join(links, 'chained')
+  fs.symlinkSync(LAUNCHER, first)
+  fs.symlinkSync(first, second)
+  const elsewhere = tempDir(t, 'aether-launcher-')
+  const expected = argsOf(spawnSync(PLUGIN_LAUNCHER, ['--resume'], { encoding: 'utf8', env: { ...process.env, ...fakeClaude(t) } }))
+  for (const command of [first, second]) {
+    const r = spawnSync(command, ['--resume'], { cwd: elsewhere, encoding: 'utf8', env: { ...process.env, ...fakeClaude(t) } })
+    assert.equal(r.status, 0, r.stderr)
+    assert.deepEqual(argsOf(r), expected)
+  }
+  // Found by name on the PATH, the way the owner runs a link in ~/.local/bin.
+  const r = spawnSync('aether-lead', ['--resume'], { cwd: elsewhere, encoding: 'utf8', env: { ...process.env, PATH: `${links}${path.delimiter}${fakeClaude(t).PATH}` } })
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual(argsOf(r), expected)
 })
