@@ -23,7 +23,8 @@
 // The exceptions, each with its reason. A new one is for something that is not a defect, such as a retired name quoted
 // as retired, and it is listed here with its reason.
 //   Commands that are not files of plugins/aether/bin/ (EXCEPTIONS):
-//     aether-lead           the launcher lives in scripts/, not in plugins/aether/bin/
+//     aether-lead           the launcher lives in plugins/aether/launcher/, outside bin/ so that it is not on the Bash
+//                           tool's PATH (scripts/aether-lead forwards to it, and the stub of aether-first-setup runs it)
 //     aether-plugin         the marketplace's and the repository's name
 //     aether-aether-plugin  the plugin's data directory
 //     aether-inline         the data directory of a --plugin-dir session
@@ -54,7 +55,7 @@ const PAGES = [
 ]
 const FILES = [README, ...PAGES]
 const EXCEPTIONS = {          // commands that are not files of plugins/aether/bin/, each with its reason
-  'aether-lead': 'the launcher lives in scripts/, not in plugins/aether/bin/',
+  'aether-lead': 'the launcher lives in plugins/aether/launcher/, not in plugins/aether/bin/',
   'aether-plugin': "the marketplace's and the repository's name",
   'aether-aether-plugin': "the plugin's data directory",
   'aether-inline': 'the data directory of a --plugin-dir session',
@@ -341,6 +342,24 @@ test('R11: every aether-* command in position is a file of plugins/aether/bin/ o
   }
 })
 
+test('R11: aether-first-setup is an executable file of bin/, the launcher is a file outside it, and the pages name the skill', () => {
+  const setup = path.join(PLUGIN, 'bin', 'aether-first-setup')
+  assert.ok(bins().has('aether-first-setup') && fs.statSync(setup).mode & 0o111, 'aether-first-setup is an executable file of bin/')
+  assert.ok(!bins().has('aether-lead'), 'the launcher is not a command of bin/')
+  assert.ok(fs.statSync(path.join(PLUGIN, 'launcher', 'aether-lead')).mode & 0o111, 'the launcher is an executable file of launcher/')
+  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'first-setup', 'SKILL.md')).isFile(), 'the skill first-setup exists')
+  for (const rel of [README, 'docs/getting-started.md', 'docs/guide/troubleshooting.md']) {
+    assert.ok(codeSpans(read(rel)).some((span) => span.trim() === '/aether:first-setup'), `${rel} names \`/aether:first-setup\``)
+  }
+  for (const rel of ['docs/getting-started.md', 'docs/reference/components.md']) {
+    assert.ok(commandsIn(read(rel)).includes('aether-first-setup'), `${rel} names \`aether-first-setup\``)
+  }
+  const components = read('docs/reference/components.md')
+  for (const text of ['`plugins/aether/launcher/aether-lead`', '`first-setup`', 'eleven commands of `bin/`']) {
+    assert.ok(components.includes(text), `docs/reference/components.md has ${text}`)
+  }
+})
+
 test('R11: every aether:<name> is an agent, a skill or a workflow', () => {
   const known = new Set([
     ...fs.readdirSync(path.join(PLUGIN, 'agents')).filter((file) => file.endsWith('.md')).map((file) => file.replace(/\.md$/, '')),
@@ -518,11 +537,11 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A58 are recorded and the changelog opens with 0.12.3 and the panel handoff', () => {
+test('R15: the decisions A50 to A59 are recorded and the changelog opens with 0.12.4 and the first-setup handoff', () => {
   const decisions = read('docs/decisions.md')
-  for (let n = 50; n <= 58; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  for (let n = 50; n <= 59; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.12.3: ') && first.includes('handoff/2026-10-17-harness-panel-0.12.3.md'), first)
+  assert.ok(first.startsWith('Version 0.12.4: ') && first.includes('handoff/2026-10-19-first-setup-0.12.4.md'), first)
 })

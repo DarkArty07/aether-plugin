@@ -18,7 +18,15 @@ Each section below says what you see, why it happens and what to do, with the ex
 
     claude --agent aether:lead --effort xhigh
 
-[Getting started](../getting-started.md#start) has the whole start, and `scripts/aether-lead` runs the same command with permissions bypassed, superpowers off for the session, and irreversible commands refused. When even a session started this way shows nothing of Aether, `claude plugin list` shows whether `aether@aether-plugin` is installed and enabled, and [Getting started](../getting-started.md#install) installs it.
+[Getting started](../getting-started.md#start) has the whole start. The launcher runs the same command with permissions bypassed, superpowers off for the session, and irreversible commands refused; `/aether:first-setup` installs it as a short command, and `scripts/aether-lead` is it in a clone. When even a session started this way shows nothing of Aether, `claude plugin list` shows whether `aether@aether-plugin` is installed and enabled, and [Getting started](../getting-started.md#install) installs it.
+
+## The Aether theme does not show
+
+**What you see.** An Aether session has Claude Code's own colors and not the violet of the Aether theme, and `/theme` does not list Aether.
+
+**Why.** The launcher selects the theme in the `--settings` of the session, so it shows only in a session the launcher started. The usual cause is an old copy of the launcher: a file copied out of `scripts/aether-lead` before the theme existed has no `theme` entry, and a copy never follows the plugin when it updates. Two others: the session was started with plain `claude`, or with a command of Install written before the `theme` entry; and the terminal has no true color, which the theme needs.
+
+**What to do.** Run `/aether:first-setup`. The command it installs runs the launcher of the newest installed release each time, so it does not go stale. When your old copy has the same name, the setup writes nothing and says the name is taken, because it never replaces a file that is not its own: use another name, or delete the old copy yourself. `/theme` lists the theme as Aether, from aether ([Getting started](../getting-started.md#the-theme)).
 
 ## The design or the swarm does not start
 
@@ -53,7 +61,7 @@ Three other causes end in a swarm that is not running:
 
 **Why.** A permission that asks stops a run like a question: the session waits at it, and an autonomous run waits at the first prompt. The plugin never changes the session's permissions, so the way you started the session decides. The swarm's agents use Bash for `git`, `aether-wt`, `aether-lane` and the test command, and edit files under `.aether/worktrees/`.
 
-**What to do.** Start the session with a permission mode or allow rules of your choice that cover those calls. Or start it with `scripts/aether-lead`, which sets `--permission-mode bypassPermissions`. With no prompts left, aether-guard is the only check on an irreversible command, so the launcher also sets `AETHER_IRREVERSIBLE=enforce` (see the next section). If the session started inside the integration worktree, add the main checkout with `/add-dir <repoRoot>`, so the agents may read and edit there.
+**What to do.** Start the session with a permission mode or allow rules of your choice that cover those calls. Or start it with the launcher (the short command `/aether:first-setup` installs, or `scripts/aether-lead` in a clone), which sets `--permission-mode bypassPermissions`. With no prompts left, aether-guard is the only check on an irreversible command, so the launcher also sets `AETHER_IRREVERSIBLE=enforce` (see the next section). If the session started inside the integration worktree, add the main checkout with `/add-dir <repoRoot>`, so the agents may read and edit there.
 
 ## A command was refused or recorded
 
@@ -98,7 +106,7 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 
 **Why.** `/harnesses` is a command of Aether's mod, and the mod declares it only in an Aether session, the one started with the agent `aether:lead`. A plain `claude` session does not have it, on purpose: nothing of the panel runs there. The panel also uses Claude Code's plugin UI API for mods, which is early access, so a Claude Code release that changes it can make the pane stop drawing; nothing else of Aether depends on it.
 
-**What to do.** Start the session with `aether-lead`, or with `claude --agent aether:lead --effort xhigh` ([Getting started](../getting-started.md#start)). If a session started that way still does not offer it, check that the plugin is installed and enabled with `claude plugin list`, and see [the panel](lanes.md#the-harnesses-panel) for the Claude Code version it was checked on.
+**What to do.** Start the session with the launcher, or with `claude --agent aether:lead --effort xhigh` ([Getting started](../getting-started.md#start)). If a session started that way still does not offer it, check that the plugin is installed and enabled with `claude plugin list`, and see [the panel](lanes.md#the-harnesses-panel) for the Claude Code version it was checked on.
 
 ## The /harnesses panel shows few rows or looks cut
 

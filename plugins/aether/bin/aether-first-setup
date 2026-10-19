@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-first-setup [--name <name>] [--dir <dir>] [--check]
+// Installs a stub, `aeth` by default, in ~/.local/bin by default. The stub starts Aether mode with the launcher of the
+// newest installed release. --check says what would happen and writes nothing.
+//
+// Prints one JSON object. Exits 0, 2 for a usage mistake, 3 when the name is taken by a file that is not its own, and
+// 1 when it cannot write.
+
+const path = require('node:path')
+const firstSetup = require(path.join(__dirname, '..', 'lib', 'first-setup.js'))
+
+const USAGE = 'usage: aether-first-setup [--name <name>] [--dir <dir>] [--check]'
+
+// A value may start with a single dash (a name does not, but the library says so); only a flag cannot be one.
+function parse(args) {
+  const options = { check: false }
+  for (let i = 0; i < args.length; i++) {
+    const flag = args[i]
+    if (flag === '--check') {
+      options.check = true
+    } else if (flag === '--name' || flag === '--dir') {
+      const key = flag.slice(2)
+      const next = args[i + 1]
+      if (next === undefined || next.startsWith('--')) throw firstSetup.usageError(`${flag} needs a value. ${USAGE}`)
+      if (key in options) throw firstSetup.usageError(`${flag} is given twice. ${USAGE}`)
+      options[key] = next
+      i++
+    } else {
+      throw firstSetup.usageError(`unexpected argument ${JSON.stringify(flag)}. ${USAGE}`)
+    }
+  }
+  return options
+}
+
+function main(args) {
+  try {
+    process.stdout.write(`${JSON.stringify(firstSetup.run(parse(args)))}\n`)
+    return 0
+  } catch (err) {
+    process.stdout.write(`${JSON.stringify({ error: err.message })}\n`)
+    return err instanceof firstSetup.SetupError ? err.exitCode : 1
+  }
+}
+
+process.exitCode = main(process.argv.slice(2))
