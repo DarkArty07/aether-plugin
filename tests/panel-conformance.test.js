@@ -27,7 +27,7 @@ const env = (name, value) => (value === undefined ? {} : { [name]: String(value)
 const ROUTERS = ['record', 'advise', 'command', 'Command', 'COMMAND', ' command', 'command ', 'advise,', '', 'x', undefined]
 const DECIDERS = ['haiku', 'jev', 'JEV', 'Jev', ' jev', 'jev ', '', 'x', undefined]
 const SEATS = ['native', 'balanced', 'robust', 'Robust', 'ROBUST', ' native ', '\trobust', '', 'fast', 'balanced,', undefined]
-const HARNESSES = ['agy', 'agy,grok', ' Grok, AGY ', 'gork', 'agy,gork,grok', '', ',,', 'AGY,agy,cursor,codex', 'cursor', 'codex,codex', 'grok;agy', 'x', undefined]
+const HARNESSES = ['agy', 'agy,grok', ' Grok, AGY ', 'gork', 'agy,gork,grok', '', ',,', 'AGY,agy,cursor,codex', 'cursor', 'codex,codex', 'agy,muse', 'MUSE,agy', 'muse,muse', 'grok;agy', 'x', undefined]
 const LANES = [true, false, 'true', 'false', 'TRUE', 'True', 'on', 'yes', '1', 1, '', undefined]
 
 test('the lists of the mod are the lists of the libs', () => {

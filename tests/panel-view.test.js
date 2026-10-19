@@ -156,7 +156,7 @@ test('a bin that fails, is stopped, is cut or prints no JSON is one clean error 
   assert.equal(view.parseDelegates(out({ totals: {} })).ok, false, 'a document with no delegations is no report')
 })
 
-test('the real output of the bins reads: agy, codex, grok and cursor, each as the bin printed it for that name', () => {
+test('the real output of the bins reads: agy, codex, grok, cursor and muse, each as the bin printed it for that name', () => {
   const agy = view.parseHarness(printed('quota-agy.json'), 'agy')
   assert.equal(agy.ok, true)
   assert.equal(agy.value.reserve, 0.05)
@@ -180,12 +180,19 @@ test('the real output of the bins reads: agy, codex, grok and cursor, each as th
   assert.equal(refreshed.groups[0].source.ageMinutes, 0)
   const cursor = view.parseHarness(printed('quota-cursor.json'), 'cursor').value.harness
   assert.equal(cursor.version, '2026.09.28-64d2043')
+  const museRead = view.parseHarness(printed('quota-muse.json'), 'muse')
+  assert.equal(museRead.ok, true)
+  const muse = museRead.value.harness
+  assert.equal(muse.version, '1.4.11')
+  assert.deepEqual(muse.groups.map((g) => [g.key, g.label]), [['muse', 'Muse subscription']])
+  assert.deepEqual(muse.groups[0].windows.map((w) => [w.name, w.remaining]), [['5h', 0.28], ['weekly', 0.6]])
+  assert.deepEqual(muse.groups[0].source, { ageMinutes: 4, stale: false })
 })
 
 test('asked for by name, a harness whose CLI is missing is listed as not installed, which is how an enabled one is found', () => {
   const missing = JSON.parse(fixture('quota-missing.json'))
-  assert.deepEqual(Object.keys(missing.harnesses), ['agy', 'grok', 'codex', 'cursor'], 'the real output lists the four it was asked for')
-  for (const name of ['agy', 'grok', 'codex', 'cursor']) {
+  assert.deepEqual(Object.keys(missing.harnesses), ['agy', 'grok', 'codex', 'cursor', 'muse'], 'the real output lists the five it was asked for')
+  for (const name of ['agy', 'grok', 'codex', 'cursor', 'muse']) {
     const parsed = view.parseHarness(out({ ...missing, harnesses: { [name]: missing.harnesses[name] } }), name)
     assert.equal(parsed.ok, true, name)
     assert.deepEqual([parsed.value.harness.installed, parsed.value.harness.groups, parsed.value.harness.version], [false, [], ''], name)
