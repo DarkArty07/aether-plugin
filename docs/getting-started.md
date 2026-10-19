@@ -17,7 +17,7 @@ Aether mode is opt-in: you install the plugin once, and you choose Aether mode e
 - Claude Code 2.1.294 or later;
 - Node.js 22;
 - git 2.36 or later;
-- for lanes, the CLI of each harness you turn on: `agy`, `codex`, `grok` or `cursor-agent`.
+- for lanes, the CLI of each harness you turn on: `agy`, `codex`, `grok`, `cursor-agent` or `muse`.
 
 ### Install
 
