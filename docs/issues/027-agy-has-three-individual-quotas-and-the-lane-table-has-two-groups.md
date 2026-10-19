@@ -36,6 +36,20 @@ The group is at once the unit of the reading, of the mark and of the order. With
 - Two keys can read one `/usage` group.
 - The old `agy__gemini.json` is ignored by `aether-lane quota`, `status` and the router.
 
+## Evidence from real calls (2026-10-19, about 19:35 UTC)
+
+Three real calls with `scripts/lane-smoke.js` (the owner approved them and asked that the Lead make them), each one file written in an empty directory, all `ok: true`:
+
+| Model | Effort | Seconds | Tokens |
+|---|---|---|---|
+| `gemini-3.8-flash` | low | 8.6 | 24,408 |
+| `gemini-4-argon` | low | 16.8 | 14,384 |
+| `gemini-4-argon` | high | 48.7 | 14,849 |
+
+- Flash works while the installed plugin still holds the `gemini` group dry until 2026-10-22: the three-keys split is needed.
+- **Argon works too, 3 days into a reset that agy stated as 163 h.** The four refusals of 2026-10-16 (04:23 to 04:49 UTC) were on `gemini-4-argon-high` and said `Resets in 163h`. The stated reset did not hold, or the limit was lifted. A mark that lasts until the stated reset (decision A60, up to 8 days) would have kept a working model out for four more days, and the owner wants that quota spent.
+- Proposal: a refusal mark holds for `dryMarkMinutes` (60 minutes), not for the stated reset, so the next start probes again. A refused call costs a failed process and no tokens (issue 021, Impact); a blocked model that works costs quota that is never spent. The stated reset could stay in the mark as information.
+
 ## Environment
 
 Claude Code 2.1.303, Aether plugin 0.12.2 installed, Sonnet 5.5 as the Lead, agy 1.4.2, Linux (WSL2).
