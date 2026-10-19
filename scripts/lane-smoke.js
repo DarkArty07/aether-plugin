@@ -69,7 +69,7 @@ function main(argv) {
   const work = path.join(dir, 'work')
   fs.mkdirSync(work)
   const prompt = adapter.schemaInPrompt === true ? `${PROMPT}\n\nThe JSON object has the fields: ${JSON.stringify(SCHEMA.required)}.` : PROMPT
-  const argvOfCall = adapter.argv({ model: adapter.modelArg({ model, level: args.effort }), level: args.effort, schemaFile, timeoutSeconds: TIMEOUT_MS / 1000, prompt })
+  const argvOfCall = adapter.argv({ model, level: args.effort, schemaFile, timeoutSeconds: TIMEOUT_MS / 1000, prompt })
   const started = Date.now()
   // The environment a lane gives its CLI: the owner's git, GitHub, registry and cloud credentials stay out of it.
   const env = lanes.laneEnv(process.env, `lane-smoke-${process.pid}`)
