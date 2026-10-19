@@ -78,7 +78,7 @@ For a read-only task the router may send the delegate to agy or Grok. The rule i
 - **The reserve.** A group with a window under 5 % left is left out.
 - **A valid reading.** A reading counts while it is within its life: 10 minutes for agy, whose reading launches a process, and 30 minutes for the Grok log line, and never past a window reset that came after the reading. A group without a valid reading is left out of that decision.
 - **Renewing a reading.** A missing or expired reading is renewed, and a decision in `advise` or `command` waits for it up to the quota limit (3 seconds by default); in `record` nothing waits. The renewal is a step of the router itself, `aether-route renew`, that saves its reading in the router's own data directory, because the lane code does not save Grok's. Measured: Grok's takes 0.7 seconds and fits in the limit; agy's takes 5 seconds and never does, so while agy is among the `harnesses` a read-only decision with an expired agy reading waits the whole limit and agy stays out of it ([issue 025](../issues/025-command-waits-3-seconds-for-an-agy-reading-that-takes-5-and-agy-cannot-serve-the-task.md)).
-- **A mark.** A reading with a balance does not lift a mark. The explicit refusal of agy, "Individual quota reached", leaves a mark of the router's own, until the reset the refusal says, or 60 minutes when it says none. The router reads the swarm's marks too, and writes only its own.
+- **A mark.** A reading with a balance does not lift a mark. The explicit refusal of agy, "Individual quota reached", leaves a mark of the router's own for 60 minutes, whatever reset the refusal says: agy's stated reset was wrong once, and a refused call costs no tokens, so the group is tried again every hour. The reset is kept in the mark as stated. The router reads the swarm's marks too, and writes only its own.
 - **Ties.** Among groups that renew at the same time, the one with more balance goes first, then the order of the table.
 
 To see the readings the router would use, and the delegations it has decided, inside Claude Code, open the [`/harnesses` panel](lanes.md#the-harnesses-panel) in an Aether session: it shows each harness's quota groups with their status, and the five newest delegations of the log.
@@ -110,7 +110,7 @@ The router always has Claude to go back to, and never asks the owner.
 - **The decider fails.** In `command` the call keeps the model and effort the Lead asked for, and the `fallback` option (`sonnet:high` unless you change it) when the Lead asked for none. In `record` and `advise` nothing is rewritten.
 - **An external delegate fails,** for any reason, including a quota refusal or the time limit. The agent runs on Claude, at the Claude rung of the same level that the router put on the call.
 - **No harness can serve the level.** The task runs on Claude at that level.
-- **A quota refusal** also leaves a mark, so the next decision does not try that group again until its reset.
+- **A quota refusal** also leaves a mark, so the next decision does not try that group again for 60 minutes.
 - **The router itself fails.** An internal error leaves the call as the Lead made it, and writes a decision entry whose fallback reads `internal: …`, so the report counts it and you can see that the router is broken.
 
 ## Override
@@ -146,4 +146,4 @@ Other uses of this architecture were found, each with the measurement behind it.
 3. **Graders.** The 98 tasks "Grade interview" are 53 % of the spend (US$255 as the first measurement counted it; that measurement counted each request about 1.8 times, so the real figure is about US$140), nearly all on inherited Opus. An A/B (about US$10) is needed before lowering them, which is why `evaluate` is a gate.
 4. **A record of the decider's hits,** once the replay exists, to feed 1 and 2.
 5. **An agy quota reading that includes the individual limit,** if some agy command offers it. Today only `/usage` shows the group, and the group can show a balance with the individual limit spent.
-6. **The swarm and the design seats recognizing agy's explicit refusal** and leaving the mark until the reset it says: see [issue 021](../issues/021-agy-refuses-with-individual-quota-reached-while-usage-shows-balance.md). It needs the owner's confirmation, because it changes what the confirmed scope leaves out.
+6. **The swarm and the design seats recognizing agy's explicit refusal** and leaving a mark of 60 minutes (done in decision A60, which holds the mark for the default length and not for the reset agy states): see [issue 021](../issues/021-agy-refuses-with-individual-quota-reached-while-usage-shows-balance.md). It needs the owner's confirmation, because it changes what the confirmed scope leaves out.

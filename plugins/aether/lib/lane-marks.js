@@ -3,9 +3,12 @@
 // On-disk quota exhaustion marks for lanes (`lanes/marks/<harness>__<group>.json`).
 // An unconfirmed mark (rate limit, missing/unknown balance, or absent used percent) lasts
 // DEFAULT_MARK_MINUTES. A mark is confirmed and holds until the reset only when reading
-// has an explicit balance showing the group under reserve, or when a call was refused with the reset stated (agy's
-// «Individual quota reached», `refusal`); a refusal's mark says so in `reason`. A mark that is live is kept by any call that
-// would end it sooner, so a later reading with a balance does not lift a refusal's mark. Marks never shorten.
+// has an explicit balance showing the group under reserve. A call agy refused with «Individual quota reached»
+// (`refusal`) leaves an unconfirmed mark with `reason: "quota refusal"`: it holds the default length, not the reset the
+// message states, which is kept in `statedResetMs` for people to read: agy's quota structure changes between days and
+// the stated reset was once wrong, while a refused call costs a failed process and no tokens, so the group is tried
+// again every hour. A live refusal mark is not replaced by a mark that is not confirmed, so a later reading with a
+// balance does not lift it. Marks never shorten.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -149,8 +152,8 @@ function liveMarks(dataDir, now = Date.now(), known = null) {
   return result
 }
 
-// refusal is { resetMs } of a call agy refused for its individual quota (quota-refusal.js): the mark holds until the
-// reset the message states, or for `minutes` when it states none, and never past what a mark can hold.
+// refusal is { resetMs } of a call agy refused for its individual quota (quota-refusal.js): the mark holds `minutes`
+// from now, whatever reset the message states; that reset is kept in the mark as statedResetMs, for information.
 function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.now(), minutes = DEFAULT_MARK_MINUTES, refusal = null }) {
   const usedPercentAbsent = Boolean(reading && reading.usedPercentAbsent)
 
@@ -159,10 +162,8 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
   let resetsAt = null
 
   if (refusal) {
-    const span = Number.isFinite(refusal.resetMs) && refusal.resetMs > 0 ? refusal.resetMs : minutes * 60 * 1000
-    confirmed = true
-    until = Math.min(now + span, now + MAX_MARK_MS - 60 * 1000)
-    resetsAt = new Date(until).toISOString()
+    // Not confirmed: no reading showed the group under the reserve, and no reset is trusted.
+    until = now + minutes * 60 * 1000
   } else if (reading && typeof reading === 'object' && !reading.unknown && !reading.usedPercentAbsent && reading.windows && typeof reading.windows === 'object') {
     const windows = Object.values(reading.windows)
     const allNumeric = windows.length > 0 && windows.every((w) => w && typeof w.remaining === 'number' && Number.isFinite(w.remaining))
@@ -194,7 +195,10 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
     resetsAt,
     usedPercentAbsent,
   }
-  if (refusal) candidate.reason = REFUSAL_REASON
+  if (refusal) {
+    candidate.reason = REFUSAL_REASON
+    candidate.statedResetMs = Number.isFinite(refusal.resetMs) && refusal.resetMs > 0 ? refusal.resetMs : null
+  }
 
   const file = markFile(dataDir, harness, group)
   return withLock(file, () => {
@@ -202,6 +206,8 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
     if (existing && typeof existing.until === 'number' && existing.until >= candidate.until) {
       return existing
     }
+    // A reading with a balance does not lift a refusal's mark; only a reading that shows the group dry replaces it.
+    if (existing && existing.reason === REFUSAL_REASON && !refusal && !candidate.confirmed) return existing
     writeAtomic(file, JSON.stringify(candidate, null, 2) + '\n')
     return candidate
   })

@@ -31,38 +31,44 @@ test('R22b: what is not that refusal gives null', () => {
   }
 })
 
-test('R22: a refusal leaves the router mark until the reset the message states, in the router store only', (t) => {
+test('R22: a refusal leaves the router mark for 60 minutes, whatever reset the message states, and keeps that reset as stated, in the router store only', (t) => {
   const dataDir = tempDir(t)
   const mark = marks.markRefusal(dataDir, { harness: 'agy', group: 'flash', text: REAL, now: NOW })
   assert.equal(mark.harness, 'agy')
   assert.equal(mark.group, 'flash')
   assert.equal(mark.at, NOW)
-  assert.equal(mark.until, NOW + REAL_MS)
-  assert.equal(mark.confirmed, true)
+  assert.equal(mark.until, NOW + 60 * MIN, 'agy said 163 h and was wrong once; a refused call costs no tokens')
+  assert.equal(mark.statedResetMs, REAL_MS)
+  assert.equal(mark.confirmed, false)
   assert.equal(mark.source, 'router')
-  assert.equal(mark.resetsAt, new Date(NOW + REAL_MS).toISOString())
+  assert.equal(mark.reason, 'quota refusal')
+  assert.equal(mark.resetsAt, null)
   const file = laneMarks.markFile(marks.routerMarksRoot(dataDir), 'agy', 'flash')
   assert.equal(file, path.join(dataDir, 'router', 'lanes', 'marks', 'agy__flash.json'))
-  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).until, NOW + REAL_MS)
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).until, NOW + 60 * MIN)
   assert.notEqual(laneMarks.liveMark(marks.routerMarksRoot(dataDir), 'agy', 'flash', NOW + MIN), null, 'lane-marks.js reads it as one of its own')
+  assert.equal(laneMarks.liveMark(marks.routerMarksRoot(dataDir), 'agy', 'flash', NOW + 61 * MIN), null, 'it has ended, and the group is tried again')
   assert.equal(fs.existsSync(path.join(dataDir, 'lanes')), false, 'the swarm store is not created or written')
   assert.deepEqual(laneMarks.liveMarks(dataDir, NOW + MIN), [])
 })
 
-test('R22: without a reset in the message the mark lasts 60 minutes, and a reset beyond 8 days is bounded', (t) => {
+test('R22: a message with no reset, or a reset of 400 h, holds 60 minutes too, and says what it stated', (t) => {
   const dataDir = tempDir(t)
   const none = marks.markRefusal(dataDir, { harness: 'agy', group: 'flash', text: 'Individual quota reached', now: NOW })
-  assert.equal(none.until, NOW + 60 * MIN)
+  assert.deepEqual([none.until, none.statedResetMs], [NOW + 60 * MIN, null])
   const far = marks.markRefusal(dataDir, { harness: 'agy', group: 'claude', text: 'Individual quota reached. Resets in 400h.', now: NOW })
-  assert.equal(far.until, NOW + laneMarks.MAX_MARK_MS - MIN)
+  assert.deepEqual([far.until, far.statedResetMs], [NOW + 60 * MIN, 400 * H])
   assert.notEqual(laneMarks.liveMark(marks.routerMarksRoot(dataDir), 'agy', 'claude', NOW + MIN), null)
 })
 
 test('a mark never shortens, and a text that is not a refusal writes nothing', (t) => {
   const dataDir = tempDir(t)
   marks.markRefusal(dataDir, { harness: 'agy', group: 'flash', text: REAL, now: NOW })
-  const again = marks.markRefusal(dataDir, { harness: 'agy', group: 'flash', text: 'Individual quota reached. Resets in 2h.', now: NOW + MIN })
-  assert.equal(again.until, NOW + REAL_MS, 'the later end is kept')
+  const again = marks.markRefusal(dataDir, { harness: 'agy', group: 'flash', text: 'Individual quota reached. Resets in 2h.', now: NOW - 30 * MIN })
+  assert.equal(again.until, NOW + 60 * MIN, 'the later end is kept')
+  assert.equal(again.statedResetMs, REAL_MS)
+  const renewed = marks.markRefusal(dataDir, { harness: 'agy', group: 'flash', text: 'Individual quota reached. Resets in 2h.', now: NOW + 30 * MIN })
+  assert.equal(renewed.until, NOW + 90 * MIN, 'a refusal again renews it')
   const other = tempDir(t)
   assert.equal(marks.markRefusal(other, { harness: 'agy', group: 'flash', text: 'exit 1: model not found', now: NOW }), null)
   assert.equal(fs.existsSync(path.join(other, 'router')), false)
@@ -70,15 +76,15 @@ test('a mark never shortens, and a text that is not a refusal writes nothing', (
 
 test('readAllMarks joins the swarm marks, which it only reads, and the router marks', (t) => {
   const dataDir = tempDir(t)
-  laneMarks.markDry(dataDir, { harness: 'agy', group: 'claude', reading: null, reserve: 0.05, now: NOW, minutes: 60 })
+  laneMarks.markDry(dataDir, { harness: 'agy', group: 'claude', reading: null, reserve: 0.05, now: NOW, minutes: 30 })
   marks.markRefusal(dataDir, { harness: 'agy', group: 'flash', text: REAL, now: NOW })
   const all = marks.readAllMarks(dataDir, NOW + MIN)
   assert.deepEqual(all.map((m) => [m.harness, m.group, m.source]), [['agy', 'claude', 'swarm'], ['agy', 'flash', 'router']])
   assert.equal(typeof all[1].until, 'number')
-  const later = marks.readAllMarks(dataDir, NOW + 61 * MIN)
-  assert.deepEqual(later.map((m) => [m.group, m.source]), [['flash', 'router']], 'the swarm mark of 60 minutes has ended; the router one holds until its reset')
+  const later = marks.readAllMarks(dataDir, NOW + 31 * MIN)
+  assert.deepEqual(later.map((m) => [m.group, m.source]), [['flash', 'router']], 'the swarm mark of 30 minutes has ended; the router one holds its 60')
   assert.deepEqual(marks.readAllMarks(tempDir(t), NOW), [])
-  assert.deepEqual(marks.readAllMarks(dataDir, NOW + REAL_MS + MIN), [])
+  assert.deepEqual(marks.readAllMarks(dataDir, NOW + 61 * MIN), [])
 })
 
 test('the module never writes the swarm store or calls markDry (R9, R22)', () => {

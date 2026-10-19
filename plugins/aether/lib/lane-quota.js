@@ -259,10 +259,15 @@ function windowLine(name, w) {
   return `${name}: ${percent(w.remaining)} left, resets ${utcTime(Date.parse(w.resetsAt))} (${w.resetsLocal}), ${when}, priority ${w.priority}`
 }
 
-// Why a dry mark holds: the reset a refusal stated, its reset when a reading showed the group under the reserve, or
-// the minutes it was given.
+// Why a dry mark holds: the minutes a refusal was given, with the reset agy stated shown as stated; its reset when a
+// reading showed the group under the reserve; or the minutes it was given.
 function markReason(mark) {
-  if (mark.reason === 'quota refusal') return 'the reset agy stated when it refused a call for its individual quota'
+  if (mark.reason === 'quota refusal') {
+    const minutes = Math.round((mark.until - mark.at) / MINUTE_MS)
+    const hours = Number.isFinite(mark.statedResetMs) ? Math.round(mark.statedResetMs / 3600000) : null
+    const stated = hours === null ? 'it stated no reset' : `agy stated a reset in ${hours} h, not trusted`
+    return `${minutes} minute${minutes === 1 ? '' : 's'} after agy refused a call for its individual quota (${stated})`
+  }
   if (mark.confirmed) return 'its reset'
   if (!Number.isFinite(mark.at)) return 'after a call ended for quota'
   const minutes = Math.round((mark.until - mark.at) / MINUTE_MS)

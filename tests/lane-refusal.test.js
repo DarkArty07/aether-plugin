@@ -3,6 +3,7 @@
 // Issue 021 and decision A60: agy has three individual quotas (Argon, Flash, Claude and GPT) and /usage lists two groups,
 // so the table keeps three keys and two of them read one /usage group; a call agy refuses with «Individual quota
 // reached» leaves a mark on the key of the model that was refused, in the swarm's lane calls and in the design seats.
+// The mark holds dryMarkMinutes (60), not the reset agy states, which was once wrong: the stated reset is kept in it.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -93,18 +94,20 @@ test('the shipped table has three agy keys, two of them reading «Gemini Models�
   })
 })
 
-test('a refusal marks the key of the refused model until the reset it states, and the other keys stay usable', () => {
+test('a refusal marks the key of the refused model for 60 minutes, though it states 163 h, and keeps the stated reset', () => {
   const dataDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-refusal-'))
   const now = Date.now()
   const mark = marks.markDry(dataDir, { harness: 'agy', group: 'argon', reserve: RESERVE, now, refusal: quotaRefusal(REFUSAL) })
-  assert.deepEqual([mark.confirmed, mark.reason, mark.until, mark.resetsAt], [true, 'quota refusal', now + RESET_MS, new Date(now + RESET_MS).toISOString()])
+  assert.deepEqual([mark.confirmed, mark.reason, mark.until, mark.resetsAt, mark.statedResetMs], [false, 'quota refusal', now + 60 * MIN, null, RESET_MS])
+  assert.notEqual(marks.liveMark(dataDir, 'agy', 'argon', now + 59 * MIN), null)
+  assert.equal(marks.liveMark(dataDir, 'agy', 'argon', now + 61 * MIN), null, 'an hour later the group is tried again')
   assert.equal(marks.liveMark(dataDir, 'agy', 'flash'), null)
   assert.equal(marks.liveMark(dataDir, 'agy', 'claude'), null)
-  // A reset beyond what a mark can hold is capped, and a refusal that states none holds for the default length.
-  const capped = marks.markDry(dataDir, { harness: 'agy', group: 'flash', reserve: RESERVE, now, refusal: { resetMs: 30 * 24 * HOUR } })
-  assert.ok(capped.until > now && capped.until < now + marks.MAX_MARK_MS)
+  // The length is the one the caller gives (the table's dryMarkMinutes), and a refusal that states no reset keeps none.
+  const short = marks.markDry(dataDir, { harness: 'agy', group: 'flash', reserve: RESERVE, now, minutes: 15, refusal: { resetMs: 30 * 24 * HOUR } })
+  assert.deepEqual([short.until - now, short.statedResetMs], [15 * MIN, 30 * 24 * HOUR])
   const plain = marks.markDry(dataDir, { harness: 'agy', group: 'claude', reserve: RESERVE, now, refusal: { resetMs: null } })
-  assert.equal(plain.until - now, marks.DEFAULT_MARK_MINUTES * MIN)
+  assert.deepEqual([plain.until - now, plain.statedResetMs], [marks.DEFAULT_MARK_MINUTES * MIN, null])
   fs.rmSync(dataDir, { recursive: true, force: true })
 })
 
@@ -116,17 +119,19 @@ test('a reading with balance does not lift the mark of a refusal, nor shorten it
   assert.deepEqual(marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: balance, reserve: RESERVE, now: now + MIN }), held)
   assert.deepEqual(marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: { unknown: true, windows: {} }, reserve: RESERVE, now: now + 2 * MIN }), held)
   assert.deepEqual(marks.liveMark(dataDir, 'agy', 'argon', now + 3 * MIN), held)
+  // A reading that shows the group under the reserve, with its reset, is another matter: it replaces the mark.
+  const dry = { windows: { weekly: { remaining: 0.01, resetsAt: new Date(now + 40 * HOUR).toISOString() } } }
+  assert.equal(marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: dry, reserve: RESERVE, now: now + 4 * MIN }).confirmed, true)
   fs.rmSync(dataDir, { recursive: true, force: true })
 })
 
-test('a swarm call agy refuses leaves the mark of Flash alone, though /usage shows balance, and the next start skips it', (t) => {
+test('a swarm call agy refuses leaves the mark of Flash alone for an hour, though /usage shows balance, and the next start skips it', (t) => {
   const env = fx.laneEnv(t)
   const { done, args } = runFlashCall(t, refuse(), env)
   assert.equal(done.status, 'quota', done.detail)
   assert.match(done.detail, /^exit 3: Individual quota reached/)
   const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash')
-  assert.deepEqual([mark.confirmed, mark.reason], [true, 'quota refusal'])
-  assert.ok(Math.abs(mark.until - mark.at - RESET_MS) < 1000, `${mark.until - mark.at}`)
+  assert.deepEqual([mark.confirmed, mark.reason, mark.until - mark.at, mark.statedResetMs], [false, 'quota refusal', 60 * MIN, RESET_MS])
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'argon'), null)
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'claude'), null)
   assert.equal(done.lane.quota.usable, false, 'the result says the group is held by its mark, whatever /usage shows')
@@ -141,7 +146,7 @@ test('a swarm call agy refuses leaves the mark of Flash alone, though /usage sho
   assert.deepEqual([agy.groups.flash.usable, agy.groups.flash.windows.weekly.remaining, agy.groups.argon.usable, agy.groups.argon.mark], [false, 0.9, true, null])
   assert.equal(agy.groups.flash.mark.reason, 'quota refusal')
   const text = runBin(fx.LANE_BIN, ['quota', 'agy'], args.repoRoot, env).stdout
-  assert.match(text, /flash, "Gemini Models": not usable, dry mark until .*, the reset agy stated when it refused a call for its individual quota\n/)
+  assert.match(text, /flash, "Gemini Models": not usable, dry mark until .*, 60 minutes after agy refused a call for its individual quota \(agy stated a reset in 163 h, not trusted\)\n/)
   assert.match(text, /argon, "Gemini Models": usable/)
 })
 
@@ -152,8 +157,7 @@ test('a seat round on Argon that agy refuses marks Argon only, and the next roun
   assert.equal(first.status, 4, JSON.stringify(first.json))
   assert.equal(first.json.failed, 'quota')
   const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'argon')
-  assert.deepEqual([mark.confirmed, mark.reason], [true, 'quota refusal'])
-  assert.ok(Math.abs(mark.until - mark.at - RESET_MS) < 1000, `${mark.until - mark.at}`)
+  assert.deepEqual([mark.confirmed, mark.reason, mark.until - mark.at, mark.statedResetMs], [false, 'quota refusal', 60 * MIN, RESET_MS])
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash'), null, 'Flash has a quota of its own')
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'claude'), null)
 

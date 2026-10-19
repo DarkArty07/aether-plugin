@@ -32,13 +32,14 @@ function writeAtomic(targetPath, content) {
   }
 }
 
-// Writes the router's mark for a quota refusal and returns it. A live router mark for the same harness and group that
+// Writes the router's mark for a quota refusal, for REFUSAL_DEFAULT_MINUTES, and returns it. A live router mark for the same harness and group that
 // ends later is kept as it is: a mark never shortens. Returns null, and writes nothing, when text is no refusal.
 function markRefusal(dataDir, { harness, group, text, now = Date.now() }) {
   const refusal = quotaRefusal(text)
   if (!refusal) return null
-  const span = refusal.resetMs === null ? REFUSAL_DEFAULT_MINUTES * MINUTE_MS : refusal.resetMs
-  const until = Math.min(now + span, now + laneMarks.MAX_MARK_MS - MINUTE_MS)
+  // The mark holds the default length, not the reset the message states: agy's quotas change between days and the
+  // stated reset was once wrong, and a refused call costs a failed process and no tokens. The reset is kept as stated.
+  const until = now + REFUSAL_DEFAULT_MINUTES * MINUTE_MS
   const root = routerMarksRoot(dataDir)
   const existing = laneMarks.liveMark(root, harness, group, now)
   if (existing && existing.until >= until) return existing
@@ -47,11 +48,12 @@ function markRefusal(dataDir, { harness, group, text, now = Date.now() }) {
     group,
     at: now,
     until,
-    confirmed: true,
-    resetsAt: new Date(until).toISOString(),
+    confirmed: false,
+    resetsAt: null,
     usedPercentAbsent: false,
     source: 'router',
     reason: 'quota refusal',
+    statedResetMs: refusal.resetMs > 0 ? refusal.resetMs : null,
   }
   writeAtomic(laneMarks.markFile(root, harness, group), JSON.stringify(mark, null, 2) + '\n')
   return mark
