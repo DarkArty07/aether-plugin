@@ -8,6 +8,11 @@ order: 31
 
 ## Status
 
+Version 0.12.6: the Lead starts at `xhigh` again ([handoff](handoff/2026-10-19-lead-xhigh-0.12.6.md), [start](getting-started.md#start), [decisions](decisions.md) A63, which updates A61 and A62). What changed since 0.12.5:
+- **The Lead starts at `xhigh`.** The launcher passes `--effort xhigh` again. The owner's reason, in A63: Sonnet 5.5 at `max` was too verbose to follow («la verbosidad es injustificada, no se le entiende nada»). Artificial Analysis rates it 56 at `max` with 420M output tokens, the most verbose of 116 models, and 52 at `xhigh` with 110M: four points for almost four times the tokens. The owner may still raise it with `/effort` in a session.
+- **The router's `inheritedEffort` is `xhigh` again,** as A62 asked: it follows the Lead. A Sonnet call that names no effort goes back to the asked rung Sonnet `xhigh` (level C); Haiku stays at B and Opus at D.
+- **What did not change.** The workflows, the options and their defaults, and the delegate and swarm efforts. Until the owner updates the plugin, the 0.12.5 launcher they have installed still passes `--effort max`.
+
 Version 0.12.5: the Lead starts at `max`, and agy's quota marks heal by themselves ([handoff](handoff/2026-10-19-lanes-marks-lead-max-0.12.5.md), [guide](guide/lanes.md), [decisions](decisions.md) A60 and A61). What changed since 0.12.4:
 - **The Lead starts at `max`.** The launcher passes `--effort max`. The owner's reason, in A61: the Lead needs to reason more to hold all of its delegation, and `xhigh` was not enough. `max` is not a value of `effortLevel` in `settings.json`, so the start command is the only way the plugin sets it; a plain `claude` with the agent set in a settings file does not reach it. It costs time and output tokens at each step, and A61 asks to measure the next real sessions against the runs of 0.12 before keeping it.
 - **A refusal marks the group for 60 minutes.** The swarm and the design seats now read agy's «Individual quota reached», as the router already did, and mark the group for `dryMarkMinutes`, not until the reset agy states: that reset had proved wrong, three days into a stated 163 hours. It is kept in the mark as information.

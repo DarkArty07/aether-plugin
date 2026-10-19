@@ -68,7 +68,7 @@ test('the documents install Aether with Claude Code, and start it with one nativ
     'claude plugin install aether --marketplace DarkArty07/aether-plugin',
     '/plugin install aether --marketplace DarkArty07/aether-plugin',
     '--config lanes=true',
-    'claude --agent aether:lead --effort max',
+    'claude --agent aether:lead --effort xhigh',
     '{ "agent": "aether:lead" }',
     'claude --agent claude',
     'Plain `claude` stays normal mode: the plugin is dormant there.',
@@ -81,7 +81,7 @@ test('the documents install Aether with Claude Code, and start it with one nativ
     'Dynamic workflows',
     'Not verified on a Mac',
     'Never remove the marketplace to change versions',
-    'claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort max',
+    'claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort xhigh',
     'claude plugin tag plugins/aether',
     // docs/changelog.md links this as ../docs/..., which keeps the full path.
     'docs/superpowers/specs/2026-10-09-installable-plugin-design.md',
@@ -131,9 +131,9 @@ test('the installer and the fish launcher are gone', () => {
   }
 })
 
-test('the manifest is version 0.12.5, and the documents say so', () => {
+test('the manifest is version 0.12.6, and the documents say so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.12.5')
+  assert.equal(manifest.version, '0.12.6')
   assert.match(manifest.description, /built for RADAR/)
   assert.match(manifest.description, /the owner's right hand/)
   assert.match(manifest.description, /a Judge on Opus reviews them/)

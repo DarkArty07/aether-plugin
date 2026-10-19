@@ -16,7 +16,7 @@ Each section below says what you see, why it happens and what to do, with the ex
 
 **What to do.** Start the session as the Lead:
 
-    claude --agent aether:lead --effort max
+    claude --agent aether:lead --effort xhigh
 
 [Getting started](../getting-started.md#start) has the whole start. The launcher runs the same command with permissions bypassed, superpowers off for the session, and irreversible commands refused; `/aether:first-setup` installs it as a short command, and `scripts/aether-lead` is it in a clone. When even a session started this way shows nothing of Aether, `claude plugin list` shows whether `aether@aether-plugin` is installed and enabled, and [Getting started](../getting-started.md#install) installs it.
 
@@ -106,7 +106,7 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 
 **Why.** `/harnesses` is a command of Aether's mod, and the mod declares it only in an Aether session, the one started with the agent `aether:lead`. A plain `claude` session does not have it, on purpose: nothing of the panel runs there. The panel also uses Claude Code's plugin UI API for mods, which is early access, so a Claude Code release that changes it can make the pane stop drawing; nothing else of Aether depends on it.
 
-**What to do.** Start the session with the launcher, or with `claude --agent aether:lead --effort max` ([Getting started](../getting-started.md#start)). If a session started that way still does not offer it, check that the plugin is installed and enabled with `claude plugin list`, and see [the panel](lanes.md#the-harnesses-panel) for the Claude Code version it was checked on.
+**What to do.** Start the session with the launcher, or with `claude --agent aether:lead --effort xhigh` ([Getting started](../getting-started.md#start)). If a session started that way still does not offer it, check that the plugin is installed and enabled with `claude plugin list`, and see [the panel](lanes.md#the-harnesses-panel) for the Claude Code version it was checked on.
 
 ## The /harnesses panel shows few rows or looks cut
 

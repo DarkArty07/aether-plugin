@@ -17,7 +17,7 @@ npm run validate                           # claude plugin validate on the plugi
 npm run check                              # all three; run before a PR or a release
 ```
 
-- **Try a branch:** `scripts/aether-lead --plugin-dir <worktree>/plugins/aether` (same as `claude --plugin-dir … --agent aether:lead --effort max`). It loads the tree instead of the installed release and uses the data directory `~/.claude/plugins/data/aether-inline/`.
+- **Try a branch:** `scripts/aether-lead --plugin-dir <worktree>/plugins/aether` (same as `claude --plugin-dir … --agent aether:lead --effort xhigh`). It loads the tree instead of the installed release and uses the data directory `~/.claude/plugins/data/aether-inline/`.
 - **Run a branch's bin by path:** `node plugins/aether/bin/aether-plan check <plan.md>`. In a development tree the `aether-*` names on `PATH` are the *installed release's* bins (docs/issues/008).
 - `node scripts/refresh-lanes.js [--write]` refreshes the lane table (needs `ARTIFICIAL_ANALYSIS_API_KEY`); `node scripts/build-models-index.js` rebuilds the models index; `node scripts/lane-smoke.js <harness>` makes one real, quota-spending call: run it on purpose.
 - **Release** (full steps in `docs/contributing.md`): the version lives in four places, `plugin.json`, the pin in `tests/launcher.test.js`, the README's `Version X.Y.Z` line and the changelog's first `Version X.Y.Z:` line; tag with `claude plugin tag plugins/aether` (`aether--v<version>`) on `main`.
