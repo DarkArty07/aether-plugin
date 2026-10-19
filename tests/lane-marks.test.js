@@ -177,3 +177,46 @@ test('a mark written under a clock far ahead stops holding once the clock is rig
   const m = mark(tempDir(t), { reading: far })
   assert.deepEqual([m.until, m.confirmed], [NOW + 60 * MIN, false])
 })
+
+// ---- a reading whose source is older than the mark does not lift it ----
+
+const LIFE = 30 * MIN
+const iso = (ms) => new Date(ms).toISOString()
+const healthy = (extra = {}) => ({ windows: { weekly: { remaining: 0.9, resetsAt: '2026-10-20T00:00:00Z' }, '5h': { remaining: 0.9, resetsAt: '2026-10-14T09:41:07Z' } }, ...extra })
+// A reading taken ten minutes after the mark was written, whose source (when it has one) is the given one.
+const liftWith = (dir, source) =>
+  marks.liftIfHealthy(dir, { harness: 'agy', group: 'claude', reading: healthy(source === undefined ? {} : { source }), readAt: NOW + 10 * MIN, reserve: RESERVE, lifeMs: LIFE, now: NOW + 10 * MIN })
+
+test('a healthy reading taken after the mark but from a source older than the mark does not lift it, and a source as new as the mark does', (t) => {
+  const dir = tempDir(t)
+  const held = mark(dir, {})
+  assert.deepEqual([held.confirmed, held.until - held.at], [false, 60 * MIN])
+  // The reading was taken now, yet what it read was written before the call that ended for quota.
+  assert.deepEqual(liftWith(dir, { command: 'muse exec --json', ts: iso(NOW - 1000), ageMinutes: 0 }), held)
+  assert.equal(fs.existsSync(marks.markFile(dir, 'agy', 'claude')), true, 'the mark file is still there')
+  assert.equal(liftWith(dir, { command: 'muse exec --json', ts: iso(NOW), ageMinutes: 0 }), null, 'a source written at the moment of the mark is not older than it')
+  assert.equal(fs.existsSync(marks.markFile(dir, 'agy', 'claude')), false)
+
+  const later = tempDir(t)
+  mark(later, {})
+  assert.equal(liftWith(later, { command: 'muse exec --json', ts: iso(NOW + MIN), ageMinutes: 0 }), null)
+  assert.equal(marks.liveMark(later, 'agy', 'claude', NOW + 10 * MIN), null)
+})
+
+test('a healthy reading with no source, or a source with no readable time, lifts a mark as it did before', (t) => {
+  const sources = { 'no source': undefined, 'a source with no time': { command: 'agy' }, 'a time that cannot be read': { ts: 'soon' }, 'a time that is null': { ts: null } }
+  for (const [name, source] of Object.entries(sources)) {
+    const dir = tempDir(t)
+    mark(dir, {})
+    assert.equal(liftWith(dir, source), null, name)
+    assert.equal(fs.existsSync(marks.markFile(dir, 'agy', 'claude')), false, name)
+  }
+})
+
+test('the source rule needs the time of the mark: a mark without one is lifted by a healthy reading whatever its source says', (t) => {
+  const dir = tempDir(t)
+  fs.mkdirSync(marks.marksDir(dir), { recursive: true })
+  fs.writeFileSync(marks.markFile(dir, 'agy', 'claude'), JSON.stringify({ harness: 'agy', group: 'claude', until: NOW + 30 * MIN, confirmed: false }))
+  assert.notEqual(marks.liveMark(dir, 'agy', 'claude', NOW + 10 * MIN), null)
+  assert.equal(liftWith(dir, { ts: iso(NOW - 60 * MIN) }), null)
+})

@@ -173,12 +173,16 @@ function healthyReading(reading, reserve) {
 }
 
 // Whether a reading lifts a live mark: the mark did not come from a refusal; the reading was taken after the mark was
-// written (a reading from before it is what the call that ended for quota had seen) and not after `now`; it is younger
-// than lifeMs, by when it was taken and by its own source's age; and it is healthy.
+// written (a reading from before it is what the call that ended for quota had seen) and not after `now`; its source,
+// when it says when it was written (source.ts), is not older than the mark either, since a harness that keeps its last
+// observation in a file is read at any time but shows what was written then (a source without a readable time leaves
+// the rule out); it is younger than lifeMs, by when it was taken and by its own source's age; and it is healthy.
 function liftable(mark, reading, { readAt, reserve, lifeMs, now = Date.now() }) {
   if (!mark || mark.reason === REFUSAL_REASON) return false
   if (!Number.isFinite(readAt) || readAt > now || now - readAt >= lifeMs) return false
   if (Number.isFinite(mark.at) && readAt < mark.at) return false
+  const sourceTs = Date.parse(reading && reading.source && reading.source.ts)
+  if (Number.isFinite(sourceTs) && Number.isFinite(mark.at) && sourceTs < mark.at) return false
   const sourceAge = reading && reading.source && reading.source.ageMinutes
   if (typeof sourceAge === 'number' && sourceAge * 60 * 1000 >= lifeMs) return false
   return healthyReading(reading, reserve)
