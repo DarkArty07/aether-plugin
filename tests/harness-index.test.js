@@ -9,8 +9,20 @@ const harnesses = require('../plugins/aether/lib/harness/index.js')
 
 const SETTINGS = { command: '/opt/x', groups: { g: 'G' } }
 
-test('the known harnesses are agy, codex, grok and cursor, in that order', () => {
-  assert.deepEqual(harnesses.HARNESS_NAMES, ['agy', 'codex', 'grok', 'cursor'])
+test('the known harnesses are agy, codex, grok, cursor and muse, in that order', () => {
+  assert.deepEqual(harnesses.HARNESS_NAMES, ['agy', 'codex', 'grok', 'cursor', 'muse'])
+})
+
+test('createAdapter builds muse from its module, and uses the factory registered under muse when there is one', () => {
+  const muse = harnesses.createAdapter('muse', { command: 'muse', groups: { muse: 'Muse subscription' } })
+  assert.equal(muse.name, 'muse')
+  harnesses.registerAdapter('muse', () => ({ name: 'registered-muse' }))
+  try {
+    assert.equal(harnesses.createAdapter('muse', { command: 'muse', groups: { muse: 'Muse subscription' } }).name, 'registered-muse')
+  } finally {
+    harnesses.unregisterAdapter('muse')
+  }
+  assert.equal(harnesses.createAdapter('muse', { command: 'muse', groups: {} }).name, 'muse')
 })
 
 test('createAdapter builds agy from its module', () => {

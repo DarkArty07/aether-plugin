@@ -6,7 +6,7 @@
 // when it is parsed: Claude Code refuses a whole pane that holds one control character, and a bidi override reorders a
 // row, so no external string reaches a part as it came.
 
-export const HARNESS_NAMES = ['agy', 'codex', 'grok', 'cursor']
+export const HARNESS_NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
 export const ROUTER_MODES = ['record', 'advise', 'command']
 export const ROUTER_DECIDERS = ['haiku', 'jev']
 export const SEAT_CHOICES = ['native', 'balanced', 'robust']
@@ -14,7 +14,7 @@ export const SEAT_CHOICES = ['native', 'balanced', 'robust']
 export const RECENT = 5
 export const DELEGATES_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 // How long each read may run: agy's own reading takes up to 60 s, grok's is ACP for 10 s and then its UI for 20 s.
-export const READ_TIMEOUT_MS = { agy: 75000, grok: 45000, codex: 20000, cursor: 20000 }
+export const READ_TIMEOUT_MS = { agy: 75000, grok: 45000, codex: 20000, cursor: 20000, muse: 20000 }
 export const DELEGATES_TIMEOUT_MS = 15000
 
 const FILLED = '█'

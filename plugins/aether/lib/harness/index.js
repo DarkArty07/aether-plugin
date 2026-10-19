@@ -3,8 +3,8 @@
 // The external harnesses a lane can run on, and the adapter each is built by. A harness module loads
 // only when a call asks for it, so one whose module is missing leaves the others working.
 
-const HARNESS_NAMES = ['agy', 'codex', 'grok', 'cursor']
-const FACTORY = { agy: 'createAgy', codex: 'createCodex', grok: 'createGrok', cursor: 'createCursor' }
+const HARNESS_NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
+const FACTORY = { agy: 'createAgy', codex: 'createCodex', grok: 'createGrok', cursor: 'createCursor', muse: 'createMuse' }
 
 // Factories added by tests, or by a caller that brings its own harness, under any name.
 const registered = new Map()
