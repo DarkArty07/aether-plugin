@@ -255,7 +255,7 @@ const LANES = {
   maxParallel: 4,
   waits: { implementer: 3, supervisor: 2, reviewer: 2 },
   calls: {
-    implementer: { haiku: { model: 'gemini-3.8-flash', group: 'flash' }, sonnet: { model: 'claude-sonnet-5-5', group: 'claude' } },
+    implementer: { haiku: { model: 'gemini-3.8-flash', group: 'gemini' }, sonnet: { model: 'claude-sonnet-5-5', group: 'claude' } },
     supervisor: { sonnet: { model: 'claude-sonnet-5-5', group: 'claude' } },
     reviewer: { opus: { model: 'claude-opus-5-5', group: 'claude' } },
   },

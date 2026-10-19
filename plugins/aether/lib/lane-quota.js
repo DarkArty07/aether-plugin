@@ -146,7 +146,9 @@ function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fr
   const groups = {}
   for (const key of new Set([...keys, ...Object.keys(read.groups ?? {})])) {
     const reading = Object.hasOwn(read.groups ?? {}, key) ? read.groups[key] : { unknown: true, windows: {} }
-    groups[key] = groupView(settings.groups?.[key], reading, { reserve, now, command: settings.command, mark: markOf(key), readAt: read.readAt, lifeMs })
+    // A mark that came from a reading is lifted by a fresh healthy one (lane-marks.js), so the view shows no mark for it.
+    const mark = marks.liftIfHealthy(dataDir, { harness: name, group: key, reading, readAt: read.readAt, reserve, lifeMs, now })
+    groups[key] = groupView(settings.groups?.[key], reading, { reserve, now, command: settings.command, mark, readAt: read.readAt, lifeMs })
   }
   return { ...base, version, groups }
 }
@@ -325,4 +327,4 @@ async function quotaCommand(args, options = {}) {
   return json ? `${JSON.stringify(report)}\n` : formatReport(report)
 }
 
-module.exports = { USAGE, quotaCommand, quotaReport, formatReport, localTime, groupView, harnessView, refreshStale }
+module.exports = { USAGE, lifeMsOf, quotaCommand, quotaReport, formatReport, localTime, groupView, harnessView, refreshStale }

@@ -7,7 +7,7 @@ const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
 
-const GROUPS = { flash: 'Gemini Models', claude: 'Claude and GPT models' }
+const GROUPS = { gemini: 'Gemini Models', claude: 'Claude and GPT models' }
 const ZERO = { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 0 }
 
 // The shape agy 1.3.2 printed for /usage on 2026-10-08, with one group added that the table does not name.
@@ -71,7 +71,7 @@ test("quota reads each configured group's windows from /usage", () => {
   assert.equal(agy.name, 'agy')
   assert.deepEqual(agy.quota(), {
     groups: {
-      flash: {
+      gemini: {
         windows: {
           weekly: { remaining: 0.9608922600746155, resetsAt: '2026-10-14T03:35:44Z' },
           '5h': { remaining: 0.9534739255905151, resetsAt: '2026-10-09T05:53:31Z' },

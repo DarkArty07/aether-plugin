@@ -41,7 +41,7 @@ function statusEnv(t, { ageMinutes = 5, agyQuota = null, extra = {} } = {}) {
   entry.ctx.config.currentPeriod.end = inHours(50)
   fs.writeFileSync(logFile, `${JSON.stringify(entry)}\n`)
   const graphFile = path.join(args.runDir, 'graph.json')
-  const flash = { model: 'gemini-3.8-flash', group: 'flash', harness: 'agy' }
+  const flash = { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' }
   const grok = { model: 'grok-4.7', group: 'grok', harness: 'grok' }
   const sonnet = { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' }
   fs.writeFileSync(
@@ -61,8 +61,8 @@ test('status gives each group its view and, per role and native model, the order
   const grok = harnesses.grok.groups.grok
   assert.deepEqual([harnesses.grok.enabled, harnesses.grok.installed, grok.usable, grok.unknown, grok.usedPercentAbsent, grok.source.ageMinutes], [true, true, true, false, true, 5])
   assert.ok(Math.abs(grok.priority - 1 / 50) < 0.001, String(grok.priority))
-  assert.deepEqual([harnesses.agy.groups.flash.usable, harnesses.agy.groups.claude.usable, harnesses.agy.groups.claude.label], [true, false, 'Claude and GPT models'])
-  assert.ok(Math.abs(harnesses.agy.groups.flash.priority - 0.9 / 200) < 0.001, String(harnesses.agy.groups.flash.priority))
+  assert.deepEqual([harnesses.agy.groups.gemini.usable, harnesses.agy.groups.claude.usable, harnesses.agy.groups.claude.label], [true, false, 'Claude and GPT models'])
+  assert.ok(Math.abs(harnesses.agy.groups.gemini.priority - 0.9 / 200) < 0.001, String(harnesses.agy.groups.gemini.priority))
   // Grok goes before Gemini for the haiku implementer, and the only sonnet candidate is under the reserve.
   assert.deepEqual(order.implementer.haiku.ordered.map((e) => `${e.harness}:${e.model}:${e.state}`), ['grok:grok-4.7:priority', 'agy:gemini-3.8-flash:priority'])
   assert.deepEqual(order.implementer.sonnet, { ordered: [], excluded: [{ ...order.implementer.sonnet.excluded[0], why: 'reserve', state: 'excluded' }] })
@@ -89,7 +89,7 @@ test('status keeps a reading that launches a process for its life, and logs one 
   assert.equal(usageCalls(env).length, 1)
   const entries = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading')
   assert.deepEqual(entries.map((e) => [e.harness, e.run]).sort(), [['agy', args.runId], ['agy', args.runId], ['grok', args.runId], ['grok', args.runId]])
-  assert.deepEqual(Object.keys(entries.find((e) => e.harness === 'agy').groups).sort(), ['argon', 'claude', 'flash'])
+  assert.deepEqual(Object.keys(entries.find((e) => e.harness === 'agy').groups).sort(), ['claude', 'gemini'])
   // The quota command is a deliberate reading, and takes a new one.
   const quota = runBin(fx.LANE_BIN, ['quota', 'agy', '--json'], args.repoRoot, env)
   assert.equal(quota.status, 0, quota.stdout + quota.stderr)
@@ -103,7 +103,7 @@ test('a reading that fails leaves the groups of its harness unknown, and the can
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const agy = r.json.harnesses.agy
   assert.match(agy.error, /agy \/usage failed/)
-  assert.deepEqual([agy.groups.flash.unknown, agy.groups.flash.usable, agy.groups.claude.unknown], [true, true, true])
+  assert.deepEqual([agy.groups.gemini.unknown, agy.groups.gemini.usable, agy.groups.claude.unknown], [true, true, true])
   // Gemini has no reading, so Grok, which has one, goes first; and the sonnet candidate is no longer left out.
   assert.deepEqual(r.json.order.implementer.haiku.ordered.map((e) => [e.model, e.state]), [['grok-4.7', 'priority'], ['gemini-3.8-flash', 'unknown']])
   assert.deepEqual(r.json.order.implementer.sonnet.ordered.map((e) => [e.model, e.state]), [['claude-sonnet-5-5', 'unknown']])

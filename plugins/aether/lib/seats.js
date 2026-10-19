@@ -16,6 +16,7 @@ const run = require('./run.js')
 const lanes = require('./lanes.js')
 const schemas = require('./lane-schemas.js')
 const laneMarks = require('./lane-marks.js')
+const laneQuota = require('./lane-quota.js')
 const { refusalIn } = require('./quota-refusal.js')
 const { createAdapter } = require('./harness/index.js')
 const { roleBody, claudeMdSections, WORKDIR_RULE } = require('./lane-calls.js')
@@ -68,7 +69,8 @@ function authorModel(author) {
 // Who takes seat under the seats choice: the first external model on its list whose harness is enabled
 // and installed, that is not the author's model, and whose group has no dry mark and has quota above the
 // reserve; else the native agent. Pure apart from the calls it is given: installed(harness), quota(harness, group)
-// and marked(harness, group), which says whether a live mark holds the group (none, when it is not given).
+// and marked(harness, group, reading), which says whether a live mark still holds the group once the reading of the
+// group (null when it could not be read) has had the chance to lift it; with none given, no mark holds.
 // Returns { off } for an examiner the choice does not run, { external } or { native }, each with the
 // models it passed over and why.
 function chooseSeat(config, { choice, seat, author = null, enabled = [], installed, quota, marked = () => false }) {
@@ -92,15 +94,20 @@ function chooseSeat(config, { choice, seat, author = null, enabled = [], install
       tried.push({ model: item, reason: 'not-installed' })
       continue
     }
-    // A group a mark holds is not read: its mark is the answer until its end.
-    if (marked(harnessName, entry.group)) {
-      tried.push({ model: item, reason: 'quota' })
-      continue
-    }
-    let reading
+    // The group is read first: a healthy reading lifts a mark that came from a reading, and the group is passed over
+    // only if a mark still holds, whether or not the reading could be read.
+    let reading = null
+    let unreadable = false
     try {
       reading = quota(harnessName, settings, entry.group)
     } catch {
+      unreadable = true
+    }
+    if (marked(harnessName, entry.group, reading)) {
+      tried.push({ model: item, reason: 'quota' })
+      continue
+    }
+    if (unreadable) {
       tried.push({ model: item, reason: 'quota-unreadable' })
       continue
     }
@@ -684,7 +691,9 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     enabled: lanes.enabledHarnesses(env),
     installed: (name, settings) => adapterOf(name, settings).installed(),
     quota: (name, settings, group) => adapterOf(name, settings).quota().groups[group] ?? null,
-    marked: (name, group) => laneMarks.liveMark(dataDir, name, group) !== null,
+    // The reading was taken a moment ago, so its life is the harness's whole life.
+    marked: (name, group, reading) =>
+      laneMarks.liftIfHealthy(dataDir, { harness: name, group, reading, readAt: Date.now(), reserve: config.reserve, lifeMs: laneQuota.lifeMsOf(config.harnesses[name]), now: Date.now() }) !== null,
   })
   if (chosen.native) {
     note('native', { reason: 'no-external', tried: chosen.tried })

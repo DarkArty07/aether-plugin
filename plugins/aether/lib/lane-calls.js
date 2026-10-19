@@ -251,13 +251,14 @@ function clearCallDir(paths) {
   }
 }
 
-// The group's reading from the harness's saved or fresh reading, or null when the reading fails or does not carry the
-// group: an unknown group (R8), which never holds a call back and never leaves a mark.
+// The group's reading from the harness's saved or fresh reading, with when it was taken, or { reading: null } when the
+// reading fails or does not carry the group: an unknown group (R8), which never holds a call back and never leaves a mark.
 function readGroup(adapter, { harness, settings, group, dataDir }) {
   try {
-    return readings.readGroups(adapter, { harness, settings, dataDir }).groups[group] ?? null
+    const read = readings.readGroups(adapter, { harness, settings, dataDir })
+    return { reading: read.groups[group] ?? null, readAt: read.readAt }
   } catch {
-    return null
+    return { reading: null, readAt: null }
   }
 }
 
@@ -296,11 +297,19 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   if (!lane) return { unavailable: 'role' }
   if (!adapter.installed()) return { unavailable: 'not-installed' }
   const dataDir = run.dataDir()
-  // A group a live mark holds is not read and its mark is not renewed: it is held until the mark's end.
-  if (marks.liveMark(dataDir, name, lane.group) !== null) return { unavailable: 'quota' }
+  // A group a live mark holds is held until the mark's end and its mark is not renewed. A refusal's mark is not read
+  // for: no reading lifts it. Any other mark is given the chance to be lifted by the reading of the group (the kept one,
+  // or a new one when it has expired), and holds if that does not lift it.
+  const held = marks.liveMark(dataDir, name, lane.group)
+  if (held !== null && held.reason === marks.REFUSAL_REASON) return { unavailable: 'quota' }
   // A reading that fails leaves the group unknown (R8), so the call starts: a harness that is broken fails the call
   // and the call goes native like any other failure. Only a reading that shows the group under the reserve holds it.
-  const quotaBefore = readGroup(adapter, { harness: name, settings: harness, group: lane.group, dataDir })
+  const { reading: quotaBefore, readAt } = readGroup(adapter, { harness: name, settings: harness, group: lane.group, dataDir })
+  if (held !== null) {
+    const reserve = config.reserve
+    const still = marks.liftIfHealthy(dataDir, { harness: name, group: lane.group, reading: quotaBefore, readAt, reserve, lifeMs: quota.lifeMsOf(harness), now: Date.now() })
+    if (still !== null) return { unavailable: 'quota' }
+  }
   if (quotaBefore !== null && !lanes.usable(quotaBefore, config.reserve)) {
     holdDry(dataDir, { harness: name, group: lane.group, reading: quotaBefore, config, now: Date.now() })
     return { unavailable: 'quota' }

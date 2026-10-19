@@ -49,7 +49,7 @@ test('renewReading saves grok\'s refreshed reading where the router reads it, va
 
 test('renewReading takes agy\'s reading fresh through readGroups, and saves it too', async (t) => {
   const dataDir = tempDir(t)
-  const groups = { flash: weeklyIn(10), claude: weeklyIn(40) }
+  const groups = { gemini: weeklyIn(10), claude: weeklyIn(40) }
   const calls = []
   const adapter = { quotaCost: 'process' }
   const createAdapter = (name, settings) => { calls.push(['create', name, settings]); return adapter }

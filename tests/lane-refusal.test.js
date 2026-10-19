@@ -1,19 +1,26 @@
 'use strict'
 
-// Issue 021 and decision A60: agy has three individual quotas (Argon, Flash, Claude and GPT) and /usage lists two groups,
-// so the table keeps three keys and two of them read one /usage group; a call agy refuses with «Individual quota
-// reached» leaves a mark on the key of the model that was refused, in the swarm's lane calls and in the design seats.
-// The mark holds dryMarkMinutes (60), not the reset agy states, which was once wrong: the stated reset is kept in it.
+// Issue 021, issue 015 and decision A60. agy's /usage lists two groups and its refusal («Individual quota reached») is
+// the only sign of an individual limit, so:
+//   - the table may have several keys read one /usage group (`splitTable` below builds the three-key shape a later split
+//     would use; the shipped table has one Gemini key);
+//   - a call agy refuses leaves a mark on the key of the model that was refused, in the swarm's lane calls and in the
+//     design seats, that holds dryMarkMinutes (60), not the reset agy states, which was once wrong: it is kept in the mark;
+//   - a mark that came from a reading is lifted by a fresh healthy reading, and a refusal's mark never is;
+//   - an unconfirmed mark cannot hold longer than 60 minutes whatever its file says;
+//   - a mark of a key the table does not have is ignored.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { makeRepo, runBin } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const marks = require('../plugins/aether/lib/lane-marks.js')
+const seats = require('../plugins/aether/lib/seats.js')
 const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
 const { quotaRefusal, refusalIn } = require('../plugins/aether/lib/quota-refusal.js')
 const { readAllMarks } = require('../plugins/aether/lib/router-marks.js')
@@ -24,13 +31,26 @@ const FEATURE = 'specs/001-demo'
 const HOUR = 3600 * 1000
 const MIN = 60 * 1000
 const RESERVE = 0.05
+const LIFE = 10 * MIN
 // The refusal as agy 1.3.6 words it, with the reset it states: 163 h 22 min 27 s.
 const REFUSAL = 'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 163h22m27s.'
 const RESET_MS = (163 * 60 + 22) * MIN + 27 * 1000
 const refuse = (extra = []) => [...extra, `FAKE-AGY: exit-error ${REFUSAL}`, 'FAKE-AGY: exit-code 3']
+const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote it.', head: '', tests: '1/1 pass', concerns: '', question: '' })
+const APPROVE = JSON.stringify({ verdict: 'approve', findings: [], openQuestions: [] })
 const flags = (digest) => ['--role', 'implementer', '--task', 'task-1', '--model', 'gemini-3.8-flash', '--effort', 'xhigh', '--digest', digest]
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'aether-refusal-'))
+const healthy = (readAt = Date.now()) => ({ windows: { '5h': { remaining: 0.98, resetsAt: new Date(readAt + 4 * HOUR).toISOString() }, weekly: { remaining: 0.99, resetsAt: new Date(readAt + 160 * HOUR).toISOString() } } })
+const dry = (readAt = Date.now()) => ({ windows: { weekly: { remaining: 0.01, resetsAt: new Date(readAt + 40 * HOUR).toISOString() } } })
 
-// A call of the swarm on gemini-3.8-flash (the Flash group), and its result.
+// The shape a later split of the Gemini group would have: three keys for agy, two of them reading «Gemini Models».
+function splitTable(config) {
+  config.harnesses.agy.groups = { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' }
+  config.harnesses.agy.models['gemini-3.8-flash'].group = 'flash'
+  config.harnesses.agy.models['gemini-4-argon'].group = 'argon'
+}
+
+// A call of the swarm on gemini-3.8-flash, and its result.
 function runFlashCall(t, lines, env) {
   const { args } = fx.laneRun(t)
   const digest = fx.writePrompt(args, IMPLEMENT, ['You are implementing task-1: Task 1 title.', ...lines].join('\n'))
@@ -56,6 +76,8 @@ function judgeRound(repo, env, input) {
   return { status: r.status, json: JSON.parse(r.stdout.trim().split('\n').pop()) }
 }
 
+// ---- the refusal ----
+
 test('the refusal is recognized, with the reset it states, in the text of a failed call', () => {
   assert.deepEqual(quotaRefusal(`exit 3: ${REFUSAL}`), { resetMs: RESET_MS })
   assert.deepEqual(quotaRefusal('Individual quota reached. Resets in 45m.'), { resetMs: 45 * MIN })
@@ -65,6 +87,37 @@ test('the refusal is recognized, with the reset it states, in the text of a fail
   assert.deepEqual(refusalIn('exit 1: other', '', `Error: ${REFUSAL}`), { resetMs: RESET_MS }, 'the first text that holds it')
   assert.equal(refusalIn('exit 1: other', null), null)
 })
+
+test('a refusal marks the key of the refused model for 60 minutes, though it states 163 h, and keeps the stated reset', () => {
+  const dataDir = tmp()
+  const now = Date.now()
+  const mark = marks.markDry(dataDir, { harness: 'agy', group: 'argon', reserve: RESERVE, now, refusal: quotaRefusal(REFUSAL) })
+  assert.deepEqual([mark.confirmed, mark.reason, mark.until, mark.resetsAt, mark.statedResetMs], [false, 'quota refusal', now + 60 * MIN, null, RESET_MS])
+  assert.notEqual(marks.liveMark(dataDir, 'agy', 'argon', now + 59 * MIN), null)
+  assert.equal(marks.liveMark(dataDir, 'agy', 'argon', now + 61 * MIN), null, 'an hour later the group is tried again')
+  assert.equal(marks.liveMark(dataDir, 'agy', 'flash'), null)
+  assert.equal(marks.liveMark(dataDir, 'agy', 'claude'), null)
+  // The length is the one the caller gives (the table's dryMarkMinutes), and a refusal that states no reset keeps none.
+  const short = marks.markDry(dataDir, { harness: 'agy', group: 'flash', reserve: RESERVE, now, minutes: 15, refusal: { resetMs: 30 * 24 * HOUR } })
+  assert.deepEqual([short.until - now, short.statedResetMs], [15 * MIN, 30 * 24 * HOUR])
+  const plain = marks.markDry(dataDir, { harness: 'agy', group: 'claude', reserve: RESERVE, now, refusal: { resetMs: null } })
+  assert.deepEqual([plain.until - now, plain.statedResetMs], [marks.DEFAULT_MARK_MINUTES * MIN, null])
+  fs.rmSync(dataDir, { recursive: true, force: true })
+})
+
+test('a reading with balance does not lift the mark of a refusal, nor shorten it', () => {
+  const dataDir = tmp()
+  const now = Date.now()
+  const held = marks.markDry(dataDir, { harness: 'agy', group: 'argon', reserve: RESERVE, now, refusal: quotaRefusal(REFUSAL) })
+  assert.deepEqual(marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: healthy(now), reserve: RESERVE, now: now + MIN }), held)
+  assert.deepEqual(marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: { unknown: true, windows: {} }, reserve: RESERVE, now: now + 2 * MIN }), held)
+  assert.deepEqual(marks.liveMark(dataDir, 'agy', 'argon', now + 3 * MIN), held)
+  // A reading that shows the group under the reserve, with its reset, is another matter: it replaces the mark.
+  assert.equal(marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: dry(now), reserve: RESERVE, now: now + 4 * MIN }).confirmed, true)
+  fs.rmSync(dataDir, { recursive: true, force: true })
+})
+
+// ---- a /usage group that feeds several keys ----
 
 test('two keys of the table may read one /usage group: each gets its windows, and a group that is not listed is unknown for all its keys', () => {
   const groups = { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' }
@@ -83,50 +136,21 @@ test('two keys of the table may read one /usage group: each gets its windows, an
   assert.equal(partial.claude.unknown, undefined)
 })
 
-test('the shipped table has three agy keys, two of them reading «Gemini Models», and each model belongs to its own', () => {
+test('the shipped table has one Gemini key for agy, which holds Flash and Argon, and one for the Claude and GPT models', () => {
   const agy = lanes.loadConfig(lanes.CONFIG_FILE).harnesses.agy
-  assert.deepEqual(agy.groups, { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' })
+  assert.deepEqual(agy.groups, { gemini: 'Gemini Models', claude: 'Claude and GPT models' })
   assert.deepEqual(Object.fromEntries(Object.entries(agy.models).map(([id, model]) => [id, model.group])), {
-    'gemini-3.8-flash': 'flash',
+    'gemini-3.8-flash': 'gemini',
     'claude-sonnet-5-5': 'claude',
     'claude-opus-5-5': 'claude',
-    'gemini-4-argon': 'argon',
+    'gemini-4-argon': 'gemini',
   })
 })
 
-test('a refusal marks the key of the refused model for 60 minutes, though it states 163 h, and keeps the stated reset', () => {
-  const dataDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-refusal-'))
-  const now = Date.now()
-  const mark = marks.markDry(dataDir, { harness: 'agy', group: 'argon', reserve: RESERVE, now, refusal: quotaRefusal(REFUSAL) })
-  assert.deepEqual([mark.confirmed, mark.reason, mark.until, mark.resetsAt, mark.statedResetMs], [false, 'quota refusal', now + 60 * MIN, null, RESET_MS])
-  assert.notEqual(marks.liveMark(dataDir, 'agy', 'argon', now + 59 * MIN), null)
-  assert.equal(marks.liveMark(dataDir, 'agy', 'argon', now + 61 * MIN), null, 'an hour later the group is tried again')
-  assert.equal(marks.liveMark(dataDir, 'agy', 'flash'), null)
-  assert.equal(marks.liveMark(dataDir, 'agy', 'claude'), null)
-  // The length is the one the caller gives (the table's dryMarkMinutes), and a refusal that states no reset keeps none.
-  const short = marks.markDry(dataDir, { harness: 'agy', group: 'flash', reserve: RESERVE, now, minutes: 15, refusal: { resetMs: 30 * 24 * HOUR } })
-  assert.deepEqual([short.until - now, short.statedResetMs], [15 * MIN, 30 * 24 * HOUR])
-  const plain = marks.markDry(dataDir, { harness: 'agy', group: 'claude', reserve: RESERVE, now, refusal: { resetMs: null } })
-  assert.deepEqual([plain.until - now, plain.statedResetMs], [marks.DEFAULT_MARK_MINUTES * MIN, null])
-  fs.rmSync(dataDir, { recursive: true, force: true })
-})
-
-test('a reading with balance does not lift the mark of a refusal, nor shorten it', () => {
-  const dataDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-refusal-'))
-  const now = Date.now()
-  const held = marks.markDry(dataDir, { harness: 'agy', group: 'argon', reserve: RESERVE, now, refusal: quotaRefusal(REFUSAL) })
-  const balance = { windows: { '5h': { remaining: 0.98, resetsAt: new Date(now + 4 * HOUR).toISOString() }, weekly: { remaining: 0.99, resetsAt: new Date(now + 160 * HOUR).toISOString() } } }
-  assert.deepEqual(marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: balance, reserve: RESERVE, now: now + MIN }), held)
-  assert.deepEqual(marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: { unknown: true, windows: {} }, reserve: RESERVE, now: now + 2 * MIN }), held)
-  assert.deepEqual(marks.liveMark(dataDir, 'agy', 'argon', now + 3 * MIN), held)
-  // A reading that shows the group under the reserve, with its reset, is another matter: it replaces the mark.
-  const dry = { windows: { weekly: { remaining: 0.01, resetsAt: new Date(now + 40 * HOUR).toISOString() } } }
-  assert.equal(marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: dry, reserve: RESERVE, now: now + 4 * MIN }).confirmed, true)
-  fs.rmSync(dataDir, { recursive: true, force: true })
-})
+// ---- the swarm and the seats mark a refusal ----
 
 test('a swarm call agy refuses leaves the mark of Flash alone for an hour, though /usage shows balance, and the next start skips it', (t) => {
-  const env = fx.laneEnv(t)
+  const env = fx.laneEnv(t, { mutate: splitTable })
   const { done, args } = runFlashCall(t, refuse(), env)
   assert.equal(done.status, 'quota', done.detail)
   assert.match(done.detail, /^exit 3: Individual quota reached/)
@@ -152,7 +176,7 @@ test('a swarm call agy refuses leaves the mark of Flash alone for an hour, thoug
 
 test('a seat round on Argon that agy refuses marks Argon only, and the next round skips it for the native agent while Flash stays usable', (t) => {
   const repo = seatRepo(t)
-  const env = fx.laneEnv(t)
+  const env = fx.laneEnv(t, { mutate: splitTable })
   const first = judgeRound(repo, env, `Review.\n${refuse().join('\n')}\n`)
   assert.equal(first.status, 4, JSON.stringify(first.json))
   assert.equal(first.json.failed, 'quota')
@@ -168,44 +192,155 @@ test('a seat round on Argon that agy refuses marks Argon only, and the next roun
   assert.equal(fx.agyTurns(env).length, turns, 'the held group is not called again')
 
   // Flash is still a lane for the swarm: its call goes through while Argon is held.
-  const { done } = runFlashCall(t, ['FAKE-AGY: answer ' + JSON.stringify({ status: 'DONE', summary: 'Wrote it.', head: '', tests: '1/1 pass', concerns: '', question: '' })], env)
+  const { done } = runFlashCall(t, [`FAKE-AGY: answer ${DONE}`], env)
   assert.equal(done.status, 'ok', done.detail)
 })
 
-test('chooseSeat leaves out a group a mark holds, without reading its quota', () => {
-  const seats = require('../plugins/aether/lib/seats.js')
-  const config = lanes.loadConfig(lanes.CONFIG_FILE)
-  const fine = { windows: { weekly: { remaining: 0.9, resetsAt: 'a' } } }
-  const quota = () => assert.fail('a held group is not read')
-  const options = { choice: 'balanced', seat: 'judge', enabled: ['agy'], installed: () => true }
-  assert.deepEqual(seats.chooseSeat(config, { ...options, quota, marked: (harness, group) => harness === 'agy' && group === 'argon' }).tried, [{ model: 'agy/gemini-4-argon', reason: 'quota' }])
-  assert.equal(seats.chooseSeat(config, { ...options, quota: () => fine, marked: (harness, group) => group === 'flash' }).external.group, 'argon')
+test('with the shipped table, one Gemini key, a refusal on Argon holds Flash too, for an hour', (t) => {
+  const repo = seatRepo(t)
+  const env = fx.laneEnv(t)
+  const first = judgeRound(repo, env, `Review.\n${refuse().join('\n')}\n`)
+  assert.equal(first.json.failed, 'quota', JSON.stringify(first.json))
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini').reason, 'quota refusal')
+  const { args } = fx.laneRun(t)
+  const digest = fx.writePrompt(args, IMPLEMENT, 'again')
+  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json, { unavailable: 'quota' })
 })
 
-test('a mark file of a group the table no longer has (agy__gemini.json) is ignored by every reader, and nothing is deleted', (t) => {
+test('chooseSeat reads the group first, and passes it over only if a mark still holds it once the reading has had its chance', () => {
+  const config = lanes.loadConfig(lanes.CONFIG_FILE)
+  const options = { choice: 'balanced', seat: 'judge', enabled: ['agy'], installed: () => true }
+  const asked = []
+  const quota = (harness, settings, group) => (asked.push(group), healthy())
+  const held = seats.chooseSeat(config, { ...options, quota, marked: (harness, group, reading) => (assert.ok(reading.windows), true) })
+  assert.deepEqual([held.tried, asked], [[{ model: 'agy/gemini-4-argon', reason: 'quota' }], ['gemini']], 'it was read, and the mark held')
+  assert.equal(seats.chooseSeat(config, { ...options, quota, marked: () => false }).external.group, 'gemini', 'the mark was lifted')
+  const unreadable = () => {
+    throw new Error('agy /usage failed')
+  }
+  assert.deepEqual(seats.chooseSeat(config, { ...options, quota: unreadable, marked: () => true }).tried, [{ model: 'agy/gemini-4-argon', reason: 'quota' }])
+  assert.deepEqual(seats.chooseSeat(config, { ...options, quota: unreadable, marked: () => false }).tried, [{ model: 'agy/gemini-4-argon', reason: 'quota-unreadable' }])
+})
+
+// ---- a mark of a key the table does not have ----
+
+test('a mark file of a key the table does not have is ignored by every reader, and nothing is deleted', (t) => {
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t)
-  const orphan = marks.markFile(env.AETHER_DATA_DIR, 'agy', 'gemini')
+  // agy's table had three keys for a day; its files for `argon` and `flash` stay on disk when the table has one.
+  const orphan = marks.markFile(env.AETHER_DATA_DIR, 'agy', 'argon')
   fs.mkdirSync(path.dirname(orphan), { recursive: true })
-  const body = JSON.stringify({ harness: 'agy', group: 'gemini', at: Date.now(), until: Date.now() + 5 * 24 * HOUR, confirmed: true, resetsAt: null, usedPercentAbsent: false })
+  const body = JSON.stringify({ harness: 'agy', group: 'argon', at: Date.now(), until: Date.now() + 5 * 24 * HOUR, confirmed: true, resetsAt: null, usedPercentAbsent: false })
   fs.writeFileSync(orphan, body)
 
   const quota = runBin(fx.LANE_BIN, ['quota', 'agy', '--json'], args.repoRoot, env)
   assert.equal(quota.status, 0, quota.stdout + quota.stderr)
   const shown = quota.json.harnesses.agy.groups
-  assert.deepEqual(Object.keys(shown), ['argon', 'flash', 'claude'])
+  assert.deepEqual(Object.keys(shown), ['gemini', 'claude'])
   assert.ok(Object.values(shown).every((group) => group.mark === null && group.usable === true))
   const status = fx.lane(args, 'status', [], env)
   assert.equal(status.status, 0, status.stdout + status.stderr)
   assert.deepEqual(status.json.marks, [])
   assert.ok(Object.values(status.json.harnesses.agy.groups).every((group) => group.mark === null))
-  assert.equal(quota.stdout.includes('gemini,'), false)
+  assert.equal(quota.stdout.includes('argon'), false)
 
   const known = lanes.groupKnown(lanes.loadConfig(lanes.CONFIG_FILE))
   assert.equal(marks.liveMarks(env.AETHER_DATA_DIR).length, 1, 'the file is still on disk')
   assert.deepEqual(readAllMarks(env.AETHER_DATA_DIR, Date.now(), known), [])
   assert.equal(fs.readFileSync(orphan, 'utf8'), body)
-  // A call and a seat on the removed key's models start as if it were not there.
-  const { done } = runFlashCall(t, ['FAKE-AGY: answer ' + JSON.stringify({ status: 'DONE', summary: 'Wrote it.', head: '', tests: '1/1 pass', concerns: '', question: '' })], env)
+  // A call on the table's models starts as if it were not there.
+  const { done } = runFlashCall(t, [`FAKE-AGY: answer ${DONE}`], env)
   assert.equal(done.status, 'ok', done.detail)
+})
+
+// ---- an unconfirmed mark cannot hold longer than 60 minutes ----
+
+test('an unconfirmed mark of 161 hours, as found on the owner\'s disk, is read as ending 60 minutes after it was written', () => {
+  const dataDir = tmp()
+  const found = { harness: 'agy', group: 'gemini', at: 1792131450120, until: 1792712790120, confirmed: false, resetsAt: null, usedPercentAbsent: false }
+  fs.mkdirSync(marks.marksDir(dataDir), { recursive: true })
+  fs.writeFileSync(marks.markFile(dataDir, 'agy', 'gemini'), JSON.stringify(found))
+  assert.equal((found.until - found.at) / HOUR, 161.48333333333332)
+  const at = found.at
+  assert.equal(marks.liveMark(dataDir, 'agy', 'gemini', at + 10 * MIN).until, at + 60 * MIN)
+  assert.equal(marks.liveMarks(dataDir, at + 10 * MIN)[0].until, at + 60 * MIN)
+  assert.equal(marks.liveMark(dataDir, 'agy', 'gemini', at + 61 * MIN), null, 'the file says 161 h; the mark ended after 60 minutes')
+  assert.deepEqual(marks.liveMarks(dataDir, at + 61 * MIN), [])
+  // A confirmed mark keeps its reset, and a mark written for a longer table keeps the minutes it was given.
+  fs.writeFileSync(marks.markFile(dataDir, 'agy', 'claude'), JSON.stringify({ ...found, group: 'claude', confirmed: true }))
+  fs.writeFileSync(marks.markFile(dataDir, 'agy', 'flash'), JSON.stringify({ ...found, group: 'flash', until: at + 120 * MIN, minutes: 120 }))
+  assert.notEqual(marks.liveMark(dataDir, 'agy', 'claude', at + 61 * MIN), null)
+  assert.notEqual(marks.liveMark(dataDir, 'agy', 'flash', at + 61 * MIN), null)
+  assert.equal(marks.liveMark(dataDir, 'agy', 'flash', at + 121 * MIN), null)
+  fs.rmSync(dataDir, { recursive: true, force: true })
+})
+
+// ---- a healthy reading lifts a mark that came from a reading ----
+
+test('liftIfHealthy lifts a mark from a reading when a fresh healthy reading taken after it shows every window above the reserve', () => {
+  const dataDir = tmp()
+  const now = Date.now()
+  const base = { harness: 'agy', group: 'gemini', reserve: RESERVE, lifeMs: LIFE }
+  const mark = (at, extra = {}) => marks.markDry(dataDir, { harness: 'agy', group: 'gemini', reading: dry(at), reserve: RESERVE, now: at, ...extra })
+  const lift = (reading, readAt, at = now) => marks.liftIfHealthy(dataDir, { ...base, reading, readAt, now: at })
+
+  mark(now - 30 * MIN)
+  assert.notEqual(marks.liveMark(dataDir, 'agy', 'gemini', now), null)
+  // None of these lifts it: still under the reserve, a window without a balance, unknown, taken before the mark, older
+  // than the reading's life, or not taken yet.
+  assert.notEqual(lift(dry(now), now), null, 'under the reserve')
+  assert.notEqual(lift({ windows: { weekly: { remaining: 0.9, resetsAt: 'x' }, '5h': { remaining: null } } }, now), null, 'a window without a balance')
+  assert.notEqual(lift({ unknown: true, windows: {} }, now), null, 'unknown')
+  assert.notEqual(lift({ ...healthy(now), usedPercentAbsent: true }, now), null, 'a percentage that was not read')
+  assert.notEqual(lift(healthy(now - 40 * MIN), now - 40 * MIN), null, 'taken before the mark')
+  assert.notEqual(lift(healthy(now - 11 * MIN), now - 11 * MIN), null, 'older than quotaLifeMinutes')
+  assert.notEqual(lift({ ...healthy(now), source: { ageMinutes: 31 } }, now, now), null, 'its own source is older than its life')
+  assert.notEqual(lift(healthy(now + MIN), now + MIN), null, 'taken in the future')
+  assert.notEqual(marks.liveMark(dataDir, 'agy', 'gemini', now), null, 'the mark was never lifted')
+  // A fresh healthy reading taken after it does.
+  assert.equal(lift(healthy(now - MIN), now - MIN), null)
+  assert.equal(marks.liveMark(dataDir, 'agy', 'gemini', now), null)
+  assert.equal(fs.existsSync(marks.markFile(dataDir, 'agy', 'gemini')), false)
+
+  // A refusal's mark is never lifted by a reading, however healthy and fresh.
+  mark(now - 30 * MIN, { reading: null, refusal: quotaRefusal(REFUSAL) })
+  assert.notEqual(lift(healthy(now), now), null)
+  assert.equal(marks.liveMark(dataDir, 'agy', 'gemini', now).reason, 'quota refusal')
+  fs.rmSync(dataDir, { recursive: true, force: true })
+})
+
+test('aether-lane quota and status lift a mark from a reading when the fresh reading is healthy, and not a refusal\'s mark', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t)
+  const written = (extra) => marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reading: dry(), reserve: RESERVE, now: Date.now() - 20 * MIN, ...extra })
+  const groups = (verb) => (verb === 'quota' ? runBin(fx.LANE_BIN, ['quota', 'agy', '--json'], args.repoRoot, env).json : fx.lane(args, 'status', [], env).json).harnesses.agy.groups
+
+  written()
+  assert.equal(groups('quota').gemini.mark, null, 'quota takes a fresh reading, with balance: the mark is lifted')
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null)
+  written()
+  assert.equal(groups('status').gemini.mark, null, 'status serves the kept reading, taken after the mark')
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null)
+  written({ reading: null, refusal: quotaRefusal(REFUSAL) })
+  assert.equal(groups('quota').gemini.mark.reason, 'quota refusal')
+  assert.equal(groups('status').gemini.usable, false)
+  // A reading still under the reserve keeps the other kind.
+  fs.rmSync(marks.markFile(env.AETHER_DATA_DIR, 'agy', 'gemini'))
+  written()
+  fs.writeFileSync(env.AETHER_FAKE_AGY_QUOTA_FILE, JSON.stringify({ 'Gemini Models': [0.02, 0.02], 'Claude and GPT models': [0.9, 0.9] }))
+  assert.notEqual(groups('quota').gemini.mark, null)
+})
+
+test('a seat round lifts a mark from a reading when the group reads healthy, and a refusal\'s mark keeps its round on the native agent', (t) => {
+  const repo = seatRepo(t)
+  const env = fx.laneEnv(t)
+  marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reading: dry(), reserve: RESERVE, now: Date.now() - 20 * MIN })
+  const lifted = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
+  assert.equal(lifted.status, 0, JSON.stringify(lifted.json))
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null, 'the fresh reading of the group (90 %) lifted the mark')
+
+  marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reserve: RESERVE, now: Date.now() - 20 * MIN, refusal: quotaRefusal(REFUSAL) })
+  const held = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
+  assert.equal(held.status, 3, JSON.stringify(held.json))
+  assert.deepEqual(held.json.tried, [{ model: 'agy/gemini-4-argon', reason: 'quota' }])
 })

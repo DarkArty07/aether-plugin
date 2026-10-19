@@ -11,7 +11,7 @@ const { CLI_MAX_SECONDS } = require('../plugins/aether/lib/delegate-limits.js')
 
 const readingsLib = require('../plugins/aether/lib/lane-readings.js')
 
-const GROUPS = { flash: 'Gemini Models', claude: 'Claude and GPT models' }
+const GROUPS = { gemini: 'Gemini Models', claude: 'Claude and GPT models' }
 
 function setup(t, { quota = null } = {}) {
   const env = laneEnv(t, { quota })
@@ -33,7 +33,7 @@ function setup(t, { quota = null } = {}) {
   const usageCalls = () => calls().filter((c) => c.argv.includes('/usage'))
   return { env, config, repo, dataDir: env.AETHER_DATA_DIR, modelCalls, usageCalls }
 }
-const rung = { model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' }
+const rung = { model: 'gemini-3.8-flash', effort: 'medium', group: 'gemini' }
 const run = (s, prompt, over = {}) => delegate.runDelegate({
   cwd: s.repo.dir, id: 'd-1', harness: 'agy', rung, task: { description: 'audit the retry wrapper', prompt }, config: s.config, dataDir: s.dataDir, ...over,
 })
@@ -166,7 +166,7 @@ test('a harness that is not installed or has no such model is unavailable, with 
   assert.equal((await run(s, 'Audit.')).status, 'unavailable')
   const t2 = setup(t)
   assert.equal((await run(t2, 'Audit.', { harness: 'codex' })).status, 'unavailable')
-  assert.equal((await run(t2, 'Audit.', { rung: { model: 'no-such-model', effort: 'low', group: 'flash' } })).status, 'unavailable')
+  assert.equal((await run(t2, 'Audit.', { rung: { model: 'no-such-model', effort: 'low', group: 'gemini' } })).status, 'unavailable')
   assert.equal(t2.modelCalls().length, 0)
 })
 
@@ -183,7 +183,7 @@ test('the quota goes through the saved reading: the one before is served from it
   assert.equal(s.usageCalls().length, 2, 'no saved reading yet: the reading before and the one after')
   const saved = JSON.parse(fs.readFileSync(readingsLib.cacheFile(s.dataDir, 'agy'), 'utf8'))
   assert.equal(saved.harness, 'agy')
-  assert.ok(Object.hasOwn(saved.groups, 'flash'), 'the reading after is saved')
+  assert.ok(Object.hasOwn(saved.groups, 'gemini'), 'the reading after is saved')
   const second = await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "two"}', { id: 'd-2' })
   assert.equal(second.status, 'ok', second.detail)
   assert.equal(s.usageCalls().length, 3, 'the reading before came from the saved one: only the reading after started agy')

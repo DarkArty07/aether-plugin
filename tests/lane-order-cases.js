@@ -9,7 +9,7 @@ const NOW = Date.parse('2026-10-14T06:08:00Z')
 
 // What agy's /usage and grok's log gave on 2026-10-14, as readings (the shape the adapters return).
 const READINGS = {
-  flash: {
+  gemini: {
     windows: {
       weekly: { remaining: 1, resetsAt: '2026-10-21T03:35:44Z' },
       '5h': { remaining: 1, resetsAt: '2026-10-14T12:49:06Z' },
@@ -56,11 +56,11 @@ const HALF = { unknown: true, usable: false, priority: null, remaining: null, re
 const NO_LONGEST = { unknown: false, usable: true, priority: null, remaining: null, resetsAt: null }
 
 const agy = (groups) => ({ installed: true, groups })
-const FLASH = { harness: 'agy', model: 'gemini-3.8-flash', group: 'flash' }
+const FLASH = { harness: 'agy', model: 'gemini-3.8-flash', group: 'gemini' }
 const SONNET = { harness: 'agy', model: 'claude-sonnet-5-5', group: 'claude' }
 const GROK_47 = { harness: 'grok', model: 'grok-4.7', group: 'grok' }
 const CODEX = { harness: 'codex', model: 'gpt-codex', group: 'codex' }
-const TODAY = { agy: agy({ flash: GEMINI, claude: CLAUDE_LOW }), grok: { installed: true, groups: { grok: GROK } } }
+const TODAY = { agy: agy({ gemini: GEMINI, claude: CLAUDE_LOW }), grok: { installed: true, groups: { grok: GROK } } }
 
 const CASES = [
   {
@@ -87,7 +87,7 @@ const CASES = [
   {
     name: 'a group with no reading goes after the groups with one, in the order of harnesses',
     candidates: [GROK_47, FLASH],
-    harnesses: { agy: agy({ flash: GEMINI }), grok: { installed: true, groups: { grok: NO_READING } } },
+    harnesses: { agy: agy({ gemini: GEMINI }), grok: { installed: true, groups: { grok: NO_READING } } },
     ordered: ['agy:gemini-3.8-flash', 'grok:grok-4.7'],
     excluded: [],
   },
@@ -95,7 +95,7 @@ const CASES = [
     name: 'a group whose balance is unknown but whose reset is known is a group with no reading',
     candidates: [GROK_47, FLASH],
     harnesses: {
-      agy: agy({ flash: GEMINI }),
+      agy: agy({ gemini: GEMINI }),
       grok: { installed: true, groups: { grok: { unknown: true, usable: true, priority: null, remaining: null, resetsAt: '2026-10-17T09:08:51.805Z' } } },
     },
     ordered: ['agy:gemini-3.8-flash', 'grok:grok-4.7'],
@@ -104,21 +104,21 @@ const CASES = [
   {
     name: 'a window under the reserve holds its group even when another window of it has no balance',
     candidates: [SONNET, FLASH],
-    harnesses: { agy: agy({ claude: HALF, flash: GEMINI }) },
+    harnesses: { agy: agy({ claude: HALF, gemini: GEMINI }) },
     ordered: ['agy:gemini-3.8-flash'],
     excluded: ['agy:claude-sonnet-5-5:reserve'],
   },
   {
     name: 'a group whose longest window cannot be read has no priority: it goes after the groups with one, not before them',
     candidates: [FLASH, GROK_47],
-    harnesses: { agy: agy({ flash: NO_LONGEST }), grok: { installed: true, groups: { grok: GROK } } },
+    harnesses: { agy: agy({ gemini: NO_LONGEST }), grok: { installed: true, groups: { grok: GROK } } },
     ordered: ['grok:grok-4.7', 'agy:gemini-3.8-flash'],
     excluded: [],
   },
   {
     name: 'a harness with no reader goes after the groups with a reading, and keeps the order of harnesses among its kind',
     candidates: [CODEX, FLASH],
-    harnesses: { agy: agy({ flash: GEMINI }), codex: { installed: true, groups: { codex: NO_READING } } },
+    harnesses: { agy: agy({ gemini: GEMINI }), codex: { installed: true, groups: { codex: NO_READING } } },
     ordered: ['agy:gemini-3.8-flash', 'codex:gpt-codex'],
     excluded: [],
   },
@@ -126,7 +126,7 @@ const CASES = [
     name: 'nothing usable: no candidate is left, and each says why',
     candidates: [FLASH, GROK_47],
     harnesses: {
-      agy: agy({ flash: view(0.0004, '2026-10-21T03:35:44.000Z', { usable: false }) }),
+      agy: agy({ gemini: view(0.0004, '2026-10-21T03:35:44.000Z', { usable: false }) }),
       grok: { installed: true, groups: { grok: view(0.0004, '2026-10-17T09:08:51.805Z', { usable: false }) } },
     },
     ordered: [],
@@ -136,7 +136,7 @@ const CASES = [
     name: 'the highest priority goes first even when another group resets sooner: the quota that could be wasted is the one with the most left per hour',
     candidates: [GROK_47, FLASH],
     harnesses: {
-      agy: agy({ flash: GEMINI }),
+      agy: agy({ gemini: GEMINI }),
       // Grok resets on the 17th with 5% of the week left (0.05 / 75 h); Gemini on the 21st with all of it (1 / 165 h).
       grok: { installed: true, groups: { grok: view(0.000667, '2026-10-17T09:08:51.805Z') } },
     },
@@ -147,7 +147,7 @@ const CASES = [
     name: 'a tie in priority goes to the nearer reset',
     candidates: [FLASH, GROK_47],
     harnesses: {
-      agy: agy({ flash: view(0.01, '2026-10-20T00:00:00.000Z') }),
+      agy: agy({ gemini: view(0.01, '2026-10-20T00:00:00.000Z') }),
       grok: { installed: true, groups: { grok: view(0.01, '2026-10-18T00:00:00.000Z') } },
     },
     ordered: ['grok:grok-4.7', 'agy:gemini-3.8-flash'],
@@ -157,7 +157,7 @@ const CASES = [
     name: 'a tie in priority and in reset goes to the order of harnesses',
     candidates: [FLASH, GROK_47],
     harnesses: {
-      agy: agy({ flash: view(0.01, '2026-10-20T00:00:00.000Z') }),
+      agy: agy({ gemini: view(0.01, '2026-10-20T00:00:00.000Z') }),
       grok: { installed: true, groups: { grok: view(0.01, '2026-10-20T00:00:00.000Z') } },
     },
     ordered: ['agy:gemini-3.8-flash', 'grok:grok-4.7'],
@@ -167,7 +167,7 @@ const CASES = [
     name: 'a group with a dry mark is left out, whatever else it reads',
     candidates: [FLASH, GROK_47],
     harnesses: {
-      agy: agy({ flash: GEMINI }),
+      agy: agy({ gemini: GEMINI }),
       grok: { installed: true, groups: { grok: { ...GROK, usable: false, mark: { harness: 'grok', group: 'grok', until: 1760000000000 } } } },
     },
     ordered: ['agy:gemini-3.8-flash'],
@@ -176,7 +176,7 @@ const CASES = [
   {
     name: 'a group that ran dry earlier in the run is left out',
     candidates: [FLASH, GROK_47],
-    harnesses: { agy: agy({ flash: { ...GEMINI, dryInRun: true } }), grok: { installed: true, groups: { grok: GROK } } },
+    harnesses: { agy: agy({ gemini: { ...GEMINI, dryInRun: true } }), grok: { installed: true, groups: { grok: GROK } } },
     ordered: ['grok:grok-4.7'],
     excluded: ['agy:gemini-3.8-flash:dry'],
   },
@@ -190,7 +190,7 @@ const CASES = [
   {
     name: 'a status that gives no priority keeps the order of harnesses',
     candidates: [FLASH, GROK_47],
-    harnesses: { agy: agy({ flash: { usable: true } }), grok: { installed: true, groups: { grok: { usable: true } } } },
+    harnesses: { agy: agy({ gemini: { usable: true } }), grok: { installed: true, groups: { grok: { usable: true } } } },
     ordered: ['agy:gemini-3.8-flash', 'grok:grok-4.7'],
     excluded: [],
   },

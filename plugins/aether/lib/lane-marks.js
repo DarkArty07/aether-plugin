@@ -9,6 +9,12 @@
 // the stated reset was once wrong, while a refused call costs a failed process and no tokens, so the group is tried
 // again every hour. A live refusal mark is not replaced by a mark that is not confirmed, so a later reading with a
 // balance does not lift it. Marks never shorten.
+//
+// Marks heal themselves. An unconfirmed mark is read as ending at most its `minutes` after it was written (60 when the
+// file says none), whatever its `until` says. A mark that came from a reading (any but a refusal's) is lifted when a
+// fresh reading, taken after the mark, shows every window above the reserve (liftIfHealthy): providers renew a quota
+// without saying so. A refusal's mark is never lifted by a reading, since /usage does not show an individual limit; it
+// ends by itself.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -92,14 +98,10 @@ function withLock(target, fn) {
   }
 }
 
-function liveMark(dataDir, harness, group, now = Date.now()) {
-  const file = markFile(dataDir, harness, group)
-  let raw
-  try {
-    raw = fs.readFileSync(file, 'utf8')
-  } catch {
-    return null
-  }
+// The mark in raw if it is live at `now`, or null. An unconfirmed mark never ends later than `minutes` after `at`
+// (DEFAULT_MARK_MINUTES for a file that says none): a file that says more was not written by markDry, or by a table
+// whose length was lower, and is read as ending then.
+function parseMark(raw, now) {
   let data
   try {
     data = JSON.parse(raw)
@@ -108,12 +110,29 @@ function liveMark(dataDir, harness, group, now = Date.now()) {
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   if (typeof data.until !== 'number' || !Number.isFinite(data.until)) return null
-  if (data.until <= now || data.until > now + MAX_MARK_MS) return null
+  // An end beyond what a mark can hold is damage, not a long mark: it is no mark.
+  if (data.until > now + MAX_MARK_MS) return null
+  if (data.confirmed !== true && Number.isFinite(data.at)) {
+    const minutes = Number.isFinite(data.minutes) && data.minutes > 0 ? data.minutes : DEFAULT_MARK_MINUTES
+    const longest = data.at + minutes * 60 * 1000
+    if (data.until > longest) data = { ...data, until: longest }
+  }
+  if (data.until <= now) return null
   return data
 }
 
+function liveMark(dataDir, harness, group, now = Date.now()) {
+  let raw
+  try {
+    raw = fs.readFileSync(markFile(dataDir, harness, group), 'utf8')
+  } catch {
+    return null
+  }
+  return parseMark(raw, now)
+}
+
 // The live marks, sorted. known(harness, group), when given, keeps only the marks of a group the lane table has: a file
-// of a group the table dropped (agy's `gemini`, which is now `argon` and `flash`) is no mark for anyone.
+// of a group the table dropped (agy's old `gemini` key, when the table had three) is no mark for anyone.
 function liveMarks(dataDir, now = Date.now(), known = null) {
   const dir = marksDir(dataDir)
   let entries
@@ -125,22 +144,14 @@ function liveMarks(dataDir, now = Date.now(), known = null) {
   const result = []
   for (const entry of entries) {
     if (!entry.endsWith('.json') || entry.startsWith('.')) continue
-    const file = path.join(dir, entry)
     let raw
     try {
-      raw = fs.readFileSync(file, 'utf8')
+      raw = fs.readFileSync(path.join(dir, entry), 'utf8')
     } catch {
       continue
     }
-    let data
-    try {
-      data = JSON.parse(raw)
-    } catch {
-      continue
-    }
-    if (!data || typeof data !== 'object' || Array.isArray(data)) continue
-    if (typeof data.until !== 'number' || !Number.isFinite(data.until)) continue
-    if (data.until <= now || data.until > now + MAX_MARK_MS) continue
+    const data = parseMark(raw, now)
+    if (data === null) continue
     if (known !== null && !known(data.harness, data.group)) continue
     result.push(data)
   }
@@ -150,6 +161,55 @@ function liveMarks(dataDir, now = Date.now(), known = null) {
     return keyA < keyB ? -1 : (keyA > keyB ? 1 : 0)
   })
   return result
+}
+
+// Whether every window of a reading has a balance above the reserve: a reading that can lift a mark. A group that is
+// unknown, has no windows, or has a window without a balance (grok reading a missing percentage as 0 % used) is not.
+function healthyReading(reading, reserve) {
+  if (!reading || typeof reading !== 'object' || reading.unknown === true || reading.usedPercentAbsent === true) return false
+  if (!reading.windows || typeof reading.windows !== 'object') return false
+  const windows = Object.values(reading.windows)
+  return windows.length > 0 && windows.every((w) => w && typeof w.remaining === 'number' && Number.isFinite(w.remaining) && w.remaining > reserve)
+}
+
+// Whether a reading lifts a live mark: the mark did not come from a refusal; the reading was taken after the mark was
+// written (a reading from before it is what the call that ended for quota had seen) and not after `now`; it is younger
+// than lifeMs, by when it was taken and by its own source's age; and it is healthy.
+function liftable(mark, reading, { readAt, reserve, lifeMs, now = Date.now() }) {
+  if (!mark || mark.reason === REFUSAL_REASON) return false
+  if (!Number.isFinite(readAt) || readAt > now || now - readAt >= lifeMs) return false
+  if (Number.isFinite(mark.at) && readAt < mark.at) return false
+  const sourceAge = reading && reading.source && reading.source.ageMinutes
+  if (typeof sourceAge === 'number' && sourceAge * 60 * 1000 >= lifeMs) return false
+  return healthyReading(reading, reserve)
+}
+
+// Removes the mark file of a mark that was read, unless a newer mark has taken its place.
+function liftMark(dataDir, mark) {
+  const file = markFile(dataDir, mark.harness, mark.group)
+  return withLock(file, () => {
+    let current
+    try {
+      current = JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch {
+      return false
+    }
+    if (!current || current.at !== mark.at) return false
+    try {
+      fs.unlinkSync(file)
+      return true
+    } catch {
+      return false
+    }
+  })
+}
+
+// The live mark of a group after a reading was given the chance to lift it: null when there is none or it was lifted,
+// the mark when it still holds. readAt is when the reading was taken. A file that cannot be removed leaves the mark.
+function liftIfHealthy(dataDir, { harness, group, reading, readAt, reserve, lifeMs, now = Date.now() }) {
+  const mark = liveMark(dataDir, harness, group, now)
+  if (mark === null || !liftable(mark, reading, { readAt, reserve, lifeMs, now })) return mark
+  return liftMark(dataDir, mark) ? null : mark
 }
 
 // refusal is { resetMs } of a call agy refused for its individual quota (quota-refusal.js): the mark holds `minutes`
@@ -195,6 +255,7 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
     resetsAt,
     usedPercentAbsent,
   }
+  if (!confirmed) candidate.minutes = minutes
   if (refusal) {
     candidate.reason = REFUSAL_REASON
     candidate.statedResetMs = Number.isFinite(refusal.resetMs) && refusal.resetMs > 0 ? refusal.resetMs : null
@@ -222,4 +283,8 @@ module.exports = {
   markDry,
   liveMark,
   liveMarks,
+  healthyReading,
+  liftable,
+  liftMark,
+  liftIfHealthy,
 }

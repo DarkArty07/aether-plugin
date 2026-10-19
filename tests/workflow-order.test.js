@@ -11,7 +11,7 @@ const { runWorkflow, laneAnswer, laneOf } = require('./workflow-harness.js')
 const choiceLib = require('../plugins/aether/lib/lane-choice.js')
 const { CASES, GEMINI, GROK, CLAUDE_LOW } = require('./lane-order-cases.js')
 
-const FLASH = { model: 'gemini-3.8-flash', group: 'flash', harness: 'agy' }
+const FLASH = { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' }
 const GROK_47 = { model: 'grok-4.7', group: 'grok', harness: 'grok' }
 const SONNET = { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' }
 
@@ -24,7 +24,7 @@ function lanesRun(t, tasks, lanes) {
 }
 
 // The readings of 2026-10-14: Gemini and Grok usable, Claude in agy under the reserve.
-const TODAY = { agy: { installed: true, groups: { flash: GEMINI, claude: CLAUDE_LOW } }, grok: { installed: true, groups: { grok: GROK } } }
+const TODAY = { agy: { installed: true, groups: { gemini: GEMINI, claude: CLAUDE_LOW } }, grok: { installed: true, groups: { grok: GROK } } }
 const TODAY_ORDER = 'grok:grok-4.7:0.013331:picked:absent/agy:gemini-3.8-flash:0.006044:untried'
 
 const ok = (run) => assert.equal(run.error, null, run.error && run.error.stack)
@@ -95,7 +95,7 @@ test('with the readings of 2026-10-14 a haiku implementer runs on Grok 4.7, a so
 })
 
 test('after the Claude group resets, the sonnet call goes to Claude in agy', async (t) => {
-  const back = { agy: { installed: true, groups: { flash: GEMINI, claude: { unknown: false, usable: true, priority: 0.0066, resetsAt: '2026-10-23T04:41:07.000Z' } } } }
+  const back = { agy: { installed: true, groups: { gemini: GEMINI, claude: { unknown: false, usable: true, priority: 0.0066, resetsAt: '2026-10-23T04:41:07.000Z' } } } }
   const run = await runWorkflow(lanesRun(t, [task(1, { tier: 'sonnet high — wiring the tests pin down' })], lanesWith({ implementer: { sonnet: [SONNET] } })), { lane: status(back) })
   ok(run)
   assert.deepEqual(starts(run).map((s) => s.lane.model), ['claude-sonnet-5-5'])
