@@ -3,7 +3,7 @@
 **Type:** bug (lanes, quota, router)
 **Date:** 2026-10-19
 **Found in:** the owner's question of why a read-only delegate went to neither agy nor grok, in the Lead's session e591573c
-**Status:** fixed on the branch `worktree-agent-a53e7f9e50ca97646`, not released (decision A60). The origin of the mark found in the owner's session was not traced; the fix removes the shared unit, not that mark.
+**Status:** fixed on the branch `worktree-agent-a53e7f9e50ca97646`, not released (decision A60), but its premise changed the same day: see «Update». The origin of the mark found in the owner's session was not traced.
 **GitHub:** not filed
 
 ## What happened
@@ -35,6 +35,13 @@ The group is at once the unit of the reading, of the mark and of the order. With
 - A refusal of Argon leaves `gemini-3.8-flash` usable, and the other way round.
 - Two keys can read one `/usage` group.
 - The old `agy__gemini.json` is ignored by `aether-lane quota`, `status` and the router.
+
+## Update (2026-10-19, later): agy now shows one Gemini quota
+
+- The owner, looking at agy's own screen: «primero no metieron la cuota de Argon junto la de Flash y la separaron y ahorita que estoy evaluando ya metieron la cuota de Argon junto con la de Flash». The screen of agy 1.4.2 lists two groups: «Gemini Models» (Gemini Flash, Gemini Pro; weekly 98.92 %, 5 hours 98.88 %) and «Claude and GPT models» (Claude Opus, Claude Sonnet, GPT-OSS; weekly 32.92 %).
+- The structure the owner described, which the four Argon refusals of 2026-10-16 (agy 1.3.6) fit, does not hold today. The agy binary was replaced on 2026-10-19 at 12:36 local time (1.4.2); whether that is the cause is not known. The three real calls below moved the 5-hour window from 100 % to 98.88 %, which fits one shared pool.
+- Still true: marks and refusals are per group, the old mark `agy__gemini.json` held a pool that works, and the reset agy stated proved unreliable. No longer true: that Argon and Flash have separate quotas. The three keys of the table describe the old structure; they are harmless, because both read the same windows. On the branch the table is back to one `gemini` group (the owner left that choice to the Lead: «decido lo mejor»), and the mechanism that lets several keys read one `/usage` group stays, so a later split is one line of `lanes.json`. The old mark was moved aside on 2026-10-19 with the owner's yes («esta bien borrar la marca vieja»); the installed plugin showed the Gemini group usable right after. The owner also asked that stale marks heal by themselves («eso debería ser automático [...] porque a veces llegan los resets de los proveedores y no avisan»): decision A60 now has marks of 60 minutes after a refusal, a healthy reading that lifts a mark that came from a reading (issue 015), and a cap of 60 minutes on an unconfirmed mark.
+- The fix was built on a fact about a third party's service that was a few days old, before any real probe (issue 029).
 
 ## Evidence from real calls (2026-10-19, about 19:35 UTC)
 

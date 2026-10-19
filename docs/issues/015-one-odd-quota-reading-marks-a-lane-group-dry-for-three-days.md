@@ -3,7 +3,7 @@
 **Type:** bug (lanes, dry marks)
 **Date:** 2026-10-15
 **Found in:** the result of run `20261015-024936-ee31` (spec 005), in the Lead's session 777d41c2
-**Status:** open
+**Status:** partly fixed on the branch `worktree-agent-a53e7f9e50ca97646`, not released (A60): a fresh healthy reading lifts a mark that came from a reading, and an unconfirmed mark cannot outlast 60 minutes. The first two proposals (the failure reason before the reading; a reading whose window resets in the past) are still open.
 **GitHub:** [#19](https://github.com/DarkArty07/aether-plugin/issues/19) (private repository)
 
 ## What happened
