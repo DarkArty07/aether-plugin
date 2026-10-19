@@ -78,6 +78,15 @@
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
       "groups": { "cursor": "Cursor plan" },
       "models": {}
+    },
+    "muse": {
+      "command": "muse",
+      "maxParallel": 1,
+      "waitSeconds": 540,
+      "quotaLifeMinutes": 30,
+      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
+      "groups": { "muse": "Muse subscription" },
+      "models": {}
     }
   }
 }
