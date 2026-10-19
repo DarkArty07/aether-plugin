@@ -71,7 +71,9 @@ function main(argv) {
   const prompt = adapter.schemaInPrompt === true ? `${PROMPT}\n\nThe JSON object has the fields: ${JSON.stringify(SCHEMA.required)}.` : PROMPT
   const argvOfCall = adapter.argv({ model: adapter.modelArg({ model, level: args.effort }), level: args.effort, schemaFile, timeoutSeconds: TIMEOUT_MS / 1000, prompt })
   const started = Date.now()
-  const run = spawnSync(argvOfCall[0], argvOfCall.slice(1), { cwd: work, encoding: 'utf8', timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 })
+  // The environment a lane gives its CLI: the owner's git, GitHub, registry and cloud credentials stay out of it.
+  const env = lanes.laneEnv(process.env, `lane-smoke-${process.pid}`)
+  const run = spawnSync(argvOfCall[0], argvOfCall.slice(1), { cwd: work, env, encoding: 'utf8', timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 })
   const seconds = Math.round((Date.now() - started) / 100) / 10
   const parsed = adapter.parse({ stdout: run.stdout ?? '', stderr: run.stderr ?? '', exitCode: run.status }, { required: ['status', 'file'] })
   const written = path.join(work, 'hello.txt')
