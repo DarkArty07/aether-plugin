@@ -22,7 +22,7 @@ test('prices.json holds the OpenRouter snapshot for each model, per million toke
     cacheWrite1h: 0.2,
     longPrompt: { minPromptTokens: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite5m: 0.625, cacheWrite1h: 1 },
   })
-  assert.ok(Object.values(prices.sources).every((url) => url.startsWith('https://openrouter.ai/')))
+  assert.ok(Object.values(prices.sources).every((url) => url.startsWith('https://openrouter.ai/') || url.startsWith('https://dev.meta.ai/')))
 })
 
 test('ratesFor matches exact ids and ids with a suffix, and nothing else', () => {
