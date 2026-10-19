@@ -50,7 +50,7 @@ Archivos de esta carpeta:
 - Usó `muse-wonder-1.0` y `muse-wonder-full-1.0` (proveedor `meta`). Según Meta, Wonder Full «is available only in Muse Code on the Power Usage and Maximum Usage plans».
 - `META_API_KEY` no está definida en el entorno (se comprobó solo si la variable existe, no su valor).
 - **Inferencia, no confirmada por el dueño:** su cuenta es una suscripción de plan Power o Maximum.
-- `ARTIFICIAL_ANALYSIS_API_KEY` tampoco está definida en el entorno: `scripts/refresh-lanes.js` no puede refrescar puntajes `aa` desde esta sesión.
+- `ARTIFICIAL_ANALYSIS_API_KEY` no está definida en el entorno, pero `scripts/refresh-lanes.js` también la busca en el `.env` del directorio de datos. **Corregido tras el diseño (ver §8):** el script corrió en seco sin error (`No figure changed.`), así que hay una clave que el script lee. El spec y el plan partieron de que no la había.
 
 ## 4. Modelos y precios (páginas de Meta, leídas el 2026-10-19 por resumen de WebFetch: verificar en la página)
 
@@ -85,6 +85,21 @@ Los puntajes publicados por Meta y por terceros no coinciden entre páginas ni s
 - Si dos `muse exec` a la vez en worktrees distintos conviven con el índice SQLite compartido.
 - Los puntajes de Artificial Analysis de Spark 1.3, Wonder 1.0 y Wonder Full a cada esfuerzo.
 
-## 8. Fuentes
+## 8. Medido después del diseño (2026-10-19; sin la cuenta del dueño y sin gasto)
+
+Con `HOME` y `XDG_*` desechables:
+
+| Caso | Salida |
+|---|---|
+| `muse exec --json …` sin sesión | exit 1, salida estándar **vacía**, y en la de error `missing meta credentials: run \`muse login\` or set META_API_KEY, or save credentials at <XDG_CONFIG_HOME>/muse/auth.json`. Esa ruta es el archivo de login: no se lee. |
+| con una `META_API_KEY` inventada | exit 1, salida estándar **vacía**, y en la de error `failed to fetch model catalog: authentication failed: your API key from META_API_KEY was rejected — update or unset it`. |
+
+`muse exec` pide el catálogo de modelos a Meta al arrancar. Por eso un fallo de acceso es **previo a la corrida y no deja ningún registro JSONL**: `parse` lo recibe como «exit distinto de 0 y salida estándar vacía» y debe dar como razón `exit 1: <primera línea de stderr>` (la regla 3 de D3 del plan), no `unreadable output`. Un `authRequired` dentro de un `run.terminal.failed` solo sería posible si la sesión caduca a mitad de una corrida, y no se ha visto. El fallo a mitad de corrida (cuota agotada, `stepLimit`) sigue sin verse: pide una llamada real.
+
+**Dos correcciones a lo que partió el diseño:**
+1. **Sí hay clave de Artificial Analysis para el script.** `scripts/refresh-lanes.js` falla con `ARTIFICIAL_ANALYSIS_API_KEY is not set, and <dir>/.env does not have it` cuando no hay ninguna, y en esta sesión corrió bien. El paso L3 del plan (añadir los modelos medidos a la tabla) es posible; el script solo refresca las cifras `aa` de modelos que ya están en la tabla, así que se añade cada modelo con su `aa.slug` y luego se refresca.
+2. **El validador de la tabla no acepta `xhigh` como valor de `levels`.** En `lib/lanes.js:25-26,60` las cuatro claves `low`, `medium`, `high` y `xhigh` son obligatorias y sus valores solo pueden ser `low`, `medium` o `high`. La A-P7 del plan (niveles de Muse como identidad, con `xhigh`) haría fallar la tabla al añadir un modelo en L3. La entrada de Muse mapea `xhigh` a `high`, como las de agy y grok, y Muse corre ese nivel en `high` (su esfuerzo por defecto). Nada de las tareas 1 a 14 cambia, porque la tabla de Muse nace sin modelos. Un esfuerzo `max` sigue nativo porque ningún modelo declara la clave `max` (`lane-calls.js:158`).
+
+## 9. Fuentes
 
 Meta: [auth](https://dev.meta.ai/docs/muse-code/auth), [suscripciones](https://dev.meta.ai/docs/muse-code/subscriptions), [extender y headless](https://dev.meta.ai/docs/muse-code/extending), [configuración](https://dev.meta.ai/docs/muse-code/configuration), [modelos](https://dev.meta.ai/docs/models), [precios y límites](https://dev.meta.ai/docs/pricing-rate-limits), [changelog](https://dev.meta.ai/docs/muse-code/changelog). Terceros: [E2B](https://docs.e2b.dev/agents/muse), [QAInsights](https://qainsights.com/?p=18730), [eesel](https://www.eesel.ai/blog/meta-muse-code-pricing), [Artificial Analysis](https://artificialanalysis.ai/models/muse-spark-1-3-xhigh).
