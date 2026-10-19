@@ -22,7 +22,7 @@ This page describes how Aether turns an intent into a reviewed spec, a plan, a b
   - a final review, by `aether:reviewer`, on Opus or Sonnet by the run's risk, covers the whole run;
   - the workflow's own `aether-wt` and `aether-lane` commands go to an `ops` agent on Haiku at `low`, which the mod answers without a model request while `ops` is on (`ops`, on by default; see [Ops without a model](guide/ops.md));
   - code deletes every unit worktree and branch as soon as it is no longer used.
-- **Lanes** run the swarm's calls on other coding harnesses while their quota lasts: agy today, and Codex, Grok and Cursor once the owner turns each one on. `lanes`, off by default; the [Lanes](guide/lanes.md#lanes) guide says how they work.
+- **Lanes** run the swarm's calls on other coding harnesses while their quota lasts: agy today, and Codex, Grok, Cursor and Muse once the owner turns each one on. `lanes`, off by default; the [Lanes](guide/lanes.md#lanes) guide says how they work.
 - **`/aether:design`** is the workflow that runs the design: it takes the intent card to an approved spec, plan and tasks with the Writer, the Judge and the Examiner, and gives the Lead one result. It needs the Workflow tool.
 - **The design seats** let the Judge, the Writer and the Examiner each be taken, one round at a time, by a stronger model of another harness, with Aether's own agent as the fallback. The [Design seats](guide/design-seats.md#design-seats) guide has the choices.
 
