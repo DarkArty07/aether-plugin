@@ -84,7 +84,7 @@ For a read-only task the router may send the delegate to agy or Grok. The rule i
 To see the readings the router would use, and the delegations it has decided, inside Claude Code, open the [`/harnesses` panel](lanes.md#the-harnesses-panel) in an Aether session: it shows each harness's quota groups with their status, and the five newest delegations of the log.
 - **A49 is pending.** The swarm orders by A49, the balance of the weekly window per hour left. The router does not, because the two differ between two groups with a balance. Adopting A49 in the router is pending the owner's confirmation.
 
-agy's reading is not reliable for its Gemini group: it showed 98 % while the calls were refused with "Individual quota reached". The truth is the refusal. See [issue 021](../issues/021-agy-refuses-with-individual-quota-reached-while-usage-shows-balance.md) for what the swarm and the seats do not recognize yet.
+agy's reading is not reliable for its Gemini groups: it showed 98 % while the calls were refused with "Individual quota reached", because `/usage` does not report the individual limits. The truth is the refusal, and the router, the swarm and the design seats all leave a mark of it ([issue 021](../issues/021-agy-refuses-with-individual-quota-reached-while-usage-shows-balance.md), decision A60).
 
 ## Other harnesses
 

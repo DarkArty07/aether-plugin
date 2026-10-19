@@ -79,14 +79,14 @@ test('the shipped table names one lane model per native model, with its group, r
   assert.equal(agy.maxParallel, 4)
   assert.equal(agy.waitSeconds, 540)
   assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200, judge: 1200, writer: 2700, examiner: 1800 })
-  assert.deepEqual(agy.groups, { gemini: 'Gemini Models', claude: 'Claude and GPT models' })
+  assert.deepEqual(agy.groups, { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' })
   assert.deepEqual(
     Object.entries(agy.models).map(([id, m]) => [id, m.group, m.replaces, m.roles, m.levels]),
     [
-      ['gemini-3.8-flash', 'gemini', 'haiku', ['implementer'], LEVELS],
+      ['gemini-3.8-flash', 'flash', 'haiku', ['implementer'], LEVELS],
       ['claude-sonnet-5-5', 'claude', 'sonnet', ['implementer', 'supervisor'], LEVELS],
       ['claude-opus-5-5', 'claude', 'opus', ['implementer', 'reviewer'], LEVELS],
-      ['gemini-4-argon', 'gemini', undefined, ['judge', 'writer', 'examiner'], LEVELS],
+      ['gemini-4-argon', 'argon', undefined, ['judge', 'writer', 'examiner'], LEVELS],
     ],
   )
   assert.deepEqual(config.designSeats, {
@@ -190,7 +190,7 @@ test('laneFor maps a native call to its lane model and level, and keeps max and 
   assert.deepEqual(lanes.laneFor(c, 'implementer', 'haiku', 'medium'), {
     harness: 'agy',
     model: 'gemini-3.8-flash',
-    group: 'gemini',
+    group: 'flash',
     agyModel: 'gemini-3.8-flash-medium',
   })
   assert.equal(lanes.laneFor(c, 'implementer', 'haiku', 'xhigh').agyModel, 'gemini-3.8-flash-high')
@@ -228,7 +228,7 @@ test('lanesArgs gives the run its lanes when the harness is installed, and null 
     waits: { implementer: 6, supervisor: 3, reviewer: 4 },
     calls: {
       implementer: {
-        haiku: [{ model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' }],
+        haiku: [{ model: 'gemini-3.8-flash', group: 'flash', harness: 'agy' }],
         sonnet: [{ model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' }],
         opus: [{ model: 'claude-opus-5-5', group: 'claude', harness: 'agy' }],
       },
@@ -254,7 +254,7 @@ test('lanesArgs lists every enabled, installed harness with a model for each cal
     waits: { implementer: 11, supervisor: 4, reviewer: 5 },
     calls: {
       implementer: {
-        haiku: [{ model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' }],
+        haiku: [{ model: 'gemini-3.8-flash', group: 'flash', harness: 'agy' }],
         sonnet: [
           { model: 'gpt-codex', group: 'codex', harness: 'codex' },
           { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' },
@@ -359,7 +359,7 @@ test('the shipped table has codex and cursor without models, and grok with grok-
   assert.deepEqual(args.harnesses, ['grok', 'agy'])
   assert.deepEqual(args.calls.implementer.haiku, [
     { model: 'grok-4.7', group: 'grok', harness: 'grok' },
-    { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' },
+    { model: 'gemini-3.8-flash', group: 'flash', harness: 'agy' },
   ])
   assert.deepEqual(args.calls.implementer.sonnet.map((lane) => lane.harness), ['agy'])
   assert.deepEqual(args.calls.implementer.opus.map((lane) => lane.harness), ['agy'])
@@ -376,10 +376,10 @@ test('enabledHarnesses reads AETHER_LANE_HARNESSES: known names, trimmed, lowerc
 })
 
 test('loadConfig refuses two harnesses that use one group key, and accepts distinct keys', (t) => {
-  const shared = writeConfig(t, (c) => (c.harnesses.codex = codexHarness('gemini')))
+  const shared = writeConfig(t, (c) => (c.harnesses.codex = codexHarness('flash')))
   assert.throws(
     () => lanes.loadConfig(shared),
-    (err) => err.message.startsWith(`lanes config ${shared}: `) && err.message.includes('group gemini is used by harnesses agy and codex: group keys are unique across the table'),
+    (err) => err.message.startsWith(`lanes config ${shared}: `) && err.message.includes('group flash is used by harnesses agy and codex: group keys are unique across the table'),
   )
   const distinct = writeConfig(t, (c) => (c.harnesses.codex = codexHarness()))
   assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor'])

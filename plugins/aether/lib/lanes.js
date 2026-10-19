@@ -326,6 +326,11 @@ function usable(groupQuota, reserve) {
   return readingUsable(groupQuota, reserve)
 }
 
+// Whether config's table has the group of a harness: the test that leaves out the marks of a group the table dropped.
+function groupKnown(config) {
+  return (harness, group) => Object.hasOwn(config?.harnesses?.[harness]?.groups ?? {}, group)
+}
+
 // What each window consumed between consecutive readings that share its reset time, and how often it reset.
 function quotaConsumed(readings) {
   const sorted = [...readings].sort((a, b) => a.time - b.time)
@@ -621,6 +626,7 @@ module.exports = {
   canonicalJson,
   resultDigest,
   usable,
+  groupKnown,
   quotaConsumed,
   laneTokens,
   logFile,

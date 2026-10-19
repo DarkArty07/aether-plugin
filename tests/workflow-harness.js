@@ -59,7 +59,7 @@ function aetherWt(call, state) {
 }
 
 const LEVEL = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
-const GROUP = { 'gemini-3.8-flash': 'gemini', 'claude-sonnet-5-5': 'claude', 'claude-opus-5-5': 'claude', 'gpt-5.5-codex': 'openai', 'grok-4.7': 'grok' }
+const GROUP = { 'gemini-3.8-flash': 'flash', 'claude-sonnet-5-5': 'claude', 'claude-opus-5-5': 'claude', 'gpt-5.5-codex': 'openai', 'grok-4.7': 'grok' }
 // The harness that runs a model when it is not agy's. A lane call names only its model, so this stands in for aether-lane's choice.
 const HARNESS_OF = { 'gpt-5.5-codex': 'codex', 'grok-4.7': 'grok' }
 
@@ -89,7 +89,7 @@ function laneAnswer({ status = 'ok', result = null, lane, detail = '', files = n
 function aetherLane(call, defaults) {
   switch (call.command.verb) {
     case 'status':
-      return { harnesses: { agy: { installed: true, version: '1.3.2', groups: { gemini: { usable: true }, claude: { usable: true } } } } }
+      return { harnesses: { agy: { installed: true, version: '1.3.2', groups: { flash: { usable: true }, claude: { usable: true } } } } }
     case 'start':
       return { started: true, model: `${call.lane.model}-${LEVEL[call.lane.effort]}`, group: GROUP[call.lane.model] }
     case 'wait':

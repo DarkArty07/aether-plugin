@@ -17,10 +17,10 @@ const win = (remaining, hours) => ({ remaining, resetsAt: new Date(NOW + hours *
 const weekly = (remaining, hours) => ({ windows: { weekly: win(remaining, hours) } })
 const gemini = (remaining, hours) => ({ windows: { '5h': win(1, 5), weekly: win(remaining, hours) } })
 const GROK = { readAt: NOW - MIN, groups: { grok: weekly(0.95, 29.6) } }
-const READINGS = { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(1, 60) } }, grok: GROK }
-const DRY = { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(0.02, 60), claude: weekly(0.02, 40) } }, grok: { readAt: NOW - MIN, groups: { grok: weekly(0.02, 29.6) } } }
-const STALE = { agy: { readAt: NOW - 11 * MIN, groups: { gemini: gemini(0.8, 10) } }, grok: GROK }
-const FRESH_AGY = { agy: { readAt: NOW, groups: { gemini: gemini(0.8, 10) } }, grok: GROK }
+const READINGS = { agy: { readAt: NOW - 2 * MIN, groups: { flash: gemini(1, 60) } }, grok: GROK }
+const DRY = { agy: { readAt: NOW - 2 * MIN, groups: { flash: gemini(0.02, 60), claude: weekly(0.02, 40) } }, grok: { readAt: NOW - MIN, groups: { grok: weekly(0.02, 29.6) } } }
+const STALE = { agy: { readAt: NOW - 11 * MIN, groups: { flash: gemini(0.8, 10) } }, grok: GROK }
+const FRESH_AGY = { agy: { readAt: NOW, groups: { flash: gemini(0.8, 10) } }, grok: GROK }
 
 const answers = (over = {}) => ({
   shape: { choice: 'explore', confidence: 0.95 },
@@ -113,18 +113,18 @@ test('scenario 1 and 8: in command mode the Lead only describes, and the delegat
   assert.equal(entry.background, false)
   assert.equal(typeof entry.deciderMs, 'number')
   assert.equal(entry.quotaWaitMs, 0)
-  const g = entry.quota.find((c) => c.harness === 'agy' && c.group === 'gemini')
+  const g = entry.quota.find((c) => c.harness === 'agy' && c.group === 'flash')
   const k = entry.quota.find((c) => c.harness === 'grok' && c.group === 'grok')
   assert.deepEqual([g.windowName, g.remaining, g.hoursLeft], ['weekly', 1, 60])
   assert.deepEqual([k.windowName, k.remaining, k.hoursLeft], ['weekly', 0.95, 29.6])
 })
 
 test('scenario 18: when the Gemini group of agy renews first, the delegate goes to agy on the level B rung of that group', async (t) => {
-  const plan = await go(setup(t, { readings: { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(0.8, 10) } }, grok: GROK } }), event())
+  const plan = await go(setup(t, { readings: { agy: { readAt: NOW - 2 * MIN, groups: { flash: gemini(0.8, 10) } }, grok: GROK } }), event())
   assert.equal(plan.external.harness, 'agy')
   assert.equal(plan.external.model, 'gemini-3.8-flash')
   assert.equal(plan.external.effort, 'medium')
-  assert.equal(plan.external.group, 'gemini')
+  assert.equal(plan.external.group, 'flash')
 })
 
 test('without a harness to take it, a decided delegate runs in Claude with an explicit effort (R17)', async (t) => {
@@ -178,7 +178,7 @@ test('a call goes to an external harness only when it names no agent, or names g
 })
 
 test('R23: a group with no valid reading is out, its renewal starts once, and the quota step waits at most the limit', async (t) => {
-  const deps = setup(t, { readings: { agy: { readAt: NOW - 11 * MIN, groups: { gemini: gemini(1, 5) } }, grok: null } })
+  const deps = setup(t, { readings: { agy: { readAt: NOW - 11 * MIN, groups: { flash: gemini(1, 5) } }, grok: null } })
   const plan = await go(deps, event())
   assert.equal(plan.external, null)
   assert.deepEqual(plan.args, { model: 'haiku', effort: 'high' })
@@ -188,8 +188,8 @@ test('R23: a group with no valid reading is out, its renewal starts once, and th
   assert.equal(entry.quotaWaitMs, 3000)
   assert.equal(entry.fallback, null, 'the decider did not fail')
   assert.ok(entry.quota.every((c) => c.state === 'excluded' && c.why === 'no-reading'))
-  assert.equal(entry.quota.find((c) => c.harness === 'agy' && c.group === 'gemini').note, 'sin lectura; la última tiene 11 min')
-  assert.equal(entry.quota.find((c) => c.harness === 'agy' && c.group === 'gemini').renewal, 'started')
+  assert.equal(entry.quota.find((c) => c.harness === 'agy' && c.group === 'flash').note, 'sin lectura; la última tiene 11 min')
+  assert.equal(entry.quota.find((c) => c.harness === 'agy' && c.group === 'flash').renewal, 'started')
 
   const short = setup(t, { settings: { deadlines: { haikuMs: 8000, jevMs: 3000, quotaMs: 1000 } }, readings: { agy: null, grok: null } })
   await go(short, event())
@@ -209,12 +209,12 @@ test('R23: a renewal that lands inside the wait makes the group a candidate for 
 })
 
 test('scenarios 16 and 20: a mark holds the group although the reading shows balance, and the record says so (R22)', async (t) => {
-  const readings = { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(0.98, 5) } }, grok: GROK }
-  const marks = [{ harness: 'agy', group: 'gemini', at: NOW - H, until: NOW + 100 * H, source: 'router' }]
+  const readings = { agy: { readAt: NOW - 2 * MIN, groups: { flash: gemini(0.98, 5) } }, grok: GROK }
+  const marks = [{ harness: 'agy', group: 'flash', at: NOW - H, until: NOW + 100 * H, source: 'router' }]
   const deps = setup(t, { readings, marks })
   const plan = await go(deps, event())
   assert.equal(plan.external.harness, 'grok')
-  const g = journal(deps)[0].quota.find((c) => c.harness === 'agy' && c.group === 'gemini')
+  const g = journal(deps)[0].quota.find((c) => c.harness === 'agy' && c.group === 'flash')
   assert.equal(g.why, 'mark')
   assert.equal(g.note, 'marca vigente; la lectura con saldo no la desmiente')
 })

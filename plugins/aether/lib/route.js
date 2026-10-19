@@ -124,7 +124,7 @@ function resolve(deps) {
     sleep: deps.sleep || realSleep,
     newId: deps.newId || (() => `r-${now().toString(36)}-${crypto.randomBytes(2).toString('hex')}`),
     readings: deps.readings || (() => peekReadings({ dataDir, config: lanesConfig(), harnesses: EXTERNAL, now: now() })),
-    marks: deps.marks || (() => readAllMarks(dataDir, now())),
+    marks: deps.marks || (() => readAllMarks(dataDir, now(), lanes.groupKnown(lanesConfig()))),
     renew: deps.renew || ((harness) => startRenewal({ dataDir, harness, now: now() })),
     installed: deps.installed || ((harness) => {
       const command = lanesConfig()?.harnesses?.[harness]?.command

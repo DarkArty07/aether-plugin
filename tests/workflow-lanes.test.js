@@ -13,7 +13,7 @@ const LANES = {
   waits: { implementer: 3, supervisor: 2, reviewer: 2 },
   calls: {
     implementer: {
-      haiku: { model: 'gemini-3.8-flash', group: 'gemini' },
+      haiku: { model: 'gemini-3.8-flash', group: 'flash' },
       sonnet: { model: 'claude-sonnet-5-5', group: 'claude' },
       opus: { model: 'claude-opus-5-5', group: 'claude' },
     },
@@ -130,13 +130,13 @@ test('with every group usable, the implementer, the supervisor and the final rev
 test("a group the wave's reading finds unusable sends its calls native for that wave", async (t) => {
   const run = await runWorkflow(lanesRun(t), {
     lane: (call, fallback) =>
-      call.command.verb === 'status' ? { harnesses: { agy: { installed: true, groups: { gemini: { usable: false }, claude: { usable: true } } } } } : fallback(call),
+      call.command.verb === 'status' ? { harnesses: { agy: { installed: true, groups: { flash: { usable: false }, claude: { usable: true } } } } } : fallback(call),
   })
   ok(run)
   assert.deepEqual(native(run, 'implementer').map((c) => [c.model, c.effort]), [['haiku', 'xhigh']])
   assert.equal(starts(run, 'implementer').length, 0)
   assert.equal(starts(run, 'supervisor').length, 1)
-  assert.deepEqual(run.result.lanes.dry, [{ wave: 1, groups: ['gemini'] }])
+  assert.deepEqual(run.result.lanes.dry, [{ wave: 1, groups: ['flash'] }])
   assert.equal(run.result.units[0].rounds[0].provider, 'native')
 })
 
@@ -444,7 +444,7 @@ const SONNET = { tier: 'sonnet high — wiring the tests pin down' }
 
 // An aether-lane status reading with agy's groups usable; `more` adds the other harnesses' readings.
 const reading = (more = {}) => ({
-  harnesses: { agy: { installed: true, version: '1.3.2', groups: { gemini: { usable: true }, claude: { usable: true } } }, ...more },
+  harnesses: { agy: { installed: true, version: '1.3.2', groups: { flash: { usable: true }, claude: { usable: true } } }, ...more },
 })
 const TWO_STATUS = reading({ codex: { installed: true, groups: { openai: { usable: true } } } })
 

@@ -16,6 +16,7 @@
 //   usage <input> <output> <thinking> <cacheRead>   this turn's tokens (default 1000 200 0 500)
 //   exit-error [<text...>]              agy's answer to an invalid model: exit 1, status ERROR, with
 //                                       <text> as its error (default: model not found: <model>)
+//   exit-code <n>                       the exit status of exit-error (default: 1; agy's quota refusal is 3)
 //   stderr <text...>                    the stderr line of exit-error (default: Error: model not found)
 //   timeout                             agy's answer to a print timeout: exit 0, empty response
 //   new-conversation                    a resume that silently starts a new conversation
@@ -81,6 +82,7 @@ let structured = null
 let turn = [1000, 200, 0, 500]
 let mode = 'answer'
 let errorText = null
+let exitCode = 1
 let stderrText = 'Error: model not found'
 let fresh = false
 for (const line of prompt.split('\n')) {
@@ -112,6 +114,8 @@ for (const line of prompt.split('\n')) {
   } else if (verb === 'exit-error' || verb === 'timeout') {
     mode = verb
     if (verb === 'exit-error' && rest.length > 0) errorText = rest.join(' ')
+  } else if (verb === 'exit-code') {
+    exitCode = Number(rest[0])
   } else if (verb === 'stderr') {
     stderrText = rest.join(' ')
   } else if (verb === 'new-conversation') {
@@ -122,7 +126,7 @@ for (const line of prompt.split('\n')) {
 if (mode === 'exit-error') {
   print({ conversation_id: '', status: 'ERROR', error: errorText ?? `model not found: ${flag('--model')}`, response: '', usage: zero() })
   process.stderr.write(`${stderrText}\n`)
-  process.exit(1)
+  process.exit(exitCode)
 }
 
 const asked = flag('--conversation')

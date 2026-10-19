@@ -13,10 +13,10 @@
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200, "judge": 1200, "writer": 2700, "examiner": 1800 },
-      "groups": { "gemini": "Gemini Models", "claude": "Claude and GPT models" },
+      "groups": { "argon": "Gemini Models", "flash": "Gemini Models", "claude": "Claude and GPT models" },
       "models": {
         "gemini-3.8-flash": {
-          "group": "gemini",
+          "group": "flash",
           "replaces": "haiku",
           "roles": ["implementer"],
           "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
@@ -37,7 +37,7 @@
           "aa": { "slug": "claude-opus-5-5-high", "intelligence": 53.6, "terminalBench": 0.57, "checked": "2026-10-08" }
         },
         "gemini-4-argon": {
-          "group": "gemini",
+          "group": "argon",
           "roles": ["judge", "writer", "examiner"],
           "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
           "note": "Gemini 4 Argon, generally available 2026-10-13. agy 1.3.6 lists it as gemini-4-argon-low, -medium and -high, and a round of each seat ran on it on 2026-10-15. Not measured against the native agent yet (docs/evaluations/seats)."

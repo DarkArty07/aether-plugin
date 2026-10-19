@@ -24,11 +24,11 @@ const base = { level: 'B', axis: 'general', rungs, config, enabled: ['agy', 'gro
 const find = (result, harness, group) => result.considered.find((c) => c.harness === harness && c.group === group)
 
 test('scenario 8: the weekly window that renews first wins, on the level B rung of its harness (R21)', () => {
-  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(1, 60) }), grok: GROK } })
+  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: gemini(1, 60) }), grok: GROK } })
   assert.equal(r.pick.harness, 'grok')
   assert.equal(r.pick.rung.model, 'grok-4.7')
   assert.equal(r.pick.rung.effort, 'low')
-  const g = find(r, 'agy', 'gemini')
+  const g = find(r, 'agy', 'flash')
   assert.equal(g.state, 'candidate')
   assert.equal(g.windowName, 'weekly')
   assert.equal(g.remaining, 1)
@@ -70,39 +70,39 @@ test('scenario 17: a group under the reserve is out, although the literal rule w
 })
 
 test('scenario 18: agy wins when its weekly window renews first, with the level B rung of the Gemini group', () => {
-  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(0.8, 10) }), grok: GROK } })
+  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: gemini(0.8, 10) }), grok: GROK } })
   assert.equal(r.pick.harness, 'agy')
   assert.equal(r.pick.rung.model, 'gemini-3.8-flash')
   assert.equal(r.pick.rung.effort, 'medium')
-  const g = find(r, 'agy', 'gemini')
+  const g = find(r, 'agy', 'flash')
   assert.equal(g.windowName, 'weekly')
   assert.equal(g.remaining, 0.8)
   assert.equal(g.hoursLeft, 10)
 })
 
 test('scenario 19: with two groups that have balance, the owner rule decides, not the balance per hour of A49', () => {
-  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(0.1, 10) }), grok: GROK } })
+  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: gemini(0.1, 10) }), grok: GROK } })
   assert.equal(r.pick.harness, 'agy', 'agy renews first, with 10 % left: A49 (0.01 against 0.032) would take grok, and is pending')
-  assert.equal(find(r, 'agy', 'gemini').state, 'candidate')
+  assert.equal(find(r, 'agy', 'flash').state, 'candidate')
 })
 
 test('two windows that renew together: the one with more balance goes first, then the order of the table', () => {
-  const more = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(0.5, 24) }), grok: { ...GROK, groups: { grok: weekly(0.9, 24) } } } })
+  const more = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: gemini(0.5, 24) }), grok: { ...GROK, groups: { grok: weekly(0.9, 24) } } } })
   assert.equal(more.pick.harness, 'grok')
-  const same = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(0.9, 24) }), grok: { ...GROK, groups: { grok: weekly(0.9, 24) } } } })
+  const same = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: gemini(0.9, 24) }), grok: { ...GROK, groups: { grok: weekly(0.9, 24) } } } })
   assert.equal(same.pick.harness, 'agy', 'agy comes first in the table of lanes.json')
 })
 
 test('scenario 9: a level only Claude serves gives no pick, and every group says why', () => {
-  const readings = { agy: agy({ gemini: gemini(1, 60), claude: weekly(0.9, 40) }), grok: GROK }
+  const readings = { agy: agy({ argon: gemini(1, 60), flash: gemini(1, 60), claude: weekly(0.9, 40) }), grok: GROK }
   const r = quota.chooseHarness({ ...base, level: 'D', readings })
   assert.equal(r.pick, null)
-  assert.equal(r.considered.length, 3)
+  assert.equal(r.considered.length, 4)
   assert.ok(r.considered.every((c) => c.state === 'unserved' && c.why === 'no-rung'))
 })
 
 test('a harness that is not installed or not enabled is out, and codex is never a candidate (R20)', () => {
-  const readings = { agy: agy({ gemini: gemini(1, 60) }), grok: GROK }
+  const readings = { agy: agy({ flash: gemini(1, 60) }), grok: GROK }
   const noGrok = quota.chooseHarness({ ...base, readings, installed: (name) => name !== 'grok' })
   assert.equal(noGrok.pick.harness, 'agy')
   assert.equal(find(noGrok, 'grok', 'grok').why, 'not-installed')
@@ -114,10 +114,10 @@ test('a harness that is not installed or not enabled is out, and codex is never 
 })
 
 test('R23: a group without a valid reading is out, and is never ordered by harnesses or by an old reading', () => {
-  const oldAgy = agy({ gemini: gemini(1, 5) }, NOW - 11 * MIN)
+  const oldAgy = agy({ flash: gemini(1, 5) }, NOW - 11 * MIN)
   const r = quota.chooseHarness({ ...base, readings: { agy: oldAgy, grok: GROK } })
   assert.equal(r.pick.harness, 'grok', 'agy would win by its reset, but its reading is 11 minutes old and its life is 10')
-  const g = find(r, 'agy', 'gemini')
+  const g = find(r, 'agy', 'flash')
   assert.equal(g.state, 'excluded')
   assert.equal(g.why, 'no-reading')
   assert.equal(g.note, 'sin lectura; la última tiene 11 min')
@@ -127,51 +127,51 @@ test('R23: a group without a valid reading is out, and is never ordered by harne
   const nothing = quota.chooseHarness({ ...base, readings: { agy: null, grok: null } })
   assert.equal(nothing.pick, null, 'agy is first in harnesses and still is not chosen without a reading')
   assert.ok(nothing.considered.every((c) => c.state === 'excluded' && c.why === 'no-reading'))
-  assert.equal(find(nothing, 'agy', 'gemini').note, 'sin lectura; ninguna guardada')
+  assert.equal(find(nothing, 'agy', 'flash').note, 'sin lectura; ninguna guardada')
 
-  const oldGrok = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(1, 60) }), grok: { ...GROK, readAt: NOW - 31 * MIN } } })
+  const oldGrok = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: gemini(1, 60) }), grok: { ...GROK, readAt: NOW - 31 * MIN } } })
   assert.equal(oldGrok.pick.harness, 'agy')
   assert.equal(find(oldGrok, 'grok', 'grok').why, 'no-reading')
-  const future = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(1, 60) }, NOW + MIN), grok: GROK } })
-  assert.equal(find(future, 'agy', 'gemini').why, 'no-reading', 'a reading from the future is not valid')
+  const future = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: gemini(1, 60) }, NOW + MIN), grok: GROK } })
+  assert.equal(find(future, 'agy', 'flash').why, 'no-reading', 'a reading from the future is not valid')
   const missingGroup = quota.chooseHarness({ ...base, readings: { agy: agy({ claude: weekly(0.9, 40) }), grok: GROK } })
-  assert.equal(find(missingGroup, 'agy', 'gemini').why, 'no-reading', 'a valid reading of the harness that lacks the group')
+  assert.equal(find(missingGroup, 'agy', 'flash').why, 'no-reading', 'a valid reading of the harness that lacks the group')
 })
 
 test('a group whose balance cannot be read is out, not guessed', () => {
-  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: { unknown: true, windows: {} } }), grok: GROK } })
-  assert.equal(find(r, 'agy', 'gemini').why, 'no-balance')
+  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: { unknown: true, windows: {} } }), grok: GROK } })
+  assert.equal(find(r, 'agy', 'flash').why, 'no-balance')
   assert.equal(r.pick.harness, 'grok')
 })
 
 test('scenario 16 and R22: a reading with balance does not lift a dry mark', () => {
-  const MARK = { harness: 'agy', group: 'gemini', at: NOW - 40 * H, until: NOW + 43 * H }
+  const MARK = { harness: 'agy', group: 'flash', at: NOW - 40 * H, until: NOW + 43 * H }
   const marks = [MARK]
   const copy = structuredClone(marks)
-  const r = quota.chooseHarness({ ...base, marks, readings: { agy: agy({ gemini: gemini(0.98, 60) }), grok: GROK } })
-  const g = find(r, 'agy', 'gemini')
+  const r = quota.chooseHarness({ ...base, marks, readings: { agy: agy({ flash: gemini(0.98, 60) }), grok: GROK } })
+  const g = find(r, 'agy', 'flash')
   assert.equal(g.state, 'excluded')
   assert.equal(g.why, 'mark')
   assert.equal(g.note, 'marca vigente; la lectura con saldo no la desmiente')
   assert.equal(r.pick.harness, 'grok')
   assert.deepEqual(marks, copy, 'the mark is not changed')
 
-  const dry = quota.chooseHarness({ ...base, marks, readings: { agy: agy({ gemini: gemini(0.02, 60) }), grok: GROK } })
-  assert.equal(find(dry, 'agy', 'gemini').why, 'mark')
-  assert.equal(find(dry, 'agy', 'gemini').note, 'marca vigente')
+  const dry = quota.chooseHarness({ ...base, marks, readings: { agy: agy({ flash: gemini(0.02, 60) }), grok: GROK } })
+  assert.equal(find(dry, 'agy', 'flash').why, 'mark')
+  assert.equal(find(dry, 'agy', 'flash').note, 'marca vigente')
   const noReading = quota.chooseHarness({ ...base, marks, readings: { agy: null, grok: GROK } })
-  assert.equal(find(noReading, 'agy', 'gemini').why, 'mark', 'the mark comes before the missing reading')
+  assert.equal(find(noReading, 'agy', 'flash').why, 'mark', 'the mark comes before the missing reading')
 
-  const expired = quota.chooseHarness({ ...base, marks: [{ ...MARK, until: NOW - 1 }], readings: { agy: agy({ gemini: gemini(0.98, 5) }), grok: GROK } })
+  const expired = quota.chooseHarness({ ...base, marks: [{ ...MARK, until: NOW - 1 }], readings: { agy: agy({ flash: gemini(0.98, 5) }), grok: GROK } })
   assert.equal(expired.pick.harness, 'agy', 'a mark that has expired holds nothing')
-  const other = quota.chooseHarness({ ...base, marks: [{ harness: 'agy', group: 'claude', at: NOW, until: NOW + H }], readings: { agy: agy({ gemini: gemini(0.98, 5) }), grok: GROK } })
+  const other = quota.chooseHarness({ ...base, marks: [{ harness: 'agy', group: 'claude', at: NOW, until: NOW + H }], readings: { agy: agy({ flash: gemini(0.98, 5) }), grok: GROK } })
   assert.equal(other.pick.harness, 'agy', 'a mark of another group holds nothing')
 })
 
 test('scenario 20: the mark the router left after a refusal holds the group the same way', () => {
-  const routerMark = { harness: 'agy', group: 'gemini', at: NOW, until: NOW + 588147000, source: 'router' }
-  const r = quota.chooseHarness({ ...base, marks: [routerMark], readings: { agy: agy({ gemini: gemini(0.98, 5) }), grok: GROK } })
-  assert.equal(find(r, 'agy', 'gemini').why, 'mark')
+  const routerMark = { harness: 'agy', group: 'flash', at: NOW, until: NOW + 588147000, source: 'router' }
+  const r = quota.chooseHarness({ ...base, marks: [routerMark], readings: { agy: agy({ flash: gemini(0.98, 5) }), grok: GROK } })
+  assert.equal(find(r, 'agy', 'flash').why, 'mark')
   assert.equal(r.pick.harness, 'grok')
 })
 
@@ -179,7 +179,7 @@ test('peekReadings serves the saved agy reading whatever its age, and never asks
   const dataDir = tempDir(t)
   const file = readingsLib.cacheFile(dataDir, 'agy')
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const groups = { gemini: gemini(1, 60), claude: weekly(0.9, 40) }
+  const groups = { flash: gemini(1, 60), claude: weekly(0.9, 40) }
   fs.writeFileSync(file, JSON.stringify({ harness: 'agy', readAt: NOW - 72 * H, groups }))
   const grokReading = { ...weekly(0.95, 29.6), source: { ageMinutes: 12 } }
   const createAdapter = (name) => (name === 'agy'
@@ -206,7 +206,7 @@ test('peekReadings reads a grok answer with no reading as no reading, so its ren
   const got = quota.peekReadings({ dataDir: tempDir(t), config, harnesses: ['agy', 'grok'], createAdapter, now: NOW })
   assert.equal(got.grok, null, 'unknownQuota has no source: it is not a reading taken now')
   assert.deepEqual(quota.staleHarnesses({ readings: got, config, harnesses: ['grok'], now: NOW }), ['grok'])
-  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(1, 60) }), grok: got.grok } })
+  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: gemini(1, 60) }), grok: got.grok } })
   const k = find(r, 'grok', 'grok')
   assert.equal(k.why, 'no-reading')
   assert.equal(k.note, 'sin lectura; ninguna guardada')
@@ -219,8 +219,8 @@ test('peekReadings takes the newest of the reading it reads and the router\'s ow
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value))
   }
-  const old = { gemini: gemini(0.5, 60) }
-  const renewed = { gemini: gemini(0.4, 60) }
+  const old = { flash: gemini(0.5, 60) }
+  const renewed = { flash: gemini(0.4, 60) }
   write(readingsLib.cacheFile(dataDir, 'agy'), { harness: 'agy', readAt: NOW - 2 * MIN, groups: old })
   write(quota.readingFile(dataDir, 'agy'), { readAt: NOW - 20 * MIN, groups: renewed })
   const grokLog = { ...weekly(0.95, 29.6), source: { ageMinutes: 12 } }
@@ -275,15 +275,15 @@ test('the life of a reading is the one of its harness, and staleHarnesses names 
 
 test('a reading with a window that has reset since it was taken is not valid, as in readGroups (R23)', () => {
   const at = (ms) => new Date(NOW + ms).toISOString()
-  const groups = (resetsAt) => ({ gemini: { windows: { weekly: { remaining: 0.9, resetsAt } } } })
+  const groups = (resetsAt) => ({ flash: { windows: { weekly: { remaining: 0.9, resetsAt } } } })
   const stale = (resetsAt) => quota.staleHarnesses({ readings: { agy: { readAt: NOW - 5 * MIN, groups: groups(resetsAt) } }, config, harnesses: ['agy'], now: NOW })
   assert.deepEqual(stale(at(-2 * MIN)), ['agy'], 'the window reset between the reading and now')
   assert.deepEqual(stale(at(0)), ['agy'], 'a reset at now has come')
   assert.deepEqual(stale(at(-6 * MIN)), [], 'a reset already behind the reading was not waiting for anything')
   assert.deepEqual(stale(at(2 * MIN)), [], 'a reset still ahead')
   assert.deepEqual(stale('not a date'), [])
-  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: { windows: { '5h': win(1, 5), weekly: { remaining: 0.9, resetsAt: at(-2 * MIN) } } } }, NOW - 5 * MIN), grok: GROK } })
-  assert.equal(find(r, 'agy', 'gemini').why, 'no-reading', 'the refilled window makes the old balance untrue')
+  const r = quota.chooseHarness({ ...base, readings: { agy: agy({ flash: { windows: { '5h': win(1, 5), weekly: { remaining: 0.9, resetsAt: at(-2 * MIN) } } } }, NOW - 5 * MIN), grok: GROK } })
+  assert.equal(find(r, 'agy', 'flash').why, 'no-reading', 'the refilled window makes the old balance untrue')
   assert.equal(r.pick.harness, 'grok')
 })
 

@@ -13,6 +13,7 @@ const { repoPaths } = require('./git.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
 const marks = require('./lane-marks.js')
+const { refusalIn } = require('./quota-refusal.js')
 const order = require('./lane-order.js')
 const quota = require('./lane-quota.js')
 const readings = require('./lane-readings.js')
@@ -220,7 +221,7 @@ function status(cwd, runId, { latest = {} } = {}) {
     }
     harnesses[name] = { enabled: true, ...quota.harnessView(name, settings, { reserve: config.reserve, now, dataDir, fresh: false, latest: latest[name] ?? null, onRead }) }
   }
-  return { time: new Date(now).toISOString(), harnesses, order: orderOf(cwd, runId, harnesses), marks: marks.liveMarks(dataDir, now) }
+  return { time: new Date(now).toISOString(), harnesses, order: orderOf(cwd, runId, harnesses), marks: marks.liveMarks(dataDir, now, lanes.groupKnown(config)) }
 }
 
 // The wave's quota step: renews the reading of each enabled harness that has a way to renew it (grok, over ACP and then
@@ -262,9 +263,10 @@ function readGroup(adapter, { harness, settings, group, dataDir }) {
 
 // Leaves the dry mark of a group, from the reading that shows it dry or, when a call ended for quota with nothing
 // that shows it, from none. A mark that cannot be written changes nothing: the group goes unmarked this time.
-function holdDry(dataDir, { harness, group, reading, config, now }) {
+// A refusal ({ resetMs }, quota-refusal.js) marks the group until the reset the message states.
+function holdDry(dataDir, { harness, group, reading, config, now, refusal = null }) {
   try {
-    marks.markDry(dataDir, { harness, group, reading, reserve: config.reserve, now, minutes: config.dryMarkMinutes })
+    marks.markDry(dataDir, { harness, group, reading, reserve: config.reserve, now, minutes: config.dryMarkMinutes, refusal })
   } catch {
     // The next start or call that finds the group dry marks it.
   }
@@ -418,6 +420,9 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
     if (!unit.ok) return { status: 'blocked', detail: unit.detail }
   }
   if (!parsed.clean) {
+    // agy's refusal for its individual quota is explicit, and /usage does not report that limit: it needs no reading.
+    const refusal = refusalIn(parsed.reason, parsed.error, stderr)
+    if (refusal) return { status: 'quota', detail: parsed.reason, refusal }
     if (quotaRead && !lanes.usable(quotaAfter, reserve)) return { status: 'quota', detail: parsed.reason }
     // A harness that reports no quota can only show it ran dry in its output, and so can grok, whose reading comes
     // from a log its headless calls do not update: a quota reason then ends the call as quota. agy's reasons never
@@ -552,7 +557,7 @@ async function runCall(cwd, runId, call) {
   }
   // A call that ended for quota holds its group, from its final reading: until the reset when that reading shows the
   // group under the reserve, for the default length otherwise. The summary below is taken after the mark.
-  if (outcome.status === 'quota') holdDry(dataDir, { harness, group, reading: quotaAfter, config, now: time })
+  if (outcome.status === 'quota') holdDry(dataDir, { harness, group, reading: quotaAfter, config, now: time, refusal: outcome.refusal ?? null })
   if (quotaRead) lane.quota = quotaSummary(quotaAfter, { reserve: config.reserve, now: time, mark: marks.liveMark(dataDir, harness, group, time) })
   try {
     lanes.appendLog(

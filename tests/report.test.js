@@ -310,12 +310,12 @@ test('report adds the lanes: calls, tokens and dollars by group, model and role,
   assert.equal(run.calls, 3)
   close(run.usd, 11.575)
   assert.deepEqual(run.tokens, { input: 2e6, output: 1e6, cacheRead: 1e6 })
-  assert.equal(run.groups.gemini.calls, 2)
-  close(run.groups.gemini.usd, 1.575)
-  assert.deepEqual(run.groups.gemini.tokens, { input: 2e6, output: 0, cacheRead: 1e6 })
-  close(run.groups.gemini.quota['5h'].consumed, 0.05)
-  assert.equal(run.groups.gemini.quota['5h'].resets, 1)
-  close(run.groups.gemini.quota.weekly.consumed, 0.02)
+  assert.equal(run.groups.flash.calls, 2)
+  close(run.groups.flash.usd, 1.575)
+  assert.deepEqual(run.groups.flash.tokens, { input: 2e6, output: 0, cacheRead: 1e6 })
+  close(run.groups.flash.quota['5h'].consumed, 0.05)
+  assert.equal(run.groups.flash.quota['5h'].resets, 1)
+  close(run.groups.flash.quota.weekly.consumed, 0.02)
   close(run.groups.claude.quota['5h'].consumed, 0.02)
   close(run.groups.claude.quota.weekly.consumed, 0.005)
   assert.deepEqual(run.byModel[GEMINI], { calls: 2, ok: 1, failed: 1, quota: 0, violation: 0, blocked: 0, usd: run.byModel[GEMINI].usd })
@@ -352,7 +352,7 @@ test('a run without lane calls reports empty lanes, and an unpriced lane model i
   assert.deepEqual(empty.lanes.run.byHarness, {})
   appendLog(dataDir, 'run-session', {
     kind: 'call', time: T0 + 5 * MIN, startedAt: T0 + 4 * MIN, session: 'run-session', run: args.runId, design: null, call: 'task-1-1-implement',
-    role: 'implementer', task: 'task-1', harness: 'agy', model: 'mystery-1-high', group: 'gemini', effort: 'xhigh', status: 'ok', durationMs: MIN,
+    role: 'implementer', task: 'task-1', harness: 'agy', model: 'mystery-1-high', group: 'flash', effort: 'xhigh', status: 'ok', durationMs: MIN,
     usage: { input: 1e6, output: 0, thinking: 0, cacheRead: 0, total: 1e6 }, conversation: 'c', quotaBefore: null, quotaAfter: null, detail: '',
   })
   const noted = report(repo.dir, args.runId, { dataDir, tests: false })
@@ -646,11 +646,11 @@ test('report gives, per group, the balance at the start and at the end of the ru
   const call = (minutes, startedMinutes, fields) =>
     appendLog(dataDir, 'run-session', { kind: 'call', time: at(minutes), startedAt: at(startedMinutes), conversation: 'c', detail: '', durationMs: (minutes - startedMinutes) * MIN, usage: { input: 1e6, output: 0, thinking: 0, cacheRead: 0, total: 1e6 }, ...fields })
   appendLog(dataDir, 'run-session', { kind: 'reading', time: at(1), run: args.runId, design: null, harness: 'grok', version: '1.0.52', groups: { grok: grokGroup(1) } })
-  appendLog(dataDir, 'run-session', { kind: 'reading', time: at(1), run: args.runId, design: null, harness: 'agy', version: '1.3.2', groups: { gemini: agyGroup(1, 1) } })
+  appendLog(dataDir, 'run-session', { kind: 'reading', time: at(1), run: args.runId, design: null, harness: 'agy', version: '1.3.2', groups: { flash: agyGroup(1, 1) } })
   call(8, 5, { run: args.runId, design: null, call: 'task-1-1-implement', role: 'implementer', task: 'task-1', harness: 'grok', model: 'grok-4.7', group: 'grok', effort: 'xhigh', status: 'ok', quotaBefore: grokGroup(1), quotaAfter: grokGroup(0.97) })
-  call(15, 10, { run: args.runId, design: null, call: 'task-2-1-implement', role: 'implementer', task: 'task-2', harness: 'agy', model: GEMINI, group: 'gemini', effort: 'xhigh', status: 'ok', quotaBefore: agyGroup(1, 1), quotaAfter: agyGroup(0.99, 0.8) })
+  call(15, 10, { run: args.runId, design: null, call: 'task-2-1-implement', role: 'implementer', task: 'task-2', harness: 'agy', model: GEMINI, group: 'flash', effort: 'xhigh', status: 'ok', quotaBefore: agyGroup(1, 1), quotaAfter: agyGroup(0.99, 0.8) })
   const { lanes, radar } = report(repo.dir, args.runId, { dataDir, tests: false })
-  const { grok, gemini } = lanes.run.groups
+  const { grok, flash } = lanes.run.groups
   assert.deepEqual(grok.balance, {
     start: { weekly: 1 },
     end: { weekly: { remaining: 0.97, resetsAt: '2026-10-17T09:08:51.805Z' } },
@@ -658,13 +658,13 @@ test('report gives, per group, the balance at the start and at the end of the ru
     usedPercentAbsent: true,
   })
   assert.equal(grok.calls, 1)
-  assert.deepEqual(gemini.balance, {
+  assert.deepEqual(flash.balance, {
     start: { weekly: 1, '5h': 1 },
     end: { weekly: { remaining: 0.99, resetsAt: '2026-10-21T03:35:44.000Z' }, '5h': { remaining: 0.8, resetsAt: iso(T0 + 4 * 3600 * 1000) } },
     nextReset: '2026-10-21T03:35:44.000Z',
     usedPercentAbsent: false,
   })
-  assert.deepEqual(radar.delegation.byGroup, { grok: { calls: 1, balance: grok.balance }, gemini: { calls: 1, balance: gemini.balance } })
+  assert.deepEqual(radar.delegation.byGroup, { grok: { calls: 1, balance: grok.balance }, flash: { calls: 1, balance: flash.balance } })
 })
 
 // A reading and a grok call as the lane log writes them, for the balance tests below.
@@ -695,22 +695,22 @@ test('a reading logged after the run ended, such as a hand-run status, does not 
 test('a group the run read but never called gets its balance with no calls, so every call going native still shows the quota', (t) => {
   const dataDir = useDataDir(t)
   const { repo, args } = finishedRun(t)
-  appendLog(dataDir, 'run-session', readingEntry(args.runId, 1, 'agy', { gemini: agyGroup(1, 1), claude: agyGroup(0.02, 0.5) }))
-  appendLog(dataDir, 'run-session', readingEntry(args.runId, 20, 'agy', { gemini: agyGroup(1, 1), claude: agyGroup(0.02, 0.5) }))
+  appendLog(dataDir, 'run-session', readingEntry(args.runId, 1, 'agy', { flash: agyGroup(1, 1), claude: agyGroup(0.02, 0.5) }))
+  appendLog(dataDir, 'run-session', readingEntry(args.runId, 20, 'agy', { flash: agyGroup(1, 1), claude: agyGroup(0.02, 0.5) }))
   const { lanes, radar } = report(repo.dir, args.runId, { dataDir, tests: false })
-  assert.deepEqual(Object.keys(lanes.run.groups).sort(), ['claude', 'gemini'])
-  const { gemini, claude } = lanes.run.groups
-  assert.equal(gemini.calls, 0)
-  assert.equal(gemini.usd, 0)
-  assert.deepEqual(gemini.balance.start, { weekly: 1, '5h': 1 })
-  assert.equal(gemini.balance.nextReset, '2026-10-21T03:35:44.000Z')
+  assert.deepEqual(Object.keys(lanes.run.groups).sort(), ['claude', 'flash'])
+  const { flash, claude } = lanes.run.groups
+  assert.equal(flash.calls, 0)
+  assert.equal(flash.usd, 0)
+  assert.deepEqual(flash.balance.start, { weekly: 1, '5h': 1 })
+  assert.equal(flash.balance.nextReset, '2026-10-21T03:35:44.000Z')
   assert.equal(claude.calls, 0)
   assert.deepEqual(claude.balance.end.weekly, { remaining: 0.02, resetsAt: '2026-10-21T03:35:44.000Z' })
-  assert.deepEqual(radar.delegation.byGroup, { gemini: { calls: 0, balance: gemini.balance }, claude: { calls: 0, balance: claude.balance } })
+  assert.deepEqual(radar.delegation.byGroup, { flash: { calls: 0, balance: flash.balance }, claude: { calls: 0, balance: claude.balance } })
   // A reading of another run, or one after this run ended, seeds nothing.
   appendLog(dataDir, 'run-session', readingEntry('20261001-000000-aaaa', 5, 'grok', { grok: grokGroup(1) }))
   appendLog(dataDir, 'run-session', readingEntry(args.runId, 2 * 24 * 60, 'grok', { grok: grokGroup(1) }))
-  assert.deepEqual(Object.keys(report(repo.dir, args.runId, { dataDir, tests: false }).lanes.run.groups).sort(), ['claude', 'gemini'])
+  assert.deepEqual(Object.keys(report(repo.dir, args.runId, { dataDir, tests: false }).lanes.run.groups).sort(), ['claude', 'flash'])
 })
 
 test('the next reset and the 0%-used flag come from the latest reading that has windows, not from an unknown reading after it', (t) => {
@@ -726,9 +726,9 @@ test('the next reset and the 0%-used flag come from the latest reading that has 
 test('a lane-log reading with a null window does not stop the report, and the window is skipped', (t) => {
   const dataDir = useDataDir(t)
   const { repo, args } = finishedRun(t)
-  appendLog(dataDir, 'run-session', readingEntry(args.runId, 1, 'agy', { gemini: { windows: { weekly: null } } }))
-  appendLog(dataDir, 'run-session', laneCall(args.runId, 8, 5, { harness: 'agy', model: GEMINI, group: 'gemini', quotaBefore: agyGroup(1, 1), quotaAfter: agyGroup(0.99, 0.8) }))
-  const { balance } = report(repo.dir, args.runId, { dataDir, tests: false }).lanes.run.groups.gemini
+  appendLog(dataDir, 'run-session', readingEntry(args.runId, 1, 'agy', { flash: { windows: { weekly: null } } }))
+  appendLog(dataDir, 'run-session', laneCall(args.runId, 8, 5, { harness: 'agy', model: GEMINI, group: 'flash', quotaBefore: agyGroup(1, 1), quotaAfter: agyGroup(0.99, 0.8) }))
+  const { balance } = report(repo.dir, args.runId, { dataDir, tests: false }).lanes.run.groups.flash
   assert.deepEqual(balance.start, { weekly: 1, '5h': 1 })
   assert.equal(balance.end.weekly.remaining, 0.99)
 })
@@ -740,9 +740,9 @@ test('a reset that cannot be read as a time gives no next reset, and a group wit
   sampleLaneLog(dataDir, args.runId)
   const { run } = report(repo.dir, args.runId, { dataDir, tests: false }).lanes
   // The sample log writes its resets as R1, W1: the balance still gives the shares, and no next reset.
-  assert.deepEqual(run.groups.gemini.balance.start, { '5h': 0.9, weekly: 0.96 })
-  assert.deepEqual(run.groups.gemini.balance.end, { '5h': { remaining: 0.7, resetsAt: 'R3' }, weekly: { remaining: 0.94, resetsAt: 'W1' } })
-  assert.equal(run.groups.gemini.balance.nextReset, null)
+  assert.deepEqual(run.groups.flash.balance.start, { '5h': 0.9, weekly: 0.96 })
+  assert.deepEqual(run.groups.flash.balance.end, { '5h': { remaining: 0.7, resetsAt: 'R3' }, weekly: { remaining: 0.94, resetsAt: 'W1' } })
+  assert.equal(run.groups.flash.balance.nextReset, null)
   appendLog(dataDir, 'run-session', { kind: 'call', time: T0 + 14 * MIN, startedAt: T0 + 13 * MIN, run: args.runId, design: null, call: 'task-9-1-implement', role: 'implementer', task: 'task-9', harness: 'codex', model: 'gpt-codex', group: 'codex', effort: 'high', status: 'failed', usage: {}, quotaBefore: null, quotaAfter: null, detail: '', durationMs: MIN })
   const again = report(repo.dir, args.runId, { dataDir, tests: false }).lanes.run
   assert.equal(again.groups.codex.balance, null)

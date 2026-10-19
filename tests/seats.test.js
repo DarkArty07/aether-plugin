@@ -24,7 +24,7 @@ test('chooseSeat takes the first external model of the choice, and gives the sea
   assert.deepEqual(judge.external, {
     harness: 'agy',
     model: 'gemini-4-argon',
-    group: 'gemini',
+    group: 'argon',
     effort: 'high',
     level: 'high',
     timeoutSeconds: 1200,

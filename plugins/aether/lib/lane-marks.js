@@ -3,12 +3,15 @@
 // On-disk quota exhaustion marks for lanes (`lanes/marks/<harness>__<group>.json`).
 // An unconfirmed mark (rate limit, missing/unknown balance, or absent used percent) lasts
 // DEFAULT_MARK_MINUTES. A mark is confirmed and holds until the reset only when reading
-// has an explicit balance showing the group under reserve. Marks never shorten.
+// has an explicit balance showing the group under reserve, or when a call was refused with the reset stated (agy's
+// «Individual quota reached», `refusal`); a refusal's mark says so in `reason`. A mark that is live is kept by any call that
+// would end it sooner, so a later reading with a balance does not lift a refusal's mark. Marks never shorten.
 
 const fs = require('node:fs')
 const path = require('node:path')
 
 const DEFAULT_MARK_MINUTES = 60
+const REFUSAL_REASON = 'quota refusal'
 // The longest a mark can legitimately hold: a confirmed mark lasts until a window resets, and the longest window is
 // the weekly one. A day is added for the clock of whoever reports the reset. A mark beyond this is damaged, or was
 // written under a clock far ahead, and is no mark.
@@ -106,7 +109,9 @@ function liveMark(dataDir, harness, group, now = Date.now()) {
   return data
 }
 
-function liveMarks(dataDir, now = Date.now()) {
+// The live marks, sorted. known(harness, group), when given, keeps only the marks of a group the lane table has: a file
+// of a group the table dropped (agy's `gemini`, which is now `argon` and `flash`) is no mark for anyone.
+function liveMarks(dataDir, now = Date.now(), known = null) {
   const dir = marksDir(dataDir)
   let entries
   try {
@@ -133,6 +138,7 @@ function liveMarks(dataDir, now = Date.now()) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) continue
     if (typeof data.until !== 'number' || !Number.isFinite(data.until)) continue
     if (data.until <= now || data.until > now + MAX_MARK_MS) continue
+    if (known !== null && !known(data.harness, data.group)) continue
     result.push(data)
   }
   result.sort((a, b) => {
@@ -143,14 +149,21 @@ function liveMarks(dataDir, now = Date.now()) {
   return result
 }
 
-function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.now(), minutes = DEFAULT_MARK_MINUTES }) {
+// refusal is { resetMs } of a call agy refused for its individual quota (quota-refusal.js): the mark holds until the
+// reset the message states, or for `minutes` when it states none, and never past what a mark can hold.
+function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.now(), minutes = DEFAULT_MARK_MINUTES, refusal = null }) {
   const usedPercentAbsent = Boolean(reading && reading.usedPercentAbsent)
 
   let confirmed = false
   let until = null
   let resetsAt = null
 
-  if (reading && typeof reading === 'object' && !reading.unknown && !reading.usedPercentAbsent && reading.windows && typeof reading.windows === 'object') {
+  if (refusal) {
+    const span = Number.isFinite(refusal.resetMs) && refusal.resetMs > 0 ? refusal.resetMs : minutes * 60 * 1000
+    confirmed = true
+    until = Math.min(now + span, now + MAX_MARK_MS - 60 * 1000)
+    resetsAt = new Date(until).toISOString()
+  } else if (reading && typeof reading === 'object' && !reading.unknown && !reading.usedPercentAbsent && reading.windows && typeof reading.windows === 'object') {
     const windows = Object.values(reading.windows)
     const allNumeric = windows.length > 0 && windows.every((w) => w && typeof w.remaining === 'number' && Number.isFinite(w.remaining))
     if (allNumeric) {
@@ -181,6 +194,7 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
     resetsAt,
     usedPercentAbsent,
   }
+  if (refusal) candidate.reason = REFUSAL_REASON
 
   const file = markFile(dataDir, harness, group)
   return withLock(file, () => {
@@ -195,6 +209,7 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
 
 module.exports = {
   DEFAULT_MARK_MINUTES,
+  REFUSAL_REASON,
   marksDir,
   MAX_MARK_MS,
   markFile,

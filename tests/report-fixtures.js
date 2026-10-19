@@ -121,10 +121,10 @@ function sampleLaneLog(dataDir, runId) {
     design: null,
     harness: 'agy',
     version: '1.3.2',
-    groups: { gemini: quota(0.9, 'R1', 0.96, 'W1'), claude: quota(0.97, 'R2', 0.98, 'W2') },
+    groups: { flash: quota(0.9, 'R1', 0.96, 'W1'), claude: quota(0.97, 'R2', 0.98, 'W2') },
   })
   call(6, 3, {
-    run: runId, design: null, call: 'task-1-1-implement', role: 'implementer', task: 'task-1', model: GEMINI, group: 'gemini', effort: 'xhigh', status: 'ok',
+    run: runId, design: null, call: 'task-1-1-implement', role: 'implementer', task: 'task-1', model: GEMINI, group: 'flash', effort: 'xhigh', status: 'ok',
     usage: { input: 1e6, output: 0, thinking: 0, cacheRead: 0, total: 1e6 },
     quotaBefore: quota(0.9, 'R1', 0.96, 'W1'), quotaAfter: quota(0.85, 'R1', 0.95, 'W1'),
   })
@@ -134,7 +134,7 @@ function sampleLaneLog(dataDir, runId) {
     quotaBefore: quota(0.97, 'R2', 0.98, 'W2'), quotaAfter: quota(0.95, 'R2', 0.975, 'W2'),
   })
   call(12, 10, {
-    run: runId, design: null, call: 'task-2-1-implement', role: 'implementer', task: 'task-2', model: GEMINI, group: 'gemini', effort: 'xhigh', status: 'failed',
+    run: runId, design: null, call: 'task-2-1-implement', role: 'implementer', task: 'task-2', model: GEMINI, group: 'flash', effort: 'xhigh', status: 'failed',
     usage: { input: 1e6, output: 0, thinking: 0, cacheRead: 1e6, total: 1e6 },
     quotaBefore: quota(0.85, 'R1', 0.95, 'W1'), quotaAfter: quota(0.7, 'R3', 0.94, 'W1'),
   })

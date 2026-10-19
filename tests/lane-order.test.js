@@ -31,7 +31,7 @@ test('an entry says its state and priority: a priority, no reading, or excluded'
 })
 
 test('the readings of 2026-10-14 give the priorities of the spec, and Grok goes before Gemini', () => {
-  const gemini = view(READINGS.gemini)
+  const gemini = view(READINGS.flash)
   const claude = view(READINGS.claude)
   const grok = view(READINGS.grok)
   assert.deepEqual([gemini.priority, gemini.resetsAt, gemini.windowName, gemini.usable], [0.006044, '2026-10-21T03:35:44.000Z', 'weekly', true])
@@ -42,7 +42,7 @@ test('the readings of 2026-10-14 give the priorities of the spec, and Grok goes 
   assert.equal(CLAUDE_LOW.priority, claude.priority)
   assert.equal(GROK.priority, grok.priority)
   const harnesses = { agy: { installed: true, groups: { gemini, claude } }, grok: { installed: true, groups: { grok } } }
-  const flash = { harness: 'agy', model: 'gemini-3.8-flash', group: 'gemini' }
+  const flash = { harness: 'agy', model: 'gemini-3.8-flash', group: 'flash' }
   const grokLane = { harness: 'grok', model: 'grok-4.7', group: 'grok' }
   const sonnet = { harness: 'agy', model: 'claude-sonnet-5-5', group: 'claude' }
   assert.deepEqual(order.orderCandidates([flash, grokLane], harnesses).ordered.map((e) => e.model), ['grok-4.7', 'gemini-3.8-flash'])
@@ -66,7 +66,7 @@ test('a group is usable when every window is above the reserve and no mark holds
   assert.equal(view(windows(0.9, 0.05)).usable, false, 'exactly at the reserve is not above it')
   assert.equal(view(windows(0.9, 0.06)).usable, true)
   assert.equal(view(windows(0.04, 1)).usable, false)
-  const mark = { harness: 'agy', group: 'gemini', until: NOW + 1000 }
+  const mark = { harness: 'agy', group: 'flash', until: NOW + 1000 }
   const marked = view(windows(0.9, 0.9), { mark })
   assert.deepEqual([marked.usable, marked.mark], [false, mark])
   // Only the longest window sets the priority; the 5 h window counts for usability alone.
@@ -136,7 +136,7 @@ test('readingUsable is the rule that start and the judge of a call use', () => {
 })
 
 test('candidatesOf reads a list of lanes, a single lane of an older plan, or nothing', () => {
-  const flash = { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' }
+  const flash = { model: 'gemini-3.8-flash', group: 'flash', harness: 'agy' }
   const grok = { model: 'grok-4.7', group: 'grok', harness: 'grok' }
   const calls = { implementer: { haiku: [flash, grok], sonnet: { model: 'claude-sonnet-5-5', group: 'claude' } } }
   assert.deepEqual(order.candidatesOf(calls, 'implementer', 'haiku'), [flash, grok])
