@@ -86,7 +86,7 @@ test('a reading that carries its own source keeps it, stale after the harness li
 
 test('the report shows a live dry mark on its group, and the text says until when and why', async (t) => {
   const dataDir = useTable(t)
-  fakeHarness(t, 'agy', { gemini: both(1, 1), claude: both(0.5, 0.5, '2026-10-16T04:41:07Z') })
+  fakeHarness(t, 'agy', { gemini: both(0.02, 0.02), claude: both(0.5, 0.5, '2026-10-16T04:41:07Z') })
   marks.markDry(dataDir, { harness: 'agy', group: 'gemini', reserve: RESERVE, now: NOW - 10 * MIN })
   const r = await report()
   const { gemini, claude } = r.harnesses.agy.groups

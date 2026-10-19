@@ -228,7 +228,7 @@ test('scenario 20: a refusal the router saw leaves its mark, and the next decisi
   const ran = runBin(BIN, ['delegate', '--id', external.id, '--session', 's1'], repo.dir, env)
   assert.equal(ran.status, 0, ran.stderr)
   assert.equal(ran.json.ok, false, 'the mod then runs the same delegate in Claude (R26)')
-  assert.ok(Math.abs(ran.json.marked - (Date.now() + 588147000)) < 60000, 'the mark holds until the reset the refusal states')
+  assert.ok(Math.abs(ran.json.marked - (Date.now() + 60 * 60 * 1000)) < 60000, 'the mark holds 60 minutes, not the 163 h the refusal states')
   assert.equal(log.readJournal(dataDir).find((e) => e.kind === 'outcome').markedUntil, ran.json.marked)
   assert.equal(fs.existsSync(path.join(dataDir, 'lanes', 'marks')), false, 'the swarm store is not written')
 

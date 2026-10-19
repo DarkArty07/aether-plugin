@@ -62,7 +62,11 @@ function failureReason({ stderr, exitCode }, data, { conversation, required }) {
 }
 
 function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = process.env } = {}) {
-  const keyOfGroup = new Map(Object.entries(groups).map(([key, name]) => [name, key]))
+  // The table's keys that read each /usage group, by its name. Several keys may read one group: agy's /usage lists
+  // «Gemini Models» alone, while Argon and Flash have a quota each, so both keys get its windows and a refusal tells
+  // them apart (marks, order and choice are per key).
+  const keysOfGroup = new Map()
+  for (const [key, name] of Object.entries(groups)) keysOfGroup.set(name, [...(keysOfGroup.get(name) ?? []), key])
   // agy's name for a lane model at a level: the model id and the level joined by a dash.
   const modelArg = ({ model, level }) => `${model}-${level}`
 
@@ -76,7 +80,8 @@ function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = pro
 
     modelArg,
 
-    // The windows of each configured group, keyed by the group's key in the table.
+    // The windows of each configured key, keyed by its key in the table; the keys that read one /usage group get the
+    // same windows, each its own copy.
     quota() {
       const result = exec([command, '-p', '/usage', '--output-format', 'json'], { timeoutMs: 60000 })
       if (result.status !== 0) {
@@ -86,19 +91,21 @@ function createAgy({ command = 'agy', groups = {}, exec = defaultExec, env = pro
       if (!Array.isArray(list)) throw new Error('agy /usage failed: unreadable output')
       const reported = {}
       for (const group of list) {
-        const key = keyOfGroup.get(group.name)
-        if (key === undefined) continue
+        const keys = keysOfGroup.get(group.name)
+        if (keys === undefined) continue
         const windows = {}
         for (const bucket of group.buckets) {
           windows[bucket.window] = { remaining: bucket.remaining_fraction, resetsAt: bucket.reset_time }
         }
-        if (Object.keys(windows).length > 0) reported[key] = { windows }
+        if (Object.keys(windows).length > 0) {
+          for (const key of keys) reported[key] = { windows: Object.fromEntries(Object.entries(windows).map(([name, w]) => [name, { ...w }])) }
+        }
       }
       // A table group that /usage does not list, or lists with no buckets, has no reading: unknown, never absent and
       // never without windows. An absent group, or one with no windows, would be judged as a quota failure by the runner
       // (a call that fails there would leave a mark), and an absent one would keep the saved reading from holding for
       // its life, since that needs every group of the table.
-      for (const key of keyOfGroup.values()) {
+      for (const key of Object.keys(groups)) {
         if (!Object.hasOwn(reported, key)) reported[key] = { unknown: true, windows: {} }
       }
       return { groups: reported }

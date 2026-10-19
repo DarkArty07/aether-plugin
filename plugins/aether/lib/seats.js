@@ -15,6 +15,9 @@ const { git, repoPaths } = require('./git.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
 const schemas = require('./lane-schemas.js')
+const laneMarks = require('./lane-marks.js')
+const laneQuota = require('./lane-quota.js')
+const { refusalIn } = require('./quota-refusal.js')
 const { createAdapter } = require('./harness/index.js')
 const { roleBody, claudeMdSections, WORKDIR_RULE } = require('./lane-calls.js')
 const { priceEntry, loadPrices } = require('./prices.js')
@@ -64,11 +67,13 @@ function authorModel(author) {
 }
 
 // Who takes seat under the seats choice: the first external model on its list whose harness is enabled
-// and installed, that is not the author's model, and whose group has quota above the reserve; else the
-// native agent. Pure apart from the adapter calls it is given: installed(harness) and quota(harness, group).
+// and installed, that is not the author's model, and whose group has no dry mark and has quota above the
+// reserve; else the native agent. Pure apart from the calls it is given: installed(harness), quota(harness, group)
+// and marked(harness, group, reading), which says whether a live mark still holds the group once the reading of the
+// group (null when it could not be read) has had the chance to lift it; with none given, no mark holds.
 // Returns { off } for an examiner the choice does not run, { external } or { native }, each with the
 // models it passed over and why.
-function chooseSeat(config, { choice, seat, author = null, enabled = [], installed, quota }) {
+function chooseSeat(config, { choice, seat, author = null, enabled = [], installed, quota, marked = () => false }) {
   const list = lanes.seatList(config, choice, seat)
   if (list === false) return { off: true, tried: [] }
   const authorId = authorModel(author)
@@ -89,10 +94,20 @@ function chooseSeat(config, { choice, seat, author = null, enabled = [], install
       tried.push({ model: item, reason: 'not-installed' })
       continue
     }
-    let reading
+    // The group is read first: a healthy reading lifts a mark that came from a reading, and the group is passed over
+    // only if a mark still holds, whether or not the reading could be read.
+    let reading = null
+    let unreadable = false
     try {
       reading = quota(harnessName, settings, entry.group)
     } catch {
+      unreadable = true
+    }
+    if (marked(harnessName, entry.group, reading)) {
+      tried.push({ model: item, reason: 'quota' })
+      continue
+    }
+    if (unreadable) {
       tried.push({ model: item, reason: 'quota-unreadable' })
       continue
     }
@@ -492,6 +507,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   let parsed = { usage: NO_USAGE, conversation: null }
   let quotaAfter = null
   let quotaRead = false
+  let refusal = null
   try {
     const schemaFile = path.join(dir, 'schema.json')
     fs.writeFileSync(schemaFile, `${JSON.stringify(schema, null, 2)}\n`)
@@ -523,7 +539,9 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
       const backup = saveRound(worktree, backupRef(id), dir, `aether: seat ${id}, kept because it changed files outside its seat`)
       outcome = { status: 'violation', files: outside, backup, detail: 'changes outside the seat' }
     } else if (!parsed.clean) {
-      const quotaGone = quotaRead && (!lanes.usable(quotaAfter, config.reserve) || (quotaAfter?.unknown === true && parsed.reason?.startsWith('quota: ')))
+      // agy's refusal for its individual quota is explicit, and /usage does not report that limit: it needs no reading.
+      refusal = refusalIn(parsed.reason, parsed.error, readTextOrEmpty(path.join(dir, 'stderr')))
+      const quotaGone = refusal !== null || (quotaRead && (!lanes.usable(quotaAfter, config.reserve) || (quotaAfter?.unknown === true && parsed.reason?.startsWith('quota: '))))
       outcome = { status: quotaGone ? 'quota' : 'failed', detail: parsed.reason }
     } else {
       const problem = schemas.validate(schema, parsed.structured) ?? answerProblem(seat, parsed.structured)
@@ -551,6 +569,14 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   }
 
   const time = Date.now()
+  // A refused round holds its group until the reset the refusal states, so the next round skips it.
+  if (refusal !== null) {
+    try {
+      laneMarks.markDry(dataDir, { harness: external.harness, group: external.group, reading: quotaAfter, reserve: config.reserve, now: time, minutes: config.dryMarkMinutes, refusal })
+    } catch {
+      // A mark that cannot be written changes nothing: the group goes unmarked this time.
+    }
+  }
   logEntry(dataDir, session, {
     kind: 'call',
     time,
@@ -665,6 +691,9 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     enabled: lanes.enabledHarnesses(env),
     installed: (name, settings) => adapterOf(name, settings).installed(),
     quota: (name, settings, group) => adapterOf(name, settings).quota().groups[group] ?? null,
+    // The reading was taken a moment ago, so its life is the harness's whole life.
+    marked: (name, group, reading) =>
+      laneMarks.liftIfHealthy(dataDir, { harness: name, group, reading, readAt: Date.now(), reserve: config.reserve, lifeMs: laneQuota.lifeMsOf(config.harnesses[name]), now: Date.now() }) !== null,
   })
   if (chosen.native) {
     note('native', { reason: 'no-external', tried: chosen.tried })

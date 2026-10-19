@@ -210,7 +210,7 @@ test('R23: a renewal that lands inside the wait makes the group a candidate for 
 
 test('scenarios 16 and 20: a mark holds the group although the reading shows balance, and the record says so (R22)', async (t) => {
   const readings = { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(0.98, 5) } }, grok: GROK }
-  const marks = [{ harness: 'agy', group: 'gemini', at: NOW - H, until: NOW + 100 * H, source: 'router' }]
+  const marks = [{ harness: 'agy', group: 'gemini', at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' }]
   const deps = setup(t, { readings, marks })
   const plan = await go(deps, event())
   assert.equal(plan.external.harness, 'grok')
@@ -521,4 +521,20 @@ test('in command the note says when the Lead\'s own choice was replaced and how 
   const advise = await go(setup(t, { settings: { mode: 'advise', lanes: false, harnesses: [] } }), event({ model: 'haiku', effort: 'medium' }))
   assert.match(advise.notes[0], /You asked haiku medium\. The call runs as you sent it\./)
   assert.doesNotMatch(advise.notes[0], /replaced/)
+})
+
+test('issue 015: the quota step lifts a swarm mark that came from a reading when the reading of its group is healthy and newer, and removes its file', async (t) => {
+  const deps = setup(t, { readings: { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(1, 60), claude: gemini(1, 60) } }, grok: GROK } })
+  deps.marks = null
+  const laneMarks = require('../plugins/aether/lib/lane-marks.js')
+  const swarm = laneMarks.markDry(deps.dataDir, { harness: 'agy', group: 'gemini', reading: { windows: { weekly: { remaining: 0.01, resetsAt: new Date(NOW + 40 * H).toISOString() } } }, reserve: 0.05, now: NOW - 30 * MIN })
+  const refusal = laneMarks.markDry(deps.dataDir, { harness: 'agy', group: 'claude', reserve: 0.05, now: NOW - 30 * MIN, refusal: { resetMs: 100 * H } })
+  const plan = await go(deps, event())
+  assert.equal(plan.external.harness, 'grok')
+  const quota = journal(deps)[0].quota
+  assert.equal(quota.find((c) => c.harness === 'agy' && c.group === 'gemini').why, null, 'the group is a candidate again')
+  assert.equal(quota.find((c) => c.harness === 'agy' && c.group === 'claude').why, 'mark')
+  assert.equal(laneMarks.liveMark(deps.dataDir, 'agy', 'gemini', NOW), null, 'its file is gone')
+  assert.deepEqual(laneMarks.liveMark(deps.dataDir, 'agy', 'claude', NOW), refusal)
+  assert.ok(swarm.until > NOW)
 })

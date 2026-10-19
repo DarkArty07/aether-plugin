@@ -144,8 +144,8 @@ test('a group whose balance cannot be read is out, not guessed', () => {
   assert.equal(r.pick.harness, 'grok')
 })
 
-test('scenario 16 and R22: a reading with balance does not lift a dry mark', () => {
-  const MARK = { harness: 'agy', group: 'gemini', at: NOW - 40 * H, until: NOW + 43 * H }
+test("scenario 16 and R22: a reading with balance does not lift a refusal's mark", () => {
+  const MARK = { harness: 'agy', group: 'gemini', at: NOW - 40 * H, until: NOW + 43 * H, reason: 'quota refusal' }
   const marks = [MARK]
   const copy = structuredClone(marks)
   const r = quota.chooseHarness({ ...base, marks, readings: { agy: agy({ gemini: gemini(0.98, 60) }), grok: GROK } })
@@ -169,10 +169,31 @@ test('scenario 16 and R22: a reading with balance does not lift a dry mark', () 
 })
 
 test('scenario 20: the mark the router left after a refusal holds the group the same way', () => {
-  const routerMark = { harness: 'agy', group: 'gemini', at: NOW, until: NOW + 588147000, source: 'router' }
+  const routerMark = { harness: 'agy', group: 'gemini', at: NOW - H, until: NOW + 588147000, source: 'router', reason: 'quota refusal' }
   const r = quota.chooseHarness({ ...base, marks: [routerMark], readings: { agy: agy({ gemini: gemini(0.98, 5) }), grok: GROK } })
   assert.equal(find(r, 'agy', 'gemini').why, 'mark')
   assert.equal(r.pick.harness, 'grok')
+})
+
+test('issue 015: a fresh healthy reading newer than the mark lifts a mark that came from a reading, and tells who keeps it', () => {
+  const MARK = { harness: 'agy', group: 'gemini', at: NOW - 30 * MIN, until: NOW + 30 * MIN, confirmed: false, source: 'swarm' }
+  const lifted = []
+  const r = quota.chooseHarness({ ...base, marks: [MARK], lift: (mark) => lifted.push(mark), readings: { agy: agy({ gemini: gemini(0.98, 60) }), grok: GROK } })
+  assert.equal(find(r, 'agy', 'gemini').state, 'candidate')
+  assert.deepEqual(lifted, [MARK])
+  // With no one to tell, the mark is lifted for this decision all the same.
+  assert.equal(find(quota.chooseHarness({ ...base, marks: [MARK], readings: { agy: agy({ gemini: gemini(0.98, 60) }), grok: GROK } }), 'agy', 'gemini').state, 'candidate')
+})
+
+test('issue 015: a reading still under the reserve, one older than the mark, a stale one, or a refusal mark lift nothing', () => {
+  const MARK = { harness: 'agy', group: 'gemini', at: NOW - 30 * MIN, until: NOW + 30 * MIN, confirmed: false, source: 'swarm' }
+  const lifted = []
+  const run = (reading, mark = MARK) => quota.chooseHarness({ ...base, marks: [mark], lift: (m) => lifted.push(m), readings: { agy: reading, grok: GROK } })
+  assert.equal(find(run(agy({ gemini: gemini(0.02, 60) })), 'agy', 'gemini').why, 'mark', 'under the reserve')
+  assert.equal(find(run(agy({ gemini: gemini(0.98, 60) }, NOW - 45 * MIN)), 'agy', 'gemini').why, 'mark', 'the reading is stale')
+  assert.equal(find(run(agy({ gemini: gemini(0.98, 60) }, NOW - 5 * MIN), { ...MARK, at: NOW - MIN }), 'agy', 'gemini').why, 'mark', 'the reading is older than the mark')
+  assert.equal(find(run(agy({ gemini: gemini(0.98, 60) }), { ...MARK, reason: 'quota refusal' }), 'agy', 'gemini').why, 'mark', 'a refusal')
+  assert.deepEqual(lifted, [])
 })
 
 test('peekReadings serves the saved agy reading whatever its age, and never asks the adapter (R23)', (t) => {

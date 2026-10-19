@@ -9,6 +9,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 const { groupView } = require('./lane-order.js')
+const laneMarks = require('./lane-marks.js')
 const readings = require('./lane-readings.js')
 const { pickRung } = require('./router-rungs.js')
 
@@ -135,7 +136,8 @@ function tableGroups(config) {
   return entries
 }
 
-function chooseHarness({ level, axis, rungs, config, enabled, installed, readings: byHarness, marks, now }) {
+// lift(mark), when given, is told of each mark a fresh healthy reading lifted, so whoever keeps the marks removes it.
+function chooseHarness({ level, axis, rungs, config, enabled, installed, readings: byHarness, marks, now, lift = null }) {
   const stale = new Set(staleHarnesses({ readings: byHarness, config, harnesses: EXTERNAL, now }))
   const candidates = []
 
@@ -164,8 +166,13 @@ function chooseHarness({ level, axis, rungs, config, enabled, installed, reading
 
     if (!enabled.includes(harness)) return exclude('not-enabled')
     if (!installed(harness)) return exclude('not-installed')
-    if (marks.some((mark) => mark.harness === harness && mark.group === group && mark.until > now)) {
-      // A reading with balance does not lift a mark (R22).
+    const held = marks.filter((mark) => mark.harness === harness && mark.group === group && mark.until > now)
+    // A mark that came from a reading is lifted by a valid reading that shows the group healthy and is newer than the
+    // mark (lane-marks.js): the provider renewed the quota without saying so. A refusal's mark never is (R22).
+    const lifted = valid !== null && held.length > 0 && held.every((mark) => laneMarks.liftable(mark, valid, { readAt: reading.readAt, reserve: config.reserve, lifeMs: lifeMs(config, harness), now }))
+    if (lifted && typeof lift === 'function') for (const mark of held) lift(mark)
+    if (held.length > 0 && !lifted) {
+      // A reading with balance does not lift a refusal's mark (R22).
       return exclude('mark', view && view.usable && !view.unknown ? 'marca vigente; la lectura con saldo no la desmiente' : 'marca vigente')
     }
     if (!view) {

@@ -47,15 +47,33 @@ function runCall(t, lines, env) {
   return fx.waitDone(args, IMPLEMENT, env)
 }
 
-test('a start refuses a group a live mark holds, without reading its quota, and does not renew the mark', (t) => {
+test("a start refuses a group a refusal's mark holds, without reading its quota, and does not renew the mark", (t) => {
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t)
   const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
-  const held = marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reserve: RESERVE, now: Date.now() - 10 * MIN })
+  const held = marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reserve: RESERVE, now: Date.now() - 10 * MIN, refusal: { resetMs: 163 * 3600 * 1000 } })
   assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json, { unavailable: 'quota' })
   assert.equal(usageCalls(env).length, 0)
   assert.deepEqual(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), held)
   assert.equal(fx.agyTurns(env).length, 0)
+})
+
+test('a start reads the group of any other mark: the mark holds while the reading shows it dry, and is lifted when a fresh reading shows it healthy', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t, { quota: groupQuota([0.02, 0.02]) })
+  const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
+  const held = marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reserve: RESERVE, now: Date.now() - 10 * MIN })
+  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json, { unavailable: 'quota' })
+  assert.equal(usageCalls(env).length, 1)
+  assert.deepEqual(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), held)
+  // The provider renewed the quota without saying so. The kept reading has a life of 10 minutes: a start inside it
+  // serves it, so the mark goes once a reading is taken after the renewal.
+  fs.writeFileSync(env.AETHER_FAKE_AGY_QUOTA_FILE, JSON.stringify(groupQuota([0.9, 0.9])))
+  fs.rmSync(path.join(env.AETHER_DATA_DIR, 'lanes', 'quota'), { recursive: true, force: true })
+  const started = fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env)
+  assert.equal(started.json.started, true, started.stdout + started.stderr)
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null)
+  fx.waitDone(args, IMPLEMENT, env)
 })
 
 test('a start that finds the group under the reserve, with a balance read, holds it until the reset', (t) => {

@@ -146,7 +146,9 @@ function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fr
   const groups = {}
   for (const key of new Set([...keys, ...Object.keys(read.groups ?? {})])) {
     const reading = Object.hasOwn(read.groups ?? {}, key) ? read.groups[key] : { unknown: true, windows: {} }
-    groups[key] = groupView(settings.groups?.[key], reading, { reserve, now, command: settings.command, mark: markOf(key), readAt: read.readAt, lifeMs })
+    // A mark that came from a reading is lifted by a fresh healthy one (lane-marks.js), so the view shows no mark for it.
+    const mark = marks.liftIfHealthy(dataDir, { harness: name, group: key, reading, readAt: read.readAt, reserve, lifeMs, now })
+    groups[key] = groupView(settings.groups?.[key], reading, { reserve, now, command: settings.command, mark, readAt: read.readAt, lifeMs })
   }
   return { ...base, version, groups }
 }
@@ -259,8 +261,15 @@ function windowLine(name, w) {
   return `${name}: ${percent(w.remaining)} left, resets ${utcTime(Date.parse(w.resetsAt))} (${w.resetsLocal}), ${when}, priority ${w.priority}`
 }
 
-// Why a dry mark holds: its reset, when a reading showed the group under the reserve, or the minutes it was given.
+// Why a dry mark holds: the minutes a refusal was given, with the reset agy stated shown as stated; its reset when a
+// reading showed the group under the reserve; or the minutes it was given.
 function markReason(mark) {
+  if (mark.reason === 'quota refusal') {
+    const minutes = Math.round((mark.until - mark.at) / MINUTE_MS)
+    const hours = Number.isFinite(mark.statedResetMs) ? Math.round(mark.statedResetMs / 3600000) : null
+    const stated = hours === null ? 'it stated no reset' : `agy stated a reset in ${hours} h, not trusted`
+    return `${minutes} minute${minutes === 1 ? '' : 's'} after agy refused a call for its individual quota (${stated})`
+  }
   if (mark.confirmed) return 'its reset'
   if (!Number.isFinite(mark.at)) return 'after a call ended for quota'
   const minutes = Math.round((mark.until - mark.at) / MINUTE_MS)
@@ -318,4 +327,4 @@ async function quotaCommand(args, options = {}) {
   return json ? `${JSON.stringify(report)}\n` : formatReport(report)
 }
 
-module.exports = { USAGE, quotaCommand, quotaReport, formatReport, localTime, groupView, harnessView, refreshStale }
+module.exports = { USAGE, lifeMsOf, quotaCommand, quotaReport, formatReport, localTime, groupView, harnessView, refreshStale }

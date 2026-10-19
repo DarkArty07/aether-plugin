@@ -19,6 +19,7 @@ const criterionLib = require('./router-criterion.js')
 const deciders = require('./router-deciders.js')
 const { EXTERNAL_LIMIT_MS } = require('./delegate-limits.js')
 const { appendEntry } = require('./router-log.js')
+const { liftMark } = require('./lane-marks.js')
 const { readAllMarks } = require('./router-marks.js')
 const { EXTERNAL, peekReadings, staleHarnesses, chooseHarness } = require('./router-quota.js')
 const { startRenewal, waitForReading } = require('./router-renewal.js')
@@ -124,7 +125,8 @@ function resolve(deps) {
     sleep: deps.sleep || realSleep,
     newId: deps.newId || (() => `r-${now().toString(36)}-${crypto.randomBytes(2).toString('hex')}`),
     readings: deps.readings || (() => peekReadings({ dataDir, config: lanesConfig(), harnesses: EXTERNAL, now: now() })),
-    marks: deps.marks || (() => readAllMarks(dataDir, now())),
+    lift: deps.lift || ((mark) => liftMark(dataDir, mark)),
+    marks: deps.marks || (() => readAllMarks(dataDir, now(), lanes.groupKnown(lanesConfig()))),
     renew: deps.renew || ((harness) => startRenewal({ dataDir, harness, now: now() })),
     installed: deps.installed || ((harness) => {
       const command = lanesConfig()?.harnesses?.[harness]?.command
@@ -344,6 +346,7 @@ async function quotaStep(d, settings, { level, axis }) {
     readings: d.readings(),
     marks: d.marks(),
     now: d.now(),
+    lift: d.lift,
   })
   const quota = considered.map((entry) => (renewals[entry.harness] ? { ...entry, renewal: renewals[entry.harness] } : entry))
   return { pick, quota, waitedMs }
