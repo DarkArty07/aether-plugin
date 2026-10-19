@@ -43,7 +43,7 @@ A plugin cannot set these, so you do:
 
 | Need | Step |
 |---|---|
-| The Lead at `xhigh` | `--effort xhigh` in the start command, or `effortLevel` in the repository's settings |
+| The Lead at `max` | `--effort max` in the start command; the settings file cannot hold `max` |
 | Dynamic workflows, for `/aether:design` and the swarm | Nothing on most paid plans. On Pro, turn on Dynamic workflows in `/config` once |
 | No advisor in Aether mode (each call rereads the whole conversation, uncached) | Nothing unless you configured one. If you did, run `/advisor off` |
 | Permissions for the swarm | Allow rules for `git`, `aether-wt`, `aether-lane` and the test command, and edits under `.aether/worktrees/`; `scripts/aether-lead` bypasses permissions instead |

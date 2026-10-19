@@ -12,7 +12,7 @@ This page is for working on the plugin itself: trying a branch, running the chec
 
 The plugin is `plugins/aether/`, and the repository's `.claude-plugin/marketplace.json` lists it. An installed release is a copy in Claude Code's plugin cache, so work in the repository never changes it until you update. To try a branch:
 
-    claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort xhigh
+    claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort max
 
 That loads the tree for one session, in place of the installed release; with the launcher it is `aether-lead --plugin-dir <worktree>/plugins/aether`. Its data goes to `~/.claude/plugins/data/aether-inline/`, and its options are set apart, under `pluginConfigs["aether@inline"]` in your settings. The bins of a branch run by path: `node <worktree>/plugins/aether/bin/aether-plan check <plan>`.
 

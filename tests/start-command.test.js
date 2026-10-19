@@ -18,7 +18,7 @@ const LAUNCHER = path.join(ROOT, 'scripts', 'aether-lead')
 const PLUGIN_LAUNCHER = path.join(ROOT, 'plugins', 'aether', 'launcher', 'aether-lead')
 const SETTINGS = '{"enabledPlugins":{"superpowers@claude-plugins-official":false},"theme":"custom:aether:aether"}'
 // The launcher's own arguments, in order, before the ones it passes on.
-const OWN_ARGS = ['--agent', 'aether:lead', '--effort', 'xhigh', '--permission-mode', 'bypassPermissions', '--settings', SETTINGS]
+const OWN_ARGS = ['--agent', 'aether:lead', '--effort', 'max','--permission-mode', 'bypassPermissions', '--settings', SETTINGS]
 
 // A directory with a `claude` that prints one argument per line, put first on the PATH.
 function fakeClaude(t) {
@@ -30,7 +30,7 @@ function fakeClaude(t) {
 
 const argsOf = (r) => r.stdout.split('\n').slice(0, -1)
 
-test('the launcher is executable and starts the Lead at xhigh, with permissions bypassed, superpowers off and the Aether theme', (t) => {
+test('the launcher is executable and starts the Lead at max, with permissions bypassed, superpowers off and the Aether theme', (t) => {
   const r = spawnSync(LAUNCHER, [], { encoding: 'utf8', env: { ...process.env, ...fakeClaude(t) } })
   assert.equal(r.status, 0, r.stderr)
   assert.deepEqual(argsOf(r), OWN_ARGS)
