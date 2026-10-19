@@ -33,3 +33,23 @@ A lane runs Aether's own calls on another coding plan the owner pays for, while 
 1. find its models in the CLI's own list, and make one real headless call per role with the command line of its adapter (`plugins/aether/lib/harness/<name>.js`); correct the adapter's field names if the CLI's JSON differs;
 2. copy `plugins/aether/config/lanes.json`, add the models to the harness's entry, each with `group`, `replaces`, `roles` and `levels` like agy's, and set `AETHER_LANES_CONFIG` to the copy in the shell that starts Claude Code. Codex and Grok take the level as their reasoning effort; Cursor ignores it for now;
 3. add the harness to the `harnesses` option, such as `agy,codex`.
+
+### The /harnesses panel
+
+`/harnesses` opens a pane inside Claude Code that shows the delegation settings and the quota of each harness, so you do not have to run `aether-lane quota` by hand. It prints nothing to the transcript, calls no model and works even while the Lead is in the middle of a turn. `Esc` or `x` closes it, and `r` renews the readings. It is read-only: it changes no setting and has no toggle button, because the switch for lanes is the `lanes` option, in `/plugin configure aether@aether-plugin` or `/config`.
+
+**Only in an Aether session.** The command exists only in a session started with `aether-lead` (agent `aether:lead`). In any other session it is not offered and nothing of it runs, so a plain session is as it was (see [what Aether adds to a normal session](../reference/components.md#what-aether-adds-to-a-normal-session)). The panel uses Claude Code's plugin UI API for mods, which is early access: its surface may change between Claude Code releases without notice, and if it stops working the panel simply does not draw. Nothing else of Aether depends on it. It was checked on Claude Code 2.1.302.
+
+**What it shows**, from top to bottom:
+- the title, `Aether · other harnesses`, and the options line, `lanes ON|OFF · router <mode> · decider <x> · seats <x> · harnesses <list>`. These are the values the session really uses, with the same validation and fallbacks as the libs: an unknown router mode is `record`, an unknown decider is `haiku`, unknown harness names are dropped and an empty list is `agy`. With lanes off, it says that nothing leaves Claude;
+- the buttons `Renew readings` (`r`) and `Close` (`x`);
+- for each harness (agy, grok, codex and cursor), its version; `not enabled` when it is installed but not in `harnesses`, and `enabled, not installed` when it is listed but missing. For each quota group it gives the label and a status, `usable`, `dry until <date> UTC` (from the group's mark), `under the reserve` or `no reading`, and for each window (`weekly`, `5h`) a bar, the share left and `resets in <h>`, with how old the reading is and `stale` when it is;
+- `Recent delegates`: the five newest delegations of the router log in the last 7 days, from any session, each with its age, the `harness/model/effort` it ran on, the task's description, and a mark when the router fell back. See [Delegate router](router.md#delegate-router).
+
+Colours follow your theme: green for usable or enough, amber for low, dry, not enabled or stale, red for under the reserve, and dim for the rest.
+
+**Layout.** From 110 columns in Claude Code's fullscreen layout the pane docks to the right of the transcript (about 67 columns wide at 150); below that, or on the main-screen layout, it sits above the prompt. It fits the room it has: when the full layout does not fit, it drops detail in steps and always keeps the title, the options line, the buttons and one line per enabled harness group. The arrow keys scroll the rest while the pane has the keyboard.
+
+**Where the numbers come from, and how fresh they are.** The panel runs `aether-lane quota --json <harness>` once per harness, in parallel, so a slow agy does not hold back Grok (agy's reading launches `agy -p /usage` and takes 5 to 8 seconds; Grok's takes about a second), and `aether-report --delegates` with `--since` set to seven days ago. `r` reads the quota again with `--refresh` (Grok over ACP, agy's `/usage`); neither is a model call, and opening the pane costs no model tokens. After the first reads, a Grok reading older than 30 minutes is renewed once by itself.
+
+**Safety.** Any text from a CLI or from a delegate's description is stripped of control characters and bidi overrides before it is drawn, because Claude Code refuses to draw a pane that holds a control character, and widths are measured in terminal cells. [Troubleshooting](troubleshooting.md#the-harnesses-panel-is-not-offered) covers a panel that is missing, cut or showing `Quota unavailable`. The sessions it was tried in are listed in [the handoff](../handoff/2026-10-17-harness-panel-0.12.3.md).

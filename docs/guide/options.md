@@ -33,6 +33,8 @@ Aether has eight options, set when you install the plugin or later, and a few se
 - `fallback`, `sonnet:high` by default, is the model and effort a delegate task runs on when the router cannot decide and the Lead asked for none, written as `alias:effort`. The aliases are `haiku`, `sonnet` and `opus`; the efforts are `low`, `medium`, `high`, `xhigh` and `max`. A value that does not say so is `sonnet:high`.
 - `deadlines`, `haiku=8,jev=3,quota=3` by default, is how long the router waits, in seconds, for each decider and for the quota decision; a value above 10 counts as 10, and a key that is missing or wrong keeps its default. In `record` mode nothing waits, because the decider runs in the background.
 
+`router`, `decider` and `seats` are selectors since 0.12.3: `/plugin configure aether@aether-plugin` and `/config` show their values to pick from (`Delegate router ◀ record ▶`) instead of a free text, and the defaults do not change. `harnesses`, `fallback` and `deadlines` stay free text. In an Aether session, the [`/harnesses` panel](lanes.md#the-harnesses-panel) shows the values the session uses for `lanes`, `router`, `decider`, `seats` and `harnesses`, with the same fallbacks as above for a value that is not valid.
+
 Set them at install with `--config lanes=true`, or later in `/plugin` → Installed → aether → Configure options. `claude plugin configure aether@aether-plugin` shows the options and which are unset.
 
 ### What you set yourself

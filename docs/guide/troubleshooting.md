@@ -92,6 +92,30 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 
 **What to do.** Fix the cause that `aether-plan compile`, `aether-lane quota` or `aether-lane status <run>` names. The options are read when a session starts, so after you change one, start a new session. [Options](options.md#options) lists them, and [Lanes](lanes.md#lanes) explains how a call picks its lane and when it falls back to the native agent.
 
+## The /harnesses panel is not offered
+
+**What you see.** Typing `/harnesses` offers nothing, or Claude Code says it does not know the command.
+
+**Why.** `/harnesses` is a command of Aether's mod, and the mod declares it only in an Aether session, the one started with the agent `aether:lead`. A plain `claude` session does not have it, on purpose: nothing of the panel runs there. The panel also uses Claude Code's plugin UI API for mods, which is early access, so a Claude Code release that changes it can make the pane stop drawing; nothing else of Aether depends on it.
+
+**What to do.** Start the session with `aether-lead`, or with `claude --agent aether:lead --effort xhigh` ([Getting started](../getting-started.md#start)). If a session started that way still does not offer it, check that the plugin is installed and enabled with `claude plugin list`, and see [the panel](lanes.md#the-harnesses-panel) for the Claude Code version it was checked on.
+
+## The /harnesses panel shows few rows or looks cut
+
+**What you see.** The pane shows only a line or two for each harness, or less than the guide describes, or its bottom is cut.
+
+**Why.** The pane fits the room it has. In a narrow or short terminal it drops detail in steps, and it always keeps the title, the options line, the buttons and one line per enabled harness group. From 110 columns in the fullscreen layout it docks to the right of the transcript; below that it sits above the prompt and takes rows from the transcript.
+
+**What to do.** Widen or heighten the terminal and the pane redraws with more detail. While the pane has the keyboard, the arrow keys scroll the rest. `r` renews the readings and `Esc` or `x` closes the pane.
+
+## The /harnesses panel says «Quota unavailable» or «enabled, not installed»
+
+**What you see.** A line `Quota unavailable: …` where a harness's rows should be, or a harness marked `enabled, not installed`.
+
+**Why.** The panel reads the quota by running `aether-lane quota --json <harness>`. `Quota unavailable: …` carries the reason the read gave, and `Delegates unavailable: …` does the same for the list of recent delegates, which the panel reads with `aether-report --delegates`. `enabled, not installed` means the harness is in the `harnesses` option but its CLI was not found. Aether looks on the `PATH` of the process that runs the command, which is Claude Code's own, not your shell's, so a directory that only your shell profile adds can be missing there. A harness that is installed but not in `harnesses` shows `not enabled` instead.
+
+**What to do.** Run `aether-lane quota <harness>` in the shell that started Claude Code to see the same reason in full. Check that the harness's CLI is on the `PATH` Claude Code was started with (`which agy`, `which grok`), install it or fix the `PATH`, and start a new session; or remove the name from `harnesses` if you do not mean to use it. `r` in the panel reads the quota again.
+
 ## A merge fails or times out
 
 **What you see.** A unit is blocked with a reason that starts `merge failed again:` (the test command failed after the merge, or a conflict, twice), `merge refused:` (for example, `the integration worktree has uncommitted changes`) or `merge failed:` (the command could not run, or was stopped after 600 s).

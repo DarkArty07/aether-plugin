@@ -57,6 +57,7 @@ test('the manifest has no dependencies, and declares the lanes, harnesses, ops, 
       description:
         "Who takes the Judge, the Writer and the Examiner: native (Aether's own agents, as in 0.8), balanced (Gemini 4 Argon on agy judges and examines; the Writer stays native) or robust (Argon writes the plan, and the Judge stays native on Opus). An external model takes a seat only with lanes on, its harness enabled and its quota left; otherwise the native agent takes it. Only the design seats change: the swarm's models and efforts still follow each task's Tier and Review.",
       default: 'balanced',
+      options: ['native', 'balanced', 'robust'],
     },
     router: {
       type: 'string',
@@ -64,6 +65,7 @@ test('the manifest has no dependencies, and declares the lanes, harnesses, ops, 
       description:
         "Who chooses the model and effort of the Lead's delegate tasks: record (the Lead chooses, and Aether records what the decider would have chosen, in the background), advise (the Lead also gets the decider's choice as a notice) or command (the decider chooses, unless the Lead overrides it with a reason). It applies only to the Lead's delegate tasks, never to the swarm, the design seats or the aether agents. Default: record.",
       default: 'record',
+      options: ['record', 'advise', 'command'],
     },
     decider: {
       type: 'string',
@@ -71,6 +73,7 @@ test('the manifest has no dependencies, and declares the lanes, harnesses, ops, 
       description:
         'What decides for the router: haiku (Claude Haiku at low effort, with no outside service) or jev (typesafe/jev-1.14 on OpenRouter: it sends each delegate brief to a third party, and needs OPENROUTER_API_KEY in the environment or in the .env of the plugin data directory). Default: haiku.',
       default: 'haiku',
+      options: ['haiku', 'jev'],
     },
     fallback: {
       type: 'string',

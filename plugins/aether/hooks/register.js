@@ -22,10 +22,16 @@
 // aether-report can price it), and the first step of a delegate the router runs on another harness. The router
 // never breaks a call: any failure in it leaves the call as the Lead made it.
 //
+// It also gives an Aether session the /harnesses command (panel.jsx): a pane with the delegation settings and the quota
+// of each harness, drawn without a model. The Lead's SessionStart declares the command; the command and the pane ask
+// this file whether the session is Aether's (aetherSession) when they are used, never at session start, so that the
+// first answer kept for the session is the meter's own.
+//
 // Files: <data dir>/usage/<session>/<n>.json, each { session, part, claudeCode, agents, entries }
 // with up to PART_SIZE entries. A reloaded module starts after the parts already on disk.
 
 import { PAYLOAD_PATH, parseOpsPrompt } from './ops-command.mjs'
+import { registerPanel } from './panel.jsx'
 import { createRouter } from './router.mjs'
 
 const PART_SIZE = 1000
@@ -141,7 +147,7 @@ async function isAether($, state) {
 }
 
 // The session of this event when it is an Aether session, else null.
-async function aetherSession($) {
+export async function aetherSession($) {
   const state = await currentSession($)
   return state && (await isAether($, state)) ? state : null
 }
@@ -327,7 +333,9 @@ async function* meteredStep($, state, e, next) {
   return result
 }
 
-export function register(on) {
+export function register(on, options) {
+  registerPanel(on, options)
+
   on('classic.SessionStart', async ($, e, next) => {
     if (e && e.agent_type === LEAD && typeof e.session_id === 'string' && SESSION_ID.test(e.session_id)) {
       sessionOf(e.session_id).aether = true
