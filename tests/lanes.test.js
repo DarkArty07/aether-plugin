@@ -349,7 +349,7 @@ test('idleHarnesses names a harness whose models serve no swarm role', () => {
 
 test('the shipped table has codex and cursor without models, and grok with grok-4.7 at the haiku tier', () => {
   const config = shipped()
-  assert.deepEqual(Object.keys(config.harnesses), ['agy', 'codex', 'grok', 'cursor'])
+  assert.deepEqual(Object.keys(config.harnesses), ['agy', 'codex', 'grok', 'cursor', 'muse'])
   for (const name of ['codex', 'cursor']) assert.deepEqual(config.harnesses[name].models, {}, name)
   assert.deepEqual(config.harnesses.cursor.command, 'cursor-agent')
   // grok-4.7-build-fast is the same model faster and twice the price: it is not a lane model.
@@ -382,7 +382,7 @@ test('loadConfig refuses two harnesses that use one group key, and accepts disti
     (err) => err.message.startsWith(`lanes config ${shared}: `) && err.message.includes('group gemini is used by harnesses agy and codex: group keys are unique across the table'),
   )
   const distinct = writeConfig(t, (c) => (c.harnesses.codex = codexHarness()))
-  assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor'])
+  assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor', 'muse'])
 })
 
 test('loadConfig refuses one model id in two harnesses, and accepts distinct ids', (t) => {
@@ -398,7 +398,7 @@ test('loadConfig refuses one model id in two harnesses, and accepts distinct ids
       err.message.includes('model claude-opus-5-5 is in harnesses agy and codex: model ids are unique across the table'),
   )
   const distinct = writeConfig(t, (c) => (c.harnesses.codex = codexHarness()))
-  assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor'])
+  assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor', 'muse'])
 })
 
 test('commandInstalled finds an absolute executable or a name on the PATH', (t) => {
@@ -693,7 +693,7 @@ test('the table takes a model id exactly when the lane choice can log it: the ta
 test('the table gives the life of a harness reading and the length of a dry mark, and refuses a bad one', (t) => {
   const config = shipped()
   assert.equal(config.dryMarkMinutes, 60)
-  assert.deepEqual(Object.fromEntries(Object.entries(config.harnesses).map(([name, h]) => [name, h.quotaLifeMinutes])), { agy: 10, codex: 10, grok: 30, cursor: 10 })
+  assert.deepEqual(Object.fromEntries(Object.entries(config.harnesses).map(([name, h]) => [name, h.quotaLifeMinutes])), { agy: 10, codex: 10, grok: 30, cursor: 10, muse: 30 })
   assert.doesNotThrow(() => lanes.loadConfig(writeConfig(t, (c) => (c.harnesses.agy.quotaLifeMinutes = 0))))
   assert.doesNotThrow(() => lanes.loadConfig(writeConfig(t, (c) => (delete c.harnesses.agy.quotaLifeMinutes, delete c.dryMarkMinutes))))
   for (const [mutate, message] of [
@@ -714,3 +714,29 @@ test('usable follows the rule of lane-order: a balance that is unknown is used u
   assert.equal(lanes.usable(window(0.06), 0.05), true)
   assert.equal(lanes.usable(window(0.05), 0.05), false)
 })
+
+test('the shipped lane table has a muse harness with one lane at a time and no models until Artificial Analysis measures one', () => {
+  const config = lanes.loadConfig(lanes.CONFIG_FILE)
+  const muse = config.harnesses.muse
+  assert.deepEqual([muse.command, muse.maxParallel, muse.quotaLifeMinutes, muse.waitSeconds], ['muse', 1, 30, 540])
+  assert.deepEqual(muse.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200 })
+  assert.deepEqual(muse.groups, { muse: 'Muse subscription' })
+  assert.deepEqual(muse.models, {})
+  assert.equal(JSON.stringify(config.designSeats).includes('muse'), false, 'Muse takes no design seat')
+})
+
+test('muse is a valid value of the harnesses option, in the owner order, without duplicates or unknown names', () => {
+  assert.deepEqual(lanes.enabledHarnesses({ AETHER_LANE_HARNESSES: 'agy,muse' }), ['agy', 'muse'])
+  assert.deepEqual(lanes.enabledHarnesses({ AETHER_LANE_HARNESSES: ' MUSE , agy, muse, gork ' }), ['muse', 'agy'])
+  assert.deepEqual(lanes.enabledHarnesses({ AETHER_LANE_HARNESSES: 'gork' }), ['agy'])
+})
+
+test('a Muse model of a synthetic table gives the swarm a candidate after agy, in the order enabled', () => {
+  const config = JSON.parse(JSON.stringify(lanes.loadConfig(lanes.CONFIG_FILE)))
+  config.harnesses.muse.models = { 'muse-spark-1.3': { group: 'muse', replaces: 'sonnet', roles: ['implementer'], levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' } } }
+  const args = lanes.lanesArgs(config, { installed: () => true, enabled: ['agy', 'muse'] })
+  assert.deepEqual(args.harnesses, ['agy', 'muse'])
+  assert.deepEqual(args.calls.implementer.sonnet.map((c) => c.harness), ['agy', 'muse'])
+  assert.equal(args.maxParallelByHarness.muse, 1)
+})
+
