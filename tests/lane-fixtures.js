@@ -27,6 +27,7 @@ function laneEnv(t, { command = FAKE_AGY, quota = null, mutate = null } = {}) {
   const env = {
     AETHER_LANES_CONFIG: configFile,
     AETHER_LANES: 'on',
+    AETHER_SUPERDELEGATION: 'on',
     AETHER_DATA_DIR: path.join(dir, 'data'),
     HOME: path.join(dir, 'home'),
     AETHER_FAKE_AGY_LOG: path.join(dir, 'agy.log'),

@@ -1,0 +1,315 @@
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { choose, enabled, resolveOption, legacyNotes, runArgs, idleHarnesses, TOLERANCE_POINTS, CUPO } = require('../plugins/aether/lib/superdelegation.js')
+const { loadPairs } = require('../plugins/aether/lib/pairs.js')
+
+const { pairs } = loadPairs()
+const DAY = 24 * 3600 * 1000
+const at = (days) => new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString()
+const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: days === null ? null : at(days) })
+const dry = { usable: false, unknown: false, mark: null, resetsAt: at(1) }
+const world = ({ gemini = open(2), claude = open(3), grok = open(1) } = {}) => ({
+  agy: { installed: true, groups: { gemini, claude } },
+  grok: { installed: true, groups: { grok } },
+})
+const ask = (model, effort, more = {}) => choose({ pairs, reference: { model, effort }, harnesses: world(), ...more })
+const why = (decision, id) => decision.candidates.find((c) => c.id === id).why
+const pickedId = (decision) => (decision.picked ? decision.picked.id : null)
+
+// A small table for the borders: native haiku, sonnet and opus at high, and the externals a test adds.
+const row = (id, over = {}) => {
+  const [harness, rest] = id.split('/')
+  const [model, effort] = rest.split('@')
+  return { id, harness, model, family: over.family ?? model, effort, group: harness === 'claude' ? null : (over.group ?? harness), intelligence: 40, costPerTaskUsd: 1, outputTokensPerSecond: 100, timeToFirstTokenS: 1, ...over }
+}
+const natives = (haiku = 37.8, sonnet = 46.8, opus = 53.6) => [
+  row('claude/haiku@high', { family: 'claude-haiku-5-5', intelligence: haiku, costPerTaskUsd: 0.08 }),
+  row('claude/sonnet@high', { family: 'claude-sonnet-5-5', intelligence: sonnet, costPerTaskUsd: 0.88 }),
+  row('claude/opus@high', { family: 'claude-opus-5-5', intelligence: opus, costPerTaskUsd: 1.82 }),
+]
+const only = (...names) => Object.fromEntries(names.map((name) => [name, { installed: true, groups: { [name]: open(1) } }]))
+
+const MUSE = 'muse/muse-wonder-full-1.0@high'
+const onlyMuse = (days = 2) => ({ muse: { installed: true, groups: { muse: open(days) } } })
+const withMuse = (days, base = world()) => ({ ...base, ...onlyMuse(days) })
+
+test('C4: a call asks for the points of its reference pair, never for a model name alone', () => {
+  assert.equal(ask('sonnet', 'xhigh').requested, 51.9)
+  assert.equal(ask('sonnet', 'high').requested, 46.8)
+  assert.equal(ask('haiku', 'high').reference.id, 'claude/haiku@high')
+  assert.equal(ask('opus', 'max').requested, 57.6)
+  assert.throws(() => choose({ pairs, reference: { model: 'gpt', effort: 'high' }, harnesses: world() }), /no reference pair/)
+  assert.equal(TOLERANCE_POINTS, 1)
+})
+
+test('E2: a Haiku high call takes the cheapest pair of the quota that renews first', () => {
+  const d = ask('haiku', 'high')
+  assert.equal(pickedId(d), 'grok/grok-4.7@low')
+  assert.equal(d.candidates[0].id, 'grok/grok-4.7@low')
+  assert.deepEqual([d.candidates[0].outcome, d.candidates[0].rank], ['picked', 1])
+  assert.match(d.reason, /grok\/grok-4\.7@low/)
+  assert.equal(d.native.id, 'claude/haiku@high')
+  // With grok dry, the next quota to renew is gemini, and its cheapest pair that reaches 36.8 is Flash medium (39.8).
+  const next = ask('haiku', 'high', { harnesses: world({ grok: dry }) })
+  assert.equal(pickedId(next), 'agy/gemini-3.8-flash@medium')
+  assert.equal(why(next, 'grok/grok-4.7@low'), 'dry')
+})
+
+test('E3: with only Grok healthy, a Sonnet xhigh call runs native and nothing is asked of the owner', () => {
+  const d = ask('sonnet', 'xhigh', { harnesses: world({ gemini: dry, claude: dry }) })
+  assert.equal(d.picked, null)
+  assert.equal(d.native.id, 'claude/sonnet@xhigh')
+  assert.equal(why(d, 'grok/grok-4.7@high'), 'below')
+  assert.equal(why(d, 'grok/grok-4.7@xhigh'), 'below')
+  assert.match(d.reason, /native/)
+})
+
+test('E4 and C6: the quota that renews first takes the call, at the cheapest pair of that quota, even when the other has a cheaper pair', () => {
+  assert.equal(pickedId(ask('sonnet', 'xhigh')), 'agy/gemini-4-argon@high')
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ claude: open(1) }) })), 'agy/claude-opus-5-5@medium')
+  // gemini renews first: Argon (1.99) wins although Opus medium of the other quota costs 1.34.
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ gemini: open(0), claude: open(1) }) })), 'agy/gemini-4-argon@high')
+})
+
+test('C6: Grok, which reaches 46.4, never receives a Sonnet xhigh or an Opus call, even when its quota renews first', () => {
+  const harnesses = world({ grok: open(-5) })
+  for (const [model, effort] of [['sonnet', 'xhigh'], ['sonnet', 'max'], ['opus', 'high'], ['opus', 'xhigh'], ['opus', 'max']]) {
+    const d = ask(model, effort, { harnesses })
+    assert.notEqual(d.picked && d.picked.harness, 'grok', `${model} ${effort}`)
+    for (const c of d.candidates.filter((x) => x.harness === 'grok')) assert.ok(['below', 'dominated'].includes(c.why), `${model} ${effort} ${c.id}`)
+  }
+})
+
+test('C5: a pair reaches a call at the points asked minus 1, inclusive, and not 0.1 below', () => {
+  const table = [...natives(), row('x/a@high', { intelligence: 45.8, costPerTaskUsd: 3 }), row('y/b@high', { intelligence: 45.7, costPerTaskUsd: 0.5 })]
+  const d = choose({ pairs: table, reference: { model: 'sonnet', effort: 'high' }, harnesses: only('x', 'y') })
+  assert.equal(pickedId(d), 'x/a@high')
+  assert.equal(why(d, 'y/b@high'), 'below')
+})
+
+test('C5: a pair with no cost per task is never a candidate, and Flash low is one of them', () => {
+  const real = ask('haiku', 'low')
+  assert.equal(why(real, 'agy/gemini-3.8-flash@low'), 'no-cost')
+  const table = [...natives(), row('a/flash@high', { intelligence: 40, costPerTaskUsd: null })]
+  const d = choose({ pairs: table, reference: { model: 'haiku', effort: 'high' }, harnesses: only('a') })
+  assert.equal(d.picked, null)
+  assert.equal(why(d, 'a/flash@high'), 'no-cost')
+})
+
+test('C5 and R9: within a quota a pair that gives no more points than a cheaper candidate of the same call is never used: Grok xhigh against Grok high', () => {
+  assert.equal(why(ask('sonnet', 'high'), 'grok/grok-4.7@xhigh'), 'dominated')
+  // haiku asks 46.8, sonnet 47.4, opus 50.9 in this table.
+  const table = [
+    ...natives(46.8, 47.4, 50.9),
+    row('g/m@high', { intelligence: 46.3, costPerTaskUsd: 2.73 }),
+    row('g/m@xhigh', { intelligence: 46.4, costPerTaskUsd: 3.74 }),
+    row('g/m@max', { intelligence: 50, costPerTaskUsd: 9 }),
+  ]
+  const reach = (model, more = {}) => choose({ pairs: table, reference: { model, effort: 'high' }, harnesses: only('g'), ...more })
+  // haiku asks 46.8: high (46.3) and xhigh (46.4) are both candidates, high is cheaper and gives at least 46.4 - 1, so it dominates xhigh and wins.
+  const haiku = reach('haiku')
+  assert.equal(pickedId(haiku), 'g/m@high')
+  assert.equal(why(haiku, 'g/m@xhigh'), 'dominated')
+  // max gives clearly more points than high, so the cheaper high does not dominate it: it stays as the next candidate.
+  assert.equal(why(haiku, 'g/m@max'), null)
+  assert.equal(haiku.candidates.find((c) => c.id === 'g/m@max').outcome, 'next')
+  // sonnet asks 47.4: only xhigh (46.4) reaches 46.4. High is not a candidate of this call, so it does not dominate xhigh, and xhigh is picked.
+  const sonnet = reach('sonnet')
+  assert.equal(pickedId(sonnet), 'g/m@xhigh')
+  assert.equal(why(sonnet, 'g/m@high'), 'below')
+  // opus asks 50.9: only max reaches 49.9.
+  assert.equal(pickedId(reach('opus')), 'g/m@max')
+  // a retry that excluded high: it no longer dominates, so xhigh is picked for the call that asked 46.8.
+  const retry = reach('haiku', { exclude: ['g/m@high'] })
+  assert.equal(pickedId(retry), 'g/m@xhigh')
+  assert.equal(why(retry, 'g/m@high'), 'excluded')
+})
+
+test('C7: changing the speeds of the table changes no choice', () => {
+  const faster = pairs.map((p, i) => ({ ...p, outputTokensPerSecond: i % 2 ? 1 : 1000, timeToFirstTokenS: i % 3 ? 300 : 0.1 }))
+  for (const model of ['haiku', 'sonnet', 'opus']) {
+    for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+      const a = choose({ pairs, reference: { model, effort }, harnesses: world() })
+      const b = choose({ pairs: faster, reference: { model, effort }, harnesses: world() })
+      assert.deepEqual([pickedId(a), a.candidates.map((c) => c.id)], [pickedId(b), b.candidates.map((c) => c.id)], `${model} ${effort}`)
+    }
+  }
+})
+
+test('C8: no pair is ever picked below the points asked minus 1, and a Sonnet xhigh call never lands on high', () => {
+  const worlds = [world(), world({ gemini: dry }), world({ claude: dry }), world({ grok: dry }), world({ gemini: dry, claude: dry, grok: dry }), world({ gemini: open(null) })]
+  for (const harnesses of worlds) {
+    for (const model of ['haiku', 'sonnet', 'opus']) {
+      for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+        const d = choose({ pairs, reference: { model, effort }, harnesses })
+        if (d.picked) assert.ok(Math.round(d.picked.intelligence * 10) >= Math.round(d.requested * 10) - 10, `${model} ${effort} -> ${d.picked.id}`)
+        assert.equal(d.native.id, d.reference.id)
+      }
+    }
+  }
+  const xhigh = ask('sonnet', 'xhigh')
+  assert.ok(xhigh.picked.intelligence >= 50.9)
+  assert.equal(ask('opus', 'max').picked, null)
+  assert.equal(ask('sonnet', 'max').picked, null)
+})
+
+test('C11: with every eligible quota dry the call runs native, in its reference pair; with one dry and one healthy it goes to the healthy', () => {
+  const none = ask('sonnet', 'xhigh', { harnesses: world({ gemini: dry, claude: dry, grok: dry }) })
+  assert.equal(none.picked, null)
+  assert.equal(none.native.id, 'claude/sonnet@xhigh')
+  assert.match(none.reason, /dry/)
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ gemini: dry }) })), 'agy/claude-opus-5-5@medium')
+  // a live mark holds a quota as a dry reading does
+  const marked = ask('sonnet', 'xhigh', { harnesses: world({ gemini: { usable: true, unknown: false, mark: { until: at(1) }, resetsAt: at(0) } }) })
+  assert.equal(why(marked, 'agy/gemini-4-argon@high'), 'dry')
+})
+
+test('C16: Muse as the only healthy harness takes a call up to Opus high by the owner decision, and nothing above it', () => {
+  const high = ask('opus', 'high', { harnesses: onlyMuse() })
+  assert.equal(pickedId(high), MUSE)
+  assert.equal(high.requested, 53.6)
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), MUSE)
+  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), MUSE)
+  for (const [model, effort] of [['opus', 'xhigh'], ['opus', 'max'], ['sonnet', 'max']]) {
+    const d = ask(model, effort, { harnesses: onlyMuse() })
+    assert.equal(d.picked, null, `${model} ${effort}`)
+    assert.equal(why(d, MUSE), 'below')
+    assert.equal(d.native.id, `claude/${model}@${effort}`)
+  }
+})
+
+test('C16: the quota of Muse competes by its window like any other, and a dry or missing one does not', () => {
+  assert.equal(pickedId(ask('opus', 'high', { harnesses: withMuse(-5) })), MUSE)
+  assert.notEqual(pickedId(ask('opus', 'high', { harnesses: withMuse(5) })), MUSE)
+  assert.notEqual(pickedId(ask('opus', 'high', { harnesses: withMuse(null) })), MUSE)
+  assert.equal(why(ask('opus', 'high', { harnesses: { ...world(), muse: { installed: true, groups: { muse: dry } } } }), MUSE), 'dry')
+  assert.equal(why(ask('opus', 'high', { harnesses: { ...world(), muse: { installed: false, groups: {} } } }), MUSE), 'not-installed')
+})
+
+test('C5 and C16: without the owner decision a pair with no cost does not enter; with it, it goes last within its quota and neither dominates nor is dominated', () => {
+  const bare = pairs.map((p) => {
+    if (p.id !== MUSE) return p
+    const { ownerDecision, ...rest } = p
+    return rest
+  })
+  const d = choose({ pairs: bare, reference: { model: 'opus', effort: 'high' }, harnesses: onlyMuse() })
+  assert.equal(d.picked, null)
+  assert.equal(why(d, MUSE), 'no-cost')
+  const table = [
+    ...natives(),
+    row('m/a@high', { intelligence: 53.6, costPerTaskUsd: null, ownerDecision: 'the owner said so' }),
+    row('m/b@high', { intelligence: 56, costPerTaskUsd: 9 }),
+    row('m/c@high', { intelligence: 53.6, costPerTaskUsd: 2 }),
+  ]
+  const ordered = choose({ pairs: table, reference: { model: 'opus', effort: 'high' }, harnesses: only('m') })
+  assert.deepEqual(ordered.candidates.filter((c) => c.rank !== null).map((c) => c.id), ['m/c@high', 'm/b@high', 'm/a@high'])
+})
+
+test('a quota whose window cannot be read competes after the ones that can, and one that is known dry does not compete', () => {
+  const table = [...natives(), row('x/a@high', { intelligence: 47, costPerTaskUsd: 0.1 }), row('y/b@high', { intelligence: 47, costPerTaskUsd: 5 })]
+  const harnesses = { x: { installed: true, groups: { x: open(null) } }, y: { installed: true, groups: { y: open(4) } } }
+  const ref = { model: 'sonnet', effort: 'high' }
+  assert.equal(pickedId(choose({ pairs: table, reference: ref, harnesses })), 'y/b@high')
+  assert.equal(pickedId(choose({ pairs: table, reference: ref, harnesses: { ...harnesses, y: { installed: true, groups: { y: dry } } } })), 'x/a@high')
+})
+
+test('the same cost within a quota goes to the pair with more points, then to the table order', () => {
+  const table = [...natives(), row('x/a@high', { intelligence: 47, costPerTaskUsd: 1 }), row('x/b@high', { intelligence: 49, costPerTaskUsd: 1 }), row('x/c@high', { intelligence: 49, costPerTaskUsd: 1 })]
+  const d = choose({ pairs: table, reference: { model: 'sonnet', effort: 'high' }, harnesses: only('x') })
+  assert.deepEqual(d.candidates.filter((c) => c.rank !== null).map((c) => c.id), ['x/b@high', 'x/c@high', 'x/a@high'])
+})
+
+test('a retry excludes the pair that failed, and a harness that is off or not installed is never a candidate', () => {
+  const d = ask('sonnet', 'xhigh', { exclude: ['agy/gemini-4-argon@high'] })
+  assert.equal(pickedId(d), 'agy/claude-opus-5-5@medium')
+  assert.equal(why(d, 'agy/gemini-4-argon@high'), 'excluded')
+  const off = choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses: { agy: world().agy } })
+  assert.equal(why(off, 'grok/grok-4.7@low'), 'harness-off')
+  const missing = choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses: { agy: { installed: false, groups: {} }, grok: world().grok } })
+  assert.equal(why(missing, 'agy/gemini-3.8-flash@medium'), 'not-installed')
+})
+
+test('C12: nobody reviews its own work, with an external pair and with the native fallback', () => {
+  const sonnetAuthor = ask('sonnet', 'high', { authors: ['claude-sonnet-5-5'], nativeDiffers: true })
+  assert.equal(why(sonnetAuthor, 'agy/claude-sonnet-5-5@high'), 'author')
+  assert.notEqual(sonnetAuthor.picked && sonnetAuthor.picked.family, 'claude-sonnet-5-5')
+  const allDry = world({ gemini: dry, claude: dry, grok: dry })
+  const judge = ask('opus', 'high', { authors: ['claude-opus-5-5'], nativeDiffers: true, harnesses: allDry })
+  assert.equal(judge.picked, null)
+  assert.deepEqual([judge.native.model, judge.native.effort, judge.native.family], ['sonnet', 'high', 'claude-sonnet-5-5'])
+  // not a review: the native pair is the reference whatever the authors
+  assert.equal(ask('opus', 'high', { authors: ['claude-opus-5-5'], harnesses: allDry }).native.model, 'opus')
+  // a tie in distance goes to the stronger model
+  const tie = choose({ pairs: natives(45, 50, 55), reference: { model: 'sonnet', effort: 'high' }, harnesses: {}, authors: ['claude-sonnet-5-5'], nativeDiffers: true })
+  assert.equal(tie.native.model, 'opus')
+  // all three are authors: the reference stays and the decision says so
+  const all = choose({ pairs: natives(), reference: { model: 'sonnet', effort: 'high' }, harnesses: {}, authors: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'], nativeDiffers: true })
+  assert.equal(all.native.model, 'sonnet')
+  assert.match(all.reason, /no other Claude model/)
+})
+
+test('choose does not change what it is given', () => {
+  const freeze = (value) => {
+    if (value && typeof value === 'object') Object.values(value).forEach(freeze)
+    return Object.freeze(value)
+  }
+  const frozenPairs = freeze(JSON.parse(JSON.stringify(pairs)))
+  const harnesses = freeze(JSON.parse(JSON.stringify(world())))
+  assert.doesNotThrow(() => choose({ pairs: frozenPairs, reference: { model: 'sonnet', effort: 'xhigh' }, harnesses, exclude: Object.freeze([]), authors: Object.freeze([]) }))
+})
+
+test('enabled: on only when the session exports on, on Linux', () => {
+  assert.deepEqual(enabled({ AETHER_SUPERDELEGATION: 'on' }, 'linux'), { on: true, reason: null })
+  assert.deepEqual(enabled({ AETHER_SUPERDELEGATION: 'on' }, 'darwin'), { on: false, reason: 'platform' })
+  assert.deepEqual(enabled({ AETHER_SUPERDELEGATION: 'off' }, 'linux'), { on: false, reason: 'option' })
+  assert.deepEqual(enabled({}, 'linux'), { on: false, reason: 'option' })
+})
+
+test('C1 and E8: superdelegation is off by default, lanes on counts as on, seats is ignored, and a set value wins', () => {
+  assert.deepEqual(resolveOption({}), { on: false, source: 'default', legacy: [] })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: '' }), { on: false, source: 'default', legacy: [] })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }), { on: true, source: 'superdelegation', legacy: [] })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_LANES: 'true' }), { on: true, source: 'lanes', legacy: ['lanes-as-on'] })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_LANES: 'false' }), { on: false, source: 'default', legacy: [] })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_LANES: 'true', CLAUDE_PLUGIN_OPTION_SEATS: 'native' }), { on: true, source: 'lanes', legacy: ['lanes-as-on', 'seats-ignored'] })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', CLAUDE_PLUGIN_OPTION_LANES: 'true' }), { on: false, source: 'superdelegation', legacy: ['lanes-ignored'] })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', CLAUDE_PLUGIN_OPTION_SEATS: 'robust' }), { on: true, source: 'superdelegation', legacy: ['seats-ignored'] })
+})
+
+test('legacyNotes tells the owner what was ignored or read as on', () => {
+  assert.deepEqual(legacyNotes(['lanes-as-on', 'lanes-ignored', 'seats-ignored']), [
+    'The lanes option is on and superdelegation is not set, so superdelegation counts as on. Set superdelegation to choose it yourself.',
+    'The lanes option is ignored: superdelegation is set.',
+    'The seats option no longer exists (native, balanced and robust are gone): its value is ignored.',
+  ])
+  assert.deepEqual(legacyNotes([]), [])
+})
+
+const harness = (maxParallel) => ({ command: 'x', maxParallel, waitSeconds: 540, timeouts: { implementer: 2700, supervisor: 900, reviewer: 1200 }, groups: {}, models: { m: {} } })
+
+test('runArgs: the harnesses that are enabled, installed and have pairs, their caps, the waits and the cupo wait', () => {
+  const config = { harnesses: { agy: harness(4), grok: harness(2), codex: { ...harness(2), models: {} }, cursor: harness(2), muse: harness(2) } }
+  const args = runArgs(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'grok', 'codex', 'cursor', 'muse'] })
+  assert.deepEqual(args, {
+    superdelegation: true,
+    harnesses: ['agy', 'grok', 'muse'],
+    maxParallelByHarness: { agy: 4, grok: 2, muse: 2 },
+    waits: { implementer: 6, supervisor: 3, reviewer: 4 },
+    cupo: { polls: 10, pollSeconds: 60 },
+  })
+  assert.deepEqual(CUPO, { waitSeconds: 600, pollSeconds: 60 })
+  assert.equal(runArgs(config, pairs, { installed: () => false, enabled: ['agy'] }), null)
+  assert.equal(runArgs(null, pairs, { installed: () => true, enabled: ['agy'] }), null)
+})
+
+test('idleHarnesses names why an enabled harness gives the run nothing', () => {
+  const config = { harnesses: { agy: harness(4), codex: { ...harness(2), models: {} }, cursor: harness(2) } }
+  const idle = idleHarnesses(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'codex', 'cursor', 'ghost'] })
+  assert.deepEqual(idle, [
+    { name: 'codex', reason: 'has no models in the lane table yet' },
+    { name: 'cursor', reason: 'is not installed: x was not found' },
+    { name: 'ghost', reason: 'has no entry in the lane table' },
+  ])
+})
