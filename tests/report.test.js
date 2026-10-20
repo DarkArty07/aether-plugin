@@ -8,7 +8,7 @@ const { useDataDir, age } = require('./helpers.js')
 const { T0, MIN, OPUS, SONNET, HAIKU, GEMINI, sampleUsage, writeUsage, finishedRun, sampleLaneLog, laneResult } = require('./report-fixtures.js')
 const { writeJson } = require('../plugins/aether/lib/run.js')
 const { appendLog } = require('../plugins/aether/lib/lanes.js')
-const { report, finalize, pruneUsage } = require('../plugins/aether/lib/report.js')
+const { report, finalize, pruneUsage, seatsReport } = require('../plugins/aether/lib/report.js')
 const { ensure, adoptUnit } = require('../plugins/aether/lib/worktrees.js')
 
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`)
@@ -480,7 +480,7 @@ test('a RADAR figure is null where nothing measured it: no usage and no saved re
   assert.deepEqual(radar, {
     rapid: { runMs: 10 * MIN, attempts: null, climbed: null, escalated: null },
     autonomous: { questions: null },
-    delegation: { laneCalls: 0, nativeUsd: null, lanesUsd: 0, laneShare: null, byHarness: {}, byGroup: {} },
+    delegation: { laneCalls: 0, nativeUsd: null, lanesUsd: 0, laneShare: null, byHarness: {}, byGroup: {}, work: { calls: 0, external: 0, native: 0, externalShare: null }, quotaByHarness: {} },
     affordable: { totalUsd: null, nativeUsd: null, lanesUsd: 0 },
     robust: { merged: null, adopted: null, blocked: null, testsPassed: null, testsKnownFailuresOnly: null, findings: null, finalVerdict: null },
   })
@@ -636,8 +636,10 @@ const grokGroup = (remaining, extra = {}) => ({ windows: { weekly: { remaining, 
 const agyGroup = (weekly, fiveHour) => ({ windows: { weekly: { remaining: weekly, resetsAt: '2026-10-21T03:35:44.000Z' }, '5h': { remaining: fiveHour, resetsAt: iso(T0 + 4 * 3600 * 1000) } } })
 
 function choiceEntry(runId, minutes, fields) {
-  return { kind: 'choice', time: T0 + minutes * MIN, session: null, run: runId, design: null, tier: 'haiku', effort: 'xhigh', ...fields }
+  return { kind: 'choice', time: T0 + minutes * MIN, session: null, run: runId, design: null, requested: 46.8, reference: { id: 'claude/sonnet@high', model: 'sonnet', effort: 'high', intelligence: 46.8 }, native: { id: 'claude/sonnet@high', model: 'sonnet', effort: 'high', family: 'claude-sonnet-5-5', intelligence: 46.8 }, ...fields }
 }
+const tookEntry = (runId, minutes, fields) => ({ kind: 'took', time: T0 + minutes * MIN, session: null, run: runId, ...fields })
+const OPUS_MEDIUM = { id: 'agy/claude-opus-5-5@medium', harness: 'agy', model: 'claude-opus-5-5', effort: 'medium', group: 'claude', family: 'claude-opus-5-5', intelligence: 51.2, costPerTaskUsd: 1.34 }
 
 test('report gives, per group, the balance at the start and at the end of the run, the next reset, and the calls', (t) => {
   const dataDir = useDataDir(t)
@@ -748,24 +750,76 @@ test('a reset that cannot be read as a time gives no next reset, and a group wit
   assert.equal(again.groups.codex.balance, null)
 })
 
-test('report lists what each lane call chose: the call, the lane that took it or none, the reason, and the candidates in order', (t) => {
+test('report lists, per call, the reference pair, the pair that took it, why, and how long it took', (t) => {
   const dataDir = useDataDir(t)
   const { repo, args } = finishedRun(t)
-  const candidates = [
-    { harness: 'grok', model: 'grok-4.7', state: 'priority', priority: 0.013331, outcome: 'picked', usedPercentAbsent: true },
-    { harness: 'agy', model: 'gemini-3.8-flash', state: 'priority', priority: 0.006044, outcome: 'untried', usedPercentAbsent: false },
-  ]
-  const native = [{ harness: 'agy', model: 'claude-sonnet-5-5', state: 'excluded', priority: null, outcome: 'reserve', usedPercentAbsent: false }]
-  appendLog(dataDir, null, choiceEntry(args.runId, 12, { call: 'task-1-1-supervise', role: 'supervisor', tier: 'sonnet', effort: 'high', picked: null, candidates: native, reason: 'native: no candidate is usable: agy claude-sonnet-5-5 is under the reserve' }))
-  appendLog(dataDir, null, choiceEntry(args.runId, 4, { call: 'task-1-1-implement', role: 'implementer', picked: { harness: 'grok', model: 'grok-4.7' }, candidates, reason: 'took grok grok-4.7, first in order (grok grok-4.7 0.013331, agy gemini-3.8-flash 0.006044)' }))
-  // Another run's choice, and one after the run ended, are not this run's.
-  appendLog(dataDir, null, choiceEntry('20261001-000000-aaaa', 5, { call: 'task-1-1-implement', role: 'implementer', picked: null, candidates: native, reason: 'x' }))
-  appendLog(dataDir, null, choiceEntry(args.runId, 45, { call: 'task-3-1-implement', role: 'implementer', picked: null, candidates: native, reason: 'late' }))
-  const { run } = report(repo.dir, args.runId, { dataDir, tests: false }).lanes
-  assert.deepEqual(run.choices, [
-    { call: 'task-1-1-implement', role: 'implementer', tier: 'haiku', effort: 'xhigh', picked: { harness: 'grok', model: 'grok-4.7' }, reason: 'took grok grok-4.7, first in order (grok grok-4.7 0.013331, agy gemini-3.8-flash 0.006044)', candidates },
-    { call: 'task-1-1-supervise', role: 'supervisor', tier: 'sonnet', effort: 'high', picked: null, reason: 'native: no candidate is usable: agy claude-sonnet-5-5 is under the reserve', candidates: native },
+  const candidates = [{ id: OPUS_MEDIUM.id, outcome: 'picked', why: null }, { id: 'grok/grok-4.7@high', outcome: 'passed', why: 'below' }]
+  appendLog(dataDir, null, choiceEntry(args.runId, 12, { call: 'task-1-1-supervise', role: 'supervisor', picked: null, reason: 'native: every eligible quota is dry', candidates: [] }))
+  appendLog(dataDir, null, choiceEntry(args.runId, 4, { call: 'task-1-1-implement', role: 'implementer', picked: OPUS_MEDIUM, reason: 'took agy/claude-opus-5-5@medium', candidates }))
+  appendLog(dataDir, null, tookEntry(args.runId, 9, { call: 'task-1-1-implement', by: 'agy:claude-opus-5-5', cause: 'chosen' }))
+  appendLog(dataDir, null, tookEntry(args.runId, 14, { call: 'task-1-1-supervise', by: 'native', cause: 'no-candidate' }))
+  // Another run's, and one after the run ended, are not this run's.
+  appendLog(dataDir, null, choiceEntry('20261001-000000-aaaa', 5, { call: 'task-1-1-implement', role: 'implementer', picked: null, reason: 'x', candidates: [] }))
+  appendLog(dataDir, null, choiceEntry(args.runId, 45, { call: 'task-3-1-implement', role: 'implementer', picked: null, reason: 'late', candidates: [] }))
+  const { lanes, radar } = report(repo.dir, args.runId, { dataDir, tests: false })
+  assert.deepEqual(lanes.run.choices, [
+    { call: 'task-1-1-implement', role: 'implementer', reference: { id: 'claude/sonnet@high', model: 'sonnet', effort: 'high', intelligence: 46.8 }, requested: 46.8, picked: OPUS_MEDIUM, by: 'agy:claude-opus-5-5', cause: 'chosen', reason: 'took agy/claude-opus-5-5@medium', ms: 5 * MIN, candidates },
+    { call: 'task-1-1-supervise', role: 'supervisor', reference: { id: 'claude/sonnet@high', model: 'sonnet', effort: 'high', intelligence: 46.8 }, requested: 46.8, picked: null, by: 'native', cause: 'no-candidate', reason: 'native: every eligible quota is dry', ms: 2 * MIN, candidates: [] },
   ])
-  const empty = report(repo.dir, args.runId, { dataDir: useDataDir(t), tests: false }).lanes.run
-  assert.deepEqual(empty.choices, [])
+  assert.deepEqual(radar.delegation.work, { calls: 2, external: 1, native: 1, externalShare: 0.5 })
+  assert.equal(report(repo.dir, args.runId, { dataDir: useDataDir(t), tests: false }).lanes.run.choices.length, 0)
+})
+
+test('a call whose pick was repeated keeps the last choice and the first time; a call with no took has no duration', (t) => {
+  const dataDir = useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  appendLog(dataDir, null, choiceEntry(args.runId, 3, { call: 'task-1-1-implement', role: 'implementer', picked: OPUS_MEDIUM, reason: 'first', candidates: [] }))
+  appendLog(dataDir, null, choiceEntry(args.runId, 5, { call: 'task-1-1-implement', role: 'implementer', picked: null, reason: 'second', candidates: [] }))
+  appendLog(dataDir, null, tookEntry(args.runId, 8, { call: 'task-1-1-implement', by: 'native', cause: 'failed' }))
+  appendLog(dataDir, null, choiceEntry(args.runId, 6, { call: 'final-review', role: 'reviewer', picked: null, reason: 'open', candidates: [] }))
+  const { choices } = report(repo.dir, args.runId, { dataDir, tests: false }).lanes.run
+  assert.deepEqual(choices.map((c) => [c.call, c.reason, c.by, c.cause, c.ms]), [['task-1-1-implement', 'second', 'native', 'failed', 5 * MIN], ['final-review', 'open', null, null, null]])
+})
+
+test('the RADAR figures say how much of the work left Claude and what each harness quota consumed', (t) => {
+  const dataDir = useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  sampleLaneLog(dataDir, args.runId)
+  appendLog(dataDir, null, tookEntry(args.runId, 5, { call: 'task-1-1-implement', by: 'agy:gemini-3.8-flash', cause: 'chosen' }))
+  appendLog(dataDir, null, tookEntry(args.runId, 6, { call: 'task-2-1-implement', by: 'native', cause: 'no-candidate' }))
+  appendLog(dataDir, null, tookEntry(args.runId, 7, { call: 'task-3-1-implement', by: 'native', cause: 'wait-limit' }))
+  const { radar } = report(repo.dir, args.runId, { dataDir, tests: false })
+  assert.deepEqual(radar.delegation.work, { calls: 3, external: 1, native: 2, externalShare: 1 / 3 })
+  assert.ok(radar.delegation.quotaByHarness.agy['5h'].consumed > 0)
+  assert.equal(typeof radar.delegation.lanesUsd, 'number')
+})
+
+test('the report repeats what the session ignored or read as on', (t) => {
+  const { repo, args } = finishedRun(t)
+  const env = { AETHER_SUPERDELEGATION: 'on', AETHER_SUPERDELEGATION_LEGACY: 'lanes-as-on,seats-ignored' }
+  const { superdelegation } = report(repo.dir, args.runId, { dataDir: useDataDir(t), tests: false, env })
+  assert.equal(superdelegation.on, true)
+  assert.deepEqual(superdelegation.legacy, [
+    'The lanes option is on and superdelegation is not set, so superdelegation counts as on. Set superdelegation to choose it yourself.',
+    'The seats option no longer exists (native, balanced and robust are gone): its value is ignored.',
+  ])
+  assert.deepEqual(report(repo.dir, args.runId, { dataDir: useDataDir(t), tests: false, env: {} }).superdelegation, { on: null, legacy: [] })
+})
+
+test('a choice written in the old shape does not break the report', (t) => {
+  const dataDir = useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  appendLog(dataDir, null, { kind: 'choice', time: T0 + 4 * MIN, session: null, run: args.runId, design: null, call: 'task-1-1-implement', role: 'implementer', tier: 'haiku', effort: 'xhigh', picked: { harness: 'grok', model: 'grok-4.7' }, candidates: [], reason: 'old' })
+  const [choice] = report(repo.dir, args.runId, { dataDir, tests: false }).lanes.run.choices
+  assert.deepEqual([choice.call, choice.reason, choice.reference, choice.requested, choice.ms], ['task-1-1-implement', 'old', null, null, null])
+})
+
+test('a design round shows its reference and reason when the seat entry brings them', (t) => {
+  const dataDir = useDataDir(t)
+  const reference = { id: 'claude/opus@high', model: 'opus', effort: 'high', intelligence: 51.2 }
+  appendLog(dataDir, 's1', { kind: 'seat', time: T0, session: 's1', seat: 'judge', status: 'native', reason: 'no-external', reference })
+  appendLog(dataDir, 's1', { kind: 'seat', time: T0 + MIN, session: 's1', seat: 'judge', status: 'native', reason: 'no-table' })
+  const { bySeat } = seatsReport({ dataDir, session: 's1' })
+  assert.deepEqual(bySeat.judge.rounds, 2)
+  assert.deepEqual(bySeat.judge.decisions, [{ status: 'native', reason: 'no-external', reference }])
 })
