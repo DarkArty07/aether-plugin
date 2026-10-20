@@ -30,7 +30,7 @@ Aether serves five goals, **RADAR**.
 - Claude Code 2.1.294 or later;
 - Node.js 22;
 - git 2.36 or later;
-- for lanes, the CLI of each harness you turn on: `agy`, `codex`, `grok`, `cursor-agent` or `muse`.
+- for superdelegation, the CLI of each harness you turn on: `agy`, `codex`, `grok`, `cursor-agent` or `muse`.
 
 ## Install
 
@@ -38,7 +38,7 @@ Aether serves five goals, **RADAR**.
 claude plugin install aether --marketplace DarkArty07/aether-plugin
 ```
 
-Add `--config lanes=true` to turn the lanes on (`lanes`, off by default; see [Options](docs/guide/options.md#options), which has the plugin's eight options and how to set them).
+Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; the rule is in [Lanes](docs/guide/lanes.md#lanes), and [Options](docs/guide/options.md#options) has the plugin's seven options and how to set them).
 
 ## First start
 

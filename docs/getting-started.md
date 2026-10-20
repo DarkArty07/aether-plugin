@@ -17,7 +17,7 @@ Aether mode is opt-in: you install the plugin once, and you choose Aether mode e
 - Claude Code 2.1.294 or later;
 - Node.js 22;
 - git 2.36 or later;
-- for lanes, the CLI of each harness you turn on: `agy`, `codex`, `grok`, `cursor-agent` or `muse`.
+- for superdelegation, the CLI of each harness you turn on: `agy`, `codex`, `grok`, `cursor-agent` or `muse`.
 
 ### Install
 
@@ -25,7 +25,7 @@ Aether mode is opt-in: you install the plugin once, and you choose Aether mode e
 claude plugin install aether --marketplace DarkArty07/aether-plugin
 ```
 
-Add `--config lanes=true` to turn the lanes on (see [Options](guide/options.md#options)). In a session, `/plugin install aether --marketplace DarkArty07/aether-plugin` does the same and lets you choose the scope.
+Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; see [Options](guide/options.md#options)). In a session, `/plugin install aether --marketplace DarkArty07/aether-plugin` does the same and lets you choose the scope.
 
 Then run `/aether:first-setup` once, in a session started with plain `claude`, to get a short command that starts Aether mode (see [Start](#start)).
 
@@ -59,7 +59,7 @@ Then, in the same shell, ask which options the plugin has:
 claude plugin configure aether@aether-plugin
 ```
 
-It shows the plugin's eight options, `lanes`, `harnesses`, `ops`, `seats`, `router`, `decider`, `fallback` and `deadlines`, and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
+It shows the plugin's seven options, `superdelegation`, `harnesses`, `ops`, `router`, `decider`, `fallback` and `deadlines`, and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
 
 Last, check that the plan format Aether builds from reads correctly. Save this two-task plan as `tasks.md` anywhere. It is what the Writer produces for a plan, shortened: every task has the Aether fields, and there is an `## Aether Execution` section.
 
@@ -160,7 +160,7 @@ Tell the Lead what you want. What it does with the request depends on its size, 
 2. **It asks the clarifying questions, at most five.** Before anything is written, one question at a time, and only about a choice that is hard to reverse, surprising or a real trade-off. What the intent leaves open and a default can settle, the Lead assumes and records, and does not ask. Your answers go into the intent card. (`using-aether`, «Designing» and «Assumptions instead of questions».)
 3. **It tells you what is worth knowing.** Before a spec and a plan it names a better option if it sees one, the scope, and the estimated cost and time from the runs finished so far, or says there is no history yet. (`using-aether`, «The route by size and risk».)
 4. **It writes the intent card.** `specs/NNN-<topic>/intent.md` holds your words as you said them, the understanding you confirmed, the criteria (what and why, each tied to a quote of yours), what is out, and your answers to the questions. Only the Lead writes the card. A small or reversible change needs no document: the Lead does it itself, or hands it to one delegate. (`using-aether`, «Designing» and «The route by size and risk».)
-5. **`/aether:design` runs the design by itself.** The Lead launches this workflow with the card and has no turn until it ends. The Writer writes the spec and the Judge reviews it; the Writer then writes the plan and the tasks, `aether-plan check` passes and the Judge reviews them; last, the Examiner writes the hidden exam. A document gets at most two revisions. Each write of a document, each review and the exam go to the models of the `seats` option first, `balanced` by default, and to the native agent last, and a seat that cannot answer passes the round to the native agent without the Lead; a correction after a review is always the native Writer's (see [Design seats](guide/design-seats.md#design-seats)). It needs the Workflow tool (see [When something fails](#when-something-fails)).
+5. **`/aether:design` runs the design by itself.** The Lead launches this workflow with the card and has no turn until it ends. The Writer writes the spec and the Judge reviews it; the Writer then writes the plan and the tasks, `aether-plan check` passes and the Judge reviews them; last, the Examiner writes the hidden exam. A document gets at most two revisions. With `superdelegation` on, each write of a document, each review and the exam go to another harness first, and to the native agent last, and a seat that cannot answer passes the round to the native agent without the Lead; with it off, which is the default, every seat is the native agent (see [Design seats](guide/design-seats.md#design-seats) and [Lanes](guide/lanes.md#lanes)). It needs the Workflow tool (see [When something fails](#when-something-fails)).
 6. **The Lead acts on one of four results.** `approved`: the paths of the spec, the plan and the tasks, each verdict of the Judge as given, the `Complexity` table and the proposals; the Lead then chooses how to build. `clarify`: questions the card did not settle, each marked `[NEEDS CLARIFICATION]`; the Lead asks you, writes your answers into the card and launches again. `dispute`: a third review that did not approve, or a `reject`, with both positions or the Judge's direction; the Lead rethinks the card or puts the dispute on your list, and never overrides the Judge. `failed`: the step and why. (`using-aether`, «Designing».)
 7. **The Lead chooses how to build it, and says why.** The direct path, the Lead itself, for a very bounded change; a delegate task, one subagent on a model the Lead names with its reason, for real but bounded work and for a plan of one or two tasks; or the swarm, `/aether:run`, for a plan of three or more tasks or one with a task on Opus. (`using-aether`, «The three paths».)
 8. **It stops at the plan with a short brief.** Without your permission to work for hours, the Lead stops here. The brief opens with what waits for your yes, and recommends how to build it: itself, a delegate task on a model it names, or the swarm. Your yes starts the build. (`using-aether`, «Autonomous runs» and «The execution method».)
@@ -186,7 +186,7 @@ The swarm needs:
 - **a separate integration worktree on a feature branch.** The Lead creates it with `git worktree add <path> -b <branch>`;
 - **permissions that let the agents run `git`, `aether-wt`, `aether-lane` and the tests**, and edit files under `.aether/worktrees/`, without asking each time.
 
-How the method works from end to end is in [Methodology](methodology.md); what Aether is for is in [Purpose](purpose.md). Lanes, the other coding plans a swarm can use, are in [Lanes](guide/lanes.md#lanes).
+How the method works from end to end is in [Methodology](methodology.md); what Aether is for is in [Purpose](purpose.md). Superdelegation, which sends a swarm's calls to the other coding plans you pay for, is in [Lanes](guide/lanes.md#lanes).
 
 ## Work for hours
 
@@ -203,7 +203,7 @@ What the Lead does then:
 
 Irreversible actions, such as a push, a merge to `main`, a publish or a deploy, are not covered by the permission to work for hours. They wait on your list in the brief unless you authorized that class of action in general words, which the Lead records as a standing grant.
 
-The dollar figure of a run covers the swarm, the lanes and the external seats; the Lead's own turns are not added up, so the time ceiling is the real guard.
+The dollar figure of a run covers the swarm, the calls on other harnesses and the external seats; the Lead's own turns are not added up, so the time ceiling is the real guard.
 
 A permission prompt of Claude Code stops a run like a question: the session waits at it. Start a session meant for a run with a permission mode or allow rules that cover its tools, or with the launcher, which bypasses permissions and refuses irreversible commands that no grant covers (see [Start](#start)). The plugin itself never turns permissions off.
 

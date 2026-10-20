@@ -24,7 +24,7 @@ Aether serves five goals, **RADAR**:
 - **Autónomo** (autonomous): the owner is not asked about trivial things, and every irreversible step reaches them in one list;
   - measured by how many times the system interrupts the owner after they confirm the intent.
 - **Delegación** (delegation): work goes to other coding harnesses (agy, Codex, Grok, Cursor, Muse) while their quota lasts;
-  - measured by the calls and tokens that ran on other harnesses, and by the lanes that ran dry.
+  - measured by the calls and tokens that ran on other harnesses, and by the quotas that ran dry.
 - **Asequible** (affordable): each role runs on the cheapest model and effort that does it well;
   - measured by the cost in US dollars at list price, per design and per run.
 - **Robusto** (robust): quality code, checked by tests, evidence and independent reviews.

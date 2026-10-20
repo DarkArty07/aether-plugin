@@ -22,7 +22,7 @@ This page describes how Aether turns an intent into a reviewed spec, a plan, a b
   - a final review, by `aether:reviewer`, on Opus or Sonnet by the run's risk, covers the whole run;
   - the workflow's own `aether-wt` and `aether-lane` commands go to an `ops` agent on Haiku at `low`, which the mod answers without a model request while `ops` is on (`ops`, on by default; see [Ops without a model](guide/ops.md));
   - code deletes every unit worktree and branch as soon as it is no longer used.
-- **Lanes** run the swarm's calls on other coding harnesses while their quota lasts: agy today, and Codex, Grok, Cursor and Muse once the owner turns each one on. `lanes`, off by default; the [Lanes](guide/lanes.md#lanes) guide says how they work.
+- **Superdelegation** runs everything that is not the Lead, in the swarm and in the design, on other coding harnesses while their quota lasts, with native Claude as the fallback: agy today, and Codex, Grok, Cursor and Muse once the owner turns each one on. `superdelegation`, off by default; the [Lanes](guide/lanes.md#lanes) guide has the rule.
 - **`/aether:design`** is the workflow that runs the design: it takes the intent card to an approved spec, plan and tasks with the Writer, the Judge and the Examiner, and gives the Lead one result. It needs the Workflow tool.
 - **The design seats** let the Judge, the Writer and the Examiner each be taken, one round at a time, by a stronger model of another harness, with Aether's own agent as the fallback. The [Design seats](guide/design-seats.md#design-seats) guide has the choices.
 
@@ -34,7 +34,7 @@ The owner sits above all of them: they confirm the Lead's understanding of what 
 2. **The route.** The Lead chooses how much design the change needs (see [The route by size and risk](#the-route-by-size-and-risk)). Who builds it, one of the three paths below, is chosen at step 6 once the plan is approved, or at once when the route needs no design.
 3. **The questions and the card.** Before anything is written, the Lead asks the owner at most five clarifying questions, one at a time, only about a choice that is hard to reverse, surprising or a real trade-off, and then writes the intent card, `specs/NNN-<topic>/intent.md`: the owner's words, the understanding they confirmed, the criteria (what and why, each tied to a quote), what is out, and the answers. Only the Lead writes it, and it commits the folder.
 4. **The design.** The Lead launches `/aether:design`, and the workflow runs without a Lead turn: the Writer writes `spec.md` from the card and the Judge reviews it; on `approve`, the Writer writes `plan.md` and `tasks.md`, with the Aether fields, and checks them with `aether-plan check`, and the Judge reviews them the same way; each document gets at most two revisions. The workflow ends with one result: `approved`, `clarify`, `dispute` or `failed` (see [The brakes and the four results](#the-brakes-and-the-four-results)).
-5. **The exam.** With the plan approved, the Examiner writes the hidden exam, inside `/aether:design`, when the `seats` choice runs it.
+5. **The exam.** With the plan approved, the Examiner writes the hidden exam, inside `/aether:design`, on another harness's model when `superdelegation` is on, and on Opus when it is off.
 6. **The build.** Here the owner's permission decides. Without permission to work for hours there is no run: the Lead goes through the design of steps 3 to 5 and stops at the plan with a short brief, in which "Espera tu sí" holds the plan's execution with the path the Lead recommends, and why. The owner's yes starts the build. With the permission (see [Autonomy](guide/autonomy.md#autonomy)), the Lead chooses the path itself, notes it in its diary, and goes on, within the ceilings, to the build, the exam and the brief. Either way the build takes one of the three paths below: the Lead works directly, starts a delegate task, or runs the swarm.
 7. **The examination and the brief.** When the build ends, `aether-exam run` runs the hidden exam on the branch that holds the build, and the Lead gives the owner one brief that opens with "Espera tu sí", the list of what waits for their yes, and "Supuestos".
 
@@ -51,13 +51,13 @@ Lead (main session, starts on Sonnet, xhigh): the intent, the card, the route an
   ▼
 /aether:design (dynamic workflow, no Lead turn): approved, clarify, dispute or failed
   │  Writer (aether:writer, Sonnet, high) ⇄ Judge (aether:judge, Opus, high, read-only)
-  │  each seat native or, by the seats option, on a stronger model of another harness (aether-lane seat-start, seat-wait)
+  │  each seat native, or, with superdelegation on, on a model of another harness (aether-lane seat-start, seat-wait)
   │  spec.md, then plan.md and tasks.md, with Aether fields: tier and effort, area, owned files, dependencies, Serves
   │  aether-plan check / compile (and the run's test baseline)
   │  Examiner (aether:examiner, Opus, high): the hidden exam, kept outside the repository (aether-exam store)
   ▼
 /aether:run (dynamic workflow)
-  ├─ wave 1: units in parallel, each in its own git worktree, native or on a lane
+  ├─ wave 1: units in parallel, each in its own git worktree, native or on another harness
   │    implementer (haiku → sonnet → opus) ⇄ supervisor (sonnet): approve, retry, escalate or block
   │    the same findings three times, or two attempts without a report, stop the unit
   ├─ merges, one at a time; only a test failure outside the baseline undoes one
@@ -67,7 +67,7 @@ Lead (main session, starts on Sonnet, xhigh): the intent, the card, the route an
   │
 aether-exam run: the hidden exam on the integration branch; a failing test is a blocking finding
   │
-aether-report: speed, cost (OpenRouter prices), quality, lanes by harness, and the RADAR figures
+aether-report: speed, cost (OpenRouter prices), quality, calls by harness, and the RADAR figures
 aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 ```
 
@@ -133,5 +133,5 @@ The Lead chooses every model on purpose, for quality, cost and speed together, f
   Efforts: Haiku `medium` for listings and lookups, `high` for mechanical edits; Sonnet `high`, or `xhigh` where the behavior matters beyond its tests (input parsing, the file system, security, data loss, concurrency); Opus `high`, or `xhigh` for hard debugging. `max` only with a reason the task needs it.
 - **Climbing.** A delegate task has no supervisor and no ladder of its own, so it starts on Sonnet for coding, or on Haiku for listings, lookups, explorers and mechanical edits. When it ends without its work, or its work still fails its tests after one round of fixes, it runs again one model up at `xhigh`. After Opus, the Lead defers the task.
 - **Aether's own agents** keep the model and effort of their definition: the Lead passes neither when it starts `aether:judge`, `aether:writer`, `aether:examiner` or `aether:reviewer`. The swarm's agents take their task's Tier and Review from the workflow.
-- **Lanes.** Lanes spend other plans' quota. Among the candidates of one call, the quota decides, never the level: they serve the same role and replace the same native model, and the one whose quota is most at risk of being lost at its reset goes first. A call runs native only when no candidate is left. The [Lanes](guide/lanes.md#lanes) guide has the order, the reserve and the fallbacks.
-- **Design seats.** A seat spends another plan's quota too, but it follows a list, not that order: each seat has a list of external models in order of preference, with the native agent always last. The first model whose harness is enabled and installed, whose quota group is above the reserve, and that is not the author's model takes the seat; when none does, the native agent does. The [Design seats](guide/design-seats.md#design-seats) guide has the `seats` choices, `native`, `balanced` and `robust`, and the full table of options and their defaults is in [Options](guide/options.md#options).
+- **Superdelegation.** It spends other plans' quota. A call asks for the points of its native reference pair, and any external pair that reaches them is a candidate; the quota whose weekly window renews first goes first, then the lower cost per task, never speed. A call runs native only when no candidate is left. The [Lanes](guide/lanes.md#lanes) guide has the rule: the order, the reserve and the fallbacks.
+- **Design seats.** A seat is a call like the others, with the reference pair of its native agent (Opus `high` for the Judge and the Examiner, Sonnet `high` for the Writer), under the same rule, and the model that wrote a document never reviews it. With `superdelegation` off every seat is the native agent. The [Design seats](guide/design-seats.md#design-seats) guide says how a round is taken, and the full table of options and their defaults is in [Options](guide/options.md#options).

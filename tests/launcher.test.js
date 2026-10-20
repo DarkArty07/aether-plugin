@@ -67,7 +67,7 @@ test('the documents install Aether with Claude Code, and start it with one nativ
   const lines = [
     'claude plugin install aether --marketplace DarkArty07/aether-plugin',
     '/plugin install aether --marketplace DarkArty07/aether-plugin',
-    '--config lanes=true',
+    '--config superdelegation=true',
     'claude --agent aether:lead --effort xhigh',
     '{ "agent": "aether:lead" }',
     'claude --agent claude',
