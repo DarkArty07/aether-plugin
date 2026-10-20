@@ -31,7 +31,7 @@ const USAGE =
 // claude is the native harness, the first: its models are not lanes. The others are lanes.
 const HARNESSES = ['claude', 'agy', 'codex', 'grok', 'cursor', 'muse']
 // The chosen harnesses, whose models the index keeps. Another comes in with --harnesses once its listing is in harness-models.json.
-const DEFAULT_HARNESSES = ['claude', 'agy', 'grok']
+const DEFAULT_HARNESSES = ['claude', 'agy', 'grok', 'muse']
 const LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 // From the least to the most effort. default is a reasoning model with no level named, and none is
 // the harness's word for no reasoning; both sit under the named levels.

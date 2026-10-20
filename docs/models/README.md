@@ -28,16 +28,16 @@ It rewrites `models.json` (in `--out`, default `plugins/aether/config/models`) a
 
 | Model | Harness | Efforts taken | Intelligence | Terminal-bench | $/M in/out | Tokens/s |
 |---|---|---|---:|---:|---:|---:|
-| Claude Haiku 5.5 `claude-haiku-5-5` | claude | low, medium, high, xhigh, max | 43.4 | 0.328 | 0.1 / 0.5 | 234.1 |
-| Claude Sonnet 5.5 `claude-sonnet-5-5` | claude | low, medium, high, xhigh, max | 56 | 0.636 | 2 / 10 | 140 |
-| Claude Opus 5.5 `claude-opus-5-5` | claude | low, medium, high, xhigh, max | 57.6 | 0.596 | 4 / 20 | 97.2 |
-| Gemini 4 Argon `gemini-4-argon` | agy* | low, medium, high | 52.6 | 0.571 | 2 / 10 | – |
-| Claude Sonnet 5.5 `claude-sonnet-5-5` | agy* | low, medium, high | 46.8 | 0.439 | 2 / 10 | 94.6 |
-| Claude Opus 5.5 `claude-opus-5-5` | agy* | low, medium, high | 53.6 | 0.566 | 4 / 20 | 71.4 |
-| Gemini 3.8 Flash `gemini-3.8-flash` | agy* | low, medium, high | 40.9 | 0.197 | 0.75 / 3.75 | 130.2 |
-| Grok 4.7 `grok-4.7` | grok* | low, medium, high, xhigh | 46.4 | 0.258 | 2 / 6 | 79.4 |
+| Claude Haiku 5.5 `claude-haiku-5-5` | claude | low, medium, high, xhigh, max | 43.4 | 0.328 | 0.1 / 0.5 | 238.8 |
+| Claude Sonnet 5.5 `claude-sonnet-5-5` | claude | low, medium, high, xhigh, max | 56 | 0.636 | 2 / 10 | 137.1 |
+| Claude Opus 5.5 `claude-opus-5-5` | claude | low, medium, high, xhigh, max | 57.6 | 0.596 | 4 / 20 | 96 |
+| Gemini 4 Argon `gemini-4-argon` | agy* | low, medium, high | 52.6 | 0.571 | 2 / 10 | 81 |
+| Claude Sonnet 5.5 `claude-sonnet-5-5` | agy* | low, medium, high | 46.8 | 0.439 | 2 / 10 | 98.4 |
+| Claude Opus 5.5 `claude-opus-5-5` | agy* | low, medium, high | 53.6 | 0.566 | 4 / 20 | 74 |
+| Gemini 3.8 Flash `gemini-3.8-flash` | agy* | low, medium, high | 40.9 | 0.197 | 0.75 / 3.75 | 140.1 |
+| Grok 4.7 `grok-4.7` | grok* | low, medium, high, xhigh | 46.4 | 0.258 | 2 / 6 | 72.4 |
 
-Generated on 2026-10-15 from https://artificialanalysis.ai/api/v2/data/llms/models; the harnesses' listings are of claude 2026-10-14, agy 2026-10-15, grok 2026-10-13. Scores are at the highest effort the harness takes that AA scored (`models.json` has each effort); `*`: in the lane table.
+Generated on 2026-10-19 from https://artificialanalysis.ai/api/v2/data/llms/models; the harnesses' listings are of claude 2026-10-14, agy 2026-10-15, grok 2026-10-13, muse 2026-10-19. Scores are at the highest effort the harness takes that AA scored (`models.json` has each effort); `*`: in the lane table.
 
 ## What each is for (`profiles.json`, from the maker's pages)
 
@@ -51,11 +51,12 @@ Generated on 2026-10-15 from https://artificialanalysis.ai/api/v2/data/llms/mode
 - **Grok 4.7** `grok-4.7` (grok), xAI (SpaceXAI): "Frontier model, built for coding, agentic tasks, and knowledge work." The default model of Grok Build. context 500K, output –; default effort high; $2 / $6 per M; cutoff 2026-05. xAI API (id grok-4.7), Grok Build (default), Cursor on all plans, OpenRouter, Vercel and Cloudflare gateways. The docs say there is no text output limit. Artificial Analysis measured low, high and xhigh, not medium. (checked 2026-10-13)
 - **Claude Fable 5.1** `claude-fable-5-1` (claude, alias `fable`, excluded), Anthropic: "For demanding reasoning and long-horizon agentic work." Anthropic's advice: for most workloads start with Opus 5.5, and use Fable 5.1 for demanding reasoning and long-horizon agentic work, or when evals on Opus 5.5 at higher effort still fall short. Comparative latency: slower. context 1M, output 128K; default effort high; $10 / $50 per M; cutoff 2026-06. Claude API id claude-fable-5-1; released 2026-09-01, not retired before 2027-09-01. Claude API, Amazon Bedrock, Google Cloud, Microsoft Foundry and Claude Platform on AWS. Each harness takes the efforts its entry lists. Thinking is always on (adaptive), and it is the only thinking mode. Forced tool use returns an error, and only Fable 5.1 and Mythos 5.1 can read its thinking blocks, which editing earlier turns invalidates. Claude Mythos 5.1 has the same capabilities and the same price, and is offered only to organizations Anthropic's verification programs have verified. (checked 2026-10-14)
 - **Grok 4.7 Fast** `grok-4.7-build-fast` (grok, no figures), xAI (SpaceXAI): The same Grok 4.7 served on faster infrastructure: faster and dearer, not a different or smaller model. context 500K, output –; default effort high; $4 / $12 per M; cutoff 2026-05. Only in Cursor and Grok Build, billed through the plan there; not in Grok Build's free tier; not on the public xAI API. Not a cheap lane: it is billed through the plan at twice the token price of Grok 4.7, and the lane table does not list it. xAI's page does not give the model id and does not mention `build-fast`: that this id is the Fast variant rests on the owner's word and on `grok models` listing it. The docs do not state the speed multiple; third-party sites say about 2x output speed. Artificial Analysis has no entry for it, so it has no scores here; its quality is Grok 4.7's. (checked 2026-10-13)
+- **Muse Wonder Full 1.0** `muse-wonder-full-1.0` (muse, no figures), Meta: Flagship coding model available only in Muse Code on the Power Usage and Maximum Usage plans. context 1.05M, output –; default effort high; price: the host's; cutoff –. Available only in Muse Code on the Power Usage and Maximum Usage plans; not on the Meta API. Prices come from a summary of Meta's pages, to be checked against the page. Not an API model; requires a Muse Code Power or Maximum subscription plan. (checked 2026-10-19)
 
 ## Left out
 
 - Excluded, not used: claude `claude-fable-5-1` (`fable`): The owner keeps Fable out until Fable 5.5 (decision A43).
-- No figures: grok `grok-4.7-build-fast`: offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it.
+- No figures: grok `grok-4.7-build-fast`: offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it; muse `muse-wonder-full-1.0`: offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it.
 - Superseded, not to be used: grok `grok-4.6`, `grok-4.5` by `grok-4.7`.
 - Out of scope: agy `gpt-oss-120b`: Artificial Analysis lists gpt-oss-120b, released 2025-08-05, before 2026-01-01.
 <!-- models-index:end -->

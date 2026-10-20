@@ -203,6 +203,28 @@ test('a healthy reading taken after the mark but from a source older than the ma
   assert.equal(marks.liveMark(later, 'agy', 'claude', NOW + 10 * MIN), null)
 })
 
+// Grok's reading comes from its log, and its source carries the time of the log line (grok-quota.js): a line written
+// before the mark no longer lifts it, though the reading was taken after it. A headless grok call writes no line.
+test('a healthy grok reading from a log line older than the mark does not lift it, and a line written after the mark does', (t) => {
+  const grokMark = (dir) => marks.markDry(dir, { harness: 'grok', group: 'grok', reserve: RESERVE, now: NOW })
+  const grokLift = (dir, lineTime) =>
+    marks.liftIfHealthy(dir, {
+      harness: 'grok',
+      group: 'grok',
+      reading: { windows: { weekly: { remaining: 0.9, resetsAt: '2026-10-20T00:00:00Z' } }, source: { log: '/home/owner/.grok/logs/unified.jsonl', ts: iso(lineTime), pid: 1234, version: '1.0.62', ageMinutes: 5 } },
+      readAt: NOW + 10 * MIN,
+      reserve: RESERVE,
+      lifeMs: LIFE,
+      now: NOW + 10 * MIN,
+    })
+  const dir = tempDir(t)
+  const held = grokMark(dir)
+  assert.deepEqual(grokLift(dir, NOW - 5 * MIN), held, 'the line is older than the mark')
+  assert.equal(fs.existsSync(marks.markFile(dir, 'grok', 'grok')), true)
+  assert.equal(grokLift(dir, NOW + 2 * MIN), null, 'a line written after the mark lifts it')
+  assert.equal(fs.existsSync(marks.markFile(dir, 'grok', 'grok')), false)
+})
+
 test('a healthy reading with no source, or a source with no readable time, lifts a mark as it did before', (t) => {
   const sources = { 'no source': undefined, 'a source with no time': { command: 'agy' }, 'a time that cannot be read': { ts: 'soon' }, 'a time that is null': { ts: null } }
   for (const [name, source] of Object.entries(sources)) {
