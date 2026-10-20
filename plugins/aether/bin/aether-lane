@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-lane status <run> [--refresh]   (each group's view, the order of the run's candidates and the dry marks;
-//   it never refreshes by itself: --refresh, which the workflow sends in the quota step of each wave, first renews
-//   grok's reading when it is stale, and says how, as refreshed and refreshMethod)
+// aether-lane status <run> [--refresh]   (the quota view of each group of every enabled harness, a disabled harness by its
+//   command alone, and the dry marks; it never refreshes by itself: --refresh, which no workflow sends any more, first
+//   renews grok's reading when it is stale, and says how, as refreshed and refreshMethod)
 // aether-lane start <run> <call> --role <role> --model <lane model> --effort <effort> --digest <digest> [--task <task>]
 // aether-lane wait <run> <call> [--max <seconds>]
 // aether-lane result <run> <call>
