@@ -4,6 +4,7 @@
 **Date:** 2026-10-15
 **Found in:** the Lead's session 777d41c2, while preparing spec 005
 **Status:** open
+**Update 2026-10-19, branch `fix/bug-issues`:** fixed: `lib/voice.js` reads an `attachment` record whose `queued_command` has `commandMode: 'prompt'` as an owner message, with its text and timestamp, in transcript order. Other queued commands (task notifications), `queue-operation` records and sidechains stay out — the shapes are the ones of session 777d41c2's own transcript, and `tests/voice.test.js` covers them. `aether-autonomy start` and `grant` verify such a message.
 **GitHub:** [#18](https://github.com/DarkArty07/aether-plugin/issues/18) (private repository)
 
 ## What happened

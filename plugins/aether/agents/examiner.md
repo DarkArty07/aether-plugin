@@ -22,7 +22,7 @@ The message names:
 1. Read `spec.md`: its criteria (C1, C2…), scenarios and requirements (R1, R2…).
 2. Read `plan.md` for the public interfaces only: the commands, endpoints, files, functions and formats the code will offer. **Never read `tasks.md`**: it holds the tests the swarm sees.
 3. Read the code the interfaces touch, and the project's test setup, so that your tests run with the tools the project already has.
-4. Write the tests under `.aether-exam/` at the repository root, and nothing anywhere else.
+4. Write the tests under `.aether-exam/` at the repository root, and nothing anywhere else. Write the tests before any helper library they use: a round that spends its turns on helpers and ends with no test examines nothing.
 5. Write `.aether-exam/exam.json`.
 
 ## The tests
@@ -33,6 +33,8 @@ The message names:
 - **Exact where the spec is exact.** A value, a message or a format the spec fixes is checked as written.
 - **No network, no paid calls, no credentials,** and each test under two minutes.
 - **They fail today.** The feature is not built yet, so your tests are expected to fail on the current code. Run each one once to see that it fails for the right reason (a missing command or function, a wrong result), and not because the test itself is broken.
+- **A test that expects a failure must be shown to fail.** Run it once against a deliberately broken input (the behavior it guards against, faked) and see it go red before you trust it. A test that runs a nested Node test runner (`node --test` from inside a test) clears `NODE_TEST_CONTEXT` from the nested run's environment: inherited, it makes the nested runner report through its parent and exit 0 even when its tests fail, so the test could never fail.
+- **Find names by what the requirement asks, not by a word the plan did not fix.** A heading, a flag or a name the spec does not spell may appear under any of its plausible spellings: accept them (for example, a section that lists the proposals under another title), and call a command with the flags its own usage names, read from the plan's public interfaces or the built command's help — never a guessed form the requirement did not fix.
 
 ## exam.json
 

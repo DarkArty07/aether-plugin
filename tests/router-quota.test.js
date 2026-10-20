@@ -23,6 +23,20 @@ const agy = (groups, readAt = NOW - 2 * MIN) => ({ readAt, groups })
 const base = { level: 'B', axis: 'general', rungs, config, enabled: ['agy', 'grok'], installed: () => true, marks: [], now: NOW }
 const find = (result, harness, group) => result.considered.find((c) => c.harness === harness && c.group === group)
 
+test('servableHarnesses leaves out a harness marked dry or with no rung at the level (issue 025)', () => {
+  const groupsOf = (harness) => Object.keys(config.harnesses[harness].groups)
+  const servable = (marks, level = 'B') => quota.servableHarnesses({ level, axis: 'general', rungs, config, marks, now: NOW, harnesses: ['agy', 'grok'] })
+  assert.deepEqual(servable([]), ['agy', 'grok'])
+  const agyDry = groupsOf('agy').map((group) => ({ harness: 'agy', group, until: NOW + H }))
+  assert.deepEqual(servable(agyDry), ['grok'], 'every agy group marked: waiting for its reading buys nothing')
+  const expired = groupsOf('agy').map((group) => ({ harness: 'agy', group, until: NOW - MIN }))
+  assert.deepEqual(servable(expired), ['agy', 'grok'], 'a mark that is over does not hold')
+  // At the top band only rungs measured there serve; a harness with none is left out too.
+  const top = servable([], 'S')
+  for (const harness of top) assert.ok(groupsOf(harness).length > 0, harness)
+  assert.ok(!top.includes('grok') || quota.chooseHarness({ ...base, level: 'S', readings: { grok: GROK } }).considered.some((c) => c.harness === 'grok' && c.state !== 'unserved'))
+})
+
 test('scenario 8: the weekly window that renews first wins, on the level B rung of its harness (R21)', () => {
   const r = quota.chooseHarness({ ...base, readings: { agy: agy({ gemini: gemini(1, 60) }), grok: GROK } })
   assert.equal(r.pick.harness, 'grok')

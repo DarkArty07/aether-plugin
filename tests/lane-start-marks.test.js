@@ -78,7 +78,7 @@ test('a start reads the group of any other mark: the mark holds while the readin
 
 test('a start that finds the group under the reserve, with a balance read, holds it until the reset', (t) => {
   const { args } = fx.laneRun(t)
-  const env = fx.laneEnv(t, { quota: groupQuota([0.9, 0.04, null, FUTURE]) })
+  const env = fx.laneEnv(t, { quota: groupQuota([0.9, 0.04, FUTURE, FUTURE]) })
   const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
   assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json, { unavailable: 'quota' })
   const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini')
@@ -131,8 +131,8 @@ test('a reading is kept for the life the table gives: two starts launch /usage o
 
 test('a call that ends for quota holds its group until the reset when its final reading shows it under the reserve, and a call that fails does not', (t) => {
   const env = fx.laneEnv(t)
-  const low = JSON.stringify(groupQuota([0.9, 0.01, null, FUTURE]))
-  const quota = runCall(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error'], env)
+  const low = JSON.stringify(groupQuota([0.9, 0.01, FUTURE, FUTURE]))
+  const quota = runCall(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error service unavailable'], env)
   assert.equal(quota.status, 'quota', quota.detail)
   const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini')
   assert.deepEqual([mark.confirmed, mark.until], [true, Date.parse(FUTURE)])
@@ -242,8 +242,8 @@ test('the runner writes its mark and its kept reading where start and status loo
   delete env.AETHER_DATA_DIR
   env.CLAUDE_CONFIG_DIR = config
   const dataDir = require('../plugins/aether/lib/run.js').dataDir({ CLAUDE_CONFIG_DIR: config })
-  const low = JSON.stringify(groupQuota([0.9, 0.01, null, FUTURE]))
-  const quota = runCall(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error'], env)
+  const low = JSON.stringify(groupQuota([0.9, 0.01, FUTURE, FUTURE]))
+  const quota = runCall(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error service unavailable'], env)
   assert.equal(quota.status, 'quota', quota.detail)
   const mark = marks.liveMark(dataDir, 'agy', 'gemini')
   assert.deepEqual([mark && mark.confirmed, mark && mark.until], [true, Date.parse(FUTURE)])

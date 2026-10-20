@@ -149,16 +149,22 @@ function grant(mainRoot, { class: cls, quote, session, scope = 'repo' }, { confi
   return { ok: true, grant: record }
 }
 
-function revoke(mainRoot, { class: cls, quote, session }, { configDir, now = Date.now() } = {}) {
+function revoke(mainRoot, { class: cls, quote, session, all = false }, { configDir, now = Date.now() } = {}) {
   assertClass(cls)
   const registry = readGrants(mainRoot)
   const verified = verifyQuote(session, quote, { configDir })
   if (!verified.ok) return { ok: false, reason: verified.reason }
-  const kept = registry.grants.filter((g) => g.class !== cls)
+  // The narrow form (the default, for the one-time procedure) removes only this
+  // session's session-scoped grants of the class. Repository grants and other
+  // sessions' grants stay; removing every grant of the class takes `all`.
+  const kept = registry.grants.filter(
+    (g) => g.class !== cls || (!all && !(g.scope === 'session' && g.session === session)),
+  )
   const revocation = {
     class: cls,
     quote,
     session,
+    all: Boolean(all),
     time: verified.time,
     added: new Date(now).toISOString(),
     removed: registry.grants.length - kept.length,
@@ -280,9 +286,26 @@ function start(mainRoot, { quote, session, hours = null, usd = null }, { configD
 
 const round2 = (x) => Math.round(x * 100) / 100
 
+// A run counts as idle when neither its diary nor its state has changed for this long:
+// the Lead is probably waiting on something that will never wake it (GitHub issue #31).
+const IDLE_MS = 30 * 60 * 1000
+
+function lastActivity(run, paths) {
+  let latest = Date.parse(run.started)
+  for (const file of [paths.diary, paths.runFile]) {
+    try {
+      latest = Math.max(latest, fs.statSync(file).mtimeMs)
+    } catch {
+      // A missing file is no activity, not an error.
+    }
+  }
+  return latest
+}
+
 function statusOfRun(run, paths, now) {
   const elapsed = round2((now - Date.parse(run.started)) / 3600000)
   const spent = round2(run.spend.reduce((sum, entry) => sum + entry.usd, 0))
+  const idleMinutes = Math.max(0, Math.floor((now - lastActivity(run, paths)) / 60000))
   let stop = null
   if (elapsed >= run.ceilings.hours) stop = 'time'
   else if (spent >= run.ceilings.usd) stop = 'cost'
@@ -294,6 +317,8 @@ function statusOfRun(run, paths, now) {
     started: run.started,
     hours: { elapsed, ceiling: run.ceilings.hours },
     usd: { spent, ceiling: run.ceilings.usd },
+    idleMinutes,
+    idle: now - lastActivity(run, paths) >= IDLE_MS,
     stop,
   }
 }

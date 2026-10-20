@@ -2,7 +2,7 @@
 'use strict'
 
 // aether-autonomy grant  --class <class> --quote <text> [--session <id>] [--scope repo|session]
-// aether-autonomy revoke --class <class> --quote <text> [--session <id>]
+// aether-autonomy revoke --class <class> --quote <text> [--session <id>] [--all]
 // aether-autonomy check  <class> [--session <id>]
 // aether-autonomy list
 // aether-autonomy start  --quote <text> [--session <id>] [--hours N] [--usd N]
@@ -17,7 +17,7 @@ const { ensureExcluded } = require(path.join(lib, 'run.js'))
 const autonomy = require(path.join(lib, 'autonomy.js'))
 
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete'
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -62,7 +62,10 @@ function getSession(args, required = false) {
 
 function main(argv) {
   const sub = argv[0]
-  const rest = argv.slice(1)
+  // --all is the one boolean flag; it takes no value, so it leaves `rest`
+  // before assertFlags checks that every flag is followed by a value.
+  const all = sub === 'revoke' && argv.includes('--all')
+  const rest = argv.slice(1).filter((a) => !(sub === 'revoke' && a === '--all'))
 
   if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'spend', 'status', 'end'].includes(sub)) {
     throw new Error(USAGE)
@@ -90,7 +93,7 @@ function main(argv) {
     if (!cls || !quote) throw new Error(USAGE)
     const session = getSession(rest, true)
     ensureExcluded(gitCommonDir)
-    const res = autonomy.revoke(mainRoot, { class: cls, quote, session })
+    const res = autonomy.revoke(mainRoot, { class: cls, quote, session, all })
     if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }
     return { code: 0, out: { revoked: res.revocation } }
   }

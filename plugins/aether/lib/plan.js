@@ -62,6 +62,10 @@ function parseSpec(lines) {
 
 // Issue 003: one task that owns this many paths, or the whole tree, is the kind that ends without its report.
 const MAX_OWNED_PATHS = 6
+// A brief that names more files to read than this is read-heavy (issue 010): its size is in
+// what it must read, not in what it owns, and such units end without a report.
+const MAX_NAMED_READS = 8
+const NAMED_FILE = /(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9]+/g
 const WHOLE_TREE = new Set(['**', '*', '**/*'])
 
 // What a brief carries of its spec (trial 2: a brief with only the contract leaves out the quality bar): the
@@ -364,12 +368,21 @@ function buildGraph(parsed, { only = null } = {}) {
     }
   }
 
+  const textOf = new Map(parsed.tasks.map((t) => [t.number, t.text || '']))
   for (const node of Object.values(nodes)) {
     const whole = node.owns.find((pattern) => WHOLE_TREE.has(pattern))
     if (whole) warnings.push(`Task ${node.number} owns the whole tree (\`${whole}\`); name the paths it needs (issue 003). Consider splitting it.`)
     else if (node.owns.length > MAX_OWNED_PATHS) {
       warnings.push(
         `Task ${node.number} owns ${node.owns.length} paths; a task that large often ends without its report and the ladder repeats the failure (issue 003). Consider splitting it.`,
+      )
+    }
+    // The files the brief names beyond what the task owns are what it must read (issue 010).
+    const owned = (file) => node.owns.some((pattern) => file === pattern || file.startsWith(pattern.replace(/\/\*.*$/, '/')))
+    const named = new Set([...(textOf.get(node.number) || '').matchAll(NAMED_FILE)].map((m) => m[0]).filter((file) => !owned(file)))
+    if (named.size > MAX_NAMED_READS) {
+      warnings.push(
+        `Task ${node.number} names ${named.size} files to read beyond the ones it owns; a read-heavy task often ends without its report (issue 010). Consider splitting it by file.`,
       )
     }
   }
@@ -449,6 +462,7 @@ module.exports = {
   DEFAULT_EFFORT,
   DEFAULT_REVIEW,
   MAX_OWNED_PATHS,
+  MAX_NAMED_READS,
   parsePlan,
   buildGraph,
   renderBrief,

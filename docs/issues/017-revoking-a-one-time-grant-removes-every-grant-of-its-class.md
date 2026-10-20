@@ -4,6 +4,7 @@
 **Date:** 2026-10-15
 **Found in:** closing the 0.11.0 release, in the Lead's session 777d41c2
 **Status:** open
+**Update 2026-10-19, branch `fix/bug-issues`:** fixed with proposal 1 and 3. `revoke` by default removes only the revoking session's session-scoped grants of the class; removing every grant of the class takes `--all`, and the revocation records which form it was. The bootstrap's withdraw-a-class line names `--all`; its one-time procedure keeps the narrow default. The acceptance is a test at both layers: after a one-time session grant is recorded and revoked, a repository grant and another session's grant of the same class stay, and `--all` takes them.
 **GitHub:** [#22](https://github.com/DarkArty07/aether-plugin/issues/22) (private repository)
 
 ## Summary

@@ -144,6 +144,8 @@ function readArgs(raw) {
   // The base of the run's first launch. Args compiled before relaunches lack it, and that is accepted.
   const firstBase = input.integration && input.integration.firstBase
   if (firstBase !== undefined && firstBase !== null && !text(firstBase)) bad.push('integration.firstBase')
+  // The bin directory of the aether-plan that compiled the run (issue 008). Args of an older compile lack it.
+  if (input.binDir !== undefined && input.binDir !== null && !(text(input.binDir) && input.binDir.startsWith('/') && !/['"\u0000-\u001f\u007f]/.test(input.binDir))) bad.push('binDir')
   if (!input.ladder || !TIERS.every((t) => Number.isInteger(input.ladder[t]) && input.ladder[t] >= 0)) bad.push('ladder')
   if (!Number.isInteger(input.maxAgents) || input.maxAgents < 1) bad.push('maxAgents')
   if (!Array.isArray(input.waves) || !input.waves.every(Array.isArray)) bad.push('waves')
@@ -176,6 +178,10 @@ const input = readArgs(args)
 const { runId, repoRoot, runDir, integration, testCommand, ladder, maxAgents, waves, tasks } = input
 // The run's lanes, or null when every call runs native.
 const lanes = input.lanes || null
+// The bins of the version that compiled the run: implementers run them by path, and the ops
+// commands put them first on PATH, so a --plugin-dir session never mixes two versions (issue 008).
+const binDir = input.binDir || null
+const wtBin = binDir ? `${binDir}/aether-wt` : 'aether-wt'
 
 const units = {}
 for (const id of waves.flat()) {
@@ -183,6 +189,10 @@ for (const id of waves.flat()) {
   units[id] = { id, title: t.title, area: t.area, status: 'pending', tiers: [], attempts: 0, rounds: [], failures: [], commit: null, reason: null, question: null, patch: null }
 }
 const agents = { total: 0, byRole: {}, byModel: {} }
+// The budget counts model agents only (issue 013): an ops command the mod answers spends no
+// model, and in the run that opened the issue 97 of 144 agents were ops. Ops calls stay in
+// agents.total and agents.byRole, reported separately, but never spend the budget.
+const modelAgentsSpent = () => agents.total - (agents.byRole.ops || 0)
 // The supervisors' shared memory: the latest rulings of each area.
 const rulings = {}
 // Merges and closes run one at a time, in the order they are asked for.
@@ -228,7 +238,9 @@ function opsPrompt(command, { payload = null, long = false } = {}) {
   const lines = [
     long ? "Run this command with the Bash tool, once, exactly as written, with the Bash tool's timeout set to 600000:" : 'Run this command with the Bash tool, once, exactly as written:',
     '',
-    `cd ${quote(repoRoot)} && ${command}`,
+    // With a binDir, the mod still answers this exact form (ops-command.mjs) and the model path
+    // runs the compiling version's bin first on PATH (issue 008).
+    binDir ? `cd ${quote(repoRoot)} && PATH=${quote(binDir)}:"$PATH" ${command}` : `cd ${quote(repoRoot)} && ${command}`,
     '',
     'Then return its exit code and its complete standard output, exactly as printed. Do not run anything else, and do not fix or retry anything.',
   ]
@@ -243,9 +255,11 @@ function opsPrompt(command, { payload = null, long = false } = {}) {
   return lines.join('\n')
 }
 
-// Runs one aether-wt or aether-lane command through the ops agent. Returns the JSON the command
-// printed, or { error } when the agent, the command or its output failed.
-async function ops(command, { phase, label, payload = null, long = false }) {
+// An ops reply that says so itself: the agent did not run the command (issue 004). Only such a
+// reply is retried — a command that may have run is never run twice on a guess.
+const NOT_RUN = /did not run|didn't run|not run it|refus|cannot run|can't run|won't run|no (corr[ií]|ejecut)/i
+
+async function opsOnce(command, { phase, label, payload = null, long = false }) {
   const reply = await call('ops', 'haiku', 'low', opsPrompt(command, { payload, long }), { phase, label, schema: OPS_SCHEMA })
   if (!reply) return { error: 'the ops agent failed' }
   const lines = String(reply.stdout || '').trim().split('\n')
@@ -258,11 +272,25 @@ async function ops(command, { phase, label, payload = null, long = false }) {
   // The bins print one JSON line. Anything else is an agent that did not run the command, as a refusal does
   // (issue 004), so the error says that instead of leaving it to be guessed from the text.
   if (!out || typeof out !== 'object') {
-    return { error: `unreadable output from ${command} (the ops agent may have refused or not run it): ${String(reply.stdout).slice(0, 300)}` }
+    const error = { error: `unreadable output from ${command} (the ops agent may have refused or not run it): ${String(reply.stdout).slice(0, 300)}` }
+    if (NOT_RUN.test(String(reply.stdout || ''))) error.notRun = true
+    return error
   }
   if (out.error) return { error: out.error }
   if (reply.exitCode !== 0) return { error: `${command} exited with ${reply.exitCode}` }
   return out
+}
+
+// Runs one aether-wt or aether-lane command through the ops agent. Returns the JSON the command
+// printed, or { error } when the agent, the command or its output failed. A reply that says the
+// command was not run retries the ops step once, never the command's own verdict (issue 004).
+async function ops(command, opts) {
+  const first = await opsOnce(command, opts)
+  if (!first.notRun) return first
+  log(`${opts.label}: the ops agent did not run the command; asking once more`)
+  const second = await opsOnce(command, { ...opts, label: `${opts.label} again` })
+  if (second.notRun) return { error: `the ops agent did not run ${command} (asked twice): ${second.error}` }
+  return second
 }
 
 function serialized(task) {
@@ -526,6 +554,9 @@ async function laneCall({ role, id, task, lane, effort, prompt, phase, base }) {
       case 'ok':
         if (!isObject(reply.result) || !isObject(reply.lane)) break
         laneCounts.ok++
+        // The window shows this call as its Haiku ops agent with 0 tokens (issue 032): the
+        // progress line names the harness and model that ran, and what they spent.
+        log(`${base}: ran on ${harnessOf(lane)} ${reply.lane.model || lane.model} · ${isObject(reply.lane.usage) && typeof reply.lane.usage.total === 'number' ? reply.lane.usage.total : '?'} tok`)
         return { kind: 'ok', result: reply.result, lane: reply.lane }
       case 'quota':
         dryInRun.add(group)
@@ -564,13 +595,15 @@ function implementerPrompt(unit, task, rung, context, { lane = false } = {}) {
         `1. You are in your unit worktree, on branch aether/${runId}/${unit.id}. The harness created it. Work only here.`,
         '2. Temporary files go in its .aether-tmp/ folder.',
         `3. The project's test command is \`${testCommand}\`. Run it in the worktree before you commit.`,
-        '4. Commit your work in the worktree. Do not run aether-wt: the harness packages your diff and reads your head from git.',
+        '4. Commit your work in the worktree as you go: a commit after each part that passes, so an attempt cut off still leaves its work. Do not run aether-wt: the harness packages your diff and reads your head from git.',
+        '5. Well before your budget runs out, stop opening new work, commit what you have and file your report with what you checked and what you did not. A partial report with commits can be reviewed and merged; no report cannot.',
       ]
     : [
-        `1. From ${repoRoot}, run \`aether-wt ensure ${runId} ${unit.id}\`. It prints JSON whose "path" is your unit worktree, on branch aether/${runId}/${unit.id}.`,
+        `1. From ${repoRoot}, run \`${wtBin} ensure ${runId} ${unit.id}\`. It prints JSON whose "path" is your unit worktree, on branch aether/${runId}/${unit.id}.`,
         '2. Work only inside that worktree. Temporary files go in its .aether-tmp/ folder.',
         `3. The project's test command is \`${testCommand}\`. Run it in the worktree before you commit.`,
-        `4. When you are done, commit in the worktree, then run \`aether-wt diff ${runId} ${unit.id}\` from ${repoRoot} so the supervisor can review your diff. Report the commit your branch ends on as "head".`,
+        '4. Commit in the worktree as you go: a commit after each part that passes, so an attempt cut off still leaves its work and a checkpoint report can name it.',
+        `5. Your budget is 60 turns. Well before it runs out — by about turn 45 — stop opening new work, commit what you have and file your report with what you checked and what you did not. A partial report with commits can be reviewed and merged; no report cannot. When you are done, run \`${wtBin} diff ${runId} ${unit.id}\` from ${repoRoot} so the supervisor can review your diff. Report the commit your branch ends on as "head".`,
       ]
   const lines = [
     `You are implementing ${unit.id}: ${task.title}.`,
@@ -585,6 +618,15 @@ function implementerPrompt(unit, task, rung, context, { lane = false } = {}) {
   if (unit.rounds.length) {
     lines.push('', '## Earlier attempts', 'The worktree keeps the work of earlier attempts. Continue from it unless the findings say otherwise.')
     for (const round of unit.rounds) lines.push(...roundLines(round))
+  }
+  // A second attempt after one ended without its report works differently, not the same brief
+  // again (issue 010): one owned file at a time, committed and noted before the next is opened.
+  if (unit.failures.includes(NO_REPORT)) {
+    lines.push(
+      '',
+      '## An earlier attempt ended without its report',
+      'It spent its budget reading. Do not repeat it: work the files you own one at a time. For each: make its change, run its checks, commit, and only then open the next. Note what you checked as you go, so your report is already written when you stop.',
+    )
   }
   if (context) lines.push('', ...context)
   return lines.join('\n')
@@ -630,14 +672,32 @@ function inIntegration(file) {
   return file.startsWith(`${root}/`) ? file.slice(root.length + 1) : file
 }
 
+// How a reviewer (and the Judge) spends a 30-turn budget on a large package (issues 011, 022):
+// the reading plan that got a verdict where free reading ran out of turns.
+const READING_PLAN = [
+  '## Reading plan (your budget is 30 turns)',
+  '- Put independent reads together in one turn: several files at once, not one per turn.',
+  '- Spend at most 20 turns reading. Verify at most six claims against the code, the riskiest first.',
+  '- Begin your answer by turn 28 at the latest, with what you have. Name anything you did not check in the summary instead of reading on: an answer that runs out of turns is no verdict at all.',
+]
+
 // The lane variant runs in a disposable copy of the integration branch, with the package in .aether-tmp/.
-function reviewerPrompt(pkg, { lane = false } = {}) {
+// A slice reviews only its units' part of the package (issue 022).
+function reviewerPrompt(pkg, { lane = false, slice = null } = {}) {
   const lines = [
     `Final review of run ${runId} on ${integration.branch}.`,
     '',
     `Review package: ${lane ? '.aether-tmp/package.diff' : pkg.path} (base ${pkg.base}, head ${pkg.head}). It holds the commits, stat and diff of everything the run merged.`,
     `Integration worktree: ${lane ? `the current directory, a disposable copy of ${integration.branch} at ${pkg.head}` : integration.worktree}`,
   ]
+  if (slice) {
+    lines.push(
+      '',
+      `This review is in ${slice.total} slices; yours is slice ${slice.n}. Review only these units: ${slice.units.map((u) => u.id).join(', ')}.`,
+      `Read the parts of the package that touch the files they own: ${[...new Set(slice.units.flatMap((u) => tasks[u.id].owns))].join(', ') || 'unknown files'}.`,
+      'Another reviewer takes each other slice. Note an integration problem only when your units are one side of it.',
+    )
+  }
   if (input.plan) lines.push(`Plan: ${lane ? inIntegration(input.plan) : input.plan}`)
   if (input.spec) lines.push(`Spec: ${input.spec} (in the integration worktree)`)
   lines.push('', '## Units')
@@ -653,6 +713,8 @@ function reviewerPrompt(pkg, { lane = false } = {}) {
   lines.push(
     '',
     'Only merged units are in the diff. Review them as one change: how the units fit together, the plan and the spec, and what a reasonable person using this software would expect.',
+    '',
+    ...READING_PLAN,
   )
   return lines.join('\n')
 }
@@ -752,7 +814,7 @@ async function implement(unit, task, model, effort, rung, context) {
     build: (lane) => ({
       task: unit.id,
       prompt: implementerPrompt(unit, task, rung, context, { lane: true }),
-      base: `${unit.id}: implement on ${rung} via ${harnessOf(lane)} ${lane.model} (attempt ${n})`,
+      base: `${unit.id}: implement via ${harnessOf(lane)} ${lane.model} on ${rung} (attempt ${n})`,
     }),
   })
   if (walked) {
@@ -795,7 +857,7 @@ async function supervise(unit, task, rung, report, used, model) {
     build: (lane) => ({
       task: unit.id,
       prompt: supervisorPrompt(unit, task, rung, report, used, model, { lane: true }),
-      base: `${unit.id}: supervise attempt ${n} via ${harnessOf(lane)} ${lane.model}`,
+      base: `${unit.id}: supervise via ${harnessOf(lane)} ${lane.model} (attempt ${n})`,
     }),
   })
   if (walked) {
@@ -857,7 +919,7 @@ async function work(unit, task) {
       log(`${unit.id}: escalating from ${model} ${effortFor(task, model, Math.max(used[model], 1))} to ${next} xhigh`)
       model = next
     }
-    if (agents.total >= maxAgents) return finish(unit, 'not-run', 'the agent budget is spent')
+    if (modelAgentsSpent() >= maxAgents) return finish(unit, 'not-run', 'the agent budget is spent')
     if (!mergeRetry) {
       used[model]++
       effort = effortFor(task, model, used[model])
@@ -967,7 +1029,17 @@ async function work(unit, task) {
       return finish(unit, 'merged')
     }
     round.merge = describeMerge(out)
-    if (out.error) return finish(unit, 'blocked', `merge ${round.merge}`)
+    if (out.error) {
+      // Never blocked on captured output alone (issue 002): the git history says whether the unit is in.
+      const status = await serialized(() => ops(`aether-wt status ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge status` }))
+      if (!status.error && status.merged) {
+        unit.commit = status.commit
+        round.merge = 'merged: the merge output was unreadable, and the merge commit is on the integration branch'
+        log(`${unit.id}: merge output unreadable, but its merge commit is on ${integration.branch}; counting it merged`)
+        return finish(unit, 'merged')
+      }
+      return finish(unit, 'blocked', `merge ${round.merge}`)
+    }
     if (out.reason === 'conflict' || out.reason === 'tests') {
       if (mergeRetried) return finish(unit, 'blocked', `merge failed again: ${round.merge}`)
       mergeRetried = true
@@ -1036,15 +1108,71 @@ function reviewResult(review) {
   return checked
 }
 
+// The merged units in slices of at most three, of one area where they fall that way
+// (issue 022): one reviewer per slice, each told the files of its units.
+function reviewSlices(merged) {
+  const byArea = []
+  for (const u of merged) {
+    const group = byArea.find((g) => g.area === u.area)
+    if (group) group.units.push(u)
+    else byArea.push({ area: u.area, units: [u] })
+  }
+  const slices = []
+  for (const group of byArea) for (let i = 0; i < group.units.length; i += 3) slices.push(group.units.slice(i, i + 3))
+  return slices
+}
+
+const READINESS = { ready: 0, 'ready-with-fixes': 1, 'not-ready': 2 }
+
+// The sliced final review (issues 011, 022): slices run in parallel on the native reviewer —
+// a lane call has the one fixed id `final-review`, so lanes keep the single-reviewer path.
+// The run's verdict is the least ready slice's; a slice with no answer fails the review and
+// keeps the other slices' findings, never a verdict from part of the change.
+async function reviewRunSliced(pkg, slices, { model, effort, chosen }) {
+  log(`final review in ${slices.length} slices on ${model} ${effort}`)
+  const answers = await parallel(
+    slices.map((sliceUnits, i) => () =>
+      call('reviewer', model, effort, reviewerPrompt(pkg, { slice: { n: i + 1, total: slices.length, units: sliceUnits } }), {
+        phase: 'Final review',
+        label: `final review on ${model} ${effort} (slice ${i + 1}/${slices.length}: ${sliceUnits.map((u) => u.id).join(', ')})`,
+        schema: REVIEW_SCHEMA,
+      }),
+    ),
+  )
+  const findings = []
+  const declined = []
+  const summaries = []
+  let verdict = 'ready'
+  let missing = null
+  answers.forEach((answer, i) => {
+    if (!answer) {
+      if (missing === null) missing = i + 1
+      return
+    }
+    const checked = reviewResult(answer)
+    findings.push(...checked.findings)
+    if (Array.isArray(checked.declined)) declined.push(...checked.declined)
+    if (READINESS[checked.verdict] > READINESS[verdict]) verdict = checked.verdict
+    summaries.push(`Slice ${i + 1} (${slices[i].map((u) => u.id).join(', ')}): ${checked.summary || ''}`)
+  })
+  if (missing !== null) {
+    return { status: 'failed', reason: `slice ${missing} of ${slices.length} ended without its answer; it may have run out of turns`, findings, declined, slices: slices.length, ...chosen }
+  }
+  return { status: 'done', provider: 'native', verdict, findings, declined, summary: summaries.join('\n'), slices: slices.length, ...chosen }
+}
+
 async function reviewRun() {
   if (!Object.values(units).some((u) => u.status === 'merged')) return { status: 'skipped', reason: 'no unit merged' }
-  if (agents.total >= maxAgents) return { status: 'skipped', reason: 'the agent budget is spent' }
+  if (modelAgentsSpent() >= maxAgents) return { status: 'skipped', reason: 'the agent budget is spent' }
   const { model, effort, reason } = reviewPlan()
   log(`final review on ${model} ${effort}: ${reason}`)
   // Every result that names a review carries the model and effort it was run on, or would have been.
   const chosen = { reviewModel: model, reviewEffort: effort }
   const pkg = await ops(`aether-wt diff ${runId} --final`, { phase: 'Final review', label: 'final review: package' })
   if (pkg.error) return { status: 'failed', reason: `package: ${pkg.error}`, ...chosen }
+  // More than three merged units are more than one reviewer's 30 turns (issues 011, 022).
+  const slices = reviewSlices(Object.values(units).filter((u) => u.status === 'merged'))
+  if (slices.length > 1) return reviewRunSliced(pkg, slices, { model, effort, chosen })
   const walked = await laneWalk({
     role: 'reviewer',
     tier: model,

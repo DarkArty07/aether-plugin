@@ -4,6 +4,7 @@
 **Date:** 2026-10-16
 **Found in:** the first real sessions of the router in `command` mode, the Lead's session 56b71739
 **Status:** open
+**Update 2026-10-19, branch `fix/bug-issues`:** proposal 1 is built in its wait half: `quotaStep` waits only for a stale harness that could serve the level (`servableHarnesses` in `lib/router-quota.js`: some group with a rung at the level and no live mark). A marked-dry or rungless harness keeps its background renewal for the next decision but this decision adds no wait for it; a servable stale harness (Grok) is still waited for, up to the deadline. The renewal itself still starts for every stale harness, since it is background work that costs the launch nothing and leaves a reading the next decision can use once a mark is over.
 **GitHub:** [#35](https://github.com/DarkArty07/aether-plugin/issues/35) (private repository)
 
 ## What happened

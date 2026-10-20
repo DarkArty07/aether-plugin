@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, MAX_OWNED_PATHS, parsePlan, buildGraph, renderBrief, specObjective } = require('../plugins/aether/lib/plan.js')
+const { EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, MAX_OWNED_PATHS, MAX_NAMED_READS, parsePlan, buildGraph, renderBrief, specObjective } = require('../plugins/aether/lib/plan.js')
 const { task, plan, specKitTasks } = require('./plan-fixtures.js')
 
 test('parsePlan reads a Spec Kit tasks.md, and its checklist is never read as a task', () => {
@@ -323,6 +323,19 @@ test('buildGraph does not warn at the limit, and warns about an owner of the who
   assert.deepEqual(buildGraph(parsePlan(plan([task(1, { owns: paths(MAX_OWNED_PATHS) }), task(2)]))).warnings, [])
   const whole = buildGraph(parsePlan(plan([task(1, { owns: '`**`' }), task(2, { owns: '`src/t2/**`' })])))
   assert.deepEqual(whole.warnings, ['Task 1 owns the whole tree (`**`); name the paths it needs (issue 003). Consider splitting it.'])
+})
+
+// Issue 010: a read-heavy task's size is in what it must read, not in what it owns.
+test('buildGraph warns about a task whose brief names many files to read', () => {
+  const reads = (n) => Array.from({ length: n }, (_, i) => `\`lib/mod${i}/read.js\``).join(', ')
+  const heavy = task(1).replace('Do the work', `Audit ${reads(MAX_NAMED_READS + 1)} and fix what you find`)
+  const graph = buildGraph(parsePlan(plan([heavy, task(2)])))
+  assert.deepEqual(graph.errors, [])
+  assert.deepEqual(graph.warnings, [
+    `Task 1 names ${MAX_NAMED_READS + 1} files to read beyond the ones it owns; a read-heavy task often ends without its report (issue 010). Consider splitting it by file.`,
+  ])
+  const owned = task(1).replace('Do the work', `Read your own ${reads(MAX_NAMED_READS + 1).replaceAll('lib/mod', 'src/t1/mod')}`)
+  assert.deepEqual(buildGraph(parsePlan(plan([owned, task(2)]))).warnings, [], 'files it owns are not reads beyond them')
 })
 
 test('buildGraph with only judges the size of the selected tasks only', () => {

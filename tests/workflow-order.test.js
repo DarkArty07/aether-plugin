@@ -81,7 +81,7 @@ test('with the readings of 2026-10-14 a haiku implementer runs on Grok 4.7, a so
   })
   const run = await runWorkflow(lanesRun(t, [task(1)], lanes), { lane: status(TODAY) })
   ok(run)
-  assert.deepEqual(starts(run).map((s) => [s.lane.call, s.lane.model, s.label]), [['task-1-1-implement', 'grok-4.7', 'task-1: implement on haiku xhigh via grok grok-4.7 (attempt 1): start']])
+  assert.deepEqual(starts(run).map((s) => [s.lane.call, s.lane.model, s.label]), [['task-1-1-implement', 'grok-4.7', 'task-1: implement via grok grok-4.7 on haiku xhigh (attempt 1): start']])
   assert.match(run.result.units[0].rounds[0].provider, /^grok grok-4\.7/)
   assert.equal(native(run, 'supervisor').length, 1)
   assert.equal(native(run, 'reviewer').length, 1)

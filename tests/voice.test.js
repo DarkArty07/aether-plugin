@@ -61,6 +61,28 @@ test('records without an origin field fall back to their shape', () => {
   assert.deepEqual(ownerMessages(lines).map((m) => m.text), ['an older record from the owner'])
 })
 
+// Issue 014: the shapes below are Claude Code's records for a message typed mid-turn.
+const queued = (prompt, time = '2026-10-08T18:10:00.000Z', extra = {}) =>
+  JSON.stringify({ type: 'attachment', isSidechain: false, timestamp: time, attachment: { type: 'queued_command', prompt, commandMode: 'prompt', humanTurn: true, timestamp: time, ...extra } })
+
+test('a message the owner sends mid-turn counts as their words (issue 014)', () => {
+  const lines = [human('hola'), queued('ire a dormir trbaja autonomamente'), human('sigo aqui', '2026-10-08T18:20:00.000Z')]
+  assert.deepEqual(ownerMessages(lines), [
+    { time: '2026-10-08T18:00:00.000Z', text: 'hola' },
+    { time: '2026-10-08T18:10:00.000Z', text: 'ire a dormir trbaja autonomamente' },
+    { time: '2026-10-08T18:20:00.000Z', text: 'sigo aqui' },
+  ])
+})
+
+test('queued commands that are not owner prompts stay out (issue 014)', () => {
+  const lines = [
+    queued('<task-notification> done', '2026-10-08T18:10:00.000Z', { commandMode: 'task-notification' }),
+    JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: '2026-10-08T18:11:00.000Z', content: 'ire a dormir trbaja autonomamente' }),
+    JSON.stringify({ type: 'attachment', isSidechain: true, timestamp: '2026-10-08T18:12:00.000Z', attachment: { type: 'queued_command', prompt: 'a subagent prompt', commandMode: 'prompt' } }),
+  ]
+  assert.deepEqual(ownerMessages(lines), [])
+})
+
 test('cuts a message over the limit and says how much was cut', () => {
   const [long] = ownerMessages([human('a'.repeat(8010))])
   assert.equal(long.text, `${'a'.repeat(8000)}\n[… 10 more characters cut]`)

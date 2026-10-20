@@ -20,8 +20,10 @@ const MARKER = /^=== aether-lane payload: .+ ===$/
 // round's message.md under <repo>/.aether-tmp/seats/<session>/. Both names are closed, the session's too.
 export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review)\/prompt\.md$|\/\.aether-tmp\/seats\/[A-Za-z0-9-]+\/message\.md$/
 
-// `cd '<absolute path>' && <bin> <tokens>`: the path has no quote and no control character.
-const COMMAND_LINE = /^cd '(\/[^'\u0000-\u001f\u007f]*)' && (aether-wt|aether-lane|aether-plan|aether-exam)((?: [A-Za-z0-9._:=@/,-]+)+)$/
+// `cd '<absolute path>' && <bin> <tokens>`: the path has no quote and no control character. A run that
+// names its compiling version's bins prepends them to PATH in this one exact form (issue 008); the mod
+// answers it only when that directory is its own bin (register.js), and runs its own bin either way.
+const COMMAND_LINE = /^cd '(\/[^'\u0000-\u001f\u007f]*)' && (?:PATH='(\/[^'\u0000-\u001f\u007f]*\/bin)':"\$PATH" )?(aether-wt|aether-lane|aether-plan|aether-exam)((?: [A-Za-z0-9._:=@/,-]+)+)$/
 
 const RUN = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK = /^task-\d+$/
@@ -57,6 +59,7 @@ const word = (expected) => (token) => token === expected
 const COMMANDS = {
   'aether-wt': [
     { checks: [word('merge'), is(RUN), is(TASK)] },
+    { checks: [word('status'), is(RUN), is(TASK)] },
     { checks: [word('salvage'), is(RUN), is(TASK)] },
     { checks: [word('remove'), is(RUN), is(TASK)] },
     { checks: [word('diff'), is(RUN), word('--final')] },
@@ -110,9 +113,9 @@ export function parseOpsPrompt(prompt) {
   if (hasPayload && (lines.length < 8 || lines[5] !== '' || lines[6] !== PREFACE || !MARKER.test(lines[7]))) return null
   const command = COMMAND_LINE.exec(lines[2])
   if (!command) return null
-  const [, cwd, bin, tokens] = command
+  const [, cwd, binDir, bin, tokens] = command
   const args = tokens.slice(1).split(' ')
   const form = COMMANDS[bin].find((candidate) => matches(candidate, args))
   if (!form || Boolean(form.payload) !== hasPayload) return null
-  return { cwd, bin, args, timeoutMs: OPS_TIMEOUT_MS }
+  return binDir === undefined ? { cwd, bin, args, timeoutMs: OPS_TIMEOUT_MS } : { cwd, bin, args, timeoutMs: OPS_TIMEOUT_MS, binDir }
 }

@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { makeRepo, compile, commitIn } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
-const { ensure, merge } = require('../plugins/aether/lib/worktrees.js')
+const { ensure, merge, unitStatus } = require('../plugins/aether/lib/worktrees.js')
 
 function setup(t, options) {
   const repo = makeRepo(t, options)
@@ -22,6 +22,23 @@ test('merge brings an owned, tested unit into the integration branch', (t) => {
   assert.deepEqual(r, { merged: true, commit: repo.git('rev-parse', 'HEAD') })
   assert.equal(repo.git('log', '-1', '--format=%s'), `Merge ${unit.branch}`)
   assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'utf8'), 'one\n')
+})
+
+test('status reads the merge from git, and a second merge is the merge it already has (issue 002)', (t) => {
+  const { repo, args, unit } = setup(t)
+  assert.deepEqual(unitStatus(repo.dir, args.runId, 'task-1'), { merged: false, branch: unit.branch, commit: null, head: repo.git('rev-parse', unit.branch) })
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const before = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(before.merged, false)
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, true)
+  const after = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(after.merged, true)
+  assert.equal(after.commit, r.commit)
+  assert.equal(after.commit, repo.git('rev-parse', 'HEAD'))
+  const headBefore = repo.git('rev-parse', 'HEAD')
+  assert.deepEqual(merge(repo.dir, args.runId, 'task-1'), { merged: true, commit: r.commit, already: true })
+  assert.equal(repo.git('rev-parse', 'HEAD'), headBefore, 'no second merge commit')
 })
 
 test("merge refuses files outside the unit's Owns", (t) => {

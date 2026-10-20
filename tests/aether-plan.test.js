@@ -33,6 +33,8 @@ test('compile writes the graph, briefs and state for the integration branch', (t
   const args = r.json
   assert.match(args.runId, /^\d{8}-\d{6}-[0-9a-f]{4}$/)
   assert.equal(args.repoRoot, repo.dir)
+  // The run's commands run this same version's bins (issue 008).
+  assert.equal(args.binDir, path.dirname(PLAN_BIN))
   assert.equal(args.runDir, path.join(repo.dir, '.aether', 'runs', args.runId))
   const head = repo.git('rev-parse', 'HEAD')
   assert.deepEqual(args.integration, { branch: 'feature/x', worktree: repo.dir, base: head, firstBase: head })
@@ -368,7 +370,8 @@ test('compile records the test baseline of a passing test command', (t) => {
   const file = writePlan(repo.dir, plan([task(1), task(2)]))
   const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
   assert.equal(r.status, 0, r.stdout + r.stderr)
-  const { recordedAt, ...baseline } = JSON.parse(fs.readFileSync(path.join(r.json.runDir, 'baseline.json'), 'utf8'))
+  const { recordedAt, durationMs, ...baseline } = JSON.parse(fs.readFileSync(path.join(r.json.runDir, 'baseline.json'), 'utf8'))
+  assert.equal(typeof durationMs, 'number')
   assert.match(recordedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
   assert.deepEqual(baseline, { exitCode: 0, signatures: [], timedOut: false })
   assert.match(r.stderr, /^aether-plan: test baseline: the test command passed$/m)
@@ -380,7 +383,8 @@ test('compile records the failing tests of a failing test command, on stderr onl
   const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.equal(r.stdout.trim().split('\n').length, 1)
-  const { recordedAt, ...baseline } = JSON.parse(fs.readFileSync(path.join(r.json.runDir, 'baseline.json'), 'utf8'))
+  const { recordedAt, durationMs, ...baseline } = JSON.parse(fs.readFileSync(path.join(r.json.runDir, 'baseline.json'), 'utf8'))
+  assert.equal(typeof durationMs, 'number')
   assert.match(recordedAt, /^\d{4}-\d{2}-\d{2}T/)
   assert.deepEqual(baseline, { exitCode: 1, signatures: ['a', 'b'], timedOut: false })
   assert.match(

@@ -167,6 +167,8 @@ function readArgs(raw) {
   if (!matches(FEATURE, feature)) bad.push('feature')
   if (!matches(SESSION, input.session)) bad.push('session')
   if (!matches(REPO_ROOT, input.repoRoot)) bad.push('repoRoot')
+  // The bin directory of the plugin this session loaded (issue 008); args without it keep the bare name.
+  if (!absent(input.binDir) && !(typeof input.binDir === 'string' && input.binDir.startsWith('/') && !/['"\u0000-\u001f\u007f]/.test(input.binDir))) bad.push('binDir')
   if (!SEAT_CHOICES.includes(input.seats)) bad.push('seats')
   if (!SWITCH.includes(input.lanes)) bad.push('lanes')
   if (!matches(HARNESSES, input.harnesses)) bad.push('harnesses')
@@ -184,6 +186,7 @@ function readArgs(raw) {
     feature,
     session: input.session,
     repoRoot: input.repoRoot.length > 1 ? input.repoRoot.replace(/\/+$/, '') : input.repoRoot,
+    binDir: absent(input.binDir) ? null : input.binDir,
     seats: input.seats,
     lanes: input.lanes,
     harnesses: input.harnesses,
@@ -195,7 +198,7 @@ function readArgs(raw) {
 }
 
 const input = readArgs(args)
-const { feature, session, repoRoot, mode } = input
+const { feature, session, repoRoot, mode, binDir } = input
 const SPEC = `${feature}/spec.md`
 const PLAN = `${feature}/plan.md`
 const TASKS = `${feature}/tasks.md`
@@ -236,7 +239,7 @@ function opsPrompt(command, { payload = null, long = false } = {}) {
   const lines = [
     long ? "Run this command with the Bash tool, once, exactly as written, with the Bash tool's timeout set to 600000:" : 'Run this command with the Bash tool, once, exactly as written:',
     '',
-    `cd ${quote(repoRoot)} && ${command}`,
+    binDir ? `cd ${quote(repoRoot)} && PATH=${quote(binDir)}:"$PATH" ${command}` : `cd ${quote(repoRoot)} && ${command}`,
     '',
     'Then return its exit code and its complete standard output, exactly as printed. Do not run anything else, and do not fix or retry anything.',
   ]
@@ -400,6 +403,8 @@ async function seatRound({ seat, doc, step, text, schema, phase, author = null, 
     const value = isObject(reply.value) ? reply.value : {}
     if (reply.exitCode === 0 && isObject(value.result) && fits(schema, value.result, { required: seat !== 'writer' })) {
       record.provider = `${value.harness} ${value.model}`
+      // The window shows the round as its Haiku ops agent (issue 032): say who ran it.
+      log(`${base}: ran on ${record.provider}${typeof value.lane === 'string' && value.lane !== '' ? ` · ${value.lane}` : ''}`)
       record.lane = typeof value.lane === 'string' ? value.lane : null
       if (seat === 'writer') keepQuestions(value.result)
       return { answer: value.result, text: String(value.answer), seat: record.provider, model: String(value.model), value }
@@ -483,13 +488,22 @@ function reviewLines(doc, path) {
   return [`Review the short design ${path} against the owner's intent.`, 'Check that it covers the intent and goes no further, and that it can be built from as it is.']
 }
 
+// How the Judge spends its 30 turns on a large document (issue 022): the reading plan that got
+// a verdict on a 15-task plan where free reading ended twice without an answer.
+const JUDGE_READING_PLAN = [
+  'Reading plan (your budget is 30 turns):',
+  '- Put independent reads together in one turn: the document, the intent and the code you check against, several files at once.',
+  '- Spend at most 20 turns reading. Verify at most six claims against the code, the riskiest first.',
+  '- Give your verdict by turn 28 at the latest, with what you have. Anything you did not check is an open question, not a reason to read on: a review that runs out of turns decides nothing.',
+]
+
 // The Judge's message for review n: the document, the intent, what to check, what aether-plan check printed for a
 // plan, and from the second review on, the earlier verdict and what changed.
 function judgeMessage({ doc, path, check, earlier }) {
   const parts = [...reviewLines(doc, path), '', ...intentLines(), FINDING_FIELDS]
   if (check !== null) parts.push('', 'aether-plan check printed:', check)
   if (earlier) parts.push('', 'Your earlier verdict:', earlier.verdict, '', 'What changed:', earlier.changed)
-  parts.push('', SCOPE)
+  parts.push('', ...JUDGE_READING_PLAN, '', SCOPE)
   return lines(parts)
 }
 

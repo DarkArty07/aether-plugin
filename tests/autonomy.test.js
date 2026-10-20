@@ -123,21 +123,40 @@ test('check takes the most recent covering grant', (t) => {
   assert.equal(autonomy.check(mainRoot, 'merge-main', { configDir }).added, '2026-10-09T21:00:00.000Z')
 })
 
-test('revoke removes every grant of the class, of both scopes, and records the revocation', (t) => {
-  const { configDir, mainRoot } = setup(t)
+test('revoke by default removes only this session\'s session grants of the class (issue 017)', (t) => {
+  const { configDir, mainRoot } = setup(t, { [SESSION]: OWNER_LINES, [OTHER]: [human(MERGE, '2026-10-09T18:00:00.000Z')] })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION }, { configDir, now: T0 })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION, scope: 'session' }, { configDir, now: T0 })
+  autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: OTHER, scope: 'session' }, { configDir, now: T0 })
   autonomy.grant(mainRoot, { class: 'push', quote: MERGE, session: SESSION }, { configDir, now: T0 })
   const r = autonomy.revoke(mainRoot, { class: 'merge-main', quote: REVOKE, session: SESSION }, { configDir, now: T0 + HOUR })
   assert.deepEqual(r, {
     ok: true,
-    revocation: { class: 'merge-main', quote: REVOKE, session: SESSION, time: '2026-10-09T21:00:00.000Z', added: '2026-10-09T21:00:00.000Z', removed: 2 },
+    revocation: { class: 'merge-main', quote: REVOKE, session: SESSION, all: false, time: '2026-10-09T21:00:00.000Z', added: '2026-10-09T21:00:00.000Z', removed: 1 },
   })
-  assert.equal(autonomy.check(mainRoot, 'merge-main', { configDir, session: SESSION }), null)
+  // The repository grant and the other session's grant of the same class stay.
+  assert.equal(autonomy.check(mainRoot, 'merge-main', { configDir }).scope, 'repo')
+  assert.equal(autonomy.check(mainRoot, 'merge-main', { configDir, session: OTHER }).session, OTHER)
   assert.equal(autonomy.check(mainRoot, 'push', { configDir }).class, 'push')
   const registry = autonomy.readGrants(mainRoot)
-  assert.deepEqual(registry.grants.map((g) => g.class), ['push'])
+  assert.deepEqual(registry.grants.map((g) => [g.class, g.scope, g.session]), [
+    ['merge-main', 'repo', SESSION],
+    ['merge-main', 'session', OTHER],
+    ['push', 'repo', SESSION],
+  ])
   assert.equal(registry.revoked.length, 1)
+})
+
+test('revoke with all removes every grant of the class, of both scopes and sessions (issue 017)', (t) => {
+  const { configDir, mainRoot } = setup(t, { [SESSION]: OWNER_LINES, [OTHER]: [human(MERGE, '2026-10-09T18:00:00.000Z')] })
+  autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION }, { configDir, now: T0 })
+  autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: OTHER, scope: 'session' }, { configDir, now: T0 })
+  autonomy.grant(mainRoot, { class: 'push', quote: MERGE, session: SESSION }, { configDir, now: T0 })
+  const r = autonomy.revoke(mainRoot, { class: 'merge-main', quote: REVOKE, session: SESSION, all: true }, { configDir, now: T0 + HOUR })
+  assert.equal(r.revocation.all, true)
+  assert.equal(r.revocation.removed, 2)
+  assert.equal(autonomy.check(mainRoot, 'merge-main', { configDir, session: SESSION }), null)
+  assert.deepEqual(autonomy.readGrants(mainRoot).grants.map((g) => g.class), ['push'])
 })
 
 test('revoke needs a verified quote, and records removed 0 when the class had no grant', (t) => {
@@ -273,12 +292,29 @@ test('status measures the hours and the spend, and stops on time first, then on 
     started: '2026-10-09T20:00:00.000Z',
     hours: { elapsed: 1.5, ceiling: 8 },
     usd: { spent: 0, ceiling: 50 },
+    idleMinutes: 0,
+    idle: false,
     stop: null,
   })
   autonomy.spend(mainRoot, 30.004, '20261009-201500-ab12', { now: T0 + 2 * HOUR })
   const after = autonomy.spend(mainRoot, 20, 'design-1/1', { now: T0 + 2 * HOUR })
   assert.deepEqual([after.usd.spent, after.stop], [50, 'cost'])
   assert.equal(autonomy.status(mainRoot, { now: T0 + 8 * HOUR }).stop, 'time')
+})
+
+test('status flags a run whose diary and state have been quiet for 30 minutes (GitHub #31)', (t) => {
+  const { configDir, mainRoot } = setup(t)
+  const { run, diary, runFile } = autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 })
+  const at = new Date(T0)
+  fs.utimesSync(diary, at, at)
+  fs.utimesSync(runFile, at, at)
+  assert.deepEqual([autonomy.status(mainRoot, { now: T0 + 10 * 60000 }).idleMinutes, autonomy.status(mainRoot, { now: T0 + 10 * 60000 }).idle], [10, false])
+  assert.deepEqual([autonomy.status(mainRoot, { now: T0 + 31 * 60000 }).idleMinutes, autonomy.status(mainRoot, { now: T0 + 31 * 60000 }).idle], [31, true])
+  // A diary edit is activity: the run is awake again.
+  const later = new Date(T0 + 30 * 60000)
+  fs.utimesSync(diary, later, later)
+  assert.deepEqual([autonomy.status(mainRoot, { now: T0 + 31 * 60000 }).idleMinutes, autonomy.status(mainRoot, { now: T0 + 31 * 60000 }).idle], [1, false])
+  assert.ok(run.id)
 })
 
 test('a later figure for the same source replaces the earlier one, in place', (t) => {

@@ -39,6 +39,7 @@ test('the timeout is the longest $.process.run allows, ten minutes', () => {
 test('every aether-wt command the workflow sends parses to its argument vector', () => {
   const forms = [
     [`aether-wt merge ${RUN} task-1`, ['merge', RUN, 'task-1']],
+    [`aether-wt status ${RUN} task-1`, ['status', RUN, 'task-1']],
     [`aether-wt salvage ${RUN} task-3`, ['salvage', RUN, 'task-3']],
     [`aether-wt remove ${RUN} task-12`, ['remove', RUN, 'task-12']],
     [`aether-wt diff ${RUN} --final`, ['diff', RUN, '--final']],
@@ -62,6 +63,20 @@ test('every aether-lane command the workflow sends parses to its argument vector
     const expected = parsed('aether-lane', command.split(' '))
     assert.deepEqual(parseOpsPrompt(prompt(`aether-lane ${command}`, { long: true, payload: carried })), expected, command)
   }
+})
+
+test('the PATH form that names the compiling version bins parses, with its binDir (issue 008)', () => {
+  const binDir = '/home/me/dev/plugins/aether/bin'
+  const withPath = prompt(`PATH='${binDir}':"$PATH" aether-wt merge ${RUN} task-1`)
+  assert.deepEqual(parseOpsPrompt(withPath), { ...parsed('aether-wt', ['merge', RUN, 'task-1']), binDir })
+  // Other PATH spellings are not the one exact form, and stay with the model.
+  for (const line of [
+    `PATH=${binDir}:"$PATH" aether-wt merge ${RUN} task-1`,
+    `PATH='${binDir}':$PATH aether-wt merge ${RUN} task-1`,
+    `PATH='/home/me/dev/plugins/aether':"$PATH" aether-wt merge ${RUN} task-1`,
+    `PATH='${binDir}':"$PATH" rm -rf /`,
+    `PATH='${binDir}':"$PATH" aether-wt merge ${RUN} task-1; id`,
+  ]) assert.equal(parseOpsPrompt(prompt(line)), null, line)
 })
 
 test('either first line is accepted for any command: the timeout is an instruction for a model', () => {
@@ -283,7 +298,8 @@ test("every ops prompt of a real workflow run parses to the command the harness 
     const { args, calls } = await opsCallsOf(t, lanes, lanes ? { lane } : {})
     assert.ok(calls.length > 0)
     for (const call of calls) {
-      const expected = { cwd: args.repoRoot, bin: call.command.tool, args: [call.command.verb, ...call.command.rest], timeoutMs: OPS_TIMEOUT_MS }
+      // A real compile names its own bin directory (issue 008), and every prompt carries it first on PATH.
+      const expected = { cwd: args.repoRoot, bin: call.command.tool, args: [call.command.verb, ...call.command.rest], timeoutMs: OPS_TIMEOUT_MS, binDir: args.binDir }
       assert.deepEqual(parseOpsPrompt(call.prompt), expected, call.prompt.split('\n')[2])
       seen.add(`${call.command.tool} ${call.command.verb}`)
     }

@@ -137,7 +137,7 @@ Commit the folder and `.specify/feature.json`: an external seat reads the commit
 
 **Launch `/aether:design`** with the Workflow tool, in the background. Its args are JSON. Read the values in one Bash command, `echo "$CLAUDE_CODE_SESSION_ID $AETHER_SEATS $AETHER_LANES $AETHER_LANE_HARNESSES"`, and the checkout with `git rev-parse --show-toplevel`, and write them in:
 
-    {"feature": "specs/NNN-<topic>", "session": "<CLAUDE_CODE_SESSION_ID>", "repoRoot": "<the checkout>", "seats": "<AETHER_SEATS>", "lanes": "<AETHER_LANES>", "harnesses": "<AETHER_LANE_HARNESSES>"}
+    {"feature": "specs/NNN-<topic>", "session": "<CLAUDE_CODE_SESSION_ID>", "repoRoot": "<the checkout>", "seats": "<AETHER_SEATS>", "lanes": "<AETHER_LANES>", "harnesses": "<AETHER_LANE_HARNESSES>", "binDir": "${CLAUDE_PLUGIN_ROOT}/bin"}
 
 It writes the spec, has the Judge review it, writes the plan and the tasks, has the Judge review them, and has the Examiner write the exam. At most two revisions per document. Each write of a document, each review and the exam take the models of the `seats` choice first and the native agent last, and a seat that cannot run goes to the native agent without you. A correction after a review is always the native Writer's. It ends with one result, in `status`:
 - `approved`: the paths of the spec, plan and tasks, every verdict of the Judge as given, the Complexity table, the Proposals and the exam. Read the verdicts and the table, then choose the path to build it (see "The three paths"). The Proposals are not worked.
@@ -212,7 +212,7 @@ Before one, run `aether-autonomy check <class>`.
 - General words that name the action («todos los merges a main», «siempre», «a partir de ahora»): `aether-autonomy grant --class <class> --quote "<their words>"`. It holds in this repository until revoked.
 - Words limited to this session («en esta sesión»): add `--scope session`.
 - A specific action («fusiona el del router») or a bare «sí»: that action, once. Note it in the diary, not in the registry.
-- Words that withdraw one: `aether-autonomy revoke --class <class> --quote "<their words>"`.
+- Words that withdraw a class: `aether-autonomy revoke --class <class> --quote "<their words>" --all`. Without `--all` a revoke removes only this session's session grants of the class, which is the form for undoing a one-time grant.
 - `aether-autonomy list` shows the registry. The registry and each run's `run.json` are written only by `aether-autonomy`; aether-guard refuses edits to them.
 - When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even an action the owner approved with a «sí» until a grant covers it: record their reply as a session grant for its class, run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
 

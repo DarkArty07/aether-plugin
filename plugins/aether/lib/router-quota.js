@@ -136,6 +136,19 @@ function tableGroups(config) {
   return entries
 }
 
+// The harnesses of `harnesses` that could serve the level whatever a fresh reading says
+// (issue 025): some group of theirs has a rung at the level and no live mark holding it.
+// A harness outside this set cannot be picked, so waiting for its reading buys nothing.
+function servableHarnesses({ level, axis, rungs, config, marks, now, harnesses }) {
+  return harnesses.filter((harness) =>
+    Object.keys(config?.harnesses?.[harness]?.groups || {}).some(
+      (group) =>
+        pickRung(rungs, { harness, level, axis, group }) !== null &&
+        !marks.some((mark) => mark.harness === harness && mark.group === group && mark.until > now),
+    ),
+  )
+}
+
 // lift(mark), when given, is told of each mark a fresh healthy reading lifted, so whoever keeps the marks removes it.
 function chooseHarness({ level, axis, rungs, config, enabled, installed, readings: byHarness, marks, now, lift = null }) {
   const stale = new Set(staleHarnesses({ readings: byHarness, config, harnesses: EXTERNAL, now }))
@@ -194,4 +207,4 @@ function chooseHarness({ level, axis, rungs, config, enabled, installed, reading
   return { pick: first ? { harness: first.entry.harness, rung: first.rung } : null, considered }
 }
 
-module.exports = { EXTERNAL, lifeMs, readingFile, peekReadings, staleHarnesses, chooseHarness }
+module.exports = { EXTERNAL, lifeMs, readingFile, peekReadings, staleHarnesses, servableHarnesses, chooseHarness }
