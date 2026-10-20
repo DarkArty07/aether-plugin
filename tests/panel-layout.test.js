@@ -364,8 +364,8 @@ const CASES = [
   ['superdelegation on, agy and grok', { superdelegation: true, harnesses: 'agy,grok' }],
   ['superdelegation off, agy and grok', { superdelegation: false, harnesses: 'agy,grok' }],
   ['all four enabled, superdelegation on', { superdelegation: true, harnesses: 'agy,codex,grok,cursor' }],
-  ['all four enabled, lanes off', { superdelegation: false, harnesses: 'agy,codex,grok,cursor' }],
-  ['agy and muse, lanes off', { superdelegation: false, harnesses: 'agy,muse' }],
+  ['all four enabled, superdelegation off', { superdelegation: false, harnesses: 'agy,codex,grok,cursor' }],
+  ['agy and muse, superdelegation off', { superdelegation: false, harnesses: 'agy,muse' }],
 ]
 
 test('whatever the room, the title, the options, the action row and a line for each enabled group are shown', () => {

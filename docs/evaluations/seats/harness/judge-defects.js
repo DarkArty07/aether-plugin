@@ -12,7 +12,7 @@
 //
 //   native     the Judge's own agent file as the system prompt of `claude -p` on Opus at high effort, with
 //              Read, Grep and Glob: a paid call at API prices.
-//   external   `aether-lane seat judge` with the session's seats choice, harnesses and lanes: on agy, a
+//   external   `aether-lane seat judge` with superdelegation on and the session's harnesses: on agy, a
 //              call on the owner's plan. A round that gives the seat back to the native agent is recorded
 //              as not run, and is not scored.
 //   --judge-cmd  a script run as `node <script> <occupant> <fixture>` with the message on stdin, printing
@@ -151,7 +151,8 @@ function runExternal(repo, prompt, session) {
     cwd: repo.dir,
     input: prompt,
     encoding: 'utf8',
-    env: { ...process.env, AETHER_LANES: process.env.AETHER_LANES || 'on' },
+    // What the session start exports today: the switch, and the harnesses it may use (agy unless the caller names others).
+    env: { ...process.env, AETHER_SUPERDELEGATION: 'on', AETHER_LANE_HARNESSES: process.env.AETHER_LANE_HARNESSES || 'agy' },
   })
   const value = JSON.parse(r.stdout.trim().split('\n').pop())
   if (r.status !== 0) return { ran: false, detail: value.unavailable || value.failed || value.error, value }
