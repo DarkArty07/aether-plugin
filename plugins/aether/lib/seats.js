@@ -1,11 +1,12 @@
 'use strict'
 
-// Design seats: the Judge, the Writer and the Examiner, which a lane harness may take in place of
-// Aether's own agent, one round at a time. The seats option chooses, per seat, the external models in
-// order of preference (config/lanes.json, designSeats); the native agent always comes last. A round runs
-// in a disposable worktree of the current commit and is judged from outside: what changed in git, and
-// an answer checked against the seat's schema. Anything else gives the seat back to the native agent,
-// which redoes the round from the files. A round keeps no conversation, so any harness can take any seat.
+// Design seats: the Judge, the Writer and the Examiner, which an external harness takes in place of Aether's
+// own agent, one round at a time, when superdelegation is on. The seat asks for the points of its native
+// reference pair and lib/superdelegation.js choose picks the pair, as it does for a swarm call; the native
+// agent takes the round only when no pair can. A round runs in a disposable worktree of the current commit and
+// is judged from outside: what changed in git, and an answer checked against the seat's schema. Anything else
+// gives the seat back to the native agent, which redoes the round from the files. A round keeps no
+// conversation, so any harness can take any seat.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -16,11 +17,13 @@ const run = require('./run.js')
 const lanes = require('./lanes.js')
 const schemas = require('./lane-schemas.js')
 const laneMarks = require('./lane-marks.js')
-const laneQuota = require('./lane-quota.js')
 const { refusalIn } = require('./quota-refusal.js')
 const { createAdapter } = require('./harness/index.js')
 const { roleBody, claudeMdSections, WORKDIR_RULE } = require('./lane-calls.js')
 const { priceEntry, loadPrices } = require('./prices.js')
+const { choose, enabled: superdelegationEnabled } = require('./superdelegation.js')
+const pairsTable = require('./pairs.js')
+const { harnessViews, latestReadings } = require('./lane-pick.js')
 
 const PLUGIN_BIN = path.join(__dirname, '..', 'bin')
 const SKILLS_DIR = path.join(__dirname, '..', 'skills')
@@ -28,16 +31,20 @@ const KILL_GRACE_SECONDS = 60
 const MAX_FINDINGS = 10
 const EXAM_DIR = '.aether-exam'
 
-// Each seat's native agent, with the model and effort its agent file sets, and that model's id.
-const NATIVE = {
-  judge: { agent: 'aether:judge', model: 'opus', effort: 'high', id: 'claude-opus-5-5' },
-  writer: { agent: 'aether:writer', model: 'sonnet', effort: 'high', id: 'claude-sonnet-5-5' },
-  examiner: { agent: 'aether:examiner', model: 'opus', effort: 'high', id: 'claude-opus-5-5' },
+// The native pair each seat asks the points of: the Judge and the Examiner review as Opus high, the Writer
+// writes as Sonnet high.
+const REFERENCE = {
+  judge: { model: 'opus', effort: 'high' },
+  writer: { model: 'sonnet', effort: 'high' },
+  examiner: { model: 'opus', effort: 'high' },
 }
 
-// The effort an external round asks of its harness. The Writer's differs from the native one: the native Writer
-// starts at high and the Lead raises it when a round needs more, but an external Writer has no one to raise it.
-const EXTERNAL_EFFORT = { judge: 'high', writer: 'xhigh', examiner: 'high' }
+// Each seat's native agent, with the model and effort its agent file sets, and that model's id.
+const NATIVE = {
+  judge: { agent: 'aether:judge', ...REFERENCE.judge, id: 'claude-opus-5-5' },
+  writer: { agent: 'aether:writer', ...REFERENCE.writer, id: 'claude-sonnet-5-5' },
+  examiner: { agent: 'aether:examiner', ...REFERENCE.examiner, id: 'claude-opus-5-5' },
+}
 
 // The Claude Code model aliases an --author may give, with the ids lane models use for the same model.
 const ALIASES = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
@@ -95,77 +102,50 @@ function offeredByListing(harnessName, model, level, listing = harnessListing())
   })
 }
 
-// Who takes seat under the seats choice: the first external model on its list whose harness is enabled
-// and installed, that its listing offers, that is not the author's model, and whose group has no dry mark and has quota above the
-// reserve; else the native agent. Pure apart from the calls it is given: installed(harness), quota(harness, group),
-// offered(harness, settings, model, level) (with none given, every model counts as offered) and
-// marked(harness, group, reading), which says whether a live mark still holds the group once the reading of the
-// group (null when it could not be read) has had the chance to lift it; with none given, no mark holds.
-// Returns { off } for an examiner the choice does not run, { external } or { native }, each with the
-// models it passed over and why.
-function chooseSeat(config, { choice, seat, author = null, enabled = [], installed, quota, marked = () => false, offered = () => true }) {
-  const list = lanes.seatList(config, choice, seat)
-  if (list === false) return { off: true, tried: [] }
+// A pair's quota view, or null when its harness gives none for its group.
+function quotaViewOf(harnesses, pair) {
+  const groups = harnesses && harnesses[pair.harness] && harnesses[pair.harness].groups
+  return groups && Object.hasOwn(groups, pair.group) ? groups[pair.group] : null
+}
+
+// Who takes seat: the external pair that lib/superdelegation.js choose gives for the seat's reference pair,
+// or the native agent when none can. harnesses is the view of the quotas of the enabled harnesses; offered(harness,
+// model, effort) says whether the harness's captured listing offers the model at that effort (issue 016): a pair it
+// does not offer is left out before the choice and listed as passed over, with the reason not-offered. A Judge or an
+// Examiner reviews what another model wrote, so its native agent is not the author's model either; the Writer's may be.
+// Pure apart from the calls it is given. Returns { external } or { native }, each with the pairs passed over and why
+// (tried) and the whole decision.
+function chooseSeat({ config, pairs, seat, author = null, harnesses, offered = () => true }) {
   const authorId = authorModel(author)
-  const tried = []
-  for (const item of list) {
-    const [harnessName, model] = item.split('/')
-    const settings = config.harnesses[harnessName]
-    const entry = settings.models[model]
-    if (!enabled.includes(harnessName)) {
-      tried.push({ model: item, reason: 'harness-off' })
-      continue
-    }
-    if (model === authorId) {
-      tried.push({ model: item, reason: 'author' })
-      continue
-    }
-    if (!installed(harnessName, settings)) {
-      tried.push({ model: item, reason: 'not-installed' })
-      continue
-    }
-    if (!offered(harnessName, settings, model, entry.levels[EXTERNAL_EFFORT[seat]])) {
-      tried.push({ model: item, reason: 'not-offered' })
-      continue
-    }
-    // The group is read first: a healthy reading lifts a mark that came from a reading, and the group is passed over
-    // only if a mark still holds, whether or not the reading could be read.
-    let reading = null
-    let unreadable = false
-    try {
-      reading = quota(harnessName, settings, entry.group)
-    } catch {
-      unreadable = true
-    }
-    if (marked(harnessName, entry.group, reading)) {
-      tried.push({ model: item, reason: 'quota' })
-      continue
-    }
-    if (unreadable) {
-      tried.push({ model: item, reason: 'quota-unreadable' })
-      continue
-    }
-    if (!lanes.usable(reading, config.reserve)) {
-      tried.push({ model: item, reason: 'quota' })
-      continue
-    }
-    const effort = EXTERNAL_EFFORT[seat]
-    return {
-      external: {
-        harness: harnessName,
-        model,
-        group: entry.group,
-        effort,
-        level: entry.levels[effort],
-        timeoutSeconds: lanes.seatTimeout(settings, seat),
-        quotaBefore: reading,
-      },
-      tried,
-    }
+  const dropped = pairs.filter((pair) => pair.harness !== pairsTable.NATIVE_HARNESS && !offered(pair.harness, pair.model, pair.effort))
+  const chosen = choose({
+    pairs: pairs.filter((pair) => !dropped.includes(pair)),
+    reference: REFERENCE[seat],
+    harnesses,
+    authors: authorId === null ? [] : [authorId],
+    nativeDiffers: seat !== 'writer',
+  })
+  const notOffered = dropped.map((pair) => ({
+    id: pair.id, harness: pair.harness, group: pair.group, intelligence: pair.intelligence, costPerTaskUsd: pair.costPerTaskUsd, rank: null, outcome: 'passed', why: 'not-offered',
+  }))
+  const decision = { ...chosen, candidates: [...chosen.candidates, ...notOffered] }
+  const tried = decision.candidates.map(({ id, outcome, why }) => ({ id, outcome, why }))
+  if (decision.picked === null) return { native: { agent: NATIVE[seat].agent, ...decision.native }, tried, decision }
+  const pair = decision.picked
+  return {
+    external: {
+      harness: pair.harness,
+      model: pair.model,
+      group: pair.group,
+      effort: pair.effort,
+      level: pair.effort,
+      timeoutSeconds: lanes.seatTimeout(config.harnesses[pair.harness], seat),
+      quotaBefore: quotaViewOf(harnesses, pair),
+      pair,
+    },
+    tried,
+    decision,
   }
-  const native = { ...NATIVE[seat] }
-  if (authorId !== null && native.id === authorId) native.sameModelAsAuthor = true
-  return { native, tried }
 }
 
 // ---- The worktree ----
@@ -515,7 +495,7 @@ function logEntry(dataDir, session, entry) {
 
 // One round of seat on its external model. Returns the reply: exit 0 with the answer, or exit 4 with
 // what failed. The worktree is removed whatever happens.
-async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, config, adapter, choiceName, dataDir }) {
+async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, decision, config, adapter, dataDir }) {
   const id = givenId ?? `${seat}-${run.newRunId()}`
   const dir = path.join(run.aetherDir(mainRoot), 'seats', id)
   const worktree = path.join(dir, 'wt')
@@ -560,13 +540,15 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     })
     killGroup(child)
     lanes.killMarked(marker)
+    // The output is parsed before the quota is read: a harness that keeps in parse what the call reported of its quota
+    // (muse's allowance) gives that to the reading below, and for the others the order changes nothing.
+    parsed = adapter.parse({ stdout: readTextOrEmpty(path.join(dir, 'stdout')), stderr: readTextOrEmpty(path.join(dir, 'stderr')), exitCode }, { required: schema.required })
     try {
       quotaAfter = adapter.quota().groups[external.group] ?? null
       quotaRead = true
     } catch {
       // An unreadable quota is an infrastructure failure, not a verdict on the quota.
     }
-    parsed = adapter.parse({ stdout: readTextOrEmpty(path.join(dir, 'stdout')), stderr: readTextOrEmpty(path.join(dir, 'stderr')), exitCode }, { required: schema.required })
     const allowed = allowedFor(seat, feature, doc)
     const outside = changedPaths(worktree, start).filter((file) => !allowed(file))
     if (outside.length > 0) {
@@ -620,7 +602,6 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     design: null,
     seat,
     seatId: id,
-    choice: choiceName,
     feature: feature ?? null,
     call: 'round-1',
     role: seat,
@@ -629,6 +610,8 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     model: modelArg,
     group: external.group,
     effort: external.effort,
+    reference: decision.reference,
+    reason: decision.reason,
     status: outcome.status,
     durationMs: time - startedAt,
     usage: parsed.usage ?? NO_USAGE,
@@ -638,9 +621,10 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     detail: outcome.detail ?? '',
   })
 
-  const native = NATIVE[seat]
+  // The native agent that redoes a failed round comes from the decision, so that a Judge or an Examiner is not the author's model.
+  const native = { agent: NATIVE[seat].agent, ...decision.native }
   if (outcome.status !== 'ok') {
-    const failed = { failed: outcome.status, seat, id, harness: external.harness, model: external.model, detail: outcome.detail, undone: true, native }
+    const failed = { failed: outcome.status, seat, id, harness: external.harness, model: external.model, detail: outcome.detail, undone: true, native, decision }
     if (outcome.files) failed.files = outcome.files
     if (outcome.backup) failed.backup = outcome.backup
     return reply(4, failed)
@@ -668,14 +652,14 @@ const SEAT_ID = /^(judge|writer|examiner)-\d{8}-\d{6}-[0-9a-f]{4}$/
 
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 
-// The native answer the Lead acts on: the seat's agent, unless the choice turns the seat off.
-function unavailable(seat, reason, { choice, tried = [], native = NATIVE[seat] }) {
-  return reply(3, { unavailable: reason, seat, choice, native, tried })
+// The reply of a round that does not run: the native agent of the decision takes it, with the decision beside it.
+function unavailable(seat, reason, { native, tried, decision }) {
+  return reply(3, { unavailable: reason, seat, native, tried, decision })
 }
 
 // aether-lane seat: one round of a design seat. Exit 0 is an external answer; 3, nothing ran and the
-// native agent takes the round (or, with native null, no one does); 4, the external round failed and was
-// undone, and the native agent takes it; 1, the command broke.
+// native agent of the decision takes the round; 4, the external round failed and was undone, and the native
+// agent of the decision takes it; 1, the command broke.
 // input is the message, or a function that resolves to it, called only when an external round runs.
 async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd = process.cwd() } = {}) {
   const [seat, ...rest] = argv
@@ -695,46 +679,47 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   const { worktree: top, mainRoot, gitCommonDir } = repoPaths(cwd)
   // Before any answer: a native Examiner writes its exam under .aether-exam/ in this checkout, and git must not see it.
   run.ensureExcluded(gitCommonDir)
-  const choice = lanes.seatsChoice(env)
   const session = opts.session
   const dataDir = run.dataDir(env)
+  const author = opts.author ?? null
 
-  const note = (status, extra) => logEntry(dataDir, session, { kind: 'seat', time: Date.now(), session, seat, choice: choice.name, feature, status, ...extra })
   const config = lanes.loadConfig()
-  if (lanes.seatList(config, choice.name, seat) === false) {
-    note('off', {})
-    return unavailable(seat, 'off', { choice: choice.name, native: null })
+  const table = pairsTable.loadPairs().pairs
+  const note = (status, extra) => logEntry(dataDir, session, { kind: 'seat', time: Date.now(), session, seat, feature, status, ...extra })
+  // A round that does not run: no harness is enabled for the choice, so the decision is the native agent's alone, and
+  // a Judge or an Examiner still does not fall on the author's model.
+  const handBack = (reason) => {
+    const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses: {} })
+    note('native', { reason, reference: chosen.decision.reference })
+    return unavailable(seat, reason, { ...chosen, tried: [] })
   }
-  const enabled = lanes.lanesEnabled(env)
-  if (!enabled.on || config === null) {
-    const reason = config === null ? 'no-table' : enabled.reason === 'platform' ? 'platform' : 'lanes-off'
-    note('native', { reason })
-    return unavailable(seat, reason, { choice: choice.name })
-  }
+  const switchState = superdelegationEnabled(env)
+  if (!switchState.on) return handBack(switchState.reason === 'platform' ? 'platform' : 'superdelegation-off')
+  if (config === null) return handBack('no-table')
   // An external seat reads the commit, so the feature's documents must be committed.
-  if (feature !== null && git(['status', '--porcelain', '--', feature], top).stdout !== '') {
-    note('native', { reason: 'uncommitted' })
-    return unavailable(seat, 'uncommitted', { choice: choice.name })
-  }
+  if (feature !== null && git(['status', '--porcelain', '--', feature], top).stdout !== '') return handBack('uncommitted')
+
   const adapters = {}
   const adapterOf = (name, settings) => (adapters[name] ||= createAdapter(name, settings))
-  const chosen = chooseSeat(config, {
-    choice: choice.name,
-    seat,
-    author: opts.author ?? null,
-    enabled: lanes.enabledHarnesses(env),
-    installed: (name, settings) => adapterOf(name, settings).installed(),
-    offered: (name, settings, model, level) => offeredByListing(name, model, level),
-    quota: (name, settings, group) => adapterOf(name, settings).quota().groups[group] ?? null,
-    // The reading was taken a moment ago, so its life is the harness's whole life.
-    marked: (name, group, reading) =>
-      laneMarks.liftIfHealthy(dataDir, { harness: name, group, reading, readAt: Date.now(), reserve: config.reserve, lifeMs: laneQuota.lifeMsOf(config.harnesses[name]), now: Date.now() }) !== null,
-  })
-  if (chosen.native) {
-    note('native', { reason: 'no-external', tried: chosen.tried })
-    return unavailable(seat, 'no-external', { choice: choice.name, tried: chosen.tried, native: chosen.native })
+  const now = Date.now()
+  const enabledNames = lanes.enabledHarnesses(env)
+  const latest = await latestReadings(config, enabledNames, { dataDir, now })
+  // The readings as the adapters gave them: the lane line measures what the round used between two of them.
+  const readings = {}
+  const harnesses = {}
+  for (const name of enabledNames) {
+    const onRead = ({ groups }) => {
+      readings[name] = groups
+    }
+    Object.assign(harnesses, harnessViews(config, [name], { dataDir, now, latest, onRead }))
   }
-  const { external } = chosen
+  const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses, offered: (name, model, effort) => offeredByListing(name, model, effort) })
+  if (chosen.native) {
+    note('native', { reason: 'no-external', tried: chosen.tried, reference: chosen.decision.reference })
+    return unavailable(seat, 'no-external', chosen)
+  }
+  const { external, decision } = chosen
+  external.quotaBefore = readings[external.harness]?.[external.group] ?? external.quotaBefore
   const message = typeof input === 'function' ? await input() : input
   if (message.trim() === '') throw new Error('the message is empty: give it on stdin')
   return runRound({
@@ -747,11 +732,11 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     id: opts.id,
     message,
     external,
+    decision,
     config,
     adapter: adapterOf(external.harness, config.harnesses[external.harness]),
-    choiceName: choice.name,
     dataDir,
   })
 }
 
-module.exports = { NATIVE, EXTERNAL_EFFORT, EXAM_DIR, USAGE, authorModel, chooseSeat, offeredByListing, changedPaths, judgeText, windowUsed, seatPrompt, seatCommand }
+module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, authorModel, chooseSeat, offeredByListing, changedPaths, judgeText, windowUsed, seatPrompt, seatCommand }
