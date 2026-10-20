@@ -208,7 +208,7 @@ test('the documents record the design seats: decisions A39-A43, the README, the 
   for (let n = 39; n <= 43; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const readme = README()
   assert.match(page('docs/guide/design-seats.md'), /^### Design seats$/m)
-  for (const text of ['`aether:examiner`', '`aether-lane seat`', '`aether-exam`', '`seats`, `balanced` by default', 'docs/evaluations/seats/README.md', 'specs/001-design-seats/spec.md', 'Fable']) {
+  for (const text of ['`aether:examiner`', '`aether-lane seat`', '`aether-exam`', 'docs/evaluations/seats/README.md', 'specs/001-design-seats/spec.md', 'Fable']) {
     assert.ok(readme.includes(text), text)
   }
   const lead = read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md')

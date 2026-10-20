@@ -39,10 +39,10 @@ test("the Lanes section of the guide explains the order of the candidates, the d
     section,
     [
       '- **The order.**',
-      'the highest priority first; in a tie, the nearer reset, then the order of `harnesses`',
-      'then the groups with no reading, in the order of `harnesses`',
-      'divided by the hours to its reset, at least one hour',
-      'the shares of different plans compare equal',
+      'The quota whose weekly window renews first goes first',
+      'Within that quota, the lower cost per task',
+      'a pair with no cost per task (Muse\'s) goes last in its quota',
+      'a window that cannot be read goes after the ones that can',
       'leaves a dry mark in the plugin\'s data directory',
       '`dryMarkMinutes`',
       '`quotaLifeMinutes`',
@@ -52,6 +52,45 @@ test("the Lanes section of the guide explains the order of the candidates, the d
     ],
     'the Lanes section of the guide',
   )
+})
+
+test('R21: lanes.md holds the rule: the switch, the points, the tolerance, the order, the cupo wait and the report', () => {
+  const text = read('docs', 'guide', 'lanes.md')
+  for (const fragment of ['`superdelegation`', 'off by default', 'plugins/aether/config/pairs.json', '1 point', 'weekly', 'cost per task', '10 minutes', 'aether-report']) assert.ok(text.includes(fragment), `lanes.md says ${fragment}`)
+})
+
+test('R21: lanes.md says how the old options are read and what the rule asks, keeps, and cannot reach', () => {
+  const text = read('docs', 'guide', 'lanes.md')
+  includesAll(
+    text,
+    [
+      'If `superdelegation` is not set and `lanes` is on, superdelegation counts as on',
+      '`seats` is always ignored',
+      'Sonnet `high` asks 46.8 and Sonnet `xhigh` asks 51.9',
+      'No pair is chosen or left out for being fast or slow',
+      'Nobody reviews its own work',
+      'scripts/lane-cupo.js',
+      'the owner\'s `paid-call` grant',
+    ],
+    'lanes.md',
+  )
+})
+
+test('R21: the guide pages of this task name neither the retired profiles nor the retired variables', () => {
+  for (const page of ['lanes', 'design-seats', 'options', 'router']) {
+    const text = read('docs', 'guide', `${page}.md`)
+    // The same patterns as Task 18's GONE; lanes.md and options.md alone may name `seats` (the migration says it is ignored).
+    const gone = [/`balanced`/, /`robust`/, /\bseats option\b/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
+    if (!['lanes', 'options'].includes(page)) gone.push(/`seats`/)
+    for (const pattern of gone) assert.doesNotMatch(text, pattern, `${page}.md still says ${pattern}`)
+  }
+})
+
+test('R25: the Muse section follows the rule: its pair is scored as Opus high by the owner, without cost, and the table maps no effort', () => {
+  const page = read('docs', 'guide', 'lanes.md')
+  const section = page.slice(page.indexOf('\n## Muse'))
+  includesAll(section, ['`muse/muse-wonder-full-1.0@high`', '53.6 points', 'no cost per task', 'goes last in its quota', '`ownerDecision`', '55.8', 'which the CLI does not take'], 'the Muse section')
+  assert.doesNotMatch(section, /\breplaces Opus\b|`replaces`|`levels`|runs at Muse's `high`/, 'the Muse section names no equivalence table')
 })
 
 test("the documents say that Grok's quota is read over ACP with its UI as the fallback, who refreshes it, and how to add a harness with its reader", () => {
