@@ -95,7 +95,7 @@ export const clean = (value) => (typeof value === 'string' ? scrub(value).replac
 // routerSettingsFrom takes a router mode or decider only when it is listed (else record or haiku), lib/lanes.js
 // enabledHarnesses keeps the known harness names, trimmed and in lower case (else agy), and superdelegation's
 // resolveOption (lib/superdelegation.js) turns the switch on when superdelegation is set to true, or when it is not
-// set (not true or false) and the old lanes option is true. The old seats option no longer exists. The mod cannot
+// set (not true or false) and the old lanes option is true. The mod cannot
 // require the libs, so the lists and the rule are copied here; tests/panel-conformance.test.js compares the two on a
 // table. `lanes` in the settings is the resolved switch, shown as superdelegation.
 export function settingsOf(options) {
