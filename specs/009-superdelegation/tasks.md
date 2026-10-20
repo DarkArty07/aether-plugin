@@ -1086,6 +1086,8 @@ test('a choice written in the old shape does not break the report', (t) => {
 - Depends on: Task 15 — lee los argumentos de la corrida que `aether-plan compile` escribe
 - Serves: R4, R5, R6, R14, R15, R16, R17, R19, R20, R22
 
+**Base: lo que ya trae `run.workflow.js` de `fix/bug-issues` (fusionada, `888cb78`) y se conserva.** El `binDir` de los args y su `wtBin` (issue 008); el reintento único del paso `ops` cuando la respuesta dice que no corrió el comando (004); la consulta `aether-wt status` antes de bloquear una unidad por un merge ilegible (002); `modelAgentsSpent()`, que hace que el presupuesto cuente solo agentes con modelo (013); `READING_PLAN` y la revisión final por rebanadas de hasta tres unidades de un área (011, 022), que corre nativa porque una llamada de lane tiene el id fijo `final-review`; las etiquetas `<tarea>: implement via <harness> <modelo> on <rung> (attempt n)` y la línea de progreso `ran on <harness> <modelo> · N tok` (032). Sus pruebas están en `tests/workflow.test.js`, `tests/workflow-lanes.test.js` y `tests/workflow-order.test.js`: la reescritura de la ruta de las llamadas externas las conserva verdes, y una que deba cambiar porque `pick` cambia el orden o la etiqueta se actualiza con su razón, no se borra.
+
 **Interfaces:**
 
 `run.workflow.js` lee `input.lanes` con la forma de los argumentos de la corrida (`null` o `{ superdelegation: true, harnesses, maxParallelByHarness, waits, cupo }`; `harnesses` una lista no vacía de nombres, `maxParallelByHarness`, `waits` y `cupo` obligatorios, con enteros de al menos 1; un `lanes` de otra forma lanza `aether:run args: lanes is invalid`). Con `lanes` nulo no hay ninguna llamada a `aether-lane` y todo corre nativo, como hoy.
@@ -1363,6 +1365,8 @@ Además esta tarea reescribe `tests/workflow-lanes.test.js` a los argumentos y l
 - Depends on: Task 3 — usa `harnessViews` y `latestReadings` de `lib/lane-pick.js`
 - Serves: R3, R4, R5, R6, R16, R17, R19, R20, R22, R24
 
+**Base: lo que ya trae `seats.js` de `fix/bug-issues` (fusionada, `888cb78`) y se conserva (issue 016).** `offeredByListing(harnessName, model, level, listing)` y el parámetro `offered` de `chooseSeat`: un modelo que el listado capturado del harness (`config/models/harness-models.json`) no ofrece al nivel del esfuerzo del asiento se pasa por alto con la razón `not-offered`, y un harness sin listado no rechaza nada. El `chooseSeat` nuevo excluye un par cuyo modelo no ofrece el listado a su effort, con esa razón en `tried` y en `decision`; `offeredByListing` sigue exportada y `seatCommand` la pasa. Los casos de `tests/seats.test.js` de `offered` y `not-offered` se conservan, adaptados a pares: un par de Argon que el listado no ofrece no se elige aunque su cuota sea la que se renueva antes, y el asiento sin par ofrecido termina en el mismo exit 3 `no-external` con los pares probados y sus razones.
+
 **Interfaces:**
 
 `lib/seats.js`:
@@ -1553,6 +1557,8 @@ test('R21: the guide pages of this task name neither the retired profiles nor th
 - Depends on: Task 6 — el workflow del swarm ya no envía `choice`
 - Depends on: Task 16 — edita la misma lista cerrada del mod, después de ella, y el diseño ya no envía `--seats` ni `--lanes`
 - Serves: R20
+
+**Base: lo que ya trae `ops-command.mjs` de `fix/bug-issues` (fusionada, `888cb78`) y se conserva.** La forma `cd '<repo>' && PATH='<bin>':"$PATH" aether-…` que `COMMAND_LINE` acepta (issue 008) y la forma `aether-wt status <run> <task>` (002). Solo se retira la forma de `choice`; sus pruebas en `tests/ops-command.test.js` y `tests/ops-command-lanes.test.js` quedan verdes.
 
 **Interfaces:**
 
@@ -1978,6 +1984,8 @@ El aviso de plataforma, `aether-plan: superdelegation is off: superdelegation ne
 - Depends on: Task 3 — edita la misma lista cerrada del mod, después de ella
 - Serves: R3, R4, R5, R6, R17, R19, R20, R22
 
+**Base: lo que ya trae `design.workflow.js` de `fix/bug-issues` (fusionada, `888cb78`) y se conserva.** El `binDir` opcional de los args y su uso en el prefijo `PATH=` de los comandos (issue 008), `JUDGE_READING_PLAN` en el mensaje del Judge (022) y la línea de progreso `ran on <proveedor> · <lane>` de cada ronda (032). Sus pruebas en `tests/workflow-design.test.js` quedan verdes.
+
 **Interfaces:**
 
 `hooks/ops-command.mjs`: las dos formas de `seat-start` (juez/examinador con `--author`; escritor con `--doc`) cambian `--seats <native|balanced|robust> --lanes <on|off>` por `--superdelegation <on|off>`; el resto de la forma no cambia. `--seats` y `--lanes` se rechazan.
@@ -2153,6 +2161,8 @@ test('R21: the site says superdelegation where it said lanes and the profiles, a
 - Depends on: Task 9 — `choice` ya no existe y `tests/lane-status.test.js` ya perdió su prueba
 - Depends on: Task 23 — `tests/muse-lane.test.js` ya no espera que `laneModel` traduzca `xhigh` a `high`
 - Serves: R13, R20
+
+**Base: lo que ya trae `lane-calls.js` de `fix/bug-issues` (fusionada, `888cb78`) y se conserva (issue 015).** En `judge()`, `isModelOrArgumentError(parsed)` se comprueba antes de la lectura de cuota: un error de modelo o de argumento (`model not found` y los suyos) es `failed` diga lo que diga la lectura. Quitar la traducción del effort no la toca, y sus pruebas en `tests/lane-start-marks.test.js` y `tests/aether-lane.test.js` quedan verdes.
 
 **Interfaces:**
 
