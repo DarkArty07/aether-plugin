@@ -33,13 +33,13 @@ const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/
 const DIGEST = /^[0-9a-f]{8}:\d+$/
-// A design round's seat: its session, its author, its feature directory, its options and its seat id.
+// A design round's seat: its session, its author, its feature directory, the superdelegation switch with the harnesses
+// and its seat id.
 const SESSION = /^[A-Za-z0-9-]+$/
 const AUTHOR = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const TASKS = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*\/tasks\.md$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
-const SEATS = ['native', 'balanced', 'robust']
 const SWITCH = ['on', 'off']
 const SEAT_ID = /^(judge|writer|examiner)-\d{8}-\d{6}-[0-9a-f]{4}$/
 const MAX = /^\d{1,3}$/
@@ -106,11 +106,11 @@ const COMMANDS = {
     // A design round's seat: the judge or the examiner, with its author; the writer, with the document it writes.
     {
       payload: true,
-      checks: [word('seat-start'), oneOf(['judge', 'examiner']), word('--session'), is(SESSION), word('--author'), is(AUTHOR), word('--feature'), is(FEATURE), word('--seats'), oneOf(SEATS), word('--lanes'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
+      checks: [word('seat-start'), oneOf(['judge', 'examiner']), word('--session'), is(SESSION), word('--author'), is(AUTHOR), word('--feature'), is(FEATURE), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
     },
     {
       payload: true,
-      checks: [word('seat-start'), word('writer'), word('--session'), is(SESSION), word('--feature'), is(FEATURE), word('--doc'), oneOf(['spec', 'plan']), word('--seats'), oneOf(SEATS), word('--lanes'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
+      checks: [word('seat-start'), word('writer'), word('--session'), is(SESSION), word('--feature'), is(FEATURE), word('--doc'), oneOf(['spec', 'plan']), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
     },
     { checks: [word('seat-wait'), is(SEAT_ID), word('--max'), is(MAX)] },
     { checks: [word('seat-stop'), is(SEAT_ID)] },

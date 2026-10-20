@@ -1,7 +1,7 @@
 export const meta = {
   name: 'design',
   description:
-    "Aether design: takes the owner's intent card in specs/NNN-<topic>/intent.md to an approved spec, plan and tasks, with the Writer, the Judge and the Examiner in rounds on the seats of the seats option, and ends on its own with one result: approved, clarify, dispute or failed. A short design runs only the Judge's rounds on one document.",
+    "Aether design: takes the owner's intent card in specs/NNN-<topic>/intent.md to an approved spec, plan and tasks, with the Writer, the Judge and the Examiner in rounds, each on the pair that superdelegation picks (the native agent only when no pair can), and ends on its own with one result: approved, clarify, dispute or failed. A short design runs only the Judge's rounds on one document.",
   phases: [
     { title: 'Spec', detail: 'the Writer writes spec.md from the intent card, and the Judge reviews it' },
     { title: 'Plan', detail: 'the Writer writes plan.md and tasks.md, aether-plan check passes, and the Judge reviews them' },
@@ -9,14 +9,17 @@ export const meta = {
   ],
 }
 
-// The design executor (spec 005, R1 to R3). The full design runs in order: the Writer writes the spec, the Judge
-// reviews it, the Writer writes the plan and the tasks, aether-plan check passes, the Judge reviews them, and the
-// Examiner writes the exam. A short design runs only the Judge's rounds on one document, with the native Writer to
-// correct it. Every Judge and every first Writer of a document runs as a seat round: `aether-lane seat-start` picks
-// the seat (an external model first, the native agent last), and the script waits for it in steps. Whenever the
-// round does not answer, the native agent takes it with the same message. The script never reads the clock or
-// random numbers: the runtime replays a resumed run call by call. It has no modules, so what it needs from
-// run.workflow.js and lib/lane-schemas.js is copied here by hand.
+// The design executor (spec 005, R1 to R3; spec 009, R5). The full design runs in order: the Writer writes the spec,
+// the Judge reviews it, the Writer writes the plan and the tasks, aether-plan check passes, the Judge reviews them,
+// and the Examiner writes the exam. A short design runs only the Judge's rounds on one document, with the Writer to
+// correct it. Every round of the Judge, the Writer (its drafts and its corrections) and the Examiner is a seat round:
+// `aether-lane seat-start` picks the pair with the same function as the swarm (an external pair first, the native
+// agent last), and the script waits for it in steps. Whenever the round does not run or does not answer, the native
+// agent takes it with the same message, in the model and effort the seat's reply names (a Judge or an Examiner is
+// never the model that wrote the document), or in the seat's reference pair when it names none. The one document no
+// Writer seat can write is design.md of a short design: its corrections are the native Writer's. The script never
+// reads the clock or random numbers: the runtime replays a resumed run call by call. It has no modules, so what it
+// needs from run.workflow.js and lib/lane-schemas.js is copied here by hand.
 
 const SCOPE =
   'Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.'
@@ -28,8 +31,9 @@ const REPO_ROOT = /^\/[^'\u0000-\u001f\u007f]*$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
 const AUTHOR = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 const SEAT_ID = /^(judge|writer|examiner)-\d{8}-\d{6}-[0-9a-f]{4}$/
-const SEAT_CHOICES = ['native', 'balanced', 'robust']
 const SWITCH = ['on', 'off']
+const TIERS = ['haiku', 'sonnet', 'opus']
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODES = ['full', 'short']
 // The documents a short design reviews, and the document each counts as in labels, verdicts and rounds.
 const SHORT_DOCS = { 'spec.md': 'spec', 'plan.md': 'plan', 'tasks.md': 'plan', 'design.md': 'design' }
@@ -40,8 +44,9 @@ const MAX_REVIEWS = 3
 const MAX_WAITS = 12
 const WAIT_SECONDS = 540
 
-// The native agents' model and effort, as their agent files and lib/seats.js NATIVE give them (R11).
-const NATIVE = {
+// The native pair each seat asks the points of, as lib/seats.js REFERENCE gives it: the native agent of a round whose seat
+// reply names none.
+const REFERENCE = {
   judge: { model: 'opus', effort: 'high' },
   writer: { model: 'sonnet', effort: 'high' },
   examiner: { model: 'opus', effort: 'high' },
@@ -169,8 +174,9 @@ function readArgs(raw) {
   if (!matches(REPO_ROOT, input.repoRoot)) bad.push('repoRoot')
   // The bin directory of the plugin this session loaded (issue 008); args without it keep the bare name.
   if (!absent(input.binDir) && !(typeof input.binDir === 'string' && input.binDir.startsWith('/') && !/['"\u0000-\u001f\u007f]/.test(input.binDir))) bad.push('binDir')
-  if (!SEAT_CHOICES.includes(input.seats)) bad.push('seats')
-  if (!SWITCH.includes(input.lanes)) bad.push('lanes')
+  // The seats and lanes options retired with superdelegation: args that still carry them are refused, not ignored.
+  for (const retired of ['seats', 'lanes']) if (hasOwn(input, retired)) bad.push(`${retired} (retired: use superdelegation)`)
+  if (!SWITCH.includes(input.superdelegation)) bad.push('superdelegation')
   if (!matches(HARNESSES, input.harnesses)) bad.push('harnesses')
   const mode = absent(input.mode) ? 'full' : input.mode
   if (!MODES.includes(mode)) bad.push('mode')
@@ -187,8 +193,7 @@ function readArgs(raw) {
     session: input.session,
     repoRoot: input.repoRoot.length > 1 ? input.repoRoot.replace(/\/+$/, '') : input.repoRoot,
     binDir: absent(input.binDir) ? null : input.binDir,
-    seats: input.seats,
-    lanes: input.lanes,
+    superdelegation: input.superdelegation,
     harnesses: input.harnesses,
     mode,
     document: mode === 'short' ? input.document : null,
@@ -324,10 +329,17 @@ function nativeLines(seat) {
 
 const RETRY_LINE = 'An earlier attempt at this round ended without an answer. Start again from the files as they are now, and end with your answer.'
 
+// The native agent of a round: the model and effort the seat's reply names for it (its decision's native pair, which
+// for a Judge or an Examiner is not the model that wrote the document), or the seat's reference pair when the reply
+// names none, as after a seat round that broke or did not start.
+function nativeOf(seat, value) {
+  const named = isObject(value.native) ? value.native : null
+  return named !== null && TIERS.includes(named.model) && EFFORTS.includes(named.effort) ? { model: named.model, effort: named.effort } : REFERENCE[seat]
+}
+
 // The native agent of a round, on its model and effort, with the round's message and its own lines. An answer that is
 // missing or does not fit the schema is tried once more; resolves to the answer, or to { failed } after the second.
-async function nativeAnswer({ seat, base, text, schema, phase }) {
-  const { model, effort } = NATIVE[seat]
+async function nativeAnswer({ seat, base, text, schema, phase, native: { model, effort } }) {
   const prompt = `${text}\n\n${nativeLines(seat)}`
   const attempts = [
     [base, prompt],
@@ -349,8 +361,9 @@ function handedBackNote(reply) {
   const value = isObject(reply.value) ? reply.value : {}
   switch (reply.exitCode) {
     case 3: {
-      const same = isObject(value.native) && value.native.sameModelAsAuthor === true ? '; the native agent is the model that wrote the document' : ''
-      return `handed back to the native agent: ${String(value.unavailable)}${same}`
+      const native = isObject(value.native) ? ` (${String(value.native.model)} ${String(value.native.effort)})` : ''
+      const reason = isObject(value.decision) && typeof value.decision.reason === 'string' ? `; ${value.decision.reason}` : ''
+      return `handed back to the native agent${native}: ${String(value.unavailable)}${reason}`
     }
     case 4:
       return `the external round on ${value.harness} ${value.model} failed and was undone: ${String(value.detail || value.failed)}`
@@ -387,20 +400,21 @@ async function awaitSeat(record, { seat, base, flags, text, phase }) {
 }
 
 // One round of a seat (R2). The seat round answers, or the native agent takes the round with the same message: after
-// exit 3 (with a native agent), 4 or 1, a start that failed, or a round that did not finish. Exit 3 with no native
-// agent (the Examiner, off in the seats option) skips the round. `author` is the model that wrote the document under
-// review, so that no seat takes it; `writes` is the Writer's --doc (spec or plan). Resolves to { answer, text, seat, model, value } (seat:
-// 'native' or '<harness> <model>'; value: the external round's), { off: true }, or { failed }.
-async function seatRound({ seat, doc, step, text, schema, phase, author = null, writes = null }) {
+// exit 3, 4 or 1, a start that failed, or a round that did not finish. `author` is the model that wrote the document
+// under review, so that no seat takes it; `writes` is the Writer's --doc (spec or plan). `schema` is the shape of an
+// external answer; the native agent answers with `nativeSchema`, which is the same unless the round is a correction.
+// Resolves to { answer, text, seat, model, value } (seat: 'native' or '<harness> <model>'; model: the one that
+// answered; value: the external round's) or { failed }.
+async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema, phase, author = null, writes = null }) {
   const base = step ? `${doc}: ${seat} ${step}` : `${doc}: ${seat}`
   const record = { document: doc, seat, provider: 'native', id: null, lane: null, note: null }
   rounds.push(record)
-  const options = `--seats ${input.seats} --lanes ${input.lanes} --harnesses ${input.harnesses}`
+  const options = `--superdelegation ${input.superdelegation} --harnesses ${input.harnesses}`
   const flags = seat === 'writer' ? `--session ${session} --feature ${feature} --doc ${writes} ${options}` : `--session ${session} --author ${author} --feature ${feature} ${options}`
   const waited = await awaitSeat(record, { seat, base, flags, text, phase })
+  const value = waited.reply && isObject(waited.reply.value) ? waited.reply.value : {}
   if (waited.reply) {
     const { reply } = waited
-    const value = isObject(reply.value) ? reply.value : {}
     if (reply.exitCode === 0 && isObject(value.result) && fits(schema, value.result, { required: seat !== 'writer' })) {
       record.provider = `${value.harness} ${value.model}`
       // The window shows the round as its Haiku ops agent (issue 032): say who ran it.
@@ -409,27 +423,25 @@ async function seatRound({ seat, doc, step, text, schema, phase, author = null, 
       if (seat === 'writer') keepQuestions(value.result)
       return { answer: value.result, text: String(value.answer), seat: record.provider, model: String(value.model), value }
     }
-    if (reply.exitCode === 3 && value.native === null && seat === 'examiner') {
-      record.provider = 'off'
-      record.note = `the seat is off in the ${input.seats} option`
-      return { off: true }
-    }
     record.note = handedBackNote(reply)
   } else {
     record.note = waited.note
   }
   log(`${base}: ${record.note}`)
-  const native = await nativeAnswer({ seat, base, text, schema, phase })
-  if (native.failed) return native
-  return { answer: native.answer, text: seat === 'judge' ? judgeText(native.answer) : '', seat: 'native', model: NATIVE[seat].model }
+  const native = nativeOf(seat, value)
+  const taken = await nativeAnswer({ seat, base, text, schema: nativeSchema, phase, native })
+  if (taken.failed) return taken
+  return { answer: taken.answer, text: seat === 'judge' ? judgeText(taken.answer) : '', seat: 'native', model: native.model }
 }
 
-// A correction by the native Writer, which needs no seat round: it answers with REVISION_SCHEMA.
-async function nativeRevision({ doc, step, text, phase }) {
-  rounds.push({ document: doc, seat: 'writer', provider: 'native', id: null, lane: null, note: 'the native Writer corrects the document, with no seat round' })
-  const native = await nativeAnswer({ seat: 'writer', base: `${doc}: writer ${step}`, text, schema: REVISION_SCHEMA, phase })
-  if (native.failed) return native
-  return { answer: native.answer, model: NATIVE.writer.model }
+// A correction of design.md, the document of a short design. No Writer seat can write it (a Writer seat takes spec.md,
+// or plan.md with tasks.md), so the native Writer corrects it, in the Writer's reference pair, with REVISION_SCHEMA.
+async function designRevision({ doc, step, text, phase }) {
+  rounds.push({ document: doc, seat: 'writer', provider: 'native', id: null, lane: null, note: `${doc}.md is no document of a Writer seat: the native Writer corrects it` })
+  const native = REFERENCE.writer
+  const taken = await nativeAnswer({ seat: 'writer', base: `${doc}: writer ${step}`, text, schema: REVISION_SCHEMA, phase, native })
+  if (taken.failed) return taken
+  return { answer: taken.answer, model: native.model }
 }
 
 // --- messages --------------------------------------------------------------------------------
@@ -519,7 +531,7 @@ function changedText(answer) {
   )
 }
 
-// The native Writer's message for a correction after review n.
+// The Writer's message for a correction after review n: a seat round's message, and the native agent's if the seat is handed back.
 function revisionMessage({ doc, path, n, verdict }) {
   const plan = doc === 'plan' ? [`When ${TASKS} changes, run \`aether-plan check ${TASKS}\` until it passes; commit ${PLAN} and ${TASKS} together.`] : []
   return lines(
@@ -579,8 +591,8 @@ async function checkedAfter(step, text, retry) {
   return { printed: checked.printed, retried: again }
 }
 
-// The Judge's rounds of one document (R1, R3): at most three reviews, with a correction by the native Writer after each
-// one that does not approve. A reject, at any review, or a third review that does not approve ends the design in a
+// The Judge's rounds of one document (R1, R3): at most three reviews, with a correction by the Writer after each one
+// that does not approve. A reject, at any review, or a third review that does not approve ends the design in a
 // dispute. `check` is what aether-plan check printed for a plan, or null; `correct(n, verdict)` corrects the document
 // and resolves to { answer, model, check } or { end }. Resolves to { author } once approved, or { end }.
 async function reviews({ doc, path, phase, author, check, correct }) {
@@ -607,25 +619,30 @@ async function reviews({ doc, path, phase, author, check, correct }) {
   }
 }
 
-// A correction of a document by the native Writer, with aether-plan check after it for a plan.
+// A correction of a document by the Writer, with aether-plan check after it for a plan. It is a seat round like the
+// Writer's first draft: `writes` is the document (spec or plan, which a short design's tasks.md counts as), the
+// external answer has the shape of that document's draft, and the native agent, if the seat is handed back, answers
+// with REVISION_SCHEMA. Only design.md has no Writer seat to ask.
 function corrector(doc, path, phase) {
+  const seatSchema = doc === 'plan' ? WRITER_SCHEMA : SPEC_WRITER_SCHEMA
+  const round = (step, text) =>
+    doc === 'design' ? designRevision({ doc, step, text, phase }) : seatRound({ seat: 'writer', doc, step, text, schema: seatSchema, nativeSchema: REVISION_SCHEMA, phase, writes: doc })
   return async (n, verdict) => {
     const step = `revision ${n}`
     const text = revisionMessage({ doc, path, n, verdict })
-    const fixed = await nativeRevision({ doc, step, text, phase })
+    const fixed = await round(step, text)
     if (fixed.failed) return failure(`${doc}-writer`, fixed.failed)
     if (doc !== 'plan') return { ...fixed, check: null }
-    const checked = await checkedAfter(step, text, (again, retryText) => nativeRevision({ doc, step: again, text: retryText, phase }))
+    const checked = await checkedAfter(step, text, round)
     if (checked.end) return checked
     return { ...(checked.retried || fixed), check: checked.printed }
   }
 }
 
-// The Examiner's round on the approved plan, written by `author`, and the exam's storage: { status: 'stored', dir },
-// { status: 'off' } or { status: 'failed', reason }. A failure here does not undo the approval.
+// The Examiner's round on the approved plan, written by `author`, and the exam's storage: { status: 'stored', dir } or
+// { status: 'failed', reason }. A failure here does not undo the approval.
 async function examine(author) {
   const round = await seatRound({ seat: 'examiner', doc: 'exam', step: '', text: examinerMessage(), schema: EXAMINER_SCHEMA, phase: 'Exam', author })
-  if (round.off) return { status: 'off' }
   if (round.failed) return { status: 'failed', reason: round.failed }
   if (round.seat !== 'native') {
     // An external Examiner's round stores the exam itself.

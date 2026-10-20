@@ -30,9 +30,9 @@ function prompt(command, { long = false, payload = null } = {}) {
 const parsed = (bin, args) => ({ cwd: '/repo', bin, args, timeoutMs: OPS_TIMEOUT_MS })
 
 const START = {
-  judge: `aether-lane seat-start judge --session sess-1 --author sonnet --feature ${FEATURE} --seats balanced --lanes on --harnesses agy,codex --digest ${DIGEST}`,
-  examiner: `aether-lane seat-start examiner --session sess-1 --author agy/gemini-4-argon --feature ${FEATURE} --seats robust --lanes off --harnesses agy --digest ${DIGEST}`,
-  writer: `aether-lane seat-start writer --session sess-1 --feature ${FEATURE} --doc spec --seats native --lanes on --harnesses agy --digest ${DIGEST}`,
+  judge: `aether-lane seat-start judge --session sess-1 --author sonnet --feature ${FEATURE} --superdelegation on --harnesses agy,codex --digest ${DIGEST}`,
+  examiner: `aether-lane seat-start examiner --session sess-1 --author agy/gemini-4-argon --feature ${FEATURE} --superdelegation off --harnesses agy --digest ${DIGEST}`,
+  writer: `aether-lane seat-start writer --session sess-1 --feature ${FEATURE} --doc spec --superdelegation on --harnesses agy --digest ${DIGEST}`,
 }
 
 test('every command of a design round parses to its argument vector', () => {
@@ -61,8 +61,8 @@ test('a token the form does not allow, or a form out of order, is refused', () =
     judge.replace('--session sess-1', '--session ..'),
     judge.replace(FEATURE, 'docs/x'),
     judge.replace(FEATURE, 'specs/7-demo'),
-    judge.replace('--seats balanced', '--seats everyone'),
-    judge.replace('--lanes on', '--lanes maybe'),
+    judge.replace('--superdelegation on', '--superdelegation maybe'),
+    judge.replace('--superdelegation on ', ''),
     judge.replace('--harnesses agy,codex', '--harnesses AGY'),
     judge.replace('--harnesses agy,codex', '--harnesses agy;rm'),
     judge.replace('--digest 0a1b2c3d:1234', '--digest nothex'),
@@ -86,6 +86,20 @@ test('a token the form does not allow, or a form out of order, is refused', () =
     'aether-exam store docs/x',
   ]
   for (const command of other) assert.equal(parseOpsPrompt(prompt(command)), null, command)
+})
+
+test('the retired --seats and --lanes are refused, alone, beside the new flag, or in place of it', () => {
+  const retired = [
+    START.judge.replace('--superdelegation on', '--seats native'),
+    START.judge.replace('--superdelegation on', '--lanes on'),
+    START.judge.replace('--superdelegation on', '--seats native --lanes on'),
+    START.judge.replace('--superdelegation on', '--seats balanced --lanes on --superdelegation on'),
+    START.judge.replace('--superdelegation on', '--superdelegation on --lanes on'),
+    START.examiner.replace('--superdelegation off', '--seats robust --lanes off'),
+    START.writer.replace('--superdelegation on', '--seats native --lanes on'),
+    START.writer.replace('--superdelegation on', '--superdelegation on --seats native'),
+  ]
+  for (const command of retired) assert.equal(parseOpsPrompt(prompt(command, { payload: MESSAGE })), null, command)
 })
 
 test('a payload is saved only where a lane call or a seat round reads it', () => {
