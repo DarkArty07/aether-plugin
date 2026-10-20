@@ -1,7 +1,7 @@
 {
   "name": "aether",
   "version": "0.13.0",
-  "description": "Aether mode for Claude Code, built for RADAR: rapid, autonomous, delegating, affordable and robust. The Lead starts on Sonnet and is the owner's right hand: it understands the intent, writes the owner's intent card, and launches /aether:design, which runs the design on its own, then orchestrates the build along three paths: itself, delegate tasks on models it chooses, or the swarm. A Writer on Sonnet writes specs, plans and tasks in Spec Kit's layout, and a Judge on Opus reviews them. A parallel swarm of Haiku, Sonnet and Opus implementers builds them, each attempt supervised and every merge made one at a time. Lanes run its calls on other coding plans, such as agy, while their quota lasts, and the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner, who writes a hidden acceptance exam. With the owner's permission, the Lead works for hours and ends with a brief.",
+  "description": "Aether mode for Claude Code, built for RADAR: rapid, autonomous, delegating, affordable and robust. The Lead starts on Sonnet and is the owner's right hand: it understands the intent, writes the owner's intent card, and launches /aether:design, which runs the design on its own, then orchestrates the build along three paths: itself, delegate tasks on models it chooses, or the swarm. A Writer on Sonnet writes specs, plans and tasks in Spec Kit's layout, and a Judge on Opus reviews them. A parallel swarm of Haiku, Sonnet and Opus implementers builds them, each attempt supervised and every merge made one at a time. With superdelegation on, everything that is not the Lead runs first on the quota of other harnesses, such as agy or grok, and native Claude is the fallback. With the owner's permission, the Lead works for hours and ends with a brief.",
   "author": {
     "name": "DarkArty07"
   },
@@ -9,16 +9,21 @@
   "repository": "https://github.com/DarkArty07/aether-plugin",
   "homepage": "https://github.com/DarkArty07/aether-plugin",
   "userConfig": {
+    "superdelegation": {
+      "type": "boolean",
+      "title": "Superdelegation",
+      "description": "Send everything that is not the Lead to other harnesses (agy, grok, ...) while their quota lasts; native Claude is the fallback. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options."
+    },
     "lanes": {
       "type": "boolean",
-      "title": "Lanes",
-      "description": "Run Aether's calls on agy while its quota lasts. Off by default: agy runs with --dangerously-skip-permissions and spends another plan's quota. Linux only.",
+      "title": "Lanes (legacy)",
+      "description": "Replaced by superdelegation. Read only when superdelegation is not set: on counts as superdelegation on.",
       "default": false
     },
     "harnesses": {
       "type": "string",
       "title": "Lane harnesses",
-      "description": "The external harnesses lanes may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates; the order of this option breaks ties between equal priorities and orders the groups with no reading. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
+      "description": "The external harnesses superdelegation may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates, then the cost per task. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
       "default": "agy"
     },
     "ops": {
@@ -29,24 +34,29 @@
     },
     "seats": {
       "type": "string",
-      "title": "Design seats",
-      "description": "Who takes the Judge, the Writer and the Examiner: native (Aether's own agents, as in 0.8), balanced (Gemini 4 Argon on agy judges and examines; the Writer stays native) or robust (Argon writes the plan, and the Judge stays native on Opus). An external model takes a seat only with lanes on, its harness enabled and its quota left; otherwise the native agent takes it. Only the design seats change: the swarm's models and efforts still follow each task's Tier and Review.",
-      "default": "balanced",
-      "options": ["native", "balanced", "robust"]
+      "title": "Design seats (legacy)",
+      "description": "Ignored. The design seats follow superdelegation now; native, balanced and robust no longer exist."
     },
     "router": {
       "type": "string",
       "title": "Delegate router",
       "description": "Who chooses the model and effort of the Lead's delegate tasks: record (the Lead chooses, and Aether records what the decider would have chosen, in the background), advise (the Lead also gets the decider's choice as a notice) or command (the decider chooses, unless the Lead overrides it with a reason). It applies only to the Lead's delegate tasks, never to the swarm, the design seats or the aether agents. Default: record.",
       "default": "record",
-      "options": ["record", "advise", "command"]
+      "options": [
+        "record",
+        "advise",
+        "command"
+      ]
     },
     "decider": {
       "type": "string",
       "title": "Router decider",
       "description": "What decides for the router: haiku (Claude Haiku at low effort, with no outside service) or jev (typesafe/jev-1.14 on OpenRouter: it sends each delegate brief to a third party, and needs OPENROUTER_API_KEY in the environment or in the .env of the plugin data directory). Default: haiku.",
       "default": "haiku",
-      "options": ["haiku", "jev"]
+      "options": [
+        "haiku",
+        "jev"
+      ]
     },
     "fallback": {
       "type": "string",
