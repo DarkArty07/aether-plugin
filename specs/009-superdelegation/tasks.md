@@ -102,9 +102,9 @@ idleHarnesses(config, pairs, { installed, enabled }) // -> [{ name, reason }]
 ```
 
 Reglas de `choose` (la política, plan D2 a D4):
-- `requested` es la inteligencia del par de referencia (`referenceOf`). Es candidato un par externo (harness distinto de `claude`) cuyo harness está en `harnesses` e instalado, con `intelligence` numérica y `costPerTaskUsd` numérico (o nulo, si su fila trae `ownerDecision`), que no está en `exclude`, cuyo `family` no está en `authors`, cuya cuota no está seca, que no está dominado y cuya inteligencia llega a `requested - 1`. Las comparaciones de puntos se hacen en décimas enteras (`Math.round(x * 10)`), con el 1 punto inclusivo.
-- Dominado: dentro de la misma cuota (mismo harness y mismo grupo), un par P con costo numérico lo está si otro par Q de la cuota con costo numérico cuesta menos y la inteligencia de P no pasa en más de 1 punto la de Q. Un par sin costo ni es dominado ni domina. Se calcula sobre todos los pares de la cuota, no solo sobre los candidatos.
-- Orden de los candidatos: la cuota con `resetsAt` menor primero (un `resetsAt` ausente o ilegible va después de los legibles); dentro de la cuota, menor costo por tarea, con el par sin costo después de los que lo tienen; con el mismo costo, más puntos; después, el orden de la tabla. `candidates` lista todos los pares externos de la tabla: primero los candidatos, en su orden, con `rank` (desde 1) y `outcome` `picked` (el primero) o `next`; después los demás, en el orden de la tabla, con `rank: null`, `outcome: 'passed'` y su `why`. Precedencia de `why`: `harness-off`, `not-installed`, `excluded`, `author`, `dry`, `no-cost` (sin costo y sin `ownerDecision`), `dominated`, `below`.
+- `requested` es la inteligencia del par de referencia (`referenceOf`). Es candidato un par externo (harness distinto de `claude`) cuyo harness está en `harnesses` e instalado, con `intelligence` numérica y `costPerTaskUsd` numérico (o nulo, si su fila trae `ownerDecision`), que no está en `exclude`, cuyo `family` no está en `authors`, cuya cuota no está seca, cuya inteligencia llega a `requested - 1` y que no está dominado por otro candidato de la llamada. Las comparaciones de puntos se hacen en décimas enteras (`Math.round(x * 10)`), con el 1 punto inclusivo.
+- Dominado: dentro de la misma cuota (mismo harness y mismo grupo), un par P con costo numérico lo está si otro par Q de la cuota con costo numérico cuesta menos y la inteligencia de P no pasa en más de 1 punto la de Q (R9). Q debe ser candidato de esa misma llamada, esto es, pasar todo lo demás (harness habilitado e instalado, no excluido, no autor, cuota no seca, inteligencia que llega a `requested - 1`): un Q excluido por un reintento, un Q que no llega a lo pedido y un Q de una cuota seca no dominan. Un par sin costo ni es dominado ni domina. Por eso el conjunto de pares usables de una cuota sí depende de lo que se pide y de lo que un reintento excluye.
+- Orden de los candidatos: la cuota con `resetsAt` menor primero (un `resetsAt` ausente o ilegible va después de los legibles); dentro de la cuota, menor costo por tarea, con el par sin costo después de los que lo tienen; con el mismo costo, más puntos; después, el orden de la tabla. `candidates` lista todos los pares externos de la tabla: primero los candidatos, en su orden, con `rank` (desde 1) y `outcome` `picked` (el primero) o `next`; después los demás, en el orden de la tabla, con `rank: null`, `outcome: 'passed'` y su `why`. Precedencia de `why`: `harness-off`, `not-installed`, `excluded`, `author`, `dry`, `no-cost` (sin costo y sin `ownerDecision`), `dominated`, `below`. Solo un par que llega a `requested - 1` puede recibir `dominated`; uno que no llega recibe `below`.
 - `native` es el par de referencia. Con `nativeDiffers` y la `family` de la referencia en `authors`, es el par de Claude de otro modelo, al mismo effort, con la inteligencia más cercana a `requested` (el más fuerte si hay empate); si los tres modelos son autores queda la referencia y `reason` dice `no other Claude model`.
 - La velocidad (`outputTokensPerSecond`, `timeToFirstTokenS`) no se lee en ningún paso.
 - `reason` nombra el id del par elegido, o dice `native` y por qué (sin candidato, o toda cuota elegible seca con la palabra `dry`).
@@ -288,7 +288,7 @@ test('E3: with only Grok healthy, a Sonnet xhigh call runs native and nothing is
   assert.equal(d.picked, null)
   assert.equal(d.native.id, 'claude/sonnet@xhigh')
   assert.equal(why(d, 'grok/grok-4.7@high'), 'below')
-  assert.equal(why(d, 'grok/grok-4.7@xhigh'), 'dominated')
+  assert.equal(why(d, 'grok/grok-4.7@xhigh'), 'below')
   assert.match(d.reason, /native/)
 })
 
@@ -324,7 +324,7 @@ test('C5: a pair with no cost per task is never a candidate, and Flash low is on
   assert.equal(why(d, 'a/flash@high'), 'no-cost')
 })
 
-test('C5: within a quota a pair that gives no more points than a cheaper one is never used: Grok xhigh against Grok high', () => {
+test('C5 and R9: within a quota a pair that gives no more points than a cheaper candidate of the same call is never used: Grok xhigh against Grok high', () => {
   assert.equal(why(ask('sonnet', 'high'), 'grok/grok-4.7@xhigh'), 'dominated')
   // haiku asks 46.8, sonnet 47.4, opus 50.9 in this table.
   const table = [
@@ -333,15 +333,24 @@ test('C5: within a quota a pair that gives no more points than a cheaper one is 
     row('g/m@xhigh', { intelligence: 46.4, costPerTaskUsd: 3.74 }),
     row('g/m@max', { intelligence: 50, costPerTaskUsd: 9 }),
   ]
-  const reach = (model) => choose({ pairs: table, reference: { model, effort: 'high' }, harnesses: only('g') })
-  // sonnet asks 47.4: only xhigh reaches 46.4, and it is dominated by high, so nothing is picked.
+  const reach = (model, more = {}) => choose({ pairs: table, reference: { model, effort: 'high' }, harnesses: only('g'), ...more })
+  // haiku asks 46.8: high (46.3) and xhigh (46.4) are both candidates, high is cheaper and gives at least 46.4 - 1, so it dominates xhigh and wins.
+  const haiku = reach('haiku')
+  assert.equal(pickedId(haiku), 'g/m@high')
+  assert.equal(why(haiku, 'g/m@xhigh'), 'dominated')
+  // max gives clearly more points than high, so the cheaper high does not dominate it: it stays as the next candidate.
+  assert.equal(why(haiku, 'g/m@max'), null)
+  assert.equal(haiku.candidates.find((c) => c.id === 'g/m@max').outcome, 'next')
+  // sonnet asks 47.4: only xhigh (46.4) reaches 46.4. High is not a candidate of this call, so it does not dominate xhigh, and xhigh is picked.
   const sonnet = reach('sonnet')
-  assert.equal(sonnet.picked, null)
-  assert.equal(why(sonnet, 'g/m@xhigh'), 'dominated')
-  // haiku asks 46.8: high reaches 45.8, and it wins over xhigh.
-  assert.equal(pickedId(reach('haiku')), 'g/m@high')
-  // opus asks 50.9: max gives clearly more points than high, so the cheaper high does not dominate it.
+  assert.equal(pickedId(sonnet), 'g/m@xhigh')
+  assert.equal(why(sonnet, 'g/m@high'), 'below')
+  // opus asks 50.9: only max reaches 49.9.
   assert.equal(pickedId(reach('opus')), 'g/m@max')
+  // a retry that excluded high: it no longer dominates, so xhigh is picked for the call that asked 46.8.
+  const retry = reach('haiku', { exclude: ['g/m@high'] })
+  assert.equal(pickedId(retry), 'g/m@xhigh')
+  assert.equal(why(retry, 'g/m@high'), 'excluded')
 })
 
 test('C7: changing the speeds of the table changes no choice', () => {
@@ -2217,7 +2226,7 @@ test('refresh-lanes refreshes the intelligence of the pairs by slug and leaves t
 - Depends on: Task 13 — la prueba de conformidad del panel ya no usa `seatsChoice`
 - Depends on: Task 19 — `laneModel` ya no lee `levels`
 - Depends on: Task 20 — el índice de modelos ya no lee `levels` ni escribe `replaces`, y `tests/lane-table-index.test.js` ya no los lee
-- Depends on: Task 23 — `tests/muse-lane.test.js` ya no usa `lanesArgs`, `idleHarnesses` ni `levels`
+- Depends on: Task 23 — `tests/muse-lane.test.js` ya no usa `lanesArgs` ni `idleHarnesses`, y ya no depende de que `levels` se traduzca a un effort; su `museEntry` conserva `levels` y `replaces` (Task 23), que el validador de la Task 21 ignora (`lib/lanes.js` no comprueba claves desconocidas)
 - Serves: R3, R20, R25
 
 **Interfaces:**
