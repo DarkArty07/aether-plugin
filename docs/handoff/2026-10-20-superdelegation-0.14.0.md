@@ -3,7 +3,7 @@
 - **Date:** 2026-10-20. It follows [the 0.13.0 handoff](2026-10-19-muse-harness-0.13.0.md).
 - **From:** the Lead, Claude Code on Sonnet 5.5 and, for part of the design, Opus 5.5, with a swarm built from [the spec](../../specs/009-superdelegation/spec.md), [the plan](../../specs/009-superdelegation/plan.md) and [its tasks](../../specs/009-superdelegation/tasks.md), and with the branch `fix/bug-issues` that another agent built for the open bug issues.
 - **To:** the next session.
-- **Repository state:** the branch `feat/superdelegation` holds the whole of 0.14.0 and the bug fixes. The merge to `main`, the tag `aether--v0.14.0` and the push are the owner's, which he asked the Lead to do on 2026-10-20: «continues lo que hacias y lances el release». Section 5 says what was done.
+- **Repository state:** the work was merged to `main` (`c3bac74`), tagged `aether--v0.14.0` and pushed on 2026-10-20, on the owner's word, and his installed plugin was updated from 0.13.0 to 0.14.0 with `claude plugin update aether@aether-plugin`; a session started after that restart has it. Section 5 says what ran.
 
 ## 1. What was done
 
@@ -47,4 +47,4 @@
 
 ## 5. The release
 
-Version 0.14.0 is in the four places the contributing guide names, and `npm run check` was run on the branch. The steps after it, in the order of [Release](../contributing.md#release), are the ones the owner asked for; the Lead records what ran in the diary of the autonomous run `auto-20261020-134953-059c`.
+Version 0.14.0 is in the four places the contributing guide names, and `npm run check` passed on the branch (1451 tests, 69 of the mod, the strict validation of the plugin and of the marketplace; 1453 after the last fixes of the final review). The owner's words «lances el release» were recorded as a one-time grant for `merge-main` and then for `push`, each revoked after its step: the merge into `main`, `claude plugin tag plugins/aether`, `git push origin main --follow-tags`, and `claude plugin update aether@aether-plugin`, in the order of [Release](../contributing.md#release). The branches `feat/superdelegation` and `fix/bug-issues`, their worktrees under `.worktrees/` and the delegates' worktrees under `.claude/worktrees/` are still there; deleting them is the owner's.
