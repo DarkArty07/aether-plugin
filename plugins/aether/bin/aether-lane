@@ -10,6 +10,12 @@
 // aether-lane stop <run> [<call>]
 // aether-lane choice <run> <call> --role <role> --tier <tier> --effort <effort> --pick <native|harness:model> --order <order>
 //   (logs which lane took a call and why; the workflow has no files, so it hands the decision to this command)
+// aether-lane pick <run> <call> --role <implementer|supervisor|reviewer> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max>
+//   [--exclude <id>[,<id>...]] [--author <family>]   (superdelegation: the pair for a call, from the points of its native
+//   reference pair and the quotas of the enabled harnesses; logs the choice and starts nothing)
+// aether-lane took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|wait-limit|failed>
+//   (logs who ran the call and why)
+// aether-lane pause --seconds <1 to 120>   (no run: waits, so that the workflow can poll for a free place)
 // aether-lane quota [<harness>...] [--refresh] [--json]   (no run: each harness's quota as text, or as JSON;
 //   --refresh first asks grok over ACP for a new reading, and opens its UI for a few seconds, with no prompt,
 //   only if that gives none)
@@ -33,6 +39,7 @@ const seats = require(path.join(__dirname, '..', 'lib', 'seats.js'))
 const seatCalls = require(path.join(__dirname, '..', 'lib', 'seat-calls.js'))
 const quota = require(path.join(__dirname, '..', 'lib', 'lane-quota.js'))
 const choice = require(path.join(__dirname, '..', 'lib', 'lane-choice.js'))
+const pick = require(path.join(__dirname, '..', 'lib', 'lane-pick.js'))
 const run = require(path.join(__dirname, '..', 'lib', 'run.js'))
 
 // Each command's usage. <run>, and <call> where it is not in brackets, are required.
@@ -42,9 +49,12 @@ const COMMANDS = {
   wait: 'wait <run> <call> [--max <seconds>]',
   result: 'result <run> <call>',
   stop: 'stop <run> [<call>]',
+  pick: 'pick <run> <call> --role <role> --model <haiku|sonnet|opus> --effort <effort> [--exclude <id>[,<id>...]] [--author <family>]',
+  took: 'took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|wait-limit|failed>',
   choice: 'choice <run> <call> --role <role> --tier <tier> --effort <effort> --pick <native|harness:model> --order <order>',
 }
-const USAGE = `usage: aether-lane ${[...Object.values(COMMANDS), quota.USAGE].join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')} | ${Object.values(seatCalls.COMMANDS).join(' | ')}`
+const PAUSE_USAGE = 'pause --seconds <1 to 120>'
+const USAGE = `usage: aether-lane ${[...Object.values(COMMANDS), PAUSE_USAGE, quota.USAGE].join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')} | ${Object.values(seatCalls.COMMANDS).join(' | ')}`
 
 // Throws the command's own usage when an argument it requires is missing.
 function requireArgs(verb, runId, call) {
@@ -107,6 +117,8 @@ async function command(argv) {
   if (verb === 'wait') return calls.wait(cwd, runId, call, { maxSeconds: maxSeconds(flags(rest).max) })
   if (verb === 'result') return calls.result(cwd, runId, call)
   if (verb === 'stop') return calls.stop(cwd, runId, call ?? null)
+  if (verb === 'pick') return pick.pickCommand(cwd, runId, call, flags(rest))
+  if (verb === 'took') return pick.tookCommand(cwd, runId, call, flags(rest))
   if (verb === 'choice') return choice.logChoice(run.dataDir(), runId, call, flags(rest))
   if (verb === 'seat-start') return seatCalls.start(cwd, { ...flags(argv.slice(2)), seat: runId }, { env: process.env })
   if (verb === 'seat-wait' || verb === 'seat-stop') return seatRoundCommand(verb, cwd, argv.slice(1))
@@ -139,6 +151,12 @@ async function main() {
   }
   if (argv[0] === 'quota') {
     process.stdout.write(await quota.quotaCommand(argv.slice(1)))
+    return
+  }
+  if (argv[0] === 'pause') {
+    const { seconds, ...unknown } = flags(argv.slice(1))
+    if (Object.keys(unknown).length > 0) throw new Error(`usage: aether-lane ${PAUSE_USAGE}`)
+    process.stdout.write(`${JSON.stringify(await pick.pauseCommand(seconds))}\n`)
     return
   }
   if (argv[0] === 'seat') {

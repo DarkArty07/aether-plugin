@@ -84,6 +84,13 @@ function laneAnswer({ status = 'ok', result = null, lane, detail = '', files = n
   return answer
 }
 
+// What a clean `aether-lane pick` prints when no external pair takes the call: the native pair of the flags
+// (points are stand-ins: no workflow test reads them).
+function nativeDecision({ call, role, model, effort }) {
+  const native = { id: `claude/${model}@${effort}`, model, effort, family: `claude-${model}-5-5`, intelligence: 50 }
+  return { requested: 50, reference: { id: native.id, model, effort, intelligence: 50 }, picked: null, native, candidates: [], reason: `native ${native.id}: no external pair is a candidate`, call, role }
+}
+
 // What a clean aether-lane prints: every group usable, every call started, and every wait done
 // with the role's default answer.
 function aetherLane(call, defaults) {
@@ -102,7 +109,12 @@ function aetherLane(call, defaults) {
     case 'stop':
       return { stopped: [call.lane.call] }
     case 'choice':
+    case 'took':
       return { logged: true }
+    case 'pick':
+      return nativeDecision(call.lane)
+    case 'pause':
+      return { paused: Number(call.command.rest[1]) }
     default:
       throw new Error(`unexpected aether-lane command: ${call.command.line}`)
   }
@@ -161,7 +173,8 @@ function tick() {
 // gets (call, fallback): `call` describes the agent call, with `n` counting this role's calls for
 // the unit (ops: for the unit and command); `fallback` is the default handler. An ops handler
 // returns what aether-wt would print, or null for an agent that failed. `overrides.lane` answers
-// aether-lane commands the same way, and may also return a string, printed as it is.
+// aether-lane commands the same way, and may also return a string, printed as it is. By default `pick` answers with
+// the native pair of its flags, `took` with { logged: true } and `pause` with { paused }.
 //
 // An aether-lane call also carries `lane` (its run, call and flags), `payload` ({ path, text }, for
 // a start), `digestOk` (for a start: whether --digest matches the payload) and `started` (for a

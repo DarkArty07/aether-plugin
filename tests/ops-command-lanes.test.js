@@ -113,3 +113,40 @@ test("the wave's quota step asks for the refresh: status <run> --refresh, and no
     assert.equal(parseOpsPrompt(prompt(command)), null, command)
   }
 })
+
+const PAIR = 'agy/claude-opus-5-5@medium'
+
+test('pick, took and pause parse to their argument vectors', () => {
+  const forms = [
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh --exclude ${PAIR}`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh --exclude ${PAIR},grok/grok-4.7@low,muse/muse-wonder-full-1.0@high`,
+    `aether-lane pick ${RUN} task-1-1-supervise --role supervisor --model sonnet --effort high --author claude-sonnet-5-5`,
+    `aether-lane pick ${RUN} final-review --role reviewer --model opus --effort max --exclude ${PAIR} --author gemini-4-argon`,
+    `aether-lane took ${RUN} ${CALL} --by agy:claude-opus-5-5 --cause chosen`,
+    `aether-lane took ${RUN} final-review --by native --cause wait-limit`,
+    `aether-lane took ${RUN} ${CALL} --by muse:muse-wonder-full-1.0 --cause chosen`,
+    'aether-lane pause --seconds 60',
+  ]
+  for (const command of forms) {
+    assert.deepEqual(parseOpsPrompt(prompt(command)), { cwd: '/repo', bin: 'aether-lane', args: command.split(' ').slice(1), timeoutMs: OPS_TIMEOUT_MS }, command)
+  }
+})
+
+test('pick, took and pause refuse a value or an order they do not take', () => {
+  const refused = [
+    `aether-lane pick ${RUN} ${CALL} --role judge --model sonnet --effort high`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model gpt --effort high`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort ultra`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort high --exclude agy/x`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort high --author A;B`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort high --author gemini-4-argon --exclude ${PAIR}`,
+    `aether-lane pick ${RUN} bad-call --role implementer --model sonnet --effort high`,
+    `aether-lane took ${RUN} ${CALL} --by native --cause because`,
+    `aether-lane took ${RUN} ${CALL} --cause chosen --by native`,
+    'aether-lane pause --seconds -1',
+    'aether-lane pause --seconds 1000',
+    'aether-lane pause 60',
+  ]
+  for (const command of refused) assert.equal(parseOpsPrompt(prompt(command)), null, command)
+})
