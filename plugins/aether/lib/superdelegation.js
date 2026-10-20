@@ -111,7 +111,7 @@ const pairPoints = (pair) => ({ id: pair.id, model: pair.model, effort: pair.eff
 
 // The native agent of the call: the reference pair, or, for a call that reviews the work of an author model,
 // the Claude model at the same effort that is not an author and whose points are closest to the ones asked
-// (the stronger on a tie). null when all three Claude models are authors.
+// (the stronger on a tie). When all three Claude models are authors the reference stays, marked `none`.
 function nativeFor(pairs, ref, { authors, nativeDiffers }) {
   if (!nativeDiffers || !authors.includes(ref.family)) return { pair: ref, swapped: false, none: false }
   const asked = tenths(ref.intelligence)
