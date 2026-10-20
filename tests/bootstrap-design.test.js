@@ -40,3 +40,9 @@ test('the bootstrap carries the scope instruction and weighs less than the 29,47
   assert.ok(BOOTSTRAP.includes(SCOPE))
   assert.ok(fs.statSync(FILE).size < 29470, `${fs.statSync(FILE).size} bytes`)
 })
+
+test('the bootstrap launches /aether:design with superdelegation and the harness list, and never with seats or lanes', () => {
+  assert.ok(BOOTSTRAP.includes('$AETHER_SUPERDELEGATION $AETHER_LANE_HARNESSES'))
+  assert.ok(BOOTSTRAP.includes('"superdelegation": "<AETHER_SUPERDELEGATION>"'))
+  for (const gone of ['AETHER_SEATS', 'AETHER_LANES', '"seats"', '"lanes"', 'balanced', 'robust']) assert.ok(!BOOTSTRAP.includes(gone), `gone: ${gone}`)
+})
