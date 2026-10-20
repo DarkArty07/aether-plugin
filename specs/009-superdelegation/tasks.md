@@ -11,9 +11,10 @@
 - **Sin llamadas pagadas ni de red.** Los tests usan tablas fijas, `tests/fixtures/fake-agy.js`, `fake-grok*.js` y el arnés de workflows con agentes simulados. Nadie corre `claude`, `agy`, `codex`, `grok` ni `cursor-agent` con un prompt real. La medición del cupo y la corrida real las hace el Lead con el permiso `paid-call`; ninguna tarea las hace.
 - **Nadie escribe bajo `specs/` ni `.specify/`** (aether-guard lo rechaza a los implementadores). Tampoco se sube la versión, se toca el changelog, se empuja, se abre un pull request ni se fusiona.
 - **La frase de alcance, idéntica donde un archivo la lleve:** `Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.`
+- **Muse sigue entero.** Muse Code (0.13.0, A64) es un harness más de la regla (spec C16, R24, R25). Ninguna tarea toca su adaptador (`plugins/aether/lib/harness/muse.js`) ni sus fixtures, y ninguna deja una lista de harness sin Muse: `tests/harness-lists.test.js` busca en todos los archivos rastreados una línea que nombre tres de `agy`, `codex`, `grok` y `cursor` sin `muse`, o que cuente «cuatro harnesses»; `tests/muse-docs.test.js`, `tests/muse-docs-overview.test.js`, `tests/muse-skills.test.js` y `tests/lanes-docs.test.js` piden que las guías, el README, la metodología, el propósito y las skills `using-aether` y `swarm` listen a Muse con los otros, y que `docs/guide/lanes.md` conserve su sección `## Muse`. Lo nuevo que escriba una tarea (código, comentarios, páginas, la web) lista los cinco harness o nombra menos de tres.
 - **Formas compartidas entre tareas** (las fija el test de la tarea que las produce; las demás las importan):
-  - **Par** (`Pair`, una fila de `plugins/aether/config/pairs.json`, escrita por la Task 1): `{ id: '<harness>/<model>@<effort>', slug: string, harness: 'claude'|'agy'|'grok'|..., model: string, family: string, effort: 'low'|'medium'|'high'|'xhigh'|'max', group: string|null, intelligence: number, costPerTaskUsd: number|null, outputTokensPerSecond: number|null, timeToFirstTokenS: number|null }`. En Claude `model` es el alias `haiku|sonnet|opus` y `group` es `null`; en un externo `model` es el id de `config/lanes.json` y `group` su cuota. `slug` es el slug de Artificial Analysis del par (`claude-sonnet-5-5-high`, `gemini-3-8-flash-low`, ...), el de la evidencia; el par de Claude dentro de agy lleva el `slug` del par nativo de su mismo modelo y effort, y `scripts/refresh-lanes.js` refresca la inteligencia de cada fila por él. `family` es la identidad del modelo: `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5`, `gemini-4-argon`, `gemini-3.8-flash`, `grok-4.7`; el mismo modelo dentro de agy y nativo comparte `family`.
-  - **Decisión** (`Decision`, lo que `choose` devuelve y `aether-lane pick` imprime, más `call` y `role` en el comando): `{ requested: number, reference: { id, model, effort, intelligence }, picked: Pair | null, native: { id, model, effort, family, intelligence }, candidates: [{ id, harness, group, intelligence, costPerTaskUsd, rank: number|null, outcome: 'picked'|'next'|'passed', why: null|'harness-off'|'not-installed'|'excluded'|'author'|'dry'|'no-cost'|'dominated'|'below' }], reason: string }`. `rank` es la posición (desde 1) de un candidato en el orden; `why` sigue esa precedencia cuando varias razones valen.
+  - **Par** (`Pair`, una fila de `plugins/aether/config/pairs.json`, escrita por la Task 1): `{ id: '<harness>/<model>@<effort>', slug: string, harness: 'claude'|'agy'|'grok'|..., model: string, family: string, effort: 'low'|'medium'|'high'|'xhigh'|'max', group: string|null, intelligence: number, costPerTaskUsd: number|null, outputTokensPerSecond: number|null, timeToFirstTokenS: number|null, ownerDecision?: string }`. `ownerDecision` es opcional, solo está en el par que entra por decisión del dueño (hoy el de Muse) y trae sus palabras; ese par trae `intelligence` numérica y puede traer `costPerTaskUsd: null`. En Claude `model` es el alias `haiku|sonnet|opus` y `group` es `null`; en un externo `model` es el id de `config/lanes.json` y `group` su cuota. `slug` es el slug de Artificial Analysis del par (`claude-sonnet-5-5-high`, `gemini-3-8-flash-low`, ...), el de la evidencia; el par de Claude dentro de agy lleva el `slug` del par nativo de su mismo modelo y effort, y `scripts/refresh-lanes.js` refresca la inteligencia de cada fila por él. `family` es la identidad del modelo: `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5`, `gemini-4-argon`, `gemini-3.8-flash`, `grok-4.7`, `muse-wonder-full-1.0`; el mismo modelo dentro de agy y nativo comparte `family`.
+  - **Decisión** (`Decision`, lo que `choose` devuelve y `aether-lane pick` imprime, más `call` y `role` en el comando): `{ requested: number, reference: { id, model, effort, intelligence }, picked: Pair | null, native: { id, model, effort, family, intelligence }, candidates: [{ id, harness, group, intelligence, costPerTaskUsd, rank: number|null, outcome: 'picked'|'next'|'passed', why: null|'harness-off'|'not-installed'|'excluded'|'author'|'dry'|'no-cost'|'dominated'|'below' }], reason: string }`. `no-cost` es solo del par sin costo y sin `ownerDecision`. `rank` es la posición (desde 1) de un candidato en el orden; `why` sigue esa precedencia cuando varias razones valen.
   - **Vista de cuotas** (la entrada `harnesses` de `choose`): `{ [harness]: { installed: boolean, groups: { [group]: { usable?: boolean, unknown?: boolean, mark?: object|null, resetsAt?: string|null } } } }`, solo con los harness habilitados; es la forma de `lib/lane-quota.js` `harnessView`. Un harness que falta es `harness-off`; un grupo que falta es una cuota sin lectura (compite, después de las legibles); `usable === false` o una `mark` es una cuota seca (`dry`).
   - **Entradas del log de lanes** (las escribe la Task 3, las lee la Task 5): `{ kind: 'choice', time, session: null, run, design: null, call, role, requested, reference: { id, model, effort, intelligence }, picked: { id, harness, model, effort, group, family, intelligence, costPerTaskUsd } | null, native: { id, model, effort, family, intelligence }, reason, candidates: [{ id, outcome, why }] }` y `{ kind: 'took', time, session: null, run, call, by: 'native' | '<harness>:<model>', cause: 'chosen'|'no-candidate'|'wait-limit'|'failed' }`. Una `kind: 'seat'` del diseño suma `reference` y `reason`.
   - **Comandos de `aether-lane`** (los escribe la Task 3; la Task 6 los envía):
@@ -59,6 +60,7 @@
 - [ ] T023 [P] [E1] El índice de modelos y el refresco de la inteligencia in scripts/build-models-index.js → Task 20
 - [ ] T024 [E1] El retiro de `levels` y los perfiles en la tabla de lanes in plugins/aether/config/lanes.json → Task 21
 - [ ] T025 [E1] El retiro del orden por candidatos in plugins/aether/lib/lane-order.js → Task 22
+- [ ] T026 [P] [E10] Las pruebas de Muse sobre la regla in tests/muse-lane.test.js → Task 23
 
 ### Task 1: La tabla de pares y la función de elección
 
@@ -68,7 +70,7 @@
 - Area: core
 - Owns: `plugins/aether/config/pairs.json`, `plugins/aether/lib/pairs.js`, `plugins/aether/lib/superdelegation.js`, `tests/pairs.test.js`, `tests/superdelegation.test.js`, `tests/helpers.js`, `tests/lane-fixtures.js`
 - Depends on: none
-- Serves: R1, R2, R4, R5, R7, R8, R9, R10, R11, R13, R16, R17, R19, R22
+- Serves: R1, R2, R4, R5, R7, R8, R9, R10, R11, R13, R16, R17, R19, R22, R24
 
 **Interfaces:**
 
@@ -78,12 +80,12 @@
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const NATIVE_MODELS = ['haiku', 'sonnet', 'opus']
 pairsPath(env = process.env) // AETHER_PAIRS_CONFIG, else plugins/aether/config/pairs.json
-loadPairs(file = pairsPath()) // -> { fetchedAt: string, pairs: Pair[] }; throws Error('pairs config <file>: <problem>'), also for a row with no `slug` (a non-empty string)
+loadPairs(file = pairsPath()) // -> { fetchedAt: string, pairs: Pair[] }; throws Error('pairs config <file>: <problem>'), also for a row with no `slug` (a non-empty string) and for an `ownerDecision` that is not a non-empty string
 pairId(harness, model, effort) // -> `${harness}/${model}@${effort}`
 referenceOf(pairs, { model, effort }) // -> the Pair of harness 'claude'; throws Error(`no reference pair for ${model} ${effort}`)
 ```
 
-`plugins/aether/config/pairs.json`: `{ "fetchedAt": "2026-10-19", "source": "specs/009-superdelegation/evidence/aa-pairs-2026-10-19.json", "pairs": [Pair, ...] }`. Los 22 pares de `specs/009-superdelegation/evidence/aa-pairs-2026-10-19.json` (mismo `slug`, misma inteligencia, mismo costo, `null` donde la evidencia no lo trae; `model` Claude como alias, externos con el id de `config/lanes.json`: `gemini-4-argon`, `gemini-3.8-flash`, `grok-4.7`; `group` `gemini` para los dos Gemini y `grok` para Grok), más seis pares de agy con `family` `claude-sonnet-5-5` y `claude-opus-5-5`, `group: "claude"`, `low`, `medium` y `high`, con el `slug` y las cifras del par nativo del mismo modelo y effort. 28 filas. El orden de las filas es el orden de desempate. Cada fila trae `outputTokensPerSecond` y `timeToFirstTokenS` de la evidencia (`null` si no la trae), solo informativos.
+`plugins/aether/config/pairs.json`: `{ "fetchedAt": "2026-10-19", "source": "specs/009-superdelegation/evidence/aa-pairs-2026-10-19.json", "pairs": [Pair, ...] }`. Los 22 pares de `specs/009-superdelegation/evidence/aa-pairs-2026-10-19.json` (mismo `slug`, misma inteligencia, mismo costo, `null` donde la evidencia no lo trae; `model` Claude como alias, externos con el id de `config/lanes.json`: `gemini-4-argon`, `gemini-3.8-flash`, `grok-4.7`; `group` `gemini` para los dos Gemini y `grok` para Grok), más seis pares de agy con `family` `claude-sonnet-5-5` y `claude-opus-5-5`, `group: "claude"`, `low`, `medium` y `high`, con el `slug` y las cifras del par nativo del mismo modelo y effort, y, como última fila, el par de Muse: `harness: "muse"`, `model` y `family: "muse-wonder-full-1.0"`, `effort: "high"`, `group: "muse"`, `slug` el de la fila `claude/opus@high` (`claude-opus-5-5-high`), `intelligence` la de esa misma fila (53.6), `costPerTaskUsd`, `outputTokensPerSecond` y `timeToFirstTokenS` `null`, y `ownerDecision` con las palabras de la cita 16 de la tarjeta: «si deja entrar a musewonder full es uno d elos mejores modelos que tiene el harness, ... esta anivel de opus segun yo». 29 filas. El orden de las filas es el orden de desempate. Cada fila trae `outputTokensPerSecond` y `timeToFirstTokenS` de la evidencia (`null` si no la trae), solo informativos.
 
 `plugins/aether/lib/superdelegation.js`:
 
@@ -100,9 +102,9 @@ idleHarnesses(config, pairs, { installed, enabled }) // -> [{ name, reason }]
 ```
 
 Reglas de `choose` (la política, plan D2 a D4):
-- `requested` es la inteligencia del par de referencia (`referenceOf`). Es candidato un par externo (harness distinto de `claude`) cuyo harness está en `harnesses` e instalado, con `intelligence` y `costPerTaskUsd` numéricos, que no está en `exclude`, cuyo `family` no está en `authors`, cuya cuota no está seca, que no está dominado y cuya inteligencia llega a `requested - 1`. Las comparaciones de puntos se hacen en décimas enteras (`Math.round(x * 10)`), con el 1 punto inclusivo.
-- Dominado: dentro de la misma cuota (mismo harness y mismo grupo), un par P lo está si otro par Q de la cuota con costo numérico cuesta menos y la inteligencia de P no pasa en más de 1 punto la de Q. Se calcula sobre todos los pares de la cuota, no solo sobre los candidatos.
-- Orden de los candidatos: la cuota con `resetsAt` menor primero (un `resetsAt` ausente o ilegible va después de los legibles); dentro de la cuota, menor costo por tarea; con el mismo costo, más puntos; después, el orden de la tabla. `candidates` lista todos los pares externos de la tabla: primero los candidatos, en su orden, con `rank` (desde 1) y `outcome` `picked` (el primero) o `next`; después los demás, en el orden de la tabla, con `rank: null`, `outcome: 'passed'` y su `why`. Precedencia de `why`: `harness-off`, `not-installed`, `excluded`, `author`, `dry`, `no-cost`, `dominated`, `below`.
+- `requested` es la inteligencia del par de referencia (`referenceOf`). Es candidato un par externo (harness distinto de `claude`) cuyo harness está en `harnesses` e instalado, con `intelligence` numérica y `costPerTaskUsd` numérico (o nulo, si su fila trae `ownerDecision`), que no está en `exclude`, cuyo `family` no está en `authors`, cuya cuota no está seca, que no está dominado y cuya inteligencia llega a `requested - 1`. Las comparaciones de puntos se hacen en décimas enteras (`Math.round(x * 10)`), con el 1 punto inclusivo.
+- Dominado: dentro de la misma cuota (mismo harness y mismo grupo), un par P con costo numérico lo está si otro par Q de la cuota con costo numérico cuesta menos y la inteligencia de P no pasa en más de 1 punto la de Q. Un par sin costo ni es dominado ni domina. Se calcula sobre todos los pares de la cuota, no solo sobre los candidatos.
+- Orden de los candidatos: la cuota con `resetsAt` menor primero (un `resetsAt` ausente o ilegible va después de los legibles); dentro de la cuota, menor costo por tarea, con el par sin costo después de los que lo tienen; con el mismo costo, más puntos; después, el orden de la tabla. `candidates` lista todos los pares externos de la tabla: primero los candidatos, en su orden, con `rank` (desde 1) y `outcome` `picked` (el primero) o `next`; después los demás, en el orden de la tabla, con `rank: null`, `outcome: 'passed'` y su `why`. Precedencia de `why`: `harness-off`, `not-installed`, `excluded`, `author`, `dry`, `no-cost` (sin costo y sin `ownerDecision`), `dominated`, `below`.
 - `native` es el par de referencia. Con `nativeDiffers` y la `family` de la referencia en `authors`, es el par de Claude de otro modelo, al mismo effort, con la inteligencia más cercana a `requested` (el más fuerte si hay empate); si los tres modelos son autores queda la referencia y `reason` dice `no other Claude model`.
 - La velocidad (`outputTokensPerSecond`, `timeToFirstTokenS`) no se lee en ningún paso.
 - `reason` nombra el id del par elegido, o dice `native` y por qué (sin candidato, o toda cuota elegible seca con la palabra `dry`).
@@ -140,7 +142,7 @@ function modelOf(name) {
   return EXTERNAL[Object.keys(EXTERNAL).find((word) => name.startsWith(word))]
 }
 
-test('the table holds the 22 pairs of the evidence with the same figures, and six Claude pairs for agy', () => {
+test('the table holds the 22 pairs of the evidence with the same figures, six Claude pairs for agy and the pair of Muse', () => {
   const { pairs } = loadPairs()
   const evidence = JSON.parse(fs.readFileSync(EVIDENCE, 'utf8')).pairs
   assert.equal(evidence.length, 22)
@@ -152,9 +154,10 @@ test('the table holds the 22 pairs of the evidence with the same figures, and si
     assert.equal(found.costPerTaskUsd, row.costPerTaskUsd ?? null, row.name)
     assert.equal(found.id, pairId(found.harness, found.model, found.effort))
   }
-  assert.equal(pairs.length, 28)
+  assert.equal(pairs.length, 29)
   assert.equal(pairs.filter((p) => p.harness === 'agy' && p.family.startsWith('claude-')).length, 6)
-  assert.equal(new Set(pairs.map((p) => p.id)).size, 28)
+  assert.equal(pairs.filter((p) => p.harness === 'muse').length, 1)
+  assert.equal(new Set(pairs.map((p) => p.id)).size, 29)
 })
 
 test('the Claude pairs of agy carry the figures of the native pair of the same model and effort', () => {
@@ -173,6 +176,18 @@ test('every native pair has no group and every external pair has one', () => {
   for (const pair of loadPairs().pairs) assert.equal(pair.group === null, pair.harness === 'claude', pair.id)
 })
 
+test('C16: the Muse pair has the figure of Opus high, no cost and the owner words, and no other pair has an owner decision', () => {
+  const { pairs } = loadPairs()
+  const pair = pairs.find((p) => p.harness === 'muse')
+  const opus = referenceOf(pairs, { model: 'opus', effort: 'high' })
+  assert.equal(pair.id, 'muse/muse-wonder-full-1.0@high')
+  assert.deepEqual([pair.model, pair.family, pair.effort, pair.group, pair.costPerTaskUsd], ['muse-wonder-full-1.0', 'muse-wonder-full-1.0', 'high', 'muse', null])
+  assert.deepEqual([pair.slug, pair.intelligence], [opus.slug, opus.intelligence])
+  assert.match(pair.ownerDecision, /anivel de opus/)
+  assert.deepEqual(pairs.filter((p) => p.ownerDecision !== undefined).map((p) => p.id), [pair.id])
+  assert.deepEqual(pairs.filter((p) => p.costPerTaskUsd === null).map((p) => p.id).sort(), ['agy/gemini-3.8-flash@low', pair.id])
+})
+
 test('referenceOf gives the native pair of a model and effort, and throws for any other', () => {
   const { pairs } = loadPairs()
   assert.equal(referenceOf(pairs, { model: 'sonnet', effort: 'xhigh' }).intelligence, 51.9)
@@ -189,7 +204,7 @@ test('AETHER_PAIRS_CONFIG names another table, and a table that breaks a rule is
     return file
   }
   assert.equal(pairsPath({ AETHER_PAIRS_CONFIG: '/x/pairs.json' }), '/x/pairs.json')
-  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 28)
+  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 29)
   const mutate = (fn) => {
     const copy = JSON.parse(JSON.stringify(good))
     fn(copy)
@@ -201,6 +216,7 @@ test('AETHER_PAIRS_CONFIG names another table, and a table that breaks a rule is
   assert.throws(() => loadPairs(mutate((c) => { c.pairs[0].intelligence = '40' })), /pairs config .*intelligence/)
   assert.throws(() => loadPairs(mutate((c) => { c.pairs[0].slug = '' })), /pairs config .*slug/)
   assert.throws(() => loadPairs(mutate((c) => { delete c.pairs[1].slug })), /pairs config .*slug/)
+  assert.throws(() => loadPairs(mutate((c) => { c.pairs.find((p) => p.harness === 'muse').ownerDecision = '' })), /pairs config .*ownerDecision/)
   assert.throws(() => loadPairs(path.join(dir, 'missing.json')), /pairs config/)
 })
 ```
@@ -240,6 +256,10 @@ const natives = (haiku = 37.8, sonnet = 46.8, opus = 53.6) => [
   row('claude/opus@high', { family: 'claude-opus-5-5', intelligence: opus, costPerTaskUsd: 1.82 }),
 ]
 const only = (...names) => Object.fromEntries(names.map((name) => [name, { installed: true, groups: { [name]: open(1) } }]))
+
+const MUSE = 'muse/muse-wonder-full-1.0@high'
+const onlyMuse = (days = 2) => ({ muse: { installed: true, groups: { muse: open(days) } } })
+const withMuse = (days, base = world()) => ({ ...base, ...onlyMuse(days) })
 
 test('C4: a call asks for the points of its reference pair, never for a model name alone', () => {
   assert.equal(ask('sonnet', 'xhigh').requested, 51.9)
@@ -363,6 +383,47 @@ test('C11: with every eligible quota dry the call runs native, in its reference 
   assert.equal(why(marked, 'agy/gemini-4-argon@high'), 'dry')
 })
 
+test('C16: Muse as the only healthy harness takes a call up to Opus high by the owner decision, and nothing above it', () => {
+  const high = ask('opus', 'high', { harnesses: onlyMuse() })
+  assert.equal(pickedId(high), MUSE)
+  assert.equal(high.requested, 53.6)
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), MUSE)
+  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), MUSE)
+  for (const [model, effort] of [['opus', 'xhigh'], ['opus', 'max'], ['sonnet', 'max']]) {
+    const d = ask(model, effort, { harnesses: onlyMuse() })
+    assert.equal(d.picked, null, `${model} ${effort}`)
+    assert.equal(why(d, MUSE), 'below')
+    assert.equal(d.native.id, `claude/${model}@${effort}`)
+  }
+})
+
+test('C16: the quota of Muse competes by its window like any other, and a dry or missing one does not', () => {
+  assert.equal(pickedId(ask('opus', 'high', { harnesses: withMuse(-5) })), MUSE)
+  assert.notEqual(pickedId(ask('opus', 'high', { harnesses: withMuse(5) })), MUSE)
+  assert.notEqual(pickedId(ask('opus', 'high', { harnesses: withMuse(null) })), MUSE)
+  assert.equal(why(ask('opus', 'high', { harnesses: { ...world(), muse: { installed: true, groups: { muse: dry } } } }), MUSE), 'dry')
+  assert.equal(why(ask('opus', 'high', { harnesses: { ...world(), muse: { installed: false, groups: {} } } }), MUSE), 'not-installed')
+})
+
+test('C5 and C16: without the owner decision a pair with no cost does not enter; with it, it goes last within its quota and neither dominates nor is dominated', () => {
+  const bare = pairs.map((p) => {
+    if (p.id !== MUSE) return p
+    const { ownerDecision, ...rest } = p
+    return rest
+  })
+  const d = choose({ pairs: bare, reference: { model: 'opus', effort: 'high' }, harnesses: onlyMuse() })
+  assert.equal(d.picked, null)
+  assert.equal(why(d, MUSE), 'no-cost')
+  const table = [
+    ...natives(),
+    row('m/a@high', { intelligence: 53.6, costPerTaskUsd: null, ownerDecision: 'the owner said so' }),
+    row('m/b@high', { intelligence: 56, costPerTaskUsd: 9 }),
+    row('m/c@high', { intelligence: 53.6, costPerTaskUsd: 2 }),
+  ]
+  const ordered = choose({ pairs: table, reference: { model: 'opus', effort: 'high' }, harnesses: only('m') })
+  assert.deepEqual(ordered.candidates.filter((c) => c.rank !== null).map((c) => c.id), ['m/c@high', 'm/b@high', 'm/a@high'])
+})
+
 test('a quota whose window cannot be read competes after the ones that can, and one that is known dry does not compete', () => {
   const table = [...natives(), row('x/a@high', { intelligence: 47, costPerTaskUsd: 0.1 }), row('y/b@high', { intelligence: 47, costPerTaskUsd: 5 })]
   const harnesses = { x: { installed: true, groups: { x: open(null) } }, y: { installed: true, groups: { y: open(4) } } }
@@ -446,12 +507,12 @@ test('legacyNotes tells the owner what was ignored or read as on', () => {
 const harness = (maxParallel) => ({ command: 'x', maxParallel, waitSeconds: 540, timeouts: { implementer: 2700, supervisor: 900, reviewer: 1200 }, groups: {}, models: { m: {} } })
 
 test('runArgs: the harnesses that are enabled, installed and have pairs, their caps, the waits and the cupo wait', () => {
-  const config = { harnesses: { agy: harness(4), grok: harness(2), codex: { ...harness(2), models: {} }, cursor: harness(2) } }
-  const args = runArgs(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'grok', 'codex', 'cursor'] })
+  const config = { harnesses: { agy: harness(4), grok: harness(2), codex: { ...harness(2), models: {} }, cursor: harness(2), muse: harness(2) } }
+  const args = runArgs(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'grok', 'codex', 'cursor', 'muse'] })
   assert.deepEqual(args, {
     superdelegation: true,
-    harnesses: ['agy', 'grok'],
-    maxParallelByHarness: { agy: 4, grok: 2 },
+    harnesses: ['agy', 'grok', 'muse'],
+    maxParallelByHarness: { agy: 4, grok: 2, muse: 2 },
     waits: { implementer: 6, supervisor: 3, reviewer: 4 },
     cupo: { polls: 10, pollSeconds: 60 },
   })
@@ -472,7 +533,7 @@ test('idleHarnesses names why an enabled harness gives the run nothing', () => {
 ```
 
 **Acceptance:**
-- `config/pairs.json` tiene las 28 filas y pasa `tests/pairs.test.js`; `lib/pairs.js` rechaza una tabla que rompe una regla con un mensaje que empieza por `pairs config <archivo>:`.
+- `config/pairs.json` tiene las 29 filas (la última, la de Muse con las palabras del dueño) y pasa `tests/pairs.test.js`; `lib/pairs.js` rechaza una tabla que rompe una regla con un mensaje que empieza por `pairs config <archivo>:`.
 - `choose` cumple `tests/superdelegation.test.js` sin leer la velocidad, sin tocar el disco, la red ni el reloj, y sin mutar sus entradas.
 - `lib/superdelegation.js` no importa `lib/lanes.js` (para no crear un ciclo cuando `lanes.js` lo use); lee la tabla de lanes solo como el argumento `config`.
 - Los archivos que ya existen y no son de esta tarea no cambian; `npm test` queda verde completo.
@@ -612,7 +673,7 @@ test('parseArgs takes a harness, an optional ceiling from 1 to 16 and --write', 
 **Acceptance:**
 - `tests/lane-cupo.test.js` pasa; `scripts/lane-cupo.js` sin argumentos imprime el uso y sale con 2 sin lanzar nada.
 - Ninguna prueba lanza `lane-smoke.js` ni un harness; el script no se corre en `npm test`.
-- Con `--write`, un `git diff` de `config/lanes.json` muestra solo las dos líneas por harness.
+- Con `--write`, un `git diff` de `config/lanes.json` muestra solo las dos líneas por harness, también en el bloque de `muse` (que `scripts/lane-smoke.js muse` ya sabe llamar).
 
 ### Task 3: Los comandos pick, took y pause, y las vistas de cuota
 
@@ -622,7 +683,7 @@ test('parseArgs takes a harness, an optional ceiling from 1 to 16 and --write', 
 - Area: lane-commands
 - Owns: `plugins/aether/lib/lane-pick.js`, `plugins/aether/lib/lane-calls.js`, `plugins/aether/bin/aether-lane`, `plugins/aether/hooks/ops-command.mjs`, `tests/lane-pick.test.js`, `tests/ops-command-lanes.test.js`, `tests/ops-command.test.js`, `tests/workflow-harness.js`
 - Depends on: Task 1 — `pick` llama a `choose` y carga `pairs.json` con `loadPairs`
-- Serves: R5, R10, R12, R14, R15, R18, R19
+- Serves: R5, R10, R12, R14, R15, R18, R19, R24
 
 **Interfaces:**
 
@@ -767,6 +828,22 @@ test('the refreshed reading of grok is saved, so a later pick within its life do
   assert.equal(asked, 2, 'past its life it is refreshed again')
 })
 
+test('C16: pick gives the Muse pair, by the owner decision, to an Opus high call, and nothing to an Opus xhigh one', (t) => {
+  const FAKE_MUSE = path.join(__dirname, 'fixtures', 'fake-muse.js')
+  fs.chmodSync(FAKE_MUSE, 0o755)
+  const { args } = fx.laneRun(t)
+  const env = { ...fx.laneEnv(t, { mutate: (config) => { config.harnesses.muse.command = FAKE_MUSE } }), AETHER_LANE_HARNESSES: 'muse' }
+  const file = path.join(env.AETHER_DATA_DIR, 'lanes', 'quota', 'muse-observed.json')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ observedAt: Date.now(), window: { usedPercent: 10, resetsAtMs: Date.now() + 3 * HOUR }, weekly: { usedPercent: 10, resetsAtMs: Date.now() + 5 * 24 * HOUR } }))
+  const high = pick(args, env, ['--role', 'implementer', '--model', 'opus', '--effort', 'high'])
+  assert.equal(high.status, 0, high.stdout + high.stderr)
+  assert.deepEqual([high.json.requested, high.json.picked.id], [53.6, 'muse/muse-wonder-full-1.0@high'])
+  const xhigh = pick(args, env, ['--role', 'implementer', '--model', 'opus', '--effort', 'xhigh'])
+  assert.equal(xhigh.json.picked, null)
+  assert.equal(xhigh.json.native.id, 'claude/opus@xhigh')
+})
+
 test('pause waits the seconds it is given, from 1 to 120, and refuses any other value', (t) => {
   const env = fx.laneEnv(t)
   const started = Date.now()
@@ -787,11 +864,12 @@ test('pick, took and pause parse to their argument vectors', () => {
   const forms = [
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh`,
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh --exclude ${PAIR}`,
-    `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh --exclude ${PAIR},grok/grok-4.7@low`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh --exclude ${PAIR},grok/grok-4.7@low,muse/muse-wonder-full-1.0@high`,
     `aether-lane pick ${RUN} task-1-1-supervise --role supervisor --model sonnet --effort high --author claude-sonnet-5-5`,
     `aether-lane pick ${RUN} final-review --role reviewer --model opus --effort max --exclude ${PAIR} --author gemini-4-argon`,
     `aether-lane took ${RUN} ${CALL} --by agy:claude-opus-5-5 --cause chosen`,
     `aether-lane took ${RUN} final-review --by native --cause wait-limit`,
+    `aether-lane took ${RUN} ${CALL} --by muse:muse-wonder-full-1.0 --cause chosen`,
     'aether-lane pause --seconds 60',
   ]
   for (const command of forms) {
@@ -985,6 +1063,7 @@ test('a choice written in the old shape does not break the report', (t) => {
 **Acceptance:**
 - Los tests nuevos pasan y los demás de `tests/report*.test.js` y `tests/aether-report.test.js` pasan sin cambiar, salvo la prueba de `choices` y `choiceEntry` que esta tarea reescribe.
 - `aether-report --run <id>` imprime los campos nuevos (`lanes.run.choices` con `ms`, `radar.delegation.work`, `radar.delegation.quotaByHarness`, `superdelegation`) sin cambiar los que ya tenía.
+- Una llamada de `muse-wonder-full-1.0` (sin precio en `config/prices.json`) suma 0 dólares a `lanesUsd` y el informe lo anota una vez (`no price for lane model muse-wonder-full-1.0`, `laneDollars` de `lib/report.js`), como hoy; esta tarea no lo cambia.
 - `aether-report --seats` sigue igual; muestra, además, el `reference` y el `reason` de cada ronda cuando la entrada `seat` los trae (Task 7).
 
 ### Task 6: El swarm sobre pick
@@ -1273,7 +1352,7 @@ Además esta tarea reescribe `tests/workflow-lanes.test.js` a los argumentos y l
 - Area: seats
 - Owns: `plugins/aether/lib/seats.js`, `plugins/aether/lib/seat-calls.js`, `tests/seats.test.js`, `tests/seats-design.test.js`, `tests/seats-harness.test.js`, `tests/seat-calls.test.js`, `tests/exam.test.js`, `tests/lane-refusal.test.js`
 - Depends on: Task 3 — usa `harnessViews` y `latestReadings` de `lib/lane-pick.js`
-- Serves: R3, R4, R5, R6, R16, R17, R19, R20, R22
+- Serves: R3, R4, R5, R6, R16, R17, R19, R20, R22, R24
 
 **Interfaces:**
 
@@ -1288,6 +1367,8 @@ chooseSeat({ config, pairs, seat, author = null, harnesses }) // harnesses: the 
 ```
 
 `chooseSeat` llama a `choose` con `reference = REFERENCE[seat]`, `authors = author ? [authorModel(author)] : []` y `nativeDiffers = seat !== 'writer'`: el Judge y el Examiner revisan lo que otro hizo, y su agente nativo tampoco puede ser el modelo del autor (C12, R17); el Writer escribe y no revisa. `EXTERNAL_EFFORT`, `SEAT_CHOICES` y toda lectura de `designSeats` y de `seatsChoice` desaparecen; el Examiner ya no tiene estado apagado. `seatCommand` lee el interruptor de `AETHER_SUPERDELEGATION` (`superdelegation.enabled`); apagado, o sin tabla de lanes, no hay candidato: llama a `choose` con `harnesses: {}` y el autor de la ronda, y devuelve exit 3 con el `native` de esa decisión (`unavailable: 'superdelegation-off'` o `'no-table'`), así que un Judge o un Examiner con la superdelegación apagada tampoco cae en el modelo del autor; encendido, obtiene las lecturas con `latestReadings` de `lib/lane-pick.js` (el mismo refresco guardado que usa `pick`), calcula las vistas con `harnessViews`, elige y corre como hoy.
+
+**Muse en un asiento.** Con la regla, el par de Muse puede tomar una ronda del diseño (hasta Opus `high`: el Judge, el Examiner y el Writer). `runRound` lee hoy la cuota del grupo (`adapter.quota()`) antes de analizar la salida (`adapter.parse`), y Muse guarda en `parse` la cuota que la llamada informó (`lanes/quota/muse-observed.json`): la ronda vería la cuota de la llamada anterior. Como `runCall` de `lib/lane-calls.js` desde la 0.13.0, `runRound` analiza la salida primero y lee la cuota después; para los demás harness el orden no cambia nada.
 
 **El agente nativo de toda respuesta sale de la decisión.** El `native` de exit 3 (cualquier causa: `superdelegation-off`, `no-table`, `no-external`, un par que no arranca) y el de exit 4 (la ronda externa falló, violó o dio una respuesta inválida) es `{ agent: NATIVE[seat].agent, ...decision.native }`, con `decision` junto a él; nunca `NATIVE[seat]` sin mirar al autor. La ronda externa corre al `effort` del par. Las entradas `seat` del log suman `reference` y `reason` de la decisión. `lib/seat-calls.js`: las banderas de `seat-start` son `--superdelegation <on|off>` y `--harnesses`, en lugar de `--seats` y `--lanes`, y el ejecutor recibe `AETHER_SUPERDELEGATION` y `AETHER_LANE_HARNESSES`. El mod (`hooks/ops-command.mjs`) y el workflow de diseño los cambia la Task 16.
 
@@ -1373,9 +1454,34 @@ test('E7: when the external round of a Judge fails, the native Judge handed back
 })
 ```
 
+En `tests/seats-design.test.js` (usa su `seatRepo`, `seat`, `FEATURE`, `laneEnv`, `lanes`, `fs`, `path`):
+
+```js
+test('C16: a Muse round reads the quota after it parses the output, so the allowance of that very round is the quota after it', (t) => {
+  const FAKE_MUSE = path.join(__dirname, 'fixtures', 'fake-muse.js')
+  fs.chmodSync(FAKE_MUSE, 0o755)
+  const repo = seatRepo(t)
+  const now = Date.now()
+  const record = (type, payload) => JSON.stringify({ schema_version: 1, id: type, stream: { kind: 'session', id: 's1' }, sequence: 1, recorded_at: 1, record_type: 'event', durability: 'durable', causation_id: 'c1', payload_type: type, payload_schema_version: 1, payload })
+  const answer = JSON.stringify({ verdict: 'approve', findings: [], openQuestions: [] })
+  const allowance = { tier: 'power', window: { usedPercent: 72, resetsAtMs: now + 3 * 3600000, windowDurationMins: 300 }, weekly: { usedPercent: 40, resetsAtMs: now + 5 * 86400000 } }
+  const stdout = `${[
+    record('run.terminal.completed', { kind: 'run_terminal', terminal: 'completed', reason: null, text: answer }),
+    record('run.usage', { kind: 'run_usage', allowance, calls: 1, completed_calls: 1, failed_calls: 0, cancelled_calls: 0, children_included: false, models: [{ model: 'muse-wonder-full-1.0', calls: 1, input_tokens: 10, output_tokens: 2, cached_tokens: 0, reasoning_tokens: 0 }] }),
+  ].join('\n')}\n`
+  const env = { ...laneEnv(t, { mutate: (config) => { config.harnesses.muse.command = FAKE_MUSE } }), AETHER_SUPERDELEGATION: 'on', AETHER_LANE_HARNESSES: 'muse', AETHER_FAKE_MUSE_SCRIPT: JSON.stringify({ stdout }) }
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], env, 'Review it.')
+  assert.equal(r.status, 0, r.stdout)
+  assert.equal(r.json.harness, 'muse')
+  const call = lanes.readLog(env.AETHER_DATA_DIR).find((entry) => entry.kind === 'call' && entry.harness === 'muse')
+  assert.ok(Math.abs(call.quotaAfter.windows.weekly.remaining - 0.6) < 1e-9, JSON.stringify(call.quotaAfter))
+})
+```
+
 En `tests/seat-calls.test.js`: las banderas de `seat-start` son `--superdelegation <on|off>` y `--harnesses`; `--seats native` y `--lanes on` se rechazan; el ejecutor de la ronda recibe `AETHER_SUPERDELEGATION` y `AETHER_LANE_HARNESSES`. En `tests/exam.test.js`, `tests/lane-refusal.test.js`, `tests/seats-design.test.js` y `tests/seats-harness.test.js`: las rondas se arrancan con `AETHER_SUPERDELEGATION: 'on'` en lugar de `AETHER_LANES` y `AETHER_SEATS`, y los asientos se eligen con el nuevo `chooseSeat`.
 
 **Acceptance:**
+- Una ronda de Muse analiza la salida antes de leer la cuota (la prueba de arriba); para los demás harness nada cambia.
 - Sin superdelegación, ninguna ronda de asiento llama a un harness externo; con ella y las cuotas sanas, el Judge, el Writer y el Examiner van al par que `choose` da, y solo la ronda sin candidato corre nativa.
 - Un Judge o un Examiner que cae a nativo, por cualquiera de las causas de exit 3 o por un fallo de exit 4, corre en un modelo que no es el del autor.
 - `EXTERNAL_EFFORT`, `designSeats`, `seatsChoice` y `seatList` ya no los usa `lib/seats.js` ni `lib/seat-calls.js` (la Task 21 los quita de `lib/lanes.js`).
@@ -1389,13 +1495,15 @@ En `tests/seat-calls.test.js`: las banderas de `seat-start` son `--superdelegati
 - Area: docs
 - Owns: `docs/guide/lanes.md`, `docs/guide/design-seats.md`, `docs/guide/options.md`, `docs/guide/router.md`, `tests/lanes-docs.test.js`, `tests/router-docs.test.js`
 - Depends on: Task 14 — la tabla de opciones y el manifiesto ya tienen su forma final
-- Serves: R19, R21
+- Serves: R19, R21, R25
 
 **Interfaces:**
 
 - `docs/guide/lanes.md` es la regla de superdelegación, escrita una vez: el interruptor y su migración (`lanes` encendido cuenta como encendido, `seats` se ignora); qué pide cada llamada (los puntos de inteligencia de Artificial Analysis de su par de Claude: modelo y effort); quién es candidato (el 1 punto); el orden (la cuota cuya ventana semanal se renueva antes, y dentro de ella el menor costo por tarea; Grok no recibe una llamada que no alcanza); que la velocidad no decide; el fallback nativo sin preguntar al dueño; la revisión cruzada; el cupo de llamadas a la vez y la espera de 10 minutos; el reintento; qué dice el informe; cómo se mide el cupo (`scripts/lane-cupo.js`). La tabla de pares se cita como `plugins/aether/config/pairs.json`. El ancla `#lanes` que enlazan otras páginas se conserva (no se renombra), porque las páginas de la Task 17 la enlazan.
 - `docs/guide/options.md` (sin la tabla de opciones, que ya es de la Task 14), `docs/guide/design-seats.md` y `docs/guide/router.md` dicen lo mismo: un interruptor, `superdelegation`, apagado por defecto; ya no hay `native`, `balanced` ni `robust`. `docs/guide/design-seats.md` describe los tres asientos y su par de referencia, y remite a `lanes.md` para la regla en lugar de repetirla.
 - No se crea una página nueva, y la lista de páginas de `tests/docs-facts.test.js` no cambia.
+- **Muse en la regla escrita.** `docs/guide/lanes.md` conserva su sección `## Muse` (la última de la página, con `muse exec --json`, `contributor`, `sandbox`, `META_API_KEY`, `authRequired`, `environmentError`, `native` y `lane-smoke`, que `tests/muse-docs.test.js` pide), las listas `agy, codex, grok, cursor, muse` y `Codex, Grok, Cursor and Muse` (`tests/lanes-docs.test.js`) y la lista de Muse con otros dos harness en esta página, en `docs/guide/ops.md`, en `docs/guide/troubleshooting.md` y en `docs/getting-started.md`. Se ajusta a la regla lo que esa sección dice de lo que desaparece: la llamada lleva `--reasoning-effort` con el effort del par, no con «un nivel de la tabla»; el modelo entra por la decisión del dueño como el par `muse/muse-wonder-full-1.0@high` con los 53.6 de Opus `high` y sin costo por tarea (va último en su cuota, y toma llamadas hasta Opus `high`, no las de Opus `xhigh`); ya no dice que el `xhigh` de Aether corre en el `high` de Muse; sigue diciendo que el 55.8 de Artificial Analysis es de `max`, que la CLI no toma, y que la entrada de la tabla lleva las palabras del dueño en `ownerDecision`. `tests/muse-docs.test.js` y `tests/muse-docs-overview.test.js` pasan sin cambios.
+- `docs/guide/lanes.md` y `docs/guide/options.md` son las únicas páginas que pueden nombrar `lanes` y `seats` como claves heredadas (la migración).
 
 **Tests (write first):**
 
@@ -1410,9 +1518,9 @@ test('R21: lanes.md holds the rule: the switch, the points, the tolerance, the o
 test('R21: the guide pages of this task name neither the retired profiles nor the retired variables', () => {
   for (const page of ['lanes', 'design-seats', 'options', 'router']) {
     const text = fs.readFileSync(path.join(__dirname, '..', 'docs', 'guide', `${page}.md`), 'utf8')
-    // The same patterns as Task 18's GONE; lanes.md alone may name `seats` (the migration says it is ignored).
+    // The same patterns as Task 18's GONE; lanes.md and options.md alone may name `seats` (the migration says it is ignored).
     const gone = [/`balanced`/, /`robust`/, /\bseats option\b/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
-    if (page !== 'lanes') gone.push(/`seats`/)
+    if (!['lanes', 'options'].includes(page)) gone.push(/`seats`/)
     for (const pattern of gone) assert.doesNotMatch(text, pattern, `${page}.md still says ${pattern}`)
   }
 })
@@ -1464,7 +1572,7 @@ test('choice is no longer a command: the bin refuses it and logs nothing', (t) =
 - Tier: haiku high — texto de skills que las pruebas de arranque fijan por frases
 - Review: high — el Lead lee estas skills para lanzar el diseño y el swarm, y un argumento mal escrito rompe el lanzamiento
 - Area: skills
-- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `plugins/aether/skills/autonomous-runs/SKILL.md`, `tests/bootstrap-design.test.js`, `tests/agents-design.test.js`, `tests/templates-design.test.js`, `tests/autonomous-runs-skill.test.js`
+- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `plugins/aether/skills/autonomous-runs/SKILL.md`, `tests/bootstrap-design.test.js`, `tests/agents-design.test.js`, `tests/templates-design.test.js`, `tests/autonomous-runs-skill.test.js`, `tests/roles.test.js`
 - Depends on: Task 6 — describe el resultado `lanes` del swarm sin `dry`
 - Depends on: Task 16 — describe los argumentos del diseño
 - Serves: R3, R5, R21
@@ -1474,6 +1582,12 @@ test('choice is no longer a command: the bin refuses it and logs nothing', (t) =
 - `using-aether/SKILL.md`: el Lead lanza `/aether:design` leyendo `echo "$CLAUDE_CODE_SESSION_ID $AETHER_SUPERDELEGATION $AETHER_LANE_HARNESSES"` y escribiendo `{"feature": "specs/NNN-<topic>", "session": "<CLAUDE_CODE_SESSION_ID>", "repoRoot": "<the checkout>", "superdelegation": "<AETHER_SUPERDELEGATION>", "harnesses": "<AETHER_LANE_HARNESSES>"}`; no nombra `AETHER_SEATS` ni `AETHER_LANES`. Dice, en una frase, qué hace la superdelegación y que el dueño la enciende con la opción `superdelegation`.
 - `swarm/SKILL.md`: el resultado `lanes` es `{ calls, ok, failed, quota, violation, blocked, unavailable, overflow }` y se explica `overflow` como las llamadas que agotaron la espera de cupo; ya no dice `dry`.
 - `autonomous-runs/SKILL.md`: donde mencione `lanes` o `seats` como opciones, nombra `superdelegation`.
+- `swarm/SKILL.md`, el párrafo `- **Lanes.**` (que la 0.13.0 amplió con Muse): pasa a hablar de la opción `superdelegation` y de la regla, conserva la lista `agy, codex, grok, cursor and muse` y la frase de que un fallo de Muse corre nativo sin preguntar al dueño (`tests/muse-skills.test.js`), y las frases que `tests/lanes-docs.test.js` busca en la skill (`each call to the candidate whose quota is most at risk of being lost first`, `` `aether-lane status <runId>` ``, `its `balance``, `what every call chose (`run.choices`)`, `Lanes (grok)`). El texto exacto es este, y es el que `tests/roles.test.js` fija, carácter por carácter, en lugar del párrafo de hoy:
+
+  ```
+  - **Lanes.** When the owner turned on the plugin's `superdelegation` option, on Linux, the run sends every call that is not the Lead's to the external harnesses that the `harnesses` option enables (agy, codex, grok, cursor and muse; agy is the default), when the harness's CLI is installed and while its quota lasts. A call asks for the intelligence points of the Claude pair (model and effort) the plan gives it and takes a pair that reaches them minus 1 point, each call to the candidate whose quota is most at risk of being lost first and, inside that quota, the cheapest per task (`docs/guide/lanes.md` has the rule). Muse is a lane like the others: its pair, `muse-wonder-full-1.0` at `high`, is there by the owner's decision, and any failure of a Muse call runs on the native agent without asking the owner. `${CLAUDE_PLUGIN_ROOT}/config/pairs.json` lists the pairs and `${CLAUDE_PLUGIN_ROOT}/config/lanes.json` each harness's models. These CLIs run without permission prompts (agy with `--dangerously-skip-permissions`) in the unit's transactional worktree, with the owner's git, GitHub, registry and cloud credentials kept out of their environment. Otherwise every call is native, and `aether-plan compile` says why on stderr; it also names each enabled harness that takes no call, and why. `aether-plan compile <plan.md> --no-lanes` runs everything native. `aether-lane quota` shows the readings, and `aether-lane status <runId>` the quota of each group and the dry marks. A call whose chosen pair is unavailable asks again without that pair; the native agent takes it only when no pair is left.
+  ```
+- `using-aether/SKILL.md` conserva la lista de la línea de «Other CLIs» (`agy, codex, grok, cursor, muse`) y `You start on Sonnet at `xhigh``.
 
 **Tests (write first):**
 
@@ -1496,6 +1610,7 @@ test('the swarm skill reads the lanes counts without dry groups', () => {
 **Acceptance:**
 - Las pruebas de arranque y de skills pasan; el bootstrap sigue pasando las pruebas que ya lo sostienen (nombres, tamaño, secciones) sin otro cambio que el de arriba.
 - Ninguna skill menciona `AETHER_SEATS`, `AETHER_LANES`, `balanced` ni `robust`.
+- `tests/muse-skills.test.js`, `tests/lanes-docs.test.js` y `tests/roles.test.js` pasan (esta última con el párrafo de arriba).
 
 ### Task 11: Las pruebas de escenario sin cuota y la búsqueda de lo que desaparece
 
@@ -1559,6 +1674,14 @@ test('C15, no quota spent: with every eligible quota dry the work falls to nativ
 test('C15, no quota spent: with one quota dry and another healthy the call goes to the healthy one', () => {
   const d = ask(oneDry, 'sonnet', 'xhigh')
   assert.equal(d.picked.group, 'claude')
+})
+
+test('C16, no quota spent: with only Muse healthy an Opus high call goes to Muse by the owner decision, and an Opus xhigh call falls to native', () => {
+  const onlyMuse = { muse: { installed: true, groups: { muse: group(2) } } }
+  assert.equal(ask(onlyMuse, 'opus', 'high').picked.id, 'muse/muse-wonder-full-1.0@high')
+  const d = ask(onlyMuse, 'opus', 'xhigh')
+  assert.equal(d.picked, null)
+  assert.equal(d.native.id, 'claude/opus@xhigh')
 })
 
 test('C15 through the swarm: a unit runs on the pair pick gives when quotas are healthy, and native when they are dry', async (t) => {
@@ -1705,7 +1828,7 @@ test('the switch the panel shows is the one the router settings hold, for every 
 
 **Acceptance:**
 - `tests/panel-conformance.test.js`, `tests/panel-view.test.js` y `tests/panel-layout.test.js` pasan; `npm run test:mod` pasa con `hooks/panel.test.tsx` cambiado (la tarea lo corre).
-- El panel no nombra `seats`, `SEAT_CHOICES`, `balanced` ni `robust`.
+- El panel no nombra `seats`, `SEAT_CHOICES`, `balanced` ni `robust`; sigue nombrando a Muse (`HARNESS_NAMES`, `READ_TIMEOUT_MS`), y las pruebas que la 0.13.0 le añadió (Muse dibujado como agy, `muse` en la tabla de harness de la prueba de conformidad) pasan sin más cambio que el texto de la cabecera.
 - Los archivos de `Owns` son los únicos que cambian; `npm test` queda verde completo.
 
 ### Task 14: El manifiesto y la tabla de opciones
@@ -1724,7 +1847,7 @@ test('the switch the panel shows is the one the router settings hold, for every 
 - `superdelegation`: `{ "type": "boolean", "title": "Superdelegation", "description": "Send everything that is not the Lead to other harnesses (agy, grok, ...) while their quota lasts; native Claude is the fallback. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options." }`, sin `default`.
 - `lanes`: título `Lanes (legacy)`, descripción `Replaced by superdelegation. Read only when superdelegation is not set: on counts as superdelegation on.`, `default: false`.
 - `seats`: título `Design seats (legacy)`, tipo `string`, descripción `Ignored. The design seats follow superdelegation now; native, balanced and robust no longer exist.`, sin `options` y sin `default`.
-- `harnesses`, `ops`, `router`, `decider`, `fallback` y `deadlines` no cambian, salvo que la descripción de `harnesses` empieza `The external harnesses superdelegation may use` en lugar de `lanes`.
+- `harnesses`, `ops`, `router`, `decider`, `fallback` y `deadlines` no cambian, salvo la descripción de `harnesses`, que pasa a (conserva la lista de cinco con `muse`, y quita la frase del orden de la opción, que la regla ya no usa): `The external harnesses superdelegation may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates, then the cost per task. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.` `tests/manifest.test.js` fija esa cadena entera en lugar de la de hoy, y `docs/guide/options.md` conserva la lista `agy, codex, grok, cursor, muse` donde la nombra.
 - La `description` del plugin cambia las dos frases de las lanes y de la opción `seats` por una: `With superdelegation on, everything that is not the Lead runs first on the quota of other harnesses, such as agy or grok, and native Claude is the fallback.` `tests/launcher.test.js` (líneas 140 y 141) pasa a comprobar `/With superdelegation on, everything that is not the Lead runs first on the quota of other harnesses/` y `/native Claude is the fallback/` en lugar de las dos frases viejas.
 
 `docs/guide/options.md` y `tests/docs-facts.test.js`: la tabla de opciones gana la fila de `superdelegation` (por defecto `off`) y pierde las filas `lanes` y `seats`; el texto que cuenta «eight options» pasa a la cuenta real; la prueba R11 compara la tabla con las opciones del manifiesto cuyo título no termina en `(legacy)`, y toma una opción booleana sin `default` como `off`. Los demás textos de la guía los reescribe la Task 8.
@@ -1905,13 +2028,15 @@ En `tests/ops-command-design.test.js`: las formas de `seat-start` llevan `--supe
 - Tier: sonnet high — prosa técnica en español e inglés que `tests/docs-facts.test.js` sostiene contra el árbol
 - Review: high — las pruebas de documentos fijan los hechos comprobables; lo demás es redacción
 - Area: docs-pages
-- Owns: `README.md`, `docs/getting-started.md`, `docs/guide/troubleshooting.md`, `docs/reference/components.md`, `docs/methodology.md`, `docs/purpose.md`
+- Owns: `README.md`, `docs/getting-started.md`, `docs/guide/troubleshooting.md`, `docs/reference/components.md`, `docs/methodology.md`, `docs/purpose.md`, `tests/launcher.test.js`
 - Depends on: Task 8 — remiten a la regla de `docs/guide/lanes.md` en lugar de repetirla
-- Serves: R21
+- Serves: R21, R25
 
 **Interfaces:**
 
 - `README.md`, `docs/getting-started.md`, `docs/guide/troubleshooting.md`, `docs/reference/components.md`, `docs/methodology.md` y `docs/purpose.md` dicen lo mismo que la regla: un interruptor, `superdelegation`, apagado por defecto; ya no hay `native`, `balanced` ni `robust`, ni la opción `seats`, ni las variables `AETHER_SEATS` y `AETHER_LANES`. Cuando una página repite el valor por defecto de la opción, dice `off`. Remiten a `docs/guide/lanes.md` (ancla `#lanes`) en lugar de repetir la regla.
+- La frase del README y de `docs/getting-started.md` que dice `--config lanes=true` pasa a `--config superdelegation=true` («`superdelegation`, off by default»), y `tests/launcher.test.js` (la lista de cadenas que el README debe tener, línea 70) cambia `'--config lanes=true'` por `'--config superdelegation=true'`. La otra cadena `--config lanes=true` de ese archivo (línea 123) es de «Upgrading from 0.6» en `docs/guide/maintenance.md`, que no cambia: `lanes` sigue siendo una clave heredada.
+- **Muse.** Estas páginas siguen listando a Muse con los otros harness donde ya lo hacen (README, metodología, propósito, `docs/getting-started.md`, `docs/guide/troubleshooting.md`; `tests/muse-docs.test.js`, `tests/muse-docs-overview.test.js`, `tests/harness-lists.test.js`), el README sigue en 160 líneas o menos, y ninguna cuenta los harness como cuatro.
 - No se crea una página nueva, no se sube la versión ni se toca el changelog.
 
 **Tests (write first):**
@@ -1934,12 +2059,25 @@ grep -nE 'balanced|robust|AETHER_SEATS|AETHER_LANES\b|--seats|`seats`|seats opti
 - Area: site
 - Owns: `site/**`, `tests/site.test.js`, `docs/decisions.md`, `docs/index.md`, `tests/docs-facts.test.js`
 - Depends on: Task 17 — las pruebas de cierre miran todas las páginas, y las de la guía y las demás ya están escritas
-- Serves: R19, R21
+- Serves: R19, R21, R25
 
 **Interfaces:**
 
 - La web (`site/index.html`, `site/app.js`, en español e inglés) dice `superdelegation` donde decía `lanes` y los perfiles. No hay `balanced` ni `AETHER_SEATS` en ella.
-- `docs/decisions.md` gana una decisión nueva (A-numerada, la siguiente) con el interruptor, la tolerancia de 1 punto y la regla de la cuota; `tests/docs-facts.test.js` ajusta el rango de decisiones que las páginas nombran si hace falta. `docs/index.md` sigue enlazando todas las páginas.
+- `docs/decisions.md` gana la decisión **A65** (A63 y A64 ya existen) con el interruptor, la tolerancia de 1 punto, la regla de la cuota y la entrada de Muse por la decisión del dueño. `docs/index.md` sigue enlazando todas las páginas. La prueba «R15: the decisions A50 to A64…» de `tests/docs-facts.test.js` pasa a:
+
+  ```js
+  test('R15: the decisions A50 to A65 are recorded and the changelog opens with 0.13.0 and its handoff', () => {
+    const decisions = read('docs/decisions.md')
+    const LAST_DECISION = 65
+    for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+    const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
+    assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
+    assert.ok(/superdelegation/i.test(line(65)))
+    // the rest of the test (A50, the changelog's first line) stays as it is
+  })
+  ```
+- **Muse.** La web sigue nombrando a Muse donde lista los harness, en español e inglés (`tests/site.test.js`: `order = ['agy', 'grok', 'codex', 'cursor', 'muse']` en `site/app.js`, ninguna cuenta de «cuatro harnesses», ninguna lista `agy, codex, grok, cursor` sin Muse).
 - No se crea una página nueva, y la lista de páginas de `tests/docs-facts.test.js` no cambia.
 
 **Tests (write first):**
@@ -1949,12 +2087,12 @@ En `tests/docs-facts.test.js`, que ya tiene `FILES`, `read`, `proseLines` y `rep
 ```js
 const GONE = [/`balanced`/, /`robust`/, /\bseats option\b/, /`seats`/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
 const HISTORY = ['docs/changelog.md', 'docs/contributing.md', 'docs/roadmap.md'] // name what was retired as history (roadmap.md: the 0.12.3 summary says `seats` selectors)
-const MIGRATION = 'docs/guide/lanes.md' // the one page that may name `seats`: the migration says it is ignored
+const MIGRATION = ['docs/guide/lanes.md', 'docs/guide/options.md'] // the only two pages that may name the legacy keys `lanes` and `seats`: the migration says what becomes of them
 const prose = (rel) => proseLines(read(rel)).join('\n')
 
 test('R21: no page of the guide or the README names the retired profiles or the retired variables', () => {
   for (const rel of FILES.filter((p) => !HISTORY.includes(p))) {
-    for (const pattern of GONE.filter((g) => rel !== MIGRATION || g.source !== '`seats`')) assert.doesNotMatch(prose(rel), pattern, `${rel} still says ${pattern}`)
+    for (const pattern of GONE.filter((g) => !MIGRATION.includes(rel) || g.source !== '`seats`')) assert.doesNotMatch(prose(rel), pattern, `${rel} still says ${pattern}`)
   }
 })
 
@@ -1971,7 +2109,7 @@ test('R21: every page that gives the default of superdelegation in the form of R
 })
 ```
 
-(`GONE` no se aplica a `docs/changelog.md`, `docs/contributing.md` ni `docs/roadmap.md`, que nombran lo retirado como historia (el resumen de 0.12.3 del roadmap dice `seats`); `` `seats` `` se admite solo en `docs/guide/lanes.md`, por su migración; los patrones son los mismos que usa la Task 8 sobre las páginas de la guía; `docs/decisions.md` es historia pero su prosa no repite esos nombres fuera de la tabla de decisiones, y si lo hace la tarea lo exceptúa con su razón en la cabecera de la prueba.) En `tests/site.test.js`:
+(`GONE` no se aplica a `docs/changelog.md`, `docs/contributing.md` ni `docs/roadmap.md`, que nombran lo retirado como historia (el resumen de 0.12.3 del roadmap dice `seats`); `` `seats` `` se admite solo en `docs/guide/lanes.md` y `docs/guide/options.md`, por su migración (la prueba lo dice en `MIGRATION`); los patrones son los mismos que usa la Task 8 sobre las páginas de la guía; `docs/decisions.md` es historia pero su prosa no repite esos nombres fuera de la tabla de decisiones, y si lo hace la tarea lo exceptúa con su razón en la cabecera de la prueba.) En `tests/site.test.js`:
 
 ```js
 test('R21: the site says superdelegation where it said lanes and the profiles, and names no retired profile', () => {
@@ -1996,6 +2134,7 @@ test('R21: the site says superdelegation where it said lanes and the profiles, a
 - Owns: `plugins/aether/lib/lane-calls.js`, `tests/lane-status.test.js`, `tests/lane-start-marks.test.js`, `tests/aether-lane.test.js`
 - Depends on: Task 6 — el workflow del swarm ya no usa `status` por ola ni los candidatos por rol
 - Depends on: Task 9 — `choice` ya no existe y `tests/lane-status.test.js` ya perdió su prueba
+- Depends on: Task 23 — `tests/muse-lane.test.js` ya no espera que `laneModel` traduzca `xhigh` a `high`
 - Serves: R13, R20
 
 **Interfaces:**
@@ -2026,12 +2165,13 @@ test('start passes the effort of the pair to the harness as it is, xhigh include
 - Area: tables
 - Owns: `scripts/build-models-index.js`, `scripts/refresh-lanes.js`, `plugins/aether/config/models/**`, `docs/models/**`, `tests/models-index.test.js`, `tests/lane-table-index.test.js`, `tests/refresh-lanes.test.js`
 - Depends on: Task 1 — lee `config/pairs.json` y su `slug`
-- Serves: R7, R13, R20
+- Serves: R7, R13, R20, R24
 
 **Interfaces:**
 
 - `scripts/build-models-index.js`: los modelos no listados por el harness toman sus efforts de las filas de `config/pairs.json` (los de su harness y modelo), no de `levels`, y el detalle del índice pierde `levels`; `plugins/aether/config/models/**` y `docs/models/**` se regeneran con `node scripts/build-models-index.js`. `plugins/aether/config/router/rungs.json` debe quedar byte a byte igual (la tarea lo comprueba con `git diff --exit-code`). `config/lanes.json` no se toca aquí: sus `levels` los quita la Task 21.
-- `scripts/refresh-lanes.js`: además de los `aa` de la tabla de lanes, refresca la inteligencia de `config/pairs.json` por el campo `slug` de cada fila (que la Task 1 ya escribió), y no toca el costo por tarea ni los demás campos.
+- `scripts/refresh-lanes.js`: además de los `aa` de la tabla de lanes, refresca la inteligencia de `config/pairs.json` por el campo `slug` de cada fila (que la Task 1 ya escribió), y no toca el costo por tarea ni los demás campos. La fila de Muse tiene el `slug` de Opus `high`: queda igual a esa fila, y la cifra propia de Artificial Analysis para Muse (55.8 a `max`) sigue solo en el `aa` de su entrada de la tabla de lanes.
+- `tests/lane-table-index.test.js` (lo escribió Muse en la 0.13.0 con la excepción de `ownerDecision`, que se conserva entera): su función `problems(config, index)` lee `entry.levels` para saber qué efforts pide la tabla, y la Task 21 quita `levels`. Pasa a `problems(config, index, pairs)`: los efforts que la tabla pide de un modelo son los de sus filas en `pairs` (las de ese `harness` y ese `model`), no los de su `levels`; los casos sintéticos (`TABLE`, `wide`) llevan al lado una lista `pairs` con las filas `{ harness, model, effort }` que antes decía su `levels` (`flash`: `low`, `medium`, `high`; `grok-9`: `low`, `medium`, `high`, `xhigh`; `wide`: `high`); la prueba de la tabla real usa `loadPairs().pairs`. Ninguna aserción cambia, y la del modelo de Muse (en `withoutFigures`, con `ownerDecision`, esfuerzo `high`) sigue pasando con la tabla de hoy y con la de la Task 21.
 
 **Tests (write first):**
 
@@ -2066,14 +2206,17 @@ test('refresh-lanes refreshes the intelligence of the pairs by slug and leaves t
 - Depends on: Task 7 — los asientos ya no leen `designSeats`, `seatsChoice` ni `EXTERNAL_EFFORT`
 - Depends on: Task 13 — la prueba de conformidad del panel ya no usa `seatsChoice`
 - Depends on: Task 19 — `laneModel` ya no lee `levels`
-- Depends on: Task 20 — el índice de modelos ya no lee `levels`
-- Serves: R3, R20
+- Depends on: Task 20 — el índice de modelos ya no lee `levels`, y `tests/lane-table-index.test.js` ya no lo lee
+- Depends on: Task 23 — `tests/muse-lane.test.js` ya no usa `lanesArgs`, `idleHarnesses` ni `levels`
+- Serves: R3, R20, R25
 
 **Interfaces:**
 
 - `config/lanes.json`: se quitan `designSeats` y la clave `levels` de cada modelo; se quitan también los campos que solo servían a ellos. Se quedan `reserve`, `dryMarkMinutes`, y por harness `command`, `maxParallel` (la medición del Lead puede añadir `maxParallelMeasured`), `waitSeconds`, `quotaLifeMinutes`, `timeouts`, `groups` y `models`, y por modelo `group`, `replaces`, `roles`, `aa` y `note`: el router y el índice de modelos los leen.
 - `lib/lanes.js`: se quitan `SEAT_CHOICES`, `DEFAULT_SEATS`, `seatsChoice`, `seatList`, `validateSeats`, `lanesEnabled`, `laneFor`, `lanesArgs` e `idleHarnesses`, la validación de `levels` y de la lista de roles de los asientos en `validateModel`, y `LEVEL_NAMES`/`LEVEL_VALUES` si nada más los usa. `seatTimeout`, `SEATS`, `enabledHarnesses`, `loadConfig`, el log y las marcas se quedan.
-- `tests/helpers.js` y `tests/lane-fixtures.js`: se quita `AETHER_LANES: 'on'`; queda `AETHER_SUPERDELEGATION: 'on'`.
+- `tests/helpers.js` y `tests/lane-fixtures.js`: se quita `AETHER_LANES: 'on'`; queda `AETHER_SUPERDELEGATION: 'on'` (y lo que Muse añadió a `laneEnv`, `config.harnesses.muse.command = '/nowhere/muse'`, se queda).
+- **La entrada de Muse** (`harnesses.muse.models["muse-wonder-full-1.0"]`) pierde solo `levels`. Conserva `group`, `replaces: "opus"`, `roles`, `aa` (el 55.8 de `max`), `ownerDecision` y `note` (de la nota sale la frase «Aether's xhigh runs at Muse's high.», que deja de ser cierta, y entra «Its pair, muse/muse-wonder-full-1.0@high, is in config/pairs.json.»), y el harness conserva `command`, `maxParallel`, `waitSeconds`, `quotaLifeMinutes`, `timeouts` y `groups`. `validateModel` sigue pidiendo `replaces` a un modelo de enjambre y `roles`, así que `tests/lane-models.test.js` (que lee `replaces` y `aa` de Muse) y `tests/lane-table-index.test.js` pasan sin cambios.
+- **Las pruebas de Muse en `tests/lanes.test.js`** (la Task 21 es la dueña del archivo): «the shipped lane table has a muse harness…» cambia `assert.deepEqual(wonder.levels, …)` por `assert.equal('levels' in wonder, false)` y `assert.equal(JSON.stringify(config.designSeats).includes('muse'), false, …)` por `assert.equal('designSeats' in config, false)`, y conserva el resto (comando, `maxParallel` 2, `quotaLifeMinutes` 30, `waitSeconds` 540, `timeouts`, `groups`, el único modelo, `group`, `replaces`, `roles`, `aa.slug`, `ownerDecision`); «the Muse model of the shipped table gives the swarm an Opus candidate…» se borra con `lanesArgs` (lo cubren `tests/superdelegation.test.js` y `tests/lane-pick.test.js`); «muse is a valid value of the harnesses option…» se queda; el cambio de Muse en «a role left out of a model turns that lane off» se va con `laneFor`. También salen de ese archivo la aserción de `m.levels` y de `designSeats` de «the shipped table names one lane model per native model…», el caso de `levels` de «loadConfig refuses a table it cannot trust…» y la prueba de «loadConfig refuses design seats…».
 
 **Tests (write first):**
 
@@ -2095,7 +2238,7 @@ test('lib/lanes.js no longer exports the retired names', () => {
 `tests/lanes.test.js` pierde las pruebas de `laneFor`, `lanesArgs`, `idleHarnesses`, `seatsChoice` y `seatList`, que ya cubren `tests/superdelegation.test.js` y `tests/seats.test.js`.
 
 **Acceptance:**
-- `config/lanes.json` no tiene `levels` ni `designSeats`, y `lib/lanes.js` no exporta los nombres de arriba.
+- `config/lanes.json` no tiene `levels` ni `designSeats`, y `lib/lanes.js` no exporta los nombres de arriba; la entrada de Muse conserva todo lo demás.
 - `git diff --exit-code plugins/aether/config/router/rungs.json` pasa, y las pruebas del router pasan sin cambiar.
 - `npm test` queda verde completo; `npm run validate` pasa.
 
@@ -2108,6 +2251,7 @@ test('lib/lanes.js no longer exports the retired names', () => {
 - Owns: `plugins/aether/lib/lane-order.js`, `tests/lane-order.test.js`, `tests/lane-order-cases.js`, `tests/lane-quota.test.js`, `tests/router-quota.test.js`
 - Depends on: Task 19 — `lane-calls.js` y `aether-lane status` ya no usan `orderCandidates` ni `candidatesOf`
 - Depends on: Task 9 — `lib/lane-choice.js` ya no existe
+- Depends on: Task 23 — `tests/muse-lane.test.js` ya no llama a `orderCandidates`
 - Serves: R19, R20
 
 **Interfaces:**
@@ -2128,3 +2272,83 @@ test('lib/lane-order.js keeps the group view and no longer holds the order of ca
 **Acceptance:**
 - `lib/lane-order.js` no exporta `candidatesOf` ni `orderCandidates`; las pruebas del router y de las vistas de cuota pasan sin cambiar salvo lo dicho arriba.
 - Los archivos de `Owns` son los únicos que cambian; `npm test` queda verde completo.
+
+### Task 23: Las pruebas de Muse sobre la regla
+
+**Aether:**
+- Tier: haiku high — reescribir tres trozos de una prueba contra una función y una tabla que los tests de la Task 1 ya fijan
+- Review: high — la prueba de Muse es la que dice que Muse se trata como los demás harness; debe seguir diciéndolo con la regla nueva
+- Area: muse
+- Owns: `tests/muse-lane.test.js`
+- Depends on: Task 1 — usa `choose`, `runArgs` e `idleHarnesses` de `lib/superdelegation.js` y `loadPairs`
+- Serves: R24, R25
+
+**Interfaces:**
+
+`tests/muse-lane.test.js` (la escribió Muse en la 0.13.0) llama hoy a `lanes.lanesArgs`, `lanes.idleHarnesses` y `order.orderCandidates`, y pide que un `--effort xhigh` llegue a la CLI como `--reasoning-effort high` por el `levels` de la tabla. Las Tasks 19, 21 y 22 retiran esas cuatro cosas, y dependen de esta tarea para que `npm test` siga verde en cada fusión. La tarea cambia solo estos trozos, a una forma que vale con el código de hoy y con el retirado, y no toca ninguna otra aserción de Muse:
+
+- Los `require`: se quita `lane-order.js` y se añaden `const { choose, runArgs, idleHarnesses } = require('../plugins/aether/lib/superdelegation.js')` y `const { loadPairs } = require('../plugins/aether/lib/pairs.js')`.
+- `flags()` pide `--effort high`, y la aserción de la primera prueba dice `'the effort of the pair goes as it is'` en lugar de «xhigh goes as the level the table maps it to» (sigue esperando `high`). `museEntry` conserva `levels` y `replaces` (el validador de hoy los pide; el de la Task 21 los ignora) y su comentario deja de decir que `xhigh` se mapea a `high`.
+
+**Tests (write first):**
+
+En «a muse that is not installed starts no call…» (US4), las líneas desde `const installed = …` hasta el final pasan a:
+
+```js
+  const { pairs } = loadPairs()
+  const installed = (name, harness) => lanes.commandInstalled(harness.command)
+  const config = lanes.loadConfig(env.AETHER_LANES_CONFIG)
+  assert.equal(runArgs(config, pairs, { installed, enabled: ['muse'] }), null)
+  const [idle] = idleHarnesses(config, pairs, { installed, enabled: ['muse'] })
+  assert.equal(idle.name, 'muse')
+  assert.match(idle.reason, /is not installed/)
+
+  // The same table with the fake muse gives the harness its calls.
+  const present = lanes.loadConfig(museEnv(t, {}).AETHER_LANES_CONFIG)
+  assert.deepEqual(runArgs(present, pairs, { installed, enabled: ['muse'] }).harnesses, ['muse'])
+```
+
+La prueba «the order treats Muse as it treats the other harnesses…» (US2, R15) se reemplaza por esta (usa `museEnv`, `observedFile`, `writeObserved`, `marks`, `runBin`, `fx`, `tempDir`, `fs`, `path`, `HOUR`, `DAY`):
+
+```js
+test('the choice treats Muse as it treats the other harnesses: the window of its quota, the reserve, a mark and the installation (US2, R15)', (t) => {
+  const env = museEnv(t, {}, { models: false })
+  const cwd = tempDir(t)
+  const { pairs } = loadPairs()
+  const MUSE_PAIR = 'muse/muse-wonder-full-1.0@high'
+  const unread = { unknown: true, usable: true, mark: null, resetsAt: null }
+  const agy = { installed: true, groups: { gemini: unread, claude: unread } }
+  const choice = (environment = env) => {
+    const report = runBin(fx.LANE_BIN, ['quota', '--json', 'muse'], cwd, environment).json
+    return choose({ pairs, reference: { model: 'opus', effort: 'high' }, harnesses: { agy, muse: report.harnesses.muse } })
+  }
+  const why = (decision) => decision.candidates.find((c) => c.id === MUSE_PAIR).why
+  const observe = (used) => writeObserved(env, { observedAt: Date.now(), window: { usedPercent: used, resetsAtMs: Date.now() + 3 * HOUR }, weekly: { usedPercent: used, resetsAtMs: Date.now() + 5 * DAY } })
+
+  // 28% left with the reset far off: Muse has a window and agy has none, so Muse goes first.
+  observe(72)
+  assert.equal(choice().picked.id, MUSE_PAIR)
+
+  // 3% left is under the reserve of 5%.
+  observe(97)
+  let decision = choice()
+  assert.equal(why(decision), 'dry')
+  assert.equal(decision.picked.harness, 'agy')
+
+  // A live mark holds the group whatever else is known.
+  fs.rmSync(observedFile(env))
+  marks.markDry(env.AETHER_DATA_DIR, { harness: 'muse', group: 'muse', reserve: 0.05, now: Date.now() })
+  assert.equal(why(choice()), 'dry')
+
+  // A command that is not installed.
+  const absent = museEnv(t, {}, { models: false, command: path.join(tempDir(t), 'no-muse') })
+  decision = choice(absent)
+  assert.equal(why(decision), 'not-installed')
+  assert.equal(decision.picked.harness, 'agy')
+})
+```
+
+**Acceptance:**
+- `tests/muse-lane.test.js` pasa con el código de hoy y sigue pasando después de las Tasks 19, 21 y 22; ya no nombra `lanesArgs`, `idleHarnesses` de `lib/lanes.js`, `orderCandidates` ni espera que `xhigh` se traduzca.
+- Los demás tests de ese archivo (la unidad en su worktree, el revisor estructurado, los seis fallos, la cuota que deja la marca de 60 minutos, `aether-lane quota`, `stop`, `lane-smoke`) no cambian.
+- Solo cambia `tests/muse-lane.test.js`; `npm test` queda verde completo.
