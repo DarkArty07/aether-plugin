@@ -33,6 +33,7 @@ const GONE = [
   [/\blaneWalk\b|effort === 'max'\) return null|!lanes \|\| effort === 'max'/, 'the fixed rule for max'],
   [/\blanesEnabled\b|\blanesArgs\b|\blaneFor\b|\borderCandidates\b|\bcandidatesOf\b/, 'the old lane arguments and order'],
   [/aether-lane choice\b/, 'the choice command'],
+  [/\blogChoice\b|\bchoiceLogs\b|\bcandidatesFor\b|\bplannedLanes\b|\bnotInstalled\b/, 'the old workflow lane helpers'],
 ]
 
 for (const [pattern, what, keep] of GONE) {
