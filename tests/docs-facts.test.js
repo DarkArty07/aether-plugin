@@ -292,7 +292,13 @@ test('repeated defaults: only the form of R6, `option`, value by default', () =>
 
 // ---- the tree
 const bins = () => new Set(fs.readdirSync(path.join(PLUGIN, 'bin')))
-const defaults = () => Object.fromEntries(Object.entries(manifest().userConfig).map(([name, option]) => [name, option.default]))
+// The options the table lists: those whose title does not end in (legacy). A boolean with no default is off.
+const defaults = () =>
+  Object.fromEntries(
+    Object.entries(manifest().userConfig)
+      .filter(([, option]) => !/\(legacy\)$/.test(option.title))
+      .map(([name, option]) => [name, option.default ?? (option.type === 'boolean' ? false : undefined)]),
+  )
 
 test('R3 to R9: every page exists and starts with title, description and an integer order', () => {
   for (const rel of PAGES) {

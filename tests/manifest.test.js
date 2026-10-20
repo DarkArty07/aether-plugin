@@ -25,23 +25,17 @@ test('the repository is a marketplace that lists the aether plugin', () => {
   })
 })
 
-test('the manifest has no dependencies, and declares the lanes, harnesses, ops, seats, router, decider, fallback and deadlines options', () => {
+test('the manifest has no dependencies, and declares the superdelegation, harnesses, ops, router, decider, fallback and deadlines options, and the lanes and seats legacy keys', () => {
   const manifest = json(PLUGIN, '.claude-plugin', 'plugin.json')
   assert.equal(manifest.name, 'aether')
   assert.equal('dependencies' in manifest, false)
-  assert.deepEqual(manifest.userConfig, {
-    lanes: {
-      type: 'boolean',
-      title: 'Lanes',
-      description:
-        "Run Aether's calls on agy while its quota lasts. Off by default: agy runs with --dangerously-skip-permissions and spends another plan's quota. Linux only.",
-      default: false,
-    },
+  const { lanes, seats, superdelegation, ...rest } = manifest.userConfig
+  assert.deepEqual(rest, {
     harnesses: {
       type: 'string',
       title: 'Lane harnesses',
       description:
-        "The external harnesses lanes may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates; the order of this option breaks ties between equal priorities and orders the groups with no reading. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
+        "The external harnesses superdelegation may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates, then the cost per task. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
       default: 'agy',
     },
     ops: {
@@ -50,14 +44,6 @@ test('the manifest has no dependencies, and declares the lanes, harnesses, ops, 
       description:
         "Run the swarm's own aether-wt and aether-lane commands in the mod, without a model. On by default. Turn it off when your project's test command needs your shell's environment, which the mod's does not have: the Haiku ops agent then runs them with the Bash tool, as before 0.8.",
       default: true,
-    },
-    seats: {
-      type: 'string',
-      title: 'Design seats',
-      description:
-        "Who takes the Judge, the Writer and the Examiner: native (Aether's own agents, as in 0.8), balanced (Gemini 4 Argon on agy judges and examines; the Writer stays native) or robust (Argon writes the plan, and the Judge stays native on Opus). An external model takes a seat only with lanes on, its harness enabled and its quota left; otherwise the native agent takes it. Only the design seats change: the swarm's models and efforts still follow each task's Tier and Review.",
-      default: 'balanced',
-      options: ['native', 'balanced', 'robust'],
     },
     router: {
       type: 'string',
@@ -90,6 +76,39 @@ test('the manifest has no dependencies, and declares the lanes, harnesses, ops, 
       default: 'haiku=8,jev=3,quota=3',
     },
   })
+  assert.deepEqual(superdelegation, {
+    type: 'boolean',
+    title: 'Superdelegation',
+    description:
+      "Send everything that is not the Lead to other harnesses (agy, grok, ...) while their quota lasts; native Claude is the fallback. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options.",
+  })
+  assert.deepEqual(lanes, {
+    type: 'boolean',
+    title: 'Lanes (legacy)',
+    description: 'Replaced by superdelegation. Read only when superdelegation is not set: on counts as superdelegation on.',
+    default: false,
+  })
+  assert.deepEqual(seats, {
+    type: 'string',
+    title: 'Design seats (legacy)',
+    description: 'Ignored. The design seats follow superdelegation now; native, balanced and robust no longer exist.',
+  })
+})
+
+test('superdelegation is a boolean with no default, and lanes and seats stay only as legacy keys', () => {
+  const { userConfig } = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
+  assert.equal(userConfig.superdelegation.type, 'boolean')
+  assert.equal(userConfig.superdelegation.title, 'Superdelegation')
+  assert.equal('default' in userConfig.superdelegation, false)
+  assert.match(userConfig.superdelegation.description, /^Send everything that is not the Lead to other harnesses/)
+  assert.match(userConfig.superdelegation.description, /Off by default/)
+  assert.equal(userConfig.lanes.title, 'Lanes (legacy)')
+  assert.equal(userConfig.lanes.default, false)
+  assert.equal(userConfig.seats.title, 'Design seats (legacy)')
+  assert.equal(userConfig.seats.type, 'string')
+  assert.equal('options' in userConfig.seats, false)
+  assert.equal('default' in userConfig.seats, false)
+  assert.deepEqual(Object.keys(userConfig).sort(), ['deadlines', 'decider', 'fallback', 'harnesses', 'lanes', 'ops', 'router', 'seats', 'superdelegation'])
 })
 
 test("the Lead agent runs on Sonnet, with no body, so Claude Code's own system prompt stays", () => {
