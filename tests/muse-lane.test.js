@@ -373,7 +373,7 @@ test('stop ends a muse that is running with the processes it started, and the ca
   assert.deepEqual(entries.map((entry) => [entry.harness, entry.call, entry.status]), [['muse', IMPLEMENT, 'stopped']])
 })
 
-test('the real-call script can call Muse through the PATH, and asks for a model when the table has none (US12, R23)', (t) => {
+test('the real-call script can call Muse through the PATH, with the model named or the table\'s own (US12, R23)', (t) => {
   fs.chmodSync(FAKE_MUSE, 0o755)
   const bin = tempDir(t, 'muse-bin-')
   fs.symlinkSync(FAKE_MUSE, path.join(bin, 'muse'))
@@ -386,7 +386,9 @@ test('the real-call script can call Muse through the PATH, and asks for a model 
   assert.ok(ok.stdout.includes('"ok":true'), ok.stdout)
   t.after(() => fs.rmSync(JSON.parse(ok.stdout.trim().split('\n').pop()).dir, { recursive: true, force: true }))
 
+  // The table has a Muse model, so a call that names none takes the table's first one.
   const bare = spawnSync(process.execPath, [SMOKE, 'muse'], { encoding: 'utf8', env })
-  assert.equal(bare.status, 2)
-  assert.ok(bare.stderr.includes('has no models in the lane table: give one as the second argument'), bare.stderr)
+  assert.equal(bare.status, 0, bare.stdout + bare.stderr)
+  assert.ok(bare.stdout.includes('"model":"muse-wonder-full-1.0"'), bare.stdout)
+  t.after(() => fs.rmSync(JSON.parse(bare.stdout.trim().split('\n').pop()).dir, { recursive: true, force: true }))
 })

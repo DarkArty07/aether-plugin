@@ -56,7 +56,7 @@ Generated on 2026-10-19 from https://artificialanalysis.ai/api/v2/data/llms/mode
 ## Left out
 
 - Excluded, not used: claude `claude-fable-5-1` (`fable`): The owner keeps Fable out until Fable 5.5 (decision A43).
-- No figures: grok `grok-4.7-build-fast`: offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it; muse `muse-wonder-full-1.0`: offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it.
+- No figures: grok `grok-4.7-build-fast`: offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it; muse `muse-wonder-full-1.0`: offered, with no Artificial Analysis entry, so no figures.
 - Superseded, not to be used: grok `grok-4.6`, `grok-4.5` by `grok-4.7`.
 - Out of scope: agy `gpt-oss-120b`: Artificial Analysis lists gpt-oss-120b, released 2025-08-05, before 2026-01-01.
 <!-- models-index:end -->

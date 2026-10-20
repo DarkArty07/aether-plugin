@@ -81,12 +81,22 @@
     },
     "muse": {
       "command": "muse",
-      "maxParallel": 1,
+      "maxParallel": 2,
       "waitSeconds": 540,
       "quotaLifeMinutes": 30,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
       "groups": { "muse": "Muse subscription" },
-      "models": {}
+      "models": {
+        "muse-wonder-full-1.0": {
+          "group": "muse",
+          "replaces": "opus",
+          "roles": ["implementer", "reviewer"],
+          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
+          "aa": { "slug": "muse-wonder-full", "intelligence": 55.8, "terminalBench": 0.57, "checked": "2026-10-19" },
+          "ownerDecision": "«si deja entrar a musewonder full es uno d elos mejores modelos que tiene el harness, ... esta anivel de opus segun yo» (the owner, 2026-10-19). Artificial Analysis names an effort for its only figure of this model, max, which the CLI does not take (low to xhigh), so under rule 3 of the models index it has no figure at an effort it takes; the owner decided it enters anyway, as Opus. Its score at max is 55.8 in intelligence and 0.57 in terminal-bench, against Opus 5.5 at 53.6 and 0.57 at high.",
+          "note": "The one model the Muse CLI lists to the owner's account (model/list of muse serve), given by Meta only on the Power and Maximum plans: an account without the plan is refused and the call runs native. Called for real on 2026-10-19 through this adapter (muse 1.4.11): clean, structured answer, the sandbox runs, and two calls at once live together. Aether's xhigh runs at Muse's high."
+        }
+      }
     }
   }
 }

@@ -10,7 +10,7 @@
 | Where | What |
 |---|---|
 | `lib/harness/muse.js`, `lib/harness/index.js`, `tests/fixtures/fake-muse.js` | The adapter for `muse exec --json` and the registry's fifth name. The command line keeps the sandbox on, contributor mode off and no foreign personal context; `parse` reads the JSONL records and gives a clean answer, the object a role asked for, or the reason of the failure, plus the usage. A simulated `muse` runs every test: nothing in the repository calls Muse. |
-| `config/lanes.json`, `plugin.json`, `docs/guide/options.md` | The `muse` entry of the table (`maxParallel` 1, no models) and the `harnesses` option naming it. |
+| `config/lanes.json`, `plugin.json`, `docs/guide/options.md` | The `muse` entry of the table (`maxParallel` 2, one model: `muse-wonder-full-1.0`, by the owner's decision) and the `harnesses` option naming it. |
 | `lib/lane-calls.js`, `lib/lane-marks.js` | Two small changes for the quota by observation: `runCall` parses before it reads the quota after the call, and `liftable` ignores a reading older than the mark. |
 | `hooks/panel-view.mjs`, `hooks/panel-layout.mjs`, `tests/fixtures/panel/` | Muse in the panel's data and view, in the same change as the registry because the conformance test compares both lists. |
 | `config/models/profiles.json`, `config/prices.json`, `scripts/build-models-index.js` | The profiles and prices of `muse-spark-1.3`, `muse-wonder-1.0` and `muse-wonder-full-1.0`, and the name `muse` in the index script (not yet in its default list). |
@@ -29,7 +29,7 @@
 
 The steps below are the Lead's (L1 to L4 of the plan, D13). The swarm does not have the `paid-call` grant and does not call Muse.
 
-- **L1, the first real call.** Run `aether-autonomy check paid-call`. With `covered: true`, run `node scripts/lane-smoke.js muse muse-spark-1.3 --effort low`; the table has no Muse models, so the model goes explicit. Without the grant, the exact command goes to «Espera tu sí» and L2 stays pending.
+- **L1, the first real call.** Done on 2026-10-19 with the owner's grant: `muse-wonder-full-1.0` and `muse-spark-1.3` answered clean through the adapter; the record is in `specs/008-muse-harness/evidence/real-call.md`.
 - **L2, the record of that call.** Save it in `specs/008-muse-harness/evidence/`: command, answer, usage, and the real shape of `allowance`, of the failure object and of the tools in `--json`. If the shape differs from the assumed one, fix `muse.js` and its tests to follow the real one.
 - **L3, the listing, prices and models.** Capture `model/list` of `muse serve` (no cost), check the prices against Meta's pages, and, with `ARTIFICIAL_ANALYSIS_API_KEY`, add the measured models to `config/lanes.json`, regenerate the index (`node scripts/build-models-index.js --harnesses claude,agy,grok,muse --write`) and add `muse` to `DEFAULT_HARNESSES`. Without the key the table stays without Muse models.
 - **L4, the close.** Run `npm run check`, check the four places of the version, and leave the report. The merge, the push, the tag and `claude plugin update` are the owner's.
@@ -38,8 +38,8 @@ What was not measured, and is assumed from the MSP schema (spec R27):
 
 - The real shape of `allowance` in `run.usage` and of the object in `run.terminal.failed`. Until then the quota of Muse is unknown unless a call brought a readable `allowance`.
 - Whether `--output-schema` takes the schemas of the roles. If not, every structured call fails with `exit 2` and runs on the native agent, and the fix is `schemaInPrompt = true` in the adapter.
-- The largest prompt a positional argument holds, whether the sandbox starts under WSL2, and whether the subscription covers `muse exec`. Each failure is a failure of the call, never a question.
-- Whether two `muse exec` in different worktrees live with the shared SQLite index; `maxParallel` is 1 until it is seen.
+- The largest prompt a positional argument holds. The sandbox starts under WSL2 and the subscription covers `muse exec`, as the real calls showed.
+- Two `muse exec` in different worktrees lived together in a real test; `maxParallel` is 2.
 - The prices come from a web summary, not from the pages.
 
 The proposals the plan did not build are in its `Proposals` section; the first is to read Muse's quota before the first call with `muse serve`.

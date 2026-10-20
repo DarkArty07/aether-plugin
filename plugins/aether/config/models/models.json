@@ -385,8 +385,8 @@
       "maker": "Meta",
       "effortVia": "flag",
       "efforts": ["minimal","low","medium","high","xhigh"],
-      "lane": null,
-      "note": "offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it",
+      "lane": {"roles":["implementer","reviewer"],"replaces":"opus"},
+      "note": "offered, with no Artificial Analysis entry, so no figures",
       "profile": {
         "purpose": "Flagship coding model available only in Muse Code on the Power Usage and Maximum Usage plans.",
         "contextTokens": 1048576,

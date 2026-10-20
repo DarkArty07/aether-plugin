@@ -155,6 +155,11 @@ test('a run with no record or a bad exit says so', (t) => {
   const { muse } = build(t)
   assert.equal(run(muse, out(completed(ANSWER)), 1).reason, 'exit 1')
   assert.equal(run(muse, '', 2, 'error: bad flag\nmore').reason, 'exit 2: error: bad flag')
+  // The stderr of real failures (measured): Muse's own notices come first, and the error after them.
+  const notices = 'muse: workspace root: /tmp/work (cwd default)\nmuse: Agent delegation: auto unavailable: workspace is untrusted.\n'
+  assert.equal(run(muse, '', 1, `${notices}missing meta credentials: run \`muse login\` or set META_API_KEY\n`).reason, 'exit 1: missing meta credentials: run `muse login` or set META_API_KEY')
+  assert.equal(run(muse, '', 1, 'muse: local session messaging disabled: session logging is required\nfailed to fetch model catalog: authentication failed\n').reason, 'exit 1: failed to fetch model catalog: authentication failed')
+  assert.equal(run(muse, '', 143, notices).reason, 'exit 143: muse: workspace root: /tmp/work (cwd default)', 'a run that only wrote notices keeps the first one')
   assert.equal(run(muse, '', null).reason, 'exit unknown')
   assert.equal(run(muse, 'hello, not records\n', 0).reason, 'unreadable output')
   assert.equal(run(muse, out(completed('   ')), 0).reason, 'no result')
@@ -168,6 +173,23 @@ test('the real capture of the echo provider reads: a completed turn whose text i
   const result = muse.parse({ stdout: capture, stderr: '', exitCode: 0 }, { required: [] })
   assert.deepEqual([result.clean, result.reason], [false, 'no structured output'])
   assert.deepEqual([result.usage.input, result.usage.total, result.usage.allowance], [0, 0, null])
+})
+
+// A real call (2026-10-19, muse 1.4.11, muse-wonder-full-1.0 at low, asked to write a file and answer with an object):
+// exit 0 in 12 s, the object as the text of the terminal record, and the `allowance` Muse itself reported, in snake_case.
+test('the real capture of a Muse call reads: a clean answer, its usage, and the quota Muse reported', (t) => {
+  const real = Date.parse('2026-10-20T00:13:30Z')
+  const { dataDir, muse } = build(t, { now: () => real })
+  const capture = fs.readFileSync(path.join(__dirname, 'fixtures', 'muse', 'exec-json-real.jsonl'), 'utf8')
+  const result = muse.parse({ stdout: capture, stderr: 'muse: workspace root: /tmp/work (cwd default)\nmuse: Agent delegation: auto unavailable: workspace is untrusted.\n', exitCode: 0 }, { required: ['status', 'file'] })
+  assert.deepEqual([result.clean, result.reason, result.structured], [true, null, { file: 'hello.txt', status: 'done' }])
+  assert.deepEqual([result.usage.input, result.usage.output, result.usage.thinking, result.usage.cacheRead, result.usage.total], [53722, 144, 57, 26740, 53866])
+  assert.deepEqual(result.usage.models.map((m) => [m.model, m.calls]), [['muse-wonder-full-1.0', 2]])
+  assert.equal(fs.existsSync(observedFile(dataDir)), true)
+  const windows = muse.quota().groups.muse.windows
+  near(windows['5h'].remaining, 1)
+  near(windows.weekly.remaining, 0.94)
+  assert.deepEqual([windows['5h'].resetsAt, windows.weekly.resetsAt], ['2026-10-20T05:13:14.000Z', '2026-10-26T00:00:00.000Z'])
 })
 
 test('quota is unknown until a call has brought an allowance, and never throws', (t) => {

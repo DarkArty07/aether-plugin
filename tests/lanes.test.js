@@ -211,7 +211,11 @@ test('laneFor maps a native call to its lane model and level, and keeps max and 
 })
 
 test('a role left out of a model turns that lane off', (t) => {
-  const file = writeConfig(t, (c) => (c.harnesses.agy.models['claude-opus-5-5'].roles = ['implementer']))
+  // Muse's one model also replaces Opus as a reviewer, so its role goes too.
+  const file = writeConfig(t, (c) => {
+    c.harnesses.agy.models['claude-opus-5-5'].roles = ['implementer']
+    c.harnesses.muse.models['muse-wonder-full-1.0'].roles = ['implementer']
+  })
   assert.equal(lanes.laneFor(lanes.loadConfig(file), 'reviewer', 'opus', 'xhigh'), null)
 })
 
@@ -715,13 +719,19 @@ test('usable follows the rule of lane-order: a balance that is unknown is used u
   assert.equal(lanes.usable(window(0.05), 0.05), false)
 })
 
-test('the shipped lane table has a muse harness with one lane at a time and no models until Artificial Analysis measures one', () => {
+test('the shipped lane table has a muse harness with two lanes at a time and the one model its CLI lists, which replaces Opus by the owner\'s decision', () => {
   const config = lanes.loadConfig(lanes.CONFIG_FILE)
   const muse = config.harnesses.muse
-  assert.deepEqual([muse.command, muse.maxParallel, muse.quotaLifeMinutes, muse.waitSeconds], ['muse', 1, 30, 540])
+  assert.deepEqual([muse.command, muse.maxParallel, muse.quotaLifeMinutes, muse.waitSeconds], ['muse', 2, 30, 540])
   assert.deepEqual(muse.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200 })
   assert.deepEqual(muse.groups, { muse: 'Muse subscription' })
-  assert.deepEqual(muse.models, {})
+  // The CLI lists one model to the owner's account (harness-models.json), and Meta gives it only on the Power and Maximum plans.
+  assert.deepEqual(Object.keys(muse.models), ['muse-wonder-full-1.0'])
+  const wonder = muse.models['muse-wonder-full-1.0']
+  assert.deepEqual([wonder.group, wonder.replaces, wonder.roles], ['muse', 'opus', ['implementer', 'reviewer']])
+  assert.deepEqual(wonder.levels, { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' })
+  assert.equal(wonder.aa.slug, 'muse-wonder-full')
+  assert.match(wonder.ownerDecision, /nivel de opus|anivel de opus/, 'the model is in the table by the owner\'s decision, written in its entry')
   assert.equal(JSON.stringify(config.designSeats).includes('muse'), false, 'Muse takes no design seat')
 })
 
@@ -731,12 +741,15 @@ test('muse is a valid value of the harnesses option, in the owner order, without
   assert.deepEqual(lanes.enabledHarnesses({ AETHER_LANE_HARNESSES: 'gork' }), ['agy'])
 })
 
-test('a Muse model of a synthetic table gives the swarm a candidate after agy, in the order enabled', () => {
-  const config = JSON.parse(JSON.stringify(lanes.loadConfig(lanes.CONFIG_FILE)))
-  config.harnesses.muse.models = { 'muse-spark-1.3': { group: 'muse', replaces: 'sonnet', roles: ['implementer'], levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' } } }
+test('the Muse model of the shipped table gives the swarm an Opus candidate after agy, in the order enabled, and only when muse is enabled', () => {
+  const config = lanes.loadConfig(lanes.CONFIG_FILE)
   const args = lanes.lanesArgs(config, { installed: () => true, enabled: ['agy', 'muse'] })
   assert.deepEqual(args.harnesses, ['agy', 'muse'])
-  assert.deepEqual(args.calls.implementer.sonnet.map((c) => c.harness), ['agy', 'muse'])
-  assert.equal(args.maxParallelByHarness.muse, 1)
+  assert.deepEqual(args.calls.implementer.opus.map((c) => [c.harness, c.model]), [['agy', 'claude-opus-5-5'], ['muse', 'muse-wonder-full-1.0']])
+  assert.deepEqual(args.calls.reviewer.opus.map((c) => c.harness), ['agy', 'muse'])
+  assert.equal(args.calls.supervisor.sonnet.some((c) => c.harness === 'muse'), false, 'it replaces Opus, not Sonnet')
+  assert.equal(args.maxParallelByHarness.muse, 2)
+  const without = lanes.lanesArgs(config, { installed: () => true, enabled: ['agy'] })
+  assert.equal(JSON.stringify(without).includes('muse'), false)
 })
 

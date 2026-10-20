@@ -270,7 +270,10 @@ function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = p
       if (exitCode !== 0) {
         // An exit that is not a number, such as none at all or a signal, is not known to be 0.
         const code = Number.isInteger(exitCode) ? exitCode : 'unknown'
-        const line = stderr.split('\n').map((item) => item.trim()).find((item) => item !== '')
+        // Muse writes its own notices to stderr on every run, each starting with `muse: ` (the workspace root, that
+        // delegation is unavailable), before an error of its own (seen in real calls): the first line that is not one.
+        const lines = stderr.split('\n').map((item) => item.trim()).filter((item) => item !== '')
+        const line = lines.find((item) => !item.startsWith('muse: ')) ?? lines[0]
         return failed(`exit ${code}${line === undefined ? '' : `: ${brief(line, LINE_LIMIT)}`}`)
       }
       if (terminal === null) return failed('unreadable output')

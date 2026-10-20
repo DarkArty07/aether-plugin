@@ -147,7 +147,7 @@
       'lanes.f1': '<strong>Apagados por defecto</strong>Los carriles corren solo con la opción <code>lanes</code> activada, y solo en Linux.',
       'lanes.f2': '<strong>La cuota decide el orden</strong>Nunca el nivel. Primero van los grupos con una lectura de cuota, el más en riesgo de perderse el primero; una reserva del 5 % deja fuera al grupo que la toca.',
       'lanes.f3': '<strong>Sin lectura, se prueba</strong>Codex y Cursor no reportan cuota, y Muse solo la reporta después de una llamada: se prueban después, hasta que una llamada falla por cuota. Entonces la llamada sigue con el siguiente.',
-      'lanes.f4': '<strong>Qué está probado</strong>agy fue el primero y Grok se probó con llamadas reales el 2026-10-13. Los adaptadores de Codex, Cursor y Muse aún no han hecho ninguna llamada real.',
+      'lanes.f4': '<strong>Qué está probado</strong>agy fue el primero y Grok se probó con llamadas reales el 2026-10-13. Muse se probó con llamadas reales el 2026-10-19. Los adaptadores de Codex y Cursor aún no han hecho ninguna llamada real.',
 
       'inst.tag': '// 07 · INSTALAR Y AUTORÍA',
       'inst.title': 'Instala y<br><em>empieza</em>',
@@ -310,7 +310,7 @@
       'lanes.f1': '<strong>Off by default</strong>Lanes run only with the <code>lanes</code> option on, and only on Linux.',
       'lanes.f2': '<strong>Quota decides the order</strong>Never the level. Groups with a quota reading go first, the one most at risk of being lost first; a 5% reserve leaves out any group that touches it.',
       'lanes.f3': '<strong>No reading, try it</strong>Codex and Cursor report no quota, and Muse reports it only after a call: they are tried after, until a call fails for quota. The call then goes on to the next.',
-      'lanes.f4': '<strong>What is proven</strong>agy was first and Grok was checked with real calls on 2026-10-13. The Codex, Cursor and Muse adapters have run no real call yet.',
+      'lanes.f4': '<strong>What is proven</strong>agy was first and Grok was checked with real calls on 2026-10-13. Muse was checked with real calls on 2026-10-19. The Codex and Cursor adapters have run no real call yet.',
 
       'inst.tag': '// 07 · INSTALL AND AUTHORSHIP',
       'inst.title': 'Install and<br><em>start</em>',
