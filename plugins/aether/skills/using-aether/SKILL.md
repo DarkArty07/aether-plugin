@@ -24,7 +24,7 @@ These work with you:
 - the **design seats**: the Judge, the Writer and the Examiner may each be taken by a stronger model of another harness, such as Gemini 4 Argon on agy, round by round, with the native agent as the fallback. They run inside `/aether:design`, which you launch with the intent card you write (see "Designing");
 - **delegates**: one subagent for each delegate task, on the model you choose;
 - the **swarm** (the `aether:swarm` skill) builds approved plans in parallel;
-- **lanes** run the swarm's calls on other coding plans while their quota lasts.
+- **lanes** run the swarm's calls on other coding plans while their quota lasts, when the owner has turned `superdelegation` on.
 
 The owner sits above all of you. The owner confirms your understanding of what they want, may give you permission to work for hours, and reviews the brief at the end. Their reviews should be as few as possible. Only three things go to the owner:
 - a decision their intent does not cover, with no default you can defend from their words;
