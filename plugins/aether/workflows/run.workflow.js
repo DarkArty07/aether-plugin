@@ -921,7 +921,6 @@ async function work(unit, task) {
       continue
     }
 
-    round.reviewEffort = task.review
     const checked = await supervise(unit, task, rung, report, used, model, attempt.family)
     if (checked.blocked !== undefined) return finish(unit, 'blocked', `lane: ${checked.blocked}`)
     round.reviewProvider = checked.provider
