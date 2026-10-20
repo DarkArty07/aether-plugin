@@ -3,7 +3,7 @@
 - **Date:** 2026-10-19. It follows [the 0.12.8 handoff](2026-10-19-lead-xhigh-0.12.8.md).
 - **From:** the Lead, Claude Code on Sonnet 5.5, with a swarm of 14 tasks planned in [the plan](../../specs/008-muse-harness/plan.md) and [its tasks](../../specs/008-muse-harness/tasks.md). This page is written by task 14, before the Lead's own steps; the Lead corrects section 3 when it closes them.
 - **To:** the next session.
-- **Repository state:** the work is on the branch `feat/muse-harness`. Nothing is merged to `main`, pushed, tagged or published, and the owner's installed plugin stays at 0.12.5 until they run `claude plugin update aether@aether-plugin`. The tag is `aether--v0.13.0`, made on `main` after the merge.
+- **Repository state:** the work was merged to `main`, tagged `aether--v0.13.0` and pushed on 2026-10-20, on the owner's word, after the patch 0.12.8 (the Lead at `xhigh`, A63). The owner's installed plugin is updated with `claude plugin update aether@aether-plugin`, and a session started after that runs it.
 
 ## 1. What was done
 
