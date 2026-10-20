@@ -1410,7 +1410,10 @@ test('R21: lanes.md holds the rule: the switch, the points, the tolerance, the o
 test('R21: the guide pages of this task name neither the retired profiles nor the retired variables', () => {
   for (const page of ['lanes', 'design-seats', 'options', 'router']) {
     const text = fs.readFileSync(path.join(__dirname, '..', 'docs', 'guide', `${page}.md`), 'utf8')
-    for (const pattern of [/`balanced`/, /`robust`/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]) assert.doesNotMatch(text, pattern, `${page}.md still says ${pattern}`)
+    // The same patterns as Task 18's GONE; lanes.md alone may name `seats` (the migration says it is ignored).
+    const gone = [/`balanced`/, /`robust`/, /\bseats option\b/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
+    if (page !== 'lanes') gone.push(/`seats`/)
+    for (const pattern of gone) assert.doesNotMatch(text, pattern, `${page}.md still says ${pattern}`)
   }
 })
 ```
@@ -1945,11 +1948,13 @@ En `tests/docs-facts.test.js`, que ya tiene `FILES`, `read`, `proseLines` y `rep
 
 ```js
 const GONE = [/`balanced`/, /`robust`/, /\bseats option\b/, /`seats`/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
+const HISTORY = ['docs/changelog.md', 'docs/contributing.md', 'docs/roadmap.md'] // name what was retired as history (roadmap.md: the 0.12.3 summary says `seats` selectors)
+const MIGRATION = 'docs/guide/lanes.md' // the one page that may name `seats`: the migration says it is ignored
 const prose = (rel) => proseLines(read(rel)).join('\n')
 
 test('R21: no page of the guide or the README names the retired profiles or the retired variables', () => {
-  for (const rel of FILES.filter((p) => !['docs/changelog.md', 'docs/contributing.md'].includes(p))) {
-    for (const pattern of GONE) assert.doesNotMatch(prose(rel), pattern, `${rel} still says ${pattern}`)
+  for (const rel of FILES.filter((p) => !HISTORY.includes(p))) {
+    for (const pattern of GONE.filter((g) => rel !== MIGRATION || g.source !== '`seats`')) assert.doesNotMatch(prose(rel), pattern, `${rel} still says ${pattern}`)
   }
 })
 
@@ -1966,7 +1971,7 @@ test('R21: every page that gives the default of superdelegation in the form of R
 })
 ```
 
-(`GONE` no se aplica a `docs/changelog.md` ni a `docs/contributing.md`, que nombran lo retirado como historia; `docs/decisions.md` es historia pero su prosa no repite esos nombres fuera de la tabla de decisiones, y si lo hace la tarea lo exceptúa con su razón en la cabecera de la prueba.) En `tests/site.test.js`:
+(`GONE` no se aplica a `docs/changelog.md`, `docs/contributing.md` ni `docs/roadmap.md`, que nombran lo retirado como historia (el resumen de 0.12.3 del roadmap dice `seats`); `` `seats` `` se admite solo en `docs/guide/lanes.md`, por su migración; los patrones son los mismos que usa la Task 8 sobre las páginas de la guía; `docs/decisions.md` es historia pero su prosa no repite esos nombres fuera de la tabla de decisiones, y si lo hace la tarea lo exceptúa con su razón en la cabecera de la prueba.) En `tests/site.test.js`:
 
 ```js
 test('R21: the site says superdelegation where it said lanes and the profiles, and names no retired profile', () => {
