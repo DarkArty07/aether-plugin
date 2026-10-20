@@ -708,7 +708,10 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   const readings = {}
   const harnesses = {}
   for (const name of enabledNames) {
-    Object.assign(harnesses, harnessViews(config, [name], { dataDir, now, latest, onRead: ({ groups }) => { readings[name] = groups } }))
+    const onRead = ({ groups }) => {
+      readings[name] = groups
+    }
+    Object.assign(harnesses, harnessViews(config, [name], { dataDir, now, latest, onRead }))
   }
   const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses, offered: (name, model, effort) => offeredByListing(name, model, effort) })
   if (chosen.native) {
