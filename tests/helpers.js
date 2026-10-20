@@ -25,7 +25,7 @@ function run(command, args, cwd, env = {}) {
   const r = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
-    env: { ...process.env, AETHER_LANES_CONFIG: NO_LANES_CONFIG, AETHER_LANES: 'on', AETHER_SUPERDELEGATION: 'on', ...env },
+    env: { ...process.env, AETHER_LANES_CONFIG: NO_LANES_CONFIG, AETHER_SUPERDELEGATION: 'on', ...env },
   })
   if (r.error) throw r.error
   return r

@@ -141,7 +141,7 @@ test('a refusal for the individual quota arrives whole in the detail, for the ro
 
 test('the native effort of the rung reaches the CLI without going through the levels of the lane table (R16)', async (t) => {
   const s = setup(t)
-  s.config.harnesses.agy.models['gemini-3.8-flash'].levels.medium = 'low'
+  s.config.harnesses.agy.models['gemini-3.8-flash'].levels = { medium: 'low' }
   const out = await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "ok"}')
   assert.equal(out.status, 'ok', out.detail)
   assert.equal(out.modelArg, 'gemini-3.8-flash-medium', 'the table would say low: the router does not read it')

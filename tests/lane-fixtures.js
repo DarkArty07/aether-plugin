@@ -26,7 +26,6 @@ function laneEnv(t, { command = FAKE_AGY, quota = null, mutate = null } = {}) {
   fs.writeFileSync(configFile, JSON.stringify(config))
   const env = {
     AETHER_LANES_CONFIG: configFile,
-    AETHER_LANES: 'on',
     AETHER_SUPERDELEGATION: 'on',
     AETHER_DATA_DIR: path.join(dir, 'data'),
     HOME: path.join(dir, 'home'),

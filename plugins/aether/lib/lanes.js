@@ -1,6 +1,6 @@
 'use strict'
 
-// The lane library: the table of external harnesses that take over native calls, harness detection,
+// The lane library: the table of external harnesses and their models, harness detection,
 // the quota and token readings they leave, the lane log, and the kills that stop a lane's processes:
 // by the group of a pid file, and by the marker in their environment.
 
@@ -15,30 +15,15 @@ const ROLES = ['implementer', 'supervisor', 'reviewer']
 // The design seats a lane model may take as well (lib/seats.js), and each seat's timeout when its harness names none.
 const SEATS = ['judge', 'writer', 'examiner']
 const SEAT_TIMEOUTS = { judge: 1200, writer: 2700, examiner: 1800 }
-// The choices of the plugin's seats option, and the one taken when it names none of them.
-const SEAT_CHOICES = ['native', 'balanced', 'robust']
-const DEFAULT_SEATS = 'balanced'
-const NATIVE_MODELS = ['haiku', 'sonnet', 'opus']
 // A model id is written into the lane choice (lib/lane-choice.js, hooks/ops-command.mjs), where ':' and '/' separate
 // the fields and the items; those copies take only these characters, so the table takes no more.
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
-const LEVEL_NAMES = ['low', 'medium', 'high', 'xhigh']
-const LEVEL_VALUES = ['low', 'medium', 'high']
-const CALLED_ROLES = ['implementer', 'supervisor', 'reviewer']
 const DAY_MS = 24 * 3600 * 1000
 const KILL_WAIT_MS = 2000
 const KILL_POLL_MS = 50
 
 function configPath() {
   return process.env.AETHER_LANES_CONFIG || CONFIG_FILE
-}
-
-// Whether lanes may run at all: the plugin's lanes option reached this process as AETHER_LANES=on,
-// and the platform is Linux (agy's command sessions are killed by process group and /proc).
-function lanesEnabled(env = process.env, platform = process.platform) {
-  if (env.AETHER_LANES !== 'on') return { on: false, reason: 'option' }
-  if (platform !== 'linux') return { on: false, reason: 'platform' }
-  return { on: true, reason: null }
 }
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -53,12 +38,6 @@ function validateModel(harness, id, model, groups) {
   if (typeof model.group !== 'string' || !Object.hasOwn(groups, model.group)) fail('group', 'must name one of the groups')
   if (!Array.isArray(model.roles) || model.roles.length === 0 || !model.roles.every((role) => ROLES.includes(role) || SEATS.includes(role))) {
     fail('roles', 'must be a non-empty list of implementer, supervisor, reviewer, judge, writer or examiner')
-  }
-  // A model that takes swarm calls replaces a native model; a model that only takes seats replaces none.
-  const swarm = model.roles.some((role) => ROLES.includes(role))
-  if ((swarm || model.replaces !== undefined) && !NATIVE_MODELS.includes(model.replaces)) fail('replaces', 'must be haiku, sonnet or opus')
-  if (!isObject(model.levels) || !LEVEL_NAMES.every((level) => LEVEL_VALUES.includes(model.levels[level]))) {
-    fail('levels', 'must map low, medium, high and xhigh to low, medium or high')
   }
 }
 
@@ -112,50 +91,6 @@ function validateConfig(config) {
       modelOwners.set(id, name)
     }
   }
-  validateSeats(config)
-}
-
-// The design seats of each choice: per seat, its external models in order of preference, written
-// <harness>/<model>, or false for an examiner that does not run. The native agent always comes last
-// and is not written. A choice or a seat the table leaves out is native.
-function validateSeats(config) {
-  if (config.designSeats === undefined) return
-  if (!isObject(config.designSeats)) throw new Error('designSeats must be an object')
-  for (const [choice, seats] of Object.entries(config.designSeats)) {
-    const where = `designSeats.${choice}`
-    if (!SEAT_CHOICES.includes(choice)) throw new Error(`${where}: the choice must be native, balanced or robust`)
-    if (!isObject(seats)) throw new Error(`${where} must be an object`)
-    for (const [seat, list] of Object.entries(seats)) {
-      if (!SEATS.includes(seat)) throw new Error(`${where}: ${seat} is not judge, writer or examiner`)
-      if (list === false) {
-        if (seat !== 'examiner') throw new Error(`${where}.${seat}: only the examiner can be off`)
-        continue
-      }
-      if (!Array.isArray(list)) throw new Error(`${where}.${seat} must be a list of <harness>/<model>`)
-      for (const item of list) {
-        const parts = typeof item === 'string' ? item.split('/') : []
-        if (parts.length !== 2 || parts[0] === '' || parts[1] === '') throw new Error(`${where}.${seat}: ${JSON.stringify(item)} must be <harness>/<model>`)
-        const [harness, model] = parts
-        const entry = Object.hasOwn(config.harnesses, harness) && Object.hasOwn(config.harnesses[harness].models, model) ? config.harnesses[harness].models[model] : null
-        if (!entry) throw new Error(`${where}.${seat}: ${item} is not a model in the table`)
-        if (!entry.roles.includes(seat)) throw new Error(`${where}.${seat}: ${item} does not list ${seat} in its roles`)
-      }
-    }
-  }
-}
-
-// The seats choice that reached this process as AETHER_SEATS: native, balanced or robust. An empty or
-// unknown value takes the default; known is false for an unknown one, which session start reports.
-function seatsChoice(env = process.env) {
-  const value = String(env.AETHER_SEATS ?? '').trim().toLowerCase()
-  if (SEAT_CHOICES.includes(value)) return { name: value, known: true }
-  return { name: DEFAULT_SEATS, known: value === '' }
-}
-
-// A seat's external models under a choice, in order of preference, or false for an examiner that does not run.
-function seatList(config, choice, seat) {
-  const list = config?.designSeats?.[choice]?.[seat]
-  return list === false ? false : Array.isArray(list) ? list : []
 }
 
 // A seat's timeout on a harness, in seconds.
@@ -201,23 +136,6 @@ function commandInstalled(command, env = process.env) {
   return commandPath(command, env) !== null
 }
 
-// The lane for a native call: the first model that replaces model and serves role, at effort's level.
-function laneFor(config, role, model, effort) {
-  if (!config || !ROLES.includes(role) || !LEVEL_NAMES.includes(effort)) return null
-  for (const [harness, settings] of Object.entries(config.harnesses)) {
-    for (const [id, entry] of Object.entries(settings.models)) {
-      if (entry.replaces === model && entry.roles.includes(role)) {
-        return { harness, model: id, group: entry.group, agyModel: `${id}-${entry.levels[effort]}` }
-      }
-    }
-  }
-  return null
-}
-
-function waitRounds(harness, role) {
-  return Math.ceil(harness.timeouts[role] / harness.waitSeconds) + 1
-}
-
 // The known names in a comma-separated list: trimmed, lowercased, each once, in order.
 function harnessNames(text) {
   const names = []
@@ -232,64 +150,6 @@ function harnessNames(text) {
 function enabledHarnesses(env = process.env) {
   const names = harnessNames(env.AETHER_LANE_HARNESSES)
   return names.length > 0 ? names : ['agy']
-}
-
-// The arguments the run takes from the enabled harnesses that are installed, or null when none gives a call.
-// calls[role][model] lists every candidate for that native call: each model of an enabled, installed harness
-// that serves the role and replaces the native model, the harnesses in the order enabled and each one's models
-// in the order of the table. Which candidate takes a call is decided later, from the quota (lane-order.js).
-// harness is the first harness that gave a call; harnesses lists each one that did. A role's wait is the
-// largest among the listed harnesses that serve it, or among all listed when none does.
-function lanesArgs(config, { installed, enabled = enabledHarnesses() }) {
-  if (!config) return null
-  const calls = {}
-  const listed = []
-  for (const name of enabled) {
-    const harness = Object.hasOwn(config.harnesses, name) ? config.harnesses[name] : null
-    if (!harness || !installed(name, harness)) continue
-    let gave = false
-    for (const role of CALLED_ROLES) {
-      for (const [id, entry] of Object.entries(harness.models)) {
-        if (!entry.roles.includes(role)) continue
-        calls[role] = calls[role] || {}
-        calls[role][entry.replaces] = calls[role][entry.replaces] || []
-        calls[role][entry.replaces].push({ model: id, group: entry.group, harness: name })
-        gave = true
-      }
-    }
-    if (gave) listed.push(name)
-  }
-  if (listed.length === 0) return null
-  const waitOf = (role) => {
-    const serving = listed.filter((name) => Object.values(config.harnesses[name].models).some((entry) => entry.roles.includes(role)))
-    const pool = serving.length > 0 ? serving : listed
-    return Math.max(...pool.map((name) => waitRounds(config.harnesses[name], role)))
-  }
-  return {
-    harness: listed[0],
-    harnesses: listed,
-    maxParallel: config.harnesses[listed[0]].maxParallel,
-    maxParallelByHarness: Object.fromEntries(listed.map((name) => [name, config.harnesses[name].maxParallel])),
-    waits: { implementer: waitOf('implementer'), supervisor: waitOf('supervisor'), reviewer: waitOf('reviewer') },
-    calls,
-  }
-}
-
-// The enabled harnesses that give the run no call, each with the reason: no entry in the table, a command
-// that is not installed, no models yet, or models that serve no swarm role. Compile names them, so that no
-// harness the owner enabled stays dry without notice.
-function idleHarnesses(config, { installed, enabled = enabledHarnesses() }) {
-  if (!config) return []
-  const listed = lanesArgs(config, { installed, enabled })?.harnesses ?? []
-  return enabled
-    .filter((name) => !listed.includes(name))
-    .map((name) => {
-      const harness = Object.hasOwn(config.harnesses, name) ? config.harnesses[name] : null
-      if (!harness) return { name, reason: 'has no entry in the lane table' }
-      if (!installed(name, harness)) return { name, reason: `is not installed: ${harness.command} was not found` }
-      if (Object.keys(harness.models).length === 0) return { name, reason: 'has no models in the lane table yet' }
-      return { name, reason: 'takes no swarm call: none of its models serves implementer, supervisor or reviewer' }
-    })
 }
 
 // FNV-1a, 32-bit, over UTF-16 code units, then the length.
@@ -608,20 +468,12 @@ module.exports = {
   CONFIG_FILE,
   ROLES,
   SEATS,
-  SEAT_CHOICES,
-  DEFAULT_SEATS,
   configPath,
-  lanesEnabled,
   loadConfig,
   commandPath,
   commandInstalled,
   enabledHarnesses,
-  idleHarnesses,
-  seatsChoice,
-  seatList,
   seatTimeout,
-  laneFor,
-  lanesArgs,
   digest,
   canonicalJson,
   resultDigest,
