@@ -29,3 +29,9 @@ test('the swarm skill and the session-start note name the skill', () => {
   assert.ok(!swarm.includes('the `using-aether` skill says'))
   assert.ok(read('bin', 'aether-session-start').includes('load the aether:autonomous-runs skill, then read'))
 })
+
+test('the swarm skill reads the lanes counts without dry groups', () => {
+  const swarm = fs.readFileSync(path.join(PLUGIN, 'skills', 'swarm', 'SKILL.md'), 'utf8')
+  assert.ok(swarm.includes('`overflow`'))
+  assert.ok(!/each wave's `dry` groups/.test(swarm))
+})
