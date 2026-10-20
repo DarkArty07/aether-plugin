@@ -6,7 +6,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { PLAN_BIN, makeRepo, writePlan, runBin, tempDir, NO_LANES_CONFIG, compile, commitIn } = require('./helpers.js')
 const { task, plan, specKitTasks } = require('./plan-fixtures.js')
-const { CONFIG_FILE, loadConfig, lanesArgs } = require('../plugins/aether/lib/lanes.js')
+const { CONFIG_FILE, loadConfig } = require('../plugins/aether/lib/lanes.js')
+const { runArgs } = require('../plugins/aether/lib/superdelegation.js')
+const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 
 test('check prints the waves of a valid plan', (t) => {
   const repo = makeRepo(t)
@@ -262,13 +264,15 @@ function executable(dir) {
   return exe
 }
 
-test('compile gives the run its lanes when the table and the harness are there, and none with --no-lanes', (t) => {
+test('compile gives the run its lanes when superdelegation is on and the harness is there, and none with --no-lanes', (t) => {
   const repo = makeRepo(t)
   const md = writePlan(repo.dir, plan([task(1)]))
   const file = laneTable(t, executable)
   const on = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file })
   assert.equal(on.status, 0, on.stdout + on.stderr)
-  assert.deepEqual(on.json.lanes, lanesArgs(loadConfig(file), { installed: () => true }))
+  assert.deepEqual(on.json.lanes, runArgs(loadConfig(file), loadPairs().pairs, { installed: () => true, enabled: ['agy'] }))
+  assert.deepEqual(Object.keys(on.json.lanes), ['superdelegation', 'harnesses', 'maxParallelByHarness', 'waits', 'cupo'])
+  assert.deepEqual(on.json.lanes.cupo, { polls: 10, pollSeconds: 60 })
   assert.equal(Object.keys(on.json).pop(), 'lanes')
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(on.json.runDir, 'graph.json'), 'utf8')).lanes, on.json.lanes)
   const off = runBin(PLAN_BIN, ['compile', md, '--no-lanes'], repo.dir, { AETHER_LANES_CONFIG: file })
@@ -313,10 +317,10 @@ test('compile names each enabled harness that gives no call, and why, on stderr'
   const r = runBin(PLAN_BIN, ['compile', md], repo.dir, env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.deepEqual(r.json.lanes.harnesses, ['agy'])
-  assert.ok(r.stderr.includes('aether-plan: lanes: codex is enabled but has no models in the lane table yet\n'), r.stderr)
-  assert.ok(r.stderr.includes('aether-plan: lanes: cursor is enabled but is not installed: cursor-agent was not found\n'), r.stderr)
+  assert.ok(r.stderr.includes('aether-plan: superdelegation: codex is enabled but has no models in the lane table yet\n'), r.stderr)
+  assert.ok(r.stderr.includes('aether-plan: superdelegation: cursor is enabled but is not installed: cursor-agent was not found\n'), r.stderr)
   // grok is installed but not enabled, and agy gives calls: neither is named.
-  assert.ok(!/lanes: (grok|agy) /.test(r.stderr), r.stderr)
+  assert.ok(!/superdelegation: (grok|agy) /.test(r.stderr), r.stderr)
 })
 
 test('compile refuses a broken lane table before writing anything', (t) => {
@@ -331,28 +335,28 @@ test('compile refuses a broken lane table before writing anything', (t) => {
   assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'runs')), false)
 })
 
-test('compile runs native, and says why on stderr, when the lanes option is off', (t) => {
+test('compile runs native, and says why on stderr, when superdelegation is off', (t) => {
   const repo = makeRepo(t)
   const md = writePlan(repo.dir, plan([task(1)]))
   const file = laneTable(t, executable)
   for (const value of ['off', '']) {
-    const r = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_LANES: value })
+    const r = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_SUPERDELEGATION: value })
     assert.equal(r.status, 0, r.stdout + r.stderr)
     assert.equal(r.json.lanes, null)
-    assert.ok(r.stderr.includes("aether-plan: lanes are off: the aether plugin's lanes option is not on\n"), r.stderr)
+    assert.ok(r.stderr.includes("aether-plan: superdelegation is off: the aether plugin's superdelegation option is not on\n"), r.stderr)
   }
-  const quiet = runBin(PLAN_BIN, ['compile', md, '--no-lanes'], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_LANES: 'off' })
+  const quiet = runBin(PLAN_BIN, ['compile', md, '--no-lanes'], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_SUPERDELEGATION: 'off' })
   assert.equal(quiet.status, 0, quiet.stdout + quiet.stderr)
   assert.equal(quiet.json.lanes, null)
-  assert.ok(!quiet.stderr.includes('lanes are off'), quiet.stderr)
+  assert.ok(!quiet.stderr.includes('superdelegation is off'), quiet.stderr)
 })
 
-test('with the lanes option off, a broken lane table is not even read', (t) => {
+test('with superdelegation off, a broken lane table is not even read', (t) => {
   const repo = makeRepo(t)
   const md = writePlan(repo.dir, plan([task(1)]))
   const file = path.join(tempDir(t), 'lanes.json')
   fs.writeFileSync(file, '{')
-  const r = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_LANES: 'off' })
+  const r = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file, AETHER_SUPERDELEGATION: 'off' })
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.equal(r.json.lanes, null)
 })
