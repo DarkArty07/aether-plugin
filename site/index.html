@@ -401,8 +401,8 @@
   <div class="wrap">
     <div class="sec-head reveal">
       <p class="tag" data-i18n="lanes.tag">// 06 · CARRILES</p>
-      <h2 id="h-carriles" class="h2" data-i18n-html="lanes.title">Carriles:<br><em>la cuota de otros planes</em></h2>
-      <p class="intro" data-i18n-html="lanes.intro">Un carril corre las llamadas de Aether en otro plan de código que ya pagas, mientras dure su cuota. Si un harness falta, se queda sin cuota o no arranca, la misma llamada pasa al siguiente candidato, y al agente propio de Aether si no queda ninguno, sin gastar la escalera.</p>
+      <h2 id="h-carriles" class="h2" data-i18n-html="lanes.title">Superdelegation:<br><em>la cuota de otros planes</em></h2>
+      <p class="intro" data-i18n-html="lanes.intro">Con <code>superdelegation</code> activada, todo lo que no es el Lead sale primero a otro plan de código que ya pagas, mientras dure su cuota. Si un harness falta, se queda sin cuota o no arranca, la misma llamada pasa al siguiente candidato, y al agente nativo de Claude si no queda ninguno, sin gastar la escalera.</p>
     </div>
 
     <div class="lanes reveal" id="lanes">
@@ -447,9 +447,9 @@
     </div>
 
     <ul class="facts">
-      <li class="reveal" data-i18n-html="lanes.f1"><strong>Apagados por defecto</strong>Los carriles corren solo con la opción <code>lanes</code> activada, y solo en Linux.</li>
-      <li class="reveal" data-i18n-html="lanes.f2"><strong>La cuota decide el orden</strong>Nunca el nivel. Primero van los grupos con una lectura de cuota, el más en riesgo de perderse el primero; una reserva del 5 % deja fuera al grupo que la toca.</li>
-      <li class="reveal" data-i18n-html="lanes.f3"><strong>Sin lectura, se prueba</strong>Codex y Cursor no reportan cuota, y Muse solo la reporta después de una llamada: se prueban después, hasta que una llamada falla por cuota. Entonces la llamada sigue con el siguiente.</li>
+      <li class="reveal" data-i18n-html="lanes.f1"><strong>Apagada por defecto</strong>Sin activar <code>superdelegation</code>, toda llamada que no es del Lead corre en Claude nativo, con cualquier cuota. Solo corre en Linux.</li>
+      <li class="reveal" data-i18n-html="lanes.f2"><strong>Los puntos piden, la cuota ordena</strong>Cada llamada pide los puntos de inteligencia de su par de Claude, modelo y effort, con 1 punto de tolerancia. Va primero la cuota cuya ventana semanal se renueva antes, y dentro de ella el par más barato por tarea; una reserva del 5 % deja fuera al grupo que la toca.</li>
+      <li class="reveal" data-i18n-html="lanes.f3"><strong>Sin lectura, se prueba</strong>Codex y Cursor no reportan cuota, y Muse solo la reporta después de una llamada: se prueban después, hasta que una llamada falla por cuota. Entonces la llamada sigue con el siguiente. El par de Muse entra por decisión del dueño y va último dentro de su cuota.</li>
       <li class="reveal" data-i18n-html="lanes.f4"><strong>Qué está probado</strong>agy fue el primero y Grok se probó con llamadas reales el 2026-10-13. Muse se probó con llamadas reales el 2026-10-19. Los adaptadores de Codex y Cursor aún no han hecho ninguna llamada real.</li>
     </ul>
   </div>
@@ -476,11 +476,11 @@
         <p class="note note-sm reveal" id="copymsg" aria-live="polite"></p>
 
         <ol class="start reveal">
-          <li><span class="num">#1</span><div><h3 data-i18n="st1.h">Instala</h3><p class="mean" data-i18n-html="st1.t">Una vez. Con <code>--config lanes=true</code> activas los carriles.</p></div></li>
+          <li><span class="num">#1</span><div><h3 data-i18n="st1.h">Instala</h3><p class="mean" data-i18n-html="st1.t">Una vez. Con <code>--config superdelegation=true</code> activas la superdelegación.</p></div></li>
           <li><span class="num">#2</span><div><h3 data-i18n="st2.h">Elige el modo Aether</h3><p class="mean" data-i18n-html="st2.t">El modo se elige por sesión: el Lead es el agente <code>aether:lead</code>, que empieza en Sonnet, y <code>--effort xhigh</code> fija su esfuerzo.</p><pre class="code"><code>claude --agent aether:lead --effort xhigh</code></pre></div></li>
           <li><span class="num">#3</span><div><h3 data-i18n="st3.h">Dile al Lead lo que quieres</h3><p class="mean" data-i18n-html="st3.t">El Lead confirma lo que entendió, escribe la tarjeta de intención y lanza el diseño. Tú revisas el brief.</p></div></li>
         </ol>
-        <p class="req reveal" data-i18n-html="inst.req">REQUISITOS · Claude Code 2.1.294 o posterior · Node.js 22 · git 2.36 o posterior · para los carriles, el CLI de cada harness que actives: <code>agy</code>, <code>codex</code>, <code>grok</code>, <code>cursor-agent</code> o <code>muse</code>.</p>
+        <p class="req reveal" data-i18n-html="inst.req">REQUISITOS · Claude Code 2.1.294 o posterior · Node.js 22 · git 2.36 o posterior · para la superdelegación, el CLI de cada harness que actives: <code>agy</code>, <code>codex</code>, <code>grok</code>, <code>cursor-agent</code> o <code>muse</code>.</p>
       </div>
 
       <aside class="inst-side">
