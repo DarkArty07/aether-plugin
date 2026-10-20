@@ -2,7 +2,7 @@
 
 // Spec 002, R3, R6, R10, R12, R15 and R16 through the bin: `aether-lane status` gives each group's view, the order of each
 // role's candidates and the dry marks; with --refresh, which only the workflow's quota step of each wave gives, it first
-// refreshes grok's reading when it is stale. `aether-lane choice` logs which lane took a call and why.
+// refreshes grok's reading when it is stale.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -170,24 +170,9 @@ test('a status run by hand does not refresh, even when the reading is stale, and
   }
 })
 
-test('choice logs the choice in the lane log through the bin, and refuses a bad one', (t) => {
+test('choice is no longer a command: the bin refuses it and logs nothing', (t) => {
   const { args, env } = statusEnv(t)
-  const order = 'grok:grok-4.7:0.013331:picked:absent/agy:gemini-3.8-flash:0.006044:untried/agy:claude-sonnet-5-5:excluded:reserve'
-  const ok = runBin(fx.LANE_BIN, ['choice', args.runId, 'task-1-1-implement', '--role', 'implementer', '--tier', 'haiku', '--effort', 'xhigh', '--pick', 'grok:grok-4.7', '--order', order], args.repoRoot, env)
-  assert.equal(ok.status, 0, ok.stdout + ok.stderr)
-  assert.deepEqual(ok.json, { logged: true })
-  const [entry] = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'choice')
-  assert.deepEqual([entry.run, entry.call, entry.role, entry.tier, entry.effort, entry.picked], [args.runId, 'task-1-1-implement', 'implementer', 'haiku', 'xhigh', { harness: 'grok', model: 'grok-4.7' }])
-  assert.equal(entry.reason, 'took grok grok-4.7, first in order (grok grok-4.7 0.013331, agy gemini-3.8-flash 0.006044)')
-  assert.deepEqual(entry.candidates.map((c) => [c.model, c.state, c.outcome, c.usedPercentAbsent]), [
-    ['grok-4.7', 'priority', 'picked', true],
-    ['gemini-3.8-flash', 'priority', 'untried', false],
-    ['claude-sonnet-5-5', 'excluded', 'reserve', false],
-  ])
-  const bad = runBin(fx.LANE_BIN, ['choice', args.runId, 'task-1-1-implement', '--role', 'implementer', '--tier', 'haiku', '--effort', 'xhigh', '--pick', 'native', '--order', order], args.repoRoot, env)
-  assert.equal(bad.status, 1)
-  assert.deepEqual(bad.json, { error: '--pick and the picked item of --order do not agree' })
-  assert.equal(lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'choice').length, 1)
-  const usage = runBin(fx.LANE_BIN, ['choice'], args.repoRoot, env)
-  assert.match(usage.json.error, /^usage: aether-lane .*choice <run> <call> --role <role> --tier <tier> --effort <effort> --pick <native\|harness:model> --order <order>/)
+  const r = runBin(fx.LANE_BIN, ['choice', args.runId, 'task-1-1-implement', '--role', 'implementer', '--tier', 'haiku', '--effort', 'xhigh', '--pick', 'native', '--order', 'a:b:1:picked'], args.repoRoot, env)
+  assert.equal(r.status, 1)
+  assert.equal(lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'choice').length, 0)
 })

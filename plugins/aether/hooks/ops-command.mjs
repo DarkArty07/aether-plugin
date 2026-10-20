@@ -51,13 +51,6 @@ const BY = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
 const CAUSES = ['chosen', 'no-candidate', 'wait-limit', 'failed']
 const SECONDS = /^\d{1,3}$/
 
-// The tokens of `aether-lane choice`, copied from lib/lane-choice.js, which this file cannot import: a
-// plain token (no space, `;`, `$` or quote), and `/` joins the items of an order. The two copies must agree;
-// tests/ops-command-lanes.test.js checks what lib reads and refuses against this parser.
-const PICK = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
-const ORDER_ITEM = /[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*:(?:\d{1,15}(?:\.\d{1,15})?|unknown|excluded):(?:picked|pool-full|untried|reserve|marked|not-installed|dry|unavailable-[a-z]+(?:-[a-z]+)*)(?::absent)?/.source
-const ORDER = new RegExp(`^${ORDER_ITEM}(?:/${ORDER_ITEM})*$`)
-
 const is = (pattern) => (token) => pattern.test(token)
 const oneOf = (values) => (token) => values.includes(token)
 const word = (expected) => (token) => token === expected
@@ -84,10 +77,6 @@ const COMMANDS = {
     { checks: [word('status'), is(RUN)] },
     // The wave's quota step: it asks for the refresh explicitly.
     { checks: [word('status'), is(RUN), word('--refresh')] },
-    // The decision of one call, logged: no payload, the flags in the order the workflow writes them.
-    {
-      checks: [word('choice'), is(RUN), is(CALL), word('--role'), oneOf(ROLES), word('--tier'), oneOf(TIERS), word('--effort'), oneOf(EFFORTS), word('--pick'), is(PICK), word('--order'), is(ORDER)],
-    },
     // Superdelegation: the pair for a call (--exclude, then --author, when given), who took it, and a pause.
     ...pickForms(),
     { checks: [word('took'), is(RUN), is(CALL), word('--by'), is(BY), word('--cause'), oneOf(CAUSES)] },
