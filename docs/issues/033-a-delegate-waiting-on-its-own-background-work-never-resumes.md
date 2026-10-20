@@ -3,7 +3,7 @@
 **Type:** bug (autonomy, delegate tasks)
 **Date:** 2026-10-16
 **Found in:** the Lead's session dd183371, run `auto-20261016-001335-f0d5` (LANDING PAGE DRA)
-**Status:** the Aether side is fixed on branch `fix/bug-issues` (2026-10-19): the autonomous-runs skill no longer counts such a delegate as something pending that will wake the Lead, and names the fallback wakeup and the check on waking; `aether-autonomy status` flags a run whose diary and state have been quiet for 30 minutes (`idle`, `idleMinutes`). Open: the Claude Code side, a subagent that is promised a resume that never comes (reported through /feedback).
+**Status:** the Aether side is fixed in 0.14.0 (2026-10-20), built on branch `fix/bug-issues`: the autonomous-runs skill no longer counts such a delegate as something pending that will wake the Lead, and names the fallback wakeup and the check on waking; `aether-autonomy status` flags a run whose diary and state have been quiet for 30 minutes (`idle`, `idleMinutes`). Open: the Claude Code side, a subagent that is promised a resume that never comes (reported through /feedback).
 **GitHub:** [#31](https://github.com/DarkArty07/aether-plugin/issues/31) (private repository). This file is the local record, written from that issue when its Aether side was fixed.
 
 ## What happened

@@ -3,7 +3,7 @@
 **Type:** bug (swarm, final review)
 **Date:** 2026-10-15
 **Found in:** the run of spec 004 (run `20261015-011925-90a1`)
-**Status:** open. Related: issue 005, whose open part is a final review that cannot take a large package.
+**Status:** fixed in 0.14.0 (2026-10-20): a final review of more than three merged units runs in slices of at most three units of an area with a reading plan. It returned a verdict on a run of 22 units in six slices, the first time it ran for real. The reviewer's `maxTurns` as a plan setting is not built. See the Update below.
 **Update 2026-10-19, branch `fix/bug-issues`:** proposals 1 and 2 are built with issue 022: a final review of more than three merged units is sliced by area into groups of at most three, and every reviewer is told its 30-turn budget, to read at most 20 turns in batches, to verify at most six claims and to begin its answer by turn 28. Proposal 3 (the reviewer's `maxTurns` as a plan setting) is not built.
 **GitHub:** [#15](https://github.com/DarkArty07/aether-plugin/issues/15) (private repository)
 

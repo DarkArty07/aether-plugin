@@ -3,7 +3,7 @@
 **Type:** bug (Examiner, `aether-exam`)
 **Date:** 2026-10-16
 **Found in:** the first run of the exam of `specs/006-delegate-router` on its build, the Lead's session 56b71739
-**Status:** open
+**Status:** partly fixed in 0.14.0 (2026-10-20): the instructions are in `agents/examiner.md`; the acceptance's rerun of the 006 exam needs a model round and has not been run. See the Update below.
 **Update 2026-10-19, branch `fix/bug-issues`:** proposals 1 and 2 are in `agents/examiner.md`: a test that runs a nested Node runner clears `NODE_TEST_CONTEXT`; a test that expects a failure is shown red on a deliberately broken input before it is trusted; headings, flags and names are found by what the requirement asks under any plausible spelling, with a command's flags read from its usage, never guessed. Proposal 3 is the instruction form: the tests are written before any helper library. `maxTurns` stays 40. The acceptance's rerun of the 006 exam needs a model round and has not been run.
 **GitHub:** [#34](https://github.com/DarkArty07/aether-plugin/issues/34) (private repository)
 

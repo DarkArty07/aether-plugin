@@ -74,7 +74,7 @@ test('the shipped table names each lane model with its group and roles', () => {
   assert.equal(config.reserve, 0.05)
   const agy = config.harnesses.agy
   assert.equal(agy.command, 'agy')
-  assert.equal(agy.maxParallel, 4)
+  assert.equal(agy.maxParallel, 8)
   assert.equal(agy.waitSeconds, 540)
   assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200, judge: 1200, writer: 2700, examiner: 1800 })
   assert.deepEqual(agy.groups, { gemini: 'Gemini Models', claude: 'Claude and GPT models' })

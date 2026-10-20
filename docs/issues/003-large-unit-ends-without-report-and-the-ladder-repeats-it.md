@@ -3,7 +3,7 @@
 **Type:** bug and plan-sizing gap
 **Date:** 2026-10-09
 **Found in:** the third launch of a 12-task plan on an application repository
-**Status:** partly addressed in 0.8.0 (2026-10-13). Done: a unit stops when it ends twice in a row without its report, with a reason that asks for a split, or when it gets the same blocking findings three times (A36), so the ladder no longer pays for the same failure again. Open: the supervisor does not review the diff an attempt leaves without a report, and `aether-plan check` does not warn about a task that is likely too large.
+**Status:** fixed in 0.14.0 (2026-10-20). Its last proposal (a commit after each part, a report before the budget ends) is in the implementer's brief, on top of what 0.8.0 did; see the Update below.
 **Update 2026-10-13, 0.9.1:** proposals 1, 2 and 4 are built (A44). An attempt that ends without its report is salvaged with `aether-wt salvage` and goes to the supervisor, the log says `no report, N changed files on the unit branch`, and `aether-plan check` warns about a task that owns more than 6 paths or the whole tree. Proposal 5 was built in 0.8.0. Still open: proposal 3, a checkpoint report asked of the implementer.
 **Update 2026-10-19, branch `fix/bug-issues`:** proposal 3 is built, the last one open: the implementer's brief (native and lane) asks for a commit after each part that passes and for its report well before its budget is out (by about turn 45 of 60 native), naming what it checked and what it did not. With proposals 1, 2, 4 and 5 built earlier, this issue's proposals are all in.
 **GitHub:** [#3](https://github.com/DarkArty07/aether-plugin/issues/3) (private repository)
