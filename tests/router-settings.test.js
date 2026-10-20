@@ -108,3 +108,13 @@ test('session start writes the router file and adds the note of the mode, and no
   assert.ok(command.context.includes('ROUTER-OVERRIDE: <reason>'))
   assert.ok(command.context.includes('Aether router (command): launch a delegate task with a description and a self-contained brief, and leave model and effort out'))
 })
+
+test('routerSettingsFrom takes lanes from the one superdelegation switch', () => {
+  const lanes = (env) => session.routerSettingsFrom(env).lanes
+  assert.equal(lanes({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }), true)
+  assert.equal(lanes({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', CLAUDE_PLUGIN_OPTION_LANES: 'true' }), false)
+  assert.equal(lanes({ CLAUDE_PLUGIN_OPTION_LANES: 'true' }), true)
+  assert.equal(lanes({ CLAUDE_PLUGIN_OPTION_LANES: 'yes' }), false)
+  assert.equal(lanes({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: '', CLAUDE_PLUGIN_OPTION_LANES: 'true' }), true)
+  assert.equal(lanes({}), false)
+})

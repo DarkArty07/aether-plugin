@@ -12,6 +12,7 @@ const { loadPrices, priceEntry } = require('./prices.js')
 const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
 const { judge } = require('./baseline.js')
+const { legacyNotes } = require('./superdelegation.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
 const DAY_MS = 24 * 3600 * 1000
@@ -277,19 +278,61 @@ const splitLog = (entries) => ({
   calls: entries.filter((entry) => entry.kind === 'call'),
   readings: entries.filter((entry) => entry.kind === 'reading'),
   choices: entries.filter((entry) => entry.kind === 'choice'),
+  tooks: entries.filter((entry) => entry.kind === 'took'),
 })
 
-// What each lane call chose, in the order of the log: the lane that took it (null when none did), its reason, and the candidates.
-const choicesOf = (choices) =>
-  choices.map((entry) => ({
-    call: entry.call,
-    role: entry.role,
-    tier: entry.tier,
-    effort: entry.effort,
-    picked: entry.picked,
-    reason: entry.reason,
-    candidates: entry.candidates,
-  }))
+// What each call chose, one item per call in the order of its first choice: the reference pair and the points it
+// asked for, the pair that took it (null when none did) and why, who took it and how long after the first choice
+// (null while no `took` is logged), and the candidates. A call whose pick was repeated keeps its last choice. A
+// choice written in the old shape (a tier, candidates with a state) has no reference or points: they are null.
+function choicesOf(choices, tooks) {
+  const byCall = new Map()
+  for (const entry of [...choices].sort((a, b) => a.time - b.time)) {
+    const item = byCall.get(entry.call)
+    byCall.set(entry.call, { first: item ? item.first : entry.time, last: entry })
+  }
+  const tookOf = new Map()
+  for (const took of [...tooks].sort((a, b) => a.time - b.time)) tookOf.set(took.call, took)
+  return [...byCall.entries()].map(([call, { first, last }]) => {
+    const took = tookOf.get(call)
+    return {
+      call,
+      role: last.role,
+      reference: last.reference ?? null,
+      requested: last.requested ?? null,
+      picked: last.picked ?? null,
+      by: took ? took.by : null,
+      cause: took ? took.cause : null,
+      reason: last.reason,
+      ms: took ? took.time - first : null,
+      candidates: last.candidates,
+    }
+  })
+}
+
+// How much of the run's work left Claude: one call per `took`, those not taken by the native agent being external.
+function workOf(tooks) {
+  const external = tooks.filter((took) => took.by !== 'native').length
+  return { calls: tooks.length, external, native: tooks.length - external, externalShare: tooks.length === 0 ? null : external / tooks.length }
+}
+
+// What each harness's quota windows consumed in the run: the sum, per window, over the groups its calls used.
+function quotaByHarness(summary, calls) {
+  const groupsOf = {}
+  for (const call of calls) (groupsOf[call.harness || LEGACY_HARNESS] ||= new Set()).add(call.group)
+  const out = {}
+  for (const [harness, groups] of Object.entries(groupsOf)) {
+    const windows = (out[harness] = {})
+    for (const group of groups) {
+      for (const [name, used] of Object.entries((summary.groups[group] || {}).quota || {})) {
+        const total = (windows[name] ||= { consumed: 0, resets: 0 })
+        total.consumed += used.consumed
+        total.resets += used.resets
+      }
+    }
+  }
+  return out
+}
 
 // A lane call's dollars at list price. A model with no price counts $0, and is noted once.
 function laneDollars(call, tokens, prices, notes) {
@@ -435,7 +478,7 @@ function laneReport({ dataDir, runId, start, end, usage, results, prices, notes,
   return {
     version: versions.agy ?? null,
     versions,
-    run: { ...run, ...launchesOf(results), choices: choicesOf(runLog.choices) },
+    run: { ...run, ...launchesOf(results), choices: choicesOf(runLog.choices, runLog.tooks), work: workOf(runLog.tooks), quotaByHarness: quotaByHarness(run, runLog.calls) },
     session,
     totals: {
       run: totalsOf(cost ? cost.run.usd : 0, run.usd),
@@ -487,6 +530,8 @@ function radarOf({ speed, cost, lanes, quality }) {
       laneShare: cost ? lanes.totals.run.coveredShare : null,
       byHarness,
       byGroup: Object.fromEntries(Object.entries(lanes.run.groups).map(([name, group]) => [name, { calls: group.calls, balance: group.balance }])),
+      work: lanes.run.work,
+      quotaByHarness: lanes.run.quotaByHarness,
     },
     affordable: { totalUsd: cost ? lanes.totals.run.totalUsd : null, nativeUsd, lanesUsd: lanes.totals.run.lanesUsd },
     robust: {
@@ -501,8 +546,23 @@ function radarOf({ speed, cost, lanes, quality }) {
   }
 }
 
+// What the session read of the superdelegation option: on (null when it was not exported) and the notes for what
+// it ignored or read as on. A token that is not known is left out rather than stopping the report.
+function superdelegationOf(env) {
+  const on = env.AETHER_SUPERDELEGATION
+  const tokens = (env.AETHER_SUPERDELEGATION_LEGACY || '').split(',').map((token) => token.trim()).filter(Boolean)
+  const legacy = tokens.flatMap((token) => {
+    try {
+      return legacyNotes([token])
+    } catch {
+      return []
+    }
+  })
+  return { on: on === 'on' ? true : on === 'off' ? false : null, legacy }
+}
+
 // The run's window starts when the plan was compiled and ends when the result was saved, or now.
-function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDir(), prices = loadPrices(), now = Date.now() } = {}) {
+function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDir(), prices = loadPrices(), now = Date.now(), env = process.env } = {}) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
   const dir = run.runDir(mainRoot, runId)
@@ -562,6 +622,7 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     lanes,
     quality,
     radar: radarOf({ speed, cost, lanes, quality }),
+    superdelegation: superdelegationOf(env),
     notes,
   }
 }
@@ -592,9 +653,14 @@ function seatsReport({ dataDir = run.dataDir(), session = null, since = 0, price
   const notes = []
   const bySeat = {}
   const seatOf = (name) => (bySeat[name] ||= { rounds: 0, external: 0, native: 0, off: 0, reasons: {}, models: {} })
+  // A round whose entry names the reference pair of its decision lists it with the reason, in the order of the log.
+  const decide = (seat, entry) => {
+    if (entry.reference) (seat.decisions ||= []).push({ status: entry.status, reason: entry.reason ?? null, reference: entry.reference ?? null })
+  }
   for (const call of calls) {
     const seat = seatOf(call.seat)
     seat.rounds++
+    decide(seat, call)
     const model = (seat.models[`${call.harness} ${call.model}`] ||= { rounds: 0, ok: 0 })
     model.rounds++
     if (call.status === 'ok') {
@@ -613,6 +679,7 @@ function seatsReport({ dataDir = run.dataDir(), session = null, since = 0, price
     }
     seat.rounds++
     seat.native++
+    decide(seat, answer)
     const reason = answer.reason || 'unknown'
     seat.reasons[reason] = (seat.reasons[reason] || 0) + 1
   }

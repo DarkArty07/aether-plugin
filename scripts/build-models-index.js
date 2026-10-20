@@ -2,7 +2,7 @@
 'use strict'
 
 // Usage: node scripts/build-models-index.js [--from <raw.json>] [--since 2026-01-01] [--harnesses claude,agy,grok] [--write]
-//                                           [--lanes <lanes.json>] [--harness <file>] [--profiles <file>] [--out <dir>] [--docs <dir>]
+//                                           [--lanes <lanes.json>] [--pairs <pairs.json>] [--harness <file>] [--profiles <file>] [--out <dir>] [--docs <dir>]
 //
 // Builds the list of the models our harnesses offer, from the Artificial Analysis (AA) models list: the
 // families released since a date, each with its effort variants, of which the ones that are the newest of
@@ -16,7 +16,8 @@
 // generated part of README.md in --docs (docs/models). profiles.json, kept by hand, says what each model is
 // for; a model in use or excluded without one is listed and the exit code is 1. The harness models come from
 // harness-models.json next to models.json: what each CLI listed on a date (per harness), kept as a file
-// because the CLIs need a login and a network to list them.
+// because the CLIs need a login and a network to list them. A model the lane table names and its CLI does not
+// list takes its efforts from the rows of the pairs table (config/pairs.json) of its harness and model.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -24,10 +25,11 @@ const { keyFrom, keyFile, envFileFor, KEY, MODELS_URL } = require('./refresh-lan
 
 const DEFAULT_SINCE = '2026-01-01'
 const DEFAULT_LANES = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'lanes.json')
+const DEFAULT_PAIRS = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json')
 const DEFAULT_OUT = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models')
 const DEFAULT_DOCS = path.join(__dirname, '..', 'docs', 'models')
 const USAGE =
-  'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--harnesses claude,agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--harness <file>] [--out <dir>] [--docs <dir>]'
+  'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--harnesses claude,agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--pairs <pairs.json>] [--harness <file>] [--out <dir>] [--docs <dir>]'
 // claude is the native harness, the first: its models are not lanes. The others are lanes.
 const HARNESSES = ['claude', 'agy', 'codex', 'grok', 'cursor', 'muse']
 // The chosen harnesses, whose models the index keeps. Another comes in with --harnesses once its listing is in harness-models.json.
@@ -66,7 +68,7 @@ const README_END = '<!-- models-index:end -->'
 // variants and the harness models that reach it, and the harness models no family took. `models` is
 // the AA list as the API gives it; nothing here reads a file or the network. `offeredOnly: false`
 // keeps every released family, offered or not (the grouping rules do not depend on it).
-function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels = {}, generatedAt = null, harnesses = DEFAULT_HARNESSES, offeredOnly = true } = {}) {
+function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels = {}, generatedAt = null, harnesses = DEFAULT_HARNESSES, offeredOnly = true, pairs = [] } = {}) {
   harnesses = HARNESSES.filter((name) => harnesses.includes(name))
   const all = groupFamilies(models)
   const families = new Map()
@@ -78,7 +80,7 @@ function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels =
   // A model is in the index when the harness's own CLI lists it. A model only the lane table names is not offered.
   const unmatched = []
   const notOffered = []
-  for (const entry of harnessEntries(lanes, harnessModels, harnesses)) {
+  for (const entry of harnessEntries(lanes, harnessModels, harnesses, pairs)) {
     if (entry.detail.listing === 'not-listed') {
       const listedBy = harnessModels.harnesses?.[entry.harness]?.listedBy ?? `${entry.harness}'s CLI`
       notOffered.push({ harness: entry.harness, model: entry.model, roles: entry.detail.roles, reason: `named by the lane table, and not listed by ${listedBy}` })
@@ -290,8 +292,9 @@ function compare(a, b) {
 }
 
 // The models each harness offers, as listed by its CLI and as named by the lane table, one entry
-// per model in harness order. `detail` is what the index records about it.
-function harnessEntries(lanes, listings, harnesses = HARNESSES) {
+// per model in harness order. `detail` is what the index records about it. A model the lane table names and the
+// CLI does not list has no efforts of its own: it takes those of its rows in `pairs`.
+function harnessEntries(lanes, listings, harnesses = HARNESSES, pairs = []) {
   const entries = []
   for (const harness of HARNESSES.filter((name) => harnesses.includes(name))) {
     const listing = listings.harnesses?.[harness] ?? {}
@@ -300,8 +303,8 @@ function harnessEntries(lanes, listings, harnesses = HARNESSES) {
     const byModel = effortVia === 'id' ? listedById(listing.models ?? []) : listedByFlag(listing)
     for (const id of Object.keys(lane)) {
       if (byModel.has(id)) continue
-      const levels = Object.values(lane[id].levels ?? {})
-      byModel.set(id, { efforts: sortEfforts(new Set(levels)), ids: null, fastIds: null, listing: 'not-listed' })
+      const asked = pairs.filter((pair) => pair.harness === harness && pair.model === id).map((pair) => pair.effort)
+      byModel.set(id, { efforts: sortEfforts(new Set(asked)), ids: null, fastIds: null, listing: 'not-listed' })
     }
     for (const [model, found] of [...byModel].sort((a, b) => compare(a[0], b[0]))) {
       const inLaneTable = Object.hasOwn(lane, model)
@@ -319,8 +322,6 @@ function harnessEntries(lanes, listings, harnesses = HARNESSES) {
           ...(found.excluded ? { excluded: found.excluded } : {}),
           inLaneTable,
           roles: entry?.roles ?? [],
-          replaces: entry?.replaces ?? null,
-          levels: entry?.levels ?? null,
           aaSlug: entry?.aa?.slug ?? null,
         },
       })
@@ -438,7 +439,7 @@ function serialize(value, depth = 0) {
 // choose a model. A model a native harness lists has `alias` (the name its CLI takes) and a null lane.
 function buildModels(index, profiles = {}) {
   const profileOf = (key) => profiles[key] ?? null
-  const laneOf = (entry) => (entry.inLaneTable ? { roles: entry.roles, replaces: entry.replaces } : null)
+  const laneOf = (entry) => (entry.inLaneTable ? { roles: entry.roles } : null)
   const byHarness = (a, b) => HARNESSES.indexOf(a.harness) - HARNESSES.indexOf(b.harness)
 
   const models = []
@@ -718,11 +719,14 @@ function readJson(file) {
 }
 
 function parseArgs(argv) {
-  const args = { from: null, since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, harness: null, out: DEFAULT_OUT, docs: DEFAULT_DOCS, harnesses: DEFAULT_HARNESSES.join(','), profiles: null }
-  const flags = { '--from': 'from', '--since': 'since', '--lanes': 'lanes', '--harness': 'harness', '--harnesses': 'harnesses', '--profiles': 'profiles', '--out': 'out', '--docs': 'docs' }
+  const args = { from: null, since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, pairs: DEFAULT_PAIRS, pairsGiven: false, harness: null, out: DEFAULT_OUT, docs: DEFAULT_DOCS, harnesses: DEFAULT_HARNESSES.join(','), profiles: null }
+  const flags = { '--from': 'from', '--since': 'since', '--lanes': 'lanes', '--pairs': 'pairs', '--harness': 'harness', '--harnesses': 'harnesses', '--profiles': 'profiles', '--out': 'out', '--docs': 'docs' }
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--write') args.write = true
-    else if (flags[argv[i]] && i + 1 < argv.length) args[flags[argv[i]]] = argv[++i]
+    else if (flags[argv[i]] && i + 1 < argv.length) {
+      if (argv[i] === '--pairs') args.pairsGiven = true
+      args[flags[argv[i]]] = argv[++i]
+    }
     else return null
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(args.since)) return null
@@ -734,6 +738,7 @@ function parseArgs(argv) {
   args.harness = path.resolve(args.harness ?? path.join(args.out, 'harness-models.json'))
   args.profiles = path.resolve(args.profiles ?? path.join(args.out, 'profiles.json'))
   args.lanes = path.resolve(args.lanes)
+  args.pairs = path.resolve(args.pairs)
   return args
 }
 
@@ -741,9 +746,10 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   const args = parseArgs(argv)
   if (!args) return { exitCode: 2, stdout: `${USAGE}\n` }
 
-  let lanes, harnessModels, profiles, body
+  let lanes, pairs, harnessModels, profiles, body
   try {
     lanes = readJson(args.lanes)
+    pairs = readPairs(args.pairs, args.pairsGiven)
     harnessModels = readJson(args.harness)
     profiles = readProfiles(args.profiles)
     if (args.from) body = readJson(path.resolve(args.from))
@@ -772,7 +778,7 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   if (!models) return { exitCode: 1, stdout: 'Artificial Analysis gave no list of models.\n' }
 
   const generatedAt = localDate(new Date(now()))
-  const index = buildIndex(models, { since: args.since, lanes, harnessModels, generatedAt, harnesses: args.harnesses })
+  const index = buildIndex(models, { since: args.since, lanes, harnessModels, generatedAt, harnesses: args.harnesses, pairs })
 
   const file = buildModels(index, profiles)
   const missing = missingProfiles(file)
@@ -794,6 +800,15 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
     stdout += `written to ${modelsFile} and ${readmeFile}\n`
   }
   return { exitCode, stdout }
+}
+
+// The rows of the pairs table at `file`. The shipped table is optional (a copy of the script in a tree without
+// the plugin has none, and a model the CLI does not list then has no efforts); one named with --pairs must be there.
+function readPairs(file, given) {
+  if (!given && !fs.existsSync(file)) return []
+  const table = readJson(file)
+  if (!Array.isArray(table.pairs)) throw new Error(`${file} has no pairs list`)
+  return table.pairs
 }
 
 // The profiles of a profiles.json text's object, or {} when the file is not there.
@@ -875,7 +890,7 @@ function summary(index) {
   )
 }
 
-module.exports = { buildIndex, buildModels, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, badListings, readProfiles, main }
+module.exports = { buildIndex, harnessEntries, buildModels, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, badListings, readProfiles, main }
 
 if (require.main === module) {
   main(process.argv.slice(2)).then(({ exitCode, stdout }) => {

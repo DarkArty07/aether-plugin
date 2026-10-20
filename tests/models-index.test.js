@@ -5,7 +5,8 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { buildIndex, buildModels, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, badListings, readProfiles, main } = require('../scripts/build-models-index.js')
+const { spawnSync } = require('node:child_process')
+const { buildIndex, buildModels, harnessEntries, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, badListings, readProfiles, main } = require('../scripts/build-models-index.js')
 
 function aa(slug, name, { creator = 'Acme', date = '2026-03-01', intelligence = null, terminalBench = null, input = 2, output = 10, tps = 100, ttft = 5 } = {}) {
   return {
@@ -40,7 +41,7 @@ const LANES = {
   harnesses: {
     agy: {
       models: {
-        'acme-1': { replaces: 'sonnet', roles: ['implementer'], levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }, aa: { slug: 'acme-1-high' } },
+        'acme-1': { roles: ['implementer'], levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }, aa: { slug: 'acme-1-high' } },
         'ghost-9': { roles: ['judge'], levels: { low: 'low', high: 'high' } },
       },
     },
@@ -189,8 +190,6 @@ test('a harness model matches a family exactly, after normalizing, or as a guess
       listing: 'listed',
       inLaneTable: true,
       roles: ['implementer'],
-      replaces: 'sonnet',
-      levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' },
       aaSlug: 'acme-1-high',
     },
     {
@@ -204,8 +203,6 @@ test('a harness model matches a family exactly, after normalizing, or as a guess
       listing: 'listed',
       inLaneTable: false,
       roles: [],
-      replaces: null,
-      levels: null,
       aaSlug: null,
     },
   ])
@@ -365,7 +362,7 @@ test('a model is scored on the efforts its harness takes, not on every effort AA
   const [acme] = file.models
   assert.deepEqual(acme.efforts, ['low', 'high'])
   assert.deepEqual(acme.ids, { low: 'acme-1-low', high: 'acme-1-high' })
-  assert.deepEqual(acme.lane, { roles: ['implementer'], replaces: 'sonnet' })
+  assert.deepEqual(acme.lane, { roles: ['implementer'] })
   assert.deepEqual(acme.scores, [
     { effort: 'low', intelligence: 40, terminalBench: 0.2, priceInput: 2, priceOutput: 10, tokensPerSecond: 100, ttftSeconds: 5 },
     { effort: 'high', intelligence: 46.8, terminalBench: 0.404, priceInput: 2, priceOutput: 10, tokensPerSecond: null, ttftSeconds: null },
@@ -581,7 +578,7 @@ const NATIVE_RAW = [
   aa('zeta-lite-1-high', 'Zeta Lite 1 (High)', { creator: 'Zeta', intelligence: 30 }),
   aa('zeta-plain-1', 'Zeta Plain 1 (High)', { creator: 'Zeta', intelligence: 33 }),
 ]
-const NATIVE_LANES = { harnesses: { agy: { models: { 'zeta-2': { replaces: 'sonnet', roles: ['implementer'], levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' } } } } } }
+const NATIVE_LANES = { harnesses: { agy: { models: { 'zeta-2': { roles: ['implementer'], levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' } } } } } }
 const NATIVE_LISTINGS = {
   harnesses: {
     claude: {
@@ -639,7 +636,7 @@ test('a model of the native harness shares its profile with the same family on a
   assert.deepEqual(agy.efforts, ['low', 'medium', 'high'])
   assert.deepEqual(agy.scores.map((score) => score.effort), ['low', 'medium', 'high'])
   assert.deepEqual(agy.ids, { low: 'zeta-2-low', medium: 'zeta-2-medium', high: 'zeta-2-high' })
-  assert.deepEqual(agy.lane, { roles: ['implementer'], replaces: 'sonnet' })
+  assert.deepEqual(agy.lane, { roles: ['implementer'] })
 })
 
 test('a listing is a string or an object: a string has no alias and takes the harness efforts, an object may have its own', () => {
@@ -1003,4 +1000,36 @@ test('the README says an object listing is for the harnesses whose effort is a f
   const readme = fs.readFileSync(path.join(DOCS, 'README.md'), 'utf8')
   assert.ok(readme.includes('for a harness whose effort is a flag (claude, grok, codex), an object `{id, alias, efforts, listed, excluded}`'))
   assert.ok(readme.includes('A harness whose effort is in the id (agy, cursor) lists ids as strings only, and the script exits 1 on an object there'))
+})
+
+test('the index of models is built without levels, and its efforts for a model the harness does not list come from the pairs table', () => {
+  // The synthetic lane table still carries levels for ghost-9 (low, high); the pairs table says three efforts, and only its agy rows count.
+  const pairs = [
+    { harness: 'agy', model: 'ghost-9', effort: 'high' },
+    { harness: 'agy', model: 'ghost-9', effort: 'low' },
+    { harness: 'agy', model: 'ghost-9', effort: 'medium' },
+    { harness: 'grok', model: 'ghost-9', effort: 'xhigh' },
+    { harness: 'agy', model: 'other', effort: 'max' },
+  ]
+  const entries = harnessEntries(LANES, LISTINGS, ['agy'], pairs)
+  const ghost = entries.find((entry) => entry.model === 'ghost-9')
+  assert.equal(ghost.detail.listing, 'not-listed')
+  assert.deepEqual(ghost.detail.efforts, ['low', 'medium', 'high'])
+  // Without the pairs table there is nothing to take the efforts from.
+  assert.deepEqual(harnessEntries(LANES, LISTINGS, ['agy']).find((entry) => entry.model === 'ghost-9').detail.efforts, [])
+  // No entry of the index carries levels or replaces.
+  for (const entry of entries) {
+    assert.equal(Object.hasOwn(entry.detail, 'levels'), false, entry.model)
+    assert.equal(Object.hasOwn(entry.detail, 'replaces'), false, entry.model)
+  }
+  const index = buildIndex(RAW, { since: '2026-01-01', lanes: LANES, harnessModels: LISTINGS, generatedAt: '2026-10-13', harnesses: ['agy'], pairs })
+  for (const offer of index.families.flatMap((entry) => entry.available)) assert.equal(Object.hasOwn(offer, 'levels'), false, offer.model)
+  // The files the build wrote are free of both.
+  const shipped = fs.readFileSync(path.join(ROOT, 'plugins', 'aether', 'config', 'models', 'models.json'), 'utf8')
+  assert.doesNotMatch(shipped, /"levels"|"replaces"/)
+})
+
+test('config/router/rungs.json is unchanged by the new index', () => {
+  const r = spawnSync('git', ['diff', '--exit-code', '--', 'plugins/aether/config/router/rungs.json'], { cwd: ROOT })
+  assert.equal(r.status, 0)
 })

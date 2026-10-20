@@ -49,6 +49,8 @@ function aetherWt(call, state) {
       return { removed: true, patch: state.merged.has(second) ? null : path.join(state.args.runDir, 'patches', `${second}.patch`) }
     case 'diff':
       return { path: path.join(state.args.runDir, 'packages', 'final.diff'), base: state.args.integration.base, head: 'f1a1' }
+    case 'status':
+      return state.merged.has(second) ? { merged: true, branch: `aether/${first}/${second}`, commit: `merge-${second}`, head: `head-${second}` } : { merged: false, branch: `aether/${first}/${second}`, commit: null, head: `head-${second}` }
     case 'salvage':
       return { salvaged: false, files: [], committed: [], left: [], head: null, package: null }
     case 'sweep':
@@ -84,12 +86,17 @@ function laneAnswer({ status = 'ok', result = null, lane, detail = '', files = n
   return answer
 }
 
-// What a clean aether-lane prints: every group usable, every call started, and every wait done
+// What a clean `aether-lane pick` prints when no external pair takes the call: the native pair of the flags
+// (points are stand-ins: no workflow test reads them).
+function nativeDecision({ call, role, model, effort }) {
+  const native = { id: `claude/${model}@${effort}`, model, effort, family: `claude-${model}-5-5`, intelligence: 50 }
+  return { requested: 50, reference: { id: native.id, model, effort, intelligence: 50 }, picked: null, native, candidates: [], reason: `native ${native.id}: no external pair is a candidate`, call, role }
+}
+
+// What a clean aether-lane prints: no external pair for any call, every call started, and every wait done
 // with the role's default answer.
 function aetherLane(call, defaults) {
   switch (call.command.verb) {
-    case 'status':
-      return { harnesses: { agy: { installed: true, version: '1.3.2', groups: { gemini: { usable: true }, claude: { usable: true } } } } }
     case 'start':
       return { started: true, model: `${call.lane.model}-${LEVEL[call.lane.effort]}`, group: GROUP[call.lane.model] }
     case 'wait':
@@ -101,8 +108,12 @@ function aetherLane(call, defaults) {
     }
     case 'stop':
       return { stopped: [call.lane.call] }
-    case 'choice':
+    case 'took':
       return { logged: true }
+    case 'pick':
+      return nativeDecision(call.lane)
+    case 'pause':
+      return { paused: Number(call.command.rest[1]) }
     default:
       throw new Error(`unexpected aether-lane command: ${call.command.line}`)
   }
@@ -161,11 +172,13 @@ function tick() {
 // gets (call, fallback): `call` describes the agent call, with `n` counting this role's calls for
 // the unit (ops: for the unit and command); `fallback` is the default handler. An ops handler
 // returns what aether-wt would print, or null for an agent that failed. `overrides.lane` answers
-// aether-lane commands the same way, and may also return a string, printed as it is.
+// aether-lane commands the same way, and may also return a string, printed as it is. By default `pick` answers with
+// the native pair of its flags, `took` with { logged: true } and `pause` with { paused }.
 //
 // An aether-lane call also carries `lane` (its run, call and flags), `payload` ({ path, text }, for
 // a start), `digestOk` (for a start: whether --digest matches the payload) and `started` (for a
-// wait, result or stop: the flags its start was given).
+// wait, result or stop: the flags its start was given). A wait, result or stop also carries its start's
+// role in `lane.role`.
 //
 // Resolves to { result, error, calls, events, logs, maxActive }. `events` holds "start <key>" and
 // "end <key>" lines in order, where <key> is the role (and ops command) plus the unit.
@@ -213,6 +226,7 @@ async function runWorkflow(args, overrides = {}, options = {}) {
       state.lanes[call.lane.call] = call.lane
     }
     if (isLane && command.verb !== 'start') call.started = state.lanes[call.lane.call] || null
+    if (isLane && ['wait', 'result', 'stop'].includes(command.verb) && call.started) call.lane.role = call.started.role
     const kind = command ? (isLane ? `ops:lane-${command.verb}` : `ops:${command.verb}`) : role
     call.n = calls.filter((c) => c.unit === call.unit && c.kind === kind).length + 1
     call.kind = kind

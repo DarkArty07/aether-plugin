@@ -139,19 +139,6 @@ test('a refusal for the individual quota arrives whole in the detail, for the ro
   assert.equal(worktrees(s), 1)
 })
 
-test('the native effort of the rung reaches the CLI without going through the levels of the lane table (R16)', async (t) => {
-  const s = setup(t)
-  s.config.harnesses.agy.models['gemini-3.8-flash'].levels.medium = 'low'
-  const out = await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "ok"}')
-  assert.equal(out.status, 'ok', out.detail)
-  assert.equal(out.modelArg, 'gemini-3.8-flash-medium', 'the table would say low: the router does not read it')
-  const { createAdapter } = require('../plugins/aether/lib/harness/index.js')
-  const grok = createAdapter('grok', s.config.harnesses.grok)
-  const argv = delegate.delegateArgv(grok, { model: 'grok-4.7', effort: 'xhigh', group: 'grok' }, { prompt: 'p', schemaFile: '/x', timeoutSeconds: 60 })
-  assert.ok(argv.join(' ').includes('--reasoning-effort xhigh'), 'the swarm sends high for xhigh: the lane table maps it')
-  assert.ok(argv.includes('grok-4.7'))
-})
-
 test('a group under the reserve is a quota failure, and agy is not launched (R26)', async (t) => {
   const s = setup(t, { quota: { 'Gemini Models': [0.9, 0.02], 'Claude and GPT models': [0.9, 0.9] } })
   const out = await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "x"}')

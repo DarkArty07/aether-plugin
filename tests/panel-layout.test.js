@@ -38,7 +38,7 @@ function quota(patch = {}) {
   return states
 }
 const delegatesOf = (list = null) => ({ status: 'ready', result: list === null ? view.parseDelegates(printed('delegates.json')) : { ok: true, value: list } })
-const settings = (options = {}) => view.settingsOf({ lanes: true, harnesses: 'agy,grok', ...options })
+const settings = (options = {}) => view.settingsOf({ superdelegation: true, harnesses: 'agy,grok', ...options })
 const draw = (columns, extra = {}) => layout.panelLines({ settings: settings(), quota: quota(), delegates: delegatesOf(), columns, now: NOW, ...extra })
 const textOf = (lines) => lines.map((one) => (one.action ? '[action row]' : layout.lineText(one)))
 const find = (lines, pattern) => lines.find((one) => pattern.test(layout.lineText(one)))
@@ -56,18 +56,18 @@ const wide = (text) => view.cells(text)
 test('the pane opens with the title, the options on one line, and then the action row, above the quota', () => {
   const lines = textOf(draw(120))
   assert.equal(lines[0], 'Aether · other harnesses')
-  assert.equal(lines[1], 'lanes ON · router record · decider haiku · seats balanced · harnesses agy, grok')
+  assert.equal(lines[1], 'superdelegation ON · router record · decider haiku · harnesses agy, grok')
   assert.equal(lines[2], '[action row]')
   assert.ok(lines.indexOf('[action row]') < lines.findIndex((text) => /^agy /.test(text)), 'the buttons come before the first harness')
   assert.equal(draw(120).filter((one) => one.action).length, 1)
   assert.ok(!lines.some((text) => /nothing leaves Claude/.test(text)))
 })
 
-test('the action row is right under the options also when lanes are off, and the notice follows it', () => {
-  const lines = textOf(draw(120, { settings: settings({ lanes: false }) }))
-  assert.match(lines[1], /^lanes OFF/)
+test('the action row is right under the options also when superdelegation is off, and the notice follows it', () => {
+  const lines = textOf(draw(120, { settings: settings({ superdelegation: false }) }))
+  assert.match(lines[1], /^superdelegation OFF/)
   assert.equal(lines[2], '[action row]')
-  assert.match(lines[3], /^Lanes are OFF: nothing leaves Claude/)
+  assert.match(lines[3], /^Superdelegation is OFF: nothing leaves Claude/)
 })
 
 test('the key hint is the last line, and only while the pane has the keyboard', () => {
@@ -76,26 +76,26 @@ test('the key hint is the last line, and only while the pane has the keyboard', 
   assert.ok(!textOf(draw(120, { isFocused: false })).some((text) => /Esc leaves/.test(text)))
 })
 
-test('with lanes off the pane says plainly that nothing leaves Claude, and still shows the quota', () => {
-  const lines = textOf(draw(80, { settings: settings({ lanes: false }) }))
-  assert.match(lines[1], /^lanes OFF · router record/)
-  assert.ok(lines.some((text) => /Lanes are OFF: nothing leaves Claude/.test(text)))
+test('with superdelegation off the pane says plainly that nothing leaves Claude, and still shows the quota', () => {
+  const lines = textOf(draw(80, { settings: settings({ superdelegation: false }) }))
+  assert.match(lines[1], /^superdelegation OFF · router record/)
+  assert.ok(lines.some((text) => /Superdelegation is OFF: nothing leaves Claude/.test(text)))
   assert.ok(lines.some((text) => /Gemini Models/.test(text)))
-  assert.equal(toneOf(draw(80, { settings: settings({ lanes: false }) }), 'lanes OFF'), 'warn')
-  assert.equal(toneOf(draw(80), 'lanes ON'), 'ok')
+  assert.equal(toneOf(draw(80, { settings: settings({ superdelegation: false }) }), 'superdelegation OFF'), 'warn')
+  assert.equal(toneOf(draw(80), 'superdelegation ON'), 'ok')
 })
 
 test('the options shown are the ones the session uses', () => {
-  const lines = textOf(draw(120, { settings: view.settingsOf({ lanes: true, router: 'Command', decider: 'JEV', seats: 'Robust', harnesses: 'gork' }) }))
-  assert.equal(lines[1], 'lanes ON · router record · decider haiku · seats robust · harnesses agy')
+  const lines = textOf(draw(120, { settings: view.settingsOf({ superdelegation: true, router: 'Command', decider: 'JEV', harnesses: 'gork' }) }))
+  assert.equal(lines[1], 'superdelegation ON · router record · decider haiku · harnesses agy')
 })
 
 test('the options go on to more lines instead of being cut, at each width', () => {
   const lines = textOf(draw(60))
-  assert.equal(lines[1], 'lanes ON · router record · decider haiku · seats balanced')
+  assert.equal(lines[1], 'superdelegation ON · router record · decider haiku')
   assert.equal(lines[2], 'harnesses agy, grok')
   const narrow = textOf(draw(40))
-  assert.deepEqual(narrow.slice(1, 3), ['lanes ON · router record · decider haiku', 'seats balanced · harnesses agy, grok'])
+  assert.deepEqual(narrow.slice(1, 3), ['superdelegation ON · router record', 'decider haiku · harnesses agy, grok'])
 })
 
 test('the enabled harnesses come first, in the order of the option, and the rest follow', () => {
@@ -360,12 +360,12 @@ test('every part is scrubbed once more at the end, whatever the parse let throug
 const COLUMNS = [40, 60, 76, 120]
 const ROWS = [10, 13, 19, 30, 46]
 const CASES = [
-  ['the default options', { lanes: false, harnesses: 'agy' }],
-  ['lanes on, agy and grok', { lanes: true, harnesses: 'agy,grok' }],
-  ['lanes off, agy and grok', { lanes: false, harnesses: 'agy,grok' }],
-  ['all four enabled, lanes on', { lanes: true, harnesses: 'agy,codex,grok,cursor' }],
-  ['all four enabled, lanes off', { lanes: false, harnesses: 'agy,codex,grok,cursor' }],
-  ['agy and muse, lanes off', { lanes: false, harnesses: 'agy,muse' }],
+  ['the default options', { superdelegation: false, harnesses: 'agy' }],
+  ['superdelegation on, agy and grok', { superdelegation: true, harnesses: 'agy,grok' }],
+  ['superdelegation off, agy and grok', { superdelegation: false, harnesses: 'agy,grok' }],
+  ['all four enabled, superdelegation on', { superdelegation: true, harnesses: 'agy,codex,grok,cursor' }],
+  ['all four enabled, superdelegation off', { superdelegation: false, harnesses: 'agy,codex,grok,cursor' }],
+  ['agy and muse, superdelegation off', { superdelegation: false, harnesses: 'agy,muse' }],
 ]
 
 test('whatever the room, the title, the options, the action row and a line for each enabled group are shown', () => {
@@ -377,9 +377,9 @@ test('whatever the room, the title, the options, the action row and a line for e
         const shown = textOf(lines.slice(0, rows))
         const where = `${name}, ${columns}x${rows}`
         assert.equal(shown[0], 'Aether · other harnesses', where)
-        assert.ok(shown.some((text) => /^lanes (ON|OFF)/.test(text)), `${where}: the options`)
+        assert.ok(shown.some((text) => /^superdelegation (ON|OFF)/.test(text)), `${where}: the options`)
         assert.ok(shown.includes('[action row]'), `${where}: the action row`)
-        const lastOption = Math.max(...shown.map((t, i) => (/^(lanes|router|decider|seats|harnesses) /.test(t) ? i : 0)))
+        const lastOption = Math.max(...shown.map((t, i) => (/^(superdelegation|router|decider|harnesses) /.test(t) ? i : 0)))
         assert.equal(shown.indexOf('[action row]'), lastOption + 1, `${where}: the action row is right under the options`)
         for (const harness of here.harnesses) {
           const groups = quota()[harness].result.value.harness.groups
@@ -408,7 +408,7 @@ test('the full layout is used whenever it fits the rows, and nothing changes wit
 
 test('what the pane gives up, it gives up in order: the age line, then the window pairs, then the delegates, then the quota block', () => {
   const features = (rows) => {
-    const lines = layout.panelLines({ settings: settings({ lanes: false, harnesses: 'agy,grok' }), quota: quota(), delegates: delegatesOf(), columns: 76, rows, isFocused: true, now: NOW })
+    const lines = layout.panelLines({ settings: settings({ superdelegation: false, harnesses: 'agy,grok' }), quota: quota(), delegates: delegatesOf(), columns: 76, rows, isFocused: true, now: NOW })
     const text = textOf(lines)
     const at = text.indexOf('Recent delegates')
     const rowsAfter = at < 0 ? [] : text.slice(at + 1).filter((t) => /(ago|just now) {2}/.test(t))
@@ -468,7 +468,7 @@ test('each window pair is one line when the width allows, and one to a line when
   assert.equal(two(76).length, 2, 'two groups, a pair line each')
   assert.match(two(76)[1], /^ {4}weekly █+░+ {2}33% · 146 h {3}5h █{14} 100% · 5 h$/)
   assert.match(two(60)[0], /^ {4}weekly █{9} 100% · 168 h {3}5h █{9} 100% · 5 h$/)
-  const narrow = atPairs(40, { lanes: false })
+  const narrow = atPairs(40, { superdelegation: false })
   assert.ok(narrow.includes('    weekly ████████████████ 100% · 168 h'), narrow.join('\n'))
   assert.ok(narrow.includes('    5h ████████████████ 100% · 5 h'), 'the bars of a group are as long as each other')
 })
@@ -479,7 +479,7 @@ test('a harness that is not enabled and has a reading is one line in the compact
 })
 
 test('when even that does not fit, one line for each enabled group comes first, and the rest follows a line that counts it', () => {
-  const lines = layout.panelLines({ settings: settings({ lanes: false, harnesses: 'agy' }), quota: quota(), delegates: delegatesOf(), columns: 60, rows: 11, isFocused: true, now: NOW })
+  const lines = layout.panelLines({ settings: settings({ superdelegation: false, harnesses: 'agy' }), quota: quota(), delegates: delegatesOf(), columns: 60, rows: 11, isFocused: true, now: NOW })
   const text = textOf(lines)
   assert.equal(text[0], 'Aether · other harnesses')
   assert.ok(text.slice(0, 11).includes('[action row]'))
@@ -494,10 +494,10 @@ test('when even that does not fit, one line for each enabled group comes first, 
 })
 
 test('the corner where nothing fits keeps what matters and drops the notice, and the marker, first', () => {
-  const all = settings({ lanes: false, harnesses: 'agy,codex,grok,cursor' })
+  const all = settings({ superdelegation: false, harnesses: 'agy,codex,grok,cursor' })
   const lines = textOf(layout.panelLines({ settings: all, quota: quota(), delegates: delegatesOf(), columns: 40, rows: 10, isFocused: true, now: NOW }).slice(0, 10))
   assert.equal(lines[0], 'Aether · other harnesses')
   assert.ok(lines.includes('[action row]'))
   for (const label of ['Gemini Models', 'Claude and GPT models', 'Codex plan', 'Grok plan', 'Cursor plan']) assert.ok(lines.some((t) => t.includes(label)), label)
-  assert.ok(!lines.some((t) => /nothing leaves Claude/.test(t)), 'the notice is what goes; lanes OFF is still in the options')
+  assert.ok(!lines.some((t) => /nothing leaves Claude/.test(t)), 'the notice is what goes; superdelegation OFF is still in the options')
 })

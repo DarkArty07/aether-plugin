@@ -1,8 +1,8 @@
 'use strict'
 
-// Spec 002, R3, R6, R10, R12, R15 and R16 through the bin: `aether-lane status` gives each group's view, the order of each
-// role's candidates and the dry marks; with --refresh, which only the workflow's quota step of each wave gives, it first
-// refreshes grok's reading when it is stale. `aether-lane choice` logs which lane took a call and why.
+// Spec 002, R3, R6, R10, R12, R15 and R16 through the bin: `aether-lane status` gives each group's view and the dry
+// marks, and no order of candidates (the pair rule of spec 009 chooses); with --refresh, which only the workflow's
+// quota step of each wave gives, it first refreshes grok's reading when it is stale.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -20,7 +20,7 @@ const RUN = '20261014-060800-ab12'
 const inHours = (hours) => new Date(Date.now() + hours * HOUR).toISOString()
 const usageCalls = (env) => fx.agyCalls(env).filter((c) => c.argv[1] === '/usage')
 
-// A run whose graph names the candidates of two calls, a table whose grok is the fake that speaks ACP, an agy quota
+// A run whose graph lists two harnesses, a table whose grok is the fake that speaks ACP, an agy quota
 // with Gemini full for 200 hours and Claude under the reserve, and a grok log whose one line is ageMinutes old, for a
 // period of 50 more hours with no creditUsagePercent (so Grok's priority is 1/50).
 function statusEnv(t, { ageMinutes = 5, agyQuota = null, extra = {} } = {}) {
@@ -41,44 +41,35 @@ function statusEnv(t, { ageMinutes = 5, agyQuota = null, extra = {} } = {}) {
   entry.ctx.config.currentPeriod.end = inHours(50)
   fs.writeFileSync(logFile, `${JSON.stringify(entry)}\n`)
   const graphFile = path.join(args.runDir, 'graph.json')
-  const flash = { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' }
-  const grok = { model: 'grok-4.7', group: 'grok', harness: 'grok' }
-  const sonnet = { model: 'claude-sonnet-5-5', group: 'claude', harness: 'agy' }
   fs.writeFileSync(
     graphFile,
-    JSON.stringify({ ...JSON.parse(fs.readFileSync(graphFile, 'utf8')), lanes: { harness: 'agy', harnesses: ['agy', 'grok'], calls: { implementer: { haiku: [flash, grok], sonnet: [sonnet] }, supervisor: { sonnet: sonnet } } } }),
+    JSON.stringify({ ...JSON.parse(fs.readFileSync(graphFile, 'utf8')), lanes: { harnesses: ['agy', 'grok'] } }),
   )
   const run = { ...env, AETHER_LANE_HARNESSES: 'agy,grok', ...extra }
   return { args, env: run, logFile }
 }
 
-test('status gives each group its view and, per role and native model, the order of the run\'s candidates', (t) => {
+test('status gives each group its view and the live marks, and no order of candidates', (t) => {
   const { args, env } = statusEnv(t)
   const r = fx.lane(args, 'status', [], env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
-  const { harnesses, order } = r.json
+  const { harnesses } = r.json
   assert.match(r.json.time, /^\d{4}-\d\d-\d\dT/)
   const grok = harnesses.grok.groups.grok
   assert.deepEqual([harnesses.grok.enabled, harnesses.grok.installed, grok.usable, grok.unknown, grok.usedPercentAbsent, grok.source.ageMinutes], [true, true, true, false, true, 5])
   assert.ok(Math.abs(grok.priority - 1 / 50) < 0.001, String(grok.priority))
   assert.deepEqual([harnesses.agy.groups.gemini.usable, harnesses.agy.groups.claude.usable, harnesses.agy.groups.claude.label], [true, false, 'Claude and GPT models'])
   assert.ok(Math.abs(harnesses.agy.groups.gemini.priority - 0.9 / 200) < 0.001, String(harnesses.agy.groups.gemini.priority))
-  // Grok goes before Gemini for the haiku implementer, and the only sonnet candidate is under the reserve.
-  assert.deepEqual(order.implementer.haiku.ordered.map((e) => `${e.harness}:${e.model}:${e.state}`), ['grok:grok-4.7:priority', 'agy:gemini-3.8-flash:priority'])
-  assert.deepEqual(order.implementer.sonnet, { ordered: [], excluded: [{ ...order.implementer.sonnet.excluded[0], why: 'reserve', state: 'excluded' }] })
-  assert.deepEqual(order.supervisor.sonnet.excluded.map((e) => e.why), ['reserve'], 'a plan of an older compile, with one lane per call, is read as a list of one')
   assert.deepEqual(r.json.marks, [])
-  assert.equal(order.reviewer, undefined)
+  assert.equal(Object.hasOwn(r.json, 'order'), false)
 })
 
-test('a dry mark holds its group in the groups, the order and the list of marks', (t) => {
+test('a dry mark holds its group in the groups and the list of marks', (t) => {
   const { args, env } = statusEnv(t)
   const mark = marks.markDry(env.AETHER_DATA_DIR, { harness: 'grok', group: 'grok', reserve: 0.05, now: Date.now() - 5 * MIN })
   const r = fx.lane(args, 'status', [], env)
   const grok = r.json.harnesses.grok.groups.grok
   assert.deepEqual([grok.usable, grok.mark.until, grok.mark.confirmed], [false, mark.until, false])
-  assert.deepEqual(r.json.order.implementer.haiku.ordered.map((e) => e.model), ['gemini-3.8-flash'])
-  assert.deepEqual(r.json.order.implementer.haiku.excluded.map((e) => [e.model, e.why]), [['grok-4.7', 'marked']])
   assert.deepEqual(r.json.marks, [mark])
 })
 
@@ -96,7 +87,7 @@ test('status keeps a reading that launches a process for its life, and logs one 
   assert.equal(usageCalls(env).length, 2)
 })
 
-test('a reading that fails leaves the groups of its harness unknown, and the candidates in the order of the table', (t) => {
+test('a reading that fails leaves the groups of its harness unknown', (t) => {
   const { args, env } = statusEnv(t)
   fs.writeFileSync(env.AETHER_FAKE_AGY_QUOTA_FILE, 'unreadable')
   const r = fx.lane(args, 'status', [], env)
@@ -104,9 +95,6 @@ test('a reading that fails leaves the groups of its harness unknown, and the can
   const agy = r.json.harnesses.agy
   assert.match(agy.error, /agy \/usage failed/)
   assert.deepEqual([agy.groups.gemini.unknown, agy.groups.gemini.usable, agy.groups.claude.unknown], [true, true, true])
-  // Gemini has no reading, so Grok, which has one, goes first; and the sonnet candidate is no longer left out.
-  assert.deepEqual(r.json.order.implementer.haiku.ordered.map((e) => [e.model, e.state]), [['grok-4.7', 'priority'], ['gemini-3.8-flash', 'unknown']])
-  assert.deepEqual(r.json.order.implementer.sonnet.ordered.map((e) => [e.model, e.state]), [['claude-sonnet-5-5', 'unknown']])
 })
 
 test("the wave's quota step, status --refresh, refreshes a stale grok reading over ACP before it reads, and says how it was taken", (t) => {
@@ -146,12 +134,11 @@ test("the wave's quota step uses grok's ACP answer itself, with no line in grok'
   const [reading] = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading' && e.harness === 'grok')
   assert.equal(reading.groups.grok.source.method, 'acp', 'the reading in the lane log is the answer too')
 
-  // With no log at all grok is not unknown, and goes first in the order.
+  // With no log at all grok is not unknown.
   fs.rmSync(logFile)
   const noLog = fx.lane(args, 'status', ['--refresh'], withFake)
   assert.equal(noLog.status, 0, noLog.stdout + noLog.stderr)
   assert.deepEqual([noLog.json.harnesses.grok.refreshMethod, noLog.json.harnesses.grok.groups.grok.unknown], ['acp', false])
-  assert.deepEqual(noLog.json.order.implementer.haiku.ordered.map((e) => [e.model, e.state]), [['grok-4.7', 'priority'], ['gemini-3.8-flash', 'priority']])
 })
 
 test('a status run by hand does not refresh, even when the reading is stale, and only --refresh is accepted after the run', (t) => {
@@ -170,24 +157,9 @@ test('a status run by hand does not refresh, even when the reading is stale, and
   }
 })
 
-test('choice logs the choice in the lane log through the bin, and refuses a bad one', (t) => {
+test('choice is no longer a command: the bin refuses it and logs nothing', (t) => {
   const { args, env } = statusEnv(t)
-  const order = 'grok:grok-4.7:0.013331:picked:absent/agy:gemini-3.8-flash:0.006044:untried/agy:claude-sonnet-5-5:excluded:reserve'
-  const ok = runBin(fx.LANE_BIN, ['choice', args.runId, 'task-1-1-implement', '--role', 'implementer', '--tier', 'haiku', '--effort', 'xhigh', '--pick', 'grok:grok-4.7', '--order', order], args.repoRoot, env)
-  assert.equal(ok.status, 0, ok.stdout + ok.stderr)
-  assert.deepEqual(ok.json, { logged: true })
-  const [entry] = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'choice')
-  assert.deepEqual([entry.run, entry.call, entry.role, entry.tier, entry.effort, entry.picked], [args.runId, 'task-1-1-implement', 'implementer', 'haiku', 'xhigh', { harness: 'grok', model: 'grok-4.7' }])
-  assert.equal(entry.reason, 'took grok grok-4.7, first in order (grok grok-4.7 0.013331, agy gemini-3.8-flash 0.006044)')
-  assert.deepEqual(entry.candidates.map((c) => [c.model, c.state, c.outcome, c.usedPercentAbsent]), [
-    ['grok-4.7', 'priority', 'picked', true],
-    ['gemini-3.8-flash', 'priority', 'untried', false],
-    ['claude-sonnet-5-5', 'excluded', 'reserve', false],
-  ])
-  const bad = runBin(fx.LANE_BIN, ['choice', args.runId, 'task-1-1-implement', '--role', 'implementer', '--tier', 'haiku', '--effort', 'xhigh', '--pick', 'native', '--order', order], args.repoRoot, env)
-  assert.equal(bad.status, 1)
-  assert.deepEqual(bad.json, { error: '--pick and the picked item of --order do not agree' })
-  assert.equal(lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'choice').length, 1)
-  const usage = runBin(fx.LANE_BIN, ['choice'], args.repoRoot, env)
-  assert.match(usage.json.error, /^usage: aether-lane .*choice <run> <call> --role <role> --tier <tier> --effort <effort> --pick <native\|harness:model> --order <order>/)
+  const r = runBin(fx.LANE_BIN, ['choice', args.runId, 'task-1-1-implement', '--role', 'implementer', '--tier', 'haiku', '--effort', 'xhigh', '--pick', 'native', '--order', 'a:b:1:picked'], args.repoRoot, env)
+  assert.equal(r.status, 1)
+  assert.equal(lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'choice').length, 0)
 })

@@ -21,7 +21,7 @@ const POLL_MS = 250
 // Each verb's usage, as the bin lists it.
 const COMMANDS = {
   start:
-    'seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>] --seats <native|balanced|robust> --lanes <on|off> --harnesses <h1,h2> --digest <digest>',
+    'seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>] --superdelegation <on|off> --harnesses <h1,h2> --digest <digest>',
   wait: 'seat-wait <id> [--max <seconds>]',
   stop: 'seat-stop <id>',
 }
@@ -31,6 +31,9 @@ const SEAT_ID = new RegExp(`^(${lanes.SEATS.join('|')})-\\d{8}-\\d{6}-[0-9a-f]{4
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const SESSION = /^[A-Za-z0-9-]+$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
+// The flags a start takes, with the seat the bin adds: the seats and lanes options retired with superdelegation, and a
+// round started with one of them would run under a switch nobody gave it.
+const START_FLAGS = ['seat', 'session', 'author', 'feature', 'doc', 'superdelegation', 'harnesses', 'digest']
 
 // ---- The round directory ----
 
@@ -70,6 +73,8 @@ function requireFlag(flags, name) {
 function checkedFlags(flags) {
   const { seat } = flags
   if (!lanes.SEATS.includes(seat)) throw new Error(`usage: aether-lane ${COMMANDS.start}`)
+  const unknown = Object.keys(flags).find((name) => !START_FLAGS.includes(name))
+  if (unknown !== undefined) throw new Error(`seat-start takes no --${unknown}: usage: aether-lane ${COMMANDS.start}`)
   const session = requireFlag(flags, 'session')
   if (!SESSION.test(session)) throw new Error(`--session must be letters, digits and dashes, not ${session}`)
   const feature = requireFlag(flags, 'feature').split(path.sep).join('/').replace(/\/+$/, '')
@@ -80,15 +85,13 @@ function checkedFlags(flags) {
     if (flags.doc !== 'spec' && flags.doc !== 'plan') throw new Error(`--doc must be spec or plan, not ${flags.doc}`)
     doc = flags.doc
   }
-  const lanesOption = requireFlag(flags, 'lanes')
-  if (lanesOption !== 'on' && lanesOption !== 'off') throw new Error(`--lanes must be on or off, not ${lanesOption}`)
+  const superdelegation = requireFlag(flags, 'superdelegation')
+  if (superdelegation !== 'on' && superdelegation !== 'off') throw new Error(`--superdelegation must be on or off, not ${superdelegation}`)
   const harnesses = requireFlag(flags, 'harnesses')
   if (!HARNESSES.test(harnesses)) throw new Error(`--harnesses must be harness names separated by commas, not ${harnesses}`)
-  const seatsOption = requireFlag(flags, 'seats')
-  if (!lanes.SEAT_CHOICES.includes(seatsOption)) throw new Error(`--seats must be ${lanes.SEAT_CHOICES.join(', ')}, not ${seatsOption}`)
   const digest = requireFlag(flags, 'digest')
   const author = typeof flags.author === 'string' && flags.author !== '' ? flags.author : null
-  return { seat, session, author, feature, doc, lanes: lanesOption, harnesses, seats: seatsOption, digest }
+  return { seat, session, author, feature, doc, superdelegation, harnesses, digest }
 }
 
 // The message the Lead saved for a round, where the mod's bins look for it: <checkout>/.aether-tmp/seats/<session>/message.md.
@@ -125,8 +128,7 @@ function start(cwd, flags, { env = process.env } = {}) {
     env: {
       ...lanes.laneEnv(env, paths.marker),
       AETHER_DATA_DIR: run.dataDir(env),
-      AETHER_SEATS: checked.seats,
-      AETHER_LANES: checked.lanes,
+      AETHER_SUPERDELEGATION: checked.superdelegation,
       AETHER_LANE_HARNESSES: checked.harnesses,
     },
   })

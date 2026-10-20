@@ -3,8 +3,9 @@
 **Type:** bug (reliability of a model step that should be deterministic)
 **Date:** 2026-10-09
 **Found in:** the fourth launch of a 12-task plan on an application repository
-**Status:** partly addressed in 0.8.0 (2026-10-13). Done: in an Aether session the mod runs the workflow's `aether-wt` and `aether-lane` commands without a model, so no agent can refuse them (A30, PR #8). Open: when the mod cannot run them, the `ops` agent is the fallback and can still refuse; the workflow then reports `unreadable output` and blocks the unit, and no regression test covers a reply that says the command was not run.
+**Status:** fixed in 0.14.0 (2026-10-20): an ops reply that says it did not run the command is asked once more and reported as not run, and a regression test covers it. What remains is Claude Code's, an ops agent that refuses twice; issue 002's status check then decides a merge from git. See the Update below.
 **Update 2026-10-13, 0.9.1:** a reply that is not the command's JSON now reads `unreadable output from <command> (the ops agent may have refused or not run it): <text>`, and a regression test covers a reply that says the command was not run (A46). The `ops` option turns the mod's answers off for a project that needs them off. Still open: the fallback agent can still refuse; it is only reported better.
+**Update 2026-10-19, branch `fix/bug-issues`:** proposals 2 and 3 are built for the fallback path: an ops reply that says the command was not run (`did not run`, a refusal, and their kin) retries the ops step once and is reported as not run, never as the command's failure; only such a reply is retried, so a command that may have run is never run twice on a guess. What remains is Claude Code's: an ops agent that refuses twice still gives no answer, and then issue 002's status check decides a merge from git.
 **GitHub:** [#4](https://github.com/DarkArty07/aether-plugin/issues/4) (private repository)
 
 ## Summary

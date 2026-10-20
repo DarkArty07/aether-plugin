@@ -272,10 +272,14 @@ async function opsOff($, state) {
 
 // The command an ops agent carries, when the mod may run it, else null. Only an agent a workflow spawned
 // with a schema has the StructuredOutput tool the answer calls; aether:run always passes one.
-function opsCommand(e) {
+function opsCommand(e, $) {
   if (e.subagentType !== OPS || !e.workflow) return null
   try {
-    return parseOpsPrompt(e.prompt)
+    const command = parseOpsPrompt(e.prompt)
+    // The PATH form names the compiling version's bins (issue 008): when they are not this
+    // mod's own, the model runs the prompt, and its PATH puts that version's bin first.
+    if (command && command.binDir !== undefined && command.binDir !== `${$.plugin.root}/bin`) return null
+    return command
   } catch {
     return null
   }
@@ -368,7 +372,7 @@ export function register(on, options) {
       // The delegate router links the agent to its decision (and keeps an external delegate for its first step).
       const ctx = await routerContext($, state)
       if (ctx) router.bind(routerCalls($), e, result.agentId, ctx)
-      const command = opsCommand(e)
+      const command = opsCommand(e, $)
       if (command && !(await opsOff($, state))) state.ops.set(result.agentId, command)
     }
     return result

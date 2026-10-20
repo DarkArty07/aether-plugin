@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { refresh, keyFrom, keyFile, main } = require('../scripts/refresh-lanes.js')
+const { refresh, refreshPairs, keyFrom, keyFile, main } = require('../scripts/refresh-lanes.js')
 
 const CONFIG = {
   reserve: 0.05,
@@ -103,4 +103,82 @@ test('main reads the key from the data directory when the environment has none, 
 test('the script no longer looks in the repository for the key', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'refresh-lanes.js'), 'utf8')
   assert.doesNotMatch(source, /repoPaths|mainRoot|main checkout/)
+})
+
+const PAIR_ROW = (id, slug, intelligence, extra = '') =>
+  `    { "id": "${id}", "slug": "${slug}", "harness": "x", "intelligence": ${intelligence}, "costPerTaskUsd": 0.5, "outputTokensPerSecond": 90, "timeToFirstTokenS": 1.5${extra} },`
+const PAIRS_TEXT = [
+  '{',
+  '  "fetchedAt": "2026-10-19",',
+  '  "pairs": [',
+  PAIR_ROW('claude/opus@high', 'claude-opus-5-5-high', 53.1),
+  PAIR_ROW('agy/claude-opus-5-5@high', 'claude-opus-5-5-high', 53.1),
+  PAIR_ROW('muse/wonder@high', 'claude-opus-5-5-high', 53.1, ', "ownerDecision": "his words"'),
+  PAIR_ROW('agy/gemini-3.8-flash@low', 'gemini-3-8-flash-low', 30),
+  PAIR_ROW('agy/gone@low', 'gone-slug', 12.3),
+  '  ]',
+  '}',
+  '',
+].join('\n').replace(',\n  ]', '\n  ]')
+const PAIRS_AA = [
+  { slug: 'claude-opus-5-5-high', evaluations: { artificial_analysis_intelligence_index: 53.64, terminalbench_v4_0: 0.5 } },
+  { slug: 'gemini-3-8-flash-low', evaluations: { artificial_analysis_intelligence_index: 30, terminalbench_v4_0: 0.1 } },
+]
+
+test('refreshPairs sets the intelligence of each pair by its slug, reports what changed, and touches nothing else', () => {
+  const table = JSON.parse(PAIRS_TEXT)
+  const { changes } = refreshPairs(table, PAIRS_AA)
+  assert.deepEqual(changes, [
+    'claude/opus@high: intelligence 53.1 → 53.6',
+    'agy/claude-opus-5-5@high: intelligence 53.1 → 53.6',
+    'muse/wonder@high: intelligence 53.1 → 53.6',
+    'agy/gone@low: slug gone-slug not found',
+  ])
+  const before = JSON.parse(PAIRS_TEXT)
+  for (const [at, pair] of table.pairs.entries()) {
+    assert.deepEqual({ ...pair, intelligence: null }, { ...before.pairs[at], intelligence: null }, pair.id)
+  }
+  assert.deepEqual(table.pairs.map((pair) => pair.intelligence), [53.6, 53.6, 53.6, 30, 12.3])
+  assert.equal(table.fetchedAt, before.fetchedAt)
+})
+
+test('refresh-lanes refreshes the intelligence of the pairs by slug and leaves their cost per task alone', async (t) => {
+  const dir = tempDir(t)
+  const file = path.join(dir, 'lanes.json')
+  const pairsFile = path.join(dir, 'pairs.json')
+  fs.writeFileSync(file, JSON.stringify(CONFIG))
+  fs.writeFileSync(pairsFile, PAIRS_TEXT)
+  const fetch = async () => ({ ok: true, status: 200, json: async () => ({ data: [...AA, ...PAIRS_AA] }) })
+  const env = { ARTIFICIAL_ANALYSIS_API_KEY: 'secret-key' }
+
+  const dry = await main(['--config', file, '--pairs', pairsFile], { env, fetch, now: NOW })
+  assert.equal(dry.exitCode, 0)
+  assert.ok(dry.stdout.includes('muse/wonder@high: intelligence 53.1 → 53.6\n'), dry.stdout)
+  assert.ok(dry.stdout.includes('agy/gone@low: slug gone-slug not found\n'), dry.stdout)
+  assert.equal(fs.readFileSync(pairsFile, 'utf8'), PAIRS_TEXT)
+
+  const wrote = await main(['--config', file, '--pairs', pairsFile, '--write'], { env, fetch, now: NOW })
+  assert.ok(wrote.stdout.includes(`written to ${pairsFile}\n`), wrote.stdout)
+  // The file keeps its layout: only the intelligence numbers of the three pairs that moved differ, and the Muse row is the Opus row.
+  assert.equal(fs.readFileSync(pairsFile, 'utf8'), PAIRS_TEXT.replaceAll('"intelligence": 53.1', '"intelligence": 53.6'))
+  const pairs = JSON.parse(fs.readFileSync(pairsFile, 'utf8')).pairs
+  assert.deepEqual(pairs.map((pair) => pair.costPerTaskUsd), [0.5, 0.5, 0.5, 0.5, 0.5])
+  assert.equal(pairs[2].intelligence, pairs[0].intelligence)
+
+  const again = await main(['--config', file, '--pairs', pairsFile], { env, fetch, now: NOW })
+  assert.equal(again.stdout.includes('intelligence 53.1'), false)
+})
+
+test('without --pairs the pairs table beside the lane table is refreshed, and none is when there is none', async (t) => {
+  const dir = tempDir(t)
+  const file = path.join(dir, 'lanes.json')
+  fs.writeFileSync(file, JSON.stringify(CONFIG))
+  const fetch = async () => ({ ok: true, status: 200, json: async () => ({ data: [...AA, ...PAIRS_AA] }) })
+  const env = { ARTIFICIAL_ANALYSIS_API_KEY: 'secret-key' }
+  const alone = await main(['--config', file], { env, fetch, now: NOW })
+  assert.equal(alone.stdout, 'gemini-3.8-flash: intelligence 40.9 → 41\ngemini-3.8-flash: terminalBench 0.2 → 0.21\n')
+  fs.writeFileSync(path.join(dir, 'pairs.json'), PAIRS_TEXT)
+  const beside = await main(['--config', file, '--write'], { env, fetch, now: NOW })
+  assert.ok(beside.stdout.includes('claude/opus@high: intelligence 53.1 → 53.6\n'), beside.stdout)
+  assert.ok(beside.stdout.includes(`written to ${path.join(dir, 'pairs.json')}\n`), beside.stdout)
 })

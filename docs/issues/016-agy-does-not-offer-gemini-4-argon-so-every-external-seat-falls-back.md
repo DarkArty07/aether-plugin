@@ -3,7 +3,8 @@
 **Type:** bug (design seats, lane models)
 **Date:** 2026-10-15
 **Found in:** the design of spec 005, in the Lead's session 777d41c2; the same failure appears in session 5ef557b7 (spec 004)
-**Status:** open
+**Status:** fixed in 0.14.0 (2026-10-20): a seat never tries a model that the harness's captured listing does not offer at the seat's effort. See the Update below.
+**Update 2026-10-19, branch `fix/bug-issues`:** the acceptance is built: a seat never tries a model the harness's captured listing (`config/models/harness-models.json`) does not offer at the level the seat's effort maps to. `chooseSeat` passes such a model over with reason `not-offered`, and a seat with no offered model ends in the same exit-3 `no-external` as before, with the tried models and reasons named. A harness with no listing captured cannot refuse a model, so nothing changes for it. The listing is the captured one, not a live `agy models` call: refresh it with the models-index scripts when a harness changes its offer.
 **GitHub:** [#20](https://github.com/DarkArty07/aether-plugin/issues/20) (private repository)
 
 ## What happened

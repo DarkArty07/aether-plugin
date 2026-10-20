@@ -16,12 +16,12 @@ test('R8: the Lead learns the override form in the bootstrap skill, and that it 
   assert.ok(skill.includes('`record`'))
 })
 
-test('R11: the front page and the getting-started page count the eight options and name them', () => {
+test('R11: the front page and the getting-started page count the seven options and name them', () => {
   const readme = read('README.md')
   const start = read('docs/getting-started.md')
-  assert.ok(readme.includes("the plugin's eight options"))
+  assert.ok(readme.includes("the plugin's seven options"))
   assert.ok(!readme.includes("the plugin's four options"))
-  assert.ok(start.includes("the plugin's eight options, `lanes`, `harnesses`, `ops`, `seats`, `router`, `decider`, `fallback` and `deadlines`"))
+  assert.ok(start.includes("the plugin's seven options, `superdelegation`, `harnesses`, `ops`, `router`, `decider`, `fallback` and `deadlines`"))
   assert.ok(!start.includes("the plugin's four options"))
   assert.ok(readme.split('\n').length <= 160)
 })

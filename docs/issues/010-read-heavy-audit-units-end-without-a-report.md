@@ -3,7 +3,8 @@
 **Type:** bug (swarm, implementer budget)
 **Date:** 2026-10-15
 **Found in:** the run that reconciled the documentation (spec 004, run `20261015-011925-90a1`), units 17, 18 and 19
-**Status:** open. Related: issue 003, which this adds a second shape to.
+**Status:** partly fixed in 0.14.0 (2026-10-20), see the Update below for what is built and what is open.
+**Update 2026-10-19, branch `fix/bug-issues`:** proposals 1, 3 and 4 are built, and 2 in brief form. The implementer is told its budget and to commit and report by about turn 45 of 60 (lanes: well before the budget is out), to commit as it goes, and — on an attempt after one ended without its report — to work the owned files one at a time, committed and noted before the next is opened. `aether-plan check` (in `buildGraph`) warns when a brief names more than 8 files to read beyond the ones the task owns. Still open in full: splitting the brief itself by owned file into separate attempts.
 **GitHub:** [#14](https://github.com/DarkArty07/aether-plugin/issues/14) (private repository)
 
 ## Summary

@@ -3,7 +3,7 @@
 // Muse in a lane, end to end, with the real runner and the fake muse (tests/fixtures/fake-muse.js): a unit runs in its
 // own worktree, a clean answer comes back with its usage and the quota that call left, every way a call can fail ends
 // as a failed call (and only the quota data of a failure leaves a mark), the observation and its marks agree on what is
-// newer, the quota view and the order treat Muse as any other harness, and a stopped call takes its children with it.
+// newer, the quota view and the choice treat Muse as any other harness, and a stopped call takes its children with it.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -12,7 +12,8 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const marks = require('../plugins/aether/lib/lane-marks.js')
-const order = require('../plugins/aether/lib/lane-order.js')
+const { choose, runArgs, idleHarnesses } = require('../plugins/aether/lib/superdelegation.js')
+const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 const { WT_BIN, runBin, commitIn, tempDir } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 
@@ -42,11 +43,10 @@ const allowanceOf = (used5h, usedWeek, now = Date.now()) => ({ tier: 'power', wi
 // A script of the fake muse that answers with `answer`, and the allowance a run reports when it has one.
 const answering = (answer, allowance = null, extra = {}) => ({ stdout: lines(completed(JSON.stringify(answer)), usageRecord(allowance)), ...extra })
 
-const flags = (digest, { role = 'implementer', task = 'task-1' } = {}) => ['--role', role, ...(task ? ['--task', task] : []), '--model', MODEL, '--effort', 'xhigh', '--digest', digest]
+const flags = (digest, { role = 'implementer', task = 'task-1' } = {}) => ['--role', role, ...(task ? ['--task', task] : []), '--model', MODEL, '--effort', 'high', '--digest', digest]
 
 // The lane table's muse entry, as the plan's tests copy and change it: the fake muse as its command, one model, and
-// waits that a test never reaches. The table maps an effort to low, medium or high only (lanes.js refuses any other
-// value, and the runner loads the table through it), so xhigh maps to high, as it does for every other harness.
+// waits that a test never reaches. levels and replaces stay, because today's lane-table validator requires them.
 function museEntry(config, { command, models }) {
   return {
     ...config.harnesses.muse,
@@ -130,7 +130,7 @@ test('a unit runs in Muse in its own worktree, safely, and comes back with its u
   assert.equal(call.cwd, path.join(args.repoRoot, '.aether', 'worktrees', args.runId, 'task-1'))
   for (const word of ['exec', '--json', '--contributor-mode', 'off', '--max-model-steps', '200', '--output-schema']) assert.ok(call.argv.includes(word), word)
   assert.equal(call.argv[call.argv.indexOf('--model') + 1], MODEL)
-  assert.equal(call.argv[call.argv.indexOf('--reasoning-effort') + 1], 'high', 'the effort xhigh goes as the level the table maps it to')
+  assert.equal(call.argv[call.argv.indexOf('--reasoning-effort') + 1], 'high', 'the effort of the pair goes as it is')
   for (const flag of ['--yolo', '--disable-sandbox', '--trust-workspace', '--api-key-stdin']) assert.equal(call.argv.includes(flag), false, flag)
   assert.equal(call.metaApiKey, false, 'the key of the caller does not reach the call')
 
@@ -182,16 +182,17 @@ test('a muse that is not installed starts no call: the start says so, and the ta
   assert.equal(fs.existsSync(env.AETHER_FAKE_MUSE_LOG), false, 'no process was launched')
   assert.deepEqual(markFiles(env), [])
 
+  const { pairs } = loadPairs()
   const installed = (name, harness) => lanes.commandInstalled(harness.command)
   const config = lanes.loadConfig(env.AETHER_LANES_CONFIG)
-  assert.equal(lanes.lanesArgs(config, { installed, enabled: ['muse'] }), null)
-  const [idle] = lanes.idleHarnesses(config, { installed, enabled: ['muse'] })
+  assert.equal(runArgs(config, pairs, { installed, enabled: ['muse'] }), null)
+  const [idle] = idleHarnesses(config, pairs, { installed, enabled: ['muse'] })
   assert.equal(idle.name, 'muse')
   assert.match(idle.reason, /is not installed/)
 
   // The same table with the fake muse gives the harness its calls.
   const present = lanes.loadConfig(museEnv(t, {}).AETHER_LANES_CONFIG)
-  assert.deepEqual(lanes.lanesArgs(present, { installed, enabled: ['muse'] }).harnesses, ['muse'])
+  assert.deepEqual(runArgs(present, pairs, { installed, enabled: ['muse'] }).harnesses, ['muse'])
 })
 
 const FAILURES = [
@@ -311,44 +312,40 @@ test('aether-lane quota shows Muse as installed with its version and the windows
   }
 })
 
-test('the order treats Muse as it treats the other harnesses: priority, reserve, mark and installation (US2, R15)', (t) => {
+test('the choice treats Muse as it treats the other harnesses: the window of its quota, the reserve, a mark and the installation (US2, R15)', (t) => {
   const env = museEnv(t, {}, { models: false })
   const cwd = tempDir(t)
-  const candidates = [
-    { harness: 'agy', model: 'gemini-3.8-flash', group: 'gemini' },
-    { harness: 'muse', model: MODEL, group: 'muse' },
-  ]
-  const ordered = (environment = env) => {
+  const { pairs } = loadPairs()
+  const MUSE_PAIR = 'muse/muse-wonder-full-1.0@high'
+  const unread = { unknown: true, usable: true, mark: null, resetsAt: null }
+  const agy = { installed: true, groups: { gemini: unread, claude: unread } }
+  const choice = (environment = env) => {
     const report = runBin(fx.LANE_BIN, ['quota', '--json', 'muse'], cwd, environment).json
-    return order.orderCandidates(candidates, { muse: report.harnesses.muse })
+    return choose({ pairs, reference: { model: 'opus', effort: 'high' }, harnesses: { agy, muse: report.harnesses.muse } })
   }
-  const names = (entries) => entries.map((entry) => `${entry.harness}:${entry.model}`)
+  const why = (decision) => decision.candidates.find((c) => c.id === MUSE_PAIR).why
   const observe = (used) => writeObserved(env, { observedAt: Date.now(), window: { usedPercent: used, resetsAtMs: Date.now() + 3 * HOUR }, weekly: { usedPercent: used, resetsAtMs: Date.now() + 5 * DAY } })
 
-  // 28% left with the reset far off: Muse has a reading and agy has none, so Muse goes first.
+  // 28% left with the reset far off: Muse has a window and agy has none, so Muse goes first.
   observe(72)
-  let result = ordered()
-  assert.deepEqual(names(result.ordered), [`muse:${MODEL}`, 'agy:gemini-3.8-flash'])
-  assert.deepEqual(result.ordered.map((entry) => entry.state), ['priority', 'unknown'])
-  assert.deepEqual(result.excluded, [])
+  assert.equal(choice().picked.id, MUSE_PAIR)
 
   // 3% left is under the reserve of 5%.
   observe(97)
-  result = ordered()
-  assert.deepEqual(names(result.ordered), ['agy:gemini-3.8-flash'])
-  assert.deepEqual(result.excluded.map((entry) => [entry.harness, entry.why]), [['muse', 'reserve']])
+  let decision = choice()
+  assert.equal(why(decision), 'dry')
+  assert.equal(decision.picked.harness, 'agy')
 
   // A live mark holds the group whatever else is known.
   fs.rmSync(observedFile(env))
   marks.markDry(env.AETHER_DATA_DIR, { harness: 'muse', group: 'muse', reserve: 0.05, now: Date.now() })
-  result = ordered()
-  assert.deepEqual(result.excluded.map((entry) => [entry.harness, entry.why]), [['muse', 'marked']])
+  assert.equal(why(choice()), 'dry')
 
   // A command that is not installed.
   const absent = museEnv(t, {}, { models: false, command: path.join(tempDir(t), 'no-muse') })
-  result = ordered(absent)
-  assert.deepEqual(result.excluded.map((entry) => [entry.harness, entry.why]), [['muse', 'not-installed']])
-  assert.deepEqual(names(result.ordered), ['agy:gemini-3.8-flash'])
+  decision = choice(absent)
+  assert.equal(why(decision), 'not-installed')
+  assert.equal(decision.picked.harness, 'agy')
 })
 
 test('stop ends a muse that is running with the processes it started, and the call is logged as stopped (US10, R7)', async (t) => {

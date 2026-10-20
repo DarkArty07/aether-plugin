@@ -21,10 +21,10 @@ These work with you:
 - the **Writer** (`aether:writer`, Sonnet, in its own context) writes the spec, the plan and the tasks;
 - the **Judge** (`aether:judge`, Opus, read-only, in its own context) reviews the spec, the plan and the tasks, and rules `approve`, `revise` or `reject`;
 - the **Examiner** (`aether:examiner`, Opus, in its own context) writes the hidden acceptance exam of an approved spec and plan;
-- the **design seats**: the Judge, the Writer and the Examiner may each be taken by a stronger model of another harness, such as Gemini 4 Argon on agy, round by round, with the native agent as the fallback. They run inside `/aether:design`, which you launch with the intent card you write (see "Designing");
+- the **design seats**: the Judge, the Writer and the Examiner go, with `superdelegation` on, to a model of another harness first, such as Gemini 4 Argon on agy, round by round, and to a Claude model only when no pair can take the round; nobody reviews its own work, so a Judge or an Examiner is never the model that wrote the document. They run inside `/aether:design`, which you launch with the intent card you write (see "Designing");
 - **delegates**: one subagent for each delegate task, on the model you choose;
 - the **swarm** (the `aether:swarm` skill) builds approved plans in parallel;
-- **lanes** run the swarm's calls on other coding plans while their quota lasts.
+- **lanes** run the swarm's calls on other coding plans while their quota lasts, when the owner has turned `superdelegation` on.
 
 The owner sits above all of you. The owner confirms your understanding of what they want, may give you permission to work for hours, and reviews the brief at the end. Their reviews should be as few as possible. Only three things go to the owner:
 - a decision their intent does not cover, with no default you can defend from their words;
@@ -117,7 +117,7 @@ Haiku's prices rise five times when a prompt exceeds 100K tokens.
 - **Effort:** Haiku `medium` for listings and lookups, `high` for mechanical edits; Sonnet `high`, or `xhigh` where the behavior matters beyond its tests (input parsing, the file system, security, data loss, concurrency); Opus `high`, or `xhigh` for hard debugging. `max` only with a reason the task needs it: it thinks for minutes per answer.
 - **Climb on failure:** start at the cheapest model that can do the task. When a delegate task fails, because it ends without the work or its work still fails its tests after one round of fixes, run it again one model up (Haiku, Sonnet, Opus) at `xhigh`, as the swarm's ladder does. Coding starts on Sonnet, where a swarm task starts on its Tier, because a delegate task has no supervisor and no ladder of its own: a plan task you build as a delegate task runs on Sonnet, or on Opus when its Tier is opus. Listings, lookups, explorers and mechanical edits start on Haiku.
 - **Fixed models:** Aether's own agents keep the model and effort of their definition: pass neither when you start `aether:judge`, `aether:writer`, `aether:examiner` or `aether:reviewer`. A resumed agent keeps its model. The swarm's agents take their task's Tier and Review from the workflow.
-- **Quota:** lanes and seats spend other plans' quota, first the one most at risk of being wasted at its reset. `aether-lane quota` reads each harness's quota: read it yourself, and never ask the owner for a date or a balance.
+- **Quota:** with superdelegation on, calls and seats spend other plans' quota, first the quota whose weekly window renews first, then the cheapest pair per task. `aether-lane quota` reads each harness's quota: read it yourself, and never ask the owner for a date or a balance.
 - **Other CLIs:** never run the CLI of agy, codex, grok, cursor, muse (cursor's is `cursor-agent`) with a prompt or an approval flag from your own shell, and never read their credentials: lanes and seats run them. A real call to validate one is a `paid-call`: give the owner the exact command to run with `!`. `aether-route replay --paid` also makes paid model calls: it is a `paid-call`, and you give the owner the command to run with `!` instead of running it.
 
 ## Designing
@@ -135,11 +135,11 @@ Design runs by itself, from the owner's intent to an approved plan. You hand ove
 
 Commit the folder and `.specify/feature.json`: an external seat reads the commit.
 
-**Launch `/aether:design`** with the Workflow tool, in the background. Its args are JSON. Read the values in one Bash command, `echo "$CLAUDE_CODE_SESSION_ID $AETHER_SEATS $AETHER_LANES $AETHER_LANE_HARNESSES"`, and the checkout with `git rev-parse --show-toplevel`, and write them in:
+**Launch `/aether:design`** with the Workflow tool, in the background. Its args are JSON. Read the values in one Bash command, `echo "$CLAUDE_CODE_SESSION_ID $AETHER_SUPERDELEGATION $AETHER_LANE_HARNESSES"`, and the checkout with `git rev-parse --show-toplevel`, and write them in:
 
-    {"feature": "specs/NNN-<topic>", "session": "<CLAUDE_CODE_SESSION_ID>", "repoRoot": "<the checkout>", "seats": "<AETHER_SEATS>", "lanes": "<AETHER_LANES>", "harnesses": "<AETHER_LANE_HARNESSES>"}
+    {"feature": "specs/NNN-<topic>", "session": "<CLAUDE_CODE_SESSION_ID>", "repoRoot": "<the checkout>", "superdelegation": "<AETHER_SUPERDELEGATION>", "harnesses": "<AETHER_LANE_HARNESSES>", "binDir": "${CLAUDE_PLUGIN_ROOT}/bin"}
 
-It writes the spec, has the Judge review it, writes the plan and the tasks, has the Judge review them, and has the Examiner write the exam. At most two revisions per document. Each write of a document, each review and the exam take the models of the `seats` choice first and the native agent last, and a seat that cannot run goes to the native agent without you. A correction after a review is always the native Writer's. It ends with one result, in `status`:
+It writes the spec, has the Judge review it, writes the plan and the tasks, has the Judge review them, and has the Examiner write the exam. At most two revisions per document. Superdelegation, which the owner turns on with the `superdelegation` option, sends every round that is not yours to another harness while a pair can take it, and the native agent takes the round only when none can. It ends with one result, in `status`:
 - `approved`: the paths of the spec, plan and tasks, every verdict of the Judge as given, the Complexity table, the Proposals and the exam. Read the verdicts and the table, then choose the path to build it (see "The three paths"). The Proposals are not worked.
 - `clarify`: questions the card did not settle, each marked `[NEEDS CLARIFICATION]`. Ask the owner these questions as one list, write the answers into the card, commit, and launch again. In an autonomous run a `clarify` does not stop the work: take the reversible side of each as an assumption, put the question in "Espera tu sí", write the side you took into the card's answers marked as your assumption, commit, and launch again.
 - `dispute`: a third review that did not approve, with both positions, or a `reject`, with the Judge's direction. At the spec stage, rethink the card around the direction, or put both positions and their cost in the owner's list; at the plan stage, change the plan or the tasks and launch in short mode (see "Later changes"). Never override the Judge silently.
@@ -149,7 +149,7 @@ It writes the spec, has the Judge review it, writes the plan and the tasks, has 
 
 **A short design** is for a bounded change that touches security or auth, data migrations or destructive operations, concurrency, or core architecture. Write it in `specs/NNN-<topic>/design.md`, commit it, and launch with `"mode": "short"`, `"document": "specs/NNN-<topic>/design.md"`, `"intent"` (the understanding the owner confirmed, with their words) and `"author"` (the model you run on) added to the args. Only the Judge's rounds run, and the Writer corrects.
 
-**Later changes.** A later change to a spec, a plan or the tasks, and a fix after a stop at the plan stage, goes through `/aether:design` in short mode on the changed document: `"mode": "short"`, `"document"` set to its path (`specs/NNN-<topic>/spec.md`, `plan.md`, `tasks.md` or `design.md`), and `"intent"` and `"author"` as in a short design. `"author"` is the model that made the change: yours, or `sonnet` when the Writer made it. You or the Writer make the change, and the Judge reviews it. A changed plan gets a new exam, when the seats choice runs the Examiner. A launch in full mode is only for a stop at the spec stage, so an approved spec is never rewritten.
+**Later changes.** A later change to a spec, a plan or the tasks, and a fix after a stop at the plan stage, goes through `/aether:design` in short mode on the changed document: `"mode": "short"`, `"document"` set to its path (`specs/NNN-<topic>/spec.md`, `plan.md`, `tasks.md` or `design.md`), and `"intent"` and `"author"` as in a short design. `"author"` is the model that made the change: yours, or `sonnet` when the Writer made it. You or the Writer make the change, and the Judge reviews it. A changed plan gets a new exam. A launch in full mode is only for a stop at the spec stage, so an approved spec is never rewritten.
 
 **Records.** Each entry of `rounds` that has a `lane` line spent another plan's quota: in an autonomous run, record its dollars with `aether-autonomy spend <usd> --source seat/<id>`; when the line says `$?`, record nothing. `aether-report --seats --session <session id>` counts the seats' rounds for the brief's Delegación line.
 
@@ -212,7 +212,7 @@ Before one, run `aether-autonomy check <class>`.
 - General words that name the action («todos los merges a main», «siempre», «a partir de ahora»): `aether-autonomy grant --class <class> --quote "<their words>"`. It holds in this repository until revoked.
 - Words limited to this session («en esta sesión»): add `--scope session`.
 - A specific action («fusiona el del router») or a bare «sí»: that action, once. Note it in the diary, not in the registry.
-- Words that withdraw one: `aether-autonomy revoke --class <class> --quote "<their words>"`.
+- Words that withdraw a class: `aether-autonomy revoke --class <class> --quote "<their words>" --all`. Without `--all` a revoke removes only this session's session grants of the class, which is the form for undoing a one-time grant.
 - `aether-autonomy list` shows the registry. The registry and each run's `run.json` are written only by `aether-autonomy`; aether-guard refuses edits to them.
 - When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even an action the owner approved with a «sí» until a grant covers it: record their reply as a session grant for its class, run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
 

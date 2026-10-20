@@ -46,6 +46,8 @@ test('in any other case the mark lasts 60 minutes: a rate limit, no reading, an 
     'a balance that is unknown': { windows: { weekly: { remaining: null, resetsAt: WEEKLY_RESET } } },
     'a share read as 0% used': { windows: { weekly: { remaining: 1, resetsAt: WEEKLY_RESET } }, usedPercentAbsent: true },
     'a reset already past': { windows: { weekly: { remaining: 0, resetsAt: '2026-10-14T05:00:00Z' } } },
+    // Issue 015's odd reading: the spent window resets in the future, the other six days ago.
+    'a past reset on a window above the reserve': { windows: { weekly: { remaining: 0.01, resetsAt: '2026-10-18T07:22:02Z' }, '5h': { remaining: 0.9, resetsAt: '2026-10-09T05:53:31Z' } } },
     'a reset that cannot be read': { windows: { weekly: { remaining: 0, resetsAt: 'soon' } } },
   }
   for (const [name, reading] of Object.entries(readings)) {

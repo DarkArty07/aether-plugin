@@ -1,15 +1,11 @@
 {
   "reserve": 0.05,
   "dryMarkMinutes": 60,
-  "designSeats": {
-    "native": { "judge": [], "writer": [], "examiner": false },
-    "balanced": { "judge": ["agy/gemini-4-argon"], "writer": [], "examiner": ["agy/gemini-4-argon"] },
-    "robust": { "judge": [], "writer": ["agy/gemini-4-argon"], "examiner": [] }
-  },
   "harnesses": {
     "agy": {
       "command": "agy",
-      "maxParallel": 4,
+      "maxParallel": 8,
+      "maxParallelMeasured": { "at": "2026-10-20T21:40:58.778Z", "ceiling": 8, "limited": false },
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200, "judge": 1200, "writer": 2700, "examiner": 1800 },
@@ -17,29 +13,22 @@
       "models": {
         "gemini-3.8-flash": {
           "group": "gemini",
-          "replaces": "haiku",
           "roles": ["implementer"],
-          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
           "aa": { "slug": "gemini-3-8-flash", "intelligence": 40.9, "terminalBench": 0.2, "checked": "2026-10-08" }
         },
         "claude-sonnet-5-5": {
           "group": "claude",
-          "replaces": "sonnet",
           "roles": ["implementer", "supervisor"],
-          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
           "aa": { "slug": "claude-sonnet-5-5-high", "intelligence": 46.8, "terminalBench": 0.44, "checked": "2026-10-08" }
         },
         "claude-opus-5-5": {
           "group": "claude",
-          "replaces": "opus",
           "roles": ["implementer", "reviewer"],
-          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
           "aa": { "slug": "claude-opus-5-5-high", "intelligence": 53.6, "terminalBench": 0.57, "checked": "2026-10-08" }
         },
         "gemini-4-argon": {
           "group": "gemini",
           "roles": ["judge", "writer", "examiner"],
-          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
           "note": "Gemini 4 Argon, generally available 2026-10-13. agy 1.3.6 lists it as gemini-4-argon-low, -medium and -high, and a round of each seat ran on it on 2026-10-15. Not measured against the native agent yet (docs/evaluations/seats)."
         }
       }
@@ -56,6 +45,7 @@
     "grok": {
       "command": "grok",
       "maxParallel": 2,
+      "maxParallelMeasured": { "at": "2026-10-20T21:42:17.781Z", "ceiling": 8, "limited": true },
       "waitSeconds": 540,
       "quotaLifeMinutes": 30,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
@@ -63,10 +53,8 @@
       "models": {
         "grok-4.7": {
           "group": "grok",
-          "replaces": "haiku",
           "roles": ["implementer"],
-          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
-          "note": "Grok 4.7 (xAI: built for coding, agentic tasks and knowledge work; 500K context; effort low, medium, high, xhigh), checked on 2026-10-13. Artificial Analysis: 46.4 intelligence and 0.258 terminal-bench at xhigh, above Gemini 3.8 Flash (0.197) and below Haiku 5.5 at xhigh (0.293), so it sits at the haiku tier. Aether's xhigh maps to high: AA scores high at 46.3 and 0.247 against 46.4 and 0.258 at xhigh, with a time to first token of 9 s against 15 s. models/profiles.json in the plugin's config folder has its profile. grok-4.7-build-fast is the same model on faster infrastructure at twice the token price, billed through the plan: it is not a cheaper lane, and it is left out."
+          "note": "Grok 4.7 (xAI: built for coding, agentic tasks and knowledge work; 500K context; effort low, medium, high, xhigh), checked on 2026-10-13. Artificial Analysis: 46.4 intelligence and 0.258 terminal-bench at xhigh, above Gemini 3.8 Flash (0.197) and below Haiku 5.5 at xhigh (0.293), so it scores below Haiku 5.5 at xhigh on that benchmark. The harness takes xhigh as it is, and the pairs table (config/pairs.json) holds its low, high and xhigh pairs, which the pair rule judges by their points: AA scores high at 46.3 and 0.247 against 46.4 and 0.258 at xhigh, with a time to first token of 9 s against 15 s. models/profiles.json in the plugin's config folder has its profile. grok-4.7-build-fast is the same model on faster infrastructure at twice the token price, billed through the plan: it is not a cheaper lane, and it is left out."
         }
       }
     },
@@ -82,6 +70,7 @@
     "muse": {
       "command": "muse",
       "maxParallel": 2,
+      "maxParallelMeasured": { "at": "2026-10-20T21:43:50.871Z", "ceiling": 8, "limited": true },
       "waitSeconds": 540,
       "quotaLifeMinutes": 30,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
@@ -89,12 +78,10 @@
       "models": {
         "muse-wonder-full-1.0": {
           "group": "muse",
-          "replaces": "opus",
           "roles": ["implementer", "reviewer"],
-          "levels": { "low": "low", "medium": "medium", "high": "high", "xhigh": "high" },
           "aa": { "slug": "muse-wonder-full", "intelligence": 55.8, "terminalBench": 0.57, "checked": "2026-10-19" },
           "ownerDecision": "«si deja entrar a musewonder full es uno d elos mejores modelos que tiene el harness, ... esta anivel de opus segun yo» (the owner, 2026-10-19). Artificial Analysis names an effort for its only figure of this model, max, which the CLI does not take (low to xhigh), so under rule 3 of the models index it has no figure at an effort it takes; the owner decided it enters anyway, as Opus. Its score at max is 55.8 in intelligence and 0.57 in terminal-bench, against Opus 5.5 at 53.6 and 0.57 at high.",
-          "note": "The one model the Muse CLI lists to the owner's account (model/list of muse serve), given by Meta only on the Power and Maximum plans: an account without the plan is refused and the call runs native. Called for real on 2026-10-19 through this adapter (muse 1.4.11): clean, structured answer, the sandbox runs, and two calls at once live together. Aether's xhigh runs at Muse's high."
+          "note": "The one model the Muse CLI lists to the owner's account (model/list of muse serve), given by Meta only on the Power and Maximum plans: an account without the plan is refused and the call runs native. Called for real on 2026-10-19 through this adapter (muse 1.4.11): clean, structured answer, the sandbox runs, and two calls at once live together. Its pair, muse/muse-wonder-full-1.0@high, is in config/pairs.json."
         }
       }
     }

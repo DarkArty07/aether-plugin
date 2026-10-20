@@ -152,16 +152,17 @@ function callHarness(info) {
   return typeof info?.harness === 'string' ? info.harness : 'agy'
 }
 
-// The table's entry for a lane model that serves role at effort: its group, its id and the level effort maps to, or null.
-function laneModel(harness, role, model, effort) {
+// The efforts a call may ask for. The harness is given the effort as it is: nothing translates it.
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+// The table's entry for a lane model at a valid effort: its group, its id and the effort itself as the level, or null.
+function laneModel(harness, model, effort) {
   const entry = Object.hasOwn(harness.models, model) ? harness.models[model] : null
-  if (!entry || !entry.roles.includes(role) || !Object.hasOwn(entry.levels, effort)) return null
-  return { group: entry.group, id: model, level: entry.levels[effort] }
+  if (!entry || !EFFORTS.includes(effort)) return null
+  return { group: entry.group, id: model, level: effort }
 }
 
 // ---- status ----
-
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 // The run's graph, or null when there is none or it cannot be read.
 function readGraph(cwd, runId) {
@@ -182,25 +183,8 @@ function enabledFor(cwd, runId) {
   return lanes.enabledHarnesses()
 }
 
-// The order of the candidates of each call the run's graph names: for each role and native model of lanes.calls, what
-// lane-order.js's rule makes of them over the groups' views. A plan of an older compile has one lane, not a list, per
-// call, and lanes.harness is the harness of a lane that names none. A graph with no lanes gives {}.
-function orderOf(cwd, runId, harnesses) {
-  const planned = readGraph(cwd, runId)?.lanes
-  if (!isObject(planned) || !isObject(planned.calls)) return {}
-  const byRole = {}
-  for (const [role, byTier] of Object.entries(planned.calls)) {
-    if (!isObject(byTier)) continue
-    byRole[role] = {}
-    for (const tier of Object.keys(byTier)) {
-      byRole[role][tier] = order.orderCandidates(order.candidatesOf(planned.calls, role, tier, planned.harness ?? null), harnesses)
-    }
-  }
-  return byRole
-}
-
 // Every harness of the table: an enabled one with the view of each of its groups (lane-quota.js), a disabled one by its
-// command alone; then the order of the run's candidates and the live dry marks. It never refreshes: the reading is the
+// command alone; then the live dry marks. It never refreshes: the reading is the
 // one kept for its life, and grok's is its log's last line, however old. Each reading it takes goes to the lane log.
 // latest maps a harness to the reading a refresh just took, which its view uses in place of asking its adapter.
 function status(cwd, runId, { latest = {} } = {}) {
@@ -221,12 +205,13 @@ function status(cwd, runId, { latest = {} } = {}) {
     }
     harnesses[name] = { enabled: true, ...quota.harnessView(name, settings, { reserve: config.reserve, now, dataDir, fresh: false, latest: latest[name] ?? null, onRead }) }
   }
-  return { time: new Date(now).toISOString(), harnesses, order: orderOf(cwd, runId, harnesses), marks: marks.liveMarks(dataDir, now, lanes.groupKnown(config)) }
+  return { time: new Date(now).toISOString(), harnesses, marks: marks.liveMarks(dataDir, now, lanes.groupKnown(config)) }
 }
 
 // The wave's quota step: renews the reading of each enabled harness that has a way to renew it (grok, over ACP and then
 // through its UI) and whose reading is missing, unknown or older than its life. Only `status --refresh` calls it, and
-// nobody calls it from start or the runner. A harness that cannot be refreshed leaves its reading as it is; the answer
+// nobody calls it from start or the runner. No workflow sends that form any more; it stays for the mod's tests and for the
+// workflows already installed. A harness that cannot be refreshed leaves its reading as it is; the answer
 // names the harnesses it tried, each as { refreshed, method, reading }.
 async function refreshStale(cwd, runId) {
   run.assertRunId(runId)
@@ -293,7 +278,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   // A harness the owner did not enable runs no call, even when a model names it.
   if (!enabledFor(cwd, runId).includes(name)) return { unavailable: 'harness' }
   const { config, harness, adapter } = harnessSettings(name)
-  const lane = CALLED_ROLES.includes(role) ? laneModel(harness, role, model, effort) : null
+  const lane = CALLED_ROLES.includes(role) ? laneModel(harness, model, effort) : null
   if (!lane) return { unavailable: 'role' }
   if (!adapter.installed()) return { unavailable: 'not-installed' }
   const dataDir = run.dataDir()
@@ -418,6 +403,17 @@ function failedDetail({ reason, error }, stderr) {
   return `${head}\n${text}`
 }
 
+// A failure that names its cause as the model or the arguments is failed whatever the
+// reading after it says (issue 015): one odd reading must not turn "model not found"
+// into a dry group. Only these explicit wordings count; anything else keeps the
+// reading's say.
+const MODEL_OR_ARGUMENT_ERROR =
+  /model not found|unknown model|no such model|unsupported model|invalid model|not recognized as a known model|invalid argument|unknown (option|flag|argument)|unrecognized (option|argument)/i
+
+function isModelOrArgumentError(parsed) {
+  return MODEL_OR_ARGUMENT_ERROR.test(parsed.reason || '') || MODEL_OR_ARGUMENT_ERROR.test(parsed.error || '')
+}
+
 // The status, result and detail of a finished call, from the checks and agy's output, in that order.
 // quotaRead says whether /usage could be read after the call: only a reading can find the group dry.
 function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, stderr) {
@@ -432,6 +428,8 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
     // agy's refusal for its individual quota is explicit, and /usage does not report that limit: it needs no reading.
     const refusal = refusalIn(parsed.reason, parsed.error, stderr)
     if (refusal) return { status: 'quota', detail: parsed.reason, refusal }
+    // The failure reason is checked before the reading (issue 015).
+    if (isModelOrArgumentError(parsed)) return { status: 'failed', detail: failedDetail(parsed, stderr) }
     if (quotaRead && !lanes.usable(quotaAfter, reserve)) return { status: 'quota', detail: parsed.reason }
     // A harness that reports no quota can only show it ran dry in its output, and so can grok, whose reading comes
     // from a log its headless calls do not update: a quota reason then ends the call as quota. agy's reasons never
@@ -660,4 +658,4 @@ function stop(cwd, runId, call = null) {
   return { stopped }
 }
 
-module.exports = { WORKDIR_RULE, LANE_NOTES, roleBody, claudeMdSections, buildPrompt, status, refreshStale, start, wait, result, stop, runCall }
+module.exports = { WORKDIR_RULE, LANE_NOTES, roleBody, claudeMdSections, buildPrompt, enabledFor, status, refreshStale, start, wait, result, stop, runCall }

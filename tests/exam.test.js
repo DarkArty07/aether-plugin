@@ -144,9 +144,10 @@ function examCli(cwd, args, env) {
 test("aether-exam stores the checkout's .aether-exam/ and removes it, runs it, and lists it", (t) => {
   const repo = repoWithSpec(t)
   const env = { AETHER_DATA_DIR: tempDir(t, 'aether-data-') }
-  // The Lead asks for the seat first; with the robust choice the native Examiner takes it, in this checkout.
-  const asked = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], { ...laneEnv(t), AETHER_SEATS: 'robust' }, '')
+  // The Lead asks for the seat first; with superdelegation off the native Examiner takes it, in this checkout.
+  const asked = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], { ...laneEnv(t), AETHER_SUPERDELEGATION: 'off' }, '')
   assert.equal(asked.status, 3)
+  assert.equal(asked.json.unavailable, 'superdelegation-off')
   assert.equal(asked.json.native.agent, 'aether:examiner')
   writeExam(path.join(repo.dir, '.aether-exam'), [README_TEST])
   assert.equal(repo.git('status', '--porcelain'), '', '.aether-exam/ is out of git')
@@ -165,16 +166,23 @@ test("aether-exam stores the checkout's .aether-exam/ and removes it, runs it, a
 
 // ---- The Examiner seat ----
 
+// What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
+// the Examiner, as it does when the quota that renews first is Gemini's.
+const geminiFirst = () => ({
+  'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * 86400000).toISOString()],
+  'Claude and GPT models': [0.9, 0.9, null, new Date(Date.now() + 3 * 86400000).toISOString()],
+})
+
 function seat(cwd, args, env, input) {
   const base = { ...process.env }
-  for (const name of ['AETHER_SEATS', 'AETHER_LANE_HARNESSES', 'AETHER_LANES']) delete base[name]
+  for (const name of ['AETHER_SUPERDELEGATION', 'AETHER_LANE_HARNESSES']) delete base[name]
   const r = spawnSync(process.execPath, [LANE_BIN, 'seat', ...args], { cwd, input, encoding: 'utf8', env: { ...base, ...env } })
   return { status: r.status, json: JSON.parse(r.stdout.trim().split('\n').pop()), stderr: r.stderr }
 }
 
 test('an external Examiner writes the exam under .aether-exam/, and Aether stores it outside the repository', (t) => {
   const repo = repoWithSpec(t)
-  const env = laneEnv(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
   const answer = { tests: [README_TEST, { ...README_TEST, id: 'c1-file', criterion: 'C1', command: 'node .aether-exam/c1.js', files: ['c1.js'] }], notes: 'C3 needs a GPU.' }
   const input = `Write the exam of ${FEATURE}.\nFAKE-AGY: write .aether-exam/c1.js process.exit(1)\nFAKE-AGY: answer ${JSON.stringify(answer)}\n`
   const r = seat(repo.dir, ['examiner', '--session', 's1', '--author', 'sonnet', '--feature', FEATURE], env, input)
@@ -194,11 +202,11 @@ test('an external Examiner writes the exam under .aether-exam/, and Aether store
 test('an Examiner that writes outside .aether-exam/, or names a file it did not write, gives the round back', (t) => {
   const repo = repoWithSpec(t)
   const answer = { tests: [{ ...README_TEST, files: ['missing.js'] }], notes: '' }
-  const outside = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], laneEnv(t), `FAKE-AGY: write tests/x.test.js x\nFAKE-AGY: answer ${JSON.stringify({ tests: [README_TEST], notes: '' })}\n`)
+  const outside = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], laneEnv(t, { quota: geminiFirst() }), `FAKE-AGY: write tests/x.test.js x\nFAKE-AGY: answer ${JSON.stringify({ tests: [README_TEST], notes: '' })}\n`)
   assert.equal(outside.status, 4)
   assert.equal(outside.json.failed, 'violation')
   assert.deepEqual(outside.json.files, ['tests/x.test.js'])
-  const missing = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], laneEnv(t), `FAKE-AGY: answer ${JSON.stringify(answer)}\n`)
+  const missing = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], laneEnv(t, { quota: geminiFirst() }), `FAKE-AGY: answer ${JSON.stringify(answer)}\n`)
   assert.equal(missing.status, 4)
   assert.equal(missing.json.detail, 'the exam cannot be stored: test c2-readme names missing.js, which is not in the exam')
   assert.equal(missing.json.native.agent, 'aether:examiner')

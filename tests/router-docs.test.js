@@ -32,9 +32,9 @@ test('C12: the measurements asked before command becomes the default are given',
   for (const text of ['paid replay', 'both deciders', 'cheaper']) assert.ok(c11.includes(text), `C11: ${text}`)
 })
 
-test('the quota section gives the owner rule, and says that a reading with balance does not lift a mark', () => {
+test('the quota section gives the owner rule, says that superdelegation uses it too, and that a reading with balance does not lift a mark', () => {
   const section = page.slice(page.indexOf('## Quota'), page.indexOf('## Other harnesses'))
-  for (const text of ['weekly window', 'renews first', '5 %', 'valid reading', 'does not lift', 'Individual quota reached', 'A49', 'pending']) assert.ok(section.includes(text), text)
+  for (const text of ['weekly window', 'renews first', '5 %', 'valid reading', 'does not lift', 'Individual quota reached', 'superdelegation', 'cost per task']) assert.ok(section.includes(text), text)
 })
 
 test('the levels section says how the bands are cut and what is not measured on a harness', () => {
@@ -60,4 +60,9 @@ test('the guide says how to read and change the criterion, how the Lead override
 test('the docs index links the guide', () => {
   assert.ok(read('docs/index.md').includes('](guide/router.md)'))
   assert.ok(read('tests/docs-facts.test.js').includes("'docs/guide/router.md'"))
+})
+
+test('R21: the router page speaks of one switch, superdelegation, and of the points of a pair, not of the retired profiles, options or equivalences', () => {
+  for (const pattern of [/`balanced`/, /`robust`/, /`seats`/, /\bseats option\b/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/, /`replaces`/, /the `lanes` option/]) assert.doesNotMatch(page, pattern, `router.md still says ${pattern}`)
+  assert.ok(page.includes('`superdelegation`'), 'router.md names the switch')
 })

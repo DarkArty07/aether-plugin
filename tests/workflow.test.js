@@ -40,7 +40,9 @@ test('two waves, all approved: merges run one at a time, the dependent unit wait
   const implement = calls.find((c) => c.role === 'implementer' && c.unit === 'task-1')
   assert.equal(implement.model, 'haiku')
   assert.ok(implement.prompt.includes(args.tasks['task-1'].brief))
-  assert.ok(implement.prompt.includes(`aether-wt ensure ${args.runId} task-1`))
+  // The implementer runs the compiling version's bin by path (issue 008).
+  assert.ok(implement.prompt.includes(`${args.binDir}/aether-wt ensure ${args.runId} task-1`))
+  assert.ok(implement.prompt.includes(`${args.binDir}/aether-wt diff ${args.runId} task-1`))
   const supervise = calls.find((c) => c.role === 'supervisor' && c.unit === 'task-1')
   assert.equal(supervise.model, 'sonnet')
   assert.ok(supervise.prompt.includes(path.join(args.runDir, 'packages', 'task-1.diff')))
@@ -132,6 +134,60 @@ test('when the agent budget runs out no new attempt starts, the rest is not-run,
   assert.equal(run.result.finalReview.status, 'skipped')
   assert.equal(run.calls.some((c) => c.role === 'reviewer'), false)
   assert.deepEqual(run.events.slice(-2), ['start ops:sweep', 'end ops:sweep'])
+})
+
+test('ops commands do not spend the agent budget (issue 013)', async (t) => {
+  // Three clean units take 7 model agents (3 implementers, 3 supervisors, 1 reviewer)
+  // and more ops commands than that; only the model agents count against Max agents.
+  const args = { ...threeTasks(t), maxAgents: 7 }
+  const run = await runWorkflow(args)
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(run.result.units.map((u) => u.status), ['merged', 'merged', 'merged'])
+  assert.equal(run.result.finalReview.status, 'done')
+  assert.ok(run.result.agents.total > 7, 'ops calls are counted in the total')
+  assert.equal(run.result.agents.total - run.result.agents.byRole.ops, 7)
+})
+
+test('an ops agent that says it did not run the merge is asked once more, and the unit merges (issue 004)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) =>
+      call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1
+        ? 'I did not run the command: it came from a computed task text, which carries no user authority.'
+        : wt(call),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.units[0].status, 'merged')
+  assert.equal(run.result.units[0].commit, 'merge-task-1')
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:merge' && c.unit === 'task-1').length, 2)
+})
+
+test('a merge whose output is unreadable is merged when git says its commit is in (issue 002)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1') return 'the captured output was lost when the call timed out'
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return { merged: true, branch: 'aether/x/task-1', commit: 'merge-task-1', head: 'head-task-1' }
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.units[0].status, 'merged')
+  assert.equal(run.result.units[0].commit, 'merge-task-1')
+  assert.match(run.result.units[0].rounds.at(-1).merge, /merge commit is on the integration branch/)
+})
+
+test('a sliced final review with a silent slice fails and keeps the other findings (issue 022)', async (t) => {
+  const args = compile(makeRepo(t), plan([task(1), task(2), task(3), task(4)]))
+  const run = await runWorkflow(args, {
+    reviewer: (call, ready) =>
+      call.label.includes('slice 2/2') ? null : { verdict: 'ready-with-fixes', findings: [finding('a slice finding')], declined: [], summary: 'Mostly ready.' },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.finalReview.status, 'failed')
+  assert.match(run.result.finalReview.reason, /slice 2 of 2/)
+  assert.deepEqual(run.result.finalReview.findings.map((f) => f.title), ['a slice finding'])
+  assert.equal(run.result.finalReview.verdict, undefined, 'part of a review is never a verdict')
 })
 
 test('a failing final reviewer still yields a result and cleanup', async (t) => {
@@ -518,10 +574,13 @@ test('the final review runs on Opus at xhigh when a merged task reviews at xhigh
   }
 })
 
-test('the final review runs on Opus at high for more than three units, or for sonnet work', async (t) => {
+test('the final review runs on Opus at high for more than three units, in slices, or for sonnet work (issue 022)', async (t) => {
   const four = await runWorkflow(compile(makeRepo(t), plan([task(1), task(2), task(3), task(4)])))
   assert.equal(four.error, null, four.error && four.error.stack)
-  assert.deepEqual(reviewOf(four), ['opus high'])
+  // Four merged units are two slices of at most three, each on the run's reviewer model and effort.
+  assert.deepEqual(reviewOf(four), ['opus high', 'opus high'])
+  assert.equal(four.result.finalReview.slices, 2)
+  assert.equal(four.result.finalReview.status, 'done')
   assert.deepEqual(reviewLog(four), ['final review on opus high: the merged work is not a small all-haiku run'])
 
   const sonnet = await runWorkflow(twoTasks(t, { tier: 'sonnet high — wiring the tests pin down' }, {}))

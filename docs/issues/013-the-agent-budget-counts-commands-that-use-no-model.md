@@ -3,7 +3,8 @@
 **Type:** bug (swarm, agent budget)
 **Date:** 2026-10-15
 **Found in:** the run of spec 004 (run `20261015-011925-90a1`)
-**Status:** open
+**Status:** fixed in 0.14.0 (2026-10-20): only model agents count against `maxAgents`; the ops commands the mod answers are reported apart. See the Update below.
+**Update 2026-10-19, branch `fix/bug-issues`:** proposal 1 is built: only model agents count against `maxAgents`; ops calls stay in the run's `agents.total` and `agents.byRole.ops`, reported separately. The acceptance's arithmetic is a test: three clean units and their final review (7 model agents, more ops commands than that) complete under `maxAgents: 7`. Proposal 2 (a computed suggested budget) is not built; the Writer's count is now a count of models.
 **GitHub:** [#17](https://github.com/DarkArty07/aether-plugin/issues/17) (private repository)
 
 ## Summary

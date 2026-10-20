@@ -270,6 +270,28 @@ function adoptUnit(cwd, runId, taskId, { commit, reason } = {}) {
   return { adopted: true, task: taskId, commit: sha, reason: adopted[taskId].reason, units: Object.keys(adopted).sort() }
 }
 
+// Whether a unit's branch is already in the integration branch, from the git history alone
+// (issue 002): the workflow asks this when a merge's own output was unreadable, instead of
+// trusting captured output as the only evidence of the merge. `commit` is the first merge
+// commit on the integration branch that took the unit in, or the unit's tip when there is none.
+function unitStatus(cwd, runId, taskId) {
+  run.assertRunId(runId)
+  run.assertTaskId(taskId)
+  const { mainRoot } = repoPaths(cwd)
+  const graph = loadGraph(mainRoot, runId)
+  if (!graph.tasks[taskId]) throw new Error(`${taskId} is not in run ${runId}`)
+  const branch = run.unitBranch(runId, taskId)
+  if (!branchExists(mainRoot, branch)) return { merged: false, branch: null, commit: null }
+  const tip = git(['rev-parse', branch], mainRoot).stdout
+  // A branch with no change of its own since the run's base is an ancestor of everything
+  // and merged nothing. (unitBase cannot say this: after a merge it is the branch's tip.)
+  const own = changedFiles(mainRoot, graph.integration.base, branch)
+  if (own.length === 0 || !isMerged(mainRoot, graph, branch)) return { merged: false, branch, commit: null, head: tip }
+  const merges = git(['rev-list', '--merges', '--reverse', `${branch}..${graph.integration.branch}`], mainRoot, { allowFail: true }).stdout
+  const commit = merges === '' ? tip : merges.split('\n')[0]
+  return { merged: true, branch, commit, head: tip }
+}
+
 // The whole run's change on the integration branch, from the first launch's base, so that a relaunch
 // does not drop the changes of the launches before it.
 function finalPackage(cwd, runId) {
@@ -415,6 +437,13 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
   }
   if (git(['status', '--porcelain', '--untracked-files=no'], integration).stdout !== '') {
     return { merged: false, reason: 'dirty-integration', detail: 'the integration worktree has uncommitted changes' }
+  }
+  // A merge of a unit that is already in is the merge it already has (issue 002): a relaunch of a
+  // unit whose merge output was lost must not try to merge its work a second time. unitStatus
+  // tells an empty branch (nothing of its own since the run's base) from a merged one.
+  if (branchExists(mainRoot, branch)) {
+    const status = unitStatus(mainRoot, runId, taskId)
+    if (status.merged) return { merged: true, commit: status.commit, already: true }
   }
   const base = unitBase(mainRoot, graph, branch)
   const files = changedFiles(mainRoot, base, branch)
@@ -750,6 +779,7 @@ module.exports = {
   salvageUnit,
   adoptUnit,
   finalPackage,
+  unitStatus,
   merge,
   betweenMerges,
   removeUnit,

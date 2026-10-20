@@ -11,9 +11,9 @@ The Lead writes the owner's intent card and launches `/aether:design`, which run
 
 Plain `claude` stays normal mode.
 
-<p align="center"><img src="https://img.shields.io/badge/version-0.13.0-blue" alt="version 0.13.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
+<p align="center"><img src="https://img.shields.io/badge/version-0.14.0-blue" alt="version 0.14.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
 
-Version 0.13.0 ([changelog](docs/changelog.md))
+Version 0.14.0 ([changelog](docs/changelog.md))
 
 Aether serves five goals, **RADAR**.
 
@@ -30,7 +30,7 @@ Aether serves five goals, **RADAR**.
 - Claude Code 2.1.294 or later;
 - Node.js 22;
 - git 2.36 or later;
-- for lanes, the CLI of each harness you turn on: `agy`, `codex`, `grok`, `cursor-agent` or `muse`.
+- for superdelegation, the CLI of each harness you turn on: `agy`, `codex`, `grok`, `cursor-agent` or `muse`.
 
 ## Install
 
@@ -38,7 +38,7 @@ Aether serves five goals, **RADAR**.
 claude plugin install aether --marketplace DarkArty07/aether-plugin
 ```
 
-Add `--config lanes=true` to turn the lanes on (`lanes`, off by default; see [Options](docs/guide/options.md#options), which has the plugin's eight options and how to set them).
+Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; the rule is in [Lanes](docs/guide/lanes.md#lanes), and [Options](docs/guide/options.md#options) has the plugin's seven options and how to set them).
 
 ## First start
 

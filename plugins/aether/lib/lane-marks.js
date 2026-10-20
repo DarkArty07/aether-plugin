@@ -231,7 +231,14 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
   } else if (reading && typeof reading === 'object' && !reading.unknown && !reading.usedPercentAbsent && reading.windows && typeof reading.windows === 'object') {
     const windows = Object.values(reading.windows)
     const allNumeric = windows.length > 0 && windows.every((w) => w && typeof w.remaining === 'number' && Number.isFinite(w.remaining))
-    if (allNumeric) {
+    // A reading with any window whose reset is in the past is not a confirmed
+    // reading (issue 015): the odd reading that opened the issue paired a spent
+    // weekly window with a 5-hour window that had reset six days earlier.
+    const anyResetInPast = windows.some((w) => {
+      const ms = parseDate(w && w.resetsAt)
+      return Number.isFinite(ms) && ms <= now
+    })
+    if (allNumeric && !anyResetInPast) {
       const underReserve = windows.filter((w) => w.remaining <= reserve)
       if (underReserve.length > 0) {
         const resets = underReserve.map((w) => parseDate(w.resetsAt))

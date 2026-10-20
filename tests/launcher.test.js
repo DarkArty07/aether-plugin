@@ -67,7 +67,7 @@ test('the documents install Aether with Claude Code, and start it with one nativ
   const lines = [
     'claude plugin install aether --marketplace DarkArty07/aether-plugin',
     '/plugin install aether --marketplace DarkArty07/aether-plugin',
-    '--config lanes=true',
+    '--config superdelegation=true',
     'claude --agent aether:lead --effort xhigh',
     '{ "agent": "aether:lead" }',
     'claude --agent claude',
@@ -131,14 +131,14 @@ test('the installer and the fish launcher are gone', () => {
   }
 })
 
-test('the manifest is version 0.13.0, and the documents say so', () => {
+test('the manifest is version 0.14.0, and the documents say so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.13.0')
+  assert.equal(manifest.version, '0.14.0')
   assert.match(manifest.description, /built for RADAR/)
   assert.match(manifest.description, /the owner's right hand/)
   assert.match(manifest.description, /a Judge on Opus reviews them/)
-  assert.match(manifest.description, /Lanes run its calls on other coding plans/)
-  assert.match(manifest.description, /the seats option lets stronger models of other harnesses take the Judge, the Writer and the Examiner/)
+  assert.match(manifest.description, /With superdelegation on, everything that is not the Lead runs first on the quota of other harnesses/)
+  assert.match(manifest.description, /native Claude is the fallback/)
   assert.match(page('docs/changelog.md'), /^Version 0\.12\.4: /m)
   assert.match(page('docs/changelog.md'), /^Version 0\.12\.3: /m)
   assert.match(page('docs/changelog.md'), /^Version 0\.12\.2: /m)
@@ -208,7 +208,7 @@ test('the documents record the design seats: decisions A39-A43, the README, the 
   for (let n = 39; n <= 43; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const readme = README()
   assert.match(page('docs/guide/design-seats.md'), /^### Design seats$/m)
-  for (const text of ['`aether:examiner`', '`aether-lane seat`', '`aether-exam`', '`seats`, `balanced` by default', 'docs/evaluations/seats/README.md', 'specs/001-design-seats/spec.md', 'Fable']) {
+  for (const text of ['`aether:examiner`', '`aether-lane seat`', '`aether-exam`', 'docs/evaluations/seats/README.md', 'specs/001-design-seats/spec.md', 'Fable']) {
     assert.ok(readme.includes(text), text)
   }
   const lead = read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md')

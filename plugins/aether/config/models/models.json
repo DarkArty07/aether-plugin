@@ -128,7 +128,7 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"gemini-4-argon-low","medium":"gemini-4-argon-medium","high":"gemini-4-argon-high"},
       "scores": [{"effort":"high","intelligence":52.6,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":81,"ttftSeconds":29.41}],
-      "lane": {"roles":["judge","writer","examiner"],"replaces":null},
+      "lane": {"roles":["judge","writer","examiner"]},
       "profile": {
         "purpose": "A flagship reasoning model, with a unified 1M context window and long decodes up to 1M tokens.",
         "contextTokens": 1000000,
@@ -142,7 +142,7 @@
         "knowledgeCutoff": null,
         "availability": "Stable in the Gemini API (id gemini-4-argon). Rolled out on 2026-10-13 to Google AI Pro and Ultra in the Gemini app. `agy models` 1.3.6 lists it as gemini-4-argon-low, -medium and -high on the owner's machine from 2026-10-15, and the Judge, Examiner and Writer seats each ran a round on it that day.",
         "caveats": [
-          "agy takes it at low, medium and high; Aether's xhigh runs at high.",
+          "agy takes it at low, medium and high; it has no xhigh, so the pair rule asks it only for the efforts it takes.",
           "Not measured against the native Judge yet (R16 of spec 001): the seeded-defects harness found 6 of 6 defects in one round per fixture, which shows that it works, not that it matches Opus.",
           "Inputs, outputs and cutoff are not on the pages read."
         ],
@@ -170,7 +170,7 @@
         {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":91.8,"ttftSeconds":0.94},
         {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":98.4,"ttftSeconds":9.03}
       ],
-      "lane": {"roles":["implementer","supervisor"],"replaces":"sonnet"},
+      "lane": {"roles":["implementer","supervisor"]},
       "profile": {
         "purpose": "\"The best combination of speed and intelligence.\" Comparative latency: fast.",
         "contextTokens": 1000000,
@@ -199,7 +199,7 @@
         {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":73,"ttftSeconds":13.78},
         {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":74,"ttftSeconds":26.58}
       ],
-      "lane": {"roles":["implementer","reviewer"],"replaces":"opus"},
+      "lane": {"roles":["implementer","reviewer"]},
       "profile": {
         "purpose": "\"For long-running agentic coding and knowledge work.\" Anthropic's advice: start here for most workloads, and move to Fable 5.1 when evals on Opus 5.5 at higher effort still fall short. Comparative latency: moderate.",
         "contextTokens": 1000000,
@@ -255,7 +255,7 @@
           "ttftSeconds": 15.53
         }
       ],
-      "lane": {"roles":["implementer"],"replaces":"haiku"},
+      "lane": {"roles":["implementer"]},
       "profile": {
         "purpose": "\"Google's most intelligent Flash model, engineered for long-horizon software engineering, autonomous agents, and complex enterprise workflows.\"",
         "contextTokens": 1048576,
@@ -283,7 +283,7 @@
         {"effort":"high","intelligence":46.3,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":73.7,"ttftSeconds":19.55},
         {"effort":"xhigh","intelligence":46.4,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":72.4,"ttftSeconds":21.7}
       ],
-      "lane": {"roles":["implementer"],"replaces":"haiku"},
+      "lane": {"roles":["implementer"]},
       "profile": {
         "purpose": "\"Frontier model, built for coding, agentic tasks, and knowledge work.\" The default model of Grok Build.",
         "contextTokens": 500000,
@@ -385,7 +385,7 @@
       "maker": "Meta",
       "effortVia": "flag",
       "efforts": ["minimal","low","medium","high","xhigh"],
-      "lane": {"roles":["implementer","reviewer"],"replaces":"opus"},
+      "lane": {"roles":["implementer","reviewer"]},
       "note": "offered, with no Artificial Analysis entry, so no figures",
       "profile": {
         "purpose": "Flagship coding model available only in Muse Code on the Power Usage and Maximum Usage plans.",

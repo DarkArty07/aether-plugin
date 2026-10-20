@@ -3,8 +3,9 @@
 **Type:** bug
 **Date:** 2026-10-09
 **Found in:** the first real swarm run of a 12-task plan (7 waves) on an application repository
-**Status:** partly addressed in 0.8.0 (2026-10-13). Done: in an Aether session the mod runs `aether-wt merge` itself, without a model, with a 10-minute limit in place of Bash's 120 s (A30, PR #8). Open: when the mod cannot run it (a policy that refuses `$.process.run`, or no `node`), the `ops` agent is the fallback and still runs the merge with Bash's default timeout; no path checks the integration branch for the unit's merge commit before it reports `blocked`, including a merge the mod stops at its limit after the merge commit; and a ten-minute merge, the acceptance's case, still reaches that limit.
+**Status:** partly fixed again in 0.14.0 (2026-10-20), see the Update below for what is built and what is open.
 **Update 2026-10-13, 0.9.1:** when the model path runs a merge, the workflow now asks for the 600000 ms Bash timeout (A46), so a four-minute merge is no longer backgrounded and reported as unreadable. Still open: no path checks the integration branch for the unit's merge commit before it reports `blocked`. A merge the mod stops at its limit leaves a merge commit whose tests did not finish, so counting it as merged needs the owner's decision.
+**Update 2026-10-19, branch `fix/bug-issues`:** proposals 2, 3 and 5 are built. `aether-wt status <run> <task>` reports from the git history whether the unit's merge commit is on the integration branch, `aether-wt merge` of a unit already in returns that merge (`already: true`) instead of merging twice, the workflow asks `status` before it blocks a unit on unreadable merge output, and `aether-plan compile` times the baseline and warns past 540 s. Still open: a merge whose tests outlast the mod's 600 s (the longest `$.process.run` allows) is stopped at that limit; its commit is then counted merged by the status check although its test run may not have finished, which the round's merge note now says.
 **GitHub:** [#2](https://github.com/DarkArty07/aether-plugin/issues/2) (private repository)
 
 ## Summary

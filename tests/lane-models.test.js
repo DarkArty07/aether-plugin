@@ -32,8 +32,8 @@ function checkMuseModels({ lanes, listings, profiles }) {
     if (line.some((other) => newer(other, id))) problems.push(`${id}: not the newest generation of its line`)
     const key = id.replace(/\./g, '-')
     if (!profiles.profiles?.[key] && !profiles.profiles?.[id]) problems.push(`${id}: no profile in profiles.json`)
-    if (typeof entry.replaces !== 'string' || !entry.aa || typeof entry.aa.slug !== 'string' || !Number.isFinite(entry.aa.intelligence)) {
-      problems.push(`${id}: no Artificial Analysis measurement behind its replaces`)
+    if (!entry.aa || typeof entry.aa.slug !== 'string' || !Number.isFinite(entry.aa.intelligence)) {
+      problems.push(`${id}: no Artificial Analysis measurement behind its entry`)
     }
   }
   return problems
@@ -46,7 +46,7 @@ test('the committed lane table passes the three rules for every Muse model it li
 })
 
 test('the rules fail for a model the CLI does not list, an older generation, a model with no profile or no measurement, and a contributor model', () => {
-  const entry = (extra = {}) => ({ group: 'muse', replaces: 'sonnet', roles: ['implementer'], levels: { low: 'low' }, aa: { slug: 's', intelligence: 40 }, ...extra })
+  const entry = (extra = {}) => ({ group: 'muse', roles: ['implementer'], aa: { slug: 's', intelligence: 40 }, ...extra })
   const listings = { harnesses: { muse: { models: [{ id: 'muse-spark-1.3' }, 'muse-spark-1.2', 'muse-spark-1.3-contributor', 'muse-wonder-1.0'] } } }
   const profiles = { profiles: { 'muse-spark-1-3': {}, 'muse-spark-1-2': {} } }
   const check = (models) => checkMuseModels({ lanes: { harnesses: { muse: { models } } }, listings, profiles })
@@ -54,7 +54,7 @@ test('the rules fail for a model the CLI does not list, an older generation, a m
   assert.deepEqual(check({ 'muse-spark-1.2': entry() }), ['muse-spark-1.2: not the newest generation of its line'])
   assert.deepEqual(check({ 'muse-spark-9.9': entry() }), ['muse-spark-9.9: the Muse CLI does not list it (harness-models.json)', 'muse-spark-9.9: no profile in profiles.json'])
   assert.deepEqual(check({ 'muse-wonder-1.0': entry() }), ['muse-wonder-1.0: no profile in profiles.json'])
-  assert.deepEqual(check({ 'muse-spark-1.3': entry({ aa: undefined }) }), ['muse-spark-1.3: no Artificial Analysis measurement behind its replaces'])
+  assert.deepEqual(check({ 'muse-spark-1.3': entry({ aa: undefined }) }), ['muse-spark-1.3: no Artificial Analysis measurement behind its entry'])
   assert.ok(check({ 'muse-spark-1.3-contributor': entry() }).some((message) => /contributor model never enters/.test(message)))
   assert.ok(check({ 'muse-image-1': entry() }).some((message) => /not a coding model/.test(message)))
 })

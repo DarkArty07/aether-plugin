@@ -24,7 +24,7 @@ Aether serves five goals, **RADAR**:
 - **Autónomo** (autonomous): the owner is not asked about trivial things, and every irreversible step reaches them in one list;
   - measured by how many times the system interrupts the owner after they confirm the intent.
 - **Delegación** (delegation): work goes to other coding harnesses (agy, Codex, Grok, Cursor, Muse) while their quota lasts;
-  - measured by the calls and tokens that ran on other harnesses, and by the lanes that ran dry.
+  - measured by the calls and tokens that ran on other harnesses, and by the quotas that ran dry.
 - **Asequible** (affordable): each role runs on the cheapest model and effort that does it well;
   - measured by the cost in US dollars at list price, per design and per run.
 - **Robusto** (robust): quality code, checked by tests, evidence and independent reviews.
@@ -38,7 +38,7 @@ Every brief the Lead writes reports the five, and `aether-report` prices a run a
 2. **Bounded autonomy.** Every run has an agent budget and a verifiable definition of done. Work that hits a real question comes back blocked, with the question.
 3. **The task chooses the model and its effort.** Each task's Tier line sets the start. A failed attempt runs again at `xhigh`, and then on a stronger model.
 4. **Contracts first, then the swarm.** Plans give interfaces, failing tests and file ownership. Units are independent by default, and every dependency needs a reason.
-5. **Sonnet writes, Opus decides, and a stronger model may take either seat.** The expensive model judges the spec, the plan and the work; the cheaper ones write them. Whoever writes a document never judges it.
+5. **Sonnet writes, Opus decides, and a model of another harness that reaches their points may take either seat.** The expensive model judges the spec, the plan and the work; the cheaper ones write them. Whoever writes a document never judges it.
 6. **One list for the owner.** What is irreversible, and what only the owner can choose, waits for the owner's yes in one list. Everything else proceeds, and every failure with a fallback is handled without asking.
 7. **RADAR.** Every change is weighed against the five goals: fast, autonomous, delegated, affordable and robust.
 

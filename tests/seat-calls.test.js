@@ -9,7 +9,14 @@ const { LANE_BIN, laneEnv, agyTurns } = require('./lane-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 
 const FEATURE = 'specs/001-demo'
-const OPTIONS = ['--seats', 'balanced', '--lanes', 'on', '--harnesses', 'agy']
+const OPTIONS = ['--superdelegation', 'on', '--harnesses', 'agy']
+const DAY = 86400000
+// What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
+// the Judge, as it does when the quota that renews first is Gemini's.
+const geminiFirst = () => ({
+  'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * DAY).toISOString()],
+  'Claude and GPT models': [0.9, 0.9, null, new Date(Date.now() + 3 * DAY).toISOString()],
+})
 const JUDGE_ANSWER = { verdict: 'revise', findings: [{ severity: 'major', type: 'missing', title: 'Task 3 is too large', evidence: '`Owns: src/**`', fix: 'split it' }], openQuestions: [] }
 const ID = 'judge-20261015-120000-ab12'
 
@@ -31,7 +38,7 @@ function writeMessage(repo, text, session = 's1') {
 }
 
 // The environment of the mod's bins: it has none of the session's exports, so the flags must carry the option.
-const modEnv = (t) => ({ ...laneEnv(t), AETHER_LANES: 'off', AETHER_SEATS: 'native', AETHER_LANE_HARNESSES: 'codex' })
+const modEnv = (t) => ({ ...laneEnv(t, { quota: geminiFirst() }), AETHER_SUPERDELEGATION: 'off', AETHER_LANE_HARNESSES: 'codex' })
 const lane = (repo, args, env) => runBin(LANE_BIN, args, repo.dir, env)
 const start = (repo, env, seat, message, extra = OPTIONS, more = []) =>
   lane(repo, ['seat-start', seat, '--session', 's1', ...more, '--feature', FEATURE, ...extra, '--digest', writeMessage(repo, message)], env)
@@ -68,12 +75,13 @@ test('an external Judge round starts in the background and its answer comes by s
 test('the other exits of a seat are results of the round: 3 for nothing ran, 4 for a failed round', (t) => {
   const repo = seatRepo(t)
   const env = modEnv(t)
-  const off = waitDone(repo, start(repo, env, 'judge', 'Review.\n', ['--seats', 'balanced', '--lanes', 'off', '--harnesses', 'agy']).json.id, env)
+  const off = waitDone(repo, start(repo, env, 'judge', 'Review.\n', ['--superdelegation', 'off', '--harnesses', 'agy']).json.id, env)
   assert.equal(off.exitCode, 3)
-  assert.equal(off.value.unavailable, 'lanes-off')
+  assert.equal(off.value.unavailable, 'superdelegation-off')
   assert.equal(off.value.native.agent, 'aether:judge')
-  const native = waitDone(repo, start(repo, env, 'examiner', 'Exam.\n', ['--seats', 'native', '--lanes', 'on', '--harnesses', 'agy']).json.id, env)
-  assert.deepEqual([native.exitCode, native.value.unavailable, native.value.native], [3, 'off', null])
+  const examiner = waitDone(repo, start(repo, env, 'examiner', 'Exam.\n', ['--superdelegation', 'off', '--harnesses', 'agy'], ['--author', 'opus']).json.id, env)
+  assert.deepEqual([examiner.exitCode, examiner.value.unavailable, examiner.value.native.agent], [3, 'superdelegation-off', 'aether:examiner'])
+  assert.notEqual(examiner.value.native.model, 'opus', 'an Examiner handed back is not the author model')
   const failed = waitDone(repo, start(repo, env, 'judge', 'Review.\nFAKE-AGY: exit-error boom\n').json.id, env)
   assert.equal(failed.exitCode, 4)
   assert.equal(failed.value.failed, 'failed')
@@ -96,6 +104,11 @@ test('seat-wait answers { done: false } while a round runs, and seat-stop ends i
   const id = started.json.id
   const worktree = path.join(repo.dir, '.aether', 'seats', id, 'wt')
   assert.ok(await until(() => fs.existsSync(worktree)), 'the round started its worktree')
+  // The runner is told the options by the flags, whatever the environment of the mod holds.
+  const pid = fs.readFileSync(path.join(repo.dir, '.aether', 'seats', id, 'pid'), 'utf8').trim()
+  const runnerEnv = fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0')
+  assert.ok(runnerEnv.includes('AETHER_SUPERDELEGATION=on'), 'AETHER_SUPERDELEGATION')
+  assert.ok(runnerEnv.includes('AETHER_LANE_HARNESSES=agy'), 'AETHER_LANE_HARNESSES')
   assert.deepEqual(lane(repo, ['seat-wait', id, '--max', '0'], env).json, { done: false })
   assert.deepEqual(lane(repo, ['seat-stop', id], env).json, { stopped: true })
   assert.ok(await until(() => !fs.existsSync(worktree)), 'the worktree is gone')
@@ -118,7 +131,11 @@ test('a round whose runner is dead is reported, and bad arguments are refused', 
   assert.equal(lane(repo, ['seat-wait', 'judge-20261015-120000-ffff'], env).json.error, 'no such seat round: judge-20261015-120000-ffff')
   const refused = (args) => lane(repo, ['seat-start', ...args], env)
   assert.match(refused(['designer', '--session', 's1']).json.error, /usage: aether-lane/)
-  assert.match(refused(['judge', '--session', 's1', '--feature', FEATURE, ...OPTIONS.slice(0, 2), '--lanes', 'maybe', '--harnesses', 'agy', '--digest', 'x']).json.error, /--lanes must be on or off/)
+  assert.match(refused(['judge', '--session', 's1', '--feature', FEATURE, '--superdelegation', 'maybe', '--harnesses', 'agy', '--digest', 'x']).json.error, /--superdelegation must be on or off/)
+  assert.match(refused(['judge', '--session', 's1', '--feature', FEATURE, '--harnesses', 'agy', '--digest', 'x']).json.error, /seat-start needs --superdelegation/)
+  // The seats and lanes options are gone: a round started with one is refused, not run under a switch nobody gave it.
+  assert.match(refused(['judge', '--session', 's1', '--feature', FEATURE, '--seats', 'native', ...OPTIONS, '--digest', 'x']).json.error, /seat-start takes no --seats/)
+  assert.match(refused(['judge', '--session', 's1', '--feature', FEATURE, '--lanes', 'on', ...OPTIONS, '--digest', 'x']).json.error, /seat-start takes no --lanes/)
   assert.match(refused(['judge', '--session', 's1', '--feature', FEATURE, ...OPTIONS]).json.error, /--digest/)
   assert.match(lane(repo, [], env).json.error, /seat-start .*seat-wait .*seat-stop/)
 })
@@ -131,7 +148,7 @@ test('the Writer of a spec round is forwarded its document', (t) => {
   t.after(() => fs.rmSync(spec, { force: true }))
   const answer = { spec: `${FEATURE}/spec.md`, commit: 'abc', clarify: [], assumptions: [], proposals: [], questions: [] }
   const message = `Write.\nFAKE-AGY: copy ${spec} ${FEATURE}/spec.md\nFAKE-AGY: commit spec\nFAKE-AGY: answer ${JSON.stringify(answer)}\n`
-  const started = start(repo, env, 'writer', message, ['--doc', 'spec', '--seats', 'robust', '--lanes', 'on', '--harnesses', 'agy'])
+  const started = start(repo, env, 'writer', message, ['--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy'])
   assert.equal(started.status, 0, started.stdout)
   const done = waitDone(repo, started.json.id, env)
   assert.equal(done.exitCode, 0, JSON.stringify(done))

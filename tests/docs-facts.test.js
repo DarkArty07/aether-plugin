@@ -292,7 +292,13 @@ test('repeated defaults: only the form of R6, `option`, value by default', () =>
 
 // ---- the tree
 const bins = () => new Set(fs.readdirSync(path.join(PLUGIN, 'bin')))
-const defaults = () => Object.fromEntries(Object.entries(manifest().userConfig).map(([name, option]) => [name, option.default]))
+// The options the table lists: those whose title does not end in (legacy). A boolean with no default is off.
+const defaults = () =>
+  Object.fromEntries(
+    Object.entries(manifest().userConfig)
+      .filter(([, option]) => !/\(legacy\)$/.test(option.title))
+      .map(([name, option]) => [name, option.default ?? (option.type === 'boolean' ? false : undefined)]),
+  )
 
 test('R3 to R9: every page exists and starts with title, description and an integer order', () => {
   for (const rel of PAGES) {
@@ -537,14 +543,41 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A64 are recorded and the changelog opens with 0.13.0 and its handoff', () => {
+test('R15: the decisions A50 to A65 are recorded and the changelog opens with 0.14.0 and its handoff', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 64
+  const LAST_DECISION = 65
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
-  const muse = decisions.split('\n').find((line) => line.startsWith(`| A${LAST_DECISION} |`))
-  assert.ok(/Muse Code/.test(muse) && /fifth lane harness/.test(muse))
+  const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
+  assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
+  assert.ok(/superdelegation/i.test(line(65)))
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.13.0: ') && first.includes('handoff/2026-10-19-muse-harness-0.13.0.md'), first)
+  assert.ok(first.startsWith('Version 0.14.0: ') && first.includes('handoff/2026-10-20-superdelegation-0.14.0.md'), first)
+})
+
+// ---- R21: the retired profiles and variables
+// docs/decisions.md is history and is not in FILES' scope here only through its table, which names what was retired;
+// it is not listed in PAGES for this rule's purposes beyond HISTORY below.
+const GONE = [/`balanced`/, /`robust`/, /\bseats option\b/, /`seats`/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
+const HISTORY = ['docs/changelog.md', 'docs/contributing.md', 'docs/roadmap.md'] // name what was retired as history (roadmap.md: the 0.12.3 summary says `seats` selectors)
+const MIGRATION = ['docs/guide/lanes.md', 'docs/guide/options.md'] // the only two pages that may name the legacy keys `lanes` and `seats`: the migration says what becomes of them
+const prose = (rel) => proseLines(read(rel)).join('\n')
+
+test('R21: no page of the guide or the README names the retired profiles or the retired variables', () => {
+  for (const rel of FILES.filter((p) => !HISTORY.includes(p))) {
+    for (const pattern of GONE.filter((g) => !MIGRATION.includes(rel) || g.source !== '`seats`')) assert.doesNotMatch(prose(rel), pattern, `${rel} still says ${pattern}`)
+  }
+})
+
+test('R21: every page that gives the default of superdelegation in the form of R6 gives off', () => {
+  let seen = 0
+  for (const rel of FILES) {
+    for (const { option, value } of repeatedDefaults(read(rel))) {
+      if (option !== 'superdelegation') continue
+      seen++
+      assert.equal(value, false, rel)
+    }
+  }
+  assert.ok(seen > 0, 'a page repeats the default of superdelegation')
 })

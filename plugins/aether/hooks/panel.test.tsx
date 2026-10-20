@@ -121,7 +121,7 @@ const expectSettled = (lines: string[]) => {
   for (const pattern of SETTLED) expect(has(lines, pattern)).toBe(false)
 }
 
-const LANES_ON = { options: { lanes: true, harnesses: 'agy,grok' } }
+const LANES_ON = { options: { superdelegation: true, harnesses: 'agy,grok' } }
 
 test('the pane draws every section on every surface, with the buttons under the options and above the quota', LANES_ON, async ($, on) => {
   stubs(on)
@@ -129,7 +129,7 @@ test('the pane draws every section on every surface, with the buttons under the 
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
     expect(await ui.find({ type: 'Text', text: 'Aether · other harnesses' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'lanes ON' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'superdelegation ON' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Gemini Models/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /dry until Oct \d+ \d\d:\d\d UTC/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Recent delegates' })).toBeDefined()
@@ -140,7 +140,7 @@ test('the pane draws every section on every surface, with the buttons under the 
     expect([close?.props.label, close?.props.hotkey]).toEqual(['Close', 'x'])
     const lines = await paneRows(ui)
     expect(lines[0]).toBe('Aether · other harnesses')
-    expect(lines[1]).toMatch(/^lanes ON · router record/)
+    expect(lines[1]).toMatch(/^superdelegation ON · router record/)
     expect(lines.indexOf('[buttons]')).toBeGreaterThan(1)
     expect(lines.indexOf('[buttons]')).toBeLessThan(lines.findIndex((line) => /^agy 1\.4\.0/.test(line)))
     await ui.unmount()
@@ -156,19 +156,19 @@ test('the key hint is shown only while the pane has the keyboard', LANES_ON, asy
   expect(has(await paneRows(idle), /Esc leaves/)).toBe(false)
 })
 
-test('the options shown are the ones the session uses, not the ones typed', { options: { lanes: true, router: 'command', decider: 'jev', seats: 'robust', harnesses: ' Gork, AGY ,grok,agy' } }, async ($, on) => {
+test('the options shown are the ones the session uses, not the ones typed', { options: { superdelegation: true, router: 'command', decider: 'jev', harnesses: ' Gork, AGY ,grok,agy' } }, async ($, on) => {
   stubs(on)
   await $.command.run({ command: 'harnesses' })
   const ui = await mount($, 'terminal', pane(120))
-  expect((await paneRows(ui))[1]).toBe('lanes ON · router command · decider jev · seats robust · harnesses agy, grok')
+  expect((await paneRows(ui))[1]).toBe('superdelegation ON · router command · decider jev · harnesses agy, grok')
 })
 
-test('with lanes off the pane says that nothing leaves Claude', async ($, on) => {
+test('with superdelegation off the pane says that nothing leaves Claude', async ($, on) => {
   stubs(on)
   await $.command.run({ command: 'harnesses' })
   const lines = await paneRows(await mount($, 'terminal'))
-  expect(lines[1]).toMatch(/^lanes OFF · router record/)
-  expect(has(lines, /Lanes are OFF: nothing leaves Claude/)).toBe(true)
+  expect(lines[1]).toMatch(/^superdelegation OFF · router record/)
+  expect(has(lines, /Superdelegation is OFF: nothing leaves Claude/)).toBe(true)
   expect(has(lines, /Gemini Models/)).toBe(true)
 })
 
@@ -188,7 +188,7 @@ test('the tone of a part reaches the style of its Text, as a theme key', LANES_O
     // A row is a Text with a Text for each part; the style is the part's.
     const style = async (query) => (await ui.findAll({ type: 'Text', ...query })).find((found) => found.props.wrap === undefined)?.props
     expect((await style({ text: 'Aether · other harnesses' }))?.bold).toBe(true)
-    expect((await style({ text: 'lanes ON' }))?.color).toBe('success')
+    expect((await style({ text: 'superdelegation ON' }))?.color).toBe('success')
     expect((await style({ text: 'usable' }))?.color).toBe('success')
     expect((await style({ text: /dry until/ }))?.color).toBe('warning')
     expect((await style({ text: /resets in 168 h/ }))?.dimColor).toBe(true)
@@ -453,7 +453,7 @@ test('whatever the room, the title, the options, the buttons and a line for each
       const lines = await paneRows(ui)
       const shown = lines.slice(0, bodyRows)
       expect(shown[0]).toBe('Aether · other harnesses')
-      expect(has(shown, /^lanes ON/)).toBe(true)
+      expect(has(shown, /^superdelegation ON/)).toBe(true)
       expect(shown).toContain('[buttons]')
       for (const label of ['Gemini Models', 'Claude and GPT models', 'Grok plan']) expect(has(shown, new RegExp(label))).toBe(true)
       for (const line of lines) expect(cellsOf(line) <= columns).toBe(true)

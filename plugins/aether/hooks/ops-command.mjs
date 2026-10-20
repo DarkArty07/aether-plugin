@@ -20,8 +20,10 @@ const MARKER = /^=== aether-lane payload: .+ ===$/
 // round's message.md under <repo>/.aether-tmp/seats/<session>/. Both names are closed, the session's too.
 export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review)\/prompt\.md$|\/\.aether-tmp\/seats\/[A-Za-z0-9-]+\/message\.md$/
 
-// `cd '<absolute path>' && <bin> <tokens>`: the path has no quote and no control character.
-const COMMAND_LINE = /^cd '(\/[^'\u0000-\u001f\u007f]*)' && (aether-wt|aether-lane|aether-plan|aether-exam)((?: [A-Za-z0-9._:=@/,-]+)+)$/
+// `cd '<absolute path>' && <bin> <tokens>`: the path has no quote and no control character. A run that
+// names its compiling version's bins prepends them to PATH in this one exact form (issue 008); the mod
+// answers it only when that directory is its own bin (register.js), and runs its own bin either way.
+const COMMAND_LINE = /^cd '(\/[^'\u0000-\u001f\u007f]*)' && (?:PATH='(\/[^'\u0000-\u001f\u007f]*\/bin)':"\$PATH" )?(aether-wt|aether-lane|aether-plan|aether-exam)((?: [A-Za-z0-9._:=@/,-]+)+)$/
 
 const RUN = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK = /^task-\d+$/
@@ -31,32 +33,41 @@ const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/
 const DIGEST = /^[0-9a-f]{8}:\d+$/
-// A design round's seat: its session, its author, its feature directory, its options and its seat id.
+// A design round's seat: its session, its author, its feature directory, the superdelegation switch with the harnesses
+// and its seat id.
 const SESSION = /^[A-Za-z0-9-]+$/
 const AUTHOR = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const TASKS = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*\/tasks\.md$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
-const SEATS = ['native', 'balanced', 'robust']
 const SWITCH = ['on', 'off']
 const SEAT_ID = /^(judge|writer|examiner)-\d{8}-\d{6}-[0-9a-f]{4}$/
 const MAX = /^\d{1,3}$/
-
-// The tokens of `aether-lane choice`, copied from lib/lane-choice.js, which this file cannot import: a
-// plain token (no space, `;`, `$` or quote), and `/` joins the items of an order. The two copies must agree;
-// tests/ops-command-lanes.test.js checks what lib reads and refuses against this parser.
-const PICK = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
-const ORDER_ITEM = /[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*:(?:\d{1,15}(?:\.\d{1,15})?|unknown|excluded):(?:picked|pool-full|untried|reserve|marked|not-installed|dry|unavailable-[a-z]+(?:-[a-z]+)*)(?::absent)?/.source
-const ORDER = new RegExp(`^${ORDER_ITEM}(?:/${ORDER_ITEM})*$`)
+// The tokens of `aether-lane pick`, `took` and `pause` (lib/lane-pick.js keeps the same expressions): a pair id,
+// a list of them, a model family, who ran a call, why, and the seconds of a pause.
+const PAIR_IDS = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(?:low|medium|high|xhigh|max)(?:,[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(?:low|medium|high|xhigh|max))*$/
+const FAMILY = /^[a-z][a-z0-9.-]*$/
+const BY = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
+const CAUSES = ['chosen', 'no-candidate', 'wait-limit', 'failed']
+const SECONDS = /^\d{1,3}$/
 
 const is = (pattern) => (token) => pattern.test(token)
 const oneOf = (values) => (token) => values.includes(token)
 const word = (expected) => (token) => token === expected
 
+// The four shapes of `aether-lane pick`: --exclude and --author are optional, and --exclude goes first.
+function pickForms() {
+  const head = [word('pick'), is(RUN), is(CALL), word('--role'), oneOf(ROLES), word('--model'), oneOf(TIERS), word('--effort'), oneOf(EFFORTS)]
+  const exclude = [word('--exclude'), is(PAIR_IDS)]
+  const author = [word('--author'), is(FAMILY)]
+  return [head, [...head, ...exclude], [...head, ...author], [...head, ...exclude, ...author]].map((checks) => ({ checks }))
+}
+
 // Each accepted command, one check per token. `payload` marks the command that carries a lane prompt.
 const COMMANDS = {
   'aether-wt': [
     { checks: [word('merge'), is(RUN), is(TASK)] },
+    { checks: [word('status'), is(RUN), is(TASK)] },
     { checks: [word('salvage'), is(RUN), is(TASK)] },
     { checks: [word('remove'), is(RUN), is(TASK)] },
     { checks: [word('diff'), is(RUN), word('--final')] },
@@ -64,12 +75,13 @@ const COMMANDS = {
   ],
   'aether-lane': [
     { checks: [word('status'), is(RUN)] },
-    // The wave's quota step: it asks for the refresh explicitly.
+    // The wave's quota step: it asks for the refresh explicitly. No workflow sends this form any more; it stays for the mod's
+    // tests and for the workflows already installed.
     { checks: [word('status'), is(RUN), word('--refresh')] },
-    // The decision of one call, logged: no payload, the flags in the order the workflow writes them.
-    {
-      checks: [word('choice'), is(RUN), is(CALL), word('--role'), oneOf(ROLES), word('--tier'), oneOf(TIERS), word('--effort'), oneOf(EFFORTS), word('--pick'), is(PICK), word('--order'), is(ORDER)],
-    },
+    // Superdelegation: the pair for a call (--exclude, then --author, when given), who took it, and a pause.
+    ...pickForms(),
+    { checks: [word('took'), is(RUN), is(CALL), word('--by'), is(BY), word('--cause'), oneOf(CAUSES)] },
+    { checks: [word('pause'), word('--seconds'), is(SECONDS)] },
     {
       payload: true,
       checks: [word('start'), is(RUN), is(CALL), word('--role'), oneOf(ROLES), word('--task'), is(TASK), word('--model'), is(MODEL), word('--effort'), oneOf(EFFORTS), word('--digest'), is(DIGEST)],
@@ -84,11 +96,11 @@ const COMMANDS = {
     // A design round's seat: the judge or the examiner, with its author; the writer, with the document it writes.
     {
       payload: true,
-      checks: [word('seat-start'), oneOf(['judge', 'examiner']), word('--session'), is(SESSION), word('--author'), is(AUTHOR), word('--feature'), is(FEATURE), word('--seats'), oneOf(SEATS), word('--lanes'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
+      checks: [word('seat-start'), oneOf(['judge', 'examiner']), word('--session'), is(SESSION), word('--author'), is(AUTHOR), word('--feature'), is(FEATURE), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
     },
     {
       payload: true,
-      checks: [word('seat-start'), word('writer'), word('--session'), is(SESSION), word('--feature'), is(FEATURE), word('--doc'), oneOf(['spec', 'plan']), word('--seats'), oneOf(SEATS), word('--lanes'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
+      checks: [word('seat-start'), word('writer'), word('--session'), is(SESSION), word('--feature'), is(FEATURE), word('--doc'), oneOf(['spec', 'plan']), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
     },
     { checks: [word('seat-wait'), is(SEAT_ID), word('--max'), is(MAX)] },
     { checks: [word('seat-stop'), is(SEAT_ID)] },
@@ -110,9 +122,9 @@ export function parseOpsPrompt(prompt) {
   if (hasPayload && (lines.length < 8 || lines[5] !== '' || lines[6] !== PREFACE || !MARKER.test(lines[7]))) return null
   const command = COMMAND_LINE.exec(lines[2])
   if (!command) return null
-  const [, cwd, bin, tokens] = command
+  const [, cwd, binDir, bin, tokens] = command
   const args = tokens.slice(1).split(' ')
   const form = COMMANDS[bin].find((candidate) => matches(candidate, args))
   if (!form || Boolean(form.payload) !== hasPayload) return null
-  return { cwd, bin, args, timeoutMs: OPS_TIMEOUT_MS }
+  return binDir === undefined ? { cwd, bin, args, timeoutMs: OPS_TIMEOUT_MS } : { cwd, bin, args, timeoutMs: OPS_TIMEOUT_MS, binDir }
 }
