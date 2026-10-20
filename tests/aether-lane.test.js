@@ -135,7 +135,7 @@ function implement(t, lines, { env = fx.laneEnv(t), session = null } = {}) {
   const message = ['You are implementing task-1: Task 1 title.', ...body].join('\n')
   const digest = fx.writePrompt(args, IMPLEMENT, message, { session })
   const start = fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env)
-  assert.deepEqual(start.json, { started: true, model: 'gemini-3.8-flash-high', group: 'gemini' }, start.stdout + start.stderr)
+  assert.deepEqual(start.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'gemini' }, start.stdout + start.stderr)
   return { repo, args, env, message, done: fx.waitDone(args, IMPLEMENT, env) }
 }
 
@@ -237,6 +237,7 @@ test("status reads each group's windows, marks a group under the reserve unusabl
     codex: { enabled: false, command: 'codex' },
     grok: { enabled: false, command: 'grok' },
     cursor: { enabled: false, command: 'cursor-agent' },
+    muse: { enabled: false, command: '/nowhere/muse' },
   })
 })
 
@@ -366,14 +367,40 @@ test('a harness that takes the schema in its prompt gets the answer section at t
   assert.ok(turn.argv[1].includes('You are an Aether implementer, run by the codex CLI rather than Claude Code.'))
 })
 
+test('start passes the effort of the pair to the harness as it is, xhigh included, and refuses an effort that does not exist', (t) => {
+  const FAKE_GROK = path.join(__dirname, 'fixtures', 'fake-grok.js')
+  fs.chmodSync(FAKE_GROK, 0o755)
+  const { args } = fx.laneRun(t)
+  const grokLog = path.join(tempDir(t), 'grok.log')
+  const env = { ...fx.laneEnv(t, { mutate: (c) => (c.harnesses.grok.command = FAKE_GROK) }), AETHER_LANE_HARNESSES: 'agy,grok', AETHER_FAKE_GROK_LOG: grokLog }
+  const effortsOf = () => (fs.existsSync(grokLog) ? fs.readFileSync(grokLog, 'utf8').trim().split('\n').map((line) => JSON.parse(line)).map((c) => c.argv[c.argv.indexOf('--reasoning-effort') + 1]) : [])
+
+  // xhigh is not translated to high: the call records it as the level and the CLI receives it.
+  const digest = fx.writePrompt(args, IMPLEMENT, `You are implementing task-1: Task 1 title.\nFAKE-GROK: answer ${DONE}`)
+  const start = fx.lane(args, 'start', [IMPLEMENT, ...flags(digest, { model: 'grok-4.7', effort: 'xhigh' })], env)
+  assert.deepEqual(start.json, { started: true, model: 'grok-4.7', group: 'grok' }, start.stdout + start.stderr)
+  const done = fx.waitDone(args, IMPLEMENT, env)
+  assert.equal(done.status, 'ok', done.detail)
+  const info = JSON.parse(fs.readFileSync(path.join(args.runDir, 'lanes', IMPLEMENT, 'call.json'), 'utf8'))
+  assert.deepEqual([info.effort, info.level], ['xhigh', 'xhigh'])
+  assert.deepEqual(effortsOf(), ['xhigh'])
+
+  // An effort that does not exist, or an empty one, starts nothing.
+  const other = 'task-1-2-implement'
+  const second = fx.writePrompt(args, other, 'You are implementing task-1: Task 1 title.')
+  assert.deepEqual(fx.lane(args, 'start', [other, ...flags(second, { model: 'grok-4.7', effort: 'extreme' })], env).json, { unavailable: 'role' })
+  assert.equal(fx.lane(args, 'start', [other, ...flags(second, { model: 'grok-4.7', effort: '' })], env).status, 1)
+  assert.deepEqual(effortsOf(), ['xhigh'])
+})
+
 test('start refuses, changing nothing, when the prompt, digest, role, harness or quota does not allow the call', (t) => {
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t)
   assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags('00000000:0')], env).json, { unavailable: 'prompt' })
   const digest = fx.writePrompt(args, IMPLEMENT, `FAKE-AGY: answer ${DONE}`)
   assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags('00000000:0')], env).json, { unavailable: 'digest' })
-  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest, { effort: 'max' })], env).json, { unavailable: 'role' })
-  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest, { role: 'supervisor' })], env).json, { unavailable: 'role' })
+  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest, { effort: 'extreme' })], env).json, { unavailable: 'role' })
+  assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest, { role: 'designer' })], env).json, { unavailable: 'role' })
   const missing = fx.laneEnv(t, { command: path.join(path.dirname(fx.FAKE_AGY), 'no-such-agy') })
   assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], missing).json, { unavailable: 'not-installed' })
   const dry = fx.laneEnv(t, { quota: { 'Gemini Models': [0.05, 0.9], 'Claude and GPT models': [0.9, 0.9] } })
@@ -393,7 +420,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   const unit = unitDir(args)
   const head = fx.git(unit, 'rev-parse', 'HEAD')
   assert.deepEqual([done.result.status, done.result.head], ['DONE', head])
-  assert.deepEqual([done.lane.harness, done.lane.model, done.lane.group, done.lane.effort], ['agy', 'gemini-3.8-flash-high', 'gemini', 'xhigh'])
+  assert.deepEqual([done.lane.harness, done.lane.model, done.lane.group, done.lane.effort], ['agy', 'gemini-3.8-flash-xhigh', 'gemini', 'xhigh'])
   assert.deepEqual(done.lane.usage, { input: 1000, output: 200, thinking: 0, cacheRead: 500, total: 1200 })
   assert.equal(done.digest, lanes.resultDigest({ result: done.result, lane: done.lane }))
   assert.ok(fs.readFileSync(path.join(args.runDir, 'packages', 'task-1.diff'), 'utf8').includes(`Head: ${head}`))
@@ -402,7 +429,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   const [turn] = fx.agyTurns(env)
   assert.equal(turn.cwd, unit)
   assert.equal(turn.marker, `${args.runId}/${IMPLEMENT}`)
-  assert.equal(fx.argAfter(turn.argv, '--model'), 'gemini-3.8-flash-high')
+  assert.equal(fx.argAfter(turn.argv, '--model'), 'gemini-3.8-flash-xhigh')
   assert.equal(fx.argAfter(turn.argv, '--print-timeout'), '2700s')
   assert.equal(fx.argAfter(turn.argv, '--conversation'), null)
   assert.ok(turn.argv.includes('--dangerously-skip-permissions'))
@@ -417,7 +444,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
   assert.deepEqual(
     [entry.session, entry.run, entry.design, entry.call, entry.role, entry.task, entry.harness, entry.model, entry.group, entry.effort, entry.status],
-    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-high', 'gemini', 'xhigh', 'ok'],
+    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-xhigh', 'gemini', 'xhigh', 'ok'],
   )
   assert.deepEqual(entry.usage, done.lane.usage)
   assert.equal(entry.conversation, done.lane.conversation)
@@ -627,7 +654,7 @@ test("stop kills a running call's runner and agy, and wait then reports it unfin
   const [entry] = entries
   assert.deepEqual(
     [entry.session, entry.run, entry.design, entry.call, entry.role, entry.task, entry.harness, entry.model, entry.group, entry.effort, entry.status],
-    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-high', 'gemini', 'xhigh', 'stopped'],
+    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-xhigh', 'gemini', 'xhigh', 'stopped'],
   )
   assert.deepEqual([entry.usage, entry.conversation, entry.quotaAfter], [{ input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }, null, null])
   assert.equal(entry.quotaBefore.windows['5h'].remaining, 0.9)

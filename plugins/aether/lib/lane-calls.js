@@ -152,16 +152,17 @@ function callHarness(info) {
   return typeof info?.harness === 'string' ? info.harness : 'agy'
 }
 
-// The table's entry for a lane model that serves role at effort: its group, its id and the level effort maps to, or null.
-function laneModel(harness, role, model, effort) {
+// The efforts a call may ask for. The harness is given the effort as it is: nothing translates it.
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+// The table's entry for a lane model at a valid effort: its group, its id and the effort itself as the level, or null.
+function laneModel(harness, model, effort) {
   const entry = Object.hasOwn(harness.models, model) ? harness.models[model] : null
-  if (!entry || !entry.roles.includes(role) || !Object.hasOwn(entry.levels, effort)) return null
-  return { group: entry.group, id: model, level: entry.levels[effort] }
+  if (!entry || !EFFORTS.includes(effort)) return null
+  return { group: entry.group, id: model, level: effort }
 }
 
 // ---- status ----
-
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 // The run's graph, or null when there is none or it cannot be read.
 function readGraph(cwd, runId) {
@@ -182,25 +183,8 @@ function enabledFor(cwd, runId) {
   return lanes.enabledHarnesses()
 }
 
-// The order of the candidates of each call the run's graph names: for each role and native model of lanes.calls, what
-// lane-order.js's rule makes of them over the groups' views. A plan of an older compile has one lane, not a list, per
-// call, and lanes.harness is the harness of a lane that names none. A graph with no lanes gives {}.
-function orderOf(cwd, runId, harnesses) {
-  const planned = readGraph(cwd, runId)?.lanes
-  if (!isObject(planned) || !isObject(planned.calls)) return {}
-  const byRole = {}
-  for (const [role, byTier] of Object.entries(planned.calls)) {
-    if (!isObject(byTier)) continue
-    byRole[role] = {}
-    for (const tier of Object.keys(byTier)) {
-      byRole[role][tier] = order.orderCandidates(order.candidatesOf(planned.calls, role, tier, planned.harness ?? null), harnesses)
-    }
-  }
-  return byRole
-}
-
 // Every harness of the table: an enabled one with the view of each of its groups (lane-quota.js), a disabled one by its
-// command alone; then the order of the run's candidates and the live dry marks. It never refreshes: the reading is the
+// command alone; then the live dry marks. It never refreshes: the reading is the
 // one kept for its life, and grok's is its log's last line, however old. Each reading it takes goes to the lane log.
 // latest maps a harness to the reading a refresh just took, which its view uses in place of asking its adapter.
 function status(cwd, runId, { latest = {} } = {}) {
@@ -221,7 +205,7 @@ function status(cwd, runId, { latest = {} } = {}) {
     }
     harnesses[name] = { enabled: true, ...quota.harnessView(name, settings, { reserve: config.reserve, now, dataDir, fresh: false, latest: latest[name] ?? null, onRead }) }
   }
-  return { time: new Date(now).toISOString(), harnesses, order: orderOf(cwd, runId, harnesses), marks: marks.liveMarks(dataDir, now, lanes.groupKnown(config)) }
+  return { time: new Date(now).toISOString(), harnesses, marks: marks.liveMarks(dataDir, now, lanes.groupKnown(config)) }
 }
 
 // The wave's quota step: renews the reading of each enabled harness that has a way to renew it (grok, over ACP and then
@@ -293,7 +277,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   // A harness the owner did not enable runs no call, even when a model names it.
   if (!enabledFor(cwd, runId).includes(name)) return { unavailable: 'harness' }
   const { config, harness, adapter } = harnessSettings(name)
-  const lane = CALLED_ROLES.includes(role) ? laneModel(harness, role, model, effort) : null
+  const lane = CALLED_ROLES.includes(role) ? laneModel(harness, model, effort) : null
   if (!lane) return { unavailable: 'role' }
   if (!adapter.installed()) return { unavailable: 'not-installed' }
   const dataDir = run.dataDir()
