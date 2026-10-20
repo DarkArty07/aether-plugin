@@ -69,6 +69,7 @@ function parseDeadlines(value) {
 // The router's settings from the plugin options in env: a mode or decider that is not listed is record or haiku.
 function routerSettingsFrom(env = process.env) {
   const { enabledHarnesses } = require('./lanes.js')
+  const { resolveOption } = require('./superdelegation.js')
   const mode = env.CLAUDE_PLUGIN_OPTION_ROUTER
   const decider = env.CLAUDE_PLUGIN_OPTION_DECIDER
   return {
@@ -76,7 +77,7 @@ function routerSettingsFrom(env = process.env) {
     decider: ROUTER_DECIDERS.includes(decider) ? decider : 'haiku',
     fallback: parseFallback(env.CLAUDE_PLUGIN_OPTION_FALLBACK),
     deadlines: parseDeadlines(env.CLAUDE_PLUGIN_OPTION_DEADLINES),
-    lanes: env.CLAUDE_PLUGIN_OPTION_LANES === 'true',
+    lanes: resolveOption(env).on,
     harnesses: enabledHarnesses({ AETHER_LANE_HARNESSES: env.CLAUDE_PLUGIN_OPTION_HARNESSES }),
   }
 }
