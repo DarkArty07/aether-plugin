@@ -45,14 +45,14 @@ Add `--config lanes=true` to turn the lanes on (`lanes`, off by default; see [Op
 Aether mode is chosen per session:
 
 ```
-claude --agent aether:lead --effort max
+claude --agent aether:lead --effort xhigh
 ```
 
-The Lead is the agent `aether:lead`, which starts on Sonnet; `--effort max` sets its effort, because a plugin cannot. The settings file cannot hold `max`, so the command is the way to start the Lead at `max`. In a clone of this repository, `scripts/aether-lead` runs that command for you, with permissions bypassed and with aether-guard refusing an irreversible command that no grant covers. It also gives that session the plugin's own color theme, Aether, and only that session.
+The Lead is the agent `aether:lead`, which starts on Sonnet; `--effort xhigh` sets its effort, because a plugin cannot; the command passes it on every start, so the Lead does not depend on the settings file. In a clone of this repository, `scripts/aether-lead` runs that command for you, with permissions bypassed and with aether-guard refusing an irreversible command that no grant covers. It also gives that session the plugin's own color theme, Aether, and only that session.
 
 With the plugin installed and no clone, run `/aether:first-setup` once in a session. It puts a short command, `aeth` unless you name another, in `~/.local/bin`; the command runs the same launcher of the newest installed release, so an update needs no second setup, and it never replaces a file that is not its own.
 
-Plain `claude` is the normal mode, and the plugin is dormant there, unless the repository sets the agent: put `{ "agent": "aether:lead" }` in its `.claude/settings.local.json`. That file takes `xhigh` at most as `effortLevel`, so this route does not start the Lead at `max`; the command above does.
+Plain `claude` is the normal mode, and the plugin is dormant there, unless the repository sets the agent: put `{ "agent": "aether:lead" }` in its `.claude/settings.local.json`. That file can hold `xhigh` as `effortLevel`, but the command above passes `--effort xhigh` itself, so it is the way that always starts the Lead there.
 
 Then tell the Lead what you want. [Start](docs/getting-started.md#start) has the launcher in full, and [Getting started](docs/getting-started.md) what happens to your first request.
 

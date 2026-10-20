@@ -1,6 +1,6 @@
 # Handoff: Muse Code is the fifth lane harness (0.13.0)
 
-- **Date:** 2026-10-19. It follows [the 0.12.5 handoff](2026-10-19-lanes-marks-lead-max-0.12.5.md).
+- **Date:** 2026-10-19. It follows [the 0.12.8 handoff](2026-10-19-lead-xhigh-0.12.8.md).
 - **From:** the Lead, Claude Code on Sonnet 5.5, with a swarm of 14 tasks planned in [the plan](../../specs/008-muse-harness/plan.md) and [its tasks](../../specs/008-muse-harness/tasks.md). This page is written by task 14, before the Lead's own steps; the Lead corrects section 3 when it closes them.
 - **To:** the next session.
 - **Repository state:** the work is on the branch `feat/muse-harness`. Nothing is merged to `main`, pushed, tagged or published, and the owner's installed plugin stays at 0.12.5 until they run `claude plugin update aether@aether-plugin`. The tag is `aether--v0.13.0`, made on `main` after the merge.
@@ -16,14 +16,14 @@
 | `config/models/profiles.json`, `config/prices.json`, `scripts/build-models-index.js` | The profiles and prices of `muse-spark-1.3`, `muse-wonder-1.0` and `muse-wonder-full-1.0`, and the name `muse` in the index script (not yet in its default list). |
 | `tests/harness-muse.test.js`, `tests/muse-lane.test.js`, `tests/lane-models.test.js`, `tests/muse-profiles.test.js`, `tests/muse-prices.test.js`, `tests/harness-lists.test.js` | The adapter, each failure shape end to end with the real runner, the three rules for a model, the profiles and prices, and the test that fails when a fixed list of harnesses leaves Muse out. |
 | `README.md`, `CLAUDE.md`, `docs/`, the skills `using-aether` and `swarm`, `site/` | Muse wherever the other harnesses are named, in English, and in Spanish and English on the site. |
-| `docs/decisions.md` (A63), `docs/index.md` | The decision, and the range `A1–A63`. |
+| `docs/decisions.md` (A64), `docs/index.md` | The decision, and the range `A1–A64`. |
 | `plugin.json`, `README.md`, `docs/changelog.md`, `docs/roadmap.md` | The version 0.13.0 and the changelog entry that links this page (task 10). |
 
 ## 2. What the owner decided, in their words
 
 - «la siguiente update se viene algo grande. va a ser la 0.13.0 y vamos a incluir un nuevo harness, vamos a incluir a muse code».
 - «neceistamos usar muse code trbaja autonomamente»: the Lead plans and builds it without asking.
-- «siempre con fallback hacia nosotros» and «que me lo tengas que preguntar es una falla de diseño»: every failure of a Muse call runs on the native agent, with no question. This is A63.
+- «siempre con fallback hacia nosotros» and «que me lo tengas que preguntar es una falla de diseño»: every failure of a Muse call runs on the native agent, with no question. This is A64.
 
 ## 3. Open
 
@@ -46,6 +46,6 @@ The proposals the plan did not build are in its `Proposals` section; the first i
 
 ## 4. How to continue
 
-- Read A63 in [the decisions](../decisions.md) and the spec's criteria C1 to C9.
+- Read A64 in [the decisions](../decisions.md) and the spec's criteria C1 to C9.
 - Do the steps of section 3 in order, and write what was measured in `evidence/` before changing the adapter.
 - When a model enters the table, it passes `tests/lane-models.test.js`: it must be listed by the CLI, be the newest of its line, have a profile, and have `replaces` and `aa` in the table. A `-contributor` model never enters.

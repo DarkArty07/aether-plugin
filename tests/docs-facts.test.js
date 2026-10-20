@@ -265,7 +265,7 @@ test('commands: an aether-* code span in position, alone or with arguments; not 
 })
 
 test('plugin names: aether:<name> inside a code span', () => {
-  assert.deepEqual(pluginNamesIn('Use `aether:judge`, `/aether:run` and `claude --agent aether:lead --effort max`; `aether:<name>` is a pattern; aether:prose is not read.'), ['judge', 'run', 'lead'])
+  assert.deepEqual(pluginNamesIn('Use `aether:judge`, `/aether:run` and `claude --agent aether:lead --effort xhigh`; `aether:<name>` is a pattern; aether:prose is not read.'), ['judge', 'run', 'lead'])
   // The value of the theme setting names the plugin and a theme file, not an agent.
   assert.deepEqual(pluginNamesIn('`{"theme":"custom:aether:aether"}` and `aether:lead`'), ['lead'])
 })
@@ -474,7 +474,7 @@ test('R1: the README is the way in: at most 160 lines, and its parts in order', 
   }
   assert.ok(section('## Install').includes('claude plugin install aether --marketplace DarkArty07/aether-plugin'), 'Install has the command')
   const start = section('## First start')
-  for (const need of ['claude --agent aether:lead --effort max', 'scripts/aether-lead', '`claude`', 'normal mode', '.claude/settings.local.json']) {
+  for (const need of ['claude --agent aether:lead --effort xhigh', 'scripts/aether-lead', '`claude`', 'normal mode', '.claude/settings.local.json']) {
     assert.ok(start.includes(need), `First start has "${need}"`)
   }
   const where = section('## Where to go')
@@ -537,9 +537,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A63 are recorded and the changelog opens with 0.13.0 and its handoff', () => {
+test('R15: the decisions A50 to A64 are recorded and the changelog opens with 0.13.0 and its handoff', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 63
+  const LAST_DECISION = 64
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const muse = decisions.split('\n').find((line) => line.startsWith(`| A${LAST_DECISION} |`))
   assert.ok(/Muse Code/.test(muse) && /fifth lane harness/.test(muse))

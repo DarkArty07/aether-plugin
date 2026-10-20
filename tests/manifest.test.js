@@ -19,7 +19,7 @@ test('the repository is a marketplace that lists the aether plugin', () => {
         name: 'aether',
         source: './plugins/aether',
         description:
-          "Aether mode: the Lead as the owner's right hand, starting on Sonnet and working along three paths (itself, delegate tasks on models it chooses, or the swarm), a Judge on Opus, and a parallel swarm that implements approved plans. Start it with claude --agent aether:lead --effort max.",
+          "Aether mode: the Lead as the owner's right hand, starting on Sonnet and working along three paths (itself, delegate tasks on models it chooses, or the swarm), a Judge on Opus, and a parallel swarm that implements approved plans. Start it with claude --agent aether:lead --effort xhigh.",
       },
     ],
   })
@@ -95,7 +95,7 @@ test('the manifest has no dependencies, and declares the lanes, harnesses, ops, 
 test("the Lead agent runs on Sonnet, with no body, so Claude Code's own system prompt stays", () => {
   assert.equal(
     fs.readFileSync(path.join(PLUGIN, 'agents', 'lead.md'), 'utf8'),
-    '---\nname: lead\ndescription: "Aether Lead: the main session of Aether mode, started with claude --agent aether:lead --effort max. It is not a subagent."\nmodel: sonnet\n---\n',
+    '---\nname: lead\ndescription: "Aether Lead: the main session of Aether mode, started with claude --agent aether:lead --effort xhigh. It is not a subagent."\nmodel: sonnet\n---\n',
   )
 })
 

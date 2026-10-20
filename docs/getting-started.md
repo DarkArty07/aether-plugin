@@ -32,7 +32,7 @@ Then run `/aether:first-setup` once, in a session started with plain `claude`, t
 Aether 0.8 no longer needs superpowers. If you keep it for other work, it still enters every session where it is enabled and asks for its own skills, so turn it off for an Aether session:
 
 ```
-claude --agent aether:lead --effort max --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false},"theme":"custom:aether:aether"}'
+claude --agent aether:lead --effort xhigh --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false},"theme":"custom:aether:aether"}'
 ```
 
 The `theme` entry gives that session the plugin's own color theme, Aether, and nothing else changes in your settings (see [Start](#start)). The launcher runs that command for you, with permissions bypassed.
@@ -116,10 +116,10 @@ The commands of the plugin's `bin/` folder are on the `PATH` of the Bash tool in
 Aether mode is chosen per session:
 
 ```
-claude --agent aether:lead --effort max
+claude --agent aether:lead --effort xhigh
 ```
 
-The Lead is the agent `aether:lead`, which starts on Sonnet; the owner may switch with `/model`. `--effort max` sets its effort, because a plugin cannot. The settings file cannot hold `max`, so the command is the way to start the Lead at `max`. The command is the same in every shell.
+The Lead is the agent `aether:lead`, which starts on Sonnet; the owner may switch with `/model`. `--effort xhigh` sets its effort, because a plugin cannot. The command passes it on every start, so the Lead does not depend on the settings file. The command is the same in every shell.
 
 To type less, the plugin ships a launcher that runs the command of Install, with superpowers turned off for the session, and passes on every argument. It also starts the session with `--permission-mode bypassPermissions`, so neither the Lead nor the swarm's agents stop at a permission prompt. With no prompts, aether-guard is the only check left on a push, a `gh pr merge` or a forced delete, so the launcher sets `AETHER_IRREVERSIBLE=enforce`: the guard refuses an irreversible command that no grant covers, instead of only recording it. A value already set in your shell is kept, so `AETHER_IRREVERSIBLE=log aether-lead` (or `AETHER_IRREVERSIBLE=log aeth`, below) only records them. For a session that asks before each tool call, run the command of Install instead. The launcher is one `exec claude` after that default, with no setup of its own, so it is the same in bash, fish and zsh.
 
@@ -142,7 +142,7 @@ To make Aether mode the default in one repository, put this in its `.claude/sett
 { "agent": "aether:lead" }
 ```
 
-Plain `claude` then starts Aether mode there, and `claude --agent claude` starts normal mode. This file takes `xhigh` at most as `effortLevel`, so this route does not start the Lead at `max`; the command of Start does.
+Plain `claude` then starts Aether mode there, and `claude --agent claude` starts normal mode. This file can hold `xhigh` as `effortLevel`, but the command of Start passes `--effort xhigh` itself, so it is the way that always starts the Lead there.
 
 Plain `claude` stays normal mode: the plugin is dormant there. Its hooks do nothing, its usage meter records nothing, and its agents are not offered.
 
@@ -243,4 +243,4 @@ The most common ones, each with its remedy. The full list is in [Troubleshooting
 - **The session stops and waits, and nothing is running.** A permission prompt of Claude Code is waiting for you, and a run waits at it like at a question. Answer it, and start the next session with a permission mode or allow rules that cover the tools, or with the launcher (see [Start](#start)).
 - **A command was refused, or it is on your list.** With `AETHER_IRREVERSIBLE=enforce`, aether-guard refuses a `git push`, a `gh pr merge`, a publish, a deploy, a forced delete or a credentials command that no grant covers, and appends it to `.aether/pending.jsonl`. It reaches you in the brief's «Espera tu sí»; answer it there. With `AETHER_IRREVERSIBLE=log` the command ran and was only recorded. A local `git merge` is not recorded either way: git undoes it, and the push that would publish it is recorded.
 - **`aether-plan check` prints `"ok":false`.** Its `errors` name the task and the rule: a missing `**Aether:**` block, a missing `## Aether Execution` section or `Test command`, or two tasks that run at the same time and own the same file. Fix what it names, and run it again.
-- **Nothing happens that looks like Aether.** The session was started with plain `claude`, where the plugin is dormant: its hooks do nothing and its agents are not offered. Start it with `claude --agent aether:lead --effort max`, or with the launcher (see [Start](#start)).
+- **Nothing happens that looks like Aether.** The session was started with plain `claude`, where the plugin is dormant: its hooks do nothing and its agents are not offered. Start it with `claude --agent aether:lead --effort xhigh`, or with the launcher (see [Start](#start)).
