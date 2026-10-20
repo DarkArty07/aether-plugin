@@ -144,10 +144,11 @@ for (const [exit, wait] of [
 test('a round that does not finish is waited for in steps of 540 s, at most 12, then stopped and handed to the native agent', async () => {
   const run = await go(ARGS, { ops: waitFor('judge', () => ({ done: false })) })
   const waits = opsCalls(run, 'seat-wait').filter((c) => c.command.rest[0].startsWith('judge'))
-  assert.equal(waits.length, 24)
+  // Two reviews of 12 waits each, and one wait each for the probe that asks the native pair of the Judge (R17).
+  assert.equal(waits.length, 26)
   for (const w of waits) assert.deepEqual(w.command.rest.slice(1), ['--max', '540'])
   assert.ok(waits[0].prompt.startsWith("Run this command with the Bash tool, once, exactly as written, with the Bash tool's timeout set to 600000:"))
-  assert.equal(opsCalls(run, 'seat-stop').length, 2)
+  assert.equal(opsCalls(run, 'seat-stop').length, 4)
   assert.equal(run.calls.filter((c) => c.role === 'judge').length, 2)
   assert.equal(run.result.status, 'approved')
 })
@@ -448,3 +449,40 @@ test('the design workflow holds no copy of the seat profiles and no native corre
   const source = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
   for (const gone of ['SEAT_CHOICES', 'nativeRevision', 'with no seat round', "'balanced'", "'robust'", 'input.seats', 'input.lanes']) assert.equal(source.includes(gone), false, gone)
 })
+
+// R17: a Judge or an Examiner is never the model that wrote what it reviews, also when the seat round names no native
+// agent (it broke, or did not start). The workflow asks lib/seats.js for the pair with a round started off, which is
+// handed back at once, and holds no rule of its own.
+function brokenThenProbed(seat, author) {
+  const probes = new Set()
+  const pairs = require('../plugins/aether/lib/pairs.js').loadPairs().pairs
+  return (call, fallback) => {
+    const { verb, rest } = call.command
+    if (verb === 'seat-start' && rest[0] === seat) {
+      const out = fallback(call)
+      if (rest.includes('off')) probes.add(out.id)
+      return out
+    }
+    if (verb === 'seat-wait' && rest[0].startsWith(seat)) {
+      if (!probes.has(rest[0])) return { done: true, exitCode: 1, value: { error: 'boom' } }
+      const { native } = seats.chooseSeat({ config: null, pairs, seat, author, harnesses: {} })
+      return { done: true, exitCode: 3, value: { unavailable: 'superdelegation-off', seat, native, tried: [] } }
+    }
+    return fallback(call)
+  }
+}
+
+for (const seat of ['judge', 'examiner']) {
+  test(`R17: a native ${seat} taken after a seat round that names no native pair is not the model that wrote the document`, async () => {
+    const document = `${FEATURE}/${seat === 'judge' ? 'design' : 'plan'}.md`
+    const run = await go({ ...SHORT, superdelegation: 'on', author: 'opus', document }, { ops: brokenThenProbed(seat, 'opus') })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    const taken = run.calls.filter((c) => c.role === seat)
+    assert.ok(taken.length >= 1, `a native ${seat} ran`)
+    for (const call of taken) assert.notEqual(call.model, 'opus', call.label)
+    assert.deepEqual([taken[0].model, taken[0].effort], ['sonnet', 'high'])
+    const probe = opsCalls(run, 'seat-start').find((c) => c.command.rest[0] === seat && c.command.rest.includes('off'))
+    assert.ok(probe, 'the native pair is asked of the seat code with a round started off')
+    assert.equal(flag(probe, '--author'), 'opus')
+  })
+}
