@@ -329,12 +329,27 @@ function nativeLines(seat) {
 
 const RETRY_LINE = 'An earlier attempt at this round ended without an answer. Start again from the files as they are now, and end with your answer.'
 
-// The native agent of a round: the model and effort the seat's reply names for it (its decision's native pair, which
-// for a Judge or an Examiner is not the model that wrote the document), or the seat's reference pair when the reply
-// names none, as after a seat round that broke or did not start.
-function nativeOf(seat, value) {
+// The model and effort a seat's reply names for its native agent (its decision's native pair, which for a Judge or an
+// Examiner is not the model that wrote the document), or null when it names none.
+function namedNative(value) {
   const named = isObject(value.native) ? value.native : null
-  return named !== null && TIERS.includes(named.model) && EFFORTS.includes(named.effort) ? { model: named.model, effort: named.effort } : REFERENCE[seat]
+  return named !== null && TIERS.includes(named.model) && EFFORTS.includes(named.effort) ? { model: named.model, effort: named.effort } : null
+}
+
+// The native agent of a round. When the seat's reply names none, as after a seat round that broke or did not start, a
+// Judge or an Examiner is still never the model that wrote what it reviews (R17). The choice is lib/seats.js's, not a
+// rule copied here: a round started with superdelegation off runs nothing and is handed back at once with the native
+// pair that the choice gives for this author, and that pair is the answer. The Writer's pair is its reference pair
+// (it may be the author). The probe is handed back at once, so it is waited for once. When it names none either, the
+// seat's reference pair stays.
+async function nativeOf(seat, value, { base, flags, text, phase }) {
+  const named = namedNative(value)
+  if (named !== null) return named
+  if (seat === 'writer') return REFERENCE[seat]
+  const off = flags.replace(/--superdelegation \S+/, '--superdelegation off')
+  const probe = await awaitSeat({}, { seat, base: `${base}: native pair`, flags: off, text, phase, maxWaits: 1 })
+  const given = probe.reply && probe.reply.exitCode === 3 && isObject(probe.reply.value) ? namedNative(probe.reply.value) : null
+  return given || REFERENCE[seat]
 }
 
 // The native agent of a round, on its model and effort, with the round's message and its own lines. An answer that is
@@ -378,7 +393,7 @@ function handedBackNote(reply) {
 
 // Starts a seat round and waits for it: { reply } with what seat-wait printed once it finished, or { note } when it
 // did not start or did not finish (then it is stopped).
-async function awaitSeat(record, { seat, base, flags, text, phase }) {
+async function awaitSeat(record, { seat, base, flags, text, phase, maxWaits = MAX_WAITS }) {
   const started = await ops(`aether-lane seat-start ${seat} ${flags} --digest ${digest(text)}`, {
     phase,
     label: `${base}: start`,
@@ -390,13 +405,13 @@ async function awaitSeat(record, { seat, base, flags, text, phase }) {
   const { id } = started
   record.id = id
   // A wait the ops agent fails or garbles only costs one more wait.
-  for (let k = 1; k <= MAX_WAITS; k++) {
+  for (let k = 1; k <= maxWaits; k++) {
     const out = await ops(`aether-lane seat-wait ${id} --max ${WAIT_SECONDS}`, { phase, label: `${base}: wait ${k}`, long: true })
     if (!out.error && out.done === true) return { reply: out }
   }
   const stopped = await ops(`aether-lane seat-stop ${id}`, { phase, label: `${base}: stop` })
   if (stopped.error) log(`${base}: the stop failed: ${stopped.error}`)
-  return { note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped` }
+  return { note: `the seat round did not finish after ${maxWaits} waits of ${WAIT_SECONDS} s, and was stopped` }
 }
 
 // One round of a seat (R2). The seat round answers, or the native agent takes the round with the same message: after
@@ -428,7 +443,7 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
     record.note = waited.note
   }
   log(`${base}: ${record.note}`)
-  const native = nativeOf(seat, value)
+  const native = await nativeOf(seat, value, { base, flags, text, phase })
   const taken = await nativeAnswer({ seat, base, text, schema: nativeSchema, phase, native })
   if (taken.failed) return taken
   return { answer: taken.answer, text: seat === 'judge' ? judgeText(taken.answer) : '', seat: 'native', model: native.model }

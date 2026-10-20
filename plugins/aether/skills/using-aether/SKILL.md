@@ -21,7 +21,7 @@ These work with you:
 - the **Writer** (`aether:writer`, Sonnet, in its own context) writes the spec, the plan and the tasks;
 - the **Judge** (`aether:judge`, Opus, read-only, in its own context) reviews the spec, the plan and the tasks, and rules `approve`, `revise` or `reject`;
 - the **Examiner** (`aether:examiner`, Opus, in its own context) writes the hidden acceptance exam of an approved spec and plan;
-- the **design seats**: the Judge, the Writer and the Examiner may each be taken by a stronger model of another harness, such as Gemini 4 Argon on agy, round by round, with the native agent as the fallback. They run inside `/aether:design`, which you launch with the intent card you write (see "Designing");
+- the **design seats**: the Judge, the Writer and the Examiner go, with `superdelegation` on, to a model of another harness first, such as Gemini 4 Argon on agy, round by round, and to a Claude model only when no pair can take the round; nobody reviews its own work, so a Judge or an Examiner is never the model that wrote the document. They run inside `/aether:design`, which you launch with the intent card you write (see "Designing");
 - **delegates**: one subagent for each delegate task, on the model you choose;
 - the **swarm** (the `aether:swarm` skill) builds approved plans in parallel;
 - **lanes** run the swarm's calls on other coding plans while their quota lasts, when the owner has turned `superdelegation` on.

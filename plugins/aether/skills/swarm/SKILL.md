@@ -64,7 +64,7 @@ The workflow returns:
 - **`finalReview`:** a `status` of `done`, `skipped` or `failed`. When it is done, it also has the `verdict`, `findings`, `declined` and `summary`. A `failed` review has a `reason`: the reviewer ended without its answer, which may be a diff too large for its turns, or it failed with an error's text. That is never a verdict. `reviewModel` and `reviewEffort` say what it ran on, which follows the run's risk: Opus at `xhigh` when a merged task is tier opus or reviews at `xhigh` or `max`, Sonnet at `high` for at most three haiku tasks that review at `high`, and Opus at `high` otherwise.
 - **`cleanup`:** what the sweep removed. Its `remaining` lists must be empty.
 - **`agents`:** the agent count, by role and by model.
-- **`lanes`:** `{ calls, ok, failed, quota, violation, blocked, unavailable, overflow }`. `overflow` is the calls that exhausted the quota wait. It is null when the run had no lanes.
+- **`lanes`:** `{ calls, ok, failed, quota, violation, blocked, unavailable, overflow }`. `overflow` is the calls whose wait for a free place on a full harness (`wait-limit`) ran out. It is null when the run had no lanes.
 - **`error`:** set only when the script itself failed.
 
 Save the result as `<runDir>/result.json`, then run `aether-report --run <runId>` from the integration worktree. It prints JSON:
