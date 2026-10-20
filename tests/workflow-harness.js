@@ -49,6 +49,8 @@ function aetherWt(call, state) {
       return { removed: true, patch: state.merged.has(second) ? null : path.join(state.args.runDir, 'patches', `${second}.patch`) }
     case 'diff':
       return { path: path.join(state.args.runDir, 'packages', 'final.diff'), base: state.args.integration.base, head: 'f1a1' }
+    case 'status':
+      return state.merged.has(second) ? { merged: true, branch: `aether/${first}/${second}`, commit: `merge-${second}`, head: `head-${second}` } : { merged: false, branch: `aether/${first}/${second}`, commit: null, head: `head-${second}` }
     case 'salvage':
       return { salvaged: false, files: [], committed: [], left: [], head: null, package: null }
     case 'sweep':

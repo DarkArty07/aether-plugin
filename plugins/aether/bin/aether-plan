@@ -103,6 +103,7 @@ const BASELINE_TIMEOUT_MS = 10 * 60 * 1000
 // Runs the test command once, in the integration worktree, before the run's first merge. The failing
 // tests it names are the baseline: a merge is blocked only by a failure that is not among them.
 function recordBaseline(cwd, testCommand) {
+  const started = Date.now()
   const r = spawnSync(testCommand, {
     cwd,
     shell: true,
@@ -112,6 +113,7 @@ function recordBaseline(cwd, testCommand) {
   })
   return {
     recordedAt: new Date().toISOString(),
+    durationMs: Date.now() - started,
     exitCode: r.status,
     // A newline between the two streams keeps the last line of one from joining the first of the other.
     signatures: baseline.failureSignatures(`${r.stdout || ''}\n${r.stderr || ''}`),
@@ -196,6 +198,9 @@ function compile(planArg, rest) {
   const base = head(process.cwd())
   const args = {
     runId,
+    // This bin's own directory, so the run's commands run this same version in a
+    // --plugin-dir session, whose PATH holds the installed release's bins (issue 008).
+    binDir: __dirname,
     repoRoot: repo.mainRoot,
     runDir: dir,
     plan: planPath,
@@ -219,6 +224,12 @@ function compile(planArg, rest) {
     const recorded = recordBaseline(repo.worktree, parsed.execution.testCommand)
     run.writeJson(baselineFile, recorded)
     process.stderr.write(`aether-plan: test baseline: ${baselineMessage(recorded)}\n`)
+    // A merge runs the same command under the mod's ten-minute limit (issue 002, proposal 5).
+    if (recorded.durationMs > 540000) {
+      process.stderr.write(
+        `aether-plan: warning: the test command took ${Math.round(recorded.durationMs / 1000)}s for the baseline; a merge runs it under a 600s limit, so merges may be stopped at the limit with their test run unfinished\n`,
+      )
+    }
   }
   run.writeJson(graphFile, args)
   // A relaunch of a run keeps its first compile time, so the report covers every launch, and keeps

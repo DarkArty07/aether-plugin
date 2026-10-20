@@ -4,6 +4,7 @@
 **Date:** 2026-10-15
 **Found in:** the run of spec 004 (run `20261015-011925-90a1`), `task-2: supervise attempt 1`
 **Status:** open
+**Update 2026-10-19, branch `fix/bug-issues`:** not fixed, and not fixable in the plugin as far as the code reaches today: a workflow script's `agent()` takes no timeout, and the script has no clock or timer to stop a silent agent with (its runs are replayed call by call). The lane table's 900 s supervisor timeout already governs lane supervisors; a native supervisor that goes silent is Claude Code's to reap. The run was not blocked by it. Revisit when the Workflow tool offers a per-agent timeout.
 **GitHub:** [#16](https://github.com/DarkArty07/aether-plugin/issues/16) (private repository)
 
 ## Summary

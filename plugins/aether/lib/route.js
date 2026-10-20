@@ -21,7 +21,7 @@ const { EXTERNAL_LIMIT_MS } = require('./delegate-limits.js')
 const { appendEntry } = require('./router-log.js')
 const { liftMark } = require('./lane-marks.js')
 const { readAllMarks } = require('./router-marks.js')
-const { EXTERNAL, peekReadings, staleHarnesses, chooseHarness } = require('./router-quota.js')
+const { EXTERNAL, peekReadings, staleHarnesses, servableHarnesses, chooseHarness } = require('./router-quota.js')
 const { startRenewal, waitForReading } = require('./router-renewal.js')
 const { loadRungs } = require('./router-rungs.js')
 const { aliasOf, askedOf, claudeLevel, claudeId, stanceOf, claudeRungAt } = require('./router-reference.js')
@@ -327,9 +327,13 @@ async function quotaStep(d, settings, { level, axis }) {
     else if (result && result.running) renewals[harness] = 'running'
   }
   let waitedMs = 0
-  if (stale.length > 0) {
+  // Only a harness that could serve the level is waited for (issue 025): one marked dry, or
+  // with no rung at the level, keeps its background renewal for the next decision, but this
+  // decision does not sit out the quota deadline for a reading that cannot change its pick.
+  const servable = servableHarnesses({ level, axis, rungs: d.rungs(), config, marks: d.marks(), now: d.now(), harnesses: stale })
+  if (servable.length > 0) {
     const waited = await waitForReading({
-      isValid: () => staleHarnesses({ readings: d.readings(), config, harnesses: live, now: d.now() }).length === 0,
+      isValid: () => staleHarnesses({ readings: d.readings(), config, harnesses: servable, now: d.now() }).length === 0,
       waitMs: settings.deadlines.quotaMs,
       now: d.now,
       sleep: d.sleep,

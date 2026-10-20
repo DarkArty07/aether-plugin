@@ -66,14 +66,44 @@ function authorModel(author) {
   return ALIASES[bare] ?? bare
 }
 
+// The models each harness's CLI listed, as captured in config/models/harness-models.json
+// (scripts/build-models-index.js captures them). Read once; a file that cannot be read
+// captures nothing, and then no model is refused on this ground.
+let listingCache = undefined
+function harnessListing() {
+  if (listingCache === undefined) {
+    try {
+      listingCache = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config', 'models', 'harness-models.json'), 'utf8'))
+    } catch {
+      listingCache = null
+    }
+  }
+  return listingCache
+}
+
+// Whether the harness's captured listing offers the model at the level the seat's effort
+// maps to (issue 016): with no listing for the harness, the listing cannot say, and the
+// model is not refused. The level may sit in the id (`gemini-4-argon-high`, which the
+// writer's xhigh maps to) or be a flag of the bare model id.
+function offeredByListing(harnessName, model, level, listing = harnessListing()) {
+  const models = listing && listing.harnesses && listing.harnesses[harnessName] && listing.harnesses[harnessName].models
+  if (!Array.isArray(models)) return true
+  return models.some((entry) => {
+    const id = typeof entry === 'string' ? entry : entry && entry.id
+    if (typeof id !== 'string' || (entry && typeof entry === 'object' && entry.excluded)) return false
+    return id === model || id === `${model}-${level}`
+  })
+}
+
 // Who takes seat under the seats choice: the first external model on its list whose harness is enabled
-// and installed, that is not the author's model, and whose group has no dry mark and has quota above the
-// reserve; else the native agent. Pure apart from the calls it is given: installed(harness), quota(harness, group)
-// and marked(harness, group, reading), which says whether a live mark still holds the group once the reading of the
+// and installed, that its listing offers, that is not the author's model, and whose group has no dry mark and has quota above the
+// reserve; else the native agent. Pure apart from the calls it is given: installed(harness), quota(harness, group),
+// offered(harness, settings, model, level) (with none given, every model counts as offered) and
+// marked(harness, group, reading), which says whether a live mark still holds the group once the reading of the
 // group (null when it could not be read) has had the chance to lift it; with none given, no mark holds.
 // Returns { off } for an examiner the choice does not run, { external } or { native }, each with the
 // models it passed over and why.
-function chooseSeat(config, { choice, seat, author = null, enabled = [], installed, quota, marked = () => false }) {
+function chooseSeat(config, { choice, seat, author = null, enabled = [], installed, quota, marked = () => false, offered = () => true }) {
   const list = lanes.seatList(config, choice, seat)
   if (list === false) return { off: true, tried: [] }
   const authorId = authorModel(author)
@@ -92,6 +122,10 @@ function chooseSeat(config, { choice, seat, author = null, enabled = [], install
     }
     if (!installed(harnessName, settings)) {
       tried.push({ model: item, reason: 'not-installed' })
+      continue
+    }
+    if (!offered(harnessName, settings, model, entry.levels[EXTERNAL_EFFORT[seat]])) {
+      tried.push({ model: item, reason: 'not-offered' })
       continue
     }
     // The group is read first: a healthy reading lifts a mark that came from a reading, and the group is passed over
@@ -690,6 +724,7 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     author: opts.author ?? null,
     enabled: lanes.enabledHarnesses(env),
     installed: (name, settings) => adapterOf(name, settings).installed(),
+    offered: (name, settings, model, level) => offeredByListing(name, model, level),
     quota: (name, settings, group) => adapterOf(name, settings).quota().groups[group] ?? null,
     // The reading was taken a moment ago, so its life is the harness's whole life.
     marked: (name, group, reading) =>
@@ -719,4 +754,4 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   })
 }
 
-module.exports = { NATIVE, EXTERNAL_EFFORT, EXAM_DIR, USAGE, authorModel, chooseSeat, changedPaths, judgeText, windowUsed, seatPrompt, seatCommand }
+module.exports = { NATIVE, EXTERNAL_EFFORT, EXAM_DIR, USAGE, authorModel, chooseSeat, offeredByListing, changedPaths, judgeText, windowUsed, seatPrompt, seatCommand }

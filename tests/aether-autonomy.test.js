@@ -12,7 +12,7 @@ const MERGE = 'apruebo merge a main en todas las futuras ocasiones'
 const HOURS = 'trabaja por horas y no cuentes conmigo hasta acabar'
 const REVOKE = 'ya no fusiones a main sin preguntarme'
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete'
 
 const human = (text, time) =>
   JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })
@@ -76,6 +76,22 @@ test('a session-scoped grant covers only its session, and revoke takes it away',
   const r = cli(['revoke', '--class', 'merge-main', '--quote', REVOKE])
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.equal(r.json.revoked.removed, 1)
+  assert.equal(cli(['check', 'merge-main']).status, 2)
+})
+
+test('revoke keeps the repository grant, and --all takes it too (issue 017)', (t) => {
+  const { cli } = setup(t)
+  assert.equal(cli(['grant', '--class', 'merge-main', '--quote', MERGE]).status, 0)
+  assert.equal(cli(['grant', '--class', 'merge-main', '--quote', MERGE, '--scope', 'session']).status, 0)
+  const narrow = cli(['revoke', '--class', 'merge-main', '--quote', REVOKE])
+  assert.equal(narrow.status, 0, narrow.stdout + narrow.stderr)
+  assert.equal(narrow.json.revoked.removed, 1)
+  assert.equal(narrow.json.revoked.all, false)
+  assert.equal(cli(['check', 'merge-main']).status, 0)
+  const all = cli(['revoke', '--class', 'merge-main', '--quote', REVOKE, '--all'])
+  assert.equal(all.status, 0, all.stdout + all.stderr)
+  assert.equal(all.json.revoked.removed, 1)
+  assert.equal(all.json.revoked.all, true)
   assert.equal(cli(['check', 'merge-main']).status, 2)
 })
 

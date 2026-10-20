@@ -418,6 +418,17 @@ function failedDetail({ reason, error }, stderr) {
   return `${head}\n${text}`
 }
 
+// A failure that names its cause as the model or the arguments is failed whatever the
+// reading after it says (issue 015): one odd reading must not turn "model not found"
+// into a dry group. Only these explicit wordings count; anything else keeps the
+// reading's say.
+const MODEL_OR_ARGUMENT_ERROR =
+  /model not found|unknown model|no such model|unsupported model|invalid model|not recognized as a known model|invalid argument|unknown (option|flag|argument)|unrecognized (option|argument)/i
+
+function isModelOrArgumentError(parsed) {
+  return MODEL_OR_ARGUMENT_ERROR.test(parsed.reason || '') || MODEL_OR_ARGUMENT_ERROR.test(parsed.error || '')
+}
+
 // The status, result and detail of a finished call, from the checks and agy's output, in that order.
 // quotaRead says whether /usage could be read after the call: only a reading can find the group dry.
 function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, stderr) {
@@ -432,6 +443,8 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
     // agy's refusal for its individual quota is explicit, and /usage does not report that limit: it needs no reading.
     const refusal = refusalIn(parsed.reason, parsed.error, stderr)
     if (refusal) return { status: 'quota', detail: parsed.reason, refusal }
+    // The failure reason is checked before the reading (issue 015).
+    if (isModelOrArgumentError(parsed)) return { status: 'failed', detail: failedDetail(parsed, stderr) }
     if (quotaRead && !lanes.usable(quotaAfter, reserve)) return { status: 'quota', detail: parsed.reason }
     // A harness that reports no quota can only show it ran dry in its output, and so can grok, whose reading comes
     // from a log its headless calls do not update: a quota reason then ends the call as quota. agy's reasons never

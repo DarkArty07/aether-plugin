@@ -4,6 +4,7 @@
 **Date:** 2026-10-19
 **Found in:** the owner's view of the `run` workflow of spec 008 in the Lead's session 4cb63536 (a screenshot of the workflow window, 15m53s into the run, 60 of 61 agents)
 **Status:** open
+**Update 2026-10-19, branch `fix/bug-issues`:** partly fixed. A lane call's row now names the harness and model up front (`task-1: implement via agy <model> on <rung> …`), before the window truncates the label, and the workflow's progress log says who ran each finished lane call and what it spent (`ran on agy <model> · N tok`); a design seat round taken externally logs the same. Not fixable in the plugin: the window's model and token columns are Claude Code's, read from the ops agent the mod answers without a model, so they still read Haiku and 0 for a lane call and for a plain ops step alike; proposal 2 (the lane's usage in that column) would take the window reading it from the answer. `aether-lane status <runId>` and the lane log keep the exact model and usage per call.
 **GitHub:** not filed
 
 ## What happened

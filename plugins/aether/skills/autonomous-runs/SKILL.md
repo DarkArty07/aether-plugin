@@ -29,6 +29,8 @@ Outside a run there is no diary: what this skill says to note in it goes in your
 
 **Keep going.** While a run is open, never end a turn unless something pending will wake you (a `/aether:design` workflow or a native Writer you started, a delegate task, a lane call, a swarm workflow, a background command) or the run has ended. If nothing is pending and work remains, do the next step in the same turn. An open run with nothing pending is the session waiting for the owner, which is what a run exists to avoid.
 
+**A delegate waiting on its own background work does not count as pending.** When a delegate task's last notification says it stopped waiting on its own background work, nothing may ever wake you from it: the delegate may never resume. Before you end the turn, start a fallback wakeup of your own: a background command that sleeps 15 to 20 minutes. When it wakes you, check the delegate: if it has not reported, resume it with a message asking for its report, or do the step it was waiting on yourself and take its work as it stands.
+
 **Scope.** Compare everything new with the intent. What goes beyond it goes to "Propuestas" and is not worked. Minor findings of the final review are deferred.
 
 **Ceilings.** Run `aether-autonomy status` before each `/aether:design` launch or relaunch, each delegate task, and each swarm launch or relaunch. When its `stop` is not null, start nothing new. Let what is running finish (a swarm run or a delegate task), or save it as patches, and never leave a merge half done. Then run `aether-autonomy end --outcome ceiling` and give the brief.

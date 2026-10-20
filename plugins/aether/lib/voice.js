@@ -44,11 +44,31 @@ function parseLine(line) {
   }
 }
 
+// A message the owner types while a turn is running is absorbed mid-turn: it is
+// not a `user` record but an attachment queued_command with commandMode
+// "prompt" (issue 014). Other queued commands (task notifications and the
+// like) are not the owner's words, so anything but "prompt" stays out.
+function queuedPrompt(record) {
+  if (record.type !== 'attachment' || record.isSidechain === true) return null
+  const a = record.attachment
+  if (!a || a.type !== 'queued_command' || a.commandMode !== 'prompt') return null
+  return a
+}
+
 function ownerMessages(lines, { maxChars = DEFAULT_MAX_CHARS } = {}) {
   const messages = []
   for (const line of lines) {
     const record = parseLine(line)
-    if (!record || !isOwnerRecord(record)) continue
+    if (!record) continue
+    const queued = queuedPrompt(record)
+    if (queued) {
+      const text = textOf(queued.prompt)
+      if (!text.trim()) continue
+      const time = typeof record.timestamp === 'string' ? record.timestamp : typeof queued.timestamp === 'string' ? queued.timestamp : ''
+      messages.push({ time, text: cut(text, maxChars) })
+      continue
+    }
+    if (!isOwnerRecord(record)) continue
     const text = textOf(record.message && record.message.content)
     if (!text.trim()) continue
     // Without an origin, a "<..." text is a command or a notification, not the owner speaking.

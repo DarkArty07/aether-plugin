@@ -476,10 +476,17 @@ test('a change to the integration worktree blocks the unit', (t) => {
 test("a non-clean call is quota when the group fell under the reserve, failed otherwise, and agy's partial work stays uncommitted", (t) => {
   const env = fx.laneEnv(t)
   const low = JSON.stringify({ 'Gemini Models': [0.01, 0.9], 'Claude and GPT models': [0.9, 0.9] })
-  const quota = implement(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error'], { env })
+  const quota = implement(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error service unavailable'], { env })
   assert.deepEqual([quota.done.status, quota.done.result], ['quota', null])
-  assert.match(quota.done.detail, /^exit 1: model not found/)
+  assert.match(quota.done.detail, /^exit 1: service unavailable/)
   assert.match(fx.git(unitDir(quota.args), 'status', '--porcelain', '--untracked-files=all'), /src\/t1\/partial\.js/)
+
+  // Issue 015: the failure reason is checked before the reading, so a model
+  // error stays failed even when the reading after it is under the reserve.
+  const env2 = fx.laneEnv(t)
+  const modelError = implement(t, [`FAKE-AGY: write-abs ${env2.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error'], { env: env2 })
+  assert.deepEqual([modelError.done.status, modelError.done.result], ['failed', null])
+  assert.match(modelError.done.detail, /^exit 1: model not found/)
 
   const failed = implement(t, ['FAKE-AGY: write src/t1/half.js half', 'FAKE-AGY: timeout'])
   assert.equal(failed.done.status, 'failed')

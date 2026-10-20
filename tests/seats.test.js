@@ -54,6 +54,18 @@ test('chooseSeat passes over a model whose harness is off, not installed or out 
   }
 })
 
+test('chooseSeat never tries a model the harness does not offer (issue 016)', () => {
+  const chosen = choose({ choice: 'balanced', seat: 'judge', offered: () => false })
+  assert.deepEqual(chosen.tried, [{ model: 'agy/gemini-4-argon', reason: 'not-offered' }])
+  assert.equal(chosen.native.agent, 'aether:judge')
+  // The shipped listing: Argon at the level each seat maps to is offered, an unknown model is not,
+  // and a harness with no listing captured cannot refuse a model.
+  assert.equal(seats.offeredByListing('agy', 'gemini-4-argon', 'high'), true)
+  assert.equal(seats.offeredByListing('agy', 'gemini-9-neon', 'high'), false)
+  assert.equal(seats.offeredByListing('agy', 'gemini-4-argon', 'high', { harnesses: {} }), true)
+  assert.equal(seats.offeredByListing('agy', 'gemini-4-argon', 'high', null), true)
+})
+
 test("chooseSeat marks a native agent of the author's own model, the only seat left", () => {
   const chosen = choose({ choice: 'balanced', seat: 'judge', author: 'opus', enabled: [] })
   assert.equal(chosen.native.sameModelAsAuthor, true)

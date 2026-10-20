@@ -4,6 +4,7 @@
 **Date:** 2026-10-16
 **Found in:** the build of `specs/006-delegate-router`, the Lead's session 56b71739: a 15-task plan review and a final review of 9 merged tasks
 **Status:** open; the Lead's workaround for this run is below; related to [issue 005](005-report-and-final-review-cannot-represent-hand-integrated-work.md), proposal 3
+**Update 2026-10-19, branch `fix/bug-issues`:** proposals 1 and 2 are built. The Judge's message carries the reading plan (reads batched in one turn, at most 20 turns reading, at most six claims verified, verdict by turn 28), for native and external rounds alike. The final review of more than three merged units runs in parallel slices of at most three units of an area, each reviewer told the files its units own and the same reading plan; the verdict is the least ready slice's, and a slice with no answer fails the review keeping the others' findings — output for output, the session's workaround. Slices run native: a lane call has the one fixed id `final-review`, so a sliced review cannot walk the lanes. Still open: proposal 3, the final review once per run at `finalize`.
 **GitHub:** [#33](https://github.com/DarkArty07/aether-plugin/issues/33) (private repository)
 
 ## What happened

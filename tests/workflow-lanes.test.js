@@ -86,14 +86,17 @@ test('with every group usable, the implementer, the supervisor and the final rev
   assert.deepEqual(flags, { run: args.runId, call: 'task-1-1-implement', role: 'implementer', task: 'task-1', model: 'gemini-3.8-flash', effort: 'xhigh' })
   assert.match(digest, /^[0-9a-f]{8}:\d+$/)
   assert.deepEqual([implement.digestOk, supervise.digestOk, review.digestOk], [true, true, true])
-  assert.equal(implement.label, 'task-1: implement on haiku xhigh via agy gemini-3.8-flash (attempt 1): start')
+  assert.equal(implement.label, 'task-1: implement via agy gemini-3.8-flash on haiku xhigh (attempt 1): start')
+  // The window shows the call as its Haiku ops agent (issue 032): the label names the harness
+  // and model up front, and the progress log says who ran and what it spent.
+  assert.ok(run.logs.some((line) => /ran on agy gemini-3\.8-flash-high · 1200 tok/.test(line)), run.logs.join('\n'))
   assert.match(implement.prompt, /^Run this command with the Bash tool, once, exactly as written, with the Bash tool's timeout set to 600000:\n\ncd '/)
   assert.equal(implement.payload.path, path.join(args.runDir, 'lanes', 'task-1-1-implement', 'prompt.md'))
   assert.match(implement.payload.text, /^You are implementing task-1: Task 1 title\.\n/)
   assert.ok(implement.payload.text.includes('\nBrief: .aether-tmp/brief.md\n'))
-  assert.ok(implement.payload.text.includes('4. Commit your work in the worktree. Do not run aether-wt: the harness packages your diff and reads your head from git.'))
+  assert.ok(implement.payload.text.includes('4. Commit your work in the worktree as you go: a commit after each part that passes, so an attempt cut off still leaves its work. Do not run aether-wt: the harness packages your diff and reads your head from git.'))
   assert.equal(implement.payload.text.includes('aether-wt ensure'), false)
-  assert.equal(run.calls[2].label, 'task-1: implement on haiku xhigh via agy gemini-3.8-flash (attempt 1): wait 1')
+  assert.equal(run.calls[2].label, 'task-1: implement via agy gemini-3.8-flash on haiku xhigh (attempt 1): wait 1')
   assert.deepEqual([supervise.lane.call, supervise.lane.role, supervise.lane.task, supervise.lane.model, supervise.lane.effort], [
     'task-1-1-supervise',
     'supervisor',
@@ -101,7 +104,7 @@ test('with every group usable, the implementer, the supervisor and the final rev
     'claude-sonnet-5-5',
     'high',
   ])
-  assert.equal(supervise.label, 'task-1: supervise attempt 1 via agy claude-sonnet-5-5: start')
+  assert.equal(supervise.label, 'task-1: supervise via agy claude-sonnet-5-5 (attempt 1): start')
   assert.ok(supervise.payload.text.includes('\nReview package: .aether-tmp/package.diff\n'))
   assert.ok(supervise.payload.text.includes(`\nUnit worktree: the current directory, a disposable copy of branch aether/${args.runId}/task-1\n`))
   // A one-unit run of haiku work with a high review: the final review is Sonnet at high.
@@ -302,7 +305,7 @@ test('when the waits run out, the lane call is stopped and the same attempt goes
   ok(run)
   assert.equal(run.calls.filter((c) => c.kind === 'ops:lane-wait' && c.lane.call === 'task-1-1-implement').length, LANES.waits.implementer)
   const stops = run.calls.filter((c) => c.kind === 'ops:lane-stop')
-  assert.deepEqual(stops.map((c) => [c.lane.call, c.label]), [['task-1-1-implement', 'task-1: implement on haiku xhigh via agy gemini-3.8-flash (attempt 1): stop']])
+  assert.deepEqual(stops.map((c) => [c.lane.call, c.label]), [['task-1-1-implement', 'task-1: implement via agy gemini-3.8-flash on haiku xhigh (attempt 1): stop']])
   assert.ok(run.calls.indexOf(stops[0]) < run.calls.indexOf(native(run, 'implementer')[0]))
   assert.deepEqual(run.result.units[0].rounds[0].laneFailure, { harness: 'agy', model: 'gemini-3.8-flash-high', reason: 'the wait cap ran out' })
   assert.equal(run.result.units[0].attempts, 1)
@@ -315,7 +318,7 @@ test('a result whose digest does not match is printed once more, then given up',
   })
   ok(once)
   assert.deepEqual(once.calls.filter((c) => c.kind === 'ops:lane-result').map((c) => c.label), [
-    'task-1: implement on haiku xhigh via agy gemini-3.8-flash (attempt 1): result',
+    'task-1: implement via agy gemini-3.8-flash on haiku xhigh (attempt 1): result',
   ])
   assert.equal(once.result.units[0].rounds[0].provider, 'agy gemini-3.8-flash-high')
 
@@ -511,7 +514,7 @@ test('two harnesses: each call runs on its own harness, and its provider and lab
   ])
   assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'agy claude-opus-5-5-high'])
   assert.deepEqual(starts(run, 'implementer').map((c) => c.lane.model), ['gpt-5.5-codex', 'gpt-5.5-codex'])
-  assert.equal(starts(run, 'implementer')[0].label, 'task-1: implement on sonnet high via codex gpt-5.5-codex (attempt 1): start')
+  assert.equal(starts(run, 'implementer')[0].label, 'task-1: implement via codex gpt-5.5-codex on sonnet high (attempt 1): start')
   assert.equal(native(run, 'implementer').length, 0)
   assert.deepEqual(run.result.lanes.dry, [{ wave: 1, groups: [] }])
 })
@@ -575,7 +578,7 @@ test('an attempt on codex that stops before it finishes names codex in its recor
   const unit = run.result.units[0]
   assert.equal(unit.status, 'merged')
   assert.deepEqual(unit.rounds[0].laneFailure, { harness: 'codex', model: 'gpt-5.5-codex-high', reason: 'exit 1: model not found' })
-  assert.equal(run.calls.find((c) => c.kind === 'ops:lane-wait' && c.lane.call === 'task-1-1-implement').label, 'task-1: implement on sonnet high via codex gpt-5.5-codex (attempt 1): wait 1')
+  assert.equal(run.calls.find((c) => c.kind === 'ops:lane-wait' && c.lane.call === 'task-1-1-implement').label, 'task-1: implement via codex gpt-5.5-codex on sonnet high (attempt 1): wait 1')
   const [attempt] = native(run, 'implementer')
   assert.ok(
     attempt.prompt.endsWith(

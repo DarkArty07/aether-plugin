@@ -4,6 +4,7 @@
 **Date:** 2026-10-15
 **Found in:** the result of run `20261015-024936-ee31` (spec 005), in the Lead's session 777d41c2
 **Status:** partly fixed in 0.12.5 (A60): a fresh healthy reading lifts a mark that came from a reading, and an unconfirmed mark cannot outlast 60 minutes. The first two proposals (the failure reason before the reading; a reading whose window resets in the past) are still open.
+**Update 2026-10-19, branch `fix/bug-issues`:** the first two proposals are built, so all three are in. `judge()` in `lib/lane-calls.js` checks the failure reason before the reading: a model or argument error (`model not found` and their kin) is `failed` whatever the reading says. `markDry` does not confirm a reading with any window whose `resetsAt` is in the past, including the issue's own shape (a spent weekly window beside a 5-hour window reset six days earlier). The existing tests that used the fake's «model not found» as their generic failure, and its past 5-hour reset in a confirmed reading, now use a generic failure and future resets: a generic failure under the reserve still ends as `quota` with a confirmed mark.
 **GitHub:** [#19](https://github.com/DarkArty07/aether-plugin/issues/19) (private repository)
 
 ## What happened
