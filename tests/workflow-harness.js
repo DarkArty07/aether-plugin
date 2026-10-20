@@ -93,12 +93,10 @@ function nativeDecision({ call, role, model, effort }) {
   return { requested: 50, reference: { id: native.id, model, effort, intelligence: 50 }, picked: null, native, candidates: [], reason: `native ${native.id}: no external pair is a candidate`, call, role }
 }
 
-// What a clean aether-lane prints: every group usable, every call started, and every wait done
+// What a clean aether-lane prints: no external pair for any call, every call started, and every wait done
 // with the role's default answer.
 function aetherLane(call, defaults) {
   switch (call.command.verb) {
-    case 'status':
-      return { harnesses: { agy: { installed: true, version: '1.3.2', groups: { gemini: { usable: true }, claude: { usable: true } } } } }
     case 'start':
       return { started: true, model: `${call.lane.model}-${LEVEL[call.lane.effort]}`, group: GROUP[call.lane.model] }
     case 'wait':
@@ -110,7 +108,6 @@ function aetherLane(call, defaults) {
     }
     case 'stop':
       return { stopped: [call.lane.call] }
-    case 'choice':
     case 'took':
       return { logged: true }
     case 'pick':
@@ -180,7 +177,8 @@ function tick() {
 //
 // An aether-lane call also carries `lane` (its run, call and flags), `payload` ({ path, text }, for
 // a start), `digestOk` (for a start: whether --digest matches the payload) and `started` (for a
-// wait, result or stop: the flags its start was given).
+// wait, result or stop: the flags its start was given). A wait, result or stop also carries its start's
+// role in `lane.role`.
 //
 // Resolves to { result, error, calls, events, logs, maxActive }. `events` holds "start <key>" and
 // "end <key>" lines in order, where <key> is the role (and ops command) plus the unit.
@@ -228,6 +226,7 @@ async function runWorkflow(args, overrides = {}, options = {}) {
       state.lanes[call.lane.call] = call.lane
     }
     if (isLane && command.verb !== 'start') call.started = state.lanes[call.lane.call] || null
+    if (isLane && ['wait', 'result', 'stop'].includes(command.verb) && call.started) call.lane.role = call.started.role
     const kind = command ? (isLane ? `ops:lane-${command.verb}` : `ops:${command.verb}`) : role
     call.n = calls.filter((c) => c.unit === call.unit && c.kind === kind).length + 1
     call.kind = kind
