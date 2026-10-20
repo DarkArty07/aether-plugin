@@ -265,7 +265,7 @@ test('commands: an aether-* code span in position, alone or with arguments; not 
 })
 
 test('plugin names: aether:<name> inside a code span', () => {
-  assert.deepEqual(pluginNamesIn('Use `aether:judge`, `/aether:run` and `claude --agent aether:lead --effort max`; `aether:<name>` is a pattern; aether:prose is not read.'), ['judge', 'run', 'lead'])
+  assert.deepEqual(pluginNamesIn('Use `aether:judge`, `/aether:run` and `claude --agent aether:lead --effort xhigh`; `aether:<name>` is a pattern; aether:prose is not read.'), ['judge', 'run', 'lead'])
   // The value of the theme setting names the plugin and a theme file, not an agent.
   assert.deepEqual(pluginNamesIn('`{"theme":"custom:aether:aether"}` and `aether:lead`'), ['lead'])
 })
@@ -474,7 +474,7 @@ test('R1: the README is the way in: at most 160 lines, and its parts in order', 
   }
   assert.ok(section('## Install').includes('claude plugin install aether --marketplace DarkArty07/aether-plugin'), 'Install has the command')
   const start = section('## First start')
-  for (const need of ['claude --agent aether:lead --effort max', 'scripts/aether-lead', '`claude`', 'normal mode', '.claude/settings.local.json']) {
+  for (const need of ['claude --agent aether:lead --effort xhigh', 'scripts/aether-lead', '`claude`', 'normal mode', '.claude/settings.local.json']) {
     assert.ok(start.includes(need), `First start has "${need}"`)
   }
   const where = section('## Where to go')
@@ -537,11 +537,11 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A61 are recorded and the changelog opens with 0.12.7 and its handoff', () => {
+test('R15: the decisions A50 to A63 are recorded and the changelog opens with 0.12.8 and its handoff', () => {
   const decisions = read('docs/decisions.md')
-  for (let n = 50; n <= 61; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  for (let n = 50; n <= 63; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.12.7: ') && first.includes('handoff/2026-10-19-onboard-skill-0.12.7.md'), first)
+  assert.ok(first.startsWith('Version 0.12.8: ') && first.includes('handoff/2026-10-19-lead-xhigh-0.12.8.md'), first)
 })

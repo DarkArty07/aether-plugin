@@ -8,6 +8,11 @@ order: 31
 
 ## Status
 
+Version 0.12.8: the Lead starts at `xhigh` again ([handoff](handoff/2026-10-19-lead-xhigh-0.12.8.md), [start](getting-started.md#start), [decisions](decisions.md) A63, which updates A61 and A62). What changed since 0.12.7:
+- **The Lead starts at `xhigh`.** The launcher passes `--effort xhigh` again. The owner's reason, in A63: Sonnet 5.5 at `max` was too verbose to follow («la verbosidad es injustificada, no se le entiende nada»). Artificial Analysis rates it 56 at `max` with 420M output tokens, the most verbose of 116 models, and 52 at `xhigh` with 110M: four points for almost four times the tokens. The owner may still raise it with `/effort` in a session.
+- **The router's `inheritedEffort` is `xhigh` again,** as A62 asked: it follows the Lead. A Sonnet call that names no effort goes back to the asked rung Sonnet `xhigh` (level C); Haiku stays at B and Opus at D.
+- **What did not change.** The workflows, the options and their defaults, and the delegate and swarm efforts. Until the owner updates the plugin, the 0.12.7 launcher they have installed still passes `--effort max`.
+
 Version 0.12.7: the `/aether:onboard` skill ([handoff](handoff/2026-10-19-onboard-skill-0.12.7.md), [components](reference/components.md)). What changed since 0.12.5:
 - **`/aether:onboard` gets Claude oriented at the start of a session.** The person calls it before asking for anything, in an Aether session or in any other. Claude reads the README and `CLAUDE.md`, `git status` and the recent log, the newest handoff, the branches, worktrees and pull requests, the feature that `.specify/feature.json` points to and an open autonomous run, and answers with a brief of 5 to 8 lines and the question of what to do. It takes an optional topic, as in `/aether:onboard router`.
 - **It only reads.** It changes nothing, asks nothing, runs no `git fetch` and starts no work. Where a handoff and git disagree it goes by git, and an open run that belongs to another session is reported, not continued.

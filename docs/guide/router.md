@@ -44,7 +44,7 @@ The router is not a trained model. It is given a criterion: `plugins/aether/conf
 - **`gates`.** The shapes that never go below the level the Lead asked for: `audit` and `evaluate`. A quality gate is not lowered without a trial.
 - **`minConfidence`.** The confidence below which an answer is not trusted and the level the Lead asked for is kept.
 - **`readOnly`.** When a delegate may be limited to reading, which is the only case that may leave Claude.
-- **`inheritedEffort`.** The effort a delegate inherits when the router only records or advises. It is `max`, the effort the Lead starts at (A62), so a delegate that passes no effort gets the same, and the floor of a call that names a model and no effort is that model at `max`.
+- **`inheritedEffort`.** The effort a delegate inherits when the router only records or advises. It is `xhigh`, the effort the Lead starts at (A62, A63), so a delegate that passes no effort gets the same, and the floor of a call that names a model and no effort is that model at `xhigh`.
 
 To change the criterion, edit the file. Then check it in two ways:
 
