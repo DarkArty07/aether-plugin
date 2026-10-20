@@ -40,6 +40,14 @@
       "efforts": ["low","medium","high","xhigh"],
       "note": "grok --help lists --reasoning-effort without its values; these four are the levels Aether uses, not a list the CLI printed",
       "models": ["grok-4.7","grok-4.7-build-fast","grok-4.6","grok-4.5"]
+    },
+    "muse": {
+      "capturedAt": "2026-10-19",
+      "listedBy": "muse serve (model/list)",
+      "effortVia": "flag",
+      "efforts": ["minimal","low","medium","high","xhigh"],
+      "note": "model/list of muse serve 1.4.10, asked over MSP with the owner's login and no model call: source bundledCatalog, one model, which is also the session's default. Its reasoningEffortVariants are minimal, low, medium, high and xhigh, with no max. Meta documents muse-spark-1.3 and muse-wonder-1.0 on its API pages, but this CLI does not list them to this account, so they are not models of this listing.",
+      "models": ["muse-wonder-full-1.0"]
     }
   }
 }

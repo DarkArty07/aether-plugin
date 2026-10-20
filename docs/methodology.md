@@ -10,7 +10,7 @@ This page describes how Aether turns an intent into a reviewed spec, a plan, a b
 
 ## Who does what
 
-- **The Lead** is the main session, starting on Sonnet at `max` (the owner may switch with `/model` or `/effort`), and the owner's right hand, not a messenger. It owns the outcome: a good design, a correct implementation and a correct deployment. It understands the intent, asks the clarifying questions, writes the intent card, launches `/aether:design` and acts on its result, decides as the owner's delegate, chooses the path of each piece of work (direct, a delegate task or the swarm) and the model of every delegate task, and tells the owner of better options, scope and costs. Its work shows in its briefs and reports.
+- **The Lead** is the main session, starting on Sonnet at `xhigh` (the owner may switch with `/model` or `/effort`), and the owner's right hand, not a messenger. It owns the outcome: a good design, a correct implementation and a correct deployment. It understands the intent, asks the clarifying questions, writes the intent card, launches `/aether:design` and acts on its result, decides as the owner's delegate, chooses the path of each piece of work (direct, a delegate task or the swarm) and the model of every delegate task, and tells the owner of better options, scope and costs. Its work shows in its briefs and reports.
 - **The Writer** (`aether:writer`, Sonnet at `high`) writes the spec from the intent card, and the plan and the tasks from the approved spec. It marks a choice the card does not settle and that is hard to reverse as `[NEEDS CLARIFICATION]`, and records every other gap as a reversible default under Assumptions.
 - **The Judge** (`aether:judge`, Opus at `high`, read-only) reviews the spec, the plan and the tasks, and rules `approve`, `revise` or `reject`, with at most ten findings, each typed `missing`, `extra` or `wrong`. Sonnet writes; Opus decides.
 - **The Examiner** (`aether:examiner`, Opus at `high`) writes the hidden acceptance exam of an approved spec and plan, from the spec and the plan's public interfaces and never from `tasks.md`. The exam is kept outside the repository, so the swarm never sees it, and a failing test is a blocking finding of the brief.
@@ -22,7 +22,7 @@ This page describes how Aether turns an intent into a reviewed spec, a plan, a b
   - a final review, by `aether:reviewer`, on Opus or Sonnet by the run's risk, covers the whole run;
   - the workflow's own `aether-wt` and `aether-lane` commands go to an `ops` agent on Haiku at `low`, which the mod answers without a model request while `ops` is on (`ops`, on by default; see [Ops without a model](guide/ops.md));
   - code deletes every unit worktree and branch as soon as it is no longer used.
-- **Lanes** run the swarm's calls on other coding harnesses while their quota lasts: agy today, and Codex, Grok and Cursor once the owner turns each one on. `lanes`, off by default; the [Lanes](guide/lanes.md#lanes) guide says how they work.
+- **Lanes** run the swarm's calls on other coding harnesses while their quota lasts: agy today, and Codex, Grok, Cursor and Muse once the owner turns each one on. `lanes`, off by default; the [Lanes](guide/lanes.md#lanes) guide says how they work.
 - **`/aether:design`** is the workflow that runs the design: it takes the intent card to an approved spec, plan and tasks with the Writer, the Judge and the Examiner, and gives the Lead one result. It needs the Workflow tool.
 - **The design seats** let the Judge, the Writer and the Examiner each be taken, one round at a time, by a stronger model of another harness, with Aether's own agent as the fallback. The [Design seats](guide/design-seats.md#design-seats) guide has the choices.
 
@@ -46,7 +46,7 @@ The owner sits above all of them: they confirm the Lead's understanding of what 
 ```text
 owner ── states the intent, may give permission to work for hours, answers one list, reviews the brief
   │
-Lead (main session, starts on Sonnet, max): the intent, the card, the route and the path (direct, delegate task, swarm), decisions as the owner's delegate, the outcome
+Lead (main session, starts on Sonnet, xhigh): the intent, the card, the route and the path (direct, delegate task, swarm), decisions as the owner's delegate, the outcome
   │  specs/NNN-<topic>/intent.md
   ▼
 /aether:design (dynamic workflow, no Lead turn): approved, clarify, dispute or failed

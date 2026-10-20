@@ -16,7 +16,7 @@ Each section below says what you see, why it happens and what to do, with the ex
 
 **What to do.** Start the session as the Lead:
 
-    claude --agent aether:lead --effort max
+    claude --agent aether:lead --effort xhigh
 
 [Getting started](../getting-started.md#start) has the whole start. The launcher runs the same command with permissions bypassed, superpowers off for the session, and irreversible commands refused; `/aether:first-setup` installs it as a short command, and `scripts/aether-lead` is it in a clone. When even a session started this way shows nothing of Aether, `claude plugin list` shows whether `aether@aether-plugin` is installed and enabled, and [Getting started](../getting-started.md#install) installs it.
 
@@ -92,9 +92,9 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 
 **Why.** Lanes are off, or no harness is ready to take a call. The causes, in the order to check them:
 - **The `lanes` option is off, or the machine is not Linux.** `lanes`, off by default, and lanes run only on Linux. Compile says `aether-plan: lanes are off: the aether plugin's lanes option is not on` or `aether-plan: lanes are off: lanes need Linux`.
-- **The harness is not in `harnesses`.** `harnesses`, `agy` by default, lists the harnesses lanes may use. A name that is not `agy`, `codex`, `grok` or `cursor` is ignored, and a list with no valid name means `agy`. `aether-lane status <run>` shows `enabled: false` for a harness that is not listed.
+- **The harness is not in `harnesses`.** `harnesses`, `agy` by default, lists the harnesses lanes may use. A name that is not `agy`, `codex`, `grok`, `cursor` or `muse` is ignored, and a list with no valid name means `agy`. `aether-lane status <run>` shows `enabled: false` for a harness that is not listed.
 - **Its CLI is not installed, or is not on the `PATH` Aether sees.** Compile says `aether-plan: lanes: <harness> is enabled but is not installed: <command> was not found`, and `aether-lane quota` says `not installed (<command> was not found on PATH)`. Aether looks on the `PATH` of the process that runs the command, and with `ops` on the workflow's `aether-lane` commands run in Claude Code's own environment, not in your shell's, so a directory that only your shell profile adds can be missing there.
-- **The harness has no models in the lane table.** Compile names it with `has no models in the lane table yet`. Codex and Cursor ship that way: add their models as [Lanes](lanes.md#lanes) explains.
+- **The harness has no models in the lane table.** Compile names it with `has no models in the lane table yet`. Codex and Cursor ship that way: add theirs as [Lanes](lanes.md#lanes) explains. Muse ships with one model, `muse-wonder-full-1.0`, in the table by the owner's decision: see [Muse](lanes.md#muse).
 - **The group is marked dry or is under its reserve.** A call that ended for quota leaves a dry mark: until the group's reset when a reading with a balance shows it under the reserve, and otherwise for 60 minutes. `aether-lane status <run>` lists, for each role, the order of the candidates with the reason each was passed over (`marked`, `dry`, `reserve` or `not-installed`), and `aether-lane quota` shows each group's windows.
 - **The run was compiled with `--no-lanes`.**
 
@@ -106,7 +106,7 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 
 **Why.** `/harnesses` is a command of Aether's mod, and the mod declares it only in an Aether session, the one started with the agent `aether:lead`. A plain `claude` session does not have it, on purpose: nothing of the panel runs there. The panel also uses Claude Code's plugin UI API for mods, which is early access, so a Claude Code release that changes it can make the pane stop drawing; nothing else of Aether depends on it.
 
-**What to do.** Start the session with the launcher, or with `claude --agent aether:lead --effort max` ([Getting started](../getting-started.md#start)). If a session started that way still does not offer it, check that the plugin is installed and enabled with `claude plugin list`, and see [the panel](lanes.md#the-harnesses-panel) for the Claude Code version it was checked on.
+**What to do.** Start the session with the launcher, or with `claude --agent aether:lead --effort xhigh` ([Getting started](../getting-started.md#start)). If a session started that way still does not offer it, check that the plugin is installed and enabled with `claude plugin list`, and see [the panel](lanes.md#the-harnesses-panel) for the Claude Code version it was checked on.
 
 ## The /harnesses panel shows few rows or looks cut
 

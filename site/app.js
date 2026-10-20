@@ -39,7 +39,7 @@
       'r2.alt': 'Una esfera armilar de anillos y esferas', 'r2.w': 'utónomo', 'r2.g': 'AUTONOMOUS',
       'r2.m': 'No se te pregunta por lo trivial, y cada paso irreversible te llega en una sola lista.',
       'r3.alt': 'Dos manos de mármol que se pasan un orbe', 'r3.w': 'elegación', 'r3.g': 'DELEGATION',
-      'r3.m': 'El trabajo va a otros harness de código (agy, Codex, Grok, Cursor) mientras dure su cuota.',
+      'r3.m': 'El trabajo va a otros harness de código (agy, Codex, Grok, Cursor, Muse) mientras dure su cuota.',
       'r4.alt': 'Una balanza de platillos ante una galaxia', 'r4.w': 'sequible', 'r4.g': 'AFFORDABLE',
       'r4.m': 'Cada rol corre con el modelo y el esfuerzo más baratos que lo hacen bien.',
       'r5.alt': 'Columnas dóricas ante una nebulosa', 'r5.w': 'obusto', 'r5.g': 'ROBUST',
@@ -48,7 +48,7 @@
       'team.tag': '// 02 · EQUIPO',
       'team.title': 'Quién hace<br><em>qué</em>',
       'team.intro': 'El Lead es la sesión principal y tu mano derecha, no un mensajero. Los demás roles trabajan en un contexto propio, y quien escribe un documento nunca lo juzga.',
-      'team.m.lead': 'Sonnet · max',
+      'team.m.lead': 'Sonnet · xhigh',
       'team.owner': 'Por encima de todos está el dueño: confirma lo que entendió el Lead, puede dar permiso para trabajar durante horas, responde una sola lista y revisa el brief.',
       'lead.alt': 'El Lead: una estatua con corona de laurel que extiende el brazo hacia las estrellas',
       'lead.t': 'Entiende la intención, hace las preguntas que el código no responde y escribe la tarjeta de intención. Lanza /aether:design, elige el camino de cada trabajo y el modelo de cada tarea delegada. Es dueño del resultado.',
@@ -146,8 +146,8 @@
       'lanes.st.native': 'llamada nativa',
       'lanes.f1': '<strong>Apagados por defecto</strong>Los carriles corren solo con la opción <code>lanes</code> activada, y solo en Linux.',
       'lanes.f2': '<strong>La cuota decide el orden</strong>Nunca el nivel. Primero van los grupos con una lectura de cuota, el más en riesgo de perderse el primero; una reserva del 5 % deja fuera al grupo que la toca.',
-      'lanes.f3': '<strong>Sin lectura, se prueba</strong>Codex y Cursor no reportan cuota: se prueban después, hasta que una llamada falla por cuota. Entonces la llamada sigue con el siguiente.',
-      'lanes.f4': '<strong>Qué está probado</strong>agy fue el primero y Grok se probó con llamadas reales el 2026-10-13. Los adaptadores de Codex y Cursor aún no han hecho ninguna llamada real.',
+      'lanes.f3': '<strong>Sin lectura, se prueba</strong>Codex y Cursor no reportan cuota, y Muse solo la reporta después de una llamada: se prueban después, hasta que una llamada falla por cuota. Entonces la llamada sigue con el siguiente.',
+      'lanes.f4': '<strong>Qué está probado</strong>agy fue el primero y Grok se probó con llamadas reales el 2026-10-13. Muse se probó con llamadas reales el 2026-10-19. Los adaptadores de Codex y Cursor aún no han hecho ninguna llamada real.',
 
       'inst.tag': '// 07 · INSTALAR Y AUTORÍA',
       'inst.title': 'Instala y<br><em>empieza</em>',
@@ -157,10 +157,10 @@
       'st1.h': 'Instala',
       'st1.t': 'Una vez. Con <code>--config lanes=true</code> activas los carriles.',
       'st2.h': 'Elige el modo Aether',
-      'st2.t': 'El modo se elige por sesión: el Lead es el agente <code>aether:lead</code>, que empieza en Sonnet, y <code>--effort max</code> fija su esfuerzo.',
+      'st2.t': 'El modo se elige por sesión: el Lead es el agente <code>aether:lead</code>, que empieza en Sonnet, y <code>--effort xhigh</code> fija su esfuerzo.',
       'st3.h': 'Dile al Lead lo que quieres',
       'st3.t': 'El Lead confirma lo que entendió, escribe la tarjeta de intención y lanza el diseño. Tú revisas el brief.',
-      'inst.req': 'REQUISITOS · Claude Code 2.1.294 o posterior · Node.js 22 · git 2.36 o posterior · para los carriles, el CLI de cada harness que actives: <code>agy</code>, <code>codex</code>, <code>grok</code> o <code>cursor-agent</code>.',
+      'inst.req': 'REQUISITOS · Claude Code 2.1.294 o posterior · Node.js 22 · git 2.36 o posterior · para los carriles, el CLI de cada harness que actives: <code>agy</code>, <code>codex</code>, <code>grok</code>, <code>cursor-agent</code> o <code>muse</code>.',
       'atm.alt': 'Una cabeza de estatua que mira hacia arriba entre polvo estelar y constelaciones',
       'auth.tag': '// AUTORÍA',
       'auth.link': 'DarkArty07 en GitHub',
@@ -202,7 +202,7 @@
       'r2.alt': 'An armillary sphere of rings and spheres', 'r2.w': 'utónomo', 'r2.g': 'AUTONOMOUS',
       'r2.m': 'You are not asked about trivial things, and every irreversible step reaches you in one list.',
       'r3.alt': 'Two marble hands passing an orb', 'r3.w': 'elegación', 'r3.g': 'DELEGATION',
-      'r3.m': 'Work goes to other coding harnesses (agy, Codex, Grok, Cursor) while their quota lasts.',
+      'r3.m': 'Work goes to other coding harnesses (agy, Codex, Grok, Cursor, Muse) while their quota lasts.',
       'r4.alt': 'Balance scales in front of a galaxy', 'r4.w': 'sequible', 'r4.g': 'AFFORDABLE',
       'r4.m': 'Each role runs on the cheapest model and effort that does it well.',
       'r5.alt': 'Doric columns in front of a nebula', 'r5.w': 'obusto', 'r5.g': 'ROBUST',
@@ -211,7 +211,7 @@
       'team.tag': '// 02 · TEAM',
       'team.title': 'Who does<br><em>what</em>',
       'team.intro': 'The Lead is the main session and your right hand, not a messenger. The other roles work in a context of their own, and whoever writes a document never judges it.',
-      'team.m.lead': 'Sonnet · max',
+      'team.m.lead': 'Sonnet · xhigh',
       'team.owner': 'The owner sits above all of them: they confirm what the Lead understood, may give permission to work for hours, answer one list and review the brief.',
       'lead.alt': 'The Lead: a statue crowned with laurel, reaching an arm toward the stars',
       'lead.t': 'Understands the intent, asks what the code cannot answer and writes the intent card. Launches /aether:design, chooses the path of each piece of work and the model of each delegate task. Owns the outcome.',
@@ -309,8 +309,8 @@
       'lanes.st.native': 'native call',
       'lanes.f1': '<strong>Off by default</strong>Lanes run only with the <code>lanes</code> option on, and only on Linux.',
       'lanes.f2': '<strong>Quota decides the order</strong>Never the level. Groups with a quota reading go first, the one most at risk of being lost first; a 5% reserve leaves out any group that touches it.',
-      'lanes.f3': '<strong>No reading, try it</strong>Codex and Cursor report no quota: they are tried after, until a call fails for quota. The call then goes on to the next.',
-      'lanes.f4': '<strong>What is proven</strong>agy was first and Grok was checked with real calls on 2026-10-13. Codex\'s and Cursor\'s adapters have run no real call yet.',
+      'lanes.f3': '<strong>No reading, try it</strong>Codex and Cursor report no quota, and Muse reports it only after a call: they are tried after, until a call fails for quota. The call then goes on to the next.',
+      'lanes.f4': '<strong>What is proven</strong>agy was first and Grok was checked with real calls on 2026-10-13. Muse was checked with real calls on 2026-10-19. The Codex and Cursor adapters have run no real call yet.',
 
       'inst.tag': '// 07 · INSTALL AND AUTHORSHIP',
       'inst.title': 'Install and<br><em>start</em>',
@@ -320,10 +320,10 @@
       'st1.h': 'Install',
       'st1.t': 'Once. Add <code>--config lanes=true</code> to turn the lanes on.',
       'st2.h': 'Choose Aether mode',
-      'st2.t': 'The mode is chosen per session: the Lead is the agent <code>aether:lead</code>, which starts on Sonnet, and <code>--effort max</code> sets its effort.',
+      'st2.t': 'The mode is chosen per session: the Lead is the agent <code>aether:lead</code>, which starts on Sonnet, and <code>--effort xhigh</code> sets its effort.',
       'st3.h': 'Tell the Lead what you want',
       'st3.t': 'The Lead confirms what it understood, writes the intent card and launches the design. You review the brief.',
-      'inst.req': 'REQUIREMENTS · Claude Code 2.1.294 or later · Node.js 22 · git 2.36 or later · for lanes, the CLI of each harness you turn on: <code>agy</code>, <code>codex</code>, <code>grok</code> or <code>cursor-agent</code>.',
+      'inst.req': 'REQUIREMENTS · Claude Code 2.1.294 or later · Node.js 22 · git 2.36 or later · for lanes, the CLI of each harness you turn on: <code>agy</code>, <code>codex</code>, <code>grok</code>, <code>cursor-agent</code> or <code>muse</code>.',
       'atm.alt': 'A statue head gazing upward amid stardust and constellations',
       'auth.tag': '// AUTHORSHIP',
       'auth.link': 'DarkArty07 on GitHub',
@@ -903,7 +903,7 @@
   /* 06 LANES                                                            */
   /* ------------------------------------------------------------------ */
   (function () {
-    var root = $('#lanes'), nodes = {}, order = ['agy', 'grok', 'codex', 'cursor'], tok = $('#token'), host = $('.lanes-img', root);
+    var root = $('#lanes'), nodes = {}, order = ['agy', 'grok', 'codex', 'cursor', 'muse'], tok = $('#token'), host = $('.lanes-img', root);
     $$('.ln', root).forEach(function (n) { nodes[n.getAttribute('data-n')] = n; });
     function st(n, key) { $('.ln-st', nodes[n]).textContent = t(key); nodes[n]._st = key; }
     /* Bars drain on the compositor: one scaleX transition, no per-frame width changes. */

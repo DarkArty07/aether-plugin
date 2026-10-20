@@ -7,7 +7,7 @@
 // Builds the list of the models our harnesses offer, from the Artificial Analysis (AA) models list: the
 // families released since a date, each with its effort variants, of which the ones that are the newest of
 // their line and that the CLI of a chosen harness lists are the models in use. The harnesses are the
-// native one (claude) and the lanes (agy, grok by default; codex and cursor on request).
+// native one (claude) and the lanes (agy, grok by default; codex, cursor and muse on request).
 // Without --from it asks the AA API (the key comes from where refresh-lanes.js looks for it, and is
 // never printed); with --from it reads a saved answer of the same API. It prints a short summary; with
 // --write it also writes models.json (the models in use, each with its scores at the efforts its harness
@@ -29,9 +29,9 @@ const DEFAULT_DOCS = path.join(__dirname, '..', 'docs', 'models')
 const USAGE =
   'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--harnesses claude,agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--harness <file>] [--out <dir>] [--docs <dir>]'
 // claude is the native harness, the first: its models are not lanes. The others are lanes.
-const HARNESSES = ['claude', 'agy', 'codex', 'grok', 'cursor']
+const HARNESSES = ['claude', 'agy', 'codex', 'grok', 'cursor', 'muse']
 // The chosen harnesses, whose models the index keeps. Another comes in with --harnesses once its listing is in harness-models.json.
-const DEFAULT_HARNESSES = ['claude', 'agy', 'grok']
+const DEFAULT_HARNESSES = ['claude', 'agy', 'grok', 'muse']
 const LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 // From the least to the most effort. default is a reasoning model with no level named, and none is
 // the harness's word for no reasoning; both sit under the named levels.
@@ -56,6 +56,7 @@ const CAPTURE = {
   codex: 'from the `models` of ~/.codex/models_cache.json (codex has no command that lists them)',
   grok: 'with `grok models`',
   cursor: 'with `cursor-agent --list-models`',
+  muse: 'with the model/list method of `muse serve` (no model call; the ids it lists, newest first)',
 }
 const NO_ENTRY = 'no Artificial Analysis entry'
 const README_START = '<!-- models-index:start -->'

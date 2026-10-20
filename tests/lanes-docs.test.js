@@ -101,3 +101,10 @@ test('the swarm skill and the brief name the order, the balance of each group an
   )
   includesAll(read('plugins', 'aether', 'skills', 'autonomous-runs', 'SKILL.md'), ['- Delegación: <llamadas y tokens en otros harness; por grupo de cuota, el saldo al empezar y al terminar y su próximo reinicio (aether-report: lanes.run.groups.<grupo>.balance)'], 'the autonomous-runs skill')
 })
+
+test('the Lanes guide names the five harnesses in the order of the option, Muse last', () => {
+  const lanes = read('docs', 'guide', 'lanes.md')
+  assert.ok(lanes.includes('agy, codex, grok, cursor, muse'), 'the fixed list')
+  assert.ok(lanes.includes('Codex, Grok, Cursor and Muse'), 'the prose list')
+  assert.ok(lanes.includes('## Muse'), 'its own section')
+})

@@ -39,7 +39,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 - [Specs](superpowers/specs/) and [plans](superpowers/plans/) up to 0.7, written with superpowers: the foundation, the swarm and measurement plans, the lanes, the Lead and the Designer, the installable plugin, the autonomy and the separation, each with its review and execution record. New work goes to `specs/NNN-<topic>/`.
 - [Evaluations](evaluations/): the trials against normal mode, with their fixtures, harnesses and results, and the later checks of the installable plugin, ops in the mod and the super Lead. Trial 2 keeps both builds, playable.
 - [Claude Code research](claude-code-research.md): the verified capabilities and limits this design relies on, and the prices.
-- [Decisions](decisions.md): D1–D15 from the first design session, with their updates, and A1–A62 from the specs and the RADAR roadmap.
+- [Decisions](decisions.md): D1–D15 from the first design session, with their updates, and A1–A64 from the specs and the RADAR roadmap.
 - [Spec 001, design seats](../specs/001-design-seats/spec.md) and its [plan](../specs/001-design-seats/plan.md): the seats of the Judge, the Writer and the Examiner, open to any harness, with the native agent as the fallback.
 - [Evaluation of the design seats](evaluations/seats/README.md): how an external model is compared with the native agent of a seat, and the harness that runs it.
 - [Aether Agents retrospective](aether-retrospective.md): what Aether was, and what failed and why.

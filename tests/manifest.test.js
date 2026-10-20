@@ -19,7 +19,7 @@ test('the repository is a marketplace that lists the aether plugin', () => {
         name: 'aether',
         source: './plugins/aether',
         description:
-          "Aether mode: the Lead as the owner's right hand, starting on Sonnet and working along three paths (itself, delegate tasks on models it chooses, or the swarm), a Judge on Opus, and a parallel swarm that implements approved plans. Start it with claude --agent aether:lead --effort max.",
+          "Aether mode: the Lead as the owner's right hand, starting on Sonnet and working along three paths (itself, delegate tasks on models it chooses, or the swarm), a Judge on Opus, and a parallel swarm that implements approved plans. Start it with claude --agent aether:lead --effort xhigh.",
       },
     ],
   })
@@ -41,7 +41,7 @@ test('the manifest has no dependencies, and declares the lanes, harnesses, ops, 
       type: 'string',
       title: 'Lane harnesses',
       description:
-        "The external harnesses lanes may use, comma-separated: agy, codex, grok, cursor. The quota decides the order of the candidates; the order of this option breaks ties between equal priorities and orders the groups with no reading. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
+        "The external harnesses lanes may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates; the order of this option breaks ties between equal priorities and orders the groups with no reading. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
       default: 'agy',
     },
     ops: {
@@ -95,7 +95,7 @@ test('the manifest has no dependencies, and declares the lanes, harnesses, ops, 
 test("the Lead agent runs on Sonnet, with no body, so Claude Code's own system prompt stays", () => {
   assert.equal(
     fs.readFileSync(path.join(PLUGIN, 'agents', 'lead.md'), 'utf8'),
-    '---\nname: lead\ndescription: "Aether Lead: the main session of Aether mode, started with claude --agent aether:lead --effort max. It is not a subagent."\nmodel: sonnet\n---\n',
+    '---\nname: lead\ndescription: "Aether Lead: the main session of Aether mode, started with claude --agent aether:lead --effort xhigh. It is not a subagent."\nmodel: sonnet\n---\n',
   )
 })
 
