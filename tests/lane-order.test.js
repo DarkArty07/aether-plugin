@@ -3,31 +3,15 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const order = require('../plugins/aether/lib/lane-order.js')
-const { NOW, READINGS, GEMINI, CLAUDE_LOW, GROK, HALF_READING, HALF, NO_LONGEST_READING, NO_LONGEST, CASES } = require('./lane-order-cases.js')
+const { NOW, READINGS, GEMINI, CLAUDE_LOW, GROK, HALF_READING, HALF, NO_LONGEST_READING, NO_LONGEST } = require('./lane-order-cases.js')
 
 const RESERVE = 0.05
 const view = (reading, extra = {}) => order.groupView(reading, { reserve: RESERVE, now: NOW, ...extra })
 
-test('every case of the order rule gives its order and its exclusions', () => {
-  for (const c of CASES) {
-    const { ordered, excluded } = order.orderCandidates(c.candidates, c.harnesses)
-    assert.deepEqual(ordered.map((e) => `${e.harness}:${e.model}`), c.ordered, c.name)
-    assert.deepEqual(excluded.map((e) => `${e.harness}:${e.model}:${e.why}`), c.excluded, c.name)
-  }
-})
-
-test('an entry says its state and priority: a priority, no reading, or excluded', () => {
-  const [today, , , none] = CASES
-  const first = order.orderCandidates(today.candidates, today.harnesses)
-  assert.deepEqual(first.ordered.map((e) => [e.state, e.priority, e.usedPercentAbsent]), [
-    ['priority', 0.013331, true],
-    ['priority', 0.006044, false],
-  ])
-  assert.equal(first.ordered[0].resetsAt, '2026-10-17T09:08:51.805Z')
-  const second = order.orderCandidates(none.candidates, none.harnesses)
-  assert.deepEqual(second.ordered.map((e) => [e.state, e.priority]), [['priority', 0.006044], ['unknown', null]])
-  const left = order.orderCandidates(CASES[1].candidates, CASES[1].harnesses)
-  assert.deepEqual(left.excluded.map((e) => [e.state, e.why, e.group]), [['excluded', 'reserve', 'claude']])
+test('lib/lane-order.js keeps the group view and no longer holds the order of candidates', () => {
+  const order = require('../plugins/aether/lib/lane-order.js')
+  for (const kept of ['groupView', 'readingUsable']) assert.equal(typeof order[kept], 'function', kept)
+  for (const gone of ['candidatesOf', 'orderCandidates']) assert.equal(gone in order, false, gone)
 })
 
 test('the readings of 2026-10-14 give the priorities of the spec, and Grok goes before Gemini', () => {
@@ -41,12 +25,6 @@ test('the readings of 2026-10-14 give the priorities of the spec, and Grok goes 
   assert.equal(GEMINI.priority, gemini.priority)
   assert.equal(CLAUDE_LOW.priority, claude.priority)
   assert.equal(GROK.priority, grok.priority)
-  const harnesses = { agy: { installed: true, groups: { gemini, claude } }, grok: { installed: true, groups: { grok } } }
-  const flash = { harness: 'agy', model: 'gemini-3.8-flash', group: 'gemini' }
-  const grokLane = { harness: 'grok', model: 'grok-4.7', group: 'grok' }
-  const sonnet = { harness: 'agy', model: 'claude-sonnet-5-5', group: 'claude' }
-  assert.deepEqual(order.orderCandidates([flash, grokLane], harnesses).ordered.map((e) => e.model), ['grok-4.7', 'gemini-3.8-flash'])
-  assert.deepEqual(order.orderCandidates([sonnet], harnesses).excluded.map((e) => e.why), ['reserve'])
 })
 
 test("a group's priority is its longest window's share left per hour to its reset, with at least one hour", () => {
@@ -133,14 +111,4 @@ test('readingUsable is the rule that start and the judge of a call use', () => {
   assert.equal(order.readingUsable(w(0.06), RESERVE), true)
   assert.equal(order.readingUsable(w(0.05), RESERVE), false)
   assert.equal(order.readingUsable(w(null), RESERVE), true, 'a balance that is unknown is used until a call fails')
-})
-
-test('candidatesOf reads a list of lanes, a single lane of an older plan, or nothing', () => {
-  const flash = { model: 'gemini-3.8-flash', group: 'gemini', harness: 'agy' }
-  const grok = { model: 'grok-4.7', group: 'grok', harness: 'grok' }
-  const calls = { implementer: { haiku: [flash, grok], sonnet: { model: 'claude-sonnet-5-5', group: 'claude' } } }
-  assert.deepEqual(order.candidatesOf(calls, 'implementer', 'haiku'), [flash, grok])
-  assert.deepEqual(order.candidatesOf(calls, 'implementer', 'sonnet', 'agy'), [{ harness: 'agy', model: 'claude-sonnet-5-5', group: 'claude' }])
-  for (const [role, tier] of [['implementer', 'opus'], ['reviewer', 'opus']]) assert.deepEqual(order.candidatesOf(calls, role, tier), [])
-  assert.deepEqual(order.candidatesOf(null, 'implementer', 'haiku'), [])
 })
