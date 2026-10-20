@@ -43,7 +43,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 
 ## What Aether adds to a normal session
 
-Today, in 0.12.8, the plugin has the eleven commands of `bin/`, and they are on the Bash tool's `PATH`; the measurement below, taken at 0.7.0, counted eight.
+Today, in 0.13.0, the plugin has the eleven commands of `bin/`, and they are on the Bash tool's `PATH`; the measurement below, taken at 0.7.0, counted eight.
 
 Measured on Claude Code 2.1.296 with Aether 0.7.0, on 2026-10-09 (`docs/evaluations/2026-10-09-installable/A3-dormant.md`), in a session started without `--agent aether:lead`, against the same session with Aether disabled:
 - the first request grows by 431 characters, all in the first message: the `aether:run` and `aether:swarm` entries of the skills list;

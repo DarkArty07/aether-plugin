@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-10-15",
+  "generatedAt": "2026-10-19",
   "source": "https://artificialanalysis.ai/api/v2/data/llms/models",
-  "harnesses": ["claude","agy","grok"],
+  "harnesses": ["claude","agy","grok","muse"],
   "since": "2026-01-01",
-  "listedOn": {"claude":"2026-10-14","agy":"2026-10-15","grok":"2026-10-13"},
+  "listedOn": {"claude":"2026-10-14","agy":"2026-10-15","grok":"2026-10-13","muse":"2026-10-19"},
   "rules": {
     "newest": "Only the newest generation of each line is used (Sonnet 5.5, not Sonnet 5); the older ones are superseded.",
     "offered": "Only a model the CLI of a chosen harness lists is in, whatever Artificial Analysis lists; a model only the lane table names is not offered.",
@@ -21,11 +21,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":29.5,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":147.9,"ttftSeconds":5.41},
-        {"effort":"medium","intelligence":34.5,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":153.7,"ttftSeconds":9.12},
-        {"effort":"high","intelligence":37.8,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":154.6,"ttftSeconds":15.92},
-        {"effort":"xhigh","intelligence":41.2,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":171.1,"ttftSeconds":45.11},
-        {"effort":"max","intelligence":43.4,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":234.1,"ttftSeconds":235.47}
+        {"effort":"low","intelligence":29.5,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":148.5,"ttftSeconds":6.41},
+        {"effort":"medium","intelligence":34.5,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":153.3,"ttftSeconds":8.92},
+        {"effort":"high","intelligence":37.8,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":165.8,"ttftSeconds":16.04},
+        {"effort":"xhigh","intelligence":41.2,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":193.6,"ttftSeconds":47.56},
+        {"effort":"max","intelligence":43.4,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":238.8,"ttftSeconds":279.37}
       ],
       "lane": null,
       "profile": {
@@ -66,11 +66,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":92.9,"ttftSeconds":0.69},
-        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":90.3,"ttftSeconds":0.91},
-        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":94.6,"ttftSeconds":7.54},
-        {"effort":"xhigh","intelligence":51.9,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":94.1,"ttftSeconds":17.9},
-        {"effort":"max","intelligence":56,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":140,"ttftSeconds":284.15}
+        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":91,"ttftSeconds":0.71},
+        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":91.8,"ttftSeconds":0.94},
+        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":98.4,"ttftSeconds":9.03},
+        {"effort":"xhigh","intelligence":51.9,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":97.7,"ttftSeconds":19.27},
+        {"effort":"max","intelligence":56,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":137.1,"ttftSeconds":322.01}
       ],
       "lane": null,
       "profile": {
@@ -97,11 +97,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":72.2,"ttftSeconds":3.14},
-        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":71.2,"ttftSeconds":12.91},
-        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":71.4,"ttftSeconds":19.69},
-        {"effort":"xhigh","intelligence":56,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":77.7,"ttftSeconds":76.62},
-        {"effort":"max","intelligence":57.6,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":97.2,"ttftSeconds":479.13}
+        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":74.2,"ttftSeconds":6.89},
+        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":73,"ttftSeconds":13.78},
+        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":74,"ttftSeconds":26.58},
+        {"effort":"xhigh","intelligence":56,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":76.5,"ttftSeconds":80.89},
+        {"effort":"max","intelligence":57.6,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":96,"ttftSeconds":620.59}
       ],
       "lane": null,
       "profile": {
@@ -127,7 +127,7 @@
       "effortVia": "id",
       "efforts": ["low","medium","high"],
       "ids": {"low":"gemini-4-argon-low","medium":"gemini-4-argon-medium","high":"gemini-4-argon-high"},
-      "scores": [{"effort":"high","intelligence":52.6,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null}],
+      "scores": [{"effort":"high","intelligence":52.6,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":81,"ttftSeconds":29.41}],
       "lane": {"roles":["judge","writer","examiner"],"replaces":null},
       "profile": {
         "purpose": "A flagship reasoning model, with a unified 1M context window and long decodes up to 1M tokens.",
@@ -166,9 +166,9 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"claude-sonnet-5-5-low","medium":"claude-sonnet-5-5-medium","high":"claude-sonnet-5-5-high"},
       "scores": [
-        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":92.9,"ttftSeconds":0.69},
-        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":90.3,"ttftSeconds":0.91},
-        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":94.6,"ttftSeconds":7.54}
+        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":91,"ttftSeconds":0.71},
+        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":91.8,"ttftSeconds":0.94},
+        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":98.4,"ttftSeconds":9.03}
       ],
       "lane": {"roles":["implementer","supervisor"],"replaces":"sonnet"},
       "profile": {
@@ -195,9 +195,9 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"claude-opus-5-5-low","medium":"claude-opus-5-5-medium","high":"claude-opus-5-5-high"},
       "scores": [
-        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":72.2,"ttftSeconds":3.14},
-        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":71.2,"ttftSeconds":12.91},
-        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":71.4,"ttftSeconds":19.69}
+        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":74.2,"ttftSeconds":6.89},
+        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":73,"ttftSeconds":13.78},
+        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":74,"ttftSeconds":26.58}
       ],
       "lane": {"roles":["implementer","reviewer"],"replaces":"opus"},
       "profile": {
@@ -251,8 +251,8 @@
           "terminalBench": 0.197,
           "priceInput": 0.75,
           "priceOutput": 3.75,
-          "tokensPerSecond": 130.2,
-          "ttftSeconds": 16.29
+          "tokensPerSecond": 140.1,
+          "ttftSeconds": 15.53
         }
       ],
       "lane": {"roles":["implementer"],"replaces":"haiku"},
@@ -279,9 +279,9 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh"],
       "scores": [
-        {"effort":"low","intelligence":42.2,"terminalBench":0.162,"priceInput":2,"priceOutput":6,"tokensPerSecond":72,"ttftSeconds":2.96},
-        {"effort":"high","intelligence":46.3,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":67.2,"ttftSeconds":11.95},
-        {"effort":"xhigh","intelligence":46.4,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":79.4,"ttftSeconds":19.36}
+        {"effort":"low","intelligence":42.2,"terminalBench":0.162,"priceInput":2,"priceOutput":6,"tokensPerSecond":60.8,"ttftSeconds":3.32},
+        {"effort":"high","intelligence":46.3,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":73.7,"ttftSeconds":19.55},
+        {"effort":"xhigh","intelligence":46.4,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":72.4,"ttftSeconds":21.7}
       ],
       "lane": {"roles":["implementer"],"replaces":"haiku"},
       "profile": {
@@ -316,11 +316,11 @@
       "efforts": ["low","medium","high","xhigh","max"],
       "price": {"input":10,"output":50},
       "scores": [
-        {"effort":"low","intelligence":46.8,"coding":75.2,"terminalBench":0.404,"priceInput":10,"priceOutput":50,"tokensPerSecond":51.6,"ttftSeconds":0.78},
-        {"effort":"medium","intelligence":48.9,"coding":77.1,"terminalBench":0.449,"priceInput":10,"priceOutput":50,"tokensPerSecond":51.7,"ttftSeconds":2.83},
-        {"effort":"high","intelligence":51.2,"coding":79.1,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":51.7,"ttftSeconds":3.67},
-        {"effort":"xhigh","intelligence":53.2,"coding":80.7,"terminalBench":0.551,"priceInput":10,"priceOutput":50,"tokensPerSecond":53.6,"ttftSeconds":46.97},
-        {"effort":"max","intelligence":53.4,"coding":81.6,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":63.8,"ttftSeconds":147.59}
+        {"effort":"low","intelligence":46.8,"coding":75.2,"terminalBench":0.404,"priceInput":10,"priceOutput":50,"tokensPerSecond":50.2,"ttftSeconds":0.67},
+        {"effort":"medium","intelligence":48.9,"coding":77.1,"terminalBench":0.449,"priceInput":10,"priceOutput":50,"tokensPerSecond":51.6,"ttftSeconds":6.03},
+        {"effort":"high","intelligence":51.2,"coding":79.1,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":50.8,"ttftSeconds":9.98},
+        {"effort":"xhigh","intelligence":53.2,"coding":80.7,"terminalBench":0.551,"priceInput":10,"priceOutput":50,"tokensPerSecond":56.9,"ttftSeconds":47.17},
+        {"effort":"max","intelligence":53.4,"coding":81.6,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":72.6,"ttftSeconds":187.59}
       ],
       "profile": {
         "purpose": "\"For demanding reasoning and long-horizon agentic work.\" Anthropic's advice: for most workloads start with Opus 5.5, and use Fable 5.1 for demanding reasoning and long-horizon agentic work, or when evals on Opus 5.5 at higher effort still fall short. Comparative latency: slower.",
@@ -376,6 +376,31 @@
         ],
         "sources": ["https://docs.x.ai/developers/grok-4-7"],
         "checked": "2026-10-13"
+      }
+    },
+    {
+      "harness": "muse",
+      "model": "muse-wonder-full-1.0",
+      "name": "Muse Wonder Full 1.0",
+      "maker": "Meta",
+      "effortVia": "flag",
+      "efforts": ["minimal","low","medium","high","xhigh"],
+      "lane": {"roles":["implementer","reviewer"],"replaces":"opus"},
+      "note": "offered, with no Artificial Analysis entry, so no figures",
+      "profile": {
+        "purpose": "Flagship coding model available only in Muse Code on the Power Usage and Maximum Usage plans.",
+        "contextTokens": 1048576,
+        "maxOutputTokens": null,
+        "defaultEffort": "high",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Available only in Muse Code on the Power Usage and Maximum Usage plans; not on the Meta API.",
+        "caveats": [
+          "Prices come from a summary of Meta's pages, to be checked against the page.",
+          "Not an API model; requires a Muse Code Power or Maximum subscription plan."
+        ],
+        "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/muse-code/subscriptions"],
+        "checked": "2026-10-19"
       }
     }
   ],

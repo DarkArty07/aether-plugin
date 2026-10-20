@@ -528,6 +528,11 @@ async function runCall(cwd, runId, call) {
     killAgyGroup(agyPid)
     // What agy started in sessions of its own outlives its group; nothing may write after the checks.
     lanes.killMarked(paths.marker)
+    const stdout = readTextOrEmpty(paths.agyStdout)
+    const stderr = readTextOrEmpty(paths.agyStderr)
+    // The output is parsed before the quota is read: a harness that keeps in parse what the call reported of its quota
+    // (muse's allowance) gives that to the reading below, and for the others the order changes nothing.
+    parsed = adapter.parse({ stdout, stderr, exitCode }, { required: schema.required })
     try {
       // A fresh reading, which also renews the one kept for the starts that follow.
       quotaAfter = readings.readGroups(adapter, { harness, settings: settings.harness, dataDir, fresh: true }).groups[group] ?? null
@@ -536,9 +541,6 @@ async function runCall(cwd, runId, call) {
       // An unreadable /usage is an infrastructure failure, not a verdict on the quota.
       quotaAfter = null
     }
-    const stdout = readTextOrEmpty(paths.agyStdout)
-    const stderr = readTextOrEmpty(paths.agyStderr)
-    parsed = adapter.parse({ stdout, stderr, exitCode }, { required: schema.required })
     outcome = judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, config.reserve, stderr)
   } catch (err) {
     outcome = { status: 'failed', detail: `runner: ${err.message}` }

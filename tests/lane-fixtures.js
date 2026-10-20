@@ -20,6 +20,7 @@ function laneEnv(t, { command = FAKE_AGY, quota = null, mutate = null } = {}) {
   const dir = tempDir(t, 'aether-lane-env-')
   const config = JSON.parse(fs.readFileSync(lanes.CONFIG_FILE, 'utf8'))
   config.harnesses.agy.command = command
+  if (config.harnesses.muse) config.harnesses.muse.command = '/nowhere/muse'
   if (mutate) mutate(config)
   const configFile = path.join(dir, 'lanes.json')
   fs.writeFileSync(configFile, JSON.stringify(config))

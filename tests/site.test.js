@@ -204,3 +204,16 @@ test('the workflow deploys only site/, with the permissions and the concurrency 
   assert.match(yml, /name:\s*github-pages/)
   assert.doesNotMatch(yml, /secrets\./, 'the workflow uses no secrets')
 })
+
+test('the site names Muse wherever it lists the harnesses, in both languages, and counts none as four', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'site', 'index.html'), 'utf8')
+  const app = fs.readFileSync(path.join(__dirname, '..', 'site', 'app.js'), 'utf8')
+  assert.match(app, /order\s*=\s*\['agy',\s*'grok',\s*'codex',\s*'cursor',\s*'muse'\]/)
+  assert.ok(/muse/i.test(html), 'index.html names Muse')
+  for (const text of [html, app]) {
+    assert.doesNotMatch(text, /\b(four|cuatro|4) (external |otros? )?harnesses\b/i)
+    assert.doesNotMatch(text, /agy,? (?:codex,? )?grok,? (?:and |y )?cursor\b(?!,? (?:and |y )?muse)/i)
+  }
+  const spanish = html.slice(html.indexOf('lang="es"') === -1 ? 0 : html.indexOf('lang="es"'))
+  assert.ok(/muse/i.test(spanish))
+})

@@ -537,11 +537,14 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A63 are recorded and the changelog opens with 0.12.8 and its handoff', () => {
+test('R15: the decisions A50 to A64 are recorded and the changelog opens with 0.13.0 and its handoff', () => {
   const decisions = read('docs/decisions.md')
-  for (let n = 50; n <= 63; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  const LAST_DECISION = 64
+  for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
+  const muse = decisions.split('\n').find((line) => line.startsWith(`| A${LAST_DECISION} |`))
+  assert.ok(/Muse Code/.test(muse) && /fifth lane harness/.test(muse))
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.12.8: ') && first.includes('handoff/2026-10-19-lead-xhigh-0.12.8.md'), first)
+  assert.ok(first.startsWith('Version 0.13.0: ') && first.includes('handoff/2026-10-19-muse-harness-0.13.0.md'), first)
 })

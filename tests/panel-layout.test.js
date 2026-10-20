@@ -19,7 +19,7 @@ test.before(async () => {
   layout = await import(path.join(HOOKS, 'panel-layout.mjs'))
 })
 
-const NAMES = ['agy', 'codex', 'grok', 'cursor']
+const NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
 const fixture = (name) => fs.readFileSync(path.join(FIXTURES, name), 'utf8')
 const printed = (name) => ({ exitCode: 0, stdout: fixture(name), stderr: '' })
 const ch = (...codes) => String.fromCharCode(...codes)
@@ -27,7 +27,7 @@ const ch = (...codes) => String.fromCharCode(...codes)
 const delegations = () => JSON.parse(fixture('delegates.json')).delegations
 const NOW = Math.max(...delegations().map((d) => d.time)) + 3 * 60000
 
-// The four harnesses as the bins printed them, each read and ready. `patch` changes a parsed harness.
+// The five harnesses as the bins printed them, each read and ready. `patch` changes a parsed harness.
 function quota(patch = {}) {
   const states = {}
   for (const name of NAMES) {
@@ -118,6 +118,27 @@ test('a harness that is not enabled is marked, and one with nothing to read join
   assert.ok(enabled.some((text) => /^ {2}Codex plan {2}no reading$/.test(text)))
   assert.ok(enabled.some((text) => /^ {2}Cursor plan {2}no reading$/.test(text)))
   assert.ok(!enabled.some((text) => /^Not enabled, no quota reading: codex/.test(text)))
+})
+
+test('muse is drawn like agy: its name and version, its group, and its 5h and weekly windows in the same format', () => {
+  const lines = textOf(draw(100, { settings: settings({ harnesses: 'agy,muse' }) }))
+  assert.ok(lines.includes('muse 1.4.11'))
+  assert.ok(lines.includes('  Muse subscription  usable'))
+  assert.ok(lines.includes('    5h      ████████░░░░░░░░░░░░░░░░░░░░░░  28%  resets in 3 h'), lines.join('\n'))
+  assert.ok(lines.includes('    weekly  ██████████████████░░░░░░░░░░░░  60%  resets in 120 h'), lines.join('\n'))
+  assert.ok(lines.indexOf('muse 1.4.11') > lines.indexOf('agy 1.4.0'), 'enabled harnesses follow the order of the option')
+  assert.ok(!lines.some((text) => /^muse.*not enabled/.test(text)))
+})
+
+test('muse that is not enabled is marked, that is enabled and not installed says so, and one with nothing to read joins the list', () => {
+  assert.ok(textOf(draw(100, { settings: settings({ harnesses: 'agy' }) })).includes('muse 1.4.11  not enabled'))
+  const unread = (name) => ({ ok: true, value: { reserve: 0.05, harness: { name, installed: false, version: '', error: null, groups: [] } } })
+  const states = { agy: quota().agy, muse: { status: 'ready', result: unread('muse') }, codex: { status: 'ready', result: unread('codex') } }
+  const enabled = textOf(layout.panelLines({ settings: settings({ harnesses: 'agy,muse' }), quota: states, delegates: delegatesOf([]), columns: 80, now: NOW }))
+  assert.ok(enabled.includes('muse  enabled, not installed'))
+  assert.ok(enabled.includes('Not installed: codex'))
+  const off = textOf(layout.panelLines({ settings: settings({ harnesses: 'agy' }), quota: states, delegates: delegatesOf([]), columns: 80, now: NOW }))
+  assert.ok(off.includes('Not installed: codex, muse'))
 })
 
 test('an enabled harness that is not installed says so, and one that is not enabled is named in a list', () => {
@@ -344,6 +365,7 @@ const CASES = [
   ['lanes off, agy and grok', { lanes: false, harnesses: 'agy,grok' }],
   ['all four enabled, lanes on', { lanes: true, harnesses: 'agy,codex,grok,cursor' }],
   ['all four enabled, lanes off', { lanes: false, harnesses: 'agy,codex,grok,cursor' }],
+  ['agy and muse, lanes off', { lanes: false, harnesses: 'agy,muse' }],
 ]
 
 test('whatever the room, the title, the options, the action row and a line for each enabled group are shown', () => {

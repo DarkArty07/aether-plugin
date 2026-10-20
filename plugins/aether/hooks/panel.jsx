@@ -18,7 +18,7 @@ import { panelLines } from './panel-layout.mjs'
 const COMMAND = 'harnesses'
 const PANE = 'harnesses'
 const LEAD = 'aether:lead'
-// The body rows the pane asks for inline above the prompt: its content with four harnesses installed.
+// The body rows the pane asks for inline above the prompt: its content with the harnesses installed.
 const ROWS = 30
 
 // The style of each tone panel-layout.mjs gives a part: theme keys, so the pane follows the person's theme.

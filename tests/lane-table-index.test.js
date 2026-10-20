@@ -19,6 +19,7 @@ const takesSwarmRole = (entry) => entry.roles.some((role) => SWARM_ROLES.include
 function problems(config, index) {
   const list = (key) => (Array.isArray(index[key]) ? index[key] : [])
   const inUse = (harness, model) => list('models').find((e) => e.harness === harness && e.model === model)
+  const noFigures = (harness, model) => list('withoutFigures').find((e) => e.harness === harness && e.model === model)
   const notOffered = (harness, model) => list('notOffered').find((e) => e.harness === harness && e.model === model)
   const superseded = (harness, model) => list('superseded').some((e) => e.harness === harness && e.id === model)
   const hasProfile = (e) => typeof e?.profile?.purpose === 'string' && e.profile.purpose !== ''
@@ -29,6 +30,18 @@ function problems(config, index) {
       const where = `${harness}/${id}`
       const found = inUse(harness, id)
       if (!found) {
+        // The owner may decide that a model with no figure at an effort its harness takes enters the table anyway: the entry
+        // then carries his words in `ownerDecision`, the index lists it among the models with no figures, and everything
+        // else is still asked of it: a profile, the efforts the table asks for, and the model it replaces.
+        const open = noFigures(harness, id)
+        if (open && typeof entry.ownerDecision === 'string' && entry.ownerDecision.trim() !== '') {
+          if (!hasProfile(open)) out.push(`${where}: has no profile`)
+          for (const level of new Set(Object.values(entry.levels))) {
+            if (!(open.efforts ?? []).includes(level)) out.push(`${where}: the table asks for the effort ${level}, which ${harness} does not take for it (${(open.efforts ?? []).join(', ')})`)
+          }
+          if (open.lane?.replaces !== entry.replaces) out.push(`${where}: the index says it replaces ${open.lane?.replaces} and the table ${entry.replaces}`)
+          continue
+        }
         out.push(`${where}: is not a current model that ${harness} offers (it is not in models)`)
         continue
       }
@@ -81,6 +94,31 @@ const copy = (value) => JSON.parse(JSON.stringify(value))
 
 test('a table and an index that agree have no problems', () => {
   assert.deepEqual(problems(TABLE, INDEX), [])
+})
+
+test('a swarm model with no figure at an effort its harness takes enters only with the owner\'s decision written in its entry, and keeps every other rule', () => {
+  const table = copy(TABLE)
+  table.harnesses.agy.models.wide = { roles: ['implementer'], replaces: 'opus', levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }, ownerDecision: '«entra» (the owner)' }
+  const index = copy(INDEX)
+  index.withoutFigures = [{ harness: 'agy', model: 'wide', efforts: ['low', 'medium', 'high'], lane: lane(['implementer'], 'opus'), profile: PROFILE }]
+  assert.deepEqual(problems(table, index), [])
+  // Without his words in the entry it is a problem, as before.
+  const undecided = copy(table)
+  delete undecided.harnesses.agy.models.wide.ownerDecision
+  assert.deepEqual(problems(undecided, index), ['agy/wide: is not a current model that agy offers (it is not in models)'])
+  const blank = copy(table)
+  blank.harnesses.agy.models.wide.ownerDecision = '  '
+  assert.deepEqual(problems(blank, index), ['agy/wide: is not a current model that agy offers (it is not in models)'])
+  // His words do not excuse a missing profile, an effort the harness does not take, or a different model to replace.
+  const flawed = copy(index)
+  flawed.withoutFigures[0].profile = { purpose: '' }
+  flawed.withoutFigures[0].efforts = ['low', 'medium']
+  flawed.withoutFigures[0].lane = lane(['implementer'], 'sonnet')
+  assert.deepEqual(problems(table, flawed), [
+    'agy/wide: has no profile',
+    'agy/wide: the table asks for the effort high, which agy does not take for it (low, medium)',
+    'agy/wide: the index says it replaces sonnet and the table opus',
+  ])
 })
 
 test('a design-seat model may be in use or not offered, and a swarm model must be in use', () => {
