@@ -16,8 +16,8 @@ import { HARNESS_NAMES, ageText, bar, cells, clip, dateText, hoursShort, isNumbe
 
 const TITLE = 'Aether · other harnesses'
 const HINT = 'r renews · x closes · Esc leaves'
-const NOTE = 'Lanes are OFF: nothing leaves Claude. The quota below is only for reference.'
-const NOTE_SHORT = 'Lanes are OFF: nothing leaves Claude.'
+const NOTE = 'Superdelegation is OFF: nothing leaves Claude. The quota below is only for reference.'
+const NOTE_SHORT = 'Superdelegation is OFF: nothing leaves Claude.'
 const DEFAULT_COLUMNS = 76
 const MIN_COLUMNS = 20
 const BAR_MIN = 6
@@ -32,7 +32,7 @@ const DESCRIPTION_MIN = 20
 const LOW = 0.3
 const MINUTE_MS = 60000
 
-// What each level gives up, cumulatively. `note` is the text of the lanes-off notice; `errorLines` how many lines an
+// What each level gives up, cumulatively. `note` is the text of the superdelegation-off notice; `errorLines` how many lines an
 // error may take.
 const LEVELS = [
   { brief: false, pairs: false, delegates: 5, blanks: true, errorLines: 3, note: NOTE },
@@ -92,17 +92,16 @@ function packSegments(segments, to) {
 function optionsLines(settings, to) {
   return packSegments(
     [
-      part(settings.lanes ? 'lanes ON' : 'lanes OFF', settings.lanes ? 'ok' : 'warn'),
+      part(settings.lanes ? 'superdelegation ON' : 'superdelegation OFF', settings.lanes ? 'ok' : 'warn'),
       part(`router ${settings.router}`),
       part(`decider ${settings.decider}`),
-      part(`seats ${settings.seats}`),
       part(`harnesses ${settings.harnesses.join(', ')}`),
     ],
     to,
   )
 }
 
-// The title, the options, the action row right under them, and then the lanes-off notice if lanes are off. `note` is the
+// The title, the options, the action row right under them, and then the superdelegation-off notice if it is off. `note` is the
 // notice's text, or null to leave it out.
 function head(ctx, note) {
   const rows = [line(part(TITLE, 'title')), ...optionsLines(ctx.settings, ctx.to), actions()]
@@ -342,8 +341,8 @@ function essentialRows(section, ctx) {
 
 // When even the least level does not fit: the head and one line per enabled group come first, and then the rest of the
 // least level. What does not fit the rows is below the line `… N more rows (↓ scrolls)`, which is the last row shown,
-// where the scroll of the pane reaches it. If the head and the groups leave no row for that line, the notice of lanes
-// off goes first, and then the line itself.
+// where the scroll of the pane reaches it. If the head and the groups leave no row for that line, the notice of
+// superdelegation off goes first, and then the line itself.
 function lastResort(ctx, limit) {
   const last = LEVELS[LEVELS.length - 1]
   const essential = ctx.sections.filter((s) => s.enabled).flatMap((s) => essentialRows(s, ctx))

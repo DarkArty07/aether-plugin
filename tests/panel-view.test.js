@@ -84,22 +84,33 @@ test('clean makes one safe line of an outside text: controls, bidi and zero-widt
 })
 
 test('the options are the ones the session uses: a value the libs would not take shows as the one they would', () => {
-  assert.deepEqual(view.settingsOf({}), { lanes: false, router: 'record', decider: 'haiku', seats: 'balanced', harnesses: ['agy'] })
+  assert.deepEqual(view.settingsOf({}), { lanes: false, router: 'record', decider: 'haiku', harnesses: ['agy'] })
   assert.deepEqual(view.settingsOf(undefined).harnesses, ['agy'])
-  assert.deepEqual(view.settingsOf({ lanes: true, router: 'command', decider: 'jev', seats: 'robust', harnesses: 'agy,grok' }), { lanes: true, router: 'command', decider: 'jev', seats: 'robust', harnesses: ['agy', 'grok'] })
-  // Wrong case or padded: the router and the decider are taken as they are, so they fall back; the seats and the harnesses are trimmed and lower-cased.
-  assert.deepEqual(view.settingsOf({ router: 'Command', decider: 'JEV', seats: 'Robust', harnesses: 'gork' }), { lanes: false, router: 'record', decider: 'haiku', seats: 'robust', harnesses: ['agy'] })
+  assert.deepEqual(view.settingsOf({ superdelegation: true, router: 'command', decider: 'jev', harnesses: 'agy,grok' }), { lanes: true, router: 'command', decider: 'jev', harnesses: ['agy', 'grok'] })
+  // Wrong case or padded: the router and the decider are taken as they are, so they fall back; the harnesses are trimmed and lower-cased.
+  assert.deepEqual(view.settingsOf({ router: 'Command', decider: 'JEV', harnesses: 'gork' }), { lanes: false, router: 'record', decider: 'haiku', harnesses: ['agy'] })
   assert.equal(view.settingsOf({ router: ' command' }).router, 'record')
-  assert.equal(view.settingsOf({ seats: ' NATIVE ' }).seats, 'native')
-  assert.equal(view.settingsOf({ seats: 'fast' }).seats, 'balanced')
+  assert.ok(!('seats' in view.settingsOf({ seats: 'robust' })), 'the seats option is gone')
+  assert.equal(view.SEAT_CHOICES, undefined)
   assert.deepEqual(view.settingsOf({ harnesses: ' Grok,AGY,grok, cursor ,gork' }).harnesses, ['grok', 'agy', 'cursor'], 'known names only, once each, in order')
   assert.deepEqual(view.settingsOf({ harnesses: ['codex', 'x'] }).harnesses, ['codex'])
   assert.deepEqual(view.settingsOf({ harnesses: '' }).harnesses, ['agy'], 'agy alone when none is given')
   assert.deepEqual(view.settingsOf({ harnesses: 'x,y' }).harnesses, ['agy'], 'agy alone when none is valid')
-  assert.equal(view.settingsOf({ lanes: true }).lanes, true)
-  assert.equal(view.settingsOf({ lanes: 'true' }).lanes, true)
-  for (const lanes of [false, 'false', 'TRUE', 'on', 1, 'yes', undefined, null]) assert.equal(view.settingsOf({ lanes }).lanes, false, String(lanes))
-  assert.equal(view.settingsOf({ router: 7, decider: ['jev'], seats: {} }).router, 'record')
+  assert.equal(view.settingsOf({ router: 7, decider: ['jev'] }).router, 'record')
+})
+
+test('the switch is on with superdelegation true, or with lanes true and superdelegation not set, and off otherwise', () => {
+  for (const superdelegation of [true, 'true']) assert.equal(view.settingsOf({ superdelegation }).lanes, true, String(superdelegation))
+  for (const lanes of [true, 'true']) assert.equal(view.settingsOf({ lanes }).lanes, true, `lanes ${lanes}`)
+  // A set superdelegation wins over lanes, in both directions.
+  for (const superdelegation of [false, 'false']) assert.equal(view.settingsOf({ superdelegation, lanes: true }).lanes, false, `superdelegation ${superdelegation}, lanes true`)
+  assert.equal(view.settingsOf({ superdelegation: true, lanes: false }).lanes, true)
+  for (const value of [false, 'false', 'TRUE', 'on', 1, 'yes', '', undefined, null]) {
+    assert.equal(view.settingsOf({ lanes: value }).lanes, false, `lanes ${String(value)}`)
+    assert.equal(view.settingsOf({ superdelegation: value }).lanes, false, `superdelegation ${String(value)}`)
+  }
+  // A superdelegation that is not true or false is not set, so lanes decides.
+  assert.equal(view.settingsOf({ superdelegation: 'on', lanes: true }).lanes, true)
 })
 
 test('times are written as hours, ages and UTC dates', () => {

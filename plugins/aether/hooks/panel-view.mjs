@@ -9,7 +9,6 @@
 export const HARNESS_NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
 export const ROUTER_MODES = ['record', 'advise', 'command']
 export const ROUTER_DECIDERS = ['haiku', 'jev']
-export const SEAT_CHOICES = ['native', 'balanced', 'robust']
 // The delegations the panel keeps, and how far back it asks for them.
 export const RECENT = 5
 export const DELEGATES_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
@@ -94,9 +93,11 @@ export const clean = (value) => (typeof value === 'string' ? scrub(value).replac
 
 // The options as the session uses them. The session does not read the options as they are: lib/session.js
 // routerSettingsFrom takes a router mode or decider only when it is listed (else record or haiku), lib/lanes.js
-// enabledHarnesses keeps the known harness names, trimmed and in lower case (else agy), seatsChoice lower-cases the
-// seats and takes balanced for one it does not know, and lanes is on only for true. The mod cannot require them, so
-// the lists are copied here; tests/panel-conformance.test.js compares the two on a table.
+// enabledHarnesses keeps the known harness names, trimmed and in lower case (else agy), and superdelegation's
+// resolveOption (lib/superdelegation.js) turns the switch on when superdelegation is set to true, or when it is not
+// set (not true or false) and the old lanes option is true. The mod cannot
+// require the libs, so the lists and the rule are copied here; tests/panel-conformance.test.js compares the two on a
+// table. `lanes` in the settings is the resolved switch, shown as superdelegation.
 export function settingsOf(options) {
   const given = isObject(options) ? options : {}
   const harnesses = []
@@ -105,12 +106,12 @@ export function settingsOf(options) {
     const name = part.trim().toLowerCase()
     if (HARNESS_NAMES.includes(name) && !harnesses.includes(name)) harnesses.push(name)
   }
-  const seats = String(given.seats ?? '').trim().toLowerCase()
+  const superdelegation = String(given.superdelegation)
+  const on = superdelegation === 'true' || superdelegation === 'false' ? superdelegation === 'true' : String(given.lanes) === 'true'
   return {
-    lanes: String(given.lanes) === 'true',
+    lanes: on,
     router: ROUTER_MODES.includes(given.router) ? given.router : 'record',
     decider: ROUTER_DECIDERS.includes(given.decider) ? given.decider : 'haiku',
-    seats: SEAT_CHOICES.includes(seats) ? seats : 'balanced',
     harnesses: harnesses.length > 0 ? harnesses : ['agy'],
   }
 }
