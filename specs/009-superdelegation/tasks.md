@@ -1086,7 +1086,7 @@ test('a choice written in the old shape does not break the report', (t) => {
 - Depends on: Task 15 — lee los argumentos de la corrida que `aether-plan compile` escribe
 - Serves: R4, R5, R6, R14, R15, R16, R17, R19, R20, R22
 
-**Base: lo que ya trae `run.workflow.js` de `fix/bug-issues` (fusionada, `888cb78`) y se conserva.** El `binDir` de los args y su `wtBin` (issue 008); el reintento único del paso `ops` cuando la respuesta dice que no corrió el comando (004); la consulta `aether-wt status` antes de bloquear una unidad por un merge ilegible (002); `modelAgentsSpent()`, que hace que el presupuesto cuente solo agentes con modelo (013); `READING_PLAN` y la revisión final por rebanadas de hasta tres unidades de un área (011, 022), que corre nativa porque una llamada de lane tiene el id fijo `final-review`; las etiquetas `<tarea>: implement via <harness> <modelo> on <rung> (attempt n)` y la línea de progreso `ran on <harness> <modelo> · N tok` (032). Sus pruebas están en `tests/workflow.test.js`, `tests/workflow-lanes.test.js` y `tests/workflow-order.test.js`: la reescritura de la ruta de las llamadas externas las conserva verdes, y una que deba cambiar porque `pick` cambia el orden o la etiqueta se actualiza con su razón, no se borra.
+**Base: lo que ya trae `run.workflow.js` de `fix/bug-issues` (fusionada, `888cb78`) y se conserva.** El `binDir` de los args y su `wtBin` (issue 008); el reintento único del paso `ops` cuando la respuesta dice que no corrió el comando (004); la consulta `aether-wt status` antes de bloquear una unidad por un merge ilegible (002); `modelAgentsSpent()`, que hace que el presupuesto cuente solo agentes con modelo (013); `READING_PLAN` y la revisión final por rebanadas de hasta tres unidades de un área (011, 022), que se conserva solo en el camino nativo: la elección de `final-review` va antes de partir en rebanadas (ver «La revisión final por rebanadas»); las etiquetas `<tarea>: implement via <harness> <modelo> on <rung> (attempt n)` y la línea de progreso `ran on <harness> <modelo> · N tok` (032). Sus pruebas están en `tests/workflow.test.js`, `tests/workflow-lanes.test.js` y `tests/workflow-order.test.js`: la reescritura de la ruta de las llamadas externas las conserva verdes, y una que deba cambiar porque `pick` cambia el orden o la etiqueta se actualiza con su razón, no se borra.
 
 **Interfaces:**
 
@@ -1101,6 +1101,8 @@ Al terminar la llamada, sea cual sea el camino, envía `aether-lane took <run> <
 **El agente nativo.** Toda llamada que cae a nativo, sea `no-candidate`, `wait-limit` o `failed` (incluido el par externo que arrancó y falló, que no repite el `pick`), corre en el `model` y el `effort` de `decision.native` de su `pick` (el último, si hubo un `start` no disponible): nunca en un modelo que el workflow calcule por su cuenta ni en la referencia sin mirar la decisión. Esa decisión ya difiere del autor en un supervisor y en la revisión final (C12, R17), así que el workflow no vuelve a comprobarlo.
 
 Referencias: implementador, `{ model: tier del escalón, effort: effortFor(...) }`; supervisor, `{ model: 'sonnet', effort: task.review }`; revisión final, `{ model, effort }` de `reviewPlan()`. `max` pasa por `pick` como cualquier effort. `--author` del supervisor es la `family` de quien corrió el intento que revisa (`decision.picked.family` si corrió un par, si no `decision.native.family`); `--author` de la revisión final es la `family` que implementó más unidades fusionadas (con empate, la de la unidad de menor número). Un implementador no lleva `--author`.
+
+**La revisión final por rebanadas (011, 022; R5, R17, R18).** `reviewRun` hace un solo `decide` para `final-review`, con la referencia de `reviewPlan()` y el `--author` de arriba, antes de llamar a `reviewSlices`; la elección no depende de cuántas rebanadas haya. (1) Con un par elegido, la revisión es una sola llamada externa sobre todo el paquete, con el id `final-review`, y no se parte en rebanadas: la revisión externa no lleva ids por rebanada. (2) Sin par (`no-candidate`), con la espera de cupo agotada o con un par que no arrancó o falló, la revisión corre nativa en el `decision.native` del último `pick` (R17: distinto de la familia del autor); si `reviewSlices` da más de una rebanada, `reviewRunSliced` corre las rebanadas en ese `model` y ese `effort`, no en los de `reviewPlan()`, y con una sola rebanada corre la revisión de un revisor como hoy. (3) En ambos caminos se envía una sola `took final-review` (`--by native` y la causa que corresponda en el camino nativo, aunque haya varias rebanadas), y el resultado de la revisión lleva el `reviewModel` y el `reviewEffort` donde corrió. La rebanada con `status: 'failed'` por una rebanada sin respuesta sigue igual. Con `lanes` nulo no hay `decide` ni `took` y las rebanadas corren como hoy, en `reviewPlan()`. Costo: una revisión externa de un paquete largo puede topar con el límite de turnos que las issues 011 y 022 resolvieron partiendo; esta tarea no lo resuelve (queda como pregunta al dueño).
 
 Reintentos: un intento que sigue a uno que no aprobó (`retry`, `escalate`, un implementador sin informe, un fallo de fusión) lleva `--exclude` con el id del par donde corrió el intento anterior, si fue externo.
 
@@ -1186,6 +1188,38 @@ test('C3: each call asks pick for the pair of its reference, and a pair that tak
     ['task-1-1-supervise', 'agy:claude-opus-5-5', 'chosen'],
     ['final-review', 'agy:claude-opus-5-5', 'chosen'],
   ])
+})
+
+test('R5, R17, R18: a final review of units from two areas is offered to a pair before it is sliced, and slices only on the native pair of the decision', async (t) => {
+  const tasks = [task(1, { area: 'api' }), task(2, { area: 'ui' })]
+  const finalOf = (run, verb) => verbs(run, verb).filter((c) => c.lane.call === 'final-review')
+
+  // A pair takes it: one external reviewer on the whole package, no slices, no native reviewer.
+  const taken = await runWorkflow(argsOf(t, tasks), { lane: lane({ 'final-review': OPUS }) })
+  ok(taken)
+  assert.deepEqual(finalOf(taken, 'pick').map((c) => [c.lane.role, c.lane.model, c.lane.effort]), [['reviewer', 'sonnet', 'high']])
+  assert.deepEqual(finalOf(taken, 'start').map((c) => [c.lane.model, c.lane.effort]), [['claude-opus-5-5', 'medium']])
+  assert.equal(natives(taken, 'reviewer').length, 0)
+  assert.equal(taken.result.finalReview.slices, undefined)
+  assert.deepEqual(finalOf(taken, 'took').map((c) => [c.lane.by, c.lane.cause]), [['agy:claude-opus-5-5', 'chosen']])
+
+  // None takes it: two slices (one per area) on the native pair that the pick gave, one pick and one took.
+  const fallback = await runWorkflow(argsOf(t, tasks), {
+    lane: (call, next) => {
+      if (call.command.verb !== 'pick') return next(call)
+      const d = decision(call, null)
+      if (call.lane.call === 'final-review') d.native = { ...d.native, model: 'opus', effort: 'high', id: 'claude/opus@high', family: FAMILY.opus }
+      return d
+    },
+  })
+  ok(fallback)
+  assert.equal(finalOf(fallback, 'pick').length, 1)
+  assert.equal(finalOf(fallback, 'start').length, 0)
+  const reviewers = natives(fallback, 'reviewer')
+  assert.equal(reviewers.length, 2)
+  assert.deepEqual(reviewers.map((c) => [c.model, c.effort]), [['opus', 'high'], ['opus', 'high']])
+  assert.equal(fallback.result.finalReview.slices, 2)
+  assert.deepEqual(finalOf(fallback, 'took').map((c) => [c.lane.by, c.lane.cause]), [['native', 'no-candidate']])
 })
 
 test('C11: a call with no pair runs native in the native pair of the decision, and took says no-candidate', async (t) => {
@@ -1365,7 +1399,7 @@ Además esta tarea reescribe `tests/workflow-lanes.test.js` a los argumentos y l
 - Depends on: Task 3 — usa `harnessViews` y `latestReadings` de `lib/lane-pick.js`
 - Serves: R3, R4, R5, R6, R16, R17, R19, R20, R22, R24
 
-**Base: lo que ya trae `seats.js` de `fix/bug-issues` (fusionada, `888cb78`) y se conserva (issue 016).** `offeredByListing(harnessName, model, level, listing)` y el parámetro `offered` de `chooseSeat`: un modelo que el listado capturado del harness (`config/models/harness-models.json`) no ofrece al nivel del esfuerzo del asiento se pasa por alto con la razón `not-offered`, y un harness sin listado no rechaza nada. El `chooseSeat` nuevo excluye un par cuyo modelo no ofrece el listado a su effort, con esa razón en `tried` y en `decision`; `offeredByListing` sigue exportada y `seatCommand` la pasa. Los casos de `tests/seats.test.js` de `offered` y `not-offered` se conservan, adaptados a pares: un par de Argon que el listado no ofrece no se elige aunque su cuota sea la que se renueva antes, y el asiento sin par ofrecido termina en el mismo exit 3 `no-external` con los pares probados y sus razones.
+**Base: lo que ya trae `seats.js` de `fix/bug-issues` (fusionada, `888cb78`) y se conserva (issue 016).** `offeredByListing(harnessName, model, level, listing)` y el parámetro `offered` de `chooseSeat`: un modelo que el listado capturado del harness (`config/models/harness-models.json`) no ofrece al nivel del esfuerzo del asiento se pasa por alto con la razón `not-offered`, y un harness sin listado no rechaza nada. El `chooseSeat` nuevo conserva `offered = () => true` en su firma (`offered(harnessName, model, effort)` devuelve un booleano) y, antes de llamar a `choose`, quita de `pairs` los pares externos que `offered` rechaza para su `harness`, su `model` y su `effort` (los pares nativos se quedan: son la referencia y el respaldo); por cada par quitado suma `{ id, harness, group, intelligence, costPerTaskUsd, rank: null, outcome: 'passed', why: 'not-offered' }` a `decision.candidates` y `{ id, outcome: 'passed', why: 'not-offered' }` a `tried`. `offeredByListing` sigue exportada y `seatCommand` pasa `(harnessName, model, level) => offeredByListing(harnessName, model, level)`. Los casos de `tests/seats.test.js` de `offered` y `not-offered` se conservan, adaptados a pares (la prueba «issue 016» de abajo): un par de Argon que el listado no ofrece no se elige aunque su cuota sea la que se renueva antes, y el asiento sin par ofrecido termina en el mismo exit 3 `no-external` con los pares probados y sus razones.
 
 **Interfaces:**
 
@@ -1374,7 +1408,7 @@ Además esta tarea reescribe `tests/workflow-lanes.test.js` a los argumentos y l
 ```js
 const REFERENCE = { judge: { model: 'opus', effort: 'high' }, writer: { model: 'sonnet', effort: 'high' }, examiner: { model: 'opus', effort: 'high' } }
 const NATIVE = { judge: { agent: 'aether:judge', ...REFERENCE.judge, id: 'claude-opus-5-5' }, writer: { agent: 'aether:writer', ...REFERENCE.writer, id: 'claude-sonnet-5-5' }, examiner: { agent: 'aether:examiner', ...REFERENCE.examiner, id: 'claude-opus-5-5' } }
-chooseSeat({ config, pairs, seat, author = null, harnesses }) // harnesses: the Vista de cuotas
+chooseSeat({ config, pairs, seat, author = null, harnesses, offered = () => true }) // harnesses: the Vista de cuotas; offered(harnessName, model, effort) -> boolean
   // -> { external: { harness, model, group, effort, level: effort, timeoutSeconds, quotaBefore, pair }, tried, decision }
   //  | { native: { agent, model, effort, id, family }, tried, decision }
 ```
@@ -1428,6 +1462,20 @@ test('C12: a Judge never takes the model that wrote the document, external or na
   assert.notEqual(native.native.model, 'opus')
   assert.notEqual(choose('examiner', { author: 'opus', harnesses: world(dry, dry) }).native.model, 'opus')
   assert.equal(choose('writer', { author: 'sonnet', harnesses: world(dry, dry) }).native.model, 'sonnet')
+})
+
+test('issue 016: a pair that the captured listing does not offer is not chosen, and the decision and tried say not-offered', () => {
+  const argon = pairs.find((p) => p.id === 'agy/gemini-4-argon@high')
+  const chosen = choose('judge', { offered: (harnessName, model, effort) => !(model === 'gemini-4-argon' && effort === 'high') })
+  assert.notEqual(chosen.external && chosen.external.pair.id, argon.id)
+  const entry = chosen.decision.candidates.find((c) => c.id === argon.id)
+  assert.deepEqual([entry.outcome, entry.why, entry.rank], ['passed', 'not-offered', null])
+  assert.deepEqual(chosen.tried.find((e) => e.id === argon.id), { id: argon.id, outcome: 'passed', why: 'not-offered' })
+  const none = choose('judge', { offered: () => false })
+  assert.equal(none.external, undefined)
+  assert.equal(none.native.agent, NATIVE.judge.agent)
+  assert.ok(none.decision.candidates.every((c) => c.why === 'not-offered'))
+  assert.ok(none.tried.some((e) => e.id === argon.id && e.why === 'not-offered'))
 })
 
 test('the seat module no longer holds the retired names', () => {
