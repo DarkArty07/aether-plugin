@@ -13,7 +13,13 @@ const seats = require('../plugins/aether/lib/seats.js')
 const schemas = require('../plugins/aether/lib/lane-schemas.js')
 
 const FEATURE = 'specs/001-demo'
-const fine = { windows: { '5h': { remaining: 0.9, resetsAt: 'a' }, weekly: { remaining: 0.9, resetsAt: 'b' } } }
+const DAY = 86400000
+// What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
+// the Writer and the Judge, as it does when the quota that renews first is Gemini's.
+const geminiFirst = () => ({
+  'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * DAY).toISOString()],
+  'Claude and GPT models': [0.9, 0.9, null, new Date(Date.now() + 3 * DAY).toISOString()],
+})
 const SPEC_ANSWER = { spec: `${FEATURE}/spec.md`, commit: 'abc123', clarify: ['[NEEDS CLARIFICATION: which store?]'], assumptions: ['A1'], proposals: [], questions: [] }
 
 function seatRepo(t) {
@@ -28,7 +34,7 @@ function seatRepo(t) {
 
 function seat(cwd, args, env, input = '') {
   const base = { ...process.env }
-  for (const name of ['AETHER_SEATS', 'AETHER_LANE_HARNESSES', 'AETHER_LANES', 'CLAUDE_ENV_FILE']) delete base[name]
+  for (const name of ['AETHER_SUPERDELEGATION', 'AETHER_LANE_HARNESSES', 'CLAUDE_ENV_FILE']) delete base[name]
   const r = spawnSync(process.execPath, [LANE_BIN, 'seat', ...args], { cwd, input, encoding: 'utf8', env: { ...base, ...env } })
   let json = null
   try {
@@ -48,16 +54,22 @@ function specInput(t, { extra = '', answer = SPEC_ANSWER } = {}) {
   return [`Write the spec of ${FEATURE}.`, `FAKE-AGY: copy ${spec} ${FEATURE}/spec.md`, extra, 'FAKE-AGY: commit the spec', `FAKE-AGY: answer ${JSON.stringify(answer)}`, ''].join('\n')
 }
 
-test('the native Writer starts at high and the external one keeps xhigh (R11)', (t) => {
+test('the Writer asks Sonnet high, and an external Writer runs at the effort of its pair (R11)', (t) => {
   assert.equal(seats.NATIVE.writer.effort, 'high')
-  assert.deepEqual(seats.EXTERNAL_EFFORT, { judge: 'high', writer: 'xhigh', examiner: 'high' })
-  const chosen = seats.chooseSeat(lanes.loadConfig(lanes.CONFIG_FILE), { choice: 'robust', seat: 'writer', enabled: ['agy'], installed: () => true, quota: () => fine })
-  assert.equal(chosen.external.effort, 'xhigh')
-  assert.equal(chosen.external.level, 'high')
+  assert.deepEqual(seats.REFERENCE.writer, { model: 'sonnet', effort: 'high' })
   const repo = seatRepo(t)
-  const r = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], laneEnv(t), 'x')
+  const r = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], { ...laneEnv(t), AETHER_SUPERDELEGATION: 'off' }, 'x')
   assert.equal(r.status, 3)
   assert.equal(r.json.native.effort, 'high', 'the native Writer a seat falls back to starts at high')
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const spec = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec'], env, 'Write.\nFAKE-AGY: exit-error boom\n')
+  assert.equal(spec.status, 4, spec.stdout)
+  assert.equal(spec.json.model, 'gemini-4-argon')
+  const [turn] = agyTurns(env)
+  assert.equal(argAfter(turn.argv, '--model'), 'gemini-4-argon-high', 'the effort of the pair, high, and no translated xhigh')
+  const [entry] = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'call')
+  assert.equal(entry.effort, 'high')
+  assert.equal(entry.reference.id, 'claude/sonnet@high')
 })
 
 test('--doc and --id are checked', (t) => {
@@ -78,7 +90,7 @@ test('--doc and --id are checked', (t) => {
 
 test('a Writer round with --doc spec writes spec.md only, commits it in the checkout without aether-plan, and names its round by --id', (t) => {
   const repo = seatRepo(t)
-  const env = { ...laneEnv(t), AETHER_SEATS: 'robust' }
+  const env = laneEnv(t, { quota: geminiFirst() })
   const id = 'writer-20261015-120000-ab12'
   const r = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--id', id], env, specInput(t))
   assert.equal(r.status, 0, r.stdout)
@@ -97,7 +109,7 @@ test('a Writer round with --doc spec writes spec.md only, commits it in the chec
 
 test('a Writer round for the spec that changes the plan is undone, and its work is kept in a ref', (t) => {
   const repo = seatRepo(t)
-  const env = { ...laneEnv(t), AETHER_SEATS: 'robust' }
+  const env = laneEnv(t, { quota: geminiFirst() })
   const before = repo.git('rev-parse', 'HEAD')
   const r = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec'], env, specInput(t, { extra: `FAKE-AGY: write ${FEATURE}/plan.md changed` }))
   assert.equal(r.status, 4, r.stdout)
@@ -124,4 +136,24 @@ test('the Judge answer needs a type for each finding, and its text shows it (R9)
   assert.ok('disagreements' in schemas.REVISION_SCHEMA.properties)
   assert.ok(!schemas.WRITER_SCHEMA.required.includes('complexity'))
   assert.ok('complexity' in schemas.WRITER_SCHEMA.properties && 'disagreements' in schemas.WRITER_SCHEMA.properties)
+})
+
+test('C16: a Muse round reads the quota after it parses the output, so the allowance of that very round is the quota after it', (t) => {
+  const FAKE_MUSE = path.join(__dirname, 'fixtures', 'fake-muse.js')
+  fs.chmodSync(FAKE_MUSE, 0o755)
+  const repo = seatRepo(t)
+  const now = Date.now()
+  const record = (type, payload) => JSON.stringify({ schema_version: 1, id: type, stream: { kind: 'session', id: 's1' }, sequence: 1, recorded_at: 1, record_type: 'event', durability: 'durable', causation_id: 'c1', payload_type: type, payload_schema_version: 1, payload })
+  const answer = JSON.stringify({ verdict: 'approve', findings: [], openQuestions: [] })
+  const allowance = { tier: 'power', window: { usedPercent: 72, resetsAtMs: now + 3 * 3600000, windowDurationMins: 300 }, weekly: { usedPercent: 40, resetsAtMs: now + 5 * 86400000 } }
+  const stdout = `${[
+    record('run.terminal.completed', { kind: 'run_terminal', terminal: 'completed', reason: null, text: answer }),
+    record('run.usage', { kind: 'run_usage', allowance, calls: 1, completed_calls: 1, failed_calls: 0, cancelled_calls: 0, children_included: false, models: [{ model: 'muse-wonder-full-1.0', calls: 1, input_tokens: 10, output_tokens: 2, cached_tokens: 0, reasoning_tokens: 0 }] }),
+  ].join('\n')}\n`
+  const env = { ...laneEnv(t, { mutate: (config) => { config.harnesses.muse.command = FAKE_MUSE } }), AETHER_SUPERDELEGATION: 'on', AETHER_LANE_HARNESSES: 'muse', AETHER_FAKE_MUSE_SCRIPT: JSON.stringify({ stdout }) }
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], env, 'Review it.')
+  assert.equal(r.status, 0, r.stdout)
+  assert.equal(r.json.harness, 'muse')
+  const call = lanes.readLog(env.AETHER_DATA_DIR).find((entry) => entry.kind === 'call' && entry.harness === 'muse')
+  assert.ok(Math.abs(call.quotaAfter.windows.weekly.remaining - 0.6) < 1e-9, JSON.stringify(call.quotaAfter))
 })

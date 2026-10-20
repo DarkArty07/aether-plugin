@@ -6,6 +6,7 @@
 //     would use; the shipped table has one Gemini key);
 //   - a call agy refuses leaves a mark on the key of the model that was refused, in the swarm's lane calls and in the
 //     design seats, that holds dryMarkMinutes (60), not the reset agy states, which was once wrong: it is kept in the mark;
+//     a design seat reads the key of its pair in the pairs table, so a split table needs a split pairs table too;
 //   - a mark that came from a reading is lifted by a fresh healthy reading, and a refusal's mark never is;
 //   - an unconfirmed mark cannot hold longer than 60 minutes whatever its file says;
 //   - a mark of a key the table does not have is ignored.
@@ -16,7 +17,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { makeRepo, runBin } = require('./helpers.js')
+const { makeRepo, runBin, tempDir } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const marks = require('../plugins/aether/lib/lane-marks.js')
@@ -40,6 +41,12 @@ const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote it.', head: '', te
 const APPROVE = JSON.stringify({ verdict: 'approve', findings: [], openQuestions: [] })
 const flags = (digest) => ['--role', 'implementer', '--task', 'task-1', '--model', 'gemini-3.8-flash', '--effort', 'xhigh', '--digest', digest]
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'aether-refusal-'))
+// What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
+// the Judge, as it does when the quota that renews first is Gemini's.
+const geminiFirst = () => ({
+  'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * 24 * HOUR).toISOString()],
+  'Claude and GPT models': [0.9, 0.9, null, new Date(Date.now() + 3 * 24 * HOUR).toISOString()],
+})
 const healthy = (readAt = Date.now()) => ({ windows: { '5h': { remaining: 0.98, resetsAt: new Date(readAt + 4 * HOUR).toISOString() }, weekly: { remaining: 0.99, resetsAt: new Date(readAt + 160 * HOUR).toISOString() } } })
 const dry = (readAt = Date.now()) => ({ windows: { weekly: { remaining: 0.01, resetsAt: new Date(readAt + 40 * HOUR).toISOString() } } })
 
@@ -48,6 +55,19 @@ function splitTable(config) {
   config.harnesses.agy.groups = { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' }
   config.harnesses.agy.models['gemini-3.8-flash'].group = 'flash'
   config.harnesses.agy.models['gemini-4-argon'].group = 'argon'
+}
+
+// The same split in the pairs table, which is where a design seat reads the key of its pair. Returns the environment
+// that points the seat at it.
+function splitPairs(t) {
+  const table = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json'), 'utf8'))
+  for (const pair of table.pairs) {
+    if (pair.harness === 'agy' && pair.model === 'gemini-4-argon') pair.group = 'argon'
+    if (pair.harness === 'agy' && pair.model === 'gemini-3.8-flash') pair.group = 'flash'
+  }
+  const file = path.join(tempDir(t, 'aether-pairs-'), 'pairs.json')
+  fs.writeFileSync(file, JSON.stringify(table))
+  return { AETHER_PAIRS_CONFIG: file }
 }
 
 // A call of the swarm on gemini-3.8-flash, and its result.
@@ -71,8 +91,8 @@ function seatRepo(t) {
 
 function judgeRound(repo, env, input) {
   const base = { ...process.env }
-  for (const name of ['AETHER_SEATS', 'AETHER_LANE_HARNESSES', 'AETHER_LANES', 'CLAUDE_ENV_FILE']) delete base[name]
-  const r = spawnSync(process.execPath, [fx.LANE_BIN, 'seat', 'judge', '--session', 's1', '--feature', FEATURE], { cwd: repo.dir, input, encoding: 'utf8', env: { ...base, ...env, AETHER_SEATS: 'balanced' } })
+  for (const name of ['AETHER_SUPERDELEGATION', 'AETHER_LANE_HARNESSES', 'CLAUDE_ENV_FILE']) delete base[name]
+  const r = spawnSync(process.execPath, [fx.LANE_BIN, 'seat', 'judge', '--session', 's1', '--feature', FEATURE], { cwd: repo.dir, input, encoding: 'utf8', env: { ...base, ...env } })
   return { status: r.status, json: JSON.parse(r.stdout.trim().split('\n').pop()) }
 }
 
@@ -174,22 +194,23 @@ test('a swarm call agy refuses leaves the mark of Flash alone for an hour, thoug
   assert.match(text, /argon, "Gemini Models": usable/)
 })
 
-test('a seat round on Argon that agy refuses marks Argon only, and the next round skips it for the native agent while Flash stays usable', (t) => {
+test('a seat round on Argon that agy refuses marks Argon only, and the next round skips it for the next pair while Flash stays usable', (t) => {
   const repo = seatRepo(t)
-  const env = fx.laneEnv(t, { mutate: splitTable })
+  const env = { ...fx.laneEnv(t, { mutate: splitTable, quota: geminiFirst() }), ...splitPairs(t) }
   const first = judgeRound(repo, env, `Review.\n${refuse().join('\n')}\n`)
   assert.equal(first.status, 4, JSON.stringify(first.json))
   assert.equal(first.json.failed, 'quota')
+  assert.equal(first.json.model, 'gemini-4-argon')
   const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'argon')
   assert.deepEqual([mark.confirmed, mark.reason, mark.until - mark.at, mark.statedResetMs], [false, 'quota refusal', 60 * MIN, RESET_MS])
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash'), null, 'Flash has a quota of its own')
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'claude'), null)
 
-  const turns = fx.agyTurns(env).length
-  const second = judgeRound(repo, env, 'Review.\n')
-  assert.equal(second.status, 3, JSON.stringify(second.json))
-  assert.deepEqual(second.json.tried, [{ model: 'agy/gemini-4-argon', reason: 'quota' }])
-  assert.equal(fx.agyTurns(env).length, turns, 'the held group is not called again')
+  // The held key is not called again: the next pair that reaches the points, on the Claude and GPT quota, takes the round.
+  const second = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
+  assert.equal(second.status, 0, JSON.stringify(second.json))
+  assert.equal(second.json.model, 'claude-opus-5-5')
+  assert.deepEqual(fx.agyTurns(env).map((turn) => fx.argAfter(turn.argv, '--model')), ['gemini-4-argon-high', 'claude-opus-5-5-high'])
 
   // Flash is still a lane for the swarm: its call goes through while Argon is held.
   const { done } = runFlashCall(t, [`FAKE-AGY: answer ${DONE}`], env)
@@ -198,7 +219,7 @@ test('a seat round on Argon that agy refuses marks Argon only, and the next roun
 
 test('with the shipped table, one Gemini key, a refusal on Argon holds Flash too, for an hour', (t) => {
   const repo = seatRepo(t)
-  const env = fx.laneEnv(t)
+  const env = fx.laneEnv(t, { quota: geminiFirst() })
   const first = judgeRound(repo, env, `Review.\n${refuse().join('\n')}\n`)
   assert.equal(first.json.failed, 'quota', JSON.stringify(first.json))
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini').reason, 'quota refusal')
@@ -207,19 +228,16 @@ test('with the shipped table, one Gemini key, a refusal on Argon holds Flash too
   assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json, { unavailable: 'quota' })
 })
 
-test('chooseSeat reads the group first, and passes it over only if a mark still holds it once the reading has had its chance', () => {
-  const config = lanes.loadConfig(lanes.CONFIG_FILE)
-  const options = { choice: 'balanced', seat: 'judge', enabled: ['agy'], installed: () => true }
-  const asked = []
-  const quota = (harness, settings, group) => (asked.push(group), healthy())
-  const held = seats.chooseSeat(config, { ...options, quota, marked: (harness, group, reading) => (assert.ok(reading.windows), true) })
-  assert.deepEqual([held.tried, asked], [[{ model: 'agy/gemini-4-argon', reason: 'quota' }], ['gemini']], 'it was read, and the mark held')
-  assert.equal(seats.chooseSeat(config, { ...options, quota, marked: () => false }).external.group, 'gemini', 'the mark was lifted')
-  const unreadable = () => {
-    throw new Error('agy /usage failed')
-  }
-  assert.deepEqual(seats.chooseSeat(config, { ...options, quota: unreadable, marked: () => true }).tried, [{ model: 'agy/gemini-4-argon', reason: 'quota' }])
-  assert.deepEqual(seats.chooseSeat(config, { ...options, quota: unreadable, marked: () => false }).tried, [{ model: 'agy/gemini-4-argon', reason: 'quota-unreadable' }])
+test('a pair whose key a mark holds is dry for a seat, and a pair of an unmarked key is not', () => {
+  const config = { harnesses: { agy: { command: 'agy', maxParallel: 4, waitSeconds: 540, timeouts: { judge: 1200 }, groups: {}, models: {} } } }
+  const { pairs } = require('../plugins/aether/lib/pairs.js').loadPairs()
+  const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.now() + days * 24 * HOUR).toISOString() })
+  const held = { usable: false, unknown: false, mark: { reason: 'quota refusal' }, resetsAt: new Date(Date.now() + 24 * HOUR).toISOString() }
+  const view = (gemini) => ({ agy: { installed: true, groups: { gemini, claude: open(3) } } })
+  const chosen = seats.chooseSeat({ config, pairs, seat: 'judge', harnesses: view(held) })
+  assert.equal(chosen.external.pair.id, 'agy/claude-opus-5-5@high')
+  assert.deepEqual(chosen.tried.find((entry) => entry.id === 'agy/gemini-4-argon@high'), { id: 'agy/gemini-4-argon@high', outcome: 'passed', why: 'dry' })
+  assert.equal(seats.chooseSeat({ config, pairs, seat: 'judge', harnesses: view(open(1)) }).external.pair.id, 'agy/gemini-4-argon@high')
 })
 
 // ---- a mark of a key the table does not have ----
@@ -331,16 +349,27 @@ test('aether-lane quota and status lift a mark from a reading when the fresh rea
   assert.notEqual(groups('quota').gemini.mark, null)
 })
 
-test('a seat round lifts a mark from a reading when the group reads healthy, and a refusal\'s mark keeps its round on the native agent', (t) => {
+test('a seat round lifts a mark from a reading when the group reads healthy, and a refusal\'s mark keeps its round off that group', (t) => {
   const repo = seatRepo(t)
-  const env = fx.laneEnv(t)
+  const env = fx.laneEnv(t, { quota: geminiFirst() })
   marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reading: dry(), reserve: RESERVE, now: Date.now() - 20 * MIN })
   const lifted = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
   assert.equal(lifted.status, 0, JSON.stringify(lifted.json))
+  assert.equal(lifted.json.model, 'gemini-4-argon')
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null, 'the fresh reading of the group (90 %) lifted the mark')
 
   marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reserve: RESERVE, now: Date.now() - 20 * MIN, refusal: quotaRefusal(REFUSAL) })
   const held = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
-  assert.equal(held.status, 3, JSON.stringify(held.json))
-  assert.deepEqual(held.json.tried, [{ model: 'agy/gemini-4-argon', reason: 'quota' }])
+  assert.equal(held.status, 0, JSON.stringify(held.json))
+  assert.equal(held.json.model, 'claude-opus-5-5', 'the held group is passed over for the next pair')
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini').reason, 'quota refusal')
+
+  // With both keys held, no pair is left and the native agent takes the round.
+  marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'claude', reserve: RESERVE, now: Date.now() - 20 * MIN, refusal: quotaRefusal(REFUSAL) })
+  const turns = fx.agyTurns(env).length
+  const none = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
+  assert.equal(none.status, 3, JSON.stringify(none.json))
+  assert.deepEqual(none.json.tried.find((entry) => entry.id === 'agy/gemini-4-argon@high'), { id: 'agy/gemini-4-argon@high', outcome: 'passed', why: 'dry' })
+  assert.equal(none.json.native.agent, 'aether:judge')
+  assert.equal(fx.agyTurns(env).length, turns, 'no held group is called')
 })
