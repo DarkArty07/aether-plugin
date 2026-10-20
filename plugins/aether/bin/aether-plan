@@ -12,6 +12,8 @@ const { parsePlan, buildGraph, renderBrief, specObjective, requirementsOf, trace
 const { repoPaths, currentBranch, head } = require(path.join(lib, 'git.js'))
 const run = require(path.join(lib, 'run.js'))
 const lanes = require(path.join(lib, 'lanes.js'))
+const superdelegation = require(path.join(lib, 'superdelegation.js'))
+const { loadPairs } = require(path.join(lib, 'pairs.js'))
 const baseline = require(path.join(lib, 'baseline.js'))
 
 const USAGE =
@@ -134,23 +136,24 @@ function compile(planArg, rest) {
   const graph = buildGraph(parsed, { only })
   const errors = [...parsed.errors, ...graph.errors]
   if (errors.length) fail(errors, graph.warnings)
-  // With the plugin's lanes option off, or off Linux, the run is native and the lane table is not read.
-  const enabled = lanes.lanesEnabled()
+  // With the plugin's superdelegation option off, or off Linux, the run is native and the lane table is not read.
+  const enabled = superdelegation.enabled()
   if (!rest.includes('--no-lanes') && !enabled.on) {
     process.stderr.write(
       enabled.reason === 'platform'
-        ? 'aether-plan: lanes are off: lanes need Linux\n'
-        : "aether-plan: lanes are off: the aether plugin's lanes option is not on\n",
+        ? 'aether-plan: superdelegation is off: superdelegation needs Linux\n'
+        : "aether-plan: superdelegation is off: the aether plugin's superdelegation option is not on\n",
     )
   }
-  // A lane table that loadConfig refuses throws here, before anything is written.
+  // A lane table or a pairs table that fails to load throws here, before anything is written.
   let laneArgs = null
   if (!rest.includes('--no-lanes') && enabled.on) {
     const config = lanes.loadConfig(lanes.configPath())
-    const installed = (name, harness) => lanes.commandInstalled(harness.command)
-    laneArgs = lanes.lanesArgs(config, { installed })
-    for (const { name, reason } of lanes.idleHarnesses(config, { installed })) {
-      process.stderr.write(`aether-plan: lanes: ${name} is enabled but ${reason}\n`)
+    const { pairs } = loadPairs()
+    const options = { installed: (name, harness) => lanes.commandInstalled(harness.command), enabled: lanes.enabledHarnesses() }
+    laneArgs = superdelegation.runArgs(config, pairs, options)
+    for (const { name, reason } of superdelegation.idleHarnesses(config, pairs, options)) {
+      process.stderr.write(`aether-plan: superdelegation: ${name} is enabled but ${reason}\n`)
     }
   }
 
