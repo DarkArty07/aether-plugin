@@ -24,7 +24,7 @@ This page describes how Aether turns an intent into a reviewed spec, a plan, a b
   - code deletes every unit worktree and branch as soon as it is no longer used.
 - **Superdelegation** runs everything that is not the Lead, in the swarm and in the design, on other coding harnesses while their quota lasts, with native Claude as the fallback: agy today, and Codex, Grok, Cursor and Muse once the owner turns each one on. `superdelegation`, off by default; the [Lanes](guide/lanes.md#lanes) guide has the rule.
 - **`/aether:design`** is the workflow that runs the design: it takes the intent card to an approved spec, plan and tasks with the Writer, the Judge and the Examiner, and gives the Lead one result. It needs the Workflow tool.
-- **The design seats** let the Judge, the Writer and the Examiner each be taken, one round at a time, by a stronger model of another harness, with Aether's own agent as the fallback. The [Design seats](guide/design-seats.md#design-seats) guide has the choices.
+- **The design seats** let the Judge, the Writer and the Examiner each be taken, one round at a time, by a pair of another harness that reaches the points of the native agent, with Aether's own agent as the fallback. The [Design seats](guide/design-seats.md#design-seats) guide has the rule.
 
 The owner sits above all of them: they confirm the Lead's understanding of what they want, may give permission to work for hours, answer one list of what only they can decide, and review the brief at the end. The [Autonomy](guide/autonomy.md#autonomy) guide covers that permission, the ceilings and the list.
 

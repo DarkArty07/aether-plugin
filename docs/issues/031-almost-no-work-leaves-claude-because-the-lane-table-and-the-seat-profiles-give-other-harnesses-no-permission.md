@@ -3,8 +3,10 @@
 **Type:** improvement (lanes, design seats, RADAR C3 Delegación)
 **Date:** 2026-10-19
 **Found in:** the owner's questions in the Lead's session 4cb63536, during the autonomous run `auto-20261019-145237-9fff` (spec 008, Muse Code)
-**Status:** open. The owner will fix it in another session; the run that found it does not work on it.
+**Status:** fixed in 0.14.0 (2026-10-20), by superdelegation (A65, spec `specs/009-superdelegation/`). See the Update below.
 **GitHub:** not filed
+
+**Update 2026-10-20, 0.14.0:** fixed. One option, `superdelegation`, off by default, replaces `lanes` and the three seat profiles (proposal 1: one rule for the seats, no profiles). A call asks for the Artificial Analysis intelligence of its reference pair, and any external pair within one point may take it, by measurement and not by a hand-written table (proposal 2); the Writer's corrections are seat rounds (proposal 3); `max` is no special case: it goes to a pair that reaches its points, and none does today (proposal 4); speed decides nothing, by the owner's word, not as a cap (proposal 5, left out); the report names, per call, the pair asked, the pair that took it and why (proposal 6, without a target). Seen in a real run of three tasks on 2026-10-20: four of seven calls went to other harnesses, three supervisors on Grok and a Haiku implementer on Gemini Flash; the two Sonnet implementers were picked on Gemini 4 Argon, which refused for its individual quota, and ran native. The acceptance's last line holds: the `seats` option no longer asks the owner to choose between sides.
 
 ## What happened
 
