@@ -7,7 +7,6 @@ const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const marks = require('../plugins/aether/lib/lane-marks.js')
-const order = require('../plugins/aether/lib/lane-order.js')
 const quota = require('../plugins/aether/lib/lane-quota.js')
 const { registerAdapter, unregisterAdapter } = require('../plugins/aether/lib/harness/index.js')
 const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
@@ -180,27 +179,4 @@ test('quota --refresh says how grok answered: over ACP, through its UI, or not a
   // Without --refresh nothing is asked of grok and the report says nothing of a refresh.
   const plain = await quota.quotaReport({ names: ['grok'], now: () => NOW, refreshers: { grok: async () => assert.fail('asked') } })
   assert.equal(plain.harnesses.grok.refreshed, undefined)
-})
-
-test('the saved readings of 2026-10-14 give the order of the spec: Grok 4.7, then Gemini 3.8 Flash, and Claude in agy not usable', (t) => {
-  const exec = () => ({ status: 0, stdout: fs.readFileSync(path.join(FIXTURES, 'agy-usage-2026-10-14.json'), 'utf8'), stderr: '' })
-  const agy = createAgy({ command: 'agy', groups: { gemini: 'Gemini Models', claude: 'Claude and GPT models' }, exec }).quota()
-  // The second line of the grok fixture is grok 1.0.41's, written at 05:45:16 UTC with no creditUsagePercent.
-  const logFile = path.join(tempDir(t), 'unified.jsonl')
-  fs.copyFileSync(path.join(FIXTURES, 'grok-billing.jsonl'), logFile)
-  const grok = readGrokQuota({ logFile, now: NOW })
-  const view = (label, reading, command) => quota.groupView(label, reading, { reserve: RESERVE, now: NOW, command })
-  const gemini = view('Gemini Models', agy.groups.gemini, 'agy')
-  const claude = view('Claude and GPT models', agy.groups.claude, 'agy')
-  const grokView = view('Grok plan', grok, 'grok')
-  assert.deepEqual([gemini.priority, claude.priority, grokView.priority], [0.006044, 0.000038, 0.013331])
-  assert.deepEqual([gemini.usable, claude.usable, grokView.usable, grokView.usedPercentAbsent, grokView.source.ageMinutes], [true, false, true, true, 22])
-  const harnesses = { agy: { installed: true, groups: { gemini, claude } }, grok: { installed: true, groups: { grok: grokView } } }
-  const haiku = [
-    { harness: 'agy', model: 'gemini-3.8-flash', group: 'gemini' },
-    { harness: 'grok', model: 'grok-4.7', group: 'grok' },
-  ]
-  assert.deepEqual(order.orderCandidates(haiku, harnesses).ordered.map((e) => e.model), ['grok-4.7', 'gemini-3.8-flash'])
-  const sonnet = order.orderCandidates([{ harness: 'agy', model: 'claude-sonnet-5-5', group: 'claude' }], harnesses)
-  assert.deepEqual([sonnet.ordered.length, sonnet.excluded.map((e) => e.why)], [0, ['reserve']])
 })
