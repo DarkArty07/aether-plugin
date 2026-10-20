@@ -8,57 +8,95 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { makeRepo } = require('./helpers.js')
+const { makeRepo, tempDir } = require('./helpers.js')
 const { LANE_BIN, laneEnv, agyTurns, argAfter, git } = require('./lane-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const seats = require('../plugins/aether/lib/seats.js')
+const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 
+const { chooseSeat, NATIVE, seatCommand } = seats
+const { pairs } = loadPairs()
 const FEATURE = 'specs/001-demo'
-const shipped = () => lanes.loadConfig(lanes.CONFIG_FILE)
-const fine = { windows: { '5h': { remaining: 0.9, resetsAt: 'a' }, weekly: { remaining: 0.9, resetsAt: 'b' } } }
-const choose = (options) =>
-  seats.chooseSeat(shipped(), { enabled: ['agy'], installed: () => true, quota: () => fine, ...options })
-
-test('chooseSeat takes the first external model of the choice, and gives the seat to the native agent otherwise', () => {
-  const judge = choose({ choice: 'balanced', seat: 'judge' })
-  assert.deepEqual(judge.external, {
-    harness: 'agy',
-    model: 'gemini-4-argon',
-    group: 'gemini',
-    effort: 'high',
-    level: 'high',
-    timeoutSeconds: 1200,
-    quotaBefore: fine,
-  })
-  assert.equal(choose({ choice: 'robust', seat: 'writer' }).external.level, 'high', 'the Writer runs at xhigh, which agy names high')
-  assert.equal(choose({ choice: 'robust', seat: 'writer' }).external.timeoutSeconds, 2700)
-  assert.deepEqual(choose({ choice: 'balanced', seat: 'writer' }), { native: seats.NATIVE.writer, tried: [] })
-  assert.deepEqual(choose({ choice: 'native', seat: 'judge' }), { native: seats.NATIVE.judge, tried: [] })
-  assert.deepEqual(choose({ choice: 'native', seat: 'examiner' }), { off: true, tried: [] })
-  assert.deepEqual(choose({ choice: 'robust', seat: 'examiner' }), { native: seats.NATIVE.examiner, tried: [] })
+const DAY = 86400000
+const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString() })
+const dry = { usable: false, unknown: false, mark: null, resetsAt: '2026-10-21T00:00:00.000Z' }
+const world = (g = open(2), c = open(3)) => ({ agy: { installed: true, groups: { gemini: g, claude: c } } })
+const config = { harnesses: { agy: { command: 'agy', maxParallel: 4, waitSeconds: 540, timeouts: { implementer: 1, supervisor: 1, reviewer: 1, judge: 1200, writer: 2700, examiner: 1800 }, groups: {}, models: {} } } }
+const choose = (seat, more = {}) => chooseSeat({ config, pairs, seat, harnesses: world(), ...more })
+// What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
+// the Judge, as it does when the quota that renews first is Gemini's.
+const geminiFirst = () => ({
+  'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * DAY).toISOString()],
+  'Claude and GPT models': [0.9, 0.9, null, new Date(Date.now() + 3 * DAY).toISOString()],
 })
 
-test('chooseSeat passes over a model whose harness is off, not installed or out of quota, and the author', () => {
-  const passed = (options) => choose({ choice: 'balanced', seat: 'judge', ...options }).tried
-  assert.deepEqual(passed({ enabled: ['codex'] }), [{ model: 'agy/gemini-4-argon', reason: 'harness-off' }])
-  assert.deepEqual(passed({ installed: () => false }), [{ model: 'agy/gemini-4-argon', reason: 'not-installed' }])
-  assert.deepEqual(passed({ quota: () => ({ windows: { '5h': { remaining: 0.01, resetsAt: 'a' } } }) }), [{ model: 'agy/gemini-4-argon', reason: 'quota' }])
-  const unreadable = () => {
-    throw new Error('agy /usage failed')
-  }
-  assert.deepEqual(passed({ quota: unreadable }), [{ model: 'agy/gemini-4-argon', reason: 'quota-unreadable' }])
-  for (const author of ['gemini-4-argon', 'agy/gemini-4-argon']) {
-    const chosen = choose({ choice: 'balanced', seat: 'judge', author })
-    assert.deepEqual(chosen.tried, [{ model: 'agy/gemini-4-argon', reason: 'author' }], author)
-    assert.equal(chosen.native.agent, 'aether:judge')
+test('the Judge asks the points of Opus high and the cheapest pair of the quota that renews first takes it', () => {
+  const chosen = choose('judge')
+  assert.equal(chosen.decision.requested, 53.6)
+  assert.equal(chosen.external.pair.id, 'agy/gemini-4-argon@high')
+  assert.deepEqual([chosen.external.harness, chosen.external.model, chosen.external.effort, chosen.external.level, chosen.external.timeoutSeconds], ['agy', 'gemini-4-argon', 'high', 'high', 1200])
+  assert.equal(chosen.external.group, 'gemini')
+  assert.deepEqual(chosen.external.quotaBefore, open(2), 'the quota view of the pair group, for the lane line')
+})
+
+test('the Writer asks Sonnet high (46.8), and its external effort is the pair effort, never a translated one', () => {
+  const chosen = choose('writer', { harnesses: world(dry, open(3)) })
+  assert.equal(chosen.decision.requested, 46.8)
+  assert.equal(chosen.external.effort, chosen.external.pair.effort)
+  assert.equal(chosen.external.timeoutSeconds, 2700)
+})
+
+test('with every quota dry the native agent of the seat takes it; the Examiner has no off state', () => {
+  for (const seat of ['judge', 'writer', 'examiner']) {
+    const chosen = choose(seat, { harnesses: world(dry, dry) })
+    assert.equal(chosen.external, undefined)
+    assert.equal(chosen.native.agent, NATIVE[seat].agent)
+    assert.equal('off' in chosen, false)
   }
 })
 
-test('chooseSeat never tries a model the harness does not offer (issue 016)', () => {
-  const chosen = choose({ choice: 'balanced', seat: 'judge', offered: () => false })
-  assert.deepEqual(chosen.tried, [{ model: 'agy/gemini-4-argon', reason: 'not-offered' }])
-  assert.equal(chosen.native.agent, 'aether:judge')
-  // The shipped listing: Argon at the level each seat maps to is offered, an unknown model is not,
+test('C12: a Judge never takes the model that wrote the document, external or native', () => {
+  const external = choose('judge', { author: 'gemini-4-argon' })
+  assert.notEqual(external.external.pair.family, 'gemini-4-argon')
+  const native = choose('judge', { author: 'opus', harnesses: world(dry, dry) })
+  assert.notEqual(native.native.model, 'opus')
+  assert.notEqual(choose('examiner', { author: 'opus', harnesses: world(dry, dry) }).native.model, 'opus')
+  assert.equal(choose('writer', { author: 'sonnet', harnesses: world(dry, dry) }).native.model, 'sonnet')
+})
+
+test('the native agent of a seat comes from its decision, with the seat agent in front', () => {
+  const chosen = choose('judge', { author: 'opus', harnesses: world(dry, dry) })
+  assert.deepEqual(chosen.native, { agent: 'aether:judge', ...chosen.decision.native })
+  assert.deepEqual(choose('writer', { harnesses: world(dry, dry) }).native.agent, 'aether:writer')
+  assert.deepEqual(chosen.tried.find((entry) => entry.id === 'agy/gemini-4-argon@high'), { id: 'agy/gemini-4-argon@high', outcome: 'passed', why: 'dry' })
+})
+
+test('a pair of a group that has no reading competes after the readable ones, and a pair of a harness that is off does not', () => {
+  const noGemini = { agy: { installed: true, groups: { claude: open(3) } } }
+  assert.equal(choose('judge', { harnesses: noGemini }).external.pair.id, 'agy/claude-opus-5-5@high', 'the readable group comes first')
+  const unread = choose('judge', { harnesses: { agy: { installed: true, groups: {} } } })
+  assert.equal(unread.external.pair.id, 'agy/claude-opus-5-5@high', 'no group is read, so the cheapest pair that reaches the points takes it')
+  assert.equal(unread.external.quotaBefore, null)
+  const off = choose('judge', { harnesses: {} })
+  assert.equal(off.external, undefined)
+  assert.ok(off.tried.every((entry) => entry.why === 'harness-off'))
+})
+
+test('issue 016: a pair that the captured listing does not offer is not chosen, and the decision and tried say not-offered', () => {
+  const argon = pairs.find((p) => p.id === 'agy/gemini-4-argon@high')
+  const chosen = choose('judge', { offered: (harnessName, model, effort) => !(model === 'gemini-4-argon' && effort === 'high') })
+  assert.notEqual(chosen.external && chosen.external.pair.id, argon.id)
+  const entry = chosen.decision.candidates.find((c) => c.id === argon.id)
+  assert.deepEqual([entry.outcome, entry.why, entry.rank], ['passed', 'not-offered', null])
+  assert.deepEqual(chosen.tried.find((e) => e.id === argon.id), { id: argon.id, outcome: 'passed', why: 'not-offered' })
+  const none = choose('judge', { offered: () => false })
+  assert.equal(none.external, undefined)
+  assert.equal(none.native.agent, NATIVE.judge.agent)
+  assert.ok(none.decision.candidates.every((c) => c.why === 'not-offered'))
+  assert.ok(none.tried.some((e) => e.id === argon.id && e.why === 'not-offered'))
+  // The native pairs are the reference and the fallback: offered never takes them away.
+  assert.equal(none.decision.native.model, 'opus')
+  // The shipped listing: Argon at the level of its pair is offered, an unknown model is not,
   // and a harness with no listing captured cannot refuse a model.
   assert.equal(seats.offeredByListing('agy', 'gemini-4-argon', 'high'), true)
   assert.equal(seats.offeredByListing('agy', 'gemini-9-neon', 'high'), false)
@@ -66,12 +104,16 @@ test('chooseSeat never tries a model the harness does not offer (issue 016)', ()
   assert.equal(seats.offeredByListing('agy', 'gemini-4-argon', 'high', null), true)
 })
 
-test("chooseSeat marks a native agent of the author's own model, the only seat left", () => {
-  const chosen = choose({ choice: 'balanced', seat: 'judge', author: 'opus', enabled: [] })
-  assert.equal(chosen.native.sameModelAsAuthor, true)
-  assert.equal(choose({ choice: 'balanced', seat: 'judge', author: 'claude-sonnet-5-5', enabled: [] }).native.sameModelAsAuthor, undefined)
+test('the seat module no longer holds the retired names', () => {
+  assert.equal('EXTERNAL_EFFORT' in seats, false)
+  const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'seats.js'), 'utf8')
+  for (const name of ['EXTERNAL_EFFORT', 'designSeats', 'seatsChoice', 'seatList', 'SEAT_CHOICES']) assert.equal(source.includes(name), false, name)
+})
+
+test('authorModel reads a lane model, a harness model or a Claude alias', () => {
   assert.equal(seats.authorModel('sonnet'), 'claude-sonnet-5-5')
   assert.equal(seats.authorModel('agy/claude-opus-5-5'), 'claude-opus-5-5')
+  assert.equal(seats.authorModel('gemini-4-argon'), 'gemini-4-argon')
   assert.equal(seats.authorModel(''), null)
 })
 
@@ -88,7 +130,7 @@ function seatRepo(t) {
 // Runs `aether-lane seat` with the message on stdin.
 function seat(cwd, args, env, input = '') {
   const base = { ...process.env }
-  for (const name of ['AETHER_SEATS', 'AETHER_LANE_HARNESSES', 'AETHER_LANES', 'CLAUDE_ENV_FILE']) delete base[name]
+  for (const name of ['AETHER_SUPERDELEGATION', 'AETHER_LANE_HARNESSES', 'CLAUDE_ENV_FILE']) delete base[name]
   const r = spawnSync(process.execPath, [LANE_BIN, 'seat', ...args], { cwd, input, encoding: 'utf8', env: { ...base, ...env } })
   let json = null
   try {
@@ -111,7 +153,7 @@ function seatLog(env) {
 
 test('an external Judge reviews the commit in a disposable worktree, and its answer comes back in the native format', (t) => {
   const repo = seatRepo(t)
-  const env = laneEnv(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
   const before = repo.git('rev-parse', 'HEAD')
   const r = seat(repo.dir, ['judge', '--session', 's1', '--author', 'sonnet', '--feature', FEATURE], env, `Review ${FEATURE}/spec.md.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`)
   assert.equal(r.status, 0, r.stdout + r.stderr)
@@ -142,7 +184,10 @@ test('an external Judge reviews the commit in a disposable worktree, and its ans
   assert.equal(entry.seat, 'judge')
   assert.equal(entry.run, null)
   assert.equal(entry.status, 'ok')
-  assert.equal(entry.choice, 'balanced')
+  assert.equal('choice' in entry, false, 'there is no seats choice any more')
+  assert.deepEqual([entry.reference.id, entry.reference.model, entry.reference.effort], ['claude/opus@high', 'opus', 'high'])
+  assert.match(entry.reason, /^agy\/gemini-4-argon@high: 52\.6 points for 53\.6 asked/)
+  assert.equal(entry.effort, 'high')
   assert.equal(entry.model, 'gemini-4-argon-high')
   assert.equal(entry.session, 's1')
 })
@@ -187,39 +232,56 @@ test('nothing runs, and the native agent takes the seat, when the external one c
   const repo = seatRepo(t)
   const input = `FAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`
   const cases = [
-    [{ AETHER_LANES: 'off' }, [], 'lanes-off'],
-    [{ AETHER_SEATS: 'native' }, [], 'no-external'],
-    [{ AETHER_LANE_HARNESSES: 'codex' }, [{ model: 'agy/gemini-4-argon', reason: 'harness-off' }], 'no-external'],
+    [{ AETHER_SUPERDELEGATION: 'off' }, 'superdelegation-off', (tried) => assert.deepEqual(tried, [])],
+    [{ AETHER_LANE_HARNESSES: 'codex' }, 'no-external', (tried) => assert.ok(tried.length > 0 && tried.every((entry) => entry.why === 'harness-off'))],
   ]
-  for (const [extra, tried, reason] of cases) {
+  for (const [extra, reason, checkTried] of cases) {
     const env = { ...laneEnv(t), ...extra }
     const r = seat(repo.dir, ['judge', '--session', 's1'], env, input)
     assert.equal(r.status, 3, JSON.stringify(extra))
     assert.equal(r.json.unavailable, reason)
-    assert.deepEqual(r.json.tried, tried)
+    checkTried(r.json.tried)
     assert.equal(r.json.native.agent, 'aether:judge')
+    assert.equal(r.json.decision.reference.id, 'claude/opus@high')
     assert.deepEqual(agyTurns(env), [], 'no turn ran')
   }
-  const author = seat(repo.dir, ['judge', '--session', 's1', '--author', 'gemini-4-argon'], laneEnv(t), input)
-  assert.deepEqual(author.json.tried, [{ model: 'agy/gemini-4-argon', reason: 'author' }])
-  const quota = laneEnv(t, { quota: { 'Gemini Models': [0.02, 0.9], 'Claude and GPT models': [0.9, 0.9] } })
-  assert.deepEqual(seat(repo.dir, ['judge', '--session', 's1'], quota, input).json.tried, [{ model: 'agy/gemini-4-argon', reason: 'quota' }])
+  const quota = laneEnv(t, { quota: { 'Gemini Models': [0.02, 0.9], 'Claude and GPT models': [0.02, 0.9] } })
+  const dried = seat(repo.dir, ['judge', '--session', 's1'], quota, input)
+  assert.equal(dried.status, 3)
+  assert.deepEqual(dried.json.tried.find((entry) => entry.id === 'agy/gemini-4-argon@high'), { id: 'agy/gemini-4-argon@high', outcome: 'passed', why: 'dry' })
+  assert.deepEqual(agyTurns(quota), [])
 
   fs.appendFileSync(path.join(repo.dir, FEATURE, 'spec.md'), 'more\n')
   const dirty = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], laneEnv(t), input)
   assert.equal(dirty.status, 3)
   assert.equal(dirty.json.unavailable, 'uncommitted')
+  assert.equal(dirty.json.native.agent, 'aether:judge')
 })
 
-test('the examiner of the native choice is off, and no agent takes it', (t) => {
+test('a Judge whose author is the one external model that reaches the points goes to another pair, and to the native agent when none is left', (t) => {
   const repo = seatRepo(t)
-  const env = { ...laneEnv(t), AETHER_SEATS: 'native' }
+  const input = `FAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const other = seat(repo.dir, ['judge', '--session', 's1', '--author', 'gemini-4-argon'], env, input)
+  assert.equal(other.status, 0, other.stdout)
+  assert.equal(other.json.model, 'claude-opus-5-5', 'Argon wrote it, so the next pair that reaches the points reviews it')
+  const both = laneEnv(t, { quota: geminiFirst() })
+  const native = seat(repo.dir, ['judge', '--session', 's1', '--author', 'opus'], { ...both, AETHER_LANE_HARNESSES: 'codex' }, input)
+  assert.equal(native.status, 3)
+  assert.notEqual(native.json.native.model, 'opus')
+  assert.deepEqual(agyTurns(both), [])
+})
+
+test('with superdelegation off the Examiner is handed to the native agent like any seat, and the log says so', (t) => {
+  const repo = seatRepo(t)
+  const env = { ...laneEnv(t), AETHER_SUPERDELEGATION: 'off' }
   const r = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], env, 'exam\n')
   assert.equal(r.status, 3)
-  assert.deepEqual(r.json, { unavailable: 'off', seat: 'examiner', choice: 'native', native: null, tried: [] })
+  assert.equal(r.json.unavailable, 'superdelegation-off')
+  assert.deepEqual([r.json.native.agent, r.json.native.model, r.json.native.effort], ['aether:examiner', 'opus', 'high'])
   assert.deepEqual(
-    seatLog(env).map((e) => [e.kind, e.seat, e.status]),
-    [['seat', 'examiner', 'off']],
+    seatLog(env).map((e) => [e.kind, e.seat, e.status, e.reason, e.reference.id]),
+    [['seat', 'examiner', 'native', 'superdelegation-off', 'claude/opus@high']],
   )
 })
 
@@ -245,12 +307,13 @@ test('the seat command refuses what it cannot run', (t) => {
 
 test("aether-report --seats counts each seat's rounds, who answered, and why the native agent took the others", (t) => {
   const repo = seatRepo(t)
-  const env = laneEnv(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const off = { ...env, AETHER_SUPERDELEGATION: 'off' }
   const ok = `FAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`
   assert.equal(seat(repo.dir, ['judge', '--session', 's1'], env, ok).status, 0)
   assert.equal(seat(repo.dir, ['judge', '--session', 's1'], env, 'FAKE-AGY: exit-error\n').status, 4)
-  assert.equal(seat(repo.dir, ['judge', '--session', 's1'], { ...env, AETHER_SEATS: 'native' }, ok).status, 3)
-  assert.equal(seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], { ...env, AETHER_SEATS: 'native' }, ok).status, 3)
+  assert.equal(seat(repo.dir, ['judge', '--session', 's1'], off, ok).status, 3)
+  assert.equal(seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], off, ok).status, 3)
   assert.equal(seat(repo.dir, ['judge', '--session', 's2'], env, ok).status, 0)
 
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-report'), '--seats', '--session', 's1'], {
@@ -260,19 +323,22 @@ test("aether-report --seats counts each seat's rounds, who answered, and why the
   })
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const report = JSON.parse(r.stdout)
-  assert.equal(report.rounds, 3)
+  assert.equal(report.rounds, 4)
   assert.equal(report.external, 1)
-  assert.equal(report.externalShare, 1 / 3)
-  assert.deepEqual(report.bySeat.judge, {
+  assert.equal(report.externalShare, 1 / 4)
+  const { decisions, ...judge } = report.bySeat.judge
+  assert.deepEqual(judge, {
     rounds: 3,
     external: 1,
     native: 2,
     off: 0,
-    reasons: { 'external failed': 1, 'no-external': 1 },
+    reasons: { 'external failed': 1, 'superdelegation-off': 1 },
     models: { 'agy gemini-4-argon-high': { rounds: 2, ok: 1 } },
   })
-  assert.equal(report.bySeat.examiner.off, 1)
-  assert.equal(report.bySeat.examiner.rounds, 0)
+  assert.deepEqual(decisions.map((d) => [d.status, d.reference.id]), [['ok', 'claude/opus@high'], ['failed', 'claude/opus@high'], ['native', 'claude/opus@high']])
+  assert.equal(decisions[2].reason, 'superdelegation-off')
+  assert.match(decisions[0].reason, /^agy\/gemini-4-argon@high: /)
+  assert.deepEqual([report.bySeat.examiner.rounds, report.bySeat.examiner.native, report.bySeat.examiner.off], [1, 1, 0])
   assert.equal(report.lanes.calls, 2)
   assert.equal(report.lanes.byRole.judge.calls, 2)
   assert.deepEqual(report.notes, [])
@@ -317,7 +383,7 @@ function writerInput(files, { extra = '' } = {}) {
 
 test("an external Writer writes the plan and the tasks, and Aether checks and commits them in the Lead's checkout", (t) => {
   const repo = seatRepo(t)
-  const env = { ...laneEnv(t), AETHER_SEATS: 'robust' }
+  const env = laneEnv(t, { quota: geminiFirst() })
   const files = writerFiles(t)
   const before = repo.git('rev-parse', 'HEAD')
   const r = seat(repo.dir, ['writer', '--session', 's1', '--author', 'sonnet', '--feature', FEATURE], env, writerInput(files))
@@ -341,7 +407,7 @@ test("an external Writer writes the plan and the tasks, and Aether checks and co
 
 test('a Writer whose tasks fail aether-plan check, or that leaves none, gives the round back, and the checkout is as it was', (t) => {
   const repo = seatRepo(t)
-  const env = { ...laneEnv(t), AETHER_SEATS: 'robust' }
+  const env = laneEnv(t, { quota: geminiFirst() })
   const before = repo.git('rev-parse', 'HEAD')
   const failing = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], env, writerInput(writerFiles(t, { valid: false })))
   assert.equal(failing.status, 4, failing.stdout)
@@ -363,12 +429,12 @@ test('a Writer whose tasks fail aether-plan check, or that leaves none, gives th
   assert.equal(fs.existsSync(path.join(repo.dir, FEATURE, 'tasks.md')), false)
 })
 
-test('the balanced choice keeps the Writer native', (t) => {
+test('with superdelegation off the Writer is the native Writer, handed back from its decision', (t) => {
   const repo = seatRepo(t)
-  const r = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], laneEnv(t), writerInput(writerFiles(t)))
+  const r = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], { ...laneEnv(t), AETHER_SUPERDELEGATION: 'off' }, writerInput(writerFiles(t)))
   assert.equal(r.status, 3)
-  assert.equal(r.json.unavailable, 'no-external')
-  assert.deepEqual(r.json.native, seats.NATIVE.writer)
+  assert.equal(r.json.unavailable, 'superdelegation-off')
+  assert.deepEqual([r.json.native.agent, r.json.native.model, r.json.native.effort], [NATIVE.writer.agent, 'sonnet', 'high'])
 })
 
 // ---- The quota a round used ----
@@ -385,4 +451,32 @@ test('windowUsed reads what a round used from a window agy held no reset time fo
   assert.equal(seats.windowUsed(at(1, '2026-10-16T04:50:00Z'), at(0.99, '2026-10-16T04:38:00Z'), '5h'), '?')
   assert.equal(seats.windowUsed(at(1, null), at(0.99, '2026-10-16T04:38:00Z'), '5h'), '?')
   assert.equal(seats.windowUsed(null, at(0.9, 'x'), '5h'), '?')
+})
+
+// ---- The switch ----
+
+test('C2: with superdelegation off the seat command hands the round to the native agent and runs no harness', async (t) => {
+  const repo = makeRepo(t)
+  const env = { ...process.env, AETHER_SUPERDELEGATION: 'off', AETHER_DATA_DIR: tempDir(t, 'aether-data-') }
+  for (const [seat, model] of [['judge', 'opus'], ['writer', 'sonnet'], ['examiner', 'opus']]) {
+    const feature = seat === 'judge' ? [] : ['--feature', 'specs/007-demo']
+    const { exitCode, value } = await seatCommand([seat, '--session', 's1', ...feature], { input: 'x', env, cwd: repo.dir })
+    assert.equal(exitCode, 3, seat)
+    assert.equal(value.unavailable, 'superdelegation-off')
+    assert.deepEqual([value.native.model, value.native.effort], [model, 'high'])
+  }
+  for (const seat of ['judge', 'examiner']) {
+    const feature = seat === 'judge' ? [] : ['--feature', 'specs/007-demo']
+    const { value } = await seatCommand([seat, '--session', 's1', '--author', 'opus', ...feature], { input: 'x', env, cwd: repo.dir })
+    assert.notEqual(value.native.model, 'opus', `${seat}, off, does not fall on the author model`)
+  }
+})
+
+test('E7: when the external round of a Judge fails, the native Judge handed back is not the author model', (t) => {
+  const repo = seatRepo(t)
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--author', 'opus'], laneEnv(t), 'FAKE-AGY: exit-error\n')
+  assert.equal(r.status, 4, r.stdout + r.stderr)
+  assert.equal(r.json.native.agent, 'aether:judge')
+  assert.notEqual(r.json.native.model, 'opus')
+  assert.equal(r.json.decision.reference.id, 'claude/opus@high')
 })
