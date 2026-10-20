@@ -16,7 +16,7 @@ const AETHER = { hook_event_name: 'SessionStart', session_id: 's1', source: 'sta
 // The hook's environment, without what a surrounding session may have set.
 function hookEnv(data, extra = {}) {
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }
-  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'AETHER_LANES']) delete env[key]
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_SEATS', 'AETHER_SUPERDELEGATION', 'AETHER_SUPERDELEGATION_LEGACY']) delete env[key]
   return { ...env, ...extra }
 }
 
@@ -161,7 +161,7 @@ test('a session that is not Aether gets nothing: no output, no file, no environm
   assert.equal(fs.existsSync(unit.path), true, 'the stale run is not swept')
 })
 
-test('an Aether session is marked, gets the lanes line, and gets the context', (t) => {
+test('an Aether session is marked, gets the superdelegation lines, and gets the context', (t) => {
   const repo = makeRepo(t)
   const data = tempDir(t, 'aether-data-')
   const envFile = path.join(tempDir(t), 'env.sh')
@@ -169,17 +169,41 @@ test('an Aether session is marked, gets the lanes line, and gets the context', (
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.out.hookSpecificOutput.additionalContext, /^Aether mode is active\./)
   assert.equal(JSON.parse(fs.readFileSync(path.join(data, 'sessions', 's1.json'), 'utf8')).session, 's1')
-  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_LANES=off\nexport AETHER_LANE_HARNESSES=agy\nexport AETHER_SEATS=balanced\n')
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
 })
 
-test('the lanes line is on only when the lanes option is exactly true, and is appended', (t) => {
+function exported(t, extra = {}) {
   const repo = makeRepo(t)
-  for (const [value, line] of [['true', 'export AETHER_LANES=on\n'], ['false', 'export AETHER_LANES=off\n'], ['TRUE', 'export AETHER_LANES=off\n'], ['', 'export AETHER_LANES=off\n']]) {
-    const envFile = path.join(tempDir(t), 'env.sh')
-    fs.writeFileSync(envFile, 'export OTHER=1\n')
-    start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_LANES: value } })
-    assert.equal(fs.readFileSync(envFile, 'utf8'), `export OTHER=1\n${line}export AETHER_LANE_HARNESSES=agy\nexport AETHER_SEATS=balanced\n`, value)
-  }
+  const envFile = path.join(tempDir(t, 'aether-env-'), 'env')
+  const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, ...extra } })
+  assert.equal(r.status, 0, r.stderr)
+  return { text: fs.readFileSync(envFile, 'utf8'), context: r.out.hookSpecificOutput.additionalContext }
+}
+
+test('C1: with nothing set, superdelegation is off and nothing is ignored', (t) => {
+  const { text, context } = exported(t)
+  assert.equal(text, 'export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
+  assert.doesNotMatch(context, /seats option|lanes option/)
+})
+
+test('C1: a set superdelegation wins, true or false', (t) => {
+  assert.ok(exported(t, { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }).text.startsWith('export AETHER_SUPERDELEGATION=on\n'))
+  assert.ok(exported(t, { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', CLAUDE_PLUGIN_OPTION_LANES: 'true' }).text.startsWith('export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=lanes-ignored\n'))
+})
+
+test('E8: lanes on with superdelegation unset counts as on, and seats native is ignored, and the owner is told both', (t) => {
+  const { text, context } = exported(t, { CLAUDE_PLUGIN_OPTION_LANES: 'true', CLAUDE_PLUGIN_OPTION_SEATS: 'native' })
+  assert.equal(text, 'export AETHER_SUPERDELEGATION=on\nexport AETHER_SUPERDELEGATION_LEGACY=lanes-as-on,seats-ignored\nexport AETHER_LANE_HARNESSES=agy\n')
+  assert.ok(context.includes('The lanes option is on and superdelegation is not set, so superdelegation counts as on. Set superdelegation to choose it yourself.'))
+  assert.ok(context.includes('The seats option no longer exists (native, balanced and robust are gone): its value is ignored.'))
+})
+
+test('the lines are appended to what the file already holds', (t) => {
+  const repo = makeRepo(t)
+  const envFile = path.join(tempDir(t), 'env.sh')
+  fs.writeFileSync(envFile, 'export OTHER=1\n')
+  start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' } })
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export OTHER=1\nexport AETHER_SUPERDELEGATION=on\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
 })
 
 test('the harness line keeps the known names of the option, in order, or is agy when none is valid', (t) => {
@@ -194,30 +218,15 @@ test('the harness line keeps the known names of the option, in order, or is agy 
     const envFile = path.join(tempDir(t), 'env.sh')
     const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_HARNESSES: value } })
     assert.equal(r.status, 0, r.stderr)
-    assert.equal(fs.readFileSync(envFile, 'utf8'), `export AETHER_LANES=off\nexport AETHER_LANE_HARNESSES=${list}\nexport AETHER_SEATS=balanced\n`, JSON.stringify(value))
+    assert.equal(fs.readFileSync(envFile, 'utf8'), `export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=${list}\n`, JSON.stringify(value))
   }
 })
 
-test('the seats line is the option when it names native, balanced or robust, and balanced otherwise, with a note', (t) => {
-  const repo = makeRepo(t)
-  const cases = [
-    ['native', 'native', false],
-    [' Robust ', 'robust', false],
-    ['balanced', 'balanced', false],
-    ['', 'balanced', false],
-    ['cheap', 'balanced', true],
-  ]
-  for (const [value, choice, noted] of cases) {
-    const envFile = path.join(tempDir(t), 'env.sh')
-    const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_SEATS: value } })
-    assert.equal(r.status, 0, r.stderr)
-    assert.equal(fs.readFileSync(envFile, 'utf8'), `export AETHER_LANES=off\nexport AETHER_LANE_HARNESSES=agy\nexport AETHER_SEATS=${choice}\n`, JSON.stringify(value))
-    const note = `The seats option is "${value}", which is not native, balanced or robust, so the design seats are balanced.`
-    assert.equal(r.out.hookSpecificOutput.additionalContext.includes(note), noted, JSON.stringify(value))
-  }
+test('the harness list is still the option, or agy', (t) => {
+  assert.match(exported(t, { CLAUDE_PLUGIN_OPTION_HARNESSES: 'grok, AGY,nope' }).text, /export AETHER_LANE_HARNESSES=grok,agy\n$/)
 })
 
-test('a resumed Aether session is marked and gets the lanes line, with no output', (t) => {
+test('a resumed Aether session is marked and gets the superdelegation lines, with no output', (t) => {
   const repo = makeRepo(t)
   const data = tempDir(t, 'aether-data-')
   const envFile = path.join(tempDir(t), 'env.sh')
@@ -225,13 +234,13 @@ test('a resumed Aether session is marked and gets the lanes line, with no output
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, '')
   assert.equal(fs.existsSync(path.join(data, 'sessions', 's1.json')), true)
-  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_LANES=off\nexport AETHER_LANE_HARNESSES=agy\nexport AETHER_SEATS=balanced\n')
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
 })
 
-test('without CLAUDE_ENV_FILE the context says the lanes are off', (t) => {
+test('without CLAUDE_ENV_FILE the context says superdelegation is off', (t) => {
   const repo = makeRepo(t)
-  const r = start(repo.dir, tempDir(t, 'aether-data-'))
-  assert.ok(r.out.hookSpecificOutput.additionalContext.includes("Aether could not pass the lanes option to this session's commands, so lanes are off."))
+  const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' } })
+  assert.ok(r.out.hookSpecificOutput.additionalContext.includes("Aether could not pass the superdelegation option to this session's commands, so superdelegation is off."))
 })
 
 test('an invalid or missing session id is said in the context, and writes no marker', (t) => {

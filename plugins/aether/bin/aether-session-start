@@ -2,7 +2,7 @@
 'use strict'
 
 // SessionStart hook. It acts only for the Lead (agent_type aether:lead): any other session
-// gets no output, no file and no sweep. For the Lead it marks the session, hands the lanes
+// gets no output, no file and no sweep. For the Lead it marks the session, hands the superdelegation
 // option to the session's commands through CLAUDE_ENV_FILE, and, on startup, clear and
 // compact, injects the using-aether bootstrap, points to an open autonomous run, sweeps
 // stale runs in the session's repository, and prunes old usage files, lane logs and
@@ -85,33 +85,32 @@ function mark(sessionId) {
   }
 }
 
-// Appends the lanes line, the harness list and the seats choice to CLAUDE_ENV_FILE; returns false when it
-// could not. The list is the option's known names, or agy when none is valid, and the choice is native,
-// balanced or robust, or balanced when the option names none of them: lanes.js reads both the same way.
-function passLanes() {
+// Appends the superdelegation option, what of the old options is ignored and the harness list to
+// CLAUDE_ENV_FILE; returns false when it could not. The option is resolved by lib/superdelegation.js, the
+// legacy tokens say which old values were read or ignored, and the list is the option's known names, or agy
+// when none is valid: lanes.js reads it the same way.
+function passSuperdelegation() {
   const file = process.env.CLAUDE_ENV_FILE
   if (!file) return false
   try {
-    const { enabledHarnesses, seatsChoice } = require(path.join(root, 'lib', 'lanes.js'))
+    const { resolveOption } = require(path.join(root, 'lib', 'superdelegation.js'))
+    const { enabledHarnesses } = require(path.join(root, 'lib', 'lanes.js'))
+    const { on, legacy } = resolveOption(process.env)
     const harnesses = enabledHarnesses({ AETHER_LANE_HARNESSES: process.env.CLAUDE_PLUGIN_OPTION_HARNESSES })
-    const seats = seatsChoice({ AETHER_SEATS: process.env.CLAUDE_PLUGIN_OPTION_SEATS })
-    const lanes = `export AETHER_LANES=${process.env.CLAUDE_PLUGIN_OPTION_LANES === 'true' ? 'on' : 'off'}\n`
-    fs.appendFileSync(file, `${lanes}export AETHER_LANE_HARNESSES=${harnesses.join(',')}\nexport AETHER_SEATS=${seats.name}\n`)
+    fs.appendFileSync(file, `export AETHER_SUPERDELEGATION=${on ? 'on' : 'off'}\nexport AETHER_SUPERDELEGATION_LEGACY=${legacy.join(',')}\nexport AETHER_LANE_HARNESSES=${harnesses.join(',')}\n`)
     return true
   } catch {
     return false
   }
 }
 
-// The note for a seats option that names none of the choices, or null.
-function seatsNote() {
+// What the owner is told about old option values that were read or ignored; empty when there are none.
+function legacyContext() {
   try {
-    const { seatsChoice } = require(path.join(root, 'lib', 'lanes.js'))
-    const seats = seatsChoice({ AETHER_SEATS: process.env.CLAUDE_PLUGIN_OPTION_SEATS })
-    if (seats.known) return null
-    return `The seats option is "${process.env.CLAUDE_PLUGIN_OPTION_SEATS}", which is not native, balanced or robust, so the design seats are ${seats.name}.`
+    const { resolveOption, legacyNotes } = require(path.join(root, 'lib', 'superdelegation.js'))
+    return legacyNotes(resolveOption(process.env).legacy)
   } catch {
-    return null
+    return []
   }
 }
 
@@ -139,7 +138,7 @@ function main() {
   if (input.agent_type !== LEAD_AGENT) return
 
   const markFailure = mark(input.session_id)
-  const lanesPassed = passLanes()
+  const passed = passSuperdelegation()
 
   const source = input.source === undefined ? 'startup' : input.source
   if (!['startup', 'clear', 'compact'].includes(source)) return
@@ -148,8 +147,8 @@ function main() {
   const context = [
     'Aether mode is active.',
     bootstrap(),
-    lanesPassed ? '' : "Aether could not pass the lanes option to this session's commands, so lanes are off.",
-    seatsNote(),
+    passed ? '' : "Aether could not pass the superdelegation option to this session's commands, so superdelegation is off.",
+    ...legacyContext(),
     markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
     sweepNote(),
     autonomyNote(),
