@@ -142,7 +142,7 @@
         "knowledgeCutoff": null,
         "availability": "Stable in the Gemini API (id gemini-4-argon). Rolled out on 2026-10-13 to Google AI Pro and Ultra in the Gemini app. `agy models` 1.3.6 lists it as gemini-4-argon-low, -medium and -high on the owner's machine from 2026-10-15, and the Judge, Examiner and Writer seats each ran a round on it that day.",
         "caveats": [
-          "agy takes it at low, medium and high; Aether's xhigh runs at high.",
+          "agy takes it at low, medium and high; it has no xhigh, so the pair rule asks it only for the efforts it takes.",
           "Not measured against the native Judge yet (R16 of spec 001): the seeded-defects harness found 6 of 6 defects in one round per fixture, which shows that it works, not that it matches Opus.",
           "Inputs, outputs and cutoff are not on the pages read."
         ],

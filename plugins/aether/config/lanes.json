@@ -54,7 +54,7 @@
         "grok-4.7": {
           "group": "grok",
           "roles": ["implementer"],
-          "note": "Grok 4.7 (xAI: built for coding, agentic tasks and knowledge work; 500K context; effort low, medium, high, xhigh), checked on 2026-10-13. Artificial Analysis: 46.4 intelligence and 0.258 terminal-bench at xhigh, above Gemini 3.8 Flash (0.197) and below Haiku 5.5 at xhigh (0.293), so it sits at the haiku tier. Aether's xhigh maps to high: AA scores high at 46.3 and 0.247 against 46.4 and 0.258 at xhigh, with a time to first token of 9 s against 15 s. models/profiles.json in the plugin's config folder has its profile. grok-4.7-build-fast is the same model on faster infrastructure at twice the token price, billed through the plan: it is not a cheaper lane, and it is left out."
+          "note": "Grok 4.7 (xAI: built for coding, agentic tasks and knowledge work; 500K context; effort low, medium, high, xhigh), checked on 2026-10-13. Artificial Analysis: 46.4 intelligence and 0.258 terminal-bench at xhigh, above Gemini 3.8 Flash (0.197) and below Haiku 5.5 at xhigh (0.293), so it scores below Haiku 5.5 at xhigh on that benchmark. The harness takes xhigh as it is, and the pairs table (config/pairs.json) holds its low, high and xhigh pairs, which the pair rule judges by their points: AA scores high at 46.3 and 0.247 against 46.4 and 0.258 at xhigh, with a time to first token of 9 s against 15 s. models/profiles.json in the plugin's config folder has its profile. grok-4.7-build-fast is the same model on faster infrastructure at twice the token price, billed through the plan: it is not a cheaper lane, and it is left out."
         }
       }
     },

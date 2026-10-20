@@ -210,7 +210,8 @@ function status(cwd, runId, { latest = {} } = {}) {
 
 // The wave's quota step: renews the reading of each enabled harness that has a way to renew it (grok, over ACP and then
 // through its UI) and whose reading is missing, unknown or older than its life. Only `status --refresh` calls it, and
-// nobody calls it from start or the runner. A harness that cannot be refreshed leaves its reading as it is; the answer
+// nobody calls it from start or the runner. No workflow sends that form any more; it stays for the mod's tests and for the
+// workflows already installed. A harness that cannot be refreshed leaves its reading as it is; the answer
 // names the harnesses it tried, each as { refreshed, method, reading }.
 async function refreshStale(cwd, runId) {
   run.assertRunId(runId)

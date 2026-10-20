@@ -75,7 +75,8 @@ const COMMANDS = {
   ],
   'aether-lane': [
     { checks: [word('status'), is(RUN)] },
-    // The wave's quota step: it asks for the refresh explicitly.
+    // The wave's quota step: it asks for the refresh explicitly. No workflow sends this form any more; it stays for the mod's
+    // tests and for the workflows already installed.
     { checks: [word('status'), is(RUN), word('--refresh')] },
     // Superdelegation: the pair for a call (--exclude, then --author, when given), who took it, and a pause.
     ...pickForms(),
