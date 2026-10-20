@@ -5,7 +5,8 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { PLUGIN, runBin, useDataDir, tempDir } = require('./helpers.js')
-const { sampleUsage, finishedRun } = require('./report-fixtures.js')
+const { T0, MIN, sampleUsage, finishedRun } = require('./report-fixtures.js')
+const { appendLog } = require('../plugins/aether/lib/lanes.js')
 
 const REPORT_BIN = path.join(PLUGIN, 'bin', 'aether-report')
 
@@ -66,4 +67,20 @@ test('aether-report reports errors as JSON and exits 1', (t) => {
   r = runBin(REPORT_BIN, [], repo.dir)
   assert.equal(r.status, 1)
   assert.match(r.json.error, /^usage: aether-report/)
+})
+
+test('aether-report --run prints the per-call choices, the delegated work and what the session ignored', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  const reference = { id: 'claude/sonnet@high', model: 'sonnet', effort: 'high', intelligence: 46.8 }
+  appendLog(dataDir, null, { kind: 'choice', time: T0 + 4 * MIN, session: null, run: args.runId, design: null, call: 'task-1-1-implement', role: 'implementer', requested: 46.8, reference, picked: null, reason: 'native', candidates: [] })
+  appendLog(dataDir, null, { kind: 'took', time: T0 + 6 * MIN, session: null, run: args.runId, call: 'task-1-1-implement', by: 'native', cause: 'no-candidate' })
+  const r = runBin(REPORT_BIN, ['--run', args.runId, '--no-tests'], repo.dir, { AETHER_SUPERDELEGATION: 'off', AETHER_SUPERDELEGATION_LEGACY: 'seats-ignored' })
+  assert.equal(r.status, 0, r.stdout)
+  assert.deepEqual(r.json.lanes.run.choices.map((c) => [c.call, c.reference, c.by, c.ms]), [['task-1-1-implement', reference, 'native', 2 * MIN]])
+  assert.deepEqual(r.json.radar.delegation.work, { calls: 1, external: 0, native: 1, externalShare: 0 })
+  assert.deepEqual(r.json.radar.delegation.quotaByHarness, {})
+  assert.equal(r.json.superdelegation.on, false)
+  assert.equal(r.json.superdelegation.legacy.length, 1)
 })
