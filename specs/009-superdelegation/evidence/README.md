@@ -34,3 +34,7 @@ Lo que muestran, en el costo por tarea:
 - El precio por token engaña: Opus `high` (53.6, US$ 1.82, 53M tokens) cuesta menos por tarea que Sonnet `xhigh` (51.9, US$ 2.01, 110M tokens).
 - Dentro de un mismo modelo hay pares que no aportan: Grok `xhigh` (46.4, US$ 3.74) da lo mismo que Grok `high` (46.3, US$ 2.73).
 - Faltan el costo de Gemini 3.8 Flash `low` y la velocidad de Flash `medium`: Artificial Analysis no los publica.
+
+## Muse (añadido el 2026-10-20, tras la 0.13.0)
+
+La CLI de Muse ofrece a la cuenta del dueño un solo modelo, `muse-wonder-full-1.0`, con efforts de `minimal` a `xhigh` (`config/models/harness-models.json`). Artificial Analysis lo mide solo a `max`: Muse Wonder Full (Max), 55.8 de inteligencia y 140M tokens del índice; no publica su precio ni su costo por tarea, ni su velocidad. Por eso entra por la decisión del dueño (tarjeta, C16 y fila 15), no por medida. Los otros modelos de Muse que Artificial Analysis mide (Muse Wonder 52.4, Muse Spark 1.3 48.1 a `max` y 45.1 a `xhigh`) no los ofrece la CLI a esta cuenta.

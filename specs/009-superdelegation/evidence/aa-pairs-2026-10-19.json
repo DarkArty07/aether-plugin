@@ -270,5 +270,25 @@
       "timeToFirstTokenS": 21.7,
       "timeIndex": 3.32
     }
-  ]
+  ],
+  "muse": {
+    "checked": "2026-10-20",
+    "model": "muse-wonder-full-1.0",
+    "offeredEfforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "aa": {
+      "slug": "muse-wonder-full",
+      "name": "Muse Wonder Full (Max)",
+      "intelligence": 55.8,
+      "indexOutputTokensM": 140,
+      "costPerTaskUsd": null,
+      "outputTokensPerSecond": null
+    },
+    "note": "Measured only at max, which the CLI does not take; no price or cost per task published. It enters by the owner decision recorded in config/lanes.json (ownerDecision)."
+  }
 }
