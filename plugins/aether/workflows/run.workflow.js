@@ -19,7 +19,7 @@ export const meta = {
 // With lanes in the args (superdelegation on), each implementer, supervisor and final review asks
 // `aether-lane pick` for the pair that takes it, and runs on that external harness through aether-lane;
 // it runs on the native agent of the decision when no pair takes it, the harness stays full past the
-// wait, or the pair fails it.
+// wait, or every pair that began it failed it (three at most).
 
 const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -34,6 +34,9 @@ const NOT_A_VERDICT = 'The verdict was not one of approve, retry, escalate or bl
 const NOT_A_REVIEW_VERDICT = 'The verdict was not one of ready, ready-with-fixes or not-ready, so it counts as not-ready.'
 const NOT_A_LIST = 'The findings were not a list, so the approval counts as a retry.'
 const AREA_MEMORY = 10
+// At most this many pairs begin one external call before it runs native; a start that is
+// unavailable began nothing and does not count.
+const MAX_PAIR_TRIES = 3
 // The failures a unit keeps (its `failures`): an attempt without a report, or a retry or an escalation
 // with the titles of its blocking findings. The same failure can stop a unit early (see work()).
 const NO_REPORT = 'no report'
@@ -388,12 +391,15 @@ const tookNative = (id, routed, where) => took(id, 'native', routed.outcome ? 'f
 
 // One call through superdelegation (R14 to R16). It asks for a decision; with a pair, it waits for a place on
 // the pair's harness, up to cupo.polls rounds of `aether-lane pause`, looking before each round, and runs on it
-// (see laneCall). A start that is unavailable asks again without that pair, until no pair is left. Resolves to
-// { decision, pair, outcome, cause }: the last decision; the pair that ran and its outcome, or null for a call
-// that runs native, then on decision.native, with the cause `took` gives it. `build(pair)` gives the call's
-// { task, prompt, base } on that pair.
+// (see laneCall). A start that is unavailable, and a call that began and then failed, ask again without that
+// pair, until no pair is left or MAX_PAIR_TRIES pairs have begun a call. Resolves to
+// { decision, pair, outcome, cause, failures }: the last decision; the pair that ran and its outcome, or null
+// for a call that runs native, then on decision.native, with the cause `took` gives it; and the infra
+// failures of this call in order, each { pair, model, reason }. `build(pair, failures)` gives the call's
+// { task, prompt, base } on that pair, with the failures so far.
 async function external({ role, model, effort, id, exclude = [], author = null, phase, label, build }) {
   const excluded = [...exclude]
+  const failures = []
   let decision = await decide({ role, model, effort, id, exclude: excluded, author, phase, label })
   let cause = 'no-candidate'
   while (decision.picked) {
@@ -402,7 +408,7 @@ async function external({ role, model, effort, id, exclude = [], author = null, 
     for (let round = 0; ; round++) {
       // The place is taken in the same step that finds it free: laneCall counts itself in flight before any await.
       if (inFlightOf(pair.harness) < capOf(pair.harness)) {
-        outcome = await laneCall({ role, id, pair, phase, ...build(pair) })
+        outcome = await laneCall({ role, id, pair, phase, ...build(pair, failures) })
         break
       }
       if (round >= lanes.cupo.polls) break
@@ -411,14 +417,16 @@ async function external({ role, model, effort, id, exclude = [], author = null, 
     if (outcome === null) {
       laneCounts.overflow++
       log(`${label}: ${pair.harness} stayed full for ${lanes.cupo.polls} waits, so the call runs native`)
-      return { decision, pair: null, outcome: null, cause: 'wait-limit' }
+      return { decision, pair: null, outcome: null, cause: 'wait-limit', failures }
     }
-    if (outcome.kind !== 'unavailable') return { decision, pair, outcome, cause: 'chosen' }
+    if (outcome.kind === 'infra') failures.push({ pair, model: outcome.model, reason: outcome.reason })
+    if (outcome.kind !== 'unavailable' && outcome.kind !== 'infra') return { decision, pair, outcome, cause: 'chosen', failures }
     excluded.push(pair.id)
     cause = 'failed'
+    if (failures.length >= MAX_PAIR_TRIES) return { decision, pair: null, outcome: null, cause, failures }
     decision = await decide({ role, model, effort, id, exclude: excluded, author, phase, label })
   }
-  return { decision, pair: null, outcome: null, cause }
+  return { decision, pair: null, outcome: null, cause, failures }
 }
 
 // One call on a pair (lanes spec §6.1): start it with its prompt as the payload, wait for its result,
@@ -426,7 +434,7 @@ async function external({ role, model, effort, id, exclude = [], author = null, 
 // on its harness from before its first await until it settles, so external() calls it right after it finds room.
 // Resolves to { kind: 'ok', result, lane }, { kind: 'violation', files, model },
 // { kind: 'blocked', detail }, { kind: 'unavailable', reason } when it did not start, or
-// { kind: 'infra', model, reason } for an infrastructure failure, which the native agent takes over.
+// { kind: 'infra', model, reason } for an infrastructure failure, which the next pair, or then the native agent, takes over.
 async function laneCall({ role, id, task, pair, prompt, phase, base }) {
   const harness = pair.harness
   lanesInFlight.set(harness, inFlightOf(harness) + 1)
@@ -491,7 +499,7 @@ async function laneCall({ role, id, task, pair, prompt, phase, base }) {
         laneCounts.blocked++
         return { kind: 'blocked', detail: String(reply.detail || '') }
     }
-    // A status the runner never writes, or ok without a result: the native agent takes the call.
+    // A status the runner never writes, or ok without a result: the next pair, or then the native agent, takes the call.
     return infra(`an unexpected result with status ${String(reply.status).slice(0, 40)}`)
   } finally {
     lanesInFlight.set(harness, inFlightOf(harness) - 1)
@@ -718,15 +726,23 @@ function findingsFailure(findings) {
 }
 
 // One attempt's implementer: on the pair the decision gives, else native on the decision's native pair (without
-// lanes, on the attempt's rung). After the pair's infrastructure failure the same attempt runs native, told what
-// happened. `exclude` names the pair the attempt before ran on. Resolves to { report, provider, laneFailure, pair,
-// family }, with `failure` (the round's summary) when the pair's changes fell outside Owns, or to { blocked } with
-// the pair's detail. `pair` is the id of the external pair that ran the attempt, or null; `family` is the model
-// family that ran it, or null when no decision named it.
+// lanes, on the attempt's rung). After a pair's infrastructure failure the same attempt runs on the next pair,
+// or then native, told what happened. `exclude` names the pair the attempt before ran on. Resolves to
+// { report, provider, laneFailure, pair, family }, with `failure` (the round's summary) when the pair's changes
+// fell outside Owns, or to { blocked } with the pair's detail. `pair` is the id of the external pair that ran
+// the attempt, or null; `family` is the model family that ran it, or null when no decision named it.
 async function implement(unit, task, model, effort, rung, context, exclude) {
   const n = unit.attempts
   const id = `${unit.id}-${n}-implement`
   const where = { phase: 'Implement', label: `${unit.id}: implement on ${rung} (attempt ${n})` }
+  const withFailures = (failures) =>
+    failures.length
+      ? [
+          ...(context ? [...context, ''] : []),
+          '## An external agent began this attempt',
+          ...failures.map((f) => `${f.pair.harness} ${f.model} stopped before it finished: ${f.reason}. Its uncommitted work, if any, is in the worktree. Continue from it.`),
+        ]
+      : context
   let laneFailure = null
   let native = { model, effort, family: null }
   let routed = null
@@ -738,14 +754,18 @@ async function implement(unit, task, model, effort, rung, context, exclude) {
       id,
       exclude,
       ...where,
-      build: (pair) => ({
+      build: (pair, failures) => ({
         task: unit.id,
-        prompt: implementerPrompt(unit, task, rung, context, { lane: true }),
+        prompt: implementerPrompt(unit, task, rung, withFailures(failures), { lane: true }),
         base: `${unit.id}: implement via ${pair.harness} ${pair.model} on ${rung} (attempt ${n})`,
       }),
     })
     native = routed.decision.native
-    const { pair, outcome } = routed
+    const { pair, outcome, failures } = routed
+    if (failures.length) {
+      const last = failures[failures.length - 1]
+      laneFailure = { harness: last.pair.harness, model: last.model, reason: last.reason }
+    }
     if (outcome && outcome.kind !== 'infra') {
       tookByPair(id, pair, where)
       const ran = { pair: pair.id, family: familyOf(pair) }
@@ -754,14 +774,7 @@ async function implement(unit, task, model, effort, rung, context, exclude) {
       const failure = `The external agent changed files outside the task's Owns: ${list(outcome.files)}. Revert those changes.`
       return { report: null, failure, provider: `${pair.harness} ${outcome.model}`, laneFailure, ...ran }
     }
-    if (outcome) {
-      laneFailure = { harness: pair.harness, model: outcome.model, reason: outcome.reason }
-      context = [
-        ...(context ? [...context, ''] : []),
-        '## An external agent began this attempt',
-        `${pair.harness} ${outcome.model} stopped before it finished: ${outcome.reason}. Its uncommitted work, if any, is in the worktree. Continue from it.`,
-      ]
-    }
+    context = withFailures(failures)
   }
   // The label names the model and effort the agent runs on (scripts/check-effort.js reads them).
   const report = await call('implementer', native.model, native.effort, implementerPrompt(unit, task, rung, context), {
