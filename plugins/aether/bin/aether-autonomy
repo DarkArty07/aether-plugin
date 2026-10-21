@@ -9,15 +9,20 @@
 // aether-autonomy spend  <usd> --source <label>
 // aether-autonomy status
 // aether-autonomy end    --outcome done|ceiling|incomplete
+// aether-autonomy brake-settings [--session <id>]
+// aether-autonomy brake-off --quote <text> [--session <id>]
+// aether-autonomy brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>]
+// aether-autonomy quota-saved --from <saved.json>
 
+const fs = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 const { repoPaths } = require(path.join(lib, 'git.js'))
-const { ensureExcluded } = require(path.join(lib, 'run.js'))
+const { ensureExcluded, dataDir } = require(path.join(lib, 'run.js'))
 const autonomy = require(path.join(lib, 'autonomy.js'))
 
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json>'
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -67,7 +72,7 @@ function main(argv) {
   const all = sub === 'revoke' && argv.includes('--all')
   const rest = argv.slice(1).filter((a) => !(sub === 'revoke' && a === '--all'))
 
-  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'spend', 'status', 'end'].includes(sub)) {
+  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'spend', 'status', 'end', 'brake-settings', 'brake-off', 'brake-crossing', 'quota-saved'].includes(sub)) {
     throw new Error(USAGE)
   }
 
@@ -152,6 +157,47 @@ function main(argv) {
     const outcome = value(rest, '--outcome')
     if (!outcome) throw new Error(USAGE)
     return { code: 0, out: { ended: autonomy.end(mainRoot, outcome) } }
+  }
+
+  if (sub === 'brake-settings') {
+    const session = getSession(rest, false)
+    return { code: 0, out: autonomy.brakeSettings(mainRoot, { session, dataDir: process.env.AETHER_DATA_DIR || dataDir() }) }
+  }
+
+  if (sub === 'brake-off') {
+    const quote = value(rest, '--quote')
+    if (!quote) throw new Error(USAGE)
+    const session = getSession(rest, true)
+    ensureExcluded(gitCommonDir)
+    const res = autonomy.brakeOff(mainRoot, { quote, session })
+    if (!res.ok && res.reason === 'no open run') return { code: 1, out: { error: 'no open run' } }
+    if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }
+    return { code: 0, out: { brakeOff: res.brakeOff } }
+  }
+
+  if (sub === 'brake-crossing') {
+    const kind = value(rest, '--kind')
+    const rawPercent = value(rest, '--percent')
+    const resetsAt = value(rest, '--resets-at')
+    const rawThreshold = value(rest, '--threshold')
+    const rawNotify = value(rest, '--notify')
+    if (kind === null || rawPercent === null || resetsAt === null || rawThreshold === null || rawNotify === null) throw new Error(USAGE)
+    const percentUsed = parseNumber(rawPercent, 'percent')
+    const threshold = parseNumber(rawThreshold, 'threshold')
+    let notify
+    if (rawNotify === 'sent') notify = { sent: true, reason: null }
+    else if (rawNotify === 'failed') notify = { sent: false, reason: value(rest, '--notify-reason') ?? 'no-channel' }
+    else throw new Error(USAGE)
+    ensureExcluded(gitCommonDir)
+    return { code: 0, out: autonomy.recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify }, { dataDir: process.env.AETHER_DATA_DIR || dataDir() }) }
+  }
+
+  if (sub === 'quota-saved') {
+    const from = value(rest, '--from')
+    if (!from) throw new Error(USAGE)
+    const saved = JSON.parse(fs.readFileSync(from, 'utf8'))
+    ensureExcluded(gitCommonDir)
+    return { code: 0, out: autonomy.recordSaved(mainRoot, saved) }
   }
 }
 

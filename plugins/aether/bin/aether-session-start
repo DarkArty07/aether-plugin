@@ -34,12 +34,17 @@ function sweepNote() {
 function autonomyNote() {
   try {
     const { repoPaths } = require(path.join(root, 'lib', 'git.js'))
-    const { openRun, runPaths } = require(path.join(root, 'lib', 'autonomy.js'))
+    const { openRun, runPaths, status } = require(path.join(root, 'lib', 'autonomy.js'))
     const { mainRoot } = repoPaths(process.cwd())
     const run = openRun(mainRoot)
     if (!run) return ''
     const { diary } = runPaths(mainRoot, run.id)
-    return `Autonomous run ${run.id} is open: load the aether:autonomous-runs skill, then read ${diary} and run \`aether-autonomy status\` before anything else.`
+    let note = `Autonomous run ${run.id} is open: load the aether:autonomous-runs skill, then read ${diary} and run \`aether-autonomy status\` before anything else.`
+    const current = status(mainRoot)
+    if (current && current.stop === 'quota' && current.quota) {
+      note += ` The run is paused by the quota brake: the five-hour window resets ${current.quota.resetsAt} and the run resumes ${current.quota.resumeAt}. Do not start anything of this run before then; Aether re-arms the resume in this session.`
+    }
+    return note
   } catch {
     return ''
   }
