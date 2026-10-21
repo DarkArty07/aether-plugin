@@ -5,9 +5,11 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const path = require('node:path')
 const { makeRepo, compile } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { runWorkflow, laneAnswer, laneOf } = require('./workflow-harness.js')
+const { PLUGIN } = require('./helpers.js')
 
 const LANES = { superdelegation: true, harnesses: ['agy'], maxParallelByHarness: { agy: 4 }, waits: { implementer: 3, supervisor: 2, reviewer: 2 }, cupo: { polls: 2, pollSeconds: 60 } }
 const FAMILY = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
@@ -148,4 +150,21 @@ test('lanes off: no aether-lane command, and the slices run native as before', a
   assert.equal(run.result.finalReview.status, 'done')
   assert.equal(run.result.finalReview.provider, 'native')
   assert.deepEqual(run.result.finalReview.slicesBy, ['native', 'native'])
+})
+
+// The workflow's lane commands pass the real parsers: the mod's closed list (which runs them without a model) and the
+// bin's own call id check. A stub answers them in the tests above, so only this one shows an id that the real list refuses.
+test('every lane command of a sliced run is one the mod answers and the bin accepts, the slices\' included', async (t) => {
+  const { parseOpsPrompt, PAYLOAD_PATH } = await import(path.join(PLUGIN, 'hooks', 'ops-command.mjs'))
+  const CALL = require('../plugins/aether/lib/lane-pick.js').CALL
+  const run = await runWorkflow(slicedRun(t), { lane: onSlices({ 'final-review-slice-1': [SONNET], 'final-review-slice-2': [SONNET] }) })
+  ok(run)
+  const lane = run.calls.filter((c) => c.kind.startsWith('ops:lane-'))
+  assert.ok(lane.some((c) => c.lane.call === 'final-review-slice-1') && lane.some((c) => c.lane.call === 'final-review-slice-2'))
+  for (const call of lane) {
+    if (call.lane.call && call.command.verb !== 'pause') assert.ok(CALL.test(call.lane.call), `${call.command.line}: the bin accepts the call id`)
+    if (!['pick', 'took', 'start', 'wait', 'result', 'stop', 'pause'].includes(call.command.verb)) continue
+    assert.ok(parseOpsPrompt(call.prompt), `the mod answers: ${call.command.line}`)
+    if (call.payload) assert.ok(PAYLOAD_PATH.test(call.payload.path), `the mod saves the payload: ${call.payload.path}`)
+  }
 })
