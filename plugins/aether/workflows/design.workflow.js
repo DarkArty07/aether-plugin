@@ -14,8 +14,9 @@ export const meta = {
 // and the Examiner writes the exam. A short design runs only the Judge's rounds on one document, with the Writer to
 // correct it. Every round of the Judge, the Writer (its drafts and its corrections) and the Examiner is a seat round:
 // `aether-lane seat-start` picks the pair with the same function as the swarm (an external pair first, the native
-// agent last), and the script waits for it in steps. A round that fails on its pair asks `seat-start` again, without
-// the pairs it tried, up to three tries in all. Whenever the round does not run, does not answer or has no pair left,
+// agent last), and the script waits for it in steps. A round that fails (exit 4), breaks (exit 1) or does not start
+// asks `seat-start` again, without the pairs it tried, up to three tries in all. After the third, or whenever the
+// round has no pair left (exit 3), does not finish or answers without a result that fits,
 // the native agent takes it with the same message, in the model and effort the seat's reply names (a Judge or an
 // Examiner is never the model that wrote the document), or in the seat's reference pair when it names none. The one
 // document no Writer seat can write is design.md of a short design: its corrections are the native Writer's. The
@@ -407,8 +408,9 @@ function handedBackNote(reply) {
 }
 
 // Starts a seat round and waits for it, without the pairs in `exclude`: { id, reply } with what seat-wait printed once it
-// finished, or { id, note } when it did not finish (then it is stopped), or { id: null, note, startFailed } when it did
-// not start. `id` is the round's, once it started.
+// finished (exit 0, 1, 3 or 4), or { id, note } when it did not finish (then it is stopped), or { id: null, note,
+// startFailed } when it did not start. `id` is the round's, once it started. seatRound decides which of these ask for
+// the next pair.
 async function awaitSeat({ seat, base, flags, exclude, text, phase }) {
   const excluding = exclude.length > 0 ? ` --exclude ${exclude.join(',')}` : ''
   const started = await ops(`aether-lane seat-start ${seat} ${flags}${excluding} --digest ${digest(text)}`, {
@@ -438,11 +440,13 @@ function failedPair(reply, value) {
 }
 
 // One round of a seat (R2). The seat round answers, or the native agent takes the round with the same message: after
-// exit 3, 4 or 1, a start that failed, or a round that did not finish. A round that ends failed (exit 4) on a pair
-// the reply names, or whose start failed, asks `seat-start` again with --exclude holding the pairs it tried, up to
-// MAX_TRIES tries in all; the native agent takes it after the last, or at once when the reply is exit 3 (no pair is
-// left), the round did not finish, or the reply names no pair to leave out. `tries` in the round's record lists the
-// tries that failed, once the next pair was asked. `author` is the model that wrote the document under review, so
+// exit 3, 4 or 1, a start that failed, or a round that did not finish. A round that ends failed (exit 4) or broke
+// (exit 1), or whose start failed, asks `seat-start` again with --exclude holding the pairs it tried, up to MAX_TRIES
+// tries in all; a reply that names no pair (exit 1, a failed start, or exit 4 naming none that --exclude can take)
+// carries the same exclusion. The native agent takes it after the last, or at once when the reply is exit 3 (no pair
+// is left), the round did not finish, or an exit-0 answer does not fit. `tries` in the round's record lists every
+// failed try once the next pair was asked, including the one that ended the external tries (exit 3, where nothing
+// ran, is not an entry). `author` is the model that wrote the document under review, so
 // that no seat takes it; `writes` is the Writer's --doc (spec or plan). `schema` is the shape of an external answer;
 // the native agent answers with `nativeSchema`, which is the same unless the round is a correction.
 // Resolves to { answer, text, seat, model, value } (seat: 'native' or '<harness> <model>'; model: the one that
@@ -475,9 +479,18 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
     } else {
       record.note = waited.note
     }
-    // A try that failed on a pair, or did not start, asks for the next pair; any other end leaves the round to the native agent.
+    // A try that failed (exit 4), broke (exit 1) or did not start asks for the next pair, carrying the same exclusion
+    // when the reply names no pair to add; any other end leaves the round to the native agent at once.
     const pair = waited.reply ? failedPair(waited.reply, value) : null
-    if (pair === null && waited.startFailed !== true) break
+    const retryable = waited.startFailed === true || (waited.reply && (waited.reply.exitCode === 1 || waited.reply.exitCode === 4))
+    if (!retryable) {
+      // Once the next pair was asked, the try that ends the external tries is listed too; exit 3 ran nothing.
+      if (tries.length > 0 && !(waited.reply && waited.reply.exitCode === 3)) {
+        tries.push({ pair, id: waited.id, reason: record.note, next: false })
+        record.tries = tries
+      }
+      break
+    }
     const next = n < MAX_TRIES && (pair === null || !excluded.includes(pair))
     tries.push({ pair, id: waited.id, reason: record.note, next })
     if (!next) break
