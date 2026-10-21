@@ -15,7 +15,7 @@ The Lead describes the task and the router decides what it runs on: the model, t
 - **Only the Lead's delegate tasks.** The router looks at the Agent calls of the Lead whose agent is not an `aether:*` one. The swarm keeps the Tier and the ladder of its plan, the design seats and the swarm's calls follow the `superdelegation` rule in [Lanes](lanes.md#lanes), and the `aether:*` agents keep their own model and effort. The Lead's own model is not touched.
 - **The mod does the work.** `plugins/aether/hooks/router.mjs` hooks the Agent tool and talks to `aether-route`, which holds the policy. In a session that is not an Aether session it does nothing.
 - **Any failure leaves the call as the Lead made it.** An exception, a bin that fails or a decision that does not come back never blocks a delegate task.
-- **What was decided can be read.** Every decision goes to a log in the plugin's data directory, and `aether-report --delegates` shows, per delegation, the rung, the reason, the confidence and the quota it spent.
+- **What was decided can be read.** Every decision goes to a log in the plugin's data directory, and `aether-report --delegates` shows, per delegation, the rung, the reason, the confidence and the quota it spent. A delegate that was tried on more than one pair has one outcome entry per try, numbered by `attempt`, and the report lists them in `attempts`, with the time of all of them added up.
 
 ## Modes
 
@@ -103,9 +103,10 @@ The engine runs a delegate's command with a cap of ten minutes, so an external d
 The router always has Claude to go back to, and never asks the owner.
 
 - **The decider fails.** In `command` the call keeps the model and effort the Lead asked for, and the `fallback` option (`sonnet:high` unless you change it) when the Lead asked for none. In `record` and `advise` nothing is rewritten.
-- **An external delegate fails,** for any reason, including a quota refusal or the time limit. The agent runs on Claude, on the rung the call would have run on, which is also the reference of the pair that failed.
+- **An external delegate is refused at its start,** because its quota is gone and it used no tokens, or because its harness is missing or has no such model. The router tries the next candidate the decision ranked, skipping any whose quota group holds a live mark, up to three tries in all and only while the delegate's 570 seconds allow a CLI of at least 120 seconds. The answer says which pair gave it and which refused first.
+- **An external delegate fails in any other way,** including a quota that ran out during the call, a call that used tokens, the time limit, a changed file or a checkout with uncommitted changes. The agent runs on Claude, on the rung the call would have run on, which is also the reference of the pair that failed. It runs on Claude too when every try was refused.
 - **No pair can take the task.** The task runs on Claude, on the rung the router decided.
-- **A quota refusal** also leaves a mark, so the next decision does not try that group again for 60 minutes.
+- **A quota refusal** also leaves a mark, so the next decision, and the next try of the same delegate, do not use that group again for 60 minutes.
 - **The router itself fails.** An internal error leaves the call as the Lead made it, and writes a decision entry whose fallback reads `internal: …`, so the report counts it and you can see that the router is broken.
 
 ## Override

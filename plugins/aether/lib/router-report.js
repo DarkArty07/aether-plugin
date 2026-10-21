@@ -1,7 +1,9 @@
 'use strict'
 
 // The delegates report (R30): one row per delegation the router decided, joining the decision log's
-// `decision`, `spawn` and `outcome` entries with the usage meter's requests and their prices.
+// `decision`, `spawn` and `outcome` entries with the usage meter's requests and their prices. A delegation has one
+// outcome per attempt of its external delegate (lib/delegate-chain.js): the last decides where it ran, and the report
+// lists them all.
 
 const run = require('./run.js')
 const { readJournal } = require('./router-log.js')
@@ -30,13 +32,14 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0, p
   const outcomes = new Map()
   for (const entry of entries) {
     if (entry.kind === 'spawn') spawns.set(entry.id, entry)
-    else if (entry.kind === 'outcome') outcomes.set(entry.id, entry)
+    else if (entry.kind === 'outcome') outcomes.set(entry.id, [...(outcomes.get(entry.id) ?? []), entry])
   }
   const delegations = entries
     .filter((entry) => entry.kind === 'decision')
     .map((entry) => {
       const spawn = spawns.get(entry.id)
-      const outcome = outcomes.get(entry.id)
+      const attempted = outcomes.get(entry.id) ?? []
+      const outcome = attempted.length > 0 ? attempted[attempted.length - 1] : undefined
       const agentId = spawn ? spawn.agentId || null : null
       const decision = entry.decision || null
       const failed = Boolean(outcome) && outcome.status !== 'ok'
@@ -66,7 +69,8 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0, p
         agentId,
         costUsd: outcome && !failed ? null : costOf(agentId, entry.session, usage, prices),
         quotaSpent: outcome ? outcome.quotaSpent || null : null,
-        durationMs: outcome ? outcome.durationMs : null,
+        durationMs: outcome ? attempted.reduce((sum, attempt) => sum + (Number.isFinite(attempt.durationMs) ? attempt.durationMs : 0), 0) : null,
+        attempts: attempted.map((attempt) => ({ harness: attempt.harness, model: attempt.model, effort: attempt.effort, status: attempt.status, detail: attempt.detail })),
       }
     })
   const totals = {

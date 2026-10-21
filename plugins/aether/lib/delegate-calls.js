@@ -17,6 +17,7 @@ const { readGroups } = require('./lane-readings.js')
 const { createAdapter } = require('./harness/index.js')
 const { WORKDIR_RULE } = require('./lane-calls.js')
 const { KILL_GRACE_SECONDS, cliSeconds } = require('./delegate-limits.js')
+const { refusalIn } = require('./quota-refusal.js')
 
 // The harnesses a delegate may run on (R19): codex and cursor are not among them.
 const HARNESSES = ['agy', 'grok', 'muse']
@@ -172,8 +173,10 @@ function usageOf(usage) {
 
 // One read-only delegate of the task on the rung, in a disposable worktree of cwd's HEAD. Resolves to its Outcome,
 // whose status is ok, quota, failed, violation, unavailable (nothing launched) or dirty (the checkout has uncommitted
-// work; nothing launched, no quota read); throws only for an id that is not a plain name.
-async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adapter = null, now = Date.now }) {
+// work; nothing launched, no quota read); throws only for an id that is not a plain name. maxCliSeconds, when it is
+// given, caps the CLI's limit below what the harness's settings allow: a later attempt of a delegate has only the time
+// the earlier ones left (lib/delegate-chain.js).
+async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adapter = null, now = Date.now, maxCliSeconds = null }) {
   if (typeof id !== 'string' || !ID.test(id)) throw new Error(`the delegate id must be a plain name (${ID}), not ${JSON.stringify(id)}`)
   const startedAt = now()
   let modelArg = rung.model
@@ -273,7 +276,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     git(['worktree', 'add', '-q', '--detach', worktree, start], top)
     const schemaFile = path.join(dir, 'schema.json')
     fs.writeFileSync(schemaFile, `${JSON.stringify(DELEGATE_SCHEMA, null, 2)}\n`)
-    const timeoutSeconds = cliSeconds(settings)
+    const timeoutSeconds = Number.isFinite(maxCliSeconds) && maxCliSeconds > 0 ? Math.min(cliSeconds(settings), maxCliSeconds) : cliSeconds(settings)
     const argv = delegateArgv(cli, rung, { schemaFile, timeoutSeconds, prompt: delegatePrompt(cli, task) })
 
     // 5. The CLI, in its own process group, with an environment clean of credentials.
@@ -307,7 +310,9 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
       const what = changes.files.length > 0 ? `changed ${changes.files.join(', ')}` : `moved HEAD from ${start} to ${changes.head}`
       result = { status: 'violation', detail: `the read-only delegate ${what}` }
     } else if (!parsed.clean) {
-      const quotaGone = (quotaRead && !lanes.usable(quotaAfter, config.reserve)) || String(parsed.reason).startsWith('quota: ')
+      // An explicit refusal is the quota's verdict even when both readings still show balance (agy's /usage does not
+      // report its individual limits), so the router can tell it from a failure and try the next candidate.
+      const quotaGone = (quotaRead && !lanes.usable(quotaAfter, config.reserve)) || String(parsed.reason).startsWith('quota: ') || refusalIn(parsed.reason) !== null
       result = { status: quotaGone ? 'quota' : 'failed', detail: parsed.reason }
     } else if (typeof parsed.structured?.answer !== 'string') {
       result = { status: 'failed', detail: 'invalid answer: answer is not a string' }

@@ -38,3 +38,19 @@ test('cliSeconds is the most a delegate may run when the setting is missing or i
     assert.equal(limits.cliSeconds({ timeouts: { reviewer } }), limits.CLI_MAX_SECONDS, String(reviewer))
   }
 })
+
+test('a later attempt gets what is left after its two readings and the kill grace, and only when that is worth a CLI', () => {
+  assert.equal(limits.MIN_RETRY_CLI_SECONDS, 120)
+  assert.equal(limits.retryCliSeconds(0), limits.CLI_MAX_SECONDS)
+  assert.equal(limits.retryCliSeconds(100000), 290)
+  assert.equal(limits.retryCliSeconds(270000), 120)
+  assert.equal(limits.retryCliSeconds(271000), null)
+})
+
+test('the first attempt at its worst leaves no room for a second, and any later attempt ends inside the limit', () => {
+  assert.equal(limits.retryCliSeconds(limits.worstCaseMs()), null)
+  for (let elapsed = 0; elapsed <= limits.EXTERNAL_LIMIT_MS; elapsed += 1000) {
+    const cli = limits.retryCliSeconds(elapsed)
+    if (cli !== null) assert.ok(elapsed + (2 * limits.READING_MAX_SECONDS + cli + limits.KILL_GRACE_SECONDS) * 1000 <= limits.EXTERNAL_LIMIT_MS, `${elapsed} ms`)
+  }
+})

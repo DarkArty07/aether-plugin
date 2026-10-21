@@ -152,6 +152,48 @@ test('an external delegate that ended ok shows the rung it ran on and costs no t
   assert.deepEqual(row.quotaSpent, [{ window: 'weekly', fraction: 0.01 }])
 })
 
+test('a delegation with several attempts lists them all, sums their time, and is decided by the last one', async (t) => {
+  const dir = tempDir(t)
+  await externalDecision(dir, 'a1')
+  log.appendEntry(dir, outcome('a1', 'quota', { time: 1100, harness: 'agy', model: 'gemini-4-argon-high', effort: 'high', durationMs: 9000, detail: 'exit 3: Individual quota reached', attempt: 1 }))
+  log.appendEntry(dir, outcome('a1', 'ok', { time: 1110, durationMs: 21000, model: 'grok-4.7-high', effort: 'high', quotaSpent: [{ window: 'weekly', fraction: 0.02 }], attempt: 2 }))
+  const [row, ...rest] = delegatesReport({ dataDir: dir, prices }).delegations
+  assert.equal(rest.length, 0)
+  assert.deepEqual(row.attempts, [
+    { harness: 'agy', model: 'gemini-4-argon-high', effort: 'high', status: 'quota', detail: 'exit 3: Individual quota reached' },
+    { harness: 'grok', model: 'grok-4.7-high', effort: 'high', status: 'ok', detail: '' },
+  ])
+  assert.equal(row.durationMs, 30000, 'the time of every attempt')
+  assert.equal(row.fallback, null, 'the last attempt ended ok: nothing went back to Claude')
+  assert.deepEqual(row.ranOn, { harness: 'grok', model: 'grok-4.7-high', effort: 'high' }, 'the last outcome decides where it ran')
+  assert.deepEqual(row.quotaSpent, [{ window: 'weekly', fraction: 0.02 }], 'the quota spent is the last outcome\'s')
+  assert.equal(row.costUsd, null)
+  assert.equal(delegatesReport({ dataDir: dir, prices }).totals.fallback, 0)
+
+  const refused = tempDir(t)
+  const entry = await externalDecision(refused, 'a2')
+  log.appendEntry(refused, outcome('a2', 'quota', { durationMs: 9000, harness: 'agy', model: 'gemini-4-argon-high', attempt: 1 }))
+  log.appendEntry(refused, outcome('a2', 'unavailable', { durationMs: 1000, detail: 'muse is not installed', attempt: 2 }))
+  const [ended] = delegatesReport({ dataDir: refused, prices }).delegations
+  assert.equal(ended.fallback, 'external unavailable', 'the last attempt decides, as the single outcome did')
+  assert.deepEqual(ended.ranOn, entry.rescue)
+  assert.equal(ended.durationMs, 10000)
+  assert.deepEqual(ended.attempts.map((a) => a.status), ['quota', 'unavailable'])
+})
+
+test('a delegation with no outcome has no attempts, and one outcome is one attempt', async (t) => {
+  const dir = tempDir(t)
+  log.appendEntry(dir, decision('n1'))
+  await externalDecision(dir, 'n2')
+  log.appendEntry(dir, outcome('n2', 'ok', { durationMs: 4000 }))
+  const { delegations } = delegatesReport({ dataDir: dir, prices })
+  assert.deepEqual(delegations.find((d) => d.id === 'n1').attempts, [])
+  assert.equal(delegations.find((d) => d.id === 'n1').durationMs, null)
+  const single = delegations.find((d) => d.id === 'n2')
+  assert.equal(single.attempts.length, 1)
+  assert.equal(single.durationMs, 4000)
+})
+
 test('per run it counts the delegations decided, overridden and in fallback', (t) => {
   const dir = fixture(t)
   const { totals } = delegatesReport({ dataDir: dir, session: 's1', prices })

@@ -128,6 +128,49 @@ test('delegate runs a read-only delegate on the external harness and records its
   assert.deepEqual(kept, [], 'once the outcome is written the file with the Lead\'s whole prompt is gone, whether the delegate ended ok or not')
 })
 
+test('delegate tries the next ranked candidate when the first pair cannot start, prints every attempt and removes the file after the last outcome', (t) => {
+  const lane = laneEnv(t)
+  const repo = makeRepo(t)
+  const dataDir = lane.AETHER_DATA_DIR
+  fs.mkdirSync(path.join(dataDir, 'router', 'external'), { recursive: true })
+  const file = path.join(dataDir, 'router', 'external', 'c1.json')
+  // The lane table's muse is a command that is not there: the first pair is unavailable, and the Gemini pair is next.
+  fs.writeFileSync(file, JSON.stringify({
+    id: 'c1', session: 's1', harness: 'muse', rung: { model: 'muse-wonder-full-1.0', effort: 'high', group: 'muse' },
+    task: { description: 'audit', prompt: 'Audit it.\nFAKE-AGY: answer {"answer": "found it"}' },
+    fallback: { model: 'haiku', effort: 'high' }, timeoutMs: EXTERNAL_LIMIT_MS,
+    alternates: [{ harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'gemini' } }],
+  }))
+  const r = runBin(BIN, ['delegate', '--id', 'c1', '--session', 's1'], repo.dir, { ...lane })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.json.ok, true)
+  assert.equal(r.json.text, 'found it')
+  assert.deepEqual(Object.keys(r.json), ['ok', 'status', 'text', 'attribution', 'detail', 'marked', 'attempts'])
+  assert.deepEqual(r.json.attempts.map((a) => [a.harness, a.model, a.effort, a.status]), [['muse', 'muse-wonder-full-1.0', 'high', 'unavailable'], ['agy', 'gemini-3.8-flash', 'medium', 'ok']])
+  assert.match(r.json.attempts[0].detail, /muse/)
+  assert.match(r.json.attribution, /^Aether router: muse-wonder-full-1\.0 on muse was unavailable first, so this answer is from gemini-3\.8-flash at medium on agy,/)
+  const outcomes = log.readJournal(dataDir).filter((e) => e.kind === 'outcome')
+  assert.deepEqual(outcomes.map((e) => [e.attempt, e.status, e.harness]), [[1, 'unavailable', 'muse'], [2, 'ok', 'agy']])
+  assert.equal(fs.existsSync(file), false, 'the file goes once the last outcome is written')
+})
+
+test('delegate with no candidate left prints the last attempt\'s status and leaves the task to Claude', (t) => {
+  const lane = laneEnv(t)
+  const repo = makeRepo(t)
+  const dataDir = lane.AETHER_DATA_DIR
+  fs.mkdirSync(path.join(dataDir, 'router', 'external'), { recursive: true })
+  fs.writeFileSync(path.join(dataDir, 'router', 'external', 'c2.json'), JSON.stringify({
+    id: 'c2', session: 's1', harness: 'muse', rung: { model: 'muse-wonder-full-1.0', effort: 'high', group: 'muse' },
+    task: { description: 'audit', prompt: 'Audit it.' }, fallback: { model: 'haiku', effort: 'high' }, timeoutMs: EXTERNAL_LIMIT_MS,
+  }))
+  const r = runBin(BIN, ['delegate', '--id', 'c2', '--session', 's1'], repo.dir, { ...lane })
+  assert.equal(r.json.ok, false)
+  assert.equal(r.json.status, 'unavailable')
+  assert.equal(r.json.attribution, null)
+  assert.equal(r.json.attempts.length, 1)
+  assert.equal(log.readJournal(dataDir).filter((e) => e.kind === 'outcome').length, 1)
+})
+
 test('delegate with uncommitted work in the checkout ends dirty: the outcome is written, no mark is left, and the file with the prompt is removed', (t) => {
   const lane = laneEnv(t)
   const repo = makeRepo(t)
@@ -223,6 +266,9 @@ test('scenario 20: a refusal the router saw leaves its mark, and the next decisi
 
   const stored = path.join(dataDir, 'router', 'external', `${before.json.external.id}.json`)
   const external = JSON.parse(fs.readFileSync(stored, 'utf8'))
+  // The file of an older router, with no alternates: this test is about the mark of one refusal, and the fake agy
+  // would refuse the next candidate too, with the same prompt.
+  delete external.alternates
   external.task.prompt = 'Audit it.\nFAKE-AGY: exit-error Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 163h22m27s.'
   fs.writeFileSync(stored, JSON.stringify(external))
   const ran = runBin(BIN, ['delegate', '--id', external.id, '--session', 's1'], repo.dir, env)

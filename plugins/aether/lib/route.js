@@ -307,6 +307,18 @@ function baseEntry(ctx, d) {
   }
 }
 
+// The candidates of the decision that come after the pick, in rank order, each as the rung a delegate runs on. The
+// decision's entries name a pair by id; the model and effort come from the pairs table. A delegate refused at its start
+// tries them in turn (lib/delegate-chain.js).
+function alternatesOf(quota, pairs) {
+  const alternates = []
+  for (const entry of [...(quota ?? [])].filter((candidate) => candidate.outcome === 'next').sort((a, b) => a.rank - b.rank)) {
+    const pair = pairs.find((row) => row.id === entry.id)
+    if (pair) alternates.push({ harness: pair.harness, rung: { model: pair.model, effort: pair.effort, group: pair.group } })
+  }
+  return alternates
+}
+
 function askedEntry(asked, table, axis) {
   return asked ? { alias: asked.alias, effort: asked.effort, level: claudeLevel(table, asked, axis) } : null
 }
@@ -409,6 +421,7 @@ async function conclude(ctx, d, result) {
         task: taskOf(event),
         fallback: external.fallback,
         timeoutMs: external.timeoutMs,
+        alternates: alternatesOf(quota, d.pairs()),
       })
       applied = 'external'
     } else {
