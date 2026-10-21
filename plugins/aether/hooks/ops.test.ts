@@ -46,6 +46,9 @@ function stubs(on, { marked = true, opsOff = false, answer = { exitCode: 0, stdo
     return { turnId: e.turnId, index: e.index, answer: 'from the model', toolUses: [], stopReason: 'end_turn', usage: { ...USAGE, model: e.model } }
   })
   on('process.run', async ($, e) => {
+    // The quota brake's calls to aether-autonomy are not ops commands: they fail here, which leaves
+    // the brake inert for these tests (its own are in quota-brake.test.ts).
+    if (e.argv[2] === 'brake-settings' || e.argv[2] === 'brake-crossing') return { value: { exitCode: 1, stdout: '', stderr: '' } }
     runs.push({ argv: [...e.argv], init: { ...(e.init || {}) } })
     if (answer === 'timeout' || answer === 'timeout-clock') await clock.advance(600000)
     if (answer === 'timeout' || answer === 'timeout-message') return { deny: `$.process.run(${e.argv[0]}) aborted: still running after 600000ms` }

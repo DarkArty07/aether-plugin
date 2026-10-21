@@ -26,6 +26,9 @@ function stubs(on, { env = { HOME: '/home/u', AETHER_DATA_DIR: '/home/u/aether-d
   on('turn.step', async function* ($, e) {
     return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: { ...USAGE, model: e.model } }
   })
+  // The quota brake asks aether-autonomy for its settings after a step; the call fails here, which
+  // leaves the brake inert for these tests (its own are in quota-brake.test.ts).
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }))
   on('fs.exists', ($, e) => (marked === 'deny' ? { deny: 'no access' } : { value: marked === true && e.path.endsWith('/sessions/s1.json') }))
   on('agent.offer', () => ({ isOffered: true }))
   on('classic.SessionStart', () => ({}))
