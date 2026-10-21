@@ -292,6 +292,76 @@ function unitStatus(cwd, runId, taskId) {
   return { merged: true, branch, commit, head: tip }
 }
 
+// The ids of a run's graph, in task number order.
+function taskIdsInOrder(graph) {
+  return Object.keys(graph.tasks).sort((a, b) => graph.tasks[a].number - graph.tasks[b].number)
+}
+
+// The value read() returns, or `fallback` when it throws: a source that fails adds nothing.
+function orEmpty(read, fallback) {
+  try {
+    return read()
+  } catch {
+    return fallback
+  }
+}
+
+// The units of a run already in the integration branch, in task order. A merged unit's branch may
+// have been removed since, so three sources count: what unitStatus sees on a branch that is still
+// there, the integration branch's merge commits named `Merge aether/<run>/<task>`, and the units
+// the Lead adopted by hand. Only tasks of the run's graph are counted.
+function mergedUnits(cwd, runId) {
+  const { mainRoot } = repoPaths(cwd)
+  const graph = loadGraph(mainRoot, runId)
+  const ids = taskIdsInOrder(graph)
+  const merged = new Set()
+  for (const taskId of ids) {
+    if (orEmpty(() => unitStatus(mainRoot, runId, taskId).merged, false)) merged.add(taskId)
+  }
+  const subjects = orEmpty(() => {
+    const log = git(['log', '--format=%s', graph.integration.branch], mainRoot, { allowFail: true })
+    return log.status === 0 ? new Set(log.stdout.split('\n')) : new Set()
+  }, new Set())
+  for (const taskId of ids) if (subjects.has(`Merge ${run.unitBranch(runId, taskId)}`)) merged.add(taskId)
+  const adoptedFile = path.join(run.runDir(mainRoot, runId), 'adopted.json')
+  const adopted = orEmpty(() => (exists(adoptedFile) ? Object.keys(run.readJson(adoptedFile)) : []), [])
+  for (const taskId of adopted) if (ids.includes(taskId)) merged.add(taskId)
+  return ids.filter((taskId) => merged.has(taskId))
+}
+
+// Saves a run's work where it outlives its worktrees: for each unit not merged yet, salvageUnit
+// commits on the unit's branch what its Owns covers and names the rest in `left`, uncommitted. A
+// merged unit is recorded as it is. Writes <runDir>/saved.json. It removes no worktree and pushes
+// nothing.
+function saveRun(cwd, runId, { now = new Date() } = {}) {
+  const { mainRoot } = repoPaths(cwd)
+  const graph = loadGraph(mainRoot, runId)
+  const merged = new Set(mergedUnits(mainRoot, runId))
+  const units = taskIdsInOrder(graph).map((taskId) => {
+    const branch = run.unitBranch(runId, taskId)
+    const tip = () => (branchExists(mainRoot, branch) ? git(['rev-parse', branch], mainRoot).stdout : null)
+    if (merged.has(taskId)) {
+      const head = tip() || unitStatus(mainRoot, runId, taskId).commit || null
+      return { task: taskId, branch, head, merged: true, salvaged: false, committed: [], left: [] }
+    }
+    const saved = salvageUnit(mainRoot, runId, taskId)
+    const head = saved.salvaged ? saved.head : tip()
+    return {
+      task: taskId,
+      branch: head === null ? null : branch,
+      head,
+      merged: false,
+      salvaged: saved.salvaged,
+      committed: saved.committed,
+      left: saved.left,
+    }
+  })
+  const saved = { run: runId, at: now.toISOString(), units }
+  const file = path.join(run.runDir(mainRoot, runId), 'saved.json')
+  run.writeJson(file, saved)
+  return { ...saved, path: file }
+}
+
 // The whole run's change on the integration branch, from the first launch's base, so that a relaunch
 // does not drop the changes of the launches before it.
 function finalPackage(cwd, runId) {
@@ -780,6 +850,8 @@ module.exports = {
   adoptUnit,
   finalPackage,
   unitStatus,
+  mergedUnits,
+  saveRun,
   merge,
   betweenMerges,
   removeUnit,
