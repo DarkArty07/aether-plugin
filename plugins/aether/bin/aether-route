@@ -12,8 +12,9 @@
 // aether-route renew --harness <agy|grok>
 //
 // Decides how each delegate task of the Lead runs. begin, finish and decide are the router's three steps (the mod
-// asks the model between begin and finish); delegate runs a read-only delegate on agy or grok, records its outcome
-// (status ok, quota, failed, violation, unavailable or dirty, the last when the checkout has uncommitted work) and then
+// asks the model between begin and finish); delegate runs a read-only delegate on agy, grok or muse, and, when a pair
+// refuses at its start, on the next ranked candidate (lib/delegate-chain.js); it records each attempt's outcome (status
+// ok, quota, failed, violation, unavailable or dirty, the last when the checkout has uncommitted work) and then
 // removes the file that holds the Lead's prompt; spawn records which agent ran a delegation, so that the delegates
 // report can price it; replay decides again over the journal or over the history (it skips the delegations to an
 // aether agent, which the router never routes, and with --paid gives each `claude -p` process --timeout seconds, 60 by
@@ -99,49 +100,21 @@ async function delegateCommand(flags, dataDir) {
   const route = lib('route.js')
   const external = route.readExternal(dataDir, flags.id)
   if (!external) return { ok: false, status: 'unavailable' }
-  const { harness, rung, task } = external
-  const result = await lib('delegate-calls.js').runDelegate({
+  const { attempts, journaled, ...result } = await lib('delegate-chain.js').runChain({
     cwd: process.cwd(),
     id: flags.id,
-    harness,
-    rung,
-    task,
+    session: flags.session ?? external.session ?? null,
+    external,
     config: lib('lanes.js').loadConfig(),
     dataDir,
   })
-  const ok = result.status === 'ok'
-  let marked = null
-  if (!ok) {
-    const mark = lib('router-marks.js').markRefusal(dataDir, { harness, group: rung.group, text: result.detail })
-    marked = mark ? mark.until : null
-  }
-  const written = lib('router-log.js').appendEntry(dataDir, {
-    kind: 'outcome',
-    id: flags.id,
-    time: Date.now(),
-    session: flags.session ?? external.session ?? null,
-    status: result.status,
-    harness,
-    model: result.modelArg,
-    effort: rung.effort,
-    durationMs: result.durationMs,
-    usage: result.usage,
-    quotaSpent: result.quotaSpent,
-    detail: result.detail,
-    markedUntil: marked,
-  })
-  // The file keeps the Lead's whole prompt, which the log limits to an excerpt: it goes once the outcome is written.
-  if (written) {
+  // The file keeps the Lead's whole prompt, which the log limits to an excerpt: it goes once the last outcome is written.
+  if (journaled) {
     try {
       fs.unlinkSync(route.externalFile(dataDir, flags.id))
     } catch {}
   }
-  // Where the answer came from, for the Lead: Claude Code lists no tool uses or tokens for an agent the mod answers, and a
-  // Lead that sees 0 tool uses doubts an answer that was read from files.
-  const attribution = ok
-    ? `Aether router: this answer is from ${rung.model} at ${rung.effort} on ${harness}, run in a disposable copy of the checkout. Claude Code lists no tool uses or tokens for it because Aether handed you the answer without a Claude request.`
-    : null
-  return { ok, status: result.status, text: result.text, attribution, detail: result.detail, marked }
+  return { ...result, attempts }
 }
 
 // The pattern of the ids route.js gives a delegation.

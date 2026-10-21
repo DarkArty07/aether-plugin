@@ -543,18 +543,19 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A66 are recorded and the changelog opens with 0.14.1 and its handoff', () => {
+test('R15: the decisions A50 to A67 are recorded and the changelog opens with 0.14.2 and its handoff', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 66
+  const LAST_DECISION = 67
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
   assert.ok(/superdelegation/i.test(line(65)))
   assert.ok(/router/i.test(line(66)) && /Muse/.test(line(66)))
+  assert.ok(/refused at its start/.test(line(67)) && /next ranked candidate/.test(line(67)))
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.14.1: ') && first.includes('handoff/2026-10-21-router-superdelegation-0.14.1.md'), first)
+  assert.ok(first.startsWith('Version 0.14.2: ') && first.includes('handoff/2026-10-21-delegate-next-candidate-0.14.2.md'), first)
 })
 
 // ---- R21: the retired profiles and variables

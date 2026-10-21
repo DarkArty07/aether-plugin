@@ -84,6 +84,7 @@ function readAllMarks(dataDir, now = Date.now(), known = null) {
 module.exports = {
   REFUSAL_DEFAULT_MINUTES,
   quotaRefusal,
+  refusalOf,
   routerMarksRoot,
   markRefusal,
   readAllMarks,

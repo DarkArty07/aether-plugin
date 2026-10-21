@@ -134,9 +134,19 @@ test('a refusal for the individual quota arrives whole in the detail, for the ro
   const s = setup(t)
   const message = 'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 163h22m27s.'
   const out = await run(s, `Audit.\nFAKE-AGY: exit-error ${message}`)
-  assert.equal(out.status, 'failed', 'the readings before and after still show balance')
+  assert.equal(out.status, 'quota', 'the readings before and after still show balance, and the refusal is the quota\'s verdict')
   assert.ok(out.detail.includes(message))
+  assert.deepEqual(out.usage, { input: 0, output: 0, thinking: 0, cacheRead: 0 }, 'a refusal at the start used nothing')
   assert.equal(worktrees(s), 1)
+})
+
+test('maxCliSeconds caps the CLI limit of the harness\'s settings, and unset leaves it as it is', async (t) => {
+  const s = setup(t)
+  const limitOf = (call) => call.argv[call.argv.indexOf('--print-timeout') + 1]
+  assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "a"}', { maxCliSeconds: 200 })).status, 'ok')
+  assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "b"}', { id: 'd-2', maxCliSeconds: CLI_MAX_SECONDS + 100 })).status, 'ok')
+  assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "c"}', { id: 'd-3', maxCliSeconds: null })).status, 'ok')
+  assert.deepEqual(s.modelCalls().map(limitOf), ['200s', `${CLI_MAX_SECONDS}s`, `${CLI_MAX_SECONDS}s`])
 })
 
 test('a group under the reserve is a quota failure, and agy is not launched (R26)', async (t) => {

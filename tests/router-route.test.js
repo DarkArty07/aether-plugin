@@ -119,6 +119,33 @@ test('scenario 1 and 8: in command mode the Lead only describes, and the delegat
   assert.ok(entry.decision.choice.startsWith('grok/grok-4.7@low:'), 'the log keeps the words of the one choice function')
 })
 
+test('the external file carries the candidates that come after the pick, in rank order, as rungs the delegate can run', async (t) => {
+  const deps = setup(t)
+  const plan = await go(deps, event())
+  assert.equal(plan.external.harness, 'grok')
+  const stored = route.readExternal(deps.dataDir, plan.id)
+  const [entry] = journal(deps)
+  const next = entry.quota.filter((c) => c.outcome === 'next').sort((a, b) => a.rank - b.rank)
+  assert.ok(next.length > 0, 'the decision ranked other candidates')
+  assert.deepEqual(stored.alternates.map((a) => a.rung.group), next.map((c) => c.group))
+  assert.deepEqual(stored.alternates.map((a) => a.harness), next.map((c) => c.harness))
+  const pairs = require('../plugins/aether/lib/pairs.js').loadPairs().pairs
+  next.forEach((candidate, i) => {
+    const pair = pairs.find((row) => row.id === candidate.id)
+    assert.deepEqual(stored.alternates[i], { harness: pair.harness, rung: { model: pair.model, effort: pair.effort, group: pair.group } })
+  })
+  assert.ok(stored.alternates.every((a) => a.rung.model && a.rung.effort && a.rung.group), 'model, effort and group are resolved from the pairs table')
+  assert.deepEqual(stored.rung, { model: 'grok-4.7', effort: 'low', group: 'grok' }, 'the pick stays as it is')
+})
+
+test('with no other candidate the external file carries an empty list of alternates', async (t) => {
+  const only = require('../plugins/aether/lib/pairs.js').loadPairs().pairs.filter((pair) => pair.harness === 'claude' || pair.id === 'grok/grok-4.7@low')
+  const deps = setup(t, { settings: { harnesses: ['grok'] }, readings: { grok: GROK }, pairs: only })
+  const plan = await go(deps, event())
+  assert.equal(plan.external.harness, 'grok')
+  assert.deepEqual(route.readExternal(deps.dataDir, plan.id).alternates, [])
+})
+
 test('scenario 18: when the Gemini group of agy renews first, the delegate goes to agy on the level B rung of that group', async (t) => {
   const plan = await go(setup(t, { readings: { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(0.8, 10), claude: weekly(0.9, 80) } }, grok: GROK } }), event())
   assert.equal(plan.external.harness, 'agy')
