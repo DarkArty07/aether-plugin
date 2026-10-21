@@ -100,7 +100,7 @@ test('delegate runs a read-only delegate on the external harness and records its
   const dataDir = lane.AETHER_DATA_DIR
   const external = (id, prompt) => {
     fs.mkdirSync(path.join(dataDir, 'router', 'external'), { recursive: true })
-    fs.writeFileSync(path.join(dataDir, 'router', 'external', `${id}.json`), JSON.stringify({ id, session: 's1', harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'gemini' }, task: { description: 'audit', prompt }, fallback: { model: 'haiku', effort: 'high' }, timeoutMs: EXTERNAL_LIMIT_MS }))
+    fs.writeFileSync(path.join(dataDir, 'router', 'external', `${id}.json`), JSON.stringify({ id, session: 's1', harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' }, task: { description: 'audit', prompt }, fallback: { model: 'haiku', effort: 'high' }, timeoutMs: EXTERNAL_LIMIT_MS }))
   }
   const env = { ...lane }
   external('r1', 'Audit it.\nFAKE-AGY: answer {"answer": "found it"}')
@@ -139,7 +139,7 @@ test('delegate tries the next ranked candidate when the first pair cannot start,
     id: 'c1', session: 's1', harness: 'muse', rung: { model: 'muse-wonder-full-1.0', effort: 'high', group: 'muse' },
     task: { description: 'audit', prompt: 'Audit it.\nFAKE-AGY: answer {"answer": "found it"}' },
     fallback: { model: 'haiku', effort: 'high' }, timeoutMs: EXTERNAL_LIMIT_MS,
-    alternates: [{ harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'gemini' } }],
+    alternates: [{ harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' } }],
   }))
   const r = runBin(BIN, ['delegate', '--id', 'c1', '--session', 's1'], repo.dir, { ...lane })
   assert.equal(r.status, 0, r.stderr)
@@ -178,7 +178,7 @@ test('delegate with uncommitted work in the checkout ends dirty: the outcome is 
   fs.writeFileSync(path.join(repo.dir, 'README.md'), 'fixture, edited and not committed\n')
   fs.mkdirSync(path.join(dataDir, 'router', 'external'), { recursive: true })
   const file = path.join(dataDir, 'router', 'external', 'r9.json')
-  fs.writeFileSync(file, JSON.stringify({ id: 'r9', session: 's1', harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'gemini' }, task: { description: 'audit', prompt: 'Audit it.\nFAKE-AGY: answer {"answer": "x"}' }, fallback: { model: 'haiku', effort: 'high' }, timeoutMs: EXTERNAL_LIMIT_MS }))
+  fs.writeFileSync(file, JSON.stringify({ id: 'r9', session: 's1', harness: 'agy', rung: { model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' }, task: { description: 'audit', prompt: 'Audit it.\nFAKE-AGY: answer {"answer": "x"}' }, fallback: { model: 'haiku', effort: 'high' }, timeoutMs: EXTERNAL_LIMIT_MS }))
   const r = runBin(BIN, ['delegate', '--id', 'r9', '--session', 's1'], repo.dir, { ...lane })
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.json.ok, false, 'the mod then runs the same delegate in Claude')
@@ -247,7 +247,7 @@ test('scenario 20: a refusal the router saw leaves its mark, and the next decisi
   const win = (remaining, hours) => ({ remaining, resetsAt: new Date(now + hours * 3600 * 1000).toISOString() })
   const file = readings.cacheFile(dataDir, 'agy')
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, JSON.stringify({ harness: 'agy', readAt: now, groups: { gemini: { windows: { '5h': win(0.98, 5), weekly: win(0.98, 60) } }, claude: { windows: { weekly: win(0.9, 80) } } } }))
+  fs.writeFileSync(file, JSON.stringify({ harness: 'agy', readAt: now, groups: { argon: { windows: { '5h': win(0.98, 5), weekly: win(0.98, 60) } }, flash: { windows: { '5h': win(0.98, 5), weekly: win(0.98, 60) } }, claude: { windows: { weekly: win(0.9, 80) } } } }))
   const env = { ...lane }
   // The input files go outside the repository: a file left in it is uncommitted work, and the delegate would not run.
   const scratch = tempDir(t, 'aether-route-scratch-')
@@ -262,7 +262,7 @@ test('scenario 20: a refusal the router saw leaves its mark, and the next decisi
   const before = decide('one')
   assert.equal(before.status, 0, before.stderr)
   assert.equal(before.json.external.harness, 'agy', 'the reading says 98 %: the group is a candidate, and it renews first (60 h against 80 h)')
-  assert.equal(before.json.external.group, 'gemini')
+  assert.equal(before.json.external.group, 'flash')
 
   const stored = path.join(dataDir, 'router', 'external', `${before.json.external.id}.json`)
   const external = JSON.parse(fs.readFileSync(stored, 'utf8'))
@@ -281,7 +281,7 @@ test('scenario 20: a refusal the router saw leaves its mark, and the next decisi
   const after = decide('two')
   assert.equal(after.json.external?.group, 'claude', 'nothing goes to the group the refusal marked: the other group of agy takes it')
   const second = log.readJournal(dataDir).filter((e) => e.kind === 'decision')[1]
-  const g = second.quota.find((c) => c.harness === 'agy' && c.group === 'gemini')
+  const g = second.quota.find((c) => c.harness === 'agy' && c.group === 'flash')
   assert.equal(g.why, 'dry', 'the mark holds the group, whatever the reading says')
 })
 

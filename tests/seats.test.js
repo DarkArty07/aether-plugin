@@ -20,7 +20,8 @@ const FEATURE = 'specs/001-demo'
 const DAY = 86400000
 const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString() })
 const dry = { usable: false, unknown: false, mark: null, resetsAt: '2026-10-21T00:00:00.000Z' }
-const world = (g = open(2), c = open(3)) => ({ agy: { installed: true, groups: { gemini: g, claude: c } } })
+// Argon and Flash read the one «Gemini Models» window, so `g` is the view of both keys.
+const world = (g = open(2), c = open(3)) => ({ agy: { installed: true, groups: { argon: g, flash: g, claude: c } } })
 const config = { harnesses: { agy: { command: 'agy', maxParallel: 4, waitSeconds: 540, timeouts: { implementer: 1, supervisor: 1, reviewer: 1, judge: 1200, writer: 2700, examiner: 1800 }, groups: {}, models: {} } } }
 const choose = (seat, more = {}) => chooseSeat({ config, pairs, seat, harnesses: world(), ...more })
 // What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
@@ -35,7 +36,7 @@ test('the Judge asks the points of Opus high and the cheapest pair of the quota 
   assert.equal(chosen.decision.requested, 53.6)
   assert.equal(chosen.external.pair.id, 'agy/gemini-4-argon@high')
   assert.deepEqual([chosen.external.harness, chosen.external.model, chosen.external.effort, chosen.external.level, chosen.external.timeoutSeconds], ['agy', 'gemini-4-argon', 'high', 'high', 1200])
-  assert.equal(chosen.external.group, 'gemini')
+  assert.equal(chosen.external.group, 'argon')
   assert.deepEqual(chosen.external.quotaBefore, open(2), 'the quota view of the pair group, for the lane line')
 })
 

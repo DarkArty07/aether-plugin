@@ -17,11 +17,11 @@
 // aether-lane quota [<harness>...] [--refresh] [--json]   (no run: each harness's quota as text, or as JSON;
 //   --refresh first asks grok over ACP for a new reading, and opens its UI for a few seconds, with no prompt,
 //   only if that gives none)
-// aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--feature specs/NNN-<topic>] [--cwd <dir>]
+// aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--exclude <id>[,<id>...]] [--feature specs/NNN-<topic>] [--cwd <dir>]
 //   (the message on stdin; exit 0 an external answer, 3 the native agent takes the round, 4 the external round
 //   failed and was undone, 1 the command broke)
 // aether-lane seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>]
-//   --superdelegation <on|off> --harnesses <h1,h2> --digest <digest>
+//   --superdelegation <on|off> --harnesses <h1,h2> [--exclude <id>[,<id>...]] --digest <digest>
 //   (the same round as seat, in the background: the message is the file the mod saved at <checkout>/.aether-tmp/seats/<session>/message.md,
 //   and the options come in flags because the mod's bins have none of the session's exports; prints { started, id },
 //   or { unavailable: message | digest } when the file is missing or is not the one the digest names)

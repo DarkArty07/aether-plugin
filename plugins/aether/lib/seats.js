@@ -55,7 +55,7 @@ const SCHEMAS = { judge: schemas.JUDGE_SCHEMA, writer: schemas.WRITER_SCHEMA, ex
 const schemaFor = (seat, doc) => (seat === 'writer' && doc === 'spec' ? schemas.SPEC_WRITER_SCHEMA : SCHEMAS[seat])
 
 const USAGE =
-  'usage: aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--feature specs/NNN-<topic>] [--doc <spec|plan>] [--id <seat id>] [--cwd <dir>] (the message on stdin)'
+  'usage: aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--exclude <id>[,<id>...]] [--feature specs/NNN-<topic>] [--doc <spec|plan>] [--id <seat id>] [--cwd <dir>] (the message on stdin)'
 
 const NO_USAGE = { input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }
 
@@ -111,17 +111,18 @@ function quotaViewOf(harnesses, pair) {
 // Who takes seat: the external pair that lib/superdelegation.js choose gives for the seat's reference pair,
 // or the native agent when none can. harnesses is the view of the quotas of the enabled harnesses; offered(harness,
 // model, effort) says whether the harness's captured listing offers the model at that effort (issue 016): a pair it
-// does not offer is left out before the choice and listed as passed over, with the reason not-offered. A Judge or an
-// Examiner reviews what another model wrote, so its native agent is not the author's model either; the Writer's may be.
-// Pure apart from the calls it is given. Returns { external } or { native }, each with the pairs passed over and why
-// (tried) and the whole decision.
-function chooseSeat({ config, pairs, seat, author = null, harnesses, offered = () => true }) {
+// does not offer is left out before the choice and listed as passed over, with the reason not-offered. exclude is
+// the pair ids the round already tried. A Judge or an Examiner reviews what another model wrote, so its native
+// agent is not the author's model either, exclusions or not; the Writer's may be. Pure apart from the calls it is
+// given. Returns { external } or { native }, each with the pairs passed over and why (tried) and the whole decision.
+function chooseSeat({ config, pairs, seat, author = null, harnesses, offered = () => true, exclude = [] }) {
   const authorId = authorModel(author)
   const dropped = pairs.filter((pair) => pair.harness !== pairsTable.NATIVE_HARNESS && !offered(pair.harness, pair.model, pair.effort))
   const chosen = choose({
     pairs: pairs.filter((pair) => !dropped.includes(pair)),
     reference: REFERENCE[seat],
     harnesses,
+    exclude,
     authors: authorId === null ? [] : [authorId],
     nativeDiffers: seat !== 'writer',
   })
@@ -650,6 +651,18 @@ function flags(args) {
 
 const SEAT_ID = /^(judge|writer|examiner)-\d{8}-\d{6}-[0-9a-f]{4}$/
 
+// The pair ids a round already tried, as `--exclude` gives them: the same rule and message as `aether-lane pick`
+// (lib/lane-pick.js excludeList), so that both refuse the same ids. Keep the two in step.
+const PAIR_ID = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(low|medium|high|xhigh|max)$/
+
+function excludeList(value) {
+  if (value === undefined) return []
+  const ids = String(value).split(',')
+  const bad = ids.find((id) => !PAIR_ID.test(id))
+  if (bad !== undefined) throw new Error(`--exclude must be pair ids like agy/model@effort, not ${JSON.stringify(bad)}`)
+  return ids
+}
+
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 // The reply of a round that does not run: the native agent of the decision takes it, with the decision beside it.
@@ -675,6 +688,7 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   }
   const doc = seat === 'writer' ? (opts.doc ?? 'plan') : null
   if (opts.id !== undefined && !(SEAT_ID.test(opts.id) && opts.id.startsWith(`${seat}-`))) throw new Error(`--id must be ${seat}-YYYYMMDD-HHMMSS-xxxx`)
+  const exclude = excludeList(opts.exclude)
   const cwd = path.resolve(callerCwd, opts.cwd ?? '.')
   const { worktree: top, mainRoot, gitCommonDir } = repoPaths(cwd)
   // Before any answer: a native Examiner writes its exam under .aether-exam/ in this checkout, and git must not see it.
@@ -689,7 +703,7 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   // A round that does not run: no harness is enabled for the choice, so the decision is the native agent's alone, and
   // a Judge or an Examiner still does not fall on the author's model.
   const handBack = (reason) => {
-    const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses: {} })
+    const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses: {}, exclude })
     note('native', { reason, reference: chosen.decision.reference })
     return unavailable(seat, reason, { ...chosen, tried: [] })
   }
@@ -713,7 +727,7 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     }
     Object.assign(harnesses, harnessViews(config, [name], { dataDir, now, latest, onRead }))
   }
-  const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses, offered: (name, model, effort) => offeredByListing(name, model, effort) })
+  const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses, exclude, offered: (name, model, effort) => offeredByListing(name, model, effort) })
   if (chosen.native) {
     note('native', { reason: 'no-external', tried: chosen.tried, reference: chosen.decision.reference })
     return unavailable(seat, 'no-external', chosen)
@@ -739,4 +753,4 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   })
 }
 
-module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, authorModel, chooseSeat, offeredByListing, changedPaths, judgeText, windowUsed, seatPrompt, seatCommand }
+module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, authorModel, excludeList, chooseSeat, offeredByListing, changedPaths, judgeText, windowUsed, seatPrompt, seatCommand }

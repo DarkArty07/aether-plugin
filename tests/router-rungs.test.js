@@ -74,7 +74,11 @@ test('the rungs the scenarios 8, 17 and 18 name sit in level B', () => {
   assert.equal(find('grok', 'grok-4.7', 'low').levels.general, 'B')
   assert.equal(find('agy', 'gemini-3.8-flash', 'medium').levels.general, 'B')
   assert.equal(rungs.pickRung(table, { harness: 'grok', level: 'B', axis: 'general' }).id, 'grok/grok-4.7/low')
-  assert.equal(rungs.pickRung(table, { harness: 'agy', level: 'B', axis: 'general', group: 'gemini' }).id, 'agy/gemini-3.8-flash/medium')
+  assert.equal(rungs.pickRung(table, { harness: 'agy', level: 'B', axis: 'general', group: 'flash' }).id, 'agy/gemini-3.8-flash/medium')
+  // Each Gemini model has a key of its own in the lane table (issue 038), and the key it had before is no rung's group.
+  assert.deepEqual([...new Set(table.rungs.filter((r) => r.harness === 'agy' && r.model === 'gemini-4-argon').map((r) => r.group))], ['argon'])
+  assert.deepEqual([...new Set(table.rungs.filter((r) => r.harness === 'agy' && r.model === 'gemini-3.8-flash').map((r) => r.group))], ['flash'])
+  assert.equal(rungs.pickRung(table, { harness: 'agy', level: 'B', axis: 'general', group: 'gemini' }), null)
 })
 
 test('a rung keeps the native effort name of its harness, the one the CLI takes (R16)', () => {
@@ -132,7 +136,7 @@ test('pickRung gives the lowest level that reaches the one asked, then the cheap
   assert.equal(show(pick('grok', 'B', 'general')), 'grok-4.7:low')
   assert.equal(show(pick('grok', 'B', 'code')), 'grok-4.7:high')
   assert.equal(show(pick('grok', 'A', 'general')), 'grok-4.7:low', 'grok has no level A: the lowest above it')
-  assert.equal(show(pick('agy', 'B', 'general', 'gemini')), 'gemini-3.8-flash:medium')
+  assert.equal(show(pick('agy', 'B', 'general', 'flash')), 'gemini-3.8-flash:medium')
   assert.equal(pick('agy', 'B', 'general', 'claude'), null, 'agy serves the Claude names unmeasured: no level (A-12)')
   assert.equal(pick('agy', 'C', 'general'), null)
   assert.equal(pick('agy', 'D', 'general'), null)

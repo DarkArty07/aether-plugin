@@ -63,6 +63,21 @@ function pickForms() {
   return [head, [...head, ...exclude], [...head, ...author], [...head, ...exclude, ...author]].map((checks) => ({ checks }))
 }
 
+// seat-start, for a judge or an examiner and for the writer. --exclude, the pair ids the round already tried, is
+// optional and sits just before --digest, with the same pair-id rule as pick.
+function seatStartForms() {
+  const exclude = [word('--exclude'), is(PAIR_IDS)]
+  const digest = [word('--digest'), is(DIGEST)]
+  const heads = [
+    [word('seat-start'), oneOf(['judge', 'examiner']), word('--session'), is(SESSION), word('--author'), is(AUTHOR), word('--feature'), is(FEATURE), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES)],
+    [word('seat-start'), word('writer'), word('--session'), is(SESSION), word('--feature'), is(FEATURE), word('--doc'), oneOf(['spec', 'plan']), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES)],
+  ]
+  return heads.flatMap((head) => [
+    { payload: true, checks: [...head, ...digest] },
+    { payload: true, checks: [...head, ...exclude, ...digest] },
+  ])
+}
+
 // Each accepted command, one check per token. `payload` marks the command that carries a lane prompt.
 const COMMANDS = {
   'aether-wt': [
@@ -94,14 +109,8 @@ const COMMANDS = {
     { checks: [word('result'), is(RUN), is(CALL)] },
     { checks: [word('stop'), is(RUN), is(CALL)] },
     // A design round's seat: the judge or the examiner, with its author; the writer, with the document it writes.
-    {
-      payload: true,
-      checks: [word('seat-start'), oneOf(['judge', 'examiner']), word('--session'), is(SESSION), word('--author'), is(AUTHOR), word('--feature'), is(FEATURE), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
-    },
-    {
-      payload: true,
-      checks: [word('seat-start'), word('writer'), word('--session'), is(SESSION), word('--feature'), is(FEATURE), word('--doc'), oneOf(['spec', 'plan']), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
-    },
+    // --exclude, when the round already tried some pairs, is the token just before --digest.
+    ...seatStartForms(),
     { checks: [word('seat-wait'), is(SEAT_ID), word('--max'), is(MAX)] },
     { checks: [word('seat-stop'), is(SEAT_ID)] },
   ],

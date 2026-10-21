@@ -132,7 +132,7 @@ function liveMark(dataDir, harness, group, now = Date.now()) {
 }
 
 // The live marks, sorted. known(harness, group), when given, keeps only the marks of a group the lane table has: a file
-// of a group the table dropped (agy's old `gemini` key, when the table had three) is no mark for anyone.
+// of a group the table dropped (agy's old `gemini` key, since the table split it into `argon` and `flash`) is no mark for anyone.
 function liveMarks(dataDir, now = Date.now(), known = null) {
   const dir = marksDir(dataDir)
   let entries

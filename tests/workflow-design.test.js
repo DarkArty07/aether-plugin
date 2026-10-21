@@ -489,3 +489,275 @@ for (const seat of ['judge', 'examiner']) {
     }
   })
 }
+
+// A seat round that fails asks for the next pair before the native agent takes it. The fakes below script the replies of
+// `aether-lane seat-wait` as seats.js prints them: exit 4 for a round that failed (the pair is `decision.picked`), exit 0
+// for one that answered, exit 3 when no pair is left.
+const AGY = 'agy/gemini-4-argon@high'
+const GROK = 'grok/grok-4.7@high'
+const MUSE = 'muse/muse-wonder-full-1.0@high'
+const QUOTA = 'Individual quota reached for this model. Resets in 133h5m24s'
+
+const parts = (pair) => {
+  const [harness, rest] = pair.split('/')
+  const [model, effort] = rest.split('@')
+  return { harness, model, effort }
+}
+const failedWait = (seat, id, pair, { status = 'failed', detail = 'exit 4: the harness failed' } = {}) => {
+  const { harness, model, effort } = parts(pair)
+  return { done: true, exitCode: 4, value: { failed: status, seat, id, harness, model, detail, undone: true, native: { ...seats.NATIVE[seat] }, decision: { picked: { id: pair, harness, model, effort } } } }
+}
+const answeredWait = (seat, id, pair, result, answer = 'x') => {
+  const { harness, model, effort } = parts(pair)
+  return { done: true, exitCode: 0, value: { seat, id, harness, model, answer, result, lane: `- Lane: ${harness} ${model}-${effort}` } }
+}
+const verdictText = '## Verdict\napprove\n## Findings\nnone\n## Open questions\n- none'
+
+// The replies for the rounds whose seat-start `match` accepts: replies[n] answers the n-th of them, as a function of its
+// id. A round past the script, and every other command, gets the default fakes.
+function scripted(match, replies) {
+  const order = new Map()
+  return (call, fallback) => {
+    const { verb, rest } = call.command
+    if (verb === 'seat-start' && match(call)) {
+      const out = fallback(call)
+      order.set(out.id, order.size)
+      return out
+    }
+    if (verb === 'seat-wait' && order.has(rest[0]) && replies[order.get(rest[0])] !== undefined) return replies[order.get(rest[0])](rest[0])
+    return fallback(call)
+  }
+}
+const SPEC_WRITER = (call) => call.command.rest[0] === 'writer' && flag(call, '--doc') === 'spec'
+const FIRST_JUDGE = (call) => call.command.rest[0] === 'judge' && call.payload.text.startsWith(`Review the spec ${FEATURE}/spec.md`)
+const specStarts = (run) => opsCalls(run, 'seat-start').filter(SPEC_WRITER)
+const exclusionOf = (start) => (start.command.rest.includes('--exclude') ? flag(start, '--exclude') : null)
+const ON = { ...ARGS, superdelegation: 'on', harnesses: 'agy,grok,muse' }
+
+test('a Writer seat refused for quota asks for the next pair, and the native Writer does not run', async () => {
+  const replies = [(id) => failedWait('writer', id, AGY, { status: 'quota', detail: `exit 3: ${QUOTA}` }), (id) => answeredWait('writer', id, GROK, SPEC_ANSWER)]
+  const run = await go(ON, { ops: scripted(SPEC_WRITER, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  assert.equal(nativeCalls(run).some((c) => c.label.startsWith('spec: writer')), false, 'no native Writer wrote the spec')
+  const starts = specStarts(run)
+  assert.equal(starts.length, 2)
+  assert.deepEqual(starts.map(exclusionOf), [null, AGY])
+  assert.equal(starts[1].command.rest.indexOf('--exclude') + 2, starts[1].command.rest.indexOf('--digest'), '--exclude is the token pair just before --digest')
+  assert.equal(starts[1].payload.text, starts[0].payload.text, 'the same message')
+  assert.equal(flag(starts[1], '--digest'), lanes.digest(starts[1].payload.text))
+  assert.ok(parseOpsPrompt(starts[1].prompt), 'the mod runs the start with --exclude without a model')
+  assert.deepEqual(['--session', '--feature', '--doc', '--superdelegation', '--harnesses'].map((f) => flag(starts[1], f)), ['sess-1', FEATURE, 'spec', 'on', 'agy,grok,muse'])
+  const record = run.result.rounds[0]
+  assert.deepEqual([record.document, record.seat, record.provider, record.note], ['spec', 'writer', 'grok grok-4.7', null])
+  assert.equal(record.tries.length, 1)
+  assert.deepEqual([record.tries[0].pair, record.tries[0].next], [AGY, true])
+  assert.ok(record.tries[0].reason.includes('Individual quota reached'), record.tries[0].reason)
+  assert.equal(record.tries[0].id, 'writer-20261015-120001-ab12')
+  assert.equal(record.id, 'writer-20261015-120002-ab12')
+  assert.deepEqual(run.result.rounds.map((x) => [x.document, x.seat]), [['spec', 'writer'], ['spec', 'judge'], ['plan', 'writer'], ['plan', 'judge'], ['exam', 'examiner']], 'the order of the rounds is the same')
+})
+
+// The ops agent of a real run reported the round's own exit (3 or 4) as the exit of `aether-lane seat-wait`, whose process
+// exits 0: the wait handler returns the reply as that raw result.
+const reportingRoundExit = (ops) => (call, fallback) => {
+  const out = ops(call, fallback)
+  return call.command.verb === 'seat-wait' && out && out.done === true ? { raw: { exitCode: out.exitCode, stdout: `${JSON.stringify(out)}\n` } } : out
+}
+
+test('a wait whose reported exit is the round\'s own (3 or 4) is read at once: no twelve waits, no stop, the next pair is asked', async () => {
+  const replies = [(id) => failedWait('writer', id, AGY, { status: 'quota', detail: `exit 3: ${QUOTA}` }), (id) => answeredWait('writer', id, GROK, SPEC_ANSWER)]
+  const run = await go(ON, { ops: reportingRoundExit(scripted(SPEC_WRITER, replies)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  assert.equal(opsCalls(run, 'seat-wait').length, opsCalls(run, 'seat-start').length, 'every round is waited for once')
+  assert.equal(opsCalls(run, 'seat-stop').length, 0, 'no round was stopped')
+  assert.deepEqual(specStarts(run).map(exclusionOf), [null, AGY])
+  assert.equal(nativeCalls(run).some((c) => c.label.startsWith('spec: writer')), false, 'no native Writer wrote the spec')
+  assert.deepEqual([run.result.rounds[0].provider, run.result.rounds[0].note], ['grok grok-4.7', null])
+  // A round handed back (exit 3) is read the same way, and its note says why, not that it did not finish.
+  assert.ok(run.result.rounds[1].note.startsWith('handed back to the native agent'), run.result.rounds[1].note)
+})
+
+test('a Judge seat that fails with exit 4 asks for the next pair, and the second one answers as the verdict', async () => {
+  const replies = [(id) => failedWait('judge', id, MUSE, { detail: 'exit 4: the harness failed' }), (id) => answeredWait('judge', id, GROK, APPROVE, verdictText)]
+  const run = await go(ON, { ops: scripted(FIRST_JUDGE, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  assert.equal(run.calls.some((c) => c.label === 'spec: judge review 1'), false, 'no native Judge took the review')
+  const starts = opsCalls(run, 'seat-start').filter(FIRST_JUDGE)
+  assert.deepEqual(starts.map(exclusionOf), [null, MUSE])
+  assert.deepEqual(starts.map((c) => flag(c, '--author')), ['sonnet', 'sonnet'])
+  assert.deepEqual(run.result.verdicts.map((v) => [v.document, v.round, v.seat]), [['spec', 1, 'grok grok-4.7'], ['plan', 1, 'native']])
+  assert.equal(run.result.verdicts[0].text, verdictText)
+  assert.deepEqual(run.result.rounds[1].tries.map((t) => [t.pair, t.next]), [[MUSE, true]])
+})
+
+test('three external tries in all: the native agent takes the round after the third, with the same message', async () => {
+  const replies = [(id) => failedWait('writer', id, AGY, { status: 'quota', detail: QUOTA }), (id) => failedWait('writer', id, GROK), (id) => failedWait('writer', id, MUSE, { detail: 'exit 4: muse failed' }), (id) => answeredWait('writer', id, AGY, SPEC_ANSWER)]
+  const run = await go(ON, { ops: scripted(SPEC_WRITER, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  const starts = specStarts(run)
+  assert.equal(starts.length, 3, 'never a fourth try')
+  assert.deepEqual(starts.map(exclusionOf), [null, AGY, `${AGY},${GROK}`])
+  assert.ok(parseOpsPrompt(starts[2].prompt), 'the mod runs a start with two excluded pairs too')
+  const native = nativeCalls(run).filter((c) => c.label.startsWith('spec: writer'))
+  assert.deepEqual(native.map((c) => c.label), ['spec: writer write'])
+  assert.ok(native[0].prompt.startsWith(starts[0].payload.text), 'the same message')
+  assert.equal(native[0].prompt.slice(starts[0].payload.text.length).trim(), 'Your checkout is /repo: the paths above are relative to it.')
+  const record = run.result.rounds[0]
+  assert.equal(record.provider, 'native')
+  assert.ok(record.note.includes('muse') && record.note.includes('exit 4: muse failed'), record.note)
+  assert.deepEqual(record.tries.map((t) => [t.pair, t.next]), [[AGY, true], [GROK, true], [MUSE, false]])
+  assert.deepEqual(record.tries.map((t) => t.id), starts.map((_, i) => `writer-20261015-12000${i + 1}-ab12`))
+  assert.ok(record.tries[0].reason.includes('Individual quota reached') && record.tries[1].reason.includes('grok') && record.tries[2].reason.includes('muse'))
+  assert.equal(record.id, 'writer-20261015-120003-ab12')
+})
+
+test('a seat-start that says no pair is left hands the round to the native agent with no retry, and the reply names the native pair', async () => {
+  const noneLeft = { unavailable: 'no-external', seat: 'judge', native: { ...seats.NATIVE.judge, model: 'sonnet', effort: 'high' }, tried: [] }
+  const first = await go(ON, { ops: scripted(FIRST_JUDGE, [() => ({ done: true, exitCode: 3, value: noneLeft })]) })
+  assert.equal(opsCalls(first, 'seat-start').filter(FIRST_JUDGE).length, 1, 'no pair is asked for again')
+  assert.deepEqual(first.calls.filter((c) => c.label === 'spec: judge review 1').map((c) => [c.model, c.effort]), [['sonnet', 'high']])
+  assert.equal('tries' in first.result.rounds[1], false, 'a round that never asked for a second pair has no tries')
+  const after = await go(ON, { ops: scripted(FIRST_JUDGE, [(id) => failedWait('judge', id, AGY, { status: 'quota', detail: QUOTA }), () => ({ done: true, exitCode: 3, value: noneLeft })]) })
+  assert.equal(after.error, null, after.error && after.error.stack)
+  const starts = opsCalls(after, 'seat-start').filter(FIRST_JUDGE)
+  assert.deepEqual(starts.map(exclusionOf), [null, AGY], 'asked once for the next pair, which was none')
+  assert.deepEqual(after.calls.filter((c) => c.label === 'spec: judge review 1').map((c) => [c.model, c.effort]), [['sonnet', 'high']])
+  const record = after.result.rounds[1]
+  assert.deepEqual(record.tries.map((t) => [t.pair, t.next]), [[AGY, true]])
+  assert.ok(record.note.startsWith('handed back to the native agent (sonnet high): no-external'), record.note)
+})
+
+test('a round that does not finish by its deadline goes native with no retry, also after a failed first try', async () => {
+  const timed = await go(ON, { ops: scripted(FIRST_JUDGE, [() => ({ done: false })]) })
+  assert.equal(opsCalls(timed, 'seat-start').filter(FIRST_JUDGE).length, 1)
+  assert.equal(opsCalls(timed, 'seat-stop').length, 1)
+  assert.ok(timed.calls.some((c) => c.label === 'spec: judge review 1'))
+  assert.equal('tries' in timed.result.rounds[1], false)
+  const replies = [(id) => failedWait('judge', id, AGY, { status: 'quota', detail: QUOTA }), () => ({ done: false })]
+  const after = await go(ON, { ops: scripted(FIRST_JUDGE, replies) })
+  const starts = opsCalls(after, 'seat-start').filter(FIRST_JUDGE)
+  assert.deepEqual(starts.map(exclusionOf), [null, AGY], 'a second try that times out is not followed by a third')
+  assert.equal(opsCalls(after, 'seat-stop').length, 1)
+  assert.ok(after.calls.some((c) => c.label === 'spec: judge review 1'), 'the native Judge took it')
+  assert.deepEqual(after.result.rounds[1].tries.map((t) => [t.pair, t.next]), [[AGY, true], [null, false]])
+  assert.ok(after.result.rounds[1].tries[1].reason.includes('did not finish'), after.result.rounds[1].tries[1].reason)
+  assert.ok(typeof after.result.rounds[1].tries[1].id === 'string' && after.result.rounds[1].tries[1].id.startsWith('judge-'))
+  assert.ok(after.result.rounds[1].note.includes('did not finish'), after.result.rounds[1].note)
+})
+
+test('an answer that does not fit goes native with no retry', async () => {
+  const unfit = (id) => answeredWait('judge', id, AGY, { verdict: 'maybe' })
+  const run = await go(ON, { ops: scripted(FIRST_JUDGE, [unfit]) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(opsCalls(run, 'seat-start').filter(FIRST_JUDGE).length, 1)
+  assert.ok(run.calls.some((c) => c.label === 'spec: judge review 1'))
+  assert.equal('tries' in run.result.rounds[1], false)
+})
+
+test('a round that broke (exit 1) asks again with no new exclusion, and the second pair answers', async () => {
+  const broke = () => ({ done: true, exitCode: 1, value: { error: 'boom' } })
+  const replies = [broke, (id) => answeredWait('judge', id, GROK, APPROVE, verdictText)]
+  const run = await go(ON, { ops: scripted(FIRST_JUDGE, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  assert.equal(run.calls.some((c) => c.label === 'spec: judge review 1'), false, 'no native Judge took the review')
+  const starts = opsCalls(run, 'seat-start').filter(FIRST_JUDGE)
+  assert.equal(starts.length, 2)
+  assert.deepEqual(starts.map(exclusionOf), [null, null], 'a broken round names no pair, so the second start carries no new exclusion')
+  assert.equal(run.result.verdicts[0].seat, 'grok grok-4.7')
+  assert.deepEqual(run.result.rounds[1].tries.map((t) => [t.pair, t.next]), [[null, true]])
+  assert.ok(run.result.rounds[1].tries[0].reason.includes('boom'), run.result.rounds[1].tries[0].reason)
+})
+
+test('a round that broke three times goes native with the same message, and the record lists three tries', async () => {
+  const broke = () => ({ done: true, exitCode: 1, value: { error: 'boom' } })
+  const replies = [broke, broke, broke, (id) => answeredWait('judge', id, GROK, APPROVE, verdictText)]
+  const run = await go(ON, { ops: scripted(FIRST_JUDGE, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  const starts = opsCalls(run, 'seat-start').filter(FIRST_JUDGE)
+  assert.equal(starts.length, 3, 'never a fourth try')
+  assert.deepEqual(starts.map(exclusionOf), [null, null, null])
+  const native = run.calls.filter((c) => c.label === 'spec: judge review 1')
+  assert.equal(native.length, 1, 'the native Judge took it after the third')
+  assert.ok(native[0].prompt.startsWith(starts[0].payload.text), 'the same message')
+  assert.deepEqual(run.result.rounds[1].tries.map((t) => [t.pair, t.next]), [[null, true], [null, true], [null, false]])
+  for (const t of run.result.rounds[1].tries) assert.ok(t.reason.includes('boom'), t.reason)
+})
+
+test('a failed round (exit 4) that names no usable pair asks again with the same exclusion', async () => {
+  const unnamed = (id) => ({ done: true, exitCode: 4, value: { failed: 'failed', seat: 'judge', id, harness: 'agy', model: 'gemini-4-argon', detail: 'x', undone: true, native: { ...seats.NATIVE.judge } } })
+  const badPair = (id) => ({ done: true, exitCode: 4, value: { failed: 'failed', seat: 'judge', id, harness: 'agy', model: 'gemini-4-argon', detail: 'x', undone: true, native: { ...seats.NATIVE.judge }, decision: { picked: { id: 'agy; rm -rf /' } } } })
+  for (const reply of [unnamed, badPair]) {
+    const run = await go(ON, { ops: scripted(FIRST_JUDGE, [reply, (id) => answeredWait('judge', id, GROK, APPROVE, verdictText)]) })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    assert.equal(run.calls.some((c) => c.label === 'spec: judge review 1'), false, reply.name)
+    const starts = opsCalls(run, 'seat-start').filter(FIRST_JUDGE)
+    assert.deepEqual(starts.map(exclusionOf), [null, null], reply.name)
+    assert.deepEqual(run.result.rounds[1].tries.map((t) => [t.pair, t.next]), [[null, true]], reply.name)
+  }
+})
+
+test('once the next pair was asked, a try whose answer does not fit is listed as the last try', async () => {
+  const replies = [(id) => failedWait('judge', id, AGY, { status: 'quota', detail: QUOTA }), (id) => answeredWait('judge', id, GROK, { verdict: 'maybe' })]
+  const run = await go(ON, { ops: scripted(FIRST_JUDGE, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(opsCalls(run, 'seat-start').filter(FIRST_JUDGE).length, 2, 'no third try after an unfit answer')
+  assert.ok(run.calls.some((c) => c.label === 'spec: judge review 1'), 'the native Judge took it')
+  assert.deepEqual(run.result.rounds[1].tries.map((t) => [t.pair, t.next]), [[AGY, true], [null, false]])
+  assert.ok(run.result.rounds[1].tries[1].reason.includes('fits its schema'), run.result.rounds[1].tries[1].reason)
+})
+
+test('a start that fails counts as a try: the next start carries the same exclusion, and the native agent takes the round after the third', async () => {
+  const starting = (failures) => {
+    let n = 0
+    return (call, fallback) => {
+      if (call.command.verb === 'seat-start' && SPEC_WRITER(call) && ++n <= failures) return { error: 'the digest does not match' }
+      if (call.command.verb === 'seat-wait' && call.command.rest[0].startsWith('writer')) return answeredWait('writer', call.command.rest[0], AGY, SPEC_ANSWER)
+      return fallback(call)
+    }
+  }
+  const once = await go(ON, { ops: starting(1) })
+  assert.equal(once.error, null, once.error && once.error.stack)
+  assert.equal(specStarts(once).length, 2)
+  assert.equal(nativeCalls(once).some((c) => c.label.startsWith('spec: writer')), false)
+  const record = once.result.rounds[0]
+  assert.equal(record.provider, 'agy gemini-4-argon')
+  assert.deepEqual(record.tries.map((t) => [t.pair, t.id, t.next]), [[null, null, true]])
+  assert.ok(record.tries[0].reason.includes('the digest does not match'), record.tries[0].reason)
+  const always = await go(ON, { ops: starting(9) })
+  assert.equal(specStarts(always).length, 3)
+  assert.ok(always.calls.some((c) => c.label === 'spec: writer write'), 'the native Writer took the round')
+  assert.deepEqual(always.result.rounds[0].tries.map((t) => t.next), [true, true, false])
+})
+
+test('a pair the reply names twice is not tried twice, and the loop always ends', async () => {
+  const same = (id) => failedWait('writer', id, AGY, { status: 'quota', detail: QUOTA })
+  const run = await go(ON, { ops: scripted(SPEC_WRITER, [same, same, same, same]) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(specStarts(run).length, 2, 'the second try failed on a pair that was already excluded: the reply is broken, so the native agent takes it')
+  assert.ok(run.calls.some((c) => c.label === 'spec: writer write'))
+  assert.deepEqual(run.result.rounds[0].tries.map((t) => [t.pair, t.next]), [[AGY, true], [AGY, false]])
+})
+
+test('the author rule holds with the exclusion: the retry keeps --author, and the native Judge after the last try is not the author', async () => {
+  const pairs = require('../plugins/aether/lib/pairs.js').loadPairs().pairs
+  const left = seats.chooseSeat({ config: null, pairs, seat: 'judge', author: 'opus', harnesses: {}, exclude: [AGY, GROK] })
+  assert.notEqual(left.native.model, 'opus')
+  const noneLeft = { unavailable: 'no-external', seat: 'judge', native: left.native, tried: left.tried, decision: left.decision }
+  const replies = [(id) => failedWait('judge', id, AGY, { status: 'quota', detail: QUOTA }), (id) => failedWait('judge', id, GROK), () => ({ done: true, exitCode: 3, value: noneLeft })]
+  const run = await go({ ...SHORT, superdelegation: 'on', harnesses: 'agy,grok,muse', author: 'opus' }, { ops: scripted((call) => call.command.rest[0] === 'judge', replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const starts = opsCalls(run, 'seat-start')
+  assert.deepEqual(starts.map(exclusionOf), [null, AGY, `${AGY},${GROK}`])
+  assert.deepEqual(starts.map((c) => flag(c, '--author')), ['opus', 'opus', 'opus'])
+  const judges = run.calls.filter((c) => c.role === 'judge')
+  assert.equal(judges.length, 1)
+  assert.deepEqual([judges[0].model, judges[0].effort], [left.native.model, left.native.effort])
+  assert.notEqual(judges[0].model, 'opus')
+  assert.deepEqual(run.result.rounds[0].tries.map((t) => [t.pair, t.next]), [[AGY, true], [GROK, true]])
+})

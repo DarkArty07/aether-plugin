@@ -11,6 +11,7 @@ const { LANE_BIN, laneEnv, agyTurns, argAfter } = require('./lane-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const seats = require('../plugins/aether/lib/seats.js')
 const schemas = require('../plugins/aether/lib/lane-schemas.js')
+const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 
 const FEATURE = 'specs/001-demo'
 const DAY = 86400000
@@ -156,4 +157,84 @@ test('C16: a Muse round reads the quota after it parses the output, so the allow
   assert.equal(r.json.harness, 'muse')
   const call = lanes.readLog(env.AETHER_DATA_DIR).find((entry) => entry.kind === 'call' && entry.harness === 'muse')
   assert.ok(Math.abs(call.quotaAfter.windows.weekly.remaining - 0.6) < 1e-9, JSON.stringify(call.quotaAfter))
+})
+
+// The two agy pairs that reach the Judge's Opus high. Gemini's window renews first, so Argon is the pair the rule
+// picks, and Opus on agy is the next one.
+const ARGON = 'agy/gemini-4-argon@high'
+const OPUS_PAIR = 'agy/claude-opus-5-5@high'
+const { pairs: PAIR_TABLE } = loadPairs()
+const openIn = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString() })
+const seatConfig = { harnesses: { agy: { timeouts: { judge: 1200, writer: 2700, examiner: 1800 } } } }
+const chooseExcluded = (seat, more = {}) => seats.chooseSeat({
+  config: seatConfig,
+  pairs: PAIR_TABLE,
+  seat,
+  harnesses: { agy: { installed: true, groups: { gemini: openIn(2), claude: openIn(3) } } },
+  ...more,
+})
+const JUDGE_REPLY = { verdict: 'revise', findings: [{ severity: 'major', type: 'missing', title: 'Task 3 is too large', evidence: '`Owns: src/**`', fix: 'split it' }], openQuestions: [] }
+const judgeInput = `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_REPLY)}\n`
+const whyOf = (chosen, id) => chosen.tried.find((entry) => entry.id === id)
+
+test('--exclude reaches the choice and the next pair of the rule takes the seat', (t) => {
+  const chosen = chooseExcluded('judge', { exclude: [ARGON] })
+  assert.equal(chosen.external.pair.id, OPUS_PAIR)
+  assert.deepEqual(whyOf(chosen, ARGON), { id: ARGON, outcome: 'passed', why: 'excluded' })
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--exclude', ARGON], env, judgeInput)
+  assert.equal(r.status, 0, r.stdout)
+  assert.equal(r.json.model, 'claude-opus-5-5')
+  assert.equal(argAfter(agyTurns(env)[0].argv, '--model'), 'claude-opus-5-5-high')
+})
+
+test('excluding every pair that can take the round hands it to the native agent', (t) => {
+  const chosen = chooseExcluded('judge', { exclude: [ARGON, OPUS_PAIR] })
+  assert.equal(chosen.external, undefined)
+  assert.equal(chosen.native.agent, 'aether:judge')
+  assert.equal(chosen.native.model, 'opus')
+  assert.equal(whyOf(chosen, ARGON).why, 'excluded')
+  assert.equal(whyOf(chosen, OPUS_PAIR).why, 'excluded')
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--exclude', `${ARGON},${OPUS_PAIR}`], env, judgeInput)
+  assert.equal(r.status, 3, r.stdout)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.equal(r.json.native.agent, 'aether:judge')
+  assert.equal(r.json.native.model, 'opus')
+  assert.equal(r.json.tried.find((entry) => entry.id === ARGON).why, 'excluded')
+  assert.equal(r.json.tried.find((entry) => entry.id === OPUS_PAIR).why, 'excluded')
+  assert.deepEqual(agyTurns(env), [])
+})
+
+test('a malformed --exclude is a usage error', (t) => {
+  const repo = seatRepo(t)
+  const env = laneEnv(t)
+  for (const value of ['agy/x', 'agy/gemini-4-argon', `${ARGON},nope`]) {
+    const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--exclude', value], env, 'Review.\n')
+    assert.equal(r.status, 1, value)
+    assert.match(r.json.error, /--exclude must be pair ids like agy\/model@effort/, value)
+  }
+})
+
+test('the author rule holds together with an exclusion', (t) => {
+  for (const seatName of ['judge', 'examiner']) {
+    const chosen = chooseExcluded(seatName, { author: 'opus', exclude: [ARGON] })
+    assert.equal(chosen.external, undefined, seatName)
+    assert.notEqual(chosen.native.model, 'opus', seatName)
+    assert.equal(chosen.native.model, 'sonnet', seatName)
+    assert.equal(whyOf(chosen, ARGON).why, 'excluded', seatName)
+    assert.equal(whyOf(chosen, OPUS_PAIR).why, 'author', seatName)
+  }
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--author', 'opus', '--feature', FEATURE, '--exclude', ARGON], env, judgeInput)
+  assert.equal(r.status, 3, r.stdout)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.notEqual(r.json.native.model, 'opus')
+  assert.equal(r.json.native.model, 'sonnet')
+  assert.equal(r.json.tried.find((entry) => entry.id === ARGON).why, 'excluded')
+  assert.equal(r.json.tried.find((entry) => entry.id === OPUS_PAIR).why, 'author')
+  assert.deepEqual(agyTurns(env), [])
 })
