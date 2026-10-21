@@ -3,7 +3,7 @@
 - **Date:** 2026-10-21. It follows [the 0.14.5 handoff](2026-10-21-external-seats-0.14.5.md) and [the 0.14.4 one](2026-10-21-split-argon-flash-0.14.4.md), whose section 3 is the owner's policy: read it first.
 - **From:** the Lead, Claude Code on Sonnet 5.5, in the same long session, in two autonomous runs («necesito que trabjes en lo que conversmaos, continua implementandolo» and, after the first reached its time ceiling, «Hola? Continua»), with «autorizo gasto no hay problema».
 - **To:** the next session.
-- **Repository state:** built on the branch `feat/delegates-that-edit` (worktree `.worktrees/delegates-that-edit`), which holds `fix/external-seats` (0.14.4, 0.14.5 and the swarm fix) and spec 010. Nothing is merged, tagged, pushed or installed: the releases wait for the owner's word.
+- **Repository state:** published. `feat/delegates-that-edit`, which held `fix/external-seats` (0.14.4, 0.14.5 and the swarm fix) and spec 010, was merged into `main`, tagged `aether--v0.15.0`, pushed and installed on the owner's word («primero pusheas borra el worktree y cambio local lo que habías hecho»), and the four worktrees of this work and their branches were deleted.
 
 ## 1. What was asked
 
@@ -31,11 +31,11 @@ The three changes of the owner's policy: the Lead's rule, spec 010 (delegates th
 - **The final review of a whole package** runs on Claude when no pair reaches the points of its model (Opus at xhigh). That is the rule.
 - **The router does not refuse an editing Agent call** (R18 of the first design); `aether-report --delegates` makes the miss visible.
 - **`lib/report.js`** counts the shared Gemini window twice (0.14.4); **three tests** read the shell's Aether variables; the minor findings of the final reviews are not worked (the list is in the run results of `20261021-033256-1728`).
-- **Cleanup:** the worktrees `.worktrees/split-argon-flash`, `external-seats`, `delegates-that-edit` and `swarm-next-pair` and their branches stay until the releases.
+- **Cleanup:** done. The runs `20261021-033256-1728` and `20261021-033828-9a2f` are still in `.aether/runs/` with the final reviews' findings (not finalized with `aether-report finalize`, which would delete them).
 
 ## 5. Release
 
-Three versions wait, in order: 0.14.4 (`fix/split-argon-flash`), 0.14.5 (`fix/external-seats`, which holds 0.14.4) and 0.15.0 (`feat/delegates-that-edit`, which holds both). Merging `feat/delegates-that-edit` into `main` releases all of it as 0.15.0. Version 0.15.0 is in the four places the contributing guide names, with the roadmap and the badge. **It waits for the owner's word.**
+Published on 2026-10-21 as 0.15.0, which holds 0.14.4 and 0.14.5 (they were never published apart). The installed plugin is 0.15.0; a session started before the update still runs the old one, so open a new one. The grants for the merge, the push, the tag and the deletion were session grants from the owner's words above, and are revoked.
 
 ## 6. What the next session has to watch
 
