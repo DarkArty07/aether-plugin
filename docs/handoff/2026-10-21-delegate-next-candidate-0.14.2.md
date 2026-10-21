@@ -3,7 +3,7 @@
 - **Date:** 2026-10-21. It follows [the 0.14.1 handoff](2026-10-21-router-superdelegation-0.14.1.md).
 - **From:** the Lead, Claude Code on Sonnet 5.5, in the session that watched the first delegations of 0.14.1 and then fixed what they showed.
 - **To:** the next session.
-- **Repository state:** built on the branch `fix/delegate-next-candidate`; section 5 says how it was released.
+- **Repository state:** published on the owner's word of 2026-10-21 («Si abre el issue desarrolla la solución cierra el issue pusheas a local actualizas el plugin y me das el aviso cuando esté resuelto»): merged to `main` (`c5f8360`), tagged `aether--v0.14.2`, pushed, and his plugin updated from 0.14.1 (a restart applies it). Section 4 says what is open.
 
 ## 1. What was asked
 
@@ -39,7 +39,7 @@ The owner asked the Lead to watch the delegation of the first session with 0.14.
 
 ## 5. Release
 
-Version 0.14.2 is in the four places the contributing guide names (and the roadmap, the badge and the pins of two tests). `npm run check` is run before the merge, and the merge, the tag and the push are made on the owner's word above.
+Version 0.14.2 is in the four places the contributing guide names (and the roadmap, the badge and the pins of two tests). `npm run check` passed before the merge (1481 tests with the shell's Aether variables cleared, 69 of the mod, the strict validation). The merge, the tag `aether--v0.14.2` and the push were made on the owner's word above, and `claude plugin update aether@aether-plugin` took his installed plugin from 0.14.1 to 0.14.2. GitHub issue #45 is closed.
 
 ## 6. What the next session has to watch
 
