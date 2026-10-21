@@ -15,7 +15,7 @@ type Run = { argv: string[] }
 
 // Answers what the brake asks Claude Code for: settings and crossings come from `aether-autonomy` by process,
 // the windows from `session.usage`, and every side effect is kept.
-function stubs(on, { marked = true, settings = SETTINGS as any, crossing = PAUSED as any, notifyFails = false } = {}) {
+function stubs(on, { marked = true, settings = SETTINGS as any, crossing = PAUSED as any, notifyFails = false, notifyThrows = false, usageThrows = false, crossingFails = false } = {}) {
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/home/u', AETHER_DATA_DIR: '/home/u/aether-data' })
   const writes: { path: string; text: string }[] = []
@@ -38,10 +38,14 @@ function stubs(on, { marked = true, settings = SETTINGS as any, crossing = PAUSE
   on('process.run', ($, e) => {
     runs.push({ argv: [...e.argv] })
     const verb = e.argv[2]
+    if (crossingFails && verb === 'brake-crossing') return { value: { exitCode: 1, stdout: '', stderr: 'the bin is down' } }
     return { value: { exitCode: 0, stdout: JSON.stringify(verb === 'brake-settings' ? settings : crossing) + '\n', stderr: '' } }
   })
-  on('session.usage', () => ({ value: sessionUsage }))
-  on('ui.notify', ($, e) => { notes.push({ text: e.text, opts: e.opts ?? e.init ?? e }); return { value: notifyFails ? { isSent: false, reason: 'disabled' } : { isSent: true, channel: 'test' } } })
+  on('session.usage', () => {
+    if (usageThrows) throw new Error('usage broke')
+    return { value: sessionUsage }
+  })
+  on('ui.notify', ($, e) => { if (notifyThrows) throw new Error('notify broke'); notes.push({ text: e.text, opts: e.opts ?? e.init ?? e }); return { value: notifyFails ? { isSent: false, reason: 'disabled' } : { isSent: true, channel: 'test' } } })
   on('prompt.submit', ($, e) => { prompts.push(e); return { text: e.text } })
   return {
     clock, writes, runs, notes, prompts,
@@ -227,4 +231,63 @@ test('a settings call that fails leaves the brake inert and the step untouched',
   // One settings attempt only, never one per step.
   await step($)
   expect(s.runs.filter((r) => r.argv[2] === 'brake-settings')).toHaveLength(1)
+})
+
+test('a usage() that throws leaves the step intact and does nothing', async ($, on) => {
+  const s = stubs(on, { usageThrows: true })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 99, resetsAt: RESET }])
+  const value = await step($)
+  expect(value.answer).toBe('ok')
+  expect(s.notes).toEqual([])
+  expect(s.crossingRuns()).toEqual([])
+  expect(s.prompts).toEqual([])
+})
+
+test('a notice that throws is recorded as failed with the reason error, and the pause still goes on', async ($, on) => {
+  const s = stubs(on, { notifyThrows: true })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  const value = await step($)
+  expect(value.answer).toBe('ok')
+  expect(s.crossingRuns()[0].argv.join(' ')).toContain('--notify failed --notify-reason error')
+  expect(s.prompts).toHaveLength(1)
+})
+
+test('a brake-crossing that fails leaves the step intact, submits no stop and is tried again on the next step', async ($, on) => {
+  const s = stubs(on, { crossingFails: true })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  const value = await step($)
+  expect(value.answer).toBe('ok')
+  expect(s.prompts).toEqual([])
+  expect(s.crossingRuns()).toHaveLength(1)
+  await step($)
+  expect(s.crossingRuns()).toHaveLength(2)
+  expect(s.notes).toHaveLength(1)
+})
+
+test('a duplicate answer arms the resume and submits no second stop', async ($, on) => {
+  const s = stubs(on, { crossing: { ...PAUSED, duplicate: true } })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.prompts).toEqual([])
+  await s.clock.advance(Date.parse(RESUME) - NOW)
+  expect(s.prompts).toHaveLength(1)
+  expect(s.prompts[0].text).toContain('the five_hour window has reset')
+})
+
+test('a resume hour that has already passed submits the resume at once', async ($, on) => {
+  const past = '2026-10-21T09:00:00.000Z'
+  const s = stubs(on, { crossing: { ...PAUSED, resumeAt: past } })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.prompts.map((p) => p.text.includes('has reset'))).toEqual([false, true])
+})
+
+test('steps that overlap settle one crossing: one settings call, one notice, one recording', async ($, on) => {
+  const s = stubs(on)
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await Promise.all([step($), step($), step($)])
+  expect(s.runs.filter((r) => r.argv[2] === 'brake-settings')).toHaveLength(1)
+  expect(s.notes).toHaveLength(1)
+  expect(s.crossingRuns()).toHaveLength(1)
+  expect(s.prompts).toHaveLength(1)
 })
