@@ -161,6 +161,7 @@ function writeStrictSchema(schemaFile) {
   try {
     parsed = JSON.parse(fs.readFileSync(schemaFile, 'utf8'))
   } catch {
+    // Missing, unreadable or not JSON: the file stays as it is.
     return
   }
   fs.writeFileSync(schemaFile, JSON.stringify(strictSchema(parsed), null, 2) + '\n')
