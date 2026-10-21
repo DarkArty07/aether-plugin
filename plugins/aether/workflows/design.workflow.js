@@ -14,12 +14,13 @@ export const meta = {
 // and the Examiner writes the exam. A short design runs only the Judge's rounds on one document, with the Writer to
 // correct it. Every round of the Judge, the Writer (its drafts and its corrections) and the Examiner is a seat round:
 // `aether-lane seat-start` picks the pair with the same function as the swarm (an external pair first, the native
-// agent last), and the script waits for it in steps. Whenever the round does not run or does not answer, the native
-// agent takes it with the same message, in the model and effort the seat's reply names (a Judge or an Examiner is
-// never the model that wrote the document), or in the seat's reference pair when it names none. The one document no
-// Writer seat can write is design.md of a short design: its corrections are the native Writer's. The script never
-// reads the clock or random numbers: the runtime replays a resumed run call by call. It has no modules, so what it
-// needs from run.workflow.js and lib/lane-schemas.js is copied here by hand.
+// agent last), and the script waits for it in steps. A round that fails on its pair asks `seat-start` again, without
+// the pairs it tried, up to three tries in all. Whenever the round does not run, does not answer or has no pair left,
+// the native agent takes it with the same message, in the model and effort the seat's reply names (a Judge or an
+// Examiner is never the model that wrote the document), or in the seat's reference pair when it names none. The one
+// document no Writer seat can write is design.md of a short design: its corrections are the native Writer's. The
+// script never reads the clock or random numbers: the runtime replays a resumed run call by call. It has no modules,
+// so what it needs from run.workflow.js and lib/lane-schemas.js is copied here by hand.
 
 const SCOPE =
   'Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.'
@@ -31,6 +32,8 @@ const REPO_ROOT = /^\/[^'\u0000-\u001f\u007f]*$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
 const AUTHOR = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 const SEAT_ID = /^(judge|writer|examiner)-\d{8}-\d{6}-[0-9a-f]{4}$/
+// A pair id as `--exclude` takes it (the rule of the mod's list in hooks/ops-command.mjs and of lib/seats.js excludeList).
+const PAIR_ID = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(low|medium|high|xhigh|max)$/
 const SWITCH = ['on', 'off']
 const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -43,6 +46,9 @@ const MAX_REVIEWS = 3
 // A seat round is waited for in steps that each fit in one ops call (R2).
 const MAX_WAITS = 12
 const WAIT_SECONDS = 540
+// A seat round gets at most three external tries: after one that fails, the next pair is asked for, and the native
+// agent takes the round after the third or when no pair is left.
+const MAX_TRIES = 3
 
 // The native pair each seat asks the points of, as lib/seats.js REFERENCE gives it: the native agent of a round whose seat
 // reply names none.
@@ -400,33 +406,45 @@ function handedBackNote(reply) {
   }
 }
 
-// Starts a seat round and waits for it: { reply } with what seat-wait printed once it finished, or { note } when it
-// did not start or did not finish (then it is stopped).
-async function awaitSeat(record, { seat, base, flags, text, phase }) {
-  const started = await ops(`aether-lane seat-start ${seat} ${flags} --digest ${digest(text)}`, {
+// Starts a seat round and waits for it, without the pairs in `exclude`: { id, reply } with what seat-wait printed once it
+// finished, or { id, note } when it did not finish (then it is stopped), or { id: null, note, startFailed } when it did
+// not start. `id` is the round's, once it started.
+async function awaitSeat({ seat, base, flags, exclude, text, phase }) {
+  const excluding = exclude.length > 0 ? ` --exclude ${exclude.join(',')}` : ''
+  const started = await ops(`aether-lane seat-start ${seat} ${flags}${excluding} --digest ${digest(text)}`, {
     phase,
     label: `${base}: start`,
     payload: { path: MESSAGE_PATH, text },
   })
   if (started.error || started.started !== true || !matches(SEAT_ID, started.id) || !started.id.startsWith(`${seat}-`)) {
-    return { note: `the seat round did not start: ${started.error || JSON.stringify(started).slice(0, 300)}` }
+    return { id: null, note: `the seat round did not start: ${started.error || JSON.stringify(started).slice(0, 300)}`, startFailed: true }
   }
   const { id } = started
-  record.id = id
   // A wait the ops agent fails or garbles only costs one more wait.
   for (let k = 1; k <= MAX_WAITS; k++) {
     const out = await ops(`aether-lane seat-wait ${id} --max ${WAIT_SECONDS}`, { phase, label: `${base}: wait ${k}`, long: true })
-    if (!out.error && out.done === true) return { reply: out }
+    if (!out.error && out.done === true) return { id, reply: out }
   }
   const stopped = await ops(`aether-lane seat-stop ${id}`, { phase, label: `${base}: stop` })
   if (stopped.error) log(`${base}: the stop failed: ${stopped.error}`)
-  return { note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped` }
+  return { id, note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped` }
+}
+
+// The pair a round that ended failed (exit 4) ran on, as its decision names it, or null when the reply names none that
+// --exclude can take.
+function failedPair(reply, value) {
+  if (reply.exitCode !== 4 || !isObject(value.decision) || !isObject(value.decision.picked)) return null
+  return matches(PAIR_ID, value.decision.picked.id) ? value.decision.picked.id : null
 }
 
 // One round of a seat (R2). The seat round answers, or the native agent takes the round with the same message: after
-// exit 3, 4 or 1, a start that failed, or a round that did not finish. `author` is the model that wrote the document
-// under review, so that no seat takes it; `writes` is the Writer's --doc (spec or plan). `schema` is the shape of an
-// external answer; the native agent answers with `nativeSchema`, which is the same unless the round is a correction.
+// exit 3, 4 or 1, a start that failed, or a round that did not finish. A round that ends failed (exit 4) on a pair
+// the reply names, or whose start failed, asks `seat-start` again with --exclude holding the pairs it tried, up to
+// MAX_TRIES tries in all; the native agent takes it after the last, or at once when the reply is exit 3 (no pair is
+// left), the round did not finish, or the reply names no pair to leave out. `tries` in the round's record lists the
+// tries that failed, once the next pair was asked. `author` is the model that wrote the document under review, so
+// that no seat takes it; `writes` is the Writer's --doc (spec or plan). `schema` is the shape of an external answer;
+// the native agent answers with `nativeSchema`, which is the same unless the round is a correction.
 // Resolves to { answer, text, seat, model, value } (seat: 'native' or '<harness> <model>'; model: the one that
 // answered; value: the external round's) or { failed }.
 async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema, phase, author = null, writes = null }) {
@@ -435,21 +453,37 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   rounds.push(record)
   const options = `--superdelegation ${input.superdelegation} --harnesses ${input.harnesses}`
   const flags = seat === 'writer' ? `--session ${session} --feature ${feature} --doc ${writes} ${options}` : `--session ${session} --author ${author} --feature ${feature} ${options}`
-  const waited = await awaitSeat(record, { seat, base, flags, text, phase })
-  const value = waited.reply && isObject(waited.reply.value) ? waited.reply.value : {}
-  if (waited.reply) {
-    const { reply } = waited
-    if (reply.exitCode === 0 && isObject(value.result) && fits(schema, value.result, { required: seat !== 'writer' })) {
-      record.provider = `${value.harness} ${value.model}`
-      // The window shows the round as its Haiku ops agent (issue 032): say who ran it.
-      log(`${base}: ran on ${record.provider}${typeof value.lane === 'string' && value.lane !== '' ? ` · ${value.lane}` : ''}`)
-      record.lane = typeof value.lane === 'string' ? value.lane : null
-      if (seat === 'writer') keepQuestions(value.result)
-      return { answer: value.result, text: String(value.answer), seat: record.provider, model: String(value.model), value }
+  const excluded = []
+  const tries = []
+  let value = {}
+  for (let n = 1; ; n++) {
+    const waited = await awaitSeat({ seat, base: n === 1 ? base : `${base} (try ${n})`, flags, exclude: excluded, text, phase })
+    if (waited.id !== null) record.id = waited.id
+    value = waited.reply && isObject(waited.reply.value) ? waited.reply.value : {}
+    if (waited.reply) {
+      const { reply } = waited
+      if (reply.exitCode === 0 && isObject(value.result) && fits(schema, value.result, { required: seat !== 'writer' })) {
+        record.provider = `${value.harness} ${value.model}`
+        record.note = null
+        // The window shows the round as its Haiku ops agent (issue 032): say who ran it.
+        log(`${base}: ran on ${record.provider}${typeof value.lane === 'string' && value.lane !== '' ? ` · ${value.lane}` : ''}`)
+        record.lane = typeof value.lane === 'string' ? value.lane : null
+        if (seat === 'writer') keepQuestions(value.result)
+        return { answer: value.result, text: String(value.answer), seat: record.provider, model: String(value.model), value }
+      }
+      record.note = handedBackNote(reply)
+    } else {
+      record.note = waited.note
     }
-    record.note = handedBackNote(reply)
-  } else {
-    record.note = waited.note
+    // A try that failed on a pair, or did not start, asks for the next pair; any other end leaves the round to the native agent.
+    const pair = waited.reply ? failedPair(waited.reply, value) : null
+    if (pair === null && waited.startFailed !== true) break
+    const next = n < MAX_TRIES && (pair === null || !excluded.includes(pair))
+    tries.push({ pair, id: waited.id, reason: record.note, next })
+    if (!next) break
+    if (pair !== null) excluded.push(pair)
+    record.tries = tries
+    log(`${base}: ${record.note}: asking for the next pair`)
   }
   log(`${base}: ${record.note}`)
   const native = nativeOf(seat, value, author)
