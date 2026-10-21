@@ -42,6 +42,10 @@ A lane runs one of Aether's own calls on another coding plan the owner pays for.
 2. copy `plugins/aether/config/lanes.json` and `plugins/aether/config/pairs.json`, add the models to the harness's entry in the first, each with `group`, `roles` and `aa` like agy's, and one pair per model and effort to the second, with the intelligence and the cost per task Artificial Analysis gives for it (`scripts/refresh-lanes.js` refreshes the points by the pair's slug); set `AETHER_LANES_CONFIG` and `AETHER_PAIRS_CONFIG` to the copies in the shell that starts Claude Code. Codex, Grok and Muse take the effort of the pair as their reasoning effort; Cursor ignores it for now;
 3. add the harness to the `harnesses` option, such as `agy,codex`, and turn `superdelegation` on.
 
+### Delegates that edit
+
+With superdelegation on, a delegate task that edits files goes first through `aether-lane delegate --brief <file> --model <model> --effort <effort> --owns <globs> [--tests <command>]`. It runs in a unit worktree and never in the owner's checkout. The call counts against the cupo of its harness, and a full cupo tries the next candidate on another harness. A pair that fails saves its patch and passes to the next candidate. When no candidate is found, it reports `no-candidate` with a run id and falls back to Claude. It brings back the summary, the branch, the test results, and a review of the diff from a distinct pair, and the Lead merges the branch with `aether-wt merge`.
+
 ### The /harnesses panel
 
 `/harnesses` opens a pane inside Claude Code that shows the delegation settings and the quota of each harness, so you do not have to run `aether-lane quota` by hand. It prints nothing to the transcript, calls no model and works even while the Lead is in the middle of a turn. `Esc` or `x` closes it, and `r` renews the readings. It is read-only: it changes no setting and has no toggle button, because the switch for lanes is the `superdelegation` option, in `/plugin configure aether@aether-plugin` or `/config`.
