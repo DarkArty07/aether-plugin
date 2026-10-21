@@ -13,7 +13,7 @@
 - **La huella dormida (R12).** En una sesión que no es del Lead no se hace nada nuevo: ni leído, ni escrito, ni avisado. La marca de sesión (`aether-session-start`) no se añade a ninguna sesión nueva, y lo que el mod hace hoy en esas sesiones queda byte a byte.
 - **Formas compartidas entre tareas** (las fija el test de la tarea que las produce; las demás las leen tal cual):
   - **Las opciones** (las escribe la Task 1): el `userConfig` de `plugins/aether/.claude-plugin/plugin.json` gana `quotabrake` (un `string`, por defecto `'95'`) y `brakepush` (un `boolean`, por defecto `false`), con los textos de `title`/`description` de la Task 1.
-  - **El ajuste de sesión** (lo escribe la Task 1, lo lee la Task 2): `brakeSettingsFrom(env) -> { threshold: number, push: boolean }` con un inválido como `{ threshold: 95, push: false }`; `<dataDir>/sessions/<sessionId>.brake.json` guarda ese mismo objeto, y `readBrakeSettings(dataDir, sessionId)` lo devuelve o `null`. La sesión conoce también `AETHER_QUOTA_BRAKE=<threshold>` y `AETHER_BRAKE_PUSH=on|off` por `CLAUDE_ENV_FILE`.
+  - **El ajuste de sesión** (lo escribe la Task 1, lo lee la Task 2): `brakeSettingsFrom(env) -> { threshold: number, push: boolean }` con un inválido como `{ threshold: 95, push: false }`; `<dataDir>/sessions/<sessionId>.brake.json` guarda ese mismo objeto, y `readBrakeSettings(dataDir, sessionId)` lo devuelve o `null`. El mod lee `threshold` en `brake-settings`. La skill de la Task 6 lee `push` en ese mismo verbo. La sesión no exporta `AETHER_QUOTA_BRAKE` ni `AETHER_BRAKE_PUSH`: nadie los lee.
   - **Los verbos de autonomía** (Task 2; la Task 3 llama a los dos primeros y la Task 7 a todos): `aether-autonomy brake-settings [--session <id>]`, `aether-autonomy brake-off --quote <text> [--session <id>]`, `aether-autonomy brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>]`, `aether-autonomy quota-saved --from <saved.json>`. Sus salidas son las de las formas de abajo, impresas tal cual por el bin.
   - **El ajuste que el mod lee** (`brakeSettings(mainRoot, opts)` de Task 2): `{ threshold, push, openRun: <runId | null>, brakeOff: boolean, paused: { run, resetsAt, resumeAt, percentUsed } | null, notified: { five_hour: <iso | null>, seven_day: <iso | null> } }`.
   - **El cruce registrado** (`recordCrossing(mainRoot, crossing, opts)` de Task 2): `{ recorded: true, paused: true, run, resetsAt, resumeAt }` (con `duplicate: true` añadido cuando la pausa con ese `resetsAt` ya existe, y el mismo `paused` que le corresponde a `now`); `{ recorded: true, paused: false, brakeOff: true, run, quote }` con el freno apagado; `{ recorded: false, paused: false, reason: 'weekly' }` para `seven_day`; `{ recorded: false, paused: false, reason: 'no-run' }` sin corrida abierta.
@@ -30,12 +30,13 @@
 
 ## Checklist
 
-- [ ] T001 [P] [E5] Las opciones `quotabrake` y `brakepush` en el manifiesto, el ajuste por sesión y el pase por `CLAUDE_ENV_FILE` in plugins/aether/lib/session.js → Task 1
+- [ ] T001 [P] [E5] Las opciones `quotabrake` y `brakepush` en el manifiesto y el ajuste por sesión, sin líneas nuevas en `CLAUDE_ENV_FILE` in plugins/aether/lib/session.js → Task 1
 - [ ] T002 [P] [E5] Las dos filas y sus notas en la página de opciones in docs/guide/options.md → Task 1
 - [ ] T003 [E1] El estado del freno, la parada `quota` y los verbos `brake-*` y `quota-saved` in plugins/aether/lib/autonomy.js → Task 2
 - [ ] T004 [E1] La nota de la pausa de sesión in plugins/aether/bin/aether-session-start → Task 2
 - [ ] T005 [E1] El decisor puro y `brakeStep` del mod in plugins/aether/hooks/quota-brake.mjs → Task 3
-- [ ] T006 [P] [E8] `aether-wt save` y los comiteos previos al barrido y al `ensure` in plugins/aether/lib/worktrees.js → Task 4
+- [ ] T006 [P] [E8] `aether-wt save` y `mergedUnits` in plugins/aether/lib/worktrees.js → Task 4
+- [ ] T011 [E8] El comiteo previo de `ensure` y `remove`, y el barrido de una corrida interrumpida in plugins/aether/lib/worktrees.js → Task 8
 - [ ] T007 [E8] La exclusión de las unidades ya fusionadas al recompilar con `--run` in plugins/aether/bin/aether-plan → Task 5
 - [ ] T008 [E1] La regla del freno en las skills de autonomía y del enjambre in plugins/aether/skills/autonomous-runs/SKILL.md → Task 6
 - [ ] T009 [E5] La página de usuario de la autonomía in docs/guide/autonomy.md → Task 6
@@ -87,7 +88,7 @@ readBrakeSettings(dataDir, sessionId)
 En `plugins/aether/bin/aether-session-start`, y solo para el Lead:
 
 - `mark()` pasa `brake: brakeSettingsFrom(process.env)` a `markSession`.
-- El pase de entorno añade a `CLAUDE_ENV_FILE`, junto a las de superdelegación, las líneas exactas `export AETHER_QUOTA_BRAKE=<threshold>` y `export AETHER_BRAKE_PUSH=on` (u `off`).
+- No se añade ninguna línea a `CLAUDE_ENV_FILE`. Las cuatro aserciones que comparan ese fichero entero en `tests/session-start.test.js` quedan como están hoy: no hay `export AETHER_QUOTA_BRAKE` ni `export AETHER_BRAKE_PUSH`.
 
 Nada más cambia: la marca, las notas y el contenido para sesiones que no son del Lead quedan como están.
 
@@ -99,7 +100,7 @@ En `docs/guide/options.md`, la cuenta de opciones pasa de siete a nueve en sus d
 ```
 
 ```markdown
-- `quotabrake`, `95` by default, is the percent of your account's five-hour window used at which the quota brake acts in a Lead session: it warns you once per crossing and, in an autonomous run, pauses the run — nothing new starts, what is running is stopped and saved — until the window resets, then resumes the run on its own. The seven-day window at the same percent only warns, and so does a Lead session with no run open. Only your own recorded words turn the brake off, and only for that run. A value that is not a percent between 1 and 100 is `95`.
+- `quotabrake`, `95` by default, is the percent of your account's five-hour window used at which the quota brake acts in a Lead session: it warns you once per crossing and, in an autonomous run, pauses the run — nothing new starts, what is running is stopped and saved — until the window resets, then resumes the run on its own. The seven-day window at the same percent only warns, and so does a Lead session with no run open. Only your own recorded words turn the brake off, and only for that run. A value that is not a finite number n with 0 < n <= 100 is `95`.
 - `brakepush`, off by default, also pushes the unit branches an interrupted workflow saved to `origin`. The saved work is local either way; with this on, a saved branch is pushed only when your recorded `push` permission covers it, branch by branch.
 ```
 
@@ -177,7 +178,7 @@ test('pruneSessions deletes the brake file of a pruned session', (t) => {
   assert.equal(fs.existsSync(session.brakeFile(data, 's1')), false)
 })
 
-test('session start writes the brake file and the env lines for the Lead, and nothing for anyone else', (t) => {
+test('session start writes the brake file for the Lead and adds no brake export', (t) => {
   const repo = makeRepo(t)
   const data = tempDir(t, 'aether-data-')
   const envFile = path.join(tempDir(t, 'aether-env-'), 'env')
@@ -187,9 +188,7 @@ test('session start writes the brake file and the env lines for the Lead, and no
   let r = spawnSync(process.execPath, [SESSION_BIN], { cwd: repo.dir, encoding: 'utf8', input: JSON.stringify(lead), env })
   assert.equal(r.status, 0, r.stderr)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(data, 'sessions', 's1.brake.json'), 'utf8')), { threshold: 90, push: true })
-  const written = fs.readFileSync(envFile, 'utf8')
-  assert.ok(written.includes('export AETHER_QUOTA_BRAKE=90\n'), written)
-  assert.ok(written.includes('export AETHER_BRAKE_PUSH=on\n'), written)
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
   r = spawnSync(process.execPath, [SESSION_BIN], { cwd: repo.dir, encoding: 'utf8', input: JSON.stringify({ ...lead, session_id: 's2', agent_type: 'general-purpose' }), env })
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, '')
@@ -534,7 +533,7 @@ export function initialBrakeState(settings)
 export function crossingsOf(rateLimits, threshold, state)
 // -> { crossings, state } (puro: no muta ni `state` ni `rateLimits`)
 // Entradas válidas solo con kind 'five_hour' o 'seven_day', percentUsed finito y resetsAt texto; en ese orden (five_hour antes).
-// percentUsed >= threshold y no es el mismo cruce de `state[kind]` (`above` ya con ese `resetsAt`) -> un cruce { kind, percentUsed, resetsAt }.
+// percentUsed >= threshold y no es el mismo cruce de `state[kind]` (`above` ya con ese `resetsAt`) -> un cruce { kind, percentUsed, resetsAt }. Esto decide solo el aviso. La pausa la decide brakeStep.
 // percentUsed >= threshold -> estado { above: true, resetsAt }; por debajo -> { above: false, resetsAt }. Sin entrada de la ventana, el estado de esa ventana no cambia.
 // rateLimits que no es lista (o vacía) -> { crossings: [], state } sin cambiar estado.
 export function notifyFor(crossing, threshold)  // -> { title, text } como en las Global Constraints
@@ -558,11 +557,12 @@ Aether quota brake: the five_hour window has reset and autonomous run {run} was 
 En `plugins/aether/hooks/register.js`:
 
 - El mapa de estado de sesión gana `brake: undefined`, y `brakeStep($, state)` — envuelto entero en `try/catch`, observando solo — se invoca directamente tras `return yield* meteredStep($, state, e, next)` convertido en `const result = yield* meteredStep($, state, e, next)` / `await brakeStep($, state)` / `return result`, solo en esa rama de `turn.step`.
-- La primera vez, `$.process.run(['node', `${$.plugin.root}/bin/aether-autonomy`, 'brake-settings', '--session', state.id], { timeoutMs: 10000 })` y `jsonFrom(stdout)` con `exitCode === 0` da el `settings` guardado en `state.brake = { settings, state: initialBrakeState(settings), armedFor: null }`; cualquier otra cosa deja `state.brake = null` y no vuelve a intentarse en esta sesión. Si `settings.paused` llega, arma el resume ya (abajo).
-- Cada vez: `$.session.usage()` y su `rateLimits`; `crossingsOf(rateLimits, settings.threshold, state.brake.state)`; el estado nuevo se guarda antes de actuar. Por cada cruce, en orden:
+- La primera vez, `$.process.run(['node', `${$.plugin.root}/bin/aether-autonomy`, 'brake-settings', '--session', state.id], { timeoutMs: 10000 })` y `jsonFrom(stdout)` con `exitCode === 0` da el `settings` guardado en `state.brake = { settings, state: initialBrakeState(settings), armedFor: null, pausedResetsAt: settings.paused ? settings.paused.resetsAt : null }`; un fracaso deja `state.brake = null` y no vuelve a intentarse en esta sesión. Si `settings.paused` llega, arma el resume ya (abajo). Mientras la lectura `five_hour` siga en o sobre el umbral y `pausedResetsAt` no sea ese `resetsAt`, cada paso posterior vuelve a pedir `brake-settings`.
+- Cada vez: `$.session.usage()` y su `rateLimits`; `crossingsOf(rateLimits, settings.threshold, state.brake.state)`; el estado nuevo del aviso se guarda antes de actuar. Por cada cruce, en orden:
   1. `$.ui.notify(n.text, { title: n.title })` con `n = notifyFor(crossing, settings.threshold)`; su resultado es `notify = result && result.isSent ? { sent: true, reason: null } : { sent: false, reason: (result && result.reason) || 'refused' }`, y un fallo es `{ sent: false, reason: 'error' }`.
   2. `$.process.run(['node', root + '/bin/aether-autonomy', 'brake-crossing', '--kind', crossing.kind, '--percent', String(crossing.percentUsed), '--resets-at', crossing.resetsAt, '--threshold', String(settings.threshold), '--notify', notify.sent ? 'sent' : 'failed', ...(!notify.sent && notify.reason ? ['--notify-reason', notify.reason] : []), '--session', state.id], { timeoutMs: 10000 })`.
-  3. Si lo impreso cumple `paused === true` y trae `run` y `resumeAt`: `$.prompt.submit({ text: brakePromptFor({ ...crossing, threshold: settings.threshold, run: record.run, resumeAt: record.resumeAt }) })` — sin `asUser`, jamás — y arma el resume.
+  3. Si lo impreso cumple `paused === true`, no trae `duplicate: true`, `pausedResetsAt` no era ya ese `resetsAt`, y trae `run` y `resumeAt`: `$.prompt.submit({ text: brakePromptFor({ ...crossing, threshold: settings.threshold, run: record.run, resumeAt: record.resumeAt }) })` — sin `asUser`, jamás — y arma el resume. Una respuesta de `five_hour` que no trae `reason: 'no-run'` hace `pausedResetsAt` ese `resetsAt`. Una `no-run` no lo toca.
+- El aviso y la pausa no comparten el dedupe. Si la lectura `five_hour` tiene `percentUsed >= threshold` y este paso no llamó ya a `brake-crossing` por `five_hour`, y `pausedResetsAt` no es ese `resetsAt`: se usa la lectura de `brake-settings` de este paso. Si `openRun` está puesto y (`paused` es nulo o su `resetsAt` es otro), se llama a `brake-crossing` con el mismo argv del punto 2 y `--notify sent` (el aviso de ese `resetsAt` ya se dio, en este paso no se repite). El bin deduplica. Sin `openRun` no se llama por este camino. La respuesta se trata como en el punto 3: se recuerda el `resetsAt` salvo que sea `no-run`, y el prompt de parada solo sale cuando `paused === true`, no es `duplicate` y `pausedResetsAt` no lo tenía ya.
 - Armar el resume: `armedFor` vale `${run}:${resumeAt}` y ya armado para esa pausa no se repite. Con `ms = Date.parse(resumeAt) - (await $.clock.now())`: si `ms <= 0` se somete el resume a continuación; si no, `$.clock.after(ms, async () => { try { await $.prompt.submit({ text: resumePromptFor({ run, resumeAt }) }) } catch {} })`.
 - Nada fuera de una sesión de Aether: el mismo `aetherSession($)` de hoy lleva a `return yield* next(e)` antes de cualquier cosa del freno, así que en esas sesiones no hay petición de settings, ni lectura de uso, ni aviso, ni nada.
 
@@ -670,13 +670,52 @@ test('crossingsOf crosses exactly at the threshold, ignores spend_limit and a mi
   out = crossingsOf([{ kind: 'five_hour', percentUsed: 50, resetsAt: RESET }], 95, out.state)
   out = crossingsOf([{ kind: 'five_hour', percentUsed: 98, resetsAt: RESET }], 95, out.state)
   expect(out.crossings).toHaveLength(1)
-  // Already warned in an earlier session with the same reset does not warn again.
+  // Already warned in an earlier session with the same reset does not warn again. The pause is not this function's decision.
   state = initialBrakeState({ notified: { five_hour: RESET, seven_day: null } })
   expect(crossingsOf([{ kind: 'five_hour', percentUsed: 99, resetsAt: RESET }], 95, state).crossings).toEqual([])
 
   function assertBounds(value: any) {
     expect(value).toEqual({ five_hour: { above: false, resetsAt: null }, seven_day: { above: false, resetsAt: null } })
   }
+})
+
+test('a run opened while the five-hour window is already over the threshold pauses without a second warning', async ($, on) => {
+  const settings = { ...SETTINGS, openRun: null, paused: null, notified: { five_hour: null, seven_day: null } }
+  const crossing: any = { recorded: false, paused: false, reason: 'no-run' }
+  const s = stubs(on, { settings, crossing })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 96, resetsAt: RESET }])
+  await step($)
+  expect(s.notes).toHaveLength(1)
+  expect(s.prompts).toEqual([])
+  const settingsCalls = () => s.runs.filter((r) => r.argv[2] === 'brake-settings').length
+  expect(settingsCalls()).toBe(1)
+  expect(s.crossingRuns()).toHaveLength(1)
+  settings.openRun = RUN
+  Object.assign(crossing, { recorded: true, paused: true, run: RUN, resetsAt: RESET, resumeAt: RESUME })
+  delete crossing.reason
+  await step($)
+  expect(s.notes).toHaveLength(1)
+  expect(settingsCalls()).toBe(2)
+  expect(s.crossingRuns()).toHaveLength(2)
+  expect(s.prompts).toHaveLength(1)
+  expect(s.prompts[0].text).toContain(`Autonomous run ${RUN} is now paused by the quota brake until ${RESUME}`)
+  expect(s.prompts[0].asUser).toBeUndefined()
+  await step($)
+  expect(s.notes).toHaveLength(1)
+  expect(settingsCalls()).toBe(2)
+  expect(s.crossingRuns()).toHaveLength(2)
+})
+
+test('a run already open in a window warned earlier still pauses, and does not warn again', async ($, on) => {
+  const s = stubs(on, {
+    settings: { ...SETTINGS, openRun: RUN, paused: null, notified: { five_hour: RESET, seven_day: null } },
+  })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 96, resetsAt: RESET }])
+  await step($)
+  expect(s.notes).toEqual([])
+  expect(s.crossingRuns()).toHaveLength(1)
+  expect(s.prompts).toHaveLength(1)
+  expect(s.prompts[0].asUser).toBeUndefined()
 })
 
 test('the weekly window and a Lead session with no open run only warn', async ($, on) => {
@@ -755,13 +794,13 @@ Un detalle del kit: los nombres de superficie de los stubs (`session.usage`, `ui
 - El freno nunca bloquea ni retrasa un paso: un bin caído o un `usage()` que falla dejan la respuesta del paso intacta.
 - Sin lectura no hay aviso ni parada; en una sesión que no es del Lead no hay petición, lectura, aviso ni estado.
 
-### Task 4: Guardar el trabajo de un workflow interrumpido en sus ramas
+### Task 4: `save` y las unidades ya fusionadas
 
 **Aether:**
-- Tier: opus high — borra, comitea y conserva ramas y worktrees; un error aquí es perder el trabajo que la spec existe para guardar
-- Review: xhigh — un camino que borrara antes de comitear, o que perdiera la rama, no lo ve ningún test de hoy fuera de esta tarea
+- Tier: opus high — comitea el trabajo de cada unidad en su rama; un commit de más o de menos pierde lo que R14 guarda
+- Review: xhigh — el sistema de ficheros: lo que el `Owns` no cubre no debe entrar en el commit, y lo que cubre no debe quedarse fuera
 - Area: worktrees
-- Owns: `plugins/aether/lib/worktrees.js`, `plugins/aether/bin/aether-wt`, `tests/wt-save.test.js`, `tests/aether-wt.test.js`, `tests/worktrees-cleanup.test.js`, `tests/worktrees-ensure.test.js`
+- Owns: `plugins/aether/lib/worktrees.js`, `plugins/aether/bin/aether-wt`, `tests/wt-save.test.js`, `tests/aether-wt.test.js`
 - Depends on: none
 - Serves: R5, R14
 
@@ -776,10 +815,7 @@ mergedUnits(cwd, runId)   // -> ['task-1', ...] en el orden de las tareas del gr
 
 - `saveRun` lee el grafo (`loadGraph`) y recorre sus tareas en orden de número. Una unidad está *ya en su rama* con la misma rutina que hoy corre tras `salvageUnit`: comitea en la rama lo sin guardar entre los ficheros de su `Owns`, nombra el resto en `left` sin comitearlo y calcula `head`. `salvageUnit(cwd, runId, taskId)` se mantiene tal cual (es una llamada a esa rutina sobre una unidad), y su resultado es la entrada de la lista: si `salvaged`, su `head` y sus `committed`/`left` valen; si no `salvaged` por no haber nada nuevo, `head` es la punta de la rama si existe (y `branch` su nombre) o `null` y `branch: null` si no. Una ya fusionada (está en el conjunto que devuelve `mergedUnits(cwd, runId)`, calculado una vez para la corrida: su rama pudo cerrarse y borrarse) entra con `merged: true`, `salvaged: false`, `committed: []`, `left: []`, su nombre de rama y, si la rama existe todavía, su punta; si no, `head` es el commit que `unitStatus` nombre o `null`. El resultado es la forma de las Global Constraints: escribe `<runDir>/saved.json` con `run.writeJson` (el objeto sin `path`) y devuelve lo mismo con `path`. Nada de esto borra worktrees y nada empuja: `save` no conoce `origin`.
 - `mergedUnits` reúne: las tareas del grafo con `unitStatus(...).merged`, las de un `git log --format=%s <integration.branch>` cuyo asunto es exactamente `Merge aether/<runId>/<taskId>` (intersectado con las tareas del grafo) y las claves de `<runDir>/adopted.json` (intersectadas, si el fichero existe). Una fuente que falla aporta vacío.
-- `ensure(cwd, runId, taskId)`: el retorno gana `salvaged: boolean`. Cuando el worktree registrado existe y `uncommittedFiles(worktree)` no está vacío, corre el salvage de esa unidad antes de devolverlo — el trabajo queda en un commit de la rama antes de que nadie lo vuelva a usar — y `salvaged` vale si el salvage comiteó algo. En la creación pasa `salvaged: false`.
-- `removeUnit(cwd, runId, taskId, opts)`: cuando el worktree está y tiene trabajo sin guardar, corre el salvage de la unidad antes de cualquier escritura o borrado que haga hoy; el resto no cambia, el parche de hoy incluido.
-- `sweepRun(cwd, runId, { finish })`: su paso de guardar cambia para las unidades no fusionadas. Hoy `savePatches` escribe parches y luego corren los borrados por todos; lo nuevo es: una rama no fusionada pasa primero por el salvage (su trabajo en la rama), luego escribe su parche si procede y la rama **no** se borra. El trabajo de las fusionadas y el resto del barrido, sin cambio. La salida gana `savedBranches: [{ task, branch, head }]` (en el orden de las ramas, como el resto) y `finished: boolean` — con `finish: true`, el directorio de la corrida se borra solo si `kept` y `savedBranches` vienen vacíos, y `finished` lo dice. `remaining.branches` lista entonces las ramas conservadas, como ya lista las que no pudo guardar.
-- `sweepStale(cwd, opts)`: si `sweepRun` deja `savedBranches`, esa corrida se anota con `run.appendRecord` en un registro con `status: 'interrupted-saved'`, la corrida no se cuenta en `swept`, su `runDir` no se borra y no se anota como `abandoned`.
+- `ensure`, `removeUnit` y el barrido los cambia la Task 8. Esta tarea no los toca.
 
 En `plugins/aether/bin/aether-wt`: despacha `save <run>` a `saveRun` y el USAGE gana el verbo, así:
 
@@ -789,7 +825,7 @@ usage: aether-wt ensure|diff|merge|status|salvage|remove <run> <task> | aether-w
 
 con su línea de comentario `// aether-wt save <run>` arriba. (Ningún cambio a `hooks/ops-command.mjs`: el suelo de ops que el mod responde es el de los workflows, y `save` lo corre el Lead por Bash, como `sweep --stale`.)
 
-Los tests existentes que esta tarea puede tocar: `tests/aether-wt.test.js`, `tests/worktrees-cleanup.test.js` y `tests/worktrees-ensure.test.js`, solo en lo que afirmen que un barrido borra la rama de una unidad no fusionada o que `ensure` no dice `salvaged`, para afirmar ahora lo de esta tarea; nada más.
+`tests/aether-wt.test.js` solo cambia si su aserción del USAGE deja de aceptar el verbo `save`. Nada más de ese fichero.
 
 **Tests (write first):**
 
@@ -802,7 +838,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { WT_BIN, makeRepo, compile, commitIn, runBin, tempDir, ageRun } = require('./helpers.js')
+const { WT_BIN, makeRepo, compile, commitIn, runBin } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { spawnSync } = require('node:child_process')
 const wt = require('../plugins/aether/lib/worktrees.js')
@@ -857,75 +893,14 @@ test('mergedUnits sees a merged unit after its branch is gone, and only units of
   const { repo, args } = interrupted(t)
   assert.deepEqual(wt.mergedUnits(repo.dir, args.runId), ['task-1'])
 })
-
-test('ensure commits the work it finds in the worktree before handing it back', (t) => {
-  const repo = makeRepo(t)
-  const args = compile(repo, plan([task(1), task(2)]))
-  const first = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
-  assert.deepEqual([first.created, first.salvaged], [true, false])
-  writeAt(path.join(first.path, 'src', 't1', 'draft.js'), 'draft\n')
-  const second = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
-  assert.deepEqual([second.created, second.salvaged], [false, true])
-  assert.equal(show(repo, `${first.branch}:src/t1/draft.js`), 'draft\n')
-  const clean = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
-  assert.equal(clean.salvaged, false)
-})
-
-test('a sweep now commits an unmerged unit and keeps its branch', (t) => {
-  const repo = makeRepo(t)
-  const args = compile(repo, plan([task(1), task(2)]))
-  const one = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
-  writeAt(path.join(one.path, 'src', 't1', 'wip.js'), 'wip\n')
-  const r = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
-  assert.equal(r.status, 0, r.stdout + r.stderr)
-  assert.deepEqual(r.json.savedBranches, [{ task: 'task-1', branch: `aether/${args.runId}/task-1`, head: repo.git('rev-parse', `aether/${args.runId}/task-1`) }])
-  assert.deepEqual(r.json.remaining.worktrees, [])
-  assert.deepEqual(r.json.remaining.branches, [`aether/${args.runId}/task-1`])
-  assert.equal(r.json.finished, false)
-  assert.equal(fs.existsSync(args.runDir), true)
-  assert.equal(show(repo, `aether/${args.runId}/task-1:src/t1/wip.js`), 'wip\n')
-  assert.equal(r.json.patches.length, 1)
-})
-
-test('remove commits the unit before deleting its worktree', (t) => {
-  const repo = makeRepo(t)
-  const args = compile(repo, plan([task(1), task(2)]))
-  const one = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
-  commitIn(repo, one.path, 'src/t1/a.js', 'a\n', 'add a')
-  writeAt(path.join(one.path, 'src', 't1', 'draft.js'), 'draft\n')
-  const r = runBin(WT_BIN, ['remove', args.runId, 'task-1'], repo.dir)
-  assert.equal(r.status, 0, r.stdout + r.stderr)
-  assert.equal(r.json.removed, true)
-  // The patch holds the committed work too, because the commit came first.
-  const patch = fs.readFileSync(r.json.patch, 'utf8')
-  assert.ok(patch.includes('src/t1/a.js'), 'the committed file is in the patch')
-  assert.ok(patch.includes('src/t1/draft.js'), 'the draft committed by the salvage is in the patch')
-})
-
-test('sweep --stale leaves a run whose branches were saved alone', (t) => {
-  const data = tempDir(t, 'aether-data-')
-  const repo = makeRepo(t)
-  const args = compile(repo, plan([task(1), task(2)]))
-  const one = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
-  writeAt(path.join(one.path, 'src', 't1', 'wip.js'), 'wip\n')
-  ageRun(args, 3)
-  const r = runBin(WT_BIN, ['sweep', '--stale', '--hours', '2'], repo.dir, { AETHER_DATA_DIR: data })
-  assert.equal(r.status, 0, r.stdout + r.stderr)
-  assert.deepEqual(r.json, { swept: [] })
-  assert.equal(fs.existsSync(path.join(args.runDir, 'graph.json')), true)
-  assert.equal(show(repo, `aether/${args.runId}/task-1:src/t1/wip.js`), 'wip\n')
-  const log = fs.readFileSync(path.join(data, 'runs.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
-  assert.deepEqual(log.map((e) => e.status), ['interrupted-saved'])
-})
 ```
 
 
 **Acceptance:**
 
-- Pasan `tests/wt-save.test.js`, `tests/aether-wt.test.js`, `tests/worktrees-cleanup.test.js`, `tests/worktrees-ensure.test.js`; y los tests de workflow y de salvage (`tests/workflow-salvage.test.js`, `tests/workflow.test.js`) siguen verdes.
-- Ningún camino borra un worktree con trabajo sin guardar antes de comitearlo: `ensure` a la vuelta, `removeUnit`, `sweepRun` y `sweepStale` a través de `sweepRun`.
-- Una rama no fusionada con trabajo guardado sobrevive a un `sweep` y a un `sweep --stale`, con el trabajo en su último commit; un relanzamiento por `ensure` lo encuentra ahí.
-- `save` no conoce `origin`: el bin no consigue ningún verbo de empuje.
+- Pasan `tests/wt-save.test.js` y `tests/aether-wt.test.js`.
+- `save` escribe `saved.json` y comitea en la rama lo que el `Owns` cubre; no borra worktrees y no conoce `origin`.
+- `mergedUnits` ve una unidad fusionada aunque su rama ya no exista.
 
 ### Task 5: Un relanzamiento no repite las unidades ya fusionadas
 
@@ -1045,7 +1020,7 @@ test('a first compile and a run id with no prior graph do not mention alreadyMer
 - Review: xhigh — la skill es el comportamiento del Lead ante la parada: una frase ambigua sobre qué puede seguir corriendo repite el fallo de la 010
 - Area: docs
 - Owns: `plugins/aether/skills/autonomous-runs/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `docs/guide/autonomy.md`, `docs/getting-started.md`, `README.md`, `tests/quota-brake-docs.test.js`
-- Depends on: Task 1 — los textos nombran `AETHER_BRAKE_PUSH` y las opciones que la T1 crea
+- Depends on: Task 1 — los textos nombran `quotabrake`, `brakepush` y el `push` que `brake-settings` imprime desde el fichero de la T1
 - Serves: R5, R7, R8, R13, R15, R18
 
 **Interfaces:**
@@ -1055,7 +1030,7 @@ En `plugins/aether/skills/autonomous-runs/SKILL.md`, el párrafo que hoy empieza
 ```markdown
 **Ceilings.** Run `aether-autonomy status` before each `/aether:design` launch or relaunch, each delegate task, and each swarm launch or relaunch. When its `stop` is `time` or `cost`, start nothing new. Let what is running finish (a swarm run or a delegate task), or save it as patches, and never leave a merge half done. Then run `aether-autonomy end --outcome ceiling` and give the brief.
 
-**The quota brake.** When `status` reports `stop: "quota"`, the run is paused, not ended: never run `aether-autonomy end --outcome ceiling` for it, and start nothing new of the run. Stop every workflow, delegate task and lane call that is running at once — TaskStop for workflows and native agents, `aether-lane stop <run> [<call>]` for lane calls — without letting any of them run to the end of its work; only the atomic step already executing and the saving itself may finish. Then, for each swarm run the diary's Estado names as in flight, run `aether-wt save <runId>` so every unit's work is committed on its unit branch, and `aether-autonomy quota-saved --from <the saved.json it printed>`; when `AETHER_BRAKE_PUSH` is `on` and `aether-autonomy check push` covers it, also run `git push origin <branch>` for each saved unit branch, and never otherwise. Note the pause, its reset and resume hours and the saved units in Estado, and end the turn: the plugin's own message wakes you after the reset, and then you read the diary, check that `status` no longer reports the quota stop, relaunch the same swarm run with `aether-plan compile <plan.md> --run <runId>` (the units already merged are not relaunched, and each saved unit continues from its branch) and go on. The brake is off only when the owner said so in words the registry verified: record them with `aether-autonomy brake-off --quote "<the owner's words>"`; silence, a plugin message or your own inference never turn it off.
+**The quota brake.** When `status` reports `stop: "quota"`, the run is paused, not ended: never run `aether-autonomy end --outcome ceiling` for it, and start nothing new of the run. Stop every workflow, delegate task and lane call that is running at once — TaskStop for workflows and native agents, `aether-lane stop <run> [<call>]` for lane calls — without letting any of them run to the end of its work; only the atomic step already executing and the saving itself may finish. Then, for each swarm run the diary's Estado names as in flight, run `aether-wt save <runId>` so every unit's work is committed on its unit branch, and `aether-autonomy quota-saved --from <the saved.json it printed>`; when `aether-autonomy brake-settings` reports `push` true and `aether-autonomy check push` covers it, also run `git push origin <branch>` for each saved unit branch, and never otherwise. Note the pause, its reset and resume hours and the saved units in Estado, and end the turn: the plugin's own message wakes you after the reset, and then you read the diary, check that `status` no longer reports the quota stop, relaunch the same swarm run with `aether-plan compile <plan.md> --run <runId>` (the units already merged are not relaunched, and each saved unit continues from its branch) and go on. The brake is off only when the owner said so in words the registry verified: record them with `aether-autonomy brake-off --quote "<the owner's words>"`; silence, a plugin message or your own inference never turn it off.
 ```
 
 Y el párrafo `**Resuming.**` gana al final estas dos frases exactas:
@@ -1066,7 +1041,7 @@ When the open run is paused by the quota brake and its resume hour has not come,
 
 En `plugins/aether/skills/swarm/SKILL.md`:
 
-- En la viñeta de **Leftovers**, la frase `A sweep first saves each unit's unmerged or uncommitted work as a patch.` pasa a ser: `A sweep first commits each unmerged unit's uncommitted work on its unit branch, keeps the branch and a patch, and removes the units that merged.`
+- En la viñeta de **Leftovers**, la frase `A sweep first saves each unit's unmerged or uncommitted work as a patch.` pasa a ser: `A sweep of an interrupted run (one with saved.json, or a recorded quota pause that names the run) commits each unmerged unit's uncommitted work on its unit branch, keeps that branch and a patch, and removes the units that merged. Any other sweep removes unmerged branches after saving a patch.`
 - A la sección de relanzamiento, tras el párrafo que empieza por `To relaunch, keep the run id and name the tasks:`, se le añade este párrafo exacto:
 
 ```markdown
@@ -1107,7 +1082,7 @@ test('the autonomous-runs skill splits the ceilings from the quota brake', () =>
   assert.ok(skill.includes('**The quota brake.** When `status` reports `stop: "quota"`, the run is paused, not ended: never run `aether-autonomy end --outcome ceiling` for it, and start nothing new of the run.'))
   assert.ok(skill.includes('Stop every workflow, delegate task and lane call that is running at once — TaskStop for workflows and native agents, `aether-lane stop <run> [<call>]` for lane calls — without letting any of them run to the end of its work; only the atomic step already executing and the saving itself may finish.'))
   assert.ok(skill.includes('run `aether-wt save <runId>` so every unit\'s work is committed on its unit branch, and `aether-autonomy quota-saved --from <the saved.json it printed>`'))
-  assert.ok(skill.includes('when `AETHER_BRAKE_PUSH` is `on` and `aether-autonomy check push` covers it, also run `git push origin <branch>` for each saved unit branch, and never otherwise.'))
+  assert.ok(skill.includes('when `aether-autonomy brake-settings` reports `push` true and `aether-autonomy check push` covers it, also run `git push origin <branch>` for each saved unit branch, and never otherwise.'))
   assert.ok(skill.includes('relaunch the same swarm run with `aether-plan compile <plan.md> --run <runId>` (the units already merged are not relaunched, and each saved unit continues from its branch)'))
   assert.ok(skill.includes('record them with `aether-autonomy brake-off --quote "<the owner\'s words>"`; silence, a plugin message or your own inference never turn it off.'))
   // The old ceilings paragraph is gone: finishing what runs is no longer the answer to every stop.
@@ -1119,7 +1094,7 @@ test('resuming tells a fresh session what a paused run is waiting for', () => {
 })
 
 test('the swarm skill saves before a relaunch and a sweep keeps the branch', () => {
-  assert.ok(swarm.includes('A sweep first commits each unmerged unit\'s uncommitted work on its unit branch, keeps the branch and a patch, and removes the units that merged.'))
+  assert.ok(swarm.includes('A sweep of an interrupted run (one with saved.json, or a recorded quota pause that names the run) commits each unmerged unit\'s uncommitted work on its unit branch, keeps that branch and a patch, and removes the units that merged. Any other sweep removes unmerged branches after saving a patch.'))
   assert.ok(swarm.includes('After an interruption (the quota brake, the session limit, a crash, the owner), first run `aether-wt save <runId>`: every unit\'s uncommitted work is committed on its branch before any worktree is removed or reused. Then relaunch with the same run id and no `--only`: `aether-plan compile <plan.md> --run <runId>` leaves out the units already merged, and each saved unit continues from its branch.'))
   assert.ok(!swarm.includes("saves each unit's unmerged or uncommitted work as a patch"))
 })
@@ -1155,7 +1130,9 @@ test('the user pages say the same as the brake', () => {
 - Owns: `tests/quota-brake-scenarios.test.js`
 - Depends on: Task 2 — los verbos `brake-*` y `quota-saved` que los escenarios corren
 - Depends on: Task 3 — importa el decisor `crossingsOf` del mod para E9 y el umbral
-- Depends on: Task 4 — `aether-wt save`, `ensure` y el barrido que guardan el trabajo de E8
+- Depends on: Task 4 — `aether-wt save`, que escribe el `saved.json` de E8
+- Depends on: Task 5 — el test E8 afirma `relaunched.json.alreadyMerged`, y esa exclusión la escribe la Task 5
+- Depends on: Task 8 — el test E8 afirma `savedBranches`, y solo una corrida interrumpida conserva la rama
 - Serves: R16
 
 **Interfaces:**
@@ -1339,6 +1316,183 @@ test('E9: no reading at all produces no crossing, and neither does a spend limit
 
 - Pasa `tests/quota-brake-scenarios.test.js`, y con él la correlación de R16 queda cubierta por las suites: `npm test` (E1 a E6, E8, E9, E10) y `npm run test:mod` (E2 y E7 en su parte de mod), sin gastar cuota real.
 - Cada escenario corre por el camino que un usuario recorre — bins y ficheros reales en repos desechables — y no reescribe estado a mano salvo el aged de la pausa pasada de E2, que es la simulación declarada de la tarjeta (reloj acelerado).
+
+### Task 8: El comiteo previo y el barrido de una corrida interrumpida
+
+**Aether:**
+- Tier: opus high — borra worktrees y ramas; un error aquí pierde el trabajo que R5 y R14 existen para guardar
+- Review: xhigh — el barrido de una corrida que no fue interrumpida debe seguir borrando, y el de una interrumpida no debe
+- Area: worktrees
+- Owns: `plugins/aether/lib/worktrees.js`, `tests/wt-sweep.test.js`, `tests/worktrees-cleanup.test.js`, `tests/worktrees-ensure.test.js`, `tests/session-start.test.js`, `tests/report.test.js`
+- Depends on: Task 4 — comparte el fichero de worktrees y lee el `saved.json` que escribe `save`
+- Serves: R5, R14
+
+**Interfaces:**
+
+En `plugins/aether/lib/worktrees.js`. `save` y `mergedUnits` no se tocan: los escribe la Task 4.
+
+```js
+ensure(cwd, runId, taskId)
+// -> { path, branch, created, salvaged }
+removeUnit(cwd, runId, taskId, { keepPatch = false } = {})
+// -> { removed: true, patch }   // ningún campo nuevo
+sweepRun(cwd, runId, { finish = false } = {})
+// -> lo de hoy, más savedBranches: [{ task, branch, head }] y finished: boolean
+sweepStale(cwd, { hours = 24, now = Date.now() } = {})
+// -> { swept }   // ningún campo nuevo; una interrumpida no entra en swept
+```
+
+- `ensure`. Cuando el worktree ya está registrado y `uncommittedFiles` no está vacío, antes de devolverlo se comitea en la rama con la misma rutina que `salvageUnit` (lo que el `Owns` cubre; el resto queda en `left`, sin comitear) y `salvaged` es `true`. Sin trabajo pendiente, y en un `ensure` que crea el worktree, `salvaged` es `false`. Los tres campos de hoy (`path`, `branch`, `created`) no cambian.
+- `removeUnit` hace ese mismo comiteo antes de escribir el parche y antes de borrar el worktree y la rama. El parche de hoy se escribe después, así que incluye lo recién comiteado. La respuesta sigue siendo exactamente `{ removed, patch }`.
+- Una corrida está interrumpida si existe `<runDir>/saved.json`, o si algún `<mainRoot>/.aether/autonomy/<id>/run.json` (el `<id>` es el de la corrida autónoma, no el del enjambre) tiene en `quotaPauses` una entrada cuyo `savedUnits` nombra este `runId` en `swarmRun`. Un `run.json` que no se puede leer, o que no es JSON, se ignora. Solo entonces `sweepRun` comitea antes el trabajo sin guardar de cada unidad sin fusionar, escribe su parche, borra el worktree como hoy y no borra la rama. Esa rama entra en `savedBranches`, en el orden de las ramas, aunque solo apunte a su base. Sin esa marca no entra, tenga o no commits por encima de la base, y se borra como hoy. Con `savedBranches` vacío el resto queda como hoy, incluido borrar el directorio cuando `finish: true` y no queda nada retenido. `finished` es verdadero solo si `finish: true` borró el directorio.
+- `sweepStale` llama a `sweepRun` como hoy. Si `savedBranches` no viene vacío: no cuenta la corrida en `swept`, no borra su `runDir` y no escribe `abandoned`; añade una sola vez `{ runId, status: 'interrupted-saved', sweptAt, repo }` a `runs.jsonl` (si el último registro de ese `runId` ya es `interrupted-saved`, no añade otro). Si viene vacío, el registro `abandoned` se escribe como hoy, con la punta de cada rama tomada antes de borrarla, y luego se borra el `runDir` y la corrida entra en `swept`. La respuesta sigue siendo exactamente `{ swept }`.
+
+Estas aserciones quedan palabra por palabra, en los ficheros de `Owns`:
+
+- `tests/session-start.test.js`, el test que termina en `Aether swept 1 stale run(s): ${args.runId}.` (un `ensure`, envejecido 48 h, sin `saved.json` y sin pausa: la rama se borra y la nota cuenta).
+- `tests/report.test.js`, el cierre que afirma `remaining` igual a `{ worktrees: [], branches: [] }` y el directorio de la corrida ausente.
+- `tests/worktrees-cleanup.test.js`, incluido el test que registra la punta de las ramas sin fusionar antes de borrarlas: hay un commit por encima de la base, no hay `saved.json` ni pausa, y la rama se borra.
+- `tests/worktrees-ensure.test.js`, el `deepEqual` que extiende el primer resultado con `created: false`. Los dos resultados traen `salvaged: false`, así que la línea no se edita.
+
+**Tests (write first):**
+
+El fichero nuevo `tests/wt-sweep.test.js`, completo. Pasa por el bin; no importa la librería.
+
+```js
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+const { WT_BIN, makeRepo, compile, commitIn, runBin, tempDir, ageRun } = require('./helpers.js')
+const { task, plan } = require('./plan-fixtures.js')
+
+const show = (repo, spec) => spawnSync('git', ['show', spec], { cwd: repo.dir, encoding: 'utf8' }).stdout
+const owned = (...parts) => parts.join('/')
+
+function writeAt(file, text) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, text)
+}
+
+function unit(t) {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const one = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
+  return { repo, args, one }
+}
+
+function pauseFor(repo, swarmRun, branch) {
+  const dir = path.join(repo.dir, '.aether', 'autonomy', 'auto-20261021-100000-abcd')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'run.json'), JSON.stringify({
+    quotaPauses: [{ savedUnits: [{ swarmRun, task: 'task-1', branch, head: null }] }],
+  }))
+}
+
+test('ensure commits the work it finds in the worktree before handing it back', (t) => {
+  const { repo, args, one } = unit(t)
+  assert.deepEqual([one.created, one.salvaged], [true, false])
+  writeAt(path.join(one.path, 'src', 't1', 'draft.js'), 'draft\n')
+  const second = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
+  assert.deepEqual([second.created, second.salvaged], [false, true])
+  assert.equal(show(repo, `${one.branch}:${owned('src', 't1', 'draft.js')}`), 'draft\n')
+  const clean = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
+  assert.equal(clean.salvaged, false)
+})
+
+test('remove commits the unit before deleting its worktree', (t) => {
+  const { repo, args, one } = unit(t)
+  commitIn(repo, one.path, owned('src', 't1', 'a.js'), 'a\n', 'add a')
+  writeAt(path.join(one.path, 'src', 't1', 'draft.js'), 'draft\n')
+  const r = runBin(WT_BIN, ['remove', args.runId, 'task-1'], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(Object.keys(r.json).sort(), ['patch', 'removed'])
+  assert.equal(r.json.removed, true)
+  const patch = fs.readFileSync(r.json.patch, 'utf8')
+  assert.ok(patch.includes(owned('src', 't1', 'a.js')), 'the committed file is in the patch')
+  assert.ok(patch.includes(owned('src', 't1', 'draft.js')), 'the draft committed by the salvage is in the patch')
+  assert.equal(fs.existsSync(one.path), false)
+  assert.equal(repo.git('branch', '--list', one.branch), '')
+})
+
+test('sweep --finish without a marker removes the branch', (t) => {
+  const { repo, args, one } = unit(t)
+  const junk = path.join(repo.dir, '.aether', 'autonomy', 'auto-20261021-100000-eeee')
+  fs.mkdirSync(junk, { recursive: true })
+  fs.writeFileSync(path.join(junk, 'run.json'), '{')
+  writeAt(path.join(one.path, 'src', 't1', 'wip.js'), 'wip\n')
+  const r = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(r.json.savedBranches, [])
+  assert.equal(r.json.finished, true)
+  assert.equal(fs.existsSync(args.runDir), false)
+  assert.deepEqual(r.json.remaining, { worktrees: [], branches: [] })
+})
+
+test('commits past the base, with no marker, are still swept', (t) => {
+  const { repo, args, one } = unit(t)
+  commitIn(repo, one.path, owned('src', 't1', 'a.js'), 'a\n', 'add a')
+  const r = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(r.json.savedBranches, [])
+  assert.equal(r.json.finished, true)
+  assert.equal(repo.git('branch', '--list', one.branch), '')
+  assert.equal(fs.existsSync(args.runDir), false)
+})
+
+test('a recorded pause keeps a branch that only points at its base', (t) => {
+  const { repo, args, one } = unit(t)
+  pauseFor(repo, args.runId, one.branch)
+  const r = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(r.json.savedBranches, [{ task: 'task-1', branch: one.branch, head: repo.git('rev-parse', one.branch) }])
+  assert.equal(repo.git('rev-parse', one.branch), repo.git('rev-parse', 'feature/x'))
+  assert.equal(r.json.finished, false)
+  assert.equal(fs.existsSync(args.runDir), true)
+  assert.deepEqual(r.json.remaining, { worktrees: [], branches: [one.branch] })
+})
+
+test('after save, sweep keeps the branch and stale records the run once', (t) => {
+  const data = tempDir(t, 'aether-data-')
+  const { repo, args, one } = unit(t)
+  assert.equal(runBin(WT_BIN, ['save', args.runId], repo.dir).status, 0)
+  writeAt(path.join(one.path, 'src', 't1', 'wip.js'), 'wip\n')
+  const finish = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
+  assert.equal(finish.status, 0, finish.stdout + finish.stderr)
+  assert.deepEqual(finish.json.savedBranches.map((b) => b.task), ['task-1'])
+  assert.equal(finish.json.savedBranches[0].head, repo.git('rev-parse', one.branch))
+  assert.equal(finish.json.finished, false)
+  assert.equal(fs.existsSync(args.runDir), true)
+  assert.deepEqual(finish.json.remaining.worktrees, [])
+  assert.equal(finish.json.patches.length, 1)
+  assert.equal(show(repo, `${one.branch}:${owned('src', 't1', 'wip.js')}`), 'wip\n')
+  assert.match(repo.git('log', '-1', '--format=%s', one.branch), /aether: task-1 work saved/)
+  ageRun(args, 3)
+  const stale = () => runBin(WT_BIN, ['sweep', '--stale', '--hours', '2'], repo.dir, { AETHER_DATA_DIR: data })
+  const first = stale()
+  assert.equal(first.status, 0, first.stdout + first.stderr)
+  assert.deepEqual(first.json, { swept: [] })
+  ageRun(args, 3)
+  const second = stale()
+  assert.deepEqual(second.json, { swept: [] })
+  const log = fs.readFileSync(path.join(data, 'runs.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  assert.deepEqual(log.map((e) => e.status), ['interrupted-saved'])
+  assert.deepEqual(Object.keys(log[0]).sort(), ['repo', 'runId', 'status', 'sweptAt'])
+  assert.equal(log[0].runId, args.runId)
+  assert.ok(repo.git('branch', '--list', one.branch).includes(one.branch))
+  assert.equal(fs.existsSync(args.runDir), true)
+})
+```
+
+**Acceptance:**
+
+- Pasan `tests/wt-sweep.test.js`, `tests/worktrees-cleanup.test.js`, `tests/worktrees-ensure.test.js`, `tests/session-start.test.js` y `tests/report.test.js`.
+- `tests/workflow-salvage.test.js` y `tests/workflow.test.js` siguen verdes.
+- Ningún camino borra un worktree con trabajo sin guardar antes de comitearlo: `ensure` a la vuelta y `removeUnit` siempre; `sweepRun` solo cuando la corrida fue interrumpida.
+- Una rama sin fusionar sobrevive a un `sweep --finish` y a un `sweep --stale` solo si hay `saved.json` o una pausa que nombra la corrida. Un commit por encima de la base, solo, no la conserva. El registro `interrupted-saved` se escribe una vez.
 
 
 
