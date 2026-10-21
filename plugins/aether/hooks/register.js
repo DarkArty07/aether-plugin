@@ -443,7 +443,12 @@ async function brakeStep($, state) {
     // with no pause seen for its reset hour, the settings are asked again, at most once a minute. A
     // failed re-ask keeps the settings it had and still counts, so no step spawns it twice in a row.
     if (five && five.percentUsed >= brake.settings.threshold && brake.pausedResetsAt !== five.resetsAt && now - brake.settingsCheckedAt >= BRAKE_RECHECK_MS) {
-      const settings = await autonomyCall($, ['brake-settings', '--session', state.id])
+      let settings = null
+      try {
+        settings = await autonomyCall($, ['brake-settings', '--session', state.id])
+      } catch {
+        settings = null
+      }
       if (settings) brake.settings = settings
       brake.settingsCheckedAt = now
     }
