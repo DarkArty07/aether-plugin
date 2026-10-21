@@ -38,10 +38,15 @@ test('the lists of the mod are the lists of the libs', () => {
 
 test('the manifest lists exactly what the libs accept for the router and the decider, and its defaults are what they fall back to', () => {
   const fields = manifest.userConfig
-  assert.deepEqual(fields.router.options, session.ROUTER_MODES)
+  assert.deepEqual(fields.router.options, session.ROUTER_CHOICES)
   assert.deepEqual(fields.decider.options, session.ROUTER_DECIDERS)
   const defaults = session.routerSettingsFrom({})
-  assert.equal(fields.router.default, defaults.mode)
+  assert.equal(fields.router.default, 'auto', 'the router default is auto: superdelegation decides')
+  assert.equal(defaults.mode, 'record', 'with nothing set, the router only records')
+  assert.equal(session.routerSettingsFrom({ CLAUDE_PLUGIN_OPTION_ROUTER: 'auto' }).mode, 'record', 'auto with superdelegation off records')
+  assert.equal(session.routerSettingsFrom({ CLAUDE_PLUGIN_OPTION_ROUTER: 'auto', CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }).mode, 'command', 'auto with superdelegation on commands')
+  assert.equal(session.routerSettingsFrom({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }).mode, 'command', 'with superdelegation on it commands')
+  assert.equal(session.routerSettingsFrom({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', CLAUDE_PLUGIN_OPTION_ROUTER: 'advise' }).mode, 'advise', 'a mode the owner set holds')
   assert.equal(fields.decider.default, defaults.decider)
   assert.equal(fields.harnesses.options, undefined, 'free text')
   assert.equal(fields.fallback.options, undefined, 'free text')

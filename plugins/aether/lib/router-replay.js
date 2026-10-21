@@ -273,8 +273,8 @@ function aliasOf(prices, model) {
 
 // Decides one set of answers for a call, as the router does. `request` is what the Lead asked for in the call, its
 // `model` and `effort`, and nothing else: the reference rung is the one it names, or the fallback's. Gives the decision,
-// the Claude rung the call runs on and the cheapest Claude rung of the decided level (an external delegate's rescue),
-// both null when no rung reaches the level.
+// the Claude rung the call runs on, which is also the rung an external delegate falls back to, and the cheapest Claude
+// rung of the decided level, both null when no rung reaches the level.
 function decideFor({ criterion, rungs, fallback, request, answers }) {
   const axis = axisOf(criterion, answers)
   const asked = askedOf(request, rungs, criterion)
@@ -408,12 +408,12 @@ function rescueOf(rungs, rescue) {
 
 // Whether the decision moved from the one the journal recorded. A decision that ran on Claude is compared by its rung.
 // The replay has no quota and picks no harness, so one that went to another harness (its `alias` is null) is compared by
-// its level and by the Claude rung it falls back to when the entry kept one.
-function moved(previous, { decided, rung, sameLevel }) {
+// its level and by the Claude rung it falls back to when the entry kept one: the rung the call would run on.
+function moved(previous, { decided, rung }) {
   if (previous === null) return false
   if (previous.harness === 'claude') return rung.alias !== previous.alias || rung.effort !== previous.effort
   if (previous.level !== decided.level) return true
-  return previous.rescue !== null && (!sameLevel || previous.rescue.alias !== sameLevel.alias || previous.rescue.effort !== sameLevel.effort)
+  return previous.rescue !== null && (!rung || previous.rescue.alias !== rung.alias || previous.rescue.effort !== rung.effort)
 }
 
 // Decides again the answers the journal holds, with the criterion in force. Nobody is called.

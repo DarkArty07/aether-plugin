@@ -140,7 +140,7 @@ test('the pane draws every section on every surface, with the buttons under the 
     expect([close?.props.label, close?.props.hotkey]).toEqual(['Close', 'x'])
     const lines = await paneRows(ui)
     expect(lines[0]).toBe('Aether · other harnesses')
-    expect(lines[1]).toMatch(/^superdelegation ON · router record/)
+    expect(lines[1]).toMatch(/^superdelegation ON · router command/)
     expect(lines.indexOf('[buttons]')).toBeGreaterThan(1)
     expect(lines.indexOf('[buttons]')).toBeLessThan(lines.findIndex((line) => /^agy 1\.4\.0/.test(line)))
     await ui.unmount()

@@ -24,6 +24,19 @@ test('routerSettingsFrom reads the four options and the lanes ones, and falls ba
   assert.deepEqual(session.ROUTER_DECIDERS, ['haiku', 'jev'])
 })
 
+test('the router mode nobody set is command with superdelegation on and record with it off, and a mode that was set holds', () => {
+  const mode = (env) => session.routerSettingsFrom(env).mode
+  assert.equal(mode({}), 'record')
+  assert.equal(mode({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false' }), 'record')
+  assert.equal(mode({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }), 'command')
+  assert.equal(mode({ CLAUDE_PLUGIN_OPTION_LANES: 'true' }), 'command', 'the legacy lanes option counts as superdelegation on')
+  assert.equal(mode({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', CLAUDE_PLUGIN_OPTION_LANES: 'true' }), 'record', 'a superdelegation that was set wins over lanes')
+  assert.equal(mode({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', CLAUDE_PLUGIN_OPTION_ROUTER: 'record' }), 'record')
+  assert.equal(mode({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', CLAUDE_PLUGIN_OPTION_ROUTER: 'advise' }), 'advise')
+  assert.equal(mode({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', CLAUDE_PLUGIN_OPTION_ROUTER: 'banana' }), 'command', 'a mode that is not listed is the default')
+  assert.equal(mode({ CLAUDE_PLUGIN_OPTION_ROUTER: 'banana' }), 'record')
+})
+
 test('the fallback rung is alias:effort, and a value that does not say so is the standard one (A-4)', () => {
   assert.deepEqual(session.parseFallback('sonnet:high'), { alias: 'sonnet', effort: 'high' })
   assert.deepEqual(session.parseFallback(' Haiku:LOW '), { alias: 'haiku', effort: 'low' })

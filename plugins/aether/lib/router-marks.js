@@ -32,10 +32,20 @@ function writeAtomic(targetPath, content) {
   }
 }
 
+// A harness that names its own quota failures, as Muse does («quota: muse weekly limit, resets ...»), leaves a refusal
+// as well as agy's «Individual quota reached». Only that declared reason counts, never the words of a message.
+const QUOTA_REASON_RE = /^quota: /
+
+function refusalOf(text) {
+  const agy = quotaRefusal(text)
+  if (agy) return agy
+  return typeof text === 'string' && QUOTA_REASON_RE.test(text) ? { resetMs: null } : null
+}
+
 // Writes the router's mark for a quota refusal, for REFUSAL_DEFAULT_MINUTES, and returns it. A live router mark for the same harness and group that
 // ends later is kept as it is: a mark never shortens. Returns null, and writes nothing, when text is no refusal.
 function markRefusal(dataDir, { harness, group, text, now = Date.now() }) {
-  const refusal = quotaRefusal(text)
+  const refusal = refusalOf(text)
   if (!refusal) return null
   // The mark holds the default length, not the reset the message states: agy's quotas change between days and the
   // stated reset was once wrong, and a refused call costs a failed process and no tokens. The reset is kept as stated.
