@@ -229,6 +229,6 @@ The Writer writes plans with the Aether fields (Tier with its effort, an optiona
 
 ## The execution method
 
-When the plan is approved, choose its path (see "The three paths"): yourself, delegate tasks, or the swarm, `/aether:run`, which implements the plan's tasks in parallel, each on its model and effort, with a supervisor for every attempt, one merge at a time, a final review, and cleanup. Plan tasks you build as delegate tasks follow "The three paths": with superdelegation on, the ones that edit leave Claude first through that command, on the model and effort of their Tier.
+When the plan is approved, choose its path (see "The three paths"): yourself, delegate tasks, or the swarm, `/aether:run`, which implements the plan's tasks in parallel, each on its model and effort, with a supervisor for every attempt, one merge at a time, a final review, and cleanup. Plan tasks you build as delegate tasks follow "The three paths": with superdelegation on, the ones that edit leave Claude first through that command (`aether-lane delegate`, for another harness), on the model and effort of their Tier.
 
 In an autonomous run, choose the path yourself (the swarm, by default, when the plan has Aether fields and three or more tasks, or a task of Tier opus) and note it in the diary. Outside a run, recommend one in the brief with a quality, cost and speed reason, and for delegate tasks their model; the owner's yes starts it. When the swarm runs, load the `aether:swarm` skill and follow it.
