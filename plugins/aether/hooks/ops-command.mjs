@@ -18,7 +18,7 @@ const MARKER = /^=== aether-lane payload: .+ ===$/
 
 // The payload a prompt may carry, saved by register.js: a lane call's prompt.md under a run's lanes/, or a seat
 // round's message.md under <repo>/.aether-tmp/seats/<session>/. Both names are closed, the session's too.
-export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review)\/prompt\.md$|\/\.aether-tmp\/seats\/[A-Za-z0-9-]+\/message\.md$/
+export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review(?:-slice-\d+)?)\/prompt\.md$|\/\.aether-tmp\/seats\/[A-Za-z0-9-]+\/message\.md$/
 
 // `cd '<absolute path>' && <bin> <tokens>`: the path has no quote and no control character. A run that
 // names its compiling version's bins prepends them to PATH in this one exact form (issue 008); the mod
@@ -27,7 +27,7 @@ const COMMAND_LINE = /^cd '(\/[^'\u0000-\u001f\u007f]*)' && (?:PATH='(\/[^'\u000
 
 const RUN = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK = /^task-\d+$/
-const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review)$/
+const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review(-slice-\d+)?)$/
 const ROLES = ['implementer', 'supervisor', 'reviewer']
 const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']

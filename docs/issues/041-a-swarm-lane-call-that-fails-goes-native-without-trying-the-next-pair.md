@@ -3,7 +3,7 @@
 **Type:** bug (design; swarm lanes)
 **Date:** 2026-10-21
 **Found in:** the swarm runs `20261021-005105-e2cc` (two launches) of the Lead's session 7c77db6f
-**Status:** open
+**Status:** fixed in 0.14.5 (2026-10-21), branch `fix/swarm-next-pair`, decision [A71](../decisions.md)
 **GitHub:** none yet. This file is the local record.
 
 ## What happened
@@ -17,3 +17,7 @@ The same rule as the delegates (A67) and the seats (A70): a call that fails with
 ## Impact
 
 Claude's quota, the reserve of an autonomous run, pays for a lane's failure.
+
+## Fix
+
+`external()` of `workflows/run.workflow.js` asks `pick` again, without the pair, after a call that began and failed, up to three pairs in all; the sliced final review offers each slice to the pairs (`final-review-slice-<n>`) before the native reviewer. Built by the swarm (`20261021-033828-9a2f`: Muse implemented both tasks); the merge of the first task hit the ten minutes of the ops command while another swarm ran the suite, and the Lead adopted it.

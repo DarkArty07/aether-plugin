@@ -57,7 +57,7 @@ The workflow returns:
   - `tiers`: the rungs it ran on, each a model and an effort, such as `["haiku medium", "haiku xhigh", "sonnet xhigh"]`. A higher effort on the same model is a climb; another model is an escalation;
   - `rounds`: each attempt, with its rung (`tier`), the implementer's report, the supervisor's verdict, findings, ruling and effort (`reviewEffort`), and the merge outcome;
   - `salvaged` in each round: true when the implementer ended without its report and the workflow rebuilt it from the unit branch (`aether-wt salvage` commits what the task owns). The supervisor reviewed that work as an unverified claim; its tests were not reported, so they run at the merge;
-  - `provider` and `reviewProvider` in each round: `native`, or `<harness> <model>`, such as `agy gemini-3.8-flash`, for the lane that ran the attempt and its review. `laneFailure`: set when a lane began the attempt and the native agent finished it, with the harness, the model and the reason;
+  - `provider` and `reviewProvider` in each round: `native`, or `<harness> <model>`, such as `agy gemini-3.8-flash`, for the lane that ran the attempt and its review. `laneFailure`: set when a lane began the attempt and another agent finished it (the last failure; the next pair is tried before the native agent), with the harness, the model and the reason;
   - `failures`: the failed attempts in order, `no report` or the blocking findings of a retry or an escalation. A unit stops when it ends twice in a row without a report, or gets the same findings three times: the reason asks for a split or a redesign;
   - `commit`, `reason`, `question` and `patch`;
   - `closeError`, when the unit could not be closed. The final sweep then removes it, after saving its work as a patch.

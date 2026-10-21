@@ -116,6 +116,8 @@ test('took logs who ran the call and why, and refuses a cause it does not know',
   assert.deepEqual(native.json, { logged: true })
   const entries = logged(env, 'took')
   assert.deepEqual(entries.map((e) => [e.run, e.call, e.by, e.cause]), [[args.runId, CALL, 'agy:claude-opus-5-5', 'chosen'], [args.runId, 'final-review', 'native', 'no-candidate']])
+  assert.deepEqual(fx.lane(args, 'took', ['final-review-slice-3', '--by', 'native', '--cause', 'no-candidate'], env).json, { logged: true })
+  assert.equal(fx.lane(args, 'took', ['final-review-slice-x', '--by', 'native', '--cause', 'no-candidate'], env).status, 1)
   assert.equal(fx.lane(args, 'took', [CALL, '--by', 'native', '--cause', 'because'], env).status, 1)
   assert.equal(fx.lane(args, 'took', [CALL, '--by', 'agy claude', '--cause', 'chosen'], env).status, 1)
 })
