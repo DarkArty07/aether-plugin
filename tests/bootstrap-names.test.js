@@ -125,7 +125,6 @@ test('every subcommand shown in code appears in the usage its command prints wit
     assert.ok(pairs.size >= 3, `${name} shows subcommands`)
     for (const pair of pairs) {
       const [command, sub] = pair.split(' ')
-      if (pair === 'aether-lane delegate' && !usage(t, command).includes('delegate')) continue
       const escaped = sub.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       assert.match(usage(t, command), new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`), `${name}: "${pair}" is in the usage of ${command}`)
     }

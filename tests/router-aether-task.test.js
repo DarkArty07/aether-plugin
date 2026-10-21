@@ -110,6 +110,15 @@ test('override with id: taskClass is null, aetherTask has id, and override holds
   assert.equal(entry.override, 'the Lead keeps this choice')
 })
 
+test('an incoherent answer classified nothing: taskClass is null, not edits', async (t) => {
+  const deps = setup(t)
+  await go(deps, event({ prompt: 'AETHER-TASK: 20261021-021202-4a26\nAudit src/.' }), text({ shape: { choice: 'banana', confidence: 0.95 } }))
+  const [entry] = journal(deps)
+  assert.equal(entry.flags.incoherent, true)
+  assert.equal(entry.taskClass, null)
+  assert.equal(entry.aetherTask, '20261021-021202-4a26')
+})
+
 test('decider failure leaves taskClass null, and aether:* agent call skips with journal empty', async (t) => {
   const deps = setup(t)
   await go(deps, event({ prompt: 'Fix the bug.' }), { failure: 'rate_limit' })

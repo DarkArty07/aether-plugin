@@ -80,7 +80,7 @@ test('the manifest has no dependencies, and declares the superdelegation, harnes
     type: 'boolean',
     title: 'Superdelegation',
     description:
-      "Send everything that is not the Lead to other harnesses (agy, grok, muse, ...) while their quota lasts; native Claude is the fallback. It covers the swarm, the design seats and the Lead's delegate tasks that only read; a delegate task that edits files stays on Claude. The router chooses where each delegate runs, as command unless you set router. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options.",
+      "Send everything that is not the Lead to other harnesses (agy, grok, muse, ...) while their quota lasts; native Claude is the fallback. It covers the swarm, the design seats and the Lead's delegate tasks: the ones that only read go where the router chooses, and the ones that edit files go first to another harness on a worktree of their own, which the Lead merges. The router chooses where each delegate runs, as command unless you set router. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options.",
   })
   assert.deepEqual(lanes, {
     type: 'boolean',

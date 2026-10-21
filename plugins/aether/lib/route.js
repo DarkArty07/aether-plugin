@@ -458,7 +458,8 @@ async function conclude(ctx, d, result) {
   }
 
   Object.assign(entry, {
-    taskClass: verdict.readOnly ? 'read-only' : 'edits',
+    // An incoherent answer classified nothing: its placeholder verdict is not an `edits`.
+    taskClass: verdict.flags && verdict.flags.incoherent ? null : verdict.readOnly ? 'read-only' : 'edits',
     asked: askedEntry(asked, table, floorAxis),
     answers,
     decision,

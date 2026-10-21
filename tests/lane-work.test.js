@@ -89,6 +89,27 @@ test('checkIntegration lets a merge move the branch forward, and catches a dirty
   })
 })
 
+test("checkIntegration of a delegate run (watched: false) lets the Lead's checkout change, and still catches a rewind", (t) => {
+  const { repo, args } = run(t)
+  const graphPath = path.join(args.runDir, 'graph.json')
+  const graph = JSON.parse(fs.readFileSync(graphPath, 'utf8'))
+  fs.writeFileSync(graphPath, `${JSON.stringify({ ...graph, integration: { ...graph.integration, watched: false } })}\n`)
+  work.prepareImplementer(repo.dir, args.runId, 'task-1')
+  const before = work.snapshot(repo.dir, args.runId, { taskId: 'task-1' })
+  fs.writeFileSync(path.join(repo.dir, 'lead-at-work.txt'), 'x\n')
+  assert.deepEqual(work.checkIntegration(repo.dir, args.runId, before), { ok: true })
+  fs.rmSync(path.join(repo.dir, 'lead-at-work.txt'))
+  fs.writeFileSync(path.join(repo.dir, 'extra.txt'), 'x\n')
+  repo.git('add', 'extra.txt')
+  repo.git('commit', '-q', '-m', 'extra')
+  const moved = work.snapshot(repo.dir, args.runId)
+  repo.git('reset', '-q', '--hard', 'HEAD~1')
+  assert.deepEqual(work.checkIntegration(repo.dir, args.runId, moved), {
+    ok: false,
+    detail: 'the integration branch was rewound or rewritten during the lane call',
+  })
+})
+
 test('checkUnitUnchanged catches a read-only call that wrote to the unit, committed or not', (t) => {
   const { repo, args } = run(t)
   const unit = work.prepareImplementer(repo.dir, args.runId, 'task-1').workdir

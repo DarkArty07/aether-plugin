@@ -453,7 +453,7 @@ async function delegateWithEnv(cwd, flags, deps) {
     runDir,
     plan: null,
     spec: null,
-    integration: { branch, worktree: paths.worktree, base, firstBase: base },
+    integration: { branch, worktree: paths.worktree, base, firstBase: base, watched: false },
     testCommand: charge.tests ?? 'true',
     ladder: { haiku: 2, sonnet: 2, opus: 1 },
     maxAgents: 1,

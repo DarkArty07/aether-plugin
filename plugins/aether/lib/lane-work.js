@@ -125,7 +125,9 @@ function checkIntegration(cwd, runId, before) {
   const { mainRoot } = repoPaths(cwd)
   const graph = loadGraph(mainRoot, runId)
   const now = betweenMerges(mainRoot, runId, () => integrationState(mainRoot, graph))
-  if (now.status !== before.integration.status) {
+  // A delegate run's integration worktree is the Lead's own checkout, where the Lead keeps working while the call runs
+  // (`watched: false`): its status is no sign of the harness, and the branch may still only move forward.
+  if (graph.integration.watched !== false && now.status !== before.integration.status) {
     return { ok: false, detail: 'the integration worktree changed during the lane call' }
   }
   const forward = git(['merge-base', '--is-ancestor', before.integration.tip, now.tip], mainRoot, { allowFail: true })
