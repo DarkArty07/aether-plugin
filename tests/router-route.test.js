@@ -9,6 +9,7 @@ const route = require('../plugins/aether/lib/route.js')
 const { EXTERNAL_LIMIT_MS } = require('../plugins/aether/lib/delegate-limits.js')
 const log = require('../plugins/aether/lib/router-log.js')
 const session = require('../plugins/aether/lib/session.js')
+const slow = require('../plugins/aether/lib/router-slow.js')
 
 const NOW = Date.parse('2026-10-15T21:32:00-06:00')
 const H = 3600 * 1000
@@ -516,17 +517,58 @@ test('R25: an internal error leaves a trace in the journal, and the delegates re
   assert.equal(typeof quiet.error, 'string')
 })
 
-test('a failure under the pair step does not lose the decision: the delegate runs on the Claude rung the router decided, and the log says why', async (t) => {
+test('a failure under the pair step does not lose the decision: the delegate runs on the Claude rung the router decided, and the log says it is an internal error', async (t) => {
   const deps = setup(t, { installed: () => { throw new Error('which failed') } })
   const plan = await go(deps, event())
-  assert.equal(plan.error, undefined, 'not an internal error of the router')
+  assert.equal(plan.error, undefined, 'the call itself is not an internal error of the router')
   assert.equal(plan.external, null)
   assert.deepEqual(plan.args, { model: 'haiku', effort: 'high' })
   const [entry] = journal(deps)
   assert.equal(entry.applied, 'rewritten')
   assert.equal(entry.decision.harness, 'claude')
-  assert.equal(entry.decision.choice, 'which failed')
+  assert.equal(entry.decision.choice, null, 'an exception is not a choice')
+  assert.equal(entry.fallback, 'internal: which failed')
+  assert.equal(entry.quota, null)
+  assert.equal(entry.ranOn.harness, 'claude')
+  assert.equal(fs.existsSync(path.join(deps.dataDir, 'router', 'external', `${plan.id}.json`)), false, 'no external delegate was set up')
+})
+
+test('issue 036: the message of a failed pair step reads as the router\'s own failures do: on one line and cut', async (t) => {
+  const deps = setup(t, { installed: () => { throw new Error(`first line\n   second   line ${'y'.repeat(300)}`) } })
+  await go(deps, event())
+  const [entry] = journal(deps)
+  assert.ok(entry.fallback.startsWith('internal: first line second line y'), entry.fallback)
+  assert.equal(entry.fallback.length, 'internal: '.length + 200)
+})
+
+test('issue 036: a decision with simply no pair keeps saying why in its choice, and has no fallback', async (t) => {
+  const deps = setup(t, { installed: () => false })
+  const plan = await go(deps, event())
+  assert.equal(plan.external, null)
+  const [entry] = journal(deps)
   assert.equal(entry.fallback, null)
+  assert.equal(typeof entry.decision.choice, 'string')
+  assert.ok(entry.decision.choice.length > 0)
+  assert.ok(Array.isArray(entry.quota))
+})
+
+test('issue 035: a pair with a live slow mark is left out of the choice and of the alternates, and the mark is read from the data directory', async (t) => {
+  const deps = setup(t)
+  slow.markSlow(deps.dataDir, { harness: 'grok', model: 'grok-4.7', effort: 'low' }, { now: NOW })
+  const plan = await go(deps, event())
+  assert.deepEqual([plan.external.harness, plan.external.model, plan.external.effort], ['grok', 'grok-4.7', 'high'], 'the pair that ran out of time is out, and the same model at another effort takes the call')
+  const [entry] = journal(deps)
+  const grok = entry.quota.find((c) => c.id === 'grok/grok-4.7@low')
+  assert.equal(grok.outcome, 'passed')
+  assert.equal(grok.why, 'excluded')
+  const stored = route.readExternal(deps.dataDir, plan.id)
+  assert.ok(!stored.alternates.some((a) => a.harness === 'grok' && a.rung.model === 'grok-4.7' && a.rung.effort === 'low'))
+
+  // An injected slow list does the same, and one that is empty leaves the choice as it was.
+  const injected = setup(t, { slow: () => ['grok/grok-4.7@low'] })
+  assert.notEqual((await go(injected, event())).external.effort, 'low')
+  const none = setup(t, { slow: () => [] })
+  assert.equal((await go(none, event())).external.effort, 'low')
 })
 
 test('the same run of the same task gives the same decision with either decider (C5)', async (t) => {

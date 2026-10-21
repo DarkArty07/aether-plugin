@@ -38,7 +38,7 @@ const PAIRS = [
 const SONNET_HIGH = { model: 'sonnet', effort: 'high' }
 
 // The router's dependencies (lib/route.js resolve) for one decision, with a clock that the wait moves.
-function setup({ readings = { agy: agy({ gemini: gemini(1, 60), claude: weekly(0.9, 40) }), grok: GROK }, marks = [], installed = () => true, pairs = PAIRS, settings = {}, lift = null } = {}) {
+function setup({ readings = { agy: agy({ gemini: gemini(1, 60), claude: weekly(0.9, 40) }), grok: GROK }, marks = [], installed = () => true, pairs = PAIRS, settings = {}, lift = null, slow = undefined } = {}) {
   const clock = { t: NOW }
   const renewed = []
   const lifted = []
@@ -52,6 +52,7 @@ function setup({ readings = { agy: agy({ gemini: gemini(1, 60), claude: weekly(0
     readings: typeof readings === 'function' ? readings : () => readings,
     renew: (harness) => { renewed.push(harness); return { started: true, running: true } },
     lift: lift || ((mark) => lifted.push(mark)),
+    ...(slow === undefined ? {} : { slow }),
   }
   const merged = { harnesses: ['agy', 'grok', 'muse'], deadlines: { haikuMs: 8000, jevMs: 3000, quotaMs: 3000 }, ...settings }
   return { d, merged, clock, renewed, lifted }
@@ -175,12 +176,13 @@ test('R22: a mark holds the group although the reading shows balance, a refusal\
   assert.deepEqual(under.lifted, [], 'a reading under the reserve lifts nothing')
 })
 
-test('a reference the table lacks gives no pick and says why, and never throws', async () => {
+test('a reference the table lacks gives no pick and names the error, and never throws', async () => {
   const s = setup()
   const step = await pairStep(s.d, s.merged, { reference: { model: 'sonnet', effort: 'minimal' } })
   assert.equal(step.pick, null)
   assert.equal(step.quota, null)
-  assert.match(step.reason, /no reference pair for sonnet minimal/)
+  assert.equal(step.reason, null, 'a table that lacks the reference is a broken router, not a choice: the failure is the error')
+  assert.match(step.error, /no reference pair for sonnet minimal/)
 })
 
 test('every harness of the staleness rule is one the router reads: muse has no reading to go stale', () => {
@@ -205,8 +207,57 @@ test('pairStep never throws, whatever fails under it: the table, the lane config
     const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
     assert.equal(step.pick, null, name)
     assert.equal(step.waitedMs, 0, name)
-    assert.ok(typeof step.reason === 'string' && step.reason !== '', name)
+    assert.equal(step.quota, null, name)
+    assert.equal(step.reason, null, `${name}: an error is not a reason`)
+    assert.ok(typeof step.error === 'string' && step.error !== '', name)
   }
+  const s = setup()
+  s.d.pairs = () => { throw 'a string, not an Error' }
+  assert.equal((await pairStep(s.d, s.merged, { reference: SONNET_HIGH })).error, 'a string, not an Error')
+})
+
+test('issue 036: a decision with no pair for the task still says why in its reason, and has no error', async () => {
+  const s = setup({ readings: { agy: null, grok: null, muse: null }, installed: () => false })
+  const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
+  assert.equal(step.pick, null)
+  assert.ok(typeof step.reason === 'string' && step.reason !== '')
+  assert.equal(Object.hasOwn(step, 'error'), false)
+  assert.ok(Array.isArray(step.quota))
+})
+
+test('issue 035: a pair with a slow mark is out of the choice, shows as excluded, and the next candidate takes the call', async () => {
+  const s = setup({ slow: () => ['grok/grok-4.7@high'] })
+  const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
+  assert.equal(idOf(step), 'agy/claude-sonnet-5-5@high', 'grok renews first, and it is the pair that ran out of time')
+  const grok = step.quota.find((c) => c.id === 'grok/grok-4.7@high')
+  assert.equal(grok.outcome, 'passed')
+  assert.equal(grok.why, 'excluded')
+  assert.ok(!step.quota.some((c) => c.outcome === 'next' && c.id === 'grok/grok-4.7@high'), 'the alternates saved for the chain never hold it')
+  assert.equal(step.waitedMs, 0)
+})
+
+test('issue 035: the slow mark is the pair\'s, not the group\'s: the same harness at another effort stays available', async () => {
+  const pairs = [...PAIRS, external('grok', 'grok-4.7', 'low', 'grok', 46.3, 1.9)]
+  const s = setup({ pairs, slow: () => ['grok/grok-4.7@high'] })
+  const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
+  assert.equal(idOf(step), 'grok/grok-4.7@low', 'the cheaper pair of the same quota takes the call')
+  assert.equal(step.quota.find((c) => c.id === 'grok/grok-4.7@high').why, 'excluded')
+})
+
+test('issue 035: the harnesses that serve are found with the slow pairs excluded too, so a harness left with nothing is not waited for', async () => {
+  // Grok has no reading and its only pair is slow: the wait would be for a reading that cannot change the pick.
+  const s = setup({ readings: { agy: agy({ gemini: gemini(1, 60), claude: weekly(0.9, 40) }), grok: null }, slow: () => ['grok/grok-4.7@high'] })
+  const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
+  assert.equal(s.clock.t, NOW, 'no wait')
+  assert.deepEqual(s.renewed, ['grok'], 'the renewal still starts, for the next decision')
+  assert.equal(step.waitedMs, 0)
+  assert.equal(idOf(step), 'agy/claude-sonnet-5-5@high')
+})
+
+test('issue 035: dependencies that lack slow, or whose slow is empty, exclude nothing', async () => {
+  assert.equal(idOf(await pairStep(setup().d, setup().merged, { reference: SONNET_HIGH })), 'grok/grok-4.7@high')
+  const s = setup({ slow: () => [] })
+  assert.equal(idOf(await pairStep(s.d, s.merged, { reference: SONNET_HIGH })), 'grok/grok-4.7@high')
 })
 
 test('the readings are the ones peekReadings finds, and no adapter is asked for a quota call that launches a process (constraint of the hook)', async (t) => {

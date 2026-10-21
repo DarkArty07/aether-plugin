@@ -28,11 +28,17 @@ const TMP_DIR = '.aether-tmp/'
 
 const DELEGATE_SCHEMA = { type: 'object', required: ['answer'], additionalProperties: false, properties: { answer: { type: 'string' } } }
 
+// What the note below asks of every delegate: the number of tool calls (every read and search counts) it may spend before
+// it answers. Grok 4.7 at high made 33 to 42 of them on single-file audits and was still working when the CLI limit
+// killed it; its lookups, which end by themselves, took 12 to 60 s (issue 035).
+const DELEGATE_TOOL_BUDGET = 20
+
 const DELEGATE_NOTE = [
   '## You run as a read-only delegate',
   '',
   'The current directory is a disposable copy of the repository. Your work is read-only: read files and run read-only commands such as `git log` or `grep`, but never change, create or delete a file, and never commit; any change undoes your answer.',
   WORKDIR_RULE,
+  `You have a few minutes, not an open-ended search: use at most about ${DELEGATE_TOOL_BUDGET} tool calls (every read and search counts), then stop and answer with the best you have, saying in the answer what you did not check.`,
   'Answer with one JSON object that matches this schema, and nothing else: {"answer": "<string>"}, where answer holds everything you found.',
 ].join('\n')
 
@@ -127,8 +133,9 @@ function killGroup(pid) {
 }
 
 // Runs argv in cwd to its end, in a group of its own, killing the group when it outlives the timeout and its grace.
-// Resolves to its exit code.
-function runCli(argv, { cwd, marker, stdoutFile, stderrFile, timeoutSeconds, onSpawn }) {
+// Resolves to its exit code. `limit.killed` is set when it was the kill timer that ended the process, so that the caller
+// can tell a call that ran out of time from one that failed by itself.
+function runCli(argv, { cwd, marker, stdoutFile, stderrFile, timeoutSeconds, graceSeconds, limit, onSpawn }) {
   const out = fs.openSync(stdoutFile, 'w')
   const err = fs.openSync(stderrFile, 'w')
   let child
@@ -146,7 +153,10 @@ function runCli(argv, { cwd, marker, stdoutFile, stderrFile, timeoutSeconds, onS
     })
     child.once('spawn', () => {
       onSpawn(child.pid)
-      timer = setTimeout(() => killGroup(child.pid), (timeoutSeconds + KILL_GRACE_SECONDS) * 1000)
+      timer = setTimeout(() => {
+        limit.killed = true
+        killGroup(child.pid)
+      }, (timeoutSeconds + graceSeconds) * 1000)
     })
     child.once('exit', (code, signal) => {
       clearTimeout(timer)
@@ -175,8 +185,10 @@ function usageOf(usage) {
 // whose status is ok, quota, failed, violation, unavailable (nothing launched) or dirty (the checkout has uncommitted
 // work; nothing launched, no quota read); throws only for an id that is not a plain name. maxCliSeconds, when it is
 // given, caps the CLI's limit below what the harness's settings allow: a later attempt of a delegate has only the time
-// the earlier ones left (lib/delegate-chain.js).
-async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adapter = null, now = Date.now, maxCliSeconds = null }) {
+// the earlier ones left (lib/delegate-chain.js). graceSeconds is the grace before the kill; only a test shortens it.
+// `timedOut` says the call was killed at its limit: such a call is `failed`, never `quota` (it says nothing of the
+// quota), and the router keeps its pair out of the choice for a while (lib/router-slow.js).
+async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adapter = null, now = Date.now, maxCliSeconds = null, graceSeconds = KILL_GRACE_SECONDS }) {
   if (typeof id !== 'string' || !ID.test(id)) throw new Error(`the delegate id must be a plain name (${ID}), not ${JSON.stringify(id)}`)
   const startedAt = now()
   let modelArg = rung.model
@@ -192,6 +204,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     quotaBefore: null,
     quotaAfter: null,
     quotaSpent: [],
+    timedOut: false,
     ...fields,
   })
 
@@ -271,12 +284,14 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   let result
   let usage = { ...NO_USAGE }
   let quotaAfter = null
+  const limit = { killed: false }
+  let timeoutSeconds = null
   try {
     const start = git(['rev-parse', 'HEAD'], top).stdout
     git(['worktree', 'add', '-q', '--detach', worktree, start], top)
     const schemaFile = path.join(dir, 'schema.json')
     fs.writeFileSync(schemaFile, `${JSON.stringify(DELEGATE_SCHEMA, null, 2)}\n`)
-    const timeoutSeconds = Number.isFinite(maxCliSeconds) && maxCliSeconds > 0 ? Math.min(cliSeconds(settings), maxCliSeconds) : cliSeconds(settings)
+    timeoutSeconds = Number.isFinite(maxCliSeconds) && maxCliSeconds > 0 ? Math.min(cliSeconds(settings), maxCliSeconds) : cliSeconds(settings)
     const argv = delegateArgv(cli, rung, { schemaFile, timeoutSeconds, prompt: delegatePrompt(cli, task) })
 
     // 5. The CLI, in its own process group, with an environment clean of credentials.
@@ -288,6 +303,8 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
       stdoutFile,
       stderrFile,
       timeoutSeconds,
+      graceSeconds,
+      limit,
       onSpawn: (pid) => {
         child = pid
       },
@@ -309,6 +326,9 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     if (changes.files.length > 0 || changes.moved) {
       const what = changes.files.length > 0 ? `changed ${changes.files.join(', ')}` : `moved HEAD from ${start} to ${changes.head}`
       result = { status: 'violation', detail: `the read-only delegate ${what}` }
+    } else if (limit.killed) {
+      // Killed at its limit: its output is cut, and what the quota reads afterwards is not the call's verdict.
+      result = { status: 'failed', detail: `ran out of time: killed at ${timeoutSeconds + graceSeconds} s, exit ${exitCode}` }
     } else if (!parsed.clean) {
       // An explicit refusal is the quota's verdict even when both readings still show balance (agy's /usage does not
       // report its individual limits), so the router can tell it from a failure and try the next candidate.
@@ -334,7 +354,8 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     quotaBefore,
     quotaAfter,
     quotaSpent: quotaSpent(quotaBefore, quotaAfter),
+    timedOut: limit.killed,
   })
 }
 
-module.exports = { DELEGATE_SCHEMA, DELEGATE_NOTE, quotaSpent, delegateArgv, runDelegate }
+module.exports = { DELEGATE_SCHEMA, DELEGATE_NOTE, DELEGATE_TOOL_BUDGET, quotaSpent, delegateArgv, runDelegate }

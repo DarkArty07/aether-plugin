@@ -208,6 +208,17 @@ test('per run it counts the delegations decided, overridden and in fallback', (t
   assert.equal(delegatesReport({ dataDir: dir, prices }).delegations.length, 6)
 })
 
+test('issue 036: a decision whose pair step failed counts as a fallback, and shows its internal error', (t) => {
+  const dir = tempDir(t)
+  log.appendEntry(dir, decision('e1', { fallback: 'internal: no reference pair for sonnet minimal', quota: null, decision: { ...decision('x').decision, choice: null } }))
+  log.appendEntry(dir, decision('e2'))
+  const report = delegatesReport({ dataDir: dir, prices })
+  assert.equal(report.delegations.find((row) => row.id === 'e1').fallback, 'internal: no reference pair for sonnet minimal')
+  assert.equal(report.delegations.find((row) => row.id === 'e2').fallback, null)
+  assert.equal(report.totals.fallback, 1)
+  assert.equal(report.totals.decided, 1, 'the one that ran without a failure is the decided one')
+})
+
 test('aether-report --delegates prints the report', (t) => {
   const dir = fixture(t)
   const bin = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-report')

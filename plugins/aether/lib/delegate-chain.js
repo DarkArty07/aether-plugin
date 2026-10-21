@@ -4,18 +4,22 @@
 // file, lib/route.js); a pair that refuses at its start has used nothing, so the next candidate gets the task. Only a
 // start refusal moves on: a call that used tokens, ran out of time, changed files or met a dirty checkout goes back to
 // the mod, which runs the agent on Claude. Each attempt writes its own outcome entry in the router's log and, when it
-// failed, the mark of its refusal; a candidate whose quota group has a live mark is not tried. This module makes no
-// call of its own: lib/delegate-calls.js does.
+// failed, the mark of its refusal; a candidate whose quota group has a live mark is not tried. A call that ran out of
+// time writes the slow mark of its pair instead (lib/router-slow.js), and a candidate whose pair holds one is not tried
+// either. This module makes no call of its own: lib/delegate-calls.js does.
 
 const delegateCalls = require('./delegate-calls.js')
 const lanes = require('./lanes.js')
 const { retryCliSeconds } = require('./delegate-limits.js')
 const { appendEntry } = require('./router-log.js')
 const { markRefusal, readAllMarks, refusalOf } = require('./router-marks.js')
+const { markSlow, slowPairIds } = require('./router-slow.js')
 
 // Three tries in all: a decision lists at most six candidates, and a run of refusals at ten seconds each stays around
 // a minute.
 const MAX_ATTEMPTS = 3
+
+const NO_USAGE = { input: 0, output: 0, thinking: 0, cacheRead: 0 }
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const isText = (value) => typeof value === 'string' && value !== ''
@@ -30,14 +34,23 @@ function alternatesOf(external) {
 const spent = (usage) => Object.values(usage ?? {}).some((count) => count > 0)
 
 // A refusal at the start: the pair is unavailable (nothing launched), or it refused for quota and used nothing. A
-// refusal the router recognizes by its text counts whatever status the call ended with.
+// refusal the router recognizes by its text counts whatever status the call ended with. A call killed at its limit is
+// never one: it had started, and what it says is about its time, not its quota.
 function isStartRefusal(result) {
+  if (result.timedOut === true) return false
   if (spent(result.usage)) return false
   if (result.status === 'unavailable' || result.status === 'quota') return true
   return result.status === 'failed' && refusalOf(result.detail) !== null
 }
 
 const REFUSED = { quota: 'refused for quota', unavailable: 'was unavailable' }
+
+// What an exception of runDelegate (it throws for a bad id, and a failing disk can make anything throw) leaves: a failed
+// attempt that used nothing, so that it still gets its outcome entry and the task goes to Claude as for any failure.
+function thrownAttempt(err, rung, elapsedMs) {
+  const message = err instanceof Error ? err.message : String(err)
+  return { status: 'failed', text: '', detail: `delegate: ${message}`, modelArg: rung.model, durationMs: elapsedMs, usage: { ...NO_USAGE }, quotaSpent: [], timedOut: false }
+}
 
 // Where the answer came from, for the Lead: Claude Code lists no tool uses or tokens for an agent the mod answers, and a
 // Lead that sees 0 tool uses doubts an answer that was read from files. Earlier pairs that refused are named first.
@@ -70,16 +83,33 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
       const at = now()
       if (refusedGroups.has(`${harness}/${rung.group}`)) continue
       if (readAllMarks(dataDir, at, known).some((mark) => mark.harness === harness && mark.group === rung.group)) continue
+      // A parallel delegate may have run its pair out of time since the decision.
+      if (slowPairIds(dataDir, [{ id: 'candidate', harness, model: rung.model, effort: rung.effort }], at).length > 0) continue
       maxCliSeconds = retryCliSeconds(at - startedAt)
       if (maxCliSeconds === null) break
     }
-    const result = await runDelegate({ cwd, id, harness, rung, task: external.task, config, dataDir, ...(maxCliSeconds === null ? {} : { maxCliSeconds }) })
+    const attemptStart = now()
+    let result
+    try {
+      result = await runDelegate({ cwd, id, harness, rung, task: external.task, config, dataDir, ...(maxCliSeconds === null ? {} : { maxCliSeconds }) })
+    } catch (err) {
+      result = thrownAttempt(err, rung, now() - attemptStart)
+    }
     const ok = result.status === 'ok'
     marked = null
+    let slowUntil = null
     if (!ok) {
-      const mark = markRefusal(dataDir, { harness, group: rung.group, text: result.detail, now: now() })
-      marked = mark ? mark.until : null
+      // A mark that cannot be written costs the next decision its memory, not this delegate its outcome.
+      try {
+        const mark = markRefusal(dataDir, { harness, group: rung.group, text: result.detail, now: now() })
+        marked = mark ? mark.until : null
+      } catch {}
       if (result.status === 'quota') refusedGroups.add(`${harness}/${rung.group}`)
+      if (result.timedOut === true) {
+        try {
+          slowUntil = markSlow(dataDir, { harness, model: rung.model, effort: rung.effort }, { now: now() }).until
+        } catch {}
+      }
     }
     journaled = appendEntry(dataDir, {
       kind: 'outcome',
@@ -96,6 +126,7 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
       detail: result.detail,
       markedUntil: marked,
       attempt: attempts.length + 1,
+      ...(result.timedOut === true ? { timedOut: true, slowUntil } : {}),
     })
     attempts.push({ harness, model: rung.model, effort: rung.effort, status: result.status, detail: result.detail, rung })
     last = { candidate, result }

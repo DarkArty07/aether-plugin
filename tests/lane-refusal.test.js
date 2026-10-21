@@ -108,6 +108,21 @@ test('the refusal is recognized, with the reset it states, in the text of a fail
   assert.equal(refusalIn('exit 1: other', null), null)
 })
 
+test('issue 037: the reset is read whatever the case of the units and with spaces between the parts, and a duration the reader cannot place states none', () => {
+  const said = (duration) => quotaRefusal(`Individual quota reached. Resets in ${duration}.`)
+  assert.deepEqual(said('163H22M27S'), { resetMs: 588147000 })
+  assert.deepEqual(said('1D2H'), { resetMs: 26 * 60 * MIN })
+  assert.deepEqual(said('2h 30m'), { resetMs: 150 * MIN })
+  assert.deepEqual(said('1d 2h 3m 4s'), { resetMs: ((26 * 60 + 3) * 60 + 4) * 1000 })
+  assert.deepEqual(said('2H  30M'), { resetMs: 150 * MIN })
+  // The lowercase forms are read as before.
+  assert.deepEqual(said('163h22m27s'), { resetMs: 588147000 })
+  assert.deepEqual(said('45m'), { resetMs: 45 * MIN })
+  // Decimals, parts out of order, a bare number and nothing at all give the refusal and no stated reset.
+  for (const duration of ['1.5h', '30m 2h', '2h 30', '90', '']) assert.deepEqual(said(duration), { resetMs: null }, duration)
+  assert.deepEqual(quotaRefusal('Individual quota reached. Resets in'), { resetMs: null })
+})
+
 test('a refusal marks the key of the refused model for 60 minutes, though it states 163 h, and keeps the stated reset', () => {
   const dataDir = tmp()
   const now = Date.now()
