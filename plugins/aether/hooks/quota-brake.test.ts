@@ -42,7 +42,7 @@ function stubs(on, { marked = true, settings = SETTINGS as any, crossing = PAUSE
   })
   on('session.usage', () => ({ value: sessionUsage }))
   on('ui.notify', ($, e) => { notes.push({ text: e.text, opts: e.opts ?? e.init ?? e }); return { value: notifyFails ? { isSent: false, reason: 'disabled' } : { isSent: true, channel: 'test' } } })
-  on('prompt.submit', ($, e) => { prompts.push(e); return { value: undefined } })
+  on('prompt.submit', ($, e) => { prompts.push(e); return { text: e.text } })
   return {
     clock, writes, runs, notes, prompts,
     setLimits(rateLimits: any) { sessionUsage = { rateLimits } },
