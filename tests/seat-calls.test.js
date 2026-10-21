@@ -140,6 +140,66 @@ test('a round whose runner is dead is reported, and bad arguments are refused', 
   assert.match(lane(repo, [], env).json.error, /seat-start .*seat-wait .*seat-stop/)
 })
 
+const ARGON = 'agy/gemini-4-argon@high'
+const OPUS_PAIR = 'agy/claude-opus-5-5@high'
+
+test('seat-start --exclude leaves that pair out and the next pair of the rule runs the round', (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`, [...OPTIONS, '--exclude', ARGON])
+  assert.equal(started.status, 0, started.stdout)
+  const done = waitDone(repo, started.json.id, env)
+  assert.equal(done.exitCode, 0, JSON.stringify(done))
+  assert.equal(done.value.model, 'claude-opus-5-5')
+  assert.equal(done.value.harness, 'agy')
+})
+
+test('seat-start with every candidate excluded answers with the native agent, as when no pair can take the round', (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const started = start(repo, env, 'judge', 'Review.\n', [...OPTIONS, '--exclude', `${ARGON},${OPUS_PAIR}`])
+  assert.equal(started.status, 0, started.stdout)
+  const done = waitDone(repo, started.json.id, env)
+  assert.equal(done.exitCode, 3, JSON.stringify(done))
+  assert.equal(done.value.unavailable, 'no-external')
+  assert.equal(done.value.native.agent, 'aether:judge')
+  assert.equal(done.value.native.model, 'opus')
+  assert.equal(done.value.tried.find((entry) => entry.id === ARGON).why, 'excluded')
+  assert.equal(done.value.tried.find((entry) => entry.id === OPUS_PAIR).why, 'excluded')
+  assert.equal(agyTurns(env).length, 0)
+})
+
+test('seat-start refuses a malformed --exclude as a usage error and starts nothing', (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const refused = (value) => lane(repo, ['seat-start', 'judge', '--session', 's1', '--feature', FEATURE, ...OPTIONS, '--exclude', value, '--digest', '0a1b2c3d:1'], env)
+  for (const value of ['agy/x', 'agy/gemini-4-argon', `${ARGON},nope`]) {
+    const r = refused(value)
+    assert.equal(r.status, 1, value)
+    assert.match(r.json.error, /--exclude must be pair ids like agy\/model@effort/, value)
+  }
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'seats')), false)
+})
+
+test('seat-start keeps the author rule when a pair is excluded', (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const started = start(repo, env, 'judge', 'Review.\n', [...OPTIONS, '--exclude', ARGON], ['--author', 'opus'])
+  assert.equal(started.status, 0, started.stdout)
+  const done = waitDone(repo, started.json.id, env)
+  assert.equal(done.exitCode, 3, JSON.stringify(done))
+  assert.equal(done.value.unavailable, 'no-external')
+  assert.notEqual(done.value.native.model, 'opus')
+  assert.equal(done.value.native.model, 'sonnet')
+  assert.equal(done.value.tried.find((entry) => entry.id === ARGON).why, 'excluded')
+  assert.equal(done.value.tried.find((entry) => entry.id === OPUS_PAIR).why, 'author')
+  const examiner = start(repo, env, 'examiner', 'Exam.\n', [...OPTIONS, '--exclude', ARGON], ['--author', 'opus'])
+  const examined = waitDone(repo, examiner.json.id, env)
+  assert.equal(examined.exitCode, 3, JSON.stringify(examined))
+  assert.notEqual(examined.value.native.model, 'opus')
+  assert.equal(agyTurns(env).length, 0)
+})
+
 test('the Writer of a spec round is forwarded its document', (t) => {
   const repo = seatRepo(t)
   const env = modEnv(t)

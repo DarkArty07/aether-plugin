@@ -21,7 +21,7 @@ const POLL_MS = 250
 // Each verb's usage, as the bin lists it.
 const COMMANDS = {
   start:
-    'seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>] --superdelegation <on|off> --harnesses <h1,h2> --digest <digest>',
+    'seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>] --superdelegation <on|off> --harnesses <h1,h2> [--exclude <id>[,<id>...]] --digest <digest>',
   wait: 'seat-wait <id> [--max <seconds>]',
   stop: 'seat-stop <id>',
 }
@@ -33,7 +33,7 @@ const SESSION = /^[A-Za-z0-9-]+$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
 // The flags a start takes, with the seat the bin adds: the seats and lanes options retired with superdelegation, and a
 // round started with one of them would run under a switch nobody gave it.
-const START_FLAGS = ['seat', 'session', 'author', 'feature', 'doc', 'superdelegation', 'harnesses', 'digest']
+const START_FLAGS = ['seat', 'session', 'author', 'feature', 'doc', 'superdelegation', 'harnesses', 'exclude', 'digest']
 
 // ---- The round directory ----
 
@@ -91,7 +91,9 @@ function checkedFlags(flags) {
   if (!HARNESSES.test(harnesses)) throw new Error(`--harnesses must be harness names separated by commas, not ${harnesses}`)
   const digest = requireFlag(flags, 'digest')
   const author = typeof flags.author === 'string' && flags.author !== '' ? flags.author : null
-  return { seat, session, author, feature, doc, superdelegation, harnesses, digest }
+  // The same pair ids as `aether-lane pick --exclude`: the pairs this round already tried.
+  const exclude = seats.excludeList(flags.exclude)
+  return { seat, session, author, feature, doc, superdelegation, harnesses, digest, exclude }
 }
 
 // The message the Lead saved for a round, where the mod's bins look for it: <checkout>/.aether-tmp/seats/<session>/message.md.
@@ -157,7 +159,8 @@ async function runSeat(cwd, id) {
     const message = fs.readFileSync(paths.message, 'utf8')
     const author = call.author === null ? [] : ['--author', call.author]
     const doc = call.doc === null ? [] : ['--doc', call.doc]
-    const argv = [call.seat, '--session', call.session, '--id', id, '--feature', call.feature, ...author, ...doc]
+    const exclude = Array.isArray(call.exclude) && call.exclude.length > 0 ? ['--exclude', call.exclude.join(',')] : []
+    const argv = [call.seat, '--session', call.session, '--id', id, '--feature', call.feature, ...author, ...doc, ...exclude]
     const { exitCode, value } = await seats.seatCommand(argv, { input: message, env: process.env, cwd })
     outcome = { exitCode, value }
   } catch (err) {

@@ -102,6 +102,40 @@ test('the retired --seats and --lanes are refused, alone, beside the new flag, o
   for (const command of retired) assert.equal(parseOpsPrompt(prompt(command, { payload: MESSAGE })), null, command)
 })
 
+const PAIR = 'agy/gemini-4-argon@high'
+const PAIR_LIST = `${PAIR},agy/claude-opus-5-5@high,grok/grok-4.7@low`
+
+test('seat-start accepts --exclude with the same pair ids as pick, just before the digest', () => {
+  const forms = [
+    START.judge.replace('--digest', `--exclude ${PAIR} --digest`),
+    START.examiner.replace('--digest', `--exclude ${PAIR_LIST} --digest`),
+    START.writer.replace('--digest', `--exclude ${PAIR} --digest`),
+  ]
+  for (const command of forms) {
+    const [bin, ...args] = command.split(' ')
+    assert.deepEqual(parseOpsPrompt(prompt(command, { payload: MESSAGE })), parsed(bin, args), command)
+  }
+})
+
+test('seat-start refuses a malformed --exclude, and the flag is refused where it does not belong', () => {
+  const malformed = [
+    START.judge.replace('--digest', '--exclude agy/x --digest'),
+    START.judge.replace('--digest', '--exclude agy/gemini-4-argon@ultra --digest'),
+    START.judge.replace('--digest', '--exclude AGY/gemini-4-argon@high --digest'),
+    START.writer.replace('--digest', `--exclude ${PAIR}, --digest`),
+    `${START.judge} --exclude ${PAIR}`,
+    START.judge.replace('--author sonnet', `--exclude ${PAIR} --author sonnet`),
+  ]
+  for (const command of malformed) assert.equal(parseOpsPrompt(prompt(command, { payload: MESSAGE })), null, command)
+  const elsewhere = [
+    `aether-lane seat-wait ${ID} --exclude ${PAIR} --max 540`,
+    `aether-lane seat-stop ${ID} --exclude ${PAIR}`,
+    `aether-plan check ${FEATURE}/tasks.md --exclude ${PAIR}`,
+    `aether-exam store ${FEATURE} --exclude ${PAIR}`,
+  ]
+  for (const command of elsewhere) assert.equal(parseOpsPrompt(prompt(command)), null, command)
+})
+
 test('a payload is saved only where a lane call or a seat round reads it', () => {
   const run = '/repo/.aether/runs/20261010-093000-ab12/lanes'
   for (const ok of [`${run}/task-1-1-implement/prompt.md`, `${run}/final-review/prompt.md`, '/repo/.aether-tmp/seats/sess-1/message.md', '/home/u/p/.worktrees/x/.aether-tmp/seats/0a1b-2c/message.md']) {
