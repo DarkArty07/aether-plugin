@@ -1082,41 +1082,75 @@ function reviewSlices(merged) {
 
 const READINESS = { ready: 0, 'ready-with-fixes': 1, 'not-ready': 2 }
 
-// The sliced final review (issues 011, 022): slices run in parallel on the native reviewer —
-// a pair reviews the whole package in one call with the fixed id `final-review`, so only the native path slices.
-// The run's verdict is the least ready slice's; a slice with no answer fails the review and
+// The sliced final review (issues 011, 022): slices run in parallel. With lanes, each slice goes through
+// external() on its own call id, at the model and effort the whole review chose, and only a slice no pair
+// takes runs on the native reviewer, on the native pair of that slice's own decision.
+// The run's verdict is the least ready slice's; a slice with no answer, or a blocked one, fails the review and
 // keeps the other slices' findings, never a verdict from part of the change.
 async function reviewRunSliced(pkg, slices, { model, effort, chosen }) {
   log(`final review in ${slices.length} slices on ${model} ${effort}`)
+  const author = lanes ? finalAuthor(slices.flat()) : null
   const answers = await parallel(
-    slices.map((sliceUnits, i) => () =>
-      call('reviewer', model, effort, reviewerPrompt(pkg, { slice: { n: i + 1, total: slices.length, units: sliceUnits } }), {
-        phase: 'Final review',
-        label: `final review on ${model} ${effort} (slice ${i + 1}/${slices.length}: ${sliceUnits.map((u) => u.id).join(', ')})`,
-        schema: REVIEW_SCHEMA,
-      }),
-    ),
+    slices.map((sliceUnits, i) => async () => {
+      const n = i + 1
+      const slice = { n, total: slices.length, units: sliceUnits }
+      const nativeSlice = (onModel, onEffort) =>
+        call('reviewer', onModel, onEffort, reviewerPrompt(pkg, { slice }), {
+          phase: 'Final review',
+          label: `final review on ${onModel} ${onEffort} (slice ${n}/${slices.length}: ${sliceUnits.map((u) => u.id).join(', ')})`,
+          schema: REVIEW_SCHEMA,
+        })
+      if (!lanes) return { review: await nativeSlice(model, effort), provider: 'native', blocked: null }
+      const id = `final-review-slice-${n}`
+      const where = { phase: 'Final review', label: `final review (slice ${n}/${slices.length})` }
+      const routed = await external({
+        role: 'reviewer',
+        model,
+        effort,
+        id,
+        author,
+        ...where,
+        build: (pair) => ({ task: null, prompt: reviewerPrompt(pkg, { lane: true, slice }), base: `final review (slice ${n}/${slices.length}) via ${pair.harness} ${pair.model}` }),
+      })
+      const { pair, outcome } = routed
+      if (outcome && (outcome.kind === 'ok' || outcome.kind === 'blocked')) {
+        tookByPair(id, pair, where)
+        if (outcome.kind === 'ok') return { review: outcome.result, provider: `${pair.harness} ${outcome.lane.model}`, blocked: null }
+        return { review: null, provider: `${pair.harness} ${pair.model}`, blocked: outcome.detail }
+      }
+      const nativePair = routed.decision ? routed.decision.native : { model, effort }
+      const review = await nativeSlice(nativePair.model, nativePair.effort)
+      tookNative(id, routed, where)
+      return { review, provider: 'native', blocked: null }
+    }),
   )
+  const slicesBy = answers.map((entry) => (entry ? entry.provider : 'native'))
   const findings = []
   const declined = []
   const summaries = []
   let verdict = 'ready'
   let missing = null
-  answers.forEach((answer, i) => {
-    if (!answer) {
-      if (missing === null) missing = i + 1
+  let blocked = null
+  answers.forEach((entry, i) => {
+    if (!entry || !entry.review) {
+      if (missing === null) {
+        missing = i + 1
+        blocked = entry ? entry.blocked : null
+      }
       return
     }
-    const checked = reviewResult(answer)
+    const checked = reviewResult(entry.review)
     findings.push(...checked.findings)
     if (Array.isArray(checked.declined)) declined.push(...checked.declined)
     if (READINESS[checked.verdict] > READINESS[verdict]) verdict = checked.verdict
     summaries.push(`Slice ${i + 1} (${slices[i].map((u) => u.id).join(', ')}): ${checked.summary || ''}`)
   })
   if (missing !== null) {
-    return { status: 'failed', reason: `slice ${missing} of ${slices.length} ended without its answer; it may have run out of turns`, findings, declined, slices: slices.length, ...chosen }
+    const reason = blocked ? `slice ${missing} of ${slices.length} was blocked: ${blocked}` : `slice ${missing} of ${slices.length} ended without its answer; it may have run out of turns`
+    return { status: 'failed', reason, findings, declined, slices: slices.length, slicesBy, ...chosen }
   }
-  return { status: 'done', provider: 'native', verdict, findings, declined, summary: summaries.join('\n'), slices: slices.length, ...chosen }
+  const provider = slicesBy.every((by) => by === 'native') ? 'native' : slicesBy.includes('native') || new Set(slicesBy).size > 1 ? 'mixed' : slicesBy[0]
+  return { status: 'done', provider, verdict, findings, declined, summary: summaries.join('\n'), slices: slices.length, slicesBy, ...chosen }
 }
 
 async function reviewRun() {
@@ -1130,7 +1164,8 @@ async function reviewRun() {
   const merged = Object.values(units).filter((u) => u.status === 'merged')
   if (!lanes) return reviewNative(pkg, reviewSlices(merged), model, effort)
   // One decision for the whole review, before it is sliced (R5, R17, R18): a pair reviews the whole package in one
-  // call, and without one the review runs, sliced or not, on the decision's native pair, which differs from the author.
+  // call, and without one the review runs on the decision's native pair, which differs from the author — sliced,
+  // each slice first asks the pairs on its own, at that pair (see reviewRunSliced).
   const where = { phase: 'Final review', label: 'final review' }
   const routed = await external({
     role: 'reviewer',
@@ -1170,8 +1205,8 @@ function finalAuthor(merged) {
   return ranked.length > 0 ? ranked[0].family : null
 }
 
-// The final review on the native reviewer, at `model` and `effort`: in slices when the merged units make more
-// than one (issues 011, 022), else one reviewer.
+// The final review no pair took whole, at `model` and `effort`: in slices when the merged units make more
+// than one (issues 011, 022), else one native reviewer.
 async function reviewNative(pkg, slices, model, effort) {
   const chosen = { reviewModel: model, reviewEffort: effort }
   if (slices.length > 1) return reviewRunSliced(pkg, slices, { model, effort, chosen })

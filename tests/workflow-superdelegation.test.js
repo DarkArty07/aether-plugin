@@ -73,7 +73,7 @@ test('C3: each call asks pick for the pair of its reference, and a pair that tak
   ])
 })
 
-test('R5, R17, R18: a final review of units from two areas is offered to a pair before it is sliced, and slices only on the native pair of the decision', async (t) => {
+test('R5, R17, R18: a final review of units from two areas is offered to a pair before it is sliced, and a slice no pair takes runs on the native pair of its own decision', async (t) => {
   const tasks = [task(1, { area: 'api' }), task(2, { area: 'ui' })]
   const finalOf = (run, verb) => verbs(run, verb).filter((c) => c.lane.call === 'final-review')
 
@@ -86,7 +86,8 @@ test('R5, R17, R18: a final review of units from two areas is offered to a pair 
   assert.equal(taken.result.finalReview.slices, undefined)
   assert.deepEqual(finalOf(taken, 'took').map((c) => [c.lane.by, c.lane.cause]), [['agy:claude-opus-5-5', 'chosen']])
 
-  // None takes it: two slices (one per area) on the native pair that the pick gave, one pick and one took.
+  // None takes it whole: two slices (one per area) ask on their own at the whole decision's native pair, and
+  // with no pair for them either they run native on the native pair of their own decisions.
   const fallback = await runWorkflow(argsOf(t, tasks), {
     lane: (call, next) => {
       if (call.command.verb !== 'pick') return next(call)
@@ -103,6 +104,10 @@ test('R5, R17, R18: a final review of units from two areas is offered to a pair 
   assert.deepEqual(reviewers.map((c) => [c.model, c.effort]), [['opus', 'high'], ['opus', 'high']])
   assert.equal(fallback.result.finalReview.slices, 2)
   assert.deepEqual(finalOf(fallback, 'took').map((c) => [c.lane.by, c.lane.cause]), [['native', 'no-candidate']])
+  const slicePicks = verbs(fallback, 'pick').filter((c) => c.lane.call.startsWith('final-review-slice-'))
+  assert.deepEqual(slicePicks.map((c) => [c.lane.call, c.lane.model, c.lane.effort]), [['final-review-slice-1', 'opus', 'high'], ['final-review-slice-2', 'opus', 'high']])
+  const sliceTooks = verbs(fallback, 'took').filter((c) => c.lane.call.startsWith('final-review-slice-'))
+  assert.deepEqual(sliceTooks.map((c) => [c.lane.call, c.lane.by, c.lane.cause]), [['final-review-slice-1', 'native', 'no-candidate'], ['final-review-slice-2', 'native', 'no-candidate']])
 })
 
 test('C11: a call with no pair runs native in the native pair of the decision, and took says no-candidate', async (t) => {
