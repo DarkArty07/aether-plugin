@@ -32,6 +32,7 @@ const { aliasOf, askedOf, claudeLevel, claudeId, stanceOf, claudeRungAt } = requ
 const { readRouterSettings } = require('./session.js')
 
 const OVERRIDE_PREFIX = 'ROUTER-OVERRIDE: '
+const AETHER_TASK_PREFIX = 'AETHER-TASK: '
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const EXCERPT_CHARS = 400
 const DEADLINE_OF = { haiku: 'haikuMs', jev: 'jevMs' }
@@ -39,7 +40,17 @@ const DEADLINE_OF = { haiku: 'haikuMs', jev: 'jevMs' }
 const PLAIN_AGENTS = ['general-purpose', 'Explore']
 const INTERNAL_MESSAGE_CHARS = 200
 
-// ---- the override and the files ----
+// ---- the override, the task id and the files ----
+
+function aetherTaskOf(prompt) {
+  if (typeof prompt !== 'string') return null
+  for (const line of prompt.split(/\r?\n/)) {
+    if (!line.startsWith(AETHER_TASK_PREFIX)) continue
+    const id = line.slice(AETHER_TASK_PREFIX.length).trim()
+    if (ID_RE.test(id)) return id
+  }
+  return null
+}
 
 function overrideOf(prompt) {
   if (typeof prompt !== 'string') return null
@@ -180,6 +191,8 @@ function recordInternalError(deps, known, err) {
       background: Boolean(known.background),
       description: task.description,
       task: { promptChars: task.prompt.length, excerpt: task.prompt.slice(0, EXCERPT_CHARS) },
+      aetherTask: aetherTaskOf(task.prompt),
+      taskClass: null,
       requested,
       asked: null,
       override: null,
@@ -295,6 +308,8 @@ function baseEntry(ctx, d) {
     background: Boolean(ctx.background),
     description: task.description,
     task: { promptChars: task.prompt.length, excerpt: task.prompt.slice(0, EXCERPT_CHARS) },
+    aetherTask: aetherTaskOf(task.prompt),
+    taskClass: null,
     requested: requestedOf(ctx.event),
     asked: null,
     override: null,
@@ -443,6 +458,7 @@ async function conclude(ctx, d, result) {
   }
 
   Object.assign(entry, {
+    taskClass: verdict.readOnly ? 'read-only' : 'edits',
     asked: askedEntry(asked, table, floorAxis),
     answers,
     decision,
@@ -614,4 +630,4 @@ async function decide(input, deps) {
   }
 }
 
-module.exports = { overrideOf, externalFile, readExternal, begin, finish, decide }
+module.exports = { aetherTaskOf, overrideOf, externalFile, readExternal, begin, finish, decide }
