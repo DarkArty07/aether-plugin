@@ -16,7 +16,7 @@ To go on with the policy («prioridad a toda costa» for other harnesses, Claude
   - Muse failed every round it took (three Judge rounds, then the swarm's implementer, supervisors and final review), with `API error 400: 'additionalProperties' is required...`. A real Muse call showed that its provider wants a strict schema: every object closed and every property required. `strictSchema` and the adapter's `argv` fix it; all eight role schemas answered clean on real calls (issue 039, A70).
   - A design seat that failed (the Writer on Argon, refused) went to the native agent without trying the next pair. `seat-start` takes `--exclude` and `seatRound` asks for the next pair, up to three external tries (issue 040, A70).
 - **How it was built:** a plan of three tasks (`.aether/plans/external-seats/tasks.md`, local) ran as a swarm (`wf_dda90a5c-3a4`, `wf_d77249a9-433`) with implementers on Grok and Muse. Task 1 merged; task 2 was blocked by a flaw of the plan (the brief asked to share `excludeList` of `lib/lane-pick.js`, a file the task did not own), and the Lead adopted its sound work with a copy of the validator in `seats.js`; task 3 merged on its second attempt. The final review (native Opus) found that Muse's strict copy was incomplete (the Writer schemas have optional keys), which the Lead verified with real calls and fixed directly. 1539 tests, 69 of the mod and the strict validation pass.
-- The swarm still sent calls to Claude when a lane failed after it started or ended for quota (Muse before the fix, Argon's refusal for an implementer): issue 041, open.
+- The swarm still sent calls to Claude when a lane failed after it started or ended for quota (Muse before the fix, Argon's refusal for an implementer): issue 041, fixed before the release in the same version by the swarm itself ([A71](../decisions.md)).
 
 ## 3. Corrections to what was said earlier in the session
 
@@ -28,7 +28,7 @@ The Judge's findings after three rounds, in short: a full cupo must try another 
 
 ## 5. Open
 
-- **Issue 041** (the swarm's failed lane call goes native without the next pair): the same fix as for the delegates and the seats, in `laneCall` of `workflows/run.workflow.js`.
+- **Issue 041** (the swarm's failed lane call goes native without the next pair): fixed in this version ([A71](../decisions.md)): `external()` of `workflows/run.workflow.js` asks the next pair, and the sliced final review asks the lanes for each slice.
 - **The workflows loaded in a session are the installed ones:** until 0.14.5 is installed, a session that starts `/aether:design` or `/aether:run` runs the old workflow; pass `binDir` of the branch for the bins and use the branch's script path for the workflow.
 - Nothing of 0.14.2 to 0.14.5 has been seen in a normal session; real Muse calls were made for the schemas only (the first Muse seat, a Judge-shaped call, answered clean).
 - The `report.js` double count of the shared Gemini window (0.14.4) and the three tests that read the shell's Aether variables.
