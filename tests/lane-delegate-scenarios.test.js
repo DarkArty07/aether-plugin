@@ -9,7 +9,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { PLUGIN, WT_BIN, runBin, makeRepo, tempDir } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
@@ -208,7 +208,8 @@ test('E1: a small editing charge leaves Claude for an external pair, comes back 
   assert.equal(json.tests.passed, true)
   assert.equal(json.review.status, 'done')
   assert.equal(json.review.verdict, 'ready')
-  assert.equal(json.merge, `aether-wt merge ${json.id} task-1`)
+  assert.notEqual(json.review.pair.id, json.pair.id, 'the reviewer is not the pair that wrote')
+  assert.equal(json.merge,`aether-wt merge ${json.id} task-1`)
   const merged = runBin(WT_BIN, ['merge', json.id, 'task-1'], repo.dir, env)
   assert.equal(merged.json.merged, true, merged.stdout + merged.stderr)
   const after = spawnSync(tests, { shell: true, cwd: repo.dir, encoding: 'utf8' })
@@ -232,13 +233,29 @@ test('E2: with scaled timeouts the delegate command runs whole in its own proces
   const turns = fx.agyTurns(env)
   assert.ok(turns.some((entry) => entry.argv[1].startsWith(fx.roleBody('implementer'))), 'the implementer turn completed')
   assert.ok(turns.some((entry) => entry.argv[1].startsWith(fx.roleBody('reviewer'))), 'the reviewer turn completed')
-  const lanesDir = path.join(repo.dir, '.aether', 'runs', r.json.id, 'lanes')
-  for (const call of fs.readdirSync(lanesDir)) {
-    const pidFile = path.join(lanesDir, call, 'pid')
-    if (!fs.existsSync(pidFile)) continue
-    const pid = Number(fs.readFileSync(pidFile, 'utf8').trim())
-    assert.equal(fx.alive(pid), false, `no child of ${call} is still alive when the command returns`)
-  }
+  // The runner removes its pid files when a call ends, so liveness is read from the processes
+  // themselves: every process of a lane call carries AETHER_LANE_CALL=<runId>/<call> in its
+  // environment, and killMarked returns the markers it finds alive (and ends them).
+  const calls = fs.readdirSync(path.join(repo.dir, '.aether', 'runs', r.json.id, 'lanes'))
+  assert.ok(calls.includes('task-1-1-implement') && calls.some((call) => call.startsWith('task-1-review-')), `the scan covers the implementer and reviewer calls: ${calls.join(', ')}`)
+  assert.deepEqual(lanes.killMarked(`${r.json.id}/`, { prefix: true }), [], 'no process of the attempt is alive when the command returns')
+
+  // Control: the same scan does find a live process that carries a marker of that shape, so an
+  // empty answer above means nothing was alive and not that the scan cannot see.
+  const controlPrefix = `${r.json.id}-control/`
+  const control = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
+    env: { ...process.env, AETHER_LANE_CALL: `${controlPrefix}task-1-1-implement` },
+    stdio: 'ignore',
+    detached: true,
+  })
+  t.after(() => {
+    try {
+      process.kill(-control.pid, 'SIGKILL')
+    } catch {
+      // Gone already.
+    }
+  })
+  assert.deepEqual(lanes.killMarked(controlPrefix, { prefix: true }), [`${controlPrefix}task-1-1-implement`], 'the scan sees a live marked process')
 })
 
 test('E3: a pair that runs out of quota mid-way passes to the next pair, and with no candidate left the charge ends as no-candidate', (t) => {
@@ -381,6 +398,7 @@ test('E8: the environment the fake dumps carries no secrets, and every turn ran 
   const r = runDelegate(repo, env, { brief })
   assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
   const seen = JSON.parse(fs.readFileSync(envFile, 'utf8'))
+  assert.ok(Object.keys(seen).length > 0, 'the fake dumped an environment')
   assert.deepEqual(Object.keys(seen).filter((name) => !fx.allowedEnvName(name)), [])
   const turns = fx.agyTurns(env)
   assert.ok(turns.length >= 2, 'the implementer and reviewer turns ran')
