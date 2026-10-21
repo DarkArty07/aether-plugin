@@ -3,7 +3,7 @@
 - **Date:** 2026-10-21. It follows [the 0.14.0 handoff](2026-10-20-superdelegation-0.14.0.md).
 - **From:** the Lead, Claude Code on Sonnet 5.5.
 - **To:** the next session.
-- **Repository state:** the branch `feat/router-superdelegation` (worktree `.worktrees/router-superdelegation`) holds the whole of 0.14.1. The merge to `main`, the tag `aether--v0.14.1` and the push are the owner's word; the section 4 says what is waiting.
+- **Repository state:** published on the owner's word of 2026-10-21 («manda todo a main push limpia lo que debas includio el worktree y actulzia local»): merged to `main` (`9683a52`), tagged `aether--v0.14.1`, pushed, and his plugin updated from 0.14.0 (a restart applies it). The branch and its worktree are gone. Section 4 says what is open.
 
 ## 1. What was asked
 
@@ -38,4 +38,8 @@ The owner asked whether the router's delegates always fall to Claude (they nearl
 
 ## 5. Release
 
-Version 0.14.1 is in the four places the contributing guide names. `npm run check` is what proves it; the merge, the tag and the push wait for the owner.
+Version 0.14.1 is in the four places the contributing guide names, and `npm run check` passed (1459 tests, 69 of the mod, the strict validation). The merge, the tag `aether--v0.14.1` and the push were made on the owner's word, and `claude plugin update aether@aether-plugin` took his installed plugin from 0.14.0 to 0.14.1.
+
+## 6. What the next session has to watch
+
+The delegation is the thing to watch in the first sessions with 0.14.1: whether the Lead's read-only delegates really leave Claude, to which pair and why. `aether-report --delegates` shows, per delegation, the pair asked, the pair that ran it and the candidates; the router's journal keeps the words of the function in `decision.choice`. A delegate that edits files stays on Claude by design (spec 010).
