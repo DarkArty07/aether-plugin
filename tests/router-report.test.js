@@ -8,7 +8,8 @@ const { tempDir } = require('./helpers.js')
 const log = require('../plugins/aether/lib/router-log.js')
 const route = require('../plugins/aether/lib/route.js')
 const session = require('../plugins/aether/lib/session.js')
-const { delegatesReport } = require('../plugins/aether/lib/router-report.js')
+const { delegatesReport, editsWithoutNoCandidate } = require('../plugins/aether/lib/router-report.js')
+const lanes = require('../plugins/aether/lib/lanes.js')
 const { loadPrices, priceEntry } = require('../plugins/aether/lib/prices.js')
 const { runBin } = require('./helpers.js')
 
@@ -226,4 +227,51 @@ test('aether-report --delegates prints the report', (t) => {
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.json.delegations.length, 5)
   assert.equal(r.json.totals.overridden, 1)
+})
+
+test('editsWithoutNoCandidate lists only the editing delegations that ran on Claude with no no-candidate for their id', () => {
+  const claude = { harness: 'claude', model: 'claude-sonnet-5-5', effort: 'high' }
+  const row = (over) => ({ id: 'd1', time: 1, session: 's', description: 'task', aetherTask: null, taskClass: 'edits', ranOn: claude, applied: 'kept', attempts: [], ...over })
+  const listed = editsWithoutNoCandidate([
+    row({ id: 'no-id' }),
+    row({ id: 'excused', aetherTask: 'run-1' }),
+    row({ id: 'fake-id', aetherTask: 'run-9' }),
+    row({ id: 'reader', taskClass: 'read-only' }),
+    row({ id: 'unclassed', taskClass: null }),
+    row({ id: 'old-entry', taskClass: undefined }),
+    row({ id: 'external', ranOn: { harness: 'agy', model: 'gemini-4-argon', effort: 'high' } }),
+    // record/advise with no model and effort asked: ranOn is null, and the call still ran native on Claude.
+    row({ id: 'no-run', ranOn: null }),
+    row({ id: 'no-run-external', ranOn: null, applied: 'external' }),
+    row({ id: 'no-run-attempted', ranOn: null, attempts: [{ harness: 'agy', model: 'gemini-4-argon', effort: 'high', status: 'failed', detail: '' }] }),
+  ], new Set(['run-1']))
+  assert.deepEqual(listed.map((entry) => entry.id), ['no-id', 'fake-id', 'no-run'])
+  assert.deepEqual(Object.keys(listed[0]).sort(), ['aetherTask', 'description', 'id', 'ranOn', 'session', 'time'])
+  assert.equal(listed.find((entry) => entry.id === 'no-run').ranOn, null)
+})
+
+test('delegatesReport adds editsOnClaudeWithoutNoCandidate, outsideMeasure, and taskClass/aetherTask on each delegation', (t) => {
+  const dir = tempDir(t)
+  const claude = { harness: 'claude', model: 'claude-sonnet-5-5', effort: 'high' }
+  log.appendEntry(dir, decision('d1', { session: 's', taskClass: 'edits', aetherTask: 'run-1', ranOn: claude }))
+  log.appendEntry(dir, decision('d2', { session: 's', taskClass: 'edits', aetherTask: null, ranOn: claude }))
+  log.appendEntry(dir, decision('d3', { session: 's', taskClass: 'edits', aetherTask: null, ranOn: null, mode: 'record', applied: 'inherited' }))
+  log.appendEntry(dir, decision('d4', { session: 's', taskClass: 'read-only', aetherTask: null, ranOn: claude }))
+  lanes.appendLog(dir, 's', { kind: 'delegate', time: 1000, session: 's', run: 'run-1', id: 'run-1', status: 'no-candidate', cause: 'no-pair', tried: [] })
+
+  const report = delegatesReport({ dataDir: dir, session: 's', prices })
+  assert.deepEqual(report.editsOnClaudeWithoutNoCandidate.map((entry) => entry.id), ['d2', 'd3'])
+  assert.equal(
+    report.outsideMeasure,
+    'Calls the router never records are outside this measure: aether:* agents leave no journal entry, calls whose brief carries ROUTER-OVERRIDE: are recorded without a class, and a session without router settings records nothing. A delegate that edits by one of those routes is not listed, and that is a limit of the measure, not a no-candidate.',
+  )
+  const [d1, d2, d3, d4] = report.delegations
+  assert.equal(d1.taskClass, 'edits')
+  assert.equal(d1.aetherTask, 'run-1')
+  assert.equal(d2.taskClass, 'edits')
+  assert.equal(d2.aetherTask, null)
+  assert.equal(d3.taskClass, 'edits')
+  assert.equal(d3.aetherTask, null)
+  assert.equal(d4.taskClass, 'read-only')
+  assert.equal(d4.aetherTask, null)
 })

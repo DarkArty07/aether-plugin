@@ -9,6 +9,10 @@ const run = require('./run.js')
 const { readJournal } = require('./router-log.js')
 const { readUsage } = require('./report.js')
 const { loadPrices, priceEntry } = require('./prices.js')
+const { readLog: readLaneLog } = require('./lanes.js')
+
+const OUTSIDE_MEASURE =
+  'Calls the router never records are outside this measure: aether:* agents leave no journal entry, calls whose brief carries ROUTER-OVERRIDE: are recorded without a class, and a session without router settings records nothing. A delegate that edits by one of those routes is not listed, and that is a limit of the measure, not a no-candidate.'
 
 // The summed price of the requests the delegation's agent made, or null with no agent or no priced request.
 function costOf(agentId, session, usage, prices) {
@@ -56,6 +60,8 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0, p
         time: entry.time,
         session: entry.session,
         description: entry.description,
+        taskClass: entry.taskClass ?? null,
+        aetherTask: entry.aetherTask ?? null,
         mode: entry.mode,
         decider: entry.decider,
         requested: entry.requested || null,
@@ -82,7 +88,39 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0, p
     recorded: delegations.filter((d) => d.decision && d.mode === 'record').length,
     costUsd: delegations.reduce((sum, d) => sum + (d.costUsd === null ? 0 : d.costUsd), 0),
   }
-  return { delegations, totals }
+  const laneEntries = readLaneLog(dataDir, { since })
+  const noCandidateIds = new Set(
+    laneEntries
+      .filter((e) => e && e.kind === 'delegate' && e.status === 'no-candidate' && e.id)
+      .map((e) => e.id),
+  )
+  const editsOnClaudeWithoutNoCandidate = editsWithoutNoCandidate(delegations, noCandidateIds)
+  return {
+    delegations,
+    totals,
+    editsOnClaudeWithoutNoCandidate,
+    outsideMeasure: OUTSIDE_MEASURE,
+  }
 }
 
-module.exports = { delegatesReport }
+function editsWithoutNoCandidate(delegations, noCandidateIds) {
+  const ids = noCandidateIds instanceof Set ? noCandidateIds : new Set(noCandidateIds || [])
+  const result = []
+  for (const d of delegations || []) {
+    if (d.taskClass !== 'edits') continue
+    const onClaude = d.ranOn ? d.ranOn.harness === 'claude' : (d.applied !== 'external' && (!Array.isArray(d.attempts) || d.attempts.length === 0))
+    if (!onClaude) continue
+    if (d.aetherTask && ids.has(d.aetherTask)) continue
+    result.push({
+      id: d.id,
+      time: d.time,
+      session: d.session,
+      description: d.description,
+      aetherTask: d.aetherTask ?? null,
+      ranOn: d.ranOn,
+    })
+  }
+  return result
+}
+
+module.exports = { delegatesReport, editsWithoutNoCandidate }
