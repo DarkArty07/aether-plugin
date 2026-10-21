@@ -75,3 +75,17 @@ En una frase: la cuota de Claude es el punto único de falla de una corrida aut�
 1. **La revisión del diff** la hace un delegado externo de solo lectura (sale a otro harness por la regla actual) y el Lead solo corre las pruebas y decide la fusión. Recomiendo sí, por C5.
 2. **Una tarea sin pruebas propias** (por ejemplo documentación) se acepta con la revisión externa del diff y sin el comando de pruebas. Recomiendo sí.
 3. **Cuánto espera el Lead:** no espera; sigue con otra cosa y el comando le avisa en segundo plano. Recomiendo sí.
+
+## 11. Después de la primera ronda de diseño (2026-10-21): lo que cambia en la tarjeta
+
+El diseño se corrió una vez (`wf_d46ae949-355`) y terminó en disputa tras tres rondas del Juez. Esta sección corrige la tarjeta con lo que el Juez encontró; donde choca con las secciones 8 a 10, manda esta.
+
+- **Se quita el rechazo en el router.** Había quedado como requisito (R18) que el router rechace una llamada `Agent` que edita cuando la superdelegación está encendida. Cada ronda del Juez le encontró un fallo nuevo: el evento `tool.call` no trae el campo `workflow` y los agentes `aether:*` no pasan por el router. **Queda fuera de alcance y es una propuesta.** C6 se cumple con las reglas del Lead y con una medida: `aether-report` lista los delegados que editan y corrieron en Claude sin que el comando haya dicho «sin candidato».
+- **C1 incluye el cupo.** Un harness con el cupo lleno no manda la tarea a Claude: se prueba el siguiente candidato de otro harness, y Claude queda solo cuando cada candidato está lleno, sin cuota o rechaza. Esto invierte a propósito la regla del enjambre de hoy (`workflows/run.workflow.js`, una espera agotada corre en nativo).
+- **C5, la revisión del diff.** Corre siempre que exista un par externo distinto del que escribió; si no existe ninguno, el Lead lee el diff. Una tarea sin pruebas propias (documentación) se acepta con el veredicto de esa revisión.
+- **El encargo lleva el rol, el modelo y el effort** de la tarea (de la tabla del Lead o del escalón del router): sin ellos `aether-lane pick` no puede pedir los puntos del par de Claude.
+- **La fusión a la rama del dueño** la decide el Lead con el permiso que corresponda (`merge-main` si es `main`): el Lead registra el permiso y comprueba la rama; el guardia hoy solo clasifica `gh pr merge`.
+- **El trabajo de un intento fallido** se guarda como parche en la carpeta de la corrida para poder verlo, y el worktree del intento se deshace: una sola redacción en toda la spec.
+- **C7**, la corrida real con llamadas pagadas, se apoya en las palabras del dueño «autorizo gasto no hay problema».
+- **Los supuestos 1 a 3 de la sección 10** quedan tomados como valores por defecto reversibles hasta que el dueño diga otra cosa.
+- **Ahora corre sobre las correcciones de esta sesión:** el Juez puede salir a Muse (esquema estricto) y un asiento que falla prueba el siguiente par antes de Claude (A70).
