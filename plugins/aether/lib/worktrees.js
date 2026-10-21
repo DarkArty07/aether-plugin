@@ -118,7 +118,11 @@ function ensure(cwd, runId, taskId) {
   const worktree = run.unitWorktree(mainRoot, runId, taskId)
   const branch = run.unitBranch(runId, taskId)
   if (exists(worktree)) {
-    if (registeredWorktrees(mainRoot).includes(worktree)) return { path: worktree, branch, created: false }
+    if (registeredWorktrees(mainRoot).includes(worktree)) {
+      // Work an earlier attempt left uncommitted is committed on the branch before the worktree is handed back.
+      const { committed } = isWorktreeRoot(worktree) ? commitOwnedWork(worktree, graph.tasks[taskId], taskId) : { committed: [] }
+      return { path: worktree, branch, created: false, salvaged: committed.length > 0 }
+    }
     if (exists(path.join(worktree, '.git'))) {
       throw new Error(`refusing to remove ${worktree}: it has a .git entry but git does not list it as a worktree`)
     }
@@ -131,7 +135,23 @@ function ensure(cwd, runId, taskId) {
   if (branchExists(mainRoot, branch)) git(['worktree', 'add', '--force', worktree, branch], mainRoot)
   else git(['worktree', 'add', '--force', '-b', branch, worktree, graph.integration.branch], mainRoot)
   fs.mkdirSync(path.join(worktree, '.aether-tmp'), { recursive: true })
-  return { path: worktree, branch, created: true }
+  return { path: worktree, branch, created: true, salvaged: false }
+}
+
+// Commits on the unit's branch what the task owns among the worktree's uncommitted files, and names the
+// rest in `left`, uncommitted: the merge's ownership check is the judge of those. `worktree` must be a
+// worktree root (isWorktreeRoot), or git would act on the enclosing checkout.
+function commitOwnedWork(worktree, task, taskId) {
+  const pending = uncommittedFiles(worktree)
+  const committed = pending.filter((file) => matchesAny(file, task.owns))
+  const left = pending.filter((file) => !committed.includes(file))
+  if (committed.length > 0) {
+    // -A with paths also stages a deletion. Without an identity of its own, the repository's commit would fail.
+    git(['add', '-A', '--', ...committed], worktree)
+    const identity = git(['config', 'user.email'], worktree, { allowFail: true }).stdout === '' ? ['-c', 'user.name=Aether', '-c', 'user.email=aether@localhost'] : []
+    git([...identity, 'commit', '--no-verify', '-q', '-m', `aether: ${taskId} work saved without its report`], worktree)
+  }
+  return { committed, left }
 }
 
 // Added lines that suggest unfinished work: a focused or skipped test, a TODO, a FIXME, a stub. TODO and
@@ -232,15 +252,7 @@ function salvageUnit(cwd, runId, taskId) {
   const branch = run.unitBranch(runId, taskId)
   const nothing = { salvaged: false, files: [], committed: [], left: [], head: null, package: null }
   if (!branchExists(mainRoot, branch) || !isWorktreeRoot(worktree)) return { ...nothing, reason: 'no-worktree' }
-  const pending = uncommittedFiles(worktree)
-  const committed = pending.filter((file) => matchesAny(file, task.owns))
-  const left = pending.filter((file) => !committed.includes(file))
-  if (committed.length > 0) {
-    // -A with paths also stages a deletion. Without an identity of its own, the repository's commit would fail.
-    git(['add', '-A', '--', ...committed], worktree)
-    const identity = git(['config', 'user.email'], worktree, { allowFail: true }).stdout === '' ? ['-c', 'user.name=Aether', '-c', 'user.email=aether@localhost'] : []
-    git([...identity, 'commit', '--no-verify', '-q', '-m', `aether: ${taskId} work saved without its report`], worktree)
-  }
+  const { committed, left } = commitOwnedWork(worktree, task, taskId)
   const files = changedFiles(mainRoot, unitBase(mainRoot, graph, branch), branch)
   if (files.length === 0) return { ...nothing, committed, left }
   const { path: packagePath } = diffPackage(cwd, runId, taskId)
@@ -627,9 +639,10 @@ function writePatch(mainRoot, graph, runId, taskId, worktree) {
   return file
 }
 
-// Removes a unit's worktree and branch. The unit's work is saved as a patch first when the caller
-// asks for it, when the branch is not merged into the integration branch, or when the worktree
-// holds uncommitted or untracked files.
+// Removes a unit's worktree and branch. What the task owns among the worktree's uncommitted files is
+// committed on the branch first, as salvageUnit does. The unit's work is then saved as a patch when
+// the caller asks for it, when the branch is not merged into the integration branch, or when the
+// worktree holds uncommitted or untracked files.
 function removeUnit(cwd, runId, taskId, { keepPatch = false } = {}) {
   run.assertRunId(runId)
   run.assertTaskId(taskId)
@@ -641,6 +654,7 @@ function removeUnit(cwd, runId, taskId, { keepPatch = false } = {}) {
   let patch = null
   if (hasBranch) {
     const graph = loadGraph(mainRoot, runId)
+    if (inWorktree && graph.tasks[taskId]) commitOwnedWork(worktree, graph.tasks[taskId], taskId)
     if (keepPatch || !isMerged(mainRoot, graph, branch) || (inWorktree && uncommittedFiles(worktree).length > 0)) {
       patch = writePatch(mainRoot, graph, runId, taskId, inWorktree ? worktree : null)
     }
@@ -659,18 +673,74 @@ function runWorktrees(mainRoot, runId) {
   return { paths: [...paths].sort(), registered }
 }
 
+// True when a quota pause recorded in <mainRoot>/.aether/autonomy/<id>/run.json names this swarm run
+// among its saved units. A record that cannot be read, or is not JSON, names nothing.
+function pausedByQuota(mainRoot, runId) {
+  const dir = path.join(run.aetherDir(mainRoot), 'autonomy')
+  const names = orEmpty(() => fs.readdirSync(dir), [])
+  return names.some((name) =>
+    orEmpty(() => {
+      const { quotaPauses } = run.readJson(path.join(dir, name, 'run.json'))
+      if (!Array.isArray(quotaPauses)) return false
+      return quotaPauses.some((pause) => Array.isArray(pause?.savedUnits) && pause.savedUnits.some((unit) => unit?.swarmRun === runId))
+    }, false),
+  )
+}
+
+// A run was interrupted when `save` wrote its saved.json, or when a quota pause names it. The sweep
+// of an interrupted run keeps its unmerged branches, so that a relaunch starts from them.
+function wasInterrupted(mainRoot, runId) {
+  return exists(path.join(run.runDir(mainRoot, runId), 'saved.json')) || pausedByQuota(mainRoot, runId)
+}
+
 // Saves, as removeUnit does, the work of each unit of a run that is not merged or not committed.
-// Returns the patch files, and the units whose work could not be saved (their base is unknown).
-function savePatches(mainRoot, runId) {
+// In an interrupted run, a unit that unitStatus (or mergedUnits) does not count as merged first
+// commits on its branch what its Owns covers, and its branch is kept: it is in `saved`, with its tip.
+// Returns the patch files, the saved branches, and the units whose work could not be saved (their
+// base is unknown, or their commit failed), whose worktree and branch stay.
+function savePatches(mainRoot, runId, interrupted) {
   const patches = []
   const kept = new Set()
+  const saved = []
   const graphFile = path.join(run.runDir(mainRoot, runId), 'graph.json')
-  if (!exists(graphFile)) return { patches, kept }
-  const graph = run.readJson(graphFile)
-  for (const { branch } of aetherBranches(mainRoot, runId)) {
-    const taskId = branch.split('/')[2]
+  const graph = exists(graphFile) ? run.readJson(graphFile) : null
+  if (!graph && !interrupted) return { patches, kept, saved }
+  const branches = aetherBranches(mainRoot, runId)
+  const unitWorktree = (taskId) => {
     const worktree = run.unitWorktree(mainRoot, runId, taskId)
-    const inWorktree = isWorktreeRoot(worktree)
+    return isWorktreeRoot(worktree) ? worktree : null
+  }
+  if (interrupted) {
+    // The work is committed before mergedness is judged: a branch cut after another unit's merge, with
+    // only uncommitted work of its own, would otherwise count as merged and be deleted.
+    for (const { branch } of branches) {
+      const taskId = branch.split('/')[2]
+      const worktree = unitWorktree(taskId)
+      if (!worktree) continue
+      try {
+        if (graph && graph.tasks[taskId]) commitOwnedWork(worktree, graph.tasks[taskId], taskId)
+        // Without the graph there is no Owns to commit and no base for a patch: uncommitted work stays.
+        else if (uncommittedFiles(worktree).length > 0) kept.add(taskId)
+      } catch {
+        kept.add(taskId)
+      }
+    }
+  }
+  const merged = graph && interrupted ? new Set(orEmpty(() => mergedUnits(mainRoot, runId), [])) : new Set()
+  for (const { branch } of branches) {
+    const taskId = branch.split('/')[2]
+    const worktree = unitWorktree(taskId)
+    const inWorktree = worktree !== null
+    if (interrupted && !merged.has(taskId)) {
+      try {
+        if (graph && !kept.has(taskId)) patches.push(writePatch(mainRoot, graph, runId, taskId, worktree))
+      } catch {
+        kept.add(taskId)
+      }
+      saved.push({ task: taskId, branch, head: git(['rev-parse', branch], mainRoot).stdout })
+      continue
+    }
+    if (!graph) continue
     try {
       if (!isMerged(mainRoot, graph, branch) || (inWorktree && uncommittedFiles(worktree).length > 0)) {
         patches.push(writePatch(mainRoot, graph, runId, taskId, inWorktree ? worktree : null))
@@ -679,7 +749,7 @@ function savePatches(mainRoot, runId) {
       kept.add(taskId)
     }
   }
-  return { patches, kept }
+  return { patches, kept, saved }
 }
 
 // Stops the processes of a run's lane calls: the lane's own and the agy it started, by their pid
@@ -732,16 +802,19 @@ function removeLaneCopies(mainRoot, runId) {
 }
 
 // Removes a run's unit worktrees and branches, after saving their unsaved work as patches. A unit
-// whose work cannot be saved is kept, and so is the run directory then. With `finish`, the run
-// directory goes too. The run's lane processes are stopped and its lane copies removed first, so
-// nothing is still writing when the units are saved.
+// whose work cannot be saved is kept, and so is the run directory then. In an interrupted run
+// (wasInterrupted), each unmerged unit's work is committed on its branch and the branch is kept, in
+// `savedBranches`; the run directory stays then too. With `finish`, the run directory goes when
+// nothing is kept, and `finished` says it went. The run's lane processes are stopped and its lane
+// copies removed first, so nothing is still writing when the units are saved.
 function sweepRun(cwd, runId, { finish = false } = {}) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
   const stopped = stopLaneProcesses(mainRoot, runId)
   const copies = removeLaneCopies(mainRoot, runId)
   const dir = run.worktreesDir(mainRoot, runId)
-  const { patches, kept } = savePatches(mainRoot, runId)
+  const { patches, kept, saved } = savePatches(mainRoot, runId, wasInterrupted(mainRoot, runId))
+  const savedTasks = new Set(saved.map(({ task }) => task))
   const removedWorktrees = []
   const { paths, registered } = runWorktrees(mainRoot, runId)
   for (const worktree of paths) {
@@ -754,14 +827,17 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
   }
   const removedBranches = []
   for (const { branch } of aetherBranches(mainRoot, runId)) {
-    if (kept.has(branch.split('/')[2])) continue
+    const taskId = branch.split('/')[2]
+    if (kept.has(taskId) || savedTasks.has(taskId)) continue
     git(['branch', '-D', branch], mainRoot)
     removedBranches.push(branch)
   }
   const runDir = run.runDir(mainRoot, runId)
-  if (finish && kept.size === 0 && exists(runDir)) {
+  let finished = false
+  if (finish && kept.size === 0 && saved.length === 0 && exists(runDir)) {
     assertInside(runDir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(runDir, { recursive: true, force: true })
+    finished = true
   }
   return {
     removedWorktrees,
@@ -772,6 +848,8 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
       branches: aetherBranches(mainRoot, runId).map(({ branch }) => branch),
     },
     lanes: { stopped, removed: copies.removed, remaining: copies.remaining },
+    savedBranches: saved,
+    finished,
   }
 }
 
@@ -798,9 +876,22 @@ function modifiedSince(dir, cutoff) {
   return false
 }
 
+// The status of the last record of `runId` in runs.jsonl, or null. Lines that are not JSON are skipped.
+function lastRecordStatus(runId, dir = run.dataDir()) {
+  const text = orEmpty(() => fs.readFileSync(path.join(dir, 'runs.jsonl'), 'utf8'), '')
+  let status = null
+  for (const line of text.split('\n')) {
+    const record = orEmpty(() => JSON.parse(line), null)
+    if (record && record.runId === runId) status = record.status
+  }
+  return status
+}
+
 // Removes runs that were never finalized and have had no activity for `hours`, plus leftovers
 // whose run directory is already gone. Activity is any change in the run directory or in the
-// run's unit worktrees. Each removal is recorded first, with the tip of every branch it deletes.
+// run's unit worktrees. Each removal is recorded, with the tip of every branch it deletes taken
+// before the deletion. A run whose sweep keeps saved branches (an interrupted run) is not removed:
+// it is recorded once as interrupted-saved, and its run directory stays for the relaunch.
 function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
   const { mainRoot } = repoPaths(cwd)
   const ids = new Set()
@@ -825,17 +916,27 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     const worktreesDir = run.worktreesDir(mainRoot, id)
     const active = fs.existsSync(dir) && (modifiedSince(dir, cutoff) || modifiedSince(worktreesDir, cutoff))
     if (active) continue
+    const sweptAt = new Date(now).toISOString()
     const branches = aetherBranches(mainRoot, id)
-    run.appendRecord({
+    const abandoned = {
       runId: id,
       status: 'abandoned',
-      sweptAt: new Date(now).toISOString(),
+      sweptAt,
       repo: mainRoot,
       removedWorktrees: runWorktrees(mainRoot, id).paths.length,
       removedBranches: branches.length,
       branches,
-    })
-    sweepRun(cwd, id)
+    }
+    // A run that was not interrupted is recorded before anything is removed, as it always was.
+    const interrupted = wasInterrupted(mainRoot, id)
+    if (!interrupted) run.appendRecord(abandoned)
+    const { savedBranches } = sweepRun(cwd, id)
+    if (savedBranches.length > 0) {
+      // Its branches wait for the relaunch: the run is recorded once, and its directory stays.
+      if (lastRecordStatus(id) !== 'interrupted-saved') run.appendRecord({ runId: id, status: 'interrupted-saved', sweptAt, repo: mainRoot })
+      continue
+    }
+    if (interrupted) run.appendRecord(abandoned)
     assertInside(dir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(dir, { recursive: true, force: true })
     swept.push(id)
