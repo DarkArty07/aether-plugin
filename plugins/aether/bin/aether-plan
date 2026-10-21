@@ -15,6 +15,7 @@ const lanes = require(path.join(lib, 'lanes.js'))
 const superdelegation = require(path.join(lib, 'superdelegation.js'))
 const { loadPairs } = require(path.join(lib, 'pairs.js'))
 const baseline = require(path.join(lib, 'baseline.js'))
+const wt = require(path.join(lib, 'worktrees.js'))
 
 const USAGE =
   'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline]'
@@ -133,9 +134,38 @@ function compile(planArg, rest) {
   const { planPath, parsed } = load(planArg)
   // Every check runs before anything is written, so a refused compile leaves no run behind.
   const onlyValue = flagValue(rest, '--only', '--only needs a comma-separated list of tasks, such as task-2,task-3.')
-  const only = onlyValue === null ? null : onlyValue.split(',').map((s) => s.trim()).filter(Boolean)
+  let only = onlyValue === null ? null : onlyValue.split(',').map((s) => s.trim()).filter(Boolean)
   const runValue = flagValue(rest, '--run', '--run needs a run id.')
-  const graph = buildGraph(parsed, { only })
+
+  const repo = repoPaths(process.cwd())
+  const branch = currentBranch(process.cwd())
+  if (!branch) fail(['the integration worktree has a detached HEAD; check out the integration branch first'])
+  if (['main', 'master'].includes(branch) && !rest.includes('--allow-main')) {
+    fail([`refusing to compile on ${branch}: run aether-plan from the integration worktree, or pass --allow-main`])
+  }
+
+  const runId = runValue === null ? run.newRunId() : runValue
+  run.assertRunId(runId)
+  const dir = run.runDir(repo.mainRoot, runId)
+  // Read before the graph is written: a relaunch's graph keeps the first launch's base.
+  const graphFile = path.join(dir, 'graph.json')
+  const priorIntegration = fs.existsSync(graphFile) ? run.readJson(graphFile).integration : null
+
+  let alreadyMerged = null
+  if (runValue !== null && fs.existsSync(graphFile) && only === null) {
+    const merged = new Set(wt.mergedUnits(process.cwd(), runId))
+    const planTaskIds = parsed.tasks.map((t) => `task-${t.number}`)
+    const intersect = planTaskIds.filter((id) => merged.has(id))
+    if (intersect.length > 0) {
+      alreadyMerged = intersect
+      for (const id of alreadyMerged) {
+        process.stderr.write(`aether-plan: ${id} is already merged in run ${runId}; it is not relaunched\n`)
+      }
+      only = planTaskIds.filter((id) => !merged.has(id))
+    }
+  }
+
+  const graph = alreadyMerged && only.length === 0 ? { waves: [], tasks: {}, errors: [], warnings: [] } : buildGraph(parsed, { only })
   const errors = [...parsed.errors, ...graph.errors]
   if (errors.length) fail(errors, graph.warnings)
   // With the plugin's superdelegation option off, or off Linux, the run is native and the lane table is not read.
@@ -159,20 +189,7 @@ function compile(planArg, rest) {
     }
   }
 
-  const repo = repoPaths(process.cwd())
-  const branch = currentBranch(process.cwd())
-  if (!branch) fail(['the integration worktree has a detached HEAD; check out the integration branch first'])
-  if (['main', 'master'].includes(branch) && !rest.includes('--allow-main')) {
-    fail([`refusing to compile on ${branch}: run aether-plan from the integration worktree, or pass --allow-main`])
-  }
-
-  const runId = runValue === null ? run.newRunId() : runValue
-  run.assertRunId(runId)
-  const dir = run.runDir(repo.mainRoot, runId)
   run.ensureExcluded(repo.gitCommonDir)
-  // Read before the graph is written: a relaunch's graph keeps the first launch's base.
-  const graphFile = path.join(dir, 'graph.json')
-  const priorIntegration = fs.existsSync(graphFile) ? run.readJson(graphFile).integration : null
 
   const spec = planSpec(parsed.spec, planPath, repo.worktree)
   // The spec's intent and criteria go into every brief (trial 2). A spec that cannot be read adds nothing.
@@ -216,6 +233,7 @@ function compile(planArg, rest) {
     maxAgents: parsed.execution.maxAgents,
     waves: graph.waves,
     tasks,
+    ...(alreadyMerged ? { alreadyMerged } : {}),
     lanes: laneArgs,
   }
   // Recorded once per run, before its first merge. A relaunch keeps the baseline it already has.

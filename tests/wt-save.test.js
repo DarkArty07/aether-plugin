@@ -59,3 +59,20 @@ test('mergedUnits sees a merged unit after its branch is gone, and only units of
   const { repo, args } = interrupted(t)
   assert.deepEqual(wt.mergedUnits(repo.dir, args.runId), ['task-1'])
 })
+
+test('a unit branch made after another unit merged, with no commit of its own, is not merged (unitStatus)', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const one = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
+  commitIn(repo, one.path, 'src/t1/a.js', 'one\n', 'add a')
+  assert.equal(runBin(WT_BIN, ['merge', args.runId, 'task-1'], repo.dir).json.merged, true)
+  runBin(WT_BIN, ['remove', args.runId, 'task-1'], repo.dir)
+  const two = runBin(WT_BIN, ['ensure', args.runId, 'task-2'], repo.dir).json
+  writeAt(path.join(two.path, 'src', 't2', 'wip.js'), 'wip\n')
+  assert.equal(wt.unitStatus(repo.dir, args.runId, 'task-2').merged, false, 'a branch that started on the integration line merged nothing')
+  assert.deepEqual(wt.mergedUnits(repo.dir, args.runId), ['task-1'])
+  // Once it has a commit of its own and is merged, it is merged.
+  commitIn(repo, two.path, 'src/t2/b.js', 'two\n', 'add b')
+  assert.equal(runBin(WT_BIN, ['merge', args.runId, 'task-2'], repo.dir).json.merged, true)
+  assert.equal(wt.unitStatus(repo.dir, args.runId, 'task-2').merged, true)
+})

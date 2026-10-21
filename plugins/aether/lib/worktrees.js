@@ -298,7 +298,10 @@ function unitStatus(cwd, runId, taskId) {
   // A branch with no change of its own since the run's base is an ancestor of everything
   // and merged nothing. (unitBase cannot say this: after a merge it is the branch's tip.)
   const own = changedFiles(mainRoot, graph.integration.base, branch)
-  if (own.length === 0 || !isMerged(mainRoot, graph, branch)) return { merged: false, branch, commit: null, head: tip }
+  // A branch made after another unit's merge starts on the integration branch's own line with no commit of its own: it
+  // merged nothing, whatever the base-to-tip diff holds. A merged unit's tip is the second parent of its merge commit.
+  const line = git(['rev-list', '--first-parent', graph.integration.branch], mainRoot, { allowFail: true }).stdout.split('\n')
+  if (own.length === 0 || line.includes(tip) || !isMerged(mainRoot, graph, branch)) return { merged: false, branch, commit: null, head: tip }
   const merges = git(['rev-list', '--merges', '--reverse', `${branch}..${graph.integration.branch}`], mainRoot, { allowFail: true }).stdout
   const commit = merges === '' ? tip : merges.split('\n')[0]
   return { merged: true, branch, commit, head: tip }
