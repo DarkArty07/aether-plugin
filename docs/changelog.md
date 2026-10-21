@@ -8,6 +8,11 @@ order: 31
 
 ## Status
 
+Version 0.14.5: Muse takes the schemas of the seats and the swarm, and a failed design seat asks for the next pair ([handoff](handoff/2026-10-21-external-seats-0.14.5.md), [design seats](guide/design-seats.md), [decisions](decisions.md) A70, issues [039](issues/039-muse-refuses-the-schemas-of-the-seats-and-the-swarm-so-every-round-it-takes-falls-to-claude.md) and [040](issues/040-a-design-seat-that-fails-goes-to-the-native-agent-without-trying-the-next-pair.md)). Running the design of spec 010 showed that every round Muse took failed and went to Claude, and that a design seat that failed went to Claude without trying another pair. What changed since 0.14.4:
+- **Muse gets a strict copy of every schema.** The adapter writes a copy of the call's schema in which every object says `additionalProperties: false` and lists all its keys as required, which Muse's provider demands. All eight role schemas answered clean on real Muse calls.
+- **A design seat that fails asks for the next pair.** `aether-lane seat-start` and `seat` take `--exclude`; `/aether:design` starts the round again with the pairs already tried excluded, up to three external tries, and the native agent does the round only when no pair is left. The record of a round lists each try.
+- **Known and not changed.** The swarm's lane calls that fail after they started or end for quota still go to the native agent without trying the next pair (issue 041).
+
 Version 0.14.4: an Argon refusal no longer keeps Flash out ([handoff](handoff/2026-10-21-split-argon-flash-0.14.4.md), [lanes](guide/lanes.md), [decisions](decisions.md) A69, [issue 038](issues/038-an-argon-refusal-keeps-flash-out-because-the-table-has-one-gemini-key.md)). agy's lane table had one quota key for Gemini 4 Argon and Gemini 3.8 Flash, so a refusal of Argon marked Flash dry for 60 minutes too. What changed since 0.14.3:
 - **Two keys, one `/usage` group.** agy's table has `argon`, `flash` and `claude`; `argon` and `flash` both read `Gemini Models`, so they show the same windows and reset, and each has its own mark, place in the order and choice. The pairs and the router's rungs follow.
 - **A refusal marks one key.** Argon refused leaves Flash usable for the swarm, the design seats and the router, and the other way round.
