@@ -3,7 +3,7 @@
 **Type:** bug (autonomy; ceilings)
 **Date:** 2026-10-21
 **Found in:** the run `auto-20261021-000725-3cae`
-**Status:** open; spec 011 (the 5-hour brake) is the place to fix it
+**Status:** fixed in 0.16.0 for a quota pause (A73: the brake's paused interval is not worked time). A run stopped by a limit the brake did not foresee still counts the idle time
 **GitHub:** none yet. This file is the local record.
 
 ## What happened
