@@ -6,6 +6,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { commandInstalled } = require('../lanes.js')
+const { strictSchema } = require('../lane-schemas.js')
 const { defaultExec, extractJsonObject, missingField, parseObject } = require('./structured.js')
 
 const OBSERVED_FILE = 'muse-observed.json'
@@ -152,6 +153,20 @@ function readingOf(stored, now) {
 // A stored window is null or complete; anything else is a broken file.
 const storedWindow = (value) => value === null || windowOf(value) !== null
 
+// Muse rejects a structured-output schema unless every object schema says additionalProperties: false. The file is
+// the caller's for this one call. A missing, unreadable or non-JSON file stays as it is, and argv still returns.
+function writeStrictSchema(schemaFile) {
+  if (!schemaFile) return
+  let parsed
+  try {
+    parsed = JSON.parse(fs.readFileSync(schemaFile, 'utf8'))
+  } catch {
+    // Missing, unreadable or not JSON: the file stays as it is.
+    return
+  }
+  fs.writeFileSync(schemaFile, JSON.stringify(strictSchema(parsed), null, 2) + '\n')
+}
+
 function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = process.env, dataDir = null, now = Date.now } = {}) {
   const observedPath = () => path.join(dataDir ?? require('../run.js').dataDir(), 'lanes', 'quota', OBSERVED_FILE)
 
@@ -232,6 +247,7 @@ function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = p
     argv({ model, level, schemaFile, prompt }) {
       if (typeof model !== 'string' || model.trim() === '') throw new Error('muse needs a model')
       if (/contributor/i.test(model)) throw new Error(`muse does not call a contributor model: ${model}`)
+      writeStrictSchema(schemaFile)
       return [
         command, 'exec', '--json', '--provider', 'meta', '--model', model,
         ...(level ? ['--reasoning-effort', level] : []),
