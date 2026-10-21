@@ -103,13 +103,21 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0, p
   }
 }
 
+// Whether a delegation's call ran on Claude. A record or advise with no model and effort asked keeps `ranOn` null,
+// because the journal cannot name the inherited pair (plan D7): that call ran native on Claude unless it was external
+// or one of its attempts went out to another harness.
+function ranOnClaude(delegation) {
+  if (delegation.ranOn) return delegation.ranOn.harness === 'claude'
+  const attempted = Array.isArray(delegation.attempts) && delegation.attempts.length > 0
+  return delegation.applied !== 'external' && !attempted
+}
+
 function editsWithoutNoCandidate(delegations, noCandidateIds) {
   const ids = noCandidateIds instanceof Set ? noCandidateIds : new Set(noCandidateIds || [])
   const result = []
   for (const d of delegations || []) {
     if (d.taskClass !== 'edits') continue
-    const onClaude = d.ranOn ? d.ranOn.harness === 'claude' : (d.applied !== 'external' && (!Array.isArray(d.attempts) || d.attempts.length === 0))
-    if (!onClaude) continue
+    if (!ranOnClaude(d)) continue
     if (d.aetherTask && ids.has(d.aetherTask)) continue
     result.push({
       id: d.id,
