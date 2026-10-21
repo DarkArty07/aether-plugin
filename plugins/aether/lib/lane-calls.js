@@ -51,6 +51,11 @@ function laneNote(role, harness = 'agy') {
   return LANE_NOTE_TEXT[role](harness)
 }
 
+// The note of a reviewer call that carries a task: it reviews the unit, not the merged run.
+function unitReviewerNote(harness = 'agy') {
+  return `## You run in an external harness\n\nYou are an Aether reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch, not of the integration branch; the unit's brief (brief.md) and the review package (package.diff) are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+}
+
 const LANE_NOTES = { implementer: laneNote('implementer'), supervisor: laneNote('supervisor'), reviewer: laneNote('reviewer') }
 
 // ---- Prompts ----
@@ -77,8 +82,9 @@ function answerSection(role) {
 }
 
 // The prompt a call's harness reads: buildPrompt's, and for a harness with schemaInPrompt, the answer section last.
-function callPrompt({ harness, adapter, role, message, workdir, home }) {
-  const prompt = buildPrompt({ role, message, workdir, home, harness })
+function callPrompt({ harness, adapter, role, task = null, message, workdir, home }) {
+  const note = role === 'reviewer' && task !== null ? unitReviewerNote(harness) : undefined
+  const prompt = buildPrompt({ role, message, workdir, home, note, harness })
   return adapter.schemaInPrompt === true ? `${prompt}\n\n${answerSection(role)}` : prompt
 }
 
@@ -260,7 +266,7 @@ function holdDry(dataDir, { harness, group, reading, config, now, refusal = null
 
 function prepareWorkspace(cwd, runId, call, role, task) {
   if (role === 'implementer') return work.prepareImplementer(cwd, runId, task).workdir
-  return work.prepareReader(cwd, runId, call, { taskId: role === 'supervisor' ? task : null }).workdir
+  return work.prepareReader(cwd, runId, call, { taskId: task }).workdir
 }
 
 function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
@@ -268,8 +274,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   for (const [name, value] of Object.entries({ role, model, effort, digest })) {
     if (typeof value !== 'string' || value === '') throw new Error(`start needs --${name}`)
   }
-  const unitTask = role === 'reviewer' ? null : task
-  if ((role === 'implementer' || role === 'supervisor') && unitTask === null) throw new Error(`start needs --task for the ${role}`)
+  if ((role === 'implementer' || role === 'supervisor') && task === null) throw new Error(`start needs --task for the ${role}`)
 
   if (!fs.existsSync(paths.prompt)) return { unavailable: 'prompt' }
   const message = fs.readFileSync(paths.prompt, 'utf8')
@@ -306,7 +311,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   clearCallDir(paths)
   let workdir
   try {
-    workdir = prepareWorkspace(cwd, runId, call, role, unitTask)
+    workdir = prepareWorkspace(cwd, runId, call, role, task)
   } catch {
     return { unavailable: 'workspace' }
   }
@@ -315,7 +320,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
     runId,
     call,
     role,
-    task: unitTask,
+    task,
     harness: name,
     model: passed,
     laneModel: lane.id,
@@ -420,7 +425,7 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
   const { runId, role, task } = info
   const integration = work.checkIntegration(cwd, runId, before)
   if (!integration.ok) return { status: 'blocked', detail: integration.detail }
-  if (role === 'supervisor') {
+  if (role === 'supervisor' || (role === 'reviewer' && task !== null)) {
     const unit = work.checkUnitUnchanged(cwd, runId, task, before)
     if (!unit.ok) return { status: 'blocked', detail: unit.detail }
   }
@@ -510,9 +515,9 @@ async function runCall(cwd, runId, call) {
     config = settings.config
     const schema = ROLE_SCHEMAS[role]
     fs.writeFileSync(paths.schema, `${JSON.stringify(schema, null, 2)}\n`)
-    const before = work.snapshot(cwd, runId, { taskId: role === 'reviewer' ? null : task })
+    const before = work.snapshot(cwd, runId, { taskId: task })
     const message = fs.readFileSync(paths.prompt, 'utf8')
-    const prompt = callPrompt({ harness, adapter, role, message, workdir, home: os.homedir() })
+    const prompt = callPrompt({ harness, adapter, role, task, message, workdir, home: os.homedir() })
     const argv = adapter.argv({ model: info.laneModel, level: info.level, schemaFile: paths.schema, timeoutSeconds: info.timeoutSeconds, prompt })
     const exitCode = await runAgy(argv, {
       workdir,
