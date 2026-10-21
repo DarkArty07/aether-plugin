@@ -59,8 +59,11 @@ function openViews(config, names, marks, now) {
 
 // The pair that takes a read-only delegate whose native reference is { model, effort } (an alias and an effort of the
 // pairs table), or none. Resolves to { pick, quota, waitedMs, reason }: pick is the pair or null, quota the candidates
-// of the decision for the journal, reason the function's own words. It never throws: a reference the table lacks gives
-// no pick and says so.
+// of the decision for the journal, reason the function's own words. The pairs that ran out of time lately (d.slow(),
+// lib/router-slow.js) are excluded from every call of the function, so they show in the candidates as excluded and the
+// alternates of the decision never hold them. It never throws: when something under it fails (a reference the table
+// lacks, a table that cannot be read) it returns the failure as `error`, with no reason, so that the router journals it
+// as an internal error and not as a choice (issue 036).
 async function pairStep(d, settings, { reference }) {
   try {
     const config = d.lanesConfig()
@@ -68,6 +71,7 @@ async function pairStep(d, settings, { reference }) {
     const listed = settings.harnesses.filter((name) => DELEGATE_HARNESSES.includes(name) && isObject(config?.harnesses?.[name]) && pairs.some((pair) => pair.harness === name))
     const live = listed.filter((name) => d.installed(name))
     const marks = d.marks()
+    const exclude = typeof d.slow === 'function' ? d.slow() : []
     // The harnesses with no whole, valid reading: expired or incomplete.
     const unreadable = (names) => {
       const readings = d.readings(names)
@@ -88,7 +92,7 @@ async function pairStep(d, settings, { reference }) {
     // Only a harness that could serve the call is waited for (issue 025): one whose every pair is held by a mark, or
     // below the points asked, keeps its background renewal for the next decision, but this decision does not sit out
     // the quota deadline for a reading that cannot change its pick.
-    const serving = new Set(choose({ pairs, reference, harnesses: openViews(config, live, marks, d.now()) })
+    const serving = new Set(choose({ pairs, reference, exclude, harnesses: openViews(config, live, marks, d.now()) })
       .candidates.filter((entry) => entry.outcome !== 'passed').map((entry) => entry.harness))
     const waiting = stale.filter((name) => serving.has(name))
     if (waiting.length > 0) {
@@ -108,7 +112,7 @@ async function pairStep(d, settings, { reference }) {
       if (!live.includes(name)) views[name] = { installed: false, groups: {} }
       else if (!expired.has(name)) views[name] = viewOf(config, name, readings[name] ?? null, { marks, now, lift: d.lift })
     }
-    const decision = choose({ pairs, reference, harnesses: views })
+    const decision = choose({ pairs, reference, exclude, harnesses: views })
     const quota = decision.candidates.map((entry) => ({
       ...entry,
       ...(expired.has(entry.harness) ? { why: 'no-reading' } : {}),
@@ -116,7 +120,7 @@ async function pairStep(d, settings, { reference }) {
     }))
     return { pick: decision.picked, quota, waitedMs, reason: decision.reason }
   } catch (err) {
-    return { pick: null, quota: null, waitedMs: 0, reason: err instanceof Error ? err.message : String(err) }
+    return { pick: null, quota: null, waitedMs: 0, reason: null, error: err instanceof Error ? err.message : String(err) }
   }
 }
 

@@ -5,15 +5,17 @@
 // that calls agy (the swarm's lane calls, the design seats, the delegate router) reads it here and turns it into a mark.
 
 const REFUSAL_RE = /individual quota reached/i
-// The duration is a run of <n>d, <n>h, <n>m, <n>s parts in that order, any subset, with no spaces.
-const RESET_RE = /resets in ((?:\d+d)?(?:\d+h)?(?:\d+m)?(?:\d+s)?)(?!\w)/i
+// The duration is a run of <n>d, <n>h, <n>m, <n>s parts in that order, any subset, in either case, with optional spaces
+// between the parts. A duration the pattern cannot place (a decimal, parts out of order, a number with no unit) does not
+// match at all: the lookaheads refuse a tail that would be left unread, and the refusal then states no reset.
+const RESET_RE = /resets in ((?:\d+d)?(?:\s*\d+h)?(?:\s*\d+m)?(?:\s*\d+s)?)(?!\w)(?!\s*\d)/i
 const DURATION_UNIT_MS = { d: 86400000, h: 3600000, m: 60000, s: 1000 }
-const DURATION_PART_RE = /(\d+)([dhms])/g
+const DURATION_PART_RE = /(\d+)([dhms])/gi
 
 function durationMs(duration) {
   let total = 0
   for (const [, amount, unit] of duration.matchAll(DURATION_PART_RE)) {
-    total += Number(amount) * DURATION_UNIT_MS[unit]
+    total += Number(amount) * DURATION_UNIT_MS[unit.toLowerCase()]
   }
   return total
 }

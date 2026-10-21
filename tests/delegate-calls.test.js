@@ -10,6 +10,7 @@ const delegate = require('../plugins/aether/lib/delegate-calls.js')
 const { CLI_MAX_SECONDS } = require('../plugins/aether/lib/delegate-limits.js')
 
 const readingsLib = require('../plugins/aether/lib/lane-readings.js')
+const lanesLib = require('../plugins/aether/lib/lanes.js')
 
 const GROUPS = { gemini: 'Gemini Models', claude: 'Claude and GPT models' }
 
@@ -49,6 +50,7 @@ test('a read-only delegate runs on agy with the model of the rung, and its answe
   assert.equal(out.modelArg, 'gemini-3.8-flash-medium')
   assert.equal(out.usage.input, 1000)
   assert.equal(out.usage.output, 200)
+  assert.equal(out.timedOut, false, 'a call that ended by itself did not run out of time')
   assert.ok(Array.isArray(out.quotaSpent))
   const [call] = s.modelCalls()
   assert.equal(call.argv[call.argv.indexOf('--model') + 1], 'gemini-3.8-flash-medium')
@@ -147,6 +149,52 @@ test('maxCliSeconds caps the CLI limit of the harness\'s settings, and unset lea
   assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "b"}', { id: 'd-2', maxCliSeconds: CLI_MAX_SECONDS + 100 })).status, 'ok')
   assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "c"}', { id: 'd-3', maxCliSeconds: null })).status, 'ok')
   assert.deepEqual(s.modelCalls().map(limitOf), ['200s', `${CLI_MAX_SECONDS}s`, `${CLI_MAX_SECONDS}s`])
+})
+
+test('issue 035: the note every delegate gets bounds the work to about 20 tool calls and asks for what was not checked', async (t) => {
+  assert.equal(delegate.DELEGATE_TOOL_BUDGET, 20)
+  assert.ok(delegate.DELEGATE_NOTE.includes('use at most about 20 tool calls (every read and search counts)'), delegate.DELEGATE_NOTE)
+  assert.match(delegate.DELEGATE_NOTE, /saying in the answer what you did not check/)
+  const s = setup(t)
+  assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "x"}')).status, 'ok')
+  const [call] = s.modelCalls()
+  assert.ok(call.argv.some((arg) => arg.includes('use at most about 20 tool calls')), 'the note reaches the CLI in the prompt')
+})
+
+test('issue 035: a call killed at its limit is timedOut and failed, even when the quota reading afterwards is under the reserve', async (t) => {
+  const quotaFile = (s) => s.env.AETHER_FAKE_AGY_QUOTA_FILE
+  const settled = (s) => {
+    s.config.harnesses.agy.timeouts = { ...s.config.harnesses.agy.timeouts, reviewer: 0.3 }
+    return { graceSeconds: 0.3 }
+  }
+  // The fake sleeps past the limit and its grace; before it sleeps it drains the group, so the reading after the call
+  // is under the reserve, which on any other ending would make the call a quota failure.
+  const drained = JSON.stringify({ 'Gemini Models': [0.9, 0.02], 'Claude and GPT models': [0.9, 0.9] })
+  const s = setup(t)
+  const out = await run(s, `Audit.\nFAKE-AGY: write-abs ${quotaFile(s)} ${drained}\nFAKE-AGY: sleep 30\nFAKE-AGY: answer {"answer": "late"}`, settled(s))
+  assert.equal(out.timedOut, true)
+  assert.equal(out.status, 'failed', 'running out of time is not a refusal, whatever the reading says')
+  assert.match(out.detail, /^ran out of time: killed at 0\.6 s, exit 137$/)
+  assert.equal(out.text, '')
+  assert.equal(lanesLib.usable(out.quotaAfter, s.config.reserve), false, 'the reading after was under the reserve')
+  assert.equal(worktrees(s), 1, 'the worktree is gone')
+
+  // The same drained reading on a call that ends by itself is still the quota's verdict.
+  const quick = setup(t)
+  const ended = await run(quick, `Audit.\nFAKE-AGY: write-abs ${quotaFile(quick)} ${drained}\nFAKE-AGY: exit-error some failure`)
+  assert.equal(ended.timedOut, false)
+  assert.equal(ended.status, 'quota')
+})
+
+test('issue 035: every outcome that did not run out of time says so, launched or not', async (t) => {
+  const s = setup(t)
+  assert.equal((await run(s, 'Audit.\nFAKE-AGY: exit-error model not found')).timedOut, false)
+  assert.equal((await run(s, 'Audit.', { harness: 'codex', id: 'd-2' })).timedOut, false)
+  const under = setup(t, { quota: { 'Gemini Models': [0.9, 0.02], 'Claude and GPT models': [0.9, 0.9] } })
+  assert.equal((await run(under, 'Audit.')).timedOut, false)
+  const dirty = setup(t)
+  fs.writeFileSync(path.join(dirty.repo.dir, 'README.md'), 'edited\n')
+  assert.equal((await run(dirty, 'Audit.')).timedOut, false)
 })
 
 test('a group under the reserve is a quota failure, and agy is not launched (R26)', async (t) => {

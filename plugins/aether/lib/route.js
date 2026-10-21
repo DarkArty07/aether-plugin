@@ -24,6 +24,7 @@ const { liftMark } = require('./lane-marks.js')
 const { readAllMarks } = require('./router-marks.js')
 const { loadPairs } = require('./pairs.js')
 const { pairStep } = require('./router-pick.js')
+const { slowPairIds } = require('./router-slow.js')
 const { EXTERNAL, peekReadings } = require('./router-quota.js')
 const { startRenewal } = require('./router-renewal.js')
 const { loadRungs } = require('./router-rungs.js')
@@ -131,6 +132,7 @@ function resolve(deps) {
     newId: deps.newId || (() => `r-${now().toString(36)}-${crypto.randomBytes(2).toString('hex')}`),
     readings: deps.readings || ((harnesses = EXTERNAL) => peekReadings({ dataDir, config: lanesConfig(), harnesses, now: now() })),
     lift: deps.lift || ((mark) => liftMark(dataDir, mark)),
+    slow: deps.slow || (() => slowPairIds(dataDir, pairs(), now())),
     marks: deps.marks || (() => readAllMarks(dataDir, now(), lanes.groupKnown(lanesConfig()))),
     renew: deps.renew || ((harness) => startRenewal({ dataDir, harness, now: now() })),
     installed: deps.installed || ((harness) => {
@@ -167,7 +169,6 @@ function recordInternalError(deps, known, err) {
     const settings = known.settings && typeof known.settings === 'object' ? known.settings : {}
     const task = taskOf(event)
     const requested = requestedOf(event)
-    const message = messageOf(err).replace(/\s+/g, ' ').trim().slice(0, INTERNAL_MESSAGE_CHARS)
     const started = Number.isFinite(known.startedAt) ? known.startedAt : now
     appendEntry(deps.dataDir, {
       kind: 'decision',
@@ -186,7 +187,7 @@ function recordInternalError(deps, known, err) {
       decision: null,
       flags: null,
       quota: null,
-      fallback: `internal: ${message}`,
+      fallback: internalFallback(messageOf(err)),
       applied: appliedWithoutRewrite(requested),
       ranOn: null,
       latencyMs: now - started,
@@ -195,6 +196,10 @@ function recordInternalError(deps, known, err) {
       deciderCost: null,
     })
   } catch {}
+}
+
+function internalFallback(message) {
+  return `internal: ${message.replace(/\s+/g, ' ').trim().slice(0, INTERNAL_MESSAGE_CHARS)}`
 }
 
 function isDeciderError(err) {
@@ -368,6 +373,7 @@ async function conclude(ctx, d, result) {
   let pick = null
   let reason = verdict.reason
   let choice = null
+  let internal = null
   if (verdict.readOnly && settings.lanes && !event.isolation && d.lanesConfig()) {
     const agent = namedAgent(event)
     if (agent !== null) {
@@ -378,6 +384,8 @@ async function conclude(ctx, d, result) {
       quota = step.quota
       quotaWaitMs = step.waitedMs
       choice = step.reason
+      // A pair step that failed is a broken router, not a choice: the journal says so as it does for any internal error.
+      if (typeof step.error === 'string') internal = step.error
     }
   }
 
@@ -440,6 +448,7 @@ async function conclude(ctx, d, result) {
     decision,
     flags: verdict.flags,
     quota,
+    fallback: internal === null ? null : internalFallback(internal),
     applied,
     ranOn: ranOnOf(table, { args, external, requested }),
     latencyMs: d.now() - ctx.startedAt,

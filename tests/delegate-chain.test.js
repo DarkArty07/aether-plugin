@@ -9,6 +9,7 @@ const chain = require('../plugins/aether/lib/delegate-chain.js')
 const laneMarks = require('../plugins/aether/lib/lane-marks.js')
 const log = require('../plugins/aether/lib/router-log.js')
 const marks = require('../plugins/aether/lib/router-marks.js')
+const slow = require('../plugins/aether/lib/router-slow.js')
 
 // agy's refusal as it reached the owner: the text of the CLI, whole.
 const AGY_REFUSAL = 'exit 3: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 135h11m.'
@@ -33,7 +34,11 @@ function setup(t, script) {
     calls.push(input)
     const wanted = script[calls.length - 1]
     assert.ok(wanted, `attempt ${calls.length} was not expected`)
-    const outcome = { status: 'ok', text: '', detail: '', durationMs: 5000, usage: { ...NO_USAGE }, quotaSpent: [], ...wanted }
+    if (wanted.throws) {
+      clock.t += wanted.durationMs ?? 1000
+      throw new Error(wanted.throws)
+    }
+    const outcome = { status: 'ok', text: '', detail: '', durationMs: 5000, usage: { ...NO_USAGE }, quotaSpent: [], timedOut: false, ...wanted }
     clock.t += outcome.durationMs
     return { ...outcome, harness: input.harness, modelArg: `${input.rung.model}-${input.rung.effort}`, text: outcome.status === 'ok' ? 'found it' : '' }
   }
@@ -227,4 +232,119 @@ test('an external file with no alternates behaves as it did: one attempt, its ou
   const odd = await bad.run(ARGON, [null, { harness: 'grok' }, { harness: 'grok', rung: { model: 'x' } }, 'grok'])
   assert.equal(odd.ok, false, 'entries that do not name a whole rung are ignored')
   assert.equal(bad.calls.length, 1)
+})
+
+// ---- issues 035 and 037 ----
+
+const KILLED = (over = {}) => ({ status: 'failed', detail: 'ran out of time: killed at 420 s, exit 137', durationMs: 420000, timedOut: true, ...over })
+
+test('issue 035: an attempt that ran out of time writes the slow mark of its pair, journals it, and goes to Claude without another try', async (t) => {
+  const s = setup(t, [KILLED()])
+  const out = await s.run(GROK, [MUSE, ARGON])
+  assert.equal(out.ok, false)
+  assert.equal(out.status, 'failed')
+  assert.match(out.detail, /^ran out of time/)
+  assert.equal(out.marked, null, 'no quota mark: a timeout says nothing of the quota')
+  assert.equal(s.calls.length, 1, 'a timeout is not a refusal at the start: the chain does not go on')
+  assert.equal(out.journaled, true)
+  const [entry] = s.outcomes()
+  assert.equal(entry.timedOut, true)
+  assert.equal(entry.slowUntil, s.clock.t + 60 * 60 * 1000)
+  assert.equal(entry.markedUntil, null)
+  assert.deepEqual(slow.slowPairIds(s.dataDir, [{ id: 'grok/grok-4.7@high', harness: 'grok', model: 'grok-4.7', effort: 'high' }, { id: 'grok/grok-4.7@low', harness: 'grok', model: 'grok-4.7', effort: 'low' }], s.clock.t), ['grok/grok-4.7@high'], 'the pair is out, not its group')
+  assert.equal(marks.readAllMarks(s.dataDir, s.clock.t).length, 0)
+})
+
+test('issue 035: the entries of attempts that did not run out of time keep their fields', async (t) => {
+  const s = setup(t, [refusal(), { status: 'ok' }])
+  await s.run(ARGON, [GROK])
+  for (const entry of s.outcomes()) {
+    assert.equal(Object.hasOwn(entry, 'timedOut'), false)
+    assert.equal(Object.hasOwn(entry, 'slowUntil'), false)
+  }
+  assert.equal(slow.slowPairIds(s.dataDir, [{ id: 'a', harness: 'agy', model: 'gemini-4-argon', effort: 'high' }], s.clock.t).length, 0)
+})
+
+test('issue 037: a timed-out attempt is never a start refusal, whatever else it says', () => {
+  const killed = { status: 'quota', detail: AGY_REFUSAL, usage: NO_USAGE, timedOut: true }
+  assert.equal(chain.isStartRefusal(killed), false, 'a quota status with no tokens and a refusal text')
+  assert.equal(chain.isStartRefusal({ ...killed, status: 'unavailable' }), false)
+  assert.equal(chain.isStartRefusal({ ...killed, timedOut: false }), true)
+  assert.equal(chain.isStartRefusal({ status: 'quota', detail: AGY_REFUSAL, usage: NO_USAGE }), true, 'an outcome with no flag is read as before')
+})
+
+test('issue 035: a candidate whose pair holds a live slow mark is skipped, and the next one runs', async (t) => {
+  const s = setup(t, [refusal(), { status: 'ok' }])
+  slow.markSlow(s.dataDir, { harness: 'grok', model: 'grok-4.7', effort: 'high' }, { now: s.clock.t })
+  const out = await s.run(ARGON, [GROK, MUSE])
+  assert.equal(out.ok, true)
+  assert.deepEqual(s.calls.map((c) => c.harness), ['agy', 'muse'], 'a parallel delegate wrote the mark')
+  assert.deepEqual(s.outcomes().map((e) => [e.attempt, e.harness]), [[1, 'agy'], [2, 'muse']])
+
+  // The same model at another effort is not the marked pair.
+  const other = setup(t, [refusal(), { status: 'ok' }])
+  slow.markSlow(other.dataDir, { harness: 'grok', model: 'grok-4.7', effort: 'high' }, { now: other.clock.t })
+  await other.run(ARGON, [{ harness: 'grok', rung: { model: 'grok-4.7', effort: 'low', group: 'grok' } }, MUSE])
+  assert.deepEqual(other.calls.map((c) => c.rung.effort), ['high', 'low'])
+
+  // An expired mark holds nothing.
+  const old = setup(t, [refusal(), { status: 'ok' }])
+  slow.markSlow(old.dataDir, { harness: 'grok', model: 'grok-4.7', effort: 'high' }, { now: old.clock.t - 2 * 60 * 60 * 1000 })
+  await old.run(ARGON, [GROK])
+  assert.deepEqual(old.calls.map((c) => c.harness), ['agy', 'grok'])
+
+  // Every candidate left is out: the chain ends on the refusal of the last attempt.
+  const all = setup(t, [refusal()])
+  slow.markSlow(all.dataDir, { harness: 'grok', model: 'grok-4.7', effort: 'high' }, { now: all.clock.t })
+  const ended = await all.run(ARGON, [GROK])
+  assert.equal(ended.ok, false)
+  assert.equal(ended.status, 'quota')
+  assert.equal(all.calls.length, 1)
+})
+
+test('issue 037: an exception of runDelegate is a failed attempt with its outcome entry, and nothing retries', async (t) => {
+  const s = setup(t, [{ throws: 'the worktree could not be made', durationMs: 2000 }])
+  const out = await s.run(ARGON, [GROK, MUSE])
+  assert.equal(out.ok, false)
+  assert.equal(out.status, 'failed')
+  assert.equal(out.detail, 'delegate: the worktree could not be made')
+  assert.equal(out.text, '')
+  assert.equal(out.journaled, true)
+  assert.equal(out.marked, null)
+  assert.equal(s.calls.length, 1)
+  assert.deepEqual(out.attempts, [{ harness: 'agy', model: 'gemini-4-argon', effort: 'high', status: 'failed', detail: 'delegate: the worktree could not be made' }])
+  const [entry] = s.outcomes()
+  assert.deepEqual([entry.attempt, entry.status, entry.harness, entry.model, entry.detail], [1, 'failed', 'agy', 'gemini-4-argon', 'delegate: the worktree could not be made'])
+  assert.deepEqual(entry.usage, NO_USAGE)
+  assert.deepEqual(entry.quotaSpent, [])
+  assert.equal(entry.durationMs, 2000)
+
+  // After a refusal the exception still has its entry, and the chain stops there.
+  const later = setup(t, [refusal(), { throws: 'boom' }, { status: 'ok' }])
+  const second = await later.run(ARGON, [GROK, MUSE])
+  assert.equal(second.ok, false)
+  assert.equal(later.calls.length, 2)
+  assert.deepEqual(later.outcomes().map((e) => [e.attempt, e.status]), [[1, 'quota'], [2, 'failed']])
+})
+
+// A file where each directory of the marks must be makes every mark fail to write, while the journal still works.
+function breakMarks(dataDir) {
+  fs.mkdirSync(path.join(dataDir, 'router'), { recursive: true })
+  for (const name of ['lanes', 'slow']) fs.writeFileSync(path.join(dataDir, 'router', name), 'not a directory')
+}
+
+test('issue 037: a mark that cannot be written is swallowed: the outcome is still journaled and the chain goes on or ends as it would', async (t) => {
+  const s = setup(t, [refusal(), { status: 'ok' }])
+  breakMarks(s.dataDir)
+  const out = await s.run(ARGON, [GROK])
+  assert.equal(out.ok, true, 'the refusal still moved on to the next candidate')
+  assert.equal(s.calls.length, 2)
+  assert.equal(out.attempts[0].status, 'quota')
+
+  const timed = setup(t, [KILLED()])
+  breakMarks(timed.dataDir)
+  const ended = await timed.run(GROK, [MUSE])
+  assert.equal(ended.ok, false)
+  assert.equal(ended.status, 'failed')
+  assert.equal(timed.calls.length, 1)
 })
