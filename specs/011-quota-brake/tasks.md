@@ -557,12 +557,12 @@ Aether quota brake: the five_hour window has reset and autonomous run {run} was 
 En `plugins/aether/hooks/register.js`:
 
 - El mapa de estado de sesión gana `brake: undefined`, y `brakeStep($, state)` — envuelto entero en `try/catch`, observando solo — se invoca directamente tras `return yield* meteredStep($, state, e, next)` convertido en `const result = yield* meteredStep($, state, e, next)` / `await brakeStep($, state)` / `return result`, solo en esa rama de `turn.step`.
-- La primera vez, `$.process.run(['node', `${$.plugin.root}/bin/aether-autonomy`, 'brake-settings', '--session', state.id], { timeoutMs: 10000 })` y `jsonFrom(stdout)` con `exitCode === 0` da el `settings` guardado en `state.brake = { settings, state: initialBrakeState(settings), armedFor: null, pausedResetsAt: settings.paused ? settings.paused.resetsAt : null }`; un fracaso deja `state.brake = null` y no vuelve a intentarse en esta sesión. Si `settings.paused` llega, arma el resume ya (abajo). Mientras la lectura `five_hour` siga en o sobre el umbral y `pausedResetsAt` no sea ese `resetsAt`, cada paso posterior vuelve a pedir `brake-settings`.
+- La primera vez, `$.process.run(['node', `${$.plugin.root}/bin/aether-autonomy`, 'brake-settings', '--session', state.id], { timeoutMs: 10000 })` y `jsonFrom(stdout)` con `exitCode === 0` da el `settings` guardado en `state.brake = { settings, state: initialBrakeState(settings), armedFor: null, pausedResetsAt: settings.paused ? settings.paused.resetsAt : null, settingsCheckedAt }`, donde `settingsCheckedAt` es `await $.clock.now()` de ese paso; un fracaso deja `state.brake = null` y no vuelve a intentarse en esta sesión. Si `settings.paused` llega, arma el resume ya (abajo). Mientras la lectura `five_hour` siga en o sobre el umbral y `pausedResetsAt` no sea ese `resetsAt`, un paso posterior vuelve a pedir `brake-settings` solo si `now - state.brake.settingsCheckedAt >= 60000`, con `now = await $.clock.now()` una vez en el paso. Si lo pide y `exitCode === 0` y `jsonFrom` da objeto, sustituye `settings` y pone `settingsCheckedAt` a ese `now`. Si el re-chequeo falla, conserva los `settings` anteriores y aun así pone `settingsCheckedAt` a ese `now`, para no spawnear en cada paso. Un paso dentro del intervalo no spawnea `brake-settings`.
 - Cada vez: `$.session.usage()` y su `rateLimits`; `crossingsOf(rateLimits, settings.threshold, state.brake.state)`; el estado nuevo del aviso se guarda antes de actuar. Por cada cruce, en orden:
   1. `$.ui.notify(n.text, { title: n.title })` con `n = notifyFor(crossing, settings.threshold)`; su resultado es `notify = result && result.isSent ? { sent: true, reason: null } : { sent: false, reason: (result && result.reason) || 'refused' }`, y un fallo es `{ sent: false, reason: 'error' }`.
   2. `$.process.run(['node', root + '/bin/aether-autonomy', 'brake-crossing', '--kind', crossing.kind, '--percent', String(crossing.percentUsed), '--resets-at', crossing.resetsAt, '--threshold', String(settings.threshold), '--notify', notify.sent ? 'sent' : 'failed', ...(!notify.sent && notify.reason ? ['--notify-reason', notify.reason] : []), '--session', state.id], { timeoutMs: 10000 })`.
   3. Si lo impreso cumple `paused === true`, no trae `duplicate: true`, `pausedResetsAt` no era ya ese `resetsAt`, y trae `run` y `resumeAt`: `$.prompt.submit({ text: brakePromptFor({ ...crossing, threshold: settings.threshold, run: record.run, resumeAt: record.resumeAt }) })` — sin `asUser`, jamás — y arma el resume. Una respuesta de `five_hour` que no trae `reason: 'no-run'` hace `pausedResetsAt` ese `resetsAt`. Una `no-run` no lo toca.
-- El aviso y la pausa no comparten el dedupe. Si la lectura `five_hour` tiene `percentUsed >= threshold` y este paso no llamó ya a `brake-crossing` por `five_hour`, y `pausedResetsAt` no es ese `resetsAt`: se usa la lectura de `brake-settings` de este paso. Si `openRun` está puesto y (`paused` es nulo o su `resetsAt` es otro), se llama a `brake-crossing` con el mismo argv del punto 2 y `--notify sent` (el aviso de ese `resetsAt` ya se dio, en este paso no se repite). El bin deduplica. Sin `openRun` no se llama por este camino. La respuesta se trata como en el punto 3: se recuerda el `resetsAt` salvo que sea `no-run`, y el prompt de parada solo sale cuando `paused === true`, no es `duplicate` y `pausedResetsAt` no lo tenía ya.
+- El aviso y la pausa no comparten el dedupe. Si la lectura `five_hour` tiene `percentUsed >= threshold` y este paso no llamó ya a `brake-crossing` por `five_hour`, y `pausedResetsAt` no es ese `resetsAt`: se usa la lectura de `brake-settings` guardada en `state.brake.settings` (la primera, o la que este paso acaba de renovar porque `now - settingsCheckedAt` ya era de al menos 60000 milisegundos). Si `openRun` está puesto y (`paused` es nulo o su `resetsAt` es otro), se llama a `brake-crossing` con el mismo argv del punto 2 y `--notify sent` (el aviso de ese `resetsAt` ya se dio, en este paso no se repite). El bin deduplica. Sin `openRun` no se llama por este camino. La respuesta se trata como en el punto 3: se recuerda el `resetsAt` salvo que sea `no-run`, y el prompt de parada solo sale cuando `paused === true`, no es `duplicate` y `pausedResetsAt` no lo tenía ya.
 - Armar el resume: `armedFor` vale `${run}:${resumeAt}` y ya armado para esa pausa no se repite. Con `ms = Date.parse(resumeAt) - (await $.clock.now())`: si `ms <= 0` se somete el resume a continuación; si no, `$.clock.after(ms, async () => { try { await $.prompt.submit({ text: resumePromptFor({ run, resumeAt }) }) } catch {} })`.
 - Nada fuera de una sesión de Aether: el mismo `aetherSession($)` de hoy lleva a `return yield* next(e)` antes de cualquier cosa del freno, así que en esas sesiones no hay petición de settings, ni lectura de uso, ni aviso, ni nada.
 
@@ -693,6 +693,7 @@ test('a run opened while the five-hour window is already over the threshold paus
   settings.openRun = RUN
   Object.assign(crossing, { recorded: true, paused: true, run: RUN, resetsAt: RESET, resumeAt: RESUME })
   delete crossing.reason
+  await s.clock.advance(60_000)
   await step($)
   expect(s.notes).toHaveLength(1)
   expect(settingsCalls()).toBe(2)
@@ -704,6 +705,23 @@ test('a run opened while the five-hour window is already over the threshold paus
   expect(s.notes).toHaveLength(1)
   expect(settingsCalls()).toBe(2)
   expect(s.crossingRuns()).toHaveLength(2)
+})
+
+test('several steps with no open run ask for settings at most once per interval', async ($, on) => {
+  const settings = { ...SETTINGS, openRun: null, paused: null }
+  const s = stubs(on, { settings, crossing: { recorded: false, paused: false, reason: 'no-run' } })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 96, resetsAt: RESET }])
+  const settingsCalls = () => s.runs.filter((r) => r.argv[2] === 'brake-settings').length
+  await step($)
+  await step($)
+  await step($)
+  expect(settingsCalls()).toBe(1)
+  expect(s.prompts).toEqual([])
+  await s.clock.advance(60_000)
+  await step($)
+  expect(settingsCalls()).toBe(2)
+  await step($)
+  expect(settingsCalls()).toBe(2)
 })
 
 test('a run already open in a window warned earlier still pauses, and does not warn again', async ($, on) => {
@@ -791,7 +809,7 @@ Un detalle del kit: los nombres de superficie de los stubs (`session.usage`, `ui
 
 - Pasa `plugins/aether/hooks/quota-brake.test.ts` con `npm run test:mod`, y las anteriores del mod (`usage.test.ts`, `ops.test.ts`, `panel.test.tsx`) siguen verdes.
 - Un aviso por cruce, registrado con su suerte; un `prompt.submit` del cruce y otro del resume, ninguno con `asUser`.
-- El freno nunca bloquea ni retrasa un paso: un bin caído o un `usage()` que falla dejan la respuesta del paso intacta.
+- El freno no bloquea un paso: un bin caído o un `usage()` que falla dejan la respuesta del paso intacta. Un paso no espera un spawn de `brake-settings` salvo el primero y, como mucho, un re-chequeo cada 60 segundos.
 - Sin lectura no hay aviso ni parada; en una sesión que no es del Lead no hay petición, lectura, aviso ni estado.
 
 ### Task 4: `save` y las unidades ya fusionadas
@@ -1071,7 +1089,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { PLUGIN } = require('./helpers.js')
 
-const ROOT = path.join(PLUGIN, '..')
+const ROOT = path.join(__dirname, '..')
 const read = (...parts) => fs.readFileSync(path.join(PLUGIN, ...parts), 'utf8')
 const doc = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 const skill = read('skills', 'autonomous-runs', 'SKILL.md')
@@ -1344,7 +1362,7 @@ sweepStale(cwd, { hours = 24, now = Date.now() } = {})
 
 - `ensure`. Cuando el worktree ya está registrado y `uncommittedFiles` no está vacío, antes de devolverlo se comitea en la rama con la misma rutina que `salvageUnit` (lo que el `Owns` cubre; el resto queda en `left`, sin comitear) y `salvaged` es `true`. Sin trabajo pendiente, y en un `ensure` que crea el worktree, `salvaged` es `false`. Los tres campos de hoy (`path`, `branch`, `created`) no cambian.
 - `removeUnit` hace ese mismo comiteo antes de escribir el parche y antes de borrar el worktree y la rama. El parche de hoy se escribe después, así que incluye lo recién comiteado. La respuesta sigue siendo exactamente `{ removed, patch }`.
-- Una corrida está interrumpida si existe `<runDir>/saved.json`, o si algún `<mainRoot>/.aether/autonomy/<id>/run.json` (el `<id>` es el de la corrida autónoma, no el del enjambre) tiene en `quotaPauses` una entrada cuyo `savedUnits` nombra este `runId` en `swarmRun`. Un `run.json` que no se puede leer, o que no es JSON, se ignora. Solo entonces `sweepRun` comitea antes el trabajo sin guardar de cada unidad sin fusionar, escribe su parche, borra el worktree como hoy y no borra la rama. Esa rama entra en `savedBranches`, en el orden de las ramas, aunque solo apunte a su base. Sin esa marca no entra, tenga o no commits por encima de la base, y se borra como hoy. Con `savedBranches` vacío el resto queda como hoy, incluido borrar el directorio cuando `finish: true` y no queda nada retenido. `finished` es verdadero solo si `finish: true` borró el directorio.
+- Una corrida está interrumpida si existe `<runDir>/saved.json`, o si algún `<mainRoot>/.aether/autonomy/<id>/run.json` (el `<id>` es el de la corrida autónoma, no el del enjambre) tiene en `quotaPauses` una entrada cuyo `savedUnits` nombra este `runId` en `swarmRun`. Un `run.json` que no se puede leer, o que no es JSON, se ignora. Solo entonces `sweepRun` comitea antes el trabajo sin guardar de cada unidad que no está fusionada, escribe su parche, borra el worktree como hoy y no borra la rama. «Fusionada» aquí es `unitStatus(cwd, runId, taskId).merged` (o estar en `mergedUnits`), no `isMerged`: `isMerged` es `merge-base --is-ancestor`, y una rama que solo apunta a su base cuenta como fusionada para `isMerged` y no para `unitStatus`. Esa rama entra en `savedBranches`, en el orden de las ramas, aunque solo apunte a su base. Sin esa marca no entra, tenga o no commits por encima de la base, y se borra como hoy. Con `savedBranches` vacío el resto queda como hoy, incluido borrar el directorio cuando `finish: true` y no queda nada retenido. `finished` es verdadero solo si `finish: true` borró el directorio.
 - `sweepStale` llama a `sweepRun` como hoy. Si `savedBranches` no viene vacío: no cuenta la corrida en `swept`, no borra su `runDir` y no escribe `abandoned`; añade una sola vez `{ runId, status: 'interrupted-saved', sweptAt, repo }` a `runs.jsonl` (si el último registro de ese `runId` ya es `interrupted-saved`, no añade otro). Si viene vacío, el registro `abandoned` se escribe como hoy, con la punta de cada rama tomada antes de borrarla, y luego se borra el `runDir` y la corrida entra en `swept`. La respuesta sigue siendo exactamente `{ swept }`.
 
 Estas aserciones quedan palabra por palabra, en los ficheros de `Owns`:
@@ -1492,7 +1510,7 @@ test('after save, sweep keeps the branch and stale records the run once', (t) =>
 - Pasan `tests/wt-sweep.test.js`, `tests/worktrees-cleanup.test.js`, `tests/worktrees-ensure.test.js`, `tests/session-start.test.js` y `tests/report.test.js`.
 - `tests/workflow-salvage.test.js` y `tests/workflow.test.js` siguen verdes.
 - Ningún camino borra un worktree con trabajo sin guardar antes de comitearlo: `ensure` a la vuelta y `removeUnit` siempre; `sweepRun` solo cuando la corrida fue interrumpida.
-- Una rama sin fusionar sobrevive a un `sweep --finish` y a un `sweep --stale` solo si hay `saved.json` o una pausa que nombra la corrida. Un commit por encima de la base, solo, no la conserva. El registro `interrupted-saved` se escribe una vez.
+- Una rama que `unitStatus(...).merged` no da por fusionada (no vale aquí `isMerged`) sobrevive a un `sweep --finish` y a un `sweep --stale` solo si hay `saved.json` o una pausa que nombra la corrida. Un commit por encima de la base, solo, no la conserva. El registro `interrupted-saved` se escribe una vez.
 
 
 
