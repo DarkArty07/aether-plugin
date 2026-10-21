@@ -1089,7 +1089,7 @@ const READINESS = { ready: 0, 'ready-with-fixes': 1, 'not-ready': 2 }
 // keeps the other slices' findings, never a verdict from part of the change.
 async function reviewRunSliced(pkg, slices, { model, effort, chosen }) {
   log(`final review in ${slices.length} slices on ${model} ${effort}`)
-  const author = lanes ? finalAuthor(slices.flat()) : null
+  const author = lanes ? finalAuthor(Object.values(units).filter((u) => u.status === 'merged')) : null
   const answers = await parallel(
     slices.map((sliceUnits, i) => async () => {
       const n = i + 1
