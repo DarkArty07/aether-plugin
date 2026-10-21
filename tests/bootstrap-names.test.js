@@ -234,6 +234,32 @@ test('the sources of the bootstrap and the swarm skill name no path of this repo
   }
 })
 
+test('the bootstrap sends editing delegates to other harnesses first, and keeps Claude as the fallback with its task line', () => {
+  const text = USING_SOURCE
+  for (const needed of [
+    '**Editing delegates leave Claude first:**',
+    'aether-lane delegate --brief <brief file> --model <model> --effort <effort> --owns <globs> [--tests <command>] --session "$CLAUDE_CODE_SESSION_ID"',
+    'launched with Bash in the background',
+    'Do not wait for it inside your turn',
+    'You merge it yourself with `aether-wt merge <run> task-1`',
+    'recording the `merge-main` grant when it is `main` or `master`',
+    'after the merge you run the task\'s test command once on your branch when it has one',
+    'only when the command answered `no-candidate`',
+    'never for speed, size or convenience',
+    'its brief carries the line `AETHER-TASK: <id>`',
+    'If the command itself exits with `{ error }`, that is a usage or infrastructure failure, not a `no-candidate`',
+    'fix its cause when it is yours to fix and launch it again',
+    'run the task native, keep the work going, and say so',
+    'you read its diff yourself only when its result says there was no reviewer with a verdict',
+    'With superdelegation off, delegate tasks run as they do today',
+    'You yourself stay on Claude either way',
+    'are also the reference pair of an editing delegate',
+    'with superdelegation on, the ones that edit leave Claude first through that command',
+  ]) assert.ok(text.includes(needed), needed)
+  const file = path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')
+  assert.ok(fs.statSync(file).size < 29470, `${fs.statSync(file).size} bytes`)
+})
+
 test("the model the bootstrap says the Lead starts on is the model of the Lead agent", (t) => {
   const started = /You start on (\w+)/.exec(opening(t))
   assert.ok(started, `the first ${OPENING} characters say what the Lead starts on`)

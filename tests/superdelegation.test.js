@@ -10,8 +10,9 @@ const DAY = 24 * 3600 * 1000
 const at = (days) => new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString()
 const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: days === null ? null : at(days) })
 const dry = { usable: false, unknown: false, mark: null, resetsAt: at(1) }
-const world = ({ gemini = open(2), claude = open(3), grok = open(1) } = {}) => ({
-  agy: { installed: true, groups: { gemini, claude } },
+// agy's Argon and Flash read the one «Gemini Models» window, so `gemini` sets both keys; `argon` or `flash` sets one.
+const world = ({ gemini = open(2), argon = gemini, flash = gemini, claude = open(3), grok = open(1) } = {}) => ({
+  agy: { installed: true, groups: { argon, flash, claude } },
   grok: { installed: true, groups: { grok } },
 })
 const ask = (model, effort, more = {}) => choose({ pairs, reference: { model, effort }, harnesses: world(), ...more })
@@ -55,6 +56,27 @@ test('E2: a Haiku high call takes the cheapest pair of the quota that renews fir
   const next = ask('haiku', 'high', { harnesses: world({ grok: dry }) })
   assert.equal(pickedId(next), 'agy/gemini-3.8-flash@medium')
   assert.equal(why(next, 'grok/grok-4.7@low'), 'dry')
+})
+
+test('issue 038: a refusal of Argon leaves Flash usable in the choice, and a refusal of Flash leaves Argon, with the pairs of the shipped table', () => {
+  const held = { usable: false, unknown: false, mark: { reason: 'quota refusal' }, resetsAt: at(2) }
+  const alone = { grok: dry, claude: dry }
+  const states = (decision, name) => decision.candidates.filter((c) => c.id.startsWith(`agy/${name}`)).map((c) => c.outcome === 'picked' ? 'picked' : c.why)
+
+  // Only the Gemini window is healthy. Argon is held: Flash medium, the cheapest pair that reaches Haiku high, takes the call.
+  const argonHeld = ask('haiku', 'high', { harnesses: world({ ...alone, argon: held }) })
+  assert.equal(pickedId(argonHeld), 'agy/gemini-3.8-flash@medium')
+  assert.deepEqual(states(argonHeld, 'gemini-4-argon'), ['dry'])
+  assert.ok(!states(argonHeld, 'gemini-3.8-flash').includes('dry'))
+
+  // Flash is held: no Flash pair is a candidate, and Argon takes a call that Flash could not reach anyway.
+  const flashHeld = ask('sonnet', 'xhigh', { harnesses: world({ ...alone, flash: held }) })
+  assert.equal(pickedId(flashHeld), 'agy/gemini-4-argon@high')
+  assert.ok(states(flashHeld, 'gemini-3.8-flash').every((why) => why === 'dry'))
+  assert.equal(pickedId(ask('haiku', 'high', { harnesses: world({ ...alone, flash: held }) })), 'agy/gemini-4-argon@high', 'Flash medium is out, so the cheapest that reaches Haiku high is Argon')
+
+  // Both held: the window is out for both, and with the rest dry nothing leaves Claude.
+  assert.equal(ask('haiku', 'high', { harnesses: world({ ...alone, argon: held, flash: held }) }).picked, null)
 })
 
 test('E3: with only Grok healthy, a Sonnet xhigh call runs native and nothing is asked of the owner', () => {

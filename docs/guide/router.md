@@ -15,7 +15,7 @@ The Lead describes the task and the router decides what it runs on: the model, t
 - **Only the Lead's delegate tasks.** The router looks at the Agent calls of the Lead whose agent is not an `aether:*` one. The swarm keeps the Tier and the ladder of its plan, the design seats and the swarm's calls follow the `superdelegation` rule in [Lanes](lanes.md#lanes), and the `aether:*` agents keep their own model and effort. The Lead's own model is not touched.
 - **The mod does the work.** `plugins/aether/hooks/router.mjs` hooks the Agent tool and talks to `aether-route`, which holds the policy. In a session that is not an Aether session it does nothing.
 - **Any failure leaves the call as the Lead made it.** An exception, a bin that fails or a decision that does not come back never blocks a delegate task.
-- **What was decided can be read.** Every decision goes to a log in the plugin's data directory, and `aether-report --delegates` shows, per delegation, the rung, the reason, the confidence and the quota it spent. A delegate that was tried on more than one pair has one outcome entry per try, numbered by `attempt`, and the report lists them in `attempts`, with the time of all of them added up. An outcome that ran out of time carries `timedOut` and `slowUntil`, the moment its pair comes back (see [Fallback](#fallback)).
+- **What was decided can be read.** Every decision goes to a log in the plugin's data directory, and `aether-report --delegates` shows, per delegation, the rung, the reason, the confidence and the quota it spent. The log records the task's class and the id from the `AETHER-TASK: <id>` line. `aether-report --delegates` lists the editing delegates that ran on Claude without a `no-candidate` entry for their id, with the two paths outside the measure (`aether:*` agents and calls with `ROUTER-OVERRIDE:`). A delegate that was tried on more than one pair has one outcome entry per try, numbered by `attempt`, and the report lists them in `attempts`, with the time of all of them added up. An outcome that ran out of time carries `timedOut` and `slowUntil`, the moment its pair comes back (see [Fallback](#fallback)).
 
 ## Modes
 
@@ -85,7 +85,7 @@ agy's reading is not reliable for its Gemini group: it showed 98 % while the cal
 
 A delegate runs on agy, Grok or Muse only when all of this holds:
 - the mode is `command`, the `superdelegation` option is on and the harness is in the `harnesses` option;
-- the task is read-only: the decider answered that it does not edit files, with enough confidence. A delegate that edits files stays on Claude, because an external delegate works on a copy that is thrown away;
+- the task is read-only: the decider answered that it does not edit files, with enough confidence. A delegate that edits files never goes this way, because an external delegate here works on a copy that is thrown away: with superdelegation on it goes through `aether-lane delegate`, on a unit worktree, and the Lead merges it (see [lanes](lanes.md));
 - the Agent call does not ask for its own worktree with `isolation`, and names no agent of its own: it has no `subagent_type`, or it is `general-purpose` or `Explore`, because an external harness would not get the instructions or the tool limits of a named agent;
 - the checkout has no uncommitted changes, because the delegate works on a copy of the last commit and would answer about older code; otherwise the task runs on Claude and the log says why;
 - the rule above picks a pair.
@@ -96,7 +96,7 @@ The delegate runs in a disposable worktree of the current commit. If it changed 
 
 The effort is the pair's own: the harness gets the effort of the pair the function picked, as the swarm does.
 
-The engine runs a delegate's command with a cap of ten minutes, so an external delegate has 570 seconds in all, and its CLI at most 360 seconds. The limits live in `plugins/aether/lib/delegate-limits.js`. A task that needs longer stays on Claude, through the fallback. The brief every external delegate gets also bounds its work: it may use about 20 tool calls, every read and search counting, and then it answers with the best it has and says what it did not check ([issue 035](../issues/035-grok-at-high-never-finishes-an-audit-it-is-killed-at-420-seconds-and-claude-reruns-it.md)).
+The engine runs a delegate's command with a cap of ten minutes, so an external delegate has 570 seconds in all, and its CLI at most 360 seconds. The limits live in `plugins/aether/lib/delegate-limits.js`. A read-only task that needs longer stays on Claude, through the fallback; an editing delegate runs in the background under the lane limits instead (see [lanes](lanes.md)). The brief every external delegate gets also bounds its work: it may use about 20 tool calls, every read and search counting, and then it answers with the best it has and says what it did not check ([issue 035](../issues/035-grok-at-high-never-finishes-an-audit-it-is-killed-at-420-seconds-and-claude-reruns-it.md)).
 
 ## Fallback
 

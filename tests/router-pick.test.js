@@ -19,6 +19,8 @@ const MIN = 60 * 1000
 const win = (remaining, hours) => ({ remaining, resetsAt: new Date(NOW + hours * H).toISOString() })
 const weekly = (remaining, hours) => ({ windows: { weekly: win(remaining, hours) } })
 const gemini = (remaining, hours) => ({ windows: { '5h': win(1, 5), weekly: win(remaining, hours) } })
+// agy's table has two keys that read the one «Gemini Models» group, so a reading has the same windows for both.
+const geminiKeys = (remaining, hours) => ({ argon: gemini(remaining, hours), flash: gemini(remaining, hours) })
 const agy = (groups, readAt = NOW - 2 * MIN) => ({ readAt, groups })
 const GROK = { readAt: NOW - MIN, groups: { grok: weekly(0.95, 29.6) } }
 
@@ -29,8 +31,8 @@ const PAIRS = [
   claude('sonnet', 'high', 46.8, 0.88),
   claude('opus', 'high', 53.6, 1.82),
   claude('opus', 'xhigh', 56, 3.46),
-  external('agy', 'gemini-3.8-flash', 'medium', 'gemini', 39.8, 0.93),
-  external('agy', 'gemini-4-argon', 'high', 'gemini', 52.6, 1.99),
+  external('agy', 'gemini-3.8-flash', 'medium', 'flash', 39.8, 0.93),
+  external('agy', 'gemini-4-argon', 'high', 'argon', 52.6, 1.99),
   external('agy', 'claude-sonnet-5-5', 'high', 'claude', 46.8, 0.88),
   external('grok', 'grok-4.7', 'high', 'grok', 46.3, 2.73),
   external('muse', 'muse-wonder-full-1.0', 'high', 'muse', 53.6, null, { ownerDecision: 'by the owner' }),
@@ -38,7 +40,7 @@ const PAIRS = [
 const SONNET_HIGH = { model: 'sonnet', effort: 'high' }
 
 // The router's dependencies (lib/route.js resolve) for one decision, with a clock that the wait moves.
-function setup({ readings = { agy: agy({ gemini: gemini(1, 60), claude: weekly(0.9, 40) }), grok: GROK }, marks = [], installed = () => true, pairs = PAIRS, settings = {}, lift = null, slow = undefined } = {}) {
+function setup({ readings = { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK }, marks = [], installed = () => true, pairs = PAIRS, settings = {}, lift = null, slow = undefined } = {}) {
   const clock = { t: NOW }
   const renewed = []
   const lifted = []
@@ -64,7 +66,7 @@ test('the harnesses a delegate may run on are agy, grok and muse, and codex and 
 })
 
 test('the quota that renews first takes the call, at its cheapest pair that reaches the points', async () => {
-  const s = setup({ readings: { agy: agy({ gemini: gemini(1, 60), claude: weekly(0.9, 40) }), grok: GROK } })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK } })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
   assert.equal(idOf(step), 'grok/grok-4.7@high', 'grok renews in 29.6 h, agy in 40 h and 60 h')
   assert.deepEqual(s.renewed, [], 'the readings are valid: nothing is renewed')
@@ -73,18 +75,18 @@ test('the quota that renews first takes the call, at its cheapest pair that reac
   assert.deepEqual(next, ['agy/claude-sonnet-5-5@high', 'agy/gemini-4-argon@high', 'muse/muse-wonder-full-1.0@high'], 'the rest in the order the function gives')
   assert.ok(step.reason.startsWith('grok/grok-4.7@high:'), step.reason)
 
-  const gem = setup({ readings: { agy: agy({ gemini: gemini(0.8, 10), claude: weekly(0.9, 40) }), grok: GROK } })
+  const gem = setup({ readings: { agy: agy({ ...geminiKeys(0.8, 10), claude: weekly(0.9, 40) }), grok: GROK } })
   assert.equal(idOf(await pairStep(gem.d, gem.merged, { reference: SONNET_HIGH })), 'agy/gemini-4-argon@high', 'the Gemini group renews first, in 10 h')
 })
 
 test('the points of the reference decide, not the name of a model: a lower reference lets a cheaper pair in', async () => {
-  const s = setup({ readings: { agy: agy({ gemini: gemini(0.8, 10), claude: weekly(0.9, 40) }), grok: GROK } })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(0.8, 10), claude: weekly(0.9, 40) }), grok: GROK } })
   const step = await pairStep(s.d, s.merged, { reference: { model: 'haiku', effort: 'high' } })
   assert.equal(idOf(step), 'agy/gemini-3.8-flash@medium', '39.8 points reach 37.8 minus one')
 })
 
 test('a group under the reserve is out, and the next quota takes the call', async () => {
-  const s = setup({ readings: { agy: agy({ gemini: gemini(0.8, 10), claude: weekly(0, 1.1) }), grok: { ...GROK, groups: { grok: weekly(0.02, 29.6) } } } })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(0.8, 10), claude: weekly(0, 1.1) }), grok: { ...GROK, groups: { grok: weekly(0.02, 29.6) } } } })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
   assert.equal(idOf(step), 'agy/gemini-4-argon@high')
   const dry = step.quota.filter((c) => c.why === 'dry').map((c) => `${c.harness}/${c.group}`)
@@ -97,7 +99,7 @@ test('Muse takes a call when its quota is the one that renews first, or the only
   assert.equal(idOf(step), 'muse/muse-wonder-full-1.0@high', 'a pair with no cost enters on the owner\'s word, and a harness with no reading is unknown, not dry')
   assert.deepEqual(only.renewed, [], 'Muse has no reading to renew')
 
-  const all = setup({ readings: { agy: agy({ gemini: gemini(1, 60), claude: weekly(0.9, 40) }), grok: GROK, muse: null } })
+  const all = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK, muse: null } })
   const after = await pairStep(all.d, all.merged, { reference: { model: 'opus', effort: 'high' } })
   assert.equal(idOf(after), 'agy/gemini-4-argon@high', 'a quota that renews at a known time goes before one that does not say')
 
@@ -119,7 +121,7 @@ test('a harness that is not enabled or not installed gives nothing, and codex is
 })
 
 test('R23: a harness with no valid reading is renewed once, waited for up to the quota limit, and left out when it is still stale', async () => {
-  const stale = setup({ settings: { harnesses: ['agy', 'grok'] }, readings: { agy: agy({ gemini: gemini(1, 5) }, NOW - 11 * MIN), grok: null } })
+  const stale = setup({ settings: { harnesses: ['agy', 'grok'] }, readings: { agy: agy({ ...geminiKeys(1, 5) }, NOW - 11 * MIN), grok: null } })
   const step = await pairStep(stale.d, stale.merged, { reference: SONNET_HIGH })
   assert.equal(step.pick, null)
   assert.deepEqual(stale.renewed, ['agy', 'grok'])
@@ -130,7 +132,7 @@ test('R23: a harness with no valid reading is renewed once, waited for up to the
   assert.match(step.reason, /no external pair is a candidate|native/)
 
   // Muse, which keeps no reading, is never stale: it takes the call while agy and grok are being renewed.
-  const withMuse = setup({ readings: { agy: agy({ gemini: gemini(1, 5) }, NOW - 11 * MIN), grok: null } })
+  const withMuse = setup({ readings: { agy: agy({ ...geminiKeys(1, 5) }, NOW - 11 * MIN), grok: null } })
   assert.equal(idOf(await pairStep(withMuse.d, withMuse.merged, { reference: SONNET_HIGH })), 'muse/muse-wonder-full-1.0@high')
 
   const short = setup({ readings: { agy: null, grok: null } })
@@ -139,7 +141,7 @@ test('R23: a harness with no valid reading is renewed once, waited for up to the
 })
 
 test('R23: a renewal that lands inside the wait makes the harness a candidate for this very decision', async () => {
-  const s = setup({ readings: () => (s.clock.t > NOW ? { agy: agy({ gemini: gemini(0.8, 10), claude: weekly(0.9, 40) }, NOW), grok: GROK } : { agy: agy({ gemini: gemini(0.8, 10) }, NOW - 11 * MIN), grok: GROK }) })
+  const s = setup({ readings: () => (s.clock.t > NOW ? { agy: agy({ ...geminiKeys(0.8, 10), claude: weekly(0.9, 40) }, NOW), grok: GROK } : { agy: agy({ ...geminiKeys(0.8, 10) }, NOW - 11 * MIN), grok: GROK }) })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
   assert.deepEqual(s.renewed, ['agy'])
   assert.equal(idOf(step), 'agy/gemini-4-argon@high')
@@ -148,7 +150,7 @@ test('R23: a renewal that lands inside the wait makes the harness a candidate fo
 
 test('issue 025: a stale harness that cannot serve the call is not waited for', async () => {
   // Nothing outside Claude reaches 56 points: no reading can change the pick, so the decision does not sit out the limit.
-  const s = setup({ readings: { agy: agy({ gemini: gemini(1, 5) }, NOW - 11 * MIN), grok: null } })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 5) }, NOW - 11 * MIN), grok: null } })
   const step = await pairStep(s.d, s.merged, { reference: { model: 'opus', effort: 'xhigh' } })
   assert.equal(step.pick, null)
   assert.equal(s.clock.t, NOW, 'no wait')
@@ -157,20 +159,20 @@ test('issue 025: a stale harness that cannot serve the call is not waited for', 
 })
 
 test('R22: a mark holds the group although the reading shows balance, a refusal\'s mark is never lifted, and one that came from a reading is', async () => {
-  const refusal = { harness: 'agy', group: 'gemini', at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' }
-  const held = setup({ readings: { agy: agy({ gemini: gemini(0.98, 5), claude: weekly(0.9, 40) }), grok: GROK }, marks: [refusal] })
+  const refusal = { harness: 'agy', group: 'argon', at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' }
+  const held = setup({ readings: { agy: agy({ ...geminiKeys(0.98, 5), claude: weekly(0.9, 40) }), grok: GROK }, marks: [refusal] })
   const step = await pairStep(held.d, held.merged, { reference: SONNET_HIGH })
   assert.equal(idOf(step), 'grok/grok-4.7@high')
-  assert.equal(step.quota.find((c) => c.harness === 'agy' && c.group === 'gemini').why, 'dry')
+  assert.equal(step.quota.find((c) => c.harness === 'agy' && c.group === 'argon').why, 'dry')
   assert.deepEqual(held.lifted, [])
 
-  const fromReading = { harness: 'agy', group: 'gemini', at: NOW - 30 * MIN, until: NOW + 30 * MIN, confirmed: false, source: 'swarm' }
-  const lifting = setup({ readings: { agy: agy({ gemini: gemini(0.98, 5), claude: weekly(0.9, 40) }), grok: GROK }, marks: [fromReading] })
+  const fromReading = { harness: 'agy', group: 'argon', at: NOW - 30 * MIN, until: NOW + 30 * MIN, confirmed: false, source: 'swarm' }
+  const lifting = setup({ readings: { agy: agy({ ...geminiKeys(0.98, 5), claude: weekly(0.9, 40) }), grok: GROK }, marks: [fromReading] })
   const after = await pairStep(lifting.d, lifting.merged, { reference: SONNET_HIGH })
   assert.equal(idOf(after), 'agy/gemini-4-argon@high', 'the fresh healthy reading lifted the mark and the Gemini group renews first')
   assert.deepEqual(lifting.lifted, [fromReading], 'whoever keeps the marks is told')
 
-  const under = setup({ readings: { agy: agy({ gemini: gemini(0.02, 5), claude: weekly(0.9, 40) }), grok: GROK }, marks: [fromReading] })
+  const under = setup({ readings: { agy: agy({ ...geminiKeys(0.02, 5), claude: weekly(0.9, 40) }), grok: GROK }, marks: [fromReading] })
   assert.equal(under.lifted.length, 0)
   await pairStep(under.d, under.merged, { reference: SONNET_HIGH })
   assert.deepEqual(under.lifted, [], 'a reading under the reserve lifts nothing')
@@ -190,7 +192,7 @@ test('every harness of the staleness rule is one the router reads: muse has no r
 })
 
 test('a fresh reading that lacks a group of the table is no whole reading: the harness is renewed, waited for and left out', async () => {
-  for (const [name, reading] of [['a group missing', agy({ gemini: gemini(0.8, 10) })], ['no groups', agy({})], ['groups null', { readAt: NOW - 2 * MIN, groups: null }]]) {
+  for (const [name, reading] of [['a group missing', agy({ ...geminiKeys(0.8, 10) })], ['a saved reading in the shape before issue 038, with the one Gemini key', agy({ gemini: gemini(0.8, 10), claude: weekly(0.9, 40) })], ['no groups', agy({})], ['groups null', { readAt: NOW - 2 * MIN, groups: null }]]) {
     const s = setup({ settings: { harnesses: ['agy', 'grok'] }, readings: { agy: reading, grok: GROK } })
     const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
     assert.equal(idOf(step), 'grok/grok-4.7@high', name)
@@ -246,7 +248,7 @@ test('issue 035: the slow mark is the pair\'s, not the group\'s: the same harnes
 
 test('issue 035: the harnesses that serve are found with the slow pairs excluded too, so a harness left with nothing is not waited for', async () => {
   // Grok has no reading and its only pair is slow: the wait would be for a reading that cannot change the pick.
-  const s = setup({ readings: { agy: agy({ gemini: gemini(1, 60), claude: weekly(0.9, 40) }), grok: null }, slow: () => ['grok/grok-4.7@high'] })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: null }, slow: () => ['grok/grok-4.7@high'] })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
   assert.equal(s.clock.t, NOW, 'no wait')
   assert.deepEqual(s.renewed, ['grok'], 'the renewal still starts, for the next decision')

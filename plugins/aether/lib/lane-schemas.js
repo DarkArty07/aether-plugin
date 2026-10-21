@@ -155,6 +155,43 @@ const TYPE_NAMES = { string: 'a string', number: 'a number', integer: 'an intege
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
+// A value copied so a later change to the copy does not change the schema that was passed in.
+function cloneValue(value) {
+  if (Array.isArray(value)) return value.map((item) => cloneValue(item))
+  if (!isPlainObject(value)) return value
+  const copy = {}
+  for (const [key, item] of Object.entries(value)) copy[key] = cloneValue(item)
+  return copy
+}
+
+// Muse accepts a structured-output schema only in strict form: every object schema says additionalProperties: false and
+// lists every key of its properties under required (a real call refused the Writer's schemas, whose optional keys were
+// not listed). The role schemas stay as written; the copy asks for the optional keys too, and a model with nothing to
+// say gives them empty. An object that already states the keyword is left as it is.
+function strictSchema(schema) {
+  if (Array.isArray(schema)) return schema.map((item) => strictSchema(item))
+  if (!isPlainObject(schema)) return schema
+  const copy = {}
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'properties' && isPlainObject(value)) {
+      const properties = {}
+      for (const [name, sub] of Object.entries(value)) properties[name] = strictSchema(sub)
+      copy.properties = properties
+    } else if (key === 'items') {
+      copy.items = strictSchema(value)
+    } else if ((key === 'anyOf' || key === 'oneOf' || key === 'allOf') && Array.isArray(value)) {
+      copy[key] = value.map((item) => strictSchema(item))
+    } else {
+      copy[key] = cloneValue(value)
+    }
+  }
+  if (copy.type === 'object' && isPlainObject(copy.properties) && !Object.hasOwn(copy, 'additionalProperties')) {
+    copy.additionalProperties = false
+    copy.required = Object.keys(copy.properties)
+  }
+  return copy
+}
+
 // Throws for a keyword the validator does not support, in the schema or in any schema under it.
 function checkKeywords(schema) {
   for (const key of Object.keys(schema)) {
@@ -222,4 +259,4 @@ function validate(schema, value) {
   return problemOf(schema, value, '')
 }
 
-module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA, JUDGE_SCHEMA, WRITER_SCHEMA, SPEC_WRITER_SCHEMA, REVISION_SCHEMA, EXAMINER_SCHEMA, validate }
+module.exports = { IMPLEMENTER_SCHEMA, SUPERVISOR_SCHEMA, REVIEW_SCHEMA, JUDGE_SCHEMA, WRITER_SCHEMA, SPEC_WRITER_SCHEMA, REVISION_SCHEMA, EXAMINER_SCHEMA, validate, strictSchema }

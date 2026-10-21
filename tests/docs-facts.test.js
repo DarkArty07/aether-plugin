@@ -543,9 +543,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A68 are recorded and the changelog opens with 0.14.3 and its handoff', () => {
+test('R15: the decisions A50 to A72 are recorded and the changelog opens with 0.15.0 and its handoff', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 68
+  const LAST_DECISION = 72
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -553,10 +553,14 @@ test('R15: the decisions A50 to A68 are recorded and the changelog opens with 0.
   assert.ok(/router/i.test(line(66)) && /Muse/.test(line(66)))
   assert.ok(/refused at its start/.test(line(67)) && /next ranked candidate/.test(line(67)))
   assert.ok(/ran out of time/.test(line(68)) && /internal error/.test(line(68)))
+  assert.ok(/`argon`/.test(line(69)) && /`flash`/.test(line(69)))
+  assert.ok(/Muse/.test(line(70)) && /next pair/.test(line(70)))
+  assert.ok(/next pair/.test(line(71)) && /final review/.test(line(71)))
+  assert.ok(/aether-lane delegate/.test(line(72)) && /edits files/.test(line(72)))
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.14.3: ') && first.includes('handoff/2026-10-21-delegate-time-limits-0.14.3.md'), first)
+  assert.ok(first.startsWith('Version 0.15.0: ') && first.includes('handoff/2026-10-21-delegates-that-edit-0.15.0.md'), first)
 })
 
 // ---- R21: the retired profiles and variables

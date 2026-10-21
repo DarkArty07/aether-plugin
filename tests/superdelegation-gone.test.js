@@ -71,12 +71,12 @@ test('R20: the lane table has no hand-written level map', () => {
   assert.equal(Object.hasOwn(config, 'designSeats'), false)
 })
 
-test('R19: the swarm, the design and the router all reach the one choice function, and none has a rule of its own', () => {
+test('R19: the swarm, the design, the router and the editing delegates all reach the one choice function, and none has a rule of its own', () => {
   const lanePick = text.get(path.join(ROOT, 'plugins/aether/lib/lane-pick.js'))
   const seats = text.get(path.join(ROOT, 'plugins/aether/lib/seats.js'))
   assert.match(lanePick, /require\('\.\/superdelegation\.js'\)/)
   assert.match(seats, /require\('\.\/superdelegation\.js'\)/)
   assert.match(text.get(path.join(ROOT, 'plugins/aether/lib/router-pick.js')), /require\('\.\/superdelegation\.js'\)/)
   const callers = found(/\bchoose\(/).filter((file) => file.startsWith('plugins/'))
-  assert.deepEqual(callers.sort(), ['plugins/aether/lib/lane-pick.js', 'plugins/aether/lib/router-pick.js', 'plugins/aether/lib/seats.js', 'plugins/aether/lib/superdelegation.js'])
+  assert.deepEqual(callers.sort(), ['plugins/aether/lib/lane-delegate.js', 'plugins/aether/lib/lane-pick.js', 'plugins/aether/lib/router-pick.js', 'plugins/aether/lib/seats.js', 'plugins/aether/lib/superdelegation.js'])
 })

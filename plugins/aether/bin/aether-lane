@@ -13,15 +13,17 @@
 //   reference pair and the quotas of the enabled harnesses; logs the choice and starts nothing)
 // aether-lane took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|wait-limit|failed>
 //   (logs who ran the call and why)
+// aether-lane delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--session <id>]
+//   (no run: a loose editing charge on an external pair, in its own one-unit run; prints its result, merges nothing)
 // aether-lane pause --seconds <1 to 120>   (no run: waits, so that the workflow can poll for a free place)
 // aether-lane quota [<harness>...] [--refresh] [--json]   (no run: each harness's quota as text, or as JSON;
 //   --refresh first asks grok over ACP for a new reading, and opens its UI for a few seconds, with no prompt,
 //   only if that gives none)
-// aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--feature specs/NNN-<topic>] [--cwd <dir>]
+// aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--exclude <id>[,<id>...]] [--feature specs/NNN-<topic>] [--cwd <dir>]
 //   (the message on stdin; exit 0 an external answer, 3 the native agent takes the round, 4 the external round
 //   failed and was undone, 1 the command broke)
 // aether-lane seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>]
-//   --superdelegation <on|off> --harnesses <h1,h2> --digest <digest>
+//   --superdelegation <on|off> --harnesses <h1,h2> [--exclude <id>[,<id>...]] --digest <digest>
 //   (the same round as seat, in the background: the message is the file the mod saved at <checkout>/.aether-tmp/seats/<session>/message.md,
 //   and the options come in flags because the mod's bins have none of the session's exports; prints { started, id },
 //   or { unavailable: message | digest } when the file is missing or is not the one the digest names)
@@ -37,6 +39,7 @@ const seats = require(path.join(__dirname, '..', 'lib', 'seats.js'))
 const seatCalls = require(path.join(__dirname, '..', 'lib', 'seat-calls.js'))
 const quota = require(path.join(__dirname, '..', 'lib', 'lane-quota.js'))
 const pick = require(path.join(__dirname, '..', 'lib', 'lane-pick.js'))
+const delegate = require(path.join(__dirname, '..', 'lib', 'lane-delegate.js'))
 
 // Each command's usage. <run>, and <call> where it is not in brackets, are required.
 const COMMANDS = {
@@ -49,7 +52,7 @@ const COMMANDS = {
   took: 'took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|wait-limit|failed>',
 }
 const PAUSE_USAGE = 'pause --seconds <1 to 120>'
-const USAGE = `usage: aether-lane ${[...Object.values(COMMANDS), PAUSE_USAGE, quota.USAGE].join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')} | ${Object.values(seatCalls.COMMANDS).join(' | ')}`
+const USAGE = `usage: aether-lane ${[...Object.values(COMMANDS), delegate.DELEGATE_USAGE, PAUSE_USAGE, quota.USAGE].join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')} | ${Object.values(seatCalls.COMMANDS).join(' | ')}`
 
 // Throws the command's own usage when an argument it requires is missing.
 function requireArgs(verb, runId, call) {
@@ -145,6 +148,10 @@ async function main() {
   }
   if (argv[0] === 'quota') {
     process.stdout.write(await quota.quotaCommand(argv.slice(1)))
+    return
+  }
+  if (argv[0] === 'delegate') {
+    process.stdout.write(`${JSON.stringify(await delegate.delegateCommand(process.cwd(), flags(argv.slice(1))))}\n`)
     return
   }
   if (argv[0] === 'pause') {

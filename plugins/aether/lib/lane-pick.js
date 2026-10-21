@@ -17,7 +17,7 @@ const { choose } = require('./superdelegation.js')
 const { peekReadings, staleHarnesses, readingFile } = require('./router-quota.js')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 
-const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review)$/
+const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review(-slice-\d+)?)$/
 const ROLES = ['implementer', 'supervisor', 'reviewer']
 const MODELS = pairs.NATIVE_MODELS
 const PAIR_ID = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(low|medium|high|xhigh|max)$/
@@ -187,4 +187,4 @@ async function pauseCommand(seconds, { sleep = wait } = {}) {
   return { paused: count }
 }
 
-module.exports = { harnessViews, latestReadings, pickCommand, tookCommand, pauseCommand }
+module.exports = { harnessViews, latestReadings, pickCommand, tookCommand, pauseCommand, CALL }
