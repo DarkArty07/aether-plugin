@@ -6,6 +6,7 @@ const path = require('node:path')
 const fs = require('node:fs')
 const { PLUGIN, runBin, tempDir } = require('./helpers.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
+const marks = require('../plugins/aether/lib/lane-marks.js')
 const { latestReadings } = require('../plugins/aether/lib/lane-pick.js')
 const { readingFile } = require('../plugins/aether/lib/router-quota.js')
 const fx = require('./lane-fixtures.js')
@@ -39,6 +40,30 @@ test('pick gives the pair of the quota that renews first, asks the points of the
   assert.equal(typeof entry.reason, 'string')
   assert.ok(Array.isArray(entry.candidates) && entry.candidates.every((c) => c.id && c.outcome))
   assert.equal(pick(args, agyEnv(t, { quota: geminiFirst }), SONNET_XHIGH).json.picked.id, 'agy/gemini-4-argon@high')
+})
+
+test('issue 038: a refusal of Argon leaves the Flash pairs to the swarm, and a refusal of Flash leaves Argon, though both read the one Gemini window', (t) => {
+  const { args } = fx.laneRun(t)
+  const HAIKU_HIGH = ['--role', 'implementer', '--model', 'haiku', '--effort', 'high']
+  const refused = (env, group) => marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group, reserve: 0.05, now: Date.now() - 5 * 60 * 1000, refusal: { resetMs: 135 * HOUR } })
+  const states = (r) => Object.fromEntries(r.json.candidates.filter((c) => c.id.startsWith('agy/gemini')).map((c) => [c.id, c.why]))
+
+  assert.equal(pick(args, agyEnv(t, { quota: geminiFirst }), HAIKU_HIGH).json.picked.id, 'agy/gemini-3.8-flash@medium', 'with no mark, Flash is the cheapest pair of the Gemini window')
+
+  const argon = agyEnv(t, { quota: geminiFirst })
+  refused(argon, 'argon')
+  const flash = pick(args, argon, HAIKU_HIGH)
+  assert.equal(flash.status, 0, flash.stdout + flash.stderr)
+  assert.equal(flash.json.picked.id, 'agy/gemini-3.8-flash@medium')
+  assert.equal(states(flash)['agy/gemini-4-argon@high'], 'dry')
+  assert.ok(Object.entries(states(flash)).filter(([id]) => id.includes('flash')).every(([, why]) => why !== 'dry'))
+
+  const other = agyEnv(t, { quota: geminiFirst })
+  refused(other, 'flash')
+  const kept = pick(args, other, HAIKU_HIGH)
+  assert.equal(kept.json.picked.id, 'agy/gemini-4-argon@high')
+  assert.ok(Object.entries(states(kept)).filter(([id]) => id.includes('flash')).every(([, why]) => why === 'dry'))
+  assert.notEqual(states(kept)['agy/gemini-4-argon@high'], 'dry')
 })
 
 test('pick with every quota dry gives no pair and the native pair of the reference, and logs it', (t) => {
