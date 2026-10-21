@@ -3,7 +3,7 @@
 - **Date:** 2026-10-21. It follows [the 0.15.0 handoff](2026-10-21-delegates-that-edit-0.15.0.md), whose section 3 says why the brake was needed.
 - **From:** the Lead, Claude Code on Sonnet 5.5, in the same long session, working autonomously on «Comienza a trabajar automáticamente en el freno».
 - **To:** the next session.
-- **Repository state:** built on the branch `feat/quota-brake` (worktree `.worktrees/quota-brake`), from `main` after 0.15.0. Nothing of it is merged, tagged, pushed or installed: it waits for the owner's word.
+- **Repository state:** published. `feat/quota-brake` was merged into `main`, tagged `aether--v0.16.0`, pushed and installed on the owner's word («publlica limpia y mandalo a local»), and its worktree and branch were deleted.
 
 ## 1. What was asked
 
@@ -44,11 +44,11 @@ export function register(on) {
 ## 4. Open
 
 - The minor findings of the final reviews (seven in the last, in `.aether/runs/20261021-140811-3594/result.json`).
-- Cleanup: the worktree `.worktrees/quota-brake` and its branch stay until the release.
+- Cleanup: done. The runs of the swarm stay in `.aether/runs/` (not finalized, so their reviews' findings can still be read).
 
 ## 5. Release
 
-Version 0.16.0 is in the four places the contributing guide names, with the roadmap and the badge. **It waits for the owner's word:** merge to `main`, tag `aether--v0.16.0`, push, `claude plugin update aether@aether-plugin`.
+Published on 2026-10-21 as 0.16.0. The installed plugin is 0.16.0; a session started before the update still runs the old one, so open a new one to get the brake. The grants for the merge, the push, the tag and the deletion were session grants from the owner's words above, and are revoked.
 
 ## 6. What the next session has to watch
 
