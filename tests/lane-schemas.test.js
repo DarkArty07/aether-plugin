@@ -33,7 +33,7 @@ function objectSchemas(schema, found = []) {
   return found
 }
 
-test('strictSchema closes a nested object in properties and in an array item, and keeps required, enum and description', () => {
+test('strictSchema closes a nested object in properties and in an array item, lists every property under required, and keeps enum and description', () => {
   const schema = {
     type: 'object',
     description: 'the answer',
@@ -77,8 +77,9 @@ test('strictSchema closes a nested object in properties and in an array item, an
   assert.equal(strict.properties.choice.anyOf[1].additionalProperties, undefined)
   assert.equal(strict.properties.choice.oneOf[0].additionalProperties, false)
   assert.equal(strict.properties.choice.allOf[0].additionalProperties, false)
-  assert.deepEqual(strict.required, ['name', 'tags'])
+  assert.deepEqual(strict.required, Object.keys(schema.properties))
   assert.deepEqual(strict.properties.nested.required, ['id'])
+  assert.deepEqual(strict.properties.empty.required, Object.keys(schema.properties.empty.properties))
   assert.deepEqual(strict.properties.tags.items.required, ['label'])
   assert.deepEqual(strict.properties.name.enum, ['a', 'b'])
   assert.equal(strict.description, 'the answer')
@@ -112,7 +113,7 @@ test('strictSchema leaves an explicit additionalProperties alone and does not mu
   assert.notEqual(strict.properties.open.properties.n.enum, schema.properties.open.properties.n.enum)
 })
 
-test('every role schema comes out with additionalProperties false on every object and the same required lists', () => {
+test('every role schema comes out with additionalProperties false on every object and every property required, the optional ones included (a real Muse call refused the Writer schemas without them)', () => {
   for (const name of ROLE_SCHEMAS) {
     const schema = schemas[name]
     const snapshot = structuredClone(schema)
@@ -123,7 +124,8 @@ test('every role schema comes out with additionalProperties false on every objec
     assert.equal(copies.length, originals.length, name)
     for (let i = 0; i < copies.length; i++) {
       assert.equal(copies[i].additionalProperties, false, `${name} [${i}]`)
-      assert.deepEqual(copies[i].required, originals[i].required, `${name} [${i}] required`)
+      assert.deepEqual(copies[i].required, Object.keys(originals[i].properties), `${name} [${i}] required`)
+      for (const key of originals[i].required ?? []) assert.ok(copies[i].required.includes(key), `${name} [${i}] keeps ${key} required`)
     }
     assert.equal(schema.additionalProperties, undefined, name)
     assert.deepEqual(schema, snapshot, name)

@@ -164,8 +164,10 @@ function cloneValue(value) {
   return copy
 }
 
-// Muse accepts a structured-output schema only when every object schema says additionalProperties: false.
-// The role schemas stay as written; an object that already states the keyword is left as it is.
+// Muse accepts a structured-output schema only in strict form: every object schema says additionalProperties: false and
+// lists every key of its properties under required (a real call refused the Writer's schemas, whose optional keys were
+// not listed). The role schemas stay as written; the copy asks for the optional keys too, and a model with nothing to
+// say gives them empty. An object that already states the keyword is left as it is.
 function strictSchema(schema) {
   if (Array.isArray(schema)) return schema.map((item) => strictSchema(item))
   if (!isPlainObject(schema)) return schema
@@ -185,6 +187,7 @@ function strictSchema(schema) {
   }
   if (copy.type === 'object' && isPlainObject(copy.properties) && !Object.hasOwn(copy, 'additionalProperties')) {
     copy.additionalProperties = false
+    copy.required = Object.keys(copy.properties)
   }
   return copy
 }
