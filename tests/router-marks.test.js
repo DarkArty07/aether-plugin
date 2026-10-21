@@ -91,3 +91,17 @@ test('the module never writes the swarm store or calls markDry (R9, R22)', () =>
   const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'router-marks.js'), 'utf8')
   assert.ok(!/markDry/.test(source))
 })
+
+test('a quota failure that a harness declares itself, as Muse\'s, leaves the same 60 minute mark, and the words of any other message do not', (t) => {
+  const dataDir = tempDir(t)
+  const mark = marks.markRefusal(dataDir, { harness: 'muse', group: 'muse', text: 'quota: muse weekly limit, resets 2026-10-22T10:00:00.000Z', now: NOW })
+  assert.equal(mark.until, NOW + 60 * MIN)
+  assert.equal(mark.statedResetMs, null)
+  assert.equal(laneMarks.liveMark(path.join(dataDir, 'router'), 'muse', 'muse', NOW + MIN).harness, 'muse')
+  assert.equal(fs.existsSync(path.join(dataDir, 'lanes', 'marks')), false, 'the swarm store is not written')
+  const other = tempDir(t)
+  for (const text of ['the quota of muse group muse cannot be read', 'muse is at or under the reserve', 'exit 1: quota exceeded somewhere', 'failed: quota: not at the start']) {
+    assert.equal(marks.markRefusal(other, { harness: 'muse', group: 'muse', text, now: NOW }), null, text)
+  }
+  assert.equal(fs.existsSync(path.join(other, 'router')), false)
+})

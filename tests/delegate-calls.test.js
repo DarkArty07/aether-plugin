@@ -157,6 +157,35 @@ test('a harness that is not installed or has no such model is unavailable, with 
   assert.equal(t2.modelCalls().length, 0)
 })
 
+test('a read-only delegate runs on muse with the model of the pair, and its answer comes back', async (t) => {
+  const s = setup(t)
+  const fake = path.join(__dirname, 'fixtures', 'fake-muse.js')
+  fs.chmodSync(fake, 0o755)
+  s.config.harnesses.muse.command = fake
+  const record = (type, payload) => JSON.stringify({ schema_version: 1, id: 'id-1', stream: { kind: 'session', id: 's1' }, sequence: 1, recorded_at: 1, record_type: 'event', durability: 'durable', causation_id: 'c1', payload_type: type, payload_schema_version: 1, payload })
+  const answer = JSON.stringify({ answer: 'found 3 callers' })
+  const keep = { script: process.env.AETHER_FAKE_MUSE_SCRIPT, log: process.env.AETHER_FAKE_MUSE_LOG }
+  process.env.AETHER_FAKE_MUSE_SCRIPT = JSON.stringify({ stdout: `${record('run.terminal.completed', { kind: 'run_terminal', terminal: 'completed', reason: null, text: answer })}\n` })
+  process.env.AETHER_FAKE_MUSE_LOG = path.join(path.dirname(s.dataDir), 'muse.log')
+  t.after(() => {
+    for (const [key, value] of [['AETHER_FAKE_MUSE_SCRIPT', keep.script], ['AETHER_FAKE_MUSE_LOG', keep.log]]) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  const head = s.repo.git('rev-parse', 'HEAD')
+  const out = await run(s, 'List the callers of fetchUser.', { harness: 'muse', rung: { model: 'muse-wonder-full-1.0', effort: 'high', group: 'muse' } })
+  assert.equal(out.status, 'ok', out.detail)
+  assert.equal(out.text, 'found 3 callers')
+  assert.equal(out.harness, 'muse')
+  const [call] = fs.readFileSync(process.env.AETHER_FAKE_MUSE_LOG, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  assert.ok(call.argv.includes('muse-wonder-full-1.0'), call.argv.join(' '))
+  assert.equal(call.metaApiKey, false, 'no key of the owner reaches the call')
+  assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', 'd-1', 'wt')), 'in the disposable worktree')
+  assert.equal(s.repo.git('rev-parse', 'HEAD'), head)
+  assert.equal(worktrees(s), 1, 'the disposable worktree is gone')
+})
+
 test('the id must be a plain name', async (t) => {
   const s = setup(t)
   await assert.rejects(run(s, 'Audit.', { id: '../escape' }), /id/)

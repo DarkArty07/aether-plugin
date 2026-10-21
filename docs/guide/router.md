@@ -1,6 +1,6 @@
 ---
 title: Delegate router
-description: How the router picks the model, the effort and the harness of the Lead's delegate tasks, its three modes, the criterion, the quota rule, and what can and cannot be done as asked
+description: How the router picks the model, the effort and the harness of the Lead's delegate tasks, its three modes, the criterion, the one rule that picks an external pair, and what can and cannot be done as asked
 order: 7
 ---
 
@@ -19,7 +19,7 @@ The Lead describes the task and the router decides what it runs on: the model, t
 
 ## Modes
 
-The `router` option has three modes, and `record` is the one it ships with. Set it at install with `--config router=command`, or later in `/plugin` → Installed → aether → Configure options (see [Options](options.md#options)).
+The `router` option has three modes. The default is `auto`: with `superdelegation` on the mode is `command`, and with it off it is `record`, so nobody has to choose one, and a mode you set holds either way. Set it at install with `--config router=command`, or later in `/plugin` → Installed → aether → Configure options (see [Options](options.md#options)).
 
 | Mode | The decider | The delegate task |
 |---|---|---|
@@ -27,7 +27,7 @@ The `router` option has three modes, and `record` is the one it ships with. Set 
 | `advise` | The launch waits for it, up to its limit | Runs as the Lead sent it. The Lead is told what the router would have chosen |
 | `command` | The launch waits for it, up to its limit | Runs on the model and effort the router chose, and the Lead is told which. A read-only task may run on another harness |
 
-Use `record` for a while, read what it would have done (see [The criterion](#the-criterion)), and move to `advise` and then to `command` when you trust it.
+With `superdelegation` off, use `record` for a while, read what it would have done (see [The criterion](#the-criterion)), and move to `advise` and then to `command` when you trust it.
 
 - **The decider.** The `decider` option picks who answers the questions: `haiku`, which runs Claude Haiku at low effort with no outside service, or `jev`, which calls typesafe/jev-1.14 on OpenRouter and sends each delegate brief to a third party. Jev answers a yes/no question with the probability alone, so the router takes how far it is from a coin flip, `|2p - 1|`, as its confidence: a task is read-only with Jev when the probability that it edits files is 0.25 or less ([issue 024](../issues/024-jev-answers-to-yes-no-questions-have-no-confidence-and-every-jev-reply-was-unreadable.md)). Its key is read from the environment or from the `.env` of the data directory.
 - **The limits.** The `deadlines` option sets how long the router waits, in seconds, for each decider and for the quota decision. A value above 10 counts as 10. In `record` nothing waits.
@@ -62,44 +62,39 @@ A level is measured capability, not a name. Artificial Analysis measures each mo
 
 The bands are cut at a score per axis, with no overlap: the cut-offs are 37.5, 45 and 55 for the general axis, and 0.18, 0.35 and 0.58 for the code axis. A score equal to a cut-off goes to the upper level. The two axes can disagree for one rung: a model can be B in general and A in code.
 
-The router keeps its own table, apart from the pairs of `superdelegation`. A pair asks for the intelligence points of its Claude reference pair, one axis; the router's rungs measure two.
+The router keeps its own table of rungs to decide how strong a task has to be, and it gives a Claude rung: the one the call would run on. Where an external pair takes the task is not decided by that table but by the pairs of `superdelegation`, which measure one axis (see [Quota](#quota)).
 
-Some rungs are not measured on this harness, and an unmeasured rung serves no level:
-- agy's own Sonnet 5.5 and Opus 5.5 carry Claude's names, and Artificial Analysis measured those names through the native API, not through agy.
-- Some efforts have no score at all, such as Grok's `medium`.
-- A model the lane table does not offer to implementers, such as Gemini 4 Argon, is not eligible.
-
-The router picks, among the eligible measured rungs of a harness at or above the level, the lowest level first, then the lowest price, then the lowest effort. The effort is translated by the level of the rung, so the same word does not mean the same on every model.
+An unmeasured rung serves no level. The router picks the Claude rung of the decided level: the rung the Lead asked for when the criterion decides exactly that level, and otherwise the cheapest Claude rung of the level.
 
 ## Quota
 
-For a read-only task the router may send the delegate to agy or Grok. The rule is the owner's: the group whose weekly window renews first is used first, among the groups over the reserve of 5 % that have a valid reading and no mark. What is not spent before the reset is lost.
+For a read-only task the router sends the delegate to another harness with the rule of `superdelegation`, the same function the swarm and the design seats ask (see [Lanes](lanes.md#lanes)). The router gives it the Claude rung the call would run on, and the function answers with the external pair that reaches the points of that rung, one point less at most. Among the pairs that do, the quota whose weekly window renews first goes first, and inside it the pair with the lowest cost per task. Speed decides nothing. What is not spent before the reset is lost.
 
+- **Agy, Grok and Muse.** The router may send a delegate to any of them that is in the `harnesses` option. Codex and Cursor cannot run a delegate.
 - **The reserve.** A group with a window under 5 % left is left out.
-- **A valid reading.** A reading counts while it is within its life: 10 minutes for agy, whose reading launches a process, and 30 minutes for the Grok log line, and never past a window reset that came after the reading. A group without a valid reading is left out of that decision.
-- **Renewing a reading.** A missing or expired reading is renewed, and a decision in `advise` or `command` waits for it up to the quota limit (3 seconds by default); in `record` nothing waits. The renewal is a step of the router itself, `aether-route renew`, that saves its reading in the router's own data directory, because the lane code does not save Grok's. Measured: Grok's takes 0.7 seconds and fits in the limit; agy's takes 5 seconds and never does, so while agy is among the `harnesses` a read-only decision with an expired agy reading waits the whole limit and agy stays out of it ([issue 025](../issues/025-command-waits-3-seconds-for-an-agy-reading-that-takes-5-and-agy-cannot-serve-the-task.md)).
+- **A valid reading.** A reading counts while it is within its life: 10 minutes for agy, whose reading launches a process, and 30 minutes for the Grok log line, and never past a window reset that came after the reading. A harness without a valid reading is left out of that decision. Muse keeps no reading to expire: its last allowance counts, and a Muse that has never been called is unknown, not dry.
+- **Renewing a reading.** A missing or expired reading of agy or Grok is renewed, and a decision in `advise` or `command` waits for it up to the quota limit (3 seconds by default), but only for a harness that has a pair able to take the task; in `record` nothing waits. The renewal is a step of the router itself, `aether-route renew`, that saves its reading in the router's own data directory, because the lane code does not save Grok's. Measured: Grok's takes 0.7 seconds and fits in the limit; agy's takes 5 seconds and never does, so while agy is among the `harnesses` a read-only decision with an expired agy reading waits the whole limit and agy stays out of it ([issue 025](../issues/025-command-waits-3-seconds-for-an-agy-reading-that-takes-5-and-agy-cannot-serve-the-task.md)). Muse's pair enters meanwhile.
 - **A mark.** A reading with a balance does not lift the mark of a refusal, because agy's `/usage` does not show its individual limits; a mark that came from a reading is lifted when a fresh reading of its group, taken after the mark, shows every window above the reserve (decision A60), and the router then removes its file. The explicit refusal of agy, "Individual quota reached", leaves a mark of the router's own for 60 minutes, whatever reset the refusal says: agy's stated reset was wrong once, and a refused call costs no tokens, so the group is tried again every hour. The reset is kept in the mark as stated. The router reads the swarm's marks too, and writes only its own.
-- **Ties.** Among groups that renew at the same time, the one with more balance goes first, then the order of the table.
+- **No pair reaches the points.** The task runs on Claude, on the rung the router decided. A task that needs more than any external pair gives, such as Opus at `xhigh`, never leaves.
 
-To see the readings the router would use, and the delegations it has decided, inside Claude Code, open the [`/harnesses` panel](lanes.md#the-harnesses-panel) in an Aether session: it shows each harness's quota groups with their status, and the five newest delegations of the log.
-- **One quota rule.** `superdelegation` orders the quotas of its candidates the same way: the weekly window that renews first, then the cost per task of the pair (see [Lanes](lanes.md#lanes)). The router breaks a tie by balance instead, because it has no cost per task for a rung. The A49 order, the balance per hour left, no longer applies to the swarm.
+To see the readings the router would use, and the delegations it has decided, inside Claude Code, open the [`/harnesses` panel](lanes.md#the-harnesses-panel) in an Aether session: it shows each harness's quota groups with their status, and the five newest delegations of the log. Each decision keeps, in the log, the candidates of the function with the reason each one did not take the call.
 
 agy's reading is not reliable for its Gemini group: it showed 98 % while the calls were refused with "Individual quota reached", because `/usage` does not report the individual limits. The truth is the refusal, and the router, the swarm and the design seats all leave a mark of it ([issue 021](../issues/021-agy-refuses-with-individual-quota-reached-while-usage-shows-balance.md), decision A60).
 
 ## Other harnesses
 
-A delegate runs on agy or Grok only when all of this holds:
+A delegate runs on agy, Grok or Muse only when all of this holds:
 - the mode is `command`, the `superdelegation` option is on and the harness is in the `harnesses` option;
-- the task is read-only: the decider answered that it does not edit files, with enough confidence;
-- the Agent call does not ask for its own worktree with `isolation`, and names no agent of its own: it has no `subagent_type`, or it is `general-purpose` or `Explore`, because agy and Grok would not get the instructions or the tool limits of a named agent;
+- the task is read-only: the decider answered that it does not edit files, with enough confidence. A delegate that edits files stays on Claude, because an external delegate works on a copy that is thrown away;
+- the Agent call does not ask for its own worktree with `isolation`, and names no agent of its own: it has no `subagent_type`, or it is `general-purpose` or `Explore`, because an external harness would not get the instructions or the tool limits of a named agent;
 - the checkout has no uncommitted changes, because the delegate works on a copy of the last commit and would answer about older code; otherwise the task runs on Claude and the log says why;
-- the quota rule above picks a group that has a rung at the level.
+- the rule above picks a pair.
 
-Grok is used only when `grok` is among the `harnesses`; the option ships with `agy` alone. A real read-only delegate has run on Grok 4.7 at low effort this way: the router picked it because its weekly window renews first, the engine ran the delegate in a disposable worktree, and the Lead got its answer as the agent's.
+Grok and Muse are used only when they are among the `harnesses`; the option ships with `agy` alone. A real read-only delegate has run on Grok 4.7 this way: the router picked it because its weekly window renews first, the engine ran the delegate in a disposable worktree, and the Lead got its answer as the agent's.
 
 The delegate runs in a disposable worktree of the current commit. If it changed anything there, its answer is undone. That check covers the copy only: a delegate that follows an absolute path into your checkout is not caught (see Containment in [Lanes](lanes.md#lanes)). The mod hands the Lead the delegate's text as the agent's answer, with no model request. The answer starts with a line that names the model, the effort and the harness, and says why Claude Code lists no tool uses or tokens for it. Codex and Cursor are not used by the router.
 
-The effort is native. The router sends the harness's own effort to the CLI, and the pairs of `superdelegation` play no part in it.
+The effort is the pair's own: the harness gets the effort of the pair the function picked, as the swarm does.
 
 The engine runs a delegate's command with a cap of ten minutes, so an external delegate has 570 seconds in all, and its CLI at most 360 seconds. The limits live in `plugins/aether/lib/delegate-limits.js`. A task that needs longer stays on Claude, through the fallback.
 
@@ -108,8 +103,8 @@ The engine runs a delegate's command with a cap of ten minutes, so an external d
 The router always has Claude to go back to, and never asks the owner.
 
 - **The decider fails.** In `command` the call keeps the model and effort the Lead asked for, and the `fallback` option (`sonnet:high` unless you change it) when the Lead asked for none. In `record` and `advise` nothing is rewritten.
-- **An external delegate fails,** for any reason, including a quota refusal or the time limit. The agent runs on Claude, at the Claude rung of the same level that the router put on the call.
-- **No harness can serve the level.** The task runs on Claude at that level.
+- **An external delegate fails,** for any reason, including a quota refusal or the time limit. The agent runs on Claude, on the rung the call would have run on, which is also the reference of the pair that failed.
+- **No pair can take the task.** The task runs on Claude, on the rung the router decided.
 - **A quota refusal** also leaves a mark, so the next decision does not try that group again for 60 minutes.
 - **The router itself fails.** An internal error leaves the call as the Lead made it, and writes a decision entry whose fallback reads `internal: …`, so the report counts it and you can see that the router is broken.
 

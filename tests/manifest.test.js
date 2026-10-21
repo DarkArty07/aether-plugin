@@ -49,9 +49,9 @@ test('the manifest has no dependencies, and declares the superdelegation, harnes
       type: 'string',
       title: 'Delegate router',
       description:
-        "Who chooses the model and effort of the Lead's delegate tasks: record (the Lead chooses, and Aether records what the decider would have chosen, in the background), advise (the Lead also gets the decider's choice as a notice) or command (the decider chooses, unless the Lead overrides it with a reason). It applies only to the Lead's delegate tasks, never to the swarm, the design seats or the aether agents. Default: record.",
-      default: 'record',
-      options: ['record', 'advise', 'command'],
+        "Who chooses the model and effort of the Lead's delegate tasks: record (the Lead chooses, and Aether records what the decider would have chosen, in the background), advise (the Lead also gets the decider's choice as a notice) or command (the decider chooses, unless the Lead overrides it with a reason). It applies only to the Lead's delegate tasks, never to the swarm, the design seats or the aether agents. Default: auto, which is command with superdelegation on and record with it off.",
+      default: 'auto',
+      options: ['auto', 'record', 'advise', 'command'],
     },
     decider: {
       type: 'string',
@@ -80,7 +80,7 @@ test('the manifest has no dependencies, and declares the superdelegation, harnes
     type: 'boolean',
     title: 'Superdelegation',
     description:
-      "Send everything that is not the Lead to other harnesses (agy, grok, ...) while their quota lasts; native Claude is the fallback. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options.",
+      "Send everything that is not the Lead to other harnesses (agy, grok, muse, ...) while their quota lasts; native Claude is the fallback. It covers the swarm, the design seats and the Lead's delegate tasks that only read; a delegate task that edits files stays on Claude. The router chooses where each delegate runs, as command unless you set router. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options.",
   })
   assert.deepEqual(lanes, {
     type: 'boolean',

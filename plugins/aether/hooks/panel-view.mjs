@@ -110,7 +110,7 @@ export function settingsOf(options) {
   const on = superdelegation === 'true' || superdelegation === 'false' ? superdelegation === 'true' : String(given.lanes) === 'true'
   return {
     lanes: on,
-    router: ROUTER_MODES.includes(given.router) ? given.router : 'record',
+    router: ROUTER_MODES.includes(given.router) ? given.router : (on ? 'command' : 'record'),
     decider: ROUTER_DECIDERS.includes(given.decider) ? given.decider : 'haiku',
     harnesses: harnesses.length > 0 ? harnesses : ['agy'],
   }

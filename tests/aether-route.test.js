@@ -194,7 +194,7 @@ test('spawn appends the link between a delegation and the agent that ran it, and
   assert.equal(typeof lost.json.error, 'string')
 })
 
-test('scenario 20: a refusal the router saw leaves its mark, and the next decision sends nothing to that group (R22, R22b)', (t) => {
+test('scenario 20: a refusal the router saw leaves its mark, and the next decision sends nothing to that group, only to the other (R22, R22b)', (t) => {
   const lane = laneEnv(t)
   const repo = makeRepo(t)
   const dataDir = lane.AETHER_DATA_DIR
@@ -204,7 +204,7 @@ test('scenario 20: a refusal the router saw leaves its mark, and the next decisi
   const win = (remaining, hours) => ({ remaining, resetsAt: new Date(now + hours * 3600 * 1000).toISOString() })
   const file = readings.cacheFile(dataDir, 'agy')
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, JSON.stringify({ harness: 'agy', readAt: now, groups: { gemini: { windows: { '5h': win(0.98, 5), weekly: win(0.98, 60) } }, claude: { windows: { weekly: win(0.9, 40) } } } }))
+  fs.writeFileSync(file, JSON.stringify({ harness: 'agy', readAt: now, groups: { gemini: { windows: { '5h': win(0.98, 5), weekly: win(0.98, 60) } }, claude: { windows: { weekly: win(0.9, 80) } } } }))
   const env = { ...lane }
   // The input files go outside the repository: a file left in it is uncommitted work, and the delegate would not run.
   const scratch = tempDir(t, 'aether-route-scratch-')
@@ -218,7 +218,7 @@ test('scenario 20: a refusal the router saw leaves its mark, and the next decisi
   }
   const before = decide('one')
   assert.equal(before.status, 0, before.stderr)
-  assert.equal(before.json.external.harness, 'agy', 'the reading says 98 %: the group is a candidate')
+  assert.equal(before.json.external.harness, 'agy', 'the reading says 98 %: the group is a candidate, and it renews first (60 h against 80 h)')
   assert.equal(before.json.external.group, 'gemini')
 
   const stored = path.join(dataDir, 'router', 'external', `${before.json.external.id}.json`)
@@ -233,11 +233,10 @@ test('scenario 20: a refusal the router saw leaves its mark, and the next decisi
   assert.equal(fs.existsSync(path.join(dataDir, 'lanes', 'marks')), false, 'the swarm store is not written')
 
   const after = decide('two')
-  assert.equal(after.json.external, null, 'nothing goes to the group the refusal marked')
+  assert.equal(after.json.external?.group, 'claude', 'nothing goes to the group the refusal marked: the other group of agy takes it')
   const second = log.readJournal(dataDir).filter((e) => e.kind === 'decision')[1]
   const g = second.quota.find((c) => c.harness === 'agy' && c.group === 'gemini')
-  assert.equal(g.why, 'mark')
-  assert.equal(g.note, 'marca vigente; la lectura con saldo no la desmiente')
+  assert.equal(g.why, 'dry', 'the mark holds the group, whatever the reading says')
 })
 
 test('replay --journal shows what a changed criterion would decide again (C11)', (t) => {

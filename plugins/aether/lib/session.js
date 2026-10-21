@@ -8,6 +8,8 @@ const SESSION_ID_RE = /^[A-Za-z0-9-]+$/
 const DAY_MS = 24 * 60 * 60 * 1000
 
 const ROUTER_MODES = ['record', 'advise', 'command']
+// The values of the router option: auto, the default, is command with superdelegation on and record with it off.
+const ROUTER_CHOICES = ['auto', ...ROUTER_MODES]
 const ROUTER_DECIDERS = ['haiku', 'jev']
 const FALLBACK_ALIASES = ['haiku', 'sonnet', 'opus']
 const FALLBACK_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -66,18 +68,21 @@ function parseDeadlines(value) {
   return out
 }
 
-// The router's settings from the plugin options in env: a mode or decider that is not listed is record or haiku.
+// The router's settings from the plugin options in env: a decider that is not listed is haiku. A mode that is not
+// listed, auto among them, is command with superdelegation on (the router decides where each delegate runs) and
+// record with it off (the router only writes what it would have decided).
 function routerSettingsFrom(env = process.env) {
   const { enabledHarnesses } = require('./lanes.js')
   const { resolveOption } = require('./superdelegation.js')
   const mode = env.CLAUDE_PLUGIN_OPTION_ROUTER
   const decider = env.CLAUDE_PLUGIN_OPTION_DECIDER
+  const superdelegation = resolveOption(env).on
   return {
-    mode: ROUTER_MODES.includes(mode) ? mode : 'record',
+    mode: ROUTER_MODES.includes(mode) ? mode : (superdelegation ? 'command' : 'record'),
     decider: ROUTER_DECIDERS.includes(decider) ? decider : 'haiku',
     fallback: parseFallback(env.CLAUDE_PLUGIN_OPTION_FALLBACK),
     deadlines: parseDeadlines(env.CLAUDE_PLUGIN_OPTION_DEADLINES),
-    lanes: resolveOption(env).on,
+    lanes: superdelegation,
     harnesses: enabledHarnesses({ AETHER_LANE_HARNESSES: env.CLAUDE_PLUGIN_OPTION_HARNESSES }),
   }
 }
@@ -175,6 +180,7 @@ function pruneSessions(dataDir, { days = 30, now = Date.now() } = {}) {
 module.exports = {
   LEAD_AGENT,
   ROUTER_MODES,
+  ROUTER_CHOICES,
   ROUTER_DECIDERS,
   DEFAULT_FALLBACK,
   DEFAULT_DEADLINES,

@@ -56,7 +56,7 @@ const wide = (text) => view.cells(text)
 test('the pane opens with the title, the options on one line, and then the action row, above the quota', () => {
   const lines = textOf(draw(120))
   assert.equal(lines[0], 'Aether · other harnesses')
-  assert.equal(lines[1], 'superdelegation ON · router record · decider haiku · harnesses agy, grok')
+  assert.equal(lines[1], 'superdelegation ON · router command · decider haiku · harnesses agy, grok')
   assert.equal(lines[2], '[action row]')
   assert.ok(lines.indexOf('[action row]') < lines.findIndex((text) => /^agy /.test(text)), 'the buttons come before the first harness')
   assert.equal(draw(120).filter((one) => one.action).length, 1)
@@ -87,15 +87,15 @@ test('with superdelegation off the pane says plainly that nothing leaves Claude,
 
 test('the options shown are the ones the session uses', () => {
   const lines = textOf(draw(120, { settings: view.settingsOf({ superdelegation: true, router: 'Command', decider: 'JEV', harnesses: 'gork' }) }))
-  assert.equal(lines[1], 'superdelegation ON · router record · decider haiku · harnesses agy')
+  assert.equal(lines[1], 'superdelegation ON · router command · decider haiku · harnesses agy')
 })
 
 test('the options go on to more lines instead of being cut, at each width', () => {
   const lines = textOf(draw(60))
-  assert.equal(lines[1], 'superdelegation ON · router record · decider haiku')
+  assert.equal(lines[1], 'superdelegation ON · router command · decider haiku')
   assert.equal(lines[2], 'harnesses agy, grok')
   const narrow = textOf(draw(40))
-  assert.deepEqual(narrow.slice(1, 3), ['superdelegation ON · router record', 'decider haiku · harnesses agy, grok'])
+  assert.deepEqual(narrow.slice(1, 3), ['superdelegation ON · router command', 'decider haiku · harnesses agy, grok'])
 })
 
 test('the enabled harnesses come first, in the order of the option, and the rest follow', () => {

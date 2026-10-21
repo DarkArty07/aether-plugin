@@ -6,9 +6,10 @@
 // is a plan with `error` and no change to the call, and a `decision` entry in the journal that says `internal: <why>`.
 //
 // The decision joins the criterion (the level and axis the answers give, never below the floor when the criterion
-// says so), the table of rungs (the Claude rung of that level), the quota (the weekly window that renews first among
-// agy and grok, for a read-only task) and the mode: record only writes the journal, advise also tells the Lead, and
-// command rewrites the call. A failure of the decider never asks again: the call keeps what the Lead asked or takes
+// says so), the table of rungs (the Claude rung of that level), the pair of the one choice function of superdelegation
+// (lib/router-pick.js: for a read-only task, the external pair that reaches the points of that Claude rung, on the quota
+// that renews first) and the mode: record only writes the journal, advise also tells the Lead, and command rewrites
+// the call. A failure of the decider never asks again: the call keeps what the Lead asked or takes
 // the standard rung of the `fallback` option.
 
 const crypto = require('node:crypto')
@@ -21,8 +22,10 @@ const { EXTERNAL_LIMIT_MS } = require('./delegate-limits.js')
 const { appendEntry } = require('./router-log.js')
 const { liftMark } = require('./lane-marks.js')
 const { readAllMarks } = require('./router-marks.js')
-const { EXTERNAL, peekReadings, staleHarnesses, servableHarnesses, chooseHarness } = require('./router-quota.js')
-const { startRenewal, waitForReading } = require('./router-renewal.js')
+const { loadPairs } = require('./pairs.js')
+const { pairStep } = require('./router-pick.js')
+const { EXTERNAL, peekReadings } = require('./router-quota.js')
+const { startRenewal } = require('./router-renewal.js')
 const { loadRungs } = require('./router-rungs.js')
 const { aliasOf, askedOf, claudeLevel, claudeId, stanceOf, claudeRungAt } = require('./router-reference.js')
 const { readRouterSettings } = require('./session.js')
@@ -116,15 +119,17 @@ function resolve(deps) {
   const criterion = once(() => deps.criterion || criterionLib.loadCriterion())
   const rungs = once(() => deps.rungs || loadRungs())
   const lanesConfig = once(() => (deps.lanesConfig !== undefined ? deps.lanesConfig : lanes.loadConfig()))
+  const pairs = once(() => deps.pairs || loadPairs().pairs)
   return {
     dataDir,
     now,
     criterion,
     rungs,
     lanesConfig,
+    pairs,
     sleep: deps.sleep || realSleep,
     newId: deps.newId || (() => `r-${now().toString(36)}-${crypto.randomBytes(2).toString('hex')}`),
-    readings: deps.readings || (() => peekReadings({ dataDir, config: lanesConfig(), harnesses: EXTERNAL, now: now() })),
+    readings: deps.readings || ((harnesses = EXTERNAL) => peekReadings({ dataDir, config: lanesConfig(), harnesses, now: now() })),
     lift: deps.lift || ((mark) => liftMark(dataDir, mark)),
     marks: deps.marks || (() => readAllMarks(dataDir, now(), lanes.groupKnown(lanesConfig()))),
     renew: deps.renew || ((harness) => startRenewal({ dataDir, harness, now: now() })),
@@ -213,7 +218,7 @@ function requestedOf(event) {
 }
 
 // The name of the agent the Lead sent the task to when that agent is not a plain one, or null. A user or plugin agent
-// has instructions and tool limits that agy and grok would not get, so its task stays on Claude.
+// has instructions and tool limits that an external harness would not get, so its task stays on Claude.
 function namedAgent(event) {
   const type = event.subagent_type
   return typeof type === 'string' && type !== '' && !PLAIN_AGENTS.includes(type) ? type : null
@@ -310,52 +315,6 @@ function plan(ctx, { args = null, notes = [], external = null }) {
   return { id: ctx.id, skip: false, args, notes, external }
 }
 
-// ---- the quota step ----
-
-async function quotaStep(d, settings, { level, axis }) {
-  const config = d.lanesConfig()
-  const enabled = settings.harnesses.filter((name) => EXTERNAL.includes(name))
-  const live = enabled.filter((name) => d.installed(name))
-  const stale = staleHarnesses({ readings: d.readings(), config, harnesses: live, now: d.now() })
-  const renewals = {}
-  for (const harness of stale) {
-    let result = null
-    try {
-      result = d.renew(harness)
-    } catch {}
-    if (result && result.started) renewals[harness] = 'started'
-    else if (result && result.running) renewals[harness] = 'running'
-  }
-  let waitedMs = 0
-  // Only a harness that could serve the level is waited for (issue 025): one marked dry, or
-  // with no rung at the level, keeps its background renewal for the next decision, but this
-  // decision does not sit out the quota deadline for a reading that cannot change its pick.
-  const servable = servableHarnesses({ level, axis, rungs: d.rungs(), config, marks: d.marks(), now: d.now(), harnesses: stale })
-  if (servable.length > 0) {
-    const waited = await waitForReading({
-      isValid: () => staleHarnesses({ readings: d.readings(), config, harnesses: servable, now: d.now() }).length === 0,
-      waitMs: settings.deadlines.quotaMs,
-      now: d.now,
-      sleep: d.sleep,
-    })
-    waitedMs = waited.waitedMs
-  }
-  const { pick, considered } = chooseHarness({
-    level,
-    axis,
-    rungs: d.rungs(),
-    config,
-    enabled,
-    installed: d.installed,
-    readings: d.readings(),
-    marks: d.marks(),
-    now: d.now(),
-    lift: d.lift,
-  })
-  const quota = considered.map((entry) => (renewals[entry.harness] ? { ...entry, renewal: renewals[entry.harness] } : entry))
-  return { pick, quota, waitedMs }
-}
-
 // ---- the decision ----
 
 // Closes a call: result is { answers, cost, deciderMs } or { failure, deciderMs }.
@@ -388,24 +347,29 @@ async function conclude(ctx, d, result) {
   const verdict = criterionLib.decide(criterion, answers, { floor })
   const { level, axis } = verdict
 
+  // The Claude rung the call would run on: the reference of the one choice function of superdelegation, and the
+  // rung an external delegate falls back to.
+  const { claudeRung } = claudeRungAt(table, { reference, floor, level, axis })
+
   let quota = null
   let quotaWaitMs = 0
   let pick = null
   let reason = verdict.reason
+  let choice = null
   if (verdict.readOnly && settings.lanes && !event.isolation && d.lanesConfig()) {
     const agent = namedAgent(event)
     if (agent !== null) {
       reason = `${reason}; named agent ${agent} stays on Claude`
     } else {
-      const step = await quotaStep(d, settings, { level, axis })
+      const step = await pairStep(d, settings, { reference: { model: claudeRung.alias, effort: claudeRung.effort } })
       pick = step.pick
       quota = step.quota
       quotaWaitMs = step.waitedMs
+      choice = step.reason
     }
   }
 
-  const { claudeRung, sameLevel } = claudeRungAt(table, { reference, floor, level, axis })
-  const chosen = pick ? pick.rung : claudeRung
+  const chosen = pick || claudeRung
   const decision = {
     harness: pick ? pick.harness : 'claude',
     model: chosen.model,
@@ -417,8 +381,9 @@ async function conclude(ctx, d, result) {
     confidence: verdict.confidence,
     status: chosen.status ?? null,
     readOnly: verdict.readOnly,
+    choice,
   }
-  const rescue = pick ? { alias: sameLevel.alias, effort: sameLevel.effort } : null
+  const rescue = pick ? { alias: claudeRung.alias, effort: claudeRung.effort } : null
 
   let args = null
   let external = null
@@ -430,9 +395,9 @@ async function conclude(ctx, d, result) {
       external = {
         id: ctx.id,
         harness: pick.harness,
-        model: pick.rung.model,
-        effort: pick.rung.effort,
-        group: pick.rung.group,
+        model: pick.model,
+        effort: pick.effort,
+        group: pick.group,
         timeoutMs: EXTERNAL_LIMIT_MS,
         fallback: { model: rescue.alias, effort: rescue.effort },
       }

@@ -312,7 +312,7 @@ test('an answer that is not one of the criterion is a fallback, not a decision',
 test('the journal of the router, decided again with its own criterion, changes nothing', async (t) => {
   const NOW = Date.parse('2026-10-15T21:32:00-06:00')
   const window = (remaining, hours) => ({ remaining, resetsAt: new Date(NOW + hours * 3600 * 1000).toISOString() })
-  const readings = { agy: { readAt: NOW - 120000, groups: { gemini: { windows: { '5h': window(1, 5), weekly: window(1, 60) } } } }, grok: { readAt: NOW - 60000, groups: { grok: { windows: { weekly: window(0.95, 29.6) } } } } }
+  const readings = { agy: { readAt: NOW - 120000, groups: { gemini: { windows: { '5h': window(1, 5), weekly: window(1, 60) } }, claude: { windows: { weekly: window(0.9, 80) } } } }, grok: { readAt: NOW - 60000, groups: { grok: { windows: { weekly: window(0.95, 29.6) } } } } }
   const event = (over = {}) => ({ subagent_type: 'general-purpose', description: 'Audit the API usage in src/', prompt: 'Read src/ and report each call that skips the retry wrapper.', ...over })
   const explore = answers({ shape: { choice: 'explore', confidence: 0.95 }, stakes: { score: 1.1, confidence: 0.95 }, edits_files: { noul: 0.03, confidence: 0.95 } })
   const cases = [
