@@ -412,6 +412,18 @@ async function brakeRecorded($, state, crossing, record) {
 // failure leaves the brake inert for the session, never retried per step); each step then reads the
 // windows and acts on a fresh crossing. Observing only: the body is caught whole.
 async function brakeStep($, state) {
+  // turn.step fires for every agent of the session, so in a swarm steps overlap: one step at a time handles a crossing, and
+  // a step that finds another one at work leaves it to that one (the next step reads the windows again).
+  if (state.brakeBusy) return
+  state.brakeBusy = true
+  try {
+    await brakeStepOnce($, state)
+  } finally {
+    state.brakeBusy = false
+  }
+}
+
+async function brakeStepOnce($, state) {
   try {
     if (state.brake === null) return
     const now = await $.clock.now()

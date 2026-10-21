@@ -71,7 +71,9 @@ test('session start writes the brake file for the Lead and adds no brake export'
   const data = tempDir(t, 'aether-data-')
   const envFile = path.join(tempDir(t, 'aether-env-'), 'env')
   fs.writeFileSync(envFile, '')
-  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data, CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_QUOTABRAKE: '90', CLAUDE_PLUGIN_OPTION_BRAKEPUSH: 'true' }
+  // Without the session's own Aether and plugin-option variables, which would change the env file this test reads.
+  const own = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(AETHER_|CLAUDE_PLUGIN_OPTION_)/.test(name)))
+  const env = { ...own, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data, CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_QUOTABRAKE: '90', CLAUDE_PLUGIN_OPTION_BRAKEPUSH: 'true' }
   const lead = { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup', agent_type: 'aether:lead' }
   let r = spawnSync(process.execPath, [SESSION_BIN], { cwd: repo.dir, encoding: 'utf8', input: JSON.stringify(lead), env })
   assert.equal(r.status, 0, r.stderr)
