@@ -267,7 +267,7 @@ function opsPrompt(command, { payload = null, long = false } = {}) {
 }
 
 // Runs one command through the ops agent. Returns the JSON the command printed, or { error } when the agent, the
-// command or its output failed. With `anyExit`, the JSON a command prints as it exits 1 is its answer too.
+// command or its output failed. With `anyExit`, the JSON a command prints is its answer whatever its exit code.
 async function ops(command, { phase, label, payload = null, long = false, anyExit = false }) {
   const reply = await call('ops', 'haiku', 'low', opsPrompt(command, { payload, long }), { phase, label, schema: OPS_SCHEMA })
   if (!reply) return { error: 'the ops agent failed' }
@@ -422,9 +422,11 @@ async function awaitSeat({ seat, base, flags, exclude, text, phase }) {
     return { id: null, note: `the seat round did not start: ${started.error || JSON.stringify(started).slice(0, 300)}`, startFailed: true }
   }
   const { id } = started
-  // A wait the ops agent fails or garbles only costs one more wait.
+  // A wait the ops agent fails or garbles only costs one more wait. The round's own exit (1, 3 or 4) is in the JSON the
+  // wait prints, so the process exit counts for nothing here: an ops agent that reports the round's exit as the command's
+  // would turn every round that did not answer into twelve waits and a native agent (seen on a real run).
   for (let k = 1; k <= MAX_WAITS; k++) {
-    const out = await ops(`aether-lane seat-wait ${id} --max ${WAIT_SECONDS}`, { phase, label: `${base}: wait ${k}`, long: true })
+    const out = await ops(`aether-lane seat-wait ${id} --max ${WAIT_SECONDS}`, { phase, label: `${base}: wait ${k}`, long: true, anyExit: true })
     if (!out.error && out.done === true) return { id, reply: out }
   }
   const stopped = await ops(`aether-lane seat-stop ${id}`, { phase, label: `${base}: stop` })

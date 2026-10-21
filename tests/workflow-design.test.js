@@ -558,6 +558,27 @@ test('a Writer seat refused for quota asks for the next pair, and the native Wri
   assert.deepEqual(run.result.rounds.map((x) => [x.document, x.seat]), [['spec', 'writer'], ['spec', 'judge'], ['plan', 'writer'], ['plan', 'judge'], ['exam', 'examiner']], 'the order of the rounds is the same')
 })
 
+// The ops agent of a real run reported the round's own exit (3 or 4) as the exit of `aether-lane seat-wait`, whose process
+// exits 0: the wait handler returns the reply as that raw result.
+const reportingRoundExit = (ops) => (call, fallback) => {
+  const out = ops(call, fallback)
+  return call.command.verb === 'seat-wait' && out && out.done === true ? { raw: { exitCode: out.exitCode, stdout: `${JSON.stringify(out)}\n` } } : out
+}
+
+test('a wait whose reported exit is the round\'s own (3 or 4) is read at once: no twelve waits, no stop, the next pair is asked', async () => {
+  const replies = [(id) => failedWait('writer', id, AGY, { status: 'quota', detail: `exit 3: ${QUOTA}` }), (id) => answeredWait('writer', id, GROK, SPEC_ANSWER)]
+  const run = await go(ON, { ops: reportingRoundExit(scripted(SPEC_WRITER, replies)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  assert.equal(opsCalls(run, 'seat-wait').length, opsCalls(run, 'seat-start').length, 'every round is waited for once')
+  assert.equal(opsCalls(run, 'seat-stop').length, 0, 'no round was stopped')
+  assert.deepEqual(specStarts(run).map(exclusionOf), [null, AGY])
+  assert.equal(nativeCalls(run).some((c) => c.label.startsWith('spec: writer')), false, 'no native Writer wrote the spec')
+  assert.deepEqual([run.result.rounds[0].provider, run.result.rounds[0].note], ['grok grok-4.7', null])
+  // A round handed back (exit 3) is read the same way, and its note says why, not that it did not finish.
+  assert.ok(run.result.rounds[1].note.startsWith('handed back to the native agent'), run.result.rounds[1].note)
+})
+
 test('a Judge seat that fails with exit 4 asks for the next pair, and the second one answers as the verdict', async () => {
   const replies = [(id) => failedWait('judge', id, MUSE, { detail: 'exit 4: the harness failed' }), (id) => answeredWait('judge', id, GROK, APPROVE, verdictText)]
   const run = await go(ON, { ops: scripted(FIRST_JUDGE, replies) })
