@@ -211,6 +211,7 @@ test('session start writes the brake file for the Lead and adds no brake export'
 - Area: brake
 - Owns: `plugins/aether/lib/autonomy.js`, `plugins/aether/bin/aether-autonomy`, `plugins/aether/bin/aether-session-start`, `tests/quota-brake.test.js`, `tests/aether-autonomy.test.js`, `tests/session-start-autonomy.test.js`, `tests/session-start.test.js`
 - Depends on: Task 1 — el umbral y el `push` vienen de `readBrakeSettings`, y la nota de sesión y el `USAGE` comparten ficheros con la Task 1
+- Depends on: Task 8 — comparte `tests/session-start.test.js`, que la Task 8 ya dejó fusionado
 - Serves: R3, R4, R6, R8, R9
 
 **Interfaces:**
