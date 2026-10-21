@@ -209,7 +209,7 @@ test('session start writes the brake file for the Lead and adds no brake export'
 - Tier: opus high — estado de la corrida y la verificación de la cita del dueño, el corazón del registro que aether-guard protege
 - Review: xhigh — una pausa que terminara la corrida, una hora pausada contada o una cita no verificada que apagara el freno rompen C1 y C3 sin que los tests de hoy lo noten
 - Area: brake
-- Owns: `plugins/aether/lib/autonomy.js`, `plugins/aether/bin/aether-autonomy`, `plugins/aether/bin/aether-session-start`, `tests/quota-brake.test.js`, `tests/aether-autonomy.test.js`, `tests/session-start-autonomy.test.js`
+- Owns: `plugins/aether/lib/autonomy.js`, `plugins/aether/bin/aether-autonomy`, `plugins/aether/bin/aether-session-start`, `tests/quota-brake.test.js`, `tests/aether-autonomy.test.js`, `tests/session-start-autonomy.test.js`, `tests/session-start.test.js`
 - Depends on: Task 1 — el umbral y el `push` vienen de `readBrakeSettings`, y la nota de sesión y el `USAGE` comparten ficheros con la Task 1
 - Serves: R3, R4, R6, R8, R9
 
@@ -519,7 +519,7 @@ test('session start names the quota pause of the open run', (t) => {
 - Tier: sonnet high — une cuatro superficies del mod que ningún fichero del repo usa hoy, y el aviso tiene que ser exactamente uno por cruce
 - Review: xhigh — un `asUser` al someter, un aviso repetido, un freno en una sesión que no es del Lead o un paso del modelo bloqueado rompen R1, R7 y R12 sin tocar otro test
 - Area: mod
-- Owns: `plugins/aether/hooks/quota-brake.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/quota-brake.test.ts`
+- Owns: `plugins/aether/hooks/quota-brake.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/quota-brake.test.ts`, `plugins/aether/hooks/usage.test.ts`, `plugins/aether/hooks/ops.test.ts`
 - Depends on: Task 2 — llama a los verbos `brake-settings` y `brake-crossing` por `$.process.run`
 - Serves: R1, R3, R7, R10, R11, R12
 
@@ -1037,7 +1037,7 @@ test('a first compile and a run id with no prior graph do not mention alreadyMer
 - Tier: haiku high — textos exactos fijados por sus tests, sin código
 - Review: xhigh — la skill es el comportamiento del Lead ante la parada: una frase ambigua sobre qué puede seguir corriendo repite el fallo de la 010
 - Area: docs
-- Owns: `plugins/aether/skills/autonomous-runs/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `docs/guide/autonomy.md`, `docs/getting-started.md`, `README.md`, `tests/quota-brake-docs.test.js`
+- Owns: `plugins/aether/skills/autonomous-runs/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `docs/guide/autonomy.md`, `docs/getting-started.md`, `README.md`, `tests/quota-brake-docs.test.js`, `tests/router-surface.test.js`
 - Depends on: Task 1 — los textos nombran `quotabrake`, `brakepush` y el `push` que `brake-settings` imprime desde el fichero de la T1
 - Serves: R5, R7, R8, R13, R15, R18
 
