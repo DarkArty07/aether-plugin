@@ -74,11 +74,16 @@ function readInput() {
 // Marks the session; returns the reason it could not, or '' when it did.
 function mark(sessionId) {
   try {
-    const { markSession, routerSettingsFrom } = require(path.join(root, 'lib', 'session.js'))
+    const { markSession, routerSettingsFrom, brakeSettingsFrom } = require(path.join(root, 'lib', 'session.js'))
     const { dataDir } = require(path.join(root, 'lib', 'run.js'))
     // The ops option is on unless it is exactly false: the mod reads the session's ops-off file.
     // The router's four options go to the session's router file, which the router's commands read.
-    markSession(dataDir(), sessionId, Date.now(), { opsInMod: process.env.CLAUDE_PLUGIN_OPTION_OPS !== 'false', router: routerSettingsFrom(process.env) })
+    // The brake settings go to the session's brake file.
+    markSession(dataDir(), sessionId, Date.now(), {
+      opsInMod: process.env.CLAUDE_PLUGIN_OPTION_OPS !== 'false',
+      router: routerSettingsFrom(process.env),
+      brake: brakeSettingsFrom(process.env),
+    })
     return ''
   } catch (err) {
     return (err && err.message) || String(err)

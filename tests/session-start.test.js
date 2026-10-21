@@ -264,7 +264,7 @@ test('session start prunes session markers not written to for 30 days', (t) => {
   const old = new Date(Date.now() - 31 * 24 * 3600 * 1000)
   fs.utimesSync(path.join(data, 'sessions', 'old.json'), old, old)
   start(repo.dir, data)
-  assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')).sort(), ['s1.json', 's1.router.json'])
+  assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')).sort(), ['s1.brake.json', 's1.json', 's1.router.json'])
 })
 
 test('session start marks the session ops-off only when the ops option is false', (t) => {
