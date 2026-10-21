@@ -58,8 +58,8 @@ test('status gives each group its view and the live marks, and no order of candi
   const grok = harnesses.grok.groups.grok
   assert.deepEqual([harnesses.grok.enabled, harnesses.grok.installed, grok.usable, grok.unknown, grok.usedPercentAbsent, grok.source.ageMinutes], [true, true, true, false, true, 5])
   assert.ok(Math.abs(grok.priority - 1 / 50) < 0.001, String(grok.priority))
-  assert.deepEqual([harnesses.agy.groups.gemini.usable, harnesses.agy.groups.claude.usable, harnesses.agy.groups.claude.label], [true, false, 'Claude and GPT models'])
-  assert.ok(Math.abs(harnesses.agy.groups.gemini.priority - 0.9 / 200) < 0.001, String(harnesses.agy.groups.gemini.priority))
+  assert.deepEqual([harnesses.agy.groups.argon.usable, harnesses.agy.groups.flash.usable, harnesses.agy.groups.claude.usable, harnesses.agy.groups.claude.label], [true, true, false, 'Claude and GPT models'])
+  for (const key of ['argon', 'flash']) assert.ok(Math.abs(harnesses.agy.groups[key].priority - 0.9 / 200) < 0.001, String(harnesses.agy.groups[key].priority))
   assert.deepEqual(r.json.marks, [])
   assert.equal(Object.hasOwn(r.json, 'order'), false)
 })
@@ -80,7 +80,7 @@ test('status keeps a reading that launches a process for its life, and logs one 
   assert.equal(usageCalls(env).length, 1)
   const entries = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading')
   assert.deepEqual(entries.map((e) => [e.harness, e.run]).sort(), [['agy', args.runId], ['agy', args.runId], ['grok', args.runId], ['grok', args.runId]])
-  assert.deepEqual(Object.keys(entries.find((e) => e.harness === 'agy').groups).sort(), ['claude', 'gemini'])
+  assert.deepEqual(Object.keys(entries.find((e) => e.harness === 'agy').groups).sort(), ['argon', 'claude', 'flash'])
   // The quota command is a deliberate reading, and takes a new one.
   const quota = runBin(fx.LANE_BIN, ['quota', 'agy', '--json'], args.repoRoot, env)
   assert.equal(quota.status, 0, quota.stdout + quota.stderr)
@@ -94,7 +94,7 @@ test('a reading that fails leaves the groups of its harness unknown', (t) => {
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const agy = r.json.harnesses.agy
   assert.match(agy.error, /agy \/usage failed/)
-  assert.deepEqual([agy.groups.gemini.unknown, agy.groups.gemini.usable, agy.groups.claude.unknown], [true, true, true])
+  assert.deepEqual([agy.groups.argon.unknown, agy.groups.flash.unknown, agy.groups.flash.usable, agy.groups.claude.unknown], [true, true, true, true])
 })
 
 test("the wave's quota step, status --refresh, refreshes a stale grok reading over ACP before it reads, and says how it was taken", (t) => {

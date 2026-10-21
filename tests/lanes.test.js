@@ -77,14 +77,14 @@ test('the shipped table names each lane model with its group and roles', () => {
   assert.equal(agy.maxParallel, 8)
   assert.equal(agy.waitSeconds, 540)
   assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200, judge: 1200, writer: 2700, examiner: 1800 })
-  assert.deepEqual(agy.groups, { gemini: 'Gemini Models', claude: 'Claude and GPT models' })
+  assert.deepEqual(agy.groups, { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' })
   assert.deepEqual(
     Object.entries(agy.models).map(([id, m]) => [id, m.group, m.roles]),
     [
-      ['gemini-3.8-flash', 'gemini', ['implementer']],
+      ['gemini-3.8-flash', 'flash', ['implementer']],
       ['claude-sonnet-5-5', 'claude', ['implementer', 'supervisor']],
       ['claude-opus-5-5', 'claude', ['implementer', 'reviewer']],
-      ['gemini-4-argon', 'gemini', ['judge', 'writer', 'examiner']],
+      ['gemini-4-argon', 'argon', ['judge', 'writer', 'examiner']],
     ],
   )
   assert.deepEqual(agy.models['gemini-3.8-flash'].aa, { slug: 'gemini-3-8-flash', intelligence: 40.9, terminalBench: 0.2, checked: '2026-10-08' })
@@ -150,10 +150,10 @@ test('enabledHarnesses reads AETHER_LANE_HARNESSES: known names, trimmed, lowerc
 })
 
 test('loadConfig refuses two harnesses that use one group key, and accepts distinct keys', (t) => {
-  const shared = writeConfig(t, (c) => (c.harnesses.codex = codexHarness('gemini')))
+  const shared = writeConfig(t, (c) => (c.harnesses.codex = codexHarness('argon')))
   assert.throws(
     () => lanes.loadConfig(shared),
-    (err) => err.message.startsWith(`lanes config ${shared}: `) && err.message.includes('group gemini is used by harnesses agy and codex: group keys are unique across the table'),
+    (err) => err.message.startsWith(`lanes config ${shared}: `) && err.message.includes('group argon is used by harnesses agy and codex: group keys are unique across the table'),
   )
   const distinct = writeConfig(t, (c) => (c.harnesses.codex = codexHarness()))
   assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor', 'muse'])

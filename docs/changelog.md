@@ -8,6 +8,12 @@ order: 31
 
 ## Status
 
+Version 0.14.4: an Argon refusal no longer keeps Flash out ([handoff](handoff/2026-10-21-split-argon-flash-0.14.4.md), [lanes](guide/lanes.md), [decisions](decisions.md) A69, [issue 038](issues/038-an-argon-refusal-keeps-flash-out-because-the-table-has-one-gemini-key.md)). agy's lane table had one quota key for Gemini 4 Argon and Gemini 3.8 Flash, so a refusal of Argon marked Flash dry for 60 minutes too. What changed since 0.14.3:
+- **Two keys, one `/usage` group.** agy's table has `argon`, `flash` and `claude`; `argon` and `flash` both read `Gemini Models`, so they show the same windows and reset, and each has its own mark, place in the order and choice. The pairs and the router's rungs follow.
+- **A refusal marks one key.** Argon refused leaves Flash usable for the swarm, the design seats and the router, and the other way round.
+- **The old key is ignored.** A mark of `gemini` is no mark for anyone, and a reading saved with the old keys is replaced in the background, so agy has no reading for a few seconds after the update.
+- **Known and not changed.** `aether-report` counts the shared Gemini window once per key, so a run that used both models shows it twice.
+
 Version 0.14.3: a pair that ran out of time is kept out of the router's choice, and the delegates' work is bounded ([handoff](handoff/2026-10-21-delegate-time-limits-0.14.3.md), [router](guide/router.md#fallback), [decisions](decisions.md) A68, issues [035](issues/035-grok-at-high-never-finishes-an-audit-it-is-killed-at-420-seconds-and-claude-reruns-it.md), [036](issues/036-an-internal-error-of-the-routers-pair-step-is-journaled-as-a-normal-choice.md) and [037](issues/037-small-faults-of-the-delegate-chain-and-of-the-reading-of-agys-refusal.md)). Watching 0.14.2 showed that every audit sent to Grok 4.7 at `high` was killed at 420 seconds and rerun on Claude. What changed since 0.14.2:
 - **The brief bounds the work.** Every external delegate is told to use about 20 tool calls and then answer with the best it has, saying what it did not check.
 - **A pair that ran out of time is out for 60 minutes.** The mark is per pair (`router/slow/`), not per quota group, so Grok at `low` keeps serving; the router excludes the pair from its choice and the chain skips it. A call killed at its limit is `failed`, never `quota` or a refusal at the start, and its outcome says `timedOut` and `slowUntil`.

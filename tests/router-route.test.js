@@ -17,11 +17,13 @@ const MIN = 60 * 1000
 const win = (remaining, hours) => ({ remaining, resetsAt: new Date(NOW + hours * H).toISOString() })
 const weekly = (remaining, hours) => ({ windows: { weekly: win(remaining, hours) } })
 const gemini = (remaining, hours) => ({ windows: { '5h': win(1, 5), weekly: win(remaining, hours) } })
+// agy's table has two keys that read the one «Gemini Models» group, so a reading has the same windows for both.
+const geminiKeys = (remaining, hours) => ({ argon: gemini(remaining, hours), flash: gemini(remaining, hours) })
 const GROK = { readAt: NOW - MIN, groups: { grok: weekly(0.95, 29.6) } }
-const READINGS = { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(1, 60), claude: weekly(0.9, 80) } }, grok: GROK }
-const DRY = { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(0.02, 60), claude: weekly(0.02, 40) } }, grok: { readAt: NOW - MIN, groups: { grok: weekly(0.02, 29.6) } } }
-const STALE = { agy: { readAt: NOW - 11 * MIN, groups: { gemini: gemini(0.8, 10), claude: weekly(0.9, 80) } }, grok: GROK }
-const FRESH_AGY = { agy: { readAt: NOW, groups: { gemini: gemini(0.8, 10), claude: weekly(0.9, 80) } }, grok: GROK }
+const READINGS = { agy: { readAt: NOW - 2 * MIN, groups: { ...geminiKeys(1, 60), claude: weekly(0.9, 80) } }, grok: GROK }
+const DRY = { agy: { readAt: NOW - 2 * MIN, groups: { ...geminiKeys(0.02, 60), claude: weekly(0.02, 40) } }, grok: { readAt: NOW - MIN, groups: { grok: weekly(0.02, 29.6) } } }
+const STALE = { agy: { readAt: NOW - 11 * MIN, groups: { ...geminiKeys(0.8, 10), claude: weekly(0.9, 80) } }, grok: GROK }
+const FRESH_AGY = { agy: { readAt: NOW, groups: { ...geminiKeys(0.8, 10), claude: weekly(0.9, 80) } }, grok: GROK }
 
 const answers = (over = {}) => ({
   shape: { choice: 'explore', confidence: 0.95 },
@@ -116,7 +118,7 @@ test('scenario 1 and 8: in command mode the Lead only describes, and the delegat
   assert.equal(entry.quotaWaitMs, 0)
   const picked = entry.quota.find((c) => c.outcome === 'picked')
   assert.deepEqual([picked.id, picked.rank], ['grok/grok-4.7@low', 1])
-  assert.ok(entry.quota.some((c) => c.harness === 'agy' && c.group === 'gemini' && c.outcome === 'next'), 'agy renews later: it is the next candidate')
+  assert.ok(entry.quota.some((c) => c.harness === 'agy' && c.group === 'argon' && c.outcome === 'next'), 'agy renews later: it is the next candidate')
   assert.ok(entry.decision.choice.startsWith('grok/grok-4.7@low:'), 'the log keeps the words of the one choice function')
 })
 
@@ -148,11 +150,11 @@ test('with no other candidate the external file carries an empty list of alterna
 })
 
 test('scenario 18: when the Gemini group of agy renews first, the delegate goes to agy on the level B rung of that group', async (t) => {
-  const plan = await go(setup(t, { readings: { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(0.8, 10), claude: weekly(0.9, 80) } }, grok: GROK } }), event())
+  const plan = await go(setup(t, { readings: { agy: { readAt: NOW - 2 * MIN, groups: { ...geminiKeys(0.8, 10), claude: weekly(0.9, 80) } }, grok: GROK } }), event())
   assert.equal(plan.external.harness, 'agy')
   assert.equal(plan.external.model, 'gemini-3.8-flash')
   assert.equal(plan.external.effort, 'medium')
-  assert.equal(plan.external.group, 'gemini')
+  assert.equal(plan.external.group, 'flash')
 })
 
 test('without a harness to take it, a decided delegate runs in Claude with an explicit effort (R17)', async (t) => {
@@ -206,7 +208,7 @@ test('a call goes to an external harness only when it names no agent, or names g
 })
 
 test('R23: a group with no valid reading is out, its renewal starts once, and the quota step waits at most the limit', async (t) => {
-  const deps = setup(t, { readings: { agy: { readAt: NOW - 11 * MIN, groups: { gemini: gemini(1, 5), claude: weekly(0.9, 80) } }, grok: null } })
+  const deps = setup(t, { readings: { agy: { readAt: NOW - 11 * MIN, groups: { ...geminiKeys(1, 5), claude: weekly(0.9, 80) } }, grok: null } })
   const plan = await go(deps, event())
   assert.equal(plan.external, null)
   assert.deepEqual(plan.args, { model: 'haiku', effort: 'high' })
@@ -216,7 +218,7 @@ test('R23: a group with no valid reading is out, its renewal starts once, and th
   assert.equal(entry.quotaWaitMs, 3000)
   assert.equal(entry.fallback, null, 'the decider did not fail')
   assert.ok(entry.quota.filter((c) => ['agy', 'grok'].includes(c.harness)).every((c) => c.outcome === 'passed' && c.why === 'no-reading'))
-  assert.equal(entry.quota.find((c) => c.harness === 'agy' && c.group === 'gemini').renewal, 'started')
+  assert.equal(entry.quota.find((c) => c.harness === 'agy' && c.group === 'argon').renewal, 'started')
 
   const short = setup(t, { settings: { deadlines: { haikuMs: 8000, jevMs: 3000, quotaMs: 1000 } }, readings: { agy: null, grok: null } })
   await go(short, event())
@@ -236,13 +238,43 @@ test('R23: a renewal that lands inside the wait makes the group a candidate for 
 })
 
 test('scenarios 16 and 20: a mark holds the group although the reading shows balance, and the record says so (R22)', async (t) => {
-  const readings = { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(0.98, 5), claude: weekly(0.9, 80) } }, grok: GROK }
-  const marks = [{ harness: 'agy', group: 'gemini', at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' }]
-  const deps = setup(t, { readings, marks })
+  const readings = { agy: { readAt: NOW - 2 * MIN, groups: { ...geminiKeys(0.98, 5), claude: weekly(0.9, 80) } }, grok: GROK }
+  const mark = (group) => ({ harness: 'agy', group, at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' })
+  const deps = setup(t, { readings, marks: [mark('argon'), mark('flash')] })
   const plan = await go(deps, event())
   assert.equal(plan.external.harness, 'grok')
-  const g = journal(deps)[0].quota.find((c) => c.harness === 'agy' && c.group === 'gemini')
-  assert.equal(g.why, 'dry', 'the mark holds the group, whatever the reading says')
+  for (const group of ['argon', 'flash']) {
+    const g = journal(deps)[0].quota.find((c) => c.harness === 'agy' && c.group === group)
+    assert.equal(g.why, 'dry', `the mark holds ${group}, whatever the reading says`)
+  }
+})
+
+test('issue 038: a mark on Flash holds Flash only, and the delegate goes to Argon, which reads the same Gemini window', async (t) => {
+  const readings = { agy: { readAt: NOW - 2 * MIN, groups: { ...geminiKeys(0.98, 5), claude: weekly(0.9, 80) } }, grok: GROK }
+  const flash = { harness: 'agy', group: 'flash', at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' }
+  const deps = setup(t, { readings, marks: [flash] })
+  const plan = await go(deps, event())
+  assert.deepEqual([plan.external.harness, plan.external.model, plan.external.group], ['agy', 'gemini-4-argon', 'argon'])
+  const quota = journal(deps)[0].quota
+  assert.equal(quota.find((c) => c.harness === 'agy' && c.group === 'flash').why, 'dry')
+  assert.equal(quota.find((c) => c.harness === 'agy' && c.group === 'argon').why, null)
+})
+
+test('issue 038: a mark of agy\'s old `gemini` key, in the swarm\'s store or the router\'s, is no mark for anyone, and stays on disk', async (t) => {
+  const deps = setup(t, { readings: { agy: { readAt: NOW - 2 * MIN, groups: { ...geminiKeys(0.98, 5), claude: weekly(0.9, 80) } }, grok: GROK } })
+  deps.marks = null
+  const laneMarks = require('../plugins/aether/lib/lane-marks.js')
+  const routerMarks = require('../plugins/aether/lib/router-marks.js')
+  const dry = { windows: { weekly: { remaining: 0.01, resetsAt: new Date(NOW + 40 * H).toISOString() } } }
+  laneMarks.markDry(deps.dataDir, { harness: 'agy', group: 'gemini', reading: dry, reserve: 0.05, now: NOW - 30 * MIN, refusal: { resetMs: 100 * H } })
+  routerMarks.markRefusal(deps.dataDir, { harness: 'agy', group: 'gemini', text: 'Individual quota reached. Resets in 100h.', now: NOW - 30 * MIN })
+  const files = [laneMarks.markFile(deps.dataDir, 'agy', 'gemini'), laneMarks.markFile(routerMarks.routerMarksRoot(deps.dataDir), 'agy', 'gemini')]
+  assert.ok(files.every((file) => fs.existsSync(file)), 'both files are on disk')
+  const plan = await go(deps, event())
+  assert.deepEqual([plan.external.harness, plan.external.group], ['agy', 'flash'], 'the old mark held nothing back')
+  const quota = journal(deps)[0].quota
+  assert.ok(quota.filter((c) => c.harness === 'agy').every((c) => c.group !== 'gemini' && c.why !== 'dry'))
+  assert.ok(files.every((file) => fs.existsSync(file)), 'nothing was deleted')
 })
 
 test('scenario 5: a model without a reason does not override; the router decides and the record says what the Lead asked', async (t) => {
@@ -604,17 +636,17 @@ test('in command the note says when the Lead\'s own choice was replaced and how 
 })
 
 test('issue 015: the quota step lifts a swarm mark that came from a reading when the reading of its group is healthy and newer, and removes its file', async (t) => {
-  const deps = setup(t, { readings: { agy: { readAt: NOW - 2 * MIN, groups: { gemini: gemini(1, 60), claude: gemini(1, 60) } }, grok: GROK } })
+  const deps = setup(t, { readings: { agy: { readAt: NOW - 2 * MIN, groups: { ...geminiKeys(1, 60), claude: gemini(1, 60) } }, grok: GROK } })
   deps.marks = null
   const laneMarks = require('../plugins/aether/lib/lane-marks.js')
-  const swarm = laneMarks.markDry(deps.dataDir, { harness: 'agy', group: 'gemini', reading: { windows: { weekly: { remaining: 0.01, resetsAt: new Date(NOW + 40 * H).toISOString() } } }, reserve: 0.05, now: NOW - 30 * MIN })
+  const swarm = laneMarks.markDry(deps.dataDir, { harness: 'agy', group: 'argon', reading: { windows: { weekly: { remaining: 0.01, resetsAt: new Date(NOW + 40 * H).toISOString() } } }, reserve: 0.05, now: NOW - 30 * MIN })
   const refusal = laneMarks.markDry(deps.dataDir, { harness: 'agy', group: 'claude', reserve: 0.05, now: NOW - 30 * MIN, refusal: { resetMs: 100 * H } })
   const plan = await go(deps, event())
   assert.equal(plan.external.harness, 'grok')
   const quota = journal(deps)[0].quota
-  assert.equal(quota.find((c) => c.harness === 'agy' && c.group === 'gemini').why, null, 'the group is a candidate again')
+  assert.equal(quota.find((c) => c.harness === 'agy' && c.group === 'argon').why, null, 'the group is a candidate again')
   assert.equal(quota.find((c) => c.harness === 'agy' && c.group === 'claude').why, 'dry')
-  assert.equal(laneMarks.liveMark(deps.dataDir, 'agy', 'gemini', NOW), null, 'its file is gone')
+  assert.equal(laneMarks.liveMark(deps.dataDir, 'agy', 'argon', NOW), null, 'its file is gone')
   assert.deepEqual(laneMarks.liveMark(deps.dataDir, 'agy', 'claude', NOW), refusal)
   assert.ok(swarm.until > NOW)
 })
