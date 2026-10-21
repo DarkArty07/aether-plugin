@@ -497,50 +497,66 @@ async function delegateWithEnv(cwd, flags, deps) {
     wait: deps.wait ?? calls.wait,
   }
 
-  const written = await runLoop(ctx, {
-    role: 'implementer',
-    reference: { model: charge.model, effort: charge.effort },
-    exclude: [],
-    prompt: implementerPrompt(briefText, charge),
-    callName: (attempt) => `${TASK_ID}-${attempt}-implement`,
-  })
-  if (written.result === undefined) {
-    const result = { status: 'no-candidate', id, run: id, cause: written.cause, reason: written.reason, tried: written.tried }
-    lanes.appendLog(ctx.dataDir, charge.session, { kind: 'delegate', time: nowOf(deps), session: charge.session, run: id, id, status: 'no-candidate', cause: written.cause, tried: written.tried })
-    return result
+  // A command that is killed (the session ends, the Lead stops it) takes its calls with it: a runner is detached, and would go
+  // on spending the other plan's quota with nobody to read what it writes.
+  const signals = ['SIGTERM', 'SIGINT', 'SIGHUP']
+  const endCalls = () => {
+    try {
+      calls.stop(cwd, id)
+    } catch {
+      // Nothing left to stop.
+    }
+    process.exit(143)
   }
+  for (const signal of signals) process.once(signal, endCalls)
+  try {
+    const written = await runLoop(ctx, {
+      role: 'implementer',
+      reference: { model: charge.model, effort: charge.effort },
+      exclude: [],
+      prompt: implementerPrompt(briefText, charge),
+      callName: (attempt) => `${TASK_ID}-${attempt}-implement`,
+    })
+    if (written.result === undefined) {
+      const result = { status: 'no-candidate', id, run: id, cause: written.cause, reason: written.reason, tried: written.tried }
+      lanes.appendLog(ctx.dataDir, charge.session, { kind: 'delegate', time: nowOf(deps), session: charge.session, run: id, id, status: 'no-candidate', cause: written.cause, tried: written.tried })
+      return result
+    }
 
-  const implementer = written.result
-  const worktree = run.unitWorktree(paths.mainRoot, id, TASK_ID)
-  const tests = charge.tests === null ? null : runTests(worktree, charge.tests)
-  const reviewed = await runLoop(ctx, {
-    role: 'reviewer',
-    reference: reviewerReference(charge.model),
-    exclude: [written.picked.id],
-    prompt: reviewerPrompt({ implementer, tests }),
-    callName: (attempt) => `${TASK_ID}-review-${attempt}`,
-  })
-  const review =
-    reviewed.result !== undefined
-      ? { status: 'done', pair: pairOf(reviewed.picked), verdict: reviewed.result.verdict, findings: reviewed.result.findings, summary: reviewed.result.summary }
-      : reviewed.attempts === 0
-        ? { status: 'none', cause: reviewed.cause }
-        : { status: 'no-verdict', tried: reviewed.tried }
-  return {
-    status: 'done',
-    id,
-    run: id,
-    branch: run.unitBranch(id, TASK_ID),
-    worktree,
-    head: typeof implementer.head === 'string' && implementer.head !== '' ? implementer.head : head(worktree),
-    pair: pairOf(written.picked),
-    reason: written.reason,
-    summary: implementer.summary,
-    implementer: { status: implementer.status, tests: implementer.tests, concerns: implementer.concerns, question: implementer.question },
-    tests,
-    review,
-    tried: written.tried,
-    merge: `aether-wt merge ${id} ${TASK_ID}`,
+    const implementer = written.result
+    const worktree = run.unitWorktree(paths.mainRoot, id, TASK_ID)
+    const tests = charge.tests === null ? null : runTests(worktree, charge.tests)
+    const reviewed = await runLoop(ctx, {
+      role: 'reviewer',
+      reference: reviewerReference(charge.model),
+      exclude: [written.picked.id],
+      prompt: reviewerPrompt({ implementer, tests }),
+      callName: (attempt) => `${TASK_ID}-review-${attempt}`,
+    })
+    const review =
+      reviewed.result !== undefined
+        ? { status: 'done', pair: pairOf(reviewed.picked), verdict: reviewed.result.verdict, findings: reviewed.result.findings, summary: reviewed.result.summary }
+        : reviewed.attempts === 0
+          ? { status: 'none', cause: reviewed.cause }
+          : { status: 'no-verdict', tried: reviewed.tried }
+    return {
+      status: 'done',
+      id,
+      run: id,
+      branch: run.unitBranch(id, TASK_ID),
+      worktree,
+      head: typeof implementer.head === 'string' && implementer.head !== '' ? implementer.head : head(worktree),
+      pair: pairOf(written.picked),
+      reason: written.reason,
+      summary: implementer.summary,
+      implementer: { status: implementer.status, tests: implementer.tests, concerns: implementer.concerns, question: implementer.question },
+      tests,
+      review,
+      tried: written.tried,
+      merge: `aether-wt merge ${id} ${TASK_ID}`,
+    }
+  } finally {
+    for (const signal of signals) process.off(signal, endCalls)
   }
 }
 

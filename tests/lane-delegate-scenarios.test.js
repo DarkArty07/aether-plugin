@@ -258,6 +258,35 @@ test('E2: with scaled timeouts the delegate command runs whole in its own proces
   assert.deepEqual(lanes.killMarked(controlPrefix, { prefix: true }), [`${controlPrefix}task-1-1-implement`], 'the scan sees a live marked process')
 })
 
+test('a delegate command that is killed ends its calls: no process of the attempt is left to spend quota', async (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  const brief = writeBrief(repo, briefLines(['FAKE-AGY: sleep 25']))
+  const child = spawn(process.execPath, [fx.LANE_BIN, 'delegate', '--brief', brief, '--model', 'haiku', '--effort', 'high', '--owns', 'src/**', '--session', 's1'], { cwd: repo.dir, env, stdio: 'ignore' })
+  const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })))
+  t.after(() => {
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      // Gone already.
+    }
+  })
+  const runsDir = path.join(repo.dir, '.aether', 'runs')
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  let id = null
+  for (let k = 0; k < 100 && id === null; k++) {
+    const found = fs.existsSync(runsDir) ? fs.readdirSync(runsDir).find((name) => fs.existsSync(path.join(runsDir, name, 'lanes', 'task-1-1-implement', 'call.json'))) : undefined
+    if (found) id = found
+    else await sleep(100)
+  }
+  assert.ok(id, 'the implementer call started')
+  await sleep(1500)
+  child.kill('SIGTERM')
+  const ended = await exited
+  assert.equal(ended.code, 143, `the command left with 143, not ${JSON.stringify(ended)}`)
+  assert.deepEqual(lanes.killMarked(`${id}/`, { prefix: true }), [], 'no process of the attempt is alive after the command was killed')
+})
+
 test('E3: a pair that runs out of quota mid-way passes to the next pair, and with no candidate left the charge ends as no-candidate', (t) => {
   const { choices } = probe(t)
   const first = choices.find((entry) => entry.role === 'implementer').picked
