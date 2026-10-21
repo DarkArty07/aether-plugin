@@ -1,12 +1,12 @@
 ---
 title: Options
-description: The seven options of the Aether plugin, their defaults, how to set each one, and the settings a plugin cannot make for you.
+description: The nine options of the Aether plugin, their defaults, how to set each one, and the settings a plugin cannot make for you.
 order: 10
 ---
 
 # Options
 
-Aether has seven options, set when you install the plugin or later, and a few settings that only you can make. This page holds the one table of options: the other pages link here for a default.
+Aether has nine options, set when you install the plugin or later, and a few settings that only you can make. This page holds the one table of options: the other pages link here for a default.
 
 ## Configure Aether
 
@@ -21,6 +21,8 @@ Aether has seven options, set when you install the plugin or later, and a few se
 | `decider` | `haiku` | `--config decider=jev` at install, or `/plugin` → Installed → aether → Configure options later | Chooses what decides for the router: `haiku`, or `jev` on OpenRouter, which sends each delegate brief to a third party |
 | `fallback` | `sonnet:high` | `--config fallback=opus:high` at install, or `/plugin` → Installed → aether → Configure options later | Sets the model and effort a delegate task runs on when the router cannot decide and the Lead asked for none, as alias:effort |
 | `deadlines` | `haiku=8,jev=3,quota=3` | `--config deadlines=haiku=5,jev=3,quota=3` at install, or `/plugin` → Installed → aether → Configure options later | Sets how long the router waits, in seconds, for each decider and for the quota decision; a value above 10 counts as 10 |
+| `quotabrake` | `95` | `--config quotabrake=90` at install, or `/plugin` → Installed → aether → Configure options later | Sets the percent of the five-hour window used at which the quota brake warns you, and pauses an autonomous run until the window resets: see [Autonomy](autonomy.md#autonomy) |
+| `brakepush` | off | `--config brakepush=true` at install, or `/plugin` → Installed → aether → Configure options later | Also pushes the unit branches an interrupted workflow saved to origin, when your recorded push permission covers it; off keeps saved work on its local branch |
 
 
 - `superdelegation`, off by default, sends everything that is not the Lead to other coding harnesses while their quota lasts, and leaves native Claude as the fallback. They work without permission prompts and spend another plan's quota, so you turn it on yourself. It runs only on Linux. It replaces the `lanes` and `seats` options, which stay in the manifest only so a value you already set is not lost silently: with `superdelegation` unset, `lanes` on counts as superdelegation on and `lanes` off as off; with `superdelegation` set, `lanes` is ignored; `seats` is always ignored, `native` included, and the session start and `aether-report` tell you so. The rule is written once, in [Lanes](lanes.md#lanes).
@@ -30,6 +32,8 @@ Aether has seven options, set when you install the plugin or later, and a few se
 - `decider`, `haiku` by default, is what decides for the router: `haiku` runs Claude Haiku at low effort with no outside service; `jev` calls typesafe/jev-1.14 on OpenRouter, which sends each delegate brief to a third party and needs `OPENROUTER_API_KEY` in the environment or in the `.env` of the plugin data directory.
 - `fallback`, `sonnet:high` by default, is the model and effort a delegate task runs on when the router cannot decide and the Lead asked for none, written as `alias:effort`. The aliases are `haiku`, `sonnet` and `opus`; the efforts are `low`, `medium`, `high`, `xhigh` and `max`. A value that does not say so is `sonnet:high`.
 - `deadlines`, `haiku=8,jev=3,quota=3` by default, is how long the router waits, in seconds, for each decider and for the quota decision; a value above 10 counts as 10, and a key that is missing or wrong keeps its default. In `record` mode nothing waits, because the decider runs in the background.
+- `quotabrake`, `95` by default, is the percent of your account's five-hour window used at which the quota brake acts in a Lead session: it warns you once per crossing and, in an autonomous run, pauses the run — nothing new starts, what is running is stopped and saved — until the window resets, then resumes the run on its own. The seven-day window at the same percent only warns, and so does a Lead session with no run open. Only your own recorded words turn the brake off, and only for that run. A value that is not a finite number n with 0 < n <= 100 is `95`.
+- `brakepush`, off by default, also pushes the unit branches an interrupted workflow saved to `origin`. The saved work is local either way; with this on, a saved branch is pushed only when your recorded `push` permission covers it, branch by branch.
 
 `router` and `decider` are selectors since 0.12.3: `/plugin configure aether@aether-plugin` and `/config` show their values to pick from (`Delegate router ◀ record ▶`) instead of a free text, and the defaults do not change. `harnesses`, `fallback` and `deadlines` stay free text. In an Aether session, the [`/harnesses` panel](lanes.md#the-harnesses-panel) shows the values the session uses for `superdelegation`, `router`, `decider` and `harnesses`, with the same fallbacks as above for a value that is not valid.
 

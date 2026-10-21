@@ -27,11 +27,17 @@
 // this file whether the session is Aether's (aetherSession) when they are used, never at session start, so that the
 // first answer kept for the session is the meter's own.
 //
+// It also runs the quota brake (spec 011, quota-brake.mjs): after each metered step it reads the session's rate-limit
+// windows, and when one crosses the threshold it warns the owner once, records the crossing with aether-autonomy, tells
+// the Lead through the plugin's own prompt to stop the run's work, and arms a wake-up for the window's reset. The brake
+// only observes a step: no failure in it changes the step's answer.
+//
 // Files: <data dir>/usage/<session>/<n>.json, each { session, part, claudeCode, agents, entries }
 // with up to PART_SIZE entries. A reloaded module starts after the parts already on disk.
 
 import { PAYLOAD_PATH, parseOpsPrompt } from './ops-command.mjs'
 import { registerPanel } from './panel.jsx'
+import { brakePromptFor, crossingsOf, initialBrakeState, jsonFrom, notifyFor, resumePromptFor } from './quota-brake.mjs'
 import { createRouter } from './router.mjs'
 
 const PART_SIZE = 1000
@@ -47,8 +53,12 @@ const ANSWERED = 'answered'
 // What node prints when a bin fails to load: a node too old for its syntax, or a missing file.
 const LOAD_FAILURE = /\b(SyntaxError|Cannot find module)\b/
 const SESSION_ID = /^[A-Za-z0-9-]+$/
+// A brake call to aether-autonomy: a small read or write of the run's JSON.
+const BRAKE_TIMEOUT_MS = 10000
+// How often the brake may ask for its settings again while a crossing waits for a run to pause.
+const BRAKE_RECHECK_MS = 60000
 
-// session id → { id, aether, dataDir, ready, entries, agents, written, writing, pending, ops }
+// session id → { id, aether, dataDir, ready, entries, agents, written, writing, pending, ops, brake }
 // `ops` holds each ops agent's command until its first step, agent id → { cwd, bin, args, timeoutMs },
 // then ANSWERED once the mod has run it.
 const sessions = new Map()
@@ -115,7 +125,7 @@ async function readDataDir($) {
 function sessionOf(id) {
   let state = sessions.get(id)
   if (!state) {
-    state = { id, aether: undefined, opsOff: undefined, dataDir: null, ready: null, entries: [], agents: {}, written: 0, writing: false, pending: false, ops: new Map() }
+    state = { id, aether: undefined, opsOff: undefined, brake: undefined, dataDir: null, ready: null, entries: [], agents: {}, written: 0, writing: false, pending: false, ops: new Map() }
     sessions.set(id, state)
   }
   return state
@@ -337,6 +347,155 @@ async function* meteredStep($, state, e, next) {
   return result
 }
 
+// One call to aether-autonomy for the brake: the object it printed, or null when it failed or printed none.
+async function autonomyCall($, args) {
+  const out = await $.process.run(['node', `${$.plugin.root}/bin/aether-autonomy`, ...args], { timeoutMs: BRAKE_TIMEOUT_MS })
+  return out && out.exitCode === 0 ? jsonFrom(out.stdout) : null
+}
+
+// Arms the wake-up for one pause, once per pause: at its resume hour the plugin's own message asks the Lead
+// to continue the run. A resume hour already past submits it at once.
+async function armResume($, brake, run, resumeAt) {
+  const at = Date.parse(resumeAt)
+  if (!run || !Number.isFinite(at)) return
+  const armedFor = `${run}:${resumeAt}`
+  if (brake.armedFor === armedFor) return
+  brake.armedFor = armedFor
+  const ms = at - (await $.clock.now())
+  if (ms <= 0) {
+    await $.prompt.submit({ text: resumePromptFor({ run, resumeAt }) })
+    return
+  }
+  $.clock.after(ms, async () => {
+    try {
+      await $.prompt.submit({ text: resumePromptFor({ run, resumeAt }) })
+    } catch {
+      // The session ended first; the next one rearms from its settings.
+    }
+  })
+}
+
+// The five-hour reading among the windows, in the shape crossingsOf accepts, or null.
+function fiveHourReading(rateLimits) {
+  if (!Array.isArray(rateLimits)) return null
+  for (const entry of rateLimits) {
+    if (entry && entry.kind === 'five_hour' && Number.isFinite(entry.percentUsed) && typeof entry.resetsAt === 'string') return entry
+  }
+  return null
+}
+
+// Records one crossing with the bin, with how its warning fared: the bin's answer, or null.
+async function recordCrossing($, state, crossing, threshold, notify) {
+  return autonomyCall($, [
+    'brake-crossing', '--kind', crossing.kind, '--percent', String(crossing.percentUsed), '--resets-at', crossing.resetsAt,
+    '--threshold', String(threshold), '--notify', notify.sent ? 'sent' : 'failed',
+    ...(!notify.sent && notify.reason ? ['--notify-reason', notify.reason] : []),
+    '--session', state.id,
+  ])
+}
+
+// What a recorded crossing does: a new five-hour pause tells the Lead to stop the run's work (the plugin's
+// own message, never as the owner's words) and arms its wake-up. Any five-hour answer but no-run is
+// remembered for that reset hour, so neither the settings nor the crossing is asked for it again.
+async function brakeRecorded($, state, crossing, record) {
+  const brake = state.brake
+  const wasPaused = brake.pausedResetsAt === crossing.resetsAt
+  if (record && crossing.kind === 'five_hour' && record.reason !== 'no-run') brake.pausedResetsAt = crossing.resetsAt
+  if (!record || crossing.kind !== 'five_hour' || record.paused !== true || !record.run || !record.resumeAt) return
+  if (record.duplicate !== true && !wasPaused) {
+    await $.prompt.submit({ text: brakePromptFor({ ...crossing, threshold: brake.settings.threshold, run: record.run, resumeAt: record.resumeAt }) })
+  }
+  await armResume($, brake, record.run, record.resumeAt)
+}
+
+// The quota brake after one metered step. The first step asks aether-autonomy for the brake's settings (a
+// failure leaves the brake inert for the session, never retried per step); each step then reads the
+// windows and acts on a fresh crossing. Observing only: the body is caught whole.
+async function brakeStep($, state) {
+  // turn.step fires for every agent of the session, so in a swarm steps overlap: one step at a time handles a crossing, and
+  // a step that finds another one at work leaves it to that one (the next step reads the windows again).
+  if (state.brakeBusy) return
+  state.brakeBusy = true
+  try {
+    await brakeStepOnce($, state)
+  } finally {
+    state.brakeBusy = false
+  }
+}
+
+async function brakeStepOnce($, state) {
+  try {
+    if (state.brake === null) return
+    const now = await $.clock.now()
+    if (state.brake === undefined) {
+      let settings = null
+      try {
+        settings = await autonomyCall($, ['brake-settings', '--session', state.id])
+      } catch {
+        settings = null
+      }
+      if (!settings) {
+        state.brake = null
+        return
+      }
+      state.brake = {
+        settings,
+        state: initialBrakeState(settings),
+        armedFor: null,
+        pausedResetsAt: settings.paused ? settings.paused.resetsAt : null,
+        settingsCheckedAt: now,
+      }
+      if (settings.paused) await armResume($, state.brake, settings.paused.run, settings.paused.resumeAt)
+    }
+    const brake = state.brake
+    const usage = await $.session.usage()
+    const rateLimits = usage && usage.rateLimits
+    const five = fiveHourReading(rateLimits)
+    // A run can open after its window was warned about: while the window stays at or over the threshold
+    // with no pause seen for its reset hour, the settings are asked again, at most once a minute. A
+    // failed re-ask keeps the settings it had and still counts, so no step spawns it twice in a row.
+    if (five && five.percentUsed >= brake.settings.threshold && brake.pausedResetsAt !== five.resetsAt && now - brake.settingsCheckedAt >= BRAKE_RECHECK_MS) {
+      let settings = null
+      try {
+        settings = await autonomyCall($, ['brake-settings', '--session', state.id])
+      } catch {
+        settings = null
+      }
+      if (settings) brake.settings = settings
+      brake.settingsCheckedAt = now
+    }
+    const decided = crossingsOf(rateLimits, brake.settings.threshold, brake.state)
+    brake.state = decided.state
+    let fiveRecorded = false
+    for (const crossing of decided.crossings) {
+      const notice = notifyFor(crossing, brake.settings.threshold)
+      let notify
+      try {
+        const result = await $.ui.notify(notice.text, { title: notice.title })
+        notify = result && result.isSent ? { sent: true, reason: null } : { sent: false, reason: (result && result.reason) || 'refused' }
+      } catch {
+        notify = { sent: false, reason: 'error' }
+      }
+      if (crossing.kind === 'five_hour') fiveRecorded = true
+      const record = await recordCrossing($, state, crossing, brake.settings.threshold, notify)
+      await brakeRecorded($, state, crossing, record)
+    }
+    // The warning and the pause do not share a dedupe: a window warned about earlier (here or in an
+    // earlier session) still pauses an open run that has no pause for its reset hour. The warning for
+    // that hour was already given, so this recording says it was sent and does not repeat it.
+    if (five && !fiveRecorded && five.percentUsed >= brake.settings.threshold && brake.pausedResetsAt !== five.resetsAt) {
+      const settings = brake.settings
+      if (settings.openRun && (!settings.paused || settings.paused.resetsAt !== five.resetsAt)) {
+        const crossing = { kind: 'five_hour', percentUsed: five.percentUsed, resetsAt: five.resetsAt }
+        const record = await recordCrossing($, state, crossing, settings.threshold, { sent: true, reason: null })
+        await brakeRecorded($, state, crossing, record)
+      }
+    }
+  } catch {
+    // Observing only.
+  }
+}
+
 export function register(on, options) {
   registerPanel(on, options)
 
@@ -444,7 +603,9 @@ export function register(on, options) {
       }
       // $.process.run refused or could not start the command, or the bin failed to load: the model runs the prompt.
     }
-    return yield* meteredStep($, state, e, next)
+    const result = yield* meteredStep($, state, e, next)
+    await brakeStep($, state)
+    return result
   })
 
   on('turn.complete', async ($, e, next) => {

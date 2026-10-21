@@ -224,6 +224,9 @@ test('start opens a run with the default ceilings and writes the diary skeleton'
     started: '2026-10-09T20:00:00.000Z',
     ceilings: { hours: 8, usd: 50, source: { hours: 'default', usd: 'default' } },
     spend: [],
+    brakeOff: null,
+    quotaPauses: [],
+    quotaCrossings: [],
     ended: null,
     outcome: null,
   })
@@ -290,11 +293,12 @@ test('status measures the hours and the spend, and stops on time first, then on 
     diary,
     session: SESSION,
     started: '2026-10-09T20:00:00.000Z',
-    hours: { elapsed: 1.5, ceiling: 8 },
+    hours: { elapsed: 1.5, ceiling: 8, paused: 0 },
     usd: { spent: 0, ceiling: 50 },
     idleMinutes: 0,
     idle: false,
     stop: null,
+    quota: { paused: false, brakeOff: false, resetsAt: null, resumeAt: null, percentUsed: null },
   })
   autonomy.spend(mainRoot, 30.004, '20261009-201500-ab12', { now: T0 + 2 * HOUR })
   const after = autonomy.spend(mainRoot, 20, 'design-1/1', { now: T0 + 2 * HOUR })

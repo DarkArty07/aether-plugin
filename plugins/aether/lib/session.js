@@ -18,6 +18,8 @@ const DEFAULT_DEADLINES = Object.freeze({ haikuMs: 8000, jevMs: 3000, quotaMs: 3
 const MAX_DEADLINE_MS = 10000
 const DEADLINE_KEYS = { haiku: 'haikuMs', jev: 'jevMs', quota: 'quotaMs' }
 
+const DEFAULT_THRESHOLD = 95
+
 function isValidSessionId(sessionId) {
   return typeof sessionId === 'string' && SESSION_ID_RE.test(sessionId)
 }
@@ -40,6 +42,21 @@ function opsOffFile(dataDir, sessionId) {
 // commands read. Same id rules as the marker.
 function routerFile(dataDir, sessionId) {
   return markerFile(dataDir, sessionId).replace(/\.json$/, '.router.json')
+}
+
+// <dataDir>/sessions/<sessionId>.brake.json: the session's quota brake settings. Same id rules as the marker.
+function brakeFile(dataDir, sessionId) {
+  return markerFile(dataDir, sessionId).replace(/\.json$/, '.brake.json')
+}
+
+// A finite number n with 0 < n <= 100, or DEFAULT_THRESHOLD for anything else.
+function parseThreshold(value) {
+  if (typeof value !== 'string') return DEFAULT_THRESHOLD
+  const text = value.trim()
+  if (!text) return DEFAULT_THRESHOLD
+  const n = Number(text)
+  if (Number.isFinite(n) && n > 0 && n <= 100) return n
+  return DEFAULT_THRESHOLD
 }
 
 // 'alias:effort' -> { alias, effort }, case-insensitive and trimmed. Anything else is DEFAULT_FALLBACK.
@@ -118,11 +135,40 @@ function readRouterSettings(dataDir, sessionId) {
   }
 }
 
+function brakeSettingsFrom(env = process.env) {
+  return {
+    threshold: parseThreshold(env.CLAUDE_PLUGIN_OPTION_QUOTABRAKE),
+    push: env.CLAUDE_PLUGIN_OPTION_BRAKEPUSH === 'true',
+  }
+}
+
+// The settings in the session's brake file, or null when it is missing, unreadable or invalid.
+function readBrakeSettings(dataDir, sessionId) {
+  try {
+    if (!isValidSessionId(sessionId)) return null
+    const s = JSON.parse(fs.readFileSync(brakeFile(dataDir, sessionId), 'utf8'))
+    const valid =
+      s !== null &&
+      typeof s === 'object' &&
+      !Array.isArray(s) &&
+      typeof s.threshold === 'number' &&
+      Number.isFinite(s.threshold) &&
+      s.threshold > 0 &&
+      s.threshold <= 100 &&
+      typeof s.push === 'boolean'
+    if (!valid) return null
+    return { threshold: s.threshold, push: s.push }
+  } catch {
+    return null
+  }
+}
+
 // Writes {"session": sessionId, "startedAt": now} to the marker file, creating its directory. Throws on a bad id (before writing anything) or a failed write.
 // With opsInMod false it also writes the ops-off file, and with it true it removes a stale one, so a session
 // resumed with the option changed follows the option it has now. With router given it writes the router file,
+// and with it null it removes a stale one, for the same reason. With brake given it writes the brake file,
 // and with it null it removes a stale one, for the same reason.
-function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, router = null } = {}) {
+function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, router = null, brake = null } = {}) {
   const file = markerFile(dataDir, sessionId)
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
@@ -133,6 +179,9 @@ function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, ro
   const routerPath = routerFile(dataDir, sessionId)
   if (router) fs.writeFileSync(routerPath, JSON.stringify(router) + '\n')
   else fs.rmSync(routerPath, { force: true })
+  const brakePath = brakeFile(dataDir, sessionId)
+  if (brake) fs.writeFileSync(brakePath, JSON.stringify(brake) + '\n')
+  else fs.rmSync(brakePath, { force: true })
 }
 
 // True when the marker file exists. False for an invalid or missing id; never throws.
@@ -172,6 +221,7 @@ function pruneSessions(dataDir, { days = 30, now = Date.now() } = {}) {
     fs.rmSync(full, { force: true })
     fs.rmSync(path.join(dir, `${id}.ops-off`), { force: true })
     fs.rmSync(path.join(dir, `${id}.router.json`), { force: true })
+    fs.rmSync(path.join(dir, `${id}.brake.json`), { force: true })
     pruned.push(id)
   }
   return pruned
@@ -185,13 +235,18 @@ module.exports = {
   DEFAULT_FALLBACK,
   DEFAULT_DEADLINES,
   MAX_DEADLINE_MS,
+  DEFAULT_THRESHOLD,
   markerFile,
   opsOffFile,
   routerFile,
+  brakeFile,
   parseFallback,
   parseDeadlines,
+  parseThreshold,
   routerSettingsFrom,
+  brakeSettingsFrom,
   readRouterSettings,
+  readBrakeSettings,
   markSession,
   isAetherSession,
   pruneSessions,

@@ -84,3 +84,20 @@ test('a session that is not Aether gets no note about an open run', (t) => {
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, '')
 })
+
+test('session start names the quota pause of the open run', (t) => {
+  const repo = makeRepo(t)
+  const diaryPath = writeRun(repo.dir, ID, null)
+  const file = path.join(repo.dir, '.aether', 'autonomy', ID, 'run.json')
+  const run = JSON.parse(fs.readFileSync(file, 'utf8'))
+  const resetsAt = new Date(Date.now() + 3600000).toISOString()
+  const resumeAt = new Date(Date.parse(resetsAt) + 120000).toISOString()
+  run.brakeOff = null
+  run.quotaPauses = [{ started: new Date().toISOString(), percentUsed: 96, threshold: 95, resetsAt, resumeAt, notify: { sent: true, reason: null }, savedUnits: [] }]
+  run.quotaCrossings = []
+  fs.writeFileSync(file, JSON.stringify(run))
+  const r = start(repo.dir, tempDir(t, 'aether-data-'))
+  assert.equal(r.status, 0, r.stderr)
+  assert.ok(r.context.includes(`Autonomous run ${ID} is open`), r.context.slice(-400))
+  assert.ok(r.context.includes(`The run is paused by the quota brake: the five-hour window resets ${resetsAt} and the run resumes ${resumeAt}. Do not start anything of this run before then; Aether re-arms the resume in this session.`), r.context.slice(-400))
+})
