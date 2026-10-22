@@ -23,8 +23,6 @@ const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote the file.', head: 
 const READY = JSON.stringify({ verdict: 'ready', findings: [], declined: [], summary: 'The diff does what the brief asks.' })
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const QUOTA_TEXT = 'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 163h22m27s.'
-const OUTSIDE_MEASURE =
-  'Calls the router never records are outside this measure: aether:* agents leave no journal entry, calls whose brief carries ROUTER-OVERRIDE: are recorded without a class, and a session without router settings records nothing. A delegate that edits by one of those routes is not listed, and that is a limit of the measure, not a no-candidate.'
 
 const agyEnv = (t, options) => ({ ...fx.laneEnv(t, options), AETHER_LANE_HARNESSES: 'agy' })
 const choicesOf = (env, role = null) => lanes.readLog(env.AETHER_DATA_DIR).filter((entry) => entry.kind === 'choice' && (role === null || entry.role === role))
@@ -440,70 +438,3 @@ test('E8: the environment the fake dumps carries no secrets, and every turn ran 
     assert.ok(inside, `the turn ran inside .aether/worktrees/ or .aether/lanes/: ${turn.cwd}`)
   }
 })
-
-test('the measure by the real path: only the editing delegation on Claude with no no-candidate behind it is listed (R16, R18)', async (t) => {
-  const repo = makeRepo(t)
-  const HOUR = 3600 * 1000
-  const inHours = (h) => new Date(Date.now() + h * HOUR).toISOString()
-  const dry = { 'Gemini Models': [0.9, 0.02, null, inHours(40)], 'Claude and GPT models': [0.9, 0.02, null, inHours(40)] }
-  const env = agyEnv(t, { command: roleFake(t), quota: dry })
-  const dataDir = env.AETHER_DATA_DIR
-
-  // (a) The delegate command, with the quota dry: a no-candidate and its id, in the lane log.
-  const brief = writeBrief(repo, briefLines())
-  const a = runDelegate(repo, env, { brief })
-  assert.equal(a.json?.status, 'no-candidate', a.stdout + a.stderr)
-  assert.equal(a.json.cause, 'dry')
-  const taskId = a.json.id
-  assert.ok(RUN_ID.test(taskId))
-
-  const deps = routerDeps(dataDir, { mode: 'record' })
-  const ev = (description, prompt, over = {}) => ({ subagent_type: 'general-purpose', description, prompt, ...over })
-
-  // (b) A native editing call whose brief carries that id, after more than 400 characters of filler.
-  const filler = 'Filler for the brief. '.repeat(30)
-  const withId = `${filler}\nAETHER-TASK: ${taskId}\nRename fetchUser to loadUser everywhere.`
-  assert.ok(withId.indexOf('AETHER-TASK:') > 400)
-  await go(deps, ev('edits behind the no-candidate', withId), editsAnswer())
-
-  // (c) Another native editing call with no such line and no model or effort asked, in record mode:
-  // its real journal entry keeps ranOn null, and the measure has to count it as Claude.
-  await go(deps, ev('edits with nothing behind it', 'Rename fetchUser to loadUser everywhere.'), editsAnswer())
-
-  // (d) A read-only call.
-  await go(deps, ev('reads only', 'Read src/ and report each call that skips the retry wrapper.'), readOnlyAnswer())
-
-  // (e) An aether:* call: the router skips it and it leaves no entry.
-  const beforeSkip = journal(dataDir).length
-  const skipped = await route.begin({ session: 's1', event: ev('an aether implementer', 'Rename fetchUser to loadUser everywhere.', { subagent_type: 'aether:implementer' }) }, deps)
-  assert.equal(skipped.skip, true)
-  assert.equal(journal(dataDir).length, beforeSkip)
-
-  // (f) A native editing call whose brief carries ROUTER-OVERRIDE: and the AETHER-TASK: line.
-  await route.begin({ session: 's1', event: ev('edits by override', `Rename fetchUser to loadUser everywhere.\nROUTER-OVERRIDE: the Lead keeps this one native\nAETHER-TASK: ${taskId}`) }, deps)
-
-  const entries = journal(dataDir)
-  const counted = entries.find((e) => e.description === 'edits with nothing behind it')
-  assert.ok(counted, 'the record-mode editing call is in the journal the router wrote')
-  assert.equal(counted.ranOn, null, 'its real journal entry keeps ranOn null')
-  assert.equal(counted.taskClass, 'edits')
-  assert.equal(counted.requested, null)
-  const behind = entries.find((e) => e.description === 'edits behind the no-candidate')
-  assert.equal(behind.aetherTask, taskId, 'the id was read from the whole brief, past the 400 characters of filler')
-  assert.equal(entries.find((e) => e.description === 'reads only').taskClass, 'read-only')
-  const override = entries.find((e) => e.description === 'edits by override')
-  assert.equal(override.taskClass, null)
-  assert.equal(override.aetherTask, taskId)
-
-  const report = runBin(REPORT_BIN, ['--delegates', '--session', 's1'], repo.dir, env)
-  assert.equal(report.status, 0, report.stdout + report.stderr)
-  const listed = report.json.editsOnClaudeWithoutNoCandidate
-  assert.equal(listed.length, 1, JSON.stringify(listed))
-  assert.equal(listed[0].description, 'edits with nothing behind it')
-  assert.equal(listed[0].id, counted.id)
-  assert.equal(listed[0].session, 's1')
-  assert.equal(listed[0].aetherTask, null)
-  assert.equal(listed[0].ranOn, null)
-  assert.equal(report.json.outsideMeasure, OUTSIDE_MEASURE)
-})
-

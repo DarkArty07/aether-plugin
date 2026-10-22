@@ -220,15 +220,6 @@ test('issue 036: a decision whose pair step failed counts as a fallback, and sho
   assert.equal(report.totals.decided, 1, 'the one that ran without a failure is the decided one')
 })
 
-test('aether-report --delegates prints the report', (t) => {
-  const dir = fixture(t)
-  const bin = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-report')
-  const r = runBin(bin, ['--delegates', '--session', 's1'], dir, { AETHER_DATA_DIR: dir })
-  assert.equal(r.status, 0, r.stderr)
-  assert.equal(r.json.delegations.length, 5)
-  assert.equal(r.json.totals.overridden, 1)
-})
-
 test('editsWithoutNoCandidate lists only the editing delegations that ran on Claude with no no-candidate for their id', () => {
   const claude = { harness: 'claude', model: 'claude-sonnet-5-5', effort: 'high' }
   const row = (over) => ({ id: 'd1', time: 1, session: 's', description: 'task', aetherTask: null, taskClass: 'edits', ranOn: claude, applied: 'kept', attempts: [], ...over })

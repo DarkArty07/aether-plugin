@@ -12,7 +12,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 const { report, finalize, seatsReport } = require(path.join(lib, 'report.js'))
-const { delegatesReport } = require(path.join(lib, 'router-report.js'))
+const { delegatesReport } = require(path.join(lib, 'delegate-report.js'))
 const { loadPrices, priceModelUsage } = require(path.join(lib, 'prices.js'))
 const { spendReport, isSessionId } = require(path.join(lib, 'spend.js'))
 

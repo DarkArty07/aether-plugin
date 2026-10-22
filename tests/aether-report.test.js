@@ -84,3 +84,12 @@ test('aether-report --run prints the per-call choices, the delegated work and wh
   assert.equal(r.json.superdelegation.on, false)
   assert.equal(r.json.superdelegation.legacy.length, 1)
 })
+
+test('aether-report --delegates without a log prints the ladder steps with zero counts and no delegations', (t) => {
+  useDataDir(t)
+  const r = runBin(REPORT_BIN, ['--delegates'], tempDir(t))
+  assert.equal(r.status, 0, r.stdout)
+  assert.deepEqual(r.json.delegations, [])
+  assert.ok(r.json.ladder.steps.length > 0 && r.json.ladder.steps.every((s) => s.tasks === 0 && s.attempts === 0))
+  assert.equal('totals' in r.json, false)
+})
