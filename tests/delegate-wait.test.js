@@ -75,18 +75,36 @@ test('the constants stay under the ten minutes of $.process.run', () => {
   assert.ok(mod.WAIT_SECONDS * 1000 < mod.WAIT_TIMEOUT_MS)
 })
 
-test('waitSteps yields a beat after every wait that did not end, and returns the result (the stall limit of the engine)', async () => {
-  const { $ } = make([{ done: false }, { done: false }, DONE])
+test('waitSteps yields a beat after every wait that did not end, before it waits again (the stall limit of the engine)', async () => {
+  const { $, state } = make([{ done: false }, { done: false }, DONE])
   const steps = mod.waitSteps($, CTX)
-  const beats = []
-  let next = await steps.next()
-  while (next.done !== true) {
-    beats.push(next.value)
-    next = await steps.next()
-  }
-  assert.deepEqual(beats, [{ beat: true, waitedMs: 540000 }, { beat: true, waitedMs: 1080000 }])
-  assert.deepEqual(next.value, { ok: true, status: 'ok', text: 'branch aether/x/task-1' })
+  const first = await steps.next()
+  assert.deepEqual([first.done, first.value], [false, { beat: true, waitedMs: 540000 }])
+  assert.equal(state.runs.length, 1, 'the first beat comes before the second wait')
+  const second = await steps.next()
+  assert.deepEqual([second.done, second.value], [false, { beat: true, waitedMs: 1080000 }])
+  assert.equal(state.runs.length, 2)
+  const last = await steps.next()
+  assert.deepEqual([last.done, last.value], [true, { ok: true, status: 'ok', text: 'branch aether/x/task-1' }])
   assert.ok(mod.WAIT_TIMEOUT_MS < mod.STALL_MS, 'no wait can go as long as the engine tolerates without an event')
+})
+
+test('a failed wait gives a beat before its retry, so a hung wait and its retry never go 600 s without an event', async () => {
+  const { $, state } = make([new Error('hung'), DONE])
+  const steps = mod.waitSteps($, CTX)
+  const first = await steps.next()
+  assert.deepEqual([first.done, first.value.beat], [false, true])
+  assert.equal(state.runs.length, 1, 'the beat comes before the retry')
+  const last = await steps.next()
+  assert.deepEqual([last.done, last.value], [true, { ok: true, status: 'ok', text: 'branch aether/x/task-1' }])
+  assert.equal(state.runs.length, 2)
+})
+
+test('two failed waits in a row give one beat and then end the wait', async () => {
+  const { $ } = make([new Error('a'), new Error('b')])
+  const steps = mod.waitSteps($, CTX)
+  assert.equal((await steps.next()).value.beat, true)
+  assert.deepEqual(await steps.next(), { done: true, value: { ok: false, status: 'wait-failed', text: null } })
 })
 
 test('a delegate that ends on the first wait yields no beat', async () => {

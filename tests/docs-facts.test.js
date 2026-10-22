@@ -33,6 +33,8 @@
 //     scripts/aether-install.js  the 0.6 installer, named as retired in "Upgrading from 0.6"
 //     scripts/lane-cupo.js       the script that measured a harness's parallel limit, removed with the limit (decision A74);
 //                                the changelog keeps the words of the release that shipped it
+//     plugins/aether/hooks/router.mjs  the retired router mod, removed in spec 013; docs/guide/router.md names it until
+//                                docs/guide/delegates.md replaces that guide
 //   Plugin names that are no agent, skill or workflow (AETHER_NAME skips them):
 //     custom:aether:<theme>      the value of the `theme` setting that selects a theme the plugin ships, which Claude
 //                                Code forms as custom:<plugin name>:<file name>; the launcher passes it
@@ -66,6 +68,7 @@ const EXCEPTIONS = {          // commands that are not files of plugins/aether/b
 const PATH_EXCEPTIONS = {
   'scripts/aether-install.js': 'the 0.6 installer, named as retired in "Upgrading from 0.6"',
   'scripts/lane-cupo.js': 'the parallel-limit script, removed in decision A74; the changelog keeps the words of its release',
+  'plugins/aether/hooks/router.mjs': 'the retired router mod, removed in spec 013; named by the router guide until docs/guide/delegates.md replaces it',
 }
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 const manifest = () => JSON.parse(read('plugins/aether/.claude-plugin/plugin.json'))

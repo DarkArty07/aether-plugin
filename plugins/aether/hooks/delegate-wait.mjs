@@ -51,9 +51,10 @@ async function waitOnce($, root, id) {
   }
 }
 
-// Repeats the wait until the delegate ends, one wait at a time. After each wait that did not end it yields
-// { beat: true, waitedMs }, so the caller can yield a heartbeat event (see STALL_MS); it returns { ok, status, text }
-// when the delegate ends, and never throws.
+// Repeats the wait until the delegate ends, one wait at a time. After each wait that did not end, and after a wait that
+// failed and is about to be retried, it yields { beat: true, waitedMs }, so the caller can yield a heartbeat event (see
+// STALL_MS): a hung wait and its retry could otherwise go past the stall limit with no event. The second failure in a row
+// ends the wait with no beat. It returns { ok, status, text } when the delegate ends, and never throws.
 // `session` is part of the caller's context and is not sent: the bin takes its session and data directory
 // from the environment of the session it runs in.
 export async function* waitSteps($, { root, id, session }) {
@@ -67,6 +68,7 @@ export async function* waitSteps($, { root, id, session }) {
       if (answer === null) {
         failures += 1
         if (failures >= 2) return { ok: false, status: 'wait-failed', text: null }
+        yield { beat: true, waitedMs: (await $.clock.now()) - started }
         continue
       }
       failures = 0
