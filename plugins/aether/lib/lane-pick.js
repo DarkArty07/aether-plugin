@@ -56,7 +56,7 @@ function writeAtomic(file, value) {
 }
 
 // The reading harnessView takes as `latest` for each enabled harness that has a refresher: the one a process left in
-// the router's file or the harness's record while it is within its life, else a new one, saved where the router
+// the readings file of the quota module or the harness's own record while it is within its life, else a new one, saved where the quota module
 // reads it so that no other pick (nor design round) renews it again within quotaLifeMinutes. Never throws: a
 // reading that does not arrive leaves its harness without `latest`.
 async function latestReadings(config, enabled, { dataDir = run.dataDir(), now = Date.now(), createAdapter = defaultCreateAdapter, refreshStale = quota.refreshStale } = {}) {
