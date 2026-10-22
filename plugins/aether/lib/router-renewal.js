@@ -1,7 +1,7 @@
 'use strict'
 
 // The router's background renewal of a harness's quota reading (R23, A-6). When a decision finds the reading of agy
-// or grok expired, it starts `aether-route renew` in a process of its own, detached from the hook that started it, and
+// or grok expired, it starts `aether-delegate renew` in a process of its own, detached from the hook that started it, and
 // may wait a moment for the new reading. At most one renewal runs per harness at a time: a lock,
 // `<dataDir>/router/renewing/<harness>.json` holding `{ pid, since }`, is taken before the process is launched, so two
 // decisions at once start one renewal. The renewal itself (renewReading) takes the reading as the lanes do and saves
@@ -26,7 +26,7 @@ function lockFile(dataDir, harness) {
 }
 
 function renewalArgv(harness, { node = process.execPath, pluginRoot = path.join(__dirname, '..') } = {}) {
-  return [node, path.join(pluginRoot, 'bin', 'aether-route'), 'renew', '--harness', harness]
+  return [node, path.join(pluginRoot, 'bin', 'aether-delegate'), 'renew', '--harness', harness]
 }
 
 // What renews a harness whose adapter cannot take a new reading itself: grok's adapter only reads its log, and its

@@ -118,6 +118,7 @@ test('a delegate that changes a file is a violation, and the change never reache
   const out = await run(s, 'Audit.\nFAKE-AGY: write notes.txt hello\nFAKE-AGY: answer {"answer": "done"}')
   assert.equal(out.status, 'violation')
   assert.ok(out.detail.includes('notes.txt'))
+  assert.deepEqual(out.changed, ['notes.txt'], 'the violation names the files it touched')
   assert.equal(out.text, '')
   assert.equal(fs.existsSync(path.join(s.repo.dir, 'notes.txt')), false)
   assert.equal(worktrees(s), 1)

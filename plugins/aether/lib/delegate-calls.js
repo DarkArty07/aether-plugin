@@ -183,8 +183,8 @@ function usageOf(usage) {
 
 // One read-only delegate of the task on the rung, in a disposable worktree of cwd's HEAD. Resolves to its Outcome,
 // whose status is ok, quota, failed, violation, unavailable (nothing launched) or dirty (the checkout has uncommitted
-// work; nothing launched, no quota read); throws only for an id that is not a plain name. maxCliSeconds, when it is
-// given, caps the CLI's limit below what the harness's settings allow: a later attempt of a delegate has only the time
+// work; nothing launched, no quota read); a violation also has `changed`, the files it touched. It throws only for an
+// id that is not a plain name. maxCliSeconds, when it is given, caps the CLI's limit below what the harness's settings allow: a later attempt of a delegate has only the time
 // the earlier ones left (lib/delegate-chain.js). graceSeconds is the grace before the kill; only a test shortens it.
 // `timedOut` says the call was killed at its limit: such a call is `failed`, never `quota` (it says nothing of the
 // quota), and the router keeps its pair out of the choice for a while (lib/router-slow.js).
@@ -325,7 +325,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     const changes = worktreeChanges(worktree, start)
     if (changes.files.length > 0 || changes.moved) {
       const what = changes.files.length > 0 ? `changed ${changes.files.join(', ')}` : `moved HEAD from ${start} to ${changes.head}`
-      result = { status: 'violation', detail: `the read-only delegate ${what}` }
+      result = { status: 'violation', detail: `the read-only delegate ${what}`, changed: changes.files }
     } else if (limit.killed) {
       // Killed at its limit: its output is cut, and what the quota reads afterwards is not the call's verdict.
       result = { status: 'failed', detail: `ran out of time: killed at ${timeoutSeconds + graceSeconds} s, exit ${exitCode}` }
@@ -355,6 +355,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     quotaAfter,
     quotaSpent: quotaSpent(quotaBefore, quotaAfter),
     timedOut: limit.killed,
+    ...(result.status === 'violation' ? { changed: result.changed } : {}),
   })
 }
 

@@ -7,7 +7,7 @@ const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const chain = require('../plugins/aether/lib/delegate-chain.js')
 const laneMarks = require('../plugins/aether/lib/lane-marks.js')
-const log = require('../plugins/aether/lib/router-log.js')
+const log = require('../plugins/aether/lib/delegate-log.js')
 const marks = require('../plugins/aether/lib/router-marks.js')
 const slow = require('../plugins/aether/lib/router-slow.js')
 
@@ -46,7 +46,7 @@ function setup(t, script) {
     { cwd: dataDir, id: 'c-1', session: 's1', external: externalOf(primary, alternates), config: CONFIG, dataDir },
     { runDelegate, now: () => clock.t },
   )
-  const outcomes = () => log.readJournal(dataDir).filter((e) => e.kind === 'outcome')
+  const outcomes = () => log.readEntries(dataDir, { task: 'c-1' }).filter((e) => e.kind === 'outcome')
   return { dataDir, clock, calls, run, outcomes }
 }
 const refusal = (over = {}) => ({ status: 'quota', detail: AGY_REFUSAL, durationMs: 9000, ...over })
@@ -176,6 +176,23 @@ test('dirty and violation go to Claude: another pair would meet the same checkou
     assert.equal(s.calls.length, 1, outcome.status)
     assert.equal(out.marked, null)
   }
+})
+
+test('a violation comes back with the files the delegate touched; other endings with none (R6)', async (t) => {
+  const s = setup(t, [{ status: 'violation', detail: 'the read-only delegate changed src/a.js', changed: ['src/a.js'] }])
+  const out = await s.run(ARGON, [GROK])
+  assert.deepEqual([out.ok, out.status, out.changed], [false, 'violation', ['src/a.js']])
+  const fine = setup(t, [{ status: 'ok' }])
+  assert.deepEqual((await fine.run(ARGON)).changed, [])
+})
+
+test('the outcomes of a task go to the delegate log with the task id and an attempt that runs on across its chains', async (t) => {
+  const s = setup(t, [refusal(), { status: 'ok' }, { status: 'ok' }])
+  await s.run(ARGON, [GROK])
+  await s.run(MUSE)
+  assert.deepEqual(s.outcomes().map((e) => [e.id, e.attempt, e.harness]), [['c-1', 1, 'agy'], ['c-1', 2, 'grok'], ['c-1', 3, 'muse']])
+  assert.equal(fs.existsSync(path.join(s.dataDir, 'delegates', 'log.jsonl')), true)
+  assert.equal(fs.existsSync(path.join(s.dataDir, 'router', 'decisions.jsonl')), false, 'nothing goes to the old journal')
 })
 
 test('the third attempt is the last, however many candidates are left', async (t) => {
