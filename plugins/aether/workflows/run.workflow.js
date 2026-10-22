@@ -689,8 +689,12 @@ function describeMerge(out) {
   switch (out.reason) {
     case 'conflict':
       return `conflict in ${list(out.files)}`
-    case 'tests':
-      return `the test command failed after the merge (exit ${out.exitCode}${out.timedOut ? ', timed out' : ''}); the merge was undone`
+    case 'tests': {
+      const timed = out.timedOut ? ', timed out' : ''
+      // reverted is false when the commit could not be reset. Saying it was undone is then false (issue #2).
+      const ending = out.reverted === false ? '; the merge commit was left in place' : '; the merge was undone'
+      return `the test command failed after the merge (exit ${out.exitCode}${timed})${ending}`
+    }
     case 'ownership':
       return `refused: these files are outside the files the task owns: ${list(out.files)}. Revert those changes`
     case 'empty':
@@ -1313,7 +1317,7 @@ async function work(unit, task) {
     // A merge the mod cuts at 600 s has its commit on the branch and its tests unfinished (issue #2). The merge, the
     // status check and the rerun stay in one turn of the merge queue, so no other unit merges between a cut and its
     // rerun. The unit is merged only when the rerun passes, with the commit the rerun names. A rerun that is cut,
-    // errors, or is refused (unverified-other, unverified-buried) leaves the commit there and blocks the unit.
+    // errors, or is refused for any reason but a finished test run leaves the commit there and blocks the unit.
     const UNTESTED = 'its merge commit is on the integration branch without a passing test run'
     const held = await serialized(async () => {
       const first = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true })
@@ -1338,9 +1342,11 @@ async function work(unit, task) {
         log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
         return finish(unit, 'merged')
       }
-      // A second cut, an error, or a refusal: the commit is on the branch and the tests did not pass.
-      // A failing test run is not one of these; it is the usual failing merge, so the one retry below applies.
-      if (again.error || again.reason === 'unverified-other' || again.reason === 'unverified-buried') {
+      // A failing test run is the usual failing merge, so the one retry below applies.
+      // Any other rerun leaves the commit untested: a second cut, an error, a dirty worktree,
+      // unverified-buried, unverified-moved or unverified-other. The reason is prefixed so the
+      // Lead still sees why, and the sentence says the commit is untested (issue #2).
+      if (again.reason !== 'tests' || again.error) {
         const reason = again.error ? UNTESTED : `${again.reason}: ${UNTESTED}`
         round.merge = reason
         log(`${unit.id}: merge rerun did not finish (${again.error || again.reason}); ${reason}`)

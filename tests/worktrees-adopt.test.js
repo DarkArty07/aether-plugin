@@ -73,3 +73,18 @@ test('adopt needs a commit and a reason that is not blank', (t) => {
   assert.match(adopt(repo, args, 'task-1', '--commit', sha).json.error, /--reason/)
   assert.match(adopt(repo, args, 'task-1', '--commit', sha, '--reason', '   ').json.error, /--reason/)
 })
+
+test('adopt refuses a unit whose merge is still unverified (issue #2)', (t) => {
+  const { repo, args } = run(t)
+  commitIn(repo, repo.dir, 'src/t1/a.js', 'one\n', 'task 1 by hand')
+  const sha = repo.git('rev-parse', 'HEAD')
+  const dir = path.join(args.runDir, 'unverified')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'task-1.json'), `${JSON.stringify({ commit: sha })}\n`)
+  const r = adopt(repo, args, 'task-1', '--commit', sha, '--reason', 'applied its patch while the tests had not passed')
+  assert.equal(r.status, 1)
+  assert.match(r.json.error, /unverified/)
+  assert.match(r.json.error, /tests did not pass/)
+  assert.equal(fs.existsSync(path.join(args.runDir, 'adopted.json')), false)
+  assert.equal(fs.existsSync(path.join(dir, 'task-1.json')), true)
+})
