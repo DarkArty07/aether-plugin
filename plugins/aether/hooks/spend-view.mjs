@@ -59,7 +59,7 @@ export function usdText(value) {
   if (dropped >= '5') cents = addOne(cents)
   if (cents.length < 3) cents = cents.padStart(3, '0')
   const whole = cents.slice(0, -2).replace(/^0+(?=\d)/, '') || '0'
-  return `${negative ? '-' : ''}${whole}.${cents.slice(-2)}`
+  return `${negative && cents !== '000' ? '-' : ''}${whole}.${cents.slice(-2)}`
 }
 
 // What `aether-report --spend` printed: the parsed object when `recorded` is a boolean, else why there is no figure.
@@ -122,6 +122,7 @@ function figureLines(value) {
   const lines = [
     line(part(TITLE, 'title')),
     line(part(`Session ${idText(value.session)} \u00b7 list prices \u00b7 ${clean(value.basis)}`, 'dim')),
+    actions(),
     moneyLine(value),
     line(part(`Lead US$ ${usdText(value.leadUsd)} \u00b7 Agents US$ ${usdText(value.agentsUsd)} \u00b7 Other harnesses US$ ${usdText(harness.usd)}`)),
     ...section('By model', ranked(value.byModel, 'requests').map((row) => entryLine(row.name, row.usd, row.count, 'request', 'requests'))),
@@ -144,7 +145,6 @@ function figureLines(value) {
   }
   const resumptions = typeof value.resumptions === 'number' && Number.isFinite(value.resumptions) ? String(value.resumptions) : MISSING
   lines.push(line(part(`Resumptions ${resumptions} (approximate)`)))
-  lines.push(actions())
   return lines
 }
 
@@ -167,30 +167,41 @@ function fit(rows, columns) {
 }
 
 // The lines of the pane, top to bottom. `result` is null while the bin has not returned, { ok: false, error } when
-// it failed, and { ok: true, value } for a figure. The last line is the action row, where the pane draws Close.
-export function spendLines({ result, columns = DEFAULT_COLUMNS } = {}) {
+// it failed, and { ok: true, value } for a figure. The action row is kept near the top.
+export function spendLines({ result, columns = DEFAULT_COLUMNS, rows } = {}) {
+  let unclipped
   if (result === null || result === undefined) {
-    return fit([
+    unclipped = [
       line(part(TITLE, 'title')),
       line(part('Reading\u2026')),
       actions(),
-    ], columns)
-  }
-  if (!result.ok) {
-    return fit([
+    ]
+  } else if (!result.ok) {
+    unclipped = [
       line(part(TITLE, 'title')),
       line(part(`  Spend unavailable: ${clean(result.error)}`, 'bad')),
       actions(),
-    ], columns)
+    ]
+  } else {
+    const value = result.value !== null && typeof result.value === 'object' ? result.value : {}
+    if (value.recorded !== true) {
+      unclipped = [
+        line(part(TITLE, 'title')),
+        line(part(`Session ${idText(value.session)}`)),
+        line(part('No spend recorded yet')),
+        actions(),
+      ]
+    } else {
+      unclipped = figureLines(value)
+    }
   }
-  const value = result.value !== null && typeof result.value === 'object' ? result.value : {}
-  if (value.recorded !== true) {
-    return fit([
-      line(part(TITLE, 'title')),
-      line(part(`Session ${idText(value.session)}`)),
-      line(part('No spend recorded yet')),
-      actions(),
-    ], columns)
-  }
-  return fit(figureLines(value), columns)
+  const limit = typeof rows === 'number' && Number.isFinite(rows) && rows >= 1 ? Math.floor(rows) : Infinity
+  if (unclipped.length <= limit || limit < 2) return fit(unclipped, columns)
+  const room = limit - 1
+  const scrolled = [
+    ...unclipped.slice(0, room),
+    line(part(`… ${unclipped.length - room} more rows (↓ scrolls)`, 'dim')),
+    ...unclipped.slice(room),
+  ]
+  return fit(scrolled, columns)
 }

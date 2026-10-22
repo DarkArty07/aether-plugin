@@ -170,7 +170,11 @@ Only a choice that is hard to reverse, surprising, or a real trade-off goes to t
 
 Before deleting worktrees and temporary files, and before any push, the closing report carries this session's list-price spend from aether-report --spend. This holds for every Aether session, including one that is not an autonomous run and not a swarm.
 
-Run `aether-report --spend --session "$CLAUDE_CODE_SESSION_ID"`: without `--session` it reports the session that wrote last, which may be another when several run at once. Write the line `Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>)`. If `recorded` is false, say no spend is recorded yet; if `complete` is false, end with «El total está incompleto.»; if `unpriced` lists models, name them: the total leaves them out.
+Run `aether-report --spend --session "$CLAUDE_CODE_SESSION_ID"`: without `--session` it reports the session that wrote last, which may be another when several run at once. The numbers and harness spend come from the JSON in dollars with two decimals. Write the line:
+
+`Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>).`
+
+When `recorded` is false, the line is `Sesión <id>: todavía no hay gasto registrado.`. When `unpriced` is not empty, the line continues with `Sin precio: <modelos>; el total no los cuenta.` (for example, a new model not yet in `config/prices.json`: its calls count in `<n>` but not in the dollars). When `complete` is false, the line ends with `El total está incompleto.`.
 
 ## The owner's list
 
