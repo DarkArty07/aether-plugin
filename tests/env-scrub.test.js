@@ -16,8 +16,9 @@ const ROOT = path.join(__dirname, '..')
 // The code the variables are read from. Tests are not code of the plugin, so they are not scanned.
 const CODE_DIRS = ['lib', 'bin', 'hooks', 'workflows', 'launcher'].map((dir) => path.join(PLUGIN, dir))
   .concat(path.join(ROOT, 'scripts'))
-// Names that match the pattern but are constants of the code, not variables: each must be declared as one.
-const CONSTANTS = ['AETHER_AGENT_PREFIX', 'AETHER_TASK_PREFIX']
+// Names that match the pattern but are constants of the code, not variables: each must be declared as one. None today:
+// the two it listed (AETHER_AGENT_PREFIX, AETHER_TASK_PREFIX) were the router's, and went with it (spec 013).
+const CONSTANTS = []
 
 function codeFiles() {
   const files = []

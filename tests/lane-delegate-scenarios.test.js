@@ -1,24 +1,19 @@
 'use strict'
 
-// The scenarios E1 to E8 (E7 is the absence of a limit on a harness) and the no-candidate measure, run end to end through the real path:
-// the aether-lane delegate bin, the router (route.begin/route.finish) and the aether-report bin,
-// all on one data directory per test. No test writes the router journal or the lane log by hand:
-// every entry is born from running the delegate command, the router, or the report bin.
+// The scenarios E1 to E8 (E7 is the absence of a limit on a harness), run end to end through the real path:
+// the aether-lane delegate bin, on one data directory per test.
+// No test writes the lane log by hand: every entry is born from running the delegate command.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawn, spawnSync } = require('node:child_process')
-const { PLUGIN, WT_BIN, runBin, makeRepo, tempDir } = require('./helpers.js')
+const { WT_BIN, runBin, makeRepo, tempDir } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const pairs = require('../plugins/aether/lib/pairs.js')
-const route = require('../plugins/aether/lib/route.js')
-const log = require('../plugins/aether/lib/router-log.js')
-const session = require('../plugins/aether/lib/session.js')
 
-const REPORT_BIN = path.join(PLUGIN, 'bin', 'aether-report')
 const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote the file.', head: '', tests: 'ok', concerns: '', question: '' })
 const READY = JSON.stringify({ verdict: 'ready', findings: [], declined: [], summary: 'The diff does what the brief asks.' })
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
@@ -108,60 +103,6 @@ function probe(t) {
   assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
   return { choices: choicesOf(env) }
 }
-
-// The router setup of tests/router-route.test.js (settings, readings, finish), adapted to a data
-// directory the caller names: the delegate command's AETHER_DATA_DIR.
-const NOW = Date.parse('2026-10-15T21:32:00-06:00')
-const H = 3600 * 1000
-const MIN = 60 * 1000
-const win = (remaining, hours) => ({ remaining, resetsAt: new Date(NOW + hours * H).toISOString() })
-const weekly = (remaining, hours) => ({ windows: { weekly: win(remaining, hours) } })
-const gemini = (remaining, hours) => ({ windows: { '5h': win(1, 5), weekly: win(remaining, hours) } })
-const geminiKeys = (remaining, hours) => ({ argon: gemini(remaining, hours), flash: gemini(remaining, hours) })
-const READINGS = {
-  agy: { readAt: NOW - 2 * MIN, groups: { ...geminiKeys(1, 60), claude: weekly(0.9, 80) } },
-  grok: { readAt: NOW - MIN, groups: { grok: weekly(0.95, 29.6) } },
-}
-
-function routerDeps(dataDir, { mode = 'record' } = {}) {
-  const settings = {
-    mode, decider: 'haiku', fallback: { alias: 'sonnet', effort: 'high' }, deadlines: { haikuMs: 8000, jevMs: 3000, quotaMs: 3000 },
-    lanes: true, harnesses: ['agy', 'grok'],
-  }
-  session.markSession(dataDir, 's1', NOW, { router: settings })
-  let n = 0
-  const clock = { t: NOW }
-  return {
-    dataDir, clock,
-    now: () => clock.t,
-    sleep: async (ms) => { clock.t += ms },
-    newId: () => `r${++n}`,
-    readings: () => READINGS,
-    marks: () => [],
-    renew: () => ({ started: true, running: true }),
-    installed: () => true,
-  }
-}
-
-const answers = (over = {}) => ({
-  shape: { choice: 'explore', confidence: 0.95 },
-  stakes: { score: 1.1, confidence: 0.95 },
-  reads_a_lot: { score: 0.5, confidence: 0.9 },
-  pinned_by_checks: { noul: 0.2, confidence: 0.9 },
-  needs_judgment: { noul: 0.3, confidence: 0.9 },
-  edits_files: { noul: 0.03, confidence: 0.95 },
-  many_steps: { noul: 0.1, confidence: 0.9 },
-  ...over,
-})
-const readOnlyAnswer = () => JSON.stringify(answers())
-const editsAnswer = () => JSON.stringify(answers({ shape: { choice: 'mechanical_edit', confidence: 0.95 }, edits_files: { noul: 0.98, confidence: 0.95 } }))
-
-async function go(deps, ev, answer) {
-  const first = await route.begin({ session: 's1', event: ev }, deps)
-  if (!first.ask) return first
-  return route.finish({ id: first.id, answer }, deps)
-}
-const journal = (dataDir) => log.readJournal(dataDir).filter((e) => e.kind === 'decision')
 
 test('E1: a small editing charge leaves Claude for an external pair, comes back as a unit branch, and after the merge the charge test command passes in the repository', (t) => {
   const repo = makeRepo(t)
@@ -345,7 +286,7 @@ test('E5: a documentation brief without a test command, with a reviewer, without
   assert.equal(c.json.review.status, 'no-verdict')
 })
 
-test('E6: with superdelegation off the delegate command does nothing, and the router in the same environment still decides Claude for an editing task', async (t) => {
+test('E6: with superdelegation off the delegate command does nothing', (t) => {
   const repo = makeRepo(t)
   const env = { ...agyEnv(t, { command: roleFake(t) }), AETHER_SUPERDELEGATION: 'off' }
   const brief = writeBrief(repo, briefLines())
@@ -356,12 +297,6 @@ test('E6: with superdelegation off the delegate command does nothing, and the ro
   assert.equal(fx.agyTurns(env).length, 0)
   assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'runs')), false, 'no run was created')
   assert.equal(lanes.readLog(env.AETHER_DATA_DIR).length, before, 'no new lane log entries')
-
-  const deps = routerDeps(env.AETHER_DATA_DIR, { mode: 'command' })
-  const plan = await go(deps, { subagent_type: 'general-purpose', description: 'Rename fetchUser', prompt: 'Rename fetchUser to loadUser everywhere.' }, editsAnswer())
-  assert.equal(plan.external, null, 'an editing delegate stays on Claude, as today')
-  assert.ok(['haiku', 'sonnet', 'opus'].includes(plan.args.model), JSON.stringify(plan.args))
-  assert.equal(journal(env.AETHER_DATA_DIR)[0].decision.harness, 'claude')
 })
 
 // A wrapper CLI that holds every implementer turn until `count` turns are running at once, or `seconds` pass,
