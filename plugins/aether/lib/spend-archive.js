@@ -10,13 +10,11 @@
 const fs = require('node:fs')
 const crypto = require('node:crypto')
 const { loadPrices } = require('./prices.js')
-const { isSessionId, spendDir, summaryFile, emptyTally, tallyOf, mergeTallies, readUsageEvents, readLaneEvents, readSummary } = require('./spend.js')
+const { isTime, later, isSessionId, spendDir, summaryFile, emptyTally, tallyOf, mergeTallies, readUsageEvents, readLaneEvents, readSummary } = require('./spend.js')
 
 // 'usage' = the meter's parts (usage/<id>/<n>.json), 'lanes' = the lane log (lanes/<id>.jsonl, its calls only).
 const READERS = { usage: readUsageEvents, lanes: readLaneEvents }
 
-const isTime = (value) => typeof value === 'number' && Number.isFinite(value)
-const later = (a, b) => (a === null ? b : b === null ? a : Math.max(a, b))
 const nothing = () => ({ archived: false, events: 0 })
 
 // The newest numeric time among `events`, or null.

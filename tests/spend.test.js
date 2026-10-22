@@ -8,7 +8,8 @@ const { spawn } = require('node:child_process')
 const { once } = require('node:events')
 const { useDataDir, age } = require('./helpers.js')
 const { MIN, T0, PRICES, iso, usdOf, meter, writeParts, laneCall, journalLine, outcome, summaryOf, writeSummary, ageFile } = require('./spend-fixtures.js')
-const { spendReport, latestSession, isSessionId, mergeTallies, tallyOf, emptyTally, readUsageEvents, readLaneEvents, readSummary, GAP_MS } = require('../plugins/aether/lib/spend.js')
+const spendLib = require('../plugins/aether/lib/spend.js')
+const { spendReport, latestSession, isSessionId, mergeTallies, tallyOf, emptyTally, readUsageEvents, readLaneEvents, readSummary, GAP_MS } = spendLib
 
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`)
 const sum = (list) => list.reduce((total, value) => total + value, 0)
@@ -349,4 +350,14 @@ test('a model named like an object property is only a name', (t) => {
   assert.deepEqual(Object.keys(priced.byModel), ['__proto__'])
   assert.equal(mergeTallies(priced, priced).byModel['__proto__'].usd, 4)
   assert.equal(Object.getPrototypeOf(priced.byModel), Object.prototype)
+})
+
+test('isTime and later are defined once, in spend.js, and the archive uses those', () => {
+  const { isTime, later } = spendLib
+  assert.deepEqual([1, 0, -3.5].map(isTime), [true, true, true])
+  assert.deepEqual([NaN, Infinity, '1', null, undefined, {}].map(isTime), [false, false, false, false, false, false])
+  assert.deepEqual([later(null, 3), later(2, null), later(2, 5), later(5, 2), later(null, null)], [3, 2, 5, 5, null])
+  const archive = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'spend-archive.js'), 'utf8')
+  assert.doesNotMatch(archive, /^(const|function) (isTime|later)\b/m)
+  assert.match(archive, /\bisTime\b[^\n]*\blater\b[^\n]*= require\('\.\/spend\.js'\)|\blater\b[^\n]*\bisTime\b[^\n]*= require\('\.\/spend\.js'\)/)
 })

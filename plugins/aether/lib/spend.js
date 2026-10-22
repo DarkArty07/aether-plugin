@@ -19,6 +19,9 @@ const SESSION_ID = /^[A-Za-z0-9_-]+$/
 const GAP_MS = 3600000
 const PART = /^\d+\.json$/
 const READ_ATTEMPTS = 3
+// A part that fails to parse is read once more, after a short pause: the meter rewrites the current part in place.
+const PART_ATTEMPTS = 2
+const PART_PAUSE_MS = 25
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const isTime = (value) => typeof value === 'number' && Number.isFinite(value)
@@ -179,6 +182,24 @@ function meterEvent(entry, agents, prices) {
   }
 }
 
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+
+// One part of the meter, parsed, with the time it was written. The meter rewrites the current part in place every 20
+// requests, so a read can catch it half written: a part that cannot be parsed or is not a part is read once more, after
+// a short pause, before it is called unreadable. A part that vanished is not read again; the caller tells it apart.
+function readPart(file) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const part = JSON.parse(fs.readFileSync(file, 'utf8'))
+      if (!isObject(part) || !Array.isArray(part.entries)) throw new Error('not a usage part')
+      return { part, writtenAt: fs.statSync(file).mtimeMs }
+    } catch (err) {
+      if (missing(err) || attempt >= PART_ATTEMPTS) throw err
+      pause(PART_PAUSE_MS)
+    }
+  }
+}
+
 // The meter's requests of session `id` after the mark `after`. Parts are read one by one, in numeric order; one that
 // cannot be read makes the read incomplete and the others are kept.
 function readUsageEvents(dataDir, id, { after = null, prices = loadPrices() } = {}) {
@@ -200,12 +221,11 @@ function readUsageEvents(dataDir, id, { after = null, prices = loadPrices() } = 
   const agents = {}
   const entries = []
   for (const name of parts) {
-    const file = path.join(dir, name)
     let part
     try {
-      part = JSON.parse(fs.readFileSync(file, 'utf8'))
-      if (!isObject(part) || !Array.isArray(part.entries)) throw new Error('not a usage part')
-      out.writtenAt = later(out.writtenAt, fs.statSync(file).mtimeMs)
+      const read = readPart(path.join(dir, name))
+      part = read.part
+      out.writtenAt = later(out.writtenAt, read.writtenAt)
     } catch (err) {
       if (missing(err)) out.vanished = true
       else out.complete = false
@@ -306,6 +326,10 @@ function readOutcomeEvents(dataDir, id, { prices = loadPrices() } = {}) {
   })
   const timed = span.early <= span.late
   for (const line of broken) {
+    // A broken line that shows a time is placed by that time among the session's times. When it shows none, or when the
+    // session's readable lines show none (`timed` is false), there is nothing to compare, and the line is placed by its
+    // position instead: between the session's first and last line is inside. That is the safer side: it can warn about
+    // a session the line did not belong to, and it does not leave a gap in the figure unreported.
     const inside = line.time !== null && timed ? line.time >= span.early && line.time <= span.late : line.position >= span.first && line.position <= span.last
     if (inside) out.complete = false
   }
@@ -418,7 +442,8 @@ const isoOrNull = (ms) => (isTime(ms) && Number.isFinite(new Date(ms).getTime())
 
 // The summary and the raw sources, read in a way that counts each event once. A prune writes the summary before it
 // deletes the raw files, so a file that vanished, or a summary that changed while the raw files were read, means a
-// prune ran in between: read it all again.
+// prune ran in between: read it all again. `settled` is false when the last attempt still saw one of the two: the
+// figure may then miss or repeat what that prune moved, and the report calls it incomplete.
 function gather(dataDir, id, prices) {
   let found
   for (let attempt = 1; attempt <= READ_ATTEMPTS; attempt++) {
@@ -426,8 +451,9 @@ function gather(dataDir, id, prices) {
     const through = summary.readable ? summary.summary.through : { usage: null, lanes: null }
     const usage = readUsageEvents(dataDir, id, { after: through.usage, prices })
     const lanes = readLaneEvents(dataDir, id, { after: through.lanes, prices })
-    found = { summary, usage, lanes }
-    if (!usage.vanished && !lanes.vanished && JSON.stringify(readSummary(dataDir, id)) === JSON.stringify(summary)) break
+    const settled = !usage.vanished && !lanes.vanished && JSON.stringify(readSummary(dataDir, id)) === JSON.stringify(summary)
+    found = { summary, usage, lanes, settled }
+    if (settled) break
   }
   return found
 }
@@ -461,19 +487,21 @@ function spendReport({ dataDir = run.dataDir(), session = null, prices = loadPri
   if (session !== null && !isSessionId(session)) throw new Error(`bad session id: ${session}`)
   const id = session ?? latestSession(dataDir)
   if (id === null) return shaped(null, false, true, emptyTally(), prices)
-  const { summary, usage, lanes } = gather(dataDir, id, prices)
+  const { summary, usage, lanes, settled } = gather(dataDir, id, prices)
   const outcomes = readOutcomeEvents(dataDir, id, { prices })
   const recorded = usage.exists || lanes.exists || summary.exists || outcomes.events.length > 0
   if (!recorded) return shaped(id, false, true, emptyTally(), prices)
   const onDisk = tallyOf([...usage.events, ...lanes.events, ...outcomes.events])
   const tally = mergeTallies(summary.readable ? summary.summary.tally : emptyTally(), onDisk)
-  const complete = tally.complete && usage.complete && lanes.complete && outcomes.complete && (!summary.exists || summary.readable)
+  const complete = settled && tally.complete && usage.complete && lanes.complete && outcomes.complete && (!summary.exists || summary.readable)
   return shaped(id, true, complete, tally, prices)
 }
 
 module.exports = {
   SESSION_ID,
   GAP_MS,
+  isTime,
+  later,
   isSessionId,
   spendDir,
   summaryFile,
