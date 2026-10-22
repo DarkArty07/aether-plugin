@@ -24,9 +24,9 @@ test('the user pages say editing delegates leave Claude first, and none still sa
   assert.ok(!options.includes('a task that edits files stays on Claude'))
   assert.ok(options.includes('a task that edits files goes first through `aether-lane delegate`, to the pair the one rule picks, and runs on Claude only when that command finds no candidate'))
 
-  const router = read('docs', 'guide', 'router.md')
-  for (const needed of ['AETHER-TASK: <id>', 'aether-report --delegates', 'aether:*', 'ROUTER-OVERRIDE:']) {
-    assert.ok(router.includes(needed), needed)
+  const delegates = read('docs', 'guide', 'delegates.md')
+  for (const needed of ['AETHER-TASK: <id>', 'aether-report --delegates', 'aether:*']) {
+    assert.ok(delegates.includes(needed), needed)
   }
 
   const components = read('docs', 'reference', 'components.md')

@@ -79,7 +79,7 @@ A command of one of these classes that no grant covers is appended to the list w
 - `enforce`: the command is refused, and the Lead puts the entry in the "Espera tu sí" of its brief. `scripts/aether-lead` sets it unless your shell already did.
 - anything else, `log` by default: the command is only recorded, and it runs. The Lead reports it under "Hice" in its brief.
 
-A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not recorded. Outside a git repository the command is allowed unrecorded. `aether-autonomy` has a seventh class, `paid-call`, for real paid model calls outside the swarm: the Lead honours it, and the guard detects one command of it, the paid replay of the delegate router (`aether-route replay --paid`); any other paid call is not detected.
+A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not recorded. Outside a git repository the command is allowed unrecorded. `aether-autonomy` has a seventh class, `paid-call`, for real paid model calls outside the swarm: the Lead honours it, and the guard detects none of them by command.
 
 **What to do.**
 - To let such an action run, say so to the Lead in your own words. A general authorization, such as «todos los merges a main», is recorded by the Lead with `aether-autonomy grant --class <class> --quote "<your words>"`, and holds in the repository until revoked; add `--scope session` for your words «en esta sesión». The quote must be at least 12 characters, found in your own messages of the session: a quote that is not there is rejected. `aether-autonomy list` shows the registry, and `aether-autonomy revoke --class <class> --quote "<your words>" --all` withdraws every grant of a class; without `--all` it removes only the current session's session grants.
@@ -167,6 +167,22 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 - **`not-run`:** the run's agent budget was spent (`Max agents`, 200 unless the plan says otherwise). The budget counts model agents only; the ops commands the mod answers without a model are reported in the run's agent counts but do not spend it.
 
 **What to do.** Nothing, in most cases: the Lead acts, not you. It answers a question from your intent, the spec and the plan when they cover it; fixes a merge failure or a spent ladder itself, or sends it to a delegate task; has the Writer split a task that failed repeatedly; and relaunches the unit, with `aether-plan compile <plan.md> --run <run> --only task-3,task-5` and the workflow again. A `skipped` or `not-run` unit is relaunched the same way once its dependencies are merged. A launch that ends with a unit still `blocked`, `skipped` or `not-run` does not run the final review: see [The final review has not run](#the-final-review-has-not-run). A question that your intent does not cover reaches you: the Lead asks you outside an autonomous run, and in one it waits in the "Espera tu sí" of the brief. A unit's unmerged work is kept as a patch under `.aether/runs/<run>/patches/` until the run is finalized or swept as stale.
+
+## A delegate task is refused or does not climb
+
+**What you see.** `aether-delegate verdict` answers `ok: false` with an error, or a delegate task stays on the same model after several verdicts, or a launch answers only that the task is `approved` or `exhausted`.
+
+**Why.** The ladder refuses what would break its rules (see [Delegates](delegates.md#the-ladder)). The errors, and what each means:
+- **`finding not accepted` or `a fix needs at least one finding`.** A finding is `file[:line]: what is missing`. One with no file, or with nothing said about what is missing, is not a finding.
+- **`an infeasible declaration needs a reason, written`,** or `starting from scratch needs a reason, written`. The step does not move without the reason.
+- **`checks failed: …`.** A check that needs no model failed, and a result that fails one cannot be approved: for an editing task, its tests, the files touched outside what it owns, or an empty change; for a read-only one, a file changed in the checkout or an empty answer. For an editing delegate that ran on Claude, `approve needs the worktree of the attempt (--worktree)` says the checks had nothing to run on; for a read-only one, `approve needs the answer of the attempt` says the mod has not recorded it yet, so wait for the agent to end.
+- **`the verdict must be approve, fix or infeasible`.** `--verdict` takes one of those three words.
+- **`unknown task`.** The id has no launch in the log: the id of the verdict must be the one of the `AETHER-TASK:` line, or the one the system gave the call in its note.
+- **`the task is approved` or `the task is exhausted`.** The task is closed: no verdict is accepted after it, and new work takes a new id.
+- **It does not climb.** A step climbs when its corrections are spent, when the same findings come back twice in a row, or on a declaration of infeasible with a reason. Findings that differ each time spend a correction each; `plugins/aether/config/ladder.json` holds how many.
+- **A model the Lead asked for was not used.** The system holds the step: what a call passes as model or effort is ignored, and the `launch` entry of the log keeps it.
+
+**What to do.** Fix the verdict as the error says and send it again. `aether-report --delegates` shows, per step, what happened to each task, and `<dataDir>/delegates/log.jsonl` holds every entry (see [Data](maintenance.md#data)).
 
 ## The final review has not run
 

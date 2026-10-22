@@ -29,20 +29,17 @@
 //     aether-aether-plugin  the plugin's data directory
 //     aether-inline         the data directory of a --plugin-dir session
 //     aether-mode           the 0.6 launcher, named as retired in "Upgrading from 0.6"
-//     aether-route          the retired decider command, named as history by docs/changelog.md (the pages that still name it
-//                           are changed by tasks of spec 013)
+//     aether-route          the retired decider command, named as history by docs/changelog.md
 //   Paths that do not exist (PATH_EXCEPTIONS):
 //     scripts/aether-install.js  the 0.6 installer, named as retired in "Upgrading from 0.6"
 //     scripts/lane-cupo.js       the script that measured a harness's parallel limit, removed with the limit (decision A74);
 //                                the changelog keeps the words of the release that shipped it
-//     plugins/aether/hooks/router.mjs  the retired router mod, removed in spec 013; docs/guide/router.md names it until
-//                                docs/guide/delegates.md replaces that guide
 //     plugins/aether/config/router/criterion.json  the decider's criterion, removed in spec 013; the changelog keeps the
 //                                words of the release that shipped it
-//     plugins/aether/config/router/rungs.json  the decider's table of rungs, removed in spec 013; docs/guide/router.md
-//                                names it until docs/guide/delegates.md replaces that guide
-//     scripts/build-router-rungs.js  the script that derived that table, removed in spec 013; named by the router guide
-//                                until it is replaced
+//   Links to a file that no longer exists (LINK_EXCEPTIONS, read by the test of R10):
+//     docs/changelog.md -> guide/router.md  the changelog is a record and links the guide as it was when each version
+//                                came out; the page became guide/delegates.md in spec 013. The test skips, in that file, a
+//                                link whose file is on the list, with or without an anchor, and no other link
 //   Plugin names that are no agent, skill or workflow (AETHER_NAME skips them):
 //     custom:aether:<theme>      the value of the `theme` setting that selects a theme the plugin ships, which Claude
 //                                Code forms as custom:<plugin name>:<file name>; the launcher passes it
@@ -62,7 +59,7 @@ const README = 'README.md'
 const PAGES = [
   'docs/index.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/guide/options.md',
   'docs/guide/lanes.md', 'docs/guide/design-seats.md', 'docs/guide/autonomy.md', 'docs/guide/ops.md',
-  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/router.md', 'docs/reference/components.md', 'docs/changelog.md',
+  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/delegates.md', 'docs/reference/components.md', 'docs/changelog.md',
   'docs/contributing.md', 'docs/roadmap.md',
 ]
 const FILES = [README, ...PAGES]
@@ -72,16 +69,16 @@ const EXCEPTIONS = {          // commands that are not files of plugins/aether/b
   'aether-aether-plugin': "the plugin's data directory",
   'aether-inline': 'the data directory of a --plugin-dir session',
   'aether-mode': 'the 0.6 launcher, named as retired',
-  'aether-route': 'the retired decider command, named as history by docs/changelog.md (the pages that still name it are changed by tasks of spec 013)',
+  'aether-route': 'the retired decider command, named as history by docs/changelog.md',
 }
 const PATH_EXCEPTIONS = {
   'scripts/aether-install.js': 'the 0.6 installer, named as retired in "Upgrading from 0.6"',
   'scripts/lane-cupo.js': 'the parallel-limit script, removed in decision A74; the changelog keeps the words of its release',
-  'plugins/aether/hooks/router.mjs': 'the retired router mod, removed in spec 013; named by the router guide until docs/guide/delegates.md replaces it',
   'plugins/aether/config/router/criterion.json': "the decider's criterion, removed in spec 013; the changelog keeps the words of the release that shipped it",
-  'plugins/aether/config/router/rungs.json': "the decider's table of rungs, removed in spec 013; named by the router guide until docs/guide/delegates.md replaces it",
-  'scripts/build-router-rungs.js': 'the script that derived the table of rungs, removed in spec 013; named by the router guide until it is replaced',
 }
+// Links of a file to a file that no longer exists, each with its reason (see the header): the records link the guide of
+// the router as it was when each version came out, and the page is now guide/delegates.md.
+const LINK_EXCEPTIONS = { 'docs/changelog.md': ['guide/router.md'] }
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 const manifest = () => JSON.parse(read('plugins/aether/.claude-plugin/plugin.json'))
 
@@ -333,6 +330,7 @@ test('R10: every internal link of the README and the pages is relative and resol
       const where = `${rel}:${line} -> ${target}`
       assert.ok(!target.startsWith('/'), `${where} is not relative`)
       const [file, anchor] = target.split('#')
+      if ((LINK_EXCEPTIONS[rel] ?? []).includes(file)) continue
       const full = file ? path.resolve(ROOT, path.dirname(rel), decodeURI(file)) : path.resolve(ROOT, rel)
       assert.ok(full === ROOT || full.startsWith(ROOT + path.sep), `${where} leaves the repository`)
       assert.ok(fs.existsSync(full), `${where} does not resolve`)

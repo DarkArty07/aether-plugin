@@ -39,7 +39,7 @@ Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AE
 - `runs.jsonl` holds one record per finalized or abandoned run;
 - the lane log is kept for 30 days;
 - `spend/<id>.json`, in this data directory, holds a summary of that session's spend. The 30-day prune writes the summary before it deletes that session's usage files or lane log, and it does not delete the summary. What was archived is added to what the same id writes later if the session resumes;
-- the router journal, `router/decisions.jsonl`, is not pruned;
+- `delegates/` holds the delegate log, `delegates/log.jsonl`, and the files of each launch (briefs, results, patches, answers). The log is append-only, shared by every session, and none of it is pruned. The journal of the earlier delegate router, `router/decisions.jsonl`, is no longer written and is not pruned; `aether-report --spend` and `/spend` still read its old entries. See [Delegates](delegates.md#the-log);
 - `sessions/` marks the Aether sessions, kept for 30 days;
 - `exams/` holds the Examiner's hidden exams, one folder per repository and feature, so uninstalling without `--keep-data` deletes them;
 - `lanes/` also holds the dry marks (`lanes/marks/`) and the kept quota readings (`lanes/quota/`).

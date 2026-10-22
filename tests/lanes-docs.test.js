@@ -62,7 +62,7 @@ test('R21: lanes.md holds the rule: the switch, the points, the tolerance, the o
 test('issue 64: the guide says the design seats reserve the author family and the swarm keeps the bar', () => {
   const lanesPage = read('docs', 'guide', 'lanes.md')
   const seatsPage = read('docs', 'guide', 'design-seats.md')
-  const routerPage = read('docs', 'guide', 'router.md')
+  const delegatesPage = read('docs', 'guide', 'delegates.md')
   const components = read('docs', 'reference', 'components.md')
   for (const [name, text] of [['lanes.md', lanesPage], ['design-seats.md', seatsPage]]) {
     assert.ok(text.includes('another family'), name)
@@ -72,8 +72,8 @@ test('issue 64: the guide says the design seats reserve the author family and th
   assert.ok(lanesPage.includes('aether-lane delegate'))
   assert.ok(lanesPage.includes('keep it as a bar') || lanesPage.includes('keeps it as a bar') || lanesPage.includes('keep that rule as a bar'))
   assert.ok(seatsPage.includes('no other external pair'))
-  assert.ok(routerPage.includes("author's own family"))
-  assert.ok(routerPage.includes('aether-lane delegate'))
+  assert.ok(delegatesPage.includes("author's own family"))
+  assert.ok(delegatesPage.includes('aether-lane delegate'))
   assert.ok(components.includes("author's own family"))
 })
 
@@ -93,7 +93,7 @@ test('R21: lanes.md says how the old options are read and what the rule asks, ke
 })
 
 test('R21: the guide pages of this task name neither the retired profiles nor the retired variables', () => {
-  for (const page of ['lanes', 'design-seats', 'options', 'router']) {
+  for (const page of ['lanes', 'design-seats', 'options', 'delegates']) {
     const text = read('docs', 'guide', `${page}.md`)
     // The same patterns as Task 18's GONE; lanes.md and options.md alone may name `seats` (the migration says it is ignored).
     const gone = [/`balanced`/, /`robust`/, /\bseats option\b/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
