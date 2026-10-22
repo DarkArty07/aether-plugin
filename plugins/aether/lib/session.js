@@ -38,8 +38,15 @@ function opsOffFile(dataDir, sessionId) {
   return markerFile(dataDir, sessionId).replace(/\.json$/, '.ops-off')
 }
 
+// <dataDir>/sessions/<sessionId>.delegate.json: the settings of the session's delegates (superdelegation, the
+// harnesses and the quota deadline), which aether-delegate reads. Same id rules as the marker.
+function delegateFile(dataDir, sessionId) {
+  return markerFile(dataDir, sessionId).replace(/\.json$/, '.delegate.json')
+}
+
 // <dataDir>/sessions/<sessionId>.router.json: the router's settings for the session, which the router's
-// commands read. Same id rules as the marker.
+// commands read. No session start writes it any more: only lib/route.js still reads it, until Task 16 retires
+// both. Same id rules as the marker.
 function routerFile(dataDir, sessionId) {
   return markerFile(dataDir, sessionId).replace(/\.json$/, '.router.json')
 }
@@ -104,6 +111,35 @@ function routerSettingsFrom(env = process.env) {
   }
 }
 
+// The settings of the session's delegates from the plugin options in env: whether superdelegation is on, the
+// harnesses that are enabled, and the quota deadline, the only key of the deadlines option that is still read
+// (haiku= and jev= are accepted and ignored: no decider is left to give a time to).
+function delegateSettingsFrom(env = process.env) {
+  const { enabledHarnesses } = require('./lanes.js')
+  const { resolveOption } = require('./superdelegation.js')
+  return {
+    lanes: resolveOption(env).on,
+    harnesses: enabledHarnesses({ AETHER_LANE_HARNESSES: env.CLAUDE_PLUGIN_OPTION_HARNESSES }),
+    deadlines: { quotaMs: parseDeadlines(env.CLAUDE_PLUGIN_OPTION_DEADLINES).quotaMs },
+  }
+}
+
+// The settings in the session's delegate file, or null when it is missing, unreadable or invalid.
+function readDelegateSettings(dataDir, sessionId) {
+  try {
+    const s = JSON.parse(fs.readFileSync(delegateFile(dataDir, sessionId), 'utf8'))
+    const valid =
+      s !== null && typeof s === 'object' &&
+      typeof s.lanes === 'boolean' &&
+      Array.isArray(s.harnesses) && s.harnesses.every((name) => typeof name === 'string') &&
+      s.deadlines !== null && typeof s.deadlines === 'object' && isPositiveNumber(s.deadlines.quotaMs)
+    if (!valid) return null
+    return { lanes: s.lanes, harnesses: s.harnesses, deadlines: { quotaMs: s.deadlines.quotaMs } }
+  } catch {
+    return null
+  }
+}
+
 function isPositiveNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
 }
@@ -165,10 +201,11 @@ function readBrakeSettings(dataDir, sessionId) {
 
 // Writes {"session": sessionId, "startedAt": now} to the marker file, creating its directory. Throws on a bad id (before writing anything) or a failed write.
 // With opsInMod false it also writes the ops-off file, and with it true it removes a stale one, so a session
-// resumed with the option changed follows the option it has now. With router given it writes the router file,
-// and with it null it removes a stale one, for the same reason. With brake given it writes the brake file,
-// and with it null it removes a stale one, for the same reason.
-function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, router = null, brake = null } = {}) {
+// resumed with the option changed follows the option it has now. With delegate given it writes the delegate file,
+// and with it null it removes a stale one, for the same reason. The same goes for brake and its file, and for
+// router, which no session start gives any more (so it removes the file an older version left) and which stays
+// accepted until Task 16 retires lib/route.js, the only reader of the router file.
+function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, delegate = null, router = null, brake = null } = {}) {
   const file = markerFile(dataDir, sessionId)
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
@@ -176,6 +213,9 @@ function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, ro
   const off = opsOffFile(dataDir, sessionId)
   if (opsInMod) fs.rmSync(off, { force: true })
   else fs.writeFileSync(off, '')
+  const delegatePath = delegateFile(dataDir, sessionId)
+  if (delegate) fs.writeFileSync(delegatePath, JSON.stringify(delegate) + '\n')
+  else fs.rmSync(delegatePath, { force: true })
   const routerPath = routerFile(dataDir, sessionId)
   if (router) fs.writeFileSync(routerPath, JSON.stringify(router) + '\n')
   else fs.rmSync(routerPath, { force: true })
@@ -220,6 +260,7 @@ function pruneSessions(dataDir, { days = 30, now = Date.now() } = {}) {
     if (now - stat.mtimeMs <= days * DAY_MS) continue
     fs.rmSync(full, { force: true })
     fs.rmSync(path.join(dir, `${id}.ops-off`), { force: true })
+    fs.rmSync(path.join(dir, `${id}.delegate.json`), { force: true })
     fs.rmSync(path.join(dir, `${id}.router.json`), { force: true })
     fs.rmSync(path.join(dir, `${id}.brake.json`), { force: true })
     pruned.push(id)
@@ -238,13 +279,16 @@ module.exports = {
   DEFAULT_THRESHOLD,
   markerFile,
   opsOffFile,
+  delegateFile,
   routerFile,
   brakeFile,
   parseFallback,
   parseDeadlines,
   parseThreshold,
+  delegateSettingsFrom,
   routerSettingsFrom,
   brakeSettingsFrom,
+  readDelegateSettings,
   readRouterSettings,
   readBrakeSettings,
   markSession,
