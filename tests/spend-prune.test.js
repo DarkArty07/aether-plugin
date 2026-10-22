@@ -9,7 +9,7 @@ const { once } = require('node:events')
 const { PLUGIN, SESSION_BIN, useDataDir, age, tempDir } = require('./helpers.js')
 const { MIN, T0, PRICES, iso, meter, writeParts, laneCall, outcome, ageFile } = require('./spend-fixtures.js')
 const { spendReport } = require('../plugins/aether/lib/spend.js')
-const { archiveSpend } = require('../plugins/aether/lib/spend-archive.js')
+const { archiveSpend, failuresFile } = require('../plugins/aether/lib/spend-archive.js')
 const { pruneUsage } = require('../plugins/aether/lib/report.js')
 const { pruneLog, logFile } = require('../plugins/aether/lib/lanes.js')
 const { pruneSessions } = require('../plugins/aether/lib/session.js')
@@ -189,4 +189,89 @@ test('session start archives a session before it prunes it', (t) => {
   assert.equal(r.status, 0, r.stderr)
   assert.equal(fs.existsSync(path.join(dataDir, 'usage', 'old')), false)
   assert.deepEqual(spendReport({ dataDir, session: 'old' }), { ...before, session: 'old' })
+})
+
+const readFailures = (dataDir) => JSON.parse(fs.readFileSync(failuresFile(dataDir), 'utf8'))
+// What stops every archive: a file where the directory of the summaries should be.
+const blockSummaries = (dataDir) => fs.writeFileSync(path.join(dataDir, 'spend'), 'a file where the directory should be')
+
+test('a prune that cannot archive a session leaves one trace naming the session and the error, and does not throw', (t) => {
+  const dataDir = useDataDir(t)
+  world(dataDir)
+  world(dataDir, 'also-old')
+  ageAll(dataDir, 'old', 31)
+  ageAll(dataDir, 'also-old', 31)
+  blockSummaries(dataDir)
+  assert.deepEqual(prune(dataDir), [{ pruned: [] }, { pruned: [] }])
+  assert.equal(failuresFile(dataDir), path.join(dataDir, 'prune-failures.json'))
+  const failures = readFailures(dataDir)
+  assert.deepEqual(Object.keys(failures).sort(), ['lanes/also-old', 'lanes/old', 'usage/also-old', 'usage/old'])
+  for (const [key, failure] of Object.entries(failures)) {
+    assert.match(failure.error, /EEXIST|ENOTDIR/, key)
+    assert.ok(Math.abs(failure.time - Date.now()) < 60000, key)
+  }
+})
+
+test('the same session failing again replaces its trace: the file does not grow with the sessions it has already named', (t) => {
+  const dataDir = useDataDir(t)
+  world(dataDir)
+  ageAll(dataDir, 'old', 31)
+  blockSummaries(dataDir)
+  prune(dataDir, { now: Date.now() })
+  const first = readFailures(dataDir)
+  const lines = fs.readFileSync(failuresFile(dataDir), 'utf8').split('\n').length
+  prune(dataDir, { now: Date.now() + 5 })
+  prune(dataDir, { now: Date.now() + 10 })
+  const again = readFailures(dataDir)
+  assert.deepEqual(Object.keys(again).sort(), ['lanes/old', 'usage/old'])
+  assert.ok(again['usage/old'].time >= first['usage/old'].time)
+  assert.equal(fs.readFileSync(failuresFile(dataDir), 'utf8').split('\n').length, lines)
+})
+
+test('the trace of a session goes when a later prune archives it, and the file with it', (t) => {
+  const dataDir = useDataDir(t)
+  world(dataDir)
+  world(dataDir, 'other')
+  ageAll(dataDir, 'old', 31)
+  ageAll(dataDir, 'other', 31)
+  blockSummaries(dataDir)
+  prune(dataDir)
+  assert.equal(Object.keys(readFailures(dataDir)).length, 4)
+  fs.rmSync(path.join(dataDir, 'spend'))
+  pruneUsage(dataDir, { days: 30, prices: PRICES })
+  assert.deepEqual(Object.keys(readFailures(dataDir)).sort(), ['lanes/old', 'lanes/other'])
+  pruneLog(dataDir, { days: 30, prices: PRICES })
+  assert.equal(fs.existsSync(failuresFile(dataDir)), false)
+})
+
+test('a prune that archives cleanly leaves no trace file', (t) => {
+  const dataDir = useDataDir(t)
+  world(dataDir)
+  ageAll(dataDir, 'old', 31)
+  prune(dataDir)
+  assert.equal(fs.existsSync(failuresFile(dataDir)), false)
+})
+
+test('a trace that cannot be written does not make the prune throw', (t) => {
+  const dataDir = useDataDir(t)
+  world(dataDir)
+  ageAll(dataDir, 'old', 31)
+  blockSummaries(dataDir)
+  fs.mkdirSync(failuresFile(dataDir))
+  assert.deepEqual(prune(dataDir), [{ pruned: [] }, { pruned: [] }])
+  assert.equal(fs.existsSync(path.join(dataDir, 'usage', 'old', '0.json')), true)
+})
+
+test('session start leaves a trace when its prune fails, and still exits 0 with its context', (t) => {
+  const dataDir = useDataDir(t)
+  // A file where the lane log's directory should be: the lane prune throws, and nothing in the hook must show it.
+  fs.writeFileSync(path.join(dataDir, 'lanes'), 'a file where the directory should be')
+  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: dataDir }
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_SEATS']) delete env[key]
+  const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: tempDir(t), encoding: 'utf8', env, input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'now', source: 'startup', agent_type: 'aether:lead' }) })
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /Aether mode is active/)
+  const failures = readFailures(dataDir)
+  assert.deepEqual(Object.keys(failures), ['session-start'])
+  assert.match(failures['session-start'].error, /ENOTDIR/)
 })
