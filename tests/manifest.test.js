@@ -25,7 +25,7 @@ test('the repository is a marketplace that lists the aether plugin', () => {
   })
 })
 
-test('the manifest has no dependencies, and declares the superdelegation, harnesses, ops, router, decider, fallback, deadlines, quotabrake and brakepush options, and the lanes and seats legacy keys', () => {
+test('the manifest has no dependencies, and declares the superdelegation, harnesses, ops, deadlines, quotabrake and brakepush options, and the lanes and seats legacy keys', () => {
   const manifest = json(PLUGIN, '.claude-plugin', 'plugin.json')
   assert.equal(manifest.name, 'aether')
   assert.equal('dependencies' in manifest, false)
@@ -46,42 +46,19 @@ test('the manifest has no dependencies, and declares the superdelegation, harnes
         "Run the swarm's own aether-wt and aether-lane commands in the mod, without a model. On by default. Turn it off when your project's test command needs your shell's environment, which the mod's does not have: the Haiku ops agent then runs them with the Bash tool, as before 0.8.",
       default: true,
     },
-    router: {
-      type: 'string',
-      title: 'Delegate router',
-      description:
-        "Who chooses the model and effort of the Lead's delegate tasks: record (the Lead chooses, and Aether records what the decider would have chosen, in the background), advise (the Lead also gets the decider's choice as a notice) or command (the decider chooses, unless the Lead overrides it with a reason). It applies only to the Lead's delegate tasks, never to the swarm, the design seats or the aether agents. Default: auto, which is command with superdelegation on and record with it off.",
-      default: 'auto',
-      options: ['auto', 'record', 'advise', 'command'],
-    },
-    decider: {
-      type: 'string',
-      title: 'Router decider',
-      description:
-        'What decides for the router: haiku (Claude Haiku at low effort, with no outside service) or jev (typesafe/jev-1.14 on OpenRouter: it sends each delegate brief to a third party, and needs OPENROUTER_API_KEY in the environment or in the .env of the plugin data directory). Default: haiku.',
-      default: 'haiku',
-      options: ['haiku', 'jev'],
-    },
-    fallback: {
-      type: 'string',
-      title: 'Router fallback rung',
-      description:
-        'The model and effort a delegate task runs on when the router cannot decide and the Lead asked for none, written as alias:effort. The aliases are haiku, sonnet and opus; the efforts are low, medium, high, xhigh and max. Default: sonnet:high.',
-      default: 'sonnet:high',
-    },
     deadlines: {
       type: 'string',
-      title: 'Router time limits',
+      title: 'Delegate time limits',
       description:
-        'How long the router waits, in seconds, for each decider and for the quota decision, written as haiku=8,jev=3,quota=3; a value above 10 counts as 10. In record mode nothing waits, because the decider runs in the background. Default: haiku=8,jev=3,quota=3.',
-      default: 'haiku=8,jev=3,quota=3',
+        'How long a delegate task waits, in seconds, for the quota decision, written as quota=3; a value above 10 counts as 10. Default: quota=3.',
+      default: 'quota=3',
     },
   })
   assert.deepEqual(superdelegation, {
     type: 'boolean',
     title: 'Superdelegation',
     description:
-      "Send everything that is not the Lead to other harnesses (agy, grok, muse, ...) while their quota lasts; native Claude is the fallback. It covers the swarm, the design seats and the Lead's delegate tasks: the ones that only read go where the router chooses, and the ones that edit files go first to another harness on a worktree of their own, which the Lead merges. The router chooses where each delegate runs, as command unless you set router. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options.",
+      "Send everything that is not the Lead to other harnesses (agy, grok, muse, ...) while their quota lasts; native Claude is the fallback. It covers the swarm, the design seats and the Lead's delegate tasks: the ones that only read go to the harness the one rule picks, and the ones that edit files go first to another harness on a worktree of their own, which the Lead merges. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options.",
   })
   assert.deepEqual(lanes, {
     type: 'boolean',
@@ -109,7 +86,13 @@ test('superdelegation is a boolean with no default, and lanes and seats stay onl
   assert.equal(userConfig.seats.type, 'string')
   assert.equal('options' in userConfig.seats, false)
   assert.equal('default' in userConfig.seats, false)
-  assert.deepEqual(Object.keys(userConfig).sort(), ['brakepush', 'deadlines', 'decider', 'fallback', 'harnesses', 'lanes', 'ops', 'quotabrake', 'router', 'seats', 'superdelegation'])
+  assert.deepEqual(Object.keys(userConfig).sort(), ['brakepush', 'deadlines', 'harnesses', 'lanes', 'ops', 'quotabrake', 'seats', 'superdelegation'])
+})
+
+test('the manifest no longer declares router, decider or fallback, and deadlines is the quota deadline alone (C7)', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
+  for (const key of ['router', 'decider', 'fallback']) assert.equal(Object.hasOwn(manifest.userConfig, key), false, key)
+  assert.equal(manifest.userConfig.deadlines.default, 'quota=3')
 })
 
 test("the Lead agent runs on Sonnet, with no body, so Claude Code's own system prompt stays", () => {
