@@ -147,8 +147,6 @@ const WITH_ARGS = [
   ['delete', 'git reset', (args) => hasFlag(args, '', '--hard')],
   ['delete', 'git clean', (args) => hasFlag(args, 'f', '--force')],
   ['delete', 'rm', isForcedRemoval],
-  // The paid replay of a router decider makes real, paid model calls over the owner's history.
-  ['paid-call', 'aether-route replay', (args) => args.includes('--paid')],
 ]
 
 const SHORT_FLAGS = /^-[A-Za-z]+$/
@@ -226,15 +224,6 @@ function dropGitOptions(words) {
   return ['git', ...words.slice(skipOptions(words, 1, GIT_VALUED))]
 }
 
-// node's options and script path in front of an aether-route command are dropped, so that
-// node .../bin/aether-route replay reads as aether-route replay. Any other script is left alone.
-function dropNodeScript(words) {
-  if (words[0] !== 'node') return words
-  const at = skipOptions(words, 1, [])
-  if (at >= words.length || nameOf(words[at]) !== 'aether-route') return words
-  return ['aether-route', ...words.slice(at + 1)]
-}
-
 // The script that a shell or eval runs, or null. A shell runs the word after its first single-dash
 // option that holds a c, as in bash -lc SCRIPT; eval runs the words after it.
 function scriptOf(words) {
@@ -272,7 +261,7 @@ function subcommandOf(words) {
 function matchWords(words, depth, wanted) {
   const unwrapped = dropWrappers(words)
   // A command run by its path, such as /usr/bin/git, is matched by its name.
-  const command = dropNodeScript(dropGitOptions(unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped))
+  const command = dropGitOptions(unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped)
   const script = scriptOf(command)
   if (script !== null) return depth < MAX_NESTING ? matchCommand(script, depth + 1, wanted) : null
   const found = subcommandOf(command)
@@ -400,7 +389,7 @@ function segmentsOf(command) {
 }
 
 // The irreversible class of a Bash command: push, merge-main, publish, deploy, delete, credentials or
-// paid-call (only the paid replay of aether-route; other paid calls are not detected),
+// paid-call (other paid calls are not detected),
 // or null. The first segment that matches decides.
 function irreversibleClass(command) {
   const found = matchCommand(command, 0)
