@@ -257,7 +257,44 @@ test('a pair that fails during a split pass ends it, and the next attempt leaves
   const picks = run.calls.filter((call) => call.kind === 'ops:lane-pick' && call.lane.role === 'implementer')
   assert.equal(picks.length, 3)
   assert.equal(picks[2].lane.exclude, FLASH.id)
-  assert.equal(limitOf(attemptsOf(run, 'task-1').at(-1).prompt), null)
+  // The pass a pair failure ended is split again. The excluded pair is not taken, so the
+  // sub-attempts run native, one per owned file.
+  const native = attemptsOf(run, 'task-1')
+  assert.equal(limitOf(native[0].prompt), null)
+  assert.deepEqual(native.slice(1).map((call) => limitOf(call.prompt)), FILES)
+  assert.equal(unit.rounds[2].split, true)
+  assert.equal(unit.rounds[2].subAttempts, FILES.length)
+  assert.equal(unit.status, 'merged')
+})
+
+test('a violation during a split pass is retried whole, not as another split', async (t) => {
+  const args = runOf(t, owns(FILES), { lanes: LANES })
+  let implementPicks = 0
+  let implementWaits = 0
+  const run = await runWorkflow(args, {
+    implementer: (call, done) => (call.unit === 'task-1' && call.n === 1 ? null : done(call)),
+    lane: (call, fallback) => {
+      if (call.command.verb === 'pick' && call.lane.role === 'implementer') {
+        implementPicks += 1
+        const decision = fallback(call)
+        if (implementPicks === 1) return decision
+        return { ...decision, picked: FLASH, reason: `took ${FLASH.id}` }
+      }
+      if (call.command.verb === 'wait' && call.started && call.started.role === 'implementer') {
+        implementWaits += 1
+        if (implementWaits === 2) return finished(call, { status: 'violation', detail: 'changes outside Owns', files: ['README.md'] })
+        return finished(call, { result: reportFor('lane') })
+      }
+      return fallback(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.rounds[1].split, true)
+  assert.match(unit.rounds[1].summary, /outside the task's Owns/)
+  const prompts = attemptsOf(run, 'task-1').map((call) => call.prompt)
+  assert.equal(limitOf(prompts[prompts.length - 1]), null)
+  assert.equal(unit.rounds.at(-1).split, undefined)
   assert.equal(unit.status, 'merged')
 })
 
