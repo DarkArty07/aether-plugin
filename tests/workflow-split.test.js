@@ -257,7 +257,43 @@ test('a pair that fails during a split pass ends it, and the next attempt leaves
   const picks = run.calls.filter((call) => call.kind === 'ops:lane-pick' && call.lane.role === 'implementer')
   assert.equal(picks.length, 3)
   assert.equal(picks[2].lane.exclude, FLASH.id)
-  assert.equal(limitOf(attemptsOf(run, 'task-1').at(-1).prompt), null)
+  // A pair failure ends the split pass, and the next attempt stays split (issue #2).
+  assert.equal(unit.rounds[2].split, true)
+  assert.equal(limitOf(attemptsOf(run, 'task-1').at(-1).prompt), 'src/d.js')
+  assert.equal(unit.status, 'merged')
+})
+
+test('a pair that fails during a split pass is followed by another split pass (issue #2)', async (t) => {
+  const args = runOf(t, owns(FILES), { lanes: LANES })
+  let implementPicks = 0
+  let implementWaits = 0
+  const run = await runWorkflow(args, {
+    implementer: (call, done) => (call.unit === 'task-1' && call.n === 1 ? null : done(call)),
+    lane: (call, fallback) => {
+      if (call.command.verb === 'pick' && call.lane.role === 'implementer') {
+        implementPicks += 1
+        const decision = fallback(call)
+        if (implementPicks === 1) return decision
+        return { ...decision, picked: FLASH, reason: `took ${FLASH.id}` }
+      }
+      if (call.command.verb === 'wait' && call.started && call.started.role === 'implementer') {
+        implementWaits += 1
+        if (implementWaits === 2) return finished(call, { status: 'quota', detail: 'its quota ran out' })
+        return finished(call, { result: reportFor('lane') })
+      }
+      return fallback(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.rounds[1].split, true)
+  assert.equal(unit.rounds[1].status, 'FAILED')
+  assert.match(unit.rounds[1].summary, /quota/)
+  const nativeLimits = attemptsOf(run, 'task-1').slice(1).map((call) => limitOf(call.prompt))
+  assert.deepEqual(nativeLimits, FILES, 'the attempt after the pair failure is split again')
+  assert.equal(unit.rounds[2].split, true)
+  const picks = run.calls.filter((call) => call.kind === 'ops:lane-pick' && call.lane.role === 'implementer')
+  assert.equal(picks[2].lane.exclude, FLASH.id)
   assert.equal(unit.status, 'merged')
 })
 

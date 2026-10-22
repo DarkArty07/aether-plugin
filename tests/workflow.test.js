@@ -283,6 +283,37 @@ test('the guide says a merge cut at 10 minutes is unverified until its tests pas
   assert.match(ops, /reruns the plan's tests/)
   assert.match(trouble, /unverified/)
   assert.match(trouble, /its merge commit is on the integration branch without a passing test run/)
+  // Recovery after the review of issue #2: the marker precedes the commit, a relaunch settles it
+  // before anything new merges, and a revert keeps commits that landed on top.
+  assert.match(ops, /writes its marker before the merge commit/)
+  assert.match(ops, /settles that commit before/)
+  assert.match(trouble, /writes its marker before the merge commit/)
+  assert.match(trouble, /settles that commit before/)
+  assert.match(trouble, /keeps the commits that followed it/)
+})
+
+test('a cut merge, its status and its rerun are one step, so another unit does not merge between them (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 2) return { merged: true, commit: UNVERIFIED.commit, rerun: true }
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'merged')
+  assert.equal(unit.commit, UNVERIFIED.commit, 'the rerun records the commit the marker names')
+  const merges = run.events.filter((event) => event.includes('ops:merge') || event.includes('ops:status'))
+  const firstEnd = nthEvent(run.events, 'end ops:merge task-1', 1)
+  const rerunStart = nthEvent(run.events, 'start ops:merge task-1', 2)
+  const other = nthEvent(run.events, 'start ops:merge task-2', 1)
+  assert.ok(firstEnd !== -1 && rerunStart !== -1 && other !== -1, merges.join('\n'))
+  assert.ok(rerunStart < other, `task-2 merged between the cut and the rerun:\n${merges.join('\n')}`)
+  const between = run.events.slice(firstEnd + 1, rerunStart)
+  assert.equal(between.includes('start ops:merge task-2'), false, between.join('\n'))
 })
 
 test('a sliced final review with a silent slice fails and keeps the other findings (issue 022)', async (t) => {
