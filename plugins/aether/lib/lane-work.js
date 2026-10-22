@@ -80,8 +80,9 @@ function patchHasDiff(file) {
   }
 }
 
-// Tokens of `diff --git <a> <b>`. Git quotes a path that holds a byte that is not ASCII, and writes
-// each of those bytes as octal. The bytes are the path's UTF-8, which is what Owns compares.
+// Tokens of a quoted diff path (`diff --git`, or a `rename from` / `copy from` source). Git quotes
+// a path that holds a byte that is not ASCII, and writes each of those bytes as octal. The bytes
+// are the path's UTF-8, which is what Owns compares.
 function gitDiffTokens(rest) {
   const tokens = []
   let i = 0
@@ -126,58 +127,133 @@ function gitDiffTokens(rest) {
   return tokens
 }
 
-// The path on a `---`, `+++`, `rename` or `copy` line. A tab, when git wrote one, starts the timestamp.
-// A quoted path is the same octal form as a `diff --git` token.
-function headerPath(rest) {
-  const cut = rest.split('\t')[0]
-  const token = cut.startsWith('"') ? (gitDiffTokens(cut)[0] ?? '') : cut
-  return token.startsWith('a/') || token.startsWith('b/') ? token.slice(2) : token
-}
-
 function addPatchPath(paths, file) {
   const normalized = String(file).replace(/\\/g, '/')
   if (normalized === '' || normalized === '/dev/null' || normalized === 'dev/null') return
   paths.add(normalized)
 }
 
-// Every path a patch touches. An unquoted path with a space cannot be split out of `diff --git`
-// (git quotes bytes that are not ASCII, not spaces), so that line counts only when it has two
-// tokens. The `---`, `+++`, rename and copy lines name the path either way. `/dev/null` is not one.
-function patchPaths(text) {
-  const paths = new Set()
-  for (const line of String(text).split('\n')) {
-    if (line.startsWith('diff --git ')) {
-      const tokens = gitDiffTokens(line.slice('diff --git '.length))
-      if (tokens.length === 2) for (const token of tokens) addPatchPath(paths, headerPath(token))
-      continue
-    }
-    if (line.startsWith('--- ') || line.startsWith('+++ ')) {
-      addPatchPath(paths, headerPath(line.slice(4)))
-      continue
-    }
-    const renamed = /^(?:rename|copy) (?:from|to) (.*)$/.exec(line)
-    if (renamed) addPatchPath(paths, headerPath(renamed[1]))
+// Records of `git apply --numstat -z`: `added\tdeleted\tpath\0`. A binary file is `-` for both
+// counts, and an empty or mode-only file is `0\t0`. The path is the one git would write, spaces
+// and non-ASCII included, with no quotes. An empty record is the trailing NUL. Anything else,
+// including a listing that does not end on a NUL, is not a list we can trust.
+function parseNumstatZ(bytes) {
+  if (bytes === null || bytes === undefined) return null
+  if (bytes.length === 0) return []
+  const records = []
+  let start = 0
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] !== 0) continue
+    records.push(bytes.subarray(start, i))
+    start = i + 1
   }
+  if (start !== bytes.length) return null
+  const paths = []
+  for (const record of records) {
+    if (record.length === 0) continue
+    const text = record.toString('utf8')
+    const tab = text.indexOf('\t')
+    const tab2 = tab === -1 ? -1 : text.indexOf('\t', tab + 1)
+    if (tab === -1 || tab2 === -1) return null
+    const added = text.slice(0, tab)
+    const deleted = text.slice(tab + 1, tab2)
+    const name = text.slice(tab2 + 1)
+    if (!/^(\d+|-)$/.test(added) || !/^(\d+|-)$/.test(deleted) || name === '') return null
+    paths.push(name)
+  }
+  return paths
+}
+
+// Git lists the paths at the top of the worktree. From a subdirectory it skips paths outside
+// that directory and still exits 0, so a path outside --owns would not be judged.
+function numstatPaths(cwd, patchFile) {
+  try {
+    const top = repoPaths(cwd).worktree
+    const listed = git(['apply', '--numstat', '-z', '--', path.resolve(patchFile)], top, { allowFail: true, raw: true })
+    if (listed.status !== 0) return null
+    return parseNumstatZ(listed.bytes)
+  } catch {
+    return null
+  }
+}
+
+// `git apply --numstat` names only the path it would write. A rename or a copy also touches its
+// source, and that source is not in the listing, so it comes from the extended header. A hunk
+// line is prefixed (`-rename from`, `--- note`) and does not match. A quoted source is the octal
+// form of `diff --git`. A source that does not decode refuses the patch: a missed source is how
+// a rename into --owns would be carried. Reading the text can only add a path, so a false match
+// refuses a carry rather than allowing one.
+function headerSources(text) {
+  const sources = []
+  for (const line of String(text).split('\n')) {
+    const renamed = /^(?:rename|copy) from (.*)$/.exec(line)
+    if (!renamed) continue
+    const raw = renamed[1]
+    if (raw.startsWith('"')) {
+      if (!raw.endsWith('"')) return null
+      const tokens = gitDiffTokens(raw)
+      if (tokens.length !== 1 || tokens[0] === '') return null
+      sources.push(tokens[0])
+      continue
+    }
+    if (raw === '') return null
+    sources.push(raw)
+  }
+  return sources
+}
+
+// Every path the patch touches, or null when git cannot list it. There is no fallback to reading
+// the diff text for the destination: that reading dropped binary files, empty files and mode-only
+// changes whose names contain a space, and the patch was then applied whole.
+function patchPaths(cwd, patchFile, text) {
+  const listed = numstatPaths(cwd, patchFile)
+  if (listed === null) return null
+  const sources = headerSources(text)
+  if (sources === null) return null
+  const paths = new Set()
+  for (const file of listed) addPatchPath(paths, file)
+  for (const file of sources) addPatchPath(paths, file)
   return [...paths]
 }
 
 // A path is inside the charge's owns when the same matcher as the ownership check says so, and it
-// does not climb out of the tree. A path the parser could not place counts as outside.
+// does not climb out of the tree.
 function pathOwned(file, owns) {
   if (file.startsWith('/') || file.split('/').includes('..')) return false
   return matchesAny(file, owns)
 }
 
-// Whether `git apply` would accept the patch on a clean checkout of HEAD. The next unit worktree
-// is that checkout, not the integration worktree's dirty files, so the check uses its own index.
-function patchApplies(cwd, patchFile) {
+// The branch the next unit worktree is created from. With a run, that is its integration branch;
+// HEAD may be another checkout, and a check there would approve a patch the worktree then rejects.
+function carryBranch(cwd, runId) {
+  if (runId === null || runId === undefined) return 'HEAD'
+  try {
+    const { mainRoot } = repoPaths(cwd)
+    const branch = loadGraph(mainRoot, runId).integration?.branch
+    return typeof branch === 'string' && branch !== '' ? branch : null
+  } catch {
+    return null
+  }
+}
+
+// Whether `git apply` would accept the patch on a clean checkout of `branch`. The check runs at
+// the top of the repository: from a subdirectory git skips paths outside it and can exit 0 while
+// the same patch does not apply. The index is private, so a dirty integration worktree is not the tree under test.
+function patchApplies(cwd, patchFile, branch) {
+  if (typeof branch !== 'string' || branch === '') return false
+  let top
+  try {
+    top = repoPaths(cwd).worktree
+  } catch {
+    return false
+  }
   const index = path.join(path.dirname(patchFile), '..', `carry-check-${process.pid}.index`)
-  const env = { ...process.env, GIT_INDEX_FILE: path.resolve(cwd, index) }
+  const env = { ...process.env, GIT_INDEX_FILE: path.resolve(top, index) }
   try {
     fs.rmSync(env.GIT_INDEX_FILE, { force: true })
-    const read = spawnSync('git', ['read-tree', 'HEAD'], { cwd, env, encoding: 'utf8' })
+    const read = spawnSync('git', ['read-tree', branch], { cwd: top, env, encoding: 'utf8' })
     if (read.status !== 0) return false
-    return spawnSync('git', ['apply', '--cached', '--check', patchFile], { cwd, env, encoding: 'utf8' }).status === 0
+    return spawnSync('git', ['apply', '--cached', '--check', '--', path.resolve(patchFile)], { cwd: top, env, encoding: 'utf8' }).status === 0
   } finally {
     // The check is the only user of this index. A lock left behind would make the next check refuse the patch.
     fs.rmSync(env.GIT_INDEX_FILE, { force: true })
@@ -186,8 +262,9 @@ function patchApplies(cwd, patchFile) {
 }
 
 // { apply: true } when the next pair should start from this patch. empty: the attempt left no diff.
-// Otherwise reason is what the result tells the Lead.
-function assessCarry(cwd, patchFile, owns) {
+// Otherwise reason is what the result tells the Lead. runId, when the caller has one, selects the
+// run's integration branch; without it the check is against HEAD.
+function assessCarry(cwd, patchFile, owns, runId = null) {
   let text
   try {
     text = fs.readFileSync(patchFile)
@@ -195,11 +272,12 @@ function assessCarry(cwd, patchFile, owns) {
     return { apply: false, empty: true }
   }
   if (!text.includes(Buffer.from('diff --git '))) return { apply: false, empty: true }
-  const paths = patchPaths(text.toString('utf8'))
-  if (paths.length === 0) return { apply: false, reason: CARRY_UNAPPLICABLE }
+  const paths = patchPaths(cwd, patchFile, text.toString('utf8'))
+  if (paths === null || paths.length === 0) return { apply: false, reason: CARRY_UNAPPLICABLE }
   const outside = paths.filter((file) => !pathOwned(file, owns)).sort()
   if (outside.length > 0) return { apply: false, reason: carryOutside(outside) }
-  if (!patchApplies(cwd, patchFile)) return { apply: false, reason: CARRY_UNAPPLICABLE }
+  const branch = carryBranch(cwd, runId)
+  if (branch === null || !patchApplies(cwd, patchFile, branch)) return { apply: false, reason: CARRY_UNAPPLICABLE }
   return { apply: true }
 }
 
