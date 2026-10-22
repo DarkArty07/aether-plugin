@@ -138,6 +138,8 @@ function figureLines(value) {
   }
   const unpriced = Array.isArray(value.unpriced) ? value.unpriced.map(clean).filter((name) => name !== '') : []
   if (unpriced.length > 0) lines.push(...section(`No price: ${unpriced.join(', ')}`, []))
+  const tokenless = Array.isArray(value.tokenless) ? value.tokenless.map(clean).filter((name) => name !== '') : []
+  if (tokenless.length > 0) lines.push(...section(`No tokens recorded: ${tokenless.join(', ')}`, []))
   if (value.firstRequest !== null && value.firstRequest !== undefined) {
     const first = clean(value.firstRequest) || MISSING
     const last = value.lastRequest === null || value.lastRequest === undefined ? MISSING : (clean(value.lastRequest) || MISSING)

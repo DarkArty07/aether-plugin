@@ -22,6 +22,8 @@ test('using-aether, which every Lead session reads, holds the closing rule word 
   assert.ok(USING.indexOf(RULE) < USING.indexOf("## The owner's list"))
   for (const text of [NONE, INCOMPLETE, 'El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>)']) assert.ok(USING.includes(text), text)
   assert.ok(USING.indexOf('Sin precio:') < USING.indexOf(INCOMPLETE), 'Sin precio comes before El total está incompleto.')
+  assert.ok(USING.indexOf('Sin precio:') < USING.indexOf('Sin tokens registrados:'), 'Sin tokens registrados follows Sin precio')
+  assert.ok(USING.indexOf('Sin tokens registrados:') < USING.indexOf(INCOMPLETE), 'Sin tokens registrados comes before El total está incompleto.')
 })
 
 test('the autonomous-runs report keeps the ceiling line and adds the session line under it', () => {

@@ -80,6 +80,13 @@ test('a long figure shows how many rows follow in a small pane', () => {
   assert.equal(Number(/\d+/.exec(text[marker])[0]), text.length - marker - 1)
 })
 
+test('a model that answered with no tokens recorded is listed under the models without a price', () => {
+  const listed = rows(view.spendLines({ result: ok({ ...REPORT, tokenless: ['grok-4.7'] }), columns: 76 }))
+  assert.ok(listed.includes('No tokens recorded: grok-4.7'))
+  assert.ok(listed.indexOf('No price: x-free') < listed.indexOf('No tokens recorded: grok-4.7'))
+  assert.ok(!rows(view.spendLines({ result: ok(REPORT), columns: 76 })).some((row) => row.startsWith('No tokens recorded')))
+})
+
 test('an incomplete figure says incomplete next to the total; a complete one does not', () => {
   const incomplete = rows(view.spendLines({ result: ok({ ...REPORT, complete: false }), columns: 76 }))
   assert.equal(incomplete[3], 'Total US$ 30.50 incomplete')
