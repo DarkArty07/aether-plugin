@@ -2,7 +2,8 @@
 
 // The commands that choose and account for a call under superdelegation: `pick` decides which pair takes a call
 // (lib/superdelegation.js choose, over the pairs table and the quota views of the enabled harnesses) and logs the
-// decision; `took` logs who ran the call and why. `pick` starts no call: it reads the quotas, and renews and
+// decision; `took` logs who ran the call and why; `pause` waits, so that the workflow can time its agents without a clock of
+// its own. `pick` starts no call: it reads the quotas, and renews and
 // saves the one reading that nobody else keeps (grok's), because each `aether-lane pick` is a process of its own.
 
 const fs = require('node:fs')
@@ -23,6 +24,8 @@ const PAIR_ID = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(low|medium|high|x
 const FAMILY = /^[a-z][a-z0-9.-]*$/
 const BY = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
 const CAUSES = ['chosen', 'no-candidate', 'failed']
+const SECONDS = /^\d{1,3}$/
+const MAX_PAUSE_SECONDS = 120
 // The harnesses whose reading is renewed by a refresher (lane-quota.js REFRESHERS): their readings are the ones a
 // process cannot find again in the harness's own record.
 const REFRESHABLE = ['grok']
@@ -173,4 +176,15 @@ function tookCommand(cwd, runId, call, flags, { now = Date.now() } = {}) {
   return { logged: true }
 }
 
-module.exports = { harnessViews, latestReadings, pickCommand, tookCommand, CALL }
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Waits `seconds`, a whole number from 1 to 120.
+async function pauseCommand(seconds, { sleep = wait } = {}) {
+  const text = String(seconds)
+  const count = SECONDS.test(text) ? Number(text) : NaN
+  if (!(count >= 1 && count <= MAX_PAUSE_SECONDS)) throw new Error(`--seconds must be a whole number from 1 to ${MAX_PAUSE_SECONDS}, not ${JSON.stringify(seconds)}`)
+  await sleep(count * 1000)
+  return { paused: count }
+}
+
+module.exports = { harnessViews, latestReadings, pickCommand, tookCommand, pauseCommand, CALL }

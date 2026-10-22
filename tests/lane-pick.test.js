@@ -157,3 +157,13 @@ test('C16: pick gives the Muse pair, by the owner decision, to an Opus high call
   assert.equal(xhigh.json.picked, null)
   assert.equal(xhigh.json.native.id, 'claude/opus@xhigh')
 })
+
+test('pause waits the seconds it is given, from 1 to 120, and refuses any other value', (t) => {
+  const env = agyEnv(t)
+  const started = Date.now()
+  const r = runBin(LANE_BIN, ['pause', '--seconds', '1'], process.cwd(), env)
+  assert.deepEqual(r.json, { paused: 1 })
+  assert.ok(Date.now() - started >= 900)
+  for (const bad of ['0', '121', 'x', '-1', '1.5']) assert.equal(runBin(LANE_BIN, ['pause', '--seconds', bad], process.cwd(), env).status, 1, bad)
+  assert.equal(runBin(LANE_BIN, ['pause'], process.cwd(), env).status, 1)
+})

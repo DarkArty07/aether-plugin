@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
 
-// The aether-lane forms of the mod's closed list: the wave's `status <run> --refresh`, and superdelegation's `pick` and `took`.
+// The aether-lane forms of the mod's closed list: the wave's `status <run> --refresh`, and superdelegation's `pick`, `took` and `pause`.
 // `aether-lane choice` is no longer one of them.
 
 const MODULE = path.join(__dirname, '..', 'plugins', 'aether', 'hooks', 'ops-command.mjs')
@@ -43,7 +43,7 @@ test("the wave's quota step asks for the refresh: status <run> --refresh, and no
 
 const PAIR = 'agy/claude-opus-5-5@medium'
 
-test('pick and took parse to their argument vectors', () => {
+test('pick, took and pause parse to their argument vectors', () => {
   const forms = [
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh`,
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh --exclude ${PAIR}`,
@@ -55,13 +55,14 @@ test('pick and took parse to their argument vectors', () => {
     `aether-lane pick ${RUN} final-review-slice-2 --role reviewer --model opus --effort high --author gemini-4-argon`,
     `aether-lane took ${RUN} final-review-slice-2 --by agy:claude-opus-5-5 --cause chosen`,
     `aether-lane took ${RUN} ${CALL} --by muse:muse-wonder-full-1.0 --cause chosen`,
+    'aether-lane pause --seconds 60',
   ]
   for (const command of forms) {
     assert.deepEqual(parseOpsPrompt(prompt(command)), { cwd: '/repo', bin: 'aether-lane', args: command.split(' ').slice(1), timeoutMs: OPS_TIMEOUT_MS }, command)
   }
 })
 
-test('pick and took refuse a value or an order they do not take', () => {
+test('pick, took and pause refuse a value or an order they do not take', () => {
   const refused = [
     `aether-lane pick ${RUN} ${CALL} --role judge --model sonnet --effort high`,
     `aether-lane pick ${RUN} ${CALL} --role implementer --model gpt --effort high`,
@@ -73,7 +74,9 @@ test('pick and took refuse a value or an order they do not take', () => {
     `aether-lane took ${RUN} ${CALL} --by native --cause because`,
     `aether-lane took ${RUN} ${CALL} --cause chosen --by native`,
     `aether-lane took ${RUN} ${CALL} --by native --cause wait-limit`,
-    'aether-lane pause --seconds 60',
+    'aether-lane pause --seconds -1',
+    'aether-lane pause --seconds 1000',
+    'aether-lane pause 60',
   ]
   for (const command of refused) assert.equal(parseOpsPrompt(prompt(command)), null, command)
 })
