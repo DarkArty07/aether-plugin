@@ -70,6 +70,8 @@ test('an external Judge round starts in the background and its answer comes by s
   assert.equal(done.value.model, 'gemini-4-argon')
   assert.deepEqual(done.value.result, JUDGE_ANSWER)
   assert.ok(done.value.answer.startsWith('## Verdict\nrevise\n'))
+  // The result carries the time the round took, from its start (issue 62).
+  assert.ok(Number.isInteger(done.durationMs) && done.durationMs >= 0 && done.durationMs < 60000, String(done.durationMs))
 })
 
 test('the other exits of a seat are results of the round: 3 for nothing ran, 4 for a failed round', (t) => {
@@ -109,13 +111,19 @@ test('seat-wait answers { done: false } while a round runs, and seat-stop ends i
   const runnerEnv = fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0')
   assert.ok(runnerEnv.includes('AETHER_SUPERDELEGATION=on'), 'AETHER_SUPERDELEGATION')
   assert.ok(runnerEnv.includes('AETHER_LANE_HARNESSES=agy'), 'AETHER_LANE_HARNESSES')
-  assert.deepEqual(lane(repo, ['seat-wait', id, '--max', '0'], env).json, { done: false })
-  assert.deepEqual(lane(repo, ['seat-stop', id], env).json, { stopped: true })
+  // A round that still runs says how long it has (the workflow has no clock: its time caps read this, issue 62).
+  const running = lane(repo, ['seat-wait', id, '--max', '0'], env).json
+  assert.deepEqual(Object.keys(running).sort(), ['done', 'elapsedMs'])
+  assert.equal(running.done, false)
+  assert.ok(Number.isInteger(running.elapsedMs) && running.elapsedMs >= 0 && running.elapsedMs < 60000, String(running.elapsedMs))
+  // seat-stop names the pair the round ran on, for the next try to leave it out.
+  assert.deepEqual(lane(repo, ['seat-stop', id], env).json, { stopped: true, pair: 'agy/gemini-4-argon@high' })
   assert.ok(await until(() => !fs.existsSync(worktree)), 'the worktree is gone')
   const after = lane(repo, ['seat-wait', id, '--max', '5'], env).json
   assert.equal(after.done, true)
   assert.equal(after.exitCode, 1)
   assert.match(after.value.error, /ended without a result/)
+  assert.ok(Number.isInteger(after.durationMs))
 })
 
 test('a round whose runner is dead is reported, and bad arguments are refused', (t) => {

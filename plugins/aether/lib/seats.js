@@ -506,6 +506,9 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   const modelArg = adapter.modelArg({ model: external.model, level: external.level })
   const label = `${external.harness}/${external.model}`
   fs.mkdirSync(dir, { recursive: true })
+  // The pair this round runs on, for `seat-stop` to name when the workflow ends the round at its time cap (issue 62), so
+  // that the next try leaves it out.
+  if (typeof decision?.picked?.id === 'string') fs.writeFileSync(path.join(dir, 'pair.json'), `${JSON.stringify({ pair: decision.picked.id })}\n`)
   const start = git(['rev-parse', 'HEAD'], cwd).stdout
   git(['worktree', 'add', '-q', '--detach', worktree, start], cwd)
 

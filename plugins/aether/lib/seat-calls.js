@@ -48,6 +48,8 @@ function seatPaths(cwd, id) {
     marker: `seat-call/${id}`,
     harnessMarker: `seat/${id}`,
     call: file('call.json'),
+    // The pair the round runs on, written by seats.js once it has one.
+    pair: file('pair.json'),
     message: file('message.md'),
     pid: file('pid'),
     result: file('result.json'),
@@ -154,8 +156,10 @@ function writeResult(paths, outcome) {
 async function runSeat(cwd, id) {
   const paths = seatPaths(cwd, id)
   let outcome
+  let startedAt = Date.now()
   try {
     const call = JSON.parse(fs.readFileSync(paths.call, 'utf8'))
+    if (Number.isFinite(call.startedAt)) startedAt = call.startedAt
     const message = fs.readFileSync(paths.message, 'utf8')
     const author = call.author === null ? [] : ['--author', call.author]
     const doc = call.doc === null ? [] : ['--doc', call.doc]
@@ -166,7 +170,8 @@ async function runSeat(cwd, id) {
   } catch (err) {
     outcome = { exitCode: 1, value: { error: err.message } }
   }
-  writeResult(paths, outcome)
+  // How long the round took since its start, for the workflow to record (issue 62).
+  writeResult(paths, { ...outcome, durationMs: Date.now() - startedAt })
   fs.rmSync(paths.pid, { force: true })
 }
 
@@ -200,20 +205,23 @@ function runnerAlive(paths) {
   }
 }
 
-// The result of a round, or { done: false } when it still runs after maxSeconds. A round whose runner is gone and
-// left no result is a result too, an exit-1 one, so that nobody waits for it.
+// The result of a round, with the time it took (durationMs), or { done: false, elapsedMs } when it still runs after
+// maxSeconds, with the time since it started: the workflow has no clock, and takes its time caps from these (issue 62).
+// A round whose runner is gone and left no result is a result too, an exit-1 one, so that nobody waits for it.
 async function wait(cwd, id, { maxSeconds = null } = {}) {
   const paths = seatPaths(cwd, id)
   if (!fs.existsSync(paths.dir)) throw new Error(`no such seat round: ${id}`)
   const deadline = Date.now() + (maxSeconds ?? SEAT_WAIT_SECONDS) * 1000
+  const startedAt = readJsonOrNull(paths.call)?.startedAt
+  const elapsed = () => (Number.isFinite(startedAt) ? Math.max(0, Date.now() - startedAt) : null)
   for (;;) {
     const done = finishedResult(paths)
     if (done) return done
     if (!runnerAlive(paths)) {
       // The runner writes its result and then drops its pid: a result that came between the two reads is the answer.
-      return finishedResult(paths) ?? { done: true, exitCode: 1, value: { error: `the seat round ${id} ended without a result` } }
+      return finishedResult(paths) ?? { done: true, exitCode: 1, value: { error: `the seat round ${id} ended without a result` }, durationMs: elapsed() }
     }
-    if (Date.now() >= deadline) return { done: false }
+    if (Date.now() >= deadline) return elapsed() === null ? { done: false } : { done: false, elapsedMs: elapsed() }
     await sleep(Math.min(POLL_MS, Math.max(0, deadline - Date.now())))
   }
 }
@@ -225,7 +233,9 @@ function stop(cwd, id) {
   if (!fs.existsSync(paths.dir)) throw new Error(`no such seat round: ${id}`)
   const runner = lanes.killGroup(paths.pid, paths.marker)
   const marked = lanes.killMarked(paths.harnessMarker)
-  return { stopped: runner.killed || marked.length > 0 }
+  // The pair the round ran on, when it had one: the workflow leaves it out of the next try after a round it ended at its cap.
+  const pair = readJsonOrNull(paths.pair)?.pair
+  return { stopped: runner.killed || marked.length > 0, ...(typeof pair === 'string' ? { pair } : {}) }
 }
 
 module.exports = { SEAT_WAIT_SECONDS, COMMANDS, start, wait, stop, runSeat }
