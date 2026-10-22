@@ -79,14 +79,15 @@ function readInput() {
 // Marks the session; returns the reason it could not, or '' when it did.
 function mark(sessionId) {
   try {
-    const { markSession, routerSettingsFrom, brakeSettingsFrom } = require(path.join(root, 'lib', 'session.js'))
+    const { markSession, delegateSettingsFrom, brakeSettingsFrom } = require(path.join(root, 'lib', 'session.js'))
     const { dataDir } = require(path.join(root, 'lib', 'run.js'))
     // The ops option is on unless it is exactly false: the mod reads the session's ops-off file.
-    // The router's four options go to the session's router file, which the router's commands read.
+    // The superdelegation option, the harnesses and the quota deadline go to the session's delegate file, which
+    // aether-delegate reads.
     // The brake settings go to the session's brake file.
     markSession(dataDir(), sessionId, Date.now(), {
       opsInMod: process.env.CLAUDE_PLUGIN_OPTION_OPS !== 'false',
-      router: routerSettingsFrom(process.env),
+      delegate: delegateSettingsFrom(process.env),
       brake: brakeSettingsFrom(process.env),
     })
     return ''
@@ -124,23 +125,6 @@ function legacyContext() {
   }
 }
 
-const ROUTER_NOTES = {
-  advise:
-    'Aether router (advise): after you launch a delegate task, Aether tells you the model and effort its decider would choose. The delegate still runs as you launched it.',
-  command:
-    'Aether router (command): launch a delegate task with a description and a self-contained brief, and leave model and effort out: Aether\'s decider chooses them and tells you which. To keep your own choice, put a line "ROUTER-OVERRIDE: <reason>" in the brief and pass model and effort. The swarm, the design seats and the aether agents are not routed.',
-}
-
-// The note of the router's mode, or null in record mode, which changes nothing the Lead sees.
-function routerNote() {
-  try {
-    const { routerSettingsFrom } = require(path.join(root, 'lib', 'session.js'))
-    return ROUTER_NOTES[routerSettingsFrom(process.env).mode] || null
-  } catch {
-    return null
-  }
-}
-
 function main() {
   const input = readInput()
   if (!input) return
@@ -162,7 +146,6 @@ function main() {
     markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
     sweepNote(),
     autonomyNote(),
-    routerNote(),
   ].filter(Boolean).join('\n\n')
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) + '\n')
 }
