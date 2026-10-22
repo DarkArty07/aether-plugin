@@ -264,6 +264,17 @@ test('words about quota in a failure are not quota: only the quota data of the f
   assert.deepEqual(markFiles(env), [])
 })
 
+test('issue 063: an observed 5 h window at 100 % makes the next start refuse and marks Muse until that reset, with no call (US6, R16)', (t) => {
+  const { args, env } = museRun(t, {})
+  const dataDir = env.AETHER_DATA_DIR
+  const resetsAtMs = Date.now() + 3 * HOUR
+  writeObserved(env, { observedAt: Date.now(), window: { usedPercent: 100, resetsAtMs }, weekly: { usedPercent: 83, resetsAtMs: Date.now() + 5 * DAY } })
+  assert.deepEqual(startImplementer(args, env).json, { unavailable: 'quota' })
+  assert.equal(museCalls(env).length, 0, 'the start runs no call')
+  const mark = marks.liveMark(dataDir, 'muse', 'muse')
+  assert.deepEqual([mark.confirmed, mark.until, mark.resetsAt], [true, resetsAtMs, new Date(resetsAtMs).toISOString()])
+})
+
 test('a quota failure with the allowance of a 5 h window used up holds the group until that reset, as for the other harnesses (US6, R16)', (t) => {
   const now = Date.now()
   const allowance = allowanceOf(100, 10, now)
