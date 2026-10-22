@@ -94,3 +94,14 @@ test('markSession refuses an invalid id and writes no delegate file either', (t)
   assert.throws(() => markSession(data, '../x', 1, { delegate: { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } } }), /invalid session id/)
   assert.deepEqual(fs.readdirSync(data), [])
 })
+
+test('markSession removes any stale router file an older version left', (t) => {
+  const data = tempDir(t)
+  markSession(data, 's1', 1)
+  const stale = path.join(data, 'sessions', 's1.router.json')
+  fs.writeFileSync(stale, '{}')
+  assert.equal(fs.existsSync(stale), true)
+  markSession(data, 's1', 2)
+  assert.equal(fs.existsSync(stale), false)
+})
+

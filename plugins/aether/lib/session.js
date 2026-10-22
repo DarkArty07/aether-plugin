@@ -135,7 +135,8 @@ function readBrakeSettings(dataDir, sessionId) {
 // Writes {"session": sessionId, "startedAt": now} to the marker file, creating its directory. Throws on a bad id (before writing anything) or a failed write.
 // With opsInMod false it also writes the ops-off file, and with it true it removes a stale one, so a session
 // resumed with the option changed follows the option it has now. With delegate given it writes the delegate file,
-// and with it null it removes a stale one, for the same reason. The same goes for brake and its file.
+// and with it null it removes a stale one, for the same reason. The same goes for brake and its file. It also
+// removes a stale router file an older version left.
 function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, delegate = null, brake = null } = {}) {
   const file = markerFile(dataDir, sessionId)
   const dir = path.dirname(file)
@@ -150,6 +151,7 @@ function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, de
   const brakePath = brakeFile(dataDir, sessionId)
   if (brake) fs.writeFileSync(brakePath, JSON.stringify(brake) + '\n')
   else fs.rmSync(brakePath, { force: true })
+  fs.rmSync(path.join(dir, `${sessionId}.router.json`), { force: true })
 }
 
 // True when the marker file exists. False for an invalid or missing id; never throws.
