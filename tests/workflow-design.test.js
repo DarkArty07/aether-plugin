@@ -463,6 +463,63 @@ test('an external correction of the Writer answers with the schema of its docume
   assert.equal(opsCalls(run, 'check').length, 2, 'after the first plan write and after its correction')
 })
 
+const EDIT_ONLY = 'Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'
+
+test('issue 67: a revision names the findings and where they touch, and tells the Writer to edit only those; the first round does not', async () => {
+  const findings = [
+    { severity: 'major', type: 'wrong', title: 'the limit', evidence: '`plan.md:12-14`', fix: 'raise it' },
+    { severity: 'minor', type: 'extra', title: 'the table', evidence: 'see `## Complexity`', fix: 'drop the row' },
+    { severity: 'blocking', type: 'missing', title: 'a gap', evidence: '`R1`', fix: 'name it' },
+  ]
+  const judge = (call, fallback) => (/ review 1$/.test(call.label) ? { verdict: 'revise', findings, openQuestions: ['Which limit?'] } : fallback(call))
+  const run = await go({ ...ARGS, superdelegation: 'on' }, { judge })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+
+  const writers = opsCalls(run, 'seat-start').filter((c) => c.command.rest[0] === 'writer')
+  const first = run.calls.find((c) => c.label === 'spec: writer write').prompt
+  const planFirst = run.calls.find((c) => c.label === 'plan: writer write').prompt
+  for (const prompt of [first, planFirst]) {
+    assert.equal(prompt.includes(EDIT_ONLY), false, prompt.slice(0, 80))
+    assert.equal(prompt.includes('names no line'), false)
+    assert.equal(prompt.includes('Findings:'), false)
+  }
+
+  const specPayload = writers[1].payload.text
+  const specNative = run.calls.find((c) => c.label === 'spec: writer revision 1').prompt
+  assert.ok(specNative.startsWith(specPayload), 'the native Writer and the external seat get the same revision message')
+  assert.ok(specPayload.startsWith(`Revise ${FEATURE}/spec.md `))
+  assert.ok(specPayload.includes(EDIT_ONLY))
+  assert.ok(specPayload.includes(`- ${FEATURE}/spec.md`))
+  assert.ok(specPayload.includes('[major] [wrong] the limit — lines 12-14'))
+  assert.ok(specPayload.includes('[minor] [extra] the table — ## Complexity'))
+  assert.ok(specPayload.includes('[blocking] [missing] a gap — names no line'))
+  assert.ok(specPayload.includes('Which limit?'))
+  assert.equal(specPayload.includes('Write the spec of'), false)
+
+  const planPayload = writers[3].payload.text
+  assert.ok(planPayload.startsWith('Revise '))
+  assert.ok(planPayload.includes(EDIT_ONLY))
+  assert.ok(planPayload.includes(`- ${FEATURE}/plan.md`))
+  assert.ok(planPayload.includes(`- ${FEATURE}/tasks.md`))
+  assert.ok(planPayload.includes('names no line'))
+  assert.ok(planPayload.includes(seats.revisionBrief({ paths: [`${FEATURE}/plan.md`, `${FEATURE}/tasks.md`], findings, openQuestions: ['Which limit?'] })))
+
+  // The next Judge review gets the same places. A git diff of the document is not in the message: the workflow
+  // can only shell out through the ops commands the mod allowlists, and that list is outside this task.
+  const judgeFirst = run.calls.find((c) => c.label === 'spec: judge review 1').prompt
+  const judgeNext = run.calls.find((c) => c.label === 'spec: judge review 2').prompt
+  assert.equal(judgeFirst.includes('Where those findings touch:'), false)
+  assert.ok(judgeNext.includes('Your earlier verdict:'))
+  assert.ok(judgeNext.includes('Where those findings touch:'))
+  assert.ok(judgeNext.includes('[major] [wrong] the limit — lines 12-14'))
+  assert.ok(judgeNext.includes('[blocking] [missing] a gap — names no line'))
+
+  const guide = fs.readFileSync(path.join(PLUGIN, '..', '..', 'docs', 'guide', 'design-seats.md'), 'utf8')
+  assert.ok(guide.includes('edit the document in place'))
+  assert.ok(guide.includes('names no line'))
+})
+
 test('the design workflow holds no copy of the seat profiles and no native correction by rule', () => {
   const source = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
   for (const gone of ['SEAT_CHOICES', 'nativeRevision', 'with no seat round', "'balanced'", "'robust'", 'input.seats', 'input.lanes']) assert.equal(source.includes(gone), false, gone)

@@ -612,11 +612,16 @@ const JUDGE_READING_PLAN = [
 ]
 
 // The Judge's message for review n: the document, the intent, what to check, what aether-plan check printed for a
-// plan, and from the second review on, the earlier verdict and what changed.
+// plan, and from the second review on, the earlier verdict, what changed, and where the earlier findings touch.
+// A git diff of the document is not included: this script can only shell out through the ops commands the mod
+// allowlists, and that list is not this task's to extend.
 function judgeMessage({ doc, path, check, earlier }) {
   const parts = [...reviewLines(doc, path), '', ...intentLines(), FINDING_FIELDS]
   if (check !== null) parts.push('', 'aether-plan check printed:', check)
-  if (earlier) parts.push('', 'Your earlier verdict:', earlier.verdict, '', 'What changed:', earlier.changed)
+  if (earlier) {
+    parts.push('', 'Your earlier verdict:', earlier.verdict, '', 'What changed:', earlier.changed)
+    if (earlier.touched) parts.push('', 'Where those findings touch:', earlier.touched)
+  }
   parts.push('', ...JUDGE_READING_PLAN, '', SCOPE)
   return lines(parts)
 }
@@ -633,17 +638,65 @@ function changedText(answer) {
   )
 }
 
-// The Writer's message for a correction after review n: a seat round's message, and the native agent's if the seat is handed back.
-function revisionMessage({ doc, path, n, verdict }) {
+// A copy of the no-document half of findingTouch, and of formatFindings and revisionBrief, in lib/seats.js (issue 67).
+// A workflow has no modules and cannot read the file, so a quote is not looked up under its heading here: a finding
+// that names no line and no heading says so. Keep the two copies in step; tests/workflow-design.test.js pins the brief.
+const PATH_LINE = /(?:^|[\s`'"(])([A-Za-z0-9_./-]*[./][A-Za-z0-9_./-]*):(\d+)(?:[ \t]*[-–][ \t]*(\d+))?(?=$|[\s`'")\],.;:])/
+const WORD_LINE = /\blines?[ \t]+(\d+)(?:[ \t]*[-–][ \t]*(\d+))?\b/i
+const NAMED_HEADING = /(?:^|[\s`'"(])(#{1,6}[ \t]+\S[^\n`]*)/
+
+function spanOf(start, end) {
+  return end ? `lines ${start}-${end}` : `line ${start}`
+}
+
+function findingTouch(finding) {
+  const evidence = finding !== null && typeof finding === 'object' && typeof finding.evidence === 'string' ? finding.evidence : ''
+  const title = finding !== null && typeof finding === 'object' && typeof finding.title === 'string' ? finding.title : ''
+  const named = `${evidence}\n${title}`
+  const path = PATH_LINE.exec(named)
+  if (path) return spanOf(path[2], path[3])
+  const word = WORD_LINE.exec(named)
+  if (word) return spanOf(word[1], word[2])
+  const heading = NAMED_HEADING.exec(named)
+  if (heading) return heading[1].trim()
+  return 'names no line'
+}
+
+function formatFindings(findings) {
+  if (!Array.isArray(findings) || findings.length === 0) return ['- none']
+  return findings.map((finding, index) => {
+    const severity = typeof finding.severity === 'string' && finding.severity !== '' ? finding.severity : 'major'
+    const type = typeof finding.type === 'string' && finding.type !== '' ? ` [${finding.type}]` : ''
+    const title = typeof finding.title === 'string' ? finding.title : ''
+    const parts = [`${index + 1}. [${severity}]${type} ${title}`, findingTouch(finding)]
+    if (typeof finding.evidence === 'string' && finding.evidence !== '') parts.push(finding.evidence)
+    if (typeof finding.fix === 'string' && finding.fix !== '') parts.push(finding.fix)
+    return parts.join(' — ')
+  })
+}
+
+const EDIT_ONLY = 'Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'
+
+function revisionBrief({ paths, findings, openQuestions = [] }) {
+  const questions = Array.isArray(openQuestions) ? openQuestions.filter((item) => typeof item === 'string' && item !== '') : []
+  const out = [EDIT_ONLY, '', 'The document:', ...paths.map((item) => `- ${item}`), '', 'Findings:', ...formatFindings(findings)]
+  if (questions.length > 0) out.push('', 'Open questions:', ...questions.map((item) => `- ${item}`))
+  return out.join('\n')
+}
+
+// The Writer's message for a correction after review n. The same text is the seat round's message and, if the seat
+// is handed back, the native agent's. A plan names both files, because the Judge reviewed them together.
+function revisionMessage({ doc, path, n, findings, openQuestions }) {
+  const paths = doc === 'plan' ? [PLAN, TASKS] : [path]
   const plan = doc === 'plan' ? [`When ${TASKS} changes, run \`aether-plan check ${TASKS}\` until it passes; commit ${PLAN} and ${TASKS} together.`] : []
   return lines(
-    `Revise ${path} after the Judge's review ${n}.`,
+    `Revise ${paths.join(' and ')} after the Judge's review ${n}.`,
     '',
     ...intentLines(),
-    "The Judge's verdict:",
-    verdict,
     '',
-    'Fix each finding in the document without starting over, and change only what a finding asks for. Commit the document. Each finding you do not apply goes in `disagreements`, with why.',
+    revisionBrief({ paths, findings, openQuestions }),
+    '',
+    'Commit the document. Each finding you do not apply goes in `disagreements`, with why.',
     ...plan,
     '',
     SCOPE,
@@ -695,7 +748,7 @@ async function checkedAfter(step, text, retry) {
 
 // The Judge's rounds of one document (R1, R3): at most three reviews, with a correction by the Writer after each one
 // that does not approve. A reject, at any review, or a third review that does not approve ends the design in a
-// dispute. `check` is what aether-plan check printed for a plan, or null; `correct(n, verdict)` corrects the document
+// dispute. `check` is what aether-plan check printed for a plan, or null; `correct(n, review)` corrects the document
 // and resolves to { answer, model, check } or { end }. Resolves to { author } once approved, or { end }.
 async function reviews({ doc, path, phase, author, check, correct }) {
   let earlier = null
@@ -712,12 +765,12 @@ async function reviews({ doc, path, phase, author, check, correct }) {
       log(`${doc}: ${kind === 'reject' ? 'the Judge rejected the approach' : `review ${n} did not approve`}`)
       return { end: { status: 'dispute', dispute: { document: doc, kind, judge: { verdict, text: review.text }, writer: positions, direction: kind === 'reject' ? review.text : null } } }
     }
-    const fixed = await correct(n, review.text)
+    const fixed = await correct(n, review)
     if (fixed.end) return fixed
     author = fixed.model
     check = fixed.check
     positions = { disagreements: listOf(fixed.answer.disagreements), assumptions: listOf(fixed.answer.assumptions) }
-    earlier = { verdict: review.text, changed: changedText(fixed.answer) }
+    earlier = { verdict: review.text, changed: changedText(fixed.answer), touched: formatFindings(review.answer.findings).join('\n') }
   }
 }
 
@@ -729,9 +782,10 @@ function corrector(doc, path, phase) {
   const seatSchema = doc === 'plan' ? WRITER_SCHEMA : SPEC_WRITER_SCHEMA
   const round = (step, text) =>
     doc === 'design' ? designRevision({ doc, step, text, phase }) : seatRound({ seat: 'writer', doc, step, text, schema: seatSchema, nativeSchema: REVISION_SCHEMA, phase, writes: doc })
-  return async (n, verdict) => {
+  return async (n, review) => {
     const step = `revision ${n}`
-    const text = revisionMessage({ doc, path, n, verdict })
+    const answer = isObject(review.answer) ? review.answer : {}
+    const text = revisionMessage({ doc, path, n, findings: answer.findings, openQuestions: answer.openQuestions })
     const fixed = await round(step, text)
     if (fixed.failed) return failure(`${doc}-writer`, fixed.failed)
     if (doc !== 'plan') return { ...fixed, check: null }

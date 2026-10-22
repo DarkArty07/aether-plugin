@@ -494,6 +494,66 @@ test('a Writer whose tasks fail aether-plan check, or that leaves none, gives th
   assert.equal(fs.existsSync(path.join(repo.dir, FEATURE, 'tasks.md')), false)
 })
 
+test('issue 67: a finding\'s place is the line it names, else the heading, else the heading above its quote, else names no line', () => {
+  const doc = ['# Spec', '', '## Requirements', '', 'The card is the source.', '', '## Out of scope', '', 'No UI.', ''].join('\n')
+  const line = { severity: 'major', type: 'wrong', title: 'the limit', evidence: '`plan.md:12-14`', fix: 'raise it' }
+  const heading = { severity: 'minor', type: 'extra', title: 'the table', evidence: 'see `## Complexity`', fix: 'drop the row' }
+  const quoted = { severity: 'major', type: 'wrong', title: 'scope', evidence: '`No UI.`', fix: 'drop it' }
+  const neither = { severity: 'blocking', type: 'missing', title: 'a gap', evidence: '`not in the file`', fix: 'name it' }
+  assert.equal(seats.findingTouch(line), 'lines 12-14')
+  assert.equal(seats.findingTouch({ ...line, evidence: 'src/api.js:40' }), 'line 40')
+  assert.equal(seats.findingTouch({ ...line, title: 'Task 1:2 is too large', evidence: '`R1`' }), 'names no line')
+  assert.equal(seats.findingTouch({ ...line, evidence: 'lines 4-9 of the spec' }), 'lines 4-9')
+  assert.equal(seats.findingTouch({ ...line, evidence: '`plan.md:12` under `## Gate`' }), 'line 12')
+  assert.equal(seats.findingTouch(heading), '## Complexity')
+  assert.equal(seats.findingTouch(quoted), 'names no line')
+  assert.equal(seats.findingTouch(quoted, doc), '## Out of scope')
+  assert.equal(seats.findingTouch(neither, doc), 'names no line')
+  assert.equal(seats.findingTouch({ severity: 'minor', type: 'missing', title: 'x', evidence: '', fix: 'y' }), 'names no line')
+
+  const brief = seats.revisionBrief({ paths: [`${FEATURE}/spec.md`], findings: [line, heading, neither], openQuestions: ['Which limit?'] })
+  assert.ok(brief.includes('Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'))
+  assert.ok(brief.includes(`- ${FEATURE}/spec.md`))
+  assert.ok(brief.includes('[major] [wrong] the limit — lines 12-14 — `plan.md:12-14` — raise it'))
+  assert.ok(brief.includes('[minor] [extra] the table — ## Complexity'))
+  assert.ok(brief.includes('[blocking] [missing] a gap — names no line'))
+  assert.ok(brief.includes('- Which limit?'))
+  assert.equal(brief.includes('Write the spec'), false)
+})
+
+test('issue 67: an external Writer is told the correction is an edit, and a draft round is not', (t) => {
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const files = writerFiles(t)
+  const findings = [
+    { severity: 'major', type: 'wrong', title: 'the limit', evidence: '`plan.md:12-14`', fix: 'raise it' },
+    { severity: 'blocking', type: 'missing', title: 'a gap', evidence: '`R1`', fix: 'name it' },
+  ]
+  const message = [
+    `Revise ${FEATURE}/plan.md and ${FEATURE}/tasks.md after the Judge's review 1.`,
+    '',
+    seats.revisionBrief({ paths: [`${FEATURE}/plan.md`, `${FEATURE}/tasks.md`], findings }),
+    `FAKE-AGY: copy ${files.plan} ${FEATURE}/plan.md`,
+    `FAKE-AGY: copy ${files.tasks} ${FEATURE}/tasks.md`,
+    'FAKE-AGY: commit plan and tasks',
+    `FAKE-AGY: answer ${JSON.stringify(WRITER_ANSWER)}`,
+    '',
+  ].join('\n')
+  const revised = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], env, message)
+  assert.equal(revised.status, 0, revised.stdout + revised.stderr)
+  const prompt = argAfter(agyTurns(env)[0].argv, '-p')
+  assert.ok(prompt.includes(message.trim()))
+  assert.ok(prompt.includes('names no line'))
+  assert.ok(prompt.includes('not a brief to write the document again'))
+
+  const draftEnv = laneEnv(t, { quota: geminiFirst() })
+  const draft = seat(repo.dir, ['writer', '--session', 's2', '--feature', FEATURE], draftEnv, writerInput(files))
+  assert.equal(draft.status, 0, draft.stdout + draft.stderr)
+  const draftPrompt = argAfter(agyTurns(draftEnv)[0].argv, '-p')
+  assert.equal(draftPrompt.includes('not a brief to write the document again'), false)
+  assert.equal(draftPrompt.includes('Findings:'), false)
+})
+
 test('with superdelegation off the Writer is the native Writer, handed back from its decision', (t) => {
   const repo = seatRepo(t)
   const r = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], { ...laneEnv(t), AETHER_SUPERDELEGATION: 'off' }, writerInput(writerFiles(t)))
