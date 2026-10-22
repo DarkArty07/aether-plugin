@@ -264,6 +264,7 @@ function windowLine(name, w) {
 // Why a dry mark holds: the minutes a refusal was given, with the reset agy stated shown as stated; its reset when a
 // reading showed the group under the reserve; or the minutes it was given.
 function markReason(mark) {
+  if (mark.confirmed && mark.reason === 'quota refusal') return 'its reset, after agy refused a call for its individual quota'
   if (mark.reason === 'quota refusal') {
     const minutes = Math.round((mark.until - mark.at) / MINUTE_MS)
     const hours = Number.isFinite(mark.statedResetMs) ? Math.round(mark.statedResetMs / 3600000) : null
