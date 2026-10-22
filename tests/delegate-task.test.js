@@ -1,0 +1,270 @@
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { tempDir, makeRepo } = require('./helpers.js')
+const task = require('../plugins/aether/lib/delegate-task.js')
+const log = require('../plugins/aether/lib/delegate-log.js')
+
+const NATIVE = { lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }
+const EXTERNAL = { lanes: true, harnesses: ['grok'], deadlines: { quotaMs: 1 } }
+const GROK = { id: 'grok/grok-4.7@high', harness: 'grok', model: 'grok-4.7', effort: 'high', group: 'grok' }
+const FINDING = 'src/a.js:3: the empty case is missing'
+const F = (n) => `src/f${n}.js:${n}: missing case ${n}`
+
+function world(t, { settings = NATIVE, pick = null, cwd = null } = {}) {
+  const dataDir = tempDir(t, 'aether-data-')
+  const asked = []
+  let n = 0
+  const deps = { dataDir, cwd: cwd ?? dataDir, now: () => 1000 + (n += 1), settings, newId: () => `gen-${n}`, pickPair: async (reference) => (asked.push(reference), { pick, quota: [] }) }
+  return { dataDir, deps, asked }
+}
+const call = (prompt, extra = {}) => ({ session: 's1', event: { subagent_type: 'general-purpose', description: 'd', prompt, ...extra } })
+const BRIEF = (id, more = '') => `AETHER-TASK: ${id}\n${more}Do the work.`
+const entries = (dataDir, id) => log.readEntries(dataDir, { task: id })
+
+test('parseBrief reads the task id, the owned paths and the tests; the first line of each wins', () => {
+  assert.deepEqual(task.parseBrief('AETHER-TASK: t-1\nAETHER-OWNS: src/**, tests/a.test.js\nAETHER-TESTS: npm test\nAETHER-TASK: t-2\nbody'), { task: 't-1', owns: ['src/**', 'tests/a.test.js'], tests: 'npm test' })
+  assert.deepEqual(task.parseBrief('just a brief'), { task: null, owns: [], tests: null })
+})
+
+test('every delegate of every task starts on Haiku, whatever the Lead asks (C1, E1, E2)', async (t) => {
+  const { deps, dataDir } = world(t)
+  const plans = []
+  for (const id of ['a', 'b', 'c']) plans.push(await task.begin(call(BRIEF(id)), deps))
+  for (const plan of plans) assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['haiku', 'first', 'haiku', 'high'])
+  const asked = await task.begin(call(BRIEF('d'), { model: 'opus', effort: 'max' }), deps)
+  assert.deepEqual([asked.args.model, asked.args.effort, asked.step], ['haiku', 'high', 'haiku'])
+  const launch = entries(dataDir, 'd').find((e) => e.kind === 'launch')
+  assert.deepEqual([launch.ignored, launch.requested], [true, { model: 'opus', effort: 'max' }])
+})
+
+test('a call with no AETHER-TASK gets a generated id and says so', async (t) => {
+  const { deps } = world(t)
+  const plan = await task.begin(call('Do the work.'), deps)
+  assert.match(plan.id, /^gen-/)
+  assert.ok(plan.notes.join(' ').includes(plan.id))
+})
+
+test('a correction goes to the same step with its findings and the xhigh effort; the step does not move (C2, E3)', async (t) => {
+  const { deps } = world(t)
+  await task.begin(call(BRIEF('t1')), deps)
+  const answer = await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
+  assert.deepEqual([answer.ok, answer.next.kind, answer.next.step, answer.corrections], [true, 'fix', 'haiku', { used: 1, cap: 5 }])
+  const again = await task.begin(call(BRIEF('t1')), deps)
+  assert.deepEqual([again.step, again.kind, again.args.model, again.args.effort], ['haiku', 'fix', 'haiku', 'xhigh'])
+  assert.ok(again.args.prompt.includes('## Findings to fix') && again.args.prompt.includes(FINDING))
+})
+
+test('the correction receives the earlier work: the patch path of its last result, or the earlier answer (C2, C4)', async (t) => {
+  const { deps, dataDir } = world(t)
+  await task.begin(call(BRIEF('t1')), deps)
+  const patch = path.join(dataDir, 'delegates', 'patches', 't1-1.patch')
+  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: null, patch, answer: null, checks: { ok: true } })
+  await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
+  const again = await task.begin(call(BRIEF('t1')), deps)
+  assert.ok(again.args.prompt.includes('## Your previous work') && again.args.prompt.includes(patch))
+})
+
+test('five corrections of Haiku, and the sixth failure rises to Sonnet with the work and the findings (C3, E5)', async (t) => {
+  const { deps } = world(t)
+  await task.begin(call(BRIEF('t1')), deps)
+  for (let n = 1; n <= 5; n++) assert.equal((await task.verdict({ task: 't1', verdict: 'fix', findings: [F(n)] }, deps)).next.kind, 'fix')
+  const sixth = await task.verdict({ task: 't1', verdict: 'fix', findings: [F(6)] }, deps)
+  assert.deepEqual([sixth.next.kind, sixth.next.step, sixth.next.cause], ['rise', 'sonnet', 'exhausted'])
+  const plan = await task.begin(call(BRIEF('t1')), deps)
+  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['sonnet', 'rise', 'sonnet', 'xhigh'])
+  assert.ok(plan.args.prompt.includes(F(6)))
+})
+
+test('the same findings twice rise to Sonnet though Haiku has corrections left (E4)', async (t) => {
+  const { deps } = world(t)
+  await task.begin(call(BRIEF('t1')), deps)
+  await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
+  const second = await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
+  assert.deepEqual([second.next.kind, second.next.cause], ['rise', 'repeated'])
+})
+
+test('an infeasible declaration without a reason is rejected and the step stays; with one it rises and the log keeps the reason (C3, E6)', async (t) => {
+  const { deps, dataDir } = world(t)
+  await task.begin(call(BRIEF('t1')), deps)
+  const rejected = await task.verdict({ task: 't1', verdict: 'infeasible' }, deps)
+  assert.equal(rejected.ok, false)
+  assert.match(rejected.error, /reason/)
+  assert.equal((await task.begin(call(BRIEF('t1')), deps)).step, 'haiku')
+  const ok = await task.verdict({ task: 't1', verdict: 'infeasible', reason: 'wrong layer for this model' }, deps)
+  assert.deepEqual([ok.ok, ok.next.step, ok.next.cause], [true, 'sonnet', 'infeasible'])
+  assert.equal(entries(dataDir, 't1').find((e) => e.kind === 'verdict' && e.verdict === 'infeasible').reason, 'wrong layer for this model')
+})
+
+test('starting from scratch drops the earlier work and keeps the reason in the log (C4, E7)', async (t) => {
+  const { deps, dataDir } = world(t)
+  await task.begin(call(BRIEF('t1')), deps)
+  const patch = path.join(dataDir, 'delegates', 'patches', 't1-1.patch')
+  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: null, patch, checks: { ok: true } })
+  await task.verdict({ task: 't1', verdict: 'infeasible', reason: 'the approach is wrong', fromScratch: true }, deps)
+  const plan = await task.begin(call(BRIEF('t1')), deps)
+  assert.equal(plan.args.prompt.includes(patch), false)
+  assert.ok(plan.args.prompt.includes('the approach is wrong'))
+  assert.equal(entries(dataDir, 't1').find((e) => e.kind === 'verdict').input.fromScratch, true)
+})
+
+test('after Opus nothing opens a fourth step: the task is exhausted (C5, E8)', async (t) => {
+  const { deps } = world(t)
+  await task.begin(call(BRIEF('t1')), deps)
+  let last
+  for (let n = 1; n <= 11; n++) last = await task.verdict({ task: 't1', verdict: 'fix', findings: [F(n)] }, deps)
+  assert.deepEqual([last.next.kind, last.next.step], ['exhausted', null])
+  const plan = await task.begin(call(BRIEF('t1')), deps)
+  assert.deepEqual([plan.args.model, plan.args.effort, plan.external], ['haiku', 'low', null])
+  assert.match(plan.args.prompt, /exhausted/)
+  assert.equal((await task.verdict({ task: 't1', verdict: 'fix', findings: [F(12)] }, deps)).ok, false)
+})
+
+test('a finding with no file or no what is not accepted as a correction (R2)', async (t) => {
+  const { deps } = world(t)
+  await task.begin(call(BRIEF('t1')), deps)
+  assert.equal((await task.verdict({ task: 't1', verdict: 'fix', findings: ['the code is bad'] }, deps)).ok, false)
+  assert.equal((await task.verdict({ task: 't1', verdict: 'fix', findings: [] }, deps)).ok, false)
+  assert.equal((await task.verdict({ task: 'nope', verdict: 'approve' }, deps)).error, 'unknown task')
+})
+
+test('approve is refused when an objective check fails: a file outside Owns, an empty task or failing tests (C6, E9)', async (t) => {
+  const repo = makeRepo(t)
+  const { deps } = world(t, { cwd: repo.dir })
+  const owns = 'AETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\n'
+  await task.begin(call(BRIEF('out', owns)), deps)
+  fs.mkdirSync(path.join(repo.dir, 'src'))
+  fs.mkdirSync(path.join(repo.dir, 'docs'))
+  fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'a\n')
+  fs.writeFileSync(path.join(repo.dir, 'docs', 'x.md'), 'x\n')
+  const outside = await task.verdict({ task: 'out', verdict: 'approve', worktree: repo.dir }, deps)
+  assert.equal(outside.ok, false)
+  assert.match(outside.error, /docs\/x\.md/)
+  const body = await task.verdict({ task: 'out', verdict: 'fix', findings: ['docs/x.md: do not touch it'] }, deps)
+  assert.equal(body.ok, true, 'a correction needs no passing check')
+
+  const clean = makeRepo(t)
+  const world2 = world(t, { cwd: clean.dir })
+  await task.begin(call(BRIEF('empty', owns)), world2.deps)
+  const empty = await task.verdict({ task: 'empty', verdict: 'approve', worktree: clean.dir }, world2.deps)
+  assert.equal(empty.ok, false)
+  assert.match(empty.error, /empty|no changes/)
+
+  const failing = makeRepo(t)
+  const world3 = world(t, { cwd: failing.dir })
+  await task.begin(call(BRIEF('red', 'AETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(1)"\n')), world3.deps)
+  fs.mkdirSync(path.join(failing.dir, 'src'))
+  fs.writeFileSync(path.join(failing.dir, 'src', 'a.js'), 'a\n')
+  assert.match((await task.verdict({ task: 'red', verdict: 'approve', worktree: failing.dir }, world3.deps)).error, /tests/)
+
+  const good = makeRepo(t)
+  const world4 = world(t, { cwd: good.dir })
+  await task.begin(call(BRIEF('green', owns)), world4.deps)
+  fs.mkdirSync(path.join(good.dir, 'src'))
+  fs.writeFileSync(path.join(good.dir, 'src', 'a.js'), 'a\n')
+  const approved = await task.verdict({ task: 'green', verdict: 'approve', worktree: good.dir }, world4.deps)
+  assert.equal(approved.ok, true)
+  assert.equal(entries(world4.dataDir, 'green').at(-1).verdict, 'approved')
+})
+
+test('a task that edits is launched with isolation worktree, whoever takes the attempt; a read-only one is not (R13, S9)', async (t) => {
+  const more = 'AETHER-OWNS: src/**\n'
+  const native = world(t)
+  assert.equal((await task.begin(call(BRIEF('e1', more)), native.deps)).args.isolation, 'worktree')
+  assert.equal((await task.begin(call(BRIEF('r1')), native.deps)).args.isolation, undefined)
+  const external = world(t, { settings: EXTERNAL, pick: GROK })
+  assert.equal((await task.begin(call(BRIEF('e2', more)), external.deps)).args.isolation, 'worktree')
+})
+
+test('an approve of an attempt on Claude that edits is refused with no worktree and no checks of a result (S9)', async (t) => {
+  const { deps, dataDir } = world(t)
+  await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), deps)
+  const refused = await task.verdict({ task: 'e1', verdict: 'approve' }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /worktree/)
+  assert.equal(entries(dataDir, 'e1').some((e) => e.kind === 'verdict'), false)
+})
+
+test('a read-only delegate on Claude is approved only with its answer, not empty, and a checkout that did not change since begin; a file dirty before counts when its content changed (R6)', async (t) => {
+  const repo = makeRepo(t)
+  fs.appendFileSync(path.join(repo.dir, 'README.md'), 'dirty before the delegate\n')
+  const { deps, dataDir } = world(t, { cwd: repo.dir })
+  const said = (id, text) => log.appendEntry(dataDir, { kind: 'answer', task: id, attempt: 1, session: 's1', time: 5000, text })
+  const plan = await task.begin(call(BRIEF('r1')), deps)
+  assert.deepEqual(plan.answerOf, { task: 'r1', attempt: 1 })
+  assert.equal((await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), deps)).answerOf, null, 'a task that edits has no answer to record')
+  const none = await task.verdict({ task: 'r1', verdict: 'approve' }, deps)
+  assert.deepEqual([none.ok, /answer/.test(none.error)], [false, true], 'no answer recorded: not approved')
+  said('r1', '   ')
+  assert.equal((await task.verdict({ task: 'r1', verdict: 'approve' }, deps)).ok, false, 'an empty answer is not approved')
+  said('r1', 'found it')
+  assert.equal((await task.verdict({ task: 'r1', verdict: 'approve' }, deps)).ok, true, 'what was dirty before and was not touched does not count')
+  await task.begin(call(BRIEF('r2')), deps)
+  said('r2', 'found it')
+  fs.writeFileSync(path.join(repo.dir, 'touched.js'), 'x\n')
+  const refused = await task.verdict({ task: 'r2', verdict: 'approve' }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /touched\.js/)
+  assert.equal((await task.verdict({ task: 'r2', verdict: 'fix', findings: ['touched.js: do not create files'] }, deps)).ok, true)
+  await task.begin(call(BRIEF('r3')), deps)
+  said('r3', 'found it')
+  fs.appendFileSync(path.join(repo.dir, 'README.md'), 'the delegate edited it again\n')
+  const again = await task.verdict({ task: 'r3', verdict: 'approve' }, deps)
+  assert.equal(again.ok, false)
+  assert.match(again.error, /README\.md/, 'a file that was dirty at begin counts when its content changed')
+})
+
+test('an approve of an external result uses the checks its run recorded (C6)', async (t) => {
+  const { deps, dataDir } = world(t)
+  await task.begin(call(BRIEF('t1', 'AETHER-OWNS: src/**\n')), deps)
+  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: null, checks: { ok: false, reasons: ['tests failed'] } })
+  const refused = await task.verdict({ task: 't1', verdict: 'approve' }, deps)
+  assert.deepEqual([refused.ok, /tests failed/.test(refused.error)], [false, true])
+})
+
+test('a new id with the same owns and tests as a task of the session that did not end approved is a relaunch (R1)', async (t) => {
+  const { deps, dataDir } = world(t)
+  const more = 'AETHER-OWNS: src/**\nAETHER-TESTS: npm test\n'
+  await task.begin(call(BRIEF('t1', more)), deps)
+  await task.begin(call(BRIEF('t2', more)), deps)
+  assert.deepEqual(log.readEntries(dataDir).filter((e) => e.kind === 'relaunch').map((e) => [e.task, e.of]), [['t2', 't1']])
+  await task.begin(call(BRIEF('t3', 'AETHER-OWNS: other/**\nAETHER-TESTS: npm test\n')), deps)
+  assert.equal(log.readEntries(dataDir).filter((e) => e.kind === 'relaunch').length, 1)
+})
+
+test('each step asks the pair of the points of its own model, and a correction keeps the pair it had (C8, R11)', async (t) => {
+  const { deps, asked, dataDir } = world(t, { settings: EXTERNAL, pick: GROK })
+  const more = 'AETHER-OWNS: src/**\nAETHER-TESTS: npm test\n'
+  const first = await task.begin(call(BRIEF('t1', more)), deps)
+  assert.deepEqual(asked[0], { model: 'haiku', effort: 'high' })
+  assert.deepEqual([first.external.id, first.external.edits, first.external.pin], ['t1', true, null])
+  assert.deepEqual(first.args, { model: 'haiku', effort: 'high', isolation: 'worktree' }, 'the rescue on Claude is the same step, isolated because the task edits')
+  const file = JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'external', 't1.json'), 'utf8'))
+  assert.deepEqual([file.edits, file.owns, file.tests, file.step, file.harness], [true, ['src/**'], 'npm test', 'haiku', 'grok'])
+  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: GROK, checks: { ok: true } })
+  await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
+  const fixed = await task.begin(call(BRIEF('t1', more)), deps)
+  assert.deepEqual(asked[1], { model: 'haiku', effort: 'xhigh' })
+  assert.equal(fixed.external.pin, GROK.id)
+  await task.verdict({ task: 't1', verdict: 'infeasible', reason: 'too hard for Haiku' }, deps)
+  const risen = await task.begin(call(BRIEF('t1', more)), deps)
+  assert.deepEqual(asked[2], { model: 'sonnet', effort: 'xhigh' })
+  assert.equal(risen.external.pin, null)
+})
+
+test('a read-only task has no edits; with no pair it runs on Claude at the model of its step (E11, R14)', async (t) => {
+  const readOnly = world(t, { settings: EXTERNAL, pick: GROK })
+  assert.equal((await task.begin(call(BRIEF('r1')), readOnly.deps)).external.edits, false)
+  const none = world(t, { settings: EXTERNAL, pick: null })
+  const plan = await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), none.deps)
+  assert.deepEqual([plan.external, plan.args.model], [null, 'haiku'])
+})
+
+test('a named agent that is not a plain one stays on Claude', async (t) => {
+  const { deps } = world(t, { settings: EXTERNAL, pick: GROK })
+  const plan = await task.begin(call(BRIEF('t1'), { subagent_type: 'aether:judge' }), deps)
+  assert.equal(plan.skip, true)
+})
