@@ -13,15 +13,19 @@ export const meta = {
 // the Judge reviews it, the Writer writes the plan and the tasks, aether-plan check passes, the Judge reviews them,
 // and the Examiner writes the exam. A short design runs only the Judge's rounds on one document, with the Writer to
 // correct it. Every round of the Judge, the Writer (its drafts and its corrections) and the Examiner is a seat round:
-// `aether-lane seat-start` picks the pair with the same function as the swarm (an external pair first, the native
-// agent last), and the script waits for it in steps. A round that fails (exit 4), breaks (exit 1) or does not start
-// asks `seat-start` again, without the pairs it tried, up to three tries in all. After the third, or whenever the
-// round has no pair left (exit 3), does not finish or answers without a result that fits,
-// the native agent takes it with the same message, in the model and effort the seat's reply names (a Judge or an
-// Examiner is never the model that wrote the document), or in the seat's reference pair when it names none. The one
-// document no Writer seat can write is design.md of a short design: its corrections are the native Writer's. The
-// script never reads the clock or random numbers: the runtime replays a resumed run call by call. It has no modules,
-// so what it needs from run.workflow.js and lib/lane-schemas.js is copied here by hand.
+// `aether-lane seat-start` picks the pair with the same function as the swarm. The design seats use the author's
+// family as a reserve: a pair of another family first, then the author's own family, and the native agent only last.
+// The Writer's choice, inside that start, leaves out the Judge's only external pair when the Writer would take it
+// and still has another. The script waits for the round in steps. A round that fails (exit 4), breaks (exit 1) or does not start
+// asks `seat-start` again, without the pairs it tried, up to three tries in all. A Writer whose try left part of
+// its document continues from that partial: the next pair finds it in its worktree, and the native Writer, when no
+// pair is left, gets the text in its message (issue 68). After the third, or whenever the round has no pair left
+// (exit 3), does not finish or answers without a result that fits, the native agent takes it with that message, in
+// the model and effort the seat's reply names (a Judge or an Examiner still swaps to a Claude model that is not an
+// author when it can), or in the seat's reference pair when it names none. The one document no Writer seat can
+// write is design.md of a short design: its corrections are the native Writer's. The script never reads the clock
+// or random numbers: the runtime replays a resumed run call by call. It has no modules, so what it needs from
+// run.workflow.js and lib/lane-schemas.js is copied here by hand.
 
 const SCOPE =
   'Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.'
@@ -342,6 +346,35 @@ function nativeLines(seat) {
 
 const RETRY_LINE = 'An earlier attempt at this round ended without an answer. Start again from the files as they are now, and end with your answer.'
 
+// What the native Writer is told when an earlier pair left a partial. The partial itself follows, one block per file:
+// the native agent has no disposable worktree, so the text is the document.
+const NATIVE_PARTIAL = 'An earlier writer began this round. Its partial document is below. It may be incomplete or wrong. Continue from it after checking it against the intent.'
+
+// The partial files worth handing on: the documents this round may write, non-empty, in that order. The same
+// paths as documentPaths in lib/seats.js. A spec round keeps spec.md only; a plan round keeps plan.md and
+// tasks.md. Anything else, and an empty document, is dropped. The last text for a path wins.
+function keptPartial(feature, doc, files) {
+  if (!Array.isArray(files) || (doc !== 'spec' && doc !== 'plan')) return null
+  const allowed = doc === 'spec' ? [`${feature}/spec.md`] : [`${feature}/plan.md`, `${feature}/tasks.md`]
+  const byPath = new Map()
+  for (const file of files) {
+    if (!isObject(file) || typeof file.path !== 'string' || !allowed.includes(file.path)) continue
+    if (typeof file.text !== 'string' || file.text === '') continue
+    byPath.set(file.path, file.text)
+  }
+  const kept = []
+  for (const filePath of allowed) {
+    if (byPath.has(filePath)) kept.push({ path: filePath, text: byPath.get(filePath) })
+  }
+  return kept.length > 0 ? kept : null
+}
+
+function partialForNative(files) {
+  const blocks = [NATIVE_PARTIAL]
+  for (const file of files) blocks.push(`## Partial document: ${file.path}\n\n${file.text.trimEnd()}`)
+  return blocks.join('\n\n')
+}
+
 // The model and effort a seat's reply names for its native agent (its decision's native pair, which for a Judge or an
 // Examiner is not the model that wrote the document), or null when it names none.
 function namedNative(value) {
@@ -444,11 +477,15 @@ async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
   }
   const stopped = await ops(`aether-lane seat-stop ${id}`, { phase, label: `${base}: stop` })
   if (stopped.error) log(`${base}: the stop failed: ${stopped.error}`)
+  // A Writer stop names the partial it saved only when partial.json was written. When partial is absent (the save
+  // had not finished) the round keeps the partial it already holds. An empty list means this try left nothing.
+  const carry = !stopped.error && Array.isArray(stopped.partial) ? { partial: stopped.partial } : {}
+  if (!stopped.error && stopped.continued === true) carry.continued = true
   if (cap !== null && elapsedMs >= cap * 1000) {
     const pair = !stopped.error && matches(PAIR_ID, stopped.pair) ? stopped.pair : null
-    return { id, note: `the seat round reached its time cap of ${cap / 60} min and was stopped`, capped: true, pair, durationMs: elapsedMs }
+    return { id, note: `the seat round reached its time cap of ${cap / 60} min and was stopped`, capped: true, pair, durationMs: elapsedMs, ...carry }
   }
-  return { id, note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped` }
+  return { id, note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped`, ...carry }
 }
 
 // The pair a round that ended failed (exit 4) ran on, as its decision names it, or null when the reply names none that
@@ -458,8 +495,9 @@ function failedPair(reply, value) {
   return matches(PAIR_ID, value.decision.picked.id) ? value.decision.picked.id : null
 }
 
-// One round of a seat (R2). The seat round answers, or the native agent takes the round with the same message: after
-// exit 3, 4 or 1, a start that failed, or a round that did not finish. A round that ends failed (exit 4) or broke
+// One round of a seat (R2). The seat round answers, or the native agent takes the round with that message: after
+// exit 3, 4 or 1, a start that failed, or a round that did not finish. A Writer whose earlier pair left a partial
+// document gets that partial in its message too. A round that ends failed (exit 4) or broke
 // (exit 1), or whose start failed, asks `seat-start` again with --exclude holding the pairs it tried, up to MAX_TRIES
 // tries in all; a reply that names no pair (exit 1, a failed start, or exit 4 naming none that --exclude can take)
 // carries the same exclusion. The native agent takes it after the last, or at once when the reply is exit 3 (no pair
@@ -478,6 +516,10 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   const flags = seat === 'writer' ? `--session ${session} --feature ${feature} --doc ${writes} ${options}` : `--session ${session} --author ${author} --feature ${feature} ${options}`
   const excluded = []
   const tries = []
+  // The partial a failed Writer left, for the native Writer when no pair is left. Exit 4 replaces it (a missing list
+  // clears it: that try left nothing). A stop replaces it only when it names a list; when partial is absent the
+  // round keeps what it holds. Exit 3 and exit 1 leave it.
+  let partial = null
   // The time each external try took, in order, where the bin or the cap says: `durations`, and `durationMs` as their sum,
   // are in the round's record (issue 62). A round that only the native agent took has none.
   const durations = []
@@ -495,11 +537,13 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
       const { reply } = waited
       if (reply.exitCode === 0 && isObject(value.result) && fits(schema, value.result, { required: seat !== 'writer' })) {
         record.provider = `${value.harness} ${value.model}`
-        record.note = null
+        // A seat that answered from the author's own family says so, so the Lead can see it (issue 64).
+        record.note = typeof value.note === 'string' && value.note !== '' ? value.note : null
         // The window shows the round as its Haiku ops agent (issue 032): say who ran it.
-        log(`${base}: ran on ${record.provider}${typeof value.lane === 'string' && value.lane !== '' ? ` · ${value.lane}` : ''}`)
+        log(`${base}: ran on ${record.provider}${record.note ? ` (${record.note})` : ''}${typeof value.lane === 'string' && value.lane !== '' ? ` · ${value.lane}` : ''}`)
         record.lane = typeof value.lane === 'string' ? value.lane : null
         if (seat === 'writer') keepQuestions(value.result)
+        if (value.continued === true) record.continued = true
         return { answer: value.result, text: String(value.answer), seat: record.provider, model: String(value.model), value }
       }
       record.note = handedBackNote(reply)
@@ -509,18 +553,22 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
     // A try that failed (exit 4), broke (exit 1) or did not start asks for the next pair, carrying the same exclusion
     // when the reply names no pair to add; any other end leaves the round to the native agent at once.
     // A round that reached its cap counts as failed too, with the pair seat-stop names.
+    if (seat === 'writer' && waited.reply && waited.reply.exitCode === 0) partial = null
+    else if (seat === 'writer' && waited.reply && waited.reply.exitCode === 4) partial = keptPartial(feature, writes, value.partial)
+    else if (seat === 'writer' && hasOwn(waited, 'partial')) partial = keptPartial(feature, writes, waited.partial)
+    const startedFromPartial = value.continued === true || waited.continued === true
     const pair = waited.capped === true ? waited.pair : waited.reply ? failedPair(waited.reply, value) : null
     const retryable = waited.startFailed === true || waited.capped === true || (waited.reply && (waited.reply.exitCode === 1 || waited.reply.exitCode === 4))
     if (!retryable) {
       // Once the next pair was asked, the try that ends the external tries is listed too; exit 3 ran nothing.
       if (tries.length > 0 && !(waited.reply && waited.reply.exitCode === 3)) {
-        tries.push({ pair, id: waited.id, reason: record.note, next: false, durationMs: waited.durationMs ?? null })
+        tries.push({ pair, id: waited.id, reason: record.note, next: false, continued: startedFromPartial, durationMs: waited.durationMs ?? null })
         record.tries = tries
       }
       break
     }
     const next = n < MAX_TRIES && (pair === null || !excluded.includes(pair))
-    tries.push({ pair, id: waited.id, reason: record.note, next, durationMs: waited.durationMs ?? null })
+    tries.push({ pair, id: waited.id, reason: record.note, next, continued: startedFromPartial, durationMs: waited.durationMs ?? null })
     if (!next) break
     if (pair !== null) excluded.push(pair)
     record.tries = tries
@@ -528,7 +576,12 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   }
   log(`${base}: ${record.note}`)
   const native = nativeOf(seat, value, author)
-  const taken = await nativeAnswer({ seat, base, text, schema: nativeSchema, phase, native })
+  let nativeText = text
+  if (seat === 'writer' && partial !== null) {
+    nativeText = `${text}\n\n${partialForNative(partial)}`
+    record.continued = true
+  }
+  const taken = await nativeAnswer({ seat, base, text: nativeText, schema: nativeSchema, phase, native })
   if (taken.failed) return taken
   return { answer: taken.answer, text: seat === 'judge' ? judgeText(taken.answer) : '', seat: 'native', model: native.model }
 }
@@ -609,11 +662,16 @@ const JUDGE_READING_PLAN = [
 ]
 
 // The Judge's message for review n: the document, the intent, what to check, what aether-plan check printed for a
-// plan, and from the second review on, the earlier verdict and what changed.
+// plan, and from the second review on, the earlier verdict, what changed, and where the earlier findings touch.
+// A git diff of the document is not included: this script can only shell out through the ops commands the mod
+// allowlists, and that list is not this task's to extend.
 function judgeMessage({ doc, path, check, earlier }) {
   const parts = [...reviewLines(doc, path), '', ...intentLines(), FINDING_FIELDS]
   if (check !== null) parts.push('', 'aether-plan check printed:', check)
-  if (earlier) parts.push('', 'Your earlier verdict:', earlier.verdict, '', 'What changed:', earlier.changed)
+  if (earlier) {
+    parts.push('', 'Your earlier verdict:', earlier.verdict, '', 'What changed:', earlier.changed)
+    if (earlier.touched) parts.push('', 'Where those findings touch:', earlier.touched)
+  }
   parts.push('', ...JUDGE_READING_PLAN, '', SCOPE)
   return lines(parts)
 }
@@ -630,17 +688,65 @@ function changedText(answer) {
   )
 }
 
-// The Writer's message for a correction after review n: a seat round's message, and the native agent's if the seat is handed back.
-function revisionMessage({ doc, path, n, verdict }) {
+// A copy of the no-document half of findingTouch, and of formatFindings and revisionBrief, in lib/seats.js (issue 67).
+// A workflow has no modules and cannot read the file, so a quote is not looked up under its heading here: a finding
+// that names no line and no heading says so. Keep the two copies in step; tests/workflow-design.test.js pins the brief.
+const PATH_LINE = /(?:^|[\s`'"(])([A-Za-z0-9_./-]*[./][A-Za-z0-9_./-]*):(\d+)(?:[ \t]*[-–][ \t]*(\d+))?(?=$|[\s`'")\],.;:])/
+const WORD_LINE = /\blines?[ \t]+(\d+)(?:[ \t]*[-–][ \t]*(\d+))?\b/i
+const NAMED_HEADING = /(?:^|[\s`'"(])(#{1,6}[ \t]+\S[^\n`]*)/
+
+function spanOf(start, end) {
+  return end ? `lines ${start}-${end}` : `line ${start}`
+}
+
+function findingTouch(finding) {
+  const evidence = finding !== null && typeof finding === 'object' && typeof finding.evidence === 'string' ? finding.evidence : ''
+  const title = finding !== null && typeof finding === 'object' && typeof finding.title === 'string' ? finding.title : ''
+  const named = `${evidence}\n${title}`
+  const path = PATH_LINE.exec(named)
+  if (path) return spanOf(path[2], path[3])
+  const word = WORD_LINE.exec(named)
+  if (word) return spanOf(word[1], word[2])
+  const heading = NAMED_HEADING.exec(named)
+  if (heading) return heading[1].trim()
+  return 'names no line'
+}
+
+function formatFindings(findings) {
+  if (!Array.isArray(findings) || findings.length === 0) return ['- none']
+  return findings.map((finding, index) => {
+    const severity = typeof finding.severity === 'string' && finding.severity !== '' ? finding.severity : 'major'
+    const type = typeof finding.type === 'string' && finding.type !== '' ? ` [${finding.type}]` : ''
+    const title = typeof finding.title === 'string' ? finding.title : ''
+    const parts = [`${index + 1}. [${severity}]${type} ${title}`, findingTouch(finding)]
+    if (typeof finding.evidence === 'string' && finding.evidence !== '') parts.push(finding.evidence)
+    if (typeof finding.fix === 'string' && finding.fix !== '') parts.push(finding.fix)
+    return parts.join(' — ')
+  })
+}
+
+const EDIT_ONLY = 'Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'
+
+function revisionBrief({ paths, findings, openQuestions = [] }) {
+  const questions = Array.isArray(openQuestions) ? openQuestions.filter((item) => typeof item === 'string' && item !== '') : []
+  const out = [EDIT_ONLY, '', 'The document:', ...paths.map((item) => `- ${item}`), '', 'Findings:', ...formatFindings(findings)]
+  if (questions.length > 0) out.push('', 'Open questions:', ...questions.map((item) => `- ${item}`))
+  return out.join('\n')
+}
+
+// The Writer's message for a correction after review n. The same text is the seat round's message and, if the seat
+// is handed back, the native agent's. A plan names both files, because the Judge reviewed them together.
+function revisionMessage({ doc, path, n, findings, openQuestions }) {
+  const paths = doc === 'plan' ? [PLAN, TASKS] : [path]
   const plan = doc === 'plan' ? [`When ${TASKS} changes, run \`aether-plan check ${TASKS}\` until it passes; commit ${PLAN} and ${TASKS} together.`] : []
   return lines(
-    `Revise ${path} after the Judge's review ${n}.`,
+    `Revise ${paths.join(' and ')} after the Judge's review ${n}.`,
     '',
     ...intentLines(),
-    "The Judge's verdict:",
-    verdict,
     '',
-    'Fix each finding in the document without starting over, and change only what a finding asks for. Commit the document. Each finding you do not apply goes in `disagreements`, with why.',
+    revisionBrief({ paths, findings, openQuestions }),
+    '',
+    'Commit the document. Each finding you do not apply goes in `disagreements`, with why.',
     ...plan,
     '',
     SCOPE,
@@ -692,7 +798,7 @@ async function checkedAfter(step, text, retry) {
 
 // The Judge's rounds of one document (R1, R3): at most three reviews, with a correction by the Writer after each one
 // that does not approve. A reject, at any review, or a third review that does not approve ends the design in a
-// dispute. `check` is what aether-plan check printed for a plan, or null; `correct(n, verdict)` corrects the document
+// dispute. `check` is what aether-plan check printed for a plan, or null; `correct(n, review)` corrects the document
 // and resolves to { answer, model, check } or { end }. Resolves to { author } once approved, or { end }.
 async function reviews({ doc, path, phase, author, check, correct }) {
   let earlier = null
@@ -709,12 +815,12 @@ async function reviews({ doc, path, phase, author, check, correct }) {
       log(`${doc}: ${kind === 'reject' ? 'the Judge rejected the approach' : `review ${n} did not approve`}`)
       return { end: { status: 'dispute', dispute: { document: doc, kind, judge: { verdict, text: review.text }, writer: positions, direction: kind === 'reject' ? review.text : null } } }
     }
-    const fixed = await correct(n, review.text)
+    const fixed = await correct(n, review)
     if (fixed.end) return fixed
     author = fixed.model
     check = fixed.check
     positions = { disagreements: listOf(fixed.answer.disagreements), assumptions: listOf(fixed.answer.assumptions) }
-    earlier = { verdict: review.text, changed: changedText(fixed.answer) }
+    earlier = { verdict: review.text, changed: changedText(fixed.answer), touched: formatFindings(review.answer.findings).join('\n') }
   }
 }
 
@@ -726,9 +832,10 @@ function corrector(doc, path, phase) {
   const seatSchema = doc === 'plan' ? WRITER_SCHEMA : SPEC_WRITER_SCHEMA
   const round = (step, text) =>
     doc === 'design' ? designRevision({ doc, step, text, phase }) : seatRound({ seat: 'writer', doc, step, text, schema: seatSchema, nativeSchema: REVISION_SCHEMA, phase, writes: doc })
-  return async (n, verdict) => {
+  return async (n, review) => {
     const step = `revision ${n}`
-    const text = revisionMessage({ doc, path, n, verdict })
+    const answer = isObject(review.answer) ? review.answer : {}
+    const text = revisionMessage({ doc, path, n, findings: answer.findings, openQuestions: answer.openQuestions })
     const fixed = await round(step, text)
     if (fixed.failed) return failure(`${doc}-writer`, fixed.failed)
     if (doc !== 'plan') return { ...fixed, check: null }

@@ -53,6 +53,9 @@ function seatPaths(cwd, id) {
     message: file('message.md'),
     pid: file('pid'),
     result: file('result.json'),
+    // Writer rounds only. continued says the round started from a partial; partial is what seat-stop saved.
+    continued: file('continued.json'),
+    partial: file('partial.json'),
   }
 }
 
@@ -226,8 +229,8 @@ async function wait(cwd, id, { maxSeconds = null } = {}) {
   }
 }
 
-// Ends a round: the runner, whose signal handler in seats.js kills the harness and removes the worktree, and then
-// whatever still carries the harness's marker.
+// Ends a round: the runner, whose signal handler in seats.js keeps a Writer's partial, kills the harness and removes
+// the worktree, and then whatever still carries the harness's marker.
 function stop(cwd, id) {
   const paths = seatPaths(cwd, id)
   if (!fs.existsSync(paths.dir)) throw new Error(`no such seat round: ${id}`)
@@ -235,7 +238,17 @@ function stop(cwd, id) {
   const marked = lanes.killMarked(paths.harnessMarker)
   // The pair the round ran on, when it had one: the workflow leaves it out of the next try after a round it ended at its cap.
   const pair = readJsonOrNull(paths.pair)?.pair
-  return { stopped: runner.killed || marked.length > 0, ...(typeof pair === 'string' ? { pair } : {}) }
+  const out = { stopped: runner.killed || marked.length > 0, ...(typeof pair === 'string' ? { pair } : {}) }
+  // A Judge or an Examiner writes neither file, so its stop stays { stopped, pair }. continued is named only when
+  // this Writer round started from a partial. partial is named only when partial.json was written: a runner killed
+  // before the save finished must not be reported as having left nothing, so the workflow keeps what it holds.
+  // An empty list means the try left nothing.
+  if (!fs.existsSync(paths.continued)) return out
+  if (readJsonOrNull(paths.continued)?.continued === true) out.continued = true
+  if (!fs.existsSync(paths.partial)) return out
+  const partial = readJsonOrNull(paths.partial)
+  out.partial = Array.isArray(partial) ? partial : []
+  return out
 }
 
 module.exports = { SEAT_WAIT_SECONDS, COMMANDS, start, wait, stop, runSeat }

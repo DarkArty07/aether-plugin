@@ -2,6 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
 const path = require('node:path')
 const { makeRepo, compile, commitIn } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
@@ -131,7 +132,10 @@ test('when the agent budget runs out no new attempt starts, the rest is not-run,
     ],
   )
   assert.match(run.result.units[2].reason, /budget/)
-  assert.equal(run.result.finalReview.status, 'skipped')
+  // The launch left a unit not run, so the review is deferred rather than skipped for the budget (issues #5 and #33).
+  assert.equal(run.result.finalReview.status, 'deferred')
+  assert.match(run.result.finalReview.reason, /1 not run/)
+  assert.match(run.result.finalReview.reason, /when a launch ends with all its units merged/)
   assert.equal(run.calls.some((c) => c.role === 'reviewer'), false)
   assert.deepEqual(run.events.slice(-2), ['start ops:sweep', 'end ops:sweep'])
 })
@@ -175,6 +179,254 @@ test('a merge whose output is unreadable is merged when git says its commit is i
   assert.equal(run.result.units[0].status, 'merged')
   assert.equal(run.result.units[0].commit, 'merge-task-1')
   assert.match(run.result.units[0].rounds.at(-1).merge, /merge commit is on the integration branch/)
+})
+
+// What the mod returns when it stops aether-wt merge at 600 s (hooks/register.js).
+const CUT = {
+  error: 'aether-wt merge was still running after 600 s and was stopped; its merge commit may be on the integration branch without its tests: check its git log before a relaunch',
+}
+const UNVERIFIED = { merged: false, unverified: true, branch: 'aether/x/task-1', commit: 'merge-task-1', head: 'head-task-1' }
+
+function nthEvent(events, text, n) {
+  let seen = 0
+  for (let i = 0; i < events.length; i++) if (events[i] === text && ++seen === n) return i
+  return -1
+}
+
+test('a merge cut at 600 s is merged only after a rerun of its tests passes (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'merged')
+  assert.equal(unit.commit, 'merge-task-1')
+  const merges = run.calls.filter((c) => c.kind === 'ops:merge' && c.unit === 'task-1')
+  assert.equal(merges.length, 2)
+  assert.match(merges[0].prompt, /timeout set to 600000/)
+  assert.match(merges[1].prompt, /timeout set to 600000/)
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:status' && c.unit === 'task-1').length, 1)
+  const { events } = run
+  assert.ok(nthEvent(events, 'end ops:merge task-1', 1) < nthEvent(events, 'start ops:status task-1', 1))
+  assert.ok(nthEvent(events, 'end ops:status task-1', 1) < nthEvent(events, 'start ops:merge task-1', 2))
+  assert.match(unit.rounds.at(-1).merge, /rerun/)
+  assert.equal(attemptsOf(run, 'task-1').length, 1, 'a passing rerun is not a new attempt')
+})
+
+test('a merge cut at 600 s whose rerun is also cut is blocked, with the commit untested (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1') return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const [one, two, three] = run.result.units
+  assert.equal(one.status, 'blocked')
+  assert.equal(one.reason, 'its merge commit is on the integration branch without a passing test run')
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:merge' && c.unit === 'task-1').length, 2)
+  assert.equal(attemptsOf(run, 'task-1').length, 1)
+  assert.equal(two.status, 'merged')
+  assert.equal(three.status, 'skipped')
+})
+
+test('a rerun whose tests fail is the usual failing merge, with one retry (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 2) {
+        return { merged: false, reason: 'tests', exitCode: 1, timedOut: false, reverted: true, output: 'not ok 1 - fresh\n' }
+      }
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'merged')
+  assert.equal(attemptsOf(run, 'task-1').length, 2)
+  assert.match(attemptsOf(run, 'task-1')[1].prompt, /test command failed/)
+  assert.match(attemptsOf(run, 'task-1')[1].prompt, /not ok 1 - fresh/)
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:merge' && c.unit === 'task-1').length, 3)
+})
+
+test('a merge whose output is lost and whose commit is not in the history stays blocked (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1') return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return { merged: false, branch: 'aether/x/task-1', commit: null, head: 'head-task-1' }
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'blocked')
+  assert.match(unit.reason, /^merge failed:/)
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:merge' && c.unit === 'task-1').length, 1)
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:status' && c.unit === 'task-1').length, 1)
+})
+
+test('the second unit does not merge between a cut and its rerun (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const { events } = run
+  const cutEnd = nthEvent(events, 'end ops:merge task-1', 1)
+  const rerunEnd = nthEvent(events, 'end ops:merge task-1', 2)
+  const other = nthEvent(events, 'start ops:merge task-2', 1)
+  assert.ok(cutEnd >= 0 && rerunEnd > cutEnd, events.join('\n'))
+  assert.ok(other > rerunEnd, events.filter((event) => event.includes('ops:merge')).join('\n'))
+  assert.equal(run.result.units[0].status, 'merged')
+  assert.equal(run.result.units[0].commit, 'merge-task-1')
+})
+
+test('a rerun refused with unverified-buried, unverified-other or unverified-moved blocks the unit (issue #2)', async (t) => {
+  for (const reason of ['unverified-buried', 'unverified-other', 'unverified-moved']) {
+    const args = threeTasks(t)
+    const run = await runWorkflow(args, {
+      ops: (call, wt) => {
+        if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) return CUT
+        if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+        if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 2) {
+          return { merged: false, reason, task: 'task-2', commit: 'merge-task-1' }
+        }
+        return wt(call)
+      },
+    })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    const unit = run.result.units[0]
+    assert.equal(unit.status, 'blocked', reason)
+    assert.match(unit.reason, new RegExp(reason))
+    assert.match(unit.reason, /its merge commit is on the integration branch without a passing test run/)
+    assert.equal(attemptsOf(run, 'task-1').length, 1, reason)
+  }
+})
+
+test('a rerun with reason tests and reverted false blocks the unit with the untested sentence and does not retry (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  let retryAttempted = false
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 2) {
+        return { merged: false, reason: 'tests', exitCode: 1, reverted: false, output: 'tests failed' }
+      }
+      return wt(call)
+    },
+    implementer: (brief) => {
+      if (brief.unit === 'task-1' && brief.attempt > 1) {
+        retryAttempted = true
+      }
+      return { status: 'DONE', head: 'tip', summary: 'did it' }
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'blocked')
+  assert.equal(unit.reason, 'its merge commit is on the integration branch without a passing test run')
+  assert.equal(retryAttempted, false, 'must not retry')
+  assert.equal(attemptsOf(run, 'task-1').length, 1)
+})
+
+test('first merge refused with unverified-* gives an explicit sentence in round merge (issue #2)', async (t) => {
+  for (const reason of ['unverified-buried', 'unverified-other', 'unverified-moved']) {
+    const args = threeTasks(t)
+    const run = await runWorkflow(args, {
+      ops: (call, wt) => {
+        if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) {
+          return { merged: false, reason, task: 'task-2', commit: 'merge-task-1' }
+        }
+        return wt(call)
+      },
+    })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    const unit = run.result.units[0]
+    assert.equal(unit.status, 'blocked', reason)
+    assert.match(unit.reason, /^merge refused:/, reason)
+    assert.doesNotMatch(unit.reason, new RegExp(`^merge refused: ${reason}$`), 'must give an explicit sentence, not just the raw reason')
+  }
+})
+
+test('the guide says a merge cut at 10 minutes is unverified until its tests pass (issue #2)', () => {
+  const root = path.join(__dirname, '..')
+  const ops = fs.readFileSync(path.join(root, 'docs/guide/ops.md'), 'utf8')
+  const trouble = fs.readFileSync(path.join(root, 'docs/guide/troubleshooting.md'), 'utf8')
+  assert.match(ops, /unverified/)
+  assert.match(ops, /reruns the plan's tests/)
+  assert.match(trouble, /unverified/)
+  assert.match(trouble, /its merge commit is on the integration branch without a passing test run/)
+  for (const text of [ops, trouble]) {
+    assert.match(text, /unverified-other/)
+    assert.match(text, /unverified-moved/)
+    assert.match(text, /marker/)
+    assert.match(text, /aether-wt merge/)
+    assert.match(text, /git reset --hard/)
+    assert.match(text, /branch was kept/)
+    assert.match(text, /before relaunching/)
+    assert.match(text, /discard or stash/)
+    assert.match(text, /never commit/)
+    assert.match(text, /no longer the tip/)
+    assert.match(text, /fixes forward/)
+    assert.match(text, /\.aether\/runs\/<run>\/unverified\/<task>\.json/)
+    assert.match(text, /--only/)
+    assert.match(text, /out of the graph/)
+    assert.match(text, /killed inside `git merge`/)
+  }
+})
+
+test('a rerun refused for a dirty integration worktree blocks the unit as untested (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 2) {
+        return { merged: false, reason: 'dirty-integration', detail: 'the integration worktree has uncommitted changes' }
+      }
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'blocked')
+  assert.match(unit.reason, /^dirty-integration: /)
+  assert.match(unit.reason, /its merge commit is on the integration branch without a passing test run/)
+  assert.equal(attemptsOf(run, 'task-1').length, 1)
+})
+
+test('a rerun whose tests fail without reverting blocks the unit with the untested sentence and does not retry (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 2) {
+        return { merged: false, reason: 'tests', exitCode: 1, timedOut: false, reverted: false, output: 'not ok 1 - fresh\n' }
+      }
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'blocked')
+  assert.equal(unit.reason, 'its merge commit is on the integration branch without a passing test run')
+  assert.equal(attemptsOf(run, 'task-1').length, 1)
 })
 
 test('a sliced final review with a silent slice fails and keeps the other findings (issue 022)', async (t) => {
@@ -437,7 +689,8 @@ test('a dirty integration worktree or a failed merge command blocks the unit at 
   assert.match(two.reason, /ops agent failed/)
   assert.equal(three.status, 'skipped')
   assert.equal(run.calls.filter((c) => c.role === 'implementer').length, 2)
-  assert.equal(run.result.finalReview.status, 'skipped')
+  assert.equal(run.result.finalReview.status, 'deferred')
+  assert.match(run.result.finalReview.reason, /2 blocked, 1 skipped, 0 not run/)
 })
 
 test('args encoded as JSON twice still run, as a Designer may pass them quoted', async (t) => {
@@ -589,7 +842,8 @@ test('the final review runs on Opus at high for more than three units, in slices
 })
 
 test('the final review judges only the merged units: a blocked opus task does not raise it', async (t) => {
-  const run = await runWorkflow(twoTasks(t, { tier: 'opus high — the parser design' }, {}), {
+  // The review is forced: a launch that leaves a unit blocked defers it (issues #5 and #33).
+  const run = await runWorkflow({ ...twoTasks(t, { tier: 'opus high — the parser design' }, {}), review: true }, {
     supervisor: (call, approve) =>
       call.unit === 'task-1' ? { verdict: 'block', findings: [], ruling: 'Block: needs a design first.', guidance: '', question: '' } : approve(call),
   })

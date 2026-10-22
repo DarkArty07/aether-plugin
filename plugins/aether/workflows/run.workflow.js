@@ -37,6 +37,9 @@ const AREA_MEMORY = 10
 // At most this many pairs begin one external call before it runs native; a start that is
 // unavailable began nothing and does not count.
 const MAX_PAIR_TRIES = 3
+// A retry after an attempt that ended without its report runs as one sub-attempt per owned
+// file, and never more than this many: the rest share the last one (issue 14).
+const MAX_SUB_ATTEMPTS = 8
 // The failures a unit keeps (its `failures`): an attempt without a report, or a retry or an escalation
 // with the titles of its blocking findings. The same failure can stop a unit early (see work()).
 const NO_REPORT = 'no report'
@@ -155,6 +158,9 @@ function readArgs(raw) {
   if (!Number.isInteger(input.maxAgents) || input.maxAgents < 1) bad.push('maxAgents')
   if (!Array.isArray(input.waves) || !input.waves.every(Array.isArray)) bad.push('waves')
   if (!input.tasks || typeof input.tasks !== 'object') bad.push('tasks')
+  // `review: true` runs the final review even when this launch did not merge every unit, including a
+  // launch whose waves are empty (issues #5 and #33). Anything else that is set is refused.
+  if (input.review !== undefined && typeof input.review !== 'boolean') bad.push('review')
   if (bad.length) throw new Error(`aether:run args are missing or invalid: ${bad.join(', ')}`)
   const seen = new Set()
   for (const id of input.waves.flat()) {
@@ -535,6 +541,7 @@ async function laneCall({ role, id, task, pair, prompt, phase, base }) {
 
 function roundLines(round) {
   const lines = [`- Attempt ${round.attempt} on ${round.tier}: ${round.status}. ${round.summary}`]
+  if (round.split) lines.push(`  Split pass: ${round.subAttempts} sub-attempts.`)
   if (round.verdict || round.ruling) lines.push(`  Supervisor: ${round.verdict ? `${round.verdict}. ` : ''}${round.ruling}`)
   if (round.guidance) lines.push(`  The next attempt must: ${round.guidance}`)
   for (const f of round.findings) lines.push(`  [${f.severity}] ${f.title} (${f.file}): ${f.evidence}`)
@@ -543,7 +550,8 @@ function roundLines(round) {
 }
 
 // The lane variant runs in the unit worktree the harness prepared, with the brief in .aether-tmp/.
-function implementerPrompt(unit, task, rung, context, { lane = false } = {}) {
+// `limit` is one item of a split pass (issue 14): this attempt works only that file.
+function implementerPrompt(unit, task, rung, context, { lane = false, limit = null } = {}) {
   const workspace = lane
     ? [
         `1. You are in your unit worktree, on branch aether/${runId}/${unit.id}. The harness created it. Work only here.`,
@@ -573,9 +581,12 @@ function implementerPrompt(unit, task, rung, context, { lane = false } = {}) {
     lines.push('', '## Earlier attempts', 'The worktree keeps the work of earlier attempts. Continue from it unless the findings say otherwise.')
     for (const round of unit.rounds) lines.push(...roundLines(round))
   }
-  // A second attempt after one ended without its report works differently, not the same brief
-  // again (issue 010): one owned file at a time, committed and noted before the next is opened.
-  if (unit.failures.includes(NO_REPORT)) {
+  // A split pass gives each sub-attempt one item and its own report (issue 14). The one-at-a-time
+  // note stays for a retry that is not split: one owned file, or a glob that matches nothing yet
+  // (issue 010).
+  if (limit) {
+    lines.push('', '## This attempt covers one part', `Your task is limited to \`${limit}\`: work only on it, commit it, and report.`)
+  } else if (unit.failures.includes(NO_REPORT)) {
     lines.push(
       '',
       '## An earlier attempt ended without its report',
@@ -678,12 +689,22 @@ function describeMerge(out) {
   switch (out.reason) {
     case 'conflict':
       return `conflict in ${list(out.files)}`
-    case 'tests':
-      return `the test command failed after the merge (exit ${out.exitCode}${out.timedOut ? ', timed out' : ''}); the merge was undone`
+    case 'tests': {
+      const timed = out.timedOut ? ', timed out' : ''
+      // reverted is false when the commit could not be reset. Saying it was undone is then false (issue #2).
+      const ending = out.reverted === false ? '; the merge commit was left in place' : '; the merge was undone'
+      return `the test command failed after the merge (exit ${out.exitCode}${timed})${ending}`
+    }
     case 'ownership':
       return `refused: these files are outside the files the task owns: ${list(out.files)}. Revert those changes`
     case 'empty':
       return `refused: the unit branch has no commits to merge${out.uncommitted ? `; uncommitted files: ${list(out.uncommitted)}. Commit your work` : ''}`
+    case 'unverified-buried':
+      return `refused: the unverified merge commit is buried under newer commits on ${integration.branch}`
+    case 'unverified-moved':
+      return 'refused: the unit branch has commits that are not in the unverified merge commit'
+    case 'unverified-other':
+      return `refused: another unit (${out.task || 'unknown'}) has an unverified merge commit on ${integration.branch}`
     default:
       return `refused: ${out.detail || out.reason}`
   }
@@ -750,6 +771,153 @@ function findingsFailure(findings) {
   return `${FINDINGS_PREFIX}${titles.length > 0 ? titles.join(' | ') : '(no blocking finding)'}`
 }
 
+// What an external attempt tells the next agent after pairs stopped before they finished.
+function failureContext(context, failures) {
+  if (!failures.length) return context
+  return [
+    ...(context ? [...context, ''] : []),
+    '## An external agent began this attempt',
+    ...failures.map((f) => `${f.pair.harness} ${f.model} stopped before it finished: ${f.reason}. Its uncommitted work, if any, is in the worktree. Continue from it.`),
+  ]
+}
+
+// A report the implementer filed. Anything else, including a null agent, ended without one.
+const isReport = (value) => isObject(value) && typeof value.status === 'string' && value.status !== ''
+
+// Best to worst. A status the schema does not name ranks past blocked, so it cannot pass as done.
+const REPORT_RANK = { DONE: 0, DONE_WITH_CONCERNS: 1, NEEDS_CONTEXT: 2, BLOCKED: 3 }
+
+// One report for a split pass: done only when every sub-attempt is, otherwise the worst status.
+// Summaries, concerns and questions are labeled by item; tests are joined; the head is the last one named.
+function combineReports(items, reports) {
+  let status = reports[0].status
+  let rank = REPORT_RANK[status] === undefined ? 4 : REPORT_RANK[status]
+  let head = ''
+  for (const report of reports) {
+    const score = REPORT_RANK[report.status] === undefined ? 4 : REPORT_RANK[report.status]
+    if (score >= rank) {
+      rank = score
+      status = report.status
+    }
+    if (typeof report.head === 'string' && report.head !== '') head = report.head
+  }
+  const labeled = (name) =>
+    reports
+      .map((report, i) => {
+        const text = typeof report[name] === 'string' ? report[name].trim() : ''
+        return text ? `[${items[i]}] ${text}` : ''
+      })
+      .filter(Boolean)
+      .join('\n')
+  const tests = reports.map((report) => (typeof report.tests === 'string' ? report.tests.trim() : '')).filter(Boolean).join('\n')
+  return { status, summary: labeled('summary'), head, tests, concerns: labeled('concerns'), question: labeled('question') }
+}
+
+// The round before this one ended without a report, and not on its own changes outside Owns.
+// A violation also pushes `no report` onto the failures, and must not split the next attempt.
+// A split pass that its pair ended (the pair stopped; not a violation) is split again.
+function followsMissingReport(unit) {
+  const last = unit.rounds[unit.rounds.length - 1]
+  if (!last) return false
+  if (last.noReport) return true
+  if (!last.split || !last.laneFailure) return false
+  return !String(last.summary).includes("outside the task's Owns")
+}
+
+// The glob matcher of lib/globs.js, written out because a workflow has no modules. Only the part
+// that turns an Owns entry into the files it already names: a pattern with no wildcard stays one item.
+const WILDCARD = /[*?]/
+
+function normalizePattern(pattern) {
+  let p = String(pattern).trim()
+  if (p.length >= 2 && p.startsWith('`') && p.endsWith('`')) p = p.slice(1, -1).trim()
+  return p.replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/+$/, '')
+}
+
+function isGlob(pattern) {
+  return WILDCARD.test(normalizePattern(pattern))
+}
+
+function globToRegExp(pattern) {
+  const p = normalizePattern(pattern)
+  let out = ''
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i]
+    if (c === '*' && p[i + 1] === '*') {
+      if (p[i + 2] === '/') {
+        out += '(?:.*/)?'
+        i += 2
+      } else {
+        out += '.*'
+        i += 1
+      }
+    } else if (c === '*') {
+      out += '[^/]*'
+    } else if (c === '?') {
+      out += '[^/]'
+    } else {
+      out += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    }
+  }
+  return new RegExp('^' + out + '$')
+}
+
+// Past eight items, the first seven stay single and the rest share the last sub-attempt.
+function groupItems(items) {
+  if (items.length <= MAX_SUB_ATTEMPTS) return items
+  return [...items.slice(0, MAX_SUB_ATTEMPTS - 1), items.slice(MAX_SUB_ATTEMPTS - 1).join(', ')]
+}
+
+// The files git already tracks in the unit worktree. An ops call, not a read: the runtime replays a
+// resumed run by repeating its agent calls.
+// The `git ls-files` listing goes through a Haiku ops agent and is not counted toward `maxAgents`.
+// A listing that fails is no files, so a glob stays one item.
+async function trackedFiles(unit) {
+  const worktree = `${repoRoot}/.aether/worktrees/${runId}/${unit.id}`
+  const reply = await call('ops', 'haiku', 'low', opsPrompt(`git -C ${quote(worktree)} ls-files`), {
+    phase: 'Implement',
+    label: `${unit.id}: owned files`,
+    schema: OPS_SCHEMA,
+  })
+  if (!reply || reply.exitCode !== 0) return []
+  const stdout = String(reply.stdout || '').trim()
+  if (!stdout) return []
+  const last = stdout.split('\n').pop()
+  try {
+    const parsed = JSON.parse(last)
+    if (isObject(parsed) && Array.isArray(parsed.files)) return parsed.files.map(String)
+  } catch {
+    // git prints one path per line; the ops agent may also wrap that list as JSON.
+  }
+  return stdout.split('\n').map((line) => line.trim()).filter(Boolean)
+}
+
+// One item per Owns entry. A glob that matches several tracked files becomes one item per file;
+// a glob that matches nothing yet (a file to create) stays the pattern. Fewer than two items is not a split.
+async function ownedItems(unit, task) {
+  const owns = Array.isArray(task.owns) ? task.owns : []
+  const files = owns.some((entry) => isGlob(entry)) ? await trackedFiles(unit) : []
+  const items = []
+  const seen = new Set()
+  const add = (item) => {
+    if (seen.has(item)) return
+    seen.add(item)
+    items.push(item)
+  }
+  for (const entry of owns) {
+    const pattern = normalizePattern(entry)
+    if (!pattern) continue
+    if (!isGlob(pattern)) {
+      add(pattern)
+      continue
+    }
+    const matched = files.filter((file) => globToRegExp(pattern).test(normalizePattern(file)))
+    if (matched.length === 0) add(pattern)
+    else for (const file of matched) add(file)
+  }
+  return groupItems(items)
+}
+
 // One attempt's implementer: on the pair the decision gives, else native on the decision's native pair (without
 // lanes, on the attempt's rung). After a pair's infrastructure failure the same attempt runs on the next pair,
 // or then native, told what happened. `exclude` names the pair the attempt before ran on. Resolves to
@@ -760,14 +928,6 @@ async function implement(unit, task, model, effort, rung, context, exclude) {
   const n = unit.attempts
   const id = `${unit.id}-${n}-implement`
   const where = { phase: 'Implement', label: `${unit.id}: implement on ${rung} (attempt ${n})` }
-  const withFailures = (failures) =>
-    failures.length
-      ? [
-          ...(context ? [...context, ''] : []),
-          '## An external agent began this attempt',
-          ...failures.map((f) => `${f.pair.harness} ${f.model} stopped before it finished: ${f.reason}. Its uncommitted work, if any, is in the worktree. Continue from it.`),
-        ]
-      : context
   let laneFailure = null
   let native = { model, effort, family: null }
   let routed = null
@@ -781,7 +941,7 @@ async function implement(unit, task, model, effort, rung, context, exclude) {
       ...where,
       build: (pair, failures) => ({
         task: unit.id,
-        prompt: implementerPrompt(unit, task, rung, withFailures(failures), { lane: true }),
+        prompt: implementerPrompt(unit, task, rung, failureContext(context, failures), { lane: true }),
         base: `${unit.id}: implement via ${pair.harness} ${pair.model} on ${rung} (attempt ${n})`,
       }),
     })
@@ -799,7 +959,7 @@ async function implement(unit, task, model, effort, rung, context, exclude) {
       const failure = `The external agent changed files outside the task's Owns: ${list(outcome.files)}. Revert those changes.`
       return { report: null, failure, provider: `${pair.harness} ${outcome.model}`, laneFailure, ...ran }
     }
-    context = withFailures(failures)
+    context = failureContext(context, failures)
   }
   // The label names the model and effort the agent runs on (scripts/check-effort.js reads them).
   const report = await call('implementer', native.model, native.effort, implementerPrompt(unit, task, rung, context), {
@@ -809,6 +969,117 @@ async function implement(unit, task, model, effort, rung, context, exclude) {
   })
   if (routed) tookNative(id, routed, where)
   return { report, provider: 'native', laneFailure, pair: null, family: familyOf(native) }
+}
+
+// The retry after a missing report, when the task has at least two items (issue 14): sequential
+// sub-attempts in the same worktree, each limited to one item. The pass is one ladder attempt.
+// The first sub-attempt asks for a pair, as a normal attempt does; every later one uses that pair.
+// The same call id is reused: the mod only answers `task-N-M-implement`, and a start clears the
+// previous call before it runs the next prompt. A failure of that pair after the first sub-attempt
+// ends the pass; it does not try another pair or the native agent mid-pass.
+async function implementSplit(unit, task, model, effort, rung, context, exclude, items) {
+  const n = unit.attempts
+  const id = `${unit.id}-${n}-implement`
+  const reports = []
+  let provider = null
+  let laneFailure = null
+  let pairId = null
+  let family = null
+  let routed = null
+  let locked = null
+  let nativeContext = context
+  const baseOf = (item, pair) => `${unit.id}: implement ${item} via ${pair.harness} ${pair.model} on ${rung} (attempt ${n})`
+  const stop = (fields) => ({ provider, laneFailure, pair: pairId, family, split: true, ...fields })
+
+  for (let i = 0; i < items.length; i++) {
+    // A lane sub-attempt is ops and does not spend the budget (issue 013); a native one does.
+    // The check is still before each sub-attempt, so a pass stops when the budget is spent.
+    if (modelAgentsSpent() >= maxAgents) return stop({ budget: true, subAttempts: i })
+    const item = items[i]
+
+    if (lanes && i === 0) {
+      const where = { phase: 'Implement', label: `${unit.id}: implement ${item} on ${rung} (attempt ${n})` }
+      routed = await external({
+        role: 'implementer',
+        model,
+        effort,
+        id,
+        exclude,
+        ...where,
+        build: (pair, failures) => ({
+          task: unit.id,
+          prompt: implementerPrompt(unit, task, rung, failureContext(context, failures), { lane: true, limit: item }),
+          base: baseOf(item, pair),
+        }),
+      })
+      const { pair, outcome, failures } = routed
+      if (failures.length) {
+        const last = failures[failures.length - 1]
+        laneFailure = { harness: last.pair.harness, model: last.model, reason: last.reason }
+      }
+      if (outcome && outcome.kind !== 'infra') {
+        tookByPair(id, pair, where)
+        pairId = pair.id
+        family = familyOf(pair)
+        locked = pair
+        if (outcome.kind === 'blocked') return stop({ blocked: outcome.detail, subAttempts: i + 1 })
+        if (outcome.kind !== 'ok') {
+          provider = `${pair.harness} ${outcome.model}`
+          const failure = `The external agent changed files outside the task's Owns: ${list(outcome.files)}. Revert those changes.`
+          return stop({ report: null, failure, subAttempts: i + 1 })
+        }
+        provider = `${pair.harness} ${outcome.lane.model}`
+        if (!isReport(outcome.result)) return stop({ report: null, subAttempts: i + 1 })
+        reports.push(outcome.result)
+        continue
+      }
+      nativeContext = failureContext(context, failures)
+    }
+
+    if (locked) {
+      const outcome = await laneCall({
+        role: 'implementer',
+        id,
+        task: unit.id,
+        pair: locked,
+        prompt: implementerPrompt(unit, task, rung, context, { lane: true, limit: item }),
+        phase: 'Implement',
+        base: baseOf(item, locked),
+      })
+      if (outcome.kind === 'blocked') return stop({ blocked: outcome.detail, subAttempts: i + 1 })
+      if (outcome.kind === 'ok') {
+        provider = `${locked.harness} ${outcome.lane.model}`
+        if (!isReport(outcome.result)) return stop({ report: null, subAttempts: i + 1 })
+        reports.push(outcome.result)
+        continue
+      }
+      if (outcome.kind === 'violation') {
+        provider = `${locked.harness} ${outcome.model}`
+        const failure = `The external agent changed files outside the task's Owns: ${list(outcome.files)}. Revert those changes.`
+        return stop({ report: null, failure, subAttempts: i + 1 })
+      }
+      // The pair of this pass failed. The next attempt asks again without it; this pass does not.
+      const reason = outcome.reason || outcome.kind
+      const ran = outcome.model || locked.model
+      provider = `${locked.harness} ${ran}`
+      laneFailure = { harness: locked.harness, model: ran, reason }
+      return stop({ report: null, failure: `${locked.harness} ${ran} stopped before it finished: ${reason}`, subAttempts: i + 1 })
+    }
+
+    const native = routed ? routed.decision.native : { model, effort, family: null }
+    provider = 'native'
+    pairId = null
+    family = familyOf(native)
+    const report = await call('implementer', native.model, native.effort, implementerPrompt(unit, task, rung, nativeContext, { limit: item }), {
+      phase: 'Implement',
+      label: `${unit.id}: implement ${item} on ${native.model} ${native.effort} (attempt ${n})`,
+      schema: IMPLEMENTER_SCHEMA,
+    })
+    if (routed && i === 0) tookNative(id, routed, { phase: 'Implement', label: `${unit.id}: implement ${item} on ${rung} (attempt ${n})` })
+    if (!isReport(report)) return stop({ report: null, subAttempts: i + 1 })
+    reports.push(report)
+  }
+  return stop({ report: combineReports(items, reports), subAttempts: items.length })
 }
 
 // One attempt's review: on the pair the decision gives, and native on the decision's native pair otherwise or
@@ -914,16 +1185,50 @@ async function work(unit, task) {
     if (unit.tiers[unit.tiers.length - 1] !== rung) unit.tiers.push(rung)
     const n = unit.attempts
 
-    const attempt = await implement(unit, task, model, effort, rung, context, lastPair ? [lastPair] : [])
+    // After a missing report, two or more owned items are retried as one split pass (issue 14).
+    // One item, or a glob that matches nothing yet, is the same retry as before.
+    const items = followsMissingReport(unit) ? await ownedItems(unit, task) : null
+    const attempt =
+      items && items.length >= 2
+        ? await implementSplit(unit, task, model, effort, rung, context, lastPair ? [lastPair] : [], items)
+        : await implement(unit, task, model, effort, rung, context, lastPair ? [lastPair] : [])
     context = null
     if (attempt.blocked !== undefined) return finish(unit, 'blocked', `lane: ${attempt.blocked}`)
+    if (attempt.budget) {
+      // The ladder already counted this pass. The round says how far the split got before the budget stopped it.
+      unit.rounds.push({
+        attempt: n,
+        tier: rung,
+        status: 'FAILED',
+        summary: 'The agent budget is spent.',
+        head: '',
+        tests: '',
+        concerns: '',
+        question: '',
+        verdict: null,
+        reviewEffort: null,
+        findings: [],
+        ruling: '',
+        guidance: '',
+        merge: null,
+        provider: attempt.provider,
+        reviewProvider: null,
+        laneFailure: attempt.laneFailure,
+        salvaged: false,
+        noReport: false,
+        split: true,
+        subAttempts: attempt.subAttempts,
+      })
+      return finish(unit, 'not-run', 'the agent budget is spent')
+    }
     lastPair = attempt.pair
     implementedBy[unit.id] = attempt.family
     let { report } = attempt
     // An attempt that ended without its report may still hold the work (issue 003): when the attempt did not fail
     // on its own changes outside Owns, what it left is committed and goes to the supervisor, which is the gate.
+    // A split pass is not salvaged: one sub-attempt without a report is a missing report for the whole pass.
     let salvaged = false
-    if (!report && !attempt.failure) {
+    if (!report && !attempt.failure && !attempt.split) {
       const saved = await salvage(unit)
       if (saved) {
         report = saved
@@ -949,15 +1254,21 @@ async function work(unit, task) {
       reviewProvider: null,
       laneFailure: attempt.laneFailure,
       salvaged,
+      noReport: !report && !attempt.failure,
+      ...(attempt.split ? { split: true, subAttempts: attempt.subAttempts } : {}),
     }
     unit.rounds.push(round)
     // A failed implementer, or a lane's changes outside Owns: the attempt failed, and the ladder decides,
     // unless the unit has now ended twice without a report, which means it is too large for one attempt.
+    // A pair that fails during a split pass is that failure, not a second missing report: the next attempt
+    // leaves the pair out, as any failed attempt does.
     if (!report) {
-      unit.failures.push(NO_REPORT)
-      const recent = unit.failures.slice(-2)
-      if (recent.length === 2 && recent.every((f) => f === NO_REPORT)) {
-        return finish(unit, 'blocked', 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks')
+      if (!(attempt.split && attempt.failure)) {
+        unit.failures.push(NO_REPORT)
+        const recent = unit.failures.slice(-2)
+        if (recent.length === 2 && recent.every((f) => f === NO_REPORT)) {
+          return finish(unit, 'blocked', 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks')
+        }
       }
       continue
     }
@@ -1009,16 +1320,56 @@ async function work(unit, task) {
     if (round.verdict !== 'approve') continue
 
     // A merge runs the plan's whole test command, so its Bash call, when the model runs it, needs the long timeout (issue 002).
-    const out = await serialized(() => ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true }))
+    // A merge the mod cuts at 600 s has its commit on the branch and its tests unfinished (issue #2). The merge, the
+    // status check and the rerun stay in one turn of the merge queue, so no other unit merges between a cut and its
+    // rerun. The unit is merged only when the rerun passes, with the commit the rerun names. A rerun that is cut,
+    // errors, or is refused for any reason but a finished test run leaves the commit there and blocks the unit.
+    const UNTESTED = 'its merge commit is on the integration branch without a passing test run'
+    const held = await serialized(async () => {
+      const first = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true })
+      if (first.merged || !first.error) return { first }
+      // Never blocked on captured output alone (issue 002): the git history says whether the unit is in.
+      const status = await ops(`aether-wt status ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge status` })
+      if (status.error || !status.unverified) return { first, status }
+      const again = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: verify merge`, long: true })
+      return { first, status, again }
+    })
+    let out = held.first
     if (out.merged) {
       unit.commit = out.commit
       return finish(unit, 'merged')
     }
     round.merge = describeMerge(out)
-    if (out.error) {
-      // Never blocked on captured output alone (issue 002): the git history says whether the unit is in.
-      const status = await serialized(() => ops(`aether-wt status ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge status` }))
-      if (!status.error && status.merged) {
+    if (held.again) {
+      const again = held.again
+      if (again.merged) {
+        unit.commit = again.commit
+        round.merge = 'merged: the tests were rerun after the merge was cut, and they passed'
+        log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
+        return finish(unit, 'merged')
+      }
+      // A failing test run is the usual failing merge, so the one retry below applies when the
+      // commit was reverted. A failing test run whose commit could not be reverted stays untested:
+      // do not retry, as the retry would only be refused unverified-moved (issue #2).
+      if (again.reason === 'tests' && again.reverted === false) {
+        round.merge = UNTESTED
+        log(`${unit.id}: merge rerun failed and commit was left in place; ${UNTESTED}`)
+        return finish(unit, 'blocked', UNTESTED)
+      }
+      // Any other rerun leaves the commit untested: a second cut, an error, a dirty worktree,
+      // unverified-buried, unverified-moved or unverified-other. The reason is prefixed so the
+      // Lead still sees why, and the sentence says the commit is untested (issue #2).
+      if (again.reason !== 'tests' || again.error) {
+        const reason = again.error ? UNTESTED : `${again.reason}: ${UNTESTED}`
+        round.merge = reason
+        log(`${unit.id}: merge rerun did not finish (${again.error || again.reason}); ${reason}`)
+        return finish(unit, 'blocked', reason)
+      }
+      out = again
+      round.merge = describeMerge(out)
+    } else if (out.error) {
+      const status = held.status
+      if (status && !status.error && status.merged) {
         unit.commit = status.commit
         round.merge = 'merged: the merge output was unreadable, and the merge commit is on the integration branch'
         log(`${unit.id}: merge output unreadable, but its merge commit is on ${integration.branch}; counting it merged`)
@@ -1076,7 +1427,9 @@ function reviewPlan() {
   const deep = merged.find((u) => ['xhigh', 'max'].includes(tasks[u.id].review))
   if (deep) return { model: 'opus', effort: 'xhigh', reason: `${deep.id} reviews at ${tasks[deep.id].review}` }
   if (isRelaunch()) return { model: 'opus', effort: 'high', reason: 'a relaunch: the final review covers the earlier launches too' }
-  if (merged.length <= 3 && merged.every((u) => tasks[u.id].tier === 'haiku' && tasks[u.id].review === 'high')) {
+  // Zero merged units is not a small all-haiku run: an empty list passes `every`, and a forced review of a
+  // launch that merged nothing would otherwise run on Sonnet.
+  if (merged.length > 0 && merged.length <= 3 && merged.every((u) => tasks[u.id].tier === 'haiku' && tasks[u.id].review === 'high')) {
     return { model: 'sonnet', effort: 'high', reason: 'a small all-haiku run with high reviews' }
   }
   return { model: 'opus', effort: 'high', reason: 'the merged work is not a small all-haiku run' }
@@ -1181,8 +1534,38 @@ async function reviewRunSliced(pkg, slices, { model, effort, chosen }) {
   return { status: 'done', provider, verdict, findings, declined, summary: summaries.join('\n'), slices: slices.length, slicesBy, ...chosen }
 }
 
-async function reviewRun() {
-  if (!Object.values(units).some((u) => u.status === 'merged')) return { status: 'skipped', reason: 'no unit merged' }
+// True when this launch was given units and every one of them merged. An empty launch did not finish
+// the run: compile prints empty waves when every unit is already merged, and that launch reviews only
+// when the Lead sets `review` to true (issues #5 and #33).
+function launchComplete() {
+  const list = Object.values(units)
+  return list.length > 0 && list.every((unit) => unit.status === 'merged')
+}
+
+// The review did not run. The reason names the units still open, when the review does run, and how to
+// force it. `deferred` is not a failure and not a verdict.
+function deferredReview() {
+  const list = Object.values(units)
+  let blocked = 0
+  let skipped = 0
+  let notRun = 0
+  for (const unit of list) {
+    if (unit.status === 'blocked') blocked++
+    else if (unit.status === 'skipped') skipped++
+    else if (unit.status !== 'merged') notRun++
+  }
+  const counts = `${blocked} blocked, ${skipped} skipped, ${notRun} not run`
+  const head = list.length === 0 ? `This launch ran no unit (${counts}).` : `${counts}.`
+  return {
+    status: 'deferred',
+    reason: `${head} The final review runs when a launch ends with all its units merged. To run it now on what is merged, launch again with review set to true.`,
+  }
+}
+
+async function reviewRun(force = false) {
+  // A launch that merged nothing has nothing of its own to review, unless the Lead forced the review
+  // of the whole run: the package is still `aether-wt diff --final`, from the first compile's base.
+  if (!Object.values(units).some((u) => u.status === 'merged') && !force) return { status: 'skipped', reason: 'no unit merged' }
   if (modelAgentsSpent() >= maxAgents) return { status: 'skipped', reason: 'the agent budget is spent' }
   const { model, effort, reason } = reviewPlan()
   log(`final review on ${model} ${effort}: ${reason}`)
@@ -1262,7 +1645,13 @@ try {
   for (let i = 0; i < waves.length; i++) {
     await parallel(waves[i].map((id) => () => runUnit(id)))
   }
-  finalReview = await reviewRun()
+  // Once per run, when this launch closed it (issues #5 and #33). A launch that leaves a unit blocked,
+  // skipped or not run does not pay for the review; the Lead forces it with `review: true`.
+  if (input.review === true || launchComplete()) finalReview = await reviewRun(input.review === true)
+  else {
+    finalReview = deferredReview()
+    log(`final review deferred: ${finalReview.reason}`)
+  }
 } catch (err) {
   error = message(err)
 } finally {

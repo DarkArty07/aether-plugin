@@ -4,9 +4,12 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { makeRepo, compile, commitIn } = require('./helpers.js')
+const { spawn } = require('node:child_process')
+const { makeRepo, compile, commitIn, WT_BIN, NO_LANES_CONFIG, PLAN_BIN, runBin, writePlan, useDataDir, ageRun } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
-const { ensure, merge, unitStatus } = require('../plugins/aether/lib/worktrees.js')
+const { ensure, merge, unitStatus, mergedUnits, removeUnit, sweepRun, sweepStale, writeUnverifiedMarker, abortUnfinishedMerge } = require('../plugins/aether/lib/worktrees.js')
+const { finalize } = require('../plugins/aether/lib/report.js')
+const run = require('../plugins/aether/lib/run.js')
 
 function setup(t, options) {
   const repo = makeRepo(t, options)
@@ -240,6 +243,527 @@ test('merge undoes a unit whose failure names no test, even with a baseline', (t
   assert.equal(r.newFailures, undefined)
 })
 
+// A merge killed while the plan's tests are running: the test command touches `signal` and then
+// sleeps, so the kill lands after the merge commit and inside the tests (issue #2).
+function shQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`
+}
+
+function pause(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function killMerge(child) {
+  if (!child || !child.pid) return
+  try {
+    process.kill(-child.pid, 'SIGKILL')
+  } catch {
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
+async function cutDuringTests(t, repo, args) {
+  const signal = path.join(args.runDir, 'test-running')
+  fs.rmSync(signal, { force: true })
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; exec sleep 30`)
+  const child = spawn(process.execPath, [WT_BIN, 'merge', args.runId, 'task-1'], {
+    cwd: repo.dir,
+    env: { ...process.env, AETHER_LANES_CONFIG: NO_LANES_CONFIG },
+    detached: true,
+    stdio: 'ignore',
+  })
+  t.after(() => killMerge(child))
+  const deadline = Date.now() + 15000
+  while (!fs.existsSync(signal) && Date.now() < deadline) await pause(20)
+  assert.ok(fs.existsSync(signal), 'the merge did not reach its tests')
+  killMerge(child)
+  const exited = new Promise((resolve) => child.once('exit', resolve))
+  const code = await Promise.race([exited, pause(5000).then(() => 'still-running')])
+  assert.notEqual(code, 'still-running', 'the cut merge did not die')
+}
+
+test('a merge killed while its tests run is unverified, not merged (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const before = repo.git('rev-parse', 'HEAD')
+  await cutDuringTests(t, repo, args)
+  const status = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(status.merged, false)
+  assert.equal(status.unverified, true)
+  assert.equal(status.branch, unit.branch)
+  assert.equal(status.commit, repo.git('rev-parse', 'HEAD'))
+  assert.notEqual(status.commit, before)
+  assert.equal(repo.git('log', '-1', '--format=%s'), `Merge ${unit.branch}`)
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), [])
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'utf8'), 'one\n')
+})
+
+test('rerunning the merge of an unverified unit with passing tests merges it once (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const commit = repo.git('rev-parse', 'HEAD')
+  const merges = repo.git('rev-list', '--count', '--merges', 'HEAD')
+  setTestCommand(args.runDir, 'true')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.deepEqual(r, { merged: true, commit, rerun: true })
+  assert.equal(repo.git('rev-parse', 'HEAD'), commit, 'no second merge commit')
+  assert.equal(repo.git('rev-list', '--count', '--merges', 'HEAD'), merges)
+  assert.equal(repo.git('log', '-1', '--format=%s'), `Merge ${unit.branch}`)
+  const after = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(after.merged, true)
+  assert.equal(after.unverified, undefined)
+  assert.equal(after.commit, commit)
+  assert.deepEqual(merge(repo.dir, args.runId, 'task-1'), { merged: true, commit, already: true })
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), ['task-1'])
+})
+
+test('rerunning the merge of an unverified unit with failing tests reverts it (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const parent = repo.git('rev-parse', 'HEAD')
+  await cutDuringTests(t, repo, args)
+  setTestCommand(args.runDir, 'echo boom; exit 3')
+  const { output, ...r } = merge(repo.dir, args.runId, 'task-1')
+  assert.match(output, /boom/)
+  assert.deepEqual(r, { merged: false, reason: 'tests', exitCode: 3, timedOut: false, reverted: true })
+  assert.equal(repo.git('rev-parse', 'HEAD'), parent)
+  assert.equal(fs.existsSync(path.join(repo.dir, 'src', 't1', 'a.js')), false)
+  const status = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(status.merged, false)
+  assert.equal(status.unverified, undefined)
+  assert.equal(status.commit, null)
+  // The marker is gone, so a later merge is a new one, the same as any unit whose tests failed.
+  setTestCommand(args.runDir, 'true')
+  const again = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(again.merged, true)
+  assert.equal(again.rerun, undefined)
+  assert.equal(repo.git('rev-list', '--count', '--merges', 'HEAD'), '1')
+})
+
+test('a rerun of a cut unit reverts that unit and leaves an earlier merge in place (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  const earlier = ensure(repo.dir, args.runId, 'task-2')
+  commitIn(repo, earlier.path, 'src/t2/a.js', 'two\n', 'add b')
+  assert.equal(merge(repo.dir, args.runId, 'task-2').merged, true)
+  const kept = repo.git('rev-parse', 'HEAD')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const status = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(status.unverified, true)
+  assert.equal(status.commit, repo.git('rev-parse', 'HEAD'))
+  assert.notEqual(status.commit, kept)
+  setTestCommand(args.runDir, 'echo boom; exit 3')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.reason, 'tests')
+  assert.equal(r.reverted, true)
+  assert.equal(repo.git('rev-parse', 'HEAD'), kept)
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't2', 'a.js'), 'utf8'), 'two\n')
+  assert.equal(fs.existsSync(path.join(repo.dir, 'src', 't1', 'a.js')), false)
+  assert.equal(unitStatus(repo.dir, args.runId, 'task-2').merged, true)
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), ['task-2'])
+})
+
+test('a rerun cut while its tests run leaves the one merge commit unverified (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const commit = repo.git('rev-parse', 'HEAD')
+  const merges = repo.git('rev-list', '--count', '--merges', 'HEAD')
+  await cutDuringTests(t, repo, args)
+  assert.equal(repo.git('rev-parse', 'HEAD'), commit, 'the rerun made no second merge commit')
+  assert.equal(repo.git('rev-list', '--count', '--merges', 'HEAD'), merges)
+  const status = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(status.merged, false)
+  assert.equal(status.unverified, true)
+  assert.equal(status.commit, commit)
+})
+
+function markerFile(runDir, taskId) {
+  return path.join(runDir, 'unverified', `${taskId}.json`)
+}
+
+function readMarker(runDir, taskId) {
+  return JSON.parse(fs.readFileSync(markerFile(runDir, taskId), 'utf8'))
+}
+
+// A kill in the post-merge hook: the merge commit is already on the branch, and the marker
+// has not been filled in yet. The hook waits so the test can stop the process there.
+async function cutDuringMerge(t, repo, args) {
+  const signal = path.join(args.runDir, 'merge-committed')
+  const testsRan = path.join(args.runDir, 'tests-ran')
+  fs.rmSync(signal, { force: true })
+  fs.rmSync(testsRan, { force: true })
+  const hooks = path.join(repo.dir, '.git', 'hooks')
+  fs.mkdirSync(hooks, { recursive: true })
+  repo.git('config', 'core.hooksPath', hooks)
+  const hook = path.join(hooks, 'post-merge')
+  fs.writeFileSync(hook, `#!/bin/sh\ntouch ${shQuote(signal)}\nsleep 30\n`)
+  fs.chmodSync(hook, 0o755)
+  setTestCommand(args.runDir, `touch ${shQuote(testsRan)}`)
+  const child = spawn(process.execPath, [WT_BIN, 'merge', args.runId, 'task-1'], {
+    cwd: repo.dir,
+    env: { ...process.env, AETHER_LANES_CONFIG: NO_LANES_CONFIG },
+    detached: true,
+    stdio: 'ignore',
+  })
+  t.after(() => {
+    killMerge(child)
+    fs.rmSync(hook, { force: true })
+  })
+  const deadline = Date.now() + 15000
+  while (!fs.existsSync(signal) && Date.now() < deadline) await pause(20)
+  assert.ok(fs.existsSync(signal), 'the merge did not reach its post-merge hook')
+  killMerge(child)
+  const exited = new Promise((resolve) => child.once('exit', resolve))
+  const code = await Promise.race([exited, pause(5000).then(() => 'still-running')])
+  assert.notEqual(code, 'still-running', 'the cut merge did not die')
+  fs.rmSync(hook, { force: true })
+  return { testsRan }
+}
+
+// A kill inside git merge, before it commits. commit-msg runs once MERGE_HEAD is written and
+// before the merge commit exists, so a kill there leaves the worktree mid-merge (issue #2).
+// pre-merge-commit is too early: on current git it runs before MERGE_HEAD is written.
+async function cutBeforeCommit(t, repo, args) {
+  const signal = path.join(args.runDir, 'merge-prepared')
+  const testsRan = path.join(args.runDir, 'tests-ran')
+  fs.rmSync(signal, { force: true })
+  fs.rmSync(testsRan, { force: true })
+  const hooks = path.join(repo.dir, '.git', 'hooks')
+  fs.mkdirSync(hooks, { recursive: true })
+  repo.git('config', 'core.hooksPath', hooks)
+  const hook = path.join(hooks, 'commit-msg')
+  fs.writeFileSync(hook, `#!/bin/sh\ntouch ${shQuote(signal)}\nsleep 30\n`)
+  fs.chmodSync(hook, 0o755)
+  setTestCommand(args.runDir, `touch ${shQuote(testsRan)}`)
+  const child = spawn(process.execPath, [WT_BIN, 'merge', args.runId, 'task-1'], {
+    cwd: repo.dir,
+    env: { ...process.env, AETHER_LANES_CONFIG: NO_LANES_CONFIG },
+    detached: true,
+    stdio: 'ignore',
+  })
+  t.after(() => {
+    killMerge(child)
+    fs.rmSync(hook, { force: true })
+  })
+  const deadline = Date.now() + 15000
+  while (!fs.existsSync(signal) && Date.now() < deadline) await pause(20)
+  assert.ok(fs.existsSync(signal), 'the merge did not reach its commit-msg hook')
+  killMerge(child)
+  const exited = new Promise((resolve) => child.once('exit', resolve))
+  const code = await Promise.race([exited, pause(5000).then(() => 'still-running')])
+  assert.notEqual(code, 'still-running', 'the cut merge did not die')
+  fs.rmSync(hook, { force: true })
+  return { testsRan }
+}
+
+function mergeHeadPath(repo) {
+  return path.resolve(repo.dir, repo.git('rev-parse', '--git-path', 'MERGE_HEAD'))
+}
+
+test('a merge killed while its tests run stays unverified when the unit tip moved and when the branch is gone (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  commitIn(repo, unit.path, 'src/t1/b.js', 'more\n', 'more after the merge')
+  const moved = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(moved.merged, false)
+  assert.equal(moved.unverified, true)
+  assert.equal(moved.commit, mergeCommit)
+  assert.equal(moved.branch, unit.branch)
+  assert.equal(moved.head, repo.git('rev-parse', unit.branch))
+  assert.notEqual(moved.head, mergeCommit)
+  assert.throws(() => repo.git('merge-base', '--is-ancestor', unit.branch, 'HEAD'))
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), [])
+  repo.git('worktree', 'remove', '--force', unit.path)
+  repo.git('branch', '-D', unit.branch)
+  const gone = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(gone.merged, false)
+  assert.equal(gone.unverified, true)
+  assert.equal(gone.commit, mergeCommit)
+  assert.equal(gone.branch, null)
+  assert.equal(gone.head, null)
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), [])
+})
+
+test('a kill between git merge and the marker fill still leaves a marker (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const { testsRan } = await cutDuringMerge(t, repo, args)
+  assert.equal(fs.existsSync(testsRan), false, 'the tests must not have started')
+  assert.equal(repo.git('log', '-1', '--format=%s'), `Merge ${unit.branch}`)
+  const marker = readMarker(args.runDir, 'task-1')
+  assert.equal(marker.commit ?? null, null)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  const status = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(status.merged, false)
+  assert.equal(status.unverified, true)
+  assert.equal(status.commit, mergeCommit)
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), [])
+  const text = plan([task(1), task(2)])
+  const again = runBin(PLAN_BIN, ['compile', writePlan(repo.dir, text), '--run', args.runId], repo.dir)
+  assert.equal(again.status, 0, again.stdout + again.stderr)
+  assert.equal(again.json.alreadyMerged, undefined)
+  assert.doesNotMatch(again.stderr, /already merged/)
+  const merges = repo.git('rev-list', '--count', '--merges', 'HEAD')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.deepEqual(r, { merged: true, commit: mergeCommit, rerun: true })
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit, 'no second merge commit')
+  assert.equal(repo.git('rev-list', '--count', '--merges', 'HEAD'), merges)
+  assert.equal(unitStatus(repo.dir, args.runId, 'task-1').unverified, undefined)
+})
+
+test('a buried unverified commit is refused and nothing is reset (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  commitIn(repo, repo.dir, 'src/t2/note.js', 'note\n', 'land on top of the unverified merge')
+  const buried = repo.git('rev-parse', 'HEAD')
+  const signal = path.join(args.runDir, 'tests-ran')
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.deepEqual(r, { merged: false, reason: 'unverified-buried', commit: mergeCommit })
+  assert.equal(repo.git('rev-parse', 'HEAD'), buried)
+  assert.equal(fs.existsSync(signal), false, 'a buried marker runs no tests')
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'utf8'), 'one\n')
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't2', 'note.js'), 'utf8'), 'note\n')
+})
+
+test("another unit's merge is refused with unverified-other and runs no tests (issue #2)", async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  const signal = path.join(args.runDir, 'tests-ran')
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+  const other = ensure(repo.dir, args.runId, 'task-2')
+  commitIn(repo, other.path, 'src/t2/a.js', 'two\n', 'add b')
+  const r = merge(repo.dir, args.runId, 'task-2')
+  assert.deepEqual(r, { merged: false, reason: 'unverified-other', task: 'task-1', commit: mergeCommit })
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit)
+  assert.equal(fs.existsSync(signal), false, 'a merge on top of an unverified commit runs no tests')
+  assert.equal(fs.existsSync(path.join(repo.dir, 'src', 't2', 'a.js')), false)
+  assert.equal(unitStatus(repo.dir, args.runId, 'task-1').unverified, true)
+})
+
+test('a merge that fails before its tests leaves no marker (issue #2)', (t) => {
+  const conflicted = setup(t)
+  commitIn(conflicted.repo, conflicted.repo.dir, 'src/t1/a.js', 'integration\n', 'integration side')
+  commitIn(conflicted.repo, conflicted.unit.path, 'src/t1/a.js', 'unit\n', 'unit side')
+  const conflict = merge(conflicted.repo.dir, conflicted.args.runId, 'task-1')
+  assert.equal(conflict.reason, 'conflict')
+  assert.equal(fs.existsSync(markerFile(conflicted.args.runDir, 'task-1')), false)
+
+  const owned = setup(t)
+  commitIn(owned.repo, owned.unit.path, 'README.md', 'changed\n', 'touch readme')
+  const ownership = merge(owned.repo.dir, owned.args.runId, 'task-1')
+  assert.equal(ownership.reason, 'ownership')
+  assert.equal(fs.existsSync(markerFile(owned.args.runDir, 'task-1')), false)
+
+  const blocked = setup(t)
+  commitIn(blocked.repo, blocked.unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  fs.mkdirSync(path.join(blocked.repo.dir, 'src', 't1'), { recursive: true })
+  fs.writeFileSync(path.join(blocked.repo.dir, 'src', 't1', 'a.js'), 'local\n')
+  const failed = merge(blocked.repo.dir, blocked.args.runId, 'task-1')
+  assert.equal(failed.reason, 'merge-failed')
+  assert.equal(fs.existsSync(markerFile(blocked.args.runDir, 'task-1')), false)
+})
+
+test('a rerun cut twice leaves the marker, remove keeps the branch and patch, and another merge is refused (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  await cutDuringTests(t, repo, args)
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit)
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(unitStatus(repo.dir, args.runId, 'task-1').unverified, true)
+  const signal = path.join(args.runDir, 'tests-ran')
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+  const other = ensure(repo.dir, args.runId, 'task-2')
+  commitIn(repo, other.path, 'src/t2/a.js', 'two\n', 'add b')
+  const refused = merge(repo.dir, args.runId, 'task-2')
+  assert.deepEqual(refused, { merged: false, reason: 'unverified-other', task: 'task-1', commit: mergeCommit })
+  assert.equal(fs.existsSync(signal), false)
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit)
+  const removed = removeUnit(repo.dir, args.runId, 'task-1')
+  assert.equal(removed.patch, path.join(args.runDir, 'patches', 'task-1.patch'))
+  assert.match(fs.readFileSync(removed.patch, 'utf8'), /\+one/)
+  assert.equal(fs.existsSync(unit.path), false)
+  assert.match(repo.git('branch', '--list', unit.branch), new RegExp(unit.branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), true)
+})
+
+test('sweep keeps the branch and patch of an unverified unit (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const r = sweepRun(repo.dir, args.runId)
+  const patch = path.join(args.runDir, 'patches', 'task-1.patch')
+  assert.deepEqual(r.patches, [patch])
+  assert.match(fs.readFileSync(patch, 'utf8'), /\+one/)
+  assert.deepEqual(r.remaining.branches, [unit.branch])
+  assert.deepEqual(r.remaining.worktrees, [])
+  assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), true)
+  assert.equal(repo.git('rev-parse', 'HEAD'), readMarker(args.runDir, 'task-1').commit)
+})
+
+test('a rerun refuses when the unit branch has commits the unverified merge does not (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  const mergedTip = repo.git('rev-parse', unit.branch)
+  commitIn(repo, unit.path, 'src/t1/b.js', 'more\n', 'commit Y after the cut')
+  const moved = repo.git('rev-parse', unit.branch)
+  const signal = path.join(args.runDir, 'tests-ran')
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.deepEqual(r, { merged: false, reason: 'unverified-moved', commit: mergeCommit })
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit, 'a moved branch resets nothing')
+  assert.equal(repo.git('rev-parse', unit.branch), moved)
+  assert.equal(fs.existsSync(signal), false, 'a moved branch runs no tests')
+  const status = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(status.merged, false)
+  assert.equal(status.unverified, true)
+  assert.equal(status.commit, mergeCommit)
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), [])
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  // The branch tip is the commit the merge already took. The rerun is the one it was.
+  repo.git('-C', unit.path, 'reset', '--hard', mergedTip)
+  const passed = path.join(args.runDir, 'rerun-passed')
+  setTestCommand(args.runDir, `touch ${shQuote(passed)}; true`)
+  const again = merge(repo.dir, args.runId, 'task-1')
+  assert.deepEqual(again, { merged: true, commit: mergeCommit, rerun: true })
+  assert.equal(fs.existsSync(passed), true)
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit, 'no second merge commit')
+  assert.equal(unitStatus(repo.dir, args.runId, 'task-1').unverified, undefined)
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), ['task-1'])
+})
+
+test("a marker of a task left out of the graph still refuses another unit's merge (issue #2)", async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  const narrowed = compile(repo, plan([task(1), task(2)]), ['--run', args.runId, '--only', 'task-2'])
+  assert.equal(narrowed.tasks['task-1'], undefined)
+  assert.ok(narrowed.tasks['task-2'])
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  const signal = path.join(args.runDir, 'tests-ran')
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+  const other = ensure(repo.dir, args.runId, 'task-2')
+  commitIn(repo, other.path, 'src/t2/a.js', 'two\n', 'add b')
+  const r = merge(repo.dir, args.runId, 'task-2')
+  assert.deepEqual(r, { merged: false, reason: 'unverified-other', task: 'task-1', commit: mergeCommit })
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit)
+  assert.equal(fs.existsSync(signal), false, 'a merge on top of an unverified commit runs no tests')
+  assert.equal(fs.existsSync(path.join(repo.dir, 'src', 't2', 'a.js')), false)
+})
+
+test('a marker with no commit does not take an older verified merge of the same unit (issue #2)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  assert.equal(merge(repo.dir, args.runId, 'task-1').merged, true)
+  const verified = repo.git('rev-parse', 'HEAD')
+  const parent = repo.git('rev-parse', 'HEAD^1')
+  const mergedTip = repo.git('rev-parse', unit.branch)
+  commitIn(repo, unit.path, 'src/t1/b.js', 'more\n', 'a second merge, killed before it commits')
+  const { testsRan } = await cutBeforeCommit(t, repo, args)
+  assert.equal(fs.existsSync(testsRan), false, 'the tests must not have started')
+  assert.equal(repo.git('rev-parse', 'HEAD'), verified, 'a kill before the commit does not move the branch')
+  const marker = readMarker(args.runDir, 'task-1')
+  assert.equal(marker.commit ?? null, null)
+  assert.equal(marker.before, verified)
+  assert.notEqual(repo.git('rev-parse', `${verified}^1`), marker.before)
+  // merge --abort drops MERGE_HEAD and leaves the marker, so the next merge is the fallback and not the abort.
+  repo.git('merge', '--abort')
+  assert.equal(fs.existsSync(mergeHeadPath(repo)), false)
+  repo.git('-C', unit.path, 'reset', '--hard', mergedTip)
+  const status = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(status.unverified, undefined)
+  assert.equal(status.merged, true)
+  assert.equal(status.commit, verified)
+  setTestCommand(args.runDir, 'echo boom; exit 3')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, true)
+  assert.equal(r.already, true)
+  assert.equal(repo.git('rev-parse', 'HEAD'), verified)
+  assert.notEqual(repo.git('rev-parse', 'HEAD'), parent)
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'utf8'), 'one\n')
+  assert.equal(fs.existsSync(path.join(repo.dir, 'src', 't1', 'b.js')), false)
+})
+
+test("the next merge aborts a leftover MERGE_HEAD when this unit's marker has no commit (issue #2)", async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const before = repo.git('rev-parse', 'HEAD')
+  const { testsRan } = await cutBeforeCommit(t, repo, args)
+  assert.equal(fs.existsSync(testsRan), false)
+  assert.equal(fs.existsSync(mergeHeadPath(repo)), true)
+  assert.equal(readMarker(args.runDir, 'task-1').commit ?? null, null)
+  setTestCommand(args.runDir, 'true')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, true)
+  assert.equal(r.rerun, undefined)
+  assert.equal(fs.existsSync(mergeHeadPath(repo)), false)
+  assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), false)
+  assert.notEqual(repo.git('rev-parse', 'HEAD'), before)
+  assert.equal(repo.git('log', '-1', '--format=%s'), `Merge ${unit.branch}`)
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'utf8'), 'one\n')
+})
+
+test('finalize and sweepStale keep a run directory whose unverified commit is on the integration branch (issue #2)', async (t) => {
+  useDataDir(t)
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  repo.git('worktree', 'remove', '--force', unit.path)
+  repo.git('branch', '-D', unit.branch)
+  const finished = sweepRun(repo.dir, args.runId, { finish: true })
+  assert.equal(finished.finished, false)
+  assert.equal(fs.existsSync(args.runDir), true)
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  ageRun(args, 48)
+  assert.deepEqual(sweepStale(repo.dir, { hours: 24 }), { swept: [] })
+  assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), true)
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit)
+  assert.equal(finished.unverified, true)
+  const out = finalize(repo.dir, args.runId, { tests: false })
+  assert.equal(out.cleanup.finished, false)
+  assert.equal(out.cleanup.unverified, true)
+  assert.equal(fs.existsSync(args.runDir), true)
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(repo.git('merge-base', '--is-ancestor', mergeCommit, 'HEAD'), '')
+  // sweepStale on a finalized run with a live marker appends no abandoned record twice
+  const countBefore = fs
+    .readFileSync(path.join(run.dataDir(), 'runs.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+    .filter((r) => r.runId === args.runId && r.status === 'abandoned').length
+  ageRun(args, 48)
+  assert.deepEqual(sweepStale(repo.dir, { hours: 24 }), { swept: [] })
+  assert.deepEqual(sweepStale(repo.dir, { hours: 24 }), { swept: [] })
+  const records = fs
+    .readFileSync(path.join(run.dataDir(), 'runs.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+    .filter((r) => r.runId === args.runId)
+  assert.equal(records.filter((r) => r.status === 'abandoned').length, countBefore, 'sweepStale on a finalized run must append no abandoned record')
+  assert.equal(records[records.length - 1].status, 'finalized')
+})
+
 test('merge does not judge a test run that timed out, even when its output names only known failures', (t) => {
   const { repo, args, unit } = setup(t)
   // `exec` makes sleep the process that the timeout stops.
@@ -253,4 +777,78 @@ test('merge does not judge a test run that timed out, even when its output names
   assert.equal(r.timedOut, true)
   assert.equal(r.newFailures, undefined)
   assert.equal(repo.git('rev-parse', 'HEAD'), before)
+})
+
+test('a marker whose content is empty, truncated or {} is read as unverified with unknown commit (issue #2)', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, true)
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), ['task-1'])
+  assert.equal(unitStatus(repo.dir, args.runId, 'task-1').merged, true)
+
+  const file = markerFile(args.runDir, 'task-1')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+
+  for (const content of ['', '{"commit":', '{}']) {
+    fs.writeFileSync(file, content)
+    const status = unitStatus(repo.dir, args.runId, 'task-1')
+    assert.equal(status.merged, false, `content: ${JSON.stringify(content)}`)
+    assert.equal(status.unverified, true, `content: ${JSON.stringify(content)}`)
+    assert.equal(status.commit, null, `content: ${JSON.stringify(content)}`)
+    assert.deepEqual(mergedUnits(repo.dir, args.runId), [], `content: ${JSON.stringify(content)}`)
+  }
+})
+
+test('the marker writes go through a temporary file and a rename (issue #2)', (t) => {
+  const { repo, args, unit } = setup(t)
+  const file = markerFile(args.runDir, 'task-1')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify({ commit: 'old-commit' })}\n`)
+
+  const originalRenameSync = fs.renameSync
+  t.after(() => {
+    fs.renameSync = originalRenameSync
+  })
+  fs.renameSync = (src, dest) => {
+    if (dest === file) throw new Error('simulated rename failure')
+    return originalRenameSync(src, dest)
+  }
+
+  assert.throws(
+    () => {
+      writeUnverifiedMarker(repo.dir, args.runId, 'task-1', 'new-commit')
+    },
+    /simulated rename failure/,
+  )
+
+  assert.equal(fs.readFileSync(file, 'utf8'), `${JSON.stringify({ commit: 'old-commit' })}\n`)
+})
+
+test('abortUnfinishedMerge leaves a MERGE_HEAD of another branch alone (issue #2)', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+
+  const integrationBranch = args.integration.branch
+  repo.git('checkout', integrationBranch)
+  repo.git('branch', 'other-branch')
+  commitIn(repo, repo.dir, 'src/main.js', 'main\n', 'integration commit')
+  repo.git('checkout', 'other-branch')
+  commitIn(repo, repo.dir, 'src/other.js', 'other\n', 'other commit')
+  repo.git('checkout', integrationBranch)
+  repo.git('merge', '--no-commit', '--no-ff', 'other-branch')
+
+  const mergeHead = mergeHeadPath(repo)
+  assert.equal(fs.existsSync(mergeHead), true, 'MERGE_HEAD must exist')
+
+  // Set up an unverified marker for task-1 with no commit
+  const file = markerFile(args.runDir, 'task-1')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify({ commit: null, before: repo.git('rev-parse', 'HEAD') })}\n`)
+
+  // Run merge for task-1: it must leave MERGE_HEAD of other-branch alone and refuse dirty-integration
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, false)
+  assert.equal(r.reason, 'dirty-integration')
+  assert.equal(fs.existsSync(mergeHead), true, 'MERGE_HEAD of other-branch must not be aborted')
 })

@@ -56,6 +56,70 @@ test('with every quota dry the native agent of the seat takes it; the Examiner h
   }
 })
 
+const SAME_FAMILY = 'the same family that wrote the document judged it: no other external pair could'
+const MUSE = 'muse/muse-wonder-full-1.0@high'
+
+test('issue 64: the Judge takes Muse when it is the only external pair left, and the note names the author family', () => {
+  const museConfig = { harnesses: { ...config.harnesses, muse: { timeouts: { judge: 1800, writer: 2700, examiner: 1800 } }, grok: { timeouts: { judge: 1, writer: 1, examiner: 1 } } } }
+  const dryExceptMuse = {
+    agy: { installed: true, groups: { argon: dry, flash: dry, claude: dry } },
+    grok: { installed: true, groups: { grok: dry } },
+    muse: { installed: true, groups: { muse: open(2) } },
+  }
+  for (const seat of ['judge', 'examiner']) {
+    const chosen = choose(seat, { author: 'muse-wonder-full-1.0', harnesses: dryExceptMuse, config: museConfig })
+    assert.equal(chosen.external && chosen.external.pair.id, MUSE, seat)
+    assert.equal(chosen.note, SAME_FAMILY, seat)
+    assert.match(chosen.decision.reason, /same family that wrote the document judged it/, seat)
+    assert.equal(chosen.decision.requested, 53.6, 'the points asked stay Opus high')
+  }
+  // Argon reaches the points and renews later than Muse, and costs more. It is another family, so it is taken.
+  const argonLater = {
+    ...dryExceptMuse,
+    agy: { installed: true, groups: { argon: open(5), flash: dry, claude: dry } },
+  }
+  const other = choose('judge', { author: 'muse-wonder-full-1.0', harnesses: argonLater, config: museConfig })
+  assert.equal(other.external.pair.family, 'gemini-4-argon')
+  assert.equal(other.note, null)
+  assert.equal(other.tried.find((entry) => entry.id === MUSE).outcome, 'next')
+})
+
+test('issue 64: the Writer leaves the Judge its only pair when the Writer has another, and keeps it when it has none', () => {
+  const pair = (id, intelligence, cost, family = id.split('/')[1].split('@')[0]) => {
+    const [harness, rest] = id.split('/')
+    const [model, effort] = rest.split('@')
+    return { id, harness, model, effort, family, group: harness, intelligence, costPerTaskUsd: cost, outputTokensPerSecond: 1, timeToFirstTokenS: 1 }
+  }
+  const table = [
+    pair('claude/haiku@high', 37.8, 0.08, 'claude-haiku-5-5'),
+    pair('claude/sonnet@high', 46.8, 0.88, 'claude-sonnet-5-5'),
+    pair('claude/opus@high', 53.6, 1.82, 'claude-opus-5-5'),
+    pair(MUSE, 53.6, 0.5, 'muse-wonder-full-1.0'),
+    pair('grok/grok-4.7@high', 46.3, 2, 'grok-4.7'),
+  ]
+  const seatConfig = { harnesses: { muse: { timeouts: { judge: 1, writer: 1, examiner: 1 } }, grok: { timeouts: { judge: 1, writer: 1, examiner: 1 } } } }
+  const view = (museDay, grokDay) => ({
+    muse: { installed: true, groups: { muse: open(museDay) } },
+    grok: { installed: true, groups: { grok: open(grokDay) } },
+  })
+  const writer = (pairs, harnesses) => chooseSeat({ config: seatConfig, pairs, seat: 'writer', harnesses })
+  // Muse is the only pair that reaches the Judge, and the one the Writer would take: the Writer takes Grok instead.
+  const held = writer(table, view(1, 4))
+  assert.equal(held.external.pair.id, 'grok/grok-4.7@high')
+  assert.equal(held.tried.find((entry) => entry.id === MUSE).why, 'reserved')
+  const judge = chooseSeat({ config: seatConfig, pairs: table, seat: 'judge', author: 'grok-4.7', harnesses: view(1, 4) })
+  assert.equal(judge.external.pair.id, MUSE)
+  // The Writer that would not take Muse keeps its own pair, and Muse stays a candidate.
+  const untouched = writer(table, view(5, 1))
+  assert.equal(untouched.external.pair.id, 'grok/grok-4.7@high')
+  assert.equal(untouched.tried.find((entry) => entry.id === MUSE).why, null)
+  // Grok no longer reaches the Writer: leaving Muse out would leave no external pair, so the Writer keeps it.
+  const only = table.map((entry) => (entry.id === 'grok/grok-4.7@high' ? { ...entry, intelligence: 40 } : entry))
+  const kept = writer(only, view(1, 1))
+  assert.equal(kept.external.pair.id, MUSE)
+  assert.notEqual(kept.tried.find((entry) => entry.id === MUSE).why, 'reserved')
+})
+
 test('C12: a Judge never takes the model that wrote the document, external or native', () => {
   const external = choose('judge', { author: 'gemini-4-argon' })
   assert.notEqual(external.external.pair.family, 'gemini-4-argon')
@@ -428,6 +492,66 @@ test('a Writer whose tasks fail aether-plan check, or that leaves none, gives th
   assert.equal(repo.git('rev-parse', 'HEAD'), before)
   assert.equal(repo.git('status', '--porcelain'), '')
   assert.equal(fs.existsSync(path.join(repo.dir, FEATURE, 'tasks.md')), false)
+})
+
+test('issue 67: a finding\'s place is the line it names, else the heading, else the heading above its quote, else names no line', () => {
+  const doc = ['# Spec', '', '## Requirements', '', 'The card is the source.', '', '## Out of scope', '', 'No UI.', ''].join('\n')
+  const line = { severity: 'major', type: 'wrong', title: 'the limit', evidence: '`plan.md:12-14`', fix: 'raise it' }
+  const heading = { severity: 'minor', type: 'extra', title: 'the table', evidence: 'see `## Complexity`', fix: 'drop the row' }
+  const quoted = { severity: 'major', type: 'wrong', title: 'scope', evidence: '`No UI.`', fix: 'drop it' }
+  const neither = { severity: 'blocking', type: 'missing', title: 'a gap', evidence: '`not in the file`', fix: 'name it' }
+  assert.equal(seats.findingTouch(line), 'lines 12-14')
+  assert.equal(seats.findingTouch({ ...line, evidence: 'src/api.js:40' }), 'line 40')
+  assert.equal(seats.findingTouch({ ...line, title: 'Task 1:2 is too large', evidence: '`R1`' }), 'names no line')
+  assert.equal(seats.findingTouch({ ...line, evidence: 'lines 4-9 of the spec' }), 'lines 4-9')
+  assert.equal(seats.findingTouch({ ...line, evidence: '`plan.md:12` under `## Gate`' }), 'line 12')
+  assert.equal(seats.findingTouch(heading), '## Complexity')
+  assert.equal(seats.findingTouch(quoted), 'names no line')
+  assert.equal(seats.findingTouch(quoted, doc), '## Out of scope')
+  assert.equal(seats.findingTouch(neither, doc), 'names no line')
+  assert.equal(seats.findingTouch({ severity: 'minor', type: 'missing', title: 'x', evidence: '', fix: 'y' }), 'names no line')
+
+  const brief = seats.revisionBrief({ paths: [`${FEATURE}/spec.md`], findings: [line, heading, neither], openQuestions: ['Which limit?'] })
+  assert.ok(brief.includes('Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'))
+  assert.ok(brief.includes(`- ${FEATURE}/spec.md`))
+  assert.ok(brief.includes('[major] [wrong] the limit — lines 12-14 — `plan.md:12-14` — raise it'))
+  assert.ok(brief.includes('[minor] [extra] the table — ## Complexity'))
+  assert.ok(brief.includes('[blocking] [missing] a gap — names no line'))
+  assert.ok(brief.includes('- Which limit?'))
+  assert.equal(brief.includes('Write the spec'), false)
+})
+
+test('issue 67: an external Writer is told the correction is an edit, and a draft round is not', (t) => {
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const files = writerFiles(t)
+  const findings = [
+    { severity: 'major', type: 'wrong', title: 'the limit', evidence: '`plan.md:12-14`', fix: 'raise it' },
+    { severity: 'blocking', type: 'missing', title: 'a gap', evidence: '`R1`', fix: 'name it' },
+  ]
+  const message = [
+    `Revise ${FEATURE}/plan.md and ${FEATURE}/tasks.md after the Judge's review 1.`,
+    '',
+    seats.revisionBrief({ paths: [`${FEATURE}/plan.md`, `${FEATURE}/tasks.md`], findings }),
+    `FAKE-AGY: copy ${files.plan} ${FEATURE}/plan.md`,
+    `FAKE-AGY: copy ${files.tasks} ${FEATURE}/tasks.md`,
+    'FAKE-AGY: commit plan and tasks',
+    `FAKE-AGY: answer ${JSON.stringify(WRITER_ANSWER)}`,
+    '',
+  ].join('\n')
+  const revised = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE], env, message)
+  assert.equal(revised.status, 0, revised.stdout + revised.stderr)
+  const prompt = argAfter(agyTurns(env)[0].argv, '-p')
+  assert.ok(prompt.includes(message.trim()))
+  assert.ok(prompt.includes('names no line'))
+  assert.ok(prompt.includes('not a brief to write the document again'))
+
+  const draftEnv = laneEnv(t, { quota: geminiFirst() })
+  const draft = seat(repo.dir, ['writer', '--session', 's2', '--feature', FEATURE], draftEnv, writerInput(files))
+  assert.equal(draft.status, 0, draft.stdout + draft.stderr)
+  const draftPrompt = argAfter(agyTurns(draftEnv)[0].argv, '-p')
+  assert.equal(draftPrompt.includes('not a brief to write the document again'), false)
+  assert.equal(draftPrompt.includes('Findings:'), false)
 })
 
 test('with superdelegation off the Writer is the native Writer, handed back from its decision', (t) => {

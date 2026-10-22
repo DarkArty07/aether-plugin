@@ -149,6 +149,60 @@ test('report adds up every launch of a relaunched run', (t) => {
   assert.deepEqual(quality.finalReview, { status: 'done', verdict: 'ready', findings: { critical: 0, important: 1, minor: 2 }, reviews: 2 })
 })
 
+test('a deferred final review is a review not yet run, with its reason, and a later done review replaces it', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t, { result: false })
+  const reason = '1 blocked, 0 skipped, 1 not run. The final review runs when a launch ends with all its units merged. To run it now on what is merged, launch again with review set to true.'
+  const file = path.join(args.runDir, 'result.json')
+  writeJson(file, {
+    units: [
+      { id: 'task-1', status: 'merged', tiers: ['haiku'], attempts: 1, rounds: [] },
+      { id: 'task-2', status: 'blocked', tiers: ['haiku'], attempts: 1, rounds: [] },
+      { id: 'task-3', status: 'not-run', tiers: [], attempts: 0, rounds: [] },
+    ],
+    finalReview: { status: 'deferred', reason },
+    agents: { total: 4 },
+  })
+  const { quality, radar } = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual(quality.finalReview, {
+    status: 'deferred',
+    verdict: null,
+    findings: { critical: 0, important: 0, minor: 0 },
+    reviews: 0,
+    reason,
+  })
+  assert.notEqual(quality.finalReview.status, 'failed')
+  assert.notEqual(quality.finalReview.status, 'skipped')
+  assert.doesNotMatch(quality.finalReview.reason, /no unit merged/)
+  assert.equal(radar.robust.finalVerdict, null)
+
+  const out = finalize(repo.dir, args.runId, { tests: false })
+  assert.deepEqual(out.record.report.quality.finalReview, quality.finalReview)
+
+  // The completing launch's review is the one the report shows. The deferred launch is not a failure that sticks.
+  const { repo: laterRepo, args: later } = finishedRun(t, { result: false })
+  const first = path.join(later.runDir, 'result-1.json')
+  writeJson(first, {
+    units: [{ id: 'task-1', status: 'blocked', tiers: ['haiku'], attempts: 1, rounds: [] }],
+    finalReview: { status: 'deferred', reason },
+    agents: { total: 2 },
+  })
+  const second = path.join(later.runDir, 'result.json')
+  writeJson(second, {
+    units: [{ id: 'task-1', status: 'merged', tiers: ['haiku'], attempts: 1, rounds: [] }],
+    finalReview: { status: 'done', verdict: 'ready', findings: [] },
+    agents: { total: 3 },
+  })
+  const replaced = report(laterRepo.dir, later.runId, { tests: false }).quality.finalReview
+  assert.deepEqual(replaced, {
+    status: 'done',
+    verdict: 'ready',
+    findings: { critical: 0, important: 0, minor: 0 },
+    reviews: 1,
+  })
+  assert.equal(replaced.reason, undefined)
+})
+
 test('report reads only the usage sessions written to since the run began', (t) => {
   const dataDir = useDataDir(t)
   sampleUsage(dataDir)
@@ -811,6 +865,19 @@ test('a choice written in the old shape does not break the report', (t) => {
   appendLog(dataDir, null, { kind: 'choice', time: T0 + 4 * MIN, session: null, run: args.runId, design: null, call: 'task-1-1-implement', role: 'implementer', tier: 'haiku', effort: 'xhigh', picked: { harness: 'grok', model: 'grok-4.7' }, candidates: [], reason: 'old' })
   const [choice] = report(repo.dir, args.runId, { dataDir, tests: false }).lanes.run.choices
   assert.deepEqual([choice.call, choice.reason, choice.reference, choice.requested, choice.ms], ['task-1-1-implement', 'old', null, null, null])
+})
+
+test('report notes a split pass and how many sub-attempts it had', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  const file = path.join(args.runDir, 'result.json')
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
+  saved.units[1].rounds[2].split = true
+  saved.units[1].rounds[2].attempt = 3
+  saved.units[1].rounds[2].subAttempts = 4
+  writeJson(file, saved)
+  const { notes } = report(repo.dir, args.runId, { tests: false })
+  assert.ok(notes.includes('task-2 attempt 3 was a split pass of 4 sub-attempts'), notes.join('\n'))
 })
 
 test('a design round shows its reference and reason when the seat entry brings them', (t) => {

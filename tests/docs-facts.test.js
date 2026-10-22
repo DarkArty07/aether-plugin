@@ -548,9 +548,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A76 are recorded and the changelog opens with 0.17.1 and its handoff', () => {
+test('R15: the decisions A50 to A83 are recorded and the changelog opens with 0.17.1 and its handoff', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 76
+  const LAST_DECISION = 83
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -566,6 +566,13 @@ test('R15: the decisions A50 to A76 are recorded and the changelog opens with 0.
   assert.ok(/parallel calls/.test(line(74)) && /cupo/.test(line(74)))
   assert.ok(/hint/.test(line(75)) && /every hour/.test(line(75)))
   assert.ok(/spend of a whole session/.test(line(76)) && /list price/.test(line(76)))
+  assert.ok(/not merged until its tests pass/.test(line(77)) && /unverified/.test(line(77)))
+  assert.ok(/once per run/.test(line(78)) && /deferred/.test(line(78)))
+  assert.ok(/splits the brief by owned file/.test(line(79)))
+  assert.ok(/order of reserve/.test(line(80)) && /scarce seat/.test(line(80)))
+  assert.ok(/edits only what the Judge flagged/.test(line(81)))
+  assert.ok(/continues from the work the failed one left/.test(line(82)))
+  assert.ok(/swarms at once are not limited/.test(line(83)))
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
