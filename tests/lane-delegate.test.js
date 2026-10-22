@@ -64,9 +64,18 @@ function roleFake(t, { failModels = [], quotaModels = [], reviewAnswer = READY, 
 const CONTINUATION = 'Its uncommitted work, if any, is in the worktree. Continue from it.'
 
 // The implementer candidates of a probe, in the order the choice would try them.
-function implementerModels(choices) {
+function implementerIds(choices) {
   const choice = choices.find((entry) => entry.role === 'implementer')
-  return [choice.picked.id, ...choice.candidates.filter((candidate) => candidate.outcome === 'next').map((candidate) => candidate.id)].map(pairModelArg)
+  return [choice.picked.id, ...choice.candidates.filter((candidate) => candidate.outcome === 'next').map((candidate) => candidate.id)]
+}
+
+function implementerModels(choices) {
+  return implementerIds(choices).map(pairModelArg)
+}
+
+// A life of 0 is not cached, so the start of an attempt reads /usage instead of the choice's reading.
+function noQuotaCache(config) {
+  config.harnesses.agy.quotaLifeMinutes = 0
 }
 
 function promptOf(repo, id, attempt) {
@@ -79,8 +88,12 @@ function witnessLines(file) {
 
 // A wrapper that records the unit worktree as the pair's process starts, then adds failure
 // directives. The record is the tree the pair sees, before its own directives run.
-function witnessingFake(t, { failModels = [], quotaModels = [], writes = {}, witness, clash = null } = {}) {
+function witnessingFake(t, { failModels = [], quotaModels = [], writes = {}, witness, clash = null, interfere = null, plantOutside = false, recordReceipt = false } = {}) {
   const file = path.join(tempDir(t, 'aether-witness-fake-'), 'witness-fake.js')
+  // Start reads /usage after the attempt's prompt is on disk and before it creates the worktree.
+  // The marker makes that happen once: the choice of the pair after it also reads /usage, and
+  // prompt of the attempt that was just refused is the newest one on disk then.
+  const marker = path.join(path.dirname(witness), 'interfere-once')
   const lines = [
     '#!/usr/bin/env node',
     "'use strict'",
@@ -101,15 +114,58 @@ function witnessingFake(t, { failModels = [], quotaModels = [], writes = {}, wit
     '  return out',
     '}',
     "const pi = argv.indexOf('-p')",
+    `if (pi !== -1 && argv[pi + 1] === '/usage' && ${JSON.stringify(interfere)} !== null) {`,
+    "  const runsDir = path.join(process.cwd(), '.aether', 'runs')",
+    '  const ids = fs.existsSync(runsDir) ? fs.readdirSync(runsDir) : []',
+    '  for (const id of ids) {',
+    "    const lanes = path.join(runsDir, id, 'lanes')",
+    "    if (!fs.existsSync(path.join(lanes, 'task-1-2-implement', 'prompt.md'))) continue",
+    "    if (fs.existsSync(path.join(lanes, 'task-1-3-implement', 'prompt.md'))) continue",
+    `    if (fs.existsSync(${JSON.stringify(marker)})) break`,
+    `    fs.writeFileSync(${JSON.stringify(marker)}, '1')`,
+    `    if (${JSON.stringify(interfere)} === 'poison') {`,
+    "      const wt = path.join(process.cwd(), '.aether', 'worktrees', id, 'task-1')",
+    "      fs.mkdirSync(wt, { recursive: true })",
+    "      fs.writeFileSync(path.join(wt, '.git'), 'gitdir: /nope\\n')",
+    `    } else if (${JSON.stringify(interfere)} === 'clash') {`,
+    "      const target = path.join(process.cwd(), 'src', 'attempt.js')",
+    "      fs.mkdirSync(path.dirname(target), { recursive: true })",
+    "      if (!fs.existsSync(target) || fs.readFileSync(target, 'utf8') !== 'from-integration\\n') {",
+    "        fs.writeFileSync(target, 'from-integration\\n')",
+    "        spawnSync('git', ['add', 'src/attempt.js'], { cwd: process.cwd() })",
+    "        spawnSync('git', ['commit', '-q', '-m', 'conflict on integration'], { cwd: process.cwd() })",
+    '      }',
+    '    }',
+    '  }',
+    '}',
     "if (pi !== -1 && argv[pi + 1] !== '/usage') {",
     "  const model = at('--model')",
     '  const prompt = argv[pi + 1]',
     "  const implementer = prompt.includes('## Paths you own')",
     '  if (implementer) {',
-    `    fs.appendFileSync(${JSON.stringify(witness)}, JSON.stringify({ model, files: listTree(process.cwd(), '') }) + '\\n')`,
+    '    const entry = { model, files: listTree(process.cwd(), \'\') }',
+    `    if (${JSON.stringify(recordReceipt)}) {`,
+    "      let receipt = null",
+    '      try {',
+    "        const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).stdout.trim()",
+    '        const main = path.dirname(common)',
+    '        const runId = path.basename(path.dirname(process.cwd()))',
+    "        receipt = fs.readFileSync(path.join(main, '.aether', 'runs', runId, 'carry', 'task-1.result.json'), 'utf8')",
+    '      } catch { receipt = null }',
+    '      entry.receipt = receipt',
+    '    }',
+    `    fs.appendFileSync(${JSON.stringify(witness)}, JSON.stringify(entry) + '\\n')`,
     '  }',
     '  const extra = []',
     '  if (implementer) {',
+    `    if (${JSON.stringify(plantOutside)} && ${JSON.stringify(failModels)}.includes(model)) {`,
+    "      fs.mkdirSync(path.join(process.cwd(), 'docs'), { recursive: true })",
+    "      fs.mkdirSync(path.join(process.cwd(), 'notes'), { recursive: true })",
+    "      fs.mkdirSync(path.join(process.cwd(), 'src'), { recursive: true })",
+    `      fs.writeFileSync(path.join(process.cwd(), 'docs', 'Screen Shot.png'), Buffer.from(${JSON.stringify([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff])}))`,
+    "      fs.writeFileSync(path.join(process.cwd(), 'notes', 'new file.txt'), '')",
+    "      fs.writeFileSync(path.join(process.cwd(), 'src', 'a.js'), 'kept\\n')",
+    '    }',
     `    for (const spec of (${JSON.stringify(writes)}[model] || [])) extra.push('FAKE-AGY: write ' + spec)`,
     `    if (${JSON.stringify(clash)} === model) {`,
     "      const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).stdout.trim()",
@@ -531,4 +587,103 @@ test('two failures in a row: the third pair starts from the state after the seco
   assert.ok(promptOf(repo, r.json.id, 2).includes(CONTINUATION))
   assert.ok(promptOf(repo, r.json.id, 3).includes(CONTINUATION))
   assert.ok(!promptOf(repo, r.json.id, 1).includes(CONTINUATION))
+})
+
+test('a binary file and an empty file whose names have a space, outside --owns, are not carried, and the result names them (issue 68)', (t) => {
+  const { choices } = probe(t)
+  const model = modelArgOf(choices.find((entry) => entry.role === 'implementer').picked)
+  const witness = path.join(tempDir(t), 'witness.jsonl')
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: witnessingFake(t, { failModels: [model], witness, plantOutside: true }) })
+  const r = runDelegate(repo, env, { brief: writeBrief(repo, briefLines()), owns: 'src/**', tests: 'true' })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  assert.equal(r.json.continued, false)
+  assert.match(r.json.carry, /docs\/Screen Shot\.png/)
+  assert.match(r.json.carry, /notes\/new file\.txt/)
+  const turns = witnessLines(witness)
+  assert.equal(turns[1].files['docs/Screen Shot.png'], undefined)
+  assert.equal(turns[1].files['notes/new file.txt'], undefined)
+  assert.equal(turns[1].files['src/a.js'], undefined)
+  assert.ok(!promptOf(repo, r.json.id, 2).includes(CONTINUATION))
+})
+
+test('a patch whose pre-check passes can still fail in the worktree, and the receipt and the result say so (issue 68)', (t) => {
+  const { choices } = probe(t)
+  const model = modelArgOf(choices.find((entry) => entry.role === 'implementer').picked)
+  const witness = path.join(tempDir(t), 'witness.jsonl')
+  const repo = makeRepo(t)
+  const env = agyEnv(t, {
+    command: witnessingFake(t, {
+      failModels: [model],
+      writes: { [model]: ['src/attempt.js attempt-one'] },
+      witness,
+      interfere: 'clash',
+      recordReceipt: true,
+    }),
+    mutate: noQuotaCache,
+  })
+  const r = runDelegate(repo, env, { brief: writeBrief(repo, briefLines()), owns: 'src/**', tests: 'true' })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  assert.equal(r.json.continued, false)
+  assert.match(r.json.carry, /does not apply cleanly/)
+  const turns = witnessLines(witness)
+  assert.equal(JSON.parse(turns[1].receipt).applied, false)
+  assert.equal(turns[1].files['src/attempt.js'], 'from-integration\n')
+})
+
+test('an attempt refused at its start leaves the offer, and the next pair continues from it (issue 68)', (t) => {
+  const { choices } = probe(t)
+  const models = implementerModels(choices)
+  assert.ok(models.length >= 3, models.join(','))
+  const [first] = models
+  const witness = path.join(tempDir(t), 'witness.jsonl')
+  const repo = makeRepo(t)
+  const env = agyEnv(t, {
+    command: witnessingFake(t, {
+      failModels: [first],
+      writes: { [first]: ['src/attempt.js attempt-one'] },
+      witness,
+      interfere: 'poison',
+    }),
+    mutate: noQuotaCache,
+  })
+  const r = runDelegate(repo, env, { brief: writeBrief(repo, briefLines()), tests: 'true' })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  assert.equal(r.json.tried[1].cause, 'unavailable: workspace')
+  assert.equal(r.json.tried[1].continued, false)
+  assert.equal(r.json.continued, true)
+  const turns = witnessLines(witness)
+  assert.equal(turns.length, 2, JSON.stringify(turns.map((turn) => turn.model)))
+  assert.equal(turns[1].files['src/attempt.js'], 'attempt-one\n')
+  assert.ok(promptOf(repo, r.json.id, 3).includes(CONTINUATION))
+})
+
+test('when the last attempt is refused at its start and no pair remains, the arm file is cleared (issue 68)', (t) => {
+  const { choices } = probe(t)
+  const ids = implementerIds(choices)
+  assert.ok(ids.length >= 2, ids.join(','))
+  const table = pairs.loadPairs()
+  const keep = new Set(ids.slice(0, 2))
+  const only = { fetchedAt: table.fetchedAt, pairs: table.pairs.filter((pair) => pair.harness === 'claude' || keep.has(pair.id)) }
+  const pairsFile = path.join(tempDir(t, 'aether-pairs-'), 'pairs.json')
+  fs.writeFileSync(pairsFile, JSON.stringify(only))
+  const witness = path.join(tempDir(t), 'witness.jsonl')
+  const repo = makeRepo(t)
+  const env = {
+    ...agyEnv(t, {
+      command: witnessingFake(t, {
+        failModels: [pairModelArg(ids[0])],
+        writes: { [pairModelArg(ids[0])]: ['src/attempt.js attempt-one'] },
+        witness,
+        interfere: 'poison',
+      }),
+      mutate: noQuotaCache,
+    }),
+    AETHER_PAIRS_CONFIG: pairsFile,
+  }
+  const r = runDelegate(repo, env, { brief: writeBrief(repo, briefLines()), tests: 'true' })
+  assert.equal(r.json?.status, 'no-candidate', r.stdout + r.stderr)
+  assert.equal(r.json.cause, 'failed')
+  assert.equal(r.json.tried[1].cause, 'unavailable: workspace')
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'runs', r.json.id, 'carry', 'task-1.json')), false)
 })

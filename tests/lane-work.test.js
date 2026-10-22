@@ -4,6 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { makeRepo, compile, commitIn } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { ensure, diffPackage, merge, finalPackage } = require('../plugins/aether/lib/worktrees.js')
@@ -219,4 +220,153 @@ test('a patch git quotes is judged by the path it names, including one that is n
   assert.deepEqual(work.assessCarry(repo.dir, spacePatch, ['src/**']), { apply: true })
   const spaceRefused = work.assessCarry(repo.dir, spacePatch, ['notes/**'])
   assert.match(spaceRefused.reason, /owns: src\/my file\.js$/)
+})
+
+// A patch saved the way removeUnit saves one: the staged diff, bytes intact. repo.git trims, which
+// would eat a binary patch, so this keeps the buffer.
+function stagedPatch(repo, name, args) {
+  const diff = spawnSync('git', args, { cwd: repo.dir })
+  if (diff.status !== 0) throw new Error(diff.stderr.toString())
+  const dir = path.join(repo.dir, 'patches')
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, name)
+  fs.writeFileSync(file, diff.stdout)
+  return file
+}
+
+function stage(repo, rel, contents) {
+  const file = path.join(repo.dir, rel)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, contents)
+  repo.git('add', '-A')
+}
+
+// An owned file the old text parser can see, plus one outside path it cannot: a binary, an empty
+// file or a mode-only change whose name has a space. The carry must name that path.
+test('a binary file outside the owned paths is not carried, and the reason names it (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  stage(repo, 'src/a.js', 'kept\n')
+  stage(repo, 'docs/Screen Shot.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff]))
+  const patch = stagedPatch(repo, 'binary.patch', ['-c', 'core.quotePath=true', 'diff', '--cached', '--binary'])
+  const refused = work.assessCarry(repo.dir, patch, ['src/**'])
+  assert.equal(refused.apply, false)
+  assert.match(refused.reason, /docs\/Screen Shot\.png/)
+})
+
+test('an empty new file outside the owned paths is not carried, and the reason names it (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  stage(repo, 'src/a.js', 'kept\n')
+  stage(repo, 'notes/new file.txt', '')
+  const patch = stagedPatch(repo, 'empty.patch', ['diff', '--cached', '--binary'])
+  const refused = work.assessCarry(repo.dir, patch, ['src/**'])
+  assert.equal(refused.apply, false)
+  assert.match(refused.reason, /notes\/new file\.txt/)
+})
+
+test('a mode-only change of a path with a space, outside the owned paths, is not carried (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  stage(repo, 'docs/my script', 'run\n')
+  repo.git('commit', '-q', '-m', 'script')
+  fs.chmodSync(path.join(repo.dir, 'docs/my script'), 0o755)
+  stage(repo, 'src/a.js', 'kept\n')
+  const patch = stagedPatch(repo, 'mode.patch', ['diff', '--cached'])
+  const refused = work.assessCarry(repo.dir, patch, ['src/**'])
+  assert.equal(refused.apply, false)
+  assert.match(refused.reason, /docs\/my script/)
+})
+
+test('a rename from outside the owned paths is not carried, and the reason names the old path (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  stage(repo, 'notes/old file.js', 'old\n')
+  repo.git('commit', '-q', '-m', 'old')
+  fs.mkdirSync(path.join(repo.dir, 'src'), { recursive: true })
+  repo.git('mv', 'notes/old file.js', 'src/new.js')
+  const patch = stagedPatch(repo, 'rename.patch', ['-c', 'core.quotePath=true', 'diff', '--cached', '--binary'])
+  const refused = work.assessCarry(repo.dir, patch, ['src/**'])
+  assert.equal(refused.apply, false)
+  assert.match(refused.reason, /notes\/old file\.js/)
+})
+
+test('a quoted non-ASCII rename source is judged by the path it names (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  stage(repo, 'notes/café.js', 'hola\n')
+  repo.git('commit', '-q', '-m', 'cafe')
+  fs.mkdirSync(path.join(repo.dir, 'src'), { recursive: true })
+  repo.git('mv', 'notes/café.js', 'src/café.js')
+  const patch = stagedPatch(repo, 'cafe-rename.patch', ['-c', 'core.quotePath=true', 'diff', '--cached', '--binary'])
+  assert.match(fs.readFileSync(patch, 'utf8'), /\\303\\251/)
+  assert.deepEqual(work.assessCarry(repo.dir, patch, ['src/**', 'notes/**']), { apply: true })
+  const refused = work.assessCarry(repo.dir, patch, ['src/**'])
+  assert.equal(refused.apply, false)
+  assert.match(refused.reason, /notes\/café\.js/)
+})
+
+test('a removed "-- note" line inside a hunk is not a path, and the carry is not refused for it (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  stage(repo, 'src/notes.sql', 'note\n-- note\nkeep\n')
+  repo.git('commit', '-q', '-m', 'notes')
+  fs.writeFileSync(path.join(repo.dir, 'src/notes.sql'), 'note\nkeep\n')
+  repo.git('add', '-A')
+  const patch = stagedPatch(repo, 'note.patch', ['diff', '--cached'])
+  assert.match(fs.readFileSync(patch, 'utf8'), /^--- note$/m)
+  assert.deepEqual(work.assessCarry(repo.dir, patch, ['src/**']), { apply: true })
+})
+
+test('with diff.noprefix the carry is judged by the path git would write (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  stage(repo, 'src/lib/x.js', 'lib\n')
+  const patch = stagedPatch(repo, 'noprefix.patch', ['-c', 'diff.noprefix=true', 'diff', '--cached'])
+  assert.match(fs.readFileSync(patch, 'utf8'), /^diff --git src\/lib\/x\.js /m)
+  const refused = work.assessCarry(repo.dir, patch, ['src/**'])
+  assert.equal(refused.apply, false)
+  assert.match(refused.reason, /owns: lib\/x\.js$/)
+  assert.deepEqual(work.assessCarry(repo.dir, patch, ['lib/**']), { apply: true })
+})
+
+test('a patch git cannot list is not carried (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  const dir = path.join(repo.dir, 'patches')
+  fs.mkdirSync(dir)
+  const patch = path.join(dir, 'broken.patch')
+  // A `---` line the text parser would treat as a path. Git itself refuses to list the patch.
+  fs.writeFileSync(patch, 'diff --git a/src/a.js b/src/a.js\n--- a/not a patch\n')
+  const refused = work.assessCarry(repo.dir, patch, ['src/**'])
+  assert.equal(refused.apply, false)
+  assert.equal(refused.reason, work.CARRY_UNAPPLICABLE)
+})
+
+test('the pre-check runs at the top of the repository, so a conflict outside the working directory is not skipped (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  fs.writeFileSync(path.join(repo.dir, 'README.md'), 'patched\n')
+  stage(repo, 'src/b.js', 'b\n')
+  const patch = stagedPatch(repo, 'both.patch', ['diff', '--cached'])
+  repo.git('reset', '-q', '--hard')
+  fs.writeFileSync(path.join(repo.dir, 'README.md'), 'other\n')
+  repo.git('add', 'README.md')
+  repo.git('commit', '-q', '-m', 'diverge')
+  fs.mkdirSync(path.join(repo.dir, 'src'), { recursive: true })
+  const refused = work.assessCarry(path.join(repo.dir, 'src'), patch, ['README.md', 'src/**'])
+  assert.equal(refused.apply, false)
+  assert.equal(refused.reason, work.CARRY_UNAPPLICABLE)
+})
+
+test('the pre-check is against the run integration branch, not the checkout HEAD (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  fs.writeFileSync(path.join(repo.dir, 'README.md'), 'patched\n')
+  repo.git('add', 'README.md')
+  const patch = stagedPatch(repo, 'readme.patch', ['diff', '--cached'])
+  repo.git('reset', '-q', '--hard')
+  repo.git('checkout', '-q', '-b', 'conflict')
+  fs.writeFileSync(path.join(repo.dir, 'README.md'), 'other\n')
+  repo.git('add', 'README.md')
+  repo.git('commit', '-q', '-m', 'conflict')
+  repo.git('checkout', '-q', 'feature/x')
+  const runId = '20261022-100211-ab68'
+  const runDir = path.join(repo.dir, '.aether', 'runs', runId)
+  fs.mkdirSync(runDir, { recursive: true })
+  fs.writeFileSync(path.join(runDir, 'graph.json'), `${JSON.stringify({ integration: { branch: 'conflict' } })}\n`)
+  assert.deepEqual(work.assessCarry(repo.dir, patch, ['README.md']), { apply: true })
+  const refused = work.assessCarry(repo.dir, patch, ['README.md'], runId)
+  assert.equal(refused.apply, false)
+  assert.equal(refused.reason, work.CARRY_UNAPPLICABLE)
 })

@@ -172,7 +172,7 @@ function offerAfter(saved, offer, continued) {
 // reason, so the result can say why the earlier work was not carried over.
 function settleCarry(ctx, offer, owns) {
   if (!offer) return { apply: false }
-  const decision = work.assessCarry(ctx.cwd, offer, owns)
+  const decision = work.assessCarry(ctx.cwd, offer, owns, ctx.id)
   if (decision.apply) return { apply: true }
   if (decision.empty) return { apply: false }
   return { apply: false, reason: decision.reason }
@@ -223,58 +223,64 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
   let decision = null
   let lastDetail = null
   let offer = null // the newest non-empty patch a writer left, which the next pair may start from
-  for (;;) {
-    const now = nowOf(ctx.deps)
-    const latest = await lanePick.latestReadings(ctx.config, ctx.enabled, { dataDir: ctx.dataDir, now })
-    const harnesses = lanePick.harnessViews(ctx.config, ctx.enabled, { dataDir: ctx.dataDir, now, latest })
-    decision = superdelegation.choose({ pairs: ctx.table, reference, harnesses, exclude, nativeDiffers: role !== 'implementer' })
-    const call = callName(attempts + 1)
-    lanes.appendLog(ctx.dataDir, null, {
-      kind: 'choice',
-      time: now,
-      session: null,
-      run: ctx.id,
-      design: null,
-      call,
-      role,
-      requested: decision.requested,
-      reference: decision.reference,
-      picked: pickedOf(decision.picked),
-      native: decision.native,
-      reason: decision.reason,
-      candidates: decision.candidates.map(({ id, outcome, why }) => ({ id, outcome, why })),
-    })
-    if (!decision.picked) break
-    const picked = decision.picked
-    attempts += 1
-    const carry = role === 'implementer' ? settleCarry(ctx, offer, owns) : { apply: false }
-    if (role === 'implementer') work.armCarry(ctx.cwd, ctx.id, TASK_ID, carry.apply ? offer : null)
-    const attemptPrompt = carry.apply ? `${prompt}\n\n${CONTINUATION_BLOCK}` : prompt
-    const outcome = await attemptCall(ctx, { role, call, picked, prompt: attemptPrompt })
-    const started = outcome.result !== undefined || !String(outcome.cause || '').startsWith('unavailable')
-    let continued = false
-    let carryNote = carry.reason || null
-    // An attempt that never reached its worktree did not start from the earlier work, even when the
-    // prompt was going to tell it to. The receipt is what the worktree actually received.
-    if (role === 'implementer' && carry.apply && started) {
-      const applied = work.consumeCarryResult(ctx.cwd, ctx.id, TASK_ID)
-      continued = applied === true
-      if (applied === false) carryNote = work.CARRY_UNAPPLICABLE
+  try {
+    for (;;) {
+      const now = nowOf(ctx.deps)
+      const latest = await lanePick.latestReadings(ctx.config, ctx.enabled, { dataDir: ctx.dataDir, now })
+      const harnesses = lanePick.harnessViews(ctx.config, ctx.enabled, { dataDir: ctx.dataDir, now, latest })
+      decision = superdelegation.choose({ pairs: ctx.table, reference, harnesses, exclude, nativeDiffers: role !== 'implementer' })
+      const call = callName(attempts + 1)
+      lanes.appendLog(ctx.dataDir, null, {
+        kind: 'choice',
+        time: now,
+        session: null,
+        run: ctx.id,
+        design: null,
+        call,
+        role,
+        requested: decision.requested,
+        reference: decision.reference,
+        picked: pickedOf(decision.picked),
+        native: decision.native,
+        reason: decision.reason,
+        candidates: decision.candidates.map(({ id, outcome, why }) => ({ id, outcome, why })),
+      })
+      if (!decision.picked) break
+      const picked = decision.picked
+      attempts += 1
+      const carry = role === 'implementer' ? settleCarry(ctx, offer, owns) : { apply: false }
+      if (role === 'implementer') work.armCarry(ctx.cwd, ctx.id, TASK_ID, carry.apply ? offer : null)
+      const attemptPrompt = carry.apply ? `${prompt}\n\n${CONTINUATION_BLOCK}` : prompt
+      const outcome = await attemptCall(ctx, { role, call, picked, prompt: attemptPrompt })
+      const started = outcome.result !== undefined || !String(outcome.cause || '').startsWith('unavailable')
+      let continued = false
+      let carryNote = carry.reason || null
+      // An attempt that never reached its worktree did not start from the earlier work, even when the
+      // prompt was going to tell it to. The receipt is what the worktree actually received.
+      if (role === 'implementer' && carry.apply && started) {
+        const applied = work.consumeCarryResult(ctx.cwd, ctx.id, TASK_ID)
+        continued = applied === true
+        if (applied === false) carryNote = work.CARRY_UNAPPLICABLE
+      }
+      if (outcome.result !== undefined) return { result: outcome.result, picked, reason: decision.reason, tried, attempts, continued, carry: carryNote }
+      lastDetail = outcome.detail
+      if (role === 'implementer') {
+        const saved = salvagePatch(ctx, attempts)
+        const entry = { pair: picked.id, cause: outcome.cause, patch: saved.patch, continued }
+        if (carryNote) entry.carry = carryNote
+        tried.push(entry)
+        offer = offerAfter(saved, offer, continued)
+      } else {
+        tried.push({ pair: picked.id, cause: outcome.cause })
+      }
+      exclude.push(picked.id)
     }
-    if (outcome.result !== undefined) return { result: outcome.result, picked, reason: decision.reason, tried, attempts, continued, carry: carryNote }
-    lastDetail = outcome.detail
-    if (role === 'implementer') {
-      const saved = salvagePatch(ctx, attempts)
-      const entry = { pair: picked.id, cause: outcome.cause, patch: saved.patch, continued }
-      if (carryNote) entry.carry = carryNote
-      tried.push(entry)
-      offer = offerAfter(saved, offer, continued)
-    } else {
-      tried.push({ pair: picked.id, cause: outcome.cause })
-    }
-    exclude.push(picked.id)
+    return { cause: endCause({ tried, decision }), reason: lastDetail ?? decision?.reason ?? '', tried, attempts }
+  } finally {
+    // A start that refuses the attempt leaves the arm file. The loop then exits when the next
+    // choice finds no pair, and a later caller must not find that file and apply it.
+    if (role === 'implementer') work.armCarry(ctx.cwd, ctx.id, TASK_ID, null)
   }
-  return { cause: endCause({ tried, decision }), reason: lastDetail ?? decision?.reason ?? '', tried, attempts }
 }
 
 // Runs fn with env laid over process.env, restoring what was there: the libraries the command
