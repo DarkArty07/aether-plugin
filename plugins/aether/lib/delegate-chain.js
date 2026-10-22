@@ -3,15 +3,16 @@
 // The attempts of one external delegate. The router picks a pair and ranks the others (the `alternates` of the external
 // file, lib/route.js); a pair that refuses at its start has used nothing, so the next candidate gets the task. Only a
 // start refusal moves on: a call that used tokens, ran out of time, changed files or met a dirty checkout goes back to
-// the mod, which runs the agent on Claude. Each attempt writes its own outcome entry in the router's log and, when it
-// failed, the mark of its refusal; a candidate whose quota group has a live mark is not tried. A call that ran out of
+// the mod, which runs the agent on Claude. Each attempt writes its own outcome entry in the delegate log
+// (lib/delegate-log.js), with the task's id and an attempt that runs on across the task's chains, and, when it failed,
+// the mark of its refusal; a candidate whose quota group has a live mark is not tried. A call that ran out of
 // time writes the slow mark of its pair instead (lib/router-slow.js), and a candidate whose pair holds one is not tried
 // either. This module makes no call of its own: lib/delegate-calls.js does.
 
 const delegateCalls = require('./delegate-calls.js')
 const lanes = require('./lanes.js')
 const { retryCliSeconds } = require('./delegate-limits.js')
-const { appendEntry } = require('./router-log.js')
+const { appendEntry, readEntries } = require('./delegate-log.js')
 const { markRefusal, readAllMarks, refusalOf } = require('./router-marks.js')
 const { markSlow, slowPairIds } = require('./router-slow.js')
 
@@ -60,12 +61,18 @@ function attributionOf(answered, earlier) {
   return `Aether router: ${lead} ${answered.rung.model} at ${answered.rung.effort} on ${answered.harness}, run in a disposable copy of the checkout. Claude Code lists no tool uses or tokens for it because Aether handed you the answer without a Claude request.`
 }
 
+// How many outcome entries the task already has: the first attempt of this chain is the next one.
+function outcomesSoFar(dataDir, id) {
+  return readEntries(dataDir, { task: id }).filter((entry) => entry.kind === 'outcome' && entry.id === id).length
+}
+
 // Runs the primary pair of `external` and then its alternates, as far as the rules above allow. Resolves to
-// { ok, status, text, attribution, detail, marked, attempts, journaled }: status, detail and marked are the last
-// attempt's, attribution is null unless an attempt ended ok, and journaled says whether the last outcome entry was
-// written (the caller removes the external file then, not before).
+// { ok, status, text, attribution, detail, marked, changed, attempts, journaled }: status, detail and marked are the
+// last attempt's, changed the files a violation of the last attempt touched (else []), attribution is null unless an
+// attempt ended ok, and journaled says whether the last outcome entry was written.
 async function runChain({ cwd, id, session = null, external, config, dataDir }, { runDelegate = delegateCalls.runDelegate, now = Date.now } = {}) {
   const startedAt = now()
+  const before = outcomesSoFar(dataDir, id)
   const queue = [{ harness: external.harness, rung: external.rung }, ...alternatesOf(external)]
   const known = lanes.groupKnown(config)
   const attempts = []
@@ -125,7 +132,7 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
       quotaSpent: result.quotaSpent,
       detail: result.detail,
       markedUntil: marked,
-      attempt: attempts.length + 1,
+      attempt: before + attempts.length + 1,
       ...(result.timedOut === true ? { timedOut: true, slowUntil } : {}),
     })
     attempts.push({ harness, model: rung.model, effort: rung.effort, status: result.status, detail: result.detail, rung })
@@ -140,6 +147,7 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
     attribution: ok ? attributionOf(last.candidate, attempts.slice(0, -1)) : null,
     detail: last.result.detail,
     marked,
+    changed: Array.isArray(last.result.changed) ? last.result.changed : [],
     attempts: attempts.map(({ harness, model, effort, status, detail }) => ({ harness, model, effort, status, detail })),
     journaled,
   }
