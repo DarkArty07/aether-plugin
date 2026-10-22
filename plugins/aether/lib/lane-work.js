@@ -80,7 +80,8 @@ function patchHasDiff(file) {
   }
 }
 
-// Tokens of `diff --git <a> <b>`. A path git quotes (a space, a quote) is one token, unquoted.
+// Tokens of `diff --git <a> <b>`. Git quotes a path that holds a byte that is not ASCII, and writes
+// each of those bytes as octal. The bytes are the path's UTF-8, which is what Owns compares.
 function gitDiffTokens(rest) {
   const tokens = []
   let i = 0
@@ -96,43 +97,66 @@ function gitDiffTokens(rest) {
       i = j
       continue
     }
-    let out = ''
+    const bytes = []
     let j = i + 1
-    while (j < rest.length) {
+    while (j < rest.length && rest[j] !== '"') {
       if (rest[j] === '\\') {
         const n = rest[j + 1]
         if (n >= '0' && n <= '7') {
           const oct = /^[0-7]{1,3}/.exec(rest.slice(j + 1, j + 4))
-          out += String.fromCharCode(parseInt(oct[0], 8))
-          j += 1 + oct[0].length
-          continue
+          if (oct) {
+            bytes.push(parseInt(oct[0], 8))
+            j += 1 + oct[0].length
+            continue
+          }
         }
-        out += n === 'n' ? '\n' : n === 't' ? '\t' : (n ?? '')
+        if (n === undefined) break
+        const mapped = n === 'n' ? '\n' : n === 't' ? '\t' : n
+        for (const byte of Buffer.from(mapped, 'utf8')) bytes.push(byte)
         j += 2
         continue
       }
-      if (rest[j] === '"') {
-        j += 1
-        break
-      }
-      out += rest[j]
+      for (const byte of Buffer.from(rest[j], 'utf8')) bytes.push(byte)
       j += 1
     }
-    tokens.push(out)
+    if (rest[j] === '"') j += 1
+    tokens.push(Buffer.from(bytes).toString('utf8'))
     i = j
   }
   return tokens
 }
 
-// Every path a patch touches, from both sides of each `diff --git`. `/dev/null` is not a path.
+// The path on a `---`, `+++`, `rename` or `copy` line. A tab, when git wrote one, starts the timestamp.
+// A quoted path is the same octal form as a `diff --git` token.
+function headerPath(rest) {
+  const cut = rest.split('\t')[0]
+  const token = cut.startsWith('"') ? (gitDiffTokens(cut)[0] ?? '') : cut
+  return token.startsWith('a/') || token.startsWith('b/') ? token.slice(2) : token
+}
+
+function addPatchPath(paths, file) {
+  const normalized = String(file).replace(/\\/g, '/')
+  if (normalized === '' || normalized === '/dev/null' || normalized === 'dev/null') return
+  paths.add(normalized)
+}
+
+// Every path a patch touches. An unquoted path with a space cannot be split out of `diff --git`
+// (git quotes bytes that are not ASCII, not spaces), so that line counts only when it has two
+// tokens. The `---`, `+++`, rename and copy lines name the path either way. `/dev/null` is not one.
 function patchPaths(text) {
   const paths = new Set()
   for (const line of String(text).split('\n')) {
-    if (!line.startsWith('diff --git ')) continue
-    for (const token of gitDiffTokens(line.slice('diff --git '.length))) {
-      const file = token.startsWith('a/') || token.startsWith('b/') ? token.slice(2) : token
-      if (file !== '' && file !== 'dev/null') paths.add(file.replace(/\\/g, '/'))
+    if (line.startsWith('diff --git ')) {
+      const tokens = gitDiffTokens(line.slice('diff --git '.length))
+      if (tokens.length === 2) for (const token of tokens) addPatchPath(paths, headerPath(token))
+      continue
     }
+    if (line.startsWith('--- ') || line.startsWith('+++ ')) {
+      addPatchPath(paths, headerPath(line.slice(4)))
+      continue
+    }
+    const renamed = /^(?:rename|copy) (?:from|to) (.*)$/.exec(line)
+    if (renamed) addPatchPath(paths, headerPath(renamed[1]))
   }
   return [...paths]
 }
@@ -155,7 +179,9 @@ function patchApplies(cwd, patchFile) {
     if (read.status !== 0) return false
     return spawnSync('git', ['apply', '--cached', '--check', patchFile], { cwd, env, encoding: 'utf8' }).status === 0
   } finally {
+    // The check is the only user of this index. A lock left behind would make the next check refuse the patch.
     fs.rmSync(env.GIT_INDEX_FILE, { force: true })
+    fs.rmSync(`${env.GIT_INDEX_FILE}.lock`, { force: true })
   }
 }
 

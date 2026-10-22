@@ -158,15 +158,18 @@ function salvagePatch(ctx, attempt) {
 }
 
 // The latest patch is already the whole diff from the base, including whatever that attempt
-// continued from. Offering it replaces the previous offer: the next pair applies one patch.
-function offerAfter(saved, offer) {
+// continued from. Offering it replaces the previous offer, so the next pair applies one patch.
+// An empty patch drops the offer only when this attempt started from that work and left the tree
+// clean. An attempt that never received it leaves the offer for the pair after it.
+function offerAfter(saved, offer, continued) {
   if (saved.error) return null
   if (saved.patch && work.patchHasDiff(saved.patch)) return saved.patch
-  if (saved.patch) return null
+  if (saved.patch && continued) return null
   return offer
 }
 
-// apply when the next pair should start from offer. reason when a patch was left and a guard refused it.
+// The next pair starts from offer only when both guards accept that patch. A refusal is named in
+// reason, so the result can say why the earlier work was not carried over.
 function settleCarry(ctx, offer, owns) {
   if (!offer) return { apply: false }
   const decision = work.assessCarry(ctx.cwd, offer, owns)
@@ -265,7 +268,7 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
       const entry = { pair: picked.id, cause: outcome.cause, patch: saved.patch, continued }
       if (carryNote) entry.carry = carryNote
       tried.push(entry)
-      offer = offerAfter(saved, offer)
+      offer = offerAfter(saved, offer, continued)
     } else {
       tried.push({ pair: picked.id, cause: outcome.cause })
     }

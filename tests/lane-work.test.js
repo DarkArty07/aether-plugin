@@ -191,3 +191,32 @@ test('finishImplementer refuses a unit that has no worktree, and never commits i
   assert.throws(() => work.finishImplementer(repo.dir, args.runId, 'task-1'), /is not a worktree/)
   assert.equal(repo.git('log', '-1', '--format=%s'), 'base')
 })
+
+// Git's default quoting writes a non-ASCII path as the octal bytes of its UTF-8. Owns compares the path.
+test('a patch git quotes is judged by the path it names, including one that is not ASCII (issue 68)', (t) => {
+  const repo = makeRepo(t)
+  const file = path.join(repo.dir, 'src', 'café.js')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, 'hola\n')
+  repo.git('add', '-A')
+  const quoted = `${repo.git('-c', 'core.quotePath=true', 'diff', '--cached', '--binary')}\n`
+  assert.match(quoted, /\\303\\251/)
+  const patchDir = path.join(repo.dir, 'patches')
+  fs.mkdirSync(patchDir)
+  const patch = path.join(patchDir, 'quoted.patch')
+  fs.writeFileSync(patch, quoted)
+  assert.deepEqual(work.assessCarry(repo.dir, patch, ['src/café.js']), { apply: true })
+  const refused = work.assessCarry(repo.dir, patch, ['notes/**'])
+  assert.equal(refused.apply, false)
+  assert.match(refused.reason, /src\/café\.js/)
+
+  fs.writeFileSync(path.join(repo.dir, 'src', 'my file.js'), 'hola\n')
+  repo.git('add', '-A')
+  const spaced = `${repo.git('-c', 'core.quotePath=true', 'diff', '--cached', '--', 'src/my file.js')}\n`
+  assert.match(spaced, /a\/src\/my file\.js/)
+  const spacePatch = path.join(patchDir, 'space.patch')
+  fs.writeFileSync(spacePatch, spaced)
+  assert.deepEqual(work.assessCarry(repo.dir, spacePatch, ['src/**']), { apply: true })
+  const spaceRefused = work.assessCarry(repo.dir, spacePatch, ['notes/**'])
+  assert.match(spaceRefused.reason, /owns: src\/my file\.js$/)
+})
