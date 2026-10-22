@@ -56,7 +56,7 @@ const wide = (text) => view.cells(text)
 test('the pane opens with the title, the options on one line, and then the action row, above the quota', () => {
   const lines = textOf(draw(120))
   assert.equal(lines[0], 'Aether · other harnesses')
-  assert.equal(lines[1], 'superdelegation ON · router command · decider haiku · harnesses agy, grok')
+  assert.equal(lines[1], 'superdelegation ON · harnesses agy, grok')
   assert.equal(lines[2], '[action row]')
   assert.ok(lines.indexOf('[action row]') < lines.findIndex((text) => /^agy /.test(text)), 'the buttons come before the first harness')
   assert.equal(draw(120).filter((one) => one.action).length, 1)
@@ -78,7 +78,7 @@ test('the key hint is the last line, and only while the pane has the keyboard', 
 
 test('with superdelegation off the pane says plainly that nothing leaves Claude, and still shows the quota', () => {
   const lines = textOf(draw(80, { settings: settings({ superdelegation: false }) }))
-  assert.match(lines[1], /^superdelegation OFF · router record/)
+  assert.match(lines[1], /^superdelegation OFF · harnesses /)
   assert.ok(lines.some((text) => /Superdelegation is OFF: nothing leaves Claude/.test(text)))
   assert.ok(lines.some((text) => /Gemini Models/.test(text)))
   assert.equal(toneOf(draw(80, { settings: settings({ superdelegation: false }) }), 'superdelegation OFF'), 'warn')
@@ -86,16 +86,15 @@ test('with superdelegation off the pane says plainly that nothing leaves Claude,
 })
 
 test('the options shown are the ones the session uses', () => {
-  const lines = textOf(draw(120, { settings: view.settingsOf({ superdelegation: true, router: 'Command', decider: 'JEV', harnesses: 'gork' }) }))
-  assert.equal(lines[1], 'superdelegation ON · router command · decider haiku · harnesses agy')
+  const lines = textOf(draw(120, { settings: view.settingsOf({ superdelegation: true, harnesses: 'gork' }) }))
+  assert.equal(lines[1], 'superdelegation ON · harnesses agy')
 })
 
 test('the options go on to more lines instead of being cut, at each width', () => {
-  const lines = textOf(draw(60))
-  assert.equal(lines[1], 'superdelegation ON · router command · decider haiku')
-  assert.equal(lines[2], 'harnesses agy, grok')
-  const narrow = textOf(draw(40))
-  assert.deepEqual(narrow.slice(1, 3), ['superdelegation ON · router command', 'decider haiku · harnesses agy, grok'])
+  assert.equal(textOf(draw(40))[1], 'superdelegation ON · harnesses agy, grok')
+  const narrow = textOf(draw(39))
+  assert.deepEqual(narrow.slice(1, 3), ['superdelegation ON', 'harnesses agy, grok'])
+  assert.equal(narrow[3], '[action row]')
 })
 
 test('the enabled harnesses come first, in the order of the option, and the rest follow', () => {
@@ -308,7 +307,7 @@ test('an error wraps onto up to three lines, and the last is cut', () => {
 })
 
 test('the bars shrink with the width, and every line fits it, from 120 columns down to 40', () => {
-  const long = delegatesOf(view.parseDelegates({ exitCode: 0, stdout: JSON.stringify({ delegations: [{ time: NOW - 1, description: 'A description that is much too long for a narrow pane to show whole', fallback: 'decider: timeout', ranOn: { harness: 'claude', model: 'claude-haiku-5-5', effort: 'high' } }] }) }).value)
+  const long = delegatesOf(view.parseDelegates({ exitCode: 0, stdout: JSON.stringify({ delegations: [{ time: NOW - 1, description: 'A description that is much too long for a narrow pane to show whole', fallback: 'agy: timeout', ranOn: { harness: 'claude', model: 'claude-haiku-5-5', effort: 'high' } }] }) }).value)
   for (const columns of [120, 80, 76, 60, 50, 40]) {
     for (const text of textOf(draw(columns, { delegates: long, isFocused: true }))) assert.ok(wide(text) <= columns, `${columns} columns: "${text}"`)
   }
@@ -379,7 +378,7 @@ test('whatever the room, the title, the options, the action row and a line for e
         assert.equal(shown[0], 'Aether · other harnesses', where)
         assert.ok(shown.some((text) => /^superdelegation (ON|OFF)/.test(text)), `${where}: the options`)
         assert.ok(shown.includes('[action row]'), `${where}: the action row`)
-        const lastOption = Math.max(...shown.map((t, i) => (/^(superdelegation|router|decider|harnesses) /.test(t) ? i : 0)))
+        const lastOption = Math.max(...shown.map((t, i) => (/^(superdelegation|harnesses) /.test(t) ? i : 0)))
         assert.equal(shown.indexOf('[action row]'), lastOption + 1, `${where}: the action row is right under the options`)
         for (const harness of here.harnesses) {
           const groups = quota()[harness].result.value.harness.groups
@@ -483,13 +482,13 @@ test('when even that does not fit, one line for each enabled group comes first, 
   const text = textOf(lines)
   assert.equal(text[0], 'Aether · other harnesses')
   assert.ok(text.slice(0, 11).includes('[action row]'))
-  assert.match(text[5], /^agy {2}Gemini Models {2}dry until /)
-  assert.match(text[6], /^agy {2}Claude and GPT models {2}usable · weekly 33% · 5h 100%$/)
+  assert.match(text[4], /^agy {2}Gemini Models {2}dry until /)
+  assert.match(text[5], /^agy {2}Claude and GPT models {2}usable · weekly 33% · 5h 100%$/)
   const marker = text.findIndex((t) => /^… \d+ more rows \(↓ scrolls\)$/.test(t))
   assert.equal(marker, 10, 'it is the last row shown')
   assert.equal(Number(/\d+/.exec(text[marker])[0]), text.length - marker - 1, 'and counts the rows after it')
   assert.ok(text.slice(marker + 1).includes('r renews · x closes · Esc leaves'), 'the rows below are there to scroll to')
-  const tones = lines.slice(5, 7).map((one) => one.parts.map((p) => p.tone))
+  const tones = lines.slice(4, 6).map((one) => one.parts.map((p) => p.tone))
   assert.deepEqual(tones[1].filter((t) => t !== 'plain'), ['title', 'ok', 'ok', 'ok'])
 })
 
