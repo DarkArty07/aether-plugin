@@ -2,7 +2,7 @@
 
 // The list-price spend of one session, whole (`aether-report --spend`): every request the usage meter kept
 // (usage/<id>/<n>.json), every call of another harness (lanes/<id>.jsonl) and every `outcome` of the router's
-// journal that belongs to the id, priced from config/prices.json and added into one Tally. A prune keeps what it
+// old journal and of the delegate log that belongs to the id, priced from config/prices.json and added into one Tally. A prune keeps what it
 // deletes as a summary (spend/<id>.json, written by lib/spend-archive.js); the figure is that summary plus what is
 // still on disk. This module only reads. It reads each source on its own: readUsage and readLog drop what they
 // cannot read, and a dropped request is a dollar that vanishes.
@@ -13,6 +13,7 @@ const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
 const { laneTokens } = require('./lanes.js')
 const { journalFile } = require('./router-log.js')
+const delegateLog = require('./delegate-log.js')
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/
 // A gap strictly longer than this between two events of a session is a resumption.
@@ -267,16 +268,15 @@ function timeOfBroken(line) {
   return found ? Number(found[1]) : null
 }
 
-// The `outcome` entries of session `id` in the router's journal, one event each (the journal writes one per attempt,
-// and attempts share the delegation's id). The journal is one file for every session and nobody prunes it, so a line
-// that cannot be read makes this session incomplete only when it falls inside the session's span: the readable lines
-// that are the session's, of any kind. By its time when the broken line shows one, by its place in the file when not.
-function readOutcomeEvents(dataDir, id, { prices = loadPrices() } = {}) {
-  const out = { events: [], complete: true }
-  if (!isSessionId(id)) return out
+// The `outcome` entries of session `id` in one JSON-lines file, one event each (a delegation writes one per attempt, and
+// attempts share its id). Both files hold every session's lines and nobody prunes them, so a line that cannot be read
+// makes this session incomplete only when it falls inside the session's span: the readable lines that are the
+// session's, of any kind. By its time when the broken line shows one, by its place in the file when not.
+function readOutcomesIn(file, id, prices) {
+  const out = { events: [], keys: [], complete: true }
   let text
   try {
-    text = fs.readFileSync(journalFile(dataDir), 'utf8')
+    text = fs.readFileSync(file, 'utf8')
   } catch (err) {
     if (!missing(err)) out.complete = false
     return out
@@ -302,13 +302,30 @@ function readOutcomeEvents(dataDir, id, { prices = loadPrices() } = {}) {
       span.early = Math.min(span.early, entry.time)
       span.late = Math.max(span.late, entry.time)
     }
-    if (entry.kind === 'outcome') out.events.push(harnessEvent('outcome', entry, prices))
+    if (entry.kind === 'outcome') {
+      out.events.push(harnessEvent('outcome', entry, prices))
+      out.keys.push(JSON.stringify([entry.id, entry.attempt]))
+    }
   })
   const timed = span.early <= span.late
   for (const line of broken) {
     const inside = line.time !== null && timed ? line.time >= span.early && line.time <= span.late : line.position >= span.first && line.position <= span.last
     if (inside) out.complete = false
   }
+  return out
+}
+
+// The `outcome` entries of session `id` in the two sources of a delegate's spend: the old router journal (read only)
+// and the delegate log. A pair of id and attempt that both hold counts once, as the delegate log has it; an entry
+// with no attempt is the pair of its id and an undefined attempt.
+function readOutcomeEvents(dataDir, id, { prices = loadPrices() } = {}) {
+  const out = { events: [], complete: true }
+  if (!isSessionId(id)) return out
+  const old = readOutcomesIn(journalFile(dataDir), id, prices)
+  const fresh = readOutcomesIn(delegateLog.logFile(dataDir), id, prices)
+  const known = new Set(fresh.keys)
+  out.events = [...old.events.filter((_, i) => !known.has(old.keys[i])), ...fresh.events]
+  out.complete = old.complete && fresh.complete
   return out
 }
 
