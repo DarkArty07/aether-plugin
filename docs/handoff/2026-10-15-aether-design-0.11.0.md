@@ -24,10 +24,10 @@
 - **A swarm's final review still does not fit in 30 turns** (issue 011). Slices with a turn budget in the message finished in 25 to 43 calls, in about 5 minutes and US$ 5.4 for the four.
 - **The Writer at `xhigh` spent 60 turns and 420 thousand tokens without writing**, which supports A53.
 - **The Lead on Opus 5.5 at `max` was the session's largest cost:** US$ 25 of about US$ 59 at list prices. Lowering the Lead's effort after measuring it stays a proposal (P7).
-- [Issue 014](../issues/014-autonomy-cannot-verify-an-owner-message-sent-mid-turn.md): a message the owner sends mid-turn does not count for `aether-autonomy`, so this run kept a manual diary.
-- [Issue 015](../issues/015-one-odd-quota-reading-marks-a-lane-group-dry-for-three-days.md): one odd reading marked agy's Gemini group dry for three days. The mark was deleted with the owner's yes.
-- [Issue 016](../issues/016-agy-does-not-offer-gemini-4-argon-so-every-external-seat-falls-back.md): agy 1.3.5 does not offer Gemini 4 Argon, so the `balanced` seats are native in practice. agy moved to 1.3.6 the same day; whether it offers Argon is not checked.
-- [Issue 017](../issues/017-revoking-a-one-time-grant-removes-every-grant-of-its-class.md): revoking a one-time grant removes every grant of its class (`lib/autonomy.js:157`). Found when this release's session grants were revoked.
+- [Issue 014](https://github.com/DarkArty07/aether-plugin/issues/18): a message the owner sends mid-turn does not count for `aether-autonomy`, so this run kept a manual diary.
+- [Issue 015](https://github.com/DarkArty07/aether-plugin/issues/19): one odd reading marked agy's Gemini group dry for three days. The mark was deleted with the owner's yes.
+- [Issue 016](https://github.com/DarkArty07/aether-plugin/issues/20): agy 1.3.5 does not offer Gemini 4 Argon, so the `balanced` seats are native in practice. agy moved to 1.3.6 the same day; whether it offers Argon is not checked.
+- [Issue 017](https://github.com/DarkArty07/aether-plugin/issues/22): revoking a one-time grant removes every grant of its class (`lib/autonomy.js:157`). Found when this release's session grants were revoked.
 
 ## 3. What is left
 

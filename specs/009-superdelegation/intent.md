@@ -2,7 +2,7 @@
 
 - **Dueño:** Christopher
 - **Fecha:** 2026-10-19 (tercera versión, el mismo día; la segunda trataba la velocidad como meta, el "cercano" por niveles y la cuota por saldo entre horas, y el dueño la corrigió punto por punto)
-- **Issue de origen:** [031](../../docs/issues/031-almost-no-work-leaves-claude-because-the-lane-table-and-the-seat-profiles-give-other-harnesses-no-permission.md). El dueño dijo «issue 032» al abrir la sesión, pero describió lo del 031; el 032 (la ventana del workflow que muestra Haiku con 0 tokens) es otro y queda fuera.
+- **Issue de origen:** [031](https://github.com/DarkArty07/aether-plugin/issues/52). El dueño dijo «issue 032» al abrir la sesión, pero describió lo del 031; el 032 (la ventana del workflow que muestra Haiku con 0 tokens) es otro y queda fuera.
 - **Confirmada por el dueño:** el Lead escribió de vuelta la intención y la política; el dueño respondió «lo que disjite esta bien pensado a mi aprcer», decidió los puntos abiertos (sección 5) y preguntó «algo mas que necesites de mi? o ya me entendiste?». Después pidió adaptarla a Muse (14) y dio permiso para implementarla solo y para las pruebas reales (15). Ese permiso llegó mientras el Lead trabajaba y `aether-autonomy start` no lo reconoce (solo lee los mensajes normales del chat), así que la corrida no quedó abierta en el registro: el Lead trabaja con las palabras del dueño y los topes por defecto (8 h, US$ 50).
 - **Evidencia:** las cifras de Artificial Analysis por par de modelo y effort, leídas el 2026-10-19: [evidence/README.md](evidence/README.md).
 - **Otra sesión** trabaja Muse Code como harness (`specs/008-muse-harness`, rama `feat/muse-harness`). Esta tarjeta es la 009 para no chocar con la 008.

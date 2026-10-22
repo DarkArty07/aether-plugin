@@ -332,7 +332,7 @@ test('C5: docs/index.md links every other page, and every document the README li
   const listed = [
     'docs/roadmap/2026-10-10-radar.md', 'docs/superpowers/specs/2026-10-07-aether-plugin-design.md', 'docs/superpowers/specs',
     'docs/superpowers/plans', 'docs/evaluations', 'docs/claude-code-research.md', 'docs/decisions.md',
-    'docs/evaluations/seats/README.md', 'docs/aether-retrospective.md', 'docs/models/README.md', 'docs/issues',
+    'docs/evaluations/seats/README.md', 'docs/aether-retrospective.md', 'docs/models/README.md',
   ]
   for (const rel of listed) assert.ok(linked.has(rel), `docs/index.md links ${rel}`)
   assert.ok([...linked].some((rel) => rel.startsWith('specs/001-design-seats')), 'docs/index.md links specs/001-design-seats/')

@@ -44,4 +44,4 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 - [Evaluation of the design seats](evaluations/seats/README.md): how an external model is compared with the native agent of a seat, and the harness that runs it.
 - [Aether Agents retrospective](aether-retrospective.md): what Aether was, and what failed and why.
 - [Models](models/README.md): the index of the models the harnesses offer, from Artificial Analysis and the harnesses' own listings, with what each is for.
-- [Issues](issues/): the issues found by using Aether, each with its status and the version that addressed it.
+- [Issues](https://github.com/DarkArty07/aether-plugin/issues): the bugs, observations and requests for improvement found by using Aether, each with its evidence and status. They are the only list: the files that once recorded them are now issues #1 to #68.

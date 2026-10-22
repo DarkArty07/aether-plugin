@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **Aether mode.** Every task suits the swarm, and all three run in one wave. Run it with `--no-lanes`: issue 007 (`docs/issues/007-lane-treats-agy-idle-notice-as-a-failure.md`) makes a lane waste quota and money until it is fixed. This is a contract plan (A10): Tasks 1 and 3 give the interfaces, the failing tests in full and the acceptance, and the implementer writes the code. Task 2 gives the exact text, because the text is the requirement. After the swarm, the Lead runs the migration in "After the swarm", in order.
+> **Aether mode.** Every task suits the swarm, and all three run in one wave. Run it with `--no-lanes`: issue 007 (https://github.com/DarkArty07/aether-plugin/issues/7) makes a lane waste quota and money until it is fixed. This is a contract plan (A10): Tasks 1 and 3 give the interfaces, the failing tests in full and the acceptance, and the implementer writes the code. Task 2 gives the exact text, because the text is the requirement. After the swarm, the Lead runs the migration in "After the swarm", in order.
 
 **Goal:** `aether-mode` loads a release installed apart from the project, so that work on the project never changes what the owner runs until an explicit, local install. Rollback is one command, `aether-mode --dev` loads the development tree on purpose, and the API key lives in the data directory.
 

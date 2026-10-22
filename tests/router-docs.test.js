@@ -44,7 +44,7 @@ test('the levels section says how the bands are cut and what is not measured on 
 
 test('C14: the other uses found are listed with their measurements, and none is built', () => {
   const section = page.slice(page.indexOf('## Other uses found, not built'))
-  for (const text of ['45 %', '57 commands', '55 %', '22 of 40', '53 %', '98 tasks', '255', '021-agy-refuses-with-individual-quota-reached-while-usage-shows-balance.md']) assert.ok(section.includes(text), text)
+  for (const text of ['45 %', '57 commands', '55 %', '22 of 40', '53 %', '98 tasks', '255', 'aether-plugin/issues/32']) assert.ok(section.includes(text), text)
   assert.ok(/none of them is built/i.test(section))
   for (const built of ['lib/guard-decider', 'lib/plan-lint', 'lib/graders']) assert.ok(!fs.existsSync(path.join(ROOT, 'plugins', 'aether', `${built}.js`)), built)
 })
