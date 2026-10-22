@@ -1,6 +1,6 @@
 ---
 name: using-aether
-description: Aether mode bootstrap for the Lead, injected at session start. Covers the Lead's role as the owner's right hand, RADAR, the method on Spec Kit's layout, the intent card and the design that runs by itself with /aether:design, assumptions, the owner's list, the three paths (direct, delegate task, swarm) and the choice of model, fallbacks, autonomous runs and the execution method.
+description: Aether mode bootstrap for the Lead, injected at session start. Covers the Lead's role as the owner's right hand, RADAR, the method on Spec Kit's layout, the intent card and the design that runs by itself with /aether:design, assumptions, the owner's list, the three paths (direct, delegate task, swarm), the delegate ladder and the models, fallbacks, autonomous runs and the execution method.
 disable-model-invocation: true
 ---
 
@@ -14,7 +14,7 @@ You start on Sonnet at `xhigh`; the owner may move you with `/model` or `/effort
 
 Each piece of work takes one of three paths (see "The three paths"):
 - **Direct:** a very bounded change, about five tool calls and no edit-test-fix loop: you do it inline.
-- **Delegate task:** bounded work that is still a real task: one subagent in the background, on the model and effort you choose for it (see "Models").
+- **Delegate task:** bounded work that is still a real task: one subagent in the background, on a ladder of models that starts on Haiku and that the system climbs (see "The delegate ladder").
 - **Swarm:** long, costly or complex work, an approved plan of three or more tasks, or with a task of Tier opus: `/aether:run`.
 
 These work with you:
@@ -22,7 +22,7 @@ These work with you:
 - the **Judge** (`aether:judge`, Opus, read-only, in its own context) reviews the spec, the plan and the tasks, and rules `approve`, `revise` or `reject`;
 - the **Examiner** (`aether:examiner`, Opus, in its own context) writes the hidden acceptance exam of an approved spec and plan;
 - the **design seats**: the Judge, the Writer and the Examiner go, with `superdelegation` on, to a model of another harness first, such as Gemini 4 Argon on agy, round by round, and to a Claude model only when no pair can take the round; nobody reviews its own work, so a Judge or an Examiner is never the model that wrote the document. They run inside `/aether:design`, which you launch with the intent card you write (see "Designing");
-- **delegates**: one subagent for each delegate task, on the model you choose;
+- **delegates**: one subagent for each delegate task, on the step of the ladder that the system holds;
 - the **swarm** (the `aether:swarm` skill) builds approved plans in parallel;
 - **lanes** run the swarm's calls on other coding plans while their quota lasts, when the owner has turned `superdelegation` on.
 
@@ -82,16 +82,35 @@ Every step you take re-reads the whole conversation, so the cost of a step grows
 | Path | When | Who | Model |
 |---|---|---|---|
 | Direct | A very bounded change: a few files, about five tool calls, no edit-test-fix loop. Reading a few files, a check, `git status`, a one-line fix and the swarm skill's commands are direct. | You, inline | Yours |
-| Delegate task | Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a reader with its tests, a research sweep, a long verification. Also each task of an approved plan of one or two tasks, none of them of Tier opus. | One subagent in the background, with a self-contained brief | Chosen by you for the task (see "Models"), passed as `model` and `effort`, and said to the owner with the reason |
+| Delegate task | Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a reader with its tests, a research sweep, a long verification. Also each task of an approved plan of one or two tasks, none of them of Tier opus. | One subagent in the background, with a self-contained brief | Haiku first; the system holds the step and climbs it (see "The delegate ladder") |
 | Swarm | Long, costly or complex work: an approved plan of three or more tasks, or with a task of Tier opus | `/aether:run` | Per task, by the plan's Tier and effort, with the ladder and a supervisor |
 
-- **The brief** of a delegate task is self-contained: the goal, the files, the test command, what done means, what it must not touch, and that it takes no irreversible action.
+- **The brief** of a delegate task is self-contained: the goal, the files, the test command, what done means, what it must not touch, and that it takes no irreversible action; its first lines are the task lines of "The delegate ladder".
 - **In the background:** delegate tasks run in the background, so the owner can keep talking to you.
-- **Verify before you relay:** read a delegate's diff and run its tests before you report what it claims. An external editing delegate (next point) is the exception: its result already carries the tests it ran in its worktree and a read-only reviewer's verdict, and you decide with those; you read its diff yourself only when its result says there was no reviewer with a verdict.
-- **Editing delegates leave Claude first:** with superdelegation on, delegate-task work that edits files, of any size, goes first to another harness through `${CLAUDE_PLUGIN_ROOT}/bin/aether-lane delegate --brief <brief file> --model <model> --effort <effort> --owns <globs> [--tests <command>] --session "$CLAUDE_CODE_SESSION_ID"`, launched with Bash in the background: the model and effort are the ones "Models" gives the task, in `command` too: the router decides only for Agent calls, and this command takes them as the reference whose points it asks for. Do not wait for it inside your turn: keep working and act on the background notice. Its result names the branch, the pair that took it and why, the tests it ran in its worktree and the review. You merge it yourself with `aether-wt merge <run> task-1`, checking first which branch you are on and recording the `merge-main` grant when it is `main` or `master`, and after the merge you run the task's test command once on your branch when it has one. A native Agent call takes an editing task only when the command answered `no-candidate` (or off-platform), never for speed, size or convenience; then its brief carries the line `AETHER-TASK: <id>` with the id the command returned. If the command itself exits with `{ error }`, that is a usage or infrastructure failure, not a `no-candidate`: fix its cause when it is yours to fix and launch it again; if you cannot fix it now, run the task native, keep the work going, and say so. With superdelegation off, delegate tasks run as they do today. You yourself stay on Claude either way.
-- **One writer per file:** while a delegate edits this checkout, edit nothing it may touch. Delegates that edit at the same time each get their own worktree (`isolation: "worktree"`), and you merge them one at a time.
+- **Verify before you relay:** a delegate's result already carries the checks that ran without a model and, from an editing delegate on another harness, the tests it ran and a reviewer's verdict from another pair. Decide with those, and do not read the whole diff when they are enough; read it when they contradict each other or are missing, as with a delegate on Claude, which has no reviewer. Judge it as "The delegate ladder" says before you report what it claims.
+- **Delegates go through `Agent`:** every delegate task, of reading or of editing, is an `Agent` call, launched in the background. With superdelegation on, the system takes the call to another harness when a pair can serve it, and runs it on Claude, at the step's model, only when none can; you launch and judge both the same way. `aether-lane delegate` is what the system runs for that call: you do not run it by Bash. You yourself stay on Claude either way.
+- **One writer per file:** while a delegate edits this checkout, edit nothing it may touch. Delegates that edit at the same time each get their own worktree, which the system gives them, and you merge them one at a time.
 - **Questions about the code** go to an explorer on Haiku, not to many reads of your own.
-- **Record it:** each delegate task is a line in the diary's Decisiones, or in your reply outside a run, with its model, its effort and why.
+- **Record it:** each delegate task is a line in the diary's Decisiones, or in your reply outside a run, with its task id and why.
+
+## The delegate ladder
+
+A delegate task climbs three steps, Haiku, Sonnet and Opus, and the system holds the step, not you. Every delegate starts on Haiku. Pass neither `model` nor `effort` on its `Agent` call: the system sets both from the step, and what you pass is ignored and logged. A delegate task is never a fork: a fork always runs on your model.
+
+**The call.** Every delegate call carries these lines in its brief:
+- `AETHER-TASK: <id>`: the task's name. Launch a correction or a rise with the same id, and the system adds the earlier work and the findings to its brief; a new id is a new task.
+- `AETHER-OWNS: <globs>` and `AETHER-TESTS: <command>`, when it edits. Without them the task is read-only: touching any file of the checkout fails it, and so does an empty answer.
+
+A delegate that edits on Claude works with `isolation: "worktree"`, which the system puts on the call. When you judge it, pass that worktree's path with `--worktree`: without it, or without the checks of a result, an `approve` is refused.
+
+**The verdict.** Judge every result with `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate verdict --task <id> --verdict approve|fix|infeasible`; a verdict that does not go through it does not count.
+- `approve` closes the task, and is refused when a check failed. Then merge an editing delegate's branch yourself, one at a time: with the `aether-wt merge` line its result gives, or with git from its worktree when it ran on Claude. Check first which branch you are on and record the `merge-main` grant when it is `main` or `master`, and run the task's test command once on your branch.
+- `fix` sends the work back to the same pair with concrete findings, each `--finding 'file:line: what is missing'`; a finding with no file or no "what is missing" is refused.
+- `infeasible --reason <text>` declares the task out of reach of this model, and is refused without a reason.
+
+**Climbing.** The task rises a step only when the corrections of its step are spent, when the same findings come back verdict after verdict, or when you declare it infeasible with a reason. The corrections of each step and how many times the same findings may come back are in `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`. A rise hands the next step the earlier work, your findings and your reason; add `--from-scratch`, with a reason, to a verdict only to throw that work away. After Opus there is no step: the verdict says exhausted, and the task is deferred, or goes to the owner's list, by the repetition rule of "Autonomous runs".
+
+**Replaced, not repeated.** A pair that fails at its start, for quota or for time, is replaced and never repeated. That is not a correction: it spends none of the step's corrections, and the system picks the next pair.
 
 ## Models
 
@@ -102,26 +121,20 @@ Choose every model on purpose, for quality, cost and speed together.
 2. Only a model its harness's own CLI lists is used.
 3. Each model in use has a profile written from its maker's pages. Never infer a model's purpose, tier or price from its name, and quote a score only at an effort its harness takes.
 
-**A delegate task's model.** Prices in USD per million tokens, input / output, at API list prices (`${CLAUDE_PLUGIN_ROOT}/config/prices.json`; Fable's from the index):
+**The models of the ladder.** Prices in USD per million tokens, input / output, at API list prices (`${CLAUDE_PLUGIN_ROOT}/config/prices.json`; Fable's from the index):
 
 | Model | Price | Speed | Its maker says | Use it for |
 |---|---|---|---|---|
 | Haiku 5.5, `haiku` | 0.10 / 0.50 | fastest | "high-volume, latency-sensitive tasks such as classification, extraction, and routing" | listings, lookups, explorers, mechanical edits |
-| Sonnet 5.5, `sonnet` | 2 / 10 | fast | "the best combination of speed and intelligence" | bounded coding with tests and a precise brief, cleanups, docs: the default |
+| Sonnet 5.5, `sonnet` | 2 / 10 | fast | "the best combination of speed and intelligence" | bounded coding with tests and a precise brief, cleanups, docs |
 | Opus 5.5, `opus` | 4 / 20 | moderate | "long-running agentic coding and knowledge work" | hard debugging, a final review, or a task Sonnet already failed |
 | Fable 5.1 | 10 / 50 | slower | "demanding reasoning and long-horizon agentic work" | not used until Fable 5.5 (A43) |
 
 Haiku's prices rise five times when a prompt exceeds 100K tokens.
 
-With superdelegation on, the model and effort of this table are also the reference pair of an editing delegate: `aether-lane delegate` asks for their points and the pair that reaches them on another harness runs the task (see "The three paths"). The table still names the native fallback when no pair can take it.
-
-- **Router in `command`:** if the session-start context says the router is in `command`, describe the task in a self-contained brief and do **not** pass `model` or `effort`: the router decides the model and effort, and says so. To keep your own choice, write the line `ROUTER-OVERRIDE: <reason>` in the brief, pass `model` and `effort`, and give the same reason in the message that launches it; the reason is kept in the router's log. With `record` or `advise`, you keep choosing as above.
-- **On every Agent call for a delegate task, pass `model` and `effort` (outside `command`),** and say the model, the effort and why in the message that launches it. After `/model` or `/effort`, your own model and effort are not what a delegate needs. A delegate task is never a fork: a fork always runs on your model and ignores `model`.
-- **Effort:** Haiku `medium` for listings and lookups, `high` for mechanical edits; Sonnet `high`, or `xhigh` where the behavior matters beyond its tests (input parsing, the file system, security, data loss, concurrency); Opus `high`, or `xhigh` for hard debugging. `max` only with a reason the task needs it: it thinks for minutes per answer.
-- **Climb on failure:** start at the cheapest model that can do the task. When a delegate task fails, because it ends without the work or its work still fails its tests after one round of fixes, run it again one model up (Haiku, Sonnet, Opus) at `xhigh`, as the swarm's ladder does. Coding starts on Sonnet, where a swarm task starts on its Tier, because a delegate task has no supervisor and no ladder of its own: a plan task you build as a delegate task runs on Sonnet, or on Opus when its Tier is opus. Listings, lookups, explorers and mechanical edits start on Haiku.
 - **Fixed models:** Aether's own agents keep the model and effort of their definition: pass neither when you start `aether:judge`, `aether:writer`, `aether:examiner` or `aether:reviewer`. A resumed agent keeps its model. The swarm's agents take their task's Tier and Review from the workflow.
 - **Quota:** with superdelegation on, calls and seats spend other plans' quota, first the quota whose weekly window renews first, then the cheapest pair per task. `aether-lane quota` reads each harness's quota: read it yourself, and never ask the owner for a date or a balance.
-- **Other CLIs:** never run the CLI of agy, codex, grok, cursor, muse (cursor's is `cursor-agent`) with a prompt or an approval flag from your own shell, and never read their credentials: lanes and seats run them. A real call to validate one is a `paid-call`: give the owner the exact command to run with `!`. `aether-route replay --paid` also makes paid model calls: it is a `paid-call`, and you give the owner the command to run with `!` instead of running it.
+- **Other CLIs:** never run the CLI of agy, codex, grok, cursor, muse (cursor's is `cursor-agent`) with a prompt or an approval flag from your own shell, and never read their credentials: lanes and seats run them. A real call to validate one is a `paid-call`: give the owner the exact command to run with `!`.
 
 ## Designing
 
@@ -190,7 +203,7 @@ A failure that already has a defined fallback is handled at once and recorded in
 - a lane that is missing or out of quota at its start: the call goes to the next candidate, and runs native only when none is left; a lane that fails after it started: the same call runs native;
 - a design round that fails: /aether:design hands it to the native agent, tries an agent that ended without an answer once more, and gives you a result; you see only that;
 - a swarm unit blocked by a merge failure or a spent ladder, or skipped: the `aether:swarm` skill, §5;
-- a delegate task that fails: run it again one model up, as "Models" says; after Opus, the repetition rule of "Autonomous runs" applies: defer the task;
+- a delegate task that fails: the ladder of "The delegate ladder" corrects it and climbs it; after Opus, the repetition rule of "Autonomous runs" applies: defer the task;
 - a command that leaves a worktree dirty: keep its changes in a stash, and go on.
 
 When the same fallback fails twice on the same step, the repetition rule of "Autonomous runs" applies.
@@ -225,7 +238,7 @@ Before one, run `aether-autonomy check <class>`.
 - `aether-autonomy list` shows the registry. The registry and each run's `run.json` are written only by `aether-autonomy`; aether-guard refuses edits to them.
 - When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even an action the owner approved with a «sí» until a grant covers it: record their reply as a session grant for its class, run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
 
-**Repetition.** When a line of work repeats without progress (the same task redesigned twice, the same unit relaunched twice without success, a third correction round on the same finding), stop it. Note the defect in the diary, take the smallest reversible path (defer that task), and go on with the rest.
+**Repetition.** When a line of work repeats without progress (the same task redesigned twice, the same unit relaunched twice without success, a third correction round on the same finding), stop it. Note the defect in the diary, take the smallest reversible path (defer that task), and go on with the rest. A delegate task's corrections and rises follow the ladder, not this rule; it applies to the task after Opus.
 
 **Every brief,** in a run or not, opens with "Espera tu sí" and "Supuestos". Supuestos are ordered by how likely the owner is to veto them, the most likely first. Outside a run the brief is short: the intent, the spec and plan paths with about five lines of each, the decisions, the list, the assumptions, what you did not verify, and the RADAR lines that apply. Outside a run you stop at the plan, and "Espera tu sí" holds the plan's execution with the method you recommend.
 
@@ -235,6 +248,6 @@ The Writer writes plans with the Aether fields (Tier with its effort, an optiona
 
 ## The execution method
 
-When the plan is approved, choose its path (see "The three paths"): yourself, delegate tasks, or the swarm, `/aether:run`, which implements the plan's tasks in parallel, each on its model and effort, with a supervisor for every attempt, one merge at a time, a final review, and cleanup. Plan tasks you build as delegate tasks follow "The three paths": with superdelegation on, the ones that edit leave Claude first through that command (`aether-lane delegate`, for another harness), on the model and effort of their Tier.
+When the plan is approved, choose its path (see "The three paths"): yourself, delegate tasks, or the swarm, `/aether:run`, which implements the plan's tasks in parallel, each on its model and effort, with a supervisor for every attempt, one merge at a time, a final review, and cleanup. Plan tasks you build as delegate tasks follow "The delegate ladder": they start on Haiku, whatever their Tier.
 
-In an autonomous run, choose the path yourself (the swarm, by default, when the plan has Aether fields and three or more tasks, or a task of Tier opus) and note it in the diary. Outside a run, recommend one in the brief with a quality, cost and speed reason, and for delegate tasks their model; the owner's yes starts it. When the swarm runs, load the `aether:swarm` skill and follow it.
+In an autonomous run, choose the path yourself (the swarm, by default, when the plan has Aether fields and three or more tasks, or a task of Tier opus) and note it in the diary. Outside a run, recommend one in the brief with a quality, cost and speed reason; the owner's yes starts it. When the swarm runs, load the `aether:swarm` skill and follow it.

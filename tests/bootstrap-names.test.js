@@ -219,13 +219,14 @@ test('the first 1,800 characters of the injected context carry R1: read it whole
 
 test('the bootstrap has The three paths and Models after the route, and the paths name the plan sizes', (t) => {
   const context = injectedContext(t)
-  const order = ['## The route by size and risk', '## The three paths', '## Models', '## Designing'].map((h) => context.indexOf(`\n${h}\n`))
-  assert.ok(order.every((at) => at >= 0), 'the four sections are there')
+  const order = ['## The route by size and risk', '## The three paths', '## The delegate ladder', '## Models', '## Designing'].map((h) => context.indexOf(`\n${h}\n`))
+  assert.ok(order.every((at) => at >= 0), 'the five sections are there')
   assert.deepEqual(order, [...order].sort((a, b) => a - b))
   const paths = section(context, 'The three paths')
   assert.match(paths, /an approved plan of three or more tasks/)
   assert.match(paths, /one or two tasks/)
-  assert.match(section(context, 'Models'), /pass `model` and `effort`/)
+  assert.match(section(context, 'The delegate ladder'), /Pass neither `model` nor `effort`/)
+  assert.doesNotMatch(section(context, 'Models'), /pass `model` and `effort`/)
 })
 
 test('the sources of the bootstrap and the swarm skill name no path of this repository', () => {
@@ -234,30 +235,31 @@ test('the sources of the bootstrap and the swarm skill name no path of this repo
   }
 })
 
-test('the bootstrap sends editing delegates to other harnesses first, and keeps Claude as the fallback with its task line', () => {
+test('the bootstrap sends every delegate through Agent, judges it with aether-delegate verdict, and merges an editing one by hand', () => {
   const text = USING_SOURCE
   for (const needed of [
-    '**Editing delegates leave Claude first:**',
-    'aether-lane delegate --brief <brief file> --model <model> --effort <effort> --owns <globs> [--tests <command>] --session "$CLAUDE_CODE_SESSION_ID"',
-    'launched with Bash in the background',
-    'Do not wait for it inside your turn',
-    'You merge it yourself with `aether-wt merge <run> task-1`',
-    'recording the `merge-main` grant when it is `main` or `master`',
-    'after the merge you run the task\'s test command once on your branch when it has one',
-    'only when the command answered `no-candidate`',
-    'never for speed, size or convenience',
-    'its brief carries the line `AETHER-TASK: <id>`',
-    'If the command itself exits with `{ error }`, that is a usage or infrastructure failure, not a `no-candidate`',
-    'fix its cause when it is yours to fix and launch it again',
-    'run the task native, keep the work going, and say so',
-    'you read its diff yourself only when its result says there was no reviewer with a verdict',
-    'With superdelegation off, delegate tasks run as they do today',
+    '**Delegates go through `Agent`:**',
+    '`aether-lane delegate` is what the system runs for that call: you do not run it by Bash',
+    'runs it on Claude, at the step\'s model, only when none can',
     'You yourself stay on Claude either way',
-    'are also the reference pair of an editing delegate',
-    'with superdelegation on, the ones that edit leave Claude first through that command',
+    'Pass neither `model` nor `effort`',
+    'the `aether-wt merge` line its result gives',
+    'record the `merge-main` grant when it is `main` or `master`',
+    'run the task\'s test command once on your branch',
+    'do not read the whole diff when they are enough',
+    'Launch a correction or a rise with the same id',
+    'with a reason, to a verdict only to throw that work away',
+    'it spends none of the step\'s corrections',
+    'Plan tasks you build as delegate tasks follow "The delegate ladder"',
   ]) assert.ok(text.includes(needed), needed)
-  const file = path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')
-  assert.ok(fs.statSync(file).size < 29470, `${fs.statSync(file).size} bytes`)
+  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')).size < 29470)
+})
+
+test('every flag of aether-delegate verdict that the bootstrap shows is in the usage of the command', (t) => {
+  const ladder = section(USING_SOURCE, 'The delegate ladder')
+  const shown = new Set([...ladder.matchAll(/(?<![\w-])(--[a-z][a-z-]*)/g)].map((m) => m[1]))
+  for (const flag of ['--task', '--verdict', '--finding', '--reason', '--from-scratch', '--worktree']) assert.ok(shown.has(flag), `the ladder shows ${flag}`)
+  for (const flag of shown) assert.match(usage(t, 'aether-delegate'), new RegExp(`(?<![\\w-])${flag}(?![\\w-])`), `${flag} is in the usage of aether-delegate`)
 })
 
 test("the model the bootstrap says the Lead starts on is the model of the Lead agent", (t) => {
