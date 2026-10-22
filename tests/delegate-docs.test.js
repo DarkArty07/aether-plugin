@@ -14,6 +14,10 @@ test('the user pages say editing delegates leave Claude first, and none still sa
     'unit worktree',
     'aether-wt merge',
     'no-candidate',
+    'Its uncommitted work, if any, is in the worktree',
+    'git apply --check',
+    'why the earlier work was not carried over',
+    'whether it started from the earlier work',
   ]) assert.ok(lanes.includes(needed), needed)
 
   const options = read('docs', 'guide', 'options.md')

@@ -7,6 +7,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { git, repoPaths } = require('./git.js')
 const { matchesAny } = require('./globs.js')
 const run = require('./run.js')
@@ -43,7 +44,200 @@ function prepareImplementer(cwd, runId, taskId) {
   const workdir = ensure(cwd, runId, taskId).path
   const brief = path.join(tmpDir(workdir), 'brief.md')
   fs.copyFileSync(path.join(run.runDir(mainRoot, runId), 'briefs', `${taskId}.md`), brief)
+  // ensure commits owned files when it reopens a worktree, so a patch applied any earlier would land
+  // as commits. Applying it here, on the clean tree start just created, leaves it uncommitted, which
+  // is what the next pair's prompt says it will find. The worktree does not exist before start.
+  applyArmedCarry(mainRoot, runId, taskId, workdir)
   return { workdir, brief }
+}
+
+// A failed delegate attempt leaves one patch that is already the whole diff from the integration
+// base. The next attempt applies that one patch, never a stack of them: stacking would apply the
+// same lines twice. The delegate arms it before start, because the prompt is written first and has
+// to agree with the tree.
+
+const CARRY_UNAPPLICABLE = 'the earlier work was not carried over: the patch does not apply cleanly'
+
+const carryOutside = (files) => `the earlier work was not carried over: the patch touches a path outside the paths this charge owns: ${files.join(', ')}`
+
+function carryDir(mainRoot, runId) {
+  return path.join(run.runDir(mainRoot, runId), 'carry')
+}
+
+function carryRequest(mainRoot, runId, taskId) {
+  return path.join(carryDir(mainRoot, runId), `${taskId}.json`)
+}
+
+function carryReceipt(mainRoot, runId, taskId) {
+  return path.join(carryDir(mainRoot, runId), `${taskId}.result.json`)
+}
+
+function patchHasDiff(file) {
+  try {
+    return fs.readFileSync(file).includes(Buffer.from('diff --git '))
+  } catch {
+    return false
+  }
+}
+
+// Tokens of `diff --git <a> <b>`. A path git quotes (a space, a quote) is one token, unquoted.
+function gitDiffTokens(rest) {
+  const tokens = []
+  let i = 0
+  while (i < rest.length) {
+    if (rest[i] === ' ') {
+      i += 1
+      continue
+    }
+    if (rest[i] !== '"') {
+      let j = i
+      while (j < rest.length && rest[j] !== ' ') j += 1
+      tokens.push(rest.slice(i, j))
+      i = j
+      continue
+    }
+    let out = ''
+    let j = i + 1
+    while (j < rest.length) {
+      if (rest[j] === '\\') {
+        const n = rest[j + 1]
+        if (n >= '0' && n <= '7') {
+          const oct = /^[0-7]{1,3}/.exec(rest.slice(j + 1, j + 4))
+          out += String.fromCharCode(parseInt(oct[0], 8))
+          j += 1 + oct[0].length
+          continue
+        }
+        out += n === 'n' ? '\n' : n === 't' ? '\t' : (n ?? '')
+        j += 2
+        continue
+      }
+      if (rest[j] === '"') {
+        j += 1
+        break
+      }
+      out += rest[j]
+      j += 1
+    }
+    tokens.push(out)
+    i = j
+  }
+  return tokens
+}
+
+// Every path a patch touches, from both sides of each `diff --git`. `/dev/null` is not a path.
+function patchPaths(text) {
+  const paths = new Set()
+  for (const line of String(text).split('\n')) {
+    if (!line.startsWith('diff --git ')) continue
+    for (const token of gitDiffTokens(line.slice('diff --git '.length))) {
+      const file = token.startsWith('a/') || token.startsWith('b/') ? token.slice(2) : token
+      if (file !== '' && file !== 'dev/null') paths.add(file.replace(/\\/g, '/'))
+    }
+  }
+  return [...paths]
+}
+
+// A path is inside the charge's owns when the same matcher as the ownership check says so, and it
+// does not climb out of the tree. A path the parser could not place counts as outside.
+function pathOwned(file, owns) {
+  if (file.startsWith('/') || file.split('/').includes('..')) return false
+  return matchesAny(file, owns)
+}
+
+// Whether `git apply` would accept the patch on a clean checkout of HEAD. The next unit worktree
+// is that checkout, not the integration worktree's dirty files, so the check uses its own index.
+function patchApplies(cwd, patchFile) {
+  const index = path.join(path.dirname(patchFile), '..', `carry-check-${process.pid}.index`)
+  const env = { ...process.env, GIT_INDEX_FILE: path.resolve(cwd, index) }
+  try {
+    fs.rmSync(env.GIT_INDEX_FILE, { force: true })
+    const read = spawnSync('git', ['read-tree', 'HEAD'], { cwd, env, encoding: 'utf8' })
+    if (read.status !== 0) return false
+    return spawnSync('git', ['apply', '--cached', '--check', patchFile], { cwd, env, encoding: 'utf8' }).status === 0
+  } finally {
+    fs.rmSync(env.GIT_INDEX_FILE, { force: true })
+  }
+}
+
+// { apply: true } when the next pair should start from this patch. empty: the attempt left no diff.
+// Otherwise reason is what the result tells the Lead.
+function assessCarry(cwd, patchFile, owns) {
+  let text
+  try {
+    text = fs.readFileSync(patchFile)
+  } catch {
+    return { apply: false, empty: true }
+  }
+  if (!text.includes(Buffer.from('diff --git '))) return { apply: false, empty: true }
+  const paths = patchPaths(text.toString('utf8'))
+  if (paths.length === 0) return { apply: false, reason: CARRY_UNAPPLICABLE }
+  const outside = paths.filter((file) => !pathOwned(file, owns)).sort()
+  if (outside.length > 0) return { apply: false, reason: carryOutside(outside) }
+  if (!patchApplies(cwd, patchFile)) return { apply: false, reason: CARRY_UNAPPLICABLE }
+  return { apply: true }
+}
+
+// Arms the patch prepareImplementer applies, or clears an arm left by an attempt that never started.
+function armCarry(cwd, runId, taskId, patch) {
+  const { mainRoot } = repoPaths(cwd)
+  const file = carryRequest(mainRoot, runId, taskId)
+  if (!patch) {
+    fs.rmSync(file, { force: true })
+    return
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify({ patch: path.resolve(patch) })}\n`)
+}
+
+function takeArmedCarry(mainRoot, runId, taskId) {
+  const file = carryRequest(mainRoot, runId, taskId)
+  let data
+  try {
+    data = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    return null
+  } finally {
+    fs.rmSync(file, { force: true })
+  }
+  if (!data || typeof data.patch !== 'string') return null
+  const resolved = path.resolve(data.patch)
+  const patches = path.join(run.runDir(mainRoot, runId), 'patches')
+  const rel = path.relative(patches, resolved)
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null
+  return fs.existsSync(resolved) ? resolved : null
+}
+
+function applyArmedCarry(mainRoot, runId, taskId, worktree) {
+  const patch = takeArmedCarry(mainRoot, runId, taskId)
+  if (!patch) return
+  let applied = false
+  const check = git(['apply', '--check', patch], worktree, { allowFail: true })
+  if (check.status === 0) {
+    try {
+      git(['apply', patch], worktree)
+      applied = true
+    } catch {
+      // The check said it would apply and it did not: the pair starts from the clean tree.
+      applied = false
+    }
+  }
+  const receipt = carryReceipt(mainRoot, runId, taskId)
+  fs.mkdirSync(path.dirname(receipt), { recursive: true })
+  fs.writeFileSync(receipt, `${JSON.stringify({ applied })}\n`)
+}
+
+// True when the armed patch was applied, false when prepare ran and refused it, null when this
+// attempt never reached its worktree. The file is read once.
+function consumeCarryResult(cwd, runId, taskId) {
+  const { mainRoot } = repoPaths(cwd)
+  const file = carryReceipt(mainRoot, runId, taskId)
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')).applied === true
+  } catch {
+    return null
+  } finally {
+    fs.rmSync(file, { force: true })
+  }
 }
 
 // Drops the copy's registry entry and its directory. True when there was either.
@@ -189,4 +383,9 @@ module.exports = {
   checkOwns,
   checkUnitUnchanged,
   finishImplementer,
+  CARRY_UNAPPLICABLE,
+  patchHasDiff,
+  assessCarry,
+  armCarry,
+  consumeCarryResult,
 }
