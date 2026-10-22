@@ -25,7 +25,7 @@ const wt = require('./worktrees.js')
 const { normalizePattern } = require('./globs.js')
 
 const ALLOWED_HARNESSES = ['agy', 'grok', 'muse']
-const DELEGATE_USAGE = 'delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--session <id>]'
+const DELEGATE_USAGE = 'delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--pair <pair id>] [--carry <patch file>] [--findings <file>] [--session <id>]'
 const TASK_ID = 'task-1'
 const WAIT_MARGIN_SECONDS = 180
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
@@ -50,11 +50,21 @@ function isOwnsEntry(entry) {
 
 const usageError = () => new Error(`usage: aether-lane ${DELEGATE_USAGE}`)
 
+// Whether name is a file of the charge: a flag value that is a path to a file that exists.
+function isFile(cwd, name) {
+  if (typeof name !== 'string' || name === '') return false
+  try {
+    return fs.statSync(path.resolve(cwd, name)).isFile()
+  } catch {
+    return false
+  }
+}
+
 // The flags of the charge, checked. Throws the usage error the bin prints as { error }.
-function checkFlags(flags) {
-  const known = ['brief', 'model', 'effort', 'owns', 'tests', 'session']
+function checkFlags(cwd, flags) {
+  const known = ['brief', 'model', 'effort', 'owns', 'tests', 'pair', 'carry', 'findings', 'session']
   for (const name of Object.keys(flags ?? {})) if (!known.includes(name)) throw usageError()
-  const { brief, model, effort, owns, tests, session } = flags ?? {}
+  const { brief, model, effort, owns, tests, pair, carry, findings, session } = flags ?? {}
   if (typeof brief !== 'string' || brief === '') throw usageError()
   if (!pairs.NATIVE_MODELS.includes(model)) throw usageError()
   if (!pairs.EFFORTS.includes(effort)) throw usageError()
@@ -62,8 +72,21 @@ function checkFlags(flags) {
   const entries = owns.split(',').map(normalizePattern).filter(Boolean)
   if (entries.length === 0 || !entries.every(isOwnsEntry)) throw usageError()
   if (tests !== undefined && (typeof tests !== 'string' || tests === '')) throw usageError()
+  if (pair !== undefined && (typeof pair !== 'string' || pair === '')) throw usageError()
+  if (carry !== undefined && !isFile(cwd, carry)) throw usageError()
+  if (findings !== undefined && !isFile(cwd, findings)) throw usageError()
   if (session !== undefined && !/^[A-Za-z0-9_-]+$/.test(session)) throw usageError()
-  return { brief, model, effort, owns: entries, tests: tests ?? null, session: session ?? null }
+  return {
+    brief,
+    model,
+    effort,
+    owns: entries,
+    tests: tests ?? null,
+    pair: pair ?? null,
+    carry: carry === undefined ? null : path.resolve(cwd, carry),
+    findings: findings === undefined ? null : fs.readFileSync(path.resolve(cwd, findings), 'utf8').trimEnd(),
+    session: session ?? null,
+  }
 }
 
 // The command's clock: deps.now as a number or as a function of no arguments.
@@ -88,10 +111,11 @@ const pairOf = (pair) => ({ id: pair.id, harness: pair.harness, model: pair.mode
 const CONTINUATION_BLOCK = ['## An external agent began this attempt', 'An earlier agent began this task. Its uncommitted work, if any, is in the worktree. Continue from it.'].join('\n')
 
 // The prompt of the pair that writes: the brief, then the paths the charge owns and, when it
-// carries one, its test command.
-function implementerPrompt(briefText, { owns, tests }) {
+// carries them, its test command and the findings the attempt is to fix.
+function implementerPrompt(briefText, { owns, tests, findings }) {
   const parts = [briefText, ['## Paths you own', '', 'You may change only these paths:', ...owns.map((entry) => `- ${entry}`)].join('\n')]
   if (tests !== null) parts.push(['## Tests', '', `Run these tests before you finish: \`${tests}\``].join('\n'))
+  if (findings !== null) parts.push(['## Findings to fix', '', findings].join('\n'))
   return parts.join('\n\n')
 }
 
@@ -214,21 +238,42 @@ async function attemptCall(ctx, { role, call, picked, prompt }) {
   return { result: done.result }
 }
 
+// The table and the reference of a choice that can only pick the pair with this id: the Claude pairs stay in the
+// table because a reference is one of them, and the lowest is the reference, so no other pair is asked for its points.
+function pinnedChoice(table, id) {
+  const native = table.filter((pair) => pair.harness === pairs.NATIVE_HARNESS)
+  const lowest = native.reduce((low, pair) => (pair.intelligence < low.intelligence ? pair : low))
+  return { table: [...native, ...table.filter((pair) => pair.id === id)], reference: { model: lowest.model, effort: lowest.effort } }
+}
+
 // The one choice loop of the writer and of the reviewer: choose, log the choice, run the attempt on the
 // pair chosen, and on a failure exclude that pair and choose again.
-async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, callName, owns = null }) {
+//
+// An implementer loop may start with an offer (the patch of earlier work) and with a pinned pair: the first
+// choice is made over that pair alone (the table keeps the Claude pairs, which a reference needs, and the
+// lowest of them is the reference, so that only the pair's own quota and marks count). A pinned pair that
+// cannot be chosen is dropped, and the loop goes on with the whole table; one that fails is excluded as any.
+async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, callName, owns = null, offer: initialOffer = null, pinned: pinnedPair = null }) {
   const exclude = [...initialExclude]
   const tried = []
   let attempts = 0
   let decision = null
   let lastDetail = null
-  let offer = null // the newest non-empty patch a writer left, which the next pair may start from
+  let offer = initialOffer // the newest non-empty patch a writer left, which the next pair may start from
+  let pinned = pinnedPair
   try {
     for (;;) {
       const now = nowOf(ctx.deps)
       const latest = await lanePick.latestReadings(ctx.config, ctx.enabled, { dataDir: ctx.dataDir, now })
       const harnesses = lanePick.harnessViews(ctx.config, ctx.enabled, { dataDir: ctx.dataDir, now, latest })
-      decision = superdelegation.choose({ pairs: ctx.table, reference, harnesses, exclude, nativeDiffers: role !== 'implementer' })
+      decision = null
+      if (pinned !== null && !exclude.includes(pinned)) {
+        const only = pinnedChoice(ctx.table, pinned)
+        decision = superdelegation.choose({ pairs: only.table, reference: only.reference, harnesses, exclude, nativeDiffers: false })
+        if (!decision.picked) decision = null
+      }
+      pinned = null
+      if (decision === null) decision = superdelegation.choose({ pairs: ctx.table, reference, harnesses, exclude, nativeDiffers: role !== 'implementer' })
       const call = callName(attempts + 1)
       lanes.appendLog(ctx.dataDir, null, {
         kind: 'choice',
@@ -303,7 +348,7 @@ async function withEnv(env, fn) {
 }
 
 async function delegateWithEnv(cwd, flags, deps) {
-  const charge = checkFlags(flags)
+  const charge = checkFlags(cwd, flags)
   const env = deps.env ?? process.env
   const gate = superdelegation.enabled(env)
   if (!gate.on) return { status: 'off', reason: gate.reason }
@@ -319,6 +364,7 @@ async function delegateWithEnv(cwd, flags, deps) {
   const config = lanes.loadConfig(tableFile)
   if (!config) throw new Error(`no lane table: ${tableFile}`)
   const table = pairs.loadPairs().pairs
+  if (charge.pair !== null && !table.some((pair) => pair.id === charge.pair && pair.harness !== pairs.NATIVE_HARNESS)) throw usageError()
   const enabled = lanes.enabledHarnesses(env).filter((name) => ALLOWED_HARNESSES.includes(name))
 
   const paths = repoPaths(cwd)
@@ -332,6 +378,13 @@ async function delegateWithEnv(cwd, flags, deps) {
   const briefPath = path.join(runDir, 'briefs', `${TASK_ID}.md`)
   fs.mkdirSync(path.dirname(briefPath), { recursive: true })
   fs.writeFileSync(briefPath, briefText)
+  // The carry guard only takes a patch from the run's own patches folder, so the earlier work is copied there.
+  let offered = null
+  if (charge.carry !== null) {
+    offered = path.join(runDir, 'patches', `${TASK_ID}-carry.patch`)
+    fs.mkdirSync(path.dirname(offered), { recursive: true })
+    fs.copyFileSync(charge.carry, offered)
+  }
   const laneArgs = superdelegation.runArgs(config, table, { installed: (name, harness) => lanes.commandInstalled(harness.command, env), enabled })
   run.writeJson(path.join(runDir, 'graph.json'), {
     runId: id,
@@ -401,6 +454,8 @@ async function delegateWithEnv(cwd, flags, deps) {
       exclude: [],
       prompt: implementerPrompt(briefText, charge),
       owns: charge.owns,
+      offer: offered,
+      pinned: charge.pair,
       callName: (attempt) => `${TASK_ID}-${attempt}-implement`,
     })
     if (written.result === undefined) {
@@ -431,6 +486,7 @@ async function delegateWithEnv(cwd, flags, deps) {
       run: id,
       branch: run.unitBranch(id, TASK_ID),
       worktree,
+      base,
       head: typeof implementer.head === 'string' && implementer.head !== '' ? implementer.head : head(worktree),
       pair: pairOf(written.picked),
       reason: written.reason,
