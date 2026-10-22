@@ -275,6 +275,12 @@ function adoptUnit(cwd, runId, taskId, { commit, reason } = {}) {
   if (git(['merge-base', '--is-ancestor', sha, graph.integration.branch], mainRoot, { allowFail: true }).status !== 0) {
     throw new Error(`${sha.slice(0, 10)} is not in the integration branch ${graph.integration.branch}`)
   }
+  // Adopting would count the unit merged while its tests did not pass (issue #2). The marker stays,
+  // and the Lead settles the merge before recording the unit by hand.
+  const marked = unverifiedCommit(mainRoot, graph, runId, taskId)
+  if (marked) {
+    throw new Error(`${taskId} is unverified: its merge commit ${marked} is on the integration branch and its tests did not pass. Settle that merge before adopting the unit`)
+  }
   const file = path.join(run.runDir(mainRoot, runId), 'adopted.json')
   const adopted = exists(file) ? run.readJson(file) : {}
   adopted[taskId] = { commit: sha, reason: reason.trim(), at: new Date().toISOString() }
@@ -291,10 +297,14 @@ function unverifiedMarker(mainRoot, runId, taskId) {
   return path.join(run.runDir(mainRoot, runId), 'unverified', `${taskId}.json`)
 }
 
-function writeUnverifiedMarker(mainRoot, runId, taskId, commit) {
+// `before` is the integration tip the merge is about to be made on. It is recorded only on the
+// first write, which has no commit yet: a later fallback may take a merge only when that tip is
+// its first parent, so an older verified merge of the same unit is not that commit (issue #2).
+function writeUnverifiedMarker(mainRoot, runId, taskId, commit, before = null) {
   const file = unverifiedMarker(mainRoot, runId, taskId)
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const body = commit ? { commit } : { commit: null }
+  const body = { commit: commit || null }
+  if (!commit && before) body.before = before
   fs.writeFileSync(file, `${JSON.stringify(body)}\n`)
 }
 
@@ -317,9 +327,10 @@ function markerRecord(mainRoot, runId, taskId) {
   try {
     const marker = JSON.parse(fs.readFileSync(file, 'utf8'))
     const commit = typeof marker?.commit === 'string' && marker.commit !== '' ? marker.commit : null
-    return { commit }
+    const before = typeof marker?.before === 'string' && marker.before !== '' ? marker.before : null
+    return { commit, before }
   } catch {
-    return { commit: null }
+    return { commit: null, before: null }
   }
 }
 
@@ -331,13 +342,21 @@ function commitOnBranch(mainRoot, graph, commit) {
 // The merge commit of `branch` still on the integration branch, found by its subject, or null.
 // Topological order, not commit dates: a marker written before the fill has no commit of its own,
 // and the history is the only record, including when the unit branch itself is gone.
-function mergeSubjectCommit(mainRoot, graph, branch) {
+// Only a merge whose first parent is `before` counts. The first `Merge <branch>` in the history
+// is the wrong commit when that unit was already merged and verified and a later merge was killed
+// before it committed (issue #2). Without `before` there is nothing to match.
+function mergeSubjectCommit(mainRoot, graph, branch, before) {
+  const wanted = fullCommit(mainRoot, before)
+  if (!wanted) return null
   const log = git(['log', '--topo-order', '--format=%H %s', graph.integration.branch], mainRoot, { allowFail: true })
   if (log.status !== 0 || log.stdout === '') return null
   const subject = `Merge ${branch}`
   for (const line of log.stdout.split('\n')) {
     const space = line.indexOf(' ')
-    if (space !== -1 && line.slice(space + 1) === subject) return line.slice(0, space)
+    if (space === -1 || line.slice(space + 1) !== subject) continue
+    const sha = line.slice(0, space)
+    const parent = git(['rev-parse', '--verify', '--quiet', `${sha}^1`], mainRoot, { allowFail: true })
+    if (parent.status === 0 && parent.stdout === wanted) return sha
   }
   return null
 }
@@ -359,7 +378,7 @@ function unverifiedCommit(mainRoot, graph, runId, taskId) {
     const sha = fullCommit(mainRoot, marker.commit)
     return sha && commitOnBranch(mainRoot, graph, sha) ? sha : null
   }
-  const found = mergeSubjectCommit(mainRoot, graph, run.unitBranch(runId, taskId))
+  const found = mergeSubjectCommit(mainRoot, graph, run.unitBranch(runId, taskId), marker.before)
   return found && commitOnBranch(mainRoot, graph, found) ? found : null
 }
 
@@ -397,6 +416,43 @@ function unitStatus(cwd, runId, taskId) {
 // The ids of a run's graph, in task number order.
 function taskIdsInOrder(graph) {
   return Object.keys(graph.tasks).sort((a, b) => graph.tasks[a].number - graph.tasks[b].number)
+}
+
+// The task ids that have a marker file. The graph is the wrong list: a relaunch with --only, or a
+// unit the Lead adopted, drops tasks from it, and a live marker of one of those would be invisible
+// (issue #2). The file name is the task id. A name that is not a task id is ignored.
+function markerTaskIds(mainRoot, runId) {
+  const dir = path.join(run.runDir(mainRoot, runId), 'unverified')
+  if (!isDirectory(dir)) return []
+  const ids = []
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.json')) continue
+    const taskId = name.slice(0, -'.json'.length)
+    try {
+      run.assertTaskId(taskId)
+    } catch {
+      continue
+    }
+    const file = path.join(dir, name)
+    if (!fs.statSync(file).isFile()) continue
+    ids.push(taskId)
+  }
+  return ids.sort((a, b) => Number(a.slice('task-'.length)) - Number(b.slice('task-'.length)))
+}
+
+// Markers whose commit is still on the integration branch. Deleting the run directory would drop
+// the only record that those commits are untested, and they would then count as merged (issue #2).
+function liveUnverified(mainRoot, runId) {
+  const graphFile = path.join(run.runDir(mainRoot, runId), 'graph.json')
+  if (!exists(graphFile)) return []
+  const graph = orEmpty(() => run.readJson(graphFile), null)
+  if (!graph || !graph.integration) return []
+  const live = []
+  for (const taskId of markerTaskIds(mainRoot, runId)) {
+    const commit = orEmpty(() => unverifiedCommit(mainRoot, graph, runId, taskId), null)
+    if (commit) live.push({ task: taskId, commit })
+  }
+  return live
 }
 
 // The value read() returns, or `fallback` when it throws: a source that fails adds nothing.
@@ -659,14 +715,19 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
       detail: `the integration worktree is on ${current || 'a detached HEAD'}, not ${graph.integration.branch}`,
     }
   }
+  // A kill inside git merge leaves MERGE_HEAD and this unit's marker with no commit. The worktree
+  // then looks dirty, and every later merge is refused with nothing that recovers it (issue #2).
+  abortUnfinishedMerge(mainRoot, runId, taskId, integration)
   if (git(['status', '--porcelain', '--untracked-files=no'], integration).stdout !== '') {
     return { merged: false, reason: 'dirty-integration', detail: 'the integration worktree has uncommitted changes' }
   }
-  // A merge never starts on top of a commit whose tests did not finish (issue #2). Another unit's
-  // marker is refused at once, with no test run and no attempt to settle that unit. This unit's
-  // marker is rerun only while its commit is still the tip; anything newer than it is left as it is.
+  // A merge never starts on top of a commit whose tests did not finish (issue #2). The marker
+  // files are the list, not the graph: a relaunch with --only, or a unit the Lead adopted, drops
+  // tasks from the graph and would hide a live marker. Another unit's marker is refused at once,
+  // with no test run and no attempt to settle that unit. This unit's marker is rerun only while
+  // its commit is still the tip and its branch is already merged; anything newer is left as it is.
   const pending = []
-  for (const id of taskIdsInOrder(graph)) {
+  for (const id of markerTaskIds(mainRoot, runId)) {
     const commit = unverifiedCommit(mainRoot, graph, runId, id)
     if (commit) pending.push({ task: id, commit })
   }
@@ -676,6 +737,13 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
   if (mine) {
     const tip = git(['rev-parse', graph.integration.branch], mainRoot).stdout
     if (mine.commit !== tip) return { merged: false, reason: 'unverified-buried', commit: mine.commit }
+    // A relaunch can commit more on the branch that was kept. The marked commit is still the tip,
+    // but those commits are not in it: rerunning the tests would pass the old tree and report the
+    // unit merged, and close would then keep the new commits only as a patch (issue #2). A branch
+    // that is already merged, or already gone, has nothing newer, so the rerun is the one it was.
+    if (branchExists(mainRoot, branch) && !isMerged(mainRoot, graph, branch)) {
+      return { merged: false, reason: 'unverified-moved', commit: mine.commit }
+    }
     const before = git(['rev-parse', `${mine.commit}^1`], integration).stdout
     return settleMerge(mainRoot, graph, runId, taskId, integration, before, { timeoutMs, rerun: true, commit: mine.commit })
   }
@@ -701,8 +769,9 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
 
   const before = head(integration)
   // Before the merge, with no commit yet: a kill between the merge and the fill still leaves it.
-  // A merge that fails before the tests start clears it, so a conflict leaves no marker.
-  writeUnverifiedMarker(mainRoot, runId, taskId, null)
+  // `before` is this tip, so the fallback cannot take an older merge of the same unit. A merge
+  // that fails before the tests start clears it, so a conflict leaves no marker.
+  writeUnverifiedMarker(mainRoot, runId, taskId, null, before)
   let attempt
   try {
     attempt = git(['merge', '--no-ff', '--no-edit', '-m', `Merge ${branch}`, branch], integration, { allowFail: true })
@@ -743,6 +812,37 @@ function removeWorktreePath(mainRoot, worktree, registered, root = unitsDir(main
   // Git refuses a worktree whose directory is broken, but not one whose directory is gone.
   if (!unregistered) unregistered = unregisterWorktree(mainRoot, worktree)
   return unregistered && !exists(worktree)
+}
+
+// MERGE_HEAD of the integration worktree, or null when this worktree is not mid-merge.
+function mergeHeadFile(integration) {
+  const found = git(['rev-parse', '--git-path', 'MERGE_HEAD'], integration, { allowFail: true })
+  if (found.status !== 0 || found.stdout === '') return null
+  const file = path.resolve(integration, found.stdout)
+  return exists(file) ? file : null
+}
+
+// A kill inside git merge leaves MERGE_HEAD and this unit's marker with no commit. Abort that
+// merge and clear the marker, so the worktree is usable again. A kill in the post-merge hook is
+// later: the merge commit is already HEAD, and MERGE_HEAD stays until the hook returns. Abort
+// then only drops that leftover state. The marker stays, so the commit is still unverified and a
+// rerun can settle it; clearing it would report the unit as having nothing to merge. If the abort
+// does move that commit, it is put back: a reset may not undo it (issue #2). A marker that already
+// names its commit, or another unit's merge, is left alone.
+function abortUnfinishedMerge(mainRoot, runId, taskId, integration) {
+  const marker = markerRecord(mainRoot, runId, taskId)
+  if (!marker || marker.commit) return
+  if (!mergeHeadFile(integration)) return
+  const tip = head(integration)
+  const before = fullCommit(mainRoot, marker.before)
+  const committed = Boolean(before && before !== tip)
+  const aborted = git(['merge', '--abort'], integration, { allowFail: true })
+  if (aborted.status !== 0) return
+  if (committed) {
+    if (head(integration) !== tip) git(['reset', '--hard', tip], integration)
+    return
+  }
+  clearUnverifiedMarker(mainRoot, runId, taskId)
 }
 
 // True when everything on `branch` is already in the integration branch.
@@ -1000,7 +1100,10 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
   }
   const runDir = run.runDir(mainRoot, runId)
   let finished = false
-  if (finish && kept.size === 0 && saved.length === 0 && exists(runDir)) {
+  // A live marker is the only record that its commit is untested. finalize reaches this with
+  // finish set; deleting the directory would make that commit count as merged (issue #2).
+  const live = liveUnverified(mainRoot, runId)
+  if (finish && kept.size === 0 && saved.length === 0 && live.length === 0 && exists(runDir)) {
     assertInside(runDir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(runDir, { recursive: true, force: true })
     finished = true
@@ -1093,6 +1196,10 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
       removedBranches: branches.length,
       branches,
     }
+    // A marker whose commit is on the integration branch keeps the run directory: deleting it
+    // would drop the only record that the commit is untested (issue #2). Checked before the
+    // sweep, which does not remove marker files. The record below stays as it was.
+    const live = liveUnverified(mainRoot, id)
     // A run that was not interrupted is recorded before anything is removed, as it always was.
     const interrupted = wasInterrupted(mainRoot, id)
     if (!interrupted) run.appendRecord(abandoned)
@@ -1102,6 +1209,7 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
       if (lastRecordStatus(id) !== 'interrupted-saved') run.appendRecord({ runId: id, status: 'interrupted-saved', sweptAt, repo: mainRoot })
       continue
     }
+    if (live.length > 0) continue
     if (interrupted) run.appendRecord(abandoned)
     assertInside(dir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(dir, { recursive: true, force: true })
