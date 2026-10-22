@@ -4,9 +4,11 @@
 // one-unit run the command writes itself, and comes back as the unit's branch with the tests the
 // command ran in its worktree and a review of its diff. The pair is the one rule's (choose in
 // lib/superdelegation.js, over the views of lib/lane-pick.js); a pair that fails saves its work as a
-// patch and passes to the next candidate, never the same one. A harness has no limit on its calls in
-// flight: an attempt starts at once on the pair that was chosen. The command never merges: the Lead reads the result,
-// merges with aether-wt, or, on `no-candidate`, runs the charge natively under the same id.
+// patch and passes to the next candidate, never the same one. When that patch is the work the pair
+// left and the guards accept it, the next pair starts from that work instead of from a clean tree.
+// A harness has no limit on its calls in flight: an attempt starts at once on the pair that was chosen.
+// The command never merges: the Lead reads the result, merges with aether-wt, or, on `no-candidate`,
+// runs the charge natively under the same id.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -18,6 +20,7 @@ const pairs = require('./pairs.js')
 const superdelegation = require('./superdelegation.js')
 const lanePick = require('./lane-pick.js')
 const calls = require('./lane-calls.js')
+const work = require('./lane-work.js')
 const wt = require('./worktrees.js')
 const { normalizePattern } = require('./globs.js')
 
@@ -80,6 +83,10 @@ const pickedOf = (pair) =>
 
 const pairOf = (pair) => ({ id: pair.id, harness: pair.harness, model: pair.model, effort: pair.effort })
 
+// The line the swarm already gives a pair that takes over a unit (workflows/run.workflow.js,
+// "Continue from it"): the work is in the tree, uncommitted, and the pair goes on from it.
+const CONTINUATION_BLOCK = ['## An external agent began this attempt', 'An earlier agent began this task. Its uncommitted work, if any, is in the worktree. Continue from it.'].join('\n')
+
 // The prompt of the pair that writes: the brief, then the paths the charge owns and, when it
 // carries one, its test command.
 function implementerPrompt(briefText, { owns, tests }) {
@@ -134,19 +141,41 @@ function runTests(worktree, command) {
 }
 
 // The patch of a failed attempt of the writer, renamed to its attempt number so the next attempt
-// cannot overwrite it; null when the attempt left nothing to save.
+// cannot overwrite it. patch is null when the attempt left nothing to save; error when the salvage
+// itself failed, so the caller does not apply an older patch on top of a worktree that may remain.
 function salvagePatch(ctx, attempt) {
-  let patch = null
+  let saved
   try {
-    patch = wt.removeUnit(ctx.cwd, ctx.id, TASK_ID, { keepPatch: true }).patch
+    saved = wt.removeUnit(ctx.cwd, ctx.id, TASK_ID, { keepPatch: true })
   } catch {
-    return null
+    return { patch: null, error: true }
   }
-  if (!patch) return null
+  if (!saved.patch) return { patch: null, error: false }
   const named = path.join(ctx.runDir, 'patches', `${TASK_ID}-attempt-${attempt}.patch`)
   fs.mkdirSync(path.dirname(named), { recursive: true })
-  if (path.resolve(patch) !== path.resolve(named)) fs.renameSync(patch, named)
-  return named
+  if (path.resolve(saved.patch) !== path.resolve(named)) fs.renameSync(saved.patch, named)
+  return { patch: named, error: false }
+}
+
+// The latest patch is already the whole diff from the base, including whatever that attempt
+// continued from. Offering it replaces the previous offer, so the next pair applies one patch.
+// An empty patch drops the offer only when this attempt started from that work and left the tree
+// clean. An attempt that never received it leaves the offer for the pair after it.
+function offerAfter(saved, offer, continued) {
+  if (saved.error) return null
+  if (saved.patch && work.patchHasDiff(saved.patch)) return saved.patch
+  if (saved.patch && continued) return null
+  return offer
+}
+
+// The next pair starts from offer only when both guards accept that patch. A refusal is named in
+// reason, so the result can say why the earlier work was not carried over.
+function settleCarry(ctx, offer, owns) {
+  if (!offer) return { apply: false }
+  const decision = work.assessCarry(ctx.cwd, offer, owns)
+  if (decision.apply) return { apply: true }
+  if (decision.empty) return { apply: false }
+  return { apply: false, reason: decision.reason }
 }
 
 // The cause with which a loop that found no pair ends: a failed attempt outranks the dry test choose
@@ -187,12 +216,13 @@ async function attemptCall(ctx, { role, call, picked, prompt }) {
 
 // The one choice loop of the writer and of the reviewer: choose, log the choice, run the attempt on the
 // pair chosen, and on a failure exclude that pair and choose again.
-async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, callName }) {
+async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, callName, owns = null }) {
   const exclude = [...initialExclude]
   const tried = []
   let attempts = 0
   let decision = null
   let lastDetail = null
+  let offer = null // the newest non-empty patch a writer left, which the next pair may start from
   for (;;) {
     const now = nowOf(ctx.deps)
     const latest = await lanePick.latestReadings(ctx.config, ctx.enabled, { dataDir: ctx.dataDir, now })
@@ -217,11 +247,28 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
     if (!decision.picked) break
     const picked = decision.picked
     attempts += 1
-    const outcome = await attemptCall(ctx, { role, call, picked, prompt })
-    if (outcome.result !== undefined) return { result: outcome.result, picked, reason: decision.reason, tried, attempts }
+    const carry = role === 'implementer' ? settleCarry(ctx, offer, owns) : { apply: false }
+    if (role === 'implementer') work.armCarry(ctx.cwd, ctx.id, TASK_ID, carry.apply ? offer : null)
+    const attemptPrompt = carry.apply ? `${prompt}\n\n${CONTINUATION_BLOCK}` : prompt
+    const outcome = await attemptCall(ctx, { role, call, picked, prompt: attemptPrompt })
+    const started = outcome.result !== undefined || !String(outcome.cause || '').startsWith('unavailable')
+    let continued = false
+    let carryNote = carry.reason || null
+    // An attempt that never reached its worktree did not start from the earlier work, even when the
+    // prompt was going to tell it to. The receipt is what the worktree actually received.
+    if (role === 'implementer' && carry.apply && started) {
+      const applied = work.consumeCarryResult(ctx.cwd, ctx.id, TASK_ID)
+      continued = applied === true
+      if (applied === false) carryNote = work.CARRY_UNAPPLICABLE
+    }
+    if (outcome.result !== undefined) return { result: outcome.result, picked, reason: decision.reason, tried, attempts, continued, carry: carryNote }
     lastDetail = outcome.detail
     if (role === 'implementer') {
-      tried.push({ pair: picked.id, cause: outcome.cause, patch: salvagePatch(ctx, attempts) })
+      const saved = salvagePatch(ctx, attempts)
+      const entry = { pair: picked.id, cause: outcome.cause, patch: saved.patch, continued }
+      if (carryNote) entry.carry = carryNote
+      tried.push(entry)
+      offer = offerAfter(saved, offer, continued)
     } else {
       tried.push({ pair: picked.id, cause: outcome.cause })
     }
@@ -347,6 +394,7 @@ async function delegateWithEnv(cwd, flags, deps) {
       reference: { model: charge.model, effort: charge.effort },
       exclude: [],
       prompt: implementerPrompt(briefText, charge),
+      owns: charge.owns,
       callName: (attempt) => `${TASK_ID}-${attempt}-implement`,
     })
     if (written.result === undefined) {
@@ -385,6 +433,8 @@ async function delegateWithEnv(cwd, flags, deps) {
       tests,
       review,
       tried: written.tried,
+      continued: written.continued === true,
+      ...(written.carry ? { carry: written.carry } : {}),
       merge: `aether-wt merge ${id} ${TASK_ID}`,
     }
   } finally {

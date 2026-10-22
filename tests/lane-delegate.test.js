@@ -60,6 +60,81 @@ function roleFake(t, { failModels = [], quotaModels = [], reviewAnswer = READY, 
   return file
 }
 
+// The sentence the swarm already tells a pair that takes over a unit (run.workflow.js).
+const CONTINUATION = 'Its uncommitted work, if any, is in the worktree. Continue from it.'
+
+// The implementer candidates of a probe, in the order the choice would try them.
+function implementerModels(choices) {
+  const choice = choices.find((entry) => entry.role === 'implementer')
+  return [choice.picked.id, ...choice.candidates.filter((candidate) => candidate.outcome === 'next').map((candidate) => candidate.id)].map(pairModelArg)
+}
+
+function promptOf(repo, id, attempt) {
+  return fs.readFileSync(path.join(repo.dir, '.aether', 'runs', id, 'lanes', `task-1-${attempt}-implement`, 'prompt.md'), 'utf8')
+}
+
+function witnessLines(file) {
+  return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line))
+}
+
+// A wrapper that records the unit worktree as the pair's process starts, then adds failure
+// directives. The record is the tree the pair sees, before its own directives run.
+function witnessingFake(t, { failModels = [], quotaModels = [], writes = {}, witness, clash = null } = {}) {
+  const file = path.join(tempDir(t, 'aether-witness-fake-'), 'witness-fake.js')
+  const lines = [
+    '#!/usr/bin/env node',
+    "'use strict'",
+    "const fs = require('node:fs')",
+    "const path = require('node:path')",
+    "const { spawnSync } = require('node:child_process')",
+    'const argv = process.argv.slice(2)',
+    "const at = (name) => { const i = argv.indexOf(name); return i === -1 ? null : argv[i + 1] }",
+    'function listTree(dir, prefix) {',
+    '  const out = {}',
+    '  for (const name of fs.readdirSync(dir)) {',
+    "    if (name === '.git' || name === '.aether-tmp') continue",
+    "    const rel = prefix ? prefix + '/' + name : name",
+    '    const full = path.join(dir, name)',
+    '    if (fs.statSync(full).isDirectory()) Object.assign(out, listTree(full, rel))',
+    "    else out[rel] = fs.readFileSync(full, 'utf8')",
+    '  }',
+    '  return out',
+    '}',
+    "const pi = argv.indexOf('-p')",
+    "if (pi !== -1 && argv[pi + 1] !== '/usage') {",
+    "  const model = at('--model')",
+    '  const prompt = argv[pi + 1]',
+    "  const implementer = prompt.includes('## Paths you own')",
+    '  if (implementer) {',
+    `    fs.appendFileSync(${JSON.stringify(witness)}, JSON.stringify({ model, files: listTree(process.cwd(), '') }) + '\\n')`,
+    '  }',
+    '  const extra = []',
+    '  if (implementer) {',
+    `    for (const spec of (${JSON.stringify(writes)}[model] || [])) extra.push('FAKE-AGY: write ' + spec)`,
+    `    if (${JSON.stringify(clash)} === model) {`,
+    "      const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).stdout.trim()",
+    '      const main = path.dirname(common)',
+    "      fs.mkdirSync(path.join(main, 'src'), { recursive: true })",
+    "      fs.writeFileSync(path.join(main, 'src', 'conflict.js'), 'from-integration\\n')",
+    "      spawnSync('git', ['add', 'src/conflict.js'], { cwd: main })",
+    "      spawnSync('git', ['commit', '-q', '-m', 'conflict on integration'], { cwd: main })",
+    '    }',
+    `    if (${JSON.stringify(failModels)}.includes(model)) extra.push('FAKE-AGY: exit-error model not found: ' + model)`,
+    `    else if (${JSON.stringify(quotaModels)}.includes(model)) {`,
+    "      extra.push('FAKE-AGY: exit-code 3')",
+    `      extra.push(${JSON.stringify(`FAKE-AGY: exit-error ${QUOTA_TEXT}`)})`,
+    '    }',
+    '  }',
+    "  if (extra.length > 0) argv[pi + 1] = prompt + '\\n' + extra.join('\\n')",
+    '}',
+    `const r = spawnSync(${JSON.stringify(fx.FAKE_AGY)}, argv, { stdio: 'inherit' })`,
+    'process.exit(r.status === null ? 1 : r.status)',
+  ]
+  fs.writeFileSync(file, lines.join('\n') + '\n')
+  fs.chmodSync(file, 0o755)
+  return file
+}
+
 const briefLines = (extra = []) => [
   'Write src/new.js saying hello and commit it.',
   ...extra,
@@ -186,7 +261,7 @@ test('a pair whose model fails passes to the next pair, its patch kept, and is n
   const turns = fx.agyTurns(env).filter((entry) => entry.argv[1].startsWith(fx.roleBody('implementer')))
   assert.equal(turns.filter((entry) => fx.argAfter(entry.argv, '--model') === modelArgOf(first)).length, 1, 'the failed pair runs once')
   assert.equal(repo.git('show', `${r.json.branch}:src/new.js`), 'hello')
-  assert.ok(!repo.git('ls-tree', '-r', '--name-only', r.json.branch).includes('src/attempt.js'), 'the failed attempt’s file is not on the branch')
+  assert.equal(repo.git('show', `${r.json.branch}:src/attempt.js`), 'attempt-one', 'the next pair continued from the failed attempt, so its file is on the branch')
 })
 
 test('a quota refusal passes to the next pair with the quota cause (E3, R8)', (t) => {
@@ -202,7 +277,7 @@ test('a quota refusal passes to the next pair with the quota cause (E3, R8)', (t
   assert.ok(fs.readFileSync(r.json.tried[0].patch, 'utf8').includes('attempt-one'))
   const turns = fx.agyTurns(env).filter((entry) => entry.argv[1].startsWith(fx.roleBody('implementer')))
   assert.equal(turns.filter((entry) => fx.argAfter(entry.argv, '--model') === modelArgOf(first)).length, 1)
-  assert.ok(!repo.git('ls-tree', '-r', '--name-only', r.json.branch).includes('src/attempt.js'))
+  assert.equal(repo.git('show', `${r.json.branch}:src/attempt.js`), 'attempt-one', 'the next pair continued from the failed attempt, so its file is on the branch')
 })
 
 test('every attempt dying at its print timeout ends as no-candidate failed, each patch kept, no unit branch left (E3, R8)', (t) => {
@@ -349,4 +424,111 @@ test('off does nothing at all, and a bad usage is an error (E6, R20)', (t) => {
   assert.ok(bad.json.error.includes('usage: aether-lane delegate'), bad.json.error)
   assert.equal(delegate.isOwnsEntry('src/**'), true)
   for (const entry of ['/abs/**', 'src/../x', 'a b', 'a{b}', '']) assert.equal(delegate.isOwnsEntry(entry), false, entry)
+})
+
+// One failed writer, then a pair that finishes. `kind` is the first pair's cause.
+function carryFromFailure(t, kind) {
+  const { choices } = probe(t)
+  const first = choices.find((entry) => entry.role === 'implementer').picked
+  const model = modelArgOf(first)
+  const witness = path.join(tempDir(t), 'witness.jsonl')
+  const repo = makeRepo(t)
+  const failing = kind === 'quota' ? { quotaModels: [model] } : { failModels: [model] }
+  const env = agyEnv(t, { command: witnessingFake(t, { ...failing, writes: { [model]: ['src/attempt.js attempt-one'] }, witness }) })
+  const r = runDelegate(repo, env, { brief: writeBrief(repo, briefLines()), tests: 'true' })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  assert.equal(r.json.tried[0].cause, kind)
+  assert.equal(r.json.tried[0].continued, false)
+  assert.equal(r.json.tried[0].carry, undefined)
+  assert.equal(r.json.continued, true)
+  assert.equal(r.json.carry, undefined)
+  const turns = witnessLines(witness)
+  assert.equal(turns.length, 2, JSON.stringify(turns))
+  assert.equal(turns[0].files['src/attempt.js'], undefined)
+  assert.equal(turns[1].files['src/attempt.js'], 'attempt-one\n')
+  assert.ok(!promptOf(repo, r.json.id, 1).includes(CONTINUATION))
+  assert.ok(promptOf(repo, r.json.id, 2).includes(CONTINUATION))
+  assert.ok(fs.readFileSync(r.json.tried[0].patch, 'utf8').includes('attempt-one'))
+}
+
+test('a pair that writes a file and then fails leaves that file in the next worktree, and the prompt says to continue (issue 68)', (t) => {
+  carryFromFailure(t, 'failed')
+})
+
+test('a pair that writes a file and then runs out of quota leaves that file in the next worktree, and the prompt says to continue (issue 68)', (t) => {
+  carryFromFailure(t, 'quota')
+})
+
+test('a patch that touches a path outside --owns is not applied, and the result says why (issue 68)', (t) => {
+  const { choices } = probe(t)
+  const model = modelArgOf(choices.find((entry) => entry.role === 'implementer').picked)
+  const witness = path.join(tempDir(t), 'witness.jsonl')
+  const repo = makeRepo(t)
+  const env = agyEnv(t, {
+    command: witnessingFake(t, { failModels: [model], writes: { [model]: ['src/kept.js kept', 'notes/outside.txt secret'] }, witness }),
+  })
+  const r = runDelegate(repo, env, { brief: writeBrief(repo, briefLines()), owns: 'src/**', tests: 'true' })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  assert.equal(r.json.tried[0].continued, false)
+  assert.equal(r.json.continued, false)
+  assert.match(r.json.carry, /not carried over/)
+  assert.match(r.json.carry, /notes\/outside\.txt/)
+  const turns = witnessLines(witness)
+  assert.equal(turns[1].files['notes/outside.txt'], undefined)
+  assert.equal(turns[1].files['src/kept.js'], undefined)
+  assert.equal(turns[1].files['src/new.js'], undefined)
+  assert.ok(!promptOf(repo, r.json.id, 2).includes(CONTINUATION))
+  assert.ok(fs.readFileSync(r.json.tried[0].patch, 'utf8').includes('notes/outside.txt'))
+})
+
+test('a patch that does not apply cleanly is not applied, and the result says why (issue 68)', (t) => {
+  const { choices } = probe(t)
+  const model = modelArgOf(choices.find((entry) => entry.role === 'implementer').picked)
+  const witness = path.join(tempDir(t), 'witness.jsonl')
+  const repo = makeRepo(t)
+  const env = agyEnv(t, {
+    command: witnessingFake(t, { failModels: [model], writes: { [model]: ['src/conflict.js from-attempt'] }, witness, clash: model }),
+  })
+  const r = runDelegate(repo, env, { brief: writeBrief(repo, briefLines()), owns: 'src/**', tests: 'true' })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  assert.equal(r.json.continued, false)
+  assert.match(r.json.carry, /does not apply cleanly/)
+  const turns = witnessLines(witness)
+  assert.equal(turns[1].files['src/conflict.js'], 'from-integration\n')
+  assert.ok(!promptOf(repo, r.json.id, 2).includes(CONTINUATION))
+})
+
+test('two failures in a row: the third pair starts from the state after the second, and the patches are not stacked (issue 68)', (t) => {
+  const { choices } = probe(t)
+  const models = implementerModels(choices)
+  assert.ok(models.length >= 3, models.join(','))
+  const [first, second] = models
+  const witness = path.join(tempDir(t), 'witness.jsonl')
+  const repo = makeRepo(t)
+  const env = agyEnv(t, {
+    command: witnessingFake(t, {
+      failModels: [first, second],
+      writes: { [first]: ['src/one.js one'], [second]: ['src/two.js two'] },
+      witness,
+    }),
+  })
+  const r = runDelegate(repo, env, { brief: writeBrief(repo, briefLines()), tests: 'true' })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  assert.equal(r.json.tried.length, 2)
+  assert.equal(r.json.tried[0].continued, false)
+  assert.equal(r.json.tried[1].continued, true)
+  assert.equal(r.json.continued, true)
+  const turns = witnessLines(witness)
+  assert.equal(turns.length, 3, JSON.stringify(turns.map((turn) => turn.model)))
+  assert.equal(turns[1].files['src/one.js'], 'one\n')
+  assert.equal(turns[1].files['src/two.js'], undefined)
+  assert.equal(turns[2].files['src/one.js'], 'one\n')
+  assert.equal(turns[2].files['src/two.js'], 'two\n')
+  const firstPatch = fs.readFileSync(r.json.tried[0].patch, 'utf8')
+  const secondPatch = fs.readFileSync(r.json.tried[1].patch, 'utf8')
+  assert.ok(firstPatch.includes('src/one.js') && !firstPatch.includes('src/two.js'))
+  assert.ok(secondPatch.includes('src/one.js') && secondPatch.includes('src/two.js'))
+  assert.ok(promptOf(repo, r.json.id, 2).includes(CONTINUATION))
+  assert.ok(promptOf(repo, r.json.id, 3).includes(CONTINUATION))
+  assert.ok(!promptOf(repo, r.json.id, 1).includes(CONTINUATION))
 })

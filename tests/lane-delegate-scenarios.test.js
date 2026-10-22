@@ -277,7 +277,7 @@ test('E3: a pair that runs out of quota mid-way passes to the next pair, and wit
   const patch = r.json.tried[0].patch
   assert.ok(patch.includes(path.join('runs', r.json.id, 'patches', 'task-1-attempt-1.patch')), patch)
   assert.ok(fs.readFileSync(patch, 'utf8').includes('attempt-one'))
-  assert.ok(!repo.git('ls-tree', '-r', '--name-only', r.json.branch).includes('src/attempt.js'), 'the failed attempt worktree is gone: its file is not on the branch')
+  assert.equal(repo.git('show', `${r.json.branch}:src/attempt.js`), 'attempt-one', 'the next pair continued from the failed attempt, so its file is on the branch')
 
   // The variant with no candidate left: the only pair that reaches runs out of quota.
   const table = pairs.loadPairs()
