@@ -439,13 +439,11 @@ function versionsOf(readings) {
   return Object.fromEntries(newest)
 }
 
-// Every launch's lane rounds, counted by the model that served them, and the lanes' overflow. A lane round's
+// Every launch's lane rounds, counted by the model that served them. A lane round's
 // provider is "<harness> <model>"; a native round's is "native", which counts nowhere.
 function launchesOf(results) {
   const attempts = {}
-  let overflow = 0
   for (const result of results) {
-    overflow += (result.lanes && result.lanes.overflow) || 0
     for (const unit of result.units || []) {
       for (const round of unit.rounds || []) {
         const lane = typeof round.provider === 'string' ? /^\S+ (.+)$/.exec(round.provider) : null
@@ -456,7 +454,7 @@ function launchesOf(results) {
       }
     }
   }
-  return { attempts, overflow }
+  return { attempts }
 }
 
 // What the plans covered: the lanes' dollars beside the native dollars, and the lanes' share of both.

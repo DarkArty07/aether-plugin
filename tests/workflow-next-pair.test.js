@@ -13,9 +13,7 @@ const { runWorkflow, laneAnswer, laneOf } = require('./workflow-harness.js')
 const LANES = {
   superdelegation: true,
   harnesses: ['agy', 'codex', 'grok'],
-  maxParallelByHarness: { agy: 4, codex: 4, grok: 4 },
   waits: { implementer: 3, supervisor: 2, reviewer: 2 },
-  cupo: { polls: 2, pollSeconds: 60 },
 }
 const FAMILY = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
 
@@ -71,7 +69,7 @@ test('an implementer whose first pair ends quota is retried on the second pair, 
     'codex gpt-5.5-codex-high',
     { harness: 'agy', model: 'gemini-3.8-flash-high', reason: 'its quota ran out' },
   ])
-  assert.deepEqual(run.result.lanes, { calls: 2, ok: 1, failed: 0, quota: 1, violation: 0, blocked: 0, unavailable: 0, overflow: 0 })
+  assert.deepEqual(run.result.lanes, { calls: 2, ok: 1, failed: 0, quota: 1, violation: 0, blocked: 0, unavailable: 0 })
   assert.deepEqual(tookOf(run, 'task-1-1-implement'), [['codex:gpt-5.5-codex', 'chosen']])
 })
 
@@ -97,7 +95,7 @@ test('three pairs in a row failing end on the native implementer, and the fourth
   const unit = run.result.units[0]
   assert.equal(unit.attempts, 1)
   assert.deepEqual([unit.rounds[0].provider, unit.rounds[0].laneFailure], ['native', { harness: 'grok', model: 'grok-4.7-high', reason: 'the wait cap ran out' }])
-  assert.deepEqual(run.result.lanes, { calls: 3, ok: 0, failed: 2, quota: 1, violation: 0, blocked: 0, unavailable: 0, overflow: 0 })
+  assert.deepEqual(run.result.lanes, { calls: 3, ok: 0, failed: 2, quota: 1, violation: 0, blocked: 0, unavailable: 0 })
   assert.deepEqual(tookOf(run, 'task-1-1-implement'), [['native', 'failed']])
 })
 
@@ -116,7 +114,7 @@ test('a supervisor lane that fails goes to the second pair, and no native superv
   assert.equal(unit.status, 'merged')
   assert.equal(unit.attempts, 1)
   assert.equal(unit.rounds[0].reviewProvider, 'agy claude-opus-5-5-high')
-  assert.deepEqual(run.result.lanes, { calls: 2, ok: 1, failed: 1, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 0 })
+  assert.deepEqual(run.result.lanes, { calls: 2, ok: 1, failed: 1, quota: 0, violation: 0, blocked: 0, unavailable: 0 })
   assert.deepEqual(tookOf(run, 'task-1-1-supervise'), [['agy:claude-opus-5-5', 'chosen']])
 })
 
@@ -132,7 +130,7 @@ test('the whole-package final review lane that fails goes to the second pair, an
   assert.deepEqual(starts(run, 'reviewer').map((c) => c.lane.model), [SONNET.model, OPUS.model])
   assert.deepEqual(picks(run, 'reviewer').map((c) => c.lane.exclude), [undefined, SONNET.id])
   assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'agy claude-opus-5-5-high'])
-  assert.deepEqual(run.result.lanes, { calls: 2, ok: 1, failed: 1, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 0 })
+  assert.deepEqual(run.result.lanes, { calls: 2, ok: 1, failed: 1, quota: 0, violation: 0, blocked: 0, unavailable: 0 })
   assert.deepEqual(tookOf(run, 'final-review'), [['agy:claude-opus-5-5', 'chosen']])
 })
 
@@ -185,6 +183,6 @@ test('a pair that failed is never asked again in the same call, and an unavailab
   assert.ok(started[3].payload.text.includes(section), started[3].payload.text)
   const unit = run.result.units[0]
   assert.deepEqual([unit.rounds[0].provider, unit.rounds[0].laneFailure], ['agy claude-sonnet-5-5-high', { harness: 'grok', model: 'grok-4.7-high', reason: 'its quota ran out' }])
-  assert.deepEqual(run.result.lanes, { calls: 3, ok: 1, failed: 1, quota: 1, violation: 0, blocked: 0, unavailable: 1, overflow: 0 })
+  assert.deepEqual(run.result.lanes, { calls: 3, ok: 1, failed: 1, quota: 1, violation: 0, blocked: 0, unavailable: 1 })
   assert.deepEqual(tookOf(run, 'task-1-1-implement'), [['agy:claude-sonnet-5-5', 'chosen']])
 })

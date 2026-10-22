@@ -32,6 +32,7 @@ test('the swarm skill and the session-start note name the skill', () => {
 
 test('the swarm skill reads the lanes counts without dry groups', () => {
   const swarm = fs.readFileSync(path.join(PLUGIN, 'skills', 'swarm', 'SKILL.md'), 'utf8')
-  assert.ok(swarm.includes('`overflow`'))
+  assert.ok(swarm.includes('`{ calls, ok, failed, quota, violation, blocked, unavailable }`'))
+  assert.ok(!swarm.includes('overflow'))
   assert.ok(!/each wave's `dry` groups/.test(swarm))
 })

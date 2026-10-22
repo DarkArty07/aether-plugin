@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { choose, enabled, resolveOption, legacyNotes, runArgs, idleHarnesses, TOLERANCE_POINTS, CUPO } = require('../plugins/aether/lib/superdelegation.js')
+const { choose, enabled, resolveOption, legacyNotes, runArgs, idleHarnesses, TOLERANCE_POINTS } = require('../plugins/aether/lib/superdelegation.js')
 const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 
 const { pairs } = loadPairs()
@@ -309,25 +309,22 @@ test('legacyNotes tells the owner what was ignored or read as on', () => {
   assert.deepEqual(legacyNotes([]), [])
 })
 
-const harness = (maxParallel) => ({ command: 'x', maxParallel, waitSeconds: 540, timeouts: { implementer: 2700, supervisor: 900, reviewer: 1200 }, groups: {}, models: { m: {} } })
+const harness = () => ({ command: 'x', waitSeconds: 540, timeouts: { implementer: 2700, supervisor: 900, reviewer: 1200 }, groups: {}, models: { m: {} } })
 
-test('runArgs: the harnesses that are enabled, installed and have pairs, their caps, the waits and the cupo wait', () => {
-  const config = { harnesses: { agy: harness(4), grok: harness(2), codex: { ...harness(2), models: {} }, cursor: harness(2), muse: harness(2) } }
+test('runArgs: the harnesses that are enabled, installed and have pairs, and the waits', () => {
+  const config = { harnesses: { agy: harness(), grok: harness(), codex: { ...harness(), models: {} }, cursor: harness(), muse: harness() } }
   const args = runArgs(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'grok', 'codex', 'cursor', 'muse'] })
   assert.deepEqual(args, {
     superdelegation: true,
     harnesses: ['agy', 'grok', 'muse'],
-    maxParallelByHarness: { agy: 4, grok: 2, muse: 2 },
     waits: { implementer: 6, supervisor: 3, reviewer: 4 },
-    cupo: { polls: 10, pollSeconds: 60 },
   })
-  assert.deepEqual(CUPO, { waitSeconds: 600, pollSeconds: 60 })
   assert.equal(runArgs(config, pairs, { installed: () => false, enabled: ['agy'] }), null)
   assert.equal(runArgs(null, pairs, { installed: () => true, enabled: ['agy'] }), null)
 })
 
 test('idleHarnesses names why an enabled harness gives the run nothing', () => {
-  const config = { harnesses: { agy: harness(4), codex: { ...harness(2), models: {} }, cursor: harness(2) } }
+  const config = { harnesses: { agy: harness(), codex: { ...harness(), models: {} }, cursor: harness() } }
   const idle = idleHarnesses(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'codex', 'cursor', 'ghost'] })
   assert.deepEqual(idle, [
     { name: 'codex', reason: 'has no models in the lane table yet' },

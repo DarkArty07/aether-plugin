@@ -6,7 +6,7 @@ const { makeRepo, compile } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { runWorkflow, laneAnswer, laneOf } = require('./workflow-harness.js')
 
-const LANES = { superdelegation: true, harnesses: ['agy'], maxParallelByHarness: { agy: 1 }, waits: { implementer: 3, supervisor: 2, reviewer: 2 }, cupo: { polls: 3, pollSeconds: 60 } }
+const LANES = { superdelegation: true, harnesses: ['agy'], waits: { implementer: 3, supervisor: 2, reviewer: 2 } }
 const FLASH = { id: 'agy/gemini-3.8-flash@medium', harness: 'agy', model: 'gemini-3.8-flash', family: 'gemini-3.8-flash', effort: 'medium', group: 'gemini', intelligence: 39.8, costPerTaskUsd: 0.93 }
 const OPUS = { id: 'agy/claude-opus-5-5@medium', harness: 'agy', model: 'claude-opus-5-5', family: 'claude-opus-5-5', effort: 'medium', group: 'claude', intelligence: 51.2, costPerTaskUsd: 1.34 }
 const FAMILY = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
@@ -41,7 +41,7 @@ test('without lanes the run never calls aether-lane and every round is native', 
 })
 
 test('lanes of the wrong shape are refused before any agent starts', async (t) => {
-  const bad = [{ superdelegation: true }, { ...LANES, maxParallelByHarness: { agy: 0 } }, { ...LANES, cupo: { polls: 0, pollSeconds: 60 } }, { ...LANES, waits: {} }, { ...LANES, harnesses: [] }]
+  const bad = [{ superdelegation: true }, { ...LANES, waits: {} }, { ...LANES, harnesses: [] }]
   for (const lanes of bad) {
     const run = await runWorkflow(argsOf(t, [task(1)], lanes))
     assert.equal(run.error && run.error.message, 'aether:run args: lanes is invalid')
@@ -170,8 +170,8 @@ test('a start that is not available repeats the pick without that pair, and the 
   assert.deepEqual([took.lane.by, took.lane.cause], ['native', 'failed'])
 })
 
-test('C10: a full harness makes the call wait, one pause per round, and the call starts when there is room', async (t) => {
-  const args = argsOf(t, [task(1), task(2)], { ...LANES, cupo: { polls: 40, pollSeconds: 60 } })
+test('C10: two calls on one harness start together, with no wait for a place', async (t) => {
+  const args = argsOf(t, [task(1), task(2)])
   const open = new Set()
   let peak = 0
   const run = await runWorkflow(args, {
@@ -188,34 +188,11 @@ test('C10: a full harness makes the call wait, one pause per round, and the call
     },
   })
   ok(run)
-  assert.equal(peak, 1)
-  assert.ok(verbs(run, 'pause').length >= 1)
-  assert.ok(verbs(run, 'pause').every((c) => c.command.rest.join(' ') === '--seconds 60'))
+  assert.equal(peak, 2)
+  assert.equal(verbs(run, 'pause').length, 0)
   assert.equal(starts(run, 'implementer'), 2)
-})
-
-test('C10 and C11: when the wait runs out the call runs native, in the native pair its pick gave, and the run counts it as overflow', async (t) => {
-  const args = argsOf(t, [task(1), task(2)], { ...LANES, waits: { implementer: 20, supervisor: 2, reviewer: 2 }, cupo: { polls: 2, pollSeconds: 60 } })
-  let waits = 0
-  const run = await runWorkflow(args, {
-    lane: (call, fallback) => {
-      if (call.command.verb === 'pick') {
-        const d = decision(call, call.lane.role === 'implementer' ? FLASH : null)
-        return call.lane.role === 'implementer' ? { ...d, native: { ...d.native, model: 'sonnet', effort: 'xhigh', id: 'claude/sonnet@xhigh', family: FAMILY.sonnet } } : d
-      }
-      // the first call stays in flight for many rounds
-      if (call.command.verb === 'wait' && call.lane.role === 'implementer' && waits++ < 15) return { done: false }
-      return fallback(call)
-    },
-  })
-  ok(run)
-  assert.equal(run.result.lanes.overflow, 1)
-  const limited = verbs(run, 'took').filter((c) => c.lane.cause === 'wait-limit')
-  assert.equal(limited.length, 1)
-  assert.equal(limited[0].lane.by, 'native')
-  const [overflowed] = natives(run, 'implementer')
-  assert.equal(natives(run, 'implementer').length, 1)
-  assert.deepEqual([overflowed.model, overflowed.effort], ['sonnet', 'xhigh'])
+  assert.equal(natives(run, 'implementer').length, 0)
+  assert.equal(Object.hasOwn(run.result.lanes, 'overflow'), false)
 })
 
 test('C12 and C11: a supervisor whose pair ran and failed runs in the native pair its pick gave, and took says failed', async (t) => {

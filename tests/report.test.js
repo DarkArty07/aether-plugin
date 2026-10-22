@@ -324,7 +324,6 @@ test('report adds the lanes: calls, tokens and dollars by group, model and role,
   assert.deepEqual(Object.keys(run.byRole).sort(), ['implementer', 'supervisor'])
   assert.equal(run.byRole.implementer.calls, 2)
   assert.deepEqual(run.attempts, { [GEMINI]: { attempts: 2, approved: 1 } })
-  assert.equal(run.overflow, 2)
 
   assert.equal(session.calls, 4)
   close(session.usd, 31.575)
@@ -348,7 +347,7 @@ test('a run without lane calls reports empty lanes, and an unpriced lane model i
   assert.equal(empty.lanes.run.calls, 0)
   assert.equal(empty.lanes.totals.run.lanesUsd, 0)
   assert.equal(empty.lanes.totals.run.coveredShare, 0)
-  assert.deepEqual([empty.lanes.version, empty.lanes.run.groups, empty.lanes.run.overflow], [null, {}, 0])
+  assert.deepEqual([empty.lanes.version, empty.lanes.run.groups], [null, {}])
   assert.deepEqual(empty.lanes.run.byHarness, {})
   appendLog(dataDir, 'run-session', {
     kind: 'call', time: T0 + 5 * MIN, startedAt: T0 + 4 * MIN, session: 'run-session', run: args.runId, design: null, call: 'task-1-1-implement',
@@ -787,7 +786,7 @@ test('the RADAR figures say how much of the work left Claude and what each harne
   sampleLaneLog(dataDir, args.runId)
   appendLog(dataDir, null, tookEntry(args.runId, 5, { call: 'task-1-1-implement', by: 'agy:gemini-3.8-flash', cause: 'chosen' }))
   appendLog(dataDir, null, tookEntry(args.runId, 6, { call: 'task-2-1-implement', by: 'native', cause: 'no-candidate' }))
-  appendLog(dataDir, null, tookEntry(args.runId, 7, { call: 'task-3-1-implement', by: 'native', cause: 'wait-limit' }))
+  appendLog(dataDir, null, tookEntry(args.runId, 7, { call: 'task-3-1-implement', by: 'native', cause: 'failed' }))
   const { radar } = report(repo.dir, args.runId, { dataDir, tests: false })
   assert.deepEqual(radar.delegation.work, { calls: 3, external: 1, native: 2, externalShare: 1 / 3 })
   assert.ok(radar.delegation.quotaByHarness.agy['5h'].consumed > 0)

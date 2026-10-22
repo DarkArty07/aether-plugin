@@ -47,7 +47,6 @@ function validateHarness(name, harness) {
   }
   if (!isObject(harness)) throw new Error(`harness ${name} must be an object`)
   if (typeof harness.command !== 'string' || harness.command === '') fail('command', 'must be a non-empty string')
-  if (!isInteger(harness.maxParallel, 1)) fail('maxParallel', 'must be an integer of at least 1')
   if (!isInteger(harness.waitSeconds, 1)) fail('waitSeconds', 'must be an integer of at least 1')
   if (harness.quotaLifeMinutes !== undefined && !isInteger(harness.quotaLifeMinutes, 0)) {
     fail('quotaLifeMinutes', 'must be an integer of at least 0')

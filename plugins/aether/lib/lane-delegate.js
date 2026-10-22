@@ -4,8 +4,8 @@
 // one-unit run the command writes itself, and comes back as the unit's branch with the tests the
 // command ran in its worktree and a review of its diff. The pair is the one rule's (choose in
 // lib/superdelegation.js, over the views of lib/lane-pick.js); a pair that fails saves its work as a
-// patch and passes to the next candidate, never the same one, and a full cupo on one harness only
-// excludes that harness for this charge. The command never merges: the Lead reads the result,
+// patch and passes to the next candidate, never the same one. A harness has no limit on its calls in
+// flight: an attempt starts at once on the pair that was chosen. The command never merges: the Lead reads the result,
 // merges with aether-wt, or, on `no-candidate`, runs the charge natively under the same id.
 
 const fs = require('node:fs')
@@ -41,153 +41,6 @@ function isOwnsEntry(entry) {
   if (typeof entry !== 'string' || entry === '') return false
   if (entry.startsWith('/') || entry.split('/').includes('..')) return false
   return !/[\s`{}()[\]]/.test(entry)
-}
-
-function defaultIsAlive(pid) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return err.code === 'EPERM'
-  }
-}
-
-function readPid(file) {
-  try {
-    const pid = Number.parseInt(fs.readFileSync(file, 'utf8'), 10)
-    return pid > 0 ? pid : null
-  } catch {
-    return null
-  }
-}
-
-function readText(file) {
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch {
-    return null
-  }
-}
-
-function readJsonOrNull(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-function listDirs(dir) {
-  try {
-    return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort()
-  } catch {
-    return []
-  }
-}
-
-// ---- The cupo slots ----
-
-function cupoDir(dataDir, harness) {
-  return path.join(dataDir, 'lanes', 'cupo', harness)
-}
-
-// Takes the first free slot-<i> of a harness under <dataDir>/lanes/cupo/<harness>/, atomically by
-// mkdir, while the standing slots do not reach maxParallel - liveExternal; a slot whose pid no
-// longer lives is reclaimed on the spot. The slot holds `pid` and, when runId is given, `run`, so
-// that liveLaneCalls does not count the slot holder's own call twice. Null when there is no room.
-function acquireSlot(dataDir, harness, maxParallel, { pid = process.pid, isAlive = defaultIsAlive, liveExternal = 0, runId = null } = {}) {
-  if (!Number.isInteger(maxParallel) || maxParallel < 1) return null
-  const capacity = maxParallel - liveExternal
-  if (capacity <= 0) return null
-  const dir = cupoDir(dataDir, harness)
-  fs.mkdirSync(dir, { recursive: true })
-  for (;;) {
-    let standing = 0
-    const free = []
-    for (let i = 0; i < maxParallel; i++) {
-      const slot = path.join(dir, `slot-${i}`)
-      if (!fs.existsSync(slot)) {
-        free.push(slot)
-        continue
-      }
-      const holder = readPid(path.join(slot, 'pid'))
-      // A slot whose pid file cannot be read yet belongs to a delegate still writing it: it stands.
-      if (holder === null || isAlive(holder)) {
-        standing += 1
-        continue
-      }
-      fs.rmSync(slot, { recursive: true, force: true })
-      free.push(slot)
-    }
-    if (standing >= capacity || free.length === 0) return null
-    const slot = free[0]
-    try {
-      fs.mkdirSync(slot)
-    } catch (err) {
-      if (err.code === 'EEXIST') continue
-      throw err
-    }
-    fs.writeFileSync(path.join(slot, 'pid'), `${pid}\n`)
-    if (runId !== null) fs.writeFileSync(path.join(slot, 'run'), `${runId}\n`)
-    return { slot }
-  }
-}
-
-// Releases a slot: removes its directory. Never throws.
-function releaseSlot(dataDir, harness, slot) {
-  try {
-    const given = typeof slot === 'string' ? slot : slot?.slot
-    if (typeof given !== 'string' || given === '') return
-    const dir = path.isAbsolute(given) ? given : path.join(cupoDir(dataDir, harness), given)
-    fs.rmSync(dir, { recursive: true, force: true })
-  } catch {
-    // A slot that cannot be removed is reclaimed when its pid is dead.
-  }
-}
-
-// The run ids a standing slot of harness already counts: the trimmed `run` file of each slot whose
-// pid lives. Counting never reclaims a slot; that is acquireSlot's.
-function slottedRuns(dataDir, harness, isAlive) {
-  const runs = new Set()
-  for (const name of listDirs(cupoDir(dataDir, harness))) {
-    if (!name.startsWith('slot-')) continue
-    const dir = path.join(cupoDir(dataDir, harness), name)
-    const pid = readPid(path.join(dir, 'pid'))
-    if (pid === null || !isAlive(pid)) continue
-    const runId = readText(path.join(dir, 'run'))?.trim()
-    if (runId) runs.add(runId)
-  }
-  return runs
-}
-
-// How many lane calls of harness are still in flight in this repository that no standing slot
-// already counts: one per call folder under <mainRoot>/.aether/runs/*/lanes/*/ whose call.json is
-// of the harness (a missing harness field ran on agy, as in lane-calls.js), of a run that is not
-// excludeRun nor held by a standing slot of the data directory, with no finished result and a live
-// pid file. An unreadable call.json counts nothing and breaks nothing.
-function liveLaneCalls(mainRoot, harness, { dataDir = null, excludeRun = null, isAlive = defaultIsAlive } = {}) {
-  const runsDir = path.join(run.aetherDir(mainRoot), 'runs')
-  if (!fs.existsSync(runsDir)) return 0
-  const held = dataDir === null ? new Set() : slottedRuns(dataDir, harness, isAlive)
-  let count = 0
-  for (const runId of listDirs(runsDir)) {
-    if (runId === excludeRun || held.has(runId)) continue
-    for (const call of listDirs(path.join(runsDir, runId, 'lanes'))) {
-      const dir = path.join(runsDir, runId, 'lanes', call)
-      const info = readJsonOrNull(path.join(dir, 'call.json'))
-      if (info === null || typeof info !== 'object') continue
-      const of = typeof info.harness === 'string' ? info.harness : 'agy'
-      if (of !== harness) continue
-      if (readJsonOrNull(path.join(dir, 'result.json'))?.done === true) continue
-      const pid = readPid(path.join(dir, 'pid'))
-      if (pid !== null && isAlive(pid)) count += 1
-    }
-  }
-  return count
 }
 
 // ---- The command ----
@@ -296,11 +149,10 @@ function salvagePatch(ctx, attempt) {
   return named
 }
 
-// The cause with which a loop that found no pair ends: a failed attempt outranks a full cupo,
-// which outranks the dry test choose itself makes for its reason, and what is left is no-pair.
+// The cause with which a loop that found no pair ends: a failed attempt outranks the dry test choose
+// itself makes for its reason, and what is left is no-pair.
 function endCause({ tried, decision }) {
   if (tried.some((entry) => entry.pair !== null)) return 'failed'
-  if (tried.some((entry) => entry.cause === 'cupo')) return 'cupo'
   return decision !== null && decision.reason.includes('is dry') ? 'dry' : 'no-pair'
 }
 
@@ -333,13 +185,11 @@ async function attemptCall(ctx, { role, call, picked, prompt }) {
   return { result: done.result }
 }
 
-// The one choice loop of the writer and of the reviewer: choose, log the choice, count the live
-// calls, take a slot or exclude the full harness for this charge, run the attempt, and on a
-// failure exclude that pair and choose again. A full cupo is never an attempt.
+// The one choice loop of the writer and of the reviewer: choose, log the choice, run the attempt on the
+// pair chosen, and on a failure exclude that pair and choose again.
 async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, callName }) {
   const exclude = [...initialExclude]
   const tried = []
-  const fullHarnesses = new Set()
   let attempts = 0
   let decision = null
   let lastDetail = null
@@ -366,24 +216,8 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
     })
     if (!decision.picked) break
     const picked = decision.picked
-    const harness = ctx.config.harnesses[picked.harness]
-    const liveExternal = liveLaneCalls(ctx.mainRoot, picked.harness, { dataDir: ctx.dataDir, excludeRun: ctx.id, isAlive: ctx.isAlive })
-    const held = acquireSlot(ctx.dataDir, picked.harness, harness.maxParallel, { isAlive: ctx.isAlive, liveExternal, runId: ctx.id })
-    if (held === null) {
-      if (!fullHarnesses.has(picked.harness)) {
-        fullHarnesses.add(picked.harness)
-        tried.push({ pair: null, harness: picked.harness, cause: 'cupo' })
-      }
-      for (const pair of ctx.table) if (pair.harness === picked.harness && !exclude.includes(pair.id)) exclude.push(pair.id)
-      continue
-    }
     attempts += 1
-    let outcome
-    try {
-      outcome = await attemptCall(ctx, { role, call, picked, prompt })
-    } finally {
-      releaseSlot(ctx.dataDir, picked.harness, held.slot)
-    }
+    const outcome = await attemptCall(ctx, { role, call, picked, prompt })
     if (outcome.result !== undefined) return { result: outcome.result, picked, reason: decision.reason, tried, attempts }
     lastDetail = outcome.detail
     if (role === 'implementer') {
@@ -486,14 +320,12 @@ async function delegateWithEnv(cwd, flags, deps) {
     cwd,
     id,
     runDir,
-    mainRoot: paths.mainRoot,
     config,
     table,
     enabled,
     dataDir: run.dataDir(env),
     session: charge.session,
     deps,
-    isAlive: deps.isAlive ?? defaultIsAlive,
     wait: deps.wait ?? calls.wait,
   }
 
@@ -567,4 +399,4 @@ function delegateCommand(cwd, flags, deps = {}) {
   return withEnv(deps.env ?? {}, () => delegateWithEnv(cwd, flags, deps))
 }
 
-module.exports = { ALLOWED_HARNESSES, DELEGATE_USAGE, reviewerReference, isOwnsEntry, acquireSlot, releaseSlot, liveLaneCalls, delegateCommand }
+module.exports = { ALLOWED_HARNESSES, DELEGATE_USAGE, reviewerReference, isOwnsEntry, delegateCommand }

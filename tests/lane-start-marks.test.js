@@ -30,7 +30,6 @@ function codexEntry() {
   const levels = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
   return {
     command: fx.FAKE_AGY,
-    maxParallel: 1,
     waitSeconds: 60,
     timeouts: { implementer: 60, supervisor: 60, reviewer: 60 },
     groups: { codex: 'codex models' },
