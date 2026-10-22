@@ -51,18 +51,26 @@ function autonomyNote() {
 }
 
 // The usage meter's files grow with every session, and so do the lane log and the session
-// markers: sessions not written to for 30 days go, from all three.
+// markers: sessions not written to for 30 days go, from all three. A session whose spend cannot
+// be archived stays, and the prunes leave a trace of it in prune-failures.json (lib/spend-archive.js).
 function pruneOldFiles() {
+  let dir = null
   try {
     const { pruneUsage: prune } = require(path.join(root, 'lib', 'report.js'))
     const { pruneLog } = require(path.join(root, 'lib', 'lanes.js'))
     const { pruneSessions } = require(path.join(root, 'lib', 'session.js'))
     const { dataDir } = require(path.join(root, 'lib', 'run.js'))
-    prune(dataDir(), { days: 30 })
-    pruneLog(dataDir(), { days: 30 })
-    pruneSessions(dataDir(), { days: 30 })
-  } catch {
-    // Pruning is housekeeping: it never blocks the session.
+    dir = dataDir()
+    prune(dir, { days: 30 })
+    pruneLog(dir, { days: 30 })
+    pruneSessions(dir, { days: 30 })
+    require(path.join(root, 'lib', 'spend-archive.js')).clearFailure(dir, 'session-start')
+  } catch (err) {
+    // Pruning is housekeeping: it never blocks the session. What stopped it is left in the trace, which does not
+    // throw either.
+    try {
+      if (dir !== null) require(path.join(root, 'lib', 'spend-archive.js')).noteFailure(dir, 'session-start', err)
+    } catch {}
   }
 }
 
