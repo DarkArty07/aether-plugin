@@ -27,6 +27,11 @@
 // this file whether the session is Aether's (aetherSession) when they are used, never at session start, so that the
 // first answer kept for the session is the meter's own.
 //
+// It also gives an Aether session the /spend command (spend-panel.jsx): a pane with the list-price spend of this
+// session, drawn without a model. The Lead's SessionStart declares the command; the command and the pane ask
+// this file whether the session is Aether's (aetherSession) when they are used, never at session start, so that the
+// first answer kept for the session is the meter's own.
+//
 // It also runs the quota brake (spec 011, quota-brake.mjs): after each metered step it reads the session's rate-limit
 // windows, and when one crosses the threshold it warns the owner once, records the crossing with aether-autonomy, tells
 // the Lead through the plugin's own prompt to stop the run's work, and arms a wake-up for the window's reset. The brake
@@ -37,6 +42,7 @@
 
 import { PAYLOAD_PATH, parseOpsPrompt } from './ops-command.mjs'
 import { registerPanel } from './panel.jsx'
+import { registerSpend } from './spend-panel.jsx'
 import { brakePromptFor, crossingsOf, initialBrakeState, jsonFrom, notifyFor, resumePromptFor } from './quota-brake.mjs'
 import { createRouter } from './router.mjs'
 
@@ -498,6 +504,7 @@ async function brakeStepOnce($, state) {
 
 export function register(on, options) {
   registerPanel(on, options)
+  registerSpend(on)
 
   on('classic.SessionStart', async ($, e, next) => {
     if (e && e.agent_type === LEAD && typeof e.session_id === 'string' && SESSION_ID.test(e.session_id)) {
