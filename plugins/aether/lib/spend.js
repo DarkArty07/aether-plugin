@@ -50,6 +50,7 @@ function emptyTally() {
     byRole: {},
     harness: { calls: 0, usd: 0, byModel: {} },
     unpriced: [],
+    tokenless: [],
     first: null,
     last: null,
     resumptions: 0,
@@ -79,6 +80,7 @@ function bump(table, key, usd, count, by = 1) {
 function tallyOf(events) {
   const tally = emptyTally()
   const unpriced = new Set()
+  const tokenless = new Set()
   const times = []
   for (const event of events) {
     if (isTime(event.time)) times.push(event.time)
@@ -88,6 +90,7 @@ function tallyOf(events) {
       unpriced.add(event.model)
       continue
     }
+    if (event.tokenless) tokenless.add(event.model)
     tally.usd += event.usd
     bump(tally.byModel, event.model, event.usd, 'requests')
     bump(tally.byEffort, `${event.model} ${event.effort || 'unknown'}`, event.usd, 'requests')
@@ -101,6 +104,7 @@ function tallyOf(events) {
     }
   }
   tally.unpriced = [...unpriced].sort()
+  tally.tokenless = [...tokenless].sort()
   times.sort((a, b) => a - b)
   if (times.length > 0) {
     tally.first = times[0]
@@ -131,6 +135,7 @@ function mergeTallies(a, b) {
     byRole: mergeBuckets(a.byRole, b.byRole, 'requests'),
     harness: { calls: a.harness.calls + b.harness.calls, usd: a.harness.usd + b.harness.usd, byModel: mergeBuckets(a.harness.byModel, b.harness.byModel, 'calls') },
     unpriced: [...new Set([...a.unpriced, ...b.unpriced])].sort(),
+    tokenless: [...new Set([...a.tokenless, ...b.tokenless])].sort(),
     first: earlier(a.first, b.first),
     last: later(a.last, b.last),
     resumptions: a.resumptions + b.resumptions,
@@ -143,14 +148,18 @@ function mergeTallies(a, b) {
 const missing = (err) => err && err.code === 'ENOENT'
 
 // The event of a call of another harness, from a lane-log call or a journal outcome, priced as a lane's call.
+// `tokenless` marks a call that answered (`ok`) and recorded no tokens: it is priced at zero for lack of them, which is
+// a gap in the figure that a measured zero is not. A call that was refused, failed or stopped spent nothing to count.
 function harnessEvent(source, entry, prices) {
   const model = textOrUnknown(entry.model)
+  const tokens = laneTokens(entry.usage ?? {})
   return {
     source,
     time: isTime(entry.time) ? entry.time : null,
     model,
     effort: entry.effort || null,
-    usd: priceEntry({ model, ...laneTokens(entry.usage ?? {}), agent: 'lane' }, prices),
+    usd: priceEntry({ model, ...tokens, agent: 'lane' }, prices),
+    tokenless: entry.status === 'ok' && Object.values(tokens).every((count) => count === 0),
   }
 }
 
@@ -340,6 +349,7 @@ function readOutcomeEvents(dataDir, id, { prices = loadPrices() } = {}) {
 
 const isBuckets = (table, count) => isObject(table) && Object.values(table).every((bucket) => isObject(bucket) && isTime(bucket.usd) && isTime(bucket[count]))
 const isMark = (value) => value === null || isTime(value)
+const isModels = (list) => Array.isArray(list) && list.every((model) => typeof model === 'string')
 
 function isTally(tally) {
   return (
@@ -354,8 +364,9 @@ function isTally(tally) {
     isTime(tally.harness.calls) &&
     isTime(tally.harness.usd) &&
     isBuckets(tally.harness.byModel, 'calls') &&
-    Array.isArray(tally.unpriced) &&
-    tally.unpriced.every((model) => typeof model === 'string') &&
+    isModels(tally.unpriced) &&
+    // A summary written before this field existed has none; readSummary gives it an empty list.
+    (tally.tokenless === undefined || isModels(tally.tokenless)) &&
     isMark(tally.first) &&
     isMark(tally.last) &&
     isTime(tally.resumptions) &&
@@ -378,6 +389,7 @@ function readSummary(dataDir, id) {
     return { exists: !missing(err), readable: false, summary: null }
   }
   if (!isSummary(summary, id)) return { exists: true, readable: false, summary: null }
+  summary.tally = { ...summary.tally, tokenless: summary.tally.tokenless ?? [] }
   return { exists: true, readable: true, summary }
 }
 
@@ -474,6 +486,7 @@ function shaped(session, recorded, complete, tally, prices) {
     byRole: tally.byRole,
     harness: tally.harness,
     unpriced: tally.unpriced,
+    tokenless: tally.tokenless,
     firstRequest: isoOrNull(tally.first),
     lastRequest: isoOrNull(tally.last),
     resumptions: none ? null : tally.resumptions,

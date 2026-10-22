@@ -10,6 +10,7 @@ const { useDataDir, age } = require('./helpers.js')
 const { MIN, T0, PRICES, iso, usdOf, meter, writeParts, laneCall, journalLine, outcome, summaryOf, writeSummary, ageFile } = require('./spend-fixtures.js')
 const spendLib = require('../plugins/aether/lib/spend.js')
 const { spendReport, latestSession, isSessionId, mergeTallies, tallyOf, emptyTally, readUsageEvents, readLaneEvents, readSummary, GAP_MS } = spendLib
+const { archiveSpend } = require('../plugins/aether/lib/spend-archive.js')
 
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`)
 const sum = (list) => list.reduce((total, value) => total + value, 0)
@@ -33,7 +34,7 @@ test('E1: the total, the Lead, the agents and every split come out of the same r
   const lead = sum(all.filter((e) => !e.agent).map(usdOf))
   const helpers = sum(all.filter((e) => e.agent).map(usdOf))
   const r = report(dataDir, 's1')
-  assert.deepEqual(Object.keys(r), ['session', 'recorded', 'complete', 'basis', 'currency', 'usd', 'leadUsd', 'agentsUsd', 'byModel', 'byEffort', 'byRole', 'harness', 'unpriced', 'firstRequest', 'lastRequest', 'resumptions', 'resumptionsApproximate'])
+  assert.deepEqual(Object.keys(r), ['session', 'recorded', 'complete', 'basis', 'currency', 'usd', 'leadUsd', 'agentsUsd', 'byModel', 'byEffort', 'byRole', 'harness', 'unpriced', 'tokenless', 'firstRequest', 'lastRequest', 'resumptions', 'resumptionsApproximate'])
   assert.deepEqual([r.session, r.recorded, r.complete, r.currency, r.basis], ['s1', true, true, 'USD', 'test list prices, S1'])
   close(r.leadUsd, lead)
   close(r.agentsUsd, helpers)
@@ -124,7 +125,7 @@ test('a well-formed id with no records is "not recorded yet", never zero dollars
   const r = report(dataDir, 'nothing')
   assert.deepEqual(r, {
     session: 'nothing', recorded: false, complete: true, basis: 'test list prices, S1', currency: 'USD', usd: null, leadUsd: null, agentsUsd: null,
-    byModel: {}, byEffort: {}, byRole: {}, harness: { calls: 0, usd: 0, byModel: {} }, unpriced: [], firstRequest: null, lastRequest: null, resumptions: null, resumptionsApproximate: true,
+    byModel: {}, byEffort: {}, byRole: {}, harness: { calls: 0, usd: 0, byModel: {} }, unpriced: [], tokenless: [], firstRequest: null, lastRequest: null, resumptions: null, resumptionsApproximate: true,
   })
 })
 
@@ -360,4 +361,77 @@ test('isTime and later are defined once, in spend.js, and the archive uses those
   const archive = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'spend-archive.js'), 'utf8')
   assert.doesNotMatch(archive, /^(const|function) (isTime|later)\b/m)
   assert.match(archive, /\bisTime\b[^\n]*\blater\b[^\n]*= require\('\.\/spend\.js'\)|\blater\b[^\n]*\bisTime\b[^\n]*= require\('\.\/spend\.js'\)/)
+})
+
+test('a call that answered and recorded no tokens is listed as tokenless, beside the unpriced, and not added as a made-up zero', (t) => {
+  const dataDir = useDataDir(t)
+  writeParts(dataDir, 's1', [{ entries: [meter(0, 'm-a', null, 'input'), { ...meter(1, 'm-a', null, 'input'), input: 0 }] }])
+  const real = laneCall(dataDir, 's1', 2, 'm-b', 'output')
+  laneCall(dataDir, 's1', 3, 'm-b', 'input', { usage: {} })
+  outcome(dataDir, 's1', 4, 'm-a', 'input', { id: 'd-4', usage: { input: 0, output: 0, thinking: 0, cacheRead: 0 } })
+  outcome(dataDir, 's1', 5, 'x-free', 'input', { id: 'd-5', usage: {} })
+  const r = report(dataDir, 's1')
+  assert.deepEqual(r.tokenless, ['m-a', 'm-b'])
+  assert.deepEqual(r.unpriced, ['x-free'])
+  close(r.usd, 1 + real)
+  assert.equal(r.harness.calls, 4)
+  assert.equal(r.harness.byModel['m-b'].calls, 2)
+  assert.equal(r.complete, true)
+  assert.deepEqual(Object.keys(r).slice(Object.keys(r).indexOf('unpriced'), Object.keys(r).indexOf('unpriced') + 2), ['unpriced', 'tokenless'])
+})
+
+test('a call that did not answer is no gap in the figure: a refusal, a failure or a quota stop with no tokens is not tokenless', (t) => {
+  const dataDir = useDataDir(t)
+  let minutes = 0
+  for (const status of ['dirty', 'failed', 'quota', 'stopped']) {
+    laneCall(dataDir, 's1', ++minutes, 'm-b', 'input', { status, usage: {} })
+    outcome(dataDir, 's1', ++minutes, 'm-b', 'input', { id: `d-${minutes}`, status, usage: { input: 0, output: 0, thinking: 0, cacheRead: 0 } })
+  }
+  const r = report(dataDir, 's1')
+  assert.deepEqual([r.recorded, r.tokenless, r.unpriced, r.harness.calls], [true, [], [], 8])
+})
+
+test('a request of the meter with zero tokens is a measured zero and is not tokenless', (t) => {
+  const dataDir = useDataDir(t)
+  writeParts(dataDir, 's1', [{ entries: [{ ...meter(0, 'm-a', null, 'input'), input: 0 }] }])
+  const r = report(dataDir, 's1')
+  assert.deepEqual([r.tokenless, r.unpriced, r.byModel], [[], [], { 'm-a': { usd: 0, requests: 1 } }])
+})
+
+test('tokenless survives the archive of a prune and merges with what is still on disk', (t) => {
+  const dataDir = useDataDir(t)
+  laneCall(dataDir, 's1', 1, 'm-a', 'input', { usage: {} })
+  assert.equal(archiveSpend(dataDir, 's1', 'lanes', { prices: PRICES }).archived, true)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, 'spend', 's1.json'), 'utf8')).tally.tokenless, ['m-a'])
+  fs.rmSync(path.join(dataDir, 'lanes', 's1.jsonl'))
+  assert.deepEqual(report(dataDir, 's1').tokenless, ['m-a'])
+  laneCall(dataDir, 's1', 2, 'm-b', 'input', { usage: {} })
+  const r = report(dataDir, 's1')
+  assert.deepEqual([r.tokenless, r.complete], [['m-a', 'm-b'], true])
+})
+
+test('a summary written before the field existed is still a summary and reports no tokenless call', (t) => {
+  const dataDir = useDataDir(t)
+  const old = summaryOf('s1')
+  assert.equal('tokenless' in old.tally, false)
+  writeSummary(dataDir, 's1', old)
+  const read = readSummary(dataDir, 's1')
+  assert.equal(read.readable, true)
+  const r = report(dataDir, 's1')
+  assert.deepEqual([r.complete, r.tokenless], [true, []])
+  laneCall(dataDir, 's1', 30, 'm-b', 'input', { usage: {} })
+  assert.deepEqual(report(dataDir, 's1').tokenless, ['m-b'])
+  const bad = summaryOf('s2')
+  bad.tally.tokenless = [1]
+  writeSummary(dataDir, 's2', bad)
+  assert.equal(readSummary(dataDir, 's2').readable, false)
+})
+
+test('tallyOf and mergeTallies carry tokenless as a sorted list with no repeats', () => {
+  const a = tallyOf([
+    { source: 'call', time: T0, model: 'm-b', effort: null, usd: 0, tokenless: true },
+    { source: 'call', time: T0 + 1, model: 'm-b', effort: null, usd: 0, tokenless: true },
+  ])
+  const b = tallyOf([{ source: 'outcome', time: T0, model: 'm-a', effort: null, usd: 0, tokenless: true }, { source: 'meter', time: T0, model: 'm-c', effort: null, usd: 0, lead: true }])
+  assert.deepEqual([a.tokenless, b.tokenless, mergeTallies(a, b).tokenless, emptyTally().tokenless], [['m-b'], ['m-a'], ['m-a', 'm-b'], []])
 })
