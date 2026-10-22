@@ -132,8 +132,10 @@ A relaunch keeps the run's first compile time, and keeps the previous launch's r
 
 Finish when every unit is merged or adopted, the final review has no open critical or important finding, and the test command passes on the integration branch, or fails only on the run's baseline (`quality.tests.knownFailuresOnly` in the report).
 
-1. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first, and in a run record the last cost with `aether-autonomy spend` before it. It appends the report to `runs.jsonl` in the plugin's data directory, with the Aether and Claude Code versions, and agy's when an agy lane ran. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
-2. Finish the branch yourself, as the owner's delegate:
+1. First, include this session's spend in the closing report from aether-report --spend --session <id de esta sesión>:
+   Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.
+2. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first, and in a run record the last cost with `aether-autonomy spend` before it. It appends the report to `runs.jsonl` in the plugin's data directory, with the Aether and Claude Code versions, and agy's when an agy lane ran. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
+3. Finish the branch yourself, as the owner's delegate:
    - **merge to `main`** only when `aether-autonomy check merge-main` passes, or the owner authorized this merge once in their own words;
    - **push or open a pull request** only when `aether-autonomy check push` passes, or the owner authorized it once;
    - **discard** never on your own: it deletes work (class `delete`);
