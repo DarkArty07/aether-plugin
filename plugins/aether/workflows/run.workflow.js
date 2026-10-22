@@ -805,9 +805,13 @@ function combineReports(items, reports) {
 
 // The round before this one ended without a report, and not on its own changes outside Owns.
 // A violation also pushes `no report` onto the failures, and must not split the next attempt.
+// A split pass a pair failure ended has no report of its own: the task already showed it is too
+// large to run whole, so the next attempt stays split.
 function followsMissingReport(unit) {
   const last = unit.rounds[unit.rounds.length - 1]
-  return Boolean(last && last.noReport)
+  if (!last) return false
+  if (last.pairEnded) return true
+  return Boolean(last.noReport)
 }
 
 // The glob matcher of lib/globs.js, written out because a workflow has no modules. Only the part
@@ -855,7 +859,8 @@ function groupItems(items) {
 }
 
 // The files git already tracks in the unit worktree. An ops call, not a read: the runtime replays a
-// resumed run by repeating its agent calls. A listing that fails is no files, so a glob stays one item.
+// resumed run by repeating its agent calls. The listing goes through a Haiku ops agent and is not
+// counted toward maxAgents. A listing that fails is no files, so a glob stays one item.
 async function trackedFiles(unit) {
   const worktree = `${repoRoot}/.aether/worktrees/${runId}/${unit.id}`
   const reply = await call('ops', 'haiku', 'low', opsPrompt(`git -C ${quote(worktree)} ls-files`), {
@@ -1047,7 +1052,7 @@ async function implementSplit(unit, task, model, effort, rung, context, exclude,
       const ran = outcome.model || locked.model
       provider = `${locked.harness} ${ran}`
       laneFailure = { harness: locked.harness, model: ran, reason }
-      return stop({ report: null, failure: `${locked.harness} ${ran} stopped before it finished: ${reason}`, subAttempts: i + 1 })
+      return stop({ report: null, failure: `${locked.harness} ${ran} stopped before it finished: ${reason}`, pairEnded: true, subAttempts: i + 1 })
     }
 
     const native = routed ? routed.decision.native : { model, effort, family: null }
@@ -1240,12 +1245,13 @@ async function work(unit, task) {
       salvaged,
       noReport: !report && !attempt.failure,
       ...(attempt.split ? { split: true, subAttempts: attempt.subAttempts } : {}),
+      ...(attempt.pairEnded ? { pairEnded: true } : {}),
     }
     unit.rounds.push(round)
     // A failed implementer, or a lane's changes outside Owns: the attempt failed, and the ladder decides,
     // unless the unit has now ended twice without a report, which means it is too large for one attempt.
     // A pair that fails during a split pass is that failure, not a second missing report: the next attempt
-    // leaves the pair out, as any failed attempt does.
+    // leaves the pair out, and it is split again, because the task already showed it is too large.
     if (!report) {
       if (!(attempt.split && attempt.failure)) {
         unit.failures.push(NO_REPORT)
@@ -1307,42 +1313,50 @@ async function work(unit, task) {
     // A merge the mod cuts at 600 s has its commit on the branch and its tests unfinished (issue #2). status says
     // unverified, and the same merge command is run again: that rerun repeats the tests and does not merge a second time.
     // The unit is merged only when the rerun passes. A rerun that is cut too leaves the commit there, unverified.
-    let out = await serialized(() => ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true }))
-    if (out.merged) {
-      unit.commit = out.commit
+    // The merge, the status check and the rerun are one turn of the merge queue, so another unit cannot land
+    // on the untested commit between them (finding 2). The rerun's commit is the one the marker names.
+    const settled = await serialized(async () => {
+      const merged = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true })
+      if (merged.merged) return { done: 'merged', commit: merged.commit, out: merged }
+      if (!merged.error) return { out: merged }
+      // Never blocked on captured output alone (issue 002): the git history says whether the unit is in.
+      const status = await ops(`aether-wt status ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge status` })
+      if (!status.error && status.unverified) {
+        const again = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: verify merge`, long: true })
+        if (again.merged) return { done: 'rerun', commit: again.commit, out: again }
+        // A second cut, or any error from the rerun: the commit is on the branch and the tests did not pass.
+        if (again.error) return { done: 'untested', out: again }
+        // A failing test run is the usual failing merge, so the one retry below applies.
+        return { out: again }
+      }
+      if (!status.error && status.merged) return { done: 'status', commit: status.commit, out: status }
+      return { done: 'blocked', out: merged }
+    })
+    if (settled.done === 'merged') {
+      unit.commit = settled.commit
       return finish(unit, 'merged')
     }
-    round.merge = describeMerge(out)
-    if (out.error) {
-      // Never blocked on captured output alone (issue 002): the git history says whether the unit is in.
-      const status = await serialized(() => ops(`aether-wt status ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge status` }))
-      if (!status.error && status.unverified) {
-        const again = await serialized(() => ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: verify merge`, long: true }))
-        if (again.merged) {
-          unit.commit = again.commit
-          round.merge = 'merged: the tests were rerun after the merge was cut, and they passed'
-          log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
-          return finish(unit, 'merged')
-        }
-        // A second cut, or any error from the rerun: the commit is on the branch and the tests did not pass.
-        if (again.error) {
-          const reason = 'its merge commit is on the integration branch without a passing test run'
-          round.merge = reason
-          log(`${unit.id}: merge rerun did not finish (${again.error}); ${reason}`)
-          return finish(unit, 'blocked', reason)
-        }
-        // A failing test run is the usual failing merge, so the one retry below applies.
-        out = again
-        round.merge = describeMerge(out)
-      } else if (!status.error && status.merged) {
-        unit.commit = status.commit
-        round.merge = 'merged: the merge output was unreadable, and the merge commit is on the integration branch'
-        log(`${unit.id}: merge output unreadable, but its merge commit is on ${integration.branch}; counting it merged`)
-        return finish(unit, 'merged')
-      } else {
-        return finish(unit, 'blocked', `merge ${round.merge}`)
-      }
+    if (settled.done === 'rerun') {
+      unit.commit = settled.commit
+      round.merge = 'merged: the tests were rerun after the merge was cut, and they passed'
+      log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
+      return finish(unit, 'merged')
     }
+    if (settled.done === 'untested') {
+      const reason = 'its merge commit is on the integration branch without a passing test run'
+      round.merge = reason
+      log(`${unit.id}: merge rerun did not finish (${settled.out.error}); ${reason}`)
+      return finish(unit, 'blocked', reason)
+    }
+    if (settled.done === 'status') {
+      unit.commit = settled.commit
+      round.merge = 'merged: the merge output was unreadable, and the merge commit is on the integration branch'
+      log(`${unit.id}: merge output unreadable, but its merge commit is on ${integration.branch}; counting it merged`)
+      return finish(unit, 'merged')
+    }
+    let out = settled.out
+    round.merge = describeMerge(out)
+    if (settled.done === 'blocked') return finish(unit, 'blocked', `merge ${round.merge}`)
     if (out.reason === 'conflict' || out.reason === 'tests') {
       if (mergeRetried) return finish(unit, 'blocked', `merge failed again: ${round.merge}`)
       mergeRetried = true
