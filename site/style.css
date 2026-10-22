@@ -23,6 +23,8 @@ html[data-motion="paused"]{scroll-behavior:auto}
 body{margin:0;background:var(--ink);color:var(--text);font:400 16px/1.6 var(--body);overflow-x:hidden;-webkit-font-smoothing:antialiased}
 img,svg,canvas{max-width:100%}
 img{display:block;height:auto}
+/* img{display:block} would beat the UA rule of the hidden attribute, and a hidden GIF stayed on screen beside its still */
+[hidden]{display:none!important}
 h1,h2,h3,p,ol,ul,figure,pre{margin:0;padding:0}
 ol,ul{list-style:none}
 a{color:inherit;text-decoration:none}
@@ -75,6 +77,14 @@ button.b-later:hover{background:var(--v2)}
 .frame::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(13,11,28,.22) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}
 .frame-lg{aspect-ratio:auto}
 .frame-lg img{height:auto}
+/* pixel GIFs (img.px): the art is hard-edged, so no scanlines over it; .px-still is the canvas copy of the frame on screen (app.js) */
+.px-frame::after{display:none}
+.px-still{display:block;width:100%;height:100%;object-fit:cover}
+.frame-lg .px-still{height:auto}
+.px-flow{max-width:1200px;margin:0 auto clamp(32px,4vw,56px)}
+.pdia-scroll{min-width:0;max-width:900px}
+.pdia-scroll .pdia,.pdia-scroll .px-still{width:100%;height:auto;display:block}
+.lanes-img{max-width:960px;margin-inline:auto}
 .sweep::before,.frame::before{content:"";position:absolute;left:0;right:0;top:0;height:24%;z-index:2;pointer-events:none;background:linear-gradient(180deg,transparent,rgba(230,220,255,.10) 60%,rgba(245,194,231,.26) 94%,transparent);opacity:0;transform:translate3d(0,-146%,0)}
 
 /* ---------- nav ---------- */
@@ -119,7 +129,7 @@ button.b-later:hover{background:var(--v2)}
 .chips li{border:1px dotted var(--faint);padding:6px 9px}
 .hero-win{position:absolute;right:var(--gut);bottom:96px;width:clamp(290px,24vw,350px);box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .hero-win-body{aspect-ratio:1/1}
-.hero-win-body img,.hero-win-body canvas{width:100%;height:100%;object-fit:cover;image-rendering:auto}
+.hero-win-body img,.hero-win-body canvas{width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
 /* images fade in once decoded instead of popping in over a slow mount */
 .hero-img,#mascot{opacity:0;transition:opacity .6s ease}
 .hero-img.ready,#mascot.ready{opacity:1}
@@ -143,17 +153,21 @@ button.b-later:hover{background:var(--v2)}
 .note-sm{font-size:13px;margin-top:28px;color:var(--dim)}
 
 /* 01 radar */
-.radar{display:grid;grid-template-columns:repeat(6,1fr);gap:clamp(18px,2.4vw,34px) clamp(16px,2vw,28px)}
-.card{grid-column:span 2;display:grid;gap:12px;align-content:start;padding:12px 12px 20px;border:1px solid transparent;transition:transform .25s cubic-bezier(.2,.8,.2,1),border-color .25s,background .25s,box-shadow .25s}
+.radar{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:0 clamp(28px,5vw,80px);align-items:start}
+.card{grid-column:2;display:grid;gap:12px;align-content:start;padding:12px 12px 20px;border:1px solid transparent;transition:transform .25s cubic-bezier(.2,.8,.2,1),border-color .25s,background .25s,box-shadow .25s}
 .card:hover{transform:translateY(-8px);border-color:var(--hair);background:rgba(30,27,58,.55);box-shadow:0 18px 40px rgba(0,0,0,.4),0 0 0 1px rgba(245,194,231,.15)}
+/* the five goals are rows beside the RADAR picture: letter and word on the left, the meaning on the right */
+.radar .card:not(.card-acr){grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);align-items:center;gap:2px clamp(16px,2.4vw,32px);padding:20px 0 22px;border:solid var(--hair);border-width:1px 0 0}
+.radar article.card:last-of-type{border-bottom:1px solid var(--hair)}
+.radar .card:not(.card-acr):hover{transform:none;box-shadow:none;background:rgba(30,27,58,.35)}
+.radar .card:not(.card-acr) .num{grid-column:1;grid-row:1}
+.radar .card:not(.card-acr) .word{grid-column:1;grid-row:2;margin-top:0}
+.radar .card:not(.card-acr) .gloss{grid-column:1;grid-row:3;margin-top:10px}
+.radar .card:not(.card-acr) .mean{grid-column:2;grid-row:1/4;align-self:center}
 .word{font:700 clamp(46px,4.6vw,68px)/.9 var(--display);color:var(--paper);letter-spacing:.005em;margin-top:6px}
 .word .first{color:var(--pink);transition:color .3s,text-shadow .3s}
-.card-acr{border:1px dotted var(--hair);background:linear-gradient(135deg,rgba(74,58,138,.25),rgba(13,11,28,0))}
-.acr{display:grid;gap:0;margin-block:4px 6px}
-.acr li{display:flex;align-items:baseline;gap:0;padding:6px 0;border-bottom:1px dotted rgba(203,166,247,.18);font:700 clamp(34px,3.4vw,50px)/1 var(--display);color:var(--v2);transition:color .3s}
-.acr b{font:inherit;color:inherit;transition:color .3s,text-shadow .3s}
-.acr li.lit{color:var(--paper)}
-.acr li.lit b{color:var(--pink);text-shadow:0 0 22px rgba(245,194,231,.55)}
+.card-acr{grid-column:1;grid-row:1/span 5;border:1px dotted var(--hair);background:linear-gradient(135deg,rgba(74,58,138,.25),rgba(13,11,28,0))}
+.card-acr .btn{justify-self:start;margin-top:8px}
 
 /* 02 team */
 .team{position:relative;display:grid;gap:56px}
@@ -309,6 +323,7 @@ html.anim .yes-win:not(.has) .yes-empty{animation:fadein .5s ease both}
 .foot-indep{font:400 12px/1.6 var(--mono);color:var(--dim);letter-spacing:.02em}
 .foot-t a{color:var(--paper);border-bottom:1px solid var(--v2)}
 .foot-top{font:400 12px var(--mono);letter-spacing:.14em;color:var(--pink);text-transform:uppercase}
+.foot-links{display:grid;gap:12px;justify-items:end}
 
 /* motion toggle */
 .motion-box{position:fixed;right:16px;bottom:16px;z-index:60;display:flex;gap:8px;align-items:stretch;max-width:calc(100vw - 32px)}
@@ -376,6 +391,7 @@ html.anim .reveal.in{opacity:1;transform:none}
 html.boot .reveal{transition:none!important}
 html.anim .card.reveal.in{transition:opacity .7s ease-out,transform .25s cubic-bezier(.2,.8,.2,1),border-color .25s,background .25s,box-shadow .25s}
 html.anim .card.reveal.in:hover{transform:translateY(-8px)}
+html.anim .radar .card:not(.card-acr).reveal.in:hover{transform:none}
 html.anim .role.reveal.in:hover{transform:translateY(-6px)}
 html.anim .radar .card:not(.lit) .first{color:var(--v1)}
 html.anim .radar .card.lit .first{text-shadow:0 0 18px rgba(245,194,231,.6)}
@@ -421,9 +437,9 @@ html.anim.calm .tl li::before,html.anim.calm .tl b{transition-duration:.5s}
   .nav-links a i{display:inline}
   .nav-links a{padding:14px 4px;border-bottom:1px solid var(--hair);font-size:13px}
   .nav-tools{margin-left:auto}
-  .radar{grid-template-columns:repeat(2,1fr)}
-  .card{grid-column:span 1}
-  .card-acr{grid-column:span 2}
+  .radar{grid-template-columns:minmax(0,1fr)}
+  .card,.radar .card:not(.card-acr){grid-column:1}
+  .card-acr{grid-row:auto;order:-1;margin-bottom:12px;max-width:640px}
   .roles{grid-template-columns:repeat(2,minmax(0,1fr))}
   .net{display:none}
   .team{gap:34px}
@@ -436,12 +452,13 @@ html.anim.calm .tl li::before,html.anim.calm .tl b{transition-duration:.5s}
   .hero-win{position:relative;right:auto;bottom:auto;width:min(340px,100%);margin-block:6px 26px}
   .hero-main{padding-bottom:10px}
   .foot-in{grid-template-columns:1fr}
+  .foot-links{justify-items:start}
 }
 @media (max-width:640px){
   :root{--nav:52px}
   .nav-gh{display:none}
-  .radar{grid-template-columns:minmax(0,1fr)}
-  .card,.card-acr{grid-column:span 1}
+  .radar .card:not(.card-acr){grid-template-columns:minmax(0,1fr)}
+  .radar .card:not(.card-acr) .mean{grid-column:1;grid-row:4}
   .roles{grid-template-columns:1fr}
   .role-lead{grid-template-columns:1fr}
   .role-t{padding:0 4px 6px}
@@ -455,6 +472,9 @@ html.anim.calm .tl li::before,html.anim.calm .tl b{transition-duration:.5s}
   .lnodes{position:static;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
   .ln{position:relative;left:auto;top:auto;transform:none;width:auto}
   .token{display:none}
+  .pdia-scroll,.px-flow{overflow-x:auto}
+  .pdia-scroll .pdia,.pdia-scroll .px-still{width:640px;max-width:none}
+  .px-flow .frame{width:720px;max-width:none}
   .facts{grid-template-columns:1fr}
   .pn text{font-size:28px;letter-spacing:0}
   .cap{display:none}
@@ -477,4 +497,23 @@ html.anim.calm .tl li::before,html.anim.calm .tl b{transition-duration:.5s}
 }
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
+}
+
+/* ---------- identity pass (2026-10-22) ---------- */
+/* the hero window bar wraps instead of overflowing its frame */
+.hero-win .win-bar{flex-wrap:wrap;gap:6px}
+.hero-win .win-bar span:first-child{white-space:normal}
+/* the plates carry no scanline overlay and no sweep band: the pixel GIFs have none */
+.role .frame::before,.role .frame::after{display:none}
+/* the vertical ghost text touched the cards between 1181 and 1500 px */
+@media (max-width:1500px){.ghost{display:none}}
+/* the hero label over the planet */
+.hero-top .tag-r{color:var(--paper);text-shadow:0 0 6px #0d0b1c}
+/* a quieter pause button on wide screens */
+@media (min-width:641px){.motion-box .motion{background:rgba(13,11,28,.82);border-color:var(--v2);min-height:36px;padding:8px 11px;font-size:11px}}
+/* on phones the big pixel scenes scroll sideways instead of shrinking until their text cannot be read */
+@media (max-width:640px){
+  .lanes-img,.control-left .frame{overflow-x:auto}
+  .lanes-img img,.lanes-img .px-still{width:720px;max-width:none}
+  .control-left .frame img,.control-left .frame .px-still{width:640px;max-width:none}
 }

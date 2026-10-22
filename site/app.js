@@ -24,25 +24,26 @@
       'hero.lead': 'Añade un <strong>modo Aether</strong> opcional: un orquestador responsable, el Lead, convierte tu intención en una spec y un plan revisados, los construye con un swarm paralelo de agentes y con los otros planes de código que ya pagas, y te informa en un solo brief.',
       'hero.note': '<code>claude</code> a secas sigue siendo el modo normal.',
       'hero.cta': 'Cómo funciona ↓',
-      'hero.bar': 'NEEDS YOUR YES · PUSH · MERGE',
+      'hero.bar': 'NEEDS YOUR YES',
       'hero.yes': 'SÍ · SE EJECUTA UNA VEZ',
       'hero.later': 'QUEDA EN LA LISTA',
-      'hero.mascot.alt': 'Una mascota pixelada recibe un rayo y se convierte en un Claude Aether cósmico y morado, que llama a tres cangrejos y muestra un brief en un monitor retro',
+      'hero.mascot.alt': 'Clawd, una mascota pixelada, se satura de tareas. Un comando /aether y un rayo cósmico la vuelven una galaxia morada que reparte el trabajo entre tres subagentes, muestra un brief en un monitor retro, espera un sí, hace el merge y vuelve a su escritorio',
 
       'metas.tag': '// 01 · METAS',
       'metas.title': 'Cinco metas.<br><em>Una sigla.</em>',
       'metas.intro': 'Aether sirve a cinco metas, <em>RADAR</em>. Cada brief que escribe el Lead informa de las cinco.',
-      'metas.acr': 'Cada brief informa de las cinco. <code>aether-report</code> pone precio a un run y reúne sus cifras.',
+      'metas.acr': 'Cada brief informa de las cinco. <code>aether-report</code> pone precio a un run y reúne sus cifras.', 'metas.more': 'Ver cada meta en movimiento',
       'ac.1': 'Rápido', 'ac.2': 'Autónomo', 'ac.3': 'Delegación', 'ac.4': 'Asequible', 'ac.5': 'Robusto',
-      'r1.alt': 'Un rayo violeta que cruza una nebulosa', 'r1.w': 'ápido', 'r1.g': 'FAST',
+      'radar.alt': 'Un radar redondo barre tres vueltas: se encienden cinco puntos y las cinco letras de la sigla RADAR mientras Clawd lo mira',
+      'r1.alt': 'Un cangrejo ligero lleva tarjetas de tarea a la meta a toda velocidad mientras uno grande, con una etiqueta de precio, descansa; un límite corta el bucle de reintentos', 'r1.w': 'ápido', 'r1.g': 'FAST',
       'r1.m': 'Modelos rápidos y baratos hacen el grueso del trabajo, y nada itera sin fin.',
-      'r2.alt': 'Una esfera armilar de anillos y esferas', 'r2.w': 'utónomo', 'r2.g': 'AUTONOMOUS',
+      'r2.alt': 'Clawd atrapa en el aire las preguntas triviales de los cangrejos y las decide solo; lo irreversible va a una sola lista que llega al dueño', 'r2.w': 'utónomo', 'r2.g': 'AUTONOMOUS',
       'r2.m': 'No se te pregunta por lo trivial, y cada paso irreversible te llega en una sola lista.',
-      'r3.alt': 'Dos manos de mármol que se pasan un orbe', 'r3.w': 'elegación', 'r3.g': 'DELEGATION',
+      'r3.alt': 'Clawd reparte tarjetas por tuberías a cinco estaciones, agy, Codex, Grok, Cursor y Muse, y recoge sus resultados mientras el agente nativo de Claude duerme', 'r3.w': 'elegación', 'r3.g': 'DELEGATION',
       'r3.m': 'El trabajo va a otros harness de código (agy, Codex, Grok, Cursor, Muse) mientras dure su cuota.',
-      'r4.alt': 'Una balanza de platillos ante una galaxia', 'r4.w': 'sequible', 'r4.g': 'AFFORDABLE',
+      'r4.alt': 'Cada rol prueba primero el modelo más barato y sube un nivel solo si falla el control de calidad; al final un sello marca el ahorro frente a usar solo Opus', 'r4.w': 'sequible', 'r4.g': 'AFFORDABLE',
       'r4.m': 'Cada rol corre con el modelo y el esfuerzo más baratos que lo hacen bien.',
-      'r5.alt': 'Columnas dóricas ante una nebulosa', 'r5.w': 'obusto', 'r5.g': 'ROBUST',
+      'r5.alt': 'Un bloque de código pasa por tests, evidencia y una revisión independiente, que encuentra un segundo bicho, y recibe un sello de verificado', 'r5.w': 'obusto', 'r5.g': 'ROBUST',
       'r5.m': 'Código de calidad, comprobado con tests, evidencia y revisiones independientes.',
 
       'team.tag': '// 02 · EQUIPO',
@@ -62,7 +63,7 @@
 
       'paths.tag': '// 03 · CAMINOS',
       'paths.title': 'Tres caminos,<br><em>una decisión</em>',
-      'paths.intro': 'El Lead toma uno de tres caminos para cada trabajo, y elige el modelo de cada tarea delegada por calidad, costo y velocidad. Pasa el cursor sobre un diagrama para detenerlo.',
+      'paths.intro': 'El Lead toma uno de tres caminos para cada trabajo, y elige el modelo de cada tarea delegada por calidad, costo y velocidad.',
       'paths.foot': 'ILUSTRATIVO: los diagramas muestran el orden de las etapas, no tiempos reales.',
       'n.lead': 'LEAD', 'n.result': 'RESULTADO', 'n.result.s': 'FINAL',
       'n.sub': 'SUBAGENTE', 'n.sub.s': 'TAREA',
@@ -70,15 +71,15 @@
       'n.review': 'REVISIÓN', 'n.review.s': 'REV.',
       'p.direct.n': 'Directo',
       'p.direct.w': 'Un cambio muy acotado: unas cinco llamadas a herramientas y ningún ciclo de editar-probar-corregir. El Lead lo hace en línea, con el modelo en que corre.',
-      'p.direct.a': 'Un trazo recto del Lead al resultado',
+      'p.direct.a': 'Clawd hace cinco llamadas a herramientas en línea, de READ a RUN, y la bandera del resultado sube',
       'p.direct.c': 'EN LÍNEA · ~5 LLAMADAS',
       'p.delegate.n': 'Tarea delegada',
       'p.delegate.w': 'Trabajo acotado que ya es una tarea real: un ciclo de editar-probar-corregir, una limpieza, una búsqueda. Un subagente en segundo plano, con un encargo autocontenido y el modelo y esfuerzo que el Lead nombra y justifica.',
-      'p.delegate.a': 'Una rama del Lead a un subagente y de vuelta',
+      'p.delegate.a': 'El Lead escribe un encargo con el modelo y el esfuerzo elegidos y lo pasa a un subagente en segundo plano; el subagente edita, prueba y corrige mientras el Lead sigue libre, y el resultado vuelve',
       'p.delegate.c': 'SEGUNDO PLANO · MODELO Y ESFUERZO ELEGIDOS',
       'p.swarm.n': 'Swarm',
       'p.swarm.w': 'Trabajo largo, costoso o complejo: un plan aprobado de tres o más tareas, o con una tarea de Tier opus. /aether:run, cada tarea en su Tier; las unidades aprobadas se funden de una en una y una revisión final cubre todo.',
-      'p.swarm.a': 'El Lead reparte en unidades paralelas que se funden de una en una, seguidas de una revisión final y el brief',
+      'p.swarm.a': 'El Lead reparte un plan en cuatro unidades paralelas, cada una en su worktree; una falla y reintenta; las unidades aprobadas se funden de una en una, de 0/4 a 4/4, y una revisión final cubre todo antes del brief',
       'p.swarm.c1': 'EN PARALELO · CADA UNIDAD EN SU WORKTREE',
       'p.swarm.c2': 'DE UNA EN UNA',
       'p.swarm.c3': 'REVISIÓN FINAL',
@@ -117,7 +118,7 @@
       'control.tag': '// 05 · CONTROL',
       'control.title': 'Tú decides<br><em>lo irreversible</em>',
       'control.intro': 'El Lead decide como tu delegado lo que tu intención cubre. Solo llega a ti lo que la intención no cubre, lo que choca con ella y las acciones irreversibles que ningún permiso cubre.',
-      'control.alt': 'Tres columnas dóricas de mármol ante una nebulosa',
+      'control.alt': 'Una compuerta con lámpara: las cajas normales pasan solas, y las marcadas PUSH, MERGE o DEPLOY ponen la lámpara en rojo y esperan en una lista hasta que el cursor del dueño pulsa YES',
       'c1.h': 'Una sola lista',
       'c1.t': 'Lo irreversible, y lo que solo tú puedes elegir, espera tu sí en una lista que abre cada brief. Todo lo demás avanza. Puedes autorizar una clase en general: <code>merge-main</code>, <code>push</code>, <code>publish</code>, <code>deploy</code>, <code>delete</code>, <code>credentials</code> o <code>paid-call</code>.',
       'c2.h': 'Examen oculto',
@@ -139,7 +140,7 @@
       'lanes.tag': '// 06 · CARRILES',
       'lanes.title': 'Superdelegation:<br><em>la cuota de otros planes</em>',
       'lanes.intro': 'Con <code>superdelegation</code> activada, todo lo que no es el Lead sale primero a otro plan de código que ya pagas, mientras dure su cuota. Si un harness falta, se queda sin cuota o no arranca, la misma llamada pasa al siguiente candidato, y al agente nativo de Claude si no queda ninguno, sin gastar la escalera.',
-      'lanes.alt': 'Islas de roca flotando en el espacio, unidas por hilos de luz',
+      'lanes.alt': 'Las tarjetas de tarea caen por un pozo y entran al primer carril con cuota; cuando un carril se queda sin cuota, la siguiente tarjeta pasa al siguiente, hasta caer en el agente nativo de Claude, que no se acaba, y las cuotas se renuevan',
       'lanes.native': 'AGENTE NATIVO',
       'lanes.st.idle': 'libre', 'lanes.st.use': 'en uso', 'lanes.st.low': 'bajo la reserva',
       'lanes.st.noread': 'sin lectura de cuota', 'lanes.st.fail': 'falló por cuota',
@@ -168,7 +169,7 @@
       'links.docs': 'Documentación', 'links.lic': 'Licencia',
       'foot.t': 'Los agentes implementador, supervisor y revisor adaptan plantillas de superpowers; el preset de Aether adapta las de GitHub Spec Kit; varias piezas portan ideas de oh-my-claudecode, todo bajo licencia MIT. El texto dentro de las ventanas es ilustrativo.',
       'foot.indep': 'Aether es un proyecto independiente; no está afiliado ni respaldado por Anthropic.',
-      'foot.top': 'Volver al origen ↑',
+      'foot.top': 'Volver al origen ↑', 'foot.gal': 'Más animaciones →',
       'motion.pause': 'Pausar animación', 'motion.play': 'Activar animación',
       'motion.calm': 'Tu sistema pide menos movimiento: animación suave.', 'motion.full': 'Ver completa',
       'motion.fullon': 'Animación completa, aunque tu sistema pide menos movimiento.', 'motion.tocalm': 'Suavizar'
@@ -187,25 +188,26 @@
       'hero.lead': 'It adds an opt-in <strong>Aether mode</strong>: an accountable orchestrator, the Lead, turns your intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans you already pay for, and reports in one brief.',
       'hero.note': 'Plain <code>claude</code> stays normal mode.',
       'hero.cta': 'How it works ↓',
-      'hero.bar': 'NEEDS YOUR YES · PUSH · MERGE',
+      'hero.bar': 'NEEDS YOUR YES',
       'hero.yes': 'YES · RUNS ONCE',
       'hero.later': 'STAYS ON THE LIST',
-      'hero.mascot.alt': 'A pixel mascot is struck by lightning and becomes a cosmic purple Claude Aether, who calls three crabs and shows a brief on a retro monitor',
+      'hero.mascot.alt': 'Clawd, a pixel mascot, is swamped with tasks. A /aether command and a cosmic bolt turn it into a purple galaxy that hands the work to three subagents, shows a brief on a retro monitor, waits for a yes, merges and goes back to its desk',
 
       'metas.tag': '// 01 · GOALS',
       'metas.title': 'Five goals.<br><em>One acronym.</em>',
       'metas.intro': 'Aether serves five goals, <em>RADAR</em>. Every brief the Lead writes reports all five.',
-      'metas.acr': 'Every brief reports the five. <code>aether-report</code> prices a run and gathers its figures.',
+      'metas.acr': 'Every brief reports the five. <code>aether-report</code> prices a run and gathers its figures.', 'metas.more': 'See each goal in motion',
       'ac.1': 'Rápido', 'ac.2': 'Autónomo', 'ac.3': 'Delegación', 'ac.4': 'Asequible', 'ac.5': 'Robusto',
-      'r1.alt': 'A violet lightning bolt across a nebula', 'r1.w': 'ápido', 'r1.g': 'FAST',
+      'radar.alt': 'A round radar sweeps three turns: five blips and the five letters of the RADAR acronym light up while Clawd watches',
+      'r1.alt': 'A light crab carries task cards to the finish line at full speed while a big one with a price tag rests; a limit cuts the retry loop', 'r1.w': 'ápido', 'r1.g': 'FAST',
       'r1.m': 'Fast, cheap models do the bulk of the work, and nothing iterates without end.',
-      'r2.alt': 'An armillary sphere of rings and spheres', 'r2.w': 'utónomo', 'r2.g': 'AUTONOMOUS',
+      'r2.alt': 'Clawd catches the trivial questions of the crabs in mid-air and decides them alone; the irreversible goes onto a single list that reaches the owner', 'r2.w': 'utónomo', 'r2.g': 'AUTONOMOUS',
       'r2.m': 'You are not asked about trivial things, and every irreversible step reaches you in one list.',
-      'r3.alt': 'Two marble hands passing an orb', 'r3.w': 'elegación', 'r3.g': 'DELEGATION',
+      'r3.alt': 'Clawd sends cards down pipes to five stations, agy, Codex, Grok, Cursor and Muse, and collects their results while the native Claude agent sleeps', 'r3.w': 'elegación', 'r3.g': 'DELEGATION',
       'r3.m': 'Work goes to other coding harnesses (agy, Codex, Grok, Cursor, Muse) while their quota lasts.',
-      'r4.alt': 'Balance scales in front of a galaxy', 'r4.w': 'sequible', 'r4.g': 'AFFORDABLE',
+      'r4.alt': 'Each role tries the cheapest model first and steps up one level only if the quality gate fails; at the end a stamp marks the saving against using Opus alone', 'r4.w': 'sequible', 'r4.g': 'AFFORDABLE',
       'r4.m': 'Each role runs on the cheapest model and effort that does it well.',
-      'r5.alt': 'Doric columns in front of a nebula', 'r5.w': 'obusto', 'r5.g': 'ROBUST',
+      'r5.alt': 'A block of code goes through tests, evidence and an independent review that finds a second bug, and receives a verified stamp', 'r5.w': 'obusto', 'r5.g': 'ROBUST',
       'r5.m': 'Quality code, checked by tests, evidence and independent reviews.',
 
       'team.tag': '// 02 · TEAM',
@@ -225,7 +227,7 @@
 
       'paths.tag': '// 03 · PATHS',
       'paths.title': 'Three paths,<br><em>one decision</em>',
-      'paths.intro': 'The Lead takes one of three paths for each piece of work, and chooses the model of every delegate task for quality, cost and speed. Hover a diagram to hold it.',
+      'paths.intro': 'The Lead takes one of three paths for each piece of work, and chooses the model of every delegate task for quality, cost and speed.',
       'paths.foot': 'ILLUSTRATIVE: the diagrams show the order of the stages, not real timings.',
       'n.lead': 'LEAD', 'n.result': 'RESULT', 'n.result.s': 'DONE',
       'n.sub': 'SUBAGENT', 'n.sub.s': 'TASK',
@@ -233,15 +235,15 @@
       'n.review': 'REVIEW', 'n.review.s': 'REV.',
       'p.direct.n': 'Direct',
       'p.direct.w': 'A very bounded change: about five tool calls and no edit-test-fix loop. The Lead does it inline, on the model it runs on.',
-      'p.direct.a': 'A straight line from the Lead to the result',
+      'p.direct.a': 'Clawd makes five inline tool calls, from READ to RUN, and the result flag goes up',
       'p.direct.c': 'INLINE · ~5 CALLS',
       'p.delegate.n': 'Delegate task',
       'p.delegate.w': 'Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a research sweep. One subagent in the background, with a self-contained brief, on the model and effort the Lead names and justifies.',
-      'p.delegate.a': 'A branch from the Lead to one subagent and back',
+      'p.delegate.a': 'The Lead writes a brief with the model and effort chosen and hands it to a background subagent; the subagent edits, tests and fixes while the Lead stays free, and the result comes back',
       'p.delegate.c': 'BACKGROUND · MODEL AND EFFORT CHOSEN',
       'p.swarm.n': 'Swarm',
       'p.swarm.w': 'Long, costly or complex work: an approved plan of three or more tasks, or with a task of Tier opus. /aether:run, each task on its Tier; approved units merge one at a time and a final review covers the whole run.',
-      'p.swarm.a': 'The Lead fans out to parallel units that merge one at a time, followed by a final review and the brief',
+      'p.swarm.a': 'The Lead splits a plan into four parallel units, each in its own worktree; one fails and retries; the approved units merge one at a time, from 0/4 to 4/4, and a final review covers everything before the brief',
       'p.swarm.c1': 'IN PARALLEL · EACH UNIT IN ITS WORKTREE',
       'p.swarm.c2': 'ONE AT A TIME',
       'p.swarm.c3': 'FINAL REVIEW',
@@ -280,7 +282,7 @@
       'control.tag': '// 05 · CONTROL',
       'control.title': 'You decide<br><em>what can\'t be undone</em>',
       'control.intro': 'The Lead decides, as your delegate, what your intent covers. Only what the intent does not cover, what conflicts with it, and irreversible actions that no grant covers reach you.',
-      'control.alt': 'Three marble Doric columns in front of a nebula',
+      'control.alt': 'A gate with a lamp: ordinary crates pass alone, and those marked PUSH, MERGE or DEPLOY turn the lamp red and wait on a list until the owner cursor presses YES',
       'c1.h': 'One list',
       'c1.t': 'What is irreversible, and what only you can choose, waits for your yes in one list that opens every brief. Everything else proceeds. You may authorize a class in general: <code>merge-main</code>, <code>push</code>, <code>publish</code>, <code>deploy</code>, <code>delete</code>, <code>credentials</code> or <code>paid-call</code>.',
       'c2.h': 'Hidden exam',
@@ -302,7 +304,7 @@
       'lanes.tag': '// 06 · LANES',
       'lanes.title': 'Superdelegation:<br><em>other plans\' quota</em>',
       'lanes.intro': 'With <code>superdelegation</code> on, everything that is not the Lead runs first on another coding plan you already pay for, while that plan\'s quota lasts. When a harness is missing, out of quota or fails to start, the same call goes to the next candidate, and to Claude\'s native agent when none is left, without spending the ladder.',
-      'lanes.alt': 'Floating rock islands in space, joined by threads of light',
+      'lanes.alt': 'Task cards fall down a shaft into the first lane with quota left; when a lane runs dry the next card moves to the next one, down to the native Claude agent, which never runs out, and the quotas renew',
       'lanes.native': 'NATIVE AGENT',
       'lanes.st.idle': 'free', 'lanes.st.use': 'in use', 'lanes.st.low': 'under the reserve',
       'lanes.st.noread': 'no quota reading', 'lanes.st.fail': 'failed for quota',
@@ -331,7 +333,7 @@
       'links.docs': 'Documentation', 'links.lic': 'License',
       'foot.t': 'The implementer, supervisor and reviewer agents adapt prompt templates of superpowers; the Aether preset adapts GitHub Spec Kit\'s templates; several pieces port ideas from oh-my-claudecode, all under the MIT License. The text inside the windows is illustrative.',
       'foot.indep': 'Aether is an independent project; it is not affiliated with or endorsed by Anthropic.',
-      'foot.top': 'Back to the origin ↑',
+      'foot.top': 'Back to the origin ↑', 'foot.gal': 'More animations →',
       'motion.pause': 'Pause animation', 'motion.play': 'Enable animation',
       'motion.calm': 'Your system asks for less motion: calm animation.', 'motion.full': 'Play full',
       'motion.fullon': 'Full animation, though your system asks for less motion.', 'motion.tocalm': 'Calm it'
@@ -475,6 +477,39 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Pixel GIFs (img.px)                                                 */
+  /* ------------------------------------------------------------------ */
+  /* A GIF starts when it comes into view, so its story begins at its first frame, and it is not fetched before.
+     It freezes (a canvas copy of the frame on screen) when motion is paused or calm. Without JavaScript a noscript copy of the image plays it. */
+  var pxImgs = $$('img.px');
+  function pxSync(img) {
+    var frozen = S.mode !== 'full', still = img._still;
+    if (!frozen) { if (still) still.hidden = true; img.hidden = false; return; }
+    if (!img._live) return;
+    if (!still) {
+      still = img._still = doc.createElement('canvas');
+      still.className = 'px-still'; still.hidden = true; still.setAttribute('role', 'img');
+      img.parentNode.insertBefore(still, img.nextSibling);
+    }
+    try {
+      still.width = img.naturalWidth; still.height = img.naturalHeight;
+      still.getContext('2d').drawImage(img, 0, 0);
+      still.setAttribute('aria-label', img.alt);
+      still.hidden = false; img.hidden = true;
+    } catch (e) { /* keep the GIF */ }
+  }
+  var pxIO = new IntersectionObserver(function (es) {
+    es.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      var img = e.target; pxIO.unobserve(img);
+      img.addEventListener('load', function () { img._live = true; pxSync(img); });
+      img.src = img._src;
+    });
+  }, { rootMargin: '160px 0px', threshold: 0.15 });
+  pxImgs.forEach(function (img) { img._src = img.getAttribute('data-src'); pxIO.observe(img); });
+  langHooks.push(function () { pxImgs.forEach(function (i) { if (i._still) i._still.setAttribute('aria-label', i.alt); }); });
+
+  /* ------------------------------------------------------------------ */
   /* Motion state                                                        */
   /* ------------------------------------------------------------------ */
   /* Three modes: 'full', 'calm' (the OS asks for reduced motion: no large or looping motion,
@@ -500,7 +535,8 @@
     $('.motion-i', b).textContent = on ? '❚❚' : '▶';
     $('#motion-l').textContent = t(on ? 'motion.pause' : 'motion.play');
     updateNote();
-    freezeMascot(!on);
+    freezeMascot(m !== 'full');
+    pxImgs.forEach(pxSync);
     comps.forEach(function (c) { c.done = false; c.sync(); });
     if (on) { revealCheck(); }
     onScroll();
@@ -604,7 +640,7 @@
       clear();
       await wait(350, ctl);
       for (var i = 0; i < 5; i++) {
-        cards[i].classList.add('lit'); acr[i].classList.add('lit');
+        cards[i].classList.add('lit'); if (acr[i]) acr[i].classList.add('lit');
         await wait(520, ctl);
       }
       acrCard.classList.add('lit');
@@ -615,20 +651,14 @@
   /* 02 TEAM: crabs + network                                            */
   /* ------------------------------------------------------------------ */
   var CRAB = [
-    '.....o...EPPE...oo.....',
-    '....oo....PP....oo.....',
-    '...moo....EE....oom....',
-    '...mmO.oooooooo.moO....',
-    '...OOOooooooooooOOO....',
-    '.....Ooo..oo..omO......',
-    '.....Omo..oo..omO......',
-    '...mm.moooooooom.mm....',
-    '..om..OmoooooomO..mo...',
-    '.oO...OOOOOOOOOO...Oo..',
-    '.m...mO........Om...O..',
-    '.O...O..........m...O..',
-    '.....O..........O......',
-    '.......................'
+    '..mmmmmmmm..',
+    '..oPooooPo..',
+    'oooooooooooo',
+    'oooooooooooo',
+    '..oooooooo..',
+    '..OOOOOOOO..',
+    '..O.O..O.O..',
+    '..O.O..O.O..'
   ];
   var CRAB_COL = {
     green: { o: '#a6e3a1', O: '#4c9a58', m: '#d6f7d1' },
@@ -643,7 +673,7 @@
         if (ch === '.') continue;
         var fill = ch === 'E' ? '#f6f1ff' : ch === 'P' ? '#0d0b1c' : pal[ch];
         var r = '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + fill + '"/>';
-        if (y >= 9) legs += r; else body += r;
+        if (y >= 6) legs += r; else body += r;
       }
     });
     svg.innerHTML = '<g>' + body + '</g><g class="claws">' + legs + '</g>';
@@ -723,6 +753,7 @@
     art.addEventListener('mouseleave', function () { setHold(false); });
     art.addEventListener('focus', function () { setHold(true); });
     art.addEventListener('blur', function () { setHold(false); });
+    if (!svg) return;   // a GIF diagram has no script to run
     var opts = { th: 0.3, hold: function () { return holding; } };
     var dots = $$('.dot', svg);
 
@@ -831,9 +862,22 @@
     box.addEventListener('mouseenter', function () { hold = true; });
     box.addEventListener('mouseleave', function () { hold = false; });
     items.forEach(function (li, i) { li.addEventListener('mouseenter', function () { show(i); }); });
-    langHooks.push(function () { buildAll(); show(cur); });
+    /* The detail text changes length with each step; reserve the tallest one, so the page below does not move while it cycles. */
+    function fit() {
+      if (!S.run || !txt.offsetHeight) return;
+      txt.style.minHeight = '';
+      var keep = cur, max = 0;
+      for (var k = 0; k < items.length; k++) { txt.textContent = t('flow.d' + k); max = Math.max(max, txt.offsetHeight); }
+      txt.style.minHeight = max + 'px';
+      txt.textContent = t('flow.d' + keep);
+    }
+    var fitTimer = null;
+    window.addEventListener('resize', function () { clearTimeout(fitTimer); fitTimer = setTimeout(fit, 150); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+    langHooks.push(function () { buildAll(); show(cur); fit(); });
     buildAll();
     component(box, async function (ctl) {
+      fit();
       for (var k = 0; ; k = (k + 1) % items.length) {
         show(k);
         if (ctl.calm && k === items.length - 1) return;
@@ -904,6 +948,7 @@
   /* ------------------------------------------------------------------ */
   (function () {
     var root = $('#lanes'), nodes = {}, order = ['agy', 'grok', 'codex', 'cursor', 'muse'], tok = $('#token'), host = $('.lanes-img', root);
+    if (!tok) return;   // the lanes are a GIF now: there is no overlay to drive
     $$('.ln', root).forEach(function (n) { nodes[n.getAttribute('data-n')] = n; });
     function st(n, key) { $('.ln-st', nodes[n]).textContent = t(key); nodes[n]._st = key; }
     /* Bars drain on the compositor: one scaleX transition, no per-frame width changes. */

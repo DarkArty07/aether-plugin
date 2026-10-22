@@ -2,8 +2,8 @@
 
 # Aether Plugin
 
-<!-- hero: the mascot, struck by lightning, becomes Claude Aether, calls three crabs and shows a brief -->
-<p align="center"><img src="assets/readme/mascot.gif" alt="A pixel mascot is struck by lightning and becomes a cosmic purple Claude Aether, who calls three crabs and shows a brief on a retro monitor" width="400"></p>
+<!-- hero: Clawd, swamped with tasks, is struck by a cosmic bolt, becomes Aether, hands the work to three subagents and shows a brief -->
+<p align="center"><img src="assets/readme/mascot.gif" alt="Clawd, a pixel mascot, is swamped with tasks. A /aether command and a cosmic bolt turn it into a purple galaxy that hands the work to three subagents, shows a brief on a retro monitor, waits for a yes, merges and goes back to its desk" width="480"></p>
 
 A plugin for Claude Code that adds an opt-in **Aether mode**: an accountable orchestrator, the Lead, that turns the owner's intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans the owner pays for, and reports in one brief.
 

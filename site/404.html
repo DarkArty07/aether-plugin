@@ -19,7 +19,7 @@
   document.head.insertBefore(b, document.head.firstChild);
 })();
 </script>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=8">
 <style>
 .nf{min-height:100vh;display:flex;flex-direction:column}
 .nf-main{flex:1;display:grid;place-items:center;padding-block:48px}
@@ -42,6 +42,7 @@
     <div class="win nf-win">
       <div class="win-title"><span>404.EXE</span><i class="boxes" aria-hidden="true"><b></b><b></b><b></b></i></div>
       <div class="win-body nf-body">
+        <figure class="frame frame-lg px-frame" style="max-width:480px;margin-inline:auto"><img class="px" id="lost" decoding="async" src="assets/img/px/lost.gif?v=8" width="480" height="270" alt="Clawd flota perdido en el espacio con una linterna mientras un enorme 404 pasa como un asteroide; al final nota un planeta HOME y vuelve a su sitio"></figure>
         <p class="tag">// 404 · NO ENCONTRADA</p>
         <p class="nf-code" aria-hidden="true">404</p>
         <h1 class="nf-t">Esta página no existe</h1>
@@ -56,5 +57,20 @@
     </div>
   </div>
 </main>
+<script>
+/* With reduced motion asked for, the GIF is replaced by a still of its first frame. */
+(function () {
+  var img = document.getElementById('lost');
+  if (!img || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  function still() {
+    var c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.setAttribute('role', 'img'); c.setAttribute('aria-label', img.alt);
+    c.style.cssText = 'display:block;width:100%;height:auto';
+    try { c.getContext('2d').drawImage(img, 0, 0); img.replaceWith(c); } catch (e) { /* keep the GIF */ }
+  }
+  if (img.complete && img.naturalWidth) still(); else img.addEventListener('load', still);
+})();
+</script>
 </body>
 </html>

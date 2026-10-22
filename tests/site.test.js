@@ -13,7 +13,7 @@ const path = require('node:path')
 
 const ROOT = path.join(__dirname, '..')
 const SITE = path.join(ROOT, 'site')
-const PAGES = ['index.html', '404.html']
+const PAGES = ['index.html', '404.html', 'animaciones.html']
 const ALLOWED = ['https://github.com/DarkArty07/', 'https://darkarty07.github.io/aether-plugin/']
 const MAX_BYTES = 3 * 1024 * 1024
 
@@ -65,15 +65,17 @@ test('the only absolute addresses are this repository and its Pages site', () =>
     const meta = attrs(read(SITE, page), ['content']).map((a) => a.value).filter((v) => /^https?:\/\//.test(v))
     for (const value of meta) assert.ok(allowed(value), `${page}: ${value} in a meta tag`)
   }
-  const js = read(SITE, 'app.js')
-  for (const [url] of js.matchAll(/https?:\/\/[^\s'"`)]+/g)) {
-    assert.ok(allowed(url) || url === 'http://www.w3.org/2000/svg', `app.js: ${url}`)
+  for (const file of ['app.js', 'animaciones.js']) {
+    const js = read(SITE, file)
+    for (const [url] of js.matchAll(/https?:\/\/[^\s'"`)]+/g)) {
+      assert.ok(allowed(url) || url === 'http://www.w3.org/2000/svg', `${file}: ${url}`)
+    }
+    assert.doesNotMatch(js, /\b(fetch|XMLHttpRequest|WebSocket|sendBeacon|importScripts)\b/, `${file} makes no network call`)
   }
-  assert.doesNotMatch(js, /\b(fetch|XMLHttpRequest|WebSocket|sendBeacon|importScripts)\b/, 'the page makes no network call')
 })
 
 test('the site references nothing outside itself', () => {
-  for (const file of [...PAGES, 'style.css', 'app.js']) {
+  for (const file of [...PAGES, 'style.css', 'app.js', 'animaciones.js']) {
     assert.doesNotMatch(read(SITE, file), /(["'(=])\.\.\//, `${file} climbs out of its folder`)
   }
 })
@@ -166,9 +168,49 @@ test('both languages of the site have the same keys, and the HTML holds the Span
   }
 })
 
+test('the animations page keeps both languages in step, and the landing and the page link to each other', () => {
+  const js = read(SITE, 'animaciones.js')
+  const start = js.indexOf('var DICT = {')
+  const end = js.indexOf('\n  };\n', start) + 5
+  const DICT = new Function(`${js.slice(start, end)}; return DICT`)()
+  assert.deepEqual(Object.keys(DICT.en).sort(), Object.keys(DICT.es).sort())
+  const html = withoutComments(read(SITE, 'animaciones.html'))
+  for (const [, key] of html.matchAll(/data-i18n(?:-html|-alt|-label)?="([^"]+)"/g)) {
+    assert.equal(typeof DICT.es[key], 'string', `animaciones.html: key ${key} has no Spanish text`)
+  }
+  for (const [, tag, key, inner] of html.matchAll(/<(\w+)[^>]*\sdata-i18n(?:-html)?="([^"]+)"[^>]*>([\s\S]*?)<\/\1>/g)) {
+    assert.equal(inner, DICT.es[key], `${key}: the HTML copy differs from the Spanish text in animaciones.js`)
+  }
+  assert.match(read(SITE, 'index.html'), /href="animaciones\.html#metas"/, 'the goals link to the animations page')
+  assert.match(html, /href="index\.html#metas"/, 'the animations page links back to the goals')
+})
+
+test('an element with the hidden attribute is hidden whatever display its class sets', () => {
+  // the GIFs freeze by showing a canvas and hiding the image with hidden; img { display: block } alone would keep both on screen
+  const css = read(SITE, 'style.css')
+  assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important/, 'style.css has a global [hidden] rule')
+})
+
+test('a lazy GIF keeps its final size before it loads, shows from a noscript copy, and its frozen copy keeps a name', () => {
+  for (const page of ['index.html', 'animaciones.html']) {
+    const html = withoutComments(read(SITE, page))
+    const placeholders = [...html.matchAll(/<img class="px[^"]*"[^>]*data-src="[^"]*"[^>]*>/g)].map((match) => match[0])
+    assert.ok(placeholders.length >= 6, `${page} has its lazy GIFs`)
+    for (const tag of placeholders) assert.match(tag, /style="aspect-ratio:\d+\/\d+"/, `${page}: a placeholder has no aspect-ratio, so the page jumps while the GIFs load: ${tag.slice(0, 80)}`)
+    const noscript = [...html.matchAll(/<noscript><style>([\s\S]*?)<\/style><\/noscript>/g)].map((match) => match[1]).join('\n')
+    assert.match(noscript, /img\.px\[data-src\]\s*\{\s*display:\s*none/, `${page}: without JavaScript the placeholder would stay on screen`)
+  }
+  for (const file of ['app.js', 'animaciones.js']) {
+    const js = read(SITE, file)
+    assert.doesNotMatch(js, /still\.setAttribute\('aria-hidden'/, `${file}: the frozen copy of a GIF must not be hidden from assistive technology`)
+    assert.match(js, /still\.setAttribute\('role', 'img'\)/, `${file}: the frozen copy has role img`)
+  }
+  assert.match(read(SITE, 'app.js'), /freezeMascot\(m !== 'full'\)/, 'the hero mascot freezes in calm motion too')
+})
+
 test('404.html links home and opens in the same style', () => {
   const html = read(SITE, '404.html')
-  assert.match(html, /<link rel="stylesheet" href="style\.css">/)
+  assert.match(html, /<link rel="stylesheet" href="style\.css(\?[^"]*)?">/)
   assert.match(html, /<a[^>]*href="index\.html"/)
   assert.match(html, /<h1[^>]*>[^<]+<\/h1>/)
 })
