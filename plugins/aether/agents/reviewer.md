@@ -23,6 +23,13 @@ Never change a file. You have no shell, so the package is your view of the chang
 - Read the package in passes if it is large, and say so.
 - Read a file in the integration worktree when a hunk you must judge is cut off, or when you need to check how the change meets the code around it.
 
+## Reading plan
+
+Your budget is 30 turns, and a review that runs out of them decides nothing.
+- Put independent reads together in one turn: the hunks you must judge and the files around them, several at once.
+- Spend at most 20 turns reading. Check at most six claims against the code, the riskiest first.
+- Give your report by turn 28 at the latest, with what you have. Anything you did not check goes in the summary as an open question, not as a reason to read on.
+
 ## The spec is a vision document
 
 The spec says what the software must do. It does not list every input, environment or condition the software will meet.
