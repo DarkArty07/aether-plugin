@@ -3,7 +3,7 @@
 - **Date:** 2026-10-22. It follows [the 0.16.0 handoff](2026-10-21-quota-brake-0.16.0.md).
 - **From:** the Lead, Claude Code on Sonnet 5.5, in one session that began as a question about how to lower the cost of the models and ended as an autonomous run on «Diseña, implementa de manera autonoma no estare disponible».
 - **To:** the next session.
-- **Repository state:** `feat/session-cost` was merged into `main` for the release on the owner's word («Pública, todo a main y limpia worktree y archivos tmp. Prepárate para cerrar la sesión»). The follow-up commit that records the publication comes after this one.
+- **Repository state:** published. `feat/session-cost` was merged into `main` (`c113d81`), tagged `aether--v0.17.0` and pushed on the owner's word («Pública, todo a main y limpia worktree y archivos tmp. Prepárate para cerrar la sesión»), and its worktree and branch were deleted.
 
 ## 1. What was asked
 
