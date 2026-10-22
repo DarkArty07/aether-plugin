@@ -6,6 +6,7 @@
 // aether-report price <claude -p json output> [--main-model <id>]
 // aether-report --seats [--session <id>] [--since <ms>]
 // aether-report --delegates [--session <id>] [--since <ms>]
+// aether-report --spend [--session <id>]
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -13,9 +14,10 @@ const lib = path.join(__dirname, '..', 'lib')
 const { report, finalize, seatsReport } = require(path.join(lib, 'report.js'))
 const { delegatesReport } = require(path.join(lib, 'router-report.js'))
 const { loadPrices, priceModelUsage } = require(path.join(lib, 'prices.js'))
+const { spendReport, isSessionId } = require(path.join(lib, 'spend.js'))
 
 const USAGE =
-  'usage: aether-report [finalize] --run <id> [--session <id>] [--no-tests] | aether-report --seats [--session <id>] [--since <ms>] | aether-report price <claude-json> [--main-model <id>]'
+  'usage: aether-report [finalize] --run <id> [--session <id>] [--no-tests] | aether-report --seats [--session <id>] [--since <ms>] | aether-report price <claude-json> [--main-model <id>] | aether-report --spend [--session <id>]'
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -40,7 +42,26 @@ function delegates(argv) {
   return delegatesReport({ session: value(rest, '--session'), since: since === null ? 0 : Number(since) })
 }
 
+const SPEND_USAGE = 'usage: aether-report --spend [--session <id>]'
+
+// --spend takes only itself and, at most once, --session with a well-formed id (a value that starts with `--` is the
+// next flag, not an id); anything else is a misuse, and the misuse is caught before any figure is read.
+function spend(argv) {
+  let session = null
+  let seen = false
+  let named = false
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--spend' && !seen) seen = true
+    else if (argv[i] === '--session' && !named && isSessionId(argv[i + 1]) && !argv[i + 1].startsWith('--')) {
+      named = true
+      session = argv[++i]
+    } else throw new Error(SPEND_USAGE)
+  }
+  return spendReport({ session })
+}
+
 function main(argv) {
+  if (argv.includes('--spend')) return spend(argv)
   if (argv[0] === 'price') {
     if (!argv[1] || argv[1].startsWith('--')) throw new Error(USAGE)
     const output = JSON.parse(fs.readFileSync(argv[1], 'utf8'))

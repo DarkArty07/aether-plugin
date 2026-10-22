@@ -375,7 +375,7 @@ function fullCommit(mainRoot, commit) {
 
 // The merge commit a marker still has on the integration branch, or null when the marker is
 // absent or its commit is not on that branch. A marker with no commit yet is that commit when
-// `Merge <branch>` is on the branch, and no merge at all when it is not (issue #2, decision A76).
+// `Merge <branch>` is on the branch, and no merge at all when it is not (issue #2, decision A77).
 function unverifiedCommit(mainRoot, graph, runId, taskId) {
   const marker = markerRecord(mainRoot, runId, taskId)
   if (!marker) return null

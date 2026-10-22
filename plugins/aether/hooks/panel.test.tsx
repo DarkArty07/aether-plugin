@@ -640,9 +640,11 @@ test('the Lead\'s SessionStart declares the command every time, as one that may 
   await $.classic.SessionStart({ source: 'startup', agent_type: 'aether:lead' })
   await $.classic.SessionStart({ source: 'clear', agent_type: 'aether:lead' })
   await $.classic.SessionStart({ source: 'compact', agent_type: 'aether:lead' })
-  expect(registered.map((spec) => spec.name)).toEqual(['harnesses', 'harnesses', 'harnesses'])
-  expect(registered.every((spec) => spec.immediate === true)).toBe(true)
-  expect(String(registered[0]?.description)).toMatch(/quota/)
+  // /spend is declared on this same SessionStart. This test is about /harnesses.
+  const harnesses = registered.filter((spec) => spec.name === 'harnesses')
+  expect(harnesses.map((spec) => spec.name)).toEqual(['harnesses', 'harnesses', 'harnesses'])
+  expect(harnesses.every((spec) => spec.immediate === true)).toBe(true)
+  expect(String(harnesses[0]?.description)).toMatch(/quota/)
 })
 
 test('no other SessionStart declares it, and the session start event does not', async ($, on) => {
@@ -660,7 +662,7 @@ test('the panel is never the first to ask whether the session is Aether\'s: the 
   await startSession($)
   written = true
   await $.classic.SessionStart({ source: 'startup', agent_type: 'aether:lead' })
-  expect(registered.map((spec) => spec.name)).toEqual(['harnesses'])
+  expect(registered.filter((spec) => spec.name === 'harnesses').map((spec) => spec.name)).toEqual(['harnesses'])
   const result = await $.command.run({ command: 'harnesses' })
   expect(result.text).toBeUndefined()
   expect(opened.length).toBe(1)
