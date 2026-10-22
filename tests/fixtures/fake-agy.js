@@ -5,7 +5,9 @@
 // line, each starting with "FAKE-AGY: ", and answers in agy 1.3.2's JSON shape (2026-10-08).
 //
 //   write <relative path> <text...>     writes "<text>\n" under the working directory
+//   write-empty <relative path>         writes an empty file under the working directory
 //   write-abs <absolute path> <text...> writes "<text>\n" to an absolute path
+//   link <relative path> <target>       replaces the relative path with a symlink to target
 //   copy <absolute path> <relative path>  copies a file into the working directory
 //   commit <message...>                 git add -A and git commit in the working directory
 //   sleep <seconds>                     waits before answering
@@ -88,10 +90,15 @@ let fresh = false
 for (const line of prompt.split('\n')) {
   if (!line.startsWith('FAKE-AGY: ')) continue
   const [verb, ...rest] = line.slice('FAKE-AGY: '.length).split(' ')
-  if (verb === 'write' || verb === 'write-abs') {
-    const target = verb === 'write' ? path.join(process.cwd(), rest[0]) : rest[0]
+  if (verb === 'write' || verb === 'write-abs' || verb === 'write-empty') {
+    const target = verb === 'write-abs' ? rest[0] : path.join(process.cwd(), rest[0])
     fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.writeFileSync(target, `${rest.slice(1).join(' ')}\n`)
+    fs.writeFileSync(target, verb === 'write-empty' ? '' : `${rest.slice(1).join(' ')}\n`)
+  } else if (verb === 'link') {
+    const target = path.join(process.cwd(), rest[0])
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.rmSync(target, { force: true })
+    fs.symlinkSync(rest[1], target)
   } else if (verb === 'copy') {
     const target = path.join(process.cwd(), rest[1])
     fs.mkdirSync(path.dirname(target), { recursive: true })

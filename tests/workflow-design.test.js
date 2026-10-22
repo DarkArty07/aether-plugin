@@ -917,3 +917,124 @@ test('a round that answers carries its duration in its record', async () => {
   assert.deepEqual([run.result.rounds[0].durations, run.result.rounds[0].durationMs], [[125000], 125000])
   assert.equal(run.result.rounds[1].durationMs, undefined, 'a round only the native agent took has none')
 })
+
+// Issue 68: the record of each try says whether it started from an earlier partial, and the native Writer
+// gets that partial in its message when no pair is left. A Judge's reply never hands a partial on.
+const NATIVE_PARTIAL = 'An earlier writer began this round. Its partial document is below. It may be incomplete or wrong. Continue from it after checking it against the intent.'
+const writerPartial = (text) => [{ path: `${FEATURE}/spec.md`, text }]
+const noneLeft = (seat) => ({ done: true, exitCode: 3, value: { unavailable: 'no-external', seat, native: { ...seats.NATIVE[seat] }, tried: [] } })
+const withPartial = (reply, partial, continued = false) => {
+  if (continued) reply.value.continued = true
+  if (partial !== undefined) reply.value.partial = partial
+  return reply
+}
+
+test('issue 68: each Writer try says whether it started from a partial, and the native Writer gets the latest one', async () => {
+  const replies = [
+    (id) => withPartial(failedWait('writer', id, AGY, { status: 'quota', detail: QUOTA }), writerPartial('FIRST-PARTIAL')),
+    (id) => withPartial(failedWait('writer', id, GROK), writerPartial('SECOND-PARTIAL'), true),
+    () => noneLeft('writer'),
+  ]
+  const run = await go(ON, { ops: scripted(SPEC_WRITER, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const record = run.result.rounds[0]
+  assert.deepEqual(record.tries.map((entry) => entry.continued), [false, true])
+  assert.equal(record.continued, true)
+  const native = nativeCalls(run).find((call) => call.label === 'spec: writer write')
+  assert.ok(native.prompt.includes(NATIVE_PARTIAL))
+  assert.ok(native.prompt.includes('## Partial document: ' + `${FEATURE}/spec.md`))
+  assert.ok(native.prompt.includes('SECOND-PARTIAL'))
+  assert.equal(native.prompt.includes('FIRST-PARTIAL'), false)
+  assert.ok(native.prompt.startsWith(specStarts(run)[0].payload.text), 'the round message is still the start of the prompt')
+})
+
+test('issue 68: a Writer try that leaves no partial drops the earlier one, so the native Writer does not get it', async () => {
+  const replies = [
+    (id) => withPartial(failedWait('writer', id, AGY, { status: 'quota', detail: QUOTA }), writerPartial('FIRST-PARTIAL')),
+    (id) => withPartial(failedWait('writer', id, GROK), undefined, true),
+    () => noneLeft('writer'),
+  ]
+  const run = await go(ON, { ops: scripted(SPEC_WRITER, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(run.result.rounds[0].tries.map((entry) => entry.continued), [false, true])
+  assert.equal(run.result.rounds[0].continued, undefined)
+  const native = nativeCalls(run).find((call) => call.label === 'spec: writer write')
+  assert.equal(native.prompt.includes('FIRST-PARTIAL'), false)
+  assert.equal(native.prompt.includes(NATIVE_PARTIAL), false)
+})
+
+test('issue 68: a Writer round stopped at its cap keeps the partial seat-stop names, for the native Writer', async () => {
+  const partial = writerPartial('capped partial')
+  const stopPartial = (ops) => (call, fallback) => (call.command.verb === 'seat-stop' ? { stopped: true, pair: AGY, partial } : ops(call, fallback))
+  const run = await go(ON, { ops: stopPartial(scripted(SPEC_WRITER, [silentRound, () => noneLeft('writer')])) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const record = run.result.rounds[0]
+  assert.equal(record.tries[0].continued, false)
+  assert.equal(record.continued, true)
+  const native = nativeCalls(run).find((call) => call.label === 'spec: writer write')
+  assert.ok(native.prompt.includes('capped partial'))
+  assert.ok(native.prompt.includes(NATIVE_PARTIAL))
+})
+
+test('issue 68: a partial outside this round, or an empty one, is not given to the native Writer', async () => {
+  const specReplies = [
+    (id) => withPartial(failedWait('writer', id, AGY), [
+      { path: `${FEATURE}/spec.md`, text: '' },
+      { path: `${FEATURE}/plan.md`, text: 'PLAN-NOT-IN-SPEC-ROUND' },
+      { path: 'src/nope.js', text: 'SECRET' },
+      { path: `${FEATURE}/spec.md`, text: 'KEPT-SPEC' },
+    ]),
+    () => noneLeft('writer'),
+  ]
+  const specRun = await go(ON, { ops: scripted(SPEC_WRITER, specReplies) })
+  assert.equal(specRun.error, null, specRun.error && specRun.error.stack)
+  const specNative = nativeCalls(specRun).find((call) => call.label === 'spec: writer write')
+  assert.ok(specNative.prompt.includes('KEPT-SPEC'))
+  assert.equal(specNative.prompt.includes('PLAN-NOT-IN-SPEC-ROUND'), false)
+  assert.equal(specNative.prompt.includes('SECRET'), false)
+  const emptyReplies = [
+    (id) => withPartial(failedWait('writer', id, AGY), [{ path: `${FEATURE}/spec.md`, text: '' }, { path: 'src/nope.js', text: 'SECRET' }]),
+    () => noneLeft('writer'),
+  ]
+  const emptyRun = await go(ON, { ops: scripted(SPEC_WRITER, emptyReplies) })
+  assert.equal(emptyRun.error, null, emptyRun.error && emptyRun.error.stack)
+  const emptyNative = nativeCalls(emptyRun).find((call) => call.label === 'spec: writer write')
+  assert.equal(emptyNative.prompt.includes(NATIVE_PARTIAL), false)
+  assert.equal(emptyNative.prompt.includes('SECRET'), false)
+  assert.equal(emptyRun.result.rounds[0].continued, undefined)
+})
+
+test('issue 68: the native Writer of a plan round gets plan.md and tasks.md, and not the spec', async () => {
+  const partial = [
+    { path: `${FEATURE}/plan.md`, text: 'PLAN-PART' },
+    { path: `${FEATURE}/tasks.md`, text: 'TASKS-PART' },
+    { path: `${FEATURE}/spec.md`, text: 'SPEC-SHOULD-NOT' },
+  ]
+  const replies = [(id) => withPartial(failedWait('writer', id, AGY), partial), () => noneLeft('writer')]
+  const run = await go(ON, { ops: scripted(PLAN_WRITER, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const native = nativeCalls(run).find((call) => call.label === 'plan: writer write')
+  assert.ok(native.prompt.includes(NATIVE_PARTIAL))
+  assert.ok(native.prompt.includes('## Partial document: ' + `${FEATURE}/plan.md`))
+  assert.ok(native.prompt.includes('PLAN-PART'))
+  assert.ok(native.prompt.includes('## Partial document: ' + `${FEATURE}/tasks.md`))
+  assert.ok(native.prompt.includes('TASKS-PART'))
+  assert.equal(native.prompt.includes('SPEC-SHOULD-NOT'), false)
+  const planRound = run.result.rounds.find((round) => round.document === 'plan' && round.seat === 'writer' && round.tries)
+  assert.equal(planRound.tries[0].continued, false)
+  assert.equal(planRound.continued, true)
+})
+
+test('issue 68: a failed Judge round does not hand a partial to the native Judge', async () => {
+  const replies = [
+    (id) => withPartial(failedWait('judge', id, AGY), writerPartial('SECRET-PARTIAL')),
+    () => noneLeft('judge'),
+  ]
+  const run = await go(ON, { ops: scripted(FIRST_JUDGE, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.rounds[1].tries[0].continued, false)
+  const native = run.calls.find((call) => call.label === 'spec: judge review 1')
+  assert.equal(native.prompt.includes('SECRET-PARTIAL'), false)
+  assert.equal(native.prompt.includes(NATIVE_PARTIAL), false)
+  assert.equal(run.result.rounds[1].continued, undefined)
+})

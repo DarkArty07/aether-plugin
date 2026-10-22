@@ -5,8 +5,9 @@
 // reference pair and lib/superdelegation.js choose picks the pair, as it does for a swarm call; the native
 // agent takes the round only when no pair can. A round runs in a disposable worktree of the current commit and
 // is judged from outside: what changed in git, and an answer checked against the seat's schema. Anything else
-// gives the seat back to the native agent, which redoes the round from the files. A round keeps no
-// conversation, so any harness can take any seat.
+// gives the seat back to the native agent, which redoes the round from the files. A Writer that failed
+// after writing part of its document is the exception: that partial is kept and the next pair continues
+// from it (issue 68). A round keeps no conversation, so any harness can take any seat.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -30,6 +31,8 @@ const SKILLS_DIR = path.join(__dirname, '..', 'skills')
 const KILL_GRACE_SECONDS = 60
 const MAX_FINDINGS = 10
 const EXAM_DIR = '.aether-exam'
+// What the next Writer is told when its worktree already holds an earlier pair's partial. The guide quotes this line.
+const CONTINUATION_LINE = 'An earlier writer began this round. Its partial document is in the worktree. It may be incomplete or wrong. Continue from it after checking it against the intent.'
 
 // The native pair each seat asks the points of: the Judge and the Examiner review as Opus high, the Writer
 // writes as Sonnet high.
@@ -241,14 +244,130 @@ function removeWorktree(mainRoot, worktree) {
   git(['worktree', 'prune'], mainRoot, { allowFail: true })
 }
 
+// The documents a Writer round may leave, in the order a partial lists them.
+function documentPaths(feature, doc) {
+  return doc === 'spec' ? [`${feature}/spec.md`] : [`${feature}/plan.md`, `${feature}/tasks.md`]
+}
+
 // Whether a changed path is one the seat may change.
 function allowedFor(seat, feature, doc) {
   if (seat === 'writer') {
-    const own = doc === 'spec' ? [`${feature}/spec.md`] : [`${feature}/plan.md`, `${feature}/tasks.md`]
+    const own = documentPaths(feature, doc)
     return (file) => own.includes(file)
   }
   if (seat === 'examiner') return (file) => file.startsWith(`${EXAM_DIR}/`)
   return () => false
+}
+
+// A non-empty regular file at rel inside root. A symlink is not one, and neither is a path that resolves outside
+// root: the partial is the document the pair wrote, not a pointer at something else.
+function textInside(root, rel) {
+  if (typeof rel !== 'string' || rel === '' || path.isAbsolute(rel) || rel.split('/').includes('..')) return null
+  const full = path.join(root, rel)
+  let st
+  try {
+    st = fs.lstatSync(full)
+  } catch {
+    return null
+  }
+  if (!st.isFile() || st.size === 0) return null
+  let realFile
+  let realRoot
+  try {
+    realFile = fs.realpathSync(full)
+    realRoot = fs.realpathSync(root)
+  } catch {
+    return null
+  }
+  const relative = path.relative(realRoot, realFile)
+  if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null
+  let text
+  try {
+    text = fs.readFileSync(full, 'utf8')
+  } catch {
+    return null
+  }
+  return text === '' ? null : text
+}
+
+// Where a Writer's partial waits for the next pair of this session and document. Null when session, feature or
+// doc could not be a path under the seat directory: the partial is never written anywhere else.
+function offerDir(mainRoot, session, feature, doc) {
+  if (!/^[A-Za-z0-9-]+$/.test(String(session))) return null
+  if (!/^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(feature))) return null
+  if (doc !== 'spec' && doc !== 'plan') return null
+  return path.join(run.aetherDir(mainRoot), 'seats', 'carry', session, feature, doc)
+}
+
+function saveOffer(mainRoot, session, feature, doc, files) {
+  const dir = offerDir(mainRoot, session, feature, doc)
+  if (dir === null) return
+  fs.rmSync(dir, { recursive: true, force: true })
+  if (!Array.isArray(files) || files.length === 0) return
+  fs.mkdirSync(dir, { recursive: true })
+  const allowed = new Set(documentPaths(feature, doc).map((rel) => path.basename(rel)))
+  for (const file of files) {
+    const base = path.basename(file.path)
+    if (!allowed.has(base) || typeof file.text !== 'string' || file.text === '') continue
+    fs.writeFileSync(path.join(dir, base), file.text)
+  }
+}
+
+function clearOffer(mainRoot, session, feature, doc) {
+  const dir = offerDir(mainRoot, session, feature, doc)
+  if (dir !== null) fs.rmSync(dir, { recursive: true, force: true })
+}
+
+function loadOffer(mainRoot, session, feature, doc) {
+  const dir = offerDir(mainRoot, session, feature, doc)
+  if (dir === null) return []
+  const files = []
+  for (const rel of documentPaths(feature, doc)) {
+    const text = textInside(dir, path.basename(rel))
+    if (text !== null) files.push({ path: rel, text })
+  }
+  return files
+}
+
+// Copies the saved partial into the new worktree, uncommitted, and only where it is still a regular file inside it.
+function applyOffer(worktree, files) {
+  const applied = []
+  for (const file of files) {
+    if (typeof file.path !== 'string' || typeof file.text !== 'string' || file.text === '') continue
+    const full = path.resolve(worktree, file.path)
+    const relative = path.relative(worktree, full)
+    if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) continue
+    fs.mkdirSync(path.dirname(full), { recursive: true })
+    try {
+      const st = fs.lstatSync(full)
+      if (!st.isFile()) fs.rmSync(full, { force: true })
+    } catch (err) {
+      if (err.code !== 'ENOENT') continue
+    }
+    fs.writeFileSync(full, file.text)
+    const text = textInside(worktree, file.path)
+    if (text !== null) applied.push({ path: file.path, text })
+  }
+  return applied
+}
+
+// The allowed documents this attempt changed and left as non-empty files. What it left replaces the previous
+// partial: an empty document, or a change that is not one of these paths, drops it.
+function salvagePartial(worktree, start, feature, doc) {
+  const changed = new Set(changedPaths(worktree, start))
+  const files = []
+  for (const rel of documentPaths(feature, doc)) {
+    if (!changed.has(rel)) continue
+    const text = textInside(worktree, rel)
+    if (text !== null) files.push({ path: rel, text })
+  }
+  return files
+}
+
+function writeJsonAtomic(file, value) {
+  const temporary = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(temporary, `${JSON.stringify(value)}\n`)
+  fs.renameSync(temporary, file)
 }
 
 // ---- The prompt ----
@@ -629,8 +748,9 @@ function logEntry(dataDir, session, entry) {
 }
 
 // One round of seat on its external model. Returns the reply: exit 0 with the answer, or exit 4 with
-// what failed. The worktree is removed whatever happens.
-async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, decision, config, adapter, dataDir, note = null }) {
+// what failed. The worktree is removed whatever happens. A Writer's partial document is saved before that,
+// so the next pair can continue from it.
+async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, decision, config, adapter, dataDir, note = null, retry = false }) {
   const id = givenId ?? `${seat}-${run.newRunId()}`
   const dir = path.join(run.aetherDir(mainRoot), 'seats', id)
   const worktree = path.join(dir, 'wt')
@@ -648,22 +768,65 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
 
   const startedAt = Date.now()
   let child = null
+  let outcome
+  let settled = false
+  let carried = []
+  let continued = false
+  // Once, before the worktree goes. A round that finished clears the partial, so a later round does not paste it
+  // back over the document it just committed. A round that did not replaces the partial with what it left, which
+  // is nothing when it left nothing worth keeping. A second call, or a worktree already gone, does not clear it:
+  // the signal and the finally both reach this, and the one that finds no worktree must not drop what the other saved.
+  const settlePartial = () => {
+    if (settled || seat !== 'writer') return
+    settled = true
+    if (outcome && outcome.status === 'ok') {
+      clearOffer(mainRoot, session, feature, doc)
+      carried = []
+      writeJsonAtomic(path.join(dir, 'partial.json'), [])
+      return
+    }
+    if (!fs.existsSync(worktree)) return
+    try {
+      carried = salvagePartial(worktree, start, feature, doc)
+      saveOffer(mainRoot, session, feature, doc, carried)
+      writeJsonAtomic(path.join(dir, 'partial.json'), carried)
+    } catch {
+      carried = []
+    }
+  }
   const onSignal = () => {
     if (child !== null) killGroup(child)
+    settlePartial()
     removeWorktree(mainRoot, worktree)
     process.exit(143)
   }
   for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, onSignal)
 
-  let outcome
   let parsed = { usage: NO_USAGE, conversation: null }
   let quotaAfter = null
   let quotaRead = false
   let refusal = null
+  let roundMessage = message
   try {
+    if (seat === 'writer') {
+      // Only a retry of this round continues from the partial. A later round of the same session starts from the
+      // commit, so whatever an earlier round left is dropped before this one runs: a retry of this round must not
+      // paste that older partial back over the document the later round is writing.
+      if (retry) {
+        const offered = loadOffer(mainRoot, session, feature, doc)
+        if (offered.length > 0 && applyOffer(worktree, offered).length > 0) {
+          continued = true
+          roundMessage = `${message.replace(/\s+$/, '')}\n\n${CONTINUATION_LINE}\n`
+        }
+      } else {
+        clearOffer(mainRoot, session, feature, doc)
+      }
+      // Written even when this round did not continue, so seat-stop can tell a Writer from a Judge.
+      writeJsonAtomic(path.join(dir, 'continued.json'), { continued })
+    }
     const schemaFile = path.join(dir, 'schema.json')
     fs.writeFileSync(schemaFile, `${JSON.stringify(schema, null, 2)}\n`)
-    const prompt = seatPrompt({ seat, harness: external.harness, adapter, message, workdir: worktree, feature, doc })
+    const prompt = seatPrompt({ seat, harness: external.harness, adapter, message: roundMessage, workdir: worktree, feature, doc })
     fs.writeFileSync(path.join(dir, 'prompt.md'), prompt)
     const argv = adapter.argv({ model: external.model, level: external.level, schemaFile, timeoutSeconds: external.timeoutSeconds, prompt })
     const exitCode = await runHarness(argv, {
@@ -718,6 +881,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     outcome = { status: 'failed', detail: `seat: ${err.message}` }
   } finally {
     if (child !== null) killGroup(child)
+    settlePartial()
     removeWorktree(mainRoot, worktree)
     for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.removeListener(signal, onSignal)
   }
@@ -766,6 +930,10 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     const failed = { failed: outcome.status, seat, id, harness: external.harness, model: external.model, detail: outcome.detail, undone: true, native, decision }
     if (outcome.files) failed.files = outcome.files
     if (outcome.backup) failed.backup = outcome.backup
+    if (seat === 'writer') {
+      failed.continued = continued
+      if (carried.length > 0) failed.partial = carried
+    }
     return reply(4, failed)
   }
   const groupLabel = settings.groups[external.group] ?? external.group
@@ -773,6 +941,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   const value = { seat, id, harness: external.harness, model: external.model, answer: `${outcome.text}\n${lane}`, result: outcome.result, lane }
   if (outcome.stored) value.stored = outcome.stored
   if (typeof note === 'string' && note !== '') value.note = note
+  if (seat === 'writer') value.continued = continued
   return reply(0, value)
 }
 
@@ -890,6 +1059,7 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     adapter: adapterOf(external.harness, config.harnesses[external.harness]),
     dataDir,
     note: chosen.note,
+    retry: exclude.length > 0,
   })
 }
 

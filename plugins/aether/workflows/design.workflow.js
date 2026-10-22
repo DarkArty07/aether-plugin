@@ -17,13 +17,15 @@ export const meta = {
 // family as a reserve: a pair of another family first, then the author's own family, and the native agent only last.
 // The Writer's choice, inside that start, leaves out the Judge's only external pair when the Writer would take it
 // and still has another. The script waits for the round in steps. A round that fails (exit 4), breaks (exit 1) or does not start
-// asks `seat-start` again, without the pairs it tried, up to three tries in all. After the third, or whenever the
-// round has no pair left (exit 3), does not finish or answers without a result that fits,
-// the native agent takes it with the same message, in the model and effort the seat's reply names (a Judge or an
-// Examiner still swaps to a Claude model that is not an author when it can), or in the seat's reference pair when it names none. The one
-// document no Writer seat can write is design.md of a short design: its corrections are the native Writer's. The
-// script never reads the clock or random numbers: the runtime replays a resumed run call by call. It has no modules,
-// so what it needs from run.workflow.js and lib/lane-schemas.js is copied here by hand.
+// asks `seat-start` again, without the pairs it tried, up to three tries in all. A Writer whose try left part of
+// its document continues from that partial: the next pair finds it in its worktree, and the native Writer, when no
+// pair is left, gets the text in its message (issue 68). After the third, or whenever the round has no pair left
+// (exit 3), does not finish or answers without a result that fits, the native agent takes it with that message, in
+// the model and effort the seat's reply names (a Judge or an Examiner still swaps to a Claude model that is not an
+// author when it can), or in the seat's reference pair when it names none. The one document no Writer seat can
+// write is design.md of a short design: its corrections are the native Writer's. The script never reads the clock
+// or random numbers: the runtime replays a resumed run call by call. It has no modules, so what it needs from
+// run.workflow.js and lib/lane-schemas.js is copied here by hand.
 
 const SCOPE =
   'Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.'
@@ -344,6 +346,35 @@ function nativeLines(seat) {
 
 const RETRY_LINE = 'An earlier attempt at this round ended without an answer. Start again from the files as they are now, and end with your answer.'
 
+// What the native Writer is told when an earlier pair left a partial. The partial itself follows, one block per file:
+// the native agent has no disposable worktree, so the text is the document.
+const NATIVE_PARTIAL = 'An earlier writer began this round. Its partial document is below. It may be incomplete or wrong. Continue from it after checking it against the intent.'
+
+// The partial files worth handing on: the documents this round may write, non-empty, in that order. The same
+// paths as documentPaths in lib/seats.js. A spec round keeps spec.md only; a plan round keeps plan.md and
+// tasks.md. Anything else, and an empty document, is dropped. The last text for a path wins.
+function keptPartial(feature, doc, files) {
+  if (!Array.isArray(files) || (doc !== 'spec' && doc !== 'plan')) return null
+  const allowed = doc === 'spec' ? [`${feature}/spec.md`] : [`${feature}/plan.md`, `${feature}/tasks.md`]
+  const byPath = new Map()
+  for (const file of files) {
+    if (!isObject(file) || typeof file.path !== 'string' || !allowed.includes(file.path)) continue
+    if (typeof file.text !== 'string' || file.text === '') continue
+    byPath.set(file.path, file.text)
+  }
+  const kept = []
+  for (const filePath of allowed) {
+    if (byPath.has(filePath)) kept.push({ path: filePath, text: byPath.get(filePath) })
+  }
+  return kept.length > 0 ? kept : null
+}
+
+function partialForNative(files) {
+  const blocks = [NATIVE_PARTIAL]
+  for (const file of files) blocks.push(`## Partial document: ${file.path}\n\n${file.text.trimEnd()}`)
+  return blocks.join('\n\n')
+}
+
 // The model and effort a seat's reply names for its native agent (its decision's native pair, which for a Judge or an
 // Examiner is not the model that wrote the document), or null when it names none.
 function namedNative(value) {
@@ -446,11 +477,15 @@ async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
   }
   const stopped = await ops(`aether-lane seat-stop ${id}`, { phase, label: `${base}: stop` })
   if (stopped.error) log(`${base}: the stop failed: ${stopped.error}`)
+  // A Writer stop names the partial it saved, when it saved one. A stop that names none leaves the earlier partial
+  // as it was; an empty list means this round left nothing.
+  const carry = !stopped.error && Array.isArray(stopped.partial) ? { partial: stopped.partial } : {}
+  if (!stopped.error && stopped.continued === true) carry.continued = true
   if (cap !== null && elapsedMs >= cap * 1000) {
     const pair = !stopped.error && matches(PAIR_ID, stopped.pair) ? stopped.pair : null
-    return { id, note: `the seat round reached its time cap of ${cap / 60} min and was stopped`, capped: true, pair, durationMs: elapsedMs }
+    return { id, note: `the seat round reached its time cap of ${cap / 60} min and was stopped`, capped: true, pair, durationMs: elapsedMs, ...carry }
   }
-  return { id, note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped` }
+  return { id, note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped`, ...carry }
 }
 
 // The pair a round that ended failed (exit 4) ran on, as its decision names it, or null when the reply names none that
@@ -460,8 +495,9 @@ function failedPair(reply, value) {
   return matches(PAIR_ID, value.decision.picked.id) ? value.decision.picked.id : null
 }
 
-// One round of a seat (R2). The seat round answers, or the native agent takes the round with the same message: after
-// exit 3, 4 or 1, a start that failed, or a round that did not finish. A round that ends failed (exit 4) or broke
+// One round of a seat (R2). The seat round answers, or the native agent takes the round with that message: after
+// exit 3, 4 or 1, a start that failed, or a round that did not finish. A Writer whose earlier pair left a partial
+// document gets that partial in its message too. A round that ends failed (exit 4) or broke
 // (exit 1), or whose start failed, asks `seat-start` again with --exclude holding the pairs it tried, up to MAX_TRIES
 // tries in all; a reply that names no pair (exit 1, a failed start, or exit 4 naming none that --exclude can take)
 // carries the same exclusion. The native agent takes it after the last, or at once when the reply is exit 3 (no pair
@@ -480,6 +516,9 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   const flags = seat === 'writer' ? `--session ${session} --feature ${feature} --doc ${writes} ${options}` : `--session ${session} --author ${author} --feature ${feature} ${options}`
   const excluded = []
   const tries = []
+  // The partial a failed Writer left, for the native Writer when no pair is left. Exit 4 replaces it (a missing list
+  // clears it: that try left nothing). A stop replaces it only when it names a list. Exit 3 and exit 1 leave it.
+  let partial = null
   // The time each external try took, in order, where the bin or the cap says: `durations`, and `durationMs` as their sum,
   // are in the round's record (issue 62). A round that only the native agent took has none.
   const durations = []
@@ -503,6 +542,7 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
         log(`${base}: ran on ${record.provider}${record.note ? ` (${record.note})` : ''}${typeof value.lane === 'string' && value.lane !== '' ? ` · ${value.lane}` : ''}`)
         record.lane = typeof value.lane === 'string' ? value.lane : null
         if (seat === 'writer') keepQuestions(value.result)
+        if (value.continued === true) record.continued = true
         return { answer: value.result, text: String(value.answer), seat: record.provider, model: String(value.model), value }
       }
       record.note = handedBackNote(reply)
@@ -512,18 +552,22 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
     // A try that failed (exit 4), broke (exit 1) or did not start asks for the next pair, carrying the same exclusion
     // when the reply names no pair to add; any other end leaves the round to the native agent at once.
     // A round that reached its cap counts as failed too, with the pair seat-stop names.
+    if (seat === 'writer' && waited.reply && waited.reply.exitCode === 0) partial = null
+    else if (seat === 'writer' && waited.reply && waited.reply.exitCode === 4) partial = keptPartial(feature, writes, value.partial)
+    else if (seat === 'writer' && Array.isArray(waited.partial)) partial = keptPartial(feature, writes, waited.partial)
+    const startedFromPartial = value.continued === true || waited.continued === true
     const pair = waited.capped === true ? waited.pair : waited.reply ? failedPair(waited.reply, value) : null
     const retryable = waited.startFailed === true || waited.capped === true || (waited.reply && (waited.reply.exitCode === 1 || waited.reply.exitCode === 4))
     if (!retryable) {
       // Once the next pair was asked, the try that ends the external tries is listed too; exit 3 ran nothing.
       if (tries.length > 0 && !(waited.reply && waited.reply.exitCode === 3)) {
-        tries.push({ pair, id: waited.id, reason: record.note, next: false, durationMs: waited.durationMs ?? null })
+        tries.push({ pair, id: waited.id, reason: record.note, next: false, continued: startedFromPartial, durationMs: waited.durationMs ?? null })
         record.tries = tries
       }
       break
     }
     const next = n < MAX_TRIES && (pair === null || !excluded.includes(pair))
-    tries.push({ pair, id: waited.id, reason: record.note, next, durationMs: waited.durationMs ?? null })
+    tries.push({ pair, id: waited.id, reason: record.note, next, continued: startedFromPartial, durationMs: waited.durationMs ?? null })
     if (!next) break
     if (pair !== null) excluded.push(pair)
     record.tries = tries
@@ -531,7 +575,12 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   }
   log(`${base}: ${record.note}`)
   const native = nativeOf(seat, value, author)
-  const taken = await nativeAnswer({ seat, base, text, schema: nativeSchema, phase, native })
+  let nativeText = text
+  if (seat === 'writer' && partial !== null) {
+    nativeText = `${text}\n\n${partialForNative(partial)}`
+    record.continued = true
+  }
+  const taken = await nativeAnswer({ seat, base, text: nativeText, schema: nativeSchema, phase, native })
   if (taken.failed) return taken
   return { answer: taken.answer, text: seat === 'judge' ? judgeText(taken.answer) : '', seat: 'native', model: native.model }
 }
