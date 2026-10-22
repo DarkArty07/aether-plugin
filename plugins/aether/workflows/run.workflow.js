@@ -1009,7 +1009,10 @@ async function work(unit, task) {
     if (round.verdict !== 'approve') continue
 
     // A merge runs the plan's whole test command, so its Bash call, when the model runs it, needs the long timeout (issue 002).
-    const out = await serialized(() => ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true }))
+    // A merge the mod cuts at 600 s has its commit on the branch and its tests unfinished (issue #2). status says
+    // unverified, and the same merge command is run again: that rerun repeats the tests and does not merge a second time.
+    // The unit is merged only when the rerun passes. A rerun that is cut too leaves the commit there, unverified.
+    let out = await serialized(() => ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true }))
     if (out.merged) {
       unit.commit = out.commit
       return finish(unit, 'merged')
@@ -1018,13 +1021,32 @@ async function work(unit, task) {
     if (out.error) {
       // Never blocked on captured output alone (issue 002): the git history says whether the unit is in.
       const status = await serialized(() => ops(`aether-wt status ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge status` }))
-      if (!status.error && status.merged) {
+      if (!status.error && status.unverified) {
+        const again = await serialized(() => ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: verify merge`, long: true }))
+        if (again.merged) {
+          unit.commit = again.commit
+          round.merge = 'merged: the tests were rerun after the merge was cut, and they passed'
+          log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
+          return finish(unit, 'merged')
+        }
+        // A second cut, or any error from the rerun: the commit is on the branch and the tests did not pass.
+        if (again.error) {
+          const reason = 'its merge commit is on the integration branch without a passing test run'
+          round.merge = reason
+          log(`${unit.id}: merge rerun did not finish (${again.error}); ${reason}`)
+          return finish(unit, 'blocked', reason)
+        }
+        // A failing test run is the usual failing merge, so the one retry below applies.
+        out = again
+        round.merge = describeMerge(out)
+      } else if (!status.error && status.merged) {
         unit.commit = status.commit
         round.merge = 'merged: the merge output was unreadable, and the merge commit is on the integration branch'
         log(`${unit.id}: merge output unreadable, but its merge commit is on ${integration.branch}; counting it merged`)
         return finish(unit, 'merged')
+      } else {
+        return finish(unit, 'blocked', `merge ${round.merge}`)
       }
-      return finish(unit, 'blocked', `merge ${round.merge}`)
     }
     if (out.reason === 'conflict' || out.reason === 'tests') {
       if (mergeRetried) return finish(unit, 'blocked', `merge failed again: ${round.merge}`)

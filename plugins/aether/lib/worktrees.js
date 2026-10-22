@@ -282,10 +282,70 @@ function adoptUnit(cwd, runId, taskId, { commit, reason } = {}) {
   return { adopted: true, task: taskId, commit: sha, reason: adopted[taskId].reason, units: Object.keys(adopted).sort() }
 }
 
+// The marker a merge leaves in the run directory while its tests have not finished (issue #2).
+// The mod kills the process at 600 s, after the merge commit and before the revert, and the marker
+// stays. status then says the unit is not merged. The file names that merge commit, so a rerun
+// settles this unit and not an earlier one.
+function unverifiedMarker(mainRoot, runId, taskId) {
+  return path.join(run.runDir(mainRoot, runId), 'unverified', `${taskId}.json`)
+}
+
+function hasUnverifiedMarker(mainRoot, runId, taskId) {
+  return exists(unverifiedMarker(mainRoot, runId, taskId))
+}
+
+function writeUnverifiedMarker(mainRoot, runId, taskId, commit) {
+  const file = unverifiedMarker(mainRoot, runId, taskId)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify({ commit })}\n`)
+}
+
+function clearUnverifiedMarker(mainRoot, runId, taskId) {
+  const file = unverifiedMarker(mainRoot, runId, taskId)
+  fs.rmSync(file, { force: true })
+  // The directory stays while another unit's marker is in it.
+  try {
+    fs.rmdirSync(path.dirname(file))
+  } catch {
+    // Not empty, or already gone.
+  }
+}
+
+// The commit recorded in the marker, or null when the file is missing or not that shape.
+// A kill can leave a half-written file; that still counts as a marker, with no commit of its own.
+function readUnverifiedCommit(mainRoot, runId, taskId) {
+  try {
+    const marker = JSON.parse(fs.readFileSync(unverifiedMarker(mainRoot, runId, taskId), 'utf8'))
+    return typeof marker?.commit === 'string' && marker.commit !== '' ? marker.commit : null
+  } catch {
+    return null
+  }
+}
+
+function commitOnBranch(mainRoot, graph, commit) {
+  if (!commit) return false
+  return git(['merge-base', '--is-ancestor', commit, graph.integration.branch], mainRoot, { allowFail: true }).status === 0
+}
+
+// The merge commit of `branch` still on the integration branch, found by its subject, or null.
+// Used when the unit branch itself is gone and the history is the only record.
+function mergeSubjectCommit(mainRoot, graph, branch) {
+  const log = git(['log', '--format=%H %s', graph.integration.branch], mainRoot, { allowFail: true })
+  if (log.status !== 0 || log.stdout === '') return null
+  const subject = `Merge ${branch}`
+  for (const line of log.stdout.split('\n')) {
+    const space = line.indexOf(' ')
+    if (space !== -1 && line.slice(space + 1) === subject) return line.slice(0, space)
+  }
+  return null
+}
+
 // Whether a unit's branch is already in the integration branch, from the git history alone
 // (issue 002): the workflow asks this when a merge's own output was unreadable, instead of
 // trusting captured output as the only evidence of the merge. `commit` is the first merge
 // commit on the integration branch that took the unit in, or the unit's tip when there is none.
+// A marker left by a merge whose tests never finished (issue #2) means that commit is not verified:
+// `merged` is false and `unverified` is true until a rerun keeps the commit or reverts it.
 function unitStatus(cwd, runId, taskId) {
   run.assertRunId(runId)
   run.assertTaskId(taskId)
@@ -293,7 +353,13 @@ function unitStatus(cwd, runId, taskId) {
   const graph = loadGraph(mainRoot, runId)
   if (!graph.tasks[taskId]) throw new Error(`${taskId} is not in run ${runId}`)
   const branch = run.unitBranch(runId, taskId)
-  if (!branchExists(mainRoot, branch)) return { merged: false, branch: null, commit: null }
+  if (!branchExists(mainRoot, branch)) {
+    if (hasUnverifiedMarker(mainRoot, runId, taskId)) {
+      const commit = mergeSubjectCommit(mainRoot, graph, branch)
+      if (commit) return { merged: false, unverified: true, branch: null, commit, head: null }
+    }
+    return { merged: false, branch: null, commit: null }
+  }
   const tip = git(['rev-parse', branch], mainRoot).stdout
   // A branch with no change of its own since the run's base is an ancestor of everything
   // and merged nothing. (unitBase cannot say this: after a merge it is the branch's tip.)
@@ -304,6 +370,13 @@ function unitStatus(cwd, runId, taskId) {
   if (own.length === 0 || line.includes(tip) || !isMerged(mainRoot, graph, branch)) return { merged: false, branch, commit: null, head: tip }
   const merges = git(['rev-list', '--merges', '--reverse', `${branch}..${graph.integration.branch}`], mainRoot, { allowFail: true }).stdout
   const commit = merges === '' ? tip : merges.split('\n')[0]
+  if (hasUnverifiedMarker(mainRoot, runId, taskId)) {
+    // The marker names the merge this unit just made. The oldest merge in the range can be another
+    // unit's, merged earlier, and a rerun must revert this one (issue #2).
+    const marked = readUnverifiedCommit(mainRoot, runId, taskId)
+    const markedCommit = commitOnBranch(mainRoot, graph, marked) ? marked : commit
+    return { merged: false, unverified: true, branch, commit: markedCommit, head: tip }
+  }
   return { merged: true, branch, commit, head: tip }
 }
 
@@ -324,20 +397,26 @@ function orEmpty(read, fallback) {
 // The units of a run already in the integration branch, in task order. A merged unit's branch may
 // have been removed since, so three sources count: what unitStatus sees on a branch that is still
 // there, the integration branch's merge commits named `Merge aether/<run>/<task>`, and the units
-// the Lead adopted by hand. Only tasks of the run's graph are counted.
+// the Lead adopted by hand. A unit whose tests were cut (issue #2) is in that history and is not
+// counted: its marker is still there. A unit the Lead adopted still counts. Only tasks of the run's graph are counted.
 function mergedUnits(cwd, runId) {
   const { mainRoot } = repoPaths(cwd)
   const graph = loadGraph(mainRoot, runId)
   const ids = taskIdsInOrder(graph)
   const merged = new Set()
+  const unverified = (taskId) => hasUnverifiedMarker(mainRoot, runId, taskId)
   for (const taskId of ids) {
+    if (unverified(taskId)) continue
     if (orEmpty(() => unitStatus(mainRoot, runId, taskId).merged, false)) merged.add(taskId)
   }
   const subjects = orEmpty(() => {
     const log = git(['log', '--format=%s', graph.integration.branch], mainRoot, { allowFail: true })
     return log.status === 0 ? new Set(log.stdout.split('\n')) : new Set()
   }, new Set())
-  for (const taskId of ids) if (subjects.has(`Merge ${run.unitBranch(runId, taskId)}`)) merged.add(taskId)
+  for (const taskId of ids) {
+    if (unverified(taskId)) continue
+    if (subjects.has(`Merge ${run.unitBranch(runId, taskId)}`)) merged.add(taskId)
+  }
   const adoptedFile = path.join(run.runDir(mainRoot, runId), 'adopted.json')
   const adopted = orEmpty(() => (exists(adoptedFile) ? Object.keys(run.readJson(adoptedFile)) : []), [])
   for (const taskId of adopted) if (ids.includes(taskId)) merged.add(taskId)
@@ -504,6 +583,49 @@ function readBaseline(mainRoot, runId) {
   }
 }
 
+// Runs the plan's tests against the merge commit that is already on the integration branch, then
+// keeps that commit or reverts it. The marker is written before this runs. It is removed when the
+// tests have finished and the merge was kept or reverted; a process killed during the tests leaves
+// it (issue #2). `before` is the integration tip this merge commit was made on, and the commit is
+// undone only while it is still the tip. `rerun` marks a call that did not merge again.
+function settleMerge(mainRoot, graph, runId, taskId, integration, before, { timeoutMs, rerun = false }) {
+  const tests = spawnSync(graph.testCommand, {
+    cwd: integration,
+    shell: true,
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  const kept = (extra) => {
+    clearUnverifiedMarker(mainRoot, runId, taskId)
+    const result = { merged: true, commit: head(integration) }
+    if (rerun) result.rerun = true
+    if (extra) Object.assign(result, extra)
+    return result
+  }
+  if (tests.status === 0) return kept()
+  // A run that was killed (timed out, or its output overflowed the buffer) did not finish, so its
+  // output cannot show that only known tests fail. Such a run is undone without the baseline.
+  const output = `${tests.stdout || ''}\n${tests.stderr || ''}`
+  const verdict = tests.status === null ? { pass: false } : judge(readBaseline(mainRoot, runId), { exitCode: tests.status, output })
+  if (verdict.pass) return kept({ knownFailures: verdict.known })
+  // Undo only the merge commit this call is settling, and only while it is still the tip.
+  const reverted = git(['rev-parse', 'HEAD^1'], integration).stdout === before
+  if (reverted) git(['reset', '--hard', before], integration)
+  // Tests finished. The marker stays only when the commit could not be reverted, so the unit remains unverified.
+  if (reverted) clearUnverifiedMarker(mainRoot, runId, taskId)
+  const result = {
+    merged: false,
+    reason: 'tests',
+    exitCode: tests.status,
+    timedOut: Boolean(tests.error && tests.error.code === 'ETIMEDOUT'),
+    reverted,
+    output: `${tests.stdout || ''}${tests.stderr || ''}`.slice(-4000),
+  }
+  if (verdict.reason === 'new failures') result.newFailures = verdict.new
+  return result
+}
+
 function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
   const task = graph.tasks[taskId]
   if (!task) throw new Error(`${taskId} is not in run ${runId}`)
@@ -526,9 +648,15 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
   // A merge of a unit that is already in is the merge it already has (issue 002): a relaunch of a
   // unit whose merge output was lost must not try to merge its work a second time. unitStatus
   // tells an empty branch (nothing of its own since the run's base) from a merged one.
+  // A unit whose merge commit is on the branch and whose marker is still there (issue #2) is not in:
+  // rerun only the tests. A kill during that rerun leaves the marker, and there is no second merge commit.
   if (branchExists(mainRoot, branch)) {
     const status = unitStatus(mainRoot, runId, taskId)
     if (status.merged) return { merged: true, commit: status.commit, already: true }
+    if (status.unverified && status.commit) {
+      const before = git(['rev-parse', `${status.commit}^1`], integration).stdout
+      return settleMerge(mainRoot, graph, runId, taskId, integration, before, { timeoutMs, rerun: true })
+    }
   }
   const base = unitBase(mainRoot, graph, branch)
   const files = changedFiles(mainRoot, base, branch)
@@ -558,34 +686,9 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
     return { merged: false, reason, files: unmerged, detail: attempt.stderr || attempt.stdout }
   }
 
-  const tests = spawnSync(graph.testCommand, {
-    cwd: integration,
-    shell: true,
-    encoding: 'utf8',
-    timeout: timeoutMs,
-    maxBuffer: 64 * 1024 * 1024,
-  })
-  if (tests.status !== 0) {
-    // A run that was killed (timed out, or its output overflowed the buffer) did not finish, so its
-    // output cannot show that only known tests fail. Such a run is undone without the baseline.
-    const output = `${tests.stdout || ''}\n${tests.stderr || ''}`
-    const verdict = tests.status === null ? { pass: false } : judge(readBaseline(mainRoot, runId), { exitCode: tests.status, output })
-    if (verdict.pass) return { merged: true, commit: head(integration), knownFailures: verdict.known }
-    // Undo only the merge commit this call created.
-    const reverted = git(['rev-parse', 'HEAD^1'], integration).stdout === before
-    if (reverted) git(['reset', '--hard', before], integration)
-    const result = {
-      merged: false,
-      reason: 'tests',
-      exitCode: tests.status,
-      timedOut: Boolean(tests.error && tests.error.code === 'ETIMEDOUT'),
-      reverted,
-      output: `${tests.stdout || ''}${tests.stderr || ''}`.slice(-4000),
-    }
-    if (verdict.reason === 'new failures') result.newFailures = verdict.new
-    return result
-  }
-  return { merged: true, commit: head(integration) }
+  // Before the tests, so a kill during them leaves the marker behind the merge commit.
+  writeUnverifiedMarker(mainRoot, runId, taskId, head(integration))
+  return settleMerge(mainRoot, graph, runId, taskId, integration, before, { timeoutMs })
 }
 
 // Drops one registry entry, and the directory with it when it is there. Works for a missing directory.
