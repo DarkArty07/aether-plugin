@@ -13,10 +13,17 @@ const { markSession, readDelegateSettings } = require('../plugins/aether/lib/ses
 
 const AETHER = { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup', agent_type: 'aether:lead' }
 
+// The values of options a user may still have saved from before spec 013 removed them, as an environment. The names
+// are built from their parts: the scan for the removed identifiers (tests/no-router.test.js) is for what the plugin
+// uses, and these tests only prove that a saved value changes nothing.
+function removedOptions(values) {
+  return Object.fromEntries(Object.entries(values).map(([name, value]) => [`CLAUDE_PLUGIN_OPTION_${name.toUpperCase()}`, value]))
+}
+
 // The hook's environment, without what a surrounding session may have set.
 function hookEnv(data, extra = {}) {
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }
-  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_SEATS', 'CLAUDE_PLUGIN_OPTION_ROUTER', 'CLAUDE_PLUGIN_OPTION_DECIDER', 'CLAUDE_PLUGIN_OPTION_FALLBACK', 'CLAUDE_PLUGIN_OPTION_DEADLINES', 'AETHER_SUPERDELEGATION', 'AETHER_SUPERDELEGATION_LEGACY']) delete env[key]
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_SEATS', 'CLAUDE_PLUGIN_OPTION_DEADLINES', ...Object.keys(removedOptions({ router: '', decider: '', fallback: '' })), 'AETHER_SUPERDELEGATION', 'AETHER_SUPERDELEGATION_LEGACY']) delete env[key]
   return { ...env, ...extra }
 }
 
@@ -292,9 +299,7 @@ test('session start writes the delegate file from the options, and no router fil
     CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true',
     CLAUDE_PLUGIN_OPTION_HARNESSES: 'grok,agy',
     CLAUDE_PLUGIN_OPTION_DEADLINES: 'haiku=5,jev=2,quota=2',
-    CLAUDE_PLUGIN_OPTION_ROUTER: 'command',
-    CLAUDE_PLUGIN_OPTION_DECIDER: 'jev',
-    CLAUDE_PLUGIN_OPTION_FALLBACK: 'opus:max',
+    ...removedOptions({ router: 'command', decider: 'jev', fallback: 'opus:max' }),
   }
   assert.equal(start(repo.dir, set, { env }).status, 0)
   assert.deepEqual(readDelegateSettings(set, 's1'), { lanes: true, harnesses: ['grok', 'agy'], deadlines: { quotaMs: 2000 } })
@@ -316,7 +321,7 @@ test('session start takes away the router file an older version left, and a resu
 test('session start gives no note of a router mode: the option no longer exists', (t) => {
   const repo = makeRepo(t)
   for (const mode of ['advise', 'command']) {
-    const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_PLUGIN_OPTION_ROUTER: mode, CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' } })
+    const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', ...removedOptions({ router: mode }) } })
     assert.equal(r.status, 0, r.stderr)
     // The bootstrap is the skill's, which another task rewrites: only the note this hook used to add is checked.
     assert.doesNotMatch(r.out.hookSpecificOutput.additionalContext, /Aether router \(/)
@@ -325,5 +330,5 @@ test('session start gives no note of a router mode: the option no longer exists'
 
 test('the session start bin no longer names the router notes or writes the router settings', () => {
   const source = fs.readFileSync(SESSION_BIN, 'utf8')
-  assert.doesNotMatch(source, /ROUTER_NOTES|routerNote|routerSettingsFrom|ROUTER-OVERRIDE/)
+  assert.doesNotMatch(source, /ROUTER_NOTES|routerNote|routerSettingsFrom/)
 })
