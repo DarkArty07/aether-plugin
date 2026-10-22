@@ -1210,7 +1210,7 @@ test('the old journal is only read, never written (D4)', (t) => {
 - Tier: opus high — procesos desacoplados, esperas y el camino que edita con su rama
 - Review: xhigh — concurrencia (un proceso que muere, un resultado que llega tarde) y el sistema de archivos
 - Area: run
-- Owns: `plugins/aether/lib/delegate-run.js`, `plugins/aether/bin/aether-delegate`, `plugins/aether/lib/delegate-chain.js`, `plugins/aether/lib/delegate-calls.js`, `plugins/aether/lib/router-renewal.js`, `tests/delegate-run.test.js`, `tests/delegate-chain.test.js`, `tests/delegate-calls.test.js`, `tests/router-renewal.test.js`
+- Owns: `plugins/aether/lib/delegate-run.js`, `plugins/aether/bin/aether-delegate`, `plugins/aether/lib/delegate-chain.js`, `plugins/aether/lib/delegate-calls.js`, `plugins/aether/lib/router-renewal.js`, `tests/delegate-run.test.js`, `tests/delegate-chain.test.js`, `tests/delegate-calls.test.js`, `tests/router-renewal.test.js`, `tests/aether-route.test.js`, `tests/docs-facts.test.js`, `docs/reference/components.md`
 - Depends on: Task 3 — escribe `result` y `outcome` en la bitácora
 - Depends on: Task 4 — llama a `delegateCommand` con `--pair`, `--carry` y `--findings`
 - Depends on: Task 5 — calcula las comprobaciones al terminar
@@ -1259,6 +1259,8 @@ wait({ id, dataDir, seconds, now = Date.now, sleep, alive = pidAlive })
 - `answer --session <id> --task <id> --attempt <n> --text <text>` → `delegate-run.recordAnswer(...)`; `--text` puede ser una cadena vacía; sin `--task` o sin `--attempt` es un uso mal hecho (`{ error }` y 1).
 - `renew --harness <agy|grok>` → lo que hacía `aether-route renew` (`lib/router-renewal.js` `renewReading`), y `renewalArgv` de `router-renewal.js` apunta a `bin/aether-delegate renew`.
 - `lib/delegate-chain.js` escribe sus `outcome` con `delegate-log.appendEntry` (forma de las Global Constraints: `id` de la tarea y `attempt` corrido por tarea), ya no con `router-log`.
+
+**El recuento de los bins (esta tarea lo sube a doce, la Task 13 lo devuelve a once).** Agregar `bin/aether-delegate` mientras `bin/aether-route` sigue ahí deja doce archivos en `bin/`, y tres lugares cuentan once: `tests/aether-route.test.js` (la prueba «the executable bit is set and the commands page counts the bins»: `assert.equal(count, 11)` y `includes('the eleven commands of `bin/`')`), `tests/docs-facts.test.js` (la frase `'eleven commands of `bin/`'` de la lista que exige `docs/reference/components.md`, y la prueba que lee cada «N commands of `bin/`» y la compara con `bins().size`, que ya conoce `twelve`) y `docs/reference/components.md` (línea 46: «the eleven commands of `bin/`»). El merge de esta tarea corre `npm test && npm run test:mod` y un merge rojo se deshace, así que esta tarea cambia, en el mismo commit que agrega el bin, `eleven` por `twelve` y `11` por `12` en esos tres sitios. La Task 13, que borra `bin/aether-route` y deja otra vez once, los vuelve a `eleven` en `tests/docs-facts.test.js` y en `docs/reference/components.md` (`tests/aether-route.test.js` lo borra). Ni la Task 14 ni la 20 tocan ese recuento.
 
 **Tests (write first):** `tests/delegate-run.test.js` y los ajustes de `tests/delegate-chain.test.js` y `tests/router-renewal.test.js`
 
@@ -1413,7 +1415,7 @@ test('the bin: an unknown verb is an error, wait on an id never started says unk
 
 `tests/delegate-chain.test.js`: las pruebas existentes se ajustan para leer los `outcome` de `delegate-log.readEntries` (campo `id` de la tarea, `attempt` corrido), y una prueba nueva: un intento con status `violation` hace que `runChain` devuelva `changed` con los archivos que `runDelegate` dijo. `tests/delegate-calls.test.js`: el resultado `violation` de un delegado que cambió un archivo trae `changed` con ese archivo. `tests/router-renewal.test.js`: la prueba de `renewalArgv` espera `bin/aether-delegate` y el verbo `renew`.
 
-**Acceptance:** `node --test tests/delegate-run.test.js tests/delegate-chain.test.js tests/router-renewal.test.js tests/delegate-calls.test.js tests/delegate-limits.test.js` pasa. `bin/aether-delegate` existe, es ejecutable y no importa nada de `lib/route.js`. Ningún camino de `run` funde, hace `push` ni escribe en el checkout del Lead.
+**Acceptance:** `node --test tests/delegate-run.test.js tests/delegate-chain.test.js tests/router-renewal.test.js tests/delegate-calls.test.js tests/delegate-limits.test.js` pasa. `bin/aether-delegate` existe, es ejecutable y no importa nada de `lib/route.js`. Con doce archivos en `bin/` pasan `node --test tests/aether-route.test.js tests/docs-facts.test.js`, y `docs/reference/components.md` dice «the twelve commands of `bin/`». Ningún camino de `run` funde, hace `push` ni escribe en el checkout del Lead.
 
 ### Task 11: El mod entrega las llamadas `Agent` con la escalera
 
@@ -1421,7 +1423,7 @@ test('the bin: an unknown verb is an error, wait on an id never started says unk
 - Tier: sonnet — integración del mod con el motor, que las pruebas simuladas sujetan solo en parte
 - Review: xhigh — el motor decide qué ve el Lead; fallo del mod no debe romper la llamada
 - Area: mod
-- Owns: `plugins/aether/hooks/delegate.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/router.mjs`, `tests/delegate-mod.test.js`, `tests/router-mod.test.js`
+- Owns: `plugins/aether/hooks/delegate.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/router.mjs`, `tests/delegate-mod.test.js`, `tests/router-mod.test.js`, `tests/docs-facts.test.js`
 - Depends on: Task 1 — usa `waitForDelegate`
 - Depends on: Task 10 — llama a los verbos `begin`, `start` y `wait` de `aether-delegate`
 - Depends on: Task 17 — la prueba en el motor real dice si el bucle de espera y el `isolation` puestos por el mod valen
@@ -1441,6 +1443,8 @@ export function createDelegates() -> { toolCall($, e, next, ctx), bind($, e, age
 - `step`: en el paso 0 de un agente con `external`, corre `aether-delegate start --id <id>` (límite 15000 ms) y después `waitForDelegate`; con `ok` y texto no vacío entrega `{ kind: 'text', index: 0, text }` y `{ kind: 'stop', stopReason: 'end_turn', usage: null }` sin pasar por el modelo; con cualquier otra cosa sigue con `yield* next(e)` (el modelo del plan, que ya es el del escalón). En un agente con `answerOf` cada paso pasa por `yield* next(e)` sin cambios y, cuando el resultado de un paso trae `stopReason` distinto de `'tool_use'` y `answer` de tipo texto, corre `node <root>/bin/aether-delegate answer --session <session> --task <task> --attempt <attempt> --text <answer recortado a 4000 caracteres>` (límite 15000 ms; cualquier falla se ignora y el paso vuelve igual): es la respuesta que `verdict` comprueba (R6). `toolCall` recuerda `answerOf` del plan junto con la llamada, como recuerda `external`.
 - `hooks/register.js`: importa `createDelegates` de `./delegate.mjs` en lugar de `createRouter` de `./router.mjs`, y renombra sus ayudantes (`routerCalls`, `routerContext`) a `delegateCalls` y `delegateContext`; la lista de llamadas que el mod hace es `$.clock.now`, `$.fs.write` y `$.process.run` (se quita `$.model.complete`). El encabezado de `register.js` describe la escalera, no el router.
 - Se borra `hooks/router.mjs` y `tests/router-mod.test.js`.
+
+**`tests/docs-facts.test.js` (esta tarea agrega una excepción; la Task 13 y la 14 lo tocan después).** Esta tarea borra `hooks/router.mjs`, y `docs/guide/router.md` (línea 16) lo nombra con su ruta en un código; la prueba C3 («the repository paths in code spans exist») se pondría roja en este merge, y un merge rojo se deshace. Por eso esta tarea agrega a `PATH_EXCEPTIONS` `'plugins/aether/hooks/router.mjs': 'the retired router mod, removed in spec 013; named by the router guide until docs/guide/delegates.md replaces it'` y la nombra en el comentario del encabezado de la prueba. Es la única ruta que se borra antes de la Task 13 y aparece en un código de las páginas que lee `tests/docs-facts.test.js` (`README.md` y `PAGES`): se buscaron también `lib/router-report.js` y `tests/router-report.test.js` (Task 8), `tests/router-settings.test.js` (Task 6) y `tests/router-mod.test.js` (esta tarea) y ninguna está nombrada en esas páginas (solo en `docs/handoff/`, que la prueba no lee). La excepción queda mientras la guía vieja exista; la Task 14 la deja o la quita, y ninguna de las dos cosas rompe la prueba.
 
 **Tests (write first):** `tests/delegate-mod.test.js`
 
@@ -1602,7 +1606,7 @@ test('a later step of the same agent is never taken over', async () => {
 })
 ```
 
-**Acceptance:** `node --test tests/delegate-mod.test.js` y `npm run test:mod` pasan. `hooks/delegate.mjs` no importa nada de `lib/` ni llama a `$.model`. `hooks/router.mjs` y `tests/router-mod.test.js` ya no existen. Lo que el motor hace con el primer paso de más de 10 minutos y con un `isolation` puesto por el mod lo mide la Task 17, antes de esta tarea; lo que hace con un `prompt` reescrito queda para la sesión real (C12).
+**Acceptance:** `node --test tests/delegate-mod.test.js` y `npm run test:mod` pasan. `hooks/delegate.mjs` no importa nada de `lib/` ni llama a `$.model`. `hooks/router.mjs` y `tests/router-mod.test.js` ya no existen, y `node --test tests/docs-facts.test.js` pasa con la excepción de `plugins/aether/hooks/router.mjs`. Lo que el motor hace con el primer paso de más de 10 minutos y con un `isolation` puesto por el mod lo mide la Task 17, antes de esta tarea; lo que hace con un `prompt` reescrito queda para la sesión real (C12).
 
 ### Task 12: La guía del Lead describe la escalera
 
@@ -1671,7 +1675,7 @@ test('an editing delegate is launched with Agent, not with Bash', () => {
 - Tier: sonnet — muchos archivos que se borran, sin romper lo que se queda
 - Review: xhigh — un borrado: no puede arrastrar las marcas, la elección del pair ni el lector del diario
 - Area: removal
-- Owns: `plugins/aether/bin/aether-route`, `plugins/aether/lib/route.js`, `plugins/aether/lib/router-criterion.js`, `plugins/aether/lib/router-deciders.js`, `plugins/aether/lib/router-replay.js`, `plugins/aether/lib/router-rungs.js`, `plugins/aether/lib/router-reference.js`, `plugins/aether/config/router`, `scripts/build-router-rungs.js`, `tests/aether-route.test.js`, `tests/router-aether-task.test.js`, `tests/router-criterion.test.js`, `tests/router-deciders.test.js`, `tests/router-regression.test.js`, `tests/router-replay.test.js`, `tests/router-route.test.js`, `tests/router-rungs.test.js`, `tests/router-surface.test.js`, `tests/router-removed.test.js`, `tests/docs-facts.test.js`
+- Owns: `plugins/aether/bin/aether-route`, `plugins/aether/lib/route.js`, `plugins/aether/lib/router-criterion.js`, `plugins/aether/lib/router-deciders.js`, `plugins/aether/lib/router-replay.js`, `plugins/aether/lib/router-rungs.js`, `plugins/aether/lib/router-reference.js`, `plugins/aether/config/router`, `scripts/build-router-rungs.js`, `tests/aether-route.test.js`, `tests/router-aether-task.test.js`, `tests/router-criterion.test.js`, `tests/router-deciders.test.js`, `tests/router-regression.test.js`, `tests/router-replay.test.js`, `tests/router-route.test.js`, `tests/router-rungs.test.js`, `tests/router-surface.test.js`, `tests/router-removed.test.js`, `tests/docs-facts.test.js`, `docs/reference/components.md`
 - Depends on: Task 7 — `begin` y `verdict` reemplazan a `lib/route.js`
 - Depends on: Task 8 — el informe nuevo reemplaza a `lib/router-report.js`
 - Depends on: Task 10 — `aether-delegate` reemplaza a `aether-route`, y `renew` y la cadena ya no usan `router-log`
@@ -1685,7 +1689,9 @@ Se borran: `bin/aether-route`, `lib/route.js`, `lib/router-criterion.js`, `lib/r
 **`tests/docs-facts.test.js` (esta tarea lo toca, y la Task 14 después).** Al borrar `bin/aether-route` y los archivos del decisor, `docs/changelog.md` (que ninguna tarea edita, es historia) y las guías que la Task 14 todavía no cambió siguen nombrándolos, y la prueba R11 («every aether-* command in position is a file of bin/») y la C3 («the repository paths in code spans exist») se pondrían rojas. Esta tarea agrega, con su razón cada una, y las nombra en el comentario del encabezado de la prueba:
 
 - a `EXCEPTIONS`: `'aether-route': 'the retired decider command, named as history by docs/changelog.md (the pages that still name it are changed by tasks of spec 013)'`;
-- a `PATH_EXCEPTIONS`: `'plugins/aether/config/router/criterion.json': 'the decider's criterion, removed in spec 013; the changelog keeps the words of the release that shipped it'`, y tres que solo nombra `docs/guide/router.md` hasta que la Task 14 lo reemplaza: `'plugins/aether/hooks/router.mjs'`, `'plugins/aether/config/router/rungs.json'` y `'scripts/build-router-rungs.js'` (misma razón: removed in spec 013, named by the router guide until it is replaced).
+- a `PATH_EXCEPTIONS`: `'plugins/aether/config/router/criterion.json': 'the decider's criterion, removed in spec 013; the changelog keeps the words of the release that shipped it'`, y dos que solo nombra `docs/guide/router.md` hasta que la Task 14 lo reemplaza: `'plugins/aether/config/router/rungs.json'` y `'scripts/build-router-rungs.js'` (misma razón: removed in spec 013, named by the router guide until it is replaced). La excepción de `'plugins/aether/hooks/router.mjs'` ya la puso la Task 11, que borra ese archivo; esta tarea no la repite.
+
+**El recuento de los bins vuelve a once.** Esta tarea borra `bin/aether-route` y deja once archivos en `bin/` (la Task 10 los había subido a doce con `bin/aether-delegate`): en `tests/docs-facts.test.js` la frase `'twelve commands of `bin/`'` vuelve a `'eleven commands of `bin/`'`, y en `docs/reference/components.md` (línea 46) «the twelve commands of `bin/`» vuelve a «the eleven commands of `bin/`». `tests/aether-route.test.js`, que contaba los bins, se borra con el resto.
 
 No cambia nada más de la prueba: la lista `PAGES` sigue nombrando `docs/guide/router.md` hasta la Task 14. `docs/roadmap.md` no nombra `aether-route` ni enlaza `guide/router.md` (su línea 9 solo dice «the router» en prosa), y `docs/contributing.md` tampoco: no hay nada que excepcionar en ellos.
 
@@ -1725,7 +1731,7 @@ test('no file of the plugin requires a module that is gone', () => {
 })
 ```
 
-**Acceptance:** `npm test && npm run test:mod` pasa con todo lo borrado ausente; las pruebas de la elección del pair, de las marcas, de la renovación, de la cuota y de `aether-lane` pasan sin cambiar su resultado (C8). `grep -r "aether-route" plugins/aether/bin plugins/aether/lib plugins/aether/hooks scripts` no da nada, salvo `lib/guard.js`, que recorta Task 16. `node --test tests/docs-facts.test.js` pasa con `aether-route` y esas cuatro rutas como excepciones, cada una con su razón en el encabezado de la prueba.
+**Acceptance:** `npm test && npm run test:mod` pasa con todo lo borrado ausente; las pruebas de la elección del pair, de las marcas, de la renovación, de la cuota y de `aether-lane` pasan sin cambiar su resultado (C8). `grep -r "aether-route" plugins/aether/bin plugins/aether/lib plugins/aether/hooks scripts` no da nada, salvo `lib/guard.js`, que recorta Task 16. `node --test tests/docs-facts.test.js` pasa con `aether-route` y las tres rutas de esta tarea (`config/router/criterion.json`, `config/router/rungs.json` y `scripts/build-router-rungs.js`) como excepciones, más la de `hooks/router.mjs` que puso la Task 11, cada una con su razón en el encabezado de la prueba, y con once archivos en `bin/` y «the eleven commands of `bin/`» en `docs/reference/components.md`.
 
 ### Task 14: La guía de los delegados describe la escalera
 
