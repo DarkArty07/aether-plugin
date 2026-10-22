@@ -699,6 +699,12 @@ function describeMerge(out) {
       return `refused: these files are outside the files the task owns: ${list(out.files)}. Revert those changes`
     case 'empty':
       return `refused: the unit branch has no commits to merge${out.uncommitted ? `; uncommitted files: ${list(out.uncommitted)}. Commit your work` : ''}`
+    case 'unverified-buried':
+      return `refused: the unverified merge commit is buried under newer commits on ${integration.branch}`
+    case 'unverified-moved':
+      return 'refused: the unit branch has commits that are not in the unverified merge commit'
+    case 'unverified-other':
+      return `refused: another unit (${out.task || 'unknown'}) has an unverified merge commit on ${integration.branch}`
     default:
       return `refused: ${out.detail || out.reason}`
   }
@@ -1342,7 +1348,14 @@ async function work(unit, task) {
         log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
         return finish(unit, 'merged')
       }
-      // A failing test run is the usual failing merge, so the one retry below applies.
+      // A failing test run is the usual failing merge, so the one retry below applies when the
+      // commit was reverted. A failing test run whose commit could not be reverted stays untested:
+      // do not retry, as the retry would only be refused unverified-moved (issue #2).
+      if (again.reason === 'tests' && again.reverted === false) {
+        round.merge = UNTESTED
+        log(`${unit.id}: merge rerun failed and commit was left in place; ${UNTESTED}`)
+        return finish(unit, 'blocked', UNTESTED)
+      }
       // Any other rerun leaves the commit untested: a second cut, an error, a dirty worktree,
       // unverified-buried, unverified-moved or unverified-other. The reason is prefixed so the
       // Lead still sees why, and the sentence says the commit is untested (issue #2).

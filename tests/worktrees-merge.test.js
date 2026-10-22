@@ -7,8 +7,9 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { makeRepo, compile, commitIn, WT_BIN, NO_LANES_CONFIG, PLAN_BIN, runBin, writePlan, useDataDir, ageRun } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
-const { ensure, merge, unitStatus, mergedUnits, removeUnit, sweepRun, sweepStale } = require('../plugins/aether/lib/worktrees.js')
+const { ensure, merge, unitStatus, mergedUnits, removeUnit, sweepRun, sweepStale, writeUnverifiedMarker, abortUnfinishedMerge } = require('../plugins/aether/lib/worktrees.js')
 const { finalize } = require('../plugins/aether/lib/report.js')
+const run = require('../plugins/aether/lib/run.js')
 
 function setup(t, options) {
   const repo = makeRepo(t, options)
@@ -736,11 +737,31 @@ test('finalize and sweepStale keep a run directory whose unverified commit is on
   assert.deepEqual(sweepStale(repo.dir, { hours: 24 }), { swept: [] })
   assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), true)
   assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit)
+  assert.equal(finished.unverified, true)
   const out = finalize(repo.dir, args.runId, { tests: false })
   assert.equal(out.cleanup.finished, false)
+  assert.equal(out.cleanup.unverified, true)
   assert.equal(fs.existsSync(args.runDir), true)
   assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
   assert.equal(repo.git('merge-base', '--is-ancestor', mergeCommit, 'HEAD'), '')
+  // sweepStale on a finalized run with a live marker appends no abandoned record twice
+  const countBefore = fs
+    .readFileSync(path.join(run.dataDir(), 'runs.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+    .filter((r) => r.runId === args.runId && r.status === 'abandoned').length
+  ageRun(args, 48)
+  assert.deepEqual(sweepStale(repo.dir, { hours: 24 }), { swept: [] })
+  assert.deepEqual(sweepStale(repo.dir, { hours: 24 }), { swept: [] })
+  const records = fs
+    .readFileSync(path.join(run.dataDir(), 'runs.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+    .filter((r) => r.runId === args.runId)
+  assert.equal(records.filter((r) => r.status === 'abandoned').length, countBefore, 'sweepStale on a finalized run must append no abandoned record')
+  assert.equal(records[records.length - 1].status, 'finalized')
 })
 
 test('merge does not judge a test run that timed out, even when its output names only known failures', (t) => {
@@ -756,4 +777,78 @@ test('merge does not judge a test run that timed out, even when its output names
   assert.equal(r.timedOut, true)
   assert.equal(r.newFailures, undefined)
   assert.equal(repo.git('rev-parse', 'HEAD'), before)
+})
+
+test('a marker whose content is empty, truncated or {} is read as unverified with unknown commit (issue #2)', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, true)
+  assert.deepEqual(mergedUnits(repo.dir, args.runId), ['task-1'])
+  assert.equal(unitStatus(repo.dir, args.runId, 'task-1').merged, true)
+
+  const file = markerFile(args.runDir, 'task-1')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+
+  for (const content of ['', '{"commit":', '{}']) {
+    fs.writeFileSync(file, content)
+    const status = unitStatus(repo.dir, args.runId, 'task-1')
+    assert.equal(status.merged, false, `content: ${JSON.stringify(content)}`)
+    assert.equal(status.unverified, true, `content: ${JSON.stringify(content)}`)
+    assert.equal(status.commit, null, `content: ${JSON.stringify(content)}`)
+    assert.deepEqual(mergedUnits(repo.dir, args.runId), [], `content: ${JSON.stringify(content)}`)
+  }
+})
+
+test('the marker writes go through a temporary file and a rename (issue #2)', (t) => {
+  const { repo, args, unit } = setup(t)
+  const file = markerFile(args.runDir, 'task-1')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify({ commit: 'old-commit' })}\n`)
+
+  const originalRenameSync = fs.renameSync
+  t.after(() => {
+    fs.renameSync = originalRenameSync
+  })
+  fs.renameSync = (src, dest) => {
+    if (dest === file) throw new Error('simulated rename failure')
+    return originalRenameSync(src, dest)
+  }
+
+  assert.throws(
+    () => {
+      writeUnverifiedMarker(repo.dir, args.runId, 'task-1', 'new-commit')
+    },
+    /simulated rename failure/,
+  )
+
+  assert.equal(fs.readFileSync(file, 'utf8'), `${JSON.stringify({ commit: 'old-commit' })}\n`)
+})
+
+test('abortUnfinishedMerge leaves a MERGE_HEAD of another branch alone (issue #2)', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+
+  const integrationBranch = args.integration.branch
+  repo.git('checkout', integrationBranch)
+  repo.git('branch', 'other-branch')
+  commitIn(repo, repo.dir, 'src/main.js', 'main\n', 'integration commit')
+  repo.git('checkout', 'other-branch')
+  commitIn(repo, repo.dir, 'src/other.js', 'other\n', 'other commit')
+  repo.git('checkout', integrationBranch)
+  repo.git('merge', '--no-commit', '--no-ff', 'other-branch')
+
+  const mergeHead = mergeHeadPath(repo)
+  assert.equal(fs.existsSync(mergeHead), true, 'MERGE_HEAD must exist')
+
+  // Set up an unverified marker for task-1 with no commit
+  const file = markerFile(args.runDir, 'task-1')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify({ commit: null, before: repo.git('rev-parse', 'HEAD') })}\n`)
+
+  // Run merge for task-1: it must leave MERGE_HEAD of other-branch alone and refuse dirty-integration
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, false)
+  assert.equal(r.reason, 'dirty-integration')
+  assert.equal(fs.existsSync(mergeHead), true, 'MERGE_HEAD of other-branch must not be aborted')
 })
