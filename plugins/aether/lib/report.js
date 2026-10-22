@@ -211,6 +211,8 @@ const isQuestion = (question) => typeof question === 'string' && question.trim()
 // A unit's latest launch gives its status and its question; attempts and findings add up across launches. A unit counts
 // as escalated when a launch moved it to another model or a relaunch started it on another model, and
 // as climbed when a launch raised its effort on one model.
+// The latest launch's review is the run's. A `deferred` review did not run: it is not a failure, and its reason
+// is kept. A later launch whose review ran replaces it. Only a review whose status is `done` counts as a review.
 // `adopted` maps a task to the Lead's record of integrating it by hand (aether-wt adopt). A unit the swarm merged
 // is not counted as adopted; any other counts as integrated, and as the swarm's status no longer.
 function qualityOf(results, adopted = {}) {
@@ -270,7 +272,15 @@ function qualityOf(results, adopted = {}) {
     attempts: all.reduce((sum, unit) => sum + unit.attempts, 0),
     agents,
     findings: countFindings(all.flatMap((unit) => unit.findings)),
-    finalReview: review ? { status: review.status, verdict: review.verdict || null, findings: countFindings(reviewFindings), reviews } : null,
+    finalReview: review
+      ? {
+          status: review.status,
+          verdict: review.verdict || null,
+          findings: countFindings(reviewFindings),
+          reviews,
+          ...(review.status === 'deferred' ? { reason: review.reason || null } : {}),
+        }
+      : null,
   }
 }
 
