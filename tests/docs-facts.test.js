@@ -548,7 +548,7 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A83 are recorded and the changelog opens with 0.17.1 and its handoff', () => {
+test('R15: the decisions A50 to A83 are recorded and the changelog opens with 0.18.0 and its handoff', () => {
   const decisions = read('docs/decisions.md')
   const LAST_DECISION = 83
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
@@ -576,7 +576,7 @@ test('R15: the decisions A50 to A83 are recorded and the changelog opens with 0.
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.17.1: ') && first.includes('handoff/2026-10-22-session-cost-0.17.0.md'), first)
+  assert.ok(first.startsWith('Version 0.18.0: ') && first.includes('handoff/2026-10-22-design-decisions-0.18.0.md'), first)
 })
 
 // ---- R21: the retired profiles and variables
