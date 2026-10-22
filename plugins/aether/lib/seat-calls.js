@@ -240,9 +240,12 @@ function stop(cwd, id) {
   const pair = readJsonOrNull(paths.pair)?.pair
   const out = { stopped: runner.killed || marked.length > 0, ...(typeof pair === 'string' ? { pair } : {}) }
   // A Judge or an Examiner writes neither file, so its stop stays { stopped, pair }. continued is named only when
-  // this Writer round started from a partial; partial is named for every Writer round, empty when it left nothing.
+  // this Writer round started from a partial. partial is named only when partial.json was written: a runner killed
+  // before the save finished must not be reported as having left nothing, so the workflow keeps what it holds.
+  // An empty list means the try left nothing.
   if (!fs.existsSync(paths.continued)) return out
   if (readJsonOrNull(paths.continued)?.continued === true) out.continued = true
+  if (!fs.existsSync(paths.partial)) return out
   const partial = readJsonOrNull(paths.partial)
   out.partial = Array.isArray(partial) ? partial : []
   return out

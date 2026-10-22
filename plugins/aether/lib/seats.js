@@ -299,18 +299,30 @@ function offerDir(mainRoot, session, feature, doc) {
   return path.join(run.aetherDir(mainRoot), 'seats', 'carry', session, feature, doc)
 }
 
-function saveOffer(mainRoot, session, feature, doc, files) {
+// The digest of the round this partial belongs to, or null when there is none. Written last, so a save that
+// was killed before it finished is not taken for the round.
+function offerDigest(mainRoot, session, feature, doc) {
+  const dir = offerDir(mainRoot, session, feature, doc)
+  if (dir === null) return null
+  try {
+    const text = fs.readFileSync(path.join(dir, 'round'), 'utf8').trim()
+    return text === '' ? null : text
+  } catch {
+    return null
+  }
+}
+
+function saveOffer(mainRoot, session, feature, doc, files, digest) {
   const dir = offerDir(mainRoot, session, feature, doc)
   if (dir === null) return
   fs.rmSync(dir, { recursive: true, force: true })
-  if (!Array.isArray(files) || files.length === 0) return
-  fs.mkdirSync(dir, { recursive: true })
+  if (!Array.isArray(files) || files.length === 0 || typeof digest !== 'string' || digest === '') return
   const allowed = new Set(documentPaths(feature, doc).map((rel) => path.basename(rel)))
-  for (const file of files) {
-    const base = path.basename(file.path)
-    if (!allowed.has(base) || typeof file.text !== 'string' || file.text === '') continue
-    fs.writeFileSync(path.join(dir, base), file.text)
-  }
+  const kept = files.filter((file) => allowed.has(path.basename(file.path)) && typeof file.text === 'string' && file.text !== '')
+  if (kept.length === 0) return
+  fs.mkdirSync(dir, { recursive: true })
+  for (const file of kept) fs.writeFileSync(path.join(dir, path.basename(file.path)), file.text)
+  fs.writeFileSync(path.join(dir, 'round'), digest)
 }
 
 function clearOffer(mainRoot, session, feature, doc) {
@@ -318,15 +330,38 @@ function clearOffer(mainRoot, session, feature, doc) {
   if (dir !== null) fs.rmSync(dir, { recursive: true, force: true })
 }
 
-function loadOffer(mainRoot, session, feature, doc) {
+function loadOffer(mainRoot, session, feature, doc, digest) {
   const dir = offerDir(mainRoot, session, feature, doc)
-  if (dir === null) return []
+  if (dir === null || offerDigest(mainRoot, session, feature, doc) !== digest) return []
   const files = []
   for (const rel of documentPaths(feature, doc)) {
     const text = textInside(dir, path.basename(rel))
     if (text !== null) files.push({ path: rel, text })
   }
   return files
+}
+
+// Whether the nearest existing ancestor of full resolves inside root. A symlink to a folder outside the
+// worktree resolves outside, so the write that would follow it is refused before any directory is created.
+function resolvesInside(root, full) {
+  let realRoot
+  try {
+    realRoot = fs.realpathSync(root)
+  } catch {
+    return false
+  }
+  let current = path.dirname(full)
+  while (true) {
+    try {
+      const relative = path.relative(realRoot, fs.realpathSync(current))
+      return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+    } catch (err) {
+      if (err.code !== 'ENOENT') return false
+      const parent = path.dirname(current)
+      if (parent === current) return false
+      current = parent
+    }
+  }
 }
 
 // Copies the saved partial into the new worktree, uncommitted, and only where it is still a regular file inside it.
@@ -337,13 +372,16 @@ function applyOffer(worktree, files) {
     const full = path.resolve(worktree, file.path)
     const relative = path.relative(worktree, full)
     if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) continue
+    if (!resolvesInside(worktree, full)) continue
     fs.mkdirSync(path.dirname(full), { recursive: true })
+    if (!resolvesInside(worktree, full)) continue
     try {
       const st = fs.lstatSync(full)
       if (!st.isFile()) fs.rmSync(full, { force: true })
     } catch (err) {
       if (err.code !== 'ENOENT') continue
     }
+    if (!resolvesInside(worktree, full)) continue
     fs.writeFileSync(full, file.text)
     const text = textInside(worktree, file.path)
     if (text !== null) applied.push({ path: file.path, text })
@@ -381,8 +419,9 @@ function skillBody(name) {
 
 // Where a finding touches the document (issue 67). A line it names wins (`file:line`, or "line N"); otherwise a
 // markdown heading it names; otherwise, when the document text is in hand, the heading above the quote in its
-// evidence. The design workflow copies the no-document half and never calls this: it cannot read the file, so a
-// round's message says "names no line" unless the finding itself names a line or a heading.
+// evidence. This is the reference copy that the workflow's copy follows and the tests pin. The design workflow
+// keeps its own copy of the no-document half and never calls this: it cannot read the file, so a round's message
+// says "names no line" unless the finding itself names a line or a heading.
 const PATH_LINE = /(?:^|[\s`'"(])([A-Za-z0-9_./-]*[./][A-Za-z0-9_./-]*):(\d+)(?:[ \t]*[-–][ \t]*(\d+))?(?=$|[\s`'")\],.;:])/
 const WORD_LINE = /\blines?[ \t]+(\d+)(?:[ \t]*[-–][ \t]*(\d+))?\b/i
 const NAMED_HEADING = /(?:^|[\s`'"(])(#{1,6}[ \t]+\S[^\n`]*)/
@@ -456,6 +495,8 @@ function formatFindings(findings) {
 // The block a correction round gives the Writer: the edit, the paths, and each finding with its place.
 const EDIT_ONLY = 'Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'
 
+// This is the reference copy that the workflow's copy follows and the tests pin. The design workflow keeps its
+// own copy, and nothing in a round calls this one.
 function revisionBrief({ paths, findings, openQuestions = [] }) {
   const questions = Array.isArray(openQuestions) ? openQuestions.filter((item) => typeof item === 'string' && item !== '') : []
   const out = [EDIT_ONLY, '', 'The document:', ...paths.map((item) => `- ${item}`), '', 'Findings:', ...formatFindings(findings)]
@@ -750,7 +791,7 @@ function logEntry(dataDir, session, entry) {
 // One round of seat on its external model. Returns the reply: exit 0 with the answer, or exit 4 with
 // what failed. The worktree is removed whatever happens. A Writer's partial document is saved before that,
 // so the next pair can continue from it.
-async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, decision, config, adapter, dataDir, note = null, retry = false }) {
+async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, decision, config, adapter, dataDir, note = null }) {
   const id = givenId ?? `${seat}-${run.newRunId()}`
   const dir = path.join(run.aetherDir(mainRoot), 'seats', id)
   const worktree = path.join(dir, 'wt')
@@ -760,6 +801,14 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   const modelArg = adapter.modelArg({ model: external.model, level: external.level })
   const label = `${external.harness}/${external.model}`
   fs.mkdirSync(dir, { recursive: true })
+  // A partial belongs to the round whose message has this digest: every try of one round shares the message, and a
+  // later round's differs. A partial of another round is cleared before pair.json exists. A stop that then lands
+  // before the signal handler can name the pair, and the next try still cannot paste that older partial over the
+  // commit (issue 68). The same digest, and not --exclude, is what makes a try a continuation: a stop that names
+  // no pair leaves the exclusion empty, and the next try of this round must still receive what this one saved.
+  const roundDigest = lanes.digest(message)
+  const sameRound = seat === 'writer' && offerDigest(mainRoot, session, feature, doc) === roundDigest
+  if (seat === 'writer' && !sameRound) clearOffer(mainRoot, session, feature, doc)
   // The pair this round runs on, for `seat-stop` to name when the workflow ends the round at its time cap (issue 62), so
   // that the next try leaves it out.
   if (typeof decision?.picked?.id === 'string') fs.writeFileSync(path.join(dir, 'pair.json'), `${JSON.stringify({ pair: decision.picked.id })}\n`)
@@ -788,7 +837,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     if (!fs.existsSync(worktree)) return
     try {
       carried = salvagePartial(worktree, start, feature, doc)
-      saveOffer(mainRoot, session, feature, doc, carried)
+      saveOffer(mainRoot, session, feature, doc, carried, roundDigest)
       writeJsonAtomic(path.join(dir, 'partial.json'), carried)
     } catch {
       carried = []
@@ -809,17 +858,13 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   let roundMessage = message
   try {
     if (seat === 'writer') {
-      // Only a retry of this round continues from the partial. A later round of the same session starts from the
-      // commit, so whatever an earlier round left is dropped before this one runs: a retry of this round must not
-      // paste that older partial back over the document the later round is writing.
-      if (retry) {
-        const offered = loadOffer(mainRoot, session, feature, doc)
+      // sameRound was decided before pair.json, from the digest. A partial of another round was cleared then.
+      if (sameRound) {
+        const offered = loadOffer(mainRoot, session, feature, doc, roundDigest)
         if (offered.length > 0 && applyOffer(worktree, offered).length > 0) {
           continued = true
           roundMessage = `${message.replace(/\s+$/, '')}\n\n${CONTINUATION_LINE}\n`
         }
-      } else {
-        clearOffer(mainRoot, session, feature, doc)
       }
       // Written even when this round did not continue, so seat-stop can tell a Writer from a Judge.
       writeJsonAtomic(path.join(dir, 'continued.json'), { continued })
@@ -1059,7 +1104,6 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     adapter: adapterOf(external.harness, config.harnesses[external.harness]),
     dataDir,
     note: chosen.note,
-    retry: exclude.length > 0,
   })
 }
 

@@ -963,6 +963,24 @@ test('issue 68: a Writer try that leaves no partial drops the earlier one, so th
   assert.equal(native.prompt.includes(NATIVE_PARTIAL), false)
 })
 
+test('issue 68: a stop that omits partial keeps the partial the round already holds', async () => {
+  const held = writerPartial('held partial')
+  let stops = 0
+  const stopOmits = (ops) => (call, fallback) => {
+    if (call.command.verb !== 'seat-stop') return ops(call, fallback)
+    stops += 1
+    // The first stop recorded a partial. The next was killed before partial.json existed, so it names none.
+    if (stops === 1) return { stopped: true, pair: AGY, partial: held }
+    return { stopped: true }
+  }
+  const run = await go(ON, { ops: stopOmits(scripted(SPEC_WRITER, [silentRound, silentRound, () => noneLeft('writer')])) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const native = nativeCalls(run).find((call) => call.label === 'spec: writer write')
+  assert.ok(native.prompt.includes(NATIVE_PARTIAL))
+  assert.ok(native.prompt.includes('held partial'))
+  assert.equal(native.prompt.includes('capped partial'), false)
+})
+
 test('issue 68: a Writer round stopped at its cap keeps the partial seat-stop names, for the native Writer', async () => {
   const partial = writerPartial('capped partial')
   const stopPartial = (ops) => (call, fallback) => (call.command.verb === 'seat-stop' ? { stopped: true, pair: AGY, partial } : ops(call, fallback))

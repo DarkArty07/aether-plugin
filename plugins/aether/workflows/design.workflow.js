@@ -477,8 +477,8 @@ async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
   }
   const stopped = await ops(`aether-lane seat-stop ${id}`, { phase, label: `${base}: stop` })
   if (stopped.error) log(`${base}: the stop failed: ${stopped.error}`)
-  // A Writer stop names the partial it saved, when it saved one. A stop that names none leaves the earlier partial
-  // as it was; an empty list means this round left nothing.
+  // A Writer stop names the partial it saved only when partial.json was written. When partial is absent (the save
+  // had not finished) the round keeps the partial it already holds. An empty list means this try left nothing.
   const carry = !stopped.error && Array.isArray(stopped.partial) ? { partial: stopped.partial } : {}
   if (!stopped.error && stopped.continued === true) carry.continued = true
   if (cap !== null && elapsedMs >= cap * 1000) {
@@ -517,7 +517,8 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   const excluded = []
   const tries = []
   // The partial a failed Writer left, for the native Writer when no pair is left. Exit 4 replaces it (a missing list
-  // clears it: that try left nothing). A stop replaces it only when it names a list. Exit 3 and exit 1 leave it.
+  // clears it: that try left nothing). A stop replaces it only when it names a list; when partial is absent the
+  // round keeps what it holds. Exit 3 and exit 1 leave it.
   let partial = null
   // The time each external try took, in order, where the bin or the cap says: `durations`, and `durationMs` as their sum,
   // are in the round's record (issue 62). A round that only the native agent took has none.
@@ -554,7 +555,7 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
     // A round that reached its cap counts as failed too, with the pair seat-stop names.
     if (seat === 'writer' && waited.reply && waited.reply.exitCode === 0) partial = null
     else if (seat === 'writer' && waited.reply && waited.reply.exitCode === 4) partial = keptPartial(feature, writes, value.partial)
-    else if (seat === 'writer' && Array.isArray(waited.partial)) partial = keptPartial(feature, writes, waited.partial)
+    else if (seat === 'writer' && hasOwn(waited, 'partial')) partial = keptPartial(feature, writes, waited.partial)
     const startedFromPartial = value.continued === true || waited.continued === true
     const pair = waited.capped === true ? waited.pair : waited.reply ? failedPair(waited.reply, value) : null
     const retryable = waited.startFailed === true || waited.capped === true || (waited.reply && (waited.reply.exitCode === 1 || waited.reply.exitCode === 4))
