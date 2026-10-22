@@ -12,12 +12,13 @@
 - La bitácora es de solo agregar y una escritura por línea (R16). Un valor de texto de más de 4000 caracteres se recorta antes de escribirlo.
 - Un veredicto que no pasa por `aether-delegate verdict` no cuenta (R7). Un `approve` con una comprobación objetiva fallida se rechaza (R6).
 - Las formas de las entradas de la bitácora son estas, y todas las tareas las usan tal cual (cada una lleva `time` y `session`):
-  - `launch`: `{ kind, task, step, attempt, launchKind: 'first'|'fix'|'rise'|'unjudged'|'refused', effort, edits, owns, tests, description, requested: {model, effort}|null, ignored, pin }`;
+  - `launch`: `{ kind, task, step, attempt, launchKind: 'first'|'fix'|'rise'|'unjudged'|'refused', effort, edits, owns, tests, description, requested: {model, effort}|null, ignored, pin, base: <HEAD de cwd>|null, dirty: string[]|null }` (`dirty`: solo en un intento en Claude de solo lectura, los archivos ya cambiados al lanzar);
   - `result`: `{ kind, task, attempt, ok, status, pair: {id, harness, model, effort}|null, branch, worktree, base, head, patch, answer, checks, review }`;
   - `outcome`: `{ kind, id: <task>, attempt: <número corrido de los outcome de la tarea>, status, harness, model, effort, durationMs, usage, quotaSpent, detail, markedUntil }`;
   - `verdict`: `{ kind, task, attempt, step, verdict: 'approved'|'fix'|'infeasible'|'exhausted', input: {kind, findings, reason, fromScratch}, reason, cause, next: {step, kind, cause, effort, carry} }`;
   - `relaunch`: `{ kind, task, of }`.
 - Una tarea no toca `specs/`, `.specify/`, `docs/decisions.md` ni `docs/changelog.md`. La numeración de la decisión se toma al fundir.
+- Las tareas 17 y 21 (`Area: lead`) son pasos del Lead, no del enjambre: las hace el Lead a mano y las excluye de `aether-plan compile` con `--only` (la lista de las demás); solo ellas escriben `docs/evidence/`. La Task 17 va antes de lanzar las Tasks 10 y 11: el Lead compila en dos tandas: las Tasks 1 a 9 y la 18 (con la 17 a mano al terminar la 1) y, hecha la 17, todas las demás menos la 21.
 - Las guías y el código nuevos están en inglés, como el resto del plugin; los mensajes que una prueba fija se escriben tal cual abajo.
 - Los identificadores que salen (C7): las opciones `router`, `decider` y `fallback`, `CLAUDE_PLUGIN_OPTION_ROUTER`, `CLAUDE_PLUGIN_OPTION_DECIDER`, `CLAUDE_PLUGIN_OPTION_FALLBACK`, el comando `aether-route`, la marca `ROUTER-OVERRIDE` y los modos `record`, `advise` y `command` del router. Una tarea que los encuentra en un archivo que posee los quita.
 
@@ -34,7 +35,7 @@
 - [ ] T003 [P] [US5] Bitácora de delegados en plugins/aether/lib/delegate-log.js → Task 3
 - [ ] T004 [P] [US3] Banderas --pair, --carry y --findings de aether-lane delegate en plugins/aether/lib/lane-delegate.js → Task 4
 - [ ] T005 [P] [US9] Comprobaciones objetivas sin modelo en plugins/aether/lib/delegate-checks.js → Task 5
-- [ ] T006 [P] [US12] Ajustes de la sesión sin las opciones del decisor en plugins/aether/lib/session.js y plugins/aether/.claude-plugin/plugin.json → Task 6
+- [ ] T006 [P] [US12] Ajustes de la sesión sin las opciones del decisor en plugins/aether/lib/session.js → Task 6
 - [ ] T007 [US1] Begin y verdict de una tarea de delegado en plugins/aether/lib/delegate-task.js → Task 7
 - [ ] T008 [P] [US5] Informe de delegados por escalón en plugins/aether/lib/delegate-report.js → Task 8
 - [ ] T009 [P] [US13] Gasto con la bitácora nueva y el diario viejo en plugins/aether/lib/spend.js → Task 9
@@ -42,9 +43,14 @@
 - [ ] T011 [US1] El mod entrega las llamadas Agent con la escalera en plugins/aether/hooks/delegate.mjs → Task 11
 - [ ] T012 [P] [US8] La guía del Lead describe la escalera en plugins/aether/skills/using-aether/SKILL.md → Task 12
 - [ ] T013 [US12] Retirar el decisor del router, su código, sus datos y sus pruebas → Task 13
-- [ ] T014 [US12] La documentación describe la escalera y las opciones que quedan en docs/guide/delegates.md → Task 14
+- [ ] T014 [US12] La guía de los delegados describe la escalera en docs/guide/delegates.md → Task 14
 - [ ] T015 [US12] Prueba que busca los identificadores retirados en tests/no-router.test.js → Task 15
 - [ ] T016 [US12] Recortar la sesión, el guard y el lector del diario viejo en plugins/aether/lib/session.js → Task 16
+- [ ] T017 [US10] Paso del Lead: la prueba de espera en el motor real, en docs/evidence/013-delegate-ladder.md → Task 17
+- [ ] T018 [US12] El panel de /harnesses sin el decisor en plugins/aether/hooks/panel-view.mjs → Task 18
+- [ ] T019 [US12] El manifiesto y la tabla de opciones sin el decisor en plugins/aether/.claude-plugin/plugin.json → Task 19
+- [ ] T020 [US12] Los recuentos y los resúmenes de la documentación en docs/reference/components.md → Task 20
+- [ ] T021 [US12] Paso del Lead al terminar: fundir main, la sesión real, la evidencia y el cierre de los issues, en docs/evidence/013-delegate-ladder.md → Task 21
 
 ### Task 1: El bucle de espera del mod y su prueba corta
 
@@ -154,7 +160,7 @@ test('the constants stay under the ten minutes of $.process.run', () => {
 })
 ```
 
-**Acceptance:** `node --test tests/delegate-wait.test.js` pasa. Es la prueba corta de R20: demuestra que el bucle espera a un delegado simulado de más de 10 minutos sin un modelo y sin una llamada de más de 570000 ms. El archivo no importa nada de `lib/`.
+**Acceptance:** `node --test tests/delegate-wait.test.js` pasa. Es la prueba corta de R20: demuestra que el bucle espera a un delegado simulado de más de 10 minutos sin un modelo y sin una llamada de más de 570000 ms. El archivo no importa nada de `lib/`. Con el reloj simulado la prueba pasaría con cualquier bucle: no decide R20 por sí sola; la medición en el motor real es la Task 17.
 
 ### Task 2: La política de la escalera y sus datos
 
@@ -505,6 +511,7 @@ checkEdits({ files, owns, tests })                // tests: { passed: boolean } 
                                                   //    ok = !empty && outside.length === 0 && tests !== 'fail'. Sin tests ('none') no falla.
 checkReadOnly({ answer, files })                  // -> { kind: 'read-only', ok, empty, outside: files, reasons }
                                                   //    ok = answer con texto && files.length === 0 (cualquier archivo tocado está fuera de lo permitido).
+                                                  //    `answer` omitido (undefined) no se comprueba y `empty` es false: es un delegado en Claude, cuya respuesta no pasa por el sistema (S9).
 ```
 
 **Tests (write first):** `tests/delegate-checks.test.js`
@@ -561,6 +568,9 @@ test('a read-only delegate must leave the checkout alone and answer something (R
   assert.deepEqual(checks.checkReadOnly({ answer: '  ', files: [] }).empty, true)
   const touched = checks.checkReadOnly({ answer: 'x', files: ['src/a.js'] })
   assert.deepEqual([touched.ok, touched.outside], [false, ['src/a.js']])
+  // A delegate on Claude: its answer does not reach the system, so only the files are checked.
+  assert.deepEqual([checks.checkReadOnly({ files: [] }).ok, checks.checkReadOnly({ files: [] }).empty], [true, false])
+  assert.equal(checks.checkReadOnly({ files: ['src/a.js'] }).ok, false)
 })
 
 test('runTests runs the command in the worktree and reports the exit code', (t) => {
@@ -576,15 +586,15 @@ test('runTests runs the command in the worktree and reports the exit code', (t) 
 
 **Acceptance:** `node --test tests/delegate-checks.test.js` pasa. Ninguna función llama a un modelo ni al checkout del Lead: solo lee el worktree que se le da.
 
-### Task 6: Los ajustes de la sesión y las opciones que quedan
+### Task 6: Los ajustes de la sesión
 
 **Aether:**
-- Tier: sonnet — varios archivos ligados (manifiesto, sesión, panel, tabla de opciones) que las pruebas sujetan
+- Tier: sonnet — varios archivos ligados (sesión, arranque, pruebas) que las pruebas sujetan
 - Review: high — la compatibilidad con valores ya guardados
 - Area: settings
-- Owns: `plugins/aether/lib/session.js`, `plugins/aether/bin/aether-session-start`, `plugins/aether/.claude-plugin/plugin.json`, `plugins/aether/hooks/panel-view.mjs`, `plugins/aether/hooks/panel-layout.mjs`, `docs/guide/options.md`, `docs/getting-started.md`, `tests/session.test.js`, `tests/session-start.test.js`, `tests/manifest.test.js`, `tests/panel-view.test.js`, `tests/panel-layout.test.js`, `tests/panel-conformance.test.js`, `tests/router-settings.test.js`, `tests/delegate-settings.test.js`, `tests/quota-brake-docs.test.js`
+- Owns: `plugins/aether/lib/session.js`, `plugins/aether/bin/aether-session-start`, `tests/session.test.js`, `tests/session-start.test.js`, `tests/router-settings.test.js`, `tests/delegate-settings.test.js`
 - Depends on: none
-- Serves: R9, R10, R22
+- Serves: R9, R22
 
 **Interfaces:**
 
@@ -602,12 +612,10 @@ markSession(dataDir, sessionId, now, { opsInMod, delegate, router, brake })   //
 // (lo único que todavía los lee); nada del plugin que corre en una sesión los llama ya.
 ```
 
-- `plugin.json`: se quitan las opciones `router`, `decider` y `fallback`; `deadlines` queda con título «Delegate time limits», descripción que habla solo de la espera de cuota (`quota=3`, un valor de más de 10 cuenta 10) y por defecto `quota=3`. Un valor que un usuario ya guardó en las tres opciones no da error: nada lo lee.
 - `bin/aether-session-start`: pasa `delegate: delegateSettingsFrom(process.env)` a `markSession`; se quita `ROUTER_NOTES` y `routerNote()` y la nota que daban (el bootstrap de Task 12 cubre a los delegados).
-- `hooks/panel-view.mjs` (`settingsOf`) y `hooks/panel-layout.mjs`: el panel `/harnesses` ya no muestra `router` ni `decider`; sigue mostrando la superdelegación y los harness.
-- `docs/guide/options.md`: la tabla y la lista de opciones coinciden con el manifiesto (sin las tres opciones; `deadlines` con su nuevo texto y valor por defecto `quota=3`) y se quitan las frases sobre `router` y `decider` como selectores. `docs/getting-started.md` y `tests/quota-brake-docs.test.js` cuentan seis opciones: `superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake` y `brakepush`, con las dos claves viejas.
+- El manifiesto, la tabla de opciones y el panel los cambian Task 19 y Task 18: esta tarea no toca `plugin.json`.
 
-**Tests (write first):** `tests/delegate-settings.test.js` (nuevo; `tests/router-settings.test.js` se borra) y los ajustes de `tests/session.test.js`, `tests/session-start.test.js`, `tests/manifest.test.js` y `tests/panel-conformance.test.js` para que comparen con `delegateSettingsFrom`
+**Tests (write first):** `tests/delegate-settings.test.js` (nuevo; `tests/router-settings.test.js` se borra) y los ajustes de `tests/session.test.js` y `tests/session-start.test.js`
 
 ```js
 'use strict'
@@ -616,7 +624,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { tempDir, PLUGIN } = require('./helpers.js')
+const { tempDir } = require('./helpers.js')
 const session = require('../plugins/aether/lib/session.js')
 
 test('the settings of a session are superdelegation, harnesses and the quota deadline, and nothing of the removed options (E12)', () => {
@@ -652,15 +660,9 @@ test('an invalid delegate file reads as null', (t) => {
   fs.writeFileSync(path.join(dir, 'sessions', 's1.delegate.json'), '{"lanes":"yes"}')
   assert.equal(session.readDelegateSettings(dir, 's1'), null)
 })
-
-test('the manifest no longer declares router, decider or fallback, and deadlines is the quota deadline alone (C7)', () => {
-  const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  for (const key of ['router', 'decider', 'fallback']) assert.equal(Object.hasOwn(manifest.userConfig, key), false, key)
-  assert.equal(manifest.userConfig.deadlines.default, 'quota=3')
-})
 ```
 
-**Acceptance:** `npm test` pasa con la tabla de `docs/guide/options.md` igual al `userConfig` (la prueba R11 de `tests/docs-facts.test.js` sigue verde sin tocarla). `bin/aether-session-start` ya no escribe el archivo del router ni nombra `ROUTER_NOTES`. Las pruebas del viejo `router-settings` se borran junto con su archivo; lo que todavía necesite `lib/route.js` de `session.js` queda en pie hasta Task 16.
+**Acceptance:** `node --test tests/delegate-settings.test.js tests/session.test.js tests/session-start.test.js` y `npm test` pasan. `bin/aether-session-start` ya no escribe el archivo del router ni nombra `ROUTER_NOTES`. Las pruebas del viejo `router-settings` se borran junto con su archivo; lo que todavía necesite `lib/route.js` de `session.js` queda en pie hasta Task 16.
 
 ### Task 7: Begin y verdict de una tarea de delegado
 
@@ -690,7 +692,7 @@ parseBrief(prompt)   // -> { task: string|null, owns: string[], tests: string|nu
 //   lanesConfig, pairs, marks, slow, readings, renew, lift, installed, sleep.
 begin({ session, event }, deps)    // -> Promise<Plan>, y no lanza: un error interno es un plan con `error` y `args: null`
 // Plan: { id, skip, step, kind, attempt, args, notes, external, error? }
-//   args: { model, effort, prompt? } | null  — lo que el mod pone en la llamada Agent
+//   args: { model, effort, prompt?, isolation? } | null  — lo que el mod pone en la llamada Agent (isolation: 'worktree' cuando la tarea edita)
 //   external: { id, edits, timeoutMs, pin } | null — cuando un pair de otro harness toma el intento
 
 verdict({ task, verdict, reason, findings, fromScratch, worktree }, deps)
@@ -701,16 +703,17 @@ verdict({ task, verdict, reason, findings, fromScratch, worktree }, deps)
 Lo que hace `begin`:
 
 1. Id de la tarea: el de `AETHER-TASK:`, o uno que da `newId` (nota: «Aether delegate task <id>: pass it to aether-delegate verdict»). Si la tarea no tiene entradas es `first`, en el primer paso. Si el último `launch` no tiene `verdict` después, es `unjudged` en el mismo paso. Si el último `verdict` tiene `next`, el lanzamiento es `next.kind` (`fix` o `rise`) en `next.step`. Si la tarea está agotada, no se abre un escalón: el plan lleva `args: { model: 'haiku', effort: 'low', prompt: <un texto que dice que la tarea está agotada, que no hay otro escalón y que el Lead debe aplazarla o llevarla a la lista del dueño> }`, `external: null`, y se registra un `launch` con `launchKind: 'refused'`.
-2. El modelo y el esfuerzo de `args` son los del paso y de `effortFor(ladder, step, launchKind)`, siempre; lo que `event.model` o `event.effort` traiga distinto se registra en el `launch` como `requested` con `ignored: true`.
+2. El modelo y el esfuerzo de `args` son los del paso y de `effortFor(ladder, step, launchKind)`, siempre; lo que `event.model` o `event.effort` traiga distinto se registra en el `launch` como `requested` con `ignored: true`. Si la tarea edita (hay `AETHER-OWNS`), `args` lleva además `isolation: 'worktree'`, sea cual sea quien tome el intento: un intento externo que cae a Claude (`yield* next(e)`) ya trabaja aislado, y un intento en Claude no toca el checkout del Lead.
 3. Un id nuevo cuyas `owns` y `tests` (los mismos conjuntos) coinciden con los de una tarea de la misma sesión que no terminó aprobada registra `{ kind: 'relaunch', task, of }`.
 4. Las secciones del brief de un intento que sigue a un veredicto: `## Findings to fix` (los hallazgos del veredicto, uno por línea), `## Reason` (la razón de la subida, cuando la hay) y, si `carry` es verdadero, `## Your previous work` con la ruta del parche del último `result` (tarea que edita) o el texto de la respuesta guardada (solo lectura). Con `fromScratch`, solo la razón. Cuando el intento corre en Claude, `args.prompt` es el prompt del Lead más esas secciones; cuando corre en otro harness, se escribe `<dataDir>/delegates/briefs/<id>-<attempt>.md` con las mismas y `external` las usa.
 5. El pair: `pickPair({ model: step, effort })`. Si hay `pick`, escribe `<dataDir>/delegates/external/<id>.json` con `{ id, session, cwd, attempt, step, effort, launchKind, edits, owns, tests, brief, findings, carry, pin, base, harness, rung: {model, effort, group}, task: {description, prompt}, alternates, timeoutMs }` y devuelve `external: { id, edits, timeoutMs, pin }`; `edits` es verdadero cuando hay `AETHER-OWNS`. En una corrección (`fix` o `unjudged`) `pin` es el `pair.id` del último `result`; en la subida y el primer intento es null. `base` es el `HEAD` de `cwd` al lanzar. Sin `pick` (o sin superdelegación, o un agente con nombre que no es `general-purpose` ni `Explore`) `external` es null y la tarea corre en Claude, en el modelo del paso (R14).
-6. Escribe el `launch` y devuelve la nota: el id, el paso, el intento y, si corre en otro harness, el pair.
+6. El `launch` lleva `base` (el `HEAD` de `cwd` al lanzar) y, en un intento en Claude de solo lectura (sin `external` y sin `AETHER-OWNS`), `dirty`: los archivos que `changedFiles(cwd, base)` ya veía cambiados en ese momento. Si `cwd` no es un repositorio, `base` y `dirty` son null y no se lanza nada.
+7. Escribe el `launch` y devuelve la nota: el id, el paso, el intento y, si corre en otro harness, el pair.
 
 Lo que hace `verdict`:
 
 1. Rechaza una tarea que no conoce (`error: 'unknown task'`), un `fix` sin hallazgos válidos (`error` con el texto del hallazgo que no se aceptó), un `infeasible` o un `fromScratch` sin razón. Un veredicto rechazado no cambia el paso: responde `{ ok: false, error }` y no se escribe en la bitácora.
-2. Un `approve` corre antes la comprobación: la del último `result` de la tarea (`checks`, que `run` calcula al terminar un delegado externo) o, en un intento en Claude que edita, `checkEdits` con `changedFiles(worktree, base)` y `runTests(worktree, tests)` si hay `worktree`. Si la comprobación no está bien, `{ ok: false, error: 'checks failed: <razones>' }` y no se cierra la tarea.
+2. Un `approve` corre antes la comprobación, según cómo corrió el último intento. Con un `result` de ese intento (un delegado externo) es la suya (`checks`, que `run` calcula al terminar). En Claude y la tarea edita: `checkEdits` con `changedFiles(worktree, base)` (la `base` del último `launch`) y `runTests(worktree, tests)`; sin `worktree` y sin un `result` se rechaza con `error: 'approve needs the worktree of the attempt (--worktree) or the checks of its result'`, y nada se aprueba sin comprobar. En Claude y la tarea solo lee: `checkReadOnly({ files })` con los archivos que `changedFiles(cwd, base)` da y que el `launch` no tenía en `dirty` (sin `answer`: esa respuesta no pasa por el sistema, S9). Si la comprobación no está bien, `{ ok: false, error: 'checks failed: <razones>' }` y no se cierra la tarea.
 3. Llama a `ladder.judge` con las entradas anteriores de la tarea (`stateOf`), escribe el `verdict` con su `input`, su razón, la causa y `next`, y responde con el paso siguiente y las correcciones gastadas y el tope.
 
 **Tests (write first):** `tests/delegate-task.test.js`
@@ -888,6 +891,38 @@ test('approve is refused when an objective check fails: a file outside Owns, an 
   assert.equal(entries(world4.dataDir, 'green').at(-1).verdict, 'approved')
 })
 
+test('a task that edits is launched with isolation worktree, whoever takes the attempt; a read-only one is not (R13, S9)', async (t) => {
+  const more = 'AETHER-OWNS: src/**\n'
+  const native = world(t)
+  assert.equal((await task.begin(call(BRIEF('e1', more)), native.deps)).args.isolation, 'worktree')
+  assert.equal((await task.begin(call(BRIEF('r1')), native.deps)).args.isolation, undefined)
+  const external = world(t, { settings: EXTERNAL, pick: GROK })
+  assert.equal((await task.begin(call(BRIEF('e2', more)), external.deps)).args.isolation, 'worktree')
+})
+
+test('an approve of an attempt on Claude that edits is refused with no worktree and no checks of a result (S9)', async (t) => {
+  const { deps, dataDir } = world(t)
+  await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), deps)
+  const refused = await task.verdict({ task: 'e1', verdict: 'approve' }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /worktree/)
+  assert.equal(entries(dataDir, 'e1').some((e) => e.kind === 'verdict'), false)
+})
+
+test('a read-only delegate on Claude cannot be approved when the checkout changed since begin; what was dirty already does not count (R6)', async (t) => {
+  const repo = makeRepo(t)
+  fs.appendFileSync(path.join(repo.dir, 'README.md'), 'dirty before the delegate\n')
+  const { deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('r1')), deps)
+  assert.equal((await task.verdict({ task: 'r1', verdict: 'approve' }, deps)).ok, true)
+  await task.begin(call(BRIEF('r2')), deps)
+  fs.writeFileSync(path.join(repo.dir, 'touched.js'), 'x\n')
+  const refused = await task.verdict({ task: 'r2', verdict: 'approve' }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /touched\.js/)
+  assert.equal((await task.verdict({ task: 'r2', verdict: 'fix', findings: ['touched.js: do not create files'] }, deps)).ok, true)
+})
+
 test('an approve of an external result uses the checks its run recorded (C6)', async (t) => {
   const { deps, dataDir } = world(t)
   await task.begin(call(BRIEF('t1', 'AETHER-OWNS: src/**\n')), deps)
@@ -912,7 +947,7 @@ test('each step asks the pair of the points of its own model, and a correction k
   const first = await task.begin(call(BRIEF('t1', more)), deps)
   assert.deepEqual(asked[0], { model: 'haiku', effort: 'high' })
   assert.deepEqual([first.external.id, first.external.edits, first.external.pin], ['t1', true, null])
-  assert.deepEqual(first.args, { model: 'haiku', effort: 'high' }, 'the rescue on Claude is the same step')
+  assert.deepEqual(first.args, { model: 'haiku', effort: 'high', isolation: 'worktree' }, 'the rescue on Claude is the same step, isolated because the task edits')
   const file = JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'external', 't1.json'), 'utf8'))
   assert.deepEqual([file.edits, file.owns, file.tests, file.step, file.harness], [true, ['src/**'], 'npm test', 'haiku', 'grok'])
   log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: GROK, checks: { ok: true } })
@@ -960,7 +995,7 @@ test('a named agent that is not a plain one stays on Claude', async (t) => {
 delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } = {})
 // -> {
 //   delegations: [{ id, time, session, description, applied: 'external'|'rewritten', ranOn: {harness, model, effort}, fallback: string|null,
-//                   step, attempts }],   // una fila por tarea, con el `time` de su primer lanzamiento: lo que `hooks/panel-view.mjs` lee
+//                   step, attempts }],   // una fila por tarea, con el `time` de su primer lanzamiento, y una por cada `decision` del diario viejo: lo que `hooks/panel-view.mjs` lee
 //   ladder: {
 //     steps: [{ step, tasks, attempts, corrections, approved,
 //               rises: { exhausted, repeated, infeasible },
@@ -970,7 +1005,7 @@ delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } = {})
 // }
 ```
 
-Los conteos por escalón: `tasks` son las tareas con algún `launch` en ese paso; `attempts` los `launch` del paso; `corrections` los `launch` con `launchKind: 'fix'`; `approved` los `verdict` `approved` del paso; `rises` cuenta, por causa, los `verdict` cuyo `next.kind` es `rise` desde ese paso; `infeasible` lista los `verdict` `infeasible` con su razón. `aether-report --delegates [--session <id>] [--since <ms>]` imprime ese objeto; se quita `costUsd`, `editsOnClaudeWithoutNoCandidate` y `outsideMeasure` (lo viejo del decisor). `lib/router-report.js` y su prueba se borran.
+Los conteos por escalón: `tasks` son las tareas con algún `launch` en ese paso; `attempts` los `launch` del paso; `corrections` los `launch` con `launchKind: 'fix'`; `approved` los `verdict` `approved` del paso; `rises` cuenta, por causa, los `verdict` cuyo `next.kind` es `rise` desde ese paso; `infeasible` lista los `verdict` `infeasible` con su razón. `aether-report --delegates [--session <id>] [--since <ms>]` imprime ese objeto. Además de las tareas de la bitácora nueva, `delegations` trae una fila por cada entrada `decision` del diario viejo (`readJournal(dataDir, { since, session })` de `lib/router-log.js`, solo lectura, R18: `aether-report --delegates` ya lo leía por `lib/router-report.js` y el panel lo muestra; si el `id` ya es una tarea de la bitácora nueva, gana la nueva): `{ id, time, session, description, applied, fallback, ranOn, step: null, attempts }`, con `ranOn` y `fallback` como los calculaba el informe viejo: el último `outcome` del `id` decide dónde corrió (`{ harness, model, effort }`); si no terminó `ok`, corrió en el `rescue` de la decisión y `fallback` es `external <estado>`; `attempts` es cuántos `outcome` tiene. Los conteos de `ladder` son solo de la bitácora nueva. Del informe viejo se quitan `editsOnClaudeWithoutNoCandidate` y `outsideMeasure` (medían lo que el decisor no registraba) y `costUsd`: lo calculaba con el `agentId` que `aether-route spawn` anotaba, que sale con el decisor; ningún requisito lo pide, el panel no lo lee y el gasto de los delegados lo da `aether-report --spend` (R18). `lib/router-report.js` y su prueba se borran.
 
 **Tests (write first):** `tests/delegate-report.test.js`
 
@@ -982,7 +1017,9 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { tempDir } = require('./helpers.js')
+const fs = require('node:fs')
 const log = require('../plugins/aether/lib/delegate-log.js')
+const { journalFile } = require('../plugins/aether/lib/router-log.js')
 const { delegatesReport } = require('../plugins/aether/lib/delegate-report.js')
 
 const BIN = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-report')
@@ -1026,6 +1063,28 @@ test('the rows keep the fields the /harnesses panel reads', (t) => {
   assert.deepEqual([row.applied, row.ranOn.harness, row.ranOn.model], ['rewritten', 'claude', 'sonnet'])
 })
 
+test('the rows of the old journal are read too, read only, and the ladder counts only the new log (R18)', (t) => {
+  const dataDir = world(t)
+  const file = journalFile(dataDir)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const lines = [
+    { kind: 'decision', id: 'old-1', time: 5, session: 's1', description: 'old one', applied: 'external', ranOn: null, rescue: { harness: 'claude', model: 'sonnet', effort: 'high' } },
+    { kind: 'outcome', id: 'old-1', time: 6, session: 's1', status: 'ok', harness: 'agy', model: 'm-a', effort: 'low' },
+    { kind: 'decision', id: 'old-2', time: 7, session: 's1', description: 'old two', applied: 'external', ranOn: null, rescue: { harness: 'claude', model: 'sonnet', effort: 'high' } },
+    { kind: 'outcome', id: 'old-2', time: 8, session: 's1', status: 'failed', harness: 'agy', model: 'm-a', effort: 'low' },
+  ]
+  fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
+  const before = fs.readFileSync(file, 'utf8')
+  const { delegations, ladder } = delegatesReport({ dataDir })
+  assert.equal(delegations.length, 6)
+  const one = delegations.find((d) => d.id === 'old-1')
+  assert.deepEqual([one.description, one.applied, one.ranOn.harness, one.fallback, one.attempts], ['old one', 'external', 'agy', null, 1])
+  const two = delegations.find((d) => d.id === 'old-2')
+  assert.deepEqual([two.ranOn.model, two.fallback], ['sonnet', 'external failed'])
+  assert.equal(ladder.steps[0].tasks, 4)
+  assert.equal(fs.readFileSync(file, 'utf8'), before)
+})
+
 test('session and since filter the report', (t) => {
   const dataDir = world(t)
   log.appendEntry(dataDir, { kind: 'launch', task: 'z', session: 'other', time: 1, step: 'haiku', attempt: 1, launchKind: 'first', description: 'z' })
@@ -1041,7 +1100,7 @@ test('aether-report --delegates prints the report as one JSON line', (t) => {
 })
 ```
 
-**Acceptance:** `node --test tests/delegate-report.test.js tests/aether-report.test.js` pasa (las pruebas viejas del informe de lanes, sellos y `--spend` siguen pasando; las del decisor se quitan). `lib/router-report.js` y `tests/router-report.test.js` ya no existen. `hooks/panel-view.mjs` `parseDelegates` lee las filas nuevas sin cambios.
+**Acceptance:** `node --test tests/delegate-report.test.js tests/aether-report.test.js` pasa, con un diario viejo en disco y sin escribirlo (las pruebas viejas del informe de lanes, sellos y `--spend` siguen pasando; las del decisor se quitan). `lib/router-report.js` y `tests/router-report.test.js` ya no existen. `hooks/panel-view.mjs` `parseDelegates` lee las filas nuevas sin cambios.
 
 ### Task 9: El gasto con la bitácora nueva y el diario viejo
 
@@ -1055,7 +1114,7 @@ test('aether-report --delegates prints the report as one JSON line', (t) => {
 
 **Interfaces:**
 
-`readOutcomeEvents(dataDir, id, { prices })` (en `lib/spend.js`) lee los `outcome` de la sesión `id` de las dos fuentes: el diario viejo (`journalFile(dataDir)`, sin escribirlo) y la bitácora nueva (`delegate-log.logFile(dataDir)`), con la misma regla de línea rota para las dos (solo hace incompleta a la sesión la línea que cae dentro de su lapso). Una pareja `id` e `attempt` que aparece en las dos fuentes cuenta una sola vez (gana la de la bitácora nueva); una entrada sin `attempt` cuenta como `attempt` indefinido. No cambia nada más de la forma ni de las cifras de `spendReport`. El freno por cuota y el panel de harness no leen el diario (comprobado al planificar: el freno lee las ventanas de la sesión y el panel lee `aether-report --delegates`), así que no cambian.
+`readOutcomeEvents(dataDir, id, { prices })` (en `lib/spend.js`) lee los `outcome` de la sesión `id` de las dos fuentes: el diario viejo (`journalFile(dataDir)`, sin escribirlo) y la bitácora nueva (`delegate-log.logFile(dataDir)`), con la misma regla de línea rota para las dos (solo hace incompleta a la sesión la línea que cae dentro de su lapso). Una pareja `id` e `attempt` que aparece en las dos fuentes cuenta una sola vez (gana la de la bitácora nueva); una entrada sin `attempt` cuenta como `attempt` indefinido. No cambia nada más de la forma ni de las cifras de `spendReport`. El freno por cuota no lee el diario (comprobado al planificar: lee las ventanas de la sesión), así que no cambia. El panel de harness lee `aether-report --delegates`, que sí leía el diario por `lib/router-report.js`: Task 8 hace que siga leyéndolo, solo lectura.
 
 **Tests (write first):** `tests/spend-ladder.test.js`
 
@@ -1132,11 +1191,12 @@ test('the old journal is only read, never written (D4)', (t) => {
 - Tier: opus high — procesos desacoplados, esperas y el camino que edita con su rama
 - Review: xhigh — concurrencia (un proceso que muere, un resultado que llega tarde) y el sistema de archivos
 - Area: run
-- Owns: `plugins/aether/lib/delegate-run.js`, `plugins/aether/bin/aether-delegate`, `plugins/aether/lib/delegate-chain.js`, `plugins/aether/lib/router-renewal.js`, `tests/delegate-run.test.js`, `tests/delegate-chain.test.js`, `tests/router-renewal.test.js`
+- Owns: `plugins/aether/lib/delegate-run.js`, `plugins/aether/bin/aether-delegate`, `plugins/aether/lib/delegate-chain.js`, `plugins/aether/lib/delegate-calls.js`, `plugins/aether/lib/router-renewal.js`, `tests/delegate-run.test.js`, `tests/delegate-chain.test.js`, `tests/delegate-calls.test.js`, `tests/router-renewal.test.js`
 - Depends on: Task 3 — escribe `result` y `outcome` en la bitácora
 - Depends on: Task 4 — llama a `delegateCommand` con `--pair`, `--carry` y `--findings`
 - Depends on: Task 5 — calcula las comprobaciones al terminar
 - Depends on: Task 7 — lee el archivo `external/<id>.json` que `begin` escribe y expone `begin` y `verdict` en el bin
+- Depends on: Task 17 — la prueba de espera en el motor real decide si `start` y `wait` son lo que el mod usa, o si se pasa al respaldo
 - Serves: R6, R8, R12, R13, R16, R22
 
 **Interfaces:**
@@ -1155,7 +1215,12 @@ runTask({ id, cwd, dataDir, now = Date.now }, { delegateCommand = laneDelegate.d
   //    que corrió, la revisión de otro pair (veredicto y hallazgos), las comprobaciones, la línea `aether-wt merge <run> task-1` y la línea
   //    `Judge it: aether-delegate verdict --task <id> --verdict approve|fix|infeasible`. `ok` es false cuando la cadena o el comando no entregan trabajo
   //    (status 'no-candidate', 'failed', ...): `text` es null y el mod deja el intento a Claude en el modelo del paso.
-  // checks: checkEdits({ files: changedFiles(worktree, base), owns, tests }) para edits; checkReadOnly({ answer, files: [] }) para solo lectura.
+  // checks: checkEdits({ files: changedFiles(worktree, base), owns, tests }) para edits; checkReadOnly({ answer, files: changed }) para solo lectura,
+  //    con `changed` los archivos que el delegado tocó en la copia desechable: `delegate-calls.js` ya detecta un cambio (`worktreeChanges`) y lo devuelve como
+  //    status 'violation'; ahora ese resultado lleva `changed: changes.files`, `runChain` lo devuelve como `changed` (el del último intento, o []) y
+  //    una violación da `ok: false`, `text: null` y `checks.outside = changed`.
+  // El camino que edita escribe un `result` y ningún `outcome`: su gasto ya lo cuenta el registro de lanes de `aether-lane delegate`, y un `outcome` más
+  //    lo contaría dos veces en `aether-report --spend`. Solo la cadena de solo lectura escribe `outcome`.
   // Guarda el parche del trabajo (git diff base..head del worktree, más lo no confirmado) en patches/<id>-<attempt>.patch y la respuesta de un delegado de
   //    solo lectura en answers/<id>-<attempt>.md; sus rutas van en el `result` (campos patch y answer). Nunca funde ni toca el checkout del Lead.
 wait({ id, dataDir, seconds, now = Date.now, sleep, alive = pidAlive })
@@ -1220,6 +1285,7 @@ test('an editing delegate runs aether-lane delegate with the step model and effo
   assert.deepEqual([written.ok, written.pair.id, written.branch, written.base], [true, PAIR.id, 'aether/run1/task-1', done.base])
   assert.ok(fs.readFileSync(written.patch, 'utf8').includes('src/new.js'))
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'results', 't1.json'), 'utf8')).ok, true)
+  assert.equal(log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind === 'outcome').length, 0, 'the lane log already counts its spend')
 })
 
 test('a correction passes the pair, the earlier patch and the findings on to the lane command (R2, R4)', async (t) => {
@@ -1264,6 +1330,13 @@ test('a read-only delegate runs the chain; its answer is saved and an empty one 
   assert.deepEqual([blank.checks.ok, blank.checks.empty], [false, true])
 })
 
+test('a read-only delegate that touched the copy comes back marked with the files it touched, never with an answer (R6)', async (t) => {
+  const { repo, dataDir } = world(t, { edits: false, owns: [], tests: null })
+  const chain = async () => ({ ok: false, status: 'violation', text: null, changed: ['src/a.js'], attempts: [], journaled: true })
+  const result = await dr.runTask({ id: 't1', cwd: repo.dir, dataDir }, { runChain: chain })
+  assert.deepEqual([result.ok, result.text, result.checks.ok, result.checks.outside], [false, null, false, ['src/a.js']])
+})
+
 test('wait: not done while the delegate lives; its result once written; died when the pid is gone without one (R12)', async (t) => {
   const dataDir = tempDir(t, 'aether-data-')
   const runFile = path.join(dataDir, 'delegates', 'run', 't1.json')
@@ -1302,7 +1375,7 @@ test('the bin: an unknown verb is an error, wait on an id never started says unk
 })
 ```
 
-`tests/delegate-chain.test.js`: las pruebas existentes se ajustan para leer los `outcome` de `delegate-log.readEntries` (campo `id` de la tarea, `attempt` corrido). `tests/router-renewal.test.js`: la prueba de `renewalArgv` espera `bin/aether-delegate` y el verbo `renew`.
+`tests/delegate-chain.test.js`: las pruebas existentes se ajustan para leer los `outcome` de `delegate-log.readEntries` (campo `id` de la tarea, `attempt` corrido), y una prueba nueva: un intento con status `violation` hace que `runChain` devuelva `changed` con los archivos que `runDelegate` dijo. `tests/delegate-calls.test.js`: el resultado `violation` de un delegado que cambió un archivo trae `changed` con ese archivo. `tests/router-renewal.test.js`: la prueba de `renewalArgv` espera `bin/aether-delegate` y el verbo `renew`.
 
 **Acceptance:** `node --test tests/delegate-run.test.js tests/delegate-chain.test.js tests/router-renewal.test.js tests/delegate-calls.test.js tests/delegate-limits.test.js` pasa. `bin/aether-delegate` existe, es ejecutable y no importa nada de `lib/route.js`. Ningún camino de `run` funde, hace `push` ni escribe en el checkout del Lead.
 
@@ -1315,6 +1388,7 @@ test('the bin: an unknown verb is an error, wait on an id never started says unk
 - Owns: `plugins/aether/hooks/delegate.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/router.mjs`, `tests/delegate-mod.test.js`, `tests/router-mod.test.js`
 - Depends on: Task 1 — usa `waitForDelegate`
 - Depends on: Task 10 — llama a los verbos `begin`, `start` y `wait` de `aether-delegate`
+- Depends on: Task 17 — la prueba en el motor real dice si el bucle de espera y el `isolation` puestos por el mod valen
 - Serves: R12, R13, R14, R20, R22
 
 **Interfaces:**
@@ -1326,7 +1400,7 @@ export function createDelegates() -> { toolCall($, e, next, ctx), bind($, e, age
 // ctx = { session, dataDir, root }. `$` solo tiene $.clock.now, $.fs.write y $.process.run (ningún $.model).
 ```
 
-- `toolCall`: una llamada cuyo `subagent_type` empieza con `aether:` pasa sin tocarse. Para las demás escribe el evento en `<dataDir>/delegates/in/<tiempo>-<n>.json` (campos `subagent_type`, `description`, `prompt`, `model`, `effort`, `run_in_background`, `isolation`) y corre `node <root>/bin/aether-delegate begin --session <session> --input <archivo>` (límite 25000 ms). Con el plan: `args` (`model`, `effort` y, si viene, `prompt`) se pone sobre la llamada que sigue a `next`; las `notes` se agregan al `context` del resultado (nunca a una llamada rechazada); si el plan tiene `external`, la llamada se recuerda por su prompt final (el reescrito, si hay) con el `external`. Cualquier falla (excepción, salida distinta de 0, línea que no es JSON, `skip`) deja la llamada como la hizo el Lead.
+- `toolCall`: una llamada cuyo `subagent_type` empieza con `aether:` pasa sin tocarse. Para las demás escribe el evento en `<dataDir>/delegates/in/<tiempo>-<n>.json` (campos `subagent_type`, `description`, `prompt`, `model`, `effort`, `run_in_background`, `isolation`) y corre `node <root>/bin/aether-delegate begin --session <session> --input <archivo>` (límite 25000 ms). Con el plan: `args` (`model`, `effort` y, si vienen, `prompt` e `isolation`) se pone sobre la llamada que sigue a `next`; las `notes` se agregan al `context` del resultado (nunca a una llamada rechazada); si el plan tiene `external`, la llamada se recuerda por su prompt final (el reescrito, si hay) con el `external`. Cualquier falla (excepción, salida distinta de 0, línea que no es JSON, `skip`) deja la llamada como la hizo el Lead.
 - `bind`: al `agent.spawn` liga la llamada por su prompt al agente; un agente con `external` queda para su primer paso.
 - `step`: en el paso 0 de un agente con `external`, corre `aether-delegate start --id <id>` (límite 15000 ms) y después `waitForDelegate`; con `ok` y texto no vacío entrega `{ kind: 'text', index: 0, text }` y `{ kind: 'stop', stopReason: 'end_turn', usage: null }` sin pasar por el modelo; con cualquier otra cosa sigue con `yield* next(e)` (el modelo del plan, que ya es el del escalón).
 - `hooks/register.js`: importa `createDelegates` de `./delegate.mjs` en lugar de `createRouter` de `./router.mjs`, y renombra sus ayudantes (`routerCalls`, `routerContext`) a `delegateCalls` y `delegateContext`; la lista de llamadas que el mod hace es `$.clock.now`, `$.fs.write` y `$.process.run` (se quita `$.model.complete`). El encabezado de `register.js` describe la escalera, no el router.
@@ -1408,6 +1482,13 @@ test('a plan that rewrites the prompt (a correction on Claude) puts the new prom
   assert.ok(seen[0].prompt.includes('## Findings to fix'))
 })
 
+test('the isolation of the plan lands on the call when the task edits (R13)', async () => {
+  const { $ } = make({ begin: [{ ...PLAN, args: { ...PLAN.args, isolation: 'worktree' } }] })
+  const { seen, next } = recorder()
+  await createDelegates().toolCall($, EV, next, CTX)
+  assert.equal(seen[0].isolation, 'worktree')
+})
+
 test('a failing or skipped begin leaves the call as the Lead made it', async () => {
   for (const verbs of [{ begin: [new Error('boom')] }, { begin: [{ id: null, skip: true, args: null, notes: [], external: null }] }]) {
     const { $ } = make(verbs)
@@ -1456,7 +1537,7 @@ test('a later step of the same agent is never taken over', async () => {
 })
 ```
 
-**Acceptance:** `node --test tests/delegate-mod.test.js` y `npm run test:mod` pasan. `hooks/delegate.mjs` no importa nada de `lib/` ni llama a `$.model`. `hooks/router.mjs` y `tests/router-mod.test.js` ya no existen. Lo que el motor hace con un `prompt` reescrito o con el primer paso de más de 10 minutos queda para la sesión real (C12), no para esta tarea.
+**Acceptance:** `node --test tests/delegate-mod.test.js` y `npm run test:mod` pasan. `hooks/delegate.mjs` no importa nada de `lib/` ni llama a `$.model`. `hooks/router.mjs` y `tests/router-mod.test.js` ya no existen. Lo que el motor hace con el primer paso de más de 10 minutos y con un `isolation` puesto por el mod lo mide la Task 17, antes de esta tarea; lo que hace con un `prompt` reescrito queda para la sesión real (C12).
 
 ### Task 12: La guía del Lead describe la escalera
 
@@ -1473,7 +1554,7 @@ test('a later step of the same agent is never taken over', async () => {
 `skills/using-aether/SKILL.md` cambia donde habla de los delegados:
 
 - Quita la regla «Climb on failure: ... run it again one model up» y la de «Router in `command`» y la de pasar `model` y `effort` en cada llamada `Agent`.
-- Pone la escalera: un delegado empieza siempre en Haiku y lo fija el sistema (el Lead no pasa `model` ni `effort`; lo que pase se ignora); cada llamada lleva `AETHER-TASK: <id>` y, si edita, `AETHER-OWNS: <globs>` y `AETHER-TESTS: <command>` (sin ellas la tarea es de solo lectura); un delegado que edita en Claude lleva `isolation: "worktree"`; el resultado ya trae las comprobaciones y la revisión de otro pair; el Lead juzga con `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate verdict --task <id> --verdict approve|fix|infeasible` (`--finding 'archivo:línea: qué falta'`, `--reason`, `--from-scratch`, `--worktree <ruta>`); corrige sobre lo hecho con hallazgos concretos; sube solo cuando se agotan las correcciones, vuelven los mismos hallazgos o declara inviable con razón; los topes están en `config/ladder.json`; después de Opus la tarea se aplaza o va a la lista del dueño según la regla de repetición.
+- Pone la escalera: un delegado empieza siempre en Haiku y lo fija el sistema (el Lead no pasa `model` ni `effort`; lo que pase se ignora); cada llamada lleva `AETHER-TASK: <id>` y, si edita, `AETHER-OWNS: <globs>` y `AETHER-TESTS: <command>` (sin ellas la tarea es de solo lectura); un delegado que edita en Claude lleva `isolation: "worktree"` (el sistema lo pone en la llamada) y el Lead pasa a `verdict` la ruta de ese worktree con `--worktree`, porque sin ella o sin las comprobaciones de un resultado un `approve` se rechaza; el resultado ya trae las comprobaciones y la revisión de otro pair; el Lead juzga con `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate verdict --task <id> --verdict approve|fix|infeasible` (`--finding 'archivo:línea: qué falta'`, `--reason`, `--from-scratch`, `--worktree <ruta>`); corrige sobre lo hecho con hallazgos concretos; sube solo cuando se agotan las correcciones, vuelven los mismos hallazgos o declara inviable con razón; los topes están en `config/ladder.json`; después de Opus la tarea se aplaza o va a la lista del dueño según la regla de repetición.
 - Conserva la excepción de A72: un pair que falla al arrancar por cuota o por tiempo se reemplaza y no se repite; no es una corrección.
 - No lee el diff entero cuando las comprobaciones y la revisión de otro pair bastan; lo lee solo cuando se contradicen o faltan.
 - La línea sobre los delegados que editan en otro harness deja de mandar a `aether-lane delegate` por Bash: ahora van por `Agent`; `aether-lane delegate` queda como lo que usa el sistema.
@@ -1574,25 +1655,24 @@ test('no file of the plugin requires a module that is gone', () => {
 
 **Acceptance:** `npm test && npm run test:mod` pasa con todo lo borrado ausente; las pruebas de la elección del pair, de las marcas, de la renovación, de la cuota y de `aether-lane` pasan sin cambiar su resultado (C8). `grep -r "aether-route" plugins/aether/bin plugins/aether/lib plugins/aether/hooks scripts` no da nada, salvo `lib/guard.js`, que recorta Task 16.
 
-### Task 14: La documentación describe la escalera y las opciones que quedan
+### Task 14: La guía de los delegados describe la escalera
 
 **Aether:**
-- Tier: sonnet — prosa y recuentos que el árbol y `docs-facts` sujetan
-- Review: high — los enlaces, las anclas y los conteos que las pruebas leen
+- Tier: sonnet — prosa que el árbol y `docs-facts` sujetan
+- Review: high — los enlaces y las anclas que las pruebas leen
 - Area: docs
-- Owns: `docs/guide/router.md`, `docs/guide/delegates.md`, `docs/index.md`, `docs/guide/lanes.md`, `docs/guide/troubleshooting.md`, `docs/guide/maintenance.md`, `docs/reference/components.md`, `docs/getting-started.md`, `README.md`, `CLAUDE.md`, `tests/docs-facts.test.js`, `tests/router-docs.test.js`, `tests/delegates-docs.test.js`, `tests/delegate-docs.test.js`, `tests/lanes-docs.test.js`, `tests/harness-lists.test.js`
-- Depends on: Task 6 — la tabla de opciones ya coincide con el manifiesto
+- Owns: `docs/guide/router.md`, `docs/guide/delegates.md`, `docs/index.md`, `docs/guide/lanes.md`, `docs/guide/troubleshooting.md`, `docs/guide/maintenance.md`, `tests/docs-facts.test.js`, `tests/router-docs.test.js`, `tests/delegates-docs.test.js`, `tests/delegate-docs.test.js`, `tests/lanes-docs.test.js`
+- Depends on: Task 19 — la tabla de opciones ya coincide con el manifiesto
 - Depends on: Task 10 — describe los verbos de `aether-delegate`
 - Depends on: Task 11 — describe el mod nuevo
 - Depends on: Task 12 — enlaza la guía del Lead
-- Depends on: Task 13 — los recuentos de componentes y de la huella dormida son los del árbol final
+- Depends on: Task 13 — el decisor ya no existe, y las guías no lo nombran
 - Serves: R10, R22
 
 **Interfaces:**
 
 - `docs/guide/router.md` se renombra `docs/guide/delegates.md` (front matter con `title`, `description` y `order` enteros, el mismo orden) y describe la escalera: empieza en Haiku, el sistema fija el escalón, la corrección sobre lo hecho, las tres causas de subida, «empezar de cero», después de Opus, quién juzga y las comprobaciones primero, `aether-delegate`, las líneas `AETHER-TASK:`, `AETHER-OWNS:` y `AETHER-TESTS:`, la bitácora (`<dataDir>/delegates/log.jsonl`), `config/ladder.json`, `aether-report --delegates` y el delegado que edita visible como agente. Conserva lo que ya explica de la elección del pair, el comando `aether-lane delegate` y los fallos de A72.
-- `docs/index.md`, `docs/guide/lanes.md`, `docs/guide/troubleshooting.md`, `docs/guide/maintenance.md`, `docs/getting-started.md`, `README.md` y `CLAUDE.md` apuntan a `guide/delegates.md` y dejan de nombrar las tres opciones, `aether-route` y los tres modos; el `CLAUDE.md` describe `aether-delegate`, `lib/ladder.js`, `config/ladder.json` y la bitácora.
-- `docs/reference/components.md`: la fila de `aether-route` pasa a `aether-delegate`; los recuentos de comandos, opciones, skills y huella dormida coinciden con el árbol.
+- `docs/index.md`, `docs/guide/lanes.md`, `docs/guide/troubleshooting.md` y `docs/guide/maintenance.md` apuntan a `guide/delegates.md` y dejan de nombrar las tres opciones, `aether-route` y los tres modos. `docs/reference/components.md`, `docs/getting-started.md`, `README.md` y `CLAUDE.md` los cambia la Task 20.
 - `tests/docs-facts.test.js`: la lista `PAGES` nombra `docs/guide/delegates.md` en lugar de `docs/guide/router.md`.
 - `tests/router-docs.test.js` se borra y `tests/delegates-docs.test.js` lo reemplaza.
 
@@ -1625,15 +1705,9 @@ test('the page has its front matter and the index links it', () => {
   assert.ok(read('docs', 'index.md').includes('guide/delegates.md'))
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'docs', 'guide', 'router.md')), false)
 })
-
-test('the components page names aether-delegate and no aether-route', () => {
-  const components = read('docs', 'reference', 'components.md')
-  assert.ok(components.includes('`aether-delegate`'))
-  assert.equal(components.includes('`aether-route`'), false)
-})
 ```
 
-**Acceptance:** `node --test tests/docs-facts.test.js tests/delegates-docs.test.js tests/delegate-docs.test.js tests/lanes-docs.test.js tests/harness-lists.test.js tests/quota-brake-docs.test.js` pasa y `npm test` sigue entero. `docs/guide/router.md` ya no existe. Los enlaces, las anclas y los recuentos pasan `tests/docs-facts.test.js` sin una excepción nueva.
+**Acceptance:** `node --test tests/docs-facts.test.js tests/delegates-docs.test.js tests/delegate-docs.test.js tests/lanes-docs.test.js` pasa. `docs/guide/router.md` ya no existe. Los enlaces y las anclas pasan `tests/docs-facts.test.js` sin una excepción nueva.
 
 ### Task 15: La prueba que busca lo retirado
 
@@ -1641,15 +1715,18 @@ test('the components page names aether-delegate and no aether-route', () => {
 - Tier: haiku high — una prueba de búsqueda con identificadores exactos que la spec fija
 - Review: high — que no deje pasar una mención ni marque una palabra común
 - Area: final
-- Owns: `tests/no-router.test.js`, `tests/lane-delegate-scenarios.test.js`
+- Owns: `tests/no-router.test.js`, `tests/lane-delegate-scenarios.test.js`, `plugins/aether/lib/lane-pick.js`
 - Depends on: Task 13 — el decisor ya no existe
-- Depends on: Task 14 — la documentación ya no lo nombra
+- Depends on: Task 14 — las guías ya no lo nombran
 - Depends on: Task 16 — la sesión, el guard y el diario ya no lo nombran
+- Depends on: Task 18 — el panel ya no lo nombra
+- Depends on: Task 19 — el manifiesto y la tabla de opciones ya no lo nombran
+- Depends on: Task 20 — el README, el CLAUDE.md y la referencia ya no lo nombran
 - Serves: R9, R10, R22
 
 **Interfaces:**
 
-`tests/no-router.test.js` busca, en `plugins/aether/`, `docs/guide/`, `docs/reference/`, `docs/index.md`, `docs/getting-started.md`, `docs/purpose.md`, `docs/methodology.md`, `docs/contributing.md`, `README.md`, `CLAUDE.md`, `scripts/` y `tests/` (menos el archivo mismo), estos identificadores exactos de C7: `aether-route` (palabra completa), `ROUTER-OVERRIDE`, `CLAUDE_PLUGIN_OPTION_ROUTER`, `CLAUDE_PLUGIN_OPTION_DECIDER`, `CLAUDE_PLUGIN_OPTION_FALLBACK`, las formas `--config router=`, `--config decider=` y `--config fallback=`, el código `` `router` `` o `` `decider` `` como nombre de opción, las claves `router`, `decider` y `fallback` en el `userConfig` del manifiesto y en la tabla de `docs/guide/options.md`, y una línea que junte `record` o `advise` con `router` o `decider` como modos. Las excepciones, cada una con su razón: `docs/decisions.md`, `docs/changelog.md` y `docs/handoff/` (registro histórico, fuera del escaneo); `plugins/aether/lib/router-log.js` y `plugins/aether/lib/spend.js` (el lector del diario viejo, R18); los archivos de las marcas de pairs agotados o lentos (R11): `router-marks.js`, `router-slow.js`, `router-quota.js`, `router-pick.js`, `router-renewal.js`. Las palabras comunes (`fallback` o `command` en otro sentido, `native fallback`, `openrouter`) no cuentan. El otro archivo de `tests/` que todavía menciona `aether-route` (`tests/lane-delegate-scenarios.test.js`, en un comentario) se corrige aquí.
+`tests/no-router.test.js` busca, en `plugins/aether/`, `docs/guide/`, `docs/reference/`, `docs/index.md`, `docs/getting-started.md`, `docs/purpose.md`, `docs/methodology.md`, `docs/contributing.md`, `README.md`, `CLAUDE.md`, `scripts/` y `tests/` (menos el archivo mismo), estos identificadores exactos de C7: `aether-route` (palabra completa), `ROUTER-OVERRIDE`, `CLAUDE_PLUGIN_OPTION_ROUTER`, `CLAUDE_PLUGIN_OPTION_DECIDER`, `CLAUDE_PLUGIN_OPTION_FALLBACK`, las formas `--config router=`, `--config decider=` y `--config fallback=`, el código `` `router` `` o `` `decider` `` como nombre de opción, las claves `router`, `decider` y `fallback` en el `userConfig` del manifiesto y en la tabla de `docs/guide/options.md`, y una línea que junte `record` o `advise` con `router` o `decider` como modos. Las excepciones, cada una con su razón: `docs/decisions.md`, `docs/changelog.md` y `docs/handoff/` (registro histórico, fuera del escaneo); `plugins/aether/lib/router-log.js` y `plugins/aether/lib/spend.js` (el lector del diario viejo, R18); los archivos de las marcas de pairs agotados o lentos (R11): `router-marks.js`, `router-slow.js`, `router-quota.js`, `router-pick.js`, `router-renewal.js`. Las palabras comunes (`fallback` o `command` en otro sentido, `native fallback`, `openrouter`) no cuentan. El otro archivo de `tests/` que todavía menciona `aether-route` (`tests/lane-delegate-scenarios.test.js`, en un comentario) se corrige aquí. `lib/lane-pick.js` tiene un comentario (líneas 58 a 61: «the router's file or the harness's record ... where the router reads it») que la última de esas formas leería como un modo del router, y no está en la lista de excepciones: se reescribe sin juntar `router` y `record` en una línea (por ejemplo «the readings file of the quota module or the harness's own record»), sin cambiar una línea de código.
 
 **Tests (write first):** `tests/no-router.test.js`
 
@@ -1721,7 +1798,7 @@ test('a user value saved in the three removed options changes nothing in the ses
 })
 ```
 
-**Acceptance:** `npm run check` pasa (`npm test`, `npm run test:mod` y `npm run validate`). `tests/no-router.test.js` no encuentra un identificador de C7 fuera de las excepciones nombradas, y cada excepción tiene su razón. `tests/lane-delegate-scenarios.test.js` ya no nombra `aether-route`.
+**Acceptance:** `npm run check` pasa (`npm test`, `npm run test:mod` y `npm run validate`). `tests/no-router.test.js` no encuentra un identificador de C7 fuera de las excepciones nombradas, y cada excepción tiene su razón. `tests/lane-delegate-scenarios.test.js` ya no nombra `aether-route`. `lib/lane-pick.js` queda igual salvo ese comentario, y las pruebas de la elección del pair pasan sin cambios.
 
 ### Task 16: Recortar la sesión, el guard y el lector del diario
 
@@ -1787,3 +1864,181 @@ test('pruneSessions removes the delegate file and an old router file of a sessio
 ```
 
 **Acceptance:** `npm test` pasa; la prueba de la pareja `id` e `attempt` de gasto (Task 9) y las pruebas de las marcas siguen verdes. `grep -rn "appendEntry" plugins/aether/lib/router-log.js` no da nada y `grep -rn "aether-route" plugins/aether/lib` no da nada.
+
+### Task 17: La prueba de espera en el motor real (paso del Lead)
+
+**Aether:**
+- Tier: opus high — lo hace el Lead a mano, no el enjambre: decide entre el bucle del mod y el respaldo de Haiku (R20)
+- Review: xhigh — la decisión depende de lo que el motor haga de verdad, no de lo que las pruebas simuladas aproximan
+- Area: lead
+- Owns: `docs/evidence/013-delegate-ladder.md`
+- Depends on: Task 1 — usa `hooks/delegate-wait.mjs`, ya fundido
+- Serves: R12, R20
+
+**Interfaces:**
+
+Es un paso del Lead (ver Global Constraints): se corre después de fundir la Task 1 y antes de lanzar las Tasks 10 y 11. No gasta cuota de otro plan (ni `aether-lane` ni un harness externo); gasta unas pocas peticiones de Claude, en Haiku, del agente de prueba.
+
+1. Un plugin desechable en `.aether/spike-wait/` (git-ignorado): una copia de `plugins/aether/` donde `hooks/router.mjs` se reemplaza por un mod mínimo. Su `toolCall` pone `model: 'haiku'`, `effort: 'low'` e `isolation: 'worktree'` en toda llamada `Agent` cuyo prompt tenga la línea `SPIKE-WAIT`, y su primer `step` corre `aether-delegate start` y `waitForDelegate` (el de la Task 1) y entrega el texto que reciba, sin pasar por el modelo. El `bin/aether-delegate` de esa copia es este, solo para la prueba:
+
+```js
+#!/usr/bin/env node
+'use strict'
+const fs = require('node:fs')
+const path = require('node:path')
+const counter = path.join(__dirname, '.waits')
+const n = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) : 0
+const verb = process.argv[2]
+if (verb === 'start') console.log(JSON.stringify({ started: true, id: 'spike', pid: process.pid }))
+else if (verb === 'wait') {
+  fs.writeFileSync(counter, String(n + 1))
+  const seconds = Number(process.argv[process.argv.indexOf('--seconds') + 1])
+  // two waits of 540 s: the delegate lasts 18 minutes, more than the 10 of one command
+  if (n < 2) setTimeout(() => console.log(JSON.stringify({ done: false })), seconds * 1000)
+  else console.log(JSON.stringify({ done: true, ok: true, status: 'ok', text: 'SPIKE-OK' }))
+}
+```
+
+2. Una sesión real con ese plugin (`scripts/aether-lead --plugin-dir <worktree>/.aether/spike-wait/aether`, o `claude -p --plugin-dir ... --model haiku` con un prompt que llame a `Agent` una vez con la línea `SPIKE-WAIT`). Mientras corre, el Lead mira cada minuto la lista de agentes de la sesión (la barra de agentes o `/agents`) y anota la hora.
+
+3. Lo que se comprueba y se anota en `docs/evidence/013-delegate-ladder.md` (sección «Prueba de espera, R20»):
+   - a. el primer paso del agente sobrevive 18 minutos o más: la respuesta del agente es exactamente `SPIKE-OK` y llega sin error;
+   - b. el agente aparece como activo en cada lectura de la lista, hasta que termina;
+   - c. no hay una petición de modelo del agente (el registro de uso de la sesión no trae una del agente de la prueba);
+   - d. el `isolation: 'worktree'` que puso el mod llegó a la llamada: existe un worktree del agente bajo `.claude/worktrees/` mientras corre (esto responde si un `toolCall` del mod puede poner `isolation`).
+
+4. Decisión, escrita en el mismo archivo:
+   - a, b y c se cumplen: se queda el bucle del mod (S1), y las Tasks 10 y 11 siguen como están.
+   - a o b falla: el Lead revisa el plan (Design 7, S1, Tasks 10 y 11) para el respaldo (un agente de Haiku con solo Bash que lanza `aether-delegate start` y repite `wait`), y mide ahí cuántas peticiones de Haiku cuesta (D8), antes de lanzar esas dos tareas.
+   - d falla: el mod no puede poner `isolation`; la red de la Task 7 sigue (un `approve` de un intento en Claude que edita se rechaza sin `--worktree` ni comprobaciones) y la guía de la Task 12 es quien lo pide; se quita `isolation` de lo que la Task 11 pone sobre la llamada.
+
+**Tests (write first):** ninguno de `tests/`: es una medición del motor. Su registro es la sección del archivo de evidencia, con las horas de cada lectura y la decisión.
+
+**Acceptance:** `docs/evidence/013-delegate-ladder.md` tiene la sección «Prueba de espera, R20» con a, b, c, d y la decisión, antes de que se lance la Task 10. `.aether/spike-wait/` no se sube.
+
+### Task 18: El panel de `/harnesses` sin el decisor
+
+**Aether:**
+- Tier: sonnet high — el panel del mod y sus pruebas, que fijan cada línea
+- Review: high — el panel y el informe que lee no pueden cambiar de cifras (R18)
+- Area: panel
+- Owns: `plugins/aether/hooks/panel-view.mjs`, `plugins/aether/hooks/panel-layout.mjs`, `plugins/aether/hooks/panel.test.tsx`, `tests/panel-view.test.js`, `tests/panel-layout.test.js`, `tests/panel-conformance.test.js`, `tests/fixtures/panel/delegates.json`, `tests/fixtures/panel/delegates-empty.json`
+- Depends on: Task 6 — compara con `delegateSettingsFrom`
+- Serves: R9, R10, R18, R22
+
+**Interfaces:**
+
+- `hooks/panel-view.mjs` `settingsOf(options)` devuelve `{ lanes: boolean, harnesses: string[] }`: sin `router` ni `decider`, y se quitan `ROUTER_MODES` y `ROUTER_DECIDERS`. La superdelegación y los harness se leen como hoy (el mod no importa `lib/`; el comentario que lo explica nombra `delegateSettingsFrom`). Los valores guardados en `router` o `decider` se ignoran.
+- `hooks/panel-layout.mjs` `optionsLines`: la línea de opciones es `superdelegation ON · harnesses agy, grok`, sin `router ...` ni `decider ...`.
+- `hooks/panel.test.tsx`: las tres comprobaciones que esperan `router command`, `router record` o `decider jev` esperan la línea nueva; la prueba «the options shown are the ones the session uses» pasa solo `superdelegation` y `harnesses`. La parte `delegates` del panel no cambia: lee las filas que la Task 8 imprime (`id`, `time`, `session`, `description`, `applied`, `ranOn`, `fallback`).
+- `tests/fixtures/panel/delegates.json`, `delegates-empty.json` (y la constante `DELEGATES` de `panel.test.tsx`): filas con la forma nueva de la Task 8, sin `mode`, `decider`, `decision`, `agentId` ni `costUsd`.
+- `tests/panel-conformance.test.js`: se quitan las pruebas del manifiesto, del router y del decisor; las del interruptor y de los harness comparan `settingsOf` con `session.delegateSettingsFrom` (`lanes`, `harnesses`).
+
+**Tests (write first):** los cambios de `tests/panel-view.test.js`, `tests/panel-layout.test.js`, `tests/panel-conformance.test.js` y `hooks/panel.test.tsx`; de `tests/panel-view.test.js`:
+
+```js
+test('the panel settings are the switch and the harnesses, and a saved router or decider changes nothing (E12)', () => {
+  assert.deepEqual(view.settingsOf({}), { lanes: false, harnesses: ['agy'] })
+  assert.deepEqual(view.settingsOf({ superdelegation: true, harnesses: 'agy,grok' }), { lanes: true, harnesses: ['agy', 'grok'] })
+  assert.deepEqual(view.settingsOf({ superdelegation: true, router: 'command', decider: 'jev', harnesses: 'gork' }), { lanes: true, harnesses: ['agy'] })
+})
+```
+
+**Acceptance:** `node --test tests/panel-view.test.js tests/panel-layout.test.js tests/panel-conformance.test.js` y `npm run test:mod` pasan. `hooks/panel-view.mjs` y `hooks/panel-layout.mjs` ya no nombran `router` ni `decider`.
+
+### Task 19: El manifiesto y la tabla de opciones sin el decisor
+
+**Aether:**
+- Tier: sonnet high — un manifiesto y una tabla que `docs-facts` compara
+- Review: high — la compatibilidad con valores ya guardados
+- Area: options
+- Owns: `plugins/aether/.claude-plugin/plugin.json`, `docs/guide/options.md`, `docs/getting-started.md`, `tests/manifest.test.js`, `tests/quota-brake-docs.test.js`
+- Depends on: Task 18 — el panel y la prueba de conformidad ya no leen del manifiesto esas opciones
+- Serves: R9, R10, R22
+
+**Interfaces:**
+
+- `plugin.json`: se quitan las opciones `router`, `decider` y `fallback`; `deadlines` queda con título «Delegate time limits», descripción que habla solo de la espera de cuota (`quota=3`, un valor de más de 10 cuenta 10) y por defecto `quota=3`. Un valor que un usuario ya guardó en las tres opciones no da error: nada lo lee.
+- `docs/guide/options.md`: la tabla y la lista de opciones coinciden con el manifiesto (sin las tres opciones; `deadlines` con su nuevo texto y valor por defecto `quota=3`) y se quitan las frases sobre `router` y `decider` como selectores. `docs/getting-started.md` y `tests/quota-brake-docs.test.js` cuentan seis opciones: `superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake` y `brakepush`, con las dos claves viejas.
+
+**Tests (write first):** un caso nuevo en `tests/manifest.test.js` y el recuento de `tests/quota-brake-docs.test.js`
+
+```js
+test('the manifest no longer declares router, decider or fallback, and deadlines is the quota deadline alone (C7)', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
+  for (const key of ['router', 'decider', 'fallback']) assert.equal(Object.hasOwn(manifest.userConfig, key), false, key)
+  assert.equal(manifest.userConfig.deadlines.default, 'quota=3')
+})
+```
+
+**Acceptance:** `node --test tests/manifest.test.js tests/quota-brake-docs.test.js tests/docs-facts.test.js` y `npm test` pasan, con la tabla de `docs/guide/options.md` igual al `userConfig` (la prueba R11 de `tests/docs-facts.test.js` sigue verde sin tocarla).
+
+### Task 20: Los recuentos y los resúmenes de la documentación
+
+**Aether:**
+- Tier: sonnet — prosa y recuentos que el árbol y `docs-facts` sujetan
+- Review: high — los conteos que las pruebas leen
+- Area: docs-counts
+- Owns: `docs/reference/components.md`, `docs/getting-started.md`, `README.md`, `CLAUDE.md`, `tests/harness-lists.test.js`, `tests/components-docs.test.js`
+- Depends on: Task 13 — los recuentos de componentes y de la huella dormida son los del árbol final
+- Depends on: Task 14 — enlazan `guide/delegates.md`
+- Depends on: Task 19 — `docs/getting-started.md` ya cuenta seis opciones
+- Serves: R10, R22
+
+**Interfaces:**
+
+- `docs/getting-started.md`, `README.md` y `CLAUDE.md` apuntan a `guide/delegates.md` y dejan de nombrar las tres opciones, `aether-route` y los tres modos; el `CLAUDE.md` describe `aether-delegate`, `lib/ladder.js`, `config/ladder.json` y la bitácora.
+- `docs/reference/components.md`: la fila de `aether-route` pasa a `aether-delegate`; los recuentos de comandos, opciones, skills y huella dormida coinciden con el árbol; la fila del mod ya no dice que llama al router.
+- `tests/harness-lists.test.js`: las listas que apuntaban a `router.md` apuntan a `delegates.md`.
+
+**Tests (write first):** `tests/components-docs.test.js` (nuevo) y los cambios de `tests/harness-lists.test.js`
+
+```js
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8')
+
+test('the components page names aether-delegate and no aether-route (R10)', () => {
+  const components = read('docs', 'reference', 'components.md')
+  assert.ok(components.includes('`aether-delegate`'))
+  assert.equal(components.includes('`aether-route`'), false)
+})
+
+test('the README and the CLAUDE.md name no aether-route and point to the delegates guide (R10)', () => {
+  for (const file of ['README.md', 'CLAUDE.md']) assert.equal(read(file).includes('aether-route'), false, file)
+  assert.ok(read('CLAUDE.md').includes('aether-delegate'))
+})
+```
+
+**Acceptance:** `node --test tests/docs-facts.test.js tests/components-docs.test.js tests/harness-lists.test.js tests/quota-brake-docs.test.js` pasa y `npm test` sigue entero. Los recuentos pasan `tests/docs-facts.test.js` sin una excepción nueva.
+
+### Task 21: Los pasos del Lead al terminar (R21, R23)
+
+**Aether:**
+- Tier: opus high — lo hace el Lead a mano, no el enjambre: fundir, gastar cuota de otros planes y cerrar issues son acciones sin vuelta atrás que piden permiso registrado
+- Review: xhigh — cada paso es irreversible o toca a otras sesiones
+- Area: lead
+- Owns: `docs/evidence/013-delegate-ladder.md`
+- Depends on: Task 15 — todo lo del enjambre está fundido y `npm run check` pasa
+- Depends on: Task 17 — la prueba de espera ya dejó su sección en el archivo de evidencia
+- Depends on: Task 20 — la documentación está al día
+- Serves: R21, R23
+
+**Interfaces:**
+
+Pasos del Lead (ver Global Constraints), en este orden. Cada acción irreversible se registra con `aether-autonomy` con las palabras del dueño en su propia llamada, y se corre en la siguiente.
+
+1. R21, el solapamiento con `fix/quick-issues`: si esa rama ya entró en `main`, `git merge main` dentro de `feat/delegate-ladder`, se resuelven los conflictos (`docs/decisions.md`, `docs/reference/components.md`, `bin/aether-session-start`, los agentes `examiner` y `reviewer`, las skills) y se vuelve a pasar `npm run check`. Si no, el brief final nombra el conflicto esperado. La corrida no toca esa rama, no sube ni se funde en `main`.
+2. R21 y C13: se compara lo anotado al empezar y al terminar en el archivo de evidencia: `git status` del checkout principal y de cada worktree de otra sesión sin cambios, el plugin instalado en 0.18.0, y todo el trabajo en `feat/delegate-ladder` (`git log main..feat/delegate-ladder`). No se lee ni se escribe el estado de otra sesión.
+3. R23, la sesión real de C12 (`paid-call`): con un permiso registrado, `scripts/aether-lead --plugin-dir <worktree>/plugins/aether` en un repositorio desechable con `superdelegation=true` y `harnesses=grok`; se pide una tarea con `AETHER-TASK:`, `AETHER-OWNS:` y `AETHER-TESTS:` y se comprueba que `aether-lane delegate`, por la llamada `Agent`, corre mientras la barra de agentes lo muestra. Sin permiso, el comando exacto queda en la lista del dueño.
+4. R23, la evidencia (captura o transcripción) o la nota de pendiente con el comando exacto, en una sección de `docs/evidence/013-delegate-ladder.md` que se confirma en la rama.
+5. R23, los issues: `gh issue close 51` y `gh issue close 74`, con un comentario que cita la evidencia, con el permiso registrado (`credentials`) con las palabras del dueño (cita 10 de la spec). El 74 espera además la evidencia de la sesión real: si queda pendiente en la lista del dueño, se cierra cuando llegue.
+
+**Tests (write first):** ninguno de `tests/`: son acciones del Lead sobre el repositorio y `gh`. Su registro es el archivo de evidencia y el brief final.
+
+**Acceptance:** `docs/evidence/013-delegate-ladder.md` tiene, por R21 y C13, el antes y el después de los worktrees ajenos y del plugin instalado, y, por R23, la evidencia de C12 o su pendiente con el comando exacto. Los issues 74 y 51 están cerrados con la cita, o quedan en la lista del dueño con la razón. `npm run check` pasa.
