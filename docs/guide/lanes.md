@@ -74,7 +74,7 @@ The dollars are list price, not a percentage of the quota and not what a subscri
 
 The same id keeps adding when you resume it: `/resume`, `/compact`, or closing the session and coming back. Another id is not linked to the one before it. `--fork-session` and `/clear` each start a new id, and the earlier one stays its own session.
 
-A model with no price is listed and is not added to the total. The count of resumptions is approximate. A resumption is a gap of more than an hour between two consecutive events of that id, the pane labels the count `approximate`, and after a prune the gap between the archived stretch and what is still on disk is not counted. When part of the record could not be read, the total is what was read and the figure says `incomplete`. With no record the pane says `No spend recorded yet`. It does not show a total of US$ 0.00, and it does not show another session.
+A model with no price is listed and is not added to the total. The count of resumptions is approximate: a resumption is a gap of more than an hour between two consecutive events of that id, and the pane labels the count `approximate`. After a prune, the gap between the archived stretch and what is still on disk is not counted. When part of the record could not be read, the total is what was read and the figure says `incomplete`. With no record the pane says `No spend recorded yet`. It does not show a total of US$ 0.00, and it does not show another session.
 
 [Troubleshooting](troubleshooting.md#the-harnesses-panel-is-not-offered) covers a `/spend` that is not offered, for the same reason as `/harnesses`. The ceiling of an autonomous run is another figure, and it still leaves out the Lead's own turns ([Autonomy](autonomy.md#autonomy-1)).
 
