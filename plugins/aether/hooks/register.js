@@ -17,10 +17,12 @@
 // aether-session-start writes. In any other session the meter records and writes nothing, and the agents
 // of the aether plugin are not offered.
 //
-// It hands the Lead's delegates to the delegate router (router.mjs, spec 006): the Agent calls of an Aether
-// session whose subagent_type is not aether:*, the spawn of each routed delegate (which the router records, so
-// aether-report can price it), and the first step of a delegate the router runs on another harness. The router
-// never breaks a call: any failure in it leaves the call as the Lead made it.
+// It hands the Lead's delegates to the delegate ladder (delegate.mjs, spec 013): the Agent calls of an Aether
+// session whose subagent_type is not aether:*, which `aether-delegate begin` gives the model and effort of the
+// ladder's step (the Lead cannot pick them), the spawn of each such delegate that has something left to do at its
+// agent, the first step of a delegate that runs on another harness (started, waited for with a heartbeat after each
+// wait, and answered with no model request), and the last step of a read-only delegate on Claude (its answer is
+// recorded for the verdict). The ladder never breaks a call: any failure in it leaves the call as the Lead made it.
 //
 // It also gives an Aether session the /harnesses command (panel.jsx): a pane with the delegation settings and the quota
 // of each harness, drawn without a model. The Lead's SessionStart declares the command; the command and the pane ask
@@ -44,7 +46,7 @@ import { PAYLOAD_PATH, parseOpsPrompt } from './ops-command.mjs'
 import { registerPanel } from './panel.jsx'
 import { registerSpend } from './spend-panel.jsx'
 import { brakePromptFor, crossingsOf, initialBrakeState, jsonFrom, notifyFor, resumePromptFor } from './quota-brake.mjs'
-import { createRouter } from './router.mjs'
+import { createDelegates } from './delegate.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -69,7 +71,7 @@ const BRAKE_RECHECK_MS = 60000
 // then ANSWERED once the mod has run it.
 const sessions = new Map()
 
-const router = createRouter()
+const delegates = createDelegates()
 
 const PAYLOAD_MARKER = /^=== aether-lane payload: (.+) ===$/m
 
@@ -301,18 +303,17 @@ function opsCommand(e, $) {
   }
 }
 
-// The four calls the router makes, spelled here: the engine follows $ only into this file's own functions.
-function routerCalls($) {
+// The three calls the delegate ladder makes, spelled here: the engine follows $ only into this file's own functions.
+function delegateCalls($) {
   return {
     clock: { now: () => $.clock.now() },
     fs: { write: (path, text) => $.fs.write(path, text) },
     process: { run: (argv, init) => $.process.run(argv, init) },
-    model: { complete: (request) => $.model.complete(request) },
   }
 }
 
-// What the router needs of an Aether session, or null when it cannot be read.
-async function routerContext($, state) {
+// What the delegate ladder needs of an Aether session, or null when it cannot be read.
+async function delegateContext($, state) {
   try {
     state.dataDir ??= readDataDir($)
     return { session: state.id, dataDir: await state.dataDir, root: $.plugin.root }
@@ -519,13 +520,13 @@ export function register(on, options) {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // The Lead's delegates go through the router; an aether:* agent is never routed (R9).
+  // The Lead's delegates go through the ladder; an aether:* agent is never touched (R9).
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     const state = await aetherSession($)
     if (!state) return next(e)
-    const ctx = await routerContext($, state)
+    const ctx = await delegateContext($, state)
     if (!ctx) return next(e)
-    return router.toolCall(routerCalls($), e, next, ctx)
+    return delegates.toolCall(delegateCalls($), e, next, ctx)
   }).catch(($, e, next) => next(e))
 
   on('agent.spawn', async ($, e, next) => {
@@ -535,9 +536,9 @@ export function register(on, options) {
     const result = await next(e)
     if (result && result.agentId) {
       state.agents[result.agentId] = { type: e.subagentType || null, description: e.description || null }
-      // The delegate router links the agent to its decision (and keeps an external delegate for its first step).
-      const ctx = await routerContext($, state)
-      if (ctx) router.bind(routerCalls($), e, result.agentId, ctx)
+      // The delegate ladder keeps an external delegate for its first step and a read-only one on Claude for its last.
+      const ctx = await delegateContext($, state)
+      if (ctx) delegates.bind(delegateCalls($), e, result.agentId, ctx)
       const command = opsCommand(e, $)
       if (command && !(await opsOff($, state))) state.ops.set(result.agentId, command)
     }
@@ -547,10 +548,11 @@ export function register(on, options) {
   on('turn.step', async function* ($, e, next) {
     const state = await aetherSession($)
     if (!state) return yield* next(e)
-    // A delegate the router runs on another harness: its first step is that harness's answer, or the model's.
-    if (router.has(e.agentId)) {
-      const ctx = await routerContext($, state)
-      if (ctx) return yield* router.step(routerCalls($), e, (event) => meteredStep($, state, event, next), ctx)
+    // A delegate on another harness: its first step is that harness's answer, or the model's. A read-only delegate on
+    // Claude goes through the model as ever, and its last answer is recorded.
+    if (delegates.has(e.agentId)) {
+      const ctx = await delegateContext($, state)
+      if (ctx) return yield* delegates.step(delegateCalls($), e, (event) => meteredStep($, state, event, next), ctx)
     }
     const command = e.agentId ? state.ops.get(e.agentId) : undefined
     if (command === ANSWERED) {
