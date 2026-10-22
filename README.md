@@ -38,7 +38,7 @@ Aether serves five goals, **RADAR**.
 claude plugin install aether --marketplace DarkArty07/aether-plugin
 ```
 
-Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; the rule is in [Lanes](docs/guide/lanes.md#lanes), and [Options](docs/guide/options.md#options) has the plugin's nine options and how to set them).
+Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; the rule is in [Lanes](docs/guide/lanes.md#lanes), and [Options](docs/guide/options.md#options) has the plugin's six options and how to set them).
 
 ## First start
 
@@ -61,6 +61,7 @@ Then tell the Lead what you want. [Start](docs/getting-started.md#start) has the
 - [Getting started](docs/getting-started.md): the install, the first start, and what the Lead does with your first request.
 - [Purpose](docs/purpose.md): why Aether exists, the five goals of RADAR and the principles it follows.
 - [Methodology](docs/methodology.md): the roles, the three paths and the swarm, from your request to a merged result.
+- [Delegates](docs/guide/delegates.md): how a delegate task of the Lead climbs from Haiku to Sonnet and Opus, corrected on top of its own work, and what the system logs of it.
 - [Documentation](docs/index.md): every guide, the reference, the changelog and the design record.
 
 ## License

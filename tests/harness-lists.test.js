@@ -58,7 +58,7 @@ test('the rule finds a list of the harnesses without Muse and a count of four, a
   assert.equal(breaches('README.md', 'agy, codex, grok, cursor, muse').length, 0)
   assert.equal(breaches('README.md', 'Agy, Codex, Grok, Cursor and Muse').length, 0)
   assert.equal(breaches('README.md', 'a call on another harness runs the same').length, 0)
-  assert.equal(breaches('README.md', 'the router sends it to agy or grok').length, 0)
+  assert.equal(breaches('docs/guide/delegates.md', 'a delegate runs on agy or grok').length, 0)
   assert.equal(breaches('docs/handoff/x.md', 'agy, codex, grok, cursor').length, 0)
   assert.equal(breaches('specs/008-muse-harness/plan.md', 'agy, codex, grok, cursor').length, 0)
   assert.equal(breaches('tests/lanes.test.js', "['agy', 'codex', 'grok', 'cursor']").length, 0)
@@ -69,5 +69,7 @@ test('the rule finds a list of the harnesses without Muse and a count of four, a
 test('no fixed list of the harnesses in the repository leaves Muse out, except the ones named with a reason', () => {
   const found = tracked().flatMap((file) => breaches(file, fs.readFileSync(path.join(ROOT, file), 'utf8')))
   assert.deepEqual(found, [])
+  assert.ok(tracked().includes('docs/guide/delegates.md'), 'the guide of the delegates is read by the rule')
+  assert.ok(!tracked().includes('docs/guide/router.md'), 'the guide of the router is gone')
   assert.ok(EXCEPTIONS.every((exception) => typeof exception.why === 'string' && exception.why !== ''))
 })
