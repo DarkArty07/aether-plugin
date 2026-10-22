@@ -18,8 +18,8 @@ export const meta = {
 // The script never reads the clock or random numbers: the runtime replays a resumed run call by call.
 // With lanes in the args (superdelegation on), each implementer, supervisor and final review asks
 // `aether-lane pick` for the pair that takes it, and runs on that external harness through aether-lane;
-// it runs on the native agent of the decision when no pair takes it, the harness stays full past the
-// wait, or every pair that began it failed it (three at most).
+// it runs on the native agent of the decision when no pair takes it, or every pair that began it failed it
+// (three at most). A call starts at once on its pair: a harness has no limit on its calls in flight.
 
 const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -40,6 +40,16 @@ const MAX_PAIR_TRIES = 3
 // The failures a unit keeps (its `failures`): an attempt without a report, or a retry or an escalation
 // with the titles of its blocking findings. The same failure can stop a unit early (see work()).
 const NO_REPORT = 'no report'
+// The time a native agent that only reads (the supervisor and the final reviewer) may stay silent (issue 16): at this
+// cap the script stops waiting for it, records it as abandoned and goes on. It is the supervisor's timeout of the lane
+// table (config/lanes.json). The implementer has no cap here: it builds for as long as its lane allows (2700 s).
+// A workflow script has no clock and no timer, and `agent()` takes no timeout, so the cap is kept by `aether-lane pause`
+// ticks through an ops agent (the mod answers them without a model), each at most CAP_TICK_SECONDS (the bin's maximum).
+// A tick is not a call of the run: it is in no count and spends no budget. The runtime offers no way to stop an agent,
+// so an abandoned one may go on running; the script only stops waiting for it.
+const NATIVE_CAP_SECONDS = { supervisor: 900, reviewer: 900 }
+const CAP_TICK_SECONDS = 120
+const ABANDONED = { abandoned: true }
 const FINDINGS_PREFIX = 'findings: '
 
 const FINDINGS = {
@@ -109,18 +119,14 @@ const OPS_SCHEMA = {
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
-// The lanes aether-plan compile prints with superdelegation on: the harnesses that may take a call, each
-// one's cap on calls in flight, the wait rounds per role, and the wait for a place on a full harness (cupo).
-// A pause takes 1 to 120 seconds (aether-lane pause), so pollSeconds may not be more.
+// The lanes aether-plan compile prints with superdelegation on: the harnesses that may take a call and the
+// wait rounds per role. A harness has no limit on its calls in flight.
 function validLanes(lanes) {
   const named = (value) => typeof value === 'string' && value !== ''
   const count = (value) => Number.isInteger(value) && value >= 1
   if (!isObject(lanes) || lanes.superdelegation !== true) return false
   if (!Array.isArray(lanes.harnesses) || lanes.harnesses.length === 0 || !lanes.harnesses.every(named)) return false
-  if (!isObject(lanes.maxParallelByHarness) || !Object.values(lanes.maxParallelByHarness).every(count)) return false
-  if (!lanes.harnesses.every((harness) => count(lanes.maxParallelByHarness[harness]))) return false
   if (!isObject(lanes.waits) || !LANE_ROLES.every((role) => count(lanes.waits[role]))) return false
-  if (!isObject(lanes.cupo) || !count(lanes.cupo.polls) || !count(lanes.cupo.pollSeconds) || lanes.cupo.pollSeconds > 120) return false
   return true
 }
 
@@ -188,6 +194,8 @@ for (const id of waves.flat()) {
   units[id] = { id, title: t.title, area: t.area, status: 'pending', tiers: [], attempts: 0, rounds: [], failures: [], commit: null, reason: null, question: null, patch: null }
 }
 const agents = { total: 0, byRole: {}, byModel: {} }
+// The native agents the script stopped waiting for at their cap: { role, label, phase, seconds }.
+const abandoned = []
 // The budget counts model agents only (issue 013): an ops command the mod answers spends no
 // model, and in the run that opened the issue 97 of 144 agents were ops. Ops calls stay in
 // agents.total and agents.byRole, reported separately, but never spend the budget.
@@ -196,10 +204,8 @@ const modelAgentsSpent = () => agents.total - (agents.byRole.ops || 0)
 const rulings = {}
 // Merges and closes run one at a time, in the order they are asked for.
 let queue = Promise.resolve()
-// The lane calls by outcome, and the calls whose wait for a place on a full harness ran out (overflow).
-const laneCounts = lanes ? { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 0 } : null
-// The lane calls in flight, by harness.
-const lanesInFlight = new Map()
+// The lane calls by outcome.
+const laneCounts = lanes ? { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, unavailable: 0 } : null
 // The picks run one at a time, in the order they are asked for (see decide).
 let picks = Promise.resolve()
 // The `took` logs, which no call waits for; the run waits for all of them before it returns.
@@ -216,18 +222,64 @@ const message = (err) => (err && err.message ? err.message : String(err))
 // Why each rejected call failed, by label, for the reasons a result reports.
 const failedBecause = new Map()
 
-// One agent call. A rejection counts as a failed agent, like a null result.
+// One agent call. A rejection counts as a failed agent, like a null result. A supervisor or a final reviewer that stays
+// silent past its cap (NATIVE_CAP_SECONDS) is abandoned: the call resolves to null, as a failed agent does, with the
+// reason in failedBecause.
 async function call(role, model, effort, prompt, { phase, label, schema }) {
   agents.total++
   agents.byRole[role] = (agents.byRole[role] || 0) + 1
   agents.byModel[model] = (agents.byModel[model] || 0) + 1
-  try {
-    return await agent(prompt, { agentType: `aether:${role}`, model, effort, phase, label, schema })
-  } catch (err) {
-    log(`${label}: the agent failed: ${message(err)}`)
-    failedBecause.set(label, message(err))
-    return null
+  const running = (async () => {
+    try {
+      return await agent(prompt, { agentType: `aether:${role}`, model, effort, phase, label, schema })
+    } catch (err) {
+      log(`${label}: the agent failed: ${message(err)}`)
+      failedBecause.set(label, message(err))
+      return null
+    }
+  })()
+  const seconds = NATIVE_CAP_SECONDS[role]
+  if (!seconds) return running
+  const clock = { over: false }
+  const late = capClock({ label, phase, seconds, clock }).then((reached) => (reached ? ABANDONED : new Promise(() => {})))
+  const first = await Promise.race([running, late])
+  clock.over = true
+  if (first !== ABANDONED) return first
+  const reason = `abandoned after ${seconds / 60} min without an answer`
+  abandoned.push({ role, label, phase, seconds })
+  failedBecause.set(label, reason)
+  log(`${label}: ${reason}; the run goes on without it (a workflow cannot stop an agent, so it may still be running)`)
+  return null
+}
+
+// The script's clock for one agent: `aether-lane pause` ticks that add up to `seconds`. Resolves to true when they all
+// ran and the agent was still silent, and to false when the agent answered first (clock.over) or the clock itself could
+// not run, which abandons nothing.
+async function capClock({ label, phase, seconds, clock }) {
+  const steps = Math.ceil(seconds / CAP_TICK_SECONDS)
+  for (let k = 1; k <= steps && !clock.over; k++) {
+    const step = Math.min(CAP_TICK_SECONDS, seconds - (k - 1) * CAP_TICK_SECONDS)
+    let paused = null
+    try {
+      const reply = await agent(opsPrompt(`aether-lane pause --seconds ${step}`, { long: true }), {
+        agentType: 'aether:ops',
+        model: 'haiku',
+        effort: 'low',
+        phase,
+        label: `${label}: deadline ${k}/${steps}`,
+        schema: OPS_SCHEMA,
+      })
+      const lines = reply && reply.exitCode === 0 ? String(reply.stdout || '').trim().split('\n') : []
+      paused = JSON.parse(lines[lines.length - 1]).paused
+    } catch {
+      paused = null
+    }
+    if (paused !== step) {
+      if (!clock.over) log(`${label}: the time cap cannot be kept: the pause did not run`)
+      return false
+    }
   }
+  return !clock.over
 }
 
 // The ops agent's message. `long` asks for the Bash timeout an aether-lane command needs; a
@@ -298,12 +350,6 @@ function serialized(task) {
 }
 
 // --- lanes -----------------------------------------------------------------------------------
-
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key)
-// A harness's cap on calls in flight. aether-lane pick only offers the run's harnesses, which all have one;
-// a pair on any other harness counts against a cap of one.
-const capOf = (harness) => (hasOwn(lanes.maxParallelByHarness, harness) ? lanes.maxParallelByHarness[harness] : 1)
-const inFlightOf = (harness) => lanesInFlight.get(harness) || 0
 
 // The digest and the canonical JSON of lib/lanes.js, written out because a workflow has no modules.
 // FNV-1a, 32-bit, over UTF-16 code units, then the length.
@@ -385,14 +431,13 @@ function took(id, by, cause, { phase, label }) {
   tookLogs.push(logged)
 }
 const tookByPair = (id, pair, where) => took(id, `${pair.harness}:${pair.model}`, 'chosen', where)
-// A call that runs native: `no-candidate` when its first pick gave no pair, `wait-limit` when the wait for a place
-// ran out, `failed` when a pair did not start or failed it.
+// A call that runs native: `no-candidate` when its first pick gave no pair, `failed` when a pair did not start
+// or failed it.
 const tookNative = (id, routed, where) => took(id, 'native', routed.outcome ? 'failed' : routed.cause, where)
 
-// One call through superdelegation (R14 to R16). It asks for a decision; with a pair, it waits for a place on
-// the pair's harness, up to cupo.polls rounds of `aether-lane pause`, looking before each round, and runs on it
-// (see laneCall). A start that is unavailable, and a call that began and then failed, ask again without that
-// pair, until no pair is left or MAX_PAIR_TRIES pairs have begun a call. Resolves to
+// One call through superdelegation (R14 to R16). It asks for a decision; with a pair, it runs on it at once
+// (see laneCall), whatever else runs on the same harness. A start that is unavailable, and a call that began
+// and then failed, ask again without that pair, until no pair is left or MAX_PAIR_TRIES pairs have begun a call. Resolves to
 // { decision, pair, outcome, cause, failures }: the last decision; the pair that ran and its outcome, or null
 // for a call that runs native, then on decision.native, with the cause `took` gives it; and the infra
 // failures of this call in order, each { pair, model, reason }. `build(pair, failures)` gives the call's
@@ -404,21 +449,7 @@ async function external({ role, model, effort, id, exclude = [], author = null, 
   let cause = 'no-candidate'
   while (decision.picked) {
     const pair = decision.picked
-    let outcome = null
-    for (let round = 0; ; round++) {
-      // The place is taken in the same step that finds it free: laneCall counts itself in flight before any await.
-      if (inFlightOf(pair.harness) < capOf(pair.harness)) {
-        outcome = await laneCall({ role, id, pair, phase, ...build(pair, failures) })
-        break
-      }
-      if (round >= lanes.cupo.polls) break
-      await ops(`aether-lane pause --seconds ${lanes.cupo.pollSeconds}`, { phase, label: `${label}: ${pair.harness} is full, wait ${round + 1}`, long: true })
-    }
-    if (outcome === null) {
-      laneCounts.overflow++
-      log(`${label}: ${pair.harness} stayed full for ${lanes.cupo.polls} waits, so the call runs native`)
-      return { decision, pair: null, outcome: null, cause: 'wait-limit', failures }
-    }
+    const outcome = await laneCall({ role, id, pair, phase, ...build(pair, failures) })
     if (outcome.kind === 'infra') failures.push({ pair, model: outcome.model, reason: outcome.reason })
     if (outcome.kind !== 'unavailable' && outcome.kind !== 'infra') return { decision, pair, outcome, cause: 'chosen', failures }
     excluded.push(pair.id)
@@ -430,80 +461,74 @@ async function external({ role, model, effort, id, exclude = [], author = null, 
 }
 
 // One call on a pair (lanes spec §6.1): start it with its prompt as the payload, wait for its result,
-// check the result's digest, and stop the call whenever the script gives up on it. It counts as in flight
-// on its harness from before its first await until it settles, so external() calls it right after it finds room.
+// check the result's digest, and stop the call whenever the script gives up on it.
 // Resolves to { kind: 'ok', result, lane }, { kind: 'violation', files, model },
 // { kind: 'blocked', detail }, { kind: 'unavailable', reason } when it did not start, or
 // { kind: 'infra', model, reason } for an infrastructure failure, which the next pair, or then the native agent, takes over.
 async function laneCall({ role, id, task, pair, prompt, phase, base }) {
   const harness = pair.harness
-  lanesInFlight.set(harness, inFlightOf(harness) + 1)
-  try {
-    const laneOps = (command, step, payload = null) => ops(`aether-lane ${command}`, { phase, label: `${base}: ${step}`, payload, long: true })
-    const named = (value) => (typeof value === 'string' && value !== '' ? value : null)
-    let started = null
-    let reply = null
-    // The model that ran: the final reply's, else the start's, else the pair's.
-    const ranModel = () => named(reply && isObject(reply.lane) && reply.lane.model) || named(started && started.model) || pair.model
-    // An infrastructure failure counts as `failed`, or as `quota` when the pair's quota ran out.
-    const infra = (reason, counter = 'failed') => {
-      laneCounts[counter]++
-      log(`${base}: ${reason}`)
-      return { kind: 'infra', model: ranModel(), reason }
-    }
-    // Return it awaited: the call stays in flight until its stop settles.
-    const giveUp = async (reason) => {
-      await laneOps(`stop ${runId} ${id}`, 'stop')
-      return infra(reason)
-    }
-    const digestMatches = (out) => !out.error && out.digest === digest(canonicalJson({ result: out.result, lane: out.lane }))
-
-    const flags = `--role ${role}${task ? ` --task ${task}` : ''} --model ${pair.model} --effort ${pair.effort} --digest ${digest(prompt)}`
-    started = await laneOps(`start ${runId} ${id} ${flags}`, 'start', { path: `${runDir}/lanes/${id}/prompt.md`, text: prompt })
-    if (!started.error && started.unavailable) {
-      laneCounts.unavailable++
-      log(`${base}: unavailable (${started.unavailable})`)
-      return { kind: 'unavailable', reason: started.unavailable }
-    }
-    if (started.error || started.started !== true) return await giveUp(`start failed: ${started.error || JSON.stringify(started)}`)
-    laneCounts.calls++
-
-    // A wait the ops agent fails or garbles only costs one more wait.
-    for (let k = 1; k <= lanes.waits[role] && !reply; k++) {
-      const out = await laneOps(`wait ${runId} ${id}`, `wait ${k}`)
-      if (!out.error && out.done === true) reply = out
-    }
-    if (!reply) return await giveUp('the wait cap ran out')
-    if (!digestMatches(reply)) {
-      const again = await laneOps(`result ${runId} ${id}`, 'result')
-      if (!again.error) reply = again
-      if (!digestMatches(reply)) return await giveUp('the result digest did not match')
-    }
-
-    switch (reply.status) {
-      case 'ok':
-        if (!isObject(reply.result) || !isObject(reply.lane)) break
-        laneCounts.ok++
-        // The window shows this call as its Haiku ops agent with 0 tokens (issue 032): the
-        // progress line names the harness and model that ran, and what they spent.
-        log(`${base}: ran on ${harness} ${reply.lane.model || pair.model} · ${isObject(reply.lane.usage) && typeof reply.lane.usage.total === 'number' ? reply.lane.usage.total : '?'} tok`)
-        return { kind: 'ok', result: reply.result, lane: reply.lane }
-      case 'quota':
-        return infra('its quota ran out', 'quota')
-      case 'failed':
-        return infra(String(reply.detail || 'failed'))
-      case 'violation':
-        laneCounts.violation++
-        return { kind: 'violation', files: Array.isArray(reply.files) ? reply.files : [], model: ranModel() }
-      case 'blocked':
-        laneCounts.blocked++
-        return { kind: 'blocked', detail: String(reply.detail || '') }
-    }
-    // A status the runner never writes, or ok without a result: the next pair, or then the native agent, takes the call.
-    return infra(`an unexpected result with status ${String(reply.status).slice(0, 40)}`)
-  } finally {
-    lanesInFlight.set(harness, inFlightOf(harness) - 1)
+  const laneOps = (command, step, payload = null) => ops(`aether-lane ${command}`, { phase, label: `${base}: ${step}`, payload, long: true })
+  const named = (value) => (typeof value === 'string' && value !== '' ? value : null)
+  let started = null
+  let reply = null
+  // The model that ran: the final reply's, else the start's, else the pair's.
+  const ranModel = () => named(reply && isObject(reply.lane) && reply.lane.model) || named(started && started.model) || pair.model
+  // An infrastructure failure counts as `failed`, or as `quota` when the pair's quota ran out.
+  const infra = (reason, counter = 'failed') => {
+    laneCounts[counter]++
+    log(`${base}: ${reason}`)
+    return { kind: 'infra', model: ranModel(), reason }
   }
+  // Return it awaited: the call settles after its stop does.
+  const giveUp = async (reason) => {
+    await laneOps(`stop ${runId} ${id}`, 'stop')
+    return infra(reason)
+  }
+  const digestMatches = (out) => !out.error && out.digest === digest(canonicalJson({ result: out.result, lane: out.lane }))
+
+  const flags = `--role ${role}${task ? ` --task ${task}` : ''} --model ${pair.model} --effort ${pair.effort} --digest ${digest(prompt)}`
+  started = await laneOps(`start ${runId} ${id} ${flags}`, 'start', { path: `${runDir}/lanes/${id}/prompt.md`, text: prompt })
+  if (!started.error && started.unavailable) {
+    laneCounts.unavailable++
+    log(`${base}: unavailable (${started.unavailable})`)
+    return { kind: 'unavailable', reason: started.unavailable }
+  }
+  if (started.error || started.started !== true) return await giveUp(`start failed: ${started.error || JSON.stringify(started)}`)
+  laneCounts.calls++
+
+  // A wait the ops agent fails or garbles only costs one more wait.
+  for (let k = 1; k <= lanes.waits[role] && !reply; k++) {
+    const out = await laneOps(`wait ${runId} ${id}`, `wait ${k}`)
+    if (!out.error && out.done === true) reply = out
+  }
+  if (!reply) return await giveUp('the wait cap ran out')
+  if (!digestMatches(reply)) {
+    const again = await laneOps(`result ${runId} ${id}`, 'result')
+    if (!again.error) reply = again
+    if (!digestMatches(reply)) return await giveUp('the result digest did not match')
+  }
+
+  switch (reply.status) {
+    case 'ok':
+      if (!isObject(reply.result) || !isObject(reply.lane)) break
+      laneCounts.ok++
+      // The window shows this call as its Haiku ops agent with 0 tokens (issue 032): the
+      // progress line names the harness and model that ran, and what they spent.
+      log(`${base}: ran on ${harness} ${reply.lane.model || pair.model} · ${isObject(reply.lane.usage) && typeof reply.lane.usage.total === 'number' ? reply.lane.usage.total : '?'} tok`)
+      return { kind: 'ok', result: reply.result, lane: reply.lane }
+    case 'quota':
+      return infra('its quota ran out', 'quota')
+    case 'failed':
+      return infra(String(reply.detail || 'failed'))
+    case 'violation':
+      laneCounts.violation++
+      return { kind: 'violation', files: Array.isArray(reply.files) ? reply.files : [], model: ranModel() }
+    case 'blocked':
+      laneCounts.blocked++
+      return { kind: 'blocked', detail: String(reply.detail || '') }
+  }
+  // A status the runner never writes, or ok without a result: the next pair, or then the native agent, takes the call.
+  return infra(`an unexpected result with status ${String(reply.status).slice(0, 40)}`)
 }
 
 // --- prompts ---------------------------------------------------------------------------------
@@ -818,13 +843,16 @@ async function supervise(unit, task, rung, report, used, model, author) {
       return { blocked: outcome.detail }
     }
   }
+  const label = `${unit.id}: supervise attempt ${n} on ${native.model} ${native.effort}`
   const review = await call('supervisor', native.model, native.effort, supervisorPrompt(unit, task, rung, report, used, model), {
     phase: 'Supervise',
-    label: `${unit.id}: supervise attempt ${n} on ${native.model} ${native.effort}`,
+    label,
     schema: SUPERVISOR_SCHEMA,
   })
   if (routed) tookNative(id, routed, where)
-  return { review, provider: 'native', effort: native.effort }
+  // An abandoned supervisor (issue 16) says so in the round's ruling; any other missing answer is a failed agent.
+  const gone = abandoned.some((entry) => entry.label === label)
+  return { review, provider: 'native', effort: native.effort, ...(gone ? { abandoned: failedBecause.get(label) } : {}) }
 }
 
 // The report of an attempt that ended without one, rebuilt from its worktree: `aether-wt salvage` commits what the
@@ -940,7 +968,7 @@ async function work(unit, task) {
     round.reviewEffort = checked.effort
     const { review } = checked
     if (!review) {
-      round.ruling = 'The supervisor agent failed.'
+      round.ruling = checked.abandoned ? `The supervisor agent was ${checked.abandoned}.` : 'The supervisor agent failed.'
       continue
     }
     round.findings = findingsOf(review.findings)
@@ -1245,4 +1273,4 @@ try {
   if (cleanup.error) cleanup = await ops(command, { phase: 'Cleanup', label: 'cleanup again' })
 }
 
-return { runId, units: Object.values(units), finalReview, cleanup, agents, lanes: laneCounts, error }
+return { runId, units: Object.values(units), finalReview, cleanup, agents, abandoned, lanes: laneCounts, error }

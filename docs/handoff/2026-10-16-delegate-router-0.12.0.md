@@ -23,9 +23,9 @@ Cost at list prices: US$ 28.19 for the swarm run's window (which includes the Le
 
 ## 2. Found in this session
 
-- [Issue 021](../issues/021-agy-refuses-with-individual-quota-reached-while-usage-shows-balance.md): agy refuses with «Individual quota reached» while `/usage` shows balance; the router recognizes it, the swarm and the seats do not.
-- [Issue 022](../issues/022-judge-and-final-reviewer-stop-at-30-turns-on-a-large-document-or-diff.md): the Judge and the final reviewer stop at 30 turns on a large plan or diff. Reviewers in slices with a turn budget (US$ 1.2 to 1.6 each) fixed it for this run, by patching the session's copy of the workflow script; the plugin's scripts are unchanged.
-- [Issue 023](../issues/023-examiner-tests-wrong-in-three-places-and-one-could-never-fail.md): three of the Examiner's tests were wrong, and one could never fail (a nested `node --test` inherits `NODE_TEST_CONTEXT` and exits 0).
+- [Issue 021](https://github.com/DarkArty07/aether-plugin/issues/32): agy refuses with «Individual quota reached» while `/usage` shows balance; the router recognizes it, the swarm and the seats do not.
+- [Issue 022](https://github.com/DarkArty07/aether-plugin/issues/33): the Judge and the final reviewer stop at 30 turns on a large plan or diff. Reviewers in slices with a turn budget (US$ 1.2 to 1.6 each) fixed it for this run, by patching the session's copy of the workflow script; the plugin's scripts are unchanged.
+- [Issue 023](https://github.com/DarkArty07/aether-plugin/issues/34): three of the Examiner's tests were wrong, and one could never fail (a nested `node --test` inherits `NODE_TEST_CONTEXT` and exits 0).
 - **The replay and the evidence counted each request about 2.2 times** (once per transcript line), so the dollar figures of the evidence are about 1.8 times too high; measured on 269 real transcripts, US$ 974.82 counted so against US$ 550.24 counted once. The ratios probably hold. The evidence README and the guide carry the correction.
 - **The plan left gaps the swarm could not close alone:** the 22-minute limit, a `spawn` journal entry that nothing wrote (so the report could not price a delegation), a grok quota reading that the background renewal never saved, and a test of `session-start` that the router file broke.
 - **Slices beat one reviewer:** the five-slice final review gave 36 findings where the single reviewer ended without a verdict. The Opus reviewers were the largest cost after the Lead.

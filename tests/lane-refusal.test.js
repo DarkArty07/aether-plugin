@@ -25,6 +25,7 @@ const seats = require('../plugins/aether/lib/seats.js')
 const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
 const { quotaRefusal, refusalIn } = require('../plugins/aether/lib/quota-refusal.js')
 const { readAllMarks } = require('../plugins/aether/lib/router-marks.js')
+const { formatReport } = require('../plugins/aether/lib/lane-quota.js')
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'agy-usage-2026-10-14.json')
 const IMPLEMENT = 'task-1-1-implement'
@@ -117,6 +118,22 @@ test('a refusal marks the key of the refused model for 60 minutes, though it sta
   assert.deepEqual([short.until - now, short.statedResetMs], [15 * MIN, 30 * 24 * HOUR])
   const plain = marks.markDry(dataDir, { harness: 'agy', group: 'claude', reserve: RESERVE, now, refusal: { resetMs: null } })
   assert.deepEqual([plain.until - now, plain.statedResetMs], [marks.DEFAULT_MARK_MINUTES * MIN, null])
+  fs.rmSync(dataDir, { recursive: true, force: true })
+})
+
+test('issue 063: a refusal whose own reading shows a window used up holds the group until that window resets, and the stated reset is still not read', () => {
+  const dataDir = tmp()
+  const now = Date.now()
+  const used = { windows: { '5h': { remaining: 0, resetsAt: new Date(now + 3 * HOUR).toISOString() }, weekly: { remaining: 0.83, resetsAt: new Date(now + 100 * HOUR).toISOString() } } }
+  const dry = marks.markDry(dataDir, { harness: 'agy', group: 'argon', reading: used, reserve: RESERVE, now, refusal: quotaRefusal(REFUSAL) })
+  assert.deepEqual([dry.confirmed, dry.reason, dry.until, dry.resetsAt, dry.statedResetMs], [true, 'quota refusal', now + 3 * HOUR, new Date(now + 3 * HOUR).toISOString(), RESET_MS])
+  assert.notEqual(marks.liveMark(dataDir, 'agy', 'argon', now + 2 * HOUR), null, 'still held two hours on')
+  assert.equal(marks.liveMark(dataDir, 'agy', 'argon', now + 3 * HOUR + MIN), null, 'and free once the window has reset')
+  const shown = formatReport({ time: new Date(now).toISOString(), reserve: RESERVE, harnesses: { agy: { command: 'agy', path: '/bin/agy', installed: true, version: '1', groups: { argon: { label: 'Gemini Models', unknown: false, usable: false, priority: null, mark: dry, windows: {}, source: null } } } } })
+  assert.match(shown, /argon, "Gemini Models": not usable, dry mark until .*, its reset, after agy refused a call for its individual quota\n/)
+  // A refusal whose reading shows balance keeps the 60 minutes of A60, whatever it states.
+  const balance = marks.markDry(dataDir, { harness: 'agy', group: 'flash', reading: healthy(now), reserve: RESERVE, now, refusal: quotaRefusal(REFUSAL) })
+  assert.deepEqual([balance.confirmed, balance.until - now, balance.statedResetMs], [false, 60 * MIN, RESET_MS])
   fs.rmSync(dataDir, { recursive: true, force: true })
 })
 
@@ -251,7 +268,7 @@ test('issue 038: with the shipped table, a refusal of Argon leaves Flash usable 
 })
 
 test('a pair whose key a mark holds is dry for a seat, and a pair of an unmarked key is not', () => {
-  const config = { harnesses: { agy: { command: 'agy', maxParallel: 4, waitSeconds: 540, timeouts: { judge: 1200 }, groups: {}, models: {} } } }
+  const config = { harnesses: { agy: { command: 'agy', waitSeconds: 540, timeouts: { judge: 1200 }, groups: {}, models: {} } } }
   const { pairs } = require('../plugins/aether/lib/pairs.js').loadPairs()
   const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.now() + days * 24 * HOUR).toISOString() })
   const held = { usable: false, unknown: false, mark: { reason: 'quota refusal' }, resetsAt: new Date(Date.now() + 24 * HOUR).toISOString() }

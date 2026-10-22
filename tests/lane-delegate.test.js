@@ -12,7 +12,6 @@ const calls = require('../plugins/aether/lib/lane-calls.js')
 const delegate = require('../plugins/aether/lib/lane-delegate.js')
 
 const LANE_DELEGATE_JS = path.join(PLUGIN, 'lib', 'lane-delegate.js')
-const FAKE_GROK = path.join(__dirname, 'fixtures', 'fake-grok.js')
 const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote src/new.js.', head: '', tests: 'ok', concerns: '', question: '' })
 const READY = JSON.stringify({ verdict: 'ready', findings: [], declined: [], summary: 'The diff does what the brief asks.' })
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
@@ -257,124 +256,6 @@ test('no candidate: dry quotas and an unreachable reference log their delegate e
     assert.equal(repo.git('status', '--porcelain'), '')
     assert.equal(repo.git('rev-parse', 'HEAD'), headBefore)
   }
-})
-
-test('the cupo slots and the live-calls count share one capacity (E7, R13)', (t) => {
-  const dataDir = tempDir(t, 'aether-data-')
-  const alive = () => true
-  const first = delegate.acquireSlot(dataDir, 'agy', 2, { isAlive: alive })
-  const second = delegate.acquireSlot(dataDir, 'agy', 2, { isAlive: alive })
-  assert.ok(first && second && first.slot !== second.slot)
-  assert.equal(delegate.acquireSlot(dataDir, 'agy', 2, { isAlive: alive }), null)
-  delegate.releaseSlot(dataDir, 'agy', first.slot)
-  assert.ok(delegate.acquireSlot(dataDir, 'agy', 2, { isAlive: alive }))
-  assert.ok(delegate.acquireSlot(dataDir, 'agy', 2, { isAlive: () => false }), 'a slot whose pid is dead is reclaimed')
-  const other = tempDir(t, 'aether-data-')
-  assert.ok(delegate.acquireSlot(other, 'agy', 2, { isAlive: alive, liveExternal: 1 }))
-  assert.equal(delegate.acquireSlot(other, 'agy', 2, { isAlive: alive, liveExternal: 1 }), null)
-  assert.equal(delegate.acquireSlot(other, 'agy', 2, { isAlive: alive, liveExternal: 2 }), null)
-
-  const mainRoot = tempDir(t, 'aether-main-')
-  const fabricate = (runId, call, { harness = 'agy', done = false } = {}) => {
-    const dir = path.join(mainRoot, '.aether', 'runs', runId, 'lanes', call)
-    fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, 'call.json'), JSON.stringify(harness === null ? {} : { harness }))
-    fs.writeFileSync(path.join(dir, 'pid'), `${process.pid}\n`)
-    if (done) fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ done: true }))
-  }
-  fabricate('20261021-000000-cccc', 'task-1-1-implement')
-  fabricate('20261021-000000-dddd', 'task-1-1-implement', { done: true })
-  fabricate('20261021-000000-eeee', 'task-1-1-implement', { harness: 'grok' })
-  fabricate('20261021-000000-ffff', 'task-1-1-implement', { harness: null })
-  assert.equal(delegate.liveLaneCalls(mainRoot, 'agy', { isAlive: alive }), 2, 'the live agy call and the one with no harness field, which ran on agy')
-  assert.equal(delegate.liveLaneCalls(mainRoot, 'agy', { excludeRun: '20261021-000000-cccc', isAlive: alive }), 1)
-  assert.equal(delegate.liveLaneCalls(mainRoot, 'agy', { isAlive: () => false }), 0)
-  assert.equal(delegate.liveLaneCalls(path.join(mainRoot, 'nowhere'), 'agy', { isAlive: alive }), 0)
-})
-
-test('a live call already held by a standing slot is not counted twice (E7, R13)', (t) => {
-  const dataDir = tempDir(t, 'aether-data-')
-  const mainRoot = tempDir(t, 'aether-main-')
-  const alive = () => true
-  const held = delegate.acquireSlot(dataDir, 'agy', 2, { isAlive: alive, runId: '20261021-000000-aaaa' })
-  assert.ok(held)
-  const dir = path.join(mainRoot, '.aether', 'runs', '20261021-000000-aaaa', 'lanes', 'task-1-1-implement')
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'call.json'), JSON.stringify({ harness: 'agy' }))
-  fs.writeFileSync(path.join(dir, 'pid'), `${process.pid}\n`)
-  const live = delegate.liveLaneCalls(mainRoot, 'agy', { dataDir, excludeRun: '20261021-000000-bbbb', isAlive: alive })
-  assert.equal(live, 0, 'the slot already counts that call')
-  assert.ok(delegate.acquireSlot(dataDir, 'agy', 2, { isAlive: alive, liveExternal: live, runId: '20261021-000000-bbbb' }), 'the second delegate takes the second slot')
-  assert.equal(delegate.acquireSlot(dataDir, 'agy', 2, { isAlive: alive }), null)
-  delegate.releaseSlot(dataDir, 'agy', held.slot)
-  assert.equal(delegate.liveLaneCalls(mainRoot, 'agy', { dataDir, excludeRun: '20261021-000000-bbbb', isAlive: alive }), 1, 'with the slot gone the call counts again')
-})
-
-// An environment with agy and grok enabled against their fakes, one place each, grok's quota read
-// from a billing line five minutes old so no refresh runs.
-function twoHarnessEnv(t) {
-  fs.chmodSync(FAKE_GROK, 0o755)
-  const env = fx.laneEnv(t, {
-    command: roleFake(t),
-    mutate: (config) => {
-      config.harnesses.grok.command = FAKE_GROK
-      config.harnesses.agy.maxParallel = 1
-      config.harnesses.grok.maxParallel = 1
-    },
-  })
-  const logFile = path.join(env.HOME, '.grok', 'logs', 'unified.jsonl')
-  fs.mkdirSync(path.dirname(logFile), { recursive: true })
-  const entry = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'grok-billing.jsonl'), 'utf8').trim().split('\n')[1])
-  entry.ts = new Date(Date.now() - 5 * 60000).toISOString()
-  entry.ctx.config.currentPeriod.end = new Date(Date.now() + 50 * 3600000).toISOString()
-  entry.ctx.config.creditUsagePercent = 30
-  fs.writeFileSync(logFile, `${JSON.stringify(entry)}\n`)
-  return { ...env, AETHER_LANE_HARNESSES: 'agy,grok', AETHER_FAKE_GROK_LOG: path.join(path.dirname(env.HOME), 'grok.log') }
-}
-
-function fabricateLiveCall(repo, runId, harness) {
-  const dir = path.join(repo.dir, '.aether', 'runs', runId, 'lanes', 'task-1-1-implement')
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'call.json'), JSON.stringify({ harness }))
-  fs.writeFileSync(path.join(dir, 'pid'), `${process.pid}\n`)
-}
-
-test('a full cupo on one harness sends the charge to the other harness, by slot and by live call (E7, R13)', (t) => {
-  const bySlot = makeRepo(t)
-  const slotEnv = twoHarnessEnv(t)
-  const briefA = writeBrief(bySlot, briefLines())
-  const held = delegate.acquireSlot(slotEnv.AETHER_DATA_DIR, 'agy', 1, {})
-  assert.ok(held)
-  const a = runDelegate(bySlot, slotEnv, { brief: briefA })
-  assert.equal(a.json?.status, 'done', a.stdout + a.stderr)
-  assert.equal(a.json.pair.harness, 'grok')
-  delegate.releaseSlot(slotEnv.AETHER_DATA_DIR, 'agy', held.slot)
-
-  const byLive = makeRepo(t)
-  const liveEnv = twoHarnessEnv(t)
-  const briefB = writeBrief(byLive, briefLines())
-  fabricateLiveCall(byLive, '20261021-000000-aaaa', 'agy')
-  const b = runDelegate(byLive, liveEnv, { brief: briefB })
-  assert.equal(b.json?.status, 'done', b.stdout + b.stderr)
-  assert.equal(b.json.pair.harness, 'grok', 'a live lane call of another run fills the harness just as a slot does')
-})
-
-test('every enabled harness full ends as no-candidate with the cupo cause, logged (E7, R13)', (t) => {
-  const repo = makeRepo(t)
-  const env = twoHarnessEnv(t)
-  const brief = writeBrief(repo, briefLines())
-  const held = delegate.acquireSlot(env.AETHER_DATA_DIR, 'agy', 1, {})
-  assert.ok(held)
-  fabricateLiveCall(repo, '20261021-000000-aaaa', 'grok')
-  const r = runDelegate(repo, env, { brief })
-  delegate.releaseSlot(env.AETHER_DATA_DIR, 'agy', held.slot)
-  assert.equal(r.status, 0, r.stdout + r.stderr)
-  assert.equal(r.json.status, 'no-candidate')
-  assert.equal(r.json.cause, 'cupo')
-  assert.ok(r.json.tried.some((entry) => entry.pair === null && entry.harness === 'agy' && entry.cause === 'cupo'))
-  const entry = lanes.readLog(env.AETHER_DATA_DIR).find((item) => item.kind === 'delegate')
-  assert.deepEqual([entry.id, entry.cause], [r.json.id, 'cupo'])
-  assert.equal(fx.agyTurns(env).length, 0)
 })
 
 test('reviewerReference gives the three derived references, and the reviewer choice asks for them (E5, R1)', (t) => {

@@ -47,6 +47,12 @@ const MAX_REVIEWS = 3
 // A seat round is waited for in steps that each fit in one ops call (R2).
 const MAX_WAITS = 12
 const WAIT_SECONDS = 540
+// The time a seat round may take, by the document it works on (issue 62): a round that reaches it is stopped and counts
+// as failed, so the next pair is asked. 10 minutes for a spec, 25 for a plan with its tasks (the plan phase of a
+// seven-task feature took 84 minutes before), 10 for the short design's document. The exam has no cap here: its
+// rounds are bounded by MAX_WAITS and by the lane table's timeout. A workflow script has no clock, so the time is
+// the `elapsedMs` that seat-wait reports, or, from a bin that reports none, the sum of the waits.
+const SEAT_CAP_SECONDS = { spec: 600, plan: 1500, design: 600 }
 // A seat round gets at most three external tries: after one that fails, the next pair is asked for, and the native
 // agent takes the round after the third or when no pair is left.
 const MAX_TRIES = 3
@@ -407,11 +413,12 @@ function handedBackNote(reply) {
   }
 }
 
-// Starts a seat round and waits for it, without the pairs in `exclude`: { id, reply } with what seat-wait printed once it
-// finished (exit 0, 1, 3 or 4), or { id, note } when it did not finish (then it is stopped), or { id: null, note,
-// startFailed } when it did not start. `id` is the round's, once it started. seatRound decides which of these ask for
-// the next pair.
-async function awaitSeat({ seat, base, flags, exclude, text, phase }) {
+// Starts a seat round and waits for it, without the pairs in `exclude`: { id, reply, durationMs } with what seat-wait
+// printed once it finished (exit 0, 1, 3 or 4) and the time it took when the bin says, or { id, note } when it did not
+// finish (then it is stopped), or { id: null, note, startFailed } when it did not start. A round that reached the cap of
+// its document (SEAT_CAP_SECONDS) comes back as { id, note, capped: true, pair, durationMs }, with the pair it ran on
+// when seat-stop names it. `id` is the round's, once it started. seatRound decides which of these ask for the next pair.
+async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
   const excluding = exclude.length > 0 ? ` --exclude ${exclude.join(',')}` : ''
   const started = await ops(`aether-lane seat-start ${seat} ${flags}${excluding} --digest ${digest(text)}`, {
     phase,
@@ -422,15 +429,25 @@ async function awaitSeat({ seat, base, flags, exclude, text, phase }) {
     return { id: null, note: `the seat round did not start: ${started.error || JSON.stringify(started).slice(0, 300)}`, startFailed: true }
   }
   const { id } = started
+  const cap = hasOwn(SEAT_CAP_SECONDS, doc) ? SEAT_CAP_SECONDS[doc] : null
+  let elapsedMs = 0
   // A wait the ops agent fails or garbles only costs one more wait. The round's own exit (1, 3 or 4) is in the JSON the
   // wait prints, so the process exit counts for nothing here: an ops agent that reports the round's exit as the command's
   // would turn every round that did not answer into twelve waits and a native agent (seen on a real run).
   for (let k = 1; k <= MAX_WAITS; k++) {
-    const out = await ops(`aether-lane seat-wait ${id} --max ${WAIT_SECONDS}`, { phase, label: `${base}: wait ${k}`, long: true, anyExit: true })
-    if (!out.error && out.done === true) return { id, reply: out }
+    if (cap !== null && elapsedMs >= cap * 1000) break
+    // The last wait of a capped round is as long as what is left of the cap.
+    const max = cap === null ? WAIT_SECONDS : Math.max(1, Math.min(WAIT_SECONDS, Math.ceil(cap - elapsedMs / 1000)))
+    const out = await ops(`aether-lane seat-wait ${id} --max ${max}`, { phase, label: `${base}: wait ${k}`, long: true, anyExit: true })
+    if (!out.error && out.done === true) return { id, reply: out, durationMs: Number.isFinite(out.durationMs) ? out.durationMs : null }
+    if (!out.error) elapsedMs = Number.isFinite(out.elapsedMs) ? Math.max(elapsedMs, out.elapsedMs) : elapsedMs + max * 1000
   }
   const stopped = await ops(`aether-lane seat-stop ${id}`, { phase, label: `${base}: stop` })
   if (stopped.error) log(`${base}: the stop failed: ${stopped.error}`)
+  if (cap !== null && elapsedMs >= cap * 1000) {
+    const pair = !stopped.error && matches(PAIR_ID, stopped.pair) ? stopped.pair : null
+    return { id, note: `the seat round reached its time cap of ${cap / 60} min and was stopped`, capped: true, pair, durationMs: elapsedMs }
+  }
   return { id, note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped` }
 }
 
@@ -461,10 +478,18 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   const flags = seat === 'writer' ? `--session ${session} --feature ${feature} --doc ${writes} ${options}` : `--session ${session} --author ${author} --feature ${feature} ${options}`
   const excluded = []
   const tries = []
+  // The time each external try took, in order, where the bin or the cap says: `durations`, and `durationMs` as their sum,
+  // are in the round's record (issue 62). A round that only the native agent took has none.
+  const durations = []
   let value = {}
   for (let n = 1; ; n++) {
-    const waited = await awaitSeat({ seat, base: n === 1 ? base : `${base} (try ${n})`, flags, exclude: excluded, text, phase })
+    const waited = await awaitSeat({ seat, doc, base: n === 1 ? base : `${base} (try ${n})`, flags, exclude: excluded, text, phase })
     if (waited.id !== null) record.id = waited.id
+    if (Number.isFinite(waited.durationMs)) {
+      durations.push(waited.durationMs)
+      record.durations = durations
+      record.durationMs = durations.reduce((sum, ms) => sum + ms, 0)
+    }
     value = waited.reply && isObject(waited.reply.value) ? waited.reply.value : {}
     if (waited.reply) {
       const { reply } = waited
@@ -483,18 +508,19 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
     }
     // A try that failed (exit 4), broke (exit 1) or did not start asks for the next pair, carrying the same exclusion
     // when the reply names no pair to add; any other end leaves the round to the native agent at once.
-    const pair = waited.reply ? failedPair(waited.reply, value) : null
-    const retryable = waited.startFailed === true || (waited.reply && (waited.reply.exitCode === 1 || waited.reply.exitCode === 4))
+    // A round that reached its cap counts as failed too, with the pair seat-stop names.
+    const pair = waited.capped === true ? waited.pair : waited.reply ? failedPair(waited.reply, value) : null
+    const retryable = waited.startFailed === true || waited.capped === true || (waited.reply && (waited.reply.exitCode === 1 || waited.reply.exitCode === 4))
     if (!retryable) {
       // Once the next pair was asked, the try that ends the external tries is listed too; exit 3 ran nothing.
       if (tries.length > 0 && !(waited.reply && waited.reply.exitCode === 3)) {
-        tries.push({ pair, id: waited.id, reason: record.note, next: false })
+        tries.push({ pair, id: waited.id, reason: record.note, next: false, durationMs: waited.durationMs ?? null })
         record.tries = tries
       }
       break
     }
     const next = n < MAX_TRIES && (pair === null || !excluded.includes(pair))
-    tries.push({ pair, id: waited.id, reason: record.note, next })
+    tries.push({ pair, id: waited.id, reason: record.note, next, durationMs: waited.durationMs ?? null })
     if (!next) break
     if (pair !== null) excluded.push(pair)
     record.tries = tries

@@ -37,7 +37,6 @@ function codexEntry(command, group = 'codex') {
   const levels = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
   return {
     command,
-    maxParallel: 1,
     waitSeconds: 60,
     timeouts: { implementer: 60, supervisor: 60, reviewer: 60, designer: 60 },
     groups: { [group]: `${group} models` },

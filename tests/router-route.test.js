@@ -237,6 +237,29 @@ test('R23: a renewal that lands inside the wait makes the group a candidate for 
   assert.equal(journal(deps)[0].quotaWaitMs, 250)
 })
 
+test('issue 025: in command with agy the only harness and every agy group marked dry, a stale agy reading costs no wait and no renewal', async (t) => {
+  const refusal = (group) => ({ harness: 'agy', group, at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' })
+  const stale = { agy: { readAt: NOW - 11 * MIN, groups: { ...geminiKeys(1, 5), claude: weekly(0.9, 80) } }, grok: null }
+  const deps = setup(t, { settings: { harnesses: ['agy'] }, readings: stale, marks: ['argon', 'flash', 'claude'].map(refusal) })
+  const plan = await go(deps, event())
+  assert.equal(plan.external, null)
+  assert.deepEqual(plan.args, { model: 'haiku', effort: 'high' }, 'the decision ends on the Claude rung, as it would without a wait')
+  assert.equal(deps.clock.t, NOW, 'no wait for the quota limit')
+  assert.deepEqual(deps.renewed, [])
+  const [entry] = journal(deps)
+  assert.equal(entry.quotaWaitMs, 0)
+  assert.equal(entry.fallback, null, 'the decider did not fail')
+})
+
+test('issue 025: in command with grok enabled and its reading stale, the wait for grok still runs up to the limit', async (t) => {
+  const stale = { agy: { readAt: NOW - 11 * MIN, groups: { ...geminiKeys(1, 5), claude: weekly(0.9, 80) } }, grok: null }
+  const deps = setup(t, { settings: { harnesses: ['agy', 'grok'] }, readings: stale, marks: ['argon', 'flash', 'claude'].map((group) => ({ harness: 'agy', group, at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' })) })
+  await go(deps, event())
+  assert.deepEqual(deps.renewed, ['grok'], 'agy is left out, grok fits the limit and is renewed')
+  assert.equal(deps.clock.t - NOW, 3000)
+  assert.equal(journal(deps)[0].quotaWaitMs, 3000)
+})
+
 test('scenarios 16 and 20: a mark holds the group although the reading shows balance, and the record says so (R22)', async (t) => {
   const readings = { agy: { readAt: NOW - 2 * MIN, groups: { ...geminiKeys(0.98, 5), claude: weekly(0.9, 80) } }, grok: GROK }
   const mark = (group) => ({ harness: 'agy', group, at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' })

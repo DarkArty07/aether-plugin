@@ -2,9 +2,9 @@
 
 // The commands that choose and account for a call under superdelegation: `pick` decides which pair takes a call
 // (lib/superdelegation.js choose, over the pairs table and the quota views of the enabled harnesses) and logs the
-// decision; `took` logs who ran the call and why; `pause` waits, so that the workflow can poll for a free place
-// without a clock of its own. `pick` starts no call: it reads the quotas, and renews and saves the one reading
-// that nobody else keeps (grok's), because each `aether-lane pick` is a process of its own.
+// decision; `took` logs who ran the call and why; `pause` waits, so that the workflow can time its agents without a clock of
+// its own. `pick` starts no call: it reads the quotas, and renews and
+// saves the one reading that nobody else keeps (grok's), because each `aether-lane pick` is a process of its own.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -23,7 +23,7 @@ const MODELS = pairs.NATIVE_MODELS
 const PAIR_ID = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(low|medium|high|xhigh|max)$/
 const FAMILY = /^[a-z][a-z0-9.-]*$/
 const BY = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
-const CAUSES = ['chosen', 'no-candidate', 'wait-limit', 'failed']
+const CAUSES = ['chosen', 'no-candidate', 'failed']
 const SECONDS = /^\d{1,3}$/
 const MAX_PAUSE_SECONDS = 120
 // The harnesses whose reading is renewed by a refresher (lane-quota.js REFRESHERS): their readings are the ones a

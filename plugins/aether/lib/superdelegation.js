@@ -9,8 +9,6 @@
 const { NATIVE_HARNESS, NATIVE_MODELS, referenceOf } = require('./pairs.js')
 
 const TOLERANCE_POINTS = 1
-// The wait for a free place on a full harness: polls of pollSeconds, up to waitSeconds in all.
-const CUPO = { waitSeconds: 600, pollSeconds: 60 }
 const ROLES = ['implementer', 'supervisor', 'reviewer']
 
 const LEGACY_NOTES = {
@@ -192,8 +190,8 @@ function listedHarnesses(config, pairs, { installed, enabled: names }) {
   })
 }
 
-// The lanes args of `aether-plan compile`: the harnesses that may take a call, each one's cap of calls in
-// flight, each role's wait rounds (the largest among those harnesses) and the cupo wait. null when none may.
+// The lanes args of `aether-plan compile`: the harnesses that may take a call and each role's wait rounds
+// (the largest among those harnesses). null when none may.
 function runArgs(config, pairs, { installed, enabled: names }) {
   if (!config) return null
   const listed = listedHarnesses(config, pairs, { installed, enabled: names })
@@ -202,9 +200,7 @@ function runArgs(config, pairs, { installed, enabled: names }) {
   return {
     superdelegation: true,
     harnesses: listed,
-    maxParallelByHarness: Object.fromEntries(listed.map((name) => [name, config.harnesses[name].maxParallel])),
     waits: Object.fromEntries(ROLES.map((role) => [role, waitOf(role)])),
-    cupo: { polls: CUPO.waitSeconds / CUPO.pollSeconds, pollSeconds: CUPO.pollSeconds },
   }
 }
 
@@ -225,7 +221,6 @@ function idleHarnesses(config, pairs, { installed, enabled: names }) {
 
 module.exports = {
   TOLERANCE_POINTS,
-  CUPO,
   enabled,
   resolveOption,
   legacyNotes,

@@ -16,7 +16,6 @@ const shipped = () => lanes.loadConfig(lanes.CONFIG_FILE)
 function codexHarness(group = 'codex') {
   return {
     command: 'codex',
-    maxParallel: 2,
     waitSeconds: 300,
     timeouts: { implementer: 3000, supervisor: 900, reviewer: 1200, designer: 1800 },
     groups: { [group]: 'Codex Models' },
@@ -74,7 +73,8 @@ test('the shipped table names each lane model with its group and roles', () => {
   assert.equal(config.reserve, 0.05)
   const agy = config.harnesses.agy
   assert.equal(agy.command, 'agy')
-  assert.equal(agy.maxParallel, 8)
+  assert.equal(Object.hasOwn(agy, 'maxParallel'), false, 'a harness has no limit on its calls in flight')
+  assert.equal(Object.hasOwn(agy, 'maxParallelMeasured'), false)
   assert.equal(agy.waitSeconds, 540)
   assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200, judge: 1200, writer: 2700, examiner: 1800 })
   assert.deepEqual(agy.groups, { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' })
@@ -102,7 +102,6 @@ test('configPath follows AETHER_LANES_CONFIG, and a missing table means no lanes
 test('loadConfig refuses a table it cannot trust, naming the file and the field', (t) => {
   const bad = [
     [(c) => (c.reserve = 2), /reserve/],
-    [(c) => (c.harnesses.agy.maxParallel = 0), /maxParallel/],
     [(c) => (c.harnesses.agy.waitSeconds = 'soon'), /waitSeconds/],
     [(c) => (c.harnesses.agy.timeouts.reviewer = -1), /timeouts/],
     [(c) => (c.harnesses.agy.models['gemini-3.8-flash'].group = 'other'), /gemini-3\.8-flash.*group/],
@@ -437,10 +436,10 @@ test('usable follows the rule of lane-order: a balance that is unknown is used u
   assert.equal(lanes.usable(window(0.05), 0.05), false)
 })
 
-test('the shipped lane table has a muse harness with two lanes at a time and the one model its CLI lists, which is in by the owner\'s decision', () => {
+test('the shipped lane table has a muse harness with the one model its CLI lists, which is in by the owner\'s decision', () => {
   const config = lanes.loadConfig(lanes.CONFIG_FILE)
   const muse = config.harnesses.muse
-  assert.deepEqual([muse.command, muse.maxParallel, muse.quotaLifeMinutes, muse.waitSeconds], ['muse', 2, 30, 540])
+  assert.deepEqual([muse.command, muse.quotaLifeMinutes, muse.waitSeconds], ['muse', 30, 540])
   assert.deepEqual(muse.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200 })
   assert.deepEqual(muse.groups, { muse: 'Muse subscription' })
   // The CLI lists one model to the owner's account (harness-models.json), and Meta gives it only on the Power and Maximum plans.

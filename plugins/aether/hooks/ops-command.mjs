@@ -48,7 +48,7 @@ const MAX = /^\d{1,3}$/
 const PAIR_IDS = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(?:low|medium|high|xhigh|max)(?:,[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(?:low|medium|high|xhigh|max))*$/
 const FAMILY = /^[a-z][a-z0-9.-]*$/
 const BY = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
-const CAUSES = ['chosen', 'no-candidate', 'wait-limit', 'failed']
+const CAUSES = ['chosen', 'no-candidate', 'failed']
 const SECONDS = /^\d{1,3}$/
 
 const is = (pattern) => (token) => pattern.test(token)

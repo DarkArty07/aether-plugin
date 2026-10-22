@@ -50,7 +50,7 @@ test('C16, no quota spent: with only Muse healthy an Opus high call goes to Muse
 })
 
 test('C15 through the swarm: a unit runs on the pair pick gives when quotas are healthy, and native when they are dry', async (t) => {
-  const lanes = { superdelegation: true, harnesses: ['agy'], maxParallelByHarness: { agy: 2 }, waits: { implementer: 3, supervisor: 2, reviewer: 2 }, cupo: { polls: 2, pollSeconds: 60 } }
+  const lanes = { superdelegation: true, harnesses: ['agy'], waits: { implementer: 3, supervisor: 2, reviewer: 2 } }
   const args = { ...compile(makeRepo(t), plan([task(1, { tier: 'sonnet high — a reason' })])), lanes }
   // Stands in for `aether-lane pick`: the real choice function on the real table, over the run's one harness.
   const withViews = (all) => async (call, fallback) => {

@@ -19,7 +19,7 @@ Eighteen more real sessions with the installed 0.12.1, US$ 4.68 in all by the CL
 | **The whole of Aether** | An autonomous run with the router on went through the intent card, `/aether:design`, the swarm, the exam and the report, in 14.6 minutes and US$ 2.66. I ran the code it built: 22 of 22 tests and the examples of the request. The router left the design seats and the swarm alone. |
 | **The rest** | The guard refused `aether-route replay --paid` as `paid-call`; the launcher `aether-lead` starts; the hidden exam gives 15 of 15 on `main`; the journal replay moves with an edited criterion. |
 
-Two defects came out and are fixed in 0.12.2 ([issue 026](../issues/026-lead-misreads-the-router-note-and-doubts-an-external-answer-that-shows-zero-tool-uses.md)): the note for a replaced choice, and the answer of an external delegate, which now says where it came from and why Claude Code lists 0 tool uses for it. The installed 0.12.1 matched the tag, file by file.
+Two defects came out and are fixed in 0.12.2 ([issue 026](https://github.com/DarkArty07/aether-plugin/issues/47)): the note for a replaced choice, and the answer of an external delegate, which now says where it came from and why Claude Code lists 0 tool uses for it. The installed 0.12.1 matched the tag, file by file.
 
 ## 2. Found in this round, not changed
 
@@ -27,7 +27,7 @@ Two defects came out and are fixed in 0.12.2 ([issue 026](../issues/026-lead-mis
 - **The router replaces the model of a named agent that fixes its own.** A `doc-checker` with `model: opus` ran on Sonnet `high`. It touches 29 of the 382 delegations in the owner's history, US$ 1.33 of what is known; whether it should leave them alone is the owner's call.
 - **Parallel external delegates see each other's quota.** Each reads its group's window before and after, so four at once each report the spending of all four (0.7 % each, 0.7 % in all). `aether-report --delegates` shows those figures per delegation.
 - **A timeout is labeled `empty`.** A Haiku decider past its limit is recorded as `decider: empty` because the engine's reason has no «time» in it. The fallback is right; only the label is vague.
-- **The router's own Haiku calls are still not metered** (0.12.1 handoff §2), and **`command` still waits 3 s for an agy reading** ([issue 025](../issues/025-command-waits-3-seconds-for-an-agy-reading-that-takes-5-and-agy-cannot-serve-the-task.md)): in the eight-at-once test, four decisions waited the whole limit and went to Claude.
+- **The router's own Haiku calls are still not metered** (0.12.1 handoff §2), and **`command` still waits 3 s for an agy reading** ([issue 025](https://github.com/DarkArty07/aether-plugin/issues/35)): in the eight-at-once test, four decisions waited the whole limit and went to Claude.
 
 ## 3. What is left
 

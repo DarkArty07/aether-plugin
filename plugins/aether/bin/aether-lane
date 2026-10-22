@@ -11,11 +11,11 @@
 // aether-lane pick <run> <call> --role <implementer|supervisor|reviewer> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max>
 //   [--exclude <id>[,<id>...]] [--author <family>]   (superdelegation: the pair for a call, from the points of its native
 //   reference pair and the quotas of the enabled harnesses; logs the choice and starts nothing)
-// aether-lane took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|wait-limit|failed>
+// aether-lane took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|failed>
 //   (logs who ran the call and why)
 // aether-lane delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--session <id>]
 //   (no run: a loose editing charge on an external pair, in its own one-unit run; prints its result, merges nothing)
-// aether-lane pause --seconds <1 to 120>   (no run: waits, so that the workflow can poll for a free place)
+// aether-lane pause --seconds <1 to 120>   (no run: waits, so that the workflow can time its agents)
 // aether-lane quota [<harness>...] [--refresh] [--json]   (no run: each harness's quota as text, or as JSON;
 //   --refresh first asks grok over ACP for a new reading, and opens its UI for a few seconds, with no prompt,
 //   only if that gives none)
@@ -49,7 +49,7 @@ const COMMANDS = {
   result: 'result <run> <call>',
   stop: 'stop <run> [<call>]',
   pick: 'pick <run> <call> --role <role> --model <haiku|sonnet|opus> --effort <effort> [--exclude <id>[,<id>...]] [--author <family>]',
-  took: 'took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|wait-limit|failed>',
+  took: 'took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|failed>',
 }
 const PAUSE_USAGE = 'pause --seconds <1 to 120>'
 const USAGE = `usage: aether-lane ${[...Object.values(COMMANDS), delegate.DELEGATE_USAGE, PAUSE_USAGE, quota.USAGE].join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')} | ${Object.values(seatCalls.COMMANDS).join(' | ')}`

@@ -11,7 +11,7 @@ const { task, plan } = require('./plan-fixtures.js')
 const { runWorkflow, laneAnswer, laneOf } = require('./workflow-harness.js')
 const { PLUGIN } = require('./helpers.js')
 
-const LANES = { superdelegation: true, harnesses: ['agy'], maxParallelByHarness: { agy: 4 }, waits: { implementer: 3, supervisor: 2, reviewer: 2 }, cupo: { polls: 2, pollSeconds: 60 } }
+const LANES = { superdelegation: true, harnesses: ['agy'], waits: { implementer: 3, supervisor: 2, reviewer: 2 } }
 const FAMILY = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
 
 // A pair of the table as pick prints it (points and costs are stand-ins: no test here reads them).
@@ -162,8 +162,8 @@ test('every lane command of a sliced run is one the mod answers and the bin acce
   const lane = run.calls.filter((c) => c.kind.startsWith('ops:lane-'))
   assert.ok(lane.some((c) => c.lane.call === 'final-review-slice-1') && lane.some((c) => c.lane.call === 'final-review-slice-2'))
   for (const call of lane) {
-    if (call.lane.call && call.command.verb !== 'pause') assert.ok(CALL.test(call.lane.call), `${call.command.line}: the bin accepts the call id`)
-    if (!['pick', 'took', 'start', 'wait', 'result', 'stop', 'pause'].includes(call.command.verb)) continue
+    if (call.lane.call) assert.ok(CALL.test(call.lane.call), `${call.command.line}: the bin accepts the call id`)
+    if (!['pick', 'took', 'start', 'wait', 'result', 'stop'].includes(call.command.verb)) continue
     assert.ok(parseOpsPrompt(call.prompt), `the mod answers: ${call.command.line}`)
     if (call.payload) assert.ok(PAYLOAD_PATH.test(call.payload.path), `the mod saves the payload: ${call.payload.path}`)
   }

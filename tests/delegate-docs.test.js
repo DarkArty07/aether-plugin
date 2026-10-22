@@ -12,7 +12,6 @@ test('the user pages say editing delegates leave Claude first, and none still sa
   for (const needed of [
     'aether-lane delegate --brief <file> --model <model> --effort <effort> --owns <globs> [--tests <command>]',
     'unit worktree',
-    'counts against',
     'aether-wt merge',
     'no-candidate',
   ]) assert.ok(lanes.includes(needed), needed)

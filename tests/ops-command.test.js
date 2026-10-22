@@ -265,7 +265,7 @@ test('a lane start needs its flags in the workflow order, with valid values, and
 })
 
 // The prompts the real workflow builds, through the workflow harness.
-const LANES = { superdelegation: true, harnesses: ['agy'], maxParallelByHarness: { agy: 4 }, waits: { implementer: 3, supervisor: 2, reviewer: 2 }, cupo: { polls: 2, pollSeconds: 60 } }
+const LANES = { superdelegation: true, harnesses: ['agy'], waits: { implementer: 3, supervisor: 2, reviewer: 2 } }
 const FLASH = { id: 'agy/gemini-3.8-flash@medium', harness: 'agy', model: 'gemini-3.8-flash', family: 'gemini-3.8-flash', effort: 'medium', group: 'gemini', intelligence: 39.8, costPerTaskUsd: 0.93 }
 
 async function opsCallsOf(t, lanes, overrides = {}) {

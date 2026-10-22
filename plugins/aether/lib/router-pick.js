@@ -4,8 +4,10 @@
 // of the Lead. The router decides how strong the task has to be, which is the Claude rung it would run on; this module
 // asks the function the swarm and the design seats ask which external pair reaches the points of that rung. It reads
 // the quota the router already has, as lib/router-quota.js does, so it never starts a quota call: a harness whose
-// reading expired is renewed in the background, waited for up to the quota deadline, and left out when it is still
-// expired. Everything else it needs comes in through `d`, the router's dependencies (lib/route.js resolve).
+// reading expired and that could serve the call is renewed in the background and waited for up to the quota deadline;
+// one that could not serve it (every group marked, or no pair at the points asked) is neither renewed nor waited for;
+// an expired harness is left out when it is still expired. Everything else it needs comes in through `d`, the
+// router's dependencies (lib/route.js resolve).
 
 const laneMarks = require('./lane-marks.js')
 const { groupView } = require('./lane-quota.js')
@@ -79,8 +81,15 @@ async function pairStep(d, settings, { reference }) {
       return names.filter((name) => expired.includes(name) || incomplete(config, name, readings[name]))
     }
     const stale = unreadable(live)
+    // The harnesses that could serve the call whatever their readings say: a group with a rung at the points asked and
+    // no live mark. A stale harness outside this set is neither renewed nor waited for (issue 025): one whose every
+    // pair is held by a mark, or below the points asked, cannot have its pick changed by a reading, so the decision
+    // starts no quota call for it and does not sit out the quota deadline.
+    const serving = new Set(choose({ pairs, reference, exclude, harnesses: openViews(config, live, marks, d.now()) })
+      .candidates.filter((entry) => entry.outcome !== 'passed').map((entry) => entry.harness))
+    const waiting = stale.filter((name) => serving.has(name))
     const renewals = {}
-    for (const harness of stale) {
+    for (const harness of waiting) {
       let result = null
       try {
         result = d.renew(harness)
@@ -89,12 +98,6 @@ async function pairStep(d, settings, { reference }) {
       else if (result && result.running) renewals[harness] = 'running'
     }
     let waitedMs = 0
-    // Only a harness that could serve the call is waited for (issue 025): one whose every pair is held by a mark, or
-    // below the points asked, keeps its background renewal for the next decision, but this decision does not sit out
-    // the quota deadline for a reading that cannot change its pick.
-    const serving = new Set(choose({ pairs, reference, exclude, harnesses: openViews(config, live, marks, d.now()) })
-      .candidates.filter((entry) => entry.outcome !== 'passed').map((entry) => entry.harness))
-    const waiting = stale.filter((name) => serving.has(name))
     if (waiting.length > 0) {
       const waited = await waitForReading({
         isValid: () => unreadable(waiting).length === 0,
