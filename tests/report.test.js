@@ -149,6 +149,60 @@ test('report adds up every launch of a relaunched run', (t) => {
   assert.deepEqual(quality.finalReview, { status: 'done', verdict: 'ready', findings: { critical: 0, important: 1, minor: 2 }, reviews: 2 })
 })
 
+test('a deferred final review is a review not yet run, with its reason, and a later done review replaces it', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t, { result: false })
+  const reason = '1 blocked, 0 skipped, 1 not run. The final review runs when a launch ends with all its units merged. To run it now on what is merged, launch again with review set to true.'
+  const file = path.join(args.runDir, 'result.json')
+  writeJson(file, {
+    units: [
+      { id: 'task-1', status: 'merged', tiers: ['haiku'], attempts: 1, rounds: [] },
+      { id: 'task-2', status: 'blocked', tiers: ['haiku'], attempts: 1, rounds: [] },
+      { id: 'task-3', status: 'not-run', tiers: [], attempts: 0, rounds: [] },
+    ],
+    finalReview: { status: 'deferred', reason },
+    agents: { total: 4 },
+  })
+  const { quality, radar } = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual(quality.finalReview, {
+    status: 'deferred',
+    verdict: null,
+    findings: { critical: 0, important: 0, minor: 0 },
+    reviews: 0,
+    reason,
+  })
+  assert.notEqual(quality.finalReview.status, 'failed')
+  assert.notEqual(quality.finalReview.status, 'skipped')
+  assert.doesNotMatch(quality.finalReview.reason, /no unit merged/)
+  assert.equal(radar.robust.finalVerdict, null)
+
+  const out = finalize(repo.dir, args.runId, { tests: false })
+  assert.deepEqual(out.record.report.quality.finalReview, quality.finalReview)
+
+  // The completing launch's review is the one the report shows. The deferred launch is not a failure that sticks.
+  const { repo: laterRepo, args: later } = finishedRun(t, { result: false })
+  const first = path.join(later.runDir, 'result-1.json')
+  writeJson(first, {
+    units: [{ id: 'task-1', status: 'blocked', tiers: ['haiku'], attempts: 1, rounds: [] }],
+    finalReview: { status: 'deferred', reason },
+    agents: { total: 2 },
+  })
+  const second = path.join(later.runDir, 'result.json')
+  writeJson(second, {
+    units: [{ id: 'task-1', status: 'merged', tiers: ['haiku'], attempts: 1, rounds: [] }],
+    finalReview: { status: 'done', verdict: 'ready', findings: [] },
+    agents: { total: 3 },
+  })
+  const replaced = report(laterRepo.dir, later.runId, { tests: false }).quality.finalReview
+  assert.deepEqual(replaced, {
+    status: 'done',
+    verdict: 'ready',
+    findings: { critical: 0, important: 0, minor: 0 },
+    reviews: 1,
+  })
+  assert.equal(replaced.reason, undefined)
+})
+
 test('report reads only the usage sessions written to since the run began', (t) => {
   const dataDir = useDataDir(t)
   sampleUsage(dataDir)

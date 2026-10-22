@@ -42,6 +42,8 @@ Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AE
 - `exams/` holds the Examiner's hidden exams, one folder per repository and feature, so uninstalling without `--keep-data` deletes them;
 - `lanes/` also holds the dry marks (`lanes/marks/`) and the kept quota readings (`lanes/quota/`).
 
+A swarm run's final review is `deferred` until it runs. It runs when a launch ends with every unit of that launch merged, once, on the whole change. [The final review has not run](troubleshooting.md#the-final-review-has-not-run) says how that looks and how the review is run on what is already merged.
+
 The autonomy registry and run states live in the repository itself, under `.aether/autonomy/` in its main checkout, and so does the owner's list of irreversible commands, `.aether/pending.jsonl`.
 
 ### Upgrading from 0.6

@@ -132,7 +132,10 @@ test('when the agent budget runs out no new attempt starts, the rest is not-run,
     ],
   )
   assert.match(run.result.units[2].reason, /budget/)
-  assert.equal(run.result.finalReview.status, 'skipped')
+  // The launch left a unit not run, so the review is deferred rather than skipped for the budget (issues #5 and #33).
+  assert.equal(run.result.finalReview.status, 'deferred')
+  assert.match(run.result.finalReview.reason, /1 not run/)
+  assert.match(run.result.finalReview.reason, /when a launch ends with all its units merged/)
   assert.equal(run.calls.some((c) => c.role === 'reviewer'), false)
   assert.deepEqual(run.events.slice(-2), ['start ops:sweep', 'end ops:sweep'])
 })
@@ -542,7 +545,8 @@ test('a dirty integration worktree or a failed merge command blocks the unit at 
   assert.match(two.reason, /ops agent failed/)
   assert.equal(three.status, 'skipped')
   assert.equal(run.calls.filter((c) => c.role === 'implementer').length, 2)
-  assert.equal(run.result.finalReview.status, 'skipped')
+  assert.equal(run.result.finalReview.status, 'deferred')
+  assert.match(run.result.finalReview.reason, /2 blocked, 1 skipped, 0 not run/)
 })
 
 test('args encoded as JSON twice still run, as a Designer may pass them quoted', async (t) => {
@@ -694,7 +698,8 @@ test('the final review runs on Opus at high for more than three units, in slices
 })
 
 test('the final review judges only the merged units: a blocked opus task does not raise it', async (t) => {
-  const run = await runWorkflow(twoTasks(t, { tier: 'opus high — the parser design' }, {}), {
+  // The review is forced: a launch that leaves a unit blocked defers it (issues #5 and #33).
+  const run = await runWorkflow({ ...twoTasks(t, { tier: 'opus high — the parser design' }, {}), review: true }, {
     supervisor: (call, approve) =>
       call.unit === 'task-1' ? { verdict: 'block', findings: [], ruling: 'Block: needs a design first.', guidance: '', question: '' } : approve(call),
   })

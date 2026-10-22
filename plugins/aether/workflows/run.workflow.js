@@ -158,6 +158,9 @@ function readArgs(raw) {
   if (!Number.isInteger(input.maxAgents) || input.maxAgents < 1) bad.push('maxAgents')
   if (!Array.isArray(input.waves) || !input.waves.every(Array.isArray)) bad.push('waves')
   if (!input.tasks || typeof input.tasks !== 'object') bad.push('tasks')
+  // `review: true` runs the final review even when this launch did not merge every unit, including a
+  // launch whose waves are empty (issues #5 and #33). Anything else that is set is refused.
+  if (input.review !== undefined && typeof input.review !== 'boolean') bad.push('review')
   if (bad.length) throw new Error(`aether:run args are missing or invalid: ${bad.join(', ')}`)
   const seen = new Set()
   for (const id of input.waves.flat()) {
@@ -1390,7 +1393,9 @@ function reviewPlan() {
   const deep = merged.find((u) => ['xhigh', 'max'].includes(tasks[u.id].review))
   if (deep) return { model: 'opus', effort: 'xhigh', reason: `${deep.id} reviews at ${tasks[deep.id].review}` }
   if (isRelaunch()) return { model: 'opus', effort: 'high', reason: 'a relaunch: the final review covers the earlier launches too' }
-  if (merged.length <= 3 && merged.every((u) => tasks[u.id].tier === 'haiku' && tasks[u.id].review === 'high')) {
+  // Zero merged units is not a small all-haiku run: an empty list passes `every`, and a forced review of a
+  // launch that merged nothing would otherwise run on Sonnet.
+  if (merged.length > 0 && merged.length <= 3 && merged.every((u) => tasks[u.id].tier === 'haiku' && tasks[u.id].review === 'high')) {
     return { model: 'sonnet', effort: 'high', reason: 'a small all-haiku run with high reviews' }
   }
   return { model: 'opus', effort: 'high', reason: 'the merged work is not a small all-haiku run' }
@@ -1495,8 +1500,38 @@ async function reviewRunSliced(pkg, slices, { model, effort, chosen }) {
   return { status: 'done', provider, verdict, findings, declined, summary: summaries.join('\n'), slices: slices.length, slicesBy, ...chosen }
 }
 
-async function reviewRun() {
-  if (!Object.values(units).some((u) => u.status === 'merged')) return { status: 'skipped', reason: 'no unit merged' }
+// True when this launch was given units and every one of them merged. An empty launch did not finish
+// the run: compile prints empty waves when every unit is already merged, and that launch reviews only
+// when the Lead sets `review` to true (issues #5 and #33).
+function launchComplete() {
+  const list = Object.values(units)
+  return list.length > 0 && list.every((unit) => unit.status === 'merged')
+}
+
+// The review did not run. The reason names the units still open, when the review does run, and how to
+// force it. `deferred` is not a failure and not a verdict.
+function deferredReview() {
+  const list = Object.values(units)
+  let blocked = 0
+  let skipped = 0
+  let notRun = 0
+  for (const unit of list) {
+    if (unit.status === 'blocked') blocked++
+    else if (unit.status === 'skipped') skipped++
+    else if (unit.status !== 'merged') notRun++
+  }
+  const counts = `${blocked} blocked, ${skipped} skipped, ${notRun} not run`
+  const head = list.length === 0 ? `This launch ran no unit (${counts}).` : `${counts}.`
+  return {
+    status: 'deferred',
+    reason: `${head} The final review runs when a launch ends with all its units merged. To run it now on what is merged, launch again with review set to true.`,
+  }
+}
+
+async function reviewRun(force = false) {
+  // A launch that merged nothing has nothing of its own to review, unless the Lead forced the review
+  // of the whole run: the package is still `aether-wt diff --final`, from the first compile's base.
+  if (!Object.values(units).some((u) => u.status === 'merged') && !force) return { status: 'skipped', reason: 'no unit merged' }
   if (modelAgentsSpent() >= maxAgents) return { status: 'skipped', reason: 'the agent budget is spent' }
   const { model, effort, reason } = reviewPlan()
   log(`final review on ${model} ${effort}: ${reason}`)
@@ -1576,7 +1611,13 @@ try {
   for (let i = 0; i < waves.length; i++) {
     await parallel(waves[i].map((id) => () => runUnit(id)))
   }
-  finalReview = await reviewRun()
+  // Once per run, when this launch closed it (issues #5 and #33). A launch that leaves a unit blocked,
+  // skipped or not run does not pay for the review; the Lead forces it with `review: true`.
+  if (input.review === true || launchComplete()) finalReview = await reviewRun(input.review === true)
+  else {
+    finalReview = deferredReview()
+    log(`final review deferred: ${finalReview.reason}`)
+  }
 } catch (err) {
   error = message(err)
 } finally {
