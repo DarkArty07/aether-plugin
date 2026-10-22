@@ -72,13 +72,27 @@ El tope es 4, no 200: el dueño avisó que hay agentes trabajando en otras sesio
 export const WAIT_SECONDS = 540        // lo que una llamada de `wait` bloquea como máximo
 export const WAIT_TIMEOUT_MS = 570000  // timeoutMs de cada $.process.run: bajo los 600000 del motor
 export const MAX_WAIT_MS = 3600000     // lo más que se espera a un delegado en total
+export const STALL_MS = 600000         // lo más que el motor deja a un paso sin un evento (medido en la Task 17: lo mata)
+
+// El texto de un latido: `[Aether: the delegate is still working, <min> min so far]\n`, con
+// <min> = Math.round(waitedMs / 60000). El paso del mod lo entrega como un evento de texto.
+export function heartbeatText(waitedMs) {}
+
+// La misma espera, paso a paso (el Lead la agregó después de la Task 17, commit a993273; el reintento con latido
+// es de la revisión 1 del Judge). Después de cada llamada de `wait` que no cerró el bucle, la que dijo
+// { done: false } y la que falló y se reintenta, entrega { beat: true, waitedMs } (waitedMs medido con
+// $.clock.now() desde el principio); así ningún tramo sin evento pasa de WAIT_TIMEOUT_MS, ni con una espera
+// colgada y su reintento (hasta 2 x 570000 ms) ni con ninguna otra. Al terminar devuelve { ok, status, text }
+// (lo mismo que waitForDelegate). No entrega latido cuando el delegado termina en esa llamada, ni cuando la
+// segunda falla seguida cierra el bucle. Nunca lanza.
+export async function* waitSteps($, { root, id, session }) {}
 
 // Repite `node <root>/bin/aether-delegate wait --id <id> --seconds 540` hasta que el delegado termina.
 // `$` solo necesita $.process.run(argv, { timeoutMs }) y $.clock.now().
 // Cada llamada imprime una última línea JSON: { done: false } o { done: true, ok, status, text }.
 // Devuelve { ok, status, text }: lo que dijo `done: true`; { ok: false, status: 'wait-failed', text: null }
 // cuando dos llamadas seguidas fallan (se reintenta una vez); { ok: false, status: 'timeout', text: null }
-// cuando se pasa MAX_WAIT_MS medido con $.clock.now(). Nunca lanza.
+// cuando se pasa MAX_WAIT_MS medido con $.clock.now(). Nunca lanza. Es waitSteps sin los latidos.
 export async function waitForDelegate($, { root, id, session }) {}
 ```
 
@@ -160,6 +174,52 @@ test('a delegate that ended without an answer says so as it is', async () => {
 test('the constants stay under the ten minutes of $.process.run', () => {
   assert.ok(mod.WAIT_TIMEOUT_MS < 600000)
   assert.ok(mod.WAIT_SECONDS * 1000 < mod.WAIT_TIMEOUT_MS)
+})
+
+// The steps are driven by hand: a loop that waits and only then yields its beats would pass a test that collects
+// everything first, and in the engine it would be killed after 600 s without an event.
+test('waitSteps yields a beat after every wait that did not end, before it waits again (the stall limit of the engine)', async () => {
+  const { $, state } = make([{ done: false }, { done: false }, DONE])
+  const steps = mod.waitSteps($, CTX)
+  const first = await steps.next()
+  assert.deepEqual([first.done, first.value], [false, { beat: true, waitedMs: 540000 }])
+  assert.equal(state.runs.length, 1, 'the first beat comes before the second wait')
+  const second = await steps.next()
+  assert.deepEqual([second.done, second.value], [false, { beat: true, waitedMs: 1080000 }])
+  assert.equal(state.runs.length, 2)
+  const last = await steps.next()
+  assert.deepEqual([last.done, last.value], [true, { ok: true, status: 'ok', text: 'branch aether/x/task-1' }])
+  assert.ok(mod.WAIT_TIMEOUT_MS < mod.STALL_MS, 'no wait can go as long as the engine tolerates without an event')
+})
+
+test('a failed wait gives a beat before its retry, so a hung wait and its retry never go 600 s without an event', async () => {
+  const { $, state } = make([new Error('hung'), DONE])
+  const steps = mod.waitSteps($, CTX)
+  const first = await steps.next()
+  assert.deepEqual([first.done, first.value.beat], [false, true])
+  assert.equal(state.runs.length, 1, 'the beat comes before the retry')
+  const last = await steps.next()
+  assert.deepEqual([last.done, last.value], [true, { ok: true, status: 'ok', text: 'branch aether/x/task-1' }])
+  assert.equal(state.runs.length, 2)
+})
+
+test('two failed waits in a row give one beat and then end the wait', async () => {
+  const { $ } = make([new Error('a'), new Error('b')])
+  const steps = mod.waitSteps($, CTX)
+  assert.equal((await steps.next()).value.beat, true)
+  assert.deepEqual(await steps.next(), { done: true, value: { ok: false, status: 'wait-failed', text: null } })
+})
+
+test('a delegate that ends on the first wait yields no beat', async () => {
+  const { $ } = make([DONE])
+  const next = await mod.waitSteps($, CTX).next()
+  assert.equal(next.done, true)
+  assert.equal(next.value.ok, true)
+})
+
+test('the heartbeat text names the minutes and ends with a newline', () => {
+  assert.equal(mod.heartbeatText(540000), '[Aether: the delegate is still working, 9 min so far]\n')
+  assert.equal(mod.heartbeatText(1080000), '[Aether: the delegate is still working, 18 min so far]\n')
 })
 ```
 
@@ -1440,7 +1500,7 @@ export function createDelegates() -> { toolCall($, e, next, ctx), bind($, e, age
 
 - `toolCall`: una llamada cuyo `subagent_type` empieza con `aether:` pasa sin tocarse. Para las demás escribe el evento en `<dataDir>/delegates/in/<tiempo>-<n>.json` (campos `subagent_type`, `description`, `prompt`, `model`, `effort`, `run_in_background`, `isolation`) y corre `node <root>/bin/aether-delegate begin --session <session> --input <archivo>` (límite 25000 ms). Con el plan: `args` (`model`, `effort` y, si vienen, `prompt` e `isolation`) se pone sobre la llamada que sigue a `next`; las `notes` se agregan al `context` del resultado (nunca a una llamada rechazada); si el plan tiene `external`, la llamada se recuerda por su prompt final (el reescrito, si hay) con el `external`. Cualquier falla (excepción, salida distinta de 0, línea que no es JSON, `skip`) deja la llamada como la hizo el Lead.
 - `bind`: al `agent.spawn` liga la llamada por su prompt al agente; un agente con `external` queda para su primer paso, y uno con `answerOf` (un delegado de solo lectura en Claude) queda para su último. `has(agentId)` es verdadero para los dos.
-- `step`: en el paso 0 de un agente con `external`, corre `aether-delegate start --id <id>` (límite 15000 ms) y después recorre `waitSteps` (de `./delegate-wait.mjs`, con `.next()` a mano): por cada `{ beat: true, waitedMs }` que entrega emite `{ kind: 'text', index: 0, text: heartbeatText(waitedMs) }`. Es el latido que la Task 17 midió como necesario: el motor mata a un agente cuyo paso no emite nada en 600 s («Agent stalled: no progress for 600s»), y un evento de texto cuenta como progreso (con un latido tras cada espera de 540 s el agente vivió 18 minutos y respondió); los latidos quedan al principio de la respuesta que ve el Lead, que sigue con el texto del delegado. Cuando `waitSteps` devuelve `ok` con texto no vacío, entrega `{ kind: 'text', index: 0, text }` y `{ kind: 'stop', stopReason: 'end_turn', usage: null }` sin pasar por el modelo (y `result.answer` es ese texto, sin latidos); con cualquier otra cosa sigue con `yield* next(e)` (el modelo del plan, que ya es el del escalón). En un agente con `answerOf` cada paso pasa por `yield* next(e)` sin cambios y, cuando el resultado de un paso trae `stopReason` distinto de `'tool_use'` y `answer` de tipo texto, corre `node <root>/bin/aether-delegate answer --session <session> --task <task> --attempt <attempt> --text <answer recortado a 4000 caracteres>` (límite 15000 ms; cualquier falla se ignora y el paso vuelve igual): es la respuesta que `verdict` comprueba (R6). `toolCall` recuerda `answerOf` del plan junto con la llamada, como recuerda `external`.
+- `step`: en el paso 0 de un agente con `external`, corre `aether-delegate start --id <id>` (límite 15000 ms) y después recorre `waitSteps` (de `./delegate-wait.mjs`, con `.next()` a mano): por cada `{ beat: true, waitedMs }` que entrega emite en ese momento, antes de pedir la siguiente espera, `{ kind: 'text', index: 0, text: heartbeatText(waitedMs) }` (`waitSteps` entrega un latido después de cada `wait` que no cerró el bucle, también el que falló y se reintenta; un paso que esperara al delegado y solo después entregara los latidos sería el paso callado de más de 600 s que el motor mata). Es el latido que la Task 17 midió como necesario: el motor mata a un agente cuyo paso no emite nada en 600 s («Agent stalled: no progress for 600s»), y un evento de texto cuenta como progreso (con un latido tras cada espera de 540 s el agente vivió 18 minutos y respondió); los latidos quedan al principio de la respuesta que ve el Lead, que sigue con el texto del delegado. Cuando `waitSteps` devuelve `ok` con texto no vacío, entrega `{ kind: 'text', index: 0, text }` y `{ kind: 'stop', stopReason: 'end_turn', usage: null }` sin pasar por el modelo (y `result.answer` es ese texto, sin latidos); con cualquier otra cosa sigue con `yield* next(e)` (el modelo del plan, que ya es el del escalón); si el delegado falla después de uno o más latidos, el Lead ve esos latidos y a continuación la respuesta del modelo, sin una nota de cierre, y `result` es el del modelo. En un agente con `answerOf` cada paso pasa por `yield* next(e)` sin cambios y, cuando el resultado de un paso trae `stopReason` distinto de `'tool_use'` y `answer` de tipo texto, corre `node <root>/bin/aether-delegate answer --session <session> --task <task> --attempt <attempt> --text <answer recortado a 4000 caracteres>` (límite 15000 ms; cualquier falla se ignora y el paso vuelve igual): es la respuesta que `verdict` comprueba (R6). `toolCall` recuerda `answerOf` del plan junto con la llamada, como recuerda `external`.
 - `hooks/register.js`: importa `createDelegates` de `./delegate.mjs` en lugar de `createRouter` de `./router.mjs`, y renombra sus ayudantes (`routerCalls`, `routerContext`) a `delegateCalls` y `delegateContext`; la lista de llamadas que el mod hace es `$.clock.now`, `$.fs.write` y `$.process.run` (se quita `$.model.complete`). El encabezado de `register.js` describe la escalera, no el router.
 - Se borra `hooks/router.mjs` y `tests/router-mod.test.js`.
 
@@ -1546,17 +1606,40 @@ test('an external delegate is the first step of its agent: started, waited for, 
   delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
   assert.equal(delegates.has('agent-1'), true)
   let asked = 0
-  const { chunks, result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, async function* () { asked += 1; return {} }, CTX))
+  const generator = delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, async function* () { asked += 1; return {} }, CTX)
+  // The generator is driven by hand: a step that waited for the delegate and only then yielded its beats would pass a
+  // test that collects every chunk first, and the engine kills a step that emits nothing for 600 s (Task 17).
+  const runs = () => calls.runs.map((r) => r.argv[2])
+  const first = await generator.next()
+  assert.deepEqual(first.value, { kind: 'text', index: 0, text: '[Aether: the delegate is still working, 9 min so far]\n' })
+  assert.deepEqual(runs(), ['begin', 'start', 'wait'], 'the first beat comes before the second wait')
+  const second = await generator.next()
+  assert.deepEqual(second.value, { kind: 'text', index: 0, text: '[Aether: the delegate is still working, 18 min so far]\n' })
+  assert.deepEqual(runs(), ['begin', 'start', 'wait', 'wait'], 'the second beat comes before the third wait')
+  const answer = await generator.next()
+  assert.deepEqual(answer.value, { kind: 'text', index: 0, text: 'branch aether/r/task-1' })
+  const stop = await generator.next()
+  assert.deepEqual(stop.value, { kind: 'stop', stopReason: 'end_turn', usage: null })
+  const end = await generator.next()
+  assert.equal(end.done, true)
+  assert.equal(end.value.answer, 'branch aether/r/task-1', 'the answer of the agent has no beats')
   assert.equal(asked, 0, 'no model request')
-  // two waits did not end, so two heartbeats come first; the engine kills a step that emits nothing for 600 s (Task 17)
-  assert.deepEqual(chunks.map((c) => c.kind), ['text', 'text', 'text', 'stop'])
-  assert.match(chunks[0].text, /^\[Aether: the delegate is still working, \d+ min so far\]\n$/)
-  assert.match(chunks[1].text, /^\[Aether: the delegate is still working, \d+ min so far\]\n$/)
-  assert.equal(chunks[2].text, 'branch aether/r/task-1')
-  assert.equal(result.answer, 'branch aether/r/task-1')
-  assert.deepEqual(calls.runs.map((r) => r.argv[2]), ['begin', 'start', 'wait', 'wait', 'wait'])
+  assert.deepEqual(runs(), ['begin', 'start', 'wait', 'wait', 'wait'])
   assert.ok(state.now - 1000 > 600000, 'the simulated delegate took more than 10 minutes')
   for (const run of calls.runs) assert.ok(run.init.timeoutMs < 600000)
+})
+
+test('a failed wait gives a beat before its retry (the engine kills a step that emits nothing for 600 s)', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [new Error('hung'), { done: true, ok: true, status: 'ok', text: 'branch aether/r/task-1' }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  const generator = delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, async function* () { return {} }, CTX)
+  const first = await generator.next()
+  assert.equal(first.value.kind, 'text')
+  assert.match(first.value.text, /^\[Aether: the delegate is still working, \d+ min so far\]\n$/)
+  assert.deepEqual(calls.runs.map((r) => r.argv[2]), ['begin', 'start', 'wait'], 'the beat comes before the retry')
+  assert.equal((await generator.next()).value.text, 'branch aether/r/task-1')
 })
 
 test('an external delegate that does not deliver is left to the model, at the model of the plan (R14)', async () => {
@@ -1567,6 +1650,22 @@ test('an external delegate that does not deliver is left to the model, at the mo
   let asked = 0
   await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, async function* () { asked += 1; return { answer: 'from the model' } }, CTX))
   assert.equal(asked, 1)
+})
+
+test('an external delegate that fails after beats shows the beats and then the answer of the model (R14)', async () => {
+  const { $ } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: false }, { done: true, ok: false, status: 'no-candidate', text: null }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  let asked = 0
+  const model = async function* () { asked += 1; yield { kind: 'text', index: 0, text: 'from the model' }; return { answer: 'from the model' } }
+  const { chunks, result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.equal(asked, 1)
+  assert.deepEqual(chunks, [
+    { kind: 'text', index: 0, text: '[Aether: the delegate is still working, 9 min so far]\n' },
+    { kind: 'text', index: 0, text: 'from the model' },
+  ])
+  assert.equal(result.answer, 'from the model')
 })
 
 test('a read-only delegate on Claude goes through the model untouched, and its last answer is recorded with no model request of the mod (R6)', async () => {
@@ -1951,7 +2050,7 @@ test('pruneSessions removes the delegate file and an old router file of a sessio
 ### Task 17: La prueba de espera en el motor real (paso del Lead)
 
 **Aether:**
-- Tier: opus high — lo hace el Lead a mano, no el enjambre: decide entre el bucle del mod y el respaldo de Haiku (R20)
+- Tier: opus high — lo hizo el Lead a mano, no el enjambre: decidió entre el bucle del mod y el respaldo de Haiku (R20); decidió el bucle con latido (ver el resultado abajo)
 - Review: xhigh — la decisión depende de lo que el motor haga de verdad, no de lo que las pruebas simuladas aproximan
 - Area: lead
 - Owns: `docs/evidence/013-delegate-ladder.md`
@@ -1959,6 +2058,8 @@ test('pruneSessions removes the delegate file and an old router file of a sessio
 - Serves: R12, R20
 
 **Interfaces:**
+
+**Resultado (2026-10-22, `docs/evidence/013-delegate-ladder.md`):** la tarea ya se hizo y la decisión está tomada: se queda el bucle del mod, con un latido tras cada espera, y el respaldo de Haiku no se construye. Sin latido el motor mató al agente a los 600 s; con un latido (un evento de texto) tras cada espera de 540 s el agente vivió 18 minutos. El protocolo de abajo es el original: su paso 1 usa `waitForDelegate` (sin latido) y los puntos del paso 4 que hablan del respaldo ya no se aplican; lo que quedó construido es `waitSteps` y `heartbeatText` (Task 1) y el latido de la Task 11.
 
 Es un paso del Lead (ver Global Constraints): se corre después de fundir la Task 1 y antes de lanzar las Tasks 10 y 11. No gasta cuota de otro plan (ni `aether-lane` ni un harness externo); gasta unas pocas peticiones de Claude, en Haiku, de los agentes de prueba, y la sesión interactiva necesita unos 20 minutos.
 
