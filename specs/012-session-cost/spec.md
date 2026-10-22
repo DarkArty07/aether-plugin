@@ -1,0 +1,144 @@
+# El gasto de una sesión completa
+
+- **Date:** 2026-10-22
+- **Status:** Draft
+- **Intent:** [intent.md](intent.md), confirmada por el dueño el 2026-10-22. El Lead escribió de vuelta lo que entendía (dólares a precio de lista, no el porcentaje de cuota; un comando al estilo de `/harnesses` y la misma cifra en el informe final; las sesiones bifurcadas) y el dueño respondió las tres preguntas y dio el permiso para diseñar e implementar sin él. Las bifurcadas quedaron a elección del Lead: la suposición S1 de la tarjeta, recogida abajo. Las mediciones de la sección 4 de la tarjeta mandan sobre cualquier idea previa: el medidor ya guarda cada petición de una sesión de Aether y suma al reanudar, el registro de lanes ya trae el id de sesión, y nada suma todavía la sesión entera.
+
+## Criteria
+
+Cada criterio cita las palabras del dueño tal como están en la tarjeta y nombra la evidencia que lo prueba.
+
+- C1. **Una orden de `aether-report` da el total en dólares a precio de lista de una sesión completa: lo del Lead, lo de los agentes, repartido por modelo y por esfuerzo, y por swarm, diseño o delegación cuando se sepa, con la primera y la última petición y el número aproximado de reanudaciones.** Por defecto la sesión es la que escribió por última vez. «tenemos algo asi como un chekout que nos diga cuanto hemos estado gastando por sesion completa aunque haya varios swarms etc». «rastrear el gasto de cada sesion completa desde que la incio hasta que la termino». Evidencia: con un directorio de datos desechable, `aether-report --spend --session <id>` imprime un JSON cuyo total, lo del Lead, lo de los agentes, el reparto por modelo y esfuerzo y el reparto por swarm, diseño o delegación coinciden con la suma hecha a mano desde las mismas peticiones y `config/prices.json`; sin `--session`, la sesión es la que escribió por última vez; la primera petición, la última y las reanudaciones salen rotuladas.
+- C2. **Las llamadas a otros harness de esa sesión se suman a esa cifra, aparte, con sus llamadas y sus dólares a precio de lista.** «aunque haya varios swarms etc», y la intención confirmada: el total vale aunque la sesión haya tenido varios swarms, diseños y delegaciones. Sin esas llamadas la cifra de una sesión con superdelegación quedaría corta. Evidencia: un directorio desechable con llamadas de otros harness de esa sesión; el JSON las cuenta una vez, las muestra aparte y las incluye en el total; un modelo sin precio queda en la lista de sin precio.
+- C3. **Una sesión reanudada suma al total anterior, aunque se haya cerrado y haya pasado tiempo.** «si la decido recontinuar despues de cerrarla el gasto se sigue sumando». «desde que la incio hasta que la termino». Evidencia: dos tandas de la misma id, separadas por horas, dan un solo total; otra id, la de un `--fork-session` o un `/clear`, no recibe los dólares de la anterior.
+- C4. **La poda de los 30 días no olvida el gasto.** Una sesión podada conserva su total en un registro propio, y si se reanuda después, el total es lo archivado más lo nuevo. Sale de la misma frase del dueño que C3: la medición de la tarjeta muestra que `pruneUsage` borra las partes 30 días después de la última escritura y una reanudación posterior perdería lo gastado. Evidencia: una sesión con la última escritura hace 31 días, podada, sigue devolviendo el mismo total y el mismo reparto; peticiones nuevas posteriores se suman una vez, encima de lo archivado.
+- C5. **Dos sesiones que escriben o leen a la vez no se pisan ni se mezclan.** La cifra de una cuenta solo las peticiones de su id, y ningún archivo compartido queda corrupto por una escritura simultánea. «hay mas sesiones trbajando entocnes haz lo necesario para no chocar». «si hay diferentes sesiones trbajando al mismo tiempo». Evidencia: dos ids escritas a la vez en un directorio desechable; cada orden devuelve solo lo suyo, y cada archivo que ambas tocan sigue siendo JSON legible. Una id mal formada no lee otra sesión.
+- C6. **Un comando `/spend`, al estilo de `/harnesses`, muestra esa cifra en un panel, sin llamar a un modelo ni escribir en la transcripción. En una sesión que no es de Aether no existe.** «uy un comando asi como harnesses seria muy bueno». La huella dormida es la invariante que la tarjeta recoge (S3): en una sesión normal el plugin no registra nada y no cambia. Evidencia: en una sesión del Lead, `/spend` abre el panel con la cifra de esa sesión y la prueba del mod ve que no hubo llamada a un modelo ni texto a la transcripción; en una sesión que no es del Lead el comando no está registrado y el medidor no escribe.
+- C7. **La cifra es la de verdad, en dólares a precio de lista, y verificarla no gasta cuota.** «Los dolares proque si te fijas unicamente por cuota de subcricpion no sabes que gasto atribuirle a cada sesion». Evidencia: las pruebas automáticas usan un directorio desechable y una tabla de precios propia, y el total coincide con la suma independiente de esas peticiones; no hay llamada de pago. Antes de dar el trabajo por cerrado queda anotada una pasada de la orden sobre las sesiones de control de la tarjeta, `010621c2` y `252123d1`, comparada con una suma independiente de sus registros, si esos directorios están en la máquina; el US$ 1.289 del apartado 4 es la foto de ese día (37 sesiones), no un oráculo permanente. La orden no relee transcripciones: el apartado 4 midió que las líneas del transcript repiten mensajes.
+- C8. **El informe final del Lead, justo antes de empezar a borrar worktrees y temporales y a subir, lleva la cifra de la sesión: el total, lo del Lead y lo de los agentes.** «en el informe final de cierre de sesion tambien seria bueno, en el momento en que el lead tiene que comenzar a borrar worktres tmp y pushear». La regla queda en las instrucciones del Lead y en el formato del informe. Evidencia: las instrucciones que mandan cerrar, borrar worktrees y subir dicen que antes se toma `aether-report --spend` de esta sesión, y el formato del informe lleva el total, lo del Lead y lo de los agentes; la cifra del tope de la corrida sigue siendo la de antes.
+- C9. **La documentación dice cómo se usa, y las pruebas del repositorio pasan (`npm run check`).** No viene de una frase del dueño: lo pide la regla del repositorio, «los docs se sostienen con pruebas», que la tarjeta recoge al poner este criterio. Evidencia: la guía explica la orden, `/spend`, el precio de lista, la reanudación y la diferencia con el tope de la corrida, y `npm run check` pasa, incluidas las pruebas de documentos.
+
+## User scenarios
+
+- **E1. El dueño pregunta cuánto lleva una sesión.** Dado un directorio desechable con peticiones del Lead y de agentes, de más de un modelo y más de un esfuerzo, y con un swarm reconocible en los registros, cuando se corre `aether-report --spend --session <id>`, entonces el JSON trae el total a precio de lista, lo del Lead, lo de los agentes, el reparto por modelo, el reparto por modelo y esfuerzo, el swarm en su grupo, la primera petición y la última.
+- **E2. La sesión usó otros harness.** Dado E1 y llamadas a otros harness de la misma id, una con precio y otra de un modelo sin precio, cuando se corre la orden, entonces las llamadas con precio se ven aparte y están dentro del total una sola vez, y el modelo sin precio sale en la lista de sin precio, sin sumar dólares.
+- **E3. Se cerró y se reanudó.** Dado la misma id con dos tandas separadas por más de una hora, cuando se corre la orden, entonces hay un solo total, la primera petición es la de la tanda vieja, la última es la de la tanda nueva, y las reanudaciones cuentan ese hueco, rotuladas como aproximadas.
+- **E4. Una sesión bifurcada o limpiada.** Dado una id con gasto y otra id nueva, cuando se consulta cada una, entonces cada total es solo el suyo. `/resume` y `/compact` no crean esta segunda id: conservan la primera y caen en E3.
+- **E5. Pasaron más de 30 días y se reanuda.** Dado una sesión cuya última escritura tiene más de 30 días, cuando corre la poda que ya corre al empezar una sesión de Aether, entonces las partes crudas pueden desaparecer y la orden sigue devolviendo el mismo total y el mismo reparto. Cuando después llegan peticiones nuevas de esa id, el total es lo conservado más lo nuevo, y ninguna petición entra dos veces.
+- **E6. Dos sesiones a la vez.** Dado dos ids que escriben sus registros al mismo tiempo, cuando se lee cada una mientras la otra escribe, entonces cada cifra cuenta solo su id y todo archivo compartido que quede escrito se puede leer entero.
+- **E7. `/spend` en esta sesión.** Dado una sesión del Lead, cuando el dueño escribe `/spend`, entonces se abre un panel con la cifra de esta sesión, sin llamada a un modelo y sin una línea nueva en la transcripción. Dado que el medidor todavía no ha volcado (vuelca cada 20 pasos), cuando se abre el panel, entonces dice que todavía no hay gasto registrado y no muestra un cero medido ni la cifra de otra sesión.
+- **E8. Una sesión que no es de Aether.** Dado una sesión normal, sin el agente `aether:lead` ni su marca, cuando corre, entonces `/spend` no existe, el medidor no escribe y el plugin no añade estado.
+- **E9. El cierre.** Dado el Lead a punto de borrar worktrees y temporales y de subir, cuando prepara el informe final, entonces ese informe ya lleva el total de la sesión, lo del Lead y lo de los agentes, tomados de la misma orden, y la cifra del tope de la corrida sigue aparte, con lo que ya cubría.
+- **E10. La cifra no cuadra con un archivo ilegible.** Dado una parte que no se puede leer y otras que sí, cuando se corre la orden, entonces lo leído se suma, el JSON dice que el total está incompleto y no lo presenta como la sesión entera.
+- **E11. Sin decir la id.** Dado varias sesiones en el directorio, cuando se corre `aether-report --spend` sin `--session`, entonces la sesión es la que escribió por última vez. `/spend` no usa esa regla: muestra la sesión en la que se escribió el comando.
+
+## Requirements
+
+- R1. `aether-report` gana la opción `--spend`, sin bin nuevo. La forma es `aether-report --spend [--session <id>]`, y el texto de uso del bin la incluye. Con `--session` informa de esa id. Sin `--session` informa de la sesión que escribió por última vez: entre las que tienen registro del medidor, registro de lanes o resumen de una poda, la de escritura más reciente; si dos empatan, la de id mayor comparada como texto. Si no hay ninguna, `session` es `null`. Una id que no cumple `^[A-Za-z0-9-]+$`, o `--spend` junto a `--run`, `--seats`, `--delegates`, `--since`, `finalize` o `price`, es un mal uso: salida distinta de cero, la línea de uso, y ni un byte de la cifra de otra sesión. Una id bien formada que no tiene registros sale con código cero y el JSON de «todavía no hay registro» de R12. La salida buena es un solo JSON en la salida estándar, con esta forma:
+
+  ```json
+  {
+    "session": "010621c2",
+    "recorded": true,
+    "complete": true,
+    "unreadable": [],
+    "basis": "OpenRouter list prices, Anthropic endpoint; Muse rows are Meta list prices, 2026-10-07",
+    "currency": "USD",
+    "usd": 0,
+    "leadUsd": 0,
+    "agentsUsd": 0,
+    "byModel": { "<model>": { "usd": 0, "requests": 0 } },
+    "byEffort": { "<model> <effort>": { "usd": 0, "requests": 0 } },
+    "byKind": {
+      "lead": { "usd": 0 },
+      "swarm": { "usd": 0 },
+      "design": { "usd": 0 },
+      "delegation": { "usd": 0 },
+      "unassigned": { "usd": 0 }
+    },
+    "harness": { "calls": 0, "usd": 0, "byModel": { "<model>": { "usd": 0, "calls": 0 } } },
+    "unpriced": [],
+    "firstRequest": null,
+    "lastRequest": null,
+    "resumptions": 0,
+    "resumptionsApproximate": true,
+    "archived": false
+  }
+  ```
+
+  `basis` es el `basis` y el `snapshot` de `config/prices.json`, unidos como ya hace el informe («basis, snapshot»); el texto del ejemplo es el de esa tabla el día de esta spec, y manda la regla, no el texto fijo. `currency` es `USD`. Los números del JSON son la suma exacta del precio, sin redondear a centavos. La suma de los `usd` de `byModel` es `usd`, la de `byEffort` es `usd`, y la de `harness.byModel` es `harness.usd`. Sirve a: C1, C5.
+
+- R2. Los dólares de una petición del medidor son el precio de lista de `config/prices.json`, con las mismas reglas con las que `aether-report` ya pone precio a una petición, incluida la tarifa de escritura de caché de la sesión principal frente a la de un agente. No es el porcentaje de una suscripción ni lo que la suscripción cobra. Sirve a: C1, C7.
+
+- R3. `leadUsd` es la suma de las peticiones del medidor que tienen precio y no tienen id de agente. `agentsUsd` es la suma de las que tienen precio y sí tienen id de agente. Ninguna de las dos incluye llamadas a otros harness. `byModel` y `byEffort` reparten cada evento con precio, del medidor o de otro harness: la clave de esfuerzo es `<model> <effort>` con un espacio, y un esfuerzo o un modelo ausente se escribe `unknown`. `requests` cuenta esos eventos con precio. `firstRequest` y `lastRequest` son la hora más temprana y la más tardía, en ISO, de todas las peticiones del medidor y de todas las entradas `kind: "call"` del registro de lanes de esa id, tengan precio o no; un evento sin hora numérica no mueve ninguna de las dos. Cada dólar con precio del medidor está en `leadUsd` o en `agentsUsd`, no en los dos. Sirve a: C1.
+
+- R4. `byKind` reparte el total en `lead`, `swarm`, `design`, `delegation` y `unassigned`. Las cinco claves están siempre. `byKind.lead.usd` es igual a `leadUsd`. La suma de las cinco es igual a `usd`. Un dólar está en un solo grupo. El grupo se toma solo de marcas que los registros ya traen, con la correspondencia de Assumptions; lo que esas marcas no colocan cae en `unassigned`, y la orden no inventa un enlace. Sirve a: C1.
+
+- R5. `usd` es `leadUsd` más `agentsUsd` más `harness.usd`. `harness.calls` cuenta las entradas `kind: "call"` del registro de lanes de esa id. `harness.usd` suma, una vez, el precio de lista del uso de cada una cuyo modelo tiene precio, y ese dólar ya va dentro de `usd`, de `byModel`, de `byEffort` y de un grupo de `byKind` que no es `lead`. `harness.byModel` reparte esas llamadas con precio por modelo. Un modelo sin precio no aporta dólares (R6). Los tokens que el medidor ya guardó no se copian a `harness.usd`. La orden lee el medidor y el registro de lanes, no las transcripciones. Sirve a: C1, C2.
+
+- R6. Un modelo sin precio, del medidor o de otro harness, se lista una vez en `unpriced` y no aporta dólares ni entra en los conteos de `byModel` y `byEffort`. No se le sustituye un cero: el cero que el informe de lanes usa hoy para «no hay precio» no vale en esta cifra. Si todas las peticiones están sin precio, `recorded` es verdadero, `usd` es 0 y `unpriced` no está vacío, y el panel muestra esa lista en la misma vista que el total. Un evento de un modelo con precio y cero tokens sí es un cero medido y entra en los cubos. Sirve a: C1, C2, C7.
+
+- R7. La cifra de una id es todo lo suyo desde la primera petición que el medidor conserva, en disco o en el resumen de R9, hasta la última. Cerrar la sesión y volver más tarde, un `/resume` o un `/compact` que conservan la id, suman. Otra id es otra sesión: un `--fork-session` o un `/clear` no se enlazan a la anterior y su gasto no se le suma. Sirve a: C3.
+
+- R8. `resumptions` cuenta los huecos de más de una hora (estrictamente más de 3.600.000 ms) entre dos eventos consecutivos de esa sesión, ordenados por su hora. Esos eventos son los mismos que mueven `firstRequest` y `lastRequest` en R3, más el puente que R9 dice con el resumen archivado. `resumptionsApproximate` es verdadero siempre que el campo exista. El panel escribe la palabra `approximate` junto a ese número, y el informe del Lead, en la lengua del dueño, dice que es aproximado. Un hueco de una hora justa no cuenta. Sirve a: C1.
+
+- R9. La poda de 30 días que ya corre al empezar una sesión de Aether deja de olvidar el gasto. Antes de borrar las partes crudas del medidor de una sesión, o su registro crudo de lanes, queda un resumen propio de esa id con lo necesario para volver a construir la misma cifra: totales, Lead, agentes, modelo, esfuerzo, grupos, harness, sin precio, primera y última hora, reanudaciones y si el tramo era incompleto. Después de la poda, la orden devuelve esa cifra y `archived` es verdadero. Si la misma id escribe después, el total es el resumen más lo nuevo, y cada petición cuenta una vez aunque el resumen y unas partes convivan: lo que sigue en disco no está dentro del resumen. Las reanudaciones son las del resumen, más los huecos internos de lo nuevo, más uno si entre la última hora archivada y el primer evento nuevo hay más de una hora. La primera hora no se mueve; la última pasa a ser la de lo nuevo. Podar una sesión no toca los archivos de otra. El plazo sigue siendo 30 días. Sirve a: C1, C2, C3, C4.
+
+- R10. La cifra de una id cuenta solo peticiones y llamadas de esa id. Dos sesiones que escriben o leen a la vez no mezclan sus eventos. Un archivo que las dos puedan escribir queda, al terminar, como JSON legible o ausente: no queda a medias de forma que se interprete como dólares. Una parte ilegible no cuenta como cero dólares de gasto que sí ocurrió: su nombre va a `unreadable`, `complete` es falso, y `usd` es la suma de lo que sí se pudo leer, marcada incompleta, no como la sesión entera. Sirve a: C5, C7.
+
+- R11. `/spend` existe solo en una sesión de Aether, declarado en el SessionStart del Lead igual que `/harnesses`, con `name` `spend`, `immediate` verdadero y la descripción inglesa `Show the list-price spend of this Aether session`. Abrirlo ejecuta `aether-report --spend --session <id de esta sesión>`, dibuja el panel con lo que el JSON trae (el total, lo del Lead, lo de los agentes, el reparto por modelo y esfuerzo, los grupos que no estén en cero, las llamadas a otros harness y sus dólares, los modelos sin precio, la primera y la última petición, las reanudaciones aproximadas, y el aviso de incompleto cuando `complete` es falso) y no llama a un modelo ni escribe en la transcripción. Un argumento de más se ignora y sigue siendo esta sesión. Si el bin falla, el panel muestra el motivo y tampoco llama a un modelo. En una sesión que no es de Aether el comando no está registrado, el medidor no escribe y el plugin no añade estado. Sirve a: C6.
+
+- R12. Si la id consultada no tiene partes, ni registro de lanes, ni resumen, `recorded` es falso, `complete` es verdadero, `usd`, `leadUsd`, `agentsUsd` y `resumptions` son `null`, y el panel dice `No spend recorded yet`. No muestra un total de US$ 0.00 ni la cifra de otra sesión. El panel decide por `recorded`, no por los ceros de `byKind`. Sirve a: C1, C6.
+
+- R13. Una sesión desechable de al menos 3.005 peticiones repartidas en 4 partes devuelve el total correcto. No hay un plazo de tiempo que la orden tenga que cumplir: el criterio es la cifra. El panel espera el resultado del bin como `/harnesses` espera a los suyos, y mientras espera no llama a un modelo. Sirve a: C7.
+
+- R14. Las pruebas de la cifra corren contra un directorio desechable y una tabla de precios de la prueba; el número esperado lo calcula la prueba desde los tokens y esa tabla. No se gasta cuota ni se hace una llamada de pago. `--run`, `--seats`, `--delegates`, `finalize` y `price` siguen informando lo que informan hoy. La cifra del tope de una corrida autónoma no cambia: sigue cubriendo el swarm, las lanes y los asientos externos, y sigue sin cubrir los turnos del Lead, los asientos nativos ni las tareas delegadas. Sirve a: C5, C7, C8.
+
+- R15. Antes de dar el trabajo por cerrado queda anotada una pasada de `aether-report --spend --session <id>` sobre `010621c2` y sobre `252123d1`, junto a una suma independiente de los mismos archivos a precio de lista, y las dos coinciden. Esa pasada no gasta cuota. Si esos directorios no están en la máquina, la nota lo dice y la evidencia de la cifra son las pruebas desechables de R14 y R13. El US$ 1.289, el Lead US$ 520, los agentes US$ 768, Sonnet US$ 863, Opus US$ 423, Haiku US$ 3 y las 11 sesiones de US$ 50 o más que suman US$ 1.079 son la foto del apartado 4 de la tarjeta (37 sesiones, el 2026-10-22), no un valor que la suite deba repetir. La suite automática no lee el directorio de datos del dueño. Sirve a: C7.
+
+- R16. Las instrucciones del Lead dicen que el informe de cierre lleva la cifra, y lo dicen antes del paso que borra worktrees y temporales y antes de subir. El formato del informe de una corrida autónoma, en «Tiempo y costo», conserva la línea del tope y añade, tomada de `aether-report --spend --session <id de esta sesión>`:
+
+  `Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.`
+
+  Los tres números y el de harness salen del JSON, mostrados en dólares con dos decimales. La línea va en el informe de cierre (cumplida, parcial, el tope o no terminada) y en lo que el Lead reporta antes de `aether-report finalize`. La skill del swarm dice lo mismo en el paso que borra los worktrees: primero la cifra, en ese informe, y después el borrado y cualquier subida. Sirve a: C8.
+
+- R17. La guía explica cómo se usa `aether-report --spend` y `/spend`, que los dólares son de precio de lista y no un porcentaje de cuota, que la misma id suma al reanudar y que otra id no se enlaza, que un modelo sin precio se lista, que la poda de 30 días conserva el total, y que el tope de la corrida es otra cifra. Lo dicen la página de autonomía, donde hoy el costo no suma los turnos del Lead, y la sección de la guía que documenta el panel `/harnesses`, más la entrada de problemas de ese panel para dejar claro que `/spend` tampoco existe fuera de una sesión de Aether. Una página nueva, si hiciera falta, entra en el índice con su front matter. `tests/docs-facts.test.js` pasa. Sirve a: C8, C9.
+
+- R18. `npm run check` pasa. Sirve a: C9.
+
+## Proposals
+
+- **Presupuestos o topes de gasto por sesión.** La tarjeta lo anota como propuesta y dice que no se trabaja. No sirve a ningún criterio: el dueño pidió ver el gasto de la sesión, no cortarlo. No se construye.
+
+## Assumptions
+
+- **Cada id es una sesión (S1 de la tarjeta).** `/resume` y `/compact` conservan la id y por eso suman solos (R7). Un `--fork-session` o un `/clear` es una id nueva y no se enlaza a la anterior: Claude Code no le da al hook un id padre, y un enlace inventado daría cifras dudosas. Base: el dueño dejó escoger («sesioens bifurcadas? no se aqui te dejo escoger lo mejor») y el Lead eligió esto en la tarjeta. El dueño puede revertirlo pidiendo el enlace.
+- **Los dólares son de precio de lista (S2).** `config/prices.json` para los tokens de Claude, y el precio que el informe ya calcula para una llamada de lane que sí tiene precio. Un modelo sin precio se lista y no entra como cero (R6), también en las llamadas de lane, donde hoy el informe sustituye un cero. No es lo que cobra una suscripción. El dueño puede pedir otra tabla.
+- **La opción se llama `--spend` y el comando `/spend` (S4).** No hay bin nuevo, y no se usa `/cost`, que es de Claude Code. `--spend` acepta únicamente `--session <id>`, como las otras opciones aceptan su sesión. El dueño puede pedir otro nombre.
+- **Reanudación aproximada (S5).** Un hueco de más de una hora entre dos eventos consecutivos de la misma id (R8). Se rotula aproximada porque no cuenta comandos `/resume`, cuenta huecos. El umbral es un número: el dueño puede cambiarlo.
+- **`/spend` muestra esta sesión; la orden sin id, la que escribió por última vez.** C1 fija el defecto de la orden. En el panel, mostrar otra sesión porque escribió más tarde sería sorprendente: `/spend` pasa siempre la id de la sesión en la que se invocó (R11, R12). El dueño puede pedir que el panel también use la última que escribió.
+- **El resumen de la poda guarda el reparto, no solo un número.** C4 pide conservar el total. Guardar también Lead, agentes, modelo, esfuerzo, grupos, harness, sin precio, horas y reanudaciones (R9) es lo que permite que una reanudación posterior siga cumpliendo C1 y C2. Quedarse solo con el número se puede pedir después; a la inversa, cuando las partes ya se borraron, el reparto no se reconstruye. El plazo sigue en 30 días.
+- **Qué cuenta como swarm, diseño o delegación.** Solo marcas que ya existen, que es lo que C1 pide con «cuando se sepa». Una petición del medidor sin agente es del Lead. Con agente: swarm si el tipo guardado es `aether:implementer`, `aether:supervisor`, `aether:reviewer` o `aether:ops`; diseño si es `aether:writer`, `aether:judge` o `aether:examiner`; delegación si el tipo falta o no empieza por `aether:`; si empieza por `aether:` y no es ninguno de esos, queda sin asignar. Una llamada de harness no es del Lead: diseño si trae un asiento con texto; si no, sin asignar. Una corrida en el registro de lanes no alcanza para llamarla swarm: el mismo `run` lo escribe un swarm y una delegación que editó en otro harness, y el registro no los distingue. Esas llamadas siguen en el total y en `harness`. Una entrada que no es una llamada con precio no suma dólares. El dueño puede mover un tipo de un grupo a otro, o pedir que toda llamada con `run` cuente como swarm.
+- **Los eventos del hueco son del medidor y de otros harness.** Un hueco de Claude con llamadas de harness en medio no es una reanudación: el trabajo siguió. El dueño puede pedir que el hueco mire solo el medidor.
+- **Una parte ilegible no tumba la cifra.** Se muestra la suma de lo leído, marcada incompleta (R10), en lugar de fallar sin número o de callar el hueco. El dueño puede pedir que la orden falle en ese caso.
+- **Sin plazo para la sesión larga.** 3.005 peticiones en 4 partes tienen que dar la cifra correcta (R13) y no hay un máximo de segundos. El dueño puede pedir uno.
+- **El panel, en inglés; el informe, en la lengua del dueño.** Como el panel `/harnesses`. La frase de «todavía no hay registro» es `No spend recorded yet`, y lo aproximado se escribe `approximate`. En el informe la línea es la de R16, en español, que es la lengua en la que ese formato ya está escrito. Los dólares del panel y del informe se muestran con dos decimales, redondeo mitad alejándose de cero; el JSON no se redondea. El dueño puede pedir el panel en español.
+- **El tope de la corrida no absorbe esta cifra.** El dueño pidió un checkout de la sesión. Meter el Lead en el tope de dólares pararía corridas en otro momento, y la tarjeta dejó los topes por sesión como propuesta. La línea del tope se queda, y la línea nueva dice que no es esa cifra (R16). El dueño puede pedir que el tope pase a usar este total.
+- **Dónde vive el resumen lo fija el plan.** Esta spec pide el resultado: un resumen por id, escrito antes del borrado, que la orden sabe leer junto con lo que quede en disco, sin contar dos veces y sin que el archivo de una sesión corrompa el de otra. El plan elige la ruta y cómo se escribe para que R10 se cumpla.
+- **La pasada real no entra en la suite.** `npm test` no depende del directorio de datos del dueño (R15). La nota de las dos sesiones de control es evidencia de C7, no un test hermético. El dueño puede pedir que esa pasada sea obligatoria en una máquina que tenga los datos.
+
+## Irreversible actions
+
+Ninguna nueva. Esta spec no pide un merge a `main`, un push, una publicación, un despliegue, credenciales ni una llamada de pago. Verificarla lee registros que ya están en disco, o fixtures de un directorio desechable, y no gasta cuota.
+
+La poda de 30 días que ya corre al empezar una sesión de Aether sigue pudiendo borrar las partes crudas del medidor y el registro crudo de lanes de una sesión que lleva 30 días sin escribirse. No es un comando nuevo: `aether-session-start` ya llama a esa poda. R9 le exige conservar antes el resumen, así que ese borrado deja de llevarse el gasto. Sigue siendo local, en el directorio de datos del plugin.
+
+## Out of scope
+
+- El porcentaje de cuota por sesión: el dueño lo descartó, porque no se puede atribuir cuando hay varias sesiones a la vez.
+- Enlazar una sesión bifurcada o limpiada con la anterior (S1).
+- Medir una sesión que no es de Aether, ni registrar nada en ella.
+- Presupuestos o topes de gasto por sesión: es la propuesta de arriba, y no se construye.
+- Cambiar qué modelo hace cada rol. Esta spec solo da el dato.
+- Cambiar la cifra del tope de una corrida autónoma, o hacer que `aether-report finalize` guarde una segunda copia del total de la sesión. El informe que lleva la cifra es el del Lead, antes de borrar y de subir (R16).
+- Un bin nuevo, o un comando llamado `/cost`.
