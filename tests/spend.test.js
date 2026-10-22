@@ -8,7 +8,7 @@ const { spawn } = require('node:child_process')
 const { once } = require('node:events')
 const { useDataDir, age } = require('./helpers.js')
 const { MIN, T0, PRICES, iso, usdOf, meter, writeParts, laneCall, journalLine, outcome, summaryOf, writeSummary, ageFile } = require('./spend-fixtures.js')
-const { spendReport, latestSession, isSessionId } = require('../plugins/aether/lib/spend.js')
+const { spendReport, latestSession, isSessionId, mergeTallies, tallyOf, emptyTally, readUsageEvents, readLaneEvents, readSummary, GAP_MS } = require('../plugins/aether/lib/spend.js')
 
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`)
 const sum = (list) => list.reduce((total, value) => total + value, 0)
@@ -283,4 +283,70 @@ test('E8: a session of 3,005 requests in 4 parts adds up to the independent sum'
   assert.equal(sum(Object.values(r.byModel).map((b) => b.requests)), 3005)
   close(bucketSum(r.byRole), r.usd)
   assert.equal(r.complete, true)
+})
+
+test('mergeTallies adds the parts, keeps the cut out of the resumptions, and is incomplete when either part is', () => {
+  const a = tallyOf([
+    { source: 'meter', time: T0, model: 'm-a', effort: 'high', usd: 1, lead: true, role: 'main' },
+    { source: 'meter', time: T0 + GAP_MS + 1, model: 'x-a', effort: null, usd: null, lead: true, role: 'main' },
+  ])
+  const b = tallyOf([
+    { source: 'call', time: T0 + 10 * GAP_MS, model: 'm-a', effort: 'high', usd: 2 },
+    { source: 'outcome', time: null, model: 'x-b', effort: null, usd: null },
+  ])
+  b.complete = false
+  const merged = mergeTallies(a, b)
+  assert.deepEqual([merged.usd, merged.leadUsd, merged.agentsUsd, merged.harness.usd, merged.harness.calls], [3, 1, 0, 2, 2])
+  assert.deepEqual(merged.byModel, { 'm-a': { usd: 3, requests: 2 } })
+  assert.deepEqual(merged.byEffort, { 'm-a high': { usd: 3, requests: 2 } })
+  assert.deepEqual(merged.unpriced, ['x-a', 'x-b'])
+  assert.deepEqual([merged.first, merged.last], [T0, T0 + 10 * GAP_MS])
+  assert.deepEqual([a.resumptions, b.resumptions, merged.resumptions], [1, 0, 1])
+  assert.equal(merged.complete, false)
+  assert.deepEqual(mergeTallies(emptyTally(), emptyTally()), emptyTally())
+  assert.equal(tallyOf([{ source: 'meter', time: T0, model: 'm-a', effort: null, usd: 0, lead: true }, { source: 'meter', time: T0 + GAP_MS, model: 'm-a', effort: null, usd: 0, lead: true }]).resumptions, 0)
+})
+
+test('the mark of a summary drops what it already holds and keeps an entry with no time', (t) => {
+  const dataDir = useDataDir(t)
+  const noTime = { ...meter(0, 'm-a', null, 'input'), t: undefined }
+  writeParts(dataDir, 's1', [{ entries: [meter(0, 'm-a', null, 'input'), meter(5, 'm-a', null, 'input'), meter(6, 'm-a', null, 'input'), noTime] }])
+  const read = readUsageEvents(dataDir, 's1', { after: T0 + 5 * MIN, prices: PRICES })
+  assert.deepEqual(read.events.map((event) => event.time), [T0 + 6 * MIN, null])
+  assert.deepEqual([read.exists, read.complete, read.vanished], [true, true, false])
+  assert.ok(read.writtenAt > 0)
+  laneCall(dataDir, 's1', 1, 'm-a')
+  laneCall(dataDir, 's1', 2, 'm-a', 'input', { session: null })
+  laneCall(dataDir, 's1', 3, 'm-a', 'input', { session: 's9' })
+  assert.deepEqual(readLaneEvents(dataDir, 's1', { prices: PRICES }).events.map((event) => event.time), [T0 + MIN, T0 + 2 * MIN])
+  assert.deepEqual(readLaneEvents(dataDir, 's1', { after: T0 + MIN, prices: PRICES }).events.map((event) => event.time), [T0 + 2 * MIN])
+  assert.deepEqual(readLaneEvents(dataDir, 'nothing', { prices: PRICES }), { exists: false, events: [], complete: true, writtenAt: null, vanished: false })
+  assert.equal(readUsageEvents(dataDir, 'unknown', { prices: PRICES }).exists, false)
+})
+
+test('a summary of another id, or one that is not a summary, is not read and the figure says so', (t) => {
+  const dataDir = useDataDir(t)
+  writeSummary(dataDir, 's1', summaryOf('s2'))
+  assert.deepEqual(readSummary(dataDir, 's1'), { exists: true, readable: false, summary: null })
+  assert.deepEqual(readSummary(dataDir, 'none'), { exists: false, readable: false, summary: null })
+  assert.equal(readSummary(dataDir, 's2').exists, false)
+  const r = report(dataDir, 's1')
+  assert.deepEqual([r.recorded, r.complete, r.usd], [true, false, 0])
+  writeSummary(dataDir, 's3', summaryOf('s3', { version: 2 }))
+  assert.equal(readSummary(dataDir, 's3').readable, false)
+  writeSummary(dataDir, 's4', summaryOf('s4'))
+  assert.equal(readSummary(dataDir, 's4').readable, true)
+})
+
+test('a model named like an object property is only a name', (t) => {
+  const dataDir = useDataDir(t)
+  writeParts(dataDir, 's1', [{ entries: [meter(0, '__proto__', null, 'input'), meter(1, 'constructor', null, 'input')] }])
+  const r = report(dataDir, 's1')
+  assert.deepEqual(r.unpriced, ['__proto__', 'constructor'])
+  assert.deepEqual(Object.keys(r.byModel), [])
+  assert.equal(r.usd, 0)
+  const priced = tallyOf([{ source: 'meter', time: T0, model: '__proto__', effort: null, usd: 2, lead: true, role: 'main' }])
+  assert.deepEqual(Object.keys(priced.byModel), ['__proto__'])
+  assert.equal(mergeTallies(priced, priced).byModel['__proto__'].usd, 4)
+  assert.equal(Object.getPrototypeOf(priced.byModel), Object.prototype)
 })
