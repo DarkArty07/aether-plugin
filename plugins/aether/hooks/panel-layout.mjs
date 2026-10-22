@@ -93,8 +93,6 @@ function optionsLines(settings, to) {
   return packSegments(
     [
       part(settings.lanes ? 'superdelegation ON' : 'superdelegation OFF', settings.lanes ? 'ok' : 'warn'),
-      part(`router ${settings.router}`),
-      part(`decider ${settings.decider}`),
       part(`harnesses ${settings.harnesses.join(', ')}`),
     ],
     to,

@@ -7,8 +7,6 @@
 // row, so no external string reaches a part as it came.
 
 export const HARNESS_NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
-export const ROUTER_MODES = ['record', 'advise', 'command']
-export const ROUTER_DECIDERS = ['haiku', 'jev']
 // The delegations the panel keeps, and how far back it asks for them.
 export const RECENT = 5
 export const DELEGATES_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
@@ -92,12 +90,12 @@ export function scrub(value) {
 export const clean = (value) => (typeof value === 'string' ? scrub(value).replace(/\s+/g, ' ').trim() : '')
 
 // The options as the session uses them. The session does not read the options as they are: lib/session.js
-// routerSettingsFrom takes a router mode or decider only when it is listed (else record or haiku), lib/lanes.js
-// enabledHarnesses keeps the known harness names, trimmed and in lower case (else agy), and superdelegation's
-// resolveOption (lib/superdelegation.js) turns the switch on when superdelegation is set to true, or when it is not
-// set (not true or false) and the old lanes option is true. The mod cannot
-// require the libs, so the lists and the rule are copied here; tests/panel-conformance.test.js compares the two on a
-// table. `lanes` in the settings is the resolved switch, shown as superdelegation.
+// delegateSettingsFrom keeps the switch and the harnesses, lib/lanes.js enabledHarnesses keeps the known harness
+// names, trimmed and in lower case (else agy), and superdelegation's resolveOption (lib/superdelegation.js) turns the
+// switch on when superdelegation is set to true, or when it is not set (not true or false) and the old lanes option is
+// true. The mod cannot require the libs, so the list and the rule are copied here; tests/panel-conformance.test.js
+// compares the two on a table. `lanes` in the settings is the resolved switch, shown as superdelegation. Any other
+// saved option is ignored.
 export function settingsOf(options) {
   const given = isObject(options) ? options : {}
   const harnesses = []
@@ -110,8 +108,6 @@ export function settingsOf(options) {
   const on = superdelegation === 'true' || superdelegation === 'false' ? superdelegation === 'true' : String(given.lanes) === 'true'
   return {
     lanes: on,
-    router: ROUTER_MODES.includes(given.router) ? given.router : (on ? 'command' : 'record'),
-    decider: ROUTER_DECIDERS.includes(given.decider) ? given.decider : 'haiku',
     harnesses: harnesses.length > 0 ? harnesses : ['agy'],
   }
 }
@@ -256,7 +252,7 @@ export function parseHarness(out, name) {
 }
 
 // What a delegation ran on, as harness/model/effort, and the same with the model's `claude-` left out for a narrow
-// pane; with no ranOn, how the router applied it. A model that ends in -<effort> (gemini-3.8-flash-low on low) says
+// pane; with no ranOn, how it was applied. A model that ends in -<effort> (gemini-3.8-flash-low on low) says
 // it twice, so the suffix goes.
 function ranOnText(ranOn, applied) {
   const how = clean(applied) || '—'
