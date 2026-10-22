@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { LEAD_AGENT, markerFile, markSession, isAetherSession, opsOffFile, pruneSessions, delegateFile, routerFile, readRouterSettings } = require('../plugins/aether/lib/session.js')
+const { LEAD_AGENT, markerFile, markSession, isAetherSession, opsOffFile, pruneSessions, delegateFile } = require('../plugins/aether/lib/session.js')
 
 test('the Lead agent is aether:lead', () => {
   assert.equal(LEAD_AGENT, 'aether:lead')
@@ -93,15 +93,4 @@ test('markSession refuses an invalid id and writes no delegate file either', (t)
   const data = tempDir(t)
   assert.throws(() => markSession(data, '../x', 1, { delegate: { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } } }), /invalid session id/)
   assert.deepEqual(fs.readdirSync(data), [])
-})
-
-test('markSession still accepts the router settings that lib/route.js reads, and a resume without them removes the stale file', (t) => {
-  const data = tempDir(t)
-  const router = { mode: 'command', decider: 'haiku', fallback: { alias: 'sonnet', effort: 'high' }, deadlines: { haikuMs: 8000, jevMs: 3000, quotaMs: 3000 }, lanes: false, harnesses: ['agy'] }
-  markSession(data, 's1', 1, { router })
-  assert.equal(routerFile(data, 's1'), path.join(data, 'sessions', 's1.router.json'))
-  assert.deepEqual(readRouterSettings(data, 's1'), router)
-  markSession(data, 's1', 2)
-  assert.equal(readRouterSettings(data, 's1'), null)
-  assert.equal(fs.existsSync(routerFile(data, 's1')), false)
 })
