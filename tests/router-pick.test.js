@@ -154,8 +154,28 @@ test('issue 025: a stale harness that cannot serve the call is not waited for', 
   const step = await pairStep(s.d, s.merged, { reference: { model: 'opus', effort: 'xhigh' } })
   assert.equal(step.pick, null)
   assert.equal(s.clock.t, NOW, 'no wait')
-  assert.deepEqual(s.renewed, ['agy', 'grok'], 'the renewals still start, for the next decision')
+  assert.deepEqual(s.renewed, [], 'no renewal starts either: no reading of agy or grok can change the pick')
   assert.match(step.reason, /native/)
+})
+
+test('issue 025: a stale agy whose every group is marked dry is neither renewed nor waited for, and a fitting stale harness still is', async () => {
+  const refusal = (group) => ({ harness: 'agy', group, at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 5), claude: weekly(0.9, 80) }, NOW - 11 * MIN), grok: null }, marks: ['argon', 'flash', 'claude'].map(refusal) })
+  const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
+  assert.deepEqual(s.renewed, ['grok'], 'agy is left out of the renewal, grok is renewed')
+  assert.equal(step.waitedMs, 3000, 'the wait is for grok alone, up to the quota limit')
+  assert.equal(s.clock.t - NOW, 3000)
+  assert.equal(step.quota.find((c) => c.harness === 'agy' && c.group === 'argon').why, 'no-reading')
+  assert.equal(step.quota.find((c) => c.harness === 'agy').renewal, undefined)
+  assert.equal(step.quota.find((c) => c.harness === 'grok').renewal, 'started')
+})
+
+test('issue 025: a stale agy with no rung at the level is neither renewed nor waited for, with a reference above every agy pair', async () => {
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 5), claude: weekly(0.9, 80) }, NOW - 11 * MIN), grok: GROK } })
+  const step = await pairStep(s.d, s.merged, { reference: { model: 'opus', effort: 'xhigh' } })
+  assert.deepEqual(s.renewed, [], 'agy\'s best pair reaches 52.6 points and this call asks 55')
+  assert.equal(s.clock.t, NOW)
+  assert.equal(step.waitedMs, 0)
 })
 
 test('R22: a mark holds the group although the reading shows balance, a refusal\'s mark is never lifted, and one that came from a reading is', async () => {
@@ -251,7 +271,7 @@ test('issue 035: the harnesses that serve are found with the slow pairs excluded
   const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: null }, slow: () => ['grok/grok-4.7@high'] })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
   assert.equal(s.clock.t, NOW, 'no wait')
-  assert.deepEqual(s.renewed, ['grok'], 'the renewal still starts, for the next decision')
+  assert.deepEqual(s.renewed, [], 'no renewal starts: its only pair is slow, so no reading of grok can change the pick')
   assert.equal(step.waitedMs, 0)
   assert.equal(idOf(step), 'agy/claude-sonnet-5-5@high')
 })
