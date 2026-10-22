@@ -14,7 +14,7 @@ const { sweepRun } = require('./worktrees.js')
 const { judge } = require('./baseline.js')
 const { legacyNotes } = require('./superdelegation.js')
 const { isSessionId } = require('./spend.js')
-const { archiveSpend } = require('./spend-archive.js')
+const { archiveSpend, noteFailure, clearFailure } = require('./spend-archive.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
 const DAY_MS = 24 * 3600 * 1000
@@ -650,7 +650,8 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
 
 // Deletes the usage sessions not written to for `days` (the usage meter's files never shrink). Before it deletes the
 // parts of a session id, it adds what they spent to the session's summary (lib/spend-archive.js): a session whose
-// summary cannot be written stays, for the next prune to try again. A name that is not a session id goes with no summary.
+// summary cannot be written stays, for the next prune to try again, and leaves a trace of the failure under the data
+// directory (prune-failures.json). A name that is not a session id goes with no summary.
 function pruneUsage(dataDir, { days = 30, now = Date.now(), prices } = {}) {
   const root = path.join(dataDir, 'usage')
   const pruned = []
@@ -662,9 +663,11 @@ function pruneUsage(dataDir, { days = 30, now = Date.now(), prices } = {}) {
     if (isSessionId(session)) {
       try {
         archiveSpend(dataDir, session, 'usage', { prices })
-      } catch {
+      } catch (err) {
+        noteFailure(dataDir, `usage/${session}`, err, now)
         continue
       }
+      clearFailure(dataDir, `usage/${session}`)
     }
     try {
       fs.rmSync(dir, { recursive: true, force: true })

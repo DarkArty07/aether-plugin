@@ -26,7 +26,7 @@ const rows = (lines) => lines.map((line) => line.parts.map((part) => part.text).
 const printed = (value, extra = {}) => ({ exitCode: 0, stdout: `${JSON.stringify(value)}\n`, ...extra })
 
 test('dollars have two decimals, rounded half away from zero', () => {
-  const cases = [[0, '0.00'], [0.005, '0.01'], [1.005, '1.01'], [2.675, '2.68'], [-0.005, '-0.01'], [36.25, '36.25'], [1e6, '1000000.00'], [0.004, '0.00']]
+  const cases = [[0, '0.00'], [0.005, '0.01'], [1.005, '1.01'], [2.675, '2.68'], [-0.005, '-0.01'], [36.25, '36.25'], [1e6, '1000000.00'], [0.004, '0.00'], [-0.004, '0.00']]
   for (const [value, text] of cases) assert.equal(view.usdText(value), text, String(value))
   for (const bad of [NaN, Infinity, null, undefined, '3']) assert.equal(view.usdText(bad), '—')
 })
@@ -45,6 +45,7 @@ test('the panel says what the figure holds, in this order', () => {
   assert.deepEqual(rows(lines), [
     'Aether · session spend',
     'Session s1 · list prices · test table, S1',
+    '',
     'Total US$ 30.50',
     'Lead US$ 20.00 · Agents US$ 8.25 · Other harnesses US$ 2.25',
     '',
@@ -67,14 +68,28 @@ test('the panel says what the figure holds, in this order', () => {
     '',
     'First request 2026-09-01T10:00:00.000Z · last request 2026-09-03T10:00:00.000Z',
     'Resumptions 4 (approximate)',
-    '',
   ])
-  assert.equal(lines[lines.length - 1].action, true)
+  assert.equal(lines[2].action, true)
+})
+
+test('a long figure shows how many rows follow in a small pane', () => {
+  const lines = view.spendLines({ result: ok(REPORT), columns: 80, rows: 10 })
+  const text = rows(lines)
+  const marker = text.findIndex((row) => /^… \d+ more rows \(↓ scrolls\)$/.test(row))
+  assert.equal(marker, 9)
+  assert.equal(Number(/\d+/.exec(text[marker])[0]), text.length - marker - 1)
+})
+
+test('a model that answered with no tokens recorded is listed under the models without a price', () => {
+  const listed = rows(view.spendLines({ result: ok({ ...REPORT, tokenless: ['grok-4.7'] }), columns: 76 }))
+  assert.ok(listed.includes('No tokens recorded: grok-4.7'))
+  assert.ok(listed.indexOf('No price: x-free') < listed.indexOf('No tokens recorded: grok-4.7'))
+  assert.ok(!rows(view.spendLines({ result: ok(REPORT), columns: 76 })).some((row) => row.startsWith('No tokens recorded')))
 })
 
 test('an incomplete figure says incomplete next to the total; a complete one does not', () => {
   const incomplete = rows(view.spendLines({ result: ok({ ...REPORT, complete: false }), columns: 76 }))
-  assert.equal(incomplete[2], 'Total US$ 30.50 incomplete')
+  assert.equal(incomplete[3], 'Total US$ 30.50 incomplete')
   assert.ok(!rows(view.spendLines({ result: ok(REPORT), columns: 76 })).some((row) => row.includes('incomplete')))
 })
 

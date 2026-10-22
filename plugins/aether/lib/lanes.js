@@ -277,13 +277,14 @@ function readLog(dataDir, { since = 0 } = {}) {
 
 // Deletes the session files of the lane log not written to for `days`. Before it deletes the file of a session id, it
 // adds what its calls spent to the session's summary (lib/spend-archive.js): a file whose summary cannot be written
-// stays, for the next prune to try again. `unknown` and a name that is not a session id go with no summary.
+// stays, for the next prune to try again, and leaves a trace of the failure under the data directory
+// (prune-failures.json). `unknown` and a name that is not a session id go with no summary.
 function pruneLog(dataDir, { days = 30, now = Date.now(), prices } = {}) {
   const dir = logDir(dataDir)
   if (!fs.existsSync(dir)) return { pruned: [] }
   // Asked for here, not on load: spend-archive.js needs spend.js, which needs this module.
   const { isSessionId } = require('./spend.js')
-  const { archiveSpend } = require('./spend-archive.js')
+  const { archiveSpend, noteFailure, clearFailure } = require('./spend-archive.js')
   const cutoff = now - days * DAY_MS
   const pruned = []
   for (const file of logFiles(dir)) {
@@ -301,9 +302,11 @@ function pruneLog(dataDir, { days = 30, now = Date.now(), prices } = {}) {
     if (isSessionId(id)) {
       try {
         archiveSpend(dataDir, id, 'lanes', { prices })
-      } catch {
+      } catch (err) {
+        noteFailure(dataDir, `lanes/${id}`, err, now)
         continue
       }
+      clearFailure(dataDir, `lanes/${id}`)
     }
     fs.rmSync(full, { force: true })
     pruned.push(id)

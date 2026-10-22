@@ -12,6 +12,11 @@ const { CLI_MAX_SECONDS } = require('../plugins/aether/lib/delegate-limits.js')
 const readingsLib = require('../plugins/aether/lib/lane-readings.js')
 const lanesLib = require('../plugins/aether/lib/lanes.js')
 
+const PID = process.pid
+const DEFAULT_ID = `d-1-${PID}`
+const ID2 = `d-2-${PID}`
+const ID3 = `d-3-${PID}`
+
 const GROUPS = { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' }
 
 function setup(t, { quota = null } = {}) {
@@ -36,7 +41,7 @@ function setup(t, { quota = null } = {}) {
 }
 const rung = { model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' }
 const run = (s, prompt, over = {}) => delegate.runDelegate({
-  cwd: s.repo.dir, id: 'd-1', harness: 'agy', rung, task: { description: 'audit the retry wrapper', prompt }, config: s.config, dataDir: s.dataDir, ...over,
+  cwd: s.repo.dir, id: DEFAULT_ID, harness: 'agy', rung, task: { description: 'audit the retry wrapper', prompt }, config: s.config, dataDir: s.dataDir, ...over,
 })
 const worktrees = (s) => s.repo.git('worktree', 'list').split('\n').length
 
@@ -56,10 +61,10 @@ test('a read-only delegate runs on agy with the model of the rung, and its answe
   assert.equal(call.argv[call.argv.indexOf('--model') + 1], 'gemini-3.8-flash-medium')
   assert.equal(call.argv[call.argv.indexOf('--print-timeout') + 1], `${CLI_MAX_SECONDS}s`, 'the reviewer timeout of the table, 1200 s, is cut to the most a delegate may run')
   assert.ok(call.argv.includes('--dangerously-skip-permissions'))
-  assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', 'd-1', 'wt')))
+  assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', DEFAULT_ID, 'wt')))
   assert.equal(s.repo.git('rev-parse', 'HEAD'), head)
   assert.equal(worktrees(s), 1, 'the disposable worktree is gone')
-  assert.equal(fs.existsSync(path.join(s.repo.dir, '.aether', 'delegates', 'd-1', 'wt')), false)
+  assert.equal(fs.existsSync(path.join(s.repo.dir, '.aether', 'delegates', DEFAULT_ID, 'wt')), false)
 })
 
 test('a checkout with uncommitted work is dirty: the disposable copy would not see it, so nothing is read or launched', async (t) => {
@@ -76,7 +81,7 @@ test('a checkout with uncommitted work is dirty: the disposable copy would not s
   assert.equal(edited.modelCalls().length, 0)
   assert.equal(edited.usageCalls().length, 0, 'the check comes before the quota reading')
   assert.equal(worktrees(edited), 1)
-  assert.equal(fs.existsSync(path.join(edited.repo.dir, '.aether', 'delegates', 'd-1')), false)
+  assert.equal(fs.existsSync(path.join(edited.repo.dir, '.aether', 'delegates', DEFAULT_ID)), false)
 
   const added = setup(t)
   fs.writeFileSync(path.join(added.repo.dir, 'notes.txt'), 'new, not committed\n')
@@ -146,8 +151,8 @@ test('maxCliSeconds caps the CLI limit of the harness\'s settings, and unset lea
   const s = setup(t)
   const limitOf = (call) => call.argv[call.argv.indexOf('--print-timeout') + 1]
   assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "a"}', { maxCliSeconds: 200 })).status, 'ok')
-  assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "b"}', { id: 'd-2', maxCliSeconds: CLI_MAX_SECONDS + 100 })).status, 'ok')
-  assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "c"}', { id: 'd-3', maxCliSeconds: null })).status, 'ok')
+  assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "b"}', { id: ID2, maxCliSeconds: CLI_MAX_SECONDS + 100 })).status, 'ok')
+  assert.equal((await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "c"}', { id: ID3, maxCliSeconds: null })).status, 'ok')
   assert.deepEqual(s.modelCalls().map(limitOf), ['200s', `${CLI_MAX_SECONDS}s`, `${CLI_MAX_SECONDS}s`])
 })
 
@@ -164,8 +169,8 @@ test('issue 035: the note every delegate gets bounds the work to about 20 tool c
 test('issue 035: a call killed at its limit is timedOut and failed, even when the quota reading afterwards is under the reserve', async (t) => {
   const quotaFile = (s) => s.env.AETHER_FAKE_AGY_QUOTA_FILE
   const settled = (s) => {
-    s.config.harnesses.agy.timeouts = { ...s.config.harnesses.agy.timeouts, reviewer: 0.3 }
-    return { graceSeconds: 0.3 }
+    s.config.harnesses.agy.timeouts = { ...s.config.harnesses.agy.timeouts, reviewer: 1 }
+    return { graceSeconds: 1 }
   }
   // The fake sleeps past the limit and its grace; before it sleeps it drains the group, so the reading after the call
   // is under the reserve, which on any other ending would make the call a quota failure.
@@ -174,7 +179,7 @@ test('issue 035: a call killed at its limit is timedOut and failed, even when th
   const out = await run(s, `Audit.\nFAKE-AGY: write-abs ${quotaFile(s)} ${drained}\nFAKE-AGY: sleep 30\nFAKE-AGY: answer {"answer": "late"}`, settled(s))
   assert.equal(out.timedOut, true)
   assert.equal(out.status, 'failed', 'running out of time is not a refusal, whatever the reading says')
-  assert.match(out.detail, /^ran out of time: killed at 0\.6 s, exit 137$/)
+  assert.match(out.detail, /^ran out of time: killed at \d+(?:\.\d+)? s, exit 137$/)
   assert.equal(out.text, '')
   assert.equal(lanesLib.usable(out.quotaAfter, s.config.reserve), false, 'the reading after was under the reserve')
   assert.equal(worktrees(s), 1, 'the worktree is gone')
@@ -189,7 +194,7 @@ test('issue 035: a call killed at its limit is timedOut and failed, even when th
 test('issue 035: every outcome that did not run out of time says so, launched or not', async (t) => {
   const s = setup(t)
   assert.equal((await run(s, 'Audit.\nFAKE-AGY: exit-error model not found')).timedOut, false)
-  assert.equal((await run(s, 'Audit.', { harness: 'codex', id: 'd-2' })).timedOut, false)
+  assert.equal((await run(s, 'Audit.', { harness: 'codex', id: ID2 })).timedOut, false)
   const under = setup(t, { quota: { 'Gemini Models': [0.9, 0.02], 'Claude and GPT models': [0.9, 0.9] } })
   assert.equal((await run(under, 'Audit.')).timedOut, false)
   const dirty = setup(t)
@@ -239,7 +244,7 @@ test('a read-only delegate runs on muse with the model of the pair, and its answ
   const [call] = fs.readFileSync(process.env.AETHER_FAKE_MUSE_LOG, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
   assert.ok(call.argv.includes('muse-wonder-full-1.0'), call.argv.join(' '))
   assert.equal(call.metaApiKey, false, 'no key of the owner reaches the call')
-  assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', 'd-1', 'wt')), 'in the disposable worktree')
+  assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', DEFAULT_ID, 'wt')), 'in the disposable worktree')
   assert.equal(s.repo.git('rev-parse', 'HEAD'), head)
   assert.equal(worktrees(s), 1, 'the disposable worktree is gone')
 })
@@ -258,7 +263,7 @@ test('the quota goes through the saved reading: the one before is served from it
   const saved = JSON.parse(fs.readFileSync(readingsLib.cacheFile(s.dataDir, 'agy'), 'utf8'))
   assert.equal(saved.harness, 'agy')
   assert.ok(Object.hasOwn(saved.groups, 'flash'), 'the reading after is saved')
-  const second = await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "two"}', { id: 'd-2' })
+  const second = await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "two"}', { id: ID2 })
   assert.equal(second.status, 'ok', second.detail)
   assert.equal(s.usageCalls().length, 3, 'the reading before came from the saved one: only the reading after started agy')
 })

@@ -16,11 +16,12 @@ const printed = (value: unknown): Answer => ({ exitCode: 0, stdout: `${JSON.stri
 
 // Answers what the mod asks Claude Code for, and keeps what it did. `calls` counts the model and the prompt: a
 // /spend must leave both at zero.
-function stubs(on, { marked = (() => true) as () => boolean, answer = (run: Run): Answer | Promise<Answer> => printed(REPORT) } = {}) {
+function stubs(on, { marked = (() => true) as () => boolean, answer = (run: Run): Answer | Promise<Answer> => printed(REPORT), placed = true, reason = 'out of room' } = {}) {
   const runs: Run[] = []
   const registered: Array<Record<string, any>> = []
   const opened: Array<Record<string, unknown>> = []
   const closed: Array<Record<string, unknown>> = []
+  const toasts: string[] = []
   const calls = { model: 0, prompt: 0 }
   mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/home/u', AETHER_DATA_DIR: '/home/u/aether-data' })
@@ -41,9 +42,13 @@ function stubs(on, { marked = (() => true) as () => boolean, answer = (run: Run)
     calls.prompt++
     return { text: (e as { text: string }).text }
   })
+  on('ui.toast', ($, e) => {
+    toasts.push(typeof e === 'string' ? e : (e as any).message ?? (e as any).text ?? String(e))
+    return { value: undefined }
+  })
   on('ui.open', ($, e) => {
     opened.push(e as Record<string, unknown>)
-    return { value: { isPlaced: true } }
+    return { value: { isPlaced: placed, reason } }
   })
   on('ui.close', ($, e) => {
     closed.push(e as Record<string, unknown>)
@@ -56,7 +61,7 @@ function stubs(on, { marked = (() => true) as () => boolean, answer = (run: Run)
     if ('deny' in done) return { deny: done.deny }
     return { value: { stderr: '', isStdoutTruncated: false, isStderrTruncated: false, ...done } }
   })
-  return { runs, registered, opened, closed, calls }
+  return { runs, registered, opened, closed, calls, toasts }
 }
 
 function gate() {
@@ -222,4 +227,76 @@ test('a plain session has no /spend: nothing is declared, opened, run or drawn',
   expect(await ui.find({ type: 'Text', text: /session spend/ })).toBeUndefined()
   await ui.unmount()
   expect(runs).toEqual([])
+})
+
+test('a new /spend discards the late answer of the previous one', async ($, on) => {
+  const first = gate()
+  let count = 0
+  stubs(on, {
+    answer: async () => {
+      count++
+      if (count === 1) {
+        await first.wait
+        return printed({ ...REPORT, usd: 999.99 })
+      }
+      return printed(REPORT)
+    },
+  })
+  await $.command.run({ command: 'spend' })
+  await $.command.run({ command: 'spend' })
+  await settled()
+  const ui = await mount($, 'terminal')
+  let rows = await paneRows(ui)
+  expect(rows).toContain('Total US$ 30.50')
+  first.open()
+  await settled()
+  rows = await paneRows(ui)
+  expect(rows).toContain('Total US$ 30.50')
+  expect(rows.join('\n')).not.toContain('999.99')
+  await ui.unmount()
+})
+
+test('a toast is shown when the pane is not placed', async ($, on) => {
+  const { toasts } = stubs(on, { placed: false, reason: 'terminal too small' })
+  await $.command.run({ command: 'spend' })
+  expect(toasts).toEqual(['spend: terminal too small'])
+})
+
+test('aether-report is run with timeoutMs 120000', async ($, on) => {
+  const { runs } = stubs(on)
+  await $.command.run({ command: 'spend' })
+  await settled()
+  expect(runs.length).toBe(1)
+  expect(runs[0]?.init.timeoutMs).toBe(120000)
+})
+
+test('a plain session draws no button on any surface', async ($, on) => {
+  const { runs } = stubs(on, { marked: () => false })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>the engine drew its own</Text>
+  })
+  await startSession($)
+  await $.classic.SessionStart({ source: 'startup' })
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect(await ui.find({ type: 'Text', text: 'the engine drew its own' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /session spend/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Button' })).toBeUndefined()
+    await ui.unmount()
+  }
+  expect(runs).toEqual([])
+})
+
+test('a long figure shows how many rows follow in a small pane and keeps Close near the top', async ($, on) => {
+  stubs(on)
+  await $.command.run({ command: 'spend' })
+  await settled()
+  const ui = await mount($, 'terminal', pane(76, 10))
+  const rows = await paneRows(ui)
+  const marker = rows.findIndex((line) => /^… \d+ more rows \(↓ scrolls\)$/.test(line))
+  expect(marker).toBe(9)
+  expect(Number(/\d+/.exec(rows[marker])?.[0])).toBe(rows.length - marker - 1)
+  expect(rows.indexOf('[buttons]')).toBe(2)
+  await ui.unmount()
 })
