@@ -153,7 +153,7 @@ function laneResult(runId) {
     { verdict: 'approve', findings: [], provider: `agy ${GEMINI}` },
   ]
   result.units[0].attempts = 2
-  result.lanes = { calls: 3, ok: 2, failed: 1, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 2, dry: [] }
+  result.lanes = { calls: 3, ok: 2, failed: 1, quota: 0, violation: 0, blocked: 0, unavailable: 0, dry: [] }
   return result
 }
 

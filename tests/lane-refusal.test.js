@@ -251,7 +251,7 @@ test('issue 038: with the shipped table, a refusal of Argon leaves Flash usable 
 })
 
 test('a pair whose key a mark holds is dry for a seat, and a pair of an unmarked key is not', () => {
-  const config = { harnesses: { agy: { command: 'agy', maxParallel: 4, waitSeconds: 540, timeouts: { judge: 1200 }, groups: {}, models: {} } } }
+  const config = { harnesses: { agy: { command: 'agy', waitSeconds: 540, timeouts: { judge: 1200 }, groups: {}, models: {} } } }
   const { pairs } = require('../plugins/aether/lib/pairs.js').loadPairs()
   const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.now() + days * 24 * HOUR).toISOString() })
   const held = { usable: false, unknown: false, mark: { reason: 'quota refusal' }, resetsAt: new Date(Date.now() + 24 * HOUR).toISOString() }

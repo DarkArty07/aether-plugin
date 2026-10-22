@@ -112,8 +112,6 @@ function aetherLane(call, defaults) {
       return { logged: true }
     case 'pick':
       return nativeDecision(call.lane)
-    case 'pause':
-      return { paused: Number(call.command.rest[1]) }
     default:
       throw new Error(`unexpected aether-lane command: ${call.command.line}`)
   }
@@ -173,7 +171,7 @@ function tick() {
 // the unit (ops: for the unit and command); `fallback` is the default handler. An ops handler
 // returns what aether-wt would print, or null for an agent that failed. `overrides.lane` answers
 // aether-lane commands the same way, and may also return a string, printed as it is. By default `pick` answers with
-// the native pair of its flags, `took` with { logged: true } and `pause` with { paused }.
+// the native pair of its flags, and `took` with { logged: true }.
 //
 // An aether-lane call also carries `lane` (its run, call and flags), `payload` ({ path, text }, for
 // a start), `digestOk` (for a start: whether --digest matches the payload) and `started` (for a

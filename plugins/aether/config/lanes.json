@@ -4,8 +4,6 @@
   "harnesses": {
     "agy": {
       "command": "agy",
-      "maxParallel": 8,
-      "maxParallelMeasured": { "at": "2026-10-20T21:40:58.778Z", "ceiling": 8, "limited": false },
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200, "judge": 1200, "writer": 2700, "examiner": 1800 },
@@ -35,7 +33,6 @@
     },
     "codex": {
       "command": "codex",
-      "maxParallel": 2,
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
@@ -44,8 +41,6 @@
     },
     "grok": {
       "command": "grok",
-      "maxParallel": 2,
-      "maxParallelMeasured": { "at": "2026-10-20T21:42:17.781Z", "ceiling": 8, "limited": true },
       "waitSeconds": 540,
       "quotaLifeMinutes": 30,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
@@ -60,7 +55,6 @@
     },
     "cursor": {
       "command": "cursor-agent",
-      "maxParallel": 2,
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
@@ -69,8 +63,6 @@
     },
     "muse": {
       "command": "muse",
-      "maxParallel": 2,
-      "maxParallelMeasured": { "at": "2026-10-20T21:43:50.871Z", "ceiling": 8, "limited": true },
       "waitSeconds": 540,
       "quotaLifeMinutes": 30,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },

@@ -54,9 +54,9 @@ test("the Lanes section of the guide explains the order of the candidates, the d
   )
 })
 
-test('R21: lanes.md holds the rule: the switch, the points, the tolerance, the order, the cupo wait and the report', () => {
+test('R21: lanes.md holds the rule: the switch, the points, the tolerance, the order, no limit on parallel calls and the report', () => {
   const text = read('docs', 'guide', 'lanes.md')
-  for (const fragment of ['`superdelegation`', 'off by default', 'plugins/aether/config/pairs.json', '1 point', 'weekly', 'cost per task', '10 minutes', 'aether-report']) assert.ok(text.includes(fragment), `lanes.md says ${fragment}`)
+  for (const fragment of ['`superdelegation`', 'off by default', 'plugins/aether/config/pairs.json', '1 point', 'weekly', 'cost per task', 'No limit on parallel calls', 'aether-report']) assert.ok(text.includes(fragment), `lanes.md says ${fragment}`)
 })
 
 test('R21: lanes.md says how the old options are read and what the rule asks, keeps, and cannot reach', () => {
@@ -69,8 +69,6 @@ test('R21: lanes.md says how the old options are read and what the rule asks, ke
       'Sonnet `high` asks 46.8 and Sonnet `xhigh` asks 51.9',
       'No pair is chosen or left out for being fast or slow',
       'Nobody reviews its own work',
-      'scripts/lane-cupo.js',
-      'the owner\'s `paid-call` grant',
     ],
     'lanes.md',
   )

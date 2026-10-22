@@ -1,6 +1,6 @@
 'use strict'
 
-// The scenarios E1 to E8 and the no-candidate measure, run end to end through the real path:
+// The scenarios E1 to E8 (E7 is the absence of a limit on a harness) and the no-candidate measure, run end to end through the real path:
 // the aether-lane delegate bin, the router (route.begin/route.finish) and the aether-report bin,
 // all on one data directory per test. No test writes the router journal or the lane log by hand:
 // every entry is born from running the delegate command, the router, or the report bin.
@@ -14,13 +14,11 @@ const { PLUGIN, WT_BIN, runBin, makeRepo, tempDir } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const pairs = require('../plugins/aether/lib/pairs.js')
-const delegate = require('../plugins/aether/lib/lane-delegate.js')
 const route = require('../plugins/aether/lib/route.js')
 const log = require('../plugins/aether/lib/router-log.js')
 const session = require('../plugins/aether/lib/session.js')
 
 const REPORT_BIN = path.join(PLUGIN, 'bin', 'aether-report')
-const FAKE_GROK = path.join(__dirname, 'fixtures', 'fake-grok.js')
 const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote the file.', head: '', tests: 'ok', concerns: '', question: '' })
 const READY = JSON.stringify({ verdict: 'ready', findings: [], declined: [], summary: 'The diff does what the brief asks.' })
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
@@ -166,28 +164,6 @@ async function go(deps, ev, answer) {
   return route.finish({ id: first.id, answer }, deps)
 }
 const journal = (dataDir) => log.readJournal(dataDir).filter((e) => e.kind === 'decision')
-
-// An environment with agy and grok enabled against their fakes, one place each, as in
-// tests/lane-delegate.test.js.
-function twoHarnessEnv(t) {
-  fs.chmodSync(FAKE_GROK, 0o755)
-  const env = fx.laneEnv(t, {
-    command: roleFake(t),
-    mutate: (config) => {
-      config.harnesses.grok.command = FAKE_GROK
-      config.harnesses.agy.maxParallel = 1
-      config.harnesses.grok.maxParallel = 1
-    },
-  })
-  const logFile = path.join(env.HOME, '.grok', 'logs', 'unified.jsonl')
-  fs.mkdirSync(path.dirname(logFile), { recursive: true })
-  const entry = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'grok-billing.jsonl'), 'utf8').trim().split('\n')[1])
-  entry.ts = new Date(Date.now() - 5 * 60000).toISOString()
-  entry.ctx.config.currentPeriod.end = new Date(Date.now() + 50 * 3600000).toISOString()
-  entry.ctx.config.creditUsagePercent = 30
-  fs.writeFileSync(logFile, `${JSON.stringify(entry)}\n`)
-  return { ...env, AETHER_LANE_HARNESSES: 'agy,grok', AETHER_FAKE_GROK_LOG: path.join(path.dirname(env.HOME), 'grok.log') }
-}
 
 test('E1: a small editing charge leaves Claude for an external pair, comes back as a unit branch, and after the merge the charge test command passes in the repository', (t) => {
   const repo = makeRepo(t)
@@ -390,33 +366,60 @@ test('E6: with superdelegation off the delegate command does nothing, and the ro
   assert.equal(journal(env.AETHER_DATA_DIR)[0].decision.harness, 'claude')
 })
 
-test('E7: a full cupo on one harness sends the charge to the other, and with every harness full the charge ends as no-candidate with the cupo cause', (t) => {
-  const bySlot = makeRepo(t)
-  const slotEnv = twoHarnessEnv(t)
-  const briefA = writeBrief(bySlot, briefLines())
-  const held = delegate.acquireSlot(slotEnv.AETHER_DATA_DIR, 'agy', 1, {})
-  assert.ok(held)
-  const a = runDelegate(bySlot, slotEnv, { brief: briefA })
-  delegate.releaseSlot(slotEnv.AETHER_DATA_DIR, 'agy', held.slot)
-  assert.equal(a.json?.status, 'done', a.stdout + a.stderr)
-  assert.equal(a.json.pair.harness, 'grok')
+// A wrapper CLI that holds every implementer turn until `count` turns are running at once, or `seconds` pass,
+// and records how many it saw: a harness that let fewer calls start would leave the first ones seeing less.
+function barrierFake(t, dir, { count, seconds }) {
+  const file = path.join(tempDir(t, 'aether-barrier-fake-'), 'barrier-fake.js')
+  const lines = [
+    '#!/usr/bin/env node',
+    "'use strict'",
+    "const fs = require('node:fs')",
+    "const path = require('node:path')",
+    "const { spawnSync } = require('node:child_process')",
+    'const argv = process.argv.slice(2)',
+    "const pi = argv.indexOf('-p')",
+    `const reviewer = ${JSON.stringify(fx.roleBody('reviewer').slice(0, 120))}`,
+    "if (pi !== -1 && argv[pi + 1] !== '/usage' && !argv[pi + 1].startsWith(reviewer)) {",
+    `  const dir = ${JSON.stringify(dir)}`,
+    "  fs.writeFileSync(path.join(dir, 'turn-' + process.pid), '')",
+    `  const deadline = Date.now() + ${seconds * 1000}`,
+    "  const running = () => fs.readdirSync(dir).filter((name) => name.startsWith('turn-')).length",
+    `  while (running() < ${count} && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)`,
+    "  fs.appendFileSync(path.join(dir, 'seen.log'), running() + '\\n')",
+    '}',
+    `const r = spawnSync(${JSON.stringify(fx.FAKE_AGY)}, argv, { stdio: 'inherit' })`,
+    'process.exit(r.status === null ? 1 : r.status)',
+  ]
+  fs.writeFileSync(file, lines.join('\n') + '\n')
+  fs.chmodSync(file, 0o755)
+  return file
+}
 
-  const full = makeRepo(t)
-  const fullEnv = twoHarnessEnv(t)
-  const briefB = writeBrief(full, briefLines())
-  const heldAgy = delegate.acquireSlot(fullEnv.AETHER_DATA_DIR, 'agy', 1, {})
-  const heldGrok = delegate.acquireSlot(fullEnv.AETHER_DATA_DIR, 'grok', 1, {})
-  assert.ok(heldAgy && heldGrok)
-  const b = runDelegate(full, fullEnv, { brief: briefB })
-  delegate.releaseSlot(fullEnv.AETHER_DATA_DIR, 'agy', heldAgy.slot)
-  delegate.releaseSlot(fullEnv.AETHER_DATA_DIR, 'grok', heldGrok.slot)
-  assert.equal(b.status, 0, b.stdout + b.stderr)
-  assert.equal(b.json.status, 'no-candidate')
-  assert.equal(b.json.cause, 'cupo')
-  assert.ok(b.json.tried.some((entry) => entry.pair === null && entry.harness === 'agy' && entry.cause === 'cupo'))
-  const entry = lanes.readLog(fullEnv.AETHER_DATA_DIR).find((item) => item.kind === 'delegate')
-  assert.deepEqual([entry.id, entry.cause], [b.json.id, 'cupo'])
-  assert.equal(fx.agyTurns(fullEnv).length, 0)
+test('E7: five editing delegates launched at once on one harness all start at once: none waits for a place and none ends no-candidate', async (t) => {
+  const COUNT = 5
+  const barrier = tempDir(t, 'aether-barrier-')
+  const env = agyEnv(t, { command: barrierFake(t, barrier, { count: COUNT, seconds: 40 }) })
+  const launch = (index) => {
+    const repo = makeRepo(t)
+    const brief = writeBrief(repo, briefLines())
+    const args = [fx.LANE_BIN, 'delegate', '--brief', brief, '--model', 'haiku', '--effort', 'high', '--owns', 'src/**', '--session', `s${index}`]
+    const child = spawn(process.execPath, args, { cwd: repo.dir, env: { ...process.env, ...env } })
+    let stdout = ''
+    child.stdout.on('data', (chunk) => (stdout += chunk))
+    t.after(() => child.kill('SIGKILL'))
+    return new Promise((resolve) => child.once('exit', (code) => resolve({ code, json: JSON.parse(stdout.trim().split('\n').pop()) })))
+  }
+  const results = await Promise.all(Array.from({ length: COUNT }, (_, index) => launch(index)))
+  for (const r of results) {
+    assert.equal(r.code, 0, JSON.stringify(r.json))
+    assert.equal(r.json.status, 'done', JSON.stringify(r.json))
+    assert.equal(r.json.pair.harness, 'agy')
+  }
+  const seen = fs.readFileSync(path.join(barrier, 'seen.log'), 'utf8').trim().split('\n').map(Number)
+  assert.equal(seen.length, COUNT)
+  assert.ok(seen.every((n) => n === COUNT), `every implementer turn ran while all ${COUNT} were running: ${seen.join(', ')}`)
+  // The lane log keeps a `delegate` entry only for a charge that ended no-candidate.
+  assert.deepEqual(lanes.readLog(env.AETHER_DATA_DIR).filter((entry) => entry.kind === 'delegate'), [])
 })
 
 test('E8: the environment the fake dumps carries no secrets, and every turn ran inside .aether/worktrees/ or .aether/lanes/, never the repository', (t) => {
