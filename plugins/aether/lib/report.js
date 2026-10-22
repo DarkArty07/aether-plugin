@@ -605,6 +605,17 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   for (const unit of quality.adoptedUnits || []) {
     notes.push(`${unit.id} was integrated by hand at ${String(unit.commit).slice(0, 10)}: ${unit.reason}`)
   }
+  // A retry that ran as one sub-attempt per owned file (issue 14). The quality counts are unchanged:
+  // the pass is still one attempt of the unit.
+  for (const result of results) {
+    for (const unit of result.units || []) {
+      for (const round of unit.rounds || []) {
+        if (!round || round.split !== true) continue
+        const note = `${unit.id} attempt ${round.attempt} was a split pass of ${round.subAttempts} sub-attempts`
+        if (!notes.includes(note)) notes.push(note)
+      }
+    }
+  }
 
   return {
     runId,
