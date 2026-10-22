@@ -112,6 +112,7 @@ async function waitCommand(flags, dataDir) {
 }
 
 async function answerCommand(flags, dataDir) {
+  if (!/^[A-Za-z0-9_-]+$/.test(flags.task)) throw new Error(`the task id is letters, digits, - and _\n${usageOf('answer')}`)
   const attempt = Number(flags.attempt)
   if (!/^\d+$/.test(flags.attempt) || attempt < 1) throw new Error(`--attempt needs a whole number from 1\n${usageOf('answer')}`)
   return lib('delegate-run.js').recordAnswer({ task: flags.task, attempt, text: flags.text ?? '', session: flags.session ?? null, dataDir })
