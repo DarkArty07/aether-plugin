@@ -68,7 +68,7 @@ An unmeasured rung serves no level. The router picks the Claude rung of the deci
 
 ## Quota
 
-For a read-only task the router sends the delegate to another harness with the rule of `superdelegation`, the same function the swarm and the design seats ask (see [Lanes](lanes.md#lanes)). The router gives it the Claude rung the call would run on, and the function answers with the external pair that reaches the points of that rung, one point less at most. Among the pairs that do, the quota whose weekly window renews first goes first, and inside it the pair with the lowest cost per task. Speed decides nothing. What is not spent before the reset is lost.
+For a read-only task the router sends the delegate to another harness with the rule of `superdelegation`, the same function the swarm and the design seats ask (see [Lanes](lanes.md#lanes)). The design seats pass the author rule as an order of reserve: a pair of another family first, then the author's own family, and the native agent only last. The swarm, the final review and `aether-lane delegate` keep it as a bar. The router gives it the Claude rung the call would run on, and the function answers with the external pair that reaches the points of that rung, one point less at most. Among the pairs that do, the quota whose weekly window renews first goes first, and inside it the pair with the lowest cost per task. Speed decides nothing. What is not spent before the reset is lost.
 
 - **Agy, Grok and Muse.** The router may send a delegate to any of them that is in the `harnesses` option. Codex and Cursor cannot run a delegate.
 - **The reserve.** A group with a window under 5 % left is left out.

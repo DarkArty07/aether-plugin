@@ -4,7 +4,10 @@
 // one rule that picks the pair for a call. A call asks for the points of its native reference pair; an external
 // pair reaches it at those points minus TOLERANCE_POINTS; within a quota a pair that gives no more points than a
 // cheaper candidate is dominated; the quota that renews first takes the call, at its cheapest pair. Speed is
-// never read. Everything here is pure: the lane table, the pairs and the quota views come in as arguments.
+// never read. authorRule is 'bar' (the default, for the swarm, the final review and aether-lane delegate: a pair
+// of an author's family is not a candidate) or 'reserve' (the design seats: a pair of another family first, then
+// the author's own family, and the native agent only last). Everything here is pure: the lane table, the pairs
+// and the quota views come in as arguments.
 
 const { NATIVE_HARNESS, NATIVE_MODELS, referenceOf } = require('./pairs.js')
 
@@ -67,12 +70,13 @@ function resetsKey(quota) {
 const isDry = (quota) => Boolean(quota) && (quota.usable === false || Boolean(quota.mark))
 
 // The reason a pair is not a candidate before dominance, in the order of precedence, or null.
-function firstBar(pair, { harnesses, exclude, authors, floor }) {
+// Under authorRule 'reserve' the author's family is not barred here: it sorts after every other family.
+function firstBar(pair, { harnesses, exclude, authors, floor, authorRule }) {
   if (!Object.hasOwn(harnesses, pair.harness)) return 'harness-off'
   const view = harnesses[pair.harness]
   if (!view || view.installed !== true) return 'not-installed'
   if (exclude.includes(pair.id)) return 'excluded'
-  if (authors.includes(pair.family)) return 'author'
+  if (authorRule !== 'reserve' && authors.includes(pair.family)) return 'author'
   if (isDry(quotaOf(pair, harnesses))) return 'dry'
   return measureBar(pair, floor)
 }
@@ -99,6 +103,14 @@ function dominated(pair, open) {
     other.costPerTaskUsd < pair.costPerTaskUsd && tenths(pair.intelligence) <= tenths(other.intelligence) + TOLERANCE_TENTHS)
 }
 
+// Under reserve, an author's pair must not knock a pair of another family out of the same quota: that other
+// family is taken even when the author's pair is cheaper. Each side is dominated only by its own side.
+function rivalsOf(pair, open, authorRule, authors) {
+  if (authorRule !== 'reserve') return open
+  const own = authors.includes(pair.family)
+  return open.filter((other) => authors.includes(other.family) === own)
+}
+
 // The order of the candidates: the quota that renews first (an unreadable window after the readable ones),
 // then the lower cost per task (no cost last), then more points, then the order of the table.
 function compareCandidates(a, b) {
@@ -123,21 +135,25 @@ function nativeFor(pairs, ref, { authors, nativeDiffers }) {
 
 // The decision for one call. See the header for the rule; candidates lists every external pair of the table,
 // the candidates first in their order, then the others in the order of the table with the reason they passed.
-function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativeDiffers = false }) {
+function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativeDiffers = false, authorRule = 'bar' }) {
+  if (authorRule !== 'bar' && authorRule !== 'reserve') throw new Error(`authorRule must be bar or reserve, not ${JSON.stringify(authorRule)}`)
   const ref = referenceOf(pairs, reference)
   const requested = ref.intelligence
   const floor = tenths(requested) - TOLERANCE_TENTHS
   const external = pairs.map((pair, index) => ({ pair, index })).filter(({ pair }) => pair.harness !== NATIVE_HARNESS)
-  const context = { harnesses: harnesses || {}, exclude, authors, floor }
+  const context = { harnesses: harnesses || {}, exclude, authors, floor, authorRule }
   const barred = external.map((entry) => ({ ...entry, why: firstBar(entry.pair, context) }))
   const open = barred.filter((entry) => entry.why === null).map((entry) => entry.pair)
   for (const entry of barred) {
-    if (entry.why === null && dominated(entry.pair, open)) entry.why = 'dominated'
+    if (entry.why === null && dominated(entry.pair, rivalsOf(entry.pair, open, authorRule, authors))) entry.why = 'dominated'
   }
+  // Reserve sorts every other family ahead of the author's, before renewal and cost, so a cheaper or sooner
+  // pair of the author's family waits until no other family can take the call.
+  const authorLater = (pair) => (authorRule === 'reserve' && authors.includes(pair.family) ? 1 : 0)
   const ranked = barred
     .filter((entry) => entry.why === null)
-    .map((entry) => ({ ...entry, resets: resetsKey(quotaOf(entry.pair, context.harnesses)), cost: hasCost(entry.pair) ? entry.pair.costPerTaskUsd : Infinity }))
-    .sort(compareCandidates)
+    .map((entry) => ({ ...entry, resets: resetsKey(quotaOf(entry.pair, context.harnesses)), cost: hasCost(entry.pair) ? entry.pair.costPerTaskUsd : Infinity, authorLater: authorLater(entry.pair) }))
+    .sort((a, b) => (a.authorLater - b.authorLater) || compareCandidates(a, b))
   const passed = barred.filter((entry) => entry.why !== null)
 
   const describe = ({ pair }, rank, outcome, why) => ({

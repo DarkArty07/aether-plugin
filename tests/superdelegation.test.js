@@ -253,6 +253,36 @@ test('a retry excludes the pair that failed, and a harness that is off or not in
   assert.equal(why(missing, 'agy/gemini-3.8-flash@medium'), 'not-installed')
 })
 
+test('issue 64: authorRule reserve takes another family first, then the author family; the default stays a bar', () => {
+  const table = [
+    ...natives(),
+    row('muse/muse@high', { family: 'muse-wonder-full-1.0', intelligence: 53.6, costPerTaskUsd: 0.1, group: 'muse' }),
+    row('agy/argon@high', { family: 'gemini-4-argon', intelligence: 52.6, costPerTaskUsd: 9, group: 'argon' }),
+  ]
+  const harnesses = {
+    muse: { installed: true, groups: { muse: open(1) } },
+    agy: { installed: true, groups: { argon: open(5) } },
+  }
+  const base = { pairs: table, reference: { model: 'opus', effort: 'high' }, harnesses, authors: ['muse-wonder-full-1.0'], nativeDiffers: true }
+  // Muse renews sooner and costs less, so with no author it takes the call. Reserve still picks the other family.
+  assert.equal(pickedId(choose({ ...base, authors: [] })), 'muse/muse@high')
+  const reserved = choose({ ...base, authorRule: 'reserve' })
+  assert.equal(pickedId(reserved), 'agy/argon@high')
+  assert.equal(why(reserved, 'muse/muse@high'), null)
+  assert.equal(reserved.candidates.find((c) => c.id === 'muse/muse@high').outcome, 'next')
+  // The default, which the swarm and delegates use, still bars the author's family.
+  const barred = choose(base)
+  assert.equal(pickedId(barred), 'agy/argon@high')
+  assert.equal(why(barred, 'muse/muse@high'), 'author')
+  // Every other pair that reaches the points is dry: reserve takes the author's family, the bar falls to native.
+  const museOnly = { muse: harnesses.muse, agy: { installed: true, groups: { argon: dry } } }
+  assert.equal(pickedId(choose({ ...base, harnesses: museOnly, authorRule: 'reserve' })), 'muse/muse@high')
+  const fallen = choose({ ...base, harnesses: museOnly })
+  assert.equal(fallen.picked, null)
+  assert.equal(fallen.native.model, 'opus')
+  assert.throws(() => choose({ ...base, authorRule: 'later' }), /authorRule must be bar or reserve/)
+})
+
 test('C12: nobody reviews its own work, with an external pair and with the native fallback', () => {
   const sonnetAuthor = ask('sonnet', 'high', { authors: ['claude-sonnet-5-5'], nativeDiffers: true })
   assert.equal(why(sonnetAuthor, 'agy/claude-sonnet-5-5@high'), 'author')

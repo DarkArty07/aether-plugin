@@ -110,6 +110,25 @@ test('the native agents carry the model and effort of their definitions, the Wri
   assert.deepEqual(run.result.exam, { status: 'stored', dir: '/data/exams/007-demo' })
 })
 
+test('issue 64: a Judge that answered from the author family keeps that note on the round', async () => {
+  const note = 'the same family that wrote the document judged it: no other external pair could'
+  const lane = '- Lane: muse muse-wonder-full-1.0, seat judge-20261015-120002-ab12'
+  const answer = `## Verdict\napprove\n## Findings\nnone\n## Open questions\n- none\n${lane}`
+  const external = waitFor('judge', (call) => ({
+    done: true,
+    exitCode: 0,
+    value: { seat: 'judge', id: call.command.rest[0], harness: 'muse', model: 'muse-wonder-full-1.0', answer, result: APPROVE, lane, note },
+  }))
+  const run = await go({ ...ARGS, superdelegation: 'on' }, { ops: external })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const records = run.result.rounds.filter((entry) => entry.seat === 'judge')
+  assert.ok(records.length >= 1)
+  for (const record of records) {
+    assert.equal(record.provider, 'muse muse-wonder-full-1.0')
+    assert.equal(record.note, note)
+  }
+})
+
 test('an external answer is the verdict as it is, the switch travels in flags, and no native Judge runs', async () => {
   const lane = '- Lane: agy gemini-4-argon-high, seat judge-20261015-120002-ab12; 9 tokens, $? at list price; Gemini Models used 0.0 % of the 5 h window and 0.0 % of the weekly one'
   const answer = `## Verdict\napprove\n## Findings\nnone\n## Open questions\n- none\n${lane}`
