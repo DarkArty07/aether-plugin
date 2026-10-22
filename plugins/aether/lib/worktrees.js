@@ -278,8 +278,10 @@ function adoptUnit(cwd, runId, taskId, { commit, reason } = {}) {
   // Adopting would count the unit merged while its tests did not pass (issue #2). The marker stays,
   // and the Lead settles the merge before recording the unit by hand.
   const marked = unverifiedCommit(mainRoot, graph, runId, taskId)
-  if (marked) {
-    throw new Error(`${taskId} is unverified: its merge commit ${marked} is on the integration branch and its tests did not pass. Settle that merge before adopting the unit`)
+  const marker = markerRecord(mainRoot, runId, taskId)
+  if (marked || (marker && !marker.commit && !marker.before)) {
+    const commitMsg = marked ? `its merge commit ${marked}` : 'an unknown merge commit'
+    throw new Error(`${taskId} is unverified: ${commitMsg} is on the integration branch and its tests did not pass. Settle that merge before adopting the unit`)
   }
   const file = path.join(run.runDir(mainRoot, runId), 'adopted.json')
   const adopted = exists(file) ? run.readJson(file) : {}
@@ -302,10 +304,13 @@ function unverifiedMarker(mainRoot, runId, taskId) {
 // its first parent, so an older verified merge of the same unit is not that commit (issue #2).
 function writeUnverifiedMarker(mainRoot, runId, taskId, commit, before = null) {
   const file = unverifiedMarker(mainRoot, runId, taskId)
-  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const dir = path.dirname(file)
+  fs.mkdirSync(dir, { recursive: true })
   const body = { commit: commit || null }
   if (!commit && before) body.before = before
-  fs.writeFileSync(file, `${JSON.stringify(body)}\n`)
+  const tmp = path.join(dir, `.${path.basename(file)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`)
+  fs.writeFileSync(tmp, `${JSON.stringify(body)}\n`)
+  fs.renameSync(tmp, file)
 }
 
 function clearUnverifiedMarker(mainRoot, runId, taskId) {
@@ -398,8 +403,15 @@ function unitStatus(cwd, runId, taskId) {
   const branch = run.unitBranch(runId, taskId)
   const exists = branchExists(mainRoot, branch)
   const tip = exists ? git(['rev-parse', branch], mainRoot).stdout : null
-  const marked = unverifiedCommit(mainRoot, graph, runId, taskId)
-  if (marked) return { merged: false, unverified: true, commit: marked, branch: exists ? branch : null, head: tip }
+  const marker = markerRecord(mainRoot, runId, taskId)
+  if (marker) {
+    const marked = unverifiedCommit(mainRoot, graph, runId, taskId)
+    if (marked) return { merged: false, unverified: true, commit: marked, branch: exists ? branch : null, head: tip }
+    // A marker that is unreadable or has neither commit nor before is unverified with unknown commit:
+    if (!marker.commit && !marker.before) {
+      return { merged: false, unverified: true, commit: null, branch: exists ? branch : null, head: tip }
+    }
+  }
   if (!exists) return { merged: false, branch: null, commit: null }
   // A branch with no change of its own since the run's base is an ancestor of everything
   // and merged nothing. (unitBase cannot say this: after a merge it is the branch's tip.)
@@ -449,6 +461,12 @@ function liveUnverified(mainRoot, runId) {
   if (!graph || !graph.integration) return []
   const live = []
   for (const taskId of markerTaskIds(mainRoot, runId)) {
+    const marker = markerRecord(mainRoot, runId, taskId)
+    if (!marker) continue
+    if (!marker.commit && !marker.before) {
+      live.push({ task: taskId, commit: null })
+      continue
+    }
     const commit = orEmpty(() => unverifiedCommit(mainRoot, graph, runId, taskId), null)
     if (commit) live.push({ task: taskId, commit })
   }
@@ -476,7 +494,12 @@ function mergedUnits(cwd, runId) {
   const merged = new Set()
   // A marker whose commit is on the integration branch is not merged, whether or not the unit
   // branch's tip is an ancestor and whether or not the branch is still there (issue #2).
-  const unverified = (taskId) => unverifiedCommit(mainRoot, graph, runId, taskId) !== null
+  const unverified = (taskId) => {
+    const marker = markerRecord(mainRoot, runId, taskId)
+    if (!marker) return false
+    if (!marker.commit && !marker.before) return true
+    return unverifiedCommit(mainRoot, graph, runId, taskId) !== null
+  }
   for (const taskId of ids) {
     if (unverified(taskId)) continue
     if (orEmpty(() => unitStatus(mainRoot, runId, taskId).merged, false)) merged.add(taskId)
@@ -728,6 +751,12 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
   // its commit is still the tip and its branch is already merged; anything newer is left as it is.
   const pending = []
   for (const id of markerTaskIds(mainRoot, runId)) {
+    const marker = markerRecord(mainRoot, runId, id)
+    if (!marker) continue
+    if (!marker.commit && !marker.before) {
+      pending.push({ task: id, commit: null })
+      continue
+    }
     const commit = unverifiedCommit(mainRoot, graph, runId, id)
     if (commit) pending.push({ task: id, commit })
   }
@@ -736,7 +765,7 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
   const mine = pending.find((item) => item.task === taskId)
   if (mine) {
     const tip = git(['rev-parse', graph.integration.branch], mainRoot).stdout
-    if (mine.commit !== tip) return { merged: false, reason: 'unverified-buried', commit: mine.commit }
+    if (!mine.commit || mine.commit !== tip) return { merged: false, reason: 'unverified-buried', commit: mine.commit }
     // A relaunch can commit more on the branch that was kept. The marked commit is still the tip,
     // but those commits are not in it: rerunning the tests would pass the old tree and report the
     // unit merged, and close would then keep the new commits only as a patch (issue #2). A branch
@@ -833,9 +862,17 @@ function abortUnfinishedMerge(mainRoot, runId, taskId, integration) {
   const marker = markerRecord(mainRoot, runId, taskId)
   if (!marker || marker.commit) return
   if (!mergeHeadFile(integration)) return
+  const branch = run.unitBranch(runId, taskId)
+  if (!branchExists(mainRoot, branch)) return
+  const unitTip = git(['rev-parse', branch], mainRoot).stdout
+  const mergeHead = git(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], integration, { allowFail: true })
+  if (mergeHead.status !== 0 || !mergeHead.stdout) return
+  const mHead = mergeHead.stdout
+  const isOwn = mHead === unitTip || git(['merge-base', '--is-ancestor', mHead, unitTip], mainRoot, { allowFail: true }).status === 0
+  if (!isOwn) return
+
   const tip = head(integration)
-  const before = fullCommit(mainRoot, marker.before)
-  const committed = Boolean(before && before !== tip)
+  const committed = git(['merge-base', '--is-ancestor', mHead, 'HEAD'], integration, { allowFail: true }).status === 0
   const aborted = git(['merge', '--abort'], integration, { allowFail: true })
   if (aborted.status !== 0) return
   if (committed) {
@@ -1108,7 +1145,7 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
     fs.rmSync(runDir, { recursive: true, force: true })
     finished = true
   }
-  return {
+  const result = {
     removedWorktrees,
     removedBranches,
     patches,
@@ -1120,6 +1157,8 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
     savedBranches: saved,
     finished,
   }
+  if (!finished && live.length > 0) result.unverified = true
+  return result
 }
 
 // True when `dir`, or anything inside it, was modified at or after `cutoff` (ms since the epoch).
@@ -1198,19 +1237,23 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     }
     // A marker whose commit is on the integration branch keeps the run directory: deleting it
     // would drop the only record that the commit is untested (issue #2). Checked before the
-    // sweep, which does not remove marker files. The record below stays as it was.
+    // sweep, which does not remove marker files. Check live marker before appending abandoned,
+    // so a finalized run does not become abandoned and records once.
     const live = liveUnverified(mainRoot, id)
-    // A run that was not interrupted is recorded before anything is removed, as it always was.
     const interrupted = wasInterrupted(mainRoot, id)
-    if (!interrupted) run.appendRecord(abandoned)
+    const lastStatus = lastRecordStatus(id)
+    if (!interrupted && live.length === 0) run.appendRecord(abandoned)
+    else if (!interrupted && live.length > 0 && lastStatus !== 'finalized' && lastStatus !== 'abandoned') {
+      run.appendRecord(abandoned)
+    }
     const { savedBranches } = sweepRun(cwd, id)
     if (savedBranches.length > 0) {
       // Its branches wait for the relaunch: the run is recorded once, and its directory stays.
-      if (lastRecordStatus(id) !== 'interrupted-saved') run.appendRecord({ runId: id, status: 'interrupted-saved', sweptAt, repo: mainRoot })
+      if (lastStatus !== 'interrupted-saved') run.appendRecord({ runId: id, status: 'interrupted-saved', sweptAt, repo: mainRoot })
       continue
     }
     if (live.length > 0) continue
-    if (interrupted) run.appendRecord(abandoned)
+    if (interrupted && lastStatus !== 'finalized' && lastStatus !== 'abandoned') run.appendRecord(abandoned)
     assertInside(dir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(dir, { recursive: true, force: true })
     swept.push(id)
@@ -1237,4 +1280,6 @@ module.exports = {
   changedFiles,
   unitBase,
   isWorktreeRoot,
+  writeUnverifiedMarker,
+  abortUnfinishedMerge,
 }

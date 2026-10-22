@@ -317,6 +317,52 @@ test('a rerun refused with unverified-buried, unverified-other or unverified-mov
   }
 })
 
+test('a rerun with reason tests and reverted false blocks the unit with the untested sentence and does not retry (issue #2)', async (t) => {
+  const args = threeTasks(t)
+  let retryAttempted = false
+  const run = await runWorkflow(args, {
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) return CUT
+      if (call.kind === 'ops:status' && call.unit === 'task-1') return UNVERIFIED
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 2) {
+        return { merged: false, reason: 'tests', exitCode: 1, reverted: false, output: 'tests failed' }
+      }
+      return wt(call)
+    },
+    implementer: (brief) => {
+      if (brief.unit === 'task-1' && brief.attempt > 1) {
+        retryAttempted = true
+      }
+      return { status: 'DONE', head: 'tip', summary: 'did it' }
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'blocked')
+  assert.equal(unit.reason, 'its merge commit is on the integration branch without a passing test run')
+  assert.equal(retryAttempted, false, 'must not retry')
+  assert.equal(attemptsOf(run, 'task-1').length, 1)
+})
+
+test('first merge refused with unverified-* gives an explicit sentence in round merge (issue #2)', async (t) => {
+  for (const reason of ['unverified-buried', 'unverified-other', 'unverified-moved']) {
+    const args = threeTasks(t)
+    const run = await runWorkflow(args, {
+      ops: (call, wt) => {
+        if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) {
+          return { merged: false, reason, task: 'task-2', commit: 'merge-task-1' }
+        }
+        return wt(call)
+      },
+    })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    const unit = run.result.units[0]
+    assert.equal(unit.status, 'blocked', reason)
+    assert.match(unit.reason, /^merge refused:/, reason)
+    assert.doesNotMatch(unit.reason, new RegExp(`^merge refused: ${reason}$`), 'must give an explicit sentence, not just the raw reason')
+  }
+})
+
 test('the guide says a merge cut at 10 minutes is unverified until its tests pass (issue #2)', () => {
   const root = path.join(__dirname, '..')
   const ops = fs.readFileSync(path.join(root, 'docs/guide/ops.md'), 'utf8')
@@ -335,6 +381,12 @@ test('the guide says a merge cut at 10 minutes is unverified until its tests pas
     assert.match(text, /before relaunching/)
     assert.match(text, /discard or stash/)
     assert.match(text, /never commit/)
+    assert.match(text, /no longer the tip/)
+    assert.match(text, /fixes forward/)
+    assert.match(text, /\.aether\/runs\/<run>\/unverified\/<task>\.json/)
+    assert.match(text, /--only/)
+    assert.match(text, /out of the graph/)
+    assert.match(text, /killed inside `git merge`/)
   }
 })
 
@@ -358,7 +410,7 @@ test('a rerun refused for a dirty integration worktree blocks the unit as untest
   assert.equal(attemptsOf(run, 'task-1').length, 1)
 })
 
-test('a rerun whose tests fail without reverting does not say the merge was undone (issue #2)', async (t) => {
+test('a rerun whose tests fail without reverting blocks the unit with the untested sentence and does not retry (issue #2)', async (t) => {
   const args = threeTasks(t)
   const run = await runWorkflow(args, {
     ops: (call, wt) => {
@@ -371,11 +423,10 @@ test('a rerun whose tests fail without reverting does not say the merge was undo
     },
   })
   assert.equal(run.error, null, run.error && run.error.stack)
-  const retry = attemptsOf(run, 'task-1')[1]
-  assert.ok(retry, 'a failing test run is still the one retry')
-  assert.match(retry.prompt, /test command failed/)
-  assert.match(retry.prompt, /left in place/)
-  assert.doesNotMatch(retry.prompt, /the merge was undone/)
+  const unit = run.result.units[0]
+  assert.equal(unit.status, 'blocked')
+  assert.equal(unit.reason, 'its merge commit is on the integration branch without a passing test run')
+  assert.equal(attemptsOf(run, 'task-1').length, 1)
 })
 
 test('a sliced final review with a silent slice fails and keeps the other findings (issue 022)', async (t) => {
