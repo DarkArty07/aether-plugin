@@ -13,7 +13,7 @@
 //   reference pair and the quotas of the enabled harnesses; logs the choice and starts nothing)
 // aether-lane took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|failed>
 //   (logs who ran the call and why)
-// aether-lane delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--session <id>]
+// aether-lane delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--pair <pair id>] [--carry <patch file>] [--findings <file>] [--session <id>]
 //   (no run: a loose editing charge on an external pair, in its own one-unit run; prints its result, merges nothing)
 // aether-lane pause --seconds <1 to 120>   (no run: waits, so that the workflow can time its agents)
 // aether-lane quota [<harness>...] [--refresh] [--json]   (no run: each harness's quota as text, or as JSON;
