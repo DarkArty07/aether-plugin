@@ -1483,8 +1483,8 @@ test('the bin: an unknown verb is an error, wait on an id never started says unk
 - Tier: sonnet — integración del mod con el motor, que las pruebas simuladas sujetan solo en parte
 - Review: xhigh — el motor decide qué ve el Lead; fallo del mod no debe romper la llamada
 - Area: mod
-- Owns: `plugins/aether/hooks/delegate.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/router.mjs`, `tests/delegate-mod.test.js`, `tests/router-mod.test.js`, `tests/docs-facts.test.js`
-- Depends on: Task 1 — usa `waitSteps` y `heartbeatText` (el Lead los agregó a `hooks/delegate-wait.mjs` después de la Task 17, commit `a993273`)
+- Owns: `plugins/aether/hooks/delegate.mjs`, `plugins/aether/hooks/delegate-wait.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/router.mjs`, `tests/delegate-mod.test.js`, `tests/delegate-wait.test.js`, `tests/router-mod.test.js`, `tests/docs-facts.test.js`
+- Depends on: Task 1 — usa `waitSteps` y `heartbeatText` (el Lead los agregó a `hooks/delegate-wait.mjs` después de la Task 17, commit `a993273`; esa versión ya fundida no entrega el latido de la espera que falla y se reintenta, y esta tarea lo agrega: por eso es dueña de `hooks/delegate-wait.mjs` y de `tests/delegate-wait.test.js`, y la Task 1 no se vuelve a correr)
 - Depends on: Task 10 — llama a los verbos `begin`, `start` y `wait` de `aether-delegate`
 - Depends on: Task 17 — la prueba en el motor real ya se hizo (2026-10-22): el bucle de espera vale con un latido tras cada espera, y el `isolation` puesto por el mod llegó a la llamada (`docs/evidence/013-delegate-ladder.md`)
 - Serves: R12, R13, R14, R20, R22
@@ -1502,6 +1502,7 @@ export function createDelegates() -> { toolCall($, e, next, ctx), bind($, e, age
 - `bind`: al `agent.spawn` liga la llamada por su prompt al agente; un agente con `external` queda para su primer paso, y uno con `answerOf` (un delegado de solo lectura en Claude) queda para su último. `has(agentId)` es verdadero para los dos.
 - `step`: en el paso 0 de un agente con `external`, corre `aether-delegate start --id <id>` (límite 15000 ms) y después recorre `waitSteps` (de `./delegate-wait.mjs`, con `.next()` a mano): por cada `{ beat: true, waitedMs }` que entrega emite en ese momento, antes de pedir la siguiente espera, `{ kind: 'text', index: 0, text: heartbeatText(waitedMs) }` (`waitSteps` entrega un latido después de cada `wait` que no cerró el bucle, también el que falló y se reintenta; un paso que esperara al delegado y solo después entregara los latidos sería el paso callado de más de 600 s que el motor mata). Es el latido que la Task 17 midió como necesario: el motor mata a un agente cuyo paso no emite nada en 600 s («Agent stalled: no progress for 600s»), y un evento de texto cuenta como progreso (con un latido tras cada espera de 540 s el agente vivió 18 minutos y respondió); los latidos quedan al principio de la respuesta que ve el Lead, que sigue con el texto del delegado. Cuando `waitSteps` devuelve `ok` con texto no vacío, entrega `{ kind: 'text', index: 0, text }` y `{ kind: 'stop', stopReason: 'end_turn', usage: null }` sin pasar por el modelo (y `result.answer` es ese texto, sin latidos); con cualquier otra cosa sigue con `yield* next(e)` (el modelo del plan, que ya es el del escalón); si el delegado falla después de uno o más latidos, el Lead ve esos latidos y a continuación la respuesta del modelo, sin una nota de cierre, y `result` es el del modelo. En un agente con `answerOf` cada paso pasa por `yield* next(e)` sin cambios y, cuando el resultado de un paso trae `stopReason` distinto de `'tool_use'` y `answer` de tipo texto, corre `node <root>/bin/aether-delegate answer --session <session> --task <task> --attempt <attempt> --text <answer recortado a 4000 caracteres>` (límite 15000 ms; cualquier falla se ignora y el paso vuelve igual): es la respuesta que `verdict` comprueba (R6). `toolCall` recuerda `answerOf` del plan junto con la llamada, como recuerda `external`.
 - `hooks/register.js`: importa `createDelegates` de `./delegate.mjs` en lugar de `createRouter` de `./router.mjs`, y renombra sus ayudantes (`routerCalls`, `routerContext`) a `delegateCalls` y `delegateContext`; la lista de llamadas que el mod hace es `$.clock.now`, `$.fs.write` y `$.process.run` (se quita `$.model.complete`). El encabezado de `register.js` describe la escalera, no el router.
+- `hooks/delegate-wait.mjs`: `waitSteps` entrega también el latido de la espera que falla y se reintenta (Interfaces de la Task 1): hoy, en la rama `answer === null`, suma la falla y sigue con `continue` sin entregar nada, y con eso una espera colgada y su reintento pueden pasar de 600 s sin un evento. El cambio es entregar `{ beat: true, waitedMs }` (medido con `$.clock.now()` desde el principio) antes de reintentar cuando es la primera falla seguida; la segunda falla seguida sigue cerrando el bucle con `wait-failed` sin latido. No cambia nada más (`waitForDelegate` descarta los latidos y sus pruebas siguen igual).
 - Se borra `hooks/router.mjs` y `tests/router-mod.test.js`.
 
 **`tests/docs-facts.test.js` (esta tarea agrega una excepción; la Task 13 y la 14 lo tocan después).** Esta tarea borra `hooks/router.mjs`, y `docs/guide/router.md` (línea 16) lo nombra con su ruta en un código; la prueba C3 («the repository paths in code spans exist») se pondría roja en este merge, y un merge rojo se deshace. Por eso esta tarea agrega a `PATH_EXCEPTIONS` `'plugins/aether/hooks/router.mjs': 'the retired router mod, removed in spec 013; named by the router guide until docs/guide/delegates.md replaces it'` y la nombra en el comentario del encabezado de la prueba. Es la única ruta que se borra antes de la Task 13 y aparece en un código de las páginas que lee `tests/docs-facts.test.js` (`README.md` y `PAGES`): se buscaron también `lib/router-report.js` y `tests/router-report.test.js` (Task 8), `tests/router-settings.test.js` (Task 6) y `tests/router-mod.test.js` (esta tarea) y ninguna está nombrada en esas páginas (solo en `docs/handoff/`, que la prueba no lee). La excepción queda mientras la guía vieja exista; la Task 14 la deja o la quita, y ninguna de las dos cosas rompe la prueba.
@@ -1637,7 +1638,7 @@ test('a failed wait gives a beat before its retry (the engine kills a step that 
   const generator = delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, async function* () { return {} }, CTX)
   const first = await generator.next()
   assert.equal(first.value.kind, 'text')
-  assert.match(first.value.text, /^\[Aether: the delegate is still working, \d+ min so far\]\n$/)
+  assert.equal(first.value.text, '[Aether: the delegate is still working, 0 min so far]\n', 'the clock of the test moves only on a wait that answers { done: false }')
   assert.deepEqual(calls.runs.map((r) => r.argv[2]), ['begin', 'start', 'wait'], 'the beat comes before the retry')
   assert.equal((await generator.next()).value.text, 'branch aether/r/task-1')
 })
@@ -1708,7 +1709,45 @@ test('a later step of the same agent is never taken over', async () => {
 })
 ```
 
-**Acceptance:** `node --test tests/delegate-mod.test.js` y `npm run test:mod` pasan. `hooks/delegate.mjs` no importa nada de `lib/` ni llama a `$.model`. `hooks/router.mjs` y `tests/router-mod.test.js` ya no existen, y `node --test tests/docs-facts.test.js` pasa con la excepción de `plugins/aether/hooks/router.mjs`. Lo que el motor hace con el primer paso de más de 10 minutos y con un `isolation` puesto por el mod lo mide la Task 17, antes de esta tarea; lo que hace con un `prompt` reescrito queda para la sesión real (C12).
+**Tests (write first):** `tests/delegate-wait.test.js`. El archivo ya existe (Task 1): esta tarea cambia su prueba de `waitSteps` a la que maneja el generador a mano y agrega las dos del latido de la espera que falla; el resto del archivo queda como está. Usa el `make`, el `CTX` y el `DONE` que el archivo ya tiene.
+
+```js
+// Reemplaza la prueba 'waitSteps yields a beat after every wait that did not end, and returns the result ...'
+test('waitSteps yields a beat after every wait that did not end, before it waits again (the stall limit of the engine)', async () => {
+  const { $, state } = make([{ done: false }, { done: false }, DONE])
+  const steps = mod.waitSteps($, CTX)
+  const first = await steps.next()
+  assert.deepEqual([first.done, first.value], [false, { beat: true, waitedMs: 540000 }])
+  assert.equal(state.runs.length, 1, 'the first beat comes before the second wait')
+  const second = await steps.next()
+  assert.deepEqual([second.done, second.value], [false, { beat: true, waitedMs: 1080000 }])
+  assert.equal(state.runs.length, 2)
+  const last = await steps.next()
+  assert.deepEqual([last.done, last.value], [true, { ok: true, status: 'ok', text: 'branch aether/x/task-1' }])
+  assert.ok(mod.WAIT_TIMEOUT_MS < mod.STALL_MS, 'no wait can go as long as the engine tolerates without an event')
+})
+
+// Nuevas
+test('a failed wait gives a beat before its retry, so a hung wait and its retry never go 600 s without an event', async () => {
+  const { $, state } = make([new Error('hung'), DONE])
+  const steps = mod.waitSteps($, CTX)
+  const first = await steps.next()
+  assert.deepEqual([first.done, first.value.beat], [false, true])
+  assert.equal(state.runs.length, 1, 'the beat comes before the retry')
+  const last = await steps.next()
+  assert.deepEqual([last.done, last.value], [true, { ok: true, status: 'ok', text: 'branch aether/x/task-1' }])
+  assert.equal(state.runs.length, 2)
+})
+
+test('two failed waits in a row give one beat and then end the wait', async () => {
+  const { $ } = make([new Error('a'), new Error('b')])
+  const steps = mod.waitSteps($, CTX)
+  assert.equal((await steps.next()).value.beat, true)
+  assert.deepEqual(await steps.next(), { done: true, value: { ok: false, status: 'wait-failed', text: null } })
+})
+```
+
+**Acceptance:** `node --test tests/delegate-mod.test.js tests/delegate-wait.test.js` y `npm run test:mod` pasan. `hooks/delegate.mjs` no importa nada de `lib/` ni llama a `$.model`. `hooks/router.mjs` y `tests/router-mod.test.js` ya no existen, y `node --test tests/docs-facts.test.js` pasa con la excepción de `plugins/aether/hooks/router.mjs`. Lo que el motor hace con el primer paso de más de 10 minutos y con un `isolation` puesto por el mod lo mide la Task 17, antes de esta tarea; lo que hace con un `prompt` reescrito queda para la sesión real (C12).
 
 ### Task 12: La guía del Lead describe la escalera
 
@@ -2059,7 +2098,7 @@ test('pruneSessions removes the delegate file and an old router file of a sessio
 
 **Interfaces:**
 
-**Resultado (2026-10-22, `docs/evidence/013-delegate-ladder.md`):** la tarea ya se hizo y la decisión está tomada: se queda el bucle del mod, con un latido tras cada espera, y el respaldo de Haiku no se construye. Sin latido el motor mató al agente a los 600 s; con un latido (un evento de texto) tras cada espera de 540 s el agente vivió 18 minutos. El protocolo de abajo es el original: su paso 1 usa `waitForDelegate` (sin latido) y los puntos del paso 4 que hablan del respaldo ya no se aplican; lo que quedó construido es `waitSteps` y `heartbeatText` (Task 1) y el latido de la Task 11.
+**Resultado (2026-10-22, `docs/evidence/013-delegate-ladder.md`):** la tarea ya se hizo y la decisión está tomada: se queda el bucle del mod, con un latido tras cada espera, y el respaldo de Haiku no se construye. Sin latido el motor mató al agente a los 600 s; con un latido (un evento de texto) tras cada espera de 540 s el agente vivió 18 minutos. El protocolo de abajo es el original: su paso 1 usa `waitForDelegate` (sin latido) y los puntos del paso 4 que hablan del respaldo ya no se aplican; lo que quedó construido es `waitSteps` y `heartbeatText` (Task 1, ya fundida, con el latido tras una espera que ni terminó ni cerró el bucle) y, en la Task 11, el latido tras la espera que falla y se reintenta en `waitSteps` y el latido del paso del mod.
 
 Es un paso del Lead (ver Global Constraints): se corre después de fundir la Task 1 y antes de lanzar las Tasks 10 y 11. No gasta cuota de otro plan (ni `aether-lane` ni un harness externo); gasta unas pocas peticiones de Claude, en Haiku, de los agentes de prueba, y la sesión interactiva necesita unos 20 minutos.
 
