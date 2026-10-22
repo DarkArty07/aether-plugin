@@ -93,6 +93,100 @@ function turnsOf(witness) {
   return fs.readFileSync(witness, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line))
 }
 
+// A harness whose prompt is ignored: each real prompt runs the next script, so two tries of one round can
+// share a message (and therefore its digest) while doing different work. --version and /usage are the
+// harness's own checks and are passed through without taking a script.
+function scriptedCommand(t, scripts) {
+  const dir = tempDir(t, 'aether-seat-script-')
+  const witness = path.join(dir, 'witness.jsonl')
+  const countFile = path.join(dir, 'count')
+  const file = path.join(dir, 'scripted-agy.js')
+  const source = [
+    '#!/usr/bin/env node',
+    "'use strict'",
+    "const fs = require('node:fs')",
+    "const path = require('node:path')",
+    "const { spawnSync } = require('node:child_process')",
+    'const argv = process.argv.slice(2)',
+    "const at = (name) => { const i = argv.indexOf(name); return i === -1 ? null : argv[i + 1] }",
+    // --version and /usage are the harness's own checks, not a try of the round.
+    "if (argv[0] === '--version' || at('-p') === null || at('-p') === '/usage') {",
+    `  const r = spawnSync(process.execPath, [${JSON.stringify(FAKE_AGY)}, ...argv], { stdio: 'inherit' })`,
+    '  process.exit(r.status === null ? 1 : r.status)',
+    '}',
+    'function listTree(dir, prefix) {',
+    '  const out = {}',
+    '  if (!fs.existsSync(dir)) return out',
+    '  for (const name of fs.readdirSync(dir)) {',
+    "    if (name === '.git' || name === '.aether-tmp') continue",
+    "    const rel = prefix ? prefix + '/' + name : name",
+    '    const full = path.join(dir, name)',
+    '    const st = fs.lstatSync(full)',
+    '    if (st.isSymbolicLink()) out[rel] = null',
+    '    else if (st.isDirectory()) Object.assign(out, listTree(full, rel))',
+    "    else if (st.isFile()) out[rel] = fs.readFileSync(full, 'utf8')",
+    '  }',
+    '  return out',
+    '}',
+    `const n = fs.existsSync(${JSON.stringify(countFile)}) ? Number(fs.readFileSync(${JSON.stringify(countFile)}, 'utf8')) : 0`,
+    `fs.writeFileSync(${JSON.stringify(countFile)}, String(n + 1))`,
+    `const scripts = ${JSON.stringify(scripts)}`,
+    'const script = scripts[Math.min(n, scripts.length - 1)]',
+    `fs.appendFileSync(${JSON.stringify(witness)}, JSON.stringify({ model: at('--model'), prompt: at('-p'), files: listTree(process.cwd(), '') }) + '\\n')`,
+    'const args = argv.slice()',
+    "const pi = args.indexOf('-p')",
+    'args[pi + 1] = script',
+    `const r = spawnSync(process.execPath, [${JSON.stringify(FAKE_AGY)}, ...args], { stdio: 'inherit' })`,
+    'process.exit(r.status === null ? 1 : r.status)',
+    '',
+  ].join('\n')
+  fs.writeFileSync(file, source)
+  fs.chmodSync(file, 0o755)
+  return { command: file, witness }
+}
+
+function writeMessage(repo, text, session = 's1') {
+  const dir = path.join(repo.dir, '.aether-tmp', 'seats', session)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'message.md'), text)
+  return lanes.digest(text)
+}
+
+function seatDirOf(repo, id) {
+  return path.join(repo.dir, '.aether', 'seats', id)
+}
+
+// Kills the runner the moment `file` appears. pair.json is written before the signal handler is installed,
+// and git worktree add (which comes next) is slower than this loop, so the handler has not run.
+function killWhenAppears(file, pidFile) {
+  const deadline = Date.now() + 20000
+  while (Date.now() < deadline) {
+    if (!fs.existsSync(file)) continue
+    const pid = Number.parseInt(fs.readFileSync(pidFile, 'utf8'), 10)
+    if (!(pid > 0)) return null
+    try { process.kill(-pid, 'SIGKILL') } catch { /* the group is already gone */ }
+    try { process.kill(pid, 'SIGKILL') } catch { /* the runner is already gone */ }
+    const until = Date.now() + 2000
+    while (Date.now() < until) {
+      try { process.kill(pid, 0) } catch { return pid }
+    }
+    return pid
+  }
+  return null
+}
+
+// A kill during git worktree add can leave a lock. Drop it so the next try can use the repository.
+function releaseRepo(repo, id) {
+  const gitDir = path.join(repo.dir, '.git')
+  fs.rmSync(path.join(seatDirOf(repo, id), 'wt'), { recursive: true, force: true })
+  for (const name of ['index.lock', 'HEAD.lock', 'config.lock', 'gc.pid.lock']) fs.rmSync(path.join(gitDir, name), { force: true })
+  const listed = path.join(gitDir, 'worktrees')
+  if (fs.existsSync(listed)) {
+    for (const name of fs.readdirSync(listed)) fs.rmSync(path.join(listed, name, 'locked'), { force: true })
+  }
+  spawnSync('git', ['worktree', 'prune'], { cwd: repo.dir, encoding: 'utf8' })
+}
+
 function lines(...parts) {
   return `${parts.join('\n')}\n`
 }
@@ -114,6 +208,25 @@ function writerTurns(t, input, { second = input, doc = 'spec', third = null } = 
     thirdRound = seat(repo.dir, [...base, '--exclude', excluded.join(',')], env, third)
   }
   return { repo, env, first, second: secondRound, third: thirdRound, turns: turnsOf(witness) }
+}
+
+// Tries of one round. They share one message, so they share its digest, and each try runs the next script.
+// --exclude still names the pairs already tried; the digest, not the exclusion, is what carries the partial.
+function sameMessageTurns(t, scripts, message = 'Write the spec.\n') {
+  const repo = seatRepo(t)
+  const { command, witness } = scriptedCommand(t, scripts)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const base = ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec']
+  const excluded = []
+  const rounds = []
+  for (let i = 0; i < scripts.length; i++) {
+    const args = excluded.length === 0 ? base : [...base, '--exclude', excluded.join(',')]
+    const result = seat(repo.dir, args, env, message)
+    rounds.push(result)
+    const picked = result.json && result.json.decision && result.json.decision.picked && result.json.decision.picked.id
+    if (typeof picked === 'string') excluded.push(picked)
+  }
+  return { repo, rounds, turns: turnsOf(witness), first: rounds[0], second: rounds[1] ?? null, third: rounds[2] ?? null }
 }
 
 function seatOf(t, seatName, input) {
@@ -208,18 +321,25 @@ test('a symlink at the document path is not carried (issue 68)', (t) => {
 })
 
 test('a later failure replaces the partial: what it left is what the pair after it sees, and an empty document drops it (issue 68)', (t) => {
-  const firstInput = lines('Write the spec.', `FAKE-AGY: write ${SPEC} PARTIAL-ONE`, 'FAKE-AGY: exit-error boom')
-  const secondInput = lines('Write the spec.', `FAKE-AGY: write ${SPEC} PARTIAL-TWO`, 'FAKE-AGY: exit-error boom')
-  const thirdInput = lines('Write the spec.', 'FAKE-AGY: exit-error boom')
-  const kept = writerTurns(t, firstInput, { second: secondInput, third: thirdInput })
+  // One message for every try: the digest of that message is what makes them one round. The scripts differ, so each
+  // try leaves a different document.
+  const kept = sameMessageTurns(t, [
+    lines(`FAKE-AGY: write ${SPEC} PARTIAL-ONE`, 'FAKE-AGY: exit-error boom'),
+    lines(`FAKE-AGY: write ${SPEC} PARTIAL-TWO`, 'FAKE-AGY: exit-error boom'),
+    lines('FAKE-AGY: exit-error boom'),
+  ])
+  assert.equal(kept.first.status, 4, kept.first.stdout + kept.first.stderr)
   assert.equal(kept.turns[1].files[SPEC], 'PARTIAL-ONE\n')
   assert.equal(kept.turns[2].files[SPEC], 'PARTIAL-TWO\n')
   assert.equal(kept.second.json.continued, true)
   assert.equal(kept.third.json.continued, true)
   assert.ok(kept.turns[2].prompt.includes(CONTINUATION))
 
-  const wipedSecond = lines('Write the spec.', `FAKE-AGY: write-empty ${SPEC}`, 'FAKE-AGY: exit-error boom')
-  const wiped = writerTurns(t, firstInput, { second: wipedSecond, third: thirdInput })
+  const wiped = sameMessageTurns(t, [
+    lines(`FAKE-AGY: write ${SPEC} PARTIAL-ONE`, 'FAKE-AGY: exit-error boom'),
+    lines(`FAKE-AGY: write-empty ${SPEC}`, 'FAKE-AGY: exit-error boom'),
+    lines('FAKE-AGY: exit-error boom'),
+  ])
   assert.equal(wiped.turns[1].files[SPEC], 'PARTIAL-ONE\n', 'the second pair started from the first partial')
   assert.equal(wiped.turns[2].files[SPEC], ORIGINAL, 'the empty document is not carried on')
   assert.equal(wiped.third.json.continued, false)
@@ -254,11 +374,13 @@ test('a later Writer round starts from the commit, not from a partial an earlier
 })
 
 test('a Writer that then succeeds does not leave the partial for the round after it (issue 68)', (t) => {
-  const failed = lines('Write the spec.', `FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: exit-error boom')
+  // The follow-up is another try of the same round: that is the try a partial a success forgot to clear would reach.
   const answer = { spec: SPEC, commit: 'abc', clarify: [], assumptions: [], questions: [] }
-  const succeeded = lines('Write the spec.', `FAKE-AGY: write ${SPEC} FULL-SPEC`, 'FAKE-AGY: commit the spec', `FAKE-AGY: answer ${JSON.stringify(answer)}`)
-  const again = lines('Write the spec.', 'FAKE-AGY: exit-error boom')
-  const { repo, second, third, turns } = writerTurns(t, failed, { second: succeeded, third: again })
+  const { repo, second, third, turns } = sameMessageTurns(t, [
+    lines(`FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: exit-error boom'),
+    lines(`FAKE-AGY: write ${SPEC} FULL-SPEC`, 'FAKE-AGY: commit the spec', `FAKE-AGY: answer ${JSON.stringify(answer)}`),
+    lines('FAKE-AGY: exit-error boom'),
+  ])
   assert.equal(second.status, 0, second.stdout + second.stderr)
   assert.equal(second.json.continued, true)
   assert.equal(fs.readFileSync(path.join(repo.dir, SPEC), 'utf8'), 'FULL-SPEC\n')
@@ -286,13 +408,14 @@ test('a failed Judge round and a failed Examiner round carry nothing (issue 68)'
 
 test('seat-wait reports whether the Writer round started from a partial, and a stopped round keeps the file for the next pair (issue 68)', async (t) => {
   const repo = seatRepo(t)
-  const { command, witness } = witnessingCommand(t)
+  const message = 'Write the spec.\n'
+  // The stopped try and the try after it share the message. The scripts differ, so the follow-up does not sleep.
+  const { command, witness } = scriptedCommand(t, [
+    lines(`FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: sleep 30'),
+    lines('FAKE-AGY: exit-error boom'),
+  ])
   const env = laneEnv(t, { command, quota: geminiFirst() })
-  const message = lines('Write the spec.', `FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: sleep 30')
-  const dir = path.join(repo.dir, '.aether-tmp', 'seats', 's1')
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'message.md'), message)
-  const digest = lanes.digest(message)
+  const digest = writeMessage(repo, message)
   const started = runBin(LANE_BIN, ['seat-start', 'writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, env)
   assert.equal(started.status, 0, started.stdout + started.stderr)
   const id = started.json.id
@@ -311,7 +434,7 @@ test('seat-wait reports whether the Writer round started from a partial, and a s
   assert.equal(waited.json.done, true)
   assert.equal(waited.json.exitCode, 1, 'a round stopped before it could write a result')
 
-  const next = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--exclude', stopped.json.pair], env, lines('Write the spec.', 'FAKE-AGY: exit-error boom'))
+  const next = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--exclude', stopped.json.pair], env, message)
   assert.equal(next.status, 4, next.stdout + next.stderr)
   assert.equal(next.json.continued, true)
   assert.deepEqual(next.json.partial, [{ path: SPEC, text: 'PARTIAL-SPEC\n' }])
@@ -319,6 +442,133 @@ test('seat-wait reports whether the Writer round started from a partial, and a s
   const carried = turns[turns.length - 1]
   assert.equal(carried.files[SPEC], 'PARTIAL-SPEC\n')
   assert.ok(carried.prompt.includes(CONTINUATION))
+})
+
+test('a stale partial from an earlier round is not loaded when the next round is killed before its signal handler, and the committed document stays (issue 68)', (t) => {
+  const committed = 'COMMITTED-BY-NATIVE\n'
+  const { command, witness } = scriptedCommand(t, [
+    lines(`FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: exit-error boom'),
+    lines('FAKE-AGY: exit-error boom'),
+  ])
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const roundN = 'Write the spec for round N.\n'
+  const roundNext = 'Write the spec for round N+1.\n'
+  const first = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec'], env, roundN)
+  assert.equal(first.status, 4, first.stdout + first.stderr)
+  assert.deepEqual(first.json.partial, [{ path: SPEC, text: 'PARTIAL-SPEC\n' }], first.stdout + first.stderr)
+  fs.writeFileSync(path.join(repo.dir, SPEC), committed)
+  repo.git('add', '-A')
+  repo.git('commit', '-q', '-m', 'the native writer committed the document')
+
+  const digest = writeMessage(repo, roundNext)
+  const started = runBin(LANE_BIN, ['seat-start', 'writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, env)
+  assert.equal(started.status, 0, started.stdout + started.stderr)
+  const id = started.json.id
+  const dir = seatDirOf(repo, id)
+  assert.ok(killWhenAppears(path.join(dir, 'pair.json'), path.join(dir, 'pid')), 'pair.json appeared')
+  assert.equal(fs.existsSync(path.join(dir, 'continued.json')), false, 'killed before the signal handler: continued.json is written after it is installed')
+  assert.equal(fs.existsSync(path.join(dir, 'partial.json')), false, 'the handler did not save a partial')
+  const stopped = runBin(LANE_BIN, ['seat-stop', id], repo.dir, env)
+  assert.equal(stopped.json.pair, 'agy/gemini-4-argon@high', JSON.stringify(stopped.json))
+  assert.equal(Object.hasOwn(stopped.json, 'partial'), false)
+  releaseRepo(repo, id)
+
+  const retry = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--exclude', stopped.json.pair], env, roundNext)
+  assert.equal(retry.status, 4, retry.stdout + retry.stderr)
+  assert.equal(retry.json.continued, false)
+  const turns = turnsOf(witness)
+  const carried = turns[turns.length - 1]
+  assert.equal(carried.files[SPEC], committed, 'the stale partial is not pasted over the committed document')
+  assert.equal(carried.prompt.includes(CONTINUATION), false)
+  assert.equal(fs.readFileSync(path.join(repo.dir, SPEC), 'utf8'), committed)
+})
+
+test('a try whose stop names no pair still hands its saved partial to the next try of the same round (issue 68)', async (t) => {
+  const message = 'Write the spec.\n'
+  const { command, witness } = scriptedCommand(t, [
+    lines(`FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: sleep 30'),
+    lines('FAKE-AGY: exit-error boom'),
+  ])
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const digest = writeMessage(repo, message)
+  const started = runBin(LANE_BIN, ['seat-start', 'writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, env)
+  assert.equal(started.status, 0, started.stdout + started.stderr)
+  const id = started.json.id
+  const dir = seatDirOf(repo, id)
+  const spec = path.join(dir, 'wt', SPEC)
+  const deadline = Date.now() + 20000
+  while (Date.now() < deadline && !(fs.existsSync(spec) && fs.readFileSync(spec, 'utf8').includes('PARTIAL-SPEC'))) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  assert.ok(fs.existsSync(spec) && fs.readFileSync(spec, 'utf8').includes('PARTIAL-SPEC'), 'the pair wrote before the stop')
+  fs.rmSync(path.join(dir, 'pair.json'), { force: true })
+  const stopped = runBin(LANE_BIN, ['seat-stop', id], repo.dir, env)
+  assert.equal(stopped.json.stopped, true, JSON.stringify(stopped.json))
+  assert.equal(stopped.json.pair, undefined, 'the stop names no pair, so the next try is not excluded')
+  assert.deepEqual(stopped.json.partial, [{ path: SPEC, text: 'PARTIAL-SPEC\n' }])
+
+  const next = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec'], env, message)
+  assert.equal(next.status, 4, next.stdout + next.stderr)
+  assert.equal(next.json.continued, true)
+  assert.deepEqual(next.json.partial, [{ path: SPEC, text: 'PARTIAL-SPEC\n' }])
+  const carried = turnsOf(witness).at(-1)
+  assert.equal(carried.files[SPEC], 'PARTIAL-SPEC\n')
+  assert.ok(carried.prompt.includes(CONTINUATION))
+})
+
+test('seat-stop omits partial when partial.json was not written (issue 68)', async (t) => {
+  const repo = seatRepo(t)
+  const { command } = witnessingCommand(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const message = lines('Write the spec.', `FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: sleep 30')
+  const digest = writeMessage(repo, message)
+  const started = runBin(LANE_BIN, ['seat-start', 'writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, env)
+  assert.equal(started.status, 0, started.stdout + started.stderr)
+  const id = started.json.id
+  const dir = seatDirOf(repo, id)
+  const continued = path.join(dir, 'continued.json')
+  const deadline = Date.now() + 20000
+  while (Date.now() < deadline && !fs.existsSync(continued)) await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.ok(fs.existsSync(continued), 'the round got as far as recording that it is a writer')
+  const pid = Number.parseInt(fs.readFileSync(path.join(dir, 'pid'), 'utf8'), 10)
+  try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ }
+  try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
+  const until = Date.now() + 2000
+  while (Date.now() < until) {
+    try { process.kill(pid, 0) } catch { break }
+  }
+  assert.equal(fs.existsSync(path.join(dir, 'partial.json')), false, 'killed before the partial was recorded')
+  const stopped = runBin(LANE_BIN, ['seat-stop', id], repo.dir, env)
+  assert.equal(Object.hasOwn(stopped.json, 'partial'), false, JSON.stringify(stopped.json))
+})
+
+test('a symlinked folder inside the worktree is not followed when a partial is applied (issue 68)', (t) => {
+  const outside = tempDir(t, 'aether-seat-outside-')
+  fs.writeFileSync(path.join(outside, 'MARKER'), 'keep\n')
+  const { command, witness } = scriptedCommand(t, [
+    lines(`FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: exit-error boom'),
+    lines('FAKE-AGY: exit-error boom'),
+  ])
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const message = 'Write the spec.\n'
+  const first = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec'], env, message)
+  assert.equal(first.status, 4, first.stdout + first.stderr)
+  assert.deepEqual(first.json.partial, [{ path: SPEC, text: 'PARTIAL-SPEC\n' }])
+  const featureDir = path.join(repo.dir, FEATURE)
+  fs.rmSync(featureDir, { recursive: true })
+  fs.symlinkSync(outside, featureDir)
+  repo.git('add', '-A')
+  repo.git('commit', '-q', '-m', 'the feature folder is a symlink')
+
+  const next = seat(repo.dir, ['writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--exclude', first.json.decision.picked.id], env, message)
+  assert.equal(next.status, 4, next.stdout + next.stderr)
+  assert.equal(fs.existsSync(path.join(outside, 'spec.md')), false, 'the partial was not written through the symlink')
+  assert.equal(fs.existsSync(path.join(outside, '001-demo')), false)
+  assert.equal(fs.readFileSync(path.join(outside, 'MARKER'), 'utf8'), 'keep\n')
+  assert.equal(JSON.stringify(turnsOf(witness).at(-1).files).includes('PARTIAL-SPEC'), false)
 })
 
 test('docs/guide/design-seats.md says a failed Writer hands its partial document to the next pair (issue 68)', () => {
@@ -329,4 +579,6 @@ test('docs/guide/design-seats.md says a failed Writer hands its partial document
   assert.ok(/Judge/.test(guide) && /Examiner/.test(guide) && /carry nothing|keeps nothing|keep nothing/.test(guide))
   assert.ok(guide.includes('for each try'))
   assert.ok(guide.includes('native Writer'))
+  assert.match(guide, /digest of (its|that) message/)
+  assert.match(guide, /symlink/)
 })
