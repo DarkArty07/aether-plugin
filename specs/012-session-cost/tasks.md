@@ -8,14 +8,14 @@
 - **Idioma.** El código, los comentarios, los mensajes y los documentos del repositorio van en inglés (el panel y sus textos, también); este archivo y el plan, en español. Un texto que un test fija va exactamente como lo escribe el test. Las excepciones, en español literal: la línea del informe de cierre de Task 4 y los textos de las skills de corrida.
 - **Estilo.** Node.js 22 CommonJS con `'use strict'`, dos espacios, sin punto y coma ni dependencias de npm; el mod (`plugins/aether/hooks/`) es ESM, como está. Los bins son finos y la lógica vive en `plugins/aether/lib/`. Las funciones de `lib/` reciben `dataDir`, `prices` y `now` por parámetro, con `run.dataDir()` y `loadPrices()` como valores por defecto.
 - **Primero los tests.** Cada tarea escribe sus tests (rojo), implementa y deja la suite verde antes de reportar. Cada fusión corre `npm test` entero: una tarea no deja rota una prueba que no es suya. Ninguna aserción existente cambia salvo donde una tarea lo dice; `--run`, `--seats`, `--delegates`, `finalize` y `price` siguen informando lo que informan hoy (R11). La tarea del mod corre además `npm run test:mod`.
-- **Sin cuota real.** Ningún test lee el directorio de datos del dueño ni gasta cuota ni hace una llamada de pago: directorios desechables (`useDataDir` de `tests/helpers.js`), y una tabla de precios de la prueba (`tests/spend-fixtures.js`) donde la cifra se compara con una suma que la prueba calcula desde los tokens. La pasada con las sesiones `010621c2` y `252123d1` (R12) la hace el Lead después de fusionar todo; ninguna tarea la hace.
+- **Sin cuota real.** Ningún test lee el directorio de datos del dueño ni gasta cuota ni hace una llamada de pago: directorios desechables (`useDataDir` de `tests/helpers.js`), y una tabla de precios de la prueba (`tests/spend-fixtures.js`) donde la cifra se compara con una suma que la prueba calcula desde los tokens. La pasada con las sesiones `010621c2` y `252123d1` (R12) la hace el Lead después de fusionar todo; ninguna tarea la hace. La suma independiente, el tiempo de la sesión más grande y dónde se anota están en «Lead, después de fusionar».
 - **Guardas que no cambian.** Nadie escribe bajo `specs/` ni `.specify/`. Nadie sube la versión, toca el changelog, empuja, publica ni fusiona a `main`. Ningún archivo nuevo importa una dependencia ni añade un bin o una opción de `plugin.json`.
 - **La huella dormida (R10).** En una sesión que no es del Lead no se registra `/spend`, el medidor no escribe y el plugin no añade estado: el panel pregunta a `aetherSession($)` al usarse, nunca al empezar la sesión.
 - **Formas compartidas entre tareas** (las produce la tarea indicada; las demás las leen tal cual):
   - **El `Tally`** (Task 1; Task 2 lo guarda): `{ usd, leadUsd, agentsUsd, byModel: { <model>: { usd, requests } }, byEffort: { '<model> <effort>': { usd, requests } }, byRole: { <rol>: { usd, requests } }, harness: { calls, usd, byModel: { <model>: { usd, calls } } }, unpriced: string[] (ordenada), first: ms | null, last: ms | null, resumptions: number, complete: boolean }`. `usd` ya incluye `harness.usd`; `byModel` y `byEffort` repartes todos los eventos con precio (los del medidor y los de otros harness); `byRole` solo los del medidor.
   - **El resumen** (Task 2 lo escribe, Task 1 lo lee): `<dataDir>/spend/<id>.json` con `{ version: 1, session, writtenAt: ms | null, through: { usage: ms | null, lanes: ms | null }, tally: Tally }`. Lo que sigue en disco de una fuente con hora `<= through.<fuente>` ya está dentro del resumen y no se cuenta otra vez.
   - **El JSON de la orden** (Task 1; Task 3 lo lee): el de R1, con estas claves en este orden: `session, recorded, complete, basis, currency, usd, leadUsd, agentsUsd, byModel, byEffort, byRole, harness, unpriced, firstRequest, lastRequest, resumptions, resumptionsApproximate`.
-  - **Los dólares en pantalla y en el informe** (Tasks 3 y 4): dos decimales, redondeo mitad alejándose de cero; el JSON no se redondea.
+  - **Los dólares en pantalla y en el informe** (Tasks 3 y 4): dos decimales, mitad alejándose de cero, sobre el decimal más corto que `toString` escribe (D8); el JSON no se redondea. `1.005` se muestra `1.01` y `2.675` se muestra `2.68`.
 
 ## Aether Execution
 
@@ -35,6 +35,7 @@
 - [ ] T008 [P] [E9] La regla de cierre y la línea del informe in plugins/aether/skills/using-aether/SKILL.md → Task 4
 - [ ] T009 [P] [E9] La línea del informe y el paso de cierre del enjambre in plugins/aether/skills/swarm/SKILL.md → Task 4
 - [ ] T010 [P] [E1] La orden, `/spend`, el precio de lista y la poda en las páginas de la guía in docs/guide/autonomy.md → Task 5
+- [ ] T011 [E7] La pasada de control de R12 la anota el Lead después de fusionar, no el enjambre in .aether/autonomy/<run id>/diary.md → Lead, después de fusionar
 
 ### Task 1: La cifra de una sesión y la opción `--spend`
 
@@ -80,7 +81,7 @@ spendReport({ dataDir = run.dataDir(), session = null, prices = loadPrices() }) 
 Reglas que las pruebas fijan:
 
 - Un evento del medidor: `model` es `entry.model || 'unknown'`; `effort` es `entry.effort || null`; `usd` es `priceEntry(entry, prices)` (null sin precio); `lead` es verdadero sin `entry.agent`; `role` es `main` sin agente y, con él, el `type` que `agents[entry.agent]` guarda en las partes (`agent` si no hay tipo). Las partes de `usage/<id>/` se leen una a una (`/^\d+\.json$/`, orden numérico); `agents` se une de todas.
-- Un evento de otro harness (`call` del registro de lanes, `outcome` del diario) tiene `usd = priceEntry({ model, ...laneTokens(entry.usage ?? {}), agent: 'lane' }, prices)`, `model` por defecto `'unknown'` y `effort` el de la entrada. El registro de lanes es solo `lanes/<id>.jsonl`; una entrada con `session` distinto del id no cuenta; `lanes/unknown.jsonl` y cualquier archivo cuyo nombre no cumple la regla no se abren nunca. Una línea ilegible del registro de lanes se omite. Un `outcome` cuenta solo si su `session` es el id; cada `outcome` cuenta una vez aunque compartan `id`.
+- Un evento de otro harness (`call` del registro de lanes, `outcome` del diario) tiene `usd = priceEntry({ model, ...laneTokens(entry.usage ?? {}), agent: 'lane' }, prices)`, `model` por defecto `'unknown'` y `effort` el de la entrada. El registro de lanes es solo `lanes/<id>.jsonl`. Una entrada sin `session` (campo ausente o `null`) toma la id de su archivo, como ya hace `readLog` en `lanes.js` (`entry.session ??` el nombre del archivo, sin `.jsonl`). Solo una entrada cuyo `session` es explícitamente distinto de esa id no cuenta. `lanes/unknown.jsonl` y cualquier archivo cuyo nombre no cumple la regla no se abren nunca. Una línea ilegible del registro de lanes se omite. Un `outcome` cuenta solo si su `session` es el id; cada `outcome` cuenta una vez aunque compartan `id`.
 - Un evento con precio entra en `usd`, `byModel`, `byEffort` (clave `<model> <effort>`, esfuerzo ausente `unknown`) y, si es del medidor, en `leadUsd` o `agentsUsd` y en `byRole`; uno de otro harness entra en `harness.calls`, `harness.usd` y `harness.byModel`. `harness.calls` cuenta también las entradas sin precio; `requests` y `harness.byModel[...].calls` cuentan solo las que tienen precio. Un modelo sin precio va a `unpriced` una sola vez y no a ningún cubo. Un evento de un modelo con precio y cero tokens es un cero medido y entra en los cubos.
 - `first`, `last` y `resumptions` salen de las horas numéricas de todos los eventos, con precio o sin él, ordenadas; una reanudación es un hueco `> GAP_MS` entre dos consecutivas.
 - Lectura del diario (R9): se lee línea a línea con su posición. Una línea en blanco no es ilegible. Una línea ilegible hace `complete` falso en la sesión S solo si cae en el tramo de S: el de las líneas legibles de S (cualquier `kind`); si de la línea rota se puede sacar una hora (`"time":<dígitos>`), cuenta cuando esa hora está entre la menor y la mayor hora del tramo; si no, cuando su posición está entre la primera y la última posición del tramo. Sin líneas legibles de S no hay tramo.
@@ -580,14 +581,18 @@ test('the bin names the new form in its usage text', () => {
 
 ```js
 // Suma al resumen de la id lo que la poda va a borrar de una fuente ('usage' = partes del medidor,
-// 'lanes' = lanes/<id>.jsonl, solo kind 'call'). No archiva outcomes del diario. Lee la fuente con
+// 'lanes' = lanes/<id>.jsonl, solo kind 'call'). Una entrada de lanes sin session (ausente o null) toma la id
+// del archivo; solo un session explícito y distinto de esa id no cuenta, la misma regla que readLaneEvents.
+// No archiva outcomes del diario. Lee la fuente con
 // after = summary.through.<source>, arma un Tally con tallyOf, lo une al del resumen con mergeTallies y escribe:
 //   writtenAt = max(el que había, la mtime más nueva de lo leído)
 //   through.<source> = max(el que había, la mayor hora numérica de lo archivado)  (el que había si no hay ninguna)
 //   tally.complete = false si lo leído no estaba completo, o si el resumen que había no se pudo leer
 // Si la lectura vio desaparecer un archivo (`vanished`: otra poda lo está borrando), no escribe y devuelve
 // { archived: false, events: 0 }. Justo antes de renombrar vuelve a leer el resumen: si su through.<source>
-// ya es >= al que iba a escribir, no escribe (otra poda llegó igual de lejos).
+// ya es >= al que iba a escribir, no escribe (otra poda de la misma fuente llegó igual de lejos).
+// Esa comprobación no mira la otra fuente. Si el renombre de la otra cae entre esta relectura y este
+// renombre, este archivo pisa ese tramo: la ventana queda aceptada en Risks del plan, y no se añade un candado.
 // Escribe a un temporal del mismo directorio (spend/<id>.json.<pid>.<aleatorio>.tmp) y lo renombra a
 // spend/<id>.json; si algo falla borra el temporal y lanza. Una id que no cumple isSessionId, o una fuente
 // sin archivos, no escribe nada.
@@ -659,13 +664,20 @@ test('E4: a pruned session keeps its figure; a later prune adds the new stretch 
   writeParts(dataDir, 'old', [{ entries: [meter(1000, 'm-a', null, 'output')] }])
   const resumed = spend(dataDir, 'old')
   close(resumed.usd, before.usd + 2)
-  assert.equal(resumed.resumptions, before.resumptions)
+  // R7: with a summary, resumptions are the summary's count plus the gaps between events still on disk.
+  // The outcome at T0+4 min stays in the journal and the new meter request is at T0+1000 min, so that gap counts as 1.
+  assert.equal(resumed.resumptions, 1)
   assert.equal(resumed.lastRequest, iso(T0 + 1000 * MIN))
   age(path.join(dataDir, 'usage', 'old'), 31 * 24)
   prune(dataDir)
   assert.equal(fs.existsSync(path.join(dataDir, 'usage', 'old')), false)
   close(readSummary(dataDir, 'old').tally.usd, before.usd - 1 + 2)
-  assert.deepEqual(spend(dataDir, 'old'), resumed)
+  const again = spend(dataDir, 'old')
+  // D-b: the second prune folds the new request into the summary and leaves the outcome alone on disk.
+  // There is no join across the cut, so the count goes back to 0. Every other field stays equal.
+  assert.equal(again.resumptions, 0)
+  const rest = ({ resumptions, ...fields }) => fields
+  assert.deepEqual(rest(again), rest(resumed))
 })
 
 test('which prune runs first does not change the summary', (t) => {
@@ -812,7 +824,14 @@ test('session start archives a session before it prunes it', (t) => {
 `plugins/aether/hooks/spend-view.mjs` (nuevo, puro: sin `$`, sin I/O, importable con node) exporta:
 
 ```js
-usdText(value)                  // -> '12.35' (dos decimales, mitad alejándose de cero); '—' si value no es un número finito
+usdText(value)                  // -> '12.35'. Two decimals, half away from zero, on the shortest round-trip decimal
+                                // (Number#toString), not on the exact binary value and not Math.round(value * 100).
+                                // Take the sign, expand an exponent form to a plain decimal, split the absolute text
+                                // into integer and fraction, keep the first two decimal digits and, when the first
+                                // dropped digit is 5 or more, add one hundredth away from zero, with carry.
+                                // 1.005 -> '1.01' and 2.675 -> '2.68': those doubles sit slightly below the half,
+                                // and rounding the exact value yields '1.00' and '2.67'.
+                                // '—' when value is not a finite number.
 parseSpend(out)                 // out es lo que $.process.run da (o { failed }); -> { ok: true, value } | { ok: false, error }
                                 // usa readJson(out, 'aether-report') de panel-view.mjs; value.recorded no booleano -> { ok: false, error: 'aether-report printed no spend figure' }
 spendLines({ result, columns = 76 })  // -> [{ parts: [{ text, tone }] }] ; la última línea es { parts: [], action: true } (los botones)
@@ -1321,3 +1340,20 @@ test('components names /spend and the summary the prune keeps', () => {
 
 - `node --test tests/spend-docs.test.js tests/docs-facts.test.js` pasa, y `npm test` entero. Ningún enlace, ancla ni nombre de comando de las páginas editadas se rompe (`aether-report` es un archivo de `bin/`; `/spend` y `aether-report --spend` dentro de código en línea).
 - La página de autonomía deja de decir sin matices que el costo no incluye al Lead sin remitir a la cifra de la sesión; el encabezado `### The /spend panel` existe y su ancla (`the-spend-panel`) resuelve.
+
+## Lead, después de fusionar
+
+R12 no tiene tarea del enjambre. `aether-plan check` avisa `R12 has no task that serves it` por eso: ninguna tarea puede leer el directorio de datos del dueño, y la suite tampoco (D11). Esta sección es el seguimiento de R12.
+
+Después de fusionar las tareas, el Lead corre estas dos órdenes, con `AETHER_DATA_DIR=~/.claude/plugins/data/aether-aether-plugin` (no `~/.claude/plugins/data/aether-inline/`):
+
+- `aether-report --spend --session 010621c2`
+- `aether-report --spend --session 252123d1`
+
+Hace la suma independiente de esos mismos archivos a precio de lista y comprueba que cada total coincide con el de la orden. No gasta cuota ni hace una llamada de pago.
+
+También cronometra la orden sobre la sesión real más grande, la de 3.005 peticiones en 4 partes que midió el apartado 4 de la tarjeta, y anota el tiempo junto a esa id. No es un plazo y la suite no lo compara.
+
+La nota queda en el diario de la corrida, `.aether/autonomy/<id de la corrida>/diary.md`, como evidencia de C7, y en el informe de cierre. Fuera de una corrida no hay diario: la nota queda en el informe de cierre. Lleva las dos cifras, las dos sumas independientes, que coinciden, y el tiempo con su id.
+
+La nota de que no se pudo hacer solo cabe si las dos sesiones ya no están en `aether-aether-plugin`, y la nota dice eso. Entonces no hay tiempo que anotar, y la evidencia de la cifra son las pruebas desechables de R11. Si la sesión de 3.005 peticiones ya no está, la nota lo dice y no anota un tiempo.
