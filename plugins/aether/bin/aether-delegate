@@ -1,0 +1,147 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-delegate begin --session <id> --input <file>
+// aether-delegate verdict --task <id> --verdict approve|fix|infeasible [--reason <text>] [--finding <file[:line]: what is missing>]...
+//   [--from-scratch] [--worktree <path>] [--session <id>]
+// aether-delegate start --id <id>
+// aether-delegate run --id <id>
+// aether-delegate wait --id <id> --seconds <n>
+// aether-delegate answer --session <id> --task <id> --attempt <n> --text <text>
+// aether-delegate renew --harness <agy|grok>
+//
+// The delegate tasks of the Lead on the ladder. begin says how the attempt the mod caught runs (lib/delegate-task.js);
+// verdict records the Lead's judgment of the last attempt, which is the only one that counts, and says what the next
+// launch is; start launches run in a process of its own and returns at once, run does the attempt on an external pair
+// (lib/delegate-run.js), and wait polls for its result for up to n seconds (540 at most); answer records the final
+// answer of a read-only delegate that ran on Claude; renew takes a new quota reading of agy or grok and saves it where
+// the pair choice reads it. start and run work in the current directory. None of them merges or pushes. Each prints one
+// JSON line and exits 0, except a wrong use or an error of its own, which prints { "error": <message> } and exits 1.
+
+const fs = require('node:fs')
+const path = require('node:path')
+const lib = (name) => require(path.join(__dirname, '..', 'lib', name))
+const run = lib('run.js')
+
+const VERBS = {
+  begin: { usage: 'begin --session <id> --input <file>', flags: ['session', 'input'], required: ['session', 'input'] },
+  verdict: {
+    usage: 'verdict --task <id> --verdict approve|fix|infeasible [--reason <text>] [--finding <file[:line]: what is missing>]... [--from-scratch] [--worktree <path>] [--session <id>]',
+    flags: ['task', 'verdict', 'reason', 'finding', 'from-scratch', 'worktree', 'session'],
+    booleans: ['from-scratch'],
+    repeatable: ['finding'],
+    required: ['task', 'verdict'],
+  },
+  start: { usage: 'start --id <id>', flags: ['id'], required: ['id'] },
+  run: { usage: 'run --id <id>', flags: ['id'], required: ['id'] },
+  wait: { usage: 'wait --id <id> --seconds <n>', flags: ['id', 'seconds'], required: ['id', 'seconds'] },
+  answer: { usage: 'answer --session <id> --task <id> --attempt <n> --text <text>', flags: ['session', 'task', 'attempt', 'text'], required: ['task', 'attempt'] },
+  renew: { usage: 'renew --harness <agy|grok>', flags: ['harness'], required: ['harness'] },
+}
+const USAGE = `usage: aether-delegate ${Object.values(VERBS).map((verb) => verb.usage).join(' | ')}`
+
+const usageOf = (verb) => `usage: aether-delegate ${VERBS[verb].usage}`
+
+// The flags of one verb, keyed by name: a value (an empty one too), true for a boolean, an array for a repeatable one.
+function flagsOf(verb, args) {
+  const spec = VERBS[verb]
+  const out = {}
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    const name = arg.startsWith('--') ? arg.slice(2) : null
+    if (name === null || !spec.flags.includes(name)) throw new Error(`unexpected argument: ${arg}\n${usageOf(verb)}`)
+    if (spec.booleans?.includes(name)) {
+      out[name] = true
+      continue
+    }
+    if (i + 1 >= args.length) throw new Error(`${arg} needs a value\n${usageOf(verb)}`)
+    const value = args[++i]
+    if (spec.repeatable?.includes(name)) (out[name] ??= []).push(value)
+    else out[name] = value
+  }
+  for (const name of spec.required) if (out[name] === undefined) throw new Error(usageOf(verb))
+  return out
+}
+
+function readJsonFile(file, what) {
+  let text
+  try {
+    text = fs.readFileSync(file, 'utf8')
+  } catch (err) {
+    throw new Error(`cannot read ${what} ${file}: ${err.message}`)
+  }
+  try {
+    return JSON.parse(text)
+  } catch (err) {
+    throw new Error(`${what} ${file} is not JSON: ${err.message}`)
+  }
+}
+
+async function beginCommand(flags, dataDir) {
+  const event = readJsonFile(flags.input, 'the event')
+  return lib('delegate-task.js').begin({ session: flags.session, event }, { dataDir })
+}
+
+async function verdictCommand(flags, dataDir) {
+  return lib('delegate-task.js').verdict(
+    {
+      task: flags.task,
+      verdict: flags.verdict,
+      reason: flags.reason,
+      findings: flags.finding ?? [],
+      fromScratch: flags['from-scratch'] === true,
+      worktree: flags.worktree,
+      session: flags.session,
+    },
+    { dataDir },
+  )
+}
+
+async function startCommand(flags, dataDir) {
+  return lib('delegate-run.js').start({ id: flags.id, cwd: process.cwd(), dataDir })
+}
+
+async function runCommand(flags, dataDir) {
+  return lib('delegate-run.js').runTask({ id: flags.id, cwd: process.cwd(), dataDir })
+}
+
+async function waitCommand(flags, dataDir) {
+  const seconds = Number(flags.seconds)
+  if (flags.seconds.trim() === '' || !Number.isFinite(seconds) || seconds < 0) throw new Error(`--seconds needs a number of seconds\n${usageOf('wait')}`)
+  return lib('delegate-run.js').wait({ id: flags.id, dataDir, seconds })
+}
+
+async function answerCommand(flags, dataDir) {
+  const attempt = Number(flags.attempt)
+  if (!/^\d+$/.test(flags.attempt) || attempt < 1) throw new Error(`--attempt needs a whole number from 1\n${usageOf('answer')}`)
+  return lib('delegate-run.js').recordAnswer({ task: flags.task, attempt, text: flags.text ?? '', session: flags.session ?? null, dataDir })
+}
+
+async function renewCommand(flags, dataDir) {
+  const renewal = lib('router-renewal.js')
+  const harness = flags.harness
+  if (!renewal.RENEWABLE.includes(harness)) throw new Error('--harness needs agy or grok')
+  const lanes = lib('lanes.js')
+  const file = lanes.configPath()
+  const config = lanes.loadConfig(file)
+  if (!config) throw new Error(`no lane table: ${file}`)
+  const settings = config.harnesses?.[harness]
+  if (!settings) throw new Error(`the lane table has no ${harness} harness`)
+  if (!lanes.commandInstalled(settings.command)) throw new Error(`${harness} is not installed: ${settings.command}`)
+  const { readAt } = await renewal.renewReading({ harness, settings, dataDir })
+  return { renewed: true, harness, readAt }
+}
+
+const COMMANDS = { begin: beginCommand, verdict: verdictCommand, start: startCommand, run: runCommand, wait: waitCommand, answer: answerCommand, renew: renewCommand }
+
+async function main() {
+  const [verb, ...args] = process.argv.slice(2)
+  if (!Object.hasOwn(COMMANDS, verb)) throw new Error(USAGE)
+  const flags = flagsOf(verb, args)
+  process.stdout.write(`${JSON.stringify(await COMMANDS[verb](flags, run.dataDir()))}\n`)
+}
+
+main().catch((err) => {
+  process.stdout.write(`${JSON.stringify({ error: err.message })}\n`)
+  process.exitCode = 1
+})

@@ -366,7 +366,7 @@ test('R11: aether-first-setup is an executable file of bin/, the launcher is a f
     assert.ok(commandsIn(read(rel)).includes('aether-first-setup'), `${rel} names \`aether-first-setup\``)
   }
   const components = read('docs/reference/components.md')
-  for (const text of ['`plugins/aether/launcher/aether-lead`', '`first-setup`', 'eleven commands of `bin/`']) {
+  for (const text of ['`plugins/aether/launcher/aether-lead`', '`first-setup`', 'twelve commands of `bin/`']) {
     assert.ok(components.includes(text), `docs/reference/components.md has ${text}`)
   }
 })
