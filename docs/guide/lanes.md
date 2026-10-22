@@ -66,6 +66,18 @@ Colours follow your theme: green for usable or enough, amber for low, dry, not e
 
 **Safety.** Any text from a CLI or from a delegate's description is stripped of control characters and bidi overrides before it is drawn, because Claude Code refuses to draw a pane that holds a control character, and widths are measured in terminal cells. [Troubleshooting](troubleshooting.md#the-harnesses-panel-is-not-offered) covers a panel that is missing, cut or showing `Quota unavailable`. The sessions it was tried in are listed in [the handoff](../handoff/2026-10-17-harness-panel-0.12.3.md).
 
+### The /spend panel
+
+`/spend` opens a pane with the list-price spend of this session. It exists only in an Aether session, the one started with the agent `aether:lead`. It calls no model and writes nothing to the transcript, including while the figure is still being read, and `Esc` or `x` closes it. From the shell the same figure is `aether-report --spend [--session <id>]`. The panel always passes this session's id. Without `--session`, the command reports the session that wrote last.
+
+The dollars are list price, not a percentage of the quota and not what a subscription charges. The total is the Lead's turns and the agents', split by model, by effort and by role, plus the calls to other harnesses and their dollars.
+
+The same id keeps adding when you resume it: `/resume`, `/compact`, or closing the session and coming back. Another id is not linked to the one before it. `--fork-session` and `/clear` each start a new id, and the earlier one stays its own session.
+
+A model with no price is listed and is not added to the total. The count of resumptions is approximate: a resumption is a gap of more than an hour between two consecutive events of that id, and the pane labels the count `approximate`. After a prune, the gap between the archived stretch and what is still on disk is not counted. When part of the record could not be read, the total is what was read and the figure says `incomplete`. With no record the pane says `No spend recorded yet`. It does not show a total of US$ 0.00, and it does not show another session.
+
+[Troubleshooting](troubleshooting.md#the-harnesses-panel-is-not-offered) covers a `/spend` that is not offered, for the same reason as `/harnesses`. The ceiling of an autonomous run is another figure, and it still leaves out the Lead's own turns ([Autonomy](autonomy.md#autonomy-1)).
+
 ## Muse
 
 Muse Code is Meta's coding agent, the `muse` CLI. It is the fifth lane harness, last in the `harnesses` list (`agy, codex, grok, cursor, muse`), and superdelegation sends it calls by the same rule, order and reserve as the others (see Parallel and models below). What follows is what the adapter does; the design is in [spec 008](../../specs/008-muse-harness/spec.md) and the Muse decision in [decisions](../decisions.md).

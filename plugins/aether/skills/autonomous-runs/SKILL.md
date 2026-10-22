@@ -76,8 +76,11 @@ A new figure for a label already recorded replaces the old one. The figure cover
     ## Tiempo y costo
     - Trabajó solo <h> h de <tope> h, y te consultó <n> veces.
     - US$ <gasto> de US$ <tope>. La cifra cubre el swarm, las lanes y los asientos externos; no cubre los turnos del Lead, ni los de los asientos nativos, ni los de las tareas delegadas.
+    - Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.
 
 Supuestos are ordered by how likely the owner is to veto them, the most likely first.
+
+La línea de la sesión en Tiempo y costo sale de aether-report --spend --session <id de esta sesión>: los tres números y el de harness salen del JSON en dólares con dos decimales; cuando `recorded` es falso la línea es `Sesión <id>: todavía no hay gasto registrado.`; cuando `complete` es falso la línea termina con `El total está incompleto.`; cuando `unpriced` no está vacío, la línea sigue con `Sin precio: <modelos>; el total no los cuenta.` (por ejemplo, grok-4.7 no tiene precio en la tabla, y sus llamadas cuentan en `<n>` pero no en los dólares). La línea va en todo informe de cierre (cumplida, parcial, el tope o no terminada).
 
 "Hice" names the branch and the commits. "Decidí" gives each decision with its grounds, above all where you departed from the Judge. "No terminé" says what was tried and why it stopped. The owner's «sí» to an item of "Espera tu sí" authorizes that action once, and you run it; if their words are general, also record a grant. When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even that action until a grant covers it: record the owner's reply as a session grant for its class (`aether-autonomy grant --class <class> --scope session --quote "<their words>"`), run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
 
