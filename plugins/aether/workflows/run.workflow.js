@@ -40,6 +40,16 @@ const MAX_PAIR_TRIES = 3
 // The failures a unit keeps (its `failures`): an attempt without a report, or a retry or an escalation
 // with the titles of its blocking findings. The same failure can stop a unit early (see work()).
 const NO_REPORT = 'no report'
+// The time a native agent that only reads (the supervisor and the final reviewer) may stay silent (issue 16): at this
+// cap the script stops waiting for it, records it as abandoned and goes on. It is the supervisor's timeout of the lane
+// table (config/lanes.json). The implementer has no cap here: it builds for as long as its lane allows (2700 s).
+// A workflow script has no clock and no timer, and `agent()` takes no timeout, so the cap is kept by `aether-lane pause`
+// ticks through an ops agent (the mod answers them without a model), each at most CAP_TICK_SECONDS (the bin's maximum).
+// A tick is not a call of the run: it is in no count and spends no budget. The runtime offers no way to stop an agent,
+// so an abandoned one may go on running; the script only stops waiting for it.
+const NATIVE_CAP_SECONDS = { supervisor: 900, reviewer: 900 }
+const CAP_TICK_SECONDS = 120
+const ABANDONED = { abandoned: true }
 const FINDINGS_PREFIX = 'findings: '
 
 const FINDINGS = {
@@ -188,6 +198,8 @@ for (const id of waves.flat()) {
   units[id] = { id, title: t.title, area: t.area, status: 'pending', tiers: [], attempts: 0, rounds: [], failures: [], commit: null, reason: null, question: null, patch: null }
 }
 const agents = { total: 0, byRole: {}, byModel: {} }
+// The native agents the script stopped waiting for at their cap: { role, label, phase, seconds }.
+const abandoned = []
 // The budget counts model agents only (issue 013): an ops command the mod answers spends no
 // model, and in the run that opened the issue 97 of 144 agents were ops. Ops calls stay in
 // agents.total and agents.byRole, reported separately, but never spend the budget.
@@ -216,18 +228,64 @@ const message = (err) => (err && err.message ? err.message : String(err))
 // Why each rejected call failed, by label, for the reasons a result reports.
 const failedBecause = new Map()
 
-// One agent call. A rejection counts as a failed agent, like a null result.
+// One agent call. A rejection counts as a failed agent, like a null result. A supervisor or a final reviewer that stays
+// silent past its cap (NATIVE_CAP_SECONDS) is abandoned: the call resolves to null, as a failed agent does, with the
+// reason in failedBecause.
 async function call(role, model, effort, prompt, { phase, label, schema }) {
   agents.total++
   agents.byRole[role] = (agents.byRole[role] || 0) + 1
   agents.byModel[model] = (agents.byModel[model] || 0) + 1
-  try {
-    return await agent(prompt, { agentType: `aether:${role}`, model, effort, phase, label, schema })
-  } catch (err) {
-    log(`${label}: the agent failed: ${message(err)}`)
-    failedBecause.set(label, message(err))
-    return null
+  const running = (async () => {
+    try {
+      return await agent(prompt, { agentType: `aether:${role}`, model, effort, phase, label, schema })
+    } catch (err) {
+      log(`${label}: the agent failed: ${message(err)}`)
+      failedBecause.set(label, message(err))
+      return null
+    }
+  })()
+  const seconds = NATIVE_CAP_SECONDS[role]
+  if (!seconds) return running
+  const clock = { over: false }
+  const late = capClock({ label, phase, seconds, clock }).then((reached) => (reached ? ABANDONED : new Promise(() => {})))
+  const first = await Promise.race([running, late])
+  clock.over = true
+  if (first !== ABANDONED) return first
+  const reason = `abandoned after ${seconds / 60} min without an answer`
+  abandoned.push({ role, label, phase, seconds })
+  failedBecause.set(label, reason)
+  log(`${label}: ${reason}; the run goes on without it (a workflow cannot stop an agent, so it may still be running)`)
+  return null
+}
+
+// The script's clock for one agent: `aether-lane pause` ticks that add up to `seconds`. Resolves to true when they all
+// ran and the agent was still silent, and to false when the agent answered first (clock.over) or the clock itself could
+// not run, which abandons nothing.
+async function capClock({ label, phase, seconds, clock }) {
+  const steps = Math.ceil(seconds / CAP_TICK_SECONDS)
+  for (let k = 1; k <= steps && !clock.over; k++) {
+    const step = Math.min(CAP_TICK_SECONDS, seconds - (k - 1) * CAP_TICK_SECONDS)
+    let paused = null
+    try {
+      const reply = await agent(opsPrompt(`aether-lane pause --seconds ${step}`, { long: true }), {
+        agentType: 'aether:ops',
+        model: 'haiku',
+        effort: 'low',
+        phase,
+        label: `${label}: deadline ${k}/${steps}`,
+        schema: OPS_SCHEMA,
+      })
+      const lines = reply && reply.exitCode === 0 ? String(reply.stdout || '').trim().split('\n') : []
+      paused = JSON.parse(lines[lines.length - 1]).paused
+    } catch {
+      paused = null
+    }
+    if (paused !== step) {
+      if (!clock.over) log(`${label}: the time cap cannot be kept: the pause did not run`)
+      return false
+    }
   }
+  return !clock.over
 }
 
 // The ops agent's message. `long` asks for the Bash timeout an aether-lane command needs; a
@@ -818,13 +876,16 @@ async function supervise(unit, task, rung, report, used, model, author) {
       return { blocked: outcome.detail }
     }
   }
+  const label = `${unit.id}: supervise attempt ${n} on ${native.model} ${native.effort}`
   const review = await call('supervisor', native.model, native.effort, supervisorPrompt(unit, task, rung, report, used, model), {
     phase: 'Supervise',
-    label: `${unit.id}: supervise attempt ${n} on ${native.model} ${native.effort}`,
+    label,
     schema: SUPERVISOR_SCHEMA,
   })
   if (routed) tookNative(id, routed, where)
-  return { review, provider: 'native', effort: native.effort }
+  // An abandoned supervisor (issue 16) says so in the round's ruling; any other missing answer is a failed agent.
+  const gone = abandoned.some((entry) => entry.label === label)
+  return { review, provider: 'native', effort: native.effort, ...(gone ? { abandoned: failedBecause.get(label) } : {}) }
 }
 
 // The report of an attempt that ended without one, rebuilt from its worktree: `aether-wt salvage` commits what the
@@ -940,7 +1001,7 @@ async function work(unit, task) {
     round.reviewEffort = checked.effort
     const { review } = checked
     if (!review) {
-      round.ruling = 'The supervisor agent failed.'
+      round.ruling = checked.abandoned ? `The supervisor agent was ${checked.abandoned}.` : 'The supervisor agent failed.'
       continue
     }
     round.findings = findingsOf(review.findings)
@@ -1245,4 +1306,4 @@ try {
   if (cleanup.error) cleanup = await ops(command, { phase: 'Cleanup', label: 'cleanup again' })
 }
 
-return { runId, units: Object.values(units), finalReview, cleanup, agents, lanes: laneCounts, error }
+return { runId, units: Object.values(units), finalReview, cleanup, agents, abandoned, lanes: laneCounts, error }
