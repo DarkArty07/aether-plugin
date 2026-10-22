@@ -300,7 +300,8 @@ function refusedPlan(r, ctx, status) {
     effort: args.effort, edits: ctx.edits, owns: ctx.brief.owns, tests: ctx.brief.tests, description: ctx.description,
     requested, ignored, pin: null, base: null, dirty: null,
   })
-  const notes = [...ctx.notes, `Aether delegate task ${ctx.id} is ${status}: no step opens. Defer it or take it to the owner's list.`]
+  const what = status === 'approved' ? 'Give new work a new AETHER-TASK id.' : "Defer it or take it to the owner's list."
+  const notes = [...ctx.notes, `Aether delegate task ${ctx.id} is ${status}: no step opens. ${what}`]
   return emptyPlan({ id: ctx.id, kind: 'refused', attempt: ctx.attempt, args, notes })
 }
 
@@ -309,15 +310,15 @@ function relaunchOf(dataDir, session, id, brief) {
   if (brief.owns.length === 0) return null
   const key = JSON.stringify([[...new Set(brief.owns)].sort(), brief.tests])
   const approved = new Set()
-  let of = null
+  const matching = []
   for (const entry of log.readEntries(dataDir, { session })) {
     if (entry.task === id || !isId(entry.task)) continue
     if (entry.kind === 'verdict' && entry.verdict === 'approved') approved.add(entry.task)
     if (entry.kind !== 'launch' || !Array.isArray(entry.owns)) continue
-    if (JSON.stringify([[...new Set(entry.owns)].sort(), entry.tests ?? null]) === key) of = entry.task
+    if (JSON.stringify([[...new Set(entry.owns)].sort(), entry.tests ?? null]) === key) matching.push(entry.task)
   }
-  // The latest matching task, unless it ended approved.
-  return of !== null && !approved.has(of) ? of : null
+  // The latest matching task that did not end approved.
+  return matching.reverse().find((task) => !approved.has(task)) ?? null
 }
 
 // What the next launch of the task is, read back from its log: { status, step, launchKind, verdict, attempt }.
