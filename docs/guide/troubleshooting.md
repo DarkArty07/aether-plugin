@@ -102,11 +102,11 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 
 ## The /harnesses panel is not offered
 
-**What you see.** Typing `/harnesses` offers nothing, or Claude Code says it does not know the command.
+**What you see.** Typing `/harnesses` offers nothing, or Claude Code says it does not know the command. Typing `/spend` does the same.
 
-**Why.** `/harnesses` is a command of Aether's mod, and the mod declares it only in an Aether session, the one started with the agent `aether:lead`. A plain `claude` session does not have it, on purpose: nothing of the panel runs there. The panel also uses Claude Code's plugin UI API for mods, which is early access, so a Claude Code release that changes it can make the pane stop drawing; nothing else of Aether depends on it.
+**Why.** `/harnesses` is a command of Aether's mod, and the mod declares it only in an Aether session, the one started with the agent `aether:lead`. `/spend` is not offered outside an Aether session either, for the same reason. A plain `claude` session has neither, on purpose: nothing of either panel runs there. The panels also use Claude Code's plugin UI API for mods, which is early access, so a Claude Code release that changes it can make a pane stop drawing; nothing else of Aether depends on it.
 
-**What to do.** Start the session with the launcher, or with `claude --agent aether:lead --effort xhigh` ([Getting started](../getting-started.md#start)). If a session started that way still does not offer it, check that the plugin is installed and enabled with `claude plugin list`, and see [the panel](lanes.md#the-harnesses-panel) for the Claude Code version it was checked on.
+**What to do.** Start the session with the launcher, or with `claude --agent aether:lead --effort xhigh` ([Getting started](../getting-started.md#start)). If a session started that way still does not offer `/harnesses` or `/spend`, check that the plugin is installed and enabled with `claude plugin list`, and see [the /harnesses panel](lanes.md#the-harnesses-panel) for the Claude Code version it was checked on and [the /spend panel](lanes.md#the-spend-panel).
 
 ## The /harnesses panel shows few rows or looks cut
 
