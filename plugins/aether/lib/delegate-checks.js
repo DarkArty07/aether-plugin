@@ -10,10 +10,8 @@ function nulEntries(text) {
 
 function changedFiles(worktree, base) {
   const root = repoPaths(worktree).worktree
-  const args = ['-c', 'core.quotePath=false', 'diff', '--name-only', '--no-renames', '-z']
-  if (base) {
-    args.push(base)
-  }
+  const revision = base || 'HEAD'
+  const args = ['-c', 'core.quotePath=false', 'diff', '--name-only', '--no-renames', '-z', revision, '--']
   const diffOut = git(args, root, { raw: true }).stdout
   const untrackedOut = git(['-c', 'core.quotePath=false', 'ls-files', '--others', '--exclude-standard', '-z'], root, { raw: true }).stdout
   return Array.from(new Set([...nulEntries(diffOut), ...nulEntries(untrackedOut)])).sort()
@@ -24,13 +22,14 @@ function runTests(worktree, command, { timeoutMs = 900000 } = {}) {
     cwd: worktree,
     shell: true,
     timeout: timeoutMs,
+    killSignal: 'SIGKILL',
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   })
   const timedOut = Boolean(r.error && r.error.code === 'ETIMEDOUT')
   const fullOutput = (r.stdout || '') + (r.stderr || '')
   const outputTail = fullOutput.slice(-4000)
-  const exitCode = timedOut ? null : (r.status ?? (r.error ? 1 : 0))
+  const exitCode = timedOut ? null : (r.status !== null ? r.status : null)
   const passed = !timedOut && exitCode === 0
   return { command, exitCode, passed, timedOut, outputTail }
 }

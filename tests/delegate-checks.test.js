@@ -85,3 +85,21 @@ test('runTests slices outputTail to the last 4000 characters', (t) => {
   assert.match(result.outputTail, /TAIL_END$/)
 })
 
+test('runTests treats a command killed by a signal as failed and not timed out', (t) => {
+  const repo = makeRepo(t)
+  const result = checks.runTests(repo.dir, 'node -e "process.kill(process.pid, \'SIGKILL\')"')
+  assert.equal(result.passed, false)
+  assert.equal(result.timedOut, false)
+  const execResult = checks.runTests(repo.dir, 'exec node -e "process.kill(process.pid, \'SIGKILL\')"')
+  assert.equal(execResult.passed, false)
+  assert.equal(execResult.timedOut, false)
+})
+
+test('changedFiles with no base diffs against HEAD and sees staged files', (t) => {
+  const repo = makeRepo(t)
+  fs.writeFileSync(path.join(repo.dir, 'staged.txt'), 'staged\n')
+  repo.git('add', 'staged.txt')
+  assert.deepEqual(checks.changedFiles(repo.dir), ['staged.txt'])
+})
+
+
