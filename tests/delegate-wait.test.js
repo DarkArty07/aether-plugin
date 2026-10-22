@@ -74,3 +74,30 @@ test('the constants stay under the ten minutes of $.process.run', () => {
   assert.ok(mod.WAIT_TIMEOUT_MS < 600000)
   assert.ok(mod.WAIT_SECONDS * 1000 < mod.WAIT_TIMEOUT_MS)
 })
+
+test('waitSteps yields a beat after every wait that did not end, and returns the result (the stall limit of the engine)', async () => {
+  const { $ } = make([{ done: false }, { done: false }, DONE])
+  const steps = mod.waitSteps($, CTX)
+  const beats = []
+  let next = await steps.next()
+  while (next.done !== true) {
+    beats.push(next.value)
+    next = await steps.next()
+  }
+  assert.deepEqual(beats, [{ beat: true, waitedMs: 540000 }, { beat: true, waitedMs: 1080000 }])
+  assert.deepEqual(next.value, { ok: true, status: 'ok', text: 'branch aether/x/task-1' })
+  assert.ok(mod.WAIT_TIMEOUT_MS < mod.STALL_MS, 'no wait can go as long as the engine tolerates without an event')
+})
+
+test('a delegate that ends on the first wait yields no beat', async () => {
+  const { $ } = make([DONE])
+  const steps = mod.waitSteps($, CTX)
+  const next = await steps.next()
+  assert.equal(next.done, true)
+  assert.equal(next.value.ok, true)
+})
+
+test('the heartbeat text names the minutes and ends with a newline', () => {
+  assert.equal(mod.heartbeatText(540000), '[Aether: the delegate is still working, 9 min so far]\n')
+  assert.equal(mod.heartbeatText(1080000), '[Aether: the delegate is still working, 18 min so far]\n')
+})

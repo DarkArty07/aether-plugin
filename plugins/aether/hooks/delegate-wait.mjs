@@ -10,6 +10,15 @@ export const WAIT_SECONDS = 540
 export const WAIT_TIMEOUT_MS = 570000
 // The most a delegate is waited for in total, in milliseconds.
 export const MAX_WAIT_MS = 3600000
+// The longest an agent's step may go without an event: measured on 2026-10-22, a step of a mod-answered agent that
+// emitted nothing for 600 s was killed with "Agent stalled: no progress for 600s". A text event the step yields counts as
+// progress (measured: the agent lived 18 minutes). The waits above are shorter, so a beat after each one is enough.
+export const STALL_MS = 600000
+
+// The text of a heartbeat: what the step yields after a wait that did not end. The engine adds it to the agent's answer.
+export function heartbeatText(waitedMs) {
+  return `[Aether: the delegate is still working, ${Math.round(waitedMs / 60000)} min so far]\n`
+}
 
 // The last line of a wait's output that is a JSON object with a boolean `done`, or null.
 function lastAnswer(stdout) {
@@ -42,10 +51,12 @@ async function waitOnce($, root, id) {
   }
 }
 
-// Repeats the wait until the delegate ends. Returns { ok, status, text }; never throws.
+// Repeats the wait until the delegate ends, one wait at a time. After each wait that did not end it yields
+// { beat: true, waitedMs }, so the caller can yield a heartbeat event (see STALL_MS); it returns { ok, status, text }
+// when the delegate ends, and never throws.
 // `session` is part of the caller's context and is not sent: the bin takes its session and data directory
 // from the environment of the session it runs in.
-export async function waitForDelegate($, { root, id, session }) {
+export async function* waitSteps($, { root, id, session }) {
   void session
   try {
     const started = await $.clock.now()
@@ -62,8 +73,18 @@ export async function waitForDelegate($, { root, id, session }) {
       if (answer.done) {
         return { ok: answer.ok === true, status: String(answer.status ?? ''), text: answer.text ?? null }
       }
+      yield { beat: true, waitedMs: (await $.clock.now()) - started }
     }
   } catch {
     return { ok: false, status: 'wait-failed', text: null }
+  }
+}
+
+// The same wait without beats: the result when the delegate ends. Never throws.
+export async function waitForDelegate($, context) {
+  const steps = waitSteps($, context)
+  for (;;) {
+    const next = await steps.next()
+    if (next.done) return next.value
   }
 }
