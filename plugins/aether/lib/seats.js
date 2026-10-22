@@ -260,8 +260,99 @@ function skillBody(name) {
   return (end === -1 ? text : text.slice(end + '\n---\n'.length)).trim()
 }
 
+// Where a finding touches the document (issue 67). A line it names wins (`file:line`, or "line N"); otherwise a
+// markdown heading it names; otherwise, when the document text is in hand, the heading above the quote in its
+// evidence. The design workflow copies the no-document half and never calls this: it cannot read the file, so a
+// round's message says "names no line" unless the finding itself names a line or a heading.
+const PATH_LINE = /(?:^|[\s`'"(])([A-Za-z0-9_./-]*[./][A-Za-z0-9_./-]*):(\d+)(?:[ \t]*[-–][ \t]*(\d+))?(?=$|[\s`'")\],.;:])/
+const WORD_LINE = /\blines?[ \t]+(\d+)(?:[ \t]*[-–][ \t]*(\d+))?\b/i
+const NAMED_HEADING = /(?:^|[\s`'"(])(#{1,6}[ \t]+\S[^\n`]*)/
+
+function spanOf(start, end) {
+  return end ? `lines ${start}-${end}` : `line ${start}`
+}
+
+function lineTouch(text) {
+  const path = PATH_LINE.exec(text)
+  if (path) return spanOf(path[2], path[3])
+  const word = WORD_LINE.exec(text)
+  if (word) return spanOf(word[1], word[2])
+  return null
+}
+
+function headingTouch(text) {
+  const heading = NAMED_HEADING.exec(text)
+  return heading ? heading[1].trim() : null
+}
+
+function quoteTouch(evidence) {
+  const match = /`([^`]+)`/.exec(evidence)
+  if (!match) return null
+  const quote = match[1].trim()
+  if (quote === '' || /^#{1,6}[ \t]/.test(quote)) return null
+  if (PATH_LINE.test(quote) || WORD_LINE.test(quote)) return null
+  return quote
+}
+
+function headingAbove(document, quote) {
+  const at = document.indexOf(quote)
+  if (at < 0) return null
+  let found = null
+  for (const line of document.slice(0, at).split('\n')) {
+    const heading = /^(#{1,6}[ \t]+\S.*)$/.exec(line.trim())
+    if (heading) found = heading[1].trim()
+  }
+  return found
+}
+
+function findingTouch(finding, document = '') {
+  const evidence = finding !== null && typeof finding === 'object' && typeof finding.evidence === 'string' ? finding.evidence : ''
+  const title = finding !== null && typeof finding === 'object' && typeof finding.title === 'string' ? finding.title : ''
+  const named = `${evidence}\n${title}`
+  const line = lineTouch(named)
+  if (line) return line
+  const heading = headingTouch(named)
+  if (heading) return heading
+  if (document !== '') {
+    const quote = quoteTouch(evidence)
+    const above = quote ? headingAbove(document, quote) : null
+    if (above) return above
+  }
+  return 'names no line'
+}
+
+function formatFindings(findings) {
+  if (!Array.isArray(findings) || findings.length === 0) return ['- none']
+  return findings.map((finding, index) => {
+    const severity = typeof finding.severity === 'string' && finding.severity !== '' ? finding.severity : 'major'
+    const type = typeof finding.type === 'string' && finding.type !== '' ? ` [${finding.type}]` : ''
+    const title = typeof finding.title === 'string' ? finding.title : ''
+    const parts = [`${index + 1}. [${severity}]${type} ${title}`, findingTouch(finding)]
+    if (typeof finding.evidence === 'string' && finding.evidence !== '') parts.push(finding.evidence)
+    if (typeof finding.fix === 'string' && finding.fix !== '') parts.push(finding.fix)
+    return parts.join(' — ')
+  })
+}
+
+// The block a correction round gives the Writer: the edit, the paths, and each finding with its place.
+const EDIT_ONLY = 'Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'
+
+function revisionBrief({ paths, findings, openQuestions = [] }) {
+  const questions = Array.isArray(openQuestions) ? openQuestions.filter((item) => typeof item === 'string' && item !== '') : []
+  const out = [EDIT_ONLY, '', 'The document:', ...paths.map((item) => `- ${item}`), '', 'Findings:', ...formatFindings(findings)]
+  if (questions.length > 0) out.push('', 'Open questions:', ...questions.map((item) => `- ${item}`))
+  return out.join('\n')
+}
+
+// A message that starts a correction, as design.workflow.js writes it. The skills below stay as the rules of the
+// fields; they are not a brief to write the document again.
+function correctionLine(message) {
+  if (typeof message !== 'string' || !message.startsWith('Revise ')) return []
+  return ['- This round corrects the document. Edit it in place, as the message says. What follows is the rule of the fields, not a brief to write the document again.']
+}
+
 // The note that tells the role it runs in an external harness, and what changes for it there.
-function seatNote(seat, harness, feature, doc) {
+function seatNote(seat, harness, feature, doc, message = '') {
   const head = `## You run in an external harness\n\n`
   if (seat === 'judge') {
     return `${head}You are the Aether Judge, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the repository at the commit under review. Your review is read-only: read files and run read-only commands such as \`git log\` or \`grep\`, but never change, create or delete a file; any change undoes your review. ${WORKDIR_RULE} Every other rule of your role holds. Your answer is the structured output your harness asks for, in place of the indented block your role describes: verdict, findings (each with severity, type, title, evidence and fix; at most ${MAX_FINDINGS}) and openQuestions. Each finding's type says what is wrong: \`missing\` (the document lacks something it needs), \`extra\` (it has something nobody asked for) or \`wrong\` (it says something that is not so).`
@@ -273,6 +364,7 @@ function seatNote(seat, harness, feature, doc) {
       `- Change only \`${feature}/spec.md\`, and commit it. A change to any other file undoes your whole round.`,
       `- ${WORKDIR_RULE}`,
       '- Your reply goes in the structured output your harness asks for: spec is its path, commit is your commit, clarify lists each [NEEDS CLARIFICATION: ...] mark left in the spec, and assumptions, proposals, questions and disagreements are lists.',
+      ...correctionLine(message),
       '',
       '## The skill aether:specify',
       '',
@@ -287,6 +379,7 @@ function seatNote(seat, harness, feature, doc) {
       `- Change only \`${feature}/plan.md\` and \`${feature}/tasks.md\`, and commit them. A change to any other file undoes your whole round.`,
       `- ${WORKDIR_RULE}`,
       '- Your reply goes in the structured output your harness asks for: plan and tasks are their paths, commit is your commit, check is what `aether-plan check` printed, and assumptions and questions are lists.',
+      ...correctionLine(message),
       '',
       '## The skill aether:plan',
       '',
@@ -305,7 +398,7 @@ function answerSection(seat, doc) {
 }
 
 function seatPrompt({ seat, harness, adapter, message, workdir, feature, doc = 'plan' }) {
-  const parts = [roleBody(seat), seatNote(seat, harness, feature, doc), ...claudeMdSections(workdir, os.homedir()), message]
+  const parts = [roleBody(seat), seatNote(seat, harness, feature, doc, message), ...claudeMdSections(workdir, os.homedir()), message]
   if (adapter.schemaInPrompt === true) parts.push(answerSection(seat, doc))
   return parts.join('\n\n')
 }
@@ -800,4 +893,4 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   })
 }
 
-module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, authorModel, excludeList, chooseSeat, offeredByListing, changedPaths, judgeText, windowUsed, seatPrompt, seatCommand }
+module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, authorModel, excludeList, chooseSeat, offeredByListing, changedPaths, judgeText, windowUsed, findingTouch, revisionBrief, seatPrompt, seatCommand }
