@@ -13,12 +13,14 @@ export const meta = {
 // the Judge reviews it, the Writer writes the plan and the tasks, aether-plan check passes, the Judge reviews them,
 // and the Examiner writes the exam. A short design runs only the Judge's rounds on one document, with the Writer to
 // correct it. Every round of the Judge, the Writer (its drafts and its corrections) and the Examiner is a seat round:
-// `aether-lane seat-start` picks the pair with the same function as the swarm (an external pair first, the native
-// agent last), and the script waits for it in steps. A round that fails (exit 4), breaks (exit 1) or does not start
+// `aether-lane seat-start` picks the pair with the same function as the swarm. The design seats use the author's
+// family as a reserve: a pair of another family first, then the author's own family, and the native agent only last.
+// The Writer's choice, inside that start, leaves out the Judge's only external pair when the Writer would take it
+// and still has another. The script waits for the round in steps. A round that fails (exit 4), breaks (exit 1) or does not start
 // asks `seat-start` again, without the pairs it tried, up to three tries in all. After the third, or whenever the
 // round has no pair left (exit 3), does not finish or answers without a result that fits,
 // the native agent takes it with the same message, in the model and effort the seat's reply names (a Judge or an
-// Examiner is never the model that wrote the document), or in the seat's reference pair when it names none. The one
+// Examiner still swaps to a Claude model that is not an author when it can), or in the seat's reference pair when it names none. The one
 // document no Writer seat can write is design.md of a short design: its corrections are the native Writer's. The
 // script never reads the clock or random numbers: the runtime replays a resumed run call by call. It has no modules,
 // so what it needs from run.workflow.js and lib/lane-schemas.js is copied here by hand.
@@ -495,9 +497,10 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
       const { reply } = waited
       if (reply.exitCode === 0 && isObject(value.result) && fits(schema, value.result, { required: seat !== 'writer' })) {
         record.provider = `${value.harness} ${value.model}`
-        record.note = null
+        // A seat that answered from the author's own family says so, so the Lead can see it (issue 64).
+        record.note = typeof value.note === 'string' && value.note !== '' ? value.note : null
         // The window shows the round as its Haiku ops agent (issue 032): say who ran it.
-        log(`${base}: ran on ${record.provider}${typeof value.lane === 'string' && value.lane !== '' ? ` · ${value.lane}` : ''}`)
+        log(`${base}: ran on ${record.provider}${record.note ? ` (${record.note})` : ''}${typeof value.lane === 'string' && value.lane !== '' ? ` · ${value.lane}` : ''}`)
         record.lane = typeof value.lane === 'string' ? value.lane : null
         if (seat === 'writer') keepQuestions(value.result)
         return { answer: value.result, text: String(value.answer), seat: record.provider, model: String(value.model), value }

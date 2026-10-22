@@ -49,6 +49,9 @@ const NATIVE = {
 // The Claude Code model aliases an --author may give, with the ids lane models use for the same model.
 const ALIASES = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
 
+// What a Judge or Examiner round says when the only external pair left is the author's own family (issue 64).
+const SAME_FAMILY_NOTE = 'the same family that wrote the document judged it: no other external pair could'
+
 const SCHEMAS = { judge: schemas.JUDGE_SCHEMA, writer: schemas.WRITER_SCHEMA, examiner: schemas.EXAMINER_SCHEMA }
 
 // The schema of a seat's answer: the Writer's depends on the document it writes.
@@ -108,30 +111,67 @@ function quotaViewOf(harnesses, pair) {
   return groups && Object.hasOwn(groups, pair.group) ? groups[pair.group] : null
 }
 
+// The design seats ask choose with the author family as a reserve: another family first, then the author's
+// own, and the native agent only last. The swarm and aether-lane delegate keep the default, which is a bar.
+function seatChoice(seat, { pairs, harnesses, exclude, authors }) {
+  return choose({
+    pairs,
+    reference: REFERENCE[seat],
+    harnesses,
+    exclude,
+    authors,
+    nativeDiffers: seat !== 'writer',
+    authorRule: 'reserve',
+  })
+}
+
+// The pair to hold back from the Writer: the Judge's only external candidate, when the Writer would take
+// that same pair and still has another. The Judge is the scarce seat, so the Writer must not spend the only
+// pair the Judge can use. Null when the Judge has another candidate, when the Writer would not have taken
+// this one, or when holding it back would leave the Writer with no external pair. The document is not written
+// yet, so the Judge is asked with no author.
+function reservedPair(offeredPairs, harnesses, exclude, authors) {
+  const judge = seatChoice('judge', { pairs: offeredPairs, harnesses, exclude: [], authors: [] })
+  const open = judge.candidates.filter((candidate) => candidate.why === null)
+  if (open.length !== 1) return null
+  const held = open[0].id
+  if (exclude.includes(held)) return null
+  const writer = seatChoice('writer', { pairs: offeredPairs, harnesses, exclude, authors })
+  if (!writer.picked || writer.picked.id !== held) return null
+  const without = seatChoice('writer', { pairs: offeredPairs, harnesses, exclude: [...exclude, held], authors })
+  return without.picked ? held : null
+}
+
 // Who takes seat: the external pair that lib/superdelegation.js choose gives for the seat's reference pair,
 // or the native agent when none can. harnesses is the view of the quotas of the enabled harnesses; offered(harness,
 // model, effort) says whether the harness's captured listing offers the model at that effort (issue 016): a pair it
 // does not offer is left out before the choice and listed as passed over, with the reason not-offered. exclude is
 // the pair ids the round already tried. A Judge or an Examiner reviews what another model wrote, so its native
-// agent is not the author's model either, exclusions or not; the Writer's may be. Pure apart from the calls it is
-// given. Returns { external } or { native }, each with the pairs passed over and why (tried) and the whole decision.
+// agent is not the author's model either, exclusions or not; the Writer's may be. Before a Writer round, the Judge's
+// only external pair is left out when the Writer would take it and still has another (issue 64); tried lists it as
+// reserved. Pure apart from the calls it is given. Returns { external } or { native }, each with the pairs passed
+// over and why (tried), the whole decision, and note when the answer is the author's own family.
 function chooseSeat({ config, pairs, seat, author = null, harnesses, offered = () => true, exclude = [] }) {
   const authorId = authorModel(author)
+  const authors = authorId === null ? [] : [authorId]
   const dropped = pairs.filter((pair) => pair.harness !== pairsTable.NATIVE_HARNESS && !offered(pair.harness, pair.model, pair.effort))
-  const chosen = choose({
-    pairs: pairs.filter((pair) => !dropped.includes(pair)),
-    reference: REFERENCE[seat],
-    harnesses,
-    exclude,
-    authors: authorId === null ? [] : [authorId],
-    nativeDiffers: seat !== 'writer',
-  })
+  const offeredPairs = pairs.filter((pair) => !dropped.includes(pair))
+  const reserved = seat === 'writer' ? reservedPair(offeredPairs, harnesses, exclude, authors) : null
+  const chosen = seatChoice(seat, { pairs: offeredPairs, harnesses, exclude: reserved === null ? exclude : [...exclude, reserved], authors })
   const notOffered = dropped.map((pair) => ({
     id: pair.id, harness: pair.harness, group: pair.group, intelligence: pair.intelligence, costPerTaskUsd: pair.costPerTaskUsd, rank: null, outcome: 'passed', why: 'not-offered',
   }))
   const decision = { ...chosen, candidates: [...chosen.candidates, ...notOffered] }
+  for (const candidate of decision.candidates) {
+    if (candidate.id === reserved && candidate.why === 'excluded') candidate.why = 'reserved'
+  }
   const tried = decision.candidates.map(({ id, outcome, why }) => ({ id, outcome, why }))
-  if (decision.picked === null) return { native: { agent: NATIVE[seat].agent, ...decision.native }, tried, decision }
+  let note = null
+  if (seat !== 'writer' && decision.picked && authors.includes(decision.picked.family)) {
+    note = SAME_FAMILY_NOTE
+    decision.reason = `${decision.reason}; ${note}`
+  }
+  if (decision.picked === null) return { native: { agent: NATIVE[seat].agent, ...decision.native }, tried, decision, note }
   const pair = decision.picked
   return {
     external: {
@@ -146,6 +186,7 @@ function chooseSeat({ config, pairs, seat, author = null, harnesses, offered = (
     },
     tried,
     decision,
+    note,
   }
 }
 
@@ -496,7 +537,7 @@ function logEntry(dataDir, session, entry) {
 
 // One round of seat on its external model. Returns the reply: exit 0 with the answer, or exit 4 with
 // what failed. The worktree is removed whatever happens.
-async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, decision, config, adapter, dataDir }) {
+async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, decision, config, adapter, dataDir, note = null }) {
   const id = givenId ?? `${seat}-${run.newRunId()}`
   const dir = path.join(run.aetherDir(mainRoot), 'seats', id)
   const worktree = path.join(dir, 'wt')
@@ -616,6 +657,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     effort: external.effort,
     reference: decision.reference,
     reason: decision.reason,
+    ...(typeof note === 'string' && note !== '' ? { note } : {}),
     status: outcome.status,
     durationMs: time - startedAt,
     usage: parsed.usage ?? NO_USAGE,
@@ -637,6 +679,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   const lane = laneLine({ harness: external.harness, modelArg, id, usage: parsed.usage, quotaBefore: external.quotaBefore, quotaAfter, groupLabel })
   const value = { seat, id, harness: external.harness, model: external.model, answer: `${outcome.text}\n${lane}`, result: outcome.result, lane }
   if (outcome.stored) value.stored = outcome.stored
+  if (typeof note === 'string' && note !== '') value.note = note
   return reply(0, value)
 }
 
@@ -753,6 +796,7 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     config,
     adapter: adapterOf(external.harness, config.harnesses[external.harness]),
     dataDir,
+    note: chosen.note,
   })
 }
 

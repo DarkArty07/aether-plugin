@@ -59,6 +59,24 @@ test('R21: lanes.md holds the rule: the switch, the points, the tolerance, the o
   for (const fragment of ['`superdelegation`', 'off by default', 'plugins/aether/config/pairs.json', '1 point', 'weekly', 'cost per task', 'No limit on parallel calls', 'aether-report']) assert.ok(text.includes(fragment), `lanes.md says ${fragment}`)
 })
 
+test('issue 64: the guide says the design seats reserve the author family and the swarm keeps the bar', () => {
+  const lanesPage = read('docs', 'guide', 'lanes.md')
+  const seatsPage = read('docs', 'guide', 'design-seats.md')
+  const routerPage = read('docs', 'guide', 'router.md')
+  const components = read('docs', 'reference', 'components.md')
+  for (const [name, text] of [['lanes.md', lanesPage], ['design-seats.md', seatsPage]]) {
+    assert.ok(text.includes('another family'), name)
+    assert.ok(text.includes("author's own family"), name)
+    assert.ok(text.includes('native agent only last'), name)
+  }
+  assert.ok(lanesPage.includes('aether-lane delegate'))
+  assert.ok(lanesPage.includes('keep it as a bar') || lanesPage.includes('keeps it as a bar') || lanesPage.includes('keep that rule as a bar'))
+  assert.ok(seatsPage.includes('no other external pair'))
+  assert.ok(routerPage.includes("author's own family"))
+  assert.ok(routerPage.includes('aether-lane delegate'))
+  assert.ok(components.includes("author's own family"))
+})
+
 test('R21: lanes.md says how the old options are read and what the rule asks, keeps, and cannot reach', () => {
   const text = read('docs', 'guide', 'lanes.md')
   includesAll(

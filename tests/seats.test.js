@@ -56,6 +56,70 @@ test('with every quota dry the native agent of the seat takes it; the Examiner h
   }
 })
 
+const SAME_FAMILY = 'the same family that wrote the document judged it: no other external pair could'
+const MUSE = 'muse/muse-wonder-full-1.0@high'
+
+test('issue 64: the Judge takes Muse when it is the only external pair left, and the note names the author family', () => {
+  const museConfig = { harnesses: { ...config.harnesses, muse: { timeouts: { judge: 1800, writer: 2700, examiner: 1800 } }, grok: { timeouts: { judge: 1, writer: 1, examiner: 1 } } } }
+  const dryExceptMuse = {
+    agy: { installed: true, groups: { argon: dry, flash: dry, claude: dry } },
+    grok: { installed: true, groups: { grok: dry } },
+    muse: { installed: true, groups: { muse: open(2) } },
+  }
+  for (const seat of ['judge', 'examiner']) {
+    const chosen = choose(seat, { author: 'muse-wonder-full-1.0', harnesses: dryExceptMuse, config: museConfig })
+    assert.equal(chosen.external && chosen.external.pair.id, MUSE, seat)
+    assert.equal(chosen.note, SAME_FAMILY, seat)
+    assert.match(chosen.decision.reason, /same family that wrote the document judged it/, seat)
+    assert.equal(chosen.decision.requested, 53.6, 'the points asked stay Opus high')
+  }
+  // Argon reaches the points and renews later than Muse, and costs more. It is another family, so it is taken.
+  const argonLater = {
+    ...dryExceptMuse,
+    agy: { installed: true, groups: { argon: open(5), flash: dry, claude: dry } },
+  }
+  const other = choose('judge', { author: 'muse-wonder-full-1.0', harnesses: argonLater, config: museConfig })
+  assert.equal(other.external.pair.family, 'gemini-4-argon')
+  assert.equal(other.note, null)
+  assert.equal(other.tried.find((entry) => entry.id === MUSE).outcome, 'next')
+})
+
+test('issue 64: the Writer leaves the Judge its only pair when the Writer has another, and keeps it when it has none', () => {
+  const pair = (id, intelligence, cost, family = id.split('/')[1].split('@')[0]) => {
+    const [harness, rest] = id.split('/')
+    const [model, effort] = rest.split('@')
+    return { id, harness, model, effort, family, group: harness, intelligence, costPerTaskUsd: cost, outputTokensPerSecond: 1, timeToFirstTokenS: 1 }
+  }
+  const table = [
+    pair('claude/haiku@high', 37.8, 0.08, 'claude-haiku-5-5'),
+    pair('claude/sonnet@high', 46.8, 0.88, 'claude-sonnet-5-5'),
+    pair('claude/opus@high', 53.6, 1.82, 'claude-opus-5-5'),
+    pair(MUSE, 53.6, 0.5, 'muse-wonder-full-1.0'),
+    pair('grok/grok-4.7@high', 46.3, 2, 'grok-4.7'),
+  ]
+  const seatConfig = { harnesses: { muse: { timeouts: { judge: 1, writer: 1, examiner: 1 } }, grok: { timeouts: { judge: 1, writer: 1, examiner: 1 } } } }
+  const view = (museDay, grokDay) => ({
+    muse: { installed: true, groups: { muse: open(museDay) } },
+    grok: { installed: true, groups: { grok: open(grokDay) } },
+  })
+  const writer = (pairs, harnesses) => chooseSeat({ config: seatConfig, pairs, seat: 'writer', harnesses })
+  // Muse is the only pair that reaches the Judge, and the one the Writer would take: the Writer takes Grok instead.
+  const held = writer(table, view(1, 4))
+  assert.equal(held.external.pair.id, 'grok/grok-4.7@high')
+  assert.equal(held.tried.find((entry) => entry.id === MUSE).why, 'reserved')
+  const judge = chooseSeat({ config: seatConfig, pairs: table, seat: 'judge', author: 'grok-4.7', harnesses: view(1, 4) })
+  assert.equal(judge.external.pair.id, MUSE)
+  // The Writer that would not take Muse keeps its own pair, and Muse stays a candidate.
+  const untouched = writer(table, view(5, 1))
+  assert.equal(untouched.external.pair.id, 'grok/grok-4.7@high')
+  assert.equal(untouched.tried.find((entry) => entry.id === MUSE).why, null)
+  // Grok no longer reaches the Writer: leaving Muse out would leave no external pair, so the Writer keeps it.
+  const only = table.map((entry) => (entry.id === 'grok/grok-4.7@high' ? { ...entry, intelligence: 40 } : entry))
+  const kept = writer(only, view(1, 1))
+  assert.equal(kept.external.pair.id, MUSE)
+  assert.notEqual(kept.tried.find((entry) => entry.id === MUSE).why, 'reserved')
+})
+
 test('C12: a Judge never takes the model that wrote the document, external or native', () => {
   const external = choose('judge', { author: 'gemini-4-argon' })
   assert.notEqual(external.external.pair.family, 'gemini-4-argon')
