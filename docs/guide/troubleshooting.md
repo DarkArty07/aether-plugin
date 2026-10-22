@@ -51,7 +51,7 @@ Three other causes end in a swarm that is not running:
 - **`Task N: missing the **Aether:** block.`** The task has no line that is exactly `**Aether:**` followed by its list of fields. Add the block with `Tier`, `Area`, `Owns` and `Depends on`.
 - **`Task N: missing Tier.`**, **`Task N: Tier must be haiku, sonnet or opus ...`** or **`Task N: sonnet low is not used for implementers; ...`** The line reads `- Tier: sonnet high — reason`: a model, an optional effort, a dash and the reason. Sonnet and Opus run at `high`, `xhigh` or `max`; only Haiku takes `low` or `medium`.
 - **`Task N: "Depends on: ..." needs the form "Task N — reason".`** Write one line per dependency, such as `- Depends on: Task 2 — needs its interface`, with the reason after the dash. A task that depends on nothing says `- Depends on: none`; leaving the line out gives `missing "Depends on"`.
-- **`Task N owns 7 paths; a task that large often ends without its report ...`** A task that owns more than six paths gets this as a warning, and one that owns the whole tree gets `Task N owns the whole tree ...`. The check still passes, but split the task, because a unit that large often ends without its report.
+- **`Task N owns 7 paths; a task that large often ends without its report ...`** A task that owns more than six paths gets this as a warning, and one that owns the whole tree gets `Task N owns the whole tree ...`. The check still passes, but split the task, because a unit that large often ends without its report. When one still does, the next attempt is a split pass: one sub-attempt per owned file, each with its own report, at most eight of them.
 - **`The plan has no "## Aether Execution" section.`** or **`Aether Execution: "Test command" is missing.`** The plan needs the section `## Aether Execution` with a line `- Test command: ...`. Its `Max agents` line is optional, and so is its `Ladder` line, which when present names all three models: `- Ladder: haiku 2, sonnet 2, opus 1`.
 - **`Task numbers must run from 1 without gaps`.** Number the tasks `### Task 1: ...`, `### Task 2: ...` with no number missing.
 
@@ -160,7 +160,7 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 **Why.**
 - **`blocked`:**
   - the ladder is spent: every attempt of each rung was used (`haiku 2, sonnet 2, opus 1` unless the plan's `Ladder` says otherwise) and the unit still did not pass;
-  - the same findings came back three times, or the unit ended twice in a row without its report: the task is too large or cut wrong and needs a split or a redesign;
+  - the same findings came back three times, or the unit ended twice in a row without its report: after one attempt ends without its report, the next is a split pass of one sub-attempt per owned file (eight at most; further files share the last). A pass that also ends without a report blocks the unit. The task is too large or cut wrong and needs a split or a redesign;
   - a merge failure came back after its one retry, or the merge was refused: see [A merge fails or times out](#a-merge-fails-or-times-out);
   - the supervisor blocked it with a question, or a lane changed the integration worktree or branch, or a read-only copy changed the unit (a reason that starts `lane:`).
 - **`skipped`:** a task it depends on did not merge, so it did not start.

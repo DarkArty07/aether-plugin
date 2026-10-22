@@ -813,6 +813,19 @@ test('a choice written in the old shape does not break the report', (t) => {
   assert.deepEqual([choice.call, choice.reason, choice.reference, choice.requested, choice.ms], ['task-1-1-implement', 'old', null, null, null])
 })
 
+test('report notes a split pass and how many sub-attempts it had', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  const file = path.join(args.runDir, 'result.json')
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
+  saved.units[1].rounds[2].split = true
+  saved.units[1].rounds[2].attempt = 3
+  saved.units[1].rounds[2].subAttempts = 4
+  writeJson(file, saved)
+  const { notes } = report(repo.dir, args.runId, { tests: false })
+  assert.ok(notes.includes('task-2 attempt 3 was a split pass of 4 sub-attempts'), notes.join('\n'))
+})
+
 test('a design round shows its reference and reason when the seat entry brings them', (t) => {
   const dataDir = useDataDir(t)
   const reference = { id: 'claude/opus@high', model: 'opus', effort: 'high', intelligence: 51.2 }

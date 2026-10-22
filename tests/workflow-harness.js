@@ -55,6 +55,10 @@ function aetherWt(call, state) {
       return { salvaged: false, files: [], committed: [], left: [], head: null, package: null }
     case 'sweep':
       return { removedWorktrees: [], removedBranches: [], remaining: { worktrees: [], branches: [] } }
+    // A glob Owns entry is expanded from the unit worktree. Empty unless a test lists files, so a
+    // glob that names nothing yet stays one item and the retry is not split (issue 14).
+    case 'ls-files':
+      return { files: [] }
     default:
       throw new Error(`unexpected command for run ${first}: ${call.command.line}`)
   }
@@ -132,6 +136,10 @@ function defaultHandlers(state) {
 }
 
 function parseCommand(prompt) {
+  // The split pass lists the worktree through the ops agent (a workflow cannot read the disk).
+  // Checked before the bin match: the prompt's `cd` line is not an aether-wt command.
+  const listed = prompt.match(/git -C '([^']*)' ls-files/)
+  if (listed) return { tool: 'git', line: listed[0], verb: 'ls-files', rest: [listed[1]] }
   const m = prompt.match(/(aether-wt|aether-lane) ([a-z]+)((?: [^\s']+)*)/)
   if (!m) return null
   return { tool: m[1], line: m[0], verb: m[2], rest: m[3].trim().split(' ').filter(Boolean) }
