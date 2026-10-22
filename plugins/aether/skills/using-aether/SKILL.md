@@ -170,6 +170,8 @@ Only a choice that is hard to reverse, surprising, or a real trade-off goes to t
 
 Before deleting worktrees and temporary files, and before any push, the closing report carries this session's list-price spend from aether-report --spend. This holds for every Aether session, including one that is not an autonomous run and not a swarm.
 
+Run `aether-report --spend --session "$CLAUDE_CODE_SESSION_ID"`: without `--session` it reports the session that wrote last, which may be another when several run at once. Write the line `Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>)`. If `recorded` is false, say no spend is recorded yet; if `complete` is false, end with «El total está incompleto.»; if `unpriced` lists models, name them: the total leaves them out.
+
 ## The owner's list
 
 Irreversible actions, and the choices only the owner can make, reach the owner as one list at the top of every brief, never one at a time. Each item:
