@@ -1215,7 +1215,7 @@ test('the old journal is only read, never written (D4)', (t) => {
 - Depends on: Task 4 — llama a `delegateCommand` con `--pair`, `--carry` y `--findings`
 - Depends on: Task 5 — calcula las comprobaciones al terminar
 - Depends on: Task 7 — lee el archivo `external/<id>.json` que `begin` escribe y expone `begin` y `verdict` en el bin
-- Depends on: Task 17 — la prueba de espera en el motor real decide si `start` y `wait` son lo que el mod usa, o si se pasa al respaldo
+- Depends on: Task 17 — la prueba de espera en el motor real ya se hizo (2026-10-22) y `start` y `wait` son lo que el mod usa, con un latido tras cada espera (Task 11); el respaldo de Haiku no se construye
 - Serves: R6, R8, R12, R13, R16, R22
 
 **Interfaces:**
@@ -1424,23 +1424,23 @@ test('the bin: an unknown verb is an error, wait on an id never started says unk
 - Review: xhigh — el motor decide qué ve el Lead; fallo del mod no debe romper la llamada
 - Area: mod
 - Owns: `plugins/aether/hooks/delegate.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/router.mjs`, `tests/delegate-mod.test.js`, `tests/router-mod.test.js`, `tests/docs-facts.test.js`
-- Depends on: Task 1 — usa `waitForDelegate`
+- Depends on: Task 1 — usa `waitSteps` y `heartbeatText` (el Lead los agregó a `hooks/delegate-wait.mjs` después de la Task 17, commit `a993273`)
 - Depends on: Task 10 — llama a los verbos `begin`, `start` y `wait` de `aether-delegate`
-- Depends on: Task 17 — la prueba en el motor real dice si el bucle de espera y el `isolation` puestos por el mod valen
+- Depends on: Task 17 — la prueba en el motor real ya se hizo (2026-10-22): el bucle de espera vale con un latido tras cada espera, y el `isolation` puesto por el mod llegó a la llamada (`docs/evidence/013-delegate-ladder.md`)
 - Serves: R12, R13, R14, R20, R22
 
 **Interfaces:**
 
 ```js
 // plugins/aether/hooks/delegate.mjs  (reemplaza hooks/router.mjs; mismos cuatro métodos que hooks/register.js ya usa)
-import { waitForDelegate } from './delegate-wait.mjs'
+import { waitSteps, heartbeatText } from './delegate-wait.mjs'
 export function createDelegates() -> { toolCall($, e, next, ctx), bind($, e, agentId, ctx), has(agentId), async *step($, e, next, ctx), drain() }
 // ctx = { session, dataDir, root }. `$` solo tiene $.clock.now, $.fs.write y $.process.run (ningún $.model).
 ```
 
 - `toolCall`: una llamada cuyo `subagent_type` empieza con `aether:` pasa sin tocarse. Para las demás escribe el evento en `<dataDir>/delegates/in/<tiempo>-<n>.json` (campos `subagent_type`, `description`, `prompt`, `model`, `effort`, `run_in_background`, `isolation`) y corre `node <root>/bin/aether-delegate begin --session <session> --input <archivo>` (límite 25000 ms). Con el plan: `args` (`model`, `effort` y, si vienen, `prompt` e `isolation`) se pone sobre la llamada que sigue a `next`; las `notes` se agregan al `context` del resultado (nunca a una llamada rechazada); si el plan tiene `external`, la llamada se recuerda por su prompt final (el reescrito, si hay) con el `external`. Cualquier falla (excepción, salida distinta de 0, línea que no es JSON, `skip`) deja la llamada como la hizo el Lead.
 - `bind`: al `agent.spawn` liga la llamada por su prompt al agente; un agente con `external` queda para su primer paso, y uno con `answerOf` (un delegado de solo lectura en Claude) queda para su último. `has(agentId)` es verdadero para los dos.
-- `step`: en el paso 0 de un agente con `external`, corre `aether-delegate start --id <id>` (límite 15000 ms) y después `waitForDelegate`; con `ok` y texto no vacío entrega `{ kind: 'text', index: 0, text }` y `{ kind: 'stop', stopReason: 'end_turn', usage: null }` sin pasar por el modelo; con cualquier otra cosa sigue con `yield* next(e)` (el modelo del plan, que ya es el del escalón). En un agente con `answerOf` cada paso pasa por `yield* next(e)` sin cambios y, cuando el resultado de un paso trae `stopReason` distinto de `'tool_use'` y `answer` de tipo texto, corre `node <root>/bin/aether-delegate answer --session <session> --task <task> --attempt <attempt> --text <answer recortado a 4000 caracteres>` (límite 15000 ms; cualquier falla se ignora y el paso vuelve igual): es la respuesta que `verdict` comprueba (R6). `toolCall` recuerda `answerOf` del plan junto con la llamada, como recuerda `external`.
+- `step`: en el paso 0 de un agente con `external`, corre `aether-delegate start --id <id>` (límite 15000 ms) y después recorre `waitSteps` (de `./delegate-wait.mjs`, con `.next()` a mano): por cada `{ beat: true, waitedMs }` que entrega emite `{ kind: 'text', index: 0, text: heartbeatText(waitedMs) }`. Es el latido que la Task 17 midió como necesario: el motor mata a un agente cuyo paso no emite nada en 600 s («Agent stalled: no progress for 600s»), y un evento de texto cuenta como progreso (con un latido tras cada espera de 540 s el agente vivió 18 minutos y respondió); los latidos quedan al principio de la respuesta que ve el Lead, que sigue con el texto del delegado. Cuando `waitSteps` devuelve `ok` con texto no vacío, entrega `{ kind: 'text', index: 0, text }` y `{ kind: 'stop', stopReason: 'end_turn', usage: null }` sin pasar por el modelo (y `result.answer` es ese texto, sin latidos); con cualquier otra cosa sigue con `yield* next(e)` (el modelo del plan, que ya es el del escalón). En un agente con `answerOf` cada paso pasa por `yield* next(e)` sin cambios y, cuando el resultado de un paso trae `stopReason` distinto de `'tool_use'` y `answer` de tipo texto, corre `node <root>/bin/aether-delegate answer --session <session> --task <task> --attempt <attempt> --text <answer recortado a 4000 caracteres>` (límite 15000 ms; cualquier falla se ignora y el paso vuelve igual): es la respuesta que `verdict` comprueba (R6). `toolCall` recuerda `answerOf` del plan junto con la llamada, como recuerda `external`.
 - `hooks/register.js`: importa `createDelegates` de `./delegate.mjs` en lugar de `createRouter` de `./router.mjs`, y renombra sus ayudantes (`routerCalls`, `routerContext`) a `delegateCalls` y `delegateContext`; la lista de llamadas que el mod hace es `$.clock.now`, `$.fs.write` y `$.process.run` (se quita `$.model.complete`). El encabezado de `register.js` describe la escalera, no el router.
 - Se borra `hooks/router.mjs` y `tests/router-mod.test.js`.
 
@@ -1548,8 +1548,11 @@ test('an external delegate is the first step of its agent: started, waited for, 
   let asked = 0
   const { chunks, result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, async function* () { asked += 1; return {} }, CTX))
   assert.equal(asked, 0, 'no model request')
-  assert.deepEqual(chunks.map((c) => c.kind), ['text', 'stop'])
-  assert.equal(chunks[0].text, 'branch aether/r/task-1')
+  // two waits did not end, so two heartbeats come first; the engine kills a step that emits nothing for 600 s (Task 17)
+  assert.deepEqual(chunks.map((c) => c.kind), ['text', 'text', 'text', 'stop'])
+  assert.match(chunks[0].text, /^\[Aether: the delegate is still working, \d+ min so far\]\n$/)
+  assert.match(chunks[1].text, /^\[Aether: the delegate is still working, \d+ min so far\]\n$/)
+  assert.equal(chunks[2].text, 'branch aether/r/task-1')
   assert.equal(result.answer, 'branch aether/r/task-1')
   assert.deepEqual(calls.runs.map((r) => r.argv[2]), ['begin', 'start', 'wait', 'wait', 'wait'])
   assert.ok(state.now - 1000 > 600000, 'the simulated delegate took more than 10 minutes')
