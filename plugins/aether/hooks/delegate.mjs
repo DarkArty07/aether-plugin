@@ -101,7 +101,7 @@ async function* runExternal($, e, next, ctx, external, answerOf) {
 // is recorded for the verdict. A failed record never changes the step.
 async function* runAnswering($, e, next, ctx, answerOf) {
   const result = yield* next(e)
-  if (isObject(result) && typeof result.stopReason === 'string' && result.stopReason !== 'tool_use' && typeof result.answer === 'string') {
+  if (answerOf !== null && isObject(result) && typeof result.stopReason === 'string' && result.stopReason !== 'tool_use' && typeof result.answer === 'string') {
     try {
       await delegate(
         $,
@@ -202,8 +202,10 @@ export function createDelegates() {
     async *step($, e, next, ctx) {
       const routed = isObject(e) && isText(e.agentId) ? byAgent.get(e.agentId) : undefined
       if (!routed) return yield* next(e)
-      // An external route answers as an answerOf one does: the model's last step records the attempt's answer.
-      const answerOf = routed.external !== null ? { task: routed.id, attempt: routed.attempt } : routed.answerOf
+      // A read-only external route answers as an answerOf one does: the model's last step records the attempt's answer. An
+      // editing one has none: `verdict` judges it by the checks of its worktree, and a text would replace its earlier patch
+      // as the work a rise carries.
+      const answerOf = routed.external === null ? routed.answerOf : routed.external.edits === true ? null : { task: routed.id, attempt: routed.attempt }
       // The delegate runs once, and only as the first step of its agent; the route stays for the later steps.
       if (routed.external !== null && e.index === 0) return yield* runExternal($, e, next, ctx, routed.external, answerOf)
       return yield* runAnswering($, e, next, ctx, answerOf)

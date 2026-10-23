@@ -189,6 +189,17 @@ test('a read-only external delegate that delivers records no answer: the agent e
   assert.equal(answersOf(calls).length, 0, 'the delegate delivered: nothing to answer')
 })
 
+test('the rescue of an editing external delegate records no answer: its checks come from its worktree, not from a text', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: false, status: 'off', text: null }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  const model = async function* () { return { answer: 'done, in the worktree', stopReason: 'end_turn' } }
+  const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.equal(result.answer, 'done, in the worktree')
+  assert.equal(answersOf(calls).length, 0)
+})
+
 test('an external delegate that fails after beats shows the beats and then the answer of the model (R14)', async () => {
   const { $ } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: false }, { done: true, ok: false, status: 'no-candidate', text: null }] })
   const delegates = createDelegates()
