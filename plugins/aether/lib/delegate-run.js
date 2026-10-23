@@ -18,6 +18,7 @@ const checksLib = require('./delegate-checks.js')
 const delegateChain = require('./delegate-chain.js')
 const laneDelegate = require('./lane-delegate.js')
 const lanes = require('./lanes.js')
+const { readDelegateSettings } = require('./session.js')
 
 const BIN = path.join(__dirname, '..', 'bin', 'aether-delegate')
 const ID = /^[A-Za-z0-9_-]+$/
@@ -202,10 +203,14 @@ async function runEdits(external, { cwd, dataDir }, delegateCommand) {
   if (carry) flags.carry = carry
   const findings = findingsFile(dataDir, external)
   if (findings) flags.findings = findings
+  // This process was started detached by `start`, without the Lead's Bash environment, so the lane gate would read no
+  // switch and no harnesses. The session's delegate file has them: with lanes on, the command gets them in its environment.
+  const settings = readDelegateSettings(dataDir, external.session)
+  const deps = settings && settings.lanes === true ? { env: { ...process.env, AETHER_SUPERDELEGATION: 'on', AETHER_LANE_HARNESSES: settings.harnesses.join(',') } } : undefined
 
   let done
   try {
-    done = await delegateCommand(cwd, flags)
+    done = await delegateCommand(cwd, flags, deps)
   } catch (err) {
     done = { status: 'failed', reason: messageOf(err) }
   }
