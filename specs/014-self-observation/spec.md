@@ -1,0 +1,97 @@
+# El plugin se observa a sí mismo
+
+- **Date:** 2026-10-23
+- **Status:** Draft
+- **Intent:** [intent.md](intent.md), confirmada por el dueño en dos rondas: eligió la opción A de la separación entre versión estándar y de desarrollo («A: con dos metodos de instalacion»), dejó la B al diseño («Eso lo tienes que diseñar tu») y pidió «una propuesta». No es una corrida autónoma: el diseño se detiene en el plan y la construcción espera su sí.
+
+## Criteria
+
+Cada criterio cita las palabras del dueño tal como están en la tarjeta y nombra la evidencia que lo prueba. Las pruebas corren en repositorios y directorios de datos desechables, con modelos y harness simulados: no gastan cuota.
+
+- C1. **El plugin identifica sus propios errores por sí solo, sin que el dueño lo pida y sin gastar un modelo: los fallos que hoy pasan en silencio dejan rastro, y los comportamientos que indican un error (una tarea que sube de escalón sin razón, un pair que falla una y otra vez, una regla del Lead que se rompe, un comando bloqueado por error) quedan señalados.** «deteccion automaitca de bugs que el lead los detecter automaticamente» y «que el plugin identificque errores». Evidencia: pruebas que provocan cada fallo silencioso y cada comportamiento de la lista sobre registros falsos y comprueban que queda un rastro o un hallazgo, con cero llamadas a un modelo.
+- C2. **El plugin va reuniendo información de uso mientras se usa, con hooks, sin que nadie tenga que acordarse.** «ir recompilando informaicon de suso» y «vaya recopilando informacion de uso». Evidencia: una sesión simulada del Lead, sin ninguna orden del dueño, deja registros de uso nuevos en el directorio de datos.
+- C3. **El plugin señala qué rol o ajuste parece desfasado (un escalón que casi nunca aprueba, un pair o un modelo que ya no rinde como su ficha, un rol del diseño que pide demasiadas rondas, un costo estimado que no coincide con el real) y propone el ajuste con números y evidencia, sin aplicarlo.** «si algun rol esta desfasado y hace falta calibracion». Evidencia: pruebas con registros falsos que producen cada señal con sus números, y una comprobación de que `ladder.json`, `pairs.json` y los Tier quedan idénticos después de producirla.
+- C4. **El dueño, al volver, encuentra un solo lugar que le dice por dónde empezar: una lista ordenada de lo observado, cada elemento con su evidencia y, si es un fallo, un issue ya redactado.** «pueda saber en que comenzar». Evidencia: una prueba con hallazgos falsos que comprueba el orden, la evidencia de cada elemento y el texto del issue de cada fallo, sin que se abra ninguno.
+- C5. **Lo reunido sobrevive a una pausa de semanas y a la poda de 30 días.** «dentendre unas semanas el desarrollo de mi plugin». Evidencia: una prueba con registros de más de 30 días corre la poda y comprueba que el resumen durable sigue completo y que la lectura posterior lo usa.
+- C6. **Hay dos instalaciones: la estándar y la de desarrollo.** «A: con dos metodos de instalacion». Evidencia: las dos se instalan desde el repositorio con la validación `--strict` en verde, y una prueba comprueba qué hace cada una al reunir información.
+- C7. **La instalación estándar no reúne, guarda ni escribe nada del contenido de una conversación (lo que el usuario escribe, lo que el modelo contesta, el contenido de archivos): solo cuentas, identificadores, nombres de modelo, duraciones y códigos de error.** «para no filtrar informacion de usuario». Evidencia: una prueba con una conversación falsa que contiene una frase marcada comprueba que la frase no aparece en nada de lo que la instalación estándar escribe.
+- C8. **La instalación de desarrollo puede reunir, además, lo que haga falta de las conversaciones para entender un fallo o una fricción, con claves y tokens borrados antes de guardar, y lo que reúne lo fija el diseño.** «hasta pdoria leer las conversaciones» y «Eso lo tienes que diseñar tu». Evidencia: una prueba con una conversación falsa que contiene una clave y un token comprueba que el fragmento guardado trae el contexto del fallo y no trae ni la clave ni el token.
+- C9. **Nada de lo reunido sale de la máquina del dueño; un issue se abre solo con su sí.** «para no filtrar informacion de usuario». Evidencia: una prueba comprueba que la reunión, los detectores y el resumen no hacen ninguna conexión de red ni ejecutan `gh`, y que el issue redactado queda solo como texto local.
+- C10. **Los hooks y detectores actúan solo en una sesión del Lead; en una sesión normal no hacen nada, y esa huella dormida se sigue midiendo en la documentación.** «quiero meter [...] hooks» sin estorbar fuera del Lead: es la invariante de diseño del repositorio. Evidencia: una prueba corre cada hook nuevo en una sesión normal y no encuentra ninguna escritura ni salida, y `docs/reference/components.md` mide la huella con los hooks nuevos.
+- C11. **El dueño puede ver qué reunió el plugin, por ejemplo con un comando de resumen, y puede borrarlo.** «para no filtrar informacion de usuario»: el dueño nombró el riesgo de privacidad, así que debe poder verlo y quitarlo. Evidencia: pruebas que muestran el contenido reunido por clase y tamaño, lo borran con una orden del dueño y comprueban que no queda nada.
+- C12. **Una primera lectura de los registros que ya existen (línea base) forma parte del resultado, sin cambiar ningún valor.** «una update antes del descanso que sea para calibrar el sistema». Evidencia: la línea base corre sobre los registros reales del dueño y responde, con números, las preguntas del último handoff: cuántas veces aprueba cada escalón, cuántos `no-candidate` hay y si empezar en Haiku cuesta más de lo que ahorra.
+- C13. **Nada de esto afecta a las otras sesiones: no cambia el plugin instalado ni el checkout principal; las pruebas corren en repositorios desechables; el trabajo queda en su rama.** Es el alcance de la corrida en la tarjeta: rama `feat/self-observation`, sin tocar el plugin instalado (0.19.2). Evidencia: tras la corrida, el plugin instalado y el checkout principal no cambiaron y la rama no está fundida en `main`.
+
+## User scenarios
+
+- **E1. Un fallo silencioso deja rastro.** Dado una sesión del Lead en la que una escritura del mod falla y hoy se traga el error, cuando el fallo ocurre, entonces queda un registro con su origen, su clase y la hora, la petición no cambia ni se retrasa, y el registro no trae contenido de la conversación.
+- **E2. Una subida sin razón.** Dado un delegado que sube de escalón sin que se hayan gastado las correcciones, ni hayan vuelto los mismos hallazgos, ni haya una declaración de inviable, cuando el detector lee la bitácora, entonces lo señala con el identificador de la tarea y las líneas que lo prueban.
+- **E3. Un pair que falla una y otra vez.** Dado un pair que falla en varios delegados seguidos, cuando el detector lee el registro de lanes, entonces lo señala con el número de fallos y las sesiones.
+- **E4. Una regla del Lead rota.** Dado un Lead que programa un `ScheduleWakeup` para esperar a un delegado, cuando el detector revisa la sesión, entonces señala la regla rota con la evidencia, sin leer el contenido de la conversación.
+- **E5. Un comando bloqueado por error.** Dado un comando que el guard bloqueó y que el dueño después permitió o repitió sin cambios, cuando el detector lee `.aether/pending.jsonl`, entonces lo señala como un posible bloqueo erróneo con el comando y las fechas.
+- **E6. Un escalón desfasado.** Dado una bitácora en la que un escalón casi nunca aprueba, cuando se corre la calibración, entonces propone un ajuste con las aprobaciones y los intentos que lo sostienen, y ningún archivo de configuración cambia.
+- **E7. El dueño vuelve de la pausa.** Dado semanas de uso y más de 30 días de registros podados, cuando el dueño abre el resumen, entonces ve una lista ordenada de lo observado, cada elemento con su evidencia, y para cada fallo el texto de un issue ya redactado que no se ha abierto.
+- **E8. La estándar no lee conversaciones.** Dado la instalación estándar y una conversación falsa con una frase marcada, cuando corre una sesión entera del Lead, entonces la frase no aparece en ningún archivo que el plugin escribió.
+- **E9. La de desarrollo guarda el fragmento de un fallo.** Dado la instalación de desarrollo y una conversación falsa con una clave y un token cerca de un fallo, cuando el plugin guarda el contexto, entonces el fragmento trae lo que hace falta para entender el fallo y la clave y el token están borrados.
+- **E10. Una sesión normal.** Dado una sesión que no es del Lead, cuando se disparan los hooks nuevos, entonces no escriben nada y no salen a pantalla.
+- **E11. Ver y borrar.** Dado un directorio de datos con lo reunido, cuando el dueño pide el resumen, entonces ve qué hay, por clase y tamaño; cuando ordena borrarlo, entonces no queda nada de lo reunido.
+- **E12. Sin salida de la máquina.** Dado un hallazgo que merece un issue, cuando el plugin lo redacta, entonces el texto queda en el directorio de datos y no se abre nada en GitHub hasta que el dueño lo ordene.
+- **E13. La línea base.** Dado los registros reales ya existentes, cuando el dueño corre la primera lectura, entonces recibe los números de aprobación por escalón, de `no-candidate` y de costo, y ningún valor de configuración cambia.
+- **E14. Otras sesiones.** Dado otra sesión con un delegado corriendo y un worktree en el checkout principal, cuando esta corrida construye, entonces no lee ni escribe ese estado, no cambia el plugin instalado y no se funde en `main`.
+
+## Requirements
+
+- R1. Todo fallo que el mod hoy traga (los `catch` de `register.js`, `delegate.mjs` y `quota-brake.mjs`) deja un registro local con origen, clase y hora, sin contenido de conversación, y sin cambiar, retrasar ni bloquear la petición. Sirve a: C1, C7
+- R2. Los detectores corren sin llamar a un modelo y señalan, cada uno con su evidencia (identificadores, líneas, fechas): una subida de escalón sin razón, un pair que falla repetidamente, una regla del Lead rota (como esperar un delegado con `ScheduleWakeup`) y un comando bloqueado por error. Sirve a: C1
+- R3. Los hooks reúnen el uso de cada sesión del Lead por sí solos, sin una orden del dueño; qué eventos de hook se usan, además de los dos de hoy, lo fija el diseño tras medir los que ofrece esta versión de Claude Code. Sirve a: C2
+- R4. Lo que la instalación estándar reúne se limita a cuentas, identificadores, nombres de modelo, duraciones y códigos de error. Sirve a: C2, C7
+- R5. La calibración produce las señales de desfase de C3 (aprobación por escalón, rendimiento de un pair o modelo contra su ficha, rondas del diseño por rol, costo estimado contra costo real), cada una con sus números y su evidencia. Sirve a: C3
+- R6. Ninguna señal ni propuesta de calibración modifica `config/ladder.json`, `config/pairs.json`, los Tier de los roles ni otro valor de configuración: solo propone. Sirve a: C3, C12
+- R7. Hay un solo comando de lectura que presenta lo observado como una lista ordenada, cada elemento con su evidencia, y para cada fallo el texto de un issue redactado que no se abre. Sirve a: C4, C9
+- R8. Un resumen durable de lo que sirve para calibrar vive aparte de los registros con poda y la poda de 30 días no lo borra; el resumen y las lecturas posteriores sobreviven a una pausa de semanas. Sirve a: C5
+- R9. El repositorio ofrece dos métodos de instalación, estándar y de desarrollo; cómo se empaquetan lo fija el diseño. Ambos pasan la validación `--strict` y las pruebas de documentos. Sirve a: C6
+- R10. La instalación estándar no lee, no guarda y no escribe contenido de conversaciones, en ninguna forma; una prueba con una conversación falsa y una frase marcada prueba que la frase no aparece en nada de lo que escribe, ni en los registros, ni en el resumen, ni en el issue redactado. Sirve a: C7
+- R11. La instalación de desarrollo puede guardar el fragmento de conversación necesario para entender un fallo o una fricción, nunca la conversación entera, y borra claves y tokens antes de guardar; lo que guarda lo fija el diseño. Sirve a: C8
+- R12. Ni la reunión, ni los detectores, ni el resumen hacen una conexión de red, mandan datos fuera de la máquina o abren un issue; un issue solo se abre con el sí del dueño. Sirve a: C9
+- R13. Los hooks, detectores y comandos nuevos solo actúan en una sesión del Lead; en una sesión normal no escriben ni imprimen nada, y `docs/reference/components.md` mide la huella dormida con ellos. Sirve a: C10
+- R14. El dueño puede ver lo reunido, por clase y tamaño, y puede borrarlo todo con una orden. Sirve a: C11
+- R15. Una línea base lee los registros que ya existen (uso, bitácora de delegados, registro de lanes, `runs.jsonl`, `.aether/pending.jsonl`, exámenes) y responde con números cuántas veces aprueba cada escalón, cuántos `no-candidate` hay y si empezar en Haiku cuesta más de lo que ahorra, sin cambiar ningún valor. Sirve a: C12
+- R16. La documentación (`docs/`, el README y la tabla de opciones frente a `plugin.json` `userConfig`) describe los hooks, detectores, comandos y las dos instalaciones, y `npm run check` pasa. Sirve a: C6, C10
+- R17. El trabajo queda en la rama `feat/self-observation` y su worktree: no toca el checkout principal ni el plugin instalado, las pruebas corren en repositorios y directorios de datos desechables, y no se sube ni se funde en `main`. Sirve a: C13
+
+## Proposals
+
+None.
+
+## Assumptions
+
+- **A1. «Automejora» es identificar y reunir, no modificar.** Base: cita 3, «no necesariamente automejora siginifca que cambie su propio código». Nada se reescribe ni se reconfigura solo. Reversible: el dueño puede pedir después que se añada modificar.
+- **A2. Lo que reúne la instalación de desarrollo de las conversaciones lo diseña el Lead, con una guía:** solo el fragmento alrededor de un fallo o una fricción, con claves y tokens borrados antes de guardar. Base: cita 4, B. El dueño puede cambiar la guía en el diseño.
+- **A3. Un issue de GitHub se abre solo con el sí del dueño, con los hallazgos redactados.** Base: es una acción hacia fuera y el dueño nombró la privacidad (cita 3). El dueño puede darle después una concesión permanente.
+- **A4. La instalación estándar demuestra su garantía con una prueba;** si además basta que el código que lee conversaciones no viaje en esa instalación lo decide el diseño. Base: la prueba es la forma de demostrar C7 con las pruebas del repositorio. El dueño puede exigir una de las dos formas.
+- **A5. El resumen durable es un archivo propio en el directorio de datos** que la poda no borra, como hoy el gasto (A76). Base: precedente de A76. El dueño puede moverlo.
+- **A6. Los valores actuales no cambian** (topes de la escalera 5, 2 y 1, pares, Tier, precios). Base: «detener el desarrollo [...] en funcionalidades» y la pausa de semanas. El dueño los recalibra después con el uso.
+- **A7. Los umbrales de los detectores y de las señales de desfase** (cuántos fallos seguidos son «repetidos», qué aprobación es «casi nunca») son datos de configuración y no valores del código, como los topes de `ladder.json`. Base: el precedente de la escalera. El dueño puede cambiarlos sin tocar código.
+- **A8. La instalación de desarrollo incluye todo lo de la estándar** y añade solo la lectura de conversaciones del fragmento. Base: C8 dice «además». El dueño puede separarlas más.
+- **A9. La línea base y los hallazgos se guardan solo en el directorio de datos local,** no en el árbol del repositorio. Base: contienen uso real y S3 de la tarjeta. El dueño puede pedir una copia redactada en `docs/`.
+- **A10. El plugin instalado del dueño (0.19.2) pasará a la instalación de desarrollo cuando él lo diga,** no en esta corrida. Base: la tarjeta, «cuando él lo diga». La versión que saldría es la 0.20.0 y el número de decisión se toma al fundir (issue #50).
+
+## Irreversible actions
+
+Ninguna se ejecuta en esta corrida sin el sí del dueño. Quedan nombradas para que el plan no las dé por concedidas:
+
+- Fundir `feat/self-observation` en `main`. Clase: `merge-main`. Comando: `git merge feat/self-observation` sobre `main`.
+- Subir la rama o `main`. Clase: `push`. Comando: `git push origin feat/self-observation` o `git push origin main`.
+- Publicar la versión 0.20.0. Clase: `publish`. Comando: `claude plugin tag plugins/aether`.
+- Abrir un issue de GitHub con un hallazgo redactado. Clase: `push` (acción hacia fuera). Comando: `gh issue create`.
+- Borrar lo reunido (C11). Clase: `delete`. Es la orden que el dueño da a mano; su nombre y su forma exactos los fija el plan, y una prueba la corre solo en un directorio de datos desechable.
+
+## Out of scope
+
+- Funcionalidades nuevas de trabajo del Lead, del diseño o del enjambre.
+- Cambiar políticas o valores de la superdelegación, la escalera, los pares, los precios o los Tier.
+- Que el plugin se modifique solo.
+- Mandar datos a un servidor, a otra persona o a GitHub sin el sí del dueño.
+- Leer conversaciones en la instalación estándar, en cualquier forma.
+- Los issues abiertos #88, #81, #80, #78, #75, #50, #6 y #1.
+- Subir, publicar, fundir en `main` o actualizar el plugin instalado sin el sí del dueño.
