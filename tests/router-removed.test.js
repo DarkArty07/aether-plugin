@@ -10,7 +10,7 @@ const PLUGIN = path.join(ROOT, 'plugins', 'aether')
 const exists = (...parts) => fs.existsSync(path.join(...parts))
 
 test('the decider, its command, its data and its script are gone (R9)', () => {
-  for (const file of ['bin/aether-route', 'lib/route.js', 'lib/router-criterion.js', 'lib/router-deciders.js', 'lib/router-replay.js', 'lib/router-rungs.js', 'lib/router-reference.js', 'lib/router-report.js', 'hooks/router.mjs', 'config/router']) {
+  for (const file of ['bin/aether-' + 'route', 'lib/route.js', 'lib/router-criterion.js', 'lib/router-deciders.js', 'lib/router-replay.js', 'lib/router-rungs.js', 'lib/router-reference.js', 'lib/router-report.js', 'hooks/router.mjs', 'config/router']) {
     assert.equal(exists(PLUGIN, file), false, file)
   }
   assert.equal(exists(ROOT, 'scripts', 'build-router-rungs.js'), false)

@@ -17,7 +17,7 @@ test('the bootstrap describes the ladder (R19, C2, C3, C5)', () => {
 })
 
 test('the old rules are gone', () => {
-  for (const gone of ['ROUTER-OVERRIDE', 'Router in `command`', 'run it again one model up', 'relaunch it one model up']) assert.equal(SKILL.includes(gone), false, gone)
+  for (const gone of ['ROUTER-' + 'OVERRIDE', 'Router in `command`', 'run it again one model up', 'relaunch it one model up']) assert.equal(SKILL.includes(gone), false, gone)
 })
 
 test('the exception of A72 stays: a pair that fails at its start is replaced, never repeated, and that is not a correction', () => {

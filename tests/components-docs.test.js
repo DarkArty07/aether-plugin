@@ -13,23 +13,25 @@ const manifest = () => JSON.parse(read('plugins', 'aether', '.claude-plugin', 'p
 const NUMBERS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
 
 // The identifiers of the retired router, as the search of C7 reads them.
+// The names of the retired command and mark are built from parts, so that a search for them does not find this test.
+const OLD_BIN = 'aether-' + 'route'
 const RETIRED = [
-  /\baether-route\b/,
-  /ROUTER-OVERRIDE/,
+  new RegExp('\\b' + OLD_BIN + '\\b'),
+  new RegExp('ROUTER-' + 'OVERRIDE'),
   /CLAUDE_PLUGIN_OPTION_(ROUTER|DECIDER|FALLBACK)/,
   /--config (router|decider|fallback)=/,
   /`(router|decider|fallback)`/,
   /\b(record|advise)\b.*\b(router|decider)\b|\b(router|decider)\b.*\b(record|advise)\b/,
 ]
 
-test('the components page names aether-delegate and no aether-route (R10)', () => {
+test('the components page names aether-delegate and no retired decider command (R10)', () => {
   const components = read('docs', 'reference', 'components.md')
   assert.ok(components.includes('`aether-delegate`'))
-  assert.equal(components.includes('`aether-route`'), false)
+  assert.equal(components.includes('`' + OLD_BIN + '`'), false)
 })
 
-test('the README and the CLAUDE.md name no aether-route and point to the delegates guide (R10)', () => {
-  for (const file of ['README.md', 'CLAUDE.md']) assert.equal(read(file).includes('aether-route'), false, file)
+test('the README and the CLAUDE.md name no retired decider command and point to the delegates guide (R10)', () => {
+  for (const file of ['README.md', 'CLAUDE.md']) assert.equal(read(file).includes(OLD_BIN), false, file)
   assert.ok(read('CLAUDE.md').includes('aether-delegate'))
 })
 

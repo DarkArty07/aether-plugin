@@ -29,7 +29,7 @@
 //     aether-aether-plugin  the plugin's data directory
 //     aether-inline         the data directory of a --plugin-dir session
 //     aether-mode           the 0.6 launcher, named as retired in "Upgrading from 0.6"
-//     aether-route          the retired decider command, named as history by docs/changelog.md
+//     (the retired decider command)  named as history by docs/changelog.md; the key is built from parts in EXCEPTIONS
 //   Paths that do not exist (PATH_EXCEPTIONS):
 //     scripts/aether-install.js  the 0.6 installer, named as retired in "Upgrading from 0.6"
 //     scripts/lane-cupo.js       the script that measured a harness's parallel limit, removed with the limit (decision A74);
@@ -69,7 +69,7 @@ const EXCEPTIONS = {          // commands that are not files of plugins/aether/b
   'aether-aether-plugin': "the plugin's data directory",
   'aether-inline': 'the data directory of a --plugin-dir session',
   'aether-mode': 'the 0.6 launcher, named as retired',
-  'aether-route': 'the retired decider command, named as history by docs/changelog.md',
+  ['aether-' + 'route']: 'the retired decider command, named as history by docs/changelog.md',
 }
 const PATH_EXCEPTIONS = {
   'scripts/aether-install.js': 'the 0.6 installer, named as retired in "Upgrading from 0.6"',

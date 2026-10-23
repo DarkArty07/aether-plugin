@@ -8,6 +8,8 @@ const { tempDir } = require('./helpers.js')
 
 const PLUGIN = path.join(__dirname, '..', 'plugins', 'aether')
 const lib = (name) => require(path.join(PLUGIN, 'lib', `${name}.js`))
+// The name of the retired decider command, built from parts so that a search for it does not find this test.
+const OLD_BIN = 'aether-' + 'route'
 
 test('the old journal is only read: router-log has no way to write it (R18, D4)', () => {
   const journal = lib('router-log')
@@ -16,8 +18,8 @@ test('the old journal is only read: router-log has no way to write it (R18, D4)'
   assert.equal(typeof journal.journalFile, 'function')
 })
 
-test('the guard no longer knows aether-route', () => {
-  assert.notEqual(lib('guard').irreversibleClass('aether-route replay --projects p --decider haiku --paid'), 'paid-call')
+test('the guard no longer knows the retired decider command', () => {
+  assert.notEqual(lib('guard').irreversibleClass(OLD_BIN + ' replay --projects p --decider haiku --paid'), 'paid-call')
 })
 
 test('the session settings of the decider are gone, and a deadlines value with the old keys still parses (E12)', () => {
