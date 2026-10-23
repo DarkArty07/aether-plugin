@@ -561,9 +561,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A83 are recorded and the changelog opens with 0.18.0 and its handoff', () => {
+test('R15: the decisions A50 to A86 are recorded and the changelog opens with 0.19.0 and its handoff', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 83
+  const LAST_DECISION = 86
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -586,10 +586,13 @@ test('R15: the decisions A50 to A83 are recorded and the changelog opens with 0.
   assert.ok(/edits only what the Judge flagged/.test(line(81)))
   assert.ok(/continues from the work the failed one left/.test(line(82)))
   assert.ok(/swarms at once are not limited/.test(line(83)))
+  assert.ok(/dollars of Grok/.test(line(84)))
+  assert.ok(/starts on Haiku/.test(line(85)) && /the system holds/.test(line(85)))
+  assert.ok(/heartbeat/.test(line(86)) && /600 s/.test(line(86)))
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.18.0: ') && first.includes('handoff/2026-10-22-design-decisions-0.18.0.md'), first)
+  assert.ok(first.startsWith('Version 0.19.0: ') && first.includes('handoff/2026-10-22-delegate-ladder.md'), first)
 })
 
 // ---- R21: the retired profiles and variables

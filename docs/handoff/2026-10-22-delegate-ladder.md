@@ -3,7 +3,7 @@
 - **Date:** 2026-10-22. It follows [the 0.18.0 handoff](2026-10-22-design-decisions-0.18.0.md).
 - **From:** the Lead, Claude Code on Sonnet 5.5, in an autonomous run (`auto-20261022-142451-4317`) that the owner started with «no estare disponible corres en modo autonomo cuando llegue el diseño lo pasas a implementar».
 - **To:** the next session.
-- **Repository state:** built and checked on the branch `feat/delegate-ladder` (worktree `.worktrees/delegate-ladder`), with `main` merged into it. **Not merged into `main`, not pushed, not published, and the installed plugin is still 0.18.0**: each of those waits for the owner's yes (section 5).
+- **Repository state:** published as 0.19.0 (the branch `feat/delegate-ladder` merged into `main` by fast-forward, tag `aether--v0.19.0`, push, and the owner's plugin updated), on the owner's word quoted in section 5. The real session of C12 has not run.
 
 ## 1. What was asked
 
@@ -30,14 +30,9 @@ Two decisions, [A85](../decisions.md) and [A86](../decisions.md):
 - **Two plan defects, filed:** [issue 80](https://github.com/DarkArty07/aether-plugin/issues/80), `Max agents` in `tasks.md` is the run's total budget of model agents, not its parallelism, and the Writer and the Judge read it as parallelism (a plan with 4 left four units `not-run`); and [issue 81](https://github.com/DarkArty07/aether-plugin/issues/81), the merge gate cannot take a group of units that each break a test of another, so five of 21 units needed a hand merge.
 - **The numbers 5, 2 and 1** are in `config/ladder.json`: read `aether-report --delegates` after some use and calibrate.
 
-## 5. Release, when the owner says yes
+## 5. Release
 
-The grants (`merge-main`, `push`, `publish`, `delete`, `paid-call`) are none. In order, each action with its own grant call, as the memory says:
-
-1. Merge into `main` from the main checkout: `git merge --no-ff feat/delegate-ladder` (if `main` moved again, merge it into the branch first and run `npm run check`). If `main` took decision numbers A85 or A86 meanwhile, renumber the two rows here.
-2. The release (full steps in [contributing](../contributing.md)): version 0.19.0 in `plugin.json`, the pin in `tests/launcher.test.js`, the README's `Version` line and the changelog's first `Version` line; the changelog entry; `npm run check`; `claude plugin tag plugins/aether`.
-3. Push `main` and the tag, then `claude plugin update aether@aether-plugin`.
-4. Close issues 51 and 74 (commands in the evidence file), and delete what is left: `.aether/spike-wait/`, the Orca terminal titled `spike-wait-013`, the worktree `.worktrees/delegate-ladder` and the branch.
+Published on 2026-10-23 on the owner's word, as he wrote it: «Necesito que borres lo que ya no es necesario. pushees a main y actualcies mi plugin local». The Lead recorded session grants for `merge-main`, `push`, `publish` and `delete`, each in its own call, ran the actions in the next, and revoked them afterwards. In order: the version 0.19.0 in the four places (`plugin.json`, the pin in `tests/launcher.test.js`, the README's `Version` line and the changelog's first line), the changelog entry, the roadmap's Now line and the status of A85 and A86; `npm run check`; a fast-forward of `main` to `feat/delegate-ladder` (`main` was already merged into it); the tag `aether--v0.19.0` with `claude plugin tag plugins/aether`; the push of `main` and the tag; `claude plugin update aether@aether-plugin`; and the deletion of what the run left (`.aether/spike-wait/`, the Orca terminal `spike-wait-013`, the worktree and the branch of the feature, and the temporary files). Issues 51 and 74 were closed with a comment: the owner had said «Aprovechamos para cerrar el issue 74 despues de implemenatrlo», and the real session of C12 (section 4) stays as the check to run.
 
 ## 6. What the next session has to watch
 

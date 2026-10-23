@@ -78,4 +78,4 @@ En esa sesión se pide una tarea de delegado con un brief que lleve las líneas 
 
 ### Los issues (R23)
 
-Siguen abiertos, porque su arreglo está en una rama que aún no está en `main`: el 51 (el decisor y la regla de subir un modelo ya no existen) y el 74 (espera, además, la sesión real de arriba). Comandos, para cuando se funda: `gh issue close 51 --comment "Fixed by spec 013 (A85): the decider is gone and the ladder holds the climb."` y `gh issue close 74 --comment "Fixed by spec 013 (A86), evidence in docs/evidence/013-delegate-ladder.md."`.
+El 51 (el decisor y la regla de subir un modelo ya no existen) y el 74 se cerraron el 2026-10-23, después de fundir y subir, con las palabras del dueño «Aprovechamso para cerrar el issue 74 despues de implemenatrlo»; la sesión real de arriba queda como la comprobación pendiente. Los comandos fueron: `gh issue close 51 --comment "Fixed by spec 013 (A85): the decider is gone and the ladder holds the climb."` y `gh issue close 74 --comment "Fixed by spec 013 (A86), evidence in docs/evidence/013-delegate-ladder.md."`.
