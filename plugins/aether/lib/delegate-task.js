@@ -35,6 +35,7 @@ const PLAIN_AGENTS = ['general-purpose', 'Explore']
 // A refused launch still has to run something, and does nothing: the cheapest call, which only says why.
 const REFUSED_ARGS = { model: 'haiku', effort: 'low' }
 const VERDICTS = ['approve', 'fix', 'infeasible']
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const TASK_KINDS = ['launch', 'result', 'verdict', 'answer']
 const NO_WORKTREE = 'approve needs the worktree of the attempt (--worktree) or the checks of its result'
 const NO_ANSWER = 'approve needs the answer of the attempt: the mod records it when the delegate ends; wait for the agent to end, or judge it fix or infeasible'
@@ -335,12 +336,26 @@ function nextLaunch(entries, ladder) {
   return { status: 'open', step: state.step, launchKind: kind === 'rise' ? 'rise' : 'fix', verdict: lastVerdict.entry, attempt }
 }
 
-// `pinned` is the pair that a correction of a task that edits asks for first (the pair of the earlier attempt): the lane
-// command takes it before any other and drops it only when it cannot serve, so it is the pair the note names.
-function stepNote(id, step, attempt, launchKind, args, pick, pinned = null) {
-  let where = `on claude ${args.model} ${args.effort}`
-  if (pick && pinned) where = `on the pair of its earlier attempt, ${pinned}, kept for a correction of a task that edits (the next candidate takes it if that pair cannot serve), with claude ${args.model} ${args.effort} as its rescue`
-  else if (pick) where = `on ${pick.harness} ${pick.model} ${pick.effort} (pair ${pick.id}), with claude ${args.model} ${args.effort} as its rescue`
+// The pair of a correction: the harness and model of the pair that did the earlier attempt, one effort up when the table
+// has it and the ladder's effort for a correction allows it, else the same effort; only a pair the choice of this launch
+// found able to serve (a candidate that was picked or ranked next). Null when none is, and the choice stands (the owner's
+// word, issue 87: improve the effort, not so aggressively, and do not change the model).
+function sameModelPair(pairs, previous, limit, quota) {
+  let table
+  try {
+    table = pairs()
+  } catch {
+    return null
+  }
+  const usable = new Set((Array.isArray(quota) ? quota : []).filter((entry) => isObject(entry) && (entry.outcome === 'picked' || entry.outcome === 'next')).map((entry) => entry.id))
+  const rank = (effort) => EFFORTS.indexOf(effort)
+  const same = table.filter((row) => row.harness === previous.harness && row.model === previous.model && usable.has(row.id))
+  const up = same.filter((row) => rank(row.effort) > rank(previous.effort) && rank(row.effort) <= rank(limit)).sort((a, b) => rank(a.effort) - rank(b.effort))[0]
+  return up ?? same.find((row) => row.id === previous.id) ?? null
+}
+
+function stepNote(id, step, attempt, launchKind, args, pick) {
+  const where = pick ? `on ${pick.harness} ${pick.model} ${pick.effort} (pair ${pick.id}), with claude ${args.model} ${args.effort} as its rescue` : `on claude ${args.model} ${args.effort}`
   return `Aether delegate task ${id}: step ${step}, attempt ${attempt} (${launchKind}), runs ${where}. Judge it with aether-delegate verdict --task ${id}.`
 }
 
@@ -378,7 +393,8 @@ async function begin(input, deps = {}) {
 
     const correcting = launchKind === 'fix' || launchKind === 'unjudged'
     const lastResult = lastOf(entries, (e) => e.kind === 'result').entry
-    const pin = correcting && lastResult && isObject(lastResult.pair) && isText(lastResult.pair.id) ? lastResult.pair.id : null
+    const previous = correcting && lastResult && isObject(lastResult.pair) && isText(lastResult.pair.id) ? lastResult.pair : null
+    let pin = null
     const base = headOf(r.cwd)
 
     let pick = null
@@ -387,6 +403,20 @@ async function begin(input, deps = {}) {
       const chosen = await r.pickPair({ model: step, effort })
       if (chosen && typeof chosen.error === 'string') notes.push(`Aether delegate task ${id}: the pair choice failed (${chosen.error}); this attempt runs on Claude.`)
       pick = chosen && isObject(chosen.pick) ? chosen.pick : null
+      let alternates = alternatesOf(chosen && chosen.quota, r.pairs)
+      if (pick && previous) {
+        // A correction keeps the model of the earlier attempt and raises its effort a step; the pair the choice made
+        // stays the next candidate. A task that edits is pinned to it, and the lane command drops the pin if it cannot serve.
+        const kept = sameModelPair(r.pairs, previous, effort, chosen.quota)
+        if (kept) {
+          pin = kept.id
+          if (kept.id !== pick.id) {
+            const rung = (row) => ({ harness: row.harness, rung: { model: row.model, effort: row.effort, group: row.group } })
+            alternates = [rung(pick), ...alternates.filter((a) => !(a.harness === kept.harness && a.rung.model === kept.model && a.rung.effort === kept.effort))]
+            pick = kept
+          }
+        }
+      }
       if (pick) {
         const briefFile = path.join(r.dataDir, 'delegates', 'briefs', `${id}-${attempt}.md`)
         fs.mkdirSync(path.dirname(briefFile), { recursive: true })
@@ -396,7 +426,7 @@ async function begin(input, deps = {}) {
           brief: briefFile, findings, carry, pin, base, harness: pick.harness,
           rung: { model: pick.model, effort: pick.effort, group: pick.group },
           task: { description, prompt: fullPrompt },
-          alternates: alternatesOf(chosen.quota, r.pairs),
+          alternates,
           timeoutMs: EXTERNAL_LIMIT_MS,
         })
         external = { id, edits, timeoutMs: EXTERNAL_LIMIT_MS, pin }
@@ -416,7 +446,7 @@ async function begin(input, deps = {}) {
       const of = relaunchOf(r.dataDir, session, id, brief)
       if (of !== null) log.appendEntry(r.dataDir, { kind: 'relaunch', time, session, task: id, of })
     }
-    notes.push(stepNote(id, step, attempt, launchKind, args, pick, edits ? pin : null))
+    notes.push(stepNote(id, step, attempt, launchKind, args, pick))
     return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: onClaudeReadOnly ? { task: id, attempt } : null })
   } catch (err) {
     return emptyPlan({ id: isId(id) ? id : null, error: messageOf(err) })
