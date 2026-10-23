@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process')
 const { tempDir, makeRepo } = require('./helpers.js')
 const dr = require('../plugins/aether/lib/delegate-run.js')
 const log = require('../plugins/aether/lib/delegate-log.js')
+const session = require('../plugins/aether/lib/session.js')
 
 const BIN = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-delegate')
 const PAIR = { id: 'grok/grok-4.7@high', harness: 'grok', model: 'grok-4.7', effort: 'high' }
@@ -45,6 +46,48 @@ test('an editing delegate runs aether-lane delegate with the step model and effo
   assert.ok(fs.readFileSync(written.patch, 'utf8').includes('src/new.js'))
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'results', 't1.json'), 'utf8')).ok, true)
   assert.equal(log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind === 'outcome').length, 0, 'the lane log already counts its spend')
+})
+
+// The two variables the lane gate reads are removed from process.env for the test, and put back afterwards, on failure too.
+function clearLaneEnv(t) {
+  const names = ['AETHER_SUPERDELEGATION', 'AETHER_LANE_HARNESSES']
+  const saved = names.map((name) => [name, process.env[name]])
+  for (const name of names) delete process.env[name]
+  t.after(() => {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  })
+}
+
+function writeDelegateSettings(dataDir, settings) {
+  const file = session.delegateFile(dataDir, 's1')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify(settings) + '\n')
+}
+
+test('an editing delegate of a session with delegate settings runs the lane command with the switch on, its harnesses and the whole environment (issue 82)', async (t) => {
+  clearLaneEnv(t)
+  const { repo, dataDir, done } = world(t)
+  writeDelegateSettings(dataDir, { lanes: true, harnesses: ['agy', 'grok'], deadlines: { quotaMs: 3000 } })
+  const seen = []
+  await dr.runTask({ id: 't1', cwd: repo.dir, dataDir }, { delegateCommand: async (cwd, flags, deps) => (seen.push({ cwd, flags, deps }), done) })
+  assert.equal(seen.length, 1)
+  const env = seen[0].deps.env
+  assert.deepEqual([env.AETHER_SUPERDELEGATION, env.AETHER_LANE_HARNESSES], ['on', 'agy,grok'])
+  assert.equal(env.PATH, process.env.PATH)
+})
+
+test('an editing delegate with no delegate settings, or with lanes off, runs the lane command with no environment of its own (issue 82)', async (t) => {
+  clearLaneEnv(t)
+  const { repo, dataDir, done } = world(t)
+  const seen = []
+  const stub = async (cwd, flags, deps) => (seen.push(deps), done)
+  await dr.runTask({ id: 't1', cwd: repo.dir, dataDir }, { delegateCommand: stub })
+  writeDelegateSettings(dataDir, { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } })
+  await dr.runTask({ id: 't1', cwd: repo.dir, dataDir }, { delegateCommand: stub })
+  assert.deepEqual(seen, [undefined, undefined])
 })
 
 test('a correction passes the pair, the earlier patch and the findings on to the lane command (R2, R4)', async (t) => {
