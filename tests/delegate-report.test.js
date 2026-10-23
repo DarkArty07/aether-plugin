@@ -101,6 +101,20 @@ test('a task whose external delegate ended ok ran on its pair; one that did not 
   assert.deepEqual([bad.ranOn.harness, bad.ranOn.model, bad.fallback], ['claude', 'haiku', 'external failed'])
 })
 
+test('a refused relaunch is not an attempt and not where the task ran (issue 85)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const outcome = at({ kind: 'outcome', id: 'done', attempt: 1, status: 'ok', harness: 'agy', model: 'm-a', effort: 'low' })
+  const refused = at({ kind: 'launch', task: 'done', step: null, attempt: 2, launchKind: 'refused', description: 'again', effort: 'low', edits: false })
+  for (const entry of [launch('done', 'haiku', 1, 'first'), outcome, verdict('done', 'haiku', 1, 'approved', { step: null, kind: 'done', cause: null }), refused]) log.appendEntry(dataDir, entry)
+  const row = delegatesReport({ dataDir }).delegations.find((d) => d.id === 'done')
+  assert.deepEqual([row.attempts, row.step, row.applied, row.ranOn.harness, row.ranOn.model, row.fallback], [1, 'haiku', 'external', 'agy', 'm-a', null])
+  assert.equal(delegatesReport({ dataDir }).ladder.steps[0].attempts, 1)
+  // A task with nothing but a refused launch in the window has no row.
+  const other = tempDir(t, 'aether-data-')
+  log.appendEntry(other, at({ kind: 'launch', task: 'lone', step: null, attempt: 1, launchKind: 'refused', description: 'x', effort: 'low', edits: false }))
+  assert.deepEqual(delegatesReport({ dataDir: other }).delegations, [])
+})
+
 test('an old-journal row whose id is a task of the new log gives way to the new one', (t) => {
   const dataDir = world(t)
   const file = journalFile(dataDir)

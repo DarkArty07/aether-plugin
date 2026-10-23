@@ -14,11 +14,15 @@ const CAUSES = ['exhausted', 'repeated', 'infeasible']
 
 const last = (list) => list[list.length - 1]
 
+// A refused relaunch (the task was approved or exhausted) is logged as a launch, but no step opened for it: it is not an
+// attempt and not where the task ran.
+const isAttempt = (entry) => entry.kind === 'launch' && entry.launchKind !== 'refused'
+
 // Where a task of the log ran. An external attempt that ended ok ran on its outcome's pair. One that did not was
 // rerun on Claude (the step's model, the launch's effort) and the row says why in `fallback`; a task with no outcome
 // at all ran on Claude, rewritten.
 function rowOfTask(id, entries) {
-  const launches = entries.filter((e) => e.kind === 'launch')
+  const launches = entries.filter(isAttempt)
   const outcomes = entries.filter((e) => e.kind === 'outcome')
   const first = launches[0]
   const latest = last(launches)
@@ -101,7 +105,7 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } 
     if (!byTask.has(id)) byTask.set(id, [])
     byTask.get(id).push(entry)
   }
-  const fromLog = [...byTask].filter(([, list]) => list.some((e) => e.kind === 'launch')).map(([id, list]) => rowOfTask(id, list))
+  const fromLog = [...byTask].filter(([, list]) => list.some(isAttempt)).map(([id, list]) => rowOfTask(id, list))
   const taken = new Set(fromLog.map((row) => row.id))
   const delegations = [...fromLog, ...rowsOfJournal(readJournal(dataDir, { since, session }), taken)]
   const ladder = loadLadder()
