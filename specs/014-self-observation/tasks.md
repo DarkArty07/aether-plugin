@@ -1130,7 +1130,7 @@ test('the reading source has no network or process module (R12)', () => {
 `lib/observe-hook.js` exporta:
 
 - `EVENTS`: `{ PostToolUse: ['tool_name'], PostToolUseFailure: ['tool_name', 'is_interrupt'], StopFailure: ['error'], PreCompact: ['trigger'], SessionEnd: ['reason'] }`.
-- `handleHook(input, { dataDir = run.dataDir(), env = process.env, now = Date.now() } = {}): { recorded: boolean, fragment: string | null }`. Nunca lanza. Si `input` no es un objeto, su `session_id` no es válido, su `hook_event_name` no está en `EVENTS`, la sesión no es de un Lead (`isAetherSession(dataDir, session_id)` de `lib/session.js`), o es `PostToolUse` de una herramienta distinta de `ScheduleWakeup`, devuelve `{ recorded: false, fragment: null }` **sin escribir nada ni crear ninguna carpeta**. Si no, toma de la entrada solo los campos de `EVENTS[evento]` y guarda con `appendEvent` el evento `{ time: now, session, kind: evento, tool: tool_name, interrupted: is_interrupt (solo si es booleano), class: error, trigger, reason }`. En `SessionEnd` llama además `digestSession(dataDir, session)` y después `readObservations({ dataDir, repoRoot, now })` de `lib/observe-read.js` (la lectura automática: los hallazgos, las señales de calibración, `observe/read.json` y los issues redactados quedan en disco sin que nadie corra un comando), con `repoRoot` igual a `input.cwd` si es un texto y `null` si no; `cwd` no se guarda. Con `observeMode(env) === 'dev'` y el evento `PostToolUseFailure`, `StopFailure` o `PostToolUse`, llama `captureFragment` de `lib/observe-dev.js`, cargado con `require` dentro de esa rama (nunca arriba del archivo). En la instalación estándar no se carga `observe-dev.js` y no se abre ningún archivo de la entrada.
+- `handleHook(input, { dataDir = run.dataDir(), env = process.env, now = Date.now() } = {}): { recorded: boolean, fragment: string | null }`. Nunca lanza. Si `input` no es un objeto, su `session_id` no es válido, su `hook_event_name` no está en `EVENTS`, la sesión no es de un Lead (`isAetherSession(dataDir, session_id)` de `lib/session.js`), o es `PostToolUse` de una herramienta distinta de `ScheduleWakeup`, devuelve `{ recorded: false, fragment: null }` **sin escribir nada ni crear ninguna carpeta**. Si no, toma de la entrada solo los campos de `EVENTS[evento]` y guarda con `appendEvent` el evento `{ time: now, session, kind: evento, tool: tool_name, interrupted: is_interrupt (solo si es booleano), class: error, trigger, reason }`. En `SessionEnd` llama además `digestSession(dataDir, session)` y después `readObservations({ dataDir, repoRoot, now })` de `lib/observe-read.js` (la lectura automática: los hallazgos, las señales de calibración, `observe/read.json` y los issues redactados quedan en disco sin que nadie corra un comando), con `repoRoot` igual al `mainRoot` de `repoPaths(input.cwd)` de `lib/git.js` si `input.cwd` es un texto y es un repositorio (un worktree o una subcarpeta dan el checkout principal, donde vive `.aether/`), y `null` si no o si `repoPaths` falla; `cwd` no se guarda. Con `observeMode(env) === 'dev'` y el evento `PostToolUseFailure`, `StopFailure` o `PostToolUse`, llama `captureFragment` de `lib/observe-dev.js`, cargado con `require` dentro de esa rama (nunca arriba del archivo). En la instalación estándar no se carga `observe-dev.js` y no se abre ningún archivo de la entrada.
 
 **Tests (write first):**
 
@@ -1143,7 +1143,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { tempDir, PLUGIN } = require('./helpers.js')
+const { tempDir, makeRepo, PLUGIN } = require('./helpers.js')
 
 const { handleHook } = require(path.join(PLUGIN, 'lib', 'observe-hook.js'))
 const observe = require(path.join(PLUGIN, 'lib', 'observe.js'))
@@ -1237,6 +1237,20 @@ test('SessionEnd runs the detectors by itself: findings and drafted issues exist
   assert.ok(fs.existsSync(path.join(dir, 'observe', 'issues', 'rise-without-reason-t2-2.md')))
   for (const file of walk(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
   assert.equal(fs.existsSync(path.join(repo, '.aether')), false, 'the repository is only read')
+})
+
+test('SessionEnd reads the main checkout from a subfolder or a worktree of the repository (E5, C4)', (t) => {
+  const dir = tempDir(t)
+  const repo = makeRepo(t)
+  lead(dir)
+  fs.mkdirSync(path.join(repo, '.aether'), { recursive: true })
+  fs.writeFileSync(path.join(repo, '.aether', 'pending.jsonl'), JSON.stringify({ time: 1000, session: 's-1', class: 'push', command: 'git push origin ZEBRA', cwd: '/x', mode: 'enforce' }) + '\n')
+  const sub = path.join(repo, 'sub')
+  fs.mkdirSync(sub)
+  handleHook({ session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear', cwd: sub }, { dataDir: dir, now: 5000 })
+  const read = JSON.parse(fs.readFileSync(path.join(dir, 'observe', 'read.json'), 'utf8'))
+  assert.ok(read.items.some((i) => JSON.stringify(i).includes('push')), 'the blocked command of the main checkout is found from a subfolder')
+  for (const file of walk(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
 })
 
 test('SessionEnd of a session that is not the Lead reads nothing and writes nothing (C10)', (t) => {
@@ -1425,12 +1439,12 @@ test('the components page counts twelve bins and describes aether-observe (R16)'
 - Review: high — que cada afirmación coincida con el árbol
 - Area: docs
 - Owns: `docs/guide/observe.md`, `docs/index.md`, `docs/reference/components.md`, `README.md`, `CLAUDE.md`, `tests/observe-docs.test.js`
-- Depends on: Task 10 — el nombre del bin, sus verbos y los hooks ya existen, y `docs/reference/components.md` ya trae el conteo y la fila del bin
+- Depends on: Task 10 — el nombre del bin, sus verbos y los hooks ya existen, y `docs/reference/components.md` ya trae el conteo y la fila del bin; la Tarea 10 también posee `docs/reference/components.md`, y esta dependencia las ordena: aquí solo se añade la frase de la huella dormida
 - Serves: R16, R13
 
 **Interfaces:**
 
-- `docs/guide/observe.md`, con el front matter `title`, `description` y un `order` entero (como las demás páginas de `docs/guide/`), explica: los dos métodos de instalación, con su orden exacta cada uno (el estándar, `claude plugin install aether@aether-plugin`, y el de desarrollo, desde el árbol: `AETHER_OBSERVE=dev scripts/aether-lead --plugin-dir <árbol>/plugins/aether`), que la variable `AETHER_OBSERVE` no cambia nada en la instalación del mercado, y qué reúne cada una (`standard` y `dev`); que la detección corre sola al terminar una sesión del Lead y que `aether-observe read` solo la repite; los cinco hooks; los verbos `hook`, `read`, `baseline`, `status` y `forget --yes`; que nada sale de la máquina y que un issue solo se abre con el sí del dueño; el resumen durable y la poda de 30 días; y las tres exenciones de R10 con su razón (`aether-voice` y `aether-autonomy start --quote`; los prompts de `delegates/briefs/` y `external/*.json`; `.aether/pending.jsonl`).
+- `docs/guide/observe.md`, con el front matter `title`, `description` y un `order` entero (como las demás páginas de `docs/guide/`), explica: los dos métodos de instalación, con su orden exacta cada uno (el estándar, `claude plugin install aether@aether-plugin`, y el de desarrollo, desde el árbol: `AETHER_OBSERVE=dev scripts/aether-lead --plugin-dir <árbol>/plugins/aether`), que la variable `AETHER_OBSERVE` no cambia nada en la instalación del mercado, y qué reúne cada una (`standard` y `dev`); que la de desarrollo es un clon lanzado con `--plugin-dir` y escribe en el directorio de datos `aether-inline`, no en el del plugin instalado, salvo que se fije `AETHER_DATA_DIR`; que la detección corre sola al terminar una sesión del Lead y que `aether-observe read` solo la repite; los cinco hooks; los verbos `hook`, `read`, `baseline`, `status` y `forget --yes`; que nada sale de la máquina y que un issue solo se abre con el sí del dueño; el resumen durable y la poda de 30 días; y las tres exenciones de R10 con su razón (`aether-voice` y `aether-autonomy start --quote`; los prompts de `delegates/briefs/` y `external/*.json`; `.aether/pending.jsonl`).
 - `docs/index.md` enlaza la página; el README (máximo 160 líneas, con las partes en su orden) y `CLAUDE.md` la nombran y nombran `aether-observe`.
 - `docs/reference/components.md`: una frase nueva en la sección «What Aether adds to a normal session» que dice que los hooks de observación, en una sesión que no es del Lead, no escriben ni imprimen nada, que corren un proceso `node` solo en los cinco eventos, y que esto se lee del plugin y lo prueba `tests/observe-guarantees.test.js` (no se mide en una sesión real).
 
