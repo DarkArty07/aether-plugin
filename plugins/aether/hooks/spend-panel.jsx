@@ -126,7 +126,11 @@ export function registerSpend(on) {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
     if (!(await aetherSession($))) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
-    const lines = spendLines({ result: shown.result, columns: e.props && e.props.bodyColumns })
+    const lines = spendLines({
+      result: shown.result,
+      columns: e.props && e.props.bodyColumns,
+      rows: e.props && e.props.scroll && e.props.scroll.bodyRows,
+    })
     return (
       <Box flexDirection="column">
         {lines.map((one, i) =>
