@@ -399,9 +399,10 @@ async function begin(input, deps = {}) {
       }
     }
 
-    // A read-only attempt on Claude works in the Lead's checkout: what was already changed there is not its doing.
+    // A read-only attempt, on an external pair or on Claude, works in the Lead's checkout (its rescue does on Claude): what
+    // was already changed there is not its doing.
     const onClaudeReadOnly = external === null && !edits
-    const dirty = onClaudeReadOnly && base !== null ? dirtyOf(r.cwd, base) : null
+    const dirty = !edits && base !== null ? dirtyOf(r.cwd, base) : null
     const time = r.now()
     log.appendEntry(r.dataDir, {
       kind: 'launch', time, session, task: id, step, attempt, launchKind, effort, edits, owns: brief.owns, tests: brief.tests,
