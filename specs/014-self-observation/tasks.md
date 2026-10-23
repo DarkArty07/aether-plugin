@@ -57,7 +57,7 @@ Los **umbrales** de `config/observe.json` (Tarea 1): `pairFailures.consecutive` 
 - Tier: sonnet high — pocas piezas, pero `forget` borra datos y la lista cerrada de campos es la garantía de C7
 - Review: xhigh — sistema de archivos, borrado y filtrado de contenido
 - Area: store
-- Owns: `plugins/aether/lib/observe.js`, `plugins/aether/config/observe.json`, `tests/observe.test.js`
+- Owns: `plugins/aether/lib/observe.js`, `plugins/aether/config/observe.json`, `tests/observe.test.js`, `tests/helpers.js`
 - Depends on: none
 - Serves: R4, R9, R10, R14
 
@@ -76,6 +76,8 @@ Los **umbrales** de `config/observe.json` (Tarea 1): `pairFailures.consecutive` 
 - `forget(dataDir, { yes }): { deleted: boolean, files: number }`. `files` es el número de archivos bajo `observe/` antes de borrar. Con `yes === true` borra `observe/` entera y nada más y da `deleted: true`; si no, no borra nada y da `deleted: false`.
 
 `config/observe.json` tiene exactamente las siete claves de los umbrales del contrato.
+
+`tests/helpers.js`: añade `'AETHER_OBSERVE'` a `AETHER_VARIABLES` (en orden alfabético, después de `'AETHER_LANE_HARNESSES'`), porque `lib/observe.js` lee `env.AETHER_OBSERVE` y `tests/env-scrub.test.js` falla si el código lee un nombre `AETHER_*` que la lista no trae; así una suite lanzada desde una sesión de desarrollo (`AETHER_OBSERVE=dev`) no la hereda. No se lista en las `CONSTANTS` de esa prueba, que no se toca.
 
 **Tests (write first):**
 
@@ -1016,7 +1018,7 @@ test('the baseline changes no configuration value (R6)', (t) => {
 1. Llama `digestAll(dataDir)` y lee el resumen.
 2. Lee, solo como campos: `delegates/log.jsonl` (cada línea con su número `line`; solo `kind`, `time`, `session`, `task`, `id`, `step`, `attempt`, `launchKind`, `status`, `harness`, `model`, `verdict`, `next`), `observe/events.jsonl`, `readFaults`, y, si `repoRoot` no es `null`, `<repoRoot>/.aether/pending.jsonl` (de cada entrada: `time`, `session`, `class` y `fingerprint = fingerprintOf(command)`; el `command` no sale de esa función) y `<repoRoot>/.aether/autonomy/grants.json` (de cada concesión: `class` y `added`).
 3. Corre los cuatro detectores de la Tarea 2 y `calibrationSignals` (con `lanes` y `seats` sumados desde las entradas del resumen, `pairs` y la ficha) y añade hallazgos de `kind: 'failure'`, `type: 'fault'` (uno por fuente, `id: 'fault:<fuente>'`, `numbers: { count }`, evidencia con la fuente y la clase) y de `kind: 'friction'` (`id: 'tool-failures:<herramienta>'` con `numbers: { count }` y `id: 'compactions'` con `numbers: { count }`, del resumen, cuando el conteo es mayor que cero).
-4. A cada hallazgo `failure` le pone `issue: { title, body }`, con el cuerpo en Markdown: `## Evidence` con la evidencia, `## Numbers` con las cifras y `## Sessions`. Escribe `observe/issues/<id>.md` (el nombre según el contrato) con el título y el cuerpo, y `observe/read.json` con `{ generatedAt, items }`: la última lectura, la que el manejador de `SessionEnd` (Tarea 9) corre solo o la que el dueño pide con `aether-observe read`, y donde el dueño encuentra al volver lo que la lectura automática dejó.
+4. A cada hallazgo `failure` le pone `issue: { title, body }`, con el cuerpo en Markdown: `## Evidence` con la evidencia, `## Numbers` con las cifras y `## Sessions`. Escribe `observe/issues/<id>.md` (el nombre según el contrato) con el título y el cuerpo, y `observe/read.json` con `{ generatedAt, items }`, ambos de forma atómica (archivo temporal en el mismo directorio y `rename`, como `observe-digest`), porque el hook de `SessionEnd` puede morir a media escritura: la última lectura, la que el manejador de `SessionEnd` (Tarea 9) corre solo o la que el dueño pide con `aether-observe read`, y donde el dueño encuentra al volver lo que la lectura automática dejó.
 5. Ordena: `failure`, `calibration`, `friction`; dentro de cada clase, más líneas de `evidence` primero, luego `lastTime` mayor, luego `id` ascendente.
 
 No abre una conexión, no ejecuta `gh`, no lee nada fuera de `dataDir` y `repoRoot`, y con datos vacíos devuelve `items: []` sin lanzar.
@@ -1680,7 +1682,7 @@ const OBSERVATION_FILES = () => [
 ]
 
 test('no observation file uses the network, a process or gh (C9, R12)', () => {
-  const forbidden = /node:(http|https|http2|net|tls|dgram|dns|child_process)|\bchild_process\b|\bfetch\s*\(|XMLHttpRequest|WebSocket|\bgh\s+(issue|api|pr)\b|\b(exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s*\(/
+  const forbidden = /node:(http|https|http2|net|tls|dgram|dns|child_process)|\bchild_process\b|\bfetch\s*\(|XMLHttpRequest|WebSocket|\bgh\s+(issue|api|pr)\b|(?<![.\w])(exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s*\(/
   for (const file of OBSERVATION_FILES()) assert.doesNotMatch(fs.readFileSync(file, 'utf8'), forbidden, file)
 })
 
