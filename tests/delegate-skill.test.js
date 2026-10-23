@@ -31,3 +31,9 @@ test('the Lead does not read the whole diff when the checks and the other pair r
 test('an editing delegate is launched with Agent, not with Bash', () => {
   assert.equal(/aether-lane delegate --brief[^\n]*in the background/i.test(SKILL), false)
 })
+
+test('the Lead waits for a delegate by its notification and schedules no wakeup for it (issue 89)', () => {
+  assert.match(SKILL, /notification of a delegate wakes you/i)
+  assert.match(SKILL, /schedule no wakeup[^.\n]*ScheduleWakeup/i)
+  assert.match(SKILL, /exception is the fallback of the `aether:autonomous-runs` skill/i)
+})
