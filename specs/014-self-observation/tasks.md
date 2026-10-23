@@ -7,7 +7,7 @@
 - Node.js 22, CommonJS, sin dependencias nuevas. Los bins son delgados y la lógica vive en `plugins/aether/lib/`; el mod (`hooks/*.mjs`) es ESM y no importa `lib/`. Las rutas de abajo son relativas a `plugins/aether/` salvo las que empiezan por `tests/`, `docs/`, `specs/`, `README.md` o `CLAUDE.md`.
 - **Pruebas.** Cada prueba corre en directorios desechables (`tempDir`, `makeRepo` de `tests/helpers.js`) y fija `AETHER_DATA_DIR` a uno; ninguna toca el directorio de datos real del dueño, ni usa la red, ni un modelo, ni `gh`. Cada tarea deja `npm test` en verde completo (el comando de cada fusión es el entero); si un cambio suyo rompe una prueba existente, la tarea la actualiza.
 - **Contenido de conversación (R10).** La observación de la instalación estándar no lee ni guarda el texto que el usuario escribe, el que el modelo contesta ni el contenido de archivos. De los archivos que ya existen lee solo campos (identificadores, clases, fechas, conteos) y compara comandos por huella. Nunca copia un `command`, una `quote`, un `prompt`, un `text`, un `answer` ni un mensaje de error. Solo `lib/observe-dev.js` puede nombrar `transcript`.
-- **Sin salida de la máquina (R12).** Ningún archivo nuevo de observación usa `node:http`, `node:https`, `node:net`, `node:child_process` ni nada de red, y ninguno ejecuta `gh`.
+- **Sin salida de la máquina (R12).** Ningún archivo nuevo de observación usa `node:http`, `node:https`, `node:net` ni nada de red, ni arranca procesos por su cuenta (`node:child_process`, `spawn`, `exec`), y ninguno ejecuta `gh`. La única excepción es indirecta y local: el manejador de `SessionEnd` y el verbo `read` llaman `repoPaths` de `lib/git.js`, que ya corre `git rev-parse` en el repositorio local, para hallar el checkout principal; no lo reimplementan.
 - **Valores de configuración (R6).** No se cambia ningún valor de `config/ladder.json`, `config/pairs.json`, `config/prices.json`, `config/lanes.json`, ni los modelos de `agents/*.md`. `config/observe.json` es nuevo.
 - **Un `catch` nuevo, ninguno.** En `hooks/register.js`, `hooks/delegate.mjs` y `hooks/quota-brake.mjs` no se añade ningún `catch` ni se escribe la palabra «catch» en un comentario (una prueba cuenta las líneas).
 - **Los bins imprimen una línea JSON** y salen con 1 y `{ "error": "…" }` ante un mal uso; `aether-observe hook` no imprime nada nunca. Los comentarios y la documentación van en el idioma del código y del documento que se edita.
@@ -1239,18 +1239,39 @@ test('SessionEnd runs the detectors by itself: findings and drafted issues exist
   assert.equal(fs.existsSync(path.join(repo, '.aether')), false, 'the repository is only read')
 })
 
-test('SessionEnd reads the main checkout from a subfolder or a worktree of the repository (E5, C4)', (t) => {
-  const dir = tempDir(t)
-  const repo = makeRepo(t)
-  lead(dir)
-  fs.mkdirSync(path.join(repo, '.aether'), { recursive: true })
+// A push the guard blocked at time 1000 and a grant of the same class added after it: the blocked-by-mistake finding
+// of D4. The files live in the main checkout, where `.aether/` is.
+function seedBlocked(repo) {
+  fs.mkdirSync(path.join(repo, '.aether', 'autonomy'), { recursive: true })
   fs.writeFileSync(path.join(repo, '.aether', 'pending.jsonl'), JSON.stringify({ time: 1000, session: 's-1', class: 'push', command: 'git push origin ZEBRA', cwd: '/x', mode: 'enforce' }) + '\n')
-  const sub = path.join(repo, 'sub')
-  fs.mkdirSync(sub)
-  handleHook({ session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear', cwd: sub }, { dataDir: dir, now: 5000 })
+  fs.writeFileSync(path.join(repo, '.aether', 'autonomy', 'grants.json'), JSON.stringify({ grants: [{ class: 'push', scope: 'repo', quote: 'ZEBRA QUOTE', session: 's-1', time: 1, added: new Date(1500).toISOString() }], revoked: [] }))
+}
+
+function endSessionFrom(t, cwdOf) {
+  const dir = tempDir(t)
+  const { dir: repo, git } = makeRepo(t)
+  lead(dir)
+  seedBlocked(repo)
+  handleHook({ session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear', cwd: cwdOf(repo, git) }, { dataDir: dir, now: 5000 })
   const read = JSON.parse(fs.readFileSync(path.join(dir, 'observe', 'read.json'), 'utf8'))
-  assert.ok(read.items.some((i) => JSON.stringify(i).includes('push')), 'the blocked command of the main checkout is found from a subfolder')
+  assert.ok(read.items.some((i) => i.type === 'blocked-by-mistake'), 'the blocked command of the main checkout is found')
   for (const file of walk(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
+}
+
+test('SessionEnd reads the main checkout from a subfolder of the repository (E5, C4)', (t) => {
+  endSessionFrom(t, (repo) => {
+    const sub = path.join(repo, 'sub')
+    fs.mkdirSync(sub)
+    return sub
+  })
+})
+
+test('SessionEnd reads the main checkout from a worktree of the repository (E5, C4)', (t) => {
+  endSessionFrom(t, (repo, git) => {
+    const worktree = path.join(tempDir(t), 'wt')
+    git('worktree', 'add', '-q', worktree, '-b', 'obs-worktree')
+    return worktree
+  })
 })
 
 test('SessionEnd of a session that is not the Lead reads nothing and writes nothing (C10)', (t) => {
@@ -1298,7 +1319,7 @@ test('observe-dev.js is required only inside the development branch (A4)', () =>
 **Interfaces:**
 
 - `bin/aether-observe` (CommonJS, ejecutable, delgado: solo analiza los argumentos y llama a `lib/`). Verbos: `hook` (lee la entrada JSON de stdin; llama `handleHook`; no imprime nada y sale 0 ante cualquier entrada, incluida una ilegible), `read` (llama `readObservations` con `dataDir()` de `lib/run.js`, `repoRoot` el `mainRoot` de `lib/git.js` `repoPaths(process.cwd())` o `null` fuera de un repositorio, y imprime una línea JSON `{ generatedAt, items }`), `baseline [--from <dir>]` (llama `baseline({ from: --from o dataDir(), to: dataDir(), repoRoot })`, con el mismo `repoRoot` que `read`, e imprime su resultado), `status` (imprime `status(dataDir())`) y `forget [--yes]` (imprime `forget(dataDir(), { yes })`). Un verbo desconocido o un argumento de más sale 1 con `{ "error": "usage: aether-observe hook | read | baseline [--from <dir>] | status | forget [--yes]" }`. Cada verbo menos `hook` imprime una sola línea JSON.
-- `hooks/hooks.json` añade cinco entradas, cada una con `{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook" }`: `PostToolUse` con `matcher: "ScheduleWakeup"`, y `PostToolUseFailure`, `StopFailure`, `PreCompact` y `SessionEnd` sin matcher (se usa `matcher: ""` solo si Claude Code lo exige). Se conservan `SessionStart`, `PreToolUse` y `modules` como están. Se actualiza `description` para nombrarlos.
+- `hooks/hooks.json` añade cinco entradas, cada una con `{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook" }`: `PostToolUse` con `matcher: "ScheduleWakeup"`, y `PostToolUseFailure`, `StopFailure`, `PreCompact` y `SessionEnd` sin matcher (se usa `matcher: ""` solo si Claude Code lo exige). La entrada de `SessionEnd` lleva además `"timeout": 30` (segundos): Claude Code 2.1.309 da a un hook de `SessionEnd` 1500 ms por omisión (medido en el binario) y el `timeout` del propio hook sube ese presupuesto; la lectura automática corre ahí. Se conservan `SessionStart`, `PreToolUse` y `modules` como están. Se actualiza `description` para nombrarlos.
 - `plugin.json` no cambia: la instalación de desarrollo no es una opción (D1 del plan), así que `userConfig` no gana ninguna clave y las seis opciones de los documentos quedan como están.
 - Lo que este cambio rompe y la tarea actualiza, y nada más: `tests/components-docs.test.js` (once bins pasan a doce: la frase «the twelve commands of `bin/`» y el conteo), `tests/docs-facts.test.js` (la comprobación de `eleven commands of `bin/``) y `docs/reference/components.md` (esa frase y una fila `aether-observe`). El resto de la prosa (README, guía, índice, `CLAUDE.md` y la frase de la huella dormida) es de la Tarea 11.
 
@@ -1415,6 +1436,8 @@ test('hooks.json runs the five new hooks and the manifest gains no option (R3, R
     assert.ok(commands.includes('node "${CLAUDE_PLUGIN_ROOT}/bin/aether-observe" hook'), event)
   }
   assert.equal(hooks.PostToolUse[0].matcher, 'ScheduleWakeup')
+  const sessionEnd = hooks.SessionEnd.flatMap((group) => group.hooks).find((h) => h.command.includes('aether-observe'))
+  assert.ok(sessionEnd.timeout >= 10, 'the SessionEnd hook asks for more than the 1500 ms Claude Code gives by default')
   assert.ok(hooks.SessionStart && hooks.PreToolUse)
 })
 
