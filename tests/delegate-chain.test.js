@@ -63,7 +63,7 @@ test('a refusal at the start tries the next candidate: both outcomes are journal
     { harness: 'agy', model: 'gemini-4-argon', effort: 'high', status: 'quota', detail: AGY_REFUSAL },
     { harness: 'grok', model: 'grok-4.7', effort: 'high', status: 'ok', detail: '' },
   ])
-  assert.match(out.attribution, /^Aether router: gemini-4-argon on agy refused for quota first, so this answer is from grok-4\.7 at high on grok, run in a disposable copy of the checkout\./)
+  assert.match(out.attribution, /^Aether delegate: gemini-4-argon on agy refused for quota first, so this answer is from grok-4\.7 at high on grok, run in a disposable copy of the checkout\./)
   assert.match(out.attribution, /Claude Code lists no tool uses or tokens/)
   assert.deepEqual(s.calls.map((c) => [c.harness, c.rung.model]), [['agy', 'gemini-4-argon'], ['grok', 'grok-4.7']])
   assert.deepEqual(s.calls.map((c) => c.task), [task, task])
@@ -82,14 +82,14 @@ test('the attribution lists every earlier pair that refused', async (t) => {
   const s = setup(t, [refusal(), { status: 'unavailable', detail: 'grok is not installed' }, { status: 'ok' }])
   const out = await s.run(ARGON, [GROK, MUSE])
   assert.equal(out.ok, true)
-  assert.match(out.attribution, /^Aether router: gemini-4-argon on agy refused for quota, grok-4\.7 on grok was unavailable first, so this answer is from muse-wonder-full-1\.0 at high on muse,/)
+  assert.match(out.attribution, /^Aether delegate: gemini-4-argon on agy refused for quota, grok-4\.7 on grok was unavailable first, so this answer is from muse-wonder-full-1\.0 at high on muse,/)
   assert.deepEqual(s.outcomes().map((e) => [e.attempt, e.status]), [[1, 'quota'], [2, 'unavailable'], [3, 'ok']])
 })
 
 test('an answer on the first pair says what it always said, and the journal holds attempt 1', async (t) => {
   const s = setup(t, [{ status: 'ok' }])
   const out = await s.run(ARGON, [GROK])
-  assert.equal(out.attribution, 'Aether router: this answer is from gemini-4-argon at high on agy, run in a disposable copy of the checkout. Claude Code lists no tool uses or tokens for it because Aether handed you the answer without a Claude request.')
+  assert.equal(out.attribution, 'Aether delegate: this answer is from gemini-4-argon at high on agy, run in a disposable copy of the checkout. Claude Code lists no tool uses or tokens for it because Aether handed you the answer without a Claude request.')
   assert.deepEqual(s.outcomes().map((e) => e.attempt), [1])
   assert.equal(s.calls.length, 1)
   assert.equal(s.calls[0].maxCliSeconds, undefined, 'the first attempt has the limit it always had')

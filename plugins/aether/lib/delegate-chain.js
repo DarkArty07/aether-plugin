@@ -58,7 +58,7 @@ function thrownAttempt(err, rung, elapsedMs) {
 function attributionOf(answered, earlier) {
   const refusals = earlier.map((attempt) => `${attempt.rung.model} on ${attempt.harness} ${REFUSED[attempt.status] ?? 'refused'}`)
   const lead = refusals.length > 0 ? `${refusals.join(', ')} first, so this answer is from` : 'this answer is from'
-  return `Aether router: ${lead} ${answered.rung.model} at ${answered.rung.effort} on ${answered.harness}, run in a disposable copy of the checkout. Claude Code lists no tool uses or tokens for it because Aether handed you the answer without a Claude request.`
+  return `Aether delegate: ${lead} ${answered.rung.model} at ${answered.rung.effort} on ${answered.harness}, run in a disposable copy of the checkout. Claude Code lists no tool uses or tokens for it because Aether handed you the answer without a Claude request.`
 }
 
 // How many outcome entries the task already has: the first attempt of this chain is the next one.
