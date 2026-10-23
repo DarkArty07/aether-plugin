@@ -24,7 +24,7 @@ Todo cuelga de `<data dir>/observe/`:
 | `summary.json` | `{ version: 1, sessions: { <id>: entrada } }` (la entrada, en la Tarea 5) |
 | `dev/<sesión>/<hora>-<evento>.json` | un fragmento de conversación (solo en `dev`) |
 | `issues/<id>.md` | el issue redactado de un hallazgo `failure`, con `id` cambiando todo carácter fuera de `[A-Za-z0-9._-]` por `-` |
-| `baseline.json`, `read.json` | el resultado de la línea base y de la última lectura |
+| `baseline.json`, `read.json` | el resultado de la línea base y el de la última lectura (la que el manejador de `SessionEnd` corre solo, o la del dueño) |
 
 Un **hallazgo** es `{ id, kind: 'failure'|'calibration'|'friction', type, title, evidence: string[], numbers: object, firstTime, lastTime, sessions: string[], proposal?: string, issue?: { title, body } }`.
 
@@ -46,8 +46,8 @@ Los **umbrales** de `config/observe.json` (Tarea 1): `pairFailures.consecutive` 
 - [ ] T006 [P] [US9] El borrado de claves y el fragmento de la instalación de desarrollo, en `lib/observe-redact.js` y `lib/observe-dev.js` → Task 6
 - [ ] T007 [P] [US13] La línea base sobre registros ajenos, en `lib/observe-baseline.js` → Task 7
 - [ ] T008 [US7] La lectura ordenada con el issue redactado, en `lib/observe-read.js` → Task 8
-- [ ] T009 [P] [US10] El manejador de los cinco hooks, en `lib/observe-hook.js` → Task 9
-- [ ] T010 [US11] El bin `aether-observe`, los hooks, la opción `observe` y lo que su cambio rompe, en `bin/aether-observe`, `hooks/hooks.json` y `.claude-plugin/plugin.json` → Task 10
+- [ ] T009 [P] [US10] El manejador de los cinco hooks y la lectura automática de `SessionEnd`, en `lib/observe-hook.js` → Task 9
+- [ ] T010 [US11] El bin `aether-observe`, los hooks y los conteos que su cambio rompe, en `bin/aether-observe` y `hooks/hooks.json` → Task 10
 - [ ] T011 [P] [US7] La documentación de la observación, en `docs/guide/observe.md` → Task 11
 - [ ] T012 [P] [US8] Las pruebas de las garantías de punta a punta, en `tests/observe-guarantees.test.js` → Task 12
 
@@ -59,14 +59,14 @@ Los **umbrales** de `config/observe.json` (Tarea 1): `pairFailures.consecutive` 
 - Area: store
 - Owns: `plugins/aether/lib/observe.js`, `plugins/aether/config/observe.json`, `tests/observe.test.js`
 - Depends on: none
-- Serves: R4, R10, R14
+- Serves: R4, R9, R10, R14
 
 **Interfaces:**
 
 `lib/observe.js` (CommonJS) exporta:
 
 - `observeDir(dataDir): string` es `<dataDir>/observe`; también `eventsFile(dataDir)`, `faultsDir(dataDir)`, `summaryFile(dataDir)`, `devDir(dataDir)`, `issuesDir(dataDir)`.
-- `observeMode(env = process.env): 'standard' | 'dev'`. Es `'dev'` solo si `env.CLAUDE_PLUGIN_OPTION_OBSERVE === 'dev'` (valor exacto).
+- `observeMode(env = process.env, root = PLUGIN_ROOT): 'standard' | 'dev'`. `PLUGIN_ROOT` es la carpeta del plugin que corre (`path.resolve(__dirname, '..')`). Es `'dev'` solo si `env.AETHER_OBSERVE === 'dev'` (valor exacto) **y** `root` es un árbol del repositorio: existe `<root>/../../.claude-plugin/marketplace.json` y `path.basename(path.dirname(root)) === 'plugins'`. Así la instalación del mercado, que vive en la caché de Claude Code, es estándar aunque la variable esté puesta, y la del árbol (D1 del plan) es la única que puede ser `dev`.
 - `cleanEvent(raw): object | null`. Lista cerrada de claves: `time` (número finito), `session` (`/^[A-Za-z0-9-]+$/`), `kind`, `tool`, `class`, `reason`, `trigger` (textos) e `interrupted` (solo booleano). `time` y `session` y `kind` son obligatorios, si no devuelve `null`. Un texto solo vale si encaja en `/^[A-Za-z0-9_.:-]{1,64}$/`; si no, vale `'unclassified'`. Toda otra clave se descarta. Un valor que no es objeto da `null`.
 - `appendEvent(dataDir, raw): boolean`. Limpia con `cleanEvent`, crea la carpeta y añade una línea JSON a `events.jsonl`. `false` si `cleanEvent` da `null` o si no se puede escribir; nunca lanza.
 - `readEvents(dataDir, { since = 0 } = {}): object[]`. Las líneas con `time >= since`, ordenadas por `time`; una línea ilegible se salta; `[]` sin archivo.
@@ -92,11 +92,21 @@ const { tempDir, PLUGIN } = require('./helpers.js')
 
 const observe = require(path.join(PLUGIN, 'lib', 'observe.js'))
 
-test('observeMode is dev only for the exact value dev (R4)', () => {
-  assert.equal(observe.observeMode({}), 'standard')
-  assert.equal(observe.observeMode({ CLAUDE_PLUGIN_OPTION_OBSERVE: 'standard' }), 'standard')
-  assert.equal(observe.observeMode({ CLAUDE_PLUGIN_OPTION_OBSERVE: 'Dev ' }), 'standard')
-  assert.equal(observe.observeMode({ CLAUDE_PLUGIN_OPTION_OBSERVE: 'dev' }), 'dev')
+test('observeMode is dev only for the exact value dev and only inside the repository tree (R4, R9)', (t) => {
+  const tree = tempDir(t)
+  fs.mkdirSync(path.join(tree, '.claude-plugin'), { recursive: true })
+  fs.writeFileSync(path.join(tree, '.claude-plugin', 'marketplace.json'), '{}')
+  fs.mkdirSync(path.join(tree, 'plugins', 'aether'), { recursive: true })
+  const treeRoot = path.join(tree, 'plugins', 'aether')
+  const cache = tempDir(t)
+  const cacheRoot = path.join(cache, 'plugins', 'cache', 'aether-plugin', 'aether', '0.19.2')
+  fs.mkdirSync(cacheRoot, { recursive: true })
+  assert.equal(observe.observeMode({}, treeRoot), 'standard')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'standard' }, treeRoot), 'standard')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'Dev ' }, treeRoot), 'standard')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'dev' }, treeRoot), 'dev')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'dev' }, cacheRoot), 'standard')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'dev' }), 'dev', 'the tests run inside the repository tree')
 })
 
 test('cleanEvent keeps only the closed keys and identifier-shaped values (R4, R10)', () => {
@@ -848,11 +858,15 @@ test('captureFragment writes a private file under observe/dev, caps them and nev
 
 **Interfaces:**
 
-`lib/observe-baseline.js` exporta `baseline({ from, to = from, prices = loadPrices() }): object`. Lee en solo lectura, de `from`, `delegates/log.jsonl` (por `lib/delegate-log.js` `readEntries`) y `lanes/*.jsonl` (por `lib/lanes.js` `readLog`); escribe `observe/baseline.json` solo en `to` (nunca dentro de `from` si `from !== to`). Devuelve y guarda:
+`lib/observe-baseline.js` exporta `baseline({ from, to = from, prices = loadPrices(), repoRoot = null }): object`. Lee en solo lectura las seis fuentes de R15: de `from`, `delegates/log.jsonl` (por `lib/delegate-log.js` `readEntries`), `lanes/*.jsonl` (por `lib/lanes.js` `readLog`), `runs.jsonl`, `usage/` y `exams/`, y, si `repoRoot` no es `null`, `<repoRoot>/.aether/pending.jsonl`; escribe `observe/baseline.json` solo en `to` (nunca dentro de `from` si `from !== to`). De cada archivo toma solo campos y conteos. Devuelve y guarda:
 
 - `approvalsByStep`: el resultado de `approvalByStep`.
 - `noCandidate: { count, calls }`: `count` es el número de entradas de `lanes/` con `status === 'no-candidate'` o `cause === 'no-candidate'`; `calls`, las de `kind === 'call'`.
 - `haikuCost: { costUsd, savesUsd, unpriced, answer }`. Para cada tarea, su escalón de aprobación es el `step` de su `verdict` `approved`. `costUsd` es la suma del precio (`prices.priceEntry` con `{ model, input, output: output + thinking, cacheRead, cacheWrite: 0, agent: true }` de los `usage` de los `outcome`) de los `outcome` de las tareas aprobadas por encima de Haiku, cuyo intento pertenece a un escalón por debajo del que las aprobó (el `step` del `launch` del mismo `task` y `attempt`). `savesUsd` es, para las tareas aprobadas en `haiku`, la suma sobre sus `outcome` de `(precio de los mismos tokens con las tarifas de la familia 'sonnet' de prices.json) − (precio real)`. Un `outcome` cuyo modelo no tiene precio suma uno a `unpriced` y no suma dinero. `answer` es `'saves-more'` si `savesUsd > costUsd`, `'costs-more'` si es menor, `'equal'` si son iguales y distintos de cero, y `'no-data'` si ambos son cero.
+- `runs: { finalized, abandoned, usd: { count, min, median, max } }`: las líneas de `runs.jsonl` cuyo `status` es `finalized` o `abandoned` (una línea ilegible o de otro estado no cuenta). `usd` resume `report.cost.run.usd` de las `finalized` donde es un número: `count` cuántas, y `min`, `median` (el promedio de los dos centrales si `count` es par) y `max`, todos `null` si `count` es cero.
+- `usage: { sessions, parts }`: las carpetas de `usage/` y los archivos `*.json` dentro de ellas. No se abre ninguno.
+- `exams: { features }`: las carpetas `exams/<repositorio>/<feature>`. No se abre ninguna.
+- `pending: { entries, byClass }`: las líneas de `pending.jsonl` y cuántas hay de cada `class`. De cada línea se toma solo `class`; el `command` no se copia. Con `repoRoot` en `null` o sin archivo, `{ entries: 0, byClass: {} }`.
 
 **Tests (write first):**
 
@@ -895,6 +909,23 @@ function build(dir) {
     { kind: 'took', time: 2, session: 's-1', cause: 'no-candidate' },
     { kind: 'call', time: 3, session: 's-1', status: 'ok' },
   ].map((e) => JSON.stringify(e)).join('\n') + '\n')
+  fs.writeFileSync(path.join(dir, 'runs.jsonl'), [
+    { runId: 'r1', status: 'finalized', report: { cost: { run: { usd: 10 } } } },
+    { runId: 'r2', status: 'finalized', report: { cost: { run: { usd: 30 } } } },
+    { runId: 'r3', status: 'abandoned' },
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n')
+  fs.mkdirSync(path.join(dir, 'usage', 's-1'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'usage', 's-1', '0.json'), '{}')
+  fs.writeFileSync(path.join(dir, 'usage', 's-1', '1.json'), '{}')
+  fs.mkdirSync(path.join(dir, 'exams', 'repo-key', '014-x'), { recursive: true })
+}
+
+function buildPending(repoRoot) {
+  fs.mkdirSync(path.join(repoRoot, '.aether'), { recursive: true })
+  fs.writeFileSync(path.join(repoRoot, '.aether', 'pending.jsonl'), [
+    { time: 1, session: 's-1', class: 'push', command: 'git push origin ZEBRA', cwd: '/x', mode: 'enforce' },
+    { time: 2, session: 's-1', class: 'delete', command: 'rm -rf ZEBRA', cwd: '/x', mode: 'enforce' },
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n')
 }
 
 function snapshot(dir) {
@@ -909,14 +940,23 @@ function snapshot(dir) {
 test('the baseline answers the three questions in numbers and reads another directory without changing it (R15, C13)', (t) => {
   const from = tempDir(t)
   const to = tempDir(t)
+  const repoRoot = tempDir(t)
   build(from)
+  buildPending(repoRoot)
   const before = snapshot(from)
-  const result = baseline({ from, to, prices })
+  const beforeRepo = snapshot(repoRoot)
+  const result = baseline({ from, to, prices, repoRoot })
   assert.deepEqual(snapshot(from), before)
+  assert.deepEqual(snapshot(repoRoot), beforeRepo)
+  assert.equal(JSON.stringify(result).includes('ZEBRA'), false)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(to, 'observe', 'baseline.json'), 'utf8')), result)
   assert.deepEqual(result.approvalsByStep.haiku, { launches: 3, approved: 2, fixes: 0, rises: 0 })
   assert.deepEqual(result.approvalsByStep.sonnet, { launches: 1, approved: 1, fixes: 0, rises: 1 })
   assert.deepEqual(result.noCandidate, { count: 2, calls: 1 })
+  assert.deepEqual(result.runs, { finalized: 2, abandoned: 1, usd: { count: 2, min: 10, median: 20, max: 30 } })
+  assert.deepEqual(result.usage, { sessions: 1, parts: 2 })
+  assert.deepEqual(result.exams, { features: 1 })
+  assert.deepEqual(result.pending, { entries: 2, byClass: { push: 1, delete: 1 } })
   const cost = (1000 * FLASH.input) / prices.per
   const saves = (1000 * SONNET.input - 1000 * FLASH.input) / prices.per
   assert.ok(Math.abs(result.haikuCost.costUsd - cost) < 1e-12, 'the attempt of b below its approving step')
@@ -931,6 +971,10 @@ test('with no records the baseline reports zeros and writes nothing into the dir
   const result = baseline({ from, to, prices })
   assert.deepEqual(result.approvalsByStep, {})
   assert.deepEqual(result.noCandidate, { count: 0, calls: 0 })
+  assert.deepEqual(result.runs, { finalized: 0, abandoned: 0, usd: { count: 0, min: null, median: null, max: null } })
+  assert.deepEqual(result.usage, { sessions: 0, parts: 0 })
+  assert.deepEqual(result.exams, { features: 0 })
+  assert.deepEqual(result.pending, { entries: 0, byClass: {} })
   assert.equal(result.haikuCost.answer, 'no-data')
   assert.deepEqual(fs.readdirSync(from), [])
 })
@@ -950,6 +994,7 @@ test('the baseline changes no configuration value (R6)', (t) => {
 
 - Las pruebas pasan. El directorio `from` queda idéntico byte a byte; el resultado se escribe solo en `to`.
 - Los intentos sin precio se cuentan en `unpriced` y no se inventan.
+- Las seis fuentes de R15 se leen y ninguna se copia: de `pending.jsonl` sale solo la clase.
 
 ### Task 8: La lectura ordenada con el issue redactado
 
@@ -971,7 +1016,7 @@ test('the baseline changes no configuration value (R6)', (t) => {
 1. Llama `digestAll(dataDir)` y lee el resumen.
 2. Lee, solo como campos: `delegates/log.jsonl` (cada línea con su número `line`; solo `kind`, `time`, `session`, `task`, `id`, `step`, `attempt`, `launchKind`, `status`, `harness`, `model`, `verdict`, `next`), `observe/events.jsonl`, `readFaults`, y, si `repoRoot` no es `null`, `<repoRoot>/.aether/pending.jsonl` (de cada entrada: `time`, `session`, `class` y `fingerprint = fingerprintOf(command)`; el `command` no sale de esa función) y `<repoRoot>/.aether/autonomy/grants.json` (de cada concesión: `class` y `added`).
 3. Corre los cuatro detectores de la Tarea 2 y `calibrationSignals` (con `lanes` y `seats` sumados desde las entradas del resumen, `pairs` y la ficha) y añade hallazgos de `kind: 'failure'`, `type: 'fault'` (uno por fuente, `id: 'fault:<fuente>'`, `numbers: { count }`, evidencia con la fuente y la clase) y de `kind: 'friction'` (`id: 'tool-failures:<herramienta>'` con `numbers: { count }` y `id: 'compactions'` con `numbers: { count }`, del resumen, cuando el conteo es mayor que cero).
-4. A cada hallazgo `failure` le pone `issue: { title, body }`, con el cuerpo en Markdown: `## Evidence` con la evidencia, `## Numbers` con las cifras y `## Sessions`. Escribe `observe/issues/<id>.md` (el nombre según el contrato) con el título y el cuerpo, y `observe/read.json` con `{ generatedAt, items }`.
+4. A cada hallazgo `failure` le pone `issue: { title, body }`, con el cuerpo en Markdown: `## Evidence` con la evidencia, `## Numbers` con las cifras y `## Sessions`. Escribe `observe/issues/<id>.md` (el nombre según el contrato) con el título y el cuerpo, y `observe/read.json` con `{ generatedAt, items }`: la última lectura, la que el manejador de `SessionEnd` (Tarea 9) corre solo o la que el dueño pide con `aether-observe read`, y donde el dueño encuentra al volver lo que la lectura automática dejó.
 5. Ordena: `failure`, `calibration`, `friction`; dentro de cada clase, más líneas de `evidence` primero, luego `lastTime` mayor, luego `id` ascendente.
 
 No abre una conexión, no ejecuta `gh`, no lee nada fuera de `dataDir` y `repoRoot`, y con datos vacíos devuelve `items: []` sin lanzar.
@@ -1077,14 +1122,15 @@ test('the reading source has no network or process module (R12)', () => {
 - Depends on: Task 1 — `cleanEvent`, `appendEvent`, `observeMode`
 - Depends on: Task 5 — en `SessionEnd` digiere la sesión para que su entrada quede en el resumen
 - Depends on: Task 6 — en la instalación de desarrollo guarda el fragmento de un fallo
-- Serves: R3, R4, R10, R13
+- Depends on: Task 8 — en `SessionEnd` corre la lectura, y con ella los detectores, la calibración y los issues redactados
+- Serves: R2, R3, R4, R7, R10, R13
 
 **Interfaces:**
 
 `lib/observe-hook.js` exporta:
 
 - `EVENTS`: `{ PostToolUse: ['tool_name'], PostToolUseFailure: ['tool_name', 'is_interrupt'], StopFailure: ['error'], PreCompact: ['trigger'], SessionEnd: ['reason'] }`.
-- `handleHook(input, { dataDir = run.dataDir(), env = process.env, now = Date.now() } = {}): { recorded: boolean, fragment: string | null }`. Nunca lanza. Si `input` no es un objeto, su `session_id` no es válido, su `hook_event_name` no está en `EVENTS`, la sesión no es de un Lead (`isAetherSession(dataDir, session_id)` de `lib/session.js`), o es `PostToolUse` de una herramienta distinta de `ScheduleWakeup`, devuelve `{ recorded: false, fragment: null }` **sin escribir nada ni crear ninguna carpeta**. Si no, toma de la entrada solo los campos de `EVENTS[evento]` y guarda con `appendEvent` el evento `{ time: now, session, kind: evento, tool: tool_name, interrupted: is_interrupt (solo si es booleano), class: error, trigger, reason }`. En `SessionEnd` llama además `digestSession(dataDir, session)`. Con `observeMode(env) === 'dev'` y el evento `PostToolUseFailure`, `StopFailure` o `PostToolUse`, llama `captureFragment` de `lib/observe-dev.js`, cargado con `require` dentro de esa rama (nunca arriba del archivo). En la instalación estándar no se carga `observe-dev.js` y no se abre ningún archivo de la entrada.
+- `handleHook(input, { dataDir = run.dataDir(), env = process.env, now = Date.now() } = {}): { recorded: boolean, fragment: string | null }`. Nunca lanza. Si `input` no es un objeto, su `session_id` no es válido, su `hook_event_name` no está en `EVENTS`, la sesión no es de un Lead (`isAetherSession(dataDir, session_id)` de `lib/session.js`), o es `PostToolUse` de una herramienta distinta de `ScheduleWakeup`, devuelve `{ recorded: false, fragment: null }` **sin escribir nada ni crear ninguna carpeta**. Si no, toma de la entrada solo los campos de `EVENTS[evento]` y guarda con `appendEvent` el evento `{ time: now, session, kind: evento, tool: tool_name, interrupted: is_interrupt (solo si es booleano), class: error, trigger, reason }`. En `SessionEnd` llama además `digestSession(dataDir, session)` y después `readObservations({ dataDir, repoRoot, now })` de `lib/observe-read.js` (la lectura automática: los hallazgos, las señales de calibración, `observe/read.json` y los issues redactados quedan en disco sin que nadie corra un comando), con `repoRoot` igual a `input.cwd` si es un texto y `null` si no; `cwd` no se guarda. Con `observeMode(env) === 'dev'` y el evento `PostToolUseFailure`, `StopFailure` o `PostToolUse`, llama `captureFragment` de `lib/observe-dev.js`, cargado con `require` dentro de esa rama (nunca arriba del archivo). En la instalación estándar no se carga `observe-dev.js` y no se abre ningún archivo de la entrada.
 
 **Tests (write first):**
 
@@ -1162,11 +1208,42 @@ test('the development installation also keeps a redacted fragment; the standard 
   const input = { session_id: 's-1', hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', transcript_path: transcript }
   assert.equal(handleHook(input, { dataDir: dir, now: 10, env: {} }).fragment, null)
   assert.equal(fs.existsSync(path.join(dir, 'observe', 'dev')), false)
-  const dev = handleHook(input, { dataDir: dir, now: 11, env: { CLAUDE_PLUGIN_OPTION_OBSERVE: 'dev' } })
+  const dev = handleHook(input, { dataDir: dir, now: 11, env: { AETHER_OBSERVE: 'dev' } })
   assert.equal(dev.fragment, path.join(dir, 'observe', 'dev', 's-1', '11-PostToolUseFailure.json'))
   const saved = fs.readFileSync(dev.fragment, 'utf8')
   assert.ok(saved.includes('ENOENT'))
   assert.equal(saved.includes(GH), false)
+})
+
+function seedRise(dir) {
+  fs.mkdirSync(path.join(dir, 'delegates'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'delegates', 'log.jsonl'), [
+    { kind: 'launch', time: 10, session: 's-1', task: 't2', step: 'haiku', attempt: 1, launchKind: 'first' },
+    { kind: 'verdict', time: 20, session: 's-1', task: 't2', step: 'haiku', verdict: 'fix', next: { kind: 'fix', cause: 'fix' }, reason: 'ZEBRA reason' },
+    { kind: 'launch', time: 30, session: 's-1', task: 't2', step: 'sonnet', attempt: 2, launchKind: 'rise' },
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n')
+}
+
+test('SessionEnd runs the detectors by itself: findings and drafted issues exist with no command run (C1, R13)', (t) => {
+  const dir = tempDir(t)
+  const repo = tempDir(t)
+  lead(dir)
+  seedRise(dir)
+  handleHook({ session_id: 's-1', hook_event_name: 'PostToolUseFailure', tool_name: 'Bash' }, { dataDir: dir, now: 40 })
+  assert.equal(fs.existsSync(path.join(dir, 'observe', 'read.json')), false, 'nothing is read before the session ends')
+  assert.equal(handleHook({ session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear', cwd: repo }, { dataDir: dir, now: 50 }).recorded, true)
+  const read = JSON.parse(fs.readFileSync(path.join(dir, 'observe', 'read.json'), 'utf8'))
+  assert.ok(read.items.some((i) => i.type === 'rise-without-reason' && i.issue.body.length > 0))
+  assert.ok(fs.existsSync(path.join(dir, 'observe', 'issues', 'rise-without-reason-t2-2.md')))
+  for (const file of walk(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
+  assert.equal(fs.existsSync(path.join(repo, '.aether')), false, 'the repository is only read')
+})
+
+test('SessionEnd of a session that is not the Lead reads nothing and writes nothing (C10)', (t) => {
+  const dir = tempDir(t)
+  seedRise(dir)
+  assert.deepEqual(handleHook({ session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear', cwd: tempDir(t) }, { dataDir: dir, now: 50 }), { recorded: false, fragment: null })
+  assert.deepEqual(fs.readdirSync(dir), ['delegates'])
 })
 
 test('garbage input is ignored without throwing', (t) => {
@@ -1189,26 +1266,27 @@ test('observe-dev.js is required only inside the development branch (A4)', () =>
 
 - Las pruebas pasan.
 - `lib/observe-hook.js` no contiene la palabra `transcript`: pasa la entrada entera a `captureFragment`, que es quien la lee.
-- Un evento de una sesión que no es del Lead no crea ni un directorio.
+- Un evento de una sesión que no es del Lead no crea ni un directorio, y su `SessionEnd` no lee nada.
+- Un `SessionEnd` de una sesión del Lead deja `observe/read.json` y los issues redactados sin ninguna orden del dueño.
 
-### Task 10: El bin, los hooks, la opción y lo que su cambio rompe
+### Task 10: El bin, los hooks y los conteos que su cambio rompe
 
 **Aether:**
-- Tier: sonnet high — integra siete archivos y actualiza pruebas y documentos que cuentan bins y opciones
+- Tier: sonnet high — integra el bin y los hooks y actualiza las pruebas y la página que cuentan los bins
 - Review: xhigh — el hook no debe imprimir nunca; `forget` borra datos
 - Area: cli
-- Owns: `plugins/aether/bin/aether-observe`, `plugins/aether/hooks/hooks.json`, `plugins/aether/.claude-plugin/plugin.json`, `tests/observe-bin.test.js`, `tests/manifest.test.js`, `tests/components-docs.test.js`, `README.md`, `docs/getting-started.md`, `docs/guide/options.md`, `docs/reference/components.md`
+- Owns: `plugins/aether/bin/aether-observe`, `plugins/aether/hooks/hooks.json`, `tests/observe-bin.test.js`, `tests/components-docs.test.js`, `tests/docs-facts.test.js`, `docs/reference/components.md`
 - Depends on: Task 7 — el verbo `baseline`
 - Depends on: Task 8 — el verbo `read`
 - Depends on: Task 9 — el verbo `hook`
-- Serves: R3, R7, R9, R13, R14, R15, R16
+- Serves: R3, R7, R13, R14, R15, R16
 
 **Interfaces:**
 
-- `bin/aether-observe` (CommonJS, ejecutable, delgado: solo analiza los argumentos y llama a `lib/`). Verbos: `hook` (lee la entrada JSON de stdin; llama `handleHook`; no imprime nada y sale 0 ante cualquier entrada, incluida una ilegible), `read` (llama `readObservations` con `dataDir()` de `lib/run.js`, `repoRoot` el `mainRoot` de `lib/git.js` `repoPaths(process.cwd())` o `null` fuera de un repositorio, y imprime una línea JSON `{ generatedAt, items }`), `baseline [--from <dir>]` (llama `baseline({ from: --from o dataDir(), to: dataDir() })` e imprime su resultado), `status` (imprime `status(dataDir())`) y `forget [--yes]` (imprime `forget(dataDir(), { yes })`). Un verbo desconocido o un argumento de más sale 1 con `{ "error": "usage: aether-observe hook | read | baseline [--from <dir>] | status | forget [--yes]" }`. Cada verbo menos `hook` imprime una sola línea JSON.
+- `bin/aether-observe` (CommonJS, ejecutable, delgado: solo analiza los argumentos y llama a `lib/`). Verbos: `hook` (lee la entrada JSON de stdin; llama `handleHook`; no imprime nada y sale 0 ante cualquier entrada, incluida una ilegible), `read` (llama `readObservations` con `dataDir()` de `lib/run.js`, `repoRoot` el `mainRoot` de `lib/git.js` `repoPaths(process.cwd())` o `null` fuera de un repositorio, y imprime una línea JSON `{ generatedAt, items }`), `baseline [--from <dir>]` (llama `baseline({ from: --from o dataDir(), to: dataDir(), repoRoot })`, con el mismo `repoRoot` que `read`, e imprime su resultado), `status` (imprime `status(dataDir())`) y `forget [--yes]` (imprime `forget(dataDir(), { yes })`). Un verbo desconocido o un argumento de más sale 1 con `{ "error": "usage: aether-observe hook | read | baseline [--from <dir>] | status | forget [--yes]" }`. Cada verbo menos `hook` imprime una sola línea JSON.
 - `hooks/hooks.json` añade cinco entradas, cada una con `{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook" }`: `PostToolUse` con `matcher: "ScheduleWakeup"`, y `PostToolUseFailure`, `StopFailure`, `PreCompact` y `SessionEnd` sin matcher (se usa `matcher: ""` solo si Claude Code lo exige). Se conservan `SessionStart`, `PreToolUse` y `modules` como están. Se actualiza `description` para nombrarlos.
-- `plugin.json` `userConfig.observe`: `{ "type": "string", "title": "Observation", "description": "…", "default": "standard" }`. La descripción dice que `standard` reúne solo conteos, identificadores, nombres de modelo, duraciones y códigos de error y nunca el contenido de una conversación, y que `dev` guarda además, en tu máquina, el fragmento de conversación alrededor de un fallo con claves y tokens borrados.
-- Lo que este cambio rompe y la tarea actualiza: `tests/manifest.test.js` (las claves restantes de `userConfig` incluyen `observe`), `tests/components-docs.test.js` (once bins pasan a doce: la frase «the twelve commands of `bin/`» y el conteo; las opciones pasan de seis a siete), `README.md` y `docs/getting-started.md` («six options» pasa a «seven options», con `observe` nombrado en getting-started), `docs/guide/options.md` (el texto de «six» y la fila de la tabla de opciones con `observe`, `standard` por defecto, que `tests/docs-facts.test.js` compara con el manifiesto) y `docs/reference/components.md` (la frase de los bins y una fila `aether-observe`).
+- `plugin.json` no cambia: la instalación de desarrollo no es una opción (D1 del plan), así que `userConfig` no gana ninguna clave y las seis opciones de los documentos quedan como están.
+- Lo que este cambio rompe y la tarea actualiza, y nada más: `tests/components-docs.test.js` (once bins pasan a doce: la frase «the twelve commands of `bin/`» y el conteo), `tests/docs-facts.test.js` (la comprobación de `eleven commands of `bin/``) y `docs/reference/components.md` (esa frase y una fila `aether-observe`). El resto de la prosa (README, guía, índice, `CLAUDE.md` y la frase de la huella dormida) es de la Tarea 11.
 
 **Tests (write first):**
 
@@ -1314,11 +1392,9 @@ test('the verbs that read run from any shell, with no plugin variable; a bad ver
   assert.equal(bin(['status', 'extra'], dir).status, 1)
 })
 
-test('the manifest has the observe option and hooks.json runs the five new hooks (R9, R3)', () => {
+test('hooks.json runs the five new hooks and the manifest gains no option (R3, R9)', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.userConfig.observe.type, 'string')
-  assert.equal(manifest.userConfig.observe.default, 'standard')
-  assert.equal(manifest.userConfig.observe.title, 'Observation')
+  assert.equal(manifest.userConfig.observe, undefined)
   const hooks = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks
   for (const event of ['PostToolUse', 'PostToolUseFailure', 'StopFailure', 'PreCompact', 'SessionEnd']) {
     const commands = (hooks[event] || []).flatMap((group) => group.hooks.map((h) => h.command))
@@ -1338,7 +1414,7 @@ test('the components page counts twelve bins and describes aether-observe (R16)'
 
 **Acceptance:**
 
-- Las pruebas pasan y `npm test` entero queda en verde con los conteos nuevos (doce bins, siete opciones).
+- Las pruebas pasan y `npm test` entero queda en verde con el conteo nuevo (doce bins; las opciones siguen siendo seis).
 - `npm run validate` (`claude plugin validate … --strict`) pasa sobre la plugin y sobre el mercado.
 - `aether-observe hook` no escribe nada en stdout ni en stderr en ningún caso.
 
@@ -1349,12 +1425,12 @@ test('the components page counts twelve bins and describes aether-observe (R16)'
 - Review: high — que cada afirmación coincida con el árbol
 - Area: docs
 - Owns: `docs/guide/observe.md`, `docs/index.md`, `docs/reference/components.md`, `README.md`, `CLAUDE.md`, `tests/observe-docs.test.js`
-- Depends on: Task 10 — el nombre del bin, sus verbos, la opción y los hooks ya existen
+- Depends on: Task 10 — el nombre del bin, sus verbos y los hooks ya existen, y `docs/reference/components.md` ya trae el conteo y la fila del bin
 - Serves: R16, R13
 
 **Interfaces:**
 
-- `docs/guide/observe.md`, con el front matter `title`, `description` y un `order` entero (como las demás páginas de `docs/guide/`), explica: las dos instalaciones (`standard` y `dev`) y cómo se elige (`observe`); qué reúne cada una; los cinco hooks; los verbos `hook`, `read`, `baseline`, `status` y `forget --yes`; que nada sale de la máquina y que un issue solo se abre con el sí del dueño; el resumen durable y la poda de 30 días; y las tres exenciones de R10 con su razón (`aether-voice` y `aether-autonomy start --quote`; los prompts de `delegates/briefs/` y `external/*.json`; `.aether/pending.jsonl`).
+- `docs/guide/observe.md`, con el front matter `title`, `description` y un `order` entero (como las demás páginas de `docs/guide/`), explica: los dos métodos de instalación, con su orden exacta cada uno (el estándar, `claude plugin install aether@aether-plugin`, y el de desarrollo, desde el árbol: `AETHER_OBSERVE=dev scripts/aether-lead --plugin-dir <árbol>/plugins/aether`), que la variable `AETHER_OBSERVE` no cambia nada en la instalación del mercado, y qué reúne cada una (`standard` y `dev`); que la detección corre sola al terminar una sesión del Lead y que `aether-observe read` solo la repite; los cinco hooks; los verbos `hook`, `read`, `baseline`, `status` y `forget --yes`; que nada sale de la máquina y que un issue solo se abre con el sí del dueño; el resumen durable y la poda de 30 días; y las tres exenciones de R10 con su razón (`aether-voice` y `aether-autonomy start --quote`; los prompts de `delegates/briefs/` y `external/*.json`; `.aether/pending.jsonl`).
 - `docs/index.md` enlaza la página; el README (máximo 160 líneas, con las partes en su orden) y `CLAUDE.md` la nombran y nombran `aether-observe`.
 - `docs/reference/components.md`: una frase nueva en la sección «What Aether adds to a normal session» que dice que los hooks de observación, en una sesión que no es del Lead, no escriben ni imprimen nada, que corren un proceso `node` solo en los cinco eventos, y que esto se lee del plugin y lo prueba `tests/observe-guarantees.test.js` (no se mide en una sesión real).
 
@@ -1379,7 +1455,8 @@ test('the observe guide has its front matter and says what each installation gat
   assert.match(front[1], /^title: .+/m)
   assert.match(front[1], /^description: .+/m)
   assert.match(front[1], /^order: \d+$/m)
-  for (const word of ['standard', 'dev', 'observe']) assert.ok(page.includes(`\`${word}\``), word)
+  for (const word of ['standard', 'dev', 'AETHER_OBSERVE']) assert.ok(page.includes(`\`${word}\``), word)
+  for (const order of ['claude plugin install aether@aether-plugin', 'scripts/aether-lead --plugin-dir']) assert.ok(page.includes(order), order)
   for (const verb of ['aether-observe hook', 'aether-observe read', 'aether-observe baseline', 'aether-observe status', 'aether-observe forget --yes']) assert.ok(page.includes(verb), verb)
   for (const event of ['PostToolUse', 'PostToolUseFailure', 'StopFailure', 'PreCompact', 'SessionEnd']) assert.ok(page.includes(event), event)
 })
@@ -1420,7 +1497,7 @@ test('the components page says the observation hooks do nothing in a plain sessi
 - Owns: `tests/observe-guarantees.test.js`, `plugins/aether/lib/observe*.js`, `plugins/aether/bin/aether-observe`, `plugins/aether/hooks/fault-trace.mjs`
 - Depends on: Task 10 — recorre el bin entero
 - Depends on: Task 4 — el barrido estático incluye `hooks/fault-trace.mjs`
-- Serves: R4, R10, R12, R13, R17
+- Serves: R2, R4, R9, R10, R12, R13, R17
 
 **Interfaces:**
 
@@ -1505,7 +1582,7 @@ test('in the standard installation the marked phrase reaches no file the observa
 test('the development installation keeps the context of a failure and not its key or token (C8, E9)', (t) => {
   const dir = tempDir(t); const home = tempDir(t)
   lead(dir)
-  const r = bin(['hook'], { dir, home, input: input('PostToolUseFailure', transcriptFile(dir)), env: { CLAUDE_PLUGIN_OPTION_OBSERVE: 'dev' } })
+  const r = bin(['hook'], { dir, home, input: input('PostToolUseFailure', transcriptFile(dir)), env: { AETHER_OBSERVE: 'dev' } })
   assert.equal(r.status, 0)
   assert.equal(r.stdout, '')
   const saved = files(path.join(dir, 'observe', 'dev'))
@@ -1516,11 +1593,41 @@ test('the development installation keeps the context of a failure and not its ke
   assert.equal(text.includes(KEY), false)
 })
 
+test('the installation from the marketplace stays standard even with the variable on; the one from the tree is development (C6, C7, R9)', (t) => {
+  const dir = tempDir(t); const home = tempDir(t)
+  lead(dir)
+  const transcript = transcriptFile(dir)
+  const cache = path.join(tempDir(t), 'plugins', 'cache', 'aether-plugin', 'aether', '0.19.2')
+  fs.cpSync(PLUGIN, cache, { recursive: true })
+  const run = (target) => spawnSync('node', [target, 'hook'], { input: input('PostToolUseFailure', transcript), encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dir, HOME: home, AETHER_OBSERVE: 'dev' } })
+  const installed = run(path.join(cache, 'bin', 'aether-observe'))
+  assert.deepEqual([installed.status, installed.stdout, installed.stderr], [0, '', ''])
+  assert.ok(fs.existsSync(path.join(dir, 'observe', 'events.jsonl')), 'it still gathers the standard events')
+  assert.deepEqual(files(path.join(dir, 'observe', 'dev')), [], 'and keeps no fragment')
+  const tree = run(BIN)
+  assert.equal(tree.status, 0)
+  assert.equal(files(path.join(dir, 'observe', 'dev')).length, 1)
+})
+
+test('the whole detection runs by itself when a Lead session ends, with no command run (C1, E7)', (t) => {
+  const dir = tempDir(t); const home = tempDir(t); const repo = makeRepo(t)
+  lead(dir)
+  seedSources(dir, repo)
+  const r = bin(['hook'], { dir, home, input: input('SessionEnd', transcriptFile(dir), { cwd: repo.dir }) })
+  assert.deepEqual([r.status, r.stdout, r.stderr], [0, '', ''])
+  const read = JSON.parse(fs.readFileSync(path.join(dir, 'observe', 'read.json'), 'utf8'))
+  const types = read.items.map((i) => i.type)
+  assert.ok(types.includes('rise-without-reason'))
+  assert.ok(types.includes('blocked-by-mistake'))
+  assert.ok(files(path.join(dir, 'observe', 'issues')).length >= 2)
+  for (const file of files(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes(MARK), false, file)
+})
+
 test('a session that is not the Lead: each hook writes and prints nothing, anywhere (E10, C10)', (t) => {
   const dir = tempDir(t); const home = tempDir(t)
   const transcript = transcriptFile(tempDir(t))
   for (const event of EVENTS) {
-    for (const env of [{}, { CLAUDE_PLUGIN_OPTION_OBSERVE: 'dev' }]) {
+    for (const env of [{}, { AETHER_OBSERVE: 'dev' }]) {
       const r = bin(['hook'], { dir, home, input: input(event, transcript), env })
       assert.deepEqual([r.status, r.stdout, r.stderr], [0, '', ''], event)
     }
@@ -1565,6 +1672,6 @@ test('a finding becomes a local draft and no issue is opened; nothing is written
 
 **Acceptance:**
 
-- Las pruebas pasan, sin que ninguna se haya quitado ni debilitado.
+- Las pruebas pasan, sin que ninguna se haya quitado ni debilitado: las dos instalaciones se comportan distinto (la copiada a la caché sigue siendo estándar con la variable puesta) y la detección corre sola al terminar una sesión del Lead.
 - `npm run check` pasa (pruebas, mod y validación `--strict`).
 - Al terminar, el checkout principal y el plugin instalado (0.19.2) no cambiaron y la rama `feat/self-observation` no está fundida.

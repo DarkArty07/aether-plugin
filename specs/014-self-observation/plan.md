@@ -8,6 +8,7 @@
 - **Estructura que se toca.** `bin/aether-*` son delgados y `lib/` tiene la lógica (CLAUDE.md). Hoy hay once bins; los hooks de comando son `SessionStart` y `PreToolUse` (`hooks/hooks.json`); el mod registra cada petición en `<data dir>/usage/<sesión>/`, y `aether-session-start` poda a 30 días `usage/`, `lanes/` y `sessions/`.
 - **Datos que ya existen y que se leen sin cambiar** (campos, nunca texto): `delegates/log.jsonl` (sin poda; entradas `launch`, `result`, `outcome`, `verdict`, `answer`), `lanes/<sesión>.jsonl` (30 días; `lib/lanes.js` `readLog`), `runs.jsonl`, `<repo>/.aether/pending.jsonl` (`lib/pending.js`), `<repo>/.aether/autonomy/grants.json` (`lib/autonomy.js`), `config/ladder.json`, `config/pairs.json`, `config/prices.json`.
 - **Medido en esta corrida (2026-10-23, Claude Code 2.1.309).** El binario nombra estos eventos de hook además de los dos de hoy: `PostToolUse`, `PostToolUseFailure`, `StopFailure`, `SubagentStop`, `SessionEnd`, `PreCompact`, `PostCompact`, `UserPromptSubmit`, `PermissionDenied`, `TaskCompleted` (búsqueda de cada nombre en el binario). El plan usa cinco: `PostToolUse` (solo `ScheduleWakeup`), `PostToolUseFailure`, `StopFailure`, `PreCompact` y `SessionEnd`. `UserPromptSubmit` queda fuera: su entrada es el texto del usuario.
+- **Medido al revisar (2026-10-23).** `claude plugin validate --strict` acepta los cinco nombres en un `hooks.json` y rechaza uno inventado (`unknown hook event`). Un mercado no admite la ruta de un plugin con `..` (`Path contains ".."`): un segundo archivo de mercado dentro de este repositorio no alcanza `plugins/aether`, y el mercado de la raíz ya llama `aether` a su única entrada.
 - **No hay constitución** (`.specify/memory/constitution.md` no existe).
 
 ## Gate
@@ -17,11 +18,14 @@
 
 ## Design
 
-### D1. Una sola plugin con una opción `observe`, no dos plugins. Serves: C6, C7, C8; R4, R9, R11
+### D1. Dos métodos de instalación, los dos desde este repositorio y los dos con el nombre `aether`. Serves: C6, C7, C8; R4, R9, R11
 
-La instalación estándar y la de desarrollo son **el mismo paquete** con la opción de `plugin.json` `userConfig.observe`, de texto, `standard` por defecto y `dev` para la del dueño. Se instala igual (`claude plugin install aether@aether-plugin`) y se elige al activar (o con `CLAUDE_PLUGIN_OPTION_OBSERVE=dev` en un árbol de desarrollo). Razón: dos plugins en el mercado (`aether` y `aether-dev`) duplicarían los agentes, los skills y los bins, y chocarían en el espacio de nombres `aether:`; la tarjeta no pide dos plugins, pide dos métodos de instalación. Cumple A4 con la prueba como garantía y no con el empaquetado: el código que lee conversaciones es **un solo archivo**, `lib/observe-dev.js`, que solo se carga (`require` perezoso) cuando la opción vale `dev`, y una prueba estática comprueba que ningún otro archivo de observación nombra `transcript`. Alternativa rechazada: dos plugins; se vuelve a abrir si el dueño exige que el código no viaje (pregunta Q1).
+La tarjeta pide «dos metodos de instalacion» y deja el empaquetado al diseño. Un mercado con dos entradas `aether` no cabe y un segundo mercado no alcanza el plugin (medido arriba), así que el segundo método no es otro paquete del mercado: es el árbol del repositorio, que ya es como el dueño prueba una rama.
 
-`observeMode(env)` devuelve `dev` solo con el valor exacto `dev`; cualquier otro, o ausente, es `standard`. La instalación de desarrollo incluye todo lo de la estándar (A8).
+1. **Estándar:** `claude plugin marketplace add DarkArty07/aether-plugin` y `claude plugin install aether@aether-plugin`. Instala solo `plugins/aether/`. Reúne lo de D2 y nada de conversaciones.
+2. **De desarrollo, desde el árbol:** un clon o un worktree del repositorio, lanzado con `AETHER_OBSERVE=dev scripts/aether-lead --plugin-dir <árbol>/plugins/aether` (el mismo lanzador de «Probar una rama» de `CLAUDE.md`; usa el directorio de datos `aether-inline`). Reúne todo lo de la estándar (A8) y, además, los fragmentos de D8.
+
+La separación no es una opción que el usuario conmute en la instalación estándar: `observeMode(env, root)` devuelve `dev` solo si la variable vale exactamente `dev` **y** `root` (la raíz del plugin que corre) es un árbol del repositorio, es decir, existe `<root>/../../.claude-plugin/marketplace.json` y la carpeta madre de `root` se llama `plugins`. El plugin instalado desde el mercado vive en la caché de Claude Code, fuera de ese árbol: con la variable puesta sigue siendo estándar (una prueba lo copia a una carpeta así y lo comprueba). No hay opción nueva en `userConfig`. El código que lee conversaciones es **un solo archivo**, `lib/observe-dev.js`, cargado con `require` perezoso solo en `dev`; una prueba estática comprueba que ningún otro archivo de observación nombra `transcript`. Que ese archivo viaje en la instalación estándar (sin usarse) es lo que la pregunta Q1 deja al dueño. Cumple A4 con la prueba como garantía y no con el empaquetado.
 
 ### D2. Qué reúne la estándar: eventos con lista cerrada de campos. Serves: C2, C7; R3, R4, R10
 
@@ -35,7 +39,7 @@ Cinco hooks de comando nuevos en `hooks/hooks.json` llaman todos a `aether-obser
 | `PreCompact` | `trigger` |
 | `SessionEnd` | `reason` |
 
-Más `session_id` y la hora. `cleanEvent` es la lista cerrada: solo las claves `time, session, kind, tool, class, reason, trigger, interrupted`, y un valor solo si es una palabra de forma de identificador (`^[A-Za-z0-9_.:-]{1,64}$`); lo demás se cambia por `unclassified`. La entrada de un hook trae más (el texto del error, `tool_input`, `transcript_path`, el prompt): el bin la lee entera porque así la entrega Claude Code, toma los nombres de la tabla y no abre ningún archivo ni guarda otra clave. Las líneas van a `<data dir>/observe/events.jsonl`. El hook no escribe en pantalla nunca (ni en una sesión del Lead).
+Más `session_id` y la hora (y, en `SessionEnd`, `cwd`, que solo dice dónde buscar `.aether/` para la lectura de D7 y no se guarda). `cleanEvent` es la lista cerrada: solo las claves `time, session, kind, tool, class, reason, trigger, interrupted`, y un valor solo si es una palabra de forma de identificador (`^[A-Za-z0-9_.:-]{1,64}$`); lo demás se cambia por `unclassified`. La entrada de un hook trae más (el texto del error, `tool_input`, `transcript_path`, el prompt): el bin la lee entera porque así la entrega Claude Code, toma los nombres de la tabla y no abre ningún archivo ni guarda otra clave. Las líneas van a `<data dir>/observe/events.jsonl`. El hook no escribe en pantalla nunca (ni en una sesión del Lead).
 
 ### D3. Los fallos silenciosos del mod dejan rastro (auditoría de R1). Serves: C1, C7; R1
 
@@ -87,11 +91,11 @@ Resultado: **17 reales y 14 esperados.** Un sitio real llama a `recordFault($, s
 
 ### D6. El resumen durable y la poda. Serves: C2, C5; R3, R8
 
-`lib/observe-digest.js` mantiene `<data dir>/observe/summary.json` = `{ version: 1, sessions: { <id>: entrada } }`, con la entrada de cada sesión de **solo conteos**: `first`, `last`, `events` por clase, `toolFailures` por herramienta, `faults` por fuente, `lanes` por `harness/group@effort` (`calls`, `ok`, `outputTokens`, `durationMs`, `usd`) y `seats` por `diseño/rol` (rondas). `digestSession` recalcula la entrada de una sesión desde lo que hay en disco y **nunca borra** una entrada existente cuyas fuentes ya no están; `digestAll` lo hace para cada sesión que aparece en eventos, fallos o `lanes/`. `pruneObserve` primero digiere, luego quita de `events.jsonl` las líneas de más de 30 días, y borra los archivos de fallos y los fragmentos de desarrollo de más de 30 días; el resumen no se poda (A5). Se digiere en tres lugares, para que ninguna fuente muera antes: `SessionEnd`, y al empezar una sesión del Lead, **antes** de `pruneUsage`/`pruneLog` en `aether-session-start`. Escritura atómica (archivo temporal y `rename`), como `spend-archive.js`.
+`lib/observe-digest.js` mantiene `<data dir>/observe/summary.json` = `{ version: 1, sessions: { <id>: entrada } }`, con la entrada de cada sesión de **solo conteos**: `first`, `last`, `events` por clase, `toolFailures` por herramienta, `faults` por fuente, `lanes` por `harness/group@effort` (`calls`, `ok`, `outputTokens`, `durationMs`, `usd`) y `seats` por `diseño/rol` (rondas). `digestSession` recalcula la entrada de una sesión desde lo que hay en disco y **nunca borra** una entrada existente cuyas fuentes ya no están; `digestAll` lo hace para cada sesión que aparece en eventos, fallos o `lanes/`. `pruneObserve` primero digiere, luego quita de `events.jsonl` las líneas de más de 30 días, y borra los archivos de fallos y los fragmentos de desarrollo de más de 30 días; el resumen no se poda (A5). Se digiere en tres lugares, para que ninguna fuente muera antes: `SessionEnd`; al empezar una sesión del Lead, **antes** de `pruneUsage`/`pruneLog` en `aether-session-start`; y dentro de la lectura (`readObservations` llama `digestAll` antes de leer, D7). Escritura atómica (archivo temporal y `rename`), como `spend-archive.js`.
 
-### D7. Una lectura, hallazgos ordenados y el issue redactado. Serves: C4, C9; R7, R12
+### D7. Una lectura, hallazgos ordenados y el issue redactado. Serves: C1, C4, C9; R2, R7, R12, R13
 
-`lib/observe-read.js` junta las fuentes de D4 y D5 (más el resumen durable para las sesiones cuyo registro ya se podó), corre detectores y calibración y devuelve la lista. Hallazgo: `{ id, kind: 'failure'|'calibration'|'friction', type, title, evidence: string[], numbers, firstTime, lastTime, sessions, proposal?, issue? }`. Los de clase `failure` (D4 y los fallos del mod de D3) llevan `issue: { title, body }` en Markdown con la evidencia; `friction` son los fallos de herramienta y las compactaciones por sesión. Orden: `failure`, luego `calibration`, luego `friction`; dentro de cada una, más evidencia primero, luego el más reciente, luego `id`. Los issues se escriben como texto en `<data dir>/observe/issues/<id>.md`. Nada abre una conexión ni ejecuta `gh`; una prueba estática comprueba que los archivos de observación no usan módulos de red ni de procesos. En el modo `dev` el texto del issue puede nombrar el archivo del fragmento y no copiarlo (un issue es público).
+`lib/observe-read.js` junta las fuentes de D4 y D5 (más el resumen durable para las sesiones cuyo registro ya se podó), corre detectores y calibración y devuelve la lista. Hallazgo: `{ id, kind: 'failure'|'calibration'|'friction', type, title, evidence: string[], numbers, firstTime, lastTime, sessions, proposal?, issue? }`. Los de clase `failure` (D4 y los fallos del mod de D3) llevan `issue: { title, body }` en Markdown con la evidencia; `friction` son los fallos de herramienta y las compactaciones por sesión. Orden: `failure`, luego `calibration`, luego `friction`; dentro de cada una, más evidencia primero, luego el más reciente, luego `id`. Los issues se escriben como texto en `<data dir>/observe/issues/<id>.md`, y la lista entera en `<data dir>/observe/read.json` (la última lectura: el lugar donde el dueño encuentra, al volver, lo que la lectura automática dejó). **La lectura corre sola:** el manejador de `SessionEnd` (D2) la llama después de digerir la sesión, con `cwd` de la entrada del hook como `repoRoot`, y por eso los hallazgos, la calibración y los issues redactados existen sin que el dueño corra ningún comando; el comando `read` (D10) solo la repite y la imprime. Como los detectores leen todo el historial y no solo la sesión, una sesión que murió sin `SessionEnd` queda cubierta por la siguiente. En una sesión que no es del Lead el manejador sale antes de todo y no lee nada (C10). Nada abre una conexión ni ejecuta `gh`; una prueba estática comprueba que los archivos de observación no usan módulos de red ni de procesos. En el modo `dev` el texto del issue puede nombrar el archivo del fragmento y no copiarlo (un issue es público).
 
 ### D8. Fragmentos de conversación en la de desarrollo, con claves borradas. Serves: C8; R11
 
@@ -99,11 +103,11 @@ Resultado: **17 reales y 14 esperados.** Un sitio real llama a `recordFault($, s
 
 ### D9. Línea base. Serves: C12, C13; R6, R15
 
-`lib/observe-baseline.js`: `baseline({ from, to })` lee el directorio `from` (por defecto el propio; para el real del dueño, `aether-aether-plugin`) en solo lectura y escribe `observe/baseline.json` solo en `to`. Responde con números: `approvalsByStep` (lanzamientos y aprobaciones por escalón), `noCandidate` (entradas `status: 'no-candidate'` y `took` con `cause: 'no-candidate'` de `lanes/`, contra el total de llamadas) y `haikuCost` con las dos sumas de R15 más `unpriced`: «cuesta» es el precio de los intentos de las tareas que subieron y quedaron por debajo del escalón que las aprobó; «ahorra» es, para las tareas aprobadas en Haiku, el precio de sus mismos tokens (`input`, `output`+`thinking`, `cacheRead`) al precio de `sonnet` de `prices.json` menos su precio real; un intento sin precio se cuenta en `unpriced` y no se inventa. Corre una vez sobre los registros reales como parte de la verificación (no entra en el árbol, A9).
+`lib/observe-baseline.js`: `baseline({ from, to, repoRoot })` lee el directorio `from` (por defecto el propio; para el real del dueño, `aether-aether-plugin`) en solo lectura y escribe `observe/baseline.json` solo en `to`. Lee las seis fuentes de R15, solo como campos y conteos: la bitácora de delegados y el registro de lanes (las tres respuestas de abajo), `runs.jsonl` (corridas terminadas y abandonadas, y el costo de lista de las terminadas, `report.cost.run.usd`, con su mínimo, mediana y máximo), `usage/` (sesiones y partes, sin abrir una petición), `exams/` (exámenes guardados) y `<repoRoot>/.aether/pending.jsonl` (entradas por clase; `repoRoot` es opcional y sin él cuenta cero). Responde con números: `approvalsByStep` (lanzamientos y aprobaciones por escalón), `noCandidate` (entradas `status: 'no-candidate'` y `took` con `cause: 'no-candidate'` de `lanes/`, contra el total de llamadas) y `haikuCost` con las dos sumas de R15 más `unpriced`: «cuesta» es el precio de los intentos de las tareas que subieron y quedaron por debajo del escalón que las aprobó; «ahorra» es, para las tareas aprobadas en Haiku, el precio de sus mismos tokens (`input`, `output`+`thinking`, `cacheRead`) al precio de `sonnet` de `prices.json` menos su precio real; un intento sin precio se cuenta en `unpriced` y no se inventa. Corre una vez sobre los registros reales como parte de la verificación (no entra en el árbol, A9).
 
 ### D10. Un solo bin `aether-observe`. Serves: C4, C11, C12; R3, R7, R13, R14, R15
 
-Verbos: `hook` (los cinco hooks, sin salida), `read` (la lista ordenada de D7, una línea JSON), `baseline [--from <dir>]`, `status` (lo reunido por clase y tamaño: eventos, fallos, resumen, fragmentos, issues, lecturas) y `forget --yes` (borra `<data dir>/observe/` entero; sin `--yes` imprime qué borraría y no borra nada, y es la orden de clase `delete` que el dueño da a mano). Todos menos `hook` funcionan desde cualquier shell, como `aether-report`; `hook` actúa solo en una sesión del Lead.
+Verbos: `hook` (los cinco hooks, sin salida; en `SessionEnd` digiere y corre la lectura de D7), `read` (repite la lectura de D7 y la imprime ordenada, una línea JSON), `baseline [--from <dir>]`, `status` (lo reunido por clase y tamaño: eventos, fallos, resumen, fragmentos, issues, lecturas) y `forget --yes` (borra `<data dir>/observe/` entero; sin `--yes` imprime qué borraría y no borra nada, y es la orden de clase `delete` que el dueño da a mano). Todos menos `hook` funcionan desde cualquier shell, como `aether-report`; `hook` actúa solo en una sesión del Lead.
 
 ### D11. Aislamiento de la corrida. Serves: C13; R17
 
@@ -121,32 +125,32 @@ Todos bajo `plugins/aether/` salvo que se diga. «Prueba» es un archivo de `tes
 - `lib/observe-redact.js`, `lib/observe-dev.js`: la de desarrollo (D8).
 - `lib/observe-baseline.js`: la línea base (D9).
 - `lib/observe-read.js`: la lectura (D7).
-- `lib/observe-hook.js`: el manejador de los cinco hooks (D2).
-- `bin/aether-observe`, `hooks/hooks.json`, `.claude-plugin/plugin.json` (la opción `observe`): el bin y el cableado (D10, D1). Con ellos, lo que su cambio rompe: `tests/manifest.test.js`, `tests/components-docs.test.js`, el README, `docs/getting-started.md`, `docs/guide/options.md` y `docs/reference/components.md` (once bins pasan a doce, seis opciones a siete).
-- `docs/guide/observe.md`, `docs/index.md`, `CLAUDE.md`: la documentación nueva (R16).
+- `lib/observe-hook.js`: el manejador de los cinco hooks y, en `SessionEnd`, la lectura automática (D2, D7).
+- `bin/aether-observe`, `hooks/hooks.json`: el bin y el cableado (D10). Sin opción nueva en `plugin.json` (D1). Con ellos, lo que su cambio rompe: `tests/components-docs.test.js`, `tests/docs-facts.test.js` y la frase y la fila de `docs/reference/components.md` (once bins pasan a doce).
+- `docs/guide/observe.md`, `docs/index.md`, `README.md`, `CLAUDE.md` y una frase nueva en `docs/reference/components.md`: la documentación nueva (R16).
 - Pruebas nuevas: `tests/observe.test.js`, `observe-detect`, `observe-calibrate`, `fault-trace`, `fault-sites`, `observe-digest`, `observe-dev`, `observe-baseline`, `observe-read`, `observe-hook`, `observe-bin`, `observe-docs`, `observe-guarantees` (todas `.test.js`), y `hooks/fault.test.ts`.
 
 ## Verification
 
 - Comando: `npm test`. Para el mod: `npm run test:mod`. Antes de cerrar: `npm run check` (incluye `npm run validate`, la validación `--strict` de la plugin y del mercado).
-- **C1 / R1, R2:** `observe-detect` (cada comportamiento sobre registros falsos, cero llamadas a un modelo), `fault-trace`, `fault-sites` y `fault.test.ts` (cada fallo real deja rastro y la petición no cambia).
-- **C2 / R3:** `observe-hook` y `observe-bin`: una sesión simulada con la marca de Lead, sin orden del dueño, deja un evento nuevo, un fallo del mod y su entrada en el resumen; sobre el árbol de hoy la prueba falla.
+- **C1 / R1, R2:** `observe-detect` (cada comportamiento sobre registros falsos, cero llamadas a un modelo), `fault-trace`, `fault-sites` y `fault.test.ts` (cada fallo real deja rastro y la petición no cambia); `observe-hook` y `observe-guarantees` (un `SessionEnd` de una sesión del Lead deja los hallazgos y los issues redactados sin que se corra ningún comando, y en una sesión normal no deja nada).
+- **C2 / R3:** `observe-hook` y `observe-bin`: una sesión simulada con la marca de Lead, sin orden del dueño, deja un evento nuevo y su entrada en el resumen; sobre el árbol de hoy la prueba falla. El fallo del mod de esa sesión lo cubre `fault.test.ts` (el mod no corre en las pruebas de Node), y `observe-digest` comprueba que la entrada del resumen cuenta los fallos del archivo de la sesión.
 - **C3 / R5, R6:** `observe-calibrate`, con el contenido de `config/` y `agents/` comparado antes y después.
 - **C4 / R7:** `observe-read` (orden, evidencia, texto del issue).
 - **C5 / R8:** `observe-digest` (registros de más de 30 días, la poda, el resumen completo, y la lectura que lo usa en `observe-read`).
-- **C6 / R9, R16:** `npm run validate`, `observe-bin` (el manifiesto y los hooks) y `observe-docs`; las dos instalaciones se prueban con la opción en sus dos valores.
+- **C6 / R9, R16:** `npm run validate` (plugin y mercado, `--strict`), `observe-bin` (los hooks) y `observe-docs` (los dos métodos, con sus órdenes); `observe.test.js` y `observe-guarantees` prueban cada método: dentro del árbol, con `AETHER_OBSERVE=dev`, la instalación guarda fragmentos; copiada a una carpeta de caché de Claude Code y con la misma variable, sigue siendo estándar.
 - **C7 / R4, R10:** `observe-guarantees` (la frase marcada no aparece en nada de `observe/`, en las tres lecturas y en el bin; el barrido estático de `transcript`).
 - **C8 / R11:** `observe-dev` y `observe-guarantees` (clave y token borrados, contexto presente).
 - **C9 / R12:** `observe-guarantees` (barrido estático de módulos de red y procesos, y un `gh` falso que no se llama).
 - **C10 / R13:** `observe-guarantees` (cada hook en una sesión sin marca: ni escritura ni salida) y `observe-docs` (la huella en `components.md`).
 - **C11 / R14:** `observe.test.js` (`status`, `forget`) y `observe-bin`.
-- **C12 / R15:** `observe-baseline`, y una corrida real de `aether-observe baseline --from ~/.claude/plugins/data/aether-aether-plugin` en la verificación final, con sus números en el resumen del Lead.
+- **C12 / R15:** `observe-baseline` (las seis fuentes de R15), y una corrida real de `aether-observe baseline --from ~/.claude/plugins/data/aether-aether-plugin` en la verificación final, con sus números en el resumen del Lead.
 - **C13 / R17:** `observe-guarantees` (un `HOME` desechable queda vacío) y, al terminar, `git status` del checkout principal y `claude plugin list` (0.19.2) sin cambio, y la rama sin fundir.
 - **No se verifica en esta corrida:** el comportamiento de los cinco hooks dentro de una sesión real de Claude Code (la entrada de cada uno se simula con la forma documentada); queda como la primera cosa que mirar al usarlo (Q3).
 
 ## Assumptions
 
-- **P1.** Una sola plugin con la opción `observe` (`standard` por defecto, `dev`). Reversible: la pregunta Q1.
+- **P1.** La variable que activa la de desarrollo se llama `AETHER_OBSERVE` y vale `dev`; el nombre es reversible y solo vive en `lib/observe.js` y en las órdenes de la documentación.
 - **P2.** Los cinco eventos de D2 son suficientes; `SubagentStop`, `PostCompact`, `PermissionDenied` y `TaskCompleted` se pueden añadir después sin cambiar el formato.
 - **P3.** El borrado es `aether-observe forget --yes`; sin `--yes` no borra.
 - **P4.** Los fallos del mod: un archivo por sesión, 100 entradas como máximo con un contador total.
@@ -156,7 +160,7 @@ Todos bajo `plugins/aether/` salvo que se diga. «Prueba» es un archivo de `tes
 - **P8.** Para los fallos de un pair se agrupa por `harness/model` del registro de delegados; para compararlo con su ficha se busca por `harness`, `group` y `effort` de las llamadas de `lanes/`.
 - **P9.** El costo estimado contra el real solo mira modelos con precio en `prices.json`; los demás se cuentan aparte.
 - **P10.** Los umbrales iniciales de `config/observe.json`: `pairFailures.consecutive` 3; `approval.minAttempts` 5 y `lowRate` 0.2; `pairSpeed.minCalls` 5 y `ratio` 0.5; `pairFailureRate.minCalls` 5 y `maxRate` 0.4; `designRounds.maxRounds` 6; `cost.minCalls` 3 y `ratio` 2; `blockedByMistake.repeatBlocks` 2. Son datos, el dueño los cambia sin tocar código.
-- **P11.** No se cambia el skill `using-aether`: el Lead no aprende los comandos nuevos en esta actualización; el dueño los corre o se los pide por su nombre (sugerencia al final).
+- **P11.** No se cambia el skill `using-aether`: la detección es automática (D7) y no necesita que el Lead conozca nada; el Lead no aprende los comandos `read`, `status` y `forget` en esta actualización, el dueño los corre o se los pide por su nombre (sugerencia al final).
 - **P12.** Sin versión nueva ni decisión numerada en esta corrida (A10 y el issue #50).
 
 ## Risks
@@ -165,17 +169,26 @@ Todos bajo `plugins/aether/` salvo que se diga. «Prueba» es un archivo de `tes
 - **Un nombre de campo de hook distinto del medido** (`is_interrupt`, `error`, `trigger`, `reason`). Si falta, el campo se omite y el evento se guarda igual; Q3.
 - **El rastro de un fallo del mod puede fallar a su vez** (mismo disco). Es un mejor esfuerzo: `recordFault` no lanza y no reintenta; un fallo que no se puede escribir sigue en silencio, y la prueba lo fija.
 - **Los 5 hooks lanzan un proceso `node`** en una sesión que no es del Lead. Son eventos raros (fallo de herramienta, compactación, fin de sesión, `ScheduleWakeup`), cada uno sale sin escribir; `components.md` lo mide.
+- **La lectura automática en cada `SessionEnd` recorre el historial.** Es de solo lectura y local, y sale antes de todo en una sesión que no es del Lead; si pesara, el umbral de `config/observe.json` puede añadir un mínimo de minutos entre lecturas sin cambiar el formato.
 - **La poda de 30 días contra el resumen:** el orden importa. Una sola prueba pone un registro viejo, corre el inicio de sesión y exige que el resumen conserve sus conteos.
 - **El texto del issue en el modo `dev`:** el texto nombra el fragmento y no lo copia; si no, un issue público filtraría una conversación.
 - **La spec fija «unos 31» `catch`:** el conteo real coincide (25, 5, 1); un `catch` nuevo falla `fault-sites` hasta que se clasifique.
 - **Mismo cambio de una opción y un bin rompe pruebas de documentos existentes** (conteos y tabla de opciones): están en la tarea que los cambia, no en una posterior.
+
+## Questions
+
+- **Q1. ¿Basta que la instalación de desarrollo sea el árbol del repositorio, sin una entrada propia en el mercado?** Se construye así porque un segundo mercado no alcanza `plugins/aether` y la entrada `aether` ya existe (medido en Technical context). Se vuelve a abrir si el dueño exige que `lib/observe-dev.js` no viaje en la instalación estándar: habría que mover el archivo fuera de `plugins/aether/`, y la de desarrollo lo buscaría en el árbol.
+- **Q2. ¿Entra `hooks/delegate-wait.mjs` en la auditoría de R1?** Tiene 3 `catch` y la spec solo nombra `register.js`, `delegate.mjs` y `quota-brake.mjs`; queda fuera.
+- **Q3. ¿Traen los cinco hooks los campos medidos dentro de una sesión real?** Los nombres `is_interrupt`, `error`, `trigger` y `reason` salen del binario y de la forma documentada, no de una sesión; si falta uno, el evento se guarda sin él. Es lo primero que se mira al usarlo.
+- **Q4. ¿«Costo estimado» de C3 es `costPerTaskUsd` de la ficha o el costo del plan contra el real de `runs.jsonl`?** Se construye lo primero (P9, D5). Lo segundo se podría añadir como otra señal; `runs.jsonl` ya entra en la línea base (D9).
+- **Q5. ¿`forget` debe borrar también `usage/`, `lanes/` y `delegates/`, que la observación lee?** No: E11 habla de «lo reunido», y esos tres son registros que el plugin ya tenía antes de esta corrida; `forget` borra solo `observe/` (D10). Si el dueño los quiere dentro, es otra orden de clase `delete`.
 
 ## Complexity
 
 | Violation | Why needed | Simpler alternative rejected because |
 | --- | --- | --- |
 | Un bin nuevo, `aether-observe` (12.º de `bin/`) con cinco verbos | R3 (el hook), R7 (la lectura), R14 (ver y borrar) y R15 (la línea base) | Añadir los verbos a `aether-report`: ese bin carga la lógica de gasto en cada llamada y el hook corre en cada fallo de herramienta; un bin propio arranca solo lo que usa y deja `aether-report` sin cambio |
-| La opción `observe` en `userConfig` | R9 y R11: es lo que separa las dos instalaciones | Dos plugins en el mercado: duplican agentes, skills y bins y chocan en `aether:`; una variable de entorno sola no se ve en la tabla de opciones ni la prueba `docs-facts` |
+| `observeMode(env, root)`: la variable `AETHER_OBSERVE` más la comprobación de que la raíz es un árbol del repositorio | R9 y R11: es lo que separa las dos instalaciones sin un segundo paquete | Dos plugins en el mercado: duplican agentes, skills y bins y chocan en `aether:`; una opción de `userConfig`: cualquiera la activa desde la instalación estándar y no hay dos métodos |
 | Un resumen durable con su digestión (`observe-digest.js`) | R8: la poda de 30 días borra el uso y el registro de lanes, y la pausa dura semanas | Alargar la poda de `usage/` y `lanes/`: guarda las peticiones enteras y no conserva solo conteos |
 | `config/observe.json` con los umbrales | R2 y R5, con la asunción A7: los umbrales son datos, como los de `ladder.json` | Constantes en el código: el dueño tendría que tocar código para recalibrar |
 | `hooks/fault-trace.mjs` y 17 llamadas en `register.js` y `delegate.mjs` | R1: cada fallo real que el mod traga debe dejar rastro | Un único `catch` global: no distingue los 14 casos esperados y deja la lista de la auditoría sin prueba |
