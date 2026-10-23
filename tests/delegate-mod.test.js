@@ -141,6 +141,54 @@ test('an external delegate that does not deliver is left to the model, at the mo
   assert.equal(asked, 1)
 })
 
+const READ_ONLY_EXTERNAL = { ...EXTERNAL, edits: false }
+const answersOf = (calls) => calls.runs.filter((r) => r.argv[2] === 'answer')
+
+test('a read-only external delegate that does not deliver is answered by the model: its answer is recorded for the attempt (R6, issue 83)', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, external: READ_ONLY_EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: false, status: 'quota', text: null }], answer: [{ recorded: true }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  let asked = 0
+  const model = async function* () { asked += 1; return { answer: 'from the model', stopReason: 'end_turn' } }
+  const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.equal(asked, 1)
+  assert.equal(result.answer, 'from the model')
+  const recorded = answersOf(calls)
+  assert.equal(recorded.length, 1, 'the answer of the attempt is recorded once')
+  assert.deepEqual(recorded[0].argv.slice(recorded[0].argv.indexOf('--task')), ['--task', 't1', '--attempt', '1', '--text', 'from the model'])
+})
+
+test('the rescue of a read-only external delegate records its answer once, at the last step, not at the first', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, external: READ_ONLY_EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: false, status: 'quota', text: null }], answer: [{ recorded: true }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  const replies = [{ answer: '', stopReason: 'tool_use' }, { answer: 'found it', stopReason: 'end_turn' }]
+  const model = async function* () { return replies.shift() }
+  const first = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.equal(first.result.stopReason, 'tool_use')
+  assert.equal(answersOf(calls).length, 0, 'a step that calls a tool records nothing')
+  const second = await collect(delegates.step($, { index: 1, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.equal(second.result.answer, 'found it')
+  const recorded = answersOf(calls)
+  assert.equal(recorded.length, 1)
+  assert.deepEqual(recorded[0].argv.slice(recorded[0].argv.indexOf('--task')), ['--task', 't1', '--attempt', '1', '--text', 'found it'])
+})
+
+test('a read-only external delegate that delivers records no answer: the agent ends at its first step', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, external: READ_ONLY_EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: true, status: 'ok', text: 'branch aether/r/task-1' }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  let asked = 0
+  const model = async function* () { asked += 1; return { answer: 'from the model', stopReason: 'end_turn' } }
+  const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.equal(result.answer, 'branch aether/r/task-1')
+  assert.equal(asked, 0, 'no model request')
+  assert.equal(answersOf(calls).length, 0, 'the delegate delivered: nothing to answer')
+})
+
 test('an external delegate that fails after beats shows the beats and then the answer of the model (R14)', async () => {
   const { $ } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: false }, { done: true, ok: false, status: 'no-candidate', text: null }] })
   const delegates = createDelegates()

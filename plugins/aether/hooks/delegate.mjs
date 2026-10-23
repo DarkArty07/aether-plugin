@@ -13,9 +13,9 @@
 // delegate is the whole delegate: `aether-delegate start` launches it, waitSteps waits for it, and a text event, a
 // heartbeat, goes out after every wait that did not end, because the engine kills an agent whose step emits nothing for
 // 600 s (Task 17 measured it). The delegate's text is the agent's answer, with no model request. A delegate that fails
-// is left to the model, at the model of the plan, which is already the one of the step. Every step of an `answerOf`
-// agent goes through the model unchanged, and the last one records its answer with `aether-delegate answer`: it is the
-// answer that `verdict` checks (R6).
+// is left to the model, at the model of the plan, which is already the one of the step. Every later step of an
+// `external` agent and every step of an `answerOf` agent goes through the model unchanged, and the last one records
+// its answer with `aether-delegate answer`: it is the answer that `verdict` checks (R6).
 //
 // Any failure of the mod (an exception, a non-zero exit, a line that is not JSON, a skipped plan) leaves the call as the
 // Lead made it.
@@ -70,8 +70,9 @@ function rewriteOf(plan) {
 const notesOf = (plan) => (Array.isArray(plan.notes) ? plan.notes.filter(isText) : [])
 
 // The delegate of an external harness: the whole first step of its agent. Yields a heartbeat after every wait that did
-// not end, before it waits again, and the delegate's text as the answer when it delivers; any other end is the model's.
-async function* runExternal($, e, next, ctx, external) {
+// not end, before it waits again, and the delegate's text as the answer when it delivers; any other end is the model's,
+// which records the answer of the attempt like any read-only step on Claude (answerOf: { task, attempt }).
+async function* runExternal($, e, next, ctx, external, answerOf) {
   let delivered = null
   try {
     const started = await delegate($, ctx, ['start', '--id', external.id], START_TIMEOUT_MS)
@@ -90,7 +91,7 @@ async function* runExternal($, e, next, ctx, external) {
   } catch {
     delivered = null
   }
-  if (delivered === null) return yield* next(e)
+  if (delivered === null) return yield* runAnswering($, e, next, ctx, answerOf)
   yield { kind: 'text', index: 0, text: delivered }
   yield { kind: 'stop', stopReason: 'end_turn', usage: null }
   return { turnId: e.turnId, index: e.index, answer: delivered, toolUses: [], stopReason: 'end_turn', usage: null }
@@ -119,7 +120,7 @@ export function createDelegates() {
   let written = 0
   // prompt → the { id, external, answerOf } of the calls that carry it, oldest first, until their spawn binds them.
   const byPrompt = new Map()
-  // agent id → its { id, external, answerOf }; only the agents that have a first step to run or a last answer to record.
+  // agent id → its { id, attempt, external, answerOf }; only the agents that have a first step to run or a last answer to record.
   const byAgent = new Map()
 
   // Only a call with something to do at its agent is remembered. A task has one attempt at a time: a record of the same
@@ -128,7 +129,7 @@ export function createDelegates() {
     const external = isObject(plan.external) && isText(plan.external.id) ? plan.external : null
     const answerOf = isObject(plan.answerOf) && isText(plan.answerOf.task) ? plan.answerOf : null
     if (typeof prompt !== 'string' || !isText(plan.id) || (external === null && answerOf === null)) return null
-    const routed = { id: plan.id, external, answerOf }
+    const routed = { id: plan.id, attempt: plan.attempt, external, answerOf }
     const waiting = (byPrompt.get(prompt) ?? []).filter((other) => other.id !== routed.id)
     waiting.push(routed)
     byPrompt.set(prompt, waiting)
@@ -201,13 +202,11 @@ export function createDelegates() {
     async *step($, e, next, ctx) {
       const routed = isObject(e) && isText(e.agentId) ? byAgent.get(e.agentId) : undefined
       if (!routed) return yield* next(e)
-      if (routed.external !== null) {
-        // The delegate runs once, and only as the first step of its agent.
-        if (e.index !== 0) return yield* next(e)
-        byAgent.delete(e.agentId)
-        return yield* runExternal($, e, next, ctx, routed.external)
-      }
-      return yield* runAnswering($, e, next, ctx, routed.answerOf)
+      // An external route answers as an answerOf one does: the model's last step records the attempt's answer.
+      const answerOf = routed.external !== null ? { task: routed.id, attempt: routed.attempt } : routed.answerOf
+      // The delegate runs once, and only as the first step of its agent; the route stays for the later steps.
+      if (routed.external !== null && e.index === 0) return yield* runExternal($, e, next, ctx, routed.external, answerOf)
+      return yield* runAnswering($, e, next, ctx, answerOf)
     },
 
     // Nothing runs in the background any more; the method stays so that its callers do not change.

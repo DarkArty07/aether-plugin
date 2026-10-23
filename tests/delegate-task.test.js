@@ -217,6 +217,32 @@ test('a read-only delegate on Claude is approved only with its answer, not empty
   assert.match(again.error, /README\.md/, 'a file that was dirty at begin counts when its content changed')
 })
 
+test('a read-only attempt on an external pair records what was dirty at its launch; an editing one records no dirty set (R6, issue 84)', async (t) => {
+  const repo = makeRepo(t)
+  fs.appendFileSync(path.join(repo.dir, 'README.md'), 'dirty before the delegate\n')
+  const { deps, dataDir } = world(t, { cwd: repo.dir, settings: EXTERNAL, pick: GROK })
+  const plan = await task.begin(call(BRIEF('r1')), deps)
+  assert.equal(plan.external.edits, false)
+  assert.equal(plan.answerOf, null, 'a plan with an external pair names no answer of its own')
+  const launch = entries(dataDir, 'r1').find((e) => e.kind === 'launch')
+  assert.equal(typeof launch.dirty, 'object')
+  assert.notEqual(launch.dirty, null)
+  assert.ok(Object.hasOwn(launch.dirty, 'README.md'), 'the file dirty before the launch is in its set')
+  await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), deps)
+  assert.equal(entries(dataDir, 'e1').find((e) => e.kind === 'launch').dirty, null, 'an editing launch records no dirty set')
+})
+
+test('an external read-only attempt that the rescue answered is approved over a dirty checkout it did not touch (R6, issue 84)', async (t) => {
+  const repo = makeRepo(t)
+  fs.appendFileSync(path.join(repo.dir, 'README.md'), 'dirty before the delegate\n')
+  const { deps, dataDir } = world(t, { cwd: repo.dir, settings: EXTERNAL, pick: GROK })
+  await task.begin(call(BRIEF('r1')), deps)
+  log.appendEntry(dataDir, { kind: 'result', task: 'r1', attempt: 1, session: 's1', time: 5000, ok: false, status: 'quota', pair: GROK, checks: null })
+  log.appendEntry(dataDir, { kind: 'answer', task: 'r1', attempt: 1, session: 's1', time: 5001, text: 'found it' })
+  const approved = await task.verdict({ task: 'r1', verdict: 'approve' }, deps)
+  assert.deepEqual([approved.ok, approved.error], [true, undefined])
+})
+
 test('an approve of an external result uses the checks its run recorded (C6)', async (t) => {
   const { deps, dataDir } = world(t)
   await task.begin(call(BRIEF('t1', 'AETHER-OWNS: src/**\n')), deps)
