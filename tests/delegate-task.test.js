@@ -281,6 +281,20 @@ test('each step asks the pair of the points of its own model, and a correction k
   assert.equal(risen.external.pin, null)
 })
 
+test('the note of a correction of a task that edits names the pinned pair, not the pick of the retry effort (issue 87)', async (t) => {
+  const retry = { id: 'grok/grok-4.7@xhigh', harness: 'grok', model: 'grok-4.7', effort: 'xhigh', group: 'grok' }
+  const { deps, dataDir } = world(t, { settings: EXTERNAL, pick: retry })
+  const more = 'AETHER-OWNS: src/**\nAETHER-TESTS: npm test\n'
+  const first = await task.begin(call(BRIEF('t1', more)), deps)
+  assert.match(first.notes.join(' '), /on grok grok-4\.7 xhigh \(pair grok\/grok-4\.7@xhigh\)/, 'a first attempt runs on the pick')
+  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: GROK, checks: { ok: true } })
+  await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
+  const fixed = await task.begin(call(BRIEF('t1', more)), deps)
+  const note = fixed.notes.join(' ')
+  assert.match(note, /pair of its earlier attempt, grok\/grok-4\.7@high/)
+  assert.doesNotMatch(note, /@xhigh/, 'the pick of the retry effort does not run')
+})
+
 test('a read-only task has no edits; with no pair it runs on Claude at the model of its step (E11, R14)', async (t) => {
   const readOnly = world(t, { settings: EXTERNAL, pick: GROK })
   assert.equal((await task.begin(call(BRIEF('r1')), readOnly.deps)).external.edits, false)

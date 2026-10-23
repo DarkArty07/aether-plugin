@@ -103,9 +103,10 @@ test('a task whose external delegate ended ok ran on its pair; one that did not 
 
 test('a refused relaunch is not an attempt and not where the task ran (issue 85)', (t) => {
   const dataDir = tempDir(t, 'aether-data-')
+  const first = launch('done', 'haiku', 1, 'first')
   const outcome = at({ kind: 'outcome', id: 'done', attempt: 1, status: 'ok', harness: 'agy', model: 'm-a', effort: 'low' })
   const refused = at({ kind: 'launch', task: 'done', step: null, attempt: 2, launchKind: 'refused', description: 'again', effort: 'low', edits: false })
-  for (const entry of [launch('done', 'haiku', 1, 'first'), outcome, verdict('done', 'haiku', 1, 'approved', { step: null, kind: 'done', cause: null }), refused]) log.appendEntry(dataDir, entry)
+  for (const entry of [first, outcome, verdict('done', 'haiku', 1, 'approved', { step: null, kind: 'done', cause: null }), refused]) log.appendEntry(dataDir, entry)
   const row = delegatesReport({ dataDir }).delegations.find((d) => d.id === 'done')
   assert.deepEqual([row.attempts, row.step, row.applied, row.ranOn.harness, row.ranOn.model, row.fallback], [1, 'haiku', 'external', 'agy', 'm-a', null])
   assert.equal(delegatesReport({ dataDir }).ladder.steps[0].attempts, 1)
@@ -113,6 +114,26 @@ test('a refused relaunch is not an attempt and not where the task ran (issue 85)
   const other = tempDir(t, 'aether-data-')
   log.appendEntry(other, at({ kind: 'launch', task: 'lone', step: null, attempt: 1, launchKind: 'refused', description: 'x', effort: 'low', edits: false }))
   assert.deepEqual(delegatesReport({ dataDir: other }).delegations, [])
+})
+
+test('an editing task has no outcome: where it ran comes from its result (issue 86)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const edit = (task) => at({ kind: 'launch', task, step: 'haiku', attempt: 1, launchKind: 'first', description: `d-${task}`, effort: 'high', edits: true })
+  const result = (task, extra) => at({ kind: 'result', task, attempt: 1, ...extra })
+  const PAIR = { id: 'agy/gemini-3.8-flash@medium', harness: 'agy', model: 'gemini-3.8-flash', effort: 'medium' }
+  for (const entry of [edit('on-agy'), result('on-agy', { ok: true, status: 'done', pair: PAIR }), edit('rescued'), result('rescued', { ok: false, status: 'no-candidate', pair: null })]) log.appendEntry(dataDir, entry)
+  const rows = Object.fromEntries(delegatesReport({ dataDir }).delegations.map((d) => [d.id, d]))
+  assert.deepEqual([rows['on-agy'].applied, rows['on-agy'].ranOn, rows['on-agy'].fallback], ['external', { harness: 'agy', model: 'gemini-3.8-flash', effort: 'medium' }, null])
+  assert.deepEqual([rows.rescued.applied, rows.rescued.ranOn.harness, rows.rescued.ranOn.model, rows.rescued.fallback], ['external', 'claude', 'haiku', 'external no-candidate'])
+})
+
+test('a later attempt that ran on Claude is not credited to the pair of an earlier one (issue 86)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const first = launch('up', 'haiku', 1, 'first')
+  const outcome = at({ kind: 'outcome', id: 'up', attempt: 1, status: 'ok', harness: 'agy', model: 'm-a', effort: 'low' })
+  for (const entry of [first, outcome, launch('up', 'sonnet', 2, 'rise')]) log.appendEntry(dataDir, entry)
+  const row = delegatesReport({ dataDir }).delegations.find((d) => d.id === 'up')
+  assert.deepEqual([row.applied, row.ranOn.harness, row.ranOn.model, row.fallback, row.attempts], ['rewritten', 'claude', 'sonnet', null, 2])
 })
 
 test('an old-journal row whose id is a task of the new log gives way to the new one', (t) => {

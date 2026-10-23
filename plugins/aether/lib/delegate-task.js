@@ -335,8 +335,12 @@ function nextLaunch(entries, ladder) {
   return { status: 'open', step: state.step, launchKind: kind === 'rise' ? 'rise' : 'fix', verdict: lastVerdict.entry, attempt }
 }
 
-function stepNote(id, step, attempt, launchKind, args, pick) {
-  const where = pick ? `on ${pick.harness} ${pick.model} ${pick.effort} (pair ${pick.id}), with claude ${args.model} ${args.effort} as its rescue` : `on claude ${args.model} ${args.effort}`
+// `pinned` is the pair that a correction of a task that edits asks for first (the pair of the earlier attempt): the lane
+// command takes it before any other and drops it only when it cannot serve, so it is the pair the note names.
+function stepNote(id, step, attempt, launchKind, args, pick, pinned = null) {
+  let where = `on claude ${args.model} ${args.effort}`
+  if (pick && pinned) where = `on the pair of its earlier attempt, ${pinned}, kept for a correction of a task that edits (the next candidate takes it if that pair cannot serve), with claude ${args.model} ${args.effort} as its rescue`
+  else if (pick) where = `on ${pick.harness} ${pick.model} ${pick.effort} (pair ${pick.id}), with claude ${args.model} ${args.effort} as its rescue`
   return `Aether delegate task ${id}: step ${step}, attempt ${attempt} (${launchKind}), runs ${where}. Judge it with aether-delegate verdict --task ${id}.`
 }
 
@@ -412,7 +416,7 @@ async function begin(input, deps = {}) {
       const of = relaunchOf(r.dataDir, session, id, brief)
       if (of !== null) log.appendEntry(r.dataDir, { kind: 'relaunch', time, session, task: id, of })
     }
-    notes.push(stepNote(id, step, attempt, launchKind, args, pick))
+    notes.push(stepNote(id, step, attempt, launchKind, args, pick, edits ? pin : null))
     return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: onClaudeReadOnly ? { task: id, attempt } : null })
   } catch (err) {
     return emptyPlan({ id: isId(id) ? id : null, error: messageOf(err) })

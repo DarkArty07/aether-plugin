@@ -18,27 +18,39 @@ const last = (list) => list[list.length - 1]
 // attempt and not where the task ran.
 const isAttempt = (entry) => entry.kind === 'launch' && entry.launchKind !== 'refused'
 
-// Where a task of the log ran. An external attempt that ended ok ran on its outcome's pair. One that did not was
-// rerun on Claude (the step's model, the launch's effort) and the row says why in `fallback`; a task with no outcome
-// at all ran on Claude, rewritten.
+// Where a task of the log ran, by what came after its latest launch (an earlier attempt's pair says nothing of a later
+// one that ran on Claude). A read-only external attempt writes `outcome` entries; one that ended ok ran on its pair. An
+// editing one writes only a `result`, whose `pair` says where it ran. An external attempt that did not end ok was rerun
+// on Claude (the step's model, the launch's effort) and the row says why in `fallback`; a launch with neither ran on
+// Claude, rewritten.
 function rowOfTask(id, entries) {
   const launches = entries.filter(isAttempt)
-  const outcomes = entries.filter((e) => e.kind === 'outcome')
   const first = launches[0]
   const latest = last(launches)
+  const since = (entry) => entry.time >= latest.time
+  const outcomes = entries.filter((e) => e.kind === 'outcome' && since(e))
+  const results = entries.filter((e) => e.kind === 'result' && since(e))
   const outcome = outcomes.length > 0 ? last(outcomes) : null
+  const result = outcome === null && results.length > 0 ? last(results) : null
   const onClaude = { harness: 'claude', model: latest.step, effort: latest.effort ?? null }
-  const failed = outcome !== null && outcome.status !== 'ok'
   let ranOn = onClaude
-  if (outcome && !failed) ranOn = { harness: outcome.harness, model: outcome.model, effort: outcome.effort }
+  let status = 'ok'
+  if (outcome) {
+    status = outcome.status
+    if (status === 'ok') ranOn = { harness: outcome.harness, model: outcome.model, effort: outcome.effort }
+  } else if (result) {
+    status = result.ok === true && result.pair ? 'ok' : result.status || 'failed'
+    if (status === 'ok') ranOn = { harness: result.pair.harness, model: result.pair.model, effort: result.pair.effort }
+  }
+  const external = outcome !== null || result !== null
   return {
     id,
     time: first.time,
     session: first.session,
     description: first.description,
-    applied: outcome ? 'external' : 'rewritten',
+    applied: external ? 'external' : 'rewritten',
     ranOn,
-    fallback: failed ? `external ${outcome.status}` : null,
+    fallback: external && status !== 'ok' ? `external ${status}` : null,
     step: latest.step,
     attempts: launches.length,
   }
