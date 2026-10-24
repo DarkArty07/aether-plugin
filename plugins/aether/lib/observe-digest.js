@@ -44,6 +44,23 @@ function bump(map, key, by = 1) {
   map.set(key, (map.get(key) || 0) + by)
 }
 
+// One event counted the way the digest counts it, by kind and, for a failed tool call, by tool. The prune uses the
+// same function for the events it takes away, so the tally and the digest have the same shape.
+function countEvent(kinds, tools, event) {
+  bump(kinds, String(event.kind))
+  if (event.kind === 'PostToolUseFailure' && typeof event.tool === 'string') bump(tools, event.tool)
+}
+
+// Adds two maps of counts key by key; a missing or unreadable map counts as empty.
+function addCounts(base, extra) {
+  const sum = new Map()
+  for (const source of [base, extra]) {
+    if (!isObject(source)) continue
+    for (const [key, value] of Object.entries(source)) bump(sum, key, finite(value))
+  }
+  return Object.fromEntries(sum)
+}
+
 // What one session left in each source: the events, the faults and the lane log, already filtered by session.
 function entryOf(events, faults, laneEntries, prices) {
   const times = []
@@ -54,8 +71,7 @@ function entryOf(events, faults, laneEntries, prices) {
     const tools = new Map()
     for (const event of events) {
       times.push(event.time)
-      bump(kinds, String(event.kind))
-      if (event.kind === 'PostToolUseFailure' && typeof event.tool === 'string') bump(tools, event.tool)
+      countEvent(kinds, tools, event)
     }
     out.events = Object.fromEntries(kinds)
     out.toolFailures = Object.fromEntries(tools)
@@ -108,21 +124,33 @@ function entryOf(events, faults, laneEntries, prices) {
 }
 
 // The new figures replace the old ones source by source; a source that is gone (already pruned) leaves the
-// old figures as they were, and the span only widens.
+// old figures as they were, and the span only widens. A session with a pruned tally adds it to what is on disk:
+// the events that the prune took away are not in the fresh figures, and the tally is what keeps them.
 function merge(previous, fresh) {
   const before = isObject(previous) ? previous : {}
+  const pruned = isObject(before.pruned) ? before.pruned : null
   const pick = (name) => (fresh[name] !== undefined ? fresh[name] : before[name] !== undefined ? before[name] : {})
+  const counted = (name) => (pruned ? addCounts(fresh[name], pruned[name]) : pick(name))
   const spans = [before.first, fresh.first].filter((n) => typeof n === 'number')
   const ends = [before.last, fresh.last].filter((n) => typeof n === 'number')
-  return {
+  const entry = {
     first: spans.length ? Math.min(...spans) : 0,
     last: ends.length ? Math.max(...ends) : 0,
-    events: pick('events'),
-    toolFailures: pick('toolFailures'),
+    events: counted('events'),
+    toolFailures: counted('toolFailures'),
     faults: pick('faults'),
     lanes: pick('lanes'),
     seats: pick('seats'),
   }
+  if (pruned) entry.pruned = pruned
+  return entry
+}
+
+// The events of a session before its watermark are in its pruned tally already. A prune writes the tally, then
+// rewrites the events file: if it stopped in between, those lines are still on disk and must not be counted twice.
+function watermarkOf(sessions, session) {
+  const entry = sessions.get(session)
+  return isObject(entry) && isObject(entry.pruned) && typeof entry.pruned.before === 'number' ? entry.pruned.before : -Infinity
 }
 
 const hasSource = (fresh) => Object.keys(fresh).length > 0
@@ -188,8 +216,9 @@ function readLaneSessions(dataDir) {
 }
 
 function sourcesOf(dataDir) {
+  const sessions = new Map(Object.entries(readSummary(dataDir).sessions))
   return {
-    events: groupBySession(readEvents(dataDir)),
+    events: groupBySession(readEvents(dataDir).filter((event) => !(event.time < watermarkOf(sessions, event.session)))),
     faults: groupBySession(readFaults(dataDir)),
     lanes: readLaneSessions(dataDir),
   }
@@ -226,15 +255,45 @@ function pruneObserve(dataDir, { days = 30, now = Date.now() } = {}) {
     text = fs.readFileSync(eventsFile(dataDir), 'utf8')
   } catch {}
   if (text !== null) {
+    const sessions = new Map(Object.entries(readSummary(dataDir).sessions))
+    const tallies = new Map()
     const kept = []
     for (const line of text.split('\n')) {
       if (!line.trim()) continue
-      let time
+      let event = null
       try {
-        time = JSON.parse(line).time
+        event = JSON.parse(line)
       } catch {}
-      if (typeof time === 'number' && time < cutoff) removed.events += 1
-      else kept.push(line)
+      const time = isObject(event) ? event.time : undefined
+      if (typeof time !== 'number' || time >= cutoff) {
+        kept.push(line)
+        continue
+      }
+      removed.events += 1
+      // A line below the watermark is in its session's tally already (see watermarkOf): only the rest is tallied.
+      if (isSession(event.session) && time >= watermarkOf(sessions, event.session)) {
+        if (!tallies.has(event.session)) tallies.set(event.session, { kinds: new Map(), tools: new Map() })
+        const tally = tallies.get(event.session)
+        countEvent(tally.kinds, tally.tools, event)
+      }
+    }
+    // The tally is written first, atomically, and the events file after it: a stop in between leaves the lines on
+    // disk below the watermark, which the digest and the next prune then do not count again.
+    if (tallies.size) {
+      for (const [id, tally] of tallies) {
+        const entry = isObject(sessions.get(id)) ? sessions.get(id) : {}
+        const prior = isObject(entry.pruned) ? entry.pruned : {}
+        const before = Math.max(watermarkOf(sessions, id), cutoff)
+        sessions.set(id, {
+          ...entry,
+          pruned: {
+            events: addCounts(prior.events, Object.fromEntries(tally.kinds)),
+            toolFailures: addCounts(prior.toolFailures, Object.fromEntries(tally.tools)),
+            before,
+          },
+        })
+      }
+      writeAtomic(summaryFile(dataDir), `${JSON.stringify({ version: 1, sessions: Object.fromEntries(sessions) })}\n`)
     }
     if (removed.events) writeAtomic(eventsFile(dataDir), kept.length ? `${kept.join('\n')}\n` : '')
   }

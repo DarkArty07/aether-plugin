@@ -132,3 +132,57 @@ test('a lane call is priced as /spend prices it, with the thinking tokens that a
   assert.equal(lane.pricedCalls, 1)
   assert.equal(lane.outputTokens, 1000)
 })
+
+// The events of one session on both sides of the 30-day cut: the prune removes the old lines one by one, so the
+// summary must keep their counts (the pruned tally) and the next digest must not overwrite them with the rest.
+test('a session whose events straddle the prune keeps the counts of the lines pruned (C5)', (t) => {
+  const dir = tempDir(t)
+  const now = Date.UTC(2026, 9, 23)
+  const old = now - 40 * DAY
+  const lines = [
+    { time: old, session: 's-cut', kind: 'PostToolUseFailure', tool: 'Bash' },
+    { time: old + 1, session: 's-cut', kind: 'PostToolUseFailure', tool: 'Edit' },
+    { time: old + 2, session: 's-cut', kind: 'PreCompact', trigger: 'auto' },
+    { time: now - DAY, session: 's-cut', kind: 'PostToolUseFailure', tool: 'Bash' },
+    { time: now - DAY + 1, session: 's-cut', kind: 'SessionEnd' },
+  ]
+  for (const line of lines) observe.appendEvent(dir, line)
+  const all = { events: { PostToolUseFailure: 3, PreCompact: 1, SessionEnd: 1 }, toolFailures: { Bash: 2, Edit: 1 } }
+  const counts = () => {
+    const entry = digest.readSummary(dir).sessions['s-cut']
+    return { events: entry.events, toolFailures: entry.toolFailures }
+  }
+
+  digest.digestAll(dir)
+  assert.deepEqual(counts(), all)
+  for (let round = 0; round < 2; round += 1) {
+    assert.equal(digest.pruneObserve(dir, { days: 30, now }).events, round === 0 ? 3 : 0)
+    digest.digestSession(dir, 's-cut')
+    assert.deepEqual(counts(), all)
+  }
+  const settled = digest.readSummary(dir)
+  digest.digestAll(dir)
+  assert.deepEqual(digest.readSummary(dir), settled)
+})
+
+// A prune that stops after it wrote the tally and before it rewrote the events file: the old lines are still on
+// disk. Their counts must come from the tally only, once, and the next prune removes them without counting again.
+test('a prune interrupted before it rewrote the events file counts the old lines once (C5)', (t) => {
+  const dir = tempDir(t)
+  const now = Date.UTC(2026, 9, 23)
+  const old = now - 40 * DAY
+  observe.appendEvent(dir, { time: old, session: 's-cut', kind: 'PostToolUseFailure', tool: 'Bash' })
+  observe.appendEvent(dir, { time: now - DAY, session: 's-cut', kind: 'PostToolUseFailure', tool: 'Bash' })
+  const eventsPath = path.join(dir, 'observe', 'events.jsonl')
+  digest.digestAll(dir)
+  const beforePrune = fs.readFileSync(eventsPath, 'utf8')
+  digest.pruneObserve(dir, { days: 30, now })
+  fs.writeFileSync(eventsPath, beforePrune)
+  digest.digestSession(dir, 's-cut')
+  const entry = digest.readSummary(dir).sessions['s-cut']
+  assert.deepEqual(entry.toolFailures, { Bash: 2 })
+  assert.deepEqual(entry.events, { PostToolUseFailure: 2 })
+  assert.equal(digest.pruneObserve(dir, { days: 30, now }).events, 1)
+  assert.deepEqual(digest.readSummary(dir).sessions['s-cut'].toolFailures, { Bash: 2 })
+  assert.deepEqual(digest.readSummary(dir).sessions['s-cut'].events, { PostToolUseFailure: 2 })
+})
