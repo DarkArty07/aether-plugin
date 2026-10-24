@@ -1,5 +1,5 @@
 {
-  "description": "Aether: the SessionStart bootstrap and stale-run sweep, and the usage meter mod",
+  "description": "Aether: the SessionStart bootstrap and stale-run sweep, the guard before writes and shell commands, the five observation hooks (PostToolUse of ScheduleWakeup, PostToolUseFailure, StopFailure, PreCompact and SessionEnd), and the usage meter mod",
   "hooks": {
     "SessionStart": [
       {
@@ -28,6 +28,58 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-guard\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "ScheduleWakeup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook",
+            "timeout": 30
           }
         ]
       }
