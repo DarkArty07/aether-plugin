@@ -11,9 +11,9 @@ The Lead writes the owner's intent card and launches `/aether:design`, which run
 
 Plain `claude` stays normal mode.
 
-<p align="center"><img src="https://img.shields.io/badge/version-0.19.2-blue" alt="version 0.19.2"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
+<p align="center"><img src="https://img.shields.io/badge/version-0.20.0-blue" alt="version 0.20.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
 
-Version 0.19.2 ([changelog](docs/changelog.md))
+Version 0.20.0 ([changelog](docs/changelog.md))
 
 Aether serves five goals, **RADAR**.
 
