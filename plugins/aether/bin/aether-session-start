@@ -5,8 +5,8 @@
 // gets no output, no file and no sweep. For the Lead it marks the session, hands the superdelegation
 // option to the session's commands through CLAUDE_ENV_FILE, and, on startup, clear and
 // compact, injects the using-aether bootstrap, points to an open autonomous run, sweeps
-// stale runs in the session's repository, and prunes old usage files, lane logs and
-// session markers.
+// stale runs in the session's repository, and prunes old usage files, lane logs,
+// observation files and session markers (the observation digest keeps their counts first).
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -50,9 +50,10 @@ function autonomyNote() {
   }
 }
 
-// The usage meter's files grow with every session, and so do the lane log, the observation files and the session
-// markers: sessions not written to for 30 days go, from all of them, after the observation digest has kept their counts. A session whose spend cannot
-// be archived stays, and the prunes leave a trace of it in prune-failures.json (lib/spend-archive.js).
+// The usage meter's files grow with every session, and so do the lane log, the observation files and the
+// session markers: sessions not written to for 30 days go, from all of them, after the observation digest has
+// kept their counts. A session whose spend cannot be archived stays, and the prunes leave a trace of it in
+// prune-failures.json (lib/spend-archive.js).
 function pruneOldFiles() {
   let dir = null
   try {

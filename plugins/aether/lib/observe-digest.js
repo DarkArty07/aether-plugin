@@ -8,7 +8,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { eventsFile, faultsDir, devDir, summaryFile, readEvents, readFaults } = require('./observe.js')
-const { logFile } = require('./lanes.js')
+const { logFile, laneTokens } = require('./lanes.js')
 const { loadPrices, priceEntry } = require('./prices.js')
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -84,7 +84,8 @@ function entryOf(events, faults, laneEntries, prices) {
         if (item.status === 'ok') lane.ok += 1
         lane.outputTokens += finite(usage.output)
         lane.durationMs += finite(item.durationMs)
-        const usd = priceEntry({ model: item.model, input: finite(usage.input), output: finite(usage.output), cacheRead: finite(usage.cacheRead), cacheWrite: 0, agent: 'lane' }, prices)
+        // Priced as /spend and aether-report price a lane call: laneTokens adds the thinking tokens that agy counts.
+        const usd = priceEntry({ model: item.model, ...laneTokens(usage), agent: 'lane' }, prices)
         if (usd !== null) {
           lane.usd += usd
           lane.pricedCalls += 1

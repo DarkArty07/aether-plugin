@@ -10,6 +10,7 @@ const { tempDir, PLUGIN, SESSION_BIN } = require('./helpers.js')
 const observe = require(path.join(PLUGIN, 'lib', 'observe.js'))
 const digest = require(path.join(PLUGIN, 'lib', 'observe-digest.js'))
 const lanes = require(path.join(PLUGIN, 'lib', 'lanes.js'))
+const { loadPrices, priceEntry } = require(path.join(PLUGIN, 'lib', 'prices.js'))
 const DAY = 24 * 60 * 60 * 1000
 
 const call = (time, status) => JSON.stringify({ kind: 'call', time, session: 's', harness: 'agy', group: 'flash', effort: 'medium', model: 'gemini-3.8-flash-medium', status, durationMs: 10000, usage: { input: 5, output: 1000, thinking: 0, cacheRead: 0, total: 1005 }, prompt: 'ZEBRA' })
@@ -114,4 +115,20 @@ test('an unreadable summary reads as empty, and the prune also removes old dev f
   fs.utimesSync(path.join(dir, 'observe', 'dev', 'd-new'), new Date(now), new Date(now))
   assert.deepEqual(digest.pruneObserve(dir, { days: 30, now }), { events: 0, faults: 0, dev: 1 })
   assert.deepEqual(fs.readdirSync(path.join(dir, 'observe', 'dev')), ['d-new'])
+})
+
+test('a lane call is priced as /spend prices it, with the thinking tokens that agy counts (R8)', (t) => {
+  const dir = tempDir(t)
+  const usage = { input: 5, output: 1000, thinking: 4000, cacheRead: 0, total: 5005 }
+  const model = 'gemini-3.8-flash-medium'
+  const entry = { kind: 'call', time: 7000, session: 's-think', harness: 'agy', group: 'flash', effort: 'medium', model, status: 'ok', durationMs: 10000, usage }
+  fs.mkdirSync(path.join(dir, 'lanes'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'lanes', 's-think.jsonl'), `${JSON.stringify(entry)}\n`)
+  const expected = priceEntry({ model, ...lanes.laneTokens(usage), agent: 'lane' }, loadPrices())
+  const withoutThinking = priceEntry({ model, input: 5, output: 1000, cacheRead: 0, cacheWrite: 0, agent: 'lane' }, loadPrices())
+  assert.notEqual(expected, withoutThinking)
+  const lane = digest.digestSession(dir, 's-think').lanes['agy/flash@medium']
+  assert.equal(lane.usd, expected)
+  assert.equal(lane.pricedCalls, 1)
+  assert.equal(lane.outputTokens, 1000)
 })
