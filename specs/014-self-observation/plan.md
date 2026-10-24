@@ -1,6 +1,6 @@
 # Plan: el plugin se observa a sí mismo
 
-**Spec:** [spec.md](spec.md). Este plan no repite sus criterios (C1 a C13), escenarios (E1 a E14) ni requisitos (R1 a R17): los cita.
+**Spec:** [spec.md](spec.md). Este plan no repite sus criterios (C1 a C14), escenarios (E1 a E15) ni requisitos (R1 a R18): los cita.
 
 ## Technical context
 
@@ -14,7 +14,7 @@
 ## Gate
 
 - Nada especulativo, y nada para una necesidad hipotética. **Pasa.** Cada pieza de abajo sirve a un requisito; el diseño no añade modificar el código propio (A1), ni canal de salida, ni más hooks de los cinco.
-- Ninguna abstracción, opción, archivo o dependencia que ningún requisito pida. **Pasa**, con las seis piezas que la tabla de Complexity nombra, cada una atada a un requisito. Sin dependencias nuevas.
+- Ninguna abstracción, opción, archivo o dependencia que ningún requisito pida. **Pasa**, con las siete piezas que la tabla de Complexity nombra, cada una atada a un requisito. Sin dependencias nuevas.
 
 ## Design
 
@@ -23,7 +23,7 @@
 La tarjeta pide «dos metodos de instalacion» y deja el empaquetado al diseño. Un mercado con dos entradas `aether` no cabe y un segundo mercado no alcanza el plugin (medido arriba), así que el segundo método no es otro paquete del mercado: es el árbol del repositorio, que ya es como el dueño prueba una rama.
 
 1. **Estándar:** `claude plugin marketplace add DarkArty07/aether-plugin` y `claude plugin install aether@aether-plugin`. Instala solo `plugins/aether/`. Reúne lo de D2 y nada de conversaciones.
-2. **De desarrollo, desde el árbol:** un clon o un worktree del repositorio, lanzado con `AETHER_OBSERVE=dev scripts/aether-lead --plugin-dir <árbol>/plugins/aether` (el mismo lanzador de «Probar una rama» de `CLAUDE.md`; usa el directorio de datos `aether-inline`). Reúne todo lo de la estándar (A8) y, además, los fragmentos de D8.
+2. **De desarrollo, desde el árbol:** un clon o un worktree del repositorio, lanzado con `AETHER_OBSERVE=dev scripts/aether-lead --plugin-dir <árbol>/plugins/aether` (el mismo lanzador de «Probar una rama» de `CLAUDE.md`; usa el directorio de datos `aether-inline`). Reúne todo lo de la estándar (A8) y, además, los fragmentos de D8 y las correcciones del dueño de D12.
 
 La separación no es una opción que el usuario conmute en la instalación estándar: `observeMode(env, root)` devuelve `dev` solo si la variable vale exactamente `dev` **y** `root` (la raíz del plugin que corre) es un árbol del repositorio, es decir, existe `<root>/../../.claude-plugin/marketplace.json` y la carpeta madre de `root` se llama `plugins`. El plugin instalado desde el mercado vive en la caché de Claude Code, fuera de ese árbol: con la variable puesta sigue siendo estándar (una prueba lo copia a una carpeta así y lo comprueba). No hay opción nueva en `userConfig`. El código que lee conversaciones es **un solo archivo**, `lib/observe-dev.js`, cargado con `require` perezoso solo en `dev`; una prueba estática comprueba que ningún otro archivo de observación nombra `transcript`. Que ese archivo viaje en la instalación estándar (sin usarse) es lo que la pregunta Q1 deja al dueño. Cumple A4 con la prueba como garantía y no con el empaquetado.
 
@@ -115,6 +115,17 @@ Verbos: `hook` (los cinco hooks, sin salida; en `SessionEnd` digiere y corre la 
 
 Todo corre en la rama `feat/self-observation` y su worktree. Ninguna prueba toca el directorio de datos real: todas fijan `AETHER_DATA_DIR` a un directorio desechable. La única lectura del directorio real es la de la línea base, por `--from`, sin escribir. No se sube, no se publica, no se funde.
 
+### D12. Las correcciones del dueño, solo en la de desarrollo. Serves: C14, C8, C7, C9; R18
+
+Al terminar el diseño quedó fuera la detección de las correcciones del dueño al Lead: exige leer lo que el dueño escribe, y `UserPromptSubmit` (descartado en Technical context) lo entrega en cada mensaje. El dueño pidió añadirla solo en la de desarrollo («Adelante implmentalo»). Se hace sin ese hook y sin ningún evento nuevo: se lee al terminar la sesión.
+
+1. **Cuándo y dónde.** En `SessionEnd`, solo con `observeMode(env) === 'dev'`, después de `digestSession` y **antes** de `readObservations` (si la lectura corriera primero, el hallazgo de esta sesión solo aparecería en la lectura de la siguiente). `handleHook` pasa la entrada entera a `captureCorrections` de `lib/observe-dev.js`, como ya hace con `captureFragment`: `lib/observe-hook.js` no nombra la conversación, no abre ningún archivo de la entrada y no guarda su ruta, y `lib/observe-dev.js`, cargado con `require` perezoso dentro de la rama `dev`, sigue siendo el único archivo que la nombra (el barrido estático de `observe-guarantees` sigue valiendo).
+2. **Qué mensajes.** Los que el dueño escribió, tal como los clasifica `ownerMessages` de `lib/voice.js` (excluye resultados de herramientas, registros meta y cadenas laterales). Se recorre el archivo una vez, línea por línea, llamando `ownerMessages([línea])` por cada una, para saber también qué dijo el Lead justo antes. Un mensaje se guarda si contiene una frase de `correctionPatterns` de `config/observe.json` (`{ es: [...], en: [...] }`) como palabra completa, sin distinguir mayúsculas y tomando el apóstrofo tipográfico (’) por el recto ('). Son listas cerradas y son datos (P13), no código. Es una heurística de palabras, no un juicio: da falsos positivos (`again`, `wrong`) y no ve correcciones sin esas palabras, y el hallazgo lo dice. No hay modelo ni red.
+3. **Qué se guarda.** Hasta `corrections.maxPerSession` (20) coincidencias por sesión; de cada una, el mensaje del dueño pasado por `redact` y cortado a sus primeros 400 caracteres, y los últimos 400 caracteres del último texto del Lead antes de él (último bloque de texto de un registro `assistant` que no sea de una cadena lateral), también por `redact`. Se borra antes de cortar, para que un corte no deje la mitad de una clave sin reconocer. Un archivo por sesión, `observe/dev/<sesión>/corrections.json` = `{ session, time, count, items: [{ time, owner, before }] }`, con permisos `600`, escrito de forma atómica y **reescrito** en cada `SessionEnd` (la misma conversación da el mismo archivo: es idempotente). Sin coincidencias no se crea archivo. Vive en la carpeta de la sesión de `observe/dev/`, así que la poda de 30 días y `forget` ya lo cubren y `status` lo cuenta en la clase `dev`; el tope de 50 fragmentos de D8 no lo cuenta. No entra en `summary.json` (el resumen solo lee eventos, fallos y `lanes/`) ni en un issue redactado (un issue puede nombrar el archivo).
+4. **La lectura.** `readObservations` añade, solo si existe `observe/dev/<sesión>/corrections.json`, un hallazgo `kind: 'friction'`, `type: 'owner-correction'`, `id: 'owner-correction:<sesión>'`, con `numbers: { count }`, la primera y la última hora, y de evidencia el conteo, las horas, el nombre del archivo y una línea que dice que es una heurística de palabras. Lee de ese archivo solo `count` y las horas; nunca `owner` ni `before`. En la estándar el archivo no existe y no aparece nada.
+5. **La estándar.** `handleHook` no carga `observe-dev.js`, no abre `transcript_path` y no llama `ownerMessages`. La garantía de C7 se amplía con una prueba de punta a punta: una conversación falsa con un mensaje del dueño que trae una frase de corrección y la palabra marcada ZEBRA, pasada por un `SessionEnd` en modo estándar, no deja ningún archivo bajo `observe/` con ZEBRA ni la carpeta `observe/dev`.
+6. **Fuera.** Detectar «preguntas innecesarias» del Lead (demasiado difuso), cualquier llamada a un modelo, cualquier red y cualquier cambio en lo que reúne la estándar.
+
 ## Files
 
 Todos bajo `plugins/aether/` salvo que se diga. «Prueba» es un archivo de `tests/`.
@@ -125,12 +136,13 @@ Todos bajo `plugins/aether/` salvo que se diga. «Prueba» es un archivo de `tes
 - `hooks/fault-trace.mjs`, y los cambios en `hooks/register.js` y `hooks/delegate.mjs`: el rastro de los 17 sitios (D3). `hooks/quota-brake.mjs` no cambia: su único `catch` es esperado.
 - `lib/observe-digest.js` y `bin/aether-session-start`: el resumen durable y su lugar en la poda (D6).
 - `lib/observe-redact.js`, `lib/observe-dev.js`: la de desarrollo (D8).
+- `lib/observe-dev.js` (`scanCorrections`, `captureCorrections`), `lib/observe-hook.js`, `lib/observe-read.js`, `config/observe.json` (las listas y el tope) y `docs/guide/observe.md`: las correcciones del dueño en la de desarrollo (D12), con `tests/observe-corrections.test.js`.
 - `lib/observe-baseline.js`: la línea base (D9).
 - `lib/observe-read.js`: la lectura (D7).
 - `lib/observe-hook.js`: el manejador de los cinco hooks y, en `SessionEnd`, la lectura automática (D2, D7).
 - `bin/aether-observe`, `hooks/hooks.json`: el bin y el cableado (D10). Sin opción nueva en `plugin.json` (D1). Con ellos, lo que su cambio rompe: `tests/components-docs.test.js`, `tests/docs-facts.test.js` y la frase y la fila de `docs/reference/components.md` (once bins pasan a doce).
 - `docs/guide/observe.md`, `docs/index.md`, `README.md`, `CLAUDE.md` y una frase nueva en `docs/reference/components.md`: la documentación nueva (R16).
-- Pruebas nuevas: `tests/observe.test.js`, `observe-detect`, `observe-calibrate`, `fault-trace`, `fault-sites`, `observe-digest`, `observe-dev`, `observe-baseline`, `observe-read`, `observe-hook`, `observe-bin`, `observe-docs`, `observe-guarantees` (todas `.test.js`), y `hooks/fault.test.ts`.
+- Pruebas nuevas: `tests/observe.test.js`, `observe-detect`, `observe-calibrate`, `fault-trace`, `fault-sites`, `observe-digest`, `observe-dev`, `observe-baseline`, `observe-read`, `observe-hook`, `observe-bin`, `observe-docs`, `observe-guarantees`, `observe-corrections` (todas `.test.js`), y `hooks/fault.test.ts`.
 
 ## Verification
 
@@ -148,6 +160,7 @@ Todos bajo `plugins/aether/` salvo que se diga. «Prueba» es un archivo de `tes
 - **C11 / R14:** `observe.test.js` (`status`, `forget`) y `observe-bin`.
 - **C12 / R15:** `observe-baseline` (las seis fuentes de R15), y una corrida real de `aether-observe baseline --from ~/.claude/plugins/data/aether-aether-plugin` en la verificación final, con sus números en el resumen del Lead.
 - **C13 / R17:** `observe-guarantees` (un `HOME` desechable queda vacío) y, al terminar, `git status` del checkout principal y `claude plugin list` (0.19.2) sin cambio, y la rama sin fundir.
+- **C14 / R18:** `observe-corrections` (las frases en español e inglés con palabras completas, el tope y el límite de bytes, el archivo `600` que se reescribe, la poda, el hallazgo sin texto en la lectura, el `SessionEnd` de desarrollo que lo deja en la misma lectura, y la estándar con la palabra marcada: sin `observe/dev`, sin ZEBRA, sin abrir la conversación ni llamar `ownerMessages`).
 - **No se verifica en esta corrida:** el comportamiento de los cinco hooks dentro de una sesión real de Claude Code (la entrada de cada uno se simula con la forma documentada); queda como la primera cosa que mirar al usarlo (Q3).
 
 ## Assumptions
@@ -164,6 +177,7 @@ Todos bajo `plugins/aether/` salvo que se diga. «Prueba» es un archivo de `tes
 - **P10.** Los umbrales iniciales de `config/observe.json`: `pairFailures.consecutive` 3; `approval.minAttempts` 5 y `lowRate` 0.2; `pairSpeed.minCalls` 5 y `ratio` 0.5; `pairFailureRate.minCalls` 5 y `maxRate` 0.4; `designRounds.maxRounds` 6; `cost.minCalls` 3 y `ratio` 2; `blockedByMistake.repeatBlocks` 2. Son datos, el dueño los cambia sin tocar código.
 - **P11.** No se cambia el skill `using-aether`: la detección es automática (D7) y no necesita que el Lead conozca nada; el Lead no aprende los comandos `read`, `status` y `forget` en esta actualización, el dueño los corre o se los pide por su nombre (sugerencia al final).
 - **P12.** Sin versión nueva ni decisión numerada en esta corrida (A10 y el issue #50).
+- **P13.** Las correcciones (D12): `correctionPatterns` inicial, `es`: «eso no», «no era», «te dije», «ya te dije», «otra vez», «no quiero», «está mal», «incorrecto», «no es lo que»; `en`: «that's not», «i said», «wrong», «again», «not what i». `corrections.maxPerSession` 20 y `corrections.maxScanBytes` 20000000 (20 MB; una línea se examina solo si termina antes de ese byte). 400 caracteres a cada lado. Todo es dato de `config/observe.json` y el dueño lo cambia sin tocar código. El límite de bytes lo añade el plan para que la cota de tiempo no dependa solo de que haya coincidencias.
 
 ## Risks
 
@@ -177,6 +191,7 @@ Todos bajo `plugins/aether/` salvo que se diga. «Prueba» es un archivo de `tes
 - **El texto del issue en el modo `dev`:** el texto nombra el fragmento y no lo copia; si no, un issue público filtraría una conversación.
 - **La spec fija «unos 31» `catch`:** el conteo real coincide (25, 5, 1); un `catch` nuevo falla `fault-sites` hasta que se clasifique.
 - **Mismo cambio de una opción y un bin rompe pruebas de documentos existentes** (conteos y tabla de opciones): están en la tarea que los cambia, no en una posterior.
+- **Las correcciones por palabras: falsos positivos y coste dentro del presupuesto de `SessionEnd` (D12).** `again` o `wrong` aparecen en mensajes que no corrigen nada, y se escapan correcciones que no usan esas palabras: la lectura dice que es una heurística, no muestra el texto y las listas son datos que el dueño ajusta. El coste: el recorrido corre dentro del hook de `SessionEnd` (1500 ms por omisión; ver el riesgo anterior de ese presupuesto) y una conversación puede pesar decenas de MB. Por eso está acotado: lee el archivo una vez, línea por línea y en trozos de 64 KiB, nunca entero, y se detiene en las 20 coincidencias o en `corrections.maxScanBytes`, lo que ocurra primero; una conversación más larga se lee solo hasta ese byte y las correcciones posteriores no se ven. Corre antes de la lectura, así que un recorrido lento le quita tiempo; el límite de bytes es lo que lo acota. Como el resto del manejador, no lanza, y el archivo se escribe de forma atómica: si el hook muere, queda el del cierre anterior y no uno a medias.
 
 ## Questions
 
@@ -196,3 +211,4 @@ Todos bajo `plugins/aether/` salvo que se diga. «Prueba» es un archivo de `tes
 | `config/observe.json` con los umbrales | R2 y R5, con la asunción A7: los umbrales son datos, como los de `ladder.json` | Constantes en el código: el dueño tendría que tocar código para recalibrar |
 | `hooks/fault-trace.mjs` y 17 llamadas en `register.js` y `delegate.mjs` | R1: cada fallo real que el mod traga debe dejar rastro | Un único `catch` global: no distingue los 14 casos esperados y deja la lista de la auditoría sin prueba |
 | La lista cerrada `cleanEvent` y el módulo `observe-dev.js` aparte | R4, R10 y R11: lo que la estándar guarda es demostrablemente un conjunto cerrado, y el código que lee conversaciones es un solo archivo | Guardar la entrada del hook y filtrar al leer: la frase marcada llegaría al disco; leer el transcript en el manejador del hook: no se puede probar que la estándar no lo hace |
+| `scanCorrections` y `captureCorrections` en `observe-dev.js`, dos claves de `config/observe.json` y un archivo `corrections.json` por sesión | R18: detectar las correcciones del dueño solo en la de desarrollo, sin modelo ni red, y mostrarlas sin su texto | Un hook `UserPromptSubmit`: entrega el texto del dueño en cada mensaje, también a la estándar, y lo rompe en el manejador; juzgar las correcciones con un modelo: sale de la máquina y gasta cuota; guardar la conversación entera: C8 y R11 lo prohíben |

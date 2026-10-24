@@ -23,12 +23,13 @@ Todo cuelga de `<data dir>/observe/`:
 | `faults/<sesión>.json` | `{ session, count, faults: [{ time, source, class }] }`, hasta 100 entradas |
 | `summary.json` | `{ version: 1, sessions: { <id>: entrada } }` (la entrada, en la Tarea 5) |
 | `dev/<sesión>/<hora>-<evento>.json` | un fragmento de conversación (solo en `dev`) |
+| `dev/<sesión>/corrections.json` | las correcciones del dueño de esa sesión: `{ session, time, count, items: [{ time, owner, before }] }` (solo en `dev`, Tarea 13) |
 | `issues/<id>.md` | el issue redactado de un hallazgo `failure`, con `id` cambiando todo carácter fuera de `[A-Za-z0-9._-]` por `-` |
 | `baseline.json`, `read.json` | el resultado de la línea base y el de la última lectura (la que el manejador de `SessionEnd` corre solo, o la del dueño) |
 
 Un **hallazgo** es `{ id, kind: 'failure'|'calibration'|'friction', type, title, evidence: string[], numbers: object, firstTime, lastTime, sessions: string[], proposal?: string, issue?: { title, body } }`.
 
-Los **umbrales** de `config/observe.json` (Tarea 1): `pairFailures.consecutive` 3; `approval.minAttempts` 5, `approval.lowRate` 0.2; `pairSpeed.minCalls` 5, `pairSpeed.ratio` 0.5; `pairFailureRate.minCalls` 5, `pairFailureRate.maxRate` 0.4; `designRounds.maxRounds` 6; `cost.minCalls` 3, `cost.ratio` 2; `blockedByMistake.repeatBlocks` 2.
+Los **umbrales** de `config/observe.json` (Tarea 1): `pairFailures.consecutive` 3; `approval.minAttempts` 5, `approval.lowRate` 0.2; `pairSpeed.minCalls` 5, `pairSpeed.ratio` 0.5; `pairFailureRate.minCalls` 5, `pairFailureRate.maxRate` 0.4; `designRounds.maxRounds` 6; `cost.minCalls` 3, `cost.ratio` 2; `blockedByMistake.repeatBlocks` 2. La Tarea 13 añade a ese archivo `correctionPatterns` y `corrections`, que no son umbrales.
 
 ## Aether Execution
 
@@ -50,6 +51,7 @@ Los **umbrales** de `config/observe.json` (Tarea 1): `pairFailures.consecutive` 
 - [ ] T010 [US11] El bin `aether-observe`, los hooks y los conteos que su cambio rompe, en `bin/aether-observe` y `hooks/hooks.json` → Task 10
 - [ ] T011 [P] [US7] La documentación de la observación, en `docs/guide/observe.md` → Task 11
 - [ ] T012 [P] [US8] Las pruebas de las garantías de punta a punta, en `tests/observe-guarantees.test.js` → Task 12
+- [ ] T013 [US15] Las correcciones del dueño, solo en la instalación de desarrollo, en `lib/observe-dev.js`, `lib/observe-hook.js`, `lib/observe-read.js` y `config/observe.json` → Task 13
 
 ### Task 1: El almacén de observe/
 
@@ -75,7 +77,7 @@ Los **umbrales** de `config/observe.json` (Tarea 1): `pairFailures.consecutive` 
 - `status(dataDir): { classes, bytes }`. `classes` tiene exactamente las claves `events`, `faults`, `summary`, `dev`, `issues`, `baseline`, `read`, cada una `{ files, bytes }` (suma recursiva de los archivos de esa clase bajo `observe/`; `baseline` es `baseline.json`, `read` es `read.json`); `bytes` es la suma.
 - `forget(dataDir, { yes }): { deleted: boolean, files: number }`. `files` es el número de archivos bajo `observe/` antes de borrar. Con `yes === true` borra `observe/` entera y nada más y da `deleted: true`; si no, no borra nada y da `deleted: false`.
 
-`config/observe.json` tiene exactamente las siete claves de los umbrales del contrato.
+`config/observe.json` tiene las siete claves de los umbrales del contrato (la Tarea 13 le añade después `correctionPatterns` y `corrections`, que no son umbrales).
 
 `tests/helpers.js`: añade `'AETHER_OBSERVE'` a `AETHER_VARIABLES` (en orden alfabético, después de `'AETHER_LANE_HARNESSES'`), porque `lib/observe.js` lee `env.AETHER_OBSERVE` y `tests/env-scrub.test.js` falla si el código lee un nombre `AETHER_*` que la lista no trae; así una suite lanzada desde una sesión de desarrollo (`AETHER_OBSERVE=dev`) no la hereda. No se lista en las `CONSTANTS` de esa prueba, que no se toca.
 
@@ -176,7 +178,8 @@ test('status counts files and bytes by class, and forget deletes only observe/ a
 
 test('the thresholds are data in config/observe.json (A7)', () => {
   const cfg = observe.loadObserveConfig()
-  assert.deepEqual(Object.keys(cfg).sort(), ['approval', 'blockedByMistake', 'cost', 'designRounds', 'pairFailureRate', 'pairFailures', 'pairSpeed'])
+  const thresholds = Object.keys(cfg).filter((key) => !['correctionPatterns', 'corrections'].includes(key))
+  assert.deepEqual(thresholds.sort(), ['approval', 'blockedByMistake', 'cost', 'designRounds', 'pairFailureRate', 'pairFailures', 'pairSpeed'])
   assert.deepEqual(cfg.pairFailures, { consecutive: 3 })
   assert.deepEqual(cfg.approval, { minAttempts: 5, lowRate: 0.2 })
   assert.deepEqual(cfg.pairSpeed, { minCalls: 5, ratio: 0.5 })
@@ -1714,3 +1717,332 @@ test('a finding becomes a local draft and no issue is opened; nothing is written
 - Las pruebas pasan, sin que ninguna se haya quitado ni debilitado: las dos instalaciones se comportan distinto (la copiada a la caché sigue siendo estándar con la variable puesta) y la detección corre sola al terminar una sesión del Lead.
 - `npm run check` pasa (pruebas, mod y validación `--strict`).
 - Al terminar, el checkout principal y el plugin instalado (0.19.2) no cambiaron y la rama `feat/self-observation` no está fundida.
+
+### Task 13: Las correcciones del dueño, solo en la instalación de desarrollo
+
+**Aether:**
+- Tier: sonnet high — recorre lo que el dueño escribe: el orden, los cortes y las palabras completas los fijan las pruebas, pero el cableado cruza cuatro archivos de tareas anteriores
+- Review: xhigh — lee texto del usuario: no debe abrirse en la estándar ni salir en el resumen, en la lectura o en un issue; el recorrido tiene que estar acotado
+- Area: dev
+- Owns: `plugins/aether/lib/observe-dev.js`, `plugins/aether/lib/observe-hook.js`, `plugins/aether/lib/observe-read.js`, `plugins/aether/config/observe.json`, `docs/guide/observe.md`, `tests/observe-corrections.test.js`
+- Depends on: Task 6 — extiende `plugins/aether/lib/observe-dev.js` (`redact` y `captureFragment` ya existen)
+- Depends on: Task 8 — extiende `plugins/aether/lib/observe-read.js` con el hallazgo `owner-correction`
+- Depends on: Task 9 — extiende `plugins/aether/lib/observe-hook.js`: el `SessionEnd` de la rama `dev`
+- Depends on: Task 11 — edita la guía `docs/guide/observe.md` que esa tarea escribe
+- Serves: R18, R10
+
+Esta tarea comparte archivos con las Tareas 6, 8, 9 y 11 porque depende de ellas (se ejecuta después, nunca en la misma ola): solo **añade** a esos archivos y no cambia ninguna interfaz que ya exista, salvo el tope de 50 fragmentos de `captureFragment`, que ya no cuenta `corrections.json`. Es solo para la instalación de desarrollo (D12 del plan): `plugins/aether/lib/observe-hook.js` y `plugins/aether/lib/observe-read.js` **no** pueden contener la palabra «transcript» (el barrido de la Tarea 12 lo exige), y en la estándar nada de esto se carga.
+
+**Interfaces:**
+
+`plugins/aether/config/observe.json` añade, junto a los siete umbrales que ya tiene, exactamente estas dos claves (datos, no código; el dueño las edita):
+
+```json
+"correctionPatterns": {
+  "es": ["eso no", "no era", "te dije", "ya te dije", "otra vez", "no quiero", "está mal", "incorrecto", "no es lo que"],
+  "en": ["that's not", "i said", "wrong", "again", "not what i"]
+},
+"corrections": { "maxPerSession": 20, "maxScanBytes": 20000000 }
+```
+
+`plugins/aether/lib/observe-dev.js` (sigue siendo el único archivo de observación que nombra la conversación) añade a sus exportaciones:
+
+- `scanCorrections(transcriptPath: string, cfg: object): { count: number, items: { time: string, owner: string, before: string }[] }`. `cfg` es lo que devuelve `loadObserveConfig()`; lee `cfg.correctionPatterns` y `cfg.corrections`. Nunca lanza: una ruta que no es texto, un archivo ilegible o una `cfg` sin esas claves dan `{ count: 0, items: [] }` (o lo hallado hasta el error). `count === items.length`. Reglas:
+  - Lee el archivo **una vez**, en trozos de 64 KiB cortados en líneas, nunca entero. Una línea se examina solo si termina (con su salto de línea) en el byte `corrections.maxScanBytes` o antes; en la primera que termina después, o al llegar a `corrections.maxPerSession` coincidencias, deja de leer.
+  - De cada línea: si es un registro `assistant` que no es de una cadena lateral (`isSidechain !== true`) y su texto (los bloques `text` unidos) no está en blanco, ese texto es «lo último que dijo el Lead». Después llama `ownerMessages([línea])` de `voice.js`: si devuelve un mensaje, es un mensaje del dueño; si no, la línea no lo es (resultados de herramientas, registros meta y cadenas laterales ya quedan fuera por ese lado).
+  - Un mensaje del dueño coincide si contiene alguna frase de las dos listas como palabra completa, sin distinguir mayúsculas: la frase en minúsculas, el apóstrofo tipográfico (’) tomado por el recto ('), los espacios de la frase como `\s+`, y «completa» es que ni antes ni después haya una letra, un dígito o un guion bajo (`\p{L}`, `\p{N}`, `_` con la bandera `u`). Se compila una sola vez por llamada.
+  - Cada coincidencia da un elemento: `time` es la hora del mensaje que da `ownerMessages` (`''` si no la trae); `owner` es el texto del mensaje pasado por `redact` de `observe-redact.js` y cortado a sus primeros 400 caracteres; `before` son los últimos 400 caracteres de lo último que dijo el Lead (se toman antes sus últimos 2000 caracteres, se pasan por `redact` y se cortan), o `''` si el Lead aún no había dicho nada. Se borra **antes** de cortar el lado del dueño, para que el corte no deje la mitad de una clave sin reconocer.
+- `captureCorrections({ dataDir, session, input, now, cfg = loadObserveConfig() }): string | null`. Si `session` no encaja en `/^[A-Za-z0-9-]+$/`, o `input` no es un objeto con `transcript_path` de texto, devuelve `null`. Llama `scanCorrections(input.transcript_path, cfg)`; sin coincidencias devuelve `null` sin crear nada. Con ellas escribe `<dataDir>/observe/dev/<session>/corrections.json` = `{ session, time: now, count, items }` (carpeta `0o700`, archivo `0o600`, de forma atómica: archivo temporal del mismo directorio y `rename`, que no queda) y devuelve su ruta; lo **reescribe** en cada llamada, así que la misma conversación da el mismo archivo. Nunca lanza.
+- `captureFragment` (Tarea 6): su tope de 50 archivos por sesión no cuenta `corrections.json`.
+
+`plugins/aether/lib/observe-hook.js`: en `handleHook`, con `event === 'SessionEnd'` y `observeMode(env) === 'dev'`, llama `captureCorrections({ dataDir, session, input, now })` **después** de `digestSession` y **antes** de `readObservations`, para que la lectura de ese mismo `SessionEnd` ya traiga el hallazgo. Pasa `input` entero (como hace con `captureFragment`: el archivo no nombra la conversación, no abre nada de la entrada y no guarda ninguna ruta) y usa el mismo `require` perezoso de `observe-dev.js` de la rama `dev`; no se añade ningún `require` de ese archivo arriba. La forma de lo que devuelve `handleHook` no cambia (`fragment` sigue siendo `null` en `SessionEnd`). En la instalación estándar y en una sesión que no es del Lead no cambia nada: no se carga `observe-dev.js`, no se abre ningún archivo de la entrada y no se llama `ownerMessages`.
+
+`plugins/aether/lib/observe-read.js`: `readObservations` recorre las carpetas de sesión de `devDir(dataDir)` (solo nombres que encajen en `/^[A-Za-z0-9-]+$/`) y, solo para las que tienen `corrections.json` legible, añade un hallazgo `{ id: 'owner-correction:<sesión>', kind: 'friction', type: 'owner-correction', title: 'Owner corrections in session <sesión>: <count>', evidence, numbers: { count }, firstTime, lastTime, sessions: ['<sesión>'] }` (sin `issue`). Lee de ese archivo solo `count` (número finito mayor que cero; si no, se salta la sesión) y la hora de cada elemento (`time`); **nunca** `owner` ni `before`. `firstTime` y `lastTime` son el menor y el mayor `Date.parse(time)` de los elementos con hora válida (milisegundos), o, si ninguno la tiene, el `time` del archivo. `evidence` son exactamente estas cuatro líneas, en este orden: `` `${count} owner message(s) matched the correction word lists of config/observe.json` ``; `` `first ${ISO de firstTime}, last ${ISO de lastTime}` `` (con `new Date(ms).toISOString()`); `` `file: observe/dev/${sesión}/corrections.json` ``; y `This is a heuristic of words, not a judgment: some matches are not corrections and some corrections are missed.` Entra en el orden de la lectura como cualquier hallazgo `friction`. Sin ese archivo no aparece nada (en la estándar nunca existe). `observe-digest.js` no cambia: el resumen no lee `observe/dev/`.
+
+`docs/guide/observe.md`: añade al final de la página esta sección (el texto puede ajustarse en la forma, no en lo que afirma; las pruebas exigen `corrections.json`, `correctionPatterns`, `aether-observe forget --yes` y `heuristic of words`):
+
+> ## What the development installation keeps about your corrections
+>
+> The development installation also looks for the moments when you correct the Lead. When a Lead session ends, it reads once the messages you typed in that session's conversation file and keeps those that contain a phrase of the `correctionPatterns` lists in `config/observe.json` (Spanish and English, for example "eso no", "te dije", "that's not", "i said"; edit the lists as you like). It is a heuristic of words, not a judgment: some matches are not corrections, and some corrections have none of those words. For each match, up to 20 per session, it keeps your message cut to 400 characters and the last 400 characters of what the Lead had said just before it, both with keys and tokens removed, in `observe/dev/<session>/corrections.json` (mode 600). The file is rewritten at each session end and deleted after 30 days like the other development fragments. The reading (`aether-observe read`) never shows that text: it reports only an `owner-correction` item with the count, the first and last time and the file name; the text is not copied into the summary or into an issue draft. The standard installation never reads what you type. To delete it all, run `aether-observe forget --yes`.
+
+**Tests (write first):**
+
+`tests/observe-corrections.test.js`:
+
+```js
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+const { tempDir, PLUGIN } = require('./helpers.js')
+
+const observe = require(path.join(PLUGIN, 'lib', 'observe.js'))
+const dev = require(path.join(PLUGIN, 'lib', 'observe-dev.js'))
+const { handleHook } = require(path.join(PLUGIN, 'lib', 'observe-hook.js'))
+const { readObservations } = require(path.join(PLUGIN, 'lib', 'observe-read.js'))
+const { readSummary, pruneObserve } = require(path.join(PLUGIN, 'lib', 'observe-digest.js'))
+
+const BIN = path.join(PLUGIN, 'bin', 'aether-observe')
+const CFG = observe.loadObserveConfig()
+const DAY = 24 * 60 * 60 * 1000
+const KEY = 'sk-ant-api03-' + 'A1b2C3d4'.repeat(6)
+
+const write = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text) }
+const lines = (records) => records.map((r) => JSON.stringify(r)).join('\n') + '\n'
+const files = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir, { recursive: true }).map((e) => path.join(dir, e)).filter((f) => fs.statSync(f).isFile()) : [])
+const U = (text, timestamp) => ({ type: 'user', timestamp, message: { role: 'user', content: text } })
+const A = (text) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } })
+const TR = (text) => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: text }] } })
+const withCorrections = (over) => ({ ...CFG, corrections: { ...CFG.corrections, ...over } })
+function lead(dir, id = 's-1') { write(path.join(dir, 'sessions', `${id}.json`), '{}') }
+
+test('the correction lists and the limits are data in config/observe.json (A14, R18)', () => {
+  assert.deepEqual(Object.keys(CFG.correctionPatterns).sort(), ['en', 'es'])
+  assert.deepEqual(CFG.correctionPatterns.es, ['eso no', 'no era', 'te dije', 'ya te dije', 'otra vez', 'no quiero', 'está mal', 'incorrecto', 'no es lo que'])
+  assert.deepEqual(CFG.correctionPatterns.en, ["that's not", 'i said', 'wrong', 'again', 'not what i'])
+  assert.deepEqual(CFG.corrections, { maxPerSession: 20, maxScanBytes: 20000000 })
+  assert.equal(CFG.pairFailures.consecutive, 3, 'the thresholds of Task 1 are still there')
+})
+
+test('scanCorrections keeps only the owner messages with a correction phrase, with the Lead text before each, redacted (R18)', (t) => {
+  const file = path.join(tempDir(t), 't.jsonl')
+  fs.writeFileSync(file, lines([
+    A('I created the file with the old name'),
+    U('Eso NO es lo que pedí', '2026-10-23T10:00:00.000Z'),
+    TR("wrong again, that's not it"),
+    A(`I renamed it. The key is ${KEY} and the rest follows`),
+    U('compare against the baseline; the wrongdoing is unrelated'),
+    { ...U('te dije que no', '2026-10-23T10:01:00.000Z'), isMeta: true },
+    { ...U('eso no', '2026-10-23T10:02:00.000Z'), isSidechain: true },
+    { ...A('text of a sidechain'), isSidechain: true },
+    U(`That's not what I asked. token ${KEY} ${'x'.repeat(600)}`, '2026-10-23T10:03:00.000Z'),
+    A('Done again'),
+    U('ESTÁ MAL'),
+  ]))
+  const result = dev.scanCorrections(file, CFG)
+  assert.equal(result.count, 3)
+  assert.equal(result.items.length, 3)
+  assert.deepEqual(result.items[0], { time: '2026-10-23T10:00:00.000Z', owner: 'Eso NO es lo que pedí', before: 'I created the file with the old name' })
+  assert.ok(result.items[1].owner.startsWith("That's not what I asked."))
+  assert.ok(result.items[1].before.includes('I renamed it.'), 'the sidechain text is not the Lead text before it')
+  assert.deepEqual(result.items[2], { time: '', owner: 'ESTÁ MAL', before: 'Done again' })
+  assert.ok(result.items.every((item) => item.owner.length <= 400 && item.before.length <= 400))
+  assert.equal(JSON.stringify(result).includes(KEY), false)
+})
+
+test('the phrases match whole words, in any case and with a typographic apostrophe (A14)', (t) => {
+  const hits = ['Eso no', 'NO ERA así', 'ya te dije', 'Otra vez', 'no quiero', 'Está mal', 'Incorrecto', 'no es lo que quería', 'That’s not it', 'I said so', 'WRONG', 'again?', 'not what I wanted']
+  const misses = ['nonsense', 'the wrongdoing', 'compare against it', 'tedije', 'incorrectos', 'beyond the mark', 'esto no', 'unwrong']
+  const dir = tempDir(t)
+  write(path.join(dir, 'hits.jsonl'), lines(hits.map((text) => U(text))))
+  write(path.join(dir, 'misses.jsonl'), lines(misses.map((text) => U(text))))
+  assert.deepEqual(dev.scanCorrections(path.join(dir, 'hits.jsonl'), CFG).items.map((item) => item.owner), hits)
+  assert.deepEqual(dev.scanCorrections(path.join(dir, 'misses.jsonl'), CFG), { count: 0, items: [] })
+})
+
+test('both sides are cut to 400 characters, and the Lead side is the last 400 (R18)', (t) => {
+  const file = path.join(tempDir(t), 't.jsonl')
+  fs.writeFileSync(file, lines([A('a'.repeat(1000) + 'END'), U('wrong ' + 'y'.repeat(1000))]))
+  const [item] = dev.scanCorrections(file, CFG).items
+  assert.equal(item.owner.length, 400)
+  assert.ok(item.owner.startsWith('wrong yyy'))
+  assert.equal(item.before.length, 400)
+  assert.ok(item.before.endsWith('END'))
+})
+
+test('the scan stops at the cap and at the byte limit, and never throws (R18)', (t) => {
+  const dir = tempDir(t)
+  const file = path.join(dir, 'c.jsonl')
+  fs.writeFileSync(file, lines(Array.from({ length: 30 }, (_, i) => U(`wrong ${i}`))))
+  assert.deepEqual(dev.scanCorrections(file, withCorrections({ maxPerSession: 3 })).items.map((item) => item.owner), ['wrong 0', 'wrong 1', 'wrong 2'])
+  assert.equal(dev.scanCorrections(file, CFG).count, 20, 'the configured cap is 20')
+  fs.writeFileSync(file, lines([U('wrong first')]) + lines([A('p'.repeat(600))]) + lines([U('wrong late')]))
+  assert.equal(dev.scanCorrections(file, CFG).count, 2)
+  assert.deepEqual(dev.scanCorrections(file, withCorrections({ maxScanBytes: 300 })).items.map((item) => item.owner), ['wrong first'])
+  assert.deepEqual(dev.scanCorrections(path.join(dir, 'missing.jsonl'), CFG), { count: 0, items: [] })
+  assert.deepEqual(dev.scanCorrections(null, CFG), { count: 0, items: [] })
+})
+
+test('captureCorrections writes one private file per session and rewrites it, idempotent (R18)', (t) => {
+  const dir = tempDir(t)
+  const transcript = path.join(dir, 't.jsonl')
+  fs.writeFileSync(transcript, lines([A('built it'), U('eso no', '2026-10-23T10:00:00.000Z'), U('otra vez, ya te dije', '2026-10-23T10:05:00.000Z')]))
+  const call = (now) => dev.captureCorrections({ dataDir: dir, session: 's-1', input: { transcript_path: transcript }, now })
+  const written = call(1700)
+  assert.equal(written, path.join(dir, 'observe', 'dev', 's-1', 'corrections.json'))
+  assert.equal(fs.statSync(written).mode & 0o777, 0o600)
+  const saved = JSON.parse(fs.readFileSync(written, 'utf8'))
+  assert.deepEqual([saved.session, saved.time, saved.count], ['s-1', 1700, 2])
+  assert.deepEqual(saved.items.map((item) => [item.time, item.owner, item.before]), [
+    ['2026-10-23T10:00:00.000Z', 'eso no', 'built it'],
+    ['2026-10-23T10:05:00.000Z', 'otra vez, ya te dije', 'built it'],
+  ])
+  const first = fs.readFileSync(written, 'utf8')
+  assert.equal(call(1700), written)
+  assert.equal(fs.readFileSync(written, 'utf8'), first, 'the same conversation gives the same file')
+  assert.deepEqual(fs.readdirSync(path.dirname(written)), ['corrections.json'], 'no temporary file is left')
+  fs.appendFileSync(transcript, lines([U('wrong')]))
+  call(1800)
+  assert.equal(JSON.parse(fs.readFileSync(written, 'utf8')).count, 3)
+  assert.equal(observe.status(dir).classes.dev.files, 1, 'status counts it in the dev class')
+  observe.forget(dir, { yes: true })
+  assert.equal(fs.existsSync(path.join(dir, 'observe')), false, 'forget --yes removes it with the rest')
+})
+
+test('captureCorrections writes nothing without a match, a readable conversation or a valid session (R18)', (t) => {
+  const dir = tempDir(t)
+  const quiet = path.join(dir, 'quiet.jsonl')
+  const loud = path.join(dir, 'loud.jsonl')
+  fs.writeFileSync(quiet, lines([U('hello'), A('hi')]))
+  fs.writeFileSync(loud, lines([U('wrong')]))
+  const run = (session, input) => dev.captureCorrections({ dataDir: dir, session, input, now: 1 })
+  assert.equal(run('s-2', { transcript_path: quiet }), null)
+  assert.equal(run('s-2', { transcript_path: path.join(dir, 'missing.jsonl') }), null)
+  assert.equal(run('s-2', {}), null)
+  assert.equal(run('s-2', null), null)
+  assert.equal(run('../x', { transcript_path: loud }), null)
+  assert.equal(fs.existsSync(path.join(dir, 'observe')), false)
+})
+
+test('corrections.json does not count among the 50 fragments of a session (R18)', (t) => {
+  const dir = tempDir(t)
+  const transcript = path.join(dir, 't.jsonl')
+  fs.writeFileSync(transcript, lines([U('start'), U('wrong'), TR('ENOENT: no such file')]))
+  assert.ok(dev.captureCorrections({ dataDir: dir, session: 's-1', input: { transcript_path: transcript }, now: 1 }))
+  for (let i = 0; i < 50; i++) assert.ok(dev.captureFragment({ dataDir: dir, session: 's-1', event: 'PreCompact', input: { transcript_path: transcript }, now: i }), `fragment ${i}`)
+  assert.equal(dev.captureFragment({ dataDir: dir, session: 's-1', event: 'PreCompact', input: { transcript_path: transcript }, now: 99 }), null)
+  assert.equal(fs.readdirSync(path.join(dir, 'observe', 'dev', 's-1')).length, 51)
+})
+
+test('corrections.json is pruned at 30 days with its session folder, and a recent one stays (R18)', (t) => {
+  const dir = tempDir(t)
+  const now = Date.now()
+  const old = new Date(now - 40 * DAY)
+  for (const id of ['s-old', 's-new']) write(path.join(dir, 'observe', 'dev', id, 'corrections.json'), JSON.stringify({ session: id, time: 1, count: 1, items: [{ time: '', owner: 'wrong', before: '' }] }))
+  const oldFolder = path.join(dir, 'observe', 'dev', 's-old')
+  fs.utimesSync(path.join(oldFolder, 'corrections.json'), old, old)
+  fs.utimesSync(oldFolder, old, old)
+  pruneObserve(dir, { days: 30, now })
+  assert.equal(fs.existsSync(oldFolder), false)
+  assert.ok(fs.existsSync(path.join(dir, 'observe', 'dev', 's-new', 'corrections.json')))
+})
+
+test('the reading reports one friction item per session with the count and the times, never the text (R18, E15)', (t) => {
+  const dir = tempDir(t)
+  for (const [id, n] of [['s-1', 2], ['s-2', 1]]) {
+    write(path.join(dir, 'observe', 'dev', id, 'corrections.json'), JSON.stringify({
+      session: id, time: 100, count: n,
+      items: Array.from({ length: n }, (_, i) => ({ time: `2026-10-2${i + 1}T10:00:00.000Z`, owner: 'ZEBRA eso no', before: 'ZEBRA before' })),
+    }))
+  }
+  write(path.join(dir, 'observe', 'dev', 's-3', '5-PreCompact.json'), '{"fragment":[]}')
+  const { items } = readObservations({ dataDir: dir, repoRoot: null, now: 5000, pairs: [], cfg: CFG })
+  const found = items.filter((item) => item.type === 'owner-correction')
+  assert.deepEqual(found.map((item) => item.id).sort(), ['owner-correction:s-1', 'owner-correction:s-2'], 'a session with only a fragment has none')
+  const one = found.find((item) => item.id === 'owner-correction:s-1')
+  assert.equal(one.kind, 'friction')
+  assert.deepEqual(one.numbers, { count: 2 })
+  assert.deepEqual(one.sessions, ['s-1'])
+  assert.equal(one.firstTime, Date.parse('2026-10-21T10:00:00.000Z'))
+  assert.equal(one.lastTime, Date.parse('2026-10-22T10:00:00.000Z'))
+  assert.ok(one.evidence.some((line) => line.includes('2026-10-21T10:00:00.000Z') && line.includes('2026-10-22T10:00:00.000Z')))
+  assert.ok(one.evidence.some((line) => line.includes('observe/dev/s-1/corrections.json')))
+  assert.ok(one.evidence.some((line) => line.includes('heuristic of words')))
+  assert.equal(JSON.stringify(items).includes('ZEBRA'), false)
+  assert.equal(fs.readFileSync(path.join(dir, 'observe', 'read.json'), 'utf8').includes('ZEBRA'), false)
+  assert.equal(readObservations({ dataDir: tempDir(t), repoRoot: null, now: 1, pairs: [], cfg: CFG }).items.some((item) => item.type === 'owner-correction'), false)
+})
+
+test('in the development installation SessionEnd keeps the corrections and the same reading reports them (E15, C14)', (t) => {
+  const dir = tempDir(t)
+  lead(dir)
+  const transcript = path.join(dir, 't.jsonl')
+  fs.writeFileSync(transcript, lines([A('done'), U(`ZEBRA eso no, otra vez ${KEY}`, '2026-10-23T10:00:00.000Z'), U('wrong again', '2026-10-23T10:09:00.000Z')]))
+  const input = { session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear', transcript_path: transcript, cwd: tempDir(t) }
+  assert.deepEqual(handleHook(input, { dataDir: dir, now: 5000, env: { AETHER_OBSERVE: 'dev' } }), { recorded: true, fragment: null })
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, 'observe', 'dev', 's-1', 'corrections.json'), 'utf8'))
+  assert.equal(saved.count, 2)
+  assert.ok(saved.items[0].owner.includes('ZEBRA'), 'the development installation keeps the text')
+  assert.equal(JSON.stringify(saved).includes(KEY), false)
+  const read = JSON.parse(fs.readFileSync(path.join(dir, 'observe', 'read.json'), 'utf8'))
+  const item = read.items.find((i) => i.type === 'owner-correction')
+  assert.ok(item, 'the reading of the same SessionEnd already has it')
+  assert.equal(item.numbers.count, 2)
+  assert.equal(JSON.stringify(read).includes('ZEBRA'), false)
+  assert.equal(JSON.stringify(readSummary(dir)).includes('ZEBRA'), false)
+  for (const file of files(path.join(dir, 'observe', 'issues'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
+  handleHook(input, { dataDir: dir, now: 5001, env: { AETHER_OBSERVE: 'dev' } })
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'observe', 'dev', 's-1', 'corrections.json'), 'utf8')).count, 2, 'a second SessionEnd rewrites, it does not add')
+})
+
+const STANDARD_SCRIPT = [
+  "const fs = require('node:fs')",
+  'const [hook, voice, input, dataDir, transcript] = process.argv.slice(1)',
+  'const touched = []',
+  "for (const name of ['readFileSync', 'openSync', 'statSync', 'existsSync', 'createReadStream', 'readFile', 'open']) {",
+  '  const original = fs[name]',
+  '  fs[name] = (...args) => { if (String(args[0]) === transcript) touched.push(name); return original.apply(fs, args) }',
+  '}',
+  'const voiceModule = require(voice)',
+  'let ownerCalls = 0',
+  'const originalOwnerMessages = voiceModule.ownerMessages',
+  'voiceModule.ownerMessages = (...args) => { ownerCalls++; return originalOwnerMessages(...args) }',
+  "const { handleHook } = require(hook)",
+  'handleHook(JSON.parse(input), { dataDir, env: {}, now: 9 })',
+  "const devLoaded = Object.keys(require.cache).some((key) => key.endsWith('observe-dev.js'))",
+  'process.stdout.write(JSON.stringify({ touched, ownerCalls, devLoaded }))',
+].join('\n')
+
+test('the standard installation never opens the conversation, never reads the owner messages and keeps no ZEBRA (C7, C14, E15)', (t) => {
+  const dir = tempDir(t)
+  lead(dir)
+  const transcript = path.join(dir, 't.jsonl')
+  fs.writeFileSync(transcript, lines([A('done'), U('ZEBRA eso no, te dije otra vez', '2026-10-23T10:00:00.000Z')]))
+  const input = JSON.stringify({ session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear', transcript_path: transcript, cwd: tempDir(t) })
+  const r = spawnSync(process.execPath, ['-e', STANDARD_SCRIPT, path.join(PLUGIN, 'lib', 'observe-hook.js'), path.join(PLUGIN, 'lib', 'voice.js'), input, dir, transcript], { encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dir } })
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual(JSON.parse(r.stdout), { touched: [], ownerCalls: 0, devLoaded: false })
+  assert.ok(fs.existsSync(path.join(dir, 'observe', 'events.jsonl')), 'the hook did run')
+  assert.equal(fs.existsSync(path.join(dir, 'observe', 'dev')), false)
+  for (const file of files(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
+})
+
+test('the bin keeps no correction in the standard installation, nor in a copy in the plugin cache with the variable on (C6, C14)', (t) => {
+  const transcriptOf = (dir) => {
+    const file = path.join(dir, 't.jsonl')
+    fs.writeFileSync(file, lines([A('done'), U('ZEBRA eso no, te dije otra vez', '2026-10-23T10:00:00.000Z')]))
+    return file
+  }
+  const endSession = (target, env) => {
+    const dir = tempDir(t)
+    lead(dir)
+    const input = JSON.stringify({ session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear', transcript_path: transcriptOf(dir), cwd: tempDir(t) })
+    const r = spawnSync('node', [target, 'hook'], { input, encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dir, HOME: tempDir(t), ...env } })
+    assert.deepEqual([r.status, r.stdout, r.stderr], [0, '', ''])
+    return dir
+  }
+  const cache = path.join(tempDir(t), 'plugins', 'cache', 'aether-plugin', 'aether', '0.19.2')
+  fs.cpSync(PLUGIN, cache, { recursive: true })
+  for (const dir of [endSession(BIN, {}), endSession(path.join(cache, 'bin', 'aether-observe'), { AETHER_OBSERVE: 'dev' })]) {
+    assert.equal(fs.existsSync(path.join(dir, 'observe', 'dev')), false)
+    for (const file of files(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
+  }
+  const treeDir = endSession(BIN, { AETHER_OBSERVE: 'dev' })
+  assert.ok(fs.existsSync(path.join(treeDir, 'observe', 'dev', 's-1', 'corrections.json')), 'the tree with the variable on keeps them')
+})
+
+test('the guide says what the development installation keeps about the corrections (R18, R16)', () => {
+  const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'guide', 'observe.md'), 'utf8')
+  for (const word of ['corrections.json', 'correctionPatterns', 'aether-observe forget --yes', 'heuristic of words']) assert.ok(page.includes(word), word)
+})
+```
+
+**Acceptance:**
+
+- Las pruebas pasan y `npm test` entero queda en verde, incluidas `observe.test.js` (las siete claves de los umbrales siguen ahí junto a las dos nuevas), `observe-hook.test.js`, `observe-read.test.js`, `observe-docs.test.js` y `observe-guarantees.test.js` (el barrido de «transcript» sigue dando solo `plugins/aether/lib/observe-dev.js`).
+- En la instalación estándar el `SessionEnd` no abre la conversación, no llama `ownerMessages`, no carga `observe-dev.js` y no deja ni `observe/dev` ni la palabra marcada en nada de `observe/`.
+- El texto del dueño solo está en `observe/dev/<sesión>/corrections.json`, con claves y tokens borrados; ni `summary.json`, ni `read.json`, ni un issue redactado lo traen.
+- El recorrido es acotado por el tope de coincidencias y por `maxScanBytes`, y la guía dice que es una heurística de palabras.
