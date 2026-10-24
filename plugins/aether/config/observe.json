@@ -1,0 +1,9 @@
+{
+  "pairFailures": { "consecutive": 3 },
+  "approval": { "minAttempts": 5, "lowRate": 0.2 },
+  "pairSpeed": { "minCalls": 5, "ratio": 0.5 },
+  "pairFailureRate": { "minCalls": 5, "maxRate": 0.4 },
+  "designRounds": { "maxRounds": 6 },
+  "cost": { "minCalls": 3, "ratio": 2 },
+  "blockedByMistake": { "repeatBlocks": 2 }
+}
