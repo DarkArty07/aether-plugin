@@ -38,7 +38,7 @@ Aether serves five goals, **RADAR**.
 claude plugin install aether --marketplace DarkArty07/aether-plugin
 ```
 
-Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; the rule is in [Lanes](docs/guide/lanes.md#lanes), and [Options](docs/guide/options.md#options) has the plugin's seven options<!-- has the plugin's six options --> and how to set them).
+Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; the rule is in [Lanes](docs/guide/lanes.md#lanes), and [Options](docs/guide/options.md#options) has the plugin's seven options and how to set them).
 
 ## First start
 

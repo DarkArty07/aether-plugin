@@ -25,12 +25,13 @@ test('the repository is a marketplace that lists the aether plugin', () => {
   })
 })
 
-test('the manifest has no dependencies, and declares the superdelegation, harnesses, ops, deadlines, quotabrake and brakepush options, and the lanes and seats legacy keys', () => {
+test('the manifest has no dependencies, and declares the superdelegation, harnesses, ops, deadlines, quotabrake, brakepush and observedev options, and the lanes and seats legacy keys', () => {
   const manifest = json(PLUGIN, '.claude-plugin', 'plugin.json')
   assert.equal(manifest.name, 'aether')
   assert.equal('dependencies' in manifest, false)
-  const { lanes, seats, superdelegation, quotabrake, brakepush, ...rest } = manifest.userConfig
+  const { lanes, seats, superdelegation, quotabrake, brakepush, observedev, ...rest } = manifest.userConfig
   assert.deepEqual([quotabrake.type, quotabrake.default, brakepush.type, brakepush.default], ['string', '95', 'boolean', false])
+  assert.deepEqual([observedev.type, observedev.default], ['boolean', false])
   assert.deepEqual(rest, {
     harnesses: {
       type: 'string',
@@ -86,7 +87,7 @@ test('superdelegation is a boolean with no default, and lanes and seats stay onl
   assert.equal(userConfig.seats.type, 'string')
   assert.equal('options' in userConfig.seats, false)
   assert.equal('default' in userConfig.seats, false)
-  assert.deepEqual(Object.keys(userConfig).sort(), ['brakepush', 'deadlines', 'harnesses', 'lanes', 'ops', 'quotabrake', 'seats', 'superdelegation'])
+  assert.deepEqual(Object.keys(userConfig).sort(), ['brakepush', 'deadlines', 'harnesses', 'lanes', 'observedev', 'ops', 'quotabrake', 'seats', 'superdelegation'])
 })
 
 test('the manifest no longer declares router, decider or fallback, and deadlines is the quota deadline alone (C7)', () => {

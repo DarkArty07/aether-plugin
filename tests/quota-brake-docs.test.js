@@ -39,8 +39,8 @@ test('the user pages say the same as the brake', () => {
   for (const text of ['**The quota brake.**', 'the run pauses rather than ends', 'relaunches the same run from the saved branches', 'Only your own recorded words turn the brake off', '`brakepush` is on']) {
     assert.ok(autonomy.includes(text), text)
   }
-  assert.match(doc('README.md'), /has the plugin's (nine|six) options/) // the README is Task 20's: it says six once that task is merged
-  assert.ok(doc('docs/getting-started.md').includes("the plugin's six options, `superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake` and `brakepush`"))
+  assert.match(doc('README.md'), /has the plugin's (nine|six|seven) options/) // the README is Task 20's: it says six once that task is merged, and seven with observedev
+  assert.ok(doc('docs/getting-started.md').includes("the plugin's seven options (`superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake`, `brakepush` and `observedev`)"))
   const options = doc('docs/guide/options.md')
   assert.ok(options.includes('`quotabrake`, `95` by default'))
   assert.ok(options.includes('`brakepush`, off by default'))
