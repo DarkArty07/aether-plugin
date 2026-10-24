@@ -18,7 +18,7 @@
 // its answer with `aether-delegate answer`: it is the answer that `verdict` checks (R6).
 //
 // Any failure of the mod (an exception, a non-zero exit, a line that is not JSON, a skipped plan) leaves the call as the
-// Lead made it.
+// Lead made it, and leaves a trace through ctx.fault (fault-trace.mjs), which the caller may not give.
 //
 // The `$` the methods take is the three calls the mod makes ($.clock.now, $.fs.write, $.process.run): the engine loads a
 // hooks module only when $ goes to functions declared at the top of its files, so register.js hands a method an object
@@ -89,6 +89,7 @@ async function* runExternal($, e, next, ctx, external, answerOf) {
       }
     }
   } catch {
+    ctx.fault?.('delegate.step', 'handler-threw')
     delivered = null
   }
   if (delivered === null) return yield* runAnswering($, e, next, ctx, answerOf)
@@ -110,6 +111,7 @@ async function* runAnswering($, e, next, ctx, answerOf) {
         ANSWER_TIMEOUT_MS,
       )
     } catch {
+      ctx.fault?.('delegate.answer', 'write-failed')
       // The verdict finds no answer for this attempt and says so; the delegate already answered.
     }
   }
@@ -158,6 +160,7 @@ export function createDelegates() {
         const begun = await delegate($, ctx, ['begin', '--session', ctx.session, '--input', inputFile], BEGIN_TIMEOUT_MS)
         plan = begun.skip === true ? null : begun
       } catch {
+        ctx.fault?.('delegate.begin', 'handler-threw')
         plan = null
       }
       if (plan === null) return next(e)
@@ -191,6 +194,7 @@ export function createDelegates() {
         if (waiting.length === 0) byPrompt.delete(e.prompt)
         if (routed) byAgent.set(agentId, routed)
       } catch {
+        ctx.fault?.('delegate.bind', 'handler-threw')
         // The agent runs as it was going to.
       }
     },

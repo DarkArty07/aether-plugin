@@ -224,7 +224,9 @@ test('a marker check that fails counts as not Aether', async ($, on) => {
   const writes = stubs(on, { marked: 'deny' })
   await step($)
   await endTurn($)
-  expect(writes).toEqual([])
+  // No usage is recorded; the only write is the fault record of the failed check (spec 014, R1).
+  expect(writes.map((w) => w.path)).toEqual(['/home/u/aether-data/observe/faults/s1.json'])
+  expect(JSON.parse(writes[0].text).faults.map((f) => f.source)).toEqual(['register.marker-check'])
 })
 
 const offer = ($, agent: string) => $.agent.offer({ agent, description: 'd', source: 'plugin' })

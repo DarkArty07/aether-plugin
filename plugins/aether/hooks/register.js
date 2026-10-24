@@ -15,7 +15,9 @@
 // Only an Aether session is metered (installable spec R9): one whose Lead started it (classic.SessionStart
 // with agent_type aether:lead), or one that has a marker <data dir>/sessions/<session>.json, which only
 // aether-session-start writes. In any other session the meter records and writes nothing, and the agents
-// of the aether plugin are not offered.
+// of the aether plugin are not offered. The one exception is the fault record of a marker check that itself throws
+// (fault-trace.mjs, source register.marker-check, spec 014 R1): the check cannot tell then whether the session is
+// Aether's, the session counts as not Aether's, and the meter would be off in silence, so that one failure is recorded.
 //
 // It hands the Lead's delegates to the delegate ladder (delegate.mjs, spec 013): the Agent calls of an Aether
 // session whose subagent_type is not aether:*, which `aether-delegate begin` gives the model and effort of the
@@ -47,6 +49,7 @@ import { registerPanel } from './panel.jsx'
 import { registerSpend } from './spend-panel.jsx'
 import { brakePromptFor, crossingsOf, initialBrakeState, jsonFrom, notifyFor, resumePromptFor } from './quota-brake.mjs'
 import { createDelegates } from './delegate.mjs'
+import { recordFault } from './fault-trace.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -158,6 +161,7 @@ async function isAether($, state) {
     state.dataDir ??= readDataDir($)
     answer = (await $.fs.exists(`${await state.dataDir}/sessions/${state.id}.json`)) === true
   } catch {
+    void recordFault($, state, 'register.marker-check', 'read-failed')
     answer = false
   }
   if (state.aether === undefined) state.aether = answer
@@ -222,6 +226,7 @@ async function flush($, state) {
       await writeParts($, state)
     } while (state.pending)
   } catch {
+    void recordFault($, state, 'register.flush', 'write-failed')
     // The entries stay in memory, and the next flush writes them.
   } finally {
     state.writing = false
@@ -249,19 +254,20 @@ function lanePayload(e) {
 }
 
 // Writes the payload, then the spawn record beside it. A failure leaves the spawn unchanged.
-async function saveLanePayload($, e, session) {
+async function saveLanePayload($, e, state) {
   try {
     const lane = lanePayload(e)
     if (!lane) return
     await $.fs.write(lane.path, lane.payload)
     const workflow = e.workflow || {}
     const spawn = {
-      session,
+      session: state.id,
       workflowRunId: workflow.runId ?? null,
       agentIndex: workflow.agentIndex ?? null,
     }
     await $.fs.write(`${lane.path.slice(0, lane.path.lastIndexOf('/'))}/spawn.json`, JSON.stringify(spawn))
   } catch {
+    void recordFault($, state, 'register.lane-payload', 'write-failed')
     // The lane finds no payload and reports it; the spawn goes on.
   }
 }
@@ -316,8 +322,9 @@ function delegateCalls($) {
 async function delegateContext($, state) {
   try {
     state.dataDir ??= readDataDir($)
-    return { session: state.id, dataDir: await state.dataDir, root: $.plugin.root }
+    return { session: state.id, dataDir: await state.dataDir, root: $.plugin.root, fault: (source, cls) => { void recordFault($, state, source, cls) } }
   } catch {
+    void recordFault($, state, 'register.delegate-context', 'read-failed')
     return null
   }
 }
@@ -349,6 +356,7 @@ async function* meteredStep($, state, e, next) {
       if (state.entries.length - state.written >= FLUSH_EVERY) await flush($, state)
     }
   } catch {
+    void recordFault($, state, 'register.meter-step', 'write-failed')
     // Observing only.
   }
   return result
@@ -439,6 +447,7 @@ async function brakeStepOnce($, state) {
       try {
         settings = await autonomyCall($, ['brake-settings', '--session', state.id])
       } catch {
+        void recordFault($, state, 'register.brake-settings-start', 'settings-unreadable')
         settings = null
       }
       if (!settings) {
@@ -466,6 +475,7 @@ async function brakeStepOnce($, state) {
       try {
         settings = await autonomyCall($, ['brake-settings', '--session', state.id])
       } catch {
+        void recordFault($, state, 'register.brake-settings-recheck', 'settings-unreadable')
         settings = null
       }
       if (settings) brake.settings = settings
@@ -499,8 +509,15 @@ async function brakeStepOnce($, state) {
       }
     }
   } catch {
+    void recordFault($, state, 'register.brake-step', 'handler-threw')
     // Observing only.
   }
+}
+
+// A handler that failed: it leaves its trace when the session is Aether's, and the event goes on as it was.
+async function recordEventFault($, source) {
+  const state = await currentSession($)
+  if (state && state.aether === true) await recordFault($, state, source, 'handler-threw')
 }
 
 export function register(on, options) {
@@ -512,13 +529,19 @@ export function register(on, options) {
       sessionOf(e.session_id).aether = true
     }
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    void recordEventFault($, 'register.on-session-start')
+    return next(e)
+  })
 
   on('agent.offer', async ($, e, next) => {
     if (e.agent === LEAD) return { isOffered: false }
     if (typeof e.agent === 'string' && e.agent.startsWith('aether:') && !(await aetherSession($))) return { isOffered: false }
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    void recordEventFault($, 'register.on-agent-offer')
+    return next(e)
+  })
 
   // The Lead's delegates go through the ladder; an aether:* agent is never touched (R9).
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
@@ -527,12 +550,15 @@ export function register(on, options) {
     const ctx = await delegateContext($, state)
     if (!ctx) return next(e)
     return delegates.toolCall(delegateCalls($), e, next, ctx)
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    void recordEventFault($, 'register.on-tool-call')
+    return next(e)
+  })
 
   on('agent.spawn', async ($, e, next) => {
     const state = await aetherSession($)
     if (!state) return next(e)
-    await saveLanePayload($, e, state.id)
+    await saveLanePayload($, e, state)
     const result = await next(e)
     if (result && result.agentId) {
       state.agents[result.agentId] = { type: e.subagentType || null, description: e.description || null }
@@ -543,7 +569,10 @@ export function register(on, options) {
       if (command && !(await opsOff($, state))) state.ops.set(result.agentId, command)
     }
     return result
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    void recordEventFault($, 'register.on-agent-spawn')
+    return next(e)
+  })
 
   on('turn.step', async function* ($, e, next) {
     const state = await aetherSession($)
@@ -599,6 +628,8 @@ export function register(on, options) {
         if (stopped) {
           const error = `${command.bin} ${command.args[0]} was still running after ${command.timeoutMs / 1000} s and was stopped; ${leftBehind(command)}`
           out = { exitCode: TIMED_OUT, stdout: `${JSON.stringify({ error })}\n` }
+        } else {
+          void recordFault($, state, 'register.ops-run', 'spawn-failed')
         }
       }
       if (out) {
