@@ -32,11 +32,13 @@ function mainRootOf(cwd) {
   }
 }
 
-function endSession(dataDir, session, input, now) {
+function endSession(dataDir, session, input, now, env) {
   const { digestSession } = require('./observe-digest.js')
   const { readObservations } = require('./observe-read.js')
   try {
     digestSession(dataDir, session)
+    // The development installation keeps the owner's corrections before the reading, so that this same reading has them.
+    if (observeMode(env) === 'dev') require('./observe-dev.js').captureCorrections({ dataDir, session, input, now })
     readObservations({ dataDir, repoRoot: mainRootOf(input.cwd), now })
   } catch {
     // The event is already recorded; a failed reading must not turn it into nothing.
@@ -60,7 +62,7 @@ function handleHook(input, { dataDir = run.dataDir(), env = process.env, now = D
     if (event === 'SessionEnd') raw.reason = input.reason
     const recorded = appendEvent(dataDir, raw)
 
-    if (event === 'SessionEnd') endSession(dataDir, session, input, now)
+    if (event === 'SessionEnd') endSession(dataDir, session, input, now, env)
 
     let fragment = null
     if (observeMode(env) === 'dev' && FRAGMENT_EVENTS.has(event)) {

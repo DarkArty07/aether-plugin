@@ -8,7 +8,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { observeDir, issuesDir, readEvents, readFaults, loadObserveConfig } = require('./observe.js')
+const { observeDir, issuesDir, devDir, readEvents, readFaults, loadObserveConfig } = require('./observe.js')
 const { digestAll, readSummary } = require('./observe-digest.js')
 const { fingerprintOf, detectRiseWithoutReason, detectPairFailures, detectRuleBroken, detectBlockedByMistake } = require('./observe-detect.js')
 const { calibrationSignals } = require('./observe-calibrate.js')
@@ -16,6 +16,7 @@ const { loadPairs } = require('./pairs.js')
 const { readPending } = require('./pending.js')
 
 const RANK = { failure: 0, calibration: 1, friction: 2 }
+const SESSION_FOLDER = /^[A-Za-z0-9-]+$/
 const IDENTIFIER = /^[A-Za-z0-9_.:-]{1,64}$/
 const DELEGATE_FIELDS = ['kind', 'time', 'session', 'task', 'id', 'step', 'attempt', 'launchKind', 'status', 'harness', 'model', 'verdict']
 const NEXT_FIELDS = ['kind', 'cause', 'step']
@@ -194,6 +195,49 @@ function frictionFindings(toolTotals, kindTotals) {
   return findings
 }
 
+// One friction item per session that has a corrections.json in the development installation. Only the count and
+// the time of each item are read from it: the owner's words and the Lead's never leave that file.
+function correctionFindings(dataDir) {
+  let folders
+  try {
+    folders = fs.readdirSync(devDir(dataDir))
+  } catch {
+    return []
+  }
+  const findings = []
+  for (const session of folders.filter((name) => SESSION_FOLDER.test(name)).sort()) {
+    let saved
+    try {
+      saved = JSON.parse(fs.readFileSync(path.join(devDir(dataDir), session, 'corrections.json'), 'utf8'))
+    } catch {
+      continue
+    }
+    if (!isObject(saved) || !isNumber(saved.count) || saved.count <= 0) continue
+    const times = (Array.isArray(saved.items) ? saved.items : [])
+      .map((entry) => (isObject(entry) && typeof entry.time === 'string' ? Date.parse(entry.time) : NaN))
+      .filter((time) => !Number.isNaN(time))
+    const firstTime = times.length ? Math.min(...times) : millis(saved.time)
+    const lastTime = times.length ? Math.max(...times) : millis(saved.time)
+    findings.push({
+      id: `owner-correction:${session}`,
+      kind: 'friction',
+      type: 'owner-correction',
+      title: `Owner corrections in session ${session}: ${saved.count}`,
+      evidence: [
+        `${saved.count} owner message(s) matched the correction word lists of config/observe.json`,
+        `first ${new Date(firstTime).toISOString()}, last ${new Date(lastTime).toISOString()}`,
+        `file: observe/dev/${session}/corrections.json`,
+        'This is a heuristic of words, not a judgment: some matches are not corrections and some corrections are missed.',
+      ],
+      numbers: { count: saved.count },
+      firstTime,
+      lastTime,
+      sessions: [session],
+    })
+  }
+  return findings
+}
+
 function issueOf(finding) {
   const numbers = Object.entries(finding.numbers).map(([key, value]) => `- ${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
   const sessions = finding.sessions.map((session) => `- ${session}`)
@@ -241,6 +285,7 @@ function readObservations({ dataDir, repoRoot = null, now = Date.now(), pairs = 
     ...faultFindings(totalsOf(sessions, 'faults'), faults),
     ...calibration,
     ...frictionFindings(totalsOf(sessions, 'toolFailures'), totalsOf(sessions, 'events')),
+    ...correctionFindings(dataDir),
   ].sort(compareFindings)
 
   for (const item of items) {

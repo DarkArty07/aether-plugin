@@ -6,8 +6,9 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { devDir } = require('./observe.js')
+const { devDir, loadObserveConfig } = require('./observe.js')
 const { redact } = require('./observe-redact.js')
+const { ownerMessages } = require('./voice.js')
 
 const MAX_FILES_PER_SESSION = 50
 // Only the tail of a long transcript is read: the fragment wants its last records, not the whole session.
@@ -120,4 +121,141 @@ function captureFragment({ dataDir, session, event, input, now } = {}) {
   }
 }
 
-module.exports = { fragmentFrom, captureFragment }
+// ---- The owner's corrections (R18): the one place that reads what the owner typed, for the development install.
+
+const CORRECTIONS_SESSION = /^[A-Za-z0-9-]+$/
+const CHUNK_BYTES = 64 * 1024
+const SIDE_CHARS = 400
+const LEAD_TAIL_CHARS = 2000
+const NEWLINE = 0x0a
+
+const NONE = () => ({ count: 0, items: [] })
+const positive = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback)
+
+// One regular expression for every phrase of both lists, built once per scan: a phrase is a whole word when no
+// letter, digit or underscore comes before or after it; its spaces match any run of spaces, and the typographic
+// apostrophe counts as the straight one (the message is normalised the same way).
+function phraseMatcher(patterns) {
+  if (!isObject(patterns)) return null
+  const phrases = []
+  for (const list of Object.values(patterns)) {
+    if (!Array.isArray(list)) continue
+    for (const phrase of list) {
+      if (typeof phrase !== 'string' || !phrase.trim()) continue
+      const words = phrase.toLowerCase().replace(/\u2019/g, "'").trim().split(/\s+/)
+      phrases.push(words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'))
+    }
+  }
+  if (!phrases.length) return null
+  return new RegExp(`(?<![\\p{L}\\p{N}_])(?:${phrases.join('|')})(?![\\p{L}\\p{N}_])`, 'iu')
+}
+
+// The text blocks of an assistant record of the main chain, joined; '' for any other record.
+function leadTextOf(line) {
+  if (!line.includes('"assistant"')) return ''
+  const record = parseLine(line)
+  if (!isObject(record) || record.type !== 'assistant' || record.isSidechain === true || !isObject(record.message)) return ''
+  const content = record.message.content
+  if (typeof content === 'string') return content.trim() ? content : ''
+  if (!Array.isArray(content)) return ''
+  const text = content.filter((block) => isObject(block) && block.type === 'text' && typeof block.text === 'string').map((block) => block.text).join('\n')
+  return text.trim() ? text : ''
+}
+
+// Calls onLine(text) for each complete line that ends, newline included, within the first maxBytes bytes of the
+// file, reading it once in chunks; onLine returns true to stop. Nothing past maxBytes is read.
+function eachLine(file, maxBytes, onLine) {
+  const fd = fs.openSync(file, 'r')
+  try {
+    const buffer = Buffer.alloc(CHUNK_BYTES)
+    let pending = []
+    let total = 0
+    for (;;) {
+      // One byte more than the limit tells a file that ends there from one that goes on.
+      const wanted = Math.min(CHUNK_BYTES, maxBytes - total + 1)
+      const n = fs.readSync(fd, buffer, 0, wanted, total)
+      if (n === 0) break
+      const usable = Math.min(n, maxBytes - total)
+      const chunk = buffer.subarray(0, usable)
+      total += usable
+      let start = 0
+      for (let at = chunk.indexOf(NEWLINE); at !== -1; at = chunk.indexOf(NEWLINE, start)) {
+        pending.push(Buffer.from(chunk.subarray(start, at)))
+        start = at + 1
+        if (onLine(Buffer.concat(pending).toString('utf8'))) return
+        pending = []
+      }
+      pending.push(Buffer.from(chunk.subarray(start)))
+      if (n > usable) return
+    }
+    // The end of the file, a last line without its newline, still ends within the limit.
+    onLine(Buffer.concat(pending).toString('utf8'))
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+function scanCorrections(transcriptPath, cfg) {
+  const items = []
+  try {
+    if (typeof transcriptPath !== 'string' || !transcriptPath || !isObject(cfg)) return NONE()
+    const matcher = phraseMatcher(cfg.correctionPatterns)
+    const maxPerSession = positive(isObject(cfg.corrections) ? cfg.corrections.maxPerSession : undefined, 0)
+    const maxBytes = positive(isObject(cfg.corrections) ? cfg.corrections.maxScanBytes : undefined, 0)
+    if (!matcher || !maxPerSession || !maxBytes) return NONE()
+    let lastLead = ''
+    eachLine(transcriptPath, maxBytes, (line) => {
+      if (!line.trim()) return false
+      const leadText = leadTextOf(line)
+      if (leadText) {
+        lastLead = leadText
+        return false
+      }
+      const [message] = ownerMessages([line])
+      if (!message || !matcher.test(message.text.replace(/\u2019/g, "'"))) return false
+      // Redacted before it is cut, so the cut never leaves half a key that no pattern recognises.
+      items.push({
+        time: message.time,
+        owner: redact(message.text).slice(0, SIDE_CHARS),
+        before: lastLead ? redact(lastLead.slice(-LEAD_TAIL_CHARS)).slice(-SIDE_CHARS) : '',
+      })
+      return items.length >= maxPerSession
+    })
+  } catch {
+    // What was found until the error is kept.
+  }
+  return { count: items.length, items }
+}
+
+// Writes through a temporary file of the same folder and a rename, so a reader never sees half a file.
+function writePrivateAtomic(file, text) {
+  const temp = `${file}.${process.pid}.tmp`
+  try {
+    fs.writeFileSync(temp, text, { mode: 0o600 })
+    fs.chmodSync(temp, 0o600)
+    fs.renameSync(temp, file)
+  } catch (err) {
+    fs.rmSync(temp, { force: true })
+    throw err
+  }
+}
+
+function captureCorrections({ dataDir, session, input, now, cfg } = {}) {
+  try {
+    if (typeof dataDir !== 'string' || !dataDir) return null
+    if (typeof session !== 'string' || !CORRECTIONS_SESSION.test(session)) return null
+    if (!isObject(input) || typeof input.transcript_path !== 'string' || !input.transcript_path) return null
+    const { count, items } = scanCorrections(input.transcript_path, cfg === undefined ? loadObserveConfig() : cfg)
+    if (count === 0) return null
+    const dir = path.join(devDir(dataDir), session)
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+    fs.chmodSync(dir, 0o700)
+    const file = path.join(dir, 'corrections.json')
+    writePrivateAtomic(file, `${JSON.stringify({ session, time: now, count, items }, null, 2)}\n`)
+    return file
+  } catch {
+    return null
+  }
+}
+
+module.exports = { fragmentFrom, captureFragment, scanCorrections, captureCorrections }
