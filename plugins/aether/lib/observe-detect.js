@@ -17,7 +17,7 @@ function toIso(time) {
 }
 
 /**
- * sha256 en hex de las palabras del comando unidas con un espacio, los primeros 12 caracteres.
+ * sha256 hex digest of command words joined by a single space, first 12 characters.
  */
 function fingerprintOf(command) {
   if (typeof command !== 'string') return ''
@@ -27,9 +27,9 @@ function fingerprintOf(command) {
 
 /**
  * detectRiseWithoutReason(entries): Finding[]
- * Para cada launch con launchKind === 'rise', mira el verdict más reciente de la misma tarea
- * anterior a él en el arreglo; es legítimo solo si su next.kind === 'rise' y next.cause es
- * 'exhausted', 'repeated' o 'infeasible'. Si no, hallazgo.
+ * For each launch with launchKind === 'rise', checks the most recent verdict of the same task
+ * prior to it in the entries array; it is legitimate only if its next.kind === 'rise' and next.cause
+ * is 'exhausted', 'repeated', or 'infeasible'. Otherwise, reports a finding. Refused launches do not count.
  */
 function detectRiseWithoutReason(entries = []) {
   if (!Array.isArray(entries)) return []
@@ -85,10 +85,10 @@ function detectRiseWithoutReason(entries = []) {
 
 /**
  * detectPairFailures(entries, cfg): Finding[]
- * Por harness/model, en orden de time, la racha más larga de estados distintos de ok
- * donde las tareas (id) son distintas (varios intentos de una misma tarea cuentan una vez).
- * Si alcanza cfg.pairFailures.consecutive, hallazgo con id: 'pair-failing:<harness>/<model>',
- * numbers: { failures, tasks }.
+ * For each harness/model pair, in chronological order of time, finds the longest streak of non-ok
+ * outcomes across distinct tasks (multiple attempts on the same task count once).
+ * If the streak reaches cfg.pairFailures.consecutive, reports a finding with
+ * id: 'pair-failing:<harness>/<model>', numbers: { failures, tasks }.
  */
 function detectPairFailures(entries = [], cfg = {}) {
   if (!Array.isArray(entries) || entries.length === 0) return []
@@ -164,10 +164,10 @@ function detectPairFailures(entries = [], cfg = {}) {
 
 /**
  * detectRuleBroken({ events, delegateEntries }): Finding[]
- * Por cada evento { kind: 'PostToolUse', tool: 'ScheduleWakeup', session, time },
- * mira si en esa sesión hay una tarea abierta en ese time: tiene un launch con time anterior
- * y su último verdict anterior a time no es approved ni exhausted.
- * Un hallazgo por sesión: id: 'rule-broken:no-wakeup-for-delegate:<sesión>', numbers: { count }.
+ * For each event { kind: 'PostToolUse', tool: 'ScheduleWakeup', session, time },
+ * checks whether an open delegate task exists in that session at that time: has a launch with an
+ * earlier time and its latest verdict prior to time is neither 'approved' nor 'exhausted'.
+ * One finding per session: id: 'rule-broken:no-wakeup-for-delegate:<session>', numbers: { count }.
  */
 function detectRuleBroken({ events = [], delegateEntries = [] } = {}) {
   if (!Array.isArray(events) || events.length === 0) return []
@@ -198,20 +198,22 @@ function detectRuleBroken({ events = [], delegateEntries = [] } = {}) {
     let hasOpenTask = false
     for (const task of launchedTasks) {
       let lastVerdict = null
-      for (const e of delegateEntries || []) {
+      let lastVerdictIndex = -1
+      const entries = delegateEntries || []
+      for (let k = 0; k < entries.length; k++) {
+        const e = entries[k]
         if (e && e.task === task && e.kind === 'verdict' && e.time < time) {
-          if (!lastVerdict || e.time > lastVerdict.time) {
+          if (!lastVerdict || e.time > lastVerdict.time || (e.time === lastVerdict.time && k > lastVerdictIndex)) {
             lastVerdict = e
+            lastVerdictIndex = k
           }
         }
       }
 
-      const isClosed =
+      const isClosed = Boolean(
         lastVerdict &&
-        (lastVerdict.verdict === 'approved' ||
-          lastVerdict.verdict === 'exhausted' ||
-          lastVerdict.next?.cause === 'exhausted' ||
-          lastVerdict.next?.kind === 'done')
+        (lastVerdict.verdict === 'approved' || lastVerdict.verdict === 'exhausted')
+      )
 
       if (!isClosed) {
         hasOpenTask = true
@@ -227,6 +229,7 @@ function detectRuleBroken({ events = [], delegateEntries = [] } = {}) {
 
   const findings = []
   for (const [session, violationEvents] of violationsBySession) {
+    violationEvents.sort((a, b) => toMillis(a.time) - toMillis(b.time))
     findings.push({
       id: `rule-broken:no-wakeup-for-delegate:${session}`,
       kind: 'failure',
@@ -245,11 +248,11 @@ function detectRuleBroken({ events = [], delegateEntries = [] } = {}) {
 
 /**
  * detectBlockedByMistake({ pending, grants }, cfg): Finding[]
- * pending es [{ time, session, class, fingerprint }] y grants es [{ class, added }] (added en ISO).
- * Una entrada se señala si hay una concesión de su clase con added posterior a su time,
- * o si la misma fingerprint aparece cfg.blockedByMistake.repeatBlocks veces o más.
- * id: 'blocked-by-mistake:<clase>:<huella>'; la evidencia nombra la clase, la huella y las fechas ISO,
- * nunca el comando ni la cita.
+ * pending is [{ time, session, class, fingerprint }] and grants is [{ class, added }] (added in ISO).
+ * An entry is flagged if there is a grant of its class with added later than its time,
+ * or if the same fingerprint appears cfg.blockedByMistake.repeatBlocks times or more.
+ * id: 'blocked-by-mistake:<class>:<fingerprint>'; evidence names the class, fingerprint, and ISO dates,
+ * never the command text or quote.
  */
 function detectBlockedByMistake({ pending = [], grants = [] } = {}, cfg = {}) {
   if (!Array.isArray(pending) || pending.length === 0) return []

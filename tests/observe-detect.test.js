@@ -63,6 +63,26 @@ test('a ScheduleWakeup while a delegate task of its session is open breaks the r
   assert.deepEqual(found[0].sessions, ['s-1'])
 })
 
+test('a rise with cause exhausted leaves the task open; a verdict of exhausted closes it', () => {
+  const delegateEntries = [
+    launch(1, 't1', 'haiku', 'first', 100, 1, 's-1'),
+    verdict(2, 't1', 'haiku', 'fix', { kind: 'rise', cause: 'exhausted', step: 'sonnet' }, 200, 's-1'),
+    launch(3, 't1', 'sonnet', 'rise', 300, 2, 's-1'),
+    launch(4, 't2', 'haiku', 'first', 100, 1, 's-2'),
+    verdict(5, 't2', 'haiku', 'exhausted', { kind: 'exhausted', cause: 'exhausted' }, 200, 's-2'),
+  ]
+  const events = [
+    { time: 350, session: 's-1', kind: 'PostToolUse', tool: 'ScheduleWakeup' },
+    { time: 350, session: 's-2', kind: 'PostToolUse', tool: 'ScheduleWakeup' },
+  ]
+  const found = d.detectRuleBroken({ events, delegateEntries })
+  assert.equal(found.length, 1)
+  assert.equal(found[0].id, 'rule-broken:no-wakeup-for-delegate:s-1')
+  assert.equal(found[0].numbers.count, 1)
+  assert.deepEqual(found[0].sessions, ['s-1'])
+  assert.equal(found.some((f) => f.sessions.includes('s-2')), false)
+})
+
 test('a grant of the same class after a block, or the same fingerprint twice, is a possible mistaken block (E5)', () => {
   const fp = d.fingerprintOf('git   push origin main')
   assert.equal(fp, d.fingerprintOf('git push origin main'))
