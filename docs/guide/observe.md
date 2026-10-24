@@ -53,7 +53,7 @@ All of them run from any shell, like `aether-report`; each verb but `hook` print
 | `aether-observe read` | Prints the ordered findings and drafts the issue of each failure |
 | `aether-observe baseline` | Prints the numbers that the data directory already holds, as a reference, and saves them in `observe/baseline.json`; `--from <dir>` reads another data directory, in read-only, such as the installed plugin's |
 | `aether-observe status` | Shows what is kept under `observe/`, by class and size |
-| `aether-observe forget --yes` | Deletes `observe/` and nothing else; without `--yes` it deletes nothing |
+| `aether-observe forget --yes` | Deletes `observe/` and nothing else; without `--yes` it deletes nothing and prints the folder it would delete |
 
 ## What is kept, and for how long
 

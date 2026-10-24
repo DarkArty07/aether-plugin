@@ -163,12 +163,14 @@ function status(dataDir) {
   return { classes, bytes }
 }
 
-// Deletes observe/ whole and nothing else, and only with yes === true.
+// Deletes observe/ whole and nothing else, and only with yes === true. The answer names the folder, so that a run
+// without yes says what it would delete.
 function forget(dataDir, { yes } = {}) {
-  const files = walk(observeDir(dataDir)).length
-  if (yes !== true) return { deleted: false, files }
-  fs.rmSync(observeDir(dataDir), { recursive: true, force: true })
-  return { deleted: true, files }
+  const dir = observeDir(dataDir)
+  const files = walk(dir).length
+  if (yes !== true) return { deleted: false, dir, files }
+  fs.rmSync(dir, { recursive: true, force: true })
+  return { deleted: true, dir, files }
 }
 
 module.exports = {
