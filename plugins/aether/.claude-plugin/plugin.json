@@ -54,6 +54,12 @@
       "title": "Push saved unit branches",
       "description": "Also push the unit branches an interrupted workflow saved to origin. Off by default: saved work stays on its local branch. A push still needs your recorded push permission each time.",
       "default": false
+    },
+    "observedev": {
+      "type": "boolean",
+      "title": "Self-observation development mode",
+      "description": "Turn on development mode for self-observation, which also keeps redacted conversation fragments around failures and owner corrections to the Lead. Off by default: standard self-observation never reads or keeps conversation text.",
+      "default": false
     }
   }
 }

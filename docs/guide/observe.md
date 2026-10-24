@@ -8,18 +8,16 @@ order: 17
 
 Aether watches its own use so that its faults and its settings can be found without you asking. While a Lead session runs, five hooks leave a trace of what failed, and when the session ends the plugin reads what it gathered and lists what looks wrong. It calls no model for this, and it applies nothing: it only points out. The design is [spec 014](../../specs/014-self-observation/spec.md).
 
-## The two installations
+## The two modes
 
-The same code runs in both; what differs is how much of a conversation it may keep.
+The same code runs in both; what differs is how much of a conversation it may keep. The two modes are standard and development, turned on with `aether-lead --dev`, the variable or the `observedev` option.
 
-| Installation | How it starts | What it gathers |
+| Mode | How it starts | What it gathers |
 |---|---|---|
-| `standard` | `claude plugin install aether@aether-plugin`, the install of [Getting started](../getting-started.md) | Identifiers, classes, model names, durations, counts and dates: the event of each hook, the silent faults of the mod, the digest of each session. It never reads or keeps what you type, what the model answers or what a file holds |
-| `dev` | From a clone of the repository, `AETHER_OBSERVE=dev scripts/aether-lead --plugin-dir <tree>/plugins/aether` | What `standard` gathers, plus a short fragment of the conversation around a failure, and the moments you corrected the Lead. Keys and tokens are erased before anything is saved |
+| `standard` | `claude plugin install aether@aether-plugin`, the install of [Getting started](../getting-started.md) (the default mode) | Identifiers, classes, model names, durations, counts and dates: the event of each hook, the silent faults of the mod, the digest of each session. It never reads or keeps what you type, what the model answers or what a file holds |
+| `dev` | `aether-lead --dev`, `AETHER_OBSERVE=dev`, `--config observedev=true`, or `scripts/aether-lead --plugin-dir <tree>/plugins/aether` | What `standard` gathers, plus a short fragment of the conversation around a failure, and the moments you corrected the Lead. Keys and tokens are erased before anything is saved |
 
-The `dev` installation is a clone, or a worktree of it, launched with `--plugin-dir`; it is not the plugin you installed. It writes in the data directory `aether-inline`, not in the one of the installed plugin (`aether-aether-plugin`), unless the command sets `AETHER_DATA_DIR` to that one.
-
-The variable `AETHER_OBSERVE` changes nothing in the marketplace install: the plugin is `dev` only when the variable is exactly `dev` and the plugin runs from the repository tree. An install from the marketplace lives in Claude Code's cache, so it is `standard` whatever the variable says.
+Development mode is turned on with `aether-lead --dev`, the environment variable `AETHER_OBSERVE=dev` (or turned off with `AETHER_OBSERVE=standard`), or the `observedev` option. Precedence goes to `AETHER_OBSERVE` when set to `dev` or `standard`, then the `observedev` option. Running from a clone of the repository with `scripts/aether-lead --plugin-dir <tree>/plugins/aether` is just another way to run it; it writes in the data directory `aether-inline`, not in the one of the installed plugin (`aether-aether-plugin`), unless the command sets `AETHER_DATA_DIR` to that one.
 
 ## What it does on its own
 

@@ -238,28 +238,36 @@ test('the standard installation never opens the conversation, never reads the ow
   for (const file of files(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
 })
 
-test('the bin keeps no correction in the standard installation, nor in a copy in the plugin cache with the variable on (C6, C14)', (t) => {
+test('a copy in the plugin cache keeps corrections with the variable on or the option on (C6, C14)', (t) => {
   const transcriptOf = (dir) => {
     const file = path.join(dir, 't.jsonl')
     fs.writeFileSync(file, lines([A('done'), U('ZEBRA eso no, te dije otra vez', '2026-10-23T10:00:00.000Z')]))
     return file
   }
-  const endSession = (target, env) => {
+  const endSession = (target, env = {}) => {
     const dir = tempDir(t)
     lead(dir)
+    const base = { ...process.env, AETHER_DATA_DIR: dir, HOME: tempDir(t) }
+    delete base.AETHER_OBSERVE
+    delete base.CLAUDE_PLUGIN_OPTION_OBSERVEDEV
     const input = JSON.stringify({ session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear', transcript_path: transcriptOf(dir), cwd: tempDir(t) })
-    const r = spawnSync('node', [target, 'hook'], { input, encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dir, HOME: tempDir(t), ...env } })
+    const r = spawnSync('node', [target, 'hook'], { input, encoding: 'utf8', env: { ...base, ...env } })
     assert.deepEqual([r.status, r.stdout, r.stderr], [0, '', ''])
     return dir
   }
   const cache = path.join(tempDir(t), 'plugins', 'cache', 'aether-plugin', 'aether', '0.19.2')
   fs.cpSync(PLUGIN, cache, { recursive: true })
-  for (const dir of [endSession(BIN, {}), endSession(path.join(cache, 'bin', 'aether-observe'), { AETHER_OBSERVE: 'dev' })]) {
-    assert.equal(fs.existsSync(path.join(dir, 'observe', 'dev')), false)
-    for (const file of files(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
-  }
-  const treeDir = endSession(BIN, { AETHER_OBSERVE: 'dev' })
-  assert.ok(fs.existsSync(path.join(treeDir, 'observe', 'dev', 's-1', 'corrections.json')), 'the tree with the variable on keeps them')
+  const cacheBin = path.join(cache, 'bin', 'aether-observe')
+
+  const standardDir = endSession(cacheBin, {})
+  assert.equal(fs.existsSync(path.join(standardDir, 'observe', 'dev')), false)
+  for (const file of files(path.join(standardDir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes('ZEBRA'), false, file)
+
+  const devVarDir = endSession(cacheBin, { AETHER_OBSERVE: 'dev' })
+  assert.ok(fs.existsSync(path.join(devVarDir, 'observe', 'dev', 's-1', 'corrections.json')), 'cache copy with variable on keeps corrections')
+
+  const devOptDir = endSession(cacheBin, { CLAUDE_PLUGIN_OPTION_OBSERVEDEV: 'true' })
+  assert.ok(fs.existsSync(path.join(devOptDir, 'observe', 'dev', 's-1', 'corrections.json')), 'cache copy with option on keeps corrections')
 })
 
 test('the guide says what the development installation keeps about the corrections (R18, R16)', () => {

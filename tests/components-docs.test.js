@@ -51,7 +51,9 @@ test('the four documents name none of the identifiers of the retired router (R10
 
 test('the README and the getting-started page count the options of the manifest (R22)', () => {
   const options = Object.entries(manifest().userConfig).filter(([, option]) => !/\(legacy\)$/.test(option.title)).map(([name]) => name)
-  assert.equal(options.length, 6)
+  assert.equal(options.length, 7)
+  assert.equal(manifest().userConfig.observedev?.type, 'boolean')
+  assert.equal(manifest().userConfig.observedev?.default, false)
   assert.ok(read('README.md').includes(`the plugin's ${NUMBERS[options.length]} options`), 'the README gives the count')
   const started = read('docs', 'getting-started.md')
   assert.ok(started.includes(`the plugin's ${NUMBERS[options.length]} options`), 'getting-started gives the count')

@@ -32,6 +32,7 @@ const AETHER_VARIABLES = [
 // Every child process gets process.env, so this covers the environment the helper hands to children and the
 // in-process reads of a test file alike. Each test file runs in a process of its own (node --test).
 for (const name of AETHER_VARIABLES) delete process.env[name]
+delete process.env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV
 
 function tempDir(t, prefix = 'aether-test-') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)))

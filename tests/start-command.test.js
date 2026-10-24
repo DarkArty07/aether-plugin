@@ -62,6 +62,48 @@ test('the launcher passes its arguments on, whole and after its own', (t) => {
   assert.deepEqual(argsOf(r).slice(OWN_ARGS.length), ['-p', 'two words', '--resume'])
 })
 
+function fakeClaudeWithObserve(t) {
+  const dir = tempDir(t, 'aether-launcher-')
+  fs.writeFileSync(
+    path.join(dir, 'claude'),
+    '#!/bin/sh\nprintf "OBSERVE:%s\\n" "${AETHER_OBSERVE-<unset>}"\nfor a in "$@"; do printf "%s\\n" "$a"; done\n',
+    { mode: 0o755 },
+  )
+  return { PATH: `${dir}${path.delimiter}${process.env.PATH}` }
+}
+
+test('the launcher recognizes --dev, exports AETHER_OBSERVE=dev and removes it from claude arguments', (t) => {
+  const run = (args, env = {}) => {
+    const base = { ...process.env, ...fakeClaudeWithObserve(t) }
+    delete base.AETHER_OBSERVE
+    const r = spawnSync(LAUNCHER, args, { encoding: 'utf8', env: { ...base, ...env } })
+    assert.equal(r.status, 0, r.stderr)
+    const lines = r.stdout.split('\n').filter(Boolean)
+    const observe = lines[0].replace(/^OBSERVE:/, '')
+    const claudeArgs = lines.slice(1)
+    return { observe, claudeArgs }
+  }
+
+  // without the flag nothing is exported by the launcher
+  const without = run([])
+  assert.equal(without.observe, '<unset>')
+  assert.deepEqual(without.claudeArgs, OWN_ARGS)
+
+  // aether-lead --dev gives claude AETHER_OBSERVE=dev and does not pass --dev
+  const devRun = run(['--dev'])
+  assert.equal(devRun.observe, 'dev')
+  assert.deepEqual(devRun.claudeArgs, OWN_ARGS)
+
+  // -p "x" --dev --resume arrives as -p "x" --resume
+  const extraRun = run(['-p', 'x', '--dev', '--resume'])
+  assert.equal(extraRun.observe, 'dev')
+  assert.deepEqual(extraRun.claudeArgs.slice(OWN_ARGS.length), ['-p', 'x', '--resume'])
+
+  // AETHER_OBSERVE=standard aether-lead --dev still gives dev
+  const winRun = run(['--dev'], { AETHER_OBSERVE: 'standard' })
+  assert.equal(winRun.observe, 'dev')
+})
+
 // A `claude` that prints the AETHER_IRREVERSIBLE it was given, or <unset>.
 function fakeClaudeEnv(t) {
   const dir = tempDir(t, 'aether-launcher-')

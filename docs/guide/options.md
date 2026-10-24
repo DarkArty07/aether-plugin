@@ -1,12 +1,12 @@
 ---
 title: Options
-description: The six options of the Aether plugin, their defaults, how to set each one, and the settings a plugin cannot make for you.
+description: The seven options of the Aether plugin, their defaults, how to set each one, and the settings a plugin cannot make for you.
 order: 10
 ---
 
 # Options
 
-Aether has six options, set when you install the plugin or later, and a few settings that only you can make. This page holds the one table of options: the other pages link here for a default.
+Aether has seven options, set when you install the plugin or later, and a few settings that only you can make. This page holds the one table of options: the other pages link here for a default.
 
 ## Configure Aether
 
@@ -20,6 +20,7 @@ Aether has six options, set when you install the plugin or later, and a few sett
 | `deadlines` | `quota=3` | `--config deadlines=quota=3` at install, or `/plugin` → Installed → aether → Configure options later | Sets how long a delegate task waits, in seconds, for the quota decision; a value above 10 counts as 10 |
 | `quotabrake` | `95` | `--config quotabrake=90` at install, or `/plugin` → Installed → aether → Configure options later | Sets the percent of the five-hour window used at which the quota brake warns you, and pauses an autonomous run until the window resets: see [Autonomy](autonomy.md#autonomy) |
 | `brakepush` | off | `--config brakepush=true` at install, or `/plugin` → Installed → aether → Configure options later | Also pushes the unit branches an interrupted workflow saved to origin, when your recorded push permission covers it; off keeps saved work on its local branch |
+| `observedev` | off | `--config observedev=true` at install, or `/plugin` → Installed → aether → Configure options later | Turns development mode on for self-observation, which keeps redacted conversation fragments and owner corrections: see [Self-observation](observe.md) |
 
 
 - `superdelegation`, off by default, sends everything that is not the Lead to other coding harnesses while their quota lasts, and leaves native Claude as the fallback. They work without permission prompts and spend another plan's quota, so you turn it on yourself. It runs only on Linux. It replaces the `lanes` and `seats` options, which stay in the manifest only so a value you already set is not lost silently: with `superdelegation` unset, `lanes` on counts as superdelegation on and `lanes` off as off; with `superdelegation` set, `lanes` is ignored; `seats` is always ignored, `native` included, and the session start and `aether-report` tell you so. The rule is written once, in [Lanes](lanes.md#lanes). A delegate task that only reads goes to the external pair the one rule picks; a task that edits files goes first through `aether-lane delegate`, to the pair the one rule picks, and runs on Claude only when that command finds no candidate.
@@ -28,6 +29,7 @@ Aether has six options, set when you install the plugin or later, and a few sett
 - `deadlines`, `quota=3` by default, is how long a delegate task waits, in seconds, for the quota decision; a value above 10 counts as 10, and a key that is missing or wrong keeps its default.
 - `quotabrake`, `95` by default, is the percent of your account's five-hour window used at which the quota brake acts in a Lead session: it warns you once per crossing and, in an autonomous run, pauses the run — nothing new starts, what is running is stopped and saved — until the window resets, then resumes the run on its own. The seven-day window at the same percent only warns, and so does a Lead session with no run open. Only your own recorded words turn the brake off, and only for that run. A value that is not a finite number n with 0 < n <= 100 is `95`.
 - `brakepush`, off by default, also pushes the unit branches an interrupted workflow saved to `origin`. The saved work is local either way; with this on, a saved branch is pushed only when your recorded `push` permission covers it, branch by branch.
+- `observedev`, off by default, turns on development mode for self-observation: it also keeps redacted conversation fragments around failures and owner corrections to the Lead (see [Self-observation](observe.md)). Standard self-observation never reads or keeps conversation text.
 
 `harnesses` and `deadlines` are free text. In an Aether session, the [`/harnesses` panel](lanes.md#the-harnesses-panel) shows the values the session uses for `superdelegation` and `harnesses`, with the same fallbacks as above for a value that is not valid. A value you saved earlier for one of the three retired delegate-router options raises no error: nothing reads it.
 

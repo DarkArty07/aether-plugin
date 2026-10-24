@@ -59,7 +59,7 @@ Then, in the same shell, ask which options the plugin has:
 claude plugin configure aether@aether-plugin
 ```
 
-It shows the plugin's six options, `superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake` and `brakepush`, with two legacy keys of the retired lanes and seats options (an old value is read once or ignored), and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
+It shows the plugin's seven options (formerly the plugin's six options, `superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake` and `brakepush`, joined by `observedev`), with two legacy keys of the retired lanes and seats options (an old value is read once or ignored), and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
 
 Last, check that the plan format Aether builds from reads correctly. Save this two-task plan as `tasks.md` anywhere. It is what the Writer produces for a plan, shortened: every task has the Aether fields, and there is an `## Aether Execution` section.
 
@@ -134,7 +134,7 @@ In a clone of this repository, `scripts/aether-lead` is the same launcher. Link 
 ln -s "$PWD/scripts/aether-lead" ~/.local/bin/aether-lead
 ```
 
-Then `aether-lead` does what `aeth` does, with the clone's launcher, and `aether-lead --plugin-dir <worktree>/plugins/aether` tries a development tree in place of the installed release.
+Then `aether-lead` does what `aeth` does, with the clone's launcher, `aether-lead --dev` starts development mode, and `aether-lead --plugin-dir <worktree>/plugins/aether` tries a development tree in place of the installed release.
 
 To make Aether mode the default in one repository, put this in its `.claude/settings.local.json`:
 

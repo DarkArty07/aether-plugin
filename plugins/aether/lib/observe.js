@@ -20,13 +20,12 @@ const summaryFile = (dataDir) => path.join(observeDir(dataDir), 'summary.json')
 const devDir = (dataDir) => path.join(observeDir(dataDir), 'dev')
 const issuesDir = (dataDir) => path.join(observeDir(dataDir), 'issues')
 
-// 'dev' only with the exact value and inside the repository tree: the marketplace install lives in
-// Claude Code's cache, so it is standard even with the variable set.
+// Development mode is turned on by AETHER_OBSERVE=dev or by the observedev option (CLAUDE_PLUGIN_OPTION_OBSERVEDEV=true).
+// Precedence: AETHER_OBSERVE (dev or standard) wins; otherwise the observedev option decides.
 function observeMode(env = process.env, root = PLUGIN_ROOT) {
-  if (env.AETHER_OBSERVE !== 'dev') return 'standard'
-  const inTree = path.basename(path.dirname(root)) === 'plugins'
-    && fs.existsSync(path.join(root, '..', '..', '.claude-plugin', 'marketplace.json'))
-  return inTree ? 'dev' : 'standard'
+  if (env.AETHER_OBSERVE === 'dev') return 'dev'
+  if (env.AETHER_OBSERVE === 'standard') return 'standard'
+  return env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV === 'true' ? 'dev' : 'standard'
 }
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)

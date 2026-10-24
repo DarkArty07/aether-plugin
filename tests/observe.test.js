@@ -8,21 +8,19 @@ const { tempDir, PLUGIN } = require('./helpers.js')
 
 const observe = require(path.join(PLUGIN, 'lib', 'observe.js'))
 
-test('observeMode is dev only for the exact value dev and only inside the repository tree (R4, R9)', (t) => {
-  const tree = tempDir(t)
-  fs.mkdirSync(path.join(tree, '.claude-plugin'), { recursive: true })
-  fs.writeFileSync(path.join(tree, '.claude-plugin', 'marketplace.json'), '{}')
-  fs.mkdirSync(path.join(tree, 'plugins', 'aether'), { recursive: true })
-  const treeRoot = path.join(tree, 'plugins', 'aether')
+test('observeMode is dev with AETHER_OBSERVE=dev from any root, or with observedev option on (R4, R9)', (t) => {
   const cache = tempDir(t)
   const cacheRoot = path.join(cache, 'plugins', 'cache', 'aether-plugin', 'aether', '0.19.2')
   fs.mkdirSync(cacheRoot, { recursive: true })
-  assert.equal(observe.observeMode({}, treeRoot), 'standard')
-  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'standard' }, treeRoot), 'standard')
-  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'Dev ' }, treeRoot), 'standard')
-  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'dev' }, treeRoot), 'dev')
-  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'dev' }, cacheRoot), 'standard')
-  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'dev' }), 'dev', 'the tests run inside the repository tree')
+  assert.equal(observe.observeMode({}), 'standard')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'dev' }, cacheRoot), 'dev')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'dev' }), 'dev')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'standard', CLAUDE_PLUGIN_OPTION_OBSERVEDEV: 'true' }), 'standard')
+  assert.equal(observe.observeMode({ CLAUDE_PLUGIN_OPTION_OBSERVEDEV: 'true' }), 'dev')
+  assert.equal(observe.observeMode({ CLAUDE_PLUGIN_OPTION_OBSERVEDEV: 'false' }), 'standard')
+  assert.equal(observe.observeMode({ CLAUDE_PLUGIN_OPTION_OBSERVEDEV: '1' }), 'standard')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'Dev ' }), 'standard')
+  assert.equal(observe.observeMode({ AETHER_OBSERVE: 'Dev ', CLAUDE_PLUGIN_OPTION_OBSERVEDEV: 'true' }), 'dev')
 })
 
 test('cleanEvent keeps only the closed keys and identifier-shaped values (R4, R10)', () => {

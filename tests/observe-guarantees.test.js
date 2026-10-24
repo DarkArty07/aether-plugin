@@ -83,20 +83,30 @@ test('the development installation keeps the context of a failure and not its ke
   assert.equal(text.includes(KEY), false)
 })
 
-test('the installation from the marketplace stays standard even with the variable on; the one from the tree is development (C6, C7, R9)', (t) => {
-  const dir = tempDir(t); const home = tempDir(t)
-  lead(dir)
-  const transcript = transcriptFile(dir)
+test('a copy in the plugin cache is standard by default, and dev with the variable or the option (C6, C7, R9)', (t) => {
+  const transcript = transcriptFile(tempDir(t))
   const cache = path.join(tempDir(t), 'plugins', 'cache', 'aether-plugin', 'aether', '0.19.2')
   fs.cpSync(PLUGIN, cache, { recursive: true })
-  const run = (target) => spawnSync('node', [target, 'hook'], { input: input('PostToolUseFailure', transcript), encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dir, HOME: home, AETHER_OBSERVE: 'dev' } })
-  const installed = run(path.join(cache, 'bin', 'aether-observe'))
-  assert.deepEqual([installed.status, installed.stdout, installed.stderr], [0, '', ''])
-  assert.ok(fs.existsSync(path.join(dir, 'observe', 'events.jsonl')), 'it still gathers the standard events')
-  assert.deepEqual(files(path.join(dir, 'observe', 'dev')), [], 'and keeps no fragment')
-  const tree = run(BIN)
-  assert.equal(tree.status, 0)
-  assert.equal(files(path.join(dir, 'observe', 'dev')).length, 1)
+  const run = (env) => {
+    const dir = tempDir(t); const home = tempDir(t)
+    lead(dir)
+    const base = { ...process.env, AETHER_DATA_DIR: dir, HOME: home }
+    delete base.AETHER_OBSERVE
+    delete base.CLAUDE_PLUGIN_OPTION_OBSERVEDEV
+    const r = spawnSync('node', [path.join(cache, 'bin', 'aether-observe'), 'hook'], { input: input('PostToolUseFailure', transcript), encoding: 'utf8', env: { ...base, ...env } })
+    assert.deepEqual([r.status, r.stdout, r.stderr], [0, '', ''])
+    return dir
+  }
+  const standardDir = run({})
+  assert.ok(fs.existsSync(path.join(standardDir, 'observe', 'events.jsonl')), 'it gathers standard events')
+  assert.deepEqual(files(path.join(standardDir, 'observe', 'dev')), [], 'and keeps no fragment')
+  for (const file of files(path.join(standardDir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes(MARK), false, file)
+
+  const devVarDir = run({ AETHER_OBSERVE: 'dev' })
+  assert.equal(files(path.join(devVarDir, 'observe', 'dev')).length, 1, 'dev with variable keeps fragment')
+
+  const devOptDir = run({ CLAUDE_PLUGIN_OPTION_OBSERVEDEV: 'true' })
+  assert.equal(files(path.join(devOptDir, 'observe', 'dev')).length, 1, 'dev with option keeps fragment')
 })
 
 test('the whole detection runs by itself when a Lead session ends, with no command run (C1, E7)', (t) => {
