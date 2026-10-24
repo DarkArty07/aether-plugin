@@ -46,7 +46,7 @@ function entriesOf(record) {
   for (const block of content) {
     if (!isObject(block)) continue
     if (block.type === 'text' && typeof block.text === 'string') entries.push({ role, kind: 'text', text: block.text })
-    else if (block.type === 'tool_use') entries.push({ role, kind: 'tool_use', text: `${block.name} ${JSON.stringify(block.input ?? {})}` })
+    else if (block.type === 'tool_use') entries.push({ role, kind: 'tool_use', text: `${block.name ?? ''} ${JSON.stringify(block.input ?? {})}` })
     else if (block.type === 'tool_result') entries.push({ role, kind: 'tool_result', text: resultText(block.content) })
   }
   return entries
@@ -59,7 +59,8 @@ function cutAndRedact(text, maxChars) {
 }
 
 function fragmentFrom(transcriptText, { records = 6, maxChars = 400 } = {}) {
-  if (typeof transcriptText !== 'string') return []
+  const count = Number.isFinite(records) ? Math.trunc(records) : 0
+  if (typeof transcriptText !== 'string' || count < 1) return []
   const withContent = []
   for (const line of transcriptText.split('\n')) {
     if (!line.trim()) continue
@@ -67,7 +68,7 @@ function fragmentFrom(transcriptText, { records = 6, maxChars = 400 } = {}) {
     if (entries.length) withContent.push(entries)
   }
   // The last `records` records, and never more than `records` entries even when a record has several blocks.
-  const entries = withContent.slice(-records).flat().slice(-records)
+  const entries = withContent.slice(-count).flat().slice(-count)
   return entries.map((entry) => ({ role: entry.role, kind: entry.kind, text: cutAndRedact(entry.text, maxChars) }))
 }
 
@@ -97,7 +98,7 @@ function captureFragment({ dataDir, session, event, input, now } = {}) {
     if (typeof dataDir !== 'string' || !dataDir) return null
     if (typeof session !== 'string' || !SESSION.test(session) || session === '.' || session === '..') return null
     if (typeof event !== 'string' || !EVENT.test(event)) return null
-    const time = typeof now === 'number' && Number.isFinite(now) ? Math.trunc(now) : Date.now()
+    const time = typeof now === 'number' && Number.isFinite(now) && now >= 0 ? Math.trunc(now) : Date.now()
     let text
     try {
       text = readTail(input.transcript_path)
