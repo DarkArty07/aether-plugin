@@ -68,20 +68,43 @@ function haikuCostOf(delegateEntries, prices) {
   const steps = loadLadder().rungs.map((rung) => rung.step)
   const rank = (step) => steps.indexOf(step)
   const approvedAt = new Map()
-  const launchStep = new Map()
+  const tasksWithOutcome = new Set()
   for (const entry of delegateEntries) {
-    if (entry.kind === 'verdict' && entry.verdict === 'approved' && typeof entry.task === 'string') approvedAt.set(entry.task, entry.step)
-    if (entry.kind === 'launch' && typeof entry.task === 'string') launchStep.set(`${entry.task}\n${entry.attempt}`, entry.step)
+    const task = typeof entry.task === 'string' ? entry.task : entry.id
+    if (entry.kind === 'verdict' && entry.verdict === 'approved' && typeof task === 'string') {
+      approvedAt.set(task, entry.step)
+    }
+    if (entry.kind === 'outcome' && typeof task === 'string') {
+      tasksWithOutcome.add(task)
+    }
   }
+  let noOutcome = 0
+  for (const [task, step] of approvedAt) {
+    if (step === steps[0] && !tasksWithOutcome.has(task)) noOutcome += 1
+  }
+
   const sonnet = prices.models[SAVES_FAMILY]
   let costUsd = 0
   let savesUsd = 0
   let unpriced = 0
+  let unmatched = 0
+  const lastLaunch = new Map()
+
   for (const entry of delegateEntries) {
-    if (entry.kind !== 'outcome') continue
     const task = typeof entry.task === 'string' ? entry.task : entry.id
+    if (entry.kind === 'launch' && typeof task === 'string') {
+      lastLaunch.set(task, entry)
+      continue
+    }
+    if (entry.kind !== 'outcome') continue
+    const launch = typeof task === 'string' ? lastLaunch.get(task) : undefined
+    if (!launch) {
+      unmatched += 1
+      continue
+    }
     if (!approvedAt.has(task)) continue
     const approving = approvedAt.get(task)
+    const step = launch.step
     const real = () => priceOf(entry, entry.model, prices)
     if (approving === steps[0]) {
       const paid = real()
@@ -89,15 +112,14 @@ function haikuCostOf(delegateEntries, prices) {
       if (paid === null || compared === null) unpriced += 1
       else savesUsd += compared - paid
     } else if (rank(approving) > 0) {
-      const attemptStep = launchStep.get(`${task}\n${entry.attempt}`)
-      if (rank(attemptStep) < 0 || rank(attemptStep) >= rank(approving)) continue
+      if (rank(step) < 0 || rank(step) >= rank(approving)) continue
       const paid = real()
       if (paid === null) unpriced += 1
       else costUsd += paid
     }
   }
   const answer = costUsd === 0 && savesUsd === 0 ? 'no-data' : savesUsd > costUsd ? 'saves-more' : savesUsd < costUsd ? 'costs-more' : 'equal'
-  return { costUsd, savesUsd, unpriced, answer }
+  return { costUsd, savesUsd, unpriced, unmatched, noOutcome, answer }
 }
 
 function runsOf(runLines) {

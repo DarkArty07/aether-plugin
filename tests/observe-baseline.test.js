@@ -17,7 +17,7 @@ const SONNET = prices.models.sonnet
 const usage = { input: 1000, output: 0, thinking: 0, cacheRead: 0 }
 
 const launch = (task, step, launchKind, attempt, time) => ({ kind: 'launch', time, session: 's-1', task, step, attempt, launchKind })
-const out = (task, attempt, model, time) => ({ kind: 'outcome', id: task, time, session: 's-1', status: 'ok', harness: 'agy', model, attempt, usage })
+const out = (task, attempt, model, time, status = 'ok') => ({ kind: 'outcome', id: task, time, session: 's-1', status, harness: 'agy', model, attempt, usage })
 const verdict = (task, step, label, time, next = { kind: 'done' }) => ({ kind: 'verdict', time, session: 's-1', task, step, verdict: label, next })
 
 function build(dir) {
@@ -88,6 +88,8 @@ test('the baseline answers the three questions in numbers and reads another dire
   assert.ok(Math.abs(result.haikuCost.costUsd - cost) < 1e-12, 'the attempt of b below its approving step')
   assert.ok(Math.abs(result.haikuCost.savesUsd - saves) < 1e-12, 'the task a approved on haiku')
   assert.equal(result.haikuCost.unpriced, 1)
+  assert.equal(result.haikuCost.unmatched, 0)
+  assert.equal(result.haikuCost.noOutcome, 0)
   assert.equal(result.haikuCost.answer, cost > saves ? 'costs-more' : cost < saves ? 'saves-more' : 'equal')
 })
 
@@ -101,6 +103,8 @@ test('with no records the baseline reports zeros and writes nothing into the dir
   assert.deepEqual(result.usage, { sessions: 0, parts: 0 })
   assert.deepEqual(result.exams, { features: 0 })
   assert.deepEqual(result.pending, { entries: 0, byClass: {} })
+  assert.equal(result.haikuCost.unmatched, 0)
+  assert.equal(result.haikuCost.noOutcome, 0)
   assert.equal(result.haikuCost.answer, 'no-data')
   assert.deepEqual(fs.readdirSync(from), [])
 })
@@ -113,4 +117,47 @@ test('the baseline changes no configuration value (R6)', (t) => {
   build(from)
   baseline({ from, to: tempDir(t), prices })
   assert.equal(hash(), before)
+})
+
+test('haikuCost joins outcomes to the last preceding launch in log order and reports unmatched and noOutcome', (t) => {
+  const from = tempDir(t)
+  const to = tempDir(t)
+  const log = [
+    // Task h: approved on Haiku; chain tried two pairs (attempt 1 failed, attempt 2 ok), both under launch attempt 1
+    launch('h', 'haiku', 'first', 1, 1),
+    out('h', 1, 'gemini-3.8-flash', 2, 'failed'),
+    out('h', 2, 'gemini-3.8-flash', 3, 'ok'),
+    verdict('h', 'haiku', 'approved', 4),
+
+    // Task s: rose to Sonnet and approved; attempts 1 and 2 ran under Haiku launch, attempts 3 and 4 ran under Sonnet launch
+    launch('s', 'haiku', 'first', 1, 5),
+    out('s', 1, 'gemini-3.8-flash', 6, 'failed'),
+    out('s', 2, 'gemini-3.8-flash', 7, 'ok'),
+    verdict('s', 'haiku', 'fix', 8, { kind: 'rise', cause: 'repeated', step: 'sonnet' }),
+    launch('s', 'sonnet', 'rise', 2, 9),
+    out('s', 3, 'gemini-4-argon', 10, 'failed'),
+    out('s', 4, 'gemini-4-argon', 11, 'ok'),
+    verdict('s', 'sonnet', 'approved', 12),
+
+    // Task e: approved on Haiku, but has no outcome at all (e.g. editing delegate)
+    launch('e', 'haiku', 'first', 1, 13),
+    verdict('e', 'haiku', 'approved', 14),
+
+    // Orphan outcome with no preceding launch
+    out('orphan', 1, 'gemini-3.8-flash', 15),
+  ]
+  fs.mkdirSync(path.join(from, 'delegates'), { recursive: true })
+  fs.writeFileSync(path.join(from, 'delegates', 'log.jsonl'), log.map((e) => JSON.stringify(e)).join('\n') + '\n')
+
+  const result = baseline({ from, to, prices })
+  const flashCost = (1000 * FLASH.input) / prices.per
+  const expectedCost = 2 * flashCost // out('s', 1) and out('s', 2) under Haiku launch
+  const expectedSaves = 2 * ((1000 * SONNET.input - 1000 * FLASH.input) / prices.per) // out('h', 1) and out('h', 2)
+
+  assert.ok(Math.abs(result.haikuCost.costUsd - expectedCost) < 1e-12, 'both haiku outcomes of task s count toward cost')
+  assert.ok(Math.abs(result.haikuCost.savesUsd - expectedSaves) < 1e-12, 'both haiku outcomes of task h count toward saves')
+  assert.equal(result.haikuCost.unpriced, 0)
+  assert.equal(result.haikuCost.unmatched, 1, 'orphan outcome counted in unmatched')
+  assert.equal(result.haikuCost.noOutcome, 1, 'task e approved in Haiku with no outcome counted in noOutcome')
+  assert.equal(result.haikuCost.answer, expectedSaves > expectedCost ? 'saves-more' : expectedSaves < expectedCost ? 'costs-more' : 'equal')
 })
