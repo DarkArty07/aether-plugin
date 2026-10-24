@@ -62,6 +62,7 @@ Then tell the Lead what you want. [Start](docs/getting-started.md#start) has the
 - [Purpose](docs/purpose.md): why Aether exists, the five goals of RADAR and the principles it follows.
 - [Methodology](docs/methodology.md): the roles, the three paths and the swarm, from your request to a merged result.
 - [Delegates](docs/guide/delegates.md): how a delegate task of the Lead climbs from Haiku to Sonnet and Opus, corrected on top of its own work, and what the system logs of it.
+- [Self-observation](docs/guide/observe.md): how `aether-observe` finds the plugin's own faults and out-of-date settings in a Lead session, and why nothing leaves your machine.
 - [Documentation](docs/index.md): every guide, the reference, the changelog and the design record.
 
 ## License

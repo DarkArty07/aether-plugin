@@ -23,6 +23,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 - [Autonomy](guide/autonomy.md): how much the Lead does without asking, and the owner's grants that widen it.
 - [Ops](guide/ops.md): the work that runs as plain code with no model call.
 - [Maintenance](guide/maintenance.md): the platforms, updating, pinning, rolling back and uninstalling, where the data lives and upgrading from 0.6.
+- [Self-observation](guide/observe.md): how the plugin finds its own faults and out-of-date settings in a Lead session, what the standard and the development installations gather, the `aether-observe` commands, and why nothing leaves your machine.
 - [Troubleshooting](guide/troubleshooting.md): what to check when something does not work as the guide says.
 - [Components](reference/components.md): the agents, skills, commands, hooks and workflows the plugin ships.
 
