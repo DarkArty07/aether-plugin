@@ -18,6 +18,7 @@ const TASK_HEADING = /^###\s+Task\s+(\d+)\s*:\s*(.+?)\s*$/i
 // any heading that tries to name a task, well formed or not
 const TASK_LOOKALIKE = /^#{1,6}\s+\W*task\s*\d/i
 const LEVEL2 = /^##\s+\S/
+// The swarm's attempts per tier: another datum than config/ladder.json, which holds the corrections of the Lead's delegates.
 const DEFAULT_LADDER = { haiku: 2, sonnet: 2, opus: 1 }
 const DEFAULT_MAX_AGENTS = 200
 const MAX_LISTED_GAPS = 20
