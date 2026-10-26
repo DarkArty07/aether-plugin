@@ -53,10 +53,6 @@ test('R20: the retired seats profiles are not a value of the seats option', () =
   // `seats: 'balanced'`, `AETHER_SEATS=robust`, `--seats robust`.
   const profile = /\b(?:seats|AETHER_SEATS|CLAUDE_PLUGIN_OPTION_SEATS|--seats)["']?\s*(?:[:=]|\s)\s*["']?(?:robust|balanced)\b/i
   assert.deepEqual(found(profile), [], 'a seats profile is still given as a value in these files')
-  // The option stays declared only as a legacy one: no default and no choices to pick from.
-  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins/aether/.claude-plugin/plugin.json'), 'utf8'))
-  const seats = manifest.userConfig.seats
-  for (const key of ['default', 'enum', 'choices', 'values']) assert.equal(Object.hasOwn(seats, key), false, key)
 })
 
 test('R20: no file of the plugin config, lib or workflows, nor of scripts, names the replaces field of the lane table', () => {

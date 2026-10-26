@@ -15,7 +15,7 @@ Aether has seven options, set when you install the plugin or later, and a few se
 | Option | Default | Set it | What it does |
 |---|---|---|---|
 | `superdelegation` | off | `--config superdelegation=true` at install, or `/plugin` → Installed → aether → Configure options later | Sends everything that is not the Lead to other coding harnesses while their quota lasts; native Claude is the fallback: see [Lanes](lanes.md#lanes) |
-| `harnesses` | `agy` | `--config harnesses=agy,grok` at install, or `/plugin` → Installed → aether → Configure options later | Lists the harnesses lanes may use, comma-separated: see [Lanes](lanes.md#lanes) |
+| `harnesses` | `agy` | `--config harnesses=agy,grok,muse` at install, or `/plugin` → Installed → aether → Configure options later | Lists the harnesses lanes may use, comma-separated: see [Lanes](lanes.md#lanes). Codex and Cursor are not tested with a real account. |
 | `ops` | on | `--config ops=false` at install, or `/plugin` → Installed → aether → Configure options later | Lets the mod run the swarm's own `aether-wt` and `aether-lane` commands without a model: see [Ops without a model](ops.md) |
 | `deadlines` | `quota=3` | `--config deadlines=quota=3` at install, or `/plugin` → Installed → aether → Configure options later | Sets how long a delegate task waits, in seconds, for the quota decision; a value above 10 counts as 10 |
 | `quotabrake` | `95` | `--config quotabrake=90` at install, or `/plugin` → Installed → aether → Configure options later | Sets the percent of the five-hour window used at which the quota brake warns you, and pauses an autonomous run until the window resets: see [Autonomy](autonomy.md#autonomy) |
