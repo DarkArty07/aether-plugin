@@ -31,7 +31,8 @@ El diseño aprobado es [design.md](design.md): D1 a D8. En orden de construcció
 
 - **Datos y código:** `plugins/aether/config/ladder.json`; `plugins/aether/lib/plan.js`; `plugins/aether/lib/lane-delegate.js`; `plugins/aether/workflows/run.workflow.js`; `plugins/aether/agents/implementer.md`, `supervisor.md` y `writer.md`; `plugins/aether/skills/tasks/SKILL.md`; `plugins/aether/speckit/commands/speckit.tasks.md`.
 - **Pruebas:** `tests/ladder.test.js`, `tests/delegate-task.test.js`, `tests/delegates-docs.test.js`, `tests/plan.test.js`, `tests/aether-plan.test.js`, `tests/agents.test.js`, `tests/speckit.test.js`, `tests/lane-delegate.test.js`, `tests/workflow*.test.js`, `tests/docs-facts.test.js`; nuevas: `tests/models-by-role-docs.test.js` y `tests/effort-policy-docs.test.js`.
-- **Documentación:** `docs/guide/models-by-role.md` (nueva), `docs/guide/delegates.md`, `docs/index.md`, `docs/decisions.md`, `docs/methodology.md`, `docs/roadmap.md`, `docs/purpose.md`, `docs/changelog.md`, `docs/handoff/2026-10-26-model-effort-policy.md`.
+- **Documentación:** `docs/guide/models-by-role.md` (nueva), `docs/guide/delegates.md`, `docs/index.md`, `docs/decisions.md`, `docs/methodology.md`, `docs/roadmap.md`, `docs/purpose.md`, `docs/changelog.md`.
+- **Fuera del swarm:** `docs/handoff/2026-10-26-model-effort-policy.md` lo escribe el Lead al cierre de la corrida, fuera del swarm; ninguna tarea lo tiene en sus `Owns`, porque un handoff cuenta la corrida ya terminada (C7).
 
 ## Verification
 
@@ -61,4 +62,4 @@ Los de [design.md](design.md): un esfuerzo menor deja pasar más; más correccio
 | Violation | Why needed | Simpler alternative rejected because |
 | --- | --- | --- |
 | Una página nueva de la guía con una prueba que la ata al árbol | R7 y C7: el dueño pidió la manera del artifact en la documentación y que quede al día | Una sección dentro de `methodology.md`: ya es larga y no tiene una prueba que la ate; una página sin prueba se desfasa en la primera recalibración |
-| Siete tareas en cuatro olas | El orden de R2 y R3 (una prueba compartida) y los 6 caminos de `Owns` por tarea | Una sola tarea con todo: pasa de 20 caminos y, según el issue 003, una tarea así suele acabar sin su reporte |
+| Siete tareas en cinco olas (`[["task-1"],["task-2"],["task-3","task-4"],["task-5"],["task-6","task-7"]]`) | R2 y R3 y las dependencias reales: la Tarea 2 va tras la 1 (patrones de `Owns` que se solapan), las Tareas 3 y 4 tras la 2 (la 3 mueve el esfuerzo por defecto que la 2 ya desacopló de las pruebas del workflow), la Tarea 5 tras la 1, la 2 y la 3 (describe lo ya cambiado) y las Tareas 6 y 7 tras la 5 (enlazan la página nueva) | Una sola tarea con todo: pasa de 20 caminos y, según el issue 003, una tarea así suele acabar sin su reporte; fundir olas violaría esas dependencias o haría que dos tareas de una ola poseyeran el mismo camino |
