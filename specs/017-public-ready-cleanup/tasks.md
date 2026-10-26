@@ -432,7 +432,7 @@ const READER = {
 test('Muse: the declared figures of muse-wonder-full-1.0 stay as the owner left them', () => {
   const lanes = json('plugins/aether/config/lanes.json').harnesses.muse.models['muse-wonder-full-1.0']
   const pair = json('plugins/aether/config/pairs.json').pairs.find((p) => p.id === 'muse/muse-wonder-full-1.0@high')
-  const model = json('plugins/aether/config/models/models.json').models.find((m) => m.harness === 'muse' && m.model === 'muse-wonder-full-1.0')
+  const model = json('plugins/aether/config/models/models.json').withoutFigures.find((m) => m.harness === 'muse' && m.model === 'muse-wonder-full-1.0')
   assert.equal(pair.intelligence, 53.6)
   assert.equal(pair.costPerTaskUsd, null)
   assert.ok(pair.ownerDecision.length > 0)
@@ -576,7 +576,7 @@ y `tests/docs-facts.test.js` cambia lo que pinaba los documentos retirados (la l
 - Depends on: Task 36 — `lib/session.js` ya no borra el archivo de sesión viejo, así que la prueba del diario puede exigir que siga en disco, y la tarea 36 ya cambió `tests/trim-router.test.js`
 - Serves: R3, R17
 
-**Interfaces:** `lib/router-log.js` se borra; `lib/spend.js` ya no pide `./router-log.js` ni lee `<dataDir>/router/decisions.jsonl` (`readOutcomesIn(journalFile(…))` sale y el gasto de un id es el de las fuentes actuales: `usage/`, `lanes/` y el registro de delegates); `lib/delegate-report.js` ya no pide `readJournal` ni las filas del diario (`rowsOfJournal` sale con lo que solo él usaba). Ningún archivo `.router.json` ni `router/decisions.jsonl` se lee ni se borra.
+**Interfaces:** `lib/router-log.js` se borra; `lib/spend.js` ya no pide `./router-log.js` ni lee `<dataDir>/router/decisions.jsonl` (`readOutcomesIn(journalFile(…))` sale y el gasto de un id es el de las fuentes actuales: `usage/`, `lanes/` y el registro de delegates); `lib/delegate-report.js` ya no pide `readJournal` ni las filas del diario (`rowsOfJournal` sale con lo que solo él usaba). Ningún archivo `.router.json` ni `router/decisions.jsonl` se lee ni se borra. En `tests/spend-prune.test.js`, las dos listas que hacen `delete env[key]` (las de «session start archives a session before it prunes it» y «session start leaves a trace when its prune fails») dejan de contener los literales `'CLAUDE_PLUGIN_OPTION_LANES'` y `'CLAUDE_PLUGIN_OPTION_SEATS'`: cada nombre se arma por concatenación (`'CLAUDE_PLUGIN_OPTION_' + 'LANES'` y `'CLAUDE_PLUGIN_OPTION_' + 'SEATS'`) y el `delete` sigue igual.
 
 **Tests (write first):** `tests/retired-journal.test.js`:
 
@@ -624,14 +624,14 @@ test('an old journal and an old session file on disk change no figure and are no
 - Tier: sonnet high — hay que decidir verbo por verbo con la lista cerrada de llamadores, leyendo las llamadas que se arman con variables
 - Review: xhigh — quitar un verbo que un workflow, un hook o una skill sí llama rompe una corrida entera sin que el árbol lo diga
 - Area: commands
-- Owns: `plugins/aether/bin/*`, `tests/aether-autonomy.test.js`, `tests/aether-lane.test.js`, `tests/aether-plan.test.js`, `tests/aether-report.test.js`, `tests/aether-wt.test.js`, `tests/observe-bin.test.js`, `tests/spend-bin.test.js`, `tests/start-command.test.js`, `tests/commands.test.js`, `docs/guide/observe.md`, `docs/guide/delegates.md`, `docs/guide/lanes.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`, `tests/observe-docs.test.js`, `tests/delegate-docs.test.js`, `tests/quota-brake-docs.test.js`
+- Owns: `plugins/aether/bin/*`, `tests/aether-autonomy.test.js`, `tests/aether-lane.test.js`, `tests/aether-plan.test.js`, `tests/aether-report.test.js`, `tests/aether-wt.test.js`, `tests/observe-bin.test.js`, `tests/spend-bin.test.js`, `tests/start-command.test.js`, `tests/commands.test.js`, `docs/guide/observe.md`, `docs/guide/delegates.md`, `docs/guide/lanes.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`, `tests/observe-docs.test.js`, `tests/delegate-docs.test.js`, `tests/quota-brake-docs.test.js`, `tests/exam.test.js`, `tests/observe-read.test.js`, `tests/observe-guarantees.test.js`, `tests/observe-corrections.test.js`, `tests/components-docs.test.js`, `plugins/aether/lib/observe-baseline.js`, `tests/observe-baseline.test.js`
 - Depends on: Task 34 — `bin/aether-session-start` lo cambió la tarea 34
 - Depends on: Task 33 — `tests/aether-report.test.js` lo cambió la tarea 33
 - Depends on: Task 5 — `tests/aether-lane.test.js`
 - Depends on: Task 7 — las páginas de `docs/guide/` y su índice
 - Serves: R19
 
-**Interfaces:** «comando» es cada bin de `plugins/aether/bin/`, cada verbo que un bin expone (la línea `// aether-<bin> <verbo> …` de su cabecera de uso) y `scripts/aether-lead`. Cada uno se conserva solo si lo llama una fuente de la lista cerrada (workflows, `hooks.json`, `hooks/*.js` y `*.mjs`, `skills/**`, `agents/**`, `scripts/`), si es de los que quedan por nombre (`aether-report` entero, `aether-guard`, `aether-session-start`, `aether-observe hook`), o si es `aether-lead`. **Los verbos internos que un verbo conservado lanza en otro proceso** (`aether-lane _runner` y `_seat` los lanzan `start` y `seat-start`; `aether-delegate run` lo lanza `start`) se conservan solo si ese verbo lanzador está en la misma cabecera de uso y tiene su propio llamador concreto; la prueba los declara en `INTERNAL`. Los candidatos que el plan midió sin llamador a la vista se miden igual que el resto, por `concreteCaller`, y salen si ningún archivo de la lista cerrada los nombra: `aether-lane result`, `aether-observe read|baseline|status|forget`, `aether-delegate renew`, `aether-exam list`, `aether-autonomy brake-crossing`. `aether-delegate verdict --from-scratch` se conserva (lo usa el Lead por sus reglas). Un verbo cuenta como llamado por un arreglo solo si está escrito entre comillas **dentro de un arreglo literal** (`[ … ]`) de un archivo que también nombra el bin; una llamada armada solo con una variable, sin el verbo escrito junto al bin ni dentro de ese arreglo, no cuenta. Un verbo quitado pierde su rama en el bin, su línea de la cabecera de uso y de `USAGE`, y la prueba de la rama; la función de `lib/` que solo él llamaba **no** se borra aquí (la borra el barrido del módulo): se lista en el informe. Las líneas de las páginas de `docs/guide/` y de sus pruebas que nombraban el verbo quitado se corrigen.
+**Interfaces:** «comando» es cada bin de `plugins/aether/bin/`, cada verbo que un bin expone (la línea `// aether-<bin> <verbo> …` de su cabecera de uso, y cada verbo separado por `|` en esa línea) y `scripts/aether-lead`. Cada uno se conserva solo si lo llama una fuente de la lista cerrada (workflows, `hooks.json`, `hooks/*.js` y `*.mjs`, `skills/**`, `agents/**`, `scripts/`), si es de los que quedan por nombre (`aether-report` entero, `aether-guard`, `aether-session-start`, `aether-observe hook`), o si es `aether-lead`. **Los verbos internos que un verbo conservado lanza en otro proceso** (`aether-lane _runner` y `_seat` los lanzan `start` y `seat-start`; `aether-delegate run` lo lanza `start`; `aether-delegate renew` lo lanza `begin`, porque el arranque llama a `startRenewal` de `lib/router-renewal.js`, que abre otro proceso con `aether-delegate renew`) se conservan solo si ese verbo lanzador está en la misma cabecera de uso y tiene su propio llamador concreto; la prueba los declara en `INTERNAL`, `renew` incluido. Los candidatos que el plan midió sin llamador a la vista se miden igual que el resto, por `concreteCaller`, y salen si ningún archivo de la lista cerrada los nombra: `aether-lane result`, `aether-observe read|baseline|status|forget`, `aether-exam list`, `aether-autonomy brake-crossing`. `aether-delegate verdict --from-scratch` se conserva (lo usa el Lead por sus reglas). Un verbo cuenta como llamado por un arreglo solo si está escrito entre comillas **dentro de un arreglo literal** (`[ … ]`) de un archivo que también nombra el bin; una llamada armada solo con una variable, sin el verbo escrito junto al bin ni dentro de ese arreglo, no cuenta. Un verbo quitado pierde su rama en el bin, su línea de la cabecera de uso y de `USAGE`, y la prueba de la rama; la función de `lib/` que solo él llamaba **no** se borra aquí (la borra el barrido del módulo): se lista en el informe. Las líneas de las páginas de `docs/guide/` y de sus pruebas que nombraban el verbo quitado se corrigen. Quitar `aether-exam list` y `aether-observe read|baseline|status|forget` corrige también las pruebas que los invocan y que esta tarea posee: `tests/exam.test.js`, `tests/observe-bin.test.js`, `tests/observe-read.test.js`, `tests/observe-guarantees.test.js`, `tests/observe-corrections.test.js` y `tests/components-docs.test.js`. `plugins/aether/lib/observe-baseline.js` pierde su único consumidor, la rama `baseline` de `bin/aether-observe` (la llamada a `baseline` de la línea 60); esta tarea posee ese módulo y `tests/observe-baseline.test.js`, no lo borra y lo lista en el informe para el barrido de la tarea 15, que ya depende de esta. Una prueba de esa lista que no invoca el verbo quitado no cambia de sentido.
 
 **Tests (write first):** `tests/commands.test.js`:
 
@@ -648,7 +648,7 @@ const PLUGIN = path.join(ROOT, 'plugins', 'aether')
 // Kept by name (R19 b): the whole of aether-report, the hook entry points, and the verb hook of aether-observe.
 const BY_NAME = new Set(['aether-report', 'aether-guard', 'aether-session-start', 'aether-observe hook'])
 // Internal verbs: launched in a process of their own by a verb that stays (the caller is that verb).
-const INTERNAL = { 'aether-lane _runner': 'aether-lane start', 'aether-lane _seat': 'aether-lane seat-start', 'aether-delegate run': 'aether-delegate start' }
+const INTERNAL = { 'aether-lane _runner': 'aether-lane start', 'aether-lane _seat': 'aether-lane seat-start', 'aether-delegate run': 'aether-delegate start', 'aether-delegate renew': 'aether-delegate begin' }
 
 function files(dir, keep) {
   return execFileSync('git', ['ls-files', dir], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter((f) => f && keep(f))
@@ -681,11 +681,27 @@ function headerOf(bin) {
 }
 
 function verbsOf(bin) {
+  const token = '[_a-z][a-z-]*'
   const verbs = new Set()
-  for (const line of headerOf(bin).split('\n')) {
-    const m = line.match(new RegExp(`^//\\s+${bin}\\s+([_a-z][a-z-]*)`))
-    if (m) verbs.add(m[1])
+  const dispatch = new Set()
+  const body = fs.readFileSync(path.join(PLUGIN, 'bin', bin), 'utf8')
+  for (const hit of body.matchAll(new RegExp(`(?:\\bverb\\b|argv\\[0\\])\\s*===\\s*['"\`](${token})['"\`]`, 'g'))) dispatch.add(hit[1])
+  // Keys of `const COMMANDS = { … }` only: a word after `{` or `,`, not a word inside a usage string (`|harness:model`).
+  for (const table of body.matchAll(/const COMMANDS = \{([^}]*)\}/g)) {
+    for (const key of table[1].matchAll(new RegExp(`(?:^|[{,])\\s*(${token})\\s*:`, 'g'))) dispatch.add(key[1])
   }
+  for (const line of headerOf(bin).split('\n')) {
+    const m = line.match(new RegExp(`^//\\s+${bin}\\s+(.*)$`))
+    if (!m) continue
+    const parts = m[1].split('|')
+    const first = parts[0].trim().match(new RegExp(`^(${token})\\b`))
+    if (first) verbs.add(first[1])
+    for (const part of parts.slice(1)) {
+      const verb = part.trim().match(new RegExp(`^(${token})\\b`))
+      if (verb && dispatch.has(verb[1])) verbs.add(verb[1])
+    }
+  }
+  for (const verb of dispatch) verbs.add(verb)
   return [...verbs]
 }
 
@@ -722,6 +738,10 @@ test('aether-delegate verdict --from-scratch stays (the Lead uses it by its rule
 
 test('scripts/aether-lead stays', () => {
   assert.ok(fs.existsSync(path.join(ROOT, 'scripts', 'aether-lead')))
+})
+
+test('a pipe-separated usage line yields every verb, crossed with the dispatch branches', () => {
+  assert.deepEqual([...verbsOf('aether-observe')].sort(), ['baseline', 'forget', 'hook', 'read', 'status'])
 })
 ```
 
@@ -2115,7 +2135,7 @@ test('R5: an editing delegate and its review never go to a pair whose model lack
 - Depends on: Task 10 — `choose` ya acepta `role` y `lanes`
 - Serves: R5, R6
 
-**Interfaces:** en `lib/seats.js`, `seatChoice(seat, { pairs, harnesses, exclude, authors, lanes })` pasa `role: seat` y `lanes` a `choose`; `chooseSeat` le pasa su `config` y `reservedPair(offeredPairs, harnesses, exclude, authors, lanes)` gana ese argumento para sus tres llamadas a `seatChoice` (`'judge'`, `'writer'` y `'writer'` sin el par retenido). `authorRule: 'reserve'` y `nativeDiffers: seat !== 'writer'` no cambian. `gemini-4-argon` lista `judge, writer, examiner`; `claude-sonnet-5-5` y `claude-opus-5-5` no listan ningún asiento: con la lista conectada los asientos solo van a los modelos que los listan, y si ninguno, al par nativo del asiento. Las pruebas que esperaban lo contrario cambian su expectativa por la que la tabla permite; el informe las lista.
+**Interfaces:** en `lib/seats.js`, `seatChoice(seat, { pairs, harnesses, exclude, authors, lanes })` pasa `role: seat` y `lanes` a `choose`; `chooseSeat` le pasa su `config` y `reservedPair(offeredPairs, harnesses, exclude, authors, lanes)` gana ese argumento para sus tres llamadas a `seatChoice` (`'judge'`, `'writer'` y `'writer'` sin el par retenido). `authorRule: 'reserve'` y `nativeDiffers: seat !== 'writer'` no cambian. `gemini-4-argon` lista `judge, writer, examiner`; `claude-sonnet-5-5` y `claude-opus-5-5` no listan ningún asiento: con la lista conectada los asientos solo van a los modelos que los listan, y si ninguno, al par nativo del asiento. Las pruebas que esperaban lo contrario cambian su expectativa por la que la tabla permite; el informe las lista. En `tests/workflow-design.test.js`, el elemento `{ seats: 'balanced' }` de la lista `bad` de «args with seats or lanes…» deja de estar escrito entero: pasa a `{ ['sea' + 'ts']: 'bal' + 'anced' }`, y la prueba sigue afirmando que ese argumento se rechaza antes de arrancar un agente. `{ lanes: 'on' }` se queda.
 
 **Tests (write first):** en `tests/seats.test.js` (usa `choose`, `config` y `world()` que el archivo ya define):
 
@@ -2203,6 +2223,7 @@ test('the decision asks for reviewer and the probe of serving asks for no role',
 - Depends on: Task 35 — `tests/panel-view.test.js` y `tests/panel-conformance.test.js`
 - Depends on: Task 36 — `tests/session.test.js` y `tests/trim-router.test.js`
 - Depends on: Task 37 — `tests/run.test.js`
+- Depends on: Task 45 — `tests/workflow-design.test.js` lo deja sin el literal `{ seats: 'balanced' }` la tarea 45, que lo posee
 - Serves: R1, R2, R3, R4, R17
 
 **Interfaces:** cada archivo que posee y que contiene un patrón retirado entero lo escribe por concatenación (`'AETHER_' + 'SEATS'`, `'CLAUDE_PLUGIN_OPTION_' + 'LAN' + 'ES'`, `'--sea' + 'ts native'`) o lo pide a `tests/retired-patterns.js`, sin cambiar lo que la prueba afirma. En `tests/helpers.js` la lista `AETHER_VARIABLES` pierde `AETHER_SUPERDELEGATION_LEGACY` (ningún código la lee ya) y `tests/env-scrub.test.js` sigue en verde; las listas de variables que borran `tests/bootstrap-names.test.js` (línea 35) y `tests/session-start-autonomy.test.js` (línea 14) pierden las dos variables de opciones retiradas, que ya nada lee. `tests/superdelegation-gone.test.js` conserva todas sus pruebas salvo las que la tarea 3 ya quitó; sus expresiones `AETHER_SEATS`, `AETHER_LANES` y la de perfiles se arman por concatenación. `tests/docs-facts.test.js`, `tests/panel-view.test.js` y los demás que otra tarea posee ya los dejó limpios esa tarea.
