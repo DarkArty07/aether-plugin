@@ -65,8 +65,12 @@ function failuresOf(payload) {
   return [failureObject(payload.reason), failureObject(payload.error)]
 }
 
-// The quota data of a failure, or null. Only this data makes a quota failure, never the words of a message.
-// Assumed from the MSP schema, not yet seen in a real call (spec R27).
+// The quota data of a failure, or null. Only this data makes a quota failure here, in the adapter's own reason.
+// One text is read as a refusal downstream instead (lib/quota-refusal.js, as agy's wording is): the subscription
+// 429 a real call failed with («Subscription quota exhausted ... (rate_limit_error)», issue 75) reaches the adapter
+// with the message text alone and none of this data, so the words are the only sign of that limit. No other words
+// of a message count, here or there.
+// The data is assumed from the MSP schema, not yet seen in a real call (spec R27).
 function quotaDataOf(failures) {
   for (const { object } of failures) {
     if (isPlainObject(object?.quota)) return object.quota

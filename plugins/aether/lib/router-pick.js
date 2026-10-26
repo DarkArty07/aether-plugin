@@ -22,7 +22,8 @@ const isObject = (value) => value !== null && typeof value === 'object' && !Arra
 
 // The view of the quota groups of one harness that choose reads, from the reading the router has of it (null when the
 // harness keeps none, which leaves its groups unknown and usable, as in the swarm). A mark that came from a reading is
-// lifted by a valid reading that shows the group healthy and is newer than the mark; a refusal's mark never is.
+// lifted by a valid reading that shows the group healthy and is newer than the mark; agy's refusal mark never is, and
+// Muse's only by a reading observed after it (lane-marks.js liftable, issue 75).
 function viewOf(config, name, reading, { marks, now, lift }) {
   const settings = config.harnesses[name]
   const life = lifeMs(config, name)

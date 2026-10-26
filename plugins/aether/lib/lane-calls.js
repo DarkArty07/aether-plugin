@@ -287,11 +287,13 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   if (!lane) return { unavailable: 'role' }
   if (!adapter.installed()) return { unavailable: 'not-installed' }
   const dataDir = run.dataDir()
-  // A group a live mark holds is held until the mark's end and its mark is not renewed. A refusal's mark is not read
-  // for: no reading lifts it. Any other mark is given the chance to be lifted by the reading of the group (the kept one,
-  // or a new one when it has expired), and holds if that does not lift it.
+  // A group a live mark holds is held until the mark's end and its mark is not renewed. agy's refusal mark is not read
+  // for: no reading lifts it. Any other mark (Muse's subscription refusal included, issue 75: its reading is the
+  // allowance of the same windows) is given the chance to be lifted by the reading of the group (the kept one, or a
+  // new one when it has expired), and holds if that does not lift it; lane-marks.js lifts Muse's refusal only for a
+  // reading observed after it, never for the allowance kept from before it.
   const held = marks.liveMark(dataDir, name, lane.group)
-  if (held !== null && held.reason === marks.REFUSAL_REASON) return { unavailable: 'quota' }
+  if (held !== null && held.reason === marks.REFUSAL_REASON && name !== 'muse') return { unavailable: 'quota' }
   // A reading that fails leaves the group unknown (R8), so the call starts: a harness that is broken fails the call
   // and the call goes native like any other failure. Only a reading that shows the group under the reserve holds it.
   const { reading: quotaBefore, readAt } = readGroup(adapter, { harness: name, settings: harness, group: lane.group, dataDir })
@@ -430,7 +432,8 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
     if (!unit.ok) return { status: 'blocked', detail: unit.detail }
   }
   if (!parsed.clean) {
-    // agy's refusal for its individual quota is explicit, and /usage does not report that limit: it needs no reading.
+    // An explicit refusal in words (agy's individual quota, Muse's subscription 429; quota-refusal.js) needs no
+    // reading: no reading reports agy's limit, and Muse's 429 carries no allowance of its own.
     const refusal = refusalIn(parsed.reason, parsed.error, stderr)
     if (refusal) return { status: 'quota', detail: parsed.reason, refusal }
     // The failure reason is checked before the reading (issue 015).

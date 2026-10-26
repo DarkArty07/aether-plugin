@@ -331,7 +331,8 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
       result = { status: 'failed', detail: `ran out of time: killed at ${timeoutSeconds + graceSeconds} s, exit ${exitCode}` }
     } else if (!parsed.clean) {
       // An explicit refusal is the quota's verdict even when both readings still show balance (agy's /usage does not
-      // report its individual limits), so the router can tell it from a failure and try the next candidate.
+      // report its individual limits, and Muse's subscription 429 carries no allowance), so the router can tell it
+      // from a failure and try the next candidate.
       const quotaGone = (quotaRead && !lanes.usable(quotaAfter, config.reserve)) || String(parsed.reason).startsWith('quota: ') || refusalIn(parsed.reason) !== null
       result = { status: quotaGone ? 'quota' : 'failed', detail: parsed.reason }
     } else if (typeof parsed.structured?.answer !== 'string') {

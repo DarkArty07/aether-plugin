@@ -36,6 +36,8 @@ const RESERVE = 0.05
 const LIFE = 10 * MIN
 // The refusal as agy 1.3.6 words it, with the reset it states: 163 h 22 min 27 s.
 const REFUSAL = 'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 163h22m27s.'
+// The 429 a real Muse call failed with (issue 75), with the reset it states.
+const MUSE_429 = 'API error 429 [request_id=req-75]: Subscription quota exhausted. Your usage window resets at 2026-10-26T00:00:00Z. (rate_limit_error)'
 const RESET_MS = (163 * 60 + 22) * MIN + 27 * 1000
 const refuse = (extra = []) => [...extra, `FAKE-AGY: exit-error ${REFUSAL}`, 'FAKE-AGY: exit-code 3']
 const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote it.', head: '', tests: '1/1 pass', concerns: '', question: '' })
@@ -87,6 +89,21 @@ test('the refusal is recognized, with the reset it states, in the text of a fail
   assert.equal(quotaRefusal(undefined), null)
   assert.deepEqual(refusalIn('exit 1: other', '', `Error: ${REFUSAL}`), { resetMs: RESET_MS }, 'the first text that holds it')
   assert.equal(refusalIn('exit 1: other', null), null)
+})
+
+test('issue 75: Muse\'s subscription-quota 429 is a refusal, with the reset it states kept as stated, and any other 429 is not', () => {
+  assert.deepEqual(quotaRefusal(MUSE_429), { resetMs: null, resetsAt: '2026-10-26T00:00:00.000Z' })
+  assert.deepEqual(refusalIn(`muse modelError: ${MUSE_429}`), { resetMs: null, resetsAt: '2026-10-26T00:00:00.000Z' })
+  // A 429 or a rate_limit_error that does not say the subscription quota is exhausted stays a plain failure.
+  assert.equal(quotaRefusal('API error 429 [request_id=req-1]: Too many requests, slow down. (rate_limit_error)'), null)
+  assert.equal(quotaRefusal('API error 429: rate_limit_error'), null)
+  assert.equal(quotaRefusal('Subscription quota exhausted.'), null, 'the phrase without rate_limit_error is not the 429 that was seen')
+  // The mark holds 60 minutes (A60), not until the stated reset, which is kept only for people to read (A75).
+  const dataDir = tmp()
+  const now = Date.now()
+  const mark = marks.markDry(dataDir, { harness: 'muse', group: 'muse', reserve: RESERVE, now, refusal: quotaRefusal(MUSE_429) })
+  assert.deepEqual([mark.confirmed, mark.reason, mark.until, mark.resetsAt, mark.statedResetMs, mark.statedResetAt], [false, 'quota refusal', now + 60 * MIN, null, null, '2026-10-26T00:00:00.000Z'])
+  fs.rmSync(dataDir, { recursive: true, force: true })
 })
 
 test('issue 037: the reset is read whatever the case of the units and with spaces between the parts, and a duration the reader cannot place states none', () => {
@@ -363,6 +380,22 @@ test('liftIfHealthy lifts a mark from a reading when a fresh healthy reading tak
   mark(now - 30 * MIN, { reading: null, refusal: quotaRefusal(REFUSAL) })
   assert.notEqual(lift(healthy(now), now), null)
   assert.equal(marks.liveMark(dataDir, 'agy', 'gemini', now).reason, 'quota refusal')
+  fs.rmSync(dataDir, { recursive: true, force: true })
+})
+
+test('issue 75: a stale muse reading does not lift the mark of its subscription refusal, and one observed after the refusal does', () => {
+  const dataDir = tmp()
+  const at = Date.now()
+  // Muse's reading is the allowance of the same subscription windows its 429 refuses for, so a healthy reading
+  // observed after the refusal lifts its mark (A75); one kept from before it must not, however healthy it looks.
+  const held = marks.markDry(dataDir, { harness: 'muse', group: 'muse', reserve: RESERVE, now: at, refusal: quotaRefusal(MUSE_429) })
+  const Muse = (sourceTs) => ({ windows: healthy(at).windows, source: { command: 'muse exec --json', ts: new Date(sourceTs).toISOString(), ageMinutes: 1 } })
+  const lift = (reading, when) => marks.liftIfHealthy(dataDir, { harness: 'muse', group: 'muse', reading, readAt: when, reserve: RESERVE, lifeMs: LIFE, now: when })
+  assert.deepEqual(lift(Muse(at - 1000), at + MIN), held, 'observed before the refusal: it is what the refused call had seen')
+  assert.equal(fs.existsSync(marks.markFile(dataDir, 'muse', 'muse')), true)
+  assert.equal(lift(Muse(at), at + MIN).reason, 'quota refusal', 'observed at the moment of the mark is not newer than it')
+  assert.equal(lift(Muse(at + 1000), at + MIN), null, 'observed after the refusal')
+  assert.equal(marks.liveMark(dataDir, 'muse', 'muse', at + MIN), null)
   fs.rmSync(dataDir, { recursive: true, force: true })
 })
 

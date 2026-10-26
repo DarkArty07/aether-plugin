@@ -901,7 +901,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
       const backup = saveRound(worktree, backupRef(id), dir, `aether: seat ${id}, kept because it changed files outside its seat`)
       outcome = { status: 'violation', files: outside, backup, detail: 'changes outside the seat' }
     } else if (!parsed.clean) {
-      // agy's refusal for its individual quota is explicit, and /usage does not report that limit: it needs no reading.
+      // An explicit refusal in words (agy's individual quota, Muse's subscription 429; quota-refusal.js) needs no reading.
       refusal = refusalIn(parsed.reason, parsed.error, readTextOrEmpty(path.join(dir, 'stderr')))
       const quotaGone = refusal !== null || (quotaRead && (!lanes.usable(quotaAfter, config.reserve) || (quotaAfter?.unknown === true && parsed.reason?.startsWith('quota: '))))
       outcome = { status: quotaGone ? 'quota' : 'failed', detail: parsed.reason }

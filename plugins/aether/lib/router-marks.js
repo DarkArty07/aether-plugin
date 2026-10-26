@@ -1,7 +1,7 @@
 'use strict'
 
 // Quota marks written by the delegate router, kept apart from the swarm's marks.
-// agy states an explicit refusal («Individual quota reached», «Resets in <duration>»). The router turns that into a
+// agy and Muse state an explicit refusal in words (quota-refusal.js). The router turns that into a
 // mark in its own store, `<dataDir>/router/lanes/marks/`, of the same shape lane-marks.js reads. The swarm's store is
 // only read here, never written, so a router refusal does not change what the swarm's marks hold.
 
@@ -32,8 +32,9 @@ function writeAtomic(targetPath, content) {
   }
 }
 
-// A harness that names its own quota failures, as Muse does («quota: muse weekly limit, resets ...»), leaves a refusal
-// as well as agy's «Individual quota reached». Only that declared reason counts, never the words of a message.
+// A harness that names its own quota failures, as Muse does with structured quota data («quota: muse weekly limit,
+// resets ...»), leaves a refusal as well as the explicit wordings of quota-refusal.js (agy's «Individual quota
+// reached», Muse's subscription 429). No other words of a message count.
 const QUOTA_REASON_RE = /^quota: /
 
 function refusalOf(text) {
@@ -64,6 +65,7 @@ function markRefusal(dataDir, { harness, group, text, now = Date.now() }) {
     source: 'router',
     reason: 'quota refusal',
     statedResetMs: refusal.resetMs > 0 ? refusal.resetMs : null,
+    ...(typeof refusal.resetsAt === 'string' || refusal.resetsAt === null ? { statedResetAt: refusal.resetsAt } : {}),
   }
   writeAtomic(laneMarks.markFile(root, harness, group), JSON.stringify(mark, null, 2) + '\n')
   return mark
