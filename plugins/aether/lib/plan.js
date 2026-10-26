@@ -7,7 +7,7 @@ const { normalizePattern, patternsOverlap } = require('./globs.js')
 
 const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
-const DEFAULT_EFFORT = 'xhigh'
+const DEFAULT_EFFORT = 'high'
 const DEFAULT_REVIEW = 'high'
 // Sonnet and Opus never implement at low or medium.
 const EFFORTS_BELOW_HIGH = ['low', 'medium']
