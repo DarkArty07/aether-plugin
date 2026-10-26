@@ -6,7 +6,7 @@ order: 8
 
 # Models by role
 
-This page says which model and effort each role of Aether runs on, how a task climbs from one model and effort to the next, what each pair costs, why the pairs are set this way and how to tell whether they should change; a test holds this page to the tree, so its ladder table is `config/ladder.json`, its default effort is the one of `lib/plan.js` and the model and effort it names for each agent are the ones of that agent's file. The measure throughout is the dollar per task, because the Claude limit is one for all the models and is spent by the cost of the model, so a cheaper pair per task makes the quota last longer whatever its price per token. The figures are those of [Artificial Analysis](https://artificialanalysis.ai), read on 2026-10-26 through its API and through `config/pairs.json`, which holds the intelligence points and the cost per task of its index.
+This page says which model and effort each role of Aether runs on, how a task climbs from one model and effort to the next, what each pair costs, why the pairs are set this way and how to tell whether they should change; a test holds this page to the tree, so its ladder table is `config/ladder.json`, its default effort (`high`) is the one of `lib/plan.js` and the model and effort it names for each agent are the ones of that agent's file. The measure throughout is the dollar per task, because the Claude limit is one for all the models and is spent by the cost of the model, so a cheaper pair per task makes the quota last longer whatever its price per token. The figures are those of [Artificial Analysis](https://artificialanalysis.ai), read on 2026-10-26 through its API and through `config/pairs.json`, which holds the intelligence points and the cost per task of its index.
 
 ## Each role, before and after
 
@@ -20,7 +20,7 @@ This page says which model and effort each role of Aether runs on, how a task cl
 | Implementer, a retry | `xhigh` in Haiku, Sonnet and Opus | `haiku xhigh` in Haiku; the task's effort in Sonnet and Opus | In Sonnet and Opus a retry gains the supervisor's findings, not a dearer effort. |
 | Implementer, after a rise | `xhigh` | the next model at `high` | A rise already changes the model, so it does not also raise the effort. |
 | Supervisor | `xhigh` in US$38 of US$43, by the plan's Review (Sonnet US$24, Opus US$14) | `sonnet high` | The plan's Review now reserves `xhigh` for where an error would reach data, security or concurrency. |
-| Supervisor of Sonnet's work | `opus xhigh` | `opus high` | It stays Opus because nobody reviews their own work, and it runs at the effort of the pair it replaces. |
+| Supervisor of Sonnet's work | `opus xhigh` | `opus high` | It stays Opus because nobody reviews their own work, and it runs at the effort of the pair it replaces. This holds with `superdelegation` on, when no other harness takes the review; with it off, a Sonnet supervisor reviews Sonnet's work. |
 | Final review | `opus xhigh` in 7 of the 8 runs | `opus high`, and `opus xhigh` only if a merged unit is Tier Opus | It is the last net, and `xhigh` stays for the Tier Opus units, where an error costs most. |
 | Ops | `haiku low` | `haiku low` | Ops runs as plain code with no model call, and this agent is only the fallback. |
 
