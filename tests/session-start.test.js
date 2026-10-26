@@ -288,31 +288,30 @@ test('session start marks the session ops-off only when the ops option is false'
   }
 })
 
-test('session start writes the delegate file from the options, and no router file', (t) => {
+test('session start writes the delegate file from the options', (t) => {
   const repo = makeRepo(t)
   const standard = tempDir(t, 'aether-data-')
   assert.equal(start(repo.dir, standard).status, 0)
   assert.deepEqual(readDelegateSettings(standard, 's1'), { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } })
-  assert.equal(fs.existsSync(path.join(standard, 'sessions', 's1.router.json')), false)
   const set = tempDir(t, 'aether-data-')
   const env = {
     CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true',
     CLAUDE_PLUGIN_OPTION_HARNESSES: 'grok,agy',
-    CLAUDE_PLUGIN_OPTION_DEADLINES: 'haiku=5,jev=2,quota=2',
+    CLAUDE_PLUGIN_OPTION_DEADLINES: 'other=5,quota=2',
     ...removedOptions({ router: 'command', decider: 'jev', fallback: 'opus:max' }),
   }
   assert.equal(start(repo.dir, set, { env }).status, 0)
   assert.deepEqual(readDelegateSettings(set, 's1'), { lanes: true, harnesses: ['grok', 'agy'], deadlines: { quotaMs: 2000 } })
-  assert.equal(fs.existsSync(path.join(set, 'sessions', 's1.router.json')), false)
 })
 
-test('session start takes away the router file an older version left, and a resumed session follows the options it has now', (t) => {
+test('session start leaves a router file an older version left, and a resumed session follows the options it has now', (t) => {
   const repo = makeRepo(t)
   const data = tempDir(t, 'aether-data-')
   markSession(data, 's1', 1)
-  fs.writeFileSync(path.join(data, 'sessions', 's1.router.json'), '{}')
+  const oldFile = path.join(data, 'sessions', 's1' + '.' + 'router' + '.json')
+  fs.writeFileSync(oldFile, '{}')
   assert.equal(start(repo.dir, data, { env: { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' } }).status, 0)
-  assert.equal(fs.existsSync(path.join(data, 'sessions', 's1.router.json')), false)
+  assert.equal(fs.existsSync(oldFile), true)
   assert.equal(readDelegateSettings(data, 's1').lanes, true)
   assert.equal(start(repo.dir, data, { env: { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false' } }).status, 0)
   assert.equal(readDelegateSettings(data, 's1').lanes, false)

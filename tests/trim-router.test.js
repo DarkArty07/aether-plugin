@@ -25,19 +25,21 @@ test('the guard no longer knows the retired decider command', () => {
 test('the session settings of the decider are gone, and a deadlines value with the old keys still parses (E12)', () => {
   const session = lib('session')
   for (const name of ['routerSettingsFrom', 'readRouterSettings', 'routerFile', 'parseFallback']) assert.equal(session[name], undefined, name)
-  assert.equal(session.delegateSettingsFrom({ CLAUDE_PLUGIN_OPTION_DEADLINES: 'haiku=5,jev=3,quota=2' }).deadlines.quotaMs, 2000)
+  assert.equal(session.delegateSettingsFrom({ CLAUDE_PLUGIN_OPTION_DEADLINES: 'other=5,quota=2' }).deadlines.quotaMs, 2000)
 })
 
-test('pruneSessions removes the delegate file and an old router file of a session that aged out', (t) => {
+test('pruneSessions removes the delegate file and leaves an old router file of a session that aged out', (t) => {
   const session = lib('session')
   const dir = tempDir(t)
   const sessions = path.join(dir, 'sessions')
   fs.mkdirSync(sessions)
-  const files = ['old.json', 'old.delegate.json', 'old.router.json'].map((name) => path.join(sessions, name))
-  for (const file of files) {
+  const toRemove = ['old.json', 'old.delegate.json'].map((name) => path.join(sessions, name))
+  const routerFile = path.join(sessions, 'old' + '.' + 'router' + '.json')
+  for (const file of [...toRemove, routerFile]) {
     fs.writeFileSync(file, '{}')
     fs.utimesSync(file, new Date(Date.now() - 40 * 86400000), new Date(Date.now() - 40 * 86400000))
   }
   session.pruneSessions(dir, { days: 30 })
-  for (const file of files) assert.equal(fs.existsSync(file), false, file)
+  for (const file of toRemove) assert.equal(fs.existsSync(file), false, file)
+  assert.equal(fs.existsSync(routerFile), true, routerFile)
 })

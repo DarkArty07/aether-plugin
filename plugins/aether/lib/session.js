@@ -52,7 +52,7 @@ function parseThreshold(value) {
   return DEFAULT_THRESHOLD
 }
 
-// 'haiku=8,jev=3,quota=3' -> { quotaMs }, the values in seconds. haiku= and jev= are accepted and ignored. A key that is
+// 'other=5,quota=3' -> { quotaMs }, the values in seconds. Any key other than quota is ignored. A key that is
 // missing, unknown or whose value is not a positive number keeps its default; a value above MAX_DEADLINE_MS is MAX_DEADLINE_MS.
 function parseDeadlines(value) {
   const out = { ...DEFAULT_DEADLINES }
@@ -61,7 +61,6 @@ function parseDeadlines(value) {
     const [rawKey, rawValue, ...rest] = pair.split('=')
     if (rawValue === undefined || rest.length > 0) continue
     const key = rawKey.trim().toLowerCase()
-    if (key === 'haiku' || key === 'jev') continue
     const field = DEADLINE_KEYS[key]
     const text = rawValue.trim()
     const seconds = /^\d+(\.\d+)?$/.test(text) ? Number(text) : NaN
@@ -73,7 +72,7 @@ function parseDeadlines(value) {
 
 // The settings of the session's delegates from the plugin options in env: whether superdelegation is on, the
 // harnesses that are enabled, and the quota deadline, the only key of the deadlines option that is still read
-// (haiku= and jev= are accepted and ignored: no decider is left to give a time to).
+// (any key other than quota is ignored).
 function delegateSettingsFrom(env = process.env) {
   const { enabledHarnesses } = require('./lanes.js')
   const { resolveOption } = require('./superdelegation.js')
@@ -135,8 +134,7 @@ function readBrakeSettings(dataDir, sessionId) {
 // Writes {"session": sessionId, "startedAt": now} to the marker file, creating its directory. Throws on a bad id (before writing anything) or a failed write.
 // With opsInMod false it also writes the ops-off file, and with it true it removes a stale one, so a session
 // resumed with the option changed follows the option it has now. With delegate given it writes the delegate file,
-// and with it null it removes a stale one, for the same reason. The same goes for brake and its file. It also
-// removes a stale router file an older version left.
+// and with it null it removes a stale one, for the same reason. The same goes for brake and its file.
 function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, delegate = null, brake = null } = {}) {
   const file = markerFile(dataDir, sessionId)
   const dir = path.dirname(file)
@@ -151,7 +149,6 @@ function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, de
   const brakePath = brakeFile(dataDir, sessionId)
   if (brake) fs.writeFileSync(brakePath, JSON.stringify(brake) + '\n')
   else fs.rmSync(brakePath, { force: true })
-  fs.rmSync(path.join(dir, `${sessionId}.router.json`), { force: true })
 }
 
 // True when the marker file exists. False for an invalid or missing id; never throws.
@@ -191,7 +188,6 @@ function pruneSessions(dataDir, { days = 30, now = Date.now() } = {}) {
     fs.rmSync(full, { force: true })
     fs.rmSync(path.join(dir, `${id}.ops-off`), { force: true })
     fs.rmSync(path.join(dir, `${id}.delegate.json`), { force: true })
-    fs.rmSync(path.join(dir, `${id}.router.json`), { force: true })
     fs.rmSync(path.join(dir, `${id}.brake.json`), { force: true })
     pruned.push(id)
   }
