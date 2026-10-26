@@ -3,7 +3,7 @@
 - **Date:** 2026-10-26. It follows [the self-observation handoff](2026-10-23-self-observation.md).
 - **From:** the Lead, Claude Code on Sonnet 5.5, session `d8729560`, in an autonomous run (`auto-20261026-031440-d7ca`) that the owner opened with «trbaja autonomamente. Quiero TODO DOCUMENTADO, no estare disponible».
 - **To:** the owner, and the next session.
-- **Repository state:** built and checked on the branch `feat/model-effort-policy` (worktree `.worktrees/model-effort-policy`), **not merged, not pushed, not published**; `main` is still 0.20.1 and the owner's installed plugin is still 0.20.1. Nothing irreversible was done.
+- **Repository state:** released as 0.21.0 on 2026-10-26, on the owner's word («Si a todo y la skill de artificial análisis deja local»): the branch `feat/model-effort-policy` was merged into `main` by fast-forward (release commit `6fced62`), the tag `aether--v0.21.0` was created, `main` and the tag were pushed, and the owner's installed plugin was updated from 0.20.1 (it takes effect when a session restarts). The owner kept the Artificial Analysis skill local, so it is not in the repository.
 
 ## 1. What was asked
 
@@ -37,12 +37,10 @@ What did **not** change: the Lead, the Writer, the Judge and the Examiner; `lib/
 - **Proposals (not worked):** start the swarm in Haiku (measure how many Tier Sonnet units Haiku approves first); Opus `medium` for the supervisor, with a `nativeFor` that picks the cheapest pair that reaches the points asked at any effort; Sonnet `max` as the last rung of the hardest tasks; keep, per attempt, what each supervisor approved or rejected.
 - **Two findings, filed as issues:** [98](https://github.com/DarkArty07/aether-plugin/issues/98), the plan check calls a glob and an unrelated file in the same folder an overlap, which forces waves of one task; and [99](https://github.com/DarkArty07/aether-plugin/issues/99), an exam test can fail a correct build on the formatting of a document.
 
-## 5. Release (waiting for the owner)
+## 5. Release (done)
 
-The branch is ready. In this order, each step with the owner's yes:
+Version 0.21.0, with the owner's yes to each step: the version in its four places, the changelog entry as the first `Version` line, the roadmap's Now line and the decision's number (A93, the next one on `main`), with the tests that pin them (`docs-facts` R15, `launcher`, `effort-policy-docs`); `npm run check` (1950 tests, the mod's tests, both validations); the fast-forward of `main`; the tag with `claude plugin tag plugins/aether`; the push of `main` and the tag; and `claude plugin update aether@aether-plugin`. The Lead recorded a session grant for each of `merge-main`, `publish`, `push` and `deploy`, each in its own call, ran the action in the next and revoked it afterwards.
 
-1. Merge `feat/model-effort-policy` into `main` (class `merge-main`). The main checkout holds uncommitted changes of another session (`docs/index.md` and two pages on Artificial Analysis): commit or move them first, because this branch also changes `docs/index.md`.
-2. Fix what the release needs: the decision number (A93 may be taken: issue [50](https://github.com/DarkArty07/aether-plugin/issues/50)), the version in its four places (`plugin.json`, the pin in `tests/launcher.test.js`, the README's `Version` line, the changelog's first `Version X.Y.Z:` line), the «Unreleased» entry turned into that line, and the tests that name the old ones (`tests/docs-facts.test.js` R12, R15 and the first changelog line; `tests/effort-policy-docs.test.js`, which pins the `## Unreleased` heading).
-3. `npm run check`, then `claude plugin tag plugins/aether` (class `publish`), the push of `main` and the tag (class `push`), and `claude plugin update aether@aether-plugin` (class `deploy`).
+The main checkout holds uncommitted changes of another session (`docs/index.md` and two pages on Artificial Analysis). The Lead set that one file aside for the fast-forward and put it back as it was; none of it was committed or pushed.
 
-The skill `.claude/skills/artificial-analysis/` (with its scripts, which read the website that Artificial Analysis' terms forbid reading by code, and the 22 pages read once on 2026-10-26 by the owner's order) is untracked on purpose and is not in the branch.
+The skill `.claude/skills/artificial-analysis/` (with its scripts, which read the website that Artificial Analysis' terms forbid reading by code, and the 22 pages read once on 2026-10-26 by the owner's order) stays local on purpose and is not in the repository.
