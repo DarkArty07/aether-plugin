@@ -215,7 +215,9 @@ function previousWork(entries) {
   const { entry } = lastOf(entries, (e) => (e.kind === 'result' && (isText(e.patch) || isText(e.answer))) || (e.kind === 'answer' && isText(e.text)))
   if (!entry) return null
   if (entry.kind === 'answer') return entry.text
-  if (isText(entry.patch)) return `The patch of your previous attempt, to start from: ${entry.patch}`
+  if (isText(entry.patch)) {
+    return `The patch of your previous attempt is ${entry.patch}. It is not applied in your worktree: before anything else, run \`git apply ${entry.patch}\` there, and go on from that work. Only when it does not apply, rebuild what it describes.`
+  }
   const text = readText(entry.answer)
   return isText(text) ? text : `Your previous answer is in ${entry.answer}`
 }

@@ -66,6 +66,7 @@ test('the correction receives the earlier work: the patch path of its last resul
   await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
   const again = await task.begin(call(BRIEF('t1')), deps)
   assert.ok(again.args.prompt.includes('## Your previous work') && again.args.prompt.includes(patch))
+  assert.ok(again.args.prompt.includes(`git apply ${patch}`), 'the brief tells a delegate on Claude to apply the patch itself (issue 88)')
 })
 
 test('five corrections of Haiku, and the sixth failure rises to Sonnet with the work and the findings (C3, E5)', async (t) => {
