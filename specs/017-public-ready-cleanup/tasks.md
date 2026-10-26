@@ -184,7 +184,7 @@ test('removeWorktree removes a worktree and its folder', (t) => {
 ### Task 2: `tests/guards-helpers.js`, las medidas de la spec como programa
 
 **Aether:**
-- Tier: sonnet high — diseña las medidas de R7, R8, R14 y R15 y deja la forma que los barridos repiten; las pruebas fijan los casos pero no la forma
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — diseña las medidas de R7, R8, R14 y R15 y deja la forma que los barridos repiten; las pruebas fijan los casos pero no la forma
 - Area: guards
 - Owns: `tests/guards-helpers.js`, `tests/guards-helpers.test.js`
 - Depends on: none
@@ -327,7 +327,7 @@ test('moduleFiles lists lib, bin and hooks, and not tests', (t) => {
 ### Task 3: el manifiesto, la tabla de opciones y los patrones retirados
 
 **Aether:**
-- Tier: sonnet high — quita dos claves del manifiesto y dos filas de la tabla, y arma por concatenación los patrones que las tareas 8, 32, 33 a 37 y 47 buscan
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — quita dos claves del manifiesto y dos filas de la tabla, y arma por concatenación los patrones que las tareas 8, 32, 33 a 37 y 47 buscan
 - Area: retire
 - Owns: `plugins/aether/.claude-plugin/plugin.json`, `docs/guide/options.md`, `tests/retired-patterns.js`, `tests/retired-options.test.js`, `tests/manifest.test.js`, `tests/superdelegation-gone.test.js`
 - Depends on: none
@@ -397,7 +397,7 @@ test('codex and cursor are said to be untested with a real account, in the manif
 ### Task 4: las cifras de Muse y las claves de las cuatro tablas
 
 **Aether:**
-- Tier: sonnet high — compara cifras que el dueño dejó divergir a propósito y borra tres claves de primer nivel que ningún lector usa
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — compara cifras que el dueño dejó divergir a propósito y borra tres claves de primer nivel que ningún lector usa
 - Area: data
 - Owns: `tests/copies-muse.test.js`, `plugins/aether/config/prices.json`, `plugins/aether/config/pairs.json`, `plugins/aether/config/lanes.json`, `plugins/aether/config/models/models.json`
 - Depends on: none
@@ -540,7 +540,7 @@ test('the panel fixtures hold no path of the owner\'s home folder', () => {
 ### Task 7: los docs históricos salen del árbol y las familias quedan escritas
 
 **Aether:**
-- Tier: sonnet high — repara enlaces, pruebas y citas de unas veinte páginas a la vez, y escribe la tabla de familias de la arquitectura
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — repara enlaces, pruebas y citas de unas veinte páginas a la vez, y escribe la tabla de familias de la arquitectura
 - Area: docs-remove
 - Owns: `docs/handoff/**`, `docs/superpowers/**`, `docs/evaluations/**`, `docs/roadmap/**`, `docs/evidence/**`, `README.md`, `CLAUDE.md`, `docs/*.md`, `docs/guide/*.md`, `docs/reference/components.md`, `site/app.js`, `site/index.html`, `plugins/aether/skills/onboard/SKILL.md`, `plugins/aether/skills/using-aether/SKILL.md`, `tests/docs-facts.test.js`, `tests/harness-lists.test.js`, `tests/launcher.test.js`, `tests/seats-harness.test.js`, `tests/components-docs.test.js`
 - Depends on: Task 3 — `docs/guide/options.md` lo cambió la tarea 3, y esta tarea posee `docs/guide/*.md`
@@ -569,7 +569,7 @@ y `tests/docs-facts.test.js` cambia lo que pinaba los documentos retirados (la l
 ### Task 8: el diario viejo del router no se lee
 
 **Aether:**
-- Tier: sonnet high — quita un lector del gasto de `/spend` y de `aether-report` y las pruebas que lo pinaban sin dejar la suma de otra fuente cambiada
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — quita un lector del gasto de `/spend` y de `aether-report` y las pruebas que lo pinaban sin dejar la suma de otra fuente cambiada
 - Area: retire
 - Owns: `plugins/aether/lib/router-log.js`, `plugins/aether/lib/spend.js`, `plugins/aether/lib/delegate-report.js`, `tests/router-log.test.js`, `tests/no-router.test.js`, `tests/router-removed.test.js`, `tests/trim-router.test.js`, `tests/delegate-chain.test.js`, `tests/delegate-log.test.js`, `tests/delegate-report.test.js`, `tests/spend-fixtures.js`, `tests/spend-ladder.test.js`, `tests/spend-prune.test.js`, `tests/spend.test.js`, `tests/retired-journal.test.js`
 - Depends on: Task 3 — `tests/retired-patterns.js`
@@ -621,7 +621,7 @@ test('an old journal and an old session file on disk change no figure and are no
 ### Task 9: los comandos que ningún flujo llama
 
 **Aether:**
-- Tier: sonnet high — hay que decidir verbo por verbo con la lista cerrada de llamadores, leyendo las llamadas que se arman con variables
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — hay que decidir verbo por verbo con la lista cerrada de llamadores, leyendo las llamadas que se arman con variables
 - Review: xhigh — quitar un verbo que un workflow, un hook o una skill sí llama rompe una corrida entera sin que el árbol lo diga
 - Area: commands
 - Owns: `plugins/aether/bin/*`, `tests/aether-autonomy.test.js`, `tests/aether-lane.test.js`, `tests/aether-plan.test.js`, `tests/aether-report.test.js`, `tests/aether-wt.test.js`, `tests/observe-bin.test.js`, `tests/spend-bin.test.js`, `tests/start-command.test.js`, `tests/commands.test.js`, `docs/guide/observe.md`, `docs/guide/delegates.md`, `docs/guide/lanes.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`, `tests/observe-docs.test.js`, `tests/delegate-docs.test.js`, `tests/quota-brake-docs.test.js`, `tests/exam.test.js`, `tests/observe-read.test.js`, `tests/observe-guarantees.test.js`, `tests/observe-corrections.test.js`, `tests/components-docs.test.js`, `plugins/aether/lib/observe-baseline.js`, `tests/observe-baseline.test.js`
@@ -759,7 +759,7 @@ test('a pipe-separated usage line yields every verb, crossed with the dispatch b
 ### Task 10: `choose` filtra por `role` solo cuando se lo pasan
 
 **Aether:**
-- Tier: opus high — es la función de la que cuelgan todas las llamadas externas; un error manda una llamada a un modelo que no debía recibirla
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: opus high — es la función de la que cuelgan todas las llamadas externas; un error manda una llamada a un modelo que no debía recibirla
 - Review: xhigh — la elección decide qué CLI externa corre sin avisos de permiso con las credenciales del dueño fuera del entorno
 - Area: roles
 - Owns: `plugins/aether/lib/superdelegation.js`, `tests/superdelegation.test.js`, `tests/superdelegation-scenarios.test.js`
@@ -836,7 +836,7 @@ test('a set role with no lane table excludes every external pair for role', () =
 ### Task 11: se rompe el ciclo `lanes.js` ↔ `spend.js`
 
 **Aether:**
-- Tier: opus high — es una capa que atraviesa nueve módulos y cuatro bins; un `require` perezoso mal movido cambia cuándo se lee la tabla
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: opus high — es una capa que atraviesa nueve módulos y cuatro bins; un `require` perezoso mal movido cambia cuándo se lee la tabla
 - Area: layers
 - Owns: `plugins/aether/lib/lanes.js`, `plugins/aether/lib/lane-process.js`, `plugins/aether/lib/spend-tokens.js`, `plugins/aether/lib/spend.js`, `tests/layers.test.js`, `tests/guards-layers.test.js`, `tests/lanes.test.js`
 - Depends on: Task 1 — `lib/common.js` (`isObject`, `numberOrZero`, `isExecutableFile`, `sleepSync`)
@@ -883,7 +883,7 @@ test('lanes.js still exposes the process helpers its callers use', () => {
 ### Task 12: los bins solo leen argumentos y llaman a `lib/`
 
 **Aether:**
-- Tier: sonnet high — mueve cuatro bloques de lógica a `lib/` sin cambiar una salida; las pruebas de los bins fijan el resultado pero no la forma
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — mueve cuatro bloques de lógica a `lib/` sin cambiar una salida; las pruebas de los bins fijan el resultado pero no la forma
 - Area: bins
 - Owns: `plugins/aether/bin/*`, `plugins/aether/lib/plan-compile.js`, `plugins/aether/lib/session-start.js`, `plugins/aether/lib/autonomy-command.js`, `plugins/aether/lib/lane-command.js`, `tests/bins-thin.test.js`, `tests/guards-bins.test.js`
 - Depends on: Task 1 — `lib/common.js` para las lecturas que se muevan
@@ -928,7 +928,7 @@ for (const name of fs.readdirSync(BIN)) {
 ### Task 13: barrido de `worktrees`, `globs`, `git`, `run` y `baseline`
 
 **Aether:**
-- Tier: sonnet high — comentarios que hay que leer contra un archivo de 1285 líneas y cuatro más
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — comentarios que hay que leer contra un archivo de 1285 líneas y cuatro más
 - Area: sweep-core
 - Owns: `plugins/aether/lib/worktrees.js`, `plugins/aether/lib/globs.js`, `plugins/aether/lib/git.js`, `plugins/aether/lib/run.js`, `plugins/aether/lib/baseline.js`, `tests/guards-wt.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -952,7 +952,7 @@ checkGroup('wt', ['plugins/aether/lib/worktrees.js', 'plugins/aether/lib/globs.j
 ### Task 14: barrido de `lane-calls`, `lane-work`, `lane-schemas`, `lane-readings` y `lane-order`
 
 **Aether:**
-- Tier: sonnet high — 1633 líneas de comentarios sobre llamadas a CLIs externas
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — 1633 líneas de comentarios sobre llamadas a CLIs externas
 - Area: sweep-lane
 - Owns: `plugins/aether/lib/lane-calls.js`, `plugins/aether/lib/lane-work.js`, `plugins/aether/lib/lane-schemas.js`, `plugins/aether/lib/lane-readings.js`, `plugins/aether/lib/lane-order.js`, `tests/guards-lane-1.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -971,7 +971,7 @@ checkGroup('wt', ['plugins/aether/lib/worktrees.js', 'plugins/aether/lib/globs.j
 ### Task 15: barrido de `observe`, `observe-calibrate`, `observe-detect`, `observe-redact` y `observe-baseline`
 
 **Aether:**
-- Tier: sonnet high — módulos que deciden qué se guarda de una sesión; un comentario falso sobre qué se retiene engaña a quien audita la privacidad
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — módulos que deciden qué se guarda de una sesión; un comentario falso sobre qué se retiene engaña a quien audita la privacidad
 - Area: sweep-observe
 - Owns: `plugins/aether/lib/observe.js`, `plugins/aether/lib/observe-calibrate.js`, `plugins/aether/lib/observe-detect.js`, `plugins/aether/lib/observe-redact.js`, `plugins/aether/lib/observe-baseline.js`, `tests/guards-observe-1.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -989,7 +989,7 @@ checkGroup('wt', ['plugins/aether/lib/worktrees.js', 'plugins/aether/lib/globs.j
 ### Task 16: barrido de `autonomy`, `guard`, `first-setup`, `voice` y `session`
 
 **Aether:**
-- Tier: sonnet high — `guard.js` y `autonomy.js` deciden qué se rechaza; sus comentarios son la documentación de esas reglas
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — `guard.js` y `autonomy.js` deciden qué se rechaza; sus comentarios son la documentación de esas reglas
 - Area: sweep-core
 - Owns: `plugins/aether/lib/autonomy.js`, `plugins/aether/lib/guard.js`, `plugins/aether/lib/first-setup.js`, `plugins/aether/lib/voice.js`, `plugins/aether/lib/session.js`, `tests/guards-core-1.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1010,7 +1010,7 @@ checkGroup('wt', ['plugins/aether/lib/worktrees.js', 'plugins/aether/lib/globs.j
 ### Task 17: barrido de los hooks `register`, `ops-command`, `fault-trace`, `quota-brake` y `spend-view`
 
 **Aether:**
-- Tier: sonnet high — piezas del mod que hacen llamadas sin modelo; los comentarios son su único contrato
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — piezas del mod que hacen llamadas sin modelo; los comentarios son su único contrato
 - Area: sweep-hooks
 - Owns: `plugins/aether/hooks/register.js`, `plugins/aether/hooks/ops-command.mjs`, `plugins/aether/hooks/fault-trace.mjs`, `plugins/aether/hooks/quota-brake.mjs`, `plugins/aether/hooks/spend-view.mjs`, `tests/guards-hooks-1.test.js`
 - Depends on: Task 1 — la prueba de grupo pide que `tests/guards-helpers.js` y `lib/common.js` existan
@@ -1028,7 +1028,7 @@ checkGroup('wt', ['plugins/aether/lib/worktrees.js', 'plugins/aether/lib/globs.j
 ### Task 18: barrido de los hooks `delegate`, `delegate-wait`, `panel-layout` y `panel-view`
 
 **Aether:**
-- Tier: sonnet high — piezas del mod con copias declaradas de la lib
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — piezas del mod con copias declaradas de la lib
 - Area: sweep-hooks
 - Owns: `plugins/aether/hooks/delegate.mjs`, `plugins/aether/hooks/delegate-wait.mjs`, `plugins/aether/hooks/panel-layout.mjs`, `plugins/aether/hooks/panel-view.mjs`, `tests/guards-hooks-2.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1049,7 +1049,7 @@ checkGroup('wt', ['plugins/aether/lib/worktrees.js', 'plugins/aether/lib/globs.j
 ### Task 19: barrido de los cinco `router-*`, que se quedan
 
 **Aether:**
-- Tier: sonnet high — comentarios y cabeceras de cinco módulos que se quedan con su nombre; la familia `router` ya está declarada
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — comentarios y cabeceras de cinco módulos que se quedan con su nombre; la familia `router` ya está declarada
 - Area: sweep-router
 - Owns: `plugins/aether/lib/router-marks.js`, `plugins/aether/lib/router-pick.js`, `plugins/aether/lib/router-quota.js`, `plugins/aether/lib/router-renewal.js`, `plugins/aether/lib/router-slow.js`, `tests/guards-router.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1086,7 +1086,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 20: barrido de los adaptadores `agy`, `codex`, `cursor`, `grok`, `structured` e `index`
 
 **Aether:**
-- Tier: sonnet high — los adaptadores de `codex` y `cursor` no se pueden probar con cuentas reales: el cambio es solo de importación y de comentario, y hay que demostrarlo
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — los adaptadores de `codex` y `cursor` no se pueden probar con cuentas reales: el cambio es solo de importación y de comentario, y hay que demostrarlo
 - Area: sweep-harness
 - Owns: `plugins/aether/lib/harness/agy.js`, `plugins/aether/lib/harness/codex.js`, `plugins/aether/lib/harness/cursor.js`, `plugins/aether/lib/harness/grok.js`, `plugins/aether/lib/harness/structured.js`, `plugins/aether/lib/harness/index.js`, `tests/guards-harness-a.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1106,7 +1106,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 21: barrido de `grok-acp`, `grok-quota` y `muse`
 
 **Aether:**
-- Tier: sonnet high — adaptadores con procesos y bloqueos; el cambio es de importación y comentario
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — adaptadores con procesos y bloqueos; el cambio es de importación y comentario
 - Area: sweep-harness
 - Owns: `plugins/aether/lib/harness/grok-acp.js`, `plugins/aether/lib/harness/grok-quota.js`, `plugins/aether/lib/harness/muse.js`, `tests/guards-harness-b.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1125,7 +1125,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 22: barrido de `spend`, `spend-archive`, `report` y `prices`
 
 **Aether:**
-- Tier: sonnet high — de aquí salen las cifras de `/spend` y del informe; un comentario falso sobre qué fuentes se leen engaña al dueño
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — de aquí salen las cifras de `/spend` y del informe; un comentario falso sobre qué fuentes se leen engaña al dueño
 - Area: sweep-spend
 - Owns: `plugins/aether/lib/spend.js`, `plugins/aether/lib/spend-archive.js`, `plugins/aether/lib/report.js`, `plugins/aether/lib/prices.js`, `tests/guards-spend.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1146,7 +1146,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 23: barrido de `plan`, `pairs`, `superdelegation`, `quota-refusal` y `pending`
 
 **Aether:**
-- Tier: sonnet high — `plan.js` y `superdelegation.js` son contratos con el swarm; sus comentarios dicen cómo se lee un plan y cómo se elige un par
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — `plan.js` y `superdelegation.js` son contratos con el swarm; sus comentarios dicen cómo se lee un plan y cómo se elige un par
 - Area: sweep-core
 - Owns: `plugins/aether/lib/plan.js`, `plugins/aether/lib/pairs.js`, `plugins/aether/lib/superdelegation.js`, `plugins/aether/lib/quota-refusal.js`, `plugins/aether/lib/pending.js`, `tests/guards-core-2.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1166,7 +1166,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 24: barrido de `lane-delegate`, `lane-marks`, `lane-pick` y `lane-quota`
 
 **Aether:**
-- Tier: sonnet high — la elección de lanes y la edición de delegates en un worktree: comentarios que describen decisiones de varias specs
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — la elección de lanes y la edición de delegates en un worktree: comentarios que describen decisiones de varias specs
 - Area: sweep-lane
 - Owns: `plugins/aether/lib/lane-delegate.js`, `plugins/aether/lib/lane-marks.js`, `plugins/aether/lib/lane-pick.js`, `plugins/aether/lib/lane-quota.js`, `tests/guards-lane-2.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1187,7 +1187,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 25: barrido de `delegate-calls`, `-chain`, `-checks`, `-limits`, `-log` y `-report`
 
 **Aether:**
-- Tier: sonnet high — las seis piezas del registro y de la corrida de los delegates, con comentarios de tres specs
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — las seis piezas del registro y de la corrida de los delegates, con comentarios de tres specs
 - Area: sweep-delegate
 - Owns: `plugins/aether/lib/delegate-calls.js`, `plugins/aether/lib/delegate-chain.js`, `plugins/aether/lib/delegate-checks.js`, `plugins/aether/lib/delegate-limits.js`, `plugins/aether/lib/delegate-log.js`, `plugins/aether/lib/delegate-report.js`, `tests/guards-delegate-1.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1206,7 +1206,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 26: barrido de `delegate-run`, `delegate-task` y `ladder`
 
 **Aether:**
-- Tier: sonnet high — la escalera de delegates, con su decisión y su estado, en archivos de 558 y 350 líneas
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — la escalera de delegates, con su decisión y su estado, en archivos de 558 y 350 líneas
 - Area: sweep-delegate
 - Owns: `plugins/aether/lib/delegate-run.js`, `plugins/aether/lib/delegate-task.js`, `plugins/aether/lib/ladder.js`, `tests/guards-delegate-2.test.js`
 - Depends on: Task 25 — `isLaunch` queda exportado de `delegate-log.js`
@@ -1225,7 +1225,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 27: barrido de `seats`, `seat-calls` y `exam`
 
 **Aether:**
-- Tier: sonnet high — `seats.js` tiene 1110 líneas de comentarios sobre los asientos de diseño
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — `seats.js` tiene 1110 líneas de comentarios sobre los asientos de diseño
 - Area: sweep-seat
 - Owns: `plugins/aether/lib/seats.js`, `plugins/aether/lib/seat-calls.js`, `plugins/aether/lib/exam.js`, `tests/guards-seat.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1246,7 +1246,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 28: barrido de `observe-dev`, `observe-digest`, `observe-hook` y `observe-read`
 
 **Aether:**
-- Tier: sonnet high — `observe-dev.js` es el único archivo que lee una conversación: su cabecera debe decirlo con exactitud
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — `observe-dev.js` es el único archivo que lee una conversación: su cabecera debe decirlo con exactitud
 - Area: sweep-observe
 - Owns: `plugins/aether/lib/observe-dev.js`, `plugins/aether/lib/observe-digest.js`, `plugins/aether/lib/observe-hook.js`, `plugins/aether/lib/observe-read.js`, `tests/guards-observe-2.test.js`
 - Depends on: Task 15 — `cleanText` queda exportado de `observe.js`
@@ -1265,7 +1265,7 @@ test('the five router modules stay, and nothing requires a renamed replacement',
 ### Task 29: las decisiones que ya no son ciertas
 
 **Aether:**
-- Tier: sonnet high — hay que leer cada decisión contra el código y la decisión que la reemplazó
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — hay que leer cada decisión contra el código y la decisión que la reemplazó
 - Area: docs-truth
 - Owns: `docs/decisions.md`, `tests/docs-decisions.test.js`
 - Depends on: Task 3 — los nombres retirados que `docs/decisions.md` aún nombra
@@ -1318,7 +1318,7 @@ test('docs/decisions.md names no retired option, journal or legacy variable', ()
 ### Task 30: `CLAUDE.md`, el README, las guías y la referencia dicen lo que el código hace
 
 **Aether:**
-- Tier: sonnet high — las afirmaciones se verifican contra el código y la configuración vigentes, una por una
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — las afirmaciones se verifican contra el código y la configuración vigentes, una por una
 - Area: docs-truth
 - Owns: `README.md`, `CLAUDE.md`, `docs/reference/components.md`, `docs/guide/*.md`, `tests/docs-claims.test.js`
 - Depends on: Task 7 — los enlaces y la sección «Library families»
@@ -1381,7 +1381,7 @@ test('the README, CLAUDE.md, the guides and the reference name no retired option
 ### Task 31: los demás documentos de `docs/` y el texto del sitio dicen lo que el código hace
 
 **Aether:**
-- Tier: sonnet high — las mismas afirmaciones en los documentos de método y en el sitio
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — las mismas afirmaciones en los documentos de método y en el sitio
 - Area: docs-truth
 - Owns: `docs/index.md`, `docs/getting-started.md`, `docs/purpose.md`, `docs/methodology.md`, `docs/contributing.md`, `docs/roadmap.md`, `docs/claude-code-research.md`, `docs/aether-retrospective.md`, `docs/models/README.md`, `site/app.js`, `site/index.html`, `tests/docs-claims-rest.test.js`
 - Depends on: Task 7 — los enlaces y el índice
@@ -1426,7 +1426,7 @@ test('the docs index still links every page that remains', () => {
 ### Task 32: las pruebas globales de la limpieza
 
 **Aether:**
-- Tier: sonnet high — junta las medidas de la spec sobre todo el árbol; no corrige nada ajeno ni deja excepciones
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — junta las medidas de la spec sobre todo el árbol; no corrige nada ajeno ni deja excepciones
 - Area: guards
 - Owns: `tests/guards.test.js`
 - Depends on: Task 1 — `lib/common.js`
@@ -1562,7 +1562,7 @@ test('R21: the retired document folders are gone and the last handoff stays', ()
 ### Task 33: `resolveOption` deja de leer las opciones viejas, y `report.js` pierde el legado
 
 **Aether:**
-- Tier: sonnet high — dos reglas cambian y las cifras de las pruebas del informe no pueden moverse
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — dos reglas cambian y las cifras de las pruebas del informe no pueden moverse
 - Area: retire-options
 - Owns: `plugins/aether/lib/superdelegation.js`, `plugins/aether/lib/report.js`, `tests/superdelegation.test.js`, `tests/report.test.js`, `tests/aether-report.test.js`, `tests/delegate-settings.test.js`
 - Depends on: Task 3 — `tests/retired-patterns.js`
@@ -1717,7 +1717,7 @@ test('the switch the panel shows is the one the delegate settings hold, for ever
 ### Task 36: `session.js` ya no borra `.router.json` ni nombra `haiku=`/`jev=`
 
 **Aether:**
-- Tier: sonnet high — quita dos borrados de archivos del dueño y una rama de lectura, y reescribe cuatro pruebas que fijaban las dos
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — quita dos borrados de archivos del dueño y una rama de lectura, y reescribe cuatro pruebas que fijaban las dos
 - Area: retire-session
 - Owns: `plugins/aether/lib/session.js`, `tests/session.test.js`, `tests/session-start.test.js`, `tests/trim-router.test.js`, `tests/delegate-settings.test.js`
 - Depends on: Task 3 — `tests/retired-patterns.js`
@@ -1848,7 +1848,7 @@ for (const entry of COPIES) {
 ### Task 39: la lista de harnesses en la configuración, el manifiesto y el script del índice
 
 **Aether:**
-- Tier: sonnet high — compara cinco sitios, uno de ellos con una divergencia declarada a propósito, y puede corregir tres archivos de configuración
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — compara cinco sitios, uno de ellos con una divergencia declarada a propósito, y puede corregir tres archivos de configuración
 - Area: copies-harness
 - Owns: `tests/copies-harness-config.test.js`, `scripts/build-models-index.js`, `plugins/aether/.claude-plugin/plugin.json`, `docs/guide/options.md`, `plugins/aether/config/lanes.json`, `plugins/aether/config/models/models.json`, `plugins/aether/config/models/harness-models.json`
 - Depends on: Task 3 — `plugin.json` y `docs/guide/options.md`
@@ -1915,7 +1915,7 @@ test('a chosen list that drifts is caught', () => {
 ### Task 40: las clases irreversibles, fuente y copias
 
 **Aether:**
-- Tier: sonnet high — compara lo que el guard detecta con lo que las concesiones conocen, y declara la clase que solo se concede
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — compara lo que el guard detecta con lo que las concesiones conocen, y declara la clase que solo se concede
 - Area: copies-classes
 - Owns: `tests/copies-classes.test.js`, `plugins/aether/lib/autonomy.js`, `plugins/aether/lib/guard.js`, `plugins/aether/skills/using-aether/SKILL.md`
 - Depends on: Task 7 — `skills/using-aether/SKILL.md` lo cambió la tarea 7
@@ -2009,7 +2009,7 @@ for (const entry of COPIES) {
 ### Task 42: los rungs de la escalera de delegates viven solo en `config/ladder.json`
 
 **Aether:**
-- Tier: sonnet high — compara una configuración con una regla del workflow y busca que ningún otro archivo repita sus números
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — compara una configuración con una regla del workflow y busca que ningún otro archivo repita sus números
 - Area: copies-ladder
 - Owns: `tests/copies-ladder.test.js`, `plugins/aether/config/ladder.json`, `plugins/aether/workflows/run.workflow.js`, `plugins/aether/lib/plan.js`
 - Depends on: none
@@ -2069,7 +2069,7 @@ test('the ladder has the three rungs and the repeat count it had', () => {
 ### Task 43: `lane-pick.js` pasa a `choose` el rol del swarm
 
 **Aether:**
-- Tier: sonnet high — un argumento nuevo y los resultados de las pruebas que usan la tabla real, donde `gemini-4-argon` (solo asientos) y `gemini-3.8-flash` (solo `implementer`) dejan de tomar lo que no listan
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — un argumento nuevo y los resultados de las pruebas que usan la tabla real, donde `gemini-4-argon` (solo asientos) y `gemini-3.8-flash` (solo `implementer`) dejan de tomar lo que no listan
 - Area: roles-pick
 - Owns: `plugins/aether/lib/lane-pick.js`, `tests/lane-pick.test.js`, `tests/lane-refusal.test.js`, `tests/lane-quota.test.js`, `tests/lane-status.test.js`, `tests/aether-lane.test.js`, `tests/ops-command-lanes.test.js`
 - Depends on: Task 5 — `tests/aether-lane.test.js`, `tests/lane-quota.test.js` y `tests/lane-refusal.test.js`
@@ -2107,7 +2107,7 @@ test('R5: a pair whose model lacks the role in its roles list is not picked, for
 ### Task 44: `lane-delegate.js` pasa a `choose` el rol del bucle
 
 **Aether:**
-- Tier: sonnet high — dos `choose` del mismo bucle, y las pruebas de delegates usan la tabla real
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — dos `choose` del mismo bucle, y las pruebas de delegates usan la tabla real
 - Area: roles-delegate
 - Owns: `plugins/aether/lib/lane-delegate.js`, `tests/lane-delegate.test.js`, `tests/lane-delegate-ladder.test.js`, `tests/lane-delegate-scenarios.test.js`, `tests/delegate-chain.test.js`, `tests/delegate-grok.test.js`, `tests/delegate-task.test.js`, `tests/delegate-run.test.js`
 - Depends on: Task 8 — `tests/delegate-chain.test.js` lo cambió la tarea 8
@@ -2138,7 +2138,7 @@ test('R5: an editing delegate and its review never go to a pair whose model lack
 ### Task 45: `seats.js` pasa a `choose` el nombre del asiento
 
 **Aether:**
-- Tier: sonnet high — el único `choose` lo llaman tres rutas, y `reservedPair` no tenía la tabla
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — el único `choose` lo llaman tres rutas, y `reservedPair` no tenía la tabla
 - Area: roles-seats
 - Owns: `plugins/aether/lib/seats.js`, `tests/seats.test.js`, `tests/seats-design.test.js`, `tests/seat-calls.test.js`, `tests/seat-partial.test.js`, `tests/workflow-design.test.js`
 - Depends on: Task 10 — `choose` ya acepta `role` y `lanes`
@@ -2174,7 +2174,7 @@ test('R5: a seat takes no pair whose model lacks the seat in its roles list', ()
 ### Task 46: `router-pick.js`, la decisión pasa `reviewer` y la sonda de `serving` no pasa rol
 
 **Aether:**
-- Tier: sonnet high — dos `choose` en la misma función, uno con rol y otro sin él a propósito; las pruebas de este archivo usan una tabla de rol única
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — dos `choose` en la misma función, uno con rol y otro sin él a propósito; las pruebas de este archivo usan una tabla de rol única
 - Area: roles-router
 - Owns: `plugins/aether/lib/router-pick.js`, `tests/router-pick.test.js`, `tests/router-slow.test.js`
 - Depends on: Task 10 — `choose` ya acepta `role` y `lanes`
@@ -2220,7 +2220,7 @@ test('the decision asks for reviewer and the probe of serving asks for no role',
 ### Task 47: las pruebas que nadie más posee dejan de llevar un nombre retirado literal
 
 **Aether:**
-- Tier: sonnet high — reescribe literales de diez archivos de prueba por concatenación sin cambiar lo que cada una afirma
+- Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — reescribe literales de diez archivos de prueba por concatenación sin cambiar lo que cada una afirma
 - Area: retire-literals
 - Owns: `tests/bootstrap-design.test.js`, `tests/bootstrap-names.test.js`, `tests/delegates-docs.test.js`, `tests/lanes-docs.test.js`, `tests/site.test.js`, `tests/helpers.js`, `tests/session-start-autonomy.test.js`, `tests/superdelegation-gone.test.js`, `tests/ops-command-design.test.js`, `tests/retired-literals.test.js`
 - Depends on: Task 3 — `tests/retired-patterns.js` y `tests/superdelegation-gone.test.js`
