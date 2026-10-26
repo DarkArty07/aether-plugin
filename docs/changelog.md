@@ -6,6 +6,10 @@ order: 31
 
 # Changelog
 
+## Unreleased
+
+The effort of each role is set by what it buys ([decisions](decisions.md) A93, [Models by role](guide/models-by-role.md), [the design](../specs/016-model-effort-policy/design.md)). The spend of the finished runs sits in `xhigh`, and the efforts are not worth the same on every model, so the default effort of a plan task goes from `xhigh` to `high`; in the swarm's ladder a retry runs at `xhigh` only on Haiku, at the task's effort on Sonnet and Opus, and a unit that moves up a model starts there at `high`; in the delegates' ladder a correction and a rise on Sonnet and Opus run at `high`, which departs from A87, where a correction raised the effort a step; the final review runs on Opus, or on Sonnet for a small all-Haiku run, at `high`, and at `xhigh` only when a unit is of Tier Opus; and the Writer's guide for naming a task's effort and the reviewer's reference follow the same rule. Against the US$165 of the eight finished runs the change saves at most US$50. The `Version X.Y.Z:` heading of this entry is written when it is published.
+
 ## Status
 
 Version 0.20.1: the development mode of the observation is a parameter ([decisions](decisions.md) A92, [Self-observation](guide/observe.md)). The owner starts with `aether-lead` every time, and the development mode of 0.20.0 needed a clone, a long command, another data directory and other options. What changed since 0.20.0:

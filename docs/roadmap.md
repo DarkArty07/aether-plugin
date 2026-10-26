@@ -11,8 +11,8 @@ order: 32
 The [RADAR roadmap](roadmap/2026-10-10-radar.md): version 0.8 builds its phases 1, 2a and 2b. What remains waits for the owner: a real call per harness and role on Codex and Cursor, and turning each one on (Grok's one role was checked on 2026-10-13; turning it on is in Now above); a measured design session with the Writer and the Judge against the 0.7 Designer; and a rerun of trial 2 in Aether mode with [its techniques](evaluations/2026-10-08-trial-2.md#next-better-results-at-the-same-time-and-cost).
 
 **Effort.** Since version 0.3.0, each plan task sets its implementer's effort on its Tier line, by the task's complexity ([spec](superpowers/specs/2026-10-08-effort-per-task-design.md)).
-- The default is `xhigh` on every model. The Writer lowers it where the tests pin the work, and names `max` only with a reason.
-- A failed attempt runs again at `xhigh`, then moves up the ladder.
+- The default is `high` on every model. The Writer raises it where a mistake would cost more than the extra effort, and names `max` only with a reason.
+- A failed attempt on Haiku runs again at `xhigh`; on Sonnet and Opus it runs again at the task's effort, and a unit that moves up a model starts there at `high`.
 - The supervisor reviews at `high`, and a task's Review line can raise it.
 - `aether-report` shows the cost and the time of each role, model and effort. `scripts/check-effort.js` checks, from a session's transcripts, that each agent ran at the effort its call asked for.
 
