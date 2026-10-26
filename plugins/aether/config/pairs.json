@@ -1,6 +1,5 @@
 {
   "fetchedAt": "2026-10-19",
-  "source": "specs/009-superdelegation/evidence/aa-pairs-2026-10-19.json",
   "pairs": [
     { "id": "claude/haiku@low", "slug": "claude-haiku-5-5-low", "harness": "claude", "model": "haiku", "family": "claude-haiku-5-5", "effort": "low", "group": null, "intelligence": 29.5, "costPerTaskUsd": 0.02, "outputTokensPerSecond": 148.5, "timeToFirstTokenS": 6.4 },
     { "id": "claude/haiku@medium", "slug": "claude-haiku-5-5-medium", "harness": "claude", "model": "haiku", "family": "claude-haiku-5-5", "effort": "medium", "group": null, "intelligence": 34.5, "costPerTaskUsd": 0.05, "outputTokensPerSecond": 153.3, "timeToFirstTokenS": 8.9 },

@@ -1,8 +1,6 @@
 {
   "basis": "OpenRouter list prices, Anthropic endpoint; Muse rows are Meta list prices",
   "snapshot": "2026-10-07",
-  "checked": "2026-10-08",
-  "currency": "USD",
   "per": 1000000,
   "sources": {
     "opus": "https://openrouter.ai/api/v1/models/anthropic/claude-opus-5.5/endpoints",
