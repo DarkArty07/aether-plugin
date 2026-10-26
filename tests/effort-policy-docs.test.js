@@ -27,13 +27,9 @@ test('the roadmap and the purpose page no longer say every retry runs at xhigh',
   assert.doesNotMatch(purpose, /A failed attempt runs again at `xhigh`, and then on a stronger model/)
 })
 
-test('the changelog has an Unreleased entry that does not start a version line', () => {
+test('the changelog opens with the version that records this change', () => {
   const text = read('docs/changelog.md')
-  const at = text.indexOf('## Unreleased')
-  assert.ok(at > -1, 'an Unreleased heading')
-  const next = text.indexOf('\n## ', at + 5)
-  const entry = text.slice(at, next > -1 ? next : undefined)
-  for (const word of ['xhigh', 'A93', 'models-by-role.md']) assert.ok(entry.includes(word), word)
-  assert.doesNotMatch(entry, /^Version \d+\.\d+\.\d+: /m)
-  assert.ok(text.indexOf('## Status') > at, 'Unreleased comes before Status')
+  assert.doesNotMatch(text, /^## Unreleased/m)
+  const first = text.split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
+  for (const word of ['xhigh', 'A93', 'models-by-role.md']) assert.ok(first.includes(word), word)
 })

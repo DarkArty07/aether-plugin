@@ -561,7 +561,7 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A93 are recorded and the changelog opens with 0.20.1, then 0.20.0, 0.19.2, 0.19.1 and 0.19.0 with its handoff', () => {
+test('R15: the decisions A50 to A93 are recorded and the changelog opens with 0.21.0, then 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0 with its handoff', () => {
   const decisions = read('docs/decisions.md')
   const LAST_DECISION = 93
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
@@ -599,11 +599,12 @@ test('R15: the decisions A50 to A93 are recorded and the changelog opens with 0.
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const versions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(versions[0].startsWith('Version 0.20.1: ') && versions[0].includes('A92'), versions[0])
-  assert.ok(versions[1].startsWith('Version 0.20.0: ') && versions[1].includes('handoff/2026-10-23-self-observation.md'), versions[1])
-  assert.ok(versions[2].startsWith('Version 0.19.2: ') && versions[2].includes('issues/86'), versions[2])
-  assert.ok(versions[3].startsWith('Version 0.19.1: ') && versions[3].includes('issues/82'), versions[3])
-  assert.ok(versions[4].startsWith('Version 0.19.0: ') && versions[4].includes('handoff/2026-10-22-delegate-ladder.md'), versions[4])
+  assert.ok(versions[0].startsWith('Version 0.21.0: ') && versions[0].includes('A93'), versions[0])
+  assert.ok(versions[1].startsWith('Version 0.20.1: ') && versions[1].includes('A92'), versions[1])
+  assert.ok(versions[2].startsWith('Version 0.20.0: ') && versions[2].includes('handoff/2026-10-23-self-observation.md'), versions[2])
+  assert.ok(versions[3].startsWith('Version 0.19.2: ') && versions[3].includes('issues/86'), versions[3])
+  assert.ok(versions[4].startsWith('Version 0.19.1: ') && versions[4].includes('issues/82'), versions[4])
+  assert.ok(versions[5].startsWith('Version 0.19.0: ') && versions[5].includes('handoff/2026-10-22-delegate-ladder.md'), versions[5])
 })
 
 // ---- R21: the retired profiles and variables
