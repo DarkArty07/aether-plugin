@@ -245,6 +245,13 @@ function withSections(prompt, sections) {
   return sections.length === 0 ? prompt : `${prompt}\n\n${sections.join('\n\n')}`
 }
 
+// Claude Code makes the isolation worktree of an editing delegate on Claude from its own base (the default branch's tip
+// unless the owner's setting says otherwise), not from the Lead's HEAD (issue 94): the call tells the delegate where its
+// work starts, which is the commit the launch records and the checks diff against.
+function startSection(base) {
+  return `## Where your worktree starts\n\nAether recorded commit ${base} as the start of this task, and your work is judged against it. Your isolated worktree may have been made from another commit: before anything else, run \`git rev-parse HEAD\`, and when it is not ${base}, run \`git checkout --detach ${base}\` and work from there.`
+}
+
 // ---- plans ----
 
 function emptyPlan(fields) {
@@ -390,14 +397,17 @@ async function begin(input, deps = {}) {
     const { requested, ignored } = requestedOf(event, args)
     const { sections, findings, carry } = sectionsOf(next.verdict, entries)
     const fullPrompt = withSections(prompt, sections)
-    if (sections.length > 0) args.prompt = fullPrompt
+    const base = headOf(r.cwd)
+    // The prompt of the call is what a delegate on Claude reads, the rescue of an external pair too; the brief file of an
+    // external pair is `fullPrompt`, whose branch the lane command makes from the base.
+    const claudePrompt = edits && base !== null ? withSections(prompt, [...sections, startSection(base)]) : fullPrompt
+    if (claudePrompt !== prompt) args.prompt = claudePrompt
     if (edits) args.isolation = 'worktree'
 
     const correcting = launchKind === 'fix' || launchKind === 'unjudged'
     const lastResult = lastOf(entries, (e) => e.kind === 'result').entry
     const previous = correcting && lastResult && isObject(lastResult.pair) && isText(lastResult.pair.id) ? lastResult.pair : null
     let pin = null
-    const base = headOf(r.cwd)
 
     let pick = null
     let external = null

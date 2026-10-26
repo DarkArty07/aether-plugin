@@ -48,6 +48,19 @@ test('an editing delegate runs aether-lane delegate with the step model and effo
   assert.equal(log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind === 'outcome').length, 0, 'the lane log already counts its spend')
 })
 
+test('the run works in the cwd that begin recorded, not in the one of its own process, which can be a delegate\'s isolation worktree (issue 94)', async (t) => {
+  const { repo, dataDir, done } = world(t)
+  const elsewhere = tempDir(t, 'aether-isolation-')
+  const seen = []
+  await dr.runTask({ id: 't1', cwd: elsewhere, dataDir }, { delegateCommand: async (cwd) => (seen.push(cwd), done) })
+  assert.deepEqual(seen, [repo.dir])
+  fs.rmSync(path.join(dataDir, 'delegates', 'results'), { recursive: true, force: true })
+  const gone = world(t, { cwd: path.join(elsewhere, 'removed-worktree') })
+  const fallback = []
+  await dr.runTask({ id: 't1', cwd: elsewhere, dataDir: gone.dataDir }, { delegateCommand: async (cwd) => (fallback.push(cwd), gone.done) })
+  assert.deepEqual(fallback, [elsewhere], 'a recorded cwd that no longer exists falls back to the cwd of the process')
+})
+
 // The two variables the lane gate reads are removed from process.env for the test, and put back afterwards, on failure too.
 function clearLaneEnv(t) {
   const names = ['AETHER_SUPERDELEGATION', 'AETHER_LANE_HARNESSES']

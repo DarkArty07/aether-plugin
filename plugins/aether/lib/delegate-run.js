@@ -275,7 +275,10 @@ async function runTask({ id, cwd, dataDir, now = Date.now }, { delegateCommand =
       attempt = Number.isInteger(external.attempt) ? external.attempt : null
       session = isText(external.session) ? external.session : null
       external.owns = Array.isArray(external.owns) ? external.owns : []
-      outcome = external.edits ? await runEdits(external, { cwd, dataDir }, delegateCommand) : await runReadOnly(external, { cwd, dataDir }, runChain)
+      // The Lead's cwd, as `begin` recorded it: this process may have started in the isolation worktree of the delegate's
+      // agent, and the unit branch and its integration worktree belong to the Lead's checkout (issue 94).
+      const workDir = isText(external.cwd) && fs.existsSync(external.cwd) ? external.cwd : cwd
+      outcome = external.edits ? await runEdits(external, { cwd: workDir, dataDir }, delegateCommand) : await runReadOnly(external, { cwd: workDir, dataDir }, runChain)
     }
   } catch (err) {
     // Under `start`, stderr is the run's log (run/<id>.log): the reason stays there.

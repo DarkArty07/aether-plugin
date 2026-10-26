@@ -180,6 +180,23 @@ test('a task that edits is launched with isolation worktree, whoever takes the a
   assert.equal((await task.begin(call(BRIEF('e2', more)), external.deps)).args.isolation, 'worktree')
 })
 
+test('the prompt of an editing task names the commit its worktree must start from, and the brief for another harness does not (issue 94)', async (t) => {
+  const repo = makeRepo(t)
+  const base = repo.git('rev-parse', 'HEAD')
+  const more = 'AETHER-OWNS: src/**\n'
+  const native = world(t, { cwd: repo.dir })
+  const onClaude = await task.begin(call(BRIEF('e1', more)), native.deps)
+  assert.ok(onClaude.args.prompt.includes(base), 'the prompt of the call carries the recorded base')
+  assert.ok(onClaude.args.prompt.includes(`git checkout --detach ${base}`))
+  assert.ok(onClaude.args.prompt.startsWith(BRIEF('e1', more)), 'the Lead\'s brief stays at the front')
+  assert.equal((await task.begin(call(BRIEF('r1')), native.deps)).args.prompt, undefined, 'a read-only task works in the Lead\'s checkout and gets nothing added')
+  const external = world(t, { settings: EXTERNAL, pick: GROK, cwd: repo.dir })
+  const rescue = await task.begin(call(BRIEF('e2', more)), external.deps)
+  assert.ok(rescue.args.prompt.includes(`git checkout --detach ${base}`), 'the rescue on Claude starts from the same base')
+  const briefFile = fs.readFileSync(path.join(external.dataDir, 'delegates', 'briefs', 'e2-1.md'), 'utf8')
+  assert.equal(briefFile.includes('git checkout --detach'), false, 'the brief of the other harness, which gets a branch made from the base, is not changed')
+})
+
 test('an approve of an attempt on Claude that edits is refused with no worktree and no checks of a result (S9)', async (t) => {
   const { deps, dataDir } = world(t)
   await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), deps)
