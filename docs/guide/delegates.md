@@ -22,8 +22,10 @@ The ladder is three steps, and their numbers are data in `plugins/aether/config/
 | Step | Corrections | Effort at first | Effort on a correction or a rise |
 |---|---|---|---|
 | Haiku | 5 | `high` | `xhigh` |
-| Sonnet | 2 | `high` | `xhigh` |
-| Opus | 1 | `high` | `xhigh` |
+| Sonnet | 2 | `high` | `high` |
+| Opus | 1 | `high` | `high` |
+
+In Sonnet and Opus a correction and a rise run at `high`, the same effort as at first: there a correction changes what the model knows (its own earlier work and the Lead's findings), not how hard it thinks. The next effort costs 2.3 times more in Sonnet and 1.9 times more in Opus (the cost per task of the Artificial Analysis index, in `config/pairs.json`) for 13 and 3 more points in code (Terminal-Bench 4.0). So the ladder allows no effort above `high` for a correction in those two steps, and a correction keeps the effort. This is the one place where a correction does not raise the effort, as decision A87 said it does; it is two numbers of `config/ladder.json` and is reverted there.
 
 The same file holds how many times the same findings may come back before the task climbs, `repeatFindings`, which is 2. The owner chose these numbers and asked to watch them, so that they can be calibrated later if they need to be: the report shows how often each step approves.
 

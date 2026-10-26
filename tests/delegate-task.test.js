@@ -75,7 +75,7 @@ test('five corrections of Haiku, and the sixth failure rises to Sonnet with the 
   const sixth = await task.verdict({ task: 't1', verdict: 'fix', findings: [F(6)] }, deps)
   assert.deepEqual([sixth.next.kind, sixth.next.step, sixth.next.cause], ['rise', 'sonnet', 'exhausted'])
   const plan = await task.begin(call(BRIEF('t1')), deps)
-  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['sonnet', 'rise', 'sonnet', 'xhigh'])
+  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['sonnet', 'rise', 'sonnet', 'high'])
   assert.ok(plan.args.prompt.includes(F(6)))
 })
 
@@ -281,7 +281,7 @@ test('each step asks the pair of the points of its own model, and a correction k
   assert.deepEqual(corrected.alternates[0], { harness: 'grok', rung: { model: 'grok-4.7', effort: 'high', group: 'grok' } }, 'the pair the choice made stays the next candidate')
   await task.verdict({ task: 't1', verdict: 'infeasible', reason: 'too hard for Haiku' }, deps)
   const risen = await task.begin(call(BRIEF('t1', more)), deps)
-  assert.deepEqual(asked[2], { model: 'sonnet', effort: 'xhigh' })
+  assert.deepEqual(asked[2], { model: 'sonnet', effort: 'high' })
   assert.equal(risen.external.pin, null)
 })
 
