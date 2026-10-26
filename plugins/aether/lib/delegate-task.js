@@ -502,8 +502,12 @@ function approveError(r, entries, launch, worktree, ignore = []) {
   if (result) {
     const own = isObject(result.checks) ? result.checks : null
     if (own && own.ok === true) return null
+    // A read-only result charged with files another writer of the checkout changed (issue 100) passes when --ignore covers all of them.
+    const charged = own !== null && own.kind === 'read-only' && own.empty !== true && Array.isArray(own.outside) && own.outside.length > 0
+    if (charged && ignore.length > 0 && own.outside.every((file) => matchesAny(file, ignore))) return null
     const reasons = own && Array.isArray(own.reasons) && own.reasons.length > 0 ? own.reasons : ['the result has no passing checks']
-    return `checks failed: ${reasons.join('; ')}`
+    const hint = charged ? ` (if another writer of this checkout changed those files, judge again with --ignore '<glob>' for each, for example --ignore '${own.outside[0]}')` : ''
+    return `checks failed: ${reasons.join('; ')}${hint}`
   }
   const owns = Array.isArray(launch.owns) ? launch.owns : []
   if (editsOf(launch)) {

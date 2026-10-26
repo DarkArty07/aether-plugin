@@ -399,6 +399,31 @@ test('a file changed outside the --ignore globs still fails the read-only check,
   assert.doesNotMatch(refused.error, /specs\/017/, 'the ignored file is left out of the list')
 })
 
+test('a read-only result of an external pair charged with files another writer changed is refused with the hint, partly ignored still refused, and approved when --ignore covers them all (issue 100, f)', async (t) => {
+  const { deps, dataDir } = world(t)
+  await task.begin(call(BRIEF('ro-f')), deps)
+  const charged = { kind: 'read-only', ok: false, empty: false, outside: [SPEC, 'touched.js'], reasons: [`files modified in read-only task: ${SPEC}, touched.js`] }
+  log.appendEntry(dataDir, { kind: 'result', task: 'ro-f', attempt: 1, session: 's1', time: 5000, ok: true, pair: null, patch: null, answer: null, checks: charged })
+  const refused = await task.verdict({ task: 'ro-f', verdict: 'approve' }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /--ignore '<glob>'/, 'the refusal of a result tells the Lead how to judge again')
+  const partial = await task.verdict({ task: 'ro-f', verdict: 'approve', ignore: [SPEC] }, deps)
+  assert.equal(partial.ok, false, 'a file outside the globs still fails')
+  const judged = await task.verdict({ task: 'ro-f', verdict: 'approve', ignore: [SPEC, 'touched.js'] }, deps)
+  assert.equal(judged.ok, true, judged.error)
+  assert.deepEqual(log.readEntries(dataDir, { task: 'ro-f' }).find((e) => e.kind === 'verdict').ignore, [SPEC, 'touched.js'])
+})
+
+test('an empty answer is not forgiven by --ignore, whatever the globs (issue 100, g)', async (t) => {
+  const { deps, dataDir } = world(t)
+  await task.begin(call(BRIEF('ro-g')), deps)
+  const empty = { kind: 'read-only', ok: false, empty: true, outside: [SPEC], reasons: ['answer is empty', `files modified in read-only task: ${SPEC}`] }
+  log.appendEntry(dataDir, { kind: 'result', task: 'ro-g', attempt: 1, session: 's1', time: 5000, ok: true, pair: null, patch: null, answer: null, checks: empty })
+  const refused = await task.verdict({ task: 'ro-g', verdict: 'approve', ignore: ['**'] }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /answer is empty/)
+})
+
 test('--ignore on an editing task is refused with a clear error, before any check runs (issue 100, d)', async (t) => {
   const { deps, dataDir } = world(t)
   await task.begin(call(BRIEF('ed-d', 'AETHER-OWNS: src/**\n')), deps)
