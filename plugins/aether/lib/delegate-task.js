@@ -25,6 +25,7 @@ const { peekReadings, EXTERNAL } = require('./router-quota.js')
 const { startRenewal } = require('./router-renewal.js')
 const { slowPairIds } = require('./router-slow.js')
 const { readDelegateSettings } = require('./session.js')
+const { matchesAny } = require('./globs.js')
 
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const TASK_PREFIX = 'AETHER-TASK:'
@@ -478,12 +479,24 @@ function editsFailure(check, tests) {
 function readOnlyFailure(check) {
   const reasons = []
   if (check.empty) reasons.push('empty answer')
-  if (check.outside.length > 0) reasons.push(`files changed by a read-only task: ${check.outside.join(', ')}`)
+  if (check.outside.length > 0) {
+    reasons.push(`files changed by a read-only task: ${check.outside.join(', ')} (if another writer of this checkout changed them, judge again with --ignore '<glob>' for each, for example --ignore '${check.outside[0]}')`)
+  }
   return reasons
 }
 
+// Whether a task edits: it has AETHER-OWNS, so its check is by what it owns.
+const editsOf = (launch) => launch.edits === true || (Array.isArray(launch.owns) && launch.owns.length > 0)
+
+// The --ignore globs of a verdict: files that another writer of the checkout changed, which a read-only task is not charged with.
+function ignoreOf(ignore) {
+  const list = ignore === undefined ? [] : Array.isArray(ignore) ? ignore : [ignore]
+  for (const glob of list) if (!isText(glob) || glob.trim().startsWith('--')) return { error: '--ignore needs a glob: --ignore <glob>' }
+  return { globs: list.map((glob) => glob.trim()) }
+}
+
 // The objective checks of an approve, by how the last attempt ran. Returns null when they pass, or the error.
-function approveError(r, entries, launch, worktree) {
+function approveError(r, entries, launch, worktree, ignore = []) {
   const attempt = launch.attempt
   const result = lastOf(entries, (e) => e.kind === 'result' && e.attempt === attempt && e.ok === true).entry
   if (result) {
@@ -493,7 +506,7 @@ function approveError(r, entries, launch, worktree) {
     return `checks failed: ${reasons.join('; ')}`
   }
   const owns = Array.isArray(launch.owns) ? launch.owns : []
-  if (launch.edits || owns.length > 0) {
+  if (editsOf(launch)) {
     if (!isText(worktree)) return NO_WORKTREE
     const tests = isText(launch.tests) ? checks.runTests(worktree, launch.tests) : null
     const check = checks.checkEdits({ files: checks.changedFiles(worktree, launch.base), owns, tests })
@@ -501,7 +514,8 @@ function approveError(r, entries, launch, worktree) {
   }
   const answer = lastOf(entries, (e) => e.kind === 'answer' && e.attempt === attempt).entry
   if (!answer) return NO_ANSWER
-  const check = checks.checkReadOnly({ answer: typeof answer.text === 'string' ? answer.text : '', files: touchedSince(r.cwd, launch) })
+  const files = touchedSince(r.cwd, launch).filter((file) => !matchesAny(file, ignore))
+  const check = checks.checkReadOnly({ answer: typeof answer.text === 'string' ? answer.text : '', files })
   return check.ok ? null : `checks failed: ${readOnlyFailure(check).join('; ')}`
 }
 
@@ -529,7 +543,7 @@ function sessionOf(dataDir, task, session) {
 }
 
 async function verdict(input, deps = {}) {
-  const { task, verdict: kind, reason, findings, fromScratch, worktree, session: named } = isObject(input) ? input : {}
+  const { task, verdict: kind, reason, findings, fromScratch, worktree, session: named, ignore } = isObject(input) ? input : {}
   const refuse = (error, extra = {}) => ({ ok: false, task: isId(task) ? task : null, verdict: null, step: null, next: null, corrections: null, error, ...extra })
   try {
     if (!isId(task)) return refuse('unknown task')
@@ -541,6 +555,9 @@ async function verdict(input, deps = {}) {
     const state = ladderLib.stateOf(verdictInputs(entries), r.ladder)
     const at = { step: state.step, corrections: correctionsOf(r.ladder, state) }
     if (!VERDICTS.includes(kind)) return refuse('the verdict must be approve, fix or infeasible', at)
+    const ignored = ignoreOf(ignore)
+    if (ignored.error) return refuse(ignored.error, at)
+    if (ignored.globs.length > 0 && editsOf(launch)) return refuse('--ignore is for a read-only task: an editing task is checked by its AETHER-OWNS, not by --ignore', at)
 
     const verdictInput = { kind, findings: [], reason: isText(reason) ? reason.trim() : null, fromScratch: Boolean(fromScratch) }
     if (kind === 'fix') {
@@ -551,7 +568,7 @@ async function verdict(input, deps = {}) {
     const judged = ladderLib.judge(state, verdictInput, r.ladder)
     if (!judged.accepted) return refuse(judged.error, at)
     if (kind === 'approve') {
-      const error = approveError(r, entries, launch, worktree)
+      const error = approveError(r, entries, launch, worktree, ignored.globs)
       if (error) return refuse(error, at)
     }
 
@@ -559,7 +576,7 @@ async function verdict(input, deps = {}) {
     const label = next.kind === 'exhausted' ? 'exhausted' : kind === 'approve' ? 'approved' : kind
     log.appendEntry(r.dataDir, {
       kind: 'verdict', time: r.now(), session, task, attempt: launch.attempt, step: state.step, verdict: label,
-      input: verdictInput, reason: verdictInput.reason, cause: next.cause, next,
+      input: verdictInput, reason: verdictInput.reason, cause: next.cause, next, ignore: ignored.globs,
     })
     return { ok: true, task, verdict: label, step: judged.state.step, next, corrections: correctionsOf(r.ladder, judged.state) }
   } catch (err) {

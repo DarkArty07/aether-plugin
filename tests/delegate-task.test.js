@@ -4,6 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { tempDir, makeRepo } = require('./helpers.js')
 const task = require('../plugins/aether/lib/delegate-task.js')
 const log = require('../plugins/aether/lib/delegate-log.js')
@@ -348,4 +349,81 @@ test('a named agent that is not a plain one stays on Claude', async (t) => {
   const { deps } = world(t, { settings: EXTERNAL, pick: GROK })
   const plan = await task.begin(call(BRIEF('t1'), { subagent_type: 'aether:judge' }), deps)
   assert.equal(plan.skip, true)
+})
+
+// ---- --ignore: files another writer of the checkout changed, which a read-only task is not charged with (issue 100) ----
+
+const SPEC = 'specs/017-public-ready-cleanup/spec.md'
+const BIN = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-delegate')
+
+// A read-only delegate on Claude that answered in a checkout; the files it is charged with are written by the test after.
+async function answeredReadOnly(t, id) {
+  const repo = makeRepo(t)
+  const { deps, dataDir } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF(id)), deps)
+  log.appendEntry(dataDir, { kind: 'answer', task: id, attempt: 1, session: 's1', time: 5000, text: 'found it' })
+  return { repo, deps, dataDir }
+}
+
+function writeSpec(repo) {
+  fs.mkdirSync(path.join(repo.dir, 'specs', '017-public-ready-cleanup'), { recursive: true })
+  fs.writeFileSync(path.join(repo.dir, SPEC), 'written by the Writer of a design run\n')
+}
+
+test('a read-only task whose checkout another writer changed is refused, and the refusal says how to judge again with --ignore (issue 100, a)', async (t) => {
+  const { repo, deps } = await answeredReadOnly(t, 'ro-a')
+  writeSpec(repo)
+  const refused = await task.verdict({ task: 'ro-a', verdict: 'approve' }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /specs\/017-public-ready-cleanup\/spec\.md/)
+  assert.match(refused.error, /--ignore '<glob>'/, 'the message names the flag and how to use it')
+})
+
+test('the same read-only task is approved when --ignore matches the file another writer changed, and the globs are recorded in the verdict (issue 100, b)', async (t) => {
+  const { repo, deps, dataDir } = await answeredReadOnly(t, 'ro-b')
+  writeSpec(repo)
+  const judged = await task.verdict({ task: 'ro-b', verdict: 'approve', ignore: [SPEC] }, deps)
+  assert.equal(judged.ok, true, judged.error)
+  assert.equal(judged.verdict, 'approved')
+  const recorded = log.readEntries(dataDir, { task: 'ro-b' }).find((e) => e.kind === 'verdict')
+  assert.deepEqual(recorded.ignore, [SPEC])
+})
+
+test('a file changed outside the --ignore globs still fails the read-only check, and the refusal names only that file (issue 100, c)', async (t) => {
+  const { repo, deps } = await answeredReadOnly(t, 'ro-c')
+  writeSpec(repo)
+  fs.writeFileSync(path.join(repo.dir, 'touched.js'), 'x\n')
+  const refused = await task.verdict({ task: 'ro-c', verdict: 'approve', ignore: ['specs/017-public-ready-cleanup/**'] }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /touched\.js/)
+  assert.doesNotMatch(refused.error, /specs\/017/, 'the ignored file is left out of the list')
+})
+
+test('--ignore on an editing task is refused with a clear error, before any check runs (issue 100, d)', async (t) => {
+  const { deps, dataDir } = world(t)
+  await task.begin(call(BRIEF('ed-d', 'AETHER-OWNS: src/**\n')), deps)
+  const refused = await task.verdict({ task: 'ed-d', verdict: 'approve', ignore: ['src/**'] }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /--ignore is for a read-only task/)
+  assert.equal(log.readEntries(dataDir, { task: 'ed-d' }).some((e) => e.kind === 'verdict'), false, 'nothing is recorded')
+})
+
+test('the bin parses a repeated --ignore and judges through the same check; a bare --ignore is refused (issue 100, e)', async (t) => {
+  const { repo, dataDir } = await answeredReadOnly(t, 'ro-e')
+  writeSpec(repo)
+  fs.writeFileSync(path.join(repo.dir, 'touched.js'), 'x\n')
+  const env = { ...process.env, AETHER_DATA_DIR: dataDir }
+  const run = (...args) => spawnSync(process.execPath, [BIN, 'verdict', '--task', 'ro-e', '--verdict', 'approve', ...args], { cwd: repo.dir, encoding: 'utf8', env })
+  const bare = run('--ignore')
+  assert.equal(bare.status, 1)
+  assert.match(JSON.parse(bare.stdout.trim()).error, /--ignore needs a value/)
+  const flagged = run('--ignore', '--verdict')
+  assert.equal(flagged.status, 1)
+  assert.match(JSON.parse(flagged.stdout.trim()).error, /is a flag/)
+  const partial = run('--ignore', SPEC)
+  assert.equal(partial.status, 0)
+  assert.equal(JSON.parse(partial.stdout.trim()).ok, false, 'touched.js is still charged')
+  const both = run('--ignore', SPEC, '--ignore', 'touched.js')
+  assert.equal(both.status, 0)
+  assert.equal(JSON.parse(both.stdout.trim()).ok, true, both.stdout)
 })

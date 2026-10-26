@@ -3,7 +3,7 @@
 
 // aether-delegate begin --session <id> --input <file>
 // aether-delegate verdict --task <id> --verdict approve|fix|infeasible [--reason <text>] [--finding <file[:line]: what is missing>]...
-//   [--from-scratch] [--worktree <path>] [--session <id>]
+//   [--from-scratch] [--worktree <path>] [--session <id>] [--ignore <glob>]...
 // aether-delegate start --id <id>
 // aether-delegate run --id <id>
 // aether-delegate wait --id <id> --seconds <n>
@@ -26,10 +26,10 @@ const run = lib('run.js')
 const VERBS = {
   begin: { usage: 'begin --session <id> --input <file>', flags: ['session', 'input'], required: ['session', 'input'] },
   verdict: {
-    usage: 'verdict --task <id> --verdict approve|fix|infeasible [--reason <text>] [--finding <file[:line]: what is missing>]... [--from-scratch] [--worktree <path>] [--session <id>]',
-    flags: ['task', 'verdict', 'reason', 'finding', 'from-scratch', 'worktree', 'session'],
+    usage: 'verdict --task <id> --verdict approve|fix|infeasible [--reason <text>] [--finding <file[:line]: what is missing>]... [--from-scratch] [--worktree <path>] [--session <id>] [--ignore <glob>]...',
+    flags: ['task', 'verdict', 'reason', 'finding', 'from-scratch', 'worktree', 'session', 'ignore'],
     booleans: ['from-scratch'],
-    repeatable: ['finding'],
+    repeatable: ['finding', 'ignore'],
     required: ['task', 'verdict'],
   },
   start: { usage: 'start --id <id>', flags: ['id'], required: ['id'] },
@@ -56,6 +56,7 @@ function flagsOf(verb, args) {
     }
     if (i + 1 >= args.length) throw new Error(`${arg} needs a value\n${usageOf(verb)}`)
     const value = args[++i]
+    if (spec.repeatable?.includes(name) && value.startsWith('--')) throw new Error(`${arg} needs a value, and ${value} is a flag\n${usageOf(verb)}`)
     if (spec.repeatable?.includes(name)) (out[name] ??= []).push(value)
     else out[name] = value
   }
@@ -92,6 +93,7 @@ async function verdictCommand(flags, dataDir) {
       fromScratch: flags['from-scratch'] === true,
       worktree: flags.worktree,
       session: flags.session,
+      ignore: flags.ignore ?? [],
     },
     { dataDir },
   )

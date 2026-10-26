@@ -57,6 +57,8 @@ The Lead decides whether the work is good. Before it does, the checks that need 
 
 The checks run without a model and before the verdict, so a result that fails one of them cannot be approved. The verdict is one of three, and it only counts when it goes through `aether-delegate verdict`; a verdict given any other way does not count, and neither raises the step nor closes the task.
 
+A read-only delegate can be charged with a file that another writer of the same checkout changed while it ran, such as the Writer of a design run, which the delegate did not touch. The refusal names those files and says how to continue: the Lead judges again with `--ignore '<glob>'` for each file that is not the delegate's doing (a file's own path works as the glob). Each `--ignore` leaves out the files it matches, every other changed file still fails the check, and the globs are recorded in the verdict's line of the log. `--ignore` is only for a read-only task: an editing task is checked by what it owns, so the verdict refuses it.
+
 - `approve` closes the task. It is refused when a check failed, and for an editing delegate on Claude it needs the worktree of the attempt, `--worktree`, or the checks of its result. Then the Lead merges the branch of an editing delegate itself, one at a time, with the `aether-wt merge` line the result gives.
 - `fix` sends the work back to the same model, one effort up when its harness has one, with the findings, each `--finding 'file:line: what is missing'`.
 - `infeasible --reason <text>` declares the task out of reach of this model. Add `--from-scratch`, with a reason, to a `fix` or an `infeasible` only to throw the earlier work away.
@@ -66,7 +68,7 @@ The checks run without a model and before the verdict, so a result that fails on
 `aether-delegate` is the bin that holds the ladder. Each verb prints one JSON line and none of them merges or pushes. The Lead uses `verdict`; the mod uses the rest.
 
 - `begin --session <id> --input <file>`: takes the `Agent` call the mod caught and says how the attempt runs: the step's model and effort, the brief with the findings and the earlier work a correction or a rise carries, the isolation of an editing task, and the external pair when there is one. It writes the `launch` entry.
-- `verdict --task <id> --verdict <approve, fix or infeasible> [--reason <text>] [--finding <file[:line]: what is missing>]... [--from-scratch] [--worktree <path>]`: judges the last attempt, runs the checks before an `approve`, and says what the next launch is.
+- `verdict --task <id> --verdict <approve, fix or infeasible> [--reason <text>] [--finding <file[:line]: what is missing>]... [--from-scratch] [--worktree <path>] [--ignore <glob>]...`: judges the last attempt, runs the checks before an `approve`, and says what the next launch is. `--ignore` leaves out of a read-only check the files another writer of the checkout changed.
 - `start --id <id>`, `run --id <id>` and `wait --id <id> --seconds <n>`: launch an attempt that runs on another harness in a process of its own and return at once, do it, and poll for its result for up to `n` seconds (540 at most).
 - `answer --session <id> --task <id> --attempt <n> --text <text>`: records the final answer of a read-only delegate that ran on Claude, so that the verdict can check it.
 - `renew --harness <agy or grok>`: takes a fresh quota reading and saves it where the choice of the pair reads it.
