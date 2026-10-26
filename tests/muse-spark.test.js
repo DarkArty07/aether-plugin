@@ -61,3 +61,12 @@ test('(c) muse-spark-1.3 has pairs at xhigh and max, and none at high, medium or
     assert.equal(sparkPairs.some((p) => p.effort === unwanted), false, `muse-spark-1.3 must have no pair at ${unwanted}`)
   }
 })
+
+test('(d) the index builder gives muse-spark-1.3 the efforts of its calledNotListed entry, so a rebuild keeps max, and Wonder Full keeps the capture\'s', () => {
+  const { harnessEntries } = require('../scripts/build-models-index.js')
+  const entries = harnessEntries(read('lanes.json'), read('models', 'harness-models.json'), ['muse'], loadPairs().pairs)
+  const spark = entries.find((entry) => entry.model === 'muse-spark-1.3')
+  assert.deepEqual(spark.detail.efforts, ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+  const wonder = entries.find((entry) => entry.model === 'muse-wonder-full-1.0')
+  assert.equal(wonder.detail.efforts.includes('max'), false, 'the capture says Wonder Full has no max')
+})

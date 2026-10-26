@@ -73,7 +73,7 @@ function fileOf(t, name, text) {
 // A patch that adds the file in a scratch clone of the repository, so the repository itself stays clean.
 function patchAdding(t, repo, relative, text) {
   const scratch = tempDir(t, 'aether-ladder-clone-')
-  spawnSync('git', ['-c', 'protocol.file.allow=always', 'clone', '-q', repo.dir, scratch], { encoding: 'utf8' })
+  spawnSync('git', ['clone', '-q', repo.dir, scratch], { encoding: 'utf8' })
   fs.mkdirSync(path.dirname(path.join(scratch, relative)), { recursive: true })
   fs.writeFileSync(path.join(scratch, relative), text)
   spawnSync('git', ['add', relative], { cwd: scratch })
