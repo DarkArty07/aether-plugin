@@ -561,9 +561,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A92 are recorded and the changelog opens with 0.20.1, then 0.20.0, 0.19.2, 0.19.1 and 0.19.0 with its handoff', () => {
+test('R15: the decisions A50 to A93 are recorded and the changelog opens with 0.20.1, then 0.20.0, 0.19.2, 0.19.1 and 0.19.0 with its handoff', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 92
+  const LAST_DECISION = 93
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -594,6 +594,8 @@ test('R15: the decisions A50 to A92 are recorded and the changelog opens with 0.
   assert.ok(/corrections to the Lead/.test(line(90)) && /development installation/.test(line(90)))
   assert.ok(/never changes the plugin by itself/.test(line(91)) && /only proposes/.test(line(91)))
   assert.ok(/parameter of the installed plugin/.test(line(92)) && /observedev/.test(line(92)))
+  assert.ok(/cheapest model and effort/.test(line(93)) && /Terminal-Bench/.test(line(93)) && /A87/.test(line(93)))
+  for (const n of [18, 36, 87]) assert.ok(/Update \(A93\)/.test(line(n)), `A${n} has its update note`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const versions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
