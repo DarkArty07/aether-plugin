@@ -19,6 +19,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 - [Options](guide/options.md): every option the plugin has, its default and how to set it.
 - [Lanes](guide/lanes.md): delegating volume to other harnesses and their models, and how the quota is spent.
 - [Delegates](guide/delegates.md): how a delegate task of the Lead starts on Haiku and climbs to Sonnet and Opus, how a correction works on the work done, who judges it, where it runs and which pair is chosen, and the log.
+- [Models by role](guide/models-by-role.md): which model and effort each role runs on, how a task climbs, what each costs, why it is set this way and how to tell whether it should change.
 - [Design seats](guide/design-seats.md): which model sits in the Judge, the Writer and the Examiner seats, and how to choose.
 - [Autonomy](guide/autonomy.md): how much the Lead does without asking, and the owner's grants that widen it.
 - [Ops](guide/ops.md): the work that runs as plain code with no model call.
