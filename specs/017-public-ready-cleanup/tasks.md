@@ -676,21 +676,21 @@ function concreteCaller(bin, verb) {
   })
 }
 
-function headerOf(bin) {
-  return fs.readFileSync(path.join(PLUGIN, 'bin', bin), 'utf8').split('\n').slice(0, 60).join('\n')
+function headerOf(bin, body = fs.readFileSync(path.join(PLUGIN, 'bin', bin), 'utf8')) {
+  return body.split('\n').slice(0, 60).join('\n')
 }
 
-function verbsOf(bin) {
+// `body` is the text of the bin; a test passes a sample text of its own, so that it does not depend on the verbs this task removes from the real file.
+function verbsOf(bin, body = fs.readFileSync(path.join(PLUGIN, 'bin', bin), 'utf8')) {
   const token = '[_a-z][a-z-]*'
   const verbs = new Set()
   const dispatch = new Set()
-  const body = fs.readFileSync(path.join(PLUGIN, 'bin', bin), 'utf8')
   for (const hit of body.matchAll(new RegExp(`(?:\\bverb\\b|argv\\[0\\])\\s*===\\s*['"\`](${token})['"\`]`, 'g'))) dispatch.add(hit[1])
   // Keys of `const COMMANDS = { … }` only: a word after `{` or `,`, not a word inside a usage string (`|harness:model`).
   for (const table of body.matchAll(/const COMMANDS = \{([^}]*)\}/g)) {
     for (const key of table[1].matchAll(new RegExp(`(?:^|[{,])\\s*(${token})\\s*:`, 'g'))) dispatch.add(key[1])
   }
-  for (const line of headerOf(bin).split('\n')) {
+  for (const line of headerOf(bin, body).split('\n')) {
     const m = line.match(new RegExp(`^//\\s+${bin}\\s+(.*)$`))
     if (!m) continue
     const parts = m[1].split('|')
@@ -741,7 +741,16 @@ test('scripts/aether-lead stays', () => {
 })
 
 test('a pipe-separated usage line yields every verb, crossed with the dispatch branches', () => {
-  assert.deepEqual([...verbsOf('aether-observe')].sort(), ['baseline', 'forget', 'hook', 'read', 'status'])
+  // A sample text, not the real bin: this task itself removes read, baseline, status and forget from plugins/aether/bin/aether-observe.
+  const sample = [
+    '// aether-observe hook | read | baseline [--from <dir>] | status | forget [--yes]',
+    "if (verb === 'hook') {}",
+    "if (verb === 'read') {}",
+    "if (verb === 'baseline') {}",
+    "if (verb === 'status') {}",
+    "if (verb === 'forget') {}",
+  ].join('\n')
+  assert.deepEqual([...verbsOf('aether-observe', sample)].sort(), ['baseline', 'forget', 'hook', 'read', 'status'])
 })
 ```
 
@@ -2294,13 +2303,13 @@ for (const entry of COPIES) {
 ### Task 49: las claves de primer nivel de `autonomy.json`, `observe.json`, `profiles.json` y `harness-models.json`
 
 **Aether:**
-- Tier: haiku high — cuatro listas cerradas con el archivo que lee cada clave, y dos claves de `profiles.json` que nada lee
+- Tier: haiku high — cuatro listas cerradas con el archivo que lee cada clave, y dos claves de documentación de `profiles.json` declaradas aparte
 - Area: data-keys
 - Owns: `tests/config-keys.test.js`, `plugins/aether/config/autonomy.json`, `plugins/aether/config/observe.json`, `plugins/aether/config/models/profiles.json`, `plugins/aether/config/models/harness-models.json`
 - Depends on: none
 - Serves: R18
 
-**Interfaces:** claves de primer nivel que se quedan, con su lector: `autonomy.json` `hours` y `usd` (`lib/autonomy.js`); `observe.json` `pairFailures`, `blockedByMistake` (`lib/observe-detect.js`), `approval`, `pairSpeed`, `pairFailureRate`, `designRounds`, `cost` (`lib/observe-calibrate.js`; `cost` también `lib/observe-baseline.js`), `correctionPatterns` (`lib/observe-dev.js`) y `corrections` (`lib/observe-hook.js`, `observe-dev.js`, `observe-read.js`); `profiles.json` `profiles` (`scripts/build-models-index.js`); `harness-models.json` `harnesses` (`scripts/build-models-index.js`). Se borran de `profiles.json` las claves de primer nivel `about` y `checked`: ningún lector las nombra (el `checked` de cada perfil, dentro de `profiles`, se queda y lo lee el script y `tests/muse-profiles.test.js`). Si una prueba de `tests/` nombra una de las dos claves como de primer nivel, la tarea no la borra y lo dice en su informe. `config/ladder.json` lo posee la tarea 42 y las otras cuatro tablas la tarea 4.
+**Interfaces:** claves de primer nivel que se quedan, con su lector: `autonomy.json` `hours` y `usd` (`lib/autonomy.js`); `observe.json` `pairFailures`, `blockedByMistake` (`lib/observe-detect.js`), `approval`, `pairSpeed`, `pairFailureRate`, `designRounds`, `cost` (`lib/observe-calibrate.js`; `cost` también `lib/observe-baseline.js`), `correctionPatterns` (`lib/observe-dev.js`) y `corrections` (`lib/observe-hook.js`, `observe-dev.js`, `observe-read.js`); `profiles.json` `profiles` (`scripts/build-models-index.js`); `harness-models.json` `harnesses` (`scripts/build-models-index.js`). Las claves de primer nivel `about` y `checked` de `profiles.json` se quedan: son la documentación del archivo y la fecha de su revisión, y ningún lector las nombra. El inventario las declara aparte, como claves de documentación con su razón (campo `docs` de su fila en `TABLES`), y no se borra ninguna (el `checked` de cada perfil, dentro de `profiles`, también se queda). `config/ladder.json` lo posee la tarea 42 y las otras cuatro tablas la tarea 4.
 
 **Tests (write first):** `tests/config-keys.test.js`:
 
@@ -2317,13 +2326,14 @@ const LIB = 'plugins/aether/lib/'
 const TABLES = {
   'plugins/aether/config/autonomy.json': { keys: ['hours', 'usd'], readers: [`${LIB}autonomy.js`] },
   'plugins/aether/config/observe.json': { keys: ['approval', 'blockedByMistake', 'correctionPatterns', 'corrections', 'cost', 'designRounds', 'pairFailureRate', 'pairFailures', 'pairSpeed'], readers: fs.readdirSync(path.join(ROOT, LIB)).filter((f) => /^observe.*\.js$/.test(f)).map((f) => LIB + f) },
-  'plugins/aether/config/models/profiles.json': { keys: ['profiles'], readers: ['scripts/build-models-index.js'] },
+  // `about` and `checked` document the file and no code reads them: they are declared as documentation, not as read keys.
+  'plugins/aether/config/models/profiles.json': { keys: ['profiles'], docs: ['about', 'checked'], readers: ['scripts/build-models-index.js'] },
   'plugins/aether/config/models/harness-models.json': { keys: ['harnesses'], readers: ['scripts/build-models-index.js'] },
 }
 
-for (const [file, { keys, readers }] of Object.entries(TABLES)) {
+for (const [file, { keys, docs = [], readers }] of Object.entries(TABLES)) {
   test(`${file}: its top-level keys are the closed list`, () => {
-    assert.deepEqual(Object.keys(JSON.parse(read(file))).sort(), [...keys].sort())
+    assert.deepEqual(Object.keys(JSON.parse(read(file))).sort(), [...keys, ...docs].sort())
   })
   test(`${file}: a reader names each key`, () => {
     const text = readers.map(read).join('\n')
@@ -2336,4 +2346,4 @@ for (const [file, { keys, readers }] of Object.entries(TABLES)) {
 }
 ```
 
-**Acceptance:** `node --test tests/config-keys.test.js tests/models-index.test.js tests/muse-profiles.test.js tests/lane-models.test.js tests/autonomy.test.js tests/observe.test.js` pasa; `profiles.json` no tiene `about` ni `checked` de primer nivel; ninguna otra cifra cambia.
+**Acceptance:** `node --test tests/config-keys.test.js tests/models-index.test.js tests/muse-profiles.test.js tests/lane-models.test.js tests/autonomy.test.js tests/observe.test.js` pasa; `profiles.json` conserva `about` y `checked` de primer nivel, declaradas como documentación; ninguna otra cifra cambia.
