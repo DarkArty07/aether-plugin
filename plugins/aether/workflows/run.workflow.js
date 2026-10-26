@@ -729,20 +729,23 @@ function nextTier(tier) {
   return TIERS.slice(TIERS.indexOf(tier) + 1).find((t) => ladder[t] > 0) || null
 }
 
-// The effort of an implementer's attempt (spec §7); `attempt` counts the attempts on `model`.
-// The task's own effort applies on the task's model only: always when it is max, else on the first attempt.
-// Every other attempt, and every attempt on a model the unit escalated to, runs at xhigh.
+// The task's own effort applies on the task's model: the first attempt, and a retry on a Sonnet or Opus task.
+// A retry on a Haiku task runs at xhigh, or at the task's effort when that is max. An attempt on a model the
+// unit escalated to runs at high.
 function effortFor(task, model, attempt) {
-  if (model === task.tier && (task.effort === 'max' || attempt === 1)) return task.effort
-  return 'xhigh'
+  if (model === task.tier) {
+    if (task.effort === 'max' || attempt === 1) return task.effort
+    return model === 'haiku' ? 'xhigh' : task.effort
+  }
+  return 'high'
 }
 
 // The end of the supervisor's message: the rung a retry and an escalation would run next.
 function ladderOutlook(task, model, used) {
   const up = nextTier(model)
-  const retryRung = used[model] < ladder[model] ? `${model} ${effortFor(task, model, used[model] + 1)}` : up && `${up} xhigh`
+  const retryRung = used[model] < ladder[model] ? `${model} ${effortFor(task, model, used[model] + 1)}` : up && `${up} ${effortFor(task, up, 1)}`
   const outlook = (verb, rung) => (rung ? `${verb} runs on ${rung}.` : `${verb} blocks the unit: the ladder is spent.`)
-  return `${outlook('A retry', retryRung)} ${outlook('Escalate', up && `${up} xhigh`)}`
+  return `${outlook('A retry', retryRung)} ${outlook('Escalate', up && `${up} ${effortFor(task, up, 1)}`)}`
 }
 
 function finish(unit, status, reason = null, question = null) {
@@ -1171,7 +1174,7 @@ async function work(unit, task) {
       const next = nextTier(model)
       if (!next) return finish(unit, 'blocked', 'the ladder is spent')
       // A model with no attempts at all never ran: name the rung its first attempt would have had.
-      log(`${unit.id}: escalating from ${model} ${effortFor(task, model, Math.max(used[model], 1))} to ${next} xhigh`)
+      log(`${unit.id}: escalating from ${model} ${effortFor(task, model, Math.max(used[model], 1))} to ${next} ${effortFor(task, next, 1)}`)
       model = next
     }
     if (modelAgentsSpent() >= maxAgents) return finish(unit, 'not-run', 'the agent budget is spent')
@@ -1313,7 +1316,7 @@ async function work(unit, task) {
     if (round.verdict === 'escalate') {
       const next = nextTier(model)
       if (!next) return finish(unit, 'blocked', 'the ladder is spent')
-      log(`${unit.id}: escalating from ${rung} to ${next} xhigh`)
+      log(`${unit.id}: escalating from ${rung} to ${next} ${effortFor(task, next, 1)}`)
       model = next
       continue
     }
@@ -1417,15 +1420,13 @@ function isRelaunch() {
 }
 
 // The final review's model and effort follow the run's risk, judged from the tasks of the merged units:
-// Opus at xhigh for an opus task or an xhigh or max review; Sonnet at high for a small run of haiku
-// tasks that all ask for high reviews; Opus at high otherwise. A relaunch's review covers the earlier
-// launches too, so it is never Sonnet: Opus at high, unless the xhigh rules apply.
+// Opus at xhigh only when a merged unit is tier opus; Sonnet at high for a small run of haiku tasks
+// that all ask for high reviews; Opus at high otherwise. A relaunch's review covers the earlier
+// launches too, so it is never Sonnet.
 function reviewPlan() {
   const merged = Object.values(units).filter((u) => u.status === 'merged')
   const opus = merged.find((u) => tasks[u.id].tier === 'opus')
   if (opus) return { model: 'opus', effort: 'xhigh', reason: `${opus.id} is tier opus` }
-  const deep = merged.find((u) => ['xhigh', 'max'].includes(tasks[u.id].review))
-  if (deep) return { model: 'opus', effort: 'xhigh', reason: `${deep.id} reviews at ${tasks[deep.id].review}` }
   if (isRelaunch()) return { model: 'opus', effort: 'high', reason: 'a relaunch: the final review covers the earlier launches too' }
   // Zero merged units is not a small all-haiku run: an empty list passes `every`, and a forced review of a
   // launch that merged nothing would otherwise run on Sonnet.
