@@ -300,6 +300,36 @@
         "sources": ["https://docs.x.ai/developers/grok-4-7"],
         "checked": "2026-10-13"
       }
+    },
+    {
+      "harness": "muse",
+      "model": "muse-spark-1.3",
+      "family": "muse-spark-1-3",
+      "name": "Muse Spark 1.3",
+      "maker": "Meta",
+      "released": "2026-10-01",
+      "effortVia": "flag",
+      "efforts": ["minimal","low","medium","high","xhigh","max"],
+      "scores": [
+        {"effort":"xhigh","intelligence":45.1,"terminalBench":0.167,"priceInput":1.25,"priceOutput":4.25,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"max","intelligence":48.1,"terminalBench":0.333,"priceInput":1.25,"priceOutput":4.25,"tokensPerSecond":null,"ttftSeconds":null}
+      ],
+      "lane": {"roles":["implementer","reviewer"]},
+      "profile": {
+        "purpose": "\"Latest version\", \"Recommended for new work\", for \"high-volume or cost-sensitive work\".",
+        "contextTokens": 1048576,
+        "maxOutputTokens": null,
+        "defaultEffort": "high",
+        "price": {"input":1.25,"output":4.25,"note":"per million tokens on the Meta API; cached input 0.15"},
+        "knowledgeCutoff": null,
+        "availability": "Meta API (id muse-spark-1.3) and Muse Code CLI. Each harness takes the efforts its entry lists.",
+        "caveats": [
+          "Prices come from a summary of Meta's pages, to be checked against the page.",
+          "The contributor-mode variant trains Meta models in exchange for lower price and does not support max effort; Aether excludes contributor mode."
+        ],
+        "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/pricing-rate-limits"],
+        "checked": "2026-10-19"
+      }
     }
   ],
   "excluded": [

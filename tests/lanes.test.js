@@ -436,20 +436,23 @@ test('usable follows the rule of lane-order: a balance that is unknown is used u
   assert.equal(lanes.usable(window(0.05), 0.05), false)
 })
 
-test('the shipped lane table has a muse harness with the one model its CLI lists, which is in by the owner\'s decision', () => {
+test('the shipped lane table has a muse harness with Wonder Full and Spark 1.3, both in by the owner\'s decision', () => {
   const config = lanes.loadConfig(lanes.CONFIG_FILE)
   const muse = config.harnesses.muse
   assert.deepEqual([muse.command, muse.quotaLifeMinutes, muse.waitSeconds], ['muse', 30, 540])
   assert.deepEqual(muse.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200 })
   assert.deepEqual(muse.groups, { muse: 'Muse subscription' })
-  // The CLI lists one model to the owner's account (harness-models.json), and Meta gives it only on the Power and Maximum plans.
-  assert.deepEqual(Object.keys(muse.models), ['muse-wonder-full-1.0'])
+  assert.deepEqual(Object.keys(muse.models).sort(), ['muse-spark-1.3', 'muse-wonder-full-1.0'])
   const wonder = muse.models['muse-wonder-full-1.0']
   assert.deepEqual([wonder.group, wonder.roles], ['muse', ['implementer', 'reviewer']])
   assert.equal('levels' in wonder, false)
   assert.equal('replaces' in wonder, false)
   assert.equal(wonder.aa.slug, 'muse-wonder-full')
   assert.match(wonder.ownerDecision, /nivel de opus|anivel de opus/, 'the model is in the table by the owner\'s decision, written in its entry')
+  const spark = muse.models['muse-spark-1.3']
+  assert.deepEqual([spark.group, spark.roles], ['muse', ['implementer', 'reviewer']])
+  assert.equal(spark.aa.slug, 'muse-spark-1-3')
+  assert.match(spark.ownerDecision, /infinitamente mas barato|nivel haiku o sonnet/)
   assert.equal('designSeats' in config, false)
 })
 
