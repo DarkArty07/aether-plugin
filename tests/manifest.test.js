@@ -25,11 +25,11 @@ test('the repository is a marketplace that lists the aether plugin', () => {
   })
 })
 
-test('the manifest has no dependencies, and declares the superdelegation, harnesses, ops, deadlines, quotabrake, brakepush and observedev options, and the lanes and seats legacy keys', () => {
+test('the manifest has no dependencies, and declares the superdelegation, harnesses, ops, deadlines, quotabrake, brakepush and observedev options', () => {
   const manifest = json(PLUGIN, '.claude-plugin', 'plugin.json')
   assert.equal(manifest.name, 'aether')
   assert.equal('dependencies' in manifest, false)
-  const { lanes, seats, superdelegation, quotabrake, brakepush, observedev, ...rest } = manifest.userConfig
+  const { superdelegation, quotabrake, brakepush, observedev, ...rest } = manifest.userConfig
   assert.deepEqual([quotabrake.type, quotabrake.default, brakepush.type, brakepush.default], ['string', '95', 'boolean', false])
   assert.deepEqual([observedev.type, observedev.default], ['boolean', false])
   assert.deepEqual(rest, {
@@ -37,7 +37,7 @@ test('the manifest has no dependencies, and declares the superdelegation, harnes
       type: 'string',
       title: 'Lane harnesses',
       description:
-        "The external harnesses superdelegation may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates, then the cost per task. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk.",
+        "The external harnesses superdelegation may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates, then the cost per task. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk. Codex and Cursor are not tested with a real account.",
       default: 'agy',
     },
     ops: {
@@ -59,35 +59,18 @@ test('the manifest has no dependencies, and declares the superdelegation, harnes
     type: 'boolean',
     title: 'Superdelegation',
     description:
-      "Send everything that is not the Lead to other harnesses (agy, grok, muse, ...) while their quota lasts; native Claude is the fallback. It covers the swarm, the design seats and the Lead's delegate tasks: the ones that only read go to the harness the one rule picks, and the ones that edit files go first to another harness on a worktree of their own, which the Lead merges. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only. Replaces the lanes and seats options.",
-  })
-  assert.deepEqual(lanes, {
-    type: 'boolean',
-    title: 'Lanes (legacy)',
-    description: 'Replaced by superdelegation. Read only when superdelegation is not set: on counts as superdelegation on.',
-    default: false,
-  })
-  assert.deepEqual(seats, {
-    type: 'string',
-    title: 'Design seats (legacy)',
-    description: 'Ignored. The design seats follow superdelegation now; native, balanced and robust no longer exist.',
+      "Send everything that is not the Lead to other harnesses (agy, grok, muse, ...) while their quota lasts; native Claude is the fallback. It covers the swarm, the design seats and the Lead's delegate tasks: the ones that only read go to the harness the one rule picks, and the ones that edit files go first to another harness on a worktree of their own, which the Lead merges. Off by default: the external CLIs run without permission prompts and spend other plans' quota. Linux only.",
   })
 })
 
-test('superdelegation is a boolean with no default, and lanes and seats stay only as legacy keys', () => {
+test('superdelegation is a boolean with no default', () => {
   const { userConfig } = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
   assert.equal(userConfig.superdelegation.type, 'boolean')
   assert.equal(userConfig.superdelegation.title, 'Superdelegation')
   assert.equal('default' in userConfig.superdelegation, false)
   assert.match(userConfig.superdelegation.description, /^Send everything that is not the Lead to other harnesses/)
   assert.match(userConfig.superdelegation.description, /Off by default/)
-  assert.equal(userConfig.lanes.title, 'Lanes (legacy)')
-  assert.equal(userConfig.lanes.default, false)
-  assert.equal(userConfig.seats.title, 'Design seats (legacy)')
-  assert.equal(userConfig.seats.type, 'string')
-  assert.equal('options' in userConfig.seats, false)
-  assert.equal('default' in userConfig.seats, false)
-  assert.deepEqual(Object.keys(userConfig).sort(), ['brakepush', 'deadlines', 'harnesses', 'lanes', 'observedev', 'ops', 'quotabrake', 'seats', 'superdelegation'])
+  assert.deepEqual(Object.keys(userConfig).sort(), ['brakepush', 'deadlines', 'harnesses', 'observedev', 'ops', 'quotabrake', 'superdelegation'])
 })
 
 test('the manifest no longer declares router, decider or fallback, and deadlines is the quota deadline alone (C7)', () => {
