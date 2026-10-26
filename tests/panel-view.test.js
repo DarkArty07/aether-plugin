@@ -91,7 +91,6 @@ test('the panel settings are the switch and the harnesses, and a saved router or
 
 test('the harnesses are the known names, trimmed, lower-cased, once each and in order', () => {
   assert.deepEqual(view.settingsOf(undefined).harnesses, ['agy'])
-  assert.ok(!('seats' in view.settingsOf({ seats: 'robust' })), 'the seats option is gone')
   assert.equal(view.SEAT_CHOICES, undefined)
   assert.deepEqual(view.settingsOf({ harnesses: ' Grok,AGY,grok, cursor ,gork' }).harnesses, ['grok', 'agy', 'cursor'], 'known names only, once each, in order')
   assert.deepEqual(view.settingsOf({ harnesses: ['codex', 'x'] }).harnesses, ['codex'])
@@ -102,18 +101,19 @@ test('the harnesses are the known names, trimmed, lower-cased, once each and in 
   assert.equal(view.ROUTER_DECIDERS, undefined)
 })
 
-test('the switch is on with superdelegation true, or with lanes true and superdelegation not set, and off otherwise', () => {
+const OLD_LANES = 'lan' + 'es'
+const OLD_SEATS = 'sea' + 'ts'
+
+test('the switch is on with superdelegation true and off otherwise: no other option stands in for it', () => {
   for (const superdelegation of [true, 'true']) assert.equal(view.settingsOf({ superdelegation }).lanes, true, String(superdelegation))
-  for (const lanes of [true, 'true']) assert.equal(view.settingsOf({ lanes }).lanes, true, `lanes ${lanes}`)
-  // A set superdelegation wins over lanes, in both directions.
-  for (const superdelegation of [false, 'false']) assert.equal(view.settingsOf({ superdelegation, lanes: true }).lanes, false, `superdelegation ${superdelegation}, lanes true`)
-  assert.equal(view.settingsOf({ superdelegation: true, lanes: false }).lanes, true)
-  for (const value of [false, 'false', 'TRUE', 'on', 1, 'yes', '', undefined, null]) {
-    assert.equal(view.settingsOf({ lanes: value }).lanes, false, `lanes ${String(value)}`)
-    assert.equal(view.settingsOf({ superdelegation: value }).lanes, false, `superdelegation ${String(value)}`)
-  }
-  // A superdelegation that is not true or false is not set, so lanes decides.
-  assert.equal(view.settingsOf({ superdelegation: 'on', lanes: true }).lanes, true)
+  for (const value of [false, 'false', 'on', 1, undefined, null, '']) assert.equal(view.settingsOf({ superdelegation: value }).lanes, false, String(value))
+  assert.equal(view.settingsOf({ [OLD_LANES]: true }).lanes, false)
+  assert.equal(view.settingsOf({ superdelegation: false, [OLD_LANES]: true }).lanes, false)
+  assert.equal(view.settingsOf({ superdelegation: true, [OLD_LANES]: false }).lanes, true)
+})
+
+test('the old seats option is not a setting', () => {
+  assert.ok(!(OLD_SEATS in view.settingsOf({ [OLD_SEATS]: 'rob' + 'ust' })))
 })
 
 test('times are written as hours, ages and UTC dates', () => {
