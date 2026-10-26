@@ -35,7 +35,7 @@ function onPairs(more = (call, fallback) => fallback(call), pairs = PAIRS) {
   }
 }
 
-function lanesRun(t, tasks = [task(1)], lanes = LANES) {
+function lanesRun(t, tasks = [task(1, { tier: 'haiku xhigh — complete code' })], lanes = LANES) {
   return { ...compile(makeRepo(t), plan(tasks)), lanes }
 }
 
@@ -379,12 +379,12 @@ test('an escalation from a Gemini attempt picks the next attempt with the next r
   })
   ok(run)
   const second = run.calls.filter((c) => c.kind === 'ops:lane-pick' && c.lane.role === 'implementer')[1]
-  assert.deepEqual([second.lane.call, second.lane.model, second.lane.effort, second.lane.exclude], ['task-1-2-implement', 'sonnet', 'xhigh', FLASH.id])
+  assert.deepEqual([second.lane.call, second.lane.model, second.lane.effort, second.lane.exclude], ['task-1-2-implement', 'sonnet', 'high', FLASH.id])
   assert.deepEqual(starts(run, 'implementer').map((c) => [c.lane.call, c.lane.model, c.lane.effort]), [
     ['task-1-1-implement', 'gemini-3.8-flash', 'high'],
     ['task-1-2-implement', 'claude-sonnet-5-5', 'high'],
   ])
-  assert.deepEqual(run.result.units[0].tiers, ['haiku xhigh', 'sonnet xhigh'])
+  assert.deepEqual(run.result.units[0].tiers, ['haiku xhigh', 'sonnet high'])
 })
 
 // Two harnesses: agy runs the Gemini and Claude pairs, and codex runs GPT-5.5, the implementers' pair.

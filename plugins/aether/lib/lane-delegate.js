@@ -33,7 +33,7 @@ const OUTPUT_TAIL_CHARS = 4000
 
 // The reviewer's native reference pair, derived from the model the charge names.
 function reviewerReference(model) {
-  if (model === 'opus') return { model: 'opus', effort: 'xhigh' }
+  if (model === 'opus') return { model: 'opus', effort: 'high' }
   if (model === 'haiku') return { model: 'sonnet', effort: 'high' }
   return { model: 'opus', effort: 'high' }
 }

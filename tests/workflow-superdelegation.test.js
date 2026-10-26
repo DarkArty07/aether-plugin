@@ -11,7 +11,7 @@ const FLASH = { id: 'agy/gemini-3.8-flash@medium', harness: 'agy', model: 'gemin
 const OPUS = { id: 'agy/claude-opus-5-5@medium', harness: 'agy', model: 'claude-opus-5-5', family: 'claude-opus-5-5', effort: 'medium', group: 'claude', intelligence: 51.2, costPerTaskUsd: 1.34 }
 const FAMILY = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
 
-const argsOf = (t, tasks = [task(1)], lanes = LANES) => ({ ...compile(makeRepo(t), plan(tasks)), lanes })
+const argsOf = (t, tasks = [task(1, { tier: 'haiku xhigh — complete code' })], lanes = LANES) => ({ ...compile(makeRepo(t), plan(tasks)), lanes })
 const ok = (run) => assert.equal(run.error, null, run.error && run.error.stack)
 const verbs = (run, verb) => run.calls.filter((c) => c.kind === `ops:lane-${verb}`)
 const flagsOf = (call) => ({ ...call.lane })

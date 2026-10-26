@@ -218,12 +218,12 @@ function runDelegate(repo, env, { brief, model = 'haiku', effort = 'high', owns 
 }
 
 // One successful delegate run in its own repository, to learn which pairs the choice picks there.
-function probe(t, { quota = null, pairsFile = null } = {}) {
+function probe(t, { quota = null, pairsFile = null, model = 'haiku', effort = 'high' } = {}) {
   const repo = makeRepo(t)
   const env = agyEnv(t, { command: roleFake(t), quota })
   if (pairsFile) env.AETHER_PAIRS_CONFIG = pairsFile
   const brief = writeBrief(repo, briefLines())
-  const r = runDelegate(repo, env, { brief, tests: 'true' })
+  const r = runDelegate(repo, env, { brief, tests: 'true', model, effort })
   assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
   return { repo, env, result: r.json, choices: choicesOf(env) }
 }
@@ -390,12 +390,15 @@ test('no candidate: dry quotas and an unreachable reference log their delegate e
 })
 
 test('reviewerReference gives the three derived references, and the reviewer choice asks for them (E5, R1)', (t) => {
-  assert.deepEqual(delegate.reviewerReference('opus'), { model: 'opus', effort: 'xhigh' })
+  assert.deepEqual(delegate.reviewerReference('opus'), { model: 'opus', effort: 'high' })
   assert.deepEqual(delegate.reviewerReference('haiku'), { model: 'sonnet', effort: 'high' })
   assert.deepEqual(delegate.reviewerReference('sonnet'), { model: 'opus', effort: 'high' })
   const { choices } = probe(t)
   const review = choices.find((entry) => entry.role === 'reviewer')
   assert.equal(review.reference.id, 'claude/sonnet@high', 'a haiku charge is reviewed against sonnet at high')
+  const opusReview = probe(t, { model: 'opus' }).choices.find((entry) => entry.role === 'reviewer')
+  assert.deepEqual({ model: opusReview.reference.model, effort: opusReview.reference.effort }, { model: 'opus', effort: 'high' })
+  assert.equal(opusReview.reference.id, 'claude/opus@high', 'an opus charge is reviewed against opus at high')
 })
 
 test('a reviewer that fails passes to the next reviewer, the branch untouched (E5, R10)', (t) => {

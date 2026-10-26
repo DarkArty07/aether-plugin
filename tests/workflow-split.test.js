@@ -32,7 +32,7 @@ const reportFor = (file, extra = {}) => ({
 })
 
 function runOf(t, owned, { maxAgents = null, lanes = null } = {}) {
-  const args = compile(makeRepo(t), plan([task(1, { owns: owned })]))
+  const args = compile(makeRepo(t), plan([task(1, { owns: owned, tier: 'haiku xhigh — complete code' })]))
   if (maxAgents !== null) args.maxAgents = maxAgents
   if (lanes) args.lanes = lanes
   return args
