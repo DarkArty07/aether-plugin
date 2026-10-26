@@ -53,7 +53,7 @@ Cada criterio cita las palabras del dueño tal como están en la tarjeta y nombr
 
 ## Assumptions
 
-Los de la tarjeta, S1 a S9, sin cambio: la corrección en Sonnet y Opus no sube el esfuerzo (el dueño no contestó la pregunta; se aparta de A87 y se revierte con dos números); el swarm sigue empezando en el modelo del Tier; el supervisor y la revisión final como en R4 y R5 (enmendadas en la tarjeta tras leer el código); el Lead, el Judge, el Examiner y el Writer no cambian; el esfuerzo por defecto baja a `high`; se mide con lo que el reporte ya tiene; la documentación es parte del trabajo; corrida aparte sin tocar el checkout principal.
+Los de la tarjeta, S1 a S9, sin cambio: la corrección en Sonnet y Opus no sube el esfuerzo (la tarjeta lo planteó como una desviación de A87; al revisar el código resultó que A87 sigue en pie, y lo que cambia es el tope del esfuerzo de una corrección en Sonnet y Opus, de `xhigh` a `high`; se revierte con dos números); el swarm sigue empezando en el modelo del Tier; el supervisor y la revisión final como en R4 y R5 (enmendadas en la tarjeta tras leer el código); el Lead, el Judge, el Examiner y el Writer no cambian; el esfuerzo por defecto baja a `high`; se mide con lo que el reporte ya tiene; la documentación es parte del trabajo; corrida aparte sin tocar el checkout principal.
 
 Y tres que esta spec añade:
 

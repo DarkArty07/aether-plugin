@@ -55,7 +55,7 @@ Los de [design.md](design.md): un esfuerzo menor deja pasar más; más correccio
 
 ## Questions
 
-- **Q1. ¿Acepta el dueño que en Sonnet y en Opus una corrección no suba el esfuerzo?** (S1, A87). La corrida sigue con el supuesto; va a «Espera tu sí».
+- **Q1. ¿Acepta el dueño que en Sonnet y en Opus una corrección no suba el esfuerzo?** (S1, A87). La corrida sigue con el supuesto; va a «Espera tu sí». (Corregido el 2026-10-26: la pregunta no hacía falta, A87 sigue en pie; ver D1 del diseño.)
 
 ## Complexity
 
