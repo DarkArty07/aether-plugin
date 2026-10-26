@@ -1,8 +1,0 @@
-Quiero agregar tres ayudas a esta librería (shop-utils), cada una con sus pruebas, y una sección en el README que las describa:
-- formatPercent(ratio, decimals = 1): devuelve el porcentaje como texto, por ejemplo formatPercent(0.256) es "25.6%".
-- parseMoney(text): convierte "USD 12.34" o "$1,234.50" a centavos enteros (1234 y 123450); lanza TypeError si el texto no es un monto válido.
-- pluralize(count, singular, plural): devuelve "1 item" o "3 items"; si no se da plural, usa singular más "s".
-
-Es una prueba de punta a punta del sistema: usa el método completo de Aether aunque la tarea sea pequeña (tarjeta de intención, /aether:design, y construye con el enjambre /aether:run), y al final corre el examen y dame el informe.
-
-Trabaja por horas, no cuentes conmigo hasta acabar. Presupuesto máximo: 1 hora y US$ 8.
