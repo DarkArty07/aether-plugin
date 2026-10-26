@@ -235,11 +235,11 @@ test('compile gives every task its effort and review, and the brief its starting
   assert.deepEqual(
     ['task-1', 'task-2'].map((id) => [r.json.tasks[id].tier, r.json.tasks[id].effort, r.json.tasks[id].review]),
     [
-      ['haiku', 'xhigh', 'high'],
+      ['haiku', 'high', 'high'],
       ['sonnet', 'high', 'xhigh'],
     ],
   )
-  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Tier: haiku xhigh — complete code$/m)
+  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Tier: haiku high — complete code$/m)
 })
 
 test('check refuses Sonnet below high with its message, and no other', (t) => {

@@ -217,7 +217,7 @@ const REVIEW_MESSAGE = 'Review must be high, xhigh or max, then " — reason".'
 
 test('plan.js exports the effort levels in order and the two defaults', () => {
   assert.deepEqual(EFFORTS, ['low', 'medium', 'high', 'xhigh', 'max'])
-  assert.equal(DEFAULT_EFFORT, 'xhigh')
+  assert.equal(DEFAULT_EFFORT, 'high')
   assert.equal(DEFAULT_REVIEW, 'high')
 })
 
@@ -283,7 +283,7 @@ test('parsePlan reads an optional Review line, and refuses one below high, unkno
   assert.deepEqual(errors, [`Task 1: ${REVIEW_MESSAGE}`, `Task 2: ${REVIEW_MESSAGE}`, `Task 3: ${REVIEW_MESSAGE}`])
 })
 
-test('buildGraph resolves each task to its effort and review, with xhigh and high as the defaults', () => {
+test('buildGraph resolves each task to its effort and review, with high and high as the defaults', () => {
   const graph = buildGraph(parsePlan(plan([
     task(1),
     task(2, { tier: 'haiku medium — renames one field', review: 'xhigh — input parsing' }),
@@ -293,9 +293,9 @@ test('buildGraph resolves each task to its effort and review, with xhigh and hig
   assert.deepEqual(
     ['task-1', 'task-2', 'task-3'].map((id) => [graph.tasks[id].tier, graph.tasks[id].effort, graph.tasks[id].review]),
     [
-      ['haiku', 'xhigh', 'high'],
+      ['haiku', 'high', 'high'],
       ['haiku', 'medium', 'xhigh'],
-      ['sonnet', 'xhigh', 'high'],
+      ['sonnet', 'high', 'high'],
     ],
   )
 })
@@ -303,7 +303,7 @@ test('buildGraph resolves each task to its effort and review, with xhigh and hig
 test('renderBrief names the starting rung on its Tier line', () => {
   const parsed = parsePlan(plan([task(1), task(2, { tier: 'sonnet high — wiring the tests pin down' })]))
   const options = { planPath: '/p/plan.md', spec: parsed.spec, globalConstraints: parsed.globalConstraints }
-  assert.match(renderBrief(parsed.tasks[0], options), /^- Tier: haiku xhigh — complete code$/m)
+  assert.match(renderBrief(parsed.tasks[0], options), /^- Tier: haiku high — complete code$/m)
   assert.match(renderBrief(parsed.tasks[1], options), /^- Tier: sonnet high — wiring the tests pin down$/m)
 })
 

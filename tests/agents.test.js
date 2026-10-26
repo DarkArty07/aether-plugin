@@ -73,9 +73,9 @@ test('the Designer is gone', () => {
   assert.equal(fs.existsSync(path.join(PLUGIN, 'agents', 'designer.md')), false)
 })
 
-test('the swarm agents run at their set effort: implementers at xhigh, ops at low, reviews at high', () => {
+test('the swarm agents run at their set effort: implementers at high, ops at low, reviews at high', () => {
   // Trial 2 found that implementers at medium were one of two causes of its quality gap (2026-10-08).
-  assert.equal(field(agentFile('implementer').front, 'effort'), 'xhigh')
+  assert.equal(field(agentFile('implementer').front, 'effort'), 'high')
   assert.equal(field(agentFile('ops').front, 'effort'), 'low')
   assert.equal(field(agentFile('supervisor').front, 'effort'), 'high')
   assert.equal(field(agentFile('reviewer').front, 'effort'), 'high')
