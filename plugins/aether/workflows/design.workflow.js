@@ -1,7 +1,7 @@
 export const meta = {
   name: 'design',
   description:
-    "Aether design: takes the owner's intent card in specs/NNN-<topic>/intent.md to an approved spec, plan and tasks, with the Writer, the Judge and the Examiner in rounds, each on the pair that superdelegation picks (the native agent only when no pair can), and ends on its own with one result: approved, clarify, dispute or failed. A short design runs only the Judge's rounds on one document.",
+    "Aether design: takes the owner's intent card in specs/NNN-<topic>/intent.md to an approved spec, plan and tasks, with the Writer, the Judge and the Examiner in rounds, each on the pair that superdelegation picks (the native agent only when no pair can), and ends on its own with one result: approved, clarify, dispute or failed. A short design runs only the Judge's rounds on one document. The Lead launches it with a JSON object (feature, session, repoRoot, superdelegation, harnesses, binDir?); a bare feature path does not work.",
   phases: [
     { title: 'Spec', detail: 'the Writer writes spec.md from the intent card, and the Judge reviews it' },
     { title: 'Plan', detail: 'the Writer writes plan.md and tasks.md, aether-plan check passes, and the Judge reviews them' },
@@ -173,6 +173,11 @@ const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key
 const matches = (pattern, value) => typeof value === 'string' && pattern.test(value)
 const absent = (value) => value === undefined || value === null
 
+// What a refused launch is told (issue 90): a path typed after /aether:design reaches this script as a bare string, and
+// the script has no environment to read the session or the switch from, so only the Lead can build the args.
+const ARGS_SHAPE =
+  'The args must be a JSON object {feature, session, repoRoot, superdelegation, harnesses, binDir?} (a short design adds mode, document, intent and author) that the Lead builds when it launches /aether:design: a bare feature path is not enough.'
+
 function readArgs(raw) {
   // The args may arrive as an object or as JSON, and a Lead may quote the JSON once more.
   let input = raw
@@ -183,7 +188,7 @@ function readArgs(raw) {
       input = null
     }
   }
-  if (!isObject(input)) throw new Error('aether:design args are missing or invalid: args')
+  if (!isObject(input)) throw new Error(`aether:design args are missing or invalid: args. ${ARGS_SHAPE}`)
   const bad = []
   const feature = typeof input.feature === 'string' ? input.feature.replace(/\/+$/, '') : null
   if (!matches(FEATURE, feature)) bad.push('feature')
@@ -204,7 +209,7 @@ function readArgs(raw) {
     if (typeof input.intent !== 'string' || input.intent.trim() === '') bad.push('intent')
     if (!matches(AUTHOR, author)) bad.push('author')
   }
-  if (bad.length) throw new Error(`aether:design args are missing or invalid: ${bad.join(', ')}`)
+  if (bad.length) throw new Error(`aether:design args are missing or invalid: ${bad.join(', ')}. ${ARGS_SHAPE}`)
   return {
     feature,
     session: input.session,

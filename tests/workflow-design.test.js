@@ -378,6 +378,24 @@ test('the args are checked', async () => {
   }
 })
 
+test('a refusal says the args are a JSON object that the Lead builds, for a bare path and for a bad field (issue 90)', async () => {
+  const shape = /must be a JSON object \{feature, session, repoRoot, superdelegation, harnesses, binDir\?\}.*Lead builds.*bare feature path/
+  const barePath = await go(FEATURE)
+  assert.match(barePath.error && barePath.error.message, /^aether:design args are missing or invalid: args\. /)
+  assert.match(barePath.error.message, shape)
+  const badField = await go({ ...ARGS, session: 'a b' })
+  assert.match(badField.error && badField.error.message, /^aether:design args are missing or invalid: session\. /)
+  assert.match(badField.error.message, shape)
+})
+
+test('the workflow description, which the skill listing shows, says the Lead launches it with a JSON object (issue 90)', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'workflows', 'design.workflow.js'), 'utf8')
+  const description = /^\s*description:\s*\n?\s*"([^\n]*)",$/m.exec(source)
+  assert.ok(description, 'the description is one string literal of meta')
+  assert.match(description[1], /The Lead launches it with a JSON object/)
+  assert.match(description[1], /a bare feature path does not work/)
+})
+
 test('a seat round is started with --superdelegation and --harnesses, and never with --seats or --lanes', async () => {
   const run = await go({ ...ARGS, superdelegation: 'on' })
   assert.equal(run.error, null, run.error && run.error.stack)
