@@ -27,7 +27,10 @@ test('the shipped file holds the numbers the owner approved (R15, D1, D7)', () =
   assert.equal(L.repeatFindings, 2)
   assert.equal(ladder.effortFor(L, 'haiku', 'first'), 'high')
   assert.equal(ladder.effortFor(L, 'haiku', 'fix'), 'xhigh')
-  assert.equal(ladder.effortFor(L, 'sonnet', 'rise'), 'xhigh')
+  assert.equal(ladder.effortFor(L, 'sonnet', 'fix'), 'high')
+  assert.equal(ladder.effortFor(L, 'sonnet', 'rise'), 'high')
+  assert.equal(ladder.effortFor(L, 'opus', 'fix'), 'high')
+  assert.equal(ladder.effortFor(L, 'opus', 'rise'), 'high')
 })
 
 test('Haiku has five corrections, and the step rises right after the fifth (C2)', () => {
@@ -35,7 +38,7 @@ test('Haiku has five corrections, and the step rises right after the fifth (C2)'
   assert.deepEqual(answers.slice(0, 5).map((a) => [a.next.kind, a.next.step]), Array(5).fill(['fix', 'haiku']))
   assert.equal(answers[4].state.correctionsUsed, 5)
   assert.deepEqual([answers[5].next.kind, answers[5].next.step, answers[5].next.cause], ['rise', 'sonnet', 'exhausted'])
-  assert.equal(answers[5].next.effort, 'xhigh')
+  assert.equal(answers[5].next.effort, 'high')
   assert.equal(answers[5].next.carry, true)
 })
 
