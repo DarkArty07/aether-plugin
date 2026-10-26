@@ -1,0 +1,79 @@
+# Tarjeta de intención: el modelo y el esfuerzo de cada rol, lo más barato que alcance
+
+- **Dueño:** Christopher
+- **Fecha:** 2026-10-26
+- **Origen:** la conversación del dueño del 2026-10-26, que empezó con `/aether:onboard` y la pregunta de cuántos roles tiene el plugin y qué modelos y puntos de inteligencia usan. Los issues abiertos (#80, #81, #88, #90 a #97) no son su origen y no se tocan aquí; el #96 (el Lead apresuró la tarjeta y no investigó antes de proponer) es el registro de un fallo del Lead en esta misma conversación, y esta tarjeta se escribe después de la investigación que el dueño pidió.
+- **Confirmada por el dueño:** el Lead midió, escribió de vuelta una propuesta por rol (la cita 12) y dio el ahorro potencial (la cita 13). El dueño contestó con la cita 14, que es su permiso para trabajar por horas. Quedó sin contestar una pregunta del Lead (S1); la corrida la toma como supuesto reversible.
+
+## 1. Las palabras del dueño
+
+Tal como las escribió (con sus erratas), de `aether-voice`:
+
+1. «Dime cuantos roles tenemos actualmente en todo el plugin aether yq eu modelos y puntos de intelgiencia usan. Porque estoy poensando hacer una politica cheapest first, pero creo que ya tenemos algo asi. Entocnes quiero ver que tendriamos que ajustar»
+2. «Me gustaria aplicar algo asi como la escalera que tenemos. Eso se puede decir que es chepest firts pero tambien quiero usar menos opus porque opus gasta el doble de sonnet, el lead esta biena ctualmente osea lo que busco es minimizar el costo de computo que la cuota se agste menos rapido, pero no se como deberia ser el balanceo. Actualmente Quien es el agente mas responsbale de los errores, el agente que si deja pasar errores se replica en todo el sistema»
+3. «BASTA No me apresures a hacer una tarjeta de intencion porque no estas indagando bien lo que quiero ni explciandome bien. Es un error del lead anotalo como issue»
+4. «Esta mal claibrado esto. [...] Podrimaos usar sonnet sin necesidad de usar opus que cuesta el doble, teniendo bien configurados los efforts proque como siempre te he dicho no todos los efforts valen igual [...]. Y Respondemme fuera del lead donde se concentra mas el gasto»
+5. «La subscircipn se gasta entre ams rapido por costo de modelo Por eso consideramos dolares eso ya te lo habia explciaod antes tambien. Porque me preguntas eso de opus. Osea [...] En claude aplica un limite para todos los modelos»
+6. «Te voy a dar toda la informacion que necesites pero no implementes sin haber investigado bien. Eso es tambien un comprotmaiento de lead y si lead NO lo hace hoy tenesmo que adaptar eso.»
+7. «Para que me preguntas eso tu eres el diseñador no YO. Que mas necesitas?»
+8. «Viste como extraje informaicon de artifiail analysis? deja una skill que explique como usar este proveedore de info porque es muy utuil. Con esta uneva info enconces que propones»
+9. «Ese artfiac esta muy bien hecho, se puede incluir en la doc no el artifac como tal si no en la amnera. Tengo duda sobre la escalada. Escala en effort o escala en mdoelo. Sigue de manera similiar el funcionamiento de la ladder? Opus esta jsutificado?»
+10. «regresamos con el tema del proyecto Opus esta jsutifiaco? La esclaada es primero a effort y luego a modelo como funciona?»
+11. «ME REFIERO A TU PROPUESTA»
+12. (La propuesta del Lead que esa cita pide: implementer en Haiku `high`, luego `xhigh`, después Sonnet `high`, después Opus `high`; supervisor en Sonnet `high` si el autor fue Haiku y en Opus `medium` si fue Sonnet; revisión final en Opus `high`; Judge, Examiner y Writer sin cambio; esfuerzo por defecto de las tareas `high`; Opus `max` nunca.)
+13. «Entonces cuanto ahorro potencial tendriamos»
+14. «Okay ya comeinza a planeras como hacerlo trbaja autonomamente. Quiero TODO DOCUMENTADO, no estare disponible. y Pero es importante la jsutifciaicon de porque hacemos estos cambios»
+
+## 2. La intención, en una frase
+
+Que **cada rol del plugin corra en el modelo y el esfuerzo más baratos que hagan el trabajo que ese rol necesita, y que una tarea suba de esfuerzo y luego de modelo solo cuando el barato no basta**, para que el límite único de Claude, que se gasta por el costo en dólares de cada modelo, dure más; con Opus solo donde su costo se justifica, y **todo documentado, con la razón de cada cambio**.
+
+## 3. Lo que se supuso (los puntos que el dueño dejó pasar), del más al menos probable de vetar
+
+- **S1. En Sonnet y en Opus, una corrección no sube el esfuerzo: se queda en `high`.** La decisión A87 (cita del dueño: «B es lo correcot lo correcto es mejorar el esfuerzo sin ser tan agresivos y cambiar el modelo») dice que una corrección sube el esfuerzo un escalón. En Haiku se cumple (`high` a `xhigh`). En Sonnet y en Opus la propuesta lo deja en `high`, porque el escalón siguiente es el que peor se paga: Sonnet de `high` a `xhigh` cuesta 2.3 veces más por unos 13 puntos más en código, y Opus de `high` a `xhigh` cuesta 1.7 veces más por 3 puntos. El Lead se lo preguntó al dueño y no contestó. Es reversible: son dos números de `config/ladder.json`.
+- **S2. El swarm sigue empezando cada unidad en el modelo que le fija el plan (su Tier).** Empezar el swarm en Haiku no entra en esta corrida: se anota en «Propuestas». Razón: no hay medida de que Haiku resuelva las unidades de Tier Sonnet, la ganancia estimada es pequeña (entre US$2 y US$9 de US$165, sin medir), y si Haiku falla gasta hasta cinco correcciones antes de subir. Reversible.
+- **S3. El supervisor corre en Sonnet `high` cuando el autor fue Haiku, y en Opus `medium` cuando el autor fue Sonnet.** La regla de que nadie revisa su propio trabajo (A41) no cambia: es lo que obliga a Opus cuando el autor es Sonnet. Hoy esa Opus corre en `xhigh` (US$14 de las 8 corridas) y en `high`. Reversible.
+- **S4. La revisión final queda en Opus, bajada de `xhigh` a `high`.** Es la última red y no hay medida de que Sonnet atrape lo mismo. Si las corridas siguientes lo muestran, es lo primero que se baja a Sonnet. Reversible.
+- **S5. El Lead, el Judge, el Examiner y el Writer no cambian.** El Lead, por la cita 2 («el lead esta biena ctualmente»); el Judge porque es el rol de más riesgo (si aprueba un plan con un error, el error llega a todas las unidades) y casi no gasta; el Examiner porque no hay evidencia a favor ni en contra de cambiarlo; el Writer porque para documentos Sonnet `high` rinde lo que Opus por la mitad.
+- **S6. El esfuerzo por defecto de una tarea de plan baja de `xhigh` a `high`,** y el Writer puede subirlo donde lo justifique. Opus `max` no se usa (saca lo mismo que `xhigh`), y `max` sigue pidiendo una razón.
+- **S7. Se mide con lo que el reporte ya tiene,** sin instrumentación nueva: intentos, subidas, hallazgos de los supervisores contra los de la revisión final, veredicto de la revisión final y fallos del examen, de las dos corridas siguientes. Lo que no se puede medir hoy (qué aprobó cada supervisor en cada intento) se dice en la documentación.
+- **S8. La documentación es parte del trabajo.** Una página nueva de la guía con la manera del artifact (cada rol antes y después, la escalera, dónde se iba el gasto), la decisión con su justificación, el changelog, el roadmap y un handoff. Las cifras de Artificial Analysis que se citan son solo las que la justificación necesita, con su fuente y su fecha; no se guarda ningún volcado de sus páginas. La skill `.claude/skills/artificial-analysis` (con scripts que leen su web, que `docs/reference/artificial-analysis.md` dice que este repositorio no hace) queda fuera de la rama.
+- **S9. Corrida aparte, sin chocar.** Trabaja en su rama `feat/model-effort-policy` y su worktree. No toca el checkout principal ni el plugin instalado (0.20.1), no sube nada, no publica y no se funde en `main` sin el sí del dueño. El número de decisión y la versión se toman al fundir (issue #50).
+
+## 4. Lo que se midió (2026-10-26)
+
+- **El gasto de las 8 corridas terminadas** (`runs.jsonl` del directorio de datos, a precio de lista): US$165.00. Fuera del Lead, US$141.75: implementers 43 %, supervisores 30 %, revisión final 19 %, Examiner 6 %, Judge y Writer 2 % entre los dos. El Lead es el 14 % del total.
+- **Opus es el 43 % del gasto (US$70.33):** revisión final 38 % de ese Opus, supervisor 25 %, implementers 23 %, Examiner 12 %, Judge 2 %. El supervisor pasa a Opus porque, cuando el autor es Sonnet, la regla de que nadie revisa lo suyo cambia el supervisor a otro modelo de Claude (`nativeFor` de `lib/superdelegation.js`); el registro guarda las etiquetas «supervise on opus xhigh», no la causa.
+- **El 68 % del gasto fuera del Lead está en `xhigh` (US$96 de US$142),** que es el esfuerzo por defecto de las tareas y el de toda corrección y subida.
+- **Cómo escala hoy la escalera de los delegados** (`config/ladder.json`, `lib/ladder.js`): empieza en Haiku `high`; una corrección va al mismo modelo en `xhigh` (Haiku 5, Sonnet 2, Opus 1); una subida pasa al modelo siguiente y aterriza en `xhigh` (el esfuerzo `retry` del escalón), con el trabajo anterior y los hallazgos. Como ninguna tarea empieza en Sonnet ni en Opus, hoy esos dos solo corren en `xhigh`. El swarm tiene la misma forma con otros números (`effortFor` de `workflows/run.workflow.js`): primer intento al esfuerzo de la tarea, todo reintento y toda escalada en `xhigh`.
+- **Los reintentos del primer intento de un implementer,** en las 8 corridas: Sonnet `high` necesitó un segundo intento en 8 de 47 unidades (17 %), Sonnet `xhigh` en 6 de 18 (33 %), Haiku `high` en 1 de 9, Opus `high` en 0 de 8. Las tareas de `xhigh` son las más duras, así que no prueba nada a favor ni en contra de bajar el esfuerzo.
+- **Qué compra cada esfuerzo** (Artificial Analysis, API y páginas de los modelos, leídas el 2026-10-26; costo por tarea de su índice a precio de lista y puntos en Terminal-Bench 4.0, código): Sonnet `high` US$0.88 y 44; `xhigh` US$2.01 y 57; `max` US$5.46 y 64. Opus `medium` US$1.34 y 53; `high` US$1.82 y 57; `xhigh` US$3.46 y 60; `max` US$5.98 y 60. Haiku `high` US$0.08 y 22; `xhigh` US$0.12 y 29. Para el mismo 57 en código, Opus `high` es más barato que Sonnet `xhigh`. En trabajo de documentos (AA-Briefcase, tasa de aprobación) Sonnet `high` saca 60 %, Opus `high` 59 % y Opus `xhigh` 61 %.
+- **El límite de Claude es uno solo para todos los modelos y se gasta por el costo del modelo** (cita 5), así que la medida es el dólar por tarea, no el precio por token.
+- **El ahorro estimado** de las reglas de S1 a S6 sobre esas 8 corridas: de US$165.00 a US$111.62 (32 % menos); fuera del Lead, de US$141.75 a US$88.37 (38 %); el gasto en Opus, de US$70.33 a US$47.80. Vienen de: Sonnet de `xhigh` a `high` en implementer y supervisor (US$31), revisión final en Opus `high` (US$12), supervisor en Opus `medium` (US$9.50) y implementers en Opus a `high` (US$1.30). Cada línea de gasto se multiplica por el costo por tarea del par nuevo entre el del par que usaba; no cuenta el ahorro de empezar en Haiku ni los reintentos que podría añadir, ni lo que cada corrección cuesta al Lead.
+- **Quién deja pasar errores que se replican:** el Judge cuando revisa el plan y las tareas. En la spec 013, 6 de 19 unidades se tuvieron que fundir a mano por errores del plan (tareas que rompían un test de otra, un archivo que ninguna poseía); en la spec 014 el examen encontró un fallo real que ni los supervisores ni la revisión final vieron. Esta corrida no cambia al Judge.
+
+## 5. Fuera de alcance
+
+- **El modelo y el esfuerzo del Lead** (cita 2).
+- **La regla de que nadie revisa su propio trabajo** (A41, A80) y el orden de los asientos de diseño (primero otro harness).
+- **Empezar el swarm en Haiku** (S2) y **Sonnet `max` como último escalón.**
+- **Instrumentación nueva** del reporte (S7), y cualquier cambio del Judge o del Examiner.
+- **Que el Lead investigue antes de implementar** (cita 6): es el issue #96.
+- **La skill de Artificial Analysis** y sus scripts (S8).
+- **Subir, publicar, fundir en `main` o actualizar el plugin instalado,** y la versión y el número de decisión (S9).
+
+## 6. Criterios (qué y por qué, sin el cómo)
+
+- **C1.** Cada rol corre en el modelo y el esfuerzo más baratos que hagan el trabajo que necesita, de modo que el mismo trabajo gaste menos del límite de Claude. Por: cita 2 («minimizar el costo de computo que la cuota se agste menos rapido»).
+- **C2.** Una tarea sube primero de esfuerzo y luego de modelo, y un modelo caro solo entra cuando el barato no bastó; la escalera de los delegados y la del swarm siguen esa misma forma. Por: cita 2 («aplicar algo asi como la escalera que tenemos») y cita 10.
+- **C3.** Opus se usa solo donde su costo se justifica, y cada uso que queda tiene su razón escrita. Por: cita 2 («quiero usar menos opus») y cita 9 («Opus esta jsutificado?»).
+- **C4.** El esfuerzo se fija por rol y por modelo según lo que ese esfuerzo compra, no con un valor único para todo. Por: cita 4 («no todos los efforts valen igual»).
+- **C5.** El Lead no cambia. Por: cita 2.
+- **C6.** Cada cambio tiene su justificación por escrito: la evidencia (cifras con su fuente y su fecha), la alternativa descartada, lo que ahorra y lo que arriesga. Por: cita 14 («es importante la jsutifciaicon de porque hacemos estos cambios»).
+- **C7.** Todo queda documentado: una página de la guía con la manera del artifact (cada rol antes y después, la escalera, dónde se iba el gasto), la decisión, el changelog, el roadmap y un handoff, y las páginas que hoy dicen otra cosa quedan corregidas. Por: cita 14 («Quiero TODO DOCUMENTADO, no estare disponible») y cita 9 («se puede incluir en la doc [...] la amnera»).
+- **C8.** El cambio se puede juzgar después y deshacer: los números son datos, y queda escrito qué medir en las dos corridas siguientes y con qué. Por: la propuesta del Lead que el dueño aceptó con la cita 14 («lo haría reversible y mediría las dos corridas siguientes») y cita 2 («no se como deberia ser el balanceo»).
+- **C9.** Nada irreversible sin el sí del dueño: ni fundir en `main`, ni subir, ni publicar, ni actualizar el plugin instalado. Por: cita 14 («no estare disponible») y las reglas de Aether sobre las acciones irreversibles.
+
+## 7. Las preguntas que quedaron sin contestar
+
+- **¿Aceptas que en Sonnet y en Opus una corrección no suba el esfuerzo (S1)?** La corrida sigue con el supuesto y lo deja en «Espera tu sí».
