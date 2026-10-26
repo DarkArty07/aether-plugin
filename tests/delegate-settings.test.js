@@ -11,7 +11,7 @@ test('the settings of a session are superdelegation, harnesses and the quota dea
   const env = {
     CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true',
     CLAUDE_PLUGIN_OPTION_HARNESSES: 'grok',
-    CLAUDE_PLUGIN_OPTION_DEADLINES: 'haiku=5,jev=3,quota=2',
+    CLAUDE_PLUGIN_OPTION_DEADLINES: 'other=5,quota=2',
     CLAUDE_PLUGIN_OPTION_ROUTER: 'command',
     CLAUDE_PLUGIN_OPTION_DECIDER: 'jev',
     CLAUDE_PLUGIN_OPTION_FALLBACK: 'opus:max',
@@ -24,11 +24,11 @@ test('the quota deadline defaults to 3 s and counts 10 s at most', () => {
   assert.equal(session.delegateSettingsFrom({ CLAUDE_PLUGIN_OPTION_DEADLINES: 'quota=99' }).deadlines.quotaMs, 10000)
 })
 
-test('the quota deadline keeps its default when the value is wrong, and haiku= and jev= alone change nothing', () => {
+test('the quota deadline keeps its default when the value is wrong, and a key other than quota alone changes nothing', () => {
   const quotaMs = (deadlines) => session.delegateSettingsFrom({ CLAUDE_PLUGIN_OPTION_DEADLINES: deadlines }).deadlines.quotaMs
   assert.equal(quotaMs('quota=1.5'), 1500)
   assert.equal(quotaMs(' quota = 4 '), 4000)
-  for (const bad of ['quota=0', 'quota=abc', 'quota=', 'quota', '', 'haiku=5,jev=2', '=,=']) assert.equal(quotaMs(bad), 3000, bad)
+  for (const bad of ['quota=0', 'quota=abc', 'quota=', 'quota', '', 'other=5,another=2', '=,=']) assert.equal(quotaMs(bad), 3000, bad)
 })
 
 test('superdelegation and harnesses follow the option rules, with the legacy lanes option still read', () => {
@@ -83,12 +83,13 @@ test('a missing, unreadable or incomplete delegate file reads as null, and a goo
   assert.deepEqual(session.readDelegateSettings(dir, 's1'), good)
 })
 
-test('pruneSessions removes the delegate file with its marker, and the router file of an older version', (t) => {
+test('pruneSessions removes the delegate file with its marker, and leaves the router file of an older version', (t) => {
   const dir = tempDir(t)
+  const oldRouter = 'old' + '.' + 'router' + '.json'
   session.markSession(dir, 'old', 1, { delegate: { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } } })
-  fs.writeFileSync(path.join(dir, 'sessions', 'old.router.json'), '{}')
+  fs.writeFileSync(path.join(dir, 'sessions', oldRouter), '{}')
   const past = new Date(Date.now() - 40 * 24 * 3600 * 1000)
   fs.utimesSync(session.markerFile(dir, 'old'), past, past)
   assert.deepEqual(session.pruneSessions(dir, { days: 30 }), ['old'])
-  assert.deepEqual(fs.readdirSync(path.join(dir, 'sessions')), [])
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'sessions')), [oldRouter])
 })

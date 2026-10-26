@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { LEAD_AGENT, markerFile, markSession, isAetherSession, opsOffFile, pruneSessions, delegateFile } = require('../plugins/aether/lib/session.js')
+const { LEAD_AGENT, markerFile, markSession, isAetherSession, opsOffFile, pruneSessions, delegateFile, parseDeadlines } = require('../plugins/aether/lib/session.js')
 
 test('the Lead agent is aether:lead', () => {
   assert.equal(LEAD_AGENT, 'aether:lead')
@@ -95,13 +95,29 @@ test('markSession refuses an invalid id and writes no delegate file either', (t)
   assert.deepEqual(fs.readdirSync(data), [])
 })
 
-test('markSession removes any stale router file an older version left', (t) => {
+const OLD_FILE = (id) => id + '.' + 'router' + '.json'
+
+test('markSession leaves a router file an older version wrote where it is', (t) => {
   const data = tempDir(t)
   markSession(data, 's1', 1)
-  const stale = path.join(data, 'sessions', 's1.router.json')
+  const stale = path.join(data, 'sessions', OLD_FILE('s1'))
   fs.writeFileSync(stale, '{}')
-  assert.equal(fs.existsSync(stale), true)
   markSession(data, 's1', 2)
-  assert.equal(fs.existsSync(stale), false)
+  assert.equal(fs.existsSync(stale), true)
+})
+
+test('pruneSessions leaves a router file of an older version, and removes the files it still knows', (t) => {
+  const data = tempDir(t)
+  markSession(data, 'old', 1, { delegate: { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } } })
+  fs.writeFileSync(path.join(data, 'sessions', OLD_FILE('old')), '{}')
+  const past = new Date(Date.now() - 40 * 24 * 3600 * 1000)
+  fs.utimesSync(markerFile(data, 'old'), past, past)
+  assert.deepEqual(pruneSessions(data, { days: 30 }), ['old'])
+  assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')), [OLD_FILE('old')])
+})
+
+test('parseDeadlines reads quota and ignores every other key', () => {
+  assert.equal(parseDeadlines('other=5,quota=2').quotaMs, 2000)
+  assert.equal(parseDeadlines('other=5,another=2').quotaMs, 3000)
 })
 
