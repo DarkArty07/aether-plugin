@@ -34,15 +34,15 @@ Never stop to ask. Where a choice is open, pick a reasonable default and write i
    ```markdown
    **Aether:**
    - Tier: haiku high — a mechanical parser that exact tests pin down
-   - Review: xhigh — malformed input that the tests do not list
+   - Review: xhigh — a failed parse deletes the user's file
    - Area: backend
    - Owns: `src/api/**`, `tests/api.test.js`
    - Depends on: none
    - Serves: R1, R3
    ```
    The fields are:
-   - **Tier:** `haiku`, `sonnet` or `opus`, then an optional effort (`low`, `medium`, `high`, `xhigh` or `max`), then " — " and the reason. Use `haiku` for work that exact tests and interfaces pin down, and that touches few files. Use `sonnet` for frontend and UI work, for integration across several files, or for behavior the tests cannot pin down exactly. Use `opus` for security and auth, data migrations or destructive operations, concurrency, and core architecture. The effort defaults to `xhigh`. Name a lower effort only where the tests pin the work down completely, such as `haiku high`. Sonnet and Opus never run below `high`. Name `max` only with a reason.
-   - **Review:** optional. `high`, `xhigh` or `max`, then " — " and the reason. Without it, the review runs at `high`. Use `xhigh` where behavior beyond the tests matters: UI states, input parsing, the file system, security, data loss or concurrency.
+   - **Tier:** `haiku`, `sonnet` or `opus`, then an optional effort (`low`, `medium`, `high`, `xhigh` or `max`), then " — " and the reason. Use `haiku` for work that exact tests and interfaces pin down, and that touches few files. Use `sonnet` for frontend and UI work, for integration across several files, or for behavior the tests cannot pin down exactly. Use `opus` for security and auth, data migrations or destructive operations, concurrency, and core architecture. The effort defaults to `high`. Name `xhigh` only where the tests cannot pin the behavior down and a mistake would cost more than the extra effort: it costs about 2.3 times more on Sonnet and 1.9 times more on Opus than `high`. Haiku may run at `low` or `medium` where the tests pin the work down completely. Sonnet and Opus never run below `high`. Name `max` only with a reason: on Opus it gives what `xhigh` gives.
+   - **Review:** optional. `high`, `xhigh` or `max`, then " — " and the reason. Without it, the review runs at `high`. `xhigh` costs about 2.3 times more than `high` on Sonnet, and the supervisor of Sonnet's work runs on Opus: name it only where a mistake would reach user data, security or concurrency, and say which.
    - **Area:** a lowercase slug of letters, digits and dashes. Each area has its own supervisor.
    - **Owns:** the paths or globs (`*`, `**`, `?`) that the task may change, separated by commas. Use relative paths only.
    - **Depends on:** `none`, or one line per dependency in the form `- Depends on: Task N — reason`. Every dependency needs its reason.
