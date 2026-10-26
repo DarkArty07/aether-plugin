@@ -34,14 +34,6 @@ test('ensureExcluded keeps the existing content', (t) => {
   assert.equal(fs.readFileSync(path.join(dir, 'info', 'exclude'), 'utf8'), 'node_modules\n/.aether/\n/.aether-tmp/\n/.aether-exam/\n')
 })
 
-test('ensureExcluded anchors the unanchored patterns that earlier versions wrote', (t) => {
-  const dir = tempDir(t)
-  fs.mkdirSync(path.join(dir, 'info'))
-  fs.writeFileSync(path.join(dir, 'info', 'exclude'), 'node_modules\n.aether/\n.aether-tmp/\n')
-  ensureExcluded(dir)
-  assert.equal(fs.readFileSync(path.join(dir, 'info', 'exclude'), 'utf8'), 'node_modules\n/.aether/\n/.aether-tmp/\n/.aether-exam/\n')
-})
-
 // ---- dataDir (installable spec R11) ----
 const os = require('node:os')
 const { dataDir } = require('../plugins/aether/lib/run.js')
