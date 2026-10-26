@@ -31,7 +31,7 @@ Y el mismo defecto, al revés, deja pasar lo que sí corre:
 
 En `segmentsOf`, al encontrar `$(` (dentro de comillas dobles; fuera de ellas ya funciona porque `(` separa segmentos):
 
-1. Buscar su `)` de cierre con un lector que respeta comillas simples y dobles, `$(` anidados, backslashes y heredocs, y que lleva una cuenta de profundidad de paréntesis: cada `(` suelto de dentro (un subshell `( … )`) suma y su `)` resta, de modo que el `)` de cierre es el que deja la cuenta en cero. `$((` es aritmética: se lee hasta su `))` y su contenido no es código (salvo un `$(` anidado dentro, que se trata como cualquier otro). Un `\$(` dentro de comillas dobles es literal: no abre nada.
+1. Buscar su `)` de cierre con un lector que respeta comillas simples y dobles, `$(` anidados, backslashes y heredocs, y que lleva una cuenta de profundidad de paréntesis: cada `(` suelto de dentro (un subshell `( … )`) suma y su `)` resta, de modo que el `)` de cierre es el que deja la cuenta en cero. `$((` es aritmética solo si tiene su `))` emparejado, contando los paréntesis internos (en `$(((1+2)))` el cierre es el último `))`, no el primero); su contenido no es código (salvo un `$(` anidado dentro, que se trata como cualquier otro). Sin ese `))` emparejado, `$((` es un `$(` con un subshell dentro (`$((echo ok); git push origin main)`) y se lee como tal; si tampoco cierra así, es el caso sin cierre y se segmenta como código. Un `\$(` dentro de comillas dobles es literal: no abre nada.
    - En un heredoc, el lector registra si el delimitador iba entrecomillado (`<<'EOF'`, `<<"EOF"`, `<<\EOF`). Si iba entrecomillado, el cuerpo es texto, y un `)` o un `"` dentro de él no cuentan. Si no (`<<EOF`), el shell expande el cuerpo: sus `$(…)` y backticks son código y se segmentan como en el resto, y el demás texto del cuerpo es texto.
 2. Segmentar el texto de dentro con la misma función (recursión) y sumar esos segmentos a los del comando, de modo que `git push`, `bash -c "…"` o `eval` dentro se clasifican como siempre. Los segmentos de dentro se insertan en el punto donde aparece el `$(…)`, entre el segmento anterior y el siguiente del comando, no al final: el primer segmento que coincide decide, y así el orden de lectura es el del comando.
 3. Seguir fuera de `$(…)` en las comillas dobles, con un marcador en la palabra.
@@ -60,7 +60,7 @@ Si el `$(` o el backtick no tiene cierre (comando cortado), el resto se segmenta
 7. Comillas simples: ``echo '$(git push origin main)'`` sin clase.
 8. `$(` anidado: `echo "$(echo "$(git push origin main)")"`: `push`.
 9. Subshell dentro de `$(…)` seguido de un irreversible: `echo "$((echo ok); git push origin main)"`: `push`.
-10. Aritmética: `echo "$((1 + 2))"` sin clase, y `echo "$(echo $((1 + 2)); git push origin main)"`: `push`.
+10. Aritmética: `echo "$((1 + 2))"` sin clase, y `echo "$(echo $((1 + 2)); git push origin main)"`: `push`. Con paréntesis dentro de la aritmética: `echo "$(echo $(((1+2))); git push origin main)"`: `push`.
 11. Heredoc sin entrecomillar: `echo "$(cat <<EOF` con `$(git push origin main)` en el cuerpo `EOF)"`: `push`; con `<<'EOF'` el mismo cuerpo: sin clase.
 12. Orden: `echo "$(npm publish)" && git push origin main` clasifica `publish`, y `git push origin main && echo "$(npm publish)"` clasifica `push` (decide el primero en el orden del comando).
 13. Anidado profundo (más de `MAX_NESTING` niveles de `"$(` abiertos, con un `git push origin main` en el centro): no lanza, y clasifica `push`.
@@ -75,4 +75,5 @@ Si el `$(` o el backtick no tiene cierre (comando cortado), el resto se segmenta
 ## Fuera
 
 - `<(…)` (process substitution), `$'…'` y las expansiones `${…}`: no cambian.
+- `case` dentro de `$(…)`: el `)` de un patrón de `case` no se distingue de un cierre. Hoy tampoco se detecta, así que no hay regresión; no se trata en este arreglo.
 - Reescribir `segmentsOf` con un parser completo de shell.
