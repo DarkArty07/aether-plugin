@@ -36,7 +36,7 @@ Every brief the Lead writes reports the five, and `aether-report` prices a run a
 
 1. **Mechanism in code, judgment in the model.** Anything that must always happen the same way (status, retries, budgets, cleanup) is code, never a prompt instruction.
 2. **Bounded autonomy.** Every run has an agent budget and a verifiable definition of done. Work that hits a real question comes back blocked, with the question.
-3. **The task chooses the model and its effort.** Each task's Tier line sets the start. A failed attempt runs again at `xhigh`, and then on a stronger model.
+3. **The task chooses the model and its effort.** Each task's Tier line sets the start. A failed attempt runs again, at a higher effort on Haiku and at the same effort on Sonnet and Opus, and then on a stronger model.
 4. **Contracts first, then the swarm.** Plans give interfaces, failing tests and file ownership. Units are independent by default, and every dependency needs a reason.
 5. **Sonnet writes, Opus decides, and a model of another harness that reaches their points may take either seat.** The expensive model judges the spec, the plan and the work; the cheaper ones write them. Whoever writes a document never judges it.
 6. **One list for the owner.** What is irreversible, and what only the owner can choose, waits for the owner's yes in one list. Everything else proceeds, and every failure with a fallback is handled without asking.
