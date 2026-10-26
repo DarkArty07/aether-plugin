@@ -21,7 +21,7 @@ This page says which model and effort each role of Aether runs on, how a task cl
 | Implementer, after a rise | `xhigh` | the next model at `high` | A rise already changes the model, so it does not also raise the effort. |
 | Supervisor | `xhigh` in US$38 of US$43, by the plan's Review (Sonnet US$24, Opus US$14) | `sonnet high` | The plan's Review now reserves `xhigh` for where an error would reach data, security or concurrency. |
 | Supervisor of Sonnet's work | `opus xhigh` | `opus high` | It stays Opus because nobody reviews their own work, and it runs at the effort of the pair it replaces. This holds with `superdelegation` on, when no other harness takes the review; with it off, a Sonnet supervisor reviews Sonnet's work. |
-| Final review | `opus xhigh` in 7 of the 8 runs | `opus high`, and `opus xhigh` only if a merged unit is Tier Opus | It is the last net, and `xhigh` stays for the Tier Opus units, where an error costs most. |
+| Final review | `opus xhigh` in 7 of the 8 runs | `opus high`, and `opus xhigh` only if a merged unit is Tier Opus | The reviewer (`aether:reviewer`) is the last net: it runs on `opus high`, and `xhigh` stays for the Tier Opus units, where an error costs most. |
 | Ops | `haiku low` | `haiku low` | Ops runs as plain code with no model call, and this agent is only the fallback. |
 
 ## The ladder
