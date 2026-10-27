@@ -1,7 +1,8 @@
 'use strict'
 
-// Parses an Aether plan (a Spec Kit tasks.md, or an older superpowers plan) that carries Aether fields,
-// and turns it into a dependency graph of waves.
+// Parses an Aether plan (a Spec Kit tasks.md) that carries Aether fields, and turns it into a
+// dependency graph of waves.
+// Family: plan.
 
 const { normalizePattern, patternsOverlap } = require('./globs.js')
 

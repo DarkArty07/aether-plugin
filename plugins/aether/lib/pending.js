@@ -2,6 +2,7 @@
 
 // The owner's list of irreversible Bash commands that no grant covered: one JSON line per command, in
 // <mainRoot>/.aether/pending.jsonl, so every such step reaches the owner in one place.
+// Family: none.
 
 const fs = require('node:fs')
 const path = require('node:path')

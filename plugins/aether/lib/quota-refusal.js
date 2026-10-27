@@ -2,7 +2,8 @@
 
 // agy's explicit quota refusal: `Individual quota reached. Please upgrade your subscription to increase your limits.
 // Resets in 163h22m27s.` It is the only sign of agy's individual limits, which /usage does not report, so every path
-// that calls agy (the swarm's lane calls, the design seats, the delegate router) reads it here and turns it into a mark.
+// that calls agy (the swarm's lane calls, the design seats, delegate calls) reads it here and turns it into a mark.
+// Family: none.
 
 const REFUSAL_RE = /individual quota reached/i
 // The duration is a run of <n>d, <n>h, <n>m, <n>s parts in that order, any subset, in either case, with optional spaces

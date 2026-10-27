@@ -2,9 +2,11 @@
 
 // The pairs table: one row per (harness, model, effort) with its Artificial Analysis figures. Superdelegation
 // (lib/superdelegation.js) asks each call for the points of its native reference pair and picks among these.
+// Family: none.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { isObject, isNumber } = require('./common.js')
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'pairs.json')
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -19,9 +21,7 @@ function pairId(harness, model, effort) {
   return `${harness}/${model}@${effort}`
 }
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const isText = (value) => typeof value === 'string' && value.length > 0
-const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
 const isNumberOrNull = (value) => value === null || (isNumber(value) && value >= 0)
 
 function validatePair(pair, index) {
