@@ -301,6 +301,7 @@ html.anim .yes-win:not(.has) .yes-empty{animation:fadein .5s ease both}
 .start h3{font:700 28px/1.05 var(--display);text-transform:uppercase;color:var(--paper);letter-spacing:.03em;margin-bottom:6px}
 .code{margin-top:12px;padding:12px 14px;border:1px solid var(--hair);background:rgba(11,10,22,.8);font:400 13px/1.5 var(--mono);color:var(--paper);overflow-x:auto;max-width:100%}
 .req{margin-top:20px;font:400 12.5px/1.8 var(--mono);color:var(--dim)}
+.inst-side .frame{margin-bottom:22px}   /* the install GIF sits above the author card */
 .author{display:grid;gap:12px;padding:22px;border:1px solid var(--hair);background:rgba(11,10,22,.78)}
 .aname{font:700 clamp(36px,3.4vw,52px)/.98 var(--display);text-transform:uppercase;color:var(--paper)}
 .handle{font:400 15px var(--mono);color:var(--pink);width:max-content;max-width:100%;border-bottom:1px solid var(--pink);padding-block:6px}
@@ -507,7 +508,7 @@ html.anim.calm .tl li::before,html.anim.calm .tl b{transition-duration:.5s}
 @media (min-width:641px){.motion-box .motion{background:rgba(13,11,28,.82);border-color:var(--v2);min-height:36px;padding:8px 11px;font-size:11px}}
 /* on phones the big pixel scenes scroll sideways instead of shrinking until their text cannot be read */
 @media (max-width:640px){
-  .lanes-img,.control-left .frame,.brake-grid .frame{overflow-x:auto}
+  .lanes-img,.control-left .frame,.brake-grid .frame,.inst-side .frame{overflow-x:auto}
   .lanes-img img,.lanes-img .px-still{width:720px;max-width:none}
-  .control-left .frame img,.control-left .frame .px-still,.brake-grid .frame img,.brake-grid .frame .px-still{width:640px;max-width:none}
+  .control-left .frame img,.control-left .frame .px-still,.brake-grid .frame img,.brake-grid .frame .px-still,.inst-side .frame img,.inst-side .frame .px-still{width:640px;max-width:none}
 }
