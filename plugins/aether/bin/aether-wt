@@ -10,11 +10,13 @@
 // aether-wt adopt <run> <task> --commit <sha> --reason <text>
 // aether-wt remove <run> <task> [--keep-patch]
 // aether-wt sweep --run <id> [--finish] | --stale [--hours N]
+// aether-wt ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>]
 
 const path = require('node:path')
 const wt = require(path.join(__dirname, '..', 'lib', 'worktrees.js'))
+const wtLadder = require(path.join(__dirname, '..', 'lib', 'wt-ladder.js'))
 
-const USAGE = 'usage: aether-wt ensure|diff|merge|status|salvage|remove <run> <task> | aether-wt save <run> | aether-wt adopt <run> <task> --commit <sha> --reason <text> [--keep-patch] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N]'
+const USAGE = 'usage: aether-wt ensure|diff|merge|status|salvage|remove <run> <task> | aether-wt save <run> | aether-wt adopt <run> <task> --commit <sha> --reason <text> [--keep-patch] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N] | aether-wt ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>]'
 
 function sweep(rest) {
   if (rest[0] === '--run') return wt.sweepRun(process.cwd(), rest[1], { finish: rest.includes('--finish') })
@@ -45,6 +47,16 @@ try {
   else if (command === 'save') result = wt.saveRun(process.cwd(), rest[0])
   else if (command === 'adopt') result = wt.adoptUnit(process.cwd(), rest[0], rest[1], { commit: flag(rest, '--commit'), reason: flag(rest, '--reason') })
   else if (command === 'remove') result = wt.removeUnit(process.cwd(), rest[0], rest[1], { keepPatch: rest.includes('--keep-patch') })
+  else if (command === 'ladder') {
+    const verdict = rest.includes('--verdict') ? (flag(rest, '--verdict') ?? '') : undefined
+    const payload = rest.includes('--payload') ? (flag(rest, '--payload') ?? '') : undefined
+    const digest = rest.includes('--digest') ? (flag(rest, '--digest') ?? '') : undefined
+    const opts = {}
+    if (verdict !== undefined) opts.verdict = verdict
+    if (payload !== undefined) opts.payload = payload
+    if (digest !== undefined) opts.digest = digest
+    result = wtLadder.ladderCommand(process.cwd(), rest[0], rest[1], opts)
+  }
   else if (command === 'sweep') result = sweep(rest)
   else throw new Error(USAGE)
   process.stdout.write(JSON.stringify(result) + '\n')
