@@ -3,9 +3,11 @@
 // The delegate ladder: which model a task's delegate runs on, how many corrections each model gets before the
 // step rises, and what the Lead's verdict on a result makes of the next launch. A pure function over the data in
 // config/ladder.json: no number of the ladder is written here.
+// Family: delegate.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { isText } = require('./common.js')
 
 const LADDER_FILE = path.join(__dirname, '..', 'config', 'ladder.json')
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -13,10 +15,6 @@ const EFFORT_KEY = { first: 'first', fix: 'retry', rise: 'retry', unjudged: 'ret
 
 function isCount(value) {
   return Number.isInteger(value) && value >= 0
-}
-
-function isText(value) {
-  return typeof value === 'string' && value.trim() !== ''
 }
 
 function checkRung(rung, index) {
