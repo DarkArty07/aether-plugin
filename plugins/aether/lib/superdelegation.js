@@ -9,7 +9,9 @@
 // the author's own family, and the native agent only last). When a call names a role, an external pair is a
 // candidate only if the lane table's entry for its model lists that role. Everything here is pure: the lane
 // table, the pairs and the quota views come in as arguments.
+// Family: none.
 
+const { isNumber } = require('./common.js')
 const { NATIVE_HARNESS, NATIVE_MODELS, referenceOf } = require('./pairs.js')
 
 const TOLERANCE_POINTS = 1
@@ -36,7 +38,6 @@ function resolveOption(env) {
 const tenths = (points) => Math.round(points * 10)
 const TOLERANCE_TENTHS = TOLERANCE_POINTS * 10
 const hasCost = (pair) => typeof pair.costPerTaskUsd === 'number'
-const isPoints = (value) => typeof value === 'number' && Number.isFinite(value)
 
 function resetsKey(quota) {
   const time = quota && typeof quota.resetsAt === 'string' ? Date.parse(quota.resetsAt) : NaN
@@ -70,7 +71,7 @@ function firstBar(pair, { harnesses, exclude, authors, floor, authorRule, role, 
 // than the floor of the call (in tenths). null when its figures let it in.
 function measureBar(pair, floor) {
   if (!hasCost(pair) && !pair.ownerDecision) return 'no-cost'
-  if (!isPoints(pair.intelligence) || tenths(pair.intelligence) < floor) return 'below'
+  if (!isNumber(pair.intelligence) || tenths(pair.intelligence) < floor) return 'below'
   return null
 }
 
@@ -111,7 +112,7 @@ function nativeFor(pairs, ref, { authors, nativeDiffers }) {
   if (!nativeDiffers || !authors.includes(ref.family)) return { pair: ref, swapped: false, none: false }
   const asked = tenths(ref.intelligence)
   const others = pairs.filter((pair) => pair.harness === NATIVE_HARNESS && pair.effort === ref.effort &&
-    NATIVE_MODELS.includes(pair.model) && pair.model !== ref.model && !authors.includes(pair.family) && isPoints(pair.intelligence))
+    NATIVE_MODELS.includes(pair.model) && pair.model !== ref.model && !authors.includes(pair.family) && isNumber(pair.intelligence))
   if (others.length === 0) return { pair: ref, swapped: false, none: true }
   const best = [...others].sort((a, b) =>
     (Math.abs(tenths(a.intelligence) - asked) - Math.abs(tenths(b.intelligence) - asked)) || (tenths(b.intelligence) - tenths(a.intelligence)))[0]
