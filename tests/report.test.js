@@ -448,12 +448,12 @@ test('report counts a question only when the unit\'s latest launch ends it block
   assert.deepEqual([quality.blocked, quality.questions], [3, 1])
 })
 
-test('report splits the lane calls by harness, and a call with no harness counts as agy', (t) => {
+test('report splits the lane calls by harness', (t) => {
   const dataDir = useDataDir(t)
   sampleUsage(dataDir)
   const { repo, args } = finishedRun(t)
   sampleLaneLog(dataDir, args.runId)
-  // Two codex calls, and one call logged before the harness was named. Each is a million output tokens of haiku: $0.50.
+  // Two codex calls, and one agy call. Each is a million output tokens of haiku: $0.50.
   const at = (minutes) => T0 + minutes * MIN
   const call = (minutes, fields) =>
     appendLog(dataDir, 'run-session', {
@@ -478,7 +478,7 @@ test('report splits the lane calls by harness, and a call with no harness counts
     })
   call(15, { harness: 'codex', call: 'task-3-1-implement', status: 'ok' })
   call(18, { harness: 'codex', call: 'task-3-2-implement', status: 'quota' })
-  call(21, { call: 'task-3-1-supervise', role: 'supervisor', status: 'failed' })
+  call(21, { harness: 'agy', call: 'task-3-1-supervise', role: 'supervisor', status: 'failed' })
   const r = report(repo.dir, args.runId, { dataDir, tests: false })
   const { byHarness } = r.lanes.run
   assert.deepEqual(Object.keys(byHarness).sort(), ['agy', 'codex'])
@@ -576,13 +576,13 @@ test('the lane log gives each harness its newest version, and lanes.version stay
   assert.equal(r.lanes.version, '1.3.2')
 })
 
-test("a lane reading that names no harness is agy's, and the newest agy reading wins", (t) => {
+test('a lane reading that names agy, and the newest agy reading wins', (t) => {
   const dataDir = useDataDir(t)
   sampleUsage(dataDir)
   const { repo, args } = finishedRun(t)
   const reading = (minutes, fields) =>
     appendLog(dataDir, 'run-session', { kind: 'reading', time: T0 + minutes * MIN, run: args.runId, design: null, groups: {}, ...fields })
-  reading(1, { version: '1.2.0' })
+  reading(1, { harness: 'agy', version: '1.2.0' })
   let r = report(repo.dir, args.runId, { dataDir, tests: false })
   assert.deepEqual([r.lanes.version, r.lanes.versions], ['1.2.0', { agy: '1.2.0' }])
   reading(2, { harness: 'agy', version: '1.3.2' })
@@ -847,16 +847,26 @@ test('the RADAR figures say how much of the work left Claude and what each harne
   assert.equal(typeof radar.delegation.lanesUsd, 'number')
 })
 
-test('the report repeats what the session ignored or read as on', (t) => {
+test('the report says whether superdelegation was on, and nothing about old options', (t) => {
   const { repo, args } = finishedRun(t)
-  const env = { AETHER_SUPERDELEGATION: 'on', AETHER_SUPERDELEGATION_LEGACY: 'lanes-as-on,seats-ignored' }
-  const { superdelegation } = report(repo.dir, args.runId, { dataDir: useDataDir(t), tests: false, env })
-  assert.equal(superdelegation.on, true)
-  assert.deepEqual(superdelegation.legacy, [
-    'The lanes option is on and superdelegation is not set, so superdelegation counts as on. Set superdelegation to choose it yourself.',
-    'The seats option no longer exists (native, balanced and robust are gone): its value is ignored.',
-  ])
-  assert.deepEqual(report(repo.dir, args.runId, { dataDir: useDataDir(t), tests: false, env: {} }).superdelegation, { on: null, legacy: [] })
+  const read = (env) => report(repo.dir, args.runId, { dataDir: useDataDir(t), tests: false, env }).superdelegation
+  assert.deepEqual(read({ AETHER_SUPERDELEGATION: 'on' }), { on: true })
+  assert.deepEqual(read({ AETHER_SUPERDELEGATION: 'off' }), { on: false })
+  assert.deepEqual(read({}), { on: null })
+})
+
+test('a lane call or reading that names no harness is counted by no harness', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo, args } = finishedRun(t)
+  sampleLaneLog(dataDir, args.runId)
+  const before = report(repo.dir, args.runId, { dataDir, tests: false })
+  appendLog(dataDir, 'run-session', { kind: 'call', time: T0 + 40 * MIN, startedAt: T0 + 39 * MIN, session: 'run-session', run: args.runId, design: null, role: 'implementer', task: 'task-9', model: HAIKU, group: 'gemini', effort: 'high', durationMs: MIN, usage: { input: 0, output: 1e6, thinking: 0, cacheRead: 0, total: 1e6 }, conversation: 'c', quotaBefore: null, quotaAfter: null, detail: '', call: 'task-9-1-implement', status: 'ok' })
+  appendLog(dataDir, 'run-session', { kind: 'reading', time: T0 + 41 * MIN, run: args.runId, design: null, groups: {}, version: '9.9.9' })
+  const after = report(repo.dir, args.runId, { dataDir, tests: false })
+  assert.deepEqual(after.lanes.run.byHarness, before.lanes.run.byHarness)
+  assert.deepEqual(after.lanes.versions, before.lanes.versions)
+  assert.deepEqual(after.radar.delegation.quotaByHarness, before.radar.delegation.quotaByHarness)
 })
 
 test('a choice written in the old shape does not break the report', (t) => {

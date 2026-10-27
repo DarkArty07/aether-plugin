@@ -12,7 +12,6 @@ const { loadPrices, priceEntry } = require('./prices.js')
 const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
 const { judge } = require('./baseline.js')
-const { legacyNotes } = require('./superdelegation.js')
 const { isSessionId } = require('./spend.js')
 const { archiveSpend, noteFailure, clearFailure } = require('./spend-archive.js')
 
@@ -23,8 +22,6 @@ const iso = (ms) => new Date(ms).toISOString()
 const zeroTokens = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
 const laneZeroTokens = () => ({ input: 0, output: 0, cacheRead: 0 })
 const LANE_STATUSES = ['ok', 'failed', 'quota', 'violation', 'blocked']
-// A lane-log call with no harness counts as agy's: entries written before the log named the harness did.
-const LEGACY_HARNESS = 'agy'
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
 // A rung is `<model> <effort>`; a bare model, as results saved before efforts were recorded name it, has no effort.
@@ -329,9 +326,13 @@ function workOf(tooks) {
 }
 
 // What each harness's quota windows consumed in the run: the sum, per window, over the groups its calls used.
+// A call that names no harness belongs to no harness.
 function quotaByHarness(summary, calls) {
   const groupsOf = {}
-  for (const call of calls) (groupsOf[call.harness || LEGACY_HARNESS] ||= new Set()).add(call.group)
+  for (const call of calls) {
+    if (!call.harness) continue
+    ;(groupsOf[call.harness] ||= new Set()).add(call.group)
+  }
   const out = {}
   for (const [harness, groups] of Object.entries(groupsOf)) {
     const windows = (out[harness] = {})
@@ -421,11 +422,13 @@ function summarizeLanes(calls, readings, prices, notes, window = null) {
     const role = (summary.byRole[call.role] ||= { calls: 0, usd: 0 })
     role.calls++
     role.usd += usd
-    const harness = (summary.byHarness[call.harness || LEGACY_HARNESS] ||= { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, usd: 0, tokens: laneZeroTokens() })
-    harness.calls++
-    harness.usd += usd
-    addTokens(harness.tokens, tokens)
-    if (LANE_STATUSES.includes(call.status)) harness[call.status]++
+    if (call.harness) {
+      const harness = (summary.byHarness[call.harness] ||= { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, usd: 0, tokens: laneZeroTokens() })
+      harness.calls++
+      harness.usd += usd
+      addTokens(harness.tokens, tokens)
+      if (LANE_STATUSES.includes(call.status)) harness[call.status]++
+    }
   }
   const balanceReadings = window ? readings.filter((reading) => reading.time >= window.start && reading.time <= window.end) : readings
   if (window) {
@@ -440,13 +443,12 @@ function summarizeLanes(calls, readings, prices, notes, window = null) {
   return summary
 }
 
-// The version that the newest reading of each harness names, by harness. A reading with no harness is agy's.
+// The version that the newest reading of each harness names, by harness. A reading with no harness names none.
 function versionsOf(readings) {
   const newest = new Map()
-  const named = readings.filter((reading) => reading.version).sort((a, b) => b.time - a.time)
+  const named = readings.filter((reading) => reading.version && reading.harness).sort((a, b) => b.time - a.time)
   for (const reading of named) {
-    const harness = reading.harness || LEGACY_HARNESS
-    if (!newest.has(harness)) newest.set(harness, reading.version)
+    if (!newest.has(reading.harness)) newest.set(reading.harness, reading.version)
   }
   return Object.fromEntries(newest)
 }
@@ -556,19 +558,10 @@ function radarOf({ speed, cost, lanes, quality }) {
   }
 }
 
-// What the session read of the superdelegation option: on (null when it was not exported) and the notes for what
-// it ignored or read as on. A token that is not known is left out rather than stopping the report.
+// What the session exported of the superdelegation switch: on, off, or null when it was not exported.
 function superdelegationOf(env) {
   const on = env.AETHER_SUPERDELEGATION
-  const tokens = (env.AETHER_SUPERDELEGATION_LEGACY || '').split(',').map((token) => token.trim()).filter(Boolean)
-  const legacy = tokens.flatMap((token) => {
-    try {
-      return legacyNotes([token])
-    } catch {
-      return []
-    }
-  })
-  return { on: on === 'on' ? true : on === 'off' ? false : null, legacy }
+  return { on: on === 'on' ? true : on === 'off' ? false : null }
 }
 
 // The run's window starts when the plan was compiled and ends when the result was saved, or now.

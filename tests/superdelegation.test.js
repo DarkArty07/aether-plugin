@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { choose, enabled, resolveOption, legacyNotes, runArgs, idleHarnesses, TOLERANCE_POINTS } = require('../plugins/aether/lib/superdelegation.js')
+const { choose, enabled, resolveOption, runArgs, idleHarnesses, TOLERANCE_POINTS } = require('../plugins/aether/lib/superdelegation.js')
 const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 
 const { pairs } = loadPairs()
@@ -319,24 +319,21 @@ test('enabled: on only when the session exports on, on Linux', () => {
   assert.deepEqual(enabled({}, 'linux'), { on: false, reason: 'option' })
 })
 
-test('C1 and E8: superdelegation is off by default, lanes on counts as on, seats is ignored, and a set value wins', () => {
-  assert.deepEqual(resolveOption({}), { on: false, source: 'default', legacy: [] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: '' }), { on: false, source: 'default', legacy: [] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }), { on: true, source: 'superdelegation', legacy: [] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_LANES: 'true' }), { on: true, source: 'lanes', legacy: ['lanes-as-on'] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_LANES: 'false' }), { on: false, source: 'default', legacy: [] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_LANES: 'true', CLAUDE_PLUGIN_OPTION_SEATS: 'native' }), { on: true, source: 'lanes', legacy: ['lanes-as-on', 'seats-ignored'] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', CLAUDE_PLUGIN_OPTION_LANES: 'true' }), { on: false, source: 'superdelegation', legacy: ['lanes-ignored'] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', CLAUDE_PLUGIN_OPTION_SEATS: 'robust' }), { on: true, source: 'superdelegation', legacy: ['seats-ignored'] })
+const OLD_LANES = 'CLAUDE_PLUGIN_OPTION_' + 'LAN' + 'ES'
+const OLD_SEATS = 'CLAUDE_PLUGIN_OPTION_' + 'SEA' + 'TS'
+
+test('resolveOption reads only the superdelegation option', () => {
+  assert.deepEqual(resolveOption({}), { on: false, source: 'default' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: '' }), { on: false, source: 'default' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }), { on: true, source: 'superdelegation' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false' }), { on: false, source: 'superdelegation' })
+  assert.deepEqual(resolveOption({ [OLD_LANES]: 'true', [OLD_SEATS]: 'robust' }), { on: false, source: 'default' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', [OLD_LANES]: 'true' }), { on: false, source: 'superdelegation' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', [OLD_SEATS]: 'robust' }), { on: true, source: 'superdelegation' })
 })
 
-test('legacyNotes tells the owner what was ignored or read as on', () => {
-  assert.deepEqual(legacyNotes(['lanes-as-on', 'lanes-ignored', 'seats-ignored']), [
-    'The lanes option is on and superdelegation is not set, so superdelegation counts as on. Set superdelegation to choose it yourself.',
-    'The lanes option is ignored: superdelegation is set.',
-    'The seats option no longer exists (native, balanced and robust are gone): its value is ignored.',
-  ])
-  assert.deepEqual(legacyNotes([]), [])
+test('the notes about the old options are gone from the module', () => {
+  assert.equal(require('../plugins/aether/lib/superdelegation.js')['legacy' + 'Notes'], undefined)
 })
 
 const harness = () => ({ command: 'x', waitSeconds: 540, timeouts: { implementer: 2700, supervisor: 900, reviewer: 1200 }, groups: {}, models: { m: {} } })
