@@ -12,8 +12,8 @@ const LANE_DIR = `/repo/.aether/runs/${RUN}/lanes/task-1-1-implement`
 const USAGE = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
 
 // The message aether:run's opsPrompt builds.
-function opsPrompt(command: string, { long = false, payload = null as string | null, marker = `${LANE_DIR}/prompt.md` } = {}) {
-  const lines = [long ? LONG : SHORT, '', `cd '/repo' && ${command}`, '', CLOSING]
+function opsPrompt(command: string, { long = false, cwd = '/repo', payload = null as string | null, marker = `${LANE_DIR}/prompt.md` } = {}) {
+  const lines = [long ? LONG : SHORT, '', `cd '${cwd}' && ${command}`, '', CLOSING]
   if (payload !== null) lines.push('', PREFACE, `=== aether-lane payload: ${marker} ===`, payload)
   return lines.join('\n')
 }
@@ -272,7 +272,7 @@ test('a ladder verdict saves its payload file at spawn, runs aether-wt with the 
   const text = '{"findings":[{"file":"src/a.js","what":"falta el caso vacío; rm -rf /"}]}'
   await spawn($, opsPrompt(command, { payload: text, marker: LADDER_FILE }))
   expect(writes.find((w) => w.path === LADDER_FILE)).toEqual({ path: LADDER_FILE, text })
-  expect(writes.every((w) => w.path.startsWith(`/repo/.aether/runs/${RUN}/ladder/`))).toBe(true)
+  expect(writes.map((w) => w.path)).toEqual([LADDER_FILE])
   const { chunks } = await step($)
   expect(runs.length).toBe(1)
   expect(runs[0].argv[1].endsWith('/bin/aether-wt')).toBe(true)
@@ -292,4 +292,14 @@ test('a gate runs in the mod with the long timeout, and a malformed ladder line 
   await step($)
   expect(runs.length).toBe(1)
   expect(counts.modelSteps).toBe(1)
+})
+
+test('a lane payload under a path containing "ladder" still writes prompt.md and spawn.json', async ($, on) => {
+  const { writes } = stubs(on, { answer: { exitCode: 0, stdout: '{"started":true}\n' } })
+  const repo = '/home/u/ladder/repo'
+  const laneDir = `${repo}/.aether/runs/${RUN}/lanes/task-1-1-implement`
+  const marker = `${laneDir}/prompt.md`
+  const command = `aether-lane start ${RUN} task-1-1-implement --role implementer --task task-1 --model gemini-3.8-flash --effort high --digest 0a1b2c3d:12`
+  await spawn($, opsPrompt(command, { cwd: repo, long: true, payload: 'You are implementing task-1.\n', marker }))
+  expect(writes.map((w) => w.path)).toEqual([marker, `${laneDir}/spawn.json`])
 })

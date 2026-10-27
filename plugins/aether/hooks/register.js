@@ -78,6 +78,8 @@ const sessions = new Map()
 const delegates = createDelegates()
 
 const PAYLOAD_MARKER = /^=== aether-lane payload: (.+) ===$/m
+// A ladder verdict payload path: ladder/ only holds state and verdict files, so spawn.json is omitted.
+const LADDER_PAYLOAD_FILE = /\/\.aether\/runs\/[^/]+\/ladder\/task-\d+-verdict\.json$/
 
 const tokens = (value) => (Number.isFinite(value) ? value : 0)
 const effortOf = (value) => (typeof value === 'string' && value !== '' ? value : null)
@@ -260,7 +262,7 @@ async function saveLanePayload($, e, state) {
     const lane = lanePayload(e)
     if (!lane) return
     await $.fs.write(lane.path, lane.payload)
-    if (lane.path.includes('/ladder/')) return
+    if (LADDER_PAYLOAD_FILE.test(lane.path)) return
     const workflow = e.workflow || {}
     const spawn = {
       session: state.id,
@@ -569,6 +571,7 @@ export function register(on, options) {
       if (ctx) delegates.bind(delegateCalls($), e, result.agentId, ctx)
       const command = opsCommand(e, $)
       if (command && !(await opsOff($, state))) state.ops.set(result.agentId, command)
+      // Clears a stale ops command if the test stub reuses an agentId across spawns.
       else state.ops.delete(result.agentId)
     }
     return result
