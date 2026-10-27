@@ -1,6 +1,10 @@
 'use strict'
 
-// Grok's weekly quota. grok writes `billing: fetched credits config` lines to ~/.grok/logs/unified.jsonl when it
+// Grok's weekly quota, read from unified.jsonl or refreshed over ACP and interactive UI.
+// lib/lane-quota.js asks for it.
+// Family: harness.
+
+// grok writes `billing: fetched credits config` lines to ~/.grok/logs/unified.jsonl when it
 // fetches the plan's credits config, with the current weekly period and, when some of it is used,
 // `creditUsagePercent`; grok 1.0.13 left it out in the first lines of a period, minutes after it began, and gave 8
 // to 100 later, and 1.0.41's and 1.0.52's lines of 2026-10-14 leave it out. What a missing creditUsagePercent means
@@ -14,7 +18,8 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
-const lanes = require('../lanes.js')
+const { isObject, pidAlive, sleep } = require('../common.js')
+const { commandPath, killMarked, laneEnv } = require('../lane-process.js')
 const run = require('../run.js')
 const { ACP_TIMEOUT_MS, readBillingViaAcp, undoWhenKilled } = require('./grok-acp.js')
 
@@ -31,7 +36,7 @@ const TAIL_BYTES = 1024 * 1024
 const CLOCK_SKEW_MS = 5 * 60 * 1000
 const TIMEOUT_MS = 20000
 const POLL_MS = 250
-// What lanes.killMarked waits between SIGTERM and SIGKILL. A refresh polls for no longer than its timeout less
+// What killMarked waits between SIGTERM and SIGKILL. A refresh polls for no longer than its timeout less
 // this, so that killing the UI still ends inside the timeout.
 const KILL_WAIT_MS = 2000
 // A lock whose holder outlived its own deadline by this much is left over from a refresh that died.
@@ -39,9 +44,6 @@ const LOCK_GRACE_MS = 5000
 // How old a reading may be before `aether-lane quota` calls it stale and a wave's quota step refreshes it. A reading
 // stays valid until its period ends, whatever its age.
 const STALE_MS = 30 * 60 * 1000
-
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // The log grok writes under HOME. A lane's environment drops GROK_HOME, so lanes and refreshes always use ~/.grok.
 function defaultLogFile(env = process.env) {
@@ -161,8 +163,8 @@ function quote(text) {
 // runs detached, in a process group of its own; the pipe on its stdin is never written or closed, so grok never
 // reads an end of input. Returns the child, or null when script or grok is not installed or cannot start.
 function launchUi({ command, cwd, env }) {
-  const script = lanes.commandPath('script', env)
-  const grok = lanes.commandPath(command, env)
+  const script = commandPath('script', env)
+  const grok = commandPath(command, env)
   if (script === null || grok === null) return null
   let exited = false
   let child
@@ -196,7 +198,7 @@ function stopUi(child, marker) {
   } catch {
     // Gone already.
   }
-  lanes.killMarked(marker)
+  killMarked(marker)
   try {
     process.kill(-child.pid, 'SIGKILL')
   } catch {
@@ -214,15 +216,6 @@ function readLock(lockFile) {
   }
 }
 
-function alive(pid) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return err.code === 'EPERM'
-  }
-}
-
 // Whether a lock is left over: its holder is gone or outlived its deadline, or its record, which takes a moment to
 // write, is still unreadable after LOCK_GRACE_MS.
 function leftOver(lockFile, holder, now) {
@@ -233,7 +226,7 @@ function leftOver(lockFile, holder, now) {
       return false
     }
   }
-  return !alive(holder.pid) || (Number.isFinite(holder.until) && now > holder.until + LOCK_GRACE_MS)
+  return !pidAlive(holder.pid) || (Number.isFinite(holder.until) && now > holder.until + LOCK_GRACE_MS)
 }
 
 // Takes the lock for a refresh, or gives the holder's record when another refresh holds it. A left-over lock is
@@ -302,7 +295,7 @@ async function openAndRead({ command, logFile, env, sessionsDir, started, pollUn
     // The directory's own name is the one grok is given.
   }
   const marker = `grok-quota/${process.pid}-${started}`
-  const laneVariables = lanes.laneEnv(env, marker)
+  const laneVariables = laneEnv(env, marker)
   // The UI needs a terminal type; the pseudo-terminal script gives it has no reader, so any capable one does.
   const term = laneVariables.TERM && laneVariables.TERM !== 'dumb' ? laneVariables.TERM : 'xterm-256color'
   const childEnv = { ...laneVariables, TERM: term, GROK_DISABLE_AUTOUPDATER: '1' }

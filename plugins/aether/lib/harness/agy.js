@@ -1,20 +1,12 @@
 'use strict'
 
-// The agy harness: reads its quota, builds its print-mode argv, and judges a run clean only on every sign.
+// The agy harness adapter: reads its quota, builds its print-mode argv, and judges a run clean only on every sign.
+// lib/harness/index.js calls it to build the adapter.
+// Family: harness.
 
-const { spawnSync } = require('node:child_process')
-const { commandInstalled } = require('../lanes.js')
-
-// Runs argv without a shell. A spawn that fails or times out throws; otherwise the exit status and output come back.
-function defaultExec(argv, { timeoutMs, cwd }) {
-  const result = spawnSync(argv[0], argv.slice(1), { encoding: 'utf8', timeout: timeoutMs, cwd, maxBuffer: 64 * 1024 * 1024 })
-  if (result.error) throw result.error
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr }
-}
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
+const { isObject: isPlainObject } = require('../common.js')
+const { commandInstalled } = require('../lane-process.js')
+const { defaultExec } = require('./structured.js')
 
 // The JSON object in text, or null when text is not one.
 function jsonObject(text) {

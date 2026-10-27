@@ -4,11 +4,13 @@
 // release. The stub looks for the launcher each time it runs, so it never goes stale, and it carries a marker line,
 // which is how this module knows a file is its own: it replaces a stub and refuses anything else of the same name.
 // It writes only inside the directory it is given, and never edits a shell file.
+// Family: none.
 
 const crypto = require('node:crypto')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { isExecutableFile } = require('./common.js')
 
 const MARKER = '# aether-first-setup stub'
 const DEFAULT_NAME = 'aeth'
@@ -110,16 +112,6 @@ function classify(file) {
   const stat = statOrNull(file, false)
   if (!stat) return 'free'
   return stat.isFile() && hasMarker(file) ? 'own' : 'foreign'
-}
-
-function isExecutableFile(file) {
-  try {
-    if (!fs.statSync(file).isFile()) return false
-    fs.accessSync(file, fs.constants.X_OK)
-    return true
-  } catch {
-    return false
-  }
 }
 
 function pathEntries(env) {

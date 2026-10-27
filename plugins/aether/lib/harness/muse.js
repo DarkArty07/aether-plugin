@@ -2,11 +2,14 @@
 
 // The Muse harness: one headless `muse exec --json` turn, and a run judged from the JSONL records it prints. Muse
 // has no quota command, so the adapter keeps the last allowance a call reported, and quota() reads that.
+// Family: harness.
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { commandInstalled } = require('../lanes.js')
+const { isObject: isPlainObject } = require('../common.js')
+const { commandInstalled } = require('../lane-process.js')
 const { strictSchema } = require('../lane-schemas.js')
+const run = require('../run.js')
 const { defaultExec, extractJsonObject, missingField, parseObject } = require('./structured.js')
 
 const OBSERVED_FILE = 'muse-observed.json'
@@ -18,10 +21,6 @@ const LINE_LIMIT = 300
 const MODEL_STEPS = '200'
 
 let writeCounter = 0
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
 
 // Text from a failure, on one line and cut to limit characters, so it cannot bloat the lane log.
 const brief = (text, limit) => text.replace(/\s+/g, ' ').trim().slice(0, limit)
@@ -168,7 +167,7 @@ function writeStrictSchema(schemaFile) {
 }
 
 function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = process.env, dataDir = null, now = Date.now } = {}) {
-  const observedPath = () => path.join(dataDir ?? require('../run.js').dataDir(), 'lanes', 'quota', OBSERVED_FILE)
+  const observedPath = () => path.join(dataDir ?? run.dataDir(), 'lanes', 'quota', OBSERVED_FILE)
 
   // Keeps the observation; an atomic write, and a failure to write is not an error of the call.
   function observe(window, weekly) {

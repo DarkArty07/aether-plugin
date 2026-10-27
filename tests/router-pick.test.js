@@ -12,7 +12,11 @@ const lanes = require('../plugins/aether/lib/lanes.js')
 const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 const { peekReadings, staleHarnesses } = require('../plugins/aether/lib/router-quota.js')
 
-const config = lanes.loadConfig(lanes.CONFIG_FILE)
+const real = lanes.loadConfig(lanes.CONFIG_FILE)
+// These tests are about the quota and the points, not about roles: here every model of the table also lists reviewer.
+// The role limit has its own tests below, on the real table.
+const config = JSON.parse(JSON.stringify(real))
+for (const harness of Object.values(config.harnesses)) for (const model of Object.values(harness.models)) if (!model.roles.includes('reviewer')) model.roles = [...model.roles, 'reviewer']
 const NOW = Date.parse('2026-10-20T12:00:00-06:00')
 const H = 3600 * 1000
 const MIN = 60 * 1000
@@ -309,4 +313,23 @@ test('every external pair of the table can run as a delegate: its model and its 
     assert.ok(Object.hasOwn(harness.groups, pair.group), `${pair.id}: its group ${pair.group} is not a group of ${pair.harness}`)
     assert.ok(DELEGATE_HARNESSES.includes(pair.harness), `${pair.id}: a delegate cannot run on ${pair.harness}`)
   }
+})
+
+test('R5: a read-only delegate takes no pair whose model lacks reviewer in its roles list (grok-4.7 lists implementer only)', async () => {
+  const s = setup({ settings: { harnesses: ['agy', 'grok'] }, readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK } })
+  s.d.lanesConfig = () => real
+  const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
+  assert.equal(step.error, undefined)
+  assert.equal(step.pick, null)
+  const why = Object.fromEntries(step.quota.map((c) => [c.id, c.why]))
+  for (const id of ['grok/grok-4.7@high', 'agy/gemini-4-argon@high', 'agy/gemini-3.8-flash@medium', 'agy/claude-sonnet-5-5@high']) assert.equal(why[id], 'role', id)
+})
+
+test('the decision asks for reviewer and the probe of serving asks for no role', () => {
+  const text = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'plugins', 'aether', 'lib', 'router-pick.js'), 'utf8')
+  const sites = text.split('\n').filter((line) => /\bchoose\(\{/.test(line))
+  assert.equal(sites.length, 2)
+  assert.ok(!/\brole\b/.test(sites[0]) && !/\blanes\b/.test(sites[0]), sites[0])
+  assert.match(sites[1], /role: 'reviewer'/)
+  assert.match(sites[1], /lanes: config/)
 })

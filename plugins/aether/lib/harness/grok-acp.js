@@ -1,19 +1,17 @@
 'use strict'
 
-// Grok's billing, asked of grok itself. `grok agent stdio` speaks ACP, JSON-RPC 2.0 with one message per line, and
-// answers the request `_x.ai/billing` with the same credits config its UI writes to its log as `billing: fetched
-// credits config`, with no terminal and no prompt (grok 1.0.52, 2026-10-14; the real lines are in
-// tests/fixtures/grok-acp-billing.jsonl). The agent is started in a new empty directory, in a process group of its own,
-// with the lane environment; it is ended on every path out, and the directory removed.
+// Grok's billing, asked of grok itself through ACP. lib/harness/grok-quota.js asks for it.
+// Family: harness.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
-const lanes = require('../lanes.js')
+const { isObject } = require('../common.js')
+const { commandPath, killMarked, laneEnv } = require('../lane-process.js')
 
 const ACP_TIMEOUT_MS = 10000
-// What lanes.killMarked waits between SIGTERM and SIGKILL. A read waits for the answer no longer than its timeout less
+// What killMarked waits between SIGTERM and SIGKILL. A read waits for the answer no longer than its timeout less
 // this, so that ending the agent still ends inside the timeout.
 const KILL_WAIT_MS = 2000
 // A line of the agent's output that grows past this without a newline is not ACP.
@@ -21,8 +19,6 @@ const MAX_LINE_BYTES = 1024 * 1024
 
 const INITIALIZE_ID = 1
 const BILLING_ID = 2
-
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 // A response's result, or null when the message is an error or has no result object.
 function resultOf(message) {
@@ -136,7 +132,7 @@ function signalGroup(pid, signal) {
 }
 
 // Ends the agent and whatever it started, and removes its directory. Each step runs whatever the one before did.
-// SIGTERM to the group, then lanes.killMarked, which waits and sends SIGKILL to what still carries the marker, then
+// SIGTERM to the group, then killMarked, which waits and sends SIGKILL to what still carries the marker, then
 // SIGKILL to the group. Never throws.
 function stopAgent({ child, dir, marker }) {
   if (child) {
@@ -148,7 +144,7 @@ function stopAgent({ child, dir, marker }) {
     signalGroup(child.pid, 'SIGTERM')
   }
   try {
-    lanes.killMarked(marker)
+    killMarked(marker)
   } catch {
     // Nothing more to end.
   }
@@ -170,14 +166,14 @@ async function readBillingViaAcp({ command = 'grok', env = process.env, timeoutM
   const session = { child: null, dir: null, marker: `grok-acp/${process.pid}-${Date.now()}` }
   const release = undoWhenKilled(() => stopAgent(session))
   try {
-    const grok = lanes.commandPath(command, env)
+    const grok = commandPath(command, env)
     if (grok === null) return null
     session.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-grok-acp-'))
     session.child = spawn(grok, ['agent', '--no-leader', 'stdio'], {
       cwd: session.dir,
       detached: true,
       stdio: ['pipe', 'pipe', 'ignore'],
-      env: { ...lanes.laneEnv(env, session.marker), GROK_DISABLE_AUTOUPDATER: '1' },
+      env: { ...laneEnv(env, session.marker), GROK_DISABLE_AUTOUPDATER: '1' },
     })
     const limit = Number.isFinite(timeoutMs) ? timeoutMs : ACP_TIMEOUT_MS
     return await ask(session.child, { waitMs: Math.max(0, limit - KILL_WAIT_MS), now })

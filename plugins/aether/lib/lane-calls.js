@@ -4,12 +4,14 @@
 // workspace and launches a detached runner; the runner drives agy, checks the workspace from
 // outside, records the usage and writes result.json last; `wait`, `result` and `stop` read and end
 // it. The commands share nothing but the files of the call directory, <runDir>/lanes/<call>/.
+// Family: lane.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { repoPaths } = require('./git.js')
+const { readJsonOrNull, readTextOrEmpty, sleep, killGroup: killAgyGroup } = require('./common.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
 const marks = require('./lane-marks.js')
@@ -110,22 +112,6 @@ function callPaths(cwd, runId, call) {
   }
 }
 
-function readJsonOrNull(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-function readTextOrEmpty(file) {
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch {
-    return ''
-  }
-}
-
 // ---- The table and the adapter ----
 
 function loadTable() {
@@ -151,9 +137,9 @@ function harnessOfModel(config, model) {
   return owners[0]
 }
 
-// The harness a call runs on, as start recorded it. A call that predates the record ran on agy, the only harness then.
+// The harness a call runs on, as start recorded it.
 function callHarness(info) {
-  return typeof info?.harness === 'string' ? info.harness : 'agy'
+  return typeof info?.harness === 'string' ? info.harness : ''
 }
 
 // The efforts a call may ask for. The harness is given the effort as it is: nothing translates it.
@@ -253,7 +239,8 @@ function readGroup(adapter, { harness, settings, group, dataDir }) {
 
 // Leaves the dry mark of a group, from the reading that shows it dry or, when a call ended for quota with nothing
 // that shows it, from none. A mark that cannot be written changes nothing: the group goes unmarked this time.
-// A refusal ({ resetMs }, quota-refusal.js) marks the group until the reset the message states.
+// A refusal ({ resetMs }, quota-refusal.js) holds dryMarkMinutes from now, the message reset is only statedResetMs,
+// and a reading that shows the group under the reserve confirms the mark until that reading's reset.
 function holdDry(dataDir, { harness, group, reading, config, now, refusal = null }) {
   try {
     marks.markDry(dataDir, { harness, group, reading, reserve: config.reserve, now, minutes: config.dryMarkMinutes, refusal })
@@ -345,16 +332,6 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
 }
 
 // ---- The runner ----
-
-// The runner kills its own child's group directly: it holds the child, so the pid cannot have been
-// reused, and after agy exits its leader is gone, which killGroup's marker check would need.
-function killAgyGroup(pid) {
-  try {
-    process.kill(-pid, 'SIGKILL')
-  } catch {
-    // The group is already empty.
-  }
-}
 
 // Runs agy to its end, killing its group when it outlives the timeout. Resolves to its exit code.
 function runAgy(argv, { workdir, marker, paths, timeoutSeconds, onSpawn }) {
@@ -593,8 +570,6 @@ async function runCall(cwd, runId, call) {
 
 // ---- wait, result, stop ----
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
 // The finished result, or null while there is none or it is still being written.
 function finishedResult(paths) {
   const done = readJsonOrNull(paths.result)
@@ -661,4 +636,4 @@ function stop(cwd, runId, call = null) {
   return { stopped }
 }
 
-module.exports = { WORKDIR_RULE, roleBody, claudeMdSections, buildPrompt, enabledFor, status, refreshStale, start, wait, result, stop, runCall }
+module.exports = { WORKDIR_RULE, roleBody, claudeMdSections, buildPrompt, enabledFor, status, refreshStale, start, wait, result, stop, runCall, finishedResult, loadTable }

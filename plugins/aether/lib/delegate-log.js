@@ -2,6 +2,7 @@
 
 // The delegate log (R16): <dataDir>/delegates/log.jsonl, one JSON entry per line,
 // append-only across sessions. Text values longer than MAX_TEXT are trimmed.
+// Family: delegate.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -73,9 +74,13 @@ function readEntries(dataDir, { task = null, session = null, since = 0 } = {}) {
   return entries
 }
 
+// A launch entry in the delegate log that opened an attempt (not a refused relaunch).
+const isLaunch = (entry) => entry.kind === 'launch' && entry.launchKind !== 'refused'
+
 module.exports = {
   MAX_TEXT,
   logFile,
   appendEntry,
-  readEntries
+  readEntries,
+  isLaunch,
 }

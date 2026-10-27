@@ -690,3 +690,17 @@ test('when the last attempt is refused at its start and no pair remains, the arm
   assert.equal(r.json.tried[1].cause, 'unavailable: workspace')
   assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'runs', r.json.id, 'carry', 'task-1.json')), false)
 })
+
+test('R5: an editing delegate and its review never go to a pair whose model lacks the role in its list', (t) => {
+  const { choices, result } = probe(t)
+  const whyOf = (entry, id) => Object.fromEntries(entry.candidates.map((c) => [c.id, c.why]))[id]
+  const by = (role) => choices.filter((entry) => entry.role === role)
+  assert.ok(by('implementer').length > 0 && by('reviewer').length > 0)
+  // gemini-4-argon lists judge, writer and examiner only.
+  for (const entry of choices) assert.equal(whyOf(entry, 'agy/gemini-4-argon@high'), 'role', entry.role)
+  // gemini-3.8-flash lists implementer only, so no review goes to it.
+  for (const entry of by('reviewer')) assert.equal(whyOf(entry, 'agy/gemini-3.8-flash@medium'), 'role')
+  assert.notEqual(result.pair.model, 'gemini-4-argon')
+  assert.notEqual(result.review.pair.model, 'gemini-3.8-flash')
+})
+

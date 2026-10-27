@@ -1,11 +1,13 @@
 'use strict'
 
 // Ids, locations and records for Aether runs.
+// Family: none.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const crypto = require('node:crypto')
+const { readJson } = require('./common.js')
 
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK_ID = /^task-\d+$/
@@ -91,9 +93,6 @@ function writeJson(file, value) {
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n')
 }
 
-function readJson(file) {
-  return JSON.parse(fs.readFileSync(file, 'utf8'))
-}
 
 function appendRecord(record, dir = dataDir()) {
   fs.mkdirSync(dir, { recursive: true })

@@ -1,12 +1,13 @@
 'use strict'
 
+// Objective checks run on a delegate task's worktree: files changed against owns, test commands,
+// and read-only invariants before an approve verdict.
+// Family: delegate.
+
 const { spawnSync } = require('node:child_process')
+const { nulEntries } = require('./common.js')
 const { git, repoPaths } = require('./git.js')
 const { matchesAny } = require('./globs.js')
-
-function nulEntries(text) {
-  return text.split('\0').filter((entry) => entry !== '')
-}
 
 function changedFiles(worktree, base) {
   const root = repoPaths(worktree).worktree

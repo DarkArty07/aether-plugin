@@ -2,6 +2,7 @@
 
 // Calibration signals for Aether self-observation.
 // Pure functions evaluating thresholds over usage metrics without mutating inputs or configuration.
+// Family: observe.
 
 function approvalByStep(delegateEntries = []) {
   const result = {}
