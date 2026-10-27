@@ -4,6 +4,7 @@
 // [redacted] and the rest of the text is kept as it was. The rules run in order, the specific shapes first,
 // so a later, broader rule only sees what an earlier one left; each rule leaves [redacted] as it found it,
 // so redact(redact(x)) === redact(x).
+// Family: observe.
 
 const MASK = '[redacted]'
 
