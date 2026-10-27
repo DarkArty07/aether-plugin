@@ -19,10 +19,9 @@ Never stop to ask. Where a choice is open, pick a reasonable default and write i
    - A title.
    - The line `**Spec:** [spec.md](spec.md)`.
    - `## Global Constraints`: the rules every task follows.
-   - `## Aether Execution`, with these three lines. Take the test command from the plan's Verification section.
+   - `## Aether Execution`, with these two lines. Take the test command from the plan's Verification section.
      ```text
      - Test command: `<command>`
-     - Ladder: haiku 2, sonnet 2, opus 1
      - Max agents: 200
      ```
    - `## Checklist`: Spec Kit's index, one line per step, in this form:
@@ -33,16 +32,16 @@ Never stop to ask. Where a choice is open, pick a reasonable default and write i
 3. Write each task section in this order. It starts with the Aether block, right after its heading:
    ```markdown
    **Aether:**
-   - Tier: haiku high — a mechanical parser that exact tests pin down
    - Review: xhigh — a failed parse deletes the user's file
    - Area: backend
    - Owns: `src/api/**`, `tests/api.test.js`
    - Depends on: none
    - Serves: R1, R3
    ```
+   The swarm starts every task on the cheapest model and raises it by itself: do not name a model or an effort for the implementer. Every task is one module and one concern; when tests cannot pin it down, split it.
+
    The fields are:
-   - **Tier:** `haiku`, `sonnet` or `opus`, then an optional effort (`low`, `medium`, `high`, `xhigh` or `max`), then " — " and the reason. Use `haiku` for work that exact tests and interfaces pin down, and that touches few files. Use `sonnet` for frontend and UI work, for integration across several files, or for behavior the tests cannot pin down exactly. Use `opus` for security and auth, data migrations or destructive operations, concurrency, and core architecture. The effort defaults to `high`. Name `xhigh` only where the tests cannot pin the behavior down and a mistake would cost more than the extra effort: it costs about 2.3 times more on Sonnet and 1.9 times more on Opus than `high`. Haiku may run at `low` or `medium` where the tests pin the work down completely. Sonnet and Opus never run below `high`. Name `max` only with a reason: on Opus it gives what `xhigh` gives.
-   - **Review:** optional. `high`, `xhigh` or `max`, then " — " and the reason. Without it, the review runs at `high`. `xhigh` costs about 2.3 times more than `high` on Sonnet, and, with `superdelegation` on, the supervisor of Sonnet's work can run on Opus: name it only where a mistake would reach user data, security or concurrency, and say which.
+   - **Review:** optional. `high`, `xhigh` or `max`, then " — " and the reason. Without it, the review runs at `high`. `xhigh` costs about 2.3 times more than `high` on Sonnet, and, with `superdelegation` on, the supervisor of Sonnet's work can run on Opus. Name **Review** (`high`, `xhigh` or `max`) only where a mistake would reach user data, security or concurrency, and say which.
    - **Area:** a lowercase slug of letters, digits and dashes. Each area has its own supervisor.
    - **Owns:** the paths or globs (`*`, `**`, `?`) that the task may change, separated by commas. Use relative paths only.
    - **Depends on:** `none`, or one line per dependency in the form `- Depends on: Task N — reason`. Every dependency needs its reason.
