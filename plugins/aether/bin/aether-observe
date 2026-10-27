@@ -5,7 +5,7 @@
 // hook: the handler of the observation hooks; reads the hook's JSON from stdin, prints nothing, always exits 0.
 // Any other use prints one JSON line with the usage error and exits 1.
 
-const fs = require('node:fs')
+const { readFileSync } = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 
@@ -13,7 +13,7 @@ const USAGE = 'usage: aether-observe hook'
 
 function hook() {
   try {
-    const input = JSON.parse(fs.readFileSync(0, 'utf8'))
+    const input = JSON.parse(readFileSync(0, 'utf8'))
     require(path.join(lib, 'observe-hook.js')).handleHook(input)
   } catch {
     // A hook must never print or fail: an unreadable input is nothing to record.

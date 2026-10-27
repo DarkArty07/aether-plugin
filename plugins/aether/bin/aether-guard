@@ -7,7 +7,7 @@
 // the owner's list, and refuses it only when AETHER_IRREVERSIBLE is "enforce"; otherwise it only logs
 // it. Always exits with 0.
 
-const fs = require('node:fs')
+const { readFileSync } = require('node:fs')
 const { dataDir, ensureExcluded } = require('../lib/run.js')
 const { isAetherSession } = require('../lib/session.js')
 const { decide, irreversibleClass, redactCommand } = require('../lib/guard.js')
@@ -42,7 +42,7 @@ function decideBash(input) {
 }
 
 try {
-  const input = JSON.parse(fs.readFileSync(0, 'utf8'))
+  const input = JSON.parse(readFileSync(0, 'utf8'))
   if (input && isAetherSession(dataDir(), input.session_id)) {
     const decision = input.tool_name === 'Bash' ? decideBash(input) : decide(input)
     if (decision) {
