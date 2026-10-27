@@ -7,7 +7,8 @@
 // never read. authorRule is 'bar' (the default, for the swarm, the final review and aether-lane delegate: a pair
 // of an author's family is not a candidate) or 'reserve' (the design seats: a pair of another family first, then
 // the author's own family, and the native agent only last). When a call names a role, an external pair is a
-// candidate only if the lane table's entry for its model lists that role. Everything here is pure: the lane
+// candidate only if the lane table's entry for its model lists that role, falling back to the native pair when
+// no external model allows the role. Everything here is pure: the lane
 // table, the pairs and the quota views come in as arguments.
 // Family: none.
 
