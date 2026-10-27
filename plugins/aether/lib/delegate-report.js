@@ -3,18 +3,15 @@
 // The delegates report (R17): what `aether-report --delegates` prints. One row per task of the delegate log
 // (lib/delegate-log.js) for the rows the /harnesses panel draws; and, per step of config/ladder.json, how the delegates
 // of the log went. The ladder counts come from the log alone.
+// Family: delegate.
 
 const run = require('./run.js')
-const log = require('./delegate-log.js')
+const { isLaunch, readEntries } = require('./delegate-log.js')
 const { loadLadder } = require('./ladder.js')
 
 const CAUSES = ['exhausted', 'repeated', 'infeasible']
 
 const last = (list) => list[list.length - 1]
-
-// A refused relaunch (the task was approved or exhausted) is logged as a launch, but no step opened for it: it is not an
-// attempt and not where the task ran.
-const isAttempt = (entry) => entry.kind === 'launch' && entry.launchKind !== 'refused'
 
 // Where a task of the log ran, by what came after its latest launch (an earlier attempt's pair says nothing of a later
 // one that ran on Claude). A read-only external attempt writes `outcome` entries; one that ended ok ran on its pair. An
@@ -22,7 +19,7 @@ const isAttempt = (entry) => entry.kind === 'launch' && entry.launchKind !== 're
 // on Claude (the step's model, the launch's effort) and the row says why in `fallback`; a launch with neither ran on
 // Claude, rewritten.
 function rowOfTask(id, entries) {
-  const launches = entries.filter(isAttempt)
+  const launches = entries.filter(isLaunch)
   const first = launches[0]
   const latest = last(launches)
   const since = (entry) => entry.time >= latest.time
@@ -74,7 +71,7 @@ function stepCounts(rung, entries) {
 }
 
 function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } = {}) {
-  const entries = log.readEntries(dataDir, { session, since })
+  const entries = readEntries(dataDir, { session, since })
   const byTask = new Map()
   for (const entry of entries) {
     // An `outcome` entry names its task in `id`; the others in `task`.
@@ -83,7 +80,7 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } 
     if (!byTask.has(id)) byTask.set(id, [])
     byTask.get(id).push(entry)
   }
-  const delegations = [...byTask].filter(([, list]) => list.some(isAttempt)).map(([id, list]) => rowOfTask(id, list))
+  const delegations = [...byTask].filter(([, list]) => list.some(isLaunch)).map(([id, list]) => rowOfTask(id, list))
   const ladder = loadLadder()
   return {
     delegations,

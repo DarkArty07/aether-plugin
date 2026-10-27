@@ -5,11 +5,13 @@
 // outside, as a design seat's round is (lib/seats.js): anything the delegate changed undoes its answer, and the
 // worktree is removed whatever happens. A checkout with uncommitted work is not delegated at all (the copy would
 // answer about older code). This module writes no log entry and no quota mark: the bin does.
+// Family: delegate.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
+const { isObject, killGroup, nulEntries, readTextOrEmpty, removeWorktree } = require('./common.js')
 const { git, repoPaths } = require('./git.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
@@ -43,10 +45,6 @@ const DELEGATE_NOTE = [
 ].join('\n')
 
 const NO_USAGE = { input: 0, output: 0, thinking: 0, cacheRead: 0 }
-
-function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
 
 function hasBalance(window) {
   return isObject(window) && typeof window.remaining === 'number' && Number.isFinite(window.remaining)
@@ -83,9 +81,7 @@ function delegatePrompt(adapter, task) {
 // ---- The worktree ----
 
 function nulList(args, cwd) {
-  return git(args, cwd, { raw: true })
-    .stdout.split('\0')
-    .filter((entry) => entry !== '')
+  return nulEntries(git(args, cwd, { raw: true }).stdout)
 }
 
 // What the delegate changed in its worktree: files committed since start, and files changed or new (not ignored)
@@ -116,21 +112,7 @@ function dirtyDetail(files) {
   return `the checkout has uncommitted changes (${named}${rest}): the disposable copy is built from the last commit and would not see them, so the delegate would answer about older code`
 }
 
-function removeWorktree(mainRoot, worktree) {
-  git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true })
-  fs.rmSync(worktree, { recursive: true, force: true })
-  git(['worktree', 'prune'], mainRoot, { allowFail: true })
-}
-
 // ---- Running the CLI ----
-
-function killGroup(pid) {
-  try {
-    process.kill(-pid, 'SIGKILL')
-  } catch {
-    // The group is already empty.
-  }
-}
 
 // Runs argv in cwd to its end, in a group of its own, killing the group when it outlives the timeout and its grace.
 // Resolves to its exit code. `limit.killed` is set when it was the kill timer that ended the process, so that the caller
@@ -163,14 +145,6 @@ function runCli(argv, { cwd, marker, stdoutFile, stderrFile, timeoutSeconds, gra
       resolve(code ?? 128 + (os.constants.signals[signal] || 0))
     })
   })
-}
-
-function readTextOrEmpty(file) {
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch {
-    return ''
-  }
 }
 
 // ---- A delegate ----

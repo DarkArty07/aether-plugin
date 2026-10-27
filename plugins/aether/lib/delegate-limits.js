@@ -3,9 +3,10 @@
 // The time limits of an external delegate, in one place. The mod runs the delegate through the engine's
 // $.process.run, which refuses a timeoutMs above ten minutes, so everything the delegate does has to fit in less than
 // that: two quota readings (before the call and after it), the CLI at its longest, and the grace before its process
-// group is killed. lib/route.js promises EXTERNAL_LIMIT_MS to the mod, lib/delegate-calls.js takes its CLI limit and
+// group is killed. lib/delegate-task.js promises EXTERNAL_LIMIT_MS to the mod, lib/delegate-calls.js takes its CLI limit and
 // its grace from here, lib/delegate-chain.js asks retryCliSeconds how long a later attempt may run, and
 // tests/delegate-limits.test.js pins that worstCaseMs() stays under EXTERNAL_LIMIT_MS.
+// Family: delegate.
 
 // The most a delegate's CLI may run.
 const CLI_MAX_SECONDS = 360
