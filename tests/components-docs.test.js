@@ -100,3 +100,13 @@ test('the components page counts the commands of bin/ and says the ladder adds n
   assert.doesNotMatch(components, /Today, in \d/)
   assert.match(components, /delegate ladder[^\n]*adds nothing at the start of a plain session/)
 })
+
+test('components.md declares the library families, the orchestrator of each and the loose modules (R16)', () => {
+  const text = fs.readFileSync(path.join(__dirname, '..', 'docs', 'reference', 'components.md'), 'utf8')
+  const section = text.split(/^## /m).find((part) => part.startsWith('Library families'))
+  assert.ok(section, 'a section "Library families"')
+  assert.match(section, /^\| Family \| Prefix \| Members \| Orchestrator or table \|$/m)
+  for (const family of ['lane', 'router', 'delegate', 'observe', 'seat', 'spend', 'plan', 'session', 'harness']) assert.match(section, new RegExp(`^\\| ${family} \\|`, 'm'), family)
+  assert.match(section, /^\| router \| `router-` \|.*\| `none` \|/m)
+  assert.match(section, /^Loose modules \(no family\):.*`common\.js`/m)
+})

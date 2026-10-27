@@ -1,7 +1,0 @@
-This is an unattended run: the owner is away, so do not ask questions. Decide yourself, and list your decisions in your final message.
-
-The owner has approved the spec `docs/spec.md` and the plan `docs/plan.md`, and chose subagent-driven development to execute the plan. You are already in an isolated worktree, on branch `feature/trial`. Do not create another worktree.
-
-Use the superpowers:subagent-driven-development skill to implement every task of the plan, with its per-task reviews and its final review, and fix the critical and important findings. Stop when every task is done, the final review has no open critical or important finding, and `npm test` passes on this branch. Do not use finishing-a-development-branch, do not merge into main, and do not push.
-
-End with a short summary: tasks done, the final review verdict, and the test result.

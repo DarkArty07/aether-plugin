@@ -30,7 +30,7 @@ Aether serves five goals, **RADAR**:
 - **Robusto** (robust): quality code, checked by tests, evidence and independent reviews.
   - measured by the tests, the findings of the reviews, the exam and the Judge's verdicts.
 
-Every brief the Lead writes reports the five, and `aether-report` prices a run and gathers its figures. The goals, their measures and the targets proposed for each are in [the RADAR roadmap](roadmap/2026-10-10-radar.md).
+Every brief the Lead writes reports the five, and `aether-report` prices a run and gathers its figures. The goals, their measures and the targets proposed for each are in the RADAR roadmap.
 
 ## Principles
 

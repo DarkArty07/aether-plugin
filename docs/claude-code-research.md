@@ -321,7 +321,7 @@ Measured on Claude Code 2.1.296 with throwaway plugins, an isolated `CLAUDE_CONF
 
 ### Dormant footprint of 0.7.0
 
-Measured on Claude Code 2.1.296 on 2026-10-09 (acceptance A3, `docs/evaluations/2026-10-09-installable/A3-dormant.md`). Aether 0.7.0 was installed from a throwaway clone at its tag into an isolated `CLAUDE_CONFIG_DIR`, with the fake model on `127.0.0.1`. The session ran from a plain git repository without `--agent`, so it is a normal session. `<S>` is the scratch directory, and `<S>/c` runs `claude` with `CLAUDE_CONFIG_DIR` set to `<S>/cfg` and `ANTHROPIC_BASE_URL` set to the fake model.
+Measured on Claude Code 2.1.296 on 2026-10-09 (acceptance A3, dormant evaluation). Aether 0.7.0 was installed from a throwaway clone at its tag into an isolated `CLAUDE_CONFIG_DIR`, with the fake model on `127.0.0.1`. The session ran from a plain git repository without `--agent`, so it is a normal session. `<S>` is the scratch directory, and `<S>/c` runs `claude` with `CLAUDE_CONFIG_DIR` set to `<S>/cfg` and `ANTHROPIC_BASE_URL` set to the fake model.
 
 The commands (checks 2 to 5):
 
