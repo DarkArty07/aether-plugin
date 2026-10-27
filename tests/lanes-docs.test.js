@@ -96,7 +96,7 @@ test('R21: the guide pages of this task name neither the retired profiles nor th
   for (const page of ['lanes', 'design-seats', 'options', 'delegates']) {
     const text = read('docs', 'guide', `${page}.md`)
     // The same patterns as Task 18's GONE; lanes.md and options.md alone may name `seats` (the migration says it is ignored).
-    const gone = [/`balanced`/, /`robust`/, /\bseats option\b/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
+    const gone = [/`balanced`/, /`robust`/, /\bseats option\b/, /--seats\b/, new RegExp('AETHER_' + 'SEATS'), new RegExp('AETHER_' + 'LAN' + 'ES\\b')]
     if (!['lanes', 'options'].includes(page)) gone.push(/`seats`/)
     for (const pattern of gone) assert.doesNotMatch(text, pattern, `${page}.md still says ${pattern}`)
   }

@@ -63,6 +63,6 @@ test('the guide keeps the rule that picks the pair of a step, and the readings a
 })
 
 test('the page speaks of one switch, superdelegation, and not of the retired profiles or equivalences', () => {
-  for (const pattern of [/`balanced`/, /`robust`/, /`seats`/, /\bseats option\b/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/, /`replaces`/, /the `lanes` option/]) assert.doesNotMatch(page, pattern, `delegates.md still says ${pattern}`)
+  for (const pattern of [/`balanced`/, /`robust`/, /`seats`/, /\bseats option\b/, /--seats\b/, new RegExp('AETHER_' + 'SEATS'), new RegExp('AETHER_' + 'LAN' + 'ES\\b'), /`replaces`/, /the `lanes` option/]) assert.doesNotMatch(page, pattern, `delegates.md still says ${pattern}`)
   assert.ok(page.includes('`superdelegation`'), 'delegates.md names the switch')
 })

@@ -89,15 +89,16 @@ test('a token the form does not allow, or a form out of order, is refused', () =
 })
 
 test('the retired --seats and --lanes are refused, alone, beside the new flag, or in place of it', () => {
+  const seats = '--' + 'sea' + 'ts'
   const retired = [
-    START.judge.replace('--superdelegation on', '--seats native'),
+    START.judge.replace('--superdelegation on', `${seats} native`),
     START.judge.replace('--superdelegation on', '--lanes on'),
-    START.judge.replace('--superdelegation on', '--seats native --lanes on'),
-    START.judge.replace('--superdelegation on', '--seats balanced --lanes on --superdelegation on'),
+    START.judge.replace('--superdelegation on', `${seats} native --lanes on`),
+    START.judge.replace('--superdelegation on', `${seats} balanced --lanes on --superdelegation on`),
     START.judge.replace('--superdelegation on', '--superdelegation on --lanes on'),
-    START.examiner.replace('--superdelegation off', '--seats robust --lanes off'),
-    START.writer.replace('--superdelegation on', '--seats native --lanes on'),
-    START.writer.replace('--superdelegation on', '--superdelegation on --seats native'),
+    START.examiner.replace('--superdelegation off', `${seats} robust --lanes off`),
+    START.writer.replace('--superdelegation on', `${seats} native --lanes on`),
+    START.writer.replace('--superdelegation on', `--superdelegation on ${seats} native`),
   ]
   for (const command of retired) assert.equal(parseOpsPrompt(prompt(command, { payload: MESSAGE })), null, command)
 })

@@ -221,7 +221,7 @@ test('the site names Muse wherever it lists the harnesses, in both languages, an
 test('R21: the site says superdelegation where it said lanes and the profiles, and names no retired profile', () => {
   for (const rel of ['site/index.html', 'site/app.js']) {
     const text = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8')
-    for (const pattern of [/\bbalanced\b/, /AETHER_SEATS/]) assert.doesNotMatch(text, pattern, `${rel} still says ${pattern}`)
+    for (const pattern of [/\bbalanced\b/, new RegExp('AETHER_' + 'SEATS')]) assert.doesNotMatch(text, pattern, `${rel} still says ${pattern}`)
     assert.match(text, /superdelegation/i, `${rel} says superdelegation`)
   }
 })

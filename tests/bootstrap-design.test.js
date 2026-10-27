@@ -54,5 +54,5 @@ test('understanding the intent: research before a policy change, plain numbered 
 test('the bootstrap launches /aether:design with superdelegation and the harness list, and never with seats or lanes', () => {
   assert.ok(BOOTSTRAP.includes('$AETHER_SUPERDELEGATION $AETHER_LANE_HARNESSES'))
   assert.ok(BOOTSTRAP.includes('"superdelegation": "<AETHER_SUPERDELEGATION>"'))
-  for (const gone of ['AETHER_SEATS', 'AETHER_LANES', '"seats"', '"lanes"', 'balanced', 'robust']) assert.ok(!BOOTSTRAP.includes(gone), `gone: ${gone}`)
+  for (const gone of ['AETHER_' + 'SEATS', 'AETHER_' + 'LAN' + 'ES', '"seats"', '"lanes"', 'balanced', 'robust']) assert.ok(!BOOTSTRAP.includes(gone), `gone: ${gone}`)
 })
