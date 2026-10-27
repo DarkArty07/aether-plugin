@@ -11,7 +11,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
-const { laneTokens } = require('./lanes.js')
+const { laneTokens } = require('./spend-tokens.js')
 const delegateLog = require('./delegate-log.js')
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/
