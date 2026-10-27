@@ -6,7 +6,7 @@
 
 // aether-lane status <run> [--refresh]   (the quota view of each group of every enabled harness, a disabled harness by its
 //   command alone, and the dry marks; it never refreshes by itself: --refresh, which no workflow sends any more, first
-//   renews grok's reading when it is stale, and says how, as refreshed and refreshMethod)
+//   renews grok's and muse's readings when they are stale, and says how, as refreshed and refreshMethod)
 // aether-lane start <run> <call> --role <role> --model <lane model> --effort <effort> --digest <digest> [--task <task>]
 // aether-lane wait <run> <call> [--max <seconds>]
 // aether-lane result <run> <call>
@@ -21,7 +21,7 @@
 // aether-lane pause --seconds <1 to 120>   (no run: waits, so that the workflow can time its agents)
 // aether-lane quota [<harness>...] [--refresh] [--json]   (no run: each harness's quota as text, or as JSON;
 //   --refresh first asks grok over ACP for a new reading, and opens its UI for a few seconds, with no prompt,
-//   only if that gives none)
+//   only if that gives none; and muse over one minimal exec call)
 // aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--exclude <id>[,<id>...]] [--feature specs/NNN-<topic>] [--cwd <dir>]
 //   (the message on stdin; exit 0 an external answer, 3 the native agent takes the round, 4 the external round
 //   failed and was undone, 1 the command broke)

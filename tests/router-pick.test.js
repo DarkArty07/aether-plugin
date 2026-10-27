@@ -10,7 +10,7 @@ const { tempDir } = require('./helpers.js')
 const { pairStep, DELEGATE_HARNESSES } = require('../plugins/aether/lib/router-pick.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const { loadPairs } = require('../plugins/aether/lib/pairs.js')
-const { peekReadings, staleHarnesses } = require('../plugins/aether/lib/router-quota.js')
+const { peekReadings, staleHarnesses, MUSE_WAIT_MS } = require('../plugins/aether/lib/router-quota.js')
 
 const real = lanes.loadConfig(lanes.CONFIG_FILE)
 // These tests are about the quota and the points, not about roles: here every model of the table also lists reviewer.
@@ -27,6 +27,8 @@ const gemini = (remaining, hours) => ({ windows: { '5h': win(1, 5), weekly: win(
 const geminiKeys = (remaining, hours) => ({ argon: gemini(remaining, hours), flash: gemini(remaining, hours) })
 const agy = (groups, readAt = NOW - 2 * MIN) => ({ readAt, groups })
 const GROK = { readAt: NOW - MIN, groups: { grok: weekly(0.95, 29.6) } }
+// A valid muse reading whose weekly window renews in 50 h, after grok's and agy's Claude group in the tests below.
+const MUSE = { readAt: NOW - MIN, groups: { muse: { windows: { '5h': win(1, 5), weekly: win(0.9, 50) } } } }
 
 const claude = (model, effort, intelligence, costPerTaskUsd) => ({ id: `claude/${model}@${effort}`, harness: 'claude', model, family: `claude-${model}-5-5`, effort, group: null, intelligence, costPerTaskUsd })
 const external = (harness, model, effort, group, intelligence, costPerTaskUsd, extra = {}) => ({ id: `${harness}/${model}@${effort}`, harness, model, family: model, effort, group, intelligence, costPerTaskUsd, ...extra })
@@ -43,8 +45,9 @@ const PAIRS = [
 ]
 const SONNET_HIGH = { model: 'sonnet', effort: 'high' }
 
-// The router's dependencies (lib/route.js resolve) for one decision, with a clock that the wait moves.
-function setup({ readings = { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK }, marks = [], installed = () => true, pairs = PAIRS, settings = {}, lift = null, slow = undefined } = {}) {
+// The router's dependencies (lib/route.js resolve) for one decision, with a clock that the wait moves. The default
+// readings are valid for every harness, so nothing is renewed and nothing is waited for unless the test says so.
+function setup({ readings = { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK, muse: MUSE }, marks = [], installed = () => true, pairs = PAIRS, settings = {}, lift = null, slow = undefined } = {}) {
   const clock = { t: NOW }
   const renewed = []
   const lifted = []
@@ -70,16 +73,16 @@ test('the harnesses a delegate may run on are agy, grok and muse, and codex and 
 })
 
 test('the quota that renews first takes the call, at its cheapest pair that reaches the points', async () => {
-  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK } })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK, muse: MUSE } })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
-  assert.equal(idOf(step), 'grok/grok-4.7@high', 'grok renews in 29.6 h, agy in 40 h and 60 h')
+  assert.equal(idOf(step), 'grok/grok-4.7@high', 'grok renews in 29.6 h, agy in 40 h and 60 h, muse in 50 h')
   assert.deepEqual(s.renewed, [], 'the readings are valid: nothing is renewed')
   assert.equal(step.waitedMs, 0)
   const next = step.quota.filter((c) => c.outcome === 'next').map((c) => c.id)
-  assert.deepEqual(next, ['agy/claude-sonnet-5-5@high', 'agy/gemini-4-argon@high', 'muse/muse-wonder-full-1.0@high'], 'the rest in the order the function gives')
+  assert.deepEqual(next, ['agy/claude-sonnet-5-5@high', 'muse/muse-wonder-full-1.0@high', 'agy/gemini-4-argon@high'], 'the rest in the order the function gives')
   assert.ok(step.reason.startsWith('grok/grok-4.7@high:'), step.reason)
 
-  const gem = setup({ readings: { agy: agy({ ...geminiKeys(0.8, 10), claude: weekly(0.9, 40) }), grok: GROK } })
+  const gem = setup({ readings: { agy: agy({ ...geminiKeys(0.8, 10), claude: weekly(0.9, 40) }), grok: GROK, muse: MUSE } })
   assert.equal(idOf(await pairStep(gem.d, gem.merged, { reference: SONNET_HIGH })), 'agy/gemini-4-argon@high', 'the Gemini group renews first, in 10 h')
 })
 
@@ -98,18 +101,29 @@ test('a group under the reserve is out, and the next quota takes the call', asyn
 })
 
 test('Muse takes a call when its quota is the one that renews first, or the only one left', async () => {
-  const only = setup({ settings: { harnesses: ['muse'] }, readings: { agy: null, grok: null, muse: null } })
+  const only = setup({ settings: { harnesses: ['muse'] }, readings: { agy: null, grok: null, muse: MUSE } })
   const step = await pairStep(only.d, only.merged, { reference: { model: 'opus', effort: 'high' } })
-  assert.equal(idOf(step), 'muse/muse-wonder-full-1.0@high', 'a pair with no cost enters on the owner\'s word, and a harness with no reading is unknown, not dry')
-  assert.deepEqual(only.renewed, [], 'Muse has no reading to renew')
+  assert.equal(idOf(step), 'muse/muse-wonder-full-1.0@high', 'a pair with no cost enters on the owner\'s word')
+  assert.deepEqual(only.renewed, [], 'the reading is valid: nothing is renewed')
 
-  const all = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK, muse: null } })
+  const missing = setup({ settings: { harnesses: ['muse'] }, readings: { agy: null, grok: null, muse: null } })
+  const left = await pairStep(missing.d, missing.merged, { reference: { model: 'opus', effort: 'high' } })
+  assert.equal(left.pick, null, 'a missing muse reading is renewed in the background and waited for, not used as unknown')
+  assert.deepEqual(missing.renewed, ['muse'])
+  assert.equal(left.waitedMs, MUSE_WAIT_MS)
+  assert.equal(left.quota.find((c) => c.harness === 'muse').why, 'no-reading')
+  assert.equal(left.quota.find((c) => c.harness === 'muse').renewal, 'started')
+
+  const unknown = { readAt: NOW - MIN, groups: { muse: { unknown: true, windows: {} } } }
+  const all = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK, muse: unknown } })
   const after = await pairStep(all.d, all.merged, { reference: { model: 'opus', effort: 'high' } })
   assert.equal(idOf(after), 'agy/gemini-4-argon@high', 'a quota that renews at a known time goes before one that does not say')
 
-  const heldMark = [{ harness: 'muse', group: 'muse', at: NOW - H, until: NOW + H, source: 'router', reason: 'quota refusal' }]
-  const held = setup({ settings: { harnesses: ['muse'] }, readings: { muse: null }, marks: heldMark })
-  assert.equal(idOf(await pairStep(held.d, held.merged, { reference: { model: 'opus', effort: 'high' } })), null, 'a refusal mark holds Muse as it holds agy')
+  const heldMark = [{ harness: 'muse', group: 'muse', at: NOW, until: NOW + H, source: 'router', reason: 'quota refusal' }]
+  const held = setup({ settings: { harnesses: ['muse'] }, readings: { muse: MUSE }, marks: heldMark })
+  const refused = await pairStep(held.d, held.merged, { reference: { model: 'opus', effort: 'high' } })
+  assert.equal(idOf(refused), null, 'a refusal mark holds Muse as it holds agy')
+  assert.equal(refused.quota.find((c) => c.harness === 'muse').why, 'dry', 'held by the mark, not left out for no reading')
 })
 
 test('a harness that is not enabled or not installed gives nothing, and codex is never a candidate', async () => {
@@ -135,21 +149,43 @@ test('R23: a harness with no valid reading is renewed once, waited for up to the
   assert.equal(step.quota.find((c) => c.harness === 'agy').renewal, 'started')
   assert.match(step.reason, /no external pair is a candidate|native/)
 
-  // Muse, which keeps no reading, is never stale: it takes the call while agy and grok are being renewed.
-  const withMuse = setup({ readings: { agy: agy({ ...geminiKeys(1, 5) }, NOW - 11 * MIN), grok: null } })
-  assert.equal(idOf(await pairStep(withMuse.d, withMuse.merged, { reference: SONNET_HIGH })), 'muse/muse-wonder-full-1.0@high')
+  // Muse is external: its missing reading is renewed in the background and waited for, like the others.
+  const withMuse = setup({ readings: { agy: agy({ ...geminiKeys(1, 5) }, NOW - 11 * MIN), grok: null, muse: null } })
+  const waited = await pairStep(withMuse.d, withMuse.merged, { reference: SONNET_HIGH })
+  assert.equal(waited.pick, null)
+  assert.deepEqual(withMuse.renewed, ['agy', 'grok', 'muse'])
+  assert.equal(waited.waitedMs, MUSE_WAIT_MS, 'muse is among the waiting: the wait is at least 20 s')
+  for (const c of waited.quota.filter((e) => ['agy', 'grok', 'muse'].includes(e.harness))) assert.equal(c.why, 'no-reading', c.id)
 
-  const short = setup({ readings: { agy: null, grok: null } })
+  const short = setup({ settings: { harnesses: ['agy', 'grok'] }, readings: { agy: null, grok: null } })
   await pairStep(short.d, { ...short.merged, deadlines: { haikuMs: 8000, jevMs: 3000, quotaMs: 1000 } }, { reference: SONNET_HIGH })
   assert.equal(short.clock.t - NOW, 1000)
 })
 
 test('R23: a renewal that lands inside the wait makes the harness a candidate for this very decision', async () => {
-  const s = setup({ readings: () => (s.clock.t > NOW ? { agy: agy({ ...geminiKeys(0.8, 10), claude: weekly(0.9, 40) }, NOW), grok: GROK } : { agy: agy({ ...geminiKeys(0.8, 10) }, NOW - 11 * MIN), grok: GROK }) })
+  const s = setup({ readings: () => (s.clock.t > NOW ? { agy: agy({ ...geminiKeys(0.8, 10), claude: weekly(0.9, 40) }, NOW), grok: GROK, muse: MUSE } : { agy: agy({ ...geminiKeys(0.8, 10) }, NOW - 11 * MIN), grok: GROK, muse: MUSE }) })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
   assert.deepEqual(s.renewed, ['agy'])
   assert.equal(idOf(step), 'agy/gemini-4-argon@high')
   assert.equal(step.waitedMs, 250)
+})
+
+test('a muse renewal that lands inside the 20 s wait makes muse a candidate of this very decision, and one that never lands leaves it out', async () => {
+  assert.equal(MUSE_WAIT_MS, 20000)
+  const landed = setup({ settings: { harnesses: ['muse'] }, readings: () => (landed.clock.t >= NOW + 8000 ? { muse: MUSE } : { muse: null }) })
+  const step = await pairStep(landed.d, landed.merged, { reference: { model: 'opus', effort: 'high' } })
+  assert.deepEqual(landed.renewed, ['muse'])
+  assert.equal(step.waitedMs, 8000, 'the wait ends when the reading lands, past the quota limit of 3 s')
+  assert.equal(idOf(step), 'muse/muse-wonder-full-1.0@high')
+
+  const never = setup({ settings: { harnesses: ['muse'] }, readings: { muse: null } })
+  const left = await pairStep(never.d, never.merged, { reference: { model: 'opus', effort: 'high' } })
+  assert.equal(left.pick, null)
+  assert.deepEqual(never.renewed, ['muse'])
+  assert.equal(left.waitedMs, MUSE_WAIT_MS)
+  assert.equal(never.clock.t - NOW, MUSE_WAIT_MS)
+  assert.equal(left.quota.find((c) => c.harness === 'muse').why, 'no-reading')
+  assert.equal(left.quota.find((c) => c.harness === 'muse').renewal, 'started')
 })
 
 test('issue 025: a stale harness that cannot serve the call is not waited for', async () => {
@@ -164,14 +200,15 @@ test('issue 025: a stale harness that cannot serve the call is not waited for', 
 
 test('issue 025: a stale agy whose every group is marked dry is neither renewed nor waited for, and a fitting stale harness still is', async () => {
   const refusal = (group) => ({ harness: 'agy', group, at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' })
-  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 5), claude: weekly(0.9, 80) }, NOW - 11 * MIN), grok: null }, marks: ['argon', 'flash', 'claude'].map(refusal) })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 5), claude: weekly(0.9, 80) }, NOW - 11 * MIN), grok: null, muse: null }, marks: ['argon', 'flash', 'claude'].map(refusal) })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
-  assert.deepEqual(s.renewed, ['grok'], 'agy is left out of the renewal, grok is renewed')
-  assert.equal(step.waitedMs, 3000, 'the wait is for grok alone, up to the quota limit')
-  assert.equal(s.clock.t - NOW, 3000)
+  assert.deepEqual(s.renewed, ['grok', 'muse'], 'agy is left out of the renewal, grok and muse are renewed')
+  assert.equal(step.waitedMs, MUSE_WAIT_MS, 'the wait is for grok and muse, at least 20 s while muse is among them')
+  assert.equal(s.clock.t - NOW, MUSE_WAIT_MS)
   assert.equal(step.quota.find((c) => c.harness === 'agy' && c.group === 'argon').why, 'no-reading')
   assert.equal(step.quota.find((c) => c.harness === 'agy').renewal, undefined)
   assert.equal(step.quota.find((c) => c.harness === 'grok').renewal, 'started')
+  assert.equal(step.quota.find((c) => c.harness === 'muse').renewal, 'started')
 })
 
 test('issue 025: a stale agy with no rung at the level is neither renewed nor waited for, with a reference above every agy pair', async () => {
@@ -211,8 +248,10 @@ test('a reference the table lacks gives no pick and names the error, and never t
   assert.match(step.error, /no reference pair for sonnet minimal/)
 })
 
-test('every harness of the staleness rule is one the router reads: muse has no reading to go stale', () => {
-  assert.deepEqual(staleHarnesses({ readings: {}, config, harnesses: ['muse'], now: NOW }), [])
+test('every harness of the staleness rule is one the router reads: a missing or old muse reading is stale', () => {
+  assert.deepEqual(staleHarnesses({ readings: {}, config, harnesses: ['muse'], now: NOW }), ['muse'])
+  assert.deepEqual(staleHarnesses({ readings: { muse: { readAt: NOW - 31 * MIN, groups: {} } }, config, harnesses: ['muse'], now: NOW }), ['muse'])
+  assert.deepEqual(staleHarnesses({ readings: { muse: MUSE }, config, harnesses: ['muse'], now: NOW }), [])
 })
 
 test('a fresh reading that lacks a group of the table is no whole reading: the harness is renewed, waited for and left out', async () => {
@@ -259,6 +298,7 @@ test('issue 035: a pair with a slow mark is out of the choice, shows as excluded
   assert.equal(grok.outcome, 'passed')
   assert.equal(grok.why, 'excluded')
   assert.ok(!step.quota.some((c) => c.outcome === 'next' && c.id === 'grok/grok-4.7@high'), 'the alternates saved for the chain never hold it')
+  assert.deepEqual(s.renewed, [], 'the readings are valid: nothing is renewed')
   assert.equal(step.waitedMs, 0)
 })
 
@@ -272,7 +312,7 @@ test('issue 035: the slow mark is the pair\'s, not the group\'s: the same harnes
 
 test('issue 035: the harnesses that serve are found with the slow pairs excluded too, so a harness left with nothing is not waited for', async () => {
   // Grok has no reading and its only pair is slow: the wait would be for a reading that cannot change the pick.
-  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: null }, slow: () => ['grok/grok-4.7@high'] })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: null, muse: MUSE }, slow: () => ['grok/grok-4.7@high'] })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
   assert.equal(s.clock.t, NOW, 'no wait')
   assert.deepEqual(s.renewed, [], 'no renewal starts: its only pair is slow, so no reading of grok can change the pick')
@@ -294,7 +334,7 @@ test('the readings are the ones peekReadings finds, and no adapter is asked for 
     quota() {
       asked.push(name)
       if (name === 'agy') throw new Error('must not run: it launches agy /usage')
-      if (name === 'muse') return { groups: { muse: { unknown: true, windows: {} } } }
+      if (name === 'muse') return { groups: { muse: { windows: { '5h': win(1, 5), weekly: win(0.9, 50) }, source: { command: 'muse exec --json', ageMinutes: 2 } } } }
       return { groups: { grok: { ...weekly(0.95, 29.6), source: { ageMinutes: 2 } } } }
     },
   })
@@ -302,8 +342,10 @@ test('the readings are the ones peekReadings finds, and no adapter is asked for 
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
   assert.equal(idOf(step), 'grok/grok-4.7@high', 'agy has no saved reading: it is stale, renewed in the background and left out')
   assert.deepEqual(s.renewed, ['agy'])
+  assert.equal(step.waitedMs, 3000, 'muse is not among the waiting: the wait stays the quota limit')
   assert.ok(!asked.includes('agy'), 'the quota of agy was never asked')
   assert.ok(!step.quota.some((c) => c.harness === 'agy' && c.why !== 'no-reading'))
+  assert.ok(!step.quota.some((c) => c.harness === 'muse' && c.why === 'no-reading'), 'muse has a reading: it is a candidate')
 })
 
 test('every external pair of the table can run as a delegate: its model and its group are in the lane table of its harness', () => {

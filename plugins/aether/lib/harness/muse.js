@@ -1,7 +1,9 @@
 'use strict'
 
-// The Muse harness: one headless `muse exec --json` turn, and a run judged from the JSONL records it prints. Muse
-// has no quota command, so the adapter keeps the last allowance a call reported, and quota() reads that.
+// The Muse harness: one headless `muse exec --json` turn, and a run judged from the JSONL records it prints. `muse
+// usage` exists but only repeats the last observation a model call made in the same process, so one minimal call
+// renews the reading (lib/harness/muse-quota.js): the adapter keeps the last allowance a call reported, and quota()
+// reads that.
 // Family: harness.
 
 const fs = require('node:fs')
@@ -122,13 +124,11 @@ function usageOf(record) {
     cacheRead: sum('cacheRead'),
     total: input + output,
     models: perModel,
-    // Assumed from the MSP schema, not yet seen in a real call (spec R27).
     allowance: isPlainObject(payload.allowance) ? payload.allowance : null,
   }
 }
 
 // A window of an allowance as { usedPercent, resetsAtMs }, or null when it is not readable.
-// Assumed from the MSP schema, not yet seen in a real call (spec R27).
 function windowOf(value) {
   const usedPercent = field(value, 'usedPercent', 'used_percent')
   const resetsAtMs = field(value, 'resetsAtMs', 'resets_at_ms')
@@ -136,7 +136,6 @@ function windowOf(value) {
 }
 
 // The 5 h and weekly windows of an allowance, or null when neither is readable.
-// Assumed from the MSP schema, not yet seen in a real call (spec R27).
 function windowsOf(allowance) {
   if (!isPlainObject(allowance)) return null
   const window = windowOf(allowance.window)
@@ -240,6 +239,10 @@ function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = p
       }
     },
 
+    // Keeps one observation of the allowance, for a caller that parsed with observe: false and takes the reading
+    // only from a clean turn (lib/harness/muse-quota.js).
+    observe,
+
     // The model is the bare model id.
     modelArg: ({ model }) => model,
 
@@ -264,8 +267,11 @@ function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = p
     // The last terminal record decides the turn. A completed turn that exited 0 with the object and every required
     // field is clean; any other fails by the first rule that holds: the quota data of the failure; a turn that did
     // not complete; an exit that is not 0; no terminal record; no text; no object; a missing field. The usage is
-    // kept whatever the verdict, and the allowance it carries is observed.
-    parse(raw, { required = [] } = {}) {
+    // kept whatever the verdict, and the allowance it carries is observed, unless observe is false: then a caller
+    // that only keeps the reading of a clean turn observes it itself (lib/harness/muse-quota.js). With needsAnswer
+    // false the text is not judged: a completed turn that exited 0 is clean whatever it says, for a renewal that
+    // only wants the allowance.
+    parse(raw, { required = [], observe: keep = true, needsAnswer = true } = {}) {
       const stdout = typeof raw?.stdout === 'string' ? raw.stdout : ''
       const stderr = typeof raw?.stderr === 'string' ? raw.stderr : ''
       const exitCode = raw?.exitCode
@@ -280,8 +286,10 @@ function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = p
       const windows = windowsOf(usage.allowance)
 
       // The observation: an allowance that reads is kept, and a quota failure replaces what was kept before it.
-      if (quota !== null) observe(windows?.window ?? null, windows?.weekly ?? null)
-      else if (windows !== null) observe(windows.window, windows.weekly)
+      if (keep) {
+        if (quota !== null) observe(windows?.window ?? null, windows?.weekly ?? null)
+        else if (windows !== null) observe(windows.window, windows.weekly)
+      }
 
       const failed = (reason) => ({ clean: false, reason, structured: null, usage, conversation: null })
       if (quota !== null) return failed(quotaReason(quota))
@@ -296,6 +304,7 @@ function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = p
         return failed(`exit ${code}${line === undefined ? '' : `: ${brief(line, LINE_LIMIT)}`}`)
       }
       if (terminal === null) return failed('unreadable output')
+      if (!needsAnswer) return { clean: true, reason: null, structured: null, usage, conversation: null }
       const text = typeof payload.text === 'string' ? payload.text : ''
       if (text.trim() === '') return failed('no result')
       const structured = extractJsonObject(text)
@@ -312,4 +321,4 @@ function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = p
   }
 }
 
-module.exports = { createMuse }
+module.exports = { createMuse, readingOf, windowsOf, QUOTA_SOURCE }

@@ -305,6 +305,16 @@ test('argv rewrites a nested schema file into strict form and returns the same a
   assert.equal(written.properties.findings.items.properties.title.description, 'the title')
 })
 
+test('a renewal judges the run, not the answer: needsAnswer accepts prose, observe: false keeps nothing', (t) => {
+  const { dataDir, muse } = build(t)
+  const raw = { stdout: out(completed('ok'), usage(allowance(72, 40))), stderr: '', exitCode: 0 }
+  assert.equal(run(muse, raw).clean, false, 'prose is no structured output to a call')
+  const judged = muse.parse(raw, { observe: false, needsAnswer: false })
+  assert.deepEqual([judged.clean, judged.reason, judged.structured], [true, null, null])
+  assert.equal(muse.quota().groups.muse.unknown, true, 'judging keeps nothing')
+  assert.equal(fs.existsSync(observedFile(dataDir)), false)
+})
+
 test('argv with a missing schema path or a file that is not JSON returns the argument list and leaves the file', (t) => {
   const { muse } = build(t, { command: '/opt/muse' })
   const missing = path.join(tempDir(t, 'muse-schema-'), 'missing.json')

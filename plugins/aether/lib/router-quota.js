@@ -11,8 +11,11 @@ const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 const { cacheFile, DEFAULT_LIFE_MINUTES, hasReset } = require('./lane-readings.js')
 
 // The harnesses whose quota reading the router keeps and renews.
-const EXTERNAL = ['agy', 'grok']
+const EXTERNAL = ['agy', 'grok', 'muse']
 const MINUTE_MS = 60000
+// How long a decision waits when muse is among the harnesses it waits for: muse's renewal is one minimal call of
+// 5 to 12 seconds, past the quota limit of 3 seconds, so the wait is at least this.
+const MUSE_WAIT_MS = 20000
 
 function lifeMs(config, harness) {
   const minutes = config?.harnesses?.[harness]?.quotaLifeMinutes
@@ -74,7 +77,7 @@ function loggedReading(adapter, now) {
 }
 
 // The readings that already exist for the harnesses named: for each, the newer of the one its adapter keeps (agy's saved
-// reading, grok's log) and the router's own. No process is launched (R23).
+// reading, grok's log, muse's observed file) and the router's own. No process is launched (R23).
 function peekReadings({ dataDir, config, harnesses, createAdapter = defaultCreateAdapter, now = Date.now() }) {
   const result = {}
   for (const harness of harnesses) {
@@ -111,4 +114,4 @@ function staleHarnesses({ readings: byHarness, config, harnesses, now }) {
     .filter((name) => isStale(byHarness?.[name], lifeMs(config, name), now))
 }
 
-module.exports = { EXTERNAL, lifeMs, readingFile, peekReadings, staleHarnesses }
+module.exports = { EXTERNAL, MUSE_WAIT_MS, lifeMs, readingFile, peekReadings, staleHarnesses }

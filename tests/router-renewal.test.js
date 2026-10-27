@@ -16,7 +16,7 @@ const clock = () => { let t = 0; return { now: () => t, sleep: async (ms) => { t
 test('renewalArgv is the renew verb of aether-delegate, which saves the reading where the pair choice reads it', () => {
   assert.deepEqual(renewal.renewalArgv('grok'), [process.execPath, path.join(PLUGIN, 'bin', 'aether-delegate'), 'renew', '--harness', 'grok'])
   assert.deepEqual(renewal.renewalArgv('agy', { node: 'node', pluginRoot: '/p' }), ['node', '/p/bin/aether-delegate', 'renew', '--harness', 'agy'])
-  assert.deepEqual(renewal.RENEWABLE, ['agy', 'grok'])
+  assert.deepEqual(renewal.RENEWABLE, ['agy', 'grok', 'muse'])
 })
 
 const config = lanes.loadConfig(lanes.CONFIG_FILE)
@@ -65,13 +65,34 @@ test('renewReading takes agy\'s reading fresh through readGroups, and saves it t
   assert.deepEqual(quota.staleHarnesses({ readings: peek(dataDir, NOW + 10 * MIN), config, harnesses: ['agy'], now: NOW + 10 * MIN }), ['agy'])
 })
 
-test('renewReading writes nothing when no reading comes, and renews only agy and grok', async (t) => {
+test('renewReading saves muse\'s refreshed reading where the router reads it, shared by the groups of its entry', async (t) => {
+  const dataDir = tempDir(t)
+  const reading = {
+    windows: {
+      '5h': { remaining: 0.28, resetsAt: new Date(NOW + 3 * 3600 * SEC).toISOString() },
+      weekly: { remaining: 0.6, resetsAt: new Date(NOW + 5 * 24 * 3600 * SEC).toISOString() },
+    },
+    source: { command: 'muse exec --json', method: 'exec', ts: new Date(NOW).toISOString(), ageMinutes: 0 },
+  }
+  const asked = []
+  const refreshers = { muse: async (settings) => { asked.push(settings); return reading } }
+  const readGroups = () => { throw new Error('the observed file keeps the reading: the adapter is not asked') }
+  const saved = await renewal.renewReading({ harness: 'muse', settings: config.harnesses.muse, dataDir, now: () => NOW, refreshers, readGroups })
+  assert.deepEqual(saved, { readAt: NOW, groups: { muse: reading } })
+  assert.deepEqual(asked, [config.harnesses.muse])
+  const file = quota.readingFile(dataDir, 'muse')
+  assert.equal(file, path.join(dataDir, 'router', 'readings', 'muse.json'))
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { readAt: NOW, groups: { muse: reading } })
+  assert.deepEqual(fs.readdirSync(path.dirname(file)), ['muse.json'], 'no temporary file is left')
+})
+
+test('renewReading writes nothing when no reading comes, and renews only agy, grok and muse', async (t) => {
   const dataDir = tempDir(t)
   await assert.rejects(renewal.renewReading({ harness: 'grok', settings: config.harnesses.grok, dataDir, now: () => NOW, refreshers: { grok: async () => null } }), /no new reading/)
   await assert.rejects(renewal.renewReading({ harness: 'grok', settings: config.harnesses.grok, dataDir, now: () => NOW, refreshers: { grok: async () => { throw new Error('acp down') } } }), /acp down/)
   const failing = () => { throw new Error('agy /usage failed') }
   await assert.rejects(renewal.renewReading({ harness: 'agy', settings: config.harnesses.agy, dataDir, now: () => NOW, createAdapter: () => ({}), readGroups: failing, refreshers: {} }), /agy \/usage failed/)
-  await assert.rejects(renewal.renewReading({ harness: 'codex', settings: config.harnesses.codex, dataDir, now: () => NOW }), /agy or grok/)
+  await assert.rejects(renewal.renewReading({ harness: 'codex', settings: config.harnesses.codex, dataDir, now: () => NOW }), /agy, grok or muse/)
   await assert.rejects(renewal.renewReading({ harness: 'agy', settings: undefined, dataDir, now: () => NOW }), /lane table/)
   assert.equal(fs.existsSync(path.join(dataDir, 'router', 'readings')), false)
 })
@@ -118,7 +139,7 @@ test('two decisions at once start one renewal: the lock is taken before the proc
   assert.deepEqual(nested, { started: false, running: true })
 })
 
-test('a process that cannot start leaves no lock, and a harness that is not agy or grok is never renewed', (t) => {
+test('a process that cannot start leaves no lock, and a harness that is not agy, grok or muse is never renewed', (t) => {
   const dataDir = tempDir(t)
   const failed = renewal.startRenewal({ dataDir, harness: 'agy', now: NOW, spawn: () => { throw new Error('ENOENT') } })
   assert.deepEqual(failed, { started: false, running: false })

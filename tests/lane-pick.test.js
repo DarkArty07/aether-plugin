@@ -161,6 +161,24 @@ test('the refreshed reading of grok is saved, so a later pick within its life do
   assert.equal(asked, 2, 'past its life it is refreshed again')
 })
 
+test('a pick renews a stale muse reading through its refresher, the way it renews grok', async (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const config = { reserve: 0.05, harnesses: { muse: { command: 'muse', quotaLifeMinutes: 30, groups: { muse: 'Muse' }, models: {} } } }
+  const NEW = { windows: {}, source: { command: 'muse exec --json', method: 'exec', ageMinutes: 0 } }
+  let asked = 0
+  const deps = {
+    dataDir,
+    createAdapter: () => ({ quotaCost: 'log', quota: () => ({ groups: { muse: { unknown: true, windows: {} } } }) }),
+    refreshStale: async () => (asked++, { muse: { refreshed: true, method: 'exec', reading: NEW } }),
+  }
+  const now = Date.now()
+  assert.deepEqual(await latestReadings(config, ['muse'], { ...deps, now }), { muse: NEW })
+  assert.equal(asked, 1)
+  assert.ok(fs.existsSync(readingFile(dataDir, 'muse')), 'the reading is saved where the router reads it')
+  assert.deepEqual(await latestReadings(config, ['muse'], { ...deps, now: now + 10 * 60 * 1000 }), { muse: NEW })
+  assert.equal(asked, 1, 'a second process within quotaLifeMinutes does not refresh again')
+})
+
 test('C16: pick gives the Muse pair, by the owner decision, to an Opus high call, and nothing to an Opus xhigh one', (t) => {
   const FAKE_MUSE = path.join(__dirname, 'fixtures', 'fake-muse.js')
   fs.chmodSync(FAKE_MUSE, 0o755)

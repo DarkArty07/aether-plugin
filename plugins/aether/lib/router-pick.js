@@ -8,7 +8,7 @@ const { isObject } = require('./common.js')
 const laneMarks = require('./lane-marks.js')
 const { groupView } = require('./lane-quota.js')
 const { choose } = require('./superdelegation.js')
-const { lifeMs, staleHarnesses } = require('./router-quota.js')
+const { lifeMs, staleHarnesses, MUSE_WAIT_MS } = require('./router-quota.js')
 const { waitForReading } = require('./router-renewal.js')
 
 // The harnesses that can run a delegate (lib/delegate-calls.js): codex and cursor cannot.
@@ -93,9 +93,12 @@ async function pairStep(d, settings, { reference }) {
     }
     let waitedMs = 0
     if (waiting.length > 0) {
+      // Muse's renewal is one minimal call of 5 to 12 seconds, past the quota limit: when muse is among the
+      // waiting, the wait is at least MUSE_WAIT_MS. The wait of agy and grok stays the quota limit.
+      const waitMs = waiting.includes('muse') ? Math.max(settings.deadlines.quotaMs, MUSE_WAIT_MS) : settings.deadlines.quotaMs
       const waited = await waitForReading({
         isValid: () => unreadable(waiting).length === 0,
-        waitMs: settings.deadlines.quotaMs,
+        waitMs,
         now: d.now,
         sleep: d.sleep,
       })
