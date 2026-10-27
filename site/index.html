@@ -24,13 +24,13 @@
 <meta name="twitter:title" content="Aether Plugin · modo Aether para Claude Code">
 <meta name="twitter:description" content="Aether es un plugin de Claude Code que añade un modo Aether opcional: un Lead convierte tu intención en una spec y un plan revisados, los construye con un swarm paralelo y te informa en un solo brief.">
 <meta name="twitter:image" content="https://darkarty07.github.io/aether-plugin/assets/img/social.png">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 <!-- Without JavaScript the Spanish copy is already in the HTML; show everything and hide the controls that need a script. -->
 <noscript><style>
-.reveal,.hero-img,#mascot{opacity:1!important;transform:none!important}
+.reveal,.hero-img{opacity:1!important;transform:none!important}
 .t-ghost{visibility:visible!important}
 img.px[data-src]{display:none!important}
-.lang,.menu-btn,.motion-box,#copybtn,.hero-win .bar-btns,.tl-detail,.brief-win,.term-win,.crabs-panel,#mascot-still{display:none!important}
+.lang,.menu-btn,.motion-box,#copybtn,.tl-detail,.brief-win,.term-win,.crabs-panel{display:none!important}
 </style></noscript>
 </head>
 <body>
@@ -87,20 +87,8 @@ img.px[data-src]{display:none!important}
       </ul>
     </div>
 
-    <div class="win hero-win" id="herowin">
-      <span class="win-glow" aria-hidden="true"></span>
-      <div class="win-title"><span>AETHER.EXE</span><i class="boxes" aria-hidden="true"><b></b><b></b><b></b></i></div>
-      <div class="win-body hero-win-body">
-        <img decoding="async" id="mascot" src="assets/img/mascot-360.gif?v=8" width="360" height="360" data-i18n-alt="hero.mascot.alt" alt="Clawd, una mascota pixelada, se satura de tareas. Un comando /aether y un rayo cósmico la vuelven una galaxia morada que reparte el trabajo entre tres subagentes, muestra un brief en un monitor retro, espera un sí, hace el merge y vuelve a su escritorio">
-        <canvas id="mascot-still" width="360" height="360" hidden aria-hidden="true"></canvas>
-      </div>
-      <div class="win-bar">
-        <span id="winmsg" data-i18n="hero.bar">NEEDS YOUR YES</span>
-        <span class="bar-btns"><button type="button" class="b-yes" id="b-yes">YES</button><button type="button" class="b-later" id="b-later">LATER</button></span>
-      </div>
-    </div>
-
     <div class="hero-bottom">
+      <div class="walk"><img class="px" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/walk.gif?v=9" width="1360" height="120" data-i18n-alt="hero.walk.alt" alt="Clawd camina tranquilo, de izquierda a derecha, sobre la línea y deja una nota musical por el camino" style="aspect-ratio:1360/120"><noscript><img class="px" decoding="async" src="assets/img/px/walk.gif?v=9" width="1360" height="120" alt="Clawd camina tranquilo, de izquierda a derecha, sobre la línea y deja una nota musical por el camino"></noscript></div>
       <div class="pgrid" aria-hidden="true"></div>
       <ol class="steps4" aria-label="Spec, plan, swarm, brief"><li>#1 SPEC</li><li>#2 PLAN</li><li>#3 SWARM</li><li>#4 BRIEF</li></ol>
     </div>
@@ -430,6 +418,6 @@ img.px[data-src]{display:none!important}
   <button type="button" class="motion" id="motion" aria-pressed="false"><span class="motion-i" aria-hidden="true">❚❚</span><span id="motion-l" data-i18n="motion.pause">Pausar animación</span></button>
 </div>
 
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

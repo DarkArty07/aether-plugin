@@ -24,10 +24,7 @@
       'hero.lead': 'Añade un <strong>modo Aether</strong> opcional: un orquestador responsable, el Lead, convierte tu intención en una spec y un plan revisados, los construye con un swarm paralelo de agentes y con los otros planes de código que ya pagas, y te informa en un solo brief.',
       'hero.note': '<code>claude</code> a secas sigue siendo el modo normal.',
       'hero.cta': 'Cómo funciona ↓',
-      'hero.bar': 'NEEDS YOUR YES',
-      'hero.yes': 'SÍ · SE EJECUTA UNA VEZ',
-      'hero.later': 'QUEDA EN LA LISTA',
-      'hero.mascot.alt': 'Clawd, una mascota pixelada, se satura de tareas. Un comando /aether y un rayo cósmico la vuelven una galaxia morada que reparte el trabajo entre tres subagentes, muestra un brief en un monitor retro, espera un sí, hace el merge y vuelve a su escritorio',
+      'hero.walk.alt': 'Clawd camina tranquilo, de izquierda a derecha, sobre la línea y deja una nota musical por el camino',
 
       'metas.tag': '// 01 · METAS',
       'metas.title': 'Cinco metas.<br><em>Una sigla.</em>',
@@ -188,10 +185,7 @@
       'hero.lead': 'It adds an opt-in <strong>Aether mode</strong>: an accountable orchestrator, the Lead, turns your intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans you already pay for, and reports in one brief.',
       'hero.note': 'Plain <code>claude</code> stays normal mode.',
       'hero.cta': 'How it works ↓',
-      'hero.bar': 'NEEDS YOUR YES',
-      'hero.yes': 'YES · RUNS ONCE',
-      'hero.later': 'STAYS ON THE LIST',
-      'hero.mascot.alt': 'Clawd, a pixel mascot, is swamped with tasks. A /aether command and a cosmic bolt turn it into a purple galaxy that hands the work to three subagents, shows a brief on a retro monitor, waits for a yes, merges and goes back to its desk',
+      'hero.walk.alt': 'Clawd strolls from left to right along the line and leaves a music note on the way',
 
       'metas.tag': '// 01 · GOALS',
       'metas.title': 'Five goals.<br><em>One acronym.</em>',
@@ -459,24 +453,6 @@
   function totalChars(lines) { return lines.reduce(function (a, l) { return a + l.length + 1; }, 0); }
 
   /* ------------------------------------------------------------------ */
-  /* Mascot freeze (pause the GIF by painting its current frame)         */
-  /* ------------------------------------------------------------------ */
-  var mascot = $('#mascot'), still = $('#mascot-still');
-  function freezeMascot(on) {
-    if (!mascot || !still) return;
-    if (!on) { still.hidden = true; mascot.hidden = false; return; }
-    function draw() {
-      try {
-        var c = still.getContext('2d');
-        c.clearRect(0, 0, still.width, still.height);
-        c.drawImage(mascot, 0, 0, still.width, still.height);
-        still.hidden = false; mascot.hidden = true;
-      } catch (e) { /* keep the GIF */ }
-    }
-    if (mascot.complete && mascot.naturalWidth) draw(); else mascot.addEventListener('load', function once() { mascot.removeEventListener('load', once); if (!S.run) draw(); });
-  }
-
-  /* ------------------------------------------------------------------ */
   /* Pixel GIFs (img.px)                                                 */
   /* ------------------------------------------------------------------ */
   /* A GIF starts when it comes into view, so its story begins at its first frame, and it is not fetched before.
@@ -535,7 +511,6 @@
     $('.motion-i', b).textContent = on ? '❚❚' : '▶';
     $('#motion-l').textContent = t(on ? 'motion.pause' : 'motion.play');
     updateNote();
-    freezeMascot(m !== 'full');
     pxImgs.forEach(pxSync);
     comps.forEach(function (c) { c.done = false; c.sync(); });
     if (on) { revealCheck(); }
@@ -586,22 +561,12 @@
     img.addEventListener('error', ok);
   }
   whenReady($('.hero-img'));
-  whenReady($('#mascot'));
 
   /* Looping CSS animations pause while their section is off screen (.off, see style.css). */
   var offIO = new IntersectionObserver(function (es) {
     es.forEach(function (e) { e.target.classList.toggle('off', !e.isIntersecting); });
   }, { rootMargin: '80px 0px' });
   $$('main > section').forEach(function (s) { offIO.observe(s); });
-
-  var winmsg = $('#winmsg'), winTimer = null;
-  function winSay(key) {
-    winmsg.textContent = t(key);
-    clearTimeout(winTimer);
-    winTimer = setTimeout(function () { winmsg.textContent = t('hero.bar'); }, 3200);
-  }
-  $('#b-yes').addEventListener('click', function () { winSay('hero.yes'); });
-  $('#b-later').addEventListener('click', function () { winSay('hero.later'); });
 
   /* ------------------------------------------------------------------ */
   /* Nav                                                                 */

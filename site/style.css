@@ -68,8 +68,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;paddin
 button.b-yes:hover{background:#fff}
 button.b-later:hover{background:var(--v2)}
 .bar-note{font-size:10px;color:var(--v2)}
-.hero-win .win-bar{letter-spacing:.08em;font-size:10px;padding:7px 8px}
-.hero-win .win-bar span:first-child{white-space:nowrap}
 
 /* dotted frame + scan */
 .frame{position:relative;border:1px dotted rgba(203,166,247,.75);background:var(--v3);overflow:hidden;aspect-ratio:640/420}
@@ -116,7 +114,7 @@ button.b-later:hover{background:var(--v2)}
 .crt{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(13,11,28,.34) 0 1px,transparent 1px 4px);opacity:.5}
 .hero-in{min-height:inherit;display:flex;flex-direction:column;padding-block:26px 20px}
 .hero-top{display:flex;justify-content:space-between;gap:20px}
-.hero-main{margin-block:auto;padding-block:36px 40px;max-width:640px}
+.hero-main{margin-block:auto;padding-block:36px max(40px,calc(min(4.7vw,64px) + 8px));max-width:640px}   /* the room under it is the walker's lane */
 .wm{display:flex;font:700 clamp(88px,15.5vw,232px)/.82 var(--display);letter-spacing:.005em;color:var(--paper);filter:drop-shadow(0 0 28px rgba(132,102,214,.4))}
 .wm span{display:block}
 .hero-sub{margin-top:20px;font:400 clamp(13px,1.5vw,19px)/1.3 var(--mono);letter-spacing:.36em;color:var(--pink)}
@@ -127,15 +125,15 @@ button.b-later:hover{background:var(--v2)}
 .hero-btns{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px;font:400 11px/1 var(--mono);letter-spacing:.16em;color:var(--dim)}
 .chips li{border:1px dotted var(--faint);padding:6px 9px}
-.hero-win{position:absolute;right:var(--gut);bottom:96px;width:clamp(290px,24vw,350px);box-shadow:0 20px 60px rgba(0,0,0,.5)}
-.hero-win-body{aspect-ratio:1/1}
-.hero-win-body img,.hero-win-body canvas{width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
 /* images fade in once decoded instead of popping in over a slow mount */
-.hero-img,#mascot{opacity:0;transition:opacity .6s ease}
-.hero-img.ready,#mascot.ready{opacity:1}
+.hero-img{opacity:0;transition:opacity .6s ease}
+.hero-img.ready{opacity:1}
 /* the window's pulse is an opacity-only glow layer, not an animated box-shadow */
 .win-glow{position:absolute;inset:0;pointer-events:none;box-shadow:0 0 22px 2px rgba(245,194,231,.35);opacity:0}
 .hero-bottom{display:flex;align-items:flex-end;gap:28px;position:relative;min-height:48px}
+/* Clawd strolls along the hero's line: a transparent GIF as wide as the content, his feet on its last row; the line is the border under it */
+.walk{position:absolute;left:0;right:0;bottom:calc(100% - 5px);border-bottom:1px solid rgba(245,194,231,.55);pointer-events:none}
+.walk img,.walk .px-still{display:block;width:100%;height:auto;image-rendering:pixelated}
 .pgrid{width:min(46vw,520px);height:46px;flex:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 660 46' preserveAspectRatio='none'%3E%3Cg stroke='%23f5c2e7' stroke-opacity='.55' stroke-width='1' fill='none'%3E%3Cpath d='M0 3H660M0 8H660M0 14H660M0 21H660M0 30H660M0 45H660'/%3E%3Cpath d='M330 0V46M330 0L240 46M330 0L120 46M330 0L0 46M330 0L420 46M330 0L540 46M330 0L660 46'/%3E%3C/g%3E%3C/svg%3E") no-repeat center/100% 100%;opacity:.7}
 .steps4{display:flex;flex-wrap:wrap;gap:10px 26px;font:400 12px/1 var(--mono);letter-spacing:.22em;color:var(--dim);padding-bottom:6px}
 
@@ -381,8 +379,7 @@ html.anim .wm span{animation:dither .85s steps(1,end) both;animation-delay:calc(
 html.anim .hero-img.ready{animation:drift 26s ease-in-out infinite alternate}
 html.anim .crt{animation:flicker 4.4s steps(1,end) infinite}
 html.anim .hero-bg::after{content:"";position:absolute;left:0;right:0;top:0;height:14vh;background:linear-gradient(180deg,transparent,rgba(203,166,247,.07),transparent);animation:rollbar 9s linear infinite;pointer-events:none;will-change:transform}
-html.anim .hero-sub,html.anim .hero-lead,html.anim .hero-note,html.anim .hero-btns,html.anim .chips,html.anim .hero-win{animation:fadeup .9s cubic-bezier(.2,.7,.2,1) both;animation-delay:1.0s}
-html.anim .hero-win{animation-delay:1.25s}
+html.anim .hero-sub,html.anim .hero-lead,html.anim .hero-note,html.anim .hero-btns,html.anim .chips{animation:fadeup .9s cubic-bezier(.2,.7,.2,1) both;animation-delay:1.0s}
 html.anim .hero-lead{animation-delay:1.15s}html.anim .hero-note{animation-delay:1.25s}html.anim .hero-btns{animation-delay:1.35s}html.anim .chips{animation-delay:1.45s}
 html.anim .win-glow{animation:glow 5s ease-in-out 2.2s infinite}
 
@@ -409,7 +406,7 @@ html.anim .off *,html.anim .off *::before,html.anim .off *::after,html.anim .off
 /* calm motion: no parallax, drift, flicker, sweeps, crawl or travelling dots; fades only */
 html.calm{scroll-behavior:auto}
 html.anim.calm .wm span{animation:fadein .6s ease both;animation-delay:calc(var(--k)*.08s + .1s)}
-html.anim.calm .hero-sub,html.anim.calm .hero-lead,html.anim.calm .hero-note,html.anim.calm .hero-btns,html.anim.calm .chips,html.anim.calm .hero-win{animation-name:fadein;animation-duration:.8s;animation-timing-function:ease}
+html.anim.calm .hero-sub,html.anim.calm .hero-lead,html.anim.calm .hero-note,html.anim.calm .hero-btns,html.anim.calm .chips{animation-name:fadein;animation-duration:.8s;animation-timing-function:ease}
 html.anim.calm .hero-img.ready,html.anim.calm .crt,html.anim.calm .hero-bg::after,html.anim.calm .win-glow,html.anim.calm .frame::before,html.anim.calm .crab,html.anim.calm .crab .claws,html.anim.calm .net .flow,html.anim.calm .caret{animation:none}
 html.anim.calm .hero-bg::after{display:none}
 html.anim.calm .frame::before{opacity:0}
@@ -449,8 +446,7 @@ html.anim.calm .tl li::before,html.anim.calm .tl b{transition-duration:.5s}
   .flow-grid,.control-grid,.inst-grid{grid-template-columns:minmax(0,1fr)}
   .flow-grid>*,.control-grid>*,.inst-grid>*,.control-left,.control-right,.inst-main,.inst-side{min-width:0}
   .control-right{position:static}
-  .hero-win{position:relative;right:auto;bottom:auto;width:min(340px,100%);margin-block:6px 26px}
-  .hero-main{padding-bottom:10px}
+  .hero-main{padding-bottom:calc(10px + 5vw)}
   .foot-in{grid-template-columns:1fr}
   .foot-links{justify-items:start}
 }
@@ -486,7 +482,6 @@ html.anim.calm .tl li::before,html.anim.calm .tl b{transition-duration:.5s}
   .dot{r:10}
   .wm{font-size:clamp(76px,28vw,130px)}
   .hero-shade{background:linear-gradient(180deg,rgba(11,10,22,.55) 0,rgba(11,10,22,.86) 38%,rgba(11,10,22,.92) 70%,var(--ink) 100%)}
-  .hero-win{width:min(300px,100%)}
   .req{overflow-wrap:anywhere}
   .code{white-space:pre-wrap;word-break:break-all}
   .motion span:last-child{display:none}
@@ -501,8 +496,6 @@ html.anim.calm .tl li::before,html.anim.calm .tl b{transition-duration:.5s}
 
 /* ---------- identity pass (2026-10-22) ---------- */
 /* the hero window bar wraps instead of overflowing its frame */
-.hero-win .win-bar{flex-wrap:wrap;gap:6px}
-.hero-win .win-bar span:first-child{white-space:normal}
 /* the plates carry no scanline overlay and no sweep band: the pixel GIFs have none */
 .role .frame::before,.role .frame::after{display:none}
 /* the vertical ghost text touched the cards between 1181 and 1500 px */

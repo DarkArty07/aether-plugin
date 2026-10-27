@@ -205,7 +205,7 @@ test('a lazy GIF keeps its final size before it loads, shows from a noscript cop
     assert.doesNotMatch(js, /still\.setAttribute\('aria-hidden'/, `${file}: the frozen copy of a GIF must not be hidden from assistive technology`)
     assert.match(js, /still\.setAttribute\('role', 'img'\)/, `${file}: the frozen copy has role img`)
   }
-  assert.match(read(SITE, 'app.js'), /freezeMascot\(m !== 'full'\)/, 'the hero mascot freezes in calm motion too')
+  assert.match(read(SITE, 'app.js'), /pxImgs\.forEach\(pxSync\)/, 'the pixel GIFs freeze in calm motion too')
 })
 
 test('404.html links home and opens in the same style', () => {

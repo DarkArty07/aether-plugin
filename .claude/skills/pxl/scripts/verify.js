@@ -18,6 +18,10 @@ const sh = loadSheet(input);
 const plan = delayPlan(sh, fps);
 const buf = fs.readFileSync(gifPath);
 const map = JSON.parse(fs.readFileSync(gifPath + '.map.json', 'utf8'));
+// The palette entries pxl marks transparent. In a GIF built with --transparent (disposal 2) the sheet's pixels of these
+// entries must come out see-through; in any other GIF they are drawn in their colour and compared as they are.
+const clear = new Set();
+if (sh.trns) sh.trns.forEach((a, i) => { if (a < 255) clear.add(i); });
 
 function lzwDecode(data, minCode, outLen) {
   const clear = 1 << minCode, eoi = clear + 1;
@@ -48,7 +52,7 @@ let p = 6;
 const W = buf.readUInt16LE(p), H = buf.readUInt16LE(p + 2), pk = buf[p + 4];
 p += 7;
 p += (pk & 0x80 ? 1 << ((pk & 7) + 1) : 0) * 3;
-const canvas = new Uint8Array(W * H);
+const canvas = new Int16Array(W * H).fill(-1);   // -1: nothing drawn here, see-through
 let n = 0, gce = null, loops = null, errors = 0, totalDelay = 0;
 const cache = new Map();
 const expected = (i) => { if (!cache.has(i)) cache.set(i, scaled(sh.frame(i), sh.FW, sh.FH, S)); return cache.get(i); };
@@ -72,6 +76,7 @@ for (;;) {
   p++;
   const pix = lzwDecode(Buffer.concat(chunks), minCode, w * h);
   const hasT = gce.packed & 1;
+  const clearing = ((gce.packed >> 2) & 7) === 2;   // disposal 2: the box is cleared after the frame, as in --transparent
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
     const v = pix[j * w + i];
     if (!(hasT && v === gce.t)) canvas[(y + j) * W + x + i] = v;
@@ -80,13 +85,14 @@ for (;;) {
   if (!m || m.x * S !== x || m.y * S !== y || m.w * S !== w || m.h * S !== h) { errors++; console.log('different box in frame', n); }
   const want = expected(m.from);
   let bad = 0;
-  for (let k = 0; k < W * H; k++) if (canvas[k] !== want[k]) bad++;
+  for (let k = 0; k < W * H; k++) if (clearing && clear.has(want[k]) ? canvas[k] !== -1 : canvas[k] !== want[k]) bad++;
   if (bad) { errors++; console.log(`frame ${n} (source ${m.from}): ${bad} pixels differ`); }
   let sumD = 0; for (let i = m.from; i <= m.to; i++) sumD += plan[i];
   if (sumD !== gce.delay) { errors++; console.log(`frame ${n}: delay ${gce.delay} != ${sumD}`); }
   // frames merged into this one must be identical to its first
   for (let i = m.from + 1; i <= m.to; i++) { const e = expected(i); for (let k = 0; k < W * H; k++) if (e[k] !== want[k]) { errors++; console.log('merged frame is not identical:', i); break; } }
   totalDelay += gce.delay;
+  if (clearing) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) canvas[(y + j) * W + x + i] = -1;
   n++;
   cache.delete(m.from - 1);
 }
