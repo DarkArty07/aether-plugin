@@ -13,7 +13,7 @@ Plain `claude` stays normal mode.
 
 <p align="center"><img src="https://img.shields.io/badge/version-0.21.0-blue" alt="version 0.21.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
 
-Version 0.21.0 ([changelog](docs/changelog.md))
+Version 0.22.0 ([changelog](docs/changelog.md))
 
 Aether serves five goals, **RADAR**.
 
