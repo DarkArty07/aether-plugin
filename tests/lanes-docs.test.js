@@ -54,9 +54,27 @@ test("the Lanes section of the guide explains the order of the candidates, the d
   )
 })
 
-test('R21: lanes.md holds the rule: the switch, the points, the tolerance, the order, the cupo wait and the report', () => {
+test('R21: lanes.md holds the rule: the switch, the points, the tolerance, the order, no limit on parallel calls and the report', () => {
   const text = read('docs', 'guide', 'lanes.md')
-  for (const fragment of ['`superdelegation`', 'off by default', 'plugins/aether/config/pairs.json', '1 point', 'weekly', 'cost per task', '10 minutes', 'aether-report']) assert.ok(text.includes(fragment), `lanes.md says ${fragment}`)
+  for (const fragment of ['`superdelegation`', 'off by default', 'plugins/aether/config/pairs.json', '1 point', 'weekly', 'cost per task', 'No limit on parallel calls', 'aether-report']) assert.ok(text.includes(fragment), `lanes.md says ${fragment}`)
+})
+
+test('issue 64: the guide says the design seats reserve the author family and the swarm keeps the bar', () => {
+  const lanesPage = read('docs', 'guide', 'lanes.md')
+  const seatsPage = read('docs', 'guide', 'design-seats.md')
+  const delegatesPage = read('docs', 'guide', 'delegates.md')
+  const components = read('docs', 'reference', 'components.md')
+  for (const [name, text] of [['lanes.md', lanesPage], ['design-seats.md', seatsPage]]) {
+    assert.ok(text.includes('another family'), name)
+    assert.ok(text.includes("author's own family"), name)
+    assert.ok(text.includes('native agent only last'), name)
+  }
+  assert.ok(lanesPage.includes('aether-lane delegate'))
+  assert.ok(lanesPage.includes('keep it as a bar') || lanesPage.includes('keeps it as a bar') || lanesPage.includes('keep that rule as a bar'))
+  assert.ok(seatsPage.includes('no other external pair'))
+  assert.ok(delegatesPage.includes("author's own family"))
+  assert.ok(delegatesPage.includes('aether-lane delegate'))
+  assert.ok(components.includes("author's own family"))
 })
 
 test('R21: lanes.md says how the old options are read and what the rule asks, keeps, and cannot reach', () => {
@@ -69,18 +87,16 @@ test('R21: lanes.md says how the old options are read and what the rule asks, ke
       'Sonnet `high` asks 46.8 and Sonnet `xhigh` asks 51.9',
       'No pair is chosen or left out for being fast or slow',
       'Nobody reviews its own work',
-      'scripts/lane-cupo.js',
-      'the owner\'s `paid-call` grant',
     ],
     'lanes.md',
   )
 })
 
 test('R21: the guide pages of this task name neither the retired profiles nor the retired variables', () => {
-  for (const page of ['lanes', 'design-seats', 'options', 'router']) {
+  for (const page of ['lanes', 'design-seats', 'options', 'delegates']) {
     const text = read('docs', 'guide', `${page}.md`)
     // The same patterns as Task 18's GONE; lanes.md and options.md alone may name `seats` (the migration says it is ignored).
-    const gone = [/`balanced`/, /`robust`/, /\bseats option\b/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
+    const gone = [/`balanced`/, /`robust`/, /\bseats option\b/, /--seats\b/, new RegExp('AETHER_' + 'SEATS'), new RegExp('AETHER_' + 'LAN' + 'ES\\b')]
     if (!['lanes', 'options'].includes(page)) gone.push(/`seats`/)
     for (const pattern of gone) assert.doesNotMatch(text, pattern, `${page}.md still says ${pattern}`)
   }

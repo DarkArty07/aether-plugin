@@ -1,160 +1,27 @@
 #!/usr/bin/env node
 'use strict'
 
-// SessionStart hook. It acts only for the Lead (agent_type aether:lead): any other session
-// gets no output, no file and no sweep. For the Lead it marks the session, hands the superdelegation
-// option to the session's commands through CLAUDE_ENV_FILE, and, on startup, clear and
-// compact, injects the using-aether bootstrap, points to an open autonomous run, sweeps
-// stale runs in the session's repository, and prunes old usage files, lane logs and
-// session markers.
+// aether-session-start: SessionStart hook handler for Aether mode.
+// Calls lib/session-start.js to mark the session with the ops option (CLAUDE_PLUGIN_OPTION_OPS),
+// inject the Lead bootstrap, and if an autonomous run is open, note to:
+// load the aether:autonomous-runs skill, then read the diary.
 
-const fs = require('node:fs')
+const { readFileSync } = require('node:fs')
 const path = require('node:path')
+const { main } = require(path.join(__dirname, '..', 'lib', 'session-start.js'))
 
-const root = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..')
-
-// Claude Code replaces ${CLAUDE_PLUGIN_ROOT} in a skill's content but not in a hook's additionalContext,
-// so the bootstrap gets the plugin folder's absolute path here, where the Lead can read the files it names.
-function bootstrap() {
-  const raw = fs.readFileSync(path.join(root, 'skills', 'using-aether', 'SKILL.md'), 'utf8')
-  return raw.replace(/^---\n[\s\S]*?\n---\n/, '').trim().split('${CLAUDE_PLUGIN_ROOT}').join(root)
-}
-
-function sweepNote() {
-  try {
-    const { sweepStale } = require(path.join(root, 'lib', 'worktrees.js'))
-    const { swept } = sweepStale(process.cwd())
-    return swept.length ? `Aether swept ${swept.length} stale run(s): ${swept.join(', ')}.` : ''
-  } catch (err) {
-    if (/not a git repository/i.test(err.message)) return ''
-    return `Aether could not sweep stale runs: ${err.message}`
+let input = null
+try {
+  const raw = readFileSync(0, 'utf8')
+  const parsed = JSON.parse(raw)
+  if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    input = parsed
   }
-}
+} catch {}
 
-function autonomyNote() {
-  try {
-    const { repoPaths } = require(path.join(root, 'lib', 'git.js'))
-    const { openRun, runPaths } = require(path.join(root, 'lib', 'autonomy.js'))
-    const { mainRoot } = repoPaths(process.cwd())
-    const run = openRun(mainRoot)
-    if (!run) return ''
-    const { diary } = runPaths(mainRoot, run.id)
-    return `Autonomous run ${run.id} is open: load the aether:autonomous-runs skill, then read ${diary} and run \`aether-autonomy status\` before anything else.`
-  } catch {
-    return ''
-  }
-}
-
-// The usage meter's files grow with every session, and so do the lane log and the session
-// markers: sessions not written to for 30 days go, from all three.
-function pruneOldFiles() {
-  try {
-    const { pruneUsage: prune } = require(path.join(root, 'lib', 'report.js'))
-    const { pruneLog } = require(path.join(root, 'lib', 'lanes.js'))
-    const { pruneSessions } = require(path.join(root, 'lib', 'session.js'))
-    const { dataDir } = require(path.join(root, 'lib', 'run.js'))
-    prune(dataDir(), { days: 30 })
-    pruneLog(dataDir(), { days: 30 })
-    pruneSessions(dataDir(), { days: 30 })
-  } catch {
-    // Pruning is housekeeping: it never blocks the session.
-  }
-}
-
-// The hook's input, or null when stdin is unreadable or is not a JSON object.
-function readInput() {
-  try {
-    const input = JSON.parse(fs.readFileSync(0, 'utf8'))
-    return input !== null && typeof input === 'object' && !Array.isArray(input) ? input : null
-  } catch {
-    return null
-  }
-}
-
-// Marks the session; returns the reason it could not, or '' when it did.
-function mark(sessionId) {
-  try {
-    const { markSession, routerSettingsFrom } = require(path.join(root, 'lib', 'session.js'))
-    const { dataDir } = require(path.join(root, 'lib', 'run.js'))
-    // The ops option is on unless it is exactly false: the mod reads the session's ops-off file.
-    // The router's four options go to the session's router file, which the router's commands read.
-    markSession(dataDir(), sessionId, Date.now(), { opsInMod: process.env.CLAUDE_PLUGIN_OPTION_OPS !== 'false', router: routerSettingsFrom(process.env) })
-    return ''
-  } catch (err) {
-    return (err && err.message) || String(err)
-  }
-}
-
-// Appends the superdelegation option, what of the old options is ignored and the harness list to
-// CLAUDE_ENV_FILE; returns false when it could not. The option is resolved by lib/superdelegation.js, the
-// legacy tokens say which old values were read or ignored, and the list is the option's known names, or agy
-// when none is valid: lanes.js reads it the same way.
-function passSuperdelegation() {
-  const file = process.env.CLAUDE_ENV_FILE
-  if (!file) return false
-  try {
-    const { resolveOption } = require(path.join(root, 'lib', 'superdelegation.js'))
-    const { enabledHarnesses } = require(path.join(root, 'lib', 'lanes.js'))
-    const { on, legacy } = resolveOption(process.env)
-    const harnesses = enabledHarnesses({ AETHER_LANE_HARNESSES: process.env.CLAUDE_PLUGIN_OPTION_HARNESSES })
-    fs.appendFileSync(file, `export AETHER_SUPERDELEGATION=${on ? 'on' : 'off'}\nexport AETHER_SUPERDELEGATION_LEGACY=${legacy.join(',')}\nexport AETHER_LANE_HARNESSES=${harnesses.join(',')}\n`)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// What the owner is told about old option values that were read or ignored; empty when there are none.
-function legacyContext() {
-  try {
-    const { resolveOption, legacyNotes } = require(path.join(root, 'lib', 'superdelegation.js'))
-    return legacyNotes(resolveOption(process.env).legacy)
-  } catch {
-    return []
-  }
-}
-
-const ROUTER_NOTES = {
-  advise:
-    'Aether router (advise): after you launch a delegate task, Aether tells you the model and effort its decider would choose. The delegate still runs as you launched it.',
-  command:
-    'Aether router (command): launch a delegate task with a description and a self-contained brief, and leave model and effort out: Aether\'s decider chooses them and tells you which. To keep your own choice, put a line "ROUTER-OVERRIDE: <reason>" in the brief and pass model and effort. The swarm, the design seats and the aether agents are not routed.',
-}
-
-// The note of the router's mode, or null in record mode, which changes nothing the Lead sees.
-function routerNote() {
-  try {
-    const { routerSettingsFrom } = require(path.join(root, 'lib', 'session.js'))
-    return ROUTER_NOTES[routerSettingsFrom(process.env).mode] || null
-  } catch {
-    return null
-  }
-}
-
-function main() {
-  const input = readInput()
-  if (!input) return
-  const { LEAD_AGENT } = require(path.join(root, 'lib', 'session.js'))
-  if (input.agent_type !== LEAD_AGENT) return
-
-  const markFailure = mark(input.session_id)
-  const passed = passSuperdelegation()
-
-  const source = input.source === undefined ? 'startup' : input.source
-  if (!['startup', 'clear', 'compact'].includes(source)) return
-
-  pruneOldFiles()
-  const context = [
-    'Aether mode is active.',
-    bootstrap(),
-    passed ? '' : "Aether could not pass the superdelegation option to this session's commands, so superdelegation is off.",
-    ...legacyContext(),
-    markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
-    sweepNote(),
-    autonomyNote(),
-    routerNote(),
-  ].filter(Boolean).join('\n\n')
-  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) + '\n')
-}
-
-main()
+main({
+  input,
+  env: process.env,
+  cwd: process.cwd(),
+  stdout: process.stdout,
+})

@@ -268,3 +268,61 @@ test('a data directory that cannot be written is not an error of the call', (t) 
   assert.equal(run(muse, out(completed(ANSWER), usage(allowance(10, 10)))).clean, true)
   assert.deepEqual(muse.quota(), { groups: { muse: { unknown: true, windows: {} } } })
 })
+
+test('argv rewrites a nested schema file into strict form and returns the same argument list', (t) => {
+  const { muse } = build(t, { command: '/opt/muse' })
+  const schemaFile = path.join(tempDir(t, 'muse-schema-'), 'schema.json')
+  const schema = {
+    type: 'object',
+    required: ['verdict', 'findings', 'open'],
+    properties: {
+      verdict: { type: 'string', enum: ['approve', 'revise', 'reject'], description: 'the verdict' },
+      findings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['title'],
+          properties: { title: { type: 'string', description: 'the title' } },
+        },
+      },
+      open: { type: 'object', additionalProperties: true, required: ['note'], properties: { note: { type: 'string' } } },
+    },
+  }
+  fs.writeFileSync(schemaFile, `${JSON.stringify(schema, null, 2)}\n`)
+  assert.deepEqual(muse.argv({ model: 'muse-spark-1.3', level: 'high', schemaFile, timeoutSeconds: 2700, prompt: 'P' }), [
+    '/opt/muse', 'exec', '--json', '--provider', 'meta', '--model', 'muse-spark-1.3', '--reasoning-effort', 'high', '--output-schema', schemaFile,
+    '--contributor-mode', 'off', '--no-foreign-personal-context', '--disable-approval', '--disable-reminders', '--disable-request-user-input',
+    '--max-model-steps', '200', 'P',
+  ])
+  const written = JSON.parse(fs.readFileSync(schemaFile, 'utf8'))
+  assert.equal(written.additionalProperties, false)
+  assert.equal(written.properties.findings.items.additionalProperties, false)
+  assert.equal(written.properties.open.additionalProperties, true)
+  assert.deepEqual(written.required, ['verdict', 'findings', 'open'])
+  assert.deepEqual(written.properties.findings.items.required, ['title'])
+  assert.deepEqual(written.properties.verdict.enum, ['approve', 'revise', 'reject'])
+  assert.equal(written.properties.verdict.description, 'the verdict')
+  assert.equal(written.properties.findings.items.properties.title.description, 'the title')
+})
+
+test('argv with a missing schema path or a file that is not JSON returns the argument list and leaves the file', (t) => {
+  const { muse } = build(t, { command: '/opt/muse' })
+  const missing = path.join(tempDir(t, 'muse-schema-'), 'missing.json')
+  assert.equal(fs.existsSync(missing), false)
+  assert.deepEqual(muse.argv({ model: 'muse-wonder-1.0', level: 'low', schemaFile: missing, timeoutSeconds: 2700, prompt: 'P' }), [
+    '/opt/muse', 'exec', '--json', '--provider', 'meta', '--model', 'muse-wonder-1.0', '--reasoning-effort', 'low', '--output-schema', missing,
+    '--contributor-mode', 'off', '--no-foreign-personal-context', '--disable-approval', '--disable-reminders', '--disable-request-user-input',
+    '--max-model-steps', '200', 'P',
+  ])
+  assert.equal(fs.existsSync(missing), false)
+
+  const bad = path.join(tempDir(t, 'muse-schema-'), 'schema.json')
+  const text = 'not json {'
+  fs.writeFileSync(bad, text)
+  assert.deepEqual(muse.argv({ model: 'muse-wonder-1.0', level: 'low', schemaFile: bad, prompt: 'P' }), [
+    '/opt/muse', 'exec', '--json', '--provider', 'meta', '--model', 'muse-wonder-1.0', '--reasoning-effort', 'low', '--output-schema', bad,
+    '--contributor-mode', 'off', '--no-foreign-personal-context', '--disable-approval', '--disable-reminders', '--disable-request-user-input',
+    '--max-model-steps', '200', 'P',
+  ])
+  assert.equal(fs.readFileSync(bad, 'utf8'), text)
+})

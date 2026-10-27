@@ -1,8 +1,8 @@
-// The command of an aether:ops prompt, for the mod to run without a model (register.js).
-// Pure: no $, no I/O. It reads only prompts of the shape aether:run's opsPrompt builds (run.workflow.js),
-// line for line, either first line with any command, and only the commands the workflow sends, every
-// argument checked. Anything else is null, and the model path runs the prompt as before. The text after
-// a lane's payload marker is data, never parsed.
+// The command parser of an aether:ops prompt, for the mod to run without a model (register.js).
+// Pure: no $, no I/O. It reads only prompts of the shape the workflows' opsPrompt builds (run.workflow.js and
+// design.workflow.js), line for line, either first line with any command, and only the commands the workflows send
+// (aether-wt, aether-lane, aether-plan, aether-exam), every argument checked. Anything else is null, and the model
+// path runs the prompt as before. The text after a lane's payload marker is data, never parsed.
 
 // The longest $.process.run allows. The model path's Bash call had 120 s for aether-wt (issue 002). A merge
 // runs the plan's tests for up to 15 minutes, so one whose tests outlast this is stopped before its revert.
@@ -18,7 +18,7 @@ const MARKER = /^=== aether-lane payload: .+ ===$/
 
 // The payload a prompt may carry, saved by register.js: a lane call's prompt.md under a run's lanes/, or a seat
 // round's message.md under <repo>/.aether-tmp/seats/<session>/. Both names are closed, the session's too.
-export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review)\/prompt\.md$|\/\.aether-tmp\/seats\/[A-Za-z0-9-]+\/message\.md$/
+export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review(?:-slice-\d+)?)\/prompt\.md$|\/\.aether-tmp\/seats\/[A-Za-z0-9-]+\/message\.md$/
 
 // `cd '<absolute path>' && <bin> <tokens>`: the path has no quote and no control character. A run that
 // names its compiling version's bins prepends them to PATH in this one exact form (issue 008); the mod
@@ -27,7 +27,7 @@ const COMMAND_LINE = /^cd '(\/[^'\u0000-\u001f\u007f]*)' && (?:PATH='(\/[^'\u000
 
 const RUN = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK = /^task-\d+$/
-const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review)$/
+const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review(-slice-\d+)?)$/
 const ROLES = ['implementer', 'supervisor', 'reviewer']
 const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -48,7 +48,7 @@ const MAX = /^\d{1,3}$/
 const PAIR_IDS = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(?:low|medium|high|xhigh|max)(?:,[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(?:low|medium|high|xhigh|max))*$/
 const FAMILY = /^[a-z][a-z0-9.-]*$/
 const BY = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
-const CAUSES = ['chosen', 'no-candidate', 'wait-limit', 'failed']
+const CAUSES = ['chosen', 'no-candidate', 'failed']
 const SECONDS = /^\d{1,3}$/
 
 const is = (pattern) => (token) => pattern.test(token)
@@ -61,6 +61,21 @@ function pickForms() {
   const exclude = [word('--exclude'), is(PAIR_IDS)]
   const author = [word('--author'), is(FAMILY)]
   return [head, [...head, ...exclude], [...head, ...author], [...head, ...exclude, ...author]].map((checks) => ({ checks }))
+}
+
+// seat-start, for a judge or an examiner and for the writer. --exclude, the pair ids the round already tried, is
+// optional and sits just before --digest, with the same pair-id rule as pick.
+function seatStartForms() {
+  const exclude = [word('--exclude'), is(PAIR_IDS)]
+  const digest = [word('--digest'), is(DIGEST)]
+  const heads = [
+    [word('seat-start'), oneOf(['judge', 'examiner']), word('--session'), is(SESSION), word('--author'), is(AUTHOR), word('--feature'), is(FEATURE), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES)],
+    [word('seat-start'), word('writer'), word('--session'), is(SESSION), word('--feature'), is(FEATURE), word('--doc'), oneOf(['spec', 'plan']), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES)],
+  ]
+  return heads.flatMap((head) => [
+    { payload: true, checks: [...head, ...digest] },
+    { payload: true, checks: [...head, ...exclude, ...digest] },
+  ])
 }
 
 // Each accepted command, one check per token. `payload` marks the command that carries a lane prompt.
@@ -94,14 +109,8 @@ const COMMANDS = {
     { checks: [word('result'), is(RUN), is(CALL)] },
     { checks: [word('stop'), is(RUN), is(CALL)] },
     // A design round's seat: the judge or the examiner, with its author; the writer, with the document it writes.
-    {
-      payload: true,
-      checks: [word('seat-start'), oneOf(['judge', 'examiner']), word('--session'), is(SESSION), word('--author'), is(AUTHOR), word('--feature'), is(FEATURE), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
-    },
-    {
-      payload: true,
-      checks: [word('seat-start'), word('writer'), word('--session'), is(SESSION), word('--feature'), is(FEATURE), word('--doc'), oneOf(['spec', 'plan']), word('--superdelegation'), oneOf(SWITCH), word('--harnesses'), is(HARNESSES), word('--digest'), is(DIGEST)],
-    },
+    // --exclude, when the round already tried some pairs, is the token just before --digest.
+    ...seatStartForms(),
     { checks: [word('seat-wait'), is(SEAT_ID), word('--max'), is(MAX)] },
     { checks: [word('seat-stop'), is(SEAT_ID)] },
   ],

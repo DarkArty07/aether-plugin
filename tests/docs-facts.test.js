@@ -29,8 +29,17 @@
 //     aether-aether-plugin  the plugin's data directory
 //     aether-inline         the data directory of a --plugin-dir session
 //     aether-mode           the 0.6 launcher, named as retired in "Upgrading from 0.6"
+//     (the retired decider command)  named as history by docs/changelog.md; the key is built from parts in EXCEPTIONS
 //   Paths that do not exist (PATH_EXCEPTIONS):
 //     scripts/aether-install.js  the 0.6 installer, named as retired in "Upgrading from 0.6"
+//     scripts/lane-cupo.js       the script that measured a harness's parallel limit, removed with the limit (decision A74);
+//                                the changelog keeps the words of the release that shipped it
+//     plugins/aether/config/router/criterion.json  the decider's criterion, removed in spec 013; the changelog keeps the
+//                                words of the release that shipped it
+//   Links to a file that no longer exists (LINK_EXCEPTIONS, read by the test of R10):
+//     docs/changelog.md -> guide/router.md  the changelog is a record and links the guide as it was when each version
+//                                came out; the page became guide/delegates.md in spec 013. The test skips, in that file, a
+//                                link whose file is on the list, with or without an anchor, and no other link
 //   Plugin names that are no agent, skill or workflow (AETHER_NAME skips them):
 //     custom:aether:<theme>      the value of the `theme` setting that selects a theme the plugin ships, which Claude
 //                                Code forms as custom:<plugin name>:<file name>; the launcher passes it
@@ -50,7 +59,7 @@ const README = 'README.md'
 const PAGES = [
   'docs/index.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/guide/options.md',
   'docs/guide/lanes.md', 'docs/guide/design-seats.md', 'docs/guide/autonomy.md', 'docs/guide/ops.md',
-  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/router.md', 'docs/reference/components.md', 'docs/changelog.md',
+  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/delegates.md', 'docs/reference/components.md', 'docs/changelog.md',
   'docs/contributing.md', 'docs/roadmap.md',
 ]
 const FILES = [README, ...PAGES]
@@ -60,8 +69,16 @@ const EXCEPTIONS = {          // commands that are not files of plugins/aether/b
   'aether-aether-plugin': "the plugin's data directory",
   'aether-inline': 'the data directory of a --plugin-dir session',
   'aether-mode': 'the 0.6 launcher, named as retired',
+  ['aether-' + 'route']: 'the retired decider command, named as history by docs/changelog.md',
 }
-const PATH_EXCEPTIONS = { 'scripts/aether-install.js': 'the 0.6 installer, named as retired in "Upgrading from 0.6"' }
+const PATH_EXCEPTIONS = {
+  'scripts/aether-install.js': 'the 0.6 installer, named as retired in "Upgrading from 0.6"',
+  'scripts/lane-cupo.js': 'the parallel-limit script, removed in decision A74; the changelog keeps the words of its release',
+  'plugins/aether/config/router/criterion.json': "the decider's criterion, removed in spec 013; the changelog keeps the words of the release that shipped it",
+}
+// Links of a file to a file that no longer exists, each with its reason (see the header): the records link the guide of
+// the router as it was when each version came out, and the page is now guide/delegates.md.
+const LINK_EXCEPTIONS = { 'docs/changelog.md': ['guide/router.md'] }
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 const manifest = () => JSON.parse(read('plugins/aether/.claude-plugin/plugin.json'))
 
@@ -313,6 +330,7 @@ test('R10: every internal link of the README and the pages is relative and resol
       const where = `${rel}:${line} -> ${target}`
       assert.ok(!target.startsWith('/'), `${where} is not relative`)
       const [file, anchor] = target.split('#')
+      if ((LINK_EXCEPTIONS[rel] ?? []).includes(file)) continue
       const full = file ? path.resolve(ROOT, path.dirname(rel), decodeURI(file)) : path.resolve(ROOT, rel)
       assert.ok(full === ROOT || full.startsWith(ROOT + path.sep), `${where} leaves the repository`)
       assert.ok(fs.existsSync(full), `${where} does not resolve`)
@@ -330,9 +348,8 @@ test('C5: docs/index.md links every other page, and every document the README li
   )
   for (const rel of PAGES) if (rel !== 'docs/index.md') assert.ok(linked.has(rel), `docs/index.md links ${rel}`)
   const listed = [
-    'docs/roadmap/2026-10-10-radar.md', 'docs/superpowers/specs/2026-10-07-aether-plugin-design.md', 'docs/superpowers/specs',
-    'docs/superpowers/plans', 'docs/evaluations', 'docs/claude-code-research.md', 'docs/decisions.md',
-    'docs/evaluations/seats/README.md', 'docs/aether-retrospective.md', 'docs/models/README.md', 'docs/issues',
+    'docs/claude-code-research.md', 'docs/decisions.md',
+    'docs/aether-retrospective.md', 'docs/models/README.md',
   ]
   for (const rel of listed) assert.ok(linked.has(rel), `docs/index.md links ${rel}`)
   assert.ok([...linked].some((rel) => rel.startsWith('specs/001-design-seats')), 'docs/index.md links specs/001-design-seats/')
@@ -361,7 +378,7 @@ test('R11: aether-first-setup is an executable file of bin/, the launcher is a f
     assert.ok(commandsIn(read(rel)).includes('aether-first-setup'), `${rel} names \`aether-first-setup\``)
   }
   const components = read('docs/reference/components.md')
-  for (const text of ['`plugins/aether/launcher/aether-lead`', '`first-setup`', 'eleven commands of `bin/`']) {
+  for (const text of ['`plugins/aether/launcher/aether-lead`', '`first-setup`', 'twelve commands of `bin/`']) {
     assert.ok(components.includes(text), `docs/reference/components.md has ${text}`)
   }
 })
@@ -543,23 +560,59 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A65 are recorded and the changelog opens with 0.14.0 and its handoff', () => {
+test('R15: the decisions A50 to A95 are recorded and the changelog opens with 0.22.0, then 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 65
+  const LAST_DECISION = 95
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
   assert.ok(/superdelegation/i.test(line(65)))
+  assert.ok(/router/i.test(line(66)) && /Muse/.test(line(66)))
+  assert.ok(/refused at its start/.test(line(67)) && /next ranked candidate/.test(line(67)))
+  assert.ok(/ran out of time/.test(line(68)) && /internal error/.test(line(68)))
+  assert.ok(/`argon`/.test(line(69)) && /`flash`/.test(line(69)))
+  assert.ok(/Muse/.test(line(70)) && /next pair/.test(line(70)))
+  assert.ok(/next pair/.test(line(71)) && /final review/.test(line(71)))
+  assert.ok(/aether-lane delegate/.test(line(72)) && /edits files/.test(line(72)))
+  assert.ok(/quota brake/.test(line(73)) && /five-hour/.test(line(73)))
+  assert.ok(/parallel calls/.test(line(74)) && /cupo/.test(line(74)))
+  assert.ok(/hint/.test(line(75)) && /every hour/.test(line(75)))
+  assert.ok(/spend of a whole session/.test(line(76)) && /list price/.test(line(76)))
+  assert.ok(/not merged until its tests pass/.test(line(77)) && /unverified/.test(line(77)))
+  assert.ok(/once per run/.test(line(78)) && /deferred/.test(line(78)))
+  assert.ok(/splits the brief by owned file/.test(line(79)))
+  assert.ok(/order of reserve/.test(line(80)) && /scarce seat/.test(line(80)))
+  assert.ok(/edits only what the Judge flagged/.test(line(81)))
+  assert.ok(/continues from the work the failed one left/.test(line(82)))
+  assert.ok(/swarms at once are not limited/.test(line(83)))
+  assert.ok(/dollars of Grok/.test(line(84)))
+  assert.ok(/starts on Haiku/.test(line(85)) && /the system holds/.test(line(85)))
+  assert.ok(/heartbeat/.test(line(86)) && /600 s/.test(line(86)))
+  assert.ok(/two installations/.test(line(88)) && /never reads a conversation/.test(line(88)))
+  assert.ok(/marker check/.test(line(89)) && /not Aether's/.test(line(89)))
+  assert.ok(/corrections to the Lead/.test(line(90)) && /development installation/.test(line(90)))
+  assert.ok(/never changes the plugin by itself/.test(line(91)) && /only proposes/.test(line(91)))
+  assert.ok(/parameter of the installed plugin/.test(line(92)) && /observedev/.test(line(92)))
+  assert.ok(/cheapest model and effort/.test(line(93)) && /Terminal-Bench/.test(line(93)) && /A87/.test(line(93)))
+  assert.ok(/Muse Spark 1.3/.test(line(94)) && /fixes #101/.test(line(94)))
+  assert.ok(/roles its list names/.test(line(95)) && /extends A65/.test(line(95)))
+  for (const n of [18, 36, 87]) assert.ok(/Update \(A93\)/.test(line(n)), `A${n} has its update note`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
-  const first = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first.startsWith('Version 0.14.0: ') && first.includes('handoff/2026-10-20-superdelegation-0.14.0.md'), first)
+  const versions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
+  assert.ok(versions[0].startsWith('Version 0.22.0: ') && versions[0].includes('A95'), versions[0])
+  assert.ok(versions[1].startsWith('Version 0.21.0: ') && versions[1].includes('A93'), versions[1])
+  assert.ok(versions[2].startsWith('Version 0.20.1: ') && versions[2].includes('A92'), versions[2])
+  assert.ok(versions[3].startsWith('Version 0.20.0: '), versions[3])
+  assert.ok(versions[4].startsWith('Version 0.19.2: ') && versions[4].includes('issues/86'), versions[4])
+  assert.ok(versions[5].startsWith('Version 0.19.1: ') && versions[5].includes('issues/82'), versions[5])
+  assert.ok(versions[6].startsWith('Version 0.19.0: '), versions[6])
 })
 
 // ---- R21: the retired profiles and variables
 // docs/decisions.md is history and is not in FILES' scope here only through its table, which names what was retired;
 // it is not listed in PAGES for this rule's purposes beyond HISTORY below.
-const GONE = [/`balanced`/, /`robust`/, /\bseats option\b/, /`seats`/, /--seats\b/, /AETHER_SEATS/, /AETHER_LANES\b/]
+const GONE = [/`balanced`/, /`robust`/, /\bseats option\b/, /`seats`/, /--seats\b/, new RegExp(['AETHER_', 'SEATS'].join('')), new RegExp(['AETHER_', 'LANES\\b'].join(''))]
 const HISTORY = ['docs/changelog.md', 'docs/contributing.md', 'docs/roadmap.md'] // name what was retired as history (roadmap.md: the 0.12.3 summary says `seats` selectors)
 const MIGRATION = ['docs/guide/lanes.md', 'docs/guide/options.md'] // the only two pages that may name the legacy keys `lanes` and `seats`: the migration says what becomes of them
 const prose = (rel) => proseLines(read(rel)).join('\n')

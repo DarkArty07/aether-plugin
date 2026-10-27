@@ -132,5 +132,5 @@ test("the shipped pairs table agrees with the models index in the plugin's confi
   // The table is not empty of what the check covers: Gemini 4 Argon, which only its judge and writer roles used to name,
   // and Muse, which enters by the owner's decision, are among the models checked.
   const checked = new Set(pairs.filter((pair) => pair.harness !== 'claude').map((pair) => `${pair.harness}/${pair.model}`))
-  for (const model of ['grok/grok-4.7', 'agy/gemini-3.8-flash', 'agy/gemini-4-argon', 'muse/muse-wonder-full-1.0']) assert.ok(checked.has(model), [...checked].join(', '))
+  for (const model of ['grok/grok-4.7', 'agy/gemini-3.8-flash', 'agy/gemini-4-argon', 'muse/muse-wonder-full-1.0', 'muse/muse-spark-1.3']) assert.ok(checked.has(model), [...checked].join(', '))
 })

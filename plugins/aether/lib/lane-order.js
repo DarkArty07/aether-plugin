@@ -1,7 +1,8 @@
 'use strict'
 
-// Pure group views for quota-aware lanes (spec 002, R9 to R12).
+// Pure group views for quota-aware lanes (spec 002, R9, R10, R12).
 // Determines lane priority and quota usability without external I/O or clock access.
+// Family: lane.
 
 const MIN_HOURS = 1
 
@@ -84,7 +85,7 @@ function groupView(reading, { reserve, now, mark = null }) {
       }
     }
     // A window whose reset cannot be read may be the longest, so no other window can stand in for it: the 5 h window
-    // would give a priority about ten times any weekly group's, against A4. The group has none, as when its only
+    // would give a priority about ten times any weekly group's, against A49. The group has none, as when its only
     // window has no readable reset, and is ordered with the groups that have no reading.
     if (resetUnreadable) {
       longest = null

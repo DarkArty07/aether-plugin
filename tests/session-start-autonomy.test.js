@@ -11,7 +11,7 @@ const AETHER = { hook_event_name: 'SessionStart', session_id: 's1', source: 'sta
 
 function start(cwd, data, input = AETHER) {
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }
-  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_SEATS', 'AETHER_SUPERDELEGATION', 'AETHER_SUPERDELEGATION_LEGACY']) delete env[key]
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'AETHER_SUPERDELEGATION']) delete env[key]
   const r = spawnSync(process.execPath, [SESSION_BIN], { cwd, encoding: 'utf8', input: JSON.stringify(input), env })
   return { status: r.status, stdout: r.stdout, context: r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : null, stderr: r.stderr }
 }
@@ -83,4 +83,21 @@ test('a session that is not Aether gets no note about an open run', (t) => {
   const r = start(repo.dir, tempDir(t, 'aether-data-'), { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup' })
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, '')
+})
+
+test('session start names the quota pause of the open run', (t) => {
+  const repo = makeRepo(t)
+  const diaryPath = writeRun(repo.dir, ID, null)
+  const file = path.join(repo.dir, '.aether', 'autonomy', ID, 'run.json')
+  const run = JSON.parse(fs.readFileSync(file, 'utf8'))
+  const resetsAt = new Date(Date.now() + 3600000).toISOString()
+  const resumeAt = new Date(Date.parse(resetsAt) + 120000).toISOString()
+  run.brakeOff = null
+  run.quotaPauses = [{ started: new Date().toISOString(), percentUsed: 96, threshold: 95, resetsAt, resumeAt, notify: { sent: true, reason: null }, savedUnits: [] }]
+  run.quotaCrossings = []
+  fs.writeFileSync(file, JSON.stringify(run))
+  const r = start(repo.dir, tempDir(t, 'aether-data-'))
+  assert.equal(r.status, 0, r.stderr)
+  assert.ok(r.context.includes(`Autonomous run ${ID} is open`), r.context.slice(-400))
+  assert.ok(r.context.includes(`The run is paused by the quota brake: the five-hour window resets ${resetsAt} and the run resumes ${resumeAt}. Do not start anything of this run before then; Aether re-arms the resume in this session.`), r.context.slice(-400))
 })

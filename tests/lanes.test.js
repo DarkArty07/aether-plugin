@@ -16,7 +16,6 @@ const shipped = () => lanes.loadConfig(lanes.CONFIG_FILE)
 function codexHarness(group = 'codex') {
   return {
     command: 'codex',
-    maxParallel: 2,
     waitSeconds: 300,
     timeouts: { implementer: 3000, supervisor: 900, reviewer: 1200, designer: 1800 },
     groups: { [group]: 'Codex Models' },
@@ -74,17 +73,18 @@ test('the shipped table names each lane model with its group and roles', () => {
   assert.equal(config.reserve, 0.05)
   const agy = config.harnesses.agy
   assert.equal(agy.command, 'agy')
-  assert.equal(agy.maxParallel, 8)
+  assert.equal(Object.hasOwn(agy, 'maxParallel'), false, 'a harness has no limit on its calls in flight')
+  assert.equal(Object.hasOwn(agy, 'maxParallelMeasured'), false)
   assert.equal(agy.waitSeconds, 540)
   assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200, judge: 1200, writer: 2700, examiner: 1800 })
-  assert.deepEqual(agy.groups, { gemini: 'Gemini Models', claude: 'Claude and GPT models' })
+  assert.deepEqual(agy.groups, { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' })
   assert.deepEqual(
     Object.entries(agy.models).map(([id, m]) => [id, m.group, m.roles]),
     [
-      ['gemini-3.8-flash', 'gemini', ['implementer']],
+      ['gemini-3.8-flash', 'flash', ['implementer']],
       ['claude-sonnet-5-5', 'claude', ['implementer', 'supervisor']],
       ['claude-opus-5-5', 'claude', ['implementer', 'reviewer']],
-      ['gemini-4-argon', 'gemini', ['judge', 'writer', 'examiner']],
+      ['gemini-4-argon', 'argon', ['judge', 'writer', 'examiner']],
     ],
   )
   assert.deepEqual(agy.models['gemini-3.8-flash'].aa, { slug: 'gemini-3-8-flash', intelligence: 40.9, terminalBench: 0.2, checked: '2026-10-08' })
@@ -102,7 +102,6 @@ test('configPath follows AETHER_LANES_CONFIG, and a missing table means no lanes
 test('loadConfig refuses a table it cannot trust, naming the file and the field', (t) => {
   const bad = [
     [(c) => (c.reserve = 2), /reserve/],
-    [(c) => (c.harnesses.agy.maxParallel = 0), /maxParallel/],
     [(c) => (c.harnesses.agy.waitSeconds = 'soon'), /waitSeconds/],
     [(c) => (c.harnesses.agy.timeouts.reviewer = -1), /timeouts/],
     [(c) => (c.harnesses.agy.models['gemini-3.8-flash'].group = 'other'), /gemini-3\.8-flash.*group/],
@@ -150,10 +149,10 @@ test('enabledHarnesses reads AETHER_LANE_HARNESSES: known names, trimmed, lowerc
 })
 
 test('loadConfig refuses two harnesses that use one group key, and accepts distinct keys', (t) => {
-  const shared = writeConfig(t, (c) => (c.harnesses.codex = codexHarness('gemini')))
+  const shared = writeConfig(t, (c) => (c.harnesses.codex = codexHarness('argon')))
   assert.throws(
     () => lanes.loadConfig(shared),
-    (err) => err.message.startsWith(`lanes config ${shared}: `) && err.message.includes('group gemini is used by harnesses agy and codex: group keys are unique across the table'),
+    (err) => err.message.startsWith(`lanes config ${shared}: `) && err.message.includes('group argon is used by harnesses agy and codex: group keys are unique across the table'),
   )
   const distinct = writeConfig(t, (c) => (c.harnesses.codex = codexHarness()))
   assert.deepEqual(Object.keys(lanes.loadConfig(distinct).harnesses), ['agy', 'codex', 'grok', 'cursor', 'muse'])
@@ -437,20 +436,23 @@ test('usable follows the rule of lane-order: a balance that is unknown is used u
   assert.equal(lanes.usable(window(0.05), 0.05), false)
 })
 
-test('the shipped lane table has a muse harness with two lanes at a time and the one model its CLI lists, which is in by the owner\'s decision', () => {
+test('the shipped lane table has a muse harness with Wonder Full and Spark 1.3, both in by the owner\'s decision', () => {
   const config = lanes.loadConfig(lanes.CONFIG_FILE)
   const muse = config.harnesses.muse
-  assert.deepEqual([muse.command, muse.maxParallel, muse.quotaLifeMinutes, muse.waitSeconds], ['muse', 2, 30, 540])
+  assert.deepEqual([muse.command, muse.quotaLifeMinutes, muse.waitSeconds], ['muse', 30, 540])
   assert.deepEqual(muse.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200 })
   assert.deepEqual(muse.groups, { muse: 'Muse subscription' })
-  // The CLI lists one model to the owner's account (harness-models.json), and Meta gives it only on the Power and Maximum plans.
-  assert.deepEqual(Object.keys(muse.models), ['muse-wonder-full-1.0'])
+  assert.deepEqual(Object.keys(muse.models).sort(), ['muse-spark-1.3', 'muse-wonder-full-1.0'])
   const wonder = muse.models['muse-wonder-full-1.0']
   assert.deepEqual([wonder.group, wonder.roles], ['muse', ['implementer', 'reviewer']])
   assert.equal('levels' in wonder, false)
   assert.equal('replaces' in wonder, false)
   assert.equal(wonder.aa.slug, 'muse-wonder-full')
   assert.match(wonder.ownerDecision, /nivel de opus|anivel de opus/, 'the model is in the table by the owner\'s decision, written in its entry')
+  const spark = muse.models['muse-spark-1.3']
+  assert.deepEqual([spark.group, spark.roles], ['muse', ['implementer', 'reviewer']])
+  assert.equal(spark.aa.slug, 'muse-spark-1-3')
+  assert.match(spark.ownerDecision, /infinitamente mas barato|nivel haiku o sonnet/)
   assert.equal('designSeats' in config, false)
 })
 

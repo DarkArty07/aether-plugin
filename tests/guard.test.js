@@ -346,36 +346,6 @@ test('irreversibleClass gives the class of each listed form', () => {
   }
 })
 
-test('irreversibleClass gives paid-call to an aether-route replay with --paid, by name or by path, and to nothing else of aether-route', () => {
-  for (const command of [
-    'aether-route replay --projects ~/.claude/projects --decider haiku --paid',
-    'aether-route replay --paid --projects ~/.claude/projects --decider jev',
-    'aether-route replay --projects p --paid --decider haiku --since 5',
-    'node plugins/aether/bin/aether-route replay --projects p --decider haiku --paid',
-    'node /abs/plugins/aether/bin/aether-route replay --paid --projects p --decider jev',
-    'node --no-warnings ./plugins/aether/bin/aether-route replay --projects p --decider haiku --paid',
-    '/abs/plugins/aether/bin/aether-route replay --projects p --decider haiku --paid',
-    'cd x && FOO=1 node bin/aether-route replay --projects p --decider haiku --paid',
-    'bash -c "node bin/aether-route replay --projects p --decider haiku --paid"',
-  ]) {
-    assert.equal(irreversibleClass(command), 'paid-call', command)
-  }
-  for (const command of [
-    'aether-route replay --journal',
-    'aether-route replay --projects p --answers a.json',
-    'node plugins/aether/bin/aether-route replay --projects p --answers a.json',
-    'aether-route report',
-    'aether-route status --paid',
-    'aether-route replay-x --paid',
-    'node plugins/aether/bin/aether-route status',
-    'echo "aether-route replay --paid"',
-    "git commit -m 'aether-route replay --projects p --decider haiku --paid'",
-    'node other.js aether-route replay --paid',
-  ]) {
-    assert.equal(irreversibleClass(command), null, command)
-  }
-})
-
 test('a forced removal is risky only when its target is the root, a home, a parent or the current directory, or one of their children', () => {
   for (const target of [
     '/', '/*', '/etc', '/etc/', '/etc/*', '/home/',
@@ -540,6 +510,83 @@ test('irreversibleClass drops the exec prefixes and their options, past sudo and
   assert.equal(irreversibleClass('nice -n 10 npm publish'), 'publish')
   assert.equal(irreversibleClass('timeout 30 git status'), null)
   assert.equal(irreversibleClass('nice -n 10 echo git push'), null)
+})
+
+test('a substitution or backquote inside double quotes runs, and its segments sit where it appears', () => {
+  assert.equal(irreversibleClass('echo "$(git push origin main)"'), 'push')
+  assert.equal(irreversibleClass('echo "`git push origin main`"'), 'push')
+  assert.equal(irreversibleClass('bash -c "git push origin main"'), 'push')
+  assert.equal(irreversibleClass('bash -c "echo \\"$(git push)\\""'), 'push')
+  assert.equal(irreversibleClass('echo "x$(git push)y"'), 'push')
+  assert.equal(irreversibleClass('echo "$(echo "$(git push)")"'), 'push')
+  assert.equal(irreversibleClass('echo "$( (git push) )"'), 'push')
+  // The first class in reading order decides, inside quotes as outside.
+  assert.equal(irreversibleClass('echo "$(npm publish)"; git push'), 'publish')
+  assert.equal(irreversibleClass('git push; echo "$(npm publish)"'), 'push')
+  // The command that holds the substitution is still classed itself.
+  assert.equal(irreversibleClass('git push "$(echo origin)"'), 'push')
+  assert.equal(irreversibleClass('echo "$(echo git push)"'), null)
+})
+
+test('quoted text inside a substitution, single quotes and escapes stay text', () => {
+  assert.equal(irreversibleClass('echo "$(echo "git push")"'), null)
+  assert.equal(irreversibleClass(`echo "$(echo 'git push')"`), null)
+  assert.equal(irreversibleClass("echo '$(git push)'"), null)
+  assert.equal(irreversibleClass("echo '`git push`'"), null)
+  assert.equal(irreversibleClass('echo "\\$(git push)"'), null)
+  assert.equal(irreversibleClass('echo "\\`git push\\`"'), null)
+  // A ")" inside quotes does not end the substitution early.
+  assert.equal(irreversibleClass(`echo "$(echo ')'; git push)"`), 'push')
+  assert.equal(irreversibleClass('echo "$(echo ")")"'), null)
+})
+
+test('an arithmetic expansion inside double quotes is text only with its matching "))"', () => {
+  assert.equal(irreversibleClass('echo "$((1 + 2))"'), null)
+  assert.equal(irreversibleClass('echo "$((git + push))"'), null)
+  assert.equal(irreversibleClass('echo "$(((1 + 2) * 3))"'), null)
+  // A substitution inside the arithmetic still runs.
+  assert.equal(irreversibleClass('echo "$(( $(git push) + 1 ))"'), 'push')
+  assert.equal(irreversibleClass('echo "$(echo $((1 + 2)); git push origin main)"'), 'push')
+  assert.equal(irreversibleClass('echo "$(echo $(((1+2))); git push origin main)"'), 'push')
+  // A subshell that ends in "))" is "$( plus subshells, not arithmetic.
+  assert.equal(irreversibleClass('echo "$((git push origin main); (echo ok))"'), 'push')
+  assert.equal(irreversibleClass('echo "$((echo ok); (git push))"'), 'push')
+  assert.equal(irreversibleClass('echo "$((echo ok); git push origin main)"'), 'push')
+  assert.equal(irreversibleClass("echo \"$((echo '))'); git push origin main)\""), 'push')
+  assert.equal(irreversibleClass("echo \"$((echo '('); git push origin main)\""), 'push')
+})
+
+test('a heredoc inside a quoted substitution keeps its body as text, quotes and ")" included', () => {
+  assert.equal(irreversibleClass('gh issue create --body "$(cat <<\'EOF\'\na " quoted\nrm -rf /\nEOF\n)"'), null)
+  assert.equal(irreversibleClass('gh issue create --body "$(cat <<\'EOF\'\nTitle "x"\n) ; git push\nEOF\n)"'), null)
+  assert.equal(irreversibleClass('gh issue create --body "$(cat <<\'EOF\'\nHe said "ok\ngit reset --hard abc123\nEOF\n)"'), null)
+  assert.equal(irreversibleClass('gh issue create --body "$(cat <<\'EOF\'\nHe said "run `git reset --hard abc123` now" and left.\nEOF\n)"'), null)
+  assert.equal(irreversibleClass('echo "$(cat <<\'EOF\'\n$(git push)\nEOF\n)"'), null)
+  assert.equal(irreversibleClass('echo "$(cat <<\'EOF\'\n`git push`\nEOF\n)"'), null)
+  // The command after the substitution is still read.
+  assert.equal(irreversibleClass('echo "$(cat <<\'EOF\'\nbody\nEOF\n)" && git push'), 'push')
+})
+
+test('a heredoc with an unquoted delimiter expands substitutions and backquotes in its body', () => {
+  assert.equal(irreversibleClass('echo "$(cat <<EOF\n$(git push)\nEOF\n)"'), 'push')
+  assert.equal(irreversibleClass('echo "$(cat <<EOF\n`git push`\nEOF\n)"'), 'push')
+  assert.equal(irreversibleClass('cat <<EOF\n$(git push)\nEOF'), 'push')
+  assert.equal(irreversibleClass("cat <<'EOF'\n$(git push)\nEOF"), null)
+  assert.equal(irreversibleClass('cat <<EOF\n\\$(git push)\nEOF'), null)
+  // Plain lines of the body are text either way.
+  assert.equal(irreversibleClass('echo "$(cat <<EOF\ngit push\nEOF\n)"'), null)
+})
+
+test('an unterminated substitution or backquote inside double quotes is read as code, and deep nesting does not throw', () => {
+  assert.equal(irreversibleClass('echo "$(git push'), 'push')
+  assert.equal(irreversibleClass('echo "`git push'), 'push')
+  assert.equal(irreversibleClass('echo "' + '$('.repeat(200) + 'git push' + ')'.repeat(200) + '"'), 'push')
+  assert.doesNotThrow(() => irreversibleClass('echo "' + '$('.repeat(200) + 'git push' + ')'.repeat(200) + '"'))
+  assert.doesNotThrow(() => irreversibleClass('echo "' + '$('.repeat(500)))
+  assert.doesNotThrow(() => irreversibleClass('echo "' + '$(( '.repeat(500) + '1' + ' ))'.repeat(500) + '"'))
+  let deep = 'git push origin main'
+  for (let i = 0; i < 20; i++) deep = `echo "$(${deep})"`
+  assert.equal(irreversibleClass(deep), 'push')
 })
 
 test('irreversibleClass reads a subshell, a group, a substitution and a background job as segments', () => {

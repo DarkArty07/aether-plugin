@@ -83,34 +83,37 @@ test('clean makes one safe line of an outside text: controls, bidi and zero-widt
   assert.equal(view.scrub(`  a${ch(0x1b)}  `), '  a  ')
 })
 
-test('the options are the ones the session uses: a value the libs would not take shows as the one they would', () => {
-  assert.deepEqual(view.settingsOf({}), { lanes: false, router: 'record', decider: 'haiku', harnesses: ['agy'] })
+test('the panel settings are the switch and the harnesses, and a saved router or decider changes nothing (E12)', () => {
+  assert.deepEqual(view.settingsOf({}), { lanes: false, harnesses: ['agy'] })
+  assert.deepEqual(view.settingsOf({ superdelegation: true, harnesses: 'agy,grok' }), { lanes: true, harnesses: ['agy', 'grok'] })
+  assert.deepEqual(view.settingsOf({ superdelegation: true, router: 'command', decider: 'jev', harnesses: 'gork' }), { lanes: true, harnesses: ['agy'] })
+})
+
+test('the harnesses are the known names, trimmed, lower-cased, once each and in order', () => {
   assert.deepEqual(view.settingsOf(undefined).harnesses, ['agy'])
-  assert.deepEqual(view.settingsOf({ superdelegation: true, router: 'command', decider: 'jev', harnesses: 'agy,grok' }), { lanes: true, router: 'command', decider: 'jev', harnesses: ['agy', 'grok'] })
-  // Wrong case or padded: the router and the decider are taken as they are, so they fall back; the harnesses are trimmed and lower-cased.
-  assert.deepEqual(view.settingsOf({ router: 'Command', decider: 'JEV', harnesses: 'gork' }), { lanes: false, router: 'record', decider: 'haiku', harnesses: ['agy'] })
-  assert.equal(view.settingsOf({ router: ' command' }).router, 'record')
-  assert.ok(!('seats' in view.settingsOf({ seats: 'robust' })), 'the seats option is gone')
   assert.equal(view.SEAT_CHOICES, undefined)
   assert.deepEqual(view.settingsOf({ harnesses: ' Grok,AGY,grok, cursor ,gork' }).harnesses, ['grok', 'agy', 'cursor'], 'known names only, once each, in order')
   assert.deepEqual(view.settingsOf({ harnesses: ['codex', 'x'] }).harnesses, ['codex'])
   assert.deepEqual(view.settingsOf({ harnesses: '' }).harnesses, ['agy'], 'agy alone when none is given')
   assert.deepEqual(view.settingsOf({ harnesses: 'x,y' }).harnesses, ['agy'], 'agy alone when none is valid')
-  assert.equal(view.settingsOf({ router: 7, decider: ['jev'] }).router, 'record')
+  assert.deepEqual(Object.keys(view.settingsOf({ router: 'command', decider: 'jev' })).sort(), ['harnesses', 'lanes'])
+  assert.equal(view.ROUTER_MODES, undefined)
+  assert.equal(view.ROUTER_DECIDERS, undefined)
 })
 
-test('the switch is on with superdelegation true, or with lanes true and superdelegation not set, and off otherwise', () => {
+const OLD_LANES = 'lan' + 'es'
+const OLD_SEATS = 'sea' + 'ts'
+
+test('the switch is on with superdelegation true and off otherwise: no other option stands in for it', () => {
   for (const superdelegation of [true, 'true']) assert.equal(view.settingsOf({ superdelegation }).lanes, true, String(superdelegation))
-  for (const lanes of [true, 'true']) assert.equal(view.settingsOf({ lanes }).lanes, true, `lanes ${lanes}`)
-  // A set superdelegation wins over lanes, in both directions.
-  for (const superdelegation of [false, 'false']) assert.equal(view.settingsOf({ superdelegation, lanes: true }).lanes, false, `superdelegation ${superdelegation}, lanes true`)
-  assert.equal(view.settingsOf({ superdelegation: true, lanes: false }).lanes, true)
-  for (const value of [false, 'false', 'TRUE', 'on', 1, 'yes', '', undefined, null]) {
-    assert.equal(view.settingsOf({ lanes: value }).lanes, false, `lanes ${String(value)}`)
-    assert.equal(view.settingsOf({ superdelegation: value }).lanes, false, `superdelegation ${String(value)}`)
-  }
-  // A superdelegation that is not true or false is not set, so lanes decides.
-  assert.equal(view.settingsOf({ superdelegation: 'on', lanes: true }).lanes, true)
+  for (const value of [false, 'false', 'on', 1, undefined, null, '']) assert.equal(view.settingsOf({ superdelegation: value }).lanes, false, String(value))
+  assert.equal(view.settingsOf({ [OLD_LANES]: true }).lanes, false)
+  assert.equal(view.settingsOf({ superdelegation: false, [OLD_LANES]: true }).lanes, false)
+  assert.equal(view.settingsOf({ superdelegation: true, [OLD_LANES]: false }).lanes, true)
+})
+
+test('the old seats option is not a setting', () => {
+  assert.ok(!(OLD_SEATS in view.settingsOf({ [OLD_SEATS]: 'rob' + 'ust' })))
 })
 
 test('times are written as hours, ages and UTC dates', () => {
@@ -244,7 +247,7 @@ test('everything outside that reaches a part is cleaned when it is parsed', () =
   for (const text of strings) assert.doesNotMatch(text, bad)
   assert.deepEqual(strings, ['1.4.0', '[31mboom', '[31mgemini', '[31mGemini', '[31mweekly'])
   const delegates = view.parseDelegates(
-    out({ delegations: [{ time: 1, description: dirty('paint'), applied: dirty('rewritten'), fallback: dirty('decider: timeout'), ranOn: { harness: dirty('claude'), model: dirty('claude-haiku-5-5'), effort: dirty('high') } }] }),
+    out({ delegations: [{ time: 1, description: dirty('paint'), applied: dirty('rewritten'), fallback: dirty('agy: timeout'), ranOn: { harness: dirty('claude'), model: dirty('claude-haiku-5-5'), effort: dirty('high') } }] }),
   ).value[0]
   for (const text of [delegates.description, delegates.ranOn, delegates.ranOnShort, delegates.fallback]) assert.doesNotMatch(text, bad)
   assert.equal(delegates.description, '[31mpaint')

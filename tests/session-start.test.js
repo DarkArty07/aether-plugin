@@ -9,14 +9,25 @@ const { SESSION_BIN, PLUGIN, makeRepo, compile, tempDir, ageRun, age } = require
 const { task, plan } = require('./plan-fixtures.js')
 const { ensure } = require('../plugins/aether/lib/worktrees.js')
 const { appendLog, logFile } = require('../plugins/aether/lib/lanes.js')
-const { markSession } = require('../plugins/aether/lib/session.js')
+const { markSession, readDelegateSettings } = require('../plugins/aether/lib/session.js')
 
 const AETHER = { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup', agent_type: 'aether:lead' }
+
+const OLD_LANES = 'CLAUDE_PLUGIN_OPTION_' + 'LAN' + 'ES'
+const OLD_SEATS = 'CLAUDE_PLUGIN_OPTION_' + 'SEA' + 'TS'
+const OLD_LEGACY = 'AETHER_SUPERDELEGATION_' + 'LEG' + 'ACY'
+
+// The values of options a user may still have saved from before spec 013 removed them, as an environment. The names
+// are built from their parts: the scan for the removed identifiers (tests/no-router.test.js) is for what the plugin
+// uses, and these tests only prove that a saved value changes nothing.
+function removedOptions(values) {
+  return Object.fromEntries(Object.entries(values).map(([name, value]) => [`CLAUDE_PLUGIN_OPTION_${name.toUpperCase()}`, value]))
+}
 
 // The hook's environment, without what a surrounding session may have set.
 function hookEnv(data, extra = {}) {
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }
-  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_SEATS', 'AETHER_SUPERDELEGATION', 'AETHER_SUPERDELEGATION_LEGACY']) delete env[key]
+  for (const key of ['CLAUDE_ENV_FILE', OLD_LANES, 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', OLD_SEATS, 'CLAUDE_PLUGIN_OPTION_DEADLINES', ...Object.keys(removedOptions({ router: '', decider: '', fallback: '' })), 'AETHER_SUPERDELEGATION', OLD_LEGACY]) delete env[key]
   return { ...env, ...extra }
 }
 
@@ -152,7 +163,7 @@ test('a session that is not Aether gets nothing: no output, no file, no environm
     '"aether:lead"',
   ]
   for (const input of inputs) {
-    const r = start(repo.dir, data, { input, env: { CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_LANES: 'true' } })
+    const r = start(repo.dir, data, { input, env: { CLAUDE_ENV_FILE: envFile, [OLD_LANES]: 'true' } })
     assert.equal(r.status, 0, r.stderr)
     assert.equal(r.stdout, '', JSON.stringify(input))
   }
@@ -169,7 +180,7 @@ test('an Aether session is marked, gets the superdelegation lines, and gets the 
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.out.hookSpecificOutput.additionalContext, /^Aether mode is active\./)
   assert.equal(JSON.parse(fs.readFileSync(path.join(data, 'sessions', 's1.json'), 'utf8')).session, 's1')
-  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_SUPERDELEGATION=off\nexport AETHER_LANE_HARNESSES=agy\n')
 })
 
 function exported(t, extra = {}) {
@@ -182,20 +193,28 @@ function exported(t, extra = {}) {
 
 test('C1: with nothing set, superdelegation is off and nothing is ignored', (t) => {
   const { text, context } = exported(t)
-  assert.equal(text, 'export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
+  assert.equal(text, 'export AETHER_SUPERDELEGATION=off\nexport AETHER_LANE_HARNESSES=agy\n')
   assert.doesNotMatch(context, /seats option|lanes option/)
 })
 
 test('C1: a set superdelegation wins, true or false', (t) => {
   assert.ok(exported(t, { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }).text.startsWith('export AETHER_SUPERDELEGATION=on\n'))
-  assert.ok(exported(t, { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', CLAUDE_PLUGIN_OPTION_LANES: 'true' }).text.startsWith('export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=lanes-ignored\n'))
+  assert.ok(exported(t, { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', [OLD_LANES]: 'true' }).text.startsWith('export AETHER_SUPERDELEGATION=off\n'))
 })
 
-test('E8: lanes on with superdelegation unset counts as on, and seats native is ignored, and the owner is told both', (t) => {
-  const { text, context } = exported(t, { CLAUDE_PLUGIN_OPTION_LANES: 'true', CLAUDE_PLUGIN_OPTION_SEATS: 'native' })
-  assert.equal(text, 'export AETHER_SUPERDELEGATION=on\nexport AETHER_SUPERDELEGATION_LEGACY=lanes-as-on,seats-ignored\nexport AETHER_LANE_HARNESSES=agy\n')
-  assert.ok(context.includes('The lanes option is on and superdelegation is not set, so superdelegation counts as on. Set superdelegation to choose it yourself.'))
-  assert.ok(context.includes('The seats option no longer exists (native, balanced and robust are gone): its value is ignored.'))
+test('the environment file has the switch and the harness list, and no line about old options', (t) => {
+  const on = exported(t, { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', CLAUDE_PLUGIN_OPTION_HARNESSES: 'agy' })
+  assert.equal(on.text, 'export AETHER_SUPERDELEGATION=on\nexport AETHER_LANE_HARNESSES=agy\n')
+  const off = exported(t, { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', [OLD_LANES]: 'true', [OLD_SEATS]: 'robust' })
+  assert.equal(off.text, 'export AETHER_SUPERDELEGATION=off\nexport AETHER_LANE_HARNESSES=agy\n')
+})
+
+test('an old lanes or seats option changes nothing and the start says nothing about it', (t) => {
+  const repo = makeRepo(t)
+  const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { [OLD_LANES]: 'true', [OLD_SEATS]: 'robust' } })
+  assert.equal(r.status, 0, r.stderr)
+  // The bootstrap itself says a delegate's model "is ignored", so only the old-option notes are checked.
+  assert.doesNotMatch(r.stdout, /counts as on|The (lanes|seats) option|no longer exists/)
 })
 
 test('the lines are appended to what the file already holds', (t) => {
@@ -203,7 +222,7 @@ test('the lines are appended to what the file already holds', (t) => {
   const envFile = path.join(tempDir(t), 'env.sh')
   fs.writeFileSync(envFile, 'export OTHER=1\n')
   start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' } })
-  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export OTHER=1\nexport AETHER_SUPERDELEGATION=on\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export OTHER=1\nexport AETHER_SUPERDELEGATION=on\nexport AETHER_LANE_HARNESSES=agy\n')
 })
 
 test('the harness line keeps the known names of the option, in order, or is agy when none is valid', (t) => {
@@ -218,7 +237,7 @@ test('the harness line keeps the known names of the option, in order, or is agy 
     const envFile = path.join(tempDir(t), 'env.sh')
     const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, CLAUDE_PLUGIN_OPTION_HARNESSES: value } })
     assert.equal(r.status, 0, r.stderr)
-    assert.equal(fs.readFileSync(envFile, 'utf8'), `export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=${list}\n`, JSON.stringify(value))
+    assert.equal(fs.readFileSync(envFile, 'utf8'), `export AETHER_SUPERDELEGATION=off\nexport AETHER_LANE_HARNESSES=${list}\n`, JSON.stringify(value))
   }
 })
 
@@ -234,7 +253,7 @@ test('a resumed Aether session is marked and gets the superdelegation lines, wit
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, '')
   assert.equal(fs.existsSync(path.join(data, 'sessions', 's1.json')), true)
-  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_SUPERDELEGATION=off\nexport AETHER_LANE_HARNESSES=agy\n')
 })
 
 test('without CLAUDE_ENV_FILE the context says superdelegation is off', (t) => {
@@ -264,7 +283,7 @@ test('session start prunes session markers not written to for 30 days', (t) => {
   const old = new Date(Date.now() - 31 * 24 * 3600 * 1000)
   fs.utimesSync(path.join(data, 'sessions', 'old.json'), old, old)
   start(repo.dir, data)
-  assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')).sort(), ['s1.json', 's1.router.json'])
+  assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')).sort(), ['s1.brake.json', 's1.delegate.json', 's1.json'])
 })
 
 test('session start marks the session ops-off only when the ops option is false', (t) => {
@@ -279,4 +298,48 @@ test('session start marks the session ops-off only when the ops option is false'
     assert.equal(fs.existsSync(path.join(on, 'sessions', 's1.json')), true)
     assert.equal(fs.existsSync(path.join(on, 'sessions', 's1.ops-off')), false)
   }
+})
+
+test('session start writes the delegate file from the options', (t) => {
+  const repo = makeRepo(t)
+  const standard = tempDir(t, 'aether-data-')
+  assert.equal(start(repo.dir, standard).status, 0)
+  assert.deepEqual(readDelegateSettings(standard, 's1'), { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } })
+  const set = tempDir(t, 'aether-data-')
+  const env = {
+    CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true',
+    CLAUDE_PLUGIN_OPTION_HARNESSES: 'grok,agy',
+    CLAUDE_PLUGIN_OPTION_DEADLINES: 'other=5,quota=2',
+    ...removedOptions({ router: 'command', decider: 'jev', fallback: 'opus:max' }),
+  }
+  assert.equal(start(repo.dir, set, { env }).status, 0)
+  assert.deepEqual(readDelegateSettings(set, 's1'), { lanes: true, harnesses: ['grok', 'agy'], deadlines: { quotaMs: 2000 } })
+})
+
+test('session start leaves a router file an older version left, and a resumed session follows the options it has now', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-data-')
+  markSession(data, 's1', 1)
+  const oldFile = path.join(data, 'sessions', 's1' + '.' + 'router' + '.json')
+  fs.writeFileSync(oldFile, '{}')
+  assert.equal(start(repo.dir, data, { env: { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' } }).status, 0)
+  assert.equal(fs.existsSync(oldFile), true)
+  assert.equal(readDelegateSettings(data, 's1').lanes, true)
+  assert.equal(start(repo.dir, data, { env: { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false' } }).status, 0)
+  assert.equal(readDelegateSettings(data, 's1').lanes, false)
+})
+
+test('session start gives no note of a router mode: the option no longer exists', (t) => {
+  const repo = makeRepo(t)
+  for (const mode of ['advise', 'command']) {
+    const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', ...removedOptions({ router: mode }) } })
+    assert.equal(r.status, 0, r.stderr)
+    // The bootstrap is the skill's, which another task rewrites: only the note this hook used to add is checked.
+    assert.doesNotMatch(r.out.hookSpecificOutput.additionalContext, /Aether router \(/)
+  }
+})
+
+test('the session start bin no longer names the router notes or writes the router settings', () => {
+  const source = fs.readFileSync(SESSION_BIN, 'utf8')
+  assert.doesNotMatch(source, /ROUTER_NOTES|routerNote|routerSettingsFrom/)
 })

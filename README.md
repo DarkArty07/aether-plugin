@@ -11,9 +11,9 @@ The Lead writes the owner's intent card and launches `/aether:design`, which run
 
 Plain `claude` stays normal mode.
 
-<p align="center"><img src="https://img.shields.io/badge/version-0.14.0-blue" alt="version 0.14.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
+<p align="center"><img src="https://img.shields.io/badge/version-0.21.0-blue" alt="version 0.21.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
 
-Version 0.14.0 ([changelog](docs/changelog.md))
+Version 0.22.0 ([changelog](docs/changelog.md))
 
 Aether serves five goals, **RADAR**.
 
@@ -61,6 +61,8 @@ Then tell the Lead what you want. [Start](docs/getting-started.md#start) has the
 - [Getting started](docs/getting-started.md): the install, the first start, and what the Lead does with your first request.
 - [Purpose](docs/purpose.md): why Aether exists, the five goals of RADAR and the principles it follows.
 - [Methodology](docs/methodology.md): the roles, the three paths and the swarm, from your request to a merged result.
+- [Delegates](docs/guide/delegates.md): how a delegate task of the Lead climbs from Haiku to Sonnet and Opus, corrected on top of its own work, and what the system logs of it.
+- [Self-observation](docs/guide/observe.md): how `aether-observe` finds the plugin's own faults and out-of-date settings in a Lead session, and why nothing leaves your machine.
 - [Documentation](docs/index.md): every guide, the reference, the changelog and the design record.
 
 ## License

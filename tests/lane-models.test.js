@@ -23,7 +23,10 @@ const newer = (a, b) => {
 function checkMuseModels({ lanes, listings, profiles }) {
   const problems = []
   const models = lanes.harnesses?.muse?.models ?? {}
-  const listed = (listings.harnesses?.muse?.models ?? []).map(idOf)
+  const listed = [
+    ...(listings.harnesses?.muse?.models ?? []),
+    ...(listings.harnesses?.muse?.calledNotListed ?? []),
+  ].map(idOf)
   for (const [id, entry] of Object.entries(models)) {
     if (/contributor/.test(id)) problems.push(`${id}: a contributor model never enters the table`)
     if (NOT_CODE.test(id)) problems.push(`${id}: not a coding model`)
@@ -51,6 +54,8 @@ test('the rules fail for a model the CLI does not list, an older generation, a m
   const profiles = { profiles: { 'muse-spark-1-3': {}, 'muse-spark-1-2': {} } }
   const check = (models) => checkMuseModels({ lanes: { harnesses: { muse: { models } } }, listings, profiles })
   assert.deepEqual(check({ 'muse-spark-1.3': entry() }), [])
+  const calledListing = { harnesses: { muse: { models: ['muse-wonder-1.0'], calledNotListed: [{ id: 'muse-spark-1.3' }] } } }
+  assert.deepEqual(checkMuseModels({ lanes: { harnesses: { muse: { models: { 'muse-spark-1.3': entry() } } } }, listings: calledListing, profiles }), [])
   assert.deepEqual(check({ 'muse-spark-1.2': entry() }), ['muse-spark-1.2: not the newest generation of its line'])
   assert.deepEqual(check({ 'muse-spark-9.9': entry() }), ['muse-spark-9.9: the Muse CLI does not list it (harness-models.json)', 'muse-spark-9.9: no profile in profiles.json'])
   assert.deepEqual(check({ 'muse-wonder-1.0': entry() }), ['muse-wonder-1.0: no profile in profiles.json'])

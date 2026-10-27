@@ -203,7 +203,7 @@ The owner's local gateway, at commit `43f9915`:
 
 ## Phase 0 findings (2026-10-07)
 
-Measured on Claude Code 2.1.293 with a throwaway plugin. The tests ran headless sessions (`claude -p`) with Haiku as the main model and bypassed permissions. The plugin was deleted afterwards. Each finding answers one of the questions S1–S6 in the [design spec](superpowers/specs/2026-10-07-aether-plugin-design.md#13-scope-and-phases), or is new.
+Measured on Claude Code 2.1.293 with a throwaway plugin. The tests ran headless sessions (`claude -p`) with Haiku as the main model and bypassed permissions. The plugin was deleted afterwards. Each finding answers one of the questions S1–S6 in the design spec, or is new.
 
 | Question | Result |
 |---|---|
@@ -252,7 +252,7 @@ Facts the Lead and Designer split relies on, from Claude Code's documentation.
 
 ## Trial 2 findings (2026-10-08)
 
-From the transcripts of [trial 2](evaluations/2026-10-08-trial-2.md), on Claude Code 2.1.294.
+From the transcripts of trial 2, on Claude Code 2.1.294.
 
 | Topic | Result |
 |---|---|
@@ -263,7 +263,7 @@ From the transcripts of [trial 2](evaluations/2026-10-08-trial-2.md), on Claude 
 
 ## Effort per task findings (2026-10-08)
 
-From the effort probe of the [effort per task plan](superpowers/plans/2026-10-08-effort-per-task.md), on Claude Code 2.1.295.
+From the effort probe of the effort per task plan, on Claude Code 2.1.295.
 
 | Topic | Result |
 |---|---|
@@ -275,7 +275,7 @@ From the effort probe of the [effort per task plan](superpowers/plans/2026-10-08
 
 ## Lanes findings (2026-10-08)
 
-From the verification run for the [lanes spec](superpowers/specs/2026-10-08-lanes-design.md): agy 1.3.2, 24 calls in throwaway directories, and Claude Code's mod API types.
+From the verification run for the lanes spec: agy 1.3.2, 24 calls in throwaway directories, and Claude Code's mod API types.
 
 | Topic | Result |
 |---|---|
@@ -305,7 +305,7 @@ Measured on Claude Code 2.1.296 with throwaway plugins, an isolated `CLAUDE_CONF
 | F8 | Hook processes receive `CLAUDE_PLUGIN_DATA`: `<plugins root>/data/<id>`, where `<id>` is the plugin id with each character other than a letter, digit, `_` or `-` replaced by `-`. That is `aether-aether-plugin` for `aether@aether-plugin`, and `aether-inline` for a `--plugin-dir` copy. Hooks also receive `CLAUDE_PLUGIN_OPTION_<KEY>`. Bash commands receive neither. | Measured (Bash: documented) |
 | F9 | A mod loads from a copied marketplace install, as from `--plugin-dir`. In a mod:<br>- `$.env.get('CLAUDE_PLUGIN_DATA')` is `null`;<br>- `$.plugin.name` and `$.plugin.root` are properties, and the root of a marketplace install is its version directory in the plugin cache;<br>- `register(on, options)` receives the `userConfig` values;<br>- `classic.SessionStart` carries `agent_type`;<br>- `agent.offer` fires once for each agent offered, with `e.agent` such as `aether:designer`. | Measured |
 | F10 | Returning `{ isOffered: false }` from `agent.offer` withholds that agent. | Documented |
-| F11 | `claude plugin install <p> --config lanes=true` stores `pluginConfigs["<id>"].options.lanes = true` in user settings. Hooks then see `CLAUDE_PLUGIN_OPTION_LANES=true`, and the mod receives `{ lanes: true }`. | Measured |
+| F11 | `claude plugin install <p> --config superdelegation=true` stores `pluginConfigs["<id>"].options.superdelegation = true` in user settings. Hooks then see `CLAUDE_PLUGIN_OPTION_SUPERDELEGATION=true`, and the mod receives `{ superdelegation: true }`. | Measured |
 | F12 | A dependency `{ "name": "superpowers", "marketplace": "claude-plugins-official" }` resolves when the root marketplace lists `claude-plugins-official` in `allowCrossMarketplaceDependenciesOn`.<br>- With the official marketplace added, the install works, and adding that marketplace even installed superpowers by itself.<br>- Without it, the install succeeds with a warning, and the plugin fails to load with `Dependency "superpowers@claude-plugins-official" is not installed — run claude plugin install superpowers@claude-plugins-official, or check that its marketplace is added`.<br>Claude Code adds the official marketplace at a user's first interactive session. | Measured (the last sentence: documented) |
 | F13 | A marketplace added from a local path loads the plugin in place, from the working tree: no copy and no pin. `claude plugin marketplace add` refuses `<path>#<ref>` ("Path does not exist") and `file://…#<ref>` ("Invalid marketplace source format"). | Measured |
 | F14 | A `git` marketplace with a `file://` URL and a `ref`, declared under `extraKnownMarketplaces` in user settings, is cloned at the next session start, and installs a copy of that tag into the plugin cache. Changing the `ref`, starting a session and running `claude plugin update` moved the plugin from 0.0.1 to 0.0.2 and back. The data directory survived each move. | Measured |
@@ -321,7 +321,7 @@ Measured on Claude Code 2.1.296 with throwaway plugins, an isolated `CLAUDE_CONF
 
 ### Dormant footprint of 0.7.0
 
-Measured on Claude Code 2.1.296 on 2026-10-09 (acceptance A3, `docs/evaluations/2026-10-09-installable/A3-dormant.md`). Aether 0.7.0 was installed from a throwaway clone at its tag into an isolated `CLAUDE_CONFIG_DIR`, with the fake model on `127.0.0.1`. The session ran from a plain git repository without `--agent`, so it is a normal session. `<S>` is the scratch directory, and `<S>/c` runs `claude` with `CLAUDE_CONFIG_DIR` set to `<S>/cfg` and `ANTHROPIC_BASE_URL` set to the fake model.
+Measured on Claude Code 2.1.296 on 2026-10-09 (acceptance A3, dormant evaluation). Aether 0.7.0 was installed from a throwaway clone at its tag into an isolated `CLAUDE_CONFIG_DIR`, with the fake model on `127.0.0.1`. The session ran from a plain git repository without `--agent`, so it is a normal session. `<S>` is the scratch directory, and `<S>/c` runs `claude` with `CLAUDE_CONFIG_DIR` set to `<S>/cfg` and `ANTHROPIC_BASE_URL` set to the fake model.
 
 The commands (checks 2 to 5):
 
@@ -349,7 +349,7 @@ The first request of each of the two sessions, in characters of each field's JSO
 
 ## Ops without a model (2026-10-10)
 
-Measured on Claude Code 2.1.296 for decision A30, with a throwaway plugin, an isolated `CLAUDE_CONFIG_DIR` and `HOME`, an emptied environment (`env -i`), and the fake model (`tests/fixtures/fake-model.js`) on a port the system chose. No model request left the machine. The evidence is in [the evaluation](evaluations/2026-10-10-ops-in-mod.md). "Documented" means the mod API types that `/plugin-types` writes, as published for 2.1.277.
+Measured on Claude Code 2.1.296 for decision A30, with a throwaway plugin, an isolated `CLAUDE_CONFIG_DIR` and `HOME`, an emptied environment (`env -i`), and the fake model (`tests/fixtures/fake-model.js`) on a port the system chose. No model request left the machine. The evidence is in the evaluation. "Documented" means the mod API types that `/plugin-types` writes, as published for 2.1.277.
 
 | # | Fact | Source |
 |---|---|---|
@@ -359,7 +359,7 @@ Measured on Claude Code 2.1.296 for decision A30, with a throwaway plugin, an is
 | F27 | `$.process.run` does not count against a hook's 10-second budget. Commands of 150 s, 330 s and 560 s resolved, and each step was answered with the command's output. Two long calls ran at once, each in its own agent's step (the workflow ran two agents at a time on that machine). Lanes wait at most 540 s per `aether-lane wait`. | Measured (the budget rule: documented) |
 | F28 | When a command outlives `timeoutMs`, `$.process.run` rejects with a `HooksError` whose message is `<plugin>: $.process.run(<argv[0]>) aborted: still running after <n>ms`. The child is killed together with its non-detached children: a grandchild meant to write a file after 25 s never wrote it. A detached grandchild (`detached: true`, stdio ignored), like `aether-lane start`'s runner, survived, and the call returned 40 ms after the direct child exited. A command that cannot start rejects at once with `failed to start: ENOENT …`: an `argv[0]` not on `PATH` (`Executable not found in $PATH`), or a `cwd` that does not exist. So does a `{ deny }` from another plugin's `process.run` hook. `node` given a script that does not exist resolves instead, with exit 1 and nothing on standard output. | Measured |
 | F29 | A non-zero exit code resolves, and passes through as is (3 stayed 3). Standard output is cut at 4 MiB: a 20 MB output came back as 4,194,304 characters, and a 1 MB output came back whole. The result also carries `isStdoutTruncated` and `isStderrTruncated`, which the 2.1.277 types do not list. | Measured |
-| F30 | `argv[0]` is looked up on `PATH` (`node` worked), and an absolute path to a script with a shebang runs it. The child inherits the Claude Code process's environment, not the Bash tool's, and so does everything it starts. Compared with a Bash call of the same session, it lacked what Claude Code adds to Bash commands, among them `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `GIT_EDITOR=true` and the plugins' `bin/` directories on `PATH`. It also lacks the exports a SessionStart hook writes to `CLAUDE_ENV_FILE` (F7). In the mini run, a plan whose test command needs `AETHER_LANES` passed its merge through the Bash tool, and failed it through `$.process.run` (`reason: tests`, reverted): Aether's own session-start hook exports `AETHER_LANES` that way. Shell-profile variables reach the child only when Claude Code was started from that shell; the probe started it with `env -i`, so `SHELL` and the profile's variables were missing too. `aether-wt` and `aether-lane` read none of the variables Claude Code adds, but a merge's test command and agy run in this environment, and `aether-lane status` looks for agy on its `PATH`. | Measured |
+| F30 | `argv[0]` is looked up on `PATH` (`node` worked), and an absolute path to a script with a shebang runs it. The child inherits the Claude Code process's environment, not the Bash tool's, and so does everything it starts. Compared with a Bash call of the same session, it lacked what Claude Code adds to Bash commands, among them `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `GIT_EDITOR=true` and the plugins' `bin/` directories on `PATH`. It also lacks the exports a SessionStart hook writes to `CLAUDE_ENV_FILE` (F7). In the mini run, a plan whose test command needs an environment variable passed its merge through the Bash tool, and failed it through `$.process.run` (`reason: tests`, reverted): Aether's own session-start hook exports environment variables that way. Shell-profile variables reach the child only when Claude Code was started from that shell; the probe started it with `env -i`, so `SHELL` and the profile's variables were missing too. `aether-wt` and `aether-lane` read none of the variables Claude Code adds, but a merge's test command and agy run in this environment, and `aether-lane status` looks for agy on its `PATH`. | Measured |
 | F31 | "Git runs with repo hooks off" (documented) does not reach git started by the command. A `git commit` made by a script under `$.process.run` ran the repository's `pre-commit` hook, as it did under the Bash tool. git as `argv[0]` itself was not tried. | Measured |
 | F32 | On two throwaway repositories, each with a compiled one-task run, Aether's own agent `aether:ops` ran six commands: `aether-lane status`, `aether-wt merge`, `aether-wt remove`, `aether-wt diff --final`, `aether-lane wait` of an unknown call, and `aether-wt sweep`. The mod and the Bash tool printed the same output once paths, run ids and hashes were masked, and the Bash tool's `Exit code 1` line was dropped (the mod reports that code as `exitCode`). The final tree, the worktrees, the branches and `final.diff` were the same too. The mod made no model requests for the six agents; with `$.process.run` refused, the model made 12. The same held after the review's fixes, run again. | Measured |
 | F33 | A mod's capabilities come from its source: `claude plugin validate` lists `$.process.run` among the module's `calls`, and no manifest field declares it. `claude plugin install` and `claude plugin details` print the same for the plugin with and without the call. An administrator's plugin can refuse a whole module by what it calls (`plugin.register`), withhold `$.process`, or deny a call; a denied call rejects. | Measured (`validate`, `install`, `details`); documented (policy) |

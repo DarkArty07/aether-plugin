@@ -1,0 +1,39 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-observe hook
+// hook: the handler of the observation hooks; reads the hook's JSON from stdin, prints nothing, always exits 0.
+// Any other use prints one JSON line with the usage error and exits 1.
+
+const { readFileSync } = require('node:fs')
+const path = require('node:path')
+const lib = path.join(__dirname, '..', 'lib')
+
+const USAGE = 'usage: aether-observe hook'
+
+function hook() {
+  try {
+    const input = JSON.parse(readFileSync(0, 'utf8'))
+    require(path.join(lib, 'observe-hook.js')).handleHook(input)
+  } catch {
+    // A hook must never print or fail: an unreadable input is nothing to record.
+  }
+  return 0
+}
+
+function fail(message) {
+  process.stdout.write(`${JSON.stringify({ error: message })}\n`)
+  return 1
+}
+
+function main(args) {
+  const [verb, ...rest] = args
+  if (verb === 'hook' && rest.length === 0) return hook()
+  return fail(USAGE)
+}
+
+try {
+  process.exitCode = main(process.argv.slice(2))
+} catch (err) {
+  process.exitCode = process.argv[2] === 'hook' ? 0 : fail(err.message)
+}

@@ -1,7 +1,10 @@
 'use strict'
 
 // Speed, cost, quality, lanes and the RADAR figures of a swarm run (spec §10), from its run directory, the
-// usage meter's files, the lane log and the saved result; and finalize, which records the run and removes what is left of it.
+// usage meter's files (usage/), the lane log (lanes/), and the saved result; and finalize, which records the
+// run and removes what is left of it. Spend (aether-report --spend) reads usage/, lanes/, and the delegate log,
+// and it no longer reads the old router journal.
+// Family: none.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -12,7 +15,8 @@ const { loadPrices, priceEntry } = require('./prices.js')
 const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
 const { judge } = require('./baseline.js')
-const { legacyNotes } = require('./superdelegation.js')
+const { isSessionId, newestIn } = require('./spend.js')
+const { archiveSpend, noteFailure, clearFailure } = require('./spend-archive.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
 const DAY_MS = 24 * 3600 * 1000
@@ -21,8 +25,6 @@ const iso = (ms) => new Date(ms).toISOString()
 const zeroTokens = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
 const laneZeroTokens = () => ({ input: 0, output: 0, cacheRead: 0 })
 const LANE_STATUSES = ['ok', 'failed', 'quota', 'violation', 'blocked']
-// A lane-log call with no harness counts as agy's: entries written before the log named the harness did.
-const LEGACY_HARNESS = 'agy'
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
 // A rung is `<model> <effort>`; a bare model, as results saved before efforts were recorded name it, has no effort.
@@ -35,17 +37,6 @@ function readIfThere(file) {
   return fs.existsSync(file) ? run.readJson(file) : null
 }
 
-// The newest modification time of a session's usage directory and its parts, or null.
-function lastWritten(dir) {
-  try {
-    let newest = fs.statSync(dir).mtimeMs
-    for (const name of fs.readdirSync(dir)) newest = Math.max(newest, fs.statSync(path.join(dir, name)).mtimeMs)
-    return newest
-  } catch {
-    return null
-  }
-}
-
 // Every usage session under <dataDir>/usage written to at or after `since`, as
 // { session, claudeCode, agents, entries }, with its parts merged in order. A part that cannot be
 // read is skipped, and so is a session with no entries.
@@ -54,7 +45,7 @@ function readUsage(dataDir, { since = 0 } = {}) {
   const sessions = new Map()
   if (!fs.existsSync(root)) return sessions
   for (const session of fs.readdirSync(root)) {
-    const written = lastWritten(path.join(root, session))
+    const written = newestIn(path.join(root, session))
     if (written === null || written < since) continue
     let names
     try {
@@ -211,6 +202,8 @@ const isQuestion = (question) => typeof question === 'string' && question.trim()
 // A unit's latest launch gives its status and its question; attempts and findings add up across launches. A unit counts
 // as escalated when a launch moved it to another model or a relaunch started it on another model, and
 // as climbed when a launch raised its effort on one model.
+// The latest launch's review is the run's. A `deferred` review did not run: it is not a failure, and its reason
+// is kept. A later launch whose review ran replaces it. Only a review whose status is `done` counts as a review.
 // `adopted` maps a task to the Lead's record of integrating it by hand (aether-wt adopt). A unit the swarm merged
 // is not counted as adopted; any other counts as integrated, and as the swarm's status no longer.
 function qualityOf(results, adopted = {}) {
@@ -270,7 +263,15 @@ function qualityOf(results, adopted = {}) {
     attempts: all.reduce((sum, unit) => sum + unit.attempts, 0),
     agents,
     findings: countFindings(all.flatMap((unit) => unit.findings)),
-    finalReview: review ? { status: review.status, verdict: review.verdict || null, findings: countFindings(reviewFindings), reviews } : null,
+    finalReview: review
+      ? {
+          status: review.status,
+          verdict: review.verdict || null,
+          findings: countFindings(reviewFindings),
+          reviews,
+          ...(review.status === 'deferred' ? { reason: review.reason || null } : {}),
+        }
+      : null,
   }
 }
 
@@ -317,9 +318,13 @@ function workOf(tooks) {
 }
 
 // What each harness's quota windows consumed in the run: the sum, per window, over the groups its calls used.
+// A call that names no harness belongs to no harness.
 function quotaByHarness(summary, calls) {
   const groupsOf = {}
-  for (const call of calls) (groupsOf[call.harness || LEGACY_HARNESS] ||= new Set()).add(call.group)
+  for (const call of calls) {
+    if (!call.harness) continue
+    ;(groupsOf[call.harness] ||= new Set()).add(call.group)
+  }
   const out = {}
   for (const [harness, groups] of Object.entries(groupsOf)) {
     const windows = (out[harness] = {})
@@ -409,11 +414,13 @@ function summarizeLanes(calls, readings, prices, notes, window = null) {
     const role = (summary.byRole[call.role] ||= { calls: 0, usd: 0 })
     role.calls++
     role.usd += usd
-    const harness = (summary.byHarness[call.harness || LEGACY_HARNESS] ||= { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, usd: 0, tokens: laneZeroTokens() })
-    harness.calls++
-    harness.usd += usd
-    addTokens(harness.tokens, tokens)
-    if (LANE_STATUSES.includes(call.status)) harness[call.status]++
+    if (call.harness) {
+      const harness = (summary.byHarness[call.harness] ||= { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, usd: 0, tokens: laneZeroTokens() })
+      harness.calls++
+      harness.usd += usd
+      addTokens(harness.tokens, tokens)
+      if (LANE_STATUSES.includes(call.status)) harness[call.status]++
+    }
   }
   const balanceReadings = window ? readings.filter((reading) => reading.time >= window.start && reading.time <= window.end) : readings
   if (window) {
@@ -428,24 +435,21 @@ function summarizeLanes(calls, readings, prices, notes, window = null) {
   return summary
 }
 
-// The version that the newest reading of each harness names, by harness. A reading with no harness is agy's.
+// The version that the newest reading of each harness names, by harness. A reading with no harness names none.
 function versionsOf(readings) {
   const newest = new Map()
-  const named = readings.filter((reading) => reading.version).sort((a, b) => b.time - a.time)
+  const named = readings.filter((reading) => reading.version && reading.harness).sort((a, b) => b.time - a.time)
   for (const reading of named) {
-    const harness = reading.harness || LEGACY_HARNESS
-    if (!newest.has(harness)) newest.set(harness, reading.version)
+    if (!newest.has(reading.harness)) newest.set(reading.harness, reading.version)
   }
   return Object.fromEntries(newest)
 }
 
-// Every launch's lane rounds, counted by the model that served them, and the lanes' overflow. A lane round's
+// Every launch's lane rounds, counted by the model that served them. A lane round's
 // provider is "<harness> <model>"; a native round's is "native", which counts nowhere.
 function launchesOf(results) {
   const attempts = {}
-  let overflow = 0
   for (const result of results) {
-    overflow += (result.lanes && result.lanes.overflow) || 0
     for (const unit of result.units || []) {
       for (const round of unit.rounds || []) {
         const lane = typeof round.provider === 'string' ? /^\S+ (.+)$/.exec(round.provider) : null
@@ -456,7 +460,7 @@ function launchesOf(results) {
       }
     }
   }
-  return { attempts, overflow }
+  return { attempts }
 }
 
 // What the plans covered: the lanes' dollars beside the native dollars, and the lanes' share of both.
@@ -546,19 +550,10 @@ function radarOf({ speed, cost, lanes, quality }) {
   }
 }
 
-// What the session read of the superdelegation option: on (null when it was not exported) and the notes for what
-// it ignored or read as on. A token that is not known is left out rather than stopping the report.
+// What the session exported of the superdelegation switch: on, off, or null when it was not exported.
 function superdelegationOf(env) {
   const on = env.AETHER_SUPERDELEGATION
-  const tokens = (env.AETHER_SUPERDELEGATION_LEGACY || '').split(',').map((token) => token.trim()).filter(Boolean)
-  const legacy = tokens.flatMap((token) => {
-    try {
-      return legacyNotes([token])
-    } catch {
-      return []
-    }
-  })
-  return { on: on === 'on' ? true : on === 'off' ? false : null, legacy }
+  return { on: on === 'on' ? true : on === 'off' ? false : null }
 }
 
 // The run's window starts when the plan was compiled and ends when the result was saved, or now.
@@ -607,6 +602,17 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   for (const unit of quality.adoptedUnits || []) {
     notes.push(`${unit.id} was integrated by hand at ${String(unit.commit).slice(0, 10)}: ${unit.reason}`)
   }
+  // A retry that ran as one sub-attempt per owned file (issue 14). The quality counts are unchanged:
+  // the pass is still one attempt of the unit.
+  for (const result of results) {
+    for (const unit of result.units || []) {
+      for (const round of unit.rounds || []) {
+        if (!round || round.split !== true) continue
+        const note = `${unit.id} attempt ${round.attempt} was a split pass of ${round.subAttempts} sub-attempts`
+        if (!notes.includes(note)) notes.push(note)
+      }
+    }
+  }
 
   return {
     runId,
@@ -627,16 +633,33 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   }
 }
 
-// Deletes the usage sessions not written to for `days` (the usage meter's files never shrink).
-function pruneUsage(dataDir, { days = 30, now = Date.now() } = {}) {
+// Deletes the usage sessions not written to for `days` (the usage meter's files never shrink). Before it deletes the
+// parts of a session id, it adds what they spent to the session's summary (lib/spend-archive.js): a session whose
+// summary cannot be written stays, for the next prune to try again, and leaves a trace of the failure under the data
+// directory (prune-failures.json). A name that is not a session id goes with no summary.
+function pruneUsage(dataDir, { days = 30, now = Date.now(), prices } = {}) {
   const root = path.join(dataDir, 'usage')
   const pruned = []
   if (!fs.existsSync(root)) return { pruned }
   for (const session of fs.readdirSync(root).sort()) {
     const dir = path.join(root, session)
-    const written = lastWritten(dir)
+    const written = newestIn(dir)
     if (written === null || now - written < days * DAY_MS) continue
-    fs.rmSync(dir, { recursive: true, force: true })
+    if (isSessionId(session)) {
+      try {
+        archiveSpend(dataDir, session, 'usage', { prices })
+      } catch (err) {
+        noteFailure(dataDir, `usage/${session}`, err, now)
+        continue
+      }
+      clearFailure(dataDir, `usage/${session}`)
+    }
+    try {
+      fs.rmSync(dir, { recursive: true, force: true })
+    } catch (err) {
+      // Another prune deleted it first.
+      if (err.code !== 'ENOENT') throw err
+    }
     pruned.push(session)
   }
   return { pruned }

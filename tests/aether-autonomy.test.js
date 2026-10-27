@@ -12,7 +12,7 @@ const MERGE = 'apruebo merge a main en todas las futuras ocasiones'
 const HOURS = 'trabaja por horas y no cuentes conmigo hasta acabar'
 const REVOKE = 'ya no fusiones a main sin preguntarme'
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json>'
 
 const human = (text, time) =>
   JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })

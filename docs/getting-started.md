@@ -59,7 +59,7 @@ Then, in the same shell, ask which options the plugin has:
 claude plugin configure aether@aether-plugin
 ```
 
-It shows the plugin's seven options, `superdelegation`, `harnesses`, `ops`, `router`, `decider`, `fallback` and `deadlines`, with two legacy keys of the retired lanes and seats options (an old value is read once or ignored), and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
+It shows the plugin's seven options (`superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake`, `brakepush` and `observedev`), and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
 
 Last, check that the plan format Aether builds from reads correctly. Save this two-task plan as `tasks.md` anywhere. It is what the Writer produces for a plan, shortened: every task has the Aether fields, and there is an `## Aether Execution` section.
 
@@ -134,7 +134,7 @@ In a clone of this repository, `scripts/aether-lead` is the same launcher. Link 
 ln -s "$PWD/scripts/aether-lead" ~/.local/bin/aether-lead
 ```
 
-Then `aether-lead` does what `aeth` does, with the clone's launcher, and `aether-lead --plugin-dir <worktree>/plugins/aether` tries a development tree in place of the installed release.
+Then `aether-lead` does what `aeth` does, with the clone's launcher, `aether-lead --dev` starts development mode, and `aether-lead --plugin-dir <worktree>/plugins/aether` tries a development tree in place of the installed release.
 
 To make Aether mode the default in one repository, put this in its `.claude/settings.local.json`:
 
@@ -162,7 +162,7 @@ Tell the Lead what you want. What it does with the request depends on its size, 
 4. **It writes the intent card.** `specs/NNN-<topic>/intent.md` holds your words as you said them, the understanding you confirmed, the criteria (what and why, each tied to a quote of yours), what is out, and your answers to the questions. Only the Lead writes the card. A small or reversible change needs no document: the Lead does it itself, or hands it to one delegate. (`using-aether`, «Designing» and «The route by size and risk».)
 5. **`/aether:design` runs the design by itself.** The Lead launches this workflow with the card and has no turn until it ends. The Writer writes the spec and the Judge reviews it; the Writer then writes the plan and the tasks, `aether-plan check` passes and the Judge reviews them; last, the Examiner writes the hidden exam. A document gets at most two revisions. With `superdelegation` on, each write of a document, each review and the exam go to another harness first, and to the native agent last, and a seat that cannot answer passes the round to the native agent without the Lead; with it off, which is the default, every seat is the native agent (see [Design seats](guide/design-seats.md#design-seats) and [Lanes](guide/lanes.md#lanes)). It needs the Workflow tool (see [When something fails](#when-something-fails)).
 6. **The Lead acts on one of four results.** `approved`: the paths of the spec, the plan and the tasks, each verdict of the Judge as given, the `Complexity` table and the proposals; the Lead then chooses how to build. `clarify`: questions the card did not settle, each marked `[NEEDS CLARIFICATION]`; the Lead asks you, writes your answers into the card and launches again. `dispute`: a third review that did not approve, or a `reject`, with both positions or the Judge's direction; the Lead rethinks the card or puts the dispute on your list, and never overrides the Judge. `failed`: the step and why. (`using-aether`, «Designing».)
-7. **The Lead chooses how to build it, and says why.** The direct path, the Lead itself, for a very bounded change; a delegate task, one subagent on a model the Lead names with its reason, for real but bounded work and for a plan of one or two tasks; or the swarm, `/aether:run`, for a plan of three or more tasks or one with a task on Opus. (`using-aether`, «The three paths».)
+7. **The Lead chooses how to build it, and says why.** The direct path, the Lead itself, for a very bounded change; a delegate task, one subagent, for real but bounded work and for a plan of one or two tasks, which starts on Haiku and rises to Sonnet and then to Opus only when it must (the system holds the step, and the Lead cannot skip one: see [Delegates](guide/delegates.md)); or the swarm, `/aether:run`, for a plan of three or more tasks or one with a task on Opus. (`using-aether`, «The three paths».)
 8. **It stops at the plan with a short brief.** Without your permission to work for hours, the Lead stops here. The brief opens with what waits for your yes, and recommends how to build it: itself, a delegate task on a model it names, or the swarm. Your yes starts the build. (`using-aether`, «Autonomous runs» and «The execution method».)
 
 **The brakes.** The design is held to what you asked, and the Lead does not conduct it, so its checks are in the documents:

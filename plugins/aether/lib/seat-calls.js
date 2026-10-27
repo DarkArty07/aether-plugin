@@ -1,17 +1,16 @@
 'use strict'
 
-// One design-seat round, started and awaited in steps. A round of an external seat can outlast the
-// time one command may run, so `start` checks the Lead's message, saves it and launches a detached runner;
-// the runner calls `aether-lane seat`'s own code (seats.js) and writes result.json last; `wait` and `stop`
-// read and end it. The commands share nothing but the files of the round directory, <mainRoot>/.aether/seats/<id>/,
-// which seats.js also uses for its worktree and its harness's files.
+// One design-seat round, started and awaited in steps. `aether-lane` seat-start, seat-wait and seat-stop call it.
+// Family: seat.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { repoPaths } = require('./git.js')
+const { readJsonOrNull, sleep } = require('./common.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
+const { finishedResult } = require('./lane-calls.js')
 const seats = require('./seats.js')
 
 const BIN = path.join(__dirname, '..', 'bin', 'aether-lane')
@@ -21,7 +20,7 @@ const POLL_MS = 250
 // Each verb's usage, as the bin lists it.
 const COMMANDS = {
   start:
-    'seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>] --superdelegation <on|off> --harnesses <h1,h2> --digest <digest>',
+    'seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>] --superdelegation <on|off> --harnesses <h1,h2> [--exclude <id>[,<id>...]] --digest <digest>',
   wait: 'seat-wait <id> [--max <seconds>]',
   stop: 'seat-stop <id>',
 }
@@ -31,9 +30,8 @@ const SEAT_ID = new RegExp(`^(${lanes.SEATS.join('|')})-\\d{8}-\\d{6}-[0-9a-f]{4
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const SESSION = /^[A-Za-z0-9-]+$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
-// The flags a start takes, with the seat the bin adds: the seats and lanes options retired with superdelegation, and a
-// round started with one of them would run under a switch nobody gave it.
-const START_FLAGS = ['seat', 'session', 'author', 'feature', 'doc', 'superdelegation', 'harnesses', 'digest']
+// The flags a start takes, plus the seat the bin adds before it calls start.
+const START_FLAGS = ['seat', 'session', 'author', 'feature', 'doc', 'superdelegation', 'harnesses', 'exclude', 'digest']
 
 // ---- The round directory ----
 
@@ -48,17 +46,14 @@ function seatPaths(cwd, id) {
     marker: `seat-call/${id}`,
     harnessMarker: `seat/${id}`,
     call: file('call.json'),
+    // The pair the round runs on, written by seats.js once it has one.
+    pair: file('pair.json'),
     message: file('message.md'),
     pid: file('pid'),
     result: file('result.json'),
-  }
-}
-
-function readJsonOrNull(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch {
-    return null
+    // Writer rounds only. continued says the round started from a partial; partial is what seat-stop saved.
+    continued: file('continued.json'),
+    partial: file('partial.json'),
   }
 }
 
@@ -91,7 +86,9 @@ function checkedFlags(flags) {
   if (!HARNESSES.test(harnesses)) throw new Error(`--harnesses must be harness names separated by commas, not ${harnesses}`)
   const digest = requireFlag(flags, 'digest')
   const author = typeof flags.author === 'string' && flags.author !== '' ? flags.author : null
-  return { seat, session, author, feature, doc, superdelegation, harnesses, digest }
+  // The same pair ids as `aether-lane pick --exclude`: the pairs this round already tried.
+  const exclude = seats.excludeList(flags.exclude)
+  return { seat, session, author, feature, doc, superdelegation, harnesses, digest, exclude }
 }
 
 // The message the Lead saved for a round, where the mod's bins look for it: <checkout>/.aether-tmp/seats/<session>/message.md.
@@ -152,30 +149,26 @@ function writeResult(paths, outcome) {
 async function runSeat(cwd, id) {
   const paths = seatPaths(cwd, id)
   let outcome
+  let startedAt = Date.now()
   try {
     const call = JSON.parse(fs.readFileSync(paths.call, 'utf8'))
+    if (Number.isFinite(call.startedAt)) startedAt = call.startedAt
     const message = fs.readFileSync(paths.message, 'utf8')
     const author = call.author === null ? [] : ['--author', call.author]
     const doc = call.doc === null ? [] : ['--doc', call.doc]
-    const argv = [call.seat, '--session', call.session, '--id', id, '--feature', call.feature, ...author, ...doc]
+    const exclude = Array.isArray(call.exclude) && call.exclude.length > 0 ? ['--exclude', call.exclude.join(',')] : []
+    const argv = [call.seat, '--session', call.session, '--id', id, '--feature', call.feature, ...author, ...doc, ...exclude]
     const { exitCode, value } = await seats.seatCommand(argv, { input: message, env: process.env, cwd })
     outcome = { exitCode, value }
   } catch (err) {
     outcome = { exitCode: 1, value: { error: err.message } }
   }
-  writeResult(paths, outcome)
+  // How long the round took since its start, for the workflow to record (issue 62).
+  writeResult(paths, { ...outcome, durationMs: Date.now() - startedAt })
   fs.rmSync(paths.pid, { force: true })
 }
 
 // ---- wait, stop ----
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-// The finished result, or null while there is none.
-function finishedResult(paths) {
-  const done = readJsonOrNull(paths.result)
-  return done && done.done === true ? done : null
-}
 
 // Whether the round's runner lives: its pid file names a process that carries the runner's marker and is not a zombie.
 // A pid the system gave to something else since, or a runner stop ended, is not it.
@@ -197,32 +190,47 @@ function runnerAlive(paths) {
   }
 }
 
-// The result of a round, or { done: false } when it still runs after maxSeconds. A round whose runner is gone and
-// left no result is a result too, an exit-1 one, so that nobody waits for it.
+// The result of a round, with the time it took (durationMs), or { done: false, elapsedMs } when it still runs after
+// maxSeconds, with the time since it started: the workflow has no clock, and takes its time caps from these (issue 62).
+// A round whose runner is gone and left no result is a result too, an exit-1 one, so that nobody waits for it.
 async function wait(cwd, id, { maxSeconds = null } = {}) {
   const paths = seatPaths(cwd, id)
   if (!fs.existsSync(paths.dir)) throw new Error(`no such seat round: ${id}`)
   const deadline = Date.now() + (maxSeconds ?? SEAT_WAIT_SECONDS) * 1000
+  const startedAt = readJsonOrNull(paths.call)?.startedAt
+  const elapsed = () => (Number.isFinite(startedAt) ? Math.max(0, Date.now() - startedAt) : null)
   for (;;) {
     const done = finishedResult(paths)
     if (done) return done
     if (!runnerAlive(paths)) {
       // The runner writes its result and then drops its pid: a result that came between the two reads is the answer.
-      return finishedResult(paths) ?? { done: true, exitCode: 1, value: { error: `the seat round ${id} ended without a result` } }
+      return finishedResult(paths) ?? { done: true, exitCode: 1, value: { error: `the seat round ${id} ended without a result` }, durationMs: elapsed() }
     }
-    if (Date.now() >= deadline) return { done: false }
+    if (Date.now() >= deadline) return elapsed() === null ? { done: false } : { done: false, elapsedMs: elapsed() }
     await sleep(Math.min(POLL_MS, Math.max(0, deadline - Date.now())))
   }
 }
 
-// Ends a round: the runner, whose signal handler in seats.js kills the harness and removes the worktree, and then
-// whatever still carries the harness's marker.
+// Ends a round: the runner, whose signal handler in seats.js keeps a Writer's partial, kills the harness and removes
+// the worktree, and then whatever still carries the harness's marker.
 function stop(cwd, id) {
   const paths = seatPaths(cwd, id)
   if (!fs.existsSync(paths.dir)) throw new Error(`no such seat round: ${id}`)
   const runner = lanes.killGroup(paths.pid, paths.marker)
   const marked = lanes.killMarked(paths.harnessMarker)
-  return { stopped: runner.killed || marked.length > 0 }
+  // The pair the round ran on, when it had one: the workflow leaves it out of the next try after a round it ended at its cap.
+  const pair = readJsonOrNull(paths.pair)?.pair
+  const out = { stopped: runner.killed || marked.length > 0, ...(typeof pair === 'string' ? { pair } : {}) }
+  // A Judge or an Examiner writes neither file, so its stop stays { stopped, pair }. continued is named only when
+  // this Writer round started from a partial. partial is named only when partial.json was written: a runner killed
+  // before the save finished must not be reported as having left nothing, so the workflow keeps what it holds.
+  // An empty list means the try left nothing.
+  if (!fs.existsSync(paths.continued)) return out
+  if (readJsonOrNull(paths.continued)?.continued === true) out.continued = true
+  if (!fs.existsSync(paths.partial)) return out
+  const partial = readJsonOrNull(paths.partial)
+  out.partial = Array.isArray(partial) ? partial : []
+  return out
 }
 
 module.exports = { SEAT_WAIT_SECONDS, COMMANDS, start, wait, stop, runSeat }

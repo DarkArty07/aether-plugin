@@ -70,6 +70,8 @@ test('an external Judge round starts in the background and its answer comes by s
   assert.equal(done.value.model, 'gemini-4-argon')
   assert.deepEqual(done.value.result, JUDGE_ANSWER)
   assert.ok(done.value.answer.startsWith('## Verdict\nrevise\n'))
+  // The result carries the time the round took, from its start (issue 62).
+  assert.ok(Number.isInteger(done.durationMs) && done.durationMs >= 0 && done.durationMs < 60000, String(done.durationMs))
 })
 
 test('the other exits of a seat are results of the round: 3 for nothing ran, 4 for a failed round', (t) => {
@@ -109,13 +111,19 @@ test('seat-wait answers { done: false } while a round runs, and seat-stop ends i
   const runnerEnv = fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0')
   assert.ok(runnerEnv.includes('AETHER_SUPERDELEGATION=on'), 'AETHER_SUPERDELEGATION')
   assert.ok(runnerEnv.includes('AETHER_LANE_HARNESSES=agy'), 'AETHER_LANE_HARNESSES')
-  assert.deepEqual(lane(repo, ['seat-wait', id, '--max', '0'], env).json, { done: false })
-  assert.deepEqual(lane(repo, ['seat-stop', id], env).json, { stopped: true })
+  // A round that still runs says how long it has (the workflow has no clock: its time caps read this, issue 62).
+  const running = lane(repo, ['seat-wait', id, '--max', '0'], env).json
+  assert.deepEqual(Object.keys(running).sort(), ['done', 'elapsedMs'])
+  assert.equal(running.done, false)
+  assert.ok(Number.isInteger(running.elapsedMs) && running.elapsedMs >= 0 && running.elapsedMs < 60000, String(running.elapsedMs))
+  // seat-stop names the pair the round ran on, for the next try to leave it out.
+  assert.deepEqual(lane(repo, ['seat-stop', id], env).json, { stopped: true, pair: 'agy/gemini-4-argon@high' })
   assert.ok(await until(() => !fs.existsSync(worktree)), 'the worktree is gone')
   const after = lane(repo, ['seat-wait', id, '--max', '5'], env).json
   assert.equal(after.done, true)
   assert.equal(after.exitCode, 1)
   assert.match(after.value.error, /ended without a result/)
+  assert.ok(Number.isInteger(after.durationMs))
 })
 
 test('a round whose runner is dead is reported, and bad arguments are refused', (t) => {
@@ -138,6 +146,68 @@ test('a round whose runner is dead is reported, and bad arguments are refused', 
   assert.match(refused(['judge', '--session', 's1', '--feature', FEATURE, '--lanes', 'on', ...OPTIONS, '--digest', 'x']).json.error, /seat-start takes no --lanes/)
   assert.match(refused(['judge', '--session', 's1', '--feature', FEATURE, ...OPTIONS]).json.error, /--digest/)
   assert.match(lane(repo, [], env).json.error, /seat-start .*seat-wait .*seat-stop/)
+})
+
+const ARGON = 'agy/gemini-4-argon@high'
+const OPUS_PAIR = 'agy/claude-opus-5-5@high'
+
+test('seat-start --exclude leaves that pair out and the next pair of the rule runs the round', (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`, [...OPTIONS, '--exclude', ARGON])
+  assert.equal(started.status, 0, started.stdout)
+  const done = waitDone(repo, started.json.id, env)
+  assert.equal(done.exitCode, 3, JSON.stringify(done))
+  assert.equal(done.value.unavailable, 'no-external')
+  assert.equal(done.value.native.agent, 'aether:judge')
+  assert.equal(done.value.native.model, 'opus')
+})
+
+test('seat-start with every candidate excluded answers with the native agent, as when no pair can take the round', (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const started = start(repo, env, 'judge', 'Review.\n', [...OPTIONS, '--exclude', `${ARGON},${OPUS_PAIR}`])
+  assert.equal(started.status, 0, started.stdout)
+  const done = waitDone(repo, started.json.id, env)
+  assert.equal(done.exitCode, 3, JSON.stringify(done))
+  assert.equal(done.value.unavailable, 'no-external')
+  assert.equal(done.value.native.agent, 'aether:judge')
+  assert.equal(done.value.native.model, 'opus')
+  assert.equal(done.value.tried.find((entry) => entry.id === ARGON).why, 'excluded')
+  assert.equal(done.value.tried.find((entry) => entry.id === OPUS_PAIR).why, 'excluded')
+  assert.equal(agyTurns(env).length, 0)
+})
+
+test('seat-start refuses a malformed --exclude as a usage error and starts nothing', (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const refused = (value) => lane(repo, ['seat-start', 'judge', '--session', 's1', '--feature', FEATURE, ...OPTIONS, '--exclude', value, '--digest', '0a1b2c3d:1'], env)
+  for (const value of ['agy/x', 'agy/gemini-4-argon', `${ARGON},nope`]) {
+    const r = refused(value)
+    assert.equal(r.status, 1, value)
+    assert.match(r.json.error, /--exclude must be pair ids like agy\/model@effort/, value)
+  }
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'seats')), false)
+})
+
+test('seat-start keeps the author rule when a pair is excluded', (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`, [...OPTIONS, '--exclude', ARGON], ['--author', 'opus'])
+  assert.equal(started.status, 0, started.stdout)
+  const done = waitDone(repo, started.json.id, env)
+  assert.equal(done.exitCode, 3, JSON.stringify(done))
+  assert.equal(done.value.unavailable, 'no-external')
+  assert.equal(done.value.native.agent, 'aether:judge')
+  assert.equal(done.value.native.model, 'sonnet')
+  const exam = { tests: [{ id: 'c1', criterion: 'C1', command: 'node --test .aether-exam/c1.test.js', files: [] }], notes: 'none' }
+  const examiner = start(repo, env, 'examiner', `Exam.\nFAKE-AGY: answer ${JSON.stringify(exam)}\n`, [...OPTIONS, '--exclude', ARGON], ['--author', 'opus'])
+  const examined = waitDone(repo, examiner.json.id, env)
+  assert.equal(examined.exitCode, 3, JSON.stringify(examined))
+  assert.equal(examined.value.unavailable, 'no-external')
+  assert.equal(examined.value.native.agent, 'aether:examiner')
+  assert.equal(examined.value.native.model, 'sonnet')
+  assert.equal(agyTurns(env).length, 0)
 })
 
 test('the Writer of a spec round is forwarded its document', (t) => {

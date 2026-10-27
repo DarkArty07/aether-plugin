@@ -10,7 +10,7 @@ The swarm runs a plan's tasks as units. Each unit:
 - is supervised after every attempt;
 - is merged into the integration branch, one merge at a time.
 
-The whole run is then reviewed as one change. You prepare the run, launch it, and act on its result. You stay the Lead: the run's agents decide inside their unit, the Judge rules on the design, and you decide everything else, as the owner's delegate.
+The whole run is reviewed once, as one change, when a launch ends with all its units merged. A launch that leaves a unit unmerged defers that review, and a relaunch reviews only when it is the launch that finishes the run. You prepare the run, launch it, and act on its result. You stay the Lead: the run's agents decide inside their unit, the Judge rules on the design, and you decide everything else, as the owner's delegate.
 
 In an autonomous run (see the `aether:autonomous-runs` skill), what this skill says to tell or report to the owner goes to the run's diary, and from there to the brief.
 
@@ -54,17 +54,18 @@ While it runs:
 The workflow returns:
 - **`units`:** one entry per task, with:
   - `status`: `merged`, `blocked`, `skipped` or `not-run`;
-  - `tiers`: the rungs it ran on, each a model and an effort, such as `["haiku medium", "haiku xhigh", "sonnet xhigh"]`. A higher effort on the same model is a climb; another model is an escalation;
+  - `tiers`: the rungs it ran on, each a model and an effort, such as `["haiku medium", "haiku xhigh", "sonnet high"]`. A higher effort on the same model is a climb; another model is an escalation;
   - `rounds`: each attempt, with its rung (`tier`), the implementer's report, the supervisor's verdict, findings, ruling and effort (`reviewEffort`), and the merge outcome;
-  - `salvaged` in each round: true when the implementer ended without its report and the workflow rebuilt it from the unit branch (`aether-wt salvage` commits what the task owns). The supervisor reviewed that work as an unverified claim; its tests were not reported, so they run at the merge;
-  - `provider` and `reviewProvider` in each round: `native`, or `<harness> <model>`, such as `agy gemini-3.8-flash`, for the lane that ran the attempt and its review. `laneFailure`: set when a lane began the attempt and the native agent finished it, with the harness, the model and the reason;
+  - `split` and `subAttempts` on a round whose attempt was a split pass: the attempt before ended without its report and the task had at least two owned files, so the pass ran one sub-attempt per file (eight at most; further files share the last). The round's report combines those sub-attempts. `aether-report` names the pass;
+  - `salvaged` in each round: true when the implementer ended without its report and the workflow rebuilt it from the unit branch (`aether-wt salvage` commits what the task owns). The supervisor reviewed that work as an unverified claim; its tests were not reported, so they run at the merge. A split pass is not salvaged: one sub-attempt without a report counts the pass as a missing report;
+  - `provider` and `reviewProvider` in each round: `native`, or `<harness> <model>`, such as `agy gemini-3.8-flash`, for the lane that ran the attempt and its review. `laneFailure`: set when a lane began the attempt and another agent finished it (the last failure; the next pair is tried before the native agent), with the harness, the model and the reason;
   - `failures`: the failed attempts in order, `no report` or the blocking findings of a retry or an escalation. A unit stops when it ends twice in a row without a report, or gets the same findings three times: the reason asks for a split or a redesign;
   - `commit`, `reason`, `question` and `patch`;
   - `closeError`, when the unit could not be closed. The final sweep then removes it, after saving its work as a patch.
-- **`finalReview`:** a `status` of `done`, `skipped` or `failed`. When it is done, it also has the `verdict`, `findings`, `declined` and `summary`. A `failed` review has a `reason`: the reviewer ended without its answer, which may be a diff too large for its turns, or it failed with an error's text. That is never a verdict. `reviewModel` and `reviewEffort` say what it ran on, which follows the run's risk: Opus at `xhigh` when a merged task is tier opus or reviews at `xhigh` or `max`, Sonnet at `high` for at most three haiku tasks that review at `high`, and Opus at `high` otherwise.
+- **`finalReview`:** a `status` of `done`, `skipped`, `failed` or `deferred`. When it is done, it also has the `verdict`, `findings`, `declined` and `summary`. A `failed` review has a `reason`: the reviewer ended without its answer, which may be a diff too large for its turns, or it failed with an error's text. That is never a verdict. A `deferred` review did not run. `deferred` is not a failure and not a verdict. Its `reason` says how many units are blocked, skipped or not run, that the review runs when a launch ends with all its units merged, and that launching again with `"review": true` in the args runs it on what is merged. `reviewModel` and `reviewEffort` say what a review that ran was run on, which follows the run's risk: Opus at `xhigh` when a merged task is tier opus, Sonnet at `high` for at most three haiku tasks that review at `high`, and Opus at `high` otherwise.
 - **`cleanup`:** what the sweep removed. Its `remaining` lists must be empty.
 - **`agents`:** the agent count, by role and by model.
-- **`lanes`:** `{ calls, ok, failed, quota, violation, blocked, unavailable, overflow }`. `overflow` is the calls whose wait for a free place on a full harness (`wait-limit`) ran out. It is null when the run had no lanes.
+- **`lanes`:** `{ calls, ok, failed, quota, violation, blocked, unavailable }`. It is null when the run had no lanes.
 - **`error`:** set only when the script itself failed.
 
 Save the result as `<runDir>/result.json`, then run `aether-report --run <runId>` from the integration worktree. It prints JSON:
@@ -73,7 +74,7 @@ Save the result as `<runDir>/result.json`, then run `aether-report --run <runId>
   - by model, and by role;
   - `byEffort`: by role, model and effort, with the output tokens and the model time of each;
   - `agents`, in `cost.run`: each agent of the run, with its label, model, effort, cost and time;
-- **`quality`:** the units merged, adopted (see §5), climbed, escalated and blocked, `integrated` (merged and adopted), every finding by severity, the final review, and the test command's result on the integration branch. Each adopted unit is also a line in `notes`.
+- **`quality`:** the units merged, adopted (see §5), climbed, escalated and blocked, `integrated` (merged and adopted), every finding by severity, the final review, and the test command's result on the integration branch. A `deferred` final review is a review not yet run, with its reason, never a failure or `skipped`. Each adopted unit is also a line in `notes`.
 - **`lanes`:** each group's calls, tokens, dollars and quota consumed per window, its `balance` (the share left of each window at the start and the end of the run, and the next reset; `usedPercentAbsent` when a share was read as 0% used), what every call chose (`run.choices`), by model, by role and by harness (`byHarness`), and `totals`: native dollars, lane dollars and the share the plans covered.
 - **`radar`:** the figures of the owner's five goals: `rapid` (the run's time, attempts, climbs and escalations), `autonomous` (questions that reached the owner), `delegation` (lane calls, by harness, and the share the plans covered), `affordable` (dollars) and `robust` (merged, blocked, tests, findings and the final verdict). A figure that was not measured is null.
 
@@ -85,7 +86,7 @@ A relaunch's report adds every launch up, and the new figure for the same run id
 
 Report from it, to the owner or, in a run, to the diary:
 - the units merged, climbed, escalated and blocked;
-- the final verdict and the tests;
+- the final verdict, or, when the review is `deferred`, that it has not run and its reason; and the tests;
 - the time and the cost by model, and the implementers' and supervisors' cost and time by effort;
 - the RADAR figures, one line per goal;
 - the lanes, in these lines, one block per harness that ran:
@@ -102,25 +103,28 @@ Report from it, to the owner or, in a run, to the diary:
 
 - **Blocked with a question:** answer it from the owner's intent, the spec and the plan when they cover it. Otherwise it goes to the owner: outside a run, ask them; in an autonomous run, it waits in the diary's "Espera tu sí" or "Decisiones", and the other units go on. Then have the Writer fix the plan task, have `/aether:design` review the fix in short mode on `tasks.md` (see "Later changes" in the `using-aether` skill), and relaunch the unit.
 - **Blocked by a merge failure or a spent ladder:** read the rounds. Fix the work yourself when it fits the direct path; otherwise send it to a delegate task, on the model the `using-aether` Models section picks, or have the Writer fix the plan task, have `/aether:design` review the fix in short mode on `tasks.md`, and relaunch it. These have a fallback, so they never go to the owner.
-- **Blocked by a repeated failure:** the unit ended twice without a report, or got the same findings three times (see its `failures`). The task is too large or cut wrong: have the Writer split it, have `/aether:design` review the split in short mode on `tasks.md`, and relaunch. This never goes to the owner either.
+- **Blocked by a repeated failure:** the unit ended twice without a report, or got the same findings three times (see its `failures`). A missing report is retried once as a split pass of sub-attempts before that block. The task is too large or cut wrong: have the Writer split it, have `/aether:design` review the split in short mode on `tasks.md`, and relaunch. This never goes to the owner either.
 - **Blocked by a lane:** a reason that starts with `lane:` means a lane changed the integration worktree or branch, or a read-only copy changed the unit. Check the integration worktree with `git status` and the branch with `git log` before you relaunch.
 - **Skipped or not-run:** relaunch these once their dependencies are merged.
+- **Final review deferred:** `finalReview.status` is `deferred`. The review did not run. Relaunch the blocked, skipped and not-run tasks. The review runs once, on the launch that ends with all its units merged, and it covers the whole run from the first compile's base. When you are giving up on the units that did not merge, force the review on what is merged: add `"review": true` to the JSON `aether-plan compile` printed and launch `aether:run` with it. A compile that finds every unit already merged prints empty `waves`; that launch reviews only when `"review": true` is set.
 - **Integrated by hand:** when you apply a unit's patch or write its work yourself, commit it on the integration branch and record it, so that the report and `finalize` agree with the branch:
 
       aether-wt adopt <runId> <task> --commit <sha> --reason "<why the swarm could not>"
 
-  The commit must be in the integration branch. The report then counts the unit as `adopted`, not `blocked`. The final review of the run ran before your change, so give an `aether:reviewer` the package of the whole run (`aether-wt diff <runId> --final`) when you adopted work.
+  The commit must be in the integration branch. The report then counts the unit as `adopted`, not `blocked`. When that launch's review already ran, it did not see this commit: give an `aether:reviewer` the package of the whole run (`aether-wt diff <runId> --final`). When `finalReview.status` is `deferred`, relaunch the units still open, or launch with `"review": true`, so the run's own review covers what is merged, including what you adopted.
 - **Patches:** `<runDir>/patches/<task>.patch` holds a unit's unmerged work. Read it before you apply it with `git apply`.
 - **Final review findings:** handle them as a final review is handled.
   - Re-grade each finding by its effect.
   - Fix the critical and important ones: a short fix yourself on the integration branch, with its test, when it fits the direct path; a longer one through a delegate task (on Opus when Sonnet already failed at it) or a relaunch; a design-level one through the Writer and `/aether:design` in short mode.
   - Defer the minor ones: list them in the report, or in a run in the brief. They are not worked.
   - Rule on each `declined` line.
-- **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep first saves each unit's unmerged or uncommitted work as a patch. A unit whose work it cannot save stays in place for you to handle.
+- **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep of an interrupted run (one with saved.json, or a recorded quota pause that names the run) commits each unmerged unit's uncommitted work on its unit branch, keeps that branch and a patch, and removes the units that merged. Any other sweep removes unmerged branches after saving a patch. A unit whose work it cannot save stays in place for you to handle.
 
 To relaunch, keep the run id and name the tasks:
 
     aether-plan compile <plan.md> --run <runId> --only task-3,task-5
+
+After an interruption (the quota brake, the session limit, a crash, the owner), first run `aether-wt save <runId>`: every unit's uncommitted work is committed on its branch before any worktree is removed or reused. Then relaunch with the same run id and no `--only`: `aether-plan compile <plan.md> --run <runId>` leaves out the units already merged, and each saved unit continues from its branch.
 
 Then launch `aether:run` again with the new JSON, after the `aether-autonomy status` check of §3 in a run. Tasks outside the selection are assumed to be merged already.
 
@@ -128,10 +132,12 @@ A relaunch keeps the run's first compile time, and keeps the previous launch's r
 
 ## 6. Finish
 
-Finish when every unit is merged or adopted, the final review has no open critical or important finding, and the test command passes on the integration branch, or fails only on the run's baseline (`quality.tests.knownFailuresOnly` in the report).
+Finish when every unit is merged or adopted, the final review's status is `done` and it has no open critical or important finding, and the test command passes on the integration branch, or fails only on the run's baseline (`quality.tests.knownFailuresOnly` in the report). A `deferred` review has not run: relaunch, or force it, before you finish.
 
-1. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first, and in a run record the last cost with `aether-autonomy spend` before it. It appends the report to `runs.jsonl` in the plugin's data directory, with the Aether and Claude Code versions, and agy's when an agy lane ran. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
-2. Finish the branch yourself, as the owner's delegate:
+1. First, include this session's spend in the closing report from `aether-report --spend --session <id de esta sesión>` in the format of `using-aether`, with the clause «y no es la cifra del tope»:
+   Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.
+2. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first, and in a run record the last cost with `aether-autonomy spend` before it. It appends the report to `runs.jsonl` in the plugin's data directory, with the Aether and Claude Code versions, and agy's when an agy lane ran. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
+3. Finish the branch yourself, as the owner's delegate:
    - **merge to `main`** only when `aether-autonomy check merge-main` passes, or the owner authorized this merge once in their own words;
    - **push or open a pull request** only when `aether-autonomy check push` passes, or the owner authorized it once;
    - **discard** never on your own: it deletes work (class `delete`);

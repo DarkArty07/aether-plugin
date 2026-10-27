@@ -3,8 +3,11 @@
 // What the Codex, Grok and Cursor harnesses share: running a command, reading its version, finding the JSON
 // object in an answer, and judging a run: a clean answer is clean whatever else the output says, and a failed
 // run is classed by its quota lines, its exit, its answer, its JSON object and its required fields, in that order.
+// Sibling harness adapters call these helpers.
+// Family: harness.
 
 const { spawnSync } = require('node:child_process')
+const { isObject: isPlainObject, parseJson } = require('../common.js')
 
 // The words of a quota or rate-limit error. A line of an answer or of command output can match too.
 const QUOTA_LINE = /rate.?limit|quota|usage limit|too many requests|\b429\b/i
@@ -20,18 +23,6 @@ function defaultExec(argv, { timeoutMs, cwd } = {}) {
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-// The JSON value text holds, or undefined when it is not JSON.
-function parseJson(text) {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
-  }
-}
 
 // The object text holds, or null when it is not a JSON object.
 function parseObject(text) {

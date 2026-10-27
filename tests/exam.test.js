@@ -141,7 +141,7 @@ function examCli(cwd, args, env) {
   return { status: r.status, json: JSON.parse(r.stdout.trim().split('\n').pop()) }
 }
 
-test("aether-exam stores the checkout's .aether-exam/ and removes it, runs it, and lists it", (t) => {
+test("aether-exam stores the checkout's .aether-exam/ and removes it, and runs it", (t) => {
   const repo = repoWithSpec(t)
   const env = { AETHER_DATA_DIR: tempDir(t, 'aether-data-') }
   // The Lead asks for the seat first; with superdelegation off the native Examiner takes it, in this checkout.
@@ -158,7 +158,6 @@ test("aether-exam stores the checkout's .aether-exam/ and removes it, runs it, a
   const ran = examCli(repo.dir, ['run', FEATURE], env)
   assert.equal(ran.status, 0)
   assert.equal(ran.json.ok, true)
-  assert.deepEqual(examCli(repo.dir, ['list'], env).json.exams.map((e) => e.feature), [FEATURE])
   const bad = examCli(repo.dir, ['run'], env)
   assert.equal(bad.status, 1)
   assert.match(bad.json.error, /^usage: aether-exam/)

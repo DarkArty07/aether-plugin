@@ -7,42 +7,13 @@
 // the owner's list, and refuses it only when AETHER_IRREVERSIBLE is "enforce"; otherwise it only logs
 // it. Always exits with 0.
 
-const fs = require('node:fs')
-const { dataDir, ensureExcluded } = require('../lib/run.js')
+const { readFileSync } = require('node:fs')
+const { dataDir } = require('../lib/run.js')
 const { isAetherSession } = require('../lib/session.js')
-const { decide, irreversibleClass, redactCommand } = require('../lib/guard.js')
-
-// A Bash call: null to allow, or { reason } to deny. Any error allows the command. The guard runs on
-// every Bash call, so the modules that read git and the grants load only for an irreversible command.
-function decideBash(input) {
-  try {
-    const cls = irreversibleClass(input.tool_input?.command)
-    if (cls === null) return null
-    const { repoPaths } = require('../lib/git.js')
-    const { check } = require('../lib/autonomy.js')
-    const { appendPending } = require('../lib/pending.js')
-    const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
-    // Outside a git repository this throws, and the command is allowed unrecorded.
-    const { mainRoot, gitCommonDir } = repoPaths(cwd)
-    if (check(mainRoot, cls, { session: input.session_id }) !== null) return null
-    const mode = process.env.AETHER_IRREVERSIBLE === 'enforce' ? 'enforce' : 'log'
-    const entry = { time: Date.now(), session: input.session_id, class: cls, command: redactCommand(input.tool_input.command, cls), cwd: input.cwd, mode }
-    // The list holds the command, so git must ignore its directory before the first line is written.
-    ensureExcluded(gitCommonDir)
-    // A command that cannot be recorded is allowed: a refusal the owner cannot see is not kept.
-    if (!appendPending(mainRoot, entry)) return null
-    if (mode === 'log') return null
-    return {
-      reason: `Aether added this ${cls} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".`,
-    }
-  } catch {
-    // Outside a git repository, or a grant registry that cannot be read: the command is allowed.
-    return null
-  }
-}
+const { decide, decideBash } = require('../lib/guard.js')
 
 try {
-  const input = JSON.parse(fs.readFileSync(0, 'utf8'))
+  const input = JSON.parse(readFileSync(0, 'utf8'))
   if (input && isAetherSession(dataDir(), input.session_id)) {
     const decision = input.tool_name === 'Bash' ? decideBash(input) : decide(input)
     if (decision) {

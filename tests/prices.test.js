@@ -25,6 +25,13 @@ test('prices.json holds the OpenRouter snapshot for each model, per million toke
   assert.ok(Object.values(prices.sources).every((url) => url.startsWith('https://openrouter.ai/') || url.startsWith('https://dev.meta.ai/')))
 })
 
+test('grok-4.7 is priced at the OpenRouter list of its xAI endpoint, and its cache writes at the input price', () => {
+  assert.deepEqual(prices.models['grok-4.7'], { ids: ['grok-4.7'], input: 2, output: 6, cacheRead: 0.5, cacheWrite5m: 2, cacheWrite1h: 2, checked: '2026-10-22' })
+  assert.equal(prices.sources['grok-4.7'], 'https://openrouter.ai/api/v1/models/x-ai/grok-4.7/endpoints')
+  assert.equal(ratesFor(prices, 'grok-4.7').family, 'grok-4.7')
+  close(priceEntry({ model: 'grok-4.7', agent: 'lane', input: 1e6, output: 1e6, cacheRead: 1e6, cacheWrite: 0 }, prices), 2 + 6 + 0.5)
+})
+
 test('ratesFor matches exact ids and ids with a suffix, and nothing else', () => {
   assert.equal(ratesFor(prices, 'claude-sonnet-5-5').family, 'sonnet')
   assert.equal(ratesFor(prices, 'claude-sonnet-5-5-20261001').family, 'sonnet')

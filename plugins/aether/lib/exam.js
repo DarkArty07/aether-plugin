@@ -1,9 +1,7 @@
 'use strict'
 
-// The Examiner's exams: acceptance tests written from a spec and its plan's public interfaces, kept where
-// the swarm does not see them (the plugin's data directory, outside every repository and worktree), and
-// run against a commit in a disposable worktree. Each test is one command run from the repository root,
-// and its exit code decides: 0 passes. A test that fails is run once more; one that then passes is flaky.
+// The Examiner's exams: acceptance tests kept outside the repository and run against a commit. `aether-exam` and seats.js call it.
+// Family: none.
 
 const fs = require('node:fs')
 const path = require('node:path')

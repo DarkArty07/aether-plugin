@@ -1,0 +1,14 @@
+{
+  "pairFailures": { "consecutive": 3 },
+  "approval": { "minAttempts": 5, "lowRate": 0.2 },
+  "pairSpeed": { "minCalls": 5, "ratio": 0.5 },
+  "pairFailureRate": { "minCalls": 5, "maxRate": 0.4 },
+  "designRounds": { "maxRounds": 6 },
+  "cost": { "minCalls": 3, "ratio": 2 },
+  "blockedByMistake": { "repeatBlocks": 2 },
+  "correctionPatterns": {
+    "es": ["eso no", "no era", "te dije", "ya te dije", "otra vez", "no quiero", "está mal", "incorrecto", "no es lo que"],
+    "en": ["that's not", "i said", "wrong", "again", "not what i"]
+  },
+  "corrections": { "maxPerSession": 20, "maxScanBytes": 20000000 }
+}

@@ -235,11 +235,11 @@ test('compile gives every task its effort and review, and the brief its starting
   assert.deepEqual(
     ['task-1', 'task-2'].map((id) => [r.json.tasks[id].tier, r.json.tasks[id].effort, r.json.tasks[id].review]),
     [
-      ['haiku', 'xhigh', 'high'],
+      ['haiku', 'high', 'high'],
       ['sonnet', 'high', 'xhigh'],
     ],
   )
-  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Tier: haiku xhigh — complete code$/m)
+  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Tier: haiku high — complete code$/m)
 })
 
 test('check refuses Sonnet below high with its message, and no other', (t) => {
@@ -273,8 +273,7 @@ test('compile gives the run its lanes when superdelegation is on and the harness
   const on = runBin(PLAN_BIN, ['compile', md], repo.dir, { AETHER_LANES_CONFIG: file })
   assert.equal(on.status, 0, on.stdout + on.stderr)
   assert.deepEqual(on.json.lanes, runArgs(loadConfig(file), loadPairs().pairs, { installed: () => true, enabled: ['agy'] }))
-  assert.deepEqual(Object.keys(on.json.lanes), ['superdelegation', 'harnesses', 'maxParallelByHarness', 'waits', 'cupo'])
-  assert.deepEqual(on.json.lanes.cupo, { polls: 10, pollSeconds: 60 })
+  assert.deepEqual(Object.keys(on.json.lanes), ['superdelegation', 'harnesses', 'waits'])
   assert.equal(Object.keys(on.json).pop(), 'lanes')
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(on.json.runDir, 'graph.json'), 'utf8')).lanes, on.json.lanes)
   const off = runBin(PLAN_BIN, ['compile', md, '--no-lanes'], repo.dir, { AETHER_LANES_CONFIG: file })

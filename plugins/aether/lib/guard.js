@@ -1,15 +1,16 @@
 'use strict'
 
-// The aether-guard decisions. decide: only the main session and the Lead write the intent card, only the
-// main session, the Lead and the Writer write specs, plans and tasks, the Examiner writes only its exam
-// under .aether-exam/, and autonomy files are kept to aether-autonomy. Protected: docs/superpowers/specs/
-// and plans/ (the old place), specs/NNN-<topic>/ spec.md, plan.md and tasks.md (Spec Kit), and
-// .specify/memory/constitution.md. The intent card is specs/NNN-<topic>/intent.md. irreversibleClass: the
-// irreversible class of a Bash command, and redactCommand: the command as the owner's list keeps it,
-// without its secret values.
-// All are pure: they read a PreToolUse hook's JSON and never touch the file system.
+// PreToolUse decisions and irreversible command classification for Aether sessions.
+// Protects specs, plans, tasks (specs/NNN-<topic>/), the constitution (.specify/memory/constitution.md),
+// and the intent card (specs/NNN-<topic>/intent.md). Protection of docs/superpowers/specs/ and
+// docs/superpowers/plans/ stays in force even though that folder is not in the tree.
+// Records irreversible Bash commands across the classes: merge-main, push, publish, deploy, delete,
+// and credentials. The paid-call class is in CLASSES of autonomy.js, but the guard does not detect it;
+// it is only granted and checked with aether-autonomy. Redacts secret values from logged commands.
+// Family: none.
 
 const path = require('node:path')
+const { isObject } = require('./common.js')
 
 const CHECKED_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const PROTECTED = [
@@ -80,10 +81,6 @@ function isBlank(value) {
   return value === undefined || value === null || value === ''
 }
 
-function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
 // The Bash classes. A segment is in a class when its words start with one of these subcommands.
 const SUBCOMMANDS = [
   ['merge-main', ['gh pr merge']],
@@ -147,8 +144,6 @@ const WITH_ARGS = [
   ['delete', 'git reset', (args) => hasFlag(args, '', '--hard')],
   ['delete', 'git clean', (args) => hasFlag(args, 'f', '--force')],
   ['delete', 'rm', isForcedRemoval],
-  // The paid replay of a router decider makes real, paid model calls over the owner's history.
-  ['paid-call', 'aether-route replay', (args) => args.includes('--paid')],
 ]
 
 const SHORT_FLAGS = /^-[A-Za-z]+$/
@@ -226,15 +221,6 @@ function dropGitOptions(words) {
   return ['git', ...words.slice(skipOptions(words, 1, GIT_VALUED))]
 }
 
-// node's options and script path in front of an aether-route command are dropped, so that
-// node .../bin/aether-route replay reads as aether-route replay. Any other script is left alone.
-function dropNodeScript(words) {
-  if (words[0] !== 'node') return words
-  const at = skipOptions(words, 1, [])
-  if (at >= words.length || nameOf(words[at]) !== 'aether-route') return words
-  return ['aether-route', ...words.slice(at + 1)]
-}
-
 // The script that a shell or eval runs, or null. A shell runs the word after its first single-dash
 // option that holds a c, as in bash -lc SCRIPT; eval runs the words after it.
 function scriptOf(words) {
@@ -272,7 +258,7 @@ function subcommandOf(words) {
 function matchWords(words, depth, wanted) {
   const unwrapped = dropWrappers(words)
   // A command run by its path, such as /usr/bin/git, is matched by its name.
-  const command = dropNodeScript(dropGitOptions(unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped))
+  const command = dropGitOptions(unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped)
   const script = scriptOf(command)
   if (script !== null) return depth < MAX_NESTING ? matchCommand(script, depth + 1, wanted) : null
   const found = subcommandOf(command)
@@ -290,21 +276,25 @@ function matchCommand(command, depth, wanted = null) {
 }
 
 // Reads the delimiter of a heredoc whose "<<" ends just before start, and queues it. Its quotes come off,
-// and a "-" before it means the body's leading tabs are ignored. Returns the index of the last character read.
+// a "-" before it means the body's leading tabs are ignored, and a quoted delimiter (a quote or a backslash
+// in it) keeps the body from expanding. Returns the index of the last character read.
 function readHeredoc(command, start, heredocs) {
   let i = start
   const strip = command[i] === '-'
   if (strip) i++
   while (command[i] === ' ' || command[i] === '\t') i++
   let word = ''
+  let quoted = false
   while (i < command.length && !/[\s;&|()<>]/.test(command[i])) {
     const ch = command[i]
     if (ch === "'" || ch === '"') {
+      quoted = true
       const close = command.indexOf(ch, i + 1)
       const stop = close === -1 ? command.length : close
       word += command.slice(i + 1, stop)
       i = stop + 1
     } else if (ch === '\\' && i + 1 < command.length) {
+      quoted = true
       word += command[i + 1]
       i += 2
     } else {
@@ -313,30 +303,182 @@ function readHeredoc(command, start, heredocs) {
     }
   }
   if (word === '') return start - 1
-  heredocs.push({ word, strip })
+  heredocs.push({ word, strip, quoted })
   return i - 1
 }
 
-// Skips the bodies of the heredocs that a command line started, from start, the index after its newline.
-// Each body runs up to the line equal to its delimiter. Returns the index of the last character skipped.
-function skipHeredocBodies(command, start, heredocs) {
+// The bodies of the heredocs that a command line started, from start, the index after its newline. Each
+// body runs up to the line equal to its delimiter. Gives the bodies and the index of the last character read.
+function heredocBodies(command, start, heredocs) {
   let pos = start
-  for (const { word, strip } of heredocs) {
+  const bodies = []
+  for (const { word, strip, quoted } of heredocs) {
+    const from = pos
+    let upto = command.length
     while (pos < command.length) {
+      const lineFrom = pos
       const end = command.indexOf('\n', pos)
       const line = command.slice(pos, end === -1 ? command.length : end)
       pos = end === -1 ? command.length : end + 1
-      if ((strip ? line.replace(/^\t+/, '') : line) === word) break
+      if ((strip ? line.replace(/^\t+/, '') : line) === word) {
+        upto = lineFrom
+        break
+      }
+    }
+    bodies.push({ text: command.slice(from, upto), quoted })
+  }
+  return { bodies, end: pos - 1 }
+}
+
+// The index just after the "))" that closes the arithmetic expansion whose "$" is at start, or -1 when it
+// has none. The parentheses of the expression itself balance first: a ")" of the expression that is not
+// followed by ")" is no closing, so "$((cmd); (cmd))" is a substitution of subshells, not arithmetic.
+function arithmeticEnd(command, start) {
+  let depth = 0
+  let quote = null
+  for (let i = start + 3; i < command.length; i++) {
+    const ch = command[i]
+    const next = command[i + 1]
+    if (quote === "'") {
+      if (ch === "'") quote = null
+    } else if (ch === '\\' && i + 1 < command.length) {
+      i++
+    } else if (quote === '"') {
+      if (ch === '"') quote = null
+      else if (ch === '$' && next === '(') {
+        const sub = readSubstitution(command, i + 2)
+        i = sub.end
+      } else if (ch === '`') {
+        const sub = readBacktick(command, i + 1)
+        i = sub.end
+      }
+    } else if (ch === "'" || ch === '"') {
+      quote = ch
+    } else if (ch === '$' && next === '(') {
+      const sub = readSubstitution(command, i + 2)
+      i = sub.end
+    } else if (ch === '`') {
+      const sub = readBacktick(command, i + 1)
+      i = sub.end
+    } else if (ch === '(') depth++
+    else if (ch === ')') {
+      if (depth > 0) depth--
+      else return next === ')' ? i + 2 : -1
     }
   }
-  return pos - 1
+  return -1
+}
+
+// The inside of a command substitution whose "$(" ends just before start, with the index of its matching
+// ")" and whether it had one. Quotes restart inside it, backslashes take the next character, nested "$("
+// and loose parentheses balance, backquotes hold their own code, and a heredoc body inside it is text up
+// to its delimiter, so neither a quote nor a ")" of the body closes anything outside it.
+function readSubstitution(command, start) {
+  let depth = 1
+  // The contexts opened inside: a quote, a backquote, or, as a number, the depth a substitution opened
+  // inside double quotes or backquotes brings back when it closes, which returns to the context below it.
+  const stack = []
+  const heredocs = []
+  for (let i = start; i < command.length; i++) {
+    const ch = command[i]
+    const next = command[i + 1]
+    const top = stack[stack.length - 1]
+    if (top === "'") {
+      if (ch === "'") stack.pop()
+    } else if (ch === '\\' && i + 1 < command.length) {
+      i++
+    } else if (top === '"') {
+      if (ch === '"') stack.pop()
+      else if (ch === '$' && next === '(') {
+        stack.push(depth)
+        depth++
+        i++
+      } else if (ch === '`') stack.push('`')
+    } else if (top === '`') {
+      if (ch === '`') stack.pop()
+      else if (ch === "'" || ch === '"') stack.push(ch)
+      else if (ch === '$' && next === '(') {
+        stack.push(depth)
+        depth++
+        i++
+      }
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      stack.push(ch)
+    } else if (ch === '(') {
+      depth++
+    } else if (ch === ')') {
+      depth--
+      if (depth === 0) return { inner: command.slice(start, i), end: i, terminated: true }
+      if (typeof top === 'number' && depth === top) stack.pop()
+    } else if (ch === '\n' && heredocs.length > 0) {
+      i = heredocBodies(command, i + 1, heredocs.splice(0)).end
+    } else if (ch === '<' && next === '<' && command[i + 2] === '<') {
+      i += 2
+    } else if (ch === '<' && next === '<') {
+      i = readHeredoc(command, i + 2, heredocs)
+    }
+  }
+  return { inner: command.slice(start), end: command.length, terminated: false }
+}
+
+// The inside of a backquoted substitution whose opening "`" is just before start, with the index of its
+// closing "`" and whether it had one. Quotes inside it restart, a backslash takes the next character,
+// and a "$(" inside it holds its own closing ")".
+function readBacktick(command, start) {
+  let quote = null
+  for (let i = start; i < command.length; i++) {
+    const ch = command[i]
+    const next = command[i + 1]
+    if (quote === "'") {
+      if (ch === "'") quote = null
+    } else if (ch === '\\' && i + 1 < command.length) {
+      i++
+    } else if (quote === '"') {
+      if (ch === '"') quote = null
+      else if (ch === '$' && next === '(') i = readSubstitution(command, i + 2).end
+    } else if (ch === "'" || ch === '"') {
+      quote = ch
+    } else if (ch === '$' && next === '(') {
+      i = readSubstitution(command, i + 2).end
+    } else if (ch === '`') {
+      return { inner: command.slice(start, i), end: i, terminated: true }
+    }
+  }
+  return { inner: command.slice(start), end: command.length, terminated: false }
+}
+
+// The segments of the substitutions and backquotes that a heredoc body with an unquoted delimiter
+// expands. The rest of the body is text, and an escaped "$" or "`" expands nothing.
+function heredocSegments(body, depth) {
+  const segments = []
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    const next = body[i + 1]
+    if (ch === '\\' && i + 1 < body.length && '$`\\'.includes(next)) {
+      i++
+    } else if (ch === '$' && next === '(' && body[i + 2] === '(' && arithmeticEnd(body, i) !== -1) {
+      i += 2
+    } else if (ch === '$' && next === '(') {
+      const sub = readSubstitution(body, i + 2)
+      if (depth < MAX_NESTING) segments.push(...segmentsOf(sub.inner, depth + 1))
+      i = sub.end
+    } else if (ch === '`') {
+      const sub = readBacktick(body, i + 1)
+      if (depth < MAX_NESTING) segments.push(...segmentsOf(sub.inner, depth + 1))
+      i = sub.end
+    }
+  }
+  return segments
 }
 
 // The segments of a command, each a list of shell words. Separators are && || ; | & newlines, ( ) and
 // backquotes, and a { or } that stands alone as a word, none of them inside quotes. A backslash takes
-// the next character literally, and quotes come off the words. A heredoc body is text: it runs from the
-// line after the command line that starts it, up to its delimiter.
-function segmentsOf(command) {
+// the next character literally, and quotes come off the words. Inside double quotes a substitution or a
+// backquote still runs: its segments, read one level deeper, sit where it appears, an arithmetic
+// expansion runs nothing, and a "\$" or "\`" is literal. Single quotes are text throughout. A heredoc
+// body is text, from the line after the command line that starts it up to its delimiter, except the
+// substitutions and backquotes that a body with an unquoted delimiter expands.
+function segmentsOf(command, depth = 0) {
   const segments = []
   let words = []
   // null between words; a quoted empty string is still a word.
@@ -362,7 +504,43 @@ function segmentsOf(command) {
     } else if (quote === '"') {
       if (ch === '"') quote = null
       else if (ch === '\\' && i + 1 < command.length && '"\\$`'.includes(command[i + 1])) word += command[++i]
-      else word += ch
+      else if (ch === '$' && next === '(' && command[i + 2] === '(' && arithmeticEnd(command, i) !== -1) {
+        const end = arithmeticEnd(command, i)
+        const inner = command.slice(i + 3, end - 2)
+        const subs = depth < MAX_NESTING ? heredocSegments(inner, depth) : []
+        if (subs.length > 0) {
+          endSegment()
+          segments.push(...subs)
+          word = ''
+        } else {
+          word = (word ?? '') + command.slice(i, end)
+        }
+        i = end - 1
+      } else if (ch === '$' && next === '(') {
+        if (depth >= MAX_NESTING) {
+          endSegment()
+          quote = null
+          word = ''
+          continue
+        }
+        const sub = readSubstitution(command, i + 2)
+        endSegment()
+        segments.push(...segmentsOf(sub.inner, depth + 1))
+        word = ''
+        i = sub.end
+      } else if (ch === '`') {
+        if (depth >= MAX_NESTING) {
+          endSegment()
+          quote = null
+          word = ''
+          continue
+        }
+        const sub = readBacktick(command, i + 1)
+        endSegment()
+        segments.push(...segmentsOf(sub.inner, depth + 1))
+        word = ''
+        i = sub.end
+      } else word += ch
     } else if (ch === '\\' && i + 1 < command.length) {
       // A backslash-newline continues the line; any other escaped character is taken literally.
       i++
@@ -374,7 +552,13 @@ function segmentsOf(command) {
       endWord()
     } else if (ch === '\n') {
       endSegment()
-      if (heredocs.length > 0) i = skipHeredocBodies(command, i + 1, heredocs.splice(0))
+      if (heredocs.length > 0) {
+        const bodies = heredocBodies(command, i + 1, heredocs.splice(0))
+        i = bodies.end
+        for (const body of bodies.bodies) {
+          if (!body.quoted && depth < MAX_NESTING) segments.push(...heredocSegments(body.text, depth))
+        }
+      }
     } else if (ch === ';' || ch === '(' || ch === ')' || ch === '`') {
       endSegment()
     } else if (ch === '|' || ch === '&') {
@@ -400,7 +584,7 @@ function segmentsOf(command) {
 }
 
 // The irreversible class of a Bash command: push, merge-main, publish, deploy, delete, credentials or
-// paid-call (only the paid replay of aether-route; other paid calls are not detected),
+// paid-call (other paid calls are not detected),
 // or null. The first segment that matches decides.
 function irreversibleClass(command) {
   const found = matchCommand(command, 0)
@@ -432,4 +616,34 @@ function redactCommand(command, cls) {
   return cls === 'credentials' ? '[redacted]' : redactValues(command)
 }
 
-module.exports = { decide, irreversibleClass, redactCommand }
+// A Bash call: null to allow, or { reason } to deny. Any error allows the command. The guard runs on
+// every Bash call, so the modules that read git and the grants load only for an irreversible command.
+function decideBash(input, env = process.env) {
+  try {
+    const cls = irreversibleClass(input.tool_input?.command)
+    if (cls === null) return null
+    const { repoPaths } = require('./git.js')
+    const { check } = require('./autonomy.js')
+    const { appendPending } = require('./pending.js')
+    const { ensureExcluded } = require('./run.js')
+    const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
+    // Outside a git repository this throws, and the command is allowed unrecorded.
+    const { mainRoot, gitCommonDir } = repoPaths(cwd)
+    if (check(mainRoot, cls, { session: input.session_id }) !== null) return null
+    const mode = env.AETHER_IRREVERSIBLE === 'enforce' ? 'enforce' : 'log'
+    const entry = { time: Date.now(), session: input.session_id, class: cls, command: redactCommand(input.tool_input.command, cls), cwd: input.cwd, mode }
+    // The list holds the command, so git must ignore its directory before the first line is written.
+    ensureExcluded(gitCommonDir)
+    // A command that cannot be recorded is allowed: a refusal the owner cannot see is not kept.
+    if (!appendPending(mainRoot, entry)) return null
+    if (mode === 'log') return null
+    return {
+      reason: `Aether added this ${cls} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".`,
+    }
+  } catch {
+    // Outside a git repository, or a grant registry that cannot be read: the command is allowed.
+    return null
+  }
+}
+
+module.exports = { decide, decideBash, irreversibleClass, redactCommand }

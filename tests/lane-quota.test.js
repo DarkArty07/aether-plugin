@@ -4,13 +4,10 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { tempDir } = require('./helpers.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const marks = require('../plugins/aether/lib/lane-marks.js')
 const quota = require('../plugins/aether/lib/lane-quota.js')
 const { registerAdapter, unregisterAdapter } = require('../plugins/aether/lib/harness/index.js')
-const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
-const { readGrokQuota } = require('../plugins/aether/lib/harness/grok-quota.js')
 const fx = require('./lane-fixtures.js')
 
 const NOW = Date.parse('2026-10-14T06:08:00Z')
@@ -85,37 +82,38 @@ test('a reading that carries its own source keeps it, stale after the harness li
 
 test('the report shows a live dry mark on its group, and the text says until when and why', async (t) => {
   const dataDir = useTable(t)
-  fakeHarness(t, 'agy', { gemini: both(0.02, 0.02), claude: both(0.5, 0.5, '2026-10-16T04:41:07Z') })
-  marks.markDry(dataDir, { harness: 'agy', group: 'gemini', reserve: RESERVE, now: NOW - 10 * MIN })
+  fakeHarness(t, 'agy', { argon: both(0.02, 0.02), flash: both(0.02, 0.02), claude: both(0.5, 0.5, '2026-10-16T04:41:07Z') })
+  marks.markDry(dataDir, { harness: 'agy', group: 'flash', reserve: RESERVE, now: NOW - 10 * MIN })
   const r = await report()
-  const { gemini, claude } = r.harnesses.agy.groups
-  assert.deepEqual([gemini.usable, gemini.mark.until, gemini.mark.confirmed, claude.usable, claude.mark], [false, NOW + 50 * MIN, false, true, null])
+  const { argon, flash, claude } = r.harnesses.agy.groups
+  assert.deepEqual([flash.usable, flash.mark.until, flash.mark.confirmed, claude.usable, claude.mark], [false, NOW + 50 * MIN, false, true, null])
+  assert.deepEqual([argon.usable, argon.mark], [false, null], 'Argon is under the reserve on its own reading, with no mark of its own')
   const text = quota.formatReport(r)
-  assert.ok(text.includes('  gemini, "Gemini Models": not usable, dry mark until 2026-10-14 06:58 UTC, 60 minutes after a call ended for quota\n'), text)
+  assert.ok(text.includes('  flash, "Gemini Models": not usable, dry mark until 2026-10-14 06:58 UTC, 60 minutes after a call ended for quota\n'), text)
   assert.ok(text.includes('  claude, "Claude and GPT models": usable, priority '), text)
 })
 
 test('a mark file with an end that is not a time does not stop the report: the mark is ignored', async (t) => {
   const dataDir = useTable(t)
-  fakeHarness(t, 'agy', { gemini: both(1, 1), claude: both(0.5, 0.5, '2026-10-16T04:41:07Z') })
+  fakeHarness(t, 'agy', { argon: both(1, 1), flash: both(1, 1), claude: both(0.5, 0.5, '2026-10-16T04:41:07Z') })
   fs.mkdirSync(marks.marksDir(dataDir), { recursive: true })
-  fs.writeFileSync(marks.markFile(dataDir, 'agy', 'gemini'), JSON.stringify({ harness: 'agy', group: 'gemini', at: NOW, until: 1e300, confirmed: false }))
+  fs.writeFileSync(marks.markFile(dataDir, 'agy', 'flash'), JSON.stringify({ harness: 'agy', group: 'flash', at: NOW, until: 1e300, confirmed: false }))
   fs.writeFileSync(marks.markFile(dataDir, 'agy', 'claude'), JSON.stringify({ harness: 'agy', group: 'claude', at: NOW, until: 8.64e15, confirmed: true }))
   const r = await report()
-  assert.deepEqual([r.harnesses.agy.groups.gemini.mark, r.harnesses.agy.groups.gemini.usable, r.harnesses.agy.groups.claude.mark], [null, true, null])
+  assert.deepEqual([r.harnesses.agy.groups.flash.mark, r.harnesses.agy.groups.flash.usable, r.harnesses.agy.groups.claude.mark], [null, true, null])
   assert.doesNotThrow(() => quota.formatReport(r))
 })
 
 test('quota reads a harness whose reading launches a process each time, and the kept reading serves a status for its life', async (t) => {
   const dataDir = useTable(t)
-  const agy = fakeHarness(t, 'agy', { gemini: both(1, 1), claude: both(1, 1) }, { cost: 'process' })
+  const agy = fakeHarness(t, 'agy', { argon: both(1, 1), flash: both(1, 1), claude: both(1, 1) }, { cost: 'process' })
   const settings = lanes.loadConfig(lanes.configPath()).harnesses.agy
   await report()
   await report({ now: () => NOW + MIN })
   assert.equal(agy.reads, 2, 'the quota command is a deliberate reading')
   const kept = quota.harnessView('agy', settings, { reserve: RESERVE, now: NOW + 5 * MIN, dataDir, fresh: false })
   assert.equal(agy.reads, 2)
-  assert.deepEqual([kept.groups.gemini.source.ageMinutes, kept.groups.gemini.source.ts], [4, new Date(NOW + MIN).toISOString()])
+  assert.deepEqual([kept.groups.flash.source.ageMinutes, kept.groups.flash.source.ts], [4, new Date(NOW + MIN).toISOString()])
   quota.harnessView('agy', settings, { reserve: RESERVE, now: NOW + 12 * MIN, dataDir, fresh: false })
   assert.equal(agy.reads, 3, 'after its life of 10 minutes it is read again')
 })
@@ -127,11 +125,11 @@ test('a reading that fails leaves each group of the harness unknown, with the er
   const r = await report()
   const h = r.harnesses.agy
   assert.equal(h.error, 'agy /usage failed: exit 1')
-  assert.deepEqual(Object.keys(h.groups), ['gemini', 'claude'])
+  assert.deepEqual(Object.keys(h.groups), ['argon', 'flash', 'claude'])
   for (const group of Object.values(h.groups)) assert.deepEqual([group.unknown, group.usable, group.priority, group.source, group.error], [true, true, null, null, 'agy /usage failed: exit 1'])
   const text = quota.formatReport(r)
   assert.ok(text.includes('  error: agy /usage failed: exit 1\n'), text)
-  assert.ok(text.includes('  gemini, "Gemini Models": unknown, used until a call fails for quota (no reading)\n'), text)
+  assert.ok(text.includes('  flash, "Gemini Models": unknown, used until a call fails for quota (no reading)\n'), text)
 })
 
 // A reading of grok's log that is ageMinutes old, as readGrokQuota gives it.

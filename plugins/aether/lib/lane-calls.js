@@ -4,12 +4,14 @@
 // workspace and launches a detached runner; the runner drives agy, checks the workspace from
 // outside, records the usage and writes result.json last; `wait`, `result` and `stop` read and end
 // it. The commands share nothing but the files of the call directory, <runDir>/lanes/<call>/.
+// Family: lane.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { repoPaths } = require('./git.js')
+const { readJsonOrNull, readTextOrEmpty, sleep, killGroup: killAgyGroup } = require('./common.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
 const marks = require('./lane-marks.js')
@@ -51,7 +53,10 @@ function laneNote(role, harness = 'agy') {
   return LANE_NOTE_TEXT[role](harness)
 }
 
-const LANE_NOTES = { implementer: laneNote('implementer'), supervisor: laneNote('supervisor'), reviewer: laneNote('reviewer') }
+// The note of a reviewer call that carries a task: it reviews the unit, not the merged run.
+function unitReviewerNote(harness = 'agy') {
+  return `## You run in an external harness\n\nYou are an Aether reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch, not of the integration branch; the unit's brief (brief.md) and the review package (package.diff) are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+}
 
 // ---- Prompts ----
 
@@ -77,8 +82,9 @@ function answerSection(role) {
 }
 
 // The prompt a call's harness reads: buildPrompt's, and for a harness with schemaInPrompt, the answer section last.
-function callPrompt({ harness, adapter, role, message, workdir, home }) {
-  const prompt = buildPrompt({ role, message, workdir, home, harness })
+function callPrompt({ harness, adapter, role, task = null, message, workdir, home }) {
+  const note = role === 'reviewer' && task !== null ? unitReviewerNote(harness) : undefined
+  const prompt = buildPrompt({ role, message, workdir, home, note, harness })
   return adapter.schemaInPrompt === true ? `${prompt}\n\n${answerSection(role)}` : prompt
 }
 
@@ -103,22 +109,6 @@ function callPaths(cwd, runId, call) {
     agyStderr: file('agy.stderr'),
     result: file('result.json'),
     stopped: file('stopped'),
-  }
-}
-
-function readJsonOrNull(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-function readTextOrEmpty(file) {
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch {
-    return ''
   }
 }
 
@@ -147,9 +137,9 @@ function harnessOfModel(config, model) {
   return owners[0]
 }
 
-// The harness a call runs on, as start recorded it. A call that predates the record ran on agy, the only harness then.
+// The harness a call runs on, as start recorded it.
 function callHarness(info) {
-  return typeof info?.harness === 'string' ? info.harness : 'agy'
+  return typeof info?.harness === 'string' ? info.harness : ''
 }
 
 // The efforts a call may ask for. The harness is given the effort as it is: nothing translates it.
@@ -249,7 +239,8 @@ function readGroup(adapter, { harness, settings, group, dataDir }) {
 
 // Leaves the dry mark of a group, from the reading that shows it dry or, when a call ended for quota with nothing
 // that shows it, from none. A mark that cannot be written changes nothing: the group goes unmarked this time.
-// A refusal ({ resetMs }, quota-refusal.js) marks the group until the reset the message states.
+// A refusal ({ resetMs }, quota-refusal.js) holds dryMarkMinutes from now, the message reset is only statedResetMs,
+// and a reading that shows the group under the reserve confirms the mark until that reading's reset.
 function holdDry(dataDir, { harness, group, reading, config, now, refusal = null }) {
   try {
     marks.markDry(dataDir, { harness, group, reading, reserve: config.reserve, now, minutes: config.dryMarkMinutes, refusal })
@@ -260,7 +251,7 @@ function holdDry(dataDir, { harness, group, reading, config, now, refusal = null
 
 function prepareWorkspace(cwd, runId, call, role, task) {
   if (role === 'implementer') return work.prepareImplementer(cwd, runId, task).workdir
-  return work.prepareReader(cwd, runId, call, { taskId: role === 'supervisor' ? task : null }).workdir
+  return work.prepareReader(cwd, runId, call, { taskId: task }).workdir
 }
 
 function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
@@ -268,8 +259,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   for (const [name, value] of Object.entries({ role, model, effort, digest })) {
     if (typeof value !== 'string' || value === '') throw new Error(`start needs --${name}`)
   }
-  const unitTask = role === 'reviewer' ? null : task
-  if ((role === 'implementer' || role === 'supervisor') && unitTask === null) throw new Error(`start needs --task for the ${role}`)
+  if ((role === 'implementer' || role === 'supervisor') && task === null) throw new Error(`start needs --task for the ${role}`)
 
   if (!fs.existsSync(paths.prompt)) return { unavailable: 'prompt' }
   const message = fs.readFileSync(paths.prompt, 'utf8')
@@ -282,11 +272,13 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   if (!lane) return { unavailable: 'role' }
   if (!adapter.installed()) return { unavailable: 'not-installed' }
   const dataDir = run.dataDir()
-  // A group a live mark holds is held until the mark's end and its mark is not renewed. A refusal's mark is not read
-  // for: no reading lifts it. Any other mark is given the chance to be lifted by the reading of the group (the kept one,
-  // or a new one when it has expired), and holds if that does not lift it.
+  // A group a live mark holds is held until the mark's end and its mark is not renewed. agy's refusal mark is not read
+  // for: no reading lifts it. Any other mark (Muse's subscription refusal included, issue 75: its reading is the
+  // allowance of the same windows) is given the chance to be lifted by the reading of the group (the kept one, or a
+  // new one when it has expired), and holds if that does not lift it; lane-marks.js lifts Muse's refusal only for a
+  // reading observed after it, never for the allowance kept from before it.
   const held = marks.liveMark(dataDir, name, lane.group)
-  if (held !== null && held.reason === marks.REFUSAL_REASON) return { unavailable: 'quota' }
+  if (held !== null && held.reason === marks.REFUSAL_REASON && name !== 'muse') return { unavailable: 'quota' }
   // A reading that fails leaves the group unknown (R8), so the call starts: a harness that is broken fails the call
   // and the call goes native like any other failure. Only a reading that shows the group under the reserve holds it.
   const { reading: quotaBefore, readAt } = readGroup(adapter, { harness: name, settings: harness, group: lane.group, dataDir })
@@ -306,7 +298,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
   clearCallDir(paths)
   let workdir
   try {
-    workdir = prepareWorkspace(cwd, runId, call, role, unitTask)
+    workdir = prepareWorkspace(cwd, runId, call, role, task)
   } catch {
     return { unavailable: 'workspace' }
   }
@@ -315,7 +307,7 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
     runId,
     call,
     role,
-    task: unitTask,
+    task,
     harness: name,
     model: passed,
     laneModel: lane.id,
@@ -342,16 +334,6 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
 }
 
 // ---- The runner ----
-
-// The runner kills its own child's group directly: it holds the child, so the pid cannot have been
-// reused, and after agy exits its leader is gone, which killGroup's marker check would need.
-function killAgyGroup(pid) {
-  try {
-    process.kill(-pid, 'SIGKILL')
-  } catch {
-    // The group is already empty.
-  }
-}
 
 // Runs agy to its end, killing its group when it outlives the timeout. Resolves to its exit code.
 function runAgy(argv, { workdir, marker, paths, timeoutSeconds, onSpawn }) {
@@ -420,12 +402,13 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
   const { runId, role, task } = info
   const integration = work.checkIntegration(cwd, runId, before)
   if (!integration.ok) return { status: 'blocked', detail: integration.detail }
-  if (role === 'supervisor') {
+  if (role === 'supervisor' || (role === 'reviewer' && task !== null)) {
     const unit = work.checkUnitUnchanged(cwd, runId, task, before)
     if (!unit.ok) return { status: 'blocked', detail: unit.detail }
   }
   if (!parsed.clean) {
-    // agy's refusal for its individual quota is explicit, and /usage does not report that limit: it needs no reading.
+    // An explicit refusal in words (agy's individual quota, Muse's subscription 429; quota-refusal.js) needs no
+    // reading: no reading reports agy's limit, and Muse's 429 carries no allowance of its own.
     const refusal = refusalIn(parsed.reason, parsed.error, stderr)
     if (refusal) return { status: 'quota', detail: parsed.reason, refusal }
     // The failure reason is checked before the reading (issue 015).
@@ -510,9 +493,9 @@ async function runCall(cwd, runId, call) {
     config = settings.config
     const schema = ROLE_SCHEMAS[role]
     fs.writeFileSync(paths.schema, `${JSON.stringify(schema, null, 2)}\n`)
-    const before = work.snapshot(cwd, runId, { taskId: role === 'reviewer' ? null : task })
+    const before = work.snapshot(cwd, runId, { taskId: task })
     const message = fs.readFileSync(paths.prompt, 'utf8')
-    const prompt = callPrompt({ harness, adapter, role, message, workdir, home: os.homedir() })
+    const prompt = callPrompt({ harness, adapter, role, task, message, workdir, home: os.homedir() })
     const argv = adapter.argv({ model: info.laneModel, level: info.level, schemaFile: paths.schema, timeoutSeconds: info.timeoutSeconds, prompt })
     const exitCode = await runAgy(argv, {
       workdir,
@@ -590,8 +573,6 @@ async function runCall(cwd, runId, call) {
 
 // ---- wait, result, stop ----
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
 // The finished result, or null while there is none or it is still being written.
 function finishedResult(paths) {
   const done = readJsonOrNull(paths.result)
@@ -658,4 +639,4 @@ function stop(cwd, runId, call = null) {
   return { stopped }
 }
 
-module.exports = { WORKDIR_RULE, LANE_NOTES, roleBody, claudeMdSections, buildPrompt, enabledFor, status, refreshStale, start, wait, result, stop, runCall }
+module.exports = { WORKDIR_RULE, roleBody, claudeMdSections, buildPrompt, enabledFor, status, refreshStale, start, wait, result, stop, runCall, finishedResult, loadTable }

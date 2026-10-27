@@ -2,6 +2,7 @@
 
 // The owner's own words: the messages the owner typed in a session transcript.
 // Transcripts are JSONL files under <configDir>/projects/<folder>/<sessionId>.jsonl.
+// Family: none.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -109,4 +110,36 @@ function render(sessionId, messages) {
   return heading + messages.map((m, i) => `## ${i + 1}. ${m.time}\n\n${m.text}\n`).join('\n')
 }
 
-module.exports = { ownerMessages, findTranscript, render }
+// The session id of --session <id>, or null when the flag is absent or has no value.
+function sessionArg(args) {
+  const at = args.indexOf('--session')
+  if (at === -1) return null
+  const value = args[at + 1]
+  return value && !value.startsWith('--') ? value : null
+}
+
+// The whole command of aether-voice: prints the owner's messages of a session and returns the exit code.
+// The session is --session <id> or CLAUDE_CODE_SESSION_ID. The transcript is read once.
+function main(args, { env = process.env, stdout = process.stdout, stderr = process.stderr } = {}) {
+  const sessionId = sessionArg(args) || env.CLAUDE_CODE_SESSION_ID || ''
+  if (!sessionId) {
+    stderr.write('aether-voice: no session id; pass --session <id> or set CLAUDE_CODE_SESSION_ID\n')
+    return 1
+  }
+  const file = findTranscript(sessionId)
+  if (!file) {
+    stderr.write(`aether-voice: no transcript for session ${sessionId}\n`)
+    return 1
+  }
+  let text
+  try {
+    text = fs.readFileSync(file, 'utf8')
+  } catch (err) {
+    stderr.write(`aether-voice: cannot read the transcript of session ${sessionId}: ${err.code || err.message}\n`)
+    return 1
+  }
+  stdout.write(render(sessionId, ownerMessages(text.split('\n'))))
+  return 0
+}
+
+module.exports = { ownerMessages, findTranscript, render, main }

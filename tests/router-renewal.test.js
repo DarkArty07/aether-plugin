@@ -13,9 +13,9 @@ const NOW = Date.parse('2026-10-15T22:30:00Z')
 const SEC = 1000
 const clock = () => { let t = 0; return { now: () => t, sleep: async (ms) => { t += ms }, slept: () => t } }
 
-test('renewalArgv is the router\'s own renew verb, which saves the reading where the router reads it', () => {
-  assert.deepEqual(renewal.renewalArgv('grok'), [process.execPath, path.join(PLUGIN, 'bin', 'aether-route'), 'renew', '--harness', 'grok'])
-  assert.deepEqual(renewal.renewalArgv('agy', { node: 'node', pluginRoot: '/p' }), ['node', '/p/bin/aether-route', 'renew', '--harness', 'agy'])
+test('renewalArgv is the renew verb of aether-delegate, which saves the reading where the pair choice reads it', () => {
+  assert.deepEqual(renewal.renewalArgv('grok'), [process.execPath, path.join(PLUGIN, 'bin', 'aether-delegate'), 'renew', '--harness', 'grok'])
+  assert.deepEqual(renewal.renewalArgv('agy', { node: 'node', pluginRoot: '/p' }), ['node', '/p/bin/aether-delegate', 'renew', '--harness', 'agy'])
   assert.deepEqual(renewal.RENEWABLE, ['agy', 'grok'])
 })
 

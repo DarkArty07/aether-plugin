@@ -256,12 +256,59 @@ test('a call that ends for quota leaves the 60-minute mark of the other harnesse
   assert.equal(museCalls(env).length, 2)
 })
 
+test('issue 75: the subscription-quota 429 ends the call for quota and leaves a 60-minute mark, and only an observation newer than the mark lifts it', (t) => {
+  const message = 'API error 429 [request_id=req-75]: Subscription quota exhausted. Your usage window resets at 2026-10-26T00:00:00Z. (rate_limit_error)'
+  const script = { stdout: lines(failedTurn({ kind: 'modelError', message, retryable: false }), usageRecord()), exit: 1 }
+  const { args, env } = museRun(t, script)
+  const dataDir = env.AETHER_DATA_DIR
+  const done = finishImplementer(args, env)
+  assert.equal(done.status, 'quota', done.detail)
+  assert.equal(done.detail, `muse modelError: ${message}`)
+  const mark = marks.liveMark(dataDir, 'muse', 'muse')
+  assert.deepEqual([mark.confirmed, mark.reason, mark.until - mark.at, mark.resetsAt, mark.statedResetAt], [false, 'quota refusal', 60 * MIN, null, '2026-10-26T00:00:00.000Z'])
+  assert.equal(museCalls(env).length, 1)
+
+  // Muse keeps the last allowance with no expiry: a healthy one from before the refusal does not lift its mark.
+  writeObserved(env, { observedAt: mark.at - 1000, window: { usedPercent: 10, resetsAtMs: Date.now() + 3 * HOUR }, weekly: { usedPercent: 10, resetsAtMs: Date.now() + 5 * DAY } })
+  assert.deepEqual(startImplementer(args, env).json, { unavailable: 'quota' })
+  assert.equal(fs.existsSync(marks.markFile(dataDir, 'muse', 'muse')), true)
+  assert.equal(museCalls(env).length, 1)
+
+  // A healthy observation made after the mark lifts it, and the call goes ahead.
+  writeObserved(env, { observedAt: Date.now(), window: { usedPercent: 10, resetsAtMs: Date.now() + 3 * HOUR }, weekly: { usedPercent: 10, resetsAtMs: Date.now() + 5 * DAY } })
+  const clean = setScript(env, answering(DONE, null, { files: { 'src/t1/a.js': 'x' } }))
+  const lifted = finishImplementer(args, clean)
+  assert.equal(lifted.status, 'ok', lifted.detail)
+  assert.equal(marks.liveMark(dataDir, 'muse', 'muse'), null)
+  assert.equal(museCalls(env).length, 2)
+})
+
+test('issue 75: a 429 that does not say the subscription quota is exhausted is a plain failure and leaves no mark', (t) => {
+  const message = 'API error 429 [request_id=req-1]: Too many requests, slow down. (rate_limit_error)'
+  const script = { stdout: lines(failedTurn({ kind: 'modelError', message, retryable: false }), usageRecord()), exit: 1 }
+  const { env, done } = runImplementer(t, script)
+  assert.equal(done.status, 'failed', done.detail)
+  assert.equal(done.detail, `muse modelError: ${message}`)
+  assert.deepEqual(markFiles(env), [])
+})
+
 test('words about quota in a failure are not quota: only the quota data of the failure is (US6, R16)', (t) => {
   const words = { stdout: lines(failedTurn({ kind: 'modelError', message: 'quota exceeded: HTTP 429 too many requests' }), usageRecord()), exit: 1 }
   const { env, done } = runImplementer(t, words)
   assert.equal(done.status, 'failed', done.detail)
   assert.equal(done.detail, 'muse modelError: quota exceeded: HTTP 429 too many requests')
   assert.deepEqual(markFiles(env), [])
+})
+
+test('issue 063: an observed 5 h window at 100 % makes the next start refuse and marks Muse until that reset, with no call (US6, R16)', (t) => {
+  const { args, env } = museRun(t, {})
+  const dataDir = env.AETHER_DATA_DIR
+  const resetsAtMs = Date.now() + 3 * HOUR
+  writeObserved(env, { observedAt: Date.now(), window: { usedPercent: 100, resetsAtMs }, weekly: { usedPercent: 83, resetsAtMs: Date.now() + 5 * DAY } })
+  assert.deepEqual(startImplementer(args, env).json, { unavailable: 'quota' })
+  assert.equal(museCalls(env).length, 0, 'the start runs no call')
+  const mark = marks.liveMark(dataDir, 'muse', 'muse')
+  assert.deepEqual([mark.confirmed, mark.until, mark.resetsAt], [true, resetsAtMs, new Date(resetsAtMs).toISOString()])
 })
 
 test('a quota failure with the allowance of a 5 h window used up holds the group until that reset, as for the other harnesses (US6, R16)', (t) => {

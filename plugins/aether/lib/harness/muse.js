@@ -2,10 +2,14 @@
 
 // The Muse harness: one headless `muse exec --json` turn, and a run judged from the JSONL records it prints. Muse
 // has no quota command, so the adapter keeps the last allowance a call reported, and quota() reads that.
+// Family: harness.
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { commandInstalled } = require('../lanes.js')
+const { isObject: isPlainObject } = require('../common.js')
+const { commandInstalled } = require('../lane-process.js')
+const { strictSchema } = require('../lane-schemas.js')
+const run = require('../run.js')
 const { defaultExec, extractJsonObject, missingField, parseObject } = require('./structured.js')
 
 const OBSERVED_FILE = 'muse-observed.json'
@@ -17,10 +21,6 @@ const LINE_LIMIT = 300
 const MODEL_STEPS = '200'
 
 let writeCounter = 0
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
 
 // Text from a failure, on one line and cut to limit characters, so it cannot bloat the lane log.
 const brief = (text, limit) => text.replace(/\s+/g, ' ').trim().slice(0, limit)
@@ -64,8 +64,12 @@ function failuresOf(payload) {
   return [failureObject(payload.reason), failureObject(payload.error)]
 }
 
-// The quota data of a failure, or null. Only this data makes a quota failure, never the words of a message.
-// Assumed from the MSP schema, not yet seen in a real call (spec R27).
+// The quota data of a failure, or null. Only this data makes a quota failure here, in the adapter's own reason.
+// One text is read as a refusal downstream instead (lib/quota-refusal.js, as agy's wording is): the subscription
+// 429 a real call failed with («Subscription quota exhausted ... (rate_limit_error)», issue 75) reaches the adapter
+// with the message text alone and none of this data, so the words are the only sign of that limit. No other words
+// of a message count, here or there.
+// The data is assumed from the MSP schema, not yet seen in a real call (spec R27).
 function quotaDataOf(failures) {
   for (const { object } of failures) {
     if (isPlainObject(object?.quota)) return object.quota
@@ -152,8 +156,22 @@ function readingOf(stored, now) {
 // A stored window is null or complete; anything else is a broken file.
 const storedWindow = (value) => value === null || windowOf(value) !== null
 
+// Muse rejects a structured-output schema unless every object schema says additionalProperties: false. The file is
+// the caller's for this one call. A missing, unreadable or non-JSON file stays as it is, and argv still returns.
+function writeStrictSchema(schemaFile) {
+  if (!schemaFile) return
+  let parsed
+  try {
+    parsed = JSON.parse(fs.readFileSync(schemaFile, 'utf8'))
+  } catch {
+    // Missing, unreadable or not JSON: the file stays as it is.
+    return
+  }
+  fs.writeFileSync(schemaFile, JSON.stringify(strictSchema(parsed), null, 2) + '\n')
+}
+
 function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = process.env, dataDir = null, now = Date.now } = {}) {
-  const observedPath = () => path.join(dataDir ?? require('../run.js').dataDir(), 'lanes', 'quota', OBSERVED_FILE)
+  const observedPath = () => path.join(dataDir ?? run.dataDir(), 'lanes', 'quota', OBSERVED_FILE)
 
   // Keeps the observation; an atomic write, and a failure to write is not an error of the call.
   function observe(window, weekly) {
@@ -232,6 +250,7 @@ function createMuse({ command = 'muse', groups = {}, exec = defaultExec, env = p
     argv({ model, level, schemaFile, prompt }) {
       if (typeof model !== 'string' || model.trim() === '') throw new Error('muse needs a model')
       if (/contributor/i.test(model)) throw new Error(`muse does not call a contributor model: ${model}`)
+      writeStrictSchema(schemaFile)
       return [
         command, 'exec', '--json', '--provider', 'meta', '--model', model,
         ...(level ? ['--reasoning-effort', level] : []),

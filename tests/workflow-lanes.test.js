@@ -11,7 +11,7 @@ const { makeRepo, compile } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { runWorkflow, laneAnswer, laneOf, HARNESS_OF } = require('./workflow-harness.js')
 
-const LANES = { superdelegation: true, harnesses: ['agy'], maxParallelByHarness: { agy: 4 }, waits: { implementer: 3, supervisor: 2, reviewer: 2 }, cupo: { polls: 2, pollSeconds: 60 } }
+const LANES = { superdelegation: true, harnesses: ['agy'], waits: { implementer: 3, supervisor: 2, reviewer: 2 } }
 const FAMILY = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
 
 // A pair of the table as pick prints it (points and costs are stand-ins: no test here reads them).
@@ -35,7 +35,7 @@ function onPairs(more = (call, fallback) => fallback(call), pairs = PAIRS) {
   }
 }
 
-function lanesRun(t, tasks = [task(1)], lanes = LANES) {
+function lanesRun(t, tasks = [task(1, { tier: 'haiku xhigh — complete code' })], lanes = LANES) {
   return { ...compile(makeRepo(t), plan(tasks)), lanes }
 }
 
@@ -69,15 +69,11 @@ test('without lanes the run never calls aether-lane, and its rounds are native',
 
 test('lanes of the wrong shape, or of the shape before superdelegation, are refused before any agent starts', async (t) => {
   const bad = [
-    { harness: 'agy', maxParallel: 4, waits: LANES.waits, calls: { implementer: { haiku: { model: 'gemini-3.8-flash', group: 'gemini' } } } },
+    { harness: 'agy', waits: LANES.waits, calls: { implementer: { haiku: { model: 'gemini-3.8-flash', group: 'gemini' } } } },
     { ...LANES, superdelegation: false },
     { ...LANES, harnesses: 'agy' },
     { ...LANES, harnesses: ['agy', ''] },
-    { ...LANES, maxParallelByHarness: ['agy'] },
-    { ...LANES, harnesses: ['agy', 'codex'] },
     { ...LANES, waits: { implementer: 3, supervisor: 2 } },
-    { ...LANES, cupo: { polls: 2 } },
-    { ...LANES, cupo: { polls: 2, pollSeconds: 121 } },
   ]
   for (const lanes of bad) {
     const run = await runWorkflow(lanesRun(t, [task(1)], lanes))
@@ -160,7 +156,7 @@ test('with a pair for every call, the implementer, the supervisor and the final 
     'claude-sonnet-5-5',
     'high',
   ])
-  assert.deepEqual(run.result.lanes, { calls: 3, ok: 3, failed: 0, quota: 0, violation: 0, blocked: 0, unavailable: 0, overflow: 0 })
+  assert.deepEqual(run.result.lanes, { calls: 3, ok: 3, failed: 0, quota: 0, violation: 0, blocked: 0, unavailable: 0 })
   assert.equal(run.result.agents.total, run.calls.length)
 })
 
@@ -283,7 +279,8 @@ test('a lane that finds the integration worktree changed blocks the unit', async
   assert.deepEqual([unit.status, unit.reason], ['blocked', 'lane: the integration worktree changed during the lane call'])
   assert.equal(starts(run, 'supervisor').length + native(run, 'supervisor').length, 0)
   assert.equal(run.calls.filter((c) => c.kind === 'ops:remove').length, 1)
-  assert.equal(run.result.finalReview.status, 'skipped')
+  assert.equal(run.result.finalReview.status, 'deferred')
+  assert.match(run.result.finalReview.reason, /1 blocked, 0 skipped, 0 not run/)
   assert.equal(run.result.lanes.blocked, 1)
   assert.deepEqual(tookOf(run, 'task-1-1-implement'), [['agy:gemini-3.8-flash', 'chosen']])
 })
@@ -382,49 +379,16 @@ test('an escalation from a Gemini attempt picks the next attempt with the next r
   })
   ok(run)
   const second = run.calls.filter((c) => c.kind === 'ops:lane-pick' && c.lane.role === 'implementer')[1]
-  assert.deepEqual([second.lane.call, second.lane.model, second.lane.effort, second.lane.exclude], ['task-1-2-implement', 'sonnet', 'xhigh', FLASH.id])
+  assert.deepEqual([second.lane.call, second.lane.model, second.lane.effort, second.lane.exclude], ['task-1-2-implement', 'sonnet', 'high', FLASH.id])
   assert.deepEqual(starts(run, 'implementer').map((c) => [c.lane.call, c.lane.model, c.lane.effort]), [
     ['task-1-1-implement', 'gemini-3.8-flash', 'high'],
     ['task-1-2-implement', 'claude-sonnet-5-5', 'high'],
   ])
-  assert.deepEqual(run.result.units[0].tiers, ['haiku xhigh', 'sonnet xhigh'])
-})
-
-test("a lane call holds its harness's place until its stop settles, and the call waiting for it starts after", async (t) => {
-  const ticks = async (n) => {
-    for (let i = 0; i < n; i++) await new Promise((resolve) => setImmediate(resolve))
-  }
-  // Lane calls from their start until their result is done or their stop returns.
-  const live = new Set()
-  let most = 0
-  const run = await runWorkflow(lanesRun(t, [task(1), task(2)], { ...LANES, maxParallelByHarness: { agy: 1 }, cupo: { polls: 200, pollSeconds: 60 } }), {
-    lane: onPairs(
-      async (call, fallback) => {
-        if (call.command.verb === 'start') {
-          live.add(call.lane.call)
-          most = Math.max(most, live.size)
-        }
-        if (isCall(call, 'wait', 'task-1-1-implement')) return { done: false }
-        if (call.command.verb === 'stop') await ticks(100)
-        const answer = fallback(call)
-        if (call.command.verb === 'stop' || answer.done) live.delete(call.lane.call)
-        return answer
-      },
-      { implementer: [FLASH] },
-    ),
-  })
-  ok(run)
-  assert.equal(most, 1)
-  assert.deepEqual(starts(run, 'implementer').map((c) => c.lane.call), ['task-1-1-implement', 'task-2-1-implement'])
-  const stop = run.calls.find((c) => c.kind === 'ops:lane-stop')
-  assert.ok(run.calls.indexOf(stop) < run.calls.indexOf(starts(run, 'implementer')[1]))
-  assert.ok(run.calls.some((c) => c.kind === 'ops:lane-pause' && c.label === 'task-2: implement on haiku xhigh (attempt 1): agy is full, wait 1'))
-  assert.deepEqual(native(run, 'implementer').map((c) => c.unit), ['task-1'])
-  assert.deepEqual(run.result.units.map((u) => u.status), ['merged', 'merged'])
+  assert.deepEqual(run.result.units[0].tiers, ['haiku xhigh', 'sonnet high'])
 })
 
 // Two harnesses: agy runs the Gemini and Claude pairs, and codex runs GPT-5.5, the implementers' pair.
-const TWO = { ...LANES, harnesses: ['agy', 'codex'], maxParallelByHarness: { agy: 4, codex: 1 } }
+const TWO = { ...LANES, harnesses: ['agy', 'codex'] }
 const TWO_PAIRS = { implementer: [CODEX], supervisor: [SONNET], reviewer: [OPUS] }
 const SONNET_TASK = { tier: 'sonnet high — wiring the tests pin down' }
 
@@ -448,7 +412,7 @@ function watch() {
 }
 
 test('two harnesses: each call runs on the harness of its pair, and its provider and labels name that harness', async (t) => {
-  const run = await runWorkflow(lanesRun(t, [task(1, SONNET_TASK), task(2, SONNET_TASK)], { ...TWO, maxParallelByHarness: { agy: 4, codex: 2 } }), { lane: watch().lane })
+  const run = await runWorkflow(lanesRun(t, [task(1, SONNET_TASK), task(2, SONNET_TASK)], TWO), { lane: watch().lane })
   ok(run)
   assert.deepEqual(run.result.units.map((u) => u.rounds.map((r) => [r.provider, r.reviewProvider])), [
     [['codex gpt-5.5-codex-high', 'agy claude-sonnet-5-5-high']],
@@ -463,23 +427,15 @@ test('two harnesses: each call runs on the harness of its pair, and its provider
   assert.deepEqual(tookOf(run, 'task-1-1-implement'), [['codex:gpt-5.5-codex', 'chosen']])
 })
 
-test('the cap on calls in flight applies per harness: a second codex call waits for codex, while agy has room', async (t) => {
+test('a harness has no cap on calls in flight: two codex calls start together, and no call waits for a place', async (t) => {
   const watched = watch()
   const run = await runWorkflow(lanesRun(t, [task(1, SONNET_TASK), task(2, SONNET_TASK)], TWO), { lane: watched.lane })
   ok(run)
-  assert.equal(watched.most.codex, 1)
+  assert.equal(watched.most.codex, 2)
   assert.equal(starts(run, 'implementer').length, 2)
   assert.equal(native(run, 'implementer').length, 0)
-  const pauses = run.calls.filter((c) => c.kind === 'ops:lane-pause')
-  assert.ok(pauses.length >= 1)
-  assert.ok(pauses.every((c) => c.label.startsWith('task-2: implement on sonnet high (attempt 1): codex is full, wait ')))
+  assert.equal(run.calls.some((c) => c.kind === 'ops:lane-pause'), false)
   assert.deepEqual(run.result.units.map((u) => u.status), ['merged', 'merged'])
-
-  const roomy = watch()
-  const both = await runWorkflow(lanesRun(t, [task(1, SONNET_TASK), task(2, SONNET_TASK)], { ...TWO, maxParallelByHarness: { agy: 4, codex: 2 } }), { lane: roomy.lane })
-  ok(both)
-  assert.equal(roomy.most.codex, 2)
-  assert.equal(both.calls.some((c) => c.kind === 'ops:lane-pause'), false)
 })
 
 test('an attempt on codex that stops before it finishes names codex in its record and in the context it hands on', async (t) => {

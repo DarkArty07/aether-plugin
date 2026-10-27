@@ -11,6 +11,7 @@ const { LANE_BIN, laneEnv, agyTurns, argAfter } = require('./lane-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const seats = require('../plugins/aether/lib/seats.js')
 const schemas = require('../plugins/aether/lib/lane-schemas.js')
+const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 
 const FEATURE = 'specs/001-demo'
 const DAY = 86400000
@@ -150,10 +151,92 @@ test('C16: a Muse round reads the quota after it parses the output, so the allow
     record('run.terminal.completed', { kind: 'run_terminal', terminal: 'completed', reason: null, text: answer }),
     record('run.usage', { kind: 'run_usage', allowance, calls: 1, completed_calls: 1, failed_calls: 0, cancelled_calls: 0, children_included: false, models: [{ model: 'muse-wonder-full-1.0', calls: 1, input_tokens: 10, output_tokens: 2, cached_tokens: 0, reasoning_tokens: 0 }] }),
   ].join('\n')}\n`
-  const env = { ...laneEnv(t, { mutate: (config) => { config.harnesses.muse.command = FAKE_MUSE } }), AETHER_SUPERDELEGATION: 'on', AETHER_LANE_HARNESSES: 'muse', AETHER_FAKE_MUSE_SCRIPT: JSON.stringify({ stdout }) }
+  const env = { ...laneEnv(t, { mutate: (config) => { config.harnesses.muse.command = FAKE_MUSE; config.harnesses.muse.models['muse-wonder-full-1.0'].roles.push('judge') } }), AETHER_SUPERDELEGATION: 'on', AETHER_LANE_HARNESSES: 'muse', AETHER_FAKE_MUSE_SCRIPT: JSON.stringify({ stdout }) }
   const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], env, 'Review it.')
   assert.equal(r.status, 0, r.stdout)
   assert.equal(r.json.harness, 'muse')
   const call = lanes.readLog(env.AETHER_DATA_DIR).find((entry) => entry.kind === 'call' && entry.harness === 'muse')
   assert.ok(Math.abs(call.quotaAfter.windows.weekly.remaining - 0.6) < 1e-9, JSON.stringify(call.quotaAfter))
+})
+
+// The two agy pairs that reach the Judge's Opus high. Gemini's window renews first, so Argon is the pair the rule
+// picks, and Opus on agy is the next one.
+const ARGON = 'agy/gemini-4-argon@high'
+const OPUS_PAIR = 'agy/claude-opus-5-5@high'
+const { pairs: PAIR_TABLE } = loadPairs()
+const openIn = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString() })
+const seatConfig = lanes.loadConfig(lanes.CONFIG_FILE)
+const chooseExcluded = (seat, more = {}) => seats.chooseSeat({
+  config: seatConfig,
+  pairs: PAIR_TABLE,
+  seat,
+  harnesses: { agy: { installed: true, groups: { gemini: openIn(2), claude: openIn(3) } } },
+  ...more,
+})
+const JUDGE_REPLY = { verdict: 'revise', findings: [{ severity: 'major', type: 'missing', title: 'Task 3 is too large', evidence: '`Owns: src/**`', fix: 'split it' }], openQuestions: [] }
+const judgeInput = `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_REPLY)}\n`
+const whyOf = (chosen, id) => chosen.tried.find((entry) => entry.id === id)
+
+test('--exclude reaches the choice and the next pair of the rule takes the seat', (t) => {
+  const chosen = chooseExcluded('judge', { exclude: [ARGON] })
+  assert.equal(chosen.external, undefined)
+  assert.equal(chosen.native.agent, 'aether:judge')
+  assert.equal(chosen.native.model, 'opus')
+  assert.deepEqual(whyOf(chosen, ARGON), { id: ARGON, outcome: 'passed', why: 'excluded' })
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--exclude', ARGON], env, judgeInput)
+  assert.equal(r.status, 3, r.stdout)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.equal(r.json.native.agent, 'aether:judge')
+  assert.equal(r.json.native.model, 'opus')
+  assert.deepEqual(agyTurns(env), [])
+})
+
+test('excluding every pair that can take the round hands it to the native agent', (t) => {
+  const chosen = chooseExcluded('judge', { exclude: [ARGON, OPUS_PAIR] })
+  assert.equal(chosen.external, undefined)
+  assert.equal(chosen.native.agent, 'aether:judge')
+  assert.equal(chosen.native.model, 'opus')
+  assert.equal(whyOf(chosen, ARGON).why, 'excluded')
+  assert.equal(whyOf(chosen, OPUS_PAIR).why, 'excluded')
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--exclude', `${ARGON},${OPUS_PAIR}`], env, judgeInput)
+  assert.equal(r.status, 3, r.stdout)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.equal(r.json.native.agent, 'aether:judge')
+  assert.equal(r.json.native.model, 'opus')
+  assert.equal(r.json.tried.find((entry) => entry.id === ARGON).why, 'excluded')
+  assert.equal(r.json.tried.find((entry) => entry.id === OPUS_PAIR).why, 'excluded')
+  assert.deepEqual(agyTurns(env), [])
+})
+
+test('a malformed --exclude is a usage error', (t) => {
+  const repo = seatRepo(t)
+  const env = laneEnv(t)
+  for (const value of ['agy/x', 'agy/gemini-4-argon', `${ARGON},nope`]) {
+    const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--exclude', value], env, 'Review.\n')
+    assert.equal(r.status, 1, value)
+    assert.match(r.json.error, /--exclude must be pair ids like agy\/model@effort/, value)
+  }
+})
+
+test('the author rule holds together with an exclusion', (t) => {
+  for (const seatName of ['judge', 'examiner']) {
+    const chosen = chooseExcluded(seatName, { author: 'opus', exclude: [ARGON] })
+    assert.equal(chosen.external, undefined, seatName)
+    assert.equal(chosen.native.agent, `aether:${seatName}`, seatName)
+    assert.notEqual(chosen.decision.native.model, 'opus', seatName)
+    assert.equal(chosen.decision.native.model, 'sonnet', seatName)
+    assert.equal(whyOf(chosen, ARGON).why, 'excluded', seatName)
+  }
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--author', 'opus', '--feature', FEATURE, '--exclude', ARGON], env, judgeInput)
+  assert.equal(r.status, 3, r.stdout)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.equal(r.json.native.agent, 'aether:judge')
+  assert.equal(r.json.native.model, 'sonnet')
+  assert.deepEqual(agyTurns(env), [])
 })

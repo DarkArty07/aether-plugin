@@ -32,7 +32,7 @@ const RUNS_SOURCE = read('skills', 'autonomous-runs', 'SKILL.md')
 function injectedContext(t) {
   const repo = makeRepo(t)
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: tempDir(t, 'aether-data-') }
-  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_SEATS', 'AETHER_SUPERDELEGATION', 'AETHER_SUPERDELEGATION_LEGACY']) delete env[key]
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'AETHER_SUPERDELEGATION']) delete env[key]
   const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: repo.dir, encoding: 'utf8', input: JSON.stringify(AETHER), env })
   assert.equal(r.status, 0, r.stderr)
   return JSON.parse(r.stdout).hookSpecificOutput.additionalContext
@@ -219,19 +219,47 @@ test('the first 1,800 characters of the injected context carry R1: read it whole
 
 test('the bootstrap has The three paths and Models after the route, and the paths name the plan sizes', (t) => {
   const context = injectedContext(t)
-  const order = ['## The route by size and risk', '## The three paths', '## Models', '## Designing'].map((h) => context.indexOf(`\n${h}\n`))
-  assert.ok(order.every((at) => at >= 0), 'the four sections are there')
+  const order = ['## The route by size and risk', '## The three paths', '## The delegate ladder', '## Models', '## Designing'].map((h) => context.indexOf(`\n${h}\n`))
+  assert.ok(order.every((at) => at >= 0), 'the five sections are there')
   assert.deepEqual(order, [...order].sort((a, b) => a - b))
   const paths = section(context, 'The three paths')
   assert.match(paths, /an approved plan of three or more tasks/)
   assert.match(paths, /one or two tasks/)
-  assert.match(section(context, 'Models'), /pass `model` and `effort`/)
+  assert.match(section(context, 'The delegate ladder'), /Pass neither `model` nor `effort`/)
+  assert.doesNotMatch(section(context, 'Models'), /pass `model` and `effort`/)
 })
 
 test('the sources of the bootstrap and the swarm skill name no path of this repository', () => {
   for (const [name, text] of [['using-aether', USING_SOURCE], ['swarm', SWARM_SOURCE]]) {
     assert.ok(!text.includes('plugins/aether/'), `${name}/SKILL.md names plugins/aether/: a Lead in another project has no such path`)
   }
+})
+
+test('the bootstrap sends every delegate through Agent, judges it with aether-delegate verdict, and merges an editing one by hand', () => {
+  const text = USING_SOURCE
+  for (const needed of [
+    '**Delegates go through `Agent`:**',
+    '`aether-lane delegate` is what the system runs for that call: you do not run it by Bash',
+    'runs it on Claude, at the step\'s model, only when none can',
+    'You yourself stay on Claude either way',
+    'Pass neither `model` nor `effort`',
+    'the `aether-wt merge` line its result gives',
+    'record the `merge-main` grant when it is `main` or `master`',
+    'run the task\'s test command once on your branch',
+    'do not read the whole diff when they are enough',
+    'Launch a correction or a rise with the same id',
+    'with a reason, to a verdict only to throw that work away',
+    'it spends none of the step\'s corrections',
+    'Plan tasks you build as delegate tasks follow "The delegate ladder"',
+  ]) assert.ok(text.includes(needed), needed)
+  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')).size < 29470)
+})
+
+test('every flag of aether-delegate verdict that the bootstrap shows is in the usage of the command', (t) => {
+  const ladder = section(USING_SOURCE, 'The delegate ladder')
+  const shown = new Set([...ladder.matchAll(/(?<![\w-])(--[a-z][a-z-]*)/g)].map((m) => m[1]))
+  for (const flag of ['--task', '--verdict', '--finding', '--reason', '--from-scratch', '--worktree']) assert.ok(shown.has(flag), `the ladder shows ${flag}`)
+  for (const flag of shown) assert.match(usage(t, 'aether-delegate'), new RegExp(`(?<![\\w-])${flag}(?![\\w-])`), `${flag} is in the usage of aether-delegate`)
 })
 
 test("the model the bootstrap says the Lead starts on is the model of the Lead agent", (t) => {

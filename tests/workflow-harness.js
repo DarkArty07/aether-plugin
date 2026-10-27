@@ -55,11 +55,16 @@ function aetherWt(call, state) {
       return { salvaged: false, files: [], committed: [], left: [], head: null, package: null }
     case 'sweep':
       return { removedWorktrees: [], removedBranches: [], remaining: { worktrees: [], branches: [] } }
+    // A glob Owns entry is expanded from the unit worktree. Empty unless a test lists files, so a
+    // glob that names nothing yet stays one item and the retry is not split (issue 14).
+    case 'ls-files':
+      return { files: [] }
     default:
       throw new Error(`unexpected command for run ${first}: ${call.command.line}`)
   }
 }
 
+const DEADLINE_TICK = /: deadline \d+\/\d+$/
 const LEVEL = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
 const GROUP = { 'gemini-3.8-flash': 'gemini', 'claude-sonnet-5-5': 'claude', 'claude-opus-5-5': 'claude', 'gpt-5.5-codex': 'openai', 'grok-4.7': 'grok' }
 // The harness that runs a model when it is not agy's. A lane call names only its model, so this stands in for aether-lane's choice.
@@ -112,8 +117,6 @@ function aetherLane(call, defaults) {
       return { logged: true }
     case 'pick':
       return nativeDecision(call.lane)
-    case 'pause':
-      return { paused: Number(call.command.rest[1]) }
     default:
       throw new Error(`unexpected aether-lane command: ${call.command.line}`)
   }
@@ -133,6 +136,10 @@ function defaultHandlers(state) {
 }
 
 function parseCommand(prompt) {
+  // The split pass lists the worktree through the ops agent (a workflow cannot read the disk).
+  // Checked before the bin match: the prompt's `cd` line is not an aether-wt command.
+  const listed = prompt.match(/git -C '([^']*)' ls-files/)
+  if (listed) return { tool: 'git', line: listed[0], verb: 'ls-files', rest: [listed[1]] }
   const m = prompt.match(/(aether-wt|aether-lane) ([a-z]+)((?: [^\s']+)*)/)
   if (!m) return null
   return { tool: m[1], line: m[0], verb: m[2], rest: m[3].trim().split(' ').filter(Boolean) }
@@ -173,14 +180,14 @@ function tick() {
 // the unit (ops: for the unit and command); `fallback` is the default handler. An ops handler
 // returns what aether-wt would print, or null for an agent that failed. `overrides.lane` answers
 // aether-lane commands the same way, and may also return a string, printed as it is. By default `pick` answers with
-// the native pair of its flags, `took` with { logged: true } and `pause` with { paused }.
+// the native pair of its flags, and `took` with { logged: true }.
 //
 // An aether-lane call also carries `lane` (its run, call and flags), `payload` ({ path, text }, for
 // a start), `digestOk` (for a start: whether --digest matches the payload) and `started` (for a
 // wait, result or stop: the flags its start was given). A wait, result or stop also carries its start's
 // role in `lane.role`.
 //
-// Resolves to { result, error, calls, events, logs, maxActive }. `events` holds "start <key>" and
+// Resolves to { result, error, calls, events, logs, maxActive, ticks }. `events` holds "start <key>" and
 // "end <key>" lines in order, where <key> is the role (and ops command) plus the unit.
 //
 // `options.script` runs another workflow of plugins/aether/workflows/ instead, with no lane bookkeeping:
@@ -200,11 +207,23 @@ async function runWorkflow(args, overrides = {}, options = {}) {
   const logs = []
   const active = {}
   const maxActive = {}
+  // The ticks of a native agent's time cap (`aether-lane pause`, labelled `...: deadline N/M`): they are the script's
+  // clock, so they are kept apart from `calls`. By default a tick never ends, so no cap is reached; a test that wants
+  // the clock to run gives overrides.deadline, which gets ({ label, seconds }) and may return a reply { exitCode, stdout }.
+  const ticks = []
 
   async function agent(prompt, opts = {}) {
     if (!opts.agentType) throw new Error('every agent call needs an agentType')
     const role = opts.agentType.replace(/^aether:/, '')
     if (!roles.includes(role)) throw new Error(`unknown agent type: ${opts.agentType}`)
+    if (!custom && role === 'ops' && DEADLINE_TICK.test(opts.label || '')) {
+      const seconds = Number(/--seconds (\d+)/.exec(prompt)[1])
+      ticks.push({ label: opts.label, seconds })
+      if (!overrides.deadline) return new Promise(() => {})
+      await tick()
+      const reply = await overrides.deadline({ label: opts.label, seconds })
+      return reply || { exitCode: 0, stdout: `${JSON.stringify({ paused: seconds })}\n` }
+    }
     const unitMatch = (opts.label || '').match(/^(task-\d+):/)
     const command = role === 'ops' ? (custom ? options.commandOf(prompt) : parseCommand(prompt)) : null
     const isLane = !custom && Boolean(command && command.tool === 'aether-lane')
@@ -262,7 +281,7 @@ async function runWorkflow(args, overrides = {}, options = {}) {
   } catch (err) {
     error = err
   }
-  return { result, error, calls, events, logs, maxActive }
+  return { result, error, calls, events, logs, maxActive, ticks }
 }
 
 module.exports = { runWorkflow, laneAnswer, laneOf, HARNESS_OF }

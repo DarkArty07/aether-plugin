@@ -1,15 +1,13 @@
 'use strict'
 
-// The router's background renewal of a harness's quota reading (R23, A-6). When a decision finds the reading of agy
-// or grok expired, it starts `aether-route renew` in a process of its own, detached from the hook that started it, and
-// may wait a moment for the new reading. At most one renewal runs per harness at a time: a lock,
-// `<dataDir>/router/renewing/<harness>.json` holding `{ pid, since }`, is taken before the process is launched, so two
-// decisions at once start one renewal. The renewal itself (renewReading) takes the reading as the lanes do and saves
-// it where the router reads it, `<dataDir>/router/readings/<harness>.json`; it writes no marks.
+// Background renewal of a harness's quota reading for delegate tasks under <dataDir>/router/ with source 'router'.
+// Launches detached renewal processes and manages locks under <dataDir>/router/renewing/ and readings under <dataDir>/router/readings/.
+// Family: router.
 
 const childProcess = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
+const { pidAlive, sleep } = require('./common.js')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 const { readGroups: defaultReadGroups } = require('./lane-readings.js')
 const { readingFile } = require('./router-quota.js')
@@ -26,7 +24,7 @@ function lockFile(dataDir, harness) {
 }
 
 function renewalArgv(harness, { node = process.execPath, pluginRoot = path.join(__dirname, '..') } = {}) {
-  return [node, path.join(pluginRoot, 'bin', 'aether-route'), 'renew', '--harness', harness]
+  return [node, path.join(pluginRoot, 'bin', 'aether-delegate'), 'renew', '--harness', harness]
 }
 
 // What renews a harness whose adapter cannot take a new reading itself: grok's adapter only reads its log, and its
@@ -86,15 +84,6 @@ function spawnRenewal(harness, { argv = renewalArgv(harness) } = {}) {
   child.unref()
   if (!Number.isInteger(child.pid)) throw new Error(`the renewal of ${harness} did not start`)
   return child.pid
-}
-
-function pidAlive(pid) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return err.code === 'EPERM'
-  }
 }
 
 // The lock as `{ pid, since }`, or null when there is none. A lock that cannot be read, because its holder is still
@@ -174,12 +163,8 @@ function startRenewal({ dataDir, harness, now = Date.now(), alive = pidAlive, sp
   }
 }
 
-function realSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 // Waits for a valid reading, checking it every pollMs, for no longer than waitMs.
-async function waitForReading({ isValid, waitMs, now = Date.now, sleep = realSleep, pollMs = 250 }) {
+async function waitForReading({ isValid, waitMs, now = Date.now, sleep: sleepFn = sleep, pollMs = 250 }) {
   const limit = Number.isFinite(waitMs) && waitMs > 0 ? waitMs : 0
   const start = now()
   for (;;) {
@@ -190,7 +175,7 @@ async function waitForReading({ isValid, waitMs, now = Date.now, sleep = realSle
     const waitedMs = now() - start
     if (valid) return { valid: true, waitedMs }
     if (waitedMs >= limit) return { valid: false, waitedMs }
-    await sleep(Math.min(pollMs, limit - waitedMs))
+    await sleepFn(Math.min(pollMs, limit - waitedMs))
   }
 }
 

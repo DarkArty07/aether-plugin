@@ -26,6 +26,9 @@ function stubs(on, { env = { HOME: '/home/u', AETHER_DATA_DIR: '/home/u/aether-d
   on('turn.step', async function* ($, e) {
     return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: { ...USAGE, model: e.model } }
   })
+  // The quota brake asks aether-autonomy for its settings after a step; the call fails here, which
+  // leaves the brake inert for these tests (its own are in quota-brake.test.ts).
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }))
   on('fs.exists', ($, e) => (marked === 'deny' ? { deny: 'no access' } : { value: marked === true && e.path.endsWith('/sessions/s1.json') }))
   on('agent.offer', () => ({ isOffered: true }))
   on('classic.SessionStart', () => ({}))
@@ -221,7 +224,9 @@ test('a marker check that fails counts as not Aether', async ($, on) => {
   const writes = stubs(on, { marked: 'deny' })
   await step($)
   await endTurn($)
-  expect(writes).toEqual([])
+  // No usage is recorded; the only write is the fault record of the failed check (spec 014, R1).
+  expect(writes.map((w) => w.path)).toEqual(['/home/u/aether-data/observe/faults/s1.json'])
+  expect(JSON.parse(writes[0].text).faults.map((f) => f.source)).toEqual(['register.marker-check'])
 })
 
 const offer = ($, agent: string) => $.agent.offer({ agent, description: 'd', source: 'plugin' })

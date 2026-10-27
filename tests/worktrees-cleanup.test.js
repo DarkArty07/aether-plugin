@@ -120,6 +120,25 @@ test('sweepStale records the tips of unmerged unit branches before deleting them
   assert.deepEqual(record.branches, [{ branch: unit.branch, tip }])
 })
 
+test('sweepRun of an interrupted run keeps only the unmerged branches, with their work committed', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const one = ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, one.path, 'src/t1/a.js', 'one\n', 'add a')
+  assert.equal(merge(repo.dir, args.runId, 'task-1').merged, true)
+  const two = ensure(repo.dir, args.runId, 'task-2')
+  fs.mkdirSync(path.join(two.path, 'src', 't2'), { recursive: true })
+  fs.writeFileSync(path.join(two.path, 'src', 't2', 'b.js'), 'two\n')
+  fs.writeFileSync(path.join(args.runDir, 'saved.json'), '{}\n')
+  const r = sweepRun(repo.dir, args.runId, { finish: true })
+  assert.deepEqual(r.removedBranches, [one.branch])
+  assert.deepEqual(r.savedBranches, [{ task: 'task-2', branch: two.branch, head: repo.git('rev-parse', two.branch) }])
+  assert.equal(repo.git('show', `${two.branch}:src/t2/b.js`), 'two')
+  assert.deepEqual(r.remaining, { worktrees: [], branches: [two.branch] })
+  assert.equal(r.finished, false)
+  assert.ok(fs.existsSync(args.runDir))
+})
+
 test('Aether leaves the registration of an unrelated worktree alone', (t) => {
   const repo = makeRepo(t)
   const userWt = path.join(tempDir(t, 'aether-user-wt-'), 'wt')

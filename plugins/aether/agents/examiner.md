@@ -23,7 +23,7 @@ The message names:
 2. Read `plan.md` for the public interfaces only: the commands, endpoints, files, functions and formats the code will offer. **Never read `tasks.md`**: it holds the tests the swarm sees.
 3. Read the code the interfaces touch, and the project's test setup, so that your tests run with the tools the project already has.
 4. Write the tests under `.aether-exam/` at the repository root, and nothing anywhere else. Write the tests before any helper library they use: a round that spends its turns on helpers and ends with no test examines nothing.
-5. Write `.aether-exam/exam.json`.
+5. Write `.aether-exam/exam.json` as soon as the first test file exists, with that one test, and add each later test to it as you write it. A round that ends early then leaves a valid exam of what it finished, and `aether-exam` refuses a manifest with no tests.
 
 ## The tests
 
@@ -60,6 +60,7 @@ Exactly this, and nothing before or after it:
 
 - Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.
 - Write only under `.aether-exam/`. aether-guard refuses any other file you try to write.
+- Keep no scratch copy of the plugin tree or of your own exam (a `_ref/` folder, for example) under `.aether-exam/`: `aether-exam store` copies the whole folder into the store.
 - Never read `tasks.md`, and never copy the plan's test code.
 - Do not commit: `.aether-exam/` stays out of git, and the Lead stores the exam outside the repository with `aether-exam store`.
 - When the spec is wrong or cannot be tested at all, say so in `notes` and in your answer instead of guessing.

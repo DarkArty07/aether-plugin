@@ -1,18 +1,18 @@
 'use strict'
 
 // Ids, locations and records for Aether runs.
+// Family: none.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const crypto = require('node:crypto')
+const { readJson } = require('./common.js')
 
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK_ID = /^task-\d+$/
 // Anchored to the worktree's root, so a project folder of the same name deeper down stays visible.
 const EXCLUDES = ['/.aether/', '/.aether-tmp/', '/.aether-exam/']
-// The unanchored lines earlier versions wrote, and what replaces each.
-const LEGACY_EXCLUDES = { '.aether/': '/.aether/', '.aether-tmp/': '/.aether-tmp/' }
 
 function isRunId(id) {
   return RUN_ID.test(String(id))
@@ -93,9 +93,6 @@ function writeJson(file, value) {
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n')
 }
 
-function readJson(file) {
-  return JSON.parse(fs.readFileSync(file, 'utf8'))
-}
 
 function appendRecord(record, dir = dataDir()) {
   fs.mkdirSync(dir, { recursive: true })
@@ -108,11 +105,10 @@ function ensureExcluded(gitCommonDir) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
   const lines = current === '' ? [] : current.replace(/\n$/, '').split('\n')
-  const updated = lines.map((line) => LEGACY_EXCLUDES[line.trim()] || line)
-  const present = new Set(updated.map((line) => line.trim()))
+  const present = new Set(lines.map((line) => line.trim()))
   const missing = EXCLUDES.filter((pattern) => !present.has(pattern))
-  if (missing.length === 0 && updated.every((line, i) => line === lines[i])) return
-  fs.writeFileSync(file, [...updated, ...missing].join('\n') + '\n')
+  if (missing.length === 0) return
+  fs.writeFileSync(file, [...lines, ...missing].join('\n') + '\n')
 }
 
 module.exports = {

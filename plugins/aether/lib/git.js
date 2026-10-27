@@ -1,6 +1,7 @@
 'use strict'
 
 // Thin wrapper around the git CLI.
+// Family: none.
 
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')

@@ -300,7 +300,8 @@ function harnessEntries(lanes, listings, harnesses = HARNESSES, pairs = []) {
     const listing = listings.harnesses?.[harness] ?? {}
     const lane = lanes.harnesses?.[harness]?.models ?? {}
     const effortVia = listing.effortVia ?? null
-    const byModel = effortVia === 'id' ? listedById(listing.models ?? []) : listedByFlag(listing)
+    const listingModels = [...(listing.models ?? []), ...(listing.calledNotListed ?? [])]
+    const byModel = effortVia === 'id' ? listedById(listingModels) : listedByFlag(listing)
     for (const id of Object.keys(lane)) {
       if (byModel.has(id)) continue
       const asked = pairs.filter((pair) => pair.harness === harness && pair.model === id).map((pair) => pair.effort)
@@ -375,7 +376,8 @@ function splitId(listed) {
 // `excluded` is the reason the owner keeps a listed model out of use.
 function listedByFlag(listing) {
   const result = new Map()
-  for (const listed of listing.models ?? []) {
+  const models = [...(listing.models ?? []), ...(listing.calledNotListed ?? [])]
+  for (const listed of models) {
     const object = typeof listed === 'string' ? {} : listed
     const model = typeof listed === 'string' ? listed : listed.id
     const efforts = object.efforts ?? listing.efforts
@@ -847,7 +849,7 @@ function badListings(listings, harnesses) {
   for (const name of harnesses) {
     const listing = listings.harnesses?.[name]
     if (!Array.isArray(listing?.models)) continue
-    for (const listed of listing.models) {
+    for (const listed of [...(listing.models ?? []), ...(listing.calledNotListed ?? [])]) {
       if (typeof listed === 'string') continue
       const shown = JSON.stringify(listed)
       if (listing.effortVia === 'id') {

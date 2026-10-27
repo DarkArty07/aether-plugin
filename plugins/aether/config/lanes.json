@@ -4,15 +4,13 @@
   "harnesses": {
     "agy": {
       "command": "agy",
-      "maxParallel": 8,
-      "maxParallelMeasured": { "at": "2026-10-20T21:40:58.778Z", "ceiling": 8, "limited": false },
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200, "judge": 1200, "writer": 2700, "examiner": 1800 },
-      "groups": { "gemini": "Gemini Models", "claude": "Claude and GPT models" },
+      "groups": { "argon": "Gemini Models", "flash": "Gemini Models", "claude": "Claude and GPT models" },
       "models": {
         "gemini-3.8-flash": {
-          "group": "gemini",
+          "group": "flash",
           "roles": ["implementer"],
           "aa": { "slug": "gemini-3-8-flash", "intelligence": 40.9, "terminalBench": 0.2, "checked": "2026-10-08" }
         },
@@ -27,7 +25,7 @@
           "aa": { "slug": "claude-opus-5-5-high", "intelligence": 53.6, "terminalBench": 0.57, "checked": "2026-10-08" }
         },
         "gemini-4-argon": {
-          "group": "gemini",
+          "group": "argon",
           "roles": ["judge", "writer", "examiner"],
           "note": "Gemini 4 Argon, generally available 2026-10-13. agy 1.3.6 lists it as gemini-4-argon-low, -medium and -high, and a round of each seat ran on it on 2026-10-15. Not measured against the native agent yet (docs/evaluations/seats)."
         }
@@ -35,7 +33,6 @@
     },
     "codex": {
       "command": "codex",
-      "maxParallel": 2,
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
@@ -44,8 +41,6 @@
     },
     "grok": {
       "command": "grok",
-      "maxParallel": 2,
-      "maxParallelMeasured": { "at": "2026-10-20T21:42:17.781Z", "ceiling": 8, "limited": true },
       "waitSeconds": 540,
       "quotaLifeMinutes": 30,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
@@ -60,7 +55,6 @@
     },
     "cursor": {
       "command": "cursor-agent",
-      "maxParallel": 2,
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
@@ -69,8 +63,6 @@
     },
     "muse": {
       "command": "muse",
-      "maxParallel": 2,
-      "maxParallelMeasured": { "at": "2026-10-20T21:43:50.871Z", "ceiling": 8, "limited": true },
       "waitSeconds": 540,
       "quotaLifeMinutes": 30,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
@@ -82,6 +74,13 @@
           "aa": { "slug": "muse-wonder-full", "intelligence": 55.8, "terminalBench": 0.57, "checked": "2026-10-19" },
           "ownerDecision": "«si deja entrar a musewonder full es uno d elos mejores modelos que tiene el harness, ... esta anivel de opus segun yo» (the owner, 2026-10-19). Artificial Analysis names an effort for its only figure of this model, max, which the CLI does not take (low to xhigh), so under rule 3 of the models index it has no figure at an effort it takes; the owner decided it enters anyway, as Opus. Its score at max is 55.8 in intelligence and 0.57 in terminal-bench, against Opus 5.5 at 53.6 and 0.57 at high.",
           "note": "The one model the Muse CLI lists to the owner's account (model/list of muse serve), given by Meta only on the Power and Maximum plans: an account without the plan is refused and the call runs native. Called for real on 2026-10-19 through this adapter (muse 1.4.11): clean, structured answer, the sandbox runs, and two calls at once live together. Its pair, muse/muse-wonder-full-1.0@high, is in config/pairs.json."
+        },
+        "muse-spark-1.3": {
+          "group": "muse",
+          "roles": ["implementer", "reviewer"],
+          "aa": { "slug": "muse-spark-1-3", "intelligence": 48.1, "terminalBench": 0.33, "checked": "2026-10-26" },
+          "ownerDecision": "«muse tambien tiene muse spark 1.3 que es infinitamente mas barato. Porque no se uso a nivel de haiku? considero que es un bug.» and «Dependiendo del effort muse spark 1.3 entra en nivel haiku o sonnet» (the owner, 2026-10-26). The Muse CLI does not list it to the owner's account (model/list of muse serve), but it answered a real call through the adapter on 2026-10-19 (specs/008-muse-harness/evidence/real-call.md, docs/handoff/2026-10-19-muse-harness-0.13.0.md); the owner decided it enters anyway.",
+          "note": "Called for real on 2026-10-19 through this adapter. Artificial Analysis measures it at xhigh (intelligence 45.1, Terminal-Bench 0.17) and max (intelligence 48.1, Terminal-Bench 0.33), with token price 1.25 / 4.25 USD/M. Cost per task is not in the API and was read by the owner off AA's chart 'Intelligence Index vs. Cost per Task' on 2026-10-26: xhigh 1.1, max 1.3 USD. Spark is not cheap in AA's dollars (1.1 and 1.3 against Haiku max 0.21 and Sonnet high 0.88): it is used because Muse is a subscription whose quota the owner spends instead of Claude's, and within that quota it is the model with the fewest points that is enough. Terminal-Bench 4.0 is weaker than the index suggests (max 33%, xhigh 17%, against Haiku high 22% and Sonnet high 44%). Its pairs are muse/muse-spark-1.3@xhigh and muse/muse-spark-1.3@max in config/pairs.json."
         }
       }
     }

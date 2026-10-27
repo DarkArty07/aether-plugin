@@ -3,6 +3,7 @@
 // Path patterns for task ownership. Supported syntax: `*` (within one
 // segment), `**` (any depth) and `?` (one character). A pattern without
 // wildcards names a file or a directory.
+// Family: none.
 
 const WILDCARD = /[*?]/
 

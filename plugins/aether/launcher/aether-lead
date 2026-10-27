@@ -3,14 +3,29 @@
 # bypassed, superpowers off and the plugin's own theme, Aether, for the session. The theme is in this
 # session's --settings only: it never reaches your settings files, so a plain `claude` keeps yours. It is
 # the README's start command and nothing else, so it needs no setup and works the same from bash, fish
-# or zsh. Every argument goes on to claude, after the ones below:
+# or zsh. --dev is the only flag the launcher takes for itself; every other argument goes on to claude,
+# after the ones below:
 #   aether-lead                       an interactive session
 #   aether-lead -p "<task>"           one run, no screen
 #   aether-lead --resume              the usual flags
+#   aether-lead --dev                 start development mode for self-observation
 #   aether-lead --plugin-dir <worktree>/plugins/aether    a development tree, in place of the installed release
 # With no permission prompts, aether-guard is the only check left on an irreversible command, so the
 # session refuses one that no grant covers (AETHER_IRREVERSIBLE=enforce) unless the shell already set
 # the variable: AETHER_IRREVERSIBLE=log aether-lead only records them.
+dev=0
+for arg do
+  shift
+  if [ "$arg" = "--dev" ]; then
+    dev=1
+    continue
+  fi
+  set -- "$@" "$arg"
+done
+if [ "$dev" = 1 ]; then
+  AETHER_OBSERVE=dev
+  export AETHER_OBSERVE
+fi
 AETHER_IRREVERSIBLE="${AETHER_IRREVERSIBLE:-enforce}"
 export AETHER_IRREVERSIBLE
 exec claude --agent aether:lead --effort xhigh --permission-mode bypassPermissions \

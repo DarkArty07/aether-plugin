@@ -122,6 +122,23 @@ test('the tasks command writes an Aether execution, Aether fields and a checklis
   }
 })
 
+test('the guidance the Writer reads says the effort defaults to high and keeps xhigh for named risk', () => {
+  const files = [
+    path.join(PLUGIN, 'skills', 'tasks', 'SKILL.md'),
+    path.join(PLUGIN, 'speckit', 'commands', 'speckit.tasks.md'),
+    path.join(PLUGIN, 'agents', 'writer.md'),
+  ]
+  for (const file of files) {
+    const text = fs.readFileSync(file, 'utf8')
+    assert.match(text, /effort(?:\*\*)? (?:defaults to|is) `high`/, file)
+    assert.doesNotMatch(text, /defaults to `xhigh`|is `xhigh` when the Tier line names none/, file)
+    assert.doesNotMatch(text, /malformed input that the tests do not list/, file)
+  }
+  for (const file of files.slice(0, 2)) {
+    assert.match(fs.readFileSync(file, 'utf8'), /only where a mistake would reach user data, security or concurrency/, file)
+  }
+})
+
 test('the NOTICE names Spec Kit and oh-my-claudecode, and keeps the superpowers paragraph', () => {
   const notice = read('NOTICE')
   assert.match(notice, /Spec Kit \(https:\/\/github\.com\/github\/spec-kit\), Copyright GitHub, Inc\./)

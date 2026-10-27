@@ -3,7 +3,7 @@ name: implementer
 description: "Aether implementer: builds one task of a compiled Aether plan in its own unit worktree, test first, and reports a status. Launched by the aether:run workflow, whose message names the brief, the run, the tier and the workspace commands."
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: haiku
-effort: xhigh
+effort: high
 maxTurns: 60
 ---
 

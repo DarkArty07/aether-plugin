@@ -1,3 +1,0 @@
-Delegate this to a subagent (the Agent tool, subagent_type general-purpose) and wait for its answer. Then tell me the answer in one line.
-
-Task: "List every exported function of src/util.js, one line each saying what it returns. Read only; edit nothing."

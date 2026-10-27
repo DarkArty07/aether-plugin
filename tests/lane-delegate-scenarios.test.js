@@ -1,0 +1,375 @@
+'use strict'
+
+// The scenarios E1 to E8 (E7 is the absence of a limit on a harness), run end to end through the real path:
+// the aether-lane delegate bin, on one data directory per test.
+// No test writes the lane log by hand: every entry is born from running the delegate command.
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { spawn, spawnSync } = require('node:child_process')
+const { WT_BIN, runBin, makeRepo, tempDir } = require('./helpers.js')
+const fx = require('./lane-fixtures.js')
+const lanes = require('../plugins/aether/lib/lanes.js')
+const pairs = require('../plugins/aether/lib/pairs.js')
+
+const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote the file.', head: '', tests: 'ok', concerns: '', question: '' })
+const READY = JSON.stringify({ verdict: 'ready', findings: [], declined: [], summary: 'The diff does what the brief asks.' })
+const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
+const QUOTA_TEXT = 'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 163h22m27s.'
+
+const agyEnv = (t, options) => ({ ...fx.laneEnv(t, options), AETHER_LANE_HARNESSES: 'agy' })
+const choicesOf = (env, role = null) => lanes.readLog(env.AETHER_DATA_DIR).filter((entry) => entry.kind === 'choice' && (role === null || entry.role === role))
+const modelArgOf = (picked) => `${picked.model}-${picked.effort}`
+const pairModelArg = (pairId) => {
+  const [rest, effort] = [pairId.slice(pairId.indexOf('/') + 1, pairId.lastIndexOf('@')), pairId.slice(pairId.lastIndexOf('@') + 1)]
+  return `${rest}-${effort}`
+}
+
+// Copied from tests/lane-delegate.test.js: a wrapper CLI that forwards to the fake agy, adding
+// directives to the -p argument: a model failure or a quota refusal for the --model values named,
+// and the review answer for a reviewer turn.
+function roleFake(t, { failModels = [], quotaModels = [], reviewAnswer = READY, writeOnFail = null } = {}) {
+  const file = path.join(tempDir(t, 'aether-role-fake-'), 'role-fake.js')
+  const lines = [
+    '#!/usr/bin/env node',
+    "'use strict'",
+    "const { spawnSync } = require('node:child_process')",
+    'const argv = process.argv.slice(2)',
+    "const at = (name) => { const i = argv.indexOf(name); return i === -1 ? null : argv[i + 1] }",
+    "const pi = argv.indexOf('-p')",
+    "if (pi !== -1 && argv[pi + 1] !== '/usage') {",
+    "  const model = at('--model')",
+    '  const extra = []',
+    `  if (${JSON.stringify(failModels)}.includes(model)) {`,
+    ...(writeOnFail ? [`    extra.push(${JSON.stringify(`FAKE-AGY: write ${writeOnFail}`)})`] : []),
+    "    extra.push('FAKE-AGY: exit-error model not found: ' + model)",
+    `  } else if (${JSON.stringify(quotaModels)}.includes(model)) {`,
+    ...(writeOnFail ? [`    extra.push(${JSON.stringify(`FAKE-AGY: write ${writeOnFail}`)})`] : []),
+    "    extra.push('FAKE-AGY: exit-code 3')",
+    `    extra.push(${JSON.stringify(`FAKE-AGY: exit-error ${QUOTA_TEXT}`)})`,
+    `  } else if (${JSON.stringify(reviewAnswer)} !== null && argv[pi + 1].startsWith(${JSON.stringify(fx.roleBody('reviewer').slice(0, 120))})) {`,
+    `    extra.push('FAKE-AGY: answer ' + ${JSON.stringify(reviewAnswer)})`,
+    '  }',
+    "  if (extra.length > 0) argv[pi + 1] = argv[pi + 1] + '\\n' + extra.join('\\n')",
+    '}',
+    `const r = spawnSync(${JSON.stringify(fx.FAKE_AGY)}, argv, { stdio: 'inherit' })`,
+    'process.exit(r.status === null ? 1 : r.status)',
+  ]
+  fs.writeFileSync(file, lines.join('\n') + '\n')
+  fs.chmodSync(file, 0o755)
+  return file
+}
+
+const briefLines = (extra = []) => [
+  'Write src/new.js saying hello and commit it.',
+  ...extra,
+  'FAKE-AGY: write src/new.js hello',
+  'FAKE-AGY: commit add new',
+  `FAKE-AGY: answer ${DONE}`,
+  'FAKE-GROK: write src/new.js hello',
+  `FAKE-GROK: answer ${DONE}`,
+]
+
+const docBriefLines = () => [
+  'Write docs/note.md saying hello and commit it.',
+  'FAKE-AGY: write docs/note.md hello',
+  'FAKE-AGY: commit add note',
+  `FAKE-AGY: answer ${DONE}`,
+]
+
+function writeBrief(repo, lines) {
+  const file = path.join(repo.dir, 'brief.md')
+  fs.writeFileSync(file, lines.join('\n') + '\n')
+  repo.git('add', 'brief.md')
+  repo.git('commit', '-q', '-m', 'brief')
+  return file
+}
+
+function runDelegate(repo, env, { brief, model = 'haiku', effort = 'high', owns = 'src/**', tests = null, session = 's1' } = {}) {
+  const args = ['delegate', '--brief', brief, '--model', model, '--effort', effort, '--owns', owns]
+  if (tests !== null) args.push('--tests', tests)
+  if (session !== null) args.push('--session', session)
+  return runBin(fx.LANE_BIN, args, repo.dir, env)
+}
+
+// One successful delegate run in its own repository, to learn which pairs the choice picks there.
+function probe(t) {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  const brief = writeBrief(repo, briefLines())
+  const r = runDelegate(repo, env, { brief, tests: 'true' })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  return { choices: choicesOf(env) }
+}
+
+test('E1: a small editing charge leaves Claude for an external pair, comes back as a unit branch, and after the merge the charge test command passes in the repository', (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  const brief = writeBrief(repo, briefLines())
+  const headBefore = repo.git('rev-parse', 'HEAD')
+  const tests = 'node -e "const fs=require(\'fs\');process.exit(fs.readFileSync(\'src/new.js\',\'utf8\').trim()===\'hello\'?0:1)"'
+  const r = runDelegate(repo, env, { brief, tests })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  const json = r.json
+  assert.equal(json.status, 'done')
+  assert.ok(RUN_ID.test(json.id) && json.run === json.id)
+  assert.equal(json.pair.harness, 'agy')
+  assert.equal(json.branch, 'aether/' + json.id + '/task-1')
+  assert.equal(repo.git('show', `${json.branch}:src/new.js`), 'hello')
+  assert.equal(repo.git('status', '--porcelain'), '', "the owner's checkout is untouched")
+  assert.equal(repo.git('rev-parse', 'HEAD'), headBefore)
+  assert.equal(json.tests.passed, true)
+  assert.equal(json.review.status, 'done')
+  assert.equal(json.review.verdict, 'ready')
+  assert.notEqual(json.review.pair.id, json.pair.id, 'the reviewer is not the pair that wrote')
+  assert.equal(json.merge,`aether-wt merge ${json.id} task-1`)
+  const merged = runBin(WT_BIN, ['merge', json.id, 'task-1'], repo.dir, env)
+  assert.equal(merged.json.merged, true, merged.stdout + merged.stderr)
+  const after = spawnSync(tests, { shell: true, cwd: repo.dir, encoding: 'utf8' })
+  assert.equal(after.status, 0, `the charge test command passes in the repository after the merge: ${after.stdout}${after.stderr}`)
+})
+
+test('E2: with scaled timeouts the delegate command runs whole in its own process and no child of the attempt is left alive', (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, {
+    command: roleFake(t),
+    mutate: (config) => {
+      for (const harness of Object.values(config.harnesses)) harness.timeouts.implementer = 3
+    },
+  })
+  const brief = writeBrief(repo, briefLines(['FAKE-AGY: sleep 2']))
+  const r = runDelegate(repo, env, { brief })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.status, 'done')
+  const callFile = path.join(repo.dir, '.aether', 'runs', r.json.id, 'lanes', 'task-1-1-implement', 'call.json')
+  assert.equal(JSON.parse(fs.readFileSync(callFile, 'utf8')).timeoutSeconds, 3, 'the lane timeout, not a smaller delegate cap')
+  const turns = fx.agyTurns(env)
+  assert.ok(turns.some((entry) => entry.argv[1].startsWith(fx.roleBody('implementer'))), 'the implementer turn completed')
+  assert.ok(turns.some((entry) => entry.argv[1].startsWith(fx.roleBody('reviewer'))), 'the reviewer turn completed')
+  // The runner removes its pid files when a call ends, so liveness is read from the processes
+  // themselves: every process of a lane call carries AETHER_LANE_CALL=<runId>/<call> in its
+  // environment, and killMarked returns the markers it finds alive (and ends them).
+  const calls = fs.readdirSync(path.join(repo.dir, '.aether', 'runs', r.json.id, 'lanes'))
+  assert.ok(calls.includes('task-1-1-implement') && calls.some((call) => call.startsWith('task-1-review-')), `the scan covers the implementer and reviewer calls: ${calls.join(', ')}`)
+  assert.deepEqual(lanes.killMarked(`${r.json.id}/`, { prefix: true }), [], 'no process of the attempt is alive when the command returns')
+
+  // Control: the same scan does find a live process that carries a marker of that shape, so an
+  // empty answer above means nothing was alive and not that the scan cannot see.
+  const controlPrefix = `${r.json.id}-control/`
+  const control = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
+    env: { ...process.env, AETHER_LANE_CALL: `${controlPrefix}task-1-1-implement` },
+    stdio: 'ignore',
+    detached: true,
+  })
+  t.after(() => {
+    try {
+      process.kill(-control.pid, 'SIGKILL')
+    } catch {
+      // Gone already.
+    }
+  })
+  assert.deepEqual(lanes.killMarked(controlPrefix, { prefix: true }), [`${controlPrefix}task-1-1-implement`], 'the scan sees a live marked process')
+})
+
+test('a delegate command that is killed ends its calls: no process of the attempt is left to spend quota', async (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  const brief = writeBrief(repo, briefLines(['FAKE-AGY: sleep 25']))
+  const child = spawn(process.execPath, [fx.LANE_BIN, 'delegate', '--brief', brief, '--model', 'haiku', '--effort', 'high', '--owns', 'src/**', '--session', 's1'], { cwd: repo.dir, env, stdio: 'ignore' })
+  const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })))
+  t.after(() => {
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      // Gone already.
+    }
+  })
+  const runsDir = path.join(repo.dir, '.aether', 'runs')
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  let id = null
+  for (let k = 0; k < 100 && id === null; k++) {
+    const found = fs.existsSync(runsDir) ? fs.readdirSync(runsDir).find((name) => fs.existsSync(path.join(runsDir, name, 'lanes', 'task-1-1-implement', 'call.json'))) : undefined
+    if (found) id = found
+    else await sleep(100)
+  }
+  assert.ok(id, 'the implementer call started')
+  await sleep(1500)
+  child.kill('SIGTERM')
+  const ended = await exited
+  assert.equal(ended.code, 143, `the command left with 143, not ${JSON.stringify(ended)}`)
+  assert.deepEqual(lanes.killMarked(`${id}/`, { prefix: true }), [], 'no process of the attempt is alive after the command was killed')
+})
+
+test('E3: a pair that runs out of quota mid-way passes to the next pair, and with no candidate left the charge ends as no-candidate', (t) => {
+  const { choices } = probe(t)
+  const first = choices.find((entry) => entry.role === 'implementer').picked
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t, { quotaModels: [modelArgOf(first)], writeOnFail: 'src/attempt.js attempt-one' }) })
+  const brief = writeBrief(repo, briefLines())
+  const r = runDelegate(repo, env, { brief, tests: 'true' })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  assert.notEqual(r.json.pair.id, first.id, 'the pair that finishes is not the one that failed')
+  assert.equal(r.json.tried.length, 1)
+  assert.deepEqual([r.json.tried[0].pair, r.json.tried[0].cause], [first.id, 'quota'])
+  const patch = r.json.tried[0].patch
+  assert.ok(patch.includes(path.join('runs', r.json.id, 'patches', 'task-1-attempt-1.patch')), patch)
+  assert.ok(fs.readFileSync(patch, 'utf8').includes('attempt-one'))
+  assert.equal(repo.git('show', `${r.json.branch}:src/attempt.js`), 'attempt-one', 'the next pair continued from the failed attempt, so its file is on the branch')
+
+  // The variant with no candidate left: the only pair that reaches runs out of quota.
+  const table = pairs.loadPairs()
+  const only = { fetchedAt: table.fetchedAt, pairs: table.pairs.filter((pair) => pair.harness === 'claude' || pair.id === 'agy/claude-opus-5-5@high') }
+  const pairsFile = path.join(tempDir(t, 'aether-pairs-'), 'pairs.json')
+  fs.writeFileSync(pairsFile, JSON.stringify(only))
+  const lone = makeRepo(t)
+  const loneEnv = { ...agyEnv(t, { command: roleFake(t, { quotaModels: [pairModelArg('agy/claude-opus-5-5@high')], writeOnFail: 'src/attempt.js attempt-one' }) }), AETHER_PAIRS_CONFIG: pairsFile }
+  const loneBrief = writeBrief(lone, briefLines())
+  const gone = runDelegate(lone, loneEnv, { brief: loneBrief })
+  assert.equal(gone.status, 0, gone.stdout + gone.stderr)
+  assert.equal(gone.json.status, 'no-candidate')
+  assert.ok(RUN_ID.test(gone.json.id))
+  assert.deepEqual([gone.json.tried[0].pair, gone.json.tried[0].cause], ['agy/claude-opus-5-5@high', 'quota'])
+  assert.ok(fs.readFileSync(gone.json.tried[0].patch, 'utf8').includes('attempt-one'))
+  assert.equal(fs.existsSync(path.join(lone.dir, '.aether', 'worktrees', gone.json.id, 'task-1')), false, 'the attempt worktree is gone')
+  const entry = lanes.readLog(loneEnv.AETHER_DATA_DIR).find((item) => item.kind === 'delegate')
+  assert.deepEqual([entry.id, entry.status], [gone.json.id, 'no-candidate'])
+})
+
+test('E4: an unreachable reference ends as no-candidate with the no-pair cause, logged under its id, with no external turn and no question', (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  const brief = writeBrief(repo, briefLines())
+  const headBefore = repo.git('rev-parse', 'HEAD')
+  const r = runDelegate(repo, env, { brief, model: 'opus', effort: 'max' })
+  assert.equal(r.status, 0, 'the bin ends on its own, with no interactive input: ' + r.stdout + r.stderr)
+  assert.equal(r.json.status, 'no-candidate')
+  assert.equal(r.json.cause, 'no-pair')
+  assert.ok(RUN_ID.test(r.json.id))
+  const entry = lanes.readLog(env.AETHER_DATA_DIR).find((item) => item.kind === 'delegate')
+  assert.ok(entry)
+  assert.deepEqual([entry.id, entry.run, entry.status, entry.cause], [r.json.id, r.json.id, 'no-candidate', 'no-pair'])
+  assert.equal(fx.agyTurns(env).length, 0, 'nothing ran outside')
+  assert.equal(repo.git('status', '--porcelain'), '')
+  assert.equal(repo.git('rev-parse', 'HEAD'), headBefore)
+})
+
+test('E5: a documentation brief without a test command, with a reviewer, without one, and with tests but no verdict', (t) => {
+  const withReview = makeRepo(t)
+  const envA = agyEnv(t, { command: roleFake(t) })
+  const a = runDelegate(withReview, envA, { brief: writeBrief(withReview, docBriefLines()), owns: 'docs/**' })
+  assert.equal(a.json?.status, 'done', a.stdout + a.stderr)
+  assert.equal(a.json.tests, null)
+  assert.equal(a.json.review.status, 'done')
+  assert.equal(a.json.review.verdict, 'ready')
+
+  const table = pairs.loadPairs()
+  const only = { fetchedAt: table.fetchedAt, pairs: table.pairs.filter((pair) => pair.harness === 'claude' || pair.id === 'agy/claude-opus-5-5@high') }
+  const pairsFile = path.join(tempDir(t, 'aether-pairs-'), 'pairs.json')
+  fs.writeFileSync(pairsFile, JSON.stringify(only))
+  const noReviewer = makeRepo(t)
+  const envB = { ...agyEnv(t, { command: roleFake(t) }), AETHER_PAIRS_CONFIG: pairsFile }
+  const b = runDelegate(noReviewer, envB, { brief: writeBrief(noReviewer, docBriefLines()), owns: 'docs/**' })
+  assert.equal(b.json?.status, 'done', b.stdout + b.stderr)
+  assert.equal(b.json.tests, null)
+  assert.equal(b.json.review.status, 'none')
+
+  const { choices } = probe(t)
+  const reviewChoice = choices.find((entry) => entry.role === 'reviewer')
+  const failModels = reviewChoice.candidates.filter((candidate) => candidate.outcome !== 'passed').map((candidate) => pairModelArg(candidate.id))
+  const noVerdict = makeRepo(t)
+  const envC = agyEnv(t, { command: roleFake(t, { failModels, reviewAnswer: null }) })
+  const c = runDelegate(noVerdict, envC, { brief: writeBrief(noVerdict, docBriefLines()), owns: 'docs/**', tests: 'true' })
+  assert.equal(c.json?.status, 'done', c.stdout + c.stderr)
+  assert.equal(c.json.tests.passed, true)
+  assert.equal(c.json.review.status, 'no-verdict')
+})
+
+test('E6: with superdelegation off the delegate command does nothing', (t) => {
+  const repo = makeRepo(t)
+  const env = { ...agyEnv(t, { command: roleFake(t) }), AETHER_SUPERDELEGATION: 'off' }
+  const brief = writeBrief(repo, briefLines())
+  const before = lanes.readLog(env.AETHER_DATA_DIR).length
+  const r = runDelegate(repo, env, { brief })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(r.json, { status: 'off', reason: 'option' })
+  assert.equal(fx.agyTurns(env).length, 0)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'runs')), false, 'no run was created')
+  assert.equal(lanes.readLog(env.AETHER_DATA_DIR).length, before, 'no new lane log entries')
+})
+
+// A wrapper CLI that holds every implementer turn until `count` turns are running at once, or `seconds` pass,
+// and records how many it saw: a harness that let fewer calls start would leave the first ones seeing less.
+function barrierFake(t, dir, { count, seconds }) {
+  const file = path.join(tempDir(t, 'aether-barrier-fake-'), 'barrier-fake.js')
+  const lines = [
+    '#!/usr/bin/env node',
+    "'use strict'",
+    "const fs = require('node:fs')",
+    "const path = require('node:path')",
+    "const { spawnSync } = require('node:child_process')",
+    'const argv = process.argv.slice(2)',
+    "const pi = argv.indexOf('-p')",
+    `const reviewer = ${JSON.stringify(fx.roleBody('reviewer').slice(0, 120))}`,
+    "if (pi !== -1 && argv[pi + 1] !== '/usage' && !argv[pi + 1].startsWith(reviewer)) {",
+    `  const dir = ${JSON.stringify(dir)}`,
+    "  fs.writeFileSync(path.join(dir, 'turn-' + process.pid), '')",
+    `  const deadline = Date.now() + ${seconds * 1000}`,
+    "  const running = () => fs.readdirSync(dir).filter((name) => name.startsWith('turn-')).length",
+    `  while (running() < ${count} && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)`,
+    "  fs.appendFileSync(path.join(dir, 'seen.log'), running() + '\\n')",
+    '}',
+    `const r = spawnSync(${JSON.stringify(fx.FAKE_AGY)}, argv, { stdio: 'inherit' })`,
+    'process.exit(r.status === null ? 1 : r.status)',
+  ]
+  fs.writeFileSync(file, lines.join('\n') + '\n')
+  fs.chmodSync(file, 0o755)
+  return file
+}
+
+test('E7: five editing delegates launched at once on one harness all start at once: none waits for a place and none ends no-candidate', async (t) => {
+  const COUNT = 5
+  const barrier = tempDir(t, 'aether-barrier-')
+  const env = agyEnv(t, { command: barrierFake(t, barrier, { count: COUNT, seconds: 40 }) })
+  const launch = (index) => {
+    const repo = makeRepo(t)
+    const brief = writeBrief(repo, briefLines())
+    const args = [fx.LANE_BIN, 'delegate', '--brief', brief, '--model', 'haiku', '--effort', 'high', '--owns', 'src/**', '--session', `s${index}`]
+    const child = spawn(process.execPath, args, { cwd: repo.dir, env: { ...process.env, ...env } })
+    let stdout = ''
+    child.stdout.on('data', (chunk) => (stdout += chunk))
+    t.after(() => child.kill('SIGKILL'))
+    return new Promise((resolve) => child.once('exit', (code) => resolve({ code, json: JSON.parse(stdout.trim().split('\n').pop()) })))
+  }
+  const results = await Promise.all(Array.from({ length: COUNT }, (_, index) => launch(index)))
+  for (const r of results) {
+    assert.equal(r.code, 0, JSON.stringify(r.json))
+    assert.equal(r.json.status, 'done', JSON.stringify(r.json))
+    assert.equal(r.json.pair.harness, 'agy')
+  }
+  const seen = fs.readFileSync(path.join(barrier, 'seen.log'), 'utf8').trim().split('\n').map(Number)
+  assert.equal(seen.length, COUNT)
+  assert.ok(seen.every((n) => n === COUNT), `every implementer turn ran while all ${COUNT} were running: ${seen.join(', ')}`)
+  // The lane log keeps a `delegate` entry only for a charge that ended no-candidate.
+  assert.deepEqual(lanes.readLog(env.AETHER_DATA_DIR).filter((entry) => entry.kind === 'delegate'), [])
+})
+
+test('E8: the environment the fake dumps carries no secrets, and every turn ran inside .aether/worktrees/ or .aether/lanes/, never the repository', (t) => {
+  const repo = makeRepo(t)
+  const envFile = path.join(tempDir(t), 'agy-env.json')
+  const env = { ...agyEnv(t, { command: roleFake(t) }), AETHER_TEST_SECRET_TOKEN: 'x', ANTHROPIC_API_KEY: 'x' }
+  const brief = writeBrief(repo, briefLines([`FAKE-AGY: env ${envFile}`]))
+  const r = runDelegate(repo, env, { brief })
+  assert.equal(r.json?.status, 'done', r.stdout + r.stderr)
+  const seen = JSON.parse(fs.readFileSync(envFile, 'utf8'))
+  assert.ok(Object.keys(seen).length > 0, 'the fake dumped an environment')
+  assert.deepEqual(Object.keys(seen).filter((name) => !fx.allowedEnvName(name)), [])
+  const turns = fx.agyTurns(env)
+  assert.ok(turns.length >= 2, 'the implementer and reviewer turns ran')
+  for (const turn of turns) {
+    assert.notEqual(turn.cwd, repo.dir)
+    const inside = turn.cwd.includes(`${path.sep}.aether${path.sep}worktrees${path.sep}`) || turn.cwd.includes(`${path.sep}.aether${path.sep}lanes${path.sep}`)
+    assert.ok(inside, `the turn ran inside .aether/worktrees/ or .aether/lanes/: ${turn.cwd}`)
+  }
+})

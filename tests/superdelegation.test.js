@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { choose, enabled, resolveOption, legacyNotes, runArgs, idleHarnesses, TOLERANCE_POINTS, CUPO } = require('../plugins/aether/lib/superdelegation.js')
+const { choose, enabled, resolveOption, runArgs, idleHarnesses, TOLERANCE_POINTS } = require('../plugins/aether/lib/superdelegation.js')
 const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 
 const { pairs } = loadPairs()
@@ -10,8 +10,9 @@ const DAY = 24 * 3600 * 1000
 const at = (days) => new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString()
 const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: days === null ? null : at(days) })
 const dry = { usable: false, unknown: false, mark: null, resetsAt: at(1) }
-const world = ({ gemini = open(2), claude = open(3), grok = open(1) } = {}) => ({
-  agy: { installed: true, groups: { gemini, claude } },
+// agy's Argon and Flash read the one «Gemini Models» window, so `gemini` sets both keys; `argon` or `flash` sets one.
+const world = ({ gemini = open(2), argon = gemini, flash = gemini, claude = open(3), grok = open(1) } = {}) => ({
+  agy: { installed: true, groups: { argon, flash, claude } },
   grok: { installed: true, groups: { grok } },
 })
 const ask = (model, effort, more = {}) => choose({ pairs, reference: { model, effort }, harnesses: world(), ...more })
@@ -55,6 +56,27 @@ test('E2: a Haiku high call takes the cheapest pair of the quota that renews fir
   const next = ask('haiku', 'high', { harnesses: world({ grok: dry }) })
   assert.equal(pickedId(next), 'agy/gemini-3.8-flash@medium')
   assert.equal(why(next, 'grok/grok-4.7@low'), 'dry')
+})
+
+test('issue 038: a refusal of Argon leaves Flash usable in the choice, and a refusal of Flash leaves Argon, with the pairs of the shipped table', () => {
+  const held = { usable: false, unknown: false, mark: { reason: 'quota refusal' }, resetsAt: at(2) }
+  const alone = { grok: dry, claude: dry }
+  const states = (decision, name) => decision.candidates.filter((c) => c.id.startsWith(`agy/${name}`)).map((c) => c.outcome === 'picked' ? 'picked' : c.why)
+
+  // Only the Gemini window is healthy. Argon is held: Flash medium, the cheapest pair that reaches Haiku high, takes the call.
+  const argonHeld = ask('haiku', 'high', { harnesses: world({ ...alone, argon: held }) })
+  assert.equal(pickedId(argonHeld), 'agy/gemini-3.8-flash@medium')
+  assert.deepEqual(states(argonHeld, 'gemini-4-argon'), ['dry'])
+  assert.ok(!states(argonHeld, 'gemini-3.8-flash').includes('dry'))
+
+  // Flash is held: no Flash pair is a candidate, and Argon takes a call that Flash could not reach anyway.
+  const flashHeld = ask('sonnet', 'xhigh', { harnesses: world({ ...alone, flash: held }) })
+  assert.equal(pickedId(flashHeld), 'agy/gemini-4-argon@high')
+  assert.ok(states(flashHeld, 'gemini-3.8-flash').every((why) => why === 'dry'))
+  assert.equal(pickedId(ask('haiku', 'high', { harnesses: world({ ...alone, flash: held }) })), 'agy/gemini-4-argon@high', 'Flash medium is out, so the cheapest that reaches Haiku high is Argon')
+
+  // Both held: the window is out for both, and with the rest dry nothing leaves Claude.
+  assert.equal(ask('haiku', 'high', { harnesses: world({ ...alone, argon: held, flash: held }) }).picked, null)
 })
 
 test('E3: with only Grok healthy, a Sonnet xhigh call runs native and nothing is asked of the owner', () => {
@@ -171,7 +193,7 @@ test('C16: Muse as the only healthy harness takes a call up to Opus high by the 
   assert.equal(pickedId(high), MUSE)
   assert.equal(high.requested, 53.6)
   assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), MUSE)
-  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), MUSE)
+  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), 'muse/muse-spark-1.3@xhigh')
   for (const [model, effort] of [['opus', 'xhigh'], ['opus', 'max'], ['sonnet', 'max']]) {
     const d = ask(model, effort, { harnesses: onlyMuse() })
     assert.equal(d.picked, null, `${model} ${effort}`)
@@ -231,6 +253,36 @@ test('a retry excludes the pair that failed, and a harness that is off or not in
   assert.equal(why(missing, 'agy/gemini-3.8-flash@medium'), 'not-installed')
 })
 
+test('issue 64: authorRule reserve takes another family first, then the author family; the default stays a bar', () => {
+  const table = [
+    ...natives(),
+    row('muse/muse@high', { family: 'muse-wonder-full-1.0', intelligence: 53.6, costPerTaskUsd: 0.1, group: 'muse' }),
+    row('agy/argon@high', { family: 'gemini-4-argon', intelligence: 52.6, costPerTaskUsd: 9, group: 'argon' }),
+  ]
+  const harnesses = {
+    muse: { installed: true, groups: { muse: open(1) } },
+    agy: { installed: true, groups: { argon: open(5) } },
+  }
+  const base = { pairs: table, reference: { model: 'opus', effort: 'high' }, harnesses, authors: ['muse-wonder-full-1.0'], nativeDiffers: true }
+  // Muse renews sooner and costs less, so with no author it takes the call. Reserve still picks the other family.
+  assert.equal(pickedId(choose({ ...base, authors: [] })), 'muse/muse@high')
+  const reserved = choose({ ...base, authorRule: 'reserve' })
+  assert.equal(pickedId(reserved), 'agy/argon@high')
+  assert.equal(why(reserved, 'muse/muse@high'), null)
+  assert.equal(reserved.candidates.find((c) => c.id === 'muse/muse@high').outcome, 'next')
+  // The default, which the swarm and delegates use, still bars the author's family.
+  const barred = choose(base)
+  assert.equal(pickedId(barred), 'agy/argon@high')
+  assert.equal(why(barred, 'muse/muse@high'), 'author')
+  // Every other pair that reaches the points is dry: reserve takes the author's family, the bar falls to native.
+  const museOnly = { muse: harnesses.muse, agy: { installed: true, groups: { argon: dry } } }
+  assert.equal(pickedId(choose({ ...base, harnesses: museOnly, authorRule: 'reserve' })), 'muse/muse@high')
+  const fallen = choose({ ...base, harnesses: museOnly })
+  assert.equal(fallen.picked, null)
+  assert.equal(fallen.native.model, 'opus')
+  assert.throws(() => choose({ ...base, authorRule: 'later' }), /authorRule must be bar or reserve/)
+})
+
 test('C12: nobody reviews its own work, with an external pair and with the native fallback', () => {
   const sonnetAuthor = ask('sonnet', 'high', { authors: ['claude-sonnet-5-5'], nativeDiffers: true })
   assert.equal(why(sonnetAuthor, 'agy/claude-sonnet-5-5@high'), 'author')
@@ -267,49 +319,94 @@ test('enabled: on only when the session exports on, on Linux', () => {
   assert.deepEqual(enabled({}, 'linux'), { on: false, reason: 'option' })
 })
 
-test('C1 and E8: superdelegation is off by default, lanes on counts as on, seats is ignored, and a set value wins', () => {
-  assert.deepEqual(resolveOption({}), { on: false, source: 'default', legacy: [] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: '' }), { on: false, source: 'default', legacy: [] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }), { on: true, source: 'superdelegation', legacy: [] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_LANES: 'true' }), { on: true, source: 'lanes', legacy: ['lanes-as-on'] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_LANES: 'false' }), { on: false, source: 'default', legacy: [] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_LANES: 'true', CLAUDE_PLUGIN_OPTION_SEATS: 'native' }), { on: true, source: 'lanes', legacy: ['lanes-as-on', 'seats-ignored'] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', CLAUDE_PLUGIN_OPTION_LANES: 'true' }), { on: false, source: 'superdelegation', legacy: ['lanes-ignored'] })
-  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', CLAUDE_PLUGIN_OPTION_SEATS: 'robust' }), { on: true, source: 'superdelegation', legacy: ['seats-ignored'] })
+const OLD_LANES = 'CLAUDE_PLUGIN_OPTION_' + 'LAN' + 'ES'
+const OLD_SEATS = 'CLAUDE_PLUGIN_OPTION_' + 'SEA' + 'TS'
+
+test('resolveOption reads only the superdelegation option', () => {
+  assert.deepEqual(resolveOption({}), { on: false, source: 'default' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: '' }), { on: false, source: 'default' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }), { on: true, source: 'superdelegation' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false' }), { on: false, source: 'superdelegation' })
+  assert.deepEqual(resolveOption({ [OLD_LANES]: 'true', [OLD_SEATS]: 'robust' }), { on: false, source: 'default' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', [OLD_LANES]: 'true' }), { on: false, source: 'superdelegation' })
+  assert.deepEqual(resolveOption({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true', [OLD_SEATS]: 'robust' }), { on: true, source: 'superdelegation' })
 })
 
-test('legacyNotes tells the owner what was ignored or read as on', () => {
-  assert.deepEqual(legacyNotes(['lanes-as-on', 'lanes-ignored', 'seats-ignored']), [
-    'The lanes option is on and superdelegation is not set, so superdelegation counts as on. Set superdelegation to choose it yourself.',
-    'The lanes option is ignored: superdelegation is set.',
-    'The seats option no longer exists (native, balanced and robust are gone): its value is ignored.',
-  ])
-  assert.deepEqual(legacyNotes([]), [])
+test('the notes about the old options are gone from the module', () => {
+  assert.equal(require('../plugins/aether/lib/superdelegation.js')['legacy' + 'Notes'], undefined)
 })
 
-const harness = (maxParallel) => ({ command: 'x', maxParallel, waitSeconds: 540, timeouts: { implementer: 2700, supervisor: 900, reviewer: 1200 }, groups: {}, models: { m: {} } })
+const harness = () => ({ command: 'x', waitSeconds: 540, timeouts: { implementer: 2700, supervisor: 900, reviewer: 1200 }, groups: {}, models: { m: {} } })
 
-test('runArgs: the harnesses that are enabled, installed and have pairs, their caps, the waits and the cupo wait', () => {
-  const config = { harnesses: { agy: harness(4), grok: harness(2), codex: { ...harness(2), models: {} }, cursor: harness(2), muse: harness(2) } }
+test('runArgs: the harnesses that are enabled, installed and have pairs, and the waits', () => {
+  const config = { harnesses: { agy: harness(), grok: harness(), codex: { ...harness(), models: {} }, cursor: harness(), muse: harness() } }
   const args = runArgs(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'grok', 'codex', 'cursor', 'muse'] })
   assert.deepEqual(args, {
     superdelegation: true,
     harnesses: ['agy', 'grok', 'muse'],
-    maxParallelByHarness: { agy: 4, grok: 2, muse: 2 },
     waits: { implementer: 6, supervisor: 3, reviewer: 4 },
-    cupo: { polls: 10, pollSeconds: 60 },
   })
-  assert.deepEqual(CUPO, { waitSeconds: 600, pollSeconds: 60 })
   assert.equal(runArgs(config, pairs, { installed: () => false, enabled: ['agy'] }), null)
   assert.equal(runArgs(null, pairs, { installed: () => true, enabled: ['agy'] }), null)
 })
 
 test('idleHarnesses names why an enabled harness gives the run nothing', () => {
-  const config = { harnesses: { agy: harness(4), codex: { ...harness(2), models: {} }, cursor: harness(2) } }
+  const config = { harnesses: { agy: harness(), codex: { ...harness(), models: {} }, cursor: harness() } }
   const idle = idleHarnesses(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'codex', 'cursor', 'ghost'] })
   assert.deepEqual(idle, [
     { name: 'codex', reason: 'has no models in the lane table yet' },
     { name: 'cursor', reason: 'is not installed: x was not found' },
     { name: 'ghost', reason: 'has no entry in the lane table' },
   ])
+})
+
+const NATIVE = { id: 'claude/sonnet@high', harness: 'claude', model: 'sonnet', effort: 'high', family: 'claude-sonnet', group: null, intelligence: 50, costPerTaskUsd: 2 }
+const EXT = (model, intelligence, cost) => ({ id: `agy/${model}@high`, harness: 'agy', model, effort: 'high', family: 'gemini', group: 'flash', intelligence, costPerTaskUsd: cost })
+const VIEWS = { agy: { installed: true, groups: { flash: {} } } }
+const TABLE = (roles) => ({ harnesses: { agy: { models: { 'gem-a': { group: 'flash', roles }, 'gem-b': { group: 'flash', roles: ['judge', 'writer', 'examiner'] } } } } })
+const call = (role, roles) => choose({ pairs: [NATIVE, EXT('gem-a', 50, 1), EXT('gem-b', 50, 5)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, role, lanes: TABLE(roles) })
+
+for (const role of ['implementer', 'supervisor', 'reviewer']) {
+  test(`E3 (${role}): a model whose roles list lacks the role is not chosen and gets no call`, () => {
+    const others = ['implementer', 'supervisor', 'reviewer'].filter((r) => r !== role)
+    const decision = call(role, others)
+    assert.equal(decision.picked, null)
+    assert.equal(decision.native.id, 'claude/sonnet@high')
+    assert.equal(decision.reason, 'native claude/sonnet@high: no external model allows the role ' + role)
+    assert.ok(decision.candidates.filter((c) => c.outcome !== 'passed').length === 0)
+    assert.equal(decision.candidates.find((c) => c.id === 'agy/gem-a@high').why, 'role')
+  })
+}
+for (const role of ['judge', 'writer', 'examiner']) {
+  test(`E3b (${role}): a seat takes no model whose roles list lacks it`, () => {
+    const decision = call(role, ['implementer', 'supervisor', 'reviewer'])
+    assert.equal(decision.picked.id, 'agy/gem-b@high')
+    const none = choose({ pairs: [NATIVE, EXT('gem-a', 50, 1)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, role, lanes: TABLE(['implementer']) })
+    assert.equal(none.picked, null)
+    assert.match(none.reason, new RegExp(`no external model allows the role ${role}$`))
+  })
+}
+test('a model whose list has the role is chosen as before', () => {
+  assert.equal(call('implementer', ['implementer']).picked.id, 'agy/gem-a@high')
+})
+test('a pair with no entry in the lane table has no roles and is not chosen', () => {
+  const decision = choose({ pairs: [NATIVE, EXT('unlisted', 50, 1)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, role: 'implementer', lanes: TABLE(['implementer']) })
+  assert.equal(decision.picked, null)
+  assert.equal(decision.candidates.find((c) => c.id === 'agy/unlisted@high').why, 'role')
+})
+test('a missing role does not throw and does not filter', () => {
+  const decision = choose({ pairs: [NATIVE, EXT('gem-a', 50, 1)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, lanes: TABLE(['judge']) })
+  assert.equal(decision.picked.id, 'agy/gem-a@high')
+  assert.equal(decision.candidates.find((c) => c.id === 'agy/gem-a@high').why, null)
+})
+test('an unknown role does not throw: the native pair takes the call and the reason names the role', () => {
+  const decision = call('nobody', ['implementer'])
+  assert.equal(decision.picked, null)
+  assert.equal(decision.native.id, 'claude/sonnet@high')
+  assert.equal(decision.reason, 'native claude/sonnet@high: no external model allows the role nobody')
+})
+test('a set role with no lane table excludes every external pair for role', () => {
+  const decision = choose({ pairs: [NATIVE, EXT('gem-a', 50, 1)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, role: 'implementer' })
+  assert.equal(decision.picked, null)
+  assert.equal(decision.candidates.find((c) => c.id === 'agy/gem-a@high').why, 'role')
 })

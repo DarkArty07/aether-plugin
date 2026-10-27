@@ -107,7 +107,7 @@ Se quedan, porque otra cosa los lee y no son parte de la política: `roles`, `aa
 | C15 | `tests/superdelegation-scenarios.test.js` (sin cuota); la medición y la corrida real, abajo |
 | C16 | `tests/pairs.test.js` (la fila de Muse), `tests/superdelegation.test.js` (Muse toma hasta Opus `high`, sin decisión no entra, va último en su cuota), `tests/lane-pick.test.js`, `tests/superdelegation-scenarios.test.js`, `tests/muse-lane.test.js`, `tests/lane-models.test.js`, `tests/lanes.test.js` y las pruebas de páginas de Muse |
 
-- **Lo que hace el Lead con el permiso `paid-call` del dueño (R23, C15).** No es una tarea del swarm; se hace con todas las tareas fusionadas y `npm test` verde, desde el checkout de la rama (`/home/darkarty/Desktop/03_PROYECTOS/01_ACTIVOS/aether-plugin/.worktrees/superdelegation`), con los bins de la rama por ruta y con `AETHER_IRREVERSIBLE=enforce` vigente. El dueño lo autorizó con «no estare dispnble trabaja autonomamente impelmetnandolo apruebo purbas reales». Primero el permiso, en una llamada aparte de las que ejecutan la acción (si el registro no acepta la cita, porque solo lee los mensajes normales del chat, el Lead no corre nada: deja las órdenes de abajo en el brief para que el dueño las corra con `!`):
+- **Lo que hace el Lead con el permiso `paid-call` del dueño (R23, C15).** No es una tarea del swarm; se hace con todas las tareas fusionadas y `npm test` verde, desde el checkout de la rama (`<repo>/.worktrees/superdelegation`), con los bins de la rama por ruta y con `AETHER_IRREVERSIBLE=enforce` vigente. El dueño lo autorizó con «no estare dispnble trabaja autonomamente impelmetnandolo apruebo purbas reales». Primero el permiso, en una llamada aparte de las que ejecutan la acción (si el registro no acepta la cita, porque solo lee los mensajes normales del chat, el Lead no corre nada: deja las órdenes de abajo en el brief para que el dueño las corra con `!`):
 
   ```
   node plugins/aether/bin/aether-autonomy grant --class paid-call --quote "no estare dispnble trabaja autonomamente impelmetnandolo apruebo purbas reales"
@@ -125,7 +125,7 @@ Se quedan, porque otra cosa los lee y no son parte de la política: `roles`, `aa
   2. **Una corrida real corta**, en un repositorio descartable con tres tareas pequeñas (Haiku `high`, Sonnet `high`, Sonnet `xhigh`; el archivo pasa `aether-plan check`):
 
      ```
-     W=/home/darkarty/Desktop/03_PROYECTOS/01_ACTIVOS/aether-plugin/.worktrees/superdelegation
+     W=<repo>/.worktrees/superdelegation
      S=$(mktemp -d) && cd $S && git init -q && printf 'node_modules\n.aether\n' > .gitignore && printf '# smoke\n' > README.md
      cat > tasks.md <<'EOF'
      # Smoke: tres tareas pequeñas

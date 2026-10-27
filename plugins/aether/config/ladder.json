@@ -1,0 +1,8 @@
+{
+  "rungs": [
+    { "step": "haiku", "model": "haiku", "corrections": 5, "effort": { "first": "high", "retry": "xhigh" } },
+    { "step": "sonnet", "model": "sonnet", "corrections": 2, "effort": { "first": "high", "retry": "high" } },
+    { "step": "opus", "model": "opus", "corrections": 1, "effort": { "first": "high", "retry": "high" } }
+  ],
+  "repeatFindings": 2
+}

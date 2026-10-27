@@ -14,9 +14,9 @@ const { runWorkflow } = require('./workflow-harness.js')
 const { pairs } = loadPairs()
 const group = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.UTC(2026, 9, 20) + days * 24 * 3600 * 1000).toISOString() })
 const dry = { usable: false, unknown: false, mark: null, resetsAt: '2026-10-21T00:00:00.000Z' }
-const healthy = { agy: { installed: true, groups: { gemini: group(2), claude: group(3) } }, grok: { installed: true, groups: { grok: group(1) } } }
-const sick = { agy: { installed: true, groups: { gemini: dry, claude: dry } }, grok: { installed: true, groups: { grok: dry } } }
-const oneDry = { ...healthy, agy: { installed: true, groups: { gemini: dry, claude: group(3) } }, grok: { installed: true, groups: { grok: dry } } }
+const healthy = { agy: { installed: true, groups: { argon: group(2), flash: group(2), claude: group(3) } }, grok: { installed: true, groups: { grok: group(1) } } }
+const sick = { agy: { installed: true, groups: { argon: dry, flash: dry, claude: dry } }, grok: { installed: true, groups: { grok: dry } } }
+const oneDry = { ...healthy, agy: { installed: true, groups: { argon: dry, flash: dry, claude: group(3) } }, grok: { installed: true, groups: { grok: dry } } }
 const ask = (harnesses, model = 'sonnet', effort = 'high') => choose({ pairs, reference: { model, effort }, harnesses })
 
 test('C15, no quota spent: with every quota healthy the Sonnet-level work leaves native Claude', () => {
@@ -50,7 +50,7 @@ test('C16, no quota spent: with only Muse healthy an Opus high call goes to Muse
 })
 
 test('C15 through the swarm: a unit runs on the pair pick gives when quotas are healthy, and native when they are dry', async (t) => {
-  const lanes = { superdelegation: true, harnesses: ['agy'], maxParallelByHarness: { agy: 2 }, waits: { implementer: 3, supervisor: 2, reviewer: 2 }, cupo: { polls: 2, pollSeconds: 60 } }
+  const lanes = { superdelegation: true, harnesses: ['agy'], waits: { implementer: 3, supervisor: 2, reviewer: 2 } }
   const args = { ...compile(makeRepo(t), plan([task(1, { tier: 'sonnet high — a reason' })])), lanes }
   // Stands in for `aether-lane pick`: the real choice function on the real table, over the run's one harness.
   const withViews = (all) => async (call, fallback) => {

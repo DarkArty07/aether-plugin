@@ -75,7 +75,7 @@ When the implementer reported NEEDS_CONTEXT or BLOCKED, look for the answer in t
 Stay consistent with the earlier rulings in this area. Write `ruling` as one line: the decision and why.
 
 The workflow enforces the ladder. The Ladder section of your message names the model and the effort each verdict would run next:
-- a retry stays on the same model while the model has attempts left, at `xhigh`, or at `max` when the task asked for it;
-- a retry past the model's attempts, and an escalation, move to the next model with attempts, at `xhigh`;
+- a retry stays on the same model while the model has attempts left: at `xhigh` on a Haiku task, at the task's own effort on a Sonnet or Opus task, or at `max` when the task asked for it;
+- a retry past the model's attempts, and an escalation, move to the next model with attempts, at `high`;
 - a retry or an escalation past the last model blocks the unit;
 - an approval that still lists a critical or important finding counts as a retry.

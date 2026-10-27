@@ -14,6 +14,27 @@ const WT_BIN = path.join(PLUGIN, 'bin', 'aether-wt')
 const SESSION_BIN = path.join(PLUGIN, 'bin', 'aether-session-start')
 // A lane table that does not exist, so a bin run by a test sees no lanes unless the test names a table.
 const NO_LANES_CONFIG = path.join(os.tmpdir(), 'aether-no-lanes', 'lanes.json')
+// The AETHER_* variables the libs, bins and hooks read. A test inherits none of them: a suite run inside an
+// Aether session would otherwise see that session's lanes and modes (issue #69). A test that needs one sets it
+// on purpose, through the env argument of runBin or through process.env after this file loads.
+// tests/env-scrub.test.js fails when the code reads a name that is not listed here.
+const AETHER_VARIABLES = [
+  'AETHER_DATA_DIR',
+  'AETHER_IRREVERSIBLE',
+  'AETHER_LANES_CONFIG',
+  'AETHER_LANE_CALL',
+  'AETHER_LANE_HARNESSES',
+  'AETHER_OBSERVE',
+  'AETHER_PAIRS_CONFIG',
+  'AETHER_SUPERDELEGATION',
+]
+// Every child process gets process.env, so this covers the environment the helper hands to children and the
+// in-process reads of a test file alike. Each test file runs in a process of its own (node --test).
+// A session may still export the retired name. Nothing in the tree reads it, so it is not part of the list
+// above; it is still cleared so a suite does not inherit it.
+const RETIRED_SESSION = ['AETHER_SUPERDELEGATION_' + 'LEGACY']
+for (const name of AETHER_VARIABLES.concat(RETIRED_SESSION)) delete process.env[name]
+delete process.env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV
 
 function tempDir(t, prefix = 'aether-test-') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)))
@@ -109,6 +130,7 @@ module.exports = {
   WT_BIN,
   SESSION_BIN,
   NO_LANES_CONFIG,
+  AETHER_VARIABLES,
   tempDir,
   makeRepo,
   writePlan,

@@ -5,7 +5,6 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { spawnSync } = require('node:child_process')
 const { buildIndex, buildModels, harnessEntries, renderGenerated, mergeReadme, serialize, findFamily, splitId, missingProfiles, missingListings, badListings, readProfiles, main } = require('../scripts/build-models-index.js')
 
 function aa(slug, name, { creator = 'Acme', date = '2026-03-01', intelligence = null, terminalBench = null, input = 2, output = 10, tps = 100, ttft = 5 } = {}) {
@@ -752,7 +751,11 @@ test('the committed models.json and README are in the shape the script writes, a
     assert.ok(entry.scores.every((score) => entry.efforts.includes(score.effort)), where)
     if (entry.effortVia === 'id') assert.deepEqual(Object.keys(entry.ids), entry.efforts, where)
     else assert.equal('ids' in entry, false, where)
-    assert.ok(listings.harnesses[entry.harness].models.some((listed) => idOf(listed).startsWith(entry.model)), where)
+    const listedModels = [
+      ...(listings.harnesses[entry.harness].models ?? []),
+      ...(listings.harnesses[entry.harness].calledNotListed ?? []),
+    ]
+    assert.ok(listedModels.some((listed) => idOf(listed).startsWith(entry.model)), where)
   }
   // Rule 1: a superseded model is not among the models in use, and its successor is.
   const inUse = new Set(file.models.map((entry) => `${entry.harness}/${entry.model}`))
@@ -1027,9 +1030,4 @@ test('the index of models is built without levels, and its efforts for a model t
   // The files the build wrote are free of both.
   const shipped = fs.readFileSync(path.join(ROOT, 'plugins', 'aether', 'config', 'models', 'models.json'), 'utf8')
   assert.doesNotMatch(shipped, /"levels"|"replaces"/)
-})
-
-test('config/router/rungs.json is unchanged by the new index', () => {
-  const r = spawnSync('git', ['diff', '--exit-code', '--', 'plugins/aether/config/router/rungs.json'], { cwd: ROOT })
-  assert.equal(r.status, 0)
 })

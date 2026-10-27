@@ -1,1 +1,0 @@
-Launch the doc-checker agent (the Agent tool, subagent_type doc-checker) to check whether README.md describes src/util.js correctly. Wait for it, and tell me in two lines what it found and, if you can tell, which model it ran on.

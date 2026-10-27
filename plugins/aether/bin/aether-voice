@@ -4,37 +4,7 @@
 // aether-voice [--session <id>]
 // Prints the owner's own messages from a session transcript. Writes no file.
 
-const fs = require('node:fs')
 const path = require('node:path')
 const voice = require(path.join(__dirname, '..', 'lib', 'voice.js'))
 
-function sessionArg(args) {
-  const at = args.indexOf('--session')
-  if (at === -1) return null
-  const value = args[at + 1]
-  return value && !value.startsWith('--') ? value : null
-}
-
-function main(args) {
-  const sessionId = sessionArg(args) || process.env.CLAUDE_CODE_SESSION_ID || ''
-  if (!sessionId) {
-    process.stderr.write('aether-voice: no session id; pass --session <id> or set CLAUDE_CODE_SESSION_ID\n')
-    return 1
-  }
-  const file = voice.findTranscript(sessionId)
-  if (!file) {
-    process.stderr.write(`aether-voice: no transcript for session ${sessionId}\n`)
-    return 1
-  }
-  let text
-  try {
-    text = fs.readFileSync(file, 'utf8')
-  } catch (err) {
-    process.stderr.write(`aether-voice: cannot read the transcript of session ${sessionId}: ${err.code || err.message}\n`)
-    return 1
-  }
-  process.stdout.write(voice.render(sessionId, voice.ownerMessages(text.split('\n'))))
-  return 0
-}
-
-process.exitCode = main(process.argv.slice(2))
+process.exitCode = voice.main(process.argv.slice(2))

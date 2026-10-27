@@ -1,38 +1,56 @@
-// Aether usage meter (spec §10). Records every model request of an Aether session (the main session's,
+// Aether mod entry point and usage meter. Records every model request of an Aether session (the main session's,
 // subagents' and workflow agents') with its tokens and timing, so aether-report can price a run.
 // The meter only observes: a failure in it never changes, delays past a write, or blocks a request.
 // It also saves each aether-lane payload an ops agent carries to the file its marker names (lanes spec §6.1):
 // a lane call's prompt, or a design round's message to <repo>/.aether-tmp/seats/<session>/message.md.
 //
-// It answers the ops agents of aether:run itself (decision A30): when a workflow spawns aether:ops with a
-// prompt that ops-command.mjs accepts, the agent's first step runs that aether-wt or aether-lane command with
-// $.process.run, no shell, and ends the agent with the StructuredOutput call aether:run's schema asks for,
-// without a model request. Any workflow in an Aether session gets that answer, for any repository and run
-// the prompt names. Any other prompt, a command that $.process.run refuses or cannot start, and a bin that
-// fails to load go to the model as before. Otherwise, once the mod has run an agent's command, the agent's
-// model never runs it: a command still running at its timeout, or ended without its line, is reported.
+// The mod answers an accepted ops prompt without a model (decision A30). When a workflow spawns
+// aether:ops with a prompt that ops-command.mjs accepts, the agent's first step runs that aether-wt,
+// aether-lane, aether-plan or aether-exam command with $.process.run, no shell, and ends the agent
+// with the StructuredOutput call the workflow's schema asks for, without a model request. Any workflow
+// in an Aether session gets that answer, for any repository and run the prompt names. Any other prompt,
+// a command that $.process.run refuses or cannot start, and a bin that fails to load go to the model as
+// before. Otherwise, once the mod has run an agent's command, the agent's model never runs it: a command
+// still running at its timeout, or ended without its line, is reported.
 //
 // Only an Aether session is metered (installable spec R9): one whose Lead started it (classic.SessionStart
 // with agent_type aether:lead), or one that has a marker <data dir>/sessions/<session>.json, which only
 // aether-session-start writes. In any other session the meter records and writes nothing, and the agents
-// of the aether plugin are not offered.
+// of the aether plugin are not offered. The one exception is the fault record of a marker check that itself throws
+// (fault-trace.mjs, source register.marker-check, spec 014 R1): the check cannot tell then whether the session is
+// Aether's, the session counts as not Aether's, and the meter would be off in silence, so that one failure is recorded.
 //
-// It hands the Lead's delegates to the delegate router (router.mjs, spec 006): the Agent calls of an Aether
-// session whose subagent_type is not aether:*, the spawn of each routed delegate (which the router records, so
-// aether-report can price it), and the first step of a delegate the router runs on another harness. The router
-// never breaks a call: any failure in it leaves the call as the Lead made it.
+// It hands the Lead's delegates to the delegate ladder (delegate.mjs, spec 013): the Agent calls of an Aether
+// session whose subagent_type is not aether:*, which `aether-delegate begin` gives the model and effort of the
+// ladder's step (the Lead cannot pick them), the spawn of each such delegate that has something left to do at its
+// agent, the first step of a delegate that runs on another harness (started, waited for with a heartbeat after each
+// wait, and answered with no model request), and the last step of a read-only delegate on Claude (its answer is
+// recorded for the verdict). The ladder never breaks a call: any failure in it leaves the call as the Lead made it.
 //
 // It also gives an Aether session the /harnesses command (panel.jsx): a pane with the delegation settings and the quota
 // of each harness, drawn without a model. The Lead's SessionStart declares the command; the command and the pane ask
 // this file whether the session is Aether's (aetherSession) when they are used, never at session start, so that the
 // first answer kept for the session is the meter's own.
 //
+// It also gives an Aether session the /spend command (spec 012 R10, spend-panel.jsx): a pane with the list-price
+// spend of this session, drawn without a model. The Lead's SessionStart declares the command; the command and the
+// pane ask this file whether the session is Aether's (aetherSession) when they are used, never at session start,
+// so that the first answer kept for the session is the meter's own.
+//
+// It also runs the quota brake (spec 011, quota-brake.mjs): after each metered step it reads the session's rate-limit
+// windows, and when one crosses the threshold it warns the owner once, records the crossing with aether-autonomy, tells
+// the Lead through the plugin's own prompt to stop the run's work, and arms a wake-up for the window's reset. The brake
+// only observes a step: no failure in it changes the step's answer.
+//
 // Files: <data dir>/usage/<session>/<n>.json, each { session, part, claudeCode, agents, entries }
 // with up to PART_SIZE entries. A reloaded module starts after the parts already on disk.
 
 import { PAYLOAD_PATH, parseOpsPrompt } from './ops-command.mjs'
 import { registerPanel } from './panel.jsx'
-import { createRouter } from './router.mjs'
+import { registerSpend } from './spend-panel.jsx'
+import { brakePromptFor, crossingsOf, initialBrakeState, jsonFrom, notifyFor, resumePromptFor } from './quota-brake.mjs'
+import { createDelegates } from './delegate.mjs'
+import { recordFault } from './fault-trace.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -47,13 +65,17 @@ const ANSWERED = 'answered'
 // What node prints when a bin fails to load: a node too old for its syntax, or a missing file.
 const LOAD_FAILURE = /\b(SyntaxError|Cannot find module)\b/
 const SESSION_ID = /^[A-Za-z0-9-]+$/
+// A brake call to aether-autonomy: a small read or write of the run's JSON.
+const BRAKE_TIMEOUT_MS = 10000
+// How often the brake may ask for its settings again while a crossing waits for a run to pause.
+const BRAKE_RECHECK_MS = 60000
 
-// session id → { id, aether, dataDir, ready, entries, agents, written, writing, pending, ops }
+// session id → { id, aether, dataDir, ready, entries, agents, written, writing, pending, ops, brake }
 // `ops` holds each ops agent's command until its first step, agent id → { cwd, bin, args, timeoutMs },
 // then ANSWERED once the mod has run it.
 const sessions = new Map()
 
-const router = createRouter()
+const delegates = createDelegates()
 
 const PAYLOAD_MARKER = /^=== aether-lane payload: (.+) ===$/m
 
@@ -115,7 +137,7 @@ async function readDataDir($) {
 function sessionOf(id) {
   let state = sessions.get(id)
   if (!state) {
-    state = { id, aether: undefined, opsOff: undefined, dataDir: null, ready: null, entries: [], agents: {}, written: 0, writing: false, pending: false, ops: new Map() }
+    state = { id, aether: undefined, opsOff: undefined, brake: undefined, dataDir: null, ready: null, entries: [], agents: {}, written: 0, writing: false, pending: false, ops: new Map() }
     sessions.set(id, state)
   }
   return state
@@ -140,6 +162,7 @@ async function isAether($, state) {
     state.dataDir ??= readDataDir($)
     answer = (await $.fs.exists(`${await state.dataDir}/sessions/${state.id}.json`)) === true
   } catch {
+    void recordFault($, state, 'register.marker-check', 'read-failed')
     answer = false
   }
   if (state.aether === undefined) state.aether = answer
@@ -204,6 +227,7 @@ async function flush($, state) {
       await writeParts($, state)
     } while (state.pending)
   } catch {
+    void recordFault($, state, 'register.flush', 'write-failed')
     // The entries stay in memory, and the next flush writes them.
   } finally {
     state.writing = false
@@ -231,19 +255,20 @@ function lanePayload(e) {
 }
 
 // Writes the payload, then the spawn record beside it. A failure leaves the spawn unchanged.
-async function saveLanePayload($, e, session) {
+async function saveLanePayload($, e, state) {
   try {
     const lane = lanePayload(e)
     if (!lane) return
     await $.fs.write(lane.path, lane.payload)
     const workflow = e.workflow || {}
     const spawn = {
-      session,
+      session: state.id,
       workflowRunId: workflow.runId ?? null,
       agentIndex: workflow.agentIndex ?? null,
     }
     await $.fs.write(`${lane.path.slice(0, lane.path.lastIndexOf('/'))}/spawn.json`, JSON.stringify(spawn))
   } catch {
+    void recordFault($, state, 'register.lane-payload', 'write-failed')
     // The lane finds no payload and reports it; the spawn goes on.
   }
 }
@@ -271,7 +296,7 @@ async function opsOff($, state) {
 }
 
 // The command an ops agent carries, when the mod may run it, else null. Only an agent a workflow spawned
-// with a schema has the StructuredOutput tool the answer calls; aether:run always passes one.
+// with a schema has the StructuredOutput tool the answer calls; workflows always pass one.
 function opsCommand(e, $) {
   if (e.subagentType !== OPS || !e.workflow) return null
   try {
@@ -285,22 +310,22 @@ function opsCommand(e, $) {
   }
 }
 
-// The four calls the router makes, spelled here: the engine follows $ only into this file's own functions.
-function routerCalls($) {
+// The three calls the delegate ladder makes, spelled here: the engine follows $ only into this file's own functions.
+function delegateCalls($) {
   return {
     clock: { now: () => $.clock.now() },
     fs: { write: (path, text) => $.fs.write(path, text) },
     process: { run: (argv, init) => $.process.run(argv, init) },
-    model: { complete: (request) => $.model.complete(request) },
   }
 }
 
-// What the router needs of an Aether session, or null when it cannot be read.
-async function routerContext($, state) {
+// What the delegate ladder needs of an Aether session, or null when it cannot be read.
+async function delegateContext($, state) {
   try {
     state.dataDir ??= readDataDir($)
-    return { session: state.id, dataDir: await state.dataDir, root: $.plugin.root }
+    return { session: state.id, dataDir: await state.dataDir, root: $.plugin.root, fault: (source, cls) => { void recordFault($, state, source, cls) } }
   } catch {
+    void recordFault($, state, 'register.delegate-context', 'read-failed')
     return null
   }
 }
@@ -332,59 +357,232 @@ async function* meteredStep($, state, e, next) {
       if (state.entries.length - state.written >= FLUSH_EVERY) await flush($, state)
     }
   } catch {
+    void recordFault($, state, 'register.meter-step', 'write-failed')
     // Observing only.
   }
   return result
 }
 
+// One call to aether-autonomy for the brake: the object it printed, or null when it failed or printed none.
+async function autonomyCall($, args) {
+  const out = await $.process.run(['node', `${$.plugin.root}/bin/aether-autonomy`, ...args], { timeoutMs: BRAKE_TIMEOUT_MS })
+  return out && out.exitCode === 0 ? jsonFrom(out.stdout) : null
+}
+
+// Arms the wake-up for one pause, once per pause: at its resume hour the plugin's own message asks the Lead
+// to continue the run. A resume hour already past submits it at once.
+async function armResume($, brake, run, resumeAt) {
+  const at = Date.parse(resumeAt)
+  if (!run || !Number.isFinite(at)) return
+  const armedFor = `${run}:${resumeAt}`
+  if (brake.armedFor === armedFor) return
+  brake.armedFor = armedFor
+  const ms = at - (await $.clock.now())
+  if (ms <= 0) {
+    await $.prompt.submit({ text: resumePromptFor({ run, resumeAt }) })
+    return
+  }
+  $.clock.after(ms, async () => {
+    try {
+      await $.prompt.submit({ text: resumePromptFor({ run, resumeAt }) })
+    } catch {
+      // The session ended first; the next one rearms from its settings.
+    }
+  })
+}
+
+// The five-hour reading among the windows, in the shape crossingsOf accepts, or null.
+function fiveHourReading(rateLimits) {
+  if (!Array.isArray(rateLimits)) return null
+  for (const entry of rateLimits) {
+    if (entry && entry.kind === 'five_hour' && Number.isFinite(entry.percentUsed) && typeof entry.resetsAt === 'string') return entry
+  }
+  return null
+}
+
+// Records one crossing with the bin, with how its warning fared: the bin's answer, or null.
+async function recordCrossing($, state, crossing, threshold, notify) {
+  return autonomyCall($, [
+    'brake-crossing', '--kind', crossing.kind, '--percent', String(crossing.percentUsed), '--resets-at', crossing.resetsAt,
+    '--threshold', String(threshold), '--notify', notify.sent ? 'sent' : 'failed',
+    ...(!notify.sent && notify.reason ? ['--notify-reason', notify.reason] : []),
+    '--session', state.id,
+  ])
+}
+
+// What a recorded crossing does: a new five-hour pause tells the Lead to stop the run's work (the plugin's
+// own message, never as the owner's words) and arms its wake-up. Any five-hour answer but no-run is
+// remembered for that reset hour, so neither the settings nor the crossing is asked for it again.
+async function brakeRecorded($, state, crossing, record) {
+  const brake = state.brake
+  const wasPaused = brake.pausedResetsAt === crossing.resetsAt
+  if (record && crossing.kind === 'five_hour' && record.reason !== 'no-run') brake.pausedResetsAt = crossing.resetsAt
+  if (!record || crossing.kind !== 'five_hour' || record.paused !== true || !record.run || !record.resumeAt) return
+  if (record.duplicate !== true && !wasPaused) {
+    await $.prompt.submit({ text: brakePromptFor({ ...crossing, threshold: brake.settings.threshold, run: record.run, resumeAt: record.resumeAt }) })
+  }
+  await armResume($, brake, record.run, record.resumeAt)
+}
+
+// The quota brake after one metered step. The first step asks aether-autonomy for the brake's settings (a
+// failure leaves the brake inert for the session, never retried per step); each step then reads the
+// windows and acts on a fresh crossing. Observing only: the body is caught whole.
+async function brakeStep($, state) {
+  // turn.step fires for every agent of the session, so in a swarm steps overlap: one step at a time handles a crossing, and
+  // a step that finds another one at work leaves it to that one (the next step reads the windows again).
+  if (state.brakeBusy) return
+  state.brakeBusy = true
+  try {
+    await brakeStepOnce($, state)
+  } finally {
+    state.brakeBusy = false
+  }
+}
+
+async function brakeStepOnce($, state) {
+  try {
+    if (state.brake === null) return
+    const now = await $.clock.now()
+    if (state.brake === undefined) {
+      let settings = null
+      try {
+        settings = await autonomyCall($, ['brake-settings', '--session', state.id])
+      } catch {
+        void recordFault($, state, 'register.brake-settings-start', 'settings-unreadable')
+        settings = null
+      }
+      if (!settings) {
+        state.brake = null
+        return
+      }
+      state.brake = {
+        settings,
+        state: initialBrakeState(settings),
+        armedFor: null,
+        pausedResetsAt: settings.paused ? settings.paused.resetsAt : null,
+        settingsCheckedAt: now,
+      }
+      if (settings.paused) await armResume($, state.brake, settings.paused.run, settings.paused.resumeAt)
+    }
+    const brake = state.brake
+    const usage = await $.session.usage()
+    const rateLimits = usage && usage.rateLimits
+    const five = fiveHourReading(rateLimits)
+    // A run can open after its window was warned about: while the window stays at or over the threshold
+    // with no pause seen for its reset hour, the settings are asked again, at most once a minute. A
+    // failed re-ask keeps the settings it had and still counts, so no step spawns it twice in a row.
+    if (five && five.percentUsed >= brake.settings.threshold && brake.pausedResetsAt !== five.resetsAt && now - brake.settingsCheckedAt >= BRAKE_RECHECK_MS) {
+      let settings = null
+      try {
+        settings = await autonomyCall($, ['brake-settings', '--session', state.id])
+      } catch {
+        void recordFault($, state, 'register.brake-settings-recheck', 'settings-unreadable')
+        settings = null
+      }
+      if (settings) brake.settings = settings
+      brake.settingsCheckedAt = now
+    }
+    const decided = crossingsOf(rateLimits, brake.settings.threshold, brake.state)
+    brake.state = decided.state
+    let fiveRecorded = false
+    for (const crossing of decided.crossings) {
+      const notice = notifyFor(crossing, brake.settings.threshold)
+      let notify
+      try {
+        const result = await $.ui.notify(notice.text, { title: notice.title })
+        notify = result && result.isSent ? { sent: true, reason: null } : { sent: false, reason: (result && result.reason) || 'refused' }
+      } catch {
+        notify = { sent: false, reason: 'error' }
+      }
+      if (crossing.kind === 'five_hour') fiveRecorded = true
+      const record = await recordCrossing($, state, crossing, brake.settings.threshold, notify)
+      await brakeRecorded($, state, crossing, record)
+    }
+    // The warning and the pause do not share a dedupe: a window warned about earlier (here or in an
+    // earlier session) still pauses an open run that has no pause for its reset hour. The warning for
+    // that hour was already given, so this recording says it was sent and does not repeat it.
+    if (five && !fiveRecorded && five.percentUsed >= brake.settings.threshold && brake.pausedResetsAt !== five.resetsAt) {
+      const settings = brake.settings
+      if (settings.openRun && (!settings.paused || settings.paused.resetsAt !== five.resetsAt)) {
+        const crossing = { kind: 'five_hour', percentUsed: five.percentUsed, resetsAt: five.resetsAt }
+        const record = await recordCrossing($, state, crossing, settings.threshold, { sent: true, reason: null })
+        await brakeRecorded($, state, crossing, record)
+      }
+    }
+  } catch {
+    void recordFault($, state, 'register.brake-step', 'handler-threw')
+    // Observing only.
+  }
+}
+
+// A handler that failed: it leaves its trace when the session is Aether's, and the event goes on as it was.
+async function recordEventFault($, source) {
+  const state = await currentSession($)
+  if (state && state.aether === true) await recordFault($, state, source, 'handler-threw')
+}
+
 export function register(on, options) {
   registerPanel(on, options)
+  registerSpend(on)
 
   on('classic.SessionStart', async ($, e, next) => {
     if (e && e.agent_type === LEAD && typeof e.session_id === 'string' && SESSION_ID.test(e.session_id)) {
       sessionOf(e.session_id).aether = true
     }
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    void recordEventFault($, 'register.on-session-start')
+    return next(e)
+  })
 
   on('agent.offer', async ($, e, next) => {
     if (e.agent === LEAD) return { isOffered: false }
     if (typeof e.agent === 'string' && e.agent.startsWith('aether:') && !(await aetherSession($))) return { isOffered: false }
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    void recordEventFault($, 'register.on-agent-offer')
+    return next(e)
+  })
 
-  // The Lead's delegates go through the router; an aether:* agent is never routed (R9).
+  // The Lead's delegates go through the ladder; an aether:* agent is never touched (R9).
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     const state = await aetherSession($)
     if (!state) return next(e)
-    const ctx = await routerContext($, state)
+    const ctx = await delegateContext($, state)
     if (!ctx) return next(e)
-    return router.toolCall(routerCalls($), e, next, ctx)
-  }).catch(($, e, next) => next(e))
+    return delegates.toolCall(delegateCalls($), e, next, ctx)
+  }).catch(($, e, next) => {
+    void recordEventFault($, 'register.on-tool-call')
+    return next(e)
+  })
 
   on('agent.spawn', async ($, e, next) => {
     const state = await aetherSession($)
     if (!state) return next(e)
-    await saveLanePayload($, e, state.id)
+    await saveLanePayload($, e, state)
     const result = await next(e)
     if (result && result.agentId) {
       state.agents[result.agentId] = { type: e.subagentType || null, description: e.description || null }
-      // The delegate router links the agent to its decision (and keeps an external delegate for its first step).
-      const ctx = await routerContext($, state)
-      if (ctx) router.bind(routerCalls($), e, result.agentId, ctx)
+      // The delegate ladder keeps an external delegate for its first step and a read-only one on Claude for its last.
+      const ctx = await delegateContext($, state)
+      if (ctx) delegates.bind(delegateCalls($), e, result.agentId, ctx)
       const command = opsCommand(e, $)
       if (command && !(await opsOff($, state))) state.ops.set(result.agentId, command)
     }
     return result
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    void recordEventFault($, 'register.on-agent-spawn')
+    return next(e)
+  })
 
   on('turn.step', async function* ($, e, next) {
     const state = await aetherSession($)
     if (!state) return yield* next(e)
-    // A delegate the router runs on another harness: its first step is that harness's answer, or the model's.
-    if (router.has(e.agentId)) {
-      const ctx = await routerContext($, state)
-      if (ctx) return yield* router.step(routerCalls($), e, (event) => meteredStep($, state, event, next), ctx)
+    // A delegate on another harness: its first step is that harness's answer, or the model's. A read-only delegate on
+    // Claude goes through the model as ever, and its last answer is recorded.
+    if (delegates.has(e.agentId)) {
+      const ctx = await delegateContext($, state)
+      if (ctx) return yield* delegates.step(delegateCalls($), e, (event) => meteredStep($, state, event, next), ctx)
     }
     const command = e.agentId ? state.ops.get(e.agentId) : undefined
     if (command === ANSWERED) {
@@ -431,6 +629,8 @@ export function register(on, options) {
         if (stopped) {
           const error = `${command.bin} ${command.args[0]} was still running after ${command.timeoutMs / 1000} s and was stopped; ${leftBehind(command)}`
           out = { exitCode: TIMED_OUT, stdout: `${JSON.stringify({ error })}\n` }
+        } else {
+          void recordFault($, state, 'register.ops-run', 'spawn-failed')
         }
       }
       if (out) {
@@ -444,7 +644,9 @@ export function register(on, options) {
       }
       // $.process.run refused or could not start the command, or the bin failed to load: the model runs the prompt.
     }
-    return yield* meteredStep($, state, e, next)
+    const result = yield* meteredStep($, state, e, next)
+    await brakeStep($, state)
+    return result
   })
 
   on('turn.complete', async ($, e, next) => {

@@ -11,8 +11,9 @@ const MODULE = path.join(__dirname, '..', 'plugins', 'aether', 'hooks', 'ops-com
 
 let parseOpsPrompt
 let OPS_TIMEOUT_MS
+let PAYLOAD_PATH
 test.before(async () => {
-  ;({ parseOpsPrompt, OPS_TIMEOUT_MS } = await import(MODULE))
+  ;({ parseOpsPrompt, OPS_TIMEOUT_MS, PAYLOAD_PATH } = await import(MODULE))
 })
 
 const RUN = '20261014-060800-ab12'
@@ -50,7 +51,9 @@ test('pick, took and pause parse to their argument vectors', () => {
     `aether-lane pick ${RUN} task-1-1-supervise --role supervisor --model sonnet --effort high --author claude-sonnet-5-5`,
     `aether-lane pick ${RUN} final-review --role reviewer --model opus --effort max --exclude ${PAIR} --author gemini-4-argon`,
     `aether-lane took ${RUN} ${CALL} --by agy:claude-opus-5-5 --cause chosen`,
-    `aether-lane took ${RUN} final-review --by native --cause wait-limit`,
+    `aether-lane took ${RUN} final-review --by native --cause no-candidate`,
+    `aether-lane pick ${RUN} final-review-slice-2 --role reviewer --model opus --effort high --author gemini-4-argon`,
+    `aether-lane took ${RUN} final-review-slice-2 --by agy:claude-opus-5-5 --cause chosen`,
     `aether-lane took ${RUN} ${CALL} --by muse:muse-wonder-full-1.0 --cause chosen`,
     'aether-lane pause --seconds 60',
   ]
@@ -70,9 +73,21 @@ test('pick, took and pause refuse a value or an order they do not take', () => {
     `aether-lane pick ${RUN} bad-call --role implementer --model sonnet --effort high`,
     `aether-lane took ${RUN} ${CALL} --by native --cause because`,
     `aether-lane took ${RUN} ${CALL} --cause chosen --by native`,
+    `aether-lane took ${RUN} ${CALL} --by native --cause wait-limit`,
     'aether-lane pause --seconds -1',
     'aether-lane pause --seconds 1000',
     'aether-lane pause 60',
   ]
   for (const command of refused) assert.equal(parseOpsPrompt(prompt(command)), null, command)
+})
+
+test('the call id of a slice of the final review is closed: final-review-slice-<n> and nothing else, in the commands and in the payload path', () => {
+  for (const id of ['final-review-slice-1', 'final-review-slice-12']) {
+    assert.ok(parseOpsPrompt(prompt(`aether-lane pick ${RUN} ${id} --role reviewer --model opus --effort high`)), id)
+    assert.ok(PAYLOAD_PATH.test(`/repo/.aether/runs/${RUN}/lanes/${id}/prompt.md`), id)
+  }
+  for (const id of ['final-review-slice-', 'final-review-slice-x', 'final-review-slice-1-2', 'final-review-slices-1', 'final-review-1']) {
+    assert.equal(parseOpsPrompt(prompt(`aether-lane pick ${RUN} ${id} --role reviewer --model opus --effort high`)), null, id)
+    assert.equal(PAYLOAD_PATH.test(`/repo/.aether/runs/${RUN}/lanes/${id}/prompt.md`), false, id)
+  }
 })

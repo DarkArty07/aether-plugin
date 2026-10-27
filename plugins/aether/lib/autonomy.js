@@ -3,16 +3,21 @@
 // The owner's standing authorizations for irreversible steps, each verified against the owner's own
 // words in a session transcript, and an autonomous run's state and ceilings (hours and USD).
 // Everything lives under <mainRoot>/.aether/autonomy/: the registry grants.json, and one folder per run.
+// Family: none.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { ownerMessages, findTranscript } = require('./voice.js')
-const { newRunId } = require('./run.js')
+const { newRunId, isRunId, dataDir: runDataDir } = require('./run.js')
+const { readBrakeSettings } = require('./session.js')
+const { isObject } = require('./common.js')
 
 const CLASSES = ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call']
 const SCOPES = ['repo', 'session']
 const OUTCOMES = ['done', 'ceiling', 'incomplete']
 const MIN_QUOTE = 12
+const RESUME_MARGIN_MS = 120000
+const WINDOW_KINDS = ['five_hour', 'seven_day']
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'autonomy.json')
 const NO_TRANSCRIPT = 'no transcript for session '
@@ -114,7 +119,6 @@ function writeJsonFile(file, value) {
   fs.renameSync(tmp, file)
 }
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const isPositive = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0
 
 function loadCeilings() {
@@ -198,6 +202,14 @@ function readRun(file) {
   return readJsonFile(file, (v) => (isObject(v) && Array.isArray(v.spend) ? null : 'a run must be an object with a spend array'))
 }
 
+// A run written before the quota brake has none of its fields; it reads as if they were empty.
+function ensureBrakeFields(run) {
+  if (run.brakeOff === undefined) run.brakeOff = null
+  if (!Array.isArray(run.quotaPauses)) run.quotaPauses = []
+  if (!Array.isArray(run.quotaCrossings)) run.quotaCrossings = []
+  return run
+}
+
 // The open run and the folder it lives in (its files are written there, whatever its id says).
 function findOpenRun(mainRoot) {
   const root = autonomyDir(mainRoot)
@@ -211,7 +223,7 @@ function findOpenRun(mainRoot) {
   for (const name of names) {
     const paths = runPaths(mainRoot, name)
     if (!fs.existsSync(paths.runFile)) continue
-    const run = readRun(paths.runFile)
+    const run = ensureBrakeFields(readRun(paths.runFile))
     if (run.ended === null) open = { run, paths }
   }
   return open
@@ -272,6 +284,9 @@ function start(mainRoot, { quote, session, hours = null, usd = null }, { configD
     started: new Date(now).toISOString(),
     ceilings: { hours: h.value, usd: u.value, source: { hours: h.source, usd: u.source } },
     spend: [],
+    brakeOff: null,
+    quotaPauses: [],
+    quotaCrossings: [],
     ended: null,
     outcome: null,
   }
@@ -302,24 +317,48 @@ function lastActivity(run, paths) {
   return latest
 }
 
+function pausedMsOf(run, now) {
+  let total = 0
+  for (const pause of run.quotaPauses || []) {
+    const started = Date.parse(pause && pause.started)
+    const until = Math.min(Date.parse(pause && pause.resumeAt), now)
+    if (!Number.isFinite(started) || !Number.isFinite(until) || started > now) continue
+    total += Math.max(0, until - started)
+  }
+  return total
+}
+
 function statusOfRun(run, paths, now) {
-  const elapsed = round2((now - Date.parse(run.started)) / 3600000)
+  ensureBrakeFields(run)
+  const pausedMs = pausedMsOf(run, now)
+  const elapsed = round2((now - Date.parse(run.started) - pausedMs) / 3600000)
+  const paused = round2(pausedMs / 3600000)
   const spent = round2(run.spend.reduce((sum, entry) => sum + entry.usd, 0))
   const idleMinutes = Math.max(0, Math.floor((now - lastActivity(run, paths)) / 60000))
+  const quotaPaused = !run.brakeOff && run.quotaPauses.some((pause) => Date.parse(pause.resumeAt) > now)
   let stop = null
-  if (elapsed >= run.ceilings.hours) stop = 'time'
+  if (quotaPaused) stop = 'quota'
+  else if (elapsed >= run.ceilings.hours) stop = 'time'
   else if (spent >= run.ceilings.usd) stop = 'cost'
+  const lastPause = run.quotaPauses.length ? run.quotaPauses[run.quotaPauses.length - 1] : null
   return {
     open: true,
     id: run.id,
     diary: paths.diary,
     session: run.session,
     started: run.started,
-    hours: { elapsed, ceiling: run.ceilings.hours },
+    hours: { elapsed, ceiling: run.ceilings.hours, paused },
     usd: { spent, ceiling: run.ceilings.usd },
     idleMinutes,
     idle: now - lastActivity(run, paths) >= IDLE_MS,
     stop,
+    quota: {
+      paused: stop === 'quota',
+      brakeOff: Boolean(run.brakeOff),
+      resetsAt: lastPause ? lastPause.resetsAt : null,
+      resumeAt: lastPause ? lastPause.resumeAt : null,
+      percentUsed: lastPause ? lastPause.percentUsed : null,
+    },
   }
 }
 
@@ -354,11 +393,146 @@ function end(mainRoot, outcome, { now = Date.now() } = {}) {
   return run
 }
 
+function resolveDataDir(dataDir) {
+  return dataDir === undefined || dataDir === null ? runDataDir() : dataDir
+}
+
+function quotaStateFile(dataDir) {
+  return path.join(dataDir, 'quota', 'state.json')
+}
+
+function readNotified(dataDir) {
+  try {
+    const value = JSON.parse(fs.readFileSync(quotaStateFile(dataDir), 'utf8'))
+    if (!isObject(value)) return { five_hour: null, seven_day: null }
+    return {
+      five_hour: typeof value.five_hour === 'string' ? value.five_hour : null,
+      seven_day: typeof value.seven_day === 'string' ? value.seven_day : null,
+    }
+  } catch {
+    return { five_hour: null, seven_day: null }
+  }
+}
+
+function writeNotified(dataDir, kind, resetsAt, now) {
+  const next = { ...readNotified(dataDir), [kind]: resetsAt, updatedAt: new Date(now).toISOString() }
+  writeJsonFile(quotaStateFile(dataDir), next)
+}
+
+function normalizeNotify(notify) {
+  const source = notify === undefined || notify === null ? { sent: false, reason: 'no-channel' } : notify
+  const sent = Boolean(source && source.sent)
+  return { sent, reason: sent ? (source.reason ?? null) : (source.reason ?? 'error') }
+}
+
+function noticeLine(notify) {
+  return notify.sent ? '- Aviso al dueño: enviado.' : `- Aviso al dueño: no enviado (${notify.reason}).`
+}
+
+function brakeSettings(mainRoot, { session = null, now = Date.now(), dataDir } = {}) {
+  const dir = resolveDataDir(dataDir)
+  const fromFile = session ? readBrakeSettings(dir, session) : null
+  const { threshold, push } = fromFile || { threshold: 95, push: false }
+  const open = findOpenRun(mainRoot)
+  const run = open ? open.run : null
+  let paused = null
+  if (run && !run.brakeOff) {
+    for (let i = run.quotaPauses.length - 1; i >= 0; i--) {
+      const pause = run.quotaPauses[i]
+      if (now < Date.parse(pause.resumeAt)) {
+        paused = { run: run.id, resetsAt: pause.resetsAt, resumeAt: pause.resumeAt, percentUsed: pause.percentUsed }
+        break
+      }
+    }
+  }
+  return {
+    threshold,
+    push,
+    openRun: run ? run.id : null,
+    brakeOff: Boolean(run && run.brakeOff),
+    paused,
+    notified: readNotified(dir),
+  }
+}
+
+function recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify = { sent: false, reason: 'no-channel' } } = {}, { now = Date.now(), dataDir } = {}) {
+  if (!WINDOW_KINDS.includes(kind)) throw new Error(`unknown window kind: ${kind}`)
+  if (typeof percentUsed !== 'number' || !Number.isFinite(percentUsed) || percentUsed < 0) throw new Error(`invalid percent: ${percentUsed}`)
+  if (typeof resetsAt !== 'string' || !Number.isFinite(Date.parse(resetsAt))) throw new Error(`invalid resetsAt: ${resetsAt}`)
+  if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold <= 0) throw new Error(`invalid threshold: ${threshold}`)
+  const dir = resolveDataDir(dataDir)
+  writeNotified(dir, kind, resetsAt, now)
+  if (kind === 'seven_day') return { recorded: false, paused: false, reason: 'weekly' }
+  const open = findOpenRun(mainRoot)
+  if (!open) return { recorded: false, paused: false, reason: 'no-run' }
+  const { run, paths } = open
+  const notice = normalizeNotify(notify)
+  if (run.brakeOff) {
+    const at = new Date(now).toISOString()
+    run.quotaCrossings.push({ at, percentUsed, threshold, resetsAt, notify: notice })
+    writeJsonFile(paths.runFile, run)
+    fs.appendFileSync(
+      paths.diary,
+      `\n## Cruce de cuota sin detención ${at}\n\n- Ventana de 5 horas al ${percentUsed}% (umbral ${threshold}%); reinicia ${resetsAt}.\n${noticeLine(notice)}\n- El freno estaba apagado por las palabras del dueño: «${run.brakeOff.quote}».\n`,
+    )
+    return { recorded: true, paused: false, brakeOff: true, run: run.id, quote: run.brakeOff.quote }
+  }
+  const existing = run.quotaPauses.find((pause) => pause.resetsAt === resetsAt)
+  if (existing) {
+    return { recorded: true, paused: now < Date.parse(existing.resumeAt), duplicate: true, run: run.id, resetsAt: existing.resetsAt, resumeAt: existing.resumeAt }
+  }
+  const started = new Date(now).toISOString()
+  const resumeAt = new Date(Date.parse(resetsAt) + RESUME_MARGIN_MS).toISOString()
+  run.quotaPauses.push({ started, percentUsed, threshold, resetsAt, resumeAt, notify: notice, savedUnits: [] })
+  writeJsonFile(paths.runFile, run)
+  fs.appendFileSync(
+    paths.diary,
+    `\n## Pausa de cuota ${started}\n\n- Ventana de 5 horas al ${percentUsed}% (umbral ${threshold}%); reinicia ${resetsAt}; la corrida se retoma ${resumeAt}.\n${noticeLine(notice)}\n`,
+  )
+  return { recorded: true, paused: true, run: run.id, resetsAt, resumeAt }
+}
+
+function brakeOff(mainRoot, { quote, session } = {}, { configDir, now = Date.now() } = {}) {
+  const open = findOpenRun(mainRoot)
+  if (!open) return { ok: false, reason: 'no open run' }
+  const verified = verifyQuote(session, quote, { configDir })
+  if (!verified.ok) return { ok: false, reason: verified.reason }
+  const { run, paths } = open
+  const record = { quote, session, time: verified.time, added: new Date(now).toISOString() }
+  run.brakeOff = record
+  writeJsonFile(paths.runFile, run)
+  return { ok: true, brakeOff: record }
+}
+
+function recordSaved(mainRoot, saved, { now = Date.now() } = {}) {
+  if (!isObject(saved) || !isRunId(saved.run) || !Array.isArray(saved.units)) throw new Error('a saved record needs a run and its units')
+  const open = findOpenRun(mainRoot)
+  if (!open) return { recorded: false, reason: 'no-run' }
+  const { run, paths } = open
+  if (!run.quotaPauses.length) return { recorded: false, reason: 'no-pause' }
+  const entries = saved.units
+    .filter((unit) => unit && unit.branch && unit.head && !unit.merged)
+    .map((unit) => ({ swarmRun: saved.run, task: unit.task, branch: unit.branch, head: unit.head }))
+  if (!entries.length) return { recorded: true, run: run.id, savedUnits: [] }
+  const lastPause = run.quotaPauses[run.quotaPauses.length - 1]
+  if (!Array.isArray(lastPause.savedUnits)) lastPause.savedUnits = []
+  for (const entry of entries) {
+    const index = lastPause.savedUnits.findIndex((unit) => unit && unit.swarmRun === entry.swarmRun && unit.task === entry.task)
+    if (index === -1) lastPause.savedUnits.push(entry)
+    else lastPause.savedUnits[index] = entry
+  }
+  writeJsonFile(paths.runFile, run)
+  const list = entries.map((entry) => `\`${entry.task}\` en \`${entry.branch}\` (${entry.head})`).join(', ')
+  fs.appendFileSync(paths.diary, `- Guardadas (${saved.at}): ${list}.\n`)
+  return { recorded: true, run: run.id, savedUnits: entries }
+}
+
 module.exports = {
   CLASSES,
   SCOPES,
   OUTCOMES,
   MIN_QUOTE,
+  RESUME_MARGIN_MS,
   normalize,
   findQuote,
   verifyQuote,
@@ -375,4 +549,8 @@ module.exports = {
   spend,
   status,
   end,
+  brakeSettings,
+  recordCrossing,
+  brakeOff,
+  recordSaved,
 }

@@ -30,7 +30,6 @@ function codexEntry() {
   const levels = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
   return {
     command: fx.FAKE_AGY,
-    maxParallel: 1,
     waitSeconds: 60,
     timeouts: { implementer: 60, supervisor: 60, reviewer: 60 },
     groups: { codex: 'codex models' },
@@ -51,10 +50,10 @@ test("a start refuses a group a refusal's mark holds, without reading its quota,
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t)
   const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
-  const held = marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reserve: RESERVE, now: Date.now() - 10 * MIN, refusal: { resetMs: 163 * 3600 * 1000 } })
+  const held = marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'flash', reserve: RESERVE, now: Date.now() - 10 * MIN, refusal: { resetMs: 163 * 3600 * 1000 } })
   assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json, { unavailable: 'quota' })
   assert.equal(usageCalls(env).length, 0)
-  assert.deepEqual(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), held)
+  assert.deepEqual(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash'), held)
   assert.equal(fx.agyTurns(env).length, 0)
 })
 
@@ -62,17 +61,17 @@ test('a start reads the group of any other mark: the mark holds while the readin
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t, { quota: groupQuota([0.02, 0.02]) })
   const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
-  const held = marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'gemini', reserve: RESERVE, now: Date.now() - 10 * MIN })
+  const held = marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'flash', reserve: RESERVE, now: Date.now() - 10 * MIN })
   assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json, { unavailable: 'quota' })
   assert.equal(usageCalls(env).length, 1)
-  assert.deepEqual(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), held)
+  assert.deepEqual(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash'), held)
   // The provider renewed the quota without saying so. The kept reading has a life of 10 minutes: a start inside it
   // serves it, so the mark goes once a reading is taken after the renewal.
   fs.writeFileSync(env.AETHER_FAKE_AGY_QUOTA_FILE, JSON.stringify(groupQuota([0.9, 0.9])))
   fs.rmSync(path.join(env.AETHER_DATA_DIR, 'lanes', 'quota'), { recursive: true, force: true })
   const started = fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env)
   assert.equal(started.json.started, true, started.stdout + started.stderr)
-  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null)
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash'), null)
   fx.waitDone(args, IMPLEMENT, env)
 })
 
@@ -81,7 +80,7 @@ test('a start that finds the group under the reserve, with a balance read, holds
   const env = fx.laneEnv(t, { quota: groupQuota([0.9, 0.04, FUTURE, FUTURE]) })
   const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
   assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json, { unavailable: 'quota' })
-  const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini')
+  const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash')
   assert.deepEqual([mark.confirmed, mark.until, mark.resetsAt], [true, Date.parse(FUTURE), new Date(FUTURE).toISOString()])
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'claude'), null, 'the other group of the harness is not held')
 })
@@ -93,7 +92,7 @@ test('a start that finds the group under the reserve, with a reset it cannot con
     const env = fx.laneEnv(t, { quota: groupQuota([0.9, 0.04]), mutate: (config) => minutes !== undefined && (config.dryMarkMinutes = minutes) })
     const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
     assert.deepEqual(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json, { unavailable: 'quota' })
-    const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini')
+    const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash')
     assert.deepEqual([mark.confirmed, mark.resetsAt, mark.until - mark.at], [false, null, expected * MIN])
   }
 })
@@ -134,14 +133,14 @@ test('a call that ends for quota holds its group until the reset when its final 
   const low = JSON.stringify(groupQuota([0.9, 0.01, FUTURE, FUTURE]))
   const quota = runCall(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error service unavailable'], env)
   assert.equal(quota.status, 'quota', quota.detail)
-  const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini')
+  const mark = marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash')
   assert.deepEqual([mark.confirmed, mark.until], [true, Date.parse(FUTURE)])
   assert.deepEqual(quota.lane.quota.usable, false)
 
   const other = fx.laneEnv(t)
   const failed = runCall(t, ['FAKE-AGY: write src/t1/half.js half', 'FAKE-AGY: timeout'], other)
   assert.equal(failed.status, 'failed')
-  assert.equal(marks.liveMark(other.AETHER_DATA_DIR, 'agy', 'gemini'), null)
+  assert.equal(marks.liveMark(other.AETHER_DATA_DIR, 'agy', 'flash'), null)
   assert.deepEqual(marks.liveMarks(other.AETHER_DATA_DIR), [])
 })
 
@@ -151,7 +150,7 @@ test('a call that fails while /usage omits its group is failed, not quota: the g
   const omits = JSON.stringify({ 'Claude and GPT models': [0.9, 0.9] })
   const done = runCall(t, ['FAKE-AGY: write src/t1/half.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${omits}`, 'FAKE-AGY: timeout'], env)
   assert.equal(done.status, 'failed', done.detail)
-  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null)
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash'), null)
   assert.deepEqual(marks.liveMarks(env.AETHER_DATA_DIR), [])
   assert.equal(done.lane.quota.usable, true)
 })
@@ -181,7 +180,7 @@ test('a group that /usage lists with no buckets is unknown: a start goes ahead, 
   const env = fx.laneEnv(t, { command: agyWithEmptyBuckets(t) })
   const done = runCall(t, ['FAKE-AGY: write src/t1/half.js half', 'FAKE-AGY: timeout'], env)
   assert.equal(done.status, 'failed', done.detail)
-  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'gemini'), null)
+  assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash'), null)
   assert.deepEqual(marks.liveMarks(env.AETHER_DATA_DIR), [])
   assert.equal(done.lane.quota.usable, true)
   assert.equal(done.lane.quota.unknown, true)
@@ -245,7 +244,7 @@ test('the runner writes its mark and its kept reading where start and status loo
   const low = JSON.stringify(groupQuota([0.9, 0.01, FUTURE, FUTURE]))
   const quota = runCall(t, ['FAKE-AGY: write src/t1/partial.js half', `FAKE-AGY: write-abs ${env.AETHER_FAKE_AGY_QUOTA_FILE} ${low}`, 'FAKE-AGY: exit-error service unavailable'], env)
   assert.equal(quota.status, 'quota', quota.detail)
-  const mark = marks.liveMark(dataDir, 'agy', 'gemini')
+  const mark = marks.liveMark(dataDir, 'agy', 'flash')
   assert.deepEqual([mark && mark.confirmed, mark && mark.until], [true, Date.parse(FUTURE)])
   assert.equal(fs.existsSync(path.join(dataDir, 'lanes', 'quota', 'agy.json')), true, 'the kept reading is renewed there too')
 })

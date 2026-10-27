@@ -8,7 +8,7 @@ const lanes = require('../plugins/aether/lib/lanes.js')
 const schemas = require('../plugins/aether/lib/lane-schemas.js')
 const work = require('../plugins/aether/lib/lane-work.js')
 const calls = require('../plugins/aether/lib/lane-calls.js')
-const { buildPrompt, LANE_NOTES, WORKDIR_RULE } = calls
+const { buildPrompt, WORKDIR_RULE } = calls
 const { registerAdapter, unregisterAdapter } = require('../plugins/aether/lib/harness/index.js')
 const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
 const { parseRun, unknownQuota } = require('../plugins/aether/lib/harness/structured.js')
@@ -37,7 +37,6 @@ function codexEntry(command, group = 'codex') {
   const levels = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
   return {
     command,
-    maxParallel: 1,
     waitSeconds: 60,
     timeouts: { implementer: 60, supervisor: 60, reviewer: 60, designer: 60 },
     groups: { [group]: `${group} models` },
@@ -135,7 +134,7 @@ function implement(t, lines, { env = fx.laneEnv(t), session = null } = {}) {
   const message = ['You are implementing task-1: Task 1 title.', ...body].join('\n')
   const digest = fx.writePrompt(args, IMPLEMENT, message, { session })
   const start = fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env)
-  assert.deepEqual(start.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'gemini' }, start.stdout + start.stderr)
+  assert.deepEqual(start.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'flash' }, start.stdout + start.stderr)
   return { repo, args, env, message, done: fx.waitDone(args, IMPLEMENT, env) }
 }
 
@@ -193,22 +192,25 @@ test('buildPrompt puts the role, the lane note and the CLAUDE.md files before th
   fs.mkdirSync(path.join(home, '.claude'))
   fs.writeFileSync(path.join(home, '.claude', 'CLAUDE.md'), 'user rules\n')
   fs.writeFileSync(path.join(work, 'CLAUDE.md'), 'project rules\n\n')
+  const supervisorNote = `## You run in an external harness\n\nYou are an Aether supervisor, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+  const implementerNote = `## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether-tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+  const reviewerNote = `## You run in an external harness\n\nYou are the Aether final reviewer, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
   assert.equal(
     buildPrompt({ role: 'supervisor', message: 'THE MESSAGE', workdir: work, home }),
     [
       fx.roleBody('supervisor'),
-      LANE_NOTES.supervisor,
+      supervisorNote,
       `## Instructions from ${path.join(home, '.claude', 'CLAUDE.md')}\n\nuser rules`,
       `## Instructions from ${path.join(work, 'CLAUDE.md')}\n\nproject rules`,
       'THE MESSAGE',
     ].join('\n\n'),
   )
-  assert.equal(buildPrompt({ role: 'implementer', message: 'M', workdir: tempDir(t), home: tempDir(t) }), [fx.roleBody('implementer'), LANE_NOTES.implementer, 'M'].join('\n\n'))
-  assert.match(LANE_NOTES.implementer, /^## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code\./)
-  assert.match(LANE_NOTES.supervisor, /Your review is read-only: do not run commands, and do not change any file\./)
-  assert.match(LANE_NOTES.reviewer, /^## You run in an external harness\n\nYou are the Aether final reviewer/)
+  assert.equal(buildPrompt({ role: 'implementer', message: 'M', workdir: tempDir(t), home: tempDir(t) }), [fx.roleBody('implementer'), implementerNote, 'M'].join('\n\n'))
+  assert.match(implementerNote, /^## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code\./)
+  assert.match(supervisorNote, /Your review is read-only: do not run commands, and do not change any file\./)
+  assert.match(reviewerNote, /^## You run in an external harness\n\nYou are the Aether final reviewer/)
   assert.equal(WORKDIR_RULE, 'Work only inside the working directory you are given: do not run `env` or `ps`, and do not search outside that directory.')
-  for (const role of ['implementer', 'supervisor', 'reviewer']) assert.ok(LANE_NOTES[role].includes(WORKDIR_RULE), role)
+  for (const [role, note] of [['implementer', implementerNote], ['supervisor', supervisorNote], ['reviewer', reviewerNote]]) assert.ok(note.includes(WORKDIR_RULE), role)
 })
 
 test("a lane note names the harness that runs the call, and agy's notes read as they always did", (t) => {
@@ -217,7 +219,7 @@ test("a lane note names the harness that runs the call, and agy's notes read as 
   const prompt = buildPrompt({ role: 'reviewer', message: 'M', workdir, home, harness: 'codex' })
   assert.ok(prompt.includes('You are the Aether final reviewer, run by the codex CLI rather than Claude Code.'))
   assert.equal(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }), buildPrompt({ role: 'reviewer', message: 'M', workdir, home, harness: 'agy' }))
-  assert.ok(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }).includes(LANE_NOTES.reviewer))
+  assert.ok(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }).includes('You are the Aether final reviewer, run by the agy CLI rather than Claude Code.'))
 })
 
 test("status reads each group's windows, marks a group under the reserve unusable, and logs the reading", (t) => {
@@ -226,11 +228,11 @@ test("status reads each group's windows, marks a group under the reserve unusabl
   const r = fx.lane(args, 'status', [], env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const agy = r.json.harnesses.agy
-  assert.deepEqual([agy.enabled, agy.path, agy.installed, agy.version, agy.groups.gemini.usable, agy.groups.claude.usable], [true, fx.FAKE_AGY, true, '1.3.2', false, true])
+  assert.deepEqual([agy.enabled, agy.path, agy.installed, agy.version, agy.groups.argon.usable, agy.groups.flash.usable, agy.groups.claude.usable], [true, fx.FAKE_AGY, true, '1.3.2', false, false, true])
   assert.deepEqual([agy.groups.claude.windows['5h'].remaining, agy.groups.claude.windows['5h'].resetsAt], [0.9, '2026-10-09T05:53:31.000Z'])
   const readings = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading')
   assert.equal(readings.length, 1)
-  assert.deepEqual([readings[0].run, readings[0].version, readings[0].harness, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', 'agy', ['claude', 'gemini']])
+  assert.deepEqual([readings[0].run, readings[0].version, readings[0].harness, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', 'agy', ['argon', 'claude', 'flash']])
   const missing = fx.lane(args, 'status', [], fx.laneEnv(t, { command: '/nowhere/agy' }))
   assert.deepEqual(missing.json.harnesses, {
     agy: { enabled: true, command: '/nowhere/agy', path: null, installed: false, version: null, groups: {} },
@@ -420,7 +422,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   const unit = unitDir(args)
   const head = fx.git(unit, 'rev-parse', 'HEAD')
   assert.deepEqual([done.result.status, done.result.head], ['DONE', head])
-  assert.deepEqual([done.lane.harness, done.lane.model, done.lane.group, done.lane.effort], ['agy', 'gemini-3.8-flash-xhigh', 'gemini', 'xhigh'])
+  assert.deepEqual([done.lane.harness, done.lane.model, done.lane.group, done.lane.effort], ['agy', 'gemini-3.8-flash-xhigh', 'flash', 'xhigh'])
   assert.deepEqual(done.lane.usage, { input: 1000, output: 200, thinking: 0, cacheRead: 500, total: 1200 })
   assert.equal(done.digest, lanes.resultDigest({ result: done.result, lane: done.lane }))
   assert.ok(fs.readFileSync(path.join(args.runDir, 'packages', 'task-1.diff'), 'utf8').includes(`Head: ${head}`))
@@ -435,7 +437,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   assert.ok(turn.argv.includes('--dangerously-skip-permissions'))
   assert.deepEqual(JSON.parse(fs.readFileSync(fx.argAfter(turn.argv, '--json-schema'), 'utf8')), schemas.IMPLEMENTER_SCHEMA)
   assert.ok(turn.argv[1].startsWith(fx.roleBody('implementer')))
-  assert.ok(turn.argv[1].includes(LANE_NOTES.implementer))
+  assert.ok(turn.argv[1].includes('You are an Aether implementer, run by the agy CLI rather than Claude Code.'))
   assert.ok(turn.argv[1].includes(WORKDIR_RULE))
   assert.ok(turn.argv[1].endsWith(message))
   // agy takes the schema as a flag, so its prompt carries no answer section.
@@ -444,7 +446,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
   assert.deepEqual(
     [entry.session, entry.run, entry.design, entry.call, entry.role, entry.task, entry.harness, entry.model, entry.group, entry.effort, entry.status],
-    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-xhigh', 'gemini', 'xhigh', 'ok'],
+    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-xhigh', 'flash', 'xhigh', 'ok'],
   )
   assert.deepEqual(entry.usage, done.lane.usage)
   assert.equal(entry.conversation, done.lane.conversation)
@@ -643,7 +645,8 @@ test("stop kills a running call's runner and agy, and wait then reports it unfin
   assert.deepEqual(runnerEnv.filter((name) => !fx.allowedEnvName(name)), [])
   assert.ok(runnerEnv.includes('AETHER_LANE_CALL'))
   assert.deepEqual(fx.lane(args, 'stop', [IMPLEMENT], env).json, { stopped: [IMPLEMENT] })
-  await new Promise((resolve) => setTimeout(resolve, 300))
+  const deadlineExit = Date.now() + 5000
+  while ((fx.alive(runner) || fx.alive(agy)) && Date.now() < deadlineExit) await new Promise((resolve) => setTimeout(resolve, 50))
   assert.deepEqual([fx.alive(runner), fx.alive(agy)], [false, false])
   assert.deepEqual(fx.lane(args, 'wait', [IMPLEMENT, '--max', '1'], env).json, { done: false })
   assert.deepEqual(fx.lane(args, 'stop', [IMPLEMENT], env).json, { stopped: [] })
@@ -654,7 +657,7 @@ test("stop kills a running call's runner and agy, and wait then reports it unfin
   const [entry] = entries
   assert.deepEqual(
     [entry.session, entry.run, entry.design, entry.call, entry.role, entry.task, entry.harness, entry.model, entry.group, entry.effort, entry.status],
-    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-xhigh', 'gemini', 'xhigh', 'stopped'],
+    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-xhigh', 'flash', 'xhigh', 'stopped'],
   )
   assert.deepEqual([entry.usage, entry.conversation, entry.quotaAfter], [{ input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }, null, null])
   assert.equal(entry.quotaBefore.windows['5h'].remaining, 0.9)
@@ -731,12 +734,12 @@ test('wait gives up after --max, and a new start of the same call never returns 
   const { args } = fx.laneRun(t)
   const env = fx.laneEnv(t)
   assert.deepEqual(fx.lane(args, 'wait', [IMPLEMENT], env).json, { error: `no such lane call: ${IMPLEMENT}` })
-  let digest = fx.writePrompt(args, IMPLEMENT, `FAKE-AGY: sleep 3\nFAKE-AGY: write src/t1/a.js one\nFAKE-AGY: commit a\nFAKE-AGY: answer ${DONE}`)
+  let digest = fx.writePrompt(args, IMPLEMENT, `FAKE-AGY: sleep 6\nFAKE-AGY: write src/t1/a.js one\nFAKE-AGY: commit a\nFAKE-AGY: answer ${DONE}`)
   fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env)
   assert.deepEqual(fx.lane(args, 'wait', [IMPLEMENT, '--max', '1'], env).json, { done: false })
   const first = fx.waitDone(args, IMPLEMENT, env)
   assert.equal(first.status, 'ok', first.detail)
-  digest = fx.writePrompt(args, IMPLEMENT, `FAKE-AGY: sleep 3\nFAKE-AGY: answer ${DONE}`)
+  digest = fx.writePrompt(args, IMPLEMENT, `FAKE-AGY: sleep 6\nFAKE-AGY: answer ${DONE}`)
   assert.equal(fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env).json.started, true)
   assert.deepEqual(fx.lane(args, 'wait', [IMPLEMENT, '--max', '1'], env).json, { done: false })
   const second = fx.waitDone(args, IMPLEMENT, env)
@@ -789,7 +792,7 @@ test("quota, with no run, gives each group's windows, reset, hours left, priorit
   assert.deepEqual([group.source.log, group.source.ageMinutes, group.source.stale, group.source.usedPercent, group.source.usedPercentAbsent], [logFile, 5, false, 30, false])
   // agy's groups come from its /usage, read now; a weekly window under the reserve makes its group unusable.
   const agy = r.json.harnesses.agy
-  assert.deepEqual([agy.groups.gemini.usable, agy.groups.claude.usable], [false, true])
+  assert.deepEqual([agy.groups.argon.usable, agy.groups.flash.usable, agy.groups.claude.usable], [false, false, true])
   assert.deepEqual(agy.groups.claude.windows['5h'].remaining, 0.5)
   assert.deepEqual([agy.groups.claude.source.command, agy.groups.claude.source.ageMinutes, agy.groups.claude.source.stale], [fx.FAKE_AGY, 0, false])
   // With no harness named, it lists the installed harnesses of the table.
@@ -813,7 +816,8 @@ test('quota prints the same for people, and marks a grok reading older than 30 m
   assert.match(text, /\n {4}weekly: 100% left, resets \d{4}-\d\d-\d\d \d\d:\d\d UTC \(\d{4}-[^)]+ UTC[+-]\d+[^)]*\), in (49\.9|50) h, priority 0\.02(00\d+)?\n/)
   assert.ok(text.includes(`source: grok's log ${logFile}, line of `), text)
   assert.ok(text.includes('(pid 531322, grok 1.0.41), 45 min old (stale: --refresh takes a new one); the line has no creditUsagePercent, read as 0% used'), text)
-  assert.match(text, /\n {2}gemini, "Gemini Models": usable, priority [\d.]+\n {4}weekly: 90% left, /)
+  assert.match(text, /\n {2}argon, "Gemini Models": usable, priority [\d.]+\n {4}weekly: 90% left, /)
+  assert.match(text, /\n {2}flash, "Gemini Models": usable, priority [\d.]+\n {4}weekly: 90% left, /)
   assert.ok(text.includes(`source: ${fx.FAKE_AGY}, read now`), text)
 
   // A reading of a period that has ended is no reading: grok is unknown, and --refresh is named as the way to one.

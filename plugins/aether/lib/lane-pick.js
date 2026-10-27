@@ -2,12 +2,14 @@
 
 // The commands that choose and account for a call under superdelegation: `pick` decides which pair takes a call
 // (lib/superdelegation.js choose, over the pairs table and the quota views of the enabled harnesses) and logs the
-// decision; `took` logs who ran the call and why; `pause` waits, so that the workflow can poll for a free place
-// without a clock of its own. `pick` starts no call: it reads the quotas, and renews and saves the one reading
-// that nobody else keeps (grok's), because each `aether-lane pick` is a process of its own.
+// decision; `took` logs who ran the call and why; `pause` waits, so that the workflow can time its agents without a clock of
+// its own. `pick` starts no call: it reads the quotas, and renews and
+// saves the one reading that nobody else keeps (grok's), because each `aether-lane pick` is a process of its own.
+// Family: lane.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { isObject, sleep } = require('./common.js')
 const lanes = require('./lanes.js')
 const run = require('./run.js')
 const quota = require('./lane-quota.js')
@@ -17,22 +19,20 @@ const { choose } = require('./superdelegation.js')
 const { peekReadings, staleHarnesses, readingFile } = require('./router-quota.js')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 
-const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review)$/
+const CALL = /^(task-\d+-\d+-(implement|supervise|supervisor|reviewer)|final-review(-slice-\d+)?)$/
 const ROLES = ['implementer', 'supervisor', 'reviewer']
 const MODELS = pairs.NATIVE_MODELS
 const PAIR_ID = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(low|medium|high|xhigh|max)$/
 const FAMILY = /^[a-z][a-z0-9.-]*$/
 const BY = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
-const CAUSES = ['chosen', 'no-candidate', 'wait-limit', 'failed']
+const CAUSES = ['chosen', 'no-candidate', 'failed']
 const SECONDS = /^\d{1,3}$/
 const MAX_PAUSE_SECONDS = 120
 // The harnesses whose reading is renewed by a refresher (lane-quota.js REFRESHERS): their readings are the ones a
 // process cannot find again in the harness's own record.
 const REFRESHABLE = ['grok']
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-
-// The Vista de cuotas of the enabled harnesses of the table: what choose reads as `harnesses`.
+// The quota view of the enabled harnesses of the table: what choose reads as `harnesses`.
 function harnessViews(config, enabled, { dataDir = run.dataDir(), now = Date.now(), latest = {}, onRead = null } = {}) {
   const views = {}
   for (const name of enabled) {
@@ -56,7 +56,7 @@ function writeAtomic(file, value) {
 }
 
 // The reading harnessView takes as `latest` for each enabled harness that has a refresher: the one a process left in
-// the router's file or the harness's record while it is within its life, else a new one, saved where the router
+// the readings file of the quota module or the harness's own record while it is within its life, else a new one, saved where the quota module
 // reads it so that no other pick (nor design round) renews it again within quotaLifeMinutes. Never throws: a
 // reading that does not arrive leaves its harness without `latest`.
 async function latestReadings(config, enabled, { dataDir = run.dataDir(), now = Date.now(), createAdapter = defaultCreateAdapter, refreshStale = quota.refreshStale } = {}) {
@@ -117,13 +117,6 @@ function authorList(value) {
   return [value]
 }
 
-function loadTable() {
-  const file = lanes.configPath()
-  const config = lanes.loadConfig(file)
-  if (!config) throw new Error(`no lane table: ${file}`)
-  return config
-}
-
 const pickedOf = (pair) => pair && {
   id: pair.id, harness: pair.harness, model: pair.model, effort: pair.effort, group: pair.group, family: pair.family, intelligence: pair.intelligence, costPerTaskUsd: pair.costPerTaskUsd,
 }
@@ -139,13 +132,13 @@ async function pickCommand(cwd, runId, call, flags, { now = Date.now() } = {}) {
   const exclude = excludeList(flags.exclude)
   const authors = authorList(flags.author)
 
-  const config = loadTable()
+  const config = calls.loadTable()
   const table = pairs.loadPairs().pairs
   const enabled = calls.enabledFor(cwd, runId)
   const dataDir = run.dataDir()
   const latest = await latestReadings(config, enabled, { dataDir, now })
   const harnesses = harnessViews(config, enabled, { dataDir, now, latest })
-  const decision = choose({ pairs: table, reference: { model, effort }, harnesses, exclude, authors, nativeDiffers: role !== 'implementer' })
+  const decision = choose({ pairs: table, reference: { model, effort }, harnesses, exclude, authors, nativeDiffers: role !== 'implementer', role, lanes: config })
 
   lanes.appendLog(dataDir, null, {
     kind: 'choice',
@@ -176,15 +169,13 @@ function tookCommand(cwd, runId, call, flags, { now = Date.now() } = {}) {
   return { logged: true }
 }
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
 // Waits `seconds`, a whole number from 1 to 120.
-async function pauseCommand(seconds, { sleep = wait } = {}) {
+async function pauseCommand(seconds, { sleep: sleepFn = sleep } = {}) {
   const text = String(seconds)
   const count = SECONDS.test(text) ? Number(text) : NaN
   if (!(count >= 1 && count <= MAX_PAUSE_SECONDS)) throw new Error(`--seconds must be a whole number from 1 to ${MAX_PAUSE_SECONDS}, not ${JSON.stringify(seconds)}`)
-  await sleep(count * 1000)
+  await sleepFn(count * 1000)
   return { paused: count }
 }
 
-module.exports = { harnessViews, latestReadings, pickCommand, tookCommand, pauseCommand }
+module.exports = { harnessViews, latestReadings, pickCommand, tookCommand, pauseCommand, CALL, excludeList }

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { LEAD_AGENT, markerFile, markSession, isAetherSession, opsOffFile, pruneSessions } = require('../plugins/aether/lib/session.js')
+const { LEAD_AGENT, markerFile, markSession, isAetherSession, opsOffFile, pruneSessions, delegateFile, parseDeadlines } = require('../plugins/aether/lib/session.js')
 
 test('the Lead agent is aether:lead', () => {
   assert.equal(LEAD_AGENT, 'aether:lead')
@@ -79,3 +79,45 @@ test('pruneSessions deletes the ops-off file of a session it prunes', (t) => {
   assert.deepEqual(pruneSessions(data, { days: 30 }), ['old'])
   assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')), [])
 })
+
+test('markSession writes the delegate file beside the marker, and a session without settings has none', (t) => {
+  const data = tempDir(t)
+  const settings = { lanes: true, harnesses: ['agy', 'grok'], deadlines: { quotaMs: 2000 } }
+  markSession(data, 's1', 1, { delegate: settings })
+  assert.deepEqual(JSON.parse(fs.readFileSync(delegateFile(data, 's1'), 'utf8')), settings)
+  markSession(data, 's2', 1)
+  assert.equal(fs.existsSync(delegateFile(data, 's2')), false)
+})
+
+test('markSession refuses an invalid id and writes no delegate file either', (t) => {
+  const data = tempDir(t)
+  assert.throws(() => markSession(data, '../x', 1, { delegate: { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } } }), /invalid session id/)
+  assert.deepEqual(fs.readdirSync(data), [])
+})
+
+const OLD_FILE = (id) => id + '.' + 'router' + '.json'
+
+test('markSession leaves a router file an older version wrote where it is', (t) => {
+  const data = tempDir(t)
+  markSession(data, 's1', 1)
+  const stale = path.join(data, 'sessions', OLD_FILE('s1'))
+  fs.writeFileSync(stale, '{}')
+  markSession(data, 's1', 2)
+  assert.equal(fs.existsSync(stale), true)
+})
+
+test('pruneSessions leaves a router file of an older version, and removes the files it still knows', (t) => {
+  const data = tempDir(t)
+  markSession(data, 'old', 1, { delegate: { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } } })
+  fs.writeFileSync(path.join(data, 'sessions', OLD_FILE('old')), '{}')
+  const past = new Date(Date.now() - 40 * 24 * 3600 * 1000)
+  fs.utimesSync(markerFile(data, 'old'), past, past)
+  assert.deepEqual(pruneSessions(data, { days: 30 }), ['old'])
+  assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')), [OLD_FILE('old')])
+})
+
+test('parseDeadlines reads quota and ignores every other key', () => {
+  assert.equal(parseDeadlines('other=5,quota=2').quotaMs, 2000)
+  assert.equal(parseDeadlines('other=5,another=2').quotaMs, 3000)
+})
+

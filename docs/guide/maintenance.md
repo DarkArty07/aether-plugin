@@ -38,9 +38,13 @@ Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AE
 - `usage/<session>/` holds the usage meter's files, kept for 30 days;
 - `runs.jsonl` holds one record per finalized or abandoned run;
 - the lane log is kept for 30 days;
+- `spend/<id>.json`, in this data directory, holds a summary of that session's spend. The 30-day prune writes the summary before it deletes that session's usage files or lane log, and it does not delete the summary. What was archived is added to what the same id writes later if the session resumes;
+- `delegates/` holds the delegate log, `delegates/log.jsonl`, and the files of each launch (briefs, results, patches, answers). The log is append-only, shared by every session, and none of it is pruned. `aether-report --spend` and `/spend` read `usage/`, `lanes/` and this delegate log (`plugins/aether/lib/spend.js`); they do not read an older router journal. See [Delegates](delegates.md#the-log);
 - `sessions/` marks the Aether sessions, kept for 30 days;
 - `exams/` holds the Examiner's hidden exams, one folder per repository and feature, so uninstalling without `--keep-data` deletes them;
 - `lanes/` also holds the dry marks (`lanes/marks/`) and the kept quota readings (`lanes/quota/`).
+
+A swarm run's final review is `deferred` until it runs. It runs when a launch ends with every unit of that launch merged, once, on the whole change. [The final review has not run](troubleshooting.md#the-final-review-has-not-run) says how that looks and how the review is run on what is already merged.
 
 The autonomy registry and run states live in the repository itself, under `.aether/autonomy/` in its main checkout, and so does the owner's list of irreversible commands, `.aether/pending.jsonl`.
 

@@ -1,13 +1,14 @@
 'use strict'
 
-// Parses an Aether plan (a Spec Kit tasks.md, or an older superpowers plan) that carries Aether fields,
-// and turns it into a dependency graph of waves.
+// Parses an Aether plan (a Spec Kit tasks.md) that carries Aether fields, and turns it into a
+// dependency graph of waves.
+// Family: plan.
 
 const { normalizePattern, patternsOverlap } = require('./globs.js')
 
 const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
-const DEFAULT_EFFORT = 'xhigh'
+const DEFAULT_EFFORT = 'high'
 const DEFAULT_REVIEW = 'high'
 // Sonnet and Opus never implement at low or medium.
 const EFFORTS_BELOW_HIGH = ['low', 'medium']
@@ -18,6 +19,7 @@ const TASK_HEADING = /^###\s+Task\s+(\d+)\s*:\s*(.+?)\s*$/i
 // any heading that tries to name a task, well formed or not
 const TASK_LOOKALIKE = /^#{1,6}\s+\W*task\s*\d/i
 const LEVEL2 = /^##\s+\S/
+// The swarm's attempts per tier: another datum than config/ladder.json, which holds the corrections of the Lead's delegates.
 const DEFAULT_LADDER = { haiku: 2, sonnet: 2, opus: 1 }
 const DEFAULT_MAX_AGENTS = 200
 const MAX_LISTED_GAPS = 20
