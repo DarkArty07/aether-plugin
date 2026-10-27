@@ -260,6 +260,7 @@ async function saveLanePayload($, e, state) {
     const lane = lanePayload(e)
     if (!lane) return
     await $.fs.write(lane.path, lane.payload)
+    if (lane.path.includes('/ladder/')) return
     const workflow = e.workflow || {}
     const spawn = {
       session: state.id,
@@ -568,6 +569,7 @@ export function register(on, options) {
       if (ctx) delegates.bind(delegateCalls($), e, result.agentId, ctx)
       const command = opsCommand(e, $)
       if (command && !(await opsOff($, state))) state.ops.set(result.agentId, command)
+      else state.ops.delete(result.agentId)
     }
     return result
   }).catch(($, e, next) => {

@@ -12,9 +12,9 @@ const LANE_DIR = `/repo/.aether/runs/${RUN}/lanes/task-1-1-implement`
 const USAGE = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
 
 // The message aether:run's opsPrompt builds.
-function opsPrompt(command: string, { long = false, payload = null as string | null } = {}) {
+function opsPrompt(command: string, { long = false, payload = null as string | null, marker = `${LANE_DIR}/prompt.md` } = {}) {
   const lines = [long ? LONG : SHORT, '', `cd '/repo' && ${command}`, '', CLOSING]
-  if (payload !== null) lines.push('', PREFACE, `=== aether-lane payload: ${LANE_DIR}/prompt.md ===`, payload)
+  if (payload !== null) lines.push('', PREFACE, `=== aether-lane payload: ${marker} ===`, payload)
   return lines.join('\n')
 }
 
@@ -262,4 +262,34 @@ test('with the ops option off the session never has its commands run by the mod,
   expect(runs).toEqual([])
   expect(counts.modelSteps).toBe(1)
   expect(chunks.some((c) => c.kind === 'tool')).toBe(false)
+})
+
+const LADDER_FILE = `/repo/.aether/runs/${RUN}/ladder/task-1-verdict.json`
+
+test('a ladder verdict saves its payload file at spawn, runs aether-wt with the path and the digest, and never asks the model', async ($, on) => {
+  const { runs, writes, counts } = stubs(on, { answer: { exitCode: 0, stdout: '{"accepted":true}\n' } })
+  const command = `aether-wt ladder ${RUN} task-1 --verdict fix --payload ${LADDER_FILE} --digest 0a1b2c3d:12`
+  const text = '{"findings":[{"file":"src/a.js","what":"falta el caso vacío; rm -rf /"}]}'
+  await spawn($, opsPrompt(command, { payload: text, marker: LADDER_FILE }))
+  expect(writes.find((w) => w.path === LADDER_FILE)).toEqual({ path: LADDER_FILE, text })
+  expect(writes.every((w) => w.path.startsWith(`/repo/.aether/runs/${RUN}/ladder/`))).toBe(true)
+  const { chunks } = await step($)
+  expect(runs.length).toBe(1)
+  expect(runs[0].argv[1].endsWith('/bin/aether-wt')).toBe(true)
+  expect(runs[0].argv.slice(2)).toEqual(command.split(' ').slice(1))
+  expect(answered(chunks).input).toEqual({ exitCode: 0, stdout: '{"accepted":true}\n' })
+  expect(counts.modelSteps).toBe(0)
+})
+
+test('a gate runs in the mod with the long timeout, and a malformed ladder line goes to the model', async ($, on) => {
+  const { runs, counts } = stubs(on, { answer: { exitCode: 0, stdout: '{"pass":true}\n' } })
+  await spawn($, opsPrompt(`aether-wt gate ${RUN} task-1`, { long: true }))
+  await step($)
+  expect(runs.length).toBe(1)
+  expect(runs[0].init).toEqual({ cwd: '/repo', timeoutMs: 600000 })
+  const bad = `aether-wt ladder ${RUN} task-1 --verdict fix --payload /etc/passwd --digest 0a1b2c3d:12`
+  await spawn($, opsPrompt(bad, { payload: 'x', marker: '/etc/passwd' }))
+  await step($)
+  expect(runs.length).toBe(1)
+  expect(counts.modelSteps).toBe(1)
 })
