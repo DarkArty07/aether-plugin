@@ -108,4 +108,4 @@ What cannot be measured today: the runs do not keep what each supervisor approve
 - The numbers of the ladder: 5, 2 and 1 corrections, and the same findings twice before a task climbs.
 - The ladder of the plan: Haiku 2, Sonnet 2, Opus 1.
 - The model each unit of a swarm starts on, which the plan still fixes.
-- The order of the design seats: a pair of another harness first, the native agent as the fallback.
+- The order of the design seats: a pair of another harness first, the native agent as the fallback. An external model takes a role only when that role is in the model's `roles` list; when none lists it, the native pair takes the call (`allowsRole` in `plugins/aether/lib/superdelegation.js`).
