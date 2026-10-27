@@ -45,6 +45,6 @@ Keep each animation's **idea, story beats, timings, frame count, fps, canvas, HU
 Per animation:
 
 - **control**: the gate is a marble portico (two Doric columns and a lintel) with the lamp as keystone; floppy disks marked PUSH, MERGE, DEPLOY wait; the YES is a 90s dialog; a bust on a pedestal watches. Sky: nebula, no city.
-- **lanes**: the four lanes are four 90s computers (AGY, GROK, CODEX, CLAUDE) on a colonnade with quota bars on their screens; the cards are floppy disks; the hopper is a marble channel.
+- **lanes**: the four lanes are four 90s computers (AGY, GROK, CODEX, CLAUDE; Muse is not drawn yet) on a colonnade with quota bars on their screens; the cards are floppy disks; the hopper is a marble channel.
 - **equipo**: Clawd as the Lead; the Writer at a 90s computer; the Judge with a blindfolded bust and the stamp on a marble block; the Examiner with a sealed scroll in a stone niche; the crabs on a cornice; temple floor, stars behind.
 - **goal_fast, goal_auto, goal_deleg, goal_cheap, goal_robust, radar, install, flujo, path_*, lost**: same rules, applied per the table.
