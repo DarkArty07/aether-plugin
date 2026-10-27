@@ -18,7 +18,6 @@
 // the pair choice reads it. start and run work in the current directory. None of them merges or pushes. Each prints one
 // JSON line and exits 0, except a wrong use or an error of its own, which prints { "error": <message> } and exits 1.
 
-const fs = require('node:fs')
 const path = require('node:path')
 const lib = (name) => require(path.join(__dirname, '..', 'lib', name))
 const run = lib('run.js')
@@ -65,16 +64,13 @@ function flagsOf(verb, args) {
 }
 
 function readJsonFile(file, what) {
-  let text
   try {
-    text = fs.readFileSync(file, 'utf8')
+    return run.readJson(file)
   } catch (err) {
+    if (err instanceof SyntaxError) {
+      throw new Error(`${what} ${file} is not JSON: ${err.message}`)
+    }
     throw new Error(`cannot read ${what} ${file}: ${err.message}`)
-  }
-  try {
-    return JSON.parse(text)
-  } catch (err) {
-    throw new Error(`${what} ${file} is not JSON: ${err.message}`)
   }
 }
 

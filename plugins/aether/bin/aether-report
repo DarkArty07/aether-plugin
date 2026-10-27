@@ -8,9 +8,9 @@
 // aether-report --delegates [--session <id>] [--since <ms>]
 // aether-report --spend [--session <id>]
 
-const fs = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
+const { readJson } = require(path.join(lib, 'common.js'))
 const { report, finalize, seatsReport } = require(path.join(lib, 'report.js'))
 const { delegatesReport } = require(path.join(lib, 'delegate-report.js'))
 const { loadPrices, priceModelUsage } = require(path.join(lib, 'prices.js'))
@@ -64,7 +64,7 @@ function main(argv) {
   if (argv.includes('--spend')) return spend(argv)
   if (argv[0] === 'price') {
     if (!argv[1] || argv[1].startsWith('--')) throw new Error(USAGE)
-    const output = JSON.parse(fs.readFileSync(argv[1], 'utf8'))
+    const output = readJson(argv[1])
     return priceModelUsage(output, loadPrices(), { mainModel: value(argv, '--main-model') })
   }
   if (argv.includes('--delegates')) return delegates(argv)
