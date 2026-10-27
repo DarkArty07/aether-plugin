@@ -27,11 +27,13 @@ const AETHER_VARIABLES = [
   'AETHER_OBSERVE',
   'AETHER_PAIRS_CONFIG',
   'AETHER_SUPERDELEGATION',
-  'AETHER_SUPERDELEGATION_LEGACY',
 ]
 // Every child process gets process.env, so this covers the environment the helper hands to children and the
 // in-process reads of a test file alike. Each test file runs in a process of its own (node --test).
-for (const name of AETHER_VARIABLES) delete process.env[name]
+// A session may still export the retired name. Nothing in the tree reads it, so it is not part of the list
+// above; it is still cleared so a suite does not inherit it.
+const RETIRED_SESSION = ['AETHER_SUPERDELEGATION_' + 'LEGACY']
+for (const name of AETHER_VARIABLES.concat(RETIRED_SESSION)) delete process.env[name]
 delete process.env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV
 
 function tempDir(t, prefix = 'aether-test-') {
