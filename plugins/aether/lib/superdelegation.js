@@ -6,8 +6,9 @@
 // cheaper candidate is dominated; the quota that renews first takes the call, at its cheapest pair. Speed is
 // never read. authorRule is 'bar' (the default, for the swarm, the final review and aether-lane delegate: a pair
 // of an author's family is not a candidate) or 'reserve' (the design seats: a pair of another family first, then
-// the author's own family, and the native agent only last). Everything here is pure: the lane table, the pairs
-// and the quota views come in as arguments.
+// the author's own family, and the native agent only last). When a call names a role, an external pair is a
+// candidate only if the lane table's entry for its model lists that role. Everything here is pure: the lane
+// table, the pairs and the quota views come in as arguments.
 
 const { NATIVE_HARNESS, NATIVE_MODELS, referenceOf } = require('./pairs.js')
 
@@ -44,13 +45,22 @@ function resetsKey(quota) {
 
 const isDry = (quota) => Boolean(quota) && (quota.usable === false || Boolean(quota.mark))
 
+// Whether the lane table's entry for a pair's model lists the role of the call. A pair with no entry, or a
+// call that brings no table, allows nothing.
+function allowsRole(pair, role, lanes) {
+  const harness = lanes && lanes.harnesses && Object.hasOwn(lanes.harnesses, pair.harness) ? lanes.harnesses[pair.harness] : null
+  const model = harness && harness.models && Object.hasOwn(harness.models, pair.model) ? harness.models[pair.model] : null
+  return Boolean(model && Array.isArray(model.roles) && model.roles.includes(role))
+}
+
 // The reason a pair is not a candidate before dominance, in the order of precedence, or null.
 // Under authorRule 'reserve' the author's family is not barred here: it sorts after every other family.
-function firstBar(pair, { harnesses, exclude, authors, floor, authorRule }) {
+function firstBar(pair, { harnesses, exclude, authors, floor, authorRule, role, lanes }) {
   if (!Object.hasOwn(harnesses, pair.harness)) return 'harness-off'
   const view = harnesses[pair.harness]
   if (!view || view.installed !== true) return 'not-installed'
   if (exclude.includes(pair.id)) return 'excluded'
+  if (role !== undefined && !allowsRole(pair, role, lanes)) return 'role'
   if (authorRule !== 'reserve' && authors.includes(pair.family)) return 'author'
   if (isDry(quotaOf(pair, harnesses))) return 'dry'
   return measureBar(pair, floor)
@@ -110,13 +120,13 @@ function nativeFor(pairs, ref, { authors, nativeDiffers }) {
 
 // The decision for one call. See the header for the rule; candidates lists every external pair of the table,
 // the candidates first in their order, then the others in the order of the table with the reason they passed.
-function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativeDiffers = false, authorRule = 'bar' }) {
+function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativeDiffers = false, authorRule = 'bar', role, lanes }) {
   if (authorRule !== 'bar' && authorRule !== 'reserve') throw new Error(`authorRule must be bar or reserve, not ${JSON.stringify(authorRule)}`)
   const ref = referenceOf(pairs, reference)
   const requested = ref.intelligence
   const floor = tenths(requested) - TOLERANCE_TENTHS
   const external = pairs.map((pair, index) => ({ pair, index })).filter(({ pair }) => pair.harness !== NATIVE_HARNESS)
-  const context = { harnesses: harnesses || {}, exclude, authors, floor, authorRule }
+  const context = { harnesses: harnesses || {}, exclude, authors, floor, authorRule, role, lanes }
   const barred = external.map((entry) => ({ ...entry, why: firstBar(entry.pair, context) }))
   const open = barred.filter((entry) => entry.why === null).map((entry) => entry.pair)
   for (const entry of barred) {
@@ -145,6 +155,8 @@ function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativ
   let reason
   if (picked) {
     reason = `${picked.id}: ${picked.intelligence} points for ${requested} asked (at least ${minimum}), the first of ${ranked.length} candidate${ranked.length === 1 ? '' : 's'}`
+  } else if (role !== undefined && !external.some(({ pair }) => allowsRole(pair, role, lanes))) {
+    reason = `native ${native.pair.id}: no external model allows the role ${role}`
   } else {
     // A quota is eligible when one of its pairs would be a candidate but for its dry quota.
     const dryOnly = passed.some((entry) => entry.why === 'dry' && measureBar(entry.pair, floor) === null)

@@ -359,3 +359,54 @@ test('idleHarnesses names why an enabled harness gives the run nothing', () => {
     { name: 'ghost', reason: 'has no entry in the lane table' },
   ])
 })
+
+const NATIVE = { id: 'claude/sonnet@high', harness: 'claude', model: 'sonnet', effort: 'high', family: 'claude-sonnet', group: null, intelligence: 50, costPerTaskUsd: 2 }
+const EXT = (model, intelligence, cost) => ({ id: `agy/${model}@high`, harness: 'agy', model, effort: 'high', family: 'gemini', group: 'flash', intelligence, costPerTaskUsd: cost })
+const VIEWS = { agy: { installed: true, groups: { flash: {} } } }
+const TABLE = (roles) => ({ harnesses: { agy: { models: { 'gem-a': { group: 'flash', roles }, 'gem-b': { group: 'flash', roles: ['judge', 'writer', 'examiner'] } } } } })
+const call = (role, roles) => choose({ pairs: [NATIVE, EXT('gem-a', 50, 1), EXT('gem-b', 50, 5)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, role, lanes: TABLE(roles) })
+
+for (const role of ['implementer', 'supervisor', 'reviewer']) {
+  test(`E3 (${role}): a model whose roles list lacks the role is not chosen and gets no call`, () => {
+    const others = ['implementer', 'supervisor', 'reviewer'].filter((r) => r !== role)
+    const decision = call(role, others)
+    assert.equal(decision.picked, null)
+    assert.equal(decision.native.id, 'claude/sonnet@high')
+    assert.equal(decision.reason, 'native claude/sonnet@high: no external model allows the role ' + role)
+    assert.ok(decision.candidates.filter((c) => c.outcome !== 'passed').length === 0)
+    assert.equal(decision.candidates.find((c) => c.id === 'agy/gem-a@high').why, 'role')
+  })
+}
+for (const role of ['judge', 'writer', 'examiner']) {
+  test(`E3b (${role}): a seat takes no model whose roles list lacks it`, () => {
+    const decision = call(role, ['implementer', 'supervisor', 'reviewer'])
+    assert.equal(decision.picked.id, 'agy/gem-b@high')
+    const none = choose({ pairs: [NATIVE, EXT('gem-a', 50, 1)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, role, lanes: TABLE(['implementer']) })
+    assert.equal(none.picked, null)
+    assert.match(none.reason, new RegExp(`no external model allows the role ${role}$`))
+  })
+}
+test('a model whose list has the role is chosen as before', () => {
+  assert.equal(call('implementer', ['implementer']).picked.id, 'agy/gem-a@high')
+})
+test('a pair with no entry in the lane table has no roles and is not chosen', () => {
+  const decision = choose({ pairs: [NATIVE, EXT('unlisted', 50, 1)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, role: 'implementer', lanes: TABLE(['implementer']) })
+  assert.equal(decision.picked, null)
+  assert.equal(decision.candidates.find((c) => c.id === 'agy/unlisted@high').why, 'role')
+})
+test('a missing role does not throw and does not filter', () => {
+  const decision = choose({ pairs: [NATIVE, EXT('gem-a', 50, 1)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, lanes: TABLE(['judge']) })
+  assert.equal(decision.picked.id, 'agy/gem-a@high')
+  assert.equal(decision.candidates.find((c) => c.id === 'agy/gem-a@high').why, null)
+})
+test('an unknown role does not throw: the native pair takes the call and the reason names the role', () => {
+  const decision = call('nobody', ['implementer'])
+  assert.equal(decision.picked, null)
+  assert.equal(decision.native.id, 'claude/sonnet@high')
+  assert.equal(decision.reason, 'native claude/sonnet@high: no external model allows the role nobody')
+})
+test('a set role with no lane table excludes every external pair for role', () => {
+  const decision = choose({ pairs: [NATIVE, EXT('gem-a', 50, 1)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, role: 'implementer' })
+  assert.equal(decision.picked, null)
+  assert.equal(decision.candidates.find((c) => c.id === 'agy/gem-a@high').why, 'role')
+})
