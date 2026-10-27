@@ -1,8 +1,8 @@
 // path_delegate.px.js: camino #2 de "Tres caminos, una decisión": TAREA DELEGADA. 225 x 40 px de arte (GIF a x4 = 900 x 160),
 // 360 cuadros a 30 fps (12 s), bucle sin corte. Es la tira que ocupa el lugar del diagrama SVG del camino #2.
 // Clawd (el Lead, a media escala 12 x 8) está en la vía principal, a la izquierda. Escribe un encargo autocontenido (un disquete TASK
-// con la ficha de modelo y esfuerzo SONNET · HIGH) y lo suelta en la vía: el encargo sube por la rama de SEGUNDO PLANO hasta
-// un subagente (un cangrejo azul, nivel medio). El cangrejo corre un ciclo EDIT, TEST, FIX (una flecha circular y tres lámparas de
+// con la ficha de modelo y esfuerzo HAIKU · HIGH: toda tarea delegada empieza en Haiku y la escalera la sube el sistema, no el Lead)
+// y lo suelta en la vía: el encargo sube por la rama de SEGUNDO PLANO hasta un subagente (un cangrejo verde, nivel ligero). El cangrejo corre un ciclo EDIT, TEST, FIX (una flecha circular y tres lámparas de
 // prueba: una falla en rojo, luego pasan) mientras Clawd sigue tecleando: el Lead no está bloqueado. El resultado vuelve por la rama
 // como un disquete verde, se funde con la vía principal y llega a la bandera FINAL RESULT, que sube con su palomita.
 // Retematizado (2026-10-22, brief de assets/brand/retheme-brief.md): la vía principal es un friso de greca (meandro) de mármol y la
@@ -10,7 +10,7 @@
 // CRT beige de los 90; el cangrejo trabaja sobre una losa de mármol flotante; la bandera se alza sobre una columna dórica pequeña;
 // fondo de estrellitas. Sin barras, cintas ni madera.
 // Leyenda de la historia (cuadros del mundo; el hit-stop congela el mundo 4 cuadros y los demás se corren):
-//   8 a 54     el disquete TASK aparece sobre Clawd, se escribe "TASK" y se enciende la ficha SONNET · HIGH
+//   8 a 54     el disquete TASK aparece sobre Clawd, se escribe "TASK" y se enciende la ficha HAIKU · HIGH
 //   54 a 66    Clawd se agacha, lo lanza con los brazos arriba; el disquete se encoge y la ficha se disuelve
 //   66 a 112   el disquete cae a la vía (aro), sube por la constelación, nace el cangrejo (bolita, se despliega) y lo recoge; "LEAD FREE"
 //   114 a 226  EDIT, TEST (150: falla en rojo, gota de sudor, sacudida del cangrejo), FIX, EDIT, TEST (214: pasa en verde)
@@ -21,6 +21,9 @@
 // Bucle: el hit-stop se come 3 cuadros del reloj del mundo (en el cuadro 359 el mundo marca 356, y el siguiente sería el 357), así que
 // lo ambiental (teclado del monitor 119, guiones de la constelación 21, parpadeos 119, estrellas 51 y 119) usa periodos que DIVIDEN 357.
 include("kit.px.js")
+// El azul de este archivo era el nivel medio (Sonnet). Una tarea delegada empieza en Haiku, el nivel ligero, que es verde en toda la
+// familia de Aether: las llaves b, B y 5 (la ficha, la franja, el cangrejo) pasan a copiar las del verde, y no se toca el resto.
+pal({ b: "t", B: "T", 5: "4" })
 
 const W = 225, H = 40, N = 360;
 pal({ R: "#f2cdcd", r: "#f5e0dc", q: "#9399b2", K: "#141225" });   // CRT beige (flamenco y rosa té); el mármol usa W e a A 2 del kit
@@ -96,7 +99,7 @@ const FP = {
   res: { body: "j", hl: "T", sh: "4" },                  // disquete verde con palomita: el resultado
 };
 const CHECK5 = ["....j", "...j.", "j.j..", ".j..."];
-// Disquete de 3.5" de frente a cualquier tamaño: postigo metálico arriba, etiqueta blanca abajo con la franja del nivel (azul = medio).
+// Disquete de 3.5" de frente a cualquier tamaño: postigo metálico arriba, etiqueta blanca abajo con la franja del nivel (verde = ligero).
 // letters >= 0 (solo en el grande): escribe "TASK" en la etiqueta.
 function floppy(c, x, y, w, h, kind = "out", letters = -1) {
   const P = FP[kind];
@@ -129,9 +132,9 @@ const CARD = { x: 4, y: 9, w: 22, h: 13 };
 function chip(c, x0, y0, tail) {
   c.rect(x0, y0, 47, 7, "5");
   c.box(x0, y0, 47, 7, "b");
-  c.text(x0 + 2, y0 + 1, "SONNET", "B");
-  c.px(x0 + 2 + 23 + 2, y0 + 3, "y");
-  c.text(x0 + 2 + 23 + 2 + 1 + 2, y0 + 1, "HIGH", "B");
+  c.text(x0 + 4, y0 + 1, "HAIKU", "B");               // 19 px de ancho (SONNET eran 23): se centra en la ficha de 47
+  c.px(x0 + 4 + 19 + 2, y0 + 3, "y");
+  c.text(x0 + 4 + 19 + 2 + 1 + 2, y0 + 1, "HIGH", "B");
   if (tail) { c.px(x0 + 23, y0 + 7, "b"); }
 }
 
@@ -363,7 +366,7 @@ function lamps(c, f) {
   });
 }
 
-// ------------------------------------------------------------------ el cangrejo (subagente de nivel medio)
+// ------------------------------------------------------------------ el cangrejo (subagente de nivel ligero)
 const KROWS = {
   up: ["l.....l", "lmmmmml", ".mkmkm.", ".mmmmm.", "d.d.d.d"],
   upb: ["l.....l", "lmmmmml", ".mkmkm.", ".mmmmm.", ".d.d.d."],
