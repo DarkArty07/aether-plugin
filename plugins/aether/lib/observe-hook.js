@@ -3,6 +3,7 @@
 // The handler of the five observation hooks. It takes from the hook's input only the fields listed in EVENTS, and
 // appendEvent keeps only identifiers from them. The rest of the input is never read here; the development
 // installation hands the whole input to captureFragment, which is the one that opens anything.
+// Family: observe.
 
 const { appendEvent, observeMode } = require('./observe.js')
 const { isAetherSession } = require('./session.js')
