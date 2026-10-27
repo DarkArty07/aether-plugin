@@ -7,7 +7,7 @@ const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const { loadPairs, pairsPath, pairId, referenceOf } = require('../plugins/aether/lib/pairs.js')
 
-const EVIDENCE = path.join(__dirname, '..', 'specs', '009-superdelegation', 'evidence', 'aa-pairs-2026-10-19.json')
+const EVIDENCE = path.join(__dirname, 'fixtures', 'aa-pairs-2026-10-19.json')
 const NATIVE = { Haiku: 'haiku', Sonnet: 'sonnet', Opus: 'opus' }
 const EXTERNAL = { 'Gemini 4 Argon': 'gemini-4-argon', 'Gemini 3.8 Flash': 'gemini-3.8-flash', 'Grok 4.7': 'grok-4.7' }
 
