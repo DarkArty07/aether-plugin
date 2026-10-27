@@ -2,9 +2,11 @@
 
 // The saved quota readings of external harnesses: kept while their life lasts when their reading launches
 // a process, as agy does, and served to calls that share the harness without running another process.
+// Family: lane.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { isObject } = require('./common.js')
 
 const DEFAULT_LIFE_MINUTES = 10
 let writeCounter = 0
@@ -35,10 +37,6 @@ function hasReset(groups, readAt, now) {
       return resetsAt > readAt && resetsAt <= now
     }),
   )
-}
-
-function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 // Reads a harness's quota through its adapter. settings is its entry in the table ({ groups, quotaLifeMinutes? }).
@@ -93,5 +91,6 @@ function readGroups(adapter, { harness, settings = {}, dataDir, now = Date.now()
 module.exports = {
   DEFAULT_LIFE_MINUTES,
   cacheFile,
+  hasReset,
   readGroups,
 }
