@@ -52,25 +52,15 @@ The plan has a `## Gate` section after `## Technical context`, and `## Complexit
 Put this block right after each task heading:
 
     **Aether:**
-    - Tier: haiku high — a mechanical parser that exact tests pin down
     - Review: xhigh — a failed parse deletes the user's file
     - Area: backend
     - Owns: `src/api/**`, `tests/api.test.js`
     - Depends on: none
     - Serves: R1, R3
 
-- **Tier** is `haiku`, `sonnet` or `opus`, optionally followed by the implementer's effort, then " — " and the reason for both:
-  - `haiku` (default): exact tests and interfaces pin the task down, and it touches few files;
-  - `sonnet`: frontend and UI work, integration across several files, or behavior the tests cannot pin down exactly;
-  - `opus`: security and auth, data migrations or destructive operations, concurrency, or core architecture.
-- **The effort** defaults to `high`. Weigh each task's complexity, and name an effort only when it should differ:
-  - name `xhigh` only where the tests cannot pin the behavior down and a mistake would cost more than the extra effort: it costs about 2.3 times more on Sonnet and 1.9 times more on Opus than `high`;
-  - Haiku may run at `low` or `medium` where the tests pin the work down completely;
-  - Sonnet and Opus never run below `high`;
-  - name `max` only with a reason: on Opus it gives what `xhigh` gives.
+The swarm starts every task on the cheapest model and raises it by itself: do not name a model or an effort for the implementer. Every task is one module and one concern; when tests cannot pin it down, split it.
 
-  A failed attempt on Haiku runs again at `xhigh`; on Sonnet and Opus it runs again at the task's own effort, and a unit that moves up a model starts there at `high`, so a task named at `xhigh` pays that cost on every attempt.
-- **Review** is optional: `high`, `xhigh` or `max`, then " — " and the reason. It sets the supervisor's effort for every attempt at the task, which is `high` without it. `xhigh` costs about 2.3 times more than `high` on Sonnet, and, with `superdelegation` on, the supervisor of Sonnet's work can run on Opus: name it only where a mistake would reach user data, security or concurrency, and say which.
+- **Review** is optional: `high`, `xhigh` or `max`, then " — " and the reason. It sets the supervisor's effort for every attempt at the task, which is `high` without it. `xhigh` costs about 2.3 times more than `high` on Sonnet, and, with `superdelegation` on, the supervisor of Sonnet's work can run on Opus. Name **Review** (`high`, `xhigh` or `max`) only where a mistake would reach user data, security or concurrency, and say which.
 - **Area** is a lowercase slug. Each area has its own supervisor.
 - **Owns** lists the files or globs (`*`, `**`, `?`) the task may change. Tasks in the same wave must not own overlapping paths.
 - **Depends on** is `none`, or one line per dependency in the form `Task N — reason`. Independence is the default, and every dependency needs a reason.
@@ -87,7 +77,6 @@ The implementer writes the code. Where the exact text is the requirement, such a
 
     ## Aether Execution
     - Test command: `npm test`
-    - Ladder: haiku 2, sonnet 2, opus 1
     - Max agents: 200
 
 **`aether-plan check specs/NNN-<topic>/tasks.md`** must pass before the plan is reviewed. It refuses chain-shaped plans and tasks of one wave that own overlapping paths. Fix what it reports.

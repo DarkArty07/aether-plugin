@@ -104,12 +104,10 @@ test('the tasks command writes an Aether execution, Aether fields and a checklis
   for (const s of [
     '## Aether Execution',
     '- Test command:',
-    '- Ladder: haiku 2, sonnet 2, opus 1',
     '- Max agents: 200',
     '## Global Constraints',
     '## Checklist',
     '**Aether:**',
-    'Tier:',
     'Review:',
     'Area:',
     'Owns:',
@@ -130,11 +128,11 @@ test('the guidance the Writer reads says the effort defaults to high and keeps x
   ]
   for (const file of files) {
     const text = fs.readFileSync(file, 'utf8')
-    assert.match(text, /effort(?:\*\*)? (?:defaults to|is) `high`/, file)
+    assert.match(text, /runs at `high`|is `high` without it/, file)
     assert.doesNotMatch(text, /defaults to `xhigh`|is `xhigh` when the Tier line names none/, file)
     assert.doesNotMatch(text, /malformed input that the tests do not list/, file)
   }
-  for (const file of files.slice(0, 2)) {
+  for (const file of files) {
     assert.match(fs.readFileSync(file, 'utf8'), /only where a mistake would reach user data, security or concurrency/, file)
   }
 })
