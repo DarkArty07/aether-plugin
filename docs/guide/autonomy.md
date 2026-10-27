@@ -12,7 +12,7 @@ Autonomy is how the Lead works for hours on the owner's permission, with standin
 
 ### Autonomy
 
-The Lead decides as the owner's delegate, and the owner's reviews are two: the permission to work at the start, and the brief at the end. See the [autonomy spec](../../docs/superpowers/specs/2026-10-09-lead-autonomy-design.md).
+The Lead decides as the owner's delegate, and the owner's reviews are two: the permission to work at the start, and the brief at the end. See the autonomy spec.
 
 - **Deciding.** The Lead closes what the owner's intent covers, and rules on the Judge's findings within it. Only what the intent does not cover, what conflicts with it, and irreversible actions that no grant covers reach the owner, as one list at the top of the brief («Espera tu sí»). Failures with a defined fallback, such as a lane out of quota, never do.
 - **Standing authorizations.** When the owner authorizes a class of irreversible action in general words, the Lead records it with `aether-autonomy grant`, quoting the owner. The quote is checked against the owner's own messages in the session's transcript, and checked again when read. The classes are `merge-main`, `push`, `publish`, `deploy`, `delete`, `credentials` and `paid-call`. Everything local and reversible proceeds without asking.

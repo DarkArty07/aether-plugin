@@ -12,8 +12,8 @@ const BINARY = /\.(png|jpe?g|gif|webp|ico|woff2?|zip|gz)$/i
 const COUNT = /\b(four|cuatro|4)\s+(external\s+)?harnesses\b/i
 
 const EXCEPTIONS = [
-  { match: (file) => file.startsWith('docs/handoff/') || file.startsWith('docs/evaluations/'), why: 'records of what was true on their date' },
-  { match: (file) => file === 'docs/roadmap.md' || file.startsWith('docs/roadmap/'), why: 'the roadmap records plans as they were written' },
+  { match: (file) => file.startsWith('docs/handoff/'), why: 'records of what was true on their date' },
+  { match: (file) => file === 'docs/roadmap.md', why: 'the roadmap records plans as they were written' },
   { match: (file) => file.startsWith('specs/'), why: 'specs, plans and tasks are design records: they describe the harnesses as they were when written, and those of 008 describe the change itself' },
   { match: (file, line) => file === 'docs/decisions.md' && !/muse/i.test(line), why: 'a decision records what was decided then; A37 lists four harnesses because there were four' },
   { match: (file) => file.startsWith('tests/fixtures/'), why: 'captured output of the CLIs' },

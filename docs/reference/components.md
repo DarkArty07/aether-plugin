@@ -28,7 +28,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | `first-setup` skill | `/aether:first-setup`, which the person calls once after installing, in a plain session. It sets `disable-model-invocation`, so the model never loads it on its own. It has Claude run `aether-first-setup --check` and then `aether-first-setup`, ask once for another name when the name is taken, and tell the person the command to type and the line for the `PATH` |
 | `onboard` skill | `/aether:onboard [topic]`, which the person calls at the start of a session to have Claude understand the project before asking for anything. It sets `disable-model-invocation`, so the model never loads it on its own, and it only reads: the README and `CLAUDE.md`, `git status` and the recent log, the newest handoff, the branches, worktrees and pull requests, the feature that `.specify/feature.json` points to and an open autonomous run. It ends with a brief of 5 to 8 lines and the question of what to do, and starts no work. Where the handoff and git disagree it goes by git, and it reports an open run that belongs to another session without continuing it |
 | Launcher | `plugins/aether/launcher/aether-lead`: Claude Code with the Lead as the agent, at `xhigh`, with permissions bypassed, superpowers off, the Aether theme in the session's own settings and `AETHER_IRREVERSIBLE=enforce`. It is outside `bin/` so that it is not on the Bash tool's `PATH`. `scripts/aether-lead` in a clone forwards to it, and the stub of `aether-first-setup` runs it. See [Getting started](../getting-started.md#start) |
-| `aether-guard` | A PreToolUse hook. In an Aether session it refuses Write, Edit, MultiEdit and NotebookEdit on specs, plans and tasks (`specs/NNN-<topic>/`, and the old `docs/superpowers/`) and on the constitution to every agent but the Lead and the Writer, on the autonomy registry and run states to every agent, and on everything outside `.aether-exam/` to the Examiner. Before Bash, it records an irreversible command that no grant covers in the owner's list, `.aether/pending.jsonl`, and refuses it when `AETHER_IRREVERSIBLE=enforce`. In any other session it allows everything |
+| `aether-guard` | A PreToolUse hook. In an Aether session it refuses Write, Edit, MultiEdit and NotebookEdit on specs, plans and tasks (`specs/NNN-<topic>/`, and former superpowers specs and plans) and on the constitution to every agent but the Lead and the Writer, on the autonomy registry and run states to every agent, and on everything outside `.aether-exam/` to the Examiner. Before Bash, it records an irreversible command that no grant covers in the owner's list, `.aether/pending.jsonl`, and refuses it when `AETHER_IRREVERSIBLE=enforce`. In any other session it allows everything |
 | `aether-autonomy` | The owner's standing authorizations, verified against their own words (`grant`, `revoke`, `check`, `list`), and an autonomous run's state and ceilings (`start`, `spend`, `status`, `end`) |
 | `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |
 | `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves, and records the run's test baseline. It reads a Spec Kit `tasks.md`, and the `spec.md` beside it. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
@@ -42,11 +42,28 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | `aether-session-start` | The command that the SessionStart hook runs. It acts only for the Lead: in any other session it prints nothing and writes nothing |
 | SessionStart hook | In an Aether session: marks the session and passes the `superdelegation`, `harnesses` and `deadlines` options (for the delegates) and the `quotabrake` and `brakepush` options (for the quota brake) to its commands; on startup, clear and compact, but not on resume, it also injects the bootstrap, sweeps runs left untouched for 24 hours, keeps a summary of the spend before it deletes the usage files and lane logs of a session id not written to for 30 days (session markers carry no spend, and `unknown.jsonl` and non-id names are deleted with no summary), deletes session markers not written to for 30 days, digests the sessions' observations into the durable summary before that prune and deletes `observe/` events, faults and development fragments not written to for 30 days (see [Self-observation](../guide/observe.md)), and points a new Lead to an open autonomous run. In any other session it does nothing |
 
+## Library families
+
+| Family | Prefix | Members | Orchestrator or table |
+| lane | `lane-` | `lane-command.js`, `lane-delegate.js`, `lane-process.js`, `lane-run.js`, `lane-schemas.js`, `lane-sweep.js`, `lane-wait.js` | `lanes.js` |
+| router | `router-` | `router-marks.js`, `router-pick.js`, `router-quota.js`, `router-renewal.js`, `router-slow.js` | `none` |
+| delegate | `delegate-` | `delegate-chain.js`, `delegate-checks.js`, `delegate-log.js`, `delegate-report.js`, `delegate-run.js`, `delegate-task.js` | `ladder.js` |
+| observe | `observe-` | `observe-calibrate.js`, `observe-detect.js`, `observe-dev.js`, `observe-digest.js`, `observe-read.js` | `observe.js` |
+| seat | `seat-` | `seat-partial.js`, `seat-round.js` | `seats.js` |
+| spend | `spend-` | `spend-archive.js`, `spend-tokens.js` | `spend.js` |
+| plan | `plan-` | `plan-compile.js` | `plan.js` |
+| session | `session-` | `session-start.js` | `session.js` |
+| harness | `lib/harness/` | `index.js`, `structured.js`, `agy.js`, `codex.js`, `cursor.js`, `grok.js`, `muse.js` | `index.js` |
+
+Loose modules (no family): `autonomy.js`, `autonomy-command.js`, `baseline.js`, `common.js`, `exam.js`, `first-setup.js`, `git.js`, `globs.js`, `guard.js`, `pairs.js`, `pending.js`, `prices.js`, `quota-refusal.js`, `report.js`, `run.js`, `superdelegation.js`, `voice.js` and `worktrees.js`; `lane-command.js` is a member of `lane`. (`autonomy-command.js` is declared loose: its prefix is not a family with more members.)
+
+The `<dataDir>/router/` directory and `source: 'router'` keep that name, the same as the family.
+
 ## What Aether adds to a normal session
 
 Today the plugin has the twelve commands of `bin/`, and they are on the Bash tool's `PATH`; the measurement below, taken at 0.7.0, counted eight.
 
-Measured on Claude Code 2.1.296 with Aether 0.7.0, on 2026-10-09 (`docs/evaluations/2026-10-09-installable/A3-dormant.md`), in a session started without `--agent aether:lead`, against the same session with Aether disabled:
+Measured on Claude Code 2.1.296 with Aether 0.7.0, on 2026-10-09, in a session started without `--agent aether:lead`, against the same session with Aether disabled:
 - the first request grows by 431 characters, all in the first message: the `aether:run` and `aether:swarm` entries of the skills list;
 - the system prompt and the tools are unchanged;
 - `claude plugin details` estimates about 100 tokens always on;

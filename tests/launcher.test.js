@@ -45,8 +45,6 @@ test('the documents record the autonomy: decisions, the README, and no per-stage
   const readme = docs()
   assert.match(page('docs/guide/autonomy.md'), /^### Autonomy$/m)
   assert.ok(page('docs/reference/components.md').includes('| `aether-autonomy` |'))
-  // docs/guide/autonomy.md links this as ../../docs/..., which keeps the full path.
-  assert.ok(readme.includes('docs/superpowers/specs/2026-10-09-lead-autonomy-design.md'))
   assert.doesNotMatch(readme, /approves the spec and the plan/)
   assert.doesNotMatch(readme, /the relay of both sides/)
 })
@@ -83,8 +81,6 @@ test('the documents install Aether with Claude Code, and start it with one nativ
     'Never remove the marketplace to change versions',
     'claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort xhigh',
     'claude plugin tag plugins/aether',
-    // docs/changelog.md links this as ../docs/..., which keeps the full path.
-    'docs/superpowers/specs/2026-10-09-installable-plugin-design.md',
   ]
   for (const line of lines) assert.ok(readme.includes(line), line)
 })
@@ -159,7 +155,6 @@ test('the documents record RADAR: the roadmap, decisions A31-A38, and documents 
   const decisions = read('docs', 'decisions.md')
   for (let n = 31; n <= 38; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   assert.match(decisions, /\*\*Update \(2026-10-10, RADAR\)\.\*\*/)
-  assert.ok(fs.existsSync(path.join(ROOT, 'docs', 'roadmap', '2026-10-10-radar.md')))
   const readme = README()
   for (const text of ['**Rápido**', '**Autónomo**', '**Delegación**', '**Asequible**', '**Robusto**', '`aether:writer`', '`aether:judge`', 'specs/NNN-<topic>/', 'AETHER_IRREVERSIBLE=enforce', '`harnesses`']) {
     assert.ok(readme.includes(text), text)
@@ -198,9 +193,6 @@ test('the documents record the decisions and the verified facts', () => {
   for (const fact of ['agent_id', 'agent_type', 'cacheTtl', 'autoCompactWindow', 'CLAUDE_CODE_DISABLE_ADVISOR_TOOL', 'CLAUDE_ENV_FILE', 'allowCrossMarketplaceDependenciesOn', 'extraKnownMarketplaces', 'agent.offer', 'port 0']) {
     assert.ok(research.includes(fact), fact)
   }
-  const v01 = read('docs', 'superpowers', 'specs', '2026-10-07-aether-plugin-design.md')
-  const status = v01.split('\n').find((line) => line.startsWith('- **Status:**'))
-  assert.match(status, /2026-10-08-lead-and-designer-design\.md/)
 })
 
 test('the documents record the design seats: decisions A39-A43, the README, the skill and the evaluation', () => {
@@ -208,14 +200,13 @@ test('the documents record the design seats: decisions A39-A43, the README, the 
   for (let n = 39; n <= 43; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const readme = README()
   assert.match(page('docs/guide/design-seats.md'), /^### Design seats$/m)
-  for (const text of ['`aether:examiner`', '`aether-lane seat`', '`aether-exam`', 'docs/evaluations/seats/README.md', 'specs/001-design-seats/spec.md', 'Fable']) {
+  for (const text of ['`aether:examiner`', '`aether-lane seat`', '`aether-exam`', 'specs/001-design-seats/spec.md', 'Fable']) {
     assert.ok(readme.includes(text), text)
   }
   const lead = read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md')
   for (const text of ['/aether:design', 'aether-exam run', 'aether-report --seats', 'seat/<id>', '`aether:examiner`']) {
     assert.ok(lead.includes(text), text)
   }
-  assert.ok(fs.existsSync(path.join(ROOT, 'docs', 'evaluations', 'seats', 'harness', 'judge-defects.js')))
   assert.ok(fs.existsSync(path.join(ROOT, 'specs', '001-design-seats', 'plan.md')))
 })
 

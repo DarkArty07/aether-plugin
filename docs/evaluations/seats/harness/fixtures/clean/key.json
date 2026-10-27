@@ -1,7 +1,0 @@
-{
-  "intent": "A function `slugify(text)` that lowercases, turns runs of spaces and punctuation into one dash, and trims dashes at both ends. Owner's words: «una función slugify para las URLs».",
-  "documents": ["spec.md"],
-  "check": "the spec against the owner's intent",
-  "expect": "approve",
-  "defects": []
-}
