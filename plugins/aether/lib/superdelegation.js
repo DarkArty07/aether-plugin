@@ -14,12 +14,6 @@ const { NATIVE_HARNESS, NATIVE_MODELS, referenceOf } = require('./pairs.js')
 const TOLERANCE_POINTS = 1
 const ROLES = ['implementer', 'supervisor', 'reviewer']
 
-const LEGACY_NOTES = {
-  'lanes-as-on': 'The lanes option is on and superdelegation is not set, so superdelegation counts as on. Set superdelegation to choose it yourself.',
-  'lanes-ignored': 'The lanes option is ignored: superdelegation is set.',
-  'seats-ignored': 'The seats option no longer exists (native, balanced and robust are gone): its value is ignored.',
-}
-
 // Whether superdelegation may run: the session exported AETHER_SUPERDELEGATION=on, and the platform is Linux
 // (external sessions are killed by process group and /proc).
 function enabled(env = process.env, platform = process.platform) {
@@ -28,32 +22,13 @@ function enabled(env = process.env, platform = process.platform) {
   return { on: true, reason: null }
 }
 
-// The plugin options as Claude Code exports them. A set superdelegation option wins; when it is not set, the
-// old lanes option on counts as on. The old seats option is ignored. legacy names what the owner is told.
+// The plugin option as Claude Code exports it: on only with 'true'; 'false' is set and off; anything else is the default, off.
 function resolveOption(env) {
   const superdelegation = env.CLAUDE_PLUGIN_OPTION_SUPERDELEGATION
-  const lanesOn = env.CLAUDE_PLUGIN_OPTION_LANES === 'true'
-  const seats = env.CLAUDE_PLUGIN_OPTION_SEATS
-  const legacy = []
-  let result
   if (superdelegation === 'true' || superdelegation === 'false') {
-    if (lanesOn) legacy.push('lanes-ignored')
-    result = { on: superdelegation === 'true', source: 'superdelegation' }
-  } else if (lanesOn) {
-    legacy.push('lanes-as-on')
-    result = { on: true, source: 'lanes' }
-  } else {
-    result = { on: false, source: 'default' }
+    return { on: superdelegation === 'true', source: 'superdelegation' }
   }
-  if (typeof seats === 'string' && seats !== '') legacy.push('seats-ignored')
-  return { ...result, legacy }
-}
-
-function legacyNotes(tokens) {
-  return tokens.map((token) => {
-    if (!Object.hasOwn(LEGACY_NOTES, token)) throw new Error(`unknown legacy option token: ${token}`)
-    return LEGACY_NOTES[token]
-  })
+  return { on: false, source: 'default' }
 }
 
 // Points are compared in integer tenths, so that 45.8 reaches 46.8 minus 1 and 45.7 does not.
@@ -239,7 +214,6 @@ module.exports = {
   TOLERANCE_POINTS,
   enabled,
   resolveOption,
-  legacyNotes,
   choose,
   runArgs,
   idleHarnesses,

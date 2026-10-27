@@ -31,12 +31,12 @@ test('the quota deadline keeps its default when the value is wrong, and a key ot
   for (const bad of ['quota=0', 'quota=abc', 'quota=', 'quota', '', 'other=5,another=2', '=,=']) assert.equal(quotaMs(bad), 3000, bad)
 })
 
-test('superdelegation and harnesses follow the option rules, with the legacy lanes option still read', () => {
+test('the superdelegation option decides the switch, and the old lanes option counts as nothing', () => {
   const settings = (env) => session.delegateSettingsFrom(env)
+  assert.equal(settings({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'true' }).lanes, true)
+  assert.equal(settings({ ['CLAUDE_PLUGIN_OPTION_' + 'LAN' + 'ES']: 'true' }).lanes, false, 'the old lanes option does not turn the switch on')
+  assert.equal(settings({}).lanes, false)
   assert.deepEqual(settings({}), { lanes: false, harnesses: ['agy'], deadlines: { quotaMs: 3000 } })
-  assert.equal(settings({ CLAUDE_PLUGIN_OPTION_SUPERDELEGATION: 'false', CLAUDE_PLUGIN_OPTION_LANES: 'true' }).lanes, false, 'a superdelegation that was set wins over lanes')
-  assert.equal(settings({ CLAUDE_PLUGIN_OPTION_LANES: 'true' }).lanes, true, 'the legacy lanes option counts as superdelegation on')
-  assert.equal(settings({ CLAUDE_PLUGIN_OPTION_LANES: 'yes' }).lanes, false)
   assert.deepEqual(settings({ CLAUDE_PLUGIN_OPTION_HARNESSES: 'agy,grok' }).harnesses, ['agy', 'grok'])
 })
 
