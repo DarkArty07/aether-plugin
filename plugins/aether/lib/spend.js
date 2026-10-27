@@ -5,8 +5,8 @@
 // that belongs to the id, priced from config/prices.json and added into one Tally. Spend sources read are
 // usage/, lanes/ and the delegate log, and it no longer reads the old router journal. A prune keeps what it
 // deletes as a summary (spend/<id>.json, written by lib/spend-archive.js); the figure is that summary plus what is
-// still on disk. This module only reads. It reads each source on its own: readUsage and readLog drop what they
-// cannot read, and a dropped request is a dollar that vanishes.
+// still on disk. This module only reads. It reads each source on its own: readUsageEvents, readLaneEvents, and
+// readOutcomeEvents drop what they cannot read, and a dropped request is a dollar that vanishes.
 // Family: spend.
 
 const fs = require('node:fs')

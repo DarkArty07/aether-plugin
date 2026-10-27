@@ -1,8 +1,8 @@
 'use strict'
 
 // Speed, cost, quality, lanes and the RADAR figures of a swarm run (spec §10), from its run directory, the
-// usage meter's files (usage/), the lane log (lanes/), the delegate log and the saved result; and finalize,
-// which records the run and removes what is left of it. Spend sources read are usage/, lanes/ and the delegate log,
+// usage meter's files (usage/), the lane log (lanes/), and the saved result; and finalize, which records the
+// run and removes what is left of it. Spend (aether-report --spend) reads usage/, lanes/, and the delegate log,
 // and it no longer reads the old router journal.
 // Family: none.
 
