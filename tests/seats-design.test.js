@@ -151,7 +151,7 @@ test('C16: a Muse round reads the quota after it parses the output, so the allow
     record('run.terminal.completed', { kind: 'run_terminal', terminal: 'completed', reason: null, text: answer }),
     record('run.usage', { kind: 'run_usage', allowance, calls: 1, completed_calls: 1, failed_calls: 0, cancelled_calls: 0, children_included: false, models: [{ model: 'muse-wonder-full-1.0', calls: 1, input_tokens: 10, output_tokens: 2, cached_tokens: 0, reasoning_tokens: 0 }] }),
   ].join('\n')}\n`
-  const env = { ...laneEnv(t, { mutate: (config) => { config.harnesses.muse.command = FAKE_MUSE } }), AETHER_SUPERDELEGATION: 'on', AETHER_LANE_HARNESSES: 'muse', AETHER_FAKE_MUSE_SCRIPT: JSON.stringify({ stdout }) }
+  const env = { ...laneEnv(t, { mutate: (config) => { config.harnesses.muse.command = FAKE_MUSE; config.harnesses.muse.models['muse-wonder-full-1.0'].roles.push('judge') } }), AETHER_SUPERDELEGATION: 'on', AETHER_LANE_HARNESSES: 'muse', AETHER_FAKE_MUSE_SCRIPT: JSON.stringify({ stdout }) }
   const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], env, 'Review it.')
   assert.equal(r.status, 0, r.stdout)
   assert.equal(r.json.harness, 'muse')
@@ -165,7 +165,7 @@ const ARGON = 'agy/gemini-4-argon@high'
 const OPUS_PAIR = 'agy/claude-opus-5-5@high'
 const { pairs: PAIR_TABLE } = loadPairs()
 const openIn = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString() })
-const seatConfig = { harnesses: { agy: { timeouts: { judge: 1200, writer: 2700, examiner: 1800 } } } }
+const seatConfig = lanes.loadConfig(lanes.CONFIG_FILE)
 const chooseExcluded = (seat, more = {}) => seats.chooseSeat({
   config: seatConfig,
   pairs: PAIR_TABLE,
@@ -179,14 +179,18 @@ const whyOf = (chosen, id) => chosen.tried.find((entry) => entry.id === id)
 
 test('--exclude reaches the choice and the next pair of the rule takes the seat', (t) => {
   const chosen = chooseExcluded('judge', { exclude: [ARGON] })
-  assert.equal(chosen.external.pair.id, OPUS_PAIR)
+  assert.equal(chosen.external, undefined)
+  assert.equal(chosen.native.agent, 'aether:judge')
+  assert.equal(chosen.native.model, 'opus')
   assert.deepEqual(whyOf(chosen, ARGON), { id: ARGON, outcome: 'passed', why: 'excluded' })
   const repo = seatRepo(t)
   const env = laneEnv(t, { quota: geminiFirst() })
   const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--exclude', ARGON], env, judgeInput)
-  assert.equal(r.status, 0, r.stdout)
-  assert.equal(r.json.model, 'claude-opus-5-5')
-  assert.equal(argAfter(agyTurns(env)[0].argv, '--model'), 'claude-opus-5-5-high')
+  assert.equal(r.status, 3, r.stdout)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.equal(r.json.native.agent, 'aether:judge')
+  assert.equal(r.json.native.model, 'opus')
+  assert.deepEqual(agyTurns(env), [])
 })
 
 test('excluding every pair that can take the round hands it to the native agent', (t) => {
@@ -219,25 +223,20 @@ test('a malformed --exclude is a usage error', (t) => {
 })
 
 test('the author rule holds together with an exclusion', (t) => {
-  const note = 'the same family that wrote the document judged it: no other external pair could'
   for (const seatName of ['judge', 'examiner']) {
     const chosen = chooseExcluded(seatName, { author: 'opus', exclude: [ARGON] })
-    assert.equal(chosen.external.pair.id, OPUS_PAIR, seatName)
-    assert.equal(chosen.note, note, seatName)
-    assert.match(chosen.decision.reason, /same family that wrote the document judged it/, seatName)
+    assert.equal(chosen.external, undefined, seatName)
+    assert.equal(chosen.native.agent, `aether:${seatName}`, seatName)
     assert.notEqual(chosen.decision.native.model, 'opus', seatName)
     assert.equal(chosen.decision.native.model, 'sonnet', seatName)
     assert.equal(whyOf(chosen, ARGON).why, 'excluded', seatName)
-    assert.equal(whyOf(chosen, OPUS_PAIR).why, null, seatName)
   }
   const repo = seatRepo(t)
   const env = laneEnv(t, { quota: geminiFirst() })
   const r = seat(repo.dir, ['judge', '--session', 's1', '--author', 'opus', '--feature', FEATURE, '--exclude', ARGON], env, judgeInput)
-  assert.equal(r.status, 0, r.stdout)
-  assert.equal(r.json.model, 'claude-opus-5-5')
-  assert.equal(r.json.note, note)
-  const call = lanes.readLog(env.AETHER_DATA_DIR).find((entry) => entry.kind === 'call')
-  assert.equal(call.note, note)
-  assert.match(call.reason, /same family that wrote the document judged it/)
-  assert.equal(argAfter(agyTurns(env)[0].argv, '--model'), 'claude-opus-5-5-high')
+  assert.equal(r.status, 3, r.stdout)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.equal(r.json.native.agent, 'aether:judge')
+  assert.equal(r.json.native.model, 'sonnet')
+  assert.deepEqual(agyTurns(env), [])
 })

@@ -116,7 +116,7 @@ function quotaViewOf(harnesses, pair) {
 
 // The design seats ask choose with the author family as a reserve: another family first, then the author's
 // own, and the native agent only last. The swarm and aether-lane delegate keep the default, which is a bar.
-function seatChoice(seat, { pairs, harnesses, exclude, authors }) {
+function seatChoice(seat, { pairs, harnesses, exclude, authors, lanes }) {
   return choose({
     pairs,
     reference: REFERENCE[seat],
@@ -125,6 +125,8 @@ function seatChoice(seat, { pairs, harnesses, exclude, authors }) {
     authors,
     nativeDiffers: seat !== 'writer',
     authorRule: 'reserve',
+    role: seat,
+    lanes,
   })
 }
 
@@ -133,15 +135,15 @@ function seatChoice(seat, { pairs, harnesses, exclude, authors }) {
 // pair the Judge can use. Null when the Judge has another candidate, when the Writer would not have taken
 // this one, or when holding it back would leave the Writer with no external pair. The document is not written
 // yet, so the Judge is asked with no author.
-function reservedPair(offeredPairs, harnesses, exclude, authors) {
-  const judge = seatChoice('judge', { pairs: offeredPairs, harnesses, exclude: [], authors: [] })
+function reservedPair(offeredPairs, harnesses, exclude, authors, lanes) {
+  const judge = seatChoice('judge', { pairs: offeredPairs, harnesses, exclude: [], authors: [], lanes })
   const open = judge.candidates.filter((candidate) => candidate.why === null)
   if (open.length !== 1) return null
   const held = open[0].id
   if (exclude.includes(held)) return null
-  const writer = seatChoice('writer', { pairs: offeredPairs, harnesses, exclude, authors })
+  const writer = seatChoice('writer', { pairs: offeredPairs, harnesses, exclude, authors, lanes })
   if (!writer.picked || writer.picked.id !== held) return null
-  const without = seatChoice('writer', { pairs: offeredPairs, harnesses, exclude: [...exclude, held], authors })
+  const without = seatChoice('writer', { pairs: offeredPairs, harnesses, exclude: [...exclude, held], authors, lanes })
   return without.picked ? held : null
 }
 
@@ -159,8 +161,8 @@ function chooseSeat({ config, pairs, seat, author = null, harnesses, offered = (
   const authors = authorId === null ? [] : [authorId]
   const dropped = pairs.filter((pair) => pair.harness !== pairsTable.NATIVE_HARNESS && !offered(pair.harness, pair.model, pair.effort))
   const offeredPairs = pairs.filter((pair) => !dropped.includes(pair))
-  const reserved = seat === 'writer' ? reservedPair(offeredPairs, harnesses, exclude, authors) : null
-  const chosen = seatChoice(seat, { pairs: offeredPairs, harnesses, exclude: reserved === null ? exclude : [...exclude, reserved], authors })
+  const reserved = seat === 'writer' ? reservedPair(offeredPairs, harnesses, exclude, authors, config) : null
+  const chosen = seatChoice(seat, { pairs: offeredPairs, harnesses, exclude: reserved === null ? exclude : [...exclude, reserved], authors, lanes: config })
   const notOffered = dropped.map((pair) => ({
     id: pair.id, harness: pair.harness, group: pair.group, intelligence: pair.intelligence, costPerTaskUsd: pair.costPerTaskUsd, rank: null, outcome: 'passed', why: 'not-offered',
   }))
