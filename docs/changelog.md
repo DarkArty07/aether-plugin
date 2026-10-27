@@ -8,6 +8,12 @@ order: 31
 
 ## Status
 
+Version 0.23.0: the Muse lane is brought up to date ([decisions](decisions.md) A96, issue 108, [Lanes](guide/lanes.md#muse)). What changed since 0.22.0:
+- **Muse's balance is read by a real call.** A Muse reading older than 30 minutes is renewed by one minimal call (Spark 1.3, `minimal` effort, a one-word prompt, about 54,000 input tokens of the subscription) that runs in a fresh temporary directory with the lane environment, one at a time under a lock, and is not repeated for 10 minutes after a failure. `muse usage` only repeats the last observation of a model call, so there is no free reading. `aether-lane quota --refresh`, the quota step of a wave, `aether-lane pick` and the delegate path use it; the delegate path waits up to 20 seconds for it.
+- **Muse Spark 1.3 serves at five efforts.** `xhigh` and `max` are measured; `low`, `medium` and `high` are estimates of points and cost per task taken from the curves of the Claude models and marked as such in their `ownerDecision`. A Haiku-level call lands on `medium`.
+- **Muse Wonder 1.0 enters at `max`** (52.4 points, US$ 4.54 per task), and the listing of `muse serve` is captured again: four models, of which Muse Spark 1.2 stays out by the owner's decision.
+- **The panel's `r` key makes the Muse call** when Muse is enabled; the guide says so.
+
 Version 0.22.0: the plugin is cleaned and made coherent before it is opened ([decisions](decisions.md) A94 and A95, [the spec](../specs/017-public-ready-cleanup/spec.md), [Components](reference/components.md)). Two behaviours change and the rest keeps its behaviour. What changed since 0.21.0:
 - **Names of behaviour that no longer exists are gone.** The `lanes` and `seats` options, `AETHER_SUPERDELEGATION_LEGACY`, the reader of the old router journal and the removal of `.router.json` files no longer exist. Set `superdelegation: true` in the plugin options before you update: `lanes: true` is not read any more. The spend of the sessions before 2026-10-22, which only the old journal held, no longer shows in `/spend`.
 - **The `roles` of `config/lanes.json` now filter.** `choose` takes the role of the call and gives only a pair whose model lists it; the swarm, the delegate loop and the design seats pass theirs, a delegate that only reads counts as `reviewer`, and a pair whose model has no entry in the table is left out with the reason `role`.

@@ -560,9 +560,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A95 are recorded and the changelog opens with 0.22.0, then 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
+test('R15: the decisions A50 to A96 are recorded and the changelog opens with 0.23.0, then 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 95
+  const LAST_DECISION = 96
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -596,17 +596,19 @@ test('R15: the decisions A50 to A95 are recorded and the changelog opens with 0.
   assert.ok(/cheapest model and effort/.test(line(93)) && /Terminal-Bench/.test(line(93)) && /A87/.test(line(93)))
   assert.ok(/Muse Spark 1.3/.test(line(94)) && /fixes #101/.test(line(94)))
   assert.ok(/roles its list names/.test(line(95)) && /extends A65/.test(line(95)))
+  assert.ok(/minimal real call/.test(line(96)) && /muse-wonder-1\.0/.test(line(96)) && /fixes #108/.test(line(96)))
   for (const n of [18, 36, 87]) assert.ok(/Update \(A93\)/.test(line(n)), `A${n} has its update note`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const versions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(versions[0].startsWith('Version 0.22.0: ') && versions[0].includes('A95'), versions[0])
-  assert.ok(versions[1].startsWith('Version 0.21.0: ') && versions[1].includes('A93'), versions[1])
-  assert.ok(versions[2].startsWith('Version 0.20.1: ') && versions[2].includes('A92'), versions[2])
-  assert.ok(versions[3].startsWith('Version 0.20.0: '), versions[3])
-  assert.ok(versions[4].startsWith('Version 0.19.2: ') && versions[4].includes('issues/86'), versions[4])
-  assert.ok(versions[5].startsWith('Version 0.19.1: ') && versions[5].includes('issues/82'), versions[5])
-  assert.ok(versions[6].startsWith('Version 0.19.0: '), versions[6])
+  assert.ok(versions[0].startsWith('Version 0.23.0: ') && versions[0].includes('A96'), versions[0])
+  assert.ok(versions[1].startsWith('Version 0.22.0: ') && versions[1].includes('A95'), versions[1])
+  assert.ok(versions[2].startsWith('Version 0.21.0: ') && versions[2].includes('A93'), versions[2])
+  assert.ok(versions[3].startsWith('Version 0.20.1: ') && versions[3].includes('A92'), versions[3])
+  assert.ok(versions[4].startsWith('Version 0.20.0: '), versions[4])
+  assert.ok(versions[5].startsWith('Version 0.19.2: ') && versions[5].includes('issues/86'), versions[5])
+  assert.ok(versions[6].startsWith('Version 0.19.1: ') && versions[6].includes('issues/82'), versions[6])
+  assert.ok(versions[7].startsWith('Version 0.19.0: '), versions[7])
 })
 
 // ---- R21: the retired profiles and variables
