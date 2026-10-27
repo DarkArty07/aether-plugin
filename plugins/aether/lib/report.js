@@ -1,7 +1,10 @@
 'use strict'
 
 // Speed, cost, quality, lanes and the RADAR figures of a swarm run (spec §10), from its run directory, the
-// usage meter's files, the lane log and the saved result; and finalize, which records the run and removes what is left of it.
+// usage meter's files (usage/), the lane log (lanes/), and the saved result; and finalize, which records the
+// run and removes what is left of it. Spend (aether-report --spend) reads usage/, lanes/, and the delegate log,
+// and it no longer reads the old router journal.
+// Family: none.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -12,7 +15,7 @@ const { loadPrices, priceEntry } = require('./prices.js')
 const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
 const { judge } = require('./baseline.js')
-const { isSessionId } = require('./spend.js')
+const { isSessionId, newestIn } = require('./spend.js')
 const { archiveSpend, noteFailure, clearFailure } = require('./spend-archive.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
@@ -34,17 +37,6 @@ function readIfThere(file) {
   return fs.existsSync(file) ? run.readJson(file) : null
 }
 
-// The newest modification time of a session's usage directory and its parts, or null.
-function lastWritten(dir) {
-  try {
-    let newest = fs.statSync(dir).mtimeMs
-    for (const name of fs.readdirSync(dir)) newest = Math.max(newest, fs.statSync(path.join(dir, name)).mtimeMs)
-    return newest
-  } catch {
-    return null
-  }
-}
-
 // Every usage session under <dataDir>/usage written to at or after `since`, as
 // { session, claudeCode, agents, entries }, with its parts merged in order. A part that cannot be
 // read is skipped, and so is a session with no entries.
@@ -53,7 +45,7 @@ function readUsage(dataDir, { since = 0 } = {}) {
   const sessions = new Map()
   if (!fs.existsSync(root)) return sessions
   for (const session of fs.readdirSync(root)) {
-    const written = lastWritten(path.join(root, session))
+    const written = newestIn(path.join(root, session))
     if (written === null || written < since) continue
     let names
     try {
@@ -651,7 +643,7 @@ function pruneUsage(dataDir, { days = 30, now = Date.now(), prices } = {}) {
   if (!fs.existsSync(root)) return { pruned }
   for (const session of fs.readdirSync(root).sort()) {
     const dir = path.join(root, session)
-    const written = lastWritten(dir)
+    const written = newestIn(dir)
     if (written === null || now - written < days * DAY_MS) continue
     if (isSessionId(session)) {
       try {

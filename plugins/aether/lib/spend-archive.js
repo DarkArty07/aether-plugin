@@ -4,8 +4,9 @@
 // deletes a session's meter parts or its lane log, archiveSpend adds what that source spent to the session's summary.
 // The summary is only added to, never replaced. Its mark per source (`through`) is the newest time it holds of that
 // source, and lib/spend.js skips what is still on disk at or before the mark: an archive repeated, a delete that
-// failed after the archive, or a read between the two count every event once. The router's journal is not archived:
+// failed after the archive, or a read between the two count every event once. The delegate log is not archived:
 // nobody prunes it. A prune that could not archive a session leaves a trace of it (noteFailure, at the end).
+// Family: spend.
 
 const fs = require('node:fs')
 const path = require('node:path')
