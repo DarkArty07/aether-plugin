@@ -122,6 +122,9 @@
       'c2.t': 'El examen se guarda fuera del repositorio: el swarm nunca lo ve. Un test que falle es un hallazgo bloqueante del brief.',
       'c3.h': 'Supervisor y revisión final',
       'c3.t': 'Un supervisor revisa cada intento y califica cada criterio con evidencia. Al final, una revisión independiente cubre todo lo fusionado.',
+      'brake.alt': 'Tres unidades construyen mientras sube el medidor de la ventana de 5 horas. Al llegar al 95 % el Lead frena en orden: no empieza nada nuevo, se detiene lo que corre y cada unidad guarda su trabajo en su rama. La corrida duerme en pausa hasta que la ventana se reinicia, y entonces sigue desde las ramas sin repetir la unidad ya fundida',
+      'c4.h': 'Freno de cuota',
+      'c4.t': 'Cuando la ventana de 5 horas de tu cuenta de Claude llega al 95 % (<code>quotabrake</code>), el plugin te avisa. En una corrida autónoma el Lead frena en orden: no empieza nada nuevo, detiene lo que corre y guarda el trabajo de cada unidad en su rama. La corrida queda en pausa, no termina: al reiniciarse la ventana sigue sola, sin repetir lo ya fundido. Solo tus palabras apagan el freno.',
       'term.lines': [
         '$ git push origin main',
         '# aether-guard: ningún permiso cubre este push',
@@ -283,6 +286,9 @@
       'c2.t': 'The exam is kept outside the repository: the swarm never sees it. A failing test is a blocking finding of the brief.',
       'c3.h': 'Supervisor and final review',
       'c3.t': 'A supervisor reviews every attempt and grades each criterion from evidence. At the end, an independent review covers everything that merged.',
+      'brake.alt': 'Three units build while the five-hour window gauge rises. At 95 % the Lead brakes in order: nothing new starts, what is running stops and each unit saves its work on its own branch. The run sleeps, paused, until the window resets, then carries on from the branches without redoing the merged unit',
+      'c4.h': 'Quota brake',
+      'c4.t': 'When the five-hour window of your Claude account reaches 95 % (<code>quotabrake</code>), the plugin warns you. In an autonomous run the Lead brakes in order: nothing new starts, what is running stops and the work of each unit is saved on its own branch. The run pauses, it does not end: when the window resets it carries on by itself, without redoing what is already merged. Only your own words turn the brake off.',
       'term.lines': [
         '$ git push origin main',
         '# aether-guard: no grant covers this push',
