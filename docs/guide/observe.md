@@ -1,6 +1,6 @@
 ---
 title: Self-observation
-description: How the plugin watches its own use in a Lead session, what the standard and the development installations gather, the five hooks and the five verbs of aether-observe, and the promise that nothing leaves your machine
+description: How the plugin watches its own use in a Lead session, what the standard and the development installations gather, the five hooks and the one verb of aether-observe, and the promise that nothing leaves your machine
 order: 17
 ---
 
@@ -30,7 +30,7 @@ The handler is `aether-observe hook`, and five hooks call it:
 
 Each one writes one line to `observe/events.jsonl` with its time, the session, the kind of event and an identifier or a class, never a message. In a session that is not the Lead's they write and print nothing. `aether-observe hook` prints nothing ever and always exits 0, so it cannot slow or break a request.
 
-The detection runs by itself when a Lead session ends: the `SessionEnd` hook digests the session into the durable summary and reads what was gathered. `aether-observe read` only repeats that reading by hand, whenever you want to see it.
+The detection runs by itself when a Lead session ends: the `SessionEnd` hook digests the session into the durable summary and reads what was gathered.
 
 ## What it points out
 
@@ -41,17 +41,11 @@ The reading is an ordered list of findings, each with its evidence and its numbe
 
 The thresholds are data in `config/observe.json`.
 
-## The commands
-
-All of them run from any shell, like `aether-report`; each verb but `hook` prints one JSON line.
+## The command
 
 | Command | What it does |
 |---|---|
 | `aether-observe hook` | The handler of the five hooks above. It reads the hook's JSON from its input and prints nothing |
-| `aether-observe read` | Prints the ordered findings and drafts the issue of each failure |
-| `aether-observe baseline` | Prints the numbers that the data directory already holds, as a reference, and saves them in `observe/baseline.json`; `--from <dir>` reads another data directory, in read-only, such as the installed plugin's |
-| `aether-observe status` | Shows what is kept under `observe/`, by class and size |
-| `aether-observe forget --yes` | Deletes `observe/` and nothing else; without `--yes` it deletes nothing and prints the folder it would delete |
 
 ## What is kept, and for how long
 
@@ -72,4 +66,4 @@ Three functions of Aether that existed before the observation are exempt, becaus
 
 ## What the development installation keeps about your corrections
 
-The development installation also looks for the moments when you correct the Lead. When a Lead session ends, it reads once the messages you typed in that session's conversation file and keeps those that contain a phrase of the `correctionPatterns` lists in `config/observe.json` (Spanish and English, for example "eso no", "te dije", "that's not", "i said"; edit the lists as you like). It is a heuristic of words, not a judgment: some matches are not corrections, and some corrections have none of those words. For each match, up to 20 per session, it keeps your message cut to 400 characters and the last 400 characters of what the Lead had said just before it, both with keys and tokens removed, in `observe/dev/<session>/corrections.json` (mode 600). The file is rewritten at each session end and deleted after 30 days like the other development fragments. The reading (`aether-observe read`) never shows that text: it reports only an `owner-correction` item with the count, the first and last time and the file name; the text is not copied into the summary or into an issue draft. The standard installation never reads what you type. To delete it all, run `aether-observe forget --yes`.
+The development installation also looks for the moments when you correct the Lead. When a Lead session ends, it reads once the messages you typed in that session's conversation file and keeps those that contain a phrase of the `correctionPatterns` lists in `config/observe.json` (Spanish and English, for example "eso no", "te dije", "that's not", "i said"; edit the lists as you like). It is a heuristic of words, not a judgment: some matches are not corrections, and some corrections have none of those words. For each match, up to 20 per session, it keeps your message cut to 400 characters and the last 400 characters of what the Lead had said just before it, both with keys and tokens removed, in `observe/dev/<session>/corrections.json` (mode 600). The file is rewritten at each session end and deleted after 30 days like the other development fragments. The reading at session end never shows that text: it reports only an `owner-correction` item with the count, the first and last time and the file name; the text is not copied into the summary or into an issue draft. The standard installation never reads what you type. To delete it all, delete the `observe/` folder of the data directory.

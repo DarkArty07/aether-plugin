@@ -16,7 +16,7 @@ test('the observe guide has its front matter and says what each installation gat
   assert.match(front[1], /^order: \d+$/m)
   for (const word of ['standard', 'dev', 'AETHER_OBSERVE']) assert.ok(page.includes(`\`${word}\``), word)
   for (const order of ['claude plugin install aether@aether-plugin', 'scripts/aether-lead --plugin-dir']) assert.ok(page.includes(order), order)
-  for (const verb of ['aether-observe hook', 'aether-observe read', 'aether-observe baseline', 'aether-observe status', 'aether-observe forget --yes']) assert.ok(page.includes(verb), verb)
+  for (const verb of ['aether-observe hook']) assert.ok(page.includes(verb), verb)
   for (const event of ['PostToolUse', 'PostToolUseFailure', 'StopFailure', 'PreCompact', 'SessionEnd']) assert.ok(page.includes(event), event)
 })
 

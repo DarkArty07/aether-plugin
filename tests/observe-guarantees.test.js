@@ -8,6 +8,9 @@ const { spawnSync } = require('node:child_process')
 const { tempDir, makeRepo, PLUGIN } = require('./helpers.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-observe')
+const { readObservations } = require(path.join(PLUGIN, 'lib', 'observe-read.js'))
+const { baseline } = require(path.join(PLUGIN, 'lib', 'observe-baseline.js'))
+const observe = require(path.join(PLUGIN, 'lib', 'observe.js'))
 const MARK = 'ZEBRA-QUOKKA-7731'
 const GH = 'ghp_' + 'a1B2c3D4e5'.repeat(3) + 'abcdef'
 const KEY = 'sk-ant-api03-' + 'A1b2C3d4'.repeat(6)
@@ -54,15 +57,11 @@ test('in the standard installation the marked phrase reaches no file the observa
   seedSources(dir, repo)
   const transcript = transcriptFile(dir)
   for (const event of EVENTS) assert.equal(bin(['hook'], { dir, home, input: input(event, transcript) }).status, 0)
-  const read = bin(['read'], { dir, home, cwd: repo.dir })
-  const baseline = bin(['baseline'], { dir, home })
-  const status = bin(['status'], { dir, home })
-  for (const r of [read, baseline, status]) {
-    assert.equal(r.status, 0)
-    assert.equal(r.stdout.includes(MARK), false)
-    assert.equal(r.stderr.includes(MARK), false)
+  const read = readObservations({ dataDir: dir, repoRoot: repo.dir })
+  for (const out of [read, baseline({ from: dir, to: dir, repoRoot: repo.dir }), observe.status(dir)]) {
+    assert.equal(JSON.stringify(out).includes(MARK), false)
   }
-  assert.ok(JSON.parse(read.stdout).items.some((i) => i.type === 'blocked-by-mistake'), 'the pending and grants sources were read')
+  assert.ok(read.items.some((i) => i.type === 'blocked-by-mistake'), 'the pending and grants sources were read')
   const written = files(path.join(dir, 'observe'))
   assert.ok(written.length > 3)
   for (const file of written) assert.equal(fs.readFileSync(file, 'utf8').includes(MARK), false, file)
@@ -161,8 +160,9 @@ test('a finding becomes a local draft and no issue is opened; nothing is written
   const sentinel = path.join(bindir, 'gh-was-called')
   write(path.join(bindir, 'gh'), `#!/bin/sh\ntouch "${sentinel}"\n`)
   fs.chmodSync(path.join(bindir, 'gh'), 0o755)
+  lead(dir)
   seedSources(dir, repo)
-  const r = bin(['read'], { dir, home, cwd: repo.dir, env: { PATH: `${bindir}:${process.env.PATH}` } })
+  const r = bin(['hook'], { dir, home, input: input('SessionEnd', transcriptFile(dir), { cwd: repo.dir }), env: { PATH: `${bindir}:${process.env.PATH}` } })
   assert.equal(r.status, 0)
   assert.ok(files(path.join(dir, 'observe', 'issues')).length >= 1)
   assert.equal(fs.existsSync(sentinel), false)

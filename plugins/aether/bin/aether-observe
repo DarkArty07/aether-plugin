@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-observe hook | read | baseline [--from <dir>] | status | forget [--yes]
+// aether-observe hook
 // hook: the handler of the observation hooks; reads the hook's JSON from stdin, prints nothing, always exits 0.
-// read: the ordered findings of the data gathered. baseline: the numbers of a data directory, as a reference.
-// status: what is kept under observe/. forget: deletes observe/ (with --yes). Each verb but hook prints one JSON line.
+// Any other use prints one JSON line with the usage error and exits 1.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 
-const USAGE = 'usage: aether-observe hook | read | baseline [--from <dir>] | status | forget [--yes]'
+const USAGE = 'usage: aether-observe hook'
 
 function hook() {
   try {
@@ -22,20 +21,6 @@ function hook() {
   return 0
 }
 
-// The main checkout of the repository that holds the working directory, or null outside one.
-function repoRoot() {
-  try {
-    return require(path.join(lib, 'git.js')).repoPaths(process.cwd()).mainRoot || null
-  } catch {
-    return null
-  }
-}
-
-function print(value) {
-  process.stdout.write(`${JSON.stringify(value)}\n`)
-  return 0
-}
-
 function fail(message) {
   process.stdout.write(`${JSON.stringify({ error: message })}\n`)
   return 1
@@ -44,21 +29,6 @@ function fail(message) {
 function main(args) {
   const [verb, ...rest] = args
   if (verb === 'hook' && rest.length === 0) return hook()
-  const { dataDir } = require(path.join(lib, 'run.js'))
-  const observe = require(path.join(lib, 'observe.js'))
-  if (verb === 'status' && rest.length === 0) return print(observe.status(dataDir()))
-  if (verb === 'forget' && (rest.length === 0 || (rest.length === 1 && rest[0] === '--yes'))) {
-    return print(observe.forget(dataDir(), { yes: rest[0] === '--yes' }))
-  }
-  if (verb === 'read' && rest.length === 0) {
-    const { generatedAt, items } = require(path.join(lib, 'observe-read.js')).readObservations({ dataDir: dataDir(), repoRoot: repoRoot() })
-    return print({ generatedAt, items })
-  }
-  if (verb === 'baseline' && (rest.length === 0 || (rest.length === 2 && rest[0] === '--from' && !rest[1].startsWith('--')))) {
-    const to = dataDir()
-    const from = rest.length === 2 ? rest[1] : to
-    return print(require(path.join(lib, 'observe-baseline.js')).baseline({ from, to, repoRoot: repoRoot() }))
-  }
   return fail(USAGE)
 }
 

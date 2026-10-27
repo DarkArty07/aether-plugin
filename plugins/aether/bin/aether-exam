@@ -5,7 +5,6 @@
 //                                                        checkout, which is removed once it is kept)
 // aether-exam run <specs/NNN-topic> [--ref <commit>]    runs it on a commit (default: HEAD) in a disposable
 //                                                        worktree; ok is false when a test failed twice
-// aether-exam list                                      the exams kept for this repository
 //
 // Prints one JSON line. Exits 1 only when the command itself fails.
 
@@ -14,7 +13,7 @@ const lib = path.join(__dirname, '..', 'lib')
 const { repoPaths } = require(path.join(lib, 'git.js'))
 const exam = require(path.join(lib, 'exam.js'))
 
-const USAGE = 'usage: aether-exam store <specs/NNN-topic> [--from <dir>] | run <specs/NNN-topic> [--ref <commit>] | list'
+const USAGE = 'usage: aether-exam store <specs/NNN-topic> [--from <dir>] | run <specs/NNN-topic> [--ref <commit>]'
 
 function value(args, flag) {
   const i = args.indexOf(flag)
@@ -27,7 +26,6 @@ function value(args, flag) {
 function main(argv) {
   const [verb, feature, ...rest] = argv
   const cwd = process.cwd()
-  if (verb === 'list') return { exams: exam.list(repoPaths(cwd).mainRoot) }
   if (!['store', 'run'].includes(verb) || !feature || feature.startsWith('--')) throw new Error(USAGE)
   const normalized = feature.replace(/\/+$/, '')
   if (verb === 'store') {

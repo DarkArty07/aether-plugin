@@ -2,11 +2,10 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { tempDir, makeRepo, PLUGIN } = require('./helpers.js')
+const { tempDir, PLUGIN } = require('./helpers.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-observe')
 
@@ -21,14 +20,6 @@ function lead(dir, id = 's-1') {
   fs.writeFileSync(path.join(dir, 'sessions', `${id}.json`), '{}')
 }
 const hookInput = (over = {}) => JSON.stringify({ session_id: 's-1', hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', error: 'ZEBRA', ...over })
-function snapshot(dir) {
-  const out = {}
-  for (const e of fs.readdirSync(dir, { recursive: true })) {
-    const f = path.join(dir, e)
-    if (fs.statSync(f).isFile()) out[e] = crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex')
-  }
-  return out
-}
 
 test('hook prints nothing, in a Lead session and out of it, and leaves a plain session untouched (E10, R13)', (t) => {
   const plain = tempDir(t)
@@ -44,57 +35,14 @@ test('hook prints nothing, in a Lead session and out of it, and leaves a plain s
   assert.deepEqual([r3.status, r3.stdout], [0, ''])
 })
 
-test('read prints one JSON line with the ordered items and drafts the issue (R7)', (t) => {
-  const dir = tempDir(t)
-  const repo = makeRepo(t)
-  fs.mkdirSync(path.join(dir, 'delegates'), { recursive: true })
-  fs.writeFileSync(path.join(dir, 'delegates', 'log.jsonl'), [
-    { kind: 'launch', time: 10, session: 's-1', task: 't2', step: 'haiku', attempt: 1, launchKind: 'first' },
-    { kind: 'launch', time: 30, session: 's-1', task: 't2', step: 'sonnet', attempt: 2, launchKind: 'rise' },
-  ].map((e) => JSON.stringify(e)).join('\n') + '\n')
-  const r = bin(['read'], dir, { cwd: repo.dir })
-  assert.equal(r.status, 0)
-  assert.equal(r.stdout.trim().split('\n').length, 1)
-  assert.equal(r.json.items[0].type, 'rise-without-reason')
-  assert.ok(r.json.items[0].issue.body.length > 0)
-  assert.ok(fs.existsSync(path.join(dir, 'observe', 'issues', 'rise-without-reason-t2-2.md')))
-})
-
-test('baseline reads --from without changing it and writes only to the data directory (R15)', (t) => {
-  const dir = tempDir(t)
-  const from = tempDir(t)
-  fs.mkdirSync(path.join(from, 'delegates'), { recursive: true })
-  fs.writeFileSync(path.join(from, 'delegates', 'log.jsonl'), JSON.stringify({ kind: 'launch', time: 1, session: 's-1', task: 'a', step: 'haiku', attempt: 1, launchKind: 'first' }) + '\n')
-  const before = snapshot(from)
-  const r = bin(['baseline', '--from', from], dir)
-  assert.equal(r.status, 0)
-  assert.equal(r.json.approvalsByStep.haiku.launches, 1)
-  assert.deepEqual(snapshot(from), before)
-  assert.ok(fs.existsSync(path.join(dir, 'observe', 'baseline.json')))
-})
-
-test('status shows what was gathered, forget without --yes deletes nothing, with --yes deletes it (E11, R14)', (t) => {
-  const dir = tempDir(t)
-  lead(dir)
-  bin(['hook'], dir, { input: hookInput() })
-  const status = bin(['status'], dir)
-  assert.ok(status.json.classes.events.bytes > 0)
-  assert.equal(bin(['forget'], dir).json.deleted, false)
-  assert.ok(fs.existsSync(path.join(dir, 'observe')))
-  assert.equal(bin(['forget', '--yes'], dir).json.deleted, true)
-  assert.equal(fs.existsSync(path.join(dir, 'observe')), false)
-  assert.ok(fs.existsSync(path.join(dir, 'sessions', 's-1.json')))
-})
-
-test('the verbs that read run from any shell, with no plugin variable; a bad verb is a usage error', (t) => {
+test('hook runs from any shell, with no plugin variable; a bad verb is a usage error', (t) => {
   const dir = tempDir(t)
   const env = { CLAUDE_PLUGIN_ROOT: '', CLAUDE_PLUGIN_DATA: '' }
-  assert.equal(bin(['status'], dir, { env }).status, 0)
-  assert.equal(bin(['read'], dir, { env }).status, 0)
+  assert.equal(bin(['hook'], dir, { env, input: hookInput() }).status, 0)
   const bad = bin(['nope'], dir)
   assert.equal(bad.status, 1)
   assert.match(bad.json.error, /^usage: aether-observe/)
-  assert.equal(bin(['status', 'extra'], dir).status, 1)
+  assert.equal(bin(['hook', 'extra'], dir).status, 1)
 })
 
 test('hooks.json runs the five new hooks and the manifest gains no option (R3, R9)', () => {
