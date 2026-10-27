@@ -109,32 +109,21 @@ function mark(sessionId) {
   }
 }
 
-// Appends the superdelegation option, what of the old options is ignored and the harness list to
-// CLAUDE_ENV_FILE; returns false when it could not. The option is resolved by lib/superdelegation.js, the
-// legacy tokens say which old values were read or ignored, and the list is the option's known names, or agy
-// when none is valid: lanes.js reads it the same way.
+// Appends the superdelegation option and the harness list to CLAUDE_ENV_FILE; returns false when it
+// could not. The option is resolved by lib/superdelegation.js, and the list is the option's known names,
+// or agy when none is valid: lanes.js reads it the same way.
 function passSuperdelegation() {
   const file = process.env.CLAUDE_ENV_FILE
   if (!file) return false
   try {
     const { resolveOption } = require(path.join(root, 'lib', 'superdelegation.js'))
     const { enabledHarnesses } = require(path.join(root, 'lib', 'lanes.js'))
-    const { on, legacy } = resolveOption(process.env)
+    const { on } = resolveOption(process.env)
     const harnesses = enabledHarnesses({ AETHER_LANE_HARNESSES: process.env.CLAUDE_PLUGIN_OPTION_HARNESSES })
-    fs.appendFileSync(file, `export AETHER_SUPERDELEGATION=${on ? 'on' : 'off'}\nexport AETHER_SUPERDELEGATION_LEGACY=${legacy.join(',')}\nexport AETHER_LANE_HARNESSES=${harnesses.join(',')}\n`)
+    fs.appendFileSync(file, `export AETHER_SUPERDELEGATION=${on ? 'on' : 'off'}\nexport AETHER_LANE_HARNESSES=${harnesses.join(',')}\n`)
     return true
   } catch {
     return false
-  }
-}
-
-// What the owner is told about old option values that were read or ignored; empty when there are none.
-function legacyContext() {
-  try {
-    const { resolveOption, legacyNotes } = require(path.join(root, 'lib', 'superdelegation.js'))
-    return legacyNotes(resolveOption(process.env).legacy)
-  } catch {
-    return []
   }
 }
 
@@ -155,7 +144,6 @@ function main() {
     'Aether mode is active.',
     bootstrap(),
     passed ? '' : "Aether could not pass the superdelegation option to this session's commands, so superdelegation is off.",
-    ...legacyContext(),
     markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
     sweepNote(),
     autonomyNote(),

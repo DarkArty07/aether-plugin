@@ -78,7 +78,7 @@ test('session start writes the brake file for the Lead and adds no brake export'
   let r = spawnSync(process.execPath, [SESSION_BIN], { cwd: repo.dir, encoding: 'utf8', input: JSON.stringify(lead), env })
   assert.equal(r.status, 0, r.stderr)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(data, 'sessions', 's1.brake.json'), 'utf8')), { threshold: 90, push: true })
-  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_SUPERDELEGATION=off\nexport AETHER_SUPERDELEGATION_LEGACY=\nexport AETHER_LANE_HARNESSES=agy\n')
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export AETHER_SUPERDELEGATION=off\nexport AETHER_LANE_HARNESSES=agy\n')
   r = spawnSync(process.execPath, [SESSION_BIN], { cwd: repo.dir, encoding: 'utf8', input: JSON.stringify({ ...lead, session_id: 's2', agent_type: 'general-purpose' }), env })
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, '')
