@@ -2,6 +2,9 @@
 
 // The structured outputs lane calls ask agy for. The three role schemas copy the workflow's
 // (run.workflow.js, from FINDINGS through REVIEW_SCHEMA), which a test keeps equal.
+// Family: lane.
+
+const { isObject: isPlainObject } = require('./common.js')
 
 const FINDINGS = {
   type: 'array',
@@ -152,8 +155,6 @@ const EXAMINER_SCHEMA = {
 const KEYWORDS = ['type', 'enum', 'required', 'properties', 'items', 'description']
 
 const TYPE_NAMES = { string: 'a string', number: 'a number', integer: 'an integer', boolean: 'a boolean', array: 'an array', object: 'an object', null: 'null' }
-
-const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 // A value copied so a later change to the copy does not change the schema that was passed in.
 function cloneValue(value) {

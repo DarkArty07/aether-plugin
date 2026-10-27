@@ -3,10 +3,12 @@
 // The baseline of self-observation (R15): what the data directory of an earlier use already holds, read
 // without changing it and written as numbers into observe/baseline.json of `to`. From each file it takes
 // fields and counts only; it copies no command, text or message.
+// Family: observe.
 
 const fs = require('node:fs')
 const path = require('node:path')
 
+const { isNumber, numberOrZero, parseJson, isObject } = require('./common.js')
 const { readEntries } = require('./delegate-log.js')
 const { readLog } = require('./lanes.js')
 const { loadLadder } = require('./ladder.js')
@@ -15,21 +17,13 @@ const { approvalByStep } = require('./observe-calibrate.js')
 
 const SAVES_FAMILY = 'sonnet'
 
-const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
-const tokens = (value) => (isNumber(value) ? value : 0)
-
 function readJsonLines(file) {
   if (!fs.existsSync(file)) return []
   const entries = []
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     if (!line.trim()) continue
-    let entry
-    try {
-      entry = JSON.parse(line)
-    } catch {
-      continue
-    }
-    if (entry !== null && typeof entry === 'object' && !Array.isArray(entry)) entries.push(entry)
+    const entry = parseJson(line)
+    if (isObject(entry)) entries.push(entry)
   }
   return entries
 }
@@ -54,9 +48,9 @@ function priceOf(outcome, model, prices) {
   const usage = outcome.usage || {}
   return priceEntry({
     model,
-    input: tokens(usage.input),
-    output: tokens(usage.output) + tokens(usage.thinking),
-    cacheRead: tokens(usage.cacheRead),
+    input: numberOrZero(usage.input),
+    output: numberOrZero(usage.output) + numberOrZero(usage.thinking),
+    cacheRead: numberOrZero(usage.cacheRead),
     cacheWrite: 0,
     agent: true,
   }, prices)

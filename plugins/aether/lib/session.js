@@ -1,5 +1,10 @@
 'use strict'
 
+// Session state, marker files and option persistence for Aether sessions under the plugin data directory.
+// Manages active session markers, ops suppression, delegate settings, quota brake configuration,
+// and session directory pruning.
+// Family: session.
+
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -91,16 +96,13 @@ function readDelegateSettings(dataDir, sessionId) {
       s !== null && typeof s === 'object' &&
       typeof s.lanes === 'boolean' &&
       Array.isArray(s.harnesses) && s.harnesses.every((name) => typeof name === 'string') &&
-      s.deadlines !== null && typeof s.deadlines === 'object' && isPositiveNumber(s.deadlines.quotaMs)
+      s.deadlines !== null && typeof s.deadlines === 'object' &&
+      typeof s.deadlines.quotaMs === 'number' && Number.isFinite(s.deadlines.quotaMs) && s.deadlines.quotaMs > 0
     if (!valid) return null
     return { lanes: s.lanes, harnesses: s.harnesses, deadlines: { quotaMs: s.deadlines.quotaMs } }
   } catch {
     return null
   }
-}
-
-function isPositiveNumber(value) {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
 }
 
 function brakeSettingsFrom(env = process.env) {

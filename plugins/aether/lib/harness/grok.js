@@ -1,9 +1,10 @@
 'use strict'
 
-// The Grok harness: the headless command line, a run judged from the one JSON object grok prints, and the quota
-// read from the log grok writes when it fetches its credits config (grok-quota.js).
+// The Grok harness adapter: builds the headless command line, judges a run from JSON output, and reads quota.
+// lib/harness/index.js calls it to build the adapter.
+// Family: harness.
 
-const { commandInstalled } = require('../lanes.js')
+const { commandInstalled } = require('../lane-process.js')
 const { defaultExec, extractJsonObject, parseRun, readVersion, stringsIn, unknownQuota, usageOf } = require('./structured.js')
 const { defaultLogFile, readGrokQuota } = require('./grok-quota.js')
 

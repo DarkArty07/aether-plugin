@@ -17,7 +17,7 @@ const { choose } = require('./superdelegation.js')
 const { peekReadings, staleHarnesses, readingFile } = require('./router-quota.js')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 
-const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review(-slice-\d+)?)$/
+const CALL = /^(task-\d+-\d+-(implement|supervise|supervisor|reviewer)|final-review(-slice-\d+)?)$/
 const ROLES = ['implementer', 'supervisor', 'reviewer']
 const MODELS = pairs.NATIVE_MODELS
 const PAIR_ID = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(low|medium|high|xhigh|max)$/
@@ -145,7 +145,7 @@ async function pickCommand(cwd, runId, call, flags, { now = Date.now() } = {}) {
   const dataDir = run.dataDir()
   const latest = await latestReadings(config, enabled, { dataDir, now })
   const harnesses = harnessViews(config, enabled, { dataDir, now, latest })
-  const decision = choose({ pairs: table, reference: { model, effort }, harnesses, exclude, authors, nativeDiffers: role !== 'implementer' })
+  const decision = choose({ pairs: table, reference: { model, effort }, harnesses, exclude, authors, nativeDiffers: role !== 'implementer', role, lanes: config })
 
   lanes.appendLog(dataDir, null, {
     kind: 'choice',

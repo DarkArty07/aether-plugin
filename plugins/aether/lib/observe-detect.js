@@ -1,5 +1,9 @@
 'use strict'
 
+// Failure detectors over self-observation events and delegate entries.
+// Evaluates rules over logs and metrics to emit structured findings.
+// Family: observe.
+
 const crypto = require('node:crypto')
 
 function toMillis(time) {

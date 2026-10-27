@@ -115,7 +115,7 @@ async function pairStep(d, settings, { reference }) {
       if (!live.includes(name)) views[name] = { installed: false, groups: {} }
       else if (!expired.has(name)) views[name] = viewOf(config, name, readings[name] ?? null, { marks, now, lift: d.lift })
     }
-    const decision = choose({ pairs, reference, exclude, harnesses: views })
+    const decision = choose({ pairs, reference, exclude, harnesses: views, role: 'reviewer', lanes: config })
     const quota = decision.candidates.map((entry) => ({
       ...entry,
       ...(expired.has(entry.harness) ? { why: 'no-reading' } : {}),

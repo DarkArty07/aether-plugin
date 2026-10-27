@@ -2,6 +2,7 @@
 
 // Test baselines: the failing tests a test command already reports before a run, so that a merge is
 // blocked only by a failure that is new since then. Pure: the callers run the command and read files.
+// Family: none.
 
 // One pattern per output format. Each captures a test's name, or the path of a file, suite or package.
 // The last three come after the others, so they can only name a line that none of the others names.

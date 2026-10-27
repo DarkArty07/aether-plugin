@@ -1,15 +1,16 @@
 'use strict'
 
-// The aether-guard decisions. decide: only the main session and the Lead write the intent card, only the
-// main session, the Lead and the Writer write specs, plans and tasks, the Examiner writes only its exam
-// under .aether-exam/, and autonomy files are kept to aether-autonomy. Protected: docs/superpowers/specs/
-// and plans/ (the old place), specs/NNN-<topic>/ spec.md, plan.md and tasks.md (Spec Kit), and
-// .specify/memory/constitution.md. The intent card is specs/NNN-<topic>/intent.md. irreversibleClass: the
-// irreversible class of a Bash command, and redactCommand: the command as the owner's list keeps it,
-// without its secret values.
-// All are pure: they read a PreToolUse hook's JSON and never touch the file system.
+// PreToolUse decisions and irreversible command classification for Aether sessions.
+// Protects specs, plans, tasks (specs/NNN-<topic>/), the constitution (.specify/memory/constitution.md),
+// and the intent card (specs/NNN-<topic>/intent.md). Protection of docs/superpowers/specs/ and
+// docs/superpowers/plans/ stays in force even though that folder is not in the tree.
+// Records irreversible Bash commands across the classes: merge-main, push, publish, deploy, delete,
+// and credentials. The paid-call class is in CLASSES of autonomy.js, but the guard does not detect it;
+// it is only granted and checked with aether-autonomy. Redacts secret values from logged commands.
+// Family: none.
 
 const path = require('node:path')
+const { isObject } = require('./common.js')
 
 const CHECKED_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const PROTECTED = [
@@ -78,10 +79,6 @@ function isLeadOrMainSession(input) {
 
 function isBlank(value) {
   return value === undefined || value === null || value === ''
-}
-
-function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 // The Bash classes. A segment is in a class when its words start with one of these subcommands.
