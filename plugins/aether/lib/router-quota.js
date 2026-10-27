@@ -1,32 +1,28 @@
 'use strict'
 
-// The router's readings of the quota of the harnesses it renews: agy and grok. It reads only readings that already
-// exist, so it never waits for a quota call and never starts a process: a harness without a valid reading is stale,
-// and a renewal of the reading is another module's work (router-renewal.js). Which pair takes a delegate is not
-// decided here: it is the one choice function of superdelegation (lib/superdelegation.js), which lib/router-pick.js
-// feeds with these readings. Muse has no quota command and its adapter keeps what a call reported, so it has no
-// reading to renew.
+// Reads cached and stored quota readings for delegate harnesses under <dataDir>/router/ with source 'router'.
+// Provides existing readings without launching new processes or waiting for quota calls.
+// Family: router.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { isObject } = require('./common.js')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
-const readings = require('./lane-readings.js')
+const { cacheFile, DEFAULT_LIFE_MINUTES, hasReset } = require('./lane-readings.js')
 
 // The harnesses whose quota reading the router keeps and renews.
 const EXTERNAL = ['agy', 'grok']
 const MINUTE_MS = 60000
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-
 function lifeMs(config, harness) {
   const minutes = config?.harnesses?.[harness]?.quotaLifeMinutes
-  return (typeof minutes === 'number' && minutes > 0 ? minutes : readings.DEFAULT_LIFE_MINUTES) * MINUTE_MS
+  return (typeof minutes === 'number' && minutes > 0 ? minutes : DEFAULT_LIFE_MINUTES) * MINUTE_MS
 }
 
 // The saved reading of a harness whose reading launches a process: whatever its age.
 function savedReading(dataDir, harness) {
   try {
-    const data = JSON.parse(fs.readFileSync(readings.cacheFile(dataDir, harness), 'utf8'))
+    const data = JSON.parse(fs.readFileSync(cacheFile(dataDir, harness), 'utf8'))
     if (!isObject(data) || typeof data.readAt !== 'number' || !isObject(data.groups)) return null
     return { readAt: data.readAt, groups: data.groups }
   } catch {
@@ -98,16 +94,6 @@ function peekReadings({ dataDir, config, harnesses, createAdapter = defaultCreat
     result[harness] = newest(kept, routerReading(dataDir, harness))
   }
   return result
-}
-
-// The same rule as hasReset in lane-readings.js: a window whose reset was ahead of the reading and has come since.
-function hasReset(groups, readAt, now) {
-  return Object.values(groups).some((group) =>
-    Object.values(isObject(group) && isObject(group.windows) ? group.windows : {}).some((window) => {
-      const resetsAt = isObject(window) && typeof window.resetsAt === 'string' ? Date.parse(window.resetsAt) : NaN
-      return resetsAt > readAt && resetsAt <= now
-    }),
-  )
 }
 
 function isStale(reading, harnessLife, now) {

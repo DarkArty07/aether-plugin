@@ -1,14 +1,12 @@
 'use strict'
 
-// The pairs whose delegate ran out of time. A delegate killed at its limit (lib/delegate-calls.js) says nothing about
-// the quota of its group, so the quota marks (lib/router-marks.js) do not hold it; what it says is that this pair, at
-// this effort, does not finish that kind of task. The mark is therefore per pair: Grok 4.7 at high can be out while Grok
-// 4.7 at low, on the same quota, still serves. It lasts SLOW_MINUTES, never shortens, and is kept in its own store,
-// `<dataDir>/router/slow/`, one file per pair. The router leaves a marked pair out of its choice
-// (lib/router-pick.js) and the chain skips it (lib/delegate-chain.js).
+// Tracks pairs whose delegate timed out, stored under <dataDir>/router/slow/ with source 'router'.
+// Excludes slow model-effort pairs from delegate candidate selection without marking the whole quota group.
+// Family: router.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { writeAtomic } = require('./common.js')
 
 const SLOW_MINUTES = 60
 const MINUTE_MS = 60 * 1000
@@ -22,21 +20,6 @@ function slowDir(dataDir) {
 function slowFile(dataDir, { harness, model, effort }) {
   const part = (value) => encodeURIComponent(String(value))
   return path.join(slowDir(dataDir), `${part(harness)}__${part(model)}__${part(effort)}.json`)
-}
-
-function writeAtomic(targetPath, content) {
-  const dir = path.dirname(targetPath)
-  fs.mkdirSync(dir, { recursive: true })
-  const base = path.basename(targetPath)
-  const tmp = path.join(dir, `.${base}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`)
-  try {
-    fs.writeFileSync(tmp, content)
-    fs.renameSync(tmp, targetPath)
-  } finally {
-    try {
-      if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
-    } catch {}
-  }
 }
 
 // The mark in a file, or null when the file is unreadable or is not a mark: every field is read as what it must be.

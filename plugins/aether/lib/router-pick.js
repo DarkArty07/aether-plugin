@@ -1,14 +1,10 @@
 'use strict'
 
-// The router's use of superdelegation's one choice function (lib/superdelegation.js choose) for a read-only delegate
-// of the Lead. The router decides how strong the task has to be, which is the Claude rung it would run on; this module
-// asks the function the swarm and the design seats ask which external pair reaches the points of that rung. It reads
-// the quota the router already has, as lib/router-quota.js does, so it never starts a quota call: a harness whose
-// reading expired and that could serve the call is renewed in the background and waited for up to the quota deadline;
-// one that could not serve it (every group marked, or no pair at the points asked) is neither renewed nor waited for;
-// an expired harness is left out when it is still expired. Everything else it needs comes in through `d`, the
-// router's dependencies (lib/route.js resolve).
+// Selects an external harness and model pair for a delegate task using superdelegation.
+// Consults quota readings and marks under <dataDir>/router/ with source 'router' without launching quota processes.
+// Family: router.
 
+const { isObject } = require('./common.js')
 const laneMarks = require('./lane-marks.js')
 const { groupView } = require('./lane-quota.js')
 const { choose } = require('./superdelegation.js')
@@ -17,8 +13,6 @@ const { waitForReading } = require('./router-renewal.js')
 
 // The harnesses that can run a delegate (lib/delegate-calls.js): codex and cursor cannot.
 const DELEGATE_HARNESSES = ['agy', 'grok', 'muse']
-
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 // The view of the quota groups of one harness that choose reads, from the reading the router has of it (null when the
 // harness keeps none, which leaves its groups unknown and usable, as in the swarm). A mark that came from a reading is
@@ -59,13 +53,12 @@ function openViews(config, names, marks, now) {
   }]))
 }
 
-// The pair that takes a read-only delegate whose native reference is { model, effort } (an alias and an effort of the
+// The pair that takes a delegate whose native reference is { model, effort } (an alias and an effort of the
 // pairs table), or none. Resolves to { pick, quota, waitedMs, reason }: pick is the pair or null, quota the candidates
-// of the decision for the journal, reason the function's own words. The pairs that ran out of time lately (d.slow(),
+// of the decision, reason the function's own words. The pairs that ran out of time lately (d.slow(),
 // lib/router-slow.js) are excluded from every call of the function, so they show in the candidates as excluded and the
 // alternates of the decision never hold them. It never throws: when something under it fails (a reference the table
-// lacks, a table that cannot be read) it returns the failure as `error`, with no reason, so that the router journals it
-// as an internal error and not as a choice (issue 036).
+// lacks, a table that cannot be read) it returns the failure as `error`, with no reason.
 async function pairStep(d, settings, { reference }) {
   try {
     const config = d.lanesConfig()
