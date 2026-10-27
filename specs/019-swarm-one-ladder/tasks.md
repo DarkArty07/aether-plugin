@@ -9,9 +9,9 @@
 - Cada archivo nuevo de `lib/` lleva un comentario de cabecera de seis palabras o más y la línea `// Family: <familia>.` (`tests/guards.test.js`). No se define un ayudante que ya exista en `lib/`, y no se deja una exportación ni una constante sin uso.
 - `bin/aether-*` solo lee argumentos y llama a `lib/` (`tests/bins-thin.test.js`, 160 líneas como máximo). Cada bin imprime una línea de JSON; un error es `{"error": "..."}` con salida 1.
 - El script `workflows/run.workflow.js` es un script de Workflow: no importa módulos, no lee el reloj ni `Math.random`. Sus llamadas a `aether-wt` van por el agente `ops` con el texto exacto que el mod admite.
-- Los textos que la spec y el plan dan literalmente se escriben tal cual: `<ruta>: fuera de Owns`, `<archivo>: el intento no terminó (<causa>)`, `npm test: superó el tiempo límite`, `npm test: salió con N`, `ignorado: el swarm arranca todas las tareas en Haiku y usa la escalera de los delegados`.
+- Los textos que la spec y el plan dan literalmente se escriben tal cual: `<ruta>: fuera de Owns`, `<archivo>: el intento no terminó (<causa>)`, `npm test: superó el tiempo límite`, `npm test: salió con N`, `falló: <nombre>`, `ignorado: el swarm arranca todas las tareas en Haiku y usa la escalera de los delegados`.
 - El contrato entre las tareas está en `plan.md`, sección `Technical context`: la vista de `aether-wt ladder`, la respuesta de `aether-wt gate` y el bloque `result.units[].ladder`.
-- Las líneas `Tier` y `Ladder` de este archivo existen porque el compilador instalado las exige; el swarm nuevo las ignora. Ninguna tarea toca `specs/` ni `.specify/`.
+- Las líneas `Tier` y `Ladder` de este archivo existen porque el compilador instalado las exige; todas las tareas dicen `haiku high`, por la orden del dueño («Que todo arranque en haiku»), y el swarm nuevo las ignora. El riesgo se marca con `Review`. Ninguna tarea toca `specs/` ni `.specify/`.
 - Para correr un bin de la rama se usa su ruta: `node plugins/aether/bin/aether-plan check <archivo>`.
 
 ## Aether Execution
@@ -23,7 +23,7 @@
 ## Checklist
 
 - [ ] T001 [P] [US2] Verbo `aether-wt ladder`: estado de la escalera en disco y veredictos con archivo de carga en `plugins/aether/lib/wt-ladder.js` → Task 1
-- [ ] T002 [P] [US2] Verbo `aether-wt gate`: archivos contra `Owns` y pruebas con línea base en `plugins/aether/lib/wt-gate.js` → Task 1
+- [ ] T002 [P] [US2] Verbo `aether-wt gate`: archivos contra `Owns` y pruebas con línea base en `plugins/aether/lib/wt-gate.js` → Task 9
 - [ ] T003 [P] [US4] El mod admite las formas exactas de `ladder` y `gate` en `plugins/aether/hooks/ops-command.mjs` → Task 2
 - [ ] T004 [P] [US9] Conteos de la escalera en el informe en `plugins/aether/lib/report.js` → Task 3
 - [ ] T005 [P] [US4] El Escritor y el supervisor: sin `Tier` ni `Ladder`, con `Review`, hallazgos con archivo y evidencia de la puerta en `plugins/aether/agents/` → Task 4
@@ -35,14 +35,14 @@
 - [ ] T011 [US1] `aether-plan` lee e ignora `Tier` y `Ladder` con una advertencia y deja de emitirlos en `plugins/aether/lib/plan.js` → Task 7
 - [ ] T012 [US1] Documentación, habilidades `swarm` y `using-aether`, decisión A97 y historial de cambios en `docs/` → Task 8
 
-### Task 1: Los verbos `aether-wt ladder` y `aether-wt gate`
+### Task 1: El verbo `aether-wt ladder`
 
 **Aether:**
-- Tier: sonnet high — dos módulos nuevos con estado en disco y un proceso hijo; las pruebas fijan las salidas, pero el cuidado con rutas y huellas no se agota en ellas
+- Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; las pruebas fijan cada salida del verbo
 - Area: wt
-- Owns: `plugins/aether/lib/wt-ladder.js`, `plugins/aether/lib/wt-gate.js`, `plugins/aether/lib/worktrees.js`, `plugins/aether/lib/delegate-checks.js`, `plugins/aether/bin/aether-wt`, `docs/reference/components.md`, `tests/wt-ladder.test.js`, `tests/wt-gate.test.js`
+- Owns: `plugins/aether/lib/wt-ladder.js`, `plugins/aether/bin/aether-wt`, `docs/reference/components.md`, `tests/wt-ladder.test.js`
 - Depends on: none
-- Serves: R2, R3, R4, R6, R8, R9, R10, R12, R13, R17, R20
+- Serves: R2, R3, R4, R6, R13, R17, R20
 
 **Interfaces:**
 
@@ -66,34 +66,13 @@ module.exports = { ladderCommand }
 - El archivo de carga es `{"findings":[{"file","line"?,"what"}],"reason"?:string}`. El veredicto que recibe `judge` es `{ kind: opts.verdict, findings, reason }`.
 - Un veredicto que `judge` rechaza devuelve `{ accepted: false, rejection: <error de judge> }` y no cambia el archivo de estado. Los errores de uso (`--verdict` desconocido, `--payload` sin `--digest`, tarea que no está en la ejecución, archivo ausente) lanzan `Error`.
 
-`plugins/aether/lib/wt-gate.js` (`// Family: wt.`):
+`plugins/aether/bin/aether-wt`: una rama más, `ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>]`, con `flag()`; la línea de uso la nombra. La rama de `gate` la agrega la tarea 9.
 
-```js
-// opts.timeoutMs: el tope de las pruebas; por defecto 570000, menor que los 600000 del mod.
-function gateCommand(cwd, runId, taskId, opts = {}) -> Gate
-// Gate = {
-//   pass: boolean,
-//   checks: 'pass' | 'fail',
-//   findings: [{ file: string, what: string }],   // vacío si pasa
-//   detail: string,        // el final de la salida de las pruebas cuando no se pudieron leer; '' si no
-//   tests: string,         // resumen: las últimas líneas de la salida, o 'known failures only: a, b'
-//   knownFailures: string[],
-//   timedOut: boolean,
-//   files: string[]        // los archivos que el intento cambió
-// }
-module.exports = { gateCommand }
+`docs/reference/components.md`: una fila en la tabla `Library families` (la tarea 9 le suma `wt-gate.js`):
+
 ```
-
-Reglas de la puerta, en este orden:
-1. Archivos cambiados: `changedFiles(worktree, unitBase(mainRoot, graph, branch))` de `delegate-checks.js` y `checkEdits({ files, owns })`. Cada archivo fuera de `Owns` es `{ file: <ruta>, what: 'fuera de Owns' }`. Ningún archivo cambiado es `{ file: <primera entrada de Owns>, what: 'el intento no cambió ningún archivo' }`. Si hay algún hallazgo, devuelve sin correr las pruebas (`tests: ''`).
-2. Pruebas: `runTests(worktree, graph.testCommand, { timeoutMs, tailChars: 200000 })`. Un corte es `pass: false`, `timedOut: true`, hallazgo `{ file: 'npm test', what: 'superó el tiempo límite' }`.
-3. Salida 0: pasa. Otra salida: `judge(readBaseline(mainRoot, runId), { exitCode, output: outputTail })` de `lib/baseline.js`. Si pasa, la puerta pasa con `knownFailures`. Si no, un hallazgo por cada nombre nuevo de `failureSignatures`: un nombre que parece una ruta (contiene `/` o termina en `.js`, `.ts`, `.py` o `.go`) es `{ file: <nombre>, what: 'la prueba falló' }`; si no se puede leer ningún nombre, un solo hallazgo `{ file: 'npm test', what: 'salió con <código>' }` y el final de la salida (1500 caracteres) en `detail`.
-
-Cambios de apoyo: `worktrees.js` exporta `readBaseline` (ya existe); `runTests(worktree, command, { timeoutMs, tailChars = 4000 })` recorta `outputTail` a `tailChars` en lugar del 4000 fijo (el resto de lo que devuelve no cambia).
-
-`plugins/aether/bin/aether-wt`: dos ramas más, `ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>]` y `gate <run> <task>`, con `flag()`; la línea de uso las nombra.
-
-`docs/reference/components.md`: una fila en la tabla `Library families`: `| wt | wt- | wt-gate.js, wt-ladder.js | none |`.
+| wt | `wt-` | `wt-ladder.js` | none |
+```
 
 **Tests (write first):**
 
@@ -248,138 +227,16 @@ test('a number changed in the ladder the verb is given changes its answer, with 
 })
 ```
 
-`tests/wt-gate.test.js`:
-
-```js
-'use strict'
-
-const test = require('node:test')
-const assert = require('node:assert/strict')
-const fs = require('node:fs')
-const path = require('node:path')
-const { WT_BIN, makeRepo, compile, commitIn, runBin } = require('./helpers.js')
-const { task, plan } = require('./plan-fixtures.js')
-const { gateCommand } = require('../plugins/aether/lib/wt-gate.js')
-const { runTests } = require('../plugins/aether/lib/delegate-checks.js')
-
-// check.js is the plan's test command. It passes while src/t1/bad.js is absent, so the run's baseline is clean;
-// with it present it fails the way `behavior` says.
-const CHECKS = {
-  newFailure: "if (require('fs').existsSync('src/t1/bad.js')) { console.log('not ok 1 - tests/new.test.js'); process.exit(1) }\nconsole.log('# pass 12')\n",
-  unreadable: "if (require('fs').existsSync('src/t1/bad.js')) { console.error('boom'); process.exit(3) }\nconsole.log('# pass 12')\n",
-  hang: "if (require('fs').existsSync('src/t1/bad.js')) setTimeout(() => {}, 20000)\n",
-  known: "console.log('not ok 1 - tests/old.test.js')\nconsole.log('# pass 11')\nprocess.exit(1)\n",
-  knownAndNew: "console.log('not ok 1 - tests/old.test.js')\nif (require('fs').existsSync('src/t1/bad.js')) console.log('not ok 2 - tests/new.test.js')\nprocess.exit(1)\n",
-  marker: "require('fs').writeFileSync('ran.txt', '1')\n",
-}
-
-function unit(t, check) {
-  const repo = makeRepo(t)
-  commitIn(repo, repo.dir, 'check.js', check, 'add the check')
-  const args = compile(repo, plan([task(1), task(2)], { execution: ['- Test command: `node check.js`'] }))
-  const created = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
-  return { repo, args, wt: created.path }
-}
-const gate = (u, opts) => gateCommand(u.repo.dir, u.args.runId, 'task-1', opts)
-
-test('an attempt that changed only what the task owns and passes the tests passes the gate', (t) => {
-  const u = unit(t, CHECKS.newFailure)
-  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
-  const g = gate(u)
-  assert.deepEqual([g.pass, g.checks, g.findings, g.timedOut, g.files], [true, 'pass', [], false, ['src/t1/a.js']])
-  assert.match(g.tests, /# pass 12/)
-})
-
-test('a file outside Owns fails the gate with the file named, and the tests do not run', (t) => {
-  const u = unit(t, CHECKS.marker)
-  commitIn(u.repo, u.wt, 'src/other/x.js', 'x\n', 'add x')
-  const g = gate(u)
-  assert.deepEqual([g.pass, g.checks], [false, 'fail'])
-  assert.deepEqual(g.findings, [{ file: 'src/other/x.js', what: 'fuera de Owns' }])
-  assert.equal(fs.existsSync(path.join(u.wt, 'ran.txt')), false)
-})
-
-test('an uncommitted file outside Owns counts too', (t) => {
-  const u = unit(t, CHECKS.newFailure)
-  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
-  fs.mkdirSync(path.join(u.wt, 'docs'), { recursive: true })
-  fs.writeFileSync(path.join(u.wt, 'docs/notes.md'), 'x\n')
-  assert.deepEqual(gate(u).findings, [{ file: 'docs/notes.md', what: 'fuera de Owns' }])
-})
-
-test('an attempt that changed nothing fails with the first Owns entry', (t) => {
-  const u = unit(t, CHECKS.newFailure)
-  const g = gate(u)
-  assert.equal(g.pass, false)
-  assert.deepEqual(g.findings, [{ file: 'src/t1/**', what: 'el intento no cambió ningún archivo' }])
-})
-
-test('a test that fails and was not failing before the run names its file', (t) => {
-  const u = unit(t, CHECKS.newFailure)
-  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
-  const g = gate(u)
-  assert.equal(g.pass, false)
-  assert.deepEqual(g.findings, [{ file: 'tests/new.test.js', what: 'la prueba falló' }])
-})
-
-test('a failure the output does not name falls back to npm test with the exit code, and the tail goes in detail', (t) => {
-  const u = unit(t, CHECKS.unreadable)
-  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
-  const g = gate(u)
-  assert.deepEqual(g.findings, [{ file: 'npm test', what: 'salió con 3' }])
-  assert.match(g.detail, /boom/)
-})
-
-test('a failure that the baseline already had does not fail the gate', (t) => {
-  const u = unit(t, CHECKS.known)
-  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
-  const g = gate(u)
-  assert.deepEqual([g.pass, g.findings, g.knownFailures], [true, [], ['tests/old.test.js']])
-  assert.match(g.tests, /known failures only: tests\/old\.test\.js/)
-})
-
-test('a known failure does not excuse a new one: only the new one is a finding', (t) => {
-  const u = unit(t, CHECKS.knownAndNew)
-  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
-  assert.deepEqual(gate(u).findings, [{ file: 'tests/new.test.js', what: 'la prueba falló' }])
-})
-
-test('tests cut at the limit are a gate failure that says so', (t) => {
-  const u = unit(t, CHECKS.hang)
-  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'hang')
-  const g = gate(u, { timeoutMs: 300 })
-  assert.deepEqual([g.pass, g.timedOut], [false, true])
-  assert.deepEqual(g.findings, [{ file: 'npm test', what: 'superó el tiempo límite' }])
-})
-
-test('the bin prints the gate as one JSON line, and a run with no unit worktree is an error', (t) => {
-  const u = unit(t, CHECKS.newFailure)
-  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
-  const r = runBin(WT_BIN, ['gate', u.args.runId, 'task-1'], u.repo.dir)
-  assert.equal(r.status, 0, r.stdout)
-  assert.equal(r.json.pass, true)
-  const none = runBin(WT_BIN, ['gate', u.args.runId, 'task-2'], u.repo.dir)
-  assert.equal(none.status, 1)
-  assert.match(none.json.error, /worktree/)
-})
-
-test('runTests keeps a longer tail when asked, and 4000 characters otherwise', () => {
-  const command = "node -e \"console.log('x'.repeat(9000))\""
-  assert.equal(runTests(process.cwd(), command).outputTail.length, 4000)
-  assert.ok(runTests(process.cwd(), command, { tailChars: 20000 }).outputTail.length > 9000)
-})
-```
-
 **Acceptance:**
-- Los dos archivos de pruebas pasan y `npm test` completo pasa (incluidos `tests/guards.test.js`, `tests/bins-thin.test.js`, `tests/copies-ladder.test.js` y las pruebas de documentación de `components.md`).
+- `tests/wt-ladder.test.js` pasa y `npm test` completo pasa (incluidos `tests/guards.test.js`, `tests/bins-thin.test.js`, `tests/copies-ladder.test.js` y las pruebas de documentación de `components.md`).
 - `git diff main -- plugins/aether/lib/ladder.js plugins/aether/config/ladder.json` queda vacío.
-- Ningún número de la escalera está escrito en `wt-ladder.js` ni en `wt-gate.js`. El tope por defecto de la puerta (570 000 ms) es menor que `OPS_TIMEOUT_MS` (600 000).
-- `aether-wt` sin argumentos conocidos sigue imprimiendo su uso, que ahora nombra `ladder` y `gate`.
+- Ningún número de la escalera está escrito en `wt-ladder.js`.
+- `aether-wt` sin argumentos conocidos sigue imprimiendo su uso, que ahora nombra `ladder`.
 
 ### Task 2: El mod admite las formas exactas de `ladder` y `gate`
 
 **Aether:**
-- Tier: opus high — el analizador es la frontera de seguridad: lo que acepta se ejecuta sin modelo
+- Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; las pruebas de formas exactas y de líneas malformadas fijan el analizador
 - Review: xhigh — una forma floja deja pasar una línea de shell que el mod ejecuta sin ningún modelo que la mire; es seguridad
 - Area: mod
 - Owns: `plugins/aether/hooks/ops-command.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/ops.test.ts`, `tests/ops-command-ladder.test.js`
@@ -582,6 +439,7 @@ quality.ladder = {
 - La entrada es `unit.ladder` de cada `result.json` / `result-N.json`: `{ steps, firstTry, corrections, rises, gateRejections, filled }` (el contrato de `plan.md`).
 - Por unidad, entre lanzamientos: `steps` es la unión, en orden de aparición y sin repetir; los contadores se suman; `firstTry` es el del último lanzamiento en que la unidad trae `ladder` y solo es verdadero si la unidad terminó `merged`.
 - Un lanzamiento cuyo bloque falta o es de otra forma suma 0 para esa unidad. No cambian `climbed`, `escalated`, `attempts` ni `radar`.
+- `finalize` guarda `report` entero en cada línea de `runs.jsonl` (`record.report`), así que `quality.ladder` llega a `runs.jsonl` sin otro cambio de código: queda guardado cuando `finalize` borra la carpeta de la ejecución, y dos ejecuciones seguidas se comparan por sus líneas. Una línea de antes del cambio no trae `report.quality.ladder`; `finalize` no la toca y sigue siendo JSON legible. Una prueba lo fija.
 
 **Tests (write first):**
 
@@ -597,7 +455,7 @@ const path = require('node:path')
 const { useDataDir } = require('./helpers.js')
 const { T0, MIN, finishedRun } = require('./report-fixtures.js')
 const { writeJson } = require('../plugins/aether/lib/run.js')
-const { report } = require('../plugins/aether/lib/report.js')
+const { report, finalize } = require('../plugins/aether/lib/report.js')
 
 const none = { exhausted: 0, repeated: 0, infeasible: 0 }
 const ladder = (over = {}) => ({ steps: ['haiku'], firstTry: true, corrections: 0, rises: { ...none }, gateRejections: 0, filled: 0, ...over })
@@ -659,16 +517,31 @@ test('counts add across launches, the steps are the union in order, and first-tr
   assert.equal(quality.ladder.firstTry, 1)
   assert.equal(quality.ladder.corrections, 3)
 })
+
+test('finalize writes the ladder counts to runs.jsonl, and a line from before the change is left as it was and still reads', (t) => {
+  const dataDir = useDataDir(t)
+  const before = JSON.stringify({ runId: '20250101-000000-aaaa', status: 'finalized', finalizedAt: '2025-01-01T00:00:00.000Z', repo: '/old', plan: null, versions: {}, report: { quality: { attempts: 3, climbed: 1, escalated: 0 } } })
+  fs.writeFileSync(path.join(dataDir, 'runs.jsonl'), `${before}\n`)
+  const { repo, args } = finishedRun(t)
+  save(args, 'result.json', [unit('task-1', 'merged', ladder({ corrections: 2 }))], 30)
+  finalize(repo.dir, args.runId, { tests: false, now: T0 + 40 * MIN })
+  const lines = fs.readFileSync(path.join(dataDir, 'runs.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  assert.equal(lines.length, 2)
+  assert.deepEqual(lines[0], JSON.parse(before))
+  assert.equal(lines[0].report.quality.ladder, undefined)
+  assert.deepEqual([lines[1].report.quality.ladder.firstTry, lines[1].report.quality.ladder.corrections], [1, 2])
+})
 ```
 
 **Acceptance:**
 - `node --test tests/report-ladder.test.js tests/report.test.js tests/aether-report.test.js` pasa, y `npm test` completo pasa.
+- La línea de `runs.jsonl` de una ejecución terminada lleva `report.quality.ladder`; una línea anterior al cambio sigue leyéndose.
 - `radar` y los demás campos de `quality` no cambian de forma ni de valor para los resultados existentes.
 
 ### Task 4: El Escritor, el supervisor y las habilidades dicen la regla nueva
 
 **Aether:**
-- Tier: sonnet high — texto de instrucción para agentes: las pruebas fijan las frases, pero no que el conjunto se lea bien
+- Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; las pruebas fijan las frases exactas
 - Area: agents
 - Owns: `plugins/aether/agents/writer.md`, `plugins/aether/agents/supervisor.md`, `plugins/aether/skills/tasks/SKILL.md`, `plugins/aether/speckit/commands/speckit.tasks.md`, `tests/speckit.test.js`, `tests/copies-ladder-prose.test.js`, `tests/swarm-ladder-agents.test.js`
 - Depends on: none
@@ -749,11 +622,12 @@ En `tests/speckit.test.js`: quitar `'- Ladder: haiku 2, sonnet 2, opus 1'` y `'T
 ### Task 5: El swarm arranca en el primer peldaño y decide con la escalera
 
 **Aether:**
-- Tier: opus high — arquitectura central del swarm: decide cuándo cada unidad sube, se corrige o se bloquea, y reemplaza la política de un script de 1 666 líneas
+- Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; el riesgo de reemplazar la política de un script de 1 666 líneas se marca en Review, y la escalera sube el modelo si hace falta
 - Review: xhigh — unidades paralelas comparten el estado de la escalera y un camino sin tope repetiría llamadas sin fin sobre la cuota del dueño
 - Area: swarm
-- Owns: `plugins/aether/workflows/run.workflow.js`, `tests/workflow-harness.js`, `tests/workflow*.test.js`, `tests/copies-ladder.test.js`
+- Owns: `plugins/aether/workflows/run.workflow.js`, `tests/workflow-harness.js`, `tests/workflow*.test.js`, `tests/copies-ladder.test.js`, `tests/ladder-one-source.test.js`
 - Depends on: Task 1 — el script llama a `aether-wt ladder` y la fixture del arnés ejecuta el verbo real de `lib/wt-ladder.js`
+- Depends on: Task 9 — `bin/aether-wt` y la fila `wt` de `components.md` quedan completos (`ladder` y `gate`) antes de que el script llame a sus verbos, y `npm test` completo del script los recorre
 - Serves: R1, R2, R3, R4, R5, R6, R7, R15, R17, R18, R20
 
 **Interfaces:**
@@ -804,7 +678,9 @@ async function applyVerdict(unit, task, kind, body)   // escribe <runDir>/ladder
 ```js
 // case 'ladder': las banderas vienen de call.command.rest = [run, task, '--verdict', kind, '--payload', ruta, '--digest', huella]
 //   si hay --payload: crea la carpeta, escribe call.payload.text en esa ruta (lo que hace el mod) y llama
-//   ladderCommand(state.args.repoRoot, run, task, { verdict, payload, digest }); sin banderas, lee.
+//   ladderCommand(state.args.repoRoot, run, task, { verdict, payload, digest, ladder: options.ladder }); sin banderas, lee.
+//   `runWorkflow(args, { ladder })` acepta `ladder`: una escalera ya cargada (por defecto, ninguna: el verbo carga config/ladder.json).
+//   Sirve para que una prueba cambie un número de la escalera sin tocar el archivo de configuración.
 ```
 
 y `call.payload` se llena también para los comandos `ladder` (hoy solo para lanes).
@@ -968,6 +844,28 @@ test('the ladder state survives a relaunch: the unit goes on at the effort it ha
   assert.ok(fs.existsSync(path.join(args.runDir, 'ladder', 'task-1.json')))
 })
 
+test('a relaunch with --only goes on at the effort the unit had reached, and leaves the other units alone', async (t) => {
+  const repo = makeRepo(t)
+  const tasks = [task(1), task(2)]
+  const first = compile(repo, plan(tasks))
+  let seen = 0
+  const firstRun = await runWorkflow(first, {
+    supervisor: (call, approve) => {
+      if (call.unit !== 'task-1') return approve(call)
+      seen += 1
+      return seen === 1 ? retry('gap') : verdict('block', 'Block: needs the owner.', { question: 'Which format?' })
+    },
+  })
+  assert.equal(unitOf(firstRun).status, 'blocked')
+  const args = compile(repo, plan(tasks), ['--run', first.runId, '--only', 'task-1'])
+  assert.deepEqual(args.waves, [['task-1']])
+  const again = await runWorkflow(args)
+  assert.equal(again.error, null, again.error && again.error.stack)
+  assert.equal(rungs(again)[0], RETRY)
+  assert.equal(unitOf(again).ladder.firstTry, false)
+  assert.equal(attempts(again, 'task-2').length, 0)
+})
+
 test('the final review runs on Opus xhigh when a unit asks for Review xhigh or max, and not for a Tier', async (t) => {
   for (const review of ['xhigh — loses data', 'max — loses data']) {
     const run = await runWorkflow(one(t, { review }))
@@ -1001,6 +899,54 @@ test('the script keeps no policy of its own: no tier ladder, attempt counters or
 })
 ```
 
+`tests/ladder-one-source.test.js` (C2: un número cambiado en una escalera de prueba cambia a la vez al swarm y a los delegados; las dos partes corren sobre la misma escalera):
+
+```js
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { tempDir, makeRepo, compile } = require('./helpers.js')
+const { task, plan } = require('./plan-fixtures.js')
+const { runWorkflow } = require('./workflow-harness.js')
+const { loadLadder } = require('../plugins/aether/lib/ladder.js')
+const delegates = require('../plugins/aether/lib/delegate-task.js')
+
+const L = loadLadder()
+const [HAIKU, SONNET] = L.rungs
+// The same ladder with one number changed: the first rung allows one correction.
+const TIGHT = { ...L, rungs: L.rungs.map((rung, i) => (i === 0 ? { ...rung, corrections: 1 } : rung)) }
+
+const finding = (n) => ({ severity: 'important', title: `gap ${n}`, file: 'src/t1/a.js:3', evidence: `evidence ${n}` })
+const retry = (call) => ({ verdict: 'retry', findings: [finding(call.n)], ruling: `Retry: gap ${call.n}.`, guidance: 'fix it', question: '' })
+const swarmModels = async (t, ladder) => {
+  const run = await runWorkflow(compile(makeRepo(t), plan([task(1)])), { ladder, supervisor: (call, approve) => (call.n <= 2 ? retry(call) : approve(call)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  return run.calls.filter((c) => c.role === 'implementer' && c.unit === 'task-1').map((c) => c.model)
+}
+
+const world = (t, ladder) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  let n = 0
+  return { dataDir, cwd: dataDir, now: () => 1000 + (n += 1), settings: { lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }, newId: () => `gen-${n}`, pickPair: async () => ({ pick: null, quota: [] }), ladder }
+}
+const brief = (id) => ({ session: 's1', event: { subagent_type: 'general-purpose', description: 'd', prompt: `AETHER-TASK: ${id}\nDo the work.` } })
+const delegateSteps = async (t, ladder) => {
+  const deps = world(t, ladder)
+  await delegates.begin(brief('t1'), deps)
+  const steps = []
+  for (const n of [1, 2]) steps.push((await delegates.verdict({ task: 't1', verdict: 'fix', findings: [`src/f${n}.js:${n}: missing case ${n}`] }, deps)).next.step)
+  return steps
+}
+
+test('one number changed in one ladder changes the swarm and the delegates together', async (t) => {
+  assert.deepEqual(await swarmModels(t, undefined), [HAIKU.model, HAIKU.model, HAIKU.model])
+  assert.deepEqual(await swarmModels(t, TIGHT), [HAIKU.model, HAIKU.model, SONNET.model])
+  assert.deepEqual(await delegateSteps(t, undefined), [HAIKU.step, HAIKU.step])
+  assert.deepEqual(await delegateSteps(t, TIGHT), [HAIKU.step, SONNET.step])
+})
+```
+
 En `tests/copies-ladder.test.js`: se borra el caso `the retry of haiku in effortFor is the retry effort of the haiku rung` (esa función ya no existe). Los demás casos de ese archivo siguen en pie hasta la tarea 7.
 
 En los siete archivos `tests/workflow*.test.js` y en `tests/workflow-final-slices.test.js`: cada prueba que fija la regla anterior se reescribe con su sentido nuevo, sin perder la cobertura que sigue valiendo. Las que hay que revisar, por nombre: `a unit the supervisor sends back twice on haiku escalates to sonnet`, `different findings each time keep the ladder`, `the same findings three times block the unit`, `a retry without a blocking finding, three times, stops the unit`, `an unknown verdict every time stops the unit`, `an implementer that returns no report twice blocks the unit`, `a failed implementer counts as an attempt`, `a retry runs at xhigh only on a Haiku task...`, `a declared max stays max...`, `the supervisor's Ladder section names the rung...`, `a task's effort applies only on its own model...`, las de la revisión final que leen `tier opus`, y `the workflow no longer hard-codes an xhigh rung for an escalation`. Ninguna prueba de los workflows lee `tier`, `effort` ni `ladder` de lo que compila `aether-plan`.
@@ -1014,10 +960,11 @@ En los siete archivos `tests/workflow*.test.js` y en `tests/workflow-final-slice
 ### Task 6: La puerta automática corre antes de cada supervisor
 
 **Aether:**
-- Tier: sonnet high — integración en el bucle de la unidad: el orden de las llamadas y el texto de los prompts no se agotan en las pruebas
+- Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; las pruebas fijan el orden de las llamadas y el texto de los prompts
 - Area: swarm
-- Owns: `plugins/aether/workflows/run.workflow.js`, `tests/workflow-harness.js`, `tests/workflow.test.js`, `tests/workflow-lanes.test.js`, `tests/workflow-next-pair.test.js`, `tests/workflow-review-once.test.js`, `tests/workflow-salvage.test.js`, `tests/workflow-split.test.js`, `tests/workflow-superdelegation.test.js`, `tests/workflow-time-cap.test.js`, `tests/workflow-final-slices.test.js`, `tests/workflow-gate.test.js`
+- Owns: `plugins/aether/workflows/run.workflow.js`, `tests/workflow-harness.js`, `tests/workflow.test.js`, `tests/workflow-lanes.test.js`, `tests/workflow-next-pair.test.js`, `tests/workflow-review-once.test.js`, `tests/workflow-salvage.test.js`, `tests/workflow-split.test.js`, `tests/workflow-superdelegation.test.js`, `tests/workflow-time-cap.test.js`, `tests/workflow-final-slices.test.js`, `tests/workflow-ladder.test.js`, `tests/workflow-gate.test.js`
 - Depends on: Task 5 — edita el mismo script y usa `applyVerdict` y el bloque `unit.ladder`
+- Depends on: Task 9 — el script llama a `aether-wt gate`: el verbo y su respuesta existen antes de que el script dependa de ellos
 - Serves: R7, R8, R10, R11, R12, R20
 
 **Interfaces:**
@@ -1054,6 +1001,7 @@ const [HAIKU, SONNET] = L.rungs
 const LONG = "Run this command with the Bash tool, once, exactly as written, with the Bash tool's timeout set to 600000:"
 
 const one = (t) => compile(makeRepo(t), plan([task(1)]))
+// What the real gate gives when a subtest `adds` fails in `tests/a.test.js`: the file is the path-like name of the same output (rule 3 of Task 9).
 const failing = (file, what, detail = '') => ({ pass: false, checks: 'fail', findings: [{ file, what }], detail, tests: '', knownFailures: [], timedOut: false, files: [] })
 const gateOn = (n, answer) => (call, wt) => (call.kind === 'ops:gate' && call.n <= n ? (typeof answer === 'function' ? answer(call) : answer) : wt(call))
 const attempts = (run) => run.calls.filter((c) => c.role === 'implementer' && c.unit === 'task-1')
@@ -1149,7 +1097,7 @@ test('a retry after a merge conflict runs the gate again', async (t) => {
 ### Task 7: `aether-plan` lee e ignora `Tier` y `Ladder`
 
 **Aether:**
-- Tier: sonnet high — el analizador tiene muchas pruebas que cambian de sentido y una salida que otros leen
+- Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; las pruebas nuevas fijan los avisos y la salida del compilador
 - Area: plan
 - Owns: `plugins/aether/lib/plan.js`, `plugins/aether/lib/plan-compile.js`, `tests/plan.test.js`, `tests/aether-plan.test.js`, `tests/plan-fixtures.js`, `tests/plan-relaunch.test.js`, `tests/plan-trace.test.js`, `tests/copies-ladder.test.js`
 - Depends on: Task 5 — el script deja de leer `tier`, `effort` y `ladder`, así que el compilador puede dejar de emitirlos
@@ -1242,10 +1190,11 @@ Las pruebas existentes que leen `tier`, `tierReason`, `effort` o `execution.ladd
 ### Task 8: La documentación, las habilidades del Lead y la decisión A97
 
 **Aether:**
-- Tier: sonnet high — prosa que debe ser verdadera frente al árbol y pasar pruebas de documentación que fijan frases
+- Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; las pruebas de documentación fijan las frases
 - Area: docs
 - Owns: `docs/guide/models-by-role.md`, `docs/guide/delegates.md`, `docs/guide/ops.md`, `docs/reference/components.md`, `docs/changelog.md`, `docs/decisions.md`, `plugins/aether/skills/swarm/SKILL.md`, `plugins/aether/skills/using-aether/SKILL.md`, `CLAUDE.md`, `tests/*docs*.test.js`, `tests/bootstrap-*.test.js`, `tests/delegate-skill.test.js`, `tests/roles.test.js`
 - Depends on: Task 1 — la fila de la familia `wt` de `components.md` ya existe y esta tarea la completa
+- Depends on: Task 9 — la fila nombra también `wt-gate.js` y esta tarea describe el verbo `gate`
 - Depends on: Task 3 — describe `quality.ladder` del informe
 - Depends on: Task 6 — describe la puerta y el estado final del script
 - Depends on: Task 7 — dice que el plan ya no elige modelo ni esfuerzo
@@ -1339,3 +1288,201 @@ Las pruebas de documentación existentes que fijaban la regla anterior (`tests/m
 - Ningún documento ni habilidad dice que el plan elige el modelo de arranque; los enlaces relativos y los anclajes que se agregan resuelven (`tests/docs-facts.test.js`).
 - `A97` cita las palabras del dueño tal como están en `specs/019-swarm-one-ladder/intent.md`.
 - No se cierra el issue #102 ni se crea un tag ni una versión: eso lo hace el Lead con la entrega.
+
+### Task 9: El verbo `aether-wt gate`
+
+**Aether:**
+- Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; las pruebas fijan los hallazgos, la línea base y el corte
+- Area: wt
+- Owns: `plugins/aether/lib/wt-gate.js`, `plugins/aether/lib/worktrees.js`, `plugins/aether/lib/delegate-checks.js`, `plugins/aether/bin/aether-wt`, `docs/reference/components.md`, `tests/wt-gate.test.js`
+- Depends on: Task 1 — comparte `bin/aether-wt` y la fila `wt` de `components.md`: la rama de `gate` y el segundo archivo de la fila se agregan después de los de `ladder`
+- Serves: R8, R9, R10, R12, R20
+
+**Interfaces:**
+
+`plugins/aether/lib/wt-gate.js` (`// Family: wt.`):
+
+```js
+// opts.timeoutMs: el tope de las pruebas; por defecto 570000, menor que los 600000 del mod.
+function gateCommand(cwd, runId, taskId, opts = {}) -> Gate
+// Gate = {
+//   pass: boolean,
+//   checks: 'pass' | 'fail',
+//   findings: [{ file: string, what: string }],   // vacío si pasa
+//   detail: string,        // el final de la salida de las pruebas cuando no se pudieron leer; '' si no
+//   tests: string,         // resumen: las últimas líneas de la salida, o 'known failures only: a, b'
+//   knownFailures: string[],
+//   timedOut: boolean,
+//   files: string[]        // los archivos que el intento cambió
+// }
+module.exports = { gateCommand }
+```
+
+Reglas de la puerta, en este orden:
+1. Archivos cambiados: `changedFiles(worktree, unitBase(mainRoot, graph, branch))` de `delegate-checks.js` y `checkEdits({ files, owns })`. Cada archivo fuera de `Owns` es `{ file: <ruta>, what: 'fuera de Owns' }`. Ningún archivo cambiado es `{ file: <primera entrada de Owns>, what: 'el intento no cambió ningún archivo' }`. Si hay algún hallazgo, devuelve sin correr las pruebas (`tests: ''`).
+2. Pruebas: `runTests(worktree, graph.testCommand, { timeoutMs, tailChars: 200000 })`. Un corte es `pass: false`, `timedOut: true`, hallazgo `{ file: 'npm test', what: 'superó el tiempo límite' }`.
+3. Salida 0: pasa. Otra salida: `judge(readBaseline(mainRoot, runId), { exitCode, output: outputTail })` de `lib/baseline.js`. Si pasa, la puerta pasa con `knownFailures`. Si no, los nombres nuevos son los de `judge(...).new` y, si `judge` no los da (`unparsed` o `no baseline`), los de `failureSignatures(outputTail)`. Un hallazgo por cada nombre nuevo:
+   - Un nombre que parece una ruta (contiene `/` o termina en `.js`, `.ts`, `.py` o `.go`) es `{ file: <nombre>, what: 'la prueba falló' }`.
+   - Cualquier otro nombre (un subtest de `node:test`, que el TAP da como `not ok N - <nombre>`) es `{ file: <la primera firma que parece una ruta entre las de `failureSignatures(outputTail)`, o 'npm test' si ninguna lo parece>, what: 'falló: <nombre>' }`.
+   - Si no se puede leer ningún nombre: un solo hallazgo `{ file: 'npm test', what: 'salió con <código>' }` y el final de la salida (1500 caracteres) en `detail`.
+   - `what` nunca lleva `detail`, para que la repetición de hallazgos de la escalera compare textos estables.
+
+Cambios de apoyo: `worktrees.js` exporta `readBaseline` (ya existe); `runTests(worktree, command, { timeoutMs, tailChars = 4000 })` recorta `outputTail` a `tailChars` en lugar del 4000 fijo (el resto de lo que devuelve no cambia).
+
+`plugins/aether/bin/aether-wt`: una rama más, `gate <run> <task>`, con el mismo estilo que la de `ladder`; la línea de uso la nombra.
+
+`docs/reference/components.md`: la fila `wt` que dejó la tarea 1 pasa a nombrar los dos archivos:
+
+```
+| wt | `wt-` | `wt-gate.js`, `wt-ladder.js` | none |
+```
+
+**Tests (write first):**
+
+`tests/wt-gate.test.js`:
+
+```js
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { WT_BIN, makeRepo, compile, commitIn, runBin } = require('./helpers.js')
+const { task, plan } = require('./plan-fixtures.js')
+const { gateCommand } = require('../plugins/aether/lib/wt-gate.js')
+const { runTests } = require('../plugins/aether/lib/delegate-checks.js')
+
+// check.js is the plan's test command. It passes while src/t1/bad.js is absent, so the run's baseline is clean;
+// with it present it fails the way `behavior` says.
+const CHECKS = {
+  newFailure: "if (require('fs').existsSync('src/t1/bad.js')) { console.log('not ok 1 - tests/new.test.js'); process.exit(1) }\nconsole.log('# pass 12')\n",
+  unreadable: "if (require('fs').existsSync('src/t1/bad.js')) { console.error('boom'); process.exit(3) }\nconsole.log('# pass 12')\n",
+  hang: "if (require('fs').existsSync('src/t1/bad.js')) setTimeout(() => {}, 20000)\n",
+  known: "console.log('not ok 1 - tests/old.test.js')\nconsole.log('# pass 11')\nprocess.exit(1)\n",
+  knownAndNew: "console.log('not ok 1 - tests/old.test.js')\nif (require('fs').existsSync('src/t1/bad.js')) console.log('not ok 2 - tests/new.test.js')\nprocess.exit(1)\n",
+  marker: "require('fs').writeFileSync('ran.txt', '1')\n",
+  namedSubtest: "if (require('fs').existsSync('src/t1/bad.js')) { console.log('not ok 1 - adds the numbers'); process.exit(1) }\nconsole.log('# pass 12')\n",
+  subtestAndFile: "if (require('fs').existsSync('src/t1/bad.js')) { console.log('not ok 1 - adds the numbers'); console.log('not ok 2 - tests/new.test.js'); process.exit(1) }\nconsole.log('# pass 12')\n",
+}
+
+function unit(t, check) {
+  const repo = makeRepo(t)
+  commitIn(repo, repo.dir, 'check.js', check, 'add the check')
+  const args = compile(repo, plan([task(1), task(2)], { execution: ['- Test command: `node check.js`'] }))
+  const created = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
+  return { repo, args, wt: created.path }
+}
+const gate = (u, opts) => gateCommand(u.repo.dir, u.args.runId, 'task-1', opts)
+
+test('an attempt that changed only what the task owns and passes the tests passes the gate', (t) => {
+  const u = unit(t, CHECKS.newFailure)
+  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
+  const g = gate(u)
+  assert.deepEqual([g.pass, g.checks, g.findings, g.timedOut, g.files], [true, 'pass', [], false, ['src/t1/a.js']])
+  assert.match(g.tests, /# pass 12/)
+})
+
+test('a file outside Owns fails the gate with the file named, and the tests do not run', (t) => {
+  const u = unit(t, CHECKS.marker)
+  commitIn(u.repo, u.wt, 'src/other/x.js', 'x\n', 'add x')
+  const g = gate(u)
+  assert.deepEqual([g.pass, g.checks], [false, 'fail'])
+  assert.deepEqual(g.findings, [{ file: 'src/other/x.js', what: 'fuera de Owns' }])
+  assert.equal(fs.existsSync(path.join(u.wt, 'ran.txt')), false)
+})
+
+test('an uncommitted file outside Owns counts too', (t) => {
+  const u = unit(t, CHECKS.newFailure)
+  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
+  fs.mkdirSync(path.join(u.wt, 'docs'), { recursive: true })
+  fs.writeFileSync(path.join(u.wt, 'docs/notes.md'), 'x\n')
+  assert.deepEqual(gate(u).findings, [{ file: 'docs/notes.md', what: 'fuera de Owns' }])
+})
+
+test('an attempt that changed nothing fails with the first Owns entry', (t) => {
+  const u = unit(t, CHECKS.newFailure)
+  const g = gate(u)
+  assert.equal(g.pass, false)
+  assert.deepEqual(g.findings, [{ file: 'src/t1/**', what: 'el intento no cambió ningún archivo' }])
+})
+
+test('a test that fails and was not failing before the run names its file', (t) => {
+  const u = unit(t, CHECKS.newFailure)
+  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  const g = gate(u)
+  assert.equal(g.pass, false)
+  assert.deepEqual(g.findings, [{ file: 'tests/new.test.js', what: 'la prueba falló' }])
+})
+
+test('a failing subtest whose name is not a path is a finding that names it, with npm test as the file when the output names no file', (t) => {
+  const u = unit(t, CHECKS.namedSubtest)
+  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  const g = gate(u)
+  assert.equal(g.pass, false)
+  assert.deepEqual(g.findings, [{ file: 'npm test', what: 'falló: adds the numbers' }])
+})
+
+test('a subtest name takes its file from a path-like failure of the same output', (t) => {
+  const u = unit(t, CHECKS.subtestAndFile)
+  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  assert.deepEqual(gate(u).findings, [
+    { file: 'tests/new.test.js', what: 'falló: adds the numbers' },
+    { file: 'tests/new.test.js', what: 'la prueba falló' },
+  ])
+})
+
+test('a failure the output does not name falls back to npm test with the exit code, and the tail goes in detail', (t) => {
+  const u = unit(t, CHECKS.unreadable)
+  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  const g = gate(u)
+  assert.deepEqual(g.findings, [{ file: 'npm test', what: 'salió con 3' }])
+  assert.match(g.detail, /boom/)
+})
+
+test('a failure that the baseline already had does not fail the gate', (t) => {
+  const u = unit(t, CHECKS.known)
+  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
+  const g = gate(u)
+  assert.deepEqual([g.pass, g.findings, g.knownFailures], [true, [], ['tests/old.test.js']])
+  assert.match(g.tests, /known failures only: tests\/old\.test\.js/)
+})
+
+test('a known failure does not excuse a new one: only the new one is a finding', (t) => {
+  const u = unit(t, CHECKS.knownAndNew)
+  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  assert.deepEqual(gate(u).findings, [{ file: 'tests/new.test.js', what: 'la prueba falló' }])
+})
+
+test('tests cut at the limit are a gate failure that says so', (t) => {
+  const u = unit(t, CHECKS.hang)
+  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'hang')
+  const g = gate(u, { timeoutMs: 300 })
+  assert.deepEqual([g.pass, g.timedOut], [false, true])
+  assert.deepEqual(g.findings, [{ file: 'npm test', what: 'superó el tiempo límite' }])
+})
+
+test('the bin prints the gate as one JSON line, and a run with no unit worktree is an error', (t) => {
+  const u = unit(t, CHECKS.newFailure)
+  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
+  const r = runBin(WT_BIN, ['gate', u.args.runId, 'task-1'], u.repo.dir)
+  assert.equal(r.status, 0, r.stdout)
+  assert.equal(r.json.pass, true)
+  const none = runBin(WT_BIN, ['gate', u.args.runId, 'task-2'], u.repo.dir)
+  assert.equal(none.status, 1)
+  assert.match(none.json.error, /worktree/)
+})
+
+test('runTests keeps a longer tail when asked, and 4000 characters otherwise', () => {
+  const command = "node -e \"console.log('x'.repeat(9000))\""
+  assert.equal(runTests(process.cwd(), command).outputTail.length, 4000)
+  assert.ok(runTests(process.cwd(), command, { tailChars: 20000 }).outputTail.length > 9000)
+})
+```
+
+**Acceptance:**
+- `tests/wt-gate.test.js` pasa y `npm test` completo pasa (incluidos `tests/guards.test.js`, `tests/bins-thin.test.js` y las pruebas de documentación de `components.md`).
+- `git diff main -- plugins/aether/lib/ladder.js plugins/aether/config/ladder.json` queda vacío.
+- Ningún número de la escalera está escrito en `wt-gate.js`. El tope por defecto de la puerta (570 000 ms) es menor que `OPS_TIMEOUT_MS` (600 000).
+- `aether-wt` sin argumentos conocidos sigue imprimiendo su uso, que ahora nombra `ladder` y `gate`.
+- Una prueba que falla con un nombre que no es una ruta se informa con ese nombre (`falló: <nombre>`), no solo con el código de salida.

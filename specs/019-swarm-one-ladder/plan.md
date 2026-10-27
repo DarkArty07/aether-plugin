@@ -14,7 +14,7 @@
   - `lib/plan.js` y `lib/plan-compile.js` dejan de pedir y de emitir `Tier`, `effort` y `ladder`.
   - `lib/report.js` cuenta lo que el script informa.
   - Las habilidades, los agentes y la documentación dicen la regla nueva.
-- **El contrato entre el script y los verbos** (lo comparten las tareas 1, 3, 5 y 6; se fija aquí para que puedan avanzar sin esperarse):
+- **El contrato entre el script y los verbos** (lo comparten las tareas 1, 3, 5, 6 y 9; se fija aquí para que puedan avanzar sin esperarse):
   - `aether-wt ladder <run> <task>` imprime la vista `{ task, status, step, model, effort, kind, cause, attempts, correctionsUsed, corrections }`. Crea el estado en el primer peldaño si no existe.
   - `aether-wt ladder <run> <task> --verdict approve|fix|infeasible --payload <ruta> --digest <huella>` aplica `judge` y imprime `{ accepted: true, ...vista }`, o `{ accepted: false, rejection }` sin guardar nada.
   - `aether-wt gate <run> <task>` imprime `{ pass, checks, findings: [{ file, what }], detail, tests, knownFailures, timedOut, files }`.
@@ -36,7 +36,7 @@
 **D2. Una sola política: `lib/ladder.js`, a través de `lib/wt-ladder.js`.**
 - `ladderCommand(cwd, runId, taskId, { verdict, payload, digest, ladder })` guarda `{ state, next }` en `<runDir>/ladder/<task>.json`, donde `state` es el de `lib/ladder.js` y `next` es el último `next` de `judge` (o el primer peldaño). Guardar `next` es lo que permite a un relanzamiento seguir en el peldaño y con el esfuerzo (primero o de corrección) en que quedó la unidad.
 - Un veredicto que `judge` no acepta devuelve `{ accepted: false, rejection }` y no cambia el archivo.
-- El parámetro `ladder` (ya cargado) existe por la misma razón que `deps.ladder` en `lib/delegate-task.js`: una prueba cambia un número sin tocar `config/ladder.json`.
+- El parámetro `ladder` (ya cargado) existe por la misma razón que `deps.ladder` en `lib/delegate-task.js`: una prueba cambia un número sin tocar `config/ladder.json`. El arnés de pruebas del script lo pasa a `ladderCommand` (`runWorkflow(args, { ladder })`), así una misma escalera modificada llega al swarm y a los delegados en una sola prueba (`tests/ladder-one-source.test.js`).
 - El script pierde `nextTier`, `effortFor`, `ladderOutlook`, los contadores `used`, la línea `Ladder:` y la regla de las tres repeticiones.
 
 *Serves: C2; R2, R3, R6, R17.*
@@ -69,7 +69,7 @@
 1. Compara los archivos cambiados con `Owns` (`changedFiles` contra `unitBase`, y `checkEdits`). Si falla, devuelve los hallazgos y **no corre las pruebas**: una prueba que se corre sobre archivos ajenos no dice nada útil.
 2. Corre `graph.testCommand` con `runTests`, con un tope de 570 s, menor que el de 600 s del mod, para que el verbo diga él mismo el corte y no lo corte el mod.
 3. `judge` de `lib/baseline.js` con el `baseline.json` de la ejecución: un fallo de la línea base no falla la puerta.
-4. Hallazgos como objetos `{ file, what }`. Para las pruebas, el archivo de prueba y el nombre que falla; si no se puede leer, `{ file: 'npm test', what: 'salió con N' }` y el final de la salida en `detail`. Un corte es `{ file: 'npm test', what: 'superó el tiempo límite' }`. `detail` no entra en `what`, para que la repetición de hallazgos de la escalera compare textos estables.
+4. Hallazgos como objetos `{ file, what }`. Para las pruebas, si el nombre que falla parece una ruta, `{ file: <nombre>, what: 'la prueba falló' }`; si es otro nombre (un subtest de `node:test`), `{ file: <la primera firma con forma de ruta de la misma salida, o 'npm test'>, what: 'falló: <nombre>' }`; si no se puede leer ningún nombre, `{ file: 'npm test', what: 'salió con N' }` y el final de la salida en `detail`. Un corte es `{ file: 'npm test', what: 'superó el tiempo límite' }`. `detail` no entra en `what`, para que la repetición de hallazgos de la escalera compare textos estables.
 
 En el script, la puerta corre después de cada intento (también uno rescatado sin informe y un reintento de merge), con `long: true`. Si falla, es un `fix` con esos hallazgos y no se llama al supervisor. Si pasa, el prompt del supervisor lleva `Checks: pass` y el resumen de las pruebas. Si el propio comando de la puerta falla (error del ops), el supervisor sigue y su prompt dice `Checks: not run (<causa>)`.
 
@@ -81,7 +81,7 @@ En el script, la puerta corre después de cada intento (también uno rescatado s
 
 **D7. La revisión final cambia de señal.** `reviewPlan` lee solo `review`: Opus `xhigh` si alguna unidad unida tiene `Review: xhigh` o `max`; Sonnet `high` en una ejecución de hasta tres unidades que piden todas `Review: high`; Opus `high` en el resto y en un relanzamiento. *Serves: C5; R15.*
 
-**D8. El informe.** El script entrega `units[].ladder` (arriba); `lib/report.js` lo suma entre lanzamientos en `quality.ladder` (`null` si ninguna unidad lo trae, que es el caso de un `result.json` anterior). No se tocan `quality.climbed`, `quality.escalated` ni `radar`. *Serves: C7; R18.*
+**D8. El informe.** El script entrega `units[].ladder` (arriba); `lib/report.js` lo suma entre lanzamientos en `quality.ladder` (`null` si ninguna unidad lo trae, que es el caso de un `result.json` anterior). `finalize` ya guarda `report` entero en `runs.jsonl`, así que las cuentas quedan ahí sin otro cambio y sobreviven al borrado de la carpeta de la ejecución; una línea anterior al cambio no las trae y sigue leyéndose. No se tocan `quality.climbed`, `quality.escalated` ni `radar`. *Serves: C7; R18.*
 
 **D9. Las habilidades y los agentes.** `aether:tasks` y su gemela de Spec Kit, y el agente `writer`, dejan de pedir `Tier` y `Ladder`, y piden `Review` donde un error llegaría a datos, seguridad o concurrencia. El agente `supervisor` exige archivo y qué falta en cada hallazgo de un `retry`, sabe que recibe la evidencia de la puerta y que la escalera sube el modelo. *Serves: C5, C3, C4; R5, R11, R16.*
 
@@ -104,7 +104,7 @@ En el script, la puerta corre después de cada intento (también uno rescatado s
 | `plugins/aether/lib/report.js` | D8. |
 | `plugins/aether/agents/writer.md`, `agents/supervisor.md`, `skills/tasks/SKILL.md`, `speckit/commands/speckit.tasks.md` | D9. |
 | `plugins/aether/skills/swarm/SKILL.md`, `skills/using-aether/SKILL.md`, `docs/guide/models-by-role.md`, `docs/guide/delegates.md`, `docs/guide/ops.md`, `docs/reference/components.md`, `docs/changelog.md`, `docs/decisions.md`, `CLAUDE.md` | D10. `CLAUDE.md` dice que el swarm toma modelo y esfuerzo del `Tier` del plan; esa frase pasaría a ser falsa. |
-| `tests/` | Nuevas: `wt-ladder`, `wt-gate`, `ops-command-ladder`, `report-ladder`, `swarm-ladder-agents`, `workflow-ladder`, `workflow-gate`, `swarm-ladder-docs`, y `hooks/ops-ladder.test.ts`. Cambian las que fijaban la regla anterior: los siete archivos `workflow*`, `workflow-harness.js`, `plan`, `aether-plan`, `plan-fixtures`, `copies-ladder`, `copies-ladder-prose` (se borra), `speckit`, `models-by-role-docs`, `effort-policy-docs`. |
+| `tests/` | Nuevas: `wt-ladder`, `wt-gate`, `ops-command-ladder`, `report-ladder`, `swarm-ladder-agents`, `ladder-one-source`, `workflow-ladder`, `workflow-gate`, `swarm-ladder-docs`, y `hooks/ops-ladder.test.ts`. Cambian las que fijaban la regla anterior: los siete archivos `workflow*`, `workflow-harness.js`, `plan`, `aether-plan`, `plan-fixtures`, `copies-ladder`, `copies-ladder-prose` (se borra), `speckit`, `models-by-role-docs`, `effort-policy-docs`. |
 
 No se tocan `lib/ladder.js` ni `config/ladder.json`, el enrutador de pares y los lanes, el modelo ni el esfuerzo del supervisor, las fusiones de a una ni el presupuesto de agentes (R17).
 
@@ -115,12 +115,12 @@ No se tocan `lib/ladder.js` ni `config/ladder.json`, el enrutador de pares y los
 | Criterio | Qué lo prueba |
 | --- | --- |
 | C1 | `tests/workflow-ladder.test.js`: planes con `Tier: sonnet` y `Tier: opus` arrancan en `haiku high`. Repetición en vivo (C9). |
-| C2 | `tests/workflow-ladder.test.js`: búsqueda en el script sin `nextTier`, `effortFor`, `ladderOutlook`, `used` ni la regla de las tres repeticiones. `tests/wt-ladder.test.js`: un número cambiado en la escalera cargada cambia el veredicto; el estado sobrevive a un nuevo proceso. `tests/workflow-ladder.test.js`: un relanzamiento sigue en su peldaño. |
-| C3 | `tests/wt-gate.test.js` (cambio ajeno, prueba que falla, línea base, éxito, corte) y `tests/workflow-gate.test.js` (una puerta que falla no llama al supervisor y gasta una corrección; una que pasa le da la evidencia). |
+| C2 | `tests/workflow-ladder.test.js`: búsqueda en el script sin `nextTier`, `effortFor`, `ladderOutlook`, `used` ni la regla de las tres repeticiones. `tests/wt-ladder.test.js`: un número cambiado en la escalera cargada cambia el veredicto; el estado sobrevive a un nuevo proceso. `tests/ladder-one-source.test.js`: una misma escalera de prueba con un número cambiado hace que el swarm (por el arnés) y los delegados (`deps.ladder`) cambien de conducta a la vez. `tests/workflow-ladder.test.js`: un relanzamiento, también con `--only`, sigue en su peldaño. |
+| C3 | `tests/wt-gate.test.js` (cambio ajeno, prueba que falla con ruta y con un nombre que no lo es, línea base, éxito, corte) y `tests/workflow-gate.test.js` (una puerta que falla no llama al supervisor y gasta una corrección; una que pasa le da la evidencia). |
 | C4 | `tests/workflow-ladder.test.js`: un `retry` sube esfuerzo y no modelo; los mismos hallazgos dos veces suben; un `retry` sin archivo se completa y se cuenta; un `escalate` sin razón es fallo del supervisor; cada resultado sin veredicto tiene su prueba y su tope. |
 | C5 | `tests/plan.test.js` y `tests/aether-plan.test.js` (advertencia, sin `tier`, `effort` ni `ladder`); `tests/workflow-ladder.test.js` (`Review` fija la revisión final); `tests/speckit.test.js` y `tests/swarm-ladder-agents.test.js` (las habilidades). |
 | C6 | Las pruebas existentes de fusiones, presupuesto, lanes y delegados pasan sin cambiar de sentido; `git diff main -- plugins/aether/lib/ladder.js plugins/aether/config/ladder.json` vacío. |
-| C7 | `tests/report-ladder.test.js`: las cuentas, y un `result.json` sin `ladder` sigue leyéndose. |
+| C7 | `tests/report-ladder.test.js`: las cuentas, un `result.json` sin `ladder` sigue leyéndose, y la línea de `runs.jsonl` lleva `report.quality.ladder` sin romper una línea anterior. |
 | C8 | `tests/swarm-ladder-docs.test.js` y las pruebas de documentación existentes. `gh issue view 102` lo comprueba el Lead al cerrar. |
 | C9 | Repetición en vivo, hecha por el Lead (abajo). |
 
@@ -138,7 +138,7 @@ No se tocan `lib/ladder.js` ni `config/ladder.json`, el enrutador de pares y los
 4. **Los textos de los hallazgos sintéticos y la advertencia del compilador están en español,** como los da el diseño (`fuera de Owns`, `el intento no terminó (<causa>)`, `npm test: superó el tiempo límite`, `ignorado: el swarm arranca todas las tareas en Haiku y usa la escalera de los delegados`). El resto de los mensajes del script sigue en inglés; se unifican en otra decisión.
 5. **El archivo de estado de la escalera es `<runDir>/ladder/<task>.json`** y el de carga `<runDir>/ladder/<task>-verdict.json`. No hay forma de reiniciar una escalera salvo borrar la carpeta de la ejecución (riesgo 4 del diseño).
 6. **`firstTry` se calcula al unirse la unidad:** unida, sin intentos previos en la escalera (`attempts` del estado al empezar el lanzamiento es 0), sin correcciones, sin subidas y sin rechazos de la puerta.
-7. **Las líneas `Tier` y `Ladder` siguen en este `tasks.md`** porque el compilador instalado las exige; la rama nueva las ignora.
+7. **Las líneas `Tier` y `Ladder` siguen en este `tasks.md`** porque el compilador instalado las exige; la rama nueva las ignora. Todas las tareas dicen `haiku high`, por la orden del dueño («Que todo arranque en haiku»), y el riesgo de las tareas 2 y 5 se marca con `Review: xhigh`.
 8. **Todos los supuestos de la spec (1 a 10) se heredan** sin cambios.
 
 ## Risks
@@ -146,7 +146,7 @@ No se tocan `lib/ladder.js` ni `config/ladder.json`, el enrutador de pares y los
 1. **`run.workflow.js` es el archivo más grande del plugin y lo tocan dos tareas seguidas (la 5 y la 6).** Se ordenan en cadena con dependencias reales y cada una deja `npm test` en verde: la tarea 5 reemplaza la política, la 6 agrega la puerta. El `check` no lo trata como cadena porque las demás tareas corren en paralelo.
 2. **Muchas pruebas existentes fijan la regla anterior** (siete archivos `workflow*`, `plan`, `copies-ladder*`, pruebas de documentación). Cada tarea es dueña de las que rompe y debe dejarlas en el sentido nuevo, sin borrar cobertura que sigue valiendo: la regla de «tres veces» pasa a ser «dos veces», y así.
 3. **La puerta duplica el tiempo de pruebas por intento** (riesgo 1 del diseño). Se acepta; el informe lo mide.
-4. **El mod admite tres formas nuevas.** El riesgo es una forma floja que deje pasar una línea de shell. Por eso la tarea 2 es de Opus con revisión `xhigh`, y sus pruebas incluyen líneas malformadas, la ruta de otra ejecución y un marcador que no coincide con `--payload`.
+4. **El mod admite tres formas nuevas.** El riesgo es una forma floja que deje pasar una línea de shell. Por eso la tarea 2 lleva revisión `xhigh` (su implementador arranca en Haiku, como toda tarea), y sus pruebas incluyen líneas malformadas, la ruta de otra ejecución y un marcador que no coincide con `--payload`.
 5. **`aether-plan` instalado y el de la rama difieren durante la construcción.** Las tareas usan el de la rama por ruta (`node plugins/aether/bin/aether-plan …`), como dice `CLAUDE.md`.
 6. **El tope de 570 s de la puerta contra 600 s del mod** deja 30 s de margen para el arranque y la salida. Un proyecto con pruebas más largas fallará la puerta siempre con «superó el tiempo límite» y gastará las correcciones; el informe lo muestra y el siguiente paso sería un comando de pruebas por tarea (fuera de alcance).
 7. **La repetición en vivo puede no pasar los techos.** La spec dice que el costo y el tiempo se miden e informan y los decide el dueño; solo las 17 pruebas son la puerta de lanzamiento.
