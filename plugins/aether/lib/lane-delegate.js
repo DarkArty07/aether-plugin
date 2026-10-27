@@ -9,6 +9,7 @@
 // A harness has no limit on its calls in flight: an attempt starts at once on the pair that was chosen.
 // The command never merges: the Lead reads the result, merges with aether-wt, or, on `no-candidate`,
 // runs the charge natively under the same id.
+// Family: lane.
 
 const fs = require('node:fs')
 const path = require('node:path')
