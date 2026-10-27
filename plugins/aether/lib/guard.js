@@ -616,4 +616,34 @@ function redactCommand(command, cls) {
   return cls === 'credentials' ? '[redacted]' : redactValues(command)
 }
 
-module.exports = { decide, irreversibleClass, redactCommand }
+// A Bash call: null to allow, or { reason } to deny. Any error allows the command. The guard runs on
+// every Bash call, so the modules that read git and the grants load only for an irreversible command.
+function decideBash(input, env = process.env) {
+  try {
+    const cls = irreversibleClass(input.tool_input?.command)
+    if (cls === null) return null
+    const { repoPaths } = require('./git.js')
+    const { check } = require('./autonomy.js')
+    const { appendPending } = require('./pending.js')
+    const { ensureExcluded } = require('./run.js')
+    const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
+    // Outside a git repository this throws, and the command is allowed unrecorded.
+    const { mainRoot, gitCommonDir } = repoPaths(cwd)
+    if (check(mainRoot, cls, { session: input.session_id }) !== null) return null
+    const mode = env.AETHER_IRREVERSIBLE === 'enforce' ? 'enforce' : 'log'
+    const entry = { time: Date.now(), session: input.session_id, class: cls, command: redactCommand(input.tool_input.command, cls), cwd: input.cwd, mode }
+    // The list holds the command, so git must ignore its directory before the first line is written.
+    ensureExcluded(gitCommonDir)
+    // A command that cannot be recorded is allowed: a refusal the owner cannot see is not kept.
+    if (!appendPending(mainRoot, entry)) return null
+    if (mode === 'log') return null
+    return {
+      reason: `Aether added this ${cls} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".`,
+    }
+  } catch {
+    // Outside a git repository, or a grant registry that cannot be read: the command is allowed.
+    return null
+  }
+}
+
+module.exports = { decide, decideBash, irreversibleClass, redactCommand }

@@ -16,11 +16,12 @@ for (const name of fs.readdirSync(BIN)) {
       assert.ok(/^'node:path'$/.test(spec) || /^'node:fs'$/.test(spec) || /lib/.test(spec), `${name} requires ${spec}`)
     }
     for (const forbidden of ['node:child_process', 'node:os', 'node:crypto']) assert.ok(!code.includes(`'${forbidden}'`), `${name} requires ${forbidden}`)
-    if (code.includes(`'node:fs'`) && name !== 'aether-voice') {
+    if (code.includes(`'node:fs'`)) {
       assert.ok(/readFileSync\((0|'\/dev\/stdin')/.test(code), `${name} requires node:fs but does not read stdin`)
     }
-    if (name !== 'aether-voice') {
-      assert.ok(!/\bfs\./.test(code.replace(/readFileSync\((0|'\/dev\/stdin')/g, '')), `${name} uses fs for more than stdin`)
+    assert.ok(!/\bfs\./.test(code.replace(/readFileSync\((0|'\/dev\/stdin')/g, '')), `${name} uses fs for more than stdin`)
+    for (const call of code.matchAll(/readFileSync\(([^)]*)\)/g)) {
+      assert.ok(/^(0|'\/dev\/stdin')\b/.test(call[1].trim()), `${name} reads a file that is not stdin: readFileSync(${call[1]})`)
     }
     assert.ok(text.split('\n').length <= MAX_LINES, `${name} has ${text.split('\n').length} lines`)
   })
