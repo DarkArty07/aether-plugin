@@ -46,20 +46,59 @@ test('(b) routing picks muse-spark-1.3 for Haiku and Sonnet high ahead of Wonder
     return decision.picked ? decision.picked.id : null
   }
 
-  assert.equal(pickFor('haiku', 'high'), 'muse/muse-spark-1.3@xhigh')
+  // The estimated rows carry an estimated cost only so the router can rank them: compareCandidates
+  // sorts a pair with no cost as Infinity, after every pair with a cost, so with null costs the measured
+  // @xhigh and @max would always win. A Haiku high call (37.8 asked, floor 36.8) takes @medium (38.0)
+  // as the cheapest pair that is enough.
+  assert.equal(pickFor('haiku', 'high'), 'muse/muse-spark-1.3@medium')
+  // Haiku max still takes @xhigh: @high at 41.0 points does not reach the floor, so @xhigh (45.1)
+  // is the cheapest pair that reaches it.
   assert.equal(pickFor('haiku', 'max'), 'muse/muse-spark-1.3@xhigh')
+  // Sonnet high (46.8 asked, at least 45.8) still lands on @max: @xhigh at 45.1 points falls short.
   assert.equal(pickFor('sonnet', 'high'), 'muse/muse-spark-1.3@max')
   assert.equal(pickFor('opus', 'high'), 'muse/muse-wonder-full-1.0@high')
 })
 
-test('(c) muse-spark-1.3 has pairs at xhigh and max, and none at high, medium or low', () => {
+test('(c) muse-spark-1.3 has pairs at low, medium, high, xhigh and max, and none at minimal', () => {
   const { pairs } = loadPairs()
   const sparkPairs = pairs.filter((p) => p.harness === 'muse' && p.model === 'muse-spark-1.3')
   const efforts = sparkPairs.map((p) => p.effort).sort()
-  assert.deepEqual(efforts, ['max', 'xhigh'])
-  for (const unwanted of ['low', 'medium', 'high']) {
-    assert.equal(sparkPairs.some((p) => p.effort === unwanted), false, `muse-spark-1.3 must have no pair at ${unwanted}`)
+  assert.deepEqual(efforts, ['high', 'low', 'max', 'medium', 'xhigh'])
+  assert.equal(sparkPairs.some((p) => p.effort === 'minimal'), false, 'muse-spark-1.3 must have no pair at minimal: no curve below low to base it on')
+})
+
+test('(e) the low, medium and high rows are the owner-estimated points and costs of 2026-10-27, with no minimal row', () => {
+  const { pairs } = loadPairs()
+  const sparkPairs = pairs.filter((p) => p.harness === 'muse' && p.model === 'muse-spark-1.3')
+  const estimated = Object.fromEntries(sparkPairs.filter((p) => ['low', 'medium', 'high'].includes(p.effort)).map((p) => [p.effort, p]))
+  assert.deepEqual(Object.keys(estimated).sort(), ['high', 'low', 'medium'])
+  assert.deepEqual([estimated.low.intelligence, estimated.medium.intelligence, estimated.high.intelligence], [32.0, 38.0, 41.0])
+  assert.deepEqual([estimated.low.costPerTaskUsd, estimated.medium.costPerTaskUsd, estimated.high.costPerTaskUsd], [0.19, 0.43, 0.66])
+  for (const [effort, pair] of Object.entries(estimated)) {
+    assert.deepEqual([pair.harness, pair.model, pair.family, pair.group], ['muse', 'muse-spark-1.3', 'muse-spark-1.3', 'muse'], effort)
+    assert.deepEqual([pair.outputTokensPerSecond, pair.timeToFirstTokenS], [null, null], effort)
+    assert.match(pair.ownerDecision, /reocmendado/, `${effort}: quotes the owner's words`)
+    assert.match(pair.ownerDecision, /2026-10-27/, `${effort}: carries the date of the decision`)
+    assert.match(pair.ownerDecision, /stimat/, `${effort}: marked as an estimate, not a measurement`)
+    assert.match(pair.ownerDecision, /no page/, `${effort}: says plainly that Artificial Analysis has no page for these efforts`)
+    assert.match(pair.ownerDecision, /cost.{0,120}estimat/i, `${effort}: says the cost is an estimate too`)
   }
+  // Each new row keeps a slug of its own, naming no Artificial Analysis page (the validation asks only
+  // for a non-empty string, as with muse-wonder-full-1.0 reusing another page's slug).
+  const slugs = sparkPairs.map((p) => p.slug)
+  assert.equal(new Set(slugs).size, slugs.length, 'every Spark row has a distinct slug')
+  assert.equal(sparkPairs.some((p) => p.effort === 'minimal'), false)
+
+  // The estimates are live candidates, not dead rows: with the measured Spark pairs and Wonder Full out
+  // (a retry chain excludes them), a Haiku high call falls to the estimated @medium, with @high next.
+  const open = (hours) => ({ usable: true, quota: { windows: { weekly: { remaining: 0.5, resetsAt: new Date(Date.now() + hours * 3600000).toISOString() } } } })
+  const harnesses = { muse: { installed: true, groups: { muse: open(1) } } }
+  const excluded = ['muse/muse-spark-1.3@xhigh', 'muse/muse-spark-1.3@max', 'muse/muse-wonder-full-1.0@high']
+  const decision = choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses, exclude: excluded })
+  assert.equal(decision.picked.id, 'muse/muse-spark-1.3@medium')
+  const outcome = Object.fromEntries(decision.candidates.filter((c) => c.id.startsWith('muse/muse-spark-1.3@')).map((c) => [c.id, [c.outcome, c.why]]))
+  assert.deepEqual(outcome['muse/muse-spark-1.3@high'], ['next', null])
+  assert.deepEqual(outcome['muse/muse-spark-1.3@low'], ['passed', 'below'], '32 points do not reach the 36.8 a Haiku high call asks for')
 })
 
 test('(d) the index builder gives muse-spark-1.3 the efforts of its calledNotListed entry, so a rebuild keeps max, and Wonder Full keeps the capture\'s', () => {

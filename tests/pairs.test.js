@@ -17,7 +17,7 @@ function modelOf(name) {
   return EXTERNAL[Object.keys(EXTERNAL).find((word) => name.startsWith(word))]
 }
 
-test('the table holds the 22 pairs of the evidence with the same figures, six Claude pairs for agy and the three pairs of Muse', () => {
+test('the table holds the 22 pairs of the evidence with the same figures, six Claude pairs for agy and the six pairs of Muse', () => {
   const { pairs } = loadPairs()
   const evidence = JSON.parse(fs.readFileSync(EVIDENCE, 'utf8')).pairs
   assert.equal(evidence.length, 22)
@@ -29,10 +29,10 @@ test('the table holds the 22 pairs of the evidence with the same figures, six Cl
     assert.equal(found.costPerTaskUsd, row.costPerTaskUsd ?? null, row.name)
     assert.equal(found.id, pairId(found.harness, found.model, found.effort))
   }
-  assert.equal(pairs.length, 31)
+  assert.equal(pairs.length, 34)
   assert.equal(pairs.filter((p) => p.harness === 'agy' && p.family.startsWith('claude-')).length, 6)
-  assert.equal(pairs.filter((p) => p.harness === 'muse').length, 3)
-  assert.equal(new Set(pairs.map((p) => p.id)).size, 31)
+  assert.equal(pairs.filter((p) => p.harness === 'muse').length, 6)
+  assert.equal(new Set(pairs.map((p) => p.id)).size, 34)
 })
 
 test('the Claude pairs of agy carry the figures of the native pair of the same model and effort', () => {
@@ -51,7 +51,7 @@ test('every native pair has no group and every external pair has one', () => {
   for (const pair of loadPairs().pairs) assert.equal(pair.group === null, pair.harness === 'claude', pair.id)
 })
 
-test('C16: the Muse pair has the figure of Opus high, no cost and the owner words, and no other pair has an owner decision', () => {
+test('C16: the Muse pair has the figure of Opus high, no cost and the owner words, and the three estimated Spark pairs carry estimated costs with an owner decision too', () => {
   const { pairs } = loadPairs()
   const pair = pairs.find((p) => p.id === 'muse/muse-wonder-full-1.0@high')
   const opus = referenceOf(pairs, { model: 'opus', effort: 'high' })
@@ -59,8 +59,13 @@ test('C16: the Muse pair has the figure of Opus high, no cost and the owner word
   assert.deepEqual([pair.model, pair.family, pair.effort, pair.group, pair.costPerTaskUsd], ['muse-wonder-full-1.0', 'muse-wonder-full-1.0', 'high', 'muse', null])
   assert.deepEqual([pair.slug, pair.intelligence], [opus.slug, opus.intelligence])
   assert.match(pair.ownerDecision, /anivel de opus/)
-  assert.deepEqual(pairs.filter((p) => p.ownerDecision !== undefined).map((p) => p.id), [pair.id])
+  assert.deepEqual(pairs.filter((p) => p.ownerDecision !== undefined).map((p) => p.id), ['muse/muse-spark-1.3@low', 'muse/muse-spark-1.3@medium', 'muse/muse-spark-1.3@high', pair.id])
   assert.deepEqual(pairs.filter((p) => p.costPerTaskUsd === null).map((p) => p.id).sort(), ['agy/gemini-3.8-flash@low', pair.id])
+  const estimated = Object.fromEntries(['low', 'medium', 'high'].map((effort) => [effort, pairs.find((p) => p.id === `muse/muse-spark-1.3@${effort}`)]))
+  assert.deepEqual([estimated.low.costPerTaskUsd, estimated.medium.costPerTaskUsd, estimated.high.costPerTaskUsd], [0.19, 0.43, 0.66])
+  for (const [effort, row] of Object.entries(estimated)) {
+    assert.match(row.ownerDecision, /cost.{0,120}estimat/i, `${effort}: says the cost is an estimate`)
+  }
 })
 
 test('referenceOf gives the native pair of a model and effort, and throws for any other', () => {
@@ -79,7 +84,7 @@ test('AETHER_PAIRS_CONFIG names another table, and a table that breaks a rule is
     return file
   }
   assert.equal(pairsPath({ AETHER_PAIRS_CONFIG: '/x/pairs.json' }), '/x/pairs.json')
-  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 31)
+  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 34)
   const mutate = (fn) => {
     const copy = JSON.parse(JSON.stringify(good))
     fn(copy)
