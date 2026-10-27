@@ -5,7 +5,8 @@
 // per hour to the reset, with at least one hour; lane-order.js's rule), whether it is usable above the table's reserve
 // and the live dry mark, and where the reading came from and how old it is. A reading that fails is no reading: each
 // group of its harness is unknown, with the error, and nothing else breaks. --refresh first asks grok for a new
-// reading, over ACP and then through its UI; refreshStale is the same step for a wave, which only refreshes what is stale.
+// reading, over ACP and then through its UI, and muse for one over a minimal exec call; refreshStale is the same
+// step for a wave, which only refreshes what is stale.
 // Family: lane.
 
 const { isObject } = require('./common.js')
@@ -16,6 +17,7 @@ const readings = require('./lane-readings.js')
 const run = require('./run.js')
 const { createAdapter } = require('./harness/index.js')
 const { STALE_MS, TIMEOUT_MS, refreshGrokQuota } = require('./harness/grok-quota.js')
+const { TIMEOUT_MS: MUSE_TIMEOUT_MS, refreshMuseQuota } = require('./harness/muse-quota.js')
 
 const USAGE = 'quota [<harness>...] [--refresh] [--json]'
 const MINUTE_MS = 60 * 1000
@@ -24,6 +26,7 @@ const MINUTE_MS = 60 * 1000
 // harness's table entry that gives the new reading, or null when there is none.
 const REFRESHERS = {
   grok: (settings) => refreshGrokQuota({ command: settings.command }),
+  muse: (settings) => refreshMuseQuota({ command: settings.command }),
 }
 
 function parseArgs(args) {
@@ -55,15 +58,15 @@ function localTime(ms) {
 
 const round = (value, digits) => Number(value.toFixed(digits))
 
-// How long a harness's reading stays fresh: its table entry's quotaLifeMinutes, or grok's 30 minutes.
+// How long a harness's reading stays fresh: its table entry's quotaLifeMinutes, or 30 minutes.
 function lifeMsOf(settings) {
   const minutes = Number.isFinite(settings?.quotaLifeMinutes) ? settings.quotaLifeMinutes : STALE_MS / MINUTE_MS
   return minutes * MINUTE_MS
 }
 
-// Where a group's reading came from. A reading with a source of its own keeps it (grok's log line or its answer over
-// ACP); one without that has windows was read from the CLI at readAt, as agy's /usage is. A reading with neither has
-// no source.
+// Where a group's reading came from. A reading with a source of its own keeps it (grok's log line, its answer over
+// ACP, or muse's minimal exec call); one without that has windows was read from the CLI at readAt, as agy's /usage
+// is. A reading with neither has no source.
 function sourceOf(reading, windows, { command, now, readAt, lifeMs }) {
   if (!isObject(reading)) return null
   let source
@@ -128,7 +131,7 @@ function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fr
 
   let read
   try {
-    // A refresh's reading is the plan's one reading, and a plan's groups share it, as grok's adapter gives it.
+    // A refresh's reading is the plan's one reading, and a plan's groups share it, as a refresher gives it.
     read = latest !== null ? { groups: Object.fromEntries(keys.map((key) => [key, { ...latest }])), readAt: now } : readings.readGroups(adapter, { harness: name, settings, dataDir, now, fresh })
   } catch (err) {
     const groups = {}
@@ -163,7 +166,7 @@ async function refresh(refreshers, name, settings) {
     reading = null
   }
   if (!isObject(reading)) return { reading: null, refreshed: false, method: null }
-  return { reading, refreshed: true, method: reading.source?.method === 'acp' ? 'acp' : 'ui' }
+  return { reading, refreshed: true, method: reading.source?.method ?? 'ui' }
 }
 
 // Whether a harness's reading is missing, unknown for some group of its table entry, or older than its life.
@@ -185,11 +188,12 @@ function needsRefresh(name, settings, { now, dataDir }) {
   })
 }
 
-// The quota step of a wave: refreshes each enabled, installed harness of the table that has a refresher (grok today)
-// and whose reading is missing, unknown or older than its life (quotaLifeMinutes, 30 minutes by default); a fresh
-// reading is left alone. Only the harnesses it tried are in the answer, each as { refreshed, method, reading }, method
-// being 'acp', 'ui' or null, and reading the new reading or null: whoever shows the view uses it, as quotaReport does,
-// so that an answer grok gave over ACP does not depend on a line in grok's log. Never throws. now and dataDir are for tests.
+// The quota step of a wave: refreshes each enabled, installed harness of the table that has a refresher (grok and
+// muse today) and whose reading is missing, unknown or older than its life (quotaLifeMinutes, 30 minutes by
+// default); a fresh reading is left alone. Only the harnesses it tried are in the answer, each as { refreshed,
+// method, reading }, method being 'acp', 'ui', 'exec' or null, and reading the new reading or null: whoever shows
+// the view uses it, as quotaReport does, so that an answer grok gave over ACP does not depend on a line in grok's
+// log. Never throws. now and dataDir are for tests.
 async function refreshStale({ config, enabled, refreshers = REFRESHERS, now = Date.now, dataDir = null }) {
   const done = {}
   for (const name of enabled) {
@@ -244,7 +248,7 @@ const percent = (fraction) => `${round(fraction * 100, 1)}%`
 function sourceLine(source) {
   const age = `${source.ageMinutes} min old`
   const stale = source.stale ? ' (stale: --refresh takes a new one)' : ''
-  if (source.method === undefined && source.log === undefined) {
+  if ((source.method === undefined || source.method === 'exec') && source.log === undefined) {
     return `source: ${source.command}, read ${source.ageMinutes === 0 ? 'now' : `${source.ageMinutes} min ago`}`
   }
   const where = [source.pid === null ? null : `pid ${source.pid}`, source.version === null ? null : `grok ${source.version}`].filter(Boolean).join(', ')
@@ -281,8 +285,13 @@ function markReason(mark) {
   return `${minutes} minute${minutes === 1 ? '' : 's'} after a call ended for quota`
 }
 
-// How the refresh of a harness went, in the words of grok's two methods: ACP first, its UI when ACP gave nothing.
-function refreshLine(h) {
+// How the refresh of a harness went: grok's two methods are ACP first, then its UI when ACP gave nothing; muse's
+// one method is a minimal exec call.
+function refreshLine(h, name) {
+  if (name === 'muse') {
+    if (!h.refreshed) return `  refresh: no new reading (muse gave none within ${MUSE_TIMEOUT_MS / 1000} s)`
+    return '  refresh: muse answered a minimal exec call'
+  }
   if (!h.refreshed) return `  refresh: no new reading (grok gave none over ACP, and its UI none within ${TIMEOUT_MS / 1000} s)`
   return h.refreshMethod === 'acp' ? '  refresh: grok answered _x.ai/billing' : "  refresh: grok's UI wrote a new reading"
 }
@@ -305,7 +314,7 @@ function formatReport(report, { refreshable = Object.keys(REFRESHERS) } = {}) {
       continue
     }
     lines.push(`${name} (${[h.version, h.path].filter(Boolean).join(', ')})`)
-    if (h.refreshed !== undefined) lines.push(refreshLine(h))
+    if (h.refreshed !== undefined) lines.push(refreshLine(h, name))
     if (h.error) lines.push(`  error: ${h.error}`)
     for (const [key, g] of Object.entries(h.groups)) {
       const label = g.label === null ? key : `${key}, "${g.label}"`

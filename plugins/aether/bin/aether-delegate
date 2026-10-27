@@ -8,13 +8,13 @@
 // aether-delegate run --id <id>
 // aether-delegate wait --id <id> --seconds <n>
 // aether-delegate answer --session <id> --task <id> --attempt <n> --text <text>
-// aether-delegate renew --harness <agy|grok>
+// aether-delegate renew --harness <agy|grok|muse>
 //
 // The delegate tasks of the Lead on the ladder. begin says how the attempt the mod caught runs (lib/delegate-task.js);
 // verdict records the Lead's judgment of the last attempt, which is the only one that counts, and says what the next
 // launch is; start launches run in a process of its own and returns at once, run does the attempt on an external pair
 // (lib/delegate-run.js), and wait polls for its result for up to n seconds (540 at most); answer records the final
-// answer of a read-only delegate that ran on Claude; renew takes a new quota reading of agy or grok and saves it where
+// answer of a read-only delegate that ran on Claude; renew takes a new quota reading of agy, grok or muse and saves it where
 // the pair choice reads it. start and run work in the current directory. None of them merges or pushes. Each prints one
 // JSON line and exits 0, except a wrong use or an error of its own, which prints { "error": <message> } and exits 1.
 
@@ -35,7 +35,7 @@ const VERBS = {
   run: { usage: 'run --id <id>', flags: ['id'], required: ['id'] },
   wait: { usage: 'wait --id <id> --seconds <n>', flags: ['id', 'seconds'], required: ['id', 'seconds'] },
   answer: { usage: 'answer --session <id> --task <id> --attempt <n> --text <text>', flags: ['session', 'task', 'attempt', 'text'], required: ['task', 'attempt'] },
-  renew: { usage: 'renew --harness <agy|grok>', flags: ['harness'], required: ['harness'] },
+  renew: { usage: 'renew --harness <agy|grok|muse>', flags: ['harness'], required: ['harness'] },
 }
 const USAGE = `usage: aether-delegate ${Object.values(VERBS).map((verb) => verb.usage).join(' | ')}`
 
@@ -119,7 +119,7 @@ async function answerCommand(flags, dataDir) {
 async function renewCommand(flags, dataDir) {
   const renewal = lib('router-renewal.js')
   const harness = flags.harness
-  if (!renewal.RENEWABLE.includes(harness)) throw new Error('--harness needs agy or grok')
+  if (!renewal.RENEWABLE.includes(harness)) throw new Error('--harness needs agy, grok or muse')
   const lanes = lib('lanes.js')
   const file = lanes.configPath()
   const config = lanes.loadConfig(file)

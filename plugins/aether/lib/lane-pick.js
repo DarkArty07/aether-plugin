@@ -4,7 +4,8 @@
 // (lib/superdelegation.js choose, over the pairs table and the quota views of the enabled harnesses) and logs the
 // decision; `took` logs who ran the call and why; `pause` waits, so that the workflow can time its agents without a clock of
 // its own. `pick` starts no call: it reads the quotas, and renews and
-// saves the one reading that nobody else keeps (grok's), because each `aether-lane pick` is a process of its own.
+// saves the readings a process cannot take anew on its own (grok's and muse's), because each `aether-lane pick`
+// is a process of its own.
 // Family: lane.
 
 const fs = require('node:fs')
@@ -28,9 +29,9 @@ const BY = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
 const CAUSES = ['chosen', 'no-candidate', 'failed']
 const SECONDS = /^\d{1,3}$/
 const MAX_PAUSE_SECONDS = 120
-// The harnesses whose reading is renewed by a refresher (lane-quota.js REFRESHERS): their readings are the ones a
-// process cannot find again in the harness's own record.
-const REFRESHABLE = ['grok']
+// The harnesses whose reading is renewed by a refresher (lane-quota.js REFRESHERS): when the kept reading is stale,
+// one call takes a new one instead of rereading the harness's own record.
+const REFRESHABLE = ['grok', 'muse']
 
 // The quota view of the enabled harnesses of the table: what choose reads as `harnesses`.
 function harnessViews(config, enabled, { dataDir = run.dataDir(), now = Date.now(), latest = {}, onRead = null } = {}) {

@@ -178,3 +178,45 @@ test('quota --refresh says how grok answered: over ACP, through its UI, or not a
   const plain = await quota.quotaReport({ names: ['grok'], now: () => NOW, refreshers: { grok: async () => assert.fail('asked') } })
   assert.equal(plain.harnesses.grok.refreshed, undefined)
 })
+
+// A reading of muse's observed file that is ageMinutes old, as the adapter's quota gives it.
+const museReading = (ageMinutes) => ({
+  windows: { '5h': { remaining: 0.9, resetsAt: '2026-10-14T10:02:11Z' }, weekly: { remaining: 1, resetsAt: '2026-10-21T03:35:44Z' } },
+  source: { command: 'muse exec --json', ts: new Date(NOW - ageMinutes * MIN).toISOString(), ageMinutes },
+})
+
+test('the wave step renews a muse reading older than its life and leaves a fresh one alone', async (t) => {
+  useTable(t, (config) => {
+    config.harnesses.muse.command = fx.FAKE_AGY
+  })
+  const muse = fakeHarness(t, 'muse', { muse: museReading(5) })
+  const config = lanes.loadConfig(lanes.configPath())
+  const fresh = { ...museReading(0), source: { ...museReading(0).source, method: 'exec' } }
+  const asked = []
+  const refreshers = { muse: async (settings) => (asked.push(settings.command), fresh) }
+  assert.deepEqual(await quota.refreshStale({ config, enabled: ['muse'], refreshers }), {})
+  assert.deepEqual(asked, [])
+  muse.groups = { muse: museReading(31) }
+  assert.deepEqual(await quota.refreshStale({ config, enabled: ['muse'], refreshers }), { muse: { refreshed: true, method: 'exec', reading: fresh } })
+  assert.deepEqual(asked, [fx.FAKE_AGY])
+  muse.groups = { muse: { unknown: true, windows: {} } }
+  assert.deepEqual(await quota.refreshStale({ config, enabled: ['muse'], refreshers }), { muse: { refreshed: true, method: 'exec', reading: fresh } })
+  assert.deepEqual(await quota.refreshStale({ config, enabled: ['muse'], refreshers: { muse: async () => null } }), { muse: { refreshed: false, method: null, reading: null } })
+})
+
+test('quota --refresh says how muse answered: a minimal exec call, or not at all', async (t) => {
+  useTable(t, (config) => {
+    config.harnesses.muse.command = fx.FAKE_AGY
+  })
+  fakeHarness(t, 'muse', { muse: museReading(300) })
+  const ask = (refresher) => quota.quotaReport({ names: ['muse'], refresh: true, now: () => NOW, refreshers: { muse: refresher } })
+  const reading = { ...museReading(0), source: { ...museReading(0).source, method: 'exec' } }
+  const ok = await ask(async () => reading)
+  assert.deepEqual([ok.harnesses.muse.refreshed, ok.harnesses.muse.refreshMethod], [true, 'exec'])
+  const text = quota.formatReport(ok)
+  assert.ok(text.includes('  refresh: muse answered a minimal exec call\n'), text)
+  assert.ok(text.includes('    source: muse exec --json, read now\n'), text)
+  const none = await ask(async () => null)
+  assert.deepEqual([none.harnesses.muse.refreshed, none.harnesses.muse.refreshMethod], [false, null])
+  assert.ok(quota.formatReport(none).includes('  refresh: no new reading (muse gave none within 90 s)\n'))
+})
