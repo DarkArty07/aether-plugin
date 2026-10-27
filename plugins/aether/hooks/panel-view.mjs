@@ -92,9 +92,9 @@ export const clean = (value) => (typeof value === 'string' ? scrub(value).replac
 // The options as the session uses them. The session does not read the options as they are: lib/session.js
 // delegateSettingsFrom keeps the switch and the harnesses, lib/lanes.js enabledHarnesses keeps the known harness
 // names, trimmed and in lower case (else agy), and superdelegation's resolveOption (lib/superdelegation.js) turns the
-// switch on when superdelegation is set to true. The mod cannot require the libs, so the list and the rule are copied
-// here; tests/panel-conformance.test.js compares the two on a table. `lanes` in the settings is the resolved switch,
-// shown as superdelegation. Any other saved option is ignored.
+// switch on when superdelegation is set to true. The mod cannot require the libs, so the list of harnesses and the
+// rule for the switch are copied here; tests/copies-harness.test.js and tests/panel-conformance.test.js compare them.
+// `lanes` in the settings is the resolved switch, shown as superdelegation. Any other saved option is ignored.
 export function settingsOf(options) {
   const given = isObject(options) ? options : {}
   const harnesses = []
