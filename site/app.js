@@ -24,7 +24,7 @@
       'hero.lead': 'Añade un <strong>modo Aether</strong> opcional: un orquestador responsable, el Lead, convierte tu intención en una spec y un plan revisados, los construye con un swarm paralelo de agentes y con los otros planes de código que ya pagas, y te informa en un solo brief.',
       'hero.note': '<code>claude</code> a secas sigue siendo el modo normal.',
       'hero.cta': 'Cómo funciona ↓',
-      'hero.walk.alt': 'Clawd camina tranquilo, de izquierda a derecha, sobre la línea y deja una nota musical por el camino',
+      'hero.walk.alt': 'Clawd pasea tranquilo de izquierda a derecha sobre la línea: da saltitos, se detiene a mirar una nube, le cae un rayo que lo vuelve violeta Aether, festeja, saluda con la mano y deja un corazón y polvo de estrellas por el camino',
 
       'metas.tag': '// 01 · METAS',
       'metas.title': 'Cinco metas.<br><em>Una sigla.</em>',
@@ -189,7 +189,7 @@
       'hero.lead': 'It adds an opt-in <strong>Aether mode</strong>: an accountable orchestrator, the Lead, turns your intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans you already pay for, and reports in one brief.',
       'hero.note': 'Plain <code>claude</code> stays normal mode.',
       'hero.cta': 'How it works ↓',
-      'hero.walk.alt': 'Clawd strolls from left to right along the line and leaves a music note on the way',
+      'hero.walk.alt': 'Clawd strolls from left to right along the line: he skips, stops to look at a cloud, is struck by a lightning bolt that turns him Aether violet, celebrates, waves and leaves a heart and stardust on the way',
 
       'metas.tag': '// 01 · GOALS',
       'metas.title': 'Five goals.<br><em>One acronym.</em>',
