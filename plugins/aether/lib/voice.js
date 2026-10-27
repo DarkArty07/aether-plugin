@@ -2,6 +2,7 @@
 
 // The owner's own words: the messages the owner typed in a session transcript.
 // Transcripts are JSONL files under <configDir>/projects/<folder>/<sessionId>.jsonl.
+// Family: none.
 
 const fs = require('node:fs')
 const os = require('node:os')

@@ -3,12 +3,14 @@
 // The owner's standing authorizations for irreversible steps, each verified against the owner's own
 // words in a session transcript, and an autonomous run's state and ceilings (hours and USD).
 // Everything lives under <mainRoot>/.aether/autonomy/: the registry grants.json, and one folder per run.
+// Family: none.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { ownerMessages, findTranscript } = require('./voice.js')
 const { newRunId, isRunId, dataDir: runDataDir } = require('./run.js')
 const { readBrakeSettings } = require('./session.js')
+const { isObject } = require('./common.js')
 
 const CLASSES = ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call']
 const SCOPES = ['repo', 'session']
@@ -117,7 +119,6 @@ function writeJsonFile(file, value) {
   fs.renameSync(tmp, file)
 }
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const isPositive = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0
 
 function loadCeilings() {
