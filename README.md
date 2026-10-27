@@ -15,7 +15,7 @@ Plain `claude` stays normal mode.
 
 Version 0.22.0 ([changelog](docs/changelog.md))
 
-Aether serves five goals, **RADAR**.
+Aether pursues five goals, and their initials, in Spanish, spell one word: **RADAR**.
 
 <p align="center"><img src="assets/readme/radar.png" alt="The five RADAR goals as five halftone cards: Rápido (lightning), Autónomo (an armillary sphere), Delegación (two marble hands passing an orb), Asequible (balance scales) and Robusto (Doric columns)" width="100%"></p>
 
