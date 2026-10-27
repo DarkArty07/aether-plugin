@@ -6,7 +6,9 @@
 // and the live dry mark, and where the reading came from and how old it is. A reading that fails is no reading: each
 // group of its harness is unknown, with the error, and nothing else breaks. --refresh first asks grok for a new
 // reading, over ACP and then through its UI; refreshStale is the same step for a wave, which only refreshes what is stale.
+// Family: lane.
 
+const { isObject } = require('./common.js')
 const lanes = require('./lanes.js')
 const marks = require('./lane-marks.js')
 const order = require('./lane-order.js')
@@ -52,7 +54,6 @@ function localTime(ms) {
 }
 
 const round = (value, digits) => Number(value.toFixed(digits))
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 // How long a harness's reading stays fresh: its table entry's quotaLifeMinutes, or grok's 30 minutes.
 function lifeMsOf(settings) {

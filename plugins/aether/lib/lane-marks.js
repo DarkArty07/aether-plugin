@@ -16,9 +16,11 @@
 // fresh reading, taken after the mark, shows every window above the reserve (liftIfHealthy): providers renew a quota
 // without saying so. A refusal's mark is never lifted by a reading, since /usage does not show an individual limit; it
 // ends by itself.
+// Family: lane.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { writeAtomic, sleepSync: sleep } = require('./common.js')
 
 const DEFAULT_MARK_MINUTES = 60
 const REFUSAL_REASON = 'quota refusal'
@@ -47,25 +49,6 @@ function parseDate(val) {
     return val
   }
   return NaN
-}
-
-function writeAtomic(targetPath, content) {
-  const dir = path.dirname(targetPath)
-  fs.mkdirSync(dir, { recursive: true })
-  const base = path.basename(targetPath)
-  const tmp = path.join(dir, `.${base}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`)
-  try {
-    fs.writeFileSync(tmp, content)
-    fs.renameSync(tmp, targetPath)
-  } finally {
-    try {
-      if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
-    } catch {}
-  }
-}
-
-function sleep(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
 // Runs fn while holding an exclusive lock file next to the mark, so that two calls ending together do not each read the
