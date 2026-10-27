@@ -1,6 +1,6 @@
 'use strict'
 
-// Pure group views for quota-aware lanes (spec 002, R9 to R12).
+// Pure group views for quota-aware lanes (spec 002, R9, R10, R12).
 // Determines lane priority and quota usability without external I/O or clock access.
 // Family: lane.
 

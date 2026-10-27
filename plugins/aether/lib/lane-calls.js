@@ -137,9 +137,9 @@ function harnessOfModel(config, model) {
   return owners[0]
 }
 
-// The harness a call runs on, as start recorded it. A call that predates the record ran on agy, the only harness then.
+// The harness a call runs on, as start recorded it.
 function callHarness(info) {
-  return typeof info?.harness === 'string' ? info.harness : 'agy'
+  return typeof info?.harness === 'string' ? info.harness : ''
 }
 
 // The efforts a call may ask for. The harness is given the effort as it is: nothing translates it.
@@ -239,7 +239,8 @@ function readGroup(adapter, { harness, settings, group, dataDir }) {
 
 // Leaves the dry mark of a group, from the reading that shows it dry or, when a call ended for quota with nothing
 // that shows it, from none. A mark that cannot be written changes nothing: the group goes unmarked this time.
-// A refusal ({ resetMs }, quota-refusal.js) marks the group until the reset the message states.
+// A refusal ({ resetMs }, quota-refusal.js) holds dryMarkMinutes from now, the message reset is only statedResetMs,
+// and a reading that shows the group under the reserve confirms the mark until that reading's reset.
 function holdDry(dataDir, { harness, group, reading, config, now, refusal = null }) {
   try {
     marks.markDry(dataDir, { harness, group, reading, reserve: config.reserve, now, minutes: config.dryMarkMinutes, refusal })
