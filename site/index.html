@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Aether Plugin · modo Aether para Claude Code</title>
-<meta name="description" content="Aether es un plugin de Claude Code que añade un modo Aether opcional: un Lead convierte tu intención en una spec y un plan revisados, los construye con un swarm paralelo y te informa en un solo brief.">
+<meta name="description" content="Aether es un plugin de Claude Code que añade un modo Aether opcional: un Lead convierte tu intención en una spec y un plan revisados, construye ese plan con un swarm paralelo y te informa en un solo brief.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0d0b1c">
 <link rel="canonical" href="https://darkarty07.github.io/aether-plugin/">
@@ -12,7 +12,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Aether Plugin">
 <meta property="og:title" content="Aether Plugin · modo Aether para Claude Code">
-<meta property="og:description" content="Aether es un plugin de Claude Code que añade un modo Aether opcional: un Lead convierte tu intención en una spec y un plan revisados, los construye con un swarm paralelo y te informa en un solo brief.">
+<meta property="og:description" content="Aether es un plugin de Claude Code que añade un modo Aether opcional: un Lead convierte tu intención en una spec y un plan revisados, construye ese plan con un swarm paralelo y te informa en un solo brief.">
 <meta property="og:url" content="https://darkarty07.github.io/aether-plugin/">
 <meta property="og:image" content="https://darkarty07.github.io/aether-plugin/assets/img/social.png">
 <meta property="og:image:width" content="1280">
@@ -22,7 +22,7 @@
 <meta property="og:locale:alternate" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Aether Plugin · modo Aether para Claude Code">
-<meta name="twitter:description" content="Aether es un plugin de Claude Code que añade un modo Aether opcional: un Lead convierte tu intención en una spec y un plan revisados, los construye con un swarm paralelo y te informa en un solo brief.">
+<meta name="twitter:description" content="Aether es un plugin de Claude Code que añade un modo Aether opcional: un Lead convierte tu intención en una spec y un plan revisados, construye ese plan con un swarm paralelo y te informa en un solo brief.">
 <meta name="twitter:image" content="https://darkarty07.github.io/aether-plugin/assets/img/social.png">
 <link rel="stylesheet" href="style.css?v=9">
 <!-- Without JavaScript the Spanish copy is already in the HTML; show everything and hide the controls that need a script. -->
@@ -76,7 +76,7 @@ img.px[data-src]{display:none!important}
     <div class="hero-main">
       <h1 id="h-hero" class="wm" aria-label="AETHER"><span aria-hidden="true">A</span><span aria-hidden="true">E</span><span aria-hidden="true">T</span><span aria-hidden="true">H</span><span aria-hidden="true">E</span><span aria-hidden="true">R</span></h1>
       <p class="hero-sub" data-i18n="hero.sub">PLUGIN PARA CLAUDE CODE</p>
-      <p class="hero-lead" data-i18n-html="hero.lead">Añade un <strong>modo Aether</strong> opcional: un orquestador responsable, el Lead, convierte tu intención en una spec y un plan revisados, los construye con un swarm paralelo de agentes y con los otros planes de código que ya pagas, y te informa en un solo brief.</p>
+      <p class="hero-lead" data-i18n-html="hero.lead">Añade un <strong>modo Aether</strong> opcional: el Lead, un orquestador que responde por el resultado, convierte tu intención en una spec y un plan revisados, construye ese plan con un swarm de agentes en paralelo y con los otros planes de código que ya pagas, y te informa en un solo brief.</p>
       <p class="hero-note" data-i18n-html="hero.note"><code>claude</code> a secas sigue siendo el modo normal.</p>
       <div class="hero-btns">
         <a class="btn btn-pink" href="#metas" data-i18n="hero.cta">Cómo funciona ↓</a>
@@ -88,7 +88,7 @@ img.px[data-src]{display:none!important}
     </div>
 
     <div class="hero-bottom">
-      <div class="walk"><img class="px" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/walk.gif?v=10" width="1360" height="224" data-i18n-alt="hero.walk.alt" alt="Clawd pasea tranquilo de izquierda a derecha sobre la línea: da saltitos, se detiene a mirar una nube, le cae un rayo que lo vuelve violeta Aether, festeja, saluda con la mano y deja un corazón y polvo de estrellas por el camino" style="aspect-ratio:1360/224"><noscript><img class="px" decoding="async" src="assets/img/px/walk.gif?v=10" width="1360" height="224" alt="Clawd pasea tranquilo de izquierda a derecha sobre la línea: da saltitos, se detiene a mirar una nube, le cae un rayo que lo vuelve violeta Aether, festeja, saluda con la mano y deja un corazón y polvo de estrellas por el camino"></noscript></div>
+      <div class="walk"><img class="px" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/walk.gif?v=10" width="1360" height="224" data-i18n-alt="hero.walk.alt" alt="Clawd pasea tranquilo de izquierda a derecha sobre la línea: da saltitos, se detiene a mirar una nube, le cae un rayo y se vuelve violeta Aether, celebra, saluda con la mano y deja un corazón y polvo de estrellas por el camino" style="aspect-ratio:1360/224"><noscript><img class="px" decoding="async" src="assets/img/px/walk.gif?v=10" width="1360" height="224" alt="Clawd pasea tranquilo de izquierda a derecha sobre la línea: da saltitos, se detiene a mirar una nube, le cae un rayo y se vuelve violeta Aether, celebra, saluda con la mano y deja un corazón y polvo de estrellas por el camino"></noscript></div>
       <div class="pgrid" aria-hidden="true"></div>
       <ol class="steps4" aria-label="Spec, plan, swarm, brief"><li>#1 SPEC</li><li>#2 PLAN</li><li>#3 SWARM</li><li>#4 BRIEF</li></ol>
     </div>
@@ -100,27 +100,27 @@ img.px[data-src]{display:none!important}
   <div class="wrap">
     <div class="sec-head reveal">
       <p class="tag" data-i18n="metas.tag">// 01 · METAS</p>
-      <h2 id="h-metas" class="h2" data-i18n-html="metas.title">Cinco metas.<br><em>Una sigla.</em></h2>
-      <p class="intro" data-i18n-html="metas.intro">Aether sirve a cinco metas, <em>RADAR</em>. Cada brief que escribe el Lead informa de las cinco.</p>
+      <h2 id="h-metas" class="h2" data-i18n-html="metas.title">Cinco metas.<br><em>Una palabra.</em></h2>
+      <p class="intro" data-i18n-html="metas.intro">Aether persigue cinco metas, y sus iniciales forman una palabra: <em>RADAR</em>.</p>
     </div>
     <div class="radar" id="radar">
       <article class="card reveal" style="--i:0">
         <p class="num">#1</p>
         <h3 class="word"><span class="first">R</span><span data-i18n="r1.w">ápido</span></h3>
         <p class="gloss" data-i18n="r1.g">FAST</p>
-        <p class="mean" data-i18n="r1.m">Modelos rápidos y baratos hacen el grueso del trabajo, y nada itera sin fin.</p>
+        <p class="mean" data-i18n="r1.m">Los modelos rápidos y baratos hacen el grueso del trabajo, y ningún ciclo se repite sin límite.</p>
       </article>
       <article class="card reveal" style="--i:1">
         <p class="num">#2</p>
         <h3 class="word"><span class="first">A</span><span data-i18n="r2.w">utónomo</span></h3>
         <p class="gloss" data-i18n="r2.g">AUTONOMOUS</p>
-        <p class="mean" data-i18n="r2.m">No se te pregunta por lo trivial, y cada paso irreversible te llega en una sola lista.</p>
+        <p class="mean" data-i18n="r2.m">Nadie te pregunta lo trivial, y cada paso irreversible te llega en una sola lista.</p>
       </article>
       <article class="card reveal" style="--i:2">
         <p class="num">#3</p>
         <h3 class="word"><span class="first">D</span><span data-i18n="r3.w">elegación</span></h3>
         <p class="gloss" data-i18n="r3.g">DELEGATION</p>
-        <p class="mean" data-i18n="r3.m">El trabajo va a otros harness de código (agy, Codex, Grok, Cursor, Muse) mientras dure su cuota.</p>
+        <p class="mean" data-i18n="r3.m">El trabajo pasa a otros harness de código (agy, Codex, Grok, Cursor y Muse) mientras les dure la cuota.</p>
       </article>
       <article class="card reveal" style="--i:3">
         <p class="num">#4</p>
@@ -132,12 +132,12 @@ img.px[data-src]{display:none!important}
         <p class="num">#5</p>
         <h3 class="word"><span class="first">R</span><span data-i18n="r5.w">obusto</span></h3>
         <p class="gloss" data-i18n="r5.g">ROBUST</p>
-        <p class="mean" data-i18n="r5.m">Código de calidad, comprobado con tests, evidencia y revisiones independientes.</p>
+        <p class="mean" data-i18n="r5.m">Código de calidad, comprobado con tests, evidencias y revisiones independientes.</p>
       </article>
       <aside class="card card-acr reveal" style="--i:5" aria-label="RADAR">
         <p class="num">// RADAR</p>
-        <div class="frame px-frame"><img class="px" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/radar.gif?v=8" width="640" height="420" data-i18n-alt="radar.alt" alt="Un radar redondo barre tres vueltas: se encienden cinco puntos y las cinco letras de la sigla RADAR mientras Clawd lo mira" style="aspect-ratio:640/420"><noscript><img class="px" decoding="async" src="assets/img/px/radar.gif?v=8" width="640" height="420" alt="Un radar redondo barre tres vueltas: se encienden cinco puntos y las cinco letras de la sigla RADAR mientras Clawd lo mira"></noscript></div>
-        <p class="mean" data-i18n-html="metas.acr">Cada brief informa de las cinco. <code>aether-report</code> pone precio a un run y reúne sus cifras.</p>
+        <div class="frame px-frame"><img class="px" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/radar.gif?v=8" width="640" height="420" data-i18n-alt="radar.alt" alt="Un radar redondo barre tres vueltas: se encienden cinco puntos y las cinco letras de la palabra RADAR mientras Clawd lo mira" style="aspect-ratio:640/420"><noscript><img class="px" decoding="async" src="assets/img/px/radar.gif?v=8" width="640" height="420" alt="Un radar redondo barre tres vueltas: se encienden cinco puntos y las cinco letras de la palabra RADAR mientras Clawd lo mira"></noscript></div>
+        <p class="mean" data-i18n-html="metas.acr">Cada brief informa de las cinco. <code>aether-report</code> pone precio a una corrida y reúne sus cifras.</p>
         <a class="btn btn-line" href="animaciones.html#metas" data-i18n="metas.more">Ver cada meta en movimiento</a>
       </aside>
     </div>
@@ -151,7 +151,7 @@ img.px[data-src]{display:none!important}
     <div class="sec-head reveal">
       <p class="tag" data-i18n="team.tag">// 02 · EQUIPO</p>
       <h2 id="h-equipo" class="h2" data-i18n-html="team.title">Quién hace<br><em>qué</em></h2>
-      <p class="intro" data-i18n-html="team.intro">El Lead es la sesión principal y tu mano derecha, no un mensajero. Los demás roles trabajan en un contexto propio, y quien escribe un documento nunca lo juzga. Los modelos de cada tarjeta son los de Claude nativo: con <code>superdelegation</code> activada, cada rol que no es el Lead corre primero en otro plan.</p>
+      <p class="intro" data-i18n-html="team.intro">El Lead es la sesión principal y tu mano derecha, no un mensajero. Los demás roles trabajan cada uno en su propio contexto, y quien escribe un documento nunca lo juzga. Los modelos de las tarjetas son los de Claude nativo: con <code>superdelegation</code> activada, todo rol que no es el Lead corre primero en otro plan.</p>
     </div>
     <div class="team" id="team">
       <svg class="net" id="net" aria-hidden="true" focusable="false"></svg>
@@ -161,7 +161,7 @@ img.px[data-src]{display:none!important}
           <p class="num">#1 · aether:lead</p>
           <h3 class="rname">LEAD</h3>
           <p class="model"><span data-i18n="team.m.lead">Sonnet · xhigh</span></p>
-          <p class="mean" data-i18n="lead.t">Entiende la intención, hace las preguntas que el código no responde y escribe la tarjeta de intención. Lanza /aether:design, elige el camino de cada trabajo y juzga el resultado de cada tarea delegada. Es dueño del resultado.</p>
+          <p class="mean" data-i18n="lead.t">Entiende la intención, hace las preguntas que el código no responde y escribe la tarjeta de intención. Lanza /aether:design, elige el camino de cada trabajo y juzga el resultado de cada tarea delegada. Responde del resultado.</p>
         </div>
       </article>
       <div class="roles">
@@ -170,14 +170,14 @@ img.px[data-src]{display:none!important}
           <p class="num">#2 · aether:writer</p>
           <h3 class="rname">WRITER</h3>
           <p class="model">Sonnet · high</p>
-          <p class="mean" data-i18n="writer.t">Escribe la spec desde la tarjeta de intención, y el plan y las tareas desde la spec aprobada. Lo que no está claro y es difícil de revertir lo marca [NEEDS CLARIFICATION].</p>
+          <p class="mean" data-i18n="writer.t">Escribe la spec desde la tarjeta de intención, y el plan y las tareas desde la spec aprobada. Marca con [NEEDS CLARIFICATION] lo que la tarjeta no aclara y sería difícil de revertir.</p>
         </article>
         <article class="role reveal" style="--i:2">
           <div class="frame"><img decoding="async" loading="lazy" src="assets/img/role-judge.png?v=8" width="640" height="420" data-i18n-alt="judge.alt" alt="El Judge: una estatua con los ojos vendados que sostiene una espada"></div>
           <p class="num">#3 · aether:judge</p>
           <h3 class="rname">JUDGE</h3>
           <p class="model">Opus · high</p>
-          <p class="mean" data-i18n="judge.t">Revisa la spec, el plan y las tareas, y dictamina approve, revise o reject, con a lo sumo diez hallazgos. Solo lectura. Sonnet escribe; Opus decide.</p>
+          <p class="mean" data-i18n="judge.t">Revisa la spec, el plan y las tareas y dictamina approve, revise o reject, con diez hallazgos como máximo. Solo lectura. Escribe Sonnet; decide Opus.</p>
         </article>
         <article class="role reveal" style="--i:3">
           <div class="frame"><img decoding="async" loading="lazy" src="assets/img/role-examiner.png?v=8" width="640" height="420" data-i18n-alt="examiner.alt" alt="El Examiner: un pergamino sellado flotando en el espacio"></div>
@@ -195,7 +195,7 @@ img.px[data-src]{display:none!important}
           <p class="num">#5 · /aether:run</p>
           <h3 class="rname">SWARM</h3>
           <p class="model">Haiku → Sonnet → Opus</p>
-          <p class="mean" data-i18n="swarm.t">Implementadores que empiezan en el Tier de su tarea y suben la escalera si fallan, un supervisor en Sonnet que revisa cada intento, merges de uno en uno y una revisión final. Cangrejos: verde, azul y rosa = modelo ligero, medio y fuerte.</p>
+          <p class="mean" data-i18n="swarm.t">Implementadores que empiezan en el modelo que fija su tarea y suben la escalera si fallan; un supervisor en Sonnet que revisa cada intento; fusiones de una en una y una revisión final. Los cangrejos son el color del modelo: verde, azul y rosa, de ligero a fuerte.</p>
         </article>
       </div>
     </div>
@@ -209,7 +209,7 @@ img.px[data-src]{display:none!important}
     <div class="sec-head reveal">
       <p class="tag" data-i18n="paths.tag">// 03 · CAMINOS</p>
       <h2 id="h-caminos" class="h2" data-i18n-html="paths.title">Tres caminos,<br><em>una decisión</em></h2>
-      <p class="intro" data-i18n-html="paths.intro">El Lead toma uno de tres caminos para cada trabajo, y la escalera de modelos de una tarea delegada la lleva el sistema, no él.</p>
+      <p class="intro" data-i18n-html="paths.intro">Para cada trabajo, el Lead elige uno de tres caminos. En la tarea delegada, la escalera de modelos la maneja el sistema, no el Lead.</p>
     </div>
 
     <div class="paths" id="paths">
@@ -218,9 +218,9 @@ img.px[data-src]{display:none!important}
         <header class="path-h">
           <p class="num">#1</p>
           <h3 id="pt-direct" class="ptitle" data-i18n="p.direct.n">Directo</h3>
-          <p class="mean" data-i18n="p.direct.w">Un cambio muy acotado: unas cinco llamadas a herramientas y ningún ciclo de editar-probar-corregir. El Lead lo hace en línea, con el modelo en que corre.</p>
+          <p class="mean" data-i18n="p.direct.w">Un cambio muy acotado: unas cinco llamadas a herramientas y ningún ciclo de editar-probar-corregir. El Lead lo hace él mismo, en su propia sesión y con su propio modelo.</p>
         </header>
-        <div class="pdia-scroll"><img class="px pdia" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/path_direct.gif?v=8" width="900" height="100" data-i18n-alt="p.direct.a" alt="Clawd hace cinco llamadas a herramientas en línea, de READ a RUN, y la bandera del resultado sube" style="aspect-ratio:900/100"><noscript><img class="px pdia" decoding="async" src="assets/img/px/path_direct.gif?v=8" width="900" height="100" alt="Clawd hace cinco llamadas a herramientas en línea, de READ a RUN, y la bandera del resultado sube"></noscript></div>
+        <div class="pdia-scroll"><img class="px pdia" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/path_direct.gif?v=8" width="900" height="100" data-i18n-alt="p.direct.a" alt="Clawd hace cinco llamadas a herramientas en su propia sesión, de READ a RUN, y la bandera del resultado sube" style="aspect-ratio:900/100"><noscript><img class="px pdia" decoding="async" src="assets/img/px/path_direct.gif?v=8" width="900" height="100" alt="Clawd hace cinco llamadas a herramientas en su propia sesión, de READ a RUN, y la bandera del resultado sube"></noscript></div>
       </article>
 
       <!-- Delegate -->
@@ -228,7 +228,7 @@ img.px[data-src]{display:none!important}
         <header class="path-h">
           <p class="num">#2</p>
           <h3 id="pt-delegate" class="ptitle" data-i18n="p.delegate.n">Tarea delegada</h3>
-          <p class="mean" data-i18n="p.delegate.w">Trabajo acotado que ya es una tarea real: un ciclo de editar-probar-corregir, una limpieza, una búsqueda. Un subagente en segundo plano, con un encargo autocontenido, que empieza en Haiku. Una corrección vuelve al mismo modelo, con su propio trabajo y los hallazgos, y la tarea solo sube a Sonnet y luego a Opus cuando agota sus correcciones.</p>
+          <p class="mean" data-i18n="p.delegate.w">Trabajo acotado que ya es una tarea de verdad: un ciclo de editar-probar-corregir, una limpieza, una búsqueda. Lo hace un subagente en segundo plano, con un encargo autocontenido, que empieza en Haiku. Una corrección vuelve al mismo modelo, con su propio trabajo y los hallazgos; la tarea solo sube a Sonnet, y luego a Opus, cuando agota sus correcciones.</p>
         </header>
         <div class="pdia-scroll"><img class="px pdia" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/path_delegate.gif?v=9" width="900" height="160" data-i18n-alt="p.delegate.a" alt="El Lead escribe un encargo que empieza en Haiku y lo pasa a un subagente en segundo plano; el subagente edita, prueba y corrige mientras el Lead sigue libre, y el resultado vuelve" style="aspect-ratio:900/160"><noscript><img class="px pdia" decoding="async" src="assets/img/px/path_delegate.gif?v=9" width="900" height="160" alt="El Lead escribe un encargo que empieza en Haiku y lo pasa a un subagente en segundo plano; el subagente edita, prueba y corrige mientras el Lead sigue libre, y el resultado vuelve"></noscript></div>
       </article>
@@ -238,9 +238,9 @@ img.px[data-src]{display:none!important}
         <header class="path-h">
           <p class="num">#3</p>
           <h3 id="pt-swarm" class="ptitle" data-i18n="p.swarm.n">Swarm</h3>
-          <p class="mean" data-i18n="p.swarm.w">Trabajo largo, costoso o complejo: un plan aprobado de tres o más tareas, o con una tarea de Tier opus. /aether:run, cada tarea en su Tier; las unidades aprobadas se funden de una en una y una revisión final cubre todo.</p>
+          <p class="mean" data-i18n="p.swarm.w">Trabajo largo, costoso o complejo: un plan aprobado de tres o más tareas, o que incluya una tarea de Tier Opus. Con /aether:run, cada tarea corre en su Tier; las unidades aprobadas se fusionan de una en una y una revisión final cubre todo.</p>
         </header>
-        <div class="pdia-scroll"><img class="px pdia" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/path_swarm.gif?v=8" width="900" height="320" data-i18n-alt="p.swarm.a" alt="El Lead reparte un plan en cuatro unidades paralelas, cada una en su worktree; una falla y reintenta; las unidades aprobadas se funden de una en una, de 0/4 a 4/4, y una revisión final cubre todo antes del brief" style="aspect-ratio:900/320"><noscript><img class="px pdia" decoding="async" src="assets/img/px/path_swarm.gif?v=8" width="900" height="320" alt="El Lead reparte un plan en cuatro unidades paralelas, cada una en su worktree; una falla y reintenta; las unidades aprobadas se funden de una en una, de 0/4 a 4/4, y una revisión final cubre todo antes del brief"></noscript></div>
+        <div class="pdia-scroll"><img class="px pdia" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/path_swarm.gif?v=8" width="900" height="320" data-i18n-alt="p.swarm.a" alt="El Lead reparte un plan en cuatro unidades paralelas, cada una en su worktree; una falla y reintenta; las unidades aprobadas se fusionan de una en una, de 0/4 a 4/4, y una revisión final cubre todo antes del brief" style="aspect-ratio:900/320"><noscript><img class="px pdia" decoding="async" src="assets/img/px/path_swarm.gif?v=8" width="900" height="320" alt="El Lead reparte un plan en cuatro unidades paralelas, cada una en su worktree; una falla y reintenta; las unidades aprobadas se fusionan de una en una, de 0/4 a 4/4, y una revisión final cubre todo antes del brief"></noscript></div>
       </article>
     </div>
     <p class="note note-sm reveal" data-i18n-html="paths.foot">ILUSTRATIVO: los diagramas muestran el orden de las etapas, no tiempos reales.</p>
@@ -254,7 +254,7 @@ img.px[data-src]{display:none!important}
     <div class="sec-head reveal">
       <p class="tag" data-i18n="flow.tag">// 04 · DEL ENCARGO AL RESULTADO</p>
       <h2 id="h-flujo" class="h2" data-i18n-html="flow.title">Del encargo<br><em>al resultado</em></h2>
-      <p class="intro" data-i18n-html="flow.intro">Sin permiso para trabajar durante horas, el Lead se detiene en el plan con un brief corto. Con él, sigue solo, dentro de sus topes, hasta el examen y el brief.</p>
+      <p class="intro" data-i18n-html="flow.intro">Sin tu permiso para trabajar durante horas, el Lead se detiene en el plan y te presenta un brief corto. Con ese permiso, sigue solo, dentro de sus topes, hasta el examen y el brief final.</p>
     </div>
 
     <div class="flow-grid">
@@ -293,15 +293,15 @@ img.px[data-src]{display:none!important}
     <div class="sec-head reveal">
       <p class="tag" data-i18n="control.tag">// 05 · CONTROL</p>
       <h2 id="h-control" class="h2" data-i18n-html="control.title">Tú decides<br><em>lo irreversible</em></h2>
-      <p class="intro" data-i18n-html="control.intro">El Lead decide como tu delegado lo que tu intención cubre. Solo llega a ti lo que la intención no cubre, lo que choca con ella y las acciones irreversibles que ningún permiso cubre.</p>
+      <p class="intro" data-i18n-html="control.intro">El Lead decide por ti, como tu delegado, todo lo que tu intención cubre. A ti solo te llega lo que la intención no cubre, lo que choca con ella y las acciones irreversibles que ningún permiso cubre.</p>
     </div>
 
     <div class="control-grid">
       <div class="control-left">
         <figure class="frame frame-lg px-frame reveal"><img class="px" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/control.gif?v=8" width="640" height="360" data-i18n-alt="control.alt" alt="Una compuerta con lámpara: las cajas normales pasan solas, y las marcadas PUSH, MERGE o DEPLOY ponen la lámpara en rojo y esperan en una lista hasta que el cursor del dueño pulsa YES" style="aspect-ratio:640/360"><noscript><img class="px" decoding="async" src="assets/img/px/control.gif?v=8" width="640" height="360" alt="Una compuerta con lámpara: las cajas normales pasan solas, y las marcadas PUSH, MERGE o DEPLOY ponen la lámpara en rojo y esperan en una lista hasta que el cursor del dueño pulsa YES"></noscript></figure>
         <ol class="claims">
-          <li class="reveal"><span class="num">#1</span><h3 data-i18n="c1.h">Una sola lista</h3><p class="mean" data-i18n-html="c1.t">Lo irreversible, y lo que solo tú puedes elegir, espera tu sí en una lista que abre cada brief. Todo lo demás avanza. Puedes autorizar una clase en general: <code>merge-main</code>, <code>push</code>, <code>publish</code>, <code>deploy</code>, <code>delete</code>, <code>credentials</code> o <code>paid-call</code>.</p></li>
-          <li class="reveal"><span class="num">#2</span><h3 data-i18n="c2.h">Examen oculto</h3><p class="mean" data-i18n-html="c2.t">El examen se guarda fuera del repositorio: el swarm nunca lo ve. Un test que falle es un hallazgo bloqueante del brief.</p></li>
+          <li class="reveal"><span class="num">#1</span><h3 data-i18n="c1.h">Una sola lista</h3><p class="mean" data-i18n-html="c1.t">Lo irreversible, y lo que solo tú puedes decidir, espera tu sí en una lista que abre cada brief. Todo lo demás sigue avanzando. Puedes autorizar de antemano una clase entera: <code>merge-main</code>, <code>push</code>, <code>publish</code>, <code>deploy</code>, <code>delete</code>, <code>credentials</code> o <code>paid-call</code>.</p></li>
+          <li class="reveal"><span class="num">#2</span><h3 data-i18n="c2.h">Examen oculto</h3><p class="mean" data-i18n-html="c2.t">El examen se guarda fuera del repositorio: el swarm nunca lo ve. Si un test falla, es un hallazgo bloqueante del brief.</p></li>
           <li class="reveal"><span class="num">#3</span><h3 data-i18n="c3.h">Supervisor y revisión final</h3><p class="mean" data-i18n-html="c3.t">Un supervisor revisa cada intento y califica cada criterio con evidencia. Al final, una revisión independiente cubre todo lo fusionado.</p></li>
         </ol>
       </div>
@@ -328,9 +328,9 @@ img.px[data-src]{display:none!important}
     </div>
 
     <div class="control-grid brake-grid">
-      <figure class="frame frame-lg px-frame reveal"><img class="px" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/brake.gif?v=9" width="640" height="360" data-i18n-alt="brake.alt" alt="Tres unidades construyen mientras sube el medidor de la ventana de 5 horas. Al llegar al 95 % el Lead frena en orden: no empieza nada nuevo, se detiene lo que corre y cada unidad guarda su trabajo en su rama. La corrida duerme en pausa hasta que la ventana se reinicia, y entonces sigue desde las ramas sin repetir la unidad ya fundida" style="aspect-ratio:640/360"><noscript><img class="px" decoding="async" src="assets/img/px/brake.gif?v=9" width="640" height="360" alt="Tres unidades construyen mientras sube el medidor de la ventana de 5 horas. Al llegar al 95 % el Lead frena en orden: no empieza nada nuevo, se detiene lo que corre y cada unidad guarda su trabajo en su rama. La corrida duerme en pausa hasta que la ventana se reinicia, y entonces sigue desde las ramas sin repetir la unidad ya fundida"></noscript></figure>
+      <figure class="frame frame-lg px-frame reveal"><img class="px" decoding="async" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="assets/img/px/brake.gif?v=9" width="640" height="360" data-i18n-alt="brake.alt" alt="Tres unidades construyen mientras sube el medidor de la ventana de 5 horas. Al llegar al 95 % el Lead frena en orden: no empieza nada nuevo, se detiene lo que corre y cada unidad guarda su trabajo en su rama. La corrida duerme en pausa hasta que la ventana se reinicia, y entonces sigue desde las ramas sin repetir la unidad ya fusionada" style="aspect-ratio:640/360"><noscript><img class="px" decoding="async" src="assets/img/px/brake.gif?v=9" width="640" height="360" alt="Tres unidades construyen mientras sube el medidor de la ventana de 5 horas. Al llegar al 95 % el Lead frena en orden: no empieza nada nuevo, se detiene lo que corre y cada unidad guarda su trabajo en su rama. La corrida duerme en pausa hasta que la ventana se reinicia, y entonces sigue desde las ramas sin repetir la unidad ya fusionada"></noscript></figure>
       <ol class="claims">
-        <li class="reveal"><span class="num">#4</span><h3 data-i18n="c4.h">Freno de cuota</h3><p class="mean" data-i18n-html="c4.t">Cuando la ventana de 5 horas de tu cuenta de Claude llega al 95 % (<code>quotabrake</code>), el plugin te avisa. En una corrida autónoma el Lead frena en orden: no empieza nada nuevo, detiene lo que corre y guarda el trabajo de cada unidad en su rama. La corrida queda en pausa, no termina: al reiniciarse la ventana sigue sola, sin repetir lo ya fundido. Solo tus palabras apagan el freno.</p></li>
+        <li class="reveal"><span class="num">#4</span><h3 data-i18n="c4.h">Freno de cuota</h3><p class="mean" data-i18n-html="c4.t">Cuando la ventana de 5 horas de tu cuenta de Claude llega al 95 % (opción <code>quotabrake</code>), el plugin te avisa. En una corrida autónoma el Lead frena en orden: no empieza nada nuevo, detiene lo que corre y guarda el trabajo de cada unidad en su rama. La corrida queda en pausa, no termina: al reiniciarse la ventana sigue sola, sin repetir lo ya fusionado. Solo tus palabras apagan el freno.</p></li>
       </ol>
     </div>
   </div>
@@ -342,7 +342,7 @@ img.px[data-src]{display:none!important}
     <div class="sec-head reveal">
       <p class="tag" data-i18n="lanes.tag">// 06 · CARRILES</p>
       <h2 id="h-carriles" class="h2" data-i18n-html="lanes.title">Superdelegation:<br><em>la cuota de otros planes</em></h2>
-      <p class="intro" data-i18n-html="lanes.intro">Con <code>superdelegation</code> activada, todo lo que no es el Lead sale primero a otro plan de código que ya pagas, mientras dure su cuota. Si un harness falta, se queda sin cuota o no arranca, la misma llamada pasa al siguiente candidato, y al agente nativo de Claude si no queda ninguno, sin gastar la escalera.</p>
+      <p class="intro" data-i18n-html="lanes.intro">Con <code>superdelegation</code> activada, todo lo que no hace el Lead sale primero a otro plan de código que ya pagas, mientras dure su cuota. Si un harness no está, se queda sin cuota o no arranca, la misma llamada pasa al siguiente candidato, y al agente nativo de Claude si no queda ninguno, sin gastar la escalera.</p>
     </div>
 
     <div class="lanes reveal" id="lanes">
@@ -352,10 +352,10 @@ img.px[data-src]{display:none!important}
     </div>
 
     <ul class="facts">
-      <li class="reveal" data-i18n-html="lanes.f1"><strong>Apagada por defecto</strong>Sin activar <code>superdelegation</code>, toda llamada que no es del Lead corre en Claude nativo, con cualquier cuota. Solo corre en Linux.</li>
-      <li class="reveal" data-i18n-html="lanes.f2"><strong>Los puntos piden, la cuota ordena</strong>Cada llamada pide los puntos de inteligencia de su par de Claude, modelo y effort, con 1 punto de tolerancia. Va primero la cuota cuya ventana semanal se renueva antes, y dentro de ella el par más barato por tarea; una reserva del 5 % deja fuera al grupo que la toca.</li>
-      <li class="reveal" data-i18n-html="lanes.f3"><strong>Sin lectura, se prueba</strong>Codex y Cursor no reportan cuota, y Muse solo la reporta después de una llamada: se prueban después, hasta que una llamada falla por cuota. Entonces la llamada sigue con el siguiente. El par de Muse entra por decisión del dueño y va último dentro de su cuota.</li>
-      <li class="reveal" data-i18n-html="lanes.f4"><strong>Qué está probado</strong>agy fue el primero y Grok se probó con llamadas reales el 2026-10-13. Muse se probó con llamadas reales el 2026-10-19. Los adaptadores de Codex y Cursor aún no han hecho ninguna llamada real.</li>
+      <li class="reveal" data-i18n-html="lanes.f1"><strong>Apagada por defecto</strong>Sin activar <code>superdelegation</code>, toda llamada que no es del Lead corre en Claude nativo, sea cual sea la cuota. Solo corre en Linux.</li>
+      <li class="reveal" data-i18n-html="lanes.f2"><strong>Los puntos piden, la cuota ordena</strong>Cada llamada pide los puntos de inteligencia de su par de Claude, modelo y esfuerzo, con 1 punto de tolerancia. Va primero la cuota cuya ventana semanal se renueva antes, y dentro de ella el par más barato por tarea; un grupo que baja de la reserva del 5 % queda fuera.</li>
+      <li class="reveal" data-i18n-html="lanes.f3"><strong>Sin lectura, se prueba</strong>Codex y Cursor no informan su cuota, y Muse solo la informa después de una llamada: sin lectura, van después de los demás y se prueban hasta que una llamada falla por cuota; entonces la llamada pasa al siguiente. El par de Muse entra por decisión del dueño y va último dentro de su cuota.</li>
+      <li class="reveal" data-i18n-html="lanes.f4"><strong>Qué está probado</strong>agy fue el primero en probarse. Grok se probó con llamadas reales el 13 de octubre de 2026 y Muse el 19 de octubre de 2026. Los adaptadores de Codex y Cursor aún no han hecho ninguna llamada real.</li>
     </ul>
   </div>
 </section>
@@ -381,8 +381,8 @@ img.px[data-src]{display:none!important}
         <p class="note note-sm reveal" id="copymsg" aria-live="polite"></p>
 
         <ol class="start reveal">
-          <li><span class="num">#1</span><div><h3 data-i18n="st1.h">Instala</h3><p class="mean" data-i18n-html="st1.t">Una vez. Con <code>--config superdelegation=true</code> activas la superdelegación.</p></div></li>
-          <li><span class="num">#2</span><div><h3 data-i18n="st2.h">Elige el modo Aether</h3><p class="mean" data-i18n-html="st2.t">El modo se elige por sesión: el Lead es el agente <code>aether:lead</code>, que empieza en Sonnet, y <code>--effort xhigh</code> fija su esfuerzo.</p><pre class="code"><code>claude --agent aether:lead --effort xhigh</code></pre></div></li>
+          <li><span class="num">#1</span><div><h3 data-i18n="st1.h">Instala</h3><p class="mean" data-i18n-html="st1.t">Se hace una vez. Añade <code>--config superdelegation=true</code> para activar la superdelegación.</p></div></li>
+          <li><span class="num">#2</span><div><h3 data-i18n="st2.h">Elige el modo Aether</h3><p class="mean" data-i18n-html="st2.t">El modo se elige en cada sesión: lanzas el agente <code>aether:lead</code>, que empieza en Sonnet, y <code>--effort xhigh</code> fija su esfuerzo.</p><pre class="code"><code>claude --agent aether:lead --effort xhigh</code></pre></div></li>
           <li><span class="num">#3</span><div><h3 data-i18n="st3.h">Dile al Lead lo que quieres</h3><p class="mean" data-i18n-html="st3.t">El Lead confirma lo que entendió, escribe la tarjeta de intención y lanza el diseño. Tú revisas el brief.</p></div></li>
         </ol>
         <p class="req reveal" data-i18n-html="inst.req">REQUISITOS · Claude Code 2.1.294 o posterior · Node.js 22 · git 2.36 o posterior · para la superdelegación, el CLI de cada harness que actives: <code>agy</code>, <code>codex</code>, <code>grok</code>, <code>cursor-agent</code> o <code>muse</code>.</p>
@@ -394,7 +394,7 @@ img.px[data-src]{display:none!important}
           <p class="tag" data-i18n="auth.tag">// AUTORÍA</p>
           <h3 class="aname">Christopher<br>Hernández Jiménez</h3>
           <a class="handle" href="https://github.com/DarkArty07" target="_blank" rel="noopener noreferrer" data-i18n-label="auth.link" aria-label="DarkArty07 en GitHub">@DarkArty07 <span aria-hidden="true">↗</span></a>
-          <p class="mean" data-i18n="auth.t">Aether Plugin es de código abierto bajo la licencia MIT, y sucesor de Aether Agents: el mismo método, reconstruido sobre un harness hecho para software.</p>
+          <p class="mean" data-i18n="auth.t">Aether Plugin es de código abierto, con licencia MIT, y sucede a Aether Agents: el mismo método, reconstruido sobre un harness hecho para software.</p>
         </div>
         <ul class="links reveal">
           <li><a href="https://github.com/DarkArty07/aether-plugin" target="_blank" rel="noopener noreferrer"><span>GitHub</span><i>DarkArty07/aether-plugin ↗</i></a></li>
@@ -411,7 +411,7 @@ img.px[data-src]{display:none!important}
   <div class="wrap foot-in">
     <div class="foot-brand"><span class="foot-wm">AETHER</span><span class="tag">// PLUGIN · v0.23.0</span></div>
     <div class="foot-copy">
-    <p class="foot-t" data-i18n-html="foot.t">Los agentes implementador, supervisor y revisor adaptan plantillas de superpowers; el preset de Aether adapta las de GitHub Spec Kit; varias piezas portan ideas de oh-my-claudecode, todo bajo licencia MIT. El texto dentro de las ventanas es ilustrativo.</p>
+    <p class="foot-t" data-i18n-html="foot.t">Los agentes implementador, supervisor y revisor adaptan plantillas de superpowers; el preset de Aether adapta las plantillas de GitHub Spec Kit; varias piezas retoman ideas de oh-my-claudecode. Todo está bajo licencia MIT. El texto dentro de las ventanas es ilustrativo.</p>
     <p class="foot-indep" data-i18n="foot.indep">Aether es un proyecto independiente; no está afiliado ni respaldado por Anthropic.</p>
     </div>
     <div class="foot-links">

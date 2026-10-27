@@ -146,6 +146,8 @@ button.b-later:hover{background:var(--v2)}
 .h2{font:700 clamp(40px,5.6vw,84px)/.94 var(--display);text-transform:uppercase;letter-spacing:.01em;color:var(--paper)}
 .h2 em{font-style:normal;color:var(--pink)}
 .intro{max-width:600px;font-size:17px;line-height:1.7;color:#b9bfdc}
+.intro{text-wrap:balance}   /* a short intro breaks into even lines, with no lone last word */
+.mean,.note{text-wrap:pretty}   /* and no paragraph ends on a single word */
 .ghost{position:absolute;right:max(6px,calc(var(--gut) * .25));top:60px;writing-mode:vertical-rl;font:700 clamp(40px,3.6vw,52px)/1 var(--display);letter-spacing:.14em;color:rgba(205,214,244,.06);pointer-events:none;user-select:none;white-space:nowrap}
 .note{margin-top:clamp(28px,4vw,48px);max-width:760px;padding-left:18px;border-left:1px solid var(--pink);font-size:15px;color:#b9bfdc}
 .note-sm{font-size:13px;margin-top:28px;color:var(--dim)}
