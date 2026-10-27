@@ -1,6 +1,6 @@
 # Handoff: each role on the cheapest model and effort that does its work (spec 016)
 
-- **Date:** 2026-10-26. It follows [the self-observation handoff](2026-10-23-self-observation.md).
+- **Date:** 2026-10-26. It follows the self-observation handoff.
 - **From:** the Lead, Claude Code on Sonnet 5.5, session `d8729560`, in an autonomous run (`auto-20261026-031440-d7ca`) that the owner opened with «trbaja autonomamente. Quiero TODO DOCUMENTADO, no estare disponible».
 - **To:** the owner, and the next session.
 - **Repository state:** released as 0.21.0 on 2026-10-26, on the owner's word («Si a todo y la skill de artificial análisis deja local»): the branch `feat/model-effort-policy` was merged into `main` by fast-forward (release commit `6fced62`), the tag `aether--v0.21.0` was created, `main` and the tag were pushed, and the owner's installed plugin was updated from 0.20.1 (it takes effect when a session restarts). The owner kept the Artificial Analysis skill local, so it is not in the repository.
