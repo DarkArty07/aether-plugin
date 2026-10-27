@@ -39,7 +39,26 @@ test('pick gives the pair of the quota that renews first, asks the points of the
   assert.deepEqual([entry.run, entry.call, entry.role, entry.requested, entry.picked.id], [args.runId, CALL, 'implementer', 51.9, 'agy/claude-opus-5-5@medium'])
   assert.equal(typeof entry.reason, 'string')
   assert.ok(Array.isArray(entry.candidates) && entry.candidates.every((c) => c.id && c.outcome))
-  assert.equal(pick(args, agyEnv(t, { quota: geminiFirst }), SONNET_XHIGH).json.picked.id, 'agy/gemini-4-argon@high')
+  assert.equal(pick(args, agyEnv(t, { quota: geminiFirst }), SONNET_XHIGH).json.picked.id, 'agy/claude-opus-5-5@medium')
+})
+
+test('R5: a pair whose model lacks the role in its roles list is not picked, for each swarm role', (t) => {
+  const { args } = fx.laneRun(t)
+  const env = agyEnv(t, { quota: geminiFirst })
+  const whyOf = (r) => Object.fromEntries(r.json.candidates.map((c) => [c.id, c.why]))
+  // gemini-4-argon lists judge, writer and examiner only: no swarm call goes to it, though its window renews first.
+  const implementer = pick(args, env, SONNET_XHIGH)
+  assert.equal(implementer.status, 0, implementer.stdout + implementer.stderr)
+  assert.notEqual(implementer.json.picked.model, 'gemini-4-argon')
+  assert.equal(whyOf(implementer)['agy/gemini-4-argon@high'], 'role')
+  // gemini-3.8-flash lists implementer only: a supervisor or a reviewer call never goes to it.
+  for (const role of ['supervisor', 'reviewer']) {
+    const r = pick(args, env, ['--role', role, '--model', 'sonnet', '--effort', 'xhigh'], `task-1-1-${role}`)
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.notEqual(r.json.picked && r.json.picked.model, 'gemini-3.8-flash', role)
+    assert.equal(whyOf(r)['agy/gemini-3.8-flash@medium'], 'role', role)
+    assert.equal(whyOf(r)['agy/gemini-4-argon@high'], 'role', role)
+  }
 })
 
 test('issue 038: a refusal of Argon leaves the Flash pairs to the swarm, and a refusal of Flash leaves Argon, though both read the one Gemini window', (t) => {
@@ -55,15 +74,15 @@ test('issue 038: a refusal of Argon leaves the Flash pairs to the swarm, and a r
   const flash = pick(args, argon, HAIKU_HIGH)
   assert.equal(flash.status, 0, flash.stdout + flash.stderr)
   assert.equal(flash.json.picked.id, 'agy/gemini-3.8-flash@medium')
-  assert.equal(states(flash)['agy/gemini-4-argon@high'], 'dry')
+  assert.equal(states(flash)['agy/gemini-4-argon@high'], 'role')
   assert.ok(Object.entries(states(flash)).filter(([id]) => id.includes('flash')).every(([, why]) => why !== 'dry'))
 
   const other = agyEnv(t, { quota: geminiFirst })
   refused(other, 'flash')
   const kept = pick(args, other, HAIKU_HIGH)
-  assert.equal(kept.json.picked.id, 'agy/gemini-4-argon@high')
+  assert.equal(kept.json.picked.id, 'agy/claude-sonnet-5-5@medium')
   assert.ok(Object.entries(states(kept)).filter(([id]) => id.includes('flash')).every(([, why]) => why === 'dry'))
-  assert.notEqual(states(kept)['agy/gemini-4-argon@high'], 'dry')
+  assert.equal(states(kept)['agy/gemini-4-argon@high'], 'role')
 })
 
 test('pick with every quota dry gives no pair and the native pair of the reference, and logs it', (t) => {
