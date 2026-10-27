@@ -10,8 +10,11 @@ const { readJson } = require('./common.js')
 
 const PRICES_FILE = path.join(__dirname, '..', 'config', 'prices.json')
 
+// The default file is this module's prices table. The body is not a one-line readJson return:
+// observe.js loads its own config with that same shape, and the two must not count as one helper.
 function loadPrices(file = PRICES_FILE) {
-  return readJson(file)
+  const table = readJson(file)
+  return table
 }
 
 // A model's family and rates: an exact id, or a listed id followed by a suffix such as a date.
