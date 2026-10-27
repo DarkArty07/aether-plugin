@@ -2,6 +2,7 @@
 
 // Unit worktrees: create, package for review, merge, remove and sweep. The sweep also stops the
 // processes of lane calls and removes the copies they leave.
+// Family: none.
 // Only paths under <repo>/.aether/ and branches under aether/ are touched.
 // Git's worktree registry is never pruned as a whole: Aether removes only its own entries, by path.
 
@@ -13,6 +14,7 @@ const { matchesAny } = require('./globs.js')
 const run = require('./run.js')
 const { killGroup, killMarked } = require('./lanes.js')
 const { judge } = require('./baseline.js')
+const { exists, nulEntries, pidAlive: processAlive, sleepSync } = require('./common.js')
 
 function loadGraph(mainRoot, runId) {
   run.assertRunId(runId)
@@ -40,16 +42,6 @@ function laneCopiesRoot(mainRoot) {
   return path.join(run.aetherDir(mainRoot), 'lanes')
 }
 
-// Unlike fs.existsSync, this counts a dangling symlink as present.
-function exists(target) {
-  try {
-    fs.lstatSync(target)
-    return true
-  } catch (err) {
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false
-    throw err
-  }
-}
 
 function isDirectory(target) {
   try {
@@ -67,10 +59,6 @@ function unitBase(mainRoot, graph, branch) {
   return git(['merge-base', graph.integration.branch, branch], mainRoot).stdout
 }
 
-// The entries of NUL-terminated git output (-z), without the empty ones.
-function nulEntries(text) {
-  return text.split('\0').filter((entry) => entry !== '')
-}
 
 // Every worktree in git's registry, including entries whose directory is gone.
 function registeredWorktrees(mainRoot) {
@@ -582,18 +570,6 @@ function mergeLockFile(mainRoot, runId) {
   return path.join(run.runDir(mainRoot, runId), 'merging')
 }
 
-function sleepSync(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-}
-
-function processAlive(pid) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return err.code === 'EPERM'
-  }
-}
 
 // The lock's {pid, time}, or null when there is none. A lock that cannot be read yet, because its
 // holder is still writing it, has no pid and dates from its file.
