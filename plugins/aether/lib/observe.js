@@ -2,9 +2,11 @@
 
 // The store of self-observation: everything hangs from <data dir>/observe/. The closed list of keys of
 // cleanEvent is what keeps conversation text out of the files (it keeps no free text at all).
+// Family: observe.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { isObject, parseJson, readJson } = require('./common.js')
 
 const PLUGIN_ROOT = path.resolve(__dirname, '..')
 const CONFIG_FILE = path.join(PLUGIN_ROOT, 'config', 'observe.json')
@@ -28,7 +30,6 @@ function observeMode(env = process.env, root = PLUGIN_ROOT) {
   return env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV === 'true' ? 'dev' : 'standard'
 }
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const cleanText = (value) => (typeof value === 'string' && IDENTIFIER.test(value) ? value : 'unclassified')
 
 function cleanEvent(raw) {
@@ -54,14 +55,6 @@ function appendEvent(dataDir, raw) {
     return true
   } catch {
     return false
-  }
-}
-
-function parseJson(text) {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
   }
 }
 
@@ -109,7 +102,7 @@ function readFaults(dataDir) {
 }
 
 function loadObserveConfig(file = CONFIG_FILE) {
-  return JSON.parse(fs.readFileSync(file, 'utf8'))
+  return readJson(file)
 }
 
 // Every file under dir, recursively, as { rel, bytes }; a symlink counts as a file and is not followed.
@@ -175,5 +168,5 @@ function forget(dataDir, { yes } = {}) {
 module.exports = {
   PLUGIN_ROOT, CONFIG_FILE,
   observeDir, eventsFile, faultsDir, summaryFile, devDir, issuesDir,
-  observeMode, cleanEvent, appendEvent, readEvents, readFaults, loadObserveConfig, status, forget,
+  observeMode, cleanText, cleanEvent, appendEvent, readEvents, readFaults, loadObserveConfig, status, forget,
 }
