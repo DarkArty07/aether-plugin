@@ -1,8 +1,10 @@
 'use strict'
 
-// The Codex harness: the headless exec command line, and a run judged from the JSON events codex prints.
+// The Codex harness adapter: builds the headless exec command line and judges a run from JSON events.
+// lib/harness/index.js calls it to build the adapter.
+// Family: harness.
 
-const { commandInstalled } = require('../lanes.js')
+const { commandInstalled } = require('../lane-process.js')
 const { defaultExec, parseJson, parseRun, readVersion, stringsIn, unknownQuota, usageOf } = require('./structured.js')
 
 // The answer is the text of the last item.completed event whose item is an agent_message, and the usage is that of
