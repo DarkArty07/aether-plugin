@@ -4,12 +4,14 @@
 // trusted with nothing: the implementer works in its unit worktree, a read-only role works in a
 // disposable copy, and these functions look at git afterwards to see what really changed.
 // Only paths under <repo>/.aether/lanes/ are removed here.
+// Family: lane.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { git, repoPaths } = require('./git.js')
 const { matchesAny } = require('./globs.js')
+const { exists } = require('./common.js')
 const run = require('./run.js')
 const { ensure, loadGraph, uncommittedFiles, changedFiles, unitBase, isWorktreeRoot, diffPackage, betweenMerges } = require('./worktrees.js')
 
@@ -21,16 +23,6 @@ function readerDir(mainRoot, runId, call) {
   run.assertRunId(runId)
   if (!CALL_ID.test(String(call))) throw new Error(`invalid call id: ${call}`)
   return path.join(run.aetherDir(mainRoot), 'lanes', runId, call)
-}
-
-function exists(target) {
-  try {
-    fs.lstatSync(target)
-    return true
-  } catch (err) {
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false
-    throw err
-  }
 }
 
 function tmpDir(workdir) {
