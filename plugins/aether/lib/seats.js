@@ -1,19 +1,14 @@
 'use strict'
 
-// Design seats: the Judge, the Writer and the Examiner, which an external harness takes in place of Aether's
-// own agent, one round at a time, when superdelegation is on. The seat asks for the points of its native
-// reference pair and lib/superdelegation.js choose picks the pair, as it does for a swarm call; the native
-// agent takes the round only when no pair can. A round runs in a disposable worktree of the current commit and
-// is judged from outside: what changed in git, and an answer checked against the seat's schema. Anything else
-// gives the seat back to the native agent, which redoes the round from the files. A Writer that failed
-// after writing part of its document is the exception: that partial is kept and the next pair continues
-// from it (issue 68). A round keeps no conversation, so any harness can take any seat.
+// One round of a design seat (Judge, Writer or Examiner) on an external harness. `aether-lane seat` and seat-calls.js call it.
+// Family: seat.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn, spawnSync } = require('node:child_process')
 const { git, repoPaths } = require('./git.js')
+const { killGroup, readTextOrEmpty, removeWorktree } = require('./common.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
 const schemas = require('./lane-schemas.js')
@@ -24,7 +19,7 @@ const { roleBody, claudeMdSections, WORKDIR_RULE } = require('./lane-calls.js')
 const { priceEntry, loadPrices } = require('./prices.js')
 const { choose, enabled: superdelegationEnabled } = require('./superdelegation.js')
 const pairsTable = require('./pairs.js')
-const { harnessViews, latestReadings } = require('./lane-pick.js')
+const { excludeList, harnessViews, latestReadings } = require('./lane-pick.js')
 
 const PLUGIN_BIN = path.join(__dirname, '..', 'bin')
 const SKILLS_DIR = path.join(__dirname, '..', 'skills')
@@ -238,12 +233,6 @@ function saveRound(top, ref, indexDir, message) {
   } finally {
     fs.rmSync(indexFile, { force: true })
   }
-}
-
-function removeWorktree(mainRoot, worktree) {
-  git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true })
-  fs.rmSync(worktree, { recursive: true, force: true })
-  git(['worktree', 'prune'], mainRoot, { allowFail: true })
 }
 
 // The documents a Writer round may leave, in the order a partial lists them.
@@ -567,14 +556,6 @@ function seatPrompt({ seat, harness, adapter, message, workdir, feature, doc = '
 
 // ---- Running the harness ----
 
-function killGroup(pid) {
-  try {
-    process.kill(-pid, 'SIGKILL')
-  } catch {
-    // The group is already empty.
-  }
-}
-
 // Runs argv in cwd to its end, in a group of its own, killing the group when it outlives the timeout.
 // Resolves to its exit code.
 function runHarness(argv, { cwd, marker, stdoutFile, stderrFile, timeoutSeconds, onSpawn }) {
@@ -602,14 +583,6 @@ function runHarness(argv, { cwd, marker, stdoutFile, stderrFile, timeoutSeconds,
       resolve(code ?? 128 + (os.constants.signals[signal] || 0))
     })
   })
-}
-
-function readTextOrEmpty(file) {
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch {
-    return ''
-  }
 }
 
 // ---- What a round leaves ----
@@ -1005,18 +978,6 @@ function flags(args) {
 }
 
 const SEAT_ID = /^(judge|writer|examiner)-\d{8}-\d{6}-[0-9a-f]{4}$/
-
-// The pair ids a round already tried, as `--exclude` gives them: the same rule and message as `aether-lane pick`
-// (lib/lane-pick.js excludeList), so that both refuse the same ids. Keep the two in step.
-const PAIR_ID = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(low|medium|high|xhigh|max)$/
-
-function excludeList(value) {
-  if (value === undefined) return []
-  const ids = String(value).split(',')
-  const bad = ids.find((id) => !PAIR_ID.test(id))
-  if (bad !== undefined) throw new Error(`--exclude must be pair ids like agy/model@effort, not ${JSON.stringify(bad)}`)
-  return ids
-}
 
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 

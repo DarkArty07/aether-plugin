@@ -1,17 +1,16 @@
 'use strict'
 
-// One design-seat round, started and awaited in steps. A round of an external seat can outlast the
-// time one command may run, so `start` checks the Lead's message, saves it and launches a detached runner;
-// the runner calls `aether-lane seat`'s own code (seats.js) and writes result.json last; `wait` and `stop`
-// read and end it. The commands share nothing but the files of the round directory, <mainRoot>/.aether/seats/<id>/,
-// which seats.js also uses for its worktree and its harness's files.
+// One design-seat round, started and awaited in steps. `aether-lane` seat-start, seat-wait and seat-stop call it.
+// Family: seat.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { repoPaths } = require('./git.js')
+const { readJsonOrNull, sleep } = require('./common.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
+const { finishedResult } = require('./lane-calls.js')
 const seats = require('./seats.js')
 
 const BIN = path.join(__dirname, '..', 'bin', 'aether-lane')
@@ -31,8 +30,7 @@ const SEAT_ID = new RegExp(`^(${lanes.SEATS.join('|')})-\\d{8}-\\d{6}-[0-9a-f]{4
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const SESSION = /^[A-Za-z0-9-]+$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
-// The flags a start takes, with the seat the bin adds: the seats and lanes options retired with superdelegation, and a
-// round started with one of them would run under a switch nobody gave it.
+// The flags a start takes, plus the seat the bin adds before it calls start.
 const START_FLAGS = ['seat', 'session', 'author', 'feature', 'doc', 'superdelegation', 'harnesses', 'exclude', 'digest']
 
 // ---- The round directory ----
@@ -56,14 +54,6 @@ function seatPaths(cwd, id) {
     // Writer rounds only. continued says the round started from a partial; partial is what seat-stop saved.
     continued: file('continued.json'),
     partial: file('partial.json'),
-  }
-}
-
-function readJsonOrNull(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch {
-    return null
   }
 }
 
@@ -179,14 +169,6 @@ async function runSeat(cwd, id) {
 }
 
 // ---- wait, stop ----
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-// The finished result, or null while there is none.
-function finishedResult(paths) {
-  const done = readJsonOrNull(paths.result)
-  return done && done.done === true ? done : null
-}
 
 // Whether the round's runner lives: its pid file names a process that carries the runner's marker and is not a zombie.
 // A pid the system gave to something else since, or a runner stop ended, is not it.
