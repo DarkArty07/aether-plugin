@@ -2,9 +2,11 @@
 
 // PreToolUse decisions and irreversible command classification for Aether sessions.
 // Protects specs, plans, tasks (specs/NNN-<topic>/), the constitution (.specify/memory/constitution.md),
-// the intent card (specs/NNN-<topic>/intent.md), and legacy superpower specs and plans (docs/superpowers/).
-// Records irreversible Bash commands across the classes of autonomy: merge-main, push, publish, deploy,
-// delete, credentials, and paid-call. Redacts secret values from logged commands.
+// and the intent card (specs/NNN-<topic>/intent.md). Protection of docs/superpowers/specs/ and
+// docs/superpowers/plans/ stays in force even though that folder is not in the tree.
+// Records irreversible Bash commands across the classes: merge-main, push, publish, deploy, delete,
+// and credentials. The paid-call class is in CLASSES of autonomy.js, but the guard does not detect it;
+// it is only granted and checked with aether-autonomy. Redacts secret values from logged commands.
 // Family: none.
 
 const path = require('node:path')
