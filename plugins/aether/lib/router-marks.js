@@ -1,12 +1,11 @@
 'use strict'
 
 // Quota marks written by the delegate router, kept apart from the swarm's marks.
-// agy states an explicit refusal («Individual quota reached», «Resets in <duration>»). The router turns that into a
-// mark in its own store, `<dataDir>/router/lanes/marks/`, of the same shape lane-marks.js reads. The swarm's store is
-// only read here, never written, so a router refusal does not change what the swarm's marks hold.
+// Records quota refusals under <dataDir>/router/ with source 'router' so refusals do not alter swarm marks.
+// Family: router.
 
-const fs = require('node:fs')
 const path = require('node:path')
+const { writeAtomic } = require('./common.js')
 const laneMarks = require('./lane-marks.js')
 const { quotaRefusal } = require('./quota-refusal.js')
 
@@ -15,21 +14,6 @@ const MINUTE_MS = 60 * 1000
 
 function routerMarksRoot(dataDir) {
   return path.join(dataDir, 'router')
-}
-
-function writeAtomic(targetPath, content) {
-  const dir = path.dirname(targetPath)
-  fs.mkdirSync(dir, { recursive: true })
-  const base = path.basename(targetPath)
-  const tmp = path.join(dir, `.${base}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`)
-  try {
-    fs.writeFileSync(tmp, content)
-    fs.renameSync(tmp, targetPath)
-  } finally {
-    try {
-      if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
-    } catch {}
-  }
 }
 
 // A harness that names its own quota failures, as Muse does («quota: muse weekly limit, resets ...»), leaves a refusal
