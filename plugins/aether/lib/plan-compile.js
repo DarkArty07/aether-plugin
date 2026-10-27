@@ -4,6 +4,9 @@
 // Called by bin/aether-plan to validate plans and build run graphs.
 // Family: plan.
 
+// aether-plan check <plan.md>
+// aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline]
+
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
@@ -25,6 +28,8 @@ function fail(errors, warnings = [], stdout = process.stdout) {
   process.exit(1)
 }
 
+// The value after a flag, or null when the flag is absent. A flag with no value,
+// or with another flag where its value belongs, fails with the given message.
 function flagValue(args, name, message, stdout) {
   const i = args.indexOf(name)
   if (i === -1) return null
@@ -45,11 +50,16 @@ function isFile(file) {
   return Boolean(stat && stat.isFile())
 }
 
+// A file is named the way a Spec line names it: relative to the integration worktree, where the run
+// reads it, or by its full path when it is outside that worktree.
 function nameInWorktree(file, worktree) {
   const rel = path.relative(worktree, file)
   return rel.split(path.sep)[0] === '..' ? file : rel
 }
 
+// The spec a plan names. A Spec line's path is read from the worktree; when nothing is there but the
+// file sits beside the plan, as the Aether preset's [spec.md](spec.md) does, that file is the spec.
+// Without a Spec line, a spec.md beside the plan stands in (Spec Kit's layout).
 function planSpec(parsedSpec, planPath, worktree) {
   if (parsedSpec) {
     if (path.isAbsolute(parsedSpec) || isFile(path.join(worktree, parsedSpec))) return parsedSpec
@@ -60,6 +70,7 @@ function planSpec(parsedSpec, planPath, worktree) {
   return isFile(sibling) ? nameInWorktree(sibling, worktree) : null
 }
 
+// The top of the working tree a check runs in; the working directory itself outside a git repository.
 function worktreeOf(cwd) {
   try {
     return repoPaths(cwd).worktree
@@ -68,6 +79,8 @@ function worktreeOf(cwd) {
   }
 }
 
+// The requirement ids of the spec the plan names, read from the same file compile reads. Empty when
+// there is no spec or it cannot be read: a check without a spec traces nothing.
 function specRequirements(parsedSpec, planPath, cwd) {
   const worktree = worktreeOf(cwd)
   const spec = planSpec(parsedSpec, planPath, worktree)
@@ -91,6 +104,8 @@ function check(planArg, { cwd = process.cwd(), stdout = process.stdout } = {}) {
 
 const BASELINE_TIMEOUT_MS = 10 * 60 * 1000
 
+// Runs the test command once, in the integration worktree, before the run's first merge. The failing
+// tests it names are the baseline: a merge is blocked only by a failure that is not among them.
 function recordBaseline(cwd, testCommand) {
   const started = Date.now()
   const r = spawnSync(testCommand, {
@@ -104,11 +119,13 @@ function recordBaseline(cwd, testCommand) {
     recordedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     exitCode: r.status,
+    // A newline before the output stops a reporter that ends on an incomplete line from running together with the error count.
     signatures: baseline.failureSignatures(`${r.stdout || ''}\n${r.stderr || ''}`),
     timedOut: Boolean(r.error && r.error.code === 'ETIMEDOUT'),
   }
 }
 
+// Summary of a recorded baseline for stderr.
 function baselineMessage({ exitCode, signatures }) {
   if (exitCode === 0) return 'the test command passed'
   if (signatures.length > 0) {
@@ -138,6 +155,8 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
 
   let alreadyMerged = null
   if (runValue !== null && fs.existsSync(graphFile) && only === null) {
+    // Read before the graph is written: a relaunch's graph keeps the first launch's base
+    // and drops the units already merged so the run continues from where it stopped.
     const merged = new Set(wt.mergedUnits(cwd, runId))
     const planTaskIds = parsed.tasks.map((t) => `task-${t.number}`)
     const intersect = planTaskIds.filter((id) => merged.has(id))
@@ -163,6 +182,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     )
   }
 
+  // A lane table or a pairs table that fails to load throws here, before anything is written.
   let laneArgs = null
   if (!rest.includes('--no-lanes') && enabled.on) {
     const config = lanes.loadConfig(lanes.configPath())
@@ -177,6 +197,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
   run.ensureExcluded(repo.gitCommonDir)
 
   const spec = planSpec(parsed.spec, planPath, repo.worktree)
+  // The spec's intent and criteria go into every brief (trial 2). A spec that cannot be read adds nothing.
   let objective = null
   if (spec) {
     try {
@@ -195,9 +216,12 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     tasks[id] = { ...graph.tasks[id], brief }
   }
 
+  // Units branch from the current head, but the run's first launch is where its changes begin.
   const base = head(cwd)
   const args = {
     runId,
+    // This bin's own directory, so the run's commands run this same version in a
+    // --plugin-dir session, whose PATH holds the installed release's bins (issue 008).
     binDir: path.join(__dirname, '..', 'bin'),
     repoRoot: repo.mainRoot,
     runDir: dir,
@@ -218,11 +242,13 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     lanes: laneArgs,
   }
 
+  // Recorded once per run, before its first merge. A relaunch keeps the baseline it already has.
   const baselineFile = path.join(dir, 'baseline.json')
   if (!rest.includes('--no-baseline') && !fs.existsSync(baselineFile)) {
     const recorded = recordBaseline(repo.worktree, parsed.execution.testCommand)
     run.writeJson(baselineFile, recorded)
     process.stderr.write(`aether-plan: test baseline: ${baselineMessage(recorded)}\n`)
+    // A merge runs the same command under the mod's ten-minute limit (issue 002, proposal 5).
     if (recorded.durationMs > 540000) {
       process.stderr.write(
         `aether-plan: warning: the test command took ${Math.round(recorded.durationMs / 1000)}s for the baseline; a merge runs it under a 600s limit, so merges may be stopped at the limit with their test run unfinished\n`,
@@ -231,6 +257,8 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
   }
   run.writeJson(graphFile, args)
 
+  // A relaunch of a run keeps its first compile time, so the report covers every launch, and keeps
+  // the previous launch's result as result-<k>.json.
   const statePath = path.join(dir, 'state.json')
   const previous = fs.existsSync(statePath) ? run.readJson(statePath) : null
   const resultPath = path.join(dir, 'result.json')

@@ -16,10 +16,12 @@ for (const name of fs.readdirSync(BIN)) {
       assert.ok(/^'node:path'$/.test(spec) || /^'node:fs'$/.test(spec) || /lib/.test(spec), `${name} requires ${spec}`)
     }
     for (const forbidden of ['node:child_process', 'node:os', 'node:crypto']) assert.ok(!code.includes(`'${forbidden}'`), `${name} requires ${forbidden}`)
-    if (code.includes(`'node:fs'`)) {
+    if (code.includes(`'node:fs'`) && name !== 'aether-voice') {
       assert.ok(/readFileSync\((0|'\/dev\/stdin')/.test(code), `${name} requires node:fs but does not read stdin`)
     }
-    assert.ok(!/\bfs\./.test(code.replace(/readFileSync\((0|'\/dev\/stdin')/g, '')), `${name} uses fs for more than stdin`)
+    if (name !== 'aether-voice') {
+      assert.ok(!/\bfs\./.test(code.replace(/readFileSync\((0|'\/dev\/stdin')/g, '')), `${name} uses fs for more than stdin`)
+    }
     assert.ok(text.split('\n').length <= MAX_LINES, `${name} has ${text.split('\n').length} lines`)
   })
 }

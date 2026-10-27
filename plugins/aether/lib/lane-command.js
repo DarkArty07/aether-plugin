@@ -4,6 +4,38 @@
 // Called by bin/aether-lane to handle status, start, wait, result, pick, and seats.
 // Family: lane.
 
+// aether-lane status <run> [--refresh]   (the quota view of each group of every enabled harness, a disabled harness by its
+//   command alone, and the dry marks; it never refreshes by itself: --refresh, which no workflow sends any more, first
+//   renews grok's reading when it is stale, and says how, as refreshed and refreshMethod)
+// aether-lane start <run> <call> --role <role> --model <lane model> --effort <effort> --digest <digest> [--task <task>]
+// aether-lane wait <run> <call> [--max <seconds>]
+// aether-lane result <run> <call>
+// aether-lane stop <run> [<call>]
+// aether-lane pick <run> <call> --role <implementer|supervisor|reviewer> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max>
+//   [--exclude <id>[,<id>...]] [--author <family>]   (superdelegation: the pair for a call, from the points of its native
+//   reference pair and the quotas of the enabled harnesses; logs the choice and starts nothing)
+// aether-lane took <run> <call> --by <native|harness:model> --cause <chosen|no-candidate|failed>
+//   (logs who ran the call and why)
+// aether-lane delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--pair <pair id>] [--carry <patch file>] [--findings <file>] [--session <id>]
+//   (no run: a loose editing charge on an external pair, in its own one-unit run; prints its result, merges nothing)
+// aether-lane pause --seconds <1 to 120>   (no run: waits, so that the workflow can time its agents)
+// aether-lane quota [<harness>...] [--refresh] [--json]   (no run: each harness's quota as text, or as JSON;
+//   --refresh first asks grok over ACP for a new reading, and opens its UI for a few seconds, with no prompt,
+//   only if that gives none)
+// aether-lane seat <judge|writer|examiner> --session <id> [--author <model>] [--exclude <id>[,<id>...]] [--feature specs/NNN-<topic>] [--cwd <dir>]
+//   (the message on stdin; exit 0 an external answer, 3 the native agent takes the round, 4 the external round
+//   failed and was undone, 1 the command broke)
+// aether-lane seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>]
+//   --superdelegation <on|off> --harnesses <h1,h2> [--exclude <id>[,<id>...]] --digest <digest>
+//   (the same round as seat, in the background: the message is the file the mod saved at <checkout>/.aether-tmp/seats/<session>/message.md,
+//   and the options come in flags because the mod's bins have none of the session's exports; prints { started, id },
+//   or { unavailable: message | digest } when the file is missing or is not the one the digest names)
+// aether-lane seat-wait <id> [--max <seconds>]   (the round's { done, exitCode, value }, with seat's exit and answer as
+//   exitCode and value, or { done: false } when it still runs after --max seconds, by default 540)
+// aether-lane seat-stop <id>   (ends the round, its harness and its worktree; prints { stopped })
+// aether-lane _runner <run> <call>   (internal: the detached runner that start launches)
+// aether-lane _seat <id>   (internal: the detached runner that seat-start launches)
+
 const calls = require('./lane-calls.js')
 const seats = require('./seats.js')
 const seatCalls = require('./seat-calls.js')
@@ -11,6 +43,7 @@ const quota = require('./lane-quota.js')
 const pick = require('./lane-pick.js')
 const delegate = require('./lane-delegate.js')
 
+// Each command's usage. <run>, and <call> where it is not in brackets, are required.
 const COMMANDS = {
   status: 'status <run> [--refresh]',
   start: 'start <run> <call> --role <role> --model <lane model> --effort <effort> --digest <digest> [--task <task>]',
@@ -23,11 +56,13 @@ const COMMANDS = {
 const PAUSE_USAGE = 'pause --seconds <1 to 120>'
 const USAGE = `usage: aether-lane ${[...Object.values(COMMANDS), delegate.DELEGATE_USAGE, PAUSE_USAGE, quota.USAGE].join(' | ')} | ${seats.USAGE.replace('usage: aether-lane ', '')} | ${Object.values(seatCalls.COMMANDS).join(' | ')}`
 
+// Throws the command's own usage when an argument it requires is missing.
 function requireArgs(verb, runId, call) {
   const needsCall = COMMANDS[verb].split(' ').includes('<call>')
   if (runId === undefined || (needsCall && call === undefined)) throw new Error(`usage: aether-lane ${COMMANDS[verb]}`)
 }
 
+// The value after each --name in args, keyed by name.
 function flags(args) {
   const parsed = {}
   for (let i = 0; i < args.length; i++) {
@@ -39,12 +74,15 @@ function flags(args) {
   return parsed
 }
 
+// Whether status was asked to refresh. --refresh, once, is the only argument it takes after the run.
 function wantsRefresh(args) {
   if (args.length === 0) return false
   if (args.length === 1 && args[0] === '--refresh') return true
   throw new Error(`usage: aether-lane ${COMMANDS.status}`)
 }
 
+// The view of status, with each harness the quota step refreshed marked as such. The reading the refresh took is the
+// harness's reading in the view, so that grok's answer over ACP does not depend on a line in its log.
 async function statusCommand(cwd, runId, args) {
   const refresh = wantsRefresh(args)
   const refreshed = refresh ? await calls.refreshStale(cwd, runId) : {}
@@ -63,6 +101,7 @@ function maxSeconds(value) {
   return seconds
 }
 
+// seat-wait and seat-stop, which take the round's id and, for wait, --max.
 function seatRoundCommand(verb, cwd, [id, ...rest]) {
   const name = verb.slice('seat-'.length)
   if (id === undefined) throw new Error(`usage: aether-lane ${seatCalls.COMMANDS[name]}`)
@@ -85,6 +124,7 @@ async function command(argv, { cwd, env }) {
   throw new Error(USAGE)
 }
 
+// All of stdin, read only when a round needs it.
 function readStdin(stdin = process.stdin) {
   if (stdin.isTTY) return Promise.resolve('')
   return new Promise((resolve, reject) => {
@@ -98,7 +138,7 @@ function readStdin(stdin = process.stdin) {
   })
 }
 
-async function main(argv, { cwd = process.cwd(), stdin = process.stdin, stdout = process.stdout, env = process.env } = {}) {
+async function main(argv, { cwd = process.cwd(), env = process.env, stdin = process.stdin, stdout = process.stdout } = {}) {
   if (argv[0] === '_runner') {
     await calls.runCall(cwd, argv[1], argv[2])
     return { exitCode: 0 }
@@ -122,8 +162,7 @@ async function main(argv, { cwd = process.cwd(), stdin = process.stdin, stdout =
     return { exitCode: 0 }
   }
   if (argv[0] === 'seat') {
-    const inputFn = () => readStdin(stdin)
-    const { exitCode, value } = await seats.seatCommand(argv.slice(1), { input: inputFn })
+    const { exitCode, value } = await seats.seatCommand(argv.slice(1), { input: () => readStdin(stdin) })
     stdout.write(`${JSON.stringify(value)}\n`)
     return { exitCode }
   }

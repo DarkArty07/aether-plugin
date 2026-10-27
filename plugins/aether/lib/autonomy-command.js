@@ -4,6 +4,19 @@
 // Called by bin/aether-autonomy to handle grant, revoke, check, and status verbs.
 // Family: none.
 
+// aether-autonomy grant  --class <class> --quote <text> [--session <id>] [--scope repo|session]
+// aether-autonomy revoke --class <class> --quote <text> [--session <id>] [--all]
+// aether-autonomy check  <class> [--session <id>]
+// aether-autonomy list
+// aether-autonomy start  --quote <text> [--session <id>] [--hours N] [--usd N]
+// aether-autonomy spend  <usd> --source <label>
+// aether-autonomy status
+// aether-autonomy end    --outcome done|ceiling|incomplete
+// aether-autonomy brake-settings [--session <id>]
+// aether-autonomy brake-off --quote <text> [--session <id>]
+// aether-autonomy brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>]
+// aether-autonomy quota-saved --from <saved.json>
+
 const fs = require('node:fs')
 const { repoPaths } = require('./git.js')
 const { ensureExcluded, dataDir } = require('./run.js')
@@ -12,6 +25,7 @@ const autonomy = require('./autonomy.js')
 const USAGE =
   'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json>'
 
+// The value after a flag, or null when the flag is absent.
 function value(args, flag) {
   const i = args.indexOf(flag)
   if (i === -1) return null
@@ -20,6 +34,7 @@ function value(args, flag) {
   return next
 }
 
+// Every flag that appears in args must be followed by a value.
 function assertFlags(args) {
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--')) {
@@ -32,12 +47,14 @@ function assertFlags(args) {
   }
 }
 
+// Number(raw), except that an empty or blank value is not a number.
 function parseNumber(raw, name) {
   const n = raw.trim() === '' ? NaN : Number(raw)
   if (!Number.isFinite(n)) throw new Error(`invalid ${name}: ${raw}`)
   return n
 }
 
+// --session, or else CLAUDE_CODE_SESSION_ID; an empty value counts as none.
 function getSession(args, required = false, env = process.env) {
   const flag = value(args, '--session')
   const envId = env?.CLAUDE_CODE_SESSION_ID
@@ -51,6 +68,8 @@ function getSession(args, required = false, env = process.env) {
 
 function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
   const sub = argv[0]
+  // --all is the one boolean flag; it takes no value, so it leaves `rest`
+  // before assertFlags checks that every flag is followed by a value.
   const all = sub === 'revoke' && argv.includes('--all')
   const rest = argv.slice(1).filter((a) => !(sub === 'revoke' && a === '--all'))
 
@@ -143,7 +162,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
 
   if (sub === 'brake-settings') {
     const session = getSession(rest, false, env)
-    return { code: 0, out: autonomy.brakeSettings(mainRoot, { session, dataDir: env?.AETHER_DATA_DIR || dataDir(env) }) }
+    return { code: 0, out: autonomy.brakeSettings(mainRoot, { session, dataDir: env.AETHER_DATA_DIR || dataDir(env) }) }
   }
 
   if (sub === 'brake-off') {
@@ -171,7 +190,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     else if (rawNotify === 'failed') notify = { sent: false, reason: value(rest, '--notify-reason') ?? 'no-channel' }
     else throw new Error(USAGE)
     ensureExcluded(gitCommonDir)
-    return { code: 0, out: autonomy.recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify }, { dataDir: env?.AETHER_DATA_DIR || dataDir(env) }) }
+    return { code: 0, out: autonomy.recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify }, { dataDir: env.AETHER_DATA_DIR || dataDir(env) }) }
   }
 
   if (sub === 'quota-saved') {
