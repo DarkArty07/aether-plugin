@@ -1,16 +1,17 @@
-// Aether mod entry point and usage meter (spec 012). Records every model request of an Aether session (the main session's,
+// Aether mod entry point and usage meter. Records every model request of an Aether session (the main session's,
 // subagents' and workflow agents') with its tokens and timing, so aether-report can price a run.
 // The meter only observes: a failure in it never changes, delays past a write, or blocks a request.
 // It also saves each aether-lane payload an ops agent carries to the file its marker names (lanes spec §6.1):
 // a lane call's prompt, or a design round's message to <repo>/.aether-tmp/seats/<session>/message.md.
 //
-// It answers the ops agents of workflows (decision A30): when a workflow spawns aether:ops with a
-// prompt that ops-command.mjs accepts, the agent's first step runs that aether-wt, aether-lane, aether-plan or
-// aether-exam command with $.process.run, no shell, and ends the agent with the StructuredOutput call the
-// workflow's schema asks for, without a model request. Any workflow in an Aether session gets that answer, for
-// any repository and run the prompt names. Any other prompt, a command that $.process.run refuses or cannot start,
-// and a bin that fails to load go to the model as before. Otherwise, once the mod has run an agent's command,
-// the agent's model never runs it: a command still running at its timeout, or ended without its line, is reported.
+// The mod answers an accepted ops prompt without a model (decision A30). When a workflow spawns
+// aether:ops with a prompt that ops-command.mjs accepts, the agent's first step runs that aether-wt,
+// aether-lane, aether-plan or aether-exam command with $.process.run, no shell, and ends the agent
+// with the StructuredOutput call the workflow's schema asks for, without a model request. Any workflow
+// in an Aether session gets that answer, for any repository and run the prompt names. Any other prompt,
+// a command that $.process.run refuses or cannot start, and a bin that fails to load go to the model as
+// before. Otherwise, once the mod has run an agent's command, the agent's model never runs it: a command
+// still running at its timeout, or ended without its line, is reported.
 //
 // Only an Aether session is metered (installable spec R9): one whose Lead started it (classic.SessionStart
 // with agent_type aether:lead), or one that has a marker <data dir>/sessions/<session>.json, which only
@@ -31,10 +32,10 @@
 // this file whether the session is Aether's (aetherSession) when they are used, never at session start, so that the
 // first answer kept for the session is the meter's own.
 //
-// It also gives an Aether session the /spend command (spend-panel.jsx): a pane with the list-price spend of this
-// session, drawn without a model. The Lead's SessionStart declares the command; the command and the pane ask
-// this file whether the session is Aether's (aetherSession) when they are used, never at session start, so that the
-// first answer kept for the session is the meter's own.
+// It also gives an Aether session the /spend command (spec 012 R10, spend-panel.jsx): a pane with the list-price
+// spend of this session, drawn without a model. The Lead's SessionStart declares the command; the command and the
+// pane ask this file whether the session is Aether's (aetherSession) when they are used, never at session start,
+// so that the first answer kept for the session is the meter's own.
 //
 // It also runs the quota brake (spec 011, quota-brake.mjs): after each metered step it reads the session's rate-limit
 // windows, and when one crosses the threshold it warns the owner once, records the crossing with aether-autonomy, tells
