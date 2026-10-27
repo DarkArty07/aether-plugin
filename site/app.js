@@ -24,10 +24,7 @@
       'hero.lead': 'Añade un <strong>modo Aether</strong> opcional: un orquestador responsable, el Lead, convierte tu intención en una spec y un plan revisados, los construye con un swarm paralelo de agentes y con los otros planes de código que ya pagas, y te informa en un solo brief.',
       'hero.note': '<code>claude</code> a secas sigue siendo el modo normal.',
       'hero.cta': 'Cómo funciona ↓',
-      'hero.bar': 'NEEDS YOUR YES',
-      'hero.yes': 'SÍ · SE EJECUTA UNA VEZ',
-      'hero.later': 'QUEDA EN LA LISTA',
-      'hero.mascot.alt': 'Clawd, una mascota pixelada, se satura de tareas. Un comando /aether y un rayo cósmico la vuelven una galaxia morada que reparte el trabajo entre tres subagentes, muestra un brief en un monitor retro, espera un sí, hace el merge y vuelve a su escritorio',
+      'hero.walk.alt': 'Clawd pasea tranquilo de izquierda a derecha sobre la línea: da saltitos, se detiene a mirar una nube, le cae un rayo que lo vuelve violeta Aether, festeja, saluda con la mano y deja un corazón y polvo de estrellas por el camino',
 
       'metas.tag': '// 01 · METAS',
       'metas.title': 'Cinco metas.<br><em>Una sigla.</em>',
@@ -48,11 +45,11 @@
 
       'team.tag': '// 02 · EQUIPO',
       'team.title': 'Quién hace<br><em>qué</em>',
-      'team.intro': 'El Lead es la sesión principal y tu mano derecha, no un mensajero. Los demás roles trabajan en un contexto propio, y quien escribe un documento nunca lo juzga.',
+      'team.intro': 'El Lead es la sesión principal y tu mano derecha, no un mensajero. Los demás roles trabajan en un contexto propio, y quien escribe un documento nunca lo juzga. Los modelos de cada tarjeta son los de Claude nativo: con <code>superdelegation</code> activada, cada rol que no es el Lead corre primero en otro plan.',
       'team.m.lead': 'Sonnet · xhigh',
       'team.owner': 'Por encima de todos está el dueño: confirma lo que entendió el Lead, puede dar permiso para trabajar durante horas, responde una sola lista y revisa el brief.',
       'lead.alt': 'El Lead: una estatua con corona de laurel que extiende el brazo hacia las estrellas',
-      'lead.t': 'Entiende la intención, hace las preguntas que el código no responde y escribe la tarjeta de intención. Lanza /aether:design, elige el camino de cada trabajo y el modelo de cada tarea delegada. Es dueño del resultado.',
+      'lead.t': 'Entiende la intención, hace las preguntas que el código no responde y escribe la tarjeta de intención. Lanza /aether:design, elige el camino de cada trabajo y juzga el resultado de cada tarea delegada. Es dueño del resultado.',
       'writer.alt': 'El Writer: una mano de mármol que escribe sobre una tableta que contiene una galaxia',
       'writer.t': 'Escribe la spec desde la tarjeta de intención, y el plan y las tareas desde la spec aprobada. Lo que no está claro y es difícil de revertir lo marca [NEEDS CLARIFICATION].',
       'judge.alt': 'El Judge: una estatua con los ojos vendados que sostiene una espada',
@@ -63,7 +60,7 @@
 
       'paths.tag': '// 03 · CAMINOS',
       'paths.title': 'Tres caminos,<br><em>una decisión</em>',
-      'paths.intro': 'El Lead toma uno de tres caminos para cada trabajo, y elige el modelo de cada tarea delegada por calidad, costo y velocidad.',
+      'paths.intro': 'El Lead toma uno de tres caminos para cada trabajo, y la escalera de modelos de una tarea delegada la lleva el sistema, no él.',
       'paths.foot': 'ILUSTRATIVO: los diagramas muestran el orden de las etapas, no tiempos reales.',
       'n.lead': 'LEAD', 'n.result': 'RESULTADO', 'n.result.s': 'FINAL',
       'n.sub': 'SUBAGENTE', 'n.sub.s': 'TAREA',
@@ -74,9 +71,9 @@
       'p.direct.a': 'Clawd hace cinco llamadas a herramientas en línea, de READ a RUN, y la bandera del resultado sube',
       'p.direct.c': 'EN LÍNEA · ~5 LLAMADAS',
       'p.delegate.n': 'Tarea delegada',
-      'p.delegate.w': 'Trabajo acotado que ya es una tarea real: un ciclo de editar-probar-corregir, una limpieza, una búsqueda. Un subagente en segundo plano, con un encargo autocontenido y el modelo y esfuerzo que el Lead nombra y justifica.',
-      'p.delegate.a': 'El Lead escribe un encargo con el modelo y el esfuerzo elegidos y lo pasa a un subagente en segundo plano; el subagente edita, prueba y corrige mientras el Lead sigue libre, y el resultado vuelve',
-      'p.delegate.c': 'SEGUNDO PLANO · MODELO Y ESFUERZO ELEGIDOS',
+      'p.delegate.w': 'Trabajo acotado que ya es una tarea real: un ciclo de editar-probar-corregir, una limpieza, una búsqueda. Un subagente en segundo plano, con un encargo autocontenido, que empieza en Haiku. Una corrección vuelve al mismo modelo, con su propio trabajo y los hallazgos, y la tarea solo sube a Sonnet y luego a Opus cuando agota sus correcciones.',
+      'p.delegate.a': 'El Lead escribe un encargo que empieza en Haiku y lo pasa a un subagente en segundo plano; el subagente edita, prueba y corrige mientras el Lead sigue libre, y el resultado vuelve',
+      'p.delegate.c': 'SEGUNDO PLANO · EMPIEZA EN HAIKU',
       'p.swarm.n': 'Swarm',
       'p.swarm.w': 'Trabajo largo, costoso o complejo: un plan aprobado de tres o más tareas, o con una tarea de Tier opus. /aether:run, cada tarea en su Tier; las unidades aprobadas se funden de una en una y una revisión final cubre todo.',
       'p.swarm.a': 'El Lead reparte un plan en cuatro unidades paralelas, cada una en su worktree; una falla y reintenta; las unidades aprobadas se funden de una en una, de 0/4 a 4/4, y una revisión final cubre todo antes del brief',
@@ -125,6 +122,9 @@
       'c2.t': 'El examen se guarda fuera del repositorio: el swarm nunca lo ve. Un test que falle es un hallazgo bloqueante del brief.',
       'c3.h': 'Supervisor y revisión final',
       'c3.t': 'Un supervisor revisa cada intento y califica cada criterio con evidencia. Al final, una revisión independiente cubre todo lo fusionado.',
+      'brake.alt': 'Tres unidades construyen mientras sube el medidor de la ventana de 5 horas. Al llegar al 95 % el Lead frena en orden: no empieza nada nuevo, se detiene lo que corre y cada unidad guarda su trabajo en su rama. La corrida duerme en pausa hasta que la ventana se reinicia, y entonces sigue desde las ramas sin repetir la unidad ya fundida',
+      'c4.h': 'Freno de cuota',
+      'c4.t': 'Cuando la ventana de 5 horas de tu cuenta de Claude llega al 95 % (<code>quotabrake</code>), el plugin te avisa. En una corrida autónoma el Lead frena en orden: no empieza nada nuevo, detiene lo que corre y guarda el trabajo de cada unidad en su rama. La corrida queda en pausa, no termina: al reiniciarse la ventana sigue sola, sin repetir lo ya fundido. Solo tus palabras apagan el freno.',
       'term.lines': [
         '$ git push origin main',
         '# aether-guard: ningún permiso cubre este push',
@@ -153,6 +153,7 @@
       'inst.tag': '// 07 · INSTALAR Y AUTORÍA',
       'inst.title': 'Instala y<br><em>empieza</em>',
       'inst.bar': 'CLAUDE PLUGIN INSTALL',
+      'inst.alt': 'Se instala el plugin, se arranca el modo Aether y Clawd pasa de naranja Claude a violeta Aether',
       'copy': 'COPY', 'copied': 'COPIADO', 'copy.fail': 'No se pudo copiar: selecciona el comando y cópialo a mano.',
       'copy.ok': 'Comando copiado al portapapeles.',
       'st1.h': 'Instala',
@@ -188,10 +189,7 @@
       'hero.lead': 'It adds an opt-in <strong>Aether mode</strong>: an accountable orchestrator, the Lead, turns your intent into a reviewed spec and plan, builds it with a parallel swarm of agents and with the other coding plans you already pay for, and reports in one brief.',
       'hero.note': 'Plain <code>claude</code> stays normal mode.',
       'hero.cta': 'How it works ↓',
-      'hero.bar': 'NEEDS YOUR YES',
-      'hero.yes': 'YES · RUNS ONCE',
-      'hero.later': 'STAYS ON THE LIST',
-      'hero.mascot.alt': 'Clawd, a pixel mascot, is swamped with tasks. A /aether command and a cosmic bolt turn it into a purple galaxy that hands the work to three subagents, shows a brief on a retro monitor, waits for a yes, merges and goes back to its desk',
+      'hero.walk.alt': 'Clawd strolls from left to right along the line: he skips, stops to look at a cloud, is struck by a lightning bolt that turns him Aether violet, celebrates, waves and leaves a heart and stardust on the way',
 
       'metas.tag': '// 01 · GOALS',
       'metas.title': 'Five goals.<br><em>One acronym.</em>',
@@ -212,11 +210,11 @@
 
       'team.tag': '// 02 · TEAM',
       'team.title': 'Who does<br><em>what</em>',
-      'team.intro': 'The Lead is the main session and your right hand, not a messenger. The other roles work in a context of their own, and whoever writes a document never judges it.',
+      'team.intro': 'The Lead is the main session and your right hand, not a messenger. The other roles work in a context of their own, and whoever writes a document never judges it. The models on each card are native Claude\'s: with <code>superdelegation</code> on, every role that is not the Lead runs first on another plan.',
       'team.m.lead': 'Sonnet · xhigh',
       'team.owner': 'The owner sits above all of them: they confirm what the Lead understood, may give permission to work for hours, answer one list and review the brief.',
       'lead.alt': 'The Lead: a statue crowned with laurel, reaching an arm toward the stars',
-      'lead.t': 'Understands the intent, asks what the code cannot answer and writes the intent card. Launches /aether:design, chooses the path of each piece of work and the model of each delegate task. Owns the outcome.',
+      'lead.t': 'Understands the intent, asks what the code cannot answer and writes the intent card. Launches /aether:design, chooses the path of each piece of work and judges the result of each delegate task. Owns the outcome.',
       'writer.alt': 'The Writer: a marble hand writing on a tablet that holds a galaxy',
       'writer.t': 'Writes the spec from the intent card, and the plan and the tasks from the approved spec. A choice that is unclear and hard to reverse is marked [NEEDS CLARIFICATION].',
       'judge.alt': 'The Judge: a blindfolded statue holding a sword',
@@ -227,7 +225,7 @@
 
       'paths.tag': '// 03 · PATHS',
       'paths.title': 'Three paths,<br><em>one decision</em>',
-      'paths.intro': 'The Lead takes one of three paths for each piece of work, and chooses the model of every delegate task for quality, cost and speed.',
+      'paths.intro': 'The Lead takes one of three paths for each piece of work, and the system, not the Lead, holds the ladder of models of a delegate task.',
       'paths.foot': 'ILLUSTRATIVE: the diagrams show the order of the stages, not real timings.',
       'n.lead': 'LEAD', 'n.result': 'RESULT', 'n.result.s': 'DONE',
       'n.sub': 'SUBAGENT', 'n.sub.s': 'TASK',
@@ -238,9 +236,9 @@
       'p.direct.a': 'Clawd makes five inline tool calls, from READ to RUN, and the result flag goes up',
       'p.direct.c': 'INLINE · ~5 CALLS',
       'p.delegate.n': 'Delegate task',
-      'p.delegate.w': 'Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a research sweep. One subagent in the background, with a self-contained brief, on the model and effort the Lead names and justifies.',
-      'p.delegate.a': 'The Lead writes a brief with the model and effort chosen and hands it to a background subagent; the subagent edits, tests and fixes while the Lead stays free, and the result comes back',
-      'p.delegate.c': 'BACKGROUND · MODEL AND EFFORT CHOSEN',
+      'p.delegate.w': 'Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a research sweep. One subagent in the background, with a self-contained brief, that starts on Haiku. A correction goes back to the same model with its own work and the findings, and the task climbs to Sonnet and then Opus only when its corrections are spent.',
+      'p.delegate.a': 'The Lead writes a brief that starts on Haiku and hands it to a background subagent; the subagent edits, tests and fixes while the Lead stays free, and the result comes back',
+      'p.delegate.c': 'BACKGROUND · STARTS ON HAIKU',
       'p.swarm.n': 'Swarm',
       'p.swarm.w': 'Long, costly or complex work: an approved plan of three or more tasks, or with a task of Tier opus. /aether:run, each task on its Tier; approved units merge one at a time and a final review covers the whole run.',
       'p.swarm.a': 'The Lead splits a plan into four parallel units, each in its own worktree; one fails and retries; the approved units merge one at a time, from 0/4 to 4/4, and a final review covers everything before the brief',
@@ -289,6 +287,9 @@
       'c2.t': 'The exam is kept outside the repository: the swarm never sees it. A failing test is a blocking finding of the brief.',
       'c3.h': 'Supervisor and final review',
       'c3.t': 'A supervisor reviews every attempt and grades each criterion from evidence. At the end, an independent review covers everything that merged.',
+      'brake.alt': 'Three units build while the five-hour window gauge rises. At 95 % the Lead brakes in order: nothing new starts, what is running stops and each unit saves its work on its own branch. The run sleeps, paused, until the window resets, then carries on from the branches without redoing the merged unit',
+      'c4.h': 'Quota brake',
+      'c4.t': 'When the five-hour window of your Claude account reaches 95 % (<code>quotabrake</code>), the plugin warns you. In an autonomous run the Lead brakes in order: nothing new starts, what is running stops and the work of each unit is saved on its own branch. The run pauses, it does not end: when the window resets it carries on by itself, without redoing what is already merged. Only your own words turn the brake off.',
       'term.lines': [
         '$ git push origin main',
         '# aether-guard: no grant covers this push',
@@ -317,6 +318,7 @@
       'inst.tag': '// 07 · INSTALL AND AUTHORSHIP',
       'inst.title': 'Install and<br><em>start</em>',
       'inst.bar': 'CLAUDE PLUGIN INSTALL',
+      'inst.alt': 'The plugin is installed, Aether mode starts and Clawd turns from Claude orange to Aether violet',
       'copy': 'COPY', 'copied': 'COPIED', 'copy.fail': 'Could not copy: select the command and copy it by hand.',
       'copy.ok': 'Command copied to the clipboard.',
       'st1.h': 'Install',
@@ -459,24 +461,6 @@
   function totalChars(lines) { return lines.reduce(function (a, l) { return a + l.length + 1; }, 0); }
 
   /* ------------------------------------------------------------------ */
-  /* Mascot freeze (pause the GIF by painting its current frame)         */
-  /* ------------------------------------------------------------------ */
-  var mascot = $('#mascot'), still = $('#mascot-still');
-  function freezeMascot(on) {
-    if (!mascot || !still) return;
-    if (!on) { still.hidden = true; mascot.hidden = false; return; }
-    function draw() {
-      try {
-        var c = still.getContext('2d');
-        c.clearRect(0, 0, still.width, still.height);
-        c.drawImage(mascot, 0, 0, still.width, still.height);
-        still.hidden = false; mascot.hidden = true;
-      } catch (e) { /* keep the GIF */ }
-    }
-    if (mascot.complete && mascot.naturalWidth) draw(); else mascot.addEventListener('load', function once() { mascot.removeEventListener('load', once); if (!S.run) draw(); });
-  }
-
-  /* ------------------------------------------------------------------ */
   /* Pixel GIFs (img.px)                                                 */
   /* ------------------------------------------------------------------ */
   /* A GIF starts when it comes into view, so its story begins at its first frame, and it is not fetched before.
@@ -535,7 +519,6 @@
     $('.motion-i', b).textContent = on ? '❚❚' : '▶';
     $('#motion-l').textContent = t(on ? 'motion.pause' : 'motion.play');
     updateNote();
-    freezeMascot(m !== 'full');
     pxImgs.forEach(pxSync);
     comps.forEach(function (c) { c.done = false; c.sync(); });
     if (on) { revealCheck(); }
@@ -586,22 +569,12 @@
     img.addEventListener('error', ok);
   }
   whenReady($('.hero-img'));
-  whenReady($('#mascot'));
 
   /* Looping CSS animations pause while their section is off screen (.off, see style.css). */
   var offIO = new IntersectionObserver(function (es) {
     es.forEach(function (e) { e.target.classList.toggle('off', !e.isIntersecting); });
   }, { rootMargin: '80px 0px' });
   $$('main > section').forEach(function (s) { offIO.observe(s); });
-
-  var winmsg = $('#winmsg'), winTimer = null;
-  function winSay(key) {
-    winmsg.textContent = t(key);
-    clearTimeout(winTimer);
-    winTimer = setTimeout(function () { winmsg.textContent = t('hero.bar'); }, 3200);
-  }
-  $('#b-yes').addEventListener('click', function () { winSay('hero.yes'); });
-  $('#b-later').addEventListener('click', function () { winSay('hero.later'); });
 
   /* ------------------------------------------------------------------ */
   /* Nav                                                                 */
