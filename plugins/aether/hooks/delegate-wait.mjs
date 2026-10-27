@@ -81,12 +81,3 @@ export async function* waitSteps($, { root, id, session }) {
     return { ok: false, status: 'wait-failed', text: null }
   }
 }
-
-// The same wait without beats: the result when the delegate ends. Never throws.
-export async function waitForDelegate($, context) {
-  const steps = waitSteps($, context)
-  for (;;) {
-    const next = await steps.next()
-    if (next.done) return next.value
-  }
-}

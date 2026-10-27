@@ -8,7 +8,7 @@ const lanes = require('../plugins/aether/lib/lanes.js')
 const schemas = require('../plugins/aether/lib/lane-schemas.js')
 const work = require('../plugins/aether/lib/lane-work.js')
 const calls = require('../plugins/aether/lib/lane-calls.js')
-const { buildPrompt, LANE_NOTES, WORKDIR_RULE } = calls
+const { buildPrompt, WORKDIR_RULE } = calls
 const { registerAdapter, unregisterAdapter } = require('../plugins/aether/lib/harness/index.js')
 const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
 const { parseRun, unknownQuota } = require('../plugins/aether/lib/harness/structured.js')
@@ -192,22 +192,25 @@ test('buildPrompt puts the role, the lane note and the CLAUDE.md files before th
   fs.mkdirSync(path.join(home, '.claude'))
   fs.writeFileSync(path.join(home, '.claude', 'CLAUDE.md'), 'user rules\n')
   fs.writeFileSync(path.join(work, 'CLAUDE.md'), 'project rules\n\n')
+  const supervisorNote = `## You run in an external harness\n\nYou are an Aether supervisor, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+  const implementerNote = `## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether-tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+  const reviewerNote = `## You run in an external harness\n\nYou are the Aether final reviewer, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
   assert.equal(
     buildPrompt({ role: 'supervisor', message: 'THE MESSAGE', workdir: work, home }),
     [
       fx.roleBody('supervisor'),
-      LANE_NOTES.supervisor,
+      supervisorNote,
       `## Instructions from ${path.join(home, '.claude', 'CLAUDE.md')}\n\nuser rules`,
       `## Instructions from ${path.join(work, 'CLAUDE.md')}\n\nproject rules`,
       'THE MESSAGE',
     ].join('\n\n'),
   )
-  assert.equal(buildPrompt({ role: 'implementer', message: 'M', workdir: tempDir(t), home: tempDir(t) }), [fx.roleBody('implementer'), LANE_NOTES.implementer, 'M'].join('\n\n'))
-  assert.match(LANE_NOTES.implementer, /^## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code\./)
-  assert.match(LANE_NOTES.supervisor, /Your review is read-only: do not run commands, and do not change any file\./)
-  assert.match(LANE_NOTES.reviewer, /^## You run in an external harness\n\nYou are the Aether final reviewer/)
+  assert.equal(buildPrompt({ role: 'implementer', message: 'M', workdir: tempDir(t), home: tempDir(t) }), [fx.roleBody('implementer'), implementerNote, 'M'].join('\n\n'))
+  assert.match(implementerNote, /^## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code\./)
+  assert.match(supervisorNote, /Your review is read-only: do not run commands, and do not change any file\./)
+  assert.match(reviewerNote, /^## You run in an external harness\n\nYou are the Aether final reviewer/)
   assert.equal(WORKDIR_RULE, 'Work only inside the working directory you are given: do not run `env` or `ps`, and do not search outside that directory.')
-  for (const role of ['implementer', 'supervisor', 'reviewer']) assert.ok(LANE_NOTES[role].includes(WORKDIR_RULE), role)
+  for (const [role, note] of [['implementer', implementerNote], ['supervisor', supervisorNote], ['reviewer', reviewerNote]]) assert.ok(note.includes(WORKDIR_RULE), role)
 })
 
 test("a lane note names the harness that runs the call, and agy's notes read as they always did", (t) => {
@@ -216,7 +219,7 @@ test("a lane note names the harness that runs the call, and agy's notes read as 
   const prompt = buildPrompt({ role: 'reviewer', message: 'M', workdir, home, harness: 'codex' })
   assert.ok(prompt.includes('You are the Aether final reviewer, run by the codex CLI rather than Claude Code.'))
   assert.equal(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }), buildPrompt({ role: 'reviewer', message: 'M', workdir, home, harness: 'agy' }))
-  assert.ok(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }).includes(LANE_NOTES.reviewer))
+  assert.ok(buildPrompt({ role: 'reviewer', message: 'M', workdir, home }).includes('You are the Aether final reviewer, run by the agy CLI rather than Claude Code.'))
 })
 
 test("status reads each group's windows, marks a group under the reserve unusable, and logs the reading", (t) => {
@@ -434,7 +437,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   assert.ok(turn.argv.includes('--dangerously-skip-permissions'))
   assert.deepEqual(JSON.parse(fs.readFileSync(fx.argAfter(turn.argv, '--json-schema'), 'utf8')), schemas.IMPLEMENTER_SCHEMA)
   assert.ok(turn.argv[1].startsWith(fx.roleBody('implementer')))
-  assert.ok(turn.argv[1].includes(LANE_NOTES.implementer))
+  assert.ok(turn.argv[1].includes('You are an Aether implementer, run by the agy CLI rather than Claude Code.'))
   assert.ok(turn.argv[1].includes(WORKDIR_RULE))
   assert.ok(turn.argv[1].endsWith(message))
   // agy takes the schema as a flag, so its prompt carries no answer section.

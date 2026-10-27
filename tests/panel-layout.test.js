@@ -40,8 +40,9 @@ function quota(patch = {}) {
 const delegatesOf = (list = null) => ({ status: 'ready', result: list === null ? view.parseDelegates(printed('delegates.json')) : { ok: true, value: list } })
 const settings = (options = {}) => view.settingsOf({ superdelegation: true, harnesses: 'agy,grok', ...options })
 const draw = (columns, extra = {}) => layout.panelLines({ settings: settings(), quota: quota(), delegates: delegatesOf(), columns, now: NOW, ...extra })
-const textOf = (lines) => lines.map((one) => (one.action ? '[action row]' : layout.lineText(one)))
-const find = (lines, pattern) => lines.find((one) => pattern.test(layout.lineText(one)))
+const rowText = (one) => one.parts.map((p) => p.text).join('')
+const textOf = (lines) => lines.map((one) => (one.action ? '[action row]' : rowText(one)))
+const find = (lines, pattern) => lines.find((one) => pattern.test(rowText(one)))
 const partsOf = (one) => one.parts.map((p) => [p.text, p.tone])
 const toneOf = (lines, text) => {
   for (const one of lines) for (const p of one.parts) if (p.text === text) return p.tone
@@ -193,7 +194,7 @@ test('a window is a bar, the percent left and when it resets, and the bar and th
       columns: 100,
       now: NOW,
     })
-  const claudeWeekly = (lines) => lines.filter((one) => /^ {4}weekly/.test(layout.lineText(one)))[1]
+  const claudeWeekly = (lines) => lines.filter((one) => /^ {4}weekly/.test(rowText(one)))[1]
   for (const [remaining, tone, text] of [[0.01, 'bad', ' 1%'], [0.05, 'bad', ' 5%'], [0.2, 'warn', '20%'], [0.3, 'warn', '30%'], [0.31, 'ok', '31%'], [0.8, 'ok', '80%'], [1, 'ok', '100%']]) {
     const parts = claudeWeekly(bars(remaining)).parts
     assert.equal(parts[3].tone, tone, `the bar at ${remaining}`)

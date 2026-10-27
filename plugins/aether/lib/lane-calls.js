@@ -56,8 +56,6 @@ function unitReviewerNote(harness = 'agy') {
   return `## You run in an external harness\n\nYou are an Aether reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch, not of the integration branch; the unit's brief (brief.md) and the review package (package.diff) are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
 }
 
-const LANE_NOTES = { implementer: laneNote('implementer'), supervisor: laneNote('supervisor'), reviewer: laneNote('reviewer') }
-
 // ---- Prompts ----
 
 function roleBody(role) {
@@ -663,4 +661,4 @@ function stop(cwd, runId, call = null) {
   return { stopped }
 }
 
-module.exports = { WORKDIR_RULE, LANE_NOTES, roleBody, claudeMdSections, buildPrompt, enabledFor, status, refreshStale, start, wait, result, stop, runCall }
+module.exports = { WORKDIR_RULE, roleBody, claudeMdSections, buildPrompt, enabledFor, status, refreshStale, start, wait, result, stop, runCall }

@@ -48,8 +48,6 @@ const blank = () => line()
 const actions = () => ({ parts: [], action: true })
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value))
 
-export const lineText = (one) => one.parts.map((p) => p.text).join('')
-
 // Greedy word wrap into at most `max` lines of `to` cells; a word longer than the line is cut, and what is left after
 // the last line goes into it, cut.
 function wrapWords(text, to, max = Infinity) {
