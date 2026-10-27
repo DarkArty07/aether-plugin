@@ -212,14 +212,15 @@ test('a failed refresh is not retried for 10 minutes, and a success removes the 
   assert.equal(fs.existsSync(failedFile(dataDir)), false, 'a success removes the record')
 })
 
-test('it never throws: an exec that fails, unreadable output and an unwritable data directory give null or a reading', async (t) => {
+test('it never throws, and fails closed: an exec that fails, unreadable output or a lock that cannot be taken give null with no call', async (t) => {
   useDataDir(t)
   useFake(t, {})
   assert.equal(await refresh({ exec: () => { throw new Error('spawn ENOENT') } }), null)
   assert.equal(await refresh({ exec: async () => ({ status: 0, stdout: 'hello, not records\n', stderr: '' }) }), null)
   const file = path.join(tempDir(t, 'muse-quota-data-'), 'a-file')
   fs.writeFileSync(file, 'not a directory')
-  const reading = await refresh({ exec: async () => ({ status: 0, stdout: out(completed('ok'), usage(allowance(10, 10))), stderr: '' }), dataDir: file })
-  assert.notEqual(reading, null, 'a reading that cannot be kept is still a reading')
-  near(reading.windows['5h'].remaining, 0.9)
+  let calls = 0
+  const reading = await refresh({ exec: async () => { calls++; return { status: 0, stdout: out(completed('ok'), usage(allowance(10, 10))), stderr: '' } }, dataDir: file })
+  assert.equal(reading, null, 'with no lock to arbitrate, no paid call is made')
+  assert.equal(calls, 0)
 })

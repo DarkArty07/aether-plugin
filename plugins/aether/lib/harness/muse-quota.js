@@ -158,8 +158,9 @@ async function refreshMuseQuota({
       locked = taken.taken
       holder = taken.holder
     } catch {
-      // Without a lock the probe still runs: a reading for this decision is better than none.
-      held = true
+      // Without a lock nothing arbitrates, and a failed probe could not be recorded either: like grok's, the refresh
+      // fails closed instead of spending a real call on every pick.
+      return null
     }
     if (!held) return awaitHolder({ lockFile: lock, holder, deadline: started + timeoutMs, dataDir: resolved, now, wait })
     let reading = null
