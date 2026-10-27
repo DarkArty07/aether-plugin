@@ -2140,8 +2140,9 @@ test('R5: an editing delegate and its review never go to a pair whose model lack
 **Aether:**
 - Tier: haiku high — todo arranca en Haiku por costo (decisión del dueño, 2026-10-26, issue 102); la escalera sube sola si falla. Antes: sonnet high — el único `choose` lo llaman tres rutas, y `reservedPair` no tenía la tabla
 - Area: roles-seats
-- Owns: `plugins/aether/lib/seats.js`, `tests/seats.test.js`, `tests/seats-design.test.js`, `tests/seat-calls.test.js`, `tests/seat-partial.test.js`, `tests/workflow-design.test.js`
+- Owns: `plugins/aether/lib/seats.js`, `tests/seats.test.js`, `tests/seats-design.test.js`, `tests/seat-calls.test.js`, `tests/seat-partial.test.js`, `tests/workflow-design.test.js`, `tests/lane-refusal.test.js`
 - Depends on: Task 10 — `choose` ya acepta `role` y `lanes`
+- Depends on: Task 43 — las dos poseen `tests/lane-refusal.test.js` y no pueden correr a la vez
 - Serves: R5, R6
 
 **Interfaces:** en `lib/seats.js`, `seatChoice(seat, { pairs, harnesses, exclude, authors, lanes })` pasa `role: seat` y `lanes` a `choose`; `chooseSeat` le pasa su `config` y `reservedPair(offeredPairs, harnesses, exclude, authors, lanes)` gana ese argumento para sus tres llamadas a `seatChoice` (`'judge'`, `'writer'` y `'writer'` sin el par retenido). `authorRule: 'reserve'` y `nativeDiffers: seat !== 'writer'` no cambian. `gemini-4-argon` lista `judge, writer, examiner`; `claude-sonnet-5-5` y `claude-opus-5-5` no listan ningún asiento: con la lista conectada los asientos solo van a los modelos que los listan, y si ninguno, al par nativo del asiento. Las pruebas que esperaban lo contrario cambian su expectativa por la que la tabla permite; el informe las lista. En `tests/workflow-design.test.js`, el elemento `{ seats: 'balanced' }` de la lista `bad` de «args with seats or lanes…» deja de estar escrito entero: pasa a `{ ['sea' + 'ts']: 'bal' + 'anced' }`, y la prueba sigue afirmando que ese argumento se rechaza antes de arrancar un agente. `{ lanes: 'on' }` se queda.

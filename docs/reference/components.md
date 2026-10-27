@@ -55,7 +55,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | session | `session-` | `session-start.js` | `session.js` |
 | harness | `lib/harness/` | `index.js`, `structured.js`, `agy.js`, `codex.js`, `cursor.js`, `grok.js`, `muse.js` | `index.js` |
 
-Loose modules (no family): `autonomy.js`, `autonomy-command.js`, `baseline.js`, `common.js`, `exam.js`, `first-setup.js`, `git.js`, `globs.js`, `guard.js`, `pairs.js`, `pending.js`, `prices.js`, `quota-refusal.js`, `report.js`, `run.js`, `superdelegation.js`, `voice.js` and `worktrees.js`; `lane-command.js` is a member of `lane`. (`autonomy-command.js` is declared loose: its prefix is not a family with more members.)
+Loose modules (no family): `autonomy.js`, `autonomy-command.js`, `baseline.js`, `common.js`, `exam.js`, `first-setup.js`, `git.js`, `globs.js`, `guard.js`, `pairs.js`, `pending.js`, `prices.js`, `quota-refusal.js`, `report.js`, `run.js`, `superdelegation.js`, `voice.js` and `worktrees.js`; lane-command.js is a member of the lane family. (`autonomy-command.js` is declared loose: its prefix is not a family with more members.)
 
 The `<dataDir>/router/` directory and `source: 'router'` keep that name, the same as the family.
 
