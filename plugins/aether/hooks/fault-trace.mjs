@@ -1,4 +1,4 @@
-// The trace of the mod's silent failures (spec 014, R1). The mod swallows a failure on purpose, so that the meter and the
+// The trace recorder of the mod's silent failures (spec 014, R1). The mod swallows a failure on purpose, so that the meter and the
 // delegate ladder never change a request; this file leaves a record of the failures that change what was measured or run.
 // A record is the place of the failure (a fixed source) and its class (a fixed word) with the hour: never the error's
 // message, which can carry paths or text (R10). Both come from the lists below; anything else is stored as a fixed word.

@@ -1,4 +1,4 @@
-// The text of the /spend panel (spend-panel.jsx): the dollars, the bin's JSON and the lines. Pure. No $, no I/O
+// The text formatter of the /spend panel (spend-panel.jsx): the dollars, the bin's JSON and the lines. Pure. No $, no I/O
 // and no clock, so the mod's tests import this file with node. Everything from outside is cleaned, and every line
 // is cut to the columns it was given: Claude Code refuses a pane that holds one control character, and a line
 // wider than the room would wrap.

@@ -1,4 +1,4 @@
-// The quota brake's pure decision (spec 011): which rate-limit readings cross the threshold, and the exact
+// The quota brake decision module of the mod (spec 011): which rate-limit readings cross the threshold, and the exact
 // texts the brake sends. register.js holds the effects (the settings and crossing calls, the notice, the
 // prompts and the resume timer); this file only decides, so crossingsOf never mutates what it is given.
 
