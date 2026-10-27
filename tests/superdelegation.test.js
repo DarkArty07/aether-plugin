@@ -193,7 +193,9 @@ test('C16: Muse as the only healthy harness takes a call up to Opus high by the 
   assert.equal(pickedId(high), MUSE)
   assert.equal(high.requested, 53.6)
   assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), MUSE)
-  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), 'muse/muse-spark-1.3@xhigh')
+  // The estimated @medium carries an estimated cost only so the router can rank it: a Haiku high call
+  // (floor 36.8) takes @medium (38.0) as the cheapest pair that is enough, ahead of the measured @xhigh.
+  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), 'muse/muse-spark-1.3@medium')
   for (const [model, effort] of [['opus', 'xhigh'], ['opus', 'max'], ['sonnet', 'max']]) {
     const d = ask(model, effort, { harnesses: onlyMuse() })
     assert.equal(d.picked, null, `${model} ${effort}`)
