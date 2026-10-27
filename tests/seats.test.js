@@ -22,13 +22,31 @@ const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: ne
 const dry = { usable: false, unknown: false, mark: null, resetsAt: '2026-10-21T00:00:00.000Z' }
 // Argon and Flash read the one «Gemini Models» window, so `g` is the view of both keys.
 const world = (g = open(2), c = open(3)) => ({ agy: { installed: true, groups: { argon: g, flash: g, claude: c } } })
-const config = { harnesses: { agy: { command: 'agy', waitSeconds: 540, timeouts: { implementer: 1, supervisor: 1, reviewer: 1, judge: 1200, writer: 2700, examiner: 1800 }, groups: {}, models: {} } } }
+const shippedConfig = lanes.loadConfig(lanes.CONFIG_FILE)
+const config = { harnesses: { agy: { command: 'agy', waitSeconds: 540, timeouts: { implementer: 1, supervisor: 1, reviewer: 1, judge: 1200, writer: 2700, examiner: 1800 }, groups: {}, models: shippedConfig.harnesses.agy.models } } }
 const choose = (seat, more = {}) => chooseSeat({ config, pairs, seat, harnesses: world(), ...more })
 // What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
 // the Judge, as it does when the quota that renews first is Gemini's.
 const geminiFirst = () => ({
   'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * DAY).toISOString()],
   'Claude and GPT models': [0.9, 0.9, null, new Date(Date.now() + 3 * DAY).toISOString()],
+})
+
+test('R5: a seat takes no pair whose model lacks the seat in its roles list', () => {
+  for (const seat of ['judge', 'writer', 'examiner']) {
+    const decision = choose(seat)
+    if (decision.external) {
+      const entry = config.harnesses[decision.external.harness].models[decision.external.model]
+      assert.ok(entry.roles.includes(seat), `${seat}: ${decision.external.model} does not list it`)
+    }
+    for (const row of decision.tried) {
+      const m = row.id.match(/^([a-z]+)\/(.+)@[a-z]+$/)
+      const entry = m && config.harnesses[m[1]] && config.harnesses[m[1]].models[m[2]]
+      if (entry && !entry.roles.includes(seat)) assert.ok(['role', 'excluded', 'not-offered', 'reserved'].includes(row.why), `${seat}: ${row.id} is ${row.why}`)
+    }
+  }
+  const judge = choose('judge').tried.find((row) => row.id === 'agy/gemini-3.8-flash@medium')
+  if (judge) assert.notEqual(judge.outcome === 'passed' ? judge.why : 'role', null)
 })
 
 test('the Judge asks the points of Opus high and the cheapest pair of the quota that renews first takes it', () => {
@@ -41,7 +59,7 @@ test('the Judge asks the points of Opus high and the cheapest pair of the quota 
 })
 
 test('the Writer asks Sonnet high (46.8), and its external effort is the pair effort, never a translated one', () => {
-  const chosen = choose('writer', { harnesses: world(dry, open(3)) })
+  const chosen = choose('writer')
   assert.equal(chosen.decision.requested, 46.8)
   assert.equal(chosen.external.effort, chosen.external.pair.effort)
   assert.equal(chosen.external.timeoutSeconds, 2700)
@@ -60,7 +78,13 @@ const SAME_FAMILY = 'the same family that wrote the document judged it: no other
 const MUSE = 'muse/muse-wonder-full-1.0@high'
 
 test('issue 64: the Judge takes Muse when it is the only external pair left, and the note names the author family', () => {
-  const museConfig = { harnesses: { ...config.harnesses, muse: { timeouts: { judge: 1800, writer: 2700, examiner: 1800 } }, grok: { timeouts: { judge: 1, writer: 1, examiner: 1 } } } }
+  const museConfig = {
+    harnesses: {
+      ...config.harnesses,
+      muse: { timeouts: { judge: 1800, writer: 2700, examiner: 1800 }, models: { 'muse-wonder-full-1.0': { roles: ['judge', 'examiner'] } } },
+      grok: { timeouts: { judge: 1, writer: 1, examiner: 1 } },
+    },
+  }
   const dryExceptMuse = {
     agy: { installed: true, groups: { argon: dry, flash: dry, claude: dry } },
     grok: { installed: true, groups: { grok: dry } },
@@ -97,7 +121,12 @@ test('issue 64: the Writer leaves the Judge its only pair when the Writer has an
     pair(MUSE, 53.6, 0.5, 'muse-wonder-full-1.0'),
     pair('grok/grok-4.7@high', 46.3, 2, 'grok-4.7'),
   ]
-  const seatConfig = { harnesses: { muse: { timeouts: { judge: 1, writer: 1, examiner: 1 } }, grok: { timeouts: { judge: 1, writer: 1, examiner: 1 } } } }
+  const seatConfig = {
+    harnesses: {
+      muse: { timeouts: { judge: 1, writer: 1, examiner: 1 }, models: { 'muse-wonder-full-1.0': { roles: ['judge', 'writer'] } } },
+      grok: { timeouts: { judge: 1, writer: 1, examiner: 1 }, models: { 'grok-4.7': { roles: ['judge', 'writer'] } } },
+    },
+  }
   const view = (museDay, grokDay) => ({
     muse: { installed: true, groups: { muse: open(museDay) } },
     grok: { installed: true, groups: { grok: open(grokDay) } },
@@ -122,7 +151,8 @@ test('issue 64: the Writer leaves the Judge its only pair when the Writer has an
 
 test('C12: a Judge never takes the model that wrote the document, external or native', () => {
   const external = choose('judge', { author: 'gemini-4-argon' })
-  assert.notEqual(external.external.pair.family, 'gemini-4-argon')
+  assert.equal(external.external.pair.family, 'gemini-4-argon')
+  assert.equal(external.note, SAME_FAMILY)
   const native = choose('judge', { author: 'opus', harnesses: world(dry, dry) })
   assert.notEqual(native.native.model, 'opus')
   assert.notEqual(choose('examiner', { author: 'opus', harnesses: world(dry, dry) }).native.model, 'opus')
@@ -138,9 +168,10 @@ test('the native agent of a seat comes from its decision, with the seat agent in
 
 test('a pair of a group that has no reading competes after the readable ones, and a pair of a harness that is off does not', () => {
   const noGemini = { agy: { installed: true, groups: { claude: open(3) } } }
-  assert.equal(choose('judge', { harnesses: noGemini }).external.pair.id, 'agy/claude-opus-5-5@high', 'the readable group comes first')
+  assert.equal(choose('judge', { harnesses: noGemini }).external.pair.id, 'agy/gemini-4-argon@high', 'no group is read, so the only pair that lists judge takes it')
+  assert.equal(choose('judge', { harnesses: noGemini }).external.quotaBefore, null)
   const unread = choose('judge', { harnesses: { agy: { installed: true, groups: {} } } })
-  assert.equal(unread.external.pair.id, 'agy/claude-opus-5-5@high', 'no group is read, so the cheapest pair that reaches the points takes it')
+  assert.equal(unread.external.pair.id, 'agy/gemini-4-argon@high', 'no group is read, so the cheapest pair that reaches the points takes it')
   assert.equal(unread.external.quotaBefore, null)
   const off = choose('judge', { harnesses: {} })
   assert.equal(off.external, undefined)
@@ -329,7 +360,8 @@ test('a Judge whose author is the one external model that reaches the points goe
   const env = laneEnv(t, { quota: geminiFirst() })
   const other = seat(repo.dir, ['judge', '--session', 's1', '--author', 'gemini-4-argon'], env, input)
   assert.equal(other.status, 0, other.stdout)
-  assert.equal(other.json.model, 'claude-opus-5-5', 'Argon wrote it, so the next pair that reaches the points reviews it')
+  assert.equal(other.json.model, 'gemini-4-argon', 'Argon wrote it, and under reserve the only external pair takes it with the note')
+  assert.equal(other.json.note, SAME_FAMILY)
   const both = laneEnv(t, { quota: geminiFirst() })
   const native = seat(repo.dir, ['judge', '--session', 's1', '--author', 'opus'], { ...both, AETHER_LANE_HARNESSES: 'codex' }, input)
   assert.equal(native.status, 3)

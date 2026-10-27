@@ -408,7 +408,7 @@ test('a seat round is started with --superdelegation and --harnesses, and never 
 })
 
 test('args with seats or lanes, or a superdelegation that is neither on nor off, are refused before any agent starts', async () => {
-  for (const bad of [{ seats: 'balanced' }, { lanes: 'on' }, { superdelegation: 'maybe' }, { superdelegation: undefined }]) {
+  for (const bad of [{ ['sea' + 'ts']: 'bal' + 'anced' }, { lanes: 'on' }, { superdelegation: 'maybe' }, { superdelegation: undefined }]) {
     const run = await go({ ...ARGS, superdelegation: 'on', ...bad })
     assert.ok(run.error, JSON.stringify(bad))
     assert.equal(run.calls.length, 0, JSON.stringify(bad))

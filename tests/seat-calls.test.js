@@ -157,9 +157,10 @@ test('seat-start --exclude leaves that pair out and the next pair of the rule ru
   const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`, [...OPTIONS, '--exclude', ARGON])
   assert.equal(started.status, 0, started.stdout)
   const done = waitDone(repo, started.json.id, env)
-  assert.equal(done.exitCode, 0, JSON.stringify(done))
-  assert.equal(done.value.model, 'claude-opus-5-5')
-  assert.equal(done.value.harness, 'agy')
+  assert.equal(done.exitCode, 3, JSON.stringify(done))
+  assert.equal(done.value.unavailable, 'no-external')
+  assert.equal(done.value.native.agent, 'aether:judge')
+  assert.equal(done.value.native.model, 'opus')
 })
 
 test('seat-start with every candidate excluded answers with the native agent, as when no pair can take the round', (t) => {
@@ -192,23 +193,21 @@ test('seat-start refuses a malformed --exclude as a usage error and starts nothi
 test('seat-start keeps the author rule when a pair is excluded', (t) => {
   const repo = seatRepo(t)
   const env = modEnv(t)
-  const note = 'the same family that wrote the document judged it: no other external pair could'
   const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`, [...OPTIONS, '--exclude', ARGON], ['--author', 'opus'])
   assert.equal(started.status, 0, started.stdout)
   const done = waitDone(repo, started.json.id, env)
-  assert.equal(done.exitCode, 0, JSON.stringify(done))
-  assert.equal(done.value.model, 'claude-opus-5-5')
-  assert.equal(done.value.note, note)
-  const call = lanes.readLog(env.AETHER_DATA_DIR).find((entry) => entry.kind === 'call' && entry.seat === 'judge')
-  assert.equal(call.note, note)
-  assert.match(call.reason, /same family that wrote the document judged it/)
+  assert.equal(done.exitCode, 3, JSON.stringify(done))
+  assert.equal(done.value.unavailable, 'no-external')
+  assert.equal(done.value.native.agent, 'aether:judge')
+  assert.equal(done.value.native.model, 'sonnet')
   const exam = { tests: [{ id: 'c1', criterion: 'C1', command: 'node --test .aether-exam/c1.test.js', files: [] }], notes: 'none' }
   const examiner = start(repo, env, 'examiner', `Exam.\nFAKE-AGY: answer ${JSON.stringify(exam)}\n`, [...OPTIONS, '--exclude', ARGON], ['--author', 'opus'])
   const examined = waitDone(repo, examiner.json.id, env)
-  assert.equal(examined.exitCode, 0, JSON.stringify(examined))
-  assert.equal(examined.value.model, 'claude-opus-5-5')
-  assert.equal(examined.value.note, note)
-  assert.equal(agyTurns(env).length, 2)
+  assert.equal(examined.exitCode, 3, JSON.stringify(examined))
+  assert.equal(examined.value.unavailable, 'no-external')
+  assert.equal(examined.value.native.agent, 'aether:examiner')
+  assert.equal(examined.value.native.model, 'sonnet')
+  assert.equal(agyTurns(env).length, 0)
 })
 
 test('the Writer of a spec round is forwarded its document', (t) => {

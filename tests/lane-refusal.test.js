@@ -252,11 +252,12 @@ test('a seat round on Argon that agy refuses marks Argon only, and the next roun
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash'), null, 'Flash has a quota of its own')
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'claude'), null)
 
-  // The held key is not called again: the next pair that reaches the points, on the Claude and GPT quota, takes the round.
+  // The held key is not called again: with no other external pair listing judge, the native agent takes the round.
   const second = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
-  assert.equal(second.status, 0, JSON.stringify(second.json))
-  assert.equal(second.json.model, 'claude-opus-5-5')
-  assert.deepEqual(fx.agyTurns(env).map((turn) => fx.argAfter(turn.argv, '--model')), ['gemini-4-argon-high', 'claude-opus-5-5-high'])
+  assert.equal(second.status, 3, JSON.stringify(second.json))
+  assert.equal(second.json.unavailable, 'no-external')
+  assert.equal(second.json.native.agent, 'aether:judge')
+  assert.deepEqual(fx.agyTurns(env).map((turn) => fx.argAfter(turn.argv, '--model')), ['gemini-4-argon-high'])
 
   // Flash is still a lane for the swarm: its call goes through while Argon is held.
   const { done } = runFlashCall(t, [`FAKE-AGY: answer ${DONE}`], env)
@@ -285,7 +286,20 @@ test('issue 038: with the shipped table, a refusal of Argon leaves Flash usable 
 })
 
 test('a pair whose key a mark holds is dry for a seat, and a pair of an unmarked key is not', () => {
-  const config = { harnesses: { agy: { command: 'agy', waitSeconds: 540, timeouts: { judge: 1200 }, groups: {}, models: {} } } }
+  const config = {
+    harnesses: {
+      agy: {
+        command: 'agy',
+        waitSeconds: 540,
+        timeouts: { judge: 1200 },
+        groups: {},
+        models: {
+          'gemini-4-argon': { roles: ['judge'] },
+          'claude-opus-5-5': { roles: ['judge'] },
+        },
+      },
+    },
+  }
   const { pairs } = require('../plugins/aether/lib/pairs.js').loadPairs()
   const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.now() + days * 24 * HOUR).toISOString() })
   const held = { usable: false, unknown: false, mark: { reason: 'quota refusal' }, resetsAt: new Date(Date.now() + 24 * HOUR).toISOString() }
@@ -423,7 +437,7 @@ test('aether-lane quota and status lift a mark from a reading when the fresh rea
 
 test('a seat round lifts a mark from a reading when the group reads healthy, and a refusal\'s mark keeps its round off that group', (t) => {
   const repo = seatRepo(t)
-  const env = fx.laneEnv(t, { quota: geminiFirst() })
+  const env = fx.laneEnv(t, { quota: geminiFirst(), mutate: (cfg) => { cfg.harnesses.agy.models['claude-opus-5-5'].roles.push('judge') } })
   marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'argon', reading: dry(), reserve: RESERVE, now: Date.now() - 20 * MIN })
   const lifted = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
   assert.equal(lifted.status, 0, JSON.stringify(lifted.json))

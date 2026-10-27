@@ -10,7 +10,19 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { makeRepo, tempDir, runBin } = require('./helpers.js')
-const { LANE_BIN, FAKE_AGY, laneEnv } = require('./lane-fixtures.js')
+const { LANE_BIN, FAKE_AGY, laneEnv: rawLaneEnv } = require('./lane-fixtures.js')
+const laneEnv = (t, opts = {}) => rawLaneEnv(t, {
+  ...opts,
+  mutate: (cfg) => {
+    if (cfg?.harnesses?.agy?.models?.['claude-sonnet-5-5']?.roles) {
+      cfg.harnesses.agy.models['claude-sonnet-5-5'].roles.push('writer')
+    }
+    if (cfg?.harnesses?.agy?.models?.['claude-opus-5-5']?.roles) {
+      cfg.harnesses.agy.models['claude-opus-5-5'].roles.push('judge', 'writer', 'examiner')
+    }
+    if (opts.mutate) opts.mutate(cfg)
+  },
+})
 const lanes = require('../plugins/aether/lib/lanes.js')
 
 const FEATURE = 'specs/001-demo'
