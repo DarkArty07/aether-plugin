@@ -272,5 +272,5 @@ test('a copy in the plugin cache keeps corrections with the variable on or the o
 
 test('the guide says what the development installation keeps about the corrections (R18, R16)', () => {
   const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'guide', 'observe.md'), 'utf8')
-  for (const word of ['corrections.json', 'correctionPatterns', 'aether-observe forget --yes', 'heuristic of words']) assert.ok(page.includes(word), word)
+  for (const word of ['corrections.json', 'correctionPatterns', 'delete the `observe/` folder', 'heuristic of words']) assert.ok(page.includes(word), word)
 })
