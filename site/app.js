@@ -45,7 +45,7 @@
 
       'team.tag': '// 02 · EQUIPO',
       'team.title': 'Quién hace<br><em>qué</em>',
-      'team.intro': 'El Lead es la sesión principal y tu mano derecha, no un mensajero. Los demás roles trabajan en un contexto propio, y quien escribe un documento nunca lo juzga.',
+      'team.intro': 'El Lead es la sesión principal y tu mano derecha, no un mensajero. Los demás roles trabajan en un contexto propio, y quien escribe un documento nunca lo juzga. Los modelos de cada tarjeta son los de Claude nativo: con <code>superdelegation</code> activada, cada rol que no es el Lead corre primero en otro plan.',
       'team.m.lead': 'Sonnet · xhigh',
       'team.owner': 'Por encima de todos está el dueño: confirma lo que entendió el Lead, puede dar permiso para trabajar durante horas, responde una sola lista y revisa el brief.',
       'lead.alt': 'El Lead: una estatua con corona de laurel que extiende el brazo hacia las estrellas',
@@ -210,7 +210,7 @@
 
       'team.tag': '// 02 · TEAM',
       'team.title': 'Who does<br><em>what</em>',
-      'team.intro': 'The Lead is the main session and your right hand, not a messenger. The other roles work in a context of their own, and whoever writes a document never judges it.',
+      'team.intro': 'The Lead is the main session and your right hand, not a messenger. The other roles work in a context of their own, and whoever writes a document never judges it. The models on each card are native Claude\'s: with <code>superdelegation</code> on, every role that is not the Lead runs first on another plan.',
       'team.m.lead': 'Sonnet · xhigh',
       'team.owner': 'The owner sits above all of them: they confirm what the Lead understood, may give permission to work for hours, answer one list and review the brief.',
       'lead.alt': 'The Lead: a statue crowned with laurel, reaching an arm toward the stars',
