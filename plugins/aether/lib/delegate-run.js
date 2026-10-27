@@ -8,11 +8,14 @@
 // `<dataDir>/delegates/results/<id>.json`, and a `result` entry in the delegate log. `wait` polls for that file. Nothing
 // here merges, pushes or writes in the Lead's checkout: the Lead judges the attempt with `aether-delegate verdict` and
 // merges with aether-wt.
+// Family: delegate.
 
 const childProcess = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { isObject, isText, messageOf, pidAlive, sleep: realSleep } = require('./common.js')
+const { pairId } = require('./pairs.js')
 const log = require('./delegate-log.js')
 const checksLib = require('./delegate-checks.js')
 const delegateChain = require('./delegate-chain.js')
@@ -25,10 +28,6 @@ const ID = /^[A-Za-z0-9_-]+$/
 const POLL_MS = 250
 // The longest single wait: under the engine's limit on one step, so the mod asks again rather than being cut off.
 const MAX_WAIT_SECONDS = 540
-
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-const isText = (value) => typeof value === 'string' && value.trim() !== ''
-const messageOf = (err) => (err && typeof err.message === 'string' && err.message ? err.message : String(err))
 
 // ---- the files of a launch ----
 
@@ -94,12 +93,10 @@ function start({ id, cwd, dataDir }, { spawn = childProcess.spawn, binPath = BIN
 
 // ---- run ----
 
-const pairIdOf = ({ harness, model, effort }) => `${harness}/${model}@${effort}`
-
 function pairOf(pair) {
   if (!isObject(pair)) return null
   const { harness, model, effort } = pair
-  return { id: isText(pair.id) ? pair.id : pairIdOf(pair), harness, model, effort }
+  return { id: isText(pair.id) ? pair.id : pairId(harness, model, effort), harness, model, effort }
 }
 
 function judgeLine(id) {
@@ -204,7 +201,7 @@ async function runEdits(external, { cwd, dataDir }, delegateCommand) {
   const findings = findingsFile(dataDir, external)
   if (findings) flags.findings = findings
   // This process was started detached by `start`, without the Lead's Bash environment, so the lane gate would read no
-  // switch and no harnesses. The session's delegate file has them: with lanes on, the command gets them in its environment.
+  // switch and no harnesses. The session's delegate file has them: with superdelegation on, the command gets them in its environment.
   const settings = readDelegateSettings(dataDir, external.session)
   const deps = settings && settings.lanes === true ? { env: { ...process.env, AETHER_SUPERDELEGATION: 'on', AETHER_LANE_HARNESSES: settings.harnesses.join(',') } } : undefined
 
@@ -306,17 +303,6 @@ function recordAnswer({ task, attempt, text, session, dataDir, now = Date.now })
 }
 
 // ---- wait ----
-
-function pidAlive(pid) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return err.code === 'EPERM'
-  }
-}
-
-const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function finished(read) {
   const value = isObject(read.value) ? read.value : {}

@@ -7,11 +7,14 @@
 // ladder (lib/ladder.js) what the next launch is. Everything goes to the delegate log (lib/delegate-log.js), which is
 // the only state: the step, the corrections spent and the next launch are read back from it. Neither function throws.
 // No number of the ladder is written here: they come from config/ladder.json.
+// Family: delegate.
 
 const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
+const { isObject, isText, messageOf, sleep: realSleep } = require('./common.js')
 const log = require('./delegate-log.js')
+const { isLaunch } = log
 const ladderLib = require('./ladder.js')
 const checks = require('./delegate-checks.js')
 const lanes = require('./lanes.js')
@@ -40,10 +43,7 @@ const TASK_KINDS = ['launch', 'result', 'verdict', 'answer']
 const NO_WORKTREE = 'approve needs the worktree of the attempt (--worktree) or the checks of its result'
 const NO_ANSWER = 'approve needs the answer of the attempt: the mod records it when the delegate ends; wait for the agent to end, or judge it fix or infeasible'
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-const isText = (value) => typeof value === 'string' && value.trim() !== ''
 const isId = (value) => typeof value === 'string' && ID_RE.test(value)
-const messageOf = (err) => (err && typeof err.message === 'string' && err.message ? err.message : String(err))
 
 // ---- the brief ----
 
@@ -83,10 +83,6 @@ function once(make) {
     }
     return value
   }
-}
-
-function realSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 // The pair step of lib/router-pick.js with the dependencies it reads, built only when a launch asks for a pair.
@@ -145,8 +141,6 @@ const lastOf = (entries, test) => {
   for (let i = entries.length - 1; i >= 0; i--) if (test(entries[i])) return { entry: entries[i], index: i }
   return { entry: null, index: -1 }
 }
-
-const isLaunch = (entry) => entry.kind === 'launch' && entry.launchKind !== 'refused'
 
 function verdictInputs(entries) {
   return entries.filter((entry) => entry.kind === 'verdict' && isObject(entry.input)).map((entry) => entry.input)
