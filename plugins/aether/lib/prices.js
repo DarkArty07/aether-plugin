@@ -3,14 +3,15 @@
 // Model costs at OpenRouter list prices (config/prices.json, A6), in USD.
 // Claude Code's usage does not split cache writes by lifetime: the main session's are billed at the
 // 1-hour rate and agents' at the 5-minute rate, as Claude Code bills them (Phase 0).
+// Family: none.
 
-const fs = require('node:fs')
 const path = require('node:path')
+const { readJson } = require('./common.js')
 
 const PRICES_FILE = path.join(__dirname, '..', 'config', 'prices.json')
 
 function loadPrices(file = PRICES_FILE) {
-  return JSON.parse(fs.readFileSync(file, 'utf8'))
+  return readJson(file)
 }
 
 // A model's family and rates: an exact id, or a listed id followed by a suffix such as a date.

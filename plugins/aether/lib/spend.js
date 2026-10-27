@@ -2,13 +2,16 @@
 
 // The list-price spend of one session, whole (`aether-report --spend`): every request the usage meter kept
 // (usage/<id>/<n>.json), every call of another harness (lanes/<id>.jsonl) and every `outcome` of the delegate log
-// that belongs to the id, priced from config/prices.json and added into one Tally. A prune keeps what it
+// that belongs to the id, priced from config/prices.json and added into one Tally. Spend sources read are
+// usage/, lanes/ and the delegate log, and it no longer reads the old router journal. A prune keeps what it
 // deletes as a summary (spend/<id>.json, written by lib/spend-archive.js); the figure is that summary plus what is
 // still on disk. This module only reads. It reads each source on its own: readUsage and readLog drop what they
 // cannot read, and a dropped request is a dollar that vanishes.
+// Family: spend.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { isObject, isNumber: isTime } = require('./common.js')
 const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
 const { laneTokens } = require('./spend-tokens.js')
@@ -23,8 +26,6 @@ const READ_ATTEMPTS = 3
 const PART_ATTEMPTS = 2
 const PART_PAUSE_MS = 25
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-const isTime = (value) => typeof value === 'number' && Number.isFinite(value)
 const numberOrZero = (value) => (isTime(value) ? value : 0)
 const textOrUnknown = (value) => (typeof value === 'string' && value !== '' ? value : 'unknown')
 
@@ -147,7 +148,7 @@ function mergeTallies(a, b) {
 
 const missing = (err) => err && err.code === 'ENOENT'
 
-// The event of a call of another harness, from a lane-log call or a journal outcome, priced as a lane's call.
+// The event of a call of another harness, from a lane-log call or a delegate log outcome, priced as a lane's call.
 // `tokenless` marks a call that answered (`ok`) and recorded no tokens: it is priced at zero for lack of them, which is
 // a gap in the figure that a measured zero is not. A call that was refused, failed or stopped spent nothing to count.
 function harnessEvent(source, entry, prices) {
@@ -290,7 +291,7 @@ function readLaneEvents(dataDir, id, { after = null, prices = loadPrices() } = {
   return out
 }
 
-// The time a broken journal line still shows: `"time":<digits>`.
+// The time a broken line still shows: `"time":<digits>`.
 function timeOfBroken(line) {
   const found = /"time"\s*:\s*(\d+)/.exec(line)
   return found ? Number(found[1]) : null
@@ -425,7 +426,7 @@ function listing(dir) {
 }
 
 // The session written to last among those with files of their own: a usage directory, a lane log or a summary,
-// by a name that is an id. The newest time wins; a tie goes to the greater id as text. The journal does not decide.
+// by a name that is an id. The newest time wins; a tie goes to the greater id as text. The delegate log does not decide.
 function latestSession(dataDir) {
   const times = new Map()
   const note = (id, time) => {
@@ -536,6 +537,7 @@ module.exports = {
   readLaneEvents,
   readOutcomeEvents,
   readSummary,
+  newestIn,
   latestSession,
   spendReport,
 }
