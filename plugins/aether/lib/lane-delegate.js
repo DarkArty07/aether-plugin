@@ -269,11 +269,11 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
       decision = null
       if (pinned !== null && !exclude.includes(pinned)) {
         const only = pinnedChoice(ctx.table, pinned)
-        decision = superdelegation.choose({ pairs: only.table, reference: only.reference, harnesses, exclude, nativeDiffers: false })
+        decision = superdelegation.choose({ pairs: only.table, reference: only.reference, harnesses, exclude, nativeDiffers: false, role, lanes: ctx.config })
         if (!decision.picked) decision = null
       }
       pinned = null
-      if (decision === null) decision = superdelegation.choose({ pairs: ctx.table, reference, harnesses, exclude, nativeDiffers: role !== 'implementer' })
+      if (decision === null) decision = superdelegation.choose({ pairs: ctx.table, reference, harnesses, exclude, nativeDiffers: role !== 'implementer', role, lanes: ctx.config })
       const call = callName(attempts + 1)
       lanes.appendLog(ctx.dataDir, null, {
         kind: 'choice',
