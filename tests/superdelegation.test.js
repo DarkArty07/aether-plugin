@@ -192,7 +192,8 @@ test('C16: Muse as the only healthy harness takes a call up to Opus high by the 
   const high = ask('opus', 'high', { harnesses: onlyMuse() })
   assert.equal(pickedId(high), MUSE)
   assert.equal(high.requested, 53.6)
-  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), MUSE)
+  // Sonnet xhigh asks 51.9 (at least 50.9): Wonder 1.0 at max (52.4, US$ 4.54) is enough and has a cost, so it ranks ahead of Wonder Full, which has none.
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), 'muse/muse-wonder-1.0@max')
   // The estimated @medium carries an estimated cost only so the router can rank it: a Haiku high call
   // (floor 36.8) takes @medium (38.0) as the cheapest pair that is enough, ahead of the measured @xhigh.
   assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), 'muse/muse-spark-1.3@medium')

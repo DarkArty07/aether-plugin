@@ -14,7 +14,7 @@ const { choose } = require('../plugins/aether/lib/superdelegation.js')
 const CONFIG = path.join(__dirname, '..', 'plugins', 'aether', 'config')
 const read = (...parts) => JSON.parse(fs.readFileSync(path.join(CONFIG, ...parts), 'utf8'))
 
-test('(a) the lane table passes its own validation with the Spark entry and rule 2 with calledNotListed', () => {
+test('(a) the lane table passes its own validation with the Spark entry, and the CLI lists Spark since the capture of 2026-10-27', () => {
   const config = lanes.loadConfig()
   assert.ok(config.harnesses.muse)
   assert.ok(config.harnesses.muse.models['muse-spark-1.3'], 'muse-spark-1.3 is in config/lanes.json')
@@ -26,14 +26,13 @@ test('(a) the lane table passes its own validation with the Spark entry and rule
   assert.equal(spark.aa?.terminalBench, 0.33)
   assert.match(spark.ownerDecision, /infinitamente mas barato|nivel haiku o sonnet/)
 
-  // Rule 2 check with calledNotListed in harness-models.json
+  // Rule 2: the CLI lists it since muse 1.4.13 (model/list of muse serve, captured 2026-10-27), so it needs no calledNotListed entry
   const listings = read('models', 'harness-models.json')
-  assert.ok(Array.isArray(listings.harnesses?.muse?.calledNotListed), 'calledNotListed is an array in muse listing')
-  const called = listings.harnesses.muse.calledNotListed.map((m) => (typeof m === 'string' ? m : m.id))
-  assert.ok(called.includes('muse-spark-1.3'), 'muse-spark-1.3 is in calledNotListed')
-  // Ensure it was NOT added to models list
   const listed = (listings.harnesses?.muse?.models ?? []).map((m) => (typeof m === 'string' ? m : m.id))
-  assert.equal(listed.includes('muse-spark-1.3'), false, 'spark must not be in captured models list')
+  assert.ok(listed.includes('muse-spark-1.3'), 'muse-spark-1.3 is in the captured models list')
+  assert.equal(listings.harnesses.muse.capturedAt, '2026-10-27')
+  const called = (listings.harnesses.muse.calledNotListed ?? []).map((m) => (typeof m === 'string' ? m : m.id))
+  assert.equal(called.includes('muse-spark-1.3'), false, 'a listed model is not also called-but-not-listed')
 })
 
 test('(b) routing picks muse-spark-1.3 for Haiku and Sonnet high ahead of Wonder Full', () => {
@@ -101,11 +100,11 @@ test('(e) the low, medium and high rows are the owner-estimated points and costs
   assert.deepEqual(outcome['muse/muse-spark-1.3@low'], ['passed', 'below'], '32 points do not reach the 36.8 a Haiku high call asks for')
 })
 
-test('(d) the index builder gives muse-spark-1.3 the efforts of its calledNotListed entry, so a rebuild keeps max, and Wonder Full keeps the capture\'s', () => {
+test('(d) the index builder gives Spark 1.3 and the Wonders the efforts of the capture, max included', () => {
   const { harnessEntries } = require('../scripts/build-models-index.js')
   const entries = harnessEntries(read('lanes.json'), read('models', 'harness-models.json'), ['muse'], loadPairs().pairs)
   const spark = entries.find((entry) => entry.model === 'muse-spark-1.3')
   assert.deepEqual(spark.detail.efforts, ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
   const wonder = entries.find((entry) => entry.model === 'muse-wonder-full-1.0')
-  assert.equal(wonder.detail.efforts.includes('max'), false, 'the capture says Wonder Full has no max')
+  assert.equal(wonder.detail.efforts.includes('max'), true, 'the capture of 2026-10-27 says Wonder Full takes max')
 })

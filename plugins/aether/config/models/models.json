@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-10-19",
+  "generatedAt": "2026-10-27",
   "source": "https://artificialanalysis.ai/api/v2/data/llms/models",
   "harnesses": ["claude","agy","grok","muse"],
   "since": "2026-01-01",
-  "listedOn": {"claude":"2026-10-14","agy":"2026-10-15","grok":"2026-10-13","muse":"2026-10-19"},
+  "listedOn": {"claude":"2026-10-14","agy":"2026-10-15","grok":"2026-10-13","muse":"2026-10-27"},
   "rules": {
     "newest": "Only the newest generation of each line is used (Sonnet 5.5, not Sonnet 5); the older ones are superseded.",
     "offered": "Only a model the CLI of a chosen harness lists is in, whatever Artificial Analysis lists; a model only the lane table names is not offered.",
@@ -21,11 +21,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":29.5,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":148.5,"ttftSeconds":6.41},
-        {"effort":"medium","intelligence":34.5,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":153.3,"ttftSeconds":8.92},
-        {"effort":"high","intelligence":37.8,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":165.8,"ttftSeconds":16.04},
-        {"effort":"xhigh","intelligence":41.2,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":193.6,"ttftSeconds":47.56},
-        {"effort":"max","intelligence":43.4,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":238.8,"ttftSeconds":279.37}
+        {"effort":"low","intelligence":29.5,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":161,"ttftSeconds":4.87},
+        {"effort":"medium","intelligence":34.5,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":163.7,"ttftSeconds":7.29},
+        {"effort":"high","intelligence":37.8,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":176.2,"ttftSeconds":13.71},
+        {"effort":"xhigh","intelligence":41.2,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":184,"ttftSeconds":36.57},
+        {"effort":"max","intelligence":43.4,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":238.9,"ttftSeconds":254.08}
       ],
       "lane": null,
       "profile": {
@@ -66,11 +66,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":91,"ttftSeconds":0.71},
-        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":91.8,"ttftSeconds":0.94},
-        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":98.4,"ttftSeconds":9.03},
-        {"effort":"xhigh","intelligence":51.9,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":97.7,"ttftSeconds":19.27},
-        {"effort":"max","intelligence":56,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":137.1,"ttftSeconds":322.01}
+        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":90.4,"ttftSeconds":0.77},
+        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":97.6,"ttftSeconds":0.99},
+        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":104.8,"ttftSeconds":7.21},
+        {"effort":"xhigh","intelligence":51.9,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":100.5,"ttftSeconds":12.36},
+        {"effort":"max","intelligence":56,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":140.8,"ttftSeconds":308.06}
       ],
       "lane": null,
       "profile": {
@@ -97,11 +97,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":74.2,"ttftSeconds":6.89},
-        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":73,"ttftSeconds":13.78},
-        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":74,"ttftSeconds":26.58},
-        {"effort":"xhigh","intelligence":56,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":76.5,"ttftSeconds":80.89},
-        {"effort":"max","intelligence":57.6,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":96,"ttftSeconds":620.59}
+        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":75.3,"ttftSeconds":2.13},
+        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.3,"ttftSeconds":10.7},
+        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":77.4,"ttftSeconds":13.04},
+        {"effort":"xhigh","intelligence":56,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":77.6,"ttftSeconds":55.63},
+        {"effort":"max","intelligence":57.6,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":96.7,"ttftSeconds":424.84}
       ],
       "lane": null,
       "profile": {
@@ -127,7 +127,7 @@
       "effortVia": "id",
       "efforts": ["low","medium","high"],
       "ids": {"low":"gemini-4-argon-low","medium":"gemini-4-argon-medium","high":"gemini-4-argon-high"},
-      "scores": [{"effort":"high","intelligence":52.6,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":81,"ttftSeconds":29.41}],
+      "scores": [{"effort":"high","intelligence":52.6,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":82.3,"ttftSeconds":36.02}],
       "lane": {"roles":["judge","writer","examiner"]},
       "profile": {
         "purpose": "A flagship reasoning model, with a unified 1M context window and long decodes up to 1M tokens.",
@@ -166,9 +166,9 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"claude-sonnet-5-5-low","medium":"claude-sonnet-5-5-medium","high":"claude-sonnet-5-5-high"},
       "scores": [
-        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":91,"ttftSeconds":0.71},
-        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":91.8,"ttftSeconds":0.94},
-        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":98.4,"ttftSeconds":9.03}
+        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":90.4,"ttftSeconds":0.77},
+        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":97.6,"ttftSeconds":0.99},
+        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":104.8,"ttftSeconds":7.21}
       ],
       "lane": {"roles":["implementer","supervisor"]},
       "profile": {
@@ -195,9 +195,9 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"claude-opus-5-5-low","medium":"claude-opus-5-5-medium","high":"claude-opus-5-5-high"},
       "scores": [
-        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":74.2,"ttftSeconds":6.89},
-        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":73,"ttftSeconds":13.78},
-        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":74,"ttftSeconds":26.58}
+        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":75.3,"ttftSeconds":2.13},
+        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.3,"ttftSeconds":10.7},
+        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":77.4,"ttftSeconds":13.04}
       ],
       "lane": {"roles":["implementer","reviewer"]},
       "profile": {
@@ -251,8 +251,8 @@
           "terminalBench": 0.197,
           "priceInput": 0.75,
           "priceOutput": 3.75,
-          "tokensPerSecond": 140.1,
-          "ttftSeconds": 15.53
+          "tokensPerSecond": 134.9,
+          "ttftSeconds": 16.28
         }
       ],
       "lane": {"roles":["implementer"]},
@@ -279,9 +279,9 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh"],
       "scores": [
-        {"effort":"low","intelligence":42.2,"terminalBench":0.162,"priceInput":2,"priceOutput":6,"tokensPerSecond":60.8,"ttftSeconds":3.32},
-        {"effort":"high","intelligence":46.3,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":73.7,"ttftSeconds":19.55},
-        {"effort":"xhigh","intelligence":46.4,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":72.4,"ttftSeconds":21.7}
+        {"effort":"low","intelligence":42.2,"terminalBench":0.162,"priceInput":2,"priceOutput":6,"tokensPerSecond":79.1,"ttftSeconds":4},
+        {"effort":"high","intelligence":46.3,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":85.7,"ttftSeconds":12.51},
+        {"effort":"xhigh","intelligence":46.4,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":79,"ttftSeconds":14.48}
       ],
       "lane": {"roles":["implementer"]},
       "profile": {
@@ -311,8 +311,26 @@
       "effortVia": "flag",
       "efforts": ["minimal","low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"xhigh","intelligence":45.1,"terminalBench":0.167,"priceInput":1.25,"priceOutput":4.25,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"max","intelligence":48.1,"terminalBench":0.333,"priceInput":1.25,"priceOutput":4.25,"tokensPerSecond":null,"ttftSeconds":null}
+        {
+          "effort": "xhigh",
+          "intelligence": 45.1,
+          "coding": 76.5,
+          "terminalBench": 0.167,
+          "priceInput": 1.25,
+          "priceOutput": 4.25,
+          "tokensPerSecond": null,
+          "ttftSeconds": null
+        },
+        {
+          "effort": "max",
+          "intelligence": 48.1,
+          "coding": 75.8,
+          "terminalBench": 0.333,
+          "priceInput": 1.25,
+          "priceOutput": 4.25,
+          "tokensPerSecond": null,
+          "ttftSeconds": null
+        }
       ],
       "lane": {"roles":["implementer","reviewer"]},
       "profile": {
@@ -346,11 +364,11 @@
       "efforts": ["low","medium","high","xhigh","max"],
       "price": {"input":10,"output":50},
       "scores": [
-        {"effort":"low","intelligence":46.8,"coding":75.2,"terminalBench":0.404,"priceInput":10,"priceOutput":50,"tokensPerSecond":50.2,"ttftSeconds":0.67},
-        {"effort":"medium","intelligence":48.9,"coding":77.1,"terminalBench":0.449,"priceInput":10,"priceOutput":50,"tokensPerSecond":51.6,"ttftSeconds":6.03},
-        {"effort":"high","intelligence":51.2,"coding":79.1,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":50.8,"ttftSeconds":9.98},
-        {"effort":"xhigh","intelligence":53.2,"coding":80.7,"terminalBench":0.551,"priceInput":10,"priceOutput":50,"tokensPerSecond":56.9,"ttftSeconds":47.17},
-        {"effort":"max","intelligence":53.4,"coding":81.6,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":72.6,"ttftSeconds":187.59}
+        {"effort":"low","intelligence":46.8,"coding":75.2,"terminalBench":0.404,"priceInput":10,"priceOutput":50,"tokensPerSecond":53.7,"ttftSeconds":0.68},
+        {"effort":"medium","intelligence":48.9,"coding":77.1,"terminalBench":0.449,"priceInput":10,"priceOutput":50,"tokensPerSecond":54.7,"ttftSeconds":2.11},
+        {"effort":"high","intelligence":51.2,"coding":79.1,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":54.2,"ttftSeconds":2.18},
+        {"effort":"xhigh","intelligence":53.2,"coding":80.7,"terminalBench":0.551,"priceInput":10,"priceOutput":50,"tokensPerSecond":58.8,"ttftSeconds":35.22},
+        {"effort":"max","intelligence":53.4,"coding":81.6,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":65.8,"ttftSeconds":156.88}
       ],
       "profile": {
         "purpose": "\"For demanding reasoning and long-horizon agentic work.\" Anthropic's advice: for most workloads start with Opus 5.5, and use Fable 5.1 for demanding reasoning and long-horizon agentic work, or when evals on Opus 5.5 at higher effort still fall short. Comparative latency: slower.",
@@ -410,11 +428,33 @@
     },
     {
       "harness": "muse",
+      "model": "muse-wonder-1.0",
+      "name": "Muse Wonder 1.0",
+      "maker": "Meta",
+      "effortVia": "flag",
+      "efforts": ["minimal","low","medium","high","xhigh","max"],
+      "lane": {"roles":["implementer","reviewer"]},
+      "note": "offered, with no Artificial Analysis entry, so no figures",
+      "profile": {
+        "purpose": "Preview; for \"complex multi-file changes\" and long-horizon agentic work.",
+        "contextTokens": 1048576,
+        "maxOutputTokens": null,
+        "defaultEffort": "high",
+        "price": {"input":4,"output":20,"note":"per million tokens on the Meta API; cached input 0.20"},
+        "knowledgeCutoff": null,
+        "availability": "Meta API (id muse-wonder-1.0, preview) and Muse Code CLI. Each harness takes the efforts its entry lists.",
+        "caveats": ["Prices come from a summary of Meta's pages, to be checked against the page.","Preview model; contributor mode is not offered."],
+        "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/pricing-rate-limits"],
+        "checked": "2026-10-19"
+      }
+    },
+    {
+      "harness": "muse",
       "model": "muse-wonder-full-1.0",
       "name": "Muse Wonder Full 1.0",
       "maker": "Meta",
       "effortVia": "flag",
-      "efforts": ["minimal","low","medium","high","xhigh"],
+      "efforts": ["minimal","low","medium","high","xhigh","max"],
       "lane": {"roles":["implementer","reviewer"]},
       "note": "offered, with no Artificial Analysis entry, so no figures",
       "profile": {
@@ -434,6 +474,10 @@
       }
     }
   ],
-  "superseded": [{"harness":"grok","id":"grok-4.6","supersededBy":"grok-4.7"},{"harness":"grok","id":"grok-4.5","supersededBy":"grok-4.7"}],
+  "superseded": [
+    {"harness":"grok","id":"grok-4.6","supersededBy":"grok-4.7"},
+    {"harness":"grok","id":"grok-4.5","supersededBy":"grok-4.7"},
+    {"harness":"muse","id":"muse-spark-1.2","supersededBy":"muse-spark-1.3"}
+  ],
   "outOfScope": [{"harness":"agy","model":"gpt-oss-120b","reason":"Artificial Analysis lists gpt-oss-120b, released 2025-08-05, before 2026-01-01"}]
 }
