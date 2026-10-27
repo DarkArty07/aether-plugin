@@ -7,6 +7,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { writeJson } = require('../plugins/aether/lib/run.js')
 const { appendLog } = require('../plugins/aether/lib/lanes.js')
+const delegateLog = require('../plugins/aether/lib/delegate-log.js')
 
 const MIN = 60 * 1000
 const T0 = Date.parse('2026-09-01T10:00:00.000Z')
@@ -49,15 +50,9 @@ function laneCall(dataDir, session, minutes, model, kind = 'input', extra = {}) 
   return usdOf({ model, agent: 'lane', [kind]: 1e6 })
 }
 
-function journalLine(dataDir, line) {
-  const file = path.join(dataDir, 'router', 'decisions.jsonl')
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.appendFileSync(file, `${typeof line === 'string' ? line : JSON.stringify(line)}\n`)
-}
-
-// An outcome entry of the router's journal. Returns its list price.
+// An outcome entry of the delegate log. Returns its list price.
 function outcome(dataDir, session, minutes, model, kind = 'input', extra = {}) {
-  journalLine(dataDir, { kind: 'outcome', id: `d-${minutes}`, time: T0 + minutes * MIN, session, status: 'ok', harness: 'agy', model, effort: 'low', durationMs: 1, usage: { [kind]: 1e6 }, attempt: 1, ...extra })
+  delegateLog.appendEntry(dataDir, { kind: 'outcome', id: `d-${minutes}`, time: T0 + minutes * MIN, session, status: 'ok', harness: 'agy', model, effort: 'low', durationMs: 1, usage: { [kind]: 1e6 }, attempt: 1, ...extra })
   return usdOf({ model, agent: 'lane', [kind]: 1e6 })
 }
 
@@ -84,4 +79,4 @@ function ageFile(file, hours) {
   fs.utimesSync(file, when, when)
 }
 
-module.exports = { MIN, T0, RATES, PRICES, iso, usdOf, meter, writeParts, laneCall, journalLine, outcome, archivedTally, summaryOf, writeSummary, ageFile }
+module.exports = { MIN, T0, RATES, PRICES, iso, usdOf, meter, writeParts, laneCall, outcome, archivedTally, summaryOf, writeSummary, ageFile }

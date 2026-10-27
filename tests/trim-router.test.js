@@ -11,13 +11,6 @@ const lib = (name) => require(path.join(PLUGIN, 'lib', `${name}.js`))
 // The name of the retired decider command, built from parts so that a search for it does not find this test.
 const OLD_BIN = 'aether-' + 'route'
 
-test('the old journal is only read: router-log has no way to write it (R18, D4)', () => {
-  const journal = lib('router-log')
-  assert.equal(journal.appendEntry, undefined)
-  assert.equal(typeof journal.readJournal, 'function')
-  assert.equal(typeof journal.journalFile, 'function')
-})
-
 test('the guard no longer knows the retired decider command', () => {
   assert.notEqual(lib('guard').irreversibleClass(OLD_BIN + ' replay --projects p --decider haiku --paid'), 'paid-call')
 })
