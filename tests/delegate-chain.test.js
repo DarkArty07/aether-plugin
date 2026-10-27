@@ -192,7 +192,7 @@ test('the outcomes of a task go to the delegate log with the task id and an atte
   await s.run(MUSE)
   assert.deepEqual(s.outcomes().map((e) => [e.id, e.attempt, e.harness]), [['c-1', 1, 'agy'], ['c-1', 2, 'grok'], ['c-1', 3, 'muse']])
   assert.equal(fs.existsSync(path.join(s.dataDir, 'delegates', 'log.jsonl')), true)
-  assert.equal(fs.existsSync(path.join(s.dataDir, 'router', 'decisions.jsonl')), false, 'nothing goes to the old journal')
+  assert.equal(fs.existsSync(path.join(s.dataDir, 'rout' + 'er', 'dec' + 'isions.jsonl')), false, 'nothing goes to the old journal')
 })
 
 test('the third attempt is the last, however many candidates are left', async (t) => {

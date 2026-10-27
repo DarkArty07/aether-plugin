@@ -1,14 +1,12 @@
 'use strict'
 
-// The delegates report (R17, R18): what `aether-report --delegates` prints. One row per task of the delegate log
-// (lib/delegate-log.js) and one per `decision` of the old router journal (lib/router-log.js, read only), for the rows
-// the /harnesses panel draws; and, per step of config/ladder.json, how the delegates of the log went. The ladder
-// counts come from the log alone.
+// The delegates report (R17): what `aether-report --delegates` prints. One row per task of the delegate log
+// (lib/delegate-log.js) for the rows the /harnesses panel draws; and, per step of config/ladder.json, how the delegates
+// of the log went. The ladder counts come from the log alone.
 
 const run = require('./run.js')
 const log = require('./delegate-log.js')
 const { loadLadder } = require('./ladder.js')
-const { readJournal } = require('./router-log.js')
 
 const CAUSES = ['exhausted', 'repeated', 'infeasible']
 
@@ -56,38 +54,6 @@ function rowOfTask(id, entries) {
   }
 }
 
-// One row per decision of the old journal whose id is not a task of the log. The last outcome of the id says where it
-// ran; if it did not end ok it ran on the decision's rescue pair.
-function rowsOfJournal(journal, taken) {
-  const outcomes = new Map()
-  for (const entry of journal) {
-    if (entry.kind === 'outcome') outcomes.set(entry.id, [...(outcomes.get(entry.id) ?? []), entry])
-  }
-  return journal
-    .filter((entry) => entry.kind === 'decision' && !taken.has(entry.id))
-    .map((entry) => {
-      const attempted = outcomes.get(entry.id) ?? []
-      const outcome = attempted.length > 0 ? last(attempted) : null
-      const failed = outcome !== null && outcome.status !== 'ok'
-      let fallback = entry.fallback || null
-      if (!fallback && failed) fallback = `external ${outcome.status}`
-      let ranOn = entry.ranOn || null
-      if (outcome) ranOn = failed ? entry.rescue || null : { harness: outcome.harness, model: outcome.model, effort: outcome.effort }
-      else if (entry.applied === 'external') ranOn = entry.rescue || null
-      return {
-        id: entry.id,
-        time: entry.time,
-        session: entry.session,
-        description: entry.description,
-        applied: entry.applied,
-        ranOn,
-        fallback,
-        step: null,
-        attempts: attempted.length,
-      }
-    })
-}
-
 function stepCounts(rung, entries) {
   const launches = entries.filter((e) => e.kind === 'launch' && e.step === rung.step)
   const verdicts = entries.filter((e) => e.kind === 'verdict' && e.step === rung.step)
@@ -117,9 +83,7 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } 
     if (!byTask.has(id)) byTask.set(id, [])
     byTask.get(id).push(entry)
   }
-  const fromLog = [...byTask].filter(([, list]) => list.some(isAttempt)).map(([id, list]) => rowOfTask(id, list))
-  const taken = new Set(fromLog.map((row) => row.id))
-  const delegations = [...fromLog, ...rowsOfJournal(readJournal(dataDir, { since, session }), taken)]
+  const delegations = [...byTask].filter(([, list]) => list.some(isAttempt)).map(([id, list]) => rowOfTask(id, list))
   const ladder = loadLadder()
   return {
     delegations,

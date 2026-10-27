@@ -7,7 +7,6 @@ const { spawnSync } = require('node:child_process')
 const { tempDir } = require('./helpers.js')
 const fs = require('node:fs')
 const log = require('../plugins/aether/lib/delegate-log.js')
-const { journalFile } = require('../plugins/aether/lib/router-log.js')
 const { delegatesReport } = require('../plugins/aether/lib/delegate-report.js')
 
 const BIN = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-report')
@@ -49,28 +48,6 @@ test('the rows keep the fields the /harnesses panel reads', (t) => {
   assert.equal(row.description, 'd-t3')
   assert.equal(typeof row.time, 'number')
   assert.deepEqual([row.applied, row.ranOn.harness, row.ranOn.model], ['rewritten', 'claude', 'sonnet'])
-})
-
-test('the rows of the old journal are read too, read only, and the ladder counts only the new log (R18)', (t) => {
-  const dataDir = world(t)
-  const file = journalFile(dataDir)
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  const lines = [
-    { kind: 'decision', id: 'old-1', time: 5, session: 's1', description: 'old one', applied: 'external', ranOn: null, rescue: { harness: 'claude', model: 'sonnet', effort: 'high' } },
-    { kind: 'outcome', id: 'old-1', time: 6, session: 's1', status: 'ok', harness: 'agy', model: 'm-a', effort: 'low' },
-    { kind: 'decision', id: 'old-2', time: 7, session: 's1', description: 'old two', applied: 'external', ranOn: null, rescue: { harness: 'claude', model: 'sonnet', effort: 'high' } },
-    { kind: 'outcome', id: 'old-2', time: 8, session: 's1', status: 'failed', harness: 'agy', model: 'm-a', effort: 'low' },
-  ]
-  fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
-  const before = fs.readFileSync(file, 'utf8')
-  const { delegations, ladder } = delegatesReport({ dataDir })
-  assert.equal(delegations.length, 6)
-  const one = delegations.find((d) => d.id === 'old-1')
-  assert.deepEqual([one.description, one.applied, one.ranOn.harness, one.fallback, one.attempts], ['old one', 'external', 'agy', null, 1])
-  const two = delegations.find((d) => d.id === 'old-2')
-  assert.deepEqual([two.ranOn.model, two.fallback], ['sonnet', 'external failed'])
-  assert.equal(ladder.steps[0].tasks, 4)
-  assert.equal(fs.readFileSync(file, 'utf8'), before)
 })
 
 test('session and since filter the report', (t) => {
@@ -134,13 +111,4 @@ test('a later attempt that ran on Claude is not credited to the pair of an earli
   for (const entry of [first, outcome, launch('up', 'sonnet', 2, 'rise')]) log.appendEntry(dataDir, entry)
   const row = delegatesReport({ dataDir }).delegations.find((d) => d.id === 'up')
   assert.deepEqual([row.applied, row.ranOn.harness, row.ranOn.model, row.fallback, row.attempts], ['rewritten', 'claude', 'sonnet', null, 2])
-})
-
-test('an old-journal row whose id is a task of the new log gives way to the new one', (t) => {
-  const dataDir = world(t)
-  const file = journalFile(dataDir)
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, JSON.stringify({ kind: 'decision', id: 't1', time: 5, session: 's1', description: 'old t1', applied: 'external' }) + '\n')
-  const rows = delegatesReport({ dataDir }).delegations.filter((d) => d.id === 't1')
-  assert.deepEqual(rows.map((d) => d.description), ['d-t1'])
 })

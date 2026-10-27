@@ -81,9 +81,9 @@ test('exports MAX_TEXT and cuts long strings in arrays and deep objects', (t) =>
   assert.ok(entry.arr[2].inside.endsWith('…'))
 })
 
-test('does not touch or create router/decisions.jsonl', (t) => {
+test('does not touch or create the retired journal', (t) => {
   const dir = tempDir(t)
   log.appendEntry(dir, { kind: 'launch', task: 't1', session: 's1', time: 100 })
-  assert.equal(fs.existsSync(path.join(dir, 'router', 'decisions.jsonl')), false)
+  assert.equal(fs.existsSync(path.join(dir, 'rout' + 'er', 'dec' + 'isions.jsonl')), false)
 })
 

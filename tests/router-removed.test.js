@@ -17,7 +17,7 @@ test('the decider, its command, its data and its script are gone (R9)', () => {
 })
 
 test('the marks, the quota, the renewal and the pair step stay and load (R11)', () => {
-  for (const name of ['router-marks', 'router-slow', 'router-quota', 'router-pick', 'router-renewal', 'router-log']) {
+  for (const name of ['router-marks', 'router-slow', 'router-quota', 'router-pick', 'router-renewal']) {
     assert.doesNotThrow(() => require(path.join(PLUGIN, 'lib', `${name}.js`)), name)
   }
 })

@@ -7,7 +7,7 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { once } = require('node:events')
 const { useDataDir, age } = require('./helpers.js')
-const { MIN, T0, PRICES, iso, usdOf, meter, writeParts, laneCall, journalLine, outcome, summaryOf, writeSummary, ageFile } = require('./spend-fixtures.js')
+const { MIN, T0, PRICES, iso, usdOf, meter, writeParts, laneCall, outcome, summaryOf, writeSummary, ageFile } = require('./spend-fixtures.js')
 const spendLib = require('../plugins/aether/lib/spend.js')
 const { spendReport, latestSession, isSessionId, mergeTallies, tallyOf, emptyTally, readUsageEvents, readLaneEvents, readSummary, GAP_MS } = spendLib
 const { archiveSpend } = require('../plugins/aether/lib/spend-archive.js')
@@ -98,7 +98,7 @@ test('without a session the report is of the one written last among those with f
   fs.writeFileSync(path.join(dataDir, 'lanes', 'bad name.jsonl'), '')
   writeParts(dataDir, 'not an id', [{ entries: [meter(0, 'm-b', null, 'input')] }])
   writeSummary(dataDir, 'bad name', summaryOf('bad name', { writtenAt: Date.now() }))
-  outcome(dataDir, 'journal-only', 3, 'm-b')
+  outcome(dataDir, 'delegate-only', 3, 'm-b')
   assert.equal(latestSession(dataDir), 'mid')
   assert.equal(report(dataDir, null).session, 'mid')
   const when = new Date(Date.now() - 3600 * 1000)
@@ -109,7 +109,7 @@ test('without a session the report is of the one written last among those with f
   assert.equal(latestSession(dataDir), 'b1')
   writeSummary(dataDir, 's-sum', summaryOf('s-sum', { writtenAt: Date.now() - 1000 }))
   assert.equal(latestSession(dataDir), 's-sum')
-  assert.equal(report(dataDir, 'journal-only').recorded, true)
+  assert.equal(report(dataDir, 'delegate-only').recorded, true)
 })
 
 test('when only unknown.jsonl was written there is no session, and the report says nothing was recorded', (t) => {
@@ -175,27 +175,6 @@ test('a part or a summary that cannot be read makes the figure incomplete and ke
   assert.deepEqual([report(dataDir, 's3').recorded, report(dataDir, 's3').complete, report(dataDir, 's3').usd], [true, false, 0])
 })
 
-test('R9: an unreadable journal line makes incomplete only the sessions whose span holds it', (t) => {
-  const dataDir = useDataDir(t)
-  const one = outcome(dataDir, 's1', 0, 'm-a')
-  journalLine(dataDir, `{"kind":"outcome","time":${T0 + 5 * MIN},"sess`)
-  outcome(dataDir, 's1', 10, 'm-a')
-  outcome(dataDir, 's2', 100, 'm-a')
-  journalLine(dataDir, 'this is not json')
-  outcome(dataDir, 's2', 110, 'm-a')
-  outcome(dataDir, 's3', 200, 'm-a')
-  journalLine(dataDir, '')
-  const s1 = report(dataDir, 's1')
-  assert.equal(s1.complete, false)
-  close(s1.usd, 2 * one)
-  assert.equal(report(dataDir, 's2').complete, false)
-  const s3 = report(dataDir, 's3')
-  assert.deepEqual([s3.recorded, s3.complete], [true, true])
-  close(s3.usd, one)
-  const s4 = report(dataDir, 's4')
-  assert.deepEqual([s4.recorded, s4.complete], [false, true])
-})
-
 test('the figure is the summary plus what is still on disk, each event once', (t) => {
   const dataDir = useDataDir(t)
   writeSummary(dataDir, 's1', summaryOf('s1', { through: { usage: T0 + 10 * MIN, lanes: T0 + 10 * MIN } }))
@@ -253,10 +232,10 @@ test('C5: reading one id while another keeps writing gives the same figure every
   const script = `
     const fs = require('node:fs'); const path = require('node:path')
     const dir = process.argv[1]
-    fs.mkdirSync(path.join(dir, 'lanes'), { recursive: true }); fs.mkdirSync(path.join(dir, 'router'), { recursive: true })
+    fs.mkdirSync(path.join(dir, 'lanes'), { recursive: true }); fs.mkdirSync(path.join(dir, 'delegates'), { recursive: true })
     for (let i = 0; i < 400; i++) {
       fs.appendFileSync(path.join(dir, 'lanes', 'busy.jsonl'), JSON.stringify({ kind: 'call', time: i, model: 'm-a', usage: { input: 1 } }) + '\\n')
-      fs.appendFileSync(path.join(dir, 'router', 'decisions.jsonl'), JSON.stringify({ kind: 'outcome', id: 'x' + i, time: i, session: 'busy', model: 'm-a', usage: { input: 1 } }) + '\\n')
+      fs.appendFileSync(path.join(dir, 'delegates', 'log.jsonl'), JSON.stringify({ kind: 'outcome', id: 'x' + i, time: i, session: 'busy', model: 'm-a', usage: { input: 1 } }) + '\\n')
       fs.mkdirSync(path.join(dir, 'usage', 'busy'), { recursive: true }); fs.writeFileSync(path.join(dir, 'usage', 'busy', '0.json'), JSON.stringify({ session: 'busy', entries: [] }))
     }`
   const writer = spawn(process.execPath, ['-e', script, dataDir], { stdio: 'ignore' })

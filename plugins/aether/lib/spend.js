@@ -1,8 +1,8 @@
 'use strict'
 
 // The list-price spend of one session, whole (`aether-report --spend`): every request the usage meter kept
-// (usage/<id>/<n>.json), every call of another harness (lanes/<id>.jsonl) and every `outcome` of the router's
-// old journal and of the delegate log that belongs to the id, priced from config/prices.json and added into one Tally. A prune keeps what it
+// (usage/<id>/<n>.json), every call of another harness (lanes/<id>.jsonl) and every `outcome` of the delegate log
+// that belongs to the id, priced from config/prices.json and added into one Tally. A prune keeps what it
 // deletes as a summary (spend/<id>.json, written by lib/spend-archive.js); the figure is that summary plus what is
 // still on disk. This module only reads. It reads each source on its own: readUsage and readLog drop what they
 // cannot read, and a dropped request is a dollar that vanishes.
@@ -12,7 +12,6 @@ const path = require('node:path')
 const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
 const { laneTokens } = require('./lanes.js')
-const { journalFile } = require('./router-log.js')
 const delegateLog = require('./delegate-log.js')
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/
@@ -298,11 +297,11 @@ function timeOfBroken(line) {
 }
 
 // The `outcome` entries of session `id` in one JSON-lines file, one event each (a delegation writes one per attempt, and
-// attempts share its id). Both files hold every session's lines and nobody prunes them, so a line that cannot be read
+// attempts share its id). The file holds every session's lines and nobody prunes them, so a line that cannot be read
 // makes this session incomplete only when it falls inside the session's span: the readable lines that are the
 // session's, of any kind. By its time when the broken line shows one, by its place in the file when not.
 function readOutcomesIn(file, id, prices) {
-  const out = { events: [], keys: [], complete: true }
+  const out = { events: [], complete: true }
   let text
   try {
     text = fs.readFileSync(file, 'utf8')
@@ -333,7 +332,6 @@ function readOutcomesIn(file, id, prices) {
     }
     if (entry.kind === 'outcome') {
       out.events.push(harnessEvent('outcome', entry, prices))
-      out.keys.push(JSON.stringify([entry.id, entry.attempt]))
     }
   })
   const timed = span.early <= span.late
@@ -348,17 +346,13 @@ function readOutcomesIn(file, id, prices) {
   return out
 }
 
-// The `outcome` entries of session `id` in the two sources of a delegate's spend: the old router journal (read only)
-// and the delegate log. A pair of id and attempt that both hold counts once, as the delegate log has it; an entry
-// with no attempt is the pair of its id and an undefined attempt.
+// The `outcome` entries of session `id` in the delegate log.
 function readOutcomeEvents(dataDir, id, { prices = loadPrices() } = {}) {
   const out = { events: [], complete: true }
   if (!isSessionId(id)) return out
-  const old = readOutcomesIn(journalFile(dataDir), id, prices)
   const fresh = readOutcomesIn(delegateLog.logFile(dataDir), id, prices)
-  const known = new Set(fresh.keys)
-  out.events = [...old.events.filter((_, i) => !known.has(old.keys[i])), ...fresh.events]
-  out.complete = old.complete && fresh.complete
+  out.events = fresh.events
+  out.complete = fresh.complete
   return out
 }
 

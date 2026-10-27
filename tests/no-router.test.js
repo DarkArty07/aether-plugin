@@ -9,7 +9,6 @@ const ROOT = path.join(__dirname, '..')
 const SCAN = ['plugins/aether', 'docs/guide', 'docs/reference', 'docs/index.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/contributing.md', 'README.md', 'CLAUDE.md', 'scripts', 'tests']
 // The files that may keep a name or a word, each with its reason (spec 013, C7).
 const ALLOWED = {
-  'plugins/aether/lib/router-log.js': 'the reader of the old journal (R18)',
   'plugins/aether/lib/spend.js': 'reads the old journal (R18)',
   'plugins/aether/lib/router-marks.js': 'the marks of exhausted pairs (R11)',
   'plugins/aether/lib/router-slow.js': 'the marks of slow pairs (R11)',

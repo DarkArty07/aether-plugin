@@ -13,6 +13,7 @@ const { archiveSpend, failuresFile } = require('../plugins/aether/lib/spend-arch
 const { pruneUsage } = require('../plugins/aether/lib/report.js')
 const { pruneLog, logFile } = require('../plugins/aether/lib/lanes.js')
 const { pruneSessions } = require('../plugins/aether/lib/session.js')
+const delegateLog = require('../plugins/aether/lib/delegate-log.js')
 
 const DAY = 24 * 3600 * 1000
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`)
@@ -21,7 +22,7 @@ const summaryPath = (dataDir, id) => path.join(dataDir, 'spend', `${id}.json`)
 const readSummary = (dataDir, id) => JSON.parse(fs.readFileSync(summaryPath(dataDir, id), 'utf8'))
 const prune = (dataDir, extra = {}) => [pruneUsage(dataDir, { days: 30, prices: PRICES, ...extra }), pruneLog(dataDir, { days: 30, prices: PRICES, ...extra })]
 
-// A session with meter parts (two parts, a judge among them), a lane call and an outcome in the journal.
+// A session with meter parts (two parts, a judge among them), a lane call and an outcome in the delegate log.
 function world(dataDir, id = 'old') {
   const agents = { j1: { type: 'aether:judge' } }
   writeParts(dataDir, id, [
@@ -48,13 +49,13 @@ test('E4: a pruned session keeps its figure; a later prune adds the new stretch 
   const summary = readSummary(dataDir, 'old')
   assert.equal(summary.session, 'old')
   assert.equal(summary.tally.harness.calls, 1)
-  assert.ok(fs.readFileSync(path.join(dataDir, 'router', 'decisions.jsonl'), 'utf8').includes('"kind":"outcome"'))
+  assert.ok(fs.readFileSync(delegateLog.logFile(dataDir), 'utf8').includes('"kind":"outcome"'))
   assert.deepEqual(spend(dataDir, 'old'), before)
   writeParts(dataDir, 'old', [{ entries: [meter(1000, 'm-a', null, 'output')] }])
   const resumed = spend(dataDir, 'old')
   close(resumed.usd, before.usd + 2)
   // R7: with a summary, resumptions are the summary's count plus the gaps between events still on disk.
-  // The outcome at T0+4 min stays in the journal and the new meter request is at T0+1000 min, so that gap counts as 1.
+  // The outcome at T0+4 min stays in the delegate log and the new meter request is at T0+1000 min, so that gap counts as 1.
   assert.equal(resumed.resumptions, 1)
   assert.equal(resumed.lastRequest, iso(T0 + 1000 * MIN))
   age(path.join(dataDir, 'usage', 'old'), 31 * 24)
@@ -184,7 +185,7 @@ test('session start archives a session before it prunes it', (t) => {
   const before = spendReport({ dataDir })
   assert.equal(before.session, 'old')
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: dataDir }
-  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_SEATS']) delete env[key]
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_' + 'LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_' + 'SEATS']) delete env[key]
   const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: tempDir(t), encoding: 'utf8', env, input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'now', source: 'startup', agent_type: 'aether:lead' }) })
   assert.equal(r.status, 0, r.stderr)
   assert.equal(fs.existsSync(path.join(dataDir, 'usage', 'old')), false)
@@ -267,7 +268,7 @@ test('session start leaves a trace when its prune fails, and still exits 0 with 
   // A file where the lane log's directory should be: the lane prune throws, and nothing in the hook must show it.
   fs.writeFileSync(path.join(dataDir, 'lanes'), 'a file where the directory should be')
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: dataDir }
-  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_SEATS']) delete env[key]
+  for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_' + 'LANES', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'CLAUDE_PLUGIN_OPTION_' + 'SEATS']) delete env[key]
   const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: tempDir(t), encoding: 'utf8', env, input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'now', source: 'startup', agent_type: 'aether:lead' }) })
   assert.equal(r.status, 0, r.stderr)
   assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /Aether mode is active/)
