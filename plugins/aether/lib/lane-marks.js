@@ -3,10 +3,11 @@
 // On-disk quota exhaustion marks for lanes (`lanes/marks/<harness>__<group>.json`).
 // An unconfirmed mark (rate limit, missing/unknown balance, or absent used percent) lasts
 // DEFAULT_MARK_MINUTES. A mark is confirmed and holds until the reset only when reading
-// has an explicit balance showing the group under reserve. A call agy refused with «Individual quota reached»
-// (`refusal`) leaves an unconfirmed mark with `reason: "quota refusal"` (confirmed to a reset only when its own reading
-// shows the group under reserve, issue 063): it holds the default length, not the reset the
-// message states, which is kept in `statedResetMs` for people to read: agy's quota structure changes between days and
+// has an explicit balance showing the group under reserve. A call refused in words for quota (agy's «Individual quota
+// reached», Muse's subscription 429; `refusal`) leaves an unconfirmed mark with `reason: "quota refusal"` (confirmed to
+// a reset only when its own reading shows the group under reserve, issue 063): it holds the default length, not the
+// reset the message states, which is kept in `statedResetMs` (agy) or `statedResetAt` (Muse) for people to read: agy's
+// quota structure changes between days and
 // the stated reset was once wrong, while a refused call costs a failed process and no tokens, so the group is tried
 // again every hour. A live refusal mark is not replaced by a mark that is not confirmed, so a later reading with a
 // balance does not lift it. Marks never shorten.
@@ -14,8 +15,10 @@
 // Marks heal themselves. An unconfirmed mark is read as ending at most its `minutes` after it was written (60 when the
 // file says none), whatever its `until` says. A mark that came from a reading (any but a refusal's) is lifted when a
 // fresh reading, taken after the mark, shows every window above the reserve (liftIfHealthy): providers renew a quota
-// without saying so. A refusal's mark is never lifted by a reading, since /usage does not show an individual limit; it
-// ends by itself.
+// without saying so. agy's refusal mark is never lifted by a reading, since /usage does not show an individual limit;
+// it ends by itself. Muse's subscription refusal is the exception (issue 75): its reading is the allowance of the
+// same windows the 429 refuses for, so a healthy reading lifts its mark, but only one observed after the refusal: Muse
+// keeps the last allowance with no expiry, and a stale one is what the refused call had already seen.
 // Family: lane.
 
 const fs = require('node:fs')
@@ -156,17 +159,25 @@ function healthyReading(reading, reserve) {
   return windows.length > 0 && windows.every((w) => w && typeof w.remaining === 'number' && Number.isFinite(w.remaining) && w.remaining > reserve)
 }
 
-// Whether a reading lifts a live mark: the mark did not come from a refusal; the reading was taken after the mark was
-// written (a reading from before it is what the call that ended for quota had seen) and not after `now`; its source,
-// when it says when it was written (source.ts), is not older than the mark either, since a harness that keeps its last
-// observation in a file is read at any time but shows what was written then (a source without a readable time leaves
-// the rule out); it is younger than lifeMs, by when it was taken and by its own source's age; and it is healthy.
+// Whether a reading lifts a live mark: the mark did not come from a refusal (Muse's subscription refusal excepted,
+// below); the reading was taken after the mark was written (a reading from before it is what the call that ended for
+// quota had seen) and not after `now`; its source, when it says when it was written (source.ts), is not older than
+// the mark either, since a harness that keeps its last observation in a file is read at any time but shows what was
+// written then (a source without a readable time leaves the rule out); it is younger than lifeMs, by when it was taken
+// and by its own source's age; and it is healthy. A muse refusal's mark (issue 75) is lifted only by a reading newer
+// than the mark itself: by its source's time when it has one, as Muse's allowance always does, else by when it was taken.
 function liftable(mark, reading, { readAt, reserve, lifeMs, now = Date.now() }) {
-  if (!mark || mark.reason === REFUSAL_REASON) return false
+  if (!mark) return false
+  const refusal = mark.reason === REFUSAL_REASON
+  if (refusal && mark.harness !== 'muse') return false
   if (!Number.isFinite(readAt) || readAt > now || now - readAt >= lifeMs) return false
   if (Number.isFinite(mark.at) && readAt < mark.at) return false
   const sourceTs = Date.parse(reading && reading.source && reading.source.ts)
   if (Number.isFinite(sourceTs) && Number.isFinite(mark.at) && sourceTs < mark.at) return false
+  if (refusal) {
+    const observedAt = Number.isFinite(sourceTs) ? sourceTs : readAt
+    if (!Number.isFinite(mark.at) || observedAt <= mark.at) return false
+  }
   const sourceAge = reading && reading.source && reading.source.ageMinutes
   if (typeof sourceAge === 'number' && sourceAge * 60 * 1000 >= lifeMs) return false
   return healthyReading(reading, reserve)
@@ -200,8 +211,9 @@ function liftIfHealthy(dataDir, { harness, group, reading, readAt, reserve, life
   return liftMark(dataDir, mark) ? null : mark
 }
 
-// refusal is { resetMs } of a call agy refused for its individual quota (quota-refusal.js): the mark holds `minutes`
-// from now, whatever reset the message states; that reset is kept in the mark as statedResetMs, for information. A
+// refusal is of a call a harness refused for quota in words (quota-refusal.js): { resetMs } for agy, whose reset is
+// a duration, or { resetsAt } for Muse, whose 429 states a moment. The mark holds `minutes` from now, whatever reset
+// the message states; that reset is kept in the mark as statedResetMs or statedResetAt, for information. A
 // reading that shows the group under the reserve, with its reset ahead, confirms the mark until that reset even when
 // the call refused (issue 063): the window the reading shows is the fact, and the refusal's own reset is still not read.
 function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.now(), minutes = DEFAULT_MARK_MINUTES, refusal = null }) {
@@ -253,6 +265,7 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
   if (refusal) {
     candidate.reason = REFUSAL_REASON
     candidate.statedResetMs = Number.isFinite(refusal.resetMs) && refusal.resetMs > 0 ? refusal.resetMs : null
+    if (typeof refusal.resetsAt === 'string' || refusal.resetsAt === null) candidate.statedResetAt = refusal.resetsAt
   }
 
   const file = markFile(dataDir, harness, group)

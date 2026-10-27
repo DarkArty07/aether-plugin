@@ -276,21 +276,25 @@ function matchCommand(command, depth, wanted = null) {
 }
 
 // Reads the delimiter of a heredoc whose "<<" ends just before start, and queues it. Its quotes come off,
-// and a "-" before it means the body's leading tabs are ignored. Returns the index of the last character read.
+// a "-" before it means the body's leading tabs are ignored, and a quoted delimiter (a quote or a backslash
+// in it) keeps the body from expanding. Returns the index of the last character read.
 function readHeredoc(command, start, heredocs) {
   let i = start
   const strip = command[i] === '-'
   if (strip) i++
   while (command[i] === ' ' || command[i] === '\t') i++
   let word = ''
+  let quoted = false
   while (i < command.length && !/[\s;&|()<>]/.test(command[i])) {
     const ch = command[i]
     if (ch === "'" || ch === '"') {
+      quoted = true
       const close = command.indexOf(ch, i + 1)
       const stop = close === -1 ? command.length : close
       word += command.slice(i + 1, stop)
       i = stop + 1
     } else if (ch === '\\' && i + 1 < command.length) {
+      quoted = true
       word += command[i + 1]
       i += 2
     } else {
@@ -299,30 +303,182 @@ function readHeredoc(command, start, heredocs) {
     }
   }
   if (word === '') return start - 1
-  heredocs.push({ word, strip })
+  heredocs.push({ word, strip, quoted })
   return i - 1
 }
 
-// Skips the bodies of the heredocs that a command line started, from start, the index after its newline.
-// Each body runs up to the line equal to its delimiter. Returns the index of the last character skipped.
-function skipHeredocBodies(command, start, heredocs) {
+// The bodies of the heredocs that a command line started, from start, the index after its newline. Each
+// body runs up to the line equal to its delimiter. Gives the bodies and the index of the last character read.
+function heredocBodies(command, start, heredocs) {
   let pos = start
-  for (const { word, strip } of heredocs) {
+  const bodies = []
+  for (const { word, strip, quoted } of heredocs) {
+    const from = pos
+    let upto = command.length
     while (pos < command.length) {
+      const lineFrom = pos
       const end = command.indexOf('\n', pos)
       const line = command.slice(pos, end === -1 ? command.length : end)
       pos = end === -1 ? command.length : end + 1
-      if ((strip ? line.replace(/^\t+/, '') : line) === word) break
+      if ((strip ? line.replace(/^\t+/, '') : line) === word) {
+        upto = lineFrom
+        break
+      }
+    }
+    bodies.push({ text: command.slice(from, upto), quoted })
+  }
+  return { bodies, end: pos - 1 }
+}
+
+// The index just after the "))" that closes the arithmetic expansion whose "$" is at start, or -1 when it
+// has none. The parentheses of the expression itself balance first: a ")" of the expression that is not
+// followed by ")" is no closing, so "$((cmd); (cmd))" is a substitution of subshells, not arithmetic.
+function arithmeticEnd(command, start) {
+  let depth = 0
+  let quote = null
+  for (let i = start + 3; i < command.length; i++) {
+    const ch = command[i]
+    const next = command[i + 1]
+    if (quote === "'") {
+      if (ch === "'") quote = null
+    } else if (ch === '\\' && i + 1 < command.length) {
+      i++
+    } else if (quote === '"') {
+      if (ch === '"') quote = null
+      else if (ch === '$' && next === '(') {
+        const sub = readSubstitution(command, i + 2)
+        i = sub.end
+      } else if (ch === '`') {
+        const sub = readBacktick(command, i + 1)
+        i = sub.end
+      }
+    } else if (ch === "'" || ch === '"') {
+      quote = ch
+    } else if (ch === '$' && next === '(') {
+      const sub = readSubstitution(command, i + 2)
+      i = sub.end
+    } else if (ch === '`') {
+      const sub = readBacktick(command, i + 1)
+      i = sub.end
+    } else if (ch === '(') depth++
+    else if (ch === ')') {
+      if (depth > 0) depth--
+      else return next === ')' ? i + 2 : -1
     }
   }
-  return pos - 1
+  return -1
+}
+
+// The inside of a command substitution whose "$(" ends just before start, with the index of its matching
+// ")" and whether it had one. Quotes restart inside it, backslashes take the next character, nested "$("
+// and loose parentheses balance, backquotes hold their own code, and a heredoc body inside it is text up
+// to its delimiter, so neither a quote nor a ")" of the body closes anything outside it.
+function readSubstitution(command, start) {
+  let depth = 1
+  // The contexts opened inside: a quote, a backquote, or, as a number, the depth a substitution opened
+  // inside double quotes or backquotes brings back when it closes, which returns to the context below it.
+  const stack = []
+  const heredocs = []
+  for (let i = start; i < command.length; i++) {
+    const ch = command[i]
+    const next = command[i + 1]
+    const top = stack[stack.length - 1]
+    if (top === "'") {
+      if (ch === "'") stack.pop()
+    } else if (ch === '\\' && i + 1 < command.length) {
+      i++
+    } else if (top === '"') {
+      if (ch === '"') stack.pop()
+      else if (ch === '$' && next === '(') {
+        stack.push(depth)
+        depth++
+        i++
+      } else if (ch === '`') stack.push('`')
+    } else if (top === '`') {
+      if (ch === '`') stack.pop()
+      else if (ch === "'" || ch === '"') stack.push(ch)
+      else if (ch === '$' && next === '(') {
+        stack.push(depth)
+        depth++
+        i++
+      }
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      stack.push(ch)
+    } else if (ch === '(') {
+      depth++
+    } else if (ch === ')') {
+      depth--
+      if (depth === 0) return { inner: command.slice(start, i), end: i, terminated: true }
+      if (typeof top === 'number' && depth === top) stack.pop()
+    } else if (ch === '\n' && heredocs.length > 0) {
+      i = heredocBodies(command, i + 1, heredocs.splice(0)).end
+    } else if (ch === '<' && next === '<' && command[i + 2] === '<') {
+      i += 2
+    } else if (ch === '<' && next === '<') {
+      i = readHeredoc(command, i + 2, heredocs)
+    }
+  }
+  return { inner: command.slice(start), end: command.length, terminated: false }
+}
+
+// The inside of a backquoted substitution whose opening "`" is just before start, with the index of its
+// closing "`" and whether it had one. Quotes inside it restart, a backslash takes the next character,
+// and a "$(" inside it holds its own closing ")".
+function readBacktick(command, start) {
+  let quote = null
+  for (let i = start; i < command.length; i++) {
+    const ch = command[i]
+    const next = command[i + 1]
+    if (quote === "'") {
+      if (ch === "'") quote = null
+    } else if (ch === '\\' && i + 1 < command.length) {
+      i++
+    } else if (quote === '"') {
+      if (ch === '"') quote = null
+      else if (ch === '$' && next === '(') i = readSubstitution(command, i + 2).end
+    } else if (ch === "'" || ch === '"') {
+      quote = ch
+    } else if (ch === '$' && next === '(') {
+      i = readSubstitution(command, i + 2).end
+    } else if (ch === '`') {
+      return { inner: command.slice(start, i), end: i, terminated: true }
+    }
+  }
+  return { inner: command.slice(start), end: command.length, terminated: false }
+}
+
+// The segments of the substitutions and backquotes that a heredoc body with an unquoted delimiter
+// expands. The rest of the body is text, and an escaped "$" or "`" expands nothing.
+function heredocSegments(body, depth) {
+  const segments = []
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    const next = body[i + 1]
+    if (ch === '\\' && i + 1 < body.length && '$`\\'.includes(next)) {
+      i++
+    } else if (ch === '$' && next === '(' && body[i + 2] === '(' && arithmeticEnd(body, i) !== -1) {
+      i += 2
+    } else if (ch === '$' && next === '(') {
+      const sub = readSubstitution(body, i + 2)
+      if (depth < MAX_NESTING) segments.push(...segmentsOf(sub.inner, depth + 1))
+      i = sub.end
+    } else if (ch === '`') {
+      const sub = readBacktick(body, i + 1)
+      if (depth < MAX_NESTING) segments.push(...segmentsOf(sub.inner, depth + 1))
+      i = sub.end
+    }
+  }
+  return segments
 }
 
 // The segments of a command, each a list of shell words. Separators are && || ; | & newlines, ( ) and
 // backquotes, and a { or } that stands alone as a word, none of them inside quotes. A backslash takes
-// the next character literally, and quotes come off the words. A heredoc body is text: it runs from the
-// line after the command line that starts it, up to its delimiter.
-function segmentsOf(command) {
+// the next character literally, and quotes come off the words. Inside double quotes a substitution or a
+// backquote still runs: its segments, read one level deeper, sit where it appears, an arithmetic
+// expansion runs nothing, and a "\$" or "\`" is literal. Single quotes are text throughout. A heredoc
+// body is text, from the line after the command line that starts it up to its delimiter, except the
+// substitutions and backquotes that a body with an unquoted delimiter expands.
+function segmentsOf(command, depth = 0) {
   const segments = []
   let words = []
   // null between words; a quoted empty string is still a word.
@@ -348,7 +504,43 @@ function segmentsOf(command) {
     } else if (quote === '"') {
       if (ch === '"') quote = null
       else if (ch === '\\' && i + 1 < command.length && '"\\$`'.includes(command[i + 1])) word += command[++i]
-      else word += ch
+      else if (ch === '$' && next === '(' && command[i + 2] === '(' && arithmeticEnd(command, i) !== -1) {
+        const end = arithmeticEnd(command, i)
+        const inner = command.slice(i + 3, end - 2)
+        const subs = depth < MAX_NESTING ? heredocSegments(inner, depth) : []
+        if (subs.length > 0) {
+          endSegment()
+          segments.push(...subs)
+          word = ''
+        } else {
+          word = (word ?? '') + command.slice(i, end)
+        }
+        i = end - 1
+      } else if (ch === '$' && next === '(') {
+        if (depth >= MAX_NESTING) {
+          endSegment()
+          quote = null
+          word = ''
+          continue
+        }
+        const sub = readSubstitution(command, i + 2)
+        endSegment()
+        segments.push(...segmentsOf(sub.inner, depth + 1))
+        word = ''
+        i = sub.end
+      } else if (ch === '`') {
+        if (depth >= MAX_NESTING) {
+          endSegment()
+          quote = null
+          word = ''
+          continue
+        }
+        const sub = readBacktick(command, i + 1)
+        endSegment()
+        segments.push(...segmentsOf(sub.inner, depth + 1))
+        word = ''
+        i = sub.end
+      } else word += ch
     } else if (ch === '\\' && i + 1 < command.length) {
       // A backslash-newline continues the line; any other escaped character is taken literally.
       i++
@@ -360,7 +552,13 @@ function segmentsOf(command) {
       endWord()
     } else if (ch === '\n') {
       endSegment()
-      if (heredocs.length > 0) i = skipHeredocBodies(command, i + 1, heredocs.splice(0))
+      if (heredocs.length > 0) {
+        const bodies = heredocBodies(command, i + 1, heredocs.splice(0))
+        i = bodies.end
+        for (const body of bodies.bodies) {
+          if (!body.quoted && depth < MAX_NESTING) segments.push(...heredocSegments(body.text, depth))
+        }
+      }
     } else if (ch === ';' || ch === '(' || ch === ')' || ch === '`') {
       endSegment()
     } else if (ch === '|' || ch === '&') {

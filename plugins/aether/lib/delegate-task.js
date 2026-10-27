@@ -28,6 +28,7 @@ const { peekReadings, EXTERNAL } = require('./router-quota.js')
 const { startRenewal } = require('./router-renewal.js')
 const { slowPairIds } = require('./router-slow.js')
 const { readDelegateSettings } = require('./session.js')
+const { matchesAny } = require('./globs.js')
 
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const TASK_PREFIX = 'AETHER-TASK:'
@@ -209,7 +210,9 @@ function previousWork(entries) {
   const { entry } = lastOf(entries, (e) => (e.kind === 'result' && (isText(e.patch) || isText(e.answer))) || (e.kind === 'answer' && isText(e.text)))
   if (!entry) return null
   if (entry.kind === 'answer') return entry.text
-  if (isText(entry.patch)) return `The patch of your previous attempt, to start from: ${entry.patch}`
+  if (isText(entry.patch)) {
+    return `The patch of your previous attempt is ${entry.patch}. It is not applied in your worktree: before anything else, run \`git apply ${entry.patch}\` there, and go on from that work. Only when it does not apply, rebuild what it describes.`
+  }
   const text = readText(entry.answer)
   return isText(text) ? text : `Your previous answer is in ${entry.answer}`
 }
@@ -235,6 +238,13 @@ function sectionsOf(verdict, entries) {
 
 function withSections(prompt, sections) {
   return sections.length === 0 ? prompt : `${prompt}\n\n${sections.join('\n\n')}`
+}
+
+// Claude Code makes the isolation worktree of an editing delegate on Claude from its own base (the default branch's tip
+// unless the owner's setting says otherwise), not from the Lead's HEAD (issue 94): the call tells the delegate where its
+// work starts, which is the commit the launch records and the checks diff against.
+function startSection(base) {
+  return `## Where your worktree starts\n\nAether recorded commit ${base} as the start of this task, and your work is judged against it. Your isolated worktree may have been made from another commit: before anything else, run \`git rev-parse HEAD\`, and when it is not ${base}, run \`git checkout --detach ${base}\` and work from there.`
 }
 
 // ---- plans ----
@@ -382,14 +392,17 @@ async function begin(input, deps = {}) {
     const { requested, ignored } = requestedOf(event, args)
     const { sections, findings, carry } = sectionsOf(next.verdict, entries)
     const fullPrompt = withSections(prompt, sections)
-    if (sections.length > 0) args.prompt = fullPrompt
+    const base = headOf(r.cwd)
+    // The prompt of the call is what a delegate on Claude reads, the rescue of an external pair too; the brief file of an
+    // external pair is `fullPrompt`, whose branch the lane command makes from the base.
+    const claudePrompt = edits && base !== null ? withSections(prompt, [...sections, startSection(base)]) : fullPrompt
+    if (claudePrompt !== prompt) args.prompt = claudePrompt
     if (edits) args.isolation = 'worktree'
 
     const correcting = launchKind === 'fix' || launchKind === 'unjudged'
     const lastResult = lastOf(entries, (e) => e.kind === 'result').entry
     const previous = correcting && lastResult && isObject(lastResult.pair) && isText(lastResult.pair.id) ? lastResult.pair : null
     let pin = null
-    const base = headOf(r.cwd)
 
     let pick = null
     let external = null
@@ -460,22 +473,38 @@ function editsFailure(check, tests) {
 function readOnlyFailure(check) {
   const reasons = []
   if (check.empty) reasons.push('empty answer')
-  if (check.outside.length > 0) reasons.push(`files changed by a read-only task: ${check.outside.join(', ')}`)
+  if (check.outside.length > 0) {
+    reasons.push(`files changed by a read-only task: ${check.outside.join(', ')} (if another writer of this checkout changed them, judge again with --ignore '<glob>' for each, for example --ignore '${check.outside[0]}')`)
+  }
   return reasons
 }
 
+// Whether a task edits: it has AETHER-OWNS, so its check is by what it owns.
+const editsOf = (launch) => launch.edits === true || (Array.isArray(launch.owns) && launch.owns.length > 0)
+
+// The --ignore globs of a verdict: files that another writer of the checkout changed, which a read-only task is not charged with.
+function ignoreOf(ignore) {
+  const list = ignore === undefined ? [] : Array.isArray(ignore) ? ignore : [ignore]
+  for (const glob of list) if (!isText(glob) || glob.trim().startsWith('--')) return { error: '--ignore needs a glob: --ignore <glob>' }
+  return { globs: list.map((glob) => glob.trim()) }
+}
+
 // The objective checks of an approve, by how the last attempt ran. Returns null when they pass, or the error.
-function approveError(r, entries, launch, worktree) {
+function approveError(r, entries, launch, worktree, ignore = []) {
   const attempt = launch.attempt
   const result = lastOf(entries, (e) => e.kind === 'result' && e.attempt === attempt && e.ok === true).entry
   if (result) {
     const own = isObject(result.checks) ? result.checks : null
     if (own && own.ok === true) return null
+    // A read-only result charged with files another writer of the checkout changed (issue 100) passes when --ignore covers all of them.
+    const charged = own !== null && own.kind === 'read-only' && own.empty !== true && Array.isArray(own.outside) && own.outside.length > 0
+    if (charged && ignore.length > 0 && own.outside.every((file) => matchesAny(file, ignore))) return null
     const reasons = own && Array.isArray(own.reasons) && own.reasons.length > 0 ? own.reasons : ['the result has no passing checks']
-    return `checks failed: ${reasons.join('; ')}`
+    const hint = charged ? ` (if another writer of this checkout changed those files, judge again with --ignore '<glob>' for each, for example --ignore '${own.outside[0]}')` : ''
+    return `checks failed: ${reasons.join('; ')}${hint}`
   }
   const owns = Array.isArray(launch.owns) ? launch.owns : []
-  if (launch.edits || owns.length > 0) {
+  if (editsOf(launch)) {
     if (!isText(worktree)) return NO_WORKTREE
     const tests = isText(launch.tests) ? checks.runTests(worktree, launch.tests) : null
     const check = checks.checkEdits({ files: checks.changedFiles(worktree, launch.base), owns, tests })
@@ -483,7 +512,8 @@ function approveError(r, entries, launch, worktree) {
   }
   const answer = lastOf(entries, (e) => e.kind === 'answer' && e.attempt === attempt).entry
   if (!answer) return NO_ANSWER
-  const check = checks.checkReadOnly({ answer: typeof answer.text === 'string' ? answer.text : '', files: touchedSince(r.cwd, launch) })
+  const files = touchedSince(r.cwd, launch).filter((file) => !matchesAny(file, ignore))
+  const check = checks.checkReadOnly({ answer: typeof answer.text === 'string' ? answer.text : '', files })
   return check.ok ? null : `checks failed: ${readOnlyFailure(check).join('; ')}`
 }
 
@@ -511,7 +541,7 @@ function sessionOf(dataDir, task, session) {
 }
 
 async function verdict(input, deps = {}) {
-  const { task, verdict: kind, reason, findings, fromScratch, worktree, session: named } = isObject(input) ? input : {}
+  const { task, verdict: kind, reason, findings, fromScratch, worktree, session: named, ignore } = isObject(input) ? input : {}
   const refuse = (error, extra = {}) => ({ ok: false, task: isId(task) ? task : null, verdict: null, step: null, next: null, corrections: null, error, ...extra })
   try {
     if (!isId(task)) return refuse('unknown task')
@@ -523,6 +553,9 @@ async function verdict(input, deps = {}) {
     const state = ladderLib.stateOf(verdictInputs(entries), r.ladder)
     const at = { step: state.step, corrections: correctionsOf(r.ladder, state) }
     if (!VERDICTS.includes(kind)) return refuse('the verdict must be approve, fix or infeasible', at)
+    const ignored = ignoreOf(ignore)
+    if (ignored.error) return refuse(ignored.error, at)
+    if (ignored.globs.length > 0 && editsOf(launch)) return refuse('--ignore is for a read-only task: an editing task is checked by its AETHER-OWNS, not by --ignore', at)
 
     const verdictInput = { kind, findings: [], reason: isText(reason) ? reason.trim() : null, fromScratch: Boolean(fromScratch) }
     if (kind === 'fix') {
@@ -533,7 +566,7 @@ async function verdict(input, deps = {}) {
     const judged = ladderLib.judge(state, verdictInput, r.ladder)
     if (!judged.accepted) return refuse(judged.error, at)
     if (kind === 'approve') {
-      const error = approveError(r, entries, launch, worktree)
+      const error = approveError(r, entries, launch, worktree, ignored.globs)
       if (error) return refuse(error, at)
     }
 
@@ -541,7 +574,7 @@ async function verdict(input, deps = {}) {
     const label = next.kind === 'exhausted' ? 'exhausted' : kind === 'approve' ? 'approved' : kind
     log.appendEntry(r.dataDir, {
       kind: 'verdict', time: r.now(), session, task, attempt: launch.attempt, step: state.step, verdict: label,
-      input: verdictInput, reason: verdictInput.reason, cause: next.cause, next,
+      input: verdictInput, reason: verdictInput.reason, cause: next.cause, next, ignore: ignored.globs,
     })
     return { ok: true, task, verdict: label, step: judged.state.step, next, corrections: correctionsOf(r.ladder, judged.state) }
   } catch (err) {

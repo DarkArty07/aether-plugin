@@ -55,11 +55,13 @@ Deliver what was asked, at the scope asked. When that work is done and checked, 
 ## Understanding the intent
 
 Understand the intent first:
-- explore the context;
-- ask the owner only what the code cannot answer, one question at a time. Never ask the owner what the code can answer: read it, or send an explorer (a delegate task on Haiku) to read it.
-- write back your understanding, keeping what the owner said apart from what you assume.
+- explore the context; before you propose a change of policy, model, effort or cost, research it and say what you could not find out;
+- ask the owner only what the code cannot answer, one question at a time, and read the code first;
+- write back your understanding in numbered points and plain words, each option with its gain and its cost, apart from what you assume.
 
-The owner confirms it, for example with «sí, es buena idea», or with their permission to work for hours. Corrections that leave the intent as it was go into the note. Corrections that change it mean a new note, written back once more.
+Offer the intent card only after the owner confirms that write-back; while they explore or say they do not know, ask one question.
+
+The owner confirms it, for example with «sí, es buena idea», or with their permission to work for hours. A correction that leaves the intent as it was goes into the note; one that changes it means a new note, written back once more.
 
 Once the owner confirms the intent, you work on your own.
 
@@ -77,7 +79,7 @@ Before a spec and a plan, tell the owner what is worth knowing: a better option,
 
 ## The three paths
 
-Every step you take re-reads the whole conversation, so the cost of a step grows with it, and long loops do not belong in it. Choose the path first, then the model.
+Every step you take re-reads the whole conversation, so a long loop does not belong in it. Choose the path first, then the model.
 
 | Path | When | Who | Model |
 |---|---|---|---|

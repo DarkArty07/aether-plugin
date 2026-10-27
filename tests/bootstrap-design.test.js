@@ -41,6 +41,16 @@ test('the bootstrap carries the scope instruction and weighs less than the 29,47
   assert.ok(fs.statSync(FILE).size < 29470, `${fs.statSync(FILE).size} bytes`)
 })
 
+test('understanding the intent: research before a policy change, plain numbered write-back, and the card only after the owner confirms it (issue 96)', () => {
+  const start = BOOTSTRAP.indexOf('\n## Understanding the intent\n')
+  assert.ok(start >= 0, 'the bootstrap has Understanding the intent')
+  const rest = BOOTSTRAP.slice(start + 1)
+  const section = rest.slice(0, rest.indexOf('\n## ', 1))
+  assert.match(section, /before you propose a change of policy, model, effort or cost, research it and say what you could not find out/)
+  assert.match(section, /write back your understanding in numbered points and plain words, each option with its gain and its cost/)
+  assert.match(section, /Offer the intent card only after the owner confirms that write-back; while they explore or say they do not know, ask one question\./)
+})
+
 test('the bootstrap launches /aether:design with superdelegation and the harness list, and never with seats or lanes', () => {
   assert.ok(BOOTSTRAP.includes('$AETHER_SUPERDELEGATION $AETHER_LANE_HARNESSES'))
   assert.ok(BOOTSTRAP.includes('"superdelegation": "<AETHER_SUPERDELEGATION>"'))

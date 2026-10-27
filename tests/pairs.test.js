@@ -17,7 +17,7 @@ function modelOf(name) {
   return EXTERNAL[Object.keys(EXTERNAL).find((word) => name.startsWith(word))]
 }
 
-test('the table holds the 22 pairs of the evidence with the same figures, six Claude pairs for agy and the pair of Muse', () => {
+test('the table holds the 22 pairs of the evidence with the same figures, six Claude pairs for agy and the three pairs of Muse', () => {
   const { pairs } = loadPairs()
   const evidence = JSON.parse(fs.readFileSync(EVIDENCE, 'utf8')).pairs
   assert.equal(evidence.length, 22)
@@ -29,10 +29,10 @@ test('the table holds the 22 pairs of the evidence with the same figures, six Cl
     assert.equal(found.costPerTaskUsd, row.costPerTaskUsd ?? null, row.name)
     assert.equal(found.id, pairId(found.harness, found.model, found.effort))
   }
-  assert.equal(pairs.length, 29)
+  assert.equal(pairs.length, 31)
   assert.equal(pairs.filter((p) => p.harness === 'agy' && p.family.startsWith('claude-')).length, 6)
-  assert.equal(pairs.filter((p) => p.harness === 'muse').length, 1)
-  assert.equal(new Set(pairs.map((p) => p.id)).size, 29)
+  assert.equal(pairs.filter((p) => p.harness === 'muse').length, 3)
+  assert.equal(new Set(pairs.map((p) => p.id)).size, 31)
 })
 
 test('the Claude pairs of agy carry the figures of the native pair of the same model and effort', () => {
@@ -53,7 +53,7 @@ test('every native pair has no group and every external pair has one', () => {
 
 test('C16: the Muse pair has the figure of Opus high, no cost and the owner words, and no other pair has an owner decision', () => {
   const { pairs } = loadPairs()
-  const pair = pairs.find((p) => p.harness === 'muse')
+  const pair = pairs.find((p) => p.id === 'muse/muse-wonder-full-1.0@high')
   const opus = referenceOf(pairs, { model: 'opus', effort: 'high' })
   assert.equal(pair.id, 'muse/muse-wonder-full-1.0@high')
   assert.deepEqual([pair.model, pair.family, pair.effort, pair.group, pair.costPerTaskUsd], ['muse-wonder-full-1.0', 'muse-wonder-full-1.0', 'high', 'muse', null])
@@ -79,7 +79,7 @@ test('AETHER_PAIRS_CONFIG names another table, and a table that breaks a rule is
     return file
   }
   assert.equal(pairsPath({ AETHER_PAIRS_CONFIG: '/x/pairs.json' }), '/x/pairs.json')
-  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 29)
+  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 31)
   const mutate = (fn) => {
     const copy = JSON.parse(JSON.stringify(good))
     fn(copy)
@@ -91,6 +91,6 @@ test('AETHER_PAIRS_CONFIG names another table, and a table that breaks a rule is
   assert.throws(() => loadPairs(mutate((c) => { c.pairs[0].intelligence = '40' })), /pairs config .*intelligence/)
   assert.throws(() => loadPairs(mutate((c) => { c.pairs[0].slug = '' })), /pairs config .*slug/)
   assert.throws(() => loadPairs(mutate((c) => { delete c.pairs[1].slug })), /pairs config .*slug/)
-  assert.throws(() => loadPairs(mutate((c) => { c.pairs.find((p) => p.harness === 'muse').ownerDecision = '' })), /pairs config .*ownerDecision/)
+  assert.throws(() => loadPairs(mutate((c) => { c.pairs.find((p) => p.id === 'muse/muse-wonder-full-1.0@high').ownerDecision = '' })), /pairs config .*ownerDecision/)
   assert.throws(() => loadPairs(path.join(dir, 'missing.json')), /pairs config/)
 })

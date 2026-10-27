@@ -193,7 +193,7 @@ test('C16: Muse as the only healthy harness takes a call up to Opus high by the 
   assert.equal(pickedId(high), MUSE)
   assert.equal(high.requested, 53.6)
   assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), MUSE)
-  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), MUSE)
+  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), 'muse/muse-spark-1.3@xhigh')
   for (const [model, effort] of [['opus', 'xhigh'], ['opus', 'max'], ['sonnet', 'max']]) {
     const d = ask(model, effort, { harnesses: onlyMuse() })
     assert.equal(d.picked, null, `${model} ${effort}`)

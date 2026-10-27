@@ -751,7 +751,11 @@ test('the committed models.json and README are in the shape the script writes, a
     assert.ok(entry.scores.every((score) => entry.efforts.includes(score.effort)), where)
     if (entry.effortVia === 'id') assert.deepEqual(Object.keys(entry.ids), entry.efforts, where)
     else assert.equal('ids' in entry, false, where)
-    assert.ok(listings.harnesses[entry.harness].models.some((listed) => idOf(listed).startsWith(entry.model)), where)
+    const listedModels = [
+      ...(listings.harnesses[entry.harness].models ?? []),
+      ...(listings.harnesses[entry.harness].calledNotListed ?? []),
+    ]
+    assert.ok(listedModels.some((listed) => idOf(listed).startsWith(entry.model)), where)
   }
   // Rule 1: a superseded model is not among the models in use, and its successor is.
   const inUse = new Set(file.models.map((entry) => `${entry.harness}/${entry.model}`))

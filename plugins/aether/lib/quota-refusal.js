@@ -1,11 +1,19 @@
 'use strict'
 
-// agy's explicit quota refusal: `Individual quota reached. Please upgrade your subscription to increase your limits.
-// Resets in 163h22m27s.` It is the only sign of agy's individual limits, which /usage does not report, so every path
-// that calls agy (the swarm's lane calls, the design seats, delegate calls) reads it here and turns it into a mark.
+// The explicit quota refusals a harness states in words, each the only sign of the limit it names: agy's
+// `Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 163h22m27s.`, of a
+// limit /usage does not report, and Muse's subscription 429, `Subscription quota exhausted. Your usage window resets
+// at 2026-10-26T00:00:00Z. (rate_limit_error)`, which a real call brought with the message text alone and no
+// structured quota data (issue 75). Every path that calls either harness (the swarm's lane calls, the design seats,
+// the delegate router) reads them here and turns one into a mark. No other words count: a 429 or a rate_limit_error
+// that does not say the subscription quota is exhausted is a plain failure.
 // Family: none.
 
 const REFUSAL_RE = /individual quota reached/i
+const MUSE_EXHAUSTED_RE = /subscription quota exhausted/i
+const MUSE_RATE_LIMIT_RE = /rate_limit_error/i
+// Muse states its reset as a moment, not a duration: `resets at 2026-10-26T00:00:00Z`.
+const MUSE_RESET_RE = /resets at (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/i
 // The duration is a run of <n>d, <n>h, <n>m, <n>s parts in that order, any subset, in either case, with optional spaces
 // between the parts. A duration the pattern cannot place (a decimal, parts out of order, a number with no unit) does not
 // match at all: the lookaheads refuse a tail that would be left unread, and the refusal then states no reset.
@@ -21,13 +29,22 @@ function durationMs(duration) {
   return total
 }
 
-// Returns null unless text is a string holding agy's explicit quota refusal. resetMs is the time the message states,
-// or null when it states none.
+// Returns null unless text is a string holding one of the explicit refusals. For agy's, resetMs is the duration the
+// message states, or null when it states none. Muse's states a moment instead, kept as resetsAt (an ISO time, or
+// null when none reads), with resetMs null: a stated reset is only a hint either way (A75), kept for people to read.
 function quotaRefusal(text) {
-  if (typeof text !== 'string' || !REFUSAL_RE.test(text)) return null
-  const reset = RESET_RE.exec(text)
-  if (!reset || reset[1] === '') return { resetMs: null }
-  return { resetMs: durationMs(reset[1]) }
+  if (typeof text !== 'string') return null
+  if (REFUSAL_RE.test(text)) {
+    const reset = RESET_RE.exec(text)
+    if (!reset || reset[1] === '') return { resetMs: null }
+    return { resetMs: durationMs(reset[1]) }
+  }
+  if (MUSE_EXHAUSTED_RE.test(text) && MUSE_RATE_LIMIT_RE.test(text)) {
+    const stated = MUSE_RESET_RE.exec(text)
+    const at = stated ? Date.parse(stated[1]) : NaN
+    return { resetMs: null, resetsAt: Number.isFinite(at) ? new Date(at).toISOString() : null }
+  }
+  return null
 }
 
 // The first refusal among the texts a failed call left (its parsed reason, its error, its stderr), or null.

@@ -92,6 +92,17 @@ test('the module never writes the swarm store or calls markDry (R9, R22)', () =>
   assert.ok(!/markDry/.test(source))
 })
 
+test('issue 75: Muse\'s subscription-quota 429 leaves the router\'s 60 minute mark, and another 429 does not', (t) => {
+  const dataDir = tempDir(t)
+  const text = 'API error 429 [request_id=req-75]: Subscription quota exhausted. Your usage window resets at 2026-10-26T00:00:00Z. (rate_limit_error)'
+  const mark = marks.markRefusal(dataDir, { harness: 'muse', group: 'muse', text, now: NOW })
+  assert.deepEqual([mark.until, mark.reason, mark.statedResetMs, mark.statedResetAt], [NOW + 60 * MIN, 'quota refusal', null, '2026-10-26T00:00:00.000Z'])
+  assert.equal(fs.existsSync(path.join(dataDir, 'lanes', 'marks')), false, 'the swarm store is not written')
+  const other = tempDir(t)
+  assert.equal(marks.markRefusal(other, { harness: 'muse', group: 'muse', text: 'API error 429: Too many requests. (rate_limit_error)', now: NOW }), null)
+  assert.equal(fs.existsSync(path.join(other, 'router')), false)
+})
+
 test('a quota failure that a harness declares itself, as Muse\'s, leaves the same 60 minute mark, and the words of any other message do not', (t) => {
   const dataDir = tempDir(t)
   const mark = marks.markRefusal(dataDir, { harness: 'muse', group: 'muse', text: 'quota: muse weekly limit, resets 2026-10-22T10:00:00.000Z', now: NOW })
