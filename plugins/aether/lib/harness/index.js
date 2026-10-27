@@ -2,6 +2,7 @@
 
 // The external harnesses a lane can run on, and the adapter each is built by. A harness module loads
 // only when a call asks for it, so one whose module is missing leaves the others working.
+// Family: harness.
 
 const HARNESS_NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
 const FACTORY = { agy: 'createAgy', codex: 'createCodex', grok: 'createGrok', cursor: 'createCursor', muse: 'createMuse' }

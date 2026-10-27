@@ -1,8 +1,10 @@
 'use strict'
 
-// The Cursor harness: the headless command line, and a run judged from the one JSON object cursor-agent prints.
+// The Cursor harness adapter: builds the headless command line and judges a run from the JSON object output.
+// lib/harness/index.js calls it to build the adapter.
+// Family: harness.
 
-const { commandInstalled } = require('../lanes.js')
+const { commandInstalled } = require('../lane-process.js')
 const { defaultExec, extractJsonObject, parseRun, readVersion, stringsIn, unknownQuota, usageOf } = require('./structured.js')
 
 // Cursor prints one JSON object: its answer is the result field, and its usage is the usage object. Every other
