@@ -2,7 +2,9 @@
 'use strict'
 
 // aether-session-start: SessionStart hook handler for Aether mode.
-// Calls lib/session-start.js to mark the session and inject the Lead bootstrap.
+// Calls lib/session-start.js to mark the session with the ops option (CLAUDE_PLUGIN_OPTION_OPS),
+// inject the Lead bootstrap, and if an autonomous run is open, note to:
+// load the aether:autonomous-runs skill, then read the diary.
 
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
