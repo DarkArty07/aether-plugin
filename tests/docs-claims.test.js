@@ -33,6 +33,23 @@ test('the lanes guide says codex and cursor are not tested with a real account, 
   assert.match(guide, /native/)
 })
 
+test('lanes.md does not say the session start or aether-report reports old option values', () => {
+  const guide = read('docs/guide/lanes.md')
+  const options = read('docs/guide/options.md')
+  assert.doesNotMatch(guide, /tell you which old value was read or ignored/)
+  assert.doesNotMatch(guide, /old option values were ignored or reinterpreted/)
+  assert.match(guide, /Earlier releases read the old options: If `superdelegation` is not set and `lanes` is on/)
+  assert.match(guide, /This release reads only `superdelegation`/)
+  const present = [
+    'turns it on only when the value is `true`',
+    'a saved `lanes` or `seats` value is not read',
+  ]
+  for (const phrase of present) {
+    assert.ok(options.includes(phrase), `options.md: ${phrase}`)
+    assert.ok(guide.includes(phrase), `lanes.md: ${phrase}`)
+  }
+})
+
 test('the README, CLAUDE.md, the guides and the reference name no retired option, journal or legacy variable', () => {
   const files = ['README.md', 'CLAUDE.md', 'docs/reference/components.md', ...fs.readdirSync(path.join(ROOT, 'docs/guide')).map((f) => `docs/guide/${f}`)]
   assert.deepEqual(hits(['options', 'journal'], { docs: true }).filter((hit) => files.includes(hit.file)), [])
