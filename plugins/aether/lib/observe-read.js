@@ -5,10 +5,12 @@
 // signals over them and returns the findings in one fixed order. Each failure gets its issue drafted as text in
 // observe/issues/; nothing is sent anywhere. From the files it reads fields and counts only: a command leaves
 // this module as a fingerprint, and a quote, an answer or a reason is never copied.
+// Family: observe.
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { observeDir, issuesDir, devDir, readEvents, readFaults, loadObserveConfig } = require('./observe.js')
+const { isObject, isNumber, numberOrZero: count, writeFileAtomic: writeAtomic } = require('./common.js')
+const { observeDir, issuesDir, devDir, readEvents, readFaults, loadObserveConfig, cleanText: identifier } = require('./observe.js')
 const { digestAll, readSummary } = require('./observe-digest.js')
 const { fingerprintOf, detectRiseWithoutReason, detectPairFailures, detectRuleBroken, detectBlockedByMistake } = require('./observe-detect.js')
 const { calibrationSignals } = require('./observe-calibrate.js')
@@ -17,31 +19,13 @@ const { readPending } = require('./pending.js')
 
 const RANK = { failure: 0, calibration: 1, friction: 2 }
 const SESSION_FOLDER = /^[A-Za-z0-9-]+$/
-const IDENTIFIER = /^[A-Za-z0-9_.:-]{1,64}$/
 const DELEGATE_FIELDS = ['kind', 'time', 'session', 'task', 'id', 'step', 'attempt', 'launchKind', 'status', 'harness', 'model', 'verdict']
 const NEXT_FIELDS = ['kind', 'cause', 'step']
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
-const count = (value) => (isNumber(value) ? value : 0)
-const identifier = (value) => (typeof value === 'string' && IDENTIFIER.test(value) ? value : 'unclassified')
 const millis = (time) => {
   if (isNumber(time)) return time
   const parsed = typeof time === 'string' ? Date.parse(time) : NaN
   return Number.isNaN(parsed) ? 0 : parsed
-}
-
-// Writes through a temporary file of the same directory and a rename: SessionEnd may die in the middle.
-function writeAtomic(file, text) {
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  const temp = `${file}.${process.pid}.${Date.now()}.tmp`
-  try {
-    fs.writeFileSync(temp, text)
-    fs.renameSync(temp, file)
-  } catch (err) {
-    fs.rmSync(temp, { force: true })
-    throw err
-  }
 }
 
 // The delegate log as the fields the detectors need, each line with its number in the file.

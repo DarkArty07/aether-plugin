@@ -4,9 +4,11 @@
 // that the prune of the raw files (events, faults, lane logs, dev fragments) loses no figure. A digest always
 // comes before the prune that deletes its sources. The summary is never pruned, and a digest never removes an
 // entry: a session with no source on disk keeps the entry it had.
+// Family: observe.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { isObject, numberOrZero: finite, writeFileAtomic: writeAtomic } = require('./common.js')
 const { eventsFile, faultsDir, devDir, summaryFile, readEvents, readFaults } = require('./observe.js')
 const { logFile, laneTokens } = require('./lanes.js')
 const { loadPrices, priceEntry } = require('./prices.js')
@@ -14,22 +16,7 @@ const { loadPrices, priceEntry } = require('./prices.js')
 const DAY_MS = 24 * 60 * 60 * 1000
 const SESSION_ID = /^[A-Za-z0-9_-]+$/
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const isSession = (value) => typeof value === 'string' && SESSION_ID.test(value)
-const finite = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
-
-// Writes through a temporary file of the same directory and a rename, so a reader sees the old file or the new one.
-function writeAtomic(file, text) {
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  const temp = `${file}.${process.pid}.${Date.now()}.tmp`
-  try {
-    fs.writeFileSync(temp, text)
-    fs.renameSync(temp, file)
-  } catch (err) {
-    fs.rmSync(temp, { force: true })
-    throw err
-  }
-}
 
 function readSummary(dataDir) {
   try {

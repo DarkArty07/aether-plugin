@@ -1,11 +1,13 @@
 'use strict'
 
 // The development install's fragment (R11): on a failure event, the last few records of the session's
-// transcript, each cut short and redacted, saved under <data dir>/observe/dev/<session>/. This is the one
-// observation file that reads the transcript; the standard install never calls it.
+// transcript, each cut short and redacted, saved under <data dir>/observe/dev/<session>/. This is the only
+// observation file that reads a conversation, in the development installation; the standard install never calls it.
+// Family: observe.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { isObject } = require('./common.js')
 const { devDir, loadObserveConfig } = require('./observe.js')
 const { redact } = require('./observe-redact.js')
 const { ownerMessages } = require('./voice.js')
@@ -16,8 +18,6 @@ const TAIL_BYTES = 4 * 1024 * 1024
 const SESSION = /^[A-Za-z0-9._-]{1,128}$/
 const EVENT = /^[A-Za-z0-9]{1,64}$/
 const FRAGMENT_FILE = /^\d+-[A-Za-z0-9]+\.json$/
-
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 function parseLine(line) {
   try {
