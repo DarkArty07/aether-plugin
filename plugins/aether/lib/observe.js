@@ -14,6 +14,9 @@ const CONFIG_FILE = path.join(PLUGIN_ROOT, 'config', 'observe.json')
 const IDENTIFIER = /^[A-Za-z0-9_.:-]{1,64}$/
 const SESSION = /^[A-Za-z0-9-]+$/
 const TEXT_KEYS = ['kind', 'tool', 'class', 'reason', 'trigger']
+// The kinds of a caught error. A copy of FAULT_KINDS in hooks/fault-trace.mjs, which this file cannot import (it is the
+// mod's ESM file); tests/observe-fault-kind.test.js fails if the two lists differ.
+const FAULT_KINDS = ['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'other']
 
 const observeDir = (dataDir) => path.join(dataDir, 'observe')
 const eventsFile = (dataDir) => path.join(observeDir(dataDir), 'events.jsonl')
@@ -95,7 +98,10 @@ function readFaults(dataDir) {
     const session = typeof file.session === 'string' ? file.session : name.slice(0, -'.json'.length)
     for (const fault of file.faults) {
       if (!isObject(fault)) continue
-      faults.push({ session, time: fault.time, source: fault.source, class: fault.class })
+      const kept = { session, time: fault.time, source: fault.source, class: fault.class }
+      // A kind outside the list is dropped whole: it is never copied as text (R10).
+      if (FAULT_KINDS.includes(fault.kind)) kept.kind = fault.kind
+      faults.push(kept)
     }
   }
   return faults.sort((a, b) => (a.session < b.session ? -1 : a.session > b.session ? 1 : a.time - b.time))
@@ -168,5 +174,5 @@ function forget(dataDir, { yes } = {}) {
 module.exports = {
   PLUGIN_ROOT, CONFIG_FILE,
   observeDir, eventsFile, faultsDir, summaryFile, devDir, issuesDir,
-  observeMode, cleanText, cleanEvent, appendEvent, readEvents, readFaults, loadObserveConfig, status, forget,
+  observeMode, cleanText, cleanEvent, appendEvent, readEvents, readFaults, loadObserveConfig, status, forget, FAULT_KINDS,
 }
