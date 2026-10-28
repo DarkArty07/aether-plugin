@@ -68,9 +68,10 @@ const FINDINGS = {
   },
 }
 
+// concerns and question are optional: a report that leaves them out is a report (issue #110).
 const IMPLEMENTER_SCHEMA = {
   type: 'object',
-  required: ['status', 'summary', 'head', 'tests', 'concerns', 'question'],
+  required: ['status', 'summary', 'head', 'tests'],
   properties: {
     status: { type: 'string', enum: ['DONE', 'DONE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'BLOCKED'] },
     summary: { type: 'string', description: 'what you implemented, or what you attempted' },
@@ -856,6 +857,9 @@ function failureContext(context, failures) {
 // A report the implementer filed. Anything else, including a null agent, ended without one.
 const isReport = (value) => isObject(value) && typeof value.status === 'string' && value.status !== ''
 
+// The text of an optional report field: concerns and question may be left out, which reads as nothing to say.
+const textOf = (value) => (typeof value === 'string' ? value : '')
+
 // Best to worst. A status the schema does not name ranks past blocked, so it cannot pass as done.
 const REPORT_RANK = { DONE: 0, DONE_WITH_CONCERNS: 1, NEEDS_CONTEXT: 2, BLOCKED: 3 }
 
@@ -1310,8 +1314,8 @@ async function work(unit, task) {
       summary: report ? report.summary : attempt.failure || 'The implementer agent failed.',
       head: report ? report.head : '',
       tests: report ? report.tests : '',
-      concerns: report ? report.concerns : '',
-      question: report ? report.question : '',
+      concerns: report ? textOf(report.concerns) : '',
+      question: report ? textOf(report.question) : '',
       verdict: null,
       reviewEffort: null,
       findings: [],
@@ -1409,7 +1413,7 @@ async function work(unit, task) {
 
       if (verdict === 'block') {
         remember(task.area, `${unit.id} attempt ${n}: ${round.verdict}. ${round.ruling}`)
-        return finish(unit, 'blocked', ruling, review.question || report.question)
+        return finish(unit, 'blocked', ruling, review.question || textOf(report.question))
       }
 
       if (verdict === 'approve') {
