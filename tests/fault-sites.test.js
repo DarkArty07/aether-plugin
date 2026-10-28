@@ -14,7 +14,8 @@ const SOURCES = {
 }
 // register.js has one more catch than the audit of plan 014: the spawn's own try around next(e), which records the refusal
 // of the engine's spawn with the kind of its error (spawn-failed), so that the failure is not taken for the mod's.
-const CATCH_LINES = { 'register.js': 26, 'delegate.mjs': 5, 'quota-brake.mjs': 1 }
+// The two catches of readDataDir moved to fault-trace.mjs with that function, which recordFault now calls itself.
+const CATCH_LINES = { 'register.js': 24, 'delegate.mjs': 5, 'quota-brake.mjs': 1 }
 
 test('every real catch of the audit names its source (R1)', () => {
   for (const [file, sources] of Object.entries(SOURCES)) {

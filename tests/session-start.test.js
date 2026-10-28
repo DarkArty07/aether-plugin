@@ -10,6 +10,7 @@ const { task, plan } = require('./plan-fixtures.js')
 const { ensure } = require('../plugins/aether/lib/worktrees.js')
 const { appendLog, logFile } = require('../plugins/aether/lib/lanes.js')
 const { markSession, readDelegateSettings } = require('../plugins/aether/lib/session.js')
+const observe = require('../plugins/aether/lib/observe.js')
 
 const AETHER = { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup', agent_type: 'aether:lead' }
 
@@ -283,6 +284,23 @@ test('session start prunes session markers not written to for 30 days', (t) => {
   const old = new Date(Date.now() - 31 * 24 * 3600 * 1000)
   fs.utimesSync(path.join(data, 'sessions', 'old.json'), old, old)
   start(repo.dir, data)
+  assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')).sort(), ['s1.brake.json', 's1.delegate.json', 's1.json'])
+})
+
+test('a digest that throws does not stop the other prunes of session start', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-data-')
+  // The digest cannot write its summary: the summary's path is a folder, so the write over it fails.
+  observe.appendEvent(data, { time: 1, session: 's-9', kind: 'SessionEnd' })
+  fs.mkdirSync(path.join(data, 'observe', 'summary.json'))
+  appendLog(data, 'old-session', { kind: 'reading', time: 1 })
+  const old = new Date(Date.now() - 31 * 24 * 3600 * 1000)
+  fs.utimesSync(logFile(data, 'old-session'), old, old)
+  markSession(data, 'old')
+  fs.utimesSync(path.join(data, 'sessions', 'old.json'), old, old)
+  const r = start(repo.dir, data)
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(fs.existsSync(logFile(data, 'old-session')), false)
   assert.deepEqual(fs.readdirSync(path.join(data, 'sessions')).sort(), ['s1.brake.json', 's1.delegate.json', 's1.json'])
 })
 

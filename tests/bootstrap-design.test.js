@@ -23,6 +23,11 @@ test('the bootstrap sends the Lead to /aether:design, and no longer describes th
   for (const gone of ['aether-lane seat', 'Exit 3', 'Exit 4', 'Exit 1', 'SendMessage', 'sameModelAsAuthor', '## Writing and judging', '## The design seats']) assert.ok(!BOOTSTRAP.includes(gone), `gone: ${gone}`)
 })
 
+test('a dispute the Lead may fix itself is named by its mechanical flag, and the plan stage launches in short mode (#91)', () => {
+  assert.ok(designing().includes('change the plan or tasks and launch in short mode (see "Later changes"); when `mechanical` is true, fix the findings yourself.'))
+  assert.ok(BOOTSTRAP.includes('Never override the Judge silently.'))
+})
+
 test('the Lead asks at most five questions, writes the card, and acts on each of the four results (R4, R5, R14)', () => {
   const section = designing()
   for (const text of ['at most five questions, one at a time', 'hard to reverse, surprising, or a real trade-off', '`specs/NNN-<topic>/intent.md`', 'Only you write the card: aether-guard refuses every other writer', "the owner's words, quoted as they said them", 'what is out', 'the answers to the clarifying questions', '- `approved`:', '- `clarify`:', '- `dispute`:', '- `failed`:', 'take the reversible side of each as an assumption, put the question in "Espera tu sí"', 'Never override the Judge silently', '**Later changes.**', 'a fix after a stop at the plan stage', 'A changed plan gets a new exam', 'an approved spec is never rewritten']) {

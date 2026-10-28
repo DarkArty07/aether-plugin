@@ -56,6 +56,15 @@ function autonomyNote(cwd) {
 // kept their counts. A session whose spend cannot be archived stays, and the prunes leave a trace of it in
 // prune-failures.json (lib/spend-archive.js).
 function pruneOldFiles(env) {
+  // The observation comes first: its digest summarizes a source before its prune deletes it. It has a try of its own, so
+  // that an error in it never stops the prunes below.
+  try {
+    const { pruneObserve } = require('./observe-digest.js')
+    const { dataDir } = require('./run.js')
+    pruneObserve(dataDir(env), { days: 30 })
+  } catch {
+    // Housekeeping: a failed digest never blocks the session or the other prunes.
+  }
   let dir = null
   try {
     const { pruneUsage: prune } = require('./report.js')
@@ -63,10 +72,6 @@ function pruneOldFiles(env) {
     const { pruneSessions } = require('./session.js')
     const { dataDir } = require('./run.js')
     dir = dataDir(env)
-    // The digest and the prune of the observation files come first: a source is summarized before any prune deletes it.
-    const { digestAll, pruneObserve } = require('./observe-digest.js')
-    digestAll(dir)
-    pruneObserve(dir, { days: 30 })
     prune(dir, { days: 30 })
     pruneLog(dir, { days: 30 })
     pruneSessions(dir, { days: 30 })

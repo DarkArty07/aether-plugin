@@ -58,13 +58,13 @@ function calibrationSignals({ delegateEntries = [], lanes = {}, seats = {}, pair
             id: `approval-low:${step}`,
             kind: 'calibration',
             type: 'approval-low',
-            title: `Baja tasa de aprobación en el escalón ${step}`,
-            evidence: [`Escalón "${step}": ${stats.approved} aprobaciones en ${stats.launches} lanzamientos (tasa: ${rate})`],
+            title: `Low approval rate at step ${step}`,
+            evidence: [`Step "${step}": ${stats.approved} approvals in ${stats.launches} launches (rate: ${rate})`],
             numbers: { step, launches: stats.launches, approved: stats.approved, rate },
             firstTime,
             lastTime,
             sessions,
-            proposal: `Propuesta: revisar o ajustar el escalón "${step}" en config/ladder.json por baja tasa de aprobación (${stats.approved}/${stats.launches}). No se aplica automáticamente.`,
+            proposal: `Proposal: review or adjust step "${step}" in config/ladder.json for its low approval rate (${stats.approved}/${stats.launches}). Not applied automatically.`,
           })
         }
       }
@@ -90,13 +90,13 @@ function calibrationSignals({ delegateEntries = [], lanes = {}, seats = {}, pair
               id: `pair-slow:${key}`,
               kind: 'calibration',
               type: 'pair-slow',
-              title: `Velocidad observada de ${key} por debajo de su ficha`,
-              evidence: [`Par "${key}": velocidad observada de ${observed} tokens/s en ${calls} llamadas (ficha: ${ficha} tokens/s)`],
+              title: `Observed speed of ${key} below its sheet`,
+              evidence: [`Pair "${key}": observed speed of ${observed} tokens/s in ${calls} calls (sheet: ${ficha} tokens/s)`],
               numbers: { observed, ficha, calls },
               firstTime: null,
               lastTime: null,
               sessions: [],
-              proposal: `Propuesta: la velocidad observada de "${key}" (${observed} tokens/s) está por debajo de su ficha (${ficha} tokens/s). Considerar calibrar outputTokensPerSecond en config/pairs.json. No se aplica automáticamente.`,
+              proposal: `Proposal: the observed speed of "${key}" (${observed} tokens/s) is below its sheet (${ficha} tokens/s). Consider calibrating outputTokensPerSecond in config/pairs.json. Not applied automatically.`,
             })
           }
         }
@@ -110,13 +110,13 @@ function calibrationSignals({ delegateEntries = [], lanes = {}, seats = {}, pair
             id: `pair-failing-rate:${key}`,
             kind: 'calibration',
             type: 'pair-failing-rate',
-            title: `Tasa de fallos elevada en el par ${key}`,
-            evidence: [`Par "${key}": ${calls - ok} fallos en ${calls} llamadas (tasa: ${rate})`],
+            title: `High failure rate in pair ${key}`,
+            evidence: [`Pair "${key}": ${calls - ok} failures in ${calls} calls (rate: ${rate})`],
             numbers: { calls, ok, rate },
             firstTime: null,
             lastTime: null,
             sessions: [],
-            proposal: `Propuesta: la tasa de fallos de "${key}" (${rate}) supera el umbral máximo de ${cfg.pairFailureRate.maxRate}. Considerar revisar la estabilidad del modelo o harness. No se aplica automáticamente.`,
+            proposal: `Proposal: the failure rate of "${key}" (${rate}) is above the maximum of ${cfg.pairFailureRate.maxRate}. Consider checking the stability of the model or harness. Not applied automatically.`,
           })
         }
       }
@@ -134,13 +134,13 @@ function calibrationSignals({ delegateEntries = [], lanes = {}, seats = {}, pair
               id: `cost-mismatch:${key}`,
               kind: 'calibration',
               type: 'cost-mismatch',
-              title: `Desfase de costo en el par ${key}`,
-              evidence: [`Par "${key}": costo observado de $${actual} por tarea en ${pricedCalls} llamadas (ficha: $${ficha})`],
+              title: `Cost mismatch in pair ${key}`,
+              evidence: [`Pair "${key}": observed cost of $${actual} per task in ${pricedCalls} calls (sheet: $${ficha})`],
               numbers: { actual, ficha, calls: pricedCalls },
               firstTime: null,
               lastTime: null,
               sessions: [],
-              proposal: `Propuesta: el costo observado de "${key}" ($${actual} por tarea) difiere de la ficha ($${ficha} por tarea). Considerar calibrar costPerTaskUsd en config/pairs.json. No se aplica automáticamente.`,
+              proposal: `Proposal: the observed cost of "${key}" ($${actual} per task) differs from its sheet ($${ficha} per task). Consider calibrating costPerTaskUsd in config/pairs.json. Not applied automatically.`,
             })
           }
         }
@@ -159,13 +159,13 @@ function calibrationSignals({ delegateEntries = [], lanes = {}, seats = {}, pair
           id: `design-rounds:${key}`,
           kind: 'calibration',
           type: 'design-rounds',
-          title: `Exceso de rondas en el rol ${seat} del diseño ${design}`,
-          evidence: [`Diseño "${design}", rol "${seat}": ${rounds} rondas realizadas (máximo: ${cfg.designRounds.maxRounds})`],
+          title: `Too many rounds in the ${seat} role of design ${design}`,
+          evidence: [`Design "${design}", role "${seat}": ${rounds} rounds run (maximum: ${cfg.designRounds.maxRounds})`],
           numbers: { rounds, design, seat },
           firstTime: null,
           lastTime: null,
           sessions: [],
-          proposal: `Propuesta: el rol "${seat}" en el diseño "${design}" requirió ${rounds} rondas, superando el límite de ${cfg.designRounds.maxRounds}. Considerar calibrar las rondas del diseño. No se aplica automáticamente.`,
+          proposal: `Proposal: the role "${seat}" in design "${design}" needed ${rounds} rounds, above the limit of ${cfg.designRounds.maxRounds}. Consider calibrating the rounds of the design. Not applied automatically.`,
         })
       }
     }

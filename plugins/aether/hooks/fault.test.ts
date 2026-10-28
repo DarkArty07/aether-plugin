@@ -41,7 +41,8 @@ test('a failed usage write leaves a fault record and the request still answers (
   const writes = stubs(on)
   const result = await oneTurn($)
   expect(result.answer).toBe('ok')
-  const fault = writes.find((w) => w.path === '/home/u/aether-data/observe/faults/s1.json')
+  // The record is named by the session and by the clock at the copy's first write (issue 93).
+  const fault = writes.find((w) => w.path === '/home/u/aether-data/observe/faults/s1-2000.json')
   expect(fault).toBeTruthy()
   expect(JSON.parse(fault.text)).toEqual({ session: 's1', count: 1, faults: [{ time: 2000, source: 'register.flush', class: 'write-failed' }] })
   expect(writes.some((w) => w.text.includes('disk full'))).toBe(false)

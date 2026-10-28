@@ -23,6 +23,7 @@ Never stop to ask. Where a choice is open, pick a reasonable default and write i
      - Test command: `<command>`
      - Max agents: 200
      ```
+     Max agents is the total of model agents of the whole run, retries and supervisors included; it does not limit how many run at once.
    - `## Checklist`: Spec Kit's index, one line per step, in this form:
      `- [ ] T001 [P] [US1] <description> in <path> → Task <N>`
      `[P]` marks a step that can run in parallel. `[US1]` names the user story the step serves. `→ Task <N>` names the swarm unit that does the step.

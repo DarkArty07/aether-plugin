@@ -8,11 +8,13 @@ const { PLUGIN } = require('./helpers.js')
 
 const load = () => import(pathToFileURL(path.join(PLUGIN, 'hooks', 'fault-trace.mjs')).href)
 
-function fake({ failWrite = false } = {}) {
+function fake({ failWrite = false, now = 123, env = {}, unreadable = false } = {}) {
   const writes = []
   const $ = {
     fs: { write: async (file, text) => { if (failWrite) throw new Error('disk full ZEBRA'); writes.push([file, JSON.parse(text)]) } },
-    clock: { now: async () => 123 },
+    clock: { now: async () => now },
+    env: unreadable ? undefined : { get: async (name) => env[name] },
+    plugin: { root: '/home/u/cache/aether-plugin/aether/0.24.1', name: 'aether' },
   }
   return { $, writes }
 }
@@ -22,10 +24,34 @@ test('recordFault writes the source and the class of the fault and nothing else 
   const { $, writes } = fake()
   const state = { id: 's-1', dataDir: Promise.resolve('/d') }
   await recordFault($, state, 'register.flush', 'write-failed')
-  assert.deepEqual(writes, [['/d/observe/faults/s-1.json', { session: 's-1', count: 1, faults: [{ time: 123, source: 'register.flush', class: 'write-failed' }] }]])
+  assert.deepEqual(writes, [['/d/observe/faults/s-1-123.json', { session: 's-1', count: 1, faults: [{ time: 123, source: 'register.flush', class: 'write-failed' }] }]])
   await recordFault($, state, 'delegate.begin', 'handler-threw')
   assert.equal(writes[1][1].count, 2)
   assert.deepEqual(writes[1][1].faults.map((f) => f.source), ['register.flush', 'delegate.begin'])
+})
+
+test('a reloaded copy of the module writes a record of its own and never replaces the one of an earlier copy (R1)', async () => {
+  const { recordFault } = await load()
+  const earlier = fake({ now: 100 })
+  const first = { id: 's-1', dataDir: '/d' }
+  await recordFault(earlier.$, first, 'register.flush', 'write-failed')
+  await recordFault(earlier.$, first, 'register.flush', 'write-failed')
+  // A reloaded copy starts with an empty state: its record is named by its own start, and counts from one.
+  const later = fake({ now: 200 })
+  await recordFault(later.$, { id: 's-1', dataDir: '/d' }, 'delegate.begin', 'handler-threw')
+  const files = new Map(later.writes.map(([file, body]) => [file, body]))
+  assert.deepEqual(earlier.writes.map(([file]) => file), ['/d/observe/faults/s-1-100.json', '/d/observe/faults/s-1-100.json'])
+  assert.equal(files.get('/d/observe/faults/s-1-200.json').count, 1)
+  assert.equal(earlier.writes[1][1].count, 2)
+})
+
+test('a fault recorded before init resolves the data directory itself, from the environment (R1)', async () => {
+  const { recordFault } = await load()
+  const { $, writes } = fake({ env: { AETHER_DATA_DIR: '/data' } })
+  const state = { id: 's-1', dataDir: null }
+  await recordFault($, state, 'register.on-session-start', 'handler-threw', 'TypeError')
+  assert.deepEqual(writes.map(([file]) => file), ['/data/observe/faults/s-1-123.json'])
+  assert.equal(await state.dataDir, '/data')
 })
 
 test('a source or class outside the lists is stored as a fixed word, never as text (R1)', async () => {
@@ -40,7 +66,7 @@ test('recordFault never throws: a failing disk, a missing data directory and a r
   const { recordFault } = await load()
   const bad = fake({ failWrite: true })
   await recordFault(bad.$, { id: 's-1', dataDir: '/d' }, 'register.flush', 'write-failed')
-  const none = fake()
+  const none = fake({ unreadable: true })
   await recordFault(none.$, { id: 's-1', dataDir: null }, 'register.flush', 'write-failed')
   await recordFault(none.$, { id: 's-1', dataDir: Promise.reject(new Error('x')) }, 'register.flush', 'write-failed')
   assert.deepEqual(none.writes, [])
