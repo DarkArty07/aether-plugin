@@ -55,3 +55,7 @@ test('the Examiner checks prose tolerant of its markup, in any line, and names i
 test('the Judge names the inputs its helpers are assumed to return, in the plan review (#91)', () => {
   has('judge', ['the inputs it assumes its helpers return', '`makeRepo` returns `{ dir, git }`, not a path'])
 })
+
+test('the Judge names the existing tests each task touches, and flags a task that contradicts one (#92)', () => {
+  has('judge', ['the existing tests that exercise the files the task changes', 'a task whose brief contradicts one of them'])
+})

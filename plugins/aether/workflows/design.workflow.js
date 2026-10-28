@@ -652,7 +652,7 @@ function reviewLines(doc, path) {
       `Review the plan ${PLAN} and its tasks ${TASKS} against the spec ${SPEC} and the owner's intent.`,
       'Check each row of the Complexity table: does the requirement it names ask for what it justifies, and is the simpler alternative really worse? Check that each task serves a requirement of the spec, and the coherence of spec, plan and tasks: duplicates, ambiguity, requirements without a measure, and contradictions.',
       'An abstraction, option, file or dependency that no requirement asks for and that the Complexity table does not justify is a finding of type `extra`.',
-      "For each test that the tasks write or change, name the inputs it assumes its helpers return (for example, that `makeRepo` returns `{ dir, git }`, not a path), and check them against the helper's source: a test that misuses a helper is a finding of type `wrong`.",
+      "For each test that the tasks write or change, name the inputs it assumes its helpers return (for example, that `makeRepo` returns `{ dir, git }`, not a path), and check them against the helper's source: a test that misuses a helper is a finding of type `wrong`. For each task, name the existing tests that exercise the files the task changes (find them with Grep under `tests/`), and flag a task whose brief contradicts one of them: a test that a correct build of the task would fail is a finding of type `wrong`, with the test's `file:line` as evidence.",
     ]
   }
   return [`Review the short design ${path} against the owner's intent.`, 'Check that it covers the intent and goes no further, and that it can be built from as it is.']

@@ -296,6 +296,12 @@ test('the plan Judge names the inputs its helpers are assumed to return, in the 
   for (const text of ['the inputs it assumes its helpers return', '`makeRepo` returns `{ dir, git }`, not a path']) assert.ok(planJudge.includes(text), text)
 })
 
+test('the plan Judge names the existing tests each task touches, and flags a task whose brief contradicts one (#92)', async () => {
+  const run = await go(ARGS)
+  const planJudge = run.calls.find((c) => c.label === 'plan: judge review 1').prompt
+  for (const text of ['the existing tests that exercise the files the task changes', 'a task whose brief contradicts one of them']) assert.ok(planJudge.includes(text), text)
+})
+
 test('the Examiner gets the rules for a check on prose, in the words its file states (#99)', async () => {
   const run = await go(ARGS)
   const examiner = run.calls.find((c) => c.label === 'exam: examiner').prompt
