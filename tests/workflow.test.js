@@ -815,7 +815,7 @@ test('the final review runs on Sonnet at high for a small run of haiku work with
   assert.deepEqual(reviewOf(run), ['sonnet high'])
   assert.equal(run.calls.find((c) => c.role === 'reviewer').label, 'final review on sonnet high')
   assert.deepEqual([run.result.finalReview.reviewModel, run.result.finalReview.reviewEffort], ['sonnet', 'high'])
-  assert.deepEqual(reviewLog(run), ['final review on sonnet high: a small all-haiku run with high reviews'])
+  assert.deepEqual(reviewLog(run), ['final review on sonnet high: a small run: 1 to 3 merged units, all asking for a high review'])
 })
 
 test('the final review runs on Opus at xhigh when a merged task reviews at xhigh or max', async (t) => {
@@ -836,7 +836,7 @@ test('the final review runs on Opus at high for more than three units, in slices
   assert.deepEqual(reviewOf(four), ['opus high', 'opus high'])
   assert.equal(four.result.finalReview.slices, 2)
   assert.equal(four.result.finalReview.status, 'done')
-  assert.deepEqual(reviewLog(four), ['final review on opus high: the merged work is not a small all-haiku run'])
+  assert.deepEqual(reviewLog(four), ['final review on opus high: the run is not small: its merged units are not 1 to 3 that all ask for a high review'])
 })
 
 test('the final review judges only the merged units: a blocked task with review xhigh does not raise it', async (t) => {
@@ -894,7 +894,7 @@ test('a first launch reviews on Sonnet as before, whether its firstBase equals i
     const run = await runWorkflow({ ...args, integration })
     assert.equal(run.error, null, run.error && run.error.stack)
     assert.deepEqual(reviewOf(run), ['sonnet high'])
-    assert.deepEqual(reviewLog(run), ['final review on sonnet high: a small all-haiku run with high reviews'])
+    assert.deepEqual(reviewLog(run), ['final review on sonnet high: a small run: 1 to 3 merged units, all asking for a high review'])
   }
 })
 

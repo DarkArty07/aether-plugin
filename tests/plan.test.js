@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { EFFORTS, DEFAULT_EFFORT, DEFAULT_REVIEW, MAX_OWNED_PATHS, MAX_NAMED_READS, parsePlan, buildGraph, renderBrief, specObjective } = require('../plugins/aether/lib/plan.js')
+const { DEFAULT_REVIEW, MAX_OWNED_PATHS, MAX_NAMED_READS, parsePlan, buildGraph, renderBrief, specObjective } = require('../plugins/aether/lib/plan.js')
 const { task, plan, specKitTasks } = require('./plan-fixtures.js')
 
 test('parsePlan reads a Spec Kit tasks.md, and its checklist is never read as a task', () => {
@@ -206,9 +206,7 @@ test('renderBrief carries the task text, its fields and the global constraints',
 const REVIEW_MESSAGE = 'Review must be high, xhigh or max, then " — reason".'
 const IGNORED = 'ignorado: el swarm arranca todas las tareas en Haiku y usa la escalera de los delegados'
 
-test('plan.js exports the effort levels in order and the two defaults', () => {
-  assert.deepEqual(EFFORTS, ['low', 'medium', 'high', 'xhigh', 'max'])
-  assert.equal(DEFAULT_EFFORT, 'high')
+test('plan.js exports the default review effort', () => {
   assert.equal(DEFAULT_REVIEW, 'high')
 })
 
