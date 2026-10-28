@@ -131,3 +131,14 @@ test('every role schema comes out with additionalProperties false on every objec
     assert.deepEqual(schema, snapshot, name)
   }
 })
+
+test('an implementer report with its four required fields is valid without concerns and question (issue #110)', () => {
+  assert.deepEqual(schemas.IMPLEMENTER_SCHEMA.required, ['status', 'summary', 'head', 'tests'])
+  assert.ok(Object.hasOwn(schemas.IMPLEMENTER_SCHEMA.properties, 'concerns'))
+  assert.ok(Object.hasOwn(schemas.IMPLEMENTER_SCHEMA.properties, 'question'))
+  const report = { status: 'DONE', summary: 'Implemented the brief.', head: 'abc1234', tests: '3/3 pass' }
+  assert.equal(schemas.validate(schemas.IMPLEMENTER_SCHEMA, report), null)
+  assert.equal(schemas.validate(schemas.IMPLEMENTER_SCHEMA, { ...report, concerns: '', question: '' }), null)
+  assert.equal(schemas.validate(schemas.IMPLEMENTER_SCHEMA, { ...report, concerns: 3 }), 'concerns must be a string')
+  assert.equal(schemas.validate(schemas.IMPLEMENTER_SCHEMA, { status: 'DONE', summary: 'x', tests: '3/3 pass' }), 'missing head')
+})
