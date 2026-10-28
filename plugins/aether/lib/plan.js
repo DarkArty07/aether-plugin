@@ -5,6 +5,7 @@
 // Family: plan.
 
 const { normalizePattern, patternsOverlap } = require('./globs.js')
+const { listNumbers } = require('./plan-groups.js')
 
 const DEFAULT_REVIEW = 'high'
 // A Review line names the reviewer's effort, which is never below high.
@@ -127,6 +128,20 @@ function isOwnsEntry(entry) {
   return !/[\s`{}()[\]]/.test(entry)
 }
 
+// "Merges with" names the tasks that build as one unit with this one: "Task N, Task M", or "none".
+// A task that names itself is an error, and is not kept.
+function parseMergesWith(task, value, errors) {
+  if (/^none$/i.test(value)) return []
+  const entries = value.split(',').map((entry) => entry.trim().match(/^Task\s+(\d+)$/i))
+  if (entries.some((m) => m === null)) {
+    errors.push(`Task ${task.number}: "Merges with: ${value}" needs the form "Task N, Task M" or "none".`)
+    return []
+  }
+  const numbers = entries.map((m) => Number(m[1]))
+  if (numbers.includes(task.number)) errors.push(`Task ${task.number}: "Merges with" names Task ${task.number} itself.`)
+  return numbers.filter((n) => n !== task.number)
+}
+
 // bodyCode marks the body lines that sit inside fenced code. Those lines are
 // never part of the Aether block, the same as headings inside fences.
 function parseAetherFields(task, body, bodyCode, errors, warnings) {
@@ -176,6 +191,8 @@ function parseAetherFields(task, body, bodyCode, errors, warnings) {
           errors.push(`${label}: Owns entry "${entry}" is not a relative path or glob.`)
         }
       }
+    } else if ((m = line.match(/^\s*-\s*Merges with:\s*(.*?)\s*$/i))) {
+      task.mergesWith.push(...parseMergesWith(task, m[1], errors))
     } else if ((m = line.match(/^\s*-\s*Serves:\s*(.*?)\s*$/i))) {
       // Tokens are requirement ids, separated by commas or spaces. traceability judges them, not the parser.
       task.serves.push(...m[1].split(/[\s,]+/).filter(Boolean).map((token) => token.toUpperCase()))
@@ -256,6 +273,7 @@ function parsePlan(markdown) {
       owns: [],
       dependsOn: [],
       serves: [],
+      mergesWith: [],
     }
     parseAetherFields(task, body, bodyCode, errors, taskWarnings)
     tasks.push(task)
@@ -310,18 +328,34 @@ function traceability(parsed, requirements) {
   return { errors, warnings }
 }
 
+// How a message names a node: a unit of several tasks names every one of them.
+function nodeName(node) {
+  return node.members ? `Tasks ${listNumbers(node.members)} (one unit)` : `Task ${node.number}`
+}
+
+// How the cycle message names a node: a unit names the tasks it holds besides its own number.
+function cycleName(node) {
+  if (!node.members) return `Task ${node.number}`
+  const others = node.members.slice(1)
+  return `Task ${node.number} (with ${others.length > 1 ? 'Tasks' : 'Task'} ${listNumbers(others)})`
+}
+
 function buildGraph(parsed, { only = null } = {}) {
   if (only && only.length === 0) return { waves: [], tasks: {}, errors: ['The selection names no tasks.'], warnings: [] }
   const errors = []
   const warnings = []
   const known = new Set(parsed.tasks.map((t) => t.number))
+  // A member of a group names the group's unit. A parse that was not grouped has no groups.
+  const unitOfMember = new Map((parsed.groups || []).flatMap((g) => g.members.map((n) => [n, g.unit])))
   let selected = parsed.tasks
   if (only) {
     const wanted = new Set()
     for (const id of only) {
-      // "3" and "task-3" name the same task
+      // "3" and "task-3" name the same task, and --only task-13 names the unit of 13's group
       const m = String(id).match(/^(?:task-)?(\d+)$/i)
-      if (m && known.has(Number(m[1]))) wanted.add(Number(m[1]))
+      const number = m ? Number(m[1]) : null
+      const unit = unitOfMember.get(number) ?? number
+      if (m && known.has(unit)) wanted.add(unit)
       else errors.push(`--only names ${id}, which is not in the plan.`)
     }
     selected = parsed.tasks.filter((t) => wanted.has(t.number))
@@ -342,16 +376,17 @@ function buildGraph(parsed, { only = null } = {}) {
       area: t.area,
       owns: t.owns,
       dependsOn: deps,
+      ...(t.members ? { members: t.members } : {}),
     }
   }
 
   const textOf = new Map(parsed.tasks.map((t) => [t.number, t.text || '']))
   for (const node of Object.values(nodes)) {
     const whole = node.owns.find((pattern) => WHOLE_TREE.has(pattern))
-    if (whole) warnings.push(`Task ${node.number} owns the whole tree (\`${whole}\`); name the paths it needs (issue 003). Consider splitting it.`)
+    if (whole) warnings.push(`${nodeName(node)} owns the whole tree (\`${whole}\`); name the paths it needs (issue 003). Consider splitting it.`)
     else if (node.owns.length > MAX_OWNED_PATHS) {
       warnings.push(
-        `Task ${node.number} owns ${node.owns.length} paths; a task that large often ends without its report and the ladder repeats the failure (issue 003). Consider splitting it.`,
+        `${nodeName(node)} owns ${node.owns.length} paths; a task that large often ends without its report and the ladder repeats the failure (issue 003). Consider splitting it.`,
       )
     }
     // The files the brief names beyond what the task owns are what it must read (issue 010).
@@ -359,7 +394,7 @@ function buildGraph(parsed, { only = null } = {}) {
     const named = new Set([...(textOf.get(node.number) || '').matchAll(NAMED_FILE)].map((m) => m[0]).filter((file) => !owned(file)))
     if (named.size > MAX_NAMED_READS) {
       warnings.push(
-        `Task ${node.number} names ${named.size} files to read beyond the ones it owns; a read-heavy task often ends without its report (issue 010). Consider splitting it by file.`,
+        `${nodeName(node)} names ${named.size} files to read beyond the ones it owns; a read-heavy task often ends without its report (issue 010). Consider splitting it by file.`,
       )
     }
   }
@@ -371,7 +406,7 @@ function buildGraph(parsed, { only = null } = {}) {
   while (remaining.length) {
     const wave = remaining.filter((id) => nodes[id].dependsOn.every((d) => placed.has(d)))
     if (wave.length === 0) {
-      errors.push(`Dependency cycle among: ${remaining.map((id) => `Task ${nodes[id].number}`).join(', ')}.`)
+      errors.push(`Dependency cycle among: ${remaining.map((id) => cycleName(nodes[id])).join(', ')}.`)
       break
     }
     wave.forEach((id) => placed.add(id))
@@ -387,7 +422,7 @@ function buildGraph(parsed, { only = null } = {}) {
         for (const pa of a.owns) {
           for (const pb of b.owns) {
             if (patternsOverlap(pa, pb)) {
-              errors.push(`Task ${a.number} and Task ${b.number} run in the same wave but both own "${pa}" and "${pb}".`)
+              errors.push(`${nodeName(a)} and ${nodeName(b)} run in the same wave but both own "${pa}" and "${pb}".`)
             }
           }
         }

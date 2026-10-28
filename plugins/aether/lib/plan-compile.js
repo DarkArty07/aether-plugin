@@ -12,6 +12,7 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
 const { parsePlan, buildGraph, renderBrief, specObjective, requirementsOf, traceability } = require('./plan.js')
+const { applyGroups } = require('./plan-groups.js')
 const { planWarnings } = require('./plan-warnings.js')
 const { repoPaths, currentBranch, head } = require('./git.js')
 const run = require('./run.js')
@@ -43,7 +44,7 @@ function load(planArg, stdout) {
   if (!planArg) fail([USAGE], [], stdout)
   const planPath = path.resolve(planArg)
   if (!fs.existsSync(planPath)) fail([`plan not found: ${planPath}`], [], stdout)
-  return { planPath, parsed: parsePlan(fs.readFileSync(planPath, 'utf8')) }
+  return { planPath, parsed: applyGroups(parsePlan(fs.readFileSync(planPath, 'utf8'))) }
 }
 
 function isFile(file) {
@@ -100,7 +101,11 @@ function check(planArg, { cwd = process.cwd(), stdout = process.stdout } = {}) {
   const errors = [...parsed.errors, ...graph.errors, ...trace.errors]
   const warnings = [...parsed.warnings, ...graph.warnings, ...trace.warnings, ...planWarnings(parsed, worktreeOf(path.dirname(planPath)))]
   if (errors.length) fail(errors, warnings, stdout)
-  stdout.write(JSON.stringify({ ok: true, tasks: Object.keys(graph.tasks).length, waves: graph.waves, warnings }) + '\n')
+  // A plan with "Merges with" lines also says which tasks each unit holds.
+  const groups = parsed.groups.map((g) => ({ unit: `task-${g.unit}`, tasks: g.members }))
+  stdout.write(
+    JSON.stringify({ ok: true, tasks: Object.keys(graph.tasks).length, waves: graph.waves, ...(groups.length ? { groups } : {}), warnings }) + '\n',
+  )
 }
 
 const BASELINE_TIMEOUT_MS = 10 * 60 * 1000

@@ -11,6 +11,8 @@ function task(n, options = {}) {
     area = 'core',
     owns = `\`src/t${n}/**\``,
     depends = 'none',
+    merges = null,
+    serves = null,
   } = options
   const dependsLines = (Array.isArray(depends) ? depends : [depends]).map((d) => `- Depends on: ${d}`)
   return [
@@ -21,7 +23,9 @@ function task(n, options = {}) {
     ...(review === null ? [] : [`- Review: ${review}`]),
     `- Area: ${area}`,
     `- Owns: ${owns}`,
+    ...(merges === null ? [] : [`- Merges with: ${merges}`]),
     ...dependsLines,
+    ...(serves === null ? [] : [`- Serves: ${serves}`]),
     '',
     '- [ ] **Step 1: Do the work**',
     '',
