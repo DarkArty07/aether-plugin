@@ -93,6 +93,17 @@ function writeJson(file, value) {
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n')
 }
 
+// The units every launch of a run has selected, by task id. A relaunch rewrites graph.json with the
+// units it selected alone, so units.json keeps the others: each compile only adds to it (issue #111).
+function readUnits(dir) {
+  const file = path.join(dir, 'units.json')
+  return fs.existsSync(file) ? readJson(file) : {}
+}
+
+function extendUnits(dir, tasks) {
+  writeJson(path.join(dir, 'units.json'), { ...readUnits(dir), ...tasks })
+}
+
 
 function appendRecord(record, dir = dataDir()) {
   fs.mkdirSync(dir, { recursive: true })
@@ -124,6 +135,8 @@ module.exports = {
   dataDir,
   writeJson,
   readJson,
+  readUnits,
+  extendUnits,
   appendRecord,
   ensureExcluded,
   toId,
