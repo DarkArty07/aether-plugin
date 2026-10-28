@@ -7,7 +7,7 @@ const path = require('node:path')
 const { WT_BIN, makeRepo, compile, runBin } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
-const { loadLadder, effortFor } = require('../plugins/aether/lib/ladder.js')
+const { loadLadder, effortFor, GATE_CUT } = require('../plugins/aether/lib/ladder.js')
 const { ladderCommand, resetSpent } = require('../plugins/aether/lib/wt-ladder.js')
 
 const L = loadLadder()
@@ -52,6 +52,14 @@ test('the same findings as often as the ladder says rise to the next rung', (t) 
   let answer
   for (let i = 0; i < L.repeatFindings; i++) answer = judged(s, 'fix', fix('missing case'))
   assert.deepEqual([answer.step, answer.kind, answer.cause, answer.effort], [SONNET.step, 'rise', 'repeated', effortFor(L, SONNET.step, 'rise')])
+})
+
+test('two gate cuts in a row are two corrections on the same rung, not a repeat (#112)', (t) => {
+  const s = setup(t)
+  const cut = { findings: [{ ...GATE_CUT }] }
+  const first = judged(s, 'fix', cut)
+  const second = judged(s, 'fix', cut)
+  assert.deepEqual([first.kind, second.kind, second.step, second.cause, second.correctionsUsed], ['fix', 'fix', HAIKU.step, 'fix', 2])
 })
 
 test('the corrections of a rung are spent, then the next fix rises', (t) => {

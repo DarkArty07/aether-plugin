@@ -12,6 +12,9 @@ const { isText } = require('./common.js')
 const LADDER_FILE = path.join(__dirname, '..', 'config', 'ladder.json')
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const EFFORT_KEY = { first: 'first', fix: 'retry', rise: 'retry', unjudged: 'retry' }
+// The finding wt-gate.js gives a test run that was cut at its time limit. It says nothing of the code, so it is no
+// repeated finding (#112): see judgeFix.
+const GATE_CUT = Object.freeze({ file: 'npm test', what: 'superó el tiempo límite' })
 
 function isCount(value) {
   return Number.isInteger(value) && value >= 0
@@ -71,6 +74,8 @@ function findingKey(finding) {
   return `${finding.file}|${finding.what}`.replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+const GATE_CUT_KEY = findingKey(GATE_CUT)
+
 function rejected(error) {
   return { accepted: false, error }
 }
@@ -108,16 +113,21 @@ function rise(state, ladder, cause, carry) {
 }
 
 function judgeFix(state, verdict, ladder, carry) {
-  const keys = [...new Set(verdict.findings.map(findingKey))].sort()
+  // The gate cut is left out of the keys (#112). A verdict that is only a cut is no repeat: it neither adds to a streak
+  // of the real findings nor breaks it, so a cut between two verdicts of the same finding does not hide the repetition,
+  // and two cuts in a row never rise by the repeat rule. A cut mixed with a real finding counts as that finding alone.
+  const keys = [...new Set(verdict.findings.map(findingKey))].filter((key) => key !== GATE_CUT_KEY).sort()
+  const cutOnly = keys.length === 0
   const same = state.lastKeys !== null && state.lastKeys.length === keys.length && state.lastKeys.every((key, i) => key === keys[i])
-  // repeats: how many verdicts in a row, this one included, gave the same findings.
-  const repeats = same ? state.repeats + 1 : 1
-  if (repeats >= ladder.repeatFindings) return rise(state, ladder, 'repeated', carry)
+  // repeats: how many verdicts in a row, this one included, gave the same real findings.
+  const repeats = cutOnly ? state.repeats : same ? state.repeats + 1 : 1
+  if (!cutOnly && repeats >= ladder.repeatFindings) return rise(state, ladder, 'repeated', carry)
   const cap = ladder.rungs[rungIndex(ladder, state.step)].corrections
   // Every fix spends a correction, the same findings again included: the step's cap is hard (R2).
   if (state.correctionsUsed >= cap) return rise(state, ladder, 'exhausted', carry)
   const next = { step: state.step, kind: 'fix', cause: 'fix', effort: effortFor(ladder, state.step, 'fix'), carry }
-  return { accepted: true, state: { ...state, attempts: state.attempts + 1, correctionsUsed: state.correctionsUsed + 1, repeats, lastKeys: keys }, next }
+  const lastKeys = cutOnly ? state.lastKeys : keys
+  return { accepted: true, state: { ...state, attempts: state.attempts + 1, correctionsUsed: state.correctionsUsed + 1, repeats, lastKeys }, next }
 }
 
 // Judges the Lead's verdict on the state the earlier verdicts left.
@@ -144,4 +154,4 @@ function stateOf(inputs, ladder) {
   return state
 }
 
-module.exports = { loadLadder, newState, parseFinding, findingKey, effortFor, judge, stateOf }
+module.exports = { loadLadder, newState, parseFinding, findingKey, effortFor, judge, stateOf, GATE_CUT }

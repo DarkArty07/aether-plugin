@@ -7,6 +7,7 @@ const path = require('node:path')
 const { WT_BIN, makeRepo, compile, commitIn, runBin } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { gateCommand } = require('../plugins/aether/lib/wt-gate.js')
+const { GATE_CUT } = require('../plugins/aether/lib/ladder.js')
 const { runTests } = require('../plugins/aether/lib/delegate-checks.js')
 
 // check.js is the plan's test command. It passes while src/t1/bad.js is absent, so the run's baseline is clean;
@@ -127,6 +128,7 @@ test('tests cut at the limit are a gate failure that says so', (t) => {
   const g = gate(u, { timeoutMs: 300 })
   assert.deepEqual([g.pass, g.timedOut], [false, true])
   assert.deepEqual(g.findings, [{ file: 'npm test', what: 'superó el tiempo límite' }])
+  assert.deepEqual(g.findings, [GATE_CUT], 'the finding is the one the ladder recognizes (#112)')
 })
 
 test('the bin prints the gate as one JSON line, and a run with no unit worktree is an error', (t) => {
