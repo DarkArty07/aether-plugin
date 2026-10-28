@@ -82,6 +82,7 @@ function isBlank(value) {
 }
 
 // The Bash classes. A segment is in a class when its words start with one of these subcommands.
+// A plain git merge is merge-main only when it lands on main or master: see landsOnMain.
 const SUBCOMMANDS = [
   ['merge-main', ['gh pr merge']],
   [
@@ -253,23 +254,123 @@ function subcommandOf(words) {
   return null
 }
 
+// What a command line leaves for the merge-main class, read segment by segment in order: here, the directory
+// the next segment runs in (null when it is not known), and branches, the branch that a git checkout or switch
+// left current in each directory. A directory not in branches is read from git once, when a merge needs it.
+function sequenceOf(cwd) {
+  return { here: typeof cwd === 'string' && cwd !== '' ? path.resolve(cwd) : null, branches: new Map() }
+}
+
+// The directory that dir names when run from base, or null when that cannot be told: "~", "$" and "-" paths,
+// and a relative path with no base.
+function resolveDir(base, dir) {
+  if (/^[-~$]/.test(dir)) return null
+  if (path.isAbsolute(dir)) return dir
+  return base === null ? null : path.resolve(base, dir)
+}
+
+// The directory a git command runs in: the cwd of the line, moved by each of its -C options in turn.
+function gitDirOf(sequence, dirs) {
+  return dirs.reduce((base, dir) => resolveDir(base, dir), sequence.here)
+}
+
+// The branch current in dir, or null when there is none: detached, not a repository, or not known.
+function branchOf(sequence, dir) {
+  if (!sequence.branches.has(dir)) {
+    const { currentBranch } = require('./git.js')
+    let branch = null
+    try {
+      branch = dir === null ? null : currentBranch(dir) || null
+    } catch {
+      branch = null
+    }
+    sequence.branches.set(dir, branch)
+  }
+  return sequence.branches.get(dir)
+}
+
+// A git command's -C directories, its subcommand and the words after it, or null when the words are not git.
+function gitCall(words) {
+  if (words[0] !== 'git') return null
+  const dirs = []
+  let i = 1
+  while (i < words.length && words[i].startsWith('-')) {
+    if (words[i] === '-C') dirs.push(words[i + 1] ?? '')
+    i += GIT_VALUED.includes(words[i]) ? 2 : 1
+  }
+  return { dirs, sub: words[i], args: words.slice(i + 1) }
+}
+
+const MAIN_BRANCHES = new Set(['main', 'master'])
+// The options of git checkout and git switch that create a branch and make it current, with its name after them.
+const NEW_BRANCH = ['-b', '-B', '-c', '-C']
+// The merge options that do not merge: they abort, continue or quit a merge in progress.
+const MERGE_CONTROL = ['--abort', '--continue', '--quit']
+
+// The branch that a git checkout or switch leaves current: its name; null when it is not known (detached, "-",
+// or a commit that is no branch, or a directory that cannot be read); or undefined when it leaves the branch as
+// it is (a path checkout).
+function switchedTo(args, dir) {
+  const created = args.findIndex((a) => NEW_BRANCH.includes(a))
+  if (created !== -1) return args[created + 1] ?? null
+  if (args.some((a) => a === '--detach' || a === '-d')) return null
+  const target = args.find((a) => !a.startsWith('-'))
+  if (target === undefined) return undefined
+  if (MAIN_BRANCHES.has(target)) return target
+  if (target === '-' || dir === null) return null
+  const { git } = require('./git.js')
+  if (git(['show-ref', '--verify', '--quiet', `refs/heads/${target}`], dir, { allowFail: true }).status === 0) return target
+  if (git(['rev-parse', '--verify', '--quiet', `${target}^{commit}`], dir, { allowFail: true }).status === 0) return null
+  return undefined
+}
+
+// Moves the sequence past one segment: cd changes the directory of the rest of the line, and git checkout or
+// git switch changes the branch of the directory it runs in. Any other segment leaves the sequence as it is.
+function followSegment(words, sequence) {
+  if (words[0] === 'cd') {
+    sequence.here = words.length > 1 ? resolveDir(sequence.here, words[1]) : null
+    return
+  }
+  const git = gitCall(words)
+  if (git === null || (git.sub !== 'checkout' && git.sub !== 'switch')) return
+  const dir = gitDirOf(sequence, git.dirs)
+  let branch
+  try {
+    branch = switchedTo(git.args, dir)
+  } catch {
+    branch = null
+  }
+  if (branch !== undefined) sequence.branches.set(dir, branch)
+}
+
+// Whether a git merge lands on main or master: the branch of its directory, after the switches before it in the
+// line. A merge that aborts, continues or quits is not one.
+function landsOnMain(git, sequence) {
+  if (git.sub !== 'merge' || git.args.some((a) => MERGE_CONTROL.includes(a))) return false
+  return MAIN_BRANCHES.has(branchOf(sequence, gitDirOf(sequence, git.dirs)))
+}
+
 // The match of one command's words: its class and the words of its subcommand, or null. A shell or eval
 // is matched by the script it runs, one level deeper. When wanted is given, only that class matches.
-function matchWords(words, depth, wanted) {
+function matchWords(words, depth, wanted, sequence) {
   const unwrapped = dropWrappers(words)
   // A command run by its path, such as /usr/bin/git, is matched by its name.
-  const command = dropGitOptions(unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped)
+  const named = unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
+  followSegment(named, sequence)
+  const command = dropGitOptions(named)
   const script = scriptOf(command)
-  if (script !== null) return depth < MAX_NESTING ? matchCommand(script, depth + 1, wanted) : null
-  const found = subcommandOf(command)
+  if (script !== null) return depth < MAX_NESTING ? matchCommand(script, depth + 1, wanted, sequence) : null
+  const git = gitCall(named)
+  const mergesToMain = git !== null && landsOnMain(git, sequence)
+  const found = mergesToMain ? { cls: 'merge-main', head: ['git', 'merge'] } : subcommandOf(command)
   return found !== null && (wanted === null || found.cls === wanted) ? found : null
 }
 
 // The first match among a command's segments, or the first of class wanted when it is given.
-function matchCommand(command, depth, wanted = null) {
+function matchCommand(command, depth, wanted = null, sequence = sequenceOf()) {
   if (typeof command !== 'string') return null
   for (const words of segmentsOf(command)) {
-    const found = matchWords(words, depth, wanted)
+    const found = matchWords(words, depth, wanted, sequence)
     if (found !== null) return found
   }
   return null
@@ -585,9 +686,10 @@ function segmentsOf(command, depth = 0) {
 
 // The irreversible class of a Bash command: push, merge-main, publish, deploy, delete, credentials or
 // paid-call (other paid calls are not detected),
-// or null. The first segment that matches decides.
-function irreversibleClass(command) {
-  const found = matchCommand(command, 0)
+// or null. The first segment that matches decides. A git merge needs cwd, the directory the command runs in,
+// to know its branch: without it, only a checkout or switch to main earlier in the line makes it merge-main.
+function irreversibleClass(command, cwd) {
+  const found = matchCommand(command, 0, null, sequenceOf(cwd))
   return found === null ? null : found.cls
 }
 
@@ -620,13 +722,13 @@ function redactCommand(command, cls) {
 // every Bash call, so the modules that read git and the grants load only for an irreversible command.
 function decideBash(input, env = process.env) {
   try {
-    const cls = irreversibleClass(input.tool_input?.command)
+    const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
+    const cls = irreversibleClass(input.tool_input?.command, cwd)
     if (cls === null) return null
     const { repoPaths } = require('./git.js')
     const { check } = require('./autonomy.js')
     const { appendPending } = require('./pending.js')
     const { ensureExcluded } = require('./run.js')
-    const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
     // Outside a git repository this throws, and the command is allowed unrecorded.
     const { mainRoot, gitCommonDir } = repoPaths(cwd)
     if (check(mainRoot, cls, { session: input.session_id }) !== null) return null
