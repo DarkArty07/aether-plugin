@@ -135,3 +135,15 @@ test('one install keeps every line it holds, an identical pair included: only a 
   delegateLog.appendEntry(installed, launch)
   assert.equal(delegatesReport({ dataDir: installed }).ladder.steps[0].attempts, 2)
 })
+
+// A task id is only unique within an install: the ladder reads its state through readEntries, which must not take in
+// the entries another install holds for the same id; only a report sums (readAllEntries).
+test('the ladder reads the delegate log of its own install alone, and a report reads every install', (t) => {
+  const { installed, inline } = installs(t)
+  const launch = { kind: 'launch', task: 'fix-1', session: 's1', time: 5, step: 'haiku', attempt: 1, launchKind: 'first', description: 'same id', effort: 'low', edits: false }
+  delegateLog.appendEntry(installed, launch)
+  delegateLog.appendEntry(inline, { ...launch, session: 's2', time: 6, step: 'sonnet', attempt: 3 })
+  assert.deepEqual(delegateLog.readEntries(installed, { task: 'fix-1' }).map((e) => e.attempt), [1])
+  assert.deepEqual(delegateLog.readEntries(inline, { task: 'fix-1' }).map((e) => e.attempt), [3])
+  assert.deepEqual(delegateLog.readAllEntries(installed, { task: 'fix-1' }).map((e) => e.attempt), [1, 3])
+})

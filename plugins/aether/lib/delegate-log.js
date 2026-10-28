@@ -76,11 +76,17 @@ function readFileEntries(dataDir, { task, session, since }) {
 
 const timeOf = (entry) => (typeof entry.time === 'number' ? entry.time : 0)
 
-// Entries with time >= since, filtered by task and session, from the log of every install (run.installDirs). One
-// install's log is in file order; when more than one holds entries they are merged in time order. An entry that an
-// earlier install's log holds too (an identical line) is left out, so a copy counts once. Skips unreadable lines;
-// returns [] when no file exists.
+// Entries in file order with time >= since, filtered by task and session, from this install's log alone. The ladder reads
+// its state from here: a task id is only unique within an install, so another install's entries must not count for it.
+// Skips unreadable lines; returns [] when no file exists.
 function readEntries(dataDir, { task = null, session = null, since = 0 } = {}) {
+  return readFileEntries(dataDir, { task, session, since })
+}
+
+// The same entries from the log of every install (run.installDirs), for a report (issue #114). One install's log is in
+// file order; when more than one holds entries they are merged in time order. An entry that an earlier install's log
+// holds too (an identical line) is left out, so a copy counts once.
+function readAllEntries(dataDir, { task = null, session = null, since = 0 } = {}) {
   const earlier = new Set()
   const sources = []
   for (const dir of run.installDirs(dataDir)) {
@@ -101,5 +107,6 @@ module.exports = {
   logFile,
   appendEntry,
   readEntries,
+  readAllEntries,
   isLaunch,
 }
