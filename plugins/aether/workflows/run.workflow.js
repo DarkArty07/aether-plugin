@@ -1,9 +1,9 @@
 export const meta = {
   name: 'run',
   description:
-    'Aether swarm: runs a plan compiled by aether-plan in parallel waves, with tier escalation, supervision, one-at-a-time merges, a final review and cleanup. Pass the JSON that `aether-plan compile` prints as args.',
+    'Aether swarm: runs a plan compiled by aether-plan in parallel waves, with ladder policy, supervision, one-at-a-time merges, a final review and cleanup. Pass the JSON that `aether-plan compile` prints as args.',
   phases: [
-    { title: 'Implement', detail: "an implementer per attempt, on the unit's current tier" },
+    { title: 'Implement', detail: "an implementer per attempt, on the unit's current ladder rung" },
     { title: 'Supervise', detail: 'a supervisor reviews each attempt and rules on it' },
     { title: 'Merge', detail: 'one merge at a time; finished units are closed' },
     { title: 'Final review', detail: 'Opus reviews everything the run merged' },
@@ -12,8 +12,8 @@ export const meta = {
 }
 
 // The swarm executor (spec §7). The units of a wave run in parallel, each through this loop:
-// implement on the current tier → supervise → merge (one at a time) → close.
-// The script keeps the ladder, the agent budget and every unit's history; agents only judge and act.
+// implement on the current rung → supervise → merge (one at a time) → close.
+// The script consults the ladder, keeps the agent budget and every unit's history; agents only judge and act.
 // Every agent call names its agentType, so no agent gets the session's full tool set.
 // The script never reads the clock or random numbers: the runtime replays a resumed run call by call.
 // With lanes in the args (superdelegation on), each implementer, supervisor and final review asks
@@ -40,8 +40,8 @@ const MAX_PAIR_TRIES = 3
 // A retry after an attempt that ended without its report runs as one sub-attempt per owned
 // file, and never more than this many: the rest share the last one (issue 14).
 const MAX_SUB_ATTEMPTS = 8
-// The failures a unit keeps (its `failures`): an attempt without a report, or a retry or an escalation
-// with the titles of its blocking findings. The same failure can stop a unit early (see work()).
+// The failures a unit keeps (its `failures`): an attempt without a report. Kept for followsMissingReport
+// and prompt warnings; ladder policy handles escalations and limits.
 const NO_REPORT = 'no report'
 // The time a native agent that only reads (the supervisor and the final reviewer) may stay silent (issue 16): at this
 // cap the script stops waiting for it, records it as abandoned and goes on. It is the supervisor's timeout of the lane
@@ -53,7 +53,6 @@ const NO_REPORT = 'no report'
 const NATIVE_CAP_SECONDS = { supervisor: 900, reviewer: 900 }
 const CAP_TICK_SECONDS = 120
 const ABANDONED = { abandoned: true }
-const FINDINGS_PREFIX = 'findings: '
 
 const FINDINGS = {
   type: 'array',
@@ -154,7 +153,6 @@ function readArgs(raw) {
   if (firstBase !== undefined && firstBase !== null && !text(firstBase)) bad.push('integration.firstBase')
   // The bin directory of the aether-plan that compiled the run (issue 008). Args of an older compile lack it.
   if (input.binDir !== undefined && input.binDir !== null && !(text(input.binDir) && input.binDir.startsWith('/') && !/['"\u0000-\u001f\u007f]/.test(input.binDir))) bad.push('binDir')
-  if (!input.ladder || !TIERS.every((t) => Number.isInteger(input.ladder[t]) && input.ladder[t] >= 0)) bad.push('ladder')
   if (!Number.isInteger(input.maxAgents) || input.maxAgents < 1) bad.push('maxAgents')
   if (!Array.isArray(input.waves) || !input.waves.every(Array.isArray)) bad.push('waves')
   if (!input.tasks || typeof input.tasks !== 'object') bad.push('tasks')
@@ -170,8 +168,6 @@ function readArgs(raw) {
       t &&
       text(t.title) &&
       text(t.brief) &&
-      TIERS.includes(t.tier) &&
-      EFFORTS.includes(t.effort) &&
       EFFORTS.includes(t.review) &&
       text(t.area) &&
       Array.isArray(t.owns) &&
@@ -186,7 +182,7 @@ function readArgs(raw) {
 }
 
 const input = readArgs(args)
-const { runId, repoRoot, runDir, integration, testCommand, ladder, maxAgents, waves, tasks } = input
+const { runId, repoRoot, runDir, integration, testCommand, maxAgents, waves, tasks } = input
 // The run's lanes, or null when every call runs native.
 const lanes = input.lanes || null
 // The bins of the version that compiled the run: implementers run them by path, and the ops
@@ -197,7 +193,28 @@ const wtBin = binDir ? `${binDir}/aether-wt` : 'aether-wt'
 const units = {}
 for (const id of waves.flat()) {
   const t = tasks[id]
-  units[id] = { id, title: t.title, area: t.area, status: 'pending', tiers: [], attempts: 0, rounds: [], failures: [], commit: null, reason: null, question: null, patch: null }
+  units[id] = {
+    id,
+    title: t.title,
+    area: t.area,
+    status: 'pending',
+    tiers: [],
+    attempts: 0,
+    rounds: [],
+    failures: [],
+    commit: null,
+    reason: null,
+    question: null,
+    patch: null,
+    ladder: {
+      steps: [],
+      firstTry: false,
+      corrections: 0,
+      rises: { exhausted: 0, repeated: 0, infeasible: 0 },
+      gateRejections: 0,
+      filled: 0,
+    },
+  }
 }
 const agents = { total: 0, byRole: {}, byModel: {} }
 // The native agents the script stopped waiting for at their cap: { role, label, phase, seconds }.
@@ -380,6 +397,50 @@ function sortKeys(value) {
 
 function canonicalJson(value) {
   return JSON.stringify(sortKeys(value))
+}
+
+async function ladderRead(unit) {
+  return await ops(`aether-wt ladder ${runId} ${unit.id}`, { phase: 'Implement', label: `${unit.id}: ladder` })
+}
+
+async function applyVerdict(unit, task, kind, body) {
+  const filePath = `${runDir}/ladder/${unit.id}-verdict.json`
+  const text = JSON.stringify(body)
+  const d = digest(text)
+  const command = `aether-wt ladder ${runId} ${unit.id} --verdict ${kind} --payload ${filePath} --digest ${d}`
+  return await ops(command, {
+    phase: 'Supervise',
+    label: `${unit.id}: ladder verdict`,
+    payload: { path: filePath, text },
+  })
+}
+
+async function step(unit, kind, body) {
+  const verdictResult = await applyVerdict(unit, null, kind, body)
+  if (verdictResult.error) return { blocked: `the ladder could not be read: ${verdictResult.error}` }
+  if (verdictResult.accepted === false) return { rejected: verdictResult.rejection }
+  if (verdictResult.kind === 'exhausted' || verdictResult.status === 'exhausted') {
+    return { blocked: 'the ladder is spent (exhausted)' }
+  }
+  if (kind === 'fix') {
+    unit.ladder.corrections++
+  }
+  if (verdictResult.kind === 'rise') {
+    unit.ladder.rises[verdictResult.cause] = (unit.ladder.rises[verdictResult.cause] || 0) + 1
+  }
+  return { next: verdictResult }
+}
+
+function isFirstTry(unit, wasCleanStart) {
+  const { corrections, rises, gateRejections } = unit.ladder
+  return (
+    wasCleanStart &&
+    corrections === 0 &&
+    rises.exhausted === 0 &&
+    rises.repeated === 0 &&
+    rises.infeasible === 0 &&
+    gateRejections === 0
+  )
 }
 
 // The tokens a decision hands on to the next commands, as the mod's closed list takes them (hooks/ops-command.mjs):
@@ -598,7 +659,7 @@ function implementerPrompt(unit, task, rung, context, { lane = false, limit = nu
 }
 
 // The lane variant runs in a disposable copy of the unit branch, with the brief and the package in .aether-tmp/.
-function supervisorPrompt(unit, task, rung, report, used, model, { lane = false } = {}) {
+function supervisorPrompt(unit, task, rung, report, view, { lane = false } = {}) {
   const lines = [
     `You supervise ${unit.id}: ${task.title} (area ${task.area}), run ${runId}. Attempt ${unit.attempts} ran on ${rung}.`,
     '',
@@ -625,8 +686,8 @@ function supervisorPrompt(unit, task, rung, report, used, model, { lane = false 
   lines.push(
     '',
     '## Ladder',
-    `Attempts used: ${TIERS.map((t) => `${t} ${used[t]}/${ladder[t]}`).join(', ')}.`,
-    ladderOutlook(task, model, used),
+    `Rung: ${view.step} ${view.effort}. Corrections used on this rung: ${view.correctionsUsed} of ${view.corrections}.`,
+    'The ladder raises the model by itself; you rule approve, retry, escalate or block.',
   )
   return lines.join('\n')
 }
@@ -725,29 +786,6 @@ function mergeContext(out) {
 
 // --- units -----------------------------------------------------------------------------------
 
-function nextTier(tier) {
-  return TIERS.slice(TIERS.indexOf(tier) + 1).find((t) => ladder[t] > 0) || null
-}
-
-// The task's own effort applies on the task's model: the first attempt, and a retry on a Sonnet or Opus task.
-// A retry on a Haiku task runs at xhigh, or at the task's effort when that is max. An attempt on a model the
-// unit escalated to runs at high.
-function effortFor(task, model, attempt) {
-  if (model === task.tier) {
-    if (task.effort === 'max' || attempt === 1) return task.effort
-    return model === 'haiku' ? 'xhigh' : task.effort
-  }
-  return 'high'
-}
-
-// The end of the supervisor's message: the rung a retry and an escalation would run next.
-function ladderOutlook(task, model, used) {
-  const up = nextTier(model)
-  const retryRung = used[model] < ladder[model] ? `${model} ${effortFor(task, model, used[model] + 1)}` : up && `${up} ${effortFor(task, up, 1)}`
-  const outlook = (verb, rung) => (rung ? `${verb} runs on ${rung}.` : `${verb} blocks the unit: the ladder is spent.`)
-  return `${outlook('A retry', retryRung)} ${outlook('Escalate', up && `${up} ${effortFor(task, up, 1)}`)}`
-}
-
 function finish(unit, status, reason = null, question = null) {
   unit.status = status
   unit.reason = reason
@@ -762,17 +800,6 @@ function remember(area, line) {
 // The findings of a supervisor's or reviewer's answer. A harness may answer with any shape, so only an array
 // counts, and within it only the entries that are objects.
 const findingsOf = (value) => (Array.isArray(value) ? value.filter(isObject) : [])
-
-// The failure of a retry or an escalation: its blocking findings' titles, sorted and written the same way,
-// so that the same findings compare equal whatever their case or spacing. A verdict without a blocking
-// finding is named as such, so a stop on it says what repeated.
-function findingsFailure(findings) {
-  const titles = findings
-    .filter((f) => BLOCKING.includes(f.severity))
-    .map((f) => String(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim())
-    .sort()
-  return `${FINDINGS_PREFIX}${titles.length > 0 ? titles.join(' | ') : '(no blocking finding)'}`
-}
 
 // What an external attempt tells the next agent after pairs stopped before they finished.
 function failureContext(context, failures) {
@@ -960,7 +987,7 @@ async function implement(unit, task, model, effort, rung, context, exclude) {
       if (outcome.kind === 'ok') return { report: outcome.result, provider: `${pair.harness} ${outcome.lane.model}`, laneFailure, ...ran }
       if (outcome.kind === 'blocked') return { blocked: outcome.detail }
       const failure = `The external agent changed files outside the task's Owns: ${list(outcome.files)}. Revert those changes.`
-      return { report: null, failure, provider: `${pair.harness} ${outcome.model}`, laneFailure, ...ran }
+      return { report: null, failure, violation: outcome.files, provider: `${pair.harness} ${outcome.model}`, laneFailure, ...ran }
     }
     context = failureContext(context, failures)
   }
@@ -1029,7 +1056,7 @@ async function implementSplit(unit, task, model, effort, rung, context, exclude,
         if (outcome.kind !== 'ok') {
           provider = `${pair.harness} ${outcome.model}`
           const failure = `The external agent changed files outside the task's Owns: ${list(outcome.files)}. Revert those changes.`
-          return stop({ report: null, failure, subAttempts: i + 1 })
+          return stop({ report: null, failure, violation: outcome.files, subAttempts: i + 1 })
         }
         provider = `${pair.harness} ${outcome.lane.model}`
         if (!isReport(outcome.result)) return stop({ report: null, subAttempts: i + 1 })
@@ -1059,7 +1086,7 @@ async function implementSplit(unit, task, model, effort, rung, context, exclude,
       if (outcome.kind === 'violation') {
         provider = `${locked.harness} ${outcome.model}`
         const failure = `The external agent changed files outside the task's Owns: ${list(outcome.files)}. Revert those changes.`
-        return stop({ report: null, failure, subAttempts: i + 1 })
+        return stop({ report: null, failure, violation: outcome.files, subAttempts: i + 1 })
       }
       // The pair of this pass failed. The next attempt asks again without it; this pass does not.
       const reason = outcome.reason || outcome.kind
@@ -1089,7 +1116,7 @@ async function implementSplit(unit, task, model, effort, rung, context, exclude,
 // after any outcome of the pair but ok and blocked (without lanes, on Sonnet at the task's review effort).
 // `author` is the family that ran the attempt. Resolves to { review, provider, effort }, with the effort the
 // review ran at, or to { blocked } with the pair's detail.
-async function supervise(unit, task, rung, report, used, model, author) {
+async function supervise(unit, task, rung, report, view, author) {
   const n = unit.attempts
   const id = `${unit.id}-${n}-supervise`
   const where = { phase: 'Supervise', label: `${unit.id}: supervise attempt ${n}` }
@@ -1105,7 +1132,7 @@ async function supervise(unit, task, rung, report, used, model, author) {
       ...where,
       build: (pair) => ({
         task: unit.id,
-        prompt: supervisorPrompt(unit, task, rung, report, used, model, { lane: true }),
+        prompt: supervisorPrompt(unit, task, rung, report, view, { lane: true }),
         base: `${unit.id}: supervise via ${pair.harness} ${pair.model} (attempt ${n})`,
       }),
     })
@@ -1118,7 +1145,7 @@ async function supervise(unit, task, rung, report, used, model, author) {
     }
   }
   const label = `${unit.id}: supervise attempt ${n} on ${native.model} ${native.effort}`
-  const review = await call('supervisor', native.model, native.effort, supervisorPrompt(unit, task, rung, report, used, model), {
+  const review = await call('supervisor', native.model, native.effort, supervisorPrompt(unit, task, rung, report, view), {
     phase: 'Supervise',
     label,
     schema: SUPERVISOR_SCHEMA,
@@ -1159,33 +1186,27 @@ async function salvage(unit) {
 async function work(unit, task) {
   const dep = task.dependsOn.find((d) => units[d] && units[d].status !== 'merged')
   if (dep) return finish(unit, 'skipped', `${dep} is ${units[dep].status}`)
-  const used = { haiku: 0, sonnet: 0, opus: 0 }
-  let model = task.tier
-  let effort = null
+
+  let view = await ladderRead(unit)
+  if (view.error) return finish(unit, 'blocked', `the ladder could not be read: ${view.error}`)
+  if (view.kind === 'exhausted' || view.status === 'exhausted') return finish(unit, 'blocked', 'the ladder is spent (exhausted)')
+  if (view.status !== 'open' || !view.model) return finish(unit, 'blocked', `the ladder is not open (${view.status})`)
+
+  const wasCleanStart = view.attempts === 0
+  let model = view.model
+  let effort = view.effort
   let context = null
-  // A conflict or a failing merge gets one retry on the same model and effort, outside the ladder.
   let mergeRetry = false
   let mergeRetried = false
-  // The external pair the attempt before ran on, if any: every attempt after the first follows one that did not
-  // end merged, so its pick leaves that pair out (C9).
   let lastPair = null
+
   for (;;) {
-    if (!mergeRetry && used[model] >= ladder[model]) {
-      const next = nextTier(model)
-      if (!next) return finish(unit, 'blocked', 'the ladder is spent')
-      // A model with no attempts at all never ran: name the rung its first attempt would have had.
-      log(`${unit.id}: escalating from ${model} ${effortFor(task, model, Math.max(used[model], 1))} to ${next} ${effortFor(task, next, 1)}`)
-      model = next
-    }
     if (modelAgentsSpent() >= maxAgents) return finish(unit, 'not-run', 'the agent budget is spent')
-    if (!mergeRetry) {
-      used[model]++
-      effort = effortFor(task, model, used[model])
-    }
     mergeRetry = false
     unit.attempts++
     const rung = `${model} ${effort}`
     if (unit.tiers[unit.tiers.length - 1] !== rung) unit.tiers.push(rung)
+    if (!unit.ladder.steps.includes(model)) unit.ladder.steps.push(model)
     const n = unit.attempts
 
     // After a missing report, two or more owned items are retried as one split pass (issue 14).
@@ -1261,66 +1282,138 @@ async function work(unit, task) {
       ...(attempt.split ? { split: true, subAttempts: attempt.subAttempts } : {}),
     }
     unit.rounds.push(round)
-    // A failed implementer, or a lane's changes outside Owns: the attempt failed, and the ladder decides,
-    // unless the unit has now ended twice without a report, which means it is too large for one attempt.
-    // A pair that fails during a split pass is that failure, not a second missing report: the next attempt
-    // leaves the pair out, as any failed attempt does.
+
     if (!report) {
       if (!(attempt.split && attempt.failure)) {
         unit.failures.push(NO_REPORT)
-        const recent = unit.failures.slice(-2)
-        if (recent.length === 2 && recent.every((f) => f === NO_REPORT)) {
-          return finish(unit, 'blocked', 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks')
+      }
+      let fixFindings = null
+      if (attempt.violation || (attempt.failure && String(attempt.failure).includes("outside the task's Owns"))) {
+        const files = Array.isArray(attempt.violation) && attempt.violation.length ? attempt.violation : [task.owns[0]]
+        round.findings = files.map((f) => ({ severity: 'important', title: 'fuera de Owns', file: f, evidence: '' }))
+        fixFindings = files.map((f) => ({ file: f, what: 'fuera de Owns' }))
+      } else {
+        const causa = (!report && !attempt.failure) ? 'sin informe' : 'el intento falló'
+        const what = `el intento no terminó (${causa})`
+        round.findings = [{ severity: 'important', title: what, file: task.owns[0], evidence: '' }]
+        fixFindings = [{ file: task.owns[0], what }]
+      }
+      const res = await step(unit, 'fix', { findings: fixFindings })
+      if (res.blocked) return finish(unit, 'blocked', res.blocked)
+      if (res.rejected) return finish(unit, 'blocked', `the ladder rejected the verdict: ${res.rejected}`)
+      view = res.next
+      model = view.model
+      effort = view.effort
+      continue
+    }
+
+    let supervisorTries = 0
+    let supervisorFailReason = null
+    let supervisorSuccess = false
+    while (supervisorTries < 3) {
+      supervisorTries++
+      const checked = await supervise(unit, task, rung, report, view, attempt.family)
+      if (checked.blocked !== undefined) return finish(unit, 'blocked', `lane: ${checked.blocked}`)
+      round.reviewProvider = checked.provider
+      round.reviewEffort = checked.effort
+      const { review } = checked
+      if (!review) {
+        supervisorFailReason = checked.abandoned || 'the agent failed'
+        round.ruling = checked.abandoned ? `The supervisor agent was ${checked.abandoned}.` : 'The supervisor agent failed.'
+        continue
+      }
+      let findings = findingsOf(review.findings)
+      let ruling = review.ruling || ''
+      let guidance = review.guidance || ''
+      let verdict = review.verdict
+
+      if (!VERDICTS.includes(verdict)) {
+        verdict = 'retry'
+        ruling = [ruling, NOT_A_VERDICT].filter(Boolean).join(' ')
+      }
+      if (verdict === 'approve' && !Array.isArray(review.findings)) {
+        verdict = 'retry'
+        ruling = [ruling, NOT_A_LIST].filter(Boolean).join(' ')
+      }
+      if (verdict === 'approve' && findings.some((f) => BLOCKING.includes(f.severity))) {
+        verdict = 'retry'
+      }
+
+      round.findings = findings
+      round.ruling = ruling
+      round.guidance = guidance
+      round.verdict = verdict
+
+      if (verdict === 'block') {
+        remember(task.area, `${unit.id} attempt ${n}: ${round.verdict}. ${round.ruling}`)
+        return finish(unit, 'blocked', ruling, review.question || report.question)
+      }
+
+      if (verdict === 'approve') {
+        remember(task.area, `${unit.id} attempt ${n}: ${round.verdict}. ${round.ruling}`)
+        supervisorSuccess = true
+        break
+      }
+
+      let ladderKind = null
+      let ladderBody = {}
+      let needsFill = false
+      if (verdict === 'escalate') {
+        ladderKind = 'infeasible'
+        ladderBody = { reason: ruling }
+      } else {
+        ladderKind = 'fix'
+        let ladderFindings = []
+        if (findings.length === 0) {
+          needsFill = true
+        } else {
+          for (const f of findings) {
+            if (!f.file || typeof f.file !== 'string' || f.file.trim() === '') {
+              needsFill = true
+              break
+            }
+          }
         }
+        if (needsFill) {
+          ladderFindings = [{ file: task.owns[0], what: ruling }]
+          round.findings = [{ severity: 'important', title: ruling, file: task.owns[0], evidence: '' }]
+        } else {
+          ladderFindings = findings.map((f) => {
+            const match = /^(.*?)(?::(\d+))?$/.exec(f.file.trim())
+            const filePath = match[1]
+            const line = match[2] ? Number(match[2]) : undefined
+            const what = f.evidence ? `${f.title}: ${f.evidence}` : f.title
+            return line !== undefined ? { file: filePath, line, what } : { file: filePath, what }
+          })
+        }
+        ladderBody = { findings: ladderFindings }
       }
-      continue
+
+      const res = await step(unit, ladderKind, ladderBody)
+      if (res.blocked) return finish(unit, 'blocked', res.blocked)
+      if (res.rejected) {
+        supervisorFailReason = res.rejected || 'verdict rejected by ladder'
+        continue
+      }
+
+      if (needsFill) {
+        unit.ladder.filled += 1
+      }
+      remember(task.area, `${unit.id} attempt ${n}: ${round.verdict}. ${round.ruling}`)
+      view = res.next
+      model = view.model
+      effort = view.effort
+      supervisorSuccess = true
+      break
     }
 
-    const checked = await supervise(unit, task, rung, report, used, model, attempt.family)
-    if (checked.blocked !== undefined) return finish(unit, 'blocked', `lane: ${checked.blocked}`)
-    round.reviewProvider = checked.provider
-    round.reviewEffort = checked.effort
-    const { review } = checked
-    if (!review) {
-      round.ruling = checked.abandoned ? `The supervisor agent was ${checked.abandoned}.` : 'The supervisor agent failed.'
-      continue
+    if (!supervisorSuccess) {
+      return finish(unit, 'blocked', `the supervisor failed 3 times in a row: ${supervisorFailReason}`)
     }
-    round.findings = findingsOf(review.findings)
-    round.ruling = review.ruling || ''
-    round.guidance = review.guidance || ''
-    round.verdict = review.verdict
-    // A verdict the script does not know counts as a retry, and the ruling says so.
-    if (!VERDICTS.includes(round.verdict)) {
-      round.verdict = 'retry'
-      round.ruling = [round.ruling, NOT_A_VERDICT].filter(Boolean).join(' ')
-    }
-    // An approval whose findings are not a list cannot show that nothing blocks it.
-    if (round.verdict === 'approve' && !Array.isArray(review.findings)) {
-      round.verdict = 'retry'
-      round.ruling = [round.ruling, NOT_A_LIST].filter(Boolean).join(' ')
-    }
-    // An approval is only as good as its findings.
-    if (round.verdict === 'approve' && round.findings.some((f) => BLOCKING.includes(f.severity))) round.verdict = 'retry'
-    remember(task.area, `${unit.id} attempt ${n}: ${round.verdict}. ${round.ruling}`)
 
-    if (round.verdict === 'block') return finish(unit, 'blocked', round.ruling, review.question || report.question)
-    // The same findings three times in one unit: the ladder would only send them round again.
     if (round.verdict === 'retry' || round.verdict === 'escalate') {
-      const failure = findingsFailure(round.findings)
-      unit.failures.push(failure)
-      if (unit.failures.filter((f) => f === failure).length >= 3) {
-        const titles = failure.slice(FINDINGS_PREFIX.length)
-        return finish(unit, 'blocked', `the same findings came back 3 times: ${titles}; the task needs a split or a redesign`)
-      }
-    }
-    if (round.verdict === 'escalate') {
-      const next = nextTier(model)
-      if (!next) return finish(unit, 'blocked', 'the ladder is spent')
-      log(`${unit.id}: escalating from ${rung} to ${next} ${effortFor(task, next, 1)}`)
-      model = next
       continue
     }
-    if (round.verdict !== 'approve') continue
 
     // A merge runs the plan's whole test command, so its Bash call, when the model runs it, needs the long timeout (issue 002).
     // A merge the mod cuts at 600 s has its commit on the branch and its tests unfinished (issue #2). The merge, the
@@ -1340,6 +1433,8 @@ async function work(unit, task) {
     let out = held.first
     if (out.merged) {
       unit.commit = out.commit
+      unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
+      await applyVerdict(unit, task, 'approve', {})
       return finish(unit, 'merged')
     }
     round.merge = describeMerge(out)
@@ -1347,6 +1442,8 @@ async function work(unit, task) {
       const again = held.again
       if (again.merged) {
         unit.commit = again.commit
+        unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
+        await applyVerdict(unit, task, 'approve', {})
         round.merge = 'merged: the tests were rerun after the merge was cut, and they passed'
         log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
         return finish(unit, 'merged')
@@ -1374,6 +1471,8 @@ async function work(unit, task) {
       const status = held.status
       if (status && !status.error && status.merged) {
         unit.commit = status.commit
+        unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
+        await applyVerdict(unit, task, 'approve', {})
         round.merge = 'merged: the merge output was unreadable, and the merge commit is on the integration branch'
         log(`${unit.id}: merge output unreadable, but its merge commit is on ${integration.branch}; counting it merged`)
         return finish(unit, 'merged')
@@ -1388,7 +1487,28 @@ async function work(unit, task) {
       continue
     }
     // Changes outside Owns, or nothing committed: the attempt failed, and the ladder decides.
-    if (out.reason === 'ownership' || out.reason === 'empty') continue
+    if (out.reason === 'ownership') {
+      const files = Array.isArray(out.files) && out.files.length ? out.files : [task.owns[0]]
+      round.findings = files.map((f) => ({ severity: 'important', title: 'fuera de Owns', file: f, evidence: '' }))
+      const res = await step(unit, 'fix', { findings: files.map((f) => ({ file: f, what: 'fuera de Owns' })) })
+      if (res.blocked) return finish(unit, 'blocked', res.blocked)
+      if (res.rejected) return finish(unit, 'blocked', `the ladder rejected the verdict: ${res.rejected}`)
+      view = res.next
+      model = view.model
+      effort = view.effort
+      continue
+    }
+    if (out.reason === 'empty') {
+      const what = 'el intento no cambió ningún archivo'
+      round.findings = [{ severity: 'important', title: what, file: task.owns[0], evidence: '' }]
+      const res = await step(unit, 'fix', { findings: [{ file: task.owns[0], what }] })
+      if (res.blocked) return finish(unit, 'blocked', res.blocked)
+      if (res.rejected) return finish(unit, 'blocked', `the ladder rejected the verdict: ${res.rejected}`)
+      view = res.next
+      model = view.model
+      effort = view.effort
+      continue
+    }
     return finish(unit, 'blocked', `merge ${round.merge}`)
   }
 }
@@ -1419,18 +1539,16 @@ function isRelaunch() {
   return typeof firstBase === 'string' && firstBase !== '' && firstBase !== integration.base
 }
 
-// The final review's model and effort follow the run's risk, judged from the tasks of the merged units:
-// Opus at xhigh only when a merged unit is tier opus; Sonnet at high for a small run of haiku tasks
+// The final review's model and effort follow the run's risk, judged from the review fields of the merged units:
+// Opus at xhigh when a merged unit asks for review xhigh or max; Sonnet at high for 1 to 3 units
 // that all ask for high reviews; Opus at high otherwise. A relaunch's review covers the earlier
 // launches too, so it is never Sonnet.
 function reviewPlan() {
   const merged = Object.values(units).filter((u) => u.status === 'merged')
-  const opus = merged.find((u) => tasks[u.id].tier === 'opus')
-  if (opus) return { model: 'opus', effort: 'xhigh', reason: `${opus.id} is tier opus` }
+  const highReview = merged.find((u) => tasks[u.id].review === 'xhigh' || tasks[u.id].review === 'max')
+  if (highReview) return { model: 'opus', effort: 'xhigh', reason: `${highReview.id} reviews at ${tasks[highReview.id].review}` }
   if (isRelaunch()) return { model: 'opus', effort: 'high', reason: 'a relaunch: the final review covers the earlier launches too' }
-  // Zero merged units is not a small all-haiku run: an empty list passes `every`, and a forced review of a
-  // launch that merged nothing would otherwise run on Sonnet.
-  if (merged.length > 0 && merged.length <= 3 && merged.every((u) => tasks[u.id].tier === 'haiku' && tasks[u.id].review === 'high')) {
+  if (merged.length >= 1 && merged.length <= 3 && merged.every((u) => tasks[u.id].review === 'high')) {
     return { model: 'sonnet', effort: 'high', reason: 'a small all-haiku run with high reviews' }
   }
   return { model: 'opus', effort: 'high', reason: 'the merged work is not a small all-haiku run' }

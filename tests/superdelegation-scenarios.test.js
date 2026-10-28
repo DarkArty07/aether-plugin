@@ -51,7 +51,8 @@ test('C16, no quota spent: with only Muse healthy an Opus high call goes to Muse
 
 test('C15 through the swarm: a unit runs on the pair pick gives when quotas are healthy, and native when they are dry', async (t) => {
   const lanes = { superdelegation: true, harnesses: ['agy'], waits: { implementer: 3, supervisor: 2, reviewer: 2 } }
-  const args = { ...compile(makeRepo(t), plan([task(1, { tier: 'sonnet high — a reason' })])), lanes }
+  // The ladder's state is kept per run (spec 019): each run compiles its own, so the second does not start on a closed unit.
+  const freshArgs = () => ({ ...compile(makeRepo(t), plan([task(1, { tier: 'sonnet high — a reason' })])), lanes })
   // Stands in for `aether-lane pick`: the real choice function on the real table, over the run's one harness.
   const withViews = (all) => async (call, fallback) => {
     if (call.command.verb !== 'pick') return fallback(call)
@@ -67,11 +68,11 @@ test('C15 through the swarm: a unit runs on the pair pick gives when quotas are 
     })
     return { call: f.call, role: f.role, ...d }
   }
-  const external = await runWorkflow(args, { lane: withViews(healthy) })
+  const external = await runWorkflow(freshArgs(), { lane: withViews(healthy) })
   assert.equal(external.error, null, external.error && external.error.stack)
   assert.ok(external.calls.some((c) => c.kind === 'ops:lane-start'))
   assert.equal(external.calls.filter((c) => c.role === 'implementer').length, 0)
-  const native = await runWorkflow(args, { lane: withViews(sick) })
+  const native = await runWorkflow(freshArgs(), { lane: withViews(sick) })
   assert.equal(native.error, null, native.error && native.error.stack)
   assert.equal(native.calls.some((c) => c.kind === 'ops:lane-start'), false)
   assert.ok(native.calls.some((c) => c.role === 'implementer'))

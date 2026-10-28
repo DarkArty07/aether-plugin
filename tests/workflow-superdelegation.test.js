@@ -55,7 +55,7 @@ test('C3: each call asks pick for the pair of its reference, and a pair that tak
   ok(run)
   const picks = verbs(run, 'pick').map((c) => c.lane)
   assert.deepEqual(picks.map((p) => [p.call, p.role, p.model, p.effort]), [
-    ['task-1-1-implement', 'implementer', 'haiku', 'xhigh'],
+    ['task-1-1-implement', 'implementer', 'haiku', 'high'],
     ['task-1-1-supervise', 'supervisor', 'sonnet', 'high'],
     ['final-review', 'reviewer', 'sonnet', 'high'],
   ])
@@ -135,9 +135,9 @@ test('C12: a supervisor review names the family that implemented the attempt, an
 })
 
 test('max goes through pick like any other effort', async (t) => {
-  const run = await runWorkflow(argsOf(t, [task(1, { tier: 'haiku max — a reason' })]), { lane: lane() })
+  const run = await runWorkflow(argsOf(t, [task(1, { review: 'max — a reason' })]), { lane: lane() })
   ok(run)
-  assert.equal(verbs(run, 'pick')[0].lane.effort, 'max')
+  assert.equal(verbs(run, 'pick').find((c) => c.lane.role === 'supervisor').lane.effort, 'max')
 })
 
 test('C9: the attempt after one that did not approve is picked with its own reference and without the pair that failed', async (t) => {

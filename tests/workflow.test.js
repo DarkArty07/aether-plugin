@@ -18,7 +18,6 @@ function threeTasks(t) {
 const finding = (title) => ({ severity: 'important', title, file: 'src/t2/a.js', evidence: 'line 3' })
 const retry = (title) => ({ verdict: 'retry', findings: [finding(title)], ruling: `Retry: ${title}.`, guidance: `fix ${title}`, question: '' })
 const attemptsOf = (run, unit) => run.calls.filter((c) => c.role === 'implementer' && c.unit === unit)
-const NO_REPORT_REASON = 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks'
 
 test('two waves, all approved: merges run one at a time, the dependent unit waits, then review and cleanup', async (t) => {
   const args = threeTasks(t)
@@ -28,9 +27,9 @@ test('two waves, all approved: merges run one at a time, the dependent unit wait
   assert.deepEqual(
     result.units.map((u) => [u.id, u.status, u.tiers, u.commit]),
     [
-      ['task-1', 'merged', ['haiku xhigh'], 'merge-task-1'],
-      ['task-2', 'merged', ['haiku xhigh'], 'merge-task-2'],
-      ['task-3', 'merged', ['haiku xhigh'], 'merge-task-3'],
+      ['task-1', 'merged', ['haiku high'], 'merge-task-1'],
+      ['task-2', 'merged', ['haiku high'], 'merge-task-2'],
+      ['task-3', 'merged', ['haiku high'], 'merge-task-3'],
     ],
   )
   assert.equal(result.runId, args.runId)
@@ -62,16 +61,16 @@ test('two waves, all approved: merges run one at a time, the dependent unit wait
 test('a unit the supervisor sends back twice on haiku escalates to sonnet and merges', async (t) => {
   const args = threeTasks(t)
   const run = await runWorkflow(args, {
-    supervisor: (call, approve) => (call.unit === 'task-2' && call.n <= 2 ? retry(`gap ${call.n}`) : approve(call)),
+    supervisor: (call, approve) => (call.unit === 'task-2' && call.n <= 2 ? retry('gap') : approve(call)),
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units.find((u) => u.id === 'task-2')
   assert.equal(unit.status, 'merged')
-  assert.deepEqual(unit.tiers, ['haiku xhigh', 'sonnet high'])
+  assert.deepEqual(unit.tiers, ['haiku high', 'haiku xhigh', 'sonnet high'])
   assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet'])
   const third = attemptsOf(run, 'task-2')[2].prompt
-  assert.match(third, /gap 2/)
-  assert.match(third, /fix gap 2/)
+  assert.match(third, /gap/)
+  assert.match(third, /fix gap/)
   assert.deepEqual(unit.rounds.map((r) => r.verdict), ['retry', 'retry', 'approve'])
 })
 
@@ -100,7 +99,7 @@ test('a unit that needs context and is blocked stops its dependents and keeps it
 })
 
 test('a merge conflict gets one retry with its context, and a second conflict blocks the unit', async (t) => {
-  const args = { ...threeTasks(t), ladder: { haiku: 1, sonnet: 1, opus: 1 } }
+  const args = threeTasks(t)
   const run = await runWorkflow(args, {
     ops: (call, wt) =>
       call.kind === 'ops:merge' && call.unit === 'task-2'
@@ -111,7 +110,7 @@ test('a merge conflict gets one retry with its context, and a second conflict bl
   const unit = run.result.units.find((u) => u.id === 'task-2')
   assert.equal(unit.status, 'blocked')
   assert.match(unit.reason, /conflict/)
-  // The retry stays on the unit's tier: a conflict is not the implementer's failure.
+  // The retry stays on the same rung: a conflict is not the implementer's failure.
   assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku'])
   const second = attemptsOf(run, 'task-2')[1].prompt
   assert.match(second, /CONFLICT 1/)
@@ -468,7 +467,6 @@ test('missing or invalid args throw before any agent starts', async (t) => {
     { ...args, runId: '../evil' },
     { ...args, maxAgents: 0 },
     { ...args, waves: [['task-1', 'task-2'], ['task-1']] },
-    { ...args, tasks: { ...args.tasks, 'task-1': { ...args.tasks['task-1'], effort: 'turbo' } } },
     { ...args, tasks: { ...args.tasks, 'task-2': { ...args.tasks['task-2'], review: 'deep' } } },
     // args compiled before this change: no effort and no review
     { ...args, tasks: Object.fromEntries(Object.entries(args.tasks).map(([id, { effort, review, ...old }]) => [id, old])) },
@@ -490,7 +488,6 @@ test('an approval that still lists an important finding counts as a retry', asyn
   assert.equal(attemptsOf(run, 'task-1').length, 2)
   assert.match(attemptsOf(run, 'task-1')[1].prompt, /missing edge case/)
   assert.deepEqual(run.result.units[0].rounds.map((r) => r.verdict), ['retry', 'approve'])
-  assert.deepEqual(run.result.units[0].failures, ['findings: missing edge case'])
   assert.equal(run.result.units[0].status, 'merged')
 })
 
@@ -525,10 +522,9 @@ test('an implementer that returns no report twice blocks the unit after two atte
   const run = await runWorkflow(args, { implementer: (call, done) => (call.unit === 'task-2' ? null : done(call)) })
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
-  assert.deepEqual([unit.status, unit.reason], ['blocked', NO_REPORT_REASON])
-  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku'])
-  assert.deepEqual(unit.tiers, ['haiku xhigh'])
-  assert.deepEqual(unit.failures, ['no report', 'no report'])
+  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent (exhausted)'])
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'sonnet', 'opus', 'opus'])
+  assert.deepEqual(unit.tiers, ['haiku high', 'haiku xhigh', 'sonnet high', 'opus high'])
   assert.equal(run.calls.some((c) => c.role === 'supervisor' && c.unit === 'task-2'), false)
   assert.equal(run.result.units[0].status, 'merged')
 })
@@ -540,38 +536,43 @@ test('different findings each time keep the ladder: every rung runs, then the la
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
-  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent'])
-  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'sonnet', 'opus'])
-  assert.deepEqual(unit.failures, ['findings: gap 1', 'findings: gap 2', 'findings: gap 3', 'findings: gap 4', 'findings: gap 5'])
+  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent (exhausted)'])
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), [
+    'haiku', 'haiku', 'haiku', 'haiku', 'haiku', 'haiku',
+    'sonnet', 'sonnet', 'sonnet',
+    'opus', 'opus',
+  ])
+  assert.equal(unit.ladder.rises.exhausted, 2)
 })
 
-test('the same findings three times block the unit, whatever the case and spacing of their titles', async (t) => {
+test('the same findings twice raise the model from haiku to sonnet, and the unit merges', async (t) => {
   const args = threeTasks(t)
-  const titles = ['Missing  edge case', 'missing edge case', ' MISSING EDGE\tCASE ']
-  // A minor finding does not take part in the comparison.
+  const titles = ['Missing  edge case', 'missing edge case']
   const withMinor = (title) => ({
     ...retry(title),
     findings: [...retry(title).findings, { severity: 'minor', title: 'naming nit', file: 'src/t2/a.js', evidence: 'x' }],
   })
   const run = await runWorkflow(args, {
-    supervisor: (call, approve) => (call.unit === 'task-2' ? withMinor(titles[Math.min(call.n, titles.length) - 1]) : approve(call)),
+    supervisor: (call, approve) => (call.unit === 'task-2' && call.n <= 2 ? withMinor(titles[call.n - 1]) : approve(call)),
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
-  assert.equal(unit.status, 'blocked')
-  assert.equal(unit.reason, 'the same findings came back 3 times: missing edge case; the task needs a split or a redesign')
-  assert.deepEqual(unit.failures, ['findings: missing edge case', 'findings: missing edge case', 'findings: missing edge case'])
+  assert.equal(unit.status, 'merged')
   assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet'])
+  assert.equal(unit.ladder.rises.repeated, 1)
 })
 
-test('a retry without a blocking finding, three times, stops the unit and says so', async (t) => {
+test('a retry without findings is completed with the ruling and first Owns entry, and the repeated finding raises the model', async (t) => {
   const args = threeTasks(t)
   const bare = { verdict: 'retry', findings: [], ruling: 'Retry.', guidance: 'try again', question: '' }
-  const run = await runWorkflow(args, { supervisor: (call, approve) => (call.unit === 'task-2' ? bare : approve(call)) })
+  const run = await runWorkflow(args, {
+    supervisor: (call, approve) => (call.unit === 'task-2' && call.n <= 2 ? bare : approve(call)),
+  })
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
-  assert.equal(unit.reason, 'the same findings came back 3 times: (no blocking finding); the task needs a split or a redesign')
-  assert.deepEqual(unit.failures, Array(3).fill('findings: (no blocking finding)'))
+  assert.equal(unit.status, 'merged')
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet'])
+  assert.equal(unit.ladder.filled, 2)
 })
 
 // The sentences the script adds to a ruling or a summary when a verdict is not one it knows.
@@ -579,17 +580,16 @@ const NOT_A_VERDICT = 'The verdict was not one of approve, retry, escalate or bl
 const NOT_A_REVIEW_VERDICT = 'The verdict was not one of ready, ready-with-fixes or not-ready, so it counts as not-ready.'
 
 test('findings that are not an array count as none, and the unit goes on with its ladder', async (t) => {
-  const args = threeTasks(t)
   const shapes = ['see ruling', { severity: 'important', title: 'missing edge case', file: 'src/t2/a.js', evidence: 'line 3' }, null]
   for (const findings of shapes) {
+    const args = threeTasks(t)
     const run = await runWorkflow(args, {
       supervisor: (call, approve) => (call.unit === 'task-2' && call.n === 1 ? { ...retry('gap'), findings } : approve(call)),
     })
     assert.equal(run.error, null, run.error && run.error.stack)
     const unit = run.result.units[1]
     assert.equal(unit.status, 'merged', JSON.stringify(findings))
-    assert.deepEqual(unit.rounds[0].findings, [], JSON.stringify(findings))
-    assert.deepEqual(unit.failures, ['findings: (no blocking finding)'])
+    assert.deepEqual(unit.rounds[0].findings, [{ severity: 'important', title: 'Retry: gap.', file: 'src/t2/**', evidence: '' }], JSON.stringify(findings))
     assert.equal(attemptsOf(run, 'task-2').length, 2)
   }
 })
@@ -604,7 +604,6 @@ test('findings keep only the entries that are objects', async (t) => {
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
   assert.deepEqual(unit.rounds[0].findings, [finding('missing edge case')])
-  assert.deepEqual(unit.failures, ['findings: missing edge case'])
   assert.equal(unit.status, 'merged')
 })
 
@@ -639,7 +638,7 @@ test('an approval whose findings are not a list counts as a retry, and the rulin
   }
 })
 
-test('an unknown verdict every time stops the unit as repeated findings, before the ladder is spent', async (t) => {
+test('an unknown verdict every time counts as a retry and exhausts the ladder', async (t) => {
   const run = await runWorkflow(threeTasks(t), {
     supervisor: (call, approve) =>
       call.unit === 'task-2' ? { verdict: 'approved', findings: [], ruling: 'Fine.', guidance: '', question: '' } : approve(call),
@@ -647,8 +646,8 @@ test('an unknown verdict every time stops the unit as repeated findings, before 
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
   assert.equal(unit.status, 'blocked')
-  assert.equal(unit.reason, 'the same findings came back 3 times: (no blocking finding); the task needs a split or a redesign')
-  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet'])
+  assert.equal(unit.reason, 'the ladder is spent (exhausted)')
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'sonnet', 'opus', 'opus'])
   assert.equal(run.calls.some((c) => c.kind === 'ops:merge' && c.unit === 'task-2'), false)
 })
 
@@ -709,108 +708,101 @@ function twoTasks(t, one = {}, two = {}) {
 
 const rungs = (run, unit) => attemptsOf(run, unit).map((c) => `${c.model} ${c.effort}`)
 
-test("every call passes its effort: the task's for implementers, its review for supervisors, the run's risk for the reviewer, low for ops", async (t) => {
+test("every call passes its effort: haiku high for implementers, review for supervisors, the run's risk for the reviewer, low for ops", async (t) => {
   const args = twoTasks(t, { tier: 'haiku xhigh — complete code' }, { tier: 'haiku medium — renames one field', review: 'xhigh — input parsing the tests leave open' })
   const run = await runWorkflow(args)
   assert.equal(run.error, null, run.error && run.error.stack)
   const of = (role, unit) => run.calls.filter((c) => c.role === role && c.unit === unit).map((c) => `${c.model} ${c.effort}`)
-  assert.deepEqual(of('implementer', 'task-1'), ['haiku xhigh'])
-  assert.deepEqual(of('implementer', 'task-2'), ['haiku medium'])
+  assert.deepEqual(of('implementer', 'task-1'), ['haiku high'])
+  assert.deepEqual(of('implementer', 'task-2'), ['haiku high'])
   assert.deepEqual(of('supervisor', 'task-1'), ['sonnet high'])
   assert.deepEqual(of('supervisor', 'task-2'), ['sonnet xhigh'])
-  // task-2 asks for an xhigh review, but no task is tier opus, so the final review is Opus at high.
-  assert.deepEqual(run.calls.filter((c) => c.role === 'reviewer').map((c) => `${c.model} ${c.effort}`), ['opus high'])
+  // task-2 asks for an xhigh review, so the final review is Opus at xhigh.
+  assert.deepEqual(run.calls.filter((c) => c.role === 'reviewer').map((c) => `${c.model} ${c.effort}`), ['opus xhigh'])
   const ops = run.calls.filter((c) => c.role === 'ops')
   assert.ok(ops.length > 0)
   assert.ok(ops.every((c) => c.model === 'haiku' && c.effort === 'low'))
-  assert.deepEqual(run.result.units.map((u) => u.tiers), [['haiku xhigh'], ['haiku medium']])
-  assert.deepEqual(run.result.units[1].rounds.map((r) => [r.tier, r.reviewEffort]), [['haiku medium', 'xhigh']])
+  assert.deepEqual(run.result.units.map((u) => u.tiers), [['haiku high'], ['haiku high']])
+  assert.deepEqual(run.result.units[1].rounds.map((r) => [r.tier, r.reviewEffort]), [['haiku high', 'xhigh']])
   const implement = run.calls.find((c) => c.role === 'implementer' && c.unit === 'task-2')
-  assert.equal(implement.label, 'task-2: implement on haiku medium (attempt 1)')
-  assert.match(implement.prompt, /, attempt 1, on haiku medium\.\n/)
+  assert.equal(implement.label, 'task-2: implement on haiku high (attempt 1)')
+  assert.match(implement.prompt, /, attempt 1, on haiku high\.\n/)
   const supervise = run.calls.find((c) => c.role === 'supervisor' && c.unit === 'task-2')
   assert.equal(supervise.label, 'task-2: supervise attempt 1 on sonnet xhigh')
-  assert.match(supervise.prompt, /Attempt 1 ran on haiku medium\./)
+  assert.match(supervise.prompt, /Attempt 1 ran on haiku high\./)
 })
 
-test("a retry runs at xhigh only on a Haiku task, stays at the task's effort on Sonnet, and an escalation runs the next model at high", async (t) => {
+test("a retry on haiku runs at xhigh, and an escalation runs the next model at high", async (t) => {
   const repo = makeRepo(t)
   const args = compile(
     repo,
     plan([
       task(1, { tier: 'haiku high — a constant table' }),
       task(2, { tier: 'sonnet high — wiring the tests pin down' }),
-      task(3, { tier: 'sonnet xhigh — a parser the tests leave partly open' }),
     ]),
   )
   const run = await runWorkflow(args, {
     supervisor: (call, approve) => {
-      if (call.unit === 'task-1' && call.n <= 2) return retry(`gap ${call.n}`)
-      if ((call.unit === 'task-2' || call.unit === 'task-3') && call.n === 1) return retry('the order of the calls')
-      if ((call.unit === 'task-2' || call.unit === 'task-3') && call.n === 2) return { ...retry('too hard for this model'), verdict: 'escalate' }
+      if (call.unit === 'task-1' && call.n === 1) return retry('gap 1')
+      if (call.unit === 'task-2' && call.n === 1) return { ...retry('too hard for this model'), verdict: 'escalate' }
       return approve(call)
     },
   })
   assert.equal(run.error, null, run.error && run.error.stack)
-  assert.deepEqual(rungs(run, 'task-1'), ['haiku high', 'haiku xhigh', 'sonnet high'])
-  assert.deepEqual(rungs(run, 'task-2'), ['sonnet high', 'sonnet high', 'opus high'])
-  assert.deepEqual(rungs(run, 'task-3'), ['sonnet xhigh', 'sonnet xhigh', 'opus high'])
+  assert.deepEqual(rungs(run, 'task-1'), ['haiku high', 'haiku xhigh'])
+  assert.deepEqual(rungs(run, 'task-2'), ['haiku high', 'sonnet high'])
   assert.deepEqual(run.result.units.map((u) => u.tiers), [
-    ['haiku high', 'haiku xhigh', 'sonnet high'],
-    ['sonnet high', 'opus high'],
-    ['sonnet xhigh', 'opus high'],
+    ['haiku high', 'haiku xhigh'],
+    ['haiku high', 'sonnet high'],
   ])
-  assert.ok(run.logs.includes('task-1: escalating from haiku xhigh to sonnet high'), run.logs.join('\n'))
-  assert.ok(run.logs.includes('task-2: escalating from sonnet high to opus high'), run.logs.join('\n'))
-  assert.ok(run.logs.includes('task-3: escalating from sonnet xhigh to opus high'), run.logs.join('\n'))
-  assert.match(attemptsOf(run, 'task-1')[2].prompt, /- Attempt 2 on haiku xhigh: DONE\./)
+  assert.match(attemptsOf(run, 'task-1')[1].prompt, /- Attempt 1 on haiku high: DONE\./)
 })
 
-test('a declared max stays max on its model, and the retry after a merge conflict keeps the model and the effort', async (t) => {
-  // Two Opus attempts, so the retry of the opus max task runs instead of spending the ladder.
-  const args = { ...twoTasks(t, { tier: 'opus max — a parser whose cases the tests cannot list' }, { tier: 'haiku high — a constant table' }), ladder: { haiku: 2, sonnet: 2, opus: 2 } }
+test('the retry after a merge conflict keeps the model and the effort', async (t) => {
+  const args = twoTasks(t)
   const run = await runWorkflow(args, {
     supervisor: (call, approve) => (call.unit === 'task-1' && call.n === 1 ? retry('edge') : approve(call)),
-    ops: (call, wt) =>
-      call.kind === 'ops:merge' && call.unit === 'task-2' && call.n === 1
-        ? { merged: false, reason: 'conflict', files: ['src/shared.js'], detail: 'CONFLICT' }
-        : wt(call),
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge' && call.unit === 'task-1' && call.n === 1) {
+        return { merged: false, reason: 'conflict', files: ['src/shared.js'], detail: 'CONFLICT' }
+      }
+      if (call.kind === 'ops:merge' && call.unit === 'task-2' && call.n === 1) {
+        return { merged: false, reason: 'conflict', files: ['src/shared.js'], detail: 'CONFLICT' }
+      }
+      return wt(call)
+    },
   })
   assert.equal(run.error, null, run.error && run.error.stack)
-  assert.deepEqual(rungs(run, 'task-1'), ['opus max', 'opus max'])
+  assert.deepEqual(rungs(run, 'task-1'), ['haiku high', 'haiku xhigh', 'haiku xhigh'])
   assert.deepEqual(rungs(run, 'task-2'), ['haiku high', 'haiku high'])
   assert.deepEqual(run.result.units.map((u) => [u.status, u.tiers]), [
-    ['merged', ['opus max']],
+    ['merged', ['haiku high', 'haiku xhigh']],
     ['merged', ['haiku high']],
   ])
 })
 
-test("the supervisor's Ladder section names the rung a retry and an escalation would run", async (t) => {
-  const args = { ...twoTasks(t, { tier: 'haiku high — a constant table' }), ladder: { haiku: 2, sonnet: 1, opus: 0 } }
+test("the supervisor's Ladder section names the rung and corrections used", async (t) => {
+  const args = twoTasks(t)
   const run = await runWorkflow(args, {
     supervisor: (call, approve) => (call.unit === 'task-1' && call.n <= 2 ? retry(`gap ${call.n}`) : approve(call)),
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   const ladders = run.calls.filter((c) => c.role === 'supervisor' && c.unit === 'task-1').map((c) => c.prompt.split('\n## Ladder\n')[1])
   assert.deepEqual(ladders, [
-    'Attempts used: haiku 1/2, sonnet 0/1, opus 0/0.\nA retry runs on haiku xhigh. Escalate runs on sonnet high.',
-    'Attempts used: haiku 2/2, sonnet 0/1, opus 0/0.\nA retry runs on sonnet high. Escalate runs on sonnet high.',
-    'Attempts used: haiku 2/2, sonnet 1/1, opus 0/0.\nA retry blocks the unit: the ladder is spent. Escalate blocks the unit: the ladder is spent.',
+    'Rung: haiku high. Corrections used on this rung: 0 of 5.\nThe ladder raises the model by itself; you rule approve, retry, escalate or block.',
+    'Rung: haiku xhigh. Corrections used on this rung: 1 of 5.\nThe ladder raises the model by itself; you rule approve, retry, escalate or block.',
+    'Rung: haiku xhigh. Corrections used on this rung: 2 of 5.\nThe ladder raises the model by itself; you rule approve, retry, escalate or block.',
   ])
-
-  const sonnetArgs = { ...twoTasks(t, { tier: 'sonnet high — wiring the tests pin down' }), ladder: { haiku: 0, sonnet: 2, opus: 1 } }
-  const sonnetRun = await runWorkflow(sonnetArgs)
-  assert.equal(sonnetRun.error, null, sonnetRun.error && sonnetRun.error.stack)
-  const sonnetLadder = sonnetRun.calls.find((c) => c.role === 'supervisor' && c.unit === 'task-1').prompt.split('\n## Ladder\n')[1]
-  assert.equal(sonnetLadder, 'Attempts used: haiku 0/0, sonnet 1/2, opus 0/1.\nA retry runs on sonnet high. Escalate runs on opus high.')
 })
 
-test("a task's effort applies only on its own model: with no Haiku attempts, a haiku medium task starts on sonnet high", async (t) => {
-  const args = { ...twoTasks(t, { tier: 'haiku medium — renames one field' }), ladder: { haiku: 0, sonnet: 2, opus: 1 } }
+test("every task starts on haiku high, ignoring plan tier and effort", async (t) => {
+  const args = twoTasks(t, { tier: 'haiku medium — renames one field' }, { tier: 'opus high — deep' })
   const run = await runWorkflow(args)
   assert.equal(run.error, null, run.error && run.error.stack)
-  assert.deepEqual(rungs(run, 'task-1'), ['sonnet high'])
-  assert.deepEqual(run.result.units[0].tiers, ['sonnet high'])
+  assert.deepEqual(rungs(run, 'task-1'), ['haiku high'])
+  assert.deepEqual(rungs(run, 'task-2'), ['haiku high'])
+  assert.deepEqual(run.result.units[0].tiers, ['haiku high'])
+  assert.deepEqual(run.result.units[1].tiers, ['haiku high'])
 })
 
 // The final reviewer's model and effort as the harness records them, and the log lines the review wrote.
@@ -826,25 +818,18 @@ test('the final review runs on Sonnet at high for a small run of haiku work with
   assert.deepEqual(reviewLog(run), ['final review on sonnet high: a small all-haiku run with high reviews'])
 })
 
-test('the final review runs on Opus at xhigh when a merged task is tier opus', async (t) => {
-  const run = await runWorkflow(twoTasks(t, { tier: 'opus high — the parser design' }, {}))
-  assert.equal(run.error, null, run.error && run.error.stack)
-  assert.deepEqual(reviewOf(run), ['opus xhigh'])
-  assert.equal(run.calls.find((c) => c.role === 'reviewer').label, 'final review on opus xhigh')
-  assert.deepEqual([run.result.finalReview.reviewModel, run.result.finalReview.reviewEffort], ['opus', 'xhigh'])
-  assert.deepEqual(reviewLog(run), ['final review on opus xhigh: task-1 is tier opus'])
-})
-
-test('the final review runs on Opus at high when a merged task reviews at xhigh or max, and no task is tier opus', async (t) => {
+test('the final review runs on Opus at xhigh when a merged task reviews at xhigh or max', async (t) => {
   for (const review of ['xhigh — input parsing the tests leave open', 'max — subtle invariants']) {
     const run = await runWorkflow(twoTasks(t, {}, { review }))
     assert.equal(run.error, null, run.error && run.error.stack)
-    assert.deepEqual(reviewOf(run), ['opus high'])
-    assert.deepEqual(reviewLog(run), ['final review on opus high: the merged work is not a small all-haiku run'])
+    assert.deepEqual(reviewOf(run), ['opus xhigh'])
+    assert.equal(run.calls.find((c) => c.role === 'reviewer').label, 'final review on opus xhigh')
+    assert.deepEqual([run.result.finalReview.reviewModel, run.result.finalReview.reviewEffort], ['opus', 'xhigh'])
+    assert.deepEqual(reviewLog(run), [`final review on opus xhigh: task-2 reviews at ${review.split(' ')[0]}`])
   }
 })
 
-test('the final review runs on Opus at high for more than three units, in slices, or for sonnet work (issue 022)', async (t) => {
+test('the final review runs on Opus at high for more than three units, in slices (issue 022)', async (t) => {
   const four = await runWorkflow(compile(makeRepo(t), plan([task(1), task(2), task(3), task(4)])))
   assert.equal(four.error, null, four.error && four.error.stack)
   // Four merged units are two slices of at most three, each on the run's reviewer model and effort.
@@ -852,15 +837,11 @@ test('the final review runs on Opus at high for more than three units, in slices
   assert.equal(four.result.finalReview.slices, 2)
   assert.equal(four.result.finalReview.status, 'done')
   assert.deepEqual(reviewLog(four), ['final review on opus high: the merged work is not a small all-haiku run'])
-
-  const sonnet = await runWorkflow(twoTasks(t, { tier: 'sonnet high — wiring the tests pin down' }, {}))
-  assert.equal(sonnet.error, null, sonnet.error && sonnet.error.stack)
-  assert.deepEqual(reviewOf(sonnet), ['opus high'])
 })
 
-test('the final review judges only the merged units: a blocked opus task does not raise it', async (t) => {
+test('the final review judges only the merged units: a blocked task with review xhigh does not raise it', async (t) => {
   // The review is forced: a launch that leaves a unit blocked defers it (issues #5 and #33).
-  const run = await runWorkflow({ ...twoTasks(t, { tier: 'opus high — the parser design' }, {}), review: true }, {
+  const run = await runWorkflow({ ...twoTasks(t, { review: 'xhigh — the parser design' }, {}), review: true }, {
     supervisor: (call, approve) =>
       call.unit === 'task-1' ? { verdict: 'block', findings: [], ruling: 'Block: needs a design first.', guidance: '', question: '' } : approve(call),
   })
@@ -880,8 +861,8 @@ function relaunchOf(t, tasks, only) {
 }
 
 test('a relaunch of one haiku task never reviews on Sonnet: the final review covers the earlier launches too', async (t) => {
-  // task-1 was an opus task in the first launch; the relaunch runs task-2 alone, a small all-haiku run.
-  const args = relaunchOf(t, [task(1, { tier: 'opus high — the parser design' }), task(2)], 'task-2')
+  // task-1 was in the first launch; the relaunch runs task-2 alone, a small all-haiku run.
+  const args = relaunchOf(t, [task(1), task(2)], 'task-2')
   assert.deepEqual(args.waves, [['task-2']])
   assert.notEqual(args.integration.firstBase, args.integration.base)
   const run = await runWorkflow(args)
@@ -892,16 +873,11 @@ test('a relaunch of one haiku task never reviews on Sonnet: the final review cov
   assert.deepEqual(reviewLog(run), ['final review on opus high: a relaunch: the final review covers the earlier launches too'])
 })
 
-test('a relaunch that merges an opus task keeps Opus at xhigh, and one whose task reviews at xhigh runs Opus at high with the relaunch reason', async (t) => {
-  const opus = await runWorkflow(relaunchOf(t, [task(1, { tier: 'opus high — the parser design' }), task(2)], 'task-1'))
-  assert.equal(opus.error, null, opus.error && opus.error.stack)
-  assert.deepEqual(reviewOf(opus), ['opus xhigh'])
-  assert.deepEqual(reviewLog(opus), ['final review on opus xhigh: task-1 is tier opus'])
-
+test('a relaunch that merges a task whose review is xhigh runs Opus at xhigh', async (t) => {
   const deep = await runWorkflow(relaunchOf(t, [task(1), task(2, { review: 'xhigh — input parsing the tests leave open' })], 'task-2'))
   assert.equal(deep.error, null, deep.error && deep.error.stack)
-  assert.deepEqual(reviewOf(deep), ['opus high'])
-  assert.deepEqual(reviewLog(deep), ['final review on opus high: a relaunch: the final review covers the earlier launches too'])
+  assert.deepEqual(reviewOf(deep), ['opus xhigh'])
+  assert.deepEqual(reviewLog(deep), ['final review on opus xhigh: task-2 reviews at xhigh'])
 })
 
 test('the workflow no longer hard-codes an xhigh rung for an escalation', () => {
@@ -911,10 +887,10 @@ test('the workflow no longer hard-codes an xhigh rung for an escalation', () => 
 })
 
 test('a first launch reviews on Sonnet as before, whether its firstBase equals its base or is missing', async (t) => {
-  const args = threeTasks(t)
-  const { firstBase, ...noFirstBase } = args.integration
-  assert.equal(firstBase, args.integration.base)
-  for (const integration of [args.integration, noFirstBase]) {
+  for (const noBase of [false, true]) {
+    const args = threeTasks(t)
+    if (!noBase) assert.equal(args.integration.firstBase, args.integration.base)
+    const integration = noBase ? (({ firstBase, ...rest }) => rest)(args.integration) : args.integration
     const run = await runWorkflow({ ...args, integration })
     assert.equal(run.error, null, run.error && run.error.stack)
     assert.deepEqual(reviewOf(run), ['sonnet high'])

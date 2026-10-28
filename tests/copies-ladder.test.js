@@ -15,13 +15,6 @@ test('the steps of the ladder are the tiers of a plan', () => {
   assert.deepEqual(LADDER().rungs.map((rung) => rung.step), TIERS)
 })
 
-test('the retry of haiku in effortFor is the retry effort of the haiku rung', () => {
-  const source = () => LADDER().rungs.find((rung) => rung.step === 'haiku').effort.retry
-  const copy = () => read('plugins/aether/workflows/run.workflow.js').match(/return model === 'haiku' \? '([a-z]+)' : task\.effort/)[1]
-  check(source(), copy())
-  assert.throws(() => check(source(), copy() + 'x'))
-})
-
 test('the attempts of the swarm are another datum, declared as such', () => {
   const text = read('plugins/aether/lib/plan.js')
   assert.match(text, /\/\/ The swarm's attempts per tier: another datum than config\/ladder\.json[^\n]*\nconst DEFAULT_LADDER = \{ haiku: 2, sonnet: 2, opus: 1 \}/)

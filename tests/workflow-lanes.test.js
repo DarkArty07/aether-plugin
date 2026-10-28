@@ -87,6 +87,7 @@ test('with a pair for every call, the implementer, the supervisor and the final 
   const run = await runWorkflow(args, { lane: onPairs() })
   ok(run)
   assert.deepEqual(kinds(run), [
+    'ops:ladder',
     'ops:lane-pick',
     'ops:lane-start',
     'ops:lane-wait',
@@ -96,6 +97,7 @@ test('with a pair for every call, the implementer, the supervisor and the final 
     'ops:lane-wait',
     'ops:lane-took',
     'ops:merge',
+    'ops:ladder',
     'ops:remove',
     'ops:diff',
     'ops:lane-pick',
@@ -104,13 +106,13 @@ test('with a pair for every call, the implementer, the supervisor and the final 
     'ops:lane-took',
     'ops:sweep',
   ])
-  assert.equal(run.calls[0].label, 'task-1: implement on haiku xhigh (attempt 1): pick')
+  assert.equal(run.calls.find((c) => c.kind === 'ops:lane-pick').label, 'task-1: implement on haiku high (attempt 1): pick')
   const [implement, supervise, review] = starts(run)
   const { digest, ...flags } = implement.lane
   assert.deepEqual(flags, { run: args.runId, call: 'task-1-1-implement', role: 'implementer', task: 'task-1', model: 'gemini-3.8-flash', effort: 'high' })
   assert.match(digest, /^[0-9a-f]{8}:\d+$/)
   assert.deepEqual([implement.digestOk, supervise.digestOk, review.digestOk], [true, true, true])
-  assert.equal(implement.label, 'task-1: implement via agy gemini-3.8-flash on haiku xhigh (attempt 1): start')
+  assert.equal(implement.label, 'task-1: implement via agy gemini-3.8-flash on haiku high (attempt 1): start')
   // The window shows the call as its Haiku ops agent (issue 032): the label names the harness
   // and model up front, and the progress log says who ran and what it spent.
   assert.ok(run.logs.some((line) => /ran on agy gemini-3\.8-flash-high · 1200 tok/.test(line)), run.logs.join('\n'))
@@ -120,7 +122,7 @@ test('with a pair for every call, the implementer, the supervisor and the final 
   assert.ok(implement.payload.text.includes('\nBrief: .aether-tmp/brief.md\n'))
   assert.ok(implement.payload.text.includes('4. Commit your work in the worktree as you go: a commit after each part that passes, so an attempt cut off still leaves its work. Do not run aether-wt: the harness packages your diff and reads your head from git.'))
   assert.equal(implement.payload.text.includes('aether-wt ensure'), false)
-  assert.equal(run.calls[2].label, 'task-1: implement via agy gemini-3.8-flash on haiku xhigh (attempt 1): wait 1')
+  assert.equal(run.calls.find((c) => c.kind === 'ops:lane-wait').label, 'task-1: implement via agy gemini-3.8-flash on haiku high (attempt 1): wait 1')
   assert.deepEqual([supervise.lane.call, supervise.lane.role, supervise.lane.task, supervise.lane.model, supervise.lane.effort], [
     'task-1-1-supervise',
     'supervisor',
@@ -163,7 +165,7 @@ test('with a pair for every call, the implementer, the supervisor and the final 
 test('a start that finds no quota runs the same attempt native, as no pair is left', async (t) => {
   const run = await runWorkflow(lanesRun(t), { lane: onPairs((call, fallback) => (isCall(call, 'start', 'task-1-1-implement') ? { unavailable: 'quota' } : fallback(call))) })
   ok(run)
-  assert.deepEqual(native(run, 'implementer').map((c) => [c.model, c.effort, c.label]), [['haiku', 'xhigh', 'task-1: implement on haiku xhigh (attempt 1)']])
+  assert.deepEqual(native(run, 'implementer').map((c) => [c.model, c.effort, c.label]), [['haiku', 'high', 'task-1: implement on haiku high (attempt 1)']])
   const unit = run.result.units[0]
   assert.equal(unit.attempts, 1)
   assert.deepEqual([unit.rounds[0].provider, unit.rounds[0].laneFailure], ['native', null])
@@ -178,7 +180,7 @@ test('an attempt agy leaves for lack of quota goes on native, in the same attemp
   })
   ok(run)
   const [attempt] = native(run, 'implementer')
-  assert.equal(attempt.label, 'task-1: implement on haiku xhigh (attempt 1)')
+  assert.equal(attempt.label, 'task-1: implement on haiku high (attempt 1)')
   assert.ok(
     attempt.prompt.endsWith(
       '## An external agent began this attempt\nagy gemini-3.8-flash-high stopped before it finished: its quota ran out. Its uncommitted work, if any, is in the worktree. Continue from it.',
@@ -218,7 +220,7 @@ test('a supervisor lane answer with an unknown verdict and findings that are a s
   const unit = run.result.units[0]
   assert.equal(unit.status, 'merged')
   assert.deepEqual(unit.rounds.map((r) => r.verdict), ['retry', 'approve'])
-  assert.deepEqual(unit.rounds[0].findings, [])
+  assert.deepEqual(unit.rounds[0].findings, [{ severity: 'important', title: unit.rounds[0].ruling, file: 'src/t1/**', evidence: '' }])
   assert.match(unit.rounds[0].ruling, /^Looks right\. The verdict was not one of approve, retry, escalate or block, so it counts as retry\.$/)
   assert.equal(starts(run, 'supervisor').length, 2)
 })
@@ -250,7 +252,7 @@ test('changes outside Owns cost the attempt, and the next one, picked without th
   assert.deepEqual(unit.failures, ['no report'])
 })
 
-test('two changes outside Owns in a row block the unit: each counts as an attempt without a report', async (t) => {
+test('changes outside Owns on every attempt exhaust the ladder and block the unit', async (t) => {
   const run = await runWorkflow(lanesRun(t), {
     lane: onPairs(
       (call, fallback) =>
@@ -260,12 +262,18 @@ test('two changes outside Owns in a row block the unit: each counts as an attemp
   })
   ok(run)
   const unit = run.result.units[0]
-  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks'])
-  assert.equal(unit.attempts, 2)
-  assert.deepEqual(unit.failures, ['no report', 'no report'])
-  assert.deepEqual(starts(run, 'implementer').map((c) => c.lane.model), ['gemini-3.8-flash', 'claude-sonnet-5-5'])
+  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent (exhausted)'])
+  assert.equal(unit.attempts, 6)
+  assert.deepEqual(starts(run, 'implementer').map((c) => c.lane.model), [
+    'gemini-3.8-flash',
+    'claude-sonnet-5-5',
+    'gemini-3.8-flash',
+    'claude-sonnet-5-5',
+    'gemini-3.8-flash',
+    'claude-sonnet-5-5',
+  ])
   assert.equal(run.calls.some((c) => c.kind === 'ops:lane-start' && c.lane.role === 'supervisor'), false)
-  assert.equal(run.result.lanes.violation, 2)
+  assert.equal(run.result.lanes.violation, 6)
 })
 
 test('a lane that finds the integration worktree changed blocks the unit', async (t) => {
@@ -306,7 +314,7 @@ test('when the waits run out, the lane call is stopped and the same attempt goes
   ok(run)
   assert.equal(run.calls.filter((c) => c.kind === 'ops:lane-wait' && c.lane.call === 'task-1-1-implement').length, LANES.waits.implementer)
   const stops = run.calls.filter((c) => c.kind === 'ops:lane-stop')
-  assert.deepEqual(stops.map((c) => [c.lane.call, c.label]), [['task-1-1-implement', 'task-1: implement via agy gemini-3.8-flash on haiku xhigh (attempt 1): stop']])
+  assert.deepEqual(stops.map((c) => [c.lane.call, c.label]), [['task-1-1-implement', 'task-1: implement via agy gemini-3.8-flash on haiku high (attempt 1): stop']])
   assert.ok(run.calls.indexOf(stops[0]) < run.calls.indexOf(native(run, 'implementer')[0]))
   assert.deepEqual(run.result.units[0].rounds[0].laneFailure, { harness: 'agy', model: 'gemini-3.8-flash-high', reason: 'the wait cap ran out' })
   assert.equal(run.result.units[0].attempts, 1)
@@ -320,7 +328,7 @@ test('a result whose digest does not match is printed once more, then given up',
   })
   ok(once)
   assert.deepEqual(once.calls.filter((c) => c.kind === 'ops:lane-result').map((c) => c.label), [
-    'task-1: implement via agy gemini-3.8-flash on haiku xhigh (attempt 1): result',
+    'task-1: implement via agy gemini-3.8-flash on haiku high (attempt 1): result',
   ])
   assert.equal(once.result.units[0].rounds[0].provider, 'agy gemini-3.8-flash-high')
 
@@ -384,7 +392,7 @@ test('an escalation from a Gemini attempt picks the next attempt with the next r
     ['task-1-1-implement', 'gemini-3.8-flash', 'high'],
     ['task-1-2-implement', 'claude-sonnet-5-5', 'high'],
   ])
-  assert.deepEqual(run.result.units[0].tiers, ['haiku xhigh', 'sonnet high'])
+  assert.deepEqual(run.result.units[0].tiers, ['haiku high', 'sonnet high'])
 })
 
 // Two harnesses: agy runs the Gemini and Claude pairs, and codex runs GPT-5.5, the implementers' pair.
@@ -420,7 +428,7 @@ test('two harnesses: each call runs on the harness of its pair, and its provider
   ])
   assert.deepEqual([run.result.finalReview.status, run.result.finalReview.provider], ['done', 'agy claude-opus-5-5-high'])
   assert.deepEqual(starts(run, 'implementer').map((c) => c.lane.model), ['gpt-5.5-codex', 'gpt-5.5-codex'])
-  assert.equal(starts(run, 'implementer')[0].label, 'task-1: implement via codex gpt-5.5-codex on sonnet high (attempt 1): start')
+  assert.equal(starts(run, 'implementer')[0].label, 'task-1: implement via codex gpt-5.5-codex on haiku high (attempt 1): start')
   assert.equal(native(run, 'implementer').length, 0)
   // The supervisor's --author is the family of the pair that implemented the attempt.
   assert.deepEqual(run.calls.filter((c) => c.kind === 'ops:lane-pick' && c.lane.role === 'supervisor').map((c) => c.lane.author), ['gpt-5.5-codex', 'gpt-5.5-codex'])
@@ -449,7 +457,7 @@ test('an attempt on codex that stops before it finishes names codex in its recor
   const unit = run.result.units[0]
   assert.equal(unit.status, 'merged')
   assert.deepEqual(unit.rounds[0].laneFailure, { harness: 'codex', model: 'gpt-5.5-codex-high', reason: 'exit 1: model not found' })
-  assert.equal(run.calls.find((c) => c.kind === 'ops:lane-wait' && c.lane.call === 'task-1-1-implement').label, 'task-1: implement via codex gpt-5.5-codex on sonnet high (attempt 1): wait 1')
+  assert.equal(run.calls.find((c) => c.kind === 'ops:lane-wait' && c.lane.call === 'task-1-1-implement').label, 'task-1: implement via codex gpt-5.5-codex on haiku high (attempt 1): wait 1')
   const [attempt] = native(run, 'implementer')
   assert.ok(
     attempt.prompt.endsWith(

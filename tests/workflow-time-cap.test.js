@@ -21,20 +21,19 @@ test('a supervisor that never answers is abandoned at 15 minutes, shown so, and 
   const args = twoTasks(t)
   const run = await runWorkflow(args, {
     deadline: clockFor('task-1: supervise attempt 1'),
-    supervisor: (call, approve) => (call.unit === 'task-1' && call.n === 1 ? silent() : approve(call)),
+    supervisor: (call, approve) => (call.unit === 'task-1' ? silent() : approve(call)),
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   const [one, two] = run.result.units
   assert.equal(two.status, 'merged')
-  // The first attempt of task 1 had no ruling; its second attempt was supervised and merged.
-  assert.equal(one.status, 'merged')
-  assert.match(one.rounds[0].ruling, /abandoned after 15 min/)
-  assert.equal(one.rounds[0].verdict, null)
-  assert.deepEqual(run.result.abandoned, [{ role: 'supervisor', label: 'task-1: supervise attempt 1 on sonnet high', phase: 'Supervise', seconds: 900 }])
+  // The supervisor of task 1 failed 3 times in a row, blocking the unit while task 2 merged.
+  assert.equal(one.status, 'blocked')
+  assert.match(one.reason, /the supervisor failed 3 times in a row: abandoned after 15 min/)
+  assert.equal(run.result.abandoned.length, 3)
   assert.ok(run.logs.some((line) => /task-1: supervise attempt 1 on sonnet high: abandoned after 15 min/.test(line)), run.logs.join('\n'))
-  // 900 s in ticks of at most 120 s, and no tick is a call of the run.
+  // 900 s in ticks of at most 120 s, 3 times.
   const mine = run.ticks.filter((tick) => tick.label.startsWith('task-1: supervise attempt 1'))
-  assert.equal(mine.reduce((sum, tick) => sum + tick.seconds, 0), 900)
+  assert.equal(mine.reduce((sum, tick) => sum + tick.seconds, 0), 2700)
   assert.ok(mine.every((tick) => tick.seconds >= 1 && tick.seconds <= 120))
   assert.equal(run.result.agents.total, run.calls.length)
 })

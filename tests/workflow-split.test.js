@@ -10,7 +10,6 @@ const { makeRepo, compile } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { runWorkflow, laneAnswer, laneOf } = require('./workflow-harness.js')
 
-const NO_REPORT_REASON = 'the unit ended twice without its report: it is probably too large for one attempt; split it into smaller tasks'
 const FILES = ['src/a.js', 'src/b.js', 'src/c.js', 'src/d.js']
 const LANES = { superdelegation: true, harnesses: ['agy'], waits: { implementer: 3, supervisor: 2, reviewer: 2 } }
 const FLASH = { id: 'agy/gemini-3.8-flash@high', harness: 'agy', model: 'gemini-3.8-flash', family: 'gemini-3.8-flash', effort: 'high', group: null, intelligence: 40, costPerTaskUsd: 1 }
@@ -54,7 +53,7 @@ test('a unit of four owned files is retried as four sub-attempts, and the superv
   const unit = run.result.units[0]
   const prompts = attemptsOf(run, 'task-1').map((call) => call.prompt)
   assert.equal(unit.attempts, 2)
-  assert.deepEqual(unit.tiers, ['haiku xhigh'])
+  assert.deepEqual(unit.tiers, ['haiku high', 'haiku xhigh'])
   assert.equal(prompts.length, 5)
   assert.equal(limitOf(prompts[0]), null)
   assert.deepEqual(prompts.slice(1).map(limitOf), FILES)
@@ -160,11 +159,11 @@ test('a sub-attempt that ends without a report counts the pass as a missing repo
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[0]
-  const prompts = attemptsOf(run, 'task-1').map((call) => call.prompt)
-  assert.deepEqual([unit.status, unit.reason], ['blocked', NO_REPORT_REASON])
-  assert.deepEqual(unit.failures, ['no report', 'no report'])
-  assert.equal(unit.attempts, 2)
-  assert.deepEqual(prompts.map(limitOf), [null, 'src/a.js', 'src/b.js'])
+  const prompts = attemptsOf(run, 'task-1').map((call) => limitOf(call.prompt))
+  assert.deepEqual(prompts.slice(0, 3), [null, 'src/a.js', 'src/b.js'])
+  assert.deepEqual(unit.failures, Array(unit.attempts).fill('no report'))
+  assert.equal(unit.attempts, 6)
+  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent (exhausted)'])
   assert.equal(run.calls.some((call) => call.role === 'supervisor' && call.unit === 'task-1'), false)
   assert.equal(unit.rounds[1].split, true)
   assert.equal(unit.rounds[1].subAttempts, 2)

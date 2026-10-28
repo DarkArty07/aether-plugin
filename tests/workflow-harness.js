@@ -11,6 +11,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { PLUGIN } = require('./helpers.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
+const { ladderCommand } = require('../plugins/aether/lib/wt-ladder.js')
 
 const WORKFLOWS = path.join(PLUGIN, 'workflows')
 const SWARM_SCRIPT = 'run.workflow.js'
@@ -59,6 +60,35 @@ function aetherWt(call, state) {
     // glob that names nothing yet stays one item and the retry is not split (issue 14).
     case 'ls-files':
       return { files: [] }
+    case 'ladder': {
+      const [first, second] = call.command.rest
+      const rest = call.command.rest
+      const flagVal = (name) => {
+        const i = rest.indexOf(name)
+        return i === -1 ? undefined : rest[i + 1]
+      }
+      const verdict = flagVal('--verdict')
+      const payload = flagVal('--payload')
+      const digestVal = flagVal('--digest')
+      const repoRoot = state.args && state.args.repoRoot ? state.args.repoRoot : process.cwd()
+      try {
+        if (payload) {
+          fs.mkdirSync(path.dirname(payload), { recursive: true })
+          fs.writeFileSync(payload, call.payload ? call.payload.text : '', 'utf8')
+          return ladderCommand(repoRoot, first, second, {
+            verdict,
+            payload,
+            digest: digestVal,
+            ladder: state.ladder,
+          })
+        }
+        return ladderCommand(repoRoot, first, second, {
+          ladder: state.ladder,
+        })
+      } catch (err) {
+        return { error: err.message }
+      }
+    }
     default:
       throw new Error(`unexpected command for run ${first}: ${call.command.line}`)
   }
@@ -200,7 +230,7 @@ async function runWorkflow(args, overrides = {}, options = {}) {
   const custom = Boolean(options.script)
   const script = custom ? options.script : SWARM_SCRIPT
   const roles = custom ? options.roles : SWARM_ROLES
-  const state = { args: parseLeniently(args), merged: new Set(), lanes: {} }
+  const state = { args: parseLeniently(args), merged: new Set(), lanes: {}, ladder: overrides.ladder || options.ladder }
   const defaults = custom ? options.defaults(state) : defaultHandlers(state)
   const calls = []
   const events = []
@@ -227,6 +257,7 @@ async function runWorkflow(args, overrides = {}, options = {}) {
     const unitMatch = (opts.label || '').match(/^(task-\d+):/)
     const command = role === 'ops' ? (custom ? options.commandOf(prompt) : parseCommand(prompt)) : null
     const isLane = !custom && Boolean(command && command.tool === 'aether-lane')
+    const isLadder = !custom && Boolean(command && command.tool === 'aether-wt' && command.verb === 'ladder')
     const call = {
       role,
       model: opts.model,
@@ -238,7 +269,7 @@ async function runWorkflow(args, overrides = {}, options = {}) {
       unit: unitMatch ? unitMatch[1] : null,
       command,
       lane: isLane ? laneFlags(command.rest) : null,
-      payload: isLane || (custom && role === 'ops') ? payloadOf(prompt) : null,
+      payload: isLane || isLadder || (custom && role === 'ops') ? payloadOf(prompt) : null,
     }
     if (isLane && command.verb === 'start') {
       call.digestOk = Boolean(call.payload) && lanes.digest(call.payload.text) === call.lane.digest

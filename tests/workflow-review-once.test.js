@@ -73,14 +73,14 @@ test('a launch whose only unit is blocked defers, and is not a skipped review of
 })
 
 test('review: true runs the final review of a launch that left a unit blocked, on the merged units', async (t) => {
-  const { args } = twoTasks(t, { tier: 'opus high — the parser design' }, {})
+  const { args } = twoTasks(t, { review: 'xhigh — the parser design' }, {})
   const run = await runWorkflow({ ...args, review: true }, { supervisor: block('task-1') })
   assert.equal(run.error, null, run.error && run.error.stack)
   assert.equal(run.result.units[0].status, 'blocked')
   assert.equal(run.result.units[1].status, 'merged')
   assert.equal(run.result.finalReview.status, 'done')
   assert.equal(run.result.finalReview.verdict, 'ready')
-  // The blocked opus task is not merged, so it does not raise the review.
+  // The blocked xhigh review task is not merged, so it does not raise the review.
   assert.deepEqual(reviewers(run).map((c) => `${c.model} ${c.effort}`), ['sonnet high'])
   assert.equal(reviewers(run).length, 1)
   const diff = run.calls.find((c) => c.kind === 'ops:diff')

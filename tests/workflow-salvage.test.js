@@ -65,7 +65,7 @@ test('a salvaged attempt the supervisor sends back runs again like any retry, an
   const unit = run.result.units[1]
   assert.equal(unit.status, 'merged')
   assert.deepEqual(unit.rounds.map((r) => [r.salvaged === true, r.verdict]), [[true, 'retry'], [false, 'approve']])
-  assert.deepEqual(unit.failures, ['findings: no tests'])
+  assert.deepEqual(unit.failures, [])
 })
 
 test('an attempt that ends without a report and left nothing still counts, and two of them stop the unit', async (t) => {
@@ -77,8 +77,8 @@ test('an attempt that ends without a report and left nothing still counts, and t
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
   assert.equal(unit.status, 'blocked')
-  assert.deepEqual(unit.failures, ['no report', 'no report'])
-  assert.equal(run.calls.filter((c) => c.kind === 'ops:salvage' && c.unit === 'task-2').length, 2)
+  assert.equal(unit.reason, 'the ladder is spent (exhausted)')
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:salvage' && c.unit === 'task-2').length, 6)
   assert.equal(run.calls.some((c) => c.role === 'supervisor' && c.unit === 'task-2'), false)
   assert.ok(run.logs.some((l) => /task-2: no report, nothing to salvage/.test(l)), run.logs.join('\n'))
 })

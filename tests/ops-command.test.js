@@ -310,6 +310,7 @@ test("every ops prompt of a real workflow run parses to the command the harness 
     'aether-lane took',
     'aether-lane wait',
     'aether-wt diff',
+    'aether-wt ladder',
     'aether-wt merge',
     'aether-wt remove',
     'aether-wt sweep',
