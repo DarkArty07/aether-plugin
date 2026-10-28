@@ -249,6 +249,31 @@ function issueOf(finding) {
 
 const issueFile = (dataDir, id) => path.join(issuesDir(dataDir), `${id.replace(/[^A-Za-z0-9._-]/g, '-')}.md`)
 
+// The names issueFile gives the drafts of the failures, and the heading every draft has: only a file with both is a draft
+// of this module, so a reading never removes any other file of the folder.
+const DRAFT_NAME = /^(fault|rise-without-reason|pair-failing|rule-broken|blocked-by-mistake)-[A-Za-z0-9._-]+\.md$/
+const DRAFT_HEADING = '\n## Evidence\n'
+
+// Removes the drafts whose failure this reading no longer finds, so that the folder keeps only the current ones.
+function pruneDrafts(dataDir, failures) {
+  const keep = new Set(failures.map((item) => path.basename(issueFile(dataDir, item.id))))
+  let names
+  try {
+    names = fs.readdirSync(issuesDir(dataDir))
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (!DRAFT_NAME.test(name) || keep.has(name)) continue
+    const file = path.join(issuesDir(dataDir), name)
+    try {
+      if (fs.readFileSync(file, 'utf8').includes(DRAFT_HEADING)) fs.rmSync(file)
+    } catch {
+      // A draft that cannot be read or removed stays until the next reading.
+    }
+  }
+}
+
 function compareFindings(a, b) {
   return RANK[a.kind] - RANK[b.kind]
     || b.evidence.length - a.evidence.length
@@ -286,8 +311,9 @@ function readObservations({ dataDir, repoRoot = null, now = Date.now(), pairs = 
     ...correctionFindings(dataDir),
   ].sort(compareFindings)
 
-  for (const item of items) {
-    if (item.kind !== 'failure') continue
+  const failures = items.filter((item) => item.kind === 'failure')
+  pruneDrafts(dataDir, failures)
+  for (const item of failures) {
     item.issue = issueOf(item)
     writeAtomic(issueFile(dataDir, item.id), `# ${item.issue.title}\n\n${item.issue.body}`)
   }

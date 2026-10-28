@@ -67,6 +67,25 @@ test('no file the reading writes carries a command, a quote or an answer (R10, E
   assert.ok(fs.existsSync(path.join(dataDir, 'observe', 'read.json')))
 })
 
+test('a reading removes the drafts of findings that are gone, and no other file of the folder', (t) => {
+  const { dataDir, repoRoot } = fixture(t)
+  const options = { dataDir, repoRoot, now: 5000, pairs: PAIRS, cfg: observe.loadObserveConfig() }
+  readObservations(options)
+  const issues = path.join(dataDir, 'observe', 'issues')
+  const current = path.join(issues, 'fault-register.flush.md')
+  assert.ok(fs.existsSync(current))
+  // A draft of a finding that is gone, a draft the owner kept by hand, and a file of the owner's that is not a draft.
+  const stale = path.join(issues, 'fault-register.gone.md')
+  write(stale, '# Silent faults in register.gone\n\n## Evidence\n\n- an old count\n')
+  write(path.join(issues, 'fault-my-notes.md'), 'my own notes about faults')
+  write(path.join(issues, 'notes.md'), 'a file of the owner')
+  readObservations(options)
+  assert.equal(fs.existsSync(stale), false)
+  assert.equal(fs.existsSync(current), true)
+  assert.equal(fs.readFileSync(path.join(issues, 'fault-my-notes.md'), 'utf8'), 'my own notes about faults')
+  assert.equal(fs.readFileSync(path.join(issues, 'notes.md'), 'utf8'), 'a file of the owner')
+})
+
 test('with nothing recorded the reading is an empty list and does not throw', (t) => {
   const { items } = readObservations({ dataDir: tempDir(t), repoRoot: null, now: 1, pairs: [], cfg: observe.loadObserveConfig() })
   assert.deepEqual(items, [])
