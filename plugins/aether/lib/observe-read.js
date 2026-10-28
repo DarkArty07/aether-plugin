@@ -10,7 +10,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { isObject, isNumber, numberOrZero: count, writeFileAtomic: writeAtomic } = require('./common.js')
-const { observeDir, issuesDir, devDir, readEvents, readFaults, loadObserveConfig, cleanText: identifier } = require('./observe.js')
+const { observeDir, issuesDir, devDir, readEvents, readFaults, loadObserveConfig, cleanText: identifier, FAULT_KINDS } = require('./observe.js')
 const { digestAll, readSummary } = require('./observe-digest.js')
 const { fingerprintOf, detectRiseWithoutReason, detectPairFailures, detectRuleBroken, detectBlockedByMistake } = require('./observe-detect.js')
 const { calibrationSignals } = require('./observe-calibrate.js')
@@ -116,21 +116,35 @@ function withOrigin(finding, lanes, seats) {
   }
 }
 
+// The kinds of the faults of one class, counted, in the order of FAULT_KINDS: " (TypeError ×2, other ×1)", or nothing when
+// none of them has a kind. Only words of the list are here, since readFaults drops any other kind.
+function kindsText(byKind) {
+  if (!byKind) return ''
+  const parts = FAULT_KINDS.filter((kind) => byKind.has(kind)).map((kind) => `${kind} ×${byKind.get(kind)}`)
+  return parts.length ? ` (${parts.join(', ')})` : ''
+}
+
 function faultFindings(totals, faults) {
   const findings = []
   for (const [source, total] of totals) {
     if (total.value <= 0) continue
     const name = identifier(source)
     const classes = new Map()
+    const kinds = new Map()
     const times = []
     for (const fault of faults) {
       if (fault.source !== source) continue
       const cls = identifier(fault.class)
       classes.set(cls, (classes.get(cls) || 0) + 1)
+      if (fault.kind !== undefined) {
+        const byKind = kinds.get(cls) || new Map()
+        byKind.set(fault.kind, (byKind.get(fault.kind) || 0) + 1)
+        kinds.set(cls, byKind)
+      }
       if (isNumber(fault.time)) times.push(fault.time)
     }
     const evidence = [`Source ${name} recorded ${total.value} silent faults in ${total.sessions.length} sessions`]
-    for (const [cls, n] of [...classes].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) evidence.push(`Class ${cls}: ${n} faults still on disk`)
+    for (const [cls, n] of [...classes].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) evidence.push(`Class ${cls}: ${n} faults still on disk${kindsText(kinds.get(cls))}`)
     findings.push({
       id: `fault:${name}`,
       kind: 'failure',
