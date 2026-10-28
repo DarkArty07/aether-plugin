@@ -23,8 +23,8 @@ test('the bootstrap sends the Lead to /aether:design, and no longer describes th
   for (const gone of ['aether-lane seat', 'Exit 3', 'Exit 4', 'Exit 1', 'SendMessage', 'sameModelAsAuthor', '## Writing and judging', '## The design seats']) assert.ok(!BOOTSTRAP.includes(gone), `gone: ${gone}`)
 })
 
-test('a dispute the Lead may fix itself is named by its mechanical flag, and the Lead relaunches in short mode (#91)', () => {
-  assert.ok(designing().includes('When `mechanical` is true, the Lead may fix the findings itself and relaunch in short mode.'))
+test('a dispute the Lead may fix itself is named by its mechanical flag, and the plan stage launches in short mode (#91)', () => {
+  assert.ok(designing().includes('change the plan or tasks and launch in short mode (see "Later changes"); when `mechanical` is true, fix the findings yourself.'))
   assert.ok(BOOTSTRAP.includes('Never override the Judge silently.'))
 })
 
