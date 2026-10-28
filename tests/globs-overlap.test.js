@@ -43,3 +43,9 @@ test('a literal folder overlaps a glob that reaches inside it, and nothing else'
 test('a pattern the rules do not parse stays an overlap', () => {
   assert.equal(patternsOverlap('src/a**b.js', 'src/c.ts'), true)
 })
+
+// `a**` in a name matches across folders (globToRegExp turns it into `.*`), so it reaches paths of more segments.
+test('a ** inside a name reaches into the folders below it', () => {
+  assert.equal(patternsOverlap('src/a**', 'src/a/b/c.js'), true)
+  assert.equal(patternsOverlap('src/a/b/c.js', 'src/a**'), true)
+})

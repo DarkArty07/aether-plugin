@@ -84,6 +84,9 @@ function segmentsOverlap(a, b) {
 
 // Conservative: true whenever the two patterns could match a common path.
 function patternsOverlap(a, b) {
+  // A `**` that is not a whole segment (`src/a**`) crosses folders inside a name, which the segment rules do not model.
+  const insideName = (pattern) => segmentsOf(normalizePattern(pattern)).some((segment) => segment !== '**' && segment.includes('**'))
+  if (insideName(a) || insideName(b)) return true
   const xs = alternatives(a)
   const ys = alternatives(b)
   return xs.some((x) => ys.some((y) => segmentsOverlap(x, y)))
