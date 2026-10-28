@@ -714,7 +714,8 @@ function supervisorPrompt(unit, task, rung, report, view, gate, opts = {}) {
     if (actualGate.error) {
       lines.push(`Checks: not run (${actualGate.error})`)
     } else {
-      lines.push(`Checks: ${actualGate.checks || 'pass'}`)
+      // Only a gate that did not fail gets here. `checks` is the verb's word for it; any other shape reads as a pass.
+      lines.push(`Checks: ${typeof actualGate.checks === 'string' && actualGate.checks ? actualGate.checks : 'pass'}`)
       if (actualGate.tests !== undefined && actualGate.tests !== null) {
         lines.push(`Tests: ${actualGate.tests}`)
       }

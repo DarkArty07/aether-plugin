@@ -43,6 +43,12 @@ test('the gate is sent with the long timeout, after the implementer and before t
   assert.ok(at('end ops:gate task-1') < at('start supervisor task-1'))
 })
 
+test('a gate answer whose checks are a list still reads as a pass to the supervisor', async (t) => {
+  const run = await runWorkflow(one(t), { ops: (call, wt) => (call.kind === 'ops:gate' ? { pass: true, checks: [{ name: 'tests', pass: true }], findings: [], detail: '', tests: '12 passed', knownFailures: [], timedOut: false, files: [] } : wt(call)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.match(supervisions(run)[0].prompt, /## Gate evidence\nChecks: pass\nTests: 12 passed/)
+})
+
 test('a gate that passes gives the supervisor its evidence', async (t) => {
   const run = await runWorkflow(one(t))
   assert.match(supervisions(run)[0].prompt, /## Gate evidence\nChecks: pass\nTests: # pass 12/)
