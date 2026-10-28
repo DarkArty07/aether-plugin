@@ -442,7 +442,8 @@ function buildGraph(parsed, { only = null } = {}) {
 
 function renderBrief(task, { planPath, spec, globalConstraints, objective = null }) {
   const parts = [
-    `# Brief: Task ${task.number}: ${task.title}`,
+    // A unit of several tasks has its tasks named in the title already.
+    task.members ? `# Brief: ${task.title}` : `# Brief: Task ${task.number}: ${task.title}`,
     '',
     `- Plan: ${planPath}`,
     `- Spec: ${spec || 'not named in the plan'}`,

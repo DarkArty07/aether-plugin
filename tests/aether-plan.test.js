@@ -455,7 +455,7 @@ test('compile builds a group of tasks as one unit: one brief with every member a
   assert.deepEqual(r.json.tasks['task-1'].members, [1, 2, 3])
   assert.deepEqual(r.json.waves, [['task-1']])
   const brief = fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8')
-  assert.match(brief, /^# Brief: Task 1: Tasks 1, 2 and 3: Task 1 title$/m)
+  assert.match(brief, /^# Brief: Tasks 1, 2 and 3: Task 1 title$/m)
   assert.match(brief, /^- Owns: src\/a\.js, src\/b\.js, src\/c\.js$/m)
   assert.match(brief, /^This unit builds Tasks 1, 2 and 3 together: /m)
   assert.match(brief, /^### Task 2: Task 2 title$/m)
