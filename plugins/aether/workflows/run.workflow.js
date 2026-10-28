@@ -659,7 +659,14 @@ function implementerPrompt(unit, task, rung, context, { lane = false, limit = nu
 }
 
 // The lane variant runs in a disposable copy of the unit branch, with the brief and the package in .aether-tmp/.
-function supervisorPrompt(unit, task, rung, report, view, { lane = false } = {}) {
+function supervisorPrompt(unit, task, rung, report, view, gate, opts = {}) {
+  let actualGate = gate
+  let actualOpts = opts
+  if (gate && (gate.lane !== undefined || gate.gate !== undefined) && opts.lane === undefined) {
+    actualGate = gate.gate || null
+    actualOpts = gate
+  }
+  const lane = Boolean(actualOpts.lane)
   const lines = [
     `You supervise ${unit.id}: ${task.title} (area ${task.area}), run ${runId}. Attempt ${unit.attempts} ran on ${rung}.`,
     '',
@@ -683,6 +690,21 @@ function supervisorPrompt(unit, task, rung, report, view, { lane = false } = {})
   }
   const memory = rulings[task.area] || []
   if (memory.length) lines.push('', `## Earlier rulings in area ${task.area}`, ...memory.map((r) => `- ${r}`))
+  if (actualGate) {
+    lines.push('', '## Gate evidence')
+    if (actualGate.error) {
+      lines.push(`Checks: not run (${actualGate.error})`)
+    } else {
+      lines.push(`Checks: ${actualGate.checks || 'pass'}`)
+      if (actualGate.tests !== undefined && actualGate.tests !== null) {
+        lines.push(`Tests: ${actualGate.tests}`)
+      }
+      if (actualGate.knownFailures && actualGate.knownFailures.length) {
+        const kf = Array.isArray(actualGate.knownFailures) ? actualGate.knownFailures.join(', ') : actualGate.knownFailures
+        lines.push(`Known failures: ${kf}`)
+      }
+    }
+  }
   lines.push(
     '',
     '## Ladder',
@@ -1116,7 +1138,7 @@ async function implementSplit(unit, task, model, effort, rung, context, exclude,
 // after any outcome of the pair but ok and blocked (without lanes, on Sonnet at the task's review effort).
 // `author` is the family that ran the attempt. Resolves to { review, provider, effort }, with the effort the
 // review ran at, or to { blocked } with the pair's detail.
-async function supervise(unit, task, rung, report, view, author) {
+async function supervise(unit, task, rung, report, view, author, gate = null) {
   const n = unit.attempts
   const id = `${unit.id}-${n}-supervise`
   const where = { phase: 'Supervise', label: `${unit.id}: supervise attempt ${n}` }
@@ -1132,7 +1154,7 @@ async function supervise(unit, task, rung, report, view, author) {
       ...where,
       build: (pair) => ({
         task: unit.id,
-        prompt: supervisorPrompt(unit, task, rung, report, view, { lane: true }),
+        prompt: supervisorPrompt(unit, task, rung, report, view, gate, { lane: true }),
         base: `${unit.id}: supervise via ${pair.harness} ${pair.model} (attempt ${n})`,
       }),
     })
@@ -1145,7 +1167,7 @@ async function supervise(unit, task, rung, report, view, author) {
     }
   }
   const label = `${unit.id}: supervise attempt ${n} on ${native.model} ${native.effort}`
-  const review = await call('supervisor', native.model, native.effort, supervisorPrompt(unit, task, rung, report, view), {
+  const review = await call('supervisor', native.model, native.effort, supervisorPrompt(unit, task, rung, report, view, gate), {
     phase: 'Supervise',
     label,
     schema: SUPERVISOR_SCHEMA,
@@ -1307,12 +1329,31 @@ async function work(unit, task) {
       continue
     }
 
+    const gate = await ops(`aether-wt gate ${runId} ${unit.id}`, { phase: 'Supervise', label: `${unit.id}: gate`, long: true })
+    if (!gate.error && gate.pass === false) {
+      unit.ladder.gateRejections++
+      const findings = gate.findings && gate.findings.length ? gate.findings : [{ file: task.owns[0], what: gate.checks || 'la puerta falló' }]
+      round.findings = findings.map((f) => ({
+        severity: 'important',
+        title: f.what,
+        file: f.file,
+        evidence: f.evidence || gate.detail || '',
+      }))
+      const res = await step(unit, 'fix', { findings })
+      if (res.blocked) return finish(unit, 'blocked', res.blocked)
+      if (res.rejected) return finish(unit, 'blocked', `the ladder rejected the verdict: ${res.rejected}`)
+      view = res.next
+      model = view.model
+      effort = view.effort
+      continue
+    }
+
     let supervisorTries = 0
     let supervisorFailReason = null
     let supervisorSuccess = false
     while (supervisorTries < 3) {
       supervisorTries++
-      const checked = await supervise(unit, task, rung, report, view, attempt.family)
+      const checked = await supervise(unit, task, rung, report, view, attempt.family, gate)
       if (checked.blocked !== undefined) return finish(unit, 'blocked', `lane: ${checked.blocked}`)
       round.reviewProvider = checked.provider
       round.reviewEffort = checked.effort

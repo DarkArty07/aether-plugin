@@ -44,6 +44,7 @@ test('every aether-wt command the workflow sends parses to its argument vector',
     [`aether-wt remove ${RUN} task-12`, ['remove', RUN, 'task-12']],
     [`aether-wt diff ${RUN} --final`, ['diff', RUN, '--final']],
     [`aether-wt sweep --run ${RUN}`, ['sweep', '--run', RUN]],
+    [`aether-wt gate ${RUN} task-1`, ['gate', RUN, 'task-1']],
   ]
   for (const [command, args] of forms) assert.deepEqual(parseOpsPrompt(prompt(command)), parsed('aether-wt', args), command)
 })
@@ -310,6 +311,7 @@ test("every ops prompt of a real workflow run parses to the command the harness 
     'aether-lane took',
     'aether-lane wait',
     'aether-wt diff',
+    'aether-wt gate',
     'aether-wt ladder',
     'aether-wt merge',
     'aether-wt remove',
