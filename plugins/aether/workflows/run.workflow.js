@@ -227,6 +227,8 @@ const abandoned = []
 const modelAgentsSpent = () => agents.total - (agents.byRole.ops || 0)
 // The supervisors' shared memory: the latest rulings of each area.
 const rulings = {}
+// The merge refusal that the unit's last merge round made, for blockHint: its files, or null for any other outcome (issues 81 and 92).
+const refusals = {}
 // Merges and closes run one at a time, in the order they are asked for.
 let queue = Promise.resolve()
 // The lane calls by outcome.
@@ -1492,6 +1494,7 @@ async function work(unit, task) {
     // rerun. The unit is merged only when the rerun passes, with the commit the rerun names. A rerun that is cut,
     // errors, or is refused for any reason but a finished test run leaves the commit there and blocks the unit.
     const UNTESTED = 'its merge commit is on the integration branch without a passing test run'
+    refusals[unit.id] = null
     const held = await serialized(async () => {
       const first = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true })
       if (first.merged || !first.error) return { first }
@@ -1550,6 +1553,7 @@ async function work(unit, task) {
       }
       return finish(unit, 'blocked', `merge ${round.merge}`)
     }
+    refusals[unit.id] = refusalOf(out)
     if (out.reason === 'conflict' || out.reason === 'tests') {
       if (unit.mergeRetried) return finish(unit, 'blocked', `merge failed again: ${round.merge}`)
       unit.mergeRetried = true
@@ -1584,6 +1588,28 @@ async function work(unit, task) {
   }
 }
 
+// The files a refused merge names (issues 81 and 92): those outside Owns, or the test files that went red after the
+// merge. A test name that is not a file names no file, so it is left out. Null for any other refusal.
+const isTestFile = (name) => typeof name === 'string' && (name.includes('/') || /\.(?:js|ts|py|go)$/.test(name))
+function refusalOf(out) {
+  if (out.reason === 'ownership') return { files: Array.isArray(out.files) ? out.files : [] }
+  if (out.reason === 'tests') return { files: Array.isArray(out.newFailures) ? out.newFailures.filter(isTestFile) : [] }
+  return null
+}
+
+// What a unit that ends blocked gives the Lead (issues 81 and 92): blockedFiles, always, and when its last merge was
+// refused and its patch was kept, the one step that integrates it by hand. The step goes at the end of the reason, which
+// the Lead reads first, after the reason the workflow or the supervisor gave.
+function blockHint(unit) {
+  const refusal = refusals[unit.id]
+  unit.blockedFiles = refusal ? refusal.files : []
+  if (!refusal || !unit.patch) return
+  const sentence = (text) => (/[.!?]$/.test(text) ? text : `${text}.`)
+  const named = refusal.files.length ? `Blocked files: ${list(refusal.files)}.` : ''
+  unit.next = `To integrate it by hand, run git apply ${unit.patch} in the integration worktree, run \`${testCommand}\` once, commit the result, then run aether-wt adopt ${runId} ${unit.id} --commit <sha> --reason "<text>", where <sha> is that commit.`
+  unit.reason = [unit.reason ? sentence(unit.reason) : '', named, unit.next].filter(Boolean).join(' ')
+}
+
 // Removes the unit's worktree and branch. aether-wt keeps unmerged work as a patch first.
 async function close(unit) {
   const command = `aether-wt remove ${runId} ${unit.id}`
@@ -1601,6 +1627,7 @@ async function runUnit(id) {
     finish(unit, 'blocked', `internal error: ${message(err)}`)
   }
   if (unit.attempts > 0) await close(unit)
+  if (unit.status === 'blocked') blockHint(unit)
 }
 
 // A relaunch is a launch after the run's first one: its firstBase, the base of the first launch, differs
