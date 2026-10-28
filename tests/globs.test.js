@@ -22,7 +22,8 @@ test('patternsOverlap is true when two patterns can match one path', () => {
   assert.equal(patternsOverlap('src/**', 'src/api/**'), true)
   assert.equal(patternsOverlap('src', 'src/a.ts'), true)
   assert.equal(patternsOverlap('**', 'web/login/form.tsx'), true)
-  assert.equal(patternsOverlap('web/*.css', 'web/a.ts'), true)
+  assert.equal(patternsOverlap('web/*.css', 'web/a.css'), true)
+  assert.equal(patternsOverlap('web/*.css', 'web/a.ts'), false)
   assert.equal(patternsOverlap('src/a.ts', 'src/a.ts'), true)
 })
 
