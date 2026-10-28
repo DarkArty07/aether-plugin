@@ -98,7 +98,7 @@ function check(planArg, { cwd = process.cwd(), stdout = process.stdout } = {}) {
   const graph = buildGraph(parsed)
   const trace = traceability(parsed, specRequirements(parsed.spec, planPath, cwd))
   const errors = [...parsed.errors, ...graph.errors, ...trace.errors]
-  const warnings = [...parsed.warnings, ...graph.warnings, ...trace.warnings, ...planWarnings(parsed)]
+  const warnings = [...parsed.warnings, ...graph.warnings, ...trace.warnings, ...planWarnings(parsed, worktreeOf(path.dirname(planPath)))]
   if (errors.length) fail(errors, warnings, stdout)
   stdout.write(JSON.stringify({ ok: true, tasks: Object.keys(graph.tasks).length, waves: graph.waves, warnings }) + '\n')
 }
@@ -283,7 +283,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     compiledAt: previous && previous.compiledAt ? previous.compiledAt : new Date().toISOString(),
     launches: previous ? (previous.launches || 1) + 1 : 1,
   })
-  const warnings = [...parsed.warnings, ...graph.warnings, ...planWarnings(parsed)]
+  const warnings = [...parsed.warnings, ...graph.warnings, ...planWarnings(parsed, worktreeOf(path.dirname(planPath)))]
   if (repo.worktree === repo.mainRoot) {
     warnings.push(
       'the integration worktree is the main checkout, so the unit worktrees under .aether/worktrees/ sit inside it, and a test command that searches the whole tree also runs their unfinished tests at merge time. Prefer a separate integration worktree (git worktree add <path> -b <branch>).',
