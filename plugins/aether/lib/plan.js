@@ -6,12 +6,9 @@
 
 const { normalizePattern, patternsOverlap } = require('./globs.js')
 
-const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const DEFAULT_EFFORT = 'high'
 const DEFAULT_REVIEW = 'high'
-// Sonnet and Opus never implement at low or medium.
-const EFFORTS_BELOW_HIGH = ['low', 'medium']
 // A Review line names the reviewer's effort, which is never below high.
 const REVIEW_EFFORTS = ['high', 'xhigh', 'max']
 const DASH = String.raw`\s+(?:—|–|--|-)\s+`
@@ -19,13 +16,12 @@ const TASK_HEADING = /^###\s+Task\s+(\d+)\s*:\s*(.+?)\s*$/i
 // any heading that tries to name a task, well formed or not
 const TASK_LOOKALIKE = /^#{1,6}\s+\W*task\s*\d/i
 const LEVEL2 = /^##\s+\S/
-// The swarm's attempts per tier: another datum than config/ladder.json, which holds the corrections of the Lead's delegates.
-const DEFAULT_LADDER = { haiku: 2, sonnet: 2, opus: 1 }
 const DEFAULT_MAX_AGENTS = 200
 const MAX_LISTED_GAPS = 20
 // A requirement id is R<n>; a top-level item of the spec's Requirements section starts with one.
 const REQUIREMENT_ID = /^R\d+$/
 const REQUIREMENT_ITEM = /^-\s+\*{0,2}(R\d+)\b/
+const IGNORED = 'ignorado: el swarm arranca todas las tareas en Haiku y usa la escalera de los delegados'
 
 function stripTicks(text) {
   return String(text).trim().replace(/^`(.*)`$/, '$1').trim()
@@ -97,8 +93,8 @@ function specObjective(markdown) {
   return text.length > MAX_OBJECTIVE_CHARS ? `${text.slice(0, MAX_OBJECTIVE_CHARS - 1)}…` : text
 }
 
-function parseExecution(body, errors) {
-  const execution = { testCommand: null, ladder: { ...DEFAULT_LADDER }, maxAgents: DEFAULT_MAX_AGENTS }
+function parseExecution(body, errors, warnings) {
+  const execution = { testCommand: null, maxAgents: DEFAULT_MAX_AGENTS }
   if (body === null) {
     errors.push('The plan has no "## Aether Execution" section.')
     return execution
@@ -107,17 +103,8 @@ function parseExecution(body, errors) {
     let m
     if ((m = line.match(/^\s*-\s*Test command:\s*(.+?)\s*$/i))) {
       execution.testCommand = stripTicks(m[1])
-    } else if ((m = line.match(/^\s*-\s*Ladder:\s*(.+?)\s*$/i))) {
-      const ladder = {}
-      for (const part of m[1].split(',')) {
-        const pm = part.trim().match(/^(haiku|sonnet|opus)\s+(\d+)$/i)
-        if (pm) ladder[pm[1].toLowerCase()] = Number(pm[2])
-        else errors.push(`Aether Execution: cannot read ladder entry "${part.trim()}"; use "haiku 2, sonnet 2, opus 1".`)
-      }
-      for (const tier of TIERS) {
-        if (!(tier in ladder)) errors.push(`Aether Execution: the ladder has no "${tier}" entry.`)
-      }
-      execution.ladder = { ...DEFAULT_LADDER, ...ladder }
+    } else if (/^\s*-\s*Ladder:/i.test(line)) {
+      warnings.push(`Aether Execution: Ladder ${IGNORED}.`)
     } else if ((m = line.match(/^\s*-\s*Max agents:\s*(\d+)\s*$/i))) {
       execution.maxAgents = Number(m[1])
     }
@@ -133,22 +120,9 @@ function isOwnsEntry(entry) {
   return !/[\s`{}()[\]]/.test(entry)
 }
 
-// The Tier line is a model, an optional effort, the dash and the reason. The
-// result is null when the line does not read that way.
-function parseTierLine(line) {
-  const m = line.match(new RegExp(String.raw`^\s*-\s*Tier:\s*(\w+)(?:\s+(\w+))?` + DASH + String.raw`(.+?)\s*$`, 'i'))
-  if (!m) return null
-  const tier = m[1].toLowerCase()
-  if (!TIERS.includes(tier)) return null
-  if (m[2] === undefined) return { tier, effort: null, reason: m[3] }
-  const effort = m[2].toLowerCase()
-  if (!EFFORTS.includes(effort)) return null
-  return { tier, effort, reason: m[3] }
-}
-
 // bodyCode marks the body lines that sit inside fenced code. Those lines are
 // never part of the Aether block, the same as headings inside fences.
-function parseAetherFields(task, body, bodyCode, errors) {
+function parseAetherFields(task, body, bodyCode, errors, warnings) {
   const label = `Task ${task.number}`
   const start = body.findIndex((line, j) => !bodyCode[j] && line.trim() === '**Aether:**')
   if (start === -1) {
@@ -157,7 +131,6 @@ function parseAetherFields(task, body, bodyCode, errors) {
   }
   let sawField = false
   let sawDepends = false
-  let tierError = false
   let areaError = false
   let ownsError = false
   for (let j = start + 1; j < body.length; j++) {
@@ -171,18 +144,7 @@ function parseAetherFields(task, body, bodyCode, errors) {
     sawField = true
     let m
     if (/^\s*-\s*Tier:/i.test(line)) {
-      const tierLine = parseTierLine(line)
-      if (tierLine === null) {
-        tierError = true
-        errors.push(`${label}: Tier must be haiku, sonnet or opus, optionally followed by an effort (low, medium, high, xhigh or max), then " — reason".`)
-      } else if (tierLine.tier !== 'haiku' && EFFORTS_BELOW_HIGH.includes(tierLine.effort)) {
-        tierError = true
-        errors.push(`${label}: ${tierLine.tier} ${tierLine.effort} is not used for implementers; Sonnet and Opus run at high, xhigh or max.`)
-      } else {
-        task.tier = tierLine.tier
-        task.effort = tierLine.effort
-        task.tierReason = tierLine.reason
-      }
+      warnings.push(`${label}: Tier ${IGNORED}.`)
     } else if (/^\s*-\s*Review:/i.test(line)) {
       const reviewLine = line.match(new RegExp(String.raw`^\s*-\s*Review:\s*(\w+)` + DASH + String.raw`(.+?)\s*$`, 'i'))
       if (reviewLine && REVIEW_EFFORTS.includes(reviewLine[1].toLowerCase())) {
@@ -220,7 +182,6 @@ function parseAetherFields(task, body, bodyCode, errors) {
       } else errors.push(`${label}: "Depends on: ${m[1]}" needs the form "Task N — reason".`)
     }
   }
-  if (!task.tier && !tierError) errors.push(`${label}: missing Tier.`)
   if (!task.area && !areaError) errors.push(`${label}: missing Area.`)
   if (task.owns.length === 0 && !ownsError) errors.push(`${label}: missing Owns.`)
   if (!sawDepends) errors.push(`${label}: missing "Depends on" (use "Depends on: none" for an independent task).`)
@@ -254,10 +215,12 @@ function parsePlan(markdown) {
     return start === -1 ? null : lines.slice(start + 1, endOfBlock(start + 1))
   }
   const errors = []
+  const taskWarnings = []
+  const executionWarnings = []
   if (unclosedAt !== null) errors.push(`A code fence opened at line ${unclosedAt} is never closed.`)
   const constraints = section(/^##\s+Global Constraints\s*$/i)
   const globalConstraints = constraints ? constraints.join('\n').trim() || null : null
-  const execution = parseExecution(section(/^##\s+Aether Execution\s*$/i), errors)
+  const execution = parseExecution(section(/^##\s+Aether Execution\s*$/i), errors, executionWarnings)
   const tasks = []
   const seen = new Set()
   for (let i = 0; i < lines.length; i++) {
@@ -272,13 +235,12 @@ function parsePlan(markdown) {
     seen.add(number)
     const bodyEnd = endOfBlock(i + 1)
     const body = lines.slice(i + 1, bodyEnd)
+    const bodyCode = code.slice(i + 1, bodyEnd)
+    const taskLines = [lines[i], ...body.filter((line, idx) => bodyCode[idx] || !/^\s*-\s*Tier:/i.test(line))]
     const task = {
       number,
       title: m[2],
-      text: [lines[i], ...body].join('\n').trim(),
-      tier: null,
-      tierReason: null,
-      effort: null,
+      text: taskLines.join('\n').trim(),
       review: null,
       reviewReason: null,
       area: null,
@@ -286,12 +248,13 @@ function parsePlan(markdown) {
       dependsOn: [],
       serves: [],
     }
-    parseAetherFields(task, body, code.slice(i + 1, bodyEnd), errors)
+    parseAetherFields(task, body, bodyCode, errors, taskWarnings)
     tasks.push(task)
   }
   if (tasks.length === 0) errors.push('The plan has no "### Task N: ..." headings.')
   else checkNumbers([...seen], errors)
-  return { tasks, execution, globalConstraints, spec: parseSpec(lines), errors }
+  const warnings = [...taskWarnings, ...executionWarnings]
+  return { tasks, execution, globalConstraints, spec: parseSpec(lines), errors, warnings }
 }
 
 // The requirement ids of a spec: the top-level items of its Requirements section, in order, each once.
@@ -360,9 +323,6 @@ function buildGraph(parsed, { only = null } = {}) {
     nodes[`task-${t.number}`] = {
       number: t.number,
       title: t.title,
-      tier: t.tier,
-      tierReason: t.tierReason,
-      effort: t.effort ?? DEFAULT_EFFORT,
       review: t.review ?? DEFAULT_REVIEW,
       area: t.area,
       owns: t.owns,
@@ -436,7 +396,6 @@ function renderBrief(task, { planPath, spec, globalConstraints, objective = null
     '',
     `- Plan: ${planPath}`,
     `- Spec: ${spec || 'not named in the plan'}`,
-    `- Tier: ${task.tier} ${task.effort ?? DEFAULT_EFFORT} — ${task.tierReason}`,
     `- Area: ${task.area}`,
     `- Owns: ${task.owns.join(', ')}`,
     '',
@@ -459,7 +418,6 @@ function renderBrief(task, { planPath, spec, globalConstraints, objective = null
 }
 
 module.exports = {
-  TIERS,
   EFFORTS,
   DEFAULT_EFFORT,
   DEFAULT_REVIEW,
