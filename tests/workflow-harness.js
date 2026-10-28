@@ -60,6 +60,8 @@ function aetherWt(call, state) {
     // glob that names nothing yet stays one item and the retry is not split (issue 14).
     case 'ls-files':
       return { files: [] }
+    case 'gate':
+      return { pass: true, checks: 'pass', findings: [], detail: '', tests: '# pass 12', knownFailures: [], timedOut: false, files: ['src/t1/a.js'] }
     case 'ladder': {
       const [first, second] = call.command.rest
       const rest = call.command.rest

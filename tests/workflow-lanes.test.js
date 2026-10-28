@@ -92,6 +92,7 @@ test('with a pair for every call, the implementer, the supervisor and the final 
     'ops:lane-start',
     'ops:lane-wait',
     'ops:lane-took',
+    'ops:gate',
     'ops:lane-pick',
     'ops:lane-start',
     'ops:lane-wait',
