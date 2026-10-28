@@ -262,6 +262,8 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     }
   }
   run.writeJson(graphFile, args)
+  // graph.json keeps only this launch's units; units.json keeps every launch's, for the next compile (issue #111).
+  run.extendUnits(dir, graph.tasks)
 
   // A relaunch of a run keeps its first compile time, so the report covers every launch, and keeps
   // the previous launch's result as result-<k>.json.
