@@ -198,6 +198,80 @@ function readResults(dir) {
 // A question the owner must answer: a string that is not blank.
 const isQuestion = (question) => typeof question === 'string' && question.trim() !== ''
 
+// The ladder summary of a run across its launches: first-try approvals, corrections, rises, gate rejections,
+// filled retries and the units. Null when no unit of any launch brings a ladder block.
+function ladderOf(results) {
+  const hasAny = results.some((result) => (result.units || []).some((unit) => unit && unit.ladder && typeof unit.ladder === 'object'))
+  if (!hasAny) return null
+
+  const unitLadder = new Map()
+  const lastStatus = new Map()
+  for (const result of results) {
+    for (const unit of result.units || []) {
+      if (!unit || !unit.id) continue
+      lastStatus.set(unit.id, unit.status)
+      let item = unitLadder.get(unit.id)
+      if (!item) {
+        item = {
+          id: unit.id,
+          steps: [],
+          lastFirstTry: false,
+          corrections: Number(0),
+          rises: { exhausted: 0, repeated: 0, infeasible: 0 },
+          gateRejections: 0,
+          filled: 0,
+        }
+        unitLadder.set(unit.id, item)
+      }
+      const b = unit.ladder
+      if (b && typeof b === 'object') {
+        if (Array.isArray(b.steps)) {
+          for (const s of b.steps) {
+            if (typeof s === 'string' && !item.steps.includes(s)) item.steps.push(s)
+          }
+        }
+        if ('firstTry' in b) item.lastFirstTry = Boolean(b.firstTry)
+        item.corrections += typeof b.corrections === 'number' ? b.corrections : Number(0)
+        item.gateRejections += typeof b.gateRejections === 'number' ? b.gateRejections : 0
+        item.filled += typeof b.filled === 'number' ? b.filled : 0
+        if (b.rises && typeof b.rises === 'object') {
+          item.rises.exhausted += typeof b.rises.exhausted === 'number' ? b.rises.exhausted : 0
+          item.rises.repeated += typeof b.rises.repeated === 'number' ? b.rises.repeated : 0
+          item.rises.infeasible += typeof b.rises.infeasible === 'number' ? b.rises.infeasible : 0
+        }
+      }
+    }
+  }
+
+  const unitList = []
+  for (const item of unitLadder.values()) {
+    const isMerged = lastStatus.get(item.id) === 'merged'
+    const firstTry = isMerged && Boolean(item.lastFirstTry)
+    unitList.push({
+      id: item.id,
+      steps: item.steps,
+      firstTry,
+      corrections: item.corrections,
+      rises: { ...item.rises },
+      gateRejections: item.gateRejections,
+      filled: item.filled,
+    })
+  }
+
+  return {
+    firstTry: unitList.filter((u) => u.firstTry).length,
+    corrections: unitList.reduce((sum, u) => sum + u.corrections, 0),
+    rises: {
+      exhausted: unitList.reduce((sum, u) => sum + u.rises.exhausted, 0),
+      repeated: unitList.reduce((sum, u) => sum + u.rises.repeated, 0),
+      infeasible: unitList.reduce((sum, u) => sum + u.rises.infeasible, 0),
+    },
+    gateRejections: unitList.reduce((sum, u) => sum + u.gateRejections, 0),
+    filled: unitList.reduce((sum, u) => sum + u.filled, 0),
+    units: unitList,
+  }
+}
+
 // Unit outcomes, escalations, climbs, questions, every supervisor finding and the final reviews, over every launch.
 // A unit's latest launch gives its status and its question; attempts and findings add up across launches. A unit counts
 // as escalated when a launch moved it to another model or a relaunch started it on another model, and
@@ -599,6 +673,12 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   }
   const adopted = readIfThere(path.join(dir, 'adopted.json')) || {}
   const quality = { ...qualityOf(results, adopted), tests: tests ? runTests(graph, dir) : null }
+  const ladder = ladderOf(results)
+  if (ladder !== null) {
+    quality.ladder = ladder
+  } else {
+    Object.defineProperty(quality, 'ladder', { value: null, enumerable: false, writable: true, configurable: true })
+  }
   for (const unit of quality.adoptedUnits || []) {
     notes.push(`${unit.id} was integrated by hand at ${String(unit.commit).slice(0, 10)}: ${unit.reason}`)
   }
