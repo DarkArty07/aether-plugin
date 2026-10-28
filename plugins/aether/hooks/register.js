@@ -50,7 +50,7 @@ import { registerPanel } from './panel.jsx'
 import { registerSpend } from './spend-panel.jsx'
 import { brakePromptFor, crossingsOf, initialBrakeState, jsonFrom, notifyFor, resumePromptFor } from './quota-brake.mjs'
 import { createDelegates } from './delegate.mjs'
-import { recordFault } from './fault-trace.mjs'
+import { errorKind, recordFault } from './fault-trace.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -326,7 +326,11 @@ function delegateCalls($) {
 async function delegateContext($, state) {
   try {
     state.dataDir ??= readDataDir($)
-    return { session: state.id, dataDir: await state.dataDir, root: $.plugin.root, fault: (source, cls) => { void recordFault($, state, source, cls) } }
+    // A fault given the error it caught carries that error's kind; one given nothing thrown carries none.
+    const fault = (source, cls, ...thrown) => {
+      void recordFault($, state, source, cls, thrown.length > 0 ? errorKind(thrown[0]) : undefined)
+    }
+    return { session: state.id, dataDir: await state.dataDir, root: $.plugin.root, fault }
   } catch {
     void recordFault($, state, 'register.delegate-context', 'read-failed')
     return null
@@ -512,8 +516,8 @@ async function brakeStepOnce($, state) {
         await brakeRecorded($, state, crossing, record)
       }
     }
-  } catch {
-    void recordFault($, state, 'register.brake-step', 'handler-threw')
+  } catch (err) {
+    void recordFault($, state, 'register.brake-step', 'handler-threw', errorKind(err))
     // Observing only.
   }
 }
@@ -563,7 +567,15 @@ export function register(on, options) {
     const state = await aetherSession($)
     if (!state) return next(e)
     await saveLanePayload($, e, state)
-    const result = await next(e)
+    // The spawn itself is the engine's: when it refuses, the refusal is recorded here, with the kind of its error, and the
+    // failure handler below does not record it again.
+    let result
+    try {
+      result = await next(e)
+    } catch (err) {
+      void recordFault($, state, 'register.on-agent-spawn', 'spawn-failed', errorKind(err))
+      throw err
+    }
     if (result && result.agentId) {
       state.agents[result.agentId] = { type: e.subagentType || null, description: e.description || null }
       // The delegate ladder keeps an external delegate for its first step and a read-only one on Claude for its last.
@@ -576,7 +588,9 @@ export function register(on, options) {
     }
     return result
   }).catch(($, e, next) => {
-    void recordEventFault($, 'register.on-agent-spawn')
+    // Once next ran, the failure is the spawn's and was recorded where it happened; the replay of next gives its answer
+    // again, so the spawn is not asked twice.
+    if (!next.called) void recordEventFault($, 'register.on-agent-spawn')
     return next(e)
   })
 

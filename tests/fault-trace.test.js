@@ -55,3 +55,29 @@ test('it keeps the first 100 faults and goes on counting', async () => {
   assert.equal(last.faults.length, 100)
   assert.equal(last.count, 105)
 })
+
+test('a fault keeps the kind of the error it caught, from a closed list, and has no kind when nothing was thrown (R1)', async () => {
+  const { recordFault, errorKind } = await load()
+  const { $, writes } = fake()
+  const state = { id: 's-1', dataDir: '/d' }
+  await recordFault($, state, 'delegate.begin', 'handler-threw', errorKind(new TypeError('ZEBRA')))
+  await recordFault($, state, 'delegate.bind', 'handler-threw', errorKind({ constructor: 'ZEBRA' }))
+  await recordFault($, state, 'register.flush', 'write-failed', 'ZEBRA')
+  await recordFault($, state, 'register.flush', 'write-failed')
+  const faults = writes[writes.length - 1][1].faults
+  assert.deepEqual(faults.map((f) => f.kind), ['TypeError', 'other', 'other', undefined])
+  assert.equal('kind' in faults[3], false)
+  assert.equal(JSON.stringify(writes).includes('ZEBRA'), false)
+})
+
+test('errorKind names the built-in error classes and nothing else, and never reads a message (R1)', async () => {
+  const { errorKind } = await load()
+  class ShardError extends Error {}
+  assert.equal(errorKind(new Error('ZEBRA')), 'Error')
+  assert.equal(errorKind(new RangeError('ZEBRA')), 'RangeError')
+  assert.equal(errorKind(new ShardError('ZEBRA')), 'other')
+  assert.equal(errorKind('ZEBRA'), 'other')
+  assert.equal(errorKind(null), 'other')
+  assert.equal(errorKind(undefined), 'other')
+  assert.equal(errorKind({ get constructor() { throw new Error('ZEBRA') } }), 'other')
+})
