@@ -8,6 +8,7 @@ const run = require('./run.js')
 const { loadGraph, unitBase, isWorktreeRoot, readBaseline } = require('./worktrees.js')
 const { changedFiles, checkEdits, runTests } = require('./delegate-checks.js')
 const { failureSignatures, judge } = require('./baseline.js')
+const { GATE_CUT } = require('./ladder.js')
 
 const DEFAULT_TIMEOUT_MS = 570000
 
@@ -64,7 +65,7 @@ function gateCommand(cwd, runId, taskId, opts = {}) {
     return {
       pass: false,
       checks: 'fail',
-      findings: [{ file: 'npm test', what: 'superó el tiempo límite' }],
+      findings: [{ ...GATE_CUT }],
       detail: '',
       tests: summaryOf(testsResult.outputTail),
       knownFailures: [],
