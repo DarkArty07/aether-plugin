@@ -122,7 +122,12 @@ function ladderCommand(cwd, runId, taskId, opts = {}) {
     throw new Error('digest does not match the payload file')
   }
 
-  const body = JSON.parse(text)
+  let body
+  try {
+    body = JSON.parse(text)
+  } catch (err) {
+    throw new Error(`payload is not valid JSON: ${err.message}`)
+  }
   const verdict = {
     kind: opts.verdict,
     findings: body.findings,

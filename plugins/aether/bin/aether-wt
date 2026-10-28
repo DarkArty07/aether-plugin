@@ -48,13 +48,10 @@ try {
   else if (command === 'adopt') result = wt.adoptUnit(process.cwd(), rest[0], rest[1], { commit: flag(rest, '--commit'), reason: flag(rest, '--reason') })
   else if (command === 'remove') result = wt.removeUnit(process.cwd(), rest[0], rest[1], { keepPatch: rest.includes('--keep-patch') })
   else if (command === 'ladder') {
-    const verdict = rest.includes('--verdict') ? (flag(rest, '--verdict') ?? '') : undefined
-    const payload = rest.includes('--payload') ? (flag(rest, '--payload') ?? '') : undefined
-    const digest = rest.includes('--digest') ? (flag(rest, '--digest') ?? '') : undefined
     const opts = {}
-    if (verdict !== undefined) opts.verdict = verdict
-    if (payload !== undefined) opts.payload = payload
-    if (digest !== undefined) opts.digest = digest
+    if (rest.includes('--verdict')) opts.verdict = flag(rest, '--verdict') ?? ''
+    if (rest.includes('--payload')) opts.payload = flag(rest, '--payload') ?? ''
+    if (rest.includes('--digest')) opts.digest = flag(rest, '--digest') ?? ''
     result = wtLadder.ladderCommand(process.cwd(), rest[0], rest[1], opts)
   }
   else if (command === 'sweep') result = sweep(rest)
