@@ -36,6 +36,15 @@ test('a failed tool of a Lead session leaves the tool and nothing of its content
   assert.equal(fs.existsSync(path.join(dir, 'observe', 'dev')), false)
 })
 
+test('a failed tool of a subagent, which carries the Lead session id and an agent_id, is not the Lead\'s', (t) => {
+  const dir = tempDir(t)
+  lead(dir)
+  const input = { session_id: 's-1', agent_id: 'a1b2', agent_type: 'general-purpose', hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', is_interrupt: false }
+  assert.deepEqual(handleHook(input, { dataDir: dir, now: 3 }), { recorded: false, fragment: null })
+  assert.deepEqual(observe.readEvents(dir), [])
+  assert.equal(handleHook({ ...input, agent_id: undefined }, { dataDir: dir, now: 4 }).recorded, true)
+})
+
 test('only ScheduleWakeup is recorded from PostToolUse', (t) => {
   const dir = tempDir(t)
   lead(dir)

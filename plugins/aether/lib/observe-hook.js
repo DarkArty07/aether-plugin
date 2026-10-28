@@ -53,6 +53,8 @@ function handleHook(input, { dataDir = run.dataDir(), env = process.env, now = D
     if (typeof event !== 'string' || !has(EVENTS, event)) return { ...NOTHING }
     const session = input.session_id
     if (!isAetherSession(dataDir, session)) return { ...NOTHING }
+    // A subagent's hooks carry the Lead's session id, with its own agent_id (Claude Code 2.1.312); its failures are not the Lead's.
+    if (typeof input.agent_id === 'string' && input.agent_id !== '') return { ...NOTHING }
     if (event === 'PostToolUse' && input.tool_name !== 'ScheduleWakeup') return { ...NOTHING }
 
     const raw = { time: now, session, kind: event }

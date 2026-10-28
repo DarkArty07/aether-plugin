@@ -64,6 +64,7 @@ The swarm starts every task on the cheapest model and raises it by itself: do no
 - **Area** is a lowercase slug. Each area has its own supervisor.
 - **Owns** lists the files or globs (`*`, `**`, `?`) the task may change. Tasks in the same wave must not own overlapping paths.
 - **Depends on** is `none`, or one line per dependency in the form `Task N — reason`. Independence is the default, and every dependency needs a reason.
+- **Merges with** is optional: `none`, or a list such as `Task 13, Task 19`. Those tasks are green only together, because each changes something that a test owned by another still holds, and `aether-plan` builds them as one unit; naming it on one side is enough. Use it only when they cannot be green alone, since one agent builds a group in sequence. Otherwise give one task the file and its test, and make the other depend on it.
 - **Serves** lists the requirement ids of the spec that the task serves, such as `- Serves: R1, R3`; a task that serves no requirement does not belong in the plan.
 
 **The contract, not the implementation (A10).** A task meant for the swarm gives:

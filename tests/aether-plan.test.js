@@ -441,3 +441,27 @@ test('a relaunch keeps the first baseline, and its firstBase stays the first lau
   const third = runBin(PLAN_BIN, ['compile', file, '--run', first.runId], repo.dir)
   assert.equal(third.json.integration.firstBase, first.integration.base)
 })
+
+test('compile builds a group of tasks as one unit: one brief with every member and the union of their owns (issue 81)', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([
+    task(1, { owns: '`src/a.js`', merges: 'Task 2, Task 3' }),
+    task(2, { owns: '`src/b.js`' }),
+    task(3, { owns: '`src/c.js`' }),
+  ]))
+  const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(Object.keys(r.json.tasks), ['task-1'])
+  assert.deepEqual(r.json.tasks['task-1'].members, [1, 2, 3])
+  assert.deepEqual(r.json.waves, [['task-1']])
+  const brief = fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8')
+  assert.match(brief, /^# Brief: Tasks 1, 2 and 3: Task 1 title$/m)
+  assert.match(brief, /^- Owns: src\/a\.js, src\/b\.js, src\/c\.js$/m)
+  assert.match(brief, /^This unit builds Tasks 1, 2 and 3 together: /m)
+  assert.match(brief, /^### Task 2: Task 2 title$/m)
+  assert.match(brief, /^### Task 3: Task 3 title$/m)
+  // A member's number selects the unit, the same as the unit's own number.
+  const only = runBin(PLAN_BIN, ['compile', file, '--only', 'task-3'], repo.dir)
+  assert.equal(only.status, 0, only.stdout + only.stderr)
+  assert.deepEqual(Object.keys(only.json.tasks), ['task-1'])
+})
