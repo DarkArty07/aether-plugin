@@ -98,7 +98,8 @@ function readFaults(dataDir) {
     const session = typeof file.session === 'string' ? file.session : name.slice(0, -'.json'.length)
     for (const fault of file.faults) {
       if (!isObject(fault)) continue
-      const kept = { session, time: fault.time, source: fault.source, class: fault.class }
+      // The source and the class are identifiers or nothing (R10): a file the mod did not write may hold free text there.
+      const kept = { session, time: fault.time, source: cleanText(fault.source), class: cleanText(fault.class) }
       // A kind outside the list is dropped whole: it is never copied as text (R10).
       if (FAULT_KINDS.includes(fault.kind)) kept.kind = fault.kind
       faults.push(kept)
