@@ -50,7 +50,7 @@ test('the components page and the ops guide name the two verbs, and the changelo
   assert.ok(components.includes('aether-wt ladder') && components.includes('aether-wt gate'))
   const ops = read('docs', 'guide', 'ops.md')
   assert.ok(ops.includes('aether-wt ladder') && ops.includes('aether-wt gate'))
-  assert.match(read('docs', 'changelog.md'), /Unreleased[\s\S]*one ladder/i)
+  assert.match(read('docs', 'changelog.md'), /Version 0\.24\.0[\s\S]*one ladder/i)
 })
 
 test('the swarm skill describes the ladder block of a result and its causes of block', () => {
