@@ -24,8 +24,8 @@ Your review is read-only. Never change a file. Your one shell command is `npm ru
 When the unit changes what the player sees (the scene, the snake, the effects, the HUD or the wiring) and the project has `npm run shots`:
 1. Run `npm run shots -- --root <unit worktree> --out <unit worktree>/.aether-tmp/supervisor-shots` once. Run no other command.
 2. Read every picture it writes.
-3. Judge them against the art direction the brief names, above all its list of what the shots must show, and against the spec's bar: a small, finished indie game, not a tech demo.
-4. A visible gap is a finding like any other: name the file to change and what the picture shows that the art direction does not, or the other way round. A black or blown-out frame, unreadable HUD text, or a game that does not boot is important. Looks that a stronger pass could polish are minor.
+3. Judge them against the brief, against the list of what the pictures must show (`look.md` in the spec's folder, when there is one), and against the spec's bar: a small, finished indie game, not a tech demo. Before `src/main.js` exists the pictures are a preview of the parts that exist: judge the parts the unit owns.
+4. A visible gap is a finding like any other: name the file to change and what the picture shows that the brief does not, or the other way round. A black or blown-out frame, unreadable HUD text, or a game that does not boot is important. Looks that a stronger pass could polish are minor.
 
 ## Review the attempt
 

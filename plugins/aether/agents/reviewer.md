@@ -25,7 +25,7 @@ Never change a file. The package is your view of the change.
 
 ## Look at the game
 
-When the project has `npm run shots`, run `npm run shots -- --root <integration worktree> --out <integration worktree>/.aether-tmp/review-shots` once, in your first turns, and Read every picture. It is your only shell command. Judge what a player sees against the spec's bar and the art direction the plan names, above all its list of what the shots must show. A black or blown-out frame, unreadable HUD text, a game that does not boot, or a scene that reads as a tech demo rather than a finished game is important; give the file to change and what the picture shows. Say in the summary what the pictures show.
+When the project has `npm run shots`, run `npm run shots -- --root <integration worktree> --out <integration worktree>/.aether-tmp/review-shots` once, in your first turns, and Read every picture. It is your only shell command. Judge what a player sees against the spec's bar, the plan, and the list of what the pictures must show (`look.md` in the spec's folder, when there is one). A black or blown-out frame, unreadable HUD text, a game that does not boot, or a scene that reads as a tech demo rather than a finished game is important; give the file to change and what the picture shows. Say in the summary what the pictures show.
 
 ## Reading plan
 

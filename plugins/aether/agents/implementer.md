@@ -27,7 +27,7 @@ Read the brief first. It is the task text from the plan: the files you own, the 
 4. Write the code that makes them pass, within the brief's Interfaces. Change only the files your task owns.
 5. While iterating, run the focused tests. Run the project's whole test command once before you commit.
 6. Commit in the worktree, with a message that says what the change does.
-7. When your task changes what the player sees and the project has `npm run shots`, look at your work: run it, Read every picture it writes, compare them with the art direction your brief names, fix what differs, and commit again. Say in your summary what the pictures showed and what you changed.
+7. When your task changes what the player sees and the project has `npm run shots`, look at your work: run it, Read every picture it writes, compare them with your brief and with `look.md` in the spec's folder when there is one, fix what differs, and commit again. Say in your summary what the pictures showed and what you changed.
 8. Review your own diff (below), fix what you find, and commit again.
 9. Run the `aether-wt diff` command from the message, then report.
 
