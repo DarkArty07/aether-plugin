@@ -261,6 +261,19 @@ test('the messages carry what each seat needs, and the scope instruction', async
   assert.ok(prompt('spec: writer write').includes('Your checkout is /repo: the paths above are relative to it.'))
 })
 
+test('the Examiner gets the rules for a check on prose, in the words its file states (#99)', async () => {
+  const run = await go(ARGS)
+  const examiner = run.calls.find((c) => c.label === 'exam: examiner').prompt
+  for (const text of [
+    'tolerant of markdown',
+    'bold, backticks, line breaks, plural and inflected forms',
+    'compare on the text with the markup stripped',
+    'any line or sentence of the document',
+    'never the first line that matches',
+    'which of its checks are about wording',
+  ]) assert.ok(examiner.includes(text), text)
+})
+
 test('a short design runs only the Judge, with the native Writer to correct design.md, and the author of the Lead', async () => {
   const run = await go(SHORT)
   assert.equal(run.error, null, run.error && run.error.stack)

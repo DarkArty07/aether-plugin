@@ -37,3 +37,17 @@ test('the final reviewer marks what is extra, and keeps the rest of its method (
   has('reviewer', ['- **Extra:** features nobody asked for, or over-engineering.', '**Plan alignment:**', '**Integration:**', '**Code quality:**', '**Evidence:**', '## Declined to judge', 'Return the structured report the workflow asks for'])
   assert.match(agent('reviewer'), /^effort: high$/m)
 })
+
+// The rules for a check on prose (#99): the Examiner's file and the message it gets say the same words.
+const PROSE_RULES = [
+  'tolerant of markdown',
+  'bold, backticks, line breaks, plural and inflected forms',
+  'compare on the text with the markup stripped',
+  'any line or sentence of the document',
+  'never the first line that matches',
+  'which of its checks are about wording',
+]
+
+test('the Examiner checks prose tolerant of its markup, in any line, and names its wording checks in notes (#99)', () => {
+  has('examiner', PROSE_RULES)
+})
