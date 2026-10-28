@@ -67,6 +67,7 @@ test('report counts quality from the saved result, and runs the tests at integra
     findings: { critical: 1, important: 2, minor: 2 },
     finalReview: { status: 'done', verdict: 'ready-with-fixes', findings: { critical: 0, important: 1, minor: 2 }, reviews: 1 },
     tests: { command: 'true', exitCode: 0, passed: true, timedOut: false, knownFailuresOnly: false },
+    ladder: null,
   })
 })
 

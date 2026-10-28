@@ -673,12 +673,7 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   }
   const adopted = readIfThere(path.join(dir, 'adopted.json')) || {}
   const quality = { ...qualityOf(results, adopted), tests: tests ? runTests(graph, dir) : null }
-  const ladder = ladderOf(results)
-  if (ladder !== null) {
-    quality.ladder = ladder
-  } else {
-    Object.defineProperty(quality, 'ladder', { value: null, enumerable: false, writable: true, configurable: true })
-  }
+  quality.ladder = ladderOf(results)
   for (const unit of quality.adoptedUnits || []) {
     notes.push(`${unit.id} was integrated by hand at ${String(unit.commit).slice(0, 10)}: ${unit.reason}`)
   }

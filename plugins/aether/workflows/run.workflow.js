@@ -1335,7 +1335,7 @@ async function work(unit, task) {
       const findings = gate.findings && gate.findings.length ? gate.findings : [{ file: task.owns[0], what: gate.checks || 'la puerta falló' }]
       round.findings = findings.map((f) => ({
         severity: 'important',
-        title: f.what,
+        title: `${f.file}: ${f.what}`,
         file: f.file,
         evidence: f.evidence || gate.detail || '',
       }))
