@@ -26,25 +26,34 @@ function stripTicks(text) {
 }
 
 // true for every line inside a fenced code block, fences included; unclosedAt
-// is the 1-based line of a fence still open at the end of the file, or null
+// is the 1-based line of a fence still open at the end of the file, or null;
+// blocks lists every closed block: its 1-based fence line, its language and its code
 function codeMask(lines) {
   const mask = []
+  const blocks = []
   let fence = null
   let openedAt = 0
+  let block = null
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^\s*(`{3,}|~{3,})/)
     if (fence) {
       mask.push(true)
-      if (m && m[1][0] === fence[0] && m[1].length >= fence.length) fence = null
+      if (m && m[1][0] === fence[0] && m[1].length >= fence.length) {
+        fence = null
+        blocks.push(block)
+      } else {
+        block.code.push(lines[i])
+      }
     } else if (m) {
       fence = m[1]
       openedAt = i + 1
+      block = { line: i + 1, language: lines[i].trim().slice(m[1].length).trim().split(/\s+/)[0].toLowerCase(), code: [] }
       mask.push(true)
     } else {
       mask.push(false)
     }
   }
-  return { mask, unclosedAt: fence ? openedAt : null }
+  return { mask, blocks, unclosedAt: fence ? openedAt : null }
 }
 
 function parseSpec(lines) {
@@ -201,7 +210,7 @@ function checkNumbers(numbers, errors) {
 
 function parsePlan(markdown) {
   const lines = String(markdown).replace(/\r\n/g, '\n').split('\n')
-  const { mask: code, unclosedAt } = codeMask(lines)
+  const { mask: code, blocks: fenced, unclosedAt } = codeMask(lines)
   const isTaskHeading = (i) => !code[i] && TASK_HEADING.test(lines[i])
   const isLevel2 = (i) => !code[i] && LEVEL2.test(lines[i])
   const endOfBlock = (from) => {
@@ -220,6 +229,8 @@ function parsePlan(markdown) {
   const globalConstraints = constraints ? constraints.join('\n').trim() || null : null
   const execution = parseExecution(section(/^##\s+Aether Execution\s*$/i), errors, executionWarnings)
   const tasks = []
+  // the line span of each task's section, for placing the fenced blocks
+  const sections = []
   const seen = new Set()
   for (let i = 0; i < lines.length; i++) {
     if (code[i]) continue
@@ -248,11 +259,17 @@ function parsePlan(markdown) {
     }
     parseAetherFields(task, body, bodyCode, errors, taskWarnings)
     tasks.push(task)
+    sections.push({ number, start: i, end: bodyEnd })
   }
   if (tasks.length === 0) errors.push('The plan has no "### Task N: ..." headings.')
   else checkNumbers([...seen], errors)
+  // each closed fenced block, with the task whose section holds its fence (null outside the tasks)
+  const codeBlocks = fenced.map((block) => {
+    const section = sections.find((s) => s.start < block.line - 1 && block.line - 1 < s.end)
+    return { ...block, task: section ? section.number : null }
+  })
   const warnings = [...taskWarnings, ...executionWarnings]
-  return { tasks, execution, globalConstraints, spec: parseSpec(lines), errors, warnings }
+  return { tasks, execution, globalConstraints, spec: parseSpec(lines), codeBlocks, errors, warnings }
 }
 
 // The requirement ids of a spec: the top-level items of its Requirements section, in order, each once.

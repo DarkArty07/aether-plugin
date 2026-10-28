@@ -6,7 +6,9 @@
 // Family: plan.
 
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 
 const { isGlob, matchesAny } = require('./globs.js')
 
@@ -131,9 +133,54 @@ function testWarnings(parsed, root) {
   return [...new Set(warnings)]
 }
 
+// The first line of node's message about a block that does not parse: the error's own line, not the file's.
+function errorLine(stderr) {
+  const lines = String(stderr).split('\n').map((line) => line.trim()).filter(Boolean)
+  return lines.find((line) => /^\w*Error: /.test(line)) || lines[0] || 'the block does not parse'
+}
+
+// The first line of node's error for a block that parses as neither CommonJS nor an ES module, or null
+// when it parses. node --check only reads the code: nothing in the block runs.
+function syntaxErrorOf(dir, index, code) {
+  let error = null
+  for (const extension of ['cjs', 'mjs']) {
+    const file = path.join(dir, `block-${index}.${extension}`)
+    fs.writeFileSync(file, code)
+    const r = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' })
+    if (r.status === 0) return null
+    error = errorLine(r.stderr)
+  }
+  return error
+}
+
+// The js and javascript blocks of the plan, each checked for syntax (issue 91). A block in a task is named
+// by its task and its place among that task's js blocks; a block outside the tasks is named as such.
+const CODE_LANGUAGES = new Set(['js', 'javascript'])
+
+function syntaxWarnings(parsed) {
+  const blocks = parsed.codeBlocks.filter((block) => CODE_LANGUAGES.has(block.language))
+  if (blocks.length === 0) return []
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-syntax-'))
+  const warnings = []
+  const places = new Map()
+  try {
+    blocks.forEach((block, index) => {
+      const place = (places.get(block.task) || 0) + 1
+      places.set(block.task, place)
+      const error = syntaxErrorOf(dir, index, block.code.join('\n'))
+      if (error === null) return
+      const where = block.task === null ? `Code block ${place} outside the tasks` : `Task ${block.task}, code block ${place}`
+      warnings.push(`${where} (line ${block.line} of tasks.md): syntax error: ${error}`)
+    })
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+  return warnings
+}
+
 // parsed is the result of parsePlan; root is the top of the checkout the plan lives in.
 function planWarnings(parsed, root) {
-  return [...budgetWarnings(parsed), ...testWarnings(parsed, root)]
+  return [...budgetWarnings(parsed), ...testWarnings(parsed, root), ...syntaxWarnings(parsed)]
 }
 
 module.exports = { planWarnings }

@@ -3,6 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { PLAN_BIN, makeRepo, writePlan, runBin } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
@@ -98,4 +99,44 @@ test('a test that names the source path in its text warns too (issue 92)', (t) =
 test('no test file, a test in node_modules, or a test that names nothing warns about nothing (issue 92)', (t) => {
   assert.deepEqual(testWarningsOf(t, { 'src/foo.js': '', 'node_modules/pkg/tests/foo.test.js': '' }, [task(1, { owns: '`src/foo.js`' })]), [])
   assert.deepEqual(testWarningsOf(t, { 'src/foo.js': '', 'tests/other.test.js': 'x\n' }, [task(1, { owns: '`src/foo.js`' })]), [])
+})
+
+// The syntax warnings of a check of one plan, with the tasks' code given as the text of each task.
+function syntaxWarningsOf(t, markdown) {
+  const repo = makeRepo(t)
+  const before = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('aether-syntax-'))
+  const r = runBin(PLAN_BIN, ['check', writePlan(repo.dir, markdown)], repo.dir)
+  assert.equal(r.status, 0, r.stdout)
+  const leftover = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('aether-syntax-') && !before.includes(name))
+  assert.deepEqual(leftover, [], 'the temporary files of the check are removed')
+  return r.json.warnings.filter((w) => w.includes('syntax error'))
+}
+
+// The line of the first line of the plan that is exactly the given text.
+const lineOf = (markdown, text) => markdown.split('\n').findIndex((line) => line === text) + 1
+
+test('a js block that parses does not warn, as CommonJS or as an ES module (issue 91)', (t) => {
+  const cjs = task(1) + "\n```js\nconst fs = require('node:fs')\nconsole.log(fs)\n```\n"
+  const esm = task(2) + "\n```javascript\nimport fs from 'node:fs'\nconsole.log(fs)\n```\n"
+  assert.deepEqual(syntaxWarningsOf(t, plan([cjs, esm])), [])
+})
+
+test('a js block with a syntax error warns, naming its task and the line of its fence (issue 91)', (t) => {
+  const broken = task(1) + '\n```js\nfunction f() {\n```\n'
+  const markdown = plan([broken, task(2)])
+  assert.deepEqual(syntaxWarningsOf(t, markdown), [
+    `Task 1, code block 1 (line ${lineOf(markdown, '```js')} of tasks.md): syntax error: SyntaxError: Unexpected end of input`,
+  ])
+})
+
+test('sh and json blocks are never checked (issue 91)', (t) => {
+  const others = task(1) + '\n```sh\nfunction f() {\n```\n\n```json\n{ "broken\n```\n'
+  assert.deepEqual(syntaxWarningsOf(t, plan([others])), [])
+})
+
+test('a js block outside the tasks is checked too, and is named as such (issue 91)', (t) => {
+  const markdown = plan([task(1)]).replace('## Aether Execution', '```js\nconst x = (\n```\n\n## Aether Execution')
+  assert.deepEqual(syntaxWarningsOf(t, markdown), [
+    `Code block 1 outside the tasks (line ${lineOf(markdown, '```js')} of tasks.md): syntax error: SyntaxError: Unexpected end of input`,
+  ])
 })
