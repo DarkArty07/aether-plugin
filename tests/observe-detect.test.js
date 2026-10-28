@@ -46,6 +46,16 @@ test('three failures in a row on different tasks flag the pair; an ok in between
   assert.deepEqual(found[0].sessions, ['s-1'])
 })
 
+test('a refusal for quota neither adds to a streak of failures nor breaks it (a pair out of quota is not failing)', () => {
+  const quotas = [outcome('a', 1, 'quota'), outcome('b', 2, 'quota'), outcome('c', 3, 'quota')]
+  assert.deepEqual(d.detectPairFailures(quotas, CFG), [])
+  const between = [outcome('a', 1, 'failed'), outcome('b', 2, 'quota'), outcome('c', 3, 'failed'), outcome('d', 4, 'failed')]
+  const found = d.detectPairFailures(between, CFG)
+  assert.equal(found.length, 1)
+  assert.deepEqual(found[0].numbers.tasks, ['a', 'c', 'd'])
+  assert.equal(d.detectPairFailures([outcome('a', 1, 'failed'), outcome('b', 2, 'failed'), outcome('c', 3, 'quota')], CFG).length, 0)
+})
+
 test('a ScheduleWakeup while a delegate task of its session is open breaks the rule (E4)', () => {
   const delegateEntries = [launch(1, 't1', 'haiku', 'first', 100, 1), verdict(2, 't1', 'haiku', 'approved', { kind: 'done' }, 300), launch(3, 't2', 'haiku', 'first', 400, 1)]
   const events = [

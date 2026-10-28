@@ -90,7 +90,8 @@ function detectRiseWithoutReason(entries = []) {
 /**
  * detectPairFailures(entries, cfg): Finding[]
  * For each harness/model pair, in chronological order of time, finds the longest streak of non-ok
- * outcomes across distinct tasks (multiple attempts on the same task count once).
+ * outcomes across distinct tasks (multiple attempts on the same task count once). An outcome with status
+ * 'quota' is left out of the streaks.
  * If the streak reaches cfg.pairFailures.consecutive, reports a finding with
  * id: 'pair-failing:<harness>/<model>', numbers: { failures, tasks }.
  */
@@ -117,6 +118,8 @@ function detectPairFailures(entries = [], cfg = {}) {
     let currentStreak = []
 
     for (const entry of group) {
+      // A refusal for quota is no failure: the pair is out of quota, not failing. It neither adds to a streak nor ends one.
+      if (entry.status === 'quota') continue
       if (entry.status === 'ok') {
         if (currentStreak.length > 0) {
           streaks.push(currentStreak)
