@@ -8,6 +8,10 @@ order: 31
 
 ## Status
 
+Version 0.25.1: the fault of a refused ops start says what failed (GitHub issue 118). What changed since 0.25.0:
+- **The kind of the error.** `register.ops-run` recorded its `spawn-failed` fault without the kind of the error, unlike `register.on-agent-spawn`, so the reading could only say "6 silent faults" and the first automatic issue ([#118](https://github.com/DarkArty07/aether-plugin/issues/118)) gave nothing to act on. The record now carries the kind, from the closed list of `FAULT_KINDS` and never the message. A refused start still goes to the model, which runs the command as before.
+- **What did not change.** A single fault still files an issue: a failure that appears only under special conditions would be hidden by a threshold of recurrence, and the faults of one burst are already one finding for their source.
+
 Version 0.25.0: in the development installation, the observation can open the issue of each failure by itself (spec 020, decision A98). What changed since 0.24.3:
 - **The `autoissue` option.** A boolean, off by default. It works only in the development installation (`aether-lead --dev`, `AETHER_OBSERVE=dev` or the `observedev` option): in the standard installation it does nothing, whatever its value. `AETHER_AUTOISSUE=on` or `off` forces it either way, and `off` always wins.
 - **What it does.** At the end of a session the hook launches a detached worker, `aether-observe file-issues`, so the hook still prints nothing and exits 0. The worker files each finding of kind `failure` on the `repository` of `plugin.json`, never on the repository of the folder where the session ran, under the label `aether-observe` and with a marker per finding. It files at most 3 issues per run and none while 10 are open, and a failure already filed (by its ledger or by its marker) is not filed again.
