@@ -599,7 +599,7 @@ export function register(on, options) {
           const error = `${command.bin} ${command.args[0]} was still running after ${command.timeoutMs / 1000} s and was stopped; ${leftBehind(command)}`
           out = { exitCode: TIMED_OUT, stdout: `${JSON.stringify({ error })}\n` }
         } else {
-          void recordFault($, state, 'register.ops-run', 'spawn-failed')
+          void recordFault($, state, 'register.ops-run', 'spawn-failed', errorKind(err))
         }
       }
       if (out) {

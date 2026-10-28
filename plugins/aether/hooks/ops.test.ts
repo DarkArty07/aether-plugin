@@ -195,6 +195,15 @@ test('a command $.process.run refuses goes to the model, which the meter records
   expect(counts.modelSteps).toBe(1)
   await endTurn($)
   expect(parts(writes)['/home/u/aether-data/usage/s1/0.json'].entries.map((e) => e.agent)).toEqual(['agent-1'])
+  // The refusal leaves a fault record with the kind of its error, never its message.
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const fault = writes.find((w) => w.path.includes('/observe/faults/'))
+  expect(fault).toBeTruthy()
+  const record = JSON.parse(fault.text)
+  expect(record.faults).toHaveLength(1)
+  expect(record.faults[0]).toMatchObject({ source: 'register.ops-run', class: 'spawn-failed' })
+  expect(typeof record.faults[0].kind).toBe('string')
+  expect(fault.text.includes('process.run is not allowed')).toBe(false)
 })
 
 test('an answered agent that takes another step is ended without the model, which would run the command again', async ($, on) => {
