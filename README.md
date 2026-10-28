@@ -11,9 +11,9 @@ The Lead writes the owner's intent card and launches `/aether:design`, which run
 
 Plain `claude` stays normal mode.
 
-<p align="center"><img src="https://img.shields.io/badge/version-0.24.3-blue" alt="version 0.24.3"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
+<p align="center"><img src="https://img.shields.io/badge/version-0.25.0-blue" alt="version 0.25.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
 
-Version 0.24.3 ([changelog](docs/changelog.md))
+Version 0.25.0 ([changelog](docs/changelog.md))
 
 Aether pursues five goals, and their initials, in Spanish, spell one word: **RADAR**.
 
@@ -38,7 +38,7 @@ Aether pursues five goals, and their initials, in Spanish, spell one word: **RAD
 claude plugin install aether --marketplace DarkArty07/aether-plugin
 ```
 
-Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; the rule is in [Lanes](docs/guide/lanes.md#lanes), and [Options](docs/guide/options.md#options) has the plugin's seven options and how to set them).
+Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; the rule is in [Lanes](docs/guide/lanes.md#lanes), and [Options](docs/guide/options.md#options) has the plugin's eight options and how to set them).
 
 ## First start
 
@@ -62,7 +62,7 @@ Then tell the Lead what you want. [Start](docs/getting-started.md#start) has the
 - [Purpose](docs/purpose.md): why Aether exists, the five goals of RADAR and the principles it follows.
 - [Methodology](docs/methodology.md): the roles, the three paths and the swarm, from your request to a merged result.
 - [Delegates](docs/guide/delegates.md): how a delegate task of the Lead climbs from Haiku to Sonnet and Opus, corrected on top of its own work, and what the system logs of it.
-- [Self-observation](docs/guide/observe.md): how `aether-observe` finds the plugin's own faults and out-of-date settings in a Lead session, and why nothing leaves your machine.
+- [Self-observation](docs/guide/observe.md): how `aether-observe` finds the plugin's own faults and out-of-date settings in a Lead session, and why nothing leaves your machine, but for the automatic issues of its development mode.
 - [Documentation](docs/index.md): every guide, the reference, the changelog and the design record.
 
 ## License

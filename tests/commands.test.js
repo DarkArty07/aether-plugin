@@ -10,7 +10,7 @@ const PLUGIN = path.join(ROOT, 'plugins', 'aether')
 // Kept by name (R19 b): the whole of aether-report, the hook entry points, and the verb hook of aether-observe.
 const BY_NAME = new Set(['aether-report', 'aether-guard', 'aether-session-start', 'aether-observe hook'])
 // Internal verbs: launched in a process of their own by a verb that stays (the caller is that verb).
-const INTERNAL = { 'aether-lane _runner': 'aether-lane start', 'aether-lane _seat': 'aether-lane seat-start', 'aether-delegate run': 'aether-delegate start', 'aether-delegate renew': 'aether-delegate begin' }
+const INTERNAL = { 'aether-lane _runner': 'aether-lane start', 'aether-lane _seat': 'aether-lane seat-start', 'aether-delegate run': 'aether-delegate start', 'aether-delegate renew': 'aether-delegate begin', 'aether-observe file-issues': 'aether-observe hook' }
 
 function files(dir, keep) {
   return execFileSync('git', ['ls-files', dir], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter((f) => f && keep(f))

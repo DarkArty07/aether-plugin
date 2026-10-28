@@ -45,6 +45,14 @@ test('hook runs from any shell, with no plugin variable; a bad verb is a usage e
   assert.equal(bin(['hook', 'extra'], dir).status, 1)
 })
 
+test('the usage names the file-issues verb, which takes no argument (spec 020)', (t) => {
+  const dir = tempDir(t)
+  const stray = bin(['file-issues', 'extra'], dir)
+  assert.equal(stray.status, 1)
+  assert.equal(stray.json.error, 'usage: aether-observe hook | file-issues')
+  assert.equal(bin(['nope'], dir).json.error, 'usage: aether-observe hook | file-issues')
+})
+
 test('hooks.json runs the five new hooks and the manifest gains no option (R3, R9)', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
   assert.equal(manifest.userConfig.observe, undefined)

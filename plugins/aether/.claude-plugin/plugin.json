@@ -1,6 +1,6 @@
 {
   "name": "aether",
-  "version": "0.24.3",
+  "version": "0.25.0",
   "description": "Aether mode for Claude Code, built for RADAR: rapid, autonomous, delegating, affordable and robust. The Lead starts on Sonnet and is the owner's right hand: it understands the intent, writes the owner's intent card, and launches /aether:design, which runs the design on its own, then orchestrates the build along three paths: itself, delegate tasks on models it chooses, or the swarm. A Writer on Sonnet writes specs, plans and tasks in Spec Kit's layout, and a Judge on Opus reviews them. A parallel swarm of Haiku, Sonnet and Opus implementers builds them, each attempt supervised and every merge made one at a time. With superdelegation on, everything that is not the Lead runs first on the quota of other harnesses, such as agy or grok, and native Claude is the fallback. With the owner's permission, the Lead works for hours and ends with a brief.",
   "author": {
     "name": "DarkArty07"
@@ -48,6 +48,12 @@
       "type": "boolean",
       "title": "Self-observation development mode",
       "description": "Turn on development mode for self-observation, which also keeps redacted conversation fragments around failures and owner corrections to the Lead. Off by default: standard self-observation never reads or keeps conversation text.",
+      "default": false
+    },
+    "autoissue": {
+      "type": "boolean",
+      "title": "Automatic issues (development mode)",
+      "description": "Only in the development mode of self-observation: when a Lead session ends, it opens on GitHub, in the plugin's own repository, an issue for each failure the reading found, with the evidence the reading already wrote and never conversation text. It needs gh signed in. Off by default; it has no effect in the standard installation.",
       "default": false
     }
   }

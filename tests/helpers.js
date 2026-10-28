@@ -19,6 +19,7 @@ const NO_LANES_CONFIG = path.join(os.tmpdir(), 'aether-no-lanes', 'lanes.json')
 // on purpose, through the env argument of runBin or through process.env after this file loads.
 // tests/env-scrub.test.js fails when the code reads a name that is not listed here.
 const AETHER_VARIABLES = [
+  'AETHER_AUTOISSUE',
   'AETHER_DATA_DIR',
   'AETHER_IRREVERSIBLE',
   'AETHER_LANES_CONFIG',
@@ -35,6 +36,7 @@ const AETHER_VARIABLES = [
 const RETIRED_SESSION = ['AETHER_SUPERDELEGATION_' + 'LEGACY']
 for (const name of AETHER_VARIABLES.concat(RETIRED_SESSION)) delete process.env[name]
 delete process.env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV
+delete process.env.CLAUDE_PLUGIN_OPTION_AUTOISSUE
 
 function tempDir(t, prefix = 'aether-test-') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)))

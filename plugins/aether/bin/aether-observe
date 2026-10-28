@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-observe hook
+// aether-observe hook | file-issues
 // hook: the handler of the observation hooks; reads the hook's JSON from stdin, prints nothing, always exits 0.
+// file-issues: the worker of the automatic issues of the development installation (spec 020); prints one JSON line and
+// exits 1 only when the gate or the destination fails.
 // Any other use prints one JSON line with the usage error and exits 1.
 
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 
-const USAGE = 'usage: aether-observe hook'
+const USAGE = 'usage: aether-observe hook | file-issues'
 
 function hook() {
   try {
@@ -21,6 +23,14 @@ function hook() {
   return 0
 }
 
+function filed() {
+  const { fileIssues } = require(path.join(lib, 'observe-issue.js'))
+  const { dataDir } = require(path.join(lib, 'run.js'))
+  const result = fileIssues({ dataDir: dataDir(), env: process.env, now: Date.now() })
+  process.stdout.write(`${JSON.stringify(result)}\n`)
+  return result.error && result.error !== 'gh-unavailable' ? 1 : 0
+}
+
 function fail(message) {
   process.stdout.write(`${JSON.stringify({ error: message })}\n`)
   return 1
@@ -29,6 +39,7 @@ function fail(message) {
 function main(args) {
   const [verb, ...rest] = args
   if (verb === 'hook' && rest.length === 0) return hook()
+  if (verb === 'file-issues' && rest.length === 0) return filed()
   return fail(USAGE)
 }
 
