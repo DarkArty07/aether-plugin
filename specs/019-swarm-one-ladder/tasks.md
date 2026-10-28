@@ -625,7 +625,7 @@ En `tests/speckit.test.js`: quitar `'- Ladder: haiku 2, sonnet 2, opus 1'` y `'T
 - Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; el riesgo de reemplazar la política de un script de 1 666 líneas se marca en Review, y la escalera sube el modelo si hace falta
 - Review: xhigh — unidades paralelas comparten el estado de la escalera y un camino sin tope repetiría llamadas sin fin sobre la cuota del dueño
 - Area: swarm
-- Owns: `plugins/aether/workflows/run.workflow.js`, `tests/workflow-harness.js`, `tests/workflow*.test.js`, `tests/copies-ladder.test.js`, `tests/ladder-one-source.test.js`
+- Owns: `plugins/aether/workflows/run.workflow.js`, `tests/workflow-harness.js`, `tests/workflow*.test.js`, `tests/copies-ladder.test.js`, `tests/ladder-one-source.test.js`, `tests/ops-command.test.js`, `tests/superdelegation-scenarios.test.js`
 - Depends on: Task 1 — el script llama a `aether-wt ladder` y la fixture del arnés ejecuta el verbo real de `lib/wt-ladder.js`
 - Depends on: Task 9 — `bin/aether-wt` y la fila `wt` de `components.md` quedan completos (`ladder` y `gate`) antes de que el script llame a sus verbos, y `npm test` completo del script los recorre
 - Serves: R1, R2, R3, R4, R5, R6, R7, R15, R17, R18, R20
@@ -962,7 +962,7 @@ En los siete archivos `tests/workflow*.test.js` y en `tests/workflow-final-slice
 **Aether:**
 - Tier: haiku high — el dueño ordenó que toda tarea arranque en Haiku; las pruebas fijan el orden de las llamadas y el texto de los prompts
 - Area: swarm
-- Owns: `plugins/aether/workflows/run.workflow.js`, `tests/workflow-harness.js`, `tests/workflow.test.js`, `tests/workflow-lanes.test.js`, `tests/workflow-next-pair.test.js`, `tests/workflow-review-once.test.js`, `tests/workflow-salvage.test.js`, `tests/workflow-split.test.js`, `tests/workflow-superdelegation.test.js`, `tests/workflow-time-cap.test.js`, `tests/workflow-final-slices.test.js`, `tests/workflow-ladder.test.js`, `tests/workflow-gate.test.js`
+- Owns: `plugins/aether/workflows/run.workflow.js`, `tests/workflow-harness.js`, `tests/workflow.test.js`, `tests/workflow-lanes.test.js`, `tests/workflow-next-pair.test.js`, `tests/workflow-review-once.test.js`, `tests/workflow-salvage.test.js`, `tests/workflow-split.test.js`, `tests/workflow-superdelegation.test.js`, `tests/workflow-time-cap.test.js`, `tests/workflow-final-slices.test.js`, `tests/workflow-ladder.test.js`, `tests/workflow-gate.test.js`, `tests/ops-command.test.js`
 - Depends on: Task 5 — edita el mismo script y usa `applyVerdict` y el bloque `unit.ladder`
 - Depends on: Task 9 — el script llama a `aether-wt gate`: el verbo y su respuesta existen antes de que el script dependa de ellos
 - Serves: R7, R8, R10, R11, R12, R20

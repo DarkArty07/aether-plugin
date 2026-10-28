@@ -75,7 +75,7 @@ Cada uno es un valor por defecto reversible: el dueño puede cambiarlo y se desh
 
 ## Irreversible actions
 
-- Una llamada de pago (clase `paid-call`): la repetición en vivo de R21 gasta la cuota de Claude del dueño. Comando: `scripts/aether-lead --plugin-dir /home/darkarty/Desktop/03_PROYECTOS/01_ACTIVOS/aether-plugin/.worktrees/swarm-ladder/plugins/aether`, y desde esa sesión `/aether:run` con el plan de la serpiente y `superdelegation` apagado; el comando exacto del run lo fija el plan. Necesita la concesión del dueño antes de correr.
+- Una llamada de pago (clase `paid-call`): la repetición en vivo de R21 gasta la cuota de Claude del dueño. Comando: `scripts/aether-lead --plugin-dir <worktree de la rama>/plugins/aether`, y desde esa sesión `/aether:run` con el plan de la serpiente y `superdelegation` apagado; el comando exacto del run lo fija el plan. Necesita la concesión del dueño antes de correr.
 
 La unión a `main`, el empuje y la publicación de una versión no forman parte de esta función (véase Out of scope).
 
