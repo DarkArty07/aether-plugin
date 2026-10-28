@@ -122,7 +122,7 @@ test('status counts files and bytes by class, and forget deletes only observe/ a
 test('the thresholds are data in config/observe.json (A7)', () => {
   const cfg = observe.loadObserveConfig()
   const thresholds = Object.keys(cfg).filter((key) => !['correctionPatterns', 'corrections'].includes(key))
-  assert.deepEqual(thresholds.sort(), ['approval', 'blockedByMistake', 'cost', 'designRounds', 'pairFailureRate', 'pairFailures', 'pairSpeed'])
+  assert.deepEqual(thresholds.sort(), ['approval', 'autoIssue', 'blockedByMistake', 'cost', 'designRounds', 'pairFailureRate', 'pairFailures', 'pairSpeed'])
   assert.deepEqual(cfg.pairFailures, { consecutive: 3 })
   assert.deepEqual(cfg.approval, { minAttempts: 5, lowRate: 0.2 })
   assert.deepEqual(cfg.pairSpeed, { minCalls: 5, ratio: 0.5 })
@@ -130,6 +130,7 @@ test('the thresholds are data in config/observe.json (A7)', () => {
   assert.deepEqual(cfg.designRounds, { maxRounds: 6 })
   assert.deepEqual(cfg.cost, { minCalls: 3, ratio: 2 })
   assert.deepEqual(cfg.blockedByMistake, { repeatBlocks: 2 })
+  assert.deepEqual(cfg.autoIssue, { maxPerSession: 3, maxOpen: 10 })
 })
 
 test('observe.js uses no network or process module (R12)', () => {

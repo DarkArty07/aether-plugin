@@ -10,5 +10,6 @@
     "es": ["eso no", "no era", "te dije", "ya te dije", "otra vez", "no quiero", "está mal", "incorrecto", "no es lo que"],
     "en": ["that's not", "i said", "wrong", "again", "not what i"]
   },
-  "corrections": { "maxPerSession": 20, "maxScanBytes": 20000000 }
+  "corrections": { "maxPerSession": 20, "maxScanBytes": 20000000 },
+  "autoIssue": { "maxPerSession": 3, "maxOpen": 10 }
 }

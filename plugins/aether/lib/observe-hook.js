@@ -5,7 +5,7 @@
 // installation hands the whole input to captureFragment, which is the one that opens anything.
 // Family: observe.
 
-const { appendEvent, observeMode } = require('./observe.js')
+const { appendEvent, observeMode, autoIssueOn } = require('./observe.js')
 const { isAetherSession } = require('./session.js')
 const run = require('./run.js')
 
@@ -41,6 +41,8 @@ function endSession(dataDir, session, input, now, env) {
     // The development installation keeps the owner's corrections before the reading, so that this same reading has them.
     if (observeMode(env) === 'dev') require('./observe-dev.js').captureCorrections({ dataDir, session, input, now })
     readObservations({ dataDir, repoRoot: mainRootOf(input.cwd), now })
+    // The development installation with autoissue on files the failures in a worker of its own, detached: no network in here (D7).
+    if (autoIssueOn(env)) require('./observe-issue.js').launch({ dataDir, env })
   } catch {
     // The event is already recorded; a failed reading must not turn it into nothing.
   }

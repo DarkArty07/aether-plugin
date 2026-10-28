@@ -141,9 +141,19 @@ const OBSERVATION_FILES = () => [
   path.join(PLUGIN, 'hooks', 'fault-trace.mjs'),
 ]
 
-test('no observation file uses the network, a process or gh (C9, R12)', () => {
+// The one observation file that runs a process and names gh: the worker of the automatic issues (spec 020, D7).
+const ISSUE_FILE = 'observe-issue.js'
+
+test('no observation file uses the network, a process or gh, but observe-issue.js (C9, R12, spec 020)', () => {
   const forbidden = /node:(http|https|http2|net|tls|dgram|dns|child_process)|\bchild_process\b|\bfetch\s*\(|XMLHttpRequest|WebSocket|\bgh\s+(issue|api|pr)\b|(?<![.\w])(exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s*\(/
-  for (const file of OBSERVATION_FILES()) assert.doesNotMatch(fs.readFileSync(file, 'utf8'), forbidden, file)
+  for (const file of OBSERVATION_FILES()) {
+    if (path.basename(file) === ISSUE_FILE) continue
+    assert.doesNotMatch(fs.readFileSync(file, 'utf8'), forbidden, file)
+  }
+  const worker = fs.readFileSync(path.join(PLUGIN, 'lib', ISSUE_FILE), 'utf8')
+  assert.match(worker, /\bgh\s+issue\s+create\b|'issue', 'create'/, 'the exception is the one that files issues')
+  assert.doesNotMatch(worker, /transcript/i, 'the worker never names a conversation file')
+  assert.doesNotMatch(worker, /require\(['"]\.\/observe-dev\.js['"]\)/, 'the worker never loads observe-dev.js')
 })
 
 test('only lib/observe-dev.js names the transcript (C7, A4)', () => {
@@ -156,15 +166,21 @@ test('only lib/observe-dev.js names the transcript (C7, A4)', () => {
 })
 
 test('a finding becomes a local draft and no issue is opened; nothing is written outside the data directory (E12, C13)', (t) => {
-  const dir = tempDir(t); const home = tempDir(t); const repo = makeRepo(t); const bindir = tempDir(t)
-  const sentinel = path.join(bindir, 'gh-was-called')
-  write(path.join(bindir, 'gh'), `#!/bin/sh\ntouch "${sentinel}"\n`)
-  fs.chmodSync(path.join(bindir, 'gh'), 0o755)
-  lead(dir)
-  seedSources(dir, repo)
-  const r = bin(['hook'], { dir, home, input: input('SessionEnd', transcriptFile(dir), { cwd: repo.dir }), env: { PATH: `${bindir}:${process.env.PATH}` } })
-  assert.equal(r.status, 0)
-  assert.ok(files(path.join(dir, 'observe', 'issues')).length >= 1)
-  assert.equal(fs.existsSync(sentinel), false)
-  assert.deepEqual(fs.readdirSync(home), [])
+  // The option off, or the standard mode with the option on: the draft is written and gh is never called (spec 020, D2).
+  const cases = [{}, { CLAUDE_PLUGIN_OPTION_AUTOISSUE: 'true' }, { AETHER_OBSERVE: 'dev', AETHER_AUTOISSUE: 'off' }, { AETHER_AUTOISSUE: 'on' }]
+  for (const extra of cases) {
+    const dir = tempDir(t); const home = tempDir(t); const repo = makeRepo(t); const bindir = tempDir(t)
+    const sentinel = path.join(bindir, 'gh-was-called')
+    write(path.join(bindir, 'gh'), `#!/bin/sh\ntouch "${sentinel}"\n`)
+    fs.chmodSync(path.join(bindir, 'gh'), 0o755)
+    lead(dir)
+    seedSources(dir, repo)
+    const env = { PATH: `${bindir}:${process.env.PATH}`, ...extra }
+    const r = bin(['hook'], { dir, home, input: input('SessionEnd', transcriptFile(dir), { cwd: repo.dir }), env })
+    assert.equal(r.status, 0, JSON.stringify(extra))
+    assert.ok(files(path.join(dir, 'observe', 'issues')).length >= 1, JSON.stringify(extra))
+    assert.equal(fs.existsSync(sentinel), false, JSON.stringify(extra))
+    assert.equal(fs.existsSync(path.join(dir, 'observe', 'issues-filed.json')), false, JSON.stringify(extra))
+    assert.deepEqual(fs.readdirSync(home), [])
+  }
 })

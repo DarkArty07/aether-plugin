@@ -33,6 +33,15 @@ function observeMode(env = process.env, root = PLUGIN_ROOT) {
   return env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV === 'true' ? 'dev' : 'standard'
 }
 
+// Automatic issues (spec 020) need development mode first, whatever the variable or the option says (D2). AETHER_AUTOISSUE
+// turns them on (on) or off (off) with the exact value; any other value counts as not set and the option decides.
+function autoIssueOn(env = process.env) {
+  if (observeMode(env) !== 'dev') return false
+  if (env.AETHER_AUTOISSUE === 'off') return false
+  if (env.AETHER_AUTOISSUE === 'on') return true
+  return env.CLAUDE_PLUGIN_OPTION_AUTOISSUE === 'true'
+}
+
 const cleanText = (value) => (typeof value === 'string' && IDENTIFIER.test(value) ? value : 'unclassified')
 
 function cleanEvent(raw) {
@@ -175,5 +184,5 @@ function forget(dataDir, { yes } = {}) {
 module.exports = {
   PLUGIN_ROOT, CONFIG_FILE,
   observeDir, eventsFile, faultsDir, summaryFile, devDir, issuesDir,
-  observeMode, cleanText, cleanEvent, appendEvent, readEvents, readFaults, loadObserveConfig, status, forget, FAULT_KINDS,
+  observeMode, autoIssueOn, cleanText, cleanEvent, appendEvent, readEvents, readFaults, loadObserveConfig, status, forget, FAULT_KINDS,
 }
