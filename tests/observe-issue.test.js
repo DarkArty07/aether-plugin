@@ -267,6 +267,17 @@ test('a name of a task is aliased only as a whole word, and the alias is the sam
   assert.match(a.body, /Task task-[0-9a-f]{8} ran; arch-layers and archive and "task-[0-9a-f]{8}" and arch_x/)
 })
 
+test('a task name with a quote is aliased in its raw and in its JSON spelling, to the same alias (D9)', () => {
+  const name = 'say "hi" now'
+  const body = `## Evidence\n\n- Task ${name} ran\n- tasks: ${JSON.stringify([name])}\n`
+  const draft = draftOf({ id: 'fault:x', sessions: [], issue: { title: 'T', body } }, { home: '/nonexistent-home', tasks: [name], now: Date.UTC(2026, 9, 28) })
+  const aliases = draft.body.match(/task-[0-9a-f]{8}/g)
+  assert.equal(aliases.length, 2)
+  assert.equal(aliases[0], aliases[1])
+  assert.equal(draft.body.includes('say "hi"'), false, 'the raw spelling is gone')
+  assert.equal(draft.body.includes('say \\"hi\\"'), false, 'the JSON spelling is gone')
+})
+
 test('an issue of the marker already in gh issue list is found, not created again (D6)', (t) => {
   const dir = tempDir(t)
   const gh = fakeGh(t, { list: [{ number: 7, state: 'OPEN', url: `https://github.com/${REPO}/issues/7`, body: `old text\n${markerOf(RISE_ID)}\n` }] })

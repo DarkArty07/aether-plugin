@@ -75,12 +75,19 @@ function taskNamesOf(dataDir) {
 const taskAlias = (name) => `task-${crypto.createHash('sha256').update(name).digest('hex').slice(0, 8)}`
 
 // One pattern for all the names, longest first, that matches a name only as a whole word of the text (a letter, a digit, _ or -
-// on either side is part of another word), or null when there is none.
+// on either side is part of another word), or null when there is none. A name with a quote or a backslash also matches the way
+// it reads inside a JSON list (the numbers of a finding), and both spellings give the alias of the same name.
 function taskPatternOf(names) {
-  const list = names.filter((name) => typeof name === 'string' && name.length >= TASK_MIN)
+  const list = [...new Set(names.filter((name) => typeof name === 'string' && name.length >= TASK_MIN))]
   if (list.length === 0) return null
-  const escaped = [...list].sort((a, b) => b.length - a.length).map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  return new RegExp(`(?<![A-Za-z0-9_-])(?:${escaped.join('|')})(?![A-Za-z0-9_-])`, 'g')
+  const spellings = new Map()
+  for (const name of list) {
+    spellings.set(name, name)
+    const json = JSON.stringify(name).slice(1, -1)
+    if (json !== name) spellings.set(json, name)
+  }
+  const escaped = [...spellings.keys()].sort((a, b) => b.length - a.length).map((spelling) => spelling.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return { regex: new RegExp(`(?<![A-Za-z0-9_-])(?:${escaped.join('|')})(?![A-Za-z0-9_-])`, 'g'), spellings }
 }
 
 // The cleaning of D4: each session becomes its first eight characters and each absolute path of the home directory or of
@@ -98,7 +105,7 @@ function scrub(text, { sessions, home }) {
   return out.replace(SYSTEM_HOME, '~')
 }
 
-const aliasTasks = (text, pattern) => (pattern ? text.replace(pattern, (name) => taskAlias(name)) : text)
+const aliasTasks = (text, pattern) => (pattern ? text.replace(pattern.regex, (spelling) => taskAlias(pattern.spellings.get(spelling))) : text)
 
 // The title and body to send for one failure. The footer and the marker come after the comparison, so they can never make a
 // draft held. A draft that redact() would change holds a key or a secret, and is not sent (D4).
