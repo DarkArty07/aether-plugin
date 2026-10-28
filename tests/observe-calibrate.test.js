@@ -93,7 +93,25 @@ test('proposals say that the adjustment is not applied (acceptance)', () => {
   const signals = c.calibrationSignals({ delegateEntries: entries, lanes, seats, pairs: [PAIR] }, CFG)
   assert.equal(signals.length, 5)
   for (const s of signals) {
-    assert.match(s.proposal, /no se aplica|not applied/i)
+    assert.match(s.proposal, /Not applied automatically\.$/)
+  }
+})
+
+test('the five signals are written in English, like the rest of the observation (acceptance)', () => {
+  const entries = Array.from({ length: 6 }, (_, i) => L(`t${i}`, 'haiku', 'first', 1))
+  const lanes = { [KEY]: { calls: 5, ok: 1, outputTokens: 2500, durationMs: 500000, usd: 5.0, pricedCalls: 5 } }
+  const signals = c.calibrationSignals({ delegateEntries: entries, lanes, seats: { 'd1/writer': 8 }, pairs: [PAIR] }, CFG)
+  const byType = Object.fromEntries(signals.map((s) => [s.type, s]))
+  assert.deepEqual(Object.keys(byType).sort(), ['approval-low', 'cost-mismatch', 'design-rounds', 'pair-failing-rate', 'pair-slow'])
+  assert.equal(byType['approval-low'].title, 'Low approval rate at step haiku')
+  assert.equal(byType['approval-low'].evidence[0], 'Step "haiku": 0 approvals in 6 launches (rate: 0)')
+  assert.equal(byType['pair-slow'].title, `Observed speed of ${KEY} below its sheet`)
+  assert.equal(byType['pair-failing-rate'].title, `High failure rate in pair ${KEY}`)
+  assert.equal(byType['cost-mismatch'].title, `Cost mismatch in pair ${KEY}`)
+  assert.equal(byType['design-rounds'].title, 'Too many rounds in the writer role of design d1')
+  for (const s of signals) {
+    assert.match(s.proposal, /^Proposal: /)
+    assert.doesNotMatch(`${s.title} ${s.evidence.join(' ')} ${s.proposal}`, /Propuesta|Baja|Velocidad|Desfase|Exceso|rondas|aprobaciones|lanzamientos|llamadas|costo|fallos|tasa|por tarea|No se aplica/)
   }
 })
 

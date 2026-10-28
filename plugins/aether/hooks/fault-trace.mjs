@@ -5,11 +5,13 @@
 // Where the mod caught an error, the record also keeps its kind: the name of the error's class when it is one of the
 // built-in classes below, else `other`. Only the word is kept, never the message.
 //
-// <data dir>/observe/faults/<session>.json is { session, count, faults: [{ time, source, class, kind? }] } with the first 100
-// faults; `count` goes on counting. The record is the mod's own file: nothing else writes it.
+// <data dir>/observe/faults/<session>-<start>.json is { session, count, faults: [{ time, source, class, kind? }] } with the
+// first 100 faults; `count` goes on counting. <start> is the clock when this copy of the module first wrote, so a reloaded
+// copy (or a resumed session) writes a record of its own and never replaces the one an earlier copy left. The record is
+// the mod's own file: nothing else writes it.
 //
 // Nothing here may change a request, so recordFault never rejects and its callers never wait for it. It imports nothing
-// and uses only $.clock.now and $.fs.write.
+// and uses only $.clock.now, $.fs.write, and the reads of the environment and of the plugin that name the data directory.
 
 // The places that leave a trace: the real failures of the audit of D3 (plan 014).
 export const FAULT_SOURCES = [
@@ -51,6 +53,17 @@ export function errorKind(thrown) {
   }
 }
 
+// The clock now, which names the record of this copy of the module; Date.now when the clock cannot be read.
+async function startOf($) {
+  try {
+    const now = await $.clock.now()
+    if (Number.isFinite(now)) return now
+  } catch {
+    // Date.now below.
+  }
+  return Date.now()
+}
+
 // Leaves the record of one fault. Counts and keeps it in state.faultLog at once, so that faults that arrive together are
 // all counted, and writes the record after the write before it, so that the last file is the newest. `kind` is given
 // only where an error was caught (errorKind); a fault with nothing thrown has none.
@@ -74,9 +87,13 @@ export async function recordFault($, state, source, cls, kind) {
       log.faults.push(fault)
     }
     const turn = (state.faultWrites ?? Promise.resolve()).then(async () => {
+      // A fault can come before the session is marked Aether, so the data directory is read here when no check has read it.
+      state.dataDir ??= readDataDir($)
       const dataDir = await state.dataDir
       if (typeof dataDir !== 'string' || dataDir === '') return
-      await $.fs.write(`${dataDir}/observe/faults/${state.id}.json`, JSON.stringify({ session: state.id, count: log.count, faults: log.faults }))
+      // Writes are one at a time, so the first of them names the file for every later one.
+      log.start ??= await startOf($)
+      await $.fs.write(`${dataDir}/observe/faults/${state.id}-${log.start}.json`, JSON.stringify({ session: state.id, count: log.count, faults: log.faults }))
     })
     // A failed write is not a failure of the next one.
     state.faultWrites = turn.catch(() => undefined)
@@ -84,4 +101,56 @@ export async function recordFault($, state, source, cls, kind) {
   } catch {
     // The trace is a courtesy: a failure to leave it changes nothing.
   }
+}
+
+const asText = (value) => (typeof value === 'string' && value !== '' ? value : null)
+const withoutTrailingSlashes = (path) => path.replace(/\/+$/, '')
+const dataId = (text) => text.replace(/[^A-Za-z0-9_-]/g, '-')
+
+// The data directory (installable spec R11, R12), from the values the mod can read. Paths are compared
+// as given: a mod cannot resolve links.
+export function dataDirFrom({ env, root, name }) {
+  const given = asText(env && env.AETHER_DATA_DIR)
+  if (given) return given
+  const cacheDir = asText(env && env.CLAUDE_CODE_PLUGIN_CACHE_DIR)
+  const configDir = asText(env && env.CLAUDE_CONFIG_DIR)
+  const home = asText(env && env.HOME) || ''
+  const pluginsRoot = withoutTrailingSlashes(cacheDir || `${configDir ? withoutTrailingSlashes(configDir) : `${withoutTrailingSlashes(home)}/.claude`}/plugins`)
+  const cachePrefix = `${pluginsRoot}/cache/`
+  const pluginRoot = typeof root === 'string' ? withoutTrailingSlashes(root) : ''
+  if (pluginRoot.startsWith(cachePrefix)) {
+    const [marketplace, plugin, version, ...rest] = pluginRoot.slice(cachePrefix.length).split('/')
+    const segments = [marketplace, plugin, version]
+    if (rest.length === 0 && segments.every((segment) => segment && segment !== '.' && segment !== '..')) {
+      return `${pluginsRoot}/data/${dataId(`${plugin}@${marketplace}`)}`
+    }
+  }
+  return `${pluginsRoot}/data/${dataId(`${asText(name) || 'aether'}@inline`)}`
+}
+
+// The data directory of this process, read through the mod's own interfaces.
+export async function readDataDir($) {
+  // A failed or refused read counts as unset. Each name is a literal, so the kit can list them.
+  const read = async (get) => {
+    try {
+      return await get
+    } catch {
+      return undefined
+    }
+  }
+  const env = {
+    AETHER_DATA_DIR: await read($.env.get('AETHER_DATA_DIR')),
+    CLAUDE_CODE_PLUGIN_CACHE_DIR: await read($.env.get('CLAUDE_CODE_PLUGIN_CACHE_DIR')),
+    CLAUDE_CONFIG_DIR: await read($.env.get('CLAUDE_CONFIG_DIR')),
+    HOME: await read($.env.get('HOME')),
+  }
+  let root
+  let name
+  try {
+    root = $.plugin.root
+    name = $.plugin.name
+  } catch {
+    // A missing value counts as undefined.
+  }
+  return dataDirFrom({ env, root, name })
 }
