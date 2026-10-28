@@ -62,7 +62,7 @@ Lead (main session, starts on Sonnet, xhigh): the intent, the card, the route an
   │    the same findings three times, or two attempts without a report, stop the unit
   ├─ merges, one at a time; only a test failure outside the baseline undoes one
   ├─ wave 2 …
-  ├─ final review of everything merged (opus, or sonnet for a small all-haiku run)
+  ├─ final review of everything merged (opus, or sonnet for a small run: 1 to 3 units that all ask for a high review)
   └─ cleanup: no unit worktree or aether/* branch is left behind
   │
 aether-exam run: the hidden exam on the integration branch; a failing test is a blocking finding
