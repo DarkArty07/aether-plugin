@@ -97,7 +97,7 @@ function check(planArg, { cwd = process.cwd(), stdout = process.stdout } = {}) {
   const graph = buildGraph(parsed)
   const trace = traceability(parsed, specRequirements(parsed.spec, planPath, cwd))
   const errors = [...parsed.errors, ...graph.errors, ...trace.errors]
-  const warnings = [...graph.warnings, ...trace.warnings]
+  const warnings = [...parsed.warnings, ...graph.warnings, ...trace.warnings]
   if (errors.length) fail(errors, warnings, stdout)
   stdout.write(JSON.stringify({ ok: true, tasks: Object.keys(graph.tasks).length, waves: graph.waves, warnings }) + '\n')
 }
@@ -171,7 +171,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
 
   const graph = alreadyMerged && only.length === 0 ? { waves: [], tasks: {}, errors: [], warnings: [] } : buildGraph(parsed, { only })
   const errors = [...parsed.errors, ...graph.errors]
-  if (errors.length) fail(errors, graph.warnings, stdout)
+  if (errors.length) fail(errors, [...parsed.warnings, ...graph.warnings], stdout)
 
   const enabled = superdelegation.enabled()
   if (!rest.includes('--no-lanes') && !enabled.on) {
@@ -234,7 +234,6 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
       firstBase: priorIntegration?.firstBase || priorIntegration?.base || base,
     },
     testCommand: parsed.execution.testCommand,
-    ladder: parsed.execution.ladder,
     maxAgents: parsed.execution.maxAgents,
     waves: graph.waves,
     tasks,
@@ -274,7 +273,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     compiledAt: previous && previous.compiledAt ? previous.compiledAt : new Date().toISOString(),
     launches: previous ? (previous.launches || 1) + 1 : 1,
   })
-  const warnings = [...graph.warnings]
+  const warnings = [...parsed.warnings, ...graph.warnings]
   if (repo.worktree === repo.mainRoot) {
     warnings.push(
       'the integration worktree is the main checkout, so the unit worktrees under .aether/worktrees/ sit inside it, and a test command that searches the whole tree also runs their unfinished tests at merge time. Prefer a separate integration worktree (git worktree add <path> -b <branch>).',

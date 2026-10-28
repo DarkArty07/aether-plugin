@@ -42,7 +42,7 @@ test('compile writes the graph, briefs and state for the integration branch', (t
   assert.deepEqual(args.integration, { branch: 'feature/x', worktree: repo.dir, base: head, firstBase: head })
   assert.deepEqual(args.waves, [['task-1', 'task-3'], ['task-2']])
   assert.equal(args.testCommand, 'true')
-  assert.deepEqual(args.ladder, { haiku: 2, sonnet: 2, opus: 1 })
+  assert.equal('ladder' in args, false)
   assert.equal(args.maxAgents, 200)
   assert.equal(args.tasks['task-2'].brief, path.join(args.runDir, 'briefs', 'task-2.md'))
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(args.runDir, 'graph.json'), 'utf8')), args)
@@ -227,27 +227,23 @@ test('compile --run on an existing run keeps its first compile time and archives
   assert.equal(fs.existsSync(path.join(first.runDir, 'result.json')), false)
 })
 
-test('compile gives every task its effort and review, and the brief its starting rung', (t) => {
+test('check and compile accept Tier and Ladder with a warning, and compile emits no tier, effort or ladder', (t) => {
   const repo = makeRepo(t)
-  const file = writePlan(repo.dir, plan([task(1), task(2, { tier: 'sonnet high — wiring the tests pin down', review: 'xhigh — UI states' })]))
+  const file = writePlan(repo.dir, plan(
+    [task(1), task(2, { tier: 'sonnet high — wiring', review: 'xhigh — UI states' })],
+    { execution: ['- Test command: `true`', '- Ladder: haiku 2, sonnet 2, opus 1'] },
+  ))
+  const checked = runBin(PLAN_BIN, ['check', file], repo.dir)
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr)
+  assert.match(checked.stdout + checked.stderr, /ignorado: el swarm arranca todas las tareas en Haiku/)
   const r = runBin(PLAN_BIN, ['compile', file], repo.dir)
   assert.equal(r.status, 0, r.stdout + r.stderr)
-  assert.deepEqual(
-    ['task-1', 'task-2'].map((id) => [r.json.tasks[id].tier, r.json.tasks[id].effort, r.json.tasks[id].review]),
-    [
-      ['haiku', 'high', 'high'],
-      ['sonnet', 'high', 'xhigh'],
-    ],
-  )
-  assert.match(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Tier: haiku high — complete code$/m)
-})
-
-test('check refuses Sonnet below high with its message, and no other', (t) => {
-  const repo = makeRepo(t)
-  const file = writePlan(repo.dir, plan([task(1), task(2, { tier: 'sonnet medium — x' })]))
-  const r = runBin(PLAN_BIN, ['check', file], repo.dir)
-  assert.equal(r.status, 1)
-  assert.deepEqual(r.json.errors, ['Task 2: sonnet medium is not used for implementers; Sonnet and Opus run at high, xhigh or max.'])
+  assert.equal('ladder' in r.json, false)
+  for (const id of ['task-1', 'task-2']) for (const key of ['tier', 'tierReason', 'effort']) assert.equal(key in r.json.tasks[id], false, `${id}.${key}`)
+  assert.equal(r.json.tasks['task-2'].review, 'xhigh')
+  assert.equal(r.json.maxAgents, 200)
+  assert.equal(r.json.testCommand, 'true')
+  assert.doesNotMatch(fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8'), /^- Tier:/m)
 })
 
 // A lane table whose agy is `command`, in a temporary directory.
