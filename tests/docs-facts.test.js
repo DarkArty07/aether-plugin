@@ -560,9 +560,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A97 are recorded and the changelog opens with 0.24.3, then 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
+test('R15: the decisions A50 to A98 are recorded and the changelog opens with 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 97
+  const LAST_DECISION = 98
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -598,22 +598,24 @@ test('R15: the decisions A50 to A97 are recorded and the changelog opens with 0.
   assert.ok(/roles its list names/.test(line(95)) && /extends A65/.test(line(95)))
   assert.ok(/minimal real call/.test(line(96)) && /muse-wonder-1\.0/.test(line(96)) && /fixes #108/.test(line(96)))
   assert.ok(/one ladder/i.test(line(97)) && /Haiku/.test(line(97)) && /#102/.test(line(97)))
+  assert.ok(/autoissue/.test(line(98)) && /development installation/.test(line(98)) && /issue of each failure/.test(line(98)))
   for (const n of [18, 36, 87]) assert.ok(/Update \(A93\)/.test(line(n)), `A${n} has its update note`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const versions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(versions[0].startsWith('Version 0.24.3: ') && versions[0].includes('81 and 93'), versions[0])
-  assert.ok(versions[1].startsWith('Version 0.24.2: ') && versions[1].includes('80, 81, 91, 92, 93, 98 and 99'), versions[1])
-  assert.ok(versions[2].startsWith('Version 0.24.1: ') && versions[2].includes('104 to 117'), versions[2])
-  assert.ok(versions[3].startsWith('Version 0.24.0: ') && versions[3].includes('A97'), versions[3])
-  assert.ok(versions[4].startsWith('Version 0.23.0: ') && versions[4].includes('A96'), versions[4])
-  assert.ok(versions[5].startsWith('Version 0.22.0: ') && versions[5].includes('A95'), versions[5])
-  assert.ok(versions[6].startsWith('Version 0.21.0: ') && versions[6].includes('A93'), versions[6])
-  assert.ok(versions[7].startsWith('Version 0.20.1: ') && versions[7].includes('A92'), versions[7])
-  assert.ok(versions[8].startsWith('Version 0.20.0: '), versions[8])
-  assert.ok(versions[9].startsWith('Version 0.19.2: ') && versions[9].includes('issues/86'), versions[9])
-  assert.ok(versions[10].startsWith('Version 0.19.1: ') && versions[10].includes('issues/82'), versions[10])
-  assert.ok(versions[11].startsWith('Version 0.19.0: '), versions[11])
+  assert.ok(versions[0].startsWith('Version 0.25.0: ') && versions[0].includes('A98'), versions[0])
+  assert.ok(versions[1].startsWith('Version 0.24.3: ') && versions[1].includes('81 and 93'), versions[1])
+  assert.ok(versions[2].startsWith('Version 0.24.2: ') && versions[2].includes('80, 81, 91, 92, 93, 98 and 99'), versions[2])
+  assert.ok(versions[3].startsWith('Version 0.24.1: ') && versions[3].includes('104 to 117'), versions[3])
+  assert.ok(versions[4].startsWith('Version 0.24.0: ') && versions[4].includes('A97'), versions[4])
+  assert.ok(versions[5].startsWith('Version 0.23.0: ') && versions[5].includes('A96'), versions[5])
+  assert.ok(versions[6].startsWith('Version 0.22.0: ') && versions[6].includes('A95'), versions[6])
+  assert.ok(versions[7].startsWith('Version 0.21.0: ') && versions[7].includes('A93'), versions[7])
+  assert.ok(versions[8].startsWith('Version 0.20.1: ') && versions[8].includes('A92'), versions[8])
+  assert.ok(versions[9].startsWith('Version 0.20.0: '), versions[9])
+  assert.ok(versions[10].startsWith('Version 0.19.2: ') && versions[10].includes('issues/86'), versions[10])
+  assert.ok(versions[11].startsWith('Version 0.19.1: ') && versions[11].includes('issues/82'), versions[11])
+  assert.ok(versions[12].startsWith('Version 0.19.0: '), versions[12])
 })
 
 // ---- R21: the retired profiles and variables

@@ -127,9 +127,9 @@ test('the installer and the fish launcher are gone', () => {
   }
 })
 
-test('the manifest is version 0.24.3, and the documents say so', () => {
+test('the manifest is version 0.25.0, and the documents say so', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
-  assert.equal(manifest.version, '0.24.3')
+  assert.equal(manifest.version, '0.25.0')
   assert.match(manifest.description, /built for RADAR/)
   assert.match(manifest.description, /the owner's right hand/)
   assert.match(manifest.description, /a Judge on Opus reviews them/)
