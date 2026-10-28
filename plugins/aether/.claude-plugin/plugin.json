@@ -49,6 +49,12 @@
       "title": "Self-observation development mode",
       "description": "Turn on development mode for self-observation, which also keeps redacted conversation fragments around failures and owner corrections to the Lead. Off by default: standard self-observation never reads or keeps conversation text.",
       "default": false
+    },
+    "autoissue": {
+      "type": "boolean",
+      "title": "Automatic issues (development mode)",
+      "description": "Only in the development mode of self-observation: when a Lead session ends, it opens on GitHub, in the plugin's own repository, an issue for each failure the reading found, with the evidence the reading already wrote and never conversation text. It needs gh signed in. Off by default; it has no effect in the standard installation.",
+      "default": false
     }
   }
 }

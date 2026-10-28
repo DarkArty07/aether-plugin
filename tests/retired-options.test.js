@@ -15,6 +15,7 @@ const READERS = {
   quotabrake: 'plugins/aether/lib/session.js',
   brakepush: 'plugins/aether/lib/session.js',
   observedev: 'plugins/aether/lib/observe.js',
+  autoissue: 'plugins/aether/lib/observe.js',
 }
 
 test('the manifest declares neither retired option, and the option table has no row for them', () => {

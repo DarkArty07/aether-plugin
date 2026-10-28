@@ -1,6 +1,6 @@
 ---
 title: Self-observation
-description: How the plugin watches its own use in a Lead session, what the standard and the development installations gather, the five hooks and the one verb of aether-observe, and the promise that nothing leaves your machine
+description: How the plugin watches its own use in a Lead session, what the standard and the development installations gather, the five hooks and the verbs of aether-observe, the automatic issues of the development mode, and the promise that nothing leaves your machine, with its one exception
 order: 17
 ---
 
@@ -37,7 +37,7 @@ The detection runs by itself when a Lead session ends: the `SessionEnd` hook dig
 ## What it points out
 
 The reading is an ordered list of findings, each with its evidence and its numbers. A finding is one of three kinds:
-- a **failure**, such as a task that climbs a step with no reason, a pair that fails run after run, a rule of the Lead that is broken, a command blocked by mistake, or a silent fault of the mod that now leaves a trace; for each one the reading drafts the text of an issue under `observe/issues/`, not opened;
+- a **failure**, such as a task that climbs a step with no reason, a pair that fails run after run, a rule of the Lead that is broken, a command blocked by mistake, or a silent fault of the mod that now leaves a trace; for each one the reading drafts the text of an issue under `observe/issues/`, not opened by the reading (the development mode can file it, see below);
 - a **calibration**, such as a step that almost never approves, a pair or a model that no longer performs as its record says, a design role that asks for too many rounds, or an estimated cost far from the real one; it proposes the adjustment with its numbers and applies none of it: `config/ladder.json`, `config/pairs.json` and the other tables are never changed by the plugin;
 - a **friction**, such as a tool that keeps failing or a context that is compacted again and again.
 
@@ -48,6 +48,7 @@ The thresholds are data in `config/observe.json`.
 | Command | What it does |
 |---|---|
 | `aether-observe hook` | The handler of the five hooks above. It reads the hook's JSON from its input and prints nothing |
+| `aether-observe file-issues` | The worker of the automatic issues (see below). A Lead session that ends starts it by itself when `autoissue` is on; run by hand, it files the failures of the last reading now. It prints one JSON line. In the standard installation, or with `autoissue` off, it prints an error and does nothing |
 
 ## What is kept, and for how long
 
@@ -55,7 +56,28 @@ The raw files (the events, the files of faults, the dev fragments) are pruned af
 
 ## What never leaves your machine
 
-Nothing gathered here leaves your machine. The hooks, the detectors and the summary open no connection and start no `gh`. A drafted issue is only a text file under `observe/issues/`: an issue is opened only with your yes.
+Nothing leaves your machine, except one case. The standard installation never opens a connection or starts `gh`, and neither do the hooks, the detectors and the summary in the development installation. The one exception is the automatic issues of the development mode, with `autoissue` on, described in the next section. Everywhere else a drafted issue is only a text file under `observe/issues/`, and an issue is opened only with your yes.
+
+## Opening issues by itself (development mode)
+
+In the development installation, with the `autoissue` option on, a Lead session that ends files the failures its reading found as GitHub issues in the plugin's own repository, the `repository` of `plugin.json` (`DarkArty07/aether-plugin`). It never files them in the repository of the folder you work in. It is off by default, it has no effect in the standard installation, and a plain session runs none of it.
+
+To turn it on, set the option (`--config autoissue=true` at install, or `/plugin` → Installed → aether → Configure options later), or set `AETHER_AUTOISSUE=on` in the shell that starts Claude Code. `AETHER_AUTOISSUE=off` turns it off whatever the option says; any other value counts as not set. It also needs the development mode (`aether-lead --dev`, `AETHER_OBSERVE=dev` or `observedev`): without it nothing is filed, whatever the option says. It needs `gh` installed and signed in.
+
+What is sent is the title and the body that the reading already drafted for each failure: its figures, classes, names of files and hour. Before it leaves, the text is cleaned: each session becomes its first eight characters, each absolute path of your home directory becomes `~/…`, and `redact()` runs over the result. A body that `redact()` would still change is not sent; its draft stays local and the run counts it as held. The footer names the plugin's version and the time, and a marker, `<!-- aether-observe:<id> -->`, names the finding. Conversation text is never sent: the worker does not read the fragments or your corrections, which stay on your machine. Only failures are filed. Calibrations, frictions and the owner-correction item are not.
+
+Each issue gets the label `aether-observe`, which the worker creates when it is missing. Before it creates one, it lists the labelled issues, on GitHub, and looks for the marker of the finding; a finding that already has an issue, from this machine or another, is not filed again. The ledger `observe/issues-filed.json` keeps what was filed, finding by finding: the issue's number and address, the time, and whether it was created or found. A finding in the ledger is not sent or searched again, so a failure that returns after you closed its issue is not filed again.
+
+Two caps, in `config/observe.json` under `autoIssue`, keep the tracker small: `maxPerSession` (3) limits the issues one run creates, and `maxOpen` (10) stops the creation while that many labelled issues are open. The run counts what a cap holds back as skipped. A lock, `observe/issues-filed.lock`, keeps two runs from working at once; a lock older than five minutes is taken over.
+
+The session end does not wait for GitHub. The `SessionEnd` hook still prints nothing and exits 0. When `autoissue` is on, it starts `aether-observe file-issues` as a detached process with no output, and that process makes the calls to `gh`, each with a 20-second limit and 90 seconds for the whole run.
+
+Its limits:
+- it runs when a Lead session ends: a session that stops without ending files nothing until a later run;
+- it needs `gh` installed and signed in; without it, nothing is sent, the drafts stay where they are, and the next run tries again;
+- a failure that returns after its issue was closed is not filed again;
+- a false positive stays open until you close it; the caps only bound how many there are;
+- it has not been tried in a real session: the tests use a fake `gh`.
 
 ## Conversation content, and its three exemptions
 

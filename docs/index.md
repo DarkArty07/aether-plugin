@@ -24,7 +24,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 - [Autonomy](guide/autonomy.md): how much the Lead does without asking, and the owner's grants that widen it.
 - [Ops](guide/ops.md): the work that runs as plain code with no model call.
 - [Maintenance](guide/maintenance.md): the platforms, updating, pinning, rolling back and uninstalling, where the data lives and upgrading from 0.6.
-- [Self-observation](guide/observe.md): how the plugin finds its own faults and out-of-date settings in a Lead session, what the standard and the development installations gather, the `aether-observe` commands, and why nothing leaves your machine.
+- [Self-observation](guide/observe.md): how the plugin finds its own faults and out-of-date settings in a Lead session, what the standard and the development installations gather, the `aether-observe` commands, and why nothing leaves your machine, but for the automatic issues of its development mode.
 - [Troubleshooting](guide/troubleshooting.md): what to check when something does not work as the guide says.
 - [Components](reference/components.md): the agents, skills, commands, hooks and workflows the plugin ships.
 
@@ -37,7 +37,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 ## The design record
 
 - [Claude Code research](claude-code-research.md): the verified capabilities and limits this design relies on, and the prices.
-- [Decisions](decisions.md): D1–D15 from the first design session, with their updates, and A1–A97 from the specs and the RADAR roadmap.
+- [Decisions](decisions.md): D1–D15 from the first design session, with their updates, and A1–A98 from the specs and the RADAR roadmap.
 - [Spec 001, design seats](../specs/001-design-seats/spec.md) and its [plan](../specs/001-design-seats/plan.md): the seats of the Judge, the Writer and the Examiner, open to any harness, with the native agent as the fallback.
 - [Aether Agents retrospective](aether-retrospective.md): what Aether was, and what failed and why.
 - [Models](models/README.md): the index of the models the harnesses offer, from Artificial Analysis and the harnesses' own listings, with what each is for.

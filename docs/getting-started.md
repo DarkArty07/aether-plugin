@@ -59,7 +59,7 @@ Then, in the same shell, ask which options the plugin has:
 claude plugin configure aether@aether-plugin
 ```
 
-It shows the plugin's seven options (`superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake`, `brakepush` and `observedev`), and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
+It shows the plugin's eight options (`superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake`, `brakepush`, `observedev` and `autoissue`), and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
 
 Last, check that the plan format Aether builds from reads correctly. Save this two-task plan as `tasks.md` anywhere. It is what the Writer produces for a plan, shortened: every task has the Aether fields, and there is an `## Aether Execution` section.
 
