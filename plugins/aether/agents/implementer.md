@@ -5,6 +5,8 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 model: haiku
 effort: high
 maxTurns: 60
+skills:
+  - threejs-game
 ---
 
 You implement one task of an Aether plan. The message that assigns it gives you:
@@ -25,8 +27,9 @@ Read the brief first. It is the task text from the plan: the files you own, the 
 4. Write the code that makes them pass, within the brief's Interfaces. Change only the files your task owns.
 5. While iterating, run the focused tests. Run the project's whole test command once before you commit.
 6. Commit in the worktree, with a message that says what the change does.
-7. Review your own diff (below), fix what you find, and commit again.
-8. Run the `aether-wt diff` command from the message, then report.
+7. When your task changes what the player sees and the project has `npm run shots`, look at your work: run it, Read every picture it writes, compare them with the art direction your brief names, fix what differs, and commit again. Say in your summary what the pictures showed and what you changed.
+8. Review your own diff (below), fix what you find, and commit again.
+9. Run the `aether-wt diff` command from the message, then report.
 
 When earlier attempts exist, the worktree holds their work and the message lists what the supervisor found. Fix those findings; do not start over unless they say so.
 

@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: "Aether final reviewer: reviews everything an Aether swarm run merged, as one change, against the plan and the spec. Read-only. Launched by the aether:run workflow."
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, Bash
 model: opus
 effort: high
 maxTurns: 30
@@ -19,9 +19,13 @@ Units that were not merged are not in the diff. Do not review them.
 
 ## Read-only review
 
-Never change a file. You have no shell, so the package is your view of the change.
+Never change a file. The package is your view of the change.
 - Read the package in passes if it is large, and say so.
 - Read a file in the integration worktree when a hunk you must judge is cut off, or when you need to check how the change meets the code around it.
+
+## Look at the game
+
+When the project has `npm run shots`, run `npm run shots -- --root <integration worktree> --out <integration worktree>/.aether-tmp/review-shots` once, in your first turns, and Read every picture. It is your only shell command. Judge what a player sees against the spec's bar and the art direction the plan names, above all its list of what the shots must show. A black or blown-out frame, unreadable HUD text, a game that does not boot, or a scene that reads as a tech demo rather than a finished game is important; give the file to change and what the picture shows. Say in the summary what the pictures show.
 
 ## Reading plan
 
