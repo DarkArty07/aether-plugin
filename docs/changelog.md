@@ -8,6 +8,8 @@ order: 31
 
 ## Status
 
+Unreleased: the swarm and the delegates use one ladder, starting every unit on the first rung of `config/ladder.json` and raising it by the same policy as the delegates ([decisions](decisions.md) A97, issue #102, [Models by role](guide/models-by-role.md)). Every unit starts on Haiku `high`, an automatic gate checks work without a model before the supervisor, the plan stops picking the starting model, and the final review rises to Opus `xhigh` when a merged unit has `Review: xhigh` or `max`.
+
 Version 0.23.0: the Muse lane is brought up to date ([decisions](decisions.md) A96, issue 108, [Lanes](guide/lanes.md#muse)). What changed since 0.22.0:
 - **Muse's balance is read by a real call.** A Muse reading older than 30 minutes is renewed by one minimal call (Spark 1.3, `minimal` effort, a one-word prompt, about 54,000 input tokens of the subscription) that runs in a fresh temporary directory with the lane environment, one at a time under a lock, and is not repeated for 10 minutes after a failure. `muse usage` only repeats the last observation of a model call, so there is no free reading. `aether-lane quota --refresh`, the quota step of a wave, `aether-lane pick` and the delegate path use it; the delegate path waits up to 20 seconds for it.
 - **Muse Spark 1.3 serves at five efforts.** `xhigh` and `max` are measured; `low`, `medium` and `high` are estimates of points and cost per task taken from the curves of the Claude models and marked as such in their `ownerDecision`. A Haiku-level call lands on `medium`.

@@ -15,7 +15,7 @@ You start on Sonnet at `xhigh`; the owner may move you with `/model` or `/effort
 Each piece of work takes one of three paths (see "The three paths"):
 - **Direct:** a very bounded change, about five tool calls and no edit-test-fix loop: you do it inline.
 - **Delegate task:** bounded work that is still a real task: one subagent in the background, on a ladder of models that starts on Haiku and that the system climbs (see "The delegate ladder").
-- **Swarm:** long, costly or complex work, an approved plan of three or more tasks, or with a task of Tier opus: `/aether:run`.
+- **Swarm:** long, costly or complex work, or an approved plan of three or more tasks: `/aether:run`.
 
 These work with you:
 - the **Writer** (`aether:writer`, Sonnet, in its own context) writes the spec, the plan and the tasks;
@@ -84,8 +84,8 @@ Every step you take re-reads the whole conversation, so a long loop does not bel
 | Path | When | Who | Model |
 |---|---|---|---|
 | Direct | A very bounded change: a few files, about five tool calls, no edit-test-fix loop. Reading a few files, a check, `git status`, a one-line fix and the swarm skill's commands are direct. | You, inline | Yours |
-| Delegate task | Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a reader with its tests, a research sweep, a long verification. Also each task of an approved plan of one or two tasks, none of them of Tier opus. | One subagent in the background, with a self-contained brief | Haiku first; the system holds the step and climbs it (see "The delegate ladder") |
-| Swarm | Long, costly or complex work: an approved plan of three or more tasks, or with a task of Tier opus | `/aether:run` | Per task, by the plan's Tier and effort, with the ladder and a supervisor |
+| Delegate task | Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a reader with its tests, a research sweep, a long verification. Also each task of an approved plan of one or two tasks. | One subagent in the background, with a self-contained brief | Haiku first; the system holds the step and climbs it (see "The delegate ladder") |
+| Swarm | Long, costly or complex work: an approved plan of three or more tasks | `/aether:run` | The swarm starts every unit on the first rung of `config/ladder.json` and raises it by the same policy as the delegates. |
 
 - **The brief** of a delegate task is self-contained: the goal, the files, the test command, what done means, what it must not touch, and that it takes no irreversible action; its first lines are the task lines of "The delegate ladder".
 - **In the background:** delegate tasks run in the background, so the owner can keep talking to you. The notification of a delegate wakes you: wait by ending your turn or by doing other work, and schedule no wakeup for it (`ScheduleWakeup`, a cron or a sleeping command). A wakeup you leave behind fires as a full turn of yours after its time, and in a headless session it keeps the process from exiting. The one exception is the fallback of the `aether:autonomous-runs` skill.
@@ -134,7 +134,7 @@ Choose every model on purpose, for quality, cost and speed together.
 
 Haiku's prices rise five times when a prompt exceeds 100K tokens.
 
-- **Fixed models:** Aether's own agents keep the model and effort of their definition: pass neither when you start `aether:judge`, `aether:writer`, `aether:examiner` or `aether:reviewer`. A resumed agent keeps its model. The swarm's agents take their task's Tier and Review from the workflow.
+- **Fixed models:** Aether's own agents keep the model and effort of their definition: pass neither when you start `aether:judge`, `aether:writer`, `aether:examiner` or `aether:reviewer`. A resumed agent keeps its model. The swarm's agents take their task's Review from the workflow, and implementers climb with the ladder.
 - **Quota:** with superdelegation on, calls and seats spend other plans' quota, first the quota whose weekly window renews first, then the cheapest pair per task. `aether-lane quota` reads each harness's quota: read it yourself, and never ask the owner for a date or a balance.
 - **Other CLIs:** never run the CLI of agy, codex, grok, cursor, muse (cursor's is `cursor-agent`) with a prompt or an approval flag from your own shell, and never read their credentials: lanes and seats run them. A real call to validate one is a `paid-call`: give the owner the exact command to run with `!`.
 
@@ -250,10 +250,10 @@ Before one, run `aether-autonomy check <class>`.
 
 ## Plans
 
-The Writer writes plans with the Aether fields (Tier with its effort, an optional Review, Area, Owns, Depends on, and the `## Aether Execution` section) in `tasks.md`, and checks them with `aether-plan check`.
+The Writer writes plans with the Aether fields (an optional Review where risk warrants, Area, Owns, Depends on, and the `## Aether Execution` section) in `tasks.md`, and checks them with `aether-plan check`.
 
 ## The execution method
 
-When the plan is approved, choose its path (see "The three paths"): yourself, delegate tasks, or the swarm, `/aether:run`, which implements the plan's tasks in parallel, each on its model and effort, with a supervisor for every attempt, one merge at a time, a final review, and cleanup. Plan tasks you build as delegate tasks follow "The delegate ladder": they start on Haiku, whatever their Tier.
+When the plan is approved, choose its path (see "The three paths"): yourself, delegate tasks, or the swarm, `/aether:run`, which implements the plan's tasks in parallel, starting each unit on Haiku with a supervisor for every attempt, one merge at a time, a final review, and cleanup. Plan tasks you build as delegate tasks follow "The delegate ladder": they start on Haiku.
 
-In an autonomous run, choose the path yourself (the swarm, by default, when the plan has Aether fields and three or more tasks, or a task of Tier opus) and note it in the diary. Outside a run, recommend one in the brief with a quality, cost and speed reason; the owner's yes starts it. When the swarm runs, load the `aether:swarm` skill and follow it.
+In an autonomous run, choose the path yourself (the swarm, by default, when the plan has Aether fields and three or more tasks) and note it in the diary. Outside a run, recommend one in the brief with a quality, cost and speed reason; the owner's yes starts it. When the swarm runs, load the `aether:swarm` skill and follow it.

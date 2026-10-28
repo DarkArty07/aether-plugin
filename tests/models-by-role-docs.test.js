@@ -36,9 +36,8 @@ test('the ladder table is config/ladder.json', () => {
   }
 })
 
-test('the default effort of a plan task is the one of lib/plan.js', () => {
-  const { DEFAULT_EFFORT } = require(path.join(PLUGIN, 'lib', 'plan.js'))
-  assert.ok(page.includes(`Default effort of a plan task: \`${DEFAULT_EFFORT}\``))
+test('the page says the swarm starts on the first rung of the ladder', () => {
+  assert.ok(page.includes('The swarm starts every unit on the first rung of `config/ladder.json`'))
 })
 
 test('the After column names the model and effort of each agent file', () => {
@@ -56,7 +55,7 @@ test('the page says where Opus stays, what to measure and when to undo', () => {
   for (const heading of ['## Each role, before and after', '## The ladder', '## Where the spend went', '## Why', '## Where Opus stays', '## How to tell if it worked', '## What did not change']) {
     assert.ok(page.includes(heading), heading)
   }
-  for (const word of ['quality.attempts', 'climbed', 'escalated', 'config/ladder.json', 'DEFAULT_EFFORT', 'effortFor', 'reviewPlan', 'reviewerReference']) {
+  for (const word of ['quality.attempts', 'climbed', 'escalated', 'config/ladder.json', 'reviewerReference']) {
     assert.ok(page.includes(word), word)
   }
 })

@@ -10,7 +10,7 @@ In an Aether session the mod runs the workflow's own commands without a model; `
 
 ## How the mod answers
 
-**Ops without a model.** The workflow has no shell, so it hands each of its own `aether-wt` and `aether-lane` commands (`merge`, `salvage`, `remove`, `diff --final`, `sweep` and the lane commands) to an `ops` agent. In an Aether session the mod answers that agent itself, with no model request:
+**Ops without a model.** The workflow has no shell, so it hands each of its own `aether-wt` and `aether-lane` commands (`merge`, `salvage`, `remove`, `diff --final`, `sweep`, `aether-wt ladder` with its payload file and digest, `aether-wt gate` under a 10-minute timeout, and the lane commands) to an `ops` agent. In an Aether session the mod answers that agent itself, with no model request:
 - it checks the prompt against the closed list of commands the workflow sends (`hooks/ops-command.mjs`);
 - it runs the command with `node` and `$.process.run`, with no shell;
 - it returns the command's exit code and output.
