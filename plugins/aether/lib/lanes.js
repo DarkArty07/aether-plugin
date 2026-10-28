@@ -12,6 +12,7 @@ const { isObject } = require('./common.js')
 const { readingUsable } = require('./lane-order.js')
 const { commandPath, commandInstalled, laneEnv, killGroup, killMarked } = require('./lane-process.js')
 const { laneTokens } = require('./spend-tokens.js')
+const run = require('./run.js')
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'lanes.json')
 const ROLES = ['implementer', 'supervisor', 'reviewer']
@@ -232,29 +233,16 @@ function readLog(dataDir, { since = 0 } = {}) {
   return entries.sort((a, b) => a.time - b.time)
 }
 
-// The data directories of the installed release and of a development tree (run.js dataDir gives each its own). A
-// relaunch from a development tree writes its lane calls to that tree's directory, so a report reads both (issue 107).
-const PLUGIN_DATA_IDS = ['aether-aether-plugin', 'aether-inline']
-
-// The data directories whose lane logs a report of a run reads: the given one and, when it sits under a plugins data
-// root, the other installs' beside it.
-function logDirsOf(dataDir) {
-  const root = path.dirname(dataDir)
-  if (path.basename(root) !== 'data') return [dataDir]
-  return [...new Set([dataDir, ...PLUGIN_DATA_IDS.map((id) => path.join(root, id))])]
-}
-
-// Every entry of the lane logs of logDirsOf, time-ordered, each entry once: a call in two directories is one call.
+// Every entry of the lane logs of every install (run.installDirs), time-ordered. An entry that an earlier install's log
+// holds too is left out: a call in two directories is one call. A relaunch from a development tree writes its calls to
+// that tree's directory (issue 107).
 function readAllLogs(dataDir, opts) {
-  const seen = new Set()
+  const earlier = new Set()
   const entries = []
-  for (const dir of logDirsOf(dataDir)) {
-    for (const entry of readLog(dir, opts)) {
-      const key = JSON.stringify(entry)
-      if (seen.has(key)) continue
-      seen.add(key)
-      entries.push(entry)
-    }
+  for (const dir of run.installDirs(dataDir)) {
+    const found = readLog(dir, opts)
+    entries.push(...found.filter((entry) => !earlier.has(JSON.stringify(entry))))
+    for (const entry of found) earlier.add(JSON.stringify(entry))
   }
   return entries.sort((a, b) => a.time - b.time)
 }
