@@ -83,14 +83,18 @@ function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// A test exercises a source when its file name is the source's base name, as lib/foo.js is tests/foo.test.js,
-// foo.test.ts beside it, or tests/foo-*.test.js; or when its text names the source's path.
+// A test exercises a source when its file name is the source's base name, as lib/foo.js is tests/foo.test.js or
+// foo.test.ts beside it; or when its text imports the module (require, import or from, with the source's folder and
+// base name in the specifier). A test that only mentions the path in a string, or whose name only starts like the
+// source's, is not taken for one: those matches were most of the warnings of a real plan.
 function exercises(test, source, root, texts) {
-  const base = path.posix.basename(source, path.posix.extname(source))
-  const name = new RegExp('^' + escapeRegExp(base) + '(-[^/]*)?\\.(test|spec)\\.[^.]+$')
-  if (name.test(path.posix.basename(test))) return true
+  const { dir, name } = path.posix.parse(source)
+  if (new RegExp('^' + escapeRegExp(name) + '\\.(test|spec)\\.[^.]+$').test(path.posix.basename(test))) return true
   if (!texts.has(test)) texts.set(test, fs.readFileSync(path.join(root, test), 'utf8'))
-  return new RegExp('(?<![\\w-])' + escapeRegExp(source) + '(?![\\w-])').test(texts.get(test))
+  const parent = path.posix.basename(dir)
+  const module = parent === '' || parent === '.' ? escapeRegExp(name) : `${escapeRegExp(parent)}/${escapeRegExp(name)}`
+  const specifier = new RegExp('(?:require\\(|\\bfrom\\s+|\\bimport\\()\\s*[\'"`](?:[^\'"`\\n]*/)?' + module + '(?:\\.[cm]?[jt]s)?[\'"`]')
+  return specifier.test(texts.get(test))
 }
 
 // The task numbers a task depends on, directly or through other dependencies.
@@ -107,8 +111,13 @@ function dependenciesOf(task, byNumber) {
   return seen
 }
 
+// One warning lists at most this many files; the rest are counted.
+const LISTED = 5
+const listed = (items) => (items.length > LISTED ? [...items.slice(0, LISTED), `and ${items.length - LISTED} more`] : items).join(', ')
+
 // Each changed source must come with the tests that exercise it: a test that is no task's, or that the
-// task and the tasks it depends on do not own, is warned about. A heuristic: it reads names and text.
+// task and the tasks it depends on do not own, is warned about, one warning for each task. A heuristic: it
+// reads names and imports.
 function testWarnings(parsed, root) {
   const changing = parsed.tasks.filter((task) => sourcesOf(task).length > 0)
   if (changing.length === 0) return []
@@ -118,19 +127,22 @@ function testWarnings(parsed, root) {
   const warnings = []
   for (const task of changing) {
     const covering = [task, ...[...dependenciesOf(task, byNumber)].map((n) => byNumber.get(n)).filter(Boolean)]
+    const sources = new Set()
+    const left = new Map()
     for (const source of sourcesOf(task)) {
       for (const test of tests) {
         if (!exercises(test, source, root, texts)) continue
         if (covering.some((owner) => matchesAny(test, owner.owns))) continue
-        const owned = parsed.tasks.some((owner) => matchesAny(test, owner.owns))
-        const reason = owned
-          ? 'which is not owned by it or by a task it depends on (directly or through other dependencies)'
-          : 'which no task owns'
-        warnings.push(`Task ${task.number} changes ${source} but not its test ${test}, ${reason}`)
+        sources.add(source)
+        const owner = parsed.tasks.find((other) => matchesAny(test, other.owns))
+        left.set(test, owner ? `task ${owner.number} owns it` : 'no task owns it')
       }
     }
+    if (left.size === 0) continue
+    const items = [...left].map(([test, why]) => `${test} (${why})`)
+    warnings.push(`Task ${task.number} changes ${listed([...sources])} but not the tests that exercise them, which it and the tasks it depends on do not own: ${listed(items)}`)
   }
-  return [...new Set(warnings)]
+  return warnings
 }
 
 // The first line of node's message about a block that does not parse: the error's own line, not the file's.

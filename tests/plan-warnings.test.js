@@ -44,14 +44,16 @@ function testWarningsOf(t, files, tasks) {
   }
   const r = runBin(PLAN_BIN, ['check', writePlan(repo.dir, plan(tasks))], repo.dir)
   assert.equal(r.status, 0, r.stdout)
-  return r.json.warnings.filter((w) => w.includes(' but not its test '))
+  return r.json.warnings.filter((w) => w.includes(' but not the tests that exercise them'))
 }
+
+const NOT_OWNED = 'but not the tests that exercise them, which it and the tasks it depends on do not own'
 
 const SOURCE = { 'src/foo.js': 'module.exports = 1\n', 'tests/foo.test.js': "require('../src/foo.js')\n" }
 
 test('a task that changes a source warns about its test, which no task owns (issue 92)', (t) => {
   assert.deepEqual(testWarningsOf(t, SOURCE, [task(1, { owns: '`src/foo.js`' })]), [
-    'Task 1 changes src/foo.js but not its test tests/foo.test.js, which no task owns',
+    `Task 1 changes src/foo.js ${NOT_OWNED}: tests/foo.test.js (no task owns it)`,
   ])
 })
 
@@ -75,10 +77,20 @@ test('a test in Owns, or owned by a task it depends on, directly or through anot
   )
 })
 
-test('a test owned by a task that is not a dependency warns with the dependency wording (issue 92)', (t) => {
+test('a test owned by a task that is not a dependency names that task (issue 92)', (t) => {
   assert.deepEqual(testWarningsOf(t, SOURCE, [task(1, { owns: '`tests/foo.test.js`' }), task(2, { owns: '`src/foo.js`' })]), [
-    'Task 2 changes src/foo.js but not its test tests/foo.test.js, which is not owned by it or by a task it depends on (directly or through other dependencies)',
+    `Task 2 changes src/foo.js ${NOT_OWNED}: tests/foo.test.js (task 1 owns it)`,
   ])
+})
+
+test('one task gives one warning, and a long list of tests is cut after five (issue 92)', (t) => {
+  const files = { 'src/foo.js': '', 'src/bar.js': '' }
+  for (const name of ['a', 'b', 'c', 'd', 'e', 'f', 'g']) files[`tests/${name}.test.js`] = "require('../src/foo.js')\n"
+  files['tests/bar.test.js'] = "const bar = require('../src/bar.js')\n"
+  const [warning, ...rest] = testWarningsOf(t, files, [task(1, { owns: '`src/foo.js`, `src/bar.js`' })])
+  assert.deepEqual(rest, [])
+  assert.match(warning, /^Task 1 changes src\/foo\.js, src\/bar\.js but not the tests that exercise them/)
+  assert.match(warning, /, and 3 more$/)
 })
 
 test('a doc or a test in Owns is never a changed source (issue 92)', (t) => {
@@ -87,12 +99,16 @@ test('a doc or a test in Owns is never a changed source (issue 92)', (t) => {
   assert.deepEqual(testWarningsOf(t, files, [task(1, { owns: '`tests/foo.test.js`' })]), [])
 })
 
-test('a test that names the source path in its text warns too (issue 92)', (t) => {
-  const named = { 'src/foo.js': '', 'tests/bar.test.js': "const file = 'src/foo.js'\n" }
+test('a test that imports the source warns too, and one that only mentions its path or shares a prefix does not (issue 92)', (t) => {
+  const named = { 'src/foo.js': '', 'tests/bar.test.js': "const foo = require('../src/foo')\n" }
   assert.deepEqual(testWarningsOf(t, named, [task(1, { owns: '`src/foo.js`' })]), [
-    'Task 1 changes src/foo.js but not its test tests/bar.test.js, which no task owns',
+    `Task 1 changes src/foo.js ${NOT_OWNED}: tests/bar.test.js (no task owns it)`,
   ])
-  const other = { 'src/foo.js': '', 'tests/baz.test.js': "const file = 'src/foo.json'\n" }
+  const esm = { 'src/foo.js': '', 'tests/bar.test.js': "import { x } from '../src/foo.js'\n" }
+  assert.equal(testWarningsOf(t, esm, [task(1, { owns: '`src/foo.js`' })]).length, 1)
+  const mention = { 'src/foo.js': '', 'tests/baz.test.js': "const file = 'src/foo.js'\n", 'tests/foo-extra.test.js': 'x\n' }
+  assert.deepEqual(testWarningsOf(t, mention, [task(1, { owns: '`src/foo.js`' })]), [])
+  const other = { 'src/foo.js': '', 'tests/baz.test.js': "const foo = require('../src/foo.json')\n" }
   assert.deepEqual(testWarningsOf(t, other, [task(1, { owns: '`src/foo.js`' })]), [])
 })
 
