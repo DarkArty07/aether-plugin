@@ -37,6 +37,7 @@ Never stop to ask. Where a choice is open, pick a reasonable default and write i
    - Area: backend
    - Owns: `src/api/**`, `tests/api.test.js`
    - Depends on: none
+   - Merges with: none
    - Serves: R1, R3
    ```
    The swarm starts every task on the cheapest model and raises it by itself: do not name a model or an effort for the implementer. Every task is one module and one concern; when tests cannot pin it down, split it.
@@ -46,6 +47,7 @@ Never stop to ask. Where a choice is open, pick a reasonable default and write i
    - **Area:** a lowercase slug of letters, digits and dashes. Each area has its own supervisor.
    - **Owns:** the paths or globs (`*`, `**`, `?`) that the task may change, separated by commas. Use relative paths only.
    - **Depends on:** `none`, or one line per dependency in the form `- Depends on: Task N — reason`. Every dependency needs its reason.
+   - **Merges with:** optional, `none` or a list such as `- Merges with: Task 13, Task 19`. The named tasks and this one are green only together, because each changes something that a test owned by another still holds, so `aether-plan` builds them as one unit; naming it on one side is enough. Use it only when they cannot be green alone, since one agent builds a group in sequence. Otherwise give one task the file and its test, and make the other depend on it.
    - **Serves:** the requirements of the spec that the task builds, such as `- Serves: R1, R3`. Every task serves at least one requirement of the spec, and every requirement has a task. aether-plan check fails on a task that serves none, and on one that names a requirement the spec does not have. It warns about a requirement that no task serves.
 
    The fields are one list with no blank line between them. A blank line ends the block.
