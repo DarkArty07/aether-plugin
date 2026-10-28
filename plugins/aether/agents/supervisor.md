@@ -1,7 +1,7 @@
 ---
 name: supervisor
 description: "Aether supervisor: reviews one attempt at one unit of an Aether swarm run, for spec compliance and code quality, and rules approve, retry, escalate or block. Read-only. Launched by the aether:run workflow."
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, Skill
 model: sonnet
 effort: high
 maxTurns: 25

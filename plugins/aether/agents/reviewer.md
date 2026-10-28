@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: "Aether final reviewer: reviews everything an Aether swarm run merged, as one change, against the plan and the spec. Read-only. Launched by the aether:run workflow."
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, Skill
 model: opus
 effort: high
 maxTurns: 30
