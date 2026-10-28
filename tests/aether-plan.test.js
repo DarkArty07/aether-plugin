@@ -27,6 +27,18 @@ test('check exits 1 and lists every error', (t) => {
   assert.deepEqual(r.json.errors, ['Aether Execution: "Test command" is missing.'])
 })
 
+test('check lets a glob and an unrelated file of the same folder share a wave (issue 98)', (t) => {
+  const repo = makeRepo(t)
+  const file = writePlan(repo.dir, plan([
+    task(1, { owns: '`tests/ladder.test.js`, `tests/delegate-*.test.js`, `tests/delegates-docs.test.js`' }),
+    task(2, { owns: '`tests/workflow*.test.js`, `tests/lane-delegate.test.js`' }),
+    task(3, { owns: '`tests/speckit.test.js`' }),
+  ]))
+  const r = runBin(PLAN_BIN, ['check', file], repo.dir)
+  assert.equal(r.status, 0, r.stdout)
+  assert.deepEqual(r.json.waves, [['task-1', 'task-2', 'task-3']])
+})
+
 test('compile writes the graph, briefs and state for the integration branch', (t) => {
   const repo = makeRepo(t)
   const file = writePlan(repo.dir, plan([task(1), task(2, { depends: 'Task 1 — uses it' }), task(3)]))
