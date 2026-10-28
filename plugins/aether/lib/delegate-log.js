@@ -6,6 +6,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const run = require('./run.js')
 
 const MAX_TEXT = 4000
 
@@ -46,9 +47,8 @@ function appendEntry(dataDir, entry) {
   }
 }
 
-// Entries in file order with time >= since, filtered by task and session.
-// Skips unreadable lines; returns [] when no file exists.
-function readEntries(dataDir, { task = null, session = null, since = 0 } = {}) {
+// The entries of one install's log file in file order, with the filters applied.
+function readFileEntries(dataDir, { task, session, since }) {
   let text
   try {
     text = fs.readFileSync(logFile(dataDir), 'utf8')
@@ -72,6 +72,25 @@ function readEntries(dataDir, { task = null, session = null, since = 0 } = {}) {
     entries.push(entry)
   }
   return entries
+}
+
+const timeOf = (entry) => (typeof entry.time === 'number' ? entry.time : 0)
+
+// Entries with time >= since, filtered by task and session, from the log of every install (run.installDirs). One
+// install's log is in file order; when more than one holds entries they are merged in time order. An entry that an
+// earlier install's log holds too (an identical line) is left out, so a copy counts once. Skips unreadable lines;
+// returns [] when no file exists.
+function readEntries(dataDir, { task = null, session = null, since = 0 } = {}) {
+  const earlier = new Set()
+  const sources = []
+  for (const dir of run.installDirs(dataDir)) {
+    const entries = readFileEntries(dir, { task, session, since })
+    const fresh = entries.filter((entry) => !earlier.has(JSON.stringify(entry)))
+    for (const entry of entries) earlier.add(JSON.stringify(entry))
+    if (fresh.length > 0) sources.push(fresh)
+  }
+  if (sources.length <= 1) return sources[0] ?? []
+  return sources.flat().sort((a, b) => timeOf(a) - timeOf(b))
 }
 
 // A launch entry in the delegate log that opened an attempt (not a refused relaunch).
