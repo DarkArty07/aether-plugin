@@ -12,7 +12,7 @@ const { spawnSync } = require('node:child_process')
 const { repoPaths } = require('./git.js')
 const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
-const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
+const { readAllLogs, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
 const { judge } = require('./baseline.js')
 const { isSessionId, newestIn } = require('./spend.js')
@@ -37,36 +37,42 @@ function readIfThere(file) {
   return fs.existsSync(file) ? run.readJson(file) : null
 }
 
-// Every usage session under <dataDir>/usage written to at or after `since`, as
-// { session, claudeCode, agents, entries }, with its parts merged in order. A part that cannot be
-// read is skipped, and so is a session with no entries.
+// Every usage session under <dataDir>/usage of every install (run.installDirs) written to at or after `since`, as
+// { session, claudeCode, agents, entries }, with its parts merged in order. A session directory that more than one
+// install holds is read from the first one that has it, the given install first, so a copy is not counted twice. A
+// part that cannot be read is skipped, and so is a session with no entries.
 function readUsage(dataDir, { since = 0 } = {}) {
-  const root = path.join(dataDir, 'usage')
   const sessions = new Map()
-  if (!fs.existsSync(root)) return sessions
-  for (const session of fs.readdirSync(root)) {
-    const written = newestIn(path.join(root, session))
-    if (written === null || written < since) continue
-    let names
-    try {
-      names = fs.readdirSync(path.join(root, session))
-    } catch {
-      continue
-    }
-    const merged = { session, claudeCode: null, agents: {}, entries: [] }
-    const parts = names.filter((name) => /^\d+\.json$/.test(name)).sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
-    for (const name of parts) {
-      let part
+  const homes = new Set()
+  for (const install of run.installDirs(dataDir)) {
+    const root = path.join(install, 'usage')
+    if (!fs.existsSync(root)) continue
+    for (const session of fs.readdirSync(root)) {
+      if (homes.has(session)) continue
+      homes.add(session)
+      const written = newestIn(path.join(root, session))
+      if (written === null || written < since) continue
+      let names
       try {
-        part = run.readJson(path.join(root, session, name))
+        names = fs.readdirSync(path.join(root, session))
       } catch {
         continue
       }
-      if (part.claudeCode) merged.claudeCode = part.claudeCode
-      Object.assign(merged.agents, part.agents || {})
-      if (Array.isArray(part.entries)) merged.entries.push(...part.entries)
+      const merged = { session, claudeCode: null, agents: {}, entries: [] }
+      const parts = names.filter((name) => /^\d+\.json$/.test(name)).sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+      for (const name of parts) {
+        let part
+        try {
+          part = run.readJson(path.join(root, session, name))
+        } catch {
+          continue
+        }
+        if (part.claudeCode) merged.claudeCode = part.claudeCode
+        Object.assign(merged.agents, part.agents || {})
+        if (Array.isArray(part.entries)) merged.entries.push(...part.entries)
+      }
+      if (merged.entries.length > 0) sessions.set(session, merged)
     }
-    if (merged.entries.length > 0) sessions.set(session, merged)
   }
   return sessions
 }
@@ -544,9 +550,10 @@ function totalsOf(nativeUsd, lanesUsd) {
 }
 
 // The lane log's share of the run, the run's calls being those inside its window, and of the usage session.
-// The versions are each harness's, and version is agy's.
+// The versions are each harness's, and version is agy's. The log is read from every install's directory (readAllLogs),
+// so every launch of the run counts, whichever install wrote its calls.
 function laneReport({ dataDir, runId, start, end, usage, results, prices, notes, cost }) {
-  const entries = readLog(dataDir)
+  const entries = readAllLogs(dataDir)
   const isRunEntry = (entry) => entry.run === runId && (entry.kind === 'reading' || (entry.time >= start && entry.time <= end))
   const runLog = splitLog(entries.filter(isRunEntry))
   const sessionLog = usage ? splitLog(entries.filter((entry) => entry.session === usage.session)) : null
@@ -742,10 +749,11 @@ function pruneUsage(dataDir, { days = 30, now = Date.now(), prices } = {}) {
 
 // The design seats' rounds (lib/seats.js), from the lane log: per seat, how many rounds an external model
 // answered, how many went to the native agent and why, and per model the calls and dollars; for the lanes,
-// the same summary as a run's. A round is one `aether-lane seat`: an external call, or a native answer.
+// the same summary as a run's. A round is one `aether-lane seat`: an external call, or a native answer. The lane log of
+// every install is read (readAllLogs), so a round that was made from the other install counts.
 function seatsReport({ dataDir = run.dataDir(), session = null, since = 0, prices = loadPrices() } = {}) {
   const ofSession = (entry) => session === null || entry.session === session
-  const entries = readLog(dataDir, { since }).filter(ofSession)
+  const entries = readAllLogs(dataDir, { since }).filter(ofSession)
   const calls = entries.filter((entry) => entry.kind === 'call' && typeof entry.seat === 'string')
   const answers = entries.filter((entry) => entry.kind === 'seat')
   const notes = []

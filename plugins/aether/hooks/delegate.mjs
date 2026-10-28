@@ -88,8 +88,8 @@ async function* runExternal($, e, next, ctx, external, answerOf) {
         yield { kind: 'text', index: 0, text: heartbeatText(step.value.waitedMs) }
       }
     }
-  } catch {
-    ctx.fault?.('delegate.step', 'handler-threw')
+  } catch (err) {
+    ctx.fault?.('delegate.step', 'handler-threw', err)
     delivered = null
   }
   if (delivered === null) return yield* runAnswering($, e, next, ctx, answerOf)
@@ -159,8 +159,8 @@ export function createDelegates() {
         await $.fs.write(inputFile, JSON.stringify(input))
         const begun = await delegate($, ctx, ['begin', '--session', ctx.session, '--input', inputFile], BEGIN_TIMEOUT_MS)
         plan = begun.skip === true ? null : begun
-      } catch {
-        ctx.fault?.('delegate.begin', 'handler-threw')
+      } catch (err) {
+        ctx.fault?.('delegate.begin', 'handler-threw', err)
         plan = null
       }
       if (plan === null) return next(e)
@@ -193,8 +193,8 @@ export function createDelegates() {
         const routed = waiting.shift()
         if (waiting.length === 0) byPrompt.delete(e.prompt)
         if (routed) byAgent.set(agentId, routed)
-      } catch {
-        ctx.fault?.('delegate.bind', 'handler-threw')
+      } catch (err) {
+        ctx.fault?.('delegate.bind', 'handler-threw', err)
         // The agent runs as it was going to.
       }
     },

@@ -68,9 +68,10 @@ const FINDINGS = {
   },
 }
 
+// concerns and question are optional: a report that leaves them out is a report (issue #110).
 const IMPLEMENTER_SCHEMA = {
   type: 'object',
-  required: ['status', 'summary', 'head', 'tests', 'concerns', 'question'],
+  required: ['status', 'summary', 'head', 'tests'],
   properties: {
     status: { type: 'string', enum: ['DONE', 'DONE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'BLOCKED'] },
     summary: { type: 'string', description: 'what you implemented, or what you attempted' },
@@ -206,6 +207,7 @@ for (const id of waves.flat()) {
     reason: null,
     question: null,
     patch: null,
+    mergeRetried: false,
     ladder: {
       steps: [],
       firstTry: false,
@@ -421,7 +423,7 @@ async function ladderRead(unit) {
   return await ops(`aether-wt ladder ${runId} ${unit.id}`, { phase: 'Implement', label: `${unit.id}: ladder` })
 }
 
-async function applyVerdict(unit, task, kind, body) {
+async function applyVerdict(unit, kind, body) {
   const filePath = `${runDir}/ladder/${unit.id}-verdict.json`
   const text = JSON.stringify(body)
   const d = digest(text)
@@ -435,12 +437,12 @@ async function applyVerdict(unit, task, kind, body) {
 
 // The approval after a merge: a failure leaves the unit merged and its ladder state open, so it is logged.
 async function approved(unit) {
-  const out = await applyVerdict(unit, null, 'approve', {})
+  const out = await applyVerdict(unit, 'approve', {})
   if (out.error || out.accepted === false) log(`${unit.id}: merged, but the ladder did not take the approval: ${out.error || out.rejection}`)
 }
 
 async function step(unit, kind, body) {
-  const verdictResult = await applyVerdict(unit, null, kind, body)
+  const verdictResult = await applyVerdict(unit, kind, body)
   if (verdictResult.error) return { blocked: `the ladder could not be read: ${verdictResult.error}` }
   if (verdictResult.accepted === false) return { rejected: verdictResult.rejection }
   if (verdictResult.kind === 'exhausted' || verdictResult.status === 'exhausted') {
@@ -455,10 +457,14 @@ async function step(unit, kind, body) {
   return { next: verdictResult }
 }
 
+// A salvaged attempt (its report rebuilt from the branch) and a merge-conflict retry are not a first try, though the
+// ladder spends no correction on either.
 function isFirstTry(unit, wasCleanStart) {
   const { corrections, rises, gateRejections } = unit.ladder
   return (
     wasCleanStart &&
+    !unit.mergeRetried &&
+    !unit.rounds.some((round) => round.salvaged) &&
     corrections === 0 &&
     rises.exhausted === 0 &&
     rises.repeated === 0 &&
@@ -856,6 +862,9 @@ function failureContext(context, failures) {
 // A report the implementer filed. Anything else, including a null agent, ended without one.
 const isReport = (value) => isObject(value) && typeof value.status === 'string' && value.status !== ''
 
+// The text of an optional report field: concerns and question may be left out, which reads as nothing to say.
+const textOf = (value) => (typeof value === 'string' ? value : '')
+
 // Best to worst. A status the schema does not name ranks past blocked, so it cannot pass as done.
 const REPORT_RANK = { DONE: 0, DONE_WITH_CONCERNS: 1, NEEDS_CONTEXT: 2, BLOCKED: 3 }
 
@@ -1241,7 +1250,6 @@ async function work(unit, task) {
   let effort = view.effort
   let context = null
   let mergeRetry = false
-  let mergeRetried = false
   let lastPair = null
 
   for (;;) {
@@ -1310,8 +1318,8 @@ async function work(unit, task) {
       summary: report ? report.summary : attempt.failure || 'The implementer agent failed.',
       head: report ? report.head : '',
       tests: report ? report.tests : '',
-      concerns: report ? report.concerns : '',
-      question: report ? report.question : '',
+      concerns: report ? textOf(report.concerns) : '',
+      question: report ? textOf(report.question) : '',
       verdict: null,
       reviewEffort: null,
       findings: [],
@@ -1409,7 +1417,7 @@ async function work(unit, task) {
 
       if (verdict === 'block') {
         remember(task.area, `${unit.id} attempt ${n}: ${round.verdict}. ${round.ruling}`)
-        return finish(unit, 'blocked', ruling, review.question || report.question)
+        return finish(unit, 'blocked', ruling, review.question || textOf(report.question))
       }
 
       if (verdict === 'approve') {
@@ -1543,8 +1551,8 @@ async function work(unit, task) {
       return finish(unit, 'blocked', `merge ${round.merge}`)
     }
     if (out.reason === 'conflict' || out.reason === 'tests') {
-      if (mergeRetried) return finish(unit, 'blocked', `merge failed again: ${round.merge}`)
-      mergeRetried = true
+      if (unit.mergeRetried) return finish(unit, 'blocked', `merge failed again: ${round.merge}`)
+      unit.mergeRetried = true
       mergeRetry = true
       context = mergeContext(out)
       continue
@@ -1612,9 +1620,9 @@ function reviewPlan() {
   if (highReview) return { model: 'opus', effort: 'xhigh', reason: `${highReview.id} reviews at ${tasks[highReview.id].review}` }
   if (isRelaunch()) return { model: 'opus', effort: 'high', reason: 'a relaunch: the final review covers the earlier launches too' }
   if (merged.length >= 1 && merged.length <= 3 && merged.every((u) => tasks[u.id].review === 'high')) {
-    return { model: 'sonnet', effort: 'high', reason: 'a small all-haiku run with high reviews' }
+    return { model: 'sonnet', effort: 'high', reason: 'a small run: 1 to 3 merged units, all asking for a high review' }
   }
-  return { model: 'opus', effort: 'high', reason: 'the merged work is not a small all-haiku run' }
+  return { model: 'opus', effort: 'high', reason: 'the run is not small: its merged units are not 1 to 3 that all ask for a high review' }
 }
 
 // The final review's answer as the run reports it, with its findings and verdict checked as a supervisor's

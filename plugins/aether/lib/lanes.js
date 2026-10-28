@@ -12,6 +12,7 @@ const { isObject } = require('./common.js')
 const { readingUsable } = require('./lane-order.js')
 const { commandPath, commandInstalled, laneEnv, killGroup, killMarked } = require('./lane-process.js')
 const { laneTokens } = require('./spend-tokens.js')
+const run = require('./run.js')
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'lanes.json')
 const ROLES = ['implementer', 'supervisor', 'reviewer']
@@ -232,6 +233,20 @@ function readLog(dataDir, { since = 0 } = {}) {
   return entries.sort((a, b) => a.time - b.time)
 }
 
+// Every entry of the lane logs of every install (run.installDirs), time-ordered. An entry that an earlier install's log
+// holds too is left out: a call in two directories is one call. A relaunch from a development tree writes its calls to
+// that tree's directory (issue 107).
+function readAllLogs(dataDir, opts) {
+  const earlier = new Set()
+  const entries = []
+  for (const dir of run.installDirs(dataDir)) {
+    const found = readLog(dir, opts)
+    entries.push(...found.filter((entry) => !earlier.has(JSON.stringify(entry))))
+    for (const entry of found) earlier.add(JSON.stringify(entry))
+  }
+  return entries.sort((a, b) => a.time - b.time)
+}
+
 // Deletes the session files of the lane log not written to for `days`. Before it deletes the file of a session id, it
 // adds what its calls spent to the session's summary (lib/spend-archive.js): a file whose summary cannot be written
 // stays, for the next prune to try again, and leaves a trace of the failure under the data directory
@@ -290,6 +305,7 @@ module.exports = {
   logFile,
   appendLog,
   readLog,
+  readAllLogs,
   pruneLog,
   laneEnv,
   killGroup,

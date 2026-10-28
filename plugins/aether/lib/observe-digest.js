@@ -66,11 +66,15 @@ function entryOf(events, faults, laneEntries, prices) {
 
   if (faults.length) {
     const sources = new Map()
+    const kinds = new Map()
     for (const fault of faults) {
       if (typeof fault.time === 'number' && Number.isFinite(fault.time)) times.push(fault.time)
       bump(sources, typeof fault.source === 'string' ? fault.source : 'unknown')
+      // readFaults keeps a kind only from FAULT_KINDS, so the keys here are words of the list.
+      if (fault.kind !== undefined) bump(kinds, fault.kind)
     }
     out.faults = Object.fromEntries(sources)
+    out.faultKinds = Object.fromEntries(kinds)
   }
 
   if (laneEntries.length) {
@@ -126,6 +130,7 @@ function merge(previous, fresh) {
     events: counted('events'),
     toolFailures: counted('toolFailures'),
     faults: pick('faults'),
+    faultKinds: pick('faultKinds'),
     lanes: pick('lanes'),
     seats: pick('seats'),
   }

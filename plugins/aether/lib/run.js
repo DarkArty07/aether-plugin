@@ -88,9 +88,32 @@ function dataDir(env = process.env, root = path.join(__dirname, '..')) {
   return path.join(pluginsRoot, 'data', id)
 }
 
+// The data directories of the installed release and of a development tree. A run relaunched from the other one keeps
+// its records there (issues 107 and 114), so a reader sums the directories of every install.
+const PLUGIN_DATA_IDS = ['aether-aether-plugin', 'aether-inline']
+
+// The data directories a reader sums: the given one first, then the other installs' beside it when it sits under a
+// plugins data root. Only the given one otherwise. A writer writes to the given one alone.
+function installDirs(dataDir) {
+  const root = path.dirname(dataDir)
+  if (path.basename(root) !== 'data') return [dataDir]
+  return [...new Set([dataDir, ...PLUGIN_DATA_IDS.map((id) => path.join(root, id))])]
+}
+
 function writeJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n')
+}
+
+// The units every launch of a run has selected, by task id. A relaunch rewrites graph.json with the
+// units it selected alone, so units.json keeps the others: each compile only adds to it (issue #111).
+function readUnits(dir) {
+  const file = path.join(dir, 'units.json')
+  return fs.existsSync(file) ? readJson(file) : {}
+}
+
+function extendUnits(dir, tasks) {
+  writeJson(path.join(dir, 'units.json'), { ...readUnits(dir), ...tasks })
 }
 
 
@@ -122,8 +145,11 @@ module.exports = {
   unitWorktree,
   unitBranch,
   dataDir,
+  installDirs,
   writeJson,
   readJson,
+  readUnits,
+  extendUnits,
   appendRecord,
   ensureExcluded,
   toId,

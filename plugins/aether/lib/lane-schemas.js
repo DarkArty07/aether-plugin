@@ -20,9 +20,10 @@ const FINDINGS = {
   },
 }
 
+// concerns and question are optional: a report that leaves them out is a report (issue #110).
 const IMPLEMENTER_SCHEMA = {
   type: 'object',
-  required: ['status', 'summary', 'head', 'tests', 'concerns', 'question'],
+  required: ['status', 'summary', 'head', 'tests'],
   properties: {
     status: { type: 'string', enum: ['DONE', 'DONE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'BLOCKED'] },
     summary: { type: 'string', description: 'what you implemented, or what you attempted' },

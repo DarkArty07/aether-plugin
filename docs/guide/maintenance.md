@@ -34,12 +34,12 @@ This page covers what keeping an installed Aether running involves: where it run
 
 ### Data
 
-Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AETHER_DATA_DIR` to use another directory. The default follows `CLAUDE_CONFIG_DIR` when that is set, and a session that loads the plugin with `--plugin-dir` uses `aether-inline` there instead.
+Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AETHER_DATA_DIR` to use another directory. The default follows `CLAUDE_CONFIG_DIR` when that is set, and a session that loads the plugin with `--plugin-dir` uses `aether-inline` there instead. A run relaunched from the other install keeps its records in that install's directory, so the reports and `/spend` read both directories and count a record that is in both once. A writer, and the prune, touch only the directory of the install they run in.
 - `usage/<session>/` holds the usage meter's files, kept for 30 days;
 - `runs.jsonl` holds one record per finalized or abandoned run;
 - the lane log is kept for 30 days;
-- `spend/<id>.json`, in this data directory, holds a summary of that session's spend. The 30-day prune writes the summary before it deletes that session's usage files or lane log, and it does not delete the summary. What was archived is added to what the same id writes later if the session resumes;
-- `delegates/` holds the delegate log, `delegates/log.jsonl`, and the files of each launch (briefs, results, patches, answers). The log is append-only, shared by every session, and none of it is pruned. `aether-report --spend` and `/spend` read `usage/`, `lanes/` and this delegate log (`plugins/aether/lib/spend.js`); they do not read an older router journal. See [Delegates](delegates.md#the-log);
+- `spend/<id>.json`, in each install's data directory, holds a summary of that session's spend. The 30-day prune writes the summary before it deletes that session's usage files or lane log, and it does not delete the summary. What was archived is added to what the same id writes later if the session resumes;
+- `delegates/` holds the delegate log, `delegates/log.jsonl`, and the files of each launch (briefs, results, patches, answers). The log is append-only, shared by every session, and none of it is pruned. `aether-report --spend` and `/spend` read `usage/`, `lanes/` and this delegate log in every install's directory (`plugins/aether/lib/spend.js`); they do not read an older router journal. See [Delegates](delegates.md#the-log);
 - `sessions/` marks the Aether sessions, kept for 30 days;
 - `exams/` holds the Examiner's hidden exams, one folder per repository and feature, so uninstalling without `--keep-data` deletes them;
 - `lanes/` also holds the dry marks (`lanes/marks/`) and the kept quota readings (`lanes/quota/`).

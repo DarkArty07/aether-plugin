@@ -6,8 +6,6 @@
 
 const { normalizePattern, patternsOverlap } = require('./globs.js')
 
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
-const DEFAULT_EFFORT = 'high'
 const DEFAULT_REVIEW = 'high'
 // A Review line names the reviewer's effort, which is never below high.
 const REVIEW_EFFORTS = ['high', 'xhigh', 'max']
@@ -418,8 +416,6 @@ function renderBrief(task, { planPath, spec, globalConstraints, objective = null
 }
 
 module.exports = {
-  EFFORTS,
-  DEFAULT_EFFORT,
   DEFAULT_REVIEW,
   MAX_OWNED_PATHS,
   MAX_NAMED_READS,

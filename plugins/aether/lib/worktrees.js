@@ -23,6 +23,12 @@ function loadGraph(mainRoot, runId) {
   return run.readJson(file)
 }
 
+// The run's graph with the units of every launch: graph.json holds only the units of the last one (issue #111).
+function loadRunGraph(mainRoot, runId) {
+  const graph = loadGraph(mainRoot, runId)
+  return { ...graph, tasks: { ...run.readUnits(run.runDir(mainRoot, runId)), ...graph.tasks } }
+}
+
 function isInside(target, root) {
   const rel = path.relative(root, target)
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
@@ -233,7 +239,7 @@ function salvageUnit(cwd, runId, taskId) {
   run.assertRunId(runId)
   run.assertTaskId(taskId)
   const { mainRoot } = repoPaths(cwd)
-  const graph = loadGraph(mainRoot, runId)
+  const graph = loadRunGraph(mainRoot, runId)
   const task = graph.tasks[taskId]
   if (!task) throw new Error(`${taskId} is not in run ${runId}`)
   const worktree = run.unitWorktree(mainRoot, runId, taskId)
@@ -386,7 +392,7 @@ function unitStatus(cwd, runId, taskId) {
   run.assertRunId(runId)
   run.assertTaskId(taskId)
   const { mainRoot } = repoPaths(cwd)
-  const graph = loadGraph(mainRoot, runId)
+  const graph = loadRunGraph(mainRoot, runId)
   if (!graph.tasks[taskId]) throw new Error(`${taskId} is not in run ${runId}`)
   const branch = run.unitBranch(runId, taskId)
   const exists = branchExists(mainRoot, branch)
@@ -474,10 +480,11 @@ function orEmpty(read, fallback) {
 // have been removed since, so three sources count: what unitStatus sees on a branch that is still
 // there, the integration branch's merge commits named `Merge aether/<run>/<task>`, and the units
 // the Lead adopted by hand. A unit whose tests were cut (issue #2) is in that history and is not
-// counted: its marker is still there. A unit the Lead adopted still counts. Only tasks of the run's graph are counted.
+// counted: its marker is still there. A unit the Lead adopted still counts. Only units of the run are counted,
+// those of every launch (issue #111), not only those of the last launch's graph.
 function mergedUnits(cwd, runId) {
   const { mainRoot } = repoPaths(cwd)
-  const graph = loadGraph(mainRoot, runId)
+  const graph = loadRunGraph(mainRoot, runId)
   const ids = taskIdsInOrder(graph)
   const merged = new Set()
   // A marker whose commit is on the integration branch is not merged, whether or not the unit
@@ -512,7 +519,8 @@ function mergedUnits(cwd, runId) {
 // nothing.
 function saveRun(cwd, runId, { now = new Date() } = {}) {
   const { mainRoot } = repoPaths(cwd)
-  const graph = loadGraph(mainRoot, runId)
+  // The units of every launch, not only those of the last one (issue #113).
+  const graph = loadRunGraph(mainRoot, runId)
   const merged = new Set(mergedUnits(mainRoot, runId))
   const units = taskIdsInOrder(graph).map((taskId) => {
     const branch = run.unitBranch(runId, taskId)

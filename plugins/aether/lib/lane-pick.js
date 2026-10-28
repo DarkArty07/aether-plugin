@@ -1,9 +1,9 @@
 'use strict'
 
 // The commands that choose and account for a call under superdelegation: `pick` decides which pair takes a call
-// (lib/superdelegation.js choose, over the pairs table and the quota views of the enabled harnesses) and logs the
-// decision; `took` logs who ran the call and why; `pause` waits, so that the workflow can time its agents without a clock of
-// its own. `pick` starts no call: it reads the quotas, and renews and
+// (lib/superdelegation.js choose, over the pairs table and the quota views of the enabled harnesses, without the pairs
+// that hold a live slow mark: lib/router-slow.js) and logs the decision; `took` logs who ran the call and why; `pause` waits,
+// so that the workflow can time its agents without a clock of its own. `pick` starts no call: it reads the quotas, and renews and
 // saves the readings a process cannot take anew on its own (grok's and muse's), because each `aether-lane pick`
 // is a process of its own.
 // Family: lane.
@@ -18,6 +18,7 @@ const calls = require('./lane-calls.js')
 const pairs = require('./pairs.js')
 const { choose } = require('./superdelegation.js')
 const { peekReadings, staleHarnesses, readingFile } = require('./router-quota.js')
+const { slowPairIds } = require('./router-slow.js')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 
 const CALL = /^(task-\d+-\d+-(implement|supervise|supervisor|reviewer)|final-review(-slice-\d+)?)$/
@@ -139,7 +140,9 @@ async function pickCommand(cwd, runId, call, flags, { now = Date.now() } = {}) {
   const dataDir = run.dataDir()
   const latest = await latestReadings(config, enabled, { dataDir, now })
   const harnesses = harnessViews(config, enabled, { dataDir, now, latest })
-  const decision = choose({ pairs: table, reference: { model, effort }, harnesses, exclude, authors, nativeDiffers: role !== 'implementer', role, lanes: config })
+  // The pairs whose call ran out of time lately are left out as the flag's pairs are, so they show as excluded.
+  const slow = slowPairIds(dataDir, table, now)
+  const decision = choose({ pairs: table, reference: { model, effort }, harnesses, exclude: [...exclude, ...slow], authors, nativeDiffers: role !== 'implementer', role, lanes: config })
 
   lanes.appendLog(dataDir, null, {
     kind: 'choice',

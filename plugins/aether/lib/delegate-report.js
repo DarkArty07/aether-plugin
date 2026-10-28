@@ -6,7 +6,7 @@
 // Family: delegate.
 
 const run = require('./run.js')
-const { isLaunch, readEntries } = require('./delegate-log.js')
+const { isLaunch, readAllEntries } = require('./delegate-log.js')
 const { loadLadder } = require('./ladder.js')
 
 const CAUSES = ['exhausted', 'repeated', 'infeasible']
@@ -71,7 +71,7 @@ function stepCounts(rung, entries) {
 }
 
 function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } = {}) {
-  const entries = readEntries(dataDir, { session, since })
+  const entries = readAllEntries(dataDir, { session, since })
   const byTask = new Map()
   for (const entry of entries) {
     // An `outcome` entry names its task in `id`; the others in `task`.

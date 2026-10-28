@@ -2,11 +2,12 @@
 
 // The list-price spend of one session, whole (`aether-report --spend`): every request the usage meter kept
 // (usage/<id>/<n>.json), every call of another harness (lanes/<id>.jsonl) and every `outcome` of the delegate log
-// that belongs to the id, priced from config/prices.json and added into one Tally. Spend sources read are
-// usage/, lanes/ and the delegate log, and it no longer reads the old router journal. A prune keeps what it
-// deletes as a summary (spend/<id>.json, written by lib/spend-archive.js); the figure is that summary plus what is
-// still on disk. This module only reads. It reads each source on its own: readUsageEvents, readLaneEvents, and
-// readOutcomeEvents drop what they cannot read, and a dropped request is a dollar that vanishes.
+// that belongs to the id, priced from config/prices.json and added into one Tally. Spend sources read are usage/, lanes/
+// and the delegate log of every install's data directory (run.installDirs), each record once, and it no longer reads
+// the old router journal. A prune keeps what it deletes as a summary (spend/<id>.json, written by lib/spend-archive.js);
+// the figure is that summary plus what is still on disk. This module only reads. It reads each source on its own:
+// readUsageEvents, readLaneEvents, and readOutcomeEvents drop what they cannot read, and a dropped request is a dollar
+// that vanishes.
 // Family: spend.
 
 const fs = require('node:fs')
@@ -257,7 +258,8 @@ function readUsageEvents(dataDir, id, { after = null, prices = loadPrices() } = 
 
 // The calls of other harnesses in lanes/<id>.jsonl, and only there. An entry with no session takes the file's id; one
 // that names another session is not this one's. A line that cannot be read is skipped, as the lane log's reader does.
-function readLaneEvents(dataDir, id, { after = null, prices = loadPrices() } = {}) {
+// A call whose line is in `earlier` (the counted calls of an earlier install) is left out, and this file's are added to it.
+function readLaneEvents(dataDir, id, { after = null, prices = loadPrices(), earlier = new Set() } = {}) {
   const out = emptyRead()
   if (!isSessionId(id)) return out
   const file = laneFile(dataDir, id)
@@ -275,6 +277,7 @@ function readLaneEvents(dataDir, id, { after = null, prices = loadPrices() } = {
     }
     return out
   }
+  const counted = []
   for (const line of text.split('\n')) {
     if (!line.trim()) continue
     let entry
@@ -286,8 +289,12 @@ function readLaneEvents(dataDir, id, { after = null, prices = loadPrices() } = {
     if (!isObject(entry) || entry.kind !== 'call') continue
     if ((entry.session ?? id) !== id) continue
     if (archived(entry.time, after)) continue
+    const key = JSON.stringify(entry)
+    if (earlier.has(key)) continue
+    counted.push(key)
     out.events.push(harnessEvent('call', entry, prices))
   }
+  for (const key of counted) earlier.add(key)
   return out
 }
 
@@ -300,8 +307,9 @@ function timeOfBroken(line) {
 // The `outcome` entries of session `id` in one JSON-lines file, one event each (a delegation writes one per attempt, and
 // attempts share its id). The file holds every session's lines and nobody prunes them, so a line that cannot be read
 // makes this session incomplete only when it falls inside the session's span: the readable lines that are the
-// session's, of any kind. By its time when the broken line shows one, by its place in the file when not.
-function readOutcomesIn(file, id, prices) {
+// session's, of any kind. By its time when the broken line shows one, by its place in the file when not. An outcome
+// whose line is in `earlier` (the counted outcomes of an earlier install) is left out, and this file's are added to it.
+function readOutcomesIn(file, id, prices, earlier = new Set()) {
   const out = { events: [], complete: true }
   let text
   try {
@@ -311,6 +319,7 @@ function readOutcomesIn(file, id, prices) {
     return out
   }
   const broken = []
+  const counted = []
   const span = { first: Infinity, last: -Infinity, early: Infinity, late: -Infinity }
   text.split('\n').forEach((line, position) => {
     if (!line.trim()) return
@@ -332,9 +341,13 @@ function readOutcomesIn(file, id, prices) {
       span.late = Math.max(span.late, entry.time)
     }
     if (entry.kind === 'outcome') {
+      const key = JSON.stringify(entry)
+      if (earlier.has(key)) return
+      counted.push(key)
       out.events.push(harnessEvent('outcome', entry, prices))
     }
   })
+  for (const key of counted) earlier.add(key)
   const timed = span.early <= span.late
   for (const line of broken) {
     // A broken line that shows a time is placed by that time among the session's times. When it shows none, or when the
@@ -347,13 +360,16 @@ function readOutcomesIn(file, id, prices) {
   return out
 }
 
-// The `outcome` entries of session `id` in the delegate log.
+// The `outcome` entries of session `id` in the delegate log of every install (run.installDirs), an identical one once.
 function readOutcomeEvents(dataDir, id, { prices = loadPrices() } = {}) {
   const out = { events: [], complete: true }
   if (!isSessionId(id)) return out
-  const fresh = readOutcomesIn(delegateLog.logFile(dataDir), id, prices)
-  out.events = fresh.events
-  out.complete = fresh.complete
+  const earlier = new Set()
+  for (const dir of run.installDirs(dataDir)) {
+    const fresh = readOutcomesIn(delegateLog.logFile(dir), id, prices, earlier)
+    out.events.push(...fresh.events)
+    out.complete = out.complete && fresh.complete
+  }
   return out
 }
 
@@ -425,35 +441,38 @@ function listing(dir) {
   }
 }
 
-// The session written to last among those with files of their own: a usage directory, a lane log or a summary,
-// by a name that is an id. The newest time wins; a tie goes to the greater id as text. The delegate log does not decide.
+// The session written to last among those with files of their own in any install (run.installDirs): a usage directory,
+// a lane log or a summary, by a name that is an id. The newest time wins; a tie goes to the greater id as text. The
+// delegate log does not decide.
 function latestSession(dataDir) {
   const times = new Map()
   const note = (id, time) => {
     if (!isSessionId(id) || !isTime(time)) return
     if (!times.has(id) || time > times.get(id)) times.set(id, time)
   }
-  for (const entry of listing(path.join(dataDir, 'usage'))) if (entry.isDirectory() && isSessionId(entry.name)) note(entry.name, newestIn(usageDir(dataDir, entry.name)))
-  for (const entry of listing(path.join(dataDir, 'lanes'))) {
-    const id = entry.name.slice(0, -'.jsonl'.length)
-    if (!entry.isFile() || !entry.name.endsWith('.jsonl') || !isSessionId(id)) continue
-    try {
-      note(id, fs.statSync(laneFile(dataDir, id)).mtimeMs)
-    } catch {}
-  }
-  for (const entry of listing(spendDir(dataDir))) {
-    const id = entry.name.slice(0, -'.json'.length)
-    if (!entry.isFile() || !entry.name.endsWith('.json') || !isSessionId(id)) continue
-    const { summary } = readSummary(dataDir, id)
-    let time = summary ? summary.writtenAt : null
-    if (!isTime(time)) {
+  for (const dir of run.installDirs(dataDir)) {
+    for (const entry of listing(path.join(dir, 'usage'))) if (entry.isDirectory() && isSessionId(entry.name)) note(entry.name, newestIn(usageDir(dir, entry.name)))
+    for (const entry of listing(path.join(dir, 'lanes'))) {
+      const id = entry.name.slice(0, -'.jsonl'.length)
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl') || !isSessionId(id)) continue
       try {
-        time = fs.statSync(summaryFile(dataDir, id)).mtimeMs
-      } catch {
-        time = null
-      }
+        note(id, fs.statSync(laneFile(dir, id)).mtimeMs)
+      } catch {}
     }
-    note(id, time)
+    for (const entry of listing(spendDir(dir))) {
+      const id = entry.name.slice(0, -'.json'.length)
+      if (!entry.isFile() || !entry.name.endsWith('.json') || !isSessionId(id)) continue
+      const { summary } = readSummary(dir, id)
+      let time = summary ? summary.writtenAt : null
+      if (!isTime(time)) {
+        try {
+          time = fs.statSync(summaryFile(dir, id)).mtimeMs
+        } catch {
+          time = null
+        }
+      }
+      note(id, time)
+    }
   }
   let best = null
   for (const [id, time] of times) if (best === null || time > best.time || (time === best.time && id > best.id)) best = { id, time }
@@ -464,20 +483,28 @@ function latestSession(dataDir) {
 
 const isoOrNull = (ms) => (isTime(ms) && Number.isFinite(new Date(ms).getTime()) ? new Date(ms).toISOString() : null)
 
-// The summary and the raw sources, read in a way that counts each event once. A prune writes the summary before it
-// deletes the raw files, so a file that vanished, or a summary that changed while the raw files were read, means a
-// prune ran in between: read it all again. `settled` is false when the last attempt still saw one of the two: the
-// figure may then miss or repeat what that prune moved, and the report calls it incomplete.
+// The summary and the raw sources of every install (run.installDirs), one store per install in that order, read in a way
+// that counts each event once. A prune writes the summary before it deletes the raw files, so a file that vanished, or a
+// summary that changed while the raw files were read, means a prune ran in between: read it all again. `settled` is
+// false when the last attempt still saw one of the two: the figure may then miss or repeat what that prune moved, and
+// the report calls it incomplete. The meter's parts are read from the first install that holds the session's usage
+// directory, since a session id lives in one directory in practice: a copy in another install is not read again. The
+// lane calls are read from every install, and an identical call counts once.
 function gather(dataDir, id, prices) {
+  const dirs = run.installDirs(dataDir)
+  const home = dirs.find((dir) => fs.existsSync(usageDir(dir, id)))
   let found
   for (let attempt = 1; attempt <= READ_ATTEMPTS; attempt++) {
-    const summary = readSummary(dataDir, id)
-    const through = summary.readable ? summary.summary.through : { usage: null, lanes: null }
-    const usage = readUsageEvents(dataDir, id, { after: through.usage, prices })
-    const lanes = readLaneEvents(dataDir, id, { after: through.lanes, prices })
-    const settled = !usage.vanished && !lanes.vanished && JSON.stringify(readSummary(dataDir, id)) === JSON.stringify(summary)
-    found = { summary, usage, lanes, settled }
-    if (settled) break
+    const earlier = new Set()
+    found = dirs.map((dir) => {
+      const summary = readSummary(dir, id)
+      const through = summary.readable ? summary.summary.through : { usage: null, lanes: null }
+      const usage = dir === home ? readUsageEvents(dir, id, { after: through.usage, prices }) : emptyRead()
+      const lanes = readLaneEvents(dir, id, { after: through.lanes, prices, earlier })
+      const settled = !usage.vanished && !lanes.vanished && JSON.stringify(readSummary(dir, id)) === JSON.stringify(summary)
+      return { summary, usage, lanes, settled }
+    })
+    if (found.every((store) => store.settled)) break
   }
   return found
 }
@@ -512,13 +539,15 @@ function spendReport({ dataDir = run.dataDir(), session = null, prices = loadPri
   if (session !== null && !isSessionId(session)) throw new Error(`bad session id: ${session}`)
   const id = session ?? latestSession(dataDir)
   if (id === null) return shaped(null, false, true, emptyTally(), prices)
-  const { summary, usage, lanes, settled } = gather(dataDir, id, prices)
+  const stores = gather(dataDir, id, prices)
   const outcomes = readOutcomeEvents(dataDir, id, { prices })
-  const recorded = usage.exists || lanes.exists || summary.exists || outcomes.events.length > 0
+  const recorded = stores.some((store) => store.usage.exists || store.lanes.exists || store.summary.exists) || outcomes.events.length > 0
   if (!recorded) return shaped(id, false, true, emptyTally(), prices)
-  const onDisk = tallyOf([...usage.events, ...lanes.events, ...outcomes.events])
-  const tally = mergeTallies(summary.readable ? summary.summary.tally : emptyTally(), onDisk)
-  const complete = settled && tally.complete && usage.complete && lanes.complete && outcomes.complete && (!summary.exists || summary.readable)
+  const events = stores.flatMap((store) => [...store.usage.events, ...store.lanes.events])
+  const onDisk = tallyOf([...events, ...outcomes.events])
+  const summarized = stores.reduce((tally, store) => (store.summary.readable ? mergeTallies(tally, store.summary.summary.tally) : tally), emptyTally())
+  const tally = mergeTallies(summarized, onDisk)
+  const complete = stores.every((store) => store.settled && store.usage.complete && store.lanes.complete && (!store.summary.exists || store.summary.readable)) && outcomes.complete && tally.complete
   return shaped(id, true, complete, tally, prices)
 }
 

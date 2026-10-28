@@ -144,7 +144,7 @@ test('a first launch with no unit and review true still reviews, and is not trea
   assert.deepEqual(reviewers(run).map((c) => `${c.model} ${c.effort}`), ['opus high'])
   assert.deepEqual(
     run.logs.filter((line) => line.startsWith('final review on ')),
-    ['final review on opus high: the merged work is not a small all-haiku run'],
+    ['final review on opus high: the run is not small: its merged units are not 1 to 3 that all ask for a high review'],
   )
 })
 

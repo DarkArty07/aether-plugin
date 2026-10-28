@@ -69,7 +69,7 @@ Three other causes end in a swarm that is not running:
 
 **Why.** In an Aether session, aether-guard watches every Bash call for six irreversible classes, each by the commands it recognizes:
 - `push`: `git push`, except a dry run;
-- `merge-main`: `gh pr merge`;
+- `merge-main`: `gh pr merge`, and a `git merge` that lands on `main` or `master` (the branch is read from the command's directory, after any `git checkout main` or `cd` earlier in the same line);
 - `publish`: `npm publish`, `cargo publish`, `docker push`, `gh release create` and the like;
 - `deploy`: `kubectl apply`, `terraform apply`, `helm upgrade`, `fly deploy`, `vercel --prod` and the like;
 - `delete`: `git reset --hard`, `git clean -f`, `git branch -D`, and `rm -rf` of a wide target such as `/`, `~` or `.`;

@@ -81,19 +81,33 @@ function observedSince(dataDir, since, at) {
   }
 }
 
+// The start of the refresh that holds the lock, from its record, or null while the record cannot be read yet: takeLock
+// reads a record that is still being written as {}. Never throws.
+function holderSince(lockFile) {
+  try {
+    const since = JSON.parse(fs.readFileSync(lockFile, 'utf8'))?.since
+    return Number.isFinite(since) ? since : null
+  } catch {
+    return null
+  }
+}
+
 // Waits for the refresh that holds the lock (grok-quota.js takeLock, shared: one probe at a time, a left-over lock
 // taken over), and takes the reading it brought: the observation it saved after that refresh started. Gives up at
 // the deadline. Never throws.
 async function awaitHolder({ lockFile, holder, deadline, dataDir, now, wait }) {
-  const since = Number.isFinite(holder.since) ? holder.since : now()
+  // The start is read from the record on each poll until it is known. A waiter that took the clock it reads now
+  // instead would start later than the holder, and reject the holder's own observation.
+  let since = Number.isFinite(holder.since) ? holder.since : null
   while (now() < deadline && fs.existsSync(lockFile)) {
+    if (since === null) since = holderSince(lockFile)
     try {
       await wait(POLL_MS)
     } catch {
       return null
     }
   }
-  return observedSince(dataDir, since, now())
+  return since === null ? null : observedSince(dataDir, since, now())
 }
 
 // When the last failed refresh was, or null when none is recorded or the record cannot be read.
