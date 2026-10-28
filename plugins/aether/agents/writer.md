@@ -56,7 +56,6 @@ Put this block right after each task heading:
     - Area: backend
     - Owns: `src/api/**`, `tests/api.test.js`
     - Depends on: none
-    - Merges with: none
     - Serves: R1, R3
 
 The swarm starts every task on the cheapest model and raises it by itself: do not name a model or an effort for the implementer. Every task is one module and one concern; when tests cannot pin it down, split it.
