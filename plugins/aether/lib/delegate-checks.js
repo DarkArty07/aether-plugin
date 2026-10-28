@@ -18,7 +18,7 @@ function changedFiles(worktree, base) {
   return Array.from(new Set([...nulEntries(diffOut), ...nulEntries(untrackedOut)])).sort()
 }
 
-function runTests(worktree, command, { timeoutMs = 900000 } = {}) {
+function runTests(worktree, command, { timeoutMs = 900000, tailChars = 4000 } = {}) {
   const r = spawnSync(command, {
     cwd: worktree,
     shell: true,
@@ -29,7 +29,7 @@ function runTests(worktree, command, { timeoutMs = 900000 } = {}) {
   })
   const timedOut = Boolean(r.error && r.error.code === 'ETIMEDOUT')
   const fullOutput = (r.stdout || '') + (r.stderr || '')
-  const outputTail = fullOutput.slice(-4000)
+  const outputTail = fullOutput.slice(-tailChars)
   const exitCode = timedOut ? null : (r.status !== null ? r.status : null)
   const passed = !timedOut && exitCode === 0
   return { command, exitCode, passed, timedOut, outputTail }

@@ -1258,4 +1258,5 @@ module.exports = {
   isWorktreeRoot,
   writeUnverifiedMarker,
   abortUnfinishedMerge,
+  readBaseline,
 }
