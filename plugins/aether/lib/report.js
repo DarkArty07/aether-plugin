@@ -12,7 +12,7 @@ const { spawnSync } = require('node:child_process')
 const { repoPaths } = require('./git.js')
 const run = require('./run.js')
 const { loadPrices, priceEntry } = require('./prices.js')
-const { readLog, quotaConsumed, laneTokens } = require('./lanes.js')
+const { readLog, readAllLogs, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
 const { judge } = require('./baseline.js')
 const { isSessionId, newestIn } = require('./spend.js')
@@ -544,9 +544,10 @@ function totalsOf(nativeUsd, lanesUsd) {
 }
 
 // The lane log's share of the run, the run's calls being those inside its window, and of the usage session.
-// The versions are each harness's, and version is agy's.
+// The versions are each harness's, and version is agy's. The log is read from every install's directory (readAllLogs),
+// so every launch of the run counts, whichever install wrote its calls.
 function laneReport({ dataDir, runId, start, end, usage, results, prices, notes, cost }) {
-  const entries = readLog(dataDir)
+  const entries = readAllLogs(dataDir)
   const isRunEntry = (entry) => entry.run === runId && (entry.kind === 'reading' || (entry.time >= start && entry.time <= end))
   const runLog = splitLog(entries.filter(isRunEntry))
   const sessionLog = usage ? splitLog(entries.filter((entry) => entry.session === usage.session)) : null
