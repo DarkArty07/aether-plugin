@@ -230,7 +230,7 @@ test('development mode with the option on: one gh issue create on the plugin rep
   assert.ok(body.includes(`- ${SESSION.slice(0, 8)}`), 'the session is cut to eight characters')
   for (const secret of [MARK, KEY, GH, SESSION, home]) assert.equal(body.includes(secret), false, 'no conversation, key, token, full session or home path')
   assert.ok(body.includes(markerOf(RISE_ID)))
-  assert.ok(body.includes('Abierto por aether-observe (autoissue, modo de desarrollo)'))
+  assert.ok(body.includes('Opened by aether-observe (autoissue, development mode)'))
   assert.deepEqual(ledgerOf(dir)[RISE_ID].via, 'created')
   assert.equal(ledgerOf(dir)[RISE_ID].number, 101)
   assert.equal(ledgerOf(dir)[RISE_ID].url, `https://github.com/${REPO}/issues/101`)

@@ -117,7 +117,7 @@ function draftOf(finding, { home = os.homedir(), version = 'unknown', now = Date
   const held = redact(cleanTitle) !== cleanTitle || redact(cleanBody) !== cleanBody
   const title = aliasTasks(cleanTitle, pattern)
   const body = aliasTasks(cleanBody, pattern)
-  const footer = `Abierto por aether-observe (autoissue, modo de desarrollo) · plugin ${version} · ${new Date(now).toISOString()}`
+  const footer = `Opened by aether-observe (autoissue, development mode) · plugin ${version} · ${new Date(now).toISOString()}`
   // The id of a finding can hold a session (rule-broken:...:<session>) or a task name; the marker keeps them cut and aliased like the body does.
   const marker = markerOf(aliasTasks(scrub(finding.id, { sessions, home: null }), pattern))
   return { title, body: `${body}\n\n${footer}\n${marker}\n`, marker, held }
