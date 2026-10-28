@@ -148,4 +148,21 @@ function ladderCommand(cwd, runId, taskId, opts = {}) {
   }
 }
 
-module.exports = { ladderCommand }
+// A relaunch that names a unit whose ladder is spent starts it a new one: the spent state is kept next to it as
+// <task>.spent-<n>.json, so nothing is lost and the report still counts it. An open ladder is never touched (R3).
+function resetSpent(runDir, taskIds) {
+  const reset = []
+  for (const taskId of taskIds) {
+    const file = ladderFile(runDir, taskId)
+    if (!fs.existsSync(file)) continue
+    const record = run.readJson(file)
+    if (!record || !record.state || record.state.status !== 'exhausted') continue
+    let n = 1
+    while (fs.existsSync(path.join(runDir, 'ladder', `${taskId}.spent-${n}.json`))) n++
+    fs.renameSync(file, path.join(runDir, 'ladder', `${taskId}.spent-${n}.json`))
+    reset.push(taskId)
+  }
+  return reset
+}
+
+module.exports = { ladderCommand, resetSpent }

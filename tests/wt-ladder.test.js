@@ -8,7 +8,7 @@ const { WT_BIN, makeRepo, compile, runBin } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const { loadLadder, effortFor } = require('../plugins/aether/lib/ladder.js')
-const { ladderCommand } = require('../plugins/aether/lib/wt-ladder.js')
+const { ladderCommand, resetSpent } = require('../plugins/aether/lib/wt-ladder.js')
 
 const L = loadLadder()
 const [HAIKU, SONNET, OPUS] = L.rungs
@@ -143,4 +143,25 @@ test('a number changed in the ladder the verb is given changes its answer, with 
   const s2 = setup(t)
   judged(s2, 'fix', fix('a'), { ladder: tight })
   assert.equal(judged(s2, 'fix', fix('b'), { ladder: tight }).step, SONNET.step)
+})
+
+test('a relaunch gives a unit with a spent ladder a new one and keeps the old state; an open ladder is never touched', (t) => {
+  const { repo, args } = setup(t)
+  const view = (task) => ladderCommand(repo.dir, args.runId, task)
+  view('task-1')
+  view('task-2')
+  const dir = path.join(args.runDir, 'ladder')
+  const spent = JSON.parse(fs.readFileSync(path.join(dir, 'task-1.json'), 'utf8'))
+  spent.state.status = 'exhausted'
+  fs.writeFileSync(path.join(dir, 'task-1.json'), JSON.stringify(spent))
+  assert.deepEqual(resetSpent(args.runDir, ['task-1', 'task-2', 'task-9']), ['task-1'])
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['task-1.spent-1.json', 'task-2.json'])
+  assert.equal(view('task-1').model, HAIKU.step, 'the unit starts again on the first rung')
+  assert.equal(view('task-1').attempts, 0)
+  // A second spent ladder keeps its own copy.
+  const again = JSON.parse(fs.readFileSync(path.join(dir, 'task-1.json'), 'utf8'))
+  again.state.status = 'exhausted'
+  fs.writeFileSync(path.join(dir, 'task-1.json'), JSON.stringify(again))
+  assert.deepEqual(resetSpent(args.runDir, ['task-1']), ['task-1'])
+  assert.ok(fs.existsSync(path.join(dir, 'task-1.spent-2.json')))
 })

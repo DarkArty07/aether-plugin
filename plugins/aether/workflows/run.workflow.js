@@ -372,6 +372,24 @@ function serialized(task) {
   return next
 }
 
+// The gate runs the plan's whole test command. The units of a wave would run it all at once, and a loaded machine
+// turns a slow run into the same timeout finding twice, which raises the model. Two at a time; a slot passes straight
+// to the next one waiting.
+const GATE_SLOTS = 2
+let gateRunning = 0
+const gateWaiting = []
+async function gated(task) {
+  if (gateRunning >= GATE_SLOTS) await new Promise((resolve) => gateWaiting.push(resolve))
+  else gateRunning++
+  try {
+    return await task()
+  } finally {
+    const next = gateWaiting.shift()
+    if (next) next()
+    else gateRunning--
+  }
+}
+
 // --- lanes -----------------------------------------------------------------------------------
 
 // The digest and the canonical JSON of lib/lanes.js, written out because a workflow has no modules.
@@ -413,6 +431,12 @@ async function applyVerdict(unit, task, kind, body) {
     label: `${unit.id}: ladder verdict`,
     payload: { path: filePath, text },
   })
+}
+
+// The approval after a merge: a failure leaves the unit merged and its ladder state open, so it is logged.
+async function approved(unit) {
+  const out = await applyVerdict(unit, null, 'approve', {})
+  if (out.error || out.accepted === false) log(`${unit.id}: merged, but the ladder did not take the approval: ${out.error || out.rejection}`)
 }
 
 async function step(unit, kind, body) {
@@ -660,13 +684,8 @@ function implementerPrompt(unit, task, rung, context, { lane = false, limit = nu
 
 // The lane variant runs in a disposable copy of the unit branch, with the brief and the package in .aether-tmp/.
 function supervisorPrompt(unit, task, rung, report, view, gate, opts = {}) {
-  let actualGate = gate
-  let actualOpts = opts
-  if (gate && (gate.lane !== undefined || gate.gate !== undefined) && opts.lane === undefined) {
-    actualGate = gate.gate || null
-    actualOpts = gate
-  }
-  const lane = Boolean(actualOpts.lane)
+  const actualGate = gate
+  const lane = Boolean(opts.lane)
   const lines = [
     `You supervise ${unit.id}: ${task.title} (area ${task.area}), run ${runId}. Attempt ${unit.attempts} ran on ${rung}.`,
     '',
@@ -1138,13 +1157,15 @@ async function implementSplit(unit, task, model, effort, rung, context, exclude,
 // after any outcome of the pair but ok and blocked (without lanes, on Sonnet at the task's review effort).
 // `author` is the family that ran the attempt. Resolves to { review, provider, effort }, with the effort the
 // review ran at, or to { blocked } with the pair's detail.
-async function supervise(unit, task, rung, report, view, author, gate = null) {
+// A second or third try of the same attempt's supervisor runs native: a lane call id is one per attempt, and the first
+// try's finished result would answer the second.
+async function supervise(unit, task, rung, report, view, author, gate = null, tries = 1) {
   const n = unit.attempts
   const id = `${unit.id}-${n}-supervise`
-  const where = { phase: 'Supervise', label: `${unit.id}: supervise attempt ${n}` }
+  const where = { phase: 'Supervise', label: `${unit.id}: supervise attempt ${n}${tries > 1 ? ` (try ${tries})` : ''}` }
   let native = { model: 'sonnet', effort: task.review }
   let routed = null
-  if (lanes) {
+  if (lanes && tries === 1) {
     routed = await external({
       role: 'supervisor',
       model: 'sonnet',
@@ -1166,7 +1187,7 @@ async function supervise(unit, task, rung, report, view, author, gate = null) {
       return { blocked: outcome.detail }
     }
   }
-  const label = `${unit.id}: supervise attempt ${n} on ${native.model} ${native.effort}`
+  const label = `${unit.id}: supervise attempt ${n}${tries > 1 ? ` (try ${tries})` : ''} on ${native.model} ${native.effort}`
   const review = await call('supervisor', native.model, native.effort, supervisorPrompt(unit, task, rung, report, view, gate), {
     phase: 'Supervise',
     label,
@@ -1329,7 +1350,7 @@ async function work(unit, task) {
       continue
     }
 
-    const gate = await ops(`aether-wt gate ${runId} ${unit.id}`, { phase: 'Supervise', label: `${unit.id}: gate`, long: true })
+    const gate = await gated(() => ops(`aether-wt gate ${runId} ${unit.id}`, { phase: 'Supervise', label: `${unit.id}: gate`, long: true }))
     if (!gate.error && gate.pass === false) {
       unit.ladder.gateRejections++
       const findings = gate.findings && gate.findings.length ? gate.findings : [{ file: task.owns[0], what: gate.checks || 'la puerta falló' }]
@@ -1353,7 +1374,7 @@ async function work(unit, task) {
     let supervisorSuccess = false
     while (supervisorTries < 3) {
       supervisorTries++
-      const checked = await supervise(unit, task, rung, report, view, attempt.family, gate)
+      const checked = await supervise(unit, task, rung, report, view, attempt.family, gate, supervisorTries)
       if (checked.blocked !== undefined) return finish(unit, 'blocked', `lane: ${checked.blocked}`)
       round.reviewProvider = checked.provider
       round.reviewEffort = checked.effort
@@ -1475,7 +1496,7 @@ async function work(unit, task) {
     if (out.merged) {
       unit.commit = out.commit
       unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
-      await applyVerdict(unit, task, 'approve', {})
+      await approved(unit)
       return finish(unit, 'merged')
     }
     round.merge = describeMerge(out)
@@ -1484,7 +1505,7 @@ async function work(unit, task) {
       if (again.merged) {
         unit.commit = again.commit
         unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
-        await applyVerdict(unit, task, 'approve', {})
+        await approved(unit)
         round.merge = 'merged: the tests were rerun after the merge was cut, and they passed'
         log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
         return finish(unit, 'merged')
@@ -1513,7 +1534,7 @@ async function work(unit, task) {
       if (status && !status.error && status.merged) {
         unit.commit = status.commit
         unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
-        await applyVerdict(unit, task, 'approve', {})
+        await approved(unit)
         round.merge = 'merged: the merge output was unreadable, and the merge commit is on the integration branch'
         log(`${unit.id}: merge output unreadable, but its merge commit is on ${integration.branch}; counting it merged`)
         return finish(unit, 'merged')

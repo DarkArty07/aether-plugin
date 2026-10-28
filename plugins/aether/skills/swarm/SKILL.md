@@ -110,6 +110,7 @@ Report from it, to the owner or, in a run, to the diary:
   - a gate that fails again and again: edits outside Owns (`<archivo>: fuera de Owns`), test failures (`falló: <nombre>` or `npm test: salió con N`), or test timeouts (`npm test: superó el tiempo límite`);
   - the attempt that did not end: crashes, aborted runs or missing reports (`el intento no terminó (<causa>)`, `<archivo>: el intento no cambió ningún archivo`). When an attempt ends without a report, the next pass retries as a split pass of sub-attempts per file before synthetic findings repeat;
   - repeated findings or infeasible rulings that exhaust the ladder's three rise causes (`exhausted`, `repeated`, `infeasible`).
+  A relaunch that names the task again (`--only`, after the Writer fixed it) gives a spent ladder a new one and keeps the old state as `<task>.spent-N.json`. A ladder that is still open continues where it was.
   Fix the work yourself when it fits the direct path; otherwise send it to a delegate task, on the model the `using-aether` Models section picks, or have the Writer fix the plan task, have `/aether:design` review the fix in short mode on `tasks.md`, and relaunch it. These have a fallback, so they never go to the owner.
 - **Blocked by a lane:** a reason that starts with `lane:` means a lane changed the integration worktree or branch, or a read-only copy changed the unit. Check the integration worktree with `git status` and the branch with `git log` before you relaunch.
 - **Skipped or not-run:** relaunch these once their dependencies are merged.

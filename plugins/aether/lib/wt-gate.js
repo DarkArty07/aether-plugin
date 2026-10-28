@@ -15,6 +15,11 @@ function looksLikePath(name) {
   return typeof name === 'string' && (name.includes('/') || /\.(?:js|ts|py|go)$/.test(name))
 }
 
+// The supervisor reads this: the last lines of the run, never the whole tail that the baseline match needs.
+const SUMMARY_LINES = 25
+const SUMMARY_CHARS = 2000
+const summaryOf = (tail) => String(tail || '').split('\n').slice(-SUMMARY_LINES).join('\n').slice(-SUMMARY_CHARS)
+
 function gateCommand(cwd, runId, taskId, opts = {}) {
   const { mainRoot } = repoPaths(cwd)
   const graph = loadGraph(mainRoot, runId)
@@ -61,7 +66,7 @@ function gateCommand(cwd, runId, taskId, opts = {}) {
       checks: 'fail',
       findings: [{ file: 'npm test', what: 'superó el tiempo límite' }],
       detail: '',
-      tests: testsResult.outputTail,
+      tests: summaryOf(testsResult.outputTail),
       knownFailures: [],
       timedOut: true,
       files,
@@ -74,7 +79,7 @@ function gateCommand(cwd, runId, taskId, opts = {}) {
       checks: 'pass',
       findings: [],
       detail: '',
-      tests: testsResult.outputTail,
+      tests: summaryOf(testsResult.outputTail),
       knownFailures: [],
       timedOut: false,
       files,
@@ -105,7 +110,7 @@ function gateCommand(cwd, runId, taskId, opts = {}) {
       checks: 'fail',
       findings: [{ file: 'npm test', what: `salió con ${testsResult.exitCode}` }],
       detail: testsResult.outputTail.slice(-1500),
-      tests: testsResult.outputTail,
+      tests: summaryOf(testsResult.outputTail),
       knownFailures: [],
       timedOut: false,
       files,
@@ -125,7 +130,7 @@ function gateCommand(cwd, runId, taskId, opts = {}) {
     checks: 'fail',
     findings: testFindings,
     detail: '',
-    tests: testsResult.outputTail,
+    tests: summaryOf(testsResult.outputTail),
     knownFailures: [],
     timedOut: false,
     files,

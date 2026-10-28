@@ -19,6 +19,7 @@ const CHECKS = {
   knownAndNew: "console.log('not ok 1 - tests/old.test.js')\nif (require('fs').existsSync('src/t1/bad.js')) console.log('not ok 2 - tests/new.test.js')\nprocess.exit(1)\n",
   marker: "require('fs').writeFileSync('ran.txt', '1')\n",
   namedSubtest: "if (require('fs').existsSync('src/t1/bad.js')) { console.log('not ok 1 - adds the numbers'); process.exit(1) }\nconsole.log('# pass 12')\n",
+  loud: "for (let i = 0; i < 3000; i++) console.log('ok ' + i + ' - a passing test with a name that is not short')\nconsole.log('# pass 3000')\n",
   subtestAndFile: "if (require('fs').existsSync('src/t1/bad.js')) { console.log('not ok 1 - adds the numbers'); console.log('not ok 2 - tests/new.test.js'); process.exit(1) }\nconsole.log('# pass 12')\n",
 }
 
@@ -37,6 +38,16 @@ test('an attempt that changed only what the task owns and passes the tests passe
   const g = gate(u)
   assert.deepEqual([g.pass, g.checks, g.findings, g.timedOut, g.files], [true, 'pass', [], false, ['src/t1/a.js']])
   assert.match(g.tests, /# pass 12/)
+})
+
+test('the tests summary is the last lines of the run, never the whole output the baseline match reads', (t) => {
+  const u = unit(t, CHECKS.loud)
+  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
+  const g = gate(u)
+  assert.equal(g.pass, true)
+  assert.ok(g.tests.length <= 2000, `the summary has ${g.tests.length} characters`)
+  assert.ok(g.tests.split('\n').length <= 25)
+  assert.match(g.tests, /# pass 3000/)
 })
 
 test('a file outside Owns fails the gate with the file named, and the tests do not run', (t) => {

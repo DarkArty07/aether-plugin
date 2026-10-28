@@ -97,3 +97,23 @@ test('a retry after a merge conflict runs the gate again', async (t) => {
   assert.equal(gates(run).length, 2)
   assert.equal(unitOf(run).ladder.corrections, 0)
 })
+
+test('no more than two gates run at once, and every unit still gets its turn', async (t) => {
+  const args = compile(makeRepo(t), plan([task(1), task(2), task(3), task(4)]))
+  let running = 0
+  let most = 0
+  const run = await runWorkflow(args, {
+    ops: async (call, wt) => {
+      if (call.kind !== 'ops:gate') return wt(call)
+      running++
+      most = Math.max(most, running)
+      await new Promise((resolve) => setTimeout(resolve, 15))
+      running--
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(run.result.units.map((u) => u.status), ['merged', 'merged', 'merged', 'merged'])
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:gate').length, 4)
+  assert.ok(most >= 1 && most <= 2, `${most} gates ran at once`)
+})

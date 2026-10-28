@@ -173,6 +173,13 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
   const errors = [...parsed.errors, ...graph.errors]
   if (errors.length) fail(errors, [...parsed.warnings, ...graph.warnings], stdout)
 
+  // A unit named again after its ladder was spent (the task was fixed and reviewed) starts a new ladder.
+  if (runValue !== null) {
+    for (const id of require('./wt-ladder.js').resetSpent(dir, Object.keys(graph.tasks || {}))) {
+      process.stderr.write(`aether-plan: ${id} had a spent ladder; it starts a new one (the old state is kept as ${id}.spent-N.json)\n`)
+    }
+  }
+
   const enabled = superdelegation.enabled()
   if (!rest.includes('--no-lanes') && !enabled.on) {
     process.stderr.write(

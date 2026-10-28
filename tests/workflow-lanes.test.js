@@ -209,6 +209,22 @@ test('a supervisor lane that fails hands the same review to the native superviso
   assert.equal(run.result.lanes.failed, 1)
 })
 
+test('a second try of the supervisor runs native: the lane call of the attempt is not reused', async (t) => {
+  let tries = 0
+  const run = await runWorkflow(lanesRun(t), {
+    lane: onPairs((call, fallback) => (isCall(call, 'wait', 'task-1-1-supervise') ? finished(call, { status: 'failed', detail: 'exit 1: model not found' }) : fallback(call))),
+    supervisor: (call, approve) => {
+      tries++
+      if (tries === 1) throw new Error('the supervisor agent failed')
+      return approve(call)
+    },
+  })
+  ok(run)
+  assert.equal(starts(run, 'supervisor').length, 1, 'the second try started another lane call with the same id')
+  assert.deepEqual(native(run, 'supervisor').map((c) => c.label), ['task-1: supervise attempt 1 on sonnet high', 'task-1: supervise attempt 1 (try 2) on sonnet high'])
+  assert.equal(run.result.units[0].status, 'merged')
+})
+
 test('a supervisor lane answer with an unknown verdict and findings that are a string counts as a retry, as a native answer does', async (t) => {
   const run = await runWorkflow(lanesRun(t), {
     lane: onPairs((call, fallback) =>
