@@ -232,6 +232,33 @@ function readLog(dataDir, { since = 0 } = {}) {
   return entries.sort((a, b) => a.time - b.time)
 }
 
+// The data directories of the installed release and of a development tree (run.js dataDir gives each its own). A
+// relaunch from a development tree writes its lane calls to that tree's directory, so a report reads both (issue 107).
+const PLUGIN_DATA_IDS = ['aether-aether-plugin', 'aether-inline']
+
+// The data directories whose lane logs a report of a run reads: the given one and, when it sits under a plugins data
+// root, the other installs' beside it.
+function logDirsOf(dataDir) {
+  const root = path.dirname(dataDir)
+  if (path.basename(root) !== 'data') return [dataDir]
+  return [...new Set([dataDir, ...PLUGIN_DATA_IDS.map((id) => path.join(root, id))])]
+}
+
+// Every entry of the lane logs of logDirsOf, time-ordered, each entry once: a call in two directories is one call.
+function readAllLogs(dataDir, opts) {
+  const seen = new Set()
+  const entries = []
+  for (const dir of logDirsOf(dataDir)) {
+    for (const entry of readLog(dir, opts)) {
+      const key = JSON.stringify(entry)
+      if (seen.has(key)) continue
+      seen.add(key)
+      entries.push(entry)
+    }
+  }
+  return entries.sort((a, b) => a.time - b.time)
+}
+
 // Deletes the session files of the lane log not written to for `days`. Before it deletes the file of a session id, it
 // adds what its calls spent to the session's summary (lib/spend-archive.js): a file whose summary cannot be written
 // stays, for the next prune to try again, and leaves a trace of the failure under the data directory
@@ -290,6 +317,7 @@ module.exports = {
   logFile,
   appendLog,
   readLog,
+  readAllLogs,
   pruneLog,
   laneEnv,
   killGroup,
