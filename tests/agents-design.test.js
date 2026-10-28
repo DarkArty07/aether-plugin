@@ -51,3 +51,7 @@ const PROSE_RULES = [
 test('the Examiner checks prose tolerant of its markup, in any line, and names its wording checks in notes (#99)', () => {
   has('examiner', PROSE_RULES)
 })
+
+test('the Judge names the inputs its helpers are assumed to return, in the plan review (#91)', () => {
+  has('judge', ['the inputs it assumes its helpers return', '`makeRepo` returns `{ dir, git }`, not a path'])
+})

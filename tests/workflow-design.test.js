@@ -186,6 +186,33 @@ test('a third review that does not approve ends in a dispute with both positions
   assert.ok(nativeCalls(run)[2].prompt.includes('gap 1') && nativeCalls(run)[2].prompt.includes('disagreements'))
 })
 
+test('a limit dispute says whether the Lead may fix its last findings itself: mechanical only when no finding of the last review blocks (#91)', async () => {
+  const minor = { ...finding('a typo'), severity: 'minor' }
+  const blocking = { ...finding('a gap'), severity: 'blocking' }
+  const noFix = { ...finding('no fix'), fix: '' }
+  const majorWithFix = finding('a limit')
+  const cases = [
+    ['only minor findings in the last review', [minor], true],
+    ['a major finding with a stated fix, and a minor one', [majorWithFix, minor], true],
+    ['one blocking finding in the last review', [minor, blocking], false],
+    ['a major finding with no fix', [minor, noFix], false],
+    ['no finding at all', [], false],
+  ]
+  for (const [name, last, expected] of cases) {
+    let n = 0
+    const judge = () => ({ verdict: 'revise', findings: ++n === 3 ? last : [blocking], openQuestions: [] })
+    const run = await go(ARGS, { judge })
+    assert.equal(run.result.status, 'dispute', name)
+    assert.equal(run.result.dispute.kind, 'limit', name)
+    assert.equal(run.result.dispute.mechanical, expected, name)
+  }
+})
+
+test('a reject is never mechanical, and its dispute says so (#91)', async () => {
+  const run = await go(ARGS, { judge: () => ({ verdict: 'reject', findings: [{ ...finding('the approach is wrong'), severity: 'minor' }], openQuestions: [] }) })
+  assert.deepEqual([run.result.dispute.kind, run.result.dispute.mechanical], ['reject', false])
+})
+
 test('a reject ends the design at once with the direction of the Judge, in the spec or in the plan (E2)', async () => {
   const reject = { verdict: 'reject', findings: [finding('the approach is wrong')], openQuestions: [] }
   const first = await go(ARGS, { judge: () => reject })
@@ -259,6 +286,14 @@ test('the messages carry what each seat needs, and the scope instruction', async
   assert.ok(prompt('exam: examiner').includes(`${FEATURE}/intent.md`) && prompt('exam: examiner').includes('never tasks.md'))
   assert.ok(prompt('exam: examiner').includes('Write the exam under /repo/.aether-exam/ and nothing else.'))
   assert.ok(prompt('spec: writer write').includes('Your checkout is /repo: the paths above are relative to it.'))
+})
+
+// The plan Judge names the inputs its helpers are assumed to return (#91). The Judge's file states the same words
+// (tests/agents-design.test.js).
+test('the plan Judge names the inputs its helpers are assumed to return, in the words its file states (#91)', async () => {
+  const run = await go(ARGS)
+  const planJudge = run.calls.find((c) => c.label === 'plan: judge review 1').prompt
+  for (const text of ['the inputs it assumes its helpers return', '`makeRepo` returns `{ dir, git }`, not a path']) assert.ok(planJudge.includes(text), text)
 })
 
 test('the Examiner gets the rules for a check on prose, in the words its file states (#99)', async () => {
