@@ -40,6 +40,8 @@ Cada llamada a `gh` lleva un tiempo máximo de 20 segundos y el trabajador enter
 
 **D8. Lo que no cambia.** Los detectores, los borradores en `observe/issues/` (siguen escribiéndose igual, también con la opción apagada), qué guarda cada modo, los fragmentos y las correcciones, el resumen durable y la poda. La instalación estándar sigue sin abrir conexiones ni ejecutar `gh`. Un issue con el sí del dueño uno por uno sigue siendo el camino con la opción apagada (el Lead lo abre con el borrador). Y la regla A91 se mantiene: la observación propone, no cambia el plugin; abrir un issue es proponer.
 
+**D9. Los nombres de tarea no salen como son.** (Añadida tras la aprobación del Judge, por una auditoría con las lecturas reales del dueño: el borrador `pair-failing` traía nombres de tareas de otros proyectos, por ejemplo `revision-marketing-redaccion`.) El Lead escribe el nombre de cada tarea delegada desde el trabajo del dueño en cualquier proyecto, así que no es un identificador neutro. El trabajador lee del registro de delegados (`delegates/log.jsonl`) los nombres (`task` y, en un `outcome`, `id`) de 3 caracteres o más y, **después** de la comprobación de `redact()` de D4 (para que una clave dentro de un nombre siga reteniendo el borrador), sustituye cada nombre, como palabra completa, por `task-` y los 8 primeros caracteres hexadecimales de su sha256, en el título, el cuerpo y la marca. El mismo nombre da siempre el mismo alias, también en otra máquina. El libro local guarda el `id` real y el borrador local conserva el nombre. Los nombres de menos de 3 caracteres no dicen nada y se dejan.
+
 ## Archivos
 
 - `plugins/aether/lib/observe-issue.js` (nuevo, familia observe): `launch({ dataDir, env })`, `fileIssues({ dataDir, env, now })`, la limpieza (D4), el libro y el cerrojo. Es el único archivo de la observación que ejecuta un proceso y el único que nombra `gh`.
@@ -59,7 +61,8 @@ Todas con un `gh` falso en un directorio temporal al frente de `PATH` (un script
 - La garantía de la sesión normal: el hook en una sesión que no es del Lead no lanza nada.
 - El pie se añade tras `redact()`: un cuerpo limpio con su pie y su marca se envía y no cuenta como `held`.
 - Desarrollo y opción encendida, con una falla en la lectura y una conversación falsa con una frase marcada, una clave y un token: el hook lanza el trabajador y, esperando el libro, `gh issue create` se llamó **una vez**, con `--repo DarkArty07/aether-plugin` aunque el `cwd` sea otro repo, con la etiqueta, y el cuerpo que recibió trae la evidencia y no trae la frase marcada, ni la clave, ni el token, ni la ruta del `HOME` de prueba; las sesiones salen de 8 caracteres.
-- Un cuerpo que `redact()` cambia (una clave en la evidencia) no se envía: queda `held` y el borrador local.
+- Nombres de tarea (D9): un nombre largo de tarea no sale ni en el título, ni en el cuerpo ni en la marca, y sale su alias `task-<8 hex>`; un nombre de menos de 3 caracteres se deja; el alias es el mismo en cada llamada; solo se sustituye como palabra completa; el libro local guarda el `id` real y una segunda corrida no llama a `gh`.
+- Un cuerpo que `redact()` cambia (una clave en la evidencia, también dentro de un nombre de tarea) no se envía: queda `held` y el borrador local.
 - Duplicados: si `gh issue list` devuelve un issue cuyo cuerpo trae la marca, no se llama a `gh issue create`, el libro lo anota como `found`; con el `id` ya en el libro, no se llama a `gh` en absoluto.
 - Topes: con más de `maxPerSession` fallas se crean solo `maxPerSession`; con `maxOpen` abiertos no se crea ninguno.
 - `gh` ausente de `PATH` o que falla: el trabajador sale 0, el libro no cambia, el borrador sigue y una segunda corrida lo reintenta.

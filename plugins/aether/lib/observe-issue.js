@@ -10,6 +10,7 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const crypto = require('node:crypto')
 const { spawn, spawnSync } = require('node:child_process')
 const { isObject, readJsonOrNull, writeAtomic } = require('./common.js')
 const { PLUGIN_ROOT, observeDir, loadObserveConfig, autoIssueOn } = require('./observe.js')
@@ -24,6 +25,8 @@ const CALL_MS = 20000
 const RUN_MS = 90000
 const LOCK_MS = 5 * 60 * 1000
 const SESSION_CUT = 8
+// A task name shorter than this says nothing about the owner's work and is left as it is (D9).
+const TASK_MIN = 3
 // The absolute paths of a person's home that a body may not keep: /home/<x>, /Users/<x> and /root, with the user's name dropped.
 const SYSTEM_HOME = /\/(?:home\/[^/\s"'`]+|Users\/[^/\s"'`]+|root)(?=\/|$|[\s"'`])/g
 
@@ -44,9 +47,45 @@ function repoOf(manifestPath = MANIFEST) {
 const markerIdOf = (id) => String(id).replace(/[^A-Za-z0-9_.:/-]/g, '_').slice(0, 120)
 const markerOf = (id) => `<!-- aether-observe:${markerIdOf(id)} -->`
 
-// The cleaning of D4, in this order: each session becomes its first eight characters, each absolute path of the home
-// directory or of /home/<x>, /Users/<x> or /root becomes ~, and redact() runs last. The caller compares the text before
-// and after redact() to decide whether it may be sent.
+// The names the Lead gave its delegate tasks, as the delegate log keeps them (task, and id in an outcome), longest first. The
+// Lead writes them from the owner's work in any project, so they never leave as they are: each becomes task-<8 hex of its
+// sha256> (D9), the same on every run and on every machine.
+function taskNamesOf(dataDir) {
+  let text
+  try {
+    text = fs.readFileSync(path.join(dataDir, 'delegates', 'log.jsonl'), 'utf8')
+  } catch {
+    return []
+  }
+  const names = new Set()
+  for (const raw of text.split('\n')) {
+    if (!raw.trim()) continue
+    let entry
+    try {
+      entry = JSON.parse(raw)
+    } catch {
+      continue
+    }
+    if (!isObject(entry)) continue
+    for (const key of ['task', 'id']) if (typeof entry[key] === 'string' && entry[key].length >= TASK_MIN) names.add(entry[key])
+  }
+  return [...names].sort((a, b) => b.length - a.length || (a < b ? -1 : 1))
+}
+
+const taskAlias = (name) => `task-${crypto.createHash('sha256').update(name).digest('hex').slice(0, 8)}`
+
+// One pattern for all the names, longest first, that matches a name only as a whole word of the text (a letter, a digit, _ or -
+// on either side is part of another word), or null when there is none.
+function taskPatternOf(names) {
+  const list = names.filter((name) => typeof name === 'string' && name.length >= TASK_MIN)
+  if (list.length === 0) return null
+  const escaped = [...list].sort((a, b) => b.length - a.length).map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return new RegExp(`(?<![A-Za-z0-9_-])(?:${escaped.join('|')})(?![A-Za-z0-9_-])`, 'g')
+}
+
+// The cleaning of D4: each session becomes its first eight characters and each absolute path of the home directory or of
+// /home/<x>, /Users/<x> or /root becomes ~. The caller compares the text before and after redact() to decide whether it may
+// be sent, and only then aliases the task names, so that a key inside a task name still holds the draft.
 function scrub(text, { sessions, home }) {
   let out = text
   for (const session of sessions) {
@@ -59,16 +98,21 @@ function scrub(text, { sessions, home }) {
   return out.replace(SYSTEM_HOME, '~')
 }
 
+const aliasTasks = (text, pattern) => (pattern ? text.replace(pattern, (name) => taskAlias(name)) : text)
+
 // The title and body to send for one failure. The footer and the marker come after the comparison, so they can never make a
 // draft held. A draft that redact() would change holds a key or a secret, and is not sent (D4).
-function draftOf(finding, { home = os.homedir(), version = 'unknown', now = Date.now() } = {}) {
+function draftOf(finding, { home = os.homedir(), version = 'unknown', now = Date.now(), tasks = [] } = {}) {
   const sessions = Array.isArray(finding.sessions) ? finding.sessions.filter((session) => typeof session === 'string') : []
-  const title = scrub(finding.issue.title, { sessions, home })
-  const body = scrub(finding.issue.body, { sessions, home }).trimEnd()
-  const held = redact(title) !== title || redact(body) !== body
+  const pattern = taskPatternOf(tasks)
+  const cleanTitle = scrub(finding.issue.title, { sessions, home })
+  const cleanBody = scrub(finding.issue.body, { sessions, home }).trimEnd()
+  const held = redact(cleanTitle) !== cleanTitle || redact(cleanBody) !== cleanBody
+  const title = aliasTasks(cleanTitle, pattern)
+  const body = aliasTasks(cleanBody, pattern)
   const footer = `Abierto por aether-observe (autoissue, modo de desarrollo) · plugin ${version} · ${new Date(now).toISOString()}`
-  // The id of a finding can hold a session (rule-broken:...:<session>); the marker keeps it cut like the body does.
-  const marker = markerOf(scrub(finding.id, { sessions, home: null }))
+  // The id of a finding can hold a session (rule-broken:...:<session>) or a task name; the marker keeps them cut and aliased like the body does.
+  const marker = markerOf(aliasTasks(scrub(finding.id, { sessions, home: null }), pattern))
   return { title, body: `${body}\n\n${footer}\n${marker}\n`, marker, held }
 }
 
@@ -182,6 +226,7 @@ function fileAll({ dataDir, env, now, manifest, repo }) {
   const { maxPerSession, maxOpen } = loadObserveConfig().autoIssue
   const home = env.HOME || os.homedir()
   const version = versionOf(manifest)
+  const tasks = taskNamesOf(dataDir)
   const deadline = Date.now() + RUN_MS
   const listed = gh(['issue', 'list', '--repo', repo, '--label', LABEL, '--state', 'all', '--limit', '200', '--json', 'number,state,url,body'], { env, deadline })
   const issues = listed.ok ? parseList(listed.stdout) : null
@@ -195,7 +240,7 @@ function fileAll({ dataDir, env, now, manifest, repo }) {
       break
     }
     const finding = pending[index]
-    const draft = draftOf(finding, { home, version, now })
+    const draft = draftOf(finding, { home, version, now, tasks })
     const existing = issues.find((issue) => issue.body.includes(draft.marker))
     if (existing) {
       filed[finding.id] = { number: existing.number, url: existing.url, time: now, via: 'found' }

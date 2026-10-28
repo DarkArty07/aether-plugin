@@ -236,6 +236,37 @@ test('development mode with the option on: one gh issue create on the plugin rep
   assert.equal(ledgerOf(dir)[RISE_ID].url, `https://github.com/${REPO}/issues/101`)
 })
 
+test('the names of the delegate tasks never leave: each becomes task-<8 hex> in the title, the body and the marker, and the draft stays local with the name (D9)', async (t) => {
+  const dir = tempDir(t); const gh = fakeGh(t)
+  lead(dir)
+  rises(dir, ['revision-marketing-redaccion', 'arch-layers', 't2'])
+  read(dir)
+  const local = files(path.join(dir, 'observe', 'issues')).map((f) => fs.readFileSync(f, 'utf8')).join('\n')
+  assert.ok(local.includes('revision-marketing-redaccion'), 'the local draft keeps the name')
+  const r = bin(['file-issues'], { dir, env: devOn(gh) })
+  assert.deepEqual([r.status, r.json.created], [0, 3])
+  const sent = [...gh.creates(), ...gh.bodies()].join('\n')
+  for (const name of ['revision-marketing-redaccion', 'arch-layers']) assert.equal(sent.includes(name), false, `${name} is not sent`)
+  const alias = (name) => `task-${require('node:crypto').createHash('sha256').update(name).digest('hex').slice(0, 8)}`
+  assert.ok(sent.includes(`Task ${alias('revision-marketing-redaccion')} attempt 2 rose to step sonnet`), 'the evidence names the alias')
+  assert.ok(sent.includes(`<!-- aether-observe:rise-without-reason:${alias('arch-layers')}:2 -->`), 'the marker names the alias')
+  assert.ok(sent.includes('Task t2 attempt 2'), 'a name shorter than three characters is left as it is')
+  // The ledger is local and keeps the real id, so the next run knows it and calls nothing.
+  assert.ok(Object.keys(ledgerOf(dir)).includes('rise-without-reason:revision-marketing-redaccion:2'))
+  const before = gh.calls().length
+  assert.deepEqual([bin(['file-issues'], { dir, env: devOn(gh) }).json.skipped], [3])
+  assert.equal(gh.calls().length, before)
+})
+
+test('a name of a task is aliased only as a whole word, and the alias is the same on every call (D9)', () => {
+  const finding = { id: 'fault:x', sessions: [], issue: { title: 'T', body: '## Evidence\n\n- Task arch ran; arch-layers and archive and "arch" and arch_x\n' } }
+  const now = Date.UTC(2026, 9, 28)
+  const a = draftOf(finding, { home: '/nonexistent-home', tasks: ['arch'], now })
+  const b = draftOf(finding, { home: '/nonexistent-home', tasks: ['arch'], now })
+  assert.equal(a.body, b.body)
+  assert.match(a.body, /Task task-[0-9a-f]{8} ran; arch-layers and archive and "task-[0-9a-f]{8}" and arch_x/)
+})
+
 test('an issue of the marker already in gh issue list is found, not created again (D6)', (t) => {
   const dir = tempDir(t)
   const gh = fakeGh(t, { list: [{ number: 7, state: 'OPEN', url: `https://github.com/${REPO}/issues/7`, body: `old text\n${markerOf(RISE_ID)}\n` }] })
