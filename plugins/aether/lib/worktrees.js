@@ -239,7 +239,7 @@ function salvageUnit(cwd, runId, taskId) {
   run.assertRunId(runId)
   run.assertTaskId(taskId)
   const { mainRoot } = repoPaths(cwd)
-  const graph = loadGraph(mainRoot, runId)
+  const graph = loadRunGraph(mainRoot, runId)
   const task = graph.tasks[taskId]
   if (!task) throw new Error(`${taskId} is not in run ${runId}`)
   const worktree = run.unitWorktree(mainRoot, runId, taskId)
@@ -519,7 +519,8 @@ function mergedUnits(cwd, runId) {
 // nothing.
 function saveRun(cwd, runId, { now = new Date() } = {}) {
   const { mainRoot } = repoPaths(cwd)
-  const graph = loadGraph(mainRoot, runId)
+  // The units of every launch, not only those of the last one (issue #113).
+  const graph = loadRunGraph(mainRoot, runId)
   const merged = new Set(mergedUnits(mainRoot, runId))
   const units = taskIdsInOrder(graph).map((taskId) => {
     const branch = run.unitBranch(runId, taskId)

@@ -92,3 +92,26 @@ test('the sweep of a relaunched run removes the branch of a unit an earlier laun
   assert.equal(repo.git('branch', '--list', `aether/${runId}/task-1`), '')
   assert.equal(fs.existsSync(path.join(first.json.runDir, 'patches', 'task-1.patch')), false)
 })
+
+// Issue #113: save lists the units of every launch, and keeps the work of an unmerged unit of an earlier one.
+test('save after a relaunch lists the units of the earlier launches and keeps the branch of an unmerged one', (t) => {
+  const repo = makeRepo(t)
+  const text = plan([task(1), task(2), task(3)])
+  const first = compileRun(repo, text)
+  assert.equal(first.status, 0, first.stdout + first.stderr)
+  const { runId } = first.json
+  mergeUnit(repo, runId, 1)
+  const two = runBin(WT_BIN, ['ensure', runId, 'task-2'], repo.dir).json
+  commitIn(repo, two.path, 'src/t2/a.js', '2\n', 'task 2')
+  const second = compileRun(repo, text, '--run', runId, '--only', 'task-3')
+  assert.equal(second.status, 0, second.stdout + second.stderr)
+  const saved = runBin(WT_BIN, ['save', runId], repo.dir)
+  assert.equal(saved.status, 0, saved.stdout + saved.stderr)
+  const { units } = JSON.parse(fs.readFileSync(path.join(first.json.runDir, 'saved.json'), 'utf8'))
+  assert.deepEqual(units.map((u) => u.task), ['task-1', 'task-2', 'task-3'])
+  const byTask = Object.fromEntries(units.map((u) => [u.task, u]))
+  assert.equal(byTask['task-1'].merged, true)
+  assert.equal(byTask['task-2'].merged, false)
+  assert.equal(byTask['task-2'].branch, `aether/${runId}/task-2`)
+  assert.notEqual(repo.git('branch', '--list', `aether/${runId}/task-2`), '')
+})
