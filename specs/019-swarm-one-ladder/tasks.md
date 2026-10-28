@@ -1093,6 +1093,7 @@ test('a retry after a merge conflict runs the gate again', async (t) => {
 - Ninguna ruta de un intento llega al supervisor sin haber pasado por la puerta (salvo que el comando de la puerta falle, con su aviso en la evidencia).
 - Un fallo de la puerta nunca llama al supervisor, gasta exactamente una corrección y repetido dos veces sube el modelo.
 - El texto del prompt de la puerta que el implementador lee lleva el archivo, lo que falló y `detail`.
+- `tests/ops-command.test.js` (el conjunto exacto de comandos de ops que envía una ejecución, hacia la línea 305) lista también `aether-wt gate`. `const FINDINGS = {` y `const OPS_SCHEMA = {` siguen en el script en ese orden, con los esquemas entre ambos sin cambios (`tests/aether-lane.test.js` corta el script con esos dos anclajes).
 
 ### Task 7: `aether-plan` lee e ignora `Tier` y `Ladder`
 
