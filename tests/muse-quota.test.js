@@ -169,6 +169,27 @@ test('a refresh that starts while another holds the lock waits and returns the r
   assert.equal(fs.existsSync(log), false, 'no muse call was made')
 })
 
+test('a waiter that finds the holder\'s record still empty takes the start from the record once it is written', async (t) => {
+  const dataDir = useDataDir(t)
+  const log = useFake(t, { stdout: out(completed('ok'), usage(allowance(72, 40))) })
+  // The holder has created the lock and not yet written its record, which takeLock reads as {}. The waiter starts
+  // later than the holder did, so the clock it reads is no start for the holder.
+  fs.mkdirSync(path.dirname(lockFile(dataDir)), { recursive: true })
+  fs.writeFileSync(lockFile(dataDir), '')
+  const pending = refreshMuseQuota({ command: FAKE_MUSE, now: () => NOW + 1000 })
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  fs.writeFileSync(lockFile(dataDir), JSON.stringify({ pid: process.pid, since: NOW, until: NOW + 60000 }))
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  fs.mkdirSync(path.dirname(observedFile(dataDir)), { recursive: true })
+  fs.writeFileSync(observedFile(dataDir), JSON.stringify({ observedAt: NOW, window: { usedPercent: 72, resetsAtMs: NOW + 3 * HOUR }, weekly: { usedPercent: 40, resetsAtMs: NOW + 5 * 24 * HOUR } }))
+  fs.rmSync(lockFile(dataDir), { force: true })
+  const reading = await pending
+  assert.deepEqual(Object.keys(reading.windows).sort(), ['5h', 'weekly'])
+  near(reading.windows['5h'].remaining, 0.28)
+  near(reading.windows.weekly.remaining, 0.6)
+  assert.equal(fs.existsSync(log), false, 'no muse call was made')
+})
+
 test('two refreshes at once make one muse call and both return the reading the holder saved', async (t) => {
   useDataDir(t)
   // The children run on the real clock, so the resets are ahead of it, not of the fixed NOW of this file.
