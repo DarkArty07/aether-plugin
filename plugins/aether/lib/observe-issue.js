@@ -67,7 +67,9 @@ function draftOf(finding, { home = os.homedir(), version = 'unknown', now = Date
   const body = scrub(finding.issue.body, { sessions, home }).trimEnd()
   const held = redact(title) !== title || redact(body) !== body
   const footer = `Abierto por aether-observe (autoissue, modo de desarrollo) · plugin ${version} · ${new Date(now).toISOString()}`
-  return { title, body: `${body}\n\n${footer}\n${markerOf(finding.id)}\n`, held }
+  // The id of a finding can hold a session (rule-broken:...:<session>); the marker keeps it cut like the body does.
+  const marker = markerOf(scrub(finding.id, { sessions, home: null }))
+  return { title, body: `${body}\n\n${footer}\n${marker}\n`, marker, held }
 }
 
 function versionOf(manifest) {
@@ -194,8 +196,7 @@ function fileAll({ dataDir, env, now, manifest, repo }) {
     }
     const finding = pending[index]
     const draft = draftOf(finding, { home, version, now })
-    const marker = markerOf(finding.id)
-    const existing = issues.find((issue) => issue.body.includes(marker))
+    const existing = issues.find((issue) => issue.body.includes(draft.marker))
     if (existing) {
       filed[finding.id] = { number: existing.number, url: existing.url, time: now, via: 'found' }
       writeAtomic(ledgerFile(dataDir), `${JSON.stringify(filed, null, 2)}\n`)

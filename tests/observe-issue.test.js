@@ -175,6 +175,14 @@ test('the footer is added after redact(): a clean draft with its footer and mark
   assert.equal(secret.held, true, 'a key in the evidence holds the draft')
 })
 
+test('a session inside the id of a finding is cut in the marker too, and the marker is the same on every run (spec 020 D4)', () => {
+  const finding = { id: `rule-broken:no-wakeup-for-delegate:${SESSION}`, sessions: [SESSION], issue: { title: 'T', body: `## Evidence\n\n- one line\n\n## Sessions\n\n- ${SESSION}\n` } }
+  const draft = draftOf(finding, { home: '/nonexistent-home' })
+  assert.equal(draft.body.includes(SESSION), false, 'the full session is nowhere in the body, the marker included')
+  assert.ok(draft.body.includes(`<!-- aether-observe:rule-broken:no-wakeup-for-delegate:${SESSION.slice(0, 8)} -->`))
+  assert.equal(draftOf(finding, { home: '/nonexistent-home' }).marker, draft.marker)
+})
+
 test('the home paths of the body become ~, with the user name dropped, and redact() keeps the rest (spec 020 D4)', (t) => {
   const home = tempDir(t)
   const body = `## Evidence\n\n- ${home}/proj/a.js and /home/someone/b.js and /root/c and /Users/bob/d\n`

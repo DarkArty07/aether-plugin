@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-observe
+// aether-observe hook | file-issues
 // hook: the handler of the observation hooks; reads the hook's JSON from stdin, prints nothing, always exits 0.
 // file-issues: the worker of the automatic issues of the development installation (spec 020); prints one JSON line and
 // exits 1 only when the gate or the destination fails.
