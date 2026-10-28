@@ -36,6 +36,14 @@ The message names:
 - **A test that expects a failure must be shown to fail.** Run it once against a deliberately broken input (the behavior it guards against, faked) and see it go red before you trust it. A test that runs a nested Node test runner (`node --test` from inside a test) clears `NODE_TEST_CONTEXT` from the nested run's environment: inherited, it makes the nested runner report through its parent and exit 0 even when its tests fail, so the test could never fail.
 - **Find names by what the requirement asks, not by a word the plan did not fix.** A heading, a flag or a name the spec does not spell may appear under any of its plausible spellings: accept them (for example, a section that lists the proposals under another title), and call a command with the flags its own usage names, read from the plan's public interfaces or the built command's help — never a guessed form the requirement did not fix.
 
+## Checks on prose
+
+A check on the wording of a document (a sentence, a heading, a message) fails a correct build easily, so it follows three rules. They are about wording only: a value, a command or a format the spec fixes stays exact.
+
+- **Markup is not wording.** Be tolerant of markdown: match the words, not their markup, and allow for bold, backticks, line breaks, plural and inflected forms. Then compare on the text with the markup stripped, so that "**The effort** is `high` when" matches "the effort is high when".
+- **Any line or sentence.** Look for the words in any line or sentence of the document, never the first line that matches. A page may say a thing a few lines further down, and a check on the first match alone fails it.
+- **Named in `notes`.** Say in `notes` which of its checks are about wording, so the Lead can judge a failure of those.
+
 ## exam.json
 
     {
@@ -54,7 +62,7 @@ Exactly this, and nothing before or after it:
     ## Exam
     - Tests: <count> (<criterion> <count>, …)
     ## Notes
-    <what the exam cannot check, and why, or "none">
+    <what the exam cannot check, and why; which of its checks are about wording; or "none">
 
 ## Rules
 

@@ -652,6 +652,7 @@ function reviewLines(doc, path) {
       `Review the plan ${PLAN} and its tasks ${TASKS} against the spec ${SPEC} and the owner's intent.`,
       'Check each row of the Complexity table: does the requirement it names ask for what it justifies, and is the simpler alternative really worse? Check that each task serves a requirement of the spec, and the coherence of spec, plan and tasks: duplicates, ambiguity, requirements without a measure, and contradictions.',
       'An abstraction, option, file or dependency that no requirement asks for and that the Complexity table does not justify is a finding of type `extra`.',
+      "For each test that the tasks write or change, name the inputs it assumes its helpers return (for example, that `makeRepo` returns `{ dir, git }`, not a path), and check them against the helper's source: a test that misuses a helper is a finding of type `wrong`. For each task, name the existing tests that exercise the files the task changes (find them with Grep under `tests/`), and flag a task whose brief contradicts one of them: a test that a correct build of the task would fail is a finding of type `wrong`, with the test's `file:line` as evidence.",
     ]
   }
   return [`Review the short design ${path} against the owner's intent.`, 'Check that it covers the intent and goes no further, and that it can be built from as it is.']
@@ -769,6 +770,9 @@ function examinerMessage() {
     '',
     `Read the spec ${SPEC} and the owner's intent card ${INTENT}${mode === 'short' ? ' when there is one' : ''}, and ${PLAN} for its public interfaces only; never tasks.md, which holds the tests the swarm sees.`,
     ...(mode === 'short' ? ['', ...intentLines()] : []),
+    '',
+    'A check on the wording of a document must be tolerant of markdown: bold, backticks, line breaks, plural and inflected forms all say the same thing, so compare on the text with the markup stripped. It must look in any line or sentence of the document, never the first line that matches. In `notes`, say which of its checks are about wording, so the Lead can judge a failure of those. A value, a command or a format the spec fixes stays exact.',
+    '',
     'Write the tests and exam.json under .aether-exam/ at the repository root, and nothing anywhere else. Do not commit.',
     '',
     SCOPE,
@@ -801,6 +805,13 @@ async function checkedAfter(step, text, retry) {
   return { printed: checked.printed, retried: again }
 }
 
+// Whether the Lead may fix the findings of a limit dispute itself (issue 91): no finding of the last review blocks, and
+// each one is minor, or major with a fix it states. A review with no finding is not mechanical: there is nothing to fix.
+function mechanicalOf(findings) {
+  const fixed = (finding) => finding.severity === 'major' && typeof finding.fix === 'string' && finding.fix.trim() !== ''
+  return findings.length > 0 && findings.every((finding) => finding.severity === 'minor' || fixed(finding))
+}
+
 // The Judge's rounds of one document (R1, R3): at most three reviews, with a correction by the Writer after each one
 // that does not approve. A reject, at any review, or a third review that does not approve ends the design in a
 // dispute. `check` is what aether-plan check printed for a plan, or null; `correct(n, review)` corrects the document
@@ -817,8 +828,9 @@ async function reviews({ doc, path, phase, author, check, correct }) {
     if (verdict === 'approve') return { author }
     if (verdict === 'reject' || n === MAX_REVIEWS) {
       const kind = verdict === 'reject' ? 'reject' : 'limit'
+      const mechanical = kind === 'limit' && mechanicalOf(review.answer.findings)
       log(`${doc}: ${kind === 'reject' ? 'the Judge rejected the approach' : `review ${n} did not approve`}`)
-      return { end: { status: 'dispute', dispute: { document: doc, kind, judge: { verdict, text: review.text }, writer: positions, direction: kind === 'reject' ? review.text : null } } }
+      return { end: { status: 'dispute', dispute: { document: doc, kind, judge: { verdict, text: review.text }, writer: positions, direction: kind === 'reject' ? review.text : null, mechanical } } }
     }
     const fixed = await correct(n, review)
     if (fixed.end) return fixed
