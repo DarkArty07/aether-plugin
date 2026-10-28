@@ -83,6 +83,16 @@ test('readFaults flattens the per-session fault files and skips a broken one', (
   ])
 })
 
+test('readFaults reads every per-process file of a session, and the session of each comes from its record', (t) => {
+  const dir = tempDir(t)
+  const faults = path.join(dir, 'observe', 'faults')
+  fs.mkdirSync(faults, { recursive: true })
+  fs.writeFileSync(path.join(faults, 's-1-100.json'), JSON.stringify({ session: 's-1', count: 1, faults: [{ time: 1, source: 'register.flush', class: 'write-failed' }] }))
+  fs.writeFileSync(path.join(faults, 's-1-200.json'), JSON.stringify({ session: 's-1', count: 1, faults: [{ time: 2, source: 'delegate.begin', class: 'handler-threw' }] }))
+  fs.writeFileSync(path.join(faults, 'other-300.json'), JSON.stringify({ session: 's-2', count: 1, faults: [{ time: 3, source: 'register.flush', class: 'write-failed' }] }))
+  assert.deepEqual(observe.readFaults(dir).map((f) => [f.session, f.time]), [['s-1', 1], ['s-1', 2], ['s-2', 3]])
+})
+
 test('status counts files and bytes by class, and forget deletes only observe/ and only with yes (R14)', (t) => {
   const dir = tempDir(t)
   observe.appendEvent(dir, { time: 1, session: 's-1', kind: 'SessionEnd', reason: 'clear' })

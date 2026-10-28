@@ -50,7 +50,7 @@ import { registerPanel } from './panel.jsx'
 import { registerSpend } from './spend-panel.jsx'
 import { brakePromptFor, crossingsOf, initialBrakeState, jsonFrom, notifyFor, resumePromptFor } from './quota-brake.mjs'
 import { createDelegates } from './delegate.mjs'
-import { errorKind, recordFault } from './fault-trace.mjs'
+import { errorKind, readDataDir, recordFault } from './fault-trace.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -84,57 +84,7 @@ const LADDER_PAYLOAD_FILE = /\/\.aether\/runs\/[^/]+\/ladder\/task-\d+-verdict\.
 const tokens = (value) => (Number.isFinite(value) ? value : 0)
 const effortOf = (value) => (typeof value === 'string' && value !== '' ? value : null)
 
-const asText = (value) => (typeof value === 'string' && value !== '' ? value : null)
-const withoutTrailingSlashes = (path) => path.replace(/\/+$/, '')
-const dataId = (text) => text.replace(/[^A-Za-z0-9_-]/g, '-')
-
-// The data directory (installable spec R11, R12), from the values the mod can read. Paths are compared
-// as given: a mod cannot resolve links.
-export function dataDirFrom({ env, root, name }) {
-  const given = asText(env && env.AETHER_DATA_DIR)
-  if (given) return given
-  const cacheDir = asText(env && env.CLAUDE_CODE_PLUGIN_CACHE_DIR)
-  const configDir = asText(env && env.CLAUDE_CONFIG_DIR)
-  const home = asText(env && env.HOME) || ''
-  const pluginsRoot = withoutTrailingSlashes(cacheDir || `${configDir ? withoutTrailingSlashes(configDir) : `${withoutTrailingSlashes(home)}/.claude`}/plugins`)
-  const cachePrefix = `${pluginsRoot}/cache/`
-  const pluginRoot = typeof root === 'string' ? withoutTrailingSlashes(root) : ''
-  if (pluginRoot.startsWith(cachePrefix)) {
-    const [marketplace, plugin, version, ...rest] = pluginRoot.slice(cachePrefix.length).split('/')
-    const segments = [marketplace, plugin, version]
-    if (rest.length === 0 && segments.every((segment) => segment && segment !== '.' && segment !== '..')) {
-      return `${pluginsRoot}/data/${dataId(`${plugin}@${marketplace}`)}`
-    }
-  }
-  return `${pluginsRoot}/data/${dataId(`${asText(name) || 'aether'}@inline`)}`
-}
-
-// The data directory of this process, read through the mod's own interfaces.
-async function readDataDir($) {
-  // A failed or refused read counts as unset. Each name is a literal, so the kit can list them.
-  const read = async (get) => {
-    try {
-      return await get
-    } catch {
-      return undefined
-    }
-  }
-  const env = {
-    AETHER_DATA_DIR: await read($.env.get('AETHER_DATA_DIR')),
-    CLAUDE_CODE_PLUGIN_CACHE_DIR: await read($.env.get('CLAUDE_CODE_PLUGIN_CACHE_DIR')),
-    CLAUDE_CONFIG_DIR: await read($.env.get('CLAUDE_CONFIG_DIR')),
-    HOME: await read($.env.get('HOME')),
-  }
-  let root
-  let name
-  try {
-    root = $.plugin.root
-    name = $.plugin.name
-  } catch {
-    // A missing value counts as undefined.
-  }
-  return dataDirFrom({ env, root, name })
-}
+export { dataDirFrom } from './fault-trace.mjs'
 
 function sessionOf(id) {
   let state = sessions.get(id)
