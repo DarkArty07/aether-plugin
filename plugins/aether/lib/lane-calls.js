@@ -22,6 +22,7 @@ const readings = require('./lane-readings.js')
 const work = require('./lane-work.js')
 const schemas = require('./lane-schemas.js')
 const { createAdapter } = require('./harness/index.js')
+const { markSlow } = require('./router-slow.js')
 
 const BIN = path.join(__dirname, '..', 'bin', 'aether-lane')
 const AGENTS_DIR = path.join(__dirname, '..', 'agents')
@@ -336,8 +337,10 @@ function start(cwd, runId, call, { role, task = null, model, effort, digest }) {
 
 // ---- The runner ----
 
-// Runs agy to its end, killing its group when it outlives the timeout. Resolves to its exit code.
-function runAgy(argv, { workdir, marker, paths, timeoutSeconds, onSpawn }) {
+// Runs agy to its end, killing its group when it outlives the timeout and its grace. Resolves to its exit code.
+// `limit.killed` is set when it was the kill timer that ended agy, so that the caller can tell a call that ran out of
+// time from one that failed by itself.
+function runAgy(argv, { workdir, marker, paths, timeoutSeconds, graceSeconds, limit, onSpawn }) {
   const out = fs.openSync(paths.agyStdout, 'w')
   const err = fs.openSync(paths.agyStderr, 'w')
   let child
@@ -361,7 +364,10 @@ function runAgy(argv, { workdir, marker, paths, timeoutSeconds, onSpawn }) {
     child.once('spawn', () => {
       onSpawn(child.pid)
       fs.writeFileSync(paths.agyPid, `${child.pid}\n`)
-      timer = setTimeout(() => killAgyGroup(child.pid), (timeoutSeconds + KILL_GRACE_SECONDS) * 1000)
+      timer = setTimeout(() => {
+        limit.killed = true
+        killAgyGroup(child.pid)
+      }, (timeoutSeconds + graceSeconds) * 1000)
     })
     child.once('exit', (code, signal) => {
       clearTimeout(timer)
@@ -470,11 +476,13 @@ function quotaSummary(reading, { reserve, now, mark }) {
   return { usable, unknown, remaining, resetsAt, priority, usedPercentAbsent }
 }
 
-async function runCall(cwd, runId, call) {
+// graceSeconds is the grace before the kill; only a test shortens it.
+async function runCall(cwd, runId, call, { graceSeconds = KILL_GRACE_SECONDS } = {}) {
   const paths = callPaths(cwd, runId, call)
   const info = JSON.parse(fs.readFileSync(paths.call, 'utf8'))
   const { role, task, workdir, group } = info
   const harness = callHarness(info)
+  const limit = { killed: false }
   let agyPid = null
   const onSignal = () => {
     if (agyPid !== null) killAgyGroup(agyPid)
@@ -503,6 +511,8 @@ async function runCall(cwd, runId, call) {
       marker: paths.marker,
       paths,
       timeoutSeconds: info.timeoutSeconds,
+      graceSeconds,
+      limit,
       onSpawn: (pid) => {
         agyPid = pid
       },
@@ -551,6 +561,16 @@ async function runCall(cwd, runId, call) {
   // A call that ended for quota holds its group, from its final reading: until the reset when that reading shows the
   // group under the reserve, for the default length otherwise. The summary below is taken after the mark.
   if (outcome.status === 'quota') holdDry(dataDir, { harness, group, reading: quotaAfter, config, now: time, refusal: outcome.refusal ?? null })
+  // A call killed at its time cap says its pair ran out of time, not that its quota is dry: the pair is left out of the
+  // swarm's picks for an hour (lib/router-slow.js), as the router leaves out a delegate's pair. Written before result.json,
+  // so the workflow that reads the result finds the mark.
+  if (limit.killed) {
+    try {
+      markSlow(dataDir, { harness, model: info.laneModel, effort: info.effort }, { now: time })
+    } catch {
+      // A mark that cannot be written costs the next pick its memory, not this call its result.
+    }
+  }
   if (quotaRead) lane.quota = quotaSummary(quotaAfter, { reserve: config.reserve, now: time, mark: marks.liveMark(dataDir, harness, group, time) })
   try {
     lanes.appendLog(
