@@ -1,0 +1,26 @@
+{
+ "build": "B",
+ "graphics": 7,
+ "creativity": 7,
+ "playability": 6,
+ "threeD": 7,
+ "total": 27,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "The synthwave look is strong and consistent: a neon pink grid floor, a glowing sunset behind dark crystal spires, and magenta spotlight beams at the board corners",
+  "Bloom and glow are used well on the snake head, the food beacon and the floating cyan shapes, so the scene has real atmosphere",
+  "It is a real 3D scene: the board has a raised rim and corner posts, rings and diamonds float around it, crystal pillars give depth, and the camera angle changes between the title screen and play",
+  "The eating effect is visible in space: a ring spreads on the floor around the head and sparks fly, and the food is a golden beam that is easy to spot",
+  "The game over screen gets a camera close-up of the snake's head with eyes, a shockwave ring and a 'NEW BEST' tag; the title and game over panels look neat and on-theme",
+  "Stable to play: 13/13 checks, 0 errors, 22 foods eaten in 40 s, and it works on a phone with no scrollbars"
+ ],
+ "weaknesses": [
+  "During play the snake is tiny and sits far from the camera at the back of a huge board, so it reads as a few small balls and is hard to follow",
+  "The HUD labels (SCORE, BEST, LEVEL) are very dim and almost unreadable; BEST and LEVEL are crowded into the corner",
+  "Too much going on outside the board: shapes floating close to the camera, white bloom blobs and bright beams pull the eye away from the game",
+  "Snake segments are plain spheres that blend into each other; the head is only modeled in the game over close-up",
+  "On a phone the board takes up a small part of the screen and the title panel covers part of it"
+ ],
+ "oneLine": "A striking, stable synthwave scene with good glow and eating effects, held back by a tiny, far-away snake that is hard to read during play and a HUD you can barely see.",
+ "costUsd": 0.22801739999999998
+}

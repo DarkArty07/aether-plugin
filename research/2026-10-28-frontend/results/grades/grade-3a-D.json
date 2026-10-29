@@ -1,0 +1,26 @@
+{
+ "build": "D",
+ "graphics": 6,
+ "creativity": 6,
+ "playability": 7,
+ "threeD": 6,
+ "total": 25,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "La paleta neón synthwave es coherente: tablero cuadriculado azul y morado, bordes magenta brillantes, postes de esquina con bloom y un fondo de estrellas con un horizonte de planeta tenue",
+  "Al comer hay un efecto claro y en capas: destello brillante, un anillo dorado que se expande y chispas en el espacio 3D (10-fx-1 y 10-fx-3)",
+  "La interfaz es limpia y pega con el resto: puntuación, récord y nivel en tipografía monoespaciada, títulos con degradado y paneles translúcidos; la pantalla de game over muestra un distintivo de NEW BEST",
+  "Pasó las 13 comprobaciones del navegador sin errores de página, y el piloto automático comió 22 veces en 40 s, así que es estable para jugar",
+  "El movimiento se ve continuo entre fotogramas, y la cabeza de la serpiente está iluminada y tiene un degradado de cian a morado a lo largo del cuerpo",
+  "Al morir hay un anillo de impacto y partículas en el punto del choque"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida son diminutas respecto al tablero, que es enorme y está casi vacío; con la cámara alta e inclinada, la serpiente se ve muy pequeña en la fila del fondo",
+  "La serpiente son esferas simples y la comida es una gema pequeña con un anillo; no se ven formas modeladas",
+  "No hay sombras proyectadas visibles y el tablero es una cuadrícula plana, con muros que solo son líneas finas de neón, así que la profundidad 3D es poca",
+  "En el teléfono en vertical, el tablero sale girado y pequeño, y la tarjeta del título lo tapa en gran parte",
+  "En las capturas no se ve que el nivel progrese (siempre nivel 1), y el fondo es sobre todo negro vacío"
+ ],
+ "oneLine": "Una serpiente neón synthwave cuidada y estable, con buen bloom y efectos al comer, pero la serpiente es diminuta en un tablero plano y demasiado grande, y el 3D es superficial, así que queda en un nivel competente pero no realmente pulido.",
+ "costUsd": 0.23323739999999998
+}

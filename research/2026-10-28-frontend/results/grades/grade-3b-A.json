@@ -1,0 +1,26 @@
+{
+ "build": "A",
+ "graphics": 7,
+ "creativity": 6,
+ "playability": 7,
+ "threeD": 6,
+ "total": 26,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "La paleta synthwave/neón es coherente: el tablero índigo, los bordes magenta y la serpiente en degradado cian-violeta combinan bien con el fondo de estrellas y la silueta oscura del planeta",
+  "El bloom está bien usado en la cabeza de la serpiente y en la comida dorada, y la comida tiene un anillo brillante en el suelo que la hace fácil de localizar",
+  "Al comer hay un efecto claro en el espacio: una onda dorada en forma de anillo con chispas que se expande y se desvanece entre 100 y 450 ms",
+  "La interfaz está cuidada y es coherente: SCORE/BEST/LEVEL en una tipografía fina, la tarjeta del título tiene letras en degradado y la pantalla de game over muestra una insignia de 'NEW BEST' y una indicación para reiniciar",
+  "La pantalla de título usa un ángulo de cámara inclinado distinto al de juego, lo que da sensación de presentación",
+  "Es estable: pasa 13/13 comprobaciones, no tiene errores de página, el piloto automático comió 22 veces en 40 s, y en un teléfono en vertical carga sin barras de desplazamiento"
+ ],
+ "weaknesses": [
+  "El tablero ocupa casi toda la pantalla, pero la serpiente se ve diminuta, sobre todo junto al borde del fondo, lo que hace que la acción se lea peor de lo debido",
+  "La geometría de la serpiente son esferas simples, y la cabeza es una mancha brillante sin forma definida ni rasgos",
+  "Apenas se ven sombras proyectadas o señales de profundidad sobre el tablero oscuro; el escenario es en esencia un plano con cuadrícula tipo Tron y un borde fino",
+  "El tema de rejilla neón es muy habitual y no aporta ideas sorprendentes más allá del bloom y el anillo al comer",
+  "En el teléfono el tablero queda pequeño e inclinado, y las etiquetas BEST/LEVEL del HUD quedan apretadas"
+ ],
+ "oneLine": "Es un snake neón pulido y estable, con buen bloom, un efecto de comer satisfactorio y un HUD coherente, aunque los modelos son simples y la serpiente se ve demasiado pequeña en un tablero genérico de cuadrícula.",
+ "costUsd": 0.23103780000000002
+}

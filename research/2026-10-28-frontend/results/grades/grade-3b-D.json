@@ -1,0 +1,26 @@
+{
+ "build": "D",
+ "graphics": 8,
+ "creativity": 8,
+ "playability": 7,
+ "threeD": 7,
+ "total": 30,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Tema 'Abyssal Glow' coherente: tablero de vidrio cian, comida en forma de medusa rosa brillante, algas, partículas bioluminiscentes y rocas low-poly enmarcando la arena",
+  "Bloom bien dosificado y paleta cian, violeta y rosa consistente en escena y HUD",
+  "HUD de paneles translúcidos pulido (Score, Level, Best), pantallas de título y de game over con insignia 'NEW BEST!' y guía de teclas",
+  "Al comer sale un anillo rosa expansivo bien visible en el espacio 3D, y la cabeza de la serpiente es una criatura con aletas, no un cubo",
+  "Estable: 13/13 checks, 0 errores, 22 comidas del autopiloto en 40 s; en vertical del teléfono se adapta bien y hay indicación para deslizar",
+  "Hay sonido con interruptor (M)"
+ ],
+ "weaknesses": [
+  "La serpiente es diminuta respecto a una cuadrícula muy grande, y en la fila del fondo, comprimida por la perspectiva, casi no se lee",
+  "El tablero vacío y oscuro ocupa gran parte de la pantalla y la jugada se siente lejana",
+  "El cuerpo de la serpiente se ve corto y poco definido como forma segmentada",
+  "La cámara parece fija en un ángulo inclinado, sin seguimiento ni reencuadre dinámico visibles",
+  "Los paneles de título y de game over tapan buena parte del tablero"
+ ],
+ "oneLine": "Un snake bioluminiscente submarino con mucha atmósfera, HUD pulido y estable, que pierde legibilidad porque la serpiente es muy pequeña en un tablero enorme visto desde lejos.",
+ "costUsd": 0.22782580000000002
+}

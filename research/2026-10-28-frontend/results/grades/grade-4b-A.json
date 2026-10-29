@@ -1,0 +1,25 @@
+{
+ "build": "A",
+ "graphics": 6,
+ "creativity": 6,
+ "playability": 6,
+ "threeD": 6,
+ "total": 24,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Paleta pastel coherente y acogedora: tablero de césped a cuadros, marco de madera, árboles low-poly, piedras y flores",
+  "HUD cohesivo con tarjetas redondeadas para score, best y level, y paneles de título y game over bien integrados con el estilo, incluida la etiqueta «New best!»",
+  "Hay piezas modeladas con algo de personalidad: fresa con hojas como comida y cabeza morada con ojos, cuerpo de segmentos esféricos de colores",
+  "Movimiento interpolado y suave entre frames (11-move-0 y 11-move-2), sombras suaves y 13/13 checks sin errores de página; el autopilot comió 24 veces en 40 s",
+  "Anillo que señala dónde chocó la cabeza en el game over"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida son diminutas frente a un tablero enorme, lo que hace la acción poco legible",
+  "No se ve ningún efecto al comer: en los frames 10-fx-1 y 10-fx-3 solo cambia el marcador",
+  "Cámara fija y alta, casi cenital, con mucho fondo beige vacío; la profundidad es limitada y no se ve postprocesado",
+  "En el teléfono el tablero queda pequeño y el panel de inicio lo tapa casi entero",
+  "Las sombras y la iluminación son discretas; los materiales son planos, sin brillo ni pulido especial"
+ ],
+ "oneLine": "Una build de tema cozy low-poly, coherente y estable, con HUD cuidado, pero la serpiente se ve diminuta en un tablero demasiado grande, no hay efectos visibles al comer y la cámara es plana: competente y agradable, aunque no llega a pulida.",
+ "costUsd": 0.22929739999999998
+}

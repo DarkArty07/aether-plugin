@@ -1,0 +1,25 @@
+{
+ "build": "F",
+ "graphics": 6,
+ "creativity": 5,
+ "playability": 7,
+ "threeD": 5,
+ "total": 23,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Paleta neón synthwave coherente: rejilla azul y magenta, bordes rosas brillantes, serpiente cian con degradado y comida dorada, con bloom bien dosificado",
+  "Buena respuesta al comer: un anillo de onda expansiva y chispas que se abren en el tablero (se ve en fx-1 y fx-3), y la comida late en un anillo dorado",
+  "HUD limpio y consistente (SCORE, BEST, LEVEL) y paneles de título y game over con estilo propio, incluida la etiqueta 'NEW BEST'",
+  "Estable: 13/13 comprobaciones, 0 errores de página y 22 comidas del autopiloto en 40 s; la vista de teléfono encaja sin scroll",
+  "La cámara del título está inclinada y en juego cambia a una perspectiva más frontal, lo que da algo de presentación"
+ ],
+ "weaknesses": [
+  "El tablero es enorme y la serpiente diminuta: en juego casi todo el encuadre es rejilla vacía y la serpiente se pierde en el borde lejano",
+  "El 3D es pobre: un plano con rejilla y esferas encadenadas, casi sin sombras, sin geometría modelada ni elementos de escena aparte del brillo difuso del fondo",
+  "El tema neón genérico (estilo Tron) no tiene ideas sorprendentes y el fondo es casi todo negro con unas pocas estrellas",
+  "En teléfono el panel del título tapa la mayor parte del tablero, que además se ve pequeño e inclinado en vertical; no se ve cómo se juega ahí",
+  "En game over el panel tapa el centro y la cabeza queda pegada al borde inferior, con poca lectura de qué la mató"
+ ],
+ "oneLine": "Un snake neón limpio y estable, con bloom y un efecto de comer bien resueltos, pero con una escena 3D plana, una serpiente demasiado pequeña para el tablero y un tema genérico que lo dejan en competente más que pulido.",
+ "costUsd": 0.23056900000000002
+}

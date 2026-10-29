@@ -1,0 +1,24 @@
+{
+ "build": "C",
+ "graphics": 6,
+ "creativity": 5,
+ "playability": 6,
+ "threeD": 5,
+ "total": 22,
+ "looksFinishedNotDemo": false,
+ "strengths": [
+  "Coherent neon look in cyan and teal: bloom on the arena walls, a glowing snake head and a pink food item",
+  "Clean, consistent HUD (score, best, level) and matching title and game-over panels, including a 'NEW BEST!' message",
+  "Eating spawns a small burst of particles, and the snake's tail fades from the head along the body",
+  "Stable in the automated run: 0 page errors, 22 foods eaten in 40 s, 12/13 checks passed, and it fits a portrait phone screen"
+ ],
+ "weaknesses": [
+  "The snake and food are tiny compared with the board, so the scene looks empty and the game is hard to read, especially on a phone",
+  "The walls' glow is too strong and outshines everything that matters to play; the palette is almost one color",
+  "Very basic 3D: flat square segments seen from almost straight above, a fixed camera, no visible shadows and no modeled shapes or scenery",
+  "Generic Tron-style neon theme with no surprising ideas; the eating effect is weak and barely shows",
+  "Fails 'Enter starts a new game at once' after game over"
+ ],
+ "oneLine": "A tidy, stable neon snake with good bloom and a cohesive HUD, but its tiny pieces, empty board and flat almost top-down 3D make it look like a polished tech demo more than a finished indie game.",
+ "costUsd": 0.22570759999999998
+}

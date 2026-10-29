@@ -1,0 +1,25 @@
+{
+ "build": "G",
+ "graphics": 7,
+ "creativity": 8,
+ "playability": 7,
+ "threeD": 7,
+ "total": 29,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Tema submarino claro y bien llevado ('Abyssal Bloom'): los textos 'Lost to the deep' y 'dive again' encajan con las algas, las rocas low-poly, las partículas brillantes y las cáusticas animadas en el suelo",
+  "Paleta coherente de azul y verde azulado, con la comida en ámbar cálido y bloom que la destaca bien sobre el fondo frío",
+  "Escenario 3D cuidado: un borde de rocas facetadas que proyectan sombra, decoración flotante a varias profundidades y una cámara en perspectiva inclinada que da profundidad real",
+  "El cuerpo de la serpiente es un tubo continuo con degradado de cian a violeta y cabeza esférica brillante; parece modelado, no hecho con cubos",
+  "Buen efecto al comer: un anillo expansivo, una ráfaga de chispas y el destello de la comida nueva. En el game over hay tinte rojo, burbujas sobre el cuerpo e insignia 'NEW BEST'",
+  "HUD limpio y coherente en paneles translúcidos; superó los 13 checks sin errores en la página y el autopiloto comió 22 veces en 40 s"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida se ven muy pequeñas frente a un tablero grande, y la comida aparece cerca de la pared del fondo, en la zona más lejana y comprimida de la perspectiva, lo que resta legibilidad",
+  "El tablero es casi monocromo y las celdas tienen poco contraste, así que la serpiente se pierde un poco en el suelo de cáusticas",
+  "En el móvil el tablero queda pequeño y la tarjeta del título tapa la mayor parte del área de juego",
+  "Las tarjetas de título y de game over tapan el centro del tablero; la decoración es bonita, pero se repiten las mismas rocas y algas"
+ ],
+ "oneLine": "Juego indie submarino pulido y coherente, con buena atmósfera y buenos efectos al comer, aunque la serpiente y la comida quedan pequeñas y algo difíciles de leer en un tablero amplio.",
+ "costUsd": 0.228949
+}

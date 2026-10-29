@@ -1,0 +1,26 @@
+{
+ "build": "A",
+ "graphics": 7,
+ "creativity": 6,
+ "playability": 7,
+ "threeD": 6,
+ "total": 26,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Paleta synthwave/neón coherente (cian, magenta, ámbar) con bloom bien dosificado en la cabeza de la serpiente, la comida y los bordes del tablero",
+  "HUD limpio y consistente (SCORE, BEST, LEVEL) con paneles translúcidos para el título y el game over, incluida una insignia 'NEW BEST'",
+  "Efecto de comer claro y legible: anillo de onda expansiva dorado con chispas que crece y se desvanece entre los 100 ms y los 450 ms",
+  "Cuerpo de la serpiente con degradado de color de cian a violeta y cabeza brillante; el movimiento se ve interpolado entre los fotogramas tomados con 160 ms de diferencia",
+  "Estable: 13/13 comprobaciones, 0 errores de página, 22 comidas del piloto automático en 40 s, y el móvil en vertical carga sin barras de desplazamiento",
+  "Pantalla de título con la cámara inclinada en otro ángulo, fondo de estrellas y un planeta oscuro que dan profundidad a la escena"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida son pequeñas frente a un tablero enorme; en la fila del fondo, lejos de la cámara, cuesta leer la acción",
+  "La geometría es básica: esferas sobre un plano con cuadrícula, sin formas modeladas ni sombras proyectadas visibles",
+  "La cámara de juego es una vista fija en picado; el tablero ocupa casi toda la pantalla y transmite poca sensación de escena 3D",
+  "El tema neón sobre cuadrícula es bastante genérico, sin una idea que sorprenda",
+  "En el móvil en vertical el tablero queda pequeño y el panel del título tapa la mayor parte"
+ ],
+ "oneLine": "Un Snake neón pulido y estable, con un HUD cohesivo y un buen efecto al comer, pero su 3D se queda en esferas sobre un tablero plano demasiado grande y el tema es poco original.",
+ "costUsd": 0.2290894
+}

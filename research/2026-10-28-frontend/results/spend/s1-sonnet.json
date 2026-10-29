@@ -1,0 +1,14 @@
+{
+ "session": "50a38c0d-bdb7-43ee-9a75-84162506d5db",
+ "usd": 4.3426298999999995,
+ "basis": "Claude Code total_cost_usd",
+ "byModel": {
+  "claude-sonnet-5-5": {
+   "usd": 4.3426298999999995,
+   "input": 142,
+   "output": 201970,
+   "cacheRead": 12655579,
+   "cacheWrite": 264272
+  }
+ }
+}

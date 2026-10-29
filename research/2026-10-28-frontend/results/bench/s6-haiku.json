@@ -1,0 +1,41 @@
+{
+ "label": "s6-haiku",
+ "checks": {
+  "loads with the debug API": true,
+  "starts on the title screen": true,
+  "Enter starts the game": true,
+  "the snake eats and grows": true,
+  "levels up after 5 foods, faster": true,
+  "Space pauses, and the snake stops": true,
+  "Space resumes": true,
+  "hitting a wall ends the game": true,
+  "the high score keeps the best score": true,
+  "Enter starts a new game at once": true,
+  "the high score survives a new game": true,
+  "loads on a phone screen": true,
+  "no scrollbars on a phone": true
+ },
+ "metrics": {
+  "foodsEaten": 24,
+  "maxLevel": 5,
+  "scoreAfterAutopilot": 700,
+  "renderInfo": {
+   "calls": 105,
+   "triangles": 16976,
+   "geometries": 25,
+   "textures": 17
+  },
+  "fps": 9.7
+ },
+ "consoleErrors": [],
+ "pageErrors": [],
+ "notes": [
+  "the snake eats and grows: 24 foods, length 27",
+  "levels up after 5 foods, faster: level 5, tickMs 90",
+  "Space pauses, and the snake stops: paused, ticks 329 then 329",
+  "the high score keeps the best score: score 700, best 700",
+  "Enter starts a new game at once: status running, score 0"
+ ],
+ "passed": 13,
+ "total": 13
+}

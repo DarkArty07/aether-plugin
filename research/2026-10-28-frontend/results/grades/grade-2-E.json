@@ -1,0 +1,27 @@
+{
+ "build": "E",
+ "graphics": 7,
+ "creativity": 8,
+ "playability": 7,
+ "threeD": 7,
+ "total": 29,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Tema submarino coherente y propio («Abyssal Bloom»): suelo con cáusticas animadas, marco de rocas low-poly, algas, motas bioluminiscentes y una paleta teal/azul consistente",
+  "La comida es un orbe dorado con bloom que contrasta bien con el fondo frío; el bloom está bien dosificado",
+  "Al comer hay un anillo de onda y un estallido de chispas que se leen bien a los 100 ms y se desvanecen hacia los 450 ms",
+  "El game over está trabajado: la escena se apaga y se tiñe de rojo, el cuerpo del snake suelta burbujas y aparece la etiqueta «NEW BEST» con un texto temático («Lost to the deep», «dive again»)",
+  "HUD de cristal limpio y coherente (score, nivel y récord), los textos de los menús encajan con el tema y hay sonido con tecla para silenciar",
+  "Estable: 13/13 checks, 0 errores en la página, 22 comidas en 40 s; el movimiento entre frames es suave y el cuerpo del snake es un tubo continuo con degradado"
+ ],
+ "weaknesses": [
+  "El snake y la comida son muy pequeños para un tablero tan grande (unas 24×20 celdas); con la cámara elevada y fija, la cabeza se pierde cerca de la pared del fondo",
+  "Las cáusticas y la cuadrícula del suelo tienen mucho ruido visual y le quitan contraste a un snake ya pequeño y pálido",
+  "El snake está poco modelado: una esfera blanca con un ojo apenas visible y un tubo corto; queda por debajo del entorno",
+  "En vertical en el móvil el tablero sale diminuto, en una franja a media pantalla, y la tarjeta del título tapa casi todo",
+  "La cámara no cambia de encuadre en ninguna captura (no sigue al snake ni se acerca), así que las capturas no muestran movimiento de cámara",
+  "El nivel sigue en 1 con 30 puntos y no se ve ninguna progresión en pantalla"
+ ],
+ "oneLine": "Un snake submarino con atmósfera, bien pulido y estable, con efectos al comer y al perder bien resueltos, pero el snake es demasiado pequeño y poco legible en un tablero enorme y con mucho ruido visual.",
+ "costUsd": 0.234649
+}

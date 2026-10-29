@@ -1,0 +1,26 @@
+{
+ "build": "B",
+ "graphics": 6,
+ "creativity": 5,
+ "playability": 6,
+ "threeD": 5,
+ "total": 22,
+ "looksFinishedNotDemo": false,
+ "strengths": [
+  "The neon cyan palette is coherent, and bloom on the arena walls gives a clear synthwave look",
+  "The HUD is cohesive: three matching glass-style panels for score, best and level, plus styled title and game-over cards with a 'NEW BEST!' message",
+  "Sparks appear on eating and on death, and the snake fades from a bright head to a teal tail",
+  "Stable at runtime: 0 page errors, 12/13 browser checks passed, and the autopilot ate 22 foods in 40 s",
+  "The perspective camera shows the board as a real 3D plane, and motion between frames looks smooth"
+ ],
+ "weaknesses": [
+  "'Enter starts a new game at once' fails, so restarting after game over is clumsy",
+  "The snake is plain cubes and the food is a small, faint pink disk that is hard to see on the board",
+  "Bloom overexposes the edges: when the snake runs along the top wall it washes into the glow and is hard to read",
+  "Little real 3D depth: almost no visible shadows, no modeled shapes, and the floor is a flat checkerboard",
+  "On a phone the board takes up only a small strip with lots of empty space, and the title card covers it",
+  "The eating effect is barely visible (a few tiny sparks), and the only theme touch is the generic neon"
+ ],
+ "oneLine": "A tidy, stable neon snake with a good HUD, but its plain shapes, faint food, washed-out bloom and slow restart make it look more like a polished demo than a finished indie game.",
+ "costUsd": 0.2233076
+}

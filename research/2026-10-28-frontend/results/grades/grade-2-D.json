@@ -1,0 +1,25 @@
+{
+ "build": "D",
+ "graphics": 7,
+ "creativity": 6,
+ "playability": 7,
+ "threeD": 6,
+ "total": 26,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "The neon synthwave palette holds together: a dark grid in magenta and blue, glowing pink edges, bright corner posts with bloom, and a starfield behind a dark planet silhouette",
+  "Eating feedback is clear and lasts: a gold shockwave ring, sparkle particles and a bright flash on the head, still visible at 450 ms",
+  "The HUD is clean and matches the theme (score, best, level). Title and game-over panels are styled consistently, and game over shows a 'NEW BEST' badge",
+  "Motion is smooth: the head is between cells in the 160 ms frames. All 13/13 browser checks pass, there are 0 page errors, and the autopilot ate 22 foods in 40 s",
+  "The food is a glowing gem with a ring under it, which makes the target easy to read"
+ ],
+ "weaknesses": [
+  "The snake is only a short chain of small spheres and looks tiny against a large board. Near the far wall it gets hard to read",
+  "The camera is a fixed, distant high-angle view. The play area fills the screen but the snake gets few pixels, and no shadows show under the snake or the food",
+  "Most of the board is empty and repeats the same pattern. Outside the board edges the scene has little 3D detail or modeled geometry",
+  "On the phone in portrait the board is small and rotated, with large empty areas above and below it",
+  "Level still shows 1 at a score of 20, so the pictures show no level progression"
+ ],
+ "oneLine": "A coherent, polished neon build with good eating effects and stable play, held back by a tiny snake made of plain spheres and a distant fixed camera that make it read as competent rather than striking.",
+ "costUsd": 0.226369
+}

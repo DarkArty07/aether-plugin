@@ -1,0 +1,26 @@
+{
+ "build": "F",
+ "graphics": 7,
+ "creativity": 7,
+ "playability": 7,
+ "threeD": 7,
+ "total": 28,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Tema propio y coherente, 'Abyssal Bloom' (fondo marino abisal), con su paleta azul y cian, rocas low-poly, algas, plancton brillante y cáusticas animadas sobre el tablero",
+  "La HUD es coherente: tarjetas translúcidas de SCORE, LEVEL y BEST, y los textos tienen voz propia ('Lost to the deep', 'dive again', distintivo NEW BEST, BEST resaltado en naranja)",
+  "Al comer hay feedback claro: un anillo de onda expansiva y una ráfaga de partículas que siguen visibles a los 450 ms, y la comida es un orbe que emite luz cálida",
+  "En el game over la escena se tiñe de rojo y la serpiente se deshace en burbujas, un detalle muy cuidado",
+  "La serpiente es un tubo suave con degradado y una cabeza esférica con ojos, no una fila de cubos, y el movimiento entre fotogramas es continuo",
+  "Pasa las 13 comprobaciones sin errores de página, el autopiloto se comió 22 comidas en 40 s, tiene sonido con tecla de silencio, controles táctiles y adaptación al móvil"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida se ven muy pequeñas frente a un tablero grande; con esta cámara inclinada y lejana cuesta leer la serpiente, sobre todo al principio",
+  "La cámara está fija: el único efecto 3D es la perspectiva inclinada y no hay movimiento de cámara visible",
+  "En vertical el tablero queda pequeño y comprimido en la parte central, con mucho espacio vacío arriba y abajo, y la tarjeta del título lo tapa",
+  "La comida aparece pegada a la pared del fondo, donde se lee peor por la perspectiva",
+  "Las sombras dentro del tablero apenas se notan; la profundidad la aportan sobre todo el bloom y la decoración"
+ ],
+ "oneLine": "Un snake pulido y con identidad propia de fondo marino, con buenos efectos al comer y al perder y una HUD coherente, aunque la serpiente diminuta y la cámara fija y lejana le restan legibilidad y presencia 3D.",
+ "costUsd": 0.2303374
+}

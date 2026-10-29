@@ -1,0 +1,8 @@
+This is an unattended experiment run for the owner, who is away: do not ask questions. Decide yourself, and list your decisions in your final message. Superdelegation is off in this session: every agent runs on Claude.
+
+The spec, the plan and the tasks in `specs/001-snake-3d/` are approved. The owner has now approved a richer art direction for the same game, `specs/001-snake-3d/art.md`: it keeps the theme "Neon Dusk", the palette and the spec, and asks for a richer scene. Make this later change with Aether's method, and stop at an approved plan:
+1. Start the Writer (`aether:writer`) to revise `plan.md` and `tasks.md` so the visual tasks implement `art.md`: change the tasks it names (8, 9, 10 and 12), add the new task for `src/render/horizon.js`, and give each change its tests (structure, names and counts that run in Node without WebGL), with the Aether fields, checked with `aether-plan check`.
+2. Commit them on `main`, then launch `/aether:design` in short mode on `specs/001-snake-3d/tasks.md`, and act on its result as your bootstrap says ("Designing", "Later changes") until it is `approved`.
+3. Commit the approved plan and tasks on `main`.
+
+Do not build anything and do not start the swarm. Do not push. End with a short summary: the paths, every verdict of the Judge, the tasks with their Area and Review, and your decisions.

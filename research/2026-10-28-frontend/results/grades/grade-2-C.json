@@ -1,0 +1,26 @@
+{
+ "build": "C",
+ "graphics": 6,
+ "creativity": 5,
+ "playability": 6,
+ "threeD": 5,
+ "total": 22,
+ "looksFinishedNotDemo": false,
+ "strengths": [
+  "La paleta neón cian, verde y rosa es coherente y se ve con claridad. El bloom de los bordes da mucha atmósfera.",
+  "El HUD es limpio y cohesivo, con tarjetas para SCORE, BEST y LEVEL. Los paneles de título y de game over están bien estilizados y el aviso NEW BEST! en dorado se ve bien.",
+  "El movimiento es suave e interpolado: en 160 ms la cabeza avanza unos pocos píxeles, no salta de casilla en casilla.",
+  "Al comer y al morir salen chispas de partículas. La cola tiene un degradado de color y la cabeza brilla.",
+  "La lógica de juego es estable: 12/13 checks, 0 errores de página y 22 comidas en 40 s. El HUD se adapta bien al móvil en vertical."
+ ],
+ "weaknesses": [
+  "El bloom es excesivo: lava el tablero en cian y deja poco contraste para la serpiente y la comida.",
+  "El 3D es básico: cubos sencillos, una comida que es un pequeño disco rosa, sombras apenas visibles y una cámara fija casi cenital con poca profundidad.",
+  "La serpiente y la comida se ven muy pequeñas respecto al tablero. Cuesta leerlas cuando están junto al borde superior brillante.",
+  "El efecto de comer es apenas un puñado de chispas que se nota poco. No hay pop ni escala, ni sacudida de cámara.",
+  "Falla el check 'Enter starts a new game at once': reiniciar tras el game over no es inmediato.",
+  "En el móvil el tablero ocupa una franja pequeña y queda mucho espacio vacío."
+ ],
+ "oneLine": "Es un snake neón estable y con un HUD cuidado, pero el bloom lo lava todo, el 3D es de cubos simples y faltan efectos con impacto, así que sigue pareciendo una demo pulida más que un juego indie terminado.",
+ "costUsd": 0.2280792
+}

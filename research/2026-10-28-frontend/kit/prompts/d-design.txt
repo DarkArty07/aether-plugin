@@ -1,0 +1,10 @@
+This is an unattended experiment run for the owner, who is away: do not ask questions. Decide yourself, and list your decisions in your final message. Superdelegation is off in this session: every agent runs on Claude.
+
+The owner has approved the spec `specs/001-snake-3d/spec.md`, and `.specify/feature.json` points at its folder. Take it to an approved plan with Aether's method, and stop there:
+1. Start the Writer (`aether:writer`) to write `specs/001-snake-3d/plan.md` and `specs/001-snake-3d/tasks.md` from the approved spec, with the Aether fields, checked with `aether-plan check`.
+2. Commit them on `main`, then launch `/aether:design` in short mode on `specs/001-snake-3d/tasks.md`, so the Judge reviews the plan and the tasks. Act on its result as your bootstrap says ("Designing", "Later changes") until it is `approved`.
+3. Commit the approved plan and tasks on `main`.
+
+Do not build anything, do not start the swarm, and do not start the Examiner: this experiment has its own hidden exam. Do not push.
+
+End with a short summary: the paths, every verdict of the Judge, the number of tasks with their Area and Review, and your decisions.

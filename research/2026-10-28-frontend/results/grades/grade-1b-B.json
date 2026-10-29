@@ -1,0 +1,25 @@
+{
+ "build": "B",
+ "graphics": 6,
+ "creativity": 6,
+ "playability": 6,
+ "threeD": 6,
+ "total": 24,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Paleta neón synthwave coherente (magenta, cian y dorado sobre azul marino) con bloom bien usado en la cabeza, la comida y los bordes del tablero",
+  "El efecto de comer está en el espacio 3D: un anillo de onda dorado que se expande y chispas, visible a los 100 ms y a los 450 ms",
+  "La comida es un diamante brillante sobre un anillo, y el cuerpo de la serpiente pasa de cian a violeta; las piezas se distinguen bien",
+  "Hay pantalla de título, game over con la marca NEW BEST y un pulso rojo en el anillo, y un HUD sencillo con puntuación, mejor marca y nivel; da sensación de juego terminado",
+  "Pasó las 13 comprobaciones del navegador sin errores de página, el autopiloto comió 22 veces en 40 s y la vista de teléfono se ve bien, sin scroll"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida son muy pequeñas frente a una cuadrícula enorme; en la fila del fondo, en perspectiva, la serpiente apenas se lee",
+  "En los fotogramas de juego casi no se ven sombras ni un anclaje claro de los objetos al suelo, así que cuesta saber dónde están en profundidad",
+  "Las formas son esferas sencillas y la cabeza es una mancha blanca brillante, sin ninguna forma modelada que le dé carácter",
+  "El escenario es casi vacío: un fondo de estrellas, un halo oscuro tenue y un tablero plano; no se ven decorados ni detalles del entorno",
+  "El panel de game over tapa la mitad del tablero, y en las capturas nunca se ve el nivel por encima de 1 ni otro cambio visual al avanzar"
+ ],
+ "oneLine": "Un snake neón limpio y estable, con bloom agradable y efectos de comida bien hechos, pero con una serpiente diminuta en un tablero grande y vacío; es competente y algo pulido, no destaca.",
+ "costUsd": 0.2306058
+}

@@ -1,0 +1,265 @@
+<title>Snake con Haiku guiado</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column for the findings, a grid of build cards scored on one 0-40 scale, then cost and caveats. */
+:root {
+  --bg: #f6f5fa;
+  --surface: #ffffff;
+  --fg: #1d1a2b;
+  --muted: #5d5873;
+  --line: #dcd8ea;
+  --accent: #c2338a;
+  --accent-2: #0f8f86;
+  --bar: #8d86ad;
+  --good: #11806f;
+  --warn: #a5590b;
+  --bad: #b3263e;
+  --display: "Chakra Petch", "Trebuchet MS", sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12101c; --surface: #1b1829; --fg: #ece9f7; --muted: #a49fbd; --line: #2f2b44;
+    --accent: #ff6fb8; --accent-2: #4fd8c9; --bar: #6d6690; --good: #4fd8a5; --warn: #f0a24a; --bad: #ff7a8f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12101c; --surface: #1b1829; --fg: #ece9f7; --muted: #a49fbd; --line: #2f2b44;
+  --accent: #ff6fb8; --accent-2: #4fd8c9; --bar: #6d6690; --good: #4fd8a5; --warn: #f0a24a; --bad: #ff7a8f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font: 17px/1.55 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 1120px; margin: 0 auto; display: grid; gap: 56px; }
+.col { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 700; letter-spacing: 0.01em; }
+h2 { font-size: 1.55rem; font-weight: 600; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p { margin: 0; }
+.eyebrow { font: 600 0.78rem/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.stack { display: grid; gap: 14px; }
+.lede { font-size: 1.2rem; color: var(--fg); }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+header { display: grid; gap: 18px; }
+.answers { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.answer { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 8px; min-width: 0; }
+.answer .q { font: 600 0.8rem/1.3 var(--mono); color: var(--muted); letter-spacing: 0.04em; }
+.answer .a { font-family: var(--display); font-size: 1.35rem; font-weight: 600; }
+.answer .a.yes { color: var(--good); }
+.answer .a.no { color: var(--bad); }
+.answer .a.mid { color: var(--warn); }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: 600 0.85rem/1 var(--body); padding: 9px 14px; background: var(--surface); color: var(--muted); border: 0; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.builds { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+.build { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; min-width: 0; }
+.build.star { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.build img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #000; }
+.build .body { padding: 14px 16px 16px; display: grid; gap: 10px; align-content: start; }
+.build .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.build .name { font-family: var(--display); font-weight: 600; font-size: 1.08rem; }
+.build .how { font-size: 0.92rem; color: var(--muted); }
+.score { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+.track { height: 8px; background: var(--line); border-radius: 4px; position: relative; overflow: hidden; }
+.track span { position: absolute; inset: 0 auto 0 0; background: var(--bar); border-radius: 4px; }
+.build.star .track span { background: var(--accent); }
+.score b { font: 600 1rem/1 var(--mono); font-variant-numeric: tabular-nums; }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.9rem; margin: 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.verdict { font-size: 0.93rem; border-left: 3px solid var(--line); padding-left: 10px; }
+.verdict.bad { border-color: var(--bad); }
+.verdict.best { border-color: var(--accent); }
+.tag { font: 600 0.72rem/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; border: 1px solid currentColor; white-space: nowrap; }
+.tag.fav { color: var(--accent); }
+.tag.broken { color: var(--bad); }
+
+.chain { display: grid; gap: 0; counter-reset: step; }
+.chain li { list-style: none; display: grid; grid-template-columns: 40px 1fr; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); }
+.chain li::before { counter-increment: step; content: counter(step); font: 600 1.1rem/1.6 var(--mono); color: var(--accent); }
+.chain { padding: 0; margin: 0; }
+.not { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.not div { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 6px; min-width: 0; }
+
+.cost { display: grid; gap: 12px; }
+.costbar { display: flex; height: 34px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.costbar span { display: block; height: 100%; }
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px 22px; font-size: 0.93rem; }
+.legend div { display: grid; grid-template-columns: 12px 1fr auto; gap: 10px; align-items: center; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: block; }
+.legend .mono { text-align: right; }
+.c-opus { background: var(--accent); }
+.c-sonnet { background: var(--accent-2); }
+.c-haiku { background: var(--warn); }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 0.93rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 0.78rem/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+
+ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; }
+a { color: var(--accent); }
+footer { font-size: 0.88rem; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .build img { transition: opacity .2s; } }
+</style>
+
+<main>
+  <header>
+    <p class="eyebrow">Experimento · 28 y 29 de octubre de 2026 · solo modelos de Claude Code</p>
+    <h1>Snake con Haiku guiado</h1>
+    <p class="lede col">¿Puede Haiku programar el resultado de un modelo mayor si lo guiamos bien, y qué aportan las skills? Nueve versiones del mismo snake en three.js, calificadas a ciegas por un Opus nuevo en cada ronda y jugadas por el dueño.</p>
+    <div class="answers">
+      <div class="answer"><span class="q">¿Haiku iguala a un modelo mayor?</span><span class="a yes">Sí, con un plan rico</span><p>Con el mismo plan, Haiku y Sonnet sacaron 27 y 27, con la misma nota en cada criterio. El dueño no ve diferencia. Programar costó US$ 1.48 con Haiku y US$ 5.55 con Sonnet.</p></div>
+      <div class="answer"><span class="q">¿Qué lo hizo posible?</span><span class="a mid">La dirección de arte</span><p>Un diseño visual detallado y con números, escrito antes del plan. Ni las herramientas ni el modelo que programa movieron la nota.</p></div>
+      <div class="answer"><span class="q">¿Qué aportan las skills?</span><span class="a no">Nada, tal como se instalan</span><p>Ningún agente abrió una sola de las 298. Leídas una por una, ninguna trata de juegos o three.js. La de dirección de arte hay que escribirla.</p></div>
+    </div>
+  </header>
+
+  <section class="stack">
+    <div class="stack col">
+      <h2>Las nueve versiones</h2>
+      <p class="muted">Nota del juez a ciegas sobre 40 (promedio de sus rondas), con el veredicto del dueño tras jugarlas. Las siete de este experimento pasan los 13 chequeos del navegador y los 25 casos del examen oculto; las dos de octubre, 12 de 13 (Aether) y 24 de 25 (normal).</p>
+    </div>
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="Captura">
+        <button type="button" id="show-play" aria-pressed="true">Jugando</button>
+        <button type="button" id="show-title" aria-pressed="false">Pantalla de título</button>
+      </div>
+    </div>
+    <div class="builds" id="builds"></div>
+  </section>
+
+  <section class="stack">
+    <div class="stack col">
+      <h2>Qué movió el resultado</h2>
+      <p>Entre «Aether guiado» (25.75) y «Haiku con plan rico» (27) solo cambió el plan, más un arreglo de infraestructura que no toca el aspecto. La dirección de arte entró por arriba y bajó en cadena:</p>
+    </div>
+    <ol class="chain col">
+      <li><div><h3>Dirección de arte (Opus)</h3><p>Sol rayado, rejilla al horizonte, montañas, figuras flotantes; serpiente con visor, luz y estela; faro en la comida; cámara más baja; exposición 1.25 y brillo medio de 35 a 70 sobre 255. Todo con números.</p></div></li>
+      <li><div><h3>Writer (Sonnet, high)</h3><p>La tradujo al plan: reescribió 4 tareas y añadió una para el mundo de fondo, con tests. Costó más porque había más que escribir, no porque pensara más.</p></div></li>
+      <li><div><h3>Haiku (high)</h3><p>Recibió el diseño dentro de cada tarea y lo construyó tal cual. Con ojos vio la cabeza blanca y la corrigió. Su forma de trabajar no cambió.</p></div></li>
+      <li><div><h3>Supervisores y revisor final</h3><p>Revisaron contra el plan rico y exigieron que se cumpliera, por ejemplo el sol tapado por el suelo.</p></div></li>
+    </ol>
+    <div class="not">
+      <div><h3>Las skills</h3><p class="muted">298 instaladas, ninguna abierta: los agentes solo ven nombres. Costaron más y sacaron menos (24.75).</p></div>
+      <div><h3>Ojos, recetas y chequeos</h3><p class="muted">Aether guiado los tuvo todos y salió igual que el normal. Sirven para corregir errores, no para embellecer.</p></div>
+      <div><h3>El modelo que programa</h3><p class="muted">Con el mismo plan, Sonnet dio el mismo juego que Haiku, a 3.7 veces el costo de programar, y se atascó en una tarea que Haiku pasó a la primera.</p></div>
+    </div>
+  </section>
+
+  <section class="cost">
+    <div class="stack col">
+      <h2>Lo que costó Haiku con plan rico</h2>
+      <p>US$ 22.17 a precio de lista: diseño US$ 11.45 y construcción US$ 10.72. Haiku es el 7 %. Lo caro es Opus.</p>
+    </div>
+    <div class="costbar" role="img" aria-label="Costo por rol: Opus 12.20, Sonnet 8.48, Haiku 1.48 dólares">
+      <span class="c-opus" style="width:28.51%" title="Revisor final 6.32"></span>
+      <span class="c-opus" style="width:18.36%;opacity:.7" title="Examiner 4.07"></span>
+      <span class="c-opus" style="width:8.16%;opacity:.45" title="Judge 1.81"></span>
+      <span class="c-sonnet" style="width:21.15%" title="Writer 4.69"></span>
+      <span class="c-sonnet" style="width:8.34%;opacity:.7" title="Supervisores 1.85"></span>
+      <span class="c-sonnet" style="width:8.75%;opacity:.45" title="Leads 1.94"></span>
+      <span class="c-haiku" style="width:6.68%" title="Haiku 1.48"></span>
+    </div>
+    <div class="legend">
+      <div><i class="c-opus"></i><span>Revisor final (Opus xhigh, 6 partes)</span><span class="mono">6.32</span></div>
+      <div><i class="c-opus" style="opacity:.7"></i><span>Examiner (Opus): no hacía falta</span><span class="mono">4.07</span></div>
+      <div><i class="c-opus" style="opacity:.45"></i><span>Judge (Opus)</span><span class="mono">1.81</span></div>
+      <div><i class="c-sonnet"></i><span>Writer (Sonnet)</span><span class="mono">4.69</span></div>
+      <div><i class="c-sonnet" style="opacity:.7"></i><span>Supervisores (Sonnet)</span><span class="mono">1.85</span></div>
+      <div><i class="c-sonnet" style="opacity:.45"></i><span>Leads de diseño y construcción (Sonnet)</span><span class="mono">1.94</span></div>
+      <div><i class="c-haiku"></i><span>Haiku, las 13 tareas</span><span class="mono">1.48</span></div>
+    </div>
+    <p class="col muted">Fuera de esa cifra: mi dirección de arte (unos US$ 1.50) y el primer diseño sobre el que se montó el plan rico (US$ 9.27). Desde cero, llegar a este resultado costó entre US$ 31 y 40. Sin el Examiner y con el revisor en Sonnet, la misma construcción podría quedar entre US$ 10 y 12; está sin probar.</p>
+  </section>
+
+  <section class="stack">
+    <h2>Lo que no está limpio</h2>
+    <ul class="plain col">
+      <li><strong>La dirección de arte la escribí yo después de ver seis juegos y las críticas del juez.</strong> Es una segunda vuelta corregida, no un primer intento. Falta probarla en una sesión limpia.</li>
+      <li><strong>El juez y los ojos miran en un navegador sin tarjeta gráfica.</strong> Sonnet solo sacó la nota más alta ahí y en el equipo del dueño sale negro.</li>
+      <li><strong>Una corrida por versión,</strong> y el juez varía uno o dos puntos entre rondas.</li>
+      <li><strong>La revisión final de Aether guiado y de Sonnet con plan rico fue una sola pasada ligera</strong> por el fallo #122, así que su costo sale más bajo de lo normal.</li>
+      <li><strong>Haiku solo no fue Haiku puro:</strong> pidió por su cuenta una revisión a un ayudante en Sonnet (US$ 1.02 de sus 2.51).</li>
+    </ul>
+  </section>
+
+  <section class="stack">
+    <h2>Siguiente prueba</h2>
+    <ul class="plain col">
+      <li><strong>Escribir la skill de dirección de arte para frontend 3D,</strong> como propuso el dueño. Debe cubrir el mundo alrededor del juego, el tamaño del protagonista en pantalla, la cámara, el brillo, los efectos por evento, un marcador legible y la lista de lo que deben mostrar las capturas, todo con números.</li>
+      <li><strong>Probarla limpia:</strong> una sesión nueva donde el Writer la tenga cargada y escriba el plan solo desde el spec, y Haiku lo construya con ojos. Si saca alrededor de 27, el método queda demostrado.</li>
+      <li><strong>Bajar el costo fijo:</strong> sin el Examiner cuando el examen ya existe y con la revisión final en Sonnet, midiendo qué deja de encontrar.</li>
+      <li><strong>Mirar en una tarjeta gráfica real</strong> antes de dar un juego por bueno.</li>
+    </ul>
+  </section>
+
+  <section class="stack">
+    <h2>Fallos de Aether encontrados</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Issue</th><th>Qué pasa</th><th>Dónde se vio</th></tr></thead>
+        <tbody>
+          <tr><td class="mono"><a href="https://github.com/DarkArty07/aether-plugin/issues/122">#122</a></td><td>Tras relanzar un run, la revisión final se planea solo con el último lanzamiento y sale como una pasada ligera.</td><td>Aether guiado; Sonnet con plan rico</td></tr>
+          <tr><td class="mono"><a href="https://github.com/DarkArty07/aether-plugin/issues/123">#123</a></td><td>Con el bin del PATH, los comandos ops los corre Haiku, que reporta como fallidos comandos que salieron bien y bloquea tareas.</td><td>Aether con skills; Aether guiado</td></tr>
+          <tr><td class="mono"><a href="https://github.com/DarkArty07/aether-plugin/issues/124">#124</a></td><td>El freno de cuota espera su propio aviso dentro de un paso de la sesión: la congela y nunca programa el aviso para reanudar.</td><td>Esta sesión, 72 minutos congelada</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="col">Precios de lista (OpenRouter, endpoint de Anthropic). Diseño y construcción en sesiones sin superdelegación ni Fable. El examen oculto y el banco del navegador son los de la prueba de octubre.</footer>
+</main>
+
+<script>
+const BUILDS = [
+  { id: 's5-rich', name: 'Haiku con plan rico', how: 'Aether guiado + dirección de arte, programa Haiku', score: 27.0, rounds: '27 · 27', cost: 'US$ 22.17 (diseño 11.45 + construcción 10.72)', time: '≈ 2 h 05 min', verdict: '«A mi parecer es el mejor. Este resultado me impresiona.»', cls: 'best', tag: 'Favorito del dueño', tagCls: 'fav', star: true },
+  { id: 's7-rich-sonnet', name: 'Sonnet con plan rico', how: 'El mismo plan y método, programa Sonnet', score: 27.0, rounds: '27 · 27', cost: 'US$ 20.23 (diseño 11.45 + construcción 8.78, revisión ligera por #122)', time: '≈ 1 h 41 min', verdict: '«No veo diferencia alguna entre Sonnet rico y Haiku rico.»', cls: '', star: true },
+  { id: 's1-sonnet', name: 'Sonnet xhigh solo', how: 'Claude normal, sin Aether', score: 28.75, rounds: '28 · 29 · 28 · 30', cost: 'US$ 4.34', time: '29 min', verdict: '«Ni lo puedo ver, me aparece todo oscuro y en pantalla negra.» Sale negro en su tarjeta gráfica.', cls: 'bad', tag: 'Negro en GPU real', tagCls: 'broken' },
+  { id: 'oct-normal', name: 'Octubre, modo normal', how: 'Opus dirige, Sonnet xhigh programa', score: 28.5, rounds: '28 · 29 · 28 · 29', cost: 'US$ 21.95', time: '2 h 18 min', verdict: '«Es el mejor, pero… el costo no está tan justificado.»', cls: '' },
+  { id: 's2-normal', name: 'Aether normal', how: 'Versión instalada, programa Haiku', score: 26.0, rounds: '26 · 26 · 26 · 26', cost: 'US$ 15.95 (diseño 9.27 + construcción 6.68)', time: '≈ 1 h 27 min', verdict: '«Aceptable… mediocre, ni sobresaliente ni malo.»', cls: '' },
+  { id: 's4-guided', name: 'Aether guiado', how: 'Ojos, recetas y chequeos, el plan normal', score: 25.75, rounds: '26 · 26 · 25 · 26', cost: 'US$ 12.27 (diseño 9.27 + construcción 3.00, revisión ligera por #122)', time: '≈ 1 h 33 min', verdict: '«Lo mismo, solo brillan las orillas, nada sobresaliente.»', cls: '' },
+  { id: 's3-skills', name: 'Aether con 298 skills', how: 'Aether normal + skills de ECC y Ponytail', score: 24.75, rounds: '24 · 23 · 26 · 26', cost: 'US$ 17.05 (diseño 9.27 + construcción 7.78)', time: '≈ 1 h 31 min', verdict: '«Exactamente igual, pero un poquito de input lag.»', cls: '' },
+  { id: 's6-haiku', name: 'Haiku xhigh solo', how: 'Claude normal, sin Aether', score: 23.0, rounds: '22 · 24', cost: 'US$ 2.51 (Haiku 1.49, un ayudante Sonnet 1.02)', time: '30 min', verdict: '«Un poco por encima de los Aether conservadores, bueno y estable, mediocre.»', cls: '' },
+  { id: 'oct-aether', name: 'Octubre, Aether', how: 'Aether de octubre, implementers en medium', score: 21.75, rounds: '22 · 22 · 21 · 22', cost: 'US$ 4.17', time: '18 min', verdict: '«Las iluminaciones no dejan jugar muy bien, está muy brillante.»', cls: 'bad' },
+]
+const grid = document.getElementById('builds')
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) }
+grid.innerHTML = BUILDS.map((b) => `
+  <article class="build${b.star ? ' star' : ''}">
+    <img src="img/${b.id}-02-play.jpg" data-play="img/${b.id}-02-play.jpg" data-title="img/${b.id}-01-ready.jpg" alt="Captura de ${esc(b.name)}" loading="lazy" width="1280" height="720">
+    <div class="body">
+      <div class="top"><span class="name">${esc(b.name)}</span>${b.tag ? `<span class="tag ${b.tagCls}">${esc(b.tag)}</span>` : ''}</div>
+      <p class="how">${esc(b.how)}</p>
+      <div class="score" aria-label="Nota del juez ${b.score} de 40"><div class="track"><span style="width:${(b.score / 40) * 100}%"></span></div><b>${b.score.toFixed(2).replace(/0$/, '')} / 40</b></div>
+      <dl class="facts"><dt>Rondas</dt><dd class="mono">${esc(b.rounds)}</dd><dt>Costo</dt><dd>${esc(b.cost)}</dd><dt>Tiempo</dt><dd>${esc(b.time)}</dd></dl>
+      <p class="verdict ${b.cls}">${esc(b.verdict)}</p>
+    </div>
+  </article>`).join('')
+const playBtn = document.getElementById('show-play')
+const titleBtn = document.getElementById('show-title')
+function show(kind) {
+  for (const img of grid.querySelectorAll('img')) img.src = img.dataset[kind]
+  playBtn.setAttribute('aria-pressed', String(kind === 'play'))
+  titleBtn.setAttribute('aria-pressed', String(kind === 'title'))
+}
+playBtn.addEventListener('click', () => show('play'))
+titleBtn.addEventListener('click', () => show('title'))
+</script>

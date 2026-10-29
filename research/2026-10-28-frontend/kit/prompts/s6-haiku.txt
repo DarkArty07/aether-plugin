@@ -1,0 +1,5 @@
+This is an unattended run: the owner is away, so do not ask questions. Decide yourself, and list your decisions in your final message.
+
+The owner has approved the spec `specs/001-snake-3d/spec.md`. Build the game it describes in this repository, on branch `main`, with the tests it needs under `test/`. Stop when the game is complete, `npm test` passes, and your work is committed. Do not push.
+
+End with a short summary: what you built, your art direction, and the test result.

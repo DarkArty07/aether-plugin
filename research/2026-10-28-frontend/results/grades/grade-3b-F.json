@@ -1,0 +1,25 @@
+{
+ "build": "F",
+ "graphics": 7,
+ "creativity": 6,
+ "playability": 7,
+ "threeD": 6,
+ "total": 26,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Paleta neón synthwave coherente (magenta/cian/violeta) con bloom bien dosificado en los postes de las esquinas, los bordes y la cabeza de la serpiente",
+  "HUD limpio y discreto (SCORE / BEST / LEVEL) y paneles de título y de game over cuidados, con títulos en degradado y el distintivo 'NEW BEST'",
+  "Buen feedback al comer: destello, anillo que se expande y chispas doradas que siguen visibles a los 450 ms; al morir, una onda expansiva y partículas",
+  "Estable según los datos: 13/13 comprobaciones, 0 errores de página y 22 comidas del autopiloto en 40 s",
+  "Fondo con estrellas y la silueta de un planeta oscuro que da algo de ambiente más allá del tablero"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida son muy pequeñas frente a un tablero enorme y vacío, que domina la imagen; se leen poco cuando están en la fila lejana",
+  "Los modelos son sencillos: la serpiente es una cadena de esferas que se van achicando, la comida un pequeño rombo con anillo y el tablero una losa con rejilla plana sin textura",
+  "Las sombras y las pistas de profundidad son débiles; aparte de los efectos, la escena parece más una rejilla en perspectiva que un mundo 3D rico",
+  "En el móvil en vertical el tablero sale pequeño e inclinado, con mucho espacio vacío alrededor",
+  "El tema neón sobre rejilla es un estilo frecuente y no tiene un giro propio"
+ ],
+ "oneLine": "Un snake neón pulido, estable y con buenos efectos al comer y al morir, aunque la serpiente es diminuta en un tablero grande y vacío y el 3D se queda en esferas sobre una rejilla.",
+ "costUsd": 0.2315974
+}

@@ -1,0 +1,27 @@
+{
+ "build": "A",
+ "graphics": 7,
+ "creativity": 7,
+ "playability": 6,
+ "threeD": 7,
+ "total": 27,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Coherent synthwave/outrun look: a neon magenta grid floor, a glowing horizon sun, wireframe mountains and a dark navy board with pink rim edges",
+  "Bloom is used well on the snake head, the food beacon and the neon edges, which gives a polished glowing look",
+  "There are several 3D depth cues: the board sits as a raised slab with beveled edges, the camera looks along it in perspective, floating rings and diamonds hang in the sky and pink spotlight beams come off the corners",
+  "The food is a tall golden light beam, so you can spot it from anywhere on the board, and eating it sends out an expanding golden ring",
+  "Title and game-over cards are styled to match, with a gradient title, a 'NEW BEST' badge and a clean SCORE/BEST/LEVEL HUD",
+  "Stable: 13/13 checks passed, no page errors and the autopilot ate 22 foods in 40 s"
+ ],
+ "weaknesses": [
+  "The low camera squashes the far rows, and the snake and food sit there in most frames, so they look tiny and hard to read",
+  "The snake is plain glowing spheres; at this distance there is no visible shaping or detail",
+  "The sky is crowded with floating rings and diamonds and the backdrop is very bright, which competes with the actual play area",
+  "The eating effect is subtle: one thin ring, with no visible particles or score popup",
+  "On a phone in portrait the board is small and the title card covers the lower part of the scene, leaving large empty grid areas",
+  "The HUD labels are very small and faint"
+ ],
+ "oneLine": "A stable, cohesive synthwave Snake with good bloom and real depth that looks like a finished game, but the low camera keeps the snake and food small and hard to read at the far end of a busy scene.",
+ "costUsd": 0.2270974
+}

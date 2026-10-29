@@ -1,0 +1,25 @@
+{
+ "build": "C",
+ "graphics": 7,
+ "creativity": 7,
+ "playability": 7,
+ "threeD": 7,
+ "total": 28,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Tema coherente y con identidad («Abyssal Glow»): fondo marino abisal con rocas low-poly, algas, partículas bioluminiscentes y bloom bien dosificado",
+  "La serpiente es un ajolote/criatura modelada (cabeza con branquias, cuerpo segmentado con degradado cian-violeta) y la comida es una medusa rosa brillante; tiene más personalidad que unos cubos",
+  "HUD de cristal cohesivo (SCORE/LEVEL/BEST), pantallas de título y de game over pulidas, con indicaciones de teclas, «NEW BEST!» e interruptor de sonido",
+  "Tablero bordeado por rocas 3D con iluminación de borde que da profundidad; los fotogramas en movimiento muestran desplazamiento interpolado y suave",
+  "Estable: 13/13 comprobaciones, 0 errores, 22 comidas del autopilot en 40 s; adaptado a móvil con texto de swipe/tap"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida son diminutas frente a un tablero enorme y vacío; cuando están en el borde lejano casi no se leen",
+  "Cámara fija en ángulo alto: el escenario se ve casi como un plano con decorado alrededor, y la perspectiva achica aún más la fila del fondo",
+  "El efecto de comer es modesto: solo un anillo rosa que se expande, sin partículas ni rebote del cuerpo apreciables",
+  "La rejilla brillante del suelo domina la imagen y aplana el tablero; dentro del área de juego faltan sombras visibles bajo la serpiente",
+  "En móvil el panel de título dice «Press the arrow keys or WASD» además del texto táctil"
+ ],
+ "oneLine": "Una build con un tema abisal bioluminiscente bien logrado y un HUD pulido que se siente como un juego terminado y estable, aunque la serpiente diminuta en un tablero grande y la cámara fija le restan legibilidad y presencia 3D.",
+ "costUsd": 0.229589
+}

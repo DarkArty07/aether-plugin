@@ -1,0 +1,25 @@
+{
+ "build": "E",
+ "graphics": 7,
+ "creativity": 6,
+ "playability": 7,
+ "threeD": 6,
+ "total": 26,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "El estilo neón synthwave es coherente: tablero índigo, bordes magenta con bloom, una cabeza cian brillante y una comida dorada que brilla bajo un cielo estrellado con la silueta de un planeta.",
+  "El efecto al comer se ve bien y dura: un anillo expansivo con chispas doradas que sigue visible a los 450 ms, y la comida tiene su propio anillo en el suelo.",
+  "El HUD es limpio y coherente: SCORE grande, BEST/LEVEL discretos, paneles semitransparentes y un distintivo NEW BEST en la pantalla de game over.",
+  "La cabeza tiene ojos y el cuerpo pasa de cian a violeta hacia la cola, así que se lee bien la dirección.",
+  "Es estable: 13/13 comprobaciones, 0 errores de página y 22 comidas en 40 s; el game over marca el choque con un anillo de impacto en la cabeza."
+ ],
+ "weaknesses": [
+  "La cámara mira casi desde arriba y el tablero ocupa toda la pantalla, así que la serpiente y la comida quedan diminutas, sobre todo cerca del borde de atrás, y el tablero se ve vacío.",
+  "La serpiente es una fila de esferas sueltas, no un cuerpo modelado; la escena tiene poca geometría aparte de la losa del tablero y los postes de las esquinas.",
+  "Las sombras y la profundidad son débiles: no hay obstáculos, relieve ni nada que dé altura a la escena.",
+  "En el teléfono en vertical el tablero sale pequeño e inclinado, con mucho espacio vacío y el panel del título tapándolo casi entero.",
+  "El tema neón sobre cuadrícula es un estilo muy visto; los toques extra son pocos y no se puede verificar sonido ni movimiento de cámara."
+ ],
+ "oneLine": "Un snake neón pulido y estable, con buen bloom, buenos efectos al comer y un HUD limpio, pero la cámara casi cenital lo deja plano y hace que la serpiente se vea demasiado pequeña sobre un tablero vacío.",
+ "costUsd": 0.2289174
+}

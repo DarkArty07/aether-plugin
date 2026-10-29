@@ -1,0 +1,10 @@
+This is an unattended experiment run for the owner, who is away: do not ask questions. Decide yourself, and list your decisions in your final message. Superdelegation is off in this session: every agent runs on Claude.
+
+The owner has approved the spec, the plan and the tasks in `specs/001-snake-3d/` and chose the swarm to build them. The integration worktree is ready: `.worktrees/integration`, on branch `feature/snake`, with the plan committed and `node_modules` installed. This session runs in the main checkout, so the agents may read and edit both.
+
+Load the `aether:swarm` skill and follow it from "Compile" to "Finish":
+1. From the integration worktree, compile with `aether-plan compile specs/001-snake-3d/tasks.md --no-lanes`, and launch the `aether:run` workflow with the JSON it prints.
+2. Read the result and act on it as the skill says, until every unit is merged, the final review has no open critical or important finding, and the test command passes on `feature/snake`.
+3. Finish as the skill's "Finish" says, but keep the branch: do not merge into `main`, do not push, and do not delete `feature/snake`.
+
+Do not schedule wakeups: the workflow's notification wakes you. End with a short summary: the units merged, climbed, escalated and blocked; the final review's verdict and what you fixed after it; the test result; and the report's time and cost.

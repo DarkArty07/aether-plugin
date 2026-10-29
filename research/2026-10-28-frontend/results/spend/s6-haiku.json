@@ -1,0 +1,21 @@
+{
+ "session": "cd031afe-a7fa-4bcc-ac90-c7de052035a0",
+ "usd": 2.5068076799999996,
+ "basis": "Claude Code total_cost_usd",
+ "byModel": {
+  "claude-haiku-5-5": {
+   "usd": 1.4863858799999996,
+   "input": 182,
+   "output": 215366,
+   "cacheRead": 18073736,
+   "cacheWrite": 279494
+  },
+  "claude-sonnet-5-5": {
+   "usd": 1.0204217999999998,
+   "input": 32,
+   "output": 62508,
+   "cacheRead": 1063053,
+   "cacheWrite": 115589
+  }
+ }
+}

@@ -1,0 +1,1 @@
+Run exactly this one Bash command and reply only with its output: echo "SD=$AETHER_SUPERDELEGATION H=$AETHER_LANE_HARNESSES DATA=$AETHER_DATA_DIR IRR=$AETHER_IRREVERSIBLE"

@@ -1,0 +1,26 @@
+{
+ "build": "A",
+ "graphics": 6,
+ "creativity": 5,
+ "playability": 6,
+ "threeD": 5,
+ "total": 22,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Paleta pastel coherente y acogedora: tablero de césped a cuadros, marco de madera, fondo crema y HUD en tarjetas redondeadas con el mismo estilo",
+  "Las pantallas de título y de game over están cuidadas: botones claros, insignia 'New best!' y la ayuda de controles abajo",
+  "Pasa las 13 comprobaciones del navegador sin errores de página; el autopiloto comió 24 veces en 40 s, así que se puede jugar de forma estable",
+  "Hay detalles modelados como la fresa con hojas, los árboles low-poly con sombra suave, piedras y flores, y la cabeza del snake con ojos",
+  "El anillo de onda alrededor de la cabeza al morir da algo de feedback espacial"
+ ],
+ "weaknesses": [
+  "El snake y la comida se ven diminutos frente al tablero enorme; la mayor parte de la pantalla es césped vacío y el jugador cuesta de leer",
+  "El efecto al comer apenas se nota: las capturas a 100 ms y 450 ms después de comer casi no muestran nada",
+  "Los colores de los segmentos (morado, verde azulado, beige, amarillo) parecen cuentas sueltas en vez de un cuerpo continuo",
+  "Cámara fija y elevada, sin postprocesado visible; la escena es plana y casi sin profundidad aparte de las sombras suaves",
+  "En el móvil el tablero queda pequeño en la mitad de la pantalla, con mucho espacio vacío arriba y abajo",
+  "El decorado fuera del tablero es escaso: unos pocos árboles y piedras sobre un fondo liso"
+ ],
+ "oneLine": "Un snake estable y bien presentado con un estilo pastel coherente, pero la serpiente se ve diminuta en un tablero enorme, el efecto al comer es débil y la cámara es fija, así que queda en un nivel competente y no pulido.",
+ "costUsd": 0.2299174
+}

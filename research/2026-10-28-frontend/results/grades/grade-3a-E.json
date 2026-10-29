@@ -1,0 +1,26 @@
+{
+ "build": "E",
+ "graphics": 6,
+ "creativity": 5,
+ "playability": 5,
+ "threeD": 5,
+ "total": 21,
+ "looksFinishedNotDemo": false,
+ "strengths": [
+  "Coherent neon look: cyan glowing walls, a dark checkerboard floor and a pink food pickup",
+  "Cohesive HUD with score, best and level panels, plus clean title and game-over overlays that show a 'NEW BEST!' message",
+  "Bloom glow and small particle bursts when eating and at game over",
+  "Stable run: 0 page errors and 22 foods eaten by the autopilot in 40 s",
+  "Grid and HUD adapt to a portrait phone screen"
+ ],
+ "weaknesses": [
+  "The wall bloom is too strong and draws the eye away from the play area",
+  "The snake is made of plain pale-teal boxes with washed-out colors and blends into the cyan floor, so it is hard to read",
+  "Food is a tiny pink disc that is hard to see; eating effects are very small and short",
+  "No visible shadows or modeled shapes; the 3D is plain boxes on a plane with a fixed high camera, and the scene around the board is empty",
+  "Failed check: Enter does not start a new game at once after game over",
+  "On a phone the board is small and the title overlay covers most of it"
+ ],
+ "oneLine": "A coherent neon look with a tidy HUD, but the snake and food are hard to read, the 3D is plain boxes under too much bloom, and Enter does not start a new game at once after game over, so it looks more like a styled tech demo than a finished indie game.",
+ "costUsd": 0.2258876
+}

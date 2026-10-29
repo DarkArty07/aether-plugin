@@ -1,0 +1,7 @@
+{
+  "rungs": [
+    { "step": "sonnet", "model": "sonnet", "corrections": 5, "effort": { "first": "high", "retry": "xhigh" } },
+    { "step": "opus", "model": "opus", "corrections": 1, "effort": { "first": "high", "retry": "high" } }
+  ],
+  "repeatFindings": 2
+}

@@ -1,0 +1,26 @@
+{
+ "build": "A",
+ "graphics": 7,
+ "creativity": 7,
+ "playability": 7,
+ "threeD": 7,
+ "total": 28,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Tema coherente de fondo marino («Abyssal Bloom») con su propia paleta: rocas low-poly, algas, partículas brillantes que flotan y cáusticas animadas sobre el suelo del tablero",
+  "Comida brillante con bloom y un efecto de comer en el espacio 3D: un anillo que se expande y una explosión de partículas",
+  "HUD limpio y coherente (puntuación, nivel y récord en cápsulas) y textos con personalidad, como «Lost to the deep» o «dive again», además de la insignia NEW BEST",
+  "El game over tiñe la escena de rojo y disuelve la serpiente en burbujas, y la pantalla de título anuncia controles y sonido",
+  "13/13 comprobaciones del navegador sin errores de página; el piloto automático comió 22 veces en 40 s, así que el juego es estable",
+  "Profundidad bien conseguida: cámara inclinada, sombras, bordes de rocas facetadas y escenario decorado alrededor del tablero"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida son muy pequeñas frente a un tablero grande y casi vacío; cuesta leerlas y quedan algo perdidas en la escena",
+  "La serpiente es un simple tubo con degradado y cabeza esférica, con poco modelado o detalle",
+  "El tablero ocupa la mayor parte de la pantalla con una rejilla repetitiva, lo que deja poco foco visual en la acción",
+  "En el móvil en vertical el tablero se ve pequeño y apretado, y la tarjeta del título lo tapa casi entero",
+  "Los paneles superpuestos de título y game over tapan el centro del tablero"
+ ],
+ "oneLine": "Una versión pulida y estable con un tema submarino distintivo y buenos efectos de comer y de game over, aunque la serpiente diminuta en un tablero enorme le resta legibilidad y presencia.",
+ "costUsd": 0.22745739999999998
+}

@@ -1,0 +1,41 @@
+{
+ "label": "oct-aether",
+ "checks": {
+  "loads with the debug API": true,
+  "starts on the title screen": true,
+  "Enter starts the game": true,
+  "the snake eats and grows": true,
+  "levels up after 5 foods, faster": true,
+  "Space pauses, and the snake stops": true,
+  "Space resumes": true,
+  "hitting a wall ends the game": true,
+  "the high score keeps the best score": true,
+  "Enter starts a new game at once": false,
+  "the high score survives a new game": true,
+  "loads on a phone screen": true,
+  "no scrollbars on a phone": true
+ },
+ "metrics": {
+  "foodsEaten": 22,
+  "maxLevel": 5,
+  "scoreAfterAutopilot": 600,
+  "renderInfo": {
+   "calls": 38,
+   "triangles": 5818,
+   "geometries": 18,
+   "textures": 16
+  },
+  "fps": 22.5
+ },
+ "consoleErrors": [],
+ "pageErrors": [],
+ "notes": [
+  "the snake eats and grows: 22 foods, length 25",
+  "levels up after 5 foods, faster: level 5, tickMs 90",
+  "Space pauses, and the snake stops: paused, ticks 331 then 331",
+  "the high score keeps the best score: score 600, best 600",
+  "Enter starts a new game at once: status ready, score 0"
+ ],
+ "passed": 12,
+ "total": 13
+}

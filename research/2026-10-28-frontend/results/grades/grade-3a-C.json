@@ -1,0 +1,26 @@
+{
+ "build": "C",
+ "graphics": 7,
+ "creativity": 6,
+ "playability": 7,
+ "threeD": 6,
+ "total": 26,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Consistent neon synthwave look: magenta glowing border, blue checker grid, a starfield and a dark planet behind the board, with bloom used well on the head and food",
+  "Polished HUD: SCORE, BEST and LEVEL in a monospace font, translucent title and game-over panels, a 'NEW BEST' badge and a gradient title",
+  "Clear eating feedback: an expanding gold ring in space with sparkles, plus a red impact ring when the snake dies",
+  "The snake is made of glowing spheres that shade from cyan to violet, and the food is a glowing gem on a floating ring",
+  "The camera turns the board on the title screen, and the board is a thick slab with depth",
+  "Stable: 13/13 browser checks, no page errors, and the autopilot ate 22 foods in 40 s"
+ ],
+ "weaknesses": [
+  "The snake and food are tiny next to a huge, mostly empty grid; at the far edge they are hard to read",
+  "The scene is very dark and blue-on-blue, with almost no visible shadows to anchor objects to the floor",
+  "The 3D is basic: plain spheres and a flat board with no props, terrain or modeled snake head",
+  "On a phone in portrait the board is small and tilted, with a lot of empty black space",
+  "The neon grid theme is common; the extra touches are limited to a ring and some sparkles"
+ ],
+ "oneLine": "A tidy, stable neon arena with a good HUD and a pleasant eating ring, but the snake is small, the scene is dark and simple, and the 3D does not go beyond spheres on a grid.",
+ "costUsd": 0.2258174
+}

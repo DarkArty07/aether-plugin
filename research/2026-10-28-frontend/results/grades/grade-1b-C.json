@@ -1,0 +1,26 @@
+{
+ "build": "C",
+ "graphics": 7,
+ "creativity": 6,
+ "playability": 7,
+ "threeD": 6,
+ "total": 26,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Paleta neón synthwave coherente: tablero en retícula magenta y azul, bordes con brillo y un bloom usado con mesura en la cabeza y la comida",
+  "El cuerpo de la serpiente son cuentas brillantes con degradado de cian a violeta, y la cabeza se distingue claramente",
+  "Al comer hay feedback claro: anillo de onda dorado y chispas que siguen visibles 450 ms después, y la comida brilla y gira sobre un anillo",
+  "HUD limpio y consistente (SCORE, BEST, LEVEL), título con texto en degradado y distintivo 'NEW BEST' en la pantalla de game over",
+  "Estable: 13/13 checks, 0 errores, 22 comidas en 40 s; los fotogramas de movimiento muestran un desplazamiento suave e interpolado",
+  "El tablero inclinado y girado en la pantalla de título, más el fondo de estrellas, da algo de presentación"
+ ],
+ "weaknesses": [
+  "La cámara está lejos y la serpiente se ve diminuta, sobre todo en la fila del fondo; una retícula plana enorme ocupa casi toda la pantalla",
+  "Escena 3D escasa: el tablero solo tiene un borde fino, no hay obstáculos ni decorado, y la serpiente y la comida son esferas sencillas",
+  "Sombras y señales de profundidad débiles; la elipse oscura que hay detrás del tablero queda como una mancha sin sentido",
+  "En el móvil el tablero sale pequeño, inclinado y tapado casi por completo por el panel de título",
+  "La pantalla de game over tapa la mayor parte del tablero; el tema es el look neón genérico, con pocos toques propios"
+ ],
+ "oneLine": "Un snake neón pulido y estable, con bloom agradable y efecto de comida bien resuelto, pero la cámara lejana, la serpiente diminuta y una escena 3D escasa lo dejan en un nivel competente, no excelente.",
+ "costUsd": 0.2290374
+}

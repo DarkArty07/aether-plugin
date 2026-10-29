@@ -1,0 +1,25 @@
+{
+ "build": "A",
+ "graphics": 7,
+ "creativity": 7,
+ "playability": 6,
+ "threeD": 7,
+ "total": 27,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "Estética synthwave coherente: rejilla neón magenta, sol en el horizonte, montañas de alambre y bloom bien aplicado",
+  "Escena 3D rica con profundidad: tablero con bordes en relieve, haces de luz, formas flotantes (anillos, cubos, diamantes) y partículas en el espacio",
+  "Efecto al comer visible y espacial: anillo dorado expansivo en el suelo y la comida marcada con un haz vertical que la hace fácil de localizar",
+  "HUD limpio y discreto (score, best, level) y paneles de título y game over pulidos, con insignia NEW BEST",
+  "Estabilidad sólida: 13/13 checks, 0 errores, 22 comidas en 40 s; el movimiento entre fotogramas se ve interpolado y fluido"
+ ],
+ "weaknesses": [
+  "La cámara baja y lejana deja la serpiente diminuta en el fondo del tablero mientras juega, lo que pesa en la legibilidad",
+  "El tablero ocupa mucho espacio en perspectiva con el lado lejano muy comprimido, lo que dificulta juzgar las distancias cerca de la pared del fondo",
+  "El fondo está recargado: formas flotantes cortadas en el borde superior que compiten con el área de juego",
+  "En el móvil vertical el tablero queda pequeño y arriba, con media pantalla de rejilla vacía debajo",
+  "La serpiente es una cadena simple de esferas con brillo, sin cabeza modelada ni más carácter"
+ ],
+ "oneLine": "Un Snake synthwave con atmósfera neón cohesionada, bloom y buenos efectos espaciales que parece un juego terminado, aunque la cámara lejana vuelve la serpiente pequeña y el fondo recargado le resta legibilidad.",
+ "costUsd": 0.2281206
+}

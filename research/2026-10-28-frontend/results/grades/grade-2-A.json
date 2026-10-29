@@ -1,0 +1,25 @@
+{
+ "build": "A",
+ "graphics": 7,
+ "creativity": 6,
+ "playability": 7,
+ "threeD": 6,
+ "total": 26,
+ "looksFinishedNotDemo": true,
+ "strengths": [
+  "La paleta neón synthwave es coherente: tablero de cuadrícula azul y magenta, bordes que brillan, fondo de estrellas y un bloom bien usado en la comida y en la cabeza de la serpiente",
+  "Al comer hay un anillo expansivo de onda y chispas (visibles a 100 ms y a 450 ms), y la comida es un diamante dorado brillante sobre un anillo, así que el feedback se lee claro",
+  "El HUD es discreto y uniforme (SCORE, BEST y LEVEL), y las pantallas de título y de game over usan un panel translúcido con texto en degradado y una insignia 'NEW BEST'",
+  "Es estable: 13/13 comprobaciones, 0 errores de página y 22 comidas del autopiloto en 40 s. Se juega en móvil sin barras de scroll",
+  "El movimiento se ve fluido entre fotogramas y la serpiente tiene segmentos en degradado que se afinan hacia la cola"
+ ],
+ "weaknesses": [
+  "La serpiente y la comida son diminutas frente a un tablero enorme y repetitivo. Casi toda la pantalla es cuadrícula vacía y la acción queda apretada en el fondo, que se ve lejano y comprimido por la perspectiva",
+  "Las formas 3D son básicas (esferas y una losa plana). Casi no hay sombras ni pistas de profundidad, y no hay elementos modelados ni decoración en la escena",
+  "El tema neón sobre cuadrícula es un estilo muy visto, con pocos toques propios",
+  "En móvil el tablero queda pequeño, inclinado y tapado en su mayor parte por la tarjeta del título",
+  "El semicírculo oscuro del fondo se ve como una mancha poco definida, no como un elemento intencional"
+ ],
+ "oneLine": "Es una build neón pulida y estable, con buen bloom y un efecto de comer claro, pero la cámara lejana, un tablero grande y vacío y una geometría simple de esferas la dejan en competente y pulida, no en destacada.",
+ "costUsd": 0.231929
+}
