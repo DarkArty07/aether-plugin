@@ -41,9 +41,10 @@ test('the procedure of a run is in the skill, and what holds outside a run stays
   assert.ok(fs.existsSync(path.join(PLUGIN, 'skills', 'autonomous-runs', 'SKILL.md')))
 })
 
-test('the bootstrap carries the scope instruction and weighs less than the 29,470 bytes of 0.10.0 (R10, C4)', () => {
+// The 29,470 bytes of 0.10.0 (R10, C4), plus the owner's placement rule of spec 021 (A99), raised to 30,000 on 2026-10-29.
+test('the bootstrap carries the scope instruction and weighs less than 30,000 bytes (R10, C4, spec 021)', () => {
   assert.ok(BOOTSTRAP.includes(SCOPE))
-  assert.ok(fs.statSync(FILE).size < 29470, `${fs.statSync(FILE).size} bytes`)
+  assert.ok(fs.statSync(FILE).size < 30000, `${fs.statSync(FILE).size} bytes`)
 })
 
 test('understanding the intent: research before a policy change, plain numbered write-back, and the card only after the owner confirms it (issue 96)', () => {
