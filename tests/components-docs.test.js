@@ -84,7 +84,7 @@ test('the components page lists every verb of aether-delegate, and the mod hands
   const row = components.split('\n').find((line) => line.startsWith('| `aether-delegate` |'))
   assert.ok(row, 'the page has a row for aether-delegate')
   const verbs = [...read('plugins', 'aether', 'bin', 'aether-delegate').matchAll(/^\/\/ aether-delegate (\w+)/gm)].map((m) => m[1])
-  assert.deepEqual(verbs.sort(), ['answer', 'begin', 'renew', 'run', 'start', 'verdict', 'wait'])
+  assert.deepEqual(verbs.sort(), ['answer', 'authorize', 'begin', 'renew', 'run', 'start', 'verdict', 'wait'])
   for (const verb of verbs) assert.ok(row.includes(`\`${verb}\``), `the row names ${verb}`)
   assert.ok(row.includes('guide/delegates.md'), 'the row links the delegates guide')
   const mod = components.split('\n').find((line) => line.startsWith('| Usage meter and ops |'))

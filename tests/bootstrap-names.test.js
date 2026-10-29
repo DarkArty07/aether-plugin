@@ -235,7 +235,7 @@ test('the sources of the bootstrap and the swarm skill name no path of this repo
   }
 })
 
-test('the bootstrap sends every delegate through Agent, judges it with aether-delegate verdict, and merges an editing one by hand', () => {
+test('the bootstrap sends every delegate through Agent, judges it with aether-delegate verdict, merges an editing one by hand, and stays under 30000 bytes', () => {
   const text = USING_SOURCE
   for (const needed of [
     '**Delegates go through `Agent`:**',
@@ -252,7 +252,8 @@ test('the bootstrap sends every delegate through Agent, judges it with aether-de
     'it spends none of the step\'s corrections',
     'Plan tasks you build as delegate tasks follow "The delegate ladder"',
   ]) assert.ok(text.includes(needed), needed)
-  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')).size < 29470)
+  // The 29,470 bytes of 0.10.0 plus the owner's placement rule of spec 021 (A99), raised to 30,000 with the same cap as bootstrap-design.test.js.
+  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')).size < 30000)
 })
 
 test('every flag of aether-delegate verdict that the bootstrap shows is in the usage of the command', (t) => {
