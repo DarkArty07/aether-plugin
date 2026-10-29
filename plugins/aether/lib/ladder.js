@@ -49,8 +49,11 @@ function rungIndex(ladder, step) {
   return index
 }
 
-function newState(ladder) {
-  return { step: ladder.rungs[0].step, attempts: 0, correctionsUsed: 0, repeats: 0, lastKeys: null, status: 'open' }
+// The state of a task that has not been judged yet. `step` is the rung the task starts on (spec 021); without one, or with
+// one the ladder does not have, it is the first rung.
+function newState(ladder, step = null) {
+  const start = ladder.rungs.some((rung) => rung.step === step) ? step : ladder.rungs[0].step
+  return { step: start, attempts: 0, correctionsUsed: 0, repeats: 0, lastKeys: null, status: 'open' }
 }
 
 function effortFor(ladder, step, launchKind) {
@@ -144,9 +147,10 @@ function judge(state, verdict, ladder) {
   return judgeFix(state, verdict, ladder, carry)
 }
 
-// Folds the recorded verdict inputs (the `input` field of each verdict entry) to the state the judging left.
-function stateOf(inputs, ladder) {
-  let state = newState(ladder)
+// Folds the recorded verdict inputs (the `input` field of each verdict entry) to the state the judging left, from the
+// step the task started on (see newState).
+function stateOf(inputs, ladder, step = null) {
+  let state = newState(ladder, step)
   for (const input of inputs) {
     const answer = judge(state, input, ladder)
     if (answer.accepted) state = answer.state

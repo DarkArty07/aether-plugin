@@ -131,3 +131,30 @@ test('stateOf folds the recorded inputs to the state the judging left', () => {
   assert.deepEqual(ladder.stateOf(inputs, L), direct)
   assert.equal(ladder.stateOf(inputs, L).step, 'sonnet')
 })
+
+test('newState and stateOf take the step a task starts on; without one, or with an unknown one, the first rung (spec 021, item 10)', () => {
+  assert.deepEqual(ladder.newState(L), ladder.newState(L, null))
+  assert.equal(ladder.newState(L, 'opus').step, 'opus')
+  assert.equal(ladder.newState(L, 'nope').step, 'haiku')
+  const inputs = [1, 2, 3].map((n) => fix(n))
+  assert.deepEqual(ladder.stateOf(inputs, L, undefined), ladder.stateOf(inputs, L))
+  assert.equal(ladder.stateOf([], L, 'sonnet').step, 'sonnet')
+  assert.equal(ladder.stateOf([], L, 'nope').step, 'haiku')
+})
+
+test('a task that starts on Opus has one correction and then is exhausted; one that starts on Sonnet has two and rises to Opus (spec 021, item 10)', () => {
+  let state = ladder.newState(L, 'opus')
+  const opusAnswers = [fix(1), fix(2)].map((v) => {
+    const answer = ladder.judge(state, v, L)
+    if (answer.accepted) state = answer.state
+    return answer
+  })
+  assert.deepEqual(opusAnswers.map((a) => [a.next.kind, a.next.step, a.next.cause]), [['fix', 'opus', 'fix'], ['exhausted', null, 'exhausted']])
+  state = ladder.newState(L, 'sonnet')
+  const sonnetAnswers = [fix(1), fix(2), fix(3)].map((v) => {
+    const answer = ladder.judge(state, v, L)
+    if (answer.accepted) state = answer.state
+    return answer
+  })
+  assert.deepEqual(sonnetAnswers.map((a) => [a.next.kind, a.next.step]), [['fix', 'sonnet'], ['fix', 'sonnet'], ['rise', 'opus']])
+})
