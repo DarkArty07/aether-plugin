@@ -17,7 +17,7 @@ const ID_RE = /^[A-Za-z0-9_-]+$/
 // The reason verifyQuote gives when the session's transcript cannot be read (the autonomy rule `transcript-gone`).
 const NO_TRANSCRIPT = 'no transcript for session '
 
-const fold = (text) => String(text).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+const fold = (text) => String(text).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 const wordsOf = (text) => fold(text).replace(/[^a-z0-9]+/g, ' ').trim()
 
 // Whether the text names the model as a word, accents and case folded: «Opus», «en opus», «Opus 5.5» and «claude-opus-5-5»

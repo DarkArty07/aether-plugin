@@ -14,8 +14,8 @@
 // The delegate tasks of the Lead on the ladder. begin says how the attempt the mod caught runs (lib/delegate-task.js);
 // verdict records the Lead's judgment of the last attempt, which is the only one that counts, and says what the next
 // launch is; authorize records the owner's words that place a task, or the session, on a model above the first rung
-// (lib/delegate-authorize.js), and prints one JSON line and exits 0 for an ok and for a refusal; start launches run in a process of its own and returns at once, run does the attempt on an external pair
-// (lib/delegate-run.js), and wait polls for its result for up to n seconds (540 at most); answer records the final
+// (lib/delegate-authorize.js; a refusal prints its error and exits 0); start launches run in a process of its own and
+// returns at once, run does the attempt on an external pair (lib/delegate-run.js), and wait polls for its result for up to n seconds (540 at most); answer records the final
 // answer of a read-only delegate that ran on Claude; renew takes a new quota reading of agy, grok or muse and saves it where
 // the pair choice reads it. start and run work in the current directory. None of them merges or pushes. Each prints one
 // JSON line and exits 0, except a wrong use or an error of its own, which prints { "error": <message> } and exits 1.
