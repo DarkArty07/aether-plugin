@@ -16,6 +16,7 @@ const { isObject, isText, messageOf, sleep: realSleep } = require('./common.js')
 const log = require('./delegate-log.js')
 const { isLaunch } = log
 const ladderLib = require('./ladder.js')
+const auth = require('./delegate-authorize.js')
 const checks = require('./delegate-checks.js')
 const lanes = require('./lanes.js')
 const { git, repoPaths } = require('./git.js')
@@ -114,7 +115,8 @@ function defaultPickPair({ dataDir, now, settings, pairs, lanesConfig }) {
 function resolve(deps) {
   const dataDir = deps.dataDir || require('./run.js').dataDir()
   const now = deps.now || Date.now
-  return { dataDir, now, cwd: deps.cwd || process.cwd(), ladder: deps.ladder || ladderLib.loadLadder() }
+  // configDir is the Claude config directory the owner's transcripts are read from (by default, CLAUDE_CONFIG_DIR).
+  return { dataDir, now, cwd: deps.cwd || process.cwd(), configDir: deps.configDir, ladder: deps.ladder || ladderLib.loadLadder() }
 }
 
 // What begin reads besides: the session's settings, the id of a task with none, and the pair step.
@@ -253,11 +255,14 @@ function emptyPlan(fields) {
   return { id: null, skip: false, step: null, kind: null, attempt: null, args: null, notes: [], external: null, answerOf: null, ...fields }
 }
 
-function requestedOf(event, args) {
+// The request of the call and whether the launch ignored it. A model the owner's authorization covers (`covered`) is honored
+// when it names the step's model (spec 021: claude-opus-5-5 is opus).
+function requestedOf(event, args, covered = false) {
   const model = isText(event.model) ? event.model : null
   const effort = isText(event.effort) ? event.effort : null
   if (!model && !effort) return { requested: null, ignored: false }
-  return { requested: { model, effort }, ignored: (model !== null && model !== args.model) || (effort !== null && effort !== args.effort) }
+  const modelIgnored = model !== null && model !== args.model && !covered
+  return { requested: { model, effort }, ignored: modelIgnored || (effort !== null && effort !== args.effort) }
 }
 
 function namedAgent(event) {
@@ -326,12 +331,13 @@ function relaunchOf(dataDir, session, id, brief) {
   return matching.reverse().find((task) => !approved.has(task)) ?? null
 }
 
-// What the next launch of the task is, read back from its log: { status, step, launchKind, verdict, attempt }.
-function nextLaunch(entries, ladder) {
+// What the next launch of the task is, read back from its log: { status, step, launchKind, verdict, attempt }. A first
+// launch starts on `firstStep` (the rung the owner placed it on, or the first one); later ones on the step it starts on.
+function nextLaunch(entries, ladder, { firstStep, configDir }) {
   const launches = entries.filter(isLaunch)
   const attempt = launches.length + 1
-  if (launches.length === 0) return { status: 'open', step: ladder.rungs[0].step, launchKind: 'first', verdict: null, attempt }
-  const state = ladderLib.stateOf(verdictInputs(entries), ladder)
+  if (launches.length === 0) return { status: 'open', step: firstStep, launchKind: 'first', verdict: null, attempt }
+  const state = ladderLib.stateOf(verdictInputs(entries), ladder, auth.startStepOf(entries, ladder, configDir))
   if (state.status !== 'open') return { status: state.status, step: null, launchKind: 'refused', verdict: null, attempt }
   const lastLaunch = lastOf(entries, isLaunch)
   const lastVerdict = lastOf(entries, (e) => e.kind === 'verdict')
@@ -363,6 +369,29 @@ function stepNote(id, step, attempt, launchKind, args, pick) {
   return `Aether delegate task ${id}: step ${step}, attempt ${attempt} (${launchKind}), runs ${where}. Judge it with aether-delegate verdict --task ${id}.`
 }
 
+// The owner's placement of a first launch (spec 021): the rung the call asks for above the first one, and the authorization
+// that covers it. A generated id has no task authorization (its brief names no id). Null when the task has launched already,
+// or the call asks for no such rung.
+function placementOf(r, entries, session, event, brief) {
+  if (entries.some(isLaunch)) return null
+  const rung = auth.requestedRung(r.ladder, event.model)
+  if (!rung) return null
+  const lines = log.readEntries(r.dataDir, { session })
+  return { rung, cover: auth.coverOf(lines, { session, task: brief.task, rung, ladder: r.ladder, configDir: r.configDir }) }
+}
+
+// What a launch records of the authorization that places its task: the line's own fields, never the whole line.
+const authorizedLine = (line) => ({ model: line.model, scope: line.scope, task: line.task, quote: line.quote, quoteTime: line.quoteTime })
+
+// The note the Lead reads on a first launch the owner asked to place above the first rung.
+function placementNote(id, rung, cover, args, brief) {
+  if (cover) {
+    return `Aether delegate task ${id}: the owner's word places it on ${rung.model} (${cover.scope === 'task' ? 'this task' : 'the session'}), so it runs on claude ${args.model} ${args.effort} by that word.`
+  }
+  const grant = brief.task === null ? '--scope session' : `--task ${brief.task} or --scope session`
+  return `Aether delegate task ${id}: no owner authorization covers ${rung.model}, so it started on ${args.model} and the request is ignored. To place it on ${rung.model}, record the owner's words that name it: aether-delegate authorize --model ${rung.model} --quote <the owner's words> (${grant}).`
+}
+
 async function begin(input, deps = {}) {
   let id = null
   try {
@@ -380,7 +409,9 @@ async function begin(input, deps = {}) {
       notes.push(`Aether delegate task ${id}: pass it to aether-delegate verdict`)
     }
     const entries = taskEntries(r.dataDir, id, session)
-    const next = nextLaunch(entries, r.ladder)
+    const placed = placementOf(r, entries, session, event, brief)
+    const cover = placed && placed.cover
+    const next = nextLaunch(entries, r.ladder, { firstStep: cover ? placed.rung.step : r.ladder.rungs[0].step, configDir: r.configDir })
     const edits = brief.owns.length > 0
     const description = typeof event.description === 'string' ? event.description : ''
     const ctx = { id, session, event, brief, edits, description, notes, attempt: next.attempt }
@@ -389,7 +420,11 @@ async function begin(input, deps = {}) {
     const { step, launchKind, attempt } = next
     const effort = ladderLib.effortFor(r.ladder, step, launchKind)
     const args = { model: rungOf(r.ladder, step).model, effort }
-    const { requested, ignored } = requestedOf(event, args)
+    // The owner's placement of this task: the authorization of its first launch (spec 021), kept by every later attempt.
+    const authorized = cover && launchKind === 'first' ? authorizedLine(cover) : auth.authorizedOf(entries)
+    const covered = authorized !== null && auth.namedRung(r.ladder, event.model)?.model === args.model
+    const { requested, ignored } = requestedOf(event, args, covered)
+    if (launchKind === 'first' && placed) notes.push(placementNote(id, placed.rung, cover, args, brief))
     const { sections, findings, carry } = sectionsOf(next.verdict, entries)
     const fullPrompt = withSections(prompt, sections)
     const base = headOf(r.cwd)
@@ -406,7 +441,8 @@ async function begin(input, deps = {}) {
 
     let pick = null
     let external = null
-    if (r.settings.lanes && namedAgent(event) === null && r.pickPair) {
+    // A task the owner placed on a model runs on Claude in every attempt: the pair choice is not asked for it (spec 021).
+    if (r.settings.lanes && namedAgent(event) === null && r.pickPair && authorized === null) {
       const chosen = await r.pickPair({ model: step, effort })
       if (chosen && typeof chosen.error === 'string') notes.push(`Aether delegate task ${id}: the pair choice failed (${chosen.error}); this attempt runs on Claude.`)
       pick = chosen && isObject(chosen.pick) ? chosen.pick : null
@@ -445,10 +481,12 @@ async function begin(input, deps = {}) {
     const onClaudeReadOnly = external === null && !edits
     const dirty = !edits && base !== null ? dirtyOf(r.cwd, base) : null
     const time = r.now()
-    log.appendEntry(r.dataDir, {
+    const launch = {
       kind: 'launch', time, session, task: id, step, attempt, launchKind, effort, edits, owns: brief.owns, tests: brief.tests,
       description, requested, ignored, pin, base, dirty,
-    })
+    }
+    if (launchKind === 'first' && authorized !== null) launch.authorized = authorized
+    log.appendEntry(r.dataDir, launch)
     if (launchKind === 'first') {
       const of = relaunchOf(r.dataDir, session, id, brief)
       if (of !== null) log.appendEntry(r.dataDir, { kind: 'relaunch', time, session, task: id, of })
@@ -550,7 +588,7 @@ async function verdict(input, deps = {}) {
     const entries = taskEntries(r.dataDir, task, session)
     const launch = lastOf(entries, isLaunch).entry
     if (!launch) return refuse('unknown task')
-    const state = ladderLib.stateOf(verdictInputs(entries), r.ladder)
+    const state = ladderLib.stateOf(verdictInputs(entries), r.ladder, auth.startStepOf(entries, r.ladder, r.configDir))
     const at = { step: state.step, corrections: correctionsOf(r.ladder, state) }
     if (!VERDICTS.includes(kind)) return refuse('the verdict must be approve, fix or infeasible', at)
     const ignored = ignoreOf(ignore)

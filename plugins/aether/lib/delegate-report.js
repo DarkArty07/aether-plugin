@@ -6,6 +6,7 @@
 // Family: delegate.
 
 const run = require('./run.js')
+const { isObject } = require('./common.js')
 const { isLaunch, readAllEntries } = require('./delegate-log.js')
 const { loadLadder } = require('./ladder.js')
 
@@ -38,7 +39,7 @@ function rowOfTask(id, entries) {
     if (status === 'ok') ranOn = { harness: result.pair.harness, model: result.pair.model, effort: result.pair.effort }
   }
   const external = outcome !== null || result !== null
-  return {
+  const row = {
     id,
     time: first.time,
     session: first.session,
@@ -49,6 +50,9 @@ function rowOfTask(id, entries) {
     step: latest.step,
     attempts: launches.length,
   }
+  // A task the owner placed on a model (spec 021) says so; no other row has the key.
+  if (isObject(first.authorized)) row.authorized = { model: first.authorized.model, scope: first.authorized.scope }
+  return row
 }
 
 function stepCounts(rung, entries) {

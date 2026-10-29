@@ -4,6 +4,7 @@
 // aether-delegate begin --session <id> --input <file>
 // aether-delegate verdict --task <id> --verdict approve|fix|infeasible [--reason <text>] [--finding <file[:line]: what is missing>]...
 //   [--from-scratch] [--worktree <path>] [--session <id>] [--ignore <glob>]...
+// aether-delegate authorize --model <model> --quote <text> (--task <id> | --scope session) [--session <id>]
 // aether-delegate start --id <id>
 // aether-delegate run --id <id>
 // aether-delegate wait --id <id> --seconds <n>
@@ -12,7 +13,8 @@
 //
 // The delegate tasks of the Lead on the ladder. begin says how the attempt the mod caught runs (lib/delegate-task.js);
 // verdict records the Lead's judgment of the last attempt, which is the only one that counts, and says what the next
-// launch is; start launches run in a process of its own and returns at once, run does the attempt on an external pair
+// launch is; authorize records the owner's words that place a task, or the session, on a model above the first rung
+// (lib/delegate-authorize.js), and prints one JSON line and exits 0 for an ok and for a refusal; start launches run in a process of its own and returns at once, run does the attempt on an external pair
 // (lib/delegate-run.js), and wait polls for its result for up to n seconds (540 at most); answer records the final
 // answer of a read-only delegate that ran on Claude; renew takes a new quota reading of agy, grok or muse and saves it where
 // the pair choice reads it. start and run work in the current directory. None of them merges or pushes. Each prints one
@@ -31,6 +33,7 @@ const VERBS = {
     repeatable: ['finding', 'ignore'],
     required: ['task', 'verdict'],
   },
+  authorize: { usage: 'authorize --model <model> --quote <text> (--task <id> | --scope session) [--session <id>]', flags: ['model', 'quote', 'task', 'scope', 'session'], required: ['model', 'quote'] },
   start: { usage: 'start --id <id>', flags: ['id'], required: ['id'] },
   run: { usage: 'run --id <id>', flags: ['id'], required: ['id'] },
   wait: { usage: 'wait --id <id> --seconds <n>', flags: ['id', 'seconds'], required: ['id', 'seconds'] },
@@ -95,6 +98,12 @@ async function verdictCommand(flags, dataDir) {
   )
 }
 
+// The session is --session, else CLAUDE_CODE_SESSION_ID: the owner's words are read from its transcript.
+async function authorizeCommand(flags, dataDir) {
+  const session = flags.session ?? process.env.CLAUDE_CODE_SESSION_ID
+  return lib('delegate-authorize.js').authorize({ model: flags.model, quote: flags.quote, task: flags.task, scope: flags.scope, session }, { dataDir })
+}
+
 async function startCommand(flags, dataDir) {
   return lib('delegate-run.js').start({ id: flags.id, cwd: process.cwd(), dataDir })
 }
@@ -131,7 +140,7 @@ async function renewCommand(flags, dataDir) {
   return { renewed: true, harness, readAt }
 }
 
-const COMMANDS = { begin: beginCommand, verdict: verdictCommand, start: startCommand, run: runCommand, wait: waitCommand, answer: answerCommand, renew: renewCommand }
+const COMMANDS = { begin: beginCommand, verdict: verdictCommand, authorize: authorizeCommand, start: startCommand, run: runCommand, wait: waitCommand, answer: answerCommand, renew: renewCommand }
 
 async function main() {
   const [verb, ...args] = process.argv.slice(2)

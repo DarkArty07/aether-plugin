@@ -112,3 +112,15 @@ test('a later attempt that ran on Claude is not credited to the pair of an earli
   const row = delegatesReport({ dataDir }).delegations.find((d) => d.id === 'up')
   assert.deepEqual([row.applied, row.ranOn.harness, row.ranOn.model, row.fallback, row.attempts], ['rewritten', 'claude', 'sonnet', null, 2])
 })
+
+test('a row of a task the owner placed carries authorized, and no other row does (spec 021, item 11)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const authorized = { model: 'opus', scope: 'task', task: 'p1', quote: 'despliega un agente en Opus', quoteTime: '2026-10-29T10:00:00.000Z' }
+  const placed = { ...launch('p1', 'opus', 1, 'first'), authorized }
+  for (const entry of [placed, verdict('p1', 'opus', 1, 'approved', { step: null, kind: 'done', cause: null }), launch('p2', 'haiku', 1, 'first')]) {
+    log.appendEntry(dataDir, entry)
+  }
+  const rows = Object.fromEntries(delegatesReport({ dataDir }).delegations.map((d) => [d.id, d]))
+  assert.deepEqual(rows.p1.authorized, { model: 'opus', scope: 'task' })
+  assert.equal(Object.hasOwn(rows.p2, 'authorized'), false)
+})
