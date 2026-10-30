@@ -44,29 +44,29 @@ Repricing those same runs with the pairs of this page saves at most from US$165.
 
 ## Why
 
-**J1. The measure is the dollar per task.** The Claude limit is one for all the models and is spent by the cost of the model, so pairs are compared by what a whole task costs on them, not by a price per token: a model writes more tokens as its effort rises, and per task Opus `high` (US$1.82) costs less than Sonnet `xhigh` (US$2.01) for the same 57 points in code. Source: the cost per task of the index in `config/pairs.json`, read on 2026-10-26.
+**J1. The measure is the dollar per task.** The Claude limit is one for all the models and is spent by the cost of the model, so pairs are compared by what a whole task costs on them, not by a price per token: a model writes more tokens as its effort rises, and per task Opus `high` (US$3.47) costs less than Sonnet `xhigh` (US$4.09) for the same 57 points in code. Source: the cost per task of the index in `config/pairs.json`, read from the model pages of Artificial Analysis on 2026-10-30.
 
 **J2. The spend is in `xhigh`.** In the 8 finished runs, 68 % of the spend outside the Lead (US$96 of US$142) ran at `xhigh`, which was the default effort of a task and the effort of every correction and rise. Source: `runs.jsonl`, priced at list price, as [Where the spend went](#where-the-spend-went) breaks down.
 
-**J3. The efforts are not worth the same.** The cost per task is that of the index in `config/pairs.json`; the code points are Terminal-Bench 4.0, the terminal coding test, from the API of Artificial Analysis, read on 2026-10-26:
+**J3. The efforts are not worth the same.** The cost per task is that of the index in `config/pairs.json`; the code points are Terminal-Bench 4.0, the terminal coding test, from the API of Artificial Analysis, read on 2026-10-29:
 
 | Pair | Intelligence | Cost per task | Code |
 |---|---|---|---|
-| `haiku high` | 29.6 | US$0.08 | 22 |
-| `haiku xhigh` | 34.3 | US$0.12 | 29 |
-| `sonnet high` | 41.1 | US$0.88 | 44 |
-| `sonnet xhigh` | 49.6 | US$2.01 | 57 |
-| `sonnet max` | 54.2 | US$5.46 | 64 |
-| `opus medium` | 48.1 | US$1.34 | 53 |
-| `opus high` | 51.7 | US$1.82 | 57 |
-| `opus xhigh` | 57 | US$3.46 | 60 |
-| `opus max` | 58.4 | US$5.98 | 60 |
+| `haiku high` | 29.6 | US$0.16 | 22 |
+| `haiku xhigh` | 34.3 | US$0.25 | 29 |
+| `sonnet high` | 41.1 | US$1.64 | 44 |
+| `sonnet xhigh` | 49.6 | US$4.09 | 57 |
+| `sonnet max` | 54.2 | US$10.02 | 64 |
+| `opus medium` | 48.1 | US$2.45 | 53 |
+| `opus high` | 51.7 | US$3.47 | 57 |
+| `opus xhigh` | 57 | US$6.05 | 60 |
+| `opus max` | 58.4 | US$10.04 | 60 |
 
-The intelligence points are those of Artificial Analysis on 2026-10-29. The cost and the time per task are those of 2026-10-26, which the API does not give (spec D4).
+The intelligence and the code points are those of Artificial Analysis on 2026-10-29. The cost per task is that of its model pages read on 2026-10-30, which the API does not give (spec D4); it almost doubled with the re-score of 2026-10-29 (Haiku `high` was US$0.08, Opus `high` US$1.82).
 
-In Sonnet, rising from `high` to `xhigh` costs 2.3 times more per task for 13 more points in code (44 to 57), and from `xhigh` to `max` 2.7 times more for 7. In Opus, rising from `high` to `xhigh` costs 1.9 times more for 3 points (57 to 60), and `max` gives the same 60 as `xhigh` for US$5.98. In Haiku the same rise is cheap: US$0.08 to US$0.12 for 22 to 29. Reading a long text (LCR) barely depends on the effort: Opus scores 84 at `medium`, 83 at `high` and 85 at `xhigh`.
+In Sonnet, rising from `high` to `xhigh` costs 2.5 times more per task for 13 more points in code (44 to 57), and from `xhigh` to `max` 2.4 times more for 7. In Opus, rising from `high` to `xhigh` costs 1.7 times more for 3 points (57 to 60), and `max` gives the same 60 as `xhigh` for US$10.04. In Haiku the same rise is cheap: US$0.16 to US$0.25 for 22 to 29. Reading a long text (LCR) barely depends on the effort: Opus scores 84 at `medium`, 83 at `high` and 85 at `xhigh`.
 
-**J4. Where Opus pays for itself, and where it does not.** Above what Sonnet `high` gives in code (44), the cheapest pairs that exist are Opus: `medium` scores 53 for US$1.34 and `high` 57 for US$1.82, against Sonnet `xhigh` at 57 for US$2.01 (source: the table of J3). As the last step of a task that Haiku and Sonnet did not solve, Opus `high` pays for itself. Opus `xhigh` and `max` do not: they buy 3 more points for almost twice the cost, and `max` no more than `xhigh`. As the supervisor of what a Sonnet wrote, Opus is there by the rule that nobody reviews their own work, not by capacity.
+**J4. Where Opus pays for itself, and where it does not.** Above what Sonnet `high` gives in code (44), the cheapest pairs that exist are Opus: `medium` scores 53 for US$2.45 and `high` 57 for US$3.47, against Sonnet `xhigh` at 57 for US$4.09 (source: the table of J3). As the last step of a task that Haiku and Sonnet did not solve, Opus `high` pays for itself. Opus `xhigh` and `max` do not: they buy 3 more points for 1.7 times the cost, and `max` no more than `xhigh`. As the supervisor of what a Sonnet wrote, Opus is there by the rule that nobody reviews their own work, not by capacity.
 
 **J5. The ladder kept Sonnet and Opus always at `xhigh`.** Before this change, a correction on the delegates' ladder went to the same model at `xhigh` and a rise landed on the next model at `xhigh`; as no task starts in Sonnet or in Opus, those two models only ever ran at `xhigh`, the worst-paid effort of J3. The swarm did the same: every attempt that was not the first ran at `xhigh`. Source: `config/ladder.json` and the run workflow as they stood before this change.
 
@@ -83,7 +83,7 @@ Opus remains in four places, each with its reason:
 - **The final review,** at `opus high`: it is the last net over the whole run, read as one change. It rises to `opus xhigh` only when a merged unit has `Review: xhigh` or `max`.
 - **The supervisor of a Sonnet author,** at `opus high`: it is Opus only by the rule that nobody reviews their own work, and it runs at `high`, the effort of the pair it replaces.
 
-Outside the case where a merged unit has `Review: xhigh` or `max`, two pairs are not used: Opus `xhigh` and Opus `max`. The first buys 3 more points in code (60 against 57) for almost twice the cost per task (US$3.46 against US$1.82), and `max` gives what `xhigh` gives, the same 60 points, for US$5.98.
+Outside the case where a merged unit has `Review: xhigh` or `max`, two pairs are not used: Opus `xhigh` and Opus `max`. The first buys 3 more points in code (60 against 57) for 1.7 times the cost per task (US$6.05 against US$3.47), and `max` gives what `xhigh` gives, the same 60 points, for US$10.04.
 
 ## How to tell if it worked
 

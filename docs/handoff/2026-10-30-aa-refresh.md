@@ -1,9 +1,9 @@
-# Handoff: the table of models on one scale (spec 023, version 0.28.0)
+# Handoff: the table of models on one scale (spec 023, versions 0.28.0 and 0.29.0)
 
 - **Date:** 2026-10-30. It follows the handoff of Codex as a work harness (0.27.0), which this one replaces and carries whole at the end.
 - **From:** the Lead, Claude Code on Sonnet 5.5, in the autonomous run `auto-20261030-012801-eb00` (session `fca00ef1`).
 - **To:** the owner, and the next session.
-- **Repository state:** version 0.28.0 is prepared on the branch `feat/aa-refresh` (worktree `.worktrees/aa-refresh`). It is **not merged, not pushed, not tagged and not installed**. `main` holds one local commit that is not pushed either: the Artificial Analysis skill and its two pages.
+- **Repository state:** version 0.28.0 (the points of AA) was released on 2026-10-30 on the owner's word («Todo lo que espera mi si, si a todo.»): squash-merged to `main`, pushed, tagged `aether--v0.28.0` and installed; the branches `feat/aa-refresh` and `feat/codex-harness` and their worktrees were deleted. The same day a second run reread the costs per task of AA's pages, with the owner's yes, and found that 0.28.0 had the new points next to the old costs: version **0.29.0** (decision A102) is prepared on the branch `feat/aa-costs` (worktree `.worktrees/aa-costs`) and is **not merged, not pushed, not tagged and not installed**.
 
 ## 1. What was asked
 
@@ -13,7 +13,7 @@
 
 [The spec](../../specs/023-aa-refresh/spec.md), [the plan](../../specs/023-aa-refresh/plan.md) and [the tasks](../../specs/023-aa-refresh/tasks.md); A101 in [the decisions](../decisions.md).
 
-- **One scale.** `scripts/refresh-lanes.js --write` and `scripts/build-models-index.js --write` put the figures of 2026-10-29 in every row of `config/pairs.json`, in the `aa` blocks of `config/lanes.json` and in the models index and its README. The costs per task stay those of 2026-10-26.
+- **One scale.** `scripts/refresh-lanes.js --write` and `scripts/build-models-index.js --write` put the figures of 2026-10-29 in every row of `config/pairs.json`, in the `aa` blocks of `config/lanes.json` and in the models index and its README. **0.29.0 then put the costs per task of AA's pages of 2026-10-30 in 48 rows**, read once with the reader of the `artificial-analysis` skill (AA's cost per index task had almost doubled with the re-score); the 15 pairs of Codex are measured, not estimated, and Spark's estimated costs are redone with the method of A96.
 - **Muse Spark's estimates** (low, medium, high, xhigh) redone with the method of A96 on the new scale: 17.8, 22.5, 28.7 and 33.9.
 - **The models the rule gives moved**, by the rule and by nothing else (section 4).
 - **The unit gate reads the whole output of the tests** (#134), with its test. It matters: with 51 known failures the old gate would have rejected every unit.
@@ -29,33 +29,33 @@
 
 ## 4. What was measured
 
-What `choose()` gives for each ask of the three Claude models, with all the quotas open at the same reset (Codex alone gives the same):
+What `choose()` gives for each ask of the three Claude models, with all the quotas open at the same reset (Codex alone gives the same). Three moments: 0.27.0 (the rows of Codex on the new scale, the others on the old), 0.28.0 (all the points on the new scale, the costs still those of 2026-10-26) and 0.29.0 (the costs of 2026-10-30 too):
 
-| Ask | Before (mixed scales) | Now |
-|---|---|---|
-| Haiku low | Terra low | Luna medium (18.3, US$ 0.011) |
-| Haiku medium | Terra medium | Terra low (29.2, US$ 0.032) |
-| **Haiku high** | Terra medium | **Terra low** |
-| **Haiku xhigh** | Terra high | **Terra medium** (38.1, US$ 0.058) |
-| Haiku max | Sol medium | Terra medium |
-| Sonnet low | Terra medium | Terra low |
-| Sonnet medium | Terra high | Terra medium |
-| **Sonnet high** | Sol medium | **Terra high** (42.3, US$ 0.108) |
-| Sonnet xhigh | Terra max | Sol high (50.2, US$ 0.216) |
-| Sonnet max | native | Sol max (54.5, US$ 0.724) |
-| Opus low | Terra high | Terra medium |
-| Opus medium | Sol high | Sol high |
-| **Opus high** | Sol max | **Terra max** (51.0, US$ 0.362) |
-| Opus xhigh, Opus max | native | native |
+| Ask | 0.27.0 | 0.28.0 | **0.29.0** |
+|---|---|---|---|
+| Haiku low | Terra low | Luna medium | Luna medium (US$ 0.042) |
+| Haiku medium | Terra medium | Terra low | Terra low (US$ 0.071) |
+| **Haiku high** | Terra medium | Terra low | **Terra low** |
+| **Haiku xhigh** | Terra high | Terra medium | **Sol low** (34.5 points, US$ 0.161) |
+| Haiku max | Sol medium | Terra medium | Terra medium (US$ 0.169) |
+| Sonnet low | Terra medium | Terra low | Terra low |
+| Sonnet medium | Terra high | Terra medium | Sol low |
+| **Sonnet high** | Sol medium | Terra high | **Terra high** (42.3 points, US$ 0.259) |
+| Sonnet xhigh | Terra max | Sol high | Sol high (US$ 0.591) |
+| Sonnet max | native | Sol max | Sol max (US$ 1.272) |
+| Opus low | Terra high | Terra medium | Sol low |
+| Opus medium | Sol high | Sol high | Sol high |
+| **Opus high** | Sol max | Terra max | **Sol xhigh** (52.3 points, US$ 0.764) |
+| Opus xhigh, Opus max | native | native | native |
 
-The four steps of the ladder are in bold. Sol leaves them and Terra covers all four.
+The four steps of the ladder are in bold: the owner approved Terra medium, Terra high, Sol medium and Sol max on 2026-10-29; the rule now gives Terra low, Sol low, Terra high and Sol xhigh. Terra max turned out to cost US$ 0.961, not the half of Sol max (US$ 1.272) that was assumed.
 
 ## 5. What is open
 
-- **For the owner, a decision: who is the Judge and the Examiner?** Gemini 4 Argon (50.4) is under the floor of Opus high minus 1 point (50.7) and is the only model of the shipped lane table with those roles, so every design round now runs on native Opus and spends Claude quota. Options: accept it; or give the roles to a pair that reaches 50.7, such as agy's Opus (51.7, but its Claude group of agy was dry) or Sol at high (50.2 is under the floor; Sol xhigh 52.3 reaches it) after measuring it as a seat (P2 of spec 022). The tests state today's behavior.
-- **For the owner, a premise:** Muse Wonder Full was admitted «a nivel de opus» (A64). On the new scale it scores 49.7 at max against Opus high at 51.7. Its pair is unchanged (it is the owner's decision); say if it stays.
-- **Assumptions the steps rest on:** Terra's cost per task is an estimate (A-P6 of spec 022), and the costs per task of every pair are those of 2026-10-26 because AA's API gives none and its pages are not read without the owner's yes. The rule reads intelligence only: Terra low (15.2 % of Terminal-Bench) stands in for Haiku high (21.7 %).
-- **Merge, push, tag `aether--v0.28.0` and `claude plugin update`** need the owner's word; so does the push of `main`'s local commit with the AA files. The merge of this branch should be a squash.
+- **Answered «sí a todo» (read as accepting what is there; the owner can change it): who is the Judge and the Examiner?** Gemini 4 Argon (50.4) is under the floor of Opus high minus 1 point (50.7) and is the only model of the shipped lane table with those roles, so every design round now runs on native Opus and spends Claude quota. Options: accept it; or give the roles to a pair that reaches 50.7, such as agy's Opus (51.7, but its Claude group of agy was dry) or Sol at high (50.2 is under the floor; Sol xhigh 52.3 reaches it) after measuring it as a seat (P2 of spec 022). The tests state today's behavior.
+- **Answered «sí a todo» (read as: it stays):** Muse Wonder Full was admitted «a nivel de opus» (A64). On the new scale it scores 49.7 at max against Opus high at 51.7. Its pair is unchanged (it is the owner's decision); say if it stays.
+- **Assumptions the steps rest on:** none about cost any more (they are AA's pages of 2026-10-30; Wonder Full and Gemini 3.8 Flash low have no page cost, as before). The rule reads intelligence only: Terra low (15.2 % of Terminal-Bench) stands in for Haiku high (21.7 %), and Sol xhigh (54.0 %) for Opus high (56.6 %).
+- **Merge `feat/aa-costs`, push, tag `aether--v0.29.0` and `claude plugin update`** need the owner's word. The merge should be a squash.
 - **Issues:** #135 (the ladder climbs when the fault is outside `Owns`), #136 (one source for the list of harnesses) and #137 (`runDelegate` does not pass its `dataDir` to the adapter). #134 is fixed here and can be closed on the merge.
 - **Deferred minor findings:** three versions of the same workaround in the seat tests (`grantOpusSeats` copied in three files), some rewritten tests that lost a second external try, and a few titles.
 

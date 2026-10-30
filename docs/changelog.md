@@ -8,6 +8,13 @@ order: 31
 
 ## Status
 
+Version 0.29.0: the costs per task follow the model pages of Artificial Analysis of 2026-10-30, and two of the four steps of the ladder move again (decision A102). What changed since 0.28.0:
+- **The costs per task are those of 2026-10-30.** AA's cost per index task almost doubled with its re-score (Haiku 5.5 `high` US$0.08 to 0.16, Opus 5.5 `high` 1.82 to 3.47, Gemini 3.8 Flash `high` 1.24 to 7.77, Gemini 4 Argon 1.99 to 7.68). The table of 0.28.0 had the points of 2026-10-29 next to the costs of 2026-10-26, which is two scales again. The 48 rows whose page gives a cost carry it now. The owner allowed one reading of the pages.
+- **The costs of Codex are measured.** All fifteen pairs, none marked as an estimate. Terra `max` costs US$0.961, three quarters of Sol `max` (US$1.272), where the assumption A-P6 of spec 022 had half.
+- **Spark's costs are redone** with the method of A96 on the new basis: US$0.232, 0.534, 0.824 and 1.438 at `low`, `medium`, `high` and `xhigh`; `max` (US$2.386) is measured.
+- **The steps move again.** With the costs of today the rule gives Sol low to Haiku xhigh (it gave Terra medium) and Sol xhigh to Opus high (it gave Terra max); Sonnet medium and Opus low go to Sol low too. The four steps are Terra low, Sol low, Terra high and Sol xhigh. A test walks the fifteen asks, with Codex alone and with agy, Codex, Grok and Muse open together.
+- **Guides and tests.** Eight tests, the table of `models-by-role` and the lane guide follow the new costs.
+
 Version 0.28.0: the table of models follows the figures that Artificial Analysis published on 2026-10-29, and the choices of the rule move with them (spec 023, decision A101). What changed since 0.27.0:
 - **One scale.** AA re-scored almost every model on 2026-10-29 (Haiku 5.5 `high` 37.8 to 29.6, Sonnet 5.5 `high` 46.8 to 41.1, Opus 5.5 `high` 53.6 to 51.7, Gemini 3.8 Flash `high` 40.9 to 30.5, Grok 4.7 `high` 46.3 to 35, Muse Wonder 1.0 52.4 to 43.3). `config/pairs.json`, the `aa` blocks of `config/lanes.json`, `config/models/models.json` and `docs/models/README.md` now carry the figures of that day in every row, where before only the rows of Codex did. The costs per task are still those read on 2026-10-26: the API gives none, and AA's pages are not read without the owner's yes.
 - **Muse Spark's estimates.** Its `low`, `medium`, `high` and `xhigh` rows are redone with the method of A96 on the new scale, the shape of the Haiku and Sonnet curves applied to Spark's measured `max` of 36.4: 17.8, 22.5, 28.7 and 33.9. AA no longer lists Spark's `xhigh`.

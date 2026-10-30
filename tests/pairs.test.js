@@ -62,14 +62,14 @@ test('C16: the Muse pair has the figure of Opus high, no cost and the owner word
   assert.match(pair.ownerDecision, /anivel de opus/)
   const wonder1 = pairs.find((p) => p.id === 'muse/muse-wonder-1.0@max')
   // Wonder 1.0 max is 43.3 on the scale of 2026-10-29. Spark xhigh is an estimate now, so it carries an owner decision with the low, medium and high rows.
-  assert.deepEqual([wonder1.intelligence, wonder1.costPerTaskUsd, wonder1.group], [43.3, 4.54, 'muse'])
+  assert.deepEqual([wonder1.intelligence, wonder1.costPerTaskUsd, wonder1.group], [43.3, 6.952, 'muse'])
   assert.match(wonder1.ownerDecision, /Las dos respuestas es lo reocmendado/)
   assert.deepEqual(pairs.filter((p) => p.ownerDecision !== undefined).map((p) => p.id), ['muse/muse-spark-1.3@low', 'muse/muse-spark-1.3@medium', 'muse/muse-spark-1.3@high', 'muse/muse-spark-1.3@xhigh', pair.id, 'muse/muse-wonder-1.0@max'])
   assert.deepEqual(pairs.filter((p) => p.costPerTaskUsd === null).map((p) => p.id).sort(), ['agy/gemini-3.8-flash@low', pair.id])
   const xhigh = pairs.find((p) => p.id === 'muse/muse-spark-1.3@xhigh')
-  assert.deepEqual([xhigh.intelligence, xhigh.costPerTaskUsd], [33.9, 1.1])
+  assert.deepEqual([xhigh.intelligence, xhigh.costPerTaskUsd], [33.9, 1.438])
   const estimated = Object.fromEntries(['low', 'medium', 'high'].map((effort) => [effort, pairs.find((p) => p.id === `muse/muse-spark-1.3@${effort}`)]))
-  assert.deepEqual([estimated.low.costPerTaskUsd, estimated.medium.costPerTaskUsd, estimated.high.costPerTaskUsd], [0.19, 0.43, 0.66])
+  assert.deepEqual([estimated.low.costPerTaskUsd, estimated.medium.costPerTaskUsd, estimated.high.costPerTaskUsd], [0.232, 0.534, 0.824])
   for (const [effort, row] of Object.entries(estimated)) {
     assert.match(row.ownerDecision, /cost.{0,120}estimat/i, `${effort}: says the cost is an estimate`)
   }

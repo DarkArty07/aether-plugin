@@ -65,13 +65,13 @@ test('(c) muse-spark-1.3 has pairs at low, medium, high, xhigh and max, and none
   assert.equal(sparkPairs.some((p) => p.effort === 'minimal'), false, 'muse-spark-1.3 must have no pair at minimal: no curve below low to base it on')
 })
 
-test('(e) the low, medium and high rows are the owner-estimated points re-estimated on 2026-10-30, with the costs of 2026-10-27 and no minimal row', () => {
+test('(e) the low, medium and high rows are the owner-estimated points re-estimated on 2026-10-30, with the costs estimated on 2026-10-30 and no minimal row', () => {
   const { pairs } = loadPairs()
   const sparkPairs = pairs.filter((p) => p.harness === 'muse' && p.model === 'muse-spark-1.3')
   const estimated = Object.fromEntries(sparkPairs.filter((p) => ['low', 'medium', 'high'].includes(p.effort)).map((p) => [p.effort, p]))
   assert.deepEqual(Object.keys(estimated).sort(), ['high', 'low', 'medium'])
   assert.deepEqual([estimated.low.intelligence, estimated.medium.intelligence, estimated.high.intelligence], [17.8, 22.5, 28.7])
-  assert.deepEqual([estimated.low.costPerTaskUsd, estimated.medium.costPerTaskUsd, estimated.high.costPerTaskUsd], [0.19, 0.43, 0.66])
+  assert.deepEqual([estimated.low.costPerTaskUsd, estimated.medium.costPerTaskUsd, estimated.high.costPerTaskUsd], [0.232, 0.534, 0.824])
   for (const [effort, pair] of Object.entries(estimated)) {
     assert.deepEqual([pair.harness, pair.model, pair.family, pair.group], ['muse', 'muse-spark-1.3', 'muse-spark-1.3', 'muse'], effort)
     assert.deepEqual([pair.outputTokensPerSecond, pair.timeToFirstTokenS], [null, null], effort)
