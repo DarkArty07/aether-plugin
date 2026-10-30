@@ -21,6 +21,7 @@ function laneEnv(t, { command = FAKE_AGY, quota = null, mutate = null } = {}) {
   const config = JSON.parse(fs.readFileSync(lanes.CONFIG_FILE, 'utf8'))
   config.harnesses.agy.command = command
   if (config.harnesses.muse) config.harnesses.muse.command = '/nowhere/muse'
+  if (config.harnesses.codex) config.harnesses.codex.command = '/nowhere/codex'
   if (mutate) mutate(config)
   const configFile = path.join(dir, 'lanes.json')
   fs.writeFileSync(configFile, JSON.stringify(config))

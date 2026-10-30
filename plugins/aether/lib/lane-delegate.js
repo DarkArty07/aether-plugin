@@ -25,7 +25,7 @@ const work = require('./lane-work.js')
 const wt = require('./worktrees.js')
 const { normalizePattern } = require('./globs.js')
 
-const ALLOWED_HARNESSES = ['agy', 'grok', 'muse']
+const ALLOWED_HARNESSES = ['agy', 'codex', 'grok', 'muse']
 const DELEGATE_USAGE = 'delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--pair <pair id>] [--carry <patch file>] [--findings <file>] [--session <id>]'
 const TASK_ID = 'task-1'
 const WAIT_MARGIN_SECONDS = 180

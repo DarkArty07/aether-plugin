@@ -33,7 +33,7 @@ const USAGE =
 // claude is the native harness, the first: its models are not lanes. The others are lanes.
 const HARNESSES = ['claude', 'agy', 'codex', 'grok', 'cursor', 'muse']
 // The chosen harnesses, whose models the index keeps. Another comes in with --harnesses once its listing is in harness-models.json.
-const DEFAULT_HARNESSES = ['claude', 'agy', 'grok', 'muse']
+const DEFAULT_HARNESSES = ['claude', 'agy', 'codex', 'grok', 'muse']
 const LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 // From the least to the most effort. default is a reasoning model with no level named, and none is
 // the harness's word for no reasoning; both sit under the named levels.
@@ -143,7 +143,16 @@ function groupFamilies(models) {
 function describe(model) {
   const name = typeof model.name === 'string' && model.name.trim() !== '' ? model.name.trim() : model.slug
   const tag = parseName(name)
-  const creator = typeof model.model_creator === 'string' ? model.model_creator : model.model_creator?.name
+  const creator = typeof model.model_creator === 'string' ? model.model_creator : (model.model_creator?.name ?? model.creator)
+  const evaluations = model.evaluations ?? {
+    artificial_analysis_intelligence_index: model.intelligence,
+    artificial_analysis_coding_index: model.coding,
+    terminalbench_v4_0: model.terminalbench_v4_0,
+  }
+  const pricing = model.pricing ?? {
+    price_1m_input_tokens: model.price_in,
+    price_1m_output_tokens: model.price_out,
+  }
   return {
     slug: model.slug,
     stem: tag.stem,
@@ -151,11 +160,11 @@ function describe(model) {
     words: tag.words,
     effort: effortOf(tag.words),
     creator: typeof creator === 'string' && creator.trim() !== '' ? creator.trim() : null,
-    releaseDate: typeof model.release_date === 'string' && model.release_date !== '' ? model.release_date : null,
-    evaluations: model.evaluations ?? {},
-    pricing: model.pricing ?? {},
-    tokensPerSecond: model.median_output_tokens_per_second,
-    ttftSeconds: model.median_time_to_first_token_seconds,
+    releaseDate: typeof model.release_date === 'string' && model.release_date !== '' ? model.release_date : (typeof model.release === 'string' && model.release !== '' ? model.release : null),
+    evaluations,
+    pricing,
+    tokensPerSecond: model.median_output_tokens_per_second ?? model.tokens_per_s,
+    ttftSeconds: model.median_time_to_first_token_seconds ?? model.ttft_s,
   }
 }
 
@@ -440,7 +449,7 @@ function serialize(value, depth = 0) {
 // scores when AA has them, and the profile); and what was left out, with why. A session reads this to
 // choose a model. A model a native harness lists has `alias` (the name its CLI takes) and a null lane.
 function buildModels(index, profiles = {}) {
-  const profileOf = (key) => profiles[key] ?? null
+  const profileOf = (key) => profiles[key] ?? profiles[key?.replace(/\./g, '-')] ?? profiles[key?.replace(/-/g, '.')] ?? null
   const laneOf = (entry) => (entry.inLaneTable ? { roles: entry.roles } : null)
   const byHarness = (a, b) => HARNESSES.indexOf(a.harness) - HARNESSES.indexOf(b.harness)
 
@@ -498,6 +507,7 @@ function buildModels(index, profiles = {}) {
       harness: entry.harness,
       model: entry.model,
       ...(entry.alias ? { alias: entry.alias } : {}),
+      family: entry.model,
       name: profileOf(entry.model)?.name ?? entry.model,
       maker: profileOf(entry.model)?.maker ?? null,
       reason: entry.excluded,
@@ -708,7 +718,7 @@ function mergeReadme(text, generated) {
 
 // The models of an AA answer: the list itself, or the list under data. Null when it is neither.
 function modelsOf(body) {
-  const list = Array.isArray(body) ? body : body?.data
+  const list = Array.isArray(body) ? body : (body?.data ?? body?.models)
   return Array.isArray(list) ? list : null
 }
 
@@ -737,8 +747,8 @@ function parseArgs(argv) {
   args.harnesses = HARNESSES.filter((name) => args.harnesses.includes(name))
   args.out = path.resolve(args.out)
   args.docs = path.resolve(args.docs)
-  args.harness = path.resolve(args.harness ?? path.join(args.out, 'harness-models.json'))
-  args.profiles = path.resolve(args.profiles ?? path.join(args.out, 'profiles.json'))
+  args.harness = path.resolve(args.harness ?? (fs.existsSync(path.join(args.out, 'harness-models.json')) ? path.join(args.out, 'harness-models.json') : path.join(DEFAULT_OUT, 'harness-models.json')))
+  args.profiles = path.resolve(args.profiles ?? (fs.existsSync(path.join(args.out, 'profiles.json')) ? path.join(args.out, 'profiles.json') : path.join(DEFAULT_OUT, 'profiles.json')))
   args.lanes = path.resolve(args.lanes)
   args.pairs = path.resolve(args.pairs)
   return args

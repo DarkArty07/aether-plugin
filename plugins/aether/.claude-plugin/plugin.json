@@ -1,6 +1,6 @@
 {
   "name": "aether",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "Aether mode for Claude Code, built for RADAR: rapid, autonomous, delegating, affordable and robust. The Lead starts on Sonnet and is the owner's right hand: it understands the intent, writes the owner's intent card, and launches /aether:design, which runs the design on its own, then orchestrates the build along three paths: itself, delegate tasks on models it chooses, or the swarm. A Writer on Sonnet writes specs, plans and tasks in Spec Kit's layout, and a Judge on Opus reviews them. A parallel swarm of Haiku, Sonnet and Opus implementers builds them, each attempt supervised and every merge made one at a time. With superdelegation on, everything that is not the Lead runs first on the quota of other harnesses, such as agy or grok, and native Claude is the fallback. With the owner's permission, the Lead works for hours and ends with a brief.",
   "author": {
     "name": "DarkArty07"
@@ -17,7 +17,7 @@
     "harnesses": {
       "type": "string",
       "title": "Lane harnesses",
-      "description": "The external harnesses superdelegation may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates, then the cost per task. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk. Codex and Cursor are not tested with a real account.",
+      "description": "The external harnesses superdelegation may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates, then the cost per task. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk. Cursor is not tested with a real account.",
       "default": "agy"
     },
     "ops": {

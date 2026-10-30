@@ -241,19 +241,23 @@ test('a model only the lane table names is not offered: it is in notOffered, wit
   assert.equal(index.families.some((entry) => entry.available.some((offer) => offer.model === 'ghost-9')), false)
 })
 
-test('by default the native harness and the lanes agy and grok are read, and a model is in the index only when its CLI lists it', () => {
+test('by default the native harness and the lanes agy, codex and grok are read, and a model is in the index only when its CLI lists it', () => {
   const index = buildIndex(RAW, { since: '2026-01-01', lanes: LANES, harnessModels: LISTINGS, generatedAt: '2026-10-13' })
   // LISTINGS has no claude listing, so the native harness offers nothing here.
-  assert.deepEqual(index.harnesses, ['claude', 'agy', 'grok', 'muse'])
+  assert.deepEqual(index.harnesses, ['claude', 'agy', 'codex', 'grok', 'muse'])
   assert.equal(index.releasedCount, 5)
-  assert.deepEqual(index.families.map((entry) => entry.family), ['acme-1'])
-  assert.deepEqual(index.families[0].available.map((offer) => offer.harness), ['agy'])
-  assert.equal(index.count, 1)
+  assert.deepEqual(index.families.map((entry) => entry.family), ['acme-1-5', 'acme-1', 'edge-1'])
+  assert.deepEqual(index.families.map((entry) => [entry.family, entry.available.map((offer) => offer.harness)]), [
+    ['acme-1-5', ['codex']],
+    ['acme-1', ['agy']],
+    ['edge-1', ['codex']],
+  ])
+  assert.equal(index.count, 3)
   assert.deepEqual(index.unmatched.map((entry) => `${entry.harness}/${entry.model}`), ['agy/oldie-1', 'grok/acme-1.5-build-fast'])
   assert.deepEqual(index.notOffered.map((entry) => `${entry.harness}/${entry.model}`), ['agy/ghost-9'])
-  // acme-1 is superseded by acme-1-5, which neither chosen harness offers: the index names the successor and does not keep it.
-  assert.deepEqual([index.families[0].current, index.families[0].supersededBy], [false, 'acme-1-5'])
-  assert.equal(index.currentCount, 0)
+  // acme-1 is superseded by acme-1-5, which codex offers.
+  assert.deepEqual([index.families[1].current, index.families[1].supersededBy], [false, 'acme-1-5'])
+  assert.equal(index.currentCount, 2)
 
   const more = buildIndex(RAW, { since: '2026-01-01', lanes: LANES, harnessModels: LISTINGS, generatedAt: '2026-10-13', harnesses: ['cursor', 'codex'] })
   assert.deepEqual(more.harnesses, ['codex', 'cursor'])
@@ -594,6 +598,7 @@ const NATIVE_LISTINGS = {
       ],
     },
     agy: { capturedAt: '2026-10-13', listedBy: 'agy models', effortVia: 'id', models: ['zeta-2-low', 'zeta-2-medium', 'zeta-2-high'] },
+    codex: { capturedAt: '2026-10-29', listedBy: 'models_cache.json', effortVia: 'flag', efforts: ['low', 'high'], models: [] },
     grok: { capturedAt: '2026-10-13', listedBy: 'grok models', effortVia: 'flag', efforts: ['low', 'high'], models: [] },
     muse: { capturedAt: '2026-10-19', listedBy: 'muse serve (model/list)', effortVia: 'flag', efforts: ['low', 'high'], models: [] },
   },
@@ -605,7 +610,7 @@ const nativeFile = () => buildModels(native(), NATIVE_PROFILES.profiles)
 
 test('claude is the first harness and a default one; its entries carry the alias, the five efforts and a null lane', () => {
   const defaults = buildIndex(NATIVE_RAW, { since: '2026-01-01', lanes: NATIVE_LANES, harnessModels: NATIVE_LISTINGS, generatedAt: '2026-10-14' })
-  assert.deepEqual(defaults.harnesses, ['claude', 'agy', 'grok', 'muse'])
+  assert.deepEqual(defaults.harnesses, ['claude', 'agy', 'codex', 'grok', 'muse'])
   // The order of the harnesses is the native one first, whatever order they are asked for.
   assert.deepEqual(native({ harnesses: ['agy', 'claude'] }).harnesses, ['claude', 'agy'])
 
@@ -688,8 +693,8 @@ test('main reads the native harness by default, writes the data to --out and the
   const args = ['--from', path.join(dir, 'raw.json'), '--lanes', path.join(dir, 'lanes.json'), '--out', path.join(dir, 'out'), '--docs', path.join(dir, 'docs')]
   const dry = await main(args, { env: {}, now: NOW })
   assert.equal(dry.exitCode, 0)
-  assert.match(dry.stdout, /are offered by claude, agy, grok, muse, of the/)
-  assert.match(dry.stdout, /Offered by harness \(families\): claude 4, agy 1, grok 0, muse 0\./)
+  assert.match(dry.stdout, /are offered by claude, agy, codex, grok, muse, of the/)
+  assert.match(dry.stdout, /Offered by harness \(families\): claude 4, agy 1, codex 0, grok 0, muse 0\./)
   assert.match(dry.stdout, /Offered with no figures \(0\): none\./)
   assert.match(dry.stdout, /Offered and excluded by the owner \(2\): claude\/zeta-big-2, claude\/zeta-ghost-1\./)
 
@@ -698,8 +703,8 @@ test('main reads the native harness by default, writes the data to --out and the
   assert.deepEqual(fs.readdirSync(path.join(dir, 'out')).sort(), ['harness-models.json', 'models.json', 'profiles.json'])
   assert.deepEqual(fs.readdirSync(path.join(dir, 'docs')), ['README.md'])
   const file = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'models.json'), 'utf8'))
-  assert.deepEqual(file.harnesses, ['claude', 'agy', 'grok', 'muse'])
-  assert.deepEqual(file.listedOn, { claude: '2026-10-14', agy: '2026-10-13', grok: '2026-10-13', muse: '2026-10-19' })
+  assert.deepEqual(file.harnesses, ['claude', 'agy', 'codex', 'grok', 'muse'])
+  assert.deepEqual(file.listedOn, { claude: '2026-10-14', agy: '2026-10-13', codex: '2026-10-29', grok: '2026-10-13', muse: '2026-10-19' })
   assert.deepEqual(file.excluded.map((entry) => entry.model), ['zeta-big-2', 'zeta-ghost-1'])
   assert.equal(`${serialize(file)}\n`, fs.readFileSync(path.join(dir, 'out', 'models.json'), 'utf8'))
   assert.ok(fs.readFileSync(path.join(dir, 'docs', 'README.md'), 'utf8').includes('- Excluded, not used: claude `zeta-big-2`'))
@@ -835,8 +840,8 @@ test('the committed index has the native harness: aliases, five efforts, no lane
 
   // Fable 5.1 is listed, kept out, and not among the models.
   assert.equal(file.models.some((entry) => entry.model === 'claude-fable-5-1'), false)
-  assert.equal(file.excluded.length, 1)
-  const [fable] = file.excluded
+  assert.equal(file.excluded.length, 8)
+  const fable = file.excluded.find((entry) => entry.model === 'claude-fable-5-1')
   assert.deepEqual([fable.harness, fable.model, fable.alias, fable.name, fable.maker], ['claude', 'claude-fable-5-1', 'fable', 'Claude Fable 5.1', 'Anthropic'])
   assert.equal(fable.reason, 'The owner keeps Fable out until Fable 5.5 (decision A43).')
   assert.deepEqual(fable.price, { input: 10, output: 50 })
@@ -858,7 +863,7 @@ test('the committed index has the native harness: aliases, five efforts, no lane
   assert.ok(readme.includes('| Claude Sonnet 5.5 `claude-sonnet-5-5` | claude | low, medium, high, xhigh, max |'))
   assert.ok(readme.includes('| Claude Sonnet 5.5 `claude-sonnet-5-5` | agy* | low, medium, high |'))
   assert.equal(readme.includes('claude*'), false)
-  assert.ok(readme.includes('- Excluded, not used: claude `claude-fable-5-1` (`fable`): The owner keeps Fable out until Fable 5.5 (decision A43).'))
+  assert.ok(readme.includes('- Excluded, not used: claude `claude-fable-5-1` (`fable`): The owner keeps Fable out until Fable 5.5 (decision A43)'))
 })
 
 // The listings of NATIVE_LISTINGS with changes to the `claude` and `agy` entries (each change is merged into its harness).

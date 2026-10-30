@@ -1,6 +1,6 @@
 'use strict'
 
-// A read-only delegate of the Lead on agy, grok or muse, outside a run: one call of the harness's CLI, with the model
+// A read-only delegate of the Lead on agy, codex, grok or muse, outside a run: one call of the harness's CLI, with the model
 // and the native effort of the pair the router chose, in a disposable worktree of the current commit. It is judged from
 // outside, as a design seat's round is (lib/seats.js): anything the delegate changed undoes its answer, and the
 // worktree is removed whatever happens. A checkout with uncommitted work is not delegated at all (the copy would
@@ -21,8 +21,8 @@ const { WORKDIR_RULE } = require('./lane-calls.js')
 const { KILL_GRACE_SECONDS, cliSeconds } = require('./delegate-limits.js')
 const { refusalIn } = require('./quota-refusal.js')
 
-// The harnesses a delegate may run on (R19): codex and cursor are not among them.
-const HARNESSES = ['agy', 'grok', 'muse']
+// The harnesses a delegate may run on (R19): cursor is not among them.
+const HARNESSES = ['agy', 'codex', 'grok', 'muse']
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
 const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP']
 // What a delegate may leave in its worktree without breaking its rule: the temporary files of its tools.
@@ -334,4 +334,4 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   })
 }
 
-module.exports = { DELEGATE_SCHEMA, DELEGATE_NOTE, DELEGATE_TOOL_BUDGET, quotaSpent, delegateArgv, runDelegate }
+module.exports = { HARNESSES, DELEGATE_SCHEMA, DELEGATE_NOTE, DELEGATE_TOOL_BUDGET, quotaSpent, delegateArgv, runDelegate }

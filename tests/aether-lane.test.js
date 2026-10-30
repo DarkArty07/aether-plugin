@@ -236,7 +236,7 @@ test("status reads each group's windows, marks a group under the reserve unusabl
   const missing = fx.lane(args, 'status', [], fx.laneEnv(t, { command: '/nowhere/agy' }))
   assert.deepEqual(missing.json.harnesses, {
     agy: { enabled: true, command: '/nowhere/agy', path: null, installed: false, version: null, groups: {} },
-    codex: { enabled: false, command: 'codex' },
+    codex: { enabled: false, command: '/nowhere/codex' },
     grok: { enabled: false, command: 'grok' },
     cursor: { enabled: false, command: 'cursor-agent' },
     muse: { enabled: false, command: '/nowhere/muse' },

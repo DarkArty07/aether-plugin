@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// Usage: node scripts/lane-smoke.js <harness> [<model>] [--effort low|medium|high]
+// Usage: node scripts/lane-smoke.js <harness> [<model>] [--effort low|medium|high|xhigh|max] [--raw <file>]
 //
 // One real call to a lane harness, the way a swarm lane would make it, in a fresh empty directory: the model
 // is asked to write one file and to answer with a JSON object. It checks that the harness runs, that the
@@ -16,7 +16,8 @@ const { spawnSync } = require('node:child_process')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const { createAdapter } = require('../plugins/aether/lib/harness/index.js')
 
-const USAGE = 'usage: node scripts/lane-smoke.js <harness> [<model>] [--effort low|medium|high]'
+const USAGE = 'usage: node scripts/lane-smoke.js <harness> [<model>] [--effort low|medium|high|xhigh|max] [--raw <file>]'
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const TIMEOUT_MS = 180000
 const PROMPT =
   'Create the file hello.txt in the working directory containing exactly the text: lane ok\n' +
@@ -31,12 +32,16 @@ const SCHEMA = {
 function parseArgs(argv) {
   const positional = []
   let effort = 'low'
+  let raw = null
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--effort') effort = argv[++i]
-    else positional.push(argv[i])
+    else if (argv[i] === '--raw') {
+      raw = argv[++i]
+      if (raw === undefined) throw new Error(USAGE)
+    } else positional.push(argv[i])
   }
-  if (positional.length < 1 || positional.length > 2 || !['low', 'medium', 'high'].includes(effort)) throw new Error(USAGE)
-  return { harness: positional[0], model: positional[1] ?? null, effort }
+  if (positional.length < 1 || positional.length > 2 || !EFFORTS.includes(effort)) throw new Error(USAGE)
+  return { harness: positional[0], model: positional[1] ?? null, effort, raw }
 }
 
 function main(argv) {
@@ -47,7 +52,7 @@ function main(argv) {
     console.error(err.message)
     return 2
   }
-  const config = lanes.loadConfig(lanes.CONFIG_FILE)
+  const config = lanes.loadConfig()
   const settings = config.harnesses[args.harness]
   if (!settings) {
     console.error(`no harness ${args.harness} in the lane table: ${Object.keys(config.harnesses).join(', ')}`)
@@ -75,11 +80,19 @@ function main(argv) {
   const env = lanes.laneEnv(process.env, `lane-smoke-${process.pid}`)
   const run = spawnSync(argvOfCall[0], argvOfCall.slice(1), { cwd: work, env, encoding: 'utf8', timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 })
   const seconds = Math.round((Date.now() - started) / 100) / 10
-  const parsed = adapter.parse({ stdout: run.stdout ?? '', stderr: run.stderr ?? '', exitCode: run.status }, { required: ['status', 'file'] })
+  const stdout = run.stdout ?? ''
+  const stderr = run.stderr ?? ''
+  if (args.raw) {
+    const separator = stdout.length === 0 || stdout.endsWith('\n') ? '' : '\n'
+    fs.writeFileSync(args.raw, `${stdout}${separator}--- stderr ---\n${stderr}`)
+  }
+  const parsed = adapter.parse({ stdout, stderr, exitCode: run.status }, { required: ['status', 'file'] })
   const written = path.join(work, 'hello.txt')
   const content = fs.existsSync(written) ? fs.readFileSync(written, 'utf8').trim() : null
   const ok = parsed.clean && content === 'lane ok'
-  console.log(JSON.stringify({ ok, harness: args.harness, model, effort: args.effort, seconds, clean: parsed.clean, reason: parsed.reason, structured: parsed.structured, usage: parsed.usage, fileContent: content, dir }))
+  const report = { ok, harness: args.harness, model, effort: args.effort, seconds, clean: parsed.clean, reason: parsed.reason, structured: parsed.structured, usage: parsed.usage, fileContent: content, dir }
+  if (args.raw) report.raw = args.raw
+  console.log(JSON.stringify(report))
   return ok ? 0 : 1
 }
 

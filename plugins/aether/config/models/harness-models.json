@@ -33,6 +33,49 @@
         "gpt-oss-120b-medium"
       ]
     },
+    "codex": {
+      "capturedAt": "2026-10-29",
+      "listedBy": "models_cache.json of ~/.codex (codex 0.166.0 has no command that lists models)",
+      "effortVia": "flag",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "excludedEfforts": {
+        "ultra": "Artificial Analysis does not measure it, so it has no figure to compare; the owner's words: “no efforts AA does not measure”."
+      },
+      "note": "Captured on 2026-10-29 from ~/.codex/models_cache.json with codex 0.166.0 for the owner's account (plan Plus), listing 10 models.",
+      "models": [
+        "gpt-6.1-sol",
+        "gpt-6.1-terra",
+        "gpt-6-luna",
+        {
+          "id": "gpt-6-astra",
+          "excluded": "The top tier waits for its next generation: the owner said «no lo vamos a usar hasta que salga astra 6.1». GPT-6.1 Astra reopens the question as Fable 5.5 reopens Fable 5.1 (A43); Astra max scored 56.9 against Sol max 54.5, at five times the price per token: 10/50 against 2/10."
+        },
+        {
+          "id": "gpt-6-sol",
+          "excluded": "Previous generation workhorse model of the line; Aether uses only the newest generation."
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "excluded": "Older generation workhorse model of the line; Aether uses only the newest generation."
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "excluded": "Older generation balanced model of the line; Aether uses only the newest generation."
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "excluded": "Older generation fast model of the line; Aether uses only the newest generation."
+        },
+        {
+          "id": "gpt-reserve",
+          "excluded": "Codex hides this model (internal model with visibility hide)."
+        },
+        {
+          "id": "codex-auto-review",
+          "excluded": "Codex hides this model (internal automatic approval review model with visibility hide)."
+        }
+      ]
+    },
     "grok": {
       "capturedAt": "2026-10-13",
       "listedBy": "grok models",

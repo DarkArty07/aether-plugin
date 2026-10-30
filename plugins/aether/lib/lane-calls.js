@@ -42,11 +42,19 @@ const ROLE_SCHEMAS = {
 // on a vague prompt, and what it reads goes to its model provider.
 const WORKDIR_RULE = 'Work only inside the working directory you are given: do not run `env` or `ps`, and do not search outside that directory.'
 
+// The read-only rule of a reviewing lane. Codex has no tool of its own to read a file, only its shell, so for it the rule
+// allows the shell to read and nothing else (the first real review call of 2026-10-30 gave up because it was told to run
+// no command at all).
+const READ_ONLY_RULE = (harness) =>
+  harness === 'codex'
+    ? 'Your review is read-only: your only tool is the shell, so use it to read (cat, ls, grep, rg, git diff, git show) and run no other command, and do not change any file.'
+    : 'Your review is read-only: do not run commands, and do not change any file.'
+
 // The note of each role's lane call, naming the harness that runs it.
 const LANE_NOTE_TEXT = {
   implementer: (harness) => `## You run in an external harness\n\nYou are an Aether implementer, run by the ${harness} CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether-tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
-  supervisor: (harness) => `## You run in an external harness\n\nYou are an Aether supervisor, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
-  reviewer: (harness) => `## You run in an external harness\n\nYou are the Aether final reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+  supervisor: (harness) => `## You run in an external harness\n\nYou are an Aether supervisor, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether-tmp/ folder. ${READ_ONLY_RULE(harness)} ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+  reviewer: (harness) => `## You run in an external harness\n\nYou are the Aether final reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. ${READ_ONLY_RULE(harness)} ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
 }
 
 // The lane note of role, naming the harness that runs the call. agy is the default, as it was before harnesses.
@@ -56,7 +64,7 @@ function laneNote(role, harness = 'agy') {
 
 // The note of a reviewer call that carries a task: it reviews the unit, not the merged run.
 function unitReviewerNote(harness = 'agy') {
-  return `## You run in an external harness\n\nYou are an Aether reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch, not of the integration branch; the unit's brief (brief.md) and the review package (package.diff) are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+  return `## You run in an external harness\n\nYou are an Aether reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch, not of the integration branch; the unit's brief (brief.md) and the review package (package.diff) are in its .aether-tmp/ folder. ${READ_ONLY_RULE(harness)} ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
 }
 
 // ---- Prompts ----
@@ -660,4 +668,4 @@ function stop(cwd, runId, call = null) {
   return { stopped }
 }
 
-module.exports = { WORKDIR_RULE, roleBody, claudeMdSections, buildPrompt, enabledFor, status, refreshStale, start, wait, result, stop, runCall, finishedResult, loadTable }
+module.exports = { WORKDIR_RULE, laneNote, unitReviewerNote, roleBody, claudeMdSections, buildPrompt, enabledFor, status, refreshStale, start, wait, result, stop, runCall, finishedResult, loadTable }

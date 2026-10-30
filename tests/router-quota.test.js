@@ -111,7 +111,7 @@ test('the life of a reading is the one of its harness, and staleHarnesses names 
   assert.deepEqual(stale({ agy: { readAt: NOW - 9 * MIN, groups: {} }, grok: { readAt: NOW - 31 * MIN, groups: {} } }), ['grok'])
   assert.deepEqual(stale({ agy: { readAt: NOW - 10 * MIN, groups: {} }, grok: null }), ['agy', 'grok'], 'a reading as old as its life is not valid')
   assert.deepEqual(stale({ agy: { readAt: NOW + MIN, groups: {} }, grok: { readAt: NOW, groups: {} } }), ['agy'])
-  assert.deepEqual(quota.staleHarnesses({ readings: { agy: null, muse: null }, config, harnesses: ['agy', 'codex', 'muse'], now: NOW }), ['agy', 'muse'], 'only agy, grok and muse are asked about')
+  assert.deepEqual(quota.staleHarnesses({ readings: { agy: null, muse: null }, config, harnesses: ['agy', 'codex', 'muse'], now: NOW }), ['agy', 'codex', 'muse'], 'only agy, codex, grok and muse are asked about')
 })
 
 test('a reading with a window that has reset since it was taken is not valid, as in readGroups (R23)', () => {

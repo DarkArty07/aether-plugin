@@ -248,6 +248,264 @@
         "https://dev.meta.ai/docs/muse-code/subscriptions"
       ],
       "checked": "2026-10-19"
+    },
+    "gpt-6-1-sol": {
+      "name": "GPT-6.1 Sol",
+      "maker": "OpenAI",
+      "purpose": "«Latest workhorse model for coding and everyday work.»",
+      "contextTokens": 500000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "low",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": { "input": 2, "output": 10, "note": "per million tokens" },
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "gpt-6-1-terra": {
+      "name": "GPT-6.1 Terra",
+      "maker": "OpenAI",
+      "purpose": "«GPT-6.1 Terra Codex model.»",
+      "contextTokens": 500000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "low",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": { "input": 1, "output": 5, "note": "per million tokens" },
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "gpt-6-luna": {
+      "name": "GPT-6 Luna",
+      "maker": "OpenAI",
+      "purpose": "«Fast and affordable model for easier tasks.»",
+      "contextTokens": 272000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": { "input": 0.1, "output": 0.5, "note": "per million tokens" },
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "gpt-6-astra": {
+      "name": "GPT-6 Astra",
+      "maker": "OpenAI",
+      "purpose": "«Frontier intelligence for the most demanding work.»",
+      "contextTokens": 272000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "low",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": { "input": 10, "output": 50, "note": "per million tokens" },
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "gpt-6-sol": {
+      "name": "GPT-6 Sol",
+      "maker": "OpenAI",
+      "purpose": "«Previous generation workhorse model.»",
+      "contextTokens": 272000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "gpt-5-6-sol": {
+      "name": "GPT-5.6 Sol",
+      "maker": "OpenAI",
+      "purpose": "«Older generation workhorse model.»",
+      "contextTokens": 272000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "low",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "gpt-5-6-terra": {
+      "name": "GPT-5.6 Terra",
+      "maker": "OpenAI",
+      "purpose": "«Older balanced model for straightforward work.»",
+      "contextTokens": 272000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "gpt-5-6-luna": {
+      "name": "GPT-5.6 Luna",
+      "maker": "OpenAI",
+      "purpose": "«Older fast and efficient model.»",
+      "contextTokens": 272000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "gpt-reserve": {
+      "name": "GPT-Reserve",
+      "maker": "OpenAI",
+      "purpose": "«Fast and affordable agentic coding model.»",
+      "contextTokens": 272000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "codex-auto-review": {
+      "name": "Codex Auto Review",
+      "maker": "OpenAI",
+      "purpose": "«Automatic approval review model for Codex.»",
+      "contextTokens": 272000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "checked": "2026-10-29"
+    },
+    "gpt-oss-120b": {
+      "name": "GPT-OSS 120B",
+      "maker": "OpenAI",
+      "purpose": "Open-weight model.",
+      "contextTokens": 131072,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["medium"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "agy",
+      "caveats": [],
+      "sources": ["https://platform.openai.com"],
+      "checked": "2026-10-15"
+    },
+    "grok-4-5": {
+      "name": "Grok 4.5",
+      "maker": "xAI (SpaceXAI)",
+      "purpose": "Previous generation Grok model.",
+      "contextTokens": 131072,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["low", "medium", "high", "xhigh"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "grok",
+      "caveats": [],
+      "sources": ["https://x.ai"],
+      "checked": "2026-10-13"
+    },
+    "grok-4-6": {
+      "name": "Grok 4.6",
+      "maker": "xAI (SpaceXAI)",
+      "purpose": "Previous generation Grok model.",
+      "contextTokens": 262144,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["low", "medium", "high", "xhigh"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "grok",
+      "caveats": [],
+      "sources": ["https://x.ai"],
+      "checked": "2026-10-13"
+    },
+    "muse-spark-1-2": {
+      "name": "Muse Spark 1.2",
+      "maker": "Meta",
+      "purpose": "Previous generation Muse Spark model.",
+      "contextTokens": 131072,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "medium",
+      "efforts": ["minimal", "low", "medium", "high", "xhigh"],
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "muse",
+      "caveats": [],
+      "sources": ["https://dev.meta.ai"],
+      "checked": "2026-10-19"
     }
   }
 }

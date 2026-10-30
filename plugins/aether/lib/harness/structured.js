@@ -124,8 +124,9 @@ const quotaReason = (line) => `quota: ${line.slice(0, QUOTE_LIMIT)}`
 // outside the answer, where a quota line may sit; the usage is kept whatever the verdict. A run that exits 0 with
 // a JSON object in its answer and every required field is clean, and no quota line is looked for in it. Any other
 // run fails by the first rule that holds: a quota line in stderr; for a run that did not exit 0, a quota line
-// outside the answer; its exit; no result; no structured output; a missing field.
-function parseRun(raw, extract, required = []) {
+// outside the answer; its exit; no result; no structured output; a missing field. quotaByText false skips those
+// two quota rules; every other rule, and its order, stays.
+function parseRun(raw, extract, required = [], { quotaByText = true } = {}) {
   const stdout = typeof raw?.stdout === 'string' ? raw.stdout : ''
   const stderr = typeof raw?.stderr === 'string' ? raw.stderr : ''
   const exitCode = raw?.exitCode
@@ -136,11 +137,15 @@ function parseRun(raw, extract, required = []) {
     return { clean: true, reason: null, structured, usage, conversation: null }
   }
   const failed = (reason) => ({ clean: false, reason, structured: null, usage, conversation: null })
-  const stderrQuota = quotaLine(stderr)
-  if (stderrQuota !== null) return failed(quotaReason(stderrQuota))
+  if (quotaByText) {
+    const stderrQuota = quotaLine(stderr)
+    if (stderrQuota !== null) return failed(quotaReason(stderrQuota))
+  }
   if (exitCode !== 0) {
-    const outsideQuota = quotaLine(outside)
-    if (outsideQuota !== null) return failed(quotaReason(outsideQuota))
+    if (quotaByText) {
+      const outsideQuota = quotaLine(outside)
+      if (outsideQuota !== null) return failed(quotaReason(outsideQuota))
+    }
     // An exit that is not a number, such as none at all or a signal, is not known to be 0.
     const code = Number.isInteger(exitCode) ? exitCode : 'unknown'
     const line = firstLine(stderr)

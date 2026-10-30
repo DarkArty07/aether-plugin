@@ -37,7 +37,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 ## The design record
 
 - [Claude Code research](claude-code-research.md): the verified capabilities and limits this design relies on, and the prices.
-- [Decisions](decisions.md): D1–D15 from the first design session, with their updates, and A1–A99 from the specs and the RADAR roadmap.
+- [Decisions](decisions.md): D1–D15 from the first design session, with their updates, and A1–A100 from the specs and the RADAR roadmap.
 - [Spec 001, design seats](../specs/001-design-seats/spec.md) and its [plan](../specs/001-design-seats/plan.md): the seats of the Judge, the Writer and the Examiner, open to any harness, with the native agent as the fallback.
 - [Aether Agents retrospective](aether-retrospective.md): what Aether was, and what failed and why.
 - [Models](models/README.md): the index of the models the harnesses offer, from Artificial Analysis and the harnesses' own listings, with what each is for.

@@ -32,8 +32,8 @@ for (const entry of COPIES) {
   })
 }
 
-// Declared as a subset: the harnesses the models index keeps, chosen by the owner (claude, the native one, and three lanes).
-const CHOSEN = ['claude', 'agy', 'grok', 'muse']
+// Declared as a subset: the harnesses the models index keeps, chosen by the owner (claude, the native one, and four lanes).
+const CHOSEN = ['claude', 'agy', 'codex', 'grok', 'muse']
 test('the chosen harnesses of the models index are claude and some of the source, in the same three places', () => {
   for (const name of CHOSEN.slice(1)) assert.ok(SOURCE().includes(name), name)
   assert.deepEqual(json('plugins/aether/config/models/models.json').harnesses, CHOSEN)

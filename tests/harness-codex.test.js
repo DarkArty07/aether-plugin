@@ -4,10 +4,11 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { tempDir } = require('./helpers.js')
-const { createCodex } = require('../plugins/aether/lib/harness/codex.js')
+const { createCodex, CODEX_NOTE } = require('../plugins/aether/lib/harness/codex.js')
 
-const GROUPS = { gpt: 'GPT models', other: 'Other models' }
+const GROUPS = { codex: 'Codex plan' }
 const ZERO = { input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }
 const USAGE = { input: 1000, output: 200, thinking: 0, cacheRead: 800, total: 1200 }
 const APPROVE = '{"verdict":"approve","summary":"done"}'
@@ -31,35 +32,60 @@ function stubExec(answers) {
 }
 const ok = (stdout) => ({ status: 0, stdout, stderr: '' })
 
-test('codex reports its quota as unknown for each group, without running the CLI', () => {
-  const { exec, calls } = stubExec([])
-  const codex = createCodex({ groups: GROUPS, exec })
-  assert.equal(codex.name, 'codex')
-  assert.equal(codex.schemaInPrompt, true)
-  assert.deepEqual(codex.quota(), {
-    groups: {
-      gpt: { unknown: true, windows: {} },
-      other: { unknown: true, windows: {} },
-    },
-  })
-  assert.deepEqual(calls, [])
+const FAKE = path.join(__dirname, 'fixtures', 'fake-codex.js')
+const CODE = path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'harness', 'codex.js')
+const schemaIn = (t) => {
+  const file = path.join(tempDir(t), 'schema.json')
+  fs.writeFileSync(file, JSON.stringify({ type: 'object', properties: { answer: { type: 'string' }, extra: { type: 'string' } }, required: ['answer'] }))
+  return file
+}
+
+test('argv runs one headless exec: the model and effort of the pair, JSON events, the sandbox on, no approvals, none of the owner\'s setup', (t) => {
+  const schemaFile = schemaIn(t)
+  const codex = createCodex({ command: '/opt/codex', groups: GROUPS })
+  assert.deepEqual(codex.argv({ model: 'gpt-6.1-terra', level: 'medium', schemaFile, timeoutSeconds: 2700, prompt: 'P' }), [
+    '/opt/codex', 'exec', `${CODEX_NOTE}\n\nP`, '--model', 'gpt-6.1-terra', '-c', 'model_reasoning_effort=medium', '--json', '--sandbox', 'workspace-write',
+    '--ephemeral', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check', '--disable', 'hooks', '--disable', 'apps', '--disable', 'browser_use', '--disable', 'browser_use_external', '--disable', 'computer_use', '--disable', 'plugins', '--disable', 'multi_agent', '-c', 'approval_policy=never',
+    '--output-schema', schemaFile,
+  ])
+  const bare = createCodex({ groups: GROUPS }).argv({ model: 'm', level: 'low', prompt: 'P' })
+  assert.equal(bare[0], 'codex')
+  assert.equal(bare.includes('--output-schema'), false)
 })
 
-test('argv runs one headless exec with the prompt, the model, its reasoning effort, JSON events and a workspace-write sandbox', () => {
-  const codex = createCodex({ command: '/opt/codex', groups: GROUPS })
-  assert.deepEqual(codex.argv({ model: 'gpt-5-codex', level: 'high', schemaFile: '/r/schema.json', timeoutSeconds: 2700, prompt: 'P' }), [
-    '/opt/codex',
-    'exec',
-    'P',
-    '--model',
-    'gpt-5-codex',
-    '-c',
-    'model_reasoning_effort=high',
-    '--json',
-    '--sandbox',
-    'workspace-write',
-  ])
-  assert.equal(createCodex({ groups: GROUPS }).argv({ model: 'm', level: 'low', prompt: 'P' })[0], 'codex')
+test('the prompt carries the note that keeps the owner\'s AGENTS.md orders out, and nothing else changes in it', () => {
+  const argv = createCodex({ groups: GROUPS }).argv({ model: 'm', level: 'low', prompt: 'DO THE TASK' })
+  assert.equal(argv[2], `${CODEX_NOTE}\n\nDO THE TASK`)
+  assert.match(CODEX_NOTE, /headless worker/)
+  assert.match(CODEX_NOTE, /start no subagents/)
+  assert.match(CODEX_NOTE, /do not run git add or git commit/, 'the sandbox keeps .git read-only, so codex must leave the commit to Aether')
+  assert.equal(argv.some((arg) => arg.startsWith('project_doc_max_bytes')), false, 'the option that did not work is gone')
+})
+
+test('the effort goes to codex under the name of the pair, for each of the five levels', () => {
+  const codex = createCodex({ groups: GROUPS })
+  for (const level of ['low', 'medium', 'high', 'xhigh', 'max']) {
+    assert.ok(codex.argv({ model: 'gpt-6-luna', level, prompt: 'P' }).includes(`model_reasoning_effort=${level}`), level)
+  }
+})
+
+test('argv passes none of the flags that open the sandbox or reach the owner\'s setup', () => {
+  const argv = createCodex({ groups: GROUPS }).argv({ model: 'm', level: 'high', prompt: 'P' })
+  for (const flag of ['--dangerously-bypass-approvals-and-sandbox', '--dangerously-bypass-hook-trust', '--full-auto', '--approve-for-me', '--add-dir', '--oss', '--profile', '-p', '--cd', '--worktree']) {
+    assert.equal(argv.includes(flag), false, flag)
+  }
+})
+
+test('the schema file is rewritten strict for codex, and codex gets it in --output-schema, not in the prompt', (t) => {
+  const schemaFile = schemaIn(t)
+  const codex = createCodex({ groups: GROUPS })
+  assert.equal(codex.schemaInPrompt, false)
+  codex.argv({ model: 'm', level: 'low', schemaFile, prompt: 'P' })
+  const written = JSON.parse(fs.readFileSync(schemaFile, 'utf8'))
+  assert.equal(written.additionalProperties, false)
+  assert.deepEqual(written.required, ['answer', 'extra'])
+  const missing = path.join(tempDir(t), 'nope.json')
+  assert.ok(codex.argv({ model: 'm', level: 'low', schemaFile: missing, prompt: 'P' }).includes(missing), 'a missing file does not stop argv')
 })
 
 test('modelArg gives codex the bare model id, since its effort goes in its own flag', () => {
@@ -99,12 +125,13 @@ test('parse fails a non-zero exit with the first non-empty stderr line, even whe
   assert.equal(codex.parse({ stdout, stderr: '', exitCode: 2 }).reason, 'exit 2')
 })
 
-test('parse fails a quota message in stderr or stdout before any other rule', () => {
+test('a quota word is no quota failure by itself: only a datum or a reading makes one', () => {
   const codex = createCodex({ groups: GROUPS })
-  const stdout = jsonl(message(APPROVE), turn(CODEX_USAGE))
-  assert.equal(codex.parse({ stdout, stderr: 'ERROR: Rate limit reached\n', exitCode: 1 }).reason, 'quota: ERROR: Rate limit reached')
-  const limited = codex.parse({ stdout: 'Error: usage limit reached\n', stderr: '', exitCode: 1 })
-  assert.deepEqual([limited.clean, limited.reason], [false, 'quota: Error: usage limit reached'])
+  const ok = jsonl(message(APPROVE), turn(CODEX_USAGE))
+  assert.equal(codex.parse({ stdout: ok, stderr: 'ERROR: Rate limit reached\n', exitCode: 1 }).reason, 'exit 1: ERROR: Rate limit reached')
+  assert.equal(codex.parse({ stdout: 'Error: usage limit reached\n', stderr: '', exitCode: 1 }).reason, 'exit 1')
+  assert.equal(codex.parse({ stdout: jsonl({ type: 'error', message: 'usage limit reached' }), stderr: '', exitCode: 1 }).reason, 'exit 1')
+  assert.equal(codex.parse({ stdout: jsonl({ type: 'turn.failed', error: { message: 'You have hit your usage limit' } }), stderr: '', exitCode: 1 }).reason, 'exit 1')
 })
 
 test('a clean answer stays clean, whatever the command output or the answer text says about limits', () => {
@@ -115,15 +142,6 @@ test('a clean answer stays clean, whatever the command output or the answer text
     const parsed = codex.parse({ stdout, stderr: '', exitCode: 0 }, { required: ['verdict'] })
     assert.deepEqual([parsed.clean, parsed.reason], [true, null])
   }
-})
-
-test('a non-zero codex run is a quota failure for a quota line on stderr or in an error event, and quotes only the message', () => {
-  const codex = createCodex({ groups: GROUPS })
-  assert.equal(codex.parse({ stdout: '', stderr: 'Rate limit reached\n', exitCode: 1 }).reason, 'quota: Rate limit reached')
-  const error = jsonl({ type: 'error', message: 'usage limit reached' })
-  assert.equal(codex.parse({ stdout: error, stderr: '', exitCode: 1 }).reason, 'quota: usage limit reached')
-  const failed = jsonl({ type: 'turn.failed', error: { message: 'You have hit your usage limit' } })
-  assert.equal(codex.parse({ stdout: failed, stderr: '', exitCode: 1 }).reason, 'quota: You have hit your usage limit')
 })
 
 test('a non-zero codex run with no quota text gives its exit and the first stderr line', () => {
@@ -183,4 +201,35 @@ test('installed follows the PATH', (t) => {
   fs.chmodSync(exe, 0o755)
   assert.equal(createCodex({ groups: GROUPS, env: { PATH: dir } }).installed(), true)
   assert.equal(createCodex({ groups: GROUPS, env: { PATH: '/nowhere' } }).installed(), false)
+})
+
+test('the fake codex runs the argv of the adapter in a working directory, and parse reads what it prints', (t) => {
+  const cwd = tempDir(t)
+  const log = path.join(tempDir(t), 'log')
+  const env = { ...process.env, AETHER_FAKE_CODEX_LOG: log, AETHER_FAKE_CODEX_SCRIPT: JSON.stringify({ answer: APPROVE, files: { 'out.txt': 'x' } }) }
+  const codex = createCodex({ command: FAKE, groups: GROUPS })
+  const argv = codex.argv({ model: 'gpt-6-luna', level: 'low', prompt: 'P' })
+  const r = spawnSync(argv[0], argv.slice(1), { cwd, env, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(fs.readFileSync(path.join(cwd, 'out.txt'), 'utf8'), 'x')
+  const parsed = codex.parse({ stdout: r.stdout, stderr: r.stderr, exitCode: r.status }, { required: ['verdict'] })
+  assert.deepEqual([parsed.clean, parsed.structured, parsed.usage], [true, { verdict: 'approve', summary: 'done' }, USAGE])
+  const [entry] = fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  assert.equal(entry.kind, 'exec')
+  assert.equal(fs.realpathSync(entry.cwd), fs.realpathSync(cwd))
+})
+
+test('the real events of codex exec --json, captured on 2026-10-29, read as a clean run', () => {
+  const stdout = fs.readFileSync(path.join(__dirname, 'fixtures', 'codex', 'exec-events.jsonl'), 'utf8')
+  const parsed = createCodex({ groups: GROUPS }).parse({ stdout, stderr: '', exitCode: 0 }, { required: [] })
+  assert.equal(parsed.clean, true, parsed.reason)
+  assert.deepEqual(parsed.structured, { ok: true })
+  assert.ok(parsed.usage.input > 0 && parsed.usage.output > 0, JSON.stringify(parsed.usage))
+})
+
+test('no code of the adapter opens the owner\'s credentials or uses an API key, and the comment about unchecked events is gone', () => {
+  const source = fs.readFileSync(CODE, 'utf8')
+  const code = source.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n')
+  assert.equal(/auth\.json|OPENAI_API_KEY|CODEX_HOME/.test(code), false)
+  assert.equal(/not yet checked against the installed codex/.test(source), false)
 })

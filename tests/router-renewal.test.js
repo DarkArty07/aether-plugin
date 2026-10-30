@@ -16,7 +16,7 @@ const clock = () => { let t = 0; return { now: () => t, sleep: async (ms) => { t
 test('renewalArgv is the renew verb of aether-delegate, which saves the reading where the pair choice reads it', () => {
   assert.deepEqual(renewal.renewalArgv('grok'), [process.execPath, path.join(PLUGIN, 'bin', 'aether-delegate'), 'renew', '--harness', 'grok'])
   assert.deepEqual(renewal.renewalArgv('agy', { node: 'node', pluginRoot: '/p' }), ['node', '/p/bin/aether-delegate', 'renew', '--harness', 'agy'])
-  assert.deepEqual(renewal.RENEWABLE, ['agy', 'grok', 'muse'])
+  assert.deepEqual(renewal.RENEWABLE, ['agy', 'codex', 'grok', 'muse'])
 })
 
 const config = lanes.loadConfig(lanes.CONFIG_FILE)
@@ -86,13 +86,13 @@ test('renewReading saves muse\'s refreshed reading where the router reads it, sh
   assert.deepEqual(fs.readdirSync(path.dirname(file)), ['muse.json'], 'no temporary file is left')
 })
 
-test('renewReading writes nothing when no reading comes, and renews only agy, grok and muse', async (t) => {
+test('renewReading writes nothing when no reading comes, and renews only agy, codex, grok and muse', async (t) => {
   const dataDir = tempDir(t)
   await assert.rejects(renewal.renewReading({ harness: 'grok', settings: config.harnesses.grok, dataDir, now: () => NOW, refreshers: { grok: async () => null } }), /no new reading/)
   await assert.rejects(renewal.renewReading({ harness: 'grok', settings: config.harnesses.grok, dataDir, now: () => NOW, refreshers: { grok: async () => { throw new Error('acp down') } } }), /acp down/)
   const failing = () => { throw new Error('agy /usage failed') }
   await assert.rejects(renewal.renewReading({ harness: 'agy', settings: config.harnesses.agy, dataDir, now: () => NOW, createAdapter: () => ({}), readGroups: failing, refreshers: {} }), /agy \/usage failed/)
-  await assert.rejects(renewal.renewReading({ harness: 'codex', settings: config.harnesses.codex, dataDir, now: () => NOW }), /agy, grok or muse/)
+  await assert.rejects(renewal.renewReading({ harness: 'cursor', settings: config.harnesses.codex, dataDir, now: () => NOW }), /agy, codex, grok or muse/)
   await assert.rejects(renewal.renewReading({ harness: 'agy', settings: undefined, dataDir, now: () => NOW }), /lane table/)
   assert.equal(fs.existsSync(path.join(dataDir, 'router', 'readings')), false)
 })
@@ -139,14 +139,27 @@ test('two decisions at once start one renewal: the lock is taken before the proc
   assert.deepEqual(nested, { started: false, running: true })
 })
 
-test('a process that cannot start leaves no lock, and a harness that is not agy, grok or muse is never renewed', (t) => {
+test('a process that cannot start leaves no lock, and a harness that is not agy, codex, grok or muse is never renewed', (t) => {
   const dataDir = tempDir(t)
   const failed = renewal.startRenewal({ dataDir, harness: 'agy', now: NOW, spawn: () => { throw new Error('ENOENT') } })
   assert.deepEqual(failed, { started: false, running: false })
   assert.equal(fs.existsSync(renewal.lockFile(dataDir, 'agy')), false)
-  for (const harness of ['codex', 'cursor', '../agy', '']) {
+  for (const harness of ['cursor', '../agy', '']) {
     assert.deepEqual(renewal.startRenewal({ dataDir, harness, now: NOW, spawn: () => { throw new Error('must not run') } }), { started: false, running: false }, harness)
   }
+})
+
+test('a renewal of codex starts once, the same way agy\'s does', (t) => {
+  const dataDir = tempDir(t)
+  const spawned = []
+  const spawn = (harness) => { spawned.push(harness); return 4242 }
+  const first = renewal.startRenewal({ dataDir, harness: 'codex', now: NOW, alive: () => true, spawn })
+  assert.deepEqual(first, { started: true, running: true })
+  assert.deepEqual(JSON.parse(fs.readFileSync(renewal.lockFile(dataDir, 'codex'), 'utf8')), { pid: 4242, since: NOW })
+  assert.equal(renewal.lockFile(dataDir, 'codex'), path.join(dataDir, 'router', 'renewing', 'codex.json'))
+  const second = renewal.startRenewal({ dataDir, harness: 'codex', now: NOW + 30 * SEC, alive: () => true, spawn })
+  assert.deepEqual(second, { started: false, running: true })
+  assert.deepEqual(spawned, ['codex'])
 })
 
 test('spawnRenewal launches a process that outlives the caller, with the argv it is given', async (t) => {

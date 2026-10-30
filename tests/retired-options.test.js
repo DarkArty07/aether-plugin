@@ -40,8 +40,9 @@ test('the formats group exists and is built for the four compatibility branches'
   for (const pattern of GROUPS.formats) assert.ok(pattern instanceof RegExp)
 })
 
-test('codex and cursor are said to be untested with a real account, in the manifest and in the option table', () => {
-  const sentence = 'Codex and Cursor are not tested with a real account.'
+test('only cursor is said to be untested with a real account, in the manifest and in the option table', () => {
+  const sentence = 'Cursor is not tested with a real account.'
   assert.ok(manifest.userConfig.harnesses.description.endsWith(sentence))
+  assert.equal(/Codex and Cursor are not tested/.test(manifest.userConfig.harnesses.description), false)
   assert.ok(fs.readFileSync(path.join(ROOT, 'docs/guide/options.md'), 'utf8').includes(sentence))
 })

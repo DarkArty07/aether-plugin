@@ -138,3 +138,11 @@ test('defaultExec runs argv without a shell, and throws when the command cannot 
   })
   assert.throws(() => defaultExec(['/nonexistent/aether-test-cli'], { timeoutMs: 20000 }))
 })
+
+test('parseRun with quotaByText false gives a quota word no quota reason, and the default keeps it', () => {
+  const extract = (stdout) => ({ answer: '', usage: {}, outside: stdout })
+  const raw = { stdout: 'usage limit reached\n', stderr: 'Rate limit reached\n', exitCode: 1 }
+  assert.equal(parseRun(raw, extract, []).reason, 'quota: Rate limit reached')
+  assert.equal(parseRun(raw, extract, [], { quotaByText: false }).reason, 'exit 1: Rate limit reached')
+  assert.equal(parseRun({ ...raw, stderr: '' }, extract, [], { quotaByText: false }).reason, 'exit 1')
+})

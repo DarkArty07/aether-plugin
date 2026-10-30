@@ -316,7 +316,7 @@ test('compile names each enabled harness that gives no call, and why, on stderr'
   const md = writePlan(repo.dir, plan([task(1)]))
   const file = laneTable(t, executable)
   const bin = tempDir(t)
-  for (const name of ['codex', 'grok']) {
+  for (const name of ['cursor-agent', 'grok']) {
     fs.writeFileSync(path.join(bin, name), '#!/bin/sh\nexit 0\n')
     fs.chmodSync(path.join(bin, name), 0o755)
   }
@@ -326,8 +326,8 @@ test('compile names each enabled harness that gives no call, and why, on stderr'
   const r = runBin(PLAN_BIN, ['compile', md], repo.dir, env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.deepEqual(r.json.lanes.harnesses, ['agy'])
-  assert.ok(r.stderr.includes('aether-plan: superdelegation: codex is enabled but has no models in the lane table yet\n'), r.stderr)
-  assert.ok(r.stderr.includes('aether-plan: superdelegation: cursor is enabled but is not installed: cursor-agent was not found\n'), r.stderr)
+  assert.ok(r.stderr.includes('aether-plan: superdelegation: cursor is enabled but has no models in the lane table yet\n'), r.stderr)
+  assert.ok(r.stderr.includes('aether-plan: superdelegation: codex is enabled but is not installed: codex was not found\n'), r.stderr)
   // grok is installed but not enabled, and agy gives calls: neither is named.
   assert.ok(!/superdelegation: (grok|agy) /.test(r.stderr), r.stderr)
 })

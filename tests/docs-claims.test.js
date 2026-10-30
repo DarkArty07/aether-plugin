@@ -26,9 +26,10 @@ test('CLAUDE.md no longer says the old options stay as legacy keys, and names th
   for (const name of ['common.js', 'lane-process.js', 'plan-compile.js']) assert.ok(text.includes(name) || read('docs/reference/components.md').includes(name), name)
 })
 
-test('the lanes guide says codex and cursor are not tested with a real account, and that a model only takes the roles of its list', () => {
+test('the lanes guide says cursor is not tested with a real account, and that a model only takes the roles of its list', () => {
   const guide = read('docs/guide/lanes.md')
-  assert.ok(guide.includes('Codex and Cursor are not tested with a real account.'))
+  assert.ok(guide.includes('Cursor is not tested with a real account.'))
+  assert.equal(/Codex and Cursor are not tested/.test(guide), false)
   assert.match(guide, /roles/)
   assert.match(guide, /native/)
 })

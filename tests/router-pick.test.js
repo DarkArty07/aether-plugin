@@ -29,6 +29,16 @@ const agy = (groups, readAt = NOW - 2 * MIN) => ({ readAt, groups })
 const GROK = { readAt: NOW - MIN, groups: { grok: weekly(0.95, 29.6) } }
 // A valid muse reading whose weekly window renews in 50 h, after grok's and agy's Claude group in the tests below.
 const MUSE = { readAt: NOW - MIN, groups: { muse: { windows: { '5h': win(1, 5), weekly: win(0.9, 50) } } } }
+// Codex: one model with the three roles in the copy of the table, one pair, and a reading whose weekly window renews in `hours`.
+// The other Codex models stay: the test of the real pairs table reads this same copy.
+config.harnesses.codex.models = {
+  'gpt-6.1-sol': { group: 'codex', roles: ['implementer', 'supervisor', 'reviewer'] },
+  'gpt-6.1-terra': config.harnesses.codex.models['gpt-6.1-terra'],
+  'gpt-6-luna': config.harnesses.codex.models['gpt-6-luna'],
+}
+const CODEX = (hours, remaining = 0.9) => ({ readAt: NOW - MIN, groups: { codex: { windows: { '5h': win(1, 5), weekly: win(remaining, hours) } } } })
+const ALL_FOUR = ['agy', 'codex', 'grok', 'muse']
+const GOOD = { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK, muse: MUSE }
 
 const claude = (model, effort, intelligence, costPerTaskUsd) => ({ id: `claude/${model}@${effort}`, harness: 'claude', model, family: `claude-${model}-5-5`, effort, group: null, intelligence, costPerTaskUsd })
 const external = (harness, model, effort, group, intelligence, costPerTaskUsd, extra = {}) => ({ id: `${harness}/${model}@${effort}`, harness, model, family: model, effort, group, intelligence, costPerTaskUsd, ...extra })
@@ -42,6 +52,7 @@ const PAIRS = [
   external('agy', 'claude-sonnet-5-5', 'high', 'claude', 46.8, 0.88),
   external('grok', 'grok-4.7', 'high', 'grok', 46.3, 2.73),
   external('muse', 'muse-wonder-full-1.0', 'high', 'muse', 53.6, null, { ownerDecision: 'by the owner' }),
+  external('codex', 'gpt-6.1-sol', 'medium', 'codex', 46.1, 0.115),
 ]
 const SONNET_HIGH = { model: 'sonnet', effort: 'high' }
 
@@ -68,8 +79,8 @@ function setup({ readings = { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.
 }
 const idOf = (step) => (step.pick ? step.pick.id : null)
 
-test('the harnesses a delegate may run on are agy, grok and muse, and codex and cursor are not', () => {
-  assert.deepEqual(DELEGATE_HARNESSES, ['agy', 'grok', 'muse'])
+test('the harnesses a delegate may run on are agy, codex, grok and muse, and cursor is not', () => {
+  assert.deepEqual(DELEGATE_HARNESSES, ['agy', 'codex', 'grok', 'muse'])
 })
 
 test('the quota that renews first takes the call, at its cheapest pair that reaches the points', async () => {
@@ -126,7 +137,7 @@ test('Muse takes a call when its quota is the one that renews first, or the only
   assert.equal(refused.quota.find((c) => c.harness === 'muse').why, 'dry', 'held by the mark, not left out for no reading')
 })
 
-test('a harness that is not enabled or not installed gives nothing, and codex is never a candidate', async () => {
+test('a harness that is not enabled or not installed gives nothing, and cursor is never a candidate', async () => {
   const noGrok = setup({ installed: (name) => name !== 'grok' })
   const step = await pairStep(noGrok.d, noGrok.merged, { reference: SONNET_HIGH })
   assert.equal(idOf(step), 'agy/claude-sonnet-5-5@high')
@@ -134,8 +145,31 @@ test('a harness that is not enabled or not installed gives nothing, and codex is
   const onlyAgy = setup()
   const second = await pairStep(onlyAgy.d, { ...onlyAgy.merged, harnesses: ['agy', 'codex', 'cursor'] }, { reference: SONNET_HIGH })
   assert.equal(second.pick.harness, 'agy')
-  assert.ok(second.quota.every((c) => ['agy', 'grok', 'muse'].includes(c.harness)))
+  assert.ok(second.quota.every((c) => ['agy', 'codex', 'grok', 'muse'].includes(c.harness)))
+  assert.equal(second.quota.find((c) => c.harness === 'codex').why, 'no-reading')
   assert.equal(second.quota.find((c) => c.harness === 'grok').why, 'harness-off')
+})
+
+test('Codex takes a call when it is enabled and its quota is the one that renews first, at its pair that reaches the points (R20)', async () => {
+  const s = setup({ settings: { harnesses: ALL_FOUR }, readings: { ...GOOD, codex: CODEX(10) } })
+  const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
+  assert.equal(idOf(step), 'codex/gpt-6.1-sol@medium')
+  assert.deepEqual(s.renewed, [])
+})
+
+test('with Codex under the reserve, not installed or its reading missing, the next quota takes the call (R8, R20)', async () => {
+  const dry = setup({ settings: { harnesses: ALL_FOUR }, readings: { ...GOOD, codex: CODEX(10, 0.02) } })
+  const afterDry = await pairStep(dry.d, dry.merged, { reference: SONNET_HIGH })
+  assert.equal(idOf(afterDry), 'grok/grok-4.7@high')
+  assert.equal(afterDry.quota.find((c) => c.harness === 'codex').why, 'dry')
+  const gone = setup({ settings: { harnesses: ALL_FOUR }, readings: { ...GOOD, codex: CODEX(10) }, installed: (name) => name !== 'codex' })
+  const afterGone = await pairStep(gone.d, gone.merged, { reference: SONNET_HIGH })
+  assert.equal(idOf(afterGone), 'grok/grok-4.7@high')
+  assert.equal(afterGone.quota.find((c) => c.harness === 'codex').why, 'not-installed')
+  const missing = setup({ settings: { harnesses: ALL_FOUR }, readings: { ...GOOD, codex: null } })
+  const afterMissing = await pairStep(missing.d, missing.merged, { reference: SONNET_HIGH })
+  assert.deepEqual(missing.renewed, ['codex'], 'a missing Codex reading is renewed once, like agy\'s')
+  assert.equal(afterMissing.quota.find((c) => c.harness === 'codex').why, 'no-reading')
 })
 
 test('R23: a harness with no valid reading is renewed once, waited for up to the quota limit, and left out when it is still stale', async () => {

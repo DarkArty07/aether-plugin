@@ -354,8 +354,8 @@ img.px[data-src]{display:none!important}
     <ul class="facts">
       <li class="reveal" data-i18n-html="lanes.f1"><strong>Apagada por defecto</strong>Sin activar <code>superdelegation</code>, toda llamada que no es del Lead corre en Claude nativo, sea cual sea la cuota. Solo corre en Linux.</li>
       <li class="reveal" data-i18n-html="lanes.f2"><strong>Los puntos piden, la cuota ordena</strong>Cada llamada pide los puntos de inteligencia de su par de Claude, modelo y esfuerzo, con 1 punto de tolerancia. Va primero la cuota cuya ventana semanal se renueva antes, y dentro de ella el par más barato por tarea; un grupo que baja de la reserva del 5 % queda fuera.</li>
-      <li class="reveal" data-i18n-html="lanes.f3"><strong>Sin lectura, se prueba</strong>Codex y Cursor no informan su cuota, y Muse solo la informa después de una llamada: sin lectura, van después de los demás y se prueban hasta que una llamada falla por cuota; entonces la llamada pasa al siguiente. El par de Muse entra por decisión del dueño y va último dentro de su cuota.</li>
-      <li class="reveal" data-i18n-html="lanes.f4"><strong>Qué está probado</strong>agy fue el primero en probarse. Grok se probó con llamadas reales el 13 de octubre de 2026 y Muse el 19 de octubre de 2026. Los adaptadores de Codex y Cursor aún no han hecho ninguna llamada real.</li>
+      <li class="reveal" data-i18n-html="lanes.f3"><strong>Sin lectura, se prueba</strong>Codex lee su cuota sin llamar a un modelo. Cursor no informa su cuota, y Muse solo la informa después de una llamada: sin lectura, van después de los demás y se prueban hasta que una llamada falla por cuota; entonces la llamada pasa al siguiente. El par de Muse entra por decisión del dueño y va último dentro de su cuota.</li>
+      <li class="reveal" data-i18n-html="lanes.f4"><strong>Qué está probado</strong>agy fue el primero en probarse. Grok se probó con llamadas reales el 13 de octubre de 2026 y Muse el 19 de octubre de 2026. Codex es un harness de trabajo como los demás. El adaptador de Cursor aún no ha hecho ninguna llamada real.</li>
     </ul>
   </div>
 </section>

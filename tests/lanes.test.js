@@ -131,10 +131,11 @@ test('loadConfig refuses a seat timeout it cannot trust, and seatTimeout falls b
   assert.equal(lanes.seatTimeout(lanes.loadConfig(without).harnesses.agy, 'writer'), 2700)
 })
 
-test('the shipped table has codex and cursor without models, and grok with grok-4.7', () => {
+test('the shipped table has codex with its three models, cursor without models, and grok with grok-4.7', () => {
   const config = shipped()
   assert.deepEqual(Object.keys(config.harnesses), ['agy', 'codex', 'grok', 'cursor', 'muse'])
-  for (const name of ['codex', 'cursor']) assert.deepEqual(config.harnesses[name].models, {}, name)
+  assert.deepEqual(config.harnesses.cursor.models, {})
+  assert.deepEqual(Object.keys(config.harnesses.codex.models), ['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna'])
   assert.deepEqual(config.harnesses.cursor.command, 'cursor-agent')
   // grok-4.7-build-fast is the same model faster and twice the price: it is not a lane model.
   assert.deepEqual(Object.keys(config.harnesses.grok.models), ['grok-4.7'])

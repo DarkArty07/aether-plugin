@@ -342,11 +342,12 @@ test('the notes about the old options are gone from the module', () => {
 const harness = () => ({ command: 'x', waitSeconds: 540, timeouts: { implementer: 2700, supervisor: 900, reviewer: 1200 }, groups: {}, models: { m: {} } })
 
 test('runArgs: the harnesses that are enabled, installed and have pairs, and the waits', () => {
-  const config = { harnesses: { agy: harness(), grok: harness(), codex: { ...harness(), models: {} }, cursor: harness(), muse: harness() } }
-  const args = runArgs(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'grok', 'codex', 'cursor', 'muse'] })
+  const config = { harnesses: { agy: harness(), grok: harness(), codex: harness(), cursor: { ...harness(), models: {} }, muse: harness() } }
+  // cursor is installed and has no pairs; muse has pairs and is not installed.
+  const args = runArgs(config, pairs, { installed: (name) => name !== 'muse', enabled: ['agy', 'grok', 'codex', 'cursor', 'muse'] })
   assert.deepEqual(args, {
     superdelegation: true,
-    harnesses: ['agy', 'grok', 'muse'],
+    harnesses: ['agy', 'grok', 'codex'],
     waits: { implementer: 6, supervisor: 3, reviewer: 4 },
   })
   assert.equal(runArgs(config, pairs, { installed: () => false, enabled: ['agy'] }), null)
@@ -354,11 +355,11 @@ test('runArgs: the harnesses that are enabled, installed and have pairs, and the
 })
 
 test('idleHarnesses names why an enabled harness gives the run nothing', () => {
-  const config = { harnesses: { agy: harness(), codex: { ...harness(), models: {} }, cursor: harness() } }
-  const idle = idleHarnesses(config, pairs, { installed: (name) => name !== 'cursor', enabled: ['agy', 'codex', 'cursor', 'ghost'] })
+  const config = { harnesses: { agy: harness(), codex: harness(), cursor: { ...harness(), models: {} } } }
+  const idle = idleHarnesses(config, pairs, { installed: (name) => name !== 'codex', enabled: ['agy', 'codex', 'cursor', 'ghost'] })
   assert.deepEqual(idle, [
-    { name: 'codex', reason: 'has no models in the lane table yet' },
-    { name: 'cursor', reason: 'is not installed: x was not found' },
+    { name: 'codex', reason: 'is not installed: x was not found' },
+    { name: 'cursor', reason: 'has no models in the lane table yet' },
     { name: 'ghost', reason: 'has no entry in the lane table' },
   ])
 })

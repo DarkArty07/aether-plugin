@@ -194,6 +194,7 @@ test('issue 035: a call killed at its limit is timedOut and failed, even when th
 
 test('issue 035: every outcome that did not run out of time says so, launched or not', async (t) => {
   const s = setup(t)
+  s.config.harnesses.codex.command = '/nonexistent/codex'
   assert.equal((await run(s, 'Audit.\nFAKE-AGY: exit-error model not found')).timedOut, false)
   assert.equal((await run(s, 'Audit.', { harness: 'codex', id: ID2 })).timedOut, false)
   const under = setup(t, { quota: { 'Gemini Models': [0.9, 0.02], 'Claude and GPT models': [0.9, 0.9] } })
@@ -216,6 +217,7 @@ test('a harness that is not installed or has no such model is unavailable, with 
   s.config.harnesses.agy.command = '/nonexistent/agy'
   assert.equal((await run(s, 'Audit.')).status, 'unavailable')
   const t2 = setup(t)
+  t2.config.harnesses.codex.command = '/nonexistent/codex'
   assert.equal((await run(t2, 'Audit.', { harness: 'codex' })).status, 'unavailable')
   assert.equal((await run(t2, 'Audit.', { rung: { model: 'no-such-model', effort: 'low', group: 'flash' } })).status, 'unavailable')
   assert.equal(t2.modelCalls().length, 0)
@@ -248,6 +250,38 @@ test('a read-only delegate runs on muse with the model of the pair, and its answ
   assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', DEFAULT_ID, 'wt')), 'in the disposable worktree')
   assert.equal(s.repo.git('rev-parse', 'HEAD'), head)
   assert.equal(worktrees(s), 1, 'the disposable worktree is gone')
+})
+
+test('a read-only delegate runs on codex with the model of the pair, and its answer comes back', async (t) => {
+  const s = setup(t)
+  const fake = path.join(__dirname, 'fixtures', 'fake-codex.js')
+  fs.chmodSync(fake, 0o755)
+  s.config.harnesses.codex = {
+    command: fake,
+    groups: { codex: 'Codex plan' },
+    quotaLifeMinutes: 10,
+    waitSeconds: 60,
+    timeouts: { implementer: 60, supervisor: 60, reviewer: 60 },
+    models: { 'gpt-6.1-terra': { group: 'codex', roles: ['implementer', 'supervisor'] } },
+  }
+  const log = path.join(path.dirname(s.dataDir), 'codex.log')
+  const keep = { script: process.env.AETHER_FAKE_CODEX_SCRIPT, log: process.env.AETHER_FAKE_CODEX_LOG, limits: process.env.AETHER_FAKE_CODEX_RATE_LIMITS }
+  process.env.AETHER_FAKE_CODEX_SCRIPT = JSON.stringify({ answer: '{"answer":"audited"}' })
+  process.env.AETHER_FAKE_CODEX_LOG = log
+  process.env.AETHER_FAKE_CODEX_RATE_LIMITS = path.join(__dirname, 'fixtures', 'codex', 'rate-limits.json')
+  t.after(() => {
+    for (const [key, value] of [['AETHER_FAKE_CODEX_SCRIPT', keep.script], ['AETHER_FAKE_CODEX_LOG', keep.log], ['AETHER_FAKE_CODEX_RATE_LIMITS', keep.limits]]) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  const out = await run(s, 'List the callers of fetchUser.', { harness: 'codex', rung: { model: 'gpt-6.1-terra', effort: 'high', group: 'codex' } })
+  assert.equal(out.status, 'ok', out.detail)
+  assert.equal(out.text, 'audited')
+  const execs = fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line)).filter((entry) => entry.kind === 'exec')
+  assert.equal(execs.length, 1)
+  assert.ok(execs[0].argv.includes('--model') && execs[0].argv[execs[0].argv.indexOf('--model') + 1] === 'gpt-6.1-terra', execs[0].argv.join(' '))
+  assert.ok(execs[0].cwd.endsWith(path.join('.aether', 'delegates', DEFAULT_ID, 'wt')), 'in the disposable worktree')
 })
 
 test('the id must be a plain name', async (t) => {

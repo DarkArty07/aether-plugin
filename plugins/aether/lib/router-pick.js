@@ -11,8 +11,8 @@ const { choose } = require('./superdelegation.js')
 const { lifeMs, staleHarnesses, MUSE_WAIT_MS } = require('./router-quota.js')
 const { waitForReading } = require('./router-renewal.js')
 
-// The harnesses that can run a delegate (lib/delegate-calls.js): codex and cursor cannot.
-const DELEGATE_HARNESSES = ['agy', 'grok', 'muse']
+// The harnesses that can run a delegate (lib/delegate-calls.js): cursor cannot.
+const DELEGATE_HARNESSES = ['agy', 'codex', 'grok', 'muse']
 
 // The view of the quota groups of one harness that choose reads, from the reading the router has of it (null when the
 // harness keeps none, which leaves its groups unknown and usable, as in the swarm). A mark that came from a reading is

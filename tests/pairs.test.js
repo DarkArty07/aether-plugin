@@ -17,7 +17,7 @@ function modelOf(name) {
   return EXTERNAL[Object.keys(EXTERNAL).find((word) => name.startsWith(word))]
 }
 
-test('the table holds the 22 pairs of the evidence with the same figures, six Claude pairs for agy and the six pairs of Muse', () => {
+test('the table holds the 22 pairs of the evidence with the same figures, six Claude pairs for agy, the six pairs of Muse and the fifteen pairs of Codex', () => {
   const { pairs } = loadPairs()
   const evidence = JSON.parse(fs.readFileSync(EVIDENCE, 'utf8')).pairs
   assert.equal(evidence.length, 22)
@@ -29,10 +29,11 @@ test('the table holds the 22 pairs of the evidence with the same figures, six Cl
     assert.equal(found.costPerTaskUsd, row.costPerTaskUsd ?? null, row.name)
     assert.equal(found.id, pairId(found.harness, found.model, found.effort))
   }
-  assert.equal(pairs.length, 35)
+  assert.equal(pairs.length, 50)
   assert.equal(pairs.filter((p) => p.harness === 'agy' && p.family.startsWith('claude-')).length, 6)
   assert.equal(pairs.filter((p) => p.harness === 'muse').length, 7)
-  assert.equal(new Set(pairs.map((p) => p.id)).size, 35)
+  assert.equal(pairs.filter((p) => p.harness === 'codex').length, 15)
+  assert.equal(new Set(pairs.map((p) => p.id)).size, 50)
 })
 
 test('the Claude pairs of agy carry the figures of the native pair of the same model and effort', () => {
@@ -87,7 +88,7 @@ test('AETHER_PAIRS_CONFIG names another table, and a table that breaks a rule is
     return file
   }
   assert.equal(pairsPath({ AETHER_PAIRS_CONFIG: '/x/pairs.json' }), '/x/pairs.json')
-  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 35)
+  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 50)
   const mutate = (fn) => {
     const copy = JSON.parse(JSON.stringify(good))
     fn(copy)
@@ -101,4 +102,17 @@ test('AETHER_PAIRS_CONFIG names another table, and a table that breaks a rule is
   assert.throws(() => loadPairs(mutate((c) => { delete c.pairs[1].slug })), /pairs config .*slug/)
   assert.throws(() => loadPairs(mutate((c) => { c.pairs.find((p) => p.id === 'muse/muse-wonder-full-1.0@high').ownerDecision = '' })), /pairs config .*ownerDecision/)
   assert.throws(() => loadPairs(path.join(dir, 'missing.json')), /pairs config/)
+})
+
+test('checked and costEstimate are optional non-empty strings of a pair', (t) => {
+  const base = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json'), 'utf8'))
+  const file = path.join(tempDir(t), 'pairs.json')
+  for (const field of ['checked', 'costEstimate']) {
+    for (const bad of ['', 3, null]) {
+      const table = structuredClone(base)
+      table.pairs.find((pair) => pair.harness === 'codex')[field] = bad
+      fs.writeFileSync(file, JSON.stringify(table))
+      assert.throws(() => loadPairs(file), new RegExp(`${field} must be a non-empty string when present`))
+    }
+  }
 })

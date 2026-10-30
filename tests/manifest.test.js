@@ -38,7 +38,7 @@ test('the manifest has no dependencies, and declares the superdelegation, harnes
       type: 'string',
       title: 'Lane harnesses',
       description:
-        "The external harnesses superdelegation may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates, then the cost per task. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk. Codex and Cursor are not tested with a real account.",
+        "The external harnesses superdelegation may use, comma-separated: agy, codex, grok, cursor, muse. The quota decides the order of the candidates, then the cost per task. Default: agy. Each one runs its CLI without permission prompts in Aether's transactional worktree, with your git, GitHub, package-registry and cloud credentials kept out of its environment. Turn one on only once you accept that risk. Cursor is not tested with a real account.",
       default: 'agy',
     },
     ops: {

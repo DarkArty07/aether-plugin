@@ -22,7 +22,7 @@ test('prices.json holds the OpenRouter snapshot for each model, per million toke
     cacheWrite1h: 0.2,
     longPrompt: { minPromptTokens: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite5m: 0.625, cacheWrite1h: 1 },
   })
-  assert.ok(Object.values(prices.sources).every((url) => url.startsWith('https://openrouter.ai/') || url.startsWith('https://dev.meta.ai/')))
+  assert.ok(Object.values(prices.sources).every((url) => url.startsWith('https://openrouter.ai/') || url.startsWith('https://dev.meta.ai/') || url.startsWith('specs/') || url.startsWith('tests/fixtures/')))
 })
 
 test('grok-4.7 is priced at the OpenRouter list of its xAI endpoint, and its cache writes at the input price', () => {

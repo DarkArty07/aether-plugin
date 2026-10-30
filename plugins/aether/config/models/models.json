@@ -1,9 +1,9 @@
 {
   "generatedAt": "2026-10-27",
   "source": "https://artificialanalysis.ai/api/v2/data/llms/models",
-  "harnesses": ["claude","agy","grok","muse"],
+  "harnesses": ["claude","agy","codex","grok","muse"],
   "since": "2026-01-01",
-  "listedOn": {"claude":"2026-10-14","agy":"2026-10-15","grok":"2026-10-13","muse":"2026-10-27"},
+  "listedOn": {"claude":"2026-10-14","agy":"2026-10-15","codex":"2026-10-29","grok":"2026-10-13","muse":"2026-10-27"},
   "rules": {
     "newest": "Only the newest generation of each line is used (Sonnet 5.5, not Sonnet 5); the older ones are superseded.",
     "offered": "Only a model the CLI of a chosen harness lists is in, whatever Artificial Analysis lists; a model only the lane table names is not offered.",
@@ -270,6 +270,96 @@
       }
     },
     {
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "family": "gpt-6-1-terra",
+      "name": "GPT-6.1 Terra",
+      "maker": "OpenAI",
+      "released": "2026-10-26",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [
+        {"effort":"low","intelligence":29.2,"terminalBench":0.152,"priceInput":1,"priceOutput":5,"tokensPerSecond":90.9,"ttftSeconds":1.55},
+        {"effort":"medium","intelligence":38.1,"terminalBench":0.323,"priceInput":1,"priceOutput":5,"tokensPerSecond":91.1,"ttftSeconds":2.41},
+        {"effort":"high","intelligence":42.3,"terminalBench":0.419,"priceInput":1,"priceOutput":5,"tokensPerSecond":91.4,"ttftSeconds":10.41},
+        {"effort":"xhigh","intelligence":45,"terminalBench":0.465,"priceInput":1,"priceOutput":5,"tokensPerSecond":90.9,"ttftSeconds":35.81},
+        {"effort":"max","intelligence":51,"terminalBench":0.556,"priceInput":1,"priceOutput":5,"tokensPerSecond":91,"ttftSeconds":165.56}
+      ],
+      "lane": {"roles":["implementer","supervisor"]},
+      "profile": {
+        "purpose": "«GPT-6.1 Terra Codex model.»",
+        "contextTokens": 500000,
+        "maxOutputTokens": null,
+        "defaultEffort": "low",
+        "price": {"input":1,"output":5,"note":"per million tokens"},
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "family": "gpt-6-1-sol",
+      "name": "GPT-6.1 Sol",
+      "maker": "OpenAI",
+      "released": "2026-09-29",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [
+        {"effort":"low","intelligence":34.5,"terminalBench":0.308,"priceInput":2,"priceOutput":10,"tokensPerSecond":57,"ttftSeconds":1.89},
+        {"effort":"medium","intelligence":46.1,"terminalBench":0.48,"priceInput":2,"priceOutput":10,"tokensPerSecond":57.1,"ttftSeconds":3.49},
+        {"effort":"high","intelligence":50.2,"terminalBench":0.515,"priceInput":2,"priceOutput":10,"tokensPerSecond":67.7,"ttftSeconds":27.84},
+        {"effort":"xhigh","intelligence":52.3,"terminalBench":0.54,"priceInput":2,"priceOutput":10,"tokensPerSecond":72.7,"ttftSeconds":71.02},
+        {"effort":"max","intelligence":54.5,"terminalBench":0.561,"priceInput":2,"priceOutput":10,"tokensPerSecond":83.5,"ttftSeconds":183.42}
+      ],
+      "lane": {"roles":["implementer","supervisor","reviewer"]},
+      "profile": {
+        "purpose": "«Latest workhorse model for coding and everyday work.»",
+        "contextTokens": 500000,
+        "maxOutputTokens": null,
+        "defaultEffort": "low",
+        "price": {"input":2,"output":10,"note":"per million tokens"},
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "family": "gpt-6-luna",
+      "name": "GPT-6 Luna",
+      "maker": "OpenAI",
+      "released": "2026-09-22",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [
+        {"effort":"low","intelligence":9.7,"terminalBench":0,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":114.6,"ttftSeconds":2.66},
+        {"effort":"medium","intelligence":18.3,"terminalBench":0.025,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"high","intelligence":21.4,"terminalBench":0.045,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":113.8,"ttftSeconds":12.04},
+        {"effort":"xhigh","intelligence":23.3,"terminalBench":0.081,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":116,"ttftSeconds":20.91},
+        {"effort":"max","intelligence":27.8,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":109.2,"ttftSeconds":96.16}
+      ],
+      "lane": {"roles":["implementer"]},
+      "profile": {
+        "purpose": "«Fast and affordable model for easier tasks.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "medium",
+        "price": {"input":0.1,"output":0.5,"note":"per million tokens"},
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      }
+    },
+    {
       "harness": "grok",
       "model": "grok-4.7",
       "family": "grok-4-7",
@@ -390,6 +480,209 @@
           "https://platform.claude.com/docs/en/build-with-claude/effort"
         ],
         "checked": "2026-10-14"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6-sol",
+      "family": "gpt-6-sol",
+      "name": "GPT-6 Sol",
+      "maker": "OpenAI",
+      "released": "2026-09-22",
+      "reason": "Previous generation workhorse model of the line; Aether uses only the newest generation.",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": {"input":2,"output":10},
+      "scores": [
+        {"effort":"low","intelligence":null,"terminalBench":0.091,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"medium","intelligence":null,"terminalBench":0.187,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"high","intelligence":null,"terminalBench":0.263,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"xhigh","intelligence":null,"terminalBench":0.303,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"max","intelligence":null,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null}
+      ],
+      "profile": {
+        "purpose": "«Previous generation workhorse model.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "medium",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "family": "gpt-6-astra",
+      "name": "GPT-6 Astra",
+      "maker": "OpenAI",
+      "released": "2026-09-03",
+      "reason": "The top tier waits for its next generation: the owner said «no lo vamos a usar hasta que salga astra 6.1». GPT-6.1 Astra reopens the question as Fable 5.5 reopens Fable 5.1 (A43); Astra max scored 56.9 against Sol max 54.5, at five times the price per token: 10/50 against 2/10.",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": {"input":10,"output":50},
+      "scores": [
+        {"effort":"low","intelligence":43,"terminalBench":0.419,"priceInput":10,"priceOutput":50,"tokensPerSecond":57.1,"ttftSeconds":1.59},
+        {"effort":"medium","intelligence":51.5,"terminalBench":0.495,"priceInput":10,"priceOutput":50,"tokensPerSecond":56.9,"ttftSeconds":3.9},
+        {"effort":"high","intelligence":54.8,"terminalBench":0.54,"priceInput":10,"priceOutput":50,"tokensPerSecond":65.8,"ttftSeconds":30.23},
+        {"effort":"xhigh","intelligence":55.3,"terminalBench":0.596,"priceInput":10,"priceOutput":50,"tokensPerSecond":77,"ttftSeconds":71.78},
+        {"effort":"max","intelligence":56.9,"terminalBench":0.591,"priceInput":10,"priceOutput":50,"tokensPerSecond":81,"ttftSeconds":200.85}
+      ],
+      "profile": {
+        "purpose": "«Frontier intelligence for the most demanding work.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "low",
+        "price": {"input":10,"output":50,"note":"per million tokens"},
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-5.6-luna",
+      "family": "gpt-5-6-luna",
+      "name": "GPT-5.6 Luna",
+      "maker": "OpenAI",
+      "released": "2026-07-09",
+      "reason": "Older generation fast model of the line; Aether uses only the newest generation.",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": {"input":0.2,"output":1.2},
+      "scores": [
+        {"effort":"low","intelligence":null,"terminalBench":0,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"medium","intelligence":null,"terminalBench":0.005,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"high","intelligence":null,"terminalBench":0.025,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"xhigh","intelligence":null,"terminalBench":0.035,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"max","intelligence":null,"terminalBench":0.116,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null}
+      ],
+      "profile": {
+        "purpose": "«Older fast and efficient model.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "medium",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-5.6-sol",
+      "family": "gpt-5-6-sol",
+      "name": "GPT-5.6 Sol",
+      "maker": "OpenAI",
+      "released": "2026-07-09",
+      "reason": "Older generation workhorse model of the line; Aether uses only the newest generation.",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": {"input":4,"output":20},
+      "scores": [
+        {"effort":"low","intelligence":null,"terminalBench":0.01,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"medium","intelligence":null,"terminalBench":0.146,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"high","intelligence":null,"terminalBench":0.207,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"xhigh","intelligence":null,"terminalBench":0.247,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"max","intelligence":null,"terminalBench":0.399,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null}
+      ],
+      "profile": {
+        "purpose": "«Older generation workhorse model.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "low",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-5.6-terra",
+      "family": "gpt-5-6-terra",
+      "name": "GPT-5.6 Terra",
+      "maker": "OpenAI",
+      "released": "2026-07-09",
+      "reason": "Older generation balanced model of the line; Aether uses only the newest generation.",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": {"input":2,"output":12},
+      "scores": [
+        {"effort":"low","intelligence":null,"terminalBench":0.015,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"medium","intelligence":null,"terminalBench":0.01,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"high","intelligence":null,"terminalBench":0.015,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"xhigh","intelligence":null,"terminalBench":0.101,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"max","intelligence":null,"terminalBench":0.354,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null}
+      ],
+      "profile": {
+        "purpose": "«Older balanced model for straightforward work.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "medium",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "codex-auto-review",
+      "family": "codex-auto-review",
+      "name": "Codex Auto Review",
+      "maker": "OpenAI",
+      "reason": "Codex hides this model (internal automatic approval review model with visibility hide).",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": null,
+      "scores": [],
+      "profile": {
+        "purpose": "«Automatic approval review model for Codex.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "medium",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-reserve",
+      "family": "gpt-reserve",
+      "name": "GPT-Reserve",
+      "maker": "OpenAI",
+      "reason": "Codex hides this model (internal model with visibility hide).",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "price": null,
+      "scores": [],
+      "profile": {
+        "purpose": "«Fast and affordable agentic coding model.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "medium",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
       }
     }
   ],

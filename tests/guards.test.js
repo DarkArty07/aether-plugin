@@ -85,6 +85,6 @@ test('R23: no tracked file holds the owner\'s home folder or email', () => {
 test('R21: the retired document folders are gone and the last handoff stays', () => {
   const docs = tracked('docs')
   assert.deepEqual(docs.filter((f) => /^docs\/(superpowers|evaluations|roadmap|evidence)\//.test(f)), [])
-  assert.deepEqual(docs.filter((f) => f.startsWith('docs/handoff/')), ['docs/handoff/2026-10-28-swarm-one-ladder.md'])
+  assert.deepEqual(docs.filter((f) => f.startsWith('docs/handoff/')), ['docs/handoff/2026-10-30-codex-harness.md'])
   assert.deepEqual(tracked('specs').filter((f) => /\/evidence\//.test(f)), [])
 })

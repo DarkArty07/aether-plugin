@@ -5,6 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const { fixedLists, listsIn } = require('./harness-literals.js')
 
 const ROOT = path.join(__dirname, '..')
 const NAMES = ['agy', 'codex', 'grok', 'cursor']
@@ -72,4 +73,18 @@ test('no fixed list of the harnesses in the repository leaves Muse out, except t
   assert.ok(tracked().includes('docs/guide/delegates.md'), 'the guide of the delegates is read by the rule')
   assert.ok(!tracked().includes('docs/guide/router.md'), 'the guide of the router is gone')
   assert.ok(EXCEPTIONS.every((exception) => typeof exception.why === 'string' && exception.why !== ''))
+})
+
+test('the walker finds a fixed list of harness names, a Set of one, and nothing else', () => {
+  const text = "const A = ['agy', 'grok']\nconst B = new Set(['codex', 'muse', 'x'])\nconst C = ['agy']\nconst D = ['red', 'green']\nexport const E = ['agy', 'codex', 'grok', 'cursor', 'muse']\n"
+  assert.deepEqual(listsIn(text, 'f.js').map((list) => list.name), ['A', 'B', 'E'])
+})
+
+// A list of the code that does not name codex, with the reason.
+const WITHOUT_CODEX = { 'plugins/aether/lib/lane-pick.js REFRESHABLE': 'Codex has no refresher: its reading is free and the adapter takes it' }
+
+test('every fixed list of harness names in the code names codex, except the ones with a reason (R3)', () => {
+  const missing = fixedLists(ROOT).filter((list) => !list.items.includes('codex') && !WITHOUT_CODEX[`${list.file} ${list.name}`]).map((list) => `${list.file} ${list.name}`)
+  assert.deepEqual(missing, [])
+  assert.ok(Object.values(WITHOUT_CODEX).every((why) => why !== ''))
 })

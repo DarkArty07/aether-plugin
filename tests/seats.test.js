@@ -329,7 +329,7 @@ test('nothing runs, and the native agent takes the seat, when the external one c
   const input = `FAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`
   const cases = [
     [{ AETHER_SUPERDELEGATION: 'off' }, 'superdelegation-off', (tried) => assert.deepEqual(tried, [])],
-    [{ AETHER_LANE_HARNESSES: 'codex' }, 'no-external', (tried) => assert.ok(tried.length > 0 && tried.every((entry) => entry.why === 'harness-off' || entry.why === 'not-offered'))],
+    [{ AETHER_LANE_HARNESSES: 'codex' }, 'no-external', (tried) => assert.ok(tried.length > 0 && tried.every((entry) => ['harness-off', 'not-offered', 'not-installed', 'role'].includes(entry.why)))],
   ]
   for (const [extra, reason, checkTried] of cases) {
     const env = { ...laneEnv(t), ...extra }

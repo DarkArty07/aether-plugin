@@ -147,8 +147,8 @@
       'lanes.st.native': 'llamada nativa',
       'lanes.f1': '<strong>Apagada por defecto</strong>Sin activar <code>superdelegation</code>, toda llamada que no es del Lead corre en Claude nativo, sea cual sea la cuota. Solo corre en Linux.',
       'lanes.f2': '<strong>Los puntos piden, la cuota ordena</strong>Cada llamada pide los puntos de inteligencia de su par de Claude, modelo y esfuerzo, con 1 punto de tolerancia. Va primero la cuota cuya ventana semanal se renueva antes, y dentro de ella el par más barato por tarea; un grupo que baja de la reserva del 5 % queda fuera.',
-      'lanes.f3': '<strong>Sin lectura, se prueba</strong>Codex y Cursor no informan su cuota, y Muse solo la informa después de una llamada: sin lectura, van después de los demás y se prueban hasta que una llamada falla por cuota; entonces la llamada pasa al siguiente. El par de Muse entra por decisión del dueño y va último dentro de su cuota.',
-      'lanes.f4': '<strong>Qué está probado</strong>agy fue el primero en probarse. Grok se probó con llamadas reales el 13 de octubre de 2026 y Muse el 19 de octubre de 2026. Los adaptadores de Codex y Cursor aún no han hecho ninguna llamada real.',
+      'lanes.f3': '<strong>Sin lectura, se prueba</strong>Codex lee su cuota sin llamar a un modelo. Cursor no informa su cuota, y Muse solo la informa después de una llamada: sin lectura, van después de los demás y se prueban hasta que una llamada falla por cuota; entonces la llamada pasa al siguiente. El par de Muse entra por decisión del dueño y va último dentro de su cuota.',
+      'lanes.f4': '<strong>Qué está probado</strong>agy fue el primero en probarse. Grok se probó con llamadas reales el 13 de octubre de 2026 y Muse el 19 de octubre de 2026. Codex es un harness de trabajo como los demás. El adaptador de Cursor aún no ha hecho ninguna llamada real.',
 
       'inst.tag': '// 07 · INSTALAR Y AUTORÍA',
       'inst.title': 'Instala y<br><em>empieza</em>',
@@ -312,8 +312,8 @@
       'lanes.st.native': 'native call',
       'lanes.f1': '<strong>Off by default</strong>With <code>superdelegation</code> off, every call that is not the Lead\'s runs on native Claude, whatever the quota. It runs only on Linux.',
       'lanes.f2': '<strong>Points ask, quota orders</strong>Each call asks for the intelligence points of its Claude pair, model and effort, with 1 point of tolerance. The quota whose weekly window renews first goes first, and within it the cheapest pair per task; a group that drops to the 5% reserve is left out.',
-      'lanes.f3': '<strong>No reading, try it</strong>Codex and Cursor do not report their quota, and Muse reports it only after a call: with no reading they go after the others and are tried until a call fails for quota; the call then moves to the next. Muse\'s pair is in by the owner\'s decision and goes last within its quota.',
-      'lanes.f4': '<strong>What is proven</strong>agy was the first to be tested. Grok was tested with real calls on 13 October 2026 and Muse on 19 October 2026. The Codex and Cursor adapters have not made a real call yet.',
+      'lanes.f3': '<strong>No reading, try it</strong>Codex reads its quota without calling a model. Cursor does not report its quota, and Muse reports it only after a call: with no reading they go after the others and are tried until a call fails for quota; the call then moves to the next. Muse\'s pair is in by the owner\'s decision and goes last within its quota.',
+      'lanes.f4': '<strong>What is proven</strong>agy was the first to be tested. Grok was tested with real calls on 13 October 2026 and Muse on 19 October 2026. Codex is a work harness like the others. Cursor\'s adapter has not made a real call yet.',
 
       'inst.tag': '// 07 · INSTALL AND AUTHORSHIP',
       'inst.title': 'Install and<br><em>start</em>',

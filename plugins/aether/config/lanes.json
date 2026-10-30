@@ -37,7 +37,26 @@
       "quotaLifeMinutes": 10,
       "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
       "groups": { "codex": "Codex plan" },
-      "models": {}
+      "models": {
+        "gpt-6.1-sol": {
+          "group": "codex",
+          "roles": ["implementer", "supervisor", "reviewer"],
+          "aa": { "slug": "gpt-6-1-sol", "intelligence": 54.5, "terminalBench": 0.561, "checked": "2026-10-29" },
+          "note": "Sol serves the ladder steps of Sonnet high (Sol medium) and Opus high (Sol max). The figures are the max row of Artificial Analysis of 2026-10-29, and the table of pairs (config/pairs.json) holds the other efforts. Roles follow plan D4: implementer, supervisor and reviewer; design seats (judge, writer, examiner) are not given because nothing judges what AA does not measure. The models Codex lists and the exclusions are in config/models/harness-models.json."
+        },
+        "gpt-6.1-terra": {
+          "group": "codex",
+          "roles": ["implementer", "supervisor"],
+          "aa": { "slug": "gpt-6-1-terra", "intelligence": 51.0, "terminalBench": 0.556, "checked": "2026-10-29" },
+          "note": "Terra serves the first step and its correction on the ladder (Terra medium for Haiku high, and Terra high for its correction Haiku xhigh). The figures are the max row of Artificial Analysis of 2026-10-29, and the table of pairs (config/pairs.json) holds the other efforts. Roles follow plan D4: implementer and supervisor; design seats (judge, writer, examiner) are not given because nothing judges what AA does not measure."
+        },
+        "gpt-6-luna": {
+          "group": "codex",
+          "roles": ["implementer"],
+          "aa": { "slug": "gpt-6-luna", "intelligence": 27.8, "terminalBench": 0.126, "checked": "2026-10-29" },
+          "note": "Luna max is 1.8 points and 9 code points below Haiku high and is not a starting step on the ladder. The figures are the max row of Artificial Analysis of 2026-10-29, and the table of pairs (config/pairs.json) holds the other efforts. Roles follow plan D4: implementer only; design seats (judge, writer, examiner) are not given because nothing judges what AA does not measure."
+        }
+      }
     },
     "grok": {
       "command": "grok",

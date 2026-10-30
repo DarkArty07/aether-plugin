@@ -70,7 +70,7 @@ function trackedFiles() {
 
 function isR21Retired(file) {
   if (/^docs\/(superpowers|evaluations|roadmap|evidence)\//.test(file)) return true
-  if (file.startsWith('docs/handoff/') && file !== 'docs/handoff/2026-10-28-swarm-one-ladder.md') return true
+  if (file.startsWith('docs/handoff/') && file !== 'docs/handoff/2026-10-30-codex-harness.md') return true
   return false
 }
 
