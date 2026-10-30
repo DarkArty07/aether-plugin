@@ -59,7 +59,9 @@ function gateCommand(cwd, runId, taskId, opts = {}) {
   }
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const testsResult = runTests(worktree, graph.testCommand, { timeoutMs, tailChars: 200000 })
+  // The baseline match reads the failures the whole output names: a known failure early in a long suite lay outside a
+  // tail of 200,000 characters and the unit was sent back for it (issue 134). What goes to the supervisor is cut below.
+  const testsResult = runTests(worktree, graph.testCommand, { timeoutMs, tailChars: 64 * 1024 * 1024 })
 
   if (testsResult.timedOut) {
     return {

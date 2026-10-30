@@ -87,7 +87,7 @@ test('the shipped table names each lane model with its group and roles', () => {
       ['gemini-4-argon', 'argon', ['judge', 'writer', 'examiner']],
     ],
   )
-  assert.deepEqual(agy.models['gemini-3.8-flash'].aa, { slug: 'gemini-3-8-flash', intelligence: 40.9, terminalBench: 0.2, checked: '2026-10-08' })
+  assert.deepEqual(agy.models['gemini-3.8-flash'].aa, { slug: 'gemini-3-8-flash', intelligence: 30.5, terminalBench: 0.2, checked: '2026-10-30' })
 })
 
 test('configPath follows AETHER_LANES_CONFIG, and a missing table means no lanes', (t) => {
@@ -456,7 +456,7 @@ test('the shipped lane table has a muse harness with Wonder Full, Wonder 1.0 and
   assert.match(spark.ownerDecision, /infinitamente mas barato|nivel haiku o sonnet/)
   const wonder1 = muse.models['muse-wonder-1.0']
   assert.deepEqual([wonder1.group, wonder1.roles], ['muse', ['implementer', 'reviewer']])
-  assert.deepEqual([wonder1.aa.slug, wonder1.aa.intelligence, wonder1.aa.terminalBench], ['muse-wonder', 52.4, 0.52])
+  assert.deepEqual([wonder1.aa.slug, wonder1.aa.intelligence, wonder1.aa.terminalBench], ['muse-wonder', 43.3, 0.52])
   assert.equal('designSeats' in config, false)
 })
 

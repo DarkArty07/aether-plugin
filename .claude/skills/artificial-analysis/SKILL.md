@@ -38,7 +38,7 @@ The key is `ARTIFICIAL_ANALYSIS_API_KEY`, in the environment or in the `.env` of
 - **Units.** The API gives benchmark scores as fractions (Terminal-Bench 0.60), the pages too; Briefcase and GDPval are Elo.
 - **Speed.** `max` efforts have first-token times of minutes (Sonnet `max` 322 s, Opus `max` 621 s, Haiku `max` 279 s). Speed is out of the policy, but a deadline can cut a call that is slow to start.
 - **The page can change.** The data is a script's JSON, not a public contract. If a field is missing, say so, and say which source the figure came from.
-- **The scores move.** AA re-scored its models between 2026-10-26 and 2026-10-29 (Haiku 5.5 `max` 43.4 to 36.2, GPT-6 Luna `max` 38.1 to 27.8, GPT-6 Astra `max` 52.7 to 56.9). Compare two models only with figures read on the same day from the same source; a row of `pairs.json` set against today's API is not a comparison.
+- **The scores move.** AA re-scored its models between 2026-10-26 and 2026-10-29 (Haiku 5.5 `max` 43.4 to 36.2, GPT-6 Luna `max` 38.1 to 27.8, GPT-6 Astra `max` 52.7 to 56.9). Compare two models only with figures read on the same day from the same source; a row of `pairs.json` set against today's API is not a comparison. The table of pairs was refreshed on 2026-10-30 (spec 023) and is on the scale of 2026-10-29; its costs per task are still those read on 2026-10-26, because the API gives no cost and the pages may not be read without the owner's yes.
 
 ## Reading it for a role
 

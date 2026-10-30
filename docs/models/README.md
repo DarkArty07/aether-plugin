@@ -28,20 +28,20 @@ It rewrites `models.json` (in `--out`, default `plugins/aether/config/models`) a
 
 | Model | Harness | Efforts taken | Intelligence | Terminal-bench | $/M in/out | Tokens/s |
 |---|---|---|---:|---:|---:|---:|
-| Claude Haiku 5.5 `claude-haiku-5-5` | claude | low, medium, high, xhigh, max | 43.4 | 0.328 | 0.1 / 0.5 | 238.9 |
-| Claude Sonnet 5.5 `claude-sonnet-5-5` | claude | low, medium, high, xhigh, max | 56 | 0.636 | 2 / 10 | 140.8 |
-| Claude Opus 5.5 `claude-opus-5-5` | claude | low, medium, high, xhigh, max | 57.6 | 0.596 | 4 / 20 | 96.7 |
-| Gemini 4 Argon `gemini-4-argon` | agy* | low, medium, high | 52.6 | 0.571 | 2 / 10 | 82.3 |
-| Claude Sonnet 5.5 `claude-sonnet-5-5` | agy* | low, medium, high | 46.8 | 0.439 | 2 / 10 | 104.8 |
-| Claude Opus 5.5 `claude-opus-5-5` | agy* | low, medium, high | 53.6 | 0.566 | 4 / 20 | 77.4 |
-| Gemini 3.8 Flash `gemini-3.8-flash` | agy* | low, medium, high | 40.9 | 0.197 | 0.75 / 3.75 | 134.9 |
+| Claude Haiku 5.5 `claude-haiku-5-5` | claude | low, medium, high, xhigh, max | 36.2 | 0.328 | 0.1 / 0.5 | 235.5 |
+| Claude Sonnet 5.5 `claude-sonnet-5-5` | claude | low, medium, high, xhigh, max | 54.2 | 0.636 | 2 / 10 | 134.4 |
+| Claude Opus 5.5 `claude-opus-5-5` | claude | low, medium, high, xhigh, max | 58.4 | 0.596 | 4 / 20 | 97.3 |
+| Gemini 4 Argon `gemini-4-argon` | agy* | low, medium, high | 50.4 | 0.571 | 4 / 20 | 80.5 |
+| Claude Sonnet 5.5 `claude-sonnet-5-5` | agy* | low, medium, high | 41.1 | 0.439 | 2 / 10 | 106.1 |
+| Claude Opus 5.5 `claude-opus-5-5` | agy* | low, medium, high | 51.7 | 0.566 | 4 / 20 | 80.7 |
+| Gemini 3.8 Flash `gemini-3.8-flash` | agy* | low, medium, high | 30.5 | 0.197 | 0.75 / 3.75 | 130.2 |
 | GPT-6.1 Terra `gpt-6.1-terra` | codex* | low, medium, high, xhigh, max | 51 | 0.556 | 1 / 5 | 91 |
-| GPT-6.1 Sol `gpt-6.1-sol` | codex* | low, medium, high, xhigh, max | 54.5 | 0.561 | 2 / 10 | 83.5 |
-| GPT-6 Luna `gpt-6-luna` | codex* | low, medium, high, xhigh, max | 27.8 | 0.126 | 0.1 / 0.5 | 109.2 |
-| Grok 4.7 `grok-4.7` | grok* | low, medium, high, xhigh | 46.4 | 0.258 | 2 / 6 | 79 |
-| Muse Spark 1.3 `muse-spark-1.3` | muse* | minimal, low, medium, high, xhigh, max | 48.1 | 0.333 | 1.25 / 4.25 | – |
+| GPT-6.1 Sol `gpt-6.1-sol` | codex* | low, medium, high, xhigh, max | 54.5 | 0.561 | 2 / 10 | 88.8 |
+| GPT-6 Luna `gpt-6-luna` | codex* | low, medium, high, xhigh, max | 27.8 | 0.126 | 0.1 / 0.5 | 115.3 |
+| Grok 4.7 `grok-4.7` | grok* | low, medium, high, xhigh | 34.3 | 0.258 | 2 / 6 | 89.5 |
+| Muse Spark 1.3 `muse-spark-1.3` | muse* | minimal, low, medium, high, xhigh, max | 36.4 | 0.333 | 1.25 / 4.25 | – |
 
-Generated on 2026-10-27 from https://artificialanalysis.ai/api/v2/data/llms/models; the harnesses' listings are of claude 2026-10-14, agy 2026-10-15, codex 2026-10-29, grok 2026-10-13, muse 2026-10-27. Scores are at the highest effort the harness takes that AA scored (`models.json` has each effort); `*`: in the lane table.
+Generated on 2026-10-30 from https://artificialanalysis.ai/api/v2/data/llms/models; the harnesses' listings are of claude 2026-10-14, agy 2026-10-15, codex 2026-10-29, grok 2026-10-13, muse 2026-10-27. Scores are at the highest effort the harness takes that AA scored (`models.json` has each effort); `*`: in the lane table.
 
 ## What each is for (`profiles.json`, from the maker's pages)
 

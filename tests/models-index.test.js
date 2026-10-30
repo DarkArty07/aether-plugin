@@ -735,9 +735,10 @@ test('the committed models.json and README are in the shape the script writes, a
   const { text, listings, profiles, readme } = readCommitted()
   const file = JSON.parse(text)
   assert.equal(`${serialize(file)}\n`, text)
-  // The data ships with the plugin, in its config folder; docs/models has the reading copy and nothing else.
+  // The data ships with the plugin, in its config folder. docs/models holds the generated README and the
+  // owner's saved Artificial Analysis page, added to the repository on 2026-10-30. The script still writes only README.md.
   assert.deepEqual(fs.readdirSync(CONFIG).sort(), ['harness-models.json', 'models.json', 'profiles.json'])
-  assert.deepEqual(fs.readdirSync(DOCS), ['README.md'])
+  assert.deepEqual(fs.readdirSync(DOCS).sort(), ['README.md', 'artificial-analysis-2026-10-26.md'])
 
   // Rule 2: the models are those of the chosen harnesses, each with a listing and the day it was captured, and the listings are of no other harness.
   assert.ok(file.harnesses.length > 0)

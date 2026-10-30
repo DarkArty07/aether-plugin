@@ -37,10 +37,10 @@ const onlyMuse = (days = 2) => ({ muse: { installed: true, groups: { muse: open(
 const withMuse = (days, base = world()) => ({ ...base, ...onlyMuse(days) })
 
 test('C4: a call asks for the points of its reference pair, never for a model name alone', () => {
-  assert.equal(ask('sonnet', 'xhigh').requested, 51.9)
-  assert.equal(ask('sonnet', 'high').requested, 46.8)
+  assert.equal(ask('sonnet', 'xhigh').requested, 49.6)
+  assert.equal(ask('sonnet', 'high').requested, 41.1)
   assert.equal(ask('haiku', 'high').reference.id, 'claude/haiku@high')
-  assert.equal(ask('opus', 'max').requested, 57.6)
+  assert.equal(ask('opus', 'max').requested, 58.4)
   assert.throws(() => choose({ pairs, reference: { model: 'gpt', effort: 'high' }, harnesses: world() }), /no reference pair/)
   assert.equal(TOLERANCE_POINTS, 1)
 })
@@ -90,12 +90,13 @@ test('E3: with only Grok healthy, a Sonnet xhigh call runs native and nothing is
 
 test('E4 and C6: the quota that renews first takes the call, at the cheapest pair of that quota, even when the other has a cheaper pair', () => {
   assert.equal(pickedId(ask('sonnet', 'xhigh')), 'agy/gemini-4-argon@high')
-  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ claude: open(1) }) })), 'agy/claude-opus-5-5@medium')
-  // gemini renews first: Argon (1.99) wins although Opus medium of the other quota costs 1.34.
+  // Sonnet xhigh asks 49.6 (floor 48.6). Opus medium is 48.1, below that floor, so the cheapest pair of the Claude quota is Opus high.
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ claude: open(1) }) })), 'agy/claude-opus-5-5@high')
+  // gemini renews first: Argon (1.99) wins although Opus high of the other quota costs 1.82.
   assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ gemini: open(0), claude: open(1) }) })), 'agy/gemini-4-argon@high')
 })
 
-test('C6: Grok, which reaches 46.4, never receives a Sonnet xhigh or an Opus call, even when its quota renews first', () => {
+test('C6: Grok, which reaches only 35, never receives a Sonnet xhigh or an Opus call, even when its quota renews first', () => {
   const harnesses = world({ grok: open(-5) })
   for (const [model, effort] of [['sonnet', 'xhigh'], ['sonnet', 'max'], ['opus', 'high'], ['opus', 'xhigh'], ['opus', 'max']]) {
     const d = ask(model, effort, { harnesses })
@@ -121,7 +122,8 @@ test('C5: a pair with no cost per task is never a candidate, and Flash low is on
 })
 
 test('C5 and R9: within a quota a pair that gives no more points than a cheaper candidate of the same call is never used: Grok xhigh against Grok high', () => {
-  assert.equal(why(ask('sonnet', 'high'), 'grok/grok-4.7@xhigh'), 'dominated')
+  // Haiku high asks 29.6. Grok high is 35 and Grok xhigh is 34.3, so the cheaper high dominates xhigh. Sonnet high asks 41.1, which neither reaches.
+  assert.equal(why(ask('haiku', 'high'), 'grok/grok-4.7@xhigh'), 'dominated')
   // haiku asks 46.8, sonnet 47.4, opus 50.9 in this table.
   const table = [
     ...natives(46.8, 47.4, 50.9),
@@ -172,7 +174,7 @@ test('C8: no pair is ever picked below the points asked minus 1, and a Sonnet xh
     }
   }
   const xhigh = ask('sonnet', 'xhigh')
-  assert.ok(xhigh.picked.intelligence >= 50.9)
+  assert.ok(xhigh.picked.intelligence >= 48.6)
   assert.equal(ask('opus', 'max').picked, null)
   assert.equal(ask('sonnet', 'max').picked, null)
 })
@@ -182,7 +184,7 @@ test('C11: with every eligible quota dry the call runs native, in its reference 
   assert.equal(none.picked, null)
   assert.equal(none.native.id, 'claude/sonnet@xhigh')
   assert.match(none.reason, /dry/)
-  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ gemini: dry }) })), 'agy/claude-opus-5-5@medium')
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ gemini: dry }) })), 'agy/claude-opus-5-5@high')
   // a live mark holds a quota as a dry reading does
   const marked = ask('sonnet', 'xhigh', { harnesses: world({ gemini: { usable: true, unknown: false, mark: { until: at(1) }, resetsAt: at(0) } }) })
   assert.equal(why(marked, 'agy/gemini-4-argon@high'), 'dry')
@@ -191,12 +193,11 @@ test('C11: with every eligible quota dry the call runs native, in its reference 
 test('C16: Muse as the only healthy harness takes a call up to Opus high by the owner decision, and nothing above it', () => {
   const high = ask('opus', 'high', { harnesses: onlyMuse() })
   assert.equal(pickedId(high), MUSE)
-  assert.equal(high.requested, 53.6)
-  // Sonnet xhigh asks 51.9 (at least 50.9): Wonder 1.0 at max (52.4, US$ 4.54) is enough and has a cost, so it ranks ahead of Wonder Full, which has none.
-  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), 'muse/muse-wonder-1.0@max')
-  // The estimated @medium carries an estimated cost only so the router can rank it: a Haiku high call
-  // (floor 36.8) takes @medium (38.0) as the cheapest pair that is enough, ahead of the measured @xhigh.
-  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), 'muse/muse-spark-1.3@medium')
+  assert.equal(high.requested, 51.7)
+  // Sonnet xhigh asks 49.6 (floor 48.6). Wonder 1.0 at max is 43.3, below that floor. Wonder Full is 51.7 and has no cost, so the owner decision is what lets it take the call.
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), MUSE)
+  // Haiku high asks 29.6 (floor 28.6). Spark high is 28.7 at US$ 0.66, the cheapest pair that reaches; Spark medium (22.5) is below.
+  assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), 'muse/muse-spark-1.3@high')
   for (const [model, effort] of [['opus', 'xhigh'], ['opus', 'max'], ['sonnet', 'max']]) {
     const d = ask(model, effort, { harnesses: onlyMuse() })
     assert.equal(d.picked, null, `${model} ${effort}`)
@@ -248,7 +249,7 @@ test('the same cost within a quota goes to the pair with more points, then to th
 
 test('a retry excludes the pair that failed, and a harness that is off or not installed is never a candidate', () => {
   const d = ask('sonnet', 'xhigh', { exclude: ['agy/gemini-4-argon@high'] })
-  assert.equal(pickedId(d), 'agy/claude-opus-5-5@medium')
+  assert.equal(pickedId(d), 'agy/claude-opus-5-5@high')
   assert.equal(why(d, 'agy/gemini-4-argon@high'), 'excluded')
   const off = choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses: { agy: world().agy } })
   assert.equal(why(off, 'grok/grok-4.7@low'), 'harness-off')

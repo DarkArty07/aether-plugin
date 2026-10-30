@@ -272,7 +272,7 @@ test('the quota view and the choice treat Codex as any harness (R10)', (t) => {
     reference: { model: 'sonnet', effort: 'high' },
     harnesses: { codex: report.json.harnesses.codex },
   })
-  assert.equal(decision.picked.id, 'codex/gpt-6.1-sol@medium')
+  assert.equal(decision.picked.id, 'codex/gpt-6.1-terra@high')
 })
 
 test('an editing delegate runs on Codex in its own worktree and comes back as a unit branch the Lead merges, and its reviewer is another pair (R20)', (t) => {
@@ -288,7 +288,7 @@ test('an editing delegate runs on Codex in its own worktree and comes back as a 
   const json = r.json
   assert.equal(json.status, 'done', JSON.stringify(json))
   assert.equal(json.pair.harness, 'codex')
-  assert.equal(json.pair.id, 'codex/gpt-6.1-terra@medium')
+  assert.equal(json.pair.id, 'codex/gpt-6.1-terra@low')
   assert.equal(repo.git('show', `${json.branch}:src/new.js`), 'hello')
   assert.equal(repo.git('status', '--porcelain'), '')
   assert.equal(repo.git('rev-parse', 'HEAD'), headBefore)

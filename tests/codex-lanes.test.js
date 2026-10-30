@@ -13,7 +13,7 @@ test('the lane table gives Codex its three models in its one quota group (R15)',
   for (const model of Object.values(codex.models)) {
     assert.equal(model.group, 'codex')
     assert.ok(typeof model.note === 'string' && model.note.length > 40)
-    assert.equal(model.aa.checked, '2026-10-29')
+    assert.equal(model.aa.checked, '2026-10-30')
   }
 })
 
@@ -24,8 +24,8 @@ test('the roles follow the plan: Sol implements, supervises and reviews, Terra i
   for (const model of Object.values(codex.models)) for (const seat of ['judge', 'writer', 'examiner']) assert.equal(model.roles.includes(seat), false, seat)
 })
 
-test('the figures of AA of the table are those of the max row of 2026-10-29', () => {
-  assert.deepEqual(codex.models['gpt-6.1-sol'].aa, { slug: 'gpt-6-1-sol', intelligence: 54.5, terminalBench: 0.561, checked: '2026-10-29' })
-  assert.deepEqual(codex.models['gpt-6.1-terra'].aa, { slug: 'gpt-6-1-terra', intelligence: 51, terminalBench: 0.556, checked: '2026-10-29' })
-  assert.deepEqual(codex.models['gpt-6-luna'].aa, { slug: 'gpt-6-luna', intelligence: 27.8, terminalBench: 0.126, checked: '2026-10-29' })
+test('the figures of AA of the table are those of the max row of the scale of 2026-10-29, read again on 2026-10-30', () => {
+  assert.deepEqual(codex.models['gpt-6.1-sol'].aa, { slug: 'gpt-6-1-sol', intelligence: 54.5, terminalBench: 0.56, checked: '2026-10-30' })
+  assert.deepEqual(codex.models['gpt-6.1-terra'].aa, { slug: 'gpt-6-1-terra', intelligence: 51, terminalBench: 0.56, checked: '2026-10-30' })
+  assert.deepEqual(codex.models['gpt-6-luna'].aa, { slug: 'gpt-6-luna', intelligence: 27.8, terminalBench: 0.13, checked: '2026-10-30' })
 })

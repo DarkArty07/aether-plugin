@@ -10,7 +10,7 @@ const has = (file, phrases) => { const text = read(file); for (const phrase of p
 
 test('the guide of lanes tells what Codex is, what it uses, what it leaves out and how its quota is read (R19)', () => {
   has('docs/guide/lanes.md', [
-    'GPT-6.1 Sol', 'GPT-6.1 Terra', 'GPT-6 Luna', 'Terra medium', 'Sol medium', 'Sol max', 'GPT-6 Astra', 'GPT-6.1 Astra', '`ultra`',
+    'GPT-6.1 Sol', 'GPT-6.1 Terra', 'GPT-6 Luna', 'Terra low', 'Terra medium', 'Terra high', 'Terra max', 'Sol max', 'GPT-6 Astra', 'GPT-6.1 Astra', '`ultra`',
     'account/rateLimits/read', 'codex app-server', 'without calling a model', 'codex exec', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--output-schema',
     'AGENTS.md', 'hooks', 'ChatGPT Plus',
   ])

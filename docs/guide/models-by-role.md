@@ -6,7 +6,7 @@ order: 8
 
 # Models by role
 
-This page says which model and effort each role of Aether runs on, how a task climbs from one model and effort to the next, what each pair costs, why the pairs are set this way and how to tell whether they should change; a test holds this page to the tree, so its ladder table is `config/ladder.json` and the model and effort it names for each agent are the ones of that agent's file. The measure throughout is the dollar per task, because the Claude limit is one for all the models and is spent by the cost of the model, so a cheaper pair per task makes the quota last longer whatever its price per token. The figures are those of [Artificial Analysis](https://artificialanalysis.ai), read on 2026-10-26 through its API and through `config/pairs.json`, which holds the intelligence points and the cost per task of its index.
+This page says which model and effort each role of Aether runs on, how a task climbs from one model and effort to the next, what each pair costs, why the pairs are set this way and how to tell whether they should change; a test holds this page to the tree, so its ladder table is `config/ladder.json` and the model and effort it names for each agent are the ones of that agent's file. The measure throughout is the dollar per task, because the Claude limit is one for all the models and is spent by the cost of the model, so a cheaper pair per task makes the quota last longer whatever its price per token. The figures are those of [Artificial Analysis](https://artificialanalysis.ai), through `config/pairs.json`: the intelligence points are those of 2026-10-29 and the cost per task those of 2026-10-26, which the API does not give.
 
 ## Each role, before and after
 
@@ -48,19 +48,21 @@ Repricing those same runs with the pairs of this page saves at most from US$165.
 
 **J2. The spend is in `xhigh`.** In the 8 finished runs, 68 % of the spend outside the Lead (US$96 of US$142) ran at `xhigh`, which was the default effort of a task and the effort of every correction and rise. Source: `runs.jsonl`, priced at list price, as [Where the spend went](#where-the-spend-went) breaks down.
 
-**J3. The efforts are not worth the same.** The intelligence points and the cost per task are those of the index in `config/pairs.json`; the code points are Terminal-Bench 4.0, the terminal coding test, from the API of Artificial Analysis, read the same day, 2026-10-26:
+**J3. The efforts are not worth the same.** The cost per task is that of the index in `config/pairs.json`; the code points are Terminal-Bench 4.0, the terminal coding test, from the API of Artificial Analysis, read on 2026-10-26:
 
 | Pair | Intelligence | Cost per task | Code |
 |---|---|---|---|
-| `haiku high` | 37.8 | US$0.08 | 22 |
-| `haiku xhigh` | 41.2 | US$0.12 | 29 |
-| `sonnet high` | 46.8 | US$0.88 | 44 |
-| `sonnet xhigh` | 51.9 | US$2.01 | 57 |
-| `sonnet max` | 56.0 | US$5.46 | 64 |
-| `opus medium` | 51.2 | US$1.34 | 53 |
-| `opus high` | 53.6 | US$1.82 | 57 |
-| `opus xhigh` | 56.0 | US$3.46 | 60 |
-| `opus max` | 57.6 | US$5.98 | 60 |
+| `haiku high` | 29.6 | US$0.08 | 22 |
+| `haiku xhigh` | 34.3 | US$0.12 | 29 |
+| `sonnet high` | 41.1 | US$0.88 | 44 |
+| `sonnet xhigh` | 49.6 | US$2.01 | 57 |
+| `sonnet max` | 54.2 | US$5.46 | 64 |
+| `opus medium` | 48.1 | US$1.34 | 53 |
+| `opus high` | 51.7 | US$1.82 | 57 |
+| `opus xhigh` | 57 | US$3.46 | 60 |
+| `opus max` | 58.4 | US$5.98 | 60 |
+
+The intelligence points are those of Artificial Analysis on 2026-10-29. The cost and the time per task are those of 2026-10-26, which the API does not give (spec D4).
 
 In Sonnet, rising from `high` to `xhigh` costs 2.3 times more per task for 13 more points in code (44 to 57), and from `xhigh` to `max` 2.7 times more for 7. In Opus, rising from `high` to `xhigh` costs 1.9 times more for 3 points (57 to 60), and `max` gives the same 60 as `xhigh` for US$5.98. In Haiku the same rise is cheap: US$0.08 to US$0.12 for 22 to 29. Reading a long text (LCR) barely depends on the effort: Opus scores 84 at `medium`, 83 at `high` and 85 at `xhigh`.
 
@@ -95,7 +97,7 @@ Measure the next two swarm runs with `aether-report`, against the baseline of th
 
 **When to undo it.** Undo the change if, in those two runs, the final review or the exam find, on average per run, more `critical` or `important` findings in units that their supervisor had approved than the average of the baseline, which is 1.7 per run (2, 1 and 2 in the three runs that hold the data); or if the Sonnet units that ask for a second attempt after the first rise above 33 %, which is what happened at `xhigh`, against 17 % at `high`.
 
-**What was measured when the swarm started on Haiku (spec 019, 2026-10-28).** One run each, Claude only, with a hidden acceptance suite. Snake game, 10 tasks: US$ 2.62 in 10.4 minutes with the new swarm, against US$ 2.96 in 10.2 (all Haiku, old swarm) and US$ 3.60 in 7.6 (mixed tiers); 17 of 17 acceptance tests in all three. Query engine, 16 tasks: US$ 4.81 in 17.1 minutes against US$ 5.58 in 10.9 with the tiers of the plan; the whole exam passed in both. The implementers cost two thirds less, but the Opus final review and the Sonnet supervisors are three quarters or more of such a bill, so the total fell 14 % at most; the time did not improve. The ladder did not rise for quality and the gate rejected nothing, because the tests of those plans were given in full. The [handoff](../handoff/2026-10-30-codex-harness.md#7-carried-forward-what-spec-019-measured-2026-10-28) has the table.
+**What was measured when the swarm started on Haiku (spec 019, 2026-10-28).** One run each, Claude only, with a hidden acceptance suite. Snake game, 10 tasks: US$ 2.62 in 10.4 minutes with the new swarm, against US$ 2.96 in 10.2 (all Haiku, old swarm) and US$ 3.60 in 7.6 (mixed tiers); 17 of 17 acceptance tests in all three. Query engine, 16 tasks: US$ 4.81 in 17.1 minutes against US$ 5.58 in 10.9 with the tiers of the plan; the whole exam passed in both. The implementers cost two thirds less, but the Opus final review and the Sonnet supervisors are three quarters or more of such a bill, so the total fell 14 % at most; the time did not improve. The ladder did not rise for quality and the gate rejected nothing, because the tests of those plans were given in full. The [handoff](../handoff/2026-10-30-aa-refresh.md#7-carried-forward-what-spec-019-measured-2026-10-28) has the table.
 
 **What to touch to undo it:** `plugins/aether/config/ladder.json`; and `reviewerReference` in `plugins/aether/lib/lane-delegate.js`.
 

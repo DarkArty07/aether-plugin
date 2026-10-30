@@ -1,6 +1,7 @@
 'use strict'
 
 const test = require('node:test')
+const { createMuse } = require('../plugins/aether/lib/harness/muse.js')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -240,7 +241,9 @@ test('a read-only delegate runs on muse with the model of the pair, and its answ
     }
   })
   const head = s.repo.git('rev-parse', 'HEAD')
-  const out = await run(s, 'List the callers of fetchUser.', { harness: 'muse', rung: { model: 'muse-wonder-full-1.0', effort: 'high', group: 'muse' } })
+  // The adapter keeps its own folder, so the quota this test reads is not the one the owner's real Muse last reported.
+  const adapter = createMuse({ command: fake, groups: s.config.harnesses.muse.groups, dataDir: s.dataDir })
+  const out = await run(s, 'List the callers of fetchUser.', { harness: 'muse', adapter, rung: { model: 'muse-wonder-full-1.0', effort: 'high', group: 'muse' } })
   assert.equal(out.status, 'ok', out.detail)
   assert.equal(out.text, 'found 3 callers')
   assert.equal(out.harness, 'muse')

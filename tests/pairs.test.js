@@ -7,7 +7,7 @@ const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const { loadPairs, pairsPath, pairId, referenceOf } = require('../plugins/aether/lib/pairs.js')
 
-const EVIDENCE = path.join(__dirname, 'fixtures', 'aa-pairs-2026-10-19.json')
+const EVIDENCE = path.join(__dirname, 'fixtures', 'aa-pairs-2026-10-29.json')
 const NATIVE = { Haiku: 'haiku', Sonnet: 'sonnet', Opus: 'opus' }
 const EXTERNAL = { 'Gemini 4 Argon': 'gemini-4-argon', 'Gemini 3.8 Flash': 'gemini-3.8-flash', 'Grok 4.7': 'grok-4.7' }
 
@@ -52,7 +52,7 @@ test('every native pair has no group and every external pair has one', () => {
   for (const pair of loadPairs().pairs) assert.equal(pair.group === null, pair.harness === 'claude', pair.id)
 })
 
-test('C16: the Muse pair has the figure of Opus high, no cost and the owner words, and the three estimated Spark pairs carry estimated costs with an owner decision too', () => {
+test('C16: the Muse pair has the figure of Opus high, no cost and the owner words, and the estimated Spark pairs carry estimated costs with an owner decision too', () => {
   const { pairs } = loadPairs()
   const pair = pairs.find((p) => p.id === 'muse/muse-wonder-full-1.0@high')
   const opus = referenceOf(pairs, { model: 'opus', effort: 'high' })
@@ -61,10 +61,13 @@ test('C16: the Muse pair has the figure of Opus high, no cost and the owner word
   assert.deepEqual([pair.slug, pair.intelligence], [opus.slug, opus.intelligence])
   assert.match(pair.ownerDecision, /anivel de opus/)
   const wonder1 = pairs.find((p) => p.id === 'muse/muse-wonder-1.0@max')
-  assert.deepEqual([wonder1.intelligence, wonder1.costPerTaskUsd, wonder1.group], [52.4, 4.54, 'muse'])
+  // Wonder 1.0 max is 43.3 on the scale of 2026-10-29. Spark xhigh is an estimate now, so it carries an owner decision with the low, medium and high rows.
+  assert.deepEqual([wonder1.intelligence, wonder1.costPerTaskUsd, wonder1.group], [43.3, 4.54, 'muse'])
   assert.match(wonder1.ownerDecision, /Las dos respuestas es lo reocmendado/)
-  assert.deepEqual(pairs.filter((p) => p.ownerDecision !== undefined).map((p) => p.id), ['muse/muse-spark-1.3@low', 'muse/muse-spark-1.3@medium', 'muse/muse-spark-1.3@high', pair.id, 'muse/muse-wonder-1.0@max'])
+  assert.deepEqual(pairs.filter((p) => p.ownerDecision !== undefined).map((p) => p.id), ['muse/muse-spark-1.3@low', 'muse/muse-spark-1.3@medium', 'muse/muse-spark-1.3@high', 'muse/muse-spark-1.3@xhigh', pair.id, 'muse/muse-wonder-1.0@max'])
   assert.deepEqual(pairs.filter((p) => p.costPerTaskUsd === null).map((p) => p.id).sort(), ['agy/gemini-3.8-flash@low', pair.id])
+  const xhigh = pairs.find((p) => p.id === 'muse/muse-spark-1.3@xhigh')
+  assert.deepEqual([xhigh.intelligence, xhigh.costPerTaskUsd], [33.9, 1.1])
   const estimated = Object.fromEntries(['low', 'medium', 'high'].map((effort) => [effort, pairs.find((p) => p.id === `muse/muse-spark-1.3@${effort}`)]))
   assert.deepEqual([estimated.low.costPerTaskUsd, estimated.medium.costPerTaskUsd, estimated.high.costPerTaskUsd], [0.19, 0.43, 0.66])
   for (const [effort, row] of Object.entries(estimated)) {
@@ -74,7 +77,7 @@ test('C16: the Muse pair has the figure of Opus high, no cost and the owner word
 
 test('referenceOf gives the native pair of a model and effort, and throws for any other', () => {
   const { pairs } = loadPairs()
-  assert.equal(referenceOf(pairs, { model: 'sonnet', effort: 'xhigh' }).intelligence, 51.9)
+  assert.equal(referenceOf(pairs, { model: 'sonnet', effort: 'xhigh' }).intelligence, 49.6)
   assert.equal(referenceOf(pairs, { model: 'opus', effort: 'max' }).id, 'claude/opus@max')
   assert.throws(() => referenceOf(pairs, { model: 'gpt', effort: 'high' }), /no reference pair for gpt high/)
 })

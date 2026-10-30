@@ -84,7 +84,7 @@ test('R21: lanes.md says how the old options are read and what the rule asks, ke
     [
       'If `superdelegation` is not set and `lanes` is on, superdelegation counts as on',
       '`seats` is always ignored',
-      'Sonnet `high` asks 46.8 and Sonnet `xhigh` asks 51.9',
+      'Sonnet `high` asks 41.1 and Sonnet `xhigh` asks 49.6',
       'No pair is chosen or left out for being fast or slow',
       'Nobody reviews its own work',
     ],
@@ -105,7 +105,7 @@ test('R21: the guide pages of this task name neither the retired profiles nor th
 test('R25: the Muse section follows the rule: its pair is scored as Opus high by the owner, without cost, and the table maps no effort', () => {
   const page = read('docs', 'guide', 'lanes.md')
   const section = page.slice(page.indexOf('\n## Muse'))
-  includesAll(section, ['`muse/muse-wonder-full-1.0@high`', '53.6 points', 'no cost per task', 'goes last in its quota', '`ownerDecision`', '55.8', 'cannot match to the model id', '`muse/muse-wonder-1.0@max`'], 'the Muse section')
+  includesAll(section, ['`muse/muse-wonder-full-1.0@high`', '51.7 points', 'no cost per task', 'goes last in its quota', '`ownerDecision`', '49.7', 'cannot match to the model id', '`muse/muse-wonder-1.0@max`'], 'the Muse section')
   assert.doesNotMatch(section, /\breplaces Opus\b|`replaces`|`levels`|runs at Muse's `high`/, 'the Muse section names no equivalence table')
 })
 

@@ -61,7 +61,7 @@ test('the index lists Sol, Terra and Luna at the five efforts with the figures o
   assert.deepEqual(excluded.map((entry) => entry.model).sort(), [...OUT].sort())
   assert.ok(excluded.every((entry) => typeof entry.reason === 'string' && entry.reason.length > 20))
   const haiku = index.models.find((model) => model.harness === 'claude' && model.alias === 'haiku')
-  assert.equal(haiku.scores.find((score) => score.effort === 'high').intelligence, 37.8, 'the figures of the other harnesses are not refreshed here')
+  assert.equal(haiku.scores.find((score) => score.effort === 'high').intelligence, 29.6, 'the committed index carries the 2026-10-29 scale for the other harnesses too')
 })
 
 test('every Codex model of the index has a profile of OpenAI with its context (R14)', () => {

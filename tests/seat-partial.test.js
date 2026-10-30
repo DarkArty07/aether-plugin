@@ -404,18 +404,29 @@ test('a Writer that then succeeds does not leave the partial for the round after
 })
 
 test('a failed Judge round and a failed Examiner round carry nothing (issue 68)', (t) => {
+  // This file grants the judge and examiner roles to agy Opus. Opus high is 51.7, which meets the floor.
+  // Argon is 50.4, below it, so Opus is the only external pair. The try after it has nowhere to carry a partial.
   const judge = seatOf(t, 'judge', lines('Review.', `FAKE-AGY: write ${SPEC} REWRITTEN`, 'FAKE-AGY: exit-error boom'))
+  assert.equal(judge.first.json.decision.picked.id, 'agy/claude-opus-5-5@high')
   assert.equal(judge.first.json.partial, undefined)
   assert.equal(judge.first.json.continued, undefined)
-  assert.equal(judge.turns[1].files[SPEC], ORIGINAL)
-  assert.notEqual(judge.turns[1].files[SPEC], 'REWRITTEN\n')
-  assert.equal(judge.turns[1].prompt.includes(CONTINUATION), false)
+  assert.equal(judge.turns.length, 1)
+  assert.equal(judge.turns[0].files[SPEC], ORIGINAL)
+  assert.equal(judge.turns[0].prompt.includes(CONTINUATION), false)
+  assert.equal(judge.second.status, 3, judge.second.stdout + judge.second.stderr)
+  assert.equal(judge.second.json.unavailable, 'no-external')
+  assert.equal(fs.readFileSync(path.join(judge.repo.dir, SPEC), 'utf8'), ORIGINAL)
 
   const exam = seatOf(t, 'examiner', lines('Write the exam.', 'FAKE-AGY: write .aether-exam/note.txt EXAM-PARTIAL', 'FAKE-AGY: exit-error boom'))
+  assert.equal(exam.first.json.decision.picked.id, 'agy/claude-opus-5-5@high')
   assert.equal(exam.first.json.partial, undefined)
   assert.equal(exam.first.json.continued, undefined)
-  assert.equal(exam.turns[1].files['.aether-exam/note.txt'], undefined)
-  assert.equal(exam.turns[1].prompt.includes(CONTINUATION), false)
+  assert.equal(exam.turns.length, 1)
+  assert.equal(exam.turns[0].files['.aether-exam/note.txt'], undefined)
+  assert.equal(exam.turns[0].prompt.includes(CONTINUATION), false)
+  assert.equal(exam.second.status, 3, exam.second.stdout + exam.second.stderr)
+  assert.equal(exam.second.json.unavailable, 'no-external')
+  assert.equal(fs.existsSync(path.join(exam.repo.dir, '.aether-exam')), false)
 })
 
 test('seat-wait reports whether the Writer round started from a partial, and a stopped round keeps the file for the next pair (issue 68)', async (t) => {

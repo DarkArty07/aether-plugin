@@ -18,6 +18,8 @@ const CHECKS = {
   hang: "if (require('fs').existsSync('src/t1/bad.js')) setTimeout(() => {}, 20000)\n",
   known: "console.log('not ok 1 - tests/old.test.js')\nconsole.log('# pass 11')\nprocess.exit(1)\n",
   knownAndNew: "console.log('not ok 1 - tests/old.test.js')\nif (require('fs').existsSync('src/t1/bad.js')) console.log('not ok 2 - tests/new.test.js')\nprocess.exit(1)\n",
+  // The known failure comes first and 400,000 characters of passing tests follow it (issue 134).
+  knownBeforeALongOutput: "console.log('not ok 1 - tests/old.test.js')\nfor (let i = 0; i < 6000; i++) console.log('ok ' + i + ' - ' + 'x'.repeat(60))\nconsole.log('# pass 5999')\nprocess.exit(1)\n",
   marker: "require('fs').writeFileSync('ran.txt', '1')\n",
   namedSubtest: "if (require('fs').existsSync('src/t1/bad.js')) { console.log('not ok 1 - adds the numbers'); process.exit(1) }\nconsole.log('# pass 12')\n",
   loud: "for (let i = 0; i < 3000; i++) console.log('ok ' + i + ' - a passing test with a name that is not short')\nconsole.log('# pass 3000')\n",
@@ -114,6 +116,14 @@ test('a failure that the baseline already had does not fail the gate', (t) => {
   const g = gate(u)
   assert.deepEqual([g.pass, g.findings, g.knownFailures], [true, [], ['tests/old.test.js']])
   assert.match(g.tests, /known failures only: tests\/old\.test\.js/)
+})
+
+test('a failure that the baseline already had does not fail the gate, however long the output that follows it (issue 134)', (t) => {
+  const u = unit(t, CHECKS.knownBeforeALongOutput)
+  commitIn(u.repo, u.wt, 'src/t1/a.js', 'one\n', 'add a')
+  const g = gate(u)
+  assert.deepEqual([g.pass, g.findings, g.knownFailures], [true, [], ['tests/old.test.js']])
+  assert.ok(g.tests.length <= 2000, 'the summary stays short')
 })
 
 test('a known failure does not excuse a new one: only the new one is a finding', (t) => {

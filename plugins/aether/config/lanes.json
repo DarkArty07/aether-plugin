@@ -6,27 +6,65 @@
       "command": "agy",
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
-      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200, "judge": 1200, "writer": 2700, "examiner": 1800 },
-      "groups": { "argon": "Gemini Models", "flash": "Gemini Models", "claude": "Claude and GPT models" },
+      "timeouts": {
+        "implementer": 2700,
+        "supervisor": 900,
+        "reviewer": 1200,
+        "judge": 1200,
+        "writer": 2700,
+        "examiner": 1800
+      },
+      "groups": {
+        "argon": "Gemini Models",
+        "flash": "Gemini Models",
+        "claude": "Claude and GPT models"
+      },
       "models": {
         "gemini-3.8-flash": {
           "group": "flash",
-          "roles": ["implementer"],
-          "aa": { "slug": "gemini-3-8-flash", "intelligence": 40.9, "terminalBench": 0.2, "checked": "2026-10-08" }
+          "roles": [
+            "implementer"
+          ],
+          "aa": {
+            "slug": "gemini-3-8-flash",
+            "intelligence": 30.5,
+            "terminalBench": 0.2,
+            "checked": "2026-10-30"
+          }
         },
         "claude-sonnet-5-5": {
           "group": "claude",
-          "roles": ["implementer", "supervisor"],
-          "aa": { "slug": "claude-sonnet-5-5-high", "intelligence": 46.8, "terminalBench": 0.44, "checked": "2026-10-08" }
+          "roles": [
+            "implementer",
+            "supervisor"
+          ],
+          "aa": {
+            "slug": "claude-sonnet-5-5-high",
+            "intelligence": 41.1,
+            "terminalBench": 0.44,
+            "checked": "2026-10-30"
+          }
         },
         "claude-opus-5-5": {
           "group": "claude",
-          "roles": ["implementer", "reviewer"],
-          "aa": { "slug": "claude-opus-5-5-high", "intelligence": 53.6, "terminalBench": 0.57, "checked": "2026-10-08" }
+          "roles": [
+            "implementer",
+            "reviewer"
+          ],
+          "aa": {
+            "slug": "claude-opus-5-5-high",
+            "intelligence": 51.7,
+            "terminalBench": 0.57,
+            "checked": "2026-10-30"
+          }
         },
         "gemini-4-argon": {
           "group": "argon",
-          "roles": ["judge", "writer", "examiner"],
+          "roles": [
+            "judge",
+            "writer",
+            "examiner"
+          ],
           "note": "Gemini 4 Argon, generally available 2026-10-13. agy 1.3.6 lists it as gemini-4-argon-low, -medium and -high, and a round of each seat ran on it on 2026-10-15. Not measured against the native agent yet (docs/evaluations/seats)."
         }
       }
@@ -35,26 +73,56 @@
       "command": "codex",
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
-      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
-      "groups": { "codex": "Codex plan" },
+      "timeouts": {
+        "implementer": 2700,
+        "supervisor": 900,
+        "reviewer": 1200
+      },
+      "groups": {
+        "codex": "Codex plan"
+      },
       "models": {
         "gpt-6.1-sol": {
           "group": "codex",
-          "roles": ["implementer", "supervisor", "reviewer"],
-          "aa": { "slug": "gpt-6-1-sol", "intelligence": 54.5, "terminalBench": 0.561, "checked": "2026-10-29" },
-          "note": "Sol serves the ladder steps of Sonnet high (Sol medium) and Opus high (Sol max). The figures are the max row of Artificial Analysis of 2026-10-29, and the table of pairs (config/pairs.json) holds the other efforts. Roles follow plan D4: implementer, supervisor and reviewer; design seats (judge, writer, examiner) are not given because nothing judges what AA does not measure. The models Codex lists and the exclusions are in config/models/harness-models.json."
+          "roles": [
+            "implementer",
+            "supervisor",
+            "reviewer"
+          ],
+          "aa": {
+            "slug": "gpt-6-1-sol",
+            "intelligence": 54.5,
+            "terminalBench": 0.56,
+            "checked": "2026-10-30"
+          },
+          "note": "Sol serves the asks that Terra does not reach on the scale of 2026-10-29: Sonnet xhigh (Sol high), Sonnet max (Sol max) and Opus medium (Sol high); the four steps of the ladder are Terra's. The figures are the max row of Artificial Analysis of 2026-10-29, and the table of pairs (config/pairs.json) holds the other efforts. Roles follow plan D4: implementer, supervisor and reviewer; design seats (judge, writer, examiner) are not given because nothing judges what AA does not measure. The models Codex lists and the exclusions are in config/models/harness-models.json."
         },
         "gpt-6.1-terra": {
           "group": "codex",
-          "roles": ["implementer", "supervisor"],
-          "aa": { "slug": "gpt-6-1-terra", "intelligence": 51.0, "terminalBench": 0.556, "checked": "2026-10-29" },
-          "note": "Terra serves the first step and its correction on the ladder (Terra medium for Haiku high, and Terra high for its correction Haiku xhigh). The figures are the max row of Artificial Analysis of 2026-10-29, and the table of pairs (config/pairs.json) holds the other efforts. Roles follow plan D4: implementer and supervisor; design seats (judge, writer, examiner) are not given because nothing judges what AA does not measure."
+          "roles": [
+            "implementer",
+            "supervisor"
+          ],
+          "aa": {
+            "slug": "gpt-6-1-terra",
+            "intelligence": 51,
+            "terminalBench": 0.56,
+            "checked": "2026-10-30"
+          },
+          "note": "Terra serves the four steps of the ladder on the scale of 2026-10-29: Terra low for Haiku high, Terra medium for its correction Haiku xhigh, Terra high for Sonnet high and Terra max for Opus high. Caution: Terra low reaches 15.2 % of Terminal-Bench against 21.7 % of Haiku high, which the rule does not see, and Terra's cost per task is an estimate. The figures are the max row of Artificial Analysis of 2026-10-29, and the table of pairs (config/pairs.json) holds the other efforts. Roles follow plan D4: implementer and supervisor; design seats (judge, writer, examiner) are not given because nothing judges what AA does not measure."
         },
         "gpt-6-luna": {
           "group": "codex",
-          "roles": ["implementer"],
-          "aa": { "slug": "gpt-6-luna", "intelligence": 27.8, "terminalBench": 0.126, "checked": "2026-10-29" },
-          "note": "Luna max is 1.8 points and 9 code points below Haiku high and is not a starting step on the ladder. The figures are the max row of Artificial Analysis of 2026-10-29, and the table of pairs (config/pairs.json) holds the other efforts. Roles follow plan D4: implementer only; design seats (judge, writer, examiner) are not given because nothing judges what AA does not measure."
+          "roles": [
+            "implementer"
+          ],
+          "aa": {
+            "slug": "gpt-6-luna",
+            "intelligence": 27.8,
+            "terminalBench": 0.13,
+            "checked": "2026-10-30"
+          },
+          "note": "Luna max is 1.8 points and 9 code points below Haiku high and is not a starting step on the ladder; Luna medium (18.3) does answer a Haiku low ask (18.6) at US$ 0.011. The figures are the max row of Artificial Analysis of 2026-10-29, and the table of pairs (config/pairs.json) holds the other efforts. Roles follow plan D4: implementer only; design seats (judge, writer, examiner) are not given because nothing judges what AA does not measure."
         }
       }
     },
@@ -62,13 +130,21 @@
       "command": "grok",
       "waitSeconds": 540,
       "quotaLifeMinutes": 30,
-      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
-      "groups": { "grok": "Grok plan" },
+      "timeouts": {
+        "implementer": 2700,
+        "supervisor": 900,
+        "reviewer": 1200
+      },
+      "groups": {
+        "grok": "Grok plan"
+      },
       "models": {
         "grok-4.7": {
           "group": "grok",
-          "roles": ["implementer"],
-          "note": "Grok 4.7 (xAI: built for coding, agentic tasks and knowledge work; 500K context; effort low, medium, high, xhigh), checked on 2026-10-13. Artificial Analysis: 46.4 intelligence and 0.258 terminal-bench at xhigh, above Gemini 3.8 Flash (0.197) and below Haiku 5.5 at xhigh (0.293), so it scores below Haiku 5.5 at xhigh on that benchmark. The harness takes xhigh as it is, and the pairs table (config/pairs.json) holds its low, high and xhigh pairs, which the pair rule judges by their points: AA scores high at 46.3 and 0.247 against 46.4 and 0.258 at xhigh, with a time to first token of 9 s against 15 s. models/profiles.json in the plugin's config folder has its profile. grok-4.7-build-fast is the same model on faster infrastructure at twice the token price, billed through the plan: it is not a cheaper lane, and it is left out."
+          "roles": [
+            "implementer"
+          ],
+          "note": "Grok 4.7 (xAI: built for coding, agentic tasks and knowledge work; 500K context; effort low, medium, high, xhigh), checked on 2026-10-13. Artificial Analysis, on the scale of 2026-10-29: 34.3 intelligence at xhigh and 35 at high (it scored 46.4 and 46.3 on the scale of 2026-10-26), so xhigh gives no more points than high and is dominated by it. The harness takes xhigh as it is, and the pairs table (config/pairs.json) holds its low, high and xhigh pairs, which the pair rule judges by their points. The terminal-bench comparisons of 2026-10-13 with Gemini 3.8 Flash and Haiku 5.5 were not read again. models/profiles.json in the plugin's config folder has its profile. grok-4.7-build-fast is the same model on faster infrastructure at twice the token price, billed through the plan: it is not a cheaper lane, and it is left out."
         }
       }
     },
@@ -76,36 +152,72 @@
       "command": "cursor-agent",
       "waitSeconds": 540,
       "quotaLifeMinutes": 10,
-      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
-      "groups": { "cursor": "Cursor plan" },
+      "timeouts": {
+        "implementer": 2700,
+        "supervisor": 900,
+        "reviewer": 1200
+      },
+      "groups": {
+        "cursor": "Cursor plan"
+      },
       "models": {}
     },
     "muse": {
       "command": "muse",
       "waitSeconds": 540,
       "quotaLifeMinutes": 30,
-      "timeouts": { "implementer": 2700, "supervisor": 900, "reviewer": 1200 },
-      "groups": { "muse": "Muse subscription" },
+      "timeouts": {
+        "implementer": 2700,
+        "supervisor": 900,
+        "reviewer": 1200
+      },
+      "groups": {
+        "muse": "Muse subscription"
+      },
       "models": {
         "muse-wonder-full-1.0": {
           "group": "muse",
-          "roles": ["implementer", "reviewer"],
-          "aa": { "slug": "muse-wonder-full", "intelligence": 55.8, "terminalBench": 0.57, "checked": "2026-10-19" },
-          "ownerDecision": "«si deja entrar a musewonder full es uno d elos mejores modelos que tiene el harness, ... esta anivel de opus segun yo» (the owner, 2026-10-19). Artificial Analysis names an effort for its only figure of this model, max, which the CLI does not take (low to xhigh), so under rule 3 of the models index it has no figure at an effort it takes; the owner decided it enters anyway, as Opus. Its score at max is 55.8 in intelligence and 0.57 in terminal-bench, against Opus 5.5 at 53.6 and 0.57 at high.",
+          "roles": [
+            "implementer",
+            "reviewer"
+          ],
+          "aa": {
+            "slug": "muse-wonder-full",
+            "intelligence": 49.7,
+            "terminalBench": 0.57,
+            "checked": "2026-10-30"
+          },
+          "ownerDecision": "«si deja entrar a musewonder full es uno d elos mejores modelos que tiene el harness, ... esta anivel de opus segun yo» (the owner, 2026-10-19). Artificial Analysis names an effort for its only figure of this model, max, which the CLI does not take (low to xhigh), so under rule 3 of the models index it has no figure at an effort it takes; the owner decided it enters anyway, as Opus. On the scale of 2026-10-29 its score at max is 49.7 in intelligence and 0.57 in terminal-bench, against Opus 5.5 at 51.7 and 0.57 at high. On the scale of 2026-10-26 it stood above Opus high (55.8 against 53.6), which is the premise of the owner's words «a nivel de opus»; on intelligence it no longer does, and the decision stands until the owner revises it.",
           "note": "The one model the Muse CLI lists to the owner's account (model/list of muse serve), given by Meta only on the Power and Maximum plans: an account without the plan is refused and the call runs native. Called for real on 2026-10-19 through this adapter (muse 1.4.11): clean, structured answer, the sandbox runs, and two calls at once live together. Its pair, muse/muse-wonder-full-1.0@high, is in config/pairs.json."
         },
         "muse-spark-1.3": {
           "group": "muse",
-          "roles": ["implementer", "reviewer"],
-          "aa": { "slug": "muse-spark-1-3", "intelligence": 48.1, "terminalBench": 0.33, "checked": "2026-10-26" },
+          "roles": [
+            "implementer",
+            "reviewer"
+          ],
+          "aa": {
+            "slug": "muse-spark-1-3",
+            "intelligence": 36.4,
+            "terminalBench": 0.33,
+            "checked": "2026-10-30"
+          },
           "ownerDecision": "«muse tambien tiene muse spark 1.3 que es infinitamente mas barato. Porque no se uso a nivel de haiku? considero que es un bug.» and «Dependiendo del effort muse spark 1.3 entra en nivel haiku o sonnet» (the owner, 2026-10-26). The Muse CLI did not list it to the owner's account on 2026-10-19 (model/list of muse serve 1.4.10), but it answered a real call through the adapter that day (specs/008-muse-harness/evidence/real-call.md, docs/handoff/2026-10-19-muse-harness-0.13.0.md) and the owner decided it enters anyway; the CLI lists it since muse 1.4.13 (checked 2026-10-27).",
-          "note": "Called for real on 2026-10-19 through this adapter. Artificial Analysis measures it at xhigh (intelligence 45.1, Terminal-Bench 0.17) and max (intelligence 48.1, Terminal-Bench 0.33), with token price 1.25 / 4.25 USD/M. Cost per task is not in the API and was read by the owner off AA's chart 'Intelligence Index vs. Cost per Task' on 2026-10-26: xhigh 1.1, max 1.3 USD. Spark is not cheap in AA's dollars (1.1 and 1.3 against Haiku max 0.21 and Sonnet high 0.88): it is used because Muse is a subscription whose quota the owner spends instead of Claude's, and within that quota it is the model with the fewest points that is enough. Terminal-Bench 4.0 is weaker than the index suggests (max 33%, xhigh 17%, against Haiku high 22% and Sonnet high 44%). Its pairs are muse/muse-spark-1.3@xhigh and muse/muse-spark-1.3@max in config/pairs.json, and, as estimates by the owner's decision of 2026-10-27, @high, @medium and @low."
+          "note": "Called for real on 2026-10-19 through this adapter. Artificial Analysis measures it at max only on the scale of 2026-10-29 (intelligence 36.4, Terminal-Bench 0.33; on 2026-10-26 it also listed xhigh, 45.1 on the old scale, which it no longer does), with token price 1.25 / 4.25 USD/M. Cost per task is not in the API and was read by the owner off AA's chart 'Intelligence Index vs. Cost per Task' on 2026-10-26: xhigh 1.1, max 1.3 USD. Spark is not cheap in AA's dollars (1.1 and 1.3 against Haiku max 0.21 and Sonnet high 0.88): it is used because Muse is a subscription whose quota the owner spends instead of Claude's, and within that quota it is the model with the fewest points that is enough. Terminal-Bench 4.0 is weaker than the index suggests (max 33%, against Haiku high 22% and Sonnet high 44%). Its @max pair is measured; @low, @medium, @high and, since 2026-10-30, @xhigh are estimates (the owner's decision of 2026-10-27 and A96, redone on the scale of 2026-10-29), all in config/pairs.json."
         },
         "muse-wonder-1.0": {
           "group": "muse",
-          "roles": ["implementer", "reviewer"],
-          "aa": { "slug": "muse-wonder", "intelligence": 52.4, "terminalBench": 0.52, "checked": "2026-10-27" },
-          "note": "The model Muse itself runs by default. The CLI lists it since muse 1.4.13 (model/list of muse serve, checked 2026-10-27); on 2026-10-19 it listed only muse-wonder-full-1.0. Artificial Analysis measures it at max only: intelligence 52.4, Terminal-Bench 0.52, token price 4 / 20 USD/M, cost per task US$ 4.54 (the cost of one task of the index, from its model page captured on 2026-10-26). It is about Sonnet at xhigh (51.9 points). Added on the owner's answer of 2026-10-27 «Las dos respuestas es lo reocmendado» to the question whether it enters. Not called for real through the adapter yet: a failed call is replaced by the next pair like any other. Its pair is muse/muse-wonder-1.0@max in config/pairs.json."
+          "roles": [
+            "implementer",
+            "reviewer"
+          ],
+          "aa": {
+            "slug": "muse-wonder",
+            "intelligence": 43.3,
+            "terminalBench": 0.52,
+            "checked": "2026-10-30"
+          },
+          "note": "The model Muse itself runs by default. The CLI lists it since muse 1.4.13 (model/list of muse serve, checked 2026-10-27); on 2026-10-19 it listed only muse-wonder-full-1.0. Artificial Analysis measures it at max only: intelligence 43.3 on the scale of 2026-10-29 (52.4 on that of 2026-10-26), Terminal-Bench 0.52, token price 4 / 20 USD/M, cost per task US$ 4.54 (the cost of one task of the index, from its model page captured on 2026-10-26). It sits above Sonnet high (41.1 points) and under Sonnet xhigh (49.6). Added on the owner's answer of 2026-10-27 «Las dos respuestas es lo reocmendado» to the question whether it enters. Not called for real through the adapter yet: a failed call is replaced by the next pair like any other. Its pair is muse/muse-wonder-1.0@max in config/pairs.json."
         }
       }
     }

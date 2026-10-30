@@ -165,12 +165,18 @@ test("aether-exam stores the checkout's .aether-exam/ and removes it, and runs i
 
 // ---- The Examiner seat ----
 
-// What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
-// the Examiner, as it does when the quota that renews first is Gemini's.
+// Gemini's window resets first. Argon (50.4) is below the Examiner's floor (Opus high 51.7, at least 50.7),
+// and the shipped table gives the examiner role only to Argon, so a plain round is the native agent. A round
+// that must run grants judge and examiner to claude-opus-5-5, and the rule picks agy/claude-opus-5-5@high.
 const geminiFirst = () => ({
   'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * 86400000).toISOString()],
   'Claude and GPT models': [0.9, 0.9, null, new Date(Date.now() + 3 * 86400000).toISOString()],
 })
+const grantOpusSeats = (cfg) => {
+  if (cfg?.harnesses?.agy?.models?.['claude-opus-5-5']?.roles) {
+    cfg.harnesses.agy.models['claude-opus-5-5'].roles.push('judge', 'examiner')
+  }
+}
 
 function seat(cwd, args, env, input) {
   const base = { ...process.env }
@@ -181,14 +187,15 @@ function seat(cwd, args, env, input) {
 
 test('an external Examiner writes the exam under .aether-exam/, and Aether stores it outside the repository', (t) => {
   const repo = repoWithSpec(t)
-  const env = laneEnv(t, { quota: geminiFirst() })
+  const env = laneEnv(t, { quota: geminiFirst(), mutate: grantOpusSeats })
   const answer = { tests: [README_TEST, { ...README_TEST, id: 'c1-file', criterion: 'C1', command: 'node .aether-exam/c1.js', files: ['c1.js'] }], notes: 'C3 needs a GPU.' }
   const input = `Write the exam of ${FEATURE}.\nFAKE-AGY: write .aether-exam/c1.js process.exit(1)\nFAKE-AGY: answer ${JSON.stringify(answer)}\n`
   const r = seat(repo.dir, ['examiner', '--session', 's1', '--author', 'sonnet', '--feature', FEATURE], env, input)
   assert.equal(r.status, 0, JSON.stringify(r.json) + r.stderr)
+  assert.equal(r.json.model, 'claude-opus-5-5')
   assert.ok(r.json.stored.startsWith(path.join(env.AETHER_DATA_DIR, 'exams')), r.json.stored)
   assert.ok(r.json.answer.startsWith('## Exam\n- Stored: '), r.json.answer)
-  assert.ok(r.json.answer.includes('- Tests: 2 (C2 1, C1 1)\n## Notes\nC3 needs a GPU.\n- Lane: agy gemini-4-argon-high'))
+  assert.ok(r.json.answer.includes('- Tests: 2 (C2 1, C1 1)\n## Notes\nC3 needs a GPU.\n- Lane: agy claude-opus-5-5-high'))
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(r.json.stored, 'exam.json'), 'utf8')), answer)
   assert.equal(fs.readFileSync(path.join(r.json.stored, 'c1.js'), 'utf8'), 'process.exit(1)\n')
   assert.equal(fs.existsSync(path.join(repo.dir, '.aether-exam')), false)
@@ -201,13 +208,29 @@ test('an external Examiner writes the exam under .aether-exam/, and Aether store
 test('an Examiner that writes outside .aether-exam/, or names a file it did not write, gives the round back', (t) => {
   const repo = repoWithSpec(t)
   const answer = { tests: [{ ...README_TEST, files: ['missing.js'] }], notes: '' }
-  const outside = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], laneEnv(t, { quota: geminiFirst() }), `FAKE-AGY: write tests/x.test.js x\nFAKE-AGY: answer ${JSON.stringify({ tests: [README_TEST], notes: '' })}\n`)
+  const outside = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], laneEnv(t, { quota: geminiFirst(), mutate: grantOpusSeats }), `FAKE-AGY: write tests/x.test.js x\nFAKE-AGY: answer ${JSON.stringify({ tests: [README_TEST], notes: '' })}\n`)
   assert.equal(outside.status, 4)
   assert.equal(outside.json.failed, 'violation')
   assert.deepEqual(outside.json.files, ['tests/x.test.js'])
-  const missing = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], laneEnv(t, { quota: geminiFirst() }), `FAKE-AGY: answer ${JSON.stringify(answer)}\n`)
+  const missing = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], laneEnv(t, { quota: geminiFirst(), mutate: grantOpusSeats }), `FAKE-AGY: answer ${JSON.stringify(answer)}\n`)
   assert.equal(missing.status, 4)
   assert.equal(missing.json.detail, 'the exam cannot be stored: test c2-readme names missing.js, which is not in the exam')
   assert.equal(missing.json.native.agent, 'aether:examiner')
   assert.equal(repo.git('status', '--porcelain'), '')
+})
+
+test('an Examiner on the shipped agy table finds no external pair at Opus high, so nothing is written or stored', (t) => {
+  const repo = repoWithSpec(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const answer = { tests: [README_TEST, { ...README_TEST, id: 'c1-file', criterion: 'C1', command: 'node .aether-exam/c1.js', files: ['c1.js'] }], notes: 'C3 needs a GPU.' }
+  const input = `Write the exam of ${FEATURE}.\nFAKE-AGY: write .aether-exam/c1.js process.exit(1)\nFAKE-AGY: answer ${JSON.stringify(answer)}\n`
+  const r = seat(repo.dir, ['examiner', '--session', 's1', '--author', 'sonnet', '--feature', FEATURE], env, input)
+  assert.equal(r.status, 3, JSON.stringify(r.json) + r.stderr)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.equal(r.json.native.agent, 'aether:examiner')
+  assert.equal(r.json.native.model, 'opus', 'the author is sonnet, so the native examiner stays opus')
+  assert.equal(r.json.native.intelligence, 51.7)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether-exam')), false)
+  assert.equal(repo.git('status', '--porcelain'), '')
+  assert.equal(fs.existsSync(path.join(env.AETHER_DATA_DIR, 'exams')), false)
 })

@@ -16,11 +16,17 @@ const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 const FEATURE = 'specs/001-demo'
 const DAY = 86400000
 // What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
-// the Writer and the Judge, as it does when the quota that renews first is Gemini's.
+// the Writer. Argon is 50.4, below the Judge's floor (Opus high 51.7, at least 50.7), so a Judge round on the
+// shipped table is the native agent unless the test grants the judge role to claude-opus-5-5.
 const geminiFirst = () => ({
   'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * DAY).toISOString()],
   'Claude and GPT models': [0.9, 0.9, null, new Date(Date.now() + 3 * DAY).toISOString()],
 })
+const grantOpusSeats = (cfg) => {
+  if (cfg?.harnesses?.agy?.models?.['claude-opus-5-5']?.roles) {
+    cfg.harnesses.agy.models['claude-opus-5-5'].roles.push('judge', 'examiner')
+  }
+}
 const SPEC_ANSWER = { spec: `${FEATURE}/spec.md`, commit: 'abc123', clarify: ['[NEEDS CLARIFICATION: which store?]'], assumptions: ['A1'], proposals: [], questions: [] }
 
 function seatRepo(t) {
@@ -124,12 +130,13 @@ test('a Writer round for the spec that changes the plan is undone, and its work 
 test('the Judge answer needs a type for each finding, and its text shows it (R9)', (t) => {
   const repo = seatRepo(t)
   const finding = { severity: 'major', title: 'Extra', evidence: '`R3`', fix: 'drop it' }
-  const without = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], laneEnv(t), `Review.\nFAKE-AGY: answer ${JSON.stringify({ verdict: 'revise', findings: [finding], openQuestions: [] })}\n`)
+  const without = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], laneEnv(t, { mutate: grantOpusSeats }), `Review.\nFAKE-AGY: answer ${JSON.stringify({ verdict: 'revise', findings: [finding], openQuestions: [] })}\n`)
   assert.equal(without.status, 4, without.stdout)
   assert.equal(without.json.detail, 'invalid answer: missing findings[0].type')
-  const typed = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], laneEnv(t), `Review.\nFAKE-AGY: answer ${JSON.stringify({ verdict: 'revise', findings: [{ ...finding, type: 'extra' }], openQuestions: [] })}\n`)
+  const typed = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], laneEnv(t, { mutate: grantOpusSeats }), `Review.\nFAKE-AGY: answer ${JSON.stringify({ verdict: 'revise', findings: [{ ...finding, type: 'extra' }], openQuestions: [] })}\n`)
   assert.equal(typed.status, 0, typed.stdout)
   assert.ok(typed.json.answer.includes('1. [major] [extra] Extra — `R3` — drop it'), typed.json.answer)
+  assert.ok(typed.json.answer.includes('- Lane: agy claude-opus-5-5-high'), typed.json.answer)
   assert.deepEqual(schemas.JUDGE_SCHEMA.properties.findings.items.properties.type.enum, ['missing', 'extra', 'wrong'])
   assert.ok(schemas.JUDGE_SCHEMA.properties.findings.items.required.includes('type'))
   assert.deepEqual(schemas.SPEC_WRITER_SCHEMA.required, ['spec', 'commit', 'clarify', 'assumptions', 'questions'])
@@ -137,6 +144,18 @@ test('the Judge answer needs a type for each finding, and its text shows it (R9)
   assert.ok('disagreements' in schemas.REVISION_SCHEMA.properties)
   assert.ok(!schemas.WRITER_SCHEMA.required.includes('complexity'))
   assert.ok('complexity' in schemas.WRITER_SCHEMA.properties && 'disagreements' in schemas.WRITER_SCHEMA.properties)
+})
+
+test('a Judge round on the shipped agy table finds no external pair at Opus high', (t) => {
+  const repo = seatRepo(t)
+  const env = laneEnv(t)
+  const finding = { severity: 'major', type: 'extra', title: 'Extra', evidence: '`R3`', fix: 'drop it' }
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE], env, `Review.\nFAKE-AGY: answer ${JSON.stringify({ verdict: 'revise', findings: [finding], openQuestions: [] })}\n`)
+  assert.equal(r.status, 3, r.stdout)
+  assert.equal(r.json.unavailable, 'no-external')
+  assert.equal(r.json.native.agent, 'aether:judge')
+  assert.equal(r.json.native.intelligence, 51.7)
+  assert.equal(agyTurns(env).length, 0)
 })
 
 test('C16: a Muse round reads the quota after it parses the output, so the allowance of that very round is the quota after it', (t) => {
@@ -159,8 +178,8 @@ test('C16: a Muse round reads the quota after it parses the output, so the allow
   assert.ok(Math.abs(call.quotaAfter.windows.weekly.remaining - 0.6) < 1e-9, JSON.stringify(call.quotaAfter))
 })
 
-// The two agy pairs that reach the Judge's Opus high. Gemini's window renews first, so Argon is the pair the rule
-// picks, and Opus on agy is the next one.
+// Argon is below the Judge's floor and Opus lists no judge role, so neither takes a round on the shipped table.
+// An exclusion is still recorded on the pair the test names.
 const ARGON = 'agy/gemini-4-argon@high'
 const OPUS_PAIR = 'agy/claude-opus-5-5@high'
 const { pairs: PAIR_TABLE } = loadPairs()

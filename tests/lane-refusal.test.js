@@ -72,10 +72,10 @@ function seatRepo(t) {
   return repo
 }
 
-function judgeRound(repo, env, input) {
+function seatRound(repo, env, input, seat = 'judge') {
   const base = { ...process.env }
   for (const name of ['AETHER_SUPERDELEGATION', 'AETHER_LANE_HARNESSES', 'CLAUDE_ENV_FILE']) delete base[name]
-  const r = spawnSync(process.execPath, [fx.LANE_BIN, 'seat', 'judge', '--session', 's1', '--feature', FEATURE], { cwd: repo.dir, input, encoding: 'utf8', env: { ...base, ...env } })
+  const r = spawnSync(process.execPath, [fx.LANE_BIN, 'seat', seat, '--session', 's1', '--feature', FEATURE], { cwd: repo.dir, input, encoding: 'utf8', env: { ...base, ...env } })
   return { status: r.status, json: JSON.parse(r.stdout.trim().split('\n').pop()) }
 }
 
@@ -241,9 +241,10 @@ test('a swarm call agy refuses leaves the mark of Flash alone for an hour, thoug
 })
 
 test('a seat round on Argon that agy refuses marks Argon only, and the next round skips it for the next pair while Flash stays usable', (t) => {
+  // The Judge asks Opus high (51.7). Argon is 50.4, below that floor, and it is the only model that lists judge, so a Judge round never calls it. The Writer asks Sonnet high (41.1), which Argon reaches, and Argon is the only model that lists writer.
   const repo = seatRepo(t)
   const env = fx.laneEnv(t, { quota: geminiFirst() })
-  const first = judgeRound(repo, env, `Review.\n${refuse().join('\n')}\n`)
+  const first = seatRound(repo, env, `Write.\n${refuse().join('\n')}\n`, 'writer')
   assert.equal(first.status, 4, JSON.stringify(first.json))
   assert.equal(first.json.failed, 'quota')
   assert.equal(first.json.model, 'gemini-4-argon')
@@ -252,11 +253,11 @@ test('a seat round on Argon that agy refuses marks Argon only, and the next roun
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'flash'), null, 'Flash has a quota of its own')
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'claude'), null)
 
-  // The held key is not called again: with no other external pair listing judge, the native agent takes the round.
-  const second = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
+  // The held key is not called again: with no other external pair listing writer, the native agent takes the round.
+  const second = seatRound(repo, env, `Write.\nFAKE-AGY: answer ${APPROVE}\n`, 'writer')
   assert.equal(second.status, 3, JSON.stringify(second.json))
   assert.equal(second.json.unavailable, 'no-external')
-  assert.equal(second.json.native.agent, 'aether:judge')
+  assert.equal(second.json.native.agent, 'aether:writer')
   assert.deepEqual(fx.agyTurns(env).map((turn) => fx.argAfter(turn.argv, '--model')), ['gemini-4-argon-high'])
 
   // Flash is still a lane for the swarm: its call goes through while Argon is held.
@@ -267,7 +268,7 @@ test('a seat round on Argon that agy refuses marks Argon only, and the next roun
 test('issue 038: with the shipped table, a refusal of Argon leaves Flash usable for the swarm, and a refusal of Flash leaves Argon usable for a seat', (t) => {
   const repo = seatRepo(t)
   const env = fx.laneEnv(t, { quota: geminiFirst() })
-  const first = judgeRound(repo, env, `Review.\n${refuse().join('\n')}\n`)
+  const first = seatRound(repo, env, `Write.\n${refuse().join('\n')}\n`, 'writer')
   assert.equal(first.json.failed, 'quota', JSON.stringify(first.json))
   assert.equal(first.json.model, 'gemini-4-argon')
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'argon').reason, 'quota refusal')
@@ -280,9 +281,9 @@ test('issue 038: with the shipped table, a refusal of Argon leaves Flash usable 
   assert.equal(refused.done.status, 'quota', refused.done.detail)
   assert.equal(marks.liveMark(other.AETHER_DATA_DIR, 'agy', 'flash').reason, 'quota refusal')
   assert.equal(marks.liveMark(other.AETHER_DATA_DIR, 'agy', 'argon'), null)
-  const judged = judgeRound(repo, other, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
-  assert.equal(judged.status, 0, JSON.stringify(judged.json))
-  assert.equal(judged.json.model, 'gemini-4-argon')
+  // A Writer round still starts on Argon: the Flash mark does not hold it. The answer is a Judge verdict, so the round fails after the call, and the model it called is Argon.
+  const judged = seatRound(repo, other, `Write.\nFAKE-AGY: answer ${APPROVE}\n`, 'writer')
+  assert.equal(judged.json.model, 'gemini-4-argon', JSON.stringify(judged.json))
 })
 
 test('a pair whose key a mark holds is dry for a seat, and a pair of an unmarked key is not', () => {
@@ -307,7 +308,10 @@ test('a pair whose key a mark holds is dry for a seat, and a pair of an unmarked
   const chosen = seats.chooseSeat({ config, pairs, seat: 'judge', harnesses: view(held) })
   assert.equal(chosen.external.pair.id, 'agy/claude-opus-5-5@high')
   assert.deepEqual(chosen.tried.find((entry) => entry.id === 'agy/gemini-4-argon@high'), { id: 'agy/gemini-4-argon@high', outcome: 'passed', why: 'dry' })
-  assert.equal(seats.chooseSeat({ config, pairs, seat: 'judge', harnesses: view(open(1)) }).external.pair.id, 'agy/gemini-4-argon@high')
+  // Argon at 50.4 is below Opus high (51.7) minus 1, so an open Argon key is not dry and is not the pair: Opus high is.
+  const openArgon = seats.chooseSeat({ config, pairs, seat: 'judge', harnesses: view(open(1)) })
+  assert.equal(openArgon.external.pair.id, 'agy/claude-opus-5-5@high')
+  assert.deepEqual(openArgon.tried.find((entry) => entry.id === 'agy/gemini-4-argon@high'), { id: 'agy/gemini-4-argon@high', outcome: 'passed', why: 'below' })
 })
 
 // ---- a mark of a key the table does not have ----
@@ -439,13 +443,14 @@ test('a seat round lifts a mark from a reading when the group reads healthy, and
   const repo = seatRepo(t)
   const env = fx.laneEnv(t, { quota: geminiFirst(), mutate: (cfg) => { cfg.harnesses.agy.models['claude-opus-5-5'].roles.push('judge') } })
   marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'argon', reading: dry(), reserve: RESERVE, now: Date.now() - 20 * MIN })
-  const lifted = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
+  const lifted = seatRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
   assert.equal(lifted.status, 0, JSON.stringify(lifted.json))
-  assert.equal(lifted.json.model, 'gemini-4-argon')
+  // Argon at 50.4 stays below Opus high minus 1 after the mark is gone, so the round goes to Opus, which this test lists as judge.
+  assert.equal(lifted.json.model, 'claude-opus-5-5')
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'argon'), null, 'the fresh reading of the group (90 %) lifted the mark')
 
   marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'argon', reserve: RESERVE, now: Date.now() - 20 * MIN, refusal: quotaRefusal(REFUSAL) })
-  const held = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
+  const held = seatRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
   assert.equal(held.status, 0, JSON.stringify(held.json))
   assert.equal(held.json.model, 'claude-opus-5-5', 'the held group is passed over for the next pair')
   assert.equal(marks.liveMark(env.AETHER_DATA_DIR, 'agy', 'argon').reason, 'quota refusal')
@@ -453,7 +458,7 @@ test('a seat round lifts a mark from a reading when the group reads healthy, and
   // With both keys held, no pair is left and the native agent takes the round.
   marks.markDry(env.AETHER_DATA_DIR, { harness: 'agy', group: 'claude', reserve: RESERVE, now: Date.now() - 20 * MIN, refusal: quotaRefusal(REFUSAL) })
   const turns = fx.agyTurns(env).length
-  const none = judgeRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
+  const none = seatRound(repo, env, `Review.\nFAKE-AGY: answer ${APPROVE}\n`)
   assert.equal(none.status, 3, JSON.stringify(none.json))
   assert.deepEqual(none.json.tried.find((entry) => entry.id === 'agy/gemini-4-argon@high'), { id: 'agy/gemini-4-argon@high', outcome: 'passed', why: 'dry' })
   assert.equal(none.json.native.agent, 'aether:judge')

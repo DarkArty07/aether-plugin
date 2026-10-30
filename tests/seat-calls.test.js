@@ -11,12 +11,18 @@ const lanes = require('../plugins/aether/lib/lanes.js')
 const FEATURE = 'specs/001-demo'
 const OPTIONS = ['--superdelegation', 'on', '--harnesses', 'agy']
 const DAY = 86400000
-// What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
-// the Judge, as it does when the quota that renews first is Gemini's.
+// Gemini's weekly window resets before the Claude and GPT one. Argon (50.4) is below the Judge's floor
+// (Opus high is 51.7, at least 50.7), and the shipped table gives judge and examiner only to Argon, so a
+// plain agy round is the native agent. A round that must run grants those roles to claude-opus-5-5.
 const geminiFirst = () => ({
   'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * DAY).toISOString()],
   'Claude and GPT models': [0.9, 0.9, null, new Date(Date.now() + 3 * DAY).toISOString()],
 })
+const grantOpusSeats = (cfg) => {
+  if (cfg?.harnesses?.agy?.models?.['claude-opus-5-5']?.roles) {
+    cfg.harnesses.agy.models['claude-opus-5-5'].roles.push('judge', 'examiner')
+  }
+}
 const JUDGE_ANSWER = { verdict: 'revise', findings: [{ severity: 'major', type: 'missing', title: 'Task 3 is too large', evidence: '`Owns: src/**`', fix: 'split it' }], openQuestions: [] }
 const ID = 'judge-20261015-120000-ab12'
 
@@ -38,7 +44,7 @@ function writeMessage(repo, text, session = 's1') {
 }
 
 // The environment of the mod's bins: it has none of the session's exports, so the flags must carry the option.
-const modEnv = (t) => ({ ...laneEnv(t, { quota: geminiFirst() }), AETHER_SUPERDELEGATION: 'off', AETHER_LANE_HARNESSES: 'codex' })
+const modEnv = (t, mutate = null) => ({ ...laneEnv(t, { quota: geminiFirst(), mutate }), AETHER_SUPERDELEGATION: 'off', AETHER_LANE_HARNESSES: 'codex' })
 const lane = (repo, args, env) => runBin(LANE_BIN, args, repo.dir, env)
 const start = (repo, env, seat, message, extra = OPTIONS, more = []) =>
   lane(repo, ['seat-start', seat, '--session', 's1', ...more, '--feature', FEATURE, ...extra, '--digest', writeMessage(repo, message)], env)
@@ -59,7 +65,7 @@ const until = async (check, seconds = 15) => {
 
 test('an external Judge round starts in the background and its answer comes by seat-wait, with the option given by flags', (t) => {
   const repo = seatRepo(t)
-  const env = modEnv(t)
+  const env = modEnv(t, grantOpusSeats)
   const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`, OPTIONS, ['--author', 'sonnet'])
   assert.equal(started.status, 0, started.stdout)
   assert.equal(started.json.started, true)
@@ -67,16 +73,17 @@ test('an external Judge round starts in the background and its answer comes by s
   const done = waitDone(repo, started.json.id, env)
   assert.equal(done.exitCode, 0, JSON.stringify(done))
   assert.equal(done.value.id, started.json.id)
-  assert.equal(done.value.model, 'gemini-4-argon')
+  assert.equal(done.value.model, 'claude-opus-5-5')
   assert.deepEqual(done.value.result, JUDGE_ANSWER)
   assert.ok(done.value.answer.startsWith('## Verdict\nrevise\n'))
+  assert.ok(done.value.answer.includes('- Lane: agy claude-opus-5-5-high'), done.value.answer)
   // The result carries the time the round took, from its start (issue 62).
   assert.ok(Number.isInteger(done.durationMs) && done.durationMs >= 0 && done.durationMs < 60000, String(done.durationMs))
 })
 
 test('the other exits of a seat are results of the round: 3 for nothing ran, 4 for a failed round', (t) => {
   const repo = seatRepo(t)
-  const env = modEnv(t)
+  const env = modEnv(t, grantOpusSeats)
   const off = waitDone(repo, start(repo, env, 'judge', 'Review.\n', ['--superdelegation', 'off', '--harnesses', 'agy']).json.id, env)
   assert.equal(off.exitCode, 3)
   assert.equal(off.value.unavailable, 'superdelegation-off')
@@ -101,7 +108,7 @@ test('a message that is missing or whose digest differs starts nothing', (t) => 
 
 test('seat-wait answers { done: false } while a round runs, and seat-stop ends it and removes its worktree', async (t) => {
   const repo = seatRepo(t)
-  const env = modEnv(t)
+  const env = modEnv(t, grantOpusSeats)
   const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: sleep 30\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`)
   const id = started.json.id
   const worktree = path.join(repo.dir, '.aether', 'seats', id, 'wt')
@@ -117,13 +124,27 @@ test('seat-wait answers { done: false } while a round runs, and seat-stop ends i
   assert.equal(running.done, false)
   assert.ok(Number.isInteger(running.elapsedMs) && running.elapsedMs >= 0 && running.elapsedMs < 60000, String(running.elapsedMs))
   // seat-stop names the pair the round ran on, for the next try to leave it out.
-  assert.deepEqual(lane(repo, ['seat-stop', id], env).json, { stopped: true, pair: 'agy/gemini-4-argon@high' })
+  assert.deepEqual(lane(repo, ['seat-stop', id], env).json, { stopped: true, pair: 'agy/claude-opus-5-5@high' })
   assert.ok(await until(() => !fs.existsSync(worktree)), 'the worktree is gone')
   const after = lane(repo, ['seat-wait', id, '--max', '5'], env).json
   assert.equal(after.done, true)
   assert.equal(after.exitCode, 1)
   assert.match(after.value.error, /ended without a result/)
   assert.ok(Number.isInteger(after.durationMs))
+})
+
+test('a Judge round on the shipped agy table finds no external pair at Opus high', (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`, OPTIONS, ['--author', 'sonnet'])
+  assert.equal(started.status, 0, started.stdout)
+  const done = waitDone(repo, started.json.id, env)
+  assert.equal(done.exitCode, 3, JSON.stringify(done))
+  assert.equal(done.value.unavailable, 'no-external')
+  assert.equal(done.value.native.agent, 'aether:judge')
+  assert.equal(done.value.native.model, 'opus')
+  assert.equal(done.value.native.intelligence, 51.7)
+  assert.equal(agyTurns(env).length, 0, 'Argon is below the floor and Opus has no judge role, so agy never runs')
 })
 
 test('a round whose runner is dead is reported, and bad arguments are refused', (t) => {

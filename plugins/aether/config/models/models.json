@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-27",
+  "generatedAt": "2026-10-30",
   "source": "https://artificialanalysis.ai/api/v2/data/llms/models",
   "harnesses": ["claude","agy","codex","grok","muse"],
   "since": "2026-01-01",
@@ -21,11 +21,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":29.5,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":161,"ttftSeconds":4.87},
-        {"effort":"medium","intelligence":34.5,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":163.7,"ttftSeconds":7.29},
-        {"effort":"high","intelligence":37.8,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":176.2,"ttftSeconds":13.71},
-        {"effort":"xhigh","intelligence":41.2,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":184,"ttftSeconds":36.57},
-        {"effort":"max","intelligence":43.4,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":238.9,"ttftSeconds":254.08}
+        {"effort":"low","intelligence":18.6,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":167.7,"ttftSeconds":6.68},
+        {"effort":"medium","intelligence":24.6,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":167.3,"ttftSeconds":8.11},
+        {"effort":"high","intelligence":29.6,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":188.1,"ttftSeconds":18.16},
+        {"effort":"xhigh","intelligence":34.3,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":199.6,"ttftSeconds":38.52},
+        {"effort":"max","intelligence":36.2,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":235.5,"ttftSeconds":269.01}
       ],
       "lane": null,
       "profile": {
@@ -66,11 +66,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":90.4,"ttftSeconds":0.77},
-        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":97.6,"ttftSeconds":0.99},
-        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":104.8,"ttftSeconds":7.21},
-        {"effort":"xhigh","intelligence":51.9,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":100.5,"ttftSeconds":12.36},
-        {"effort":"max","intelligence":56,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":140.8,"ttftSeconds":308.06}
+        {"effort":"low","intelligence":25.3,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":102.7,"ttftSeconds":0.94},
+        {"effort":"medium","intelligence":30.3,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":100,"ttftSeconds":0.88},
+        {"effort":"high","intelligence":41.1,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":106.1,"ttftSeconds":8.47},
+        {"effort":"xhigh","intelligence":49.6,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":104,"ttftSeconds":15.89},
+        {"effort":"max","intelligence":54.2,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":134.4,"ttftSeconds":251.92}
       ],
       "lane": null,
       "profile": {
@@ -97,11 +97,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":75.3,"ttftSeconds":2.13},
-        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.3,"ttftSeconds":10.7},
-        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":77.4,"ttftSeconds":13.04},
-        {"effort":"xhigh","intelligence":56,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":77.6,"ttftSeconds":55.63},
-        {"effort":"max","intelligence":57.6,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":96.7,"ttftSeconds":424.84}
+        {"effort":"low","intelligence":34.5,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":75.9,"ttftSeconds":4.59},
+        {"effort":"medium","intelligence":48.1,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":76.9,"ttftSeconds":13.76},
+        {"effort":"high","intelligence":51.7,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.7,"ttftSeconds":18.59},
+        {"effort":"xhigh","intelligence":57,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":85.1,"ttftSeconds":84.45},
+        {"effort":"max","intelligence":58.4,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":97.3,"ttftSeconds":617.73}
       ],
       "lane": null,
       "profile": {
@@ -127,7 +127,7 @@
       "effortVia": "id",
       "efforts": ["low","medium","high"],
       "ids": {"low":"gemini-4-argon-low","medium":"gemini-4-argon-medium","high":"gemini-4-argon-high"},
-      "scores": [{"effort":"high","intelligence":52.6,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":82.3,"ttftSeconds":36.02}],
+      "scores": [{"effort":"high","intelligence":50.4,"terminalBench":0.571,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.5,"ttftSeconds":27.2}],
       "lane": {"roles":["judge","writer","examiner"]},
       "profile": {
         "purpose": "A flagship reasoning model, with a unified 1M context window and long decodes up to 1M tokens.",
@@ -166,9 +166,9 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"claude-sonnet-5-5-low","medium":"claude-sonnet-5-5-medium","high":"claude-sonnet-5-5-high"},
       "scores": [
-        {"effort":"low","intelligence":35.9,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":90.4,"ttftSeconds":0.77},
-        {"effort":"medium","intelligence":40.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":97.6,"ttftSeconds":0.99},
-        {"effort":"high","intelligence":46.8,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":104.8,"ttftSeconds":7.21}
+        {"effort":"low","intelligence":25.3,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":102.7,"ttftSeconds":0.94},
+        {"effort":"medium","intelligence":30.3,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":100,"ttftSeconds":0.88},
+        {"effort":"high","intelligence":41.1,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":106.1,"ttftSeconds":8.47}
       ],
       "lane": {"roles":["implementer","supervisor"]},
       "profile": {
@@ -195,9 +195,9 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"claude-opus-5-5-low","medium":"claude-opus-5-5-medium","high":"claude-opus-5-5-high"},
       "scores": [
-        {"effort":"low","intelligence":42.3,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":75.3,"ttftSeconds":2.13},
-        {"effort":"medium","intelligence":51.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.3,"ttftSeconds":10.7},
-        {"effort":"high","intelligence":53.6,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":77.4,"ttftSeconds":13.04}
+        {"effort":"low","intelligence":34.5,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":75.9,"ttftSeconds":4.59},
+        {"effort":"medium","intelligence":48.1,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":76.9,"ttftSeconds":13.76},
+        {"effort":"high","intelligence":51.7,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.7,"ttftSeconds":18.59}
       ],
       "lane": {"roles":["implementer","reviewer"]},
       "profile": {
@@ -224,36 +224,9 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"gemini-3.8-flash-low","medium":"gemini-3.8-flash-medium","high":"gemini-3.8-flash-high"},
       "scores": [
-        {
-          "effort": "low",
-          "intelligence": 33.5,
-          "coding": 73.5,
-          "terminalBench": 0.101,
-          "priceInput": 0.75,
-          "priceOutput": 3.75,
-          "tokensPerSecond": null,
-          "ttftSeconds": null
-        },
-        {
-          "effort": "medium",
-          "intelligence": 39.8,
-          "coding": 74.1,
-          "terminalBench": 0.197,
-          "priceInput": 0.75,
-          "priceOutput": 3.75,
-          "tokensPerSecond": null,
-          "ttftSeconds": null
-        },
-        {
-          "effort": "high",
-          "intelligence": 40.9,
-          "coding": 76.3,
-          "terminalBench": 0.197,
-          "priceInput": 0.75,
-          "priceOutput": 3.75,
-          "tokensPerSecond": 134.9,
-          "ttftSeconds": 16.28
-        }
+        {"effort":"low","intelligence":22.3,"terminalBench":0.101,"priceInput":0.75,"priceOutput":3.75,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"medium","intelligence":30,"terminalBench":0.197,"priceInput":0.75,"priceOutput":3.75,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"high","intelligence":30.5,"terminalBench":0.197,"priceInput":0.75,"priceOutput":3.75,"tokensPerSecond":130.2,"ttftSeconds":18.01}
       ],
       "lane": {"roles":["implementer"]},
       "profile": {
@@ -279,11 +252,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":29.2,"terminalBench":0.152,"priceInput":1,"priceOutput":5,"tokensPerSecond":90.9,"ttftSeconds":1.55},
-        {"effort":"medium","intelligence":38.1,"terminalBench":0.323,"priceInput":1,"priceOutput":5,"tokensPerSecond":91.1,"ttftSeconds":2.41},
-        {"effort":"high","intelligence":42.3,"terminalBench":0.419,"priceInput":1,"priceOutput":5,"tokensPerSecond":91.4,"ttftSeconds":10.41},
-        {"effort":"xhigh","intelligence":45,"terminalBench":0.465,"priceInput":1,"priceOutput":5,"tokensPerSecond":90.9,"ttftSeconds":35.81},
-        {"effort":"max","intelligence":51,"terminalBench":0.556,"priceInput":1,"priceOutput":5,"tokensPerSecond":91,"ttftSeconds":165.56}
+        {"effort":"low","intelligence":29.2,"terminalBench":0.152,"priceInput":1,"priceOutput":5,"tokensPerSecond":90.9,"ttftSeconds":1.73},
+        {"effort":"medium","intelligence":38.1,"terminalBench":0.323,"priceInput":1,"priceOutput":5,"tokensPerSecond":91.5,"ttftSeconds":3.03},
+        {"effort":"high","intelligence":42.3,"terminalBench":0.419,"priceInput":1,"priceOutput":5,"tokensPerSecond":92.9,"ttftSeconds":13.32},
+        {"effort":"xhigh","intelligence":45,"terminalBench":0.465,"priceInput":1,"priceOutput":5,"tokensPerSecond":91.1,"ttftSeconds":38.66},
+        {"effort":"max","intelligence":51,"terminalBench":0.556,"priceInput":1,"priceOutput":5,"tokensPerSecond":91,"ttftSeconds":171.32}
       ],
       "lane": {"roles":["implementer","supervisor"]},
       "profile": {
@@ -309,11 +282,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":34.5,"terminalBench":0.308,"priceInput":2,"priceOutput":10,"tokensPerSecond":57,"ttftSeconds":1.89},
-        {"effort":"medium","intelligence":46.1,"terminalBench":0.48,"priceInput":2,"priceOutput":10,"tokensPerSecond":57.1,"ttftSeconds":3.49},
-        {"effort":"high","intelligence":50.2,"terminalBench":0.515,"priceInput":2,"priceOutput":10,"tokensPerSecond":67.7,"ttftSeconds":27.84},
-        {"effort":"xhigh","intelligence":52.3,"terminalBench":0.54,"priceInput":2,"priceOutput":10,"tokensPerSecond":72.7,"ttftSeconds":71.02},
-        {"effort":"max","intelligence":54.5,"terminalBench":0.561,"priceInput":2,"priceOutput":10,"tokensPerSecond":83.5,"ttftSeconds":183.42}
+        {"effort":"low","intelligence":34.5,"terminalBench":0.308,"priceInput":2,"priceOutput":10,"tokensPerSecond":57,"ttftSeconds":1.88},
+        {"effort":"medium","intelligence":46.1,"terminalBench":0.48,"priceInput":2,"priceOutput":10,"tokensPerSecond":57.1,"ttftSeconds":3.98},
+        {"effort":"high","intelligence":50.2,"terminalBench":0.515,"priceInput":2,"priceOutput":10,"tokensPerSecond":67.7,"ttftSeconds":30.59},
+        {"effort":"xhigh","intelligence":52.3,"terminalBench":0.54,"priceInput":2,"priceOutput":10,"tokensPerSecond":75.9,"ttftSeconds":71.02},
+        {"effort":"max","intelligence":54.5,"terminalBench":0.561,"priceInput":2,"priceOutput":10,"tokensPerSecond":88.8,"ttftSeconds":183.42}
       ],
       "lane": {"roles":["implementer","supervisor","reviewer"]},
       "profile": {
@@ -339,11 +312,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":9.7,"terminalBench":0,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":114.6,"ttftSeconds":2.66},
+        {"effort":"low","intelligence":9.7,"terminalBench":0,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":111.5,"ttftSeconds":3.36},
         {"effort":"medium","intelligence":18.3,"terminalBench":0.025,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"high","intelligence":21.4,"terminalBench":0.045,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":113.8,"ttftSeconds":12.04},
-        {"effort":"xhigh","intelligence":23.3,"terminalBench":0.081,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":116,"ttftSeconds":20.91},
-        {"effort":"max","intelligence":27.8,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":109.2,"ttftSeconds":96.16}
+        {"effort":"high","intelligence":21.4,"terminalBench":0.045,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":113.8,"ttftSeconds":14.88},
+        {"effort":"xhigh","intelligence":23.3,"terminalBench":0.081,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":116,"ttftSeconds":25.71},
+        {"effort":"max","intelligence":27.8,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":115.3,"ttftSeconds":107.11}
       ],
       "lane": {"roles":["implementer"]},
       "profile": {
@@ -369,9 +342,9 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh"],
       "scores": [
-        {"effort":"low","intelligence":42.2,"terminalBench":0.162,"priceInput":2,"priceOutput":6,"tokensPerSecond":79.1,"ttftSeconds":4},
-        {"effort":"high","intelligence":46.3,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":85.7,"ttftSeconds":12.51},
-        {"effort":"xhigh","intelligence":46.4,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":79,"ttftSeconds":14.48}
+        {"effort":"low","intelligence":30.9,"terminalBench":0.162,"priceInput":2,"priceOutput":6,"tokensPerSecond":73.2,"ttftSeconds":4.13},
+        {"effort":"high","intelligence":35,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":78.2,"ttftSeconds":11.37},
+        {"effort":"xhigh","intelligence":34.3,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":89.5,"ttftSeconds":23.38}
       ],
       "lane": {"roles":["implementer"]},
       "profile": {
@@ -401,26 +374,8 @@
       "effortVia": "flag",
       "efforts": ["minimal","low","medium","high","xhigh","max"],
       "scores": [
-        {
-          "effort": "xhigh",
-          "intelligence": 45.1,
-          "coding": 76.5,
-          "terminalBench": 0.167,
-          "priceInput": 1.25,
-          "priceOutput": 4.25,
-          "tokensPerSecond": null,
-          "ttftSeconds": null
-        },
-        {
-          "effort": "max",
-          "intelligence": 48.1,
-          "coding": 75.8,
-          "terminalBench": 0.333,
-          "priceInput": 1.25,
-          "priceOutput": 4.25,
-          "tokensPerSecond": null,
-          "ttftSeconds": null
-        }
+        {"effort":"xhigh","intelligence":null,"terminalBench":0.167,"priceInput":1.25,"priceOutput":4.25,"tokensPerSecond":null,"ttftSeconds":null},
+        {"effort":"max","intelligence":36.4,"terminalBench":0.333,"priceInput":1.25,"priceOutput":4.25,"tokensPerSecond":null,"ttftSeconds":null}
       ],
       "lane": {"roles":["implementer","reviewer"]},
       "profile": {
@@ -454,11 +409,11 @@
       "efforts": ["low","medium","high","xhigh","max"],
       "price": {"input":10,"output":50},
       "scores": [
-        {"effort":"low","intelligence":46.8,"coding":75.2,"terminalBench":0.404,"priceInput":10,"priceOutput":50,"tokensPerSecond":53.7,"ttftSeconds":0.68},
-        {"effort":"medium","intelligence":48.9,"coding":77.1,"terminalBench":0.449,"priceInput":10,"priceOutput":50,"tokensPerSecond":54.7,"ttftSeconds":2.11},
-        {"effort":"high","intelligence":51.2,"coding":79.1,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":54.2,"ttftSeconds":2.18},
-        {"effort":"xhigh","intelligence":53.2,"coding":80.7,"terminalBench":0.551,"priceInput":10,"priceOutput":50,"tokensPerSecond":58.8,"ttftSeconds":35.22},
-        {"effort":"max","intelligence":53.4,"coding":81.6,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":65.8,"ttftSeconds":156.88}
+        {"effort":"low","intelligence":38.5,"terminalBench":0.404,"priceInput":10,"priceOutput":50,"tokensPerSecond":53.5,"ttftSeconds":1.6},
+        {"effort":"medium","intelligence":43,"terminalBench":0.449,"priceInput":10,"priceOutput":50,"tokensPerSecond":57.1,"ttftSeconds":3.44},
+        {"effort":"high","intelligence":47,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":56.3,"ttftSeconds":13.43},
+        {"effort":"xhigh","intelligence":49.7,"terminalBench":0.551,"priceInput":10,"priceOutput":50,"tokensPerSecond":63.8,"ttftSeconds":44.18},
+        {"effort":"max","intelligence":49,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":69.7,"ttftSeconds":169.49}
       ],
       "profile": {
         "purpose": "\"For demanding reasoning and long-horizon agentic work.\" Anthropic's advice: for most workloads start with Opus 5.5, and use Fable 5.1 for demanding reasoning and long-horizon agentic work, or when evals on Opus 5.5 at higher effort still fall short. Comparative latency: slower.",
@@ -525,11 +480,11 @@
       "efforts": ["low","medium","high","xhigh","max"],
       "price": {"input":10,"output":50},
       "scores": [
-        {"effort":"low","intelligence":43,"terminalBench":0.419,"priceInput":10,"priceOutput":50,"tokensPerSecond":57.1,"ttftSeconds":1.59},
-        {"effort":"medium","intelligence":51.5,"terminalBench":0.495,"priceInput":10,"priceOutput":50,"tokensPerSecond":56.9,"ttftSeconds":3.9},
-        {"effort":"high","intelligence":54.8,"terminalBench":0.54,"priceInput":10,"priceOutput":50,"tokensPerSecond":65.8,"ttftSeconds":30.23},
-        {"effort":"xhigh","intelligence":55.3,"terminalBench":0.596,"priceInput":10,"priceOutput":50,"tokensPerSecond":77,"ttftSeconds":71.78},
-        {"effort":"max","intelligence":56.9,"terminalBench":0.591,"priceInput":10,"priceOutput":50,"tokensPerSecond":81,"ttftSeconds":200.85}
+        {"effort":"low","intelligence":43,"terminalBench":0.419,"priceInput":10,"priceOutput":50,"tokensPerSecond":65.7,"ttftSeconds":1.6},
+        {"effort":"medium","intelligence":51.5,"terminalBench":0.495,"priceInput":10,"priceOutput":50,"tokensPerSecond":61.5,"ttftSeconds":5.29},
+        {"effort":"high","intelligence":54.8,"terminalBench":0.54,"priceInput":10,"priceOutput":50,"tokensPerSecond":72.3,"ttftSeconds":34.46},
+        {"effort":"xhigh","intelligence":55.3,"terminalBench":0.596,"priceInput":10,"priceOutput":50,"tokensPerSecond":78,"ttftSeconds":78.88},
+        {"effort":"max","intelligence":56.9,"terminalBench":0.591,"priceInput":10,"priceOutput":50,"tokensPerSecond":88.9,"ttftSeconds":200.85}
       ],
       "profile": {
         "purpose": "«Frontier intelligence for the most demanding work.»",

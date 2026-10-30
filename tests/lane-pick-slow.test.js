@@ -90,19 +90,22 @@ test('a swarm call that ends by itself writes no slow mark', async (t) => {
 })
 
 test('a slow mark holds its pair for an hour, and a mark that has run out holds nothing', (t) => {
+  // Sonnet xhigh asks 49.6. Opus medium is 48.1, below the floor, so the pair this quota picks is Opus high.
+  const opusHigh = { harness: 'agy', model: 'claude-opus-5-5', effort: 'high' }
+  const opusHighId = 'agy/claude-opus-5-5@high'
   const { args } = fx.laneRun(t)
   const live = agyEnv(t, { quota: claudeFirst })
-  slow.markSlow(live.AETHER_DATA_DIR, OPUS_MEDIUM, { now: Date.now() - 59 * MIN })
+  slow.markSlow(live.AETHER_DATA_DIR, opusHigh, { now: Date.now() - 59 * MIN })
   const held = pick(args, live, SONNET_XHIGH)
   assert.equal(held.status, 0, held.stdout + held.stderr)
-  assert.equal(whyOf(held)[OPUS_MEDIUM_ID], 'excluded')
-  assert.notEqual(held.json.picked.id, OPUS_MEDIUM_ID)
+  assert.equal(whyOf(held)[opusHighId], 'excluded')
+  assert.equal(held.json.picked, null, 'no other implementer pair reaches Sonnet xhigh')
 
   const expired = agyEnv(t, { quota: claudeFirst })
-  slow.markSlow(expired.AETHER_DATA_DIR, OPUS_MEDIUM, { now: Date.now() - 61 * MIN })
+  slow.markSlow(expired.AETHER_DATA_DIR, opusHigh, { now: Date.now() - 61 * MIN })
   const again = pick(args, expired, SONNET_XHIGH)
-  assert.equal(again.json.picked.id, OPUS_MEDIUM_ID)
-  assert.equal(whyOf(again)[OPUS_MEDIUM_ID], null, 'it is a candidate again')
+  assert.equal(again.json.picked.id, opusHighId)
+  assert.equal(whyOf(again)[opusHighId], null, 'it is a candidate again')
 })
 
 test('a slow mark of one pair does not hide another effort of the same model', (t) => {

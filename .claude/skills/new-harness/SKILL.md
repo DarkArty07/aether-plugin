@@ -49,7 +49,7 @@ The top tier of a line waits for the next generation of that tier while a much c
 
 ## The scales move
 
-AA re-measured almost every model between 2026-10-26 and 2026-10-29: Haiku high 37.8 to 29.6, Sonnet high 46.8 to 41.1, Opus high 53.6 to 51.7. A new row is not compared with an old one without saying the date. The project keeps the old rows until the owner decides the refresh, P1 of spec 022. Read the owner's `artificial-analysis` skill too when it is present.
+AA re-measured almost every model between 2026-10-26 and 2026-10-29: Haiku high 37.8 to 29.6, Sonnet high 46.8 to 41.1, Opus high 53.6 to 51.7. A new row is not compared with an old one without saying the date. The table of pairs was refreshed on 2026-10-30 (spec 023) and is on one scale, the one of 2026-10-29. When AA moves its scores again, refresh the whole table before adding a row: `node scripts/refresh-lanes.js --write`, then `node scripts/build-models-index.js --write`, then redo the estimated rows (Muse Spark's, with the method of A96), and then run `choose()` over the fifteen asks of Haiku, Sonnet and Opus. The pairs the rule gives move with the scale: the four steps of Codex went from Terra medium, Terra high, Sol medium and Sol max to Terra low, Terra medium, Terra high and Terra max, and the Judge and the Examiner went back to native Opus because Argon fell under their floor. Say so to the owner before the refresh is merged. Read the owner's `artificial-analysis` skill too when it is present.
 
 ## Related
 
