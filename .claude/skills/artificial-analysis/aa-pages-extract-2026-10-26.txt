@@ -1,0 +1,55 @@
+Figures read from the Artificial Analysis model pages on 2026-10-26 by a script of this session (aa-pages.js, now removed).
+Restored by hand from the tables the session printed. Nothing here was read again.
+
+READ FIRST
+- Rows ending in @max, the agy/gemini-3.8-flash rows and grok-4.7@xhigh are WRONG: the first script took the first model block of the page, which was another model's. They all show the same values (1423 / 1540 / 48% / $2.37 / TB 33 / $5.18 / 260k / LCR 88 / HLE 46). Ignore them. The right figures for the max pages are in the second table.
+- The gdpval column is an Elo that the script multiplied by 100 by mistake. Ignore it.
+- "$brief" and "$tb" are the cost of ONE task of that benchmark, not weighted. They are not comparable with costPerTaskUsd of pairs.json (weighted over the whole index).
+- TB4 = Terminal-Bench 4.0 score in %, tok(k) = output tokens of one Terminal-Bench task in thousands, LCR = long-context reasoning %, HLE = Humanity's Last Exam %, omni = AA-Omniscience, critpt = CritPt %.
+
+TABLE 1 (first extractor; valid for the rows with an effort suffix)
+pair                           int  | BRIEF elo anal rubric  $brief | TB4 score  $tb   tok(k) | LCR  HLE  omni  critpt gdpval
+claude/haiku@low                29.5 |  1112  1222   34%   $0.05 |   13  $0.12     70 |  72   27     3      9 112264
+claude/haiku@medium             34.5 |  1369  1592   45%   $0.13 |   15  $0.19    107 |  77   34     4     13 127513
+claude/haiku@high               37.8 |  1440  1692   47%   $0.22 |   22  $0.33    166 |  77   37     6     19 141646
+claude/haiku@xhigh              41.2 |  1527  1798   51%   $0.37 |   29  $0.46    232 |  78   43     6     23 151319
+claude/sonnet@low               35.9 |  1268  1436   42%   $0.80 |   21  $1.28     40 |  76   36    19     11 117740
+claude/sonnet@medium            40.8 |  1438  1643   51%   $1.39 |   30  $1.58     52 |  76   40    20     17 132235
+claude/sonnet@high              46.8 |  1635  1877   60%   $3.27 |   44  $2.19     77 |  78   46    21     25 154758
+claude/sonnet@xhigh             51.9 |  1746  2015   62%   $6.98 |   57  $6.08    192 |  80   50    24     31 172735
+claude/opus@low                 42.3 |  1276  1435   43%   $1.15 |   31  $2.08     38 |  81   48    39     18 123391
+claude/opus@medium              51.2 |  1622  1865   57%   $4.40 |   53  $4.04     76 |  84   55    40     28 158507
+claude/opus@high                53.6 |  1683  1976   59%   $6.27 |   57  $5.12    100 |  83   56    41     31 170359
+claude/opus@xhigh                 56 |  1761  2086   61%  $12.27 |   60  $8.78    169 |  85   58    43     32 182946
+agy/gemini-4-argon@high         52.6 |  1486  1559   65%   $5.83 |   57  $6.78    165 |  80   57    42     27 162410
+grok/grok-4.7@low               42.2 |  1496  1730   49%   $2.51 |   16  $6.33     67 |  80   39    30     13 158258
+grok/grok-4.7@high              46.3 |  1630  1921   55%   $7.42 |   25  $8.95    126 |  77   42    31     18 170702
+(agy/claude-sonnet-5-5@* and agy/claude-opus-5-5@* repeat the claude/ rows; muse/muse-wonder-full-1.0@high repeated claude/opus@high by mistake: ignore it.)
+
+TABLE 2 (second extractor, own block of each page; includes the max pages)
+slug                       brief-elo  analytic  rubric  | TB4.0 score   $/task | cost per index task: total  cache(r+w)  reasoning  answer
+claude-haiku-5-5-xhigh          1527      1798     51%  |    29    $0.46  |                    $0.12       $0.08      $0.03   $0.01
+claude-haiku-5-5                1575      1898     52%  |    33    $0.65  |                    $0.21       $0.13      $0.06   $0.02
+claude-sonnet-5-5-high          1635      1877     60%  |    44    $2.19  |                    $0.88       $0.46      $0.19   $0.19
+claude-sonnet-5-5-xhigh         1746      2015     62%  |    57    $6.08  |                    $2.01       $1.21      $0.48   $0.27
+claude-sonnet-5-5               1816      2111     65%  |    64   $12.65  |                    $5.46       $3.44      $1.47   $0.51
+claude-opus-5-5-medium          1622      1865     57%  |    53    $4.04  |                    $1.34       $0.72      $0.23   $0.28
+claude-opus-5-5-high            1683      1976     59%  |    57    $5.12  |                    $1.82       $1.01      $0.36   $0.35
+claude-opus-5-5-xhigh           1761      2086     61%  |    60    $8.78  |                    $3.46       $2.04      $0.81   $0.51
+claude-opus-5-5                 1801      2138     61%  |    60   $13.11  |                    $5.98       $3.50      $1.68   $0.70
+(the page slug without an effort suffix is the max effort)
+
+API figures (Terminal-Bench 4.0 / LCR / HLE / SciCode, in %, from the allowed API) for the Claude 5.5 models:
+Opus max 60/85/61/67; Sonnet max 64/83/55/61; Opus xhigh 60/85/57/65; Opus high 57/83/56/60; Sonnet xhigh 57/80/50/57; Opus medium 53/84/55/59;
+Sonnet high 44/78/46/54; Haiku max 33/83/44/55; Opus low 31/81/48/59; Haiku xhigh 29/78/43/52; Sonnet medium 30/76/40/53; Haiku high 22/77/37/49;
+Sonnet low 21/76/36/49; Haiku medium 15/77/34/49; Haiku low 13/72/27/49.
+
+GDPval-AA Elo, corrected (the gdpval column of table 1 divided by 100)
+haiku low 1122.64, medium 1275.13, high 1416.46, xhigh 1513.19
+sonnet low 1177.40, medium 1322.35, high 1547.58, xhigh 1727.35
+opus low 1233.91, medium 1585.07, high 1703.59, xhigh 1829.46
+gemini-4-argon high 1624.10; grok-4.7 low 1582.58, high 1707.02
+
+NOT RECOVERED (never printed, so they were only in the deleted aa-pages.json and the downloaded pages): the presentation Elo and the total Briefcase cost,
+the tokens, cost and time of every benchmark other than Terminal-Bench, AutomationBench, SciCode, GDP.pdf, and the input / non-cache input / output lines of the cost split.
+They can only be had by reading the pages again.

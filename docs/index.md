@@ -41,4 +41,6 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 - [Spec 001, design seats](../specs/001-design-seats/spec.md) and its [plan](../specs/001-design-seats/plan.md): the seats of the Judge, the Writer and the Examiner, open to any harness, with the native agent as the fallback.
 - [Aether Agents retrospective](aether-retrospective.md): what Aether was, and what failed and why.
 - [Models](models/README.md): the index of the models the harnesses offer, from Artificial Analysis and the harnesses' own listings, with what each is for.
+- [Artificial Analysis data](reference/artificial-analysis.md): what its free API returns field by field, what its website shows that the API does not, what its terms of use allow, and where each figure lives in the plugin.
+- [Artificial Analysis comparison](models/artificial-analysis-2026-10-26.md): the 28 models of the owner's chart with the figures of the API and of the website, among them the cost, tokens and time per task, dated 2026-10-26.
 - [Issues](https://github.com/DarkArty07/aether-plugin/issues): the bugs, observations and requests for improvement found by using Aether, each with its evidence and status. They are the only list: the files that once recorded them are now issues #1 to #68.
