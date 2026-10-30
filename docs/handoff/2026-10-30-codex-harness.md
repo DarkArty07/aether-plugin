@@ -3,7 +3,7 @@
 - **Date:** 2026-10-30. It follows the handoff of the swarm's one ladder (spec 019), which this one replaces; versions 0.24.1 to 0.26.0 were released in between and are in the [changelog](../changelog.md). The measurements of spec 019 that other pages cite are carried forward in section 7.
 - **From:** the Lead, Claude Code on Sonnet 5.5, in the autonomous run `auto-20261029-185517-6665` (session `fca00ef1`).
 - **To:** the owner, and the next session.
-- **Repository state:** version 0.27.0 is prepared on the branch `feat/codex-harness` (worktree `.worktrees/codex-harness`). It is **not merged, not pushed, not tagged and not installed**; those steps are the owner's (see section 5).
+- **Repository state:** version 0.27.0 was released on 2026-10-30 on the owner's word («Todo lo que necesita mi SI, lo apruebo adelante hazlo»): the branch `feat/codex-harness` was squash-merged to `main` (commit `29b5122`, so that two lines of the branch's history that held a home folder never entered `main`), `main` and the tag `aether--v0.27.0` were pushed, the installed plugin was updated to 0.27.0, `codex` was added to his `harnesses` option and the old repository grants (push, merge-main, publish, delete) were revoked. The branch and its worktree `.worktrees/codex-harness` are still there for him to delete.
 
 ## 1. What was asked
 
@@ -50,7 +50,7 @@ The real calls (2026-10-30, `codex-cli 0.166.0`, Plus account) wrote `hello.txt`
 
 ## 5. What is open
 
-- **For the owner (each needs his word):** merge `feat/codex-harness` to `main`; push; tag `aether--v0.27.0` (`claude plugin tag plugins/aether`); `claude plugin update`; add `codex` to his `harnesses` option; optionally a private `CODEX_HOME` to remove the `AGENTS.md` limit; decide on the table-wide refresh of Artificial Analysis (P1); revoke the stale 2026-10-28 repository grants (push, merge-main, publish, delete).
+- **For the owner (each needs his word):** optionally a private `CODEX_HOME` to remove the `AGENTS.md` limit (it is a feature, not a switch: a login of his own in that folder, with no copy of `auth.json`); the table-wide refresh of Artificial Analysis (P1), which is a spec of its own because it changes the figures that every choice reads; delete the merged branch `feat/codex-harness` and its worktree.
 - **Issues filed from this run:** [#134](https://github.com/DarkArty07/aether-plugin/issues/134) (the unit gate keeps only the last 200,000 characters of the test output, so a known baseline failure is read as unparsed), [#135](https://github.com/DarkArty07/aether-plugin/issues/135) (the ladder keeps climbing when the red test is outside the unit's Owns) and [#136](https://github.com/DarkArty07/aether-plugin/issues/136) (a possible refactor: one source for the list of harnesses).
 - **Why two launches were blocked:** the step-0 evidence made R21 fail and the gate could not excuse it (#134), and Codex's data broke tests that no task owned (#135). The Lead adopted four units by hand from their patches (`aether-wt adopt`) and widened the `Owns` of tasks 9 and 10 without a new Judge review.
 - **Deferred minor findings of the final review:** a fixed 800 ms sleep in the quota-mark tests; a test that does `chmod` on a tracked fixture; R11 of the spec says the mark is under `<data dir>/router/` and the code puts it under `lanes/marks`; the components table does not list `codex-quota.js`; the website's «what is proven» card gives no date for Codex; the new decision is not linked from `delegates.md`.
