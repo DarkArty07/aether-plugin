@@ -7,18 +7,19 @@
 // Family: none.
 
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { isExecutableFile } = require('./common.js')
-const { MARKER, DEFAULT_NAME, newestLauncher } = require('./first-setup.js')
+const { MARKER, DEFAULT_NAME, newestLauncher, homeOf, configDirOf } = require('./first-setup.js')
+const { HARNESS_NAMES } = require('./harness/index.js')
 
 const MIN_CLAUDE = '2.1.294'
 const MIN_NODE_MAJOR = 22
 const MIN_GIT = '2.36'
-// The harness CLIs, in the order they are listed. The option names the cursor harness `cursor`; its CLI is `cursor-agent`.
-const HARNESS_CLIS = ['agy', 'codex', 'grok', 'cursor-agent', 'muse']
+// The harnesses are the one list of lib/harness/index.js, in its order. The option names the cursor harness `cursor`; its
+// CLI is `cursor-agent`, and every other harness's CLI has the harness's own name.
 const HARNESS_ALIASES = { cursor: 'cursor-agent' }
+const cliOf = (name) => HARNESS_ALIASES[name] || name
 const OPTIONS_KEY = 'aether@aether-plugin'
 const INSTALL_FIX = 'claude plugin install aether --marketplace DarkArty07/aether-plugin'
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
@@ -40,9 +41,6 @@ class DoctorError extends Error {
 }
 
 const usageError = (message) => new DoctorError(message, EXIT_USAGE)
-
-const homeOf = (env) => env.HOME || os.homedir()
-const configDirOf = (env) => env.CLAUDE_CONFIG_DIR || path.join(homeOf(env), '.claude')
 
 const check = (id, status, detail, fix = null) => ({ id, status, detail, fix })
 
@@ -252,12 +250,12 @@ function namedHarnesses(value) {
   const text = Array.isArray(value) ? value.join(',') : value
   if (typeof text !== 'string') return []
   const names = text.split(/[,\s]+/).map((name) => name.trim().toLowerCase()).filter(Boolean)
-  return [...new Set(names)].map((name) => ({ name, cli: HARNESS_ALIASES[name] || name }))
+  return [...new Set(names)].map((name) => ({ name, cli: cliOf(name) }))
 }
 
 function harnessesCheck(found, options) {
   if (options && isOn(options.superdelegation)) {
-    const missing = namedHarnesses(options.harnesses).filter(({ cli }) => !found.includes(cli))
+    const missing = namedHarnesses(options.harnesses).filter(({ name }) => !found.includes(name))
     if (missing.length) {
       const names = missing.map(({ name }) => name)
       return check(
@@ -268,8 +266,8 @@ function harnessesCheck(found, options) {
       )
     }
   }
-  if (found.length) return check('harnesses', 'info', `other harnesses installed: ${found.join(', ')}`)
-  return check('harnesses', 'info', 'no other harness is installed (agy, codex, grok, cursor-agent, muse): Aether runs on Claude alone')
+  if (found.length) return check('harnesses', 'info', `other harnesses installed: ${found.map(cliOf).join(', ')}`)
+  return check('harnesses', 'info', `no other harness is installed (${HARNESS_NAMES.map(cliOf).join(', ')}): Aether runs on Claude alone`)
 }
 
 function projectCheck(exec, cwd, name) {
@@ -292,7 +290,8 @@ function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec
   const configDir = configDirOf(env)
   const release = newestLauncher(configDir)
   const options = savedOptions(configDir)
-  const found = HARNESS_CLIS.filter((cli) => findOnPath(cli, env, cwd) !== null)
+  // The option names of the harnesses whose CLI is on the PATH.
+  const found = HARNESS_NAMES.filter((name) => findOnPath(cliOf(name), env, cwd) !== null)
   const { command, check: commandCheck } = commandState(name, env, cwd)
   const checks = [
     claudeCheck(exec),
@@ -309,11 +308,11 @@ function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec
     version: pluginVersion(),
     installed: release ? release.version : null,
     // The names the harnesses option takes (cursor, not cursor-agent), so /aether:setup can save them as they are.
-    harnesses: found.map((cli) => Object.keys(HARNESS_ALIASES).find((name) => HARNESS_ALIASES[name] === cli) || cli),
+    harnesses: found,
     options,
     command,
     checks,
   }
 }
 
-module.exports = { run, usageError, DoctorError, MIN_CLAUDE, MIN_GIT, MIN_NODE_MAJOR, HARNESS_CLIS }
+module.exports = { run, usageError, DoctorError, MIN_CLAUDE, MIN_GIT, MIN_NODE_MAJOR }

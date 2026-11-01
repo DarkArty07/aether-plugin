@@ -353,4 +353,4 @@ function run({ name = DEFAULT_NAME, dir, permissions = DEFAULT_PERMISSIONS, chec
   }
 }
 
-module.exports = { run, usageError, SetupError, MARKER, DEFAULT_NAME, PERMISSIONS, DEFAULT_PERMISSIONS, stubText, newestLauncher, compareVersions }
+module.exports = { homeOf, configDirOf, run, usageError, SetupError, MARKER, DEFAULT_NAME, PERMISSIONS, DEFAULT_PERMISSIONS, stubText, newestLauncher, compareVersions }
