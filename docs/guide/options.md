@@ -46,7 +46,7 @@ A plugin cannot set these, so you do:
 | The Lead at `xhigh` | `--effort xhigh` in the start command; `effortLevel` in a settings file could also hold `xhigh`, but the launcher passes it explicitly |
 | Dynamic workflows, for `/aether:design` and the swarm | Nothing on most paid plans. On Pro, turn on Dynamic workflows in `/config` once |
 | No advisor in Aether mode (each call rereads the whole conversation, uncached) | Nothing unless you configured one. If you did, run `/advisor off` |
-| Permissions for the swarm | Allow rules for `git`, `aether-wt`, `aether-lane` and the test command, and edits under `.aether/worktrees/`; `scripts/aether-lead` bypasses permissions instead |
+| Permissions for the swarm | Allow rules for `git`, `aether-wt`, `aether-lane` and the test command, and edits under `.aether/worktrees/`; the launcher (`aeth`, or `scripts/aether-lead` in a clone) bypasses permissions instead, unless `/aether:setup` chose another mode |
 | superpowers off in Aether sessions, if you keep it for other work | `--settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false}}'` in the start command |
 | Irreversible commands refused, not only recorded | `AETHER_IRREVERSIBLE=enforce` in the shell that starts Claude Code; `scripts/aether-lead` sets it |
 | Superdelegation on Codex, Grok, Muse or Cursor | Codex, Grok and Muse: their models and pairs are already in the tables, so they need only their name in the `harnesses` option, and for Codex that you signed in to `codex` yourself (see [Lanes](lanes.md#lanes)). Cursor: its models in your copy of the lane table and its pairs in your copy of `plugins/aether/config/pairs.json`, `AETHER_LANES_CONFIG` and `AETHER_PAIRS_CONFIG` set to those copies, and the `harnesses` option |

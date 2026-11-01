@@ -1,6 +1,6 @@
 'use strict'
 
-// Spec 004 (R6, R10, R11, R12): the facts of the README and of the 15 pages of docs/ that a machine can hold to the tree.
+// Spec 004 (R6, R10, R11, R12): the facts of the README and of the 35 pages of docs/ that a machine can hold to the tree.
 //
 // The rule of extraction. Every file is read the same way, and only prose counts: the lines of a fenced block (three or
 // more backticks or tildes) and the text of an HTML comment are never read.
@@ -43,6 +43,9 @@
 //   Plugin names that are no agent, skill or workflow (AETHER_NAME skips them):
 //     custom:aether:<theme>      the value of the `theme` setting that selects a theme the plugin ships, which Claude
 //                                Code forms as custom:<plugin name>:<file name>; the launcher passes it
+//   Retired plugin names that a record keeps (RETIRED_NAMES, read by the test of R11 on plugin names):
+//     aether:first-setup         the skill of 0.12.4 to 0.29.0, renamed setup in 0.30.0 (spec 024); docs/changelog.md
+//                                and docs/roadmap.md keep its name in the words of the releases that shipped it
 //
 // One word is not a count: the article in "the commands of `bin/`", which docs/reference/components.md writes in the list
 // of what the 0.7.0 measurement found, and whose number it does not repeat there (the measurement counted eight, bin/ has
@@ -61,6 +64,11 @@ const PAGES = [
   'docs/guide/lanes.md', 'docs/guide/design-seats.md', 'docs/guide/autonomy.md', 'docs/guide/ops.md',
   'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/delegates.md', 'docs/reference/components.md', 'docs/changelog.md',
   'docs/contributing.md', 'docs/roadmap.md',
+  'docs/what-aether-adds.md', 'docs/tutorials/install-and-start.md', 'docs/tutorials/first-request.md', 'docs/tutorials/whole-feature.md',
+  'docs/tutorials/read-the-brief.md', 'docs/tutorials/work-for-hours.md', 'docs/tutorials/other-harnesses.md', 'docs/tutorials/see-the-spend.md',
+  'docs/tutorials/update-and-uninstall.md', 'docs/es/index.md', 'docs/es/que-agrega-aether.md', 'docs/es/guias/instalar-y-arrancar.md',
+  'docs/es/guias/primera-peticion.md', 'docs/es/guias/feature-completa.md', 'docs/es/guias/leer-el-brief.md', 'docs/es/guias/trabajar-horas.md',
+  'docs/es/guias/otros-harnesses.md', 'docs/es/guias/ver-el-gasto.md', 'docs/es/guias/actualizar-y-desinstalar.md',
 ]
 const FILES = [README, ...PAGES]
 const EXCEPTIONS = {          // commands that are not files of plugins/aether/bin/, each with its reason
@@ -185,6 +193,8 @@ const commandsIn = (text) =>
 
 // An aether:<name>, but not the one inside custom:aether:<theme>, which selects a theme (see the exceptions).
 const AETHER_NAME = /(?<!custom:)\baether:([a-z][a-z0-9-]*)/g
+// A retired name, and the records that may keep it (see the header).
+const RETIRED_NAMES = { 'first-setup': ['docs/changelog.md', 'docs/roadmap.md'] }
 
 const pluginNamesIn = (text) =>
   codeSpans(text).flatMap((span) => [...span.matchAll(AETHER_NAME)].map((name) => name[1]))
@@ -365,20 +375,29 @@ test('R11: every aether-* command in position is a file of plugins/aether/bin/ o
   }
 })
 
-test('R11: aether-first-setup is an executable file of bin/, the launcher is a file outside it, and the pages name the skill', () => {
-  const setup = path.join(PLUGIN, 'bin', 'aether-first-setup')
-  assert.ok(bins().has('aether-first-setup') && fs.statSync(setup).mode & 0o111, 'aether-first-setup is an executable file of bin/')
+test('R11: aether-first-setup and aether-doctor are executable files of bin/, the launcher is a file outside it, and the pages name the skills', () => {
+  for (const bin of ['aether-first-setup', 'aether-doctor']) {
+    assert.ok(bins().has(bin) && fs.statSync(path.join(PLUGIN, 'bin', bin)).mode & 0o111, `${bin} is an executable file of bin/`)
+  }
   assert.ok(!bins().has('aether-lead'), 'the launcher is not a command of bin/')
   assert.ok(fs.statSync(path.join(PLUGIN, 'launcher', 'aether-lead')).mode & 0o111, 'the launcher is an executable file of launcher/')
-  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'first-setup', 'SKILL.md')).isFile(), 'the skill first-setup exists')
+  // Spec 024: the skill first-setup became setup; doctor and help are new.
+  for (const skill of ['setup', 'doctor', 'help']) {
+    assert.ok(fs.statSync(path.join(PLUGIN, 'skills', skill, 'SKILL.md')).isFile(), `the skill ${skill} exists`)
+  }
+  assert.ok(!fs.existsSync(path.join(PLUGIN, 'skills', 'first-setup')), 'the skill first-setup is gone')
   for (const rel of [README, 'docs/getting-started.md', 'docs/guide/troubleshooting.md']) {
-    assert.ok(codeSpans(read(rel)).some((span) => span.trim() === '/aether:first-setup'), `${rel} names \`/aether:first-setup\``)
+    assert.ok(codeSpans(read(rel)).some((span) => span.trim() === '/aether:setup'), `${rel} names \`/aether:setup\``)
+  }
+  for (const rel of ['docs/getting-started.md', 'docs/guide/troubleshooting.md']) {
+    assert.ok(codeSpans(read(rel)).some((span) => span.trim() === '/aether:doctor'), `${rel} names \`/aether:doctor\``)
   }
   for (const rel of ['docs/getting-started.md', 'docs/reference/components.md']) {
     assert.ok(commandsIn(read(rel)).includes('aether-first-setup'), `${rel} names \`aether-first-setup\``)
   }
+  assert.ok(commandsIn(read('docs/reference/components.md')).includes('aether-doctor'), 'docs/reference/components.md names `aether-doctor`')
   const components = read('docs/reference/components.md')
-  for (const text of ['`plugins/aether/launcher/aether-lead`', '`first-setup`', 'twelve commands of `bin/`']) {
+  for (const text of ['`plugins/aether/launcher/aether-lead`', '`setup` skill', '`doctor` skill', '`help` skill', 'thirteen commands of `bin/`']) {
     assert.ok(components.includes(text), `docs/reference/components.md has ${text}`)
   }
 })
@@ -390,7 +409,10 @@ test('R11: every aether:<name> is an agent, a skill or a workflow', () => {
     ...fs.readdirSync(path.join(PLUGIN, 'workflows')).filter((file) => file.endsWith('.workflow.js')).map((file) => file.replace(/\.workflow\.js$/, '')),
   ])
   for (const rel of FILES) {
-    for (const name of pluginNamesIn(read(rel))) assert.ok(known.has(name), `${rel} names aether:${name}, which is no agent, skill or workflow`)
+    for (const name of pluginNamesIn(read(rel))) {
+      if ((RETIRED_NAMES[name] || []).includes(rel)) continue
+      assert.ok(known.has(name), `${rel} names aether:${name}, which is no agent, skill or workflow`)
+    }
   }
 })
 
@@ -430,7 +452,7 @@ test('C3: the repository paths in code spans exist', () => {
   }
 })
 
-const NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 }
+const NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13 }
 
 test('R12: the count of commands of bin/ that the pages give is the count of its files', () => {
   let seen = 0
@@ -478,10 +500,13 @@ test('R1: the README is the way in: at most 160 lines, and its parts in order', 
     lines.slice(title + 1, version).some((line) => /\S/.test(line) && !line.startsWith('<!--')),
     'a paragraph that says what Aether is comes before the Version line',
   )
+  // Spec 024 (R17): the four steps of Quick start come right after the Version line, before RADAR.
+  const quick = at(/^## Quick start$/, '## Quick start')
   const order = [
     title,
     hero,
     version,
+    quick,
     ...['Rápido', 'Autónomo', 'Delegación', 'Asequible', 'Robusto'].map((goal) => at(new RegExp(`^- \\*\\*${goal}\\*\\*`), `the goal ${goal}, on one line`)),
     at(/^## Requirements$/, '## Requirements'),
     at(/^## Install$/, '## Install'),
@@ -495,6 +520,17 @@ test('R1: the README is the way in: at most 160 lines, and its parts in order', 
     const end = rest.findIndex((line) => /^## /.test(line))
     return (end < 0 ? rest : rest.slice(0, end)).join('\n')
   }
+  assert.ok(lines.slice(version + 1, quick).every((line) => !/\S/.test(line)), 'Quick start comes right after the Version line')
+  const steps = section('## Quick start')
+  for (const need of [
+    'claude plugin install aether --marketplace DarkArty07/aether-plugin && claude "/aether:setup"',
+    'close the terminal',
+    '`aeth`',
+    'Tell the Lead what you want',
+  ]) {
+    assert.ok(steps.includes(need), `Quick start has "${need}"`)
+  }
+  assert.equal(steps.split('\n').filter((line) => /^\d+\. /.test(line)).length, 4, 'Quick start has four numbered steps')
   assert.ok(section('## Install').includes('claude plugin install aether --marketplace DarkArty07/aether-plugin'), 'Install has the command')
   const start = section('## First start')
   for (const need of ['claude --agent aether:lead --effort xhigh', 'scripts/aether-lead', '`claude`', 'normal mode', '.claude/settings.local.json']) {
@@ -560,9 +596,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A102 are recorded and the changelog opens with 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
+test('R15: the decisions A50 to A103 are recorded and the changelog opens with 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 102
+  const LAST_DECISION = 103
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -599,29 +635,31 @@ test('R15: the decisions A50 to A102 are recorded and the changelog opens with 0
   assert.ok(/minimal real call/.test(line(96)) && /muse-wonder-1\.0/.test(line(96)) && /fixes #108/.test(line(96)))
   assert.ok(/one ladder/i.test(line(97)) && /Haiku/.test(line(97)) && /#102/.test(line(97)))
   assert.ok(/autoissue/.test(line(98)) && /development installation/.test(line(98)) && /issue of each failure/.test(line(98)))
+  assert.ok(/four steps/.test(line(103)) && /\/aether:setup/.test(line(103)) && /Sonnet or Haiku/.test(line(103)))
   assert.ok(/own words/.test(line(99)) && /Sonnet or Opus/.test(line(99)) && /every delegate still starts on Haiku/.test(line(99)))
   for (const n of [18, 36, 87]) assert.ok(/Update \(A93\)/.test(line(n)), `A${n} has its update note`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const versions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(versions[0].startsWith('Version 0.29.0: ') && versions[0].includes('A102'), versions[0])
-  assert.ok(versions[1].startsWith('Version 0.28.0: ') && versions[1].includes('A101'), versions[1])
-  assert.ok(versions[2].startsWith('Version 0.27.0: ') && versions[2].includes('A100'), versions[2])
-  assert.ok(versions[3].startsWith('Version 0.26.0: ') && versions[3].includes('A99'), versions[3])
-  assert.ok(versions[4].startsWith('Version 0.25.1: ') && versions[4].includes('issue 118'), versions[4])
-  assert.ok(versions[5].startsWith('Version 0.25.0: ') && versions[5].includes('A98'), versions[5])
-  assert.ok(versions[6].startsWith('Version 0.24.3: ') && versions[6].includes('81 and 93'), versions[6])
-  assert.ok(versions[7].startsWith('Version 0.24.2: ') && versions[7].includes('80, 81, 91, 92, 93, 98 and 99'), versions[7])
-  assert.ok(versions[8].startsWith('Version 0.24.1: ') && versions[8].includes('104 to 117'), versions[8])
-  assert.ok(versions[9].startsWith('Version 0.24.0: ') && versions[9].includes('A97'), versions[9])
-  assert.ok(versions[10].startsWith('Version 0.23.0: ') && versions[10].includes('A96'), versions[10])
-  assert.ok(versions[11].startsWith('Version 0.22.0: ') && versions[11].includes('A95'), versions[11])
-  assert.ok(versions[12].startsWith('Version 0.21.0: ') && versions[12].includes('A93'), versions[12])
-  assert.ok(versions[13].startsWith('Version 0.20.1: ') && versions[13].includes('A92'), versions[13])
-  assert.ok(versions[14].startsWith('Version 0.20.0: '), versions[14])
-  assert.ok(versions[15].startsWith('Version 0.19.2: ') && versions[15].includes('issues/86'), versions[15])
-  assert.ok(versions[16].startsWith('Version 0.19.1: ') && versions[16].includes('issues/82'), versions[16])
-  assert.ok(versions[17].startsWith('Version 0.19.0: '), versions[17])
+  assert.ok(versions[0].startsWith('Version 0.30.0: ') && versions[0].includes('A103'), versions[0])
+  assert.ok(versions[1].startsWith('Version 0.29.0: ') && versions[1].includes('A102'), versions[1])
+  assert.ok(versions[2].startsWith('Version 0.28.0: ') && versions[2].includes('A101'), versions[2])
+  assert.ok(versions[3].startsWith('Version 0.27.0: ') && versions[3].includes('A100'), versions[3])
+  assert.ok(versions[4].startsWith('Version 0.26.0: ') && versions[4].includes('A99'), versions[4])
+  assert.ok(versions[5].startsWith('Version 0.25.1: ') && versions[5].includes('issue 118'), versions[5])
+  assert.ok(versions[6].startsWith('Version 0.25.0: ') && versions[6].includes('A98'), versions[6])
+  assert.ok(versions[7].startsWith('Version 0.24.3: ') && versions[7].includes('81 and 93'), versions[7])
+  assert.ok(versions[8].startsWith('Version 0.24.2: ') && versions[8].includes('80, 81, 91, 92, 93, 98 and 99'), versions[8])
+  assert.ok(versions[9].startsWith('Version 0.24.1: ') && versions[9].includes('104 to 117'), versions[9])
+  assert.ok(versions[10].startsWith('Version 0.24.0: ') && versions[10].includes('A97'), versions[10])
+  assert.ok(versions[11].startsWith('Version 0.23.0: ') && versions[11].includes('A96'), versions[11])
+  assert.ok(versions[12].startsWith('Version 0.22.0: ') && versions[12].includes('A95'), versions[12])
+  assert.ok(versions[13].startsWith('Version 0.21.0: ') && versions[13].includes('A93'), versions[13])
+  assert.ok(versions[14].startsWith('Version 0.20.1: ') && versions[14].includes('A92'), versions[14])
+  assert.ok(versions[15].startsWith('Version 0.20.0: '), versions[15])
+  assert.ok(versions[16].startsWith('Version 0.19.2: ') && versions[16].includes('issues/86'), versions[16])
+  assert.ok(versions[17].startsWith('Version 0.19.1: ') && versions[17].includes('issues/82'), versions[17])
+  assert.ok(versions[18].startsWith('Version 0.19.0: '), versions[18])
 })
 
 // ---- R21: the retired profiles and variables
