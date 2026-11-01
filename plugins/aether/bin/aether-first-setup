@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-first-setup [--name <name>] [--dir <dir>] [--check]
-// Installs a stub, `aeth` by default, in ~/.local/bin by default. The stub starts Aether mode with the launcher of the
-// newest installed release. --check says what would happen and writes nothing.
+// aether-first-setup [--name <name>] [--dir <dir>] [--permissions autonomous|auto|ask] [--check]
+// Installs a stub, `aeth` by default. The stub starts Aether mode with the launcher of the newest installed release.
+// Without --dir it goes in ~/.local/bin if that is on the PATH; else next to `claude` if that is inside the home and can
+// be written; else in ~/.local/bin, with the line that puts it on the PATH. --permissions sets the permission mode the
+// stub gives the launcher: autonomous (bypassPermissions, the default), auto (auto) or ask (manual); a mode the shell
+// already set in AETHER_PERMISSION_MODE wins when the stub runs. --check says what would happen and writes nothing.
 //
-// Prints one JSON object. Exits 0, 2 for a usage mistake, 3 when the name is taken by a file that is not its own, and
-// 1 when it cannot write.
+// Prints one JSON object, with the directory chosen (`dir`), `permissions` and `permissionMode`. Exits 0, 2 for a usage
+// mistake, 3 when the name is taken by a file that is not its own, and 1 when it cannot write.
 
 const path = require('node:path')
 const firstSetup = require(path.join(__dirname, '..', 'lib', 'first-setup.js'))
 
-const USAGE = 'usage: aether-first-setup [--name <name>] [--dir <dir>] [--check]'
+const USAGE = 'usage: aether-first-setup [--name <name>] [--dir <dir>] [--permissions autonomous|auto|ask] [--check]'
 
 // A value may start with a single dash (a name does not, but the library says so); only a flag cannot be one.
 function parse(args) {
@@ -20,7 +23,7 @@ function parse(args) {
     const flag = args[i]
     if (flag === '--check') {
       options.check = true
-    } else if (flag === '--name' || flag === '--dir') {
+    } else if (flag === '--name' || flag === '--dir' || flag === '--permissions') {
       const key = flag.slice(2)
       const next = args[i + 1]
       if (next === undefined || next.startsWith('--')) throw firstSetup.usageError(`${flag} needs a value. ${USAGE}`)

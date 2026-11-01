@@ -10,6 +10,8 @@
 // compact, injects the using-aether bootstrap, points to an open autonomous run, sweeps
 // stale runs in the session's repository, and prunes old usage files, lane logs,
 // observation files and session markers (the observation digest keeps their counts first).
+// On startup only it also adds the hook's top-level systemMessage, a welcome line for the person with the
+// plugin's version and /aether:help (spec 024 R9).
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -19,6 +21,26 @@ const path = require('node:path')
 function bootstrap(root) {
   const raw = fs.readFileSync(path.join(root, 'skills', 'using-aether', 'SKILL.md'), 'utf8')
   return raw.replace(/^---\n[\s\S]*?\n---\n/, '').trim().split('${CLAUDE_PLUGIN_ROOT}').join(root)
+}
+
+// The plugin's version, read from <root>/.claude-plugin/plugin.json; '' when it cannot be read.
+function pluginVersion(root) {
+  try {
+    const { version } = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'))
+    return typeof version === 'string' ? version.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+// The line Claude Code shows the person (the hook's top-level systemMessage) when a Lead session starts: Spanish when
+// the first non-empty of LC_ALL, LC_MESSAGES and LANG starts with es, English otherwise.
+function welcome(root, env) {
+  const locale = ['LC_ALL', 'LC_MESSAGES', 'LANG'].map((name) => env[name]).find((value) => typeof value === 'string' && value !== '') || ''
+  const version = pluginVersion(root)
+  const name = version ? `Aether ${version}` : 'Aether'
+  if (/^es/i.test(locale)) return `${name} · Lead listo · dime lo que quieres, o escribe /aether:help para ver qué puedo hacer`
+  return `${name} · Lead ready · tell me what you want, or type /aether:help to see what I can do`
 }
 
 function sweepNote(cwd) {
@@ -144,7 +166,10 @@ function main({ input = null, env = process.env, cwd = process.cwd(), stdout = p
     sweepNote(cwd),
     autonomyNote(cwd),
   ].filter(Boolean).join('\n\n')
-  stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) + '\n')
+  const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }
+  // The welcome line is for the person and only at startup: a clear or a compact inside a session adds none.
+  if (source === 'startup') output.systemMessage = welcome(root, env)
+  stdout.write(JSON.stringify(output) + '\n')
 }
 
 module.exports = {

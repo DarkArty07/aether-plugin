@@ -156,12 +156,14 @@
       'inst.alt': 'Se instala el plugin, se arranca el modo Aether y Clawd pasa de naranja Claude a violeta Aether',
       'copy': 'COPY', 'copied': 'COPIADO', 'copy.fail': 'No se pudo copiar: selecciona el comando y cópialo a mano.',
       'copy.ok': 'Comando copiado al portapapeles.',
-      'st1.h': 'Instala',
-      'st1.t': 'Se hace una vez. Añade <code>--config superdelegation=true</code> para activar la superdelegación.',
-      'st2.h': 'Elige el modo Aether',
-      'st2.t': 'El modo se elige en cada sesión: lanzas el agente <code>aether:lead</code>, que empieza en Sonnet, y <code>--effort xhigh</code> fija su esfuerzo.',
-      'st3.h': 'Dile al Lead lo que quieres',
-      'st3.t': 'El Lead confirma lo que entendió, escribe la tarjeta de intención y lanza el diseño. Tú revisas el brief.',
+      'st1.h': 'Pega una línea',
+      'st1.t': 'Instala el plugin y abre Claude Code con <code>/aether:setup</code>. Se hace una vez.',
+      'st2.h': 'Contesta dos preguntas',
+      'st2.t': 'Cómo empieza Aether (autónomo por defecto) y si mandas trabajo a tus otros harnesses, la superdelegación. Después cierra la terminal.',
+      'st3.h': 'Escribe aeth',
+      'st3.t': 'En una terminal nueva, en la carpeta de tu proyecto. Los días siguientes, solo este paso.',
+      'st4.h': 'Dile al Lead lo que quieres',
+      'st4.t': 'El Lead confirma lo que entendió, escribe la tarjeta de intención y lanza el diseño. Tú revisas el brief.',
       'inst.req': 'REQUISITOS · Claude Code 2.1.294 o posterior · Node.js 22 · git 2.36 o posterior · para la superdelegación, el CLI de cada harness que actives: <code>agy</code>, <code>codex</code>, <code>grok</code>, <code>cursor-agent</code> o <code>muse</code>.',
       'atm.alt': 'Una cabeza de estatua que mira hacia arriba entre polvo estelar y constelaciones',
       'auth.tag': '// AUTORÍA',
@@ -321,12 +323,14 @@
       'inst.alt': 'The plugin is installed, Aether mode starts and Clawd turns from Claude orange to Aether violet',
       'copy': 'COPY', 'copied': 'COPIED', 'copy.fail': 'Could not copy: select the command and copy it by hand.',
       'copy.ok': 'Command copied to the clipboard.',
-      'st1.h': 'Install',
-      'st1.t': 'You do it once. Add <code>--config superdelegation=true</code> to turn superdelegation on.',
-      'st2.h': 'Choose Aether mode',
-      'st2.t': 'The mode is chosen per session: you launch the agent <code>aether:lead</code>, which starts on Sonnet, and <code>--effort xhigh</code> sets its effort.',
-      'st3.h': 'Tell the Lead what you want',
-      'st3.t': 'The Lead confirms what it understood, writes the intent card and launches the design. You review the brief.',
+      'st1.h': 'Paste one line',
+      'st1.t': 'It installs the plugin and opens Claude Code with <code>/aether:setup</code>. You do it once.',
+      'st2.h': 'Answer two questions',
+      'st2.t': 'How Aether starts (autonomous by default) and whether you send work to your other harnesses, superdelegation. Then close the terminal.',
+      'st3.h': 'Type aeth',
+      'st3.t': 'In a new terminal, in your project\'s folder. On the following days, only this step.',
+      'st4.h': 'Tell the Lead what you want',
+      'st4.t': 'The Lead confirms what it understood, writes the intent card and launches the design. You review the brief.',
       'inst.req': 'REQUIREMENTS · Claude Code 2.1.294 or later · Node.js 22 · git 2.36 or later · for superdelegation, the CLI of each harness you turn on: <code>agy</code>, <code>codex</code>, <code>grok</code>, <code>cursor-agent</code> or <code>muse</code>.',
       'atm.alt': 'A statue head gazing upward amid stardust and constellations',
       'auth.tag': '// AUTHORSHIP',
@@ -350,7 +354,7 @@
   function store(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 
-  var INSTALL_CMD = 'claude plugin install aether --marketplace DarkArty07/aether-plugin';
+  var INSTALL_CMD = 'claude plugin install aether --marketplace DarkArty07/aether-plugin && claude "/aether:setup"';
   var langHooks = [];
 
   function applyLang() {

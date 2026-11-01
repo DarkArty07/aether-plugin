@@ -15,7 +15,10 @@ const { tempDir } = require('./helpers.js')
 const ROOT = path.join(__dirname, '..')
 const BIN = path.join(ROOT, 'plugins', 'aether', 'bin', 'aether-first-setup')
 const MARKER = '# aether-first-setup stub'
-const KEYS = ['installed', 'launcher', 'launcherVersion', 'name', 'onPath', 'path', 'replaced', 'shellHint']
+const KEYS = ['dir', 'installed', 'launcher', 'launcherVersion', 'name', 'onPath', 'path', 'permissionMode', 'permissions', 'replaced', 'shellHint']
+const stubLib = require(path.join(ROOT, 'plugins', 'aether', 'lib', 'first-setup.js'))
+// The words of --permissions, and the mode of Claude Code that each one is (spec 024 R4).
+const PERMISSION_MODES = { autonomous: 'bypassPermissions', auto: 'auto', ask: 'manual' }
 // What a stub needs of the system: sh, sort and tail.
 const SYSTEM_PATH = '/usr/bin:/bin'
 
@@ -31,13 +34,13 @@ function sandbox(t) {
 }
 
 // A release in the fake plugin cache, with or without a launcher. Its launcher says which release it is and prints its
-// arguments, one per line, and the AETHER_IRREVERSIBLE it was given.
+// arguments, one per line, and the AETHER_PERMISSION_MODE it was given, on stderr (`mode <value>`, or `mode <unset>`).
 function addRelease(config, version, { market = 'aether-plugin', launcher = true, mode = 0o755 } = {}) {
   const release = path.join(config, 'plugins', 'cache', market, 'aether', version)
   fs.mkdirSync(path.join(release, 'launcher'), { recursive: true })
   const file = path.join(release, 'launcher', 'aether-lead')
   if (launcher) {
-    const script = `#!/bin/sh\necho "launcher ${version}"\nfor a in "$@"; do printf '%s\\n' "$a"; done\nexit \${EXIT_WITH:-0}\n`
+    const script = `#!/bin/sh\necho "launcher ${version}"\necho "mode \${AETHER_PERMISSION_MODE-<unset>}" >&2\nfor a in "$@"; do printf '%s\\n' "$a"; done\nexit \${EXIT_WITH:-0}\n`
     fs.writeFileSync(file, script)
     fs.chmodSync(file, mode)
   }
@@ -80,6 +83,7 @@ test('it installs a stub of mode 0755 with the marker, named aeth by default, an
   assert.equal(r.json.installed, true)
   assert.equal(r.json.name, 'aeth')
   assert.equal(r.json.path, file)
+  assert.equal(r.json.dir, box.dir)
   assert.equal(r.json.replaced, false)
   assert.equal(fs.statSync(file).mode & 0o777, 0o755)
   const text = fs.readFileSync(file, 'utf8')
@@ -93,6 +97,7 @@ test('without --dir the stub goes in ~/.local/bin, and --name sets its name', (t
   const r = setup(box, ['--name', 'mi-aether.2'])
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.json.path, path.join(box.home, '.local', 'bin', 'mi-aether.2'))
+  assert.equal(r.json.dir, path.join(box.home, '.local', 'bin'))
   assert.ok(fs.existsSync(r.json.path))
 })
 
@@ -104,6 +109,7 @@ test('--check says what would happen and writes nothing, not even the directory'
   assert.equal(r.json.installed, false)
   assert.equal(r.json.replaced, false)
   assert.equal(r.json.path, path.join(box.dir, 'aeth'))
+  assert.equal(r.json.dir, box.dir)
   assert.ok(!fs.existsSync(path.join(box.root, 'target')), 'the directory was not created')
   // With a stub of its own there, --check says it would replace it, and leaves it as it was.
   assert.equal(setup(box, ['--dir', box.dir]).status, 0)
@@ -523,28 +529,334 @@ test('the stub is POSIX sh: it runs under dash and bash --posix, and from fish',
   assert.deepEqual(lines(r.stdout), ['launcher 0.12.3', 'a b'])
 })
 
+// ---- the permission mode (spec 024 R4)
+// What the launcher of a release was given in AETHER_PERMISSION_MODE, as the stub ran it: the `mode <value>` line of stderr.
+const modeOf = (r) => lines(r.stderr).find((line) => line.startsWith('mode '))?.slice('mode '.length)
+
+test('--permissions autonomous, auto and ask write the mode in the stub, say so in the result, and autonomous is the default', (t) => {
+  for (const [word, mode] of [[undefined, 'bypassPermissions'], ...Object.entries(PERMISSION_MODES)]) {
+    const box = sandbox(t)
+    addRelease(box.config, '0.12.3')
+    const r = setup(box, ['--dir', box.dir, ...(word ? ['--permissions', word] : [])])
+    assert.equal(r.status, 0, r.stderr)
+    assert.deepEqual(Object.keys(r.json).sort(), KEYS)
+    assert.equal(r.json.permissions, word ?? 'autonomous')
+    assert.equal(r.json.permissionMode, mode)
+    const text = fs.readFileSync(r.json.path, 'utf8')
+    // The marker is the same as ever, and the two permission lines come before the exec line.
+    assert.ok(lines(text).includes(MARKER), 'the marker line is the same')
+    const set = lines(text).indexOf(`AETHER_PERMISSION_MODE="\${AETHER_PERMISSION_MODE:-${mode}}"`)
+    const exported = lines(text).indexOf('export AETHER_PERMISSION_MODE')
+    const exec = lines(text).findIndex((line) => line.startsWith('exec '))
+    assert.ok(set > 0 && exported === set + 1 && exec === exported + 1, `${word}: the stub sets the mode, exports it and then execs\n${text}`)
+    // The launcher the stub runs gets it.
+    const out = runStub(r.json.path, [], { config: box.config, home: box.home })
+    assert.equal(out.status, 0, out.stderr)
+    assert.equal(modeOf(out), mode, word)
+  }
+})
+
+test('--check says the permissions that would be written, and writes nothing', (t) => {
+  const box = sandbox(t)
+  for (const [word, mode] of Object.entries(PERMISSION_MODES)) {
+    const r = setup(box, ['--dir', box.dir, '--permissions', word, '--check'])
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(r.json.installed, false)
+    assert.equal(r.json.permissions, word)
+    assert.equal(r.json.permissionMode, mode)
+  }
+  assert.ok(!fs.existsSync(path.join(box.root, 'target')), 'nothing was written')
+})
+
+test('an invalid --permissions, one without a value or one given twice gives exit 2 and writes nothing', (t) => {
+  const box = sandbox(t)
+  const bad = [
+    ['--permissions', 'yolo'], ['--permissions', 'Ask'], ['--permissions', ' auto'], ['--permissions', ''], ['--permissions', 'manual'],
+    ['--permissions', 'bypassPermissions'], ['--permissions', 'toString'], ['--permissions', '__proto__'], ['--permissions'],
+    ['--permissions', '--check'], ['--permissions', 'auto', '--permissions', 'ask'], ['--permissions', 'ask', '--permissions', 'ask'],
+  ]
+  for (const args of bad) {
+    for (const extra of [[], ['--check']]) {
+      const r = setup(box, ['--dir', box.dir, ...args, ...extra])
+      assert.equal(r.status, 2, `${args.join(' ')}: ${r.stdout}${r.stderr}`)
+      assert.ok(r.json && r.json.error.length > 0, args.join(' '))
+    }
+  }
+  assert.ok(!fs.existsSync(path.join(box.root, 'target')), 'nothing was written, not even the directory')
+  const named = setup(box, ['--dir', box.dir, '--permissions', 'yolo'])
+  for (const word of ['autonomous', 'auto', 'ask']) assert.ok(named.json.error.includes(word), named.json.error)
+  assert.ok(setup(box, ['--permissions', 'yolo']).json.error.length > 0)
+  assert.ok(!fs.existsSync(path.join(box.home, '.local')), 'a mistake does not make the default directory either')
+  assert.ok(setup(box, ['--nope']).json.error.includes('--permissions autonomous|auto|ask'), 'the usage names the option')
+})
+
+test('a mode the shell already set wins over the stub\'s, and an empty one does not', (t) => {
+  const box = sandbox(t)
+  addRelease(box.config, '0.12.3')
+  const stub = setup(box, ['--dir', box.dir, '--permissions', 'ask']).json.path
+  const run = (extra) => modeOf(runStub(stub, [], { config: box.config, home: box.home, extra }))
+  assert.equal(run({}), 'manual')
+  assert.equal(run({ AETHER_PERMISSION_MODE: 'auto' }), 'auto')
+  assert.equal(run({ AETHER_PERMISSION_MODE: 'bypassPermissions' }), 'bypassPermissions')
+  assert.equal(run({ AETHER_PERMISSION_MODE: '' }), 'manual', 'an empty value is the same as none')
+  // The arguments still go whole, after the permission lines.
+  const r = runStub(stub, ['-p', 'two words'], { config: box.config, home: box.home, extra: { AETHER_PERMISSION_MODE: 'auto' } })
+  assert.deepEqual(lines(r.stdout), ['launcher 0.12.3', '-p', 'two words'])
+})
+
+test('the stub with the permission lines runs under dash and bash --posix', (t) => {
+  const box = sandbox(t)
+  addRelease(box.config, '0.12.3')
+  const stub = setup(box, ['--dir', box.dir, '--permissions', 'auto']).json.path
+  const env = { PATH: SYSTEM_PATH, HOME: box.home, CLAUDE_CONFIG_DIR: box.config }
+  let ran = 0
+  for (const [shell, flags] of [['dash', []], ['bash', ['--posix']], ['busybox', ['sh']]]) {
+    if (spawnSync(shell, [...flags, '-c', 'exit 0'], { env }).error) continue
+    const r = spawnSync(shell, [...flags, stub], { encoding: 'utf8', env })
+    assert.equal(r.status, 0, `${shell}: ${r.stderr}`)
+    assert.equal(modeOf(r), 'auto', shell)
+    const set = spawnSync(shell, [...flags, stub], { encoding: 'utf8', env: { ...env, AETHER_PERMISSION_MODE: 'manual' } })
+    assert.equal(modeOf(set), 'manual', shell)
+    ran++
+  }
+  assert.ok(ran > 0, 'at least one POSIX shell ran the stub')
+})
+
+test('a stub of an earlier version, without the permission lines, is its own: replaced in place with the new lines', (t) => {
+  const box = sandbox(t)
+  addRelease(box.config, '0.12.3')
+  fs.mkdirSync(box.dir, { recursive: true })
+  const file = path.join(box.dir, 'aeth')
+  fs.writeFileSync(file, `#!/bin/sh\n${MARKER}\n# an earlier stub, with no permission lines\nexec /bin/true "$@"\n`, { mode: 0o755 })
+  const check = setup(box, ['--dir', box.dir, '--permissions', 'ask', '--check'])
+  assert.equal(check.json.replaced, true)
+  assert.ok(!fs.readFileSync(file, 'utf8').includes('AETHER_PERMISSION_MODE'), '--check left it as it was')
+  const r = setup(box, ['--dir', box.dir, '--permissions', 'ask'])
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.json.replaced, true)
+  assert.equal(r.json.installed, true)
+  const text = fs.readFileSync(file, 'utf8')
+  assert.ok(lines(text).includes(`AETHER_PERMISSION_MODE="\${AETHER_PERMISSION_MODE:-manual}"`))
+  assert.ok(lines(text).includes('export AETHER_PERMISSION_MODE'))
+  assert.equal(modeOf(runStub(file, [], { config: box.config, home: box.home })), 'manual')
+  assert.deepEqual(fs.readdirSync(box.dir), ['aeth'], 'no temporary file is left')
+  // A stub of this version is replaced by another mode in the same way.
+  const again = setup(box, ['--dir', box.dir, '--permissions', 'auto'])
+  assert.equal(again.json.replaced, true)
+  assert.equal(modeOf(runStub(file, [], { config: box.config, home: box.home })), 'auto')
+})
+
+test('stubText() with no argument is the default mode, a known mode is written, and any other value is refused', () => {
+  assert.equal(stubLib.stubText(), stubLib.stubText('bypassPermissions'))
+  assert.ok(stubLib.stubText().includes(':-bypassPermissions}'))
+  assert.ok(stubLib.stubText('manual').includes('AETHER_PERMISSION_MODE:-manual}'))
+  assert.ok(lines(stubLib.stubText()).includes(MARKER))
+  for (const bad of ['yolo', '', 'x"; rm -rf ~; "', null]) assert.throws(() => stubLib.stubText(bad))
+  assert.throws(() => stubLib.run({ permissions: 'yolo', check: true }), /permissions/)
+})
+
+// ---- the default directory (spec 024 R5)
+// A `claude` that does nothing, in a directory made if need be.
+function addClaude(dir, { mode = 0o755 } = {}) {
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, 'claude')
+  fs.writeFileSync(file, '#!/bin/sh\nexit 0\n', { mode })
+  return file
+}
+
+test('without --dir, ~/.local/bin on the PATH is the directory, even when claude is in another one of the home', (t) => {
+  const box = sandbox(t)
+  const local = path.join(box.home, '.local', 'bin')
+  fs.mkdirSync(local, { recursive: true })
+  const beside = path.join(box.home, 'tools')
+  addClaude(beside)
+  const r = setup(box, [], { pathDirs: [beside, local] })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.json.dir, local)
+  assert.equal(r.json.path, path.join(local, 'aeth'))
+  assert.equal(r.json.onPath, true)
+  assert.equal(r.json.shellHint, null)
+  assert.deepEqual(fs.readdirSync(beside), ['claude'], 'nothing next to claude')
+})
+
+test('without --dir and ~/.local/bin off the PATH, the stub goes next to claude when that is inside the home, and needs no hint', (t) => {
+  const box = sandbox(t)
+  const beside = path.join(box.home, 'tools', 'bin')
+  const claude = addClaude(beside)
+  const bytes = fs.readFileSync(claude)
+  const r = setup(box, [], { pathDirs: [box.onPath, beside] })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.json.dir, beside)
+  assert.equal(r.json.path, path.join(beside, 'aeth'))
+  assert.equal(r.json.onPath, true)
+  assert.equal(r.json.shellHint, null)
+  assert.ok(!fs.existsSync(path.join(box.home, '.local')), '~/.local/bin was not made')
+  assert.deepEqual(fs.readdirSync(beside).sort(), ['aeth', 'claude'])
+  assert.deepEqual(fs.readFileSync(claude), bytes, 'claude itself is untouched')
+  // Run again: the stub beside claude is on the PATH and is its own, so it is replaced and not taken for another command.
+  const again = setup(box, [], { pathDirs: [box.onPath, beside] })
+  assert.equal(again.status, 0, again.stderr)
+  assert.equal(again.json.replaced, true)
+  assert.equal(again.json.path, r.json.path)
+  // --check says the same directory and writes nothing new.
+  const fresh = sandbox(t)
+  const there = path.join(fresh.home, 'bin')
+  addClaude(there)
+  const check = setup(fresh, ['--check'], { pathDirs: [there] })
+  assert.equal(check.json.dir, there)
+  assert.deepEqual(fs.readdirSync(there), ['claude'])
+  // --dir wins over all of it.
+  const explicit = setup(fresh, ['--dir', fresh.dir], { pathDirs: [there] })
+  assert.equal(explicit.json.dir, fresh.dir)
+})
+
+test('the directory of claude is the PATH entry that holds it, even when claude is a link to a file outside the home', (t) => {
+  const box = sandbox(t)
+  const outside = addClaude(path.join(box.root, 'versions'))
+  const beside = path.join(box.home, 'bin')
+  fs.mkdirSync(beside)
+  fs.symlinkSync(outside, path.join(beside, 'claude'))
+  const r = setup(box, [], { pathDirs: [beside] })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.json.dir, beside)
+  assert.deepEqual(fs.readdirSync(beside).sort(), ['aeth', 'claude'])
+  assert.deepEqual(fs.readdirSync(path.join(box.root, 'versions')), ['claude'], 'nothing was written where the link leads')
+})
+
+test('without --dir, a claude outside the home gives ~/.local/bin and the hint', (t) => {
+  const box = sandbox(t)
+  addClaude(box.onPath)
+  const r = setup(box, [], { pathDirs: [box.onPath] })
+  assert.equal(r.status, 0, r.stderr)
+  const local = path.join(box.home, '.local', 'bin')
+  assert.equal(r.json.dir, local)
+  assert.equal(r.json.path, path.join(local, 'aeth'))
+  assert.equal(r.json.onPath, false)
+  assert.ok(r.json.shellHint.includes(local), r.json.shellHint)
+  assert.deepEqual(fs.readdirSync(box.onPath), ['claude'], 'nothing next to claude')
+  // A directory that only starts like the home is not inside it.
+  const sibling = path.join(box.root, 'home-other')
+  addClaude(sibling)
+  const near = setup(box, ['--check'], { pathDirs: [sibling] })
+  assert.equal(near.json.dir, local)
+})
+
+test('without --dir, the first claude on the PATH decides: a later one inside the home does not', (t) => {
+  const box = sandbox(t)
+  addClaude(box.onPath)
+  addClaude(path.join(box.home, 'bin'))
+  const r = setup(box, ['--check'], { pathDirs: [box.onPath, path.join(box.home, 'bin')] })
+  assert.equal(r.json.dir, path.join(box.home, '.local', 'bin'))
+  // A claude that cannot be run is not the first one.
+  const quiet = sandbox(t)
+  addClaude(quiet.onPath, { mode: 0o644 })
+  addClaude(path.join(quiet.home, 'bin'))
+  const next = setup(quiet, ['--check'], { pathDirs: [quiet.onPath, path.join(quiet.home, 'bin')] })
+  assert.equal(next.json.dir, path.join(quiet.home, 'bin'))
+})
+
+test('without --dir and with no claude on the PATH, ~/.local/bin and the hint', (t) => {
+  const box = sandbox(t)
+  const r = setup(box, [], { pathDirs: [box.onPath] })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.json.dir, path.join(box.home, '.local', 'bin'))
+  assert.equal(r.json.onPath, false)
+  assert.equal(typeof r.json.shellHint, 'string')
+})
+
+test('without --dir, the home itself is never the directory, even with claude in it', (t) => {
+  const box = sandbox(t)
+  addClaude(box.home)
+  const r = setup(box, ['--check'], { pathDirs: [box.home] })
+  assert.equal(r.json.dir, path.join(box.home, '.local', 'bin'))
+  assert.equal(r.json.onPath, false)
+})
+
+test('without --dir, a directory of claude that is a link out of the home, or the home reached by a link, is judged by where it leads', (t) => {
+  const box = sandbox(t)
+  addClaude(box.onPath)
+  const out = path.join(box.home, 'out')
+  fs.symlinkSync(box.onPath, out)
+  const local = path.join(box.home, '.local', 'bin')
+  assert.equal(setup(box, ['--check'], { pathDirs: [out] }).json.dir, local, 'a link out of the home leads out of it')
+  // The home itself reached through a link: the directory is still inside it.
+  const inside = path.join(box.home, 'real-bin')
+  addClaude(inside)
+  const homeLink = path.join(box.root, 'home-link')
+  fs.symlinkSync(box.home, homeLink)
+  const r = setup(box, ['--check'], { pathDirs: [path.join(homeLink, 'real-bin')], home: homeLink })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(fs.realpathSync(r.json.dir), fs.realpathSync(inside))
+})
+
+test('without --dir, a directory of claude that cannot be written gives ~/.local/bin and the hint', (t) => {
+  if (process.getuid && process.getuid() === 0) return t.skip('root writes to every directory')
+  const box = sandbox(t)
+  const beside = path.join(box.home, 'bin')
+  addClaude(beside)
+  fs.chmodSync(beside, 0o555)
+  try {
+    const r = setup(box, ['--check'], { pathDirs: [beside] })
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(r.json.dir, path.join(box.home, '.local', 'bin'))
+    assert.equal(r.json.onPath, false)
+    assert.equal(typeof r.json.shellHint, 'string')
+  } finally {
+    fs.chmodSync(beside, 0o755)
+  }
+})
+
+test('next to claude, the checks of the name stay: a foreign file or another command of that name gives exit 3', (t) => {
+  const box = sandbox(t)
+  const beside = path.join(box.home, 'bin')
+  addClaude(beside)
+  fs.writeFileSync(path.join(beside, 'aeth'), '#!/bin/sh\necho mine\n', { mode: 0o755 })
+  const taken = setup(box, [], { pathDirs: [beside] })
+  assert.equal(taken.status, 3, taken.stderr)
+  assert.ok(taken.json.error.includes(path.join(beside, 'aeth')), taken.json.error)
+  assert.equal(fs.readFileSync(path.join(beside, 'aeth'), 'utf8'), '#!/bin/sh\necho mine\n')
+  // Another command of that name, earlier on the PATH than claude's directory.
+  const other = sandbox(t)
+  const claudeDir = path.join(other.home, 'bin')
+  addClaude(claudeDir)
+  fs.writeFileSync(path.join(other.onPath, 'aeth'), '#!/bin/sh\necho another\n', { mode: 0o755 })
+  const shadow = setup(other, [], { pathDirs: [other.onPath, claudeDir] })
+  assert.equal(shadow.status, 3, shadow.stderr)
+  assert.ok(shadow.json.error.includes(path.join(other.onPath, 'aeth')), shadow.json.error)
+  assert.deepEqual(fs.readdirSync(claudeDir), ['claude'], 'nothing was written')
+})
+
 // ---- the skill
-test('the skill first-setup has a name, a one-line description and disable-model-invocation, and runs the command', () => {
-  const text = fs.readFileSync(path.join(ROOT, 'plugins', 'aether', 'skills', 'first-setup', 'SKILL.md'), 'utf8')
+test('the skill setup (spec 024) checks, asks, installs and saves, and runs the commands, never a fix of its own', () => {
+  // The skill first-setup became setup in 0.30.0; the bin keeps its name, aether-first-setup.
+  assert.ok(!fs.existsSync(path.join(ROOT, 'plugins', 'aether', 'skills', 'first-setup')), 'the skill first-setup is gone')
+  const text = fs.readFileSync(path.join(ROOT, 'plugins', 'aether', 'skills', 'setup', 'SKILL.md'), 'utf8')
   const block = text.match(/^---\n([\s\S]*?)\n---\n/)
   assert.ok(block, 'the skill starts with front matter')
   const front = Object.fromEntries(block[1].split('\n').map((line) => [line.slice(0, line.indexOf(':')), line.slice(line.indexOf(':') + 1).trim()]))
-  assert.equal(front.name, 'first-setup')
+  assert.equal(front.name, 'setup')
   assert.ok(front.description && front.description.length > 0, 'it has a description')
   assert.ok(front.description.length <= 200, 'the description is short')
   assert.equal(front['disable-model-invocation'], 'true')
   const body = text.slice(block[0].length)
-  assert.ok(body.split('\n').length <= 40, 'the skill is short')
+  assert.ok(body.split('\n').length <= 90, 'the skill is short')
   for (const need of [
-    'aether-first-setup --check', '--name', 'exit 3', 'PATH',
-    // exit 1: give the error, and stop
-    'exit 1', 'by hand', 'sudo', 'shell file',
-    // the command is not found: the plugin is not enabled in this session
-    'not found', 'not enabled', 'new session',
-    // the PATH of the session is not the person's terminal
-    'this session\'s `PATH`', 'new terminal', 'shellHint',
+    // R2: check, ask, install, save, the final screen
+    'aether-doctor', 'AskUserQuestion', 'aether-first-setup --permissions', '--name',
+    // R3: the three answers on permissions, the recommended one first, and the harnesses only when some are installed
+    '`autonomous`', '`auto`', '`ask`', '(Recommended)', 'only when `harnesses` is not empty', 'multiSelect',
+    // R6: the options, as JSON strings, through claude plugin configure
+    'claude plugin configure aether@aether-plugin --values-stdin', '{"superdelegation":"true","harnesses":', '{"superdelegation":"false"}',
+    // the exits of aether-first-setup and what is never done
+    'exit 3', 'exit 2', 'exit 1', 'by hand', 'sudo', 'shell file', 'settings file',
+    // the plugin is not enabled in this session
+    'not found', 'not enabled',
+    // R7: the final screen
+    'shellHint', 'close this terminal', 'your project\'s folder', '/aether:doctor', '/aether:setup',
     // the name rules
     '64', '`claude`',
   ]) assert.ok(body.toLowerCase().includes(need.toLowerCase()), `the skill says ${need}`)
-  assert.match(body, /not write (any )?code/i)
+  assert.match(body, /not write code/i)
+  // The person's language: the locale when the command is their only message.
+  assert.ok(body.includes('LC_ALL') && body.includes('LANG'), 'the skill reads the locale for the language')
 })

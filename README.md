@@ -11,9 +11,21 @@ The Lead writes the owner's intent card and launches `/aether:design`, which run
 
 Plain `claude` stays normal mode.
 
-<p align="center"><img src="https://img.shields.io/badge/version-0.29.0-blue" alt="version 0.29.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
+<p align="center"><img src="https://img.shields.io/badge/version-0.30.0-blue" alt="version 0.30.0"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"> <img src="https://img.shields.io/badge/Claude_Code-2.1.294%2B-informational" alt="Claude Code 2.1.294 or later"></p>
 
-Version 0.29.0 ([changelog](docs/changelog.md))
+Version 0.30.0 ([changelog](docs/changelog.md))
+
+## Quick start
+
+1. Paste this line in a terminal. It installs the plugin and opens Claude Code with its setup:
+   ```
+   claude plugin install aether --marketplace DarkArty07/aether-plugin && claude "/aether:setup"
+   ```
+2. Answer the setup's questions, then close the terminal.
+3. Open a new terminal in your project's folder and type `aeth`.
+4. Tell the Lead what you want.
+
+On the days after, only step 3. The [install guide](docs/tutorials/install-and-start.md) shows each step and what you see ([en español](docs/es/guias/instalar-y-arrancar.md)).
 
 Aether pursues five goals, and their initials, in Spanish, spell one word: **RADAR**.
 
@@ -38,26 +50,26 @@ Aether pursues five goals, and their initials, in Spanish, spell one word: **RAD
 claude plugin install aether --marketplace DarkArty07/aether-plugin
 ```
 
-Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; the rule is in [Lanes](docs/guide/lanes.md#lanes), and [Options](docs/guide/options.md#options) has the plugin's eight options and how to set them).
+The line of Quick start runs this command and then `/aether:setup`. The setup checks what it can by itself (Claude Code, Node, git, Dynamic workflows, the harness CLIs you have), asks two questions, how `aeth` handles permissions and whether to send work to the other harnesses it found, and puts the short command `aeth` on your `PATH`. Run it again whenever you want to change those answers, and run `/aether:doctor` when something does not work. [Options](docs/guide/options.md#options) has the plugin's eight options and how to set them by hand.
 
 ## First start
 
-Aether mode is chosen per session:
+`aeth` starts Aether mode in the folder you open it in, and `aeth -c` continues the last conversation. By default it works autonomously: no permission prompts, while aether-guard refuses a push, a merge to `main`, a deploy or a forced delete that you have not said yes to. It also gives that session the plugin's own color theme, Aether, and only that session.
+
+Without the short command, Aether mode is chosen per session with:
 
 ```
 claude --agent aether:lead --effort xhigh
 ```
 
-The Lead is the agent `aether:lead`, which starts on Sonnet; `--effort xhigh` sets its effort, because a plugin cannot; the command passes it on every start, so the Lead does not depend on the settings file. In a clone of this repository, `scripts/aether-lead` runs that command for you, with permissions bypassed and with aether-guard refusing an irreversible command that no grant covers. It also gives that session the plugin's own color theme, Aether, and only that session.
+The Lead is the agent `aether:lead`, which starts on Sonnet; `--effort xhigh` sets its effort, because a plugin's settings cannot. In a clone of this repository, `scripts/aether-lead` is the same launcher as `aeth`.
 
-With the plugin installed and no clone, run `/aether:first-setup` once in a session. It puts a short command, `aeth` unless you name another, in `~/.local/bin`; the command runs the same launcher of the newest installed release, so an update needs no second setup, and it never replaces a file that is not its own.
-
-Plain `claude` is the normal mode, and the plugin is dormant there, unless the repository sets the agent: put `{ "agent": "aether:lead" }` in its `.claude/settings.local.json`. That file can hold `xhigh` as `effortLevel`, but the command above passes `--effort xhigh` itself, so it is the way that always starts the Lead there.
-
-Then tell the Lead what you want. [Start](docs/getting-started.md#start) has the launcher in full, and [Getting started](docs/getting-started.md) what happens to your first request.
+Plain `claude` is the normal mode, and the plugin is dormant there, unless the repository sets the agent: put `{ "agent": "aether:lead" }` in its `.claude/settings.local.json`. [Start](docs/getting-started.md#start) has the launcher in full, and [Getting started](docs/getting-started.md) what happens to your first request.
 
 ## Where to go
 
+- [Step-by-step guides](docs/tutorials/install-and-start.md): install and start, your first request, a whole feature, the brief, working for hours, other harnesses, the spend, updating ([en español](docs/es/index.md)).
+- [What Aether adds](docs/what-aether-adds.md): every command, agent and option it adds, point by point, and a cheat sheet ([en español](docs/es/que-agrega-aether.md)).
 - [Getting started](docs/getting-started.md): the install, the first start, and what the Lead does with your first request.
 - [Purpose](docs/purpose.md): why Aether exists, the five goals of RADAR and the principles it follows.
 - [Methodology](docs/methodology.md): the roles, the three paths and the swarm, from your request to a merged result.

@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-doctor [--name <name>]
+// Checks that Aether can run here (Claude Code, Node, git, the installed release, the command that starts Aether mode,
+// dynamic workflows, the other harnesses and the folder) and says how to fix what cannot. It reads and writes nothing.
+//
+// Prints one JSON object. Exits 0 when no check is an error, 1 when one is (or the check itself failed), 2 for a usage
+// mistake.
+
+const path = require('node:path')
+const doctor = require(path.join(__dirname, '..', 'lib', 'doctor.js'))
+
+const USAGE = 'usage: aether-doctor [--name <name>]'
+
+// A value may start with a single dash (a name does not, but the library says so); only a flag cannot be one.
+function parse(args) {
+  const options = {}
+  for (let i = 0; i < args.length; i++) {
+    const flag = args[i]
+    if (flag === '--name') {
+      const next = args[i + 1]
+      if (next === undefined || next.startsWith('--')) throw doctor.usageError(`${flag} needs a value. ${USAGE}`)
+      if ('name' in options) throw doctor.usageError(`${flag} is given twice. ${USAGE}`)
+      options.name = next
+      i++
+    } else {
+      throw doctor.usageError(`unexpected argument ${JSON.stringify(flag)}. ${USAGE}`)
+    }
+  }
+  return options
+}
+
+function main(args) {
+  try {
+    const report = doctor.run(parse(args))
+    process.stdout.write(`${JSON.stringify(report)}\n`)
+    return report.ok ? 0 : 1
+  } catch (err) {
+    process.stdout.write(`${JSON.stringify({ error: err.message })}\n`)
+    return err instanceof doctor.DoctorError ? err.exitCode : 1
+  }
+}
+
+process.exitCode = main(process.argv.slice(2))
