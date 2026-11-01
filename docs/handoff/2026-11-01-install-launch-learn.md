@@ -46,7 +46,15 @@ No subagent of the release ran on Opus. Before the owner's rule, while the relea
 
 ## 6. The clean install (T19)
 
-Pending: the Lead adds the result here when the run ends.
+All eight steps passed on Sonnet, with no model call and nothing written outside a scratch directory, with `CLAUDE_CONFIG_DIR` and `HOME` pointing at empty folders:
+1. `claude plugin install aether --marketplace <the clone>` installs 0.30.0, enabled, with the notice that 8 options are not yet set.
+2. The installed `aether-doctor` reports 0.30.0, the `aether` check ok and the command not installed yet.
+3. `aether-first-setup` with no `--dir`, `~/.local/bin` off the `PATH` and `claude` outside the home, chooses `~/.local/bin` and gives the `shellHint`, `autonomous` and `bypassPermissions`; `--permissions ask` replaces its own stub with `manual`; `--permissions nope` exits 2.
+4. With `~/.local/bin` on the `PATH`, the `command` check is ok.
+5. `aeth --resume` with a fake `claude` first on the `PATH` runs the installed launcher, which passes `--agent aether:lead --effort xhigh --permission-mode manual --settings … --resume` with `AETHER_IRREVERSIBLE=enforce`; a shell value of `AETHER_PERMISSION_MODE` wins; without it the launcher passes `bypassPermissions`.
+6. `claude plugin configure --values-stdin` saves `superdelegation` and `harnesses` and keeps the other settings; `aether-doctor` then warns that the named harnesses are not installed; `{"superdelegation":"false"}` keeps `harnesses`; a value that is not a string exits 1.
+7. `aether-session-start` gives the welcome line in Spanish with `LANG=es_MX.UTF-8` and in English with `en_US.UTF-8`, and nothing for a session that is not the Lead's.
+8. No process was left running.
 
 ## 7. How to try the branch
 

@@ -12,28 +12,28 @@ Cada tarea dice quién la hace: **Lead** (la sesión principal), **Sonnet** o **
 
 ## Oleada 2: código (cada tarea con sus pruebas)
 
-- [ ] **T4 · Sonnet.** `lib/doctor.js`, `bin/aether-doctor`, `tests/doctor.test.js` y el skill `doctor` (R10, R11).
-- [ ] **T5 · Sonnet.** `aether-first-setup --permissions` y el directorio por defecto (R4, R5); el lanzador lee `AETHER_PERMISSION_MODE` (R8); sus pruebas en `tests/first-setup.test.js` y `tests/launcher.test.js`.
-- [ ] **T6 · Lead.** El skill `setup` en lugar de `first-setup` (R2, R3, R6, R7). Depende de T4 y T5.
-- [ ] **T8 · Sonnet.** El skill `help` y `tests/help.test.js` (R12).
-- [ ] **T9 · Sonnet.** La línea de bienvenida del hook SessionStart y sus pruebas (R9).
+- [x] **T4 · Sonnet.** `lib/doctor.js`, `bin/aether-doctor`, `tests/doctor.test.js` y el skill `doctor` (R10, R11).
+- [x] **T5 · Sonnet.** `aether-first-setup --permissions` y el directorio por defecto (R4, R5); el lanzador lee `AETHER_PERMISSION_MODE` (R8); sus pruebas en `tests/first-setup.test.js` y `tests/launcher.test.js`.
+- [x] **T6 · Lead.** El skill `setup` en lugar de `first-setup` (R2, R3, R6, R7). Depende de T4 y T5.
+- [x] **T8 · Sonnet.** El skill `help` y `tests/help.test.js` (R12).
+- [x] **T9 · Sonnet.** La línea de bienvenida del hook SessionStart y sus pruebas (R9).
 
 ## Oleada 3: documentación
 
-- [ ] **T10 · Lead.** `## Quick start` en el README y la prueba R1 con el orden nuevo (R17).
-- [ ] **T11 · Sonnet.** `docs/getting-started.md` con los cuatro pasos; la prueba de `tasks.md` a `docs/contributing.md` (R16).
-- [ ] **T12 · Sonnet.** Guías 1 a 4, en inglés y en español (R13).
-- [ ] **T13 · Sonnet.** Guías 5 a 8, en inglés y en español (R13).
-- [ ] **T14 · Sonnet.** «What Aether adds», «Qué agrega Aether» y `docs/es/index.md` (R14, R15).
-- [ ] **T15 · Sonnet.** La sección de instalación de `site/index.html`, en español y en inglés (R18).
-- [ ] **T16 · Haiku.** Los enlaces de `docs/index.md`, la lista de páginas de `tests/docs-facts.test.js`, las filas de `docs/reference/components.md` y los nombres de `first-setup` que quedan en las páginas (R15, R19).
-- [ ] **T17 · Haiku.** El borrador del changelog, el roadmap y el handoff; el Lead lo revisa (R19).
+- [x] **T10 · Lead.** `## Quick start` en el README y la prueba R1 con el orden nuevo (R17).
+- [x] **T11 · Sonnet.** `docs/getting-started.md` con los cuatro pasos; la prueba de `tasks.md` a `docs/contributing.md` (R16).
+- [x] **T12 · Sonnet.** Guías 1 a 4, en inglés y en español (R13).
+- [x] **T13 · Sonnet.** Guías 5 a 8, en inglés y en español (R13).
+- [x] **T14 · Sonnet.** «What Aether adds», «Qué agrega Aether» y `docs/es/index.md` (R14, R15).
+- [x] **T15 · Sonnet.** La sección de instalación de `site/index.html`, en español y en inglés (R18).
+- [x] **T16 · Haiku.** Los enlaces de `docs/index.md`, la lista de páginas de `tests/docs-facts.test.js`, las filas de `docs/reference/components.md` y los nombres de `first-setup` que quedan en las páginas (R15, R19).
+- [x] **T17 · Haiku.** El borrador del changelog, el roadmap y el handoff; el Lead lo revisa (R19).
 
 ## Oleada 4: verificar y entregar
 
-- [ ] **T18 · Haiku.** `npm test` y el resumen de los fallos; el Lead los arregla.
-- [ ] **T19 · Sonnet.** Una instalación limpia en un `CLAUDE_CONFIG_DIR` desechable desde la rama: instalar, `aether-doctor`, `aether-first-setup`, `claude plugin configure`, y que `aeth` corra el lanzador.
-- [ ] **T20 · Lead.** La versión 0.30.0 en sus cuatro lugares, la decisión A103, la revisión del diff completo, los commits y el push a la rama.
+- [x] **T18 · Lead.** `npm test` y sus arreglos (el Lead lo corrió en lugar de Haiku: era un solo comando).
+- [x] **T19 · Sonnet.** Una instalación limpia en un `CLAUDE_CONFIG_DIR` desechable desde la rama: instalar, `aether-doctor`, `aether-first-setup`, `claude plugin configure`, y que `aeth` corra el lanzador.
+- [x] **T20 · Lead.** La versión 0.30.0 en sus cuatro lugares, la decisión A103, la revisión del diff completo, los commits y el push a la rama.
 - [ ] **T21 · Dueño.** Los cuatro pasos en su máquina, con una sesión interactiva.
 
 ## Nombres de las páginas nuevas
