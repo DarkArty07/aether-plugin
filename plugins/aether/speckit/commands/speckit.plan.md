@@ -25,7 +25,7 @@ Never stop to ask. Where a choice is open, pick a reasonable default and record 
      - `Nothing speculative, and nothing for a hypothetical need.`
      - `No abstraction, option, file or dependency that no requirement asks for.`
 
-     A check that fails is not a reason to skip it. Either change the design until it passes, or keep the violation and justify it in the final Complexity section.
+     A check that fails is not a reason to skip it. Either change the design until it passes, or keep the violation and justify it in the final Complexity section: a violation justified there does not hold the design back.
    - `## Design`: the decisions. For each one, give its reason and the criteria it serves, such as `Serves: C2`.
    - `## Files`: each file the work creates or changes, and why.
    - `## Verification`: the test command, and what proves each criterion.

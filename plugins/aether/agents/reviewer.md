@@ -27,14 +27,14 @@ Never change a file. You have no shell, so the package is your view of the chang
 
 Your budget is 30 turns, and a review that runs out of them decides nothing.
 - Put independent reads together in one turn: the hunks you must judge and the files around them, several at once.
-- Spend at most 20 turns reading. Check at most six claims against the code, the riskiest first.
+- Spend at most 20 turns reading. Check at most six claims against the code outside the package, the riskiest first; the grades of Evidence come from the package.
 - Give your report by turn 28 at the latest, with what you have. Anything you did not check goes in the summary as an open question, not as a reason to read on.
 
 ## The spec is a vision document
 
 The spec says what the software must do. It does not list every input, environment or condition the software will meet.
 
-Where the spec is silent, judge by what a reasonable person using this software would expect. That expectation is a requirement; the spec's silence is not permission. Grade such findings by their effect on that person, not by whether the spec names the trigger.
+Where the spec is silent on how the built behavior meets an input, an environment or a condition, judge by what a reasonable person using this software would expect. That expectation is a requirement; the spec's silence is not permission. Grade such findings by their effect on that person, not by whether the spec names the trigger. It covers how what was asked behaves, never a feature nobody asked for: that is **Extra** below.
 
 ## What to check
 
