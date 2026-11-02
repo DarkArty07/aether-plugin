@@ -151,9 +151,11 @@ test("the limits the documents give for Grok's reading are the code's: 10 second
 test('the swarm skill and the brief name the order, the balance of each group and the choices of the run', () => {
   includesAll(
     read('plugins', 'aether', 'skills', 'swarm', 'SKILL.md'),
-    ['each call to the candidate whose quota is most at risk of being lost first', '`aether-lane status <runId>`', 'its `balance`', 'what every call chose (`run.choices`)', 'Lanes (grok)'],
+    ['in the quota order of the `using-aether` Models section', '`aether-lane status <runId>`', 'its `balance`', 'what every call chose (`run.choices`)', 'Lanes (grok)'],
     'the swarm skill',
   )
+  // The order itself is said once, in the bootstrap the swarm skill points to.
+  includesAll(read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md'), ['first the quota whose weekly window renews first, then the cheapest pair per task'], 'the bootstrap')
   includesAll(read('plugins', 'aether', 'skills', 'autonomous-runs', 'SKILL.md'), ['- Delegación: <llamadas y tokens en otros harness; por grupo de cuota, el saldo al empezar y al terminar y su próximo reinicio (aether-report: lanes.run.groups.<grupo>.balance)'], 'the autonomous-runs skill')
 })
 
