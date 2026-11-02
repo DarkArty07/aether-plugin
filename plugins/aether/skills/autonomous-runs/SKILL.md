@@ -12,7 +12,7 @@ The permission that opens a run, the irreversible classes, the grant registry, t
 2. Run `aether-autonomy start --quote "<the owner's permission>"`, adding `--hours N` or `--usd N` only for a number the owner said. The defaults are 8 hours and US$ 50. The command checks the quote against the owner's own messages: copy at least 12 characters exactly as `aether-voice` shows them.
 3. It prints the run's id and its diary. Fill in "Intención" with the owner's quotes and C1 to Cn, and start.
 
-**Permission prompts.** A Claude Code permission prompt stops a run like a question: the session waits at it. A run assumes the owner started the session so that its tools do not prompt, with a permission mode or allow rules of their choice (what the swarm needs is under "Permissions" in the `aether:swarm` skill). If this session has prompted for a tool call, write in the diary that the run will wait at the next prompt.
+**Permission prompts.** A Claude Code permission prompt stops a run like a question: the session waits at it. A run assumes the owner started the session so that its tools do not prompt, with a permission mode or allow rules of their choice (what the swarm needs is under "Permissions" in the `aether:swarm` skill). Never turn permissions off or change the session's permission mode on your own. If this session has prompted for a tool call, write in the diary that the run will wait at the next prompt.
 
 **The diary,** `.aether/autonomy/<run id>/diary.md`, is yours. Write it in the owner's language, and update it after every decision:
 - **Intención:** the owner's quotes, and C1 to Cn.
