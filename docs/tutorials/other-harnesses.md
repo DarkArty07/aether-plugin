@@ -33,7 +33,7 @@ Aether looks on the `PATH` of Claude Code's own process, not of your shell. A di
 claude "/aether:setup"
 ```
 
-The setup checks again, and now it finds the CLIs you installed. It asks whether to send work to them, and you can pick several. «No, only Claude» is the recommended answer. (It asks the permissions question again too: pick the same answer to keep it.) Grok's choice carries a warning that it runs without asking permissions. Then it saves your answer as the `superdelegation` and `harnesses` options.
+The setup checks again, and now it finds the CLIs you installed. It asks whether to send work to them, and you can pick several. «No, only Claude» is the recommended answer. (It asks the permissions question again too: pick the same answer to keep it.) The choice of each harness carries a warning that it runs without asking permissions. Then it saves your answer as the `superdelegation` and `harnesses` options.
 
 Close the terminal and open a new one: the options are read when a session starts.
 

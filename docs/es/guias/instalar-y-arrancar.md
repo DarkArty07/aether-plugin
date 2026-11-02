@@ -46,7 +46,7 @@ Lo que ves:
 
 Elijas lo que elijas, el guardia de Aether sigue activo: un `push`, un merge a `main`, una publicación, un despliegue y un borrado esperan tu sí, en el brief, salvo que hayas dado permiso para esa clase de acción con palabras generales.
 
-**¿Quieres mandar trabajo a otros harnesses?** Solo la ves si la configuración encontró alguno instalado (`agy`, `codex`, `grok`, `cursor-agent` o `muse`). «No, solo Claude» es la respuesta recomendada. Si eliges alguno, la configuración enciende `superdelegation` y guarda `harnesses`; la opción de Grok lleva la advertencia de que corre sin pedir permisos. [Otros harnesses](otros-harnesses.md) tiene el resto.
+**¿Quieres mandar trabajo a otros harnesses?** Solo la ves si la configuración encontró alguno instalado (`agy`, `codex`, `grok`, `cursor-agent` o `muse`). «No, solo Claude» es la respuesta recomendada. Si eliges alguno, la configuración enciende `superdelegation` y guarda `harnesses`; la opción de cada harness lleva la advertencia de que corre sin pedir permisos. [Otros harnesses](otros-harnesses.md) tiene el resto.
 
 Si el nombre `aeth` ya lo usa algo que no es de Aether, la configuración te pide otro nombre, una vez. Nunca reemplaza un archivo que no es suyo.
 

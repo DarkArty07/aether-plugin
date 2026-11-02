@@ -46,7 +46,7 @@ What you see:
 
 Whatever you choose, Aether's guard stays on: a `push`, a merge to `main`, a publish, a deploy and a delete wait for your yes, in the brief, unless you granted that class of action in general words.
 
-**Do you want to send work to other harnesses?** You only see this if the setup found some installed (`agy`, `codex`, `grok`, `cursor-agent` or `muse`). «No, only Claude» is the recommended answer. If you pick some, the setup turns on `superdelegation` and saves `harnesses`; Grok's choice carries a warning that it runs without asking permissions. [Other harnesses](other-harnesses.md) has the rest.
+**Do you want to send work to other harnesses?** You only see this if the setup found some installed (`agy`, `codex`, `grok`, `cursor-agent` or `muse`). «No, only Claude» is the recommended answer. If you pick some, the setup turns on `superdelegation` and saves `harnesses`; the choice of each harness carries a warning that it runs without asking permissions. [Other harnesses](other-harnesses.md) has the rest.
 
 If the name `aeth` is already taken by something that is not Aether's, the setup asks you for another name, once. It never replaces a file that is not its own.
 

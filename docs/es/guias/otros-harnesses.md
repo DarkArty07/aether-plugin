@@ -33,7 +33,7 @@ Aether busca en el `PATH` del proceso de Claude Code, no en el de tu shell. Un d
 claude "/aether:setup"
 ```
 
-La configuración revisa de nuevo, y ahora encuentra los CLI que instalaste. Pregunta si mandarles trabajo, y puedes elegir varios. «No, solo Claude» es la respuesta recomendada. (También repite la pregunta de permisos: elige la misma respuesta para conservarla.) La opción de Grok lleva una advertencia de que corre sin pedir permisos. Luego guarda tu respuesta como las opciones `superdelegation` y `harnesses`.
+La configuración revisa de nuevo, y ahora encuentra los CLI que instalaste. Pregunta si mandarles trabajo, y puedes elegir varios. «No, solo Claude» es la respuesta recomendada. (También repite la pregunta de permisos: elige la misma respuesta para conservarla.) La opción de cada harness lleva una advertencia de que corre sin pedir permisos. Luego guarda tu respuesta como las opciones `superdelegation` y `harnesses`.
 
 Cierra la terminal y abre una nueva: las opciones se leen cuando arranca una sesión.
 
