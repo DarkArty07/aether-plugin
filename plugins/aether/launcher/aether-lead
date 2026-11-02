@@ -13,6 +13,8 @@
 # With no permission prompts, aether-guard is the only check left on an irreversible command, so the
 # session refuses one that no grant covers (AETHER_IRREVERSIBLE=enforce) unless the shell already set
 # the variable: AETHER_IRREVERSIBLE=log aether-lead only records them.
+# The stub aether-first-setup writes may set AETHER_PERMISSION_MODE (bypassPermissions, auto or manual);
+# without it the launcher bypasses permissions, as before.
 dev=0
 for arg do
   shift
@@ -28,6 +30,6 @@ if [ "$dev" = 1 ]; then
 fi
 AETHER_IRREVERSIBLE="${AETHER_IRREVERSIBLE:-enforce}"
 export AETHER_IRREVERSIBLE
-exec claude --agent aether:lead --effort xhigh --permission-mode bypassPermissions \
+exec claude --agent aether:lead --effort xhigh --permission-mode "${AETHER_PERMISSION_MODE:-bypassPermissions}" \
   --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false},"theme":"custom:aether:aether"}' \
   "$@"

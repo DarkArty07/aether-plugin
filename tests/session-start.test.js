@@ -28,7 +28,7 @@ function removedOptions(values) {
 // The hook's environment, without what a surrounding session may have set.
 function hookEnv(data, extra = {}) {
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }
-  for (const key of ['CLAUDE_ENV_FILE', OLD_LANES, 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', OLD_SEATS, 'CLAUDE_PLUGIN_OPTION_DEADLINES', ...Object.keys(removedOptions({ router: '', decider: '', fallback: '' })), 'AETHER_SUPERDELEGATION', OLD_LEGACY]) delete env[key]
+  for (const key of ['LC_ALL', 'LC_MESSAGES', 'LANG', 'CLAUDE_ENV_FILE', OLD_LANES, 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', OLD_SEATS, 'CLAUDE_PLUGIN_OPTION_DEADLINES', ...Object.keys(removedOptions({ router: '', decider: '', fallback: '' })), 'AETHER_SUPERDELEGATION', OLD_LEGACY]) delete env[key]
   return { ...env, ...extra }
 }
 
@@ -360,4 +360,94 @@ test('session start gives no note of a router mode: the option no longer exists'
 test('the session start bin no longer names the router notes or writes the router settings', () => {
   const source = fs.readFileSync(SESSION_BIN, 'utf8')
   assert.doesNotMatch(source, /ROUTER_NOTES|routerNote|routerSettingsFrom/)
+})
+
+// R9 (spec 024): the welcome line is the hook's top-level systemMessage, shown to the person, on startup of a Lead session.
+const VERSION = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')).version
+const WELCOME_ES = (version) => `Aether ${version} · Lead listo · dime lo que quieres, o escribe /aether:help para ver qué puedo hacer`
+const WELCOME_EN = (version) => `Aether ${version} · Lead ready · tell me what you want, or type /aether:help to see what I can do`
+
+function welcomeOf(t, env = {}, input = AETHER) {
+  const r = start(makeRepo(t).dir, tempDir(t, 'aether-data-'), { input, env })
+  assert.equal(r.status, 0, r.stderr)
+  return r
+}
+
+test('R9: a Lead startup shows the English welcome line when no locale is set or it is not Spanish', (t) => {
+  const none = welcomeOf(t)
+  assert.equal(none.out.systemMessage, WELCOME_EN(VERSION))
+  // The line sits next to hookSpecificOutput, not inside it.
+  assert.equal('systemMessage' in none.out.hookSpecificOutput, false)
+  assert.equal(welcomeOf(t, { LANG: 'en_US.UTF-8' }).out.systemMessage, WELCOME_EN(VERSION))
+  assert.equal(welcomeOf(t, { LANG: 'fr_FR.UTF-8' }).out.systemMessage, WELCOME_EN(VERSION))
+  assert.equal(welcomeOf(t, { LANG: 'C' }).out.systemMessage, WELCOME_EN(VERSION))
+})
+
+test('R9: a Lead startup shows the Spanish welcome line when the locale starts with es, in any case', (t) => {
+  for (const env of [{ LANG: 'es_MX.UTF-8' }, { LANG: 'ES_ES' }, { LANG: 'es' }, { LC_MESSAGES: 'es_AR.UTF-8' }, { LC_ALL: 'es_CO.UTF-8' }]) {
+    assert.equal(welcomeOf(t, env).out.systemMessage, WELCOME_ES(VERSION), JSON.stringify(env))
+  }
+})
+
+test('R9: LC_ALL wins over LC_MESSAGES, which wins over LANG; an empty one is skipped', (t) => {
+  assert.equal(welcomeOf(t, { LC_ALL: 'en_US.UTF-8', LANG: 'es_MX.UTF-8' }).out.systemMessage, WELCOME_EN(VERSION))
+  assert.equal(welcomeOf(t, { LC_ALL: 'es_MX.UTF-8', LANG: 'en_US.UTF-8' }).out.systemMessage, WELCOME_ES(VERSION))
+  assert.equal(welcomeOf(t, { LC_MESSAGES: 'en_US.UTF-8', LANG: 'es_MX.UTF-8' }).out.systemMessage, WELCOME_EN(VERSION))
+  assert.equal(welcomeOf(t, { LC_ALL: 'es_MX.UTF-8', LC_MESSAGES: 'en_US.UTF-8' }).out.systemMessage, WELCOME_ES(VERSION))
+  assert.equal(welcomeOf(t, { LC_ALL: '', LANG: 'es_MX.UTF-8' }).out.systemMessage, WELCOME_ES(VERSION))
+})
+
+test('R9: a startup with no source in the input counts as startup and gets the welcome line', (t) => {
+  const { source, ...noSource } = AETHER
+  assert.equal(welcomeOf(t, {}, noSource).out.systemMessage, WELCOME_EN(VERSION))
+})
+
+test('R9: the welcome line takes the version from the plugin.json of CLAUDE_PLUGIN_ROOT', (t) => {
+  const copy = path.join(tempDir(t), 'aether')
+  fs.cpSync(PLUGIN, copy, { recursive: true })
+  const manifest = path.join(copy, '.claude-plugin', 'plugin.json')
+  fs.writeFileSync(manifest, JSON.stringify({ ...JSON.parse(fs.readFileSync(manifest, 'utf8')), version: '9.8.7' }))
+  assert.equal(welcomeOf(t, { CLAUDE_PLUGIN_ROOT: copy }).out.systemMessage, WELCOME_EN('9.8.7'))
+  assert.equal(welcomeOf(t, { CLAUDE_PLUGIN_ROOT: copy, LANG: 'es_MX.UTF-8' }).out.systemMessage, WELCOME_ES('9.8.7'))
+})
+
+test('R9: without a readable plugin.json the welcome line has no version and the start does not fail', (t) => {
+  const copy = path.join(tempDir(t), 'aether')
+  fs.cpSync(PLUGIN, copy, { recursive: true })
+  const manifest = path.join(copy, '.claude-plugin', 'plugin.json')
+  const expectEn = 'Aether · Lead ready · tell me what you want, or type /aether:help to see what I can do'
+  const expectEs = 'Aether · Lead listo · dime lo que quieres, o escribe /aether:help para ver qué puedo hacer'
+  // Missing file.
+  fs.rmSync(manifest)
+  let r = welcomeOf(t, { CLAUDE_PLUGIN_ROOT: copy })
+  assert.equal(r.out.systemMessage, expectEn)
+  assert.match(r.out.hookSpecificOutput.additionalContext, /^Aether mode is active\./)
+  assert.equal(welcomeOf(t, { CLAUDE_PLUGIN_ROOT: copy, LANG: 'es_MX.UTF-8' }).out.systemMessage, expectEs)
+  // Not JSON, and JSON without a version.
+  for (const text of ['not json', '{}', '{"version": 3}', 'null']) {
+    fs.writeFileSync(manifest, text)
+    r = welcomeOf(t, { CLAUDE_PLUGIN_ROOT: copy })
+    assert.equal(r.out.systemMessage, expectEn, text)
+  }
+})
+
+test('R9: clear and compact keep the output as it was: the context and no welcome line', (t) => {
+  for (const source of ['clear', 'compact']) {
+    const r = welcomeOf(t, { LANG: 'es_MX.UTF-8' }, { ...AETHER, source })
+    assert.deepEqual(Object.keys(r.out), ['hookSpecificOutput'], source)
+    assert.deepEqual(Object.keys(r.out.hookSpecificOutput).sort(), ['additionalContext', 'hookEventName'], source)
+    assert.match(r.out.hookSpecificOutput.additionalContext, /^Aether mode is active\./, source)
+    assert.doesNotMatch(r.stdout, /systemMessage|\/aether:help to see|para ver qué puedo hacer/, source)
+  }
+})
+
+test('R9: resume and any other source give no output at all, and a session that is not the Lead gets no welcome line', (t) => {
+  for (const source of ['resume', 'other', '']) {
+    const r = welcomeOf(t, {}, { ...AETHER, source })
+    assert.equal(r.stdout, '', JSON.stringify(source))
+  }
+  for (const input of [{ ...AETHER, agent_type: undefined }, { ...AETHER, agent_type: 'Explore' }, { ...AETHER, agent_type: 'claude' }]) {
+    const r = welcomeOf(t, { LANG: 'es_MX.UTF-8' }, input)
+    assert.equal(r.stdout, '', JSON.stringify(input))
+  }
 })

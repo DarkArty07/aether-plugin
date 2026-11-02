@@ -19,7 +19,7 @@ test('the repository is a marketplace that lists the aether plugin', () => {
         name: 'aether',
         source: './plugins/aether',
         description:
-          "Aether mode: the Lead as the owner's right hand, starting on Sonnet and working along three paths (itself, delegate tasks on models it chooses, or the swarm), a Judge on Opus, and a parallel swarm that implements approved plans. Start it with claude --agent aether:lead --effort xhigh.",
+          "Aether mode: the Lead as the owner's right hand, starting on Sonnet and working along three paths (itself, delegate tasks on models it chooses, or the swarm), a Judge on Opus, and a parallel swarm that implements approved plans. Set it up with /aether:setup after installing, then start it with aeth, or with claude --agent aether:lead --effort xhigh.",
       },
     ],
   })

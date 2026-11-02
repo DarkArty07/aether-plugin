@@ -8,6 +8,8 @@ order: 16
 
 Each section below says what you see, why it happens and what to do, with the exact command when there is one; if you have not started Aether mode yet, begin with [Getting started](../getting-started.md).
 
+Run `/aether:doctor` first: it checks the usual causes below and prints the fix of each one it finds, and it changes nothing.
+
 ## Aether's agents do not show up
 
 **What you see.** A session started with plain `claude` offers none of Aether's agents (`aether:lead`, `aether:writer`, `aether:judge` and the rest), and nothing in it behaves like the Lead.
@@ -18,7 +20,7 @@ Each section below says what you see, why it happens and what to do, with the ex
 
     claude --agent aether:lead --effort xhigh
 
-[Getting started](../getting-started.md#start) has the whole start. The launcher runs the same command with permissions bypassed, superpowers off for the session, and irreversible commands refused; `/aether:first-setup` installs it as a short command, and `scripts/aether-lead` is it in a clone. When even a session started this way shows nothing of Aether, `claude plugin list` shows whether `aether@aether-plugin` is installed and enabled, and [Getting started](../getting-started.md#install) installs it.
+[Getting started](../getting-started.md#start) has the whole start. The launcher runs the same command with permissions bypassed (unless `/aether:setup` chose another mode), superpowers off for the session, and irreversible commands refused; `/aether:setup` installs it as a short command, and `scripts/aether-lead` is it in a clone. When even a session started this way shows nothing of Aether, `claude plugin list` shows whether `aether@aether-plugin` is installed and enabled, and [Getting started](../getting-started.md#install) installs it.
 
 ## The Aether theme does not show
 
@@ -26,7 +28,7 @@ Each section below says what you see, why it happens and what to do, with the ex
 
 **Why.** The launcher selects the theme in the `--settings` of the session, so it shows only in a session the launcher started. The usual cause is an old copy of the launcher: a file copied out of `scripts/aether-lead` before the theme existed has no `theme` entry, and a copy never follows the plugin when it updates. Two others: the session was started with plain `claude`, or with a command of Install written before the `theme` entry; and the terminal has no true color, which the theme needs.
 
-**What to do.** Run `/aether:first-setup`. The command it installs runs the launcher of the newest installed release each time, so it does not go stale. When your old copy has the same name, the setup writes nothing and says the name is taken, because it never replaces a file that is not its own: use another name, or delete the old copy yourself. `/theme` lists the theme as Aether, from aether ([Getting started](../getting-started.md#the-theme)).
+**What to do.** Run `/aether:setup`. The command it installs runs the launcher of the newest installed release each time, so it does not go stale. When your old copy has the same name, the setup writes nothing and says the name is taken, because it never replaces a file that is not its own: use another name, or delete the old copy yourself. `/theme` lists the theme as Aether, from aether ([Getting started](../getting-started.md#the-theme)).
 
 ## The design or the swarm does not start
 
@@ -63,7 +65,7 @@ Three other causes end in a swarm that is not running:
 
 **Why.** A permission that asks stops a run like a question: the session waits at it, and an autonomous run waits at the first prompt. The plugin never changes the session's permissions, so the way you started the session decides. The swarm's agents use Bash for `git`, `aether-wt`, `aether-lane` and the test command, and edit files under `.aether/worktrees/`.
 
-**What to do.** Start the session with a permission mode or allow rules of your choice that cover those calls. Or start it with the launcher (the short command `/aether:first-setup` installs, or `scripts/aether-lead` in a clone), which sets `--permission-mode bypassPermissions`. With no prompts left, aether-guard is the only check on an irreversible command, so the launcher also sets `AETHER_IRREVERSIBLE=enforce` (see the next section). If the session started inside the integration worktree, add the main checkout with `/add-dir <repoRoot>`, so the agents may read and edit there.
+**What to do.** Start the session with a permission mode or allow rules of your choice that cover those calls. Or start it with the launcher (the short command `/aether:setup` installs, or `scripts/aether-lead` in a clone), which sets `--permission-mode bypassPermissions` (unless `/aether:setup` chose another mode). With no prompts left, aether-guard is the only check on an irreversible command, so the launcher also sets `AETHER_IRREVERSIBLE=enforce` (see the next section). If the session started inside the integration worktree, add the main checkout with `/add-dir <repoRoot>`, so the agents may read and edit there.
 
 ## A command was refused or recorded
 

@@ -267,3 +267,69 @@ test('R21: the site says superdelegation where it said lanes and the profiles, a
     assert.match(text, /superdelegation/i, `${rel} says superdelegation`)
   }
 })
+
+// Spec 024 R18: the install section shows the four steps, in both languages, with one command to paste.
+const INSTALL_LINE = 'claude plugin install aether --marketplace DarkArty07/aether-plugin && claude "/aether:setup"'
+const siteDict = () => {
+  const js = read(SITE, 'app.js')
+  const start = js.indexOf('var DICT = {')
+  const end = js.indexOf('\n  };\n', start) + 5
+  return new Function(`${js.slice(start, end)}; return DICT`)()
+}
+const installSection = () => {
+  const html = withoutComments(read(SITE, 'index.html'))
+  const start = html.indexOf('id="instalar"')
+  return html.slice(start, html.indexOf('</section>', start))
+}
+
+test('R18: the install window types and copies the one-line command that installs and opens /aether:setup', () => {
+  const js = read(SITE, 'app.js')
+  assert.ok(js.includes(`var INSTALL_CMD = '${INSTALL_LINE}';`), 'app.js holds the exact line the copy button copies')
+  assert.match(js, /navigator\.clipboard\.writeText\(INSTALL_CMD\)/, 'the copy button copies INSTALL_CMD')
+  assert.match(js, /ta\.value = INSTALL_CMD/, 'the file:// fallback copies INSTALL_CMD')
+  assert.match(js, /var line = '\$ ' \+ INSTALL_CMD/, 'the typed animation types INSTALL_CMD')
+  const ghost = installSection().match(/<span class="t-ghost"[^>]*><span class="p">\$<\/span> ([^<]*)<\/span>/)
+  assert.ok(ghost, 'the install window has its ghost line')
+  assert.equal(ghost[1].replace(/&amp;/g, '&'), INSTALL_LINE, 'the ghost line, which reserves the height, is the same command')
+  assert.doesNotMatch(read(SITE, 'index.html') + js, /claude --agent aether:lead --effort xhigh|--config superdelegation=true/, 'the old launch steps are gone')
+})
+
+test('R18: the install list has four steps (#1 to #4) in both languages, and no key is missing in either', () => {
+  const section = installSection()
+  const list = section.slice(section.indexOf('<ol class="start'), section.indexOf('</ol>', section.indexOf('<ol class="start')))
+  const items = [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((match) => match[1])
+  assert.equal(items.length, 4, 'the list has four steps')
+  items.forEach((item, i) => {
+    assert.match(item, new RegExp(`<span class="num">#${i + 1}</span>`), `step ${i + 1} is numbered #${i + 1}`)
+    assert.match(item, new RegExp(`data-i18n="st${i + 1}\\.h"`), `step ${i + 1} has its heading key`)
+    assert.match(item, new RegExp(`data-i18n-html="st${i + 1}\\.t"`), `step ${i + 1} has its text key`)
+  })
+  assert.doesNotMatch(list, /st5\./, 'there is no fifth step')
+  const DICT = siteDict()
+  for (const lang of ['es', 'en']) {
+    for (let n = 1; n <= 4; n++) {
+      for (const part of ['h', 't']) assert.ok(DICT[lang][`st${n}.${part}`], `${lang}: st${n}.${part} has text`)
+    }
+    assert.equal(DICT[lang]['st5.h'], undefined, `${lang}: no fifth step`)
+  }
+  assert.equal(DICT.es['st1.h'], 'Pega una línea')
+  assert.equal(DICT.en['st1.h'], 'Paste one line')
+  assert.equal(DICT.es['st2.h'], 'Contesta dos preguntas')
+  assert.equal(DICT.en['st2.h'], 'Answer two questions')
+  assert.equal(DICT.es['st3.h'], 'Escribe aeth')
+  assert.equal(DICT.en['st3.h'], 'Type aeth')
+  assert.equal(DICT.es['st4.h'], 'Dile al Lead lo que quieres')
+  assert.equal(DICT.en['st4.h'], 'Tell the Lead what you want')
+  assert.match(DICT.es['st1.t'], /\/aether:setup/)
+  assert.match(DICT.en['st1.t'], /\/aether:setup/)
+  assert.match(list, /<code>aeth<\/code>/, 'step 3 shows the command to type')
+})
+
+test('R18: the version the page shows (hero chip and footer) is the version of plugin.json', () => {
+  const version = JSON.parse(read(ROOT, 'plugins', 'aether', '.claude-plugin', 'plugin.json')).version
+  const html = withoutComments(read(SITE, 'index.html'))
+  const shown = [...html.matchAll(/\bv(\d+\.\d+\.\d+)\b/g)].map((match) => match[1])
+  assert.ok(shown.length >= 2, 'the page shows its version in the hero and in the footer')
+  for (const found of shown) assert.equal(found, version, `index.html shows v${found}, plugin.json says ${version}`)
+  assert.match(html, /\/\/ PLUGIN · v\d+\.\d+\.\d+/, 'the footer shows the version')
+})

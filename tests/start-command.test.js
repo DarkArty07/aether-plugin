@@ -20,12 +20,16 @@ const SETTINGS = '{"enabledPlugins":{"superpowers@claude-plugins-official":false
 // The launcher's own arguments, in order, before the ones it passes on.
 const OWN_ARGS = ['--agent', 'aether:lead', '--effort', 'xhigh', '--permission-mode', 'bypassPermissions', '--settings', SETTINGS]
 
+// The variable the stub of aether-first-setup sets, which the launcher reads (spec 024 R8). The tests that compare the
+// arguments take it out of the environment, so that a value in the shell that runs them cannot change the default.
+const NO_PERMISSION_MODE = { AETHER_PERMISSION_MODE: undefined }
+
 // A directory with a `claude` that prints one argument per line, put first on the PATH.
 function fakeClaude(t) {
   const dir = tempDir(t, 'aether-launcher-')
   const file = path.join(dir, 'claude')
   fs.writeFileSync(file, '#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done\n', { mode: 0o755 })
-  return { PATH: `${dir}${path.delimiter}${process.env.PATH}` }
+  return { PATH: `${dir}${path.delimiter}${process.env.PATH}`, ...NO_PERMISSION_MODE }
 }
 
 const argsOf = (r) => r.stdout.split('\n').slice(0, -1)
@@ -56,6 +60,29 @@ test('the theme the launcher selects is a file the plugin ships, and it sets onl
   for (const [token, color] of entries) assert.match(color, /^#[0-9a-f]{6}$/, `${token} is a #rrggbb color`)
 })
 
+// Spec 024 R8: the stub of aether-first-setup may set AETHER_PERMISSION_MODE; without it the launcher does what it did.
+test('the launcher gives claude the permission mode of AETHER_PERMISSION_MODE, and bypassPermissions without it', (t) => {
+  const modeOf = (command, value) => {
+    const env = { ...process.env, ...fakeClaude(t) }
+    if (value !== undefined) env.AETHER_PERMISSION_MODE = value
+    const r = spawnSync(command, ['-p', 'two words'], { encoding: 'utf8', env })
+    assert.equal(r.status, 0, r.stderr)
+    return argsOf(r)
+  }
+  const withMode = (mode) => OWN_ARGS.map((arg, i) => (OWN_ARGS[i - 1] === '--permission-mode' ? mode : arg))
+  for (const command of [LAUNCHER, PLUGIN_LAUNCHER]) {
+    // Without the variable, and with it empty, the arguments are the ones the launcher always passed.
+    assert.deepEqual(modeOf(command, undefined), [...OWN_ARGS, '-p', 'two words'])
+    assert.deepEqual(modeOf(command, ''), [...OWN_ARGS, '-p', 'two words'])
+    // A mode of the stub reaches claude as --permission-mode, in the same place, and nothing else changes.
+    for (const mode of ['manual', 'auto', 'bypassPermissions']) assert.deepEqual(modeOf(command, mode), [...withMode(mode), '-p', 'two words'])
+  }
+  assert.deepEqual(modeOf(LAUNCHER, 'manual').slice(4, 6), ['--permission-mode', 'manual'])
+  const text = fs.readFileSync(PLUGIN_LAUNCHER, 'utf8')
+  assert.ok(text.includes('--permission-mode "${AETHER_PERMISSION_MODE:-bypassPermissions}"'), 'the launcher reads the variable, with the default')
+  assert.ok(!text.includes('--permission-mode bypassPermissions'), 'the mode is no longer fixed')
+})
+
 test('the launcher passes its arguments on, whole and after its own', (t) => {
   const r = spawnSync(LAUNCHER, ['-p', 'two words', '--resume'], { encoding: 'utf8', env: { ...process.env, ...fakeClaude(t) } })
   assert.equal(r.status, 0, r.stderr)
@@ -69,7 +96,7 @@ function fakeClaudeWithObserve(t) {
     '#!/bin/sh\nprintf "OBSERVE:%s\\n" "${AETHER_OBSERVE-<unset>}"\nfor a in "$@"; do printf "%s\\n" "$a"; done\n',
     { mode: 0o755 },
   )
-  return { PATH: `${dir}${path.delimiter}${process.env.PATH}` }
+  return { PATH: `${dir}${path.delimiter}${process.env.PATH}`, ...NO_PERMISSION_MODE }
 }
 
 test('the launcher recognizes --dev, exports AETHER_OBSERVE=dev and removes it from claude arguments', (t) => {

@@ -95,8 +95,9 @@ test('the components page lists every verb of aether-delegate, and the mod hands
 
 test('the components page counts the commands of bin/ and says the ladder adds nothing to a plain session (R10)', () => {
   const components = read('docs', 'reference', 'components.md')
-  assert.ok(components.includes('the twelve commands of `bin/`'))
-  assert.equal(fs.readdirSync(path.join(__dirname, '..', 'plugins', 'aether', 'bin')).length, 12)
+  // Spec 024 adds aether-doctor: thirteen.
+  assert.ok(components.includes('the thirteen commands of `bin/`'))
+  assert.equal(fs.readdirSync(path.join(__dirname, '..', 'plugins', 'aether', 'bin')).length, 13)
   assert.doesNotMatch(components, /Today, in \d/)
   assert.match(components, /delegate ladder[^\n]*adds nothing at the start of a plain session/)
 })

@@ -6,7 +6,7 @@ order: 1
 
 # Getting started
 
-This guide is for someone who has just installed Aether, or is about to. At its end you will have Aether mode running, you will know what happens to your first request, and you will know how to read the brief that ends it.
+This guide is for someone who has just installed Aether, or is about to. At its end you will have Aether mode running, you will know what happens to your first request, and you will know how to read the brief that ends it. For the same steps one at a time, with what you see at each, read [Install and start Aether](tutorials/install-and-start.md) ([en español](es/index.md)).
 
 ## Use Aether mode
 
@@ -21,13 +21,22 @@ Aether mode is opt-in: you install the plugin once, and you choose Aether mode e
 
 ### Install
 
+One line installs the plugin and opens Claude Code with its setup:
+
 ```
-claude plugin install aether --marketplace DarkArty07/aether-plugin
+claude plugin install aether --marketplace DarkArty07/aether-plugin && claude "/aether:setup"
 ```
 
-Add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; see [Options](guide/options.md#options)). In a session, `/plugin install aether --marketplace DarkArty07/aether-plugin` does the same and lets you choose the scope.
+1. Paste the line in a terminal.
+2. Answer the setup's questions, then close the terminal.
+3. Open a new terminal in your project's folder and type `aeth`.
+4. Tell the Lead what you want.
 
-Then run `/aether:first-setup` once, in a session started with plain `claude`, to get a short command that starts Aether mode (see [Start](#start)).
+On the days after, only step 3.
+
+`/aether:setup` first checks, without asking, Claude Code, Node, git, Dynamic workflows and which harness CLIs you have. Then it asks two questions, sometimes one: how `aeth` handles permissions (work autonomously, the recommended answer; Claude Code's auto mode; or ask before each tool), and, only when it found harness CLIs, whether to send them work while their quota lasts (the default is no, only Claude). If the name `aeth` belongs to something that is not Aether's, it asks for another. It saves the answers, the permission mode in `aeth` itself and the harnesses as the plugin's options, puts `aeth` in a folder of your `PATH`, and ends on a screen with one line per check, the fix of each that failed, and what to type next. Run it again whenever you want to change an answer.
+
+To install without the setup, run only the first part, `claude plugin install aether --marketplace DarkArty07/aether-plugin`, and add `--config superdelegation=true` to send everything that is not the Lead to other harnesses (`superdelegation`, off by default; see [Options](guide/options.md#options)). In a session, `/plugin install aether --marketplace DarkArty07/aether-plugin` does the same and lets you choose the scope. After either, run `/aether:setup` once, in a session started with plain `claude`, to get `aeth`.
 
 Aether 0.8 no longer needs superpowers. If you keep it for other work, it still enters every session where it is enabled and asks for its own skills, so turn it off for an Aether session:
 
@@ -35,17 +44,17 @@ Aether 0.8 no longer needs superpowers. If you keep it for other work, it still 
 claude --agent aether:lead --effort xhigh --settings '{"enabledPlugins":{"superpowers@claude-plugins-official":false},"theme":"custom:aether:aether"}'
 ```
 
-The `theme` entry gives that session the plugin's own color theme, Aether, and nothing else changes in your settings (see [Start](#start)). The launcher runs that command for you, with permissions bypassed.
+The `theme` entry gives that session the plugin's own color theme, Aether, and nothing else changes in your settings (see [Start](#start)). `aeth` passes both settings for you.
 
 To install from a clone of this repository instead of GitHub, pass the clone's path to `--marketplace`: the plugin then loads from that folder, in place. To update, pin, roll back or uninstall it, see [Update, pin, roll back and uninstall](guide/maintenance.md#update-pin-roll-back-and-uninstall).
 
 ### Check that it worked
 
-None of these checks needs a model.
+Inside a session, type `/aether:doctor`. It runs `aether-doctor` and shows a fixed report: a summary line, one line for each check (`✓` ok, `·` information, `!` warning, `✗` error) and, for each problem, the exact fix. It checks Claude Code, Node and git against the Requirements, the version of Aether installed, the `aeth` command and whether its folder is on your `PATH`, Dynamic workflows, the harness CLIs you have and whether the folder is a git repository. It changes nothing, and it also works in a session started with plain `claude`.
 
-To try the install without touching your own Claude Code configuration, run the install above and each command below with `CLAUDE_CONFIG_DIR` pointing at the same empty folder. A command run without it reads your own configuration, and one run with another folder finds nothing installed.
+Outside a session, two more commands check the install, and neither needs a model. To try the install without touching your own Claude Code configuration, run the install above and each command below with `CLAUDE_CONFIG_DIR` pointing at the same empty folder. A command run without it reads your own configuration, and one run with another folder finds nothing installed.
 
-Outside a session, in any shell, ask Claude Code which plugins are installed:
+In any shell, ask Claude Code which plugins are installed:
 
 ```
 claude plugin list
@@ -61,74 +70,28 @@ claude plugin configure aether@aether-plugin
 
 It shows the plugin's eight options (`superdelegation`, `harnesses`, `ops`, `deadlines`, `quotabrake`, `brakepush`, `observedev` and `autoissue`), and says which you have set. An option you have not set uses its default (the table is in [Options](guide/options.md#options)); the install prints a notice that some options are not yet set, and that is expected.
 
-Last, check that the plan format Aether builds from reads correctly. Save this two-task plan as `tasks.md` anywhere. It is what the Writer produces for a plan, shortened: every task has the Aether fields, and there is an `## Aether Execution` section.
-
-```
-# Tasks: Greeting and farewell
-
-## Task list
-
-### Task 1: The greeting function
-
-**Aether:**
-- Tier: haiku high — a pure function with exact tests
-- Area: greeting
-- Owns: `src/greeting.js`, `test/greeting.test.js`
-- Depends on: none
-
-Write `greet(name)` in `src/greeting.js`. It returns `Hello, <name>!`.
-
-### Task 2: The farewell function
-
-**Aether:**
-- Tier: haiku high — a pure function with exact tests
-- Area: farewell
-- Owns: `src/farewell.js`, `test/farewell.test.js`
-- Depends on: none
-
-Write `farewell(name)` in `src/farewell.js`. It returns `Goodbye, <name>!`.
-
-## Aether Execution
-
-- Test command: `npm test`
-- Ladder: haiku 2, sonnet 2, opus 1
-- Max agents: 20
-```
-
-Then run the plan checker on it. Inside a session it is on the `PATH`; outside one it is not, so use its path, as the paragraph after the output explains:
-
-```
-aether-plan check tasks.md
-```
-
-It prints one line of JSON and exits 0 when the plan is sound. For this plan it is:
-
-```
-{"ok":true,"tasks":2,"waves":[["task-1","task-2"]],"warnings":[]}
-```
-
-`waves` shows the swarm would run both tasks at the same time, because neither depends on the other and they own different files.
-
-The commands of the plugin's `bin/` folder are on the `PATH` of the Bash tool in a session that has the plugin, so inside a session you type `aether-plan check tasks.md`. In a shell outside a session they are not on the `PATH`, and you run the file by its path. In a clone of this repository that is `node plugins/aether/bin/aether-plan check tasks.md`. If you installed from GitHub, the plugin's copy is in the Claude config dir, and the path is `node ~/.claude/plugins/cache/aether-plugin/aether/<version>/bin/aether-plan check tasks.md`, where `<version>` is the one `claude plugin list` shows. If you set `CLAUDE_CONFIG_DIR`, write that folder in place of `~/.claude`. If you installed from a clone's path, the plugin loads from the clone itself, so the clone's path above is the one.
-
 ### Start
 
-Aether mode is chosen per session:
+`aeth` starts Aether mode in the folder you open it in. `/aether:setup` puts it in `~/.local/bin` when that is on your `PATH`; otherwise next to `claude`, when that folder is inside your home and you can write to it; otherwise in `~/.local/bin`, and then it prints the line that puts that folder on your `PATH`. `aeth -c` continues the last conversation, `aeth --resume` lets you pick an older one and `aeth -p "<task>"` runs one task. The command runs the launcher of the newest installed release each time, so a plugin update needs no second setup. Its name is `aeth` unless you name another (`/aether:setup <name>`).
+
+The permission mode is the answer you gave in the setup. `autonomous`, the default, bypasses permissions (`bypassPermissions`), so neither the Lead nor the swarm's agents stop at a permission prompt; `auto` is Claude Code's auto mode; `ask` is the manual mode, where every tool asks. The command passes the mode to the launcher in `AETHER_PERMISSION_MODE`, and a value your shell sets wins, so `AETHER_PERMISSION_MODE=auto aeth` changes one session. The launcher starts with `--permission-mode bypassPermissions` unless `AETHER_PERMISSION_MODE` says otherwise.
+
+With no prompts, aether-guard is the only check left on a push, a `gh pr merge` or a forced delete, so the launcher sets `AETHER_IRREVERSIBLE=enforce`: the guard refuses an irreversible command that no grant covers, instead of only recording it. A value already set in your shell is kept, so `AETHER_IRREVERSIBLE=log aether-lead` (or `AETHER_IRREVERSIBLE=log aeth`) only records them. The launcher is one `exec claude` after those defaults, with no setup of its own, so it is the same in bash, fish and zsh.
+
+What the setup's command will and will not do:
+- It never replaces a file that is not its own. When the name is already a file in that directory, or a command on your `PATH`, it writes nothing and asks for another name; `aether-first-setup --name <name>` does the same from a shell. A name is letters, digits, `.`, `_` and `-`, at most 64 characters, and not `claude`, because the launcher runs `claude` and a command of that name would call itself.
+- It replaces its own command, so running it again refreshes it, and it still recognizes the command of an earlier version as its own.
+- It edits no shell file. When its folder is not on your `PATH`, it prints the line to add for bash, zsh and fish, and you add it. It reads the `PATH` of the session that runs it, which may differ from your terminal's, so open a new terminal after the setup and type the command; if it is not found there, add the line. `aether-first-setup --check` says what it would do and writes nothing.
+
+Without the short command, Aether mode is chosen per session with the long form:
 
 ```
 claude --agent aether:lead --effort xhigh
 ```
 
-The Lead is the agent `aether:lead`, which starts on Sonnet; the owner may switch with `/model`. `--effort xhigh` sets its effort, because a plugin cannot. The command passes it on every start, so the Lead does not depend on the settings file. The command is the same in every shell.
+The Lead is the agent `aether:lead`, which starts on Sonnet; the owner may switch with `/model`. `--effort xhigh` sets its effort, because a plugin cannot. The command passes it on every start, so the Lead does not depend on the settings file. It is the same in every shell, and it uses your usual Claude Code permission settings.
 
-To type less, the plugin ships a launcher that runs the command of Install, with superpowers turned off for the session, and passes on every argument. It also starts the session with `--permission-mode bypassPermissions`, so neither the Lead nor the swarm's agents stop at a permission prompt. With no prompts, aether-guard is the only check left on a push, a `gh pr merge` or a forced delete, so the launcher sets `AETHER_IRREVERSIBLE=enforce`: the guard refuses an irreversible command that no grant covers, instead of only recording it. A value already set in your shell is kept, so `AETHER_IRREVERSIBLE=log aether-lead` (or `AETHER_IRREVERSIBLE=log aeth`, below) only records them. For a session that asks before each tool call, run the command of Install instead. The launcher is one `exec claude` after that default, with no setup of its own, so it is the same in bash, fish and zsh.
-
-To get it as a command, run `/aether:first-setup` once after installing the plugin. It runs `aether-first-setup`, which puts a small command, `aeth` unless you name another (`/aether:first-setup <name>`), in `~/.local/bin`. That command runs the launcher of the newest installed release each time, so a plugin update needs no second setup. Then `aeth` starts Aether mode, `aeth --resume` resumes a session and `aeth -p "<task>"` runs one task. What it will and will not do:
-- It never replaces a file that is not its own. When the name is already a file in that directory, or a command on your `PATH`, it writes nothing and asks for another name; `aether-first-setup --name <name>` does the same from a shell. A name is letters, digits, `.`, `_` and `-`, at most 64 characters, and not `claude`, because the launcher runs `claude` and a command of that name would call itself.
-- It replaces its own command, so running it again refreshes it.
-- It edits no shell file. When `~/.local/bin` is not on your `PATH`, it prints the line to add for bash, zsh and fish, and you add it. It reads the `PATH` of the session that runs it, which may differ from your terminal's, so open a new terminal after the setup and type the command; if it is not found there, add the line. `aether-first-setup --check` says what it would do and writes nothing.
-
-In a clone of this repository, `scripts/aether-lead` is the same launcher. Link it once under any name on your `PATH`, and the link keeps working because the script finds the launcher from its own resolved path:
+In a clone of this repository, `scripts/aether-lead` is the same launcher as `aeth`. Link it once under any name on your `PATH`, and the link keeps working because the script finds the launcher from its own resolved path:
 
 ```
 ln -s "$PWD/scripts/aether-lead" ~/.local/bin/aether-lead
@@ -146,9 +109,13 @@ Plain `claude` then starts Aether mode there, and `claude --agent claude` starts
 
 Plain `claude` stays normal mode: the plugin is dormant there. Its hooks do nothing, its usage meter records nothing, and its agents are not offered.
 
+### The welcome line
+
+When `aeth` opens the Lead, Claude Code shows one line, once, as the session starts: «Aether 0.30.0 · Lead ready · tell me what you want, or type /aether:help to see what I can do». The number is the installed version, and the line comes in Spanish when your locale is Spanish. `/aether:help` lists what Aether adds, by what you want to do.
+
 ### The theme
 
-The plugin ships a color theme, Aether (`plugins/aether/themes/aether.json`): the violet of Claude Aether in place of Claude's orange, a deep indigo for the messages, and a color for each permission mode and for each of the eight subagent colors. The command of Install and the launcher select it in the session's `--settings`, so it applies while that session runs and is never written to your settings files. A plain `claude` session keeps your own theme.
+The plugin ships a color theme, Aether (`plugins/aether/themes/aether.json`): the violet of Claude Aether in place of Claude's orange, a deep indigo for the messages, and a color for each permission mode and for each of the eight subagent colors. The launcher selects it in the session's `--settings`, as does the superpowers command of Install, so it applies while that session runs and is never written to your settings files. A plain `claude` session keeps your own theme.
 
 To have it in a repository where Aether mode is the default, add `"theme": "custom:aether:aether"` to the same `.claude/settings.local.json`. The `/theme` picker lists it as Aether, from aether; choosing it there sets it for every session of that account, which is what a session-only start avoids. The theme needs a terminal with true color. The syntax colors of code blocks and diffs are Claude Code's own and do not change with it.
 
@@ -205,7 +172,7 @@ Irreversible actions, such as a push, a merge to `main`, a publish or a deploy, 
 
 The dollar figure of a run covers the swarm, the calls on other harnesses and the external seats; the Lead's own turns are not added up, so the time ceiling is the real guard.
 
-A permission prompt of Claude Code stops a run like a question: the session waits at it. Start a session meant for a run with a permission mode or allow rules that cover its tools, or with the launcher, which bypasses permissions and refuses irreversible commands that no grant covers (see [Start](#start)). The plugin itself never turns permissions off.
+A permission prompt of Claude Code stops a run like a question: the session waits at it. Start a session meant for a run with a permission mode or allow rules that cover its tools, or with `aeth`, which by default bypasses permissions and refuses irreversible commands that no grant covers (see [Start](#start)). The plugin itself never turns permissions off.
 
 The full contract, with the grants and the guard, is in [Autonomy](guide/autonomy.md#autonomy).
 
@@ -237,10 +204,10 @@ What to answer:
 
 ## When something fails
 
-The most common ones, each with its remedy. The full list is in [Troubleshooting](guide/troubleshooting.md).
+Run `/aether:doctor` first. It checks what Aether needs, changes nothing and gives the exact fix of each problem it finds. The most common ones, each with its remedy, follow; the full list is in [Troubleshooting](guide/troubleshooting.md).
 
 - **The design or the swarm does not start, and the session has no `Workflow` tool.** `/aether:design` and the swarm are dynamic workflows, and workflows are off. Turn on Dynamic workflows in `/config` and start a new session. The Lead tells you this and does not design by hand. If you already have an approved plan, the Lead can build it task by task, each as a delegate task.
-- **The session stops and waits, and nothing is running.** A permission prompt of Claude Code is waiting for you, and a run waits at it like at a question. Answer it, and start the next session with a permission mode or allow rules that cover the tools, or with the launcher (see [Start](#start)).
+- **The session stops and waits, and nothing is running.** A permission prompt of Claude Code is waiting for you, and a run waits at it like at a question. Answer it, and start the next session with a permission mode or allow rules that cover the tools, or with `aeth` (see [Start](#start)).
 - **A command was refused, or it is on your list.** With `AETHER_IRREVERSIBLE=enforce`, aether-guard refuses a `git push`, a `gh pr merge`, a publish, a deploy, a forced delete or a credentials command that no grant covers, and appends it to `.aether/pending.jsonl`. It reaches you in the brief's «Espera tu sí»; answer it there. With `AETHER_IRREVERSIBLE=log` the command ran and was only recorded. A local `git merge` is not recorded either way: git undoes it, and the push that would publish it is recorded.
 - **`aether-plan check` prints `"ok":false`.** Its `errors` name the task and the rule: a missing `**Aether:**` block, a missing `## Aether Execution` section or `Test command`, or two tasks that run at the same time and own the same file. Fix what it names, and run it again.
-- **Nothing happens that looks like Aether.** The session was started with plain `claude`, where the plugin is dormant: its hooks do nothing and its agents are not offered. Start it with `claude --agent aether:lead --effort xhigh`, or with the launcher (see [Start](#start)).
+- **Nothing happens that looks like Aether.** The session was started with plain `claude`, where the plugin is dormant: its hooks do nothing and its agents are not offered. Start it with `aeth`, or with `claude --agent aether:lead --effort xhigh` (see [Start](#start)).

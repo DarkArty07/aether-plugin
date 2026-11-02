@@ -83,7 +83,7 @@ img.px[data-src]{display:none!important}
         <a class="btn btn-line" href="https://github.com/DarkArty07/aether-plugin" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
       </div>
       <ul class="chips" aria-label="Versión y licencia">
-        <li>v0.23.0</li><li>MIT</li><li>Claude Code 2.1.294+</li>
+        <li>v0.30.0</li><li>MIT</li><li>Claude Code 2.1.294+</li>
       </ul>
     </div>
 
@@ -374,16 +374,17 @@ img.px[data-src]{display:none!important}
         <div class="win reveal" id="instwin">
           <div class="win-title"><span>INSTALL.EXE</span><i class="boxes" aria-hidden="true"><b></b><b></b><b></b></i></div>
           <div class="win-body inst-body">
-            <pre class="typed typed-inst"><span class="t-ghost" aria-hidden="true"><span class="p">$</span> claude plugin install aether --marketplace DarkArty07/aether-plugin</span><span class="t-live" id="inst-live"></span></pre>
+            <pre class="typed typed-inst"><span class="t-ghost" aria-hidden="true"><span class="p">$</span> claude plugin install aether --marketplace DarkArty07/aether-plugin &amp;&amp; claude "/aether:setup"</span><span class="t-live" id="inst-live"></span></pre>
           </div>
           <div class="win-bar"><span data-i18n="inst.bar">CLAUDE PLUGIN INSTALL</span><span class="bar-btns"><button type="button" class="b-yes" id="copybtn" data-i18n="copy">COPY</button></span></div>
         </div>
         <p class="note note-sm reveal" id="copymsg" aria-live="polite"></p>
 
         <ol class="start reveal">
-          <li><span class="num">#1</span><div><h3 data-i18n="st1.h">Instala</h3><p class="mean" data-i18n-html="st1.t">Se hace una vez. Añade <code>--config superdelegation=true</code> para activar la superdelegación.</p></div></li>
-          <li><span class="num">#2</span><div><h3 data-i18n="st2.h">Elige el modo Aether</h3><p class="mean" data-i18n-html="st2.t">El modo se elige en cada sesión: lanzas el agente <code>aether:lead</code>, que empieza en Sonnet, y <code>--effort xhigh</code> fija su esfuerzo.</p><pre class="code"><code>claude --agent aether:lead --effort xhigh</code></pre></div></li>
-          <li><span class="num">#3</span><div><h3 data-i18n="st3.h">Dile al Lead lo que quieres</h3><p class="mean" data-i18n-html="st3.t">El Lead confirma lo que entendió, escribe la tarjeta de intención y lanza el diseño. Tú revisas el brief.</p></div></li>
+          <li><span class="num">#1</span><div><h3 data-i18n="st1.h">Pega una línea</h3><p class="mean" data-i18n-html="st1.t">Instala el plugin y abre Claude Code con <code>/aether:setup</code>. Se hace una vez.</p></div></li>
+          <li><span class="num">#2</span><div><h3 data-i18n="st2.h">Contesta dos preguntas</h3><p class="mean" data-i18n-html="st2.t">Cómo empieza Aether (autónomo por defecto) y si mandas trabajo a tus otros harnesses, la superdelegación. Después cierra la terminal.</p></div></li>
+          <li><span class="num">#3</span><div><h3 data-i18n="st3.h">Escribe aeth</h3><p class="mean" data-i18n-html="st3.t">En una terminal nueva, en la carpeta de tu proyecto. Los días siguientes, solo este paso.</p><pre class="code"><code>aeth</code></pre></div></li>
+          <li><span class="num">#4</span><div><h3 data-i18n="st4.h">Dile al Lead lo que quieres</h3><p class="mean" data-i18n-html="st4.t">El Lead confirma lo que entendió, escribe la tarjeta de intención y lanza el diseño. Tú revisas el brief.</p></div></li>
         </ol>
         <p class="req reveal" data-i18n-html="inst.req">REQUISITOS · Claude Code 2.1.294 o posterior · Node.js 22 · git 2.36 o posterior · para la superdelegación, el CLI de cada harness que actives: <code>agy</code>, <code>codex</code>, <code>grok</code>, <code>cursor-agent</code> o <code>muse</code>.</p>
       </div>
@@ -409,7 +410,7 @@ img.px[data-src]{display:none!important}
 
 <footer class="foot">
   <div class="wrap foot-in">
-    <div class="foot-brand"><span class="foot-wm">AETHER</span><span class="tag">// PLUGIN · v0.23.0</span></div>
+    <div class="foot-brand"><span class="foot-wm">AETHER</span><span class="tag">// PLUGIN · v0.30.0</span></div>
     <div class="foot-copy">
     <p class="foot-t" data-i18n-html="foot.t">Los agentes implementador, supervisor y revisor adaptan plantillas de superpowers; el preset de Aether adapta las plantillas de GitHub Spec Kit; varias piezas retoman ideas de oh-my-claudecode. Todo está bajo licencia MIT. El texto dentro de las ventanas es ilustrativo.</p>
     <p class="foot-indep" data-i18n="foot.indep">Aether es un proyecto independiente; no está afiliado ni respaldado por Anthropic.</p>

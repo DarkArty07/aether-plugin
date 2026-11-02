@@ -3,7 +3,8 @@
 // First setup: a small stub, `aeth` by default, that starts Aether mode with the launcher of the newest installed
 // release. The stub looks for the launcher each time it runs, so it never goes stale, and it carries a marker line,
 // which is how this module knows a file is its own: it replaces a stub and refuses anything else of the same name.
-// It writes only inside the directory it is given, and never edits a shell file.
+// It writes only inside the directory it is given, and never edits a shell file. The stub also carries the permission
+// mode the owner chose (AETHER_PERMISSION_MODE, which the launcher reads); a value the shell already set wins.
 // Family: none.
 
 const crypto = require('node:crypto')
@@ -16,10 +17,14 @@ const MARKER = '# aether-first-setup stub'
 const DEFAULT_NAME = 'aeth'
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const MAX_NAME_LENGTH = 64
+const CLAUDE_COMMAND = 'claude'
 // The launcher runs `claude`, so a stub of that name would run itself.
-const FORBIDDEN_NAME = 'claude'
+const FORBIDDEN_NAME = CLAUDE_COMMAND
 // A version directory of the plugin cache: 0.12.3, not a commit hash. The stub's glob is the same rule.
 const RELEASE_DIRECTORY = /^\d+\.\d+\.\d+/
+// The owner's word for the permission mode, and the --permission-mode value of Claude Code that the launcher gets.
+const PERMISSIONS = { autonomous: 'bypassPermissions', auto: 'auto', ask: 'manual' }
+const DEFAULT_PERMISSIONS = 'autonomous'
 const EXIT_USAGE = 2
 const EXIT_TAKEN = 3
 const STUB_MODE = 0o755
@@ -40,8 +45,12 @@ const usageError = (message) => new SetupError(message, EXIT_USAGE)
 // highest version by `sort -V` and runs it with every argument. The glob is the plugin cache's layout:
 // <config dir>/plugins/cache/<marketplace>/aether/<version>/launcher/aether-lead, and only a version directory shaped
 // like 0.12.3 counts, so the hash of a commit never wins. A launcher counts if it is a file that can be run.
-// newestLauncher below is the same rule in JavaScript, and the two have to change together.
-function stubText() {
+// newestLauncher below is the same rule in JavaScript, and the two have to change together. Before it runs the launcher
+// the stub sets AETHER_PERMISSION_MODE to the chosen mode, unless the shell already set one. The marker line does not
+// change with the permission lines, so a stub of an earlier version is still its own and is replaced in place.
+function stubText(permissionMode = PERMISSIONS[DEFAULT_PERMISSIONS]) {
+  // The mode goes into a shell line: only one of the known values may.
+  if (!Object.values(PERMISSIONS).includes(permissionMode)) throw new Error(`unknown permission mode ${JSON.stringify(permissionMode)}`)
   return `#!/bin/sh
 ${MARKER}
 # Starts Aether mode with the launcher of the newest installed release. aether-first-setup wrote it and replaces it when
@@ -58,6 +67,8 @@ if [ -z "$newest" ]; then
   echo "\${0##*/}: no Aether release is installed; install it with: claude plugin install aether --marketplace DarkArty07/aether-plugin" >&2
   exit 1
 fi
+AETHER_PERMISSION_MODE="\${AETHER_PERMISSION_MODE:-${permissionMode}}"
+export AETHER_PERMISSION_MODE
 exec "\${newest#* }" "$@"
 `
 }
@@ -123,6 +134,15 @@ function foreignOnPath(name, env) {
   for (const entry of pathEntries(env)) {
     const candidate = path.join(entry, name)
     if (isExecutableFile(candidate) && !hasMarker(candidate)) return candidate
+  }
+  return null
+}
+
+// The first executable of that name on the PATH, stub or not, or null: the one a shell would run.
+function firstOnPath(name, env) {
+  for (const entry of pathEntries(env)) {
+    const candidate = path.join(entry, name)
+    if (isExecutableFile(candidate)) return candidate
   }
   return null
 }
@@ -195,6 +215,44 @@ function shellHint(dir) {
   ].join('\n')
 }
 
+// Whether the directory is inside the home, and not the home itself, with both resolved through links.
+function insideHome(dir, home) {
+  const [wanted, root] = [canonical(dir), canonical(home)]
+  if (wanted === root || root === path.parse(root).root) return false
+  const relative = path.relative(root, wanted)
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+}
+
+function isWritable(dir) {
+  try {
+    fs.accessSync(dir, fs.constants.W_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// The directory of the stub when --dir is not given (spec 024 R5): ~/.local/bin if the PATH has it; else the directory of
+// the first `claude` on the PATH, if it is inside the home, is not the home and can be written, so that the stub is on
+// the PATH already; else ~/.local/bin, and the result carries the line that puts it on the PATH. Never a system directory.
+function defaultDirectory(home, env) {
+  const local = path.join(home, '.local', 'bin')
+  if (isOnPath(local, env)) return local
+  const claude = firstOnPath(CLAUDE_COMMAND, env)
+  if (claude) {
+    const beside = path.dirname(claude)
+    if (insideHome(beside, home) && isWritable(beside)) return beside
+  }
+  return local
+}
+
+function permissionModeOf(permissions) {
+  if (typeof permissions !== 'string' || !Object.hasOwn(PERMISSIONS, permissions)) {
+    throw usageError(`invalid --permissions ${JSON.stringify(permissions)}: use ${Object.keys(PERMISSIONS).join(', ')}`)
+  }
+  return PERMISSIONS[permissions]
+}
+
 function validateName(name) {
   if (typeof name === 'string' && name.length > MAX_NAME_LENGTH) {
     throw usageError(`invalid name of ${name.length} characters: at most ${MAX_NAME_LENGTH}`)
@@ -256,12 +314,14 @@ function replaceOwn(file, text, name) {
 }
 
 // Installs the stub, or with `check` says what would happen and writes nothing. The result is the one JSON object of
-// the bin; with `check`, `installed` is false and `replaced` says whether an own stub would be replaced.
-function run({ name = DEFAULT_NAME, dir, check = false, env = process.env, cwd = process.cwd() } = {}) {
+// the bin; with `check`, `installed` is false and `replaced` says whether an own stub would be replaced, and
+// `permissions` and `permissionMode` say what would be written. `dir` is the directory chosen.
+function run({ name = DEFAULT_NAME, dir, permissions = DEFAULT_PERMISSIONS, check = false, env = process.env, cwd = process.cwd() } = {}) {
   validateName(name)
+  const permissionMode = permissionModeOf(permissions)
   const home = homeOf(env)
   if (dir !== undefined && (typeof dir !== 'string' || dir === '')) throw usageError('--dir needs a directory')
-  const target = path.resolve(cwd, expandHome(dir ?? path.join(home, '.local', 'bin'), home))
+  const target = path.resolve(cwd, dir === undefined ? defaultDirectory(home, env) : expandHome(dir, home))
   const stat = statOrNull(target)
   if (stat && !stat.isDirectory()) throw usageError(`--dir ${target} is not a directory`)
 
@@ -273,15 +333,18 @@ function run({ name = DEFAULT_NAME, dir, check = false, env = process.env, cwd =
 
   if (!check) {
     makeDirectory(target)
-    if (state === 'own') replaceOwn(file, stubText(), name)
-    else writeNew(file, stubText(), name)
+    if (state === 'own') replaceOwn(file, stubText(permissionMode), name)
+    else writeNew(file, stubText(permissionMode), name)
   }
   const release = newestLauncher(configDirOf(env))
   const onPath = isOnPath(target, env)
   return {
     installed: !check,
     name,
+    dir: target,
     path: file,
+    permissions,
+    permissionMode,
     launcher: release ? release.launcher : null,
     launcherVersion: release ? release.version : null,
     onPath,
@@ -290,4 +353,4 @@ function run({ name = DEFAULT_NAME, dir, check = false, env = process.env, cwd =
   }
 }
 
-module.exports = { run, usageError, SetupError, MARKER, DEFAULT_NAME, stubText, newestLauncher, compareVersions }
+module.exports = { homeOf, configDirOf, run, usageError, SetupError, MARKER, DEFAULT_NAME, PERMISSIONS, DEFAULT_PERMISSIONS, stubText, newestLauncher, compareVersions }

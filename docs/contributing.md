@@ -23,6 +23,58 @@ That loads the tree for one session, in place of the installed release; with the
 
 Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens. `scripts/refresh-lanes.js` updates the lane table from Artificial Analysis; it reads `ARTIFICIAL_ANALYSIS_API_KEY`, or else the `.env` file its header comment names.
 
+### Check the plan format
+
+When you change the plan checker, the compiler or the format of a task, check that the plan format Aether builds from still reads correctly. Save this two-task plan as `tasks.md` anywhere. It is what the Writer produces for a plan, shortened: every task has the Aether fields, and there is an `## Aether Execution` section.
+
+```
+# Tasks: Greeting and farewell
+
+## Task list
+
+### Task 1: The greeting function
+
+**Aether:**
+- Tier: haiku high — a pure function with exact tests
+- Area: greeting
+- Owns: `src/greeting.js`, `test/greeting.test.js`
+- Depends on: none
+
+Write `greet(name)` in `src/greeting.js`. It returns `Hello, <name>!`.
+
+### Task 2: The farewell function
+
+**Aether:**
+- Tier: haiku high — a pure function with exact tests
+- Area: farewell
+- Owns: `src/farewell.js`, `test/farewell.test.js`
+- Depends on: none
+
+Write `farewell(name)` in `src/farewell.js`. It returns `Goodbye, <name>!`.
+
+## Aether Execution
+
+- Test command: `npm test`
+- Ladder: haiku 2, sonnet 2, opus 1
+- Max agents: 20
+```
+
+Then run the plan checker on it. Inside a session it is on the `PATH`; outside one it is not, so use its path, as the paragraph after the output explains:
+
+```
+aether-plan check tasks.md
+```
+
+It prints one line of JSON and exits 0 when the plan is sound. For this plan it is:
+
+```
+{"ok":true,"tasks":2,"waves":[["task-1","task-2"]],"warnings":[]}
+```
+
+`waves` shows the swarm would run both tasks at the same time, because neither depends on the other and they own different files.
+
+The commands of the plugin's `bin/` folder are on the `PATH` of the Bash tool in a session that has the plugin, so inside a session you type `aether-plan check tasks.md`. In a shell outside a session they are not on the `PATH`, and you run the file by its path. In a clone of this repository that is `node plugins/aether/bin/aether-plan check tasks.md`. If you installed from GitHub, the plugin's copy is in the Claude config dir, and the path is `node ~/.claude/plugins/cache/aether-plugin/aether/<version>/bin/aether-plan check tasks.md`, where `<version>` is the one `claude plugin list` shows. If you set `CLAUDE_CONFIG_DIR`, write that folder in place of `~/.claude`. If you installed from a clone's path, the plugin loads from the clone itself, so the clone's path above is the one.
+
 ### Release
 
 1. bump `"version"` in `plugins/aether/.claude-plugin/plugin.json`, the version that `tests/launcher.test.js` pins, the `Version X.Y.Z` line of the README, and the first `Version X.Y.Z:` line of the [changelog](changelog.md); tests/docs-facts.test.js checks the last two; turn the changelog's `## Unreleased` entry into part of that new `Version X.Y.Z:` line;
