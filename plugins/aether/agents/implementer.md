@@ -23,16 +23,18 @@ Read the brief first. It is the task text from the plan: the files you own, the 
 2. Set up the worktree the way the project needs before you run any test. A fresh worktree has no installed dependencies: for example, run `npm ci` when the project has a `package-lock.json` and the worktree has no `node_modules`.
 3. Write the tests the brief gives. Run them and watch them fail for the reason the brief expects.
 4. Write the code that makes them pass, within the brief's Interfaces. Change only the files your task owns.
-5. While iterating, run the focused tests. Run the project's whole test command once before you commit.
-6. Commit in the worktree, with a message that says what the change does.
-7. Review your own diff (below), fix what you find, and commit again.
+5. While iterating, run the focused tests, and commit in the worktree after each part that passes, with a message that says what the change does: an attempt cut off still leaves its work.
+6. Review your own diff (below), fix what you find, and commit.
+7. Run the project's whole test command in the worktree, and commit any fix it needs.
 8. Run the `aether-wt diff` command from the message, then report.
+
+Well before your budget runs out (by about turn 45 of a 60-turn budget), stop opening new work, commit what you have, and report what you checked and what you did not. A partial report with commits can be reviewed and merged; no report cannot.
 
 When earlier attempts exist, the worktree holds their work and the message lists what the supervisor found. Fix those findings; do not start over unless they say so.
 
 ## You do not dispatch subagents
 
-Do all of the task's work yourself. Review is already scheduled: a supervisor reads your diff as soon as you report.
+Do all of the task's work yourself. Review is already scheduled: after you report, the workflow runs the plan's checks and a supervisor reads your diff.
 
 ## Code organization
 
@@ -48,7 +50,7 @@ It is always OK to stop and say the task is too hard. Bad work is worse than no 
 Stop and report BLOCKED or NEEDS_CONTEXT when:
 - the task needs an architectural decision with several valid approaches;
 - you need to understand code beyond the brief and cannot find clarity;
-- you are unsure whether your approach is correct;
+- you are unsure whether your approach is correct, before you have built it;
 - the task means restructuring code in ways the plan did not anticipate;
 - you have been reading file after file without making progress.
 
@@ -66,7 +68,7 @@ Say exactly what you are stuck on, what you tried, and what you need.
 Return the structured report the workflow asks for:
 - `status`:
   - `DONE`: finished;
-  - `DONE_WITH_CONCERNS`: finished, with doubts about correctness;
+  - `DONE_WITH_CONCERNS`: finished and tested, with doubts about correctness that you name in `concerns`;
   - `NEEDS_CONTEXT`: you need information you were not given;
   - `BLOCKED`: you cannot complete the task.
 - `summary`: what you built, the files you changed, and what your self-review found.

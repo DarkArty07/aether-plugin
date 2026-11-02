@@ -16,7 +16,7 @@ Never stop to ask. Where the owner's words are silent, choose a reasonable princ
 
 2. Write `.specify/memory/constitution.md` from the owner's words. Create the folders when they do not exist. The file has these parts:
    - A title with the project's name.
-   - `## Principles`: a short list of principles. Each principle is one bullet: the principle in bold, then `Rationale:` and one line of reason. Keep the existing principles unless the owner changed them.
+   - `## Principles`: a short list of principles. Each principle is one bullet: the principle in bold, then `Rationale:` and one line of reason.
    - `## Assumptions`: each thing you assumed while you wrote the file, and why.
 
 3. Commit `.specify/memory/constitution.md` with a message such as `docs: update the project constitution`.
