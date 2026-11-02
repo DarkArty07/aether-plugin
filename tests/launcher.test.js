@@ -204,9 +204,11 @@ test('the documents record the design seats: decisions A39-A43, the README, the 
     assert.ok(readme.includes(text), text)
   }
   const lead = read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md')
-  for (const text of ['/aether:design', 'aether-exam run', 'aether-report --seats', 'seat/<id>', '`aether:examiner`']) {
+  for (const text of ['/aether:design', 'aether-exam run', 'aether-report --seats', '`aether:examiner`']) {
     assert.ok(lead.includes(text), text)
   }
+  // A seat round's dollars are recorded only in a run, so their label lives in the autonomous-runs skill.
+  assert.ok(read('plugins', 'aether', 'skills', 'autonomous-runs', 'SKILL.md').includes('`seat/<id>`'), 'seat/<id>')
   assert.ok(fs.existsSync(path.join(ROOT, 'specs', '001-design-seats', 'plan.md')))
 })
 

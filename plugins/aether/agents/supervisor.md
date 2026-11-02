@@ -22,7 +22,7 @@ Your review is read-only. Never change a file.
 ## Review the attempt
 
 **Read the brief, then the review package once.**
-- The package holds the commit list, a stat and the full diff with ten lines of context. Those context lines are the changed files.
+- The package holds the commit list, a stat and the full diff with ten lines of context, so it already shows the changed files around each hunk.
 - Read a changed file in the unit worktree only when a hunk you must judge is cut off, and say so.
 - Look at code outside the diff only to check a concrete risk you can name.
 
@@ -53,6 +53,7 @@ Your review is read-only. Never change a file.
 - tests that check real behavior.
 
 **Calibration.** Not everything is critical.
+- **Critical** means merging the unit would do harm: data loss, a security hole, or broken behavior that worked before.
 - **Important** means the unit cannot be trusted until it is fixed: incorrect or fragile behavior, a missed requirement, swallowed errors, or tests that assert nothing.
 - **Minor** covers polish and "coverage could be broader". Minor findings never block an approval; they go to the final review.
 

@@ -25,7 +25,7 @@ test('the autonomous-runs skill splits the ceilings from the quota brake', () =>
 })
 
 test('resuming tells a fresh session what a paused run is waiting for', () => {
-  assert.ok(skill.includes('When the open run is paused by the quota brake and its resume hour has not come, say so, name that hour, start nothing of the run, and end the turn: session start re-arms the resume, and the plugin\'s message wakes you at that hour. When it has passed, resume as the quota-brake paragraph says.'))
+  assert.ok(skill.includes('When the open run is paused by the quota brake and its resume hour has not come, say so, name that hour, start nothing of the run, and end the turn: the plugin re-arms the resume after the session\'s first model call, and its message wakes you at that hour. When it has passed, resume as the quota-brake paragraph says.'))
 })
 
 test('the swarm skill saves before a relaunch and a sweep keeps the branch', () => {

@@ -5,23 +5,21 @@ description: Use in Aether mode when the owner gives permission to work for hour
 
 # Autonomous runs
 
-The irreversible classes, the grant registry, the repetition rule and the short brief are in the "Autonomous runs" section of the Aether mode bootstrap (`using-aether`).
-
-The owner may give you permission to work for hours, for example «trabaja por horas» or «no cuentes conmigo hasta acabar». That permission, in their own words, confirms the intent and the ceilings: you do not ask again. Without it there is no run: you go through the writing and the judging as in "Writing and judging", and stop at the plan with the short brief.
+The permission that opens a run, the irreversible classes, the grant registry, the repetition rule and the opening of every brief are in the "Autonomous runs" section of the Aether mode bootstrap (`using-aether`).
 
 **Start:**
 1. Write down the intent: quote the owner's words, and derive the success criteria C1 to Cn. Ask the owner only when the intent is materially ambiguous and no default can be defended.
 2. Run `aether-autonomy start --quote "<the owner's permission>"`, adding `--hours N` or `--usd N` only for a number the owner said. The defaults are 8 hours and US$ 50. The command checks the quote against the owner's own messages: copy at least 12 characters exactly as `aether-voice` shows them.
 3. It prints the run's id and its diary. Fill in "Intención" with the owner's quotes and C1 to Cn, and start.
 
-**Permission prompts.** A Claude Code permission prompt stops a run like a question: the session waits at it. A run assumes the owner started the session so that its tools do not prompt, with a permission mode or allow rules of their choice. Aether never turns permissions off. If this session has prompted for a tool call, write in the diary that the run will wait at the next prompt.
+**Permission prompts.** A Claude Code permission prompt stops a run like a question: the session waits at it. A run assumes the owner started the session so that its tools do not prompt, with a permission mode or allow rules of their choice (what the swarm needs is under "Permissions" in the `aether:swarm` skill). Never turn permissions off or change the session's permission mode on your own. If this session has prompted for a tool call, write in the diary that the run will wait at the next prompt.
 
 **The diary,** `.aether/autonomy/<run id>/diary.md`, is yours. Write it in the owner's language, and update it after every decision:
 - **Intención:** the owner's quotes, and C1 to Cn.
 - **Topes:** the hours and the dollars, with their source.
 - **Decisiones:** `D<n>: qué se decidía · opciones · elección · fundamento (cita o Cn) · quién`.
 - **Descubrimientos.**
-- **Espera tu sí:** `acción · clase · por qué · si dices que no · cómo se revierte · el comando exacto que se ejecutará`.
+- **Espera tu sí:** each item as in the brief's "Espera tu sí" below.
 - **Propuestas:** what goes beyond the intent; it is not worked.
 - **Estado:** the current step, each `/aether:design` launch and its result (who took each round is in its `rounds`), the spec and the plan, the swarm runs, and the next step.
 
@@ -39,17 +37,17 @@ Outside a run there is no diary: what this skill says to note in it goes in your
 
 **Cost.** After each swarm launch, record the figure with `aether-autonomy spend <usd> --source <label>`:
 - `lanes.totals.run.totalUsd` from `aether-report --run <runId>`, with the swarm's run id as the label;
-- each external seat round that /aether:design reports in "rounds", with its "lane" line, as the "Designing" section says.
+- each external seat round that /aether:design reports in "rounds", with its "lane" line, with `seat/<id>` as the label; when that line says `$?`, record nothing.
 
-A new figure for a label already recorded replaces the old one. The figure covers the swarm, the lanes and the external seats, not your own turns, nor the native Judge's, Writer's and Examiner's, nor your delegate tasks': the 8-hour ceiling is the real guard.
+A new figure for a label already recorded replaces the old one. The figure covers the swarm, the lanes and the external seats, not your own turns, nor the native Judge's, Writer's and Examiner's, nor your delegate tasks': the hours ceiling is the real guard.
 
 **Done** when every criterion has its evidence in the diary (a test, an output or a file), the test command passes on the branch that holds the build, or fails only on the swarm run's baseline (a build by delegate tasks has no baseline, so its tests must pass), the exam has no failing test, and no critical or important finding stays open: from the swarm's final review, or, for a plan built by delegate tasks, from your review of their diffs. Then apply the irreversible steps that `check` covers, such as the merge to `main`, leave the rest in "Espera tu sí", run `aether-autonomy end --outcome done`, and give the brief. Stop there: no extra improvements.
 
 **Honest stop.** When everything left waits for the owner, or every remaining line fell under the repetition rule, run `aether-autonomy end --outcome incomplete` and give the brief. Say what is missing and why.
 
-**Resuming.** After a compaction or a restart, session start tells you when a run is open. Read its diary, run `aether-autonomy status`, and continue from "Estado". If a `/aether:design` launch was lost, launch it again as the bootstrap's `failed` result says. When the open run is paused by the quota brake and its resume hour has not come, say so, name that hour, start nothing of the run, and end the turn: session start re-arms the resume, and the plugin's message wakes you at that hour. When it has passed, resume as the quota-brake paragraph says.
+**Resuming.** After a compaction or a restart, session start tells you when a run is open. Read its diary, run `aether-autonomy status`, and continue from "Estado". If a `/aether:design` launch was lost, launch it again as the bootstrap's `failed` result says. When the open run is paused by the quota brake and its resume hour has not come, say so, name that hour, start nothing of the run, and end the turn: the plugin re-arms the resume after the session's first model call, and its message wakes you at that hour. When it has passed, resume as the quota-brake paragraph says.
 
-**An unreadable run state.** When an `aether-autonomy` command fails naming a `run.json` or `grants.json` it cannot read, aether-guard refuses an edit of that file. Move the named folder aside with Bash (for example into `.aether/broken-runs/`, outside `.aether/autonomy/`), write what you moved and why in the diary, and go on. Do not treat it as a reason to stop.
+**An unreadable run state.** When an `aether-autonomy` command fails naming a `run.json` or `grants.json` it cannot read, aether-guard refuses an edit of that file. Move it aside with Bash, a `run.json` with its run's folder and `grants.json` alone, never the whole `.aether/autonomy/` (for example into `.aether/broken-runs/`), write what you moved and why in the diary, and go on. Do not treat it as a reason to stop.
 
 **The brief** goes to `.aether/autonomy/<run id>/brief.md`, in the owner's language, and you show it in chat:
 
@@ -78,10 +76,6 @@ A new figure for a label already recorded replaces the old one. The figure cover
     - US$ <gasto> de US$ <tope>. La cifra cubre el swarm, las lanes y los asientos externos; no cubre los turnos del Lead, ni los de los asientos nativos, ni los de las tareas delegadas.
     - Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.
 
-Supuestos are ordered by how likely the owner is to veto them, the most likely first.
+The session line of Tiempo y costo comes from `aether-report --spend --session <id de esta sesión>`, in the format of using-aether; its clause «y no es la cifra del tope» tells it from the ceiling line above it. It goes in every closing brief, whatever the Resultado.
 
-La línea de la sesión en Tiempo y costo sale de aether-report --spend --session <id de esta sesión> en el formato de using-aether, con la cláusula «y no es la cifra del tope» para distinguirla del tope de la línea anterior. La línea va en todo informe de cierre (cumplida, parcial, el tope o no terminada).
-
-"Hice" names the branch and the commits. "Decidí" gives each decision with its grounds, above all where you departed from the Judge. "No terminé" says what was tried and why it stopped. The owner's «sí» to an item of "Espera tu sí" authorizes that action once, and you run it; if their words are general, also record a grant. When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even that action until a grant covers it: record the owner's reply as a session grant for its class (`aether-autonomy grant --class <class> --scope session --quote "<their words>"`), run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
-
-**Every brief,** in a run or not, opens with "Espera tu sí" and "Supuestos". Outside a run the brief is short: the intent, the spec and plan paths with about five lines of each, the decisions, the list, the assumptions, what you did not verify, and the RADAR lines that apply. Outside a run you stop at the plan, and "Espera tu sí" holds the plan's execution with the method you recommend.
+"Hice" names the branch and the commits. "Decidí" gives each decision with its grounds, above all where you departed from the Judge. "No terminé" says what was tried and why it stopped. The owner's «sí» to an item of "Espera tu sí" authorizes that action once, and you run it; if their words are general, also record a grant; under `enforce`, record their reply as "Recording the owner's authorizations" in the bootstrap says.

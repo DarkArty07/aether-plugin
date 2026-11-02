@@ -33,10 +33,10 @@ The input is the intent card, `intent.md`, in the feature folder: the owner's ow
      - `Intent:` the intent, quoted as the owner confirmed it, or a pointer to `intent.md` when the card is the input.
    - `## Criteria`: the owner's success criteria, C1 to Cn. Take them from the confirmed intent and the owner's own words. Each criterion quotes the owner's words from the card that it comes from. For each one, name the evidence that will prove it. For example: `- C1: A user can log in with a valid password. «I want to log in.» Evidence: a test logs in and sees the account page.`
    - `## User scenarios`: acceptance scenarios, each one as Given, When and Then.
-   - `## Requirements`: one line per requirement, numbered R1 to Rn. Each requirement is testable. End it with the criteria it serves, such as `Serves: C2`. A requirement that serves no criterion goes to `## Proposals` instead.
+   - `## Requirements`: one list item per requirement, `- R1:` to `- Rn:`, the form `aether-plan check` reads to trace tasks to requirements. Each requirement is testable. End it with the criteria it serves, such as `Serves: C2`. A requirement that serves no criterion goes to `## Proposals` instead.
    - `## Proposals`: the requirements that serve no criterion. They are not built. Write "None." when there are none.
-   - `## Assumptions`: each default you chose where the intent is silent, as a reversible default. Give its basis, and say that the owner can reverse it. A choice that is hard to reverse, surprising, or a real trade-off is not a default: mark it `[NEEDS CLARIFICATION: <question>]` instead.
-   - `## Irreversible actions`: each action the work will need that cannot be undone, such as a merge to main, a push, a publication, a deployment, deleting data, using credentials or a paid call. For each one, give its class and the exact command. Write "None." when there are none.
+   - `## Assumptions`: each reversible default you chose where the intent is silent, with its basis, and that the owner can reverse it.
+   - `## Irreversible actions`: each action the work will need that cannot be undone, such as a merge to main, a push, a publication, a deployment, deleting data, using credentials or a paid call. For each one, give its class (`merge-main`, `push`, `publish`, `deploy`, `delete`, `credentials` or `paid-call`) and the exact command. Write "None." when there are none.
    - `## Out of scope`: what the work will not do.
 
    Criteria and requirements say what and why, never how. The evidence of a criterion may say how the result is checked. A tool or a test suite that does not exist yet is a requirement of its own, and it serves a criterion that comes from the owner's words.
