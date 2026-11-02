@@ -50,4 +50,3 @@
 ## Propuestas
 
 - El aviso de versión nueva al arrancar el Lead, una vez al día, con un `git ls-remote` acotado y una opción para apagarlo.
-- Probar `effort: xhigh` en el frontmatter de `aether:lead`, para que `claude --agent aether:lead` baste sin `--effort`.
