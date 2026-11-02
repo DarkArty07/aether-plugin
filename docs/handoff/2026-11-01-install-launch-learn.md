@@ -3,7 +3,7 @@
 - **Date:** 2026-11-01. It follows the handoff of the table of models on one scale (versions 0.28.0 and 0.29.0), which it carries forward at the end.
 - **From:** the Lead, Claude Code. Task T17 drafted this file on Haiku; the Lead reviewed and completed it (T20).
 - **To:** the owner, and the next session.
-- **Repository state:** version 0.30.0 is on the branch `ccr-763bff04-p62mfq`, pushed to `origin`, in four commits from `ec2faf6`. It is **not merged to `main`, not tagged and not released**. The owner merges it, then tags it with `claude plugin tag plugins/aether` on `main`, as in the earlier releases.
+- **Repository state:** version 0.30.0 was released on 2026-11-02 on the owner's word («Necesito lelvarlo a main cambiar la version publicar y lo que haces normalemtne en cada brief»): `npm run check` passed (2,616 tests, the mod's tests, `claude plugin validate --strict` on the plugin and on the marketplace), PR #138 was merged to `main` with a merge commit (`271e954`; the earlier releases 0.28.0 and 0.29.0 were squashes, and this one keeps the six commits of the branch), the tag `aether--v0.30.0` was created and pushed. The owner's installed plugin is **not updated yet**: it waits for the owner's word (`claude plugin update aether@aether-plugin`). The branch `ccr-763bff04-p62mfq` is still on `origin`.
 
 ## 1. What was asked
 
@@ -41,7 +41,7 @@ No subagent of the release ran on Opus. Before the owner's rule, while the relea
 ## 5. What is open
 
 - **For the owner (T21):** the four steps in an interactive session on their own machine: the line; the answers to `/aether:setup`; closing the terminal; `aeth` in a new terminal in a project; one request to the Lead; `/aether:doctor` in that session; the welcome line; and the permission mode chosen. The container could not answer the folder-trust prompt, so the interactive run is the owner's.
-- **Then the owner's word:** merge `ccr-763bff04-p62mfq` to `main` (a squash, as in 0.28.0 and 0.29.0); tag with `claude plugin tag plugins/aether` on `main`; then `claude plugin update aether@aether-plugin`.
+- **Then the owner's word:** the merge and the tag are done (see the repository state above); what is left is `claude plugin update aether@aether-plugin` on the owner's machine, and then T21.
 - **Proposals (spec 024, «Propuestas»), not built:** (1) a notice of a new version at the start of a Lead session, once a day, with a bounded `git ls-remote` and an option to turn it off; it needs the network, so it is not in 0.30.0. (2) An icon for the plugin, the one warning of `claude plugin validate`. Not a proposal: `effort: xhigh` in the front matter of `aether:lead` does not reach the main session (F3 of the research page), so `--effort xhigh` stays in the launcher.
 - **Where the findings live:** [the research page](../claude-code-research.md#install-launch-and-learn-findings-2026-10-31) has what was measured and what was read in the documentation (I1 to I12), and what oh-my-claudecode and ECC do. Two things are still unconfirmed and are task T21: `claude "/aether:setup"` in an interactive session, and the welcome line showing in the terminal.
 
