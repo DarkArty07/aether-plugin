@@ -27,6 +27,7 @@ export const FAULT_SOURCES = [
   'register.on-agent-offer',
   'register.on-tool-call',
   'register.on-agent-spawn',
+  'register.on-tool-describe',
   'register.ops-run',
   'delegate.step',
   'delegate.answer',
