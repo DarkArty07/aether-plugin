@@ -71,7 +71,7 @@ test('a five-hour crossing warns once, records the pause and wakes the Lead afte
     ['node', expect.stringContaining('/bin/aether-autonomy'), 'brake-crossing', '--kind', 'five_hour', '--percent', '96.5', '--resets-at', RESET, '--threshold', '95', '--notify', 'sent', '--session', 's1'],
   ])
   expect(s.prompts.map((p) => p.text)).toEqual([
-    `Aether quota brake: the five_hour window is at 96.5% (threshold 95%) and resets at ${RESET}. Autonomous run ${RUN} is now paused by the quota brake until ${RESUME}. Stop every running workflow, delegate task and lane call of this run now (TaskStop, aether-lane stop), save each swarm unit with aether-wt save and record it with aether-autonomy quota-saved, and start nothing new. Do not end the run: it resumes by itself after the reset.`,
+    `Aether quota brake: the five_hour window is at 96.5% (threshold 95%) and resets at ${RESET}. Autonomous run ${RUN} is now paused by the quota brake until ${RESUME}. Stop every running workflow, delegate task and lane call of this run now (TaskStop, aether-lane stop), save each swarm run in flight with aether-wt save <run> and record it with aether-autonomy quota-saved --from <the saved.json it printed>, and start nothing new. Do not end the run: it resumes by itself after the reset.`,
   ])
   expect(s.prompts.every((p) => p.asUser === undefined)).toBe(true)
   // The same reading, and one just under the threshold after it: no second warning, no second recording.

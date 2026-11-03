@@ -70,6 +70,25 @@ test('the correction receives the earlier work: the patch path of its last resul
   assert.ok(again.args.prompt.includes(`git apply ${patch}`), 'the brief tells a delegate on Claude to apply the patch itself (issue 88)')
 })
 
+test('the brief of an editing external pair leaves the patch and the findings to the lane command, which carries both; the rescue on Claude keeps them (issue 142)', async (t) => {
+  const { deps, dataDir } = world(t, { settings: EXTERNAL, pick: GROK })
+  const more = 'AETHER-OWNS: src/**\n'
+  await task.begin(call(BRIEF('t1', more)), deps)
+  const patch = path.join(dataDir, 'delegates', 'patches', 't1-1.patch')
+  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: GROK, patch, answer: null, checks: { ok: true } })
+  await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING], reason: 'keep the API' }, deps)
+  const again = await task.begin(call(BRIEF('t1', more)), deps)
+  const file = JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'external', 't1.json'), 'utf8'))
+  assert.deepEqual([file.carry, file.findings], [true, [FINDING]], 'the lane command gets the patch (--carry) and the findings (--findings)')
+  const brief = fs.readFileSync(file.brief, 'utf8')
+  assert.equal(brief, file.task.prompt)
+  assert.equal(brief.includes('git apply'), false, 'the lane applies the patch before the pair starts: the brief does not ask for it again')
+  assert.equal(brief.includes(patch), false, 'the patch lives outside the worktree the pair is limited to')
+  assert.equal(brief.includes('## Findings to fix'), false, 'the lane adds the findings: they appear once')
+  assert.ok(brief.includes('## Reason\n\nkeep the API'), 'what the lane does not carry stays in the brief')
+  assert.ok(again.args.prompt.includes(`git apply ${patch}`) && again.args.prompt.includes(FINDING), 'the rescue on Claude applies the patch itself and reads the findings (issue 88)')
+})
+
 test('five corrections of Haiku, and the sixth failure rises to Sonnet with the work and the findings (C3, E5)', async (t) => {
   const { deps } = world(t)
   await task.begin(call(BRIEF('t1')), deps)

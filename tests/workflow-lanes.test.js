@@ -121,7 +121,13 @@ test('with a pair for every call, the implementer, the supervisor and the final 
   assert.equal(implement.payload.path, path.join(args.runDir, 'lanes', 'task-1-1-implement', 'prompt.md'))
   assert.match(implement.payload.text, /^You are implementing task-1: Task 1 title\.\n/)
   assert.ok(implement.payload.text.includes('\nBrief: .aether-tmp/brief.md\n'))
-  assert.ok(implement.payload.text.includes('4. Commit your work in the worktree as you go: a commit after each part that passes, so an attempt cut off still leaves its work. Do not run aether-wt: the harness packages your diff and reads your head from git.'))
+  // The message gives the lane's data; how to commit is implementer.md's, and what the harness does in place of the
+  // aether-wt steps is the lane note's (aether-lane.test.js pins both), so the message repeats neither.
+  assert.ok(implement.payload.text.includes(`\n## Workspace\n- Unit worktree: the current directory, on branch aether/${args.runId}/task-1.\n- Test command: \``))
+  assert.equal(implement.payload.text.includes('Commit your work'), false)
+  const body = require('node:fs').readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'agents', 'implementer.md'), 'utf8')
+  assert.ok(body.includes('commit in the worktree after each part that passes'), 'the rule the message carried (issue 003) is in the body')
+  assert.equal(implement.payload.text.includes('aether-wt'), false)
   assert.equal(implement.payload.text.includes('aether-wt ensure'), false)
   assert.equal(run.calls.find((c) => c.kind === 'ops:lane-wait').label, 'task-1: implement via agy gemini-3.8-flash on haiku high (attempt 1): wait 1')
   assert.deepEqual([supervise.lane.call, supervise.lane.role, supervise.lane.task, supervise.lane.model, supervise.lane.effort], [
@@ -133,6 +139,9 @@ test('with a pair for every call, the implementer, the supervisor and the final 
   ])
   assert.equal(supervise.label, 'task-1: supervise via agy claude-sonnet-5-5 (attempt 1): start')
   assert.ok(supervise.payload.text.includes('\nReview package: .aether-tmp/package.diff\n'))
+  // The messages name the pair that ran, not only the ladder's rung.
+  assert.match(implement.payload.text, /, attempt 1, on agy gemini-3\.8-flash high\.\n/)
+  assert.match(supervise.payload.text, /Attempt 1 ran on agy gemini-3\.8-flash-high \(rung haiku high\)\./)
   assert.ok(supervise.payload.text.includes(`\nUnit worktree: the current directory, a disposable copy of branch aether/${args.runId}/task-1\n`))
   assert.deepEqual([review.lane.call, review.lane.role, review.lane.task, review.lane.model, review.lane.effort], [
     'final-review',

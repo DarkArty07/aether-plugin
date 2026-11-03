@@ -147,7 +147,12 @@ function reviewerPrompt({ implementer, tests }) {
           '```',
         ].join('\n')
   return [
-    'Review the review package `package.diff` against the brief `brief.md`: both are in the `.aether-tmp` folder of your copy. Judge the diff against what the brief asks for, and nothing else.',
+    [
+      'Review `package.diff` against `brief.md`. This is one delegate unit, not a swarm run: there is no plan, spec, other unit or deferred finding.',
+      '- Wherever your role names the plan, the spec, a criterion or an acceptance, read the brief: judge the diff against what it asks for, and nothing else.',
+      '- Skip the checks between units. Where your role says the integration worktree, read your copy of the unit\'s branch.',
+      '- `declined` lists what you set aside as outside the brief.',
+    ].join('\n'),
     reported,
     ran,
   ].join('\n\n')

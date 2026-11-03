@@ -317,6 +317,7 @@ test('a reviewing lane on Codex may read with its shell, because that is its onl
   const notes = [calls.laneNote('supervisor', 'codex'), calls.laneNote('reviewer', 'codex'), calls.unitReviewerNote('codex')]
   for (const note of notes) {
     assert.match(note, /your only tool is the shell, so use it to read/)
+    assert.match(note, /whatever your role says of a shell/, "the note overrides reviewer.md's «You have no shell» on Codex")
     assert.match(note, /do not change any file/)
     assert.doesNotMatch(note, /do not run commands/)
   }

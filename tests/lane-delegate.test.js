@@ -248,6 +248,10 @@ test('a small editing charge leaves Claude for an external pair and comes back a
   assert.notEqual(json.review.pair.id, json.pair.id, 'the reviewer is not the pair that wrote')
   assert.equal(json.review.verdict, 'ready')
   assert.equal(json.merge, `aether-wt merge ${json.id} task-1`)
+  // The reviewer's role is the final review of a swarm run: the call names the parts that do not apply to one unit.
+  const review = fs.readFileSync(path.join(repo.dir, '.aether', 'runs', json.id, 'lanes', 'task-1-review-1', 'prompt.md'), 'utf8')
+  assert.ok(review.includes('there is no plan, spec, other unit or deferred finding'), review)
+  assert.ok(review.includes('Wherever your role names the plan, the spec, a criterion or an acceptance, read the brief'))
   const merged = runBin(WT_BIN, ['merge', json.id, 'task-1'], repo.dir, env)
   assert.equal(merged.json.merged, true, merged.stdout + merged.stderr)
 })

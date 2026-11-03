@@ -6,7 +6,7 @@ export const meta = {
     { title: 'Implement', detail: "an implementer per attempt, on the unit's current ladder rung" },
     { title: 'Supervise', detail: 'a supervisor reviews each attempt and rules on it' },
     { title: 'Merge', detail: 'one merge at a time; finished units are closed' },
-    { title: 'Final review', detail: 'Opus reviews everything the run merged' },
+    { title: 'Final review', detail: 'the final review, on the model the run calls for, reads everything the run merged' },
     { title: 'Cleanup', detail: "the run's worktrees and branches are swept" },
   ],
 }
@@ -632,46 +632,51 @@ async function laneCall({ role, id, task, pair, prompt, phase, base }) {
 
 // --- prompts ---------------------------------------------------------------------------------
 
+// What an attempt ran on: the external pair that ran it, with its ladder rung, or the rung for a native one.
+function ranOn(round) {
+  return round.provider && round.provider !== 'native' ? `${round.provider} (rung ${round.tier})` : round.tier
+}
+
+// The model a pair runs, as the implementer's message names it.
+const pairLabel = (pair) => [pair.harness, pair.model, pair.effort].filter(Boolean).join(' ')
+
 function roundLines(round) {
-  const lines = [`- Attempt ${round.attempt} on ${round.tier}: ${round.status}. ${round.summary}`]
+  const lines = [`- Attempt ${round.attempt} on ${ranOn(round)}: ${round.status}. ${round.summary}`]
   if (round.split) lines.push(`  Split pass: ${round.subAttempts} sub-attempts.`)
   if (round.verdict || round.ruling) lines.push(`  Supervisor: ${round.verdict ? `${round.verdict}. ` : ''}${round.ruling}`)
   if (round.guidance) lines.push(`  The next attempt must: ${round.guidance}`)
-  for (const f of round.findings) lines.push(`  [${f.severity}] ${f.title} (${f.file}): ${f.evidence}`)
+  for (const f of round.findings) {
+    // A gate finding's title already starts with its file.
+    const where = String(f.title).startsWith(`${f.file}:`) ? '' : ` (${f.file})`
+    lines.push(`  [${f.severity}] ${f.title}${where}${f.evidence ? `: ${f.evidence}` : ''}`)
+  }
   if (round.merge) lines.push(`  Merge: ${round.merge}`)
   return lines
 }
 
-// The lane variant runs in the unit worktree the harness prepared, with the brief in .aether-tmp/.
-// `limit` is one item of a split pass (issue 14): this attempt works only that file.
-function implementerPrompt(unit, task, rung, context, { lane = false, limit = null } = {}) {
+// The message carries the data of the attempt; implementer.md holds how to work. The lane variant runs in the unit
+// worktree the harness prepared, with the brief in .aether-tmp/; its lane note (lib/lane-calls.js) says what the
+// harness does in place of the aether-wt steps. `on` is what the attempt runs on. `limit` is one item of a split pass
+// (issue 14): this attempt works only that file.
+function implementerPrompt(unit, task, on, context, { lane = false, limit = null } = {}) {
   const workspace = lane
-    ? [
-        `1. You are in your unit worktree, on branch aether/${runId}/${unit.id}. The harness created it. Work only here.`,
-        '2. Temporary files go in its .aether-tmp/ folder.',
-        `3. The project's test command is \`${testCommand}\`. Run it in the worktree before you commit.`,
-        '4. Commit your work in the worktree as you go: a commit after each part that passes, so an attempt cut off still leaves its work. Do not run aether-wt: the harness packages your diff and reads your head from git.',
-        '5. Well before your budget runs out, stop opening new work, commit what you have and file your report with what you checked and what you did not. A partial report with commits can be reviewed and merged; no report cannot.',
-      ]
+    ? [`- Unit worktree: the current directory, on branch aether/${runId}/${unit.id}.`, `- Test command: \`${testCommand}\``]
     : [
-        `1. From ${repoRoot}, run \`${wtBin} ensure ${runId} ${unit.id}\`. It prints JSON whose "path" is your unit worktree, on branch aether/${runId}/${unit.id}.`,
-        '2. Work only inside that worktree. Temporary files go in its .aether-tmp/ folder.',
-        `3. The project's test command is \`${testCommand}\`. Run it in the worktree before you commit.`,
-        '4. Commit in the worktree as you go: a commit after each part that passes, so an attempt cut off still leaves its work and a checkpoint report can name it.',
-        `5. Your budget is 60 turns. Well before it runs out — by about turn 45 — stop opening new work, commit what you have and file your report with what you checked and what you did not. A partial report with commits can be reviewed and merged; no report cannot. When you are done, run \`${wtBin} diff ${runId} ${unit.id}\` from ${repoRoot} so the supervisor can review your diff. Report the commit your branch ends on as "head".`,
+        `- Set up: from ${repoRoot}, run \`${wtBin} ensure ${runId} ${unit.id}\`. It prints JSON whose "path" is your unit worktree, on branch aether/${runId}/${unit.id}.`,
+        `- Test command: \`${testCommand}\``,
+        `- Package: when you are done, run \`${wtBin} diff ${runId} ${unit.id}\` from ${repoRoot}.`,
       ]
   const lines = [
     `You are implementing ${unit.id}: ${task.title}.`,
-    `Run ${runId}, attempt ${unit.attempts}, on ${rung}.`,
+    `Run ${runId}, attempt ${unit.attempts}, on ${on}.`,
     '',
     `Brief: ${lane ? '.aether-tmp/brief.md' : task.brief}`,
-    'Read the brief first. It holds the task text from the plan: the files you own, the interfaces, the tests to write first, and the acceptance.',
     '',
     '## Workspace',
     ...workspace,
   ]
   if (unit.rounds.length) {
-    lines.push('', '## Earlier attempts', 'The worktree keeps the work of earlier attempts. Continue from it unless the findings say otherwise.')
+    lines.push('', '## Earlier attempts')
     for (const round of unit.rounds) lines.push(...roundLines(round))
   }
   // A split pass gives each sub-attempt one item and its own report (issue 14). The one-at-a-time
@@ -683,7 +688,7 @@ function implementerPrompt(unit, task, rung, context, { lane = false, limit = nu
     lines.push(
       '',
       '## An earlier attempt ended without its report',
-      'It spent its budget reading. Do not repeat it: work the files you own one at a time. For each: make its change, run its checks, commit, and only then open the next. Note what you checked as you go, so your report is already written when you stop.',
+      'Work the files you own one at a time. For each: make its change, run its checks, commit, and only then open the next. Note what you checked as you go, so your report is already written when you stop.',
     )
   }
   if (context) lines.push('', ...context)
@@ -694,8 +699,9 @@ function implementerPrompt(unit, task, rung, context, { lane = false, limit = nu
 function supervisorPrompt(unit, task, rung, report, view, gate, opts = {}) {
   const actualGate = gate
   const lane = Boolean(opts.lane)
+  const current = unit.rounds[unit.rounds.length - 1]
   const lines = [
-    `You supervise ${unit.id}: ${task.title} (area ${task.area}), run ${runId}. Attempt ${unit.attempts} ran on ${rung}.`,
+    `You supervise ${unit.id}: ${task.title} (area ${task.area}), run ${runId}. Attempt ${unit.attempts} ran on ${current ? ranOn(current) : rung}.`,
     '',
     `Brief: ${lane ? '.aether-tmp/brief.md' : task.brief}`,
     `Review package: ${lane ? '.aether-tmp/package.diff' : `${runDir}/packages/${unit.id}.diff`}`,
@@ -715,7 +721,8 @@ function supervisorPrompt(unit, task, rung, report, view, gate, opts = {}) {
     lines.push('', '## Earlier attempts')
     for (const round of earlier) lines.push(...roundLines(round))
   }
-  const memory = rulings[task.area] || []
+  // This unit's own rulings are already in its earlier attempts.
+  const memory = (rulings[task.area] || []).filter((r) => !r.startsWith(`${unit.id} attempt `))
   if (memory.length) lines.push('', `## Earlier rulings in area ${task.area}`, ...memory.map((r) => `- ${r}`))
   if (actualGate) {
     lines.push('', '## Gate evidence')
@@ -733,12 +740,8 @@ function supervisorPrompt(unit, task, rung, report, view, gate, opts = {}) {
       }
     }
   }
-  lines.push(
-    '',
-    '## Ladder',
-    `Rung: ${view.step} ${view.effort}. Corrections used on this rung: ${view.correctionsUsed} of ${view.corrections}.`,
-    'The ladder raises the model by itself; you rule approve, retry, escalate or block.',
-  )
+  // What the ladder does with a ruling is in supervisor.md; the message gives only where the unit stands on it.
+  lines.push('', '## Ladder', `Rung: ${view.step} ${view.effort}. Corrections used on this rung: ${view.correctionsUsed} of ${view.corrections}.`)
   return lines.join('\n')
 }
 
@@ -748,22 +751,14 @@ function inIntegration(file) {
   return file.startsWith(`${root}/`) ? file.slice(root.length + 1) : file
 }
 
-// How a reviewer (and the Judge) spends a 30-turn budget on a large package (issues 011, 022):
-// the reading plan that got a verdict where free reading ran out of turns.
-const READING_PLAN = [
-  '## Reading plan (your budget is 30 turns)',
-  '- Put independent reads together in one turn: several files at once, not one per turn.',
-  '- Spend at most 20 turns reading. Verify at most six claims against the code, the riskiest first.',
-  '- Begin your answer by turn 28 at the latest, with what you have. Name anything you did not check in the summary instead of reading on: an answer that runs out of turns is no verdict at all.',
-]
-
-// The lane variant runs in a disposable copy of the integration branch, with the package in .aether-tmp/.
+// The message carries the data of the review; reviewer.md holds how to review, its reading plan included (issues 011,
+// 022). The lane variant runs in a disposable copy of the integration branch, with the package in .aether-tmp/.
 // A slice reviews only its units' part of the package (issue 022).
 function reviewerPrompt(pkg, { lane = false, slice = null } = {}) {
   const lines = [
     `Final review of run ${runId} on ${integration.branch}.`,
     '',
-    `Review package: ${lane ? '.aether-tmp/package.diff' : pkg.path} (base ${pkg.base}, head ${pkg.head}). It holds the commits, stat and diff of everything the run merged.`,
+    `Review package: ${lane ? '.aether-tmp/package.diff' : pkg.path} (base ${pkg.base}, head ${pkg.head})`,
     `Integration worktree: ${lane ? `the current directory, a disposable copy of ${integration.branch} at ${pkg.head}` : integration.worktree}`,
   ]
   if (slice) {
@@ -786,12 +781,6 @@ function reviewerPrompt(pkg, { lane = false, slice = null } = {}) {
     for (const f of u.rounds[u.rounds.length - 1].findings) if (f.severity === 'minor') minors.push(`- ${u.id}: ${f.title} (${f.file})`)
   }
   if (minors.length) lines.push('', '## Minor findings the supervisors deferred', ...minors)
-  lines.push(
-    '',
-    'Only merged units are in the diff. Review them as one change: how the units fit together, the plan and the spec, and what a reasonable person using this software would expect.',
-    '',
-    ...READING_PLAN,
-  )
   return lines.join('\n')
 }
 
@@ -1024,7 +1013,7 @@ async function implement(unit, task, model, effort, rung, context, exclude) {
       ...where,
       build: (pair, failures) => ({
         task: unit.id,
-        prompt: implementerPrompt(unit, task, rung, failureContext(context, failures), { lane: true }),
+        prompt: implementerPrompt(unit, task, pairLabel(pair), failureContext(context, failures), { lane: true }),
         base: `${unit.id}: implement via ${pair.harness} ${pair.model} on ${rung} (attempt ${n})`,
       }),
     })
@@ -1045,7 +1034,7 @@ async function implement(unit, task, model, effort, rung, context, exclude) {
     context = failureContext(context, failures)
   }
   // The label names the model and effort the agent runs on (scripts/check-effort.js reads them).
-  const report = await call('implementer', native.model, native.effort, implementerPrompt(unit, task, rung, context), {
+  const report = await call('implementer', native.model, native.effort, implementerPrompt(unit, task, `${native.model} ${native.effort}`, context), {
     phase: 'Implement',
     label: `${unit.id}: implement on ${native.model} ${native.effort} (attempt ${n})`,
     schema: IMPLEMENTER_SCHEMA,
@@ -1091,7 +1080,7 @@ async function implementSplit(unit, task, model, effort, rung, context, exclude,
         ...where,
         build: (pair, failures) => ({
           task: unit.id,
-          prompt: implementerPrompt(unit, task, rung, failureContext(context, failures), { lane: true, limit: item }),
+          prompt: implementerPrompt(unit, task, pairLabel(pair), failureContext(context, failures), { lane: true, limit: item }),
           base: baseOf(item, pair),
         }),
       })
@@ -1125,7 +1114,7 @@ async function implementSplit(unit, task, model, effort, rung, context, exclude,
         id,
         task: unit.id,
         pair: locked,
-        prompt: implementerPrompt(unit, task, rung, context, { lane: true, limit: item }),
+        prompt: implementerPrompt(unit, task, pairLabel(locked), context, { lane: true, limit: item }),
         phase: 'Implement',
         base: baseOf(item, locked),
       })
@@ -1153,7 +1142,7 @@ async function implementSplit(unit, task, model, effort, rung, context, exclude,
     provider = 'native'
     pairId = null
     family = familyOf(native)
-    const report = await call('implementer', native.model, native.effort, implementerPrompt(unit, task, rung, nativeContext, { limit: item }), {
+    const report = await call('implementer', native.model, native.effort, implementerPrompt(unit, task, `${native.model} ${native.effort}`, nativeContext, { limit: item }), {
       phase: 'Implement',
       label: `${unit.id}: implement ${item} on ${native.model} ${native.effort} (attempt ${n})`,
       schema: IMPLEMENTER_SCHEMA,
