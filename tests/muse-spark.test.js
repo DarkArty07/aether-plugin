@@ -11,6 +11,9 @@ const lanes = require('../plugins/aether/lib/lanes.js')
 const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 const { choose } = require('../plugins/aether/lib/superdelegation.js')
 
+// The launcher leaves AETHER_LANES_CONFIG pointing at a missing file; this test reads the repository's table (issue 146).
+delete process.env.AETHER_LANES_CONFIG
+
 const CONFIG = path.join(__dirname, '..', 'plugins', 'aether', 'config')
 const read = (...parts) => JSON.parse(fs.readFileSync(path.join(CONFIG, ...parts), 'utf8'))
 

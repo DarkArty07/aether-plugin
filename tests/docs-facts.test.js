@@ -596,7 +596,7 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A104 are recorded and the changelog opens with 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
+test('R15: the decisions A50 to A104 are recorded and the changelog opens with 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
   const decisions = read('docs/decisions.md')
   const LAST_DECISION = 104
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
@@ -641,7 +641,9 @@ test('R15: the decisions A50 to A104 are recorded and the changelog opens with 0
   for (const n of [18, 36, 87]) assert.ok(/Update \(A93\)/.test(line(n)), `A${n} has its update note`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
-  const versions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
+  const allVersions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
+  assert.ok(allVersions[0].startsWith('Version 0.30.2: ') && allVersions[0].includes('issue 145'), allVersions[0])
+  const versions = allVersions.slice(1)
   assert.ok(versions[0].startsWith('Version 0.30.1: ') && versions[0].includes('A104') && versions[0].includes('spec 025'), versions[0])
   assert.ok(versions[1].startsWith('Version 0.30.0: ') && versions[1].includes('A103'), versions[1])
   assert.ok(versions[2].startsWith('Version 0.29.0: ') && versions[2].includes('A102'), versions[2])
