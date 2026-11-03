@@ -5,22 +5,97 @@
 // Family: session.
 
 // SessionStart hook. It acts only for the Lead (agent_type aether:lead): any other session
-// gets no output, no file and no sweep. For the Lead it marks the session, hands the superdelegation
-// option to the session's commands through CLAUDE_ENV_FILE, and, on startup, clear and
-// compact, injects the using-aether bootstrap, points to an open autonomous run, sweeps
-// stale runs in the session's repository, and prunes old usage files, lane logs,
-// observation files and session markers (the observation digest keeps their counts first).
-// On startup only it also adds the hook's top-level systemMessage, a welcome line for the person with the
-// plugin's version and /aether:help (spec 024 R9).
+// gets no output, no file and no sweep. hooks/hooks.json runs it six times in one entry (issue #139):
+// - with no --part, the notes command marks the session, hands the superdelegation option to the session's
+//   commands through CLAUDE_ENV_FILE, and, on startup, clear and compact, prunes old usage files, lane logs,
+//   observation files and session markers (the observation digest keeps their counts first), sweeps stale runs
+//   in the session's repository and prints "Aether mode is active." with its notes (an open autonomous run, the
+//   sweep, what it could not do). On startup only it also adds the hook's top-level systemMessage, a welcome
+//   line for the person with the plugin's version and /aether:help (spec 024 R9).
+// - with --part k, on startup, clear and compact, it prints part k of the using-aether bootstrap and does
+//   nothing else; nothing when the bootstrap has fewer than k parts.
+// Claude Code delivers a hook's output whole only up to 10,000 characters and gives a longer one as a preview and
+// a file, so the bootstrap goes in parts whose whole output stays within PART_LIMIT.
 
 const fs = require('node:fs')
 const path = require('node:path')
+
+// The most characters of a part command's whole standard output, the JSON with its escapes and its newline:
+// under Claude Code's 10,000-character cut per hook output, measured in issue #139.
+const PART_LIMIT = 9800
 
 // Claude Code replaces ${CLAUDE_PLUGIN_ROOT} in a skill's content but not in a hook's additionalContext,
 // so the bootstrap gets the plugin folder's absolute path here, where the Lead can read the files it names.
 function bootstrap(root) {
   const raw = fs.readFileSync(path.join(root, 'skills', 'using-aether', 'SKILL.md'), 'utf8')
   return raw.replace(/^---\n[\s\S]*?\n---\n/, '').trim().split('${CLAUDE_PLUGIN_ROOT}').join(root)
+}
+
+// The whole standard output of a command that injects a context.
+function contextOutput(context) {
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) + '\n'
+}
+
+const partHeading = (k, n) => `Aether mode, part ${k} of ${n}.\n\n`
+
+// The offsets of text where a line starts that matches the pattern, after offset 0.
+function lineStarts(text, pattern) {
+  const starts = []
+  for (const m of text.matchAll(pattern)) if (m.index > 0) starts.push(m.index)
+  return starts
+}
+
+// Splits a text into the fewest consecutive slices whose part output (heading and slice) is at most limit
+// characters. A cut falls just before a line that starts with "## ", so a section that fits in a part is never split
+// and the blank line before a heading ends the slice before it; only a section that cannot fit in a part of its own is
+// cut at its blank lines, then at its line breaks, then anywhere. The parts are { heading, slice, context, output };
+// the slices joined give the text back, byte for byte.
+function splitParts(text, limit = PART_LIMIT) {
+  const levels = [lineStarts(text, /^## /gm), lineStarts(text, /(?<=\n\n)/g), lineStarts(text, /(?<=\n)/g)]
+  for (const cuts of levels) cuts.push(text.length)
+  const split = (n) => {
+    const fits = (from, to) => contextOutput(partHeading(n, n) + text.slice(from, to)).length <= limit
+    const slices = []
+    let from = 0
+    while (from < text.length) {
+      let to = -1
+      for (const cuts of levels) {
+        // The furthest cut of this level that still fits: the size only grows with the slice.
+        for (const cut of cuts) {
+          if (cut <= from) continue
+          if (!fits(from, cut)) break
+          to = cut
+        }
+        if (to > 0) break
+      }
+      if (to < 0) {
+        to = from + 1
+        while (to < text.length && fits(from, to + 1)) to += 1
+      }
+      slices.push(text.slice(from, to))
+      from = to
+    }
+    return slices
+  }
+  // A part's heading is longest with k = n, and its length grows with the digits of n: split again while the count
+  // has more digits than the split assumed.
+  let assumed = 1
+  let slices = split(assumed)
+  while (String(slices.length).length > String(assumed).length) {
+    assumed = slices.length
+    slices = split(assumed)
+  }
+  const n = slices.length
+  return slices.map((slice, i) => {
+    const heading = partHeading(i + 1, n)
+    const context = heading + slice
+    return { heading, slice, context, output: contextOutput(context) }
+  })
+}
+
+// The parts of the using-aether bootstrap of the plugin at root, as splitParts gives them.
+function bootstrapParts(root) {
+  return splitParts(bootstrap(root))
 }
 
 // The plugin's version, read from <root>/.claude-plugin/plugin.json; '' when it cannot be read.
@@ -145,22 +220,30 @@ function passSuperdelegation(env) {
   }
 }
 
-function main({ input = null, env = process.env, cwd = process.cwd(), stdout = process.stdout } = {}) {
+function main({ input = null, part = null, env = process.env, cwd = process.cwd(), stdout = process.stdout } = {}) {
   if (!input) return
   const { LEAD_AGENT } = require('./session.js')
   if (input.agent_type !== LEAD_AGENT) return
 
   const root = env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..')
+  const source = input.source === undefined ? 'startup' : input.source
+  const injects = ['startup', 'clear', 'compact'].includes(source)
+
+  // A part command prints its part of the bootstrap and does nothing else: the notes command has the side effects.
+  if (part !== null) {
+    if (!injects || !/^[1-9]\d*$/.test(String(part))) return
+    const found = bootstrapParts(root)[Number(part) - 1]
+    if (found) stdout.write(found.output)
+    return
+  }
+
   const markFailure = mark(input.session_id, env)
   const passed = passSuperdelegation(env)
-
-  const source = input.source === undefined ? 'startup' : input.source
-  if (!['startup', 'clear', 'compact'].includes(source)) return
+  if (!injects) return
 
   pruneOldFiles(env)
   const context = [
     'Aether mode is active.',
-    bootstrap(root),
     passed ? '' : "Aether could not pass the superdelegation option to this session's commands, so superdelegation is off.",
     markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
     sweepNote(cwd),
@@ -173,5 +256,8 @@ function main({ input = null, env = process.env, cwd = process.cwd(), stdout = p
 }
 
 module.exports = {
+  PART_LIMIT,
+  bootstrapParts,
+  splitParts,
   main,
 }

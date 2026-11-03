@@ -1,8 +1,8 @@
 'use strict'
 
 // Everything the Lead's bootstrap, the swarm skill and the autonomous-runs skill name must exist: commands,
-// subcommands, agents, skills, workflows, files, prices and quotes. The sources are the context the session-start
-// hook injects (run as the Lead), and the two skills, the swarm one with ${CLAUDE_PLUGIN_ROOT} resolved the way
+// subcommands, agents, skills, workflows, files, prices and quotes. The sources are the bootstrap the session-start
+// hook's part commands inject (run as the Lead), and the two skills, the swarm one with ${CLAUDE_PLUGIN_ROOT} resolved the way
 // Claude Code resolves it.
 
 const test = require('node:test')
@@ -10,10 +10,9 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { PLUGIN, SESSION_BIN, tempDir, makeRepo } = require('./helpers.js')
+const { PLUGIN, tempDir, makeRepo, leadParts } = require('./helpers.js')
 
 const PLACEHOLDER = '${CLAUDE_PLUGIN_ROOT}'
-const AETHER = { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup', agent_type: 'aether:lead' }
 
 const read = (...parts) => fs.readFileSync(path.join(PLUGIN, ...parts), 'utf8')
 const json = (...parts) => JSON.parse(read(...parts))
@@ -28,15 +27,16 @@ const USING_SOURCE = read('skills', 'using-aether', 'SKILL.md')
 const SWARM_SOURCE = read('skills', 'swarm', 'SKILL.md')
 const RUNS_SOURCE = read('skills', 'autonomous-runs', 'SKILL.md')
 
-// The context the hook injects for the Lead, as the session-start tests run it.
-function injectedContext(t) {
+// What the part commands of the hook inject for the Lead, as the session-start tests run them (issue #139).
+function injectedParts(t) {
   const repo = makeRepo(t)
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: tempDir(t, 'aether-data-') }
   for (const key of ['CLAUDE_ENV_FILE', 'CLAUDE_PLUGIN_OPTION_HARNESSES', 'CLAUDE_PLUGIN_OPTION_OPS', 'CLAUDE_PLUGIN_OPTION_SUPERDELEGATION', 'AETHER_SUPERDELEGATION']) delete env[key]
-  const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: repo.dir, encoding: 'utf8', input: JSON.stringify(AETHER), env })
-  assert.equal(r.status, 0, r.stderr)
-  return JSON.parse(r.stdout).hookSpecificOutput.additionalContext
+  return leadParts(repo.dir, env)
 }
+
+// The bootstrap the hook injects for the Lead: the parts joined in order, each without its "part k of n" heading.
+const injectedContext = (t) => injectedParts(t).bootstrap
 
 // The swarm skill the way Claude Code loads it: the plugin folder in place of ${CLAUDE_PLUGIN_ROOT}.
 const resolvedSwarm = () => SWARM_SOURCE.split(PLACEHOLDER).join(PLUGIN)
@@ -206,9 +206,10 @@ test("each rubric quote is contained, ignoring case, in the purpose of its model
   }
 })
 
-// The preview a long context gets is cut at about 2,000 characters, so what R1 needs must be inside the first 1,800.
+// The preview a long context gets is cut at about 2,000 characters, so what R1 needs must be inside the first 1,800 of
+// the first hook output the Lead reads: part 1, with its heading.
 const OPENING = 1800
-const opening = (t) => injectedContext(t).slice(0, OPENING)
+const opening = (t) => injectedParts(t).contexts[0].slice(0, OPENING)
 
 test('the first 1,800 characters of the injected context carry R1: read it whole, the model it starts on and how to move it, the three paths', (t) => {
   const head = opening(t)

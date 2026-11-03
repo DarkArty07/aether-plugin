@@ -2,13 +2,22 @@
 'use strict'
 
 // aether-session-start: SessionStart hook handler for Aether mode.
-// Calls lib/session-start.js to mark the session with the ops option (CLAUDE_PLUGIN_OPTION_OPS),
-// inject the Lead bootstrap, and if an autonomous run is open, note to:
-// load the aether:autonomous-runs skill, then read the diary.
+// aether-session-start [--part <k>]
+// Calls lib/session-start.js. With no flag it marks the session with the ops option (CLAUDE_PLUGIN_OPTION_OPS),
+// passes the superdelegation option, prunes, sweeps, and prints "Aether mode is active." with its notes, among them,
+// if an autonomous run is open, a note to: load the aether:autonomous-runs skill, then read the diary.
+// With --part k it prints only part k of the Lead bootstrap (issue #139); hooks/hooks.json runs both in one entry.
 
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
 const { main } = require(path.join(__dirname, '..', 'lib', 'session-start.js'))
+
+const args = process.argv.slice(2)
+let part = null
+if (args.length > 0) {
+  // Anything other than --part <k> is a part that does not exist: the command prints nothing.
+  part = args[0] === '--part' && args.length === 2 ? args[1] : ''
+}
 
 let input = null
 try {
@@ -21,6 +30,7 @@ try {
 
 main({
   input,
+  part,
   env: process.env,
   cwd: process.cwd(),
   stdout: process.stdout,
