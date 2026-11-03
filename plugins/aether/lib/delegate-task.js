@@ -207,35 +207,46 @@ function readText(file) {
 
 // The earlier work a correction or a rise receives, from the latest work recorded: the patch of a result (a task that
 // edits), or an answer (a read-only one: the file of an external result, or the text the mod recorded for an attempt
-// on Claude).
+// on Claude). { text, patch }: patch is true when the work is a patch the delegate has to apply.
 function previousWork(entries) {
   const { entry } = lastOf(entries, (e) => (e.kind === 'result' && (isText(e.patch) || isText(e.answer))) || (e.kind === 'answer' && isText(e.text)))
   if (!entry) return null
-  if (entry.kind === 'answer') return entry.text
+  if (entry.kind === 'answer') return { text: entry.text, patch: false }
   if (isText(entry.patch)) {
-    return `The patch of your previous attempt is ${entry.patch}. It is not applied in your worktree: before anything else, run \`git apply ${entry.patch}\` there, and go on from that work. Only when it does not apply, rebuild what it describes.`
+    return { text: `The patch of your previous attempt is ${entry.patch}. It is not applied in your worktree: before anything else, run \`git apply ${entry.patch}\` there, and go on from that work. Only when it does not apply, rebuild what it describes.`, patch: true }
   }
   const text = readText(entry.answer)
-  return isText(text) ? text : `Your previous answer is in ${entry.answer}`
+  return { text: isText(text) ? text : `Your previous answer is in ${entry.answer}`, patch: false }
 }
 
+// The sections a correction or a rise adds: `sections` for a delegate on Claude and for a read-only external pair, and
+// `laneSections` for the brief of an editing external pair. `aether-lane delegate` gives that pair the findings itself
+// (--findings) and applies the patch in its worktree before it starts (--carry), saying so in the prompt, so its brief
+// carries neither (issue 142).
 function sectionsOf(verdict, entries) {
-  if (!verdict) return { sections: [], findings: null, carry: null }
+  if (!verdict) return { sections: [], laneSections: [], findings: null, carry: null }
   const input = isObject(verdict.input) ? verdict.input : {}
   const reason = isText(verdict.reason) ? verdict.reason : null
   const carry = Boolean(verdict.next && verdict.next.carry)
   const sections = []
+  const laneSections = []
   let findings = null
   if (!input.fromScratch && Array.isArray(input.findings) && input.findings.length > 0) {
     findings = input.findings.map(findingText)
     sections.push(`## Findings to fix\n\n${findings.join('\n')}`)
   }
-  if (reason) sections.push(`## Reason\n\n${reason}`)
+  if (reason) {
+    sections.push(`## Reason\n\n${reason}`)
+    laneSections.push(`## Reason\n\n${reason}`)
+  }
   if (carry) {
     const work = previousWork(entries)
-    if (work) sections.push(`## Your previous work\n\n${work}`)
+    if (work) {
+      sections.push(`## Your previous work\n\n${work.text}`)
+      if (!work.patch) laneSections.push(`## Your previous work\n\n${work.text}`)
+    }
   }
-  return { sections, findings, carry }
+  return { sections, laneSections, findings, carry }
 }
 
 function withSections(prompt, sections) {
@@ -366,7 +377,7 @@ function sameModelPair(pairs, previous, limit, quota) {
 
 function stepNote(id, step, attempt, launchKind, args, pick) {
   const where = pick ? `on ${pick.harness} ${pick.model} ${pick.effort} (pair ${pick.id}), with claude ${args.model} ${args.effort} as its rescue` : `on claude ${args.model} ${args.effort}`
-  return `Aether delegate task ${id}: step ${step}, attempt ${attempt} (${launchKind}), runs ${where}. Judge it with aether-delegate verdict --task ${id}.`
+  return `Aether delegate task ${id}: step ${step}, attempt ${attempt} (${launchKind}), runs ${where}. Judge it with aether-delegate verdict --task ${id} --verdict approve|fix|infeasible.`
 }
 
 // The owner's placement of a first launch (spec 021): the rung the call asks for above the first one, and the authorization
@@ -425,12 +436,13 @@ async function begin(input, deps = {}) {
     const covered = authorized !== null && auth.namedRung(r.ladder, event.model)?.model === args.model
     const { requested, ignored } = requestedOf(event, args, covered)
     if (launchKind === 'first' && placed) notes.push(placementNote(id, placed.rung, cover, args, brief))
-    const { sections, findings, carry } = sectionsOf(next.verdict, entries)
+    const { sections, laneSections, findings, carry } = sectionsOf(next.verdict, entries)
     const fullPrompt = withSections(prompt, sections)
     const base = headOf(r.cwd)
     // The prompt of the call is what a delegate on Claude reads, the rescue of an external pair too; the brief file of an
-    // external pair is `fullPrompt`, whose branch the lane command makes from the base.
+    // external pair is `externalPrompt`, whose branch the lane command makes from the base.
     const claudePrompt = edits && base !== null ? withSections(prompt, [...sections, startSection(base)]) : fullPrompt
+    const externalPrompt = edits ? withSections(prompt, laneSections) : fullPrompt
     if (claudePrompt !== prompt) args.prompt = claudePrompt
     if (edits) args.isolation = 'worktree'
 
@@ -463,12 +475,12 @@ async function begin(input, deps = {}) {
       if (pick) {
         const briefFile = path.join(r.dataDir, 'delegates', 'briefs', `${id}-${attempt}.md`)
         fs.mkdirSync(path.dirname(briefFile), { recursive: true })
-        fs.writeFileSync(briefFile, fullPrompt)
+        fs.writeFileSync(briefFile, externalPrompt)
         writeJson(path.join(r.dataDir, 'delegates', 'external', `${id}.json`), {
           id, session, cwd: r.cwd, attempt, step, effort, launchKind, edits, owns: brief.owns, tests: brief.tests,
           brief: briefFile, findings, carry, pin, base, harness: pick.harness,
           rung: { model: pick.model, effort: pick.effort, group: pick.group },
-          task: { description, prompt: fullPrompt },
+          task: { description, prompt: externalPrompt },
           alternates,
           timeoutMs: EXTERNAL_LIMIT_MS,
         })

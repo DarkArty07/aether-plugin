@@ -111,6 +111,17 @@ const pairOf = (pair) => ({ id: pair.id, harness: pair.harness, model: pair.mode
 // "Continue from it"): the work is in the tree, uncommitted, and the pair goes on from it.
 const CONTINUATION_BLOCK = ['## An external agent began this attempt', 'An earlier agent began this task. Its uncommitted work, if any, is in the worktree. Continue from it.'].join('\n')
 
+// The paragraph of an attempt whose earlier work the carry guards refused (settleCarry): that work is not in the
+// worktree, so the pair is told why, where the patch is, and to rebuild it first.
+function refusedCarryBlock(reason, patch, findings) {
+  const why = reason.replace(/^the earlier work was not carried over: /, '')
+  const then = findings ? 'the findings are about that work' : 'the brief goes on from that work'
+  return [
+    '## The earlier work is not in your worktree',
+    `An earlier attempt left its work in the patch \`${patch}\`, but it could not be applied to your worktree: ${why}. Read that patch and rebuild in the worktree what it describes, within the paths you own, before anything else: ${then}.`,
+  ].join('\n')
+}
+
 // The prompt of the pair that writes: the brief, then the paths the charge owns and, when it
 // carries them, its test command and the findings the attempt is to fix.
 function implementerPrompt(briefText, { owns, tests, findings }) {
@@ -147,7 +158,12 @@ function reviewerPrompt({ implementer, tests }) {
           '```',
         ].join('\n')
   return [
-    'Review the review package `package.diff` against the brief `brief.md`: both are in the `.aether-tmp` folder of your copy. Judge the diff against what the brief asks for, and nothing else.',
+    [
+      'Review `package.diff` against `brief.md`. This is one delegate unit, not a swarm run: there is no plan, spec, other unit or deferred finding.',
+      '- Wherever your role names the plan, the spec, a criterion or an acceptance, read the brief: judge the diff against what it asks for, and nothing else.',
+      '- Skip the checks between units. Where your role says the integration worktree, read your copy of the unit\'s branch.',
+      '- `declined` lists what you set aside as outside the brief.',
+    ].join('\n'),
     reported,
     ran,
   ].join('\n\n')
@@ -254,7 +270,8 @@ function pinnedChoice(table, id) {
 // choice is made over that pair alone (the table keeps the Claude pairs, which a reference needs, and the
 // lowest of them is the reference, so that only the pair's own quota and marks count). A pinned pair that
 // cannot be chosen is dropped, and the loop goes on with the whole table; one that fails is excluded as any.
-async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, callName, owns = null, offer: initialOffer = null, pinned: pinnedPair = null }) {
+// findings is true when the prompt carries findings to fix.
+async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, callName, owns = null, offer: initialOffer = null, pinned: pinnedPair = null, findings = false }) {
   const exclude = [...initialExclude]
   const tried = []
   let attempts = 0
@@ -296,7 +313,11 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
       attempts += 1
       const carry = role === 'implementer' ? settleCarry(ctx, offer, owns) : { apply: false }
       if (role === 'implementer') work.armCarry(ctx.cwd, ctx.id, TASK_ID, carry.apply ? offer : null)
-      const attemptPrompt = carry.apply ? `${prompt}\n\n${CONTINUATION_BLOCK}` : prompt
+      const attemptPrompt = carry.apply
+        ? `${prompt}\n\n${CONTINUATION_BLOCK}`
+        : carry.reason
+          ? `${prompt}\n\n${refusedCarryBlock(carry.reason, offer, findings)}`
+          : prompt
       const outcome = await attemptCall(ctx, { role, call, picked, prompt: attemptPrompt })
       const started = outcome.result !== undefined || !String(outcome.cause || '').startsWith('unavailable')
       let continued = false
@@ -457,6 +478,7 @@ async function delegateWithEnv(cwd, flags, deps) {
       owns: charge.owns,
       offer: offered,
       pinned: charge.pair,
+      findings: charge.findings !== null,
       callName: (attempt) => `${TASK_ID}-${attempt}-implement`,
     })
     if (written.result === undefined) {

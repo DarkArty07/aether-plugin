@@ -4,6 +4,8 @@
 // dependency graph of waves.
 // Family: plan.
 
+const fs = require('node:fs')
+const path = require('node:path')
 const { normalizePattern, patternsOverlap } = require('./globs.js')
 const { listNumbers } = require('./plan-groups.js')
 
@@ -440,12 +442,27 @@ function buildGraph(parsed, { only = null } = {}) {
   return { waves, tasks: nodes, errors, warnings }
 }
 
+// The plan's path from the top of the git worktree it sits in, as the Spec line names the spec: an implementer on another
+// harness works only inside its unit worktree, where the absolute path of the Lead's checkout is outside its reach. The
+// path as it is when no worktree holds it.
+function inWorktree(file) {
+  if (typeof file !== 'string' || !path.isAbsolute(file)) return file
+  try {
+    for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
+      if (fs.existsSync(path.join(dir, '.git'))) return path.relative(dir, file)
+      if (path.dirname(dir) === dir) return file
+    }
+  } catch {
+    return file
+  }
+}
+
 function renderBrief(task, { planPath, spec, globalConstraints, objective = null }) {
   const parts = [
     // A unit of several tasks has its tasks named in the title already.
     task.members ? `# Brief: ${task.title}` : `# Brief: Task ${task.number}: ${task.title}`,
     '',
-    `- Plan: ${planPath}`,
+    `- Plan: ${inWorktree(planPath)}`,
     `- Spec: ${spec || 'not named in the plan'}`,
     `- Area: ${task.area}`,
     `- Owns: ${task.owns.join(', ')}`,

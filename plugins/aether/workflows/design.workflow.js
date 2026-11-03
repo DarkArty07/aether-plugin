@@ -25,10 +25,9 @@ export const meta = {
 // author when it can), or in the seat's reference pair when it names none. The one document no Writer seat can
 // write is design.md of a short design: its corrections are the native Writer's. The script never reads the clock
 // or random numbers: the runtime replays a resumed run call by call. It has no modules, so what it needs from
-// run.workflow.js and lib/lane-schemas.js is copied here by hand.
-
-const SCOPE =
-  'Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.'
+// run.workflow.js and lib/lane-schemas.js is copied here by hand. The rules of each role live in its agents/*.md,
+// which reaches the model whoever runs it (the native agent's system prompt, an external seat's role body): a
+// message here carries only the round's data (paths, findings, check output).
 
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const SESSION = /^[A-Za-z0-9-]+$/
@@ -602,9 +601,8 @@ async function designRevision({ doc, step, text, phase }) {
 }
 
 // --- messages --------------------------------------------------------------------------------
-
-const FINDING_FIELDS =
-  'Give each finding its `severity` (blocking, major or minor), its `type` (missing, extra or wrong: what nobody asked for is `extra`), a `title`, the `evidence` (a quote of the document in backticks, or file:line in the code) and the `fix`.'
+// Each message names what the round works on. What the role does with it (the skills, the checks, the finding types,
+// the reading plan, the scope, the commit, the shape of the answer) is in its agents/*.md, and is not repeated here.
 
 // The owner's intent as a message names it: the card of a full design, or the Lead's words for a short one.
 function intentLines() {
@@ -614,71 +612,41 @@ function intentLines() {
 
 const lines = (...parts) => parts.flat().join('\n')
 
+// The aether-plan a Writer checks the plan with, when the args name the bin directory of the plugin this session
+// loaded: the one planCheck runs, where the session's PATH may hold another release's (issue 13). Without binDir the
+// Writer's own `aether-plan` is the same bare name the workflow runs.
+function planBinLines() {
+  if (!binDir) return []
+  const bin = `${binDir}/aether-plan`
+  return [`Run aether-plan as \`${/^[A-Za-z0-9_./-]+$/.test(bin) ? bin : quote(bin)}\`.`]
+}
+
 function specWriterMessage() {
-  return lines(
-    `Write the spec of ${feature}.`,
-    '',
-    `Read the owner's intent card, ${INTENT}, and write ${SPEC} from it with the skill aether:specify. Take each criterion from the owner's words in the card, and make each requirement serve a criterion.`,
-    'Where the card is silent, choose a reversible default and record it under Assumptions. Only for a choice that is hard to reverse, surprising or a real trade-off, write `[NEEDS CLARIFICATION: <question>]` in the spec instead of guessing, and list each mark you leave in `clarify`.',
-    `Write and commit ${SPEC} only: no plan and no tasks.`,
-    '',
-    SCOPE,
-  )
+  return lines(`Write the spec of ${feature}: ${SPEC}, from the owner's intent card ${INTENT}.`)
 }
 
 function planWriterMessage() {
-  return lines(
-    `Write the plan and the tasks of ${feature}.`,
-    '',
-    `The approved spec is ${SPEC}. Write ${PLAN} with the skill aether:plan, then ${TASKS} with the skill aether:tasks.`,
-    "The plan has its `## Gate` section and, as its last section, its `## Complexity` table: one row for each piece of complexity beyond the spec, naming the requirement it serves. Each task's Aether block has its `- Serves:` line with the requirements of the spec it serves.",
-    `Run \`aether-plan check ${TASKS}\` until it passes, and commit ${PLAN} and ${TASKS} only.`,
-    '',
-    SCOPE,
-  )
+  return lines(`Write the plan and the tasks of ${feature}: ${PLAN} and ${TASKS}, from the approved spec ${SPEC}.`, ...planBinLines())
 }
 
-// What a document's Judge must check, by document.
+// What a document's Judge reviews, by document. How it reviews each kind is in judge.md.
 function reviewLines(doc, path) {
-  if (doc === 'spec') {
-    return [
-      `Review the spec ${path} against the owner's intent.`,
-      "Check that each criterion comes from the owner's words, that each requirement serves a criterion, and that nothing goes beyond the intent.",
-      'A `[NEEDS CLARIFICATION` mark left in the spec is a finding of type `wrong`.',
-    ]
-  }
-  if (doc === 'plan') {
-    return [
-      `Review the plan ${PLAN} and its tasks ${TASKS} against the spec ${SPEC} and the owner's intent.`,
-      'Check each row of the Complexity table: does the requirement it names ask for what it justifies, and is the simpler alternative really worse? Check that each task serves a requirement of the spec, and the coherence of spec, plan and tasks: duplicates, ambiguity, requirements without a measure, and contradictions.',
-      'An abstraction, option, file or dependency that no requirement asks for and that the Complexity table does not justify is a finding of type `extra`.',
-      "For each test that the tasks write or change, name the inputs it assumes its helpers return (for example, that `makeRepo` returns `{ dir, git }`, not a path), and check them against the helper's source: a test that misuses a helper is a finding of type `wrong`. For each task, name the existing tests that exercise the files the task changes (find them with Grep under `tests/`), and flag a task whose brief contradicts one of them: a test that a correct build of the task would fail is a finding of type `wrong`, with the test's `file:line` as evidence.",
-    ]
-  }
-  return [`Review the short design ${path} against the owner's intent.`, 'Check that it covers the intent and goes no further, and that it can be built from as it is.']
+  if (doc === 'spec') return [`Review the spec ${path} against the owner's intent.`]
+  if (doc === 'plan') return [`Review the plan ${PLAN} and its tasks ${TASKS} against the spec ${SPEC} and the owner's intent.`]
+  return [`Review the short design ${path} against the owner's intent.`]
 }
 
-// How the Judge spends its 30 turns on a large document (issue 022): the reading plan that got
-// a verdict on a 15-task plan where free reading ended twice without an answer.
-const JUDGE_READING_PLAN = [
-  'Reading plan (your budget is 30 turns):',
-  '- Put independent reads together in one turn: the document, the intent and the code you check against, several files at once.',
-  '- Spend at most 20 turns reading. Verify at most six claims against the code, the riskiest first.',
-  '- Give your verdict by turn 28 at the latest, with what you have. Anything you did not check is an open question, not a reason to read on: a review that runs out of turns decides nothing.',
-]
-
-// The Judge's message for review n: the document, the intent, what to check, what aether-plan check printed for a
-// plan, and from the second review on, the earlier verdict, what changed, and where the earlier findings touch.
-// A git diff of the document is not included: this script can only shell out through the ops commands the mod
-// allowlists, and that list is not this task's to extend.
+// The Judge's message for review n: the document, the intent, what aether-plan check printed for a plan, and from the
+// second review on, the earlier verdict with each finding and where it touches, and what changed. A git diff of the
+// document is not included: this script can only shell out through the ops commands the mod allowlists, and that list
+// is not this task's to extend.
 function judgeMessage({ doc, path, check, earlier }) {
-  const parts = [...reviewLines(doc, path), '', ...intentLines(), FINDING_FIELDS]
+  const parts = [...reviewLines(doc, path), '', ...intentLines()]
   if (check !== null) parts.push('', 'aether-plan check printed:', check)
   if (earlier) {
-    parts.push('', 'Your earlier verdict:', earlier.verdict, '', 'What changed:', earlier.changed)
-    if (earlier.touched) parts.push('', 'Where those findings touch:', earlier.touched)
+    parts.push('', `The earlier verdict, of review ${earlier.round}: ${earlier.verdict}`, 'Its findings, and where each touches:', ...earlier.findings)
+    parts.push('Its open questions:', ...earlier.openQuestions, '', 'What changed:', earlier.changed)
   }
-  parts.push('', ...JUDGE_READING_PLAN, '', SCOPE)
   return lines(parts)
 }
 
@@ -731,11 +699,11 @@ function formatFindings(findings) {
   })
 }
 
-const EDIT_ONLY = 'Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'
-
+// The paths and the findings of a correction. How to correct (edit in place, change only what the findings need) is
+// the Writer's rule for a revision, in writer.md.
 function revisionBrief({ paths, findings, openQuestions = [] }) {
   const questions = Array.isArray(openQuestions) ? openQuestions.filter((item) => typeof item === 'string' && item !== '') : []
-  const out = [EDIT_ONLY, '', 'The document:', ...paths.map((item) => `- ${item}`), '', 'Findings:', ...formatFindings(findings)]
+  const out = ['The document:', ...paths.map((item) => `- ${item}`), '', 'Findings:', ...formatFindings(findings)]
   if (questions.length > 0) out.push('', 'Open questions:', ...questions.map((item) => `- ${item}`))
   return out.join('\n')
 }
@@ -744,38 +712,25 @@ function revisionBrief({ paths, findings, openQuestions = [] }) {
 // is handed back, the native agent's. A plan names both files, because the Judge reviewed them together.
 function revisionMessage({ doc, path, n, findings, openQuestions }) {
   const paths = doc === 'plan' ? [PLAN, TASKS] : [path]
-  const plan = doc === 'plan' ? [`When ${TASKS} changes, run \`aether-plan check ${TASKS}\` until it passes; commit ${PLAN} and ${TASKS} together.`] : []
   return lines(
     `Revise ${paths.join(' and ')} after the Judge's review ${n}.`,
+    ...(doc === 'plan' ? planBinLines() : []),
     '',
     ...intentLines(),
     '',
     revisionBrief({ paths, findings, openQuestions }),
-    '',
-    'Commit the document. Each finding you do not apply goes in `disagreements`, with why.',
-    ...plan,
-    '',
-    SCOPE,
   )
 }
 
-// What a Writer gets when aether-plan check failed on the plan: the errors, to fix.
+// What a Writer gets when aether-plan check failed on the plan: the errors.
 function checkErrorsLines(errors) {
-  return [`\`aether-plan check ${TASKS}\` failed on the plan. Fix each error, run it again until it passes, and commit:`, ...errors.map((e) => `- ${e}`)]
+  return [`\`aether-plan check ${TASKS}\` failed on the plan with these errors:`, ...errors.map((e) => `- ${e}`)]
 }
 
 function examinerMessage() {
   return lines(
-    `Write the hidden exam of ${feature}.`,
-    '',
-    `Read the spec ${SPEC} and the owner's intent card ${INTENT}${mode === 'short' ? ' when there is one' : ''}, and ${PLAN} for its public interfaces only; never tasks.md, which holds the tests the swarm sees.`,
+    `Write the hidden exam of ${feature}, from the spec ${SPEC}, the owner's intent card ${INTENT}${mode === 'short' ? ' when there is one' : ''} and the plan ${PLAN}.`,
     ...(mode === 'short' ? ['', ...intentLines()] : []),
-    '',
-    'A check on the wording of a document must be tolerant of markdown: bold, backticks, line breaks, plural and inflected forms all say the same thing, so compare on the text with the markup stripped. It must look in any line or sentence of the document, never the first line that matches. In `notes`, say which of its checks are about wording, so the Lead can judge a failure of those. A value, a command or a format the spec fixes stays exact.',
-    '',
-    'Write the tests and exam.json under .aether-exam/ at the repository root, and nothing anywhere else. Do not commit.',
-    '',
-    SCOPE,
   )
 }
 
@@ -837,7 +792,14 @@ async function reviews({ doc, path, phase, author, check, correct }) {
     author = fixed.model
     check = fixed.check
     positions = { disagreements: listOf(fixed.answer.disagreements), assumptions: listOf(fixed.answer.assumptions) }
-    earlier = { verdict: review.text, changed: changedText(fixed.answer), touched: formatFindings(review.answer.findings).join('\n') }
+    const questions = listOf(review.answer.openQuestions)
+    earlier = {
+      round: n,
+      verdict,
+      findings: formatFindings(review.answer.findings),
+      openQuestions: questions.length === 0 ? ['- none'] : questions.map((q) => `- ${q}`),
+      changed: changedText(fixed.answer),
+    }
   }
 }
 

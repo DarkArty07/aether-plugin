@@ -7,6 +7,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const os = require('node:os')
 const { spawnSync } = require('node:child_process')
 const { makeRepo, tempDir } = require('./helpers.js')
 const { LANE_BIN, laneEnv, agyTurns, argAfter, git } = require('./lane-fixtures.js')
@@ -297,6 +298,12 @@ test('an external Judge reviews the commit in a disposable worktree, and its ans
   const prompt = argAfter(turn.argv, '-p')
   assert.ok(prompt.includes('You are the Aether Judge, run by the agy CLI rather than Claude Code.'))
   assert.ok(prompt.includes(`Review ${FEATURE}/spec.md.`))
+  // The rules come from judge.md, the role body, and the note only says what changes outside Claude Code: its limit is
+  // the round's time, and its answer is the structured output, whose schema defines the finding types.
+  assert.ok(prompt.includes('Deliver what was asked, at the scope asked.'))
+  assert.ok(prompt.includes('## Finding types') && prompt.includes('## Reading plan'))
+  assert.ok(prompt.includes("Your limit here is the round's time, not the 30 turns of your reading plan"))
+  assert.equal(prompt.includes("Each finding's type says what is wrong"), false, 'the types are defined in judge.md and in the schema, not a third time')
 
   assert.equal(fs.existsSync(turn.cwd), false, 'the worktree is removed')
   assert.equal(git(repo.dir, 'worktree', 'list').split('\n').length, 1)
@@ -473,6 +480,22 @@ test('a Judge whose author is Argon, which is below Opus high (51.7), goes to th
   assert.equal(native.status, 3)
   assert.notEqual(native.json.native.model, 'opus')
   assert.deepEqual(agyTurns(both), [])
+})
+
+test('the Examiner and spec Writer notes say only what changes outside Claude Code, and the role body says the rest', () => {
+  const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-seat-note-'))
+  try {
+    const exam = seats.seatPrompt({ seat: 'examiner', harness: 'agy', adapter: {}, message: 'M', workdir, feature: FEATURE })
+    assert.ok(exam.includes('You are the Aether Examiner, run by the agy CLI rather than Claude Code.'))
+    assert.ok(exam.includes('in place of the text answer your role describes'))
+    assert.ok(exam.includes('**Never read `tasks.md`**'), 'from examiner.md')
+    assert.equal(exam.split('Never read').length, 2, 'the note does not repeat the rule of the role')
+    const spec = seats.seatPrompt({ seat: 'writer', harness: 'agy', adapter: {}, message: `Revise ${FEATURE}/spec.md after the Judge's review 1.`, workdir, feature: FEATURE, doc: 'spec' })
+    assert.ok(spec.includes('with the fields your role lists after the spec, also when this round corrects it: not the revision shape.'))
+    assert.ok(spec.includes('Edit it in place, as your role says for a revision.'))
+  } finally {
+    fs.rmSync(workdir, { recursive: true, force: true })
+  }
 })
 
 test('with superdelegation off the Examiner is handed to the native agent like any seat, and the log says so', (t) => {
@@ -699,7 +722,10 @@ test('issue 67: a finding\'s place is the line it names, else the heading, else 
   assert.equal(seats.findingTouch({ severity: 'minor', type: 'missing', title: 'x', evidence: '', fix: 'y' }), 'names no line')
 
   const brief = seats.revisionBrief({ paths: [`${FEATURE}/spec.md`], findings: [line, heading, neither], openQuestions: ['Which limit?'] })
-  assert.ok(brief.includes('Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'))
+  // How to correct is the Writer's rule for a revision, in writer.md, which an external Writer gets as its role body.
+  const editOnly = 'Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'
+  assert.ok(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'agents', 'writer.md'), 'utf8').includes(editOnly))
+  assert.equal(brief.includes(editOnly), false)
   assert.ok(brief.includes(`- ${FEATURE}/spec.md`))
   assert.ok(brief.includes('[major] [wrong] the limit — lines 12-14 — `plan.md:12-14` — raise it'))
   assert.ok(brief.includes('[minor] [extra] the table — ## Complexity'))
@@ -732,6 +758,11 @@ test('issue 67: an external Writer is told the correction is an edit, and a draf
   assert.ok(prompt.includes(message.trim()))
   assert.ok(prompt.includes('names no line'))
   assert.ok(prompt.includes('not a brief to write the document again'))
+  assert.ok(prompt.includes('Edit it in place, as your role says for a revision.'))
+  // The round's schema is the plan's draft schema, so the note answers with those fields in place of writer.md's
+  // revision shape (the shape the native correction answers in).
+  assert.ok(prompt.includes('with the fields your role lists after the plan and the tasks, also when this round corrects them: not the revision shape.'))
+  assert.ok(prompt.includes('Answer in the revision shape under Your answer.'), 'the role body is in the prompt, so the note must override it')
 
   const draftEnv = laneEnv(t, { quota: geminiFirst() })
   const draft = seat(repo.dir, ['writer', '--session', 's2', '--feature', FEATURE], draftEnv, writerInput(files))

@@ -1,5 +1,5 @@
 {
-  "description": "Aether: the SessionStart bootstrap and stale-run sweep, the guard before writes and shell commands, the five observation hooks (PostToolUse of ScheduleWakeup, PostToolUseFailure, StopFailure, PreCompact and SessionEnd), and the usage meter mod",
+  "description": "Aether: the SessionStart notes and stale-run sweep and the bootstrap in five part commands, the guard before writes and shell commands, the five observation hooks (PostToolUse of ScheduleWakeup, PostToolUseFailure, StopFailure, PreCompact and SessionEnd), and the usage meter mod",
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +8,26 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\""
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 1"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 2"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 3"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 4"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 5"
           }
         ]
       }

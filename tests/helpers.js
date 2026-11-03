@@ -127,11 +127,63 @@ function ageRun(args, hours) {
   if (fs.existsSync(worktrees)) age(worktrees, hours)
 }
 
+// The SessionStart commands of hooks/hooks.json, as the arguments each gives aether-session-start: the notes command
+// (no argument) first, then the part commands (issue #139).
+const SESSION_COMMANDS = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'))
+  .hooks.SessionStart.flatMap((entry) => entry.hooks)
+  .map((hook) => /\/bin\/aether-session-start"(.*)$/.exec(hook.command))
+  .filter(Boolean)
+  .map((m) => m[1].trim().split(/\s+/).filter(Boolean))
+const PART_COMMANDS = SESSION_COMMANDS.filter((args) => args[0] === '--part')
+
+// The start of a Lead session, as the session-start tests give it to the hook.
+const LEAD_START = { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup', agent_type: 'aether:lead' }
+
+// Runs aether-session-start once, with the given arguments, as a hook runs it: the input on stdin.
+function runSessionStart(cwd, env, input = LEAD_START, args = []) {
+  const r = spawnSync(process.execPath, [SESSION_BIN, ...args], {
+    cwd,
+    encoding: 'utf8',
+    input: typeof input === 'string' ? input : JSON.stringify(input),
+    env,
+  })
+  if (r.error) throw r.error
+  return r
+}
+
+// Runs the part commands of hooks/hooks.json in order and returns what they print: outputs (each command's whole
+// standard output, '' when it printed nothing), contexts (the additionalContext of each part that printed) and
+// bootstrap (the parts' contexts without their heading, joined in order). It throws when a command fails, when a part
+// does not carry its heading, or when a command prints after one that printed nothing.
+// The heading of part k of n: what to do when a part is missing, with the rules' file in the plugin at root.
+const partHeading = (k, n, root) =>
+  `Aether mode, part ${k} of ${n}. If a part from 1 to ${n} did not reach you, read the whole file ${path.join(root, 'skills', 'using-aether', 'SKILL.md')} before you act.\n\n`
+
+function leadParts(cwd, env, input = LEAD_START) {
+  const outputs = PART_COMMANDS.map((args) => {
+    const r = runSessionStart(cwd, env, input, args)
+    if (r.status !== 0) throw new Error(`aether-session-start ${args.join(' ')} exited ${r.status}: ${r.stderr}`)
+    return r.stdout
+  })
+  const printed = outputs.filter((out) => out !== '')
+  if (outputs.slice(0, printed.length).some((out) => out === '')) throw new Error('a part command printed after one that printed nothing')
+  const contexts = printed.map((out) => JSON.parse(out).hookSpecificOutput.additionalContext)
+  const slices = contexts.map((context, i) => {
+    const heading = partHeading(i + 1, printed.length, env.CLAUDE_PLUGIN_ROOT || PLUGIN)
+    if (!context.startsWith(heading)) throw new Error(`part ${i + 1} does not start with its heading: ${context.slice(0, 80)}`)
+    return context.slice(heading.length)
+  })
+  return { outputs, contexts, bootstrap: slices.join('') }
+}
+
 module.exports = {
   PLUGIN,
   PLAN_BIN,
   WT_BIN,
   SESSION_BIN,
+  SESSION_COMMANDS,
+  PART_COMMANDS,
+  LEAD_START,
   NO_LANES_CONFIG,
   AETHER_VARIABLES,
   tempDir,
@@ -143,4 +195,7 @@ module.exports = {
   useDataDir,
   age,
   ageRun,
+  runSessionStart,
+  partHeading,
+  leadParts,
 }

@@ -38,7 +38,8 @@ test('the final reviewer marks what is extra, and keeps the rest of its method (
   assert.match(agent('reviewer'), /^effort: high$/m)
 })
 
-// The rules for a check on prose (#99): the Examiner's file and the message it gets say the same words.
+// The rules for a check on prose (#99) live in the Examiner's file only: the design workflow's message does not repeat
+// them (tests/workflow-design.test.js), and an external seat gets the file as its role body.
 const PROSE_RULES = [
   'tolerant of markdown',
   'bold, backticks, line breaks, plural and inflected forms',
