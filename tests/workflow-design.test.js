@@ -22,7 +22,7 @@ test.before(async () => {
   ;({ parseOpsPrompt, PAYLOAD_PATH } = await import(path.join(PLUGIN, 'hooks', 'ops-command.mjs')))
 })
 
-const COMMAND = /^cd '[^']*' && (aether-lane|aether-plan|aether-exam) ([a-z-]+)(.*)$/m
+const COMMAND = /^cd '[^']*' && (?:PATH='[^']*':"\$PATH" )?(aether-lane|aether-plan|aether-exam) ([a-z-]+)(.*)$/m
 function commandOf(prompt) {
   const m = COMMAND.exec(prompt)
   return m ? { tool: m[1], verb: m[2], rest: m[3].trim().split(' ').filter(Boolean), line: `${m[1]} ${m[2]}${m[3]}` } : null
@@ -66,6 +66,20 @@ const front = (name) => {
   const block = /^---\n([\s\S]*?)\n---\n/.exec(fs.readFileSync(path.join(PLUGIN, 'agents', `${name}.md`), 'utf8'))[1]
   const get = (key) => new RegExp(`^${key}: (.+)$`, 'm').exec(block)[1].trim()
   return [get('model'), get('effort')]
+}
+
+// The rules of each seat live in its agents/*.md, which is the native agent's system prompt and an external seat's
+// role body (lib/seats.js seatPrompt): the message carries the round's data only. tests/agents-design.test.js pins
+// the rules in the bodies; ruleIsInBody pins that the call goes to the agent whose body holds them, and that the
+// message does not repeat them.
+const body = (name) => fs.readFileSync(path.join(PLUGIN, 'agents', `${name}.md`), 'utf8')
+const ruleIsInBody = (run, label, role, texts) => {
+  const call = run.calls.find((c) => c.label === label)
+  assert.equal(call.role, role, label)
+  for (const text of texts) {
+    assert.ok(body(role).includes(text), `${role}.md has: ${text}`)
+    assert.equal(call.prompt.includes(text), false, `${label} does not repeat: ${text}`)
+  }
 }
 
 test('one run takes the card to an approved plan with no turn of the Lead in between (E1)', async () => {
@@ -182,8 +196,9 @@ test('a third review that does not approve ends in a dispute with both positions
   assert.deepEqual(r.dispute.writer.disagreements, ['gap 1: kept, the card says so'])
   assert.deepEqual(nativeCalls(run).map((c) => c.label), ['spec: writer write', 'spec: judge review 1', 'spec: writer revision 1', 'spec: judge review 2', 'spec: writer revision 2', 'spec: judge review 3'])
   assert.equal(r.verdicts.length, 3)
-  assert.ok(nativeCalls(run)[3].prompt.includes('Your earlier verdict:') && nativeCalls(run)[3].prompt.includes('gap 1'))
-  assert.ok(nativeCalls(run)[2].prompt.includes('gap 1') && nativeCalls(run)[2].prompt.includes('disagreements'))
+  assert.ok(nativeCalls(run)[3].prompt.includes('The earlier verdict, of review 1: revise') && nativeCalls(run)[3].prompt.includes('gap 1'))
+  assert.ok(nativeCalls(run)[2].prompt.includes('gap 1'))
+  ruleIsInBody(run, 'spec: writer revision 1', 'writer', ['`disagreements`: each Judge finding you did not apply, with why.'])
 })
 
 test('a limit dispute says whether the Lead may fix its last findings itself: mechanical only when no finding of the last review blocks (#91)', async () => {
@@ -275,44 +290,62 @@ test('the plan Judge reads what check printed, and the author of each document i
   assert.ok(planJudge.includes('aether-plan check printed:') && planJudge.includes('R3 has no task that serves it.'))
 })
 
-test('the messages carry what each seat needs, and the scope instruction', async () => {
+test('the messages carry what each seat needs, and the scope instruction reaches each seat from its role (R10)', async () => {
   const run = await go(ARGS)
   const prompt = (label) => run.calls.find((c) => c.label === label).prompt
-  for (const label of ['spec: writer write', 'spec: judge review 1', 'plan: writer write', 'plan: judge review 1', 'exam: examiner']) assert.ok(prompt(label).includes(SCOPE), label)
-  for (const text of [`${FEATURE}/intent.md`, 'aether:specify', '[NEEDS CLARIFICATION: <question>]']) assert.ok(prompt('spec: writer write').includes(text), text)
-  for (const text of [`${FEATURE}/spec.md`, `${FEATURE}/intent.md`, "each criterion comes from the owner's words", 'severity', 'type']) assert.ok(prompt('spec: judge review 1').includes(text), text)
-  for (const text of [`${FEATURE}/spec.md`, 'aether:plan', 'aether:tasks', '## Gate', '## Complexity', 'Serves']) assert.ok(prompt('plan: writer write').includes(text), text)
-  assert.ok(prompt('plan: judge review 1').includes('Complexity table'))
-  assert.ok(prompt('exam: examiner').includes(`${FEATURE}/intent.md`) && prompt('exam: examiner').includes('never tasks.md'))
+  for (const [label, role] of [['spec: writer write', 'writer'], ['spec: judge review 1', 'judge'], ['plan: writer write', 'writer'], ['plan: judge review 1', 'judge'], ['exam: examiner', 'examiner']]) {
+    ruleIsInBody(run, label, role, [SCOPE])
+  }
+  for (const text of [`${FEATURE}/intent.md`, `${FEATURE}/spec.md`]) assert.ok(prompt('spec: writer write').includes(text), text)
+  ruleIsInBody(run, 'spec: writer write', 'writer', ['`aether:specify`', '[NEEDS CLARIFICATION: <question>]'])
+  for (const text of [`${FEATURE}/spec.md`, `${FEATURE}/intent.md`]) assert.ok(prompt('spec: judge review 1').includes(text), text)
+  ruleIsInBody(run, 'spec: judge review 1', 'judge', ["each criterion comes from the owner's words", '[blocking | major | minor] [missing | extra | wrong]'])
+  for (const text of [`${FEATURE}/spec.md`, `${FEATURE}/plan.md`, `${FEATURE}/tasks.md`]) assert.ok(prompt('plan: writer write').includes(text), text)
+  ruleIsInBody(run, 'plan: writer write', 'writer', ['`aether:plan`', '`aether:tasks`', '## Gate', '## Complexity', '- Serves:'])
+  ruleIsInBody(run, 'plan: judge review 1', 'judge', ['Complexity table', 'Your budget is 30 turns'])
+  assert.ok(prompt('exam: examiner').includes(`${FEATURE}/intent.md`) && prompt('exam: examiner').includes(`${FEATURE}/plan.md`))
+  ruleIsInBody(run, 'exam: examiner', 'examiner', ['**Never read `tasks.md`**', 'Do not commit'])
+  assert.equal(prompt('exam: examiner').includes('tasks.md'), false, 'the Examiner is not pointed at tasks.md')
   assert.ok(prompt('exam: examiner').includes('Write the exam under /repo/.aether-exam/ and nothing else.'))
   assert.ok(prompt('spec: writer write').includes('Your checkout is /repo: the paths above are relative to it.'))
 })
 
-// The plan Judge names the inputs its helpers are assumed to return (#91). The Judge's file states the same words
-// (tests/agents-design.test.js).
+// The plan Judge names the inputs its helpers are assumed to return (#91), and the existing tests each task touches
+// (#92): judge.md states the words (tests/agents-design.test.js), and the plan Judge's message does not repeat them.
 test('the plan Judge names the inputs its helpers are assumed to return, in the words its file states (#91)', async () => {
   const run = await go(ARGS)
-  const planJudge = run.calls.find((c) => c.label === 'plan: judge review 1').prompt
-  for (const text of ['the inputs it assumes its helpers return', '`makeRepo` returns `{ dir, git }`, not a path']) assert.ok(planJudge.includes(text), text)
+  ruleIsInBody(run, 'plan: judge review 1', 'judge', ['the inputs it assumes its helpers return', '`makeRepo` returns `{ dir, git }`, not a path'])
 })
 
 test('the plan Judge names the existing tests each task touches, and flags a task whose brief contradicts one (#92)', async () => {
   const run = await go(ARGS)
-  const planJudge = run.calls.find((c) => c.label === 'plan: judge review 1').prompt
-  for (const text of ['the existing tests that exercise the files the task changes', 'a task whose brief contradicts one of them']) assert.ok(planJudge.includes(text), text)
+  ruleIsInBody(run, 'plan: judge review 1', 'judge', ['the existing tests that exercise the files the task changes', 'a task whose brief contradicts one of them'])
 })
 
-test('the Examiner gets the rules for a check on prose, in the words its file states (#99)', async () => {
+test('the Examiner gets the rules for a check on prose from its file, and its message does not repeat them (#99)', async () => {
   const run = await go(ARGS)
-  const examiner = run.calls.find((c) => c.label === 'exam: examiner').prompt
-  for (const text of [
+  ruleIsInBody(run, 'exam: examiner', 'examiner', [
     'tolerant of markdown',
     'bold, backticks, line breaks, plural and inflected forms',
     'compare on the text with the markup stripped',
     'any line or sentence of the document',
     'never the first line that matches',
     'which of its checks are about wording',
-  ]) assert.ok(examiner.includes(text), text)
+  ])
+})
+
+test('with binDir, a Writer checks the plan with the aether-plan the workflow checks with (issue 13)', async () => {
+  const bin = '/plugins/aether/bin'
+  let n = 0
+  const revise = (call, fallback) => (call.label.startsWith('plan:') && ++n === 1 ? { verdict: 'revise', findings: [finding('gap')], openQuestions: [] } : fallback(call))
+  const run = await go({ ...ARGS, binDir: bin }, { judge: revise })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const line = `Run aether-plan as \`${bin}/aether-plan\`.`
+  for (const label of ['plan: writer write', 'plan: writer revision 1']) assert.ok(run.calls.find((c) => c.label === label).prompt.includes(line), label)
+  assert.equal(run.calls.find((c) => c.label === 'spec: writer write').prompt.includes('aether-plan'), false)
+  for (const check of opsCalls(run, 'check')) assert.ok(check.prompt.includes(`PATH='${bin}':"$PATH" aether-plan check`), check.prompt)
+  const bare = await go(ARGS)
+  assert.equal(bare.calls.find((c) => c.label === 'plan: writer write').prompt.includes('Run aether-plan as'), false, 'without binDir the bare name of writer.md holds')
 })
 
 test('a short design runs only the Judge, with the native Writer to correct design.md, and the author of the Lead', async () => {
@@ -537,7 +570,7 @@ test('an external correction of the Writer answers with the schema of its docume
 
 const EDIT_ONLY = 'Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'
 
-test('issue 67: a revision names the findings and where they touch, and tells the Writer to edit only those; the first round does not', async () => {
+test('issue 67: a revision names the findings and where they touch, and the Writer\'s role tells it to edit only those; the first round does not', async () => {
   const findings = [
     { severity: 'major', type: 'wrong', title: 'the limit', evidence: '`plan.md:12-14`', fix: 'raise it' },
     { severity: 'minor', type: 'extra', title: 'the table', evidence: 'see `## Complexity`', fix: 'drop the row' },
@@ -561,7 +594,8 @@ test('issue 67: a revision names the findings and where they touch, and tells th
   const specNative = run.calls.find((c) => c.label === 'spec: writer revision 1').prompt
   assert.ok(specNative.startsWith(specPayload), 'the native Writer and the external seat get the same revision message')
   assert.ok(specPayload.startsWith(`Revise ${FEATURE}/spec.md `))
-  assert.ok(specPayload.includes(EDIT_ONLY))
+  ruleIsInBody(run, 'spec: writer revision 1', 'writer', [EDIT_ONLY])
+  assert.equal(specPayload.includes(EDIT_ONLY), false, 'the edit rule is writer.md\'s, not the message\'s')
   assert.ok(specPayload.includes(`- ${FEATURE}/spec.md`))
   assert.ok(specPayload.includes('[major] [wrong] the limit — lines 12-14'))
   assert.ok(specPayload.includes('[minor] [extra] the table — ## Complexity'))
@@ -571,7 +605,8 @@ test('issue 67: a revision names the findings and where they touch, and tells th
 
   const planPayload = writers[3].payload.text
   assert.ok(planPayload.startsWith('Revise '))
-  assert.ok(planPayload.includes(EDIT_ONLY))
+  ruleIsInBody(run, 'plan: writer revision 1', 'writer', [EDIT_ONLY])
+  assert.equal(planPayload.includes(EDIT_ONLY), false)
   assert.ok(planPayload.includes(`- ${FEATURE}/plan.md`))
   assert.ok(planPayload.includes(`- ${FEATURE}/tasks.md`))
   assert.ok(planPayload.includes('names no line'))
@@ -581,11 +616,16 @@ test('issue 67: a revision names the findings and where they touch, and tells th
   // can only shell out through the ops commands the mod allowlists, and that list is outside this task.
   const judgeFirst = run.calls.find((c) => c.label === 'spec: judge review 1').prompt
   const judgeNext = run.calls.find((c) => c.label === 'spec: judge review 2').prompt
-  assert.equal(judgeFirst.includes('Where those findings touch:'), false)
-  assert.ok(judgeNext.includes('Your earlier verdict:'))
-  assert.ok(judgeNext.includes('Where those findings touch:'))
-  assert.ok(judgeNext.includes('[major] [wrong] the limit — lines 12-14'))
+  assert.equal(judgeFirst.includes('Its findings, and where each touches:'), false)
+  assert.equal(judgeFirst.includes('The earlier verdict'), false)
+  assert.ok(judgeNext.includes('The earlier verdict, of review 1: revise'))
+  assert.ok(judgeNext.includes('Its findings, and where each touches:'))
+  assert.ok(judgeNext.includes('[major] [wrong] the limit — lines 12-14 — `plan.md:12-14` — raise it'))
   assert.ok(judgeNext.includes('[blocking] [missing] a gap — names no line'))
+  assert.ok(judgeNext.includes('Its open questions:\n- Which limit?'))
+  // The earlier findings are listed once, with their places: not once as the verdict and again as where they touch.
+  assert.equal(judgeNext.split('the limit').length, 2, judgeNext)
+  assert.equal(judgeNext.split('Which limit?').length, 2, judgeNext)
 
   const guide = fs.readFileSync(path.join(PLUGIN, '..', '..', 'docs', 'guide', 'design-seats.md'), 'utf8')
   assert.ok(guide.includes('edit the document in place'))
