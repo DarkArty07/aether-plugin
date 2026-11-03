@@ -14,7 +14,7 @@ Run `/aether:doctor` first: it checks the usual causes below and prints the fix 
 
 **What you see.** A session started with plain `claude` offers none of Aether's agents (`aether:lead`, `aether:writer`, `aether:judge` and the rest), and nothing in it behaves like the Lead.
 
-**Why.** Plain `claude` is normal mode, and the plugin sleeps there. Aether's mod (`plugins/aether/hooks/register.js`) withholds every `aether:` agent from a session that the Lead did not start, and records and runs nothing in it; the session-start hook and aether-guard do nothing in it either. The Lead's rules are the `using-aether` skill, which sets `disable-model-invocation`, so the model never loads it on its own: the session-start hook injects it, and only when the session's agent is `aether:lead`. Aether mode is chosen when a session starts, with `--agent aether:lead`.
+**Why.** Plain `claude` is normal mode, and the plugin sleeps there. Aether's mod (`plugins/aether/hooks/register.js`) withholds every `aether:` agent from a session that the Lead did not start, and records and runs nothing in it; the session-start hook and aether-guard do nothing in it either. The Lead's rules are the `using-aether` skill, which sets `disable-model-invocation`, so the model never loads it on its own: the session-start hook injects it, in parts that each reach the Lead whole, and only when the session's agent is `aether:lead`. Aether mode is chosen when a session starts, with `--agent aether:lead`.
 
 **What to do.** Start the session as the Lead:
 

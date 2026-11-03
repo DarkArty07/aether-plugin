@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const { spawnSync } = require('node:child_process')
 const path = require('node:path')
-const { SESSION_BIN, PLUGIN, makeRepo, compile, tempDir, ageRun, age } = require('./helpers.js')
+const { SESSION_BIN, SESSION_COMMANDS, PLUGIN, makeRepo, compile, tempDir, ageRun, age, leadParts } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { ensure } = require('../plugins/aether/lib/worktrees.js')
 const { appendLog, logFile } = require('../plugins/aether/lib/lanes.js')
@@ -32,8 +32,8 @@ function hookEnv(data, extra = {}) {
   return { ...env, ...extra }
 }
 
-function start(cwd, data, { input = AETHER, env = {} } = {}) {
-  const r = spawnSync(process.execPath, [SESSION_BIN], {
+function start(cwd, data, { input = AETHER, env = {}, args = [] } = {}) {
+  const r = spawnSync(process.execPath, [SESSION_BIN, ...args], {
     cwd,
     encoding: 'utf8',
     input: typeof input === 'string' ? input : JSON.stringify(input),
@@ -42,13 +42,22 @@ function start(cwd, data, { input = AETHER, env = {} } = {}) {
   return { status: r.status, stdout: r.stdout, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr }
 }
 
+// The bootstrap the part commands inject for the Lead (issue #139): their contexts joined, each without its heading.
+function injected(cwd, data, env = {}) {
+  return leadParts(cwd, hookEnv(data, env))
+}
+
 test('session start injects the Lead bootstrap', (t) => {
   const repo = makeRepo(t)
-  const r = start(repo.dir, tempDir(t, 'aether-data-'))
+  const data = tempDir(t, 'aether-data-')
+  const r = start(repo.dir, data)
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.out.hookSpecificOutput.hookEventName, 'SessionStart')
-  const context = r.out.hookSpecificOutput.additionalContext
-  assert.match(context, /^Aether mode is active\./)
+  assert.match(r.out.hookSpecificOutput.additionalContext, /^Aether mode is active\./)
+  const parts = injected(repo.dir, data)
+  for (const out of parts.outputs.filter(Boolean)) assert.equal(JSON.parse(out).hookSpecificOutput.hookEventName, 'SessionStart')
+  assert.match(parts.contexts[0], /^Aether mode, part 1 of \d+\.\n\n# Aether mode\n/)
+  const context = parts.bootstrap
   assert.match(context, /# Aether mode/)
   assert.doesNotMatch(context, /disable-model-invocation/)
   // The main session is the Lead: the owner's right hand, with a Writer and a Judge.
@@ -84,9 +93,9 @@ test('session start injects the Lead bootstrap', (t) => {
 
 test('session start gives the bootstrap the plugin folder, the way Claude Code does for a skill', (t) => {
   const repo = makeRepo(t)
-  const r = start(repo.dir, tempDir(t, 'aether-data-'))
-  assert.equal(r.status, 0, r.stderr)
-  const context = r.out.hookSpecificOutput.additionalContext
+  const parts = injected(repo.dir, tempDir(t, 'aether-data-'))
+  for (const context of parts.contexts) assert.doesNotMatch(context, /\$\{CLAUDE_PLUGIN_ROOT\}/)
+  const context = parts.bootstrap
   assert.doesNotMatch(context, /\$\{CLAUDE_PLUGIN_ROOT\}/)
   assert.ok(context.includes(`${PLUGIN}/config/models/models.json`), 'the bootstrap names the models index by its absolute path')
   assert.ok(context.includes(`${PLUGIN}/config/prices.json`), 'the bootstrap names the price table by its absolute path')
@@ -96,11 +105,9 @@ test('the plugin folder is put into the bootstrap as it is, even with characters
   const repo = makeRepo(t)
   const copy = path.join(tempDir(t), 'a$&b$1', 'aether')
   fs.cpSync(PLUGIN, copy, { recursive: true })
-  const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_PLUGIN_ROOT: copy } })
-  assert.equal(r.status, 0, r.stderr)
-  const context = r.out.hookSpecificOutput.additionalContext
-  assert.doesNotMatch(context, /\$\{CLAUDE_PLUGIN_ROOT\}/)
-  assert.ok(context.includes(`${copy}/config/models/models.json`))
+  const parts = injected(repo.dir, tempDir(t, 'aether-data-'), { CLAUDE_PLUGIN_ROOT: copy })
+  for (const context of parts.contexts) assert.doesNotMatch(context, /\$\{CLAUDE_PLUGIN_ROOT\}/)
+  assert.ok(parts.bootstrap.includes(`${copy}/config/models/models.json`))
 })
 
 test('session start sweeps stale runs and says so', (t) => {
@@ -163,10 +170,14 @@ test('a session that is not Aether gets nothing: no output, no file, no environm
     '[]',
     '"aether:lead"',
   ]
-  for (const input of inputs) {
-    const r = start(repo.dir, data, { input, env: { CLAUDE_ENV_FILE: envFile, [OLD_LANES]: 'true' } })
-    assert.equal(r.status, 0, r.stderr)
-    assert.equal(r.stdout, '', JSON.stringify(input))
+  // Every SessionStart command of hooks/hooks.json: the notes command and the part commands.
+  assert.equal(SESSION_COMMANDS.length, 6)
+  for (const args of SESSION_COMMANDS) {
+    for (const input of inputs) {
+      const r = start(repo.dir, data, { input, args, env: { CLAUDE_ENV_FILE: envFile, [OLD_LANES]: 'true' } })
+      assert.equal(r.status, 0, r.stderr)
+      assert.equal(r.stdout, '', `${args.join(' ')} ${JSON.stringify(input)}`)
+    }
   }
   assert.deepEqual(fs.readdirSync(data), [])
   assert.equal(fs.existsSync(envFile), false)
@@ -189,13 +200,14 @@ function exported(t, extra = {}) {
   const envFile = path.join(tempDir(t, 'aether-env-'), 'env')
   const r = start(repo.dir, tempDir(t, 'aether-data-'), { env: { CLAUDE_ENV_FILE: envFile, ...extra } })
   assert.equal(r.status, 0, r.stderr)
-  return { text: fs.readFileSync(envFile, 'utf8'), context: r.out.hookSpecificOutput.additionalContext }
+  return { text: fs.readFileSync(envFile, 'utf8'), context: r.out.hookSpecificOutput.additionalContext, repo }
 }
 
 test('C1: with nothing set, superdelegation is off and nothing is ignored', (t) => {
-  const { text, context } = exported(t)
+  const { text, context, repo } = exported(t)
   assert.equal(text, 'export AETHER_SUPERDELEGATION=off\nexport AETHER_LANE_HARNESSES=agy\n')
   assert.doesNotMatch(context, /seats option|lanes option/)
+  assert.doesNotMatch(injected(repo.dir, tempDir(t, 'aether-data-')).bootstrap, /seats option|lanes option/)
 })
 
 test('C1: a set superdelegation wins, true or false', (t) => {
@@ -438,6 +450,11 @@ test('R9: clear and compact keep the output as it was: the context and no welcom
     assert.deepEqual(Object.keys(r.out.hookSpecificOutput).sort(), ['additionalContext', 'hookEventName'], source)
     assert.match(r.out.hookSpecificOutput.additionalContext, /^Aether mode is active\./, source)
     assert.doesNotMatch(r.stdout, /systemMessage|\/aether:help to see|para ver qué puedo hacer/, source)
+    // The part commands give the whole bootstrap again, with no welcome line either.
+    const parts = leadParts(makeRepo(t).dir, hookEnv(tempDir(t, 'aether-data-'), { LANG: 'es_MX.UTF-8' }), { ...AETHER, source })
+    assert.ok(parts.contexts.length >= 2, source)
+    assert.match(parts.bootstrap, /## The execution method/, source)
+    for (const out of parts.outputs.filter(Boolean)) assert.deepEqual(Object.keys(JSON.parse(out)), ['hookSpecificOutput'], source)
   }
 })
 
@@ -445,6 +462,11 @@ test('R9: resume and any other source give no output at all, and a session that 
   for (const source of ['resume', 'other', '']) {
     const r = welcomeOf(t, {}, { ...AETHER, source })
     assert.equal(r.stdout, '', JSON.stringify(source))
+    for (const args of SESSION_COMMANDS) {
+      const part = start(makeRepo(t).dir, tempDir(t, 'aether-data-'), { input: { ...AETHER, source }, args })
+      assert.equal(part.status, 0, part.stderr)
+      assert.equal(part.stdout, '', `${args.join(' ')} ${JSON.stringify(source)}`)
+    }
   }
   for (const input of [{ ...AETHER, agent_type: undefined }, { ...AETHER, agent_type: 'Explore' }, { ...AETHER, agent_type: 'claude' }]) {
     const r = welcomeOf(t, { LANG: 'es_MX.UTF-8' }, input)
