@@ -185,6 +185,8 @@ function editsText(external, done, checks, patch) {
     testsLine(done.tests),
     ...reviewLines(done.review),
     checksLine(checks),
+    // The lane command did not start this attempt from the earlier work (`carry` is why): the Lead judges work the pair had to rebuild.
+    ...(done.continued !== true && isText(done.carry) ? [`Carry refused: ${done.carry}; this attempt did not start from that work, so check that it rebuilt it.`] : []),
     ...(patch ? [`Patch: ${patch}`] : []),
     `Merge it, once approved: ${done.merge}`,
     judgeLine(external.id),

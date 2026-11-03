@@ -8,7 +8,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { PLUGIN, SESSION_COMMANDS, PART_COMMANDS, LEAD_START, makeRepo, tempDir, runSessionStart, leadParts } = require('./helpers.js')
+const { PLUGIN, SESSION_COMMANDS, PART_COMMANDS, LEAD_START, makeRepo, tempDir, runSessionStart, partHeading, leadParts } = require('./helpers.js')
 const { PART_LIMIT, bootstrapParts, splitParts } = require('../plugins/aether/lib/session-start.js')
 
 const ENV_LINES = 'export AETHER_SUPERDELEGATION=off\nexport AETHER_LANE_HARNESSES=agy\n'
@@ -36,6 +36,13 @@ test('(a) each part, as the whole output of its command, is at most 9,800 charac
   const parts = leadParts(makeRepo(t).dir, hookEnv(tempDir(t, 'aether-data-')))
   assert.ok(parts.contexts.length >= 2, 'the bootstrap goes in more than one part')
   for (const [i, out] of parts.outputs.entries()) assert.ok(out.length <= 9800, `part ${i + 1} prints ${out.length} characters`)
+  // The heading counts against the limit: each output is the JSON of its heading and its slice, nothing else.
+  const n = parts.contexts.length
+  for (const [i, part] of bootstrapParts(PLUGIN).entries()) {
+    assert.equal(part.heading, partHeading(i + 1, n, PLUGIN))
+    assert.equal(part.output.length, JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: part.heading + part.slice } }).length + 1)
+    assert.equal(part.output, parts.outputs[i])
+  }
   // Not a byte lost, repeated or moved.
   assert.equal(parts.bootstrap, source(PLUGIN))
   // Each cut falls just before a "## " line, and the blank line before that heading ends the part before it.
@@ -84,11 +91,16 @@ test('(d) the bootstrap needs five parts or fewer, also from a long plugin path,
   const parts = bootstrapParts(PLUGIN)
   assert.ok(parts.length <= 5, `the bootstrap needs ${parts.length} parts`)
   assert.equal(leadParts(makeRepo(t).dir, hookEnv(tempDir(t, 'aether-data-'))).contexts.length, parts.length)
-  // An installed plugin lives deeper than a checkout: a 200-character folder still fits in five parts.
-  const deep = '/' + 'd'.repeat(199)
-  const far = splitParts(source(deep))
-  assert.ok(far.length <= 5, `from a 200-character folder the bootstrap needs ${far.length} parts`)
-  for (const part of far) assert.ok(part.output.length <= 9800)
+  // An installed plugin lives deeper than a checkout, and every heading names its folder: a folder of 200 or of 400
+  // characters still fits in five parts of at most 9,800 characters that give the bootstrap back.
+  for (const size of [200, 400]) {
+    const deep = '/' + 'd'.repeat(size - 1)
+    const far = splitParts(source(deep), deep)
+    assert.ok(far.length <= 5, `from a ${size}-character folder the bootstrap needs ${far.length} parts`)
+    for (const part of far) assert.ok(part.output.length <= 9800, `from a ${size}-character folder a part prints ${part.output.length} characters`)
+    assert.equal(far.map((part) => part.slice).join(''), source(deep))
+    for (const [i, part] of far.entries()) assert.equal(part.heading, partHeading(i + 1, far.length, deep))
+  }
   assert.ok(PART_COMMANDS.length >= parts.length)
 })
 
@@ -107,7 +119,7 @@ test('(f) a whole section that fits in a part is never split, and only a section
   const section = (title, ...paragraphs) => `## ${title}\n\n${paragraphs.map((size) => 'x'.repeat(size) + '\n\n').join('')}`
   const text = ('# Top\n\n' + section('A', 2000) + section('B', 2000) + section('C', 4000) + section('D', 3000, 3000, 3000) + section('E', 300)).trim()
   const limit = 5000
-  const parts = splitParts(text, limit)
+  const parts = splitParts(text, '/p', limit)
   assert.equal(parts.map((part) => part.slice).join(''), text)
   for (const part of parts) assert.ok(part.output.length <= limit, part.output.length)
   // A and B fit together; C does not fit with them, so it opens a part of its own; D is longer than any part, so it is
@@ -123,7 +135,7 @@ test('(f) a whole section that fits in a part is never split, and only a section
   for (const part of bootstrapParts(PLUGIN)) cuts.push((at += part.slice.length))
   for (let i = 0; i < starts.length - 1; i += 1) {
     const [from, to] = [starts[i], starts[i + 1]]
-    assert.equal(splitParts(text2.slice(from, to)).length, 1, `the section at ${from} fits in a part of its own`)
+    assert.equal(splitParts(text2.slice(from, to), PLUGIN).length, 1, `the section at ${from} fits in a part of its own`)
     assert.ok(!cuts.some((cut) => cut > from && cut < to), `the section at ${from} is not split`)
   }
 })
@@ -140,6 +152,25 @@ test('(g) the notes command with no notes prints the context "Aether mode is act
   const out = JSON.parse(r.stdout)
   assert.equal(out.hookSpecificOutput.additionalContext, 'Aether mode is active.')
   assert.match(out.systemMessage, /Lead ready/)
+})
+
+test('(h) every part opens with the same one-line heading, which says to read the whole rules file when a part is missing', (t) => {
+  const parts = leadParts(makeRepo(t).dir, hookEnv(tempDir(t, 'aether-data-')))
+  const n = parts.contexts.length
+  const file = path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')
+  assert.ok(fs.existsSync(file))
+  for (const [i, context] of parts.contexts.entries()) {
+    const heading = partHeading(i + 1, n, PLUGIN)
+    assert.ok(context.startsWith(heading), `part ${i + 1}: ${context.slice(0, 120)}`)
+    assert.equal(heading, `Aether mode, part ${i + 1} of ${n}. If a part from 1 to ${n} did not reach you, read the whole file ${file} before you act.\n\n`)
+    assert.equal(heading.trimEnd().includes('\n'), false, 'the heading is one line')
+  }
+  // The heading names the folder the hook was given, not the one the code lives in.
+  const other = path.join(tempDir(t), 'plugin')
+  fs.cpSync(PLUGIN, other, { recursive: true, filter: (from) => !/node_modules|\.git$/.test(from) })
+  const moved = leadParts(makeRepo(t).dir, { ...hookEnv(tempDir(t, 'aether-data-')), CLAUDE_PLUGIN_ROOT: other })
+  assert.ok(moved.contexts[0].includes(path.join(other, 'skills', 'using-aether', 'SKILL.md')))
+  assert.ok(!moved.contexts[0].startsWith(partHeading(1, moved.contexts.length, PLUGIN)))
 })
 
 test('a part command with a part that does not exist, or a bad argument, prints nothing', (t) => {

@@ -17,6 +17,7 @@ const delegate = require('../plugins/aether/lib/lane-delegate.js')
 const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote src/new.js.', head: '', tests: 'ok', concerns: '', question: '' })
 const READY = JSON.stringify({ verdict: 'ready', findings: [], declined: [], summary: 'The diff does what the brief asks.' })
 const CONTINUATION = 'Its uncommitted work, if any, is in the worktree. Continue from it.'
+const REFUSED = '## The earlier work is not in your worktree'
 
 const agyEnv = (t, options) => ({ ...fx.laneEnv(t, options), AETHER_LANE_HARNESSES: 'agy' })
 const choicesOf = (env, role = null) => lanes.readLog(env.AETHER_DATA_DIR).filter((entry) => entry.kind === 'choice' && (role === null || entry.role === role))
@@ -114,6 +115,7 @@ test('--carry offers the earlier patch: the attempt starts from that work and th
   assert.equal(result.status, 'done')
   assert.equal(result.continued, true, String(result.carry))
   assert.ok(promptOf(repo, result.id, 1).includes(CONTINUATION))
+  assert.ok(!promptOf(repo, result.id, 1).includes(REFUSED), 'an applied carry is not reported as refused')
   assert.equal(fs.readFileSync(path.join(result.worktree, 'src', 'old.js'), 'utf8'), 'old\n')
   assert.equal(repo.git('status', '--porcelain'), '')
 })
@@ -127,8 +129,49 @@ test('--carry with a patch that touches files outside --owns is not applied', as
   assert.equal(result.continued, false)
   assert.equal(typeof result.carry, 'string')
   assert.match(result.carry, /notes\/outside\.txt/)
-  assert.ok(!promptOf(repo, result.id, 1).includes(CONTINUATION))
+  const prompt = promptOf(repo, result.id, 1)
+  assert.ok(!prompt.includes(CONTINUATION))
+  // The pair does not see the refused work: the prompt says why, where the patch is, and to rebuild it first.
+  const offered = path.join(repo.dir, '.aether', 'runs', result.id, 'patches', 'task-1-carry.patch')
+  assert.ok(fs.existsSync(offered))
+  assert.ok(
+    prompt.endsWith(
+      `${REFUSED}\nAn earlier attempt left its work in the patch \`${offered}\`, but it could not be applied to your worktree: the patch touches a path outside the paths this charge owns: notes/outside.txt. Read that patch and rebuild in the worktree what it describes, within the paths you own, before anything else: the brief goes on from that work.`,
+    ),
+    prompt,
+  )
   assert.equal(fs.existsSync(path.join(result.worktree, 'notes', 'outside.txt')), false)
+  assert.equal(repo.git('status', '--porcelain'), '')
+})
+
+test('--carry with a patch that does not apply cleanly: the correction is told why, where the patch is, and to rebuild it before it fixes the findings', async (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  // A patch that changes src/gone.js, a file the repository does not have.
+  const scratch = tempDir(t, 'aether-ladder-clone-')
+  spawnSync('git', ['-c', 'protocol.file.allow=always', 'clone', '-q', repo.dir, scratch], { encoding: 'utf8' })
+  fs.mkdirSync(path.join(scratch, 'src'), { recursive: true })
+  fs.writeFileSync(path.join(scratch, 'src', 'gone.js'), 'one\n')
+  spawnSync('git', ['add', 'src/gone.js'], { cwd: scratch })
+  spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'gone'], { cwd: scratch })
+  fs.writeFileSync(path.join(scratch, 'src', 'gone.js'), 'two\n')
+  const carry = fileOf(t, 'carry.patch', spawnSync('git', ['diff'], { cwd: scratch, encoding: 'utf8' }).stdout)
+  assert.match(fs.readFileSync(carry, 'utf8'), /diff --git a\/src\/gone\.js/)
+  const findings = fileOf(t, 'findings.md', 'src/gone.js:1: say three\n')
+  const result = await delegateIn(repo, env, { carry, findings })
+  assert.equal(result.status, 'done')
+  assert.equal(result.continued, false)
+  assert.match(result.carry, /does not apply cleanly/)
+  const prompt = promptOf(repo, result.id, 1)
+  const offered = path.join(repo.dir, '.aether', 'runs', result.id, 'patches', 'task-1-carry.patch')
+  assert.ok(!prompt.includes(CONTINUATION))
+  assert.ok(prompt.indexOf('## Findings to fix') < prompt.indexOf(REFUSED), prompt)
+  assert.ok(
+    prompt.endsWith(
+      `${REFUSED}\nAn earlier attempt left its work in the patch \`${offered}\`, but it could not be applied to your worktree: the patch does not apply cleanly. Read that patch and rebuild in the worktree what it describes, within the paths you own, before anything else: the findings are about that work.`,
+    ),
+    prompt,
+  )
   assert.equal(repo.git('status', '--porcelain'), '')
 })
 

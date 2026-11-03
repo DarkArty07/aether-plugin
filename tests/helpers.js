@@ -153,8 +153,12 @@ function runSessionStart(cwd, env, input = LEAD_START, args = []) {
 
 // Runs the part commands of hooks/hooks.json in order and returns what they print: outputs (each command's whole
 // standard output, '' when it printed nothing), contexts (the additionalContext of each part that printed) and
-// bootstrap (the parts' contexts without their "Aether mode, part k of n." heading, joined in order). It throws when a
-// command fails, when a part does not carry its heading, or when a command prints after one that printed nothing.
+// bootstrap (the parts' contexts without their heading, joined in order). It throws when a command fails, when a part
+// does not carry its heading, or when a command prints after one that printed nothing.
+// The heading of part k of n: what to do when a part is missing, with the rules' file in the plugin at root.
+const partHeading = (k, n, root) =>
+  `Aether mode, part ${k} of ${n}. If a part from 1 to ${n} did not reach you, read the whole file ${path.join(root, 'skills', 'using-aether', 'SKILL.md')} before you act.\n\n`
+
 function leadParts(cwd, env, input = LEAD_START) {
   const outputs = PART_COMMANDS.map((args) => {
     const r = runSessionStart(cwd, env, input, args)
@@ -165,7 +169,7 @@ function leadParts(cwd, env, input = LEAD_START) {
   if (outputs.slice(0, printed.length).some((out) => out === '')) throw new Error('a part command printed after one that printed nothing')
   const contexts = printed.map((out) => JSON.parse(out).hookSpecificOutput.additionalContext)
   const slices = contexts.map((context, i) => {
-    const heading = `Aether mode, part ${i + 1} of ${printed.length}.\n\n`
+    const heading = partHeading(i + 1, printed.length, env.CLAUDE_PLUGIN_ROOT || PLUGIN)
     if (!context.startsWith(heading)) throw new Error(`part ${i + 1} does not start with its heading: ${context.slice(0, 80)}`)
     return context.slice(heading.length)
   })
@@ -192,5 +196,6 @@ module.exports = {
   age,
   ageRun,
   runSessionStart,
+  partHeading,
   leadParts,
 }

@@ -24,10 +24,13 @@ const path = require('node:path')
 // under Claude Code's 10,000-character cut per hook output, measured in issue #139.
 const PART_LIMIT = 9800
 
+// The file of the Lead's rules in the plugin at root.
+const skillFile = (root) => path.join(root, 'skills', 'using-aether', 'SKILL.md')
+
 // Claude Code replaces ${CLAUDE_PLUGIN_ROOT} in a skill's content but not in a hook's additionalContext,
 // so the bootstrap gets the plugin folder's absolute path here, where the Lead can read the files it names.
 function bootstrap(root) {
-  const raw = fs.readFileSync(path.join(root, 'skills', 'using-aether', 'SKILL.md'), 'utf8')
+  const raw = fs.readFileSync(skillFile(root), 'utf8')
   return raw.replace(/^---\n[\s\S]*?\n---\n/, '').trim().split('${CLAUDE_PLUGIN_ROOT}').join(root)
 }
 
@@ -36,7 +39,10 @@ function contextOutput(context) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) + '\n'
 }
 
-const partHeading = (k, n) => `Aether mode, part ${k} of ${n}.\n\n`
+// Each part command is a process of its own, and one that fails or times out leaves no trace in the session: every
+// part's heading says what to do when a part is missing.
+const partHeading = (k, n, root) =>
+  `Aether mode, part ${k} of ${n}. If a part from 1 to ${n} did not reach you, read the whole file ${skillFile(root)} before you act.\n\n`
 
 // The offsets of text where a line starts that matches the pattern, after offset 0.
 function lineStarts(text, pattern) {
@@ -49,12 +55,12 @@ function lineStarts(text, pattern) {
 // characters. A cut falls just before a line that starts with "## ", so a section that fits in a part is never split
 // and the blank line before a heading ends the slice before it; only a section that cannot fit in a part of its own is
 // cut at its blank lines, then at its line breaks, then anywhere. The parts are { heading, slice, context, output };
-// the slices joined give the text back, byte for byte.
-function splitParts(text, limit = PART_LIMIT) {
+// the slices joined give the text back, byte for byte. root is the plugin folder that the headings name.
+function splitParts(text, root, limit = PART_LIMIT) {
   const levels = [lineStarts(text, /^## /gm), lineStarts(text, /(?<=\n\n)/g), lineStarts(text, /(?<=\n)/g)]
   for (const cuts of levels) cuts.push(text.length)
   const split = (n) => {
-    const fits = (from, to) => contextOutput(partHeading(n, n) + text.slice(from, to)).length <= limit
+    const fits = (from, to) => contextOutput(partHeading(n, n, root) + text.slice(from, to)).length <= limit
     const slices = []
     let from = 0
     while (from < text.length) {
@@ -77,8 +83,8 @@ function splitParts(text, limit = PART_LIMIT) {
     }
     return slices
   }
-  // A part's heading is longest with k = n, and its length grows with the digits of n: split again while the count
-  // has more digits than the split assumed.
+  // A part's heading is longest with k = n, and its length grows with the digits of n (twice in it): split again while
+  // the count has more digits than the split assumed.
   let assumed = 1
   let slices = split(assumed)
   while (String(slices.length).length > String(assumed).length) {
@@ -87,7 +93,7 @@ function splitParts(text, limit = PART_LIMIT) {
   }
   const n = slices.length
   return slices.map((slice, i) => {
-    const heading = partHeading(i + 1, n)
+    const heading = partHeading(i + 1, n, root)
     const context = heading + slice
     return { heading, slice, context, output: contextOutput(context) }
   })
@@ -95,7 +101,7 @@ function splitParts(text, limit = PART_LIMIT) {
 
 // The parts of the using-aether bootstrap of the plugin at root, as splitParts gives them.
 function bootstrapParts(root) {
-  return splitParts(bootstrap(root))
+  return splitParts(bootstrap(root), root)
 }
 
 // The plugin's version, read from <root>/.claude-plugin/plugin.json; '' when it cannot be read.
