@@ -47,7 +47,7 @@ const WORKDIR_RULE = 'Work only inside the working directory you are given: do n
 // no command at all).
 const READ_ONLY_RULE = (harness) =>
   harness === 'codex'
-    ? 'Your review is read-only: your only tool is the shell, so use it to read (cat, ls, grep, rg, git diff, git show) and run no other command, and do not change any file.'
+    ? 'Your review is read-only. Here, whatever your role says of a shell, your only tool is the shell, so use it to read (cat, ls, grep, rg, git diff, git show) and run no other command, and do not change any file.'
     : 'Your review is read-only: do not run commands, and do not change any file.'
 
 // The note of each role's lane call, naming the harness that runs it.

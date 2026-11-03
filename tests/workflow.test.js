@@ -758,6 +758,26 @@ test("a retry on haiku runs at xhigh, and an escalation runs the next model at h
   assert.match(attemptsOf(run, 'task-1')[1].prompt, /- Attempt 1 on haiku high: DONE\./)
 })
 
+test('the messages carry data: the rules of the implementer and the final reviewer live in their bodies, and a supervisor reads its own unit once', async (t) => {
+  const args = twoTasks(t)
+  const run = await runWorkflow(args, {
+    supervisor: (call, approve) => (call.unit === 'task-1' && call.n === 1 ? retry('gap 1') : approve(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const body = (role) => fs.readFileSync(path.join(PLUGIN, 'agents', `${role}.md`), 'utf8')
+  const implement = attemptsOf(run, 'task-1')[1].prompt
+  assert.ok(implement.includes(`- Set up: from ${args.repoRoot}, run \`${args.binDir}/aether-wt ensure ${args.runId} task-1\`.`))
+  for (const rule of ['Read the brief first', 'before you commit', 'Your budget is', 'The worktree keeps the work']) assert.equal(implement.includes(rule), false, rule)
+  assert.ok(body('implementer').includes('Read the brief first.') && body('implementer').includes('by about turn 45 of a 60-turn budget'))
+  const review = run.calls.find((c) => c.role === 'reviewer').prompt
+  assert.equal(review.includes('Reading plan'), false)
+  assert.ok(body('reviewer').includes('## Reading plan') && body('reviewer').includes('Give your report by turn 28 at the latest'))
+  const second = run.calls.filter((c) => c.role === 'supervisor' && c.unit === 'task-1')[1].prompt
+  assert.ok(second.includes('\n## Earlier attempts\n- Attempt 1 on haiku high'))
+  const area = second.split(/\n## Earlier rulings in area [^\n]*\n/)[1] ?? ''
+  assert.equal(/^- task-1 attempt /m.test(area), false, "the unit's own ruling is in its earlier attempts, not again in the area's")
+})
+
 test('the retry after a merge conflict keeps the model and the effort', async (t) => {
   const args = twoTasks(t)
   const run = await runWorkflow(args, {
@@ -788,11 +808,14 @@ test("the supervisor's Ladder section names the rung and corrections used", asyn
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   const ladders = run.calls.filter((c) => c.role === 'supervisor' && c.unit === 'task-1').map((c) => c.prompt.split('\n## Ladder\n')[1])
+  // The section is data: what the ladder does with a ruling lives once, in supervisor.md (pinned in swarm-ladder-agents.test.js).
   assert.deepEqual(ladders, [
-    'Rung: haiku high. Corrections used on this rung: 0 of 5.\nThe ladder raises the model by itself; you rule approve, retry, escalate or block.',
-    'Rung: haiku xhigh. Corrections used on this rung: 1 of 5.\nThe ladder raises the model by itself; you rule approve, retry, escalate or block.',
-    'Rung: haiku xhigh. Corrections used on this rung: 2 of 5.\nThe ladder raises the model by itself; you rule approve, retry, escalate or block.',
+    'Rung: haiku high. Corrections used on this rung: 0 of 5.',
+    'Rung: haiku xhigh. Corrections used on this rung: 1 of 5.',
+    'Rung: haiku xhigh. Corrections used on this rung: 2 of 5.',
   ])
+  const body = fs.readFileSync(path.join(PLUGIN, 'agents', 'supervisor.md'), 'utf8')
+  assert.ok(body.includes('The ladder raises the model by itself: when the corrections of the rung are spent'))
 })
 
 test("every task starts on haiku high, ignoring plan tier and effort", async (t) => {

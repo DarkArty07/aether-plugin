@@ -3,6 +3,8 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { DEFAULT_REVIEW, MAX_OWNED_PATHS, MAX_NAMED_READS, parsePlan, buildGraph, renderBrief, specObjective } = require('../plugins/aether/lib/plan.js')
+const path = require('node:path')
+const { makeRepo } = require('./helpers.js')
 const { task, plan, specKitTasks } = require('./plan-fixtures.js')
 
 test('parsePlan reads a Spec Kit tasks.md, and its checklist is never read as a task', () => {
@@ -358,6 +360,16 @@ test('specObjective is null without an intent or criteria, and is bounded', () =
   const bounded = specObjective(long)
   assert.ok(bounded.length <= 2000, String(bounded.length))
   assert.ok(bounded.endsWith('…'))
+})
+
+test('renderBrief names the plan from the top of its worktree, as it names the spec, so a lane implementer can reach it', (t) => {
+  const repo = makeRepo(t)
+  const parsed = parsePlan(plan([task(1)]))
+  const planPath = path.join(repo.dir, 'specs', '001-x', 'tasks.md')
+  const brief = renderBrief(parsed.tasks[0], { planPath, spec: 'specs/001-x/spec.md', globalConstraints: parsed.globalConstraints })
+  assert.ok(brief.includes('\n- Plan: specs/001-x/tasks.md\n- Spec: specs/001-x/spec.md\n'), brief)
+  const outside = renderBrief(parsed.tasks[0], { planPath: '/p/plan.md', spec: null, globalConstraints: parsed.globalConstraints })
+  assert.ok(outside.includes('\n- Plan: /p/plan.md\n'), 'a plan no worktree holds keeps its path')
 })
 
 test('renderBrief puts the spec objective before the task, and nothing when there is none', () => {
