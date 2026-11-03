@@ -483,14 +483,13 @@ function formatFindings(findings) {
   })
 }
 
-// The block a correction round gives the Writer: the edit, the paths, and each finding with its place.
-const EDIT_ONLY = 'Edit the document in place. Change only what the findings need. Do not rewrite, reorder or reformat the rest. Keep everything the Judge did not flag.'
-
+// The block a correction round gives the Writer: the paths, and each finding with its place. How to correct (edit in
+// place, change only what the findings need) is the Writer's rule for a revision, in writer.md.
 // This is the reference copy that the workflow's copy follows and the tests pin. The design workflow keeps its
 // own copy, and nothing in a round calls this one.
 function revisionBrief({ paths, findings, openQuestions = [] }) {
   const questions = Array.isArray(openQuestions) ? openQuestions.filter((item) => typeof item === 'string' && item !== '') : []
-  const out = [EDIT_ONLY, '', 'The document:', ...paths.map((item) => `- ${item}`), '', 'Findings:', ...formatFindings(findings)]
+  const out = ['The document:', ...paths.map((item) => `- ${item}`), '', 'Findings:', ...formatFindings(findings)]
   if (questions.length > 0) out.push('', 'Open questions:', ...questions.map((item) => `- ${item}`))
   return out.join('\n')
 }
@@ -499,14 +498,16 @@ function revisionBrief({ paths, findings, openQuestions = [] }) {
 // fields; they are not a brief to write the document again.
 function correctionLine(message) {
   if (typeof message !== 'string' || !message.startsWith('Revise ')) return []
-  return ['- This round corrects the document. Edit it in place, as the message says. What follows is the rule of the fields, not a brief to write the document again.']
+  return ['- This round corrects the document. Edit it in place, as your role says for a revision. What follows is the rule of the fields, not a brief to write the document again.']
 }
 
-// The note that tells the role it runs in an external harness, and what changes for it there.
+// The note that tells the role it runs in an external harness, and what changes for it there. A Writer seat's schema is
+// the draft's of its document in every round, a correction's too (the workflow and finishSpec/finishWriter read that
+// shape), so its note says to answer in that shape where writer.md gives a native correction the revision shape.
 function seatNote(seat, harness, feature, doc, message = '') {
   const head = `## You run in an external harness\n\n`
   if (seat === 'judge') {
-    return `${head}You are the Aether Judge, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the repository at the commit under review. Your review is read-only: read files and run read-only commands such as \`git log\` or \`grep\`, but never change, create or delete a file; any change undoes your review. ${WORKDIR_RULE} Every other rule of your role holds. Your answer is the structured output your harness asks for, in place of the indented block your role describes: verdict, findings (each with severity, type, title, evidence and fix; at most ${MAX_FINDINGS}) and openQuestions. Each finding's type says what is wrong: \`missing\` (the document lacks something it needs), \`extra\` (it has something nobody asked for) or \`wrong\` (it says something that is not so).`
+    return `${head}You are the Aether Judge, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the repository at the commit under review. Your review is read-only: read files and run read-only commands such as \`git log\` or \`grep\`, but never change, create or delete a file; any change undoes your review. ${WORKDIR_RULE} Your limit here is the round's time, not the 30 turns of your reading plan: read as the plan says, and give your verdict with what you have rather than read on. Every other rule of your role holds. Your answer is the structured output your harness asks for, in place of the indented block your role describes: verdict, findings (each with severity, type, title, evidence and fix; at most ${MAX_FINDINGS}) and openQuestions.`
   }
   if (seat === 'writer' && doc === 'spec') {
     return [
@@ -514,7 +515,7 @@ function seatNote(seat, harness, feature, doc, message = '') {
       '- You have no Skill tool. Where your role says to load the skill aether:specify, follow its text, which is below. Do not write a plan or tasks, and do not run aether-plan.',
       `- Change only \`${feature}/spec.md\`, and commit it. A change to any other file undoes your whole round.`,
       `- ${WORKDIR_RULE}`,
-      '- Your reply goes in the structured output your harness asks for: spec is its path, commit is your commit, clarify lists each [NEEDS CLARIFICATION: ...] mark left in the spec, and assumptions, proposals, questions and disagreements are lists.',
+      '- Your answer is the structured output your harness asks for, with the fields your role lists after the spec, also when this round corrects it: not the revision shape.',
       ...correctionLine(message),
       '',
       '## The skill aether:specify',
@@ -529,7 +530,7 @@ function seatNote(seat, harness, feature, doc, message = '') {
       `- Run aether-plan as \`${path.join(PLUGIN_BIN, 'aether-plan')}\`.`,
       `- Change only \`${feature}/plan.md\` and \`${feature}/tasks.md\`, and commit them. A change to any other file undoes your whole round.`,
       `- ${WORKDIR_RULE}`,
-      '- Your reply goes in the structured output your harness asks for: plan and tasks are their paths, commit is your commit, check is what `aether-plan check` printed, and assumptions and questions are lists.',
+      '- Your answer is the structured output your harness asks for, with the fields your role lists after the plan and the tasks, also when this round corrects them: not the revision shape.',
       ...correctionLine(message),
       '',
       '## The skill aether:plan',
@@ -541,7 +542,7 @@ function seatNote(seat, harness, feature, doc, message = '') {
       skillBody('tasks'),
     ].join('\n')
   }
-  return `${head}You are the Aether Examiner, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the repository. Write the exam under \`${EXAM_DIR}/\` in the current directory, and nothing else: a change outside it undoes your round. Never read \`tasks.md\`. ${WORKDIR_RULE} Every other rule of your role holds. Your answer is the structured output your harness asks for: tests (each with id, criterion, command and files) and notes.`
+  return `${head}You are the Aether Examiner, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the repository. Write the exam under \`${EXAM_DIR}/\` in the current directory, and nothing else: a change outside it undoes your round. ${WORKDIR_RULE} Every other rule of your role holds. Your answer is the structured output your harness asks for, in place of the text answer your role describes: tests (each with id, criterion, command and files) and notes.`
 }
 
 function answerSection(seat, doc) {
