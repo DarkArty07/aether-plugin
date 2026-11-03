@@ -27,6 +27,10 @@
 // wait, and answered with no model request), and the last step of a read-only delegate on Claude (its answer is
 // recorded for the verdict). The ladder never breaks a call: any failure in it leaves the call as the Lead made it.
 //
+// It also takes one paragraph out of the description of the Agent tool in an Aether session (agent-text.mjs, issue 145):
+// on a Pro account Claude Code says there to launch no agent unless the user asks, against the Lead's rules. A plain
+// session keeps the engine's text.
+//
 // It also gives an Aether session the /harnesses command (panel.jsx): a pane with the delegation settings and the quota
 // of each harness, drawn without a model. The Lead's SessionStart declares the command; the command and the pane ask
 // this file whether the session is Aether's (aetherSession) when they are used, never at session start, so that the
@@ -51,6 +55,7 @@ import { registerSpend } from './spend-panel.jsx'
 import { brakePromptFor, crossingsOf, initialBrakeState, jsonFrom, notifyFor, resumePromptFor } from './quota-brake.mjs'
 import { createDelegates } from './delegate.mjs'
 import { errorKind, readDataDir, recordFault } from './fault-trace.mjs'
+import { withoutSpawnRule } from './agent-text.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -125,6 +130,19 @@ async function isAether($, state) {
 export async function aetherSession($) {
   const state = await currentSession($)
   return state && (await isAether($, state)) ? state : null
+}
+
+// Whether the session is Aether, without keeping an answer that is still "no": the first answer kept for a session is
+// the meter's own, and the Agent description (issue 145) may be asked before the Lead's SessionStart has marked it.
+async function isAetherUnkept($, state) {
+  if (state.aether !== undefined) return state.aether
+  try {
+    state.dataDir ??= readDataDir($)
+    return (await $.fs.exists(`${await state.dataDir}/sessions/${state.id}.json`)) === true
+  } catch {
+    void recordFault($, state, 'register.marker-check', 'read-failed')
+    return false
+  }
 }
 
 async function init($, state) {
@@ -484,11 +502,41 @@ export function register(on, options) {
 
   on('classic.SessionStart', async ($, e, next) => {
     if (e && e.agent_type === LEAD && typeof e.session_id === 'string' && SESSION_ID.test(e.session_id)) {
-      sessionOf(e.session_id).aether = true
+      const state = sessionOf(e.session_id)
+      state.aether = true
+      // The Agent description was asked for before this event and kept with its paragraph: ask for it again.
+      if (state.agentTextStale) {
+        state.agentTextStale = false
+        try {
+          $.ui.invalidate('tool.describe')
+        } catch (err) {
+          // The paragraph stays, and using-aether's sentence about the owner's request covers it.
+          void recordFault($, state, 'register.on-tool-describe', 'handler-threw', errorKind(err))
+        }
+      }
     }
     return next(e)
   }).catch(($, e, next) => {
     void recordEventFault($, 'register.on-session-start')
+    return next(e)
+  })
+
+  // On a Pro account the Agent tool's text says to launch no agent unless the user asks, against the Lead's rules (issue 145):
+  // in an Aether session that paragraph is taken out of the description. A plain session keeps the engine's text.
+  on('tool.describe', { tool: 'Agent' }, async ($, e, next) => {
+    const result = await next(e)
+    if (!result || typeof result.description !== 'string') return result
+    const description = withoutSpawnRule(result.description)
+    if (description === result.description) return result
+    const state = await currentSession($)
+    if (!state) return result
+    if (!(await isAetherUnkept($, state))) {
+      state.agentTextStale = true
+      return result
+    }
+    return { ...result, description }
+  }).catch(($, e, next) => {
+    void recordEventFault($, 'register.on-tool-describe')
     return next(e)
   })
 

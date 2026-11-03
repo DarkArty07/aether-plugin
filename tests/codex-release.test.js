@@ -7,14 +7,14 @@ const path = require('node:path')
 const ROOT = path.join(__dirname, '..')
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 
-test('the manifest, the launcher pin, the README and the changelog all say 0.30.1 (R25 of spec 022, four releases later)', () => {
-  assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.30.1')
-  assert.ok(read('tests/launcher.test.js').includes("'0.30.1'"))
+test('the manifest, the launcher pin, the README and the changelog all say 0.30.2 (R25 of spec 022, four releases later)', () => {
+  assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.30.2')
+  assert.ok(read('tests/launcher.test.js').includes("'0.30.2'"))
   const readme = read('README.md')
   assert.equal(readme.split('\n').filter((line) => /^Version \d/.test(line)).length, 1)
-  assert.ok(readme.includes('Version 0.30.1 ('))
+  assert.ok(readme.includes('Version 0.30.2 ('))
   const firstVersion = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(firstVersion.startsWith('Version 0.30.1: ') && firstVersion.includes('A104') && /spec 025/.test(firstVersion), firstVersion)
+  assert.ok(firstVersion.startsWith('Version 0.30.2: ') && /issue 145/.test(firstVersion), firstVersion)
 })
 
 test('the decisions record A100 with the owner\'s words and what was decided about Codex (R25)', () => {
@@ -24,6 +24,6 @@ test('the decisions record A100 with the owner\'s words and what was decided abo
 })
 
 test('the guides say that Codex is a work harness, and the roadmap says what is now (R25)', () => {
-  assert.ok(read('docs/roadmap.md').split('\n').find((line) => line.startsWith('**Now:**')).includes('version 0.30.1'))
+  assert.ok(read('docs/roadmap.md').split('\n').find((line) => line.startsWith('**Now:**')).includes('version 0.30.2'))
   assert.ok(/codex/i.test(read('docs/reference/components.md')))
 })

@@ -85,6 +85,9 @@ test('R23: no tracked file holds the owner\'s home folder or email', () => {
 test('R21: the retired document folders are gone and the last handoff stays', () => {
   const docs = tracked('docs')
   assert.deepEqual(docs.filter((f) => /^docs\/(superpowers|evaluations|roadmap|evidence)\//.test(f)), [])
-  assert.deepEqual(docs.filter((f) => f.startsWith('docs/handoff/')), ['docs/handoff/2026-11-01-install-launch-learn.md'])
+  // The handoffs that stay are dated pages; a release adds one, so the list is not pinned (issue 146).
+  const handoffs = docs.filter((f) => f.startsWith('docs/handoff/'))
+  assert.ok(handoffs.length > 0)
+  assert.deepEqual(handoffs.filter((f) => !/^docs\/handoff\/\d{4}-\d{2}-\d{2}-.+\.md$/.test(f)), [])
   assert.deepEqual(tracked('specs').filter((f) => /\/evidence\//.test(f)), [])
 })
