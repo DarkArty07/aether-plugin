@@ -114,6 +114,19 @@ test('a correction passes the pair, the earlier patch and the findings on to the
   assert.deepEqual([seen[0].pair, seen[0].carry, seen[0].findings, seen[0].effort], [PAIR.id, patch, findings, 'high'])
 })
 
+test('when the lane command refused the earlier patch, the text tells the Lead why in one line; an applied carry or none adds nothing', async (t) => {
+  const { CARRY_UNAPPLICABLE } = require('../plugins/aether/lib/lane-work.js')
+  const run = async (fields) => {
+    const { repo, dataDir, done } = world(t, { launchKind: 'fix', carry: true })
+    return (await dr.runTask({ id: 't1', cwd: repo.dir, dataDir }, { delegateCommand: async () => ({ ...done, ...fields }) })).text
+  }
+  // The shape of a done result whose carry the guards refused (tests/lane-delegate-ladder.test.js): continued false, carry the reason.
+  const refused = await run({ continued: false, carry: CARRY_UNAPPLICABLE })
+  const lines = refused.split('\n').filter((line) => line.startsWith('Carry refused: '))
+  assert.deepEqual(lines, [`Carry refused: ${CARRY_UNAPPLICABLE}; this attempt did not start from that work, so check that it rebuilt it.`])
+  for (const fields of [{ continued: true }, { continued: false }, {}]) assert.equal((await run(fields)).includes('Carry refused'), false, JSON.stringify(fields))
+})
+
 test('a result that touches files outside Owns, or changes nothing, is marked and never approvable (E9)', async (t) => {
   const outside = world(t)
   fs.mkdirSync(path.join(outside.repo.dir, 'docs'))
