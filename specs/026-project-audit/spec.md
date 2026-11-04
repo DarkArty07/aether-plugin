@@ -1,0 +1,116 @@
+# Especificación: `/aether:audit`, una auditoría del proyecto que entrega una lista ordenada por urgencia
+
+- **Date:** 2026-11-04
+- **Status:** Draft
+- **Intent:** [intent.md](intent.md), confirmada por el dueño el 2026-11-04. La investigación en que se apoya la propuesta aprobada está en [research.md](research.md).
+
+## Criteria
+
+- **C1.** `/aether:audit` es una skill del plugin y funciona en cualquier proyecto, no solo en este. «la quiero como skill del plugin es decir como la que creemos con either onboard». Evidence: la skill está en `plugins/aether/skills/audit/`, una prueba fija su portada (nombre, `disable-model-invocation`, argumento) y cada ronda de prueba corre en proyectos del dueño sin archivos de Aether, de pilas distintas.
+- **C2.** Antes de revisar, el Lead corre el análisis automatizado y propone los temas que aplican y los que deja fuera, cada uno con su razón, en una sola pregunta; con temas en la invocación no pregunta. «Antes de comenzar que el lead diga algo asi. La skill dice que haga auditorias con agentes en estos cmapos, confirmas todos o quieres que quitemos alguno porque no lo necesitas?» y «analisis automatizado sera.». Evidence: pruebas del análisis sobre repositorios git desechables, y en cada ronda el registro de la sesión muestra una sola pregunta con temas y razones (o ninguna cuando se nombraron temas).
+- **C3.** Los temas cubren la práctica establecida, no solo los cuatro que dijo el dueño. «yo propuse 4 pero yo queiro que te bases en las mejores practicas y me hagas una propeusta, que tal si hay un state of art en skills a auditoria que no conozcamos.» Evidence: el catálogo de temas de la skill contiene los doce de R9, cada uno con su fuente en [research.md](research.md), y una prueba lo verifica.
+- **C4.** Cada hallazgo de la lista trae su prueba y su estado de verificación, y uno que no se pudo verificar nunca se presenta como seguro. «que automáticamente me lo diga todo y yo decida cuáles son lo que quiero tomar de esa auditoría.» y «hallgasofgs […] fixes que se necesitan ya, bugs que podrian aparecer». Evidence: en el reporte de cada ronda, ningún punto de la lista ordenada está «sin verificar» y todos tienen ubicación y evidencia; una prueba con verificadores simulados que fallan comprueba que su hallazgo cae en «sin verificar».
+- **C5.** El resultado es una lista ordenada de lo más urgente a lo menos, con la forma del prototipo aprobado, y termina preguntando qué toma el dueño. «Hay esto pendiente en orden de de mas urgente a menos urgente.» y «me parece bien». Evidence: el reporte de cada ronda tiene las secciones de R21 en ese orden, y una prueba del triaje con hallazgos simulados fija el orden.
+- **C6.** La auditoría no cambia nada del proyecto auditado y no arregla nada: el dueño decide qué tomar. «yo decida cuáles son lo que quiero tomar de esa auditoría.» Evidence: en cada ronda, `git status` y `git rev-parse HEAD` del proyecto auditado son idénticos antes y después, y no se creó ningún issue.
+- **C7.** La lista no repite lo que ya es un issue abierto, y dice qué cambió desde la auditoría anterior. «que automáticamente me lo diga todo» (sin trabajo repetido). Evidence: una prueba de la limpieza con issues simulados y con una auditoría anterior simulada; en las rondas 2 y 3 el reporte marca cada punto «nuevo», «sigue» o «resuelto».
+- **C8.** La skill se prueba en proyectos reales del dueño, este repositorio incluido, hasta tres rondas, corrigiéndola entre una y otra; cada ronda queda con su evidencia. «Lo vas a probar hasta tres veces. […] la idea es que esta skill esté probada.» Evidence: `specs/026-project-audit/rounds/round-N.md` por cada ronda corrida, con lo de R29.
+- **C9.** La skill queda documentada y los tests del repositorio pasan. «El resultado final es que tengas la skill probada y documentada.» Evidence: `npm test` y `npm run validate` pasan; la guía existe y `tests/docs-facts.test.js` pasa con ella.
+
+## User scenarios
+
+1. **Auditoría completa en un proyecto con tests y GitHub.** Dado un proyecto Node con tests, remoto en GitHub y `gh` autenticado, cuando la persona escribe `/aether:audit`, entonces el Lead corre el análisis automatizado, muestra su resumen y una sola pregunta con los temas propuestos y los dejados fuera, cada uno con su razón; la persona contesta «todos menos rendimiento»; la auditoría corre en segundo plano; y al terminar el Lead entrega la lista de P0 a P3 y pregunta cuáles toma.
+2. **Temas nombrados.** Dado cualquier proyecto, cuando la persona escribe `/aether:audit docs bugs`, entonces el Lead corre el análisis automatizado y la auditoría de esos dos temas sin hacer la pregunta de temas.
+3. **Proyecto sin nada.** Dado un repositorio git sin tests, sin linter, sin manifiesto y sin remoto, cuando se audita, entonces cada revisión automatizada dice «no aplica» y por qué, la auditoría sigue con los temas que sí aplican y el reporte lo dice en «lo que no cubrió»; nada falla.
+4. **Sin la herramienta Workflow.** Dado un Lead cuya sesión no tiene la herramienta Workflow (Dynamic workflows apagados), cuando la persona corre `/aether:audit`, entonces el Lead hace las mismas fases con delegados en segundo plano, entrega la misma lista, y el reporte dice que corrió sin el workflow. No pide encender nada ni se detiene.
+5. **Un verificador falla.** Dado un hallazgo cuyo verificador se agota o no responde, cuando se hace la entrega, entonces ese hallazgo está en «sin verificar», con su razón, y no tiene nivel de prioridad ni aparece en la lista numerada.
+6. **Segunda auditoría.** Dado un proyecto auditado antes, con un issue abierto que ya cubre un hallazgo y un hallazgo antiguo ya arreglado, cuando se audita otra vez, entonces el issue cubierto no aparece como punto, el arreglado sale como «resuelto», y los demás como «nuevo» o «sigue».
+7. **Lo que el dueño elige.** Dado el reporte entregado, cuando la persona dice «tomo el 1, el 4 y el 7» en un proyecto con GitHub, entonces el Lead crea un issue por punto elegido con su evidencia y no antes; en un proyecto sin GitHub, entrega los puntos elegidos como texto y no crea nada.
+8. **Un secreto en el historial.** Dado un secreto en un commit viejo, cuando el análisis lo encuentra, entonces el reporte dice el tipo, el commit y el archivo, y el valor no aparece en la salida, en el reporte ni en el registro de los delegados.
+
+## Requirements
+
+### La skill
+
+- **R1.** Existe la skill `audit` del plugin (`/aether:audit [temas]`), con `disable-model-invocation`, como `onboard`: no agrega entrada a la lista de skills ni hook ni nada a una sesión que no la invoca. Funciona en un proyecto sin archivos de Aether (sin `.specify/`, sin `CLAUDE.md`, sin `specs/`), de cualquier pila, con o sin tests, con tests lentos, con o sin remoto de GitHub y con o sin `gh`. Sirve a: C1.
+- **R2.** La auditoría tiene siete fases, en este orden: análisis automatizado, pregunta de temas, descubrimiento, verificación, limpieza, triaje y entrega. Ninguna fase cambia el proyecto auditado. Sirve a: C1, C6.
+- **R3.** La skill responde en el idioma en que escribe la persona, y el reporte se escribe en ese idioma. Sirve a: C5.
+
+### Análisis automatizado
+
+- **R4.** El análisis automatizado es un comando del plugin, sin modelos, cuya salida es un objeto JSON, con pruebas sobre repositorios git desechables. Hace, cuando aplican: correr los tests del proyecto (el comando sale del manifiesto o de la documentación del proyecto, con un tope de tiempo); el linter si el proyecto lo tiene; la auditoría de dependencias del ecosistema (`npm audit`, `pip-audit` o el equivalente); la búsqueda de secretos en el árbol y en el historial de todas las ramas; los TODO y FIXME con su archivo y línea; las ramas, los PR y los issues viejos; y los hotspots del historial (los archivos que más cambian y más grandes son). Sirve a: C2, C4.
+- **R5.** Cada revisión del análisis termina en uno de tres estados: un resultado, «no aplica» (con por qué) o «no se pudo» (con por qué: sin red, sin la herramienta, tope de tiempo, error). Una revisión que no se pudo no se cuenta como limpia. El análisis nunca instala ni inicializa nada, y sale sin error aunque todas las revisiones sean «no aplica». Sirve a: C2, C4.
+- **R6.** El análisis no cambia el proyecto: compara el estado del árbol (`git status` y `HEAD`) antes y después de correr los tests y las herramientas del proyecto, y si algo cambió lo dice como hallazgo de la propia auditoría con los archivos. No ejecuta ningún comando que corrija (`npm audit fix`, `--fix`, `git fetch`, `git pull`). Sirve a: C6.
+- **R7.** El valor de un secreto encontrado nunca se imprime ni se guarda (ni en la salida del análisis, ni en el reporte, ni en lo que reciben los delegados); solo su tipo, el archivo, la línea o el commit. Sirve a: C6.
+- **R8.** Los hotspots salen ordenados, cada uno con su frecuencia de cambio y su tamaño, y se entregan a los revisores como el lugar donde empezar. Un archivo grande que casi no cambia queda por debajo de uno que cambia mucho. Sirve a: C2, C4.
+
+### La pregunta de temas
+
+- **R9.** El catálogo de temas tiene doce: bugs; seguridad; dependencias; tests; fiabilidad; rendimiento; accesibilidad; arquitectura y deuda técnica; documentación contra código; versiones y releases; higiene del repositorio; oportunidades. Cada tema tiene su fuente en [research.md](research.md). Rendimiento y accesibilidad solo se proponen cuando el análisis muestra que aplican (código con interfaz o con caminos de trabajo pesado). Sirve a: C3.
+- **R10.** Después del análisis automatizado y antes de cualquier revisión con modelos, el Lead muestra el resumen del análisis y hace una sola pregunta, en una sola llamada: los temas que propone, cada uno con su razón sacada del análisis, y los que deja fuera, cada uno con la suya. La persona confirma, quita o agrega. Sin respuesta nueva en esa llamada la auditoría no empieza. Sirve a: C2.
+- **R11.** Con temas en la invocación (`/aether:audit docs bugs`) no hay pregunta: el Lead audita esos temas. Un nombre que no está en el catálogo se dice al empezar y se ignora; si ninguno es del catálogo, el Lead hace la pregunta de R10. Sirve a: C2.
+
+### Descubrimiento y verificación
+
+- **R12.** El descubrimiento usa un revisor por tema confirmado, todos en paralelo, cada uno un delegado de solo lectura, en un contexto sin la conversación de la persona. Cada revisor recibe su tema, el resumen del análisis y los hotspots, empieza por los hotspots, trabaja sobre un alcance acotado, y devuelve además qué no miró. El trabajo de un revisor que toca un archivo del proyecto falla, como cualquier delegado de solo lectura. La skill no escoge el modelo de ningún delegado. Sirve a: C3, C6.
+- **R13.** Cada hallazgo candidato trae: un título, la afirmación, la ubicación (archivo y línea), el tipo (bug, riesgo, deuda, documentación, oportunidad u otro), qué lo dispara, la evidencia y el impacto. Un candidato sin ubicación o sin evidencia no pasa a la verificación; queda en «descartado» con la razón. Sirve a: C4.
+- **R14.** Cada hallazgo candidato pasa a un verificador, un delegado de solo lectura en un contexto nuevo que recibe la afirmación y la ubicación, no el razonamiento del revisor. El verificador primero reescribe la afirmación con su causa, su disparador y su impacto; luego intenta refutarla; y la reproduce cuando se puede sin tocar el proyecto. Su veredicto es uno de: «comprobado» (se reprodujo), «confirmado leyendo el código», «propuesta» (solo para oportunidades, que no son defectos), «refutado» o «sin verificar». Sirve a: C4.
+- **R15.** Un hallazgo cuya verificación falla (el verificador se agota, no responde, devuelve un veredicto que no es uno de los cinco o no trae evidencia) queda «sin verificar» con la razón. Nunca se conserva como si estuviera verificado. Sirve a: C4.
+
+### Limpieza y triaje
+
+- **R16.** La limpieza junta los hallazgos de la misma causa en uno solo, con todas sus ubicaciones. Sirve a: C7.
+- **R17.** Cuando el proyecto tiene remoto de GitHub y `gh` responde, la limpieza quita los hallazgos que ya cubre un issue abierto y dice cuáles y con qué número de issue. Cuando no, dice que no pudo comparar. Sirve a: C7.
+- **R18.** La limpieza compara con la auditoría anterior del mismo proyecto y marca cada punto «nuevo» o «sigue», y lista los «resueltos». En la primera auditoría dice que no hay una anterior. Sirve a: C7.
+- **R19.** El triaje da a cada hallazgo comprobado o confirmado una gravedad (el alcance del daño) y una prioridad (cuándo arreglarlo) por separado, con la razón del nivel en una frase. Los niveles son cuatro: P0 urge ya, P1 pronto, P2 programable, P3 cuando puedas o idea. La edad de un issue, una rama o un TODO es un motivo para mirar, no una gravedad. Sirve a: C5.
+- **R20.** Dentro de cada nivel el orden es: primero lo que más cuesta esperar y, a igual costo de espera, lo que menos cuesta hacer; una regresión va antes que un defecto viejo del mismo nivel. El costo de hacerlo se da en tamaños gruesos (por ejemplo S, M, L), no en cifras exactas. Sirve a: C5.
+
+### La entrega
+
+- **R21.** La entrega, en este orden, es: la lista numerada de P0 a P3, donde cada punto trae qué es, dónde (archivo y línea), su tipo, por qué ese nivel, qué tan verificado está, su tamaño y cómo se construiría; luego las secciones «sin verificar», «descartado», «qué cambió desde la última», «lo que no cubrió», el RADAR con sus cifras y el costo; y al final la pregunta de cuáles toma la persona. Sirve a: C5.
+- **R22.** «Lo que no cubrió» nombra cada revisión del análisis que fue «no aplica» o «no se pudo», cada tema que se dejó fuera, lo que cada revisor dijo que no miró, los revisores que se agotaron, y si la auditoría corrió sin el workflow. Sirve a: C4, C5.
+- **R23.** El costo de la auditoría se lee de los registros de Aether (`aether-report --spend`, el registro de los delegados); cuando no se puede leer, el reporte lo dice y no inventa una cifra. Sirve a: C5.
+- **R24.** El reporte completo se guarda fuera del árbol del proyecto auditado, en el directorio de datos del plugin, bajo una carpeta del proyecto y con la fecha; la entrega dice la ruta. La auditoría siguiente del mismo proyecto lee de ahí la anterior. Sirve a: C6, C7.
+- **R25.** La auditoría no arregla nada: no edita archivos del proyecto, no hace commits, ramas ni worktrees en él, y no crea issues por su cuenta. Solo después de que la persona elige puntos, y solo si el proyecto usa GitHub y `gh` responde, el Lead crea un issue por punto elegido con su evidencia; si no, entrega los puntos elegidos como texto. Sirve a: C6.
+
+### Sin la herramienta Workflow
+
+- **R26.** Cuando la sesión tiene la herramienta Workflow, el descubrimiento y la verificación corren como un workflow en segundo plano, y la persona puede seguir hablando con el Lead; al terminar recibe la entrega. Cuando la sesión no la tiene, el Lead hace las mismas fases con delegados en segundo plano y entrega el mismo reporte, con las mismas secciones, y «lo que no cubrió» dice que corrió sin el workflow. En ningún caso la auditoría se detiene ni pide a la persona que encienda los workflows. Sirve a: C1, C5.
+
+### Pruebas, documentación y registro
+
+- **R27.** Las partes que no usan modelos (el análisis automatizado, la limpieza, el triaje, la forma del reporte) tienen pruebas en `tests/` que corren con `npm test` sobre repositorios desechables y con hallazgos y verificadores simulados, sin gastar tokens, entre ellas: un repositorio sin nada, un hotspot, un secreto sin que su valor aparezca, un verificador que falla, un issue abierto que cubre un hallazgo, una auditoría anterior, y el orden de la lista. Sirve a: C2, C4, C5, C7, C9.
+- **R28.** Una prueba fija la skill: su portada (`name`, `description`, `argument-hint`, `disable-model-invocation`), que nombra las siete fases de R2 y los doce temas de R9, que dice qué hace sin la herramienta Workflow, y que `/aether:help` la nombra. Sirve a: C1, C3, C9.
+- **R29.** Las pruebas en proyectos reales son hasta tres rondas. La ronda 1 corre en al menos tres proyectos de `~/Desktop/03_PROYECTOS/01_ACTIVOS`, de pilas distintas entre sí, uno de ellos este repositorio. Entre una ronda y otra se corrige la skill con lo que se encontró. Cada ronda deja `specs/026-project-audit/rounds/round-N.md` con: los proyectos, los temas, cuántos hallazgos hubo en cada estado, el tiempo y el costo, si el proyecto quedó idéntico (R6, C6), los defectos de la skill que se encontraron, y qué se cambió. En las pruebas no se crea ningún issue en repositorios del dueño. Sirve a: C8.
+- **R30.** La skill se documenta: una guía `docs/guide/audit.md` (con su portada y enlazada desde `docs/index.md`), su equivalente en español en `docs/es/`, la fila de la tabla de `docs/reference/components.md`, la mención en `/aether:help`, y la nota de la huella en reposo, de modo que `tests/docs-facts.test.js` pasa. La guía dice lo que audita, lo que no hace, qué pasa sin red, sin tests o sin GitHub, dónde se guarda el reporte y que las rondas de prueba están en `specs/026-project-audit/rounds/`. Sirve a: C9.
+- **R31.** `npm test` y `npm run validate` pasan al final. Sirve a: C9.
+
+## Proposals
+
+None.
+
+## Assumptions
+
+- **A1. El reporte se guarda en el directorio de datos del plugin, no en el proyecto.** Base: C6 prohíbe cambiar el proyecto auditado y la tarjeta dice que «se guarda el reporte». Guardarlo en el árbol (por ejemplo `docs/audits/`) sería una escritura en el proyecto. La persona puede pedir otra ruta después.
+- **A2. Las oportunidades son hallazgos de tipo propio, «propuesta», y entran a la lista en P3.** Base: la tarjeta pide «funcionalidades que podríamos implementar» y el veredicto «propuesta». No son defectos, por eso no se «comprueban». Reversible: pasarlas a una sección aparte.
+- **A3. Los tests del proyecto auditado se corren con un tope de tiempo (el plan lo fija; punto de partida: 5 minutos).** Base: los proyectos del dueño pueden tener tests lentos o ninguno. Si se agota, la revisión es «no se pudo» con el tope, no un fallo del proyecto. Reversible: cambiar el tope o pedir con un argumento saltarse los tests.
+- **A4. Un nombre de tema desconocido se ignora y se dice, no detiene la auditoría.** Base: la regla de no detenerse a preguntar. Reversible en el texto de la skill.
+- **A5. Cada ronda de prueba usa proyectos que no tengan cambios sin guardar, o los audita con ese hecho dicho.** Base: un delegado externo de solo lectura no se lanza sobre un árbol con cambios sin confirmar; el delegado corre entonces en Claude, con su escalera. No cambia el resultado, cambia dónde corre.
+- **A6. La guía va en inglés y en español.** Base: el repositorio mantiene `docs/es/` desde la spec 024. Reversible: dejar solo la inglesa.
+- **A7. El número de proyectos de la ronda 1 es al menos tres y los elige el Lead.** Base: la tarjeta (§5) deja la elección al Lead y pide proyectos distintos. Si hay uno sin tests o sin remoto de GitHub, se incluye, porque prueba los casos de borde.
+- **A8. Las rondas 2 y 3 repiten solo los proyectos donde la ronda anterior encontró defectos de la skill, más este repositorio.** Base: el costo; la tarjeta dice «si encuentras correcciones, vuelves a lanzar la auditoría». Si una ronda no encuentra defectos de la skill, no se corre otra.
+- **A9. La forma de la entrega es la del §2.8 de la tarjeta, que reproduce el prototipo aprobado.** Base: la tarjeta lista sus partes y su orden. Si el prototipo vive en un archivo, el plan lo lee y lo sigue; ver las preguntas.
+
+## Irreversible actions
+
+- **Crear un issue en GitHub por cada punto que la persona elige** (clase `publish`, comando `gh issue create --title … --body …`): solo después de que la persona elige, nunca en las pruebas de las rondas. Es lo único que la skill hace hacia afuera.
+- El merge a `main`, el push de la rama `feat/audit-skill` y el release de la versión que traiga la skill (clases `merge-main`, `push` y `publish`) son del dueño: quedan en «Espera tu sí» y esta spec no los ejecuta.
+
+## Out of scope
+
+- Arreglar los hallazgos: la auditoría solo entrega la lista.
+- Auditorías programadas, en CI o como GitHub Action.
+- Cambiar el modelo de los delegados o la escalera: los revisores y verificadores son delegados normales y siguen sus reglas.
+- El merge a `main`, el push y el release.
+- Instalar herramientas en los proyectos auditados (linters, escáneres de secretos o de dependencias): el análisis usa las que hay y dice cuáles faltaron.
+- Un puntaje numérico de confianza o de salud del proyecto.
+- Crear issues durante las rondas de prueba.
