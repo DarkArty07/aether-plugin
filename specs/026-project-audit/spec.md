@@ -21,7 +21,7 @@
 1. **Auditoría completa en un proyecto con tests y GitHub.** Dado un proyecto Node con tests, remoto en GitHub y `gh` autenticado, cuando la persona escribe `/aether:audit`, entonces el Lead corre el análisis automatizado, muestra su resumen y una sola pregunta con los temas propuestos y los dejados fuera, cada uno con su razón; la persona contesta «todos menos rendimiento»; la auditoría corre en segundo plano; y al terminar el Lead entrega la lista de P0 a P3 y pregunta cuáles toma.
 2. **Temas nombrados.** Dado cualquier proyecto, cuando la persona escribe `/aether:audit docs bugs`, entonces el Lead corre el análisis automatizado y la auditoría de esos dos temas sin hacer la pregunta de temas.
 3. **Proyecto sin nada.** Dado un repositorio git sin tests, sin linter, sin manifiesto y sin remoto, cuando se audita, entonces cada revisión automatizada dice «no aplica» y por qué, la auditoría sigue con los temas que sí aplican y el reporte lo dice en «lo que no cubrió»; nada falla.
-4. **Sin la herramienta Workflow.** Dado un Lead cuya sesión no tiene la herramienta Workflow (Dynamic workflows apagados), cuando la persona corre `/aether:audit`, entonces el Lead hace las mismas fases con delegados en segundo plano, entrega la misma lista, y el reporte dice que corrió sin el workflow. No pide encender nada ni se detiene.
+4. **Sin la herramienta Workflow.** Dado un Lead cuya sesión no tiene la herramienta Workflow (Dynamic workflows apagados), cuando la persona corre `/aether:audit`, entonces la auditoría corre igual, con sus delegados en segundo plano, y entrega la misma lista. No pide encender nada ni se detiene.
 5. **Un verificador falla.** Dado un hallazgo cuyo verificador se agota o no responde, cuando se hace la entrega, entonces ese hallazgo está en «sin verificar», con su razón, y no tiene nivel de prioridad ni aparece en la lista numerada.
 6. **Segunda auditoría.** Dado un proyecto auditado antes, con un issue abierto que ya cubre un hallazgo y un hallazgo antiguo ya arreglado, cuando se audita otra vez, entonces el issue cubierto no aparece como punto, el arreglado sale como «resuelto», y los demás como «nuevo» o «sigue».
 7. **Lo que el dueño elige.** Dado el reporte entregado, cuando la persona dice «tomo el 1, el 4 y el 7» en un proyecto con GitHub, entonces el Lead crea un issue por punto elegido con su evidencia y no antes; en un proyecto sin GitHub, entrega los puntos elegidos como texto y no crea nada.
@@ -67,26 +67,26 @@
 ### La entrega
 
 - **R21.** La entrega, en este orden, es: la lista numerada de P0 a P3, donde cada punto trae qué es, dónde (archivo y línea), su tipo, por qué ese nivel, qué tan verificado está, su tamaño y cómo se construiría; luego las secciones «sin verificar», «descartado», «qué cambió desde la última», «lo que no cubrió», el RADAR con sus cifras y el costo; y al final la pregunta de cuáles toma la persona. Sirve a: C5.
-- **R22.** «Lo que no cubrió» nombra cada revisión del análisis que fue «no aplica» o «no se pudo», cada tema que se dejó fuera, lo que cada revisor dijo que no miró, los revisores que se agotaron, y si la auditoría corrió sin el workflow. Sirve a: C4, C5.
+- **R22.** «Lo que no cubrió» nombra cada revisión del análisis que fue «no aplica» o «no se pudo», cada tema que se dejó fuera, lo que cada revisor dijo que no miró y los revisores que se agotaron. Sirve a: C4, C5.
 - **R23.** El costo de la auditoría se lee de los registros de Aether (`aether-report --spend`, el registro de los delegados); cuando no se puede leer, el reporte lo dice y no inventa una cifra. Sirve a: C5.
 - **R24.** El reporte completo se guarda fuera del árbol del proyecto auditado, en el directorio de datos del plugin, bajo una carpeta del proyecto y con la fecha; la entrega dice la ruta. La auditoría siguiente del mismo proyecto lee de ahí la anterior. Sirve a: C6, C7.
 - **R25.** La auditoría no arregla nada: no edita archivos del proyecto, no hace commits, ramas ni worktrees en él, y no crea issues por su cuenta. Solo después de que la persona elige puntos, y solo si el proyecto usa GitHub y `gh` responde, el Lead crea un issue por punto elegido con su evidencia; si no, entrega los puntos elegidos como texto. Sirve a: C6.
 
 ### Sin la herramienta Workflow
 
-- **R26.** Cuando la sesión tiene la herramienta Workflow, el descubrimiento y la verificación corren como un workflow en segundo plano, y la persona puede seguir hablando con el Lead; al terminar recibe la entrega. Cuando la sesión no la tiene, el Lead hace las mismas fases con delegados en segundo plano y entrega el mismo reporte, con las mismas secciones, y «lo que no cubrió» dice que corrió sin el workflow. En ningún caso la auditoría se detiene ni pide a la persona que encienda los workflows. Sirve a: C1, C5.
+- **R26.** El descubrimiento y la verificación corren como delegados del Lead en segundo plano, que no necesitan la herramienta Workflow: la auditoría funciona igual en una sesión con o sin ella, y la persona puede seguir hablando con el Lead mientras corren; al terminar recibe la entrega. En ningún caso la auditoría se detiene ni pide a la persona que encienda los workflows. Sirve a: C1, C5.
 
 ### Pruebas, documentación y registro
 
 - **R27.** Las partes que no usan modelos (el análisis automatizado, la limpieza, el triaje, la forma del reporte) tienen pruebas en `tests/` que corren con `npm test` sobre repositorios desechables y con hallazgos y verificadores simulados, sin gastar tokens, entre ellas: un repositorio sin nada, un hotspot, un secreto sin que su valor aparezca, un verificador que falla, un issue abierto que cubre un hallazgo, una auditoría anterior, y el orden de la lista. Sirve a: C2, C4, C5, C7, C9.
-- **R28.** Una prueba fija la skill: su portada (`name`, `description`, `argument-hint`, `disable-model-invocation`), que nombra las siete fases de R2 y los doce temas de R9, que dice qué hace sin la herramienta Workflow, y que `/aether:help` la nombra. Sirve a: C1, C3, C9.
+- **R28.** Una prueba fija la skill: su portada (`name`, `description`, `argument-hint`, `disable-model-invocation`), que nombra las siete fases de R2 y los doce temas de R9, que no depende de la herramienta Workflow, y que `/aether:help` la nombra. Sirve a: C1, C3, C9.
 - **R29.** Las pruebas en proyectos reales son hasta tres rondas. La ronda 1 corre en al menos tres proyectos de `~/Desktop/03_PROYECTOS/01_ACTIVOS`, de pilas distintas entre sí, uno de ellos este repositorio. Entre una ronda y otra se corrige la skill con lo que se encontró. Cada ronda deja `specs/026-project-audit/rounds/round-N.md` con: los proyectos, los temas, cuántos hallazgos hubo en cada estado, el tiempo y el costo, si el proyecto quedó idéntico (R6, C6), los defectos de la skill que se encontraron, y qué se cambió. En las pruebas no se crea ningún issue en repositorios del dueño. Sirve a: C8.
 - **R30.** La skill se documenta: una guía `docs/guide/audit.md` (con su portada y enlazada desde `docs/index.md`), su equivalente en español en `docs/es/`, la fila de la tabla de `docs/reference/components.md`, la mención en `/aether:help`, y la nota de la huella en reposo, de modo que `tests/docs-facts.test.js` pasa. La guía dice lo que audita, lo que no hace, qué pasa sin red, sin tests o sin GitHub, dónde se guarda el reporte y que las rondas de prueba están en `specs/026-project-audit/rounds/`. Sirve a: C9.
 - **R31.** `npm test` y `npm run validate` pasan al final. Sirve a: C9.
 
 ## Proposals
 
-None.
+- **Un workflow propio, `audit.workflow.js`, para el descubrimiento y la verificación** cuando la sesión tiene la herramienta Workflow. Ganaría menos turnos del Lead (un solo despertar en vez de uno por delegado); costaría un segundo camino con su propio código y sus pruebas, que esta sesión no puede probar porque no tiene la herramienta. Decisión del Lead (2026-11-04): un solo camino, con delegados, porque corre en toda sesión y ya trae la escalera, la superdelegación y las comprobaciones sin modelo de los delegados; el workflow queda como propuesta. El «workflow» de las palabras del dueño («una skill que ejecute autonamemtne un workflow») se lee como el proceso automático de fases, que este camino cumple.
 
 ## Assumptions
 
@@ -98,11 +98,11 @@ None.
 - **A6. La guía va en inglés y en español.** Base: el repositorio mantiene `docs/es/` desde la spec 024. Reversible: dejar solo la inglesa.
 - **A7. El número de proyectos de la ronda 1 es al menos tres y los elige el Lead.** Base: la tarjeta (§5) deja la elección al Lead y pide proyectos distintos. Si hay uno sin tests o sin remoto de GitHub, se incluye, porque prueba los casos de borde.
 - **A8. Las rondas 2 y 3 repiten solo los proyectos donde la ronda anterior encontró defectos de la skill, más este repositorio.** Base: el costo; la tarjeta dice «si encuentras correcciones, vuelves a lanzar la auditoría». Si una ronda no encuentra defectos de la skill, no se corre otra.
-- **A9. La forma de la entrega es la del §2.8 de la tarjeta, que reproduce el prototipo aprobado.** Base: la tarjeta lista sus partes y su orden. Si el prototipo vive en un archivo, el plan lo lee y lo sigue; ver las preguntas.
+- **A9. La forma de la pregunta de temas y de la entrega es la del prototipo aprobado, [prototype.md](prototype.md)** (el texto que el dueño aprobó con «me parece bien», con el nombre de fase que eligió después). Base: la tarjeta lista sus partes y su orden; el prototipo da la forma exacta.
 
 ## Irreversible actions
 
-- **Crear un issue en GitHub por cada punto que la persona elige** (clase `publish`, comando `gh issue create --title … --body …`): solo después de que la persona elige, nunca en las pruebas de las rondas. Es lo único que la skill hace hacia afuera.
+- **Crear un issue en GitHub por cada punto que la persona elige** (`gh issue create --title … --body …`): no es una de las clases de aether-guard, pero es una acción hacia afuera; la autoriza la elección de la persona, punto por punto, y nunca ocurre en las pruebas de las rondas. Es lo único que la skill hace hacia afuera.
 - El merge a `main`, el push de la rama `feat/audit-skill` y el release de la versión que traiga la skill (clases `merge-main`, `push` y `publish`) son del dueño: quedan en «Espera tu sí» y esta spec no los ejecuta.
 
 ## Out of scope
