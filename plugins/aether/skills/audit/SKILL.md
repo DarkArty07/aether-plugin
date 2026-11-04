@@ -62,7 +62,7 @@ One reviewer per confirmed topic. A reviewer has about 20 tool calls and ten min
     Scope: <files or directories>. About 20 tool calls; then answer with what you have.
     Open issues (do not report what they already cover): <number and title, at most 30>.
 
-    Report only problems you can point to: a file and a line, or a file and a commit, and the evidence you saw (a quote of at most two lines, or a command's output). No nitpicks, nothing a linter would catch, nothing you are not fairly sure is real. An opportunity says where it is promised or asked for.
+    Report only problems you can point to: a file and a line, or a file and a commit, and the evidence you saw (a quote of at most two lines, or a command's output). A branch is located by its name and the commit at its tip: {"file": "<branch>", "commit": "<sha>"}. An open issue is not a finding by itself: report the code or the document it points to. No nitpicks, nothing a linter would catch, nothing you are not fairly sure is real. An opportunity says where it is promised or asked for.
 
     Answer with one JSON block and nothing else after it:
     {"candidates": [{"id": "<topic>-1", "topic": "<topic>", "title": "...", "claim": "...", "location": {"file": "...", "line": 1}, "type": "bug|risk|debt|docs|opportunity|other", "trigger": "...", "evidence": "...", "impact": "..."}], "notLooked": ["what you did not get to"]}
@@ -72,7 +72,7 @@ Reviewers never get the person's conversation. Wait for every reviewer; keep eac
 
 ## 4. Verification
 
-Join every reviewer's candidates into one array in `$W/candidates.json` (the analysis's own `selfFindings` are already established: phase 5 takes them in), and run:
+Join every reviewer's candidates into one array in `$W/candidates.json` (the analysis's own `selfFindings` are already established: phase 5 takes them in). You may fix a candidate's shape (a path the reviewer mistyped, a topic id, a duplicate id) and say so under «Assumptions»; never rewrite its claim or its evidence, and never invent a location: a candidate with none is discarded, which is the point of the gate. Run:
 
     aether-audit candidates "$W/candidates.json" --out "$W/gated.json"
 
@@ -91,7 +91,7 @@ It discards a candidate with no location or no evidence. Then each accepted cand
     Answer with one JSON block and nothing else after it:
     {"verdicts": [{"id": "...", "verdict": "...", "rootCause": "...", "trigger": "...", "impact": "...", "evidence": "...", "reproduction": "..."}]}
 
-Write every verdict into one array in `$W/verdicts.json`, adding to each `ranOn`: `"claude"` when its result says it ran on Claude, else the harness's name. A verifier that ran out or did not answer leaves its claims with no verdict. Run:
+Write every verdict into one array in `$W/verdicts.json`, adding to each `ranOn`: `"claude"` when its result says it ran on Claude, else the harness's name. A verifier that ran out or did not answer leaves its claims with no verdict. Copy each verdict as the verifier gave it: never change one, and never make one stronger. When a verifier's own evidence contradicts its verdict, write that claim's verdict as `"unverified"` with the contradiction as its `reason`, and say so under «Assumptions». Run:
 
     aether-audit verdicts "$W/gated.json" "$W/verdicts.json" --out "$W/settled.json"
 
