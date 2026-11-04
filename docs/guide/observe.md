@@ -37,7 +37,7 @@ The detection runs by itself when a Lead session ends: the `SessionEnd` hook dig
 ## What it points out
 
 The reading is an ordered list of findings, each with its evidence and its numbers. A finding is one of three kinds:
-- a **failure**, such as a task that climbs a step with no reason, a pair that fails run after run, a rule of the Lead that is broken, a command blocked by mistake, or a silent fault of the mod that now leaves a trace; for each one the reading drafts the text of an issue under `observe/issues/`, not opened by the reading (the development mode can file it, see below);
+- a **failure**, such as a task that climbs a step with no reason, a pair that fails run after run, a rule of the Lead that is broken, or a silent fault of the mod that now leaves a trace; for each one the reading drafts the text of an issue under `observe/issues/`, not opened by the reading (the development mode can file it, see below);
 - a **calibration**, such as a step that almost never approves, a pair or a model that no longer performs as its record says, a design role that asks for too many rounds, or an estimated cost far from the real one; it proposes the adjustment with its numbers and applies none of it: `config/ladder.json`, `config/pairs.json` and the other tables are never changed by the plugin;
 - a **friction**, such as a tool that keeps failing or a context that is compacted again and again.
 
@@ -70,6 +70,12 @@ Each issue gets the label `aether-observe`, which the worker creates when it is 
 
 Two caps, in `config/observe.json` under `autoIssue`, keep the tracker small: `maxPerSession` (3) limits the issues one run creates, and `maxOpen` (10) stops the creation while that many labelled issues are open. The run counts what a cap holds back as skipped. A lock, `observe/issues-filed.lock`, keeps two runs from working at once; a lock older than five minutes is taken over.
 
+Repeated pending commands and later grants of the same class are local friction signals, not proof of a mistaken block; their mode distinguishes log-only records from enforced blocks. They are not issue drafts or automatically published.
+
+After a confirmed creation, a private local notice holds the issue number, URL and a generic reason. A Lead startup shows them oldest first in its user-facing system message, claiming only those that keep its whole encoded output, greeting and notes included, within 9,800 characters, the budget of one hook output; a notice that does not fit stays pending for the next startup without holding back a smaller later one. Existing issues and unconfirmed creation attempts produce no notice. Concurrent startups claim each notice at most once.
+
+What a failure costs, in order: the notice is saved before the ledger is written. If the ledger cannot be written, the run stops with an error, and the next run finds the issue by its marker in the listing of labelled issues and writes the ledger without creating it again; that listing holds the last 200 labelled issues, so an older issue whose ledger was lost could be created a second time. If the notice cannot be saved, the issue stays in the ledger, the run counts it as `unnoticed`, and the owner is not told. A create that fails in gh but reaches GitHub is found by its marker on the next run, so it is not created twice, and it gets no notice. A crash after a startup claims a notice, or before the hook prints it, loses that notice: the hook has no delivery confirmation, so delivery is at most once and not guaranteed. These writes use atomic rename, without fsync, so a power loss can lose a pending notice or restore a consumed one.
+
 The session end does not wait for GitHub. The `SessionEnd` hook still prints nothing and exits 0. When `autoissue` is on, it starts `aether-observe file-issues` as a detached process with no output, and that process makes the calls to `gh`, each with a 20-second limit and 90 seconds for the whole run.
 
 Its limits:
@@ -86,7 +92,7 @@ The standard installation does not read, keep or write conversation content: wha
 Three functions of Aether that existed before the observation are exempt, because each one is a thing you use by hand and not observation, and none was removed:
 - `aether-voice` and `aether-autonomy start --quote` read the transcript only when you give the command, to check a quote of your own words;
 - the full prompt of a delegate, which `aether-delegate` writes in `delegates/briefs/` and in `external/*.json`, is the task itself that is handed over;
-- `.aether/pending.jsonl` keeps the command that the guard blocked, which is your list of irreversible steps to approve.
+- `.aether/pending.jsonl` keeps the command that the guard recorded (blocked only in enforce mode), which is your list of irreversible steps to approve.
 
 ## What the development installation keeps about your corrections
 

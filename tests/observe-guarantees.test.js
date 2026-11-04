@@ -117,8 +117,12 @@ test('the whole detection runs by itself when a Lead session ends, with no comma
   const read = JSON.parse(fs.readFileSync(path.join(dir, 'observe', 'read.json'), 'utf8'))
   const types = read.items.map((i) => i.type)
   assert.ok(types.includes('rise-without-reason'))
-  assert.ok(types.includes('blocked-by-mistake'))
-  assert.ok(files(path.join(dir, 'observe', 'issues')).length >= 2)
+  // A record without a grant is a friction signal, whatever its mode: it is not a failure and gets no draft (spec 020).
+  const blocked = read.items.filter((i) => i.type === 'blocked-by-mistake')
+  assert.ok(blocked.length >= 1 && blocked.every((i) => i.kind === 'friction'))
+  const drafts = files(path.join(dir, 'observe', 'issues'))
+  assert.ok(drafts.some((f) => /rise-without-reason/.test(path.basename(f))), 'the failure has its local draft')
+  assert.equal(drafts.length, read.items.filter((i) => i.kind === 'failure').length, 'one draft per failure, none for a friction signal')
   for (const file of files(path.join(dir, 'observe'))) assert.equal(fs.readFileSync(file, 'utf8').includes(MARK), false, file)
 })
 

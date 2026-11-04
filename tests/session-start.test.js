@@ -473,3 +473,117 @@ test('R9: resume and any other source give no output at all, and a session that 
     assert.equal(r.stdout, '', JSON.stringify(input))
   }
 })
+
+test('startup bounds notice output before claiming and preserves the remainder', (t) => {
+  const dir = tempDir(t)
+  const { saveNotice } = require('../plugins/aether/lib/observe-notice.js')
+  for (let number = 1; number <= 150; number++) saveNotice(dir, { number, url: `https://github.com/owner/repo/issues/${number}`, id: 'fault:test' })
+  const { main } = require('../plugins/aether/lib/session-start.js')
+  const delivered = []
+  for (let i = 0; i < 10 && delivered.length < 150; i++) {
+    let output = ''
+    main({ input: AETHER, env: { AETHER_DATA_DIR: dir }, cwd: dir, stdout: { write(s) { output += s } } })
+    assert.ok(output.length <= 9800, `hook output: ${output.length}`)
+    delivered.push(...Array.from(JSON.parse(output).systemMessage.matchAll(/Aether opened issue #(\d+):/g), (match) => Number(match[1])))
+    if (i === 0) assert.ok(delivered.length > 0 && delivered.length < 150)
+  }
+  assert.deepEqual(delivered.sort((a, b) => a - b), Array.from({ length: 150 }, (_, i) => i + 1))
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'observe', 'notices')), [])
+})
+
+test('a notice that does not fit stays available without being claimed', (t) => {
+  const dir = tempDir(t)
+  const { saveNotice, takeNotices } = require('../plugins/aether/lib/observe-notice.js')
+  saveNotice(dir, { number: 1, url: 'https://github.com/owner/repo/issues/1', id: 'fault:test' })
+  const noticesDir = path.join(dir, 'observe', 'notices')
+  const pending = fs.readdirSync(noticesDir)
+  assert.deepEqual(takeNotices(dir, () => false), [])
+  assert.deepEqual(fs.readdirSync(noticesDir), pending)
+  assert.deepEqual(takeNotices(dir), [{ number: 1, url: 'https://github.com/owner/repo/issues/1', reason: 'silent faults' }])
+  assert.deepEqual(takeNotices(dir), [])
+})
+
+test('a notice too large for this startup does not hold back smaller notices', (t) => {
+  const dir = tempDir(t)
+  const root = tempDir(t)
+  const { saveNotice } = require('../plugins/aether/lib/observe-notice.js')
+  const { main, PART_LIMIT } = require('../plugins/aether/lib/session-start.js')
+  const manifest = path.join(root, '.claude-plugin', 'plugin.json')
+  fs.mkdirSync(path.dirname(manifest))
+  fs.writeFileSync(manifest, JSON.stringify({ version: 'v' }))
+  const startWith = (env) => {
+    let output = ''
+    main({ input: AETHER, env, cwd: dir, stdout: { write(s) { output += s } } })
+    return output
+  }
+  const env = { AETHER_DATA_DIR: dir, CLAUDE_PLUGIN_ROOT: root }
+  const baseline = startWith(env)
+  fs.writeFileSync(manifest, JSON.stringify({ version: 'v'.repeat(PART_LIMIT - baseline.length - 149) }))
+
+  const notices = path.join(dir, 'observe', 'notices')
+  saveNotice(dir, { number: 1, url: `https://github.com/${'o'.repeat(39)}/${'r'.repeat(100)}/issues/1`, id: 'fault:test' })
+  fs.renameSync(path.join(notices, fs.readdirSync(notices)[0]), path.join(notices, '000000000000000-ffffffff.json'))
+  saveNotice(dir, { number: 2, url: 'https://github.com/o/r/issues/2', id: 'fault:test' })
+  const output = startWith(env)
+  assert.ok(output.length <= PART_LIMIT)
+  assert.ok(JSON.parse(output).systemMessage.includes('Aether opened issue #2:'), 'the smaller notice is delivered')
+  assert.doesNotMatch(JSON.parse(output).systemMessage, /Aether opened issue #1:/)
+  assert.deepEqual(fs.readdirSync(notices), ['000000000000000-ffffffff.json'])
+
+  const later = startWith({ AETHER_DATA_DIR: dir })
+  assert.match(JSON.parse(later).systemMessage, /Aether opened issue #1:/)
+  assert.deepEqual(fs.readdirSync(notices), [])
+})
+
+test('startup budgets the encoded greeting and notes before consuming notices', (t) => {
+  const dir = tempDir(t)
+  const root = tempDir(t)
+  const { saveNotice, takeNotices } = require('../plugins/aether/lib/observe-notice.js')
+  const { main, PART_LIMIT } = require('../plugins/aether/lib/session-start.js')
+  fs.mkdirSync(path.join(root, '.claude-plugin'))
+  // Each character below expands to two in JSON, so budgeting just the visible message would overflow.
+  fs.writeFileSync(path.join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ version: '\\"\n'.repeat(1500) }))
+  for (let number = 1; number <= 20; number++) saveNotice(dir, { number, url: `https://github.com/owner/repo/issues/${number}`, id: 'fault:test' })
+  let output = ''
+  main({ input: AETHER, env: { AETHER_DATA_DIR: dir, CLAUDE_PLUGIN_ROOT: root }, cwd: dir, stdout: { write(s) { output += s } } })
+  assert.ok(output.length <= PART_LIMIT, `encoded hook output: ${output.length}`)
+  const sent = Array.from(JSON.parse(output).systemMessage.matchAll(/Aether opened issue #(\d+):/g), (match) => Number(match[1]))
+  assert.ok(sent.length > 0 && sent.length < 20)
+  const remaining = takeNotices(dir).map((notice) => notice.number)
+  assert.equal(remaining.length, 20 - sent.length)
+  assert.deepEqual([...sent, ...remaining].sort((a, b) => a - b), Array.from({ length: 20 }, (_, i) => i + 1))
+})
+
+test('startup keeps notices pending when the greeting alone exceeds the output limit', (t) => {
+  const dir = tempDir(t)
+  const root = tempDir(t)
+  const { saveNotice, takeNotices } = require('../plugins/aether/lib/observe-notice.js')
+  const { main, PART_LIMIT } = require('../plugins/aether/lib/session-start.js')
+  fs.mkdirSync(path.join(root, '.claude-plugin'))
+  fs.writeFileSync(path.join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ version: 'v'.repeat(PART_LIMIT) }))
+  saveNotice(dir, { number: 1, url: 'https://github.com/owner/repo/issues/1', id: 'fault:test' })
+  let output = ''
+  main({ input: AETHER, env: { AETHER_DATA_DIR: dir, CLAUDE_PLUGIN_ROOT: root }, cwd: dir, stdout: { write(s) { output += s } } })
+  assert.ok(output.length > PART_LIMIT)
+  assert.ok(!JSON.parse(output).systemMessage.includes('Aether opened issue #1:'))
+  assert.deepEqual(takeNotices(dir).map((notice) => notice.number), [1])
+})
+
+test('clear, compact, resume and bootstrap parts leave startup notices pending', (t) => {
+  const dir = tempDir(t)
+  const { saveNotice, takeNotices } = require('../plugins/aether/lib/observe-notice.js')
+  const { main } = require('../plugins/aether/lib/session-start.js')
+  saveNotice(dir, { number: 42, url: 'https://github.com/owner/repo/issues/42', id: 'fault:test' })
+  const cases = [
+    { input: { ...AETHER, agent_type: 'other' } },
+    ...['clear', 'compact', 'resume'].map((source) => ({ input: { ...AETHER, source } })),
+    { input: AETHER, part: 1 },
+  ]
+  for (const args of cases) {
+    let output = ''
+    main({ ...args, env: { AETHER_DATA_DIR: dir }, cwd: dir, stdout: { write(s) { output += s } } })
+    assert.doesNotMatch(output, /Aether opened issue/)
+    assert.equal(fs.readdirSync(path.join(dir, 'observe', 'notices')).length, 1)
+  }
+  assert.equal(takeNotices(dir)[0].number, 42)
+})

@@ -173,7 +173,7 @@ function fileableOf(dataDir) {
   const reading = readJsonOrNull(readingFile(dataDir))
   const items = isObject(reading) && Array.isArray(reading.items) ? reading.items : []
   return items
-    .filter((item) => isObject(item) && item.kind === 'failure' && typeof item.id === 'string' && isObject(item.issue))
+    .filter((item) => isObject(item) && item.kind === 'failure' && item.type !== 'blocked-by-mistake' && typeof item.id === 'string' && !item.id.startsWith('blocked-by-mistake:') && isObject(item.issue))
     .filter((item) => typeof item.issue.title === 'string' && typeof item.issue.body === 'string')
     .map((item) => ({ id: item.id, issue: item.issue, sessions: Array.isArray(item.sessions) ? item.sessions : [] }))
 }
@@ -201,10 +201,11 @@ function takeLock(file) {
 }
 
 // The worker: files the failures of the last reading that the ledger does not have, on the plugin's repository. Returns one
-// object with created, found, held and skipped, and an error only when the gate, the destination or a create fails.
+// object with created, found, held, skipped and unnoticed (a created issue whose notice could not be saved), and an error only
+// when the gate, the destination, a create or the ledger fails.
 // A gh that is missing or fails at the listing is not an error: nothing is noted, and the next run tries again.
 function fileIssues({ dataDir, env = process.env, now = Date.now(), manifest = MANIFEST } = {}) {
-  const none = { created: 0, found: 0, held: 0, skipped: 0 }
+  const none = { created: 0, found: 0, held: 0, skipped: 0, unnoticed: 0 }
   if (!autoIssueOn(env)) return { ...none, error: 'autoissue-off' }
   const repo = repoOf(manifest)
   if (repo === null) return { ...none, error: 'repository-invalid' }
@@ -218,7 +219,7 @@ function fileIssues({ dataDir, env = process.env, now = Date.now(), manifest = M
 }
 
 function fileAll({ dataDir, env, now, manifest, repo }) {
-  const result = { created: 0, found: 0, held: 0, skipped: 0 }
+  const result = { created: 0, found: 0, held: 0, skipped: 0, unnoticed: 0 }
   const ledger = readJsonOrNull(ledgerFile(dataDir))
   const filed = isObject(ledger) ? ledger : {}
   const pending = fileableOf(dataDir).filter((finding) => {
@@ -269,9 +270,23 @@ function fileAll({ dataDir, env, now, manifest, repo }) {
     }
     const created = gh(['issue', 'create', '--repo', repo, '--title', draft.title, '--body-file', '-', '--label', LABEL], { env, deadline, input: draft.body })
     const url = created.ok ? created.stdout.trim().split('\n').pop().trim() : ''
-    const number = /\/issues\/(\d+)$/.exec(url)
-    if (!number) return { ...result, error: 'gh-create-failed' }
-    filed[finding.id] = { number: Number(number[1]), url, time: now, via: 'created' }
+    const match = /\/issues\/(\d+)$/.exec(url)
+    const issueNumber = match ? Number(match[1]) : NaN
+    // Only a canonical URL on the configured repository confirms a representable, positive issue number: anything else
+    // (another repository, a missing or zero number, leading zeros, past the safe integer) records nothing and stays to retry.
+    if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0 || url !== `https://github.com/${repo}/issues/${issueNumber}`) {
+      return { ...result, error: 'gh-create-failed' }
+    }
+    // The notice is saved before the ledger: when the ledger cannot be written, the next run finds the issue by its marker and the
+    // owner already has the notice. A notice that cannot be saved does not stop the run; the run counts it as unnoticed.
+    let noticed = false
+    try {
+      noticed = require('./observe-notice.js').saveNotice(dataDir, { number: issueNumber, url, id: finding.id })
+    } catch {
+      noticed = false
+    }
+    if (!noticed) result.unnoticed += 1
+    filed[finding.id] = { number: issueNumber, url, time: now, via: 'created' }
     writeAtomic(ledgerFile(dataDir), `${JSON.stringify(filed, null, 2)}\n`)
     result.created += 1
     open += 1

@@ -255,10 +255,10 @@ function detectRuleBroken({ events = [], delegateEntries = [] } = {}) {
 
 /**
  * detectBlockedByMistake({ pending, grants }, cfg): Finding[]
- * pending is [{ time, session, class, fingerprint }] and grants is [{ class, added }] (added in ISO).
- * An entry is flagged if there is a grant of its class with added later than its time,
+ * pending is [{ time, session, class, fingerprint, mode }] and grants is [{ class, added }] (added in ISO).
+ * A local friction signal is raised if there is a grant of its class with added later than its time,
  * or if the same fingerprint appears cfg.blockedByMistake.repeatBlocks times or more.
- * id: 'blocked-by-mistake:<class>:<fingerprint>'; evidence names the class, fingerprint, and ISO dates,
+ * id: 'blocked-by-mistake:<class>:<fingerprint>:<mode>'; evidence names the class, fingerprint, mode and ISO dates,
  * never the command text or quote.
  */
 function detectBlockedByMistake({ pending = [], grants = [] } = {}, cfg = {}) {
@@ -269,7 +269,9 @@ function detectBlockedByMistake({ pending = [], grants = [] } = {}, cfg = {}) {
   const fpCounts = new Map()
   for (const p of pending) {
     if (!p || !p.fingerprint) continue
-    fpCounts.set(p.fingerprint, (fpCounts.get(p.fingerprint) || 0) + 1)
+    const mode = ['enforce', 'log'].includes(p.mode) ? p.mode : 'unknown'
+    const key = `${p.class}:${p.fingerprint}:${mode}`
+    fpCounts.set(key, (fpCounts.get(key) || 0) + 1)
   }
 
   // Group grants by class
@@ -287,13 +289,15 @@ function detectBlockedByMistake({ pending = [], grants = [] } = {}, cfg = {}) {
 
     const classGrants = grantsByClass.get(p.class) || []
     const laterGrant = classGrants.find((g) => toMillis(g.added) > toMillis(p.time))
-    const isRepeated = (fpCounts.get(p.fingerprint) || 0) >= repeatBlocksThreshold
+    const mode = ['enforce', 'log'].includes(p.mode) ? p.mode : 'unknown'
+    const isRepeated = (fpCounts.get(`${p.class}:${p.fingerprint}:${mode}`) || 0) >= repeatBlocksThreshold
 
     if (laterGrant || isRepeated) {
-      const key = `${p.class}:${p.fingerprint}`
+      const key = `${p.class}:${p.fingerprint}:${mode}`
       if (!signaledGroups.has(key)) {
         signaledGroups.set(key, {
           cls: p.class,
+          mode,
           fingerprint: p.fingerprint,
           entries: [],
           laterGrant: laterGrant || null,
@@ -318,23 +322,24 @@ function detectBlockedByMistake({ pending = [], grants = [] } = {}, cfg = {}) {
     const evidence = []
     if (group.laterGrant) {
       evidence.push(
-        `Class ${group.cls} with fingerprint ${group.fingerprint} blocked at ${toIso(firstTime)} before grant added at ${toIso(group.laterGrant.added)}`
+        `Class ${group.cls} with fingerprint ${group.fingerprint} recorded in ${group.mode} mode at ${toIso(firstTime)} before grant added at ${toIso(group.laterGrant.added)}`
       )
     }
     if (group.isRepeated) {
       evidence.push(
-        `Class ${group.cls} with fingerprint ${group.fingerprint} blocked ${group.entries.length} times between ${toIso(firstTime)} and ${toIso(lastTime)}`
+        `Class ${group.cls} with fingerprint ${group.fingerprint} recorded in ${group.mode} mode ${group.entries.length} times between ${toIso(firstTime)} and ${toIso(lastTime)}`
       )
     }
 
     findings.push({
       id: `blocked-by-mistake:${key}`,
-      kind: 'failure',
+      kind: 'friction',
       type: 'blocked-by-mistake',
-      title: `Command of class ${group.cls} (fingerprint ${group.fingerprint}) possibly blocked by mistake`,
+      title: `Command of class ${group.cls} (fingerprint ${group.fingerprint}) recorded without a grant`,
       evidence,
       numbers: {
         class: group.cls,
+        mode: group.mode,
         fingerprint: group.fingerprint,
         count: group.entries.length,
       },

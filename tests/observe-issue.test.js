@@ -11,6 +11,7 @@ const { spawnSync } = require('node:child_process')
 const { tempDir, makeRepo, PLUGIN } = require('./helpers.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-observe')
+const GUARD = path.join(PLUGIN, 'bin', 'aether-guard')
 const { readObservations } = require(path.join(PLUGIN, 'lib', 'observe-read.js'))
 const { autoIssueOn } = require(path.join(PLUGIN, 'lib', 'observe.js'))
 const { repoOf, draftOf, markerOf } = require(path.join(PLUGIN, 'lib', 'observe-issue.js'))
@@ -46,20 +47,23 @@ case "$1 $2" in
     if [ -f "$DIR/list.json" ]; then cat "$DIR/list.json"; else echo '[]'; fi
     exit 0 ;;
   "issue create")
+    if [ -n "$FAKE_GH_FAIL_CREATE" ]; then echo "gh: HTTP 502" >&2; exit 1; fi
     n=0
     [ -f "$DIR/count" ] && n=$(cat "$DIR/count")
     n=$((n + 1))
     echo $n > "$DIR/count"
     cat > "$DIR/body-$n.md"
     echo "Creating issue in ${REPO}"
-    echo "https://github.com/${REPO}/issues/$((100 + n))"
+    if [ -f "$DIR/create-url" ]; then cat "$DIR/create-url"; exit 0; fi
+    if [ -n "$FAKE_GH_OTHER_URL" ]; then echo "https://github.com/other/fork/issues/$((100 + n))"; else echo "https://github.com/${REPO}/issues/$((100 + n))"; fi
     exit 0 ;;
   "label create") exit 0 ;;
   *) exit 2 ;;
 esac
 `
 
-function fakeGh(t, { list } = {}) {
+// failCreate: every issue create exits 1 (a gh that cannot reach GitHub). otherUrl: every create answers with a URL off the plugin repository.
+function fakeGh(t, { list, failCreate = false, otherUrl = false } = {}) {
   const state = tempDir(t, 'aether-gh-state-')
   const bindir = tempDir(t, 'aether-gh-bin-')
   write(path.join(bindir, 'gh'), GH_SCRIPT)
@@ -67,7 +71,10 @@ function fakeGh(t, { list } = {}) {
   if (list !== undefined) write(path.join(state, 'list.json'), JSON.stringify(list))
   const calls = () => (fs.existsSync(path.join(state, 'calls.log')) ? fs.readFileSync(path.join(state, 'calls.log'), 'utf8').trim().split('\n') : [])
   return {
-    env: { PATH: `${bindir}${path.delimiter}${process.env.PATH}`, FAKE_GH_DIR: state },
+    env: {
+      PATH: `${bindir}${path.delimiter}${process.env.PATH}`, FAKE_GH_DIR: state,
+      ...(failCreate ? { FAKE_GH_FAIL_CREATE: '1' } : {}), ...(otherUrl ? { FAKE_GH_OTHER_URL: '1' } : {}),
+    },
     state,
     calls,
     creates: () => calls().filter((line) => line.startsWith('CALL issue create')),
@@ -414,4 +421,171 @@ test('file-issues with the gate closed says so and exits 1; the standard install
   assert.equal(r.status, 1)
   assert.equal(r.json.error, 'autoissue-off')
   assert.equal(fs.existsSync(path.join(dir, 'observe')), false)
+})
+
+test('confirmed creations produce one sanitized startup notice, while existing issues do not', (t) => {
+  const dir = tempDir(t); const gh = fakeGh(t)
+  rises(dir, ['private-task-name']); read(dir)
+  assert.equal(bin(['file-issues'], { dir, env: devOn(gh) }).json.created, 1)
+  const { main } = require(path.join(PLUGIN, 'lib', 'session-start.js'))
+  const start = (agent = 'aether:lead') => {
+    let output = ''
+    main({ input: { agent_type: agent, source: 'startup', session_id: 'notice-test' }, env: { AETHER_DATA_DIR: dir }, cwd: dir, stdout: { write: (s) => { output += s } } })
+    return output ? JSON.parse(output).systemMessage : ''
+  }
+  assert.equal(start('other'), '')
+  const message = start()
+  assert.match(message, /#101/)
+  assert.match(message, /https:\/\/github\.com\/DarkArty07\/aether-plugin\/issues\/101/)
+  assert.doesNotMatch(message, /private-task-name/)
+  assert.doesNotMatch(start(), /#101/)
+})
+
+test('concurrent startups claim a notice once, and found duplicates create none', async (t) => {
+  const dir = tempDir(t); const gh = fakeGh(t)
+  rises(dir, ['t2']); read(dir)
+  assert.equal(bin(['file-issues'], { dir, env: devOn(gh) }).json.created, 1)
+  const { spawn } = require('node:child_process')
+  const script = `const {takeNotices}=require(${JSON.stringify(path.join(PLUGIN, 'lib', 'observe-notice.js'))}); console.log(JSON.stringify(takeNotices(process.argv[1])))`
+  const run = () => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', script, dir]); let output = ''
+    child.stdout.on('data', (chunk) => { output += chunk }); child.on('error', reject); child.on('close', (code) => code === 0 ? resolve(JSON.parse(output)) : reject(new Error(`exit ${code}`)))
+  })
+  const results = await Promise.all([run(), run()])
+  assert.equal(results.flat().length, 1)
+  const other = tempDir(t); const foundGh = fakeGh(t, { list: [{ number: 101, state: 'OPEN', url: `https://github.com/${REPO}/issues/101`, body: markerOf(RISE_ID) }] })
+  rises(other, ['t2']); read(other)
+  assert.equal(bin(['file-issues'], { dir: other, env: devOn(foundGh) }).json.found, 1)
+  assert.deepEqual(require(path.join(PLUGIN, 'lib', 'observe-notice.js')).takeNotices(other), [])
+})
+
+test('the reading takes what the guard really records: log and enforced entries are friction and never reach gh, a real failure still does (spec 020)', (t) => {
+  const dir = tempDir(t); const home = tempDir(t); const repo = makeRepo(t); const gh = fakeGh(t)
+  lead(dir)
+  // The guard of a Lead session records a push no grant covers: in log mode it allows it, in enforce mode it refuses it.
+  const guard = (env = {}) => spawnSync(process.execPath, [GUARD], {
+    input: JSON.stringify({ session_id: SESSION, tool_name: 'Bash', cwd: repo.dir, tool_input: { command: 'git push origin main' } }),
+    cwd: repo.dir, encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dir, HOME: home, ...env },
+  })
+  for (let i = 0; i < 2; i++) {
+    const logged = guard()
+    assert.deepEqual([logged.status, logged.stdout], [0, ''], 'log mode allows the command and says nothing')
+  }
+  for (let i = 0; i < 2; i++) {
+    const refused = guard({ AETHER_IRREVERSIBLE: 'enforce' })
+    assert.equal(JSON.parse(refused.stdout).hookSpecificOutput.permissionDecision, 'deny', 'enforce mode refuses it')
+  }
+  const pending = fs.readFileSync(path.join(repo.dir, '.aether', 'pending.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  assert.deepEqual(pending.map((entry) => entry.mode), ['log', 'log', 'enforce', 'enforce'])
+
+  // Two records of one mode repeat the same block: one friction signal per mode, never a failure.
+  const signals = () => read(dir, repo.dir).items.filter((i) => i.type === 'blocked-by-mistake')
+  assert.deepEqual(signals().map((i) => [i.kind, i.numbers.mode]).sort(), [['friction', 'enforce'], ['friction', 'log']])
+  assert.deepEqual(bin(['file-issues'], { dir, env: devOn(gh) }).json, { created: 0, found: 0, held: 0, skipped: 0, unnoticed: 0 })
+  assert.deepEqual(gh.calls(), [], 'no gh call for friction signals')
+
+  // A grant of the class added after those records is named in their evidence, and it is still friction.
+  write(path.join(repo.dir, '.aether', 'autonomy', 'grants.json'), JSON.stringify({ grants: [{ class: 'push', scope: 'repo', quote: 'a quote', session: SESSION, time: 1, added: new Date(Date.now() + 60000).toISOString() }], revoked: [] }))
+  const later = signals()
+  assert.equal(later.length, 2)
+  assert.ok(later.every((i) => i.kind === 'friction' && i.evidence.some((line) => line.includes('before grant added'))))
+  assert.deepEqual(gh.calls(), [])
+
+  // A real failure of the same reading is filed, and it is the only issue gh receives.
+  rises(dir, ['t2']); read(dir, repo.dir)
+  assert.equal(bin(['file-issues'], { dir, env: devOn(gh) }).json.created, 1)
+  assert.equal(gh.creates().length, 1)
+  assert.ok(gh.bodies()[0].includes('Task t2 attempt 2 rose to step sonnet'))
+  assert.equal(draftsOf(dir).length, 1, 'one local draft: the failure, not the friction signals')
+  const notices = path.join(dir, 'observe', 'notices')
+  assert.equal(fs.statSync(notices).mode & 0o777, 0o700)
+  assert.equal(fs.statSync(path.join(notices, fs.readdirSync(notices)[0])).mode & 0o777, 0o600)
+})
+
+test('a gh that fails to create, or answers with a URL off the plugin repository, records nothing: the draft stays and the next run creates it once (D7)', (t) => {
+  const dir = tempDir(t)
+  lead(dir)
+  rises(dir, ['t2'])
+  read(dir)
+  const failing = fakeGh(t, { failCreate: true })
+  const first = bin(['file-issues'], { dir, env: devOn(failing) })
+  assert.deepEqual([first.status, first.json.error, first.json.created], [1, 'gh-create-failed', 0])
+  assert.equal(failing.creates().length, 1)
+  assert.equal(fs.existsSync(path.join(dir, 'observe', 'issues-filed.json')), false, 'nothing is in the ledger')
+  assert.equal(fs.existsSync(path.join(dir, 'observe', 'notices')), false, 'there is no notice')
+  assert.equal(draftsOf(dir).length, 1, 'the draft stays')
+
+  const off = fakeGh(t, { otherUrl: true })
+  const second = bin(['file-issues'], { dir, env: devOn(off) })
+  assert.deepEqual([second.status, second.json.error, second.json.created], [1, 'gh-create-failed', 0])
+  assert.equal(fs.existsSync(path.join(dir, 'observe', 'issues-filed.json')), false, 'a URL off the plugin repository confirms nothing')
+  assert.equal(fs.existsSync(path.join(dir, 'observe', 'notices')), false)
+
+  const gh = fakeGh(t)
+  const third = bin(['file-issues'], { dir, env: devOn(gh) })
+  assert.deepEqual([third.status, third.json.created], [0, 1])
+  assert.equal(gh.creates().length, 1)
+  assert.equal(ledgerOf(dir)[RISE_ID].via, 'created')
+})
+
+test('a create answer without a canonical URL for a positive issue confirms nothing: no ledger, no notice, retry works (D7)', (t) => {
+  for (const url of [
+    'not a URL',
+    `https://github.com/${REPO}/issues/0`,
+    `https://github.com/${REPO}/issues/0001`,
+    `https://github.com/${REPO}/issues/9007199254740992`,
+  ]) {
+    const dir = tempDir(t)
+    lead(dir)
+    rises(dir, ['t2'])
+    read(dir)
+    const gh = fakeGh(t)
+    write(path.join(gh.state, 'create-url'), `${url}\n`)
+    const failed = bin(['file-issues'], { dir, env: devOn(gh) })
+    assert.deepEqual([failed.status, failed.json.error, failed.json.created], [1, 'gh-create-failed', 0], url)
+    assert.equal(fs.existsSync(path.join(dir, 'observe', 'issues-filed.json')), false, `no ledger for ${url}`)
+    assert.deepEqual(files(path.join(dir, 'observe', 'notices')), [], `no notice for ${url}`)
+    fs.unlinkSync(path.join(gh.state, 'create-url'))
+    assert.equal(bin(['file-issues'], { dir, env: devOn(gh) }).json.created, 1, `retry after ${url}`)
+  }
+})
+
+test('a ledger that cannot be written after gh created the issue: the notice is kept, the run reports the error, and the next run finds the issue by its marker (D6, D7)', (t) => {
+  const dir = tempDir(t)
+  lead(dir)
+  rises(dir, ['t2'])
+  read(dir)
+  // A directory where the ledger file goes: the rename of the new ledger over it fails.
+  fs.mkdirSync(path.join(dir, 'observe', 'issues-filed.json'))
+  const gh = fakeGh(t)
+  const first = bin(['file-issues'], { dir, env: devOn(gh) })
+  assert.equal(first.status, 1)
+  assert.equal(typeof first.json.error, 'string')
+  assert.equal(gh.creates().length, 1, 'the issue was created')
+  assert.equal(files(path.join(dir, 'observe', 'notices')).length, 1, 'its notice was saved before the ledger')
+  assert.equal(fs.existsSync(path.join(dir, 'observe', 'issues-filed.lock')), false, 'the lock is released')
+
+  // The obstacle is cleared, and the listing now holds the issue the first run created, with its marker.
+  fs.rmdirSync(path.join(dir, 'observe', 'issues-filed.json'))
+  write(path.join(gh.state, 'list.json'), JSON.stringify([{ number: 101, state: 'OPEN', url: `https://github.com/${REPO}/issues/101`, body: gh.bodies()[0] }]))
+  const second = bin(['file-issues'], { dir, env: devOn(gh) })
+  assert.deepEqual([second.status, second.json.found, second.json.created], [0, 1, 0])
+  assert.equal(gh.creates().length, 1, 'no second issue')
+  assert.equal(ledgerOf(dir)[RISE_ID].via, 'found')
+  assert.equal(files(path.join(dir, 'observe', 'notices')).length, 1, 'a found issue adds no notice')
+})
+
+test('a notice that cannot be saved does not stop the run: the issue is in the ledger and the run counts it as unnoticed', (t) => {
+  const dir = tempDir(t)
+  lead(dir)
+  rises(dir, ['t2'])
+  read(dir)
+  write(path.join(dir, 'observe', 'notices'), 'a file where the notices folder goes')
+  const gh = fakeGh(t)
+  const r = bin(['file-issues'], { dir, env: devOn(gh) })
+  assert.deepEqual([r.status, r.json.created, r.json.unnoticed], [0, 1, 1])
+  assert.equal(ledgerOf(dir)[RISE_ID].via, 'created')
+  const again = bin(['file-issues'], { dir, env: devOn(gh) })
+  assert.deepEqual([again.status, again.json.created, again.json.skipped], [0, 0, 1])
+  assert.equal(gh.creates().length, 1)
 })
