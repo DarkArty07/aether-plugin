@@ -61,10 +61,11 @@ One reviewer per confirmed topic. A reviewer has about 20 tool calls and ten min
     Start here: <the hotspots and the facts of the analysis that touch this topic>.
     Scope: <files or directories>. About 20 tool calls; then answer with what you have.
     Open issues (do not report what they already cover): <number and title, at most 30>.
+    You have no gh and no network: what you need from GitHub is in this brief.
 
     Report only problems you can point to: a file and a line, or a file and a commit, and the evidence you saw (a quote of at most two lines, or a command's output). A branch is located by its name and the commit at its tip: {"file": "<branch>", "commit": "<sha>"}. An open issue is not a finding by itself: report the code or the document it points to. No nitpicks, nothing a linter would catch, nothing you are not fairly sure is real. An opportunity says where it is promised or asked for.
 
-    Answer with one JSON block and nothing else after it:
+    End your answer with one fenced json block of valid JSON (no trailing comma, no comment), and nothing after it:
     {"candidates": [{"id": "<topic>-1", "topic": "<topic>", "title": "...", "claim": "...", "location": {"file": "...", "line": 1}, "type": "bug|risk|debt|docs|opportunity|other", "trigger": "...", "evidence": "...", "impact": "..."}], "notLooked": ["what you did not get to"]}
     Write title, claim and impact in <the person's language>.
 
@@ -84,11 +85,11 @@ It discards a candidate with no location or no evidence. Then each accepted cand
 
     For each claim: (1) restate it from the code, in your own words: its root cause, what triggers it and its impact; if you cannot, it is unverified. (2) Try to refute it: read the location, its callers and the tests and configuration around it, and look for what makes it false. (3) Reproduce it only if you run on Claude and can do it without touching the project: write the reproduction in a directory made with `mktemp -d` outside the project, run it, and remove the directory. On another harness, do not reproduce.
 
-    Verdicts: proven (you reproduced it; give the command and what it printed), read-confirmed (the code shows it), proposal (only for an opportunity that is real), refuted (give the evidence that makes it false), unverified (you could not settle it; say why).
+    Verdicts: proven (you reproduced it; give the command and what it printed), read-confirmed (the code shows it), proposal (only for a claim whose type is opportunity, when it is real), refuted (give the evidence that makes it false), unverified (you could not settle it; say why). A claim of any other type is never a proposal: a future risk that the code shows is read-confirmed.
 
     Claims: <id, claim, location and type of each>
 
-    Answer with one JSON block and nothing else after it:
+    End your answer with one fenced json block of valid JSON (no trailing comma, no comment), and nothing after it:
     {"verdicts": [{"id": "...", "verdict": "...", "rootCause": "...", "trigger": "...", "impact": "...", "evidence": "...", "reproduction": "..."}]}
 
 Write every verdict into one array in `$W/verdicts.json`, adding to each `ranOn`: `"claude"` when its result says it ran on Claude, else the harness's name. A verifier that ran out or did not answer leaves its claims with no verdict. Copy each verdict as the verifier gave it: never change one, and never make one stronger. When a verifier's own evidence contradicts its verdict, write that claim's verdict as `"unverified"` with the contradiction as its `reason`, and say so under «Assumptions». Run:
@@ -132,6 +133,6 @@ When the spend cannot be read, `"costUsd": null` and `"cost": {"readable": false
 
     aether-audit report --meta "$W/meta.json" --analysis "$W/analysis.json" --triage "$W/triage.json" --lang <es|en> --save --out "$W/report.json"
 
-It saves the report outside the project, in the data directory, and returns its sections and its markdown. Give the person that markdown as it is, in their language: for a language other than Spanish or English, use `--lang en` and translate it. It opens with the header line, «Awaiting your yes» and «Assumptions», then the list from P0 to P3 (each item with its topic and verification, what it is, where, why that level, its size and how it would be built), the unverified findings, what changed since the last audit, the discarded, what was not covered, the RADAR line and the cost, and it ends asking which items the person takes.
+It saves the report outside the project, in the data directory, and returns its sections and its markdown. Give the person that markdown as it is, with nothing before its header line (a note of yours goes under «Assumptions»), in their language: for a language other than Spanish or English, use `--lang en` and translate it. It opens with the header line, «Awaiting your yes» and «Assumptions», then the list from P0 to P3 (each item with its topic and verification, what it is, where, why that level, its size and how it would be built), the unverified findings, what changed since the last audit, the discarded, what was not covered, the RADAR line and the cost, and it ends asking which items the person takes.
 
 When the person answers with numbers, look each one up in the saved `report.json`. Only after the person chooses, and only in a project with a GitHub remote where `gh` answers, create one issue per chosen item with `gh issue create --title '<title>' --body '<claim, locations, evidence, verification, priority and why>'`, and give the issue links. Otherwise give the chosen items as text. Then stop: building them is a new request.
