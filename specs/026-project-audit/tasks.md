@@ -1564,8 +1564,9 @@ async function command(args, ctx) {}
 // 3. Previous audit (R18): previousReport(dataDir, analysis.project.key) of audit-store.js. With none, sinceLast = { previous: null, resolved: [], notReaudited: [] } and every mark is null.
 //    With one, each verified finding gets mark 'still' when its causeKey is a causeKey of the previous report's list, else 'new'. sinceLast = { previous: { date }, resolved, notReaudited }:
 //    resolved = the previous list items whose causeKey is not among the current verified findings, nor among the ones removed for an open issue, and whose topic is in `topics`;
-//    notReaudited = the previous list items whose topic is not in `topics`. Each item is { causeKey, title, topic }. A previous item whose causeKey starts with
-//    `audit-changed-project-` (the audit's own, which every analysis checks again) counts as re-audited whatever `topics` says: it is resolved or still, never notReaudited.
+//    notReaudited = the previous list items whose topic is not in `topics`. Each item is { causeKey, title, topic }. A previous item whose causeKey is
+//    `audit-changed-project-<step>` (the audit's own; step is tests, lint or dependencies) counts as re-audited, whatever `topics` says, only when this analysis's
+//    checks[<step>].state is 'result': then it is resolved or still, never notReaudited. When that step did not run (--no-tests, a refused chain, no linter), it is notReaudited.
 // Output: findings = the verified ones that remain; unverified = the unverified ones that remain (no mark); discarded = the input's discarded then merged then covered ones;
 // counts = the input's counts.
 function clean(settled, analysis, options) {}
@@ -1748,6 +1749,21 @@ test('the cleanup compares with the previous audit of the same project: new, sti
   assert.equal(out.sinceLast.previous.date, '2026-10-12')
   assert.deepEqual(out.sinceLast.resolved, [{ causeKey: 'old-fixed', title: 'Old fixed bug', topic: 'bugs' }])
   assert.deepEqual(out.sinceLast.notReaudited, [{ causeKey: 'other-topic', title: 'Doc drift', topic: 'docs' }])
+})
+
+test('an earlier item of the audit's own counts as re-audited only when this analysis ran the same step (R18)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const key = 'repo-0123456789ab'
+  store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), {
+    list: [
+      { causeKey: 'audit-changed-project-tests', title: 'Running the tests changed the project', topic: 'hygiene' },
+      { causeKey: 'audit-changed-project-lint', title: 'Running the linter changed the project', topic: 'hygiene' },
+    ],
+  }, '')
+  const analysis = { ...analysisWith(OPEN, key), checks: { issues: OPEN, tests: { state: 'result' }, lint: { state: 'not-applicable', reason: 'no linter declared' } } }
+  const out = clean.clean(settled([fnd('F1')]), analysis, { topics: ['bugs'], dataDir })
+  assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), ['audit-changed-project-tests'])
+  assert.deepEqual(out.sinceLast.notReaudited.map((r) => r.causeKey), ['audit-changed-project-lint'])
 })
 
 const judgment = (over = {}) => ({ severity: 'high', priority: 'P1', reason: 'a reason', size: 'S', how: 'one agent', regression: false, waitCost: 'medium', ...over })
