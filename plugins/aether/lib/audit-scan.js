@@ -16,7 +16,7 @@ const SECRET_PATTERNS = [
   { type: 'slack-token', pattern: /\bxox[abprs]-[0-9A-Za-z-]{10,}\b/, confidence: 'high' },
   { type: 'google-api-key', pattern: /\bAIza[0-9A-Za-z_-]{35}\b/, confidence: 'high' },
   { type: 'private-key-block', pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/, confidence: 'high' },
-  { type: 'generic-assignment', pattern: /(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*["'][^"'\s]{12,}["']/i, confidence: 'low' },
+  { type: 'generic-assignment', pattern: /(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*["'][^"'\s]{12,}["']/i, confidence: 'low' },
 ]
 
 // redact(text) -> the text with every secret-looking match replaced by its type, never by its value.
@@ -212,32 +212,45 @@ function hotspots(root, { top = 10, months = 12 } = {}) {
   return { state: 'result', items: items.slice(0, top) }
 }
 
-function defaultBranch(root, heads) {
+function defaultBranch(root, heads, remotes) {
   const symbolic = git(['symbolic-ref', '--short', '--quiet', 'refs/remotes/origin/HEAD'], root, { allowFail: true })
   if (symbolic.status === 0 && symbolic.stdout !== '') return symbolic.stdout.replace(/^origin\//, '')
-  if (heads.includes('main')) return 'main'
-  if (heads.includes('master')) return 'master'
-  return git(['branch', '--show-current'], root).stdout || heads[0] || ''
+  for (const name of ['main', 'master']) {
+    if (heads.includes(name) || remotes.includes(`origin/${name}`)) return name
+  }
+  return git(['branch', '--show-current'], root, { allowFail: true }).stdout || heads[0] || ''
 }
 
-function branchDetail(root, name, kind, fallback, nowMs, staleDays) {
+// The ref a branch is compared with: a local branch with the local default, a remote one with the default of its own
+// remote (`origin/main` for `origin/x`), each falling back to the other when it does not exist; null when neither does.
+function comparisonRef(name, kind, fallback, heads, remotes) {
+  const remote = kind === 'remote' ? name.slice(0, name.indexOf('/')) : 'origin'
+  const local = heads.includes(fallback) ? fallback : null
+  const remoteRef = remotes.includes(`${remote}/${fallback}`) ? `${remote}/${fallback}` : null
+  return kind === 'remote' ? remoteRef || local : local || remoteRef
+}
+
+function branchDetail(root, name, kind, compareTo, nowMs, staleDays) {
   const lastCommit = git(['log', '-1', '--format=%cI', name], root).stdout
   const ageDays = Math.floor((nowMs - new Date(lastCommit).getTime()) / 86400000)
-  const aheadOfDefault = Number(git(['rev-list', '--count', `${fallback}..${name}`], root).stdout)
-  const merged = git(['merge-base', '--is-ancestor', name, fallback], root, { allowFail: true }).status === 0
-  return { name, kind, lastCommit, ageDays, aheadOfDefault, merged, stale: ageDays >= staleDays && name !== fallback }
+  let aheadOfDefault = null
+  let merged = null
+  if (compareTo !== null) {
+    const ahead = git(['rev-list', '--count', `${compareTo}..${name}`], root, { allowFail: true })
+    aheadOfDefault = ahead.status === 0 ? Number(ahead.stdout) : null
+    merged = git(['merge-base', '--is-ancestor', name, compareTo], root, { allowFail: true }).status === 0
+  }
+  return { name, kind, lastCommit, ageDays, aheadOfDefault, merged, stale: ageDays >= staleDays && name !== compareTo }
 }
 
 // branches(root, options) -> every local and remote branch with its age, lead and staleness.
 function branches(root, { now = new Date(), staleDays = 60 } = {}) {
   const heads = git(['for-each-ref', '--format=%(refname:short)', 'refs/heads'], root).stdout.split('\n').filter((line) => line !== '')
-  const remotes = git(['for-each-ref', '--format=%(refname:short)', 'refs/remotes'], root).stdout.split('\n').filter((line) => line !== '' && !line.endsWith('/HEAD'))
-  const fallback = defaultBranch(root, heads)
+  const remotes = git(['for-each-ref', '--format=%(refname:short)', 'refs/remotes'], root).stdout.split('\n').filter((line) => line !== '' && line.includes('/') && !line.endsWith('/HEAD'))
+  const fallback = defaultBranch(root, heads, remotes)
   const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime()
-  const items = [
-    ...heads.map((name) => branchDetail(root, name, 'local', fallback, nowMs, staleDays)),
-    ...remotes.map((name) => branchDetail(root, name, 'remote', fallback, nowMs, staleDays)),
-  ]
+  const detail = (name, kind) => branchDetail(root, name, kind, comparisonRef(name, kind, fallback, heads, remotes), nowMs, staleDays)
+  const items = [...heads.map((name) => detail(name, 'local')), ...remotes.map((name) => detail(name, 'remote'))]
   items.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   return { state: 'result', default: fallback, stale: items.filter((item) => item.stale).length, items }
 }

@@ -203,6 +203,34 @@ test('branches: the age, the lead over the default branch and whether each is me
   assert.equal(r.stale, 1)
 })
 
+test('branches: a remote branch is compared with the default of its own remote, and a clone without a local default does not fail (R4)', (t) => {
+  const repo = makeRepo(t)
+  repo.git('switch', '-q', 'main')
+  const head = repo.git('rev-parse', 'HEAD')
+  repo.git('update-ref', 'refs/remotes/origin/main', head)
+  repo.git('switch', '-q', '-c', 'topic')
+  commitOn(repo, 'f.txt', 'x', 'feature work', daysAgo(90))
+  repo.git('update-ref', 'refs/remotes/origin/topic', repo.git('rev-parse', 'HEAD'))
+  repo.git('switch', '-q', 'main')
+  const r = scan.branches(repo.dir, { now: new Date() })
+  const by = Object.fromEntries(r.items.map((i) => [i.name, i]))
+  assert.deepEqual([by['origin/main'].stale, by['origin/main'].merged, by['origin/main'].aheadOfDefault], [false, true, 0])
+  assert.deepEqual([by['origin/topic'].stale, by['origin/topic'].merged, by['origin/topic'].aheadOfDefault], [true, false, 1])
+  repo.git('switch', '-q', '--detach', 'HEAD')
+  repo.git('branch', '-q', '-D', 'main', 'topic', 'feature/x')
+  const orphan = scan.branches(repo.dir, { now: new Date() })
+  assert.equal(orphan.state, 'result')
+  assert.equal(orphan.default, 'main')
+  const remoteOnly = Object.fromEntries(orphan.items.map((i) => [i.name, i]))
+  assert.deepEqual([remoteOnly['origin/topic'].aheadOfDefault, remoteOnly['origin/main'].stale], [1, false])
+})
+
+test('withSnapshots with no steps reports no change', async (t) => {
+  const repo = makeRepo(t)
+  const out = await snap.withSnapshots(repo.dir, [])
+  assert.deepEqual(out, { results: [], changes: { changed: false, attributed: [], unattributable: [] } })
+})
+
 const issuesJson = JSON.stringify([{ number: 41, title: 'Export CSV', createdAt: daysAgo(100), labels: [{ name: 'enhancement' }], url: 'https://github.com/o/r/issues/41' }])
 const prsJson = JSON.stringify([{ number: 7, title: 'Fix stock', createdAt: daysAgo(3), isDraft: true, headRefName: 'fix/stock', url: 'https://github.com/o/r/pull/7' }])
 

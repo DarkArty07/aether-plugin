@@ -120,6 +120,7 @@ function diffSnapshots(a, b) {
 
 // withSnapshots(root, steps, { snapshotFn }) -> runs each step between two photographs and tells which step changed what.
 async function withSnapshots(root, steps, { snapshotFn = snapshot } = {}) {
+  if (steps.length === 0) return { results: [], changes: { changed: false, attributed: [], unattributable: [] } }
   const results = []
   const attributed = []
   const unattributable = []
