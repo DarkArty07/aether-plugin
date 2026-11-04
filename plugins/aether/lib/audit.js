@@ -15,11 +15,11 @@ function runAnalyze(args, ctx) {
 }
 
 function runCandidates(args, ctx) {
-  return require('./audit-verify.js').command(args, ctx)
+  return require('./audit-verify.js').command(args, { ...ctx, subcommand: 'candidates' })
 }
 
 function runVerdicts(args, ctx) {
-  return require('./audit-verify.js').command(args, ctx)
+  return require('./audit-verify.js').command(args, { ...ctx, subcommand: 'verdicts' })
 }
 
 function runClean(args, ctx) {

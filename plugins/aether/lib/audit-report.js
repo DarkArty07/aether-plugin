@@ -16,6 +16,7 @@ const CHECK_ORDER = ['tests', 'lint', 'dependencies', 'secrets', 'todos', 'branc
 
 const DISCARD_ORDER = ['refuted', 'covered-by-issue', 'merged', 'no-location', 'no-evidence']
 
+// Every fixed word of the report lives in one of these two tables, never in a function body.
 const ES = {
   topics: { bugs: 'Bug', security: 'Seguridad', dependencies: 'Dependencias', tests: 'Tests', reliability: 'Fiabilidad', performance: 'Rendimiento', accessibility: 'Accesibilidad', architecture: 'Arquitectura', docs: 'Docs', releases: 'Versiones', hygiene: 'Higiene', opportunities: 'Oportunidad' },
   verifications: { proven: 'comprobado', 'read-confirmed': 'confirmado leyendo', proposal: 'propuesta' },
@@ -33,6 +34,25 @@ const ES = {
   unreadableCost: 'No pude leer el costo de la sesión; no pongo una cifra.',
   questionEmpty: '**¿Cuáles tomas?** No hay hallazgos verificados para tomar.',
   sinceLastNone: '**Desde la última auditoría:** no hay una auditoría anterior.',
+  header: (name, date, count, candidates, verified) => `**Auditoría de ${name} · ${date} · ${count} temas · ${candidates} hallazgos, ${verified} sobrevivieron la verificación**`,
+  band: (priority, level) => `**${priority} · ${level}**`,
+  why: (priority) => `*Por qué ${priority}:*`,
+  unattributable: (first, second, files) => `- Cambio no atribuible durante la auditoría (entre ${first} y ${second}): ${files}`,
+  sinceLast: (date, news, stills, resolved) => `**Desde la última auditoría (${date}):** ${news} nuevos, ${stills} siguen, ${resolved} resueltos.`,
+  sinceLastExtra: (left) => ` ${left} sin revisar esta vez, porque sus temas quedaron fuera.`,
+  discarded: (total, parts) => `**Descartados:** ${total}${parts ? ` (${parts})` : ''}.`,
+  noCompare: (reason) => ` No pude comparar con los issues abiertos (${reason}).`,
+  savedList: (dir) => ` La lista completa está en el reporte guardado: ${dir}`,
+  notRun: (check, reason) => `${check}: no se corrió: ${reason}`,
+  notApplicable: (check, reason) => `${check}: no aplica: ${reason}`,
+  couldNot: (check, reason) => `${check}: no se pudo: ${reason}`,
+  truncated: (check) => `${check}: se leyó solo una parte`,
+  leftOut: (topic, reason) => `${topic}: tema fuera: ${reason}`,
+  notLooked: (topic, items) => `${topic}: no miré ${items}`,
+  exhausted: (topic) => `Revisor agotado: ${topic}`,
+  radar: (text) => `**RADAR:** ${text}`,
+  question: (example) => `**¿Cuáles tomas?** Por ejemplo: «${example}».`,
+  exampleJoin: (head, last) => `${head} y ${last}`,
 }
 
 const EN = {
@@ -52,19 +72,29 @@ const EN = {
   unreadableCost: 'I could not read the session cost; I give no figure.',
   questionEmpty: '**Which do you take?** There are no verified findings to take.',
   sinceLastNone: '**Since the last audit:** there is no earlier audit.',
+  header: (name, date, count, candidates, verified) => `**Audit of ${name} · ${date} · ${count} topics · ${candidates} findings, ${verified} survived verification**`,
+  band: (priority, level) => `**${priority} · ${level}**`,
+  why: (priority) => `*Why ${priority}:*`,
+  unattributable: (first, second, files) => `- Unattributable change during the audit (between ${first} and ${second}): ${files}`,
+  sinceLast: (date, news, stills, resolved) => `**Since the last audit (${date}):** ${news} new, ${stills} still open, ${resolved} resolved.`,
+  sinceLastExtra: (left) => ` ${left} not re-audited, because their topics were left out.`,
+  discarded: (total, parts) => `**Discarded:** ${total}${parts ? ` (${parts})` : ''}.`,
+  noCompare: (reason) => ` I could not compare with the open issues (${reason}).`,
+  savedList: (dir) => ` The full list is in the saved report: ${dir}`,
+  notRun: (check, reason) => `${check}: not run: ${reason}`,
+  notApplicable: (check, reason) => `${check}: not applicable: ${reason}`,
+  couldNot: (check, reason) => `${check}: could not: ${reason}`,
+  truncated: (check) => `${check}: only part was read`,
+  leftOut: (topic, reason) => `${topic}: left out: ${reason}`,
+  notLooked: (topic, items) => `${topic}: I did not look at ${items}`,
+  exhausted: (topic) => `Reviewer ran out: ${topic}`,
+  radar: (text) => `**RADAR:** ${text}`,
+  question: (example) => `**Which do you take?** For example: «${example}».`,
+  exampleJoin: (head, last) => `${head} and ${last}`,
 }
 
 function strings(lang) {
   return String(lang || '').toLowerCase().startsWith('es') ? ES : EN
-}
-
-function isSpanish(lang) {
-  return String(lang || '').toLowerCase().startsWith('es')
-}
-
-function headerLine(spanish, name, date, topics, candidates, verified) {
-  if (spanish) return `**Auditoría de ${name} · ${date} · ${topics} temas · ${candidates} hallazgos, ${verified} sobrevivieron la verificación**`
-  return `**Audit of ${name} · ${date} · ${topics} topics · ${candidates} findings, ${verified} survived verification**`
 }
 
 function renderLocation(location) {
@@ -76,43 +106,33 @@ function renderLocations(locations) {
   return (locations || []).map(renderLocation).join(', ')
 }
 
-function bandHeading(priority, T) {
-  return `**${priority} · ${T.levels[priority]}**`
-}
-
-function whyLabel(spanish, priority) {
-  return spanish ? `*Por qué ${priority}:*` : `*Why ${priority}:*`
-}
-
-function renderListItem(T, spanish, item) {
-  const topic = T.topics[item.topic] || item.topic
-  const verification = T.verifications[item.verification] || item.verification
-  const type = T.types[item.type] || item.type
-  const size = T.sizes[item.size] || item.size
+function renderListItem(T, item) {
   const mark = item.mark === 'new' || item.mark === 'still' ? ` · ${T.marks[item.mark]}` : ''
   return [
-    `${item.number}. **[${topic} · ${verification}]** ${item.title}`,
-    `   ${renderLocations(item.locations)} · ${type} — ${item.claim}`,
-    `   ${whyLabel(spanish, item.priority)} ${item.reason} · ${size} · ${item.how}${mark}`,
+    `${item.number}. **[${T.topics[item.topic] || item.topic} · ${T.verifications[item.verification] || item.verification}]** ${item.title}`,
+    `   ${renderLocations(item.locations)} · ${T.types[item.type] || item.type} — ${item.claim}`,
+    `   ${T.why(item.priority)} ${item.reason} · ${T.sizes[item.size] || item.size} · ${item.how}${mark}`,
   ].join('\n')
 }
 
 function renderUnverifiedItem(T, item) {
-  const topic = T.topics[item.topic] || item.topic
-  return `- **[${topic}]** ${item.title} (${renderLocations(item.locations)}): ${item.reason}`
+  return `- **[${T.topics[item.topic] || item.topic}]** ${item.title} (${renderLocations(item.locations)}): ${item.reason}`
 }
 
-function sinceLastSection(T, spanish, sinceLast) {
+function sinceLastSection(T, sinceLast) {
   if (!sinceLast || !sinceLast.previous) return T.sinceLastNone
   const counts = sinceLast.counts || {}
   const resolved = Array.isArray(sinceLast.resolved) ? sinceLast.resolved.length : 0
   const notReaudited = Array.isArray(sinceLast.notReaudited) ? sinceLast.notReaudited : []
-  const date = sinceLast.previous.date
-  let line
-  if (spanish) line = `**Desde la última auditoría (${date}):** ${counts.new} nuevos, ${counts.still} siguen, ${resolved} resueltos.`
-  else line = `**Since the last audit (${date}):** ${counts.new} new, ${counts.still} still open, ${resolved} resolved.`
-  if (notReaudited.length > 0) line += spanish ? ` ${notReaudited.length} sin revisar esta vez, porque sus temas quedaron fuera.` : ` ${notReaudited.length} not re-audited, because their topics were left out.`
+  let line = T.sinceLast(sinceLast.previous.date, counts.new, counts.still, resolved)
+  if (notReaudited.length > 0) line += T.sinceLastExtra(notReaudited.length)
   return line
+}
+
+function countReasons(discarded) {
+  const byReason = {}
+  for (const entry of discarded) byReason[entry.reason] = (byReason[entry.reason] || 0) + 1
+  return byReason
 }
 
 function discardParts(T, discarded) {
@@ -134,63 +154,51 @@ function discardParts(T, discarded) {
   return parts
 }
 
-function countReasons(discarded) {
-  const byReason = {}
-  for (const entry of discarded) byReason[entry.reason] = (byReason[entry.reason] || 0) + 1
-  return byReason
-}
-
-function discardedSection(T, spanish, discarded, issueComparison, savedTo) {
+function discardedSection(T, discarded, issueComparison, savedTo) {
   const parts = discardParts(T, discarded)
-  let line
-  if (spanish) line = `**Descartados:** ${discarded.length}${parts.length > 0 ? ` (${parts.join(', ')})` : ''}.`
-  else line = `**Discarded:** ${discarded.length}${parts.length > 0 ? ` (${parts.join(', ')})` : ''}.`
-  if (issueComparison && issueComparison.state !== 'done') {
-    line += spanish ? ` No pude comparar con los issues abiertos (${issueComparison.reason}).` : ` I could not compare with the open issues (${issueComparison.reason}).`
-  }
-  if (savedTo) line += spanish ? ` La lista completa está en el reporte guardado: ${savedTo}` : ` The full list is in the saved report: ${savedTo}`
+  let line = T.discarded(discarded.length, parts.join(', '))
+  if (issueComparison && issueComparison.state !== 'done') line += T.noCompare(issueComparison.reason)
+  if (savedTo) line += T.savedList(savedTo)
   return line
 }
 
-function notCoveredLines(T, spanish, meta, analysis) {
+function notCoveredLines(T, meta, analysis) {
   const lines = []
   const checks = (analysis && analysis.checks) || {}
   for (const key of CHECK_ORDER) {
     const check = checks[key]
     if (!check) continue
-    const label = T.checks[key]
     if (check.state === 'result') {
-      if (check.truncated) lines.push(spanish ? `${label}: se leyó solo una parte` : `${label}: only part was read`)
+      if (check.truncated) lines.push(T.truncated(T.checks[key]))
       continue
     }
-    if (check.notRun) lines.push(spanish ? `${label}: no se corrió: ${check.reason}` : `${label}: not run: ${check.reason}`)
-    else if (check.state === 'not-applicable') lines.push(spanish ? `${label}: no aplica: ${check.reason}` : `${label}: not applicable: ${check.reason}`)
-    else lines.push(spanish ? `${label}: no se pudo: ${check.reason}` : `${label}: could not: ${check.reason}`)
+    if (check.notRun) lines.push(T.notRun(T.checks[key], check.reason))
+    else if (check.state === 'not-applicable') lines.push(T.notApplicable(T.checks[key], check.reason))
+    else lines.push(T.couldNot(T.checks[key], check.reason))
   }
   for (const entry of (meta && meta.leftOut) || []) {
-    lines.push(spanish ? `${T.topics[entry.topic] || entry.topic}: tema fuera: ${entry.reason}` : `${T.topics[entry.topic] || entry.topic}: left out: ${entry.reason}`)
+    lines.push(T.leftOut(T.topics[entry.topic] || entry.topic, entry.reason))
   }
   const reviewers = (meta && meta.reviewers) || {}
   for (const entry of reviewers.notLooked || []) {
-    lines.push(spanish ? `${T.topics[entry.topic] || entry.topic}: no miré ${(entry.items || []).join(', ')}` : `${T.topics[entry.topic] || entry.topic}: I did not look at ${(entry.items || []).join(', ')}`)
+    lines.push(T.notLooked(T.topics[entry.topic] || entry.topic, (entry.items || []).join(', ')))
   }
   for (const topic of reviewers.exhausted || []) {
-    lines.push(spanish ? `Revisor agotado: ${T.topics[topic] || topic}` : `Reviewer ran out: ${T.topics[topic] || topic}`)
+    lines.push(T.exhausted(T.topics[topic] || topic))
   }
   return lines
 }
 
-function exampleNumbers(spanish, numbers) {
+function exampleNumbers(T, numbers) {
   const shown = numbers.slice(0, 3)
-  if (shown.length <= 2) return shown.join(spanish ? ' y ' : ' and ')
-  const head = shown.slice(0, -1).join(', ')
-  return spanish ? `${head} y ${shown[shown.length - 1]}` : `${head} and ${shown[shown.length - 1]}`
+  if (shown.length <= 1) return shown.join('')
+  if (shown.length === 2) return T.exampleJoin(shown[0], shown[1])
+  return T.exampleJoin(shown.slice(0, -1).join(', '), shown[shown.length - 1])
 }
 
-function questionSection(T, spanish, list) {
+function questionSection(T, list) {
   if (list.length === 0) return T.questionEmpty
-  const example = exampleNumbers(spanish, list.map((item) => item.number))
-  return spanish ? `**¿Cuáles tomas?** Por ejemplo: «${example}».` : `**Which do you take?** For example: «${example}».`
+  return T.question(exampleNumbers(T, list.map((item) => item.number)))
 }
 
 // input = { meta, analysis, triage } as in Global Constraints and below; lang is 'es' or anything else (anything else is English).
@@ -199,17 +207,14 @@ function questionSection(T, spanish, list) {
 // options.savedTo (optional) is the folder where the report is saved.
 function render(input, lang, options = {}) {
   const T = strings(lang)
-  const spanish = isSpanish(lang)
   const { meta, analysis, triage } = input
   const list = triage.list || []
   const unverified = triage.unverified || []
   const discarded = triage.discarded || []
-  const news = list.filter((item) => item.mark === 'new').length
-  const stills = list.filter((item) => item.mark === 'still').length
-  const withCounts = { ...triage.sinceLast, counts: { new: news, still: stills } }
+  const withCounts = { ...triage.sinceLast, counts: { new: list.filter((item) => item.mark === 'new').length, still: list.filter((item) => item.mark === 'still').length } }
 
   const sections = []
-  sections.push(headerLine(spanish, analysis.project.name, meta.date, (meta.topics || []).length, triage.counts.candidates, triage.counts.verified))
+  sections.push(T.header(analysis.project.name, meta.date, (meta.topics || []).length, triage.counts.candidates, triage.counts.verified))
 
   const waits = (meta.waits || []).map((wait) => `- ${wait}`)
   sections.push([T.waits, ...(waits.length > 0 ? waits : [T.none])].join('\n'))
@@ -217,33 +222,32 @@ function render(input, lang, options = {}) {
   const assumptions = (meta.assumptions || []).map((assumption) => `- ${assumption}`)
   for (const change of ((analysis.changes && analysis.changes.unattributable) || [])) {
     const files = (change.items || []).flatMap((item) => item.files || [])
-    if (spanish) assumptions.push(`- Cambio no atribuible durante la auditoría (entre ${change.between[0]} y ${change.between[1]}): ${files.join(', ')}`)
-    else assumptions.push(`- Unattributable change during the audit (between ${change.between[0]} and ${change.between[1]}): ${files.join(', ')}`)
+    assumptions.push(T.unattributable(change.between[0], change.between[1], files.join(', ')))
   }
   sections.push([T.assumptions, ...(assumptions.length > 0 ? assumptions : [T.none])].join('\n'))
 
   for (const priority of PRIORITY_ORDER) {
     const band = list.filter((item) => item.priority === priority)
     if (band.length === 0) continue
-    sections.push([bandHeading(priority, T), ...band.map((item) => renderListItem(T, spanish, item))].join('\n'))
+    sections.push([T.band(priority, T.levels[priority]), ...band.map((item) => renderListItem(T, item))].join('\n'))
   }
 
   const unverifiedLines = unverified.map((item) => renderUnverifiedItem(T, item))
   sections.push([T.unverified, ...(unverifiedLines.length > 0 ? unverifiedLines : [T.none])].join('\n'))
 
-  sections.push(sinceLastSection(T, spanish, withCounts))
+  sections.push(sinceLastSection(T, withCounts))
 
-  sections.push(discardedSection(T, spanish, discarded, triage.issueComparison, options.savedTo))
+  sections.push(discardedSection(T, discarded, triage.issueComparison, options.savedTo))
 
-  const covered = notCoveredLines(T, spanish, meta, analysis)
+  const covered = notCoveredLines(T, meta, analysis)
   sections.push([T.notCovered, ...(covered.length > 0 ? covered.map((line) => `- ${line}`) : [T.none])].join('\n'))
 
-  sections.push(`**RADAR:** ${meta.radar}`)
+  sections.push(T.radar(meta.radar))
 
   const cost = meta.cost || {}
   sections.push(cost.readable && cost.text ? cost.text : T.unreadableCost)
 
-  sections.push(questionSection(T, spanish, list))
+  sections.push(questionSection(T, list))
 
   const data = {
     project: analysis.project,
