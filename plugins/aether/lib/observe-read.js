@@ -67,6 +67,7 @@ function readPendingEntries(repoRoot) {
     time: millis(entry.time),
     session: typeof entry.session === 'string' ? entry.session : '',
     class: identifier(entry.class),
+    mode: entry.mode === 'enforce' ? 'enforce' : entry.mode === 'log' ? 'log' : 'unknown',
     fingerprint: fingerprintOf(entry.command),
   }))
 }

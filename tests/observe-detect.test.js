@@ -93,7 +93,7 @@ test('a rise with cause exhausted leaves the task open; a verdict of exhausted c
   assert.equal(found.some((f) => f.sessions.includes('s-2')), false)
 })
 
-test('a grant of the same class after a block, or the same fingerprint twice, is a possible mistaken block (E5)', () => {
+test('later grants and repeated pending commands are local friction, with unknown mode for old records (E5)', () => {
   const fp = d.fingerprintOf('git   push origin main')
   assert.equal(fp, d.fingerprintOf('git push origin main'))
   assert.match(fp, /^[0-9a-f]{12}$/)
@@ -108,11 +108,28 @@ test('a grant of the same class after a block, or the same fingerprint twice, is
     { class: 'delete', added: new Date(1500).toISOString() },
   ]
   const found = d.detectBlockedByMistake({ pending, grants }, CFG)
-  assert.deepEqual(found.map((f) => f.id).sort(), [`blocked-by-mistake:deploy:aaaaaaaaaaaa`, `blocked-by-mistake:push:${fp}`])
+  assert.deepEqual(found.map((f) => f.id).sort(), [`blocked-by-mistake:deploy:aaaaaaaaaaaa:unknown`, `blocked-by-mistake:push:${fp}:unknown`])
+  for (const item of found) {
+    assert.equal(item.kind, 'friction')
+    assert.equal(item.numbers.mode, 'unknown')
+    assert.doesNotMatch(item.evidence.join('\n'), /\bblocked\b/)
+  }
   const text = JSON.stringify(found)
   assert.ok(text.includes(fp) && text.includes(new Date(1500).toISOString()))
   assert.equal(text.includes('SECRET QUOTE'), false)
   assert.equal(text.includes('rm -rf'), false)
+})
+
+test('repeat thresholds do not combine different guard modes or classes', () => {
+  const pending = [
+    { time: 1000, class: 'push', mode: 'log', fingerprint: 'aaaaaaaaaaaa' },
+    { time: 2000, class: 'push', mode: 'enforce', fingerprint: 'aaaaaaaaaaaa' },
+    { time: 3000, class: 'deploy', mode: 'log', fingerprint: 'aaaaaaaaaaaa' },
+  ]
+  assert.deepEqual(d.detectBlockedByMistake({ pending }, CFG), [])
+  const found = d.detectBlockedByMistake({ pending: [...pending, { ...pending[1], time: 4000 }] }, CFG)
+  assert.equal(found.length, 1)
+  assert.deepEqual(found[0].numbers, { class: 'push', mode: 'enforce', fingerprint: 'aaaaaaaaaaaa', count: 2 })
 })
 
 test('every detector returns [] for empty input', () => {

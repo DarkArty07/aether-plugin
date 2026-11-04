@@ -11,7 +11,8 @@
 //   observation files and session markers (the observation digest keeps their counts first), sweeps stale runs
 //   in the session's repository and prints "Aether mode is active." with its notes (an open autonomous run, the
 //   sweep, what it could not do). On startup only it also adds the hook's top-level systemMessage, a welcome
-//   line for the person with the plugin's version and /aether:help (spec 024 R9).
+//   line for the person with the plugin's version and /aether:help (spec 024 R9), and the notices of issues the
+//   worker opened (spec 020) that fit in the same output.
 // - with --part k, on startup, clear and compact, it prints part k of the using-aether bootstrap and does
 //   nothing else; nothing when the bootstrap has fewer than k parts.
 // Claude Code delivers a hook's output whole only up to 10,000 characters and gives a longer one as a preview and
@@ -256,9 +257,24 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     autonomyNote(cwd),
   ].filter(Boolean).join('\n\n')
   const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }
-  // The welcome line is for the person and only at startup: a clear or a compact inside a session adds none.
-  if (source === 'startup') output.systemMessage = welcome(root, env)
-  stdout.write(JSON.stringify(output) + '\n')
+  // The welcome line is for the person and only at startup: a clear or a compact inside a session adds none. At startup the
+  // notices of confirmed issues (spec 020) are shown too, oldest first, claiming only those that keep the whole output within
+  // PART_LIMIT: one that does not fit stays pending without holding back a smaller later one.
+  const welcomeLine = source === 'startup' ? welcome(root, env) : null
+  let noticeLine = () => ''
+  const message = (list) => JSON.stringify(welcomeLine === null
+    ? output
+    : { ...output, systemMessage: [welcomeLine, ...list.map((notice) => noticeLine(notice))].join('\n') }) + '\n'
+  let notices = []
+  if (welcomeLine !== null) {
+    try {
+      const { dataDir } = require('./run.js')
+      const store = require('./observe-notice.js')
+      noticeLine = store.noticeLine
+      notices = store.takeNotices(dataDir(env), (list) => message(list).length <= PART_LIMIT)
+    } catch { /* A notice must never stop startup. */ }
+  }
+  stdout.write(message(notices))
 }
 
 module.exports = {
