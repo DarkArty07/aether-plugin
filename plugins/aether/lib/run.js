@@ -135,6 +135,7 @@ function ensureExcluded(gitCommonDir) {
 }
 
 module.exports = {
+  EXCLUDES,
   isRunId,
   assertRunId,
   assertTaskId,
