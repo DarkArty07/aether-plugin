@@ -137,7 +137,8 @@ async function command(args, ctx) {
     } catch (err) {
       throw new Error(`${gatedFile} or ${verdictsFile}: ${messageOf(err)}`)
     }
-    if (!gated || !Array.isArray(gated.accepted) || !Array.isArray(verdicts)) {
+    const counted = gated && gated.counts && Number.isInteger(gated.counts.candidates)
+    if (!gated || !Array.isArray(gated.accepted) || !Array.isArray(gated.discarded) || !counted || !Array.isArray(verdicts)) {
       throw new Error(`${gatedFile} or ${verdictsFile}: not a candidates output and a verdicts list`)
     }
     const result = settle(gated, verdicts)

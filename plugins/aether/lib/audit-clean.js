@@ -167,7 +167,8 @@ async function command(args, ctx) {
   } catch (err) {
     throw new Error(`${settledFile} or ${analysisFile}: ${messageOf(err)}`)
   }
-  if (!settled || !Array.isArray(settled.findings) || !analysis || typeof analysis !== 'object') {
+  const counted = settled && settled.counts && Number.isInteger(settled.counts.candidates) && Number.isInteger(settled.counts.verified)
+  if (!settled || !Array.isArray(settled.findings) || !Array.isArray(settled.discarded) || !counted || !analysis || typeof analysis !== 'object') {
     throw new Error(`${settledFile} or ${analysisFile}: not a settled output and an analysis`)
   }
   const result = clean(settled, analysis, { topics, dataDir: dataDir(ctx.env) })

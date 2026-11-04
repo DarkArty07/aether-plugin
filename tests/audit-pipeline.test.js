@@ -115,7 +115,7 @@ test('the cleanup removes what an open issue covers and says which, and says it 
   assert.deepEqual(blind.issueComparison, { state: 'could-not', reason: 'gh is not installed', removed: [] })
 })
 
-test('the cleanup takes in the analysis\u2019s own findings as verified findings, so a change the audit made reaches the list (R6)', (t) => {
+test('the cleanup takes in the analysis\'s own findings as verified findings, so a change the audit made reaches the list (R6)', (t) => {
   const dataDir = tempDir(t, 'aether-data-')
   const self = {
     id: 'AUDIT-1', topic: 'hygiene', title: 'Running the tests changed the project', claim: 'the test command wrote notes.txt', location: { file: 'notes.txt', line: 1 },
@@ -153,7 +153,7 @@ test('the cleanup compares with the previous audit of the same project: new, sti
   assert.deepEqual(out.sinceLast.notReaudited, [{ causeKey: 'other-topic', title: 'Doc drift', topic: 'docs' }])
 })
 
-test('an earlier item of the audit\u2019s own counts as re-audited only when this analysis ran the same step (R18)', (t) => {
+test('an earlier item of the audit\'s own counts as re-audited only when this analysis ran the same step (R18)', (t) => {
   const dataDir = tempDir(t, 'aether-data-')
   const key = 'repo-0123456789ab'
   store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), {
@@ -243,4 +243,23 @@ test('the four stages chain through files and the bin: candidates, verdicts, cle
   assert.equal(incomplete.status, 1)
   assert.deepEqual(incomplete.json.incomplete, [{ id: 'A', missing: ['judgment'] }])
   assert.equal(repo.git('status', '--porcelain'), '')
+})
+
+test('a hand-edited intermediate file that lost its discarded list or its counts is refused with an error that names the file', (t) => {
+  const repo = makeRepo(t)
+  const work = tempDir(t, 'aether-work-')
+  const gated = path.join(work, 'gated.json')
+  const verdictsFile = path.join(work, 'verdicts.json')
+  fs.writeFileSync(gated, JSON.stringify({ accepted: [] }))
+  fs.writeFileSync(verdictsFile, '[]')
+  const v = runBin(BIN, ['verdicts', gated, verdictsFile], repo.dir)
+  assert.equal(v.status, 1)
+  assert.match(v.json.error, /gated\.json/)
+  const settledFile = path.join(work, 'settled.json')
+  const analysisFile = path.join(work, 'analysis.json')
+  fs.writeFileSync(settledFile, JSON.stringify({ findings: [] }))
+  fs.writeFileSync(analysisFile, JSON.stringify({ project: { key: 'k-0123456789ab' }, checks: {} }))
+  const c = runBin(BIN, ['clean', settledFile, '--analysis', analysisFile, '--topics', 'bugs'], repo.dir)
+  assert.equal(c.status, 1)
+  assert.match(c.json.error, /settled\.json/)
 })
