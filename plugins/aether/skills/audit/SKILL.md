@@ -50,9 +50,9 @@ Take the answer as it comes: «yes» is the proposed list; numbers or names remo
 
 ## 3. Discovery
 
-One reviewer per confirmed topic. A reviewer has about 20 tool calls and ten minutes, so in a large project split a topic into up to three reviewers, each with its own scope (a group of hotspots, a directory, the docs). Give each one only what it needs:
+One reviewer per confirmed topic. A reviewer has about 20 tool calls and ten minutes, so give it a bounded scope: the hotspots and the files the analysis points to for its topic, then what is nearest to them. What it does not get to goes to «not covered». Give each one only what it needs:
 
-    AETHER-TASK: audit-<topic>[-<n>]
+    AETHER-TASK: audit-<topic>
 
     You review one topic of a read-only audit of a project. Change, create or delete no file of the project and run no command that changes it (no git fetch or pull, no --fix, no install). Never print, quote or copy the value of a secret: name its type, file and line only.
 
@@ -65,7 +65,7 @@ One reviewer per confirmed topic. A reviewer has about 20 tool calls and ten min
     Report only problems you can point to: a file and a line, or a file and a commit, and the evidence you saw (a quote of at most two lines, or a command's output). No nitpicks, nothing a linter would catch, nothing you are not fairly sure is real. An opportunity says where it is promised or asked for.
 
     Answer with one JSON block and nothing else after it:
-    {"candidates": [{"id": "<topic>-<n>-1", "topic": "<topic>", "title": "...", "claim": "...", "location": {"file": "...", "line": 1}, "type": "bug|risk|debt|docs|opportunity|other", "trigger": "...", "evidence": "...", "impact": "..."}], "notLooked": ["what you did not get to"]}
+    {"candidates": [{"id": "<topic>-1", "topic": "<topic>", "title": "...", "claim": "...", "location": {"file": "...", "line": 1}, "type": "bug|risk|debt|docs|opportunity|other", "trigger": "...", "evidence": "...", "impact": "..."}], "notLooked": ["what you did not get to"]}
     Write title, claim and impact in <the person's language>.
 
 Reviewers never get the person's conversation. Wait for every reviewer; keep each one's `notLooked`, and the topics of reviewers that ran out.
