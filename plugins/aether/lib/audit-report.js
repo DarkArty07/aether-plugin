@@ -165,16 +165,17 @@ function discardedSection(T, discarded, issueComparison, savedTo) {
 function notCoveredLines(T, meta, analysis) {
   const lines = []
   const checks = (analysis && analysis.checks) || {}
+  // First every check that gave no result, then the ones that gave a partial result, each pass in the order of CHECK_ORDER.
   for (const key of CHECK_ORDER) {
     const check = checks[key]
-    if (!check) continue
-    if (check.state === 'result') {
-      if (check.truncated) lines.push(T.truncated(T.checks[key]))
-      continue
-    }
+    if (!check || check.state === 'result') continue
     if (check.notRun) lines.push(T.notRun(T.checks[key], check.reason))
     else if (check.state === 'not-applicable') lines.push(T.notApplicable(T.checks[key], check.reason))
     else lines.push(T.couldNot(T.checks[key], check.reason))
+  }
+  for (const key of CHECK_ORDER) {
+    const check = checks[key]
+    if (check && check.state === 'result' && check.truncated) lines.push(T.truncated(T.checks[key]))
   }
   for (const entry of (meta && meta.leftOut) || []) {
     lines.push(T.leftOut(T.topics[entry.topic] || entry.topic, entry.reason))

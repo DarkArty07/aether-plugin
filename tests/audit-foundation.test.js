@@ -356,3 +356,26 @@ test('--out writes the whole result outside the project and prints a summary; a 
   assert.equal(missing.status, 1)
   assert.match(missing.json.error, /nope\.json/)
 })
+
+test('a failed subcommand with --out prints its own failure, never a success line, and writes no file', (t) => {
+  const repo = makeRepo(t)
+  const work = tempDir(t, 'aether-work-')
+  const files = writeInputs(work, fixture())
+  const out = path.join(work, 'never.json')
+  const r = runBin(BIN, ['report', '--meta', path.join(work, 'nope.json'), '--analysis', files.analysis, '--triage', files.triage, '--out', out], repo.dir)
+  assert.equal(r.status, 1)
+  assert.equal(r.json.ok, false)
+  assert.match(r.json.error, /nope\.json/)
+  assert.equal(fs.existsSync(out), false)
+})
+
+test('«No cubrí» lists the checks with no result first and the partial ones after, each in the order of the checks', () => {
+  const f = fixture()
+  f.analysis.checks.tests = { state: 'result', truncated: true }
+  f.analysis.checks.lint = { state: 'could-not', reason: 'eslint crashed' }
+  const section = between(report.render(f, 'es').markdown, '**No cubrí', '**RADAR')
+  const lint = section.indexOf('Linter: no se pudo: eslint crashed')
+  const tests = section.indexOf('Tests: se leyó solo una parte')
+  assert.ok(lint > -1 && tests > -1, section)
+  assert.ok(lint < tests, section)
+})

@@ -111,7 +111,8 @@ async function main(argv, { cwd = process.cwd(), env = process.env, stdout = pro
   const ctx = { cwd, env, subcommand: verb, now: () => new Date() }
   try {
     const { code = 0, result, summary } = await run(args, ctx)
-    if (out !== null) {
+    // A failed subcommand prints its own result (ok: false), with or without --out: a success line never covers a failure.
+    if (out !== null && code === 0) {
       writeAtomic(out, JSON.stringify(result, null, 2))
       print(stdout, { ok: true, out, summary })
     } else {
