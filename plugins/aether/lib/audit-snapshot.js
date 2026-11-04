@@ -21,7 +21,7 @@ function statusOf(root) {
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]
     const code = entry.slice(0, 2)
-    let file = entry.slice(3)
+    const file = entry.slice(3)
     if (code[0] === 'R' || code[0] === 'C' || code[1] === 'R' || code[1] === 'C') i++
     if (isAetherPath(file)) continue
     let hash = null
