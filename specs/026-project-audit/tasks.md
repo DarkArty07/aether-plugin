@@ -301,7 +301,7 @@ El texto de cada sección (la forma del prototipo). Español; las etiquetas entr
    *Por qué P0:* {reason} · {tamaño} · {how}{ · nuevo | · sigue}
 **Sin verificar (no los ordené)**
 - **[{tema}]** {title} (`{file}:{line}`): {reason}
-**Desde la última auditoría ({previous.date}):** {nuevos} nuevos, {siguen} siguen, {resueltos} resueltos.     (sin anterior: **Desde la última auditoría:** no hay una auditoría anterior.)
+**Desde la última auditoría ({previous.date}):** {nuevos} nuevos, {siguen} siguen, {resueltos} resueltos.{ {k} sin revisar esta vez, porque sus temas quedaron fuera.}     (la frase final solo cuando sinceLast.notReaudited tiene k > 0, y en inglés ` {k} not re-audited, because their topics were left out.`; sin anterior: **Desde la última auditoría:** no hay una auditoría anterior.)
 **Descartados:** {total} ({razón}: {n}, ...).{ No pude comparar con los issues abiertos ({reason}).}{ La lista completa está en el reporte guardado: {savedTo}}
 **No cubrí:**
 - {línea}                                 (sin líneas: - (nada))
@@ -310,7 +310,7 @@ El texto de cada sección (la forma del prototipo). Español; las etiquetas entr
 **¿Cuáles tomas?** Por ejemplo: «1, 2 y 3».     (los primeros hasta tres números de la lista; con una lista vacía: **¿Cuáles tomas?** No hay hallazgos verificados para tomar.)
 ```
 
-Etiquetas en español: tema (bugs Bug, security Seguridad, dependencies Dependencias, tests Tests, reliability Fiabilidad, performance Rendimiento, accessibility Accesibilidad, architecture Arquitectura, docs Docs, releases Versiones, hygiene Higiene, opportunities Oportunidad); verificación (proven comprobado, read-confirmed confirmado leyendo, proposal propuesta); tipo (bug Bug, risk Riesgo, debt Deuda, docs Docs, opportunity Oportunidad, other Otro); tamaño (S Pequeño, M Mediano, L Grande); marca (new nuevo, still sigue); razones de descarte, en este orden: refuted `refutados`, covered-by-issue `cubiertos por un issue`, merged `repetidos`, no-location `sin ubicación`, no-evidence `sin evidencia`, y cualquier otra con su id; revisiones del análisis (tests Tests, lint Linter, dependencies Dependencias, secrets Secretos, todos TODO y FIXME, branches Ramas, issues Issues, prs Pull requests, hotspots Hotspots).
+Etiquetas en español: tema (bugs Bug, security Seguridad, dependencies Dependencias, tests Tests, reliability Fiabilidad, performance Rendimiento, accessibility Accesibilidad, architecture Arquitectura, docs Docs, releases Versiones, hygiene Higiene, opportunities Oportunidad); verificación (proven comprobado, read-confirmed confirmado leyendo, proposal propuesta); tipo (bug Bug, risk Riesgo, debt Deuda, docs Docs, opportunity Oportunidad, other Otro); tamaño (S Pequeño, M Mediano, L Grande); marca (new nuevo, still sigue); niveles (P0 `Urge ya`, P1 `Pronto`, P2 `Programable`, P3 `Cuando puedas / ideas`); razones de descarte, en este orden: refuted `refutados`, covered-by-issue `cubiertos por un issue`, merged `repetidos`, no-location `sin ubicación`, no-evidence `sin evidencia`, y cualquier otra con su id; revisiones del análisis (tests Tests, lint Linter, dependencies Dependencias, secrets Secretos, todos TODO y FIXME, branches Ramas, issues Issues, prs Pull requests, hotspots Hotspots).
 
 Líneas de «No cubrí», en este orden: por cada revisión del análisis que no sea `result` (en el orden de la tabla anterior): `{revisión}: no se corrió: {reason}` si `notRun`, `{revisión}: no aplica: {reason}` si `not-applicable`, `{revisión}: no se pudo: {reason}` si `could-not`; por cada revisión `result` con `truncated: true`: `{revisión}: se leyó solo una parte`; por cada `meta.leftOut`: `{tema}: tema fuera: {reason}`; por cada `meta.reviewers.notLooked`: `{tema}: no miré {items separados por coma}`; por cada `meta.reviewers.exhausted`: `Revisor agotado: {tema}`.
 
@@ -569,7 +569,7 @@ test('what is unverified has no level and no number, and the since-last, discard
   assert.ok(unverified.includes('Possible stock race') && unverified.includes('`src/orders/stock.js:30`'))
   assert.doesNotMatch(unverified, /\bP[0-3]\b/)
   assert.doesNotMatch(unverified, /^\d+\./m)
-  assert.ok(md.includes('**Desde la última auditoría (2026-10-12):** 2 nuevos, 1 siguen, 1 resueltos.'))
+  assert.ok(md.includes('**Desde la última auditoría (2026-10-12):** 3 nuevos, 1 siguen, 1 resueltos.'))
   const discarded = between(md, '**Descartados', '**No cubrí')
   assert.ok(discarded.includes('**Descartados:** 5 (refutados: 2, cubiertos por un issue: 1, repetidos: 1, sin ubicación: 1).'))
   assert.ok(discarded.includes('No pude comparar con los issues abiertos (gh is not installed).'))
@@ -1093,7 +1093,7 @@ function assess(root, commandLine) {}
 //   credentials text /\$\{?[A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|CREDENTIAL|PRIVATE_KEY)[A-Za-z0-9_]*\}?|--token\b|--password\b|\b(aws|gcloud)\s|az login|aws-vault|vault (read|login)|op (run|read)|doppler run/
 //   fixes       text /--fix\b|--write\b|audit fix|git (fetch|pull|push|commit|add|checkout|reset|clean|stash|merge|rebase|worktree|branch)\b/
 //   installs    text /\b(npm|pnpm|yarn|bun) (i|install|ci|add)\b|pip install|poetry install|bundle install|composer install|go get|cargo install/
-function assess(root, commandLine) {}
+const RISKS = [ /* one { id, name, text } row per class above */ ]
 ```
 
 `plugins/aether/lib/audit-tools.js`:
@@ -1429,10 +1429,13 @@ test('analyze: a test command that would seed data is not run, and the analysis 
 
 test('analyze: --tests-command gives the Lead a way to name a test command when no manifest declares one, and it is read like any other', async (t) => {
   const repo = makeRepo(t)
+  commitIn(repo, repo.dir, 'Makefile', 'check:\n\tnode --test\n\ndeploy:\n\tgit push origin main\n', 'makefile')
   const exec = fake(OK)
   const a = await analyze.analyze(repo.dir, { testsCommand: 'make check' }, ctxFor(t, async (...args) => exec(...args)))
+  assert.equal(a.checks.tests.state, 'result')
   assert.equal(a.checks.tests.command, 'make check')
   assert.equal(a.checks.tests.source, 'given by the Lead')
+  assert.ok(exec.calls.some((c) => c.args.join(' ').includes('make check')), 'the command the Lead gave was run')
   const risky = await analyze.analyze(repo.dir, { testsCommand: 'make deploy' }, ctxFor(t, never))
   assert.deepEqual([risky.checks.tests.state, risky.checks.tests.notRun], ['could-not', true])
 })
@@ -1541,7 +1544,9 @@ async function command(args, ctx) {}
 ```js
 // clean(settled, analysis, { topics, dataDir }) -> { findings, unverified, discarded, counts, issueComparison, sinceLast }
 // settled = the output of verdicts, with the fields the Lead added to each finding: causeKey (default: the id) and coveredBy (an issue number, optional).
-// analysis = the output of analyze (only project.key, checks.issues and, for the date of the audit, generatedAt are read).
+// analysis = the output of analyze (only project.key, checks.issues, selfFindings and, for the date of the audit, generatedAt are read).
+// 0. The audit's own findings (R6): each of analysis.selfFindings (already established by the analysis: status 'verified', verification 'proven', source 'analysis')
+//    is appended to the settled findings before step 1, and counts.candidates and counts.verified each grow by their number. A missing selfFindings is [].
 // 1. Merge (R16): findings with the same causeKey AND the same status become one. The survivor is the first in the input; it gets locations (the unique locations of all, as Location[]),
 //    mergedFrom (the ids, in order), verification = the strongest (proven > read-confirmed > proposal; for unverified findings 'unverified'), and the others go to discarded as
 //    { id, title, topic, reason: 'merged', into: <survivor id> }. A verified and an unverified finding never merge. Every finding, merged or not, has locations (at least its own location) and mergedFrom.
@@ -1696,6 +1701,22 @@ test('the cleanup removes what an open issue covers and says which, and says it 
   const blind = clean.clean(input, analysisWith({ state: 'could-not', reason: 'gh is not installed' }), { topics: ['bugs'], dataDir })
   assert.deepEqual(blind.findings.map((f) => f.id), ['F4', 'F5', 'F6'])
   assert.deepEqual(blind.issueComparison, { state: 'could-not', reason: 'gh is not installed', removed: [] })
+})
+
+test('the cleanup takes in the analysis's own findings as verified findings, so a change the audit made reaches the list (R6)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const self = {
+    id: 'AUDIT-1', topic: 'hygiene', title: 'Running the tests changed the project', claim: 'the test command wrote notes.txt', location: { file: 'notes.txt', line: 1 },
+    type: 'risk', trigger: 'the audit ran npm test', evidence: 'status: notes.txt', impact: 'the audit changed the project', rootCause: 'the test command writes a tracked file',
+    verification: 'proven', status: 'verified', causeKey: 'audit-changed-project-tests', source: 'analysis',
+  }
+  const out = clean.clean(settled([fnd('F1')]), { ...analysisWith(OPEN), selfFindings: [self] }, { topics: ['bugs'], dataDir })
+  assert.deepEqual(out.findings.map((f) => f.id), ['F1', 'AUDIT-1'])
+  assert.equal(out.findings[1].status, 'verified')
+  assert.deepEqual(out.findings[1].locations, [{ file: 'notes.txt', line: 1 }])
+  assert.deepEqual([out.counts.candidates, out.counts.verified], [2, 2])
+  const none = clean.clean(settled([fnd('F1')]), analysisWith(OPEN), { topics: ['bugs'], dataDir })
+  assert.deepEqual(none.findings.map((f) => f.id), ['F1'])
 })
 
 test('the cleanup compares with the previous audit of the same project: new, still, resolved, and topics not reviewed this time (R18, scenario 6)', (t) => {
