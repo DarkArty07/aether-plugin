@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-audit: reads the project without models and reports what is pending, ordered by urgency.
+// aether-audit analyze [--no-tests] [--tests-command <cmd>] [--timeout-seconds <n>] [--out <file>]
+// aether-audit candidates <candidates.json> [--out <file>]
+// aether-audit verdicts <gated.json> <verdicts.json> [--out <file>]
+// aether-audit clean <settled.json> --analysis <analysis.json> --topics <a,b,c> [--out <file>]
+// aether-audit triage <clean.json> <judgments.json> [--out <file>]
+// aether-audit report --meta <meta.json> --analysis <analysis.json> --triage <triage.json> [--lang <l>] [--save] [--out <file>]
+
+const path = require('node:path')
+const { main } = require(path.join(__dirname, '..', 'lib', 'audit.js'))
+
+main(process.argv.slice(2), { cwd: process.cwd(), env: process.env, stdout: process.stdout }).then(
+  (code) => {
+    process.exitCode = code
+  },
+  (err) => {
+    process.stdout.write(`${JSON.stringify({ ok: false, error: String((err && err.message) || err) })}\n`)
+    process.exitCode = 1
+  },
+)

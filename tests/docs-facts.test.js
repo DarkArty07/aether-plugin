@@ -397,7 +397,7 @@ test('R11: aether-first-setup and aether-doctor are executable files of bin/, th
   }
   assert.ok(commandsIn(read('docs/reference/components.md')).includes('aether-doctor'), 'docs/reference/components.md names `aether-doctor`')
   const components = read('docs/reference/components.md')
-  for (const text of ['`plugins/aether/launcher/aether-lead`', '`setup` skill', '`doctor` skill', '`help` skill', 'thirteen commands of `bin/`']) {
+  for (const text of ['`plugins/aether/launcher/aether-lead`', '`setup` skill', '`doctor` skill', '`help` skill', 'fourteen commands of `bin/`']) {
     assert.ok(components.includes(text), `docs/reference/components.md has ${text}`)
   }
 })
@@ -452,7 +452,7 @@ test('C3: the repository paths in code spans exist', () => {
   }
 })
 
-const NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13 }
+const NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14 }
 
 test('R12: the count of commands of bin/ that the pages give is the count of its files', () => {
   let seen = 0
