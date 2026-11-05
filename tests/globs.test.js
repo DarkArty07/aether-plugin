@@ -2,7 +2,9 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { normalizePattern, staticPrefix, patternsOverlap, matchesAny } = require('../plugins/aether/lib/globs.js')
+const fs = require('node:fs')
+const path = require('node:path')
+const { normalizePattern, isGlob, staticPrefix, patternsOverlap, matchesAny, globToRegExp } = require('../plugins/aether/lib/globs.js')
 
 test('normalizePattern strips backticks, ./ and trailing slashes', () => {
   assert.equal(normalizePattern('`src/api/**`'), 'src/api/**')
@@ -44,4 +46,24 @@ test('matchesAny matches files against wildcard and plain patterns', () => {
   assert.equal(matchesAny('README.md.bak', ['README.md']), false)
   assert.equal(matchesAny('f1.txt', ['f?.txt']), true)
   assert.equal(matchesAny('dir/f1.txt', ['f?.txt']), false)
+})
+
+test('the glob functions that run.workflow.js copies behave as lib/globs.js on edge patterns and paths (R15)', () => {
+  const text = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'workflows', 'run.workflow.js'), 'utf8')
+  const start = text.indexOf('const WILDCARD')
+  const end = text.indexOf('// Past eight items')
+  assert.ok(start > 0 && end > start, 'the copied block is found in the workflow')
+  const copy = new Function(`${text.slice(start, end)}\nreturn { normalizePattern, isGlob, globToRegExp }`)()
+  const lib = require('../plugins/aether/lib/globs.js')
+
+  const patterns = ['`src/api/**`', './docs/', ' web\\login\\form.tsx ', '**', '*', 'src/*.js', 'src/**/index', 'a/**/b/*', 'f?.txt', '././x/', 'plain/file.md', '`', '']
+  const paths = ['src/api/v1/users', 'src/api/index', 'src/apix/index', 'docs/guide/lanes', 'docs', 'web/login/form.tsx', 'a/x/b/c', 'a/b/c', 'f1.txt', 'f10.txt', 'x/y', 'plain/file.md', 'src/a.js', 'src/deep/a.js', 'src/index']
+  for (const pattern of patterns) {
+    assert.equal(copy.normalizePattern(pattern), lib.normalizePattern(pattern), `normalizePattern(${JSON.stringify(pattern)})`)
+    assert.equal(copy.isGlob(pattern), lib.isGlob(pattern), `isGlob(${JSON.stringify(pattern)})`)
+    assert.equal(copy.globToRegExp(pattern).source, lib.globToRegExp(pattern).source, `globToRegExp(${JSON.stringify(pattern)})`)
+    for (const file of paths) {
+      assert.equal(copy.globToRegExp(pattern).test(file), lib.globToRegExp(pattern).test(file), `${pattern} against ${file}`)
+    }
+  }
 })
