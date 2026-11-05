@@ -85,16 +85,15 @@ test('sweepStale removes runs untouched for longer than the limit and records th
   assert.equal(records[0].status, 'abandoned')
 })
 
-test('sweepStale cleans leftovers whose run directory is already gone', (t) => {
+test('sweepStale retains leftovers whose run directory is already gone', (t) => {
   useDataDir(t)
   const repo = makeRepo(t)
   const args = compile(repo, plan([task(1), task(2)]))
   const unit = ensure(repo.dir, args.runId, 'task-1')
   fs.rmSync(args.runDir, { recursive: true, force: true })
   fs.rmSync(unit.path, { recursive: true, force: true })
-  assert.deepEqual(sweepStale(repo.dir), { swept: [args.runId] })
-  assert.equal(repo.git('branch', '--list', unit.branch), '')
-  assert.doesNotMatch(repo.git('worktree', 'list', '--porcelain'), /task-1/)
+  assert.deepEqual(sweepStale(repo.dir), { swept: [] })
+  assert.notEqual(repo.git('branch', '--list', unit.branch), '')
 })
 
 test('sweepStale keeps a run whose unit worktree was touched recently', (t) => {
@@ -297,7 +296,7 @@ test('sweepStale cleans lane copies whose run directory is already gone', (t) =>
   diffPackage(repo.dir, args.runId, 'task-1')
   const copy = prepareReader(repo.dir, args.runId, 'task-1-1-supervise', { taskId: 'task-1' })
   fs.rmSync(args.runDir, { recursive: true, force: true })
-  assert.deepEqual(sweepStale(repo.dir), { swept: [args.runId] })
+  assert.deepEqual(sweepStale(repo.dir), { swept: [] })
   assert.equal(fs.existsSync(copy.workdir), false)
 })
 
@@ -409,3 +408,79 @@ for (const graphState of ['missing', 'malformed']) {
     })
   }
 }
+
+for (const stale of [false, true]) {
+  test(`missing run directory preserves dirty worktree and branch (stale=${stale})`, (t) => {
+    useDataDir(t)
+    const repo = makeRepo(t)
+    const args = compile(repo, plan([task(1)]))
+    const unit = ensure(repo.dir, args.runId, 'task-1')
+    fs.writeFileSync(path.join(unit.path, 'unsaved.txt'), 'unsaved\n')
+    fs.rmSync(args.runDir, { recursive: true })
+    if (stale) assert.deepEqual(sweepStale(repo.dir), { swept: [] })
+    else sweepRun(repo.dir, args.runId, { finish: true })
+    assert.equal(fs.readFileSync(path.join(unit.path, 'unsaved.txt'), 'utf8'), 'unsaved\n')
+    assert.notEqual(repo.git('branch', '--list', unit.branch), '')
+  })
+
+  test(`recreated worktree and existing patch are preserved (stale=${stale})`, (t) => {
+    useDataDir(t)
+    const repo = makeRepo(t)
+    const args = compile(repo, plan([task(1)]))
+    const unit = ensure(repo.dir, args.runId, 'task-1')
+    commitIn(repo, unit.path, 'src/t1/a.js', 'committed\n', 'work')
+    fs.writeFileSync(path.join(unit.path, 'old.txt'), 'old unsaved\n')
+    sweepRun(repo.dir, args.runId)
+    const patch = path.join(args.runDir, 'patches/task-1.patch')
+    const original = fs.readFileSync(patch)
+    ensure(repo.dir, args.runId, 'task-1')
+    fs.writeFileSync(path.join(unit.path, 'new.txt'), 'new unsaved\n')
+    if (stale) { ageRun(args, 48); sweepStale(repo.dir) } else sweepRun(repo.dir, args.runId)
+    assert.deepEqual(fs.readFileSync(patch), original)
+    assert.equal(fs.readFileSync(path.join(unit.path, 'new.txt'), 'utf8'), 'new unsaved\n')
+    assert.notEqual(repo.git('branch', '--list', unit.branch), '')
+  })
+
+  test(`unreadable graph preserves marker without branch or worktree (stale=${stale})`, (t) => {
+    useDataDir(t)
+    const repo = makeRepo(t)
+    const args = compile(repo, plan([task(1)]))
+    const marker = path.join(args.runDir, 'unverified/task-1.json')
+    fs.mkdirSync(path.dirname(marker), { recursive: true })
+    fs.writeFileSync(marker, JSON.stringify({ commit: repo.git('rev-parse', 'HEAD') }))
+    fs.writeFileSync(path.join(args.runDir, 'graph.json'), '{broken')
+    if (stale) { ageRun(args, 48); assert.deepEqual(sweepStale(repo.dir), { swept: [] }) }
+    else assert.equal(sweepRun(repo.dir, args.runId, { finish: true }).finished, false)
+    assert.ok(fs.existsSync(marker))
+  })
+}
+
+test('adopted branch with later commits is retained', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1')
+  const { adoptUnit } = require('../plugins/aether/lib/worktrees.js')
+  adoptUnit(repo.dir, args.runId, 'task-1', { commit: repo.git('rev-parse', 'HEAD'), reason: 'integrated manually' })
+  commitIn(repo, unit.path, 'src/t1/a.js', 'later\n', 'later work')
+  const result = sweepRun(repo.dir, args.runId, { finish: true })
+  assert.deepEqual(result.retainedBranches, [unit.branch])
+  assert.notEqual(repo.git('branch', '--list', unit.branch), '')
+})
+
+test('stale sweep records actual removals once even with a live marker', (t) => {
+  const data = useDataDir(t)
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'work\n', 'work')
+  const marker = path.join(args.runDir, 'unverified/task-1.json')
+  fs.mkdirSync(path.dirname(marker), { recursive: true })
+  fs.writeFileSync(marker, JSON.stringify({ commit: repo.git('rev-parse', 'HEAD') }))
+  for (let i = 0; i < 2; i++) { ageRun(args, 48); assert.deepEqual(sweepStale(repo.dir), { swept: [] }) }
+  const records = fs.readFileSync(path.join(data, 'runs.jsonl'), 'utf8').trim().split('\n').map(JSON.parse)
+  const abandoned = records.filter((record) => record.status === 'abandoned')
+  assert.equal(abandoned.length, 1)
+  assert.equal(abandoned[0].removedWorktrees, 1)
+  assert.equal(abandoned[0].removedBranches, 0)
+  assert.deepEqual(abandoned[0].branches, [])
+})

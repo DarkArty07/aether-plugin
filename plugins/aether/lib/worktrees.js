@@ -450,9 +450,10 @@ function markerTaskIds(mainRoot, runId) {
 // the only record that those commits are untested, and they would then count as merged (issue #2).
 function liveUnverified(mainRoot, runId) {
   const graphFile = path.join(run.runDir(mainRoot, runId), 'graph.json')
-  if (!exists(graphFile)) return []
   const graph = orEmpty(() => run.readJson(graphFile), null)
-  if (!graph || !graph.integration) return []
+  if (!graph || !graph.integration || !graph.integration.branch || !branchExists(mainRoot, graph.integration.branch)) {
+    return markerTaskIds(mainRoot, runId).map((task) => ({ task, commit: null }))
+  }
   const live = []
   for (const taskId of markerTaskIds(mainRoot, runId)) {
     const marker = markerRecord(mainRoot, runId, taskId)
@@ -997,11 +998,8 @@ function savePatches(mainRoot, runId, interrupted) {
   }
   const branches = aetherBranches(mainRoot, runId)
   const taskOf = (branch) => branch.split('/')[2]
-  // Without a readable graph nothing can be judged: when the run directory is still there the
-  // branches are retained so no work is lost (R6). When the run directory is already gone there
-  // is no state to preserve, so leftovers are still swept.
-  if (!graph || graphUnreadable) {
-    if (!exists(run.runDir(mainRoot, runId))) return { patches, kept, saved, retained: [] }
+  // Without a trustworthy graph neither a base nor mergedness can be judged.
+  if (!graph || graphUnreadable || !graph.integration || !graph.integration.branch || !graph.tasks) {
     // With no trustworthy base a patch cannot be produced. Keep every worktree,
     // including directories without a branch, rather than discarding unsaved files.
     for (const worktree of runWorktrees(mainRoot, runId).paths) kept.add(path.basename(worktree))
@@ -1013,13 +1011,19 @@ function savePatches(mainRoot, runId, interrupted) {
     const worktree = run.unitWorktree(mainRoot, runId, taskId)
     return isWorktreeRoot(worktree) ? worktree : null
   }
+  // A recreated worktree does not contain the unsaved work in an earlier patch. Keep both
+  // copies rather than overwriting the patch or discarding newer work in the worktree.
+  for (const { branch } of branches) {
+    const taskId = taskOf(branch)
+    if (unitWorktree(taskId) && exists(path.join(run.runDir(mainRoot, runId), 'patches', `${taskId}.patch`))) kept.add(taskId)
+  }
   if (interrupted) {
     // The work is committed before mergedness is judged: a branch cut after another unit's merge, with
     // only uncommitted work of its own, would otherwise count as merged and be deleted.
     for (const { branch } of branches) {
       const taskId = branch.split('/')[2]
       const worktree = unitWorktree(taskId)
-      if (!worktree) continue
+      if (!worktree || kept.has(taskId)) continue
       try {
         if (graph && graph.tasks[taskId]) commitOwnedWork(worktree, graph.tasks[taskId], taskId)
         // Without the graph there is no Owns to commit and no base for a patch: uncommitted work stays.
@@ -1034,6 +1038,7 @@ function savePatches(mainRoot, runId, interrupted) {
     const taskId = branch.split('/')[2]
     const worktree = unitWorktree(taskId)
     const inWorktree = worktree !== null
+    if (kept.has(taskId)) continue
     if (interrupted && !merged.has(taskId)) {
       try {
         if (graph && !kept.has(taskId)) patches.push(writePatch(mainRoot, graph, runId, taskId, worktree))
@@ -1056,16 +1061,10 @@ function savePatches(mainRoot, runId, interrupted) {
     }
     if (marked && !kept.has(taskId)) saved.push({ task: taskId, branch, head: git(['rev-parse', branch], mainRoot).stdout })
   }
-  // Tasks whose branch is not integrated, or that cannot be judged: their branch is retained
-  // by sweepRun and their patch was written above (R6). An adopted unit counts as integrated.
-  const adopted = orEmpty(() => {
-    const file = path.join(run.runDir(mainRoot, runId), 'adopted.json')
-    return exists(file) ? run.readJson(file) : {}
-  }, {})
+  // Retain every branch whose current tip is not integrated, including adopted units.
   const retained = []
   for (const { branch } of branches) {
     const taskId = taskOf(branch)
-    if (adopted && typeof adopted === 'object' && adopted[taskId]) continue
     let unmerged = false
     try {
       if (unverifiedCommit(mainRoot, graph, runId, taskId) !== null) unmerged = true
@@ -1231,6 +1230,14 @@ function lastRecordStatus(runId, dir = run.dataDir()) {
   return status
 }
 
+function hasRecordStatus(runId, status, dir = run.dataDir()) {
+  const text = orEmpty(() => fs.readFileSync(path.join(dir, 'runs.jsonl'), 'utf8'), '')
+  return text.split('\n').some((line) => {
+    const record = orEmpty(() => JSON.parse(line), null)
+    return record && record.runId === runId && record.status === status
+  })
+}
+
 // Removes runs that were never finalized and have had no activity for `hours`, plus leftovers
 // whose run directory is already gone. Activity is any change in the run directory or in the
 // run's unit worktrees. Each removal is recorded, with the tip of every branch it deletes taken
@@ -1264,31 +1271,27 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     if (active) continue
     const sweptAt = new Date(now).toISOString()
     const branches = aetherBranches(mainRoot, id)
+    // A live marker keeps the run directory; the sweep does not remove marker files.
+    const live = liveUnverified(mainRoot, id)
+    const interrupted = wasInterrupted(mainRoot, id)
+    const lastStatus = lastRecordStatus(id)
+    const sweep = sweepRun(cwd, id)
+    const removed = new Set(sweep.removedBranches)
     const abandoned = {
       runId: id,
       status: 'abandoned',
       sweptAt,
       repo: mainRoot,
-      removedWorktrees: runWorktrees(mainRoot, id).paths.length,
-      removedBranches: branches.length,
-      branches,
+      removedWorktrees: sweep.removedWorktrees.length,
+      removedBranches: sweep.removedBranches.length,
+      branches: branches.filter(({ branch }) => removed.has(branch)),
     }
-    // A marker whose commit is on the integration branch keeps the run directory: deleting it
-    // would drop the only record that the commit is untested (issue #2). Checked before the
-    // sweep, which does not remove marker files. Check live marker before appending abandoned,
-    // so a finalized run does not become abandoned and records once.
-    const live = liveUnverified(mainRoot, id)
-    const interrupted = wasInterrupted(mainRoot, id)
-    const lastStatus = lastRecordStatus(id)
-    if (!interrupted && live.length === 0 && lastStatus !== 'abandoned' && lastStatus !== 'finalized') run.appendRecord(abandoned)
-    else if (!interrupted && live.length > 0 && lastStatus !== 'finalized' && lastStatus !== 'abandoned') {
-      run.appendRecord(abandoned)
-    }
-    const sweep = sweepRun(cwd, id)
+    const alreadyAbandoned = hasRecordStatus(id, 'abandoned')
+    if (!interrupted && !alreadyAbandoned && lastStatus !== 'finalized') run.appendRecord(abandoned)
     const { savedBranches } = sweep
     if (savedBranches.length > 0) {
       // Its branches wait for the relaunch: the run is recorded once, and its directory stays.
-      if (lastStatus !== 'interrupted-saved') run.appendRecord({ runId: id, status: 'interrupted-saved', sweptAt, repo: mainRoot })
+      if (!hasRecordStatus(id, 'interrupted-saved')) run.appendRecord({ runId: id, status: 'interrupted-saved', sweptAt, repo: mainRoot })
       continue
     }
     if (live.length > 0) continue
@@ -1298,7 +1301,7 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     const hasPatches = isDirectory(patchesDir) && fs.readdirSync(patchesDir).length > 0
     if ((sweep.retainedBranches && sweep.retainedBranches.length > 0) || hasPatches) continue
     if (sweep.remaining.worktrees.length > 0 || sweep.remaining.branches.length > 0) continue
-    if (interrupted && lastStatus !== 'finalized' && lastStatus !== 'abandoned') run.appendRecord(abandoned)
+    if (interrupted && lastStatus !== 'finalized' && !alreadyAbandoned) run.appendRecord(abandoned)
     assertInside(dir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(dir, { recursive: true, force: true })
     swept.push(id)
