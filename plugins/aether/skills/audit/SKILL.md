@@ -38,7 +38,7 @@ Read the line it prints, and from `$W/analysis.json` what you need: `checks` (ea
 
 ## 2. Topic question
 
-Unless the person named the topics, ask **one question**, in one message, and end your turn there: do not start the review without a new answer. The message has, in the person's language:
+Unless the person named the topics, ask **one question**, in one message, and end your turn there: do not start the review without a new answer. The message starts with its first line below, with nothing before it, and has, in the person's language:
 
 1. A line with what the project is (its name, stack, size and commits), and «Automated analysis, already done:» with one line per check that says something (tests passed and failed, vulnerabilities, possible secrets with their commit, the first hotspots, open issues and stale branches). A check that could not run says why.
 2. «I propose to audit N topics, one agent each:», a numbered list of the topics that apply, each with its reason taken from the analysis or the project («Security: there is a login and a possible key in the history»).
