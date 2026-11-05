@@ -212,20 +212,20 @@ En `plugins/aether/lib/guard.js`, `decideBash(input, env)`:
 - **Registro ilegible (R4).** Si `check` lanza (JSON inválido, estructura inválida), la clase cuenta como sin permiso: se registra y, en `enforce`, se rechaza. En modo `log` se registra y se permite.
 - **Escrituras protegidas (R3): una regla por mención, que no resuelve rutas ni sigue `cd`.** Un análisis de cada orden (qué argumento es el destino, qué opción lo adjunta, en qué directorio corre) dejó abierto un frente nuevo en cada ronda de la versión anterior de esta tarea: opciones adjuntas (`-t`), directorios, globs, `cd` en subshells y condicionales. Esta regla no entiende lo que hace la orden: mira los nombres. Rechaza siempre (con o sin `AETHER_IRREVERSIBLE`, solo en una sesión de Aether, como hoy; fuera de ella el guard no actúa) cualquier segmento que `segmentsOf` entrega (scripts anidados y cuerpos de heredoc de shell incluidos; un cuerpo de heredoc hacia otra orden no cuenta) cuando se cumple una de estas cuatro cosas, con el motivo: ``Aether's autonomy registry and run states are written only by aether-autonomy. Use `aether-autonomy` (grant, revoke, start, spend, end) instead of editing <lo que el segmento nombra>.``
   1. **Nombra un archivo protegido.** El texto del segmento, tal cual y sin quitar comillas, contiene `grants.json` o `run.json` con límite de nombre: ni precedido ni seguido de una letra, cifra, `_`, `.` o `-` (así `grants.json.bak` y `grants.jsonl` no cuentan). Esto incluye un segmento que solo asigna (`F=grants.json`), un `node -e` o un `python -c` cuyo código lo nombra, y un nombre relativo (`cd .aether/autonomy && echo x > grants.json`).
-  2. **Nombra con un patrón.** Una palabra del segmento (sin comillas) que contiene `*`, `?` o `{a,b}` y alguno de los componentes `.aether` o `autonomy` alcanza `.aether/autonomy/grants.json` o `.aether/autonomy/auto-20261009-200000-ab12/run.json`. Para la coincidencia usa `globToRegExp` de `lib/globs.js` sobre cada alternativa de la llave (se expande un nivel de `{a,b}`; sin anidar), con el final de la ruta anclado y un prefijo cualquiera permitido (`globToRegExp` escapa `[` como literal, así que `[...]` queda en límites conocidos). Ejemplos que se rechazan: `.aether/autonomy/grants.?son`, `.aether/autonomy/*.json`, `.aether/autonomy/*/run.json`, `.aether/autonomy/{grants,x}.json`.
-  3. **Orden que borra, mueve o copia, con el directorio.** La orden (tras `dropWrappers` y `nameOf`) es una de `rm`, `rmdir`, `unlink`, `mv`, `cp`, `rsync`, `install`, `ln`, `chmod`, `chown`, `chgrp`, `truncate`, `shred`, `dd`, `tar`, `unzip`, `patch`, o `find` con `-delete`, `-exec` o `-execdir`, y una palabra del segmento, quitadas las comillas y un `/`, `/.` o `/*` final, termina en `.aether` o en `.aether/autonomy`, o es `autonomy`. Esto cubre `rm -rf .aether`, `mv .aether /tmp/x`, `cp -r /tmp/autonomy .aether/`, `cp -ft.aether/autonomy /tmp/x`, `cp --target-directory=.aether/autonomy /tmp/x`, `chmod -R 777 .aether`, `cd .aether && rm -r autonomy`.
+  2. **Nombra con un patrón.** Una palabra del segmento (sin comillas, y quitado un prefijo de opción como `-t` o `--target-directory=`) que contiene `*`, `?`, `[` o `{a,b}` y alguno de los componentes `.aether` o `autonomy` alcanza `.aether/autonomy/grants.json`, `.aether/autonomy/auto-20261009-200000-ab12/run.json` o el directorio `.aether/autonomy`. Para la coincidencia usa `globToRegExp` de `lib/globs.js` sobre cada alternativa de la llave (se expande un nivel de `{a,b}`; sin anidar), convirtiendo además las clases de caracteres `[...]` que `globToRegExp` escapa (`\\\[(!|\^)?([^\]]+)\\\]` → `[` + (`^` si llevaba `!` o `^`) + cuerpo + `]`), con el final de la ruta anclado (o seguido de `/` o `/*`) y un prefijo cualquiera permitido. Ejemplos que se rechazan: `.aether/autonomy/grants.?son`, `.aether/autonomy/grants.[j]son`, `.aether/autonomy/*.json`, `.aether/autonomy/*/run.json`, `.aether/autonomy/{grants,x}.json`, `rm -rf .aether/auto*`.
+  3. **Orden que borra, mueve o copia, con el directorio.** La orden (tras `dropWrappers` y `nameOf`) es una de `rm`, `rmdir`, `unlink`, `mv`, `cp`, `rsync`, `install`, `ln`, `chmod`, `chown`, `chgrp`, `truncate`, `shred`, `dd`, `tar`, `unzip`, `patch`, o `find` con `-delete`, `-exec` o `-execdir`, y una palabra del segmento, quitadas las comillas, un prefijo de opción como `-t` o `--target-directory=` y un `/`, `/.` o `/*` final, termina en `.aether` o en `.aether/autonomy`, o es `autonomy`. Esto cubre `rm -rf .aether`, `mv .aether /tmp/x`, `cp -r /tmp/autonomy .aether/`, `cp -ft.aether/autonomy /tmp/x`, `cp --target-directory=.aether/autonomy /tmp/x`, `chmod -R 777 .aether`, `cd .aether && rm -r autonomy`.
   4. **Una redirección** (`>`, `>>`, `>|`, `&>`, `&>>`, con un descriptor delante o sin él) cuyo destino cumple 1, 2 o 3, sea cual sea la orden y aunque el segmento no tenga orden (`> .aether/autonomy/grants.json`). Las redirecciones de entrada (`<`, `<<`, `<&`, `0<&0`, `3</dev/null`) nunca cuentan, y un número de descriptor delante de `<` o `>` no es un argumento ni un nombre de script: lo que viene después sigue siendo la orden y su heredoc.
   
-  **Se exceptúan de 1 a 3 (no de 4)** las órdenes de solo lectura: `echo`, `printf`, `cat`, `less`, `more`, `head`, `tail`, `grep`, `egrep`, `fgrep`, `rg`, `ls`, `stat`, `file`, `wc`, `diff`, `cmp`, `jq`, `test`, `[`, `sed` sin `-i`/`--in-place`, `sort` sin `-o`, `find` sin `-delete`/`-exec`/`-execdir`/`-fprint`, `git` salvo `clean`, `rm`, `mv`, `restore` y `checkout`, y `gh`. También se exceptúa `aether-autonomy` (la orden, o `node` cuyo primer argumento que no es una opción termina en `/aether-autonomy`), que es el escritor autorizado de los registros. Una orden que no está en esas listas y nombra un archivo protegido (1 o 2) se rechaza, haga lo que haga.
+  **Se exceptúan de 1 a 3 (no de 4)** las órdenes de solo lectura: `echo`, `printf`, `cat`, `less`, `more`, `head`, `tail`, `grep`, `egrep`, `fgrep`, `rg`, `ls`, `stat`, `file`, `wc`, `diff`, `cmp`, `jq`, `test`, `[`, `sed` sin `-i`/`--in-place`, `sort` sin `-o`, `find` sin `-delete`/`-exec`/`-execdir`/`-fprint`, `git` salvo `clean`, `rm`, `mv`, `restore` y `checkout`, y `gh`. También se exceptúa `aether-autonomy` (la orden, o `node` cuyo primer argumento que no es una opción termina en `/aether-autonomy`), que es el escritor autorizado de los registros. Y se exceptúa con nombre la recuperación de un registro o estado corrupto mediante `mv` (tras `dropWrappers` y `nameOf`) de `grants.json`, `run.json` o su carpeta de corrida hacia `.aether/broken-runs/`: aplica únicamente cuando el segmento no tiene redirecciones de salida, el destino está bajo `.aether/broken-runs/` (es `.aether/broken-runs` o empieza por `.aether/broken-runs/`, sin `..`, ya sea como último operando posicional o como valor de una única opción `-t <dest>`, `-t<dest>`, `--target-directory=<dest>` o `--target-directory <dest>`, incluidas agrupaciones cortas terminadas en `t` como `-ft`), hay al menos un operando de origen y todo operando de origen (sin que ninguno esté bajo `.aether/broken-runs/`, por lo que el movimiento inverso se rechaza siempre) es `.aether/autonomy/grants.json`, `.aether/autonomy/<id>/run.json` o una carpeta de corrida `.aether/autonomy/<id>` (resueltos contra `cwd`), y `aether-guard` lee antes en disco cada origen y comprueba que el archivo correspondiente (`grants.json` o `<origen>/run.json` cuando el origen es la carpeta de la corrida) existe como archivo regular y falla la lectura o validación de `aether-autonomy` (para `grants.json`, `JSON.parse` lanza o no cumple `isObject(v) && Array.isArray(v.grants) && Array.isArray(v.revoked)`; para `run.json`, `JSON.parse` lanza o no cumple `isObject(v) && Array.isArray(v.spend)`). Un `grants.json` o `run.json` legible o inexistente no se aparta con Bash. Una orden que no entra en esas excepciones y cumple 1, 2 o 3 se rechaza, haga lo que haga.
   
-  **Límites conocidos, que se documentan en un comentario de `guard.js` y que NO son hallazgos de esta tarea ni hay que cerrarlos:** un nombre que el comando construye al ejecutarse (variables como `${F}nts.json`, sustituciones de comando, `eval`, un programa que arma la ruta, escritura por cifrado o por `printf` de partes), las clases de caracteres `[...]` (que `lib/globs.js` escapa como literales), los globs que abrevian el propio nombre del directorio en una orden destructiva (`rm -rf .aether/auto*`, `rm -rf .a*`), `cd .aether/autonomy` seguido de un patrón que no nombra los archivos (`rm *`), y el falso positivo conocido cuando una orden que no es de solo lectura nombra un `grants.json` o `run.json` ajeno del proyecto del usuario (`node build.js > dist/run.json`). No sigas `cd`, ni subshells, ni `&&`/`||`, ni resuelvas rutas contra `cwd`: la regla funciona por los nombres precisamente para no tener que hacerlo.
+  **Límites conocidos, que se documentan en un comentario de `guard.js` y que NO son hallazgos de esta tarea ni hay que cerrarlos:** un nombre que el comando construye al ejecutarse (variables como `${F}nts.json`, sustituciones de comando, `eval`, un programa que arma la ruta, escritura por cifrado o por `printf` de partes), `cd .aether/autonomy` seguido de un patrón que no nombra los archivos (`rm *`), las órdenes sobre la carpeta de una corrida `.aether/autonomy/<id>` cuando no se nombra `run.json`, y el falso positivo conocido cuando una orden que no es de solo lectura nombra un `grants.json` o `run.json` ajeno del proyecto del usuario (`node build.js > dist/run.json`). No sigas `cd`, ni subshells, ni `&&`/`||`, ni resuelvas rutas contra `cwd` (salvo para leer en disco el origen de la excepción `mv` hacia `.aether/broken-runs/`): la regla funciona por los nombres precisamente para no tener que hacerlo.
   
   Leer esos archivos (`cat`, `grep`, `ls`), escribir `diary.md`, `brief.md` o un archivo de nombre parecido (`grants.json.bak`), y `mkdir .aether/runs/x` o `rm -rf .aether/worktrees/old` siguen permitidos.
 
 En `plugins/aether/skills/autonomous-runs/SKILL.md` (línea 50, párrafo `**An unreadable run state.**`):
 
-- Como `aether-guard` rechaza también mover o borrar `grants.json` y `run.json` desde Bash, cambia la instrucción de recuperación para que el Lead no intente moverlos con Bash (`.aether/broken-runs/`), sino que deje escrito exactamente:
-  `**An unreadable run state.** When an \`aether-autonomy\` command fails naming a \`run.json\` or \`grants.json\` it cannot read, \`aether-guard\` refuses both editing and moving that file from Bash. Do not try to move, delete or overwrite it: write the failure in the diary (or in your reply outside a run), stop and ask the owner to move or fix the file outside Aether (putting the command in "Espera tu sí" when giving the brief).`
+- Actualiza el párrafo para fijar `.aether/broken-runs/` como ese destino requerido (no como un ejemplo con `for example`) y dejar escrito exactamente:
+  `**An unreadable run state.** When an \`aether-autonomy\` command fails naming a \`run.json\` or \`grants.json\` it cannot read, \`aether-guard\` refuses an edit of that file and allows \`mv\` into \`.aether/broken-runs/\` only when that file cannot be read. Move it aside with \`mv\` into \`.aether/broken-runs/\`, a \`run.json\` with its run's folder and \`grants.json\` alone, never the whole \`.aether/autonomy/\`, write what you moved and why in the diary, and go on. Do not treat it as a reason to stop.`
 
 **Tests (write first):**
 
@@ -278,8 +278,10 @@ test('Bash cannot name the autonomy registry or a run state unless it only reads
     "cd .aether/autonomy && (cd /tmp); echo '{}' > grants.json",
     "cd .aether/autonomy || cd /tmp; echo '{}' > grants.json",
     "printf '{}' | tee .aether/autonomy/grants.?son",
+    'rm .aether/autonomy/grants.[j]son',
     'tee .aether/autonomy/*/run.json < /dev/null',
     'rm .aether/autonomy/{grants,x}.json',
+    'rm -rf .aether/auto*',
     "F=grants.json; echo '{}' > .aether/autonomy/$F",
     `python3 -c "open('.aether/autonomy/grants.json','w').write('{}')"`,
     `node -e "require('fs').writeFileSync('.aether/autonomy/grants.json','{}')"`,
@@ -318,6 +320,56 @@ test('Bash cannot name the autonomy registry or a run state unless it only reads
   assert.equal(guardBash(t, 'echo "{}" > .aether/autonomy/grants.json', { cwd: repo.dir, marked: false }).stdout, '')
 })
 
+test('mv to .aether/broken-runs/ is allowed only when grants.json or run.json exists and cannot be read or validated (R3)', (t) => {
+  const repo = makeRepo(t)
+  const runId = 'auto-20261009-200000-ab12'
+  const grantsPath = path.join(repo.dir, '.aether', 'autonomy', 'grants.json')
+  const runDir = path.join(repo.dir, '.aether', 'autonomy', runId)
+  const runPath = path.join(runDir, 'run.json')
+  fs.mkdirSync(runDir, { recursive: true })
+
+  // Readable files cannot be moved aside with Bash.
+  fs.writeFileSync(grantsPath, JSON.stringify({ grants: [], revoked: [] }))
+  fs.writeFileSync(runPath, JSON.stringify({ id: runId, spend: [], ended: null }))
+  for (const command of [
+    'mv .aether/autonomy/grants.json .aether/broken-runs/',
+    `mv .aether/autonomy/${runId}/run.json .aether/broken-runs/`,
+    `mv .aether/autonomy/${runId} .aether/broken-runs/`,
+    'mv -t .aether/broken-runs/ .aether/autonomy/grants.json',
+  ]) {
+    const r = guardBash(t, command, { cwd: repo.dir })
+    assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, 'deny', command)
+  }
+
+  // Unreadable or invalid grants.json and run.json may be moved to .aether/broken-runs/.
+  fs.writeFileSync(grantsPath, '{ not json')
+  fs.writeFileSync(runPath, JSON.stringify({ id: runId, spend: 'not-an-array' }))
+  for (const command of [
+    'mv .aether/autonomy/grants.json .aether/broken-runs/',
+    'mv .aether/autonomy/grants.json .aether/broken-runs/grants.json',
+    'mv -t .aether/broken-runs/ .aether/autonomy/grants.json',
+    'mv --target-directory=.aether/broken-runs .aether/autonomy/grants.json',
+    `mv .aether/autonomy/${runId}/run.json .aether/broken-runs/`,
+    `mv .aether/autonomy/${runId} .aether/broken-runs/`,
+  ]) {
+    assert.equal(guardBash(t, command, { cwd: repo.dir }).stdout, '', command)
+  }
+
+  // Reverse moves from .aether/broken-runs/, -t/--target-directory to a protected destination, and cp/ln to .aether/broken-runs/ are always refused.
+  for (const command of [
+    'mv .aether/broken-runs/grants.json .aether/autonomy/grants.json',
+    `mv .aether/broken-runs/run.json .aether/autonomy/${runId}/run.json`,
+    'mv -t .aether/autonomy .aether/broken-runs/grants.json',
+    'mv --target-directory=.aether/autonomy .aether/broken-runs/grants.json',
+    'cp .aether/autonomy/grants.json .aether/broken-runs/',
+    'ln .aether/autonomy/grants.json .aether/broken-runs/',
+    `cp -r .aether/autonomy/${runId}/run.json .aether/broken-runs/`,
+  ]) {
+    const r = guardBash(t, command, { cwd: repo.dir })
+    assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, 'deny', command)
+  }
+})
+
 test('a grant registry that cannot be read fails closed: the command is recorded, and refused in enforce mode (R4)', (t) => {
   const repo = makeRepo(t)
   fs.mkdirSync(path.join(repo.dir, '.aether', 'autonomy'), { recursive: true })
@@ -334,11 +386,11 @@ test('a grant registry that cannot be read fails closed: the command is recorded
 En `tests/autonomous-runs-skill.test.js`:
 
 ```js
-test('an unreadable run state or grant registry is not moved with Bash: the Lead stops and asks the owner (R3, R4)', () => {
+test('an unreadable run state or grant registry is moved with mv into .aether/broken-runs/, which is the required destination and not an example (R3)', () => {
   const line = SKILL.split('\n').find((l) => l.startsWith('**An unreadable run state.**'))
   assert.ok(line, 'the skill has the unreadable run state paragraph')
-  assert.doesNotMatch(line, /Move it aside with Bash|broken-runs/i)
-  assert.match(line, /stop and ask the owner/i)
+  assert.doesNotMatch(line, /for example into `\.aether\/broken-runs\/`/i)
+  assert.match(line, /`mv` into `\.aether\/broken-runs\/`/)
 })
 ```
 
@@ -1090,7 +1142,7 @@ test('merge stops the whole process group of a test run that timed out (R9)', (t
   - si los tiene, toma el mismo bloqueo de la sesión (`spend/.<session>`, mismos plazos), lee las líneas del registro que son JSON con `kind === 'outcome'` y `session` igual, y conserva su texto exacto; lee las líneas que ya tiene `spend/<session>.outcomes.jsonl`, si existe; escribe con `common.writeAtomic` la unión (primero lo que ya había, después las líneas nuevas que no estaban, comparadas por texto exacto); vuelve a leer el archivo y comprueba que cada línea del registro está en él; devuelve `{ archived: true, lines: <líneas añadidas por esta llamada> }`;
   - LANZA si no puede leer el registro (un error distinto de «no existe»), escribir o comprobar: quien la llama conserva entonces el registro;
   - una línea del registro que no se lee como JSON no se archiva (no se sabe de qué sesión es).
-- `spend.js` exporta `outcomesFile(dataDir, id)` (`<dataDir>/spend/<id>.outcomes.jsonl`). `readOutcomeEvents` sigue devolviendo `{ events, complete }`, pero para las instalaciones de `run.installDirs(dataDir)` lee primero TODOS los `delegates/log.jsonl` y después TODOS los `outcomesFile`, con `readOutcomesIn` y el mismo conjunto `earlier`: una línea idéntica cuenta una sola vez aunque esté en el registro y en el archivo, o en dos instalaciones, y una línea distinta nunca se omite. Se lee el registro antes que el archivo porque el archivo se escribe antes de que se borre la línea del registro. No hay marcas de tiempo nuevas: `isSummary`, `through` y los resúmenes de hoy no cambian.
+- `spend.js` exporta `outcomesFile(dataDir, id)` (`<dataDir>/spend/<id>.outcomes.jsonl`). `readOutcomeEvents` sigue devolviendo `{ events, complete }`, pero para las instalaciones de `run.installDirs(dataDir)` lee primero TODOS los `delegates/log.jsonl` y después TODOS los `outcomesFile`, con `readOutcomesIn` y el mismo conjunto `earlier`: una línea idéntica cuenta una sola vez aunque esté en el registro y en el archivo, o en dos instalaciones, y una línea distinta nunca se omite. Se lee el registro antes que el archivo porque el archivo se escribe antes de que se borre la línea del registro. Actualiza también el comentario encima de `readOutcomesIn` (línea 308 de `plugins/aether/lib/spend.js`, que dice `The file holds every session's lines and nobody prunes them`) y el de `readOutcomeEvents` (línea 363) para que describan que `readOutcomesIn` lee un archivo JSONL (`delegates/log.jsonl` o `spend/<id>.outcomes.jsonl`) y ya no afirmen `nobody prunes them`. No hay marcas de tiempo nuevas: `isSummary`, `through` y los resúmenes de hoy no cambian.
 
 **Tests (write first):**
 
@@ -1107,6 +1159,7 @@ test('archiveSpend holds the session lock while it renames the summary, and rele
   assert.equal(heldDuringRename, true)
   assert.equal(fs.existsSync(lock), false)
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'spend-archive.js'), 'utf8'), /nobody prunes it|no lock is added/)
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'spend.js'), 'utf8'), /nobody prunes them/)
 })
 
 test('a stale session lock does not stop archiveSpend (R10)', (t) => {
@@ -1278,6 +1331,7 @@ test('four processes digesting different sessions at once keep every session in 
 
 En `plugins/aether/lib/delegate-log.js`:
 
+- Actualiza el comentario de cabecera en la línea 4 (`append-only across sessions`) para que ya no diga `append-only`, sino que describa que se escribe bajo bloqueo entre sesiones y se poda para sesiones inactivas durante 30 días tras archivar sus líneas `outcome` en `spend/<id>.outcomes.jsonl`.
 - `appendEntry(dataDir, entry)` toma `common.withLock(path.join(dataDir, 'delegates', '.log'), fn, { waitMs: 10000, staleMs: 60000 })` (el archivo de bloqueo es `delegates/.log.lock`) alrededor de su `appendFileSync`; conserva su conducta de devolver `false` sin lanzar.
 - `pruneDelegateLog(dataDir, { days = 30, now = Date.now() } = {})` devuelve `{ pruned: [<sesión>, ...] }` (orden alfabético):
   - una sesión está vencida cuando la mayor `time` numérica de sus entradas es anterior a `now - days * 86400000`; una sesión sin ninguna `time` numérica, y las entradas sin `session`, se conservan;
@@ -1337,12 +1391,16 @@ test('an outcome of an idle session that arrives while the prune runs is archive
   const now = T0 + 40 * DAY
   const first = outcome(dataDir, 's-old', 1, 'm-b', 'output')
   const file = log.logFile(dataDir)
+  const archived = outcomesFile(dataDir, 's-old')
   const late = { kind: 'outcome', id: 'd-5', time: T0 + 5 * MIN, session: 's-old', status: 'ok', harness: 'agy', model: 'm-b', effort: 'low', durationMs: 1, usage: { output: 1e6 }, attempt: 1 }
-  const real = fs.readFileSync
-  let reads = 0
-  t.mock.method(fs, 'readFileSync', function (target, ...rest) {
-    const out = real.call(this, target, ...rest)
-    if (target === file && ++reads === 2) fs.appendFileSync(file, JSON.stringify(late) + '\n')
+  const real = fs.renameSync
+  let injected = false
+  t.mock.method(fs, 'renameSync', function (from, to, ...rest) {
+    const out = real.call(this, from, to, ...rest)
+    if (!injected && String(to) === archived) {
+      injected = true
+      fs.appendFileSync(file, JSON.stringify(late) + '\n')
+    }
     return out
   })
   const res = log.pruneDelegateLog(dataDir, { days: 30, now })
@@ -1410,7 +1468,7 @@ test('the guide says where the log is, how it is pruned after 30 days, what a de
   }
   const maintenance = read('docs', 'guide', 'maintenance.md')
   assert.ok(maintenance.includes('spend/<id>.outcomes.jsonl'))
-  for (const text of [page, maintenance]) {
+  for (const text of [page, maintenance, read('plugins', 'aether', 'lib', 'delegate-log.js')]) {
     assert.doesNotMatch(text, /none of it is pruned|append-only/i)
   }
 })
