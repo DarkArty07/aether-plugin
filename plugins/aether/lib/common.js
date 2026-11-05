@@ -4,7 +4,9 @@
 // Family: none.
 
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { git } = require('./git.js')
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -119,6 +121,103 @@ function nulEntries(text) {
   return text.split('\0').filter((entry) => entry !== '')
 }
 
+// Runs sh -c <command> as a process-group leader with stdout and stderr to temporary files, so a grandchild
+// that inherits them cannot keep the call hanging on a pipe. Returns a spawnSync-shaped object with stdout and
+// stderr as text, and never throws. On timeoutMs spawnSync kills the shell itself with SIGKILL (killSignal, so a
+// shell that traps or ignores SIGTERM cannot hold the call), then the rest of the group is killed with
+// killGroup(pid); then status is null and error.code is 'ETIMEDOUT'.
+function runShell(command, { cwd, timeoutMs, env = process.env, maxBuffer = 64 * 1024 * 1024 } = {}) {
+  let tmpDir = null
+  try {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-runShell-'))
+    const outFile = path.join(tmpDir, 'stdout')
+    const errFile = path.join(tmpDir, 'stderr')
+    const outFd = fs.openSync(outFile, 'w')
+    let errFd = null
+    try {
+      errFd = fs.openSync(errFile, 'w')
+    } catch (err) {
+      try {
+        fs.closeSync(outFd)
+      } catch {}
+      throw err
+    }
+    let result = null
+    try {
+      const options = { cwd, env, detached: true, stdio: ['ignore', outFd, errFd], killSignal: 'SIGKILL' }
+      if (timeoutMs !== undefined && timeoutMs !== null) options.timeout = timeoutMs
+      result = spawnSync('sh', ['-c', command], options)
+    } finally {
+      try {
+        fs.closeSync(outFd)
+      } catch {}
+      if (errFd !== null) {
+        try {
+          fs.closeSync(errFd)
+        } catch {}
+      }
+    }
+    if (result.error && result.error.code === 'ETIMEDOUT' && typeof result.pid === 'number') {
+      // The shell is already dead: spawnSync killed it with SIGKILL at the deadline. Only the rest of the
+      // group (background children, grandchildren) still needs killing.
+      killGroup(result.pid)
+    }
+    let stdout = ''
+    let stderr = ''
+    try {
+      stdout = fs.readFileSync(outFile, 'utf8')
+    } catch {}
+    try {
+      stderr = fs.readFileSync(errFile, 'utf8')
+    } catch {}
+    if (Buffer.byteLength(stdout, 'utf8') > maxBuffer) stdout = Buffer.from(stdout, 'utf8').slice(0, maxBuffer).toString('utf8')
+    if (Buffer.byteLength(stderr, 'utf8') > maxBuffer) stderr = Buffer.from(stderr, 'utf8').slice(0, maxBuffer).toString('utf8')
+    return { status: result.status, signal: result.signal, stdout, stderr, error: result.error, pid: result.pid }
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err))
+    if (error.code === undefined) error.code = 'SPAWN'
+    return { status: null, signal: null, stdout: '', stderr: '', error, pid: undefined }
+  } finally {
+    if (tmpDir !== null) {
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      } catch {}
+    }
+  }
+}
+
+// Runs fn while holding an exclusive lock file next to the target, so that two processes ending together do not
+// each read the target, compare, and let the shorter write come last. The lock never fails a call: a lock older
+// than staleMs belongs to a process that died inside it and is broken; when the lock cannot be taken within
+// waitMs, fn runs without it. Not reentrant.
+function withLock(target, fn, { waitMs = 2000, staleMs = 10000 } = {}) {
+  const lock = `${target}.lock`
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  const deadline = Date.now() + waitMs
+  let held = false
+  while (!held && Date.now() < deadline) {
+    try {
+      fs.closeSync(fs.openSync(lock, 'wx'))
+      held = true
+    } catch (err) {
+      if (err.code !== 'EEXIST') break
+      try {
+        if (Date.now() - fs.statSync(lock).mtimeMs > staleMs) fs.unlinkSync(lock)
+        else sleepSync(5)
+      } catch {}
+    }
+  }
+  try {
+    return fn()
+  } finally {
+    if (held) {
+      try {
+        fs.unlinkSync(lock)
+      } catch {}
+    }
+  }
+}
+
 function removeWorktree(mainRoot, worktree) {
   git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true })
   fs.rmSync(worktree, { recursive: true, force: true })
@@ -141,8 +240,10 @@ module.exports = {
   readJsonOrNull,
   readTextOrEmpty,
   removeWorktree,
+  runShell,
   sleep,
   sleepSync,
+  withLock,
   writeAtomic,
   writeFileAtomic,
 }

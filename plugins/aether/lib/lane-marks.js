@@ -23,7 +23,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { writeAtomic, sleepSync: sleep } = require('./common.js')
+const { writeAtomic, withLock } = require('./common.js')
 
 const DEFAULT_MARK_MINUTES = 60
 const REFUSAL_REASON = 'quota refusal'
@@ -52,37 +52,6 @@ function parseDate(val) {
     return val
   }
   return NaN
-}
-
-// Runs fn while holding an exclusive lock file next to the mark, so that two calls ending together do not each read the
-// mark, compare, and let the shorter write come last. The lock never fails a call: if it cannot be taken within
-// LOCK_WAIT_MS, fn runs without it, as a mark that may be shortened is better than none.
-function withLock(target, fn) {
-  const lock = `${target}.lock`
-  fs.mkdirSync(path.dirname(target), { recursive: true })
-  const deadline = Date.now() + LOCK_WAIT_MS
-  let held = false
-  while (!held && Date.now() < deadline) {
-    try {
-      fs.closeSync(fs.openSync(lock, 'wx'))
-      held = true
-    } catch (err) {
-      if (err.code !== 'EEXIST') break
-      try {
-        if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) fs.unlinkSync(lock)
-        else sleep(5)
-      } catch {}
-    }
-  }
-  try {
-    return fn()
-  } finally {
-    if (held) {
-      try {
-        fs.unlinkSync(lock)
-      } catch {}
-    }
-  }
 }
 
 // The mark in raw if it is live at `now`, or null. An unconfirmed mark never ends later than `minutes` after `at`
@@ -200,7 +169,7 @@ function liftMark(dataDir, mark) {
     } catch {
       return false
     }
-  })
+  }, { waitMs: LOCK_WAIT_MS, staleMs: LOCK_STALE_MS })
 }
 
 // The live mark of a group after a reading was given the chance to lift it: null when there is none or it was lifted,
@@ -278,7 +247,7 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
     if (existing && existing.reason === REFUSAL_REASON && !refusal && !candidate.confirmed) return existing
     writeAtomic(file, JSON.stringify(candidate, null, 2) + '\n')
     return candidate
-  })
+  }, { waitMs: LOCK_WAIT_MS, staleMs: LOCK_STALE_MS })
 }
 
 module.exports = {
