@@ -118,6 +118,33 @@ test('a failing command answers its exit code and standard output, as the model 
   expect(counts.modelSteps).toBe(0)
 })
 
+test('a valid bin line overrides a nonzero ops exit code and leaves a fault trace', async ($, on) => {
+  const stdout = 'warning\n{"merged":true,"commit":"abc"}\n\n'
+  const { writes, counts } = stubs(on, { answer: { exitCode: -1, stdout } })
+  await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
+  const { chunks } = await step($)
+  expect(answered(chunks).input).toEqual({ exitCode: 0, stdout })
+  expect(counts.modelSteps).toBe(0)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const fault = writes.find((w) => w.path.includes('/observe/faults/'))
+  expect(fault).toBeTruthy()
+  expect(JSON.parse(fault.text).faults).toEqual([{ time: 1000, source: 'register.ops-run', class: 'exit-code-overridden' }])
+})
+
+for (const stdout of ['', '{"error":"failed"}\n', '{"error":null}\n', 'not JSON\n', '[{}]\n', '{"merged":true}\ntrailing text\n']) {
+  test(`a nonzero ops exit code stays a failure without an error-free final object (${JSON.stringify(stdout)})`, async ($, on) => {
+    const { writes } = stubs(on, { answer: { exitCode: -1, stdout } })
+    await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
+    const { chunks } = await step($)
+    const input = answered(chunks).input
+    expect(input.exitCode).toBe(-1)
+    if (stdout !== '') expect(input.stdout).toBe(stdout)
+    else expect(JSON.parse(input.stdout).error).toContain('exited -1 and printed nothing')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(writes.some((w) => w.path.includes('/observe/faults/'))).toBe(false)
+  })
+}
+
 test("a lane start saves its payload at spawn, then runs aether-lane with the payload's text left out", async ($, on) => {
   const { runs, writes } = stubs(on, { answer: { exitCode: 0, stdout: '{"started":true}\n' } })
   const command = `aether-lane start ${RUN} task-1-1-implement --role implementer --task task-1 --model gemini-3.8-flash --effort high --digest 0a1b2c3d:12`

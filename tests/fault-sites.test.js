@@ -17,7 +17,9 @@ const SOURCES = {
 // The two catches of readDataDir moved to fault-trace.mjs with that function, which recordFault now calls itself.
 // Three more came with the Agent description (issue 145): the marker check that does not keep its answer, the invalidation
 // of the description when the Lead's SessionStart arrives, and the hook's own failure handler.
-const CATCH_LINES = { 'register.js': 27, 'delegate.mjs': 5, 'quota-brake.mjs': 1 }
+// Four lines guard the two fire-and-forget quota prompts (issue 124): each absorbs both synchronous
+// throws and promise rejections when the session ends, so neither can interrupt the step or its wake-up.
+const CATCH_LINES = { 'register.js': 31, 'delegate.mjs': 5, 'quota-brake.mjs': 1 }
 
 test('every real catch of the audit names its source (R1)', () => {
   for (const [file, sources] of Object.entries(SOURCES)) {
