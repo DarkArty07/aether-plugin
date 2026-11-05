@@ -59,7 +59,7 @@ Reviewers and verifiers have no `gh` and no network: what they need from GitHub 
 
 Outside the project, in the plugin's data directory, under `<data dir>/audits/<project>/<date>`, with `report.json` and `report.md`. The date is the day the audit ran; a second audit the same day takes the next suffix. Nothing is written inside the project you audited.
 
-The next audit reads the saved one by itself: it reuses the cause key when it meets the same problem and marks each finding new or still. An earlier item it does not find again counts as resolved only when a file of its locations changed since the earlier audit (for a branch, when its tip moved or it is gone); otherwise the since-the-last-audit line counts it as not found again, though its code did not change, because reviewers are models and miss things. Items of topics left out this time are counted apart. When there is no earlier audit, that section says so.
+The next audit reads the saved one by itself: it reuses the cause key when it meets the same problem and marks each finding new or still. An earlier item it does not find again counts as resolved only when a file of its locations changed since the earlier audit (for a branch, only when it is gone), and the line says so; otherwise it counts it as not found again, though its code did not change, and names it, because reviewers are models and miss things. A finding of the analysis itself is checked again by the same step, so when that step ran and did not find it, it is resolved. Items of topics left out this time are counted apart. When there is no earlier audit, that section says so.
 
 ## What you take
 

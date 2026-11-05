@@ -38,9 +38,11 @@ const ES = {
   band: (priority, level) => `**${priority} · ${level}**`,
   why: (priority) => `*Por qué ${priority}:*`,
   unattributable: (first, second, files) => `- Cambio no atribuible durante la auditoría (entre ${first} y ${second}): ${files}`,
-  sinceLast: (date, news, stills, resolved) => `**Desde la última auditoría (${date}):** ${news} nuevos, ${stills} siguen, ${resolved} resueltos.`,
+  sinceLast: (date, news, stills, resolved) => `**Desde la última auditoría (${date}):** ${news} nuevos, ${stills} siguen, ${resolved} resueltos (ya no aparecen y su código cambió).`,
   sinceLastNotFound: (count) => ` ${count} no se volvieron a encontrar, pero su código no cambió.`,
   sinceLastExtra: (left) => ` ${left} sin revisar esta vez, porque sus temas quedaron fuera.`,
+  notFoundList: (titles) => `- No se volvieron a encontrar: ${titles}`,
+  andMore: (count) => `, y ${count} más`,
   discarded: (total, parts) => `**Descartados:** ${total}${parts ? ` (${parts})` : ''}.`,
   noCompare: (reason) => ` No pude comparar con los issues abiertos (${reason}).`,
   savedList: (dir) => ` La lista completa está en el reporte guardado: ${dir}`,
@@ -77,9 +79,11 @@ const EN = {
   band: (priority, level) => `**${priority} · ${level}**`,
   why: (priority) => `*Why ${priority}:*`,
   unattributable: (first, second, files) => `- Unattributable change during the audit (between ${first} and ${second}): ${files}`,
-  sinceLast: (date, news, stills, resolved) => `**Since the last audit (${date}):** ${news} new, ${stills} still open, ${resolved} resolved.`,
+  sinceLast: (date, news, stills, resolved) => `**Since the last audit (${date}):** ${news} new, ${stills} still open, ${resolved} resolved (no longer found, and their code changed).`,
   sinceLastNotFound: (count) => ` ${count} not found again, though their code did not change.`,
   sinceLastExtra: (left) => ` ${left} not re-audited, because their topics were left out.`,
+  notFoundList: (titles) => `- Not found again: ${titles}`,
+  andMore: (count) => `, and ${count} more`,
   discarded: (total, parts) => `**Discarded:** ${total}${parts ? ` (${parts})` : ''}.`,
   noCompare: (reason) => ` I could not compare with the open issues (${reason}).`,
   savedList: (dir) => ` The full list is in the saved report: ${dir}`,
@@ -130,6 +134,11 @@ function sinceLastSection(T, sinceLast) {
   let line = T.sinceLast(sinceLast.previous.date, counts.new, counts.still, resolved)
   if (notFound.length > 0) line += T.sinceLastNotFound(notFound.length)
   if (notReaudited.length > 0) line += T.sinceLastExtra(notReaudited.length)
+  // The titles of the items not found again, so the person sees what may still be pending: at most ten, then a count.
+  if (notFound.length > 0) {
+    const shown = notFound.slice(0, 10).map((item) => item.title).join('; ')
+    line += `\n${T.notFoundList(shown + (notFound.length > 10 ? T.andMore(notFound.length - 10) : ''))}`
+  }
   return line
 }
 

@@ -167,13 +167,10 @@ function evidenceChangedSince(item, earlierHead, currentHead, root) {
   for (const location of locations) {
     if (!location || typeof location.file !== 'string') continue
     if (typeof location.commit === 'string' && location.commit !== '') {
-      // A branch located by its tip: changed when the tip moved, or when the branch is gone. A file located by a commit
-      // (a secret in the history) is a path of that commit's tree, and is compared as a file below.
-      const tip = refTip(location.file, root)
-      if (tip !== null) {
-        if (!tip.toLowerCase().startsWith(location.commit.toLowerCase())) return true
-        continue
-      }
+      // A branch located by its tip counts as changed only when it is gone: a branch that got a new commit may still hold
+      // the work the finding was about. A file located by a commit (a secret in the history) is a path of that commit's
+      // tree, and is compared as a file below.
+      if (refTip(location.file, root) !== null) continue
       if (!pathIn(location.commit, location.file, root)) return true
     }
     files.push(location.file)
@@ -207,8 +204,10 @@ function comparePrevious(analysis, findings, removed, topics, storeDir) {
     const step = ownStep(item.causeKey)
     if (step !== null) {
       const ran = checks[step] && checks[step].state === 'result'
+      // The analysis's own findings are re-checked by the same step, which is not a sample: when it ran and did not
+      // find the change again, the item is resolved.
       if (!ran) notReaudited.push(pickPrevious(item))
-      else if (!current.has(item.causeKey) && !removed.has(item.causeKey)) settleMissing(item)
+      else if (!current.has(item.causeKey) && !removed.has(item.causeKey)) resolved.push(pickPrevious(item))
     } else if (!topics.includes(item.topic)) {
       notReaudited.push(pickPrevious(item))
     } else if (!current.has(item.causeKey) && !removed.has(item.causeKey)) {

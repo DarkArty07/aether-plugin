@@ -301,7 +301,7 @@ El texto de cada sección (la forma del prototipo). Español; las etiquetas entr
    *Por qué P0:* {reason} · {tamaño} · {how}{ · nuevo | · sigue}
 **Sin verificar (no los ordené)**
 - **[{tema}]** {title} (`{file}:{line}`): {reason}
-**Desde la última auditoría ({previous.date}):** {nuevos} nuevos, {siguen} siguen, {resueltos} resueltos.{ {k} sin revisar esta vez, porque sus temas quedaron fuera.}     (la frase final solo cuando sinceLast.notReaudited tiene k > 0, y en inglés ` {k} not re-audited, because their topics were left out.`; sin anterior: **Desde la última auditoría:** no hay una auditoría anterior.)
+**Desde la última auditoría ({previous.date}):** {nuevos} nuevos, {siguen} siguen, {resueltos} resueltos (ya no aparecen y su código cambió).{ {n} no se volvieron a encontrar, pero su código no cambió.}{ {k} sin revisar esta vez, porque sus temas quedaron fuera.}     (las dos frases finales solo cuando sinceLast.notFoundAgain o sinceLast.notReaudited tienen elementos; después, una línea `- No se volvieron a encontrar: {títulos separados por «; »}` con a lo más diez títulos y `, y {m} más`; en inglés `{r} resolved (no longer found, and their code changed).`, ` {n} not found again, though their code did not change.`, ` {k} not re-audited, because their topics were left out.`, `- Not found again: {titles}`, `, and {m} more`; sin anterior: **Desde la última auditoría:** no hay una auditoría anterior.)
 **Descartados:** {total} ({razón}: {n}, ...).{ No pude comparar con los issues abiertos ({reason}).}{ La lista completa está en el reporte guardado: {savedTo}}
 **No cubrí:**
 - {línea}                                 (sin líneas: - (nada))

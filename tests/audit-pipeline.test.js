@@ -165,8 +165,8 @@ test('an earlier item of the audit\'s own counts as re-audited only when this an
   }, '')
   const analysis = { ...analysisWith(OPEN, key), checks: { issues: OPEN, tests: { state: 'result' }, lint: { state: 'not-applicable', reason: 'no linter declared' } } }
   const out = clean.clean(settled([fnd('F1')]), analysis, { topics: ['bugs'], dataDir })
-  assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), [])
-  assert.deepEqual(out.sinceLast.notFoundAgain.map((r) => r.causeKey), ['audit-changed-project-tests'])
+  assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), ['audit-changed-project-tests'])
+  assert.deepEqual(out.sinceLast.notFoundAgain.map((r) => r.causeKey), [])
   assert.deepEqual(out.sinceLast.notReaudited.map((r) => r.causeKey), ['audit-changed-project-lint'])
 })
 
@@ -198,7 +198,7 @@ test('a missing earlier item is resolved only when its files changed since the e
   ])
 })
 
-test('a branch located by its tip is resolved when the tip moved or the branch is gone, and a file located by a commit is compared as a file', (t) => {
+test('a branch located by its tip is resolved only when the branch is gone, and a file located by a commit is compared as a file', (t) => {
   const repo = makeRepo(t)
   commitIn(repo, repo.dir, 'src/a.js', 'a v1\n', 'add a')
   commitIn(repo, repo.dir, 'config/dev.env', 'X=1\n', 'add env')
@@ -223,8 +223,8 @@ test('a branch located by its tip is resolved when the tip moved or the branch i
   repo.git('branch', '-q', '-D', 'gone')
   const analysis = { project: { key, head: repo.git('rev-parse', 'HEAD'), root: repo.dir }, checks: { issues: { state: 'result', open: [] } } }
   const out = clean.clean(settled([]), analysis, { topics: ['hygiene', 'security'], dataDir })
-  assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), ['moved', 'gone'])
-  assert.deepEqual(out.sinceLast.notFoundAgain.map((r) => r.causeKey), ['kept', 'secret'])
+  assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), ['gone'])
+  assert.deepEqual(out.sinceLast.notFoundAgain.map((r) => r.causeKey), ['moved', 'kept', 'secret'])
 })
 
 const judgment = (over = {}) => ({ severity: 'high', priority: 'P1', reason: 'a reason', size: 'S', how: 'one agent', regression: false, waitCost: 'medium', ...over })
