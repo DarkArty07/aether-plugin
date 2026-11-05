@@ -155,14 +155,18 @@ test('the env option governs the call: the data directory comes from it and secr
 test('a refresh that starts while another holds the lock waits and returns the reading the holder saved, without calling muse', async (t) => {
   const dataDir = useDataDir(t)
   const log = useFake(t, { stdout: out(completed('ok'), usage(allowance(72, 40))) })
-  const taken = takeLock(lockFile(dataDir), { pid: process.pid, since: NOW, until: NOW + 60000 }, NOW)
-  assert.deepEqual(taken, { taken: true, holder: null })
-  const pending = refresh()
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  fs.mkdirSync(path.dirname(observedFile(dataDir)), { recursive: true })
-  fs.writeFileSync(observedFile(dataDir), JSON.stringify({ observedAt: NOW, window: { usedPercent: 72, resetsAtMs: NOW + 3 * HOUR }, weekly: { usedPercent: 40, resetsAtMs: NOW + 5 * 24 * HOUR } }))
-  fs.rmSync(lockFile(dataDir), { force: true })
-  const reading = await pending
+  assert.deepEqual(takeLock(lockFile(dataDir), { pid: process.pid, since: NOW, until: NOW + 60000 }, NOW), { taken: true, holder: null })
+  let polls = 0
+  const wait = async () => {
+    polls++
+    if (polls === 1) {
+      fs.mkdirSync(path.dirname(observedFile(dataDir)), { recursive: true })
+      fs.writeFileSync(observedFile(dataDir), JSON.stringify({ observedAt: NOW, window: { usedPercent: 72, resetsAtMs: NOW + 3 * HOUR }, weekly: { usedPercent: 40, resetsAtMs: NOW + 5 * 24 * HOUR } }))
+      fs.rmSync(lockFile(dataDir), { force: true })
+    }
+  }
+  const reading = await refreshMuseQuota({ command: FAKE_MUSE, now: () => NOW, wait })
+  assert.ok(polls >= 1)
   assert.deepEqual(Object.keys(reading.windows).sort(), ['5h', 'weekly'])
   near(reading.windows['5h'].remaining, 0.28)
   near(reading.windows.weekly.remaining, 0.6)
@@ -176,14 +180,19 @@ test('a waiter that finds the holder\'s record still empty takes the start from 
   // later than the holder did, so the clock it reads is no start for the holder.
   fs.mkdirSync(path.dirname(lockFile(dataDir)), { recursive: true })
   fs.writeFileSync(lockFile(dataDir), '')
-  const pending = refreshMuseQuota({ command: FAKE_MUSE, now: () => NOW + 1000 })
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  fs.writeFileSync(lockFile(dataDir), JSON.stringify({ pid: process.pid, since: NOW, until: NOW + 60000 }))
-  await new Promise((resolve) => setTimeout(resolve, 600))
-  fs.mkdirSync(path.dirname(observedFile(dataDir)), { recursive: true })
-  fs.writeFileSync(observedFile(dataDir), JSON.stringify({ observedAt: NOW, window: { usedPercent: 72, resetsAtMs: NOW + 3 * HOUR }, weekly: { usedPercent: 40, resetsAtMs: NOW + 5 * 24 * HOUR } }))
-  fs.rmSync(lockFile(dataDir), { force: true })
-  const reading = await pending
+  let polls = 0
+  const wait = async () => {
+    polls++
+    if (polls === 1) {
+      fs.writeFileSync(lockFile(dataDir), JSON.stringify({ pid: process.pid, since: NOW, until: NOW + 60000 }))
+    } else if (polls === 2) {
+      fs.mkdirSync(path.dirname(observedFile(dataDir)), { recursive: true })
+      fs.writeFileSync(observedFile(dataDir), JSON.stringify({ observedAt: NOW, window: { usedPercent: 72, resetsAtMs: NOW + 3 * HOUR }, weekly: { usedPercent: 40, resetsAtMs: NOW + 5 * 24 * HOUR } }))
+      fs.rmSync(lockFile(dataDir), { force: true })
+    }
+  }
+  const reading = await refreshMuseQuota({ command: FAKE_MUSE, now: () => NOW + 1000, wait })
+  assert.ok(polls >= 2)
   assert.deepEqual(Object.keys(reading.windows).sort(), ['5h', 'weekly'])
   near(reading.windows['5h'].remaining, 0.28)
   near(reading.windows.weekly.remaining, 0.6)
