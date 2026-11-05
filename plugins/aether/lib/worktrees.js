@@ -1127,12 +1127,22 @@ function removeLaneCopies(mainRoot, runId) {
   return { removed, remaining: laneCopyNames(mainRoot, runId) }
 }
 
+// The files of a run's patches/ that still hold work no integration branch has: those of tasks that are not merged or
+// adopted. A patch of a unit that merged later, or that the Lead adopted, is already in the branch and must not keep
+// the run directory for good (the sweep at every session start would visit it again). A run whose graph cannot be
+// read keeps every patch.
+function pendingPatches(mainRoot, runId, patchesDir) {
+  if (!isDirectory(patchesDir)) return []
+  const integrated = new Set(orEmpty(() => mergedUnits(mainRoot, runId), []))
+  return fs.readdirSync(patchesDir).filter((name) => !integrated.has(name.replace(/\.patch$/, '')))
+}
+
 // Removes a run's unit worktrees and branches, after saving their unsaved work as patches. A unit
 // whose work cannot be saved is kept, and so is the run directory then. In an interrupted run
 // (wasInterrupted), each unmerged unit's work is committed on its branch and the branch is kept, in
 // `savedBranches`; the run directory stays then too. A branch of a task in `retained` (not
 // integrated, R6) is never deleted. With `finish`, the run directory goes only when nothing is
-// kept: no retained task, no saved branch, no live unverified marker, no file in patches/, and no
+// kept: no retained task, no saved branch, no live unverified marker, no patch of a task not integrated, and no
 // worktree or branch remaining; `finished` says it went. The run's lane processes are stopped and
 // its lane copies removed first, so nothing is still writing when the units are saved.
 function sweepRun(cwd, runId, { finish = false } = {}) {
@@ -1171,7 +1181,7 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
   const remainingWorktrees = runWorktrees(mainRoot, runId).paths.map((worktree) => path.basename(worktree))
   const remainingBranches = aetherBranches(mainRoot, runId).map(({ branch }) => branch)
   const patchesDir = path.join(runDir, 'patches')
-  const hasPatches = isDirectory(patchesDir) && fs.readdirSync(patchesDir).length > 0
+  const hasPatches = pendingPatches(mainRoot, runId, patchesDir).length > 0
   const keepRunDir =
     kept.size > 0 || saved.length > 0 || live.length > 0 || retained.length > 0 || hasPatches || remainingWorktrees.length > 0 || remainingBranches.length > 0
   if (finish && !keepRunDir && exists(runDir)) {
@@ -1298,7 +1308,7 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     // Unmerged work kept as patches and retained branches, or any worktree or branch remaining,
     // keeps the run directory with its graph and patches (R7): not swept, abandoned recorded once.
     const patchesDir = path.join(dir, 'patches')
-    const hasPatches = isDirectory(patchesDir) && fs.readdirSync(patchesDir).length > 0
+    const hasPatches = pendingPatches(mainRoot, id, patchesDir).length > 0
     if ((sweep.retainedBranches && sweep.retainedBranches.length > 0) || hasPatches) continue
     if (sweep.remaining.worktrees.length > 0 || sweep.remaining.branches.length > 0) continue
     if (interrupted && lastStatus !== 'finalized' && !alreadyAbandoned) run.appendRecord(abandoned)

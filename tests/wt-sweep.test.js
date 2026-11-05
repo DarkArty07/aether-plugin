@@ -75,6 +75,22 @@ test('sweep --finish without a marker keeps the patch and the run directory (R6)
   assert.deepEqual(r.json.retainedBranches, [])
 })
 
+test('the patch of a unit the Lead adopted does not keep the run directory (R7)', (t) => {
+  const { repo, args, one } = unit(t)
+  commitIn(repo, one.path, owned('src', 't1', 'a.js'), 'a\n', 'add a')
+  const removed = runBin(WT_BIN, ['remove', args.runId, 'task-1'], repo.dir)
+  assert.equal(fs.existsSync(removed.json.patch), true)
+  const kept = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
+  assert.equal(kept.json.finished, false, 'while the unit is not integrated its patch keeps the run')
+  commitIn(repo, repo.dir, owned('src', 't1', 'a.js'), 'a\n', 'apply task 1 by hand')
+  const adopted = runBin(WT_BIN, ['adopt', args.runId, 'task-1', '--commit', repo.git('rev-parse', 'HEAD').trim(), '--reason', 'by hand'], repo.dir)
+  assert.equal(adopted.status, 0, adopted.stdout + adopted.stderr)
+  const r = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.finished, true)
+  assert.equal(fs.existsSync(args.runDir), false)
+})
+
 test('commits past the base, with no marker, are retained with their patch (R6)', (t) => {
   const { repo, args, one } = unit(t)
   commitIn(repo, one.path, owned('src', 't1', 'a.js'), 'a\n', 'add a')
