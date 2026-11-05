@@ -32,10 +32,10 @@ const AETHER_VARIABLES = [
 ]
 // Every child process gets process.env, so this covers the environment the helper hands to children and the
 // in-process reads of a test file alike. Each test file runs in a process of its own (node --test).
-// A session may still export the retired name. Nothing in the tree reads it, so it is not part of the list
-// above; it is still cleared so a suite does not inherit it.
-const RETIRED_SESSION = ['AETHER_SUPERDELEGATION_' + 'LEGACY']
-for (const name of AETHER_VARIABLES.concat(RETIRED_SESSION)) delete process.env[name]
+// Every AETHER_* variable in the environment is cleared, the listed ones and any other: the shell that runs the suite may export
+// variables the code does not read (the owner's own settings, a retired name), and a test must not inherit those either (the
+// scan in tests/env-scrub.test.js still compares the list with what the code reads).
+for (const name of Object.keys(process.env)) if (name.startsWith('AETHER_')) delete process.env[name]
 delete process.env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV
 delete process.env.CLAUDE_PLUGIN_OPTION_AUTOISSUE
 

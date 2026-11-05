@@ -95,3 +95,27 @@ test('the reading source has no network or process module (R12)', () => {
   const source = fs.readFileSync(path.join(PLUGIN, 'lib', 'observe-read.js'), 'utf8')
   assert.doesNotMatch(source, /node:(http|https|http2|net|tls|dgram|dns|child_process)|child_process|\bfetch\s*\(|\bgh\s+(issue|api)/)
 })
+
+test('pending log and enforce entries remain local signals with their actual modes', (t) => {
+  const dataDir = tempDir(t); const repoRoot = tempDir(t)
+  write(path.join(repoRoot, '.aether', 'pending.jsonl'), jsonl(['log', 'enforce'].flatMap((mode) => [1, 2].map((time) => ({ time, mode, class: mode, command: `command ${mode}`, session: 's' })))))
+  const items = readObservations({ dataDir, repoRoot, pairs: [] }).items.filter((i) => i.type === 'blocked-by-mistake')
+  assert.equal(items.length, 2)
+  for (const item of items) {
+    assert.equal(item.kind, 'friction')
+    assert.equal(item.numbers.mode, item.numbers.class)
+    assert.equal(item.issue, undefined)
+  }
+})
+
+test('notice claims are private, sanitized and consumed only once', (t) => {
+  const dataDir = tempDir(t)
+  const { saveNotice, takeNotices } = require(path.join(PLUGIN, 'lib', 'observe-notice.js'))
+  saveNotice(dataDir, { number: 42, url: 'https://github.com/owner/repo/issues/42', id: 'rise-without-reason:private-task:1' })
+  const dir = path.join(dataDir, 'observe', 'notices')
+  const file = path.join(dir, fs.readdirSync(dir)[0])
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+  assert.equal(fs.readFileSync(file, 'utf8').includes('private-task'), false)
+  assert.deepEqual(takeNotices(dataDir), [{ number: 42, url: 'https://github.com/owner/repo/issues/42', reason: 'an unexplained delegate rise' }])
+  assert.deepEqual(takeNotices(dataDir), [])
+})

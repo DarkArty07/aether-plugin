@@ -8,6 +8,11 @@ order: 31
 
 ## Status
 
+Version 0.30.3: automatic observation keeps unproven block alerts local and tells the owner when it files an issue. What changed since 0.30.2:
+- **Less noise.** The reading retains whether the guard only logged or enforced a pending command. Repeated blocks and later grants by class remain local friction, not proof of a mistaken block and not automatic issues.
+- **Notice of a filed issue.** A confirmed creation saves a private notice with its link and a generic reason; the next Aether session displays it. The worker runs after SessionEnd, so the notice is not immediate. A storage failure can prevent a notice, and the open-issue cap still applies.
+- **Verification.** The test suite, mod tests and strict validation passed; no real issue was created to verify the notice. Existing automatic issues still need individual review.
+
 Version 0.30.2: a Lead on a Pro account no longer receives the Agent tool's «do not spawn agents unless the user asks», which contradicted its own rules (issue 145). What changed since 0.30.1:
 - **The Agent tool's text on a Pro account (issue 145).** Claude Code puts a paragraph in the description of `Agent` that says to launch no agent unless the user asks, and it does so on a Pro account (it gates on the subscription type); the Lead's rules say the opposite: an edit-test-fix loop goes to a delegate task and long work to the swarm. A Lead on Pro skipped delegating, and chose without saying so. The mod now answers `tool.describe` for `Agent` in an Aether session without that paragraph (`hooks/agent-text.mjs`, `hooks/register.js`); a plain session keeps the engine's text, and a description asked for before the Lead's SessionStart is asked again when it arrives. `using-aether` says in one sentence that choosing Aether mode is the owner's standing request for delegate tasks and the swarm, so the rule holds when the hook does not. Checked in two real headless sessions on Haiku: the tree of 0.30.1 quotes the paragraph, this one answers NONE. A new session loads it.
 - **Two tests that failed on `main` were fixed (issue 146).** The R21 test pinned a single handoff, and the Muse Spark test depended on the `AETHER_LANES_CONFIG` of the session that ran it.
