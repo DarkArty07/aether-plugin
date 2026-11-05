@@ -99,10 +99,9 @@ function readAllEntries(dataDir, { task = null, session = null, since = 0 } = {}
   return sources.flat().sort((a, b) => timeOf(a) - timeOf(b))
 }
 
-// One entry of earlier work for both the prompt and any carried patch, from the same log entry: the latest answer
-// recorded on Claude, or otherwise the latest result. A result names its patch when the patch file still exists, and
-// says to rebuild when it does not; a result with an answer names that answer. { text, patch }: patch is the patch
-// the next attempt has to apply, or null when the work is text the next attempt reads.
+// The earlier work a correction or a rise builds on, for both the prompt and any carried patch, from one log entry:
+// the latest answer recorded on Claude, or otherwise the latest result. A result carries its patch when the patch file
+// still exists, and only its description when the file is gone; a result with an answer carries that answer.
 function previousWork(entries) {
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i]
@@ -124,6 +123,14 @@ function previousWork(entries) {
   return null
 }
 
+// Session and task identifiers use the same safe filename alphabet. The length prefix keeps
+// separators inside either identifier from producing the same key for different pairs.
+function fileKey(session, id) {
+  const valid = /^[A-Za-z0-9_-]+$/
+  if (typeof id !== 'string' || !valid.test(id) || (session != null && (typeof session !== 'string' || !valid.test(session)))) throw new Error('invalid delegate session or task id')
+  return session == null ? id : `${session.length}-${session}--${id}`
+}
+
 // A launch entry in the delegate log that opened an attempt (not a refused relaunch).
 const isLaunch = (entry) => entry.kind === 'launch' && entry.launchKind !== 'refused'
 
@@ -135,4 +142,5 @@ module.exports = {
   readAllEntries,
   isLaunch,
   previousWork,
+  fileKey,
 }

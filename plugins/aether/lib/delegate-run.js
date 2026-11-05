@@ -5,7 +5,7 @@
 // `begin` wrote (lib/delegate-task.js) and does the work: an editing task through `aether-lane delegate`
 // (lib/lane-delegate.js), which comes back as a unit branch with its tests and a review by another pair; a read-only
 // task through the chain of read-only delegates (lib/delegate-chain.js). It writes the result where `wait` finds it,
-// `<dataDir>/delegates/results/<id>.json`, and a `result` entry in the delegate log. `wait` polls for that file. Nothing
+// `<dataDir>/delegates/results/<session-task-key>.json`, and a `result` entry in the delegate log. `wait` polls for that file. Nothing
 // here merges, pushes or writes in the Lead's checkout: the Lead judges the attempt with `aether-delegate verdict` and
 // merges with aether-wt.
 // Family: delegate.
@@ -32,10 +32,10 @@ const MAX_WAIT_SECONDS = 540
 // ---- the files of a launch ----
 
 const delegatesDir = (dataDir) => path.join(dataDir, 'delegates')
-const externalFile = (dataDir, id) => path.join(delegatesDir(dataDir), 'external', `${id}.json`)
-const resultFile = (dataDir, id) => path.join(delegatesDir(dataDir), 'results', `${id}.json`)
-const runFile = (dataDir, id) => path.join(delegatesDir(dataDir), 'run', `${id}.json`)
-const runLog = (dataDir, id) => path.join(delegatesDir(dataDir), 'run', `${id}.log`)
+const externalFile = (dataDir, id, session) => path.join(delegatesDir(dataDir), 'external', `${log.fileKey(session, id)}.json`)
+const resultFile = (dataDir, id, session) => path.join(delegatesDir(dataDir), 'results', `${log.fileKey(session, id)}.json`)
+const runFile = (dataDir, id, session) => path.join(delegatesDir(dataDir), 'run', `${log.fileKey(session, id)}.json`)
+const runLog = (dataDir, id, session) => path.join(delegatesDir(dataDir), 'run', `${log.fileKey(session, id)}.log`)
 
 function assertId(id) {
   if (typeof id !== 'string' || !ID.test(id)) throw new Error(`the delegate id must be letters, digits, - and _, not ${JSON.stringify(id)}`)
@@ -65,17 +65,17 @@ function readJson(file) {
 
 // ---- start ----
 
-// Launches `node <binPath> run --id <id>` in cwd, detached, with its output in run/<id>.log, and records its pid in
-// run/<id>.json. The earlier result of the id is removed first, so that `wait` never reads it as this one's.
-function start({ id, cwd, dataDir }, { spawn = childProcess.spawn, binPath = BIN } = {}) {
+// Launches `node <binPath> run --id <id>` in cwd, detached, with its output in run/<session-task-key>.log, and records its pid in
+// run/<session-task-key>.json. The earlier result of the id is removed first, so that `wait` never reads it as this one's.
+function start({ id, session = null, cwd, dataDir }, { spawn = childProcess.spawn, binPath = BIN } = {}) {
   assertId(id)
-  fs.rmSync(resultFile(dataDir, id), { force: true })
-  const logPath = runLog(dataDir, id)
+  fs.rmSync(resultFile(dataDir, id, session), { force: true })
+  const logPath = runLog(dataDir, id, session)
   fs.mkdirSync(path.dirname(logPath), { recursive: true })
   const out = fs.openSync(logPath, 'a')
   let child
   try {
-    child = spawn(process.execPath, [binPath, 'run', '--id', id], {
+    child = spawn(process.execPath, [binPath, 'run', '--id', id, ...(session ? ['--session', session] : [])], {
       cwd,
       detached: true,
       stdio: ['ignore', out, out],
@@ -87,7 +87,7 @@ function start({ id, cwd, dataDir }, { spawn = childProcess.spawn, binPath = BIN
   if (typeof child.on === 'function') child.on('error', () => {})
   child.unref()
   if (!Number.isInteger(child.pid)) throw new Error(`the run of delegate ${id} did not start`)
-  writeAtomic(runFile(dataDir, id), `${JSON.stringify({ pid: child.pid, startedAt: Date.now() })}\n`)
+  writeAtomic(runFile(dataDir, id, session), `${JSON.stringify({ pid: child.pid, startedAt: Date.now() })}\n`)
   return { started: true, id, pid: child.pid }
 }
 
@@ -129,7 +129,7 @@ function reviewLines(review) {
 function findingsFile(dataDir, external) {
   if (typeof external.findings === 'string' && external.findings !== '') return external.findings
   if (!Array.isArray(external.findings) || external.findings.length === 0) return null
-  const file = path.join(delegatesDir(dataDir), 'in', `${external.id}-${external.attempt}-findings.md`)
+  const file = path.join(delegatesDir(dataDir), 'in', `${log.fileKey(external.session ?? null, external.id)}-${external.attempt}-findings.md`)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, `${external.findings.join('\n')}\n`)
   return file
@@ -219,7 +219,7 @@ async function runEdits(external, { cwd, dataDir }, delegateCommand) {
   const checks = editsChecks(done.worktree, done.base, external.owns, done.tests)
   let patch = null
   try {
-    patch = savePatch(done.worktree, done.base, path.join(delegatesDir(dataDir), 'patches', `${external.id}-${external.attempt}.patch`))
+    patch = savePatch(done.worktree, done.base, path.join(delegatesDir(dataDir), 'patches', `${log.fileKey(external.session ?? null, external.id)}-${external.attempt}.patch`))
   } catch {
     // A patch that cannot be saved costs a later correction its starting point, not this attempt its result.
   }
@@ -243,7 +243,7 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
   if (!chain.ok) return { result: { ok: false, status: chain.status ?? 'failed', text: null, checks: null }, entry: none }
   const answer = typeof chain.text === 'string' ? chain.text : ''
   const checks = checksLib.checkReadOnly({ answer, files: changed })
-  const answerPath = path.join(delegatesDir(dataDir), 'answers', `${external.id}-${external.attempt}.md`)
+  const answerPath = path.join(delegatesDir(dataDir), 'answers', `${log.fileKey(external.session ?? null, external.id)}-${external.attempt}.md`)
   let saved = null
   try {
     fs.mkdirSync(path.dirname(answerPath), { recursive: true })
@@ -256,16 +256,16 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
   return { result: { ok: true, status: chain.status ?? 'ok', text, checks }, entry: { ...none, answer: saved } }
 }
 
-// Runs the attempt the external file of `id` describes, and writes its result to results/<id>.json and to the log. The
+// Runs the attempt the external file of `id` describes, and writes its result to results/<session-task-key>.json and to the log. The
 // editing path writes no `outcome`: `aether-lane delegate` records its calls in the lane log, which the spend already
 // reads. Resolves to the Result; never rejects.
-async function runTask({ id, cwd, dataDir, now = Date.now }, { delegateCommand = laneDelegate.delegateCommand, runChain = delegateChain.runChain } = {}) {
+async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { delegateCommand = laneDelegate.delegateCommand, runChain = delegateChain.runChain } = {}) {
   let attempt = null
-  let session = null
+  const pathSession = session
   let outcome
   try {
     assertId(id)
-    const read = readJson(externalFile(dataDir, id))
+    const read = readJson(externalFile(dataDir, id, session))
     const external = isObject(read.value) ? { ...read.value, id } : null
     if (!external) {
       outcome = { result: { ok: false, status: 'unavailable', text: null, checks: null }, entry: {} }
@@ -279,7 +279,7 @@ async function runTask({ id, cwd, dataDir, now = Date.now }, { delegateCommand =
       outcome = external.edits ? await runEdits(external, { cwd: workDir, dataDir }, delegateCommand) : await runReadOnly(external, { cwd: workDir, dataDir }, runChain)
     }
   } catch (err) {
-    // Under `start`, stderr is the run's log (run/<id>.log): the reason stays there.
+    // Under `start`, stderr is the run's log (run/<session-task-key>.log): the reason stays there.
     process.stderr.write(`aether-delegate run ${id}: ${messageOf(err)}\n`)
     outcome = { result: { ok: false, status: 'failed', text: null, checks: null }, entry: {} }
   }
@@ -287,7 +287,7 @@ async function runTask({ id, cwd, dataDir, now = Date.now }, { delegateCommand =
   const empty = { pair: null, branch: null, worktree: null, base: null, head: null, patch: null, answer: null, review: null }
   log.appendEntry(dataDir, { kind: 'result', time: now(), session, task: id, attempt, ok: result.ok, status: result.status, ...empty, ...outcome.entry, checks: result.checks })
   try {
-    if (typeof id === 'string' && ID.test(id)) writeAtomic(resultFile(dataDir, id), `${JSON.stringify(result)}\n`)
+    if (typeof id === 'string' && ID.test(id)) writeAtomic(resultFile(dataDir, id, pathSession), `${JSON.stringify(result)}\n`)
   } catch {
     // `wait` reports the run as died once its process is gone.
   }
@@ -315,20 +315,20 @@ function finished(read) {
 
 // Polls for the result of `id` for up to `seconds` (at most MAX_WAIT_SECONDS). A run whose process is gone without a
 // result died; an id with neither a run nor a result was never started here.
-async function wait({ id, dataDir, seconds, now = Date.now, sleep = realSleep, alive = pidAlive }) {
+async function wait({ id, session = null, dataDir, seconds, now = Date.now, sleep = realSleep, alive = pidAlive }) {
   assertId(id)
   const limit = Math.min(Math.max(Number(seconds) || 0, 0), MAX_WAIT_SECONDS) * 1000
   const deadline = now() + limit
   for (;;) {
-    const result = readJson(resultFile(dataDir, id))
+    const result = readJson(resultFile(dataDir, id, session))
     if (isObject(result.value)) return finished(result)
-    const run = readJson(runFile(dataDir, id))
+    const run = readJson(runFile(dataDir, id, session))
     if (!run.found) return { done: true, ok: false, status: 'unknown', text: null }
     const pid = isObject(run.value) ? run.value.pid : null
     if (!Number.isInteger(pid)) return { done: true, ok: false, status: 'unknown', text: null }
     if (!alive(pid)) {
       // The result may have landed between the two reads.
-      const late = readJson(resultFile(dataDir, id))
+      const late = readJson(resultFile(dataDir, id, session))
       return isObject(late.value) ? finished(late) : { done: true, ok: false, status: 'died', text: null }
     }
     const left = deadline - now()

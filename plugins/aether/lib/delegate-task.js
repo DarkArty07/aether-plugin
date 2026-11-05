@@ -451,10 +451,10 @@ async function begin(input, deps = {}) {
         }
       }
       if (pick) {
-        const briefFile = path.join(r.dataDir, 'delegates', 'briefs', `${id}-${attempt}.md`)
+        const briefFile = path.join(r.dataDir, 'delegates', 'briefs', `${log.fileKey(session, id)}-${attempt}.md`)
         fs.mkdirSync(path.dirname(briefFile), { recursive: true })
         fs.writeFileSync(briefFile, externalPrompt)
-        writeJson(path.join(r.dataDir, 'delegates', 'external', `${id}.json`), {
+        writeJson(path.join(r.dataDir, 'delegates', 'external', `${log.fileKey(session, id)}.json`), {
           id, session, cwd: r.cwd, attempt, step, effort, launchKind, edits, owns: brief.owns, tests: brief.tests,
           brief: briefFile, findings, carry: carry ? log.previousWork(entries)?.patch ?? null : null, pin, base, harness: pick.harness,
           rung: { model: pick.model, effort: pick.effort, group: pick.group },

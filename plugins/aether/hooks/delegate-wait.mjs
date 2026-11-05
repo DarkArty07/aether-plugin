@@ -37,11 +37,12 @@ function lastAnswer(stdout) {
   return null
 }
 
-// One `aether-delegate wait`: its answer, or null when the call fails (throws, exits non-zero or prints no answer).
-async function waitOnce($, root, id) {
+// One `aether-delegate wait`: its answer, or null when the call fails (throws, exits non-zero or prints no answer). A
+// call with no session waits the way one did before sessions keyed the files.
+async function waitOnce($, root, id, session) {
   try {
     const run = await $.process.run(
-      ['node', `${root}/bin/aether-delegate`, 'wait', '--id', id, '--seconds', String(WAIT_SECONDS)],
+      ['node', `${root}/bin/aether-delegate`, 'wait', '--id', id, '--seconds', String(WAIT_SECONDS), ...(session ? ['--session', session] : [])],
       { timeoutMs: WAIT_TIMEOUT_MS },
     )
     if (run && run.exitCode !== undefined && run.exitCode !== 0) return null
@@ -55,16 +56,13 @@ async function waitOnce($, root, id) {
 // failed and is about to be retried, it yields { beat: true, waitedMs }, so the caller can yield a heartbeat event (see
 // STALL_MS): a hung wait and its retry could otherwise go past the stall limit with no event. The second failure in a row
 // ends the wait with no beat. It returns { ok, status, text } when the delegate ends, and never throws.
-// `session` is part of the caller's context and is not sent: the bin takes its session and data directory
-// from the environment of the session it runs in.
 export async function* waitSteps($, { root, id, session }) {
-  void session
   try {
     const started = await $.clock.now()
     let failures = 0
     for (;;) {
       if ((await $.clock.now()) - started >= MAX_WAIT_MS) return { ok: false, status: 'timeout', text: null }
-      const answer = await waitOnce($, root, id)
+      const answer = await waitOnce($, root, id, session)
       if (answer === null) {
         failures += 1
         if (failures >= 2) return { ok: false, status: 'wait-failed', text: null }

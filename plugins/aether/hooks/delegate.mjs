@@ -75,7 +75,7 @@ const notesOf = (plan) => (Array.isArray(plan.notes) ? plan.notes.filter(isText)
 async function* runExternal($, e, next, ctx, external, answerOf) {
   let delivered = null
   try {
-    const started = await delegate($, ctx, ['start', '--id', external.id], START_TIMEOUT_MS)
+    const started = await delegate($, ctx, ['start', '--id', external.id, '--session', ctx.session], START_TIMEOUT_MS)
     if (started.started === true) {
       const steps = waitSteps($, { root: ctx.root, id: external.id, session: ctx.session })
       for (;;) {

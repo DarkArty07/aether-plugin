@@ -67,6 +67,7 @@ test('a refusal at the start tries the next candidate: both outcomes are journal
   assert.match(out.attribution, /Claude Code lists no tool uses or tokens/)
   assert.deepEqual(s.calls.map((c) => [c.harness, c.rung.model]), [['agy', 'gemini-4-argon'], ['grok', 'grok-4.7']])
   assert.deepEqual(s.calls.map((c) => c.task), [task, task])
+  assert.deepEqual(s.calls.map((c) => c.id), ['2-s1--c-1', '2-s1--c-1'])
   const [first, second] = s.outcomes()
   assert.deepEqual([first.attempt, first.status, first.harness, first.model], [1, 'quota', 'agy', 'gemini-4-argon-high'])
   assert.deepEqual([second.attempt, second.status, second.harness, second.model], [2, 'ok', 'grok', 'grok-4.7-high'])
