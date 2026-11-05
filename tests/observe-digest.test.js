@@ -186,3 +186,70 @@ test('a prune interrupted before it rewrote the events file counts the old lines
   assert.deepEqual(digest.readSummary(dir).sessions['s-cut'].toolFailures, { Bash: 2 })
   assert.deepEqual(digest.readSummary(dir).sessions['s-cut'].events, { PostToolUseFailure: 2 })
 })
+
+test('digestSession and pruneObserve hold the summary lock while they write the summary (R11)', (t) => {
+  const dir = tempDir(t)
+  const now = Date.UTC(2026, 9, 23)
+  seed(dir, 's-old', now - 40 * DAY)
+  seed(dir, 's-new', now - DAY)
+  const lock = path.join(dir, 'observe', '.summary.lock')
+  const real = fs.renameSync
+  const held = []
+  t.mock.method(fs, 'renameSync', function (from, to, ...rest) {
+    if (String(to) === path.join(dir, 'observe', 'summary.json')) held.push(fs.existsSync(lock))
+    return real.call(this, from, to, ...rest)
+  })
+  digest.digestSession(dir, 's-new')
+  digest.digestAll(dir)
+  digest.pruneObserve(dir, { days: 30, now })
+  t.mock.restoreAll()
+  assert.ok(held.length >= 3)
+  assert.equal(held.every(Boolean), true, 'the summary is only written under the lock')
+  assert.equal(fs.existsSync(lock), false)
+})
+
+test('three processes pruning the same directory at once keep every session and count every pruned event once (R11)', async (t) => {
+  const dir = tempDir(t)
+  const now = Date.UTC(2026, 9, 23)
+  const old = now - 40 * DAY
+  const ids = ['s-a', 's-b', 's-c']
+  for (const id of ids) {
+    seed(dir, id, old)
+    age(dir, id, old)
+  }
+  const script = `
+    const digest = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'observe-digest.js'))})
+    digest.pruneObserve(process.argv[1], { days: 30, now: Number(process.argv[2]) })`
+  await Promise.all(ids.map(() => new Promise((resolve, reject) => {
+    const child = require('node:child_process').spawn(process.execPath, ['-e', script, dir, String(now)], { stdio: 'ignore' })
+    child.on('error', reject)
+    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))))
+  })))
+  const sessions = digest.readSummary(dir).sessions
+  assert.deepEqual(Object.keys(sessions).sort(), ids)
+  for (const id of ids) {
+    assert.equal(sessions[id].pruned.events.PostToolUseFailure, 2, id)
+    assert.equal(sessions[id].pruned.events.PreCompact, 1, id)
+  }
+})
+
+test('four processes digesting different sessions at once keep every session in the summary (R11)', async (t) => {
+  const dir = tempDir(t)
+  const script = `
+    const observe = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'observe.js'))})
+    const digest = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'observe-digest.js'))})
+    const [dir, id] = process.argv.slice(1)
+    for (let i = 0; i < 30; i++) {
+      observe.appendEvent(dir, { time: 1000 + i, session: id, kind: 'PostToolUseFailure', tool: 'Bash' })
+      digest.digestSession(dir, id)
+    }`
+  const ids = ['s-a', 's-b', 's-c', 's-d']
+  await Promise.all(ids.map((id) => new Promise((resolve, reject) => {
+    const child = require('node:child_process').spawn(process.execPath, ['-e', script, dir, id], { stdio: 'ignore' })
+    child.on('error', reject)
+    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))))
+  })))
+  const sessions = digest.readSummary(dir).sessions
+  assert.deepEqual(Object.keys(sessions).sort(), ids)
+  for (const id of ids) assert.equal(sessions[id].events.PostToolUseFailure, 30, id)
+})
