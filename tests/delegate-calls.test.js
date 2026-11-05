@@ -1,7 +1,6 @@
 'use strict'
 
 const test = require('node:test')
-const { createMuse } = require('../plugins/aether/lib/harness/muse.js')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -231,20 +230,31 @@ test('a read-only delegate runs on muse with the model of the pair, and its answ
   s.config.harnesses.muse.command = fake
   const record = (type, payload) => JSON.stringify({ schema_version: 1, id: 'id-1', stream: { kind: 'session', id: 's1' }, sequence: 1, recorded_at: 1, record_type: 'event', durability: 'durable', causation_id: 'c1', payload_type: type, payload_schema_version: 1, payload })
   const answer = JSON.stringify({ answer: 'found 3 callers' })
-  const keep = { script: process.env.AETHER_FAKE_MUSE_SCRIPT, log: process.env.AETHER_FAKE_MUSE_LOG }
-  process.env.AETHER_FAKE_MUSE_SCRIPT = JSON.stringify({ stdout: `${record('run.terminal.completed', { kind: 'run_terminal', terminal: 'completed', reason: null, text: answer })}\n` })
+  const keep = { script: process.env.AETHER_FAKE_MUSE_SCRIPT, log: process.env.AETHER_FAKE_MUSE_LOG, dataDir: process.env.AETHER_DATA_DIR }
+  const processDataDir = path.join(path.dirname(s.dataDir), 'process-data')
+  const observedFile = (dir) => path.join(dir, 'lanes', 'quota', 'muse-observed.json')
+  const at = Date.now()
+  const window = (usedPercent) => ({ usedPercent, resetsAtMs: at + 86400000 })
+  const processObservation = JSON.stringify({ observedAt: at, window: null, weekly: window(99) })
+  for (const dir of [processDataDir, s.dataDir]) fs.mkdirSync(path.dirname(observedFile(dir)), { recursive: true })
+  fs.writeFileSync(observedFile(processDataDir), processObservation)
+  fs.writeFileSync(observedFile(s.dataDir), JSON.stringify({ observedAt: at, window: null, weekly: window(20) }))
+  process.env.AETHER_DATA_DIR = processDataDir
+  const usage = record('run.usage', { kind: 'run_usage', allowance: { weekly: window(40) }, models: [] })
+  process.env.AETHER_FAKE_MUSE_SCRIPT = JSON.stringify({ stdout: `${record('run.terminal.completed', { kind: 'run_terminal', terminal: 'completed', reason: null, text: answer })}\n${usage}\n` })
   process.env.AETHER_FAKE_MUSE_LOG = path.join(path.dirname(s.dataDir), 'muse.log')
   t.after(() => {
-    for (const [key, value] of [['AETHER_FAKE_MUSE_SCRIPT', keep.script], ['AETHER_FAKE_MUSE_LOG', keep.log]]) {
+    for (const [key, value] of [['AETHER_FAKE_MUSE_SCRIPT', keep.script], ['AETHER_FAKE_MUSE_LOG', keep.log], ['AETHER_DATA_DIR', keep.dataDir]]) {
       if (value === undefined) delete process.env[key]
       else process.env[key] = value
     }
   })
   const head = s.repo.git('rev-parse', 'HEAD')
-  // The adapter keeps its own folder, so the quota this test reads is not the one the owner's real Muse last reported.
-  const adapter = createMuse({ command: fake, groups: s.config.harnesses.muse.groups, dataDir: s.dataDir })
-  const out = await run(s, 'List the callers of fetchUser.', { harness: 'muse', adapter, rung: { model: 'muse-wonder-full-1.0', effort: 'high', group: 'muse' } })
+  const out = await run(s, 'List the callers of fetchUser.', { harness: 'muse', rung: { model: 'muse-wonder-full-1.0', effort: 'high', group: 'muse' } })
   assert.equal(out.status, 'ok', out.detail)
+  assert.equal(out.quotaBefore.windows.weekly.remaining, 0.8)
+  assert.equal(JSON.parse(fs.readFileSync(observedFile(s.dataDir), 'utf8')).weekly.usedPercent, 40)
+  assert.equal(fs.readFileSync(observedFile(processDataDir), 'utf8'), processObservation)
   assert.equal(out.text, 'found 3 callers')
   assert.equal(out.harness, 'muse')
   const [call] = fs.readFileSync(process.env.AETHER_FAKE_MUSE_LOG, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
