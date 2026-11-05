@@ -118,21 +118,10 @@ test('a failing command answers its exit code and standard output, as the model 
   expect(counts.modelSteps).toBe(0)
 })
 
-test('a valid bin line overrides a nonzero ops exit code and leaves a fault trace', async ($, on) => {
-  const stdout = 'warning\n{"merged":true,"commit":"abc"}\n\n'
-  const { writes, counts } = stubs(on, { answer: { exitCode: -1, stdout } })
-  await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
-  const { chunks } = await step($)
-  expect(answered(chunks).input).toEqual({ exitCode: 0, stdout })
-  expect(counts.modelSteps).toBe(0)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  const fault = writes.find((w) => w.path.includes('/observe/faults/'))
-  expect(fault).toBeTruthy()
-  expect(JSON.parse(fault.text).faults).toEqual([{ time: 1000, source: 'register.ops-run', class: 'exit-code-overridden' }])
-})
-
-for (const stdout of ['', '{"error":"failed"}\n', '{"error":null}\n', 'not JSON\n', '[{}]\n', '{"merged":true}\ntrailing text\n']) {
-  test(`a nonzero ops exit code stays a failure without an error-free final object (${JSON.stringify(stdout)})`, async ($, on) => {
+// The mod ran the command itself, so its exit code is the process's own: a bin that exits nonzero with a JSON line is
+// not turned into a success (issue 123: only a model-reported exit code is questioned, and that is the workflow's).
+for (const stdout of ['', '{"error":"failed"}\n', '{"error":null}\n', 'not JSON\n', '[{}]\n', '{"merged":true}\ntrailing text\n', '{"merged":false}\n']) {
+  test(`a nonzero exit code of a command the mod ran is reported as it is (${JSON.stringify(stdout)})`, async ($, on) => {
     const { writes } = stubs(on, { answer: { exitCode: -1, stdout } })
     await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
     const { chunks } = await step($)

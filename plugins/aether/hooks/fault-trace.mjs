@@ -35,7 +35,7 @@ export const FAULT_SOURCES = [
   'delegate.bind',
 ]
 
-export const FAULT_CLASSES = ['write-failed', 'read-failed', 'settings-unreadable', 'handler-threw', 'spawn-failed', 'exit-code-overridden']
+export const FAULT_CLASSES = ['write-failed', 'read-failed', 'settings-unreadable', 'handler-threw', 'spawn-failed']
 
 // The kinds of a caught error: the built-in classes of JavaScript's errors, and `other` for any class of its own or any
 // value that is not an error.

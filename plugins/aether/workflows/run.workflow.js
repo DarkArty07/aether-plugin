@@ -334,6 +334,7 @@ function opsPrompt(command, { payload = null, long = false } = {}) {
 
 // An ops reply that says so itself: the agent did not run the command (issue 004). Only such a
 // reply is retried — a command that may have run is never run twice on a guess.
+const MODEL_UNKNOWN_EXIT = -1
 const NOT_RUN = /did not run|didn't run|not run it|refus|cannot run|can't run|won't run|no (corr[ií]|ejecut)/i
 
 async function opsOnce(command, { phase, label, payload = null, long = false }) {
@@ -354,7 +355,10 @@ async function opsOnce(command, { phase, label, payload = null, long = false }) 
     return error
   }
   if (out.error) return { error: out.error }
-  if (reply.exitCode !== 0) return { error: `${command} exited with ${reply.exitCode}` }
+  // A model that ran the command can report "exitCode": -1 for a command that succeeded and printed the bin's own
+  // line (issue 123). No process exits with -1 and the line has no error, so the line is the answer; any other
+  // nonzero exit code is a failure.
+  if (reply.exitCode !== 0 && reply.exitCode !== MODEL_UNKNOWN_EXIT) return { error: `${command} exited with ${reply.exitCode}` }
   return out
 }
 
