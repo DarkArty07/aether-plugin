@@ -8,6 +8,11 @@ order: 31
 
 ## Status
 
+Version 0.31.0: `/aether:audit` audits any project read-only and hands back one list from P0 to P3 for the owner to choose from (A105, spec 026). What changed since 0.30.3:
+- **The audit.** Seven phases: an automated analysis with no model (`aether-audit analyze`: the project's tests after reading their whole chain of scripts, the linter, the dependency audit, secrets in every branch without their value, TODO, branches, hotspots, issues and PRs), one question about the twelve topics with a reason for each, one read-only reviewer per topic, verifiers in a fresh context that try to refute each claim, a cleanup against the open issues and the earlier audit, a triage with severity apart from priority, and the delivery. It changes nothing in the project, saves the report in the data directory, and creates a GitHub issue only for what the owner picks.
+- **Tested for real.** Three rounds on three of the owner's projects (Node, Python, PHP), three audits at a time; seventeen defects of the skill found and fixed between rounds, among them two audits reading each other's delegate results (every delegate id now carries the audit's stamp; issue 148) and «resolved» items that were only not found again (resolved now needs a code change). Limits left: one dependency ecosystem per analysis (issue 150), and an audit of a large project is a sample (issue 149).
+- **Verification.** `npm run check` passed (tests, mod tests, strict validation) and the hidden exam of spec 026 passed 14 of 14. The guide is [Audit a project](guide/audit.md).
+
 Version 0.30.3: automatic observation keeps unproven block alerts local and tells the owner when it files an issue. What changed since 0.30.2:
 - **Less noise.** The reading retains whether the guard only logged or enforced a pending command. Repeated blocks and later grants by class remain local friction, not proof of a mistaken block and not automatic issues.
 - **Notice of a filed issue.** A confirmed creation saves a private notice with its link and a generic reason; the next Aether session displays it. The worker runs after SessionEnd, so the notice is not immediate. A storage failure can prevent a notice, and the open-issue cap still applies.

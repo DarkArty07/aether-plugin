@@ -596,9 +596,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A104 are recorded and the changelog opens with 0.30.3, then 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
+test('R15: the decisions A50 to A105 are recorded and the changelog opens with 0.31.0, then 0.30.3, then 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 104
+  const LAST_DECISION = 105
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -636,15 +636,17 @@ test('R15: the decisions A50 to A104 are recorded and the changelog opens with 0
   assert.ok(/one ladder/i.test(line(97)) && /Haiku/.test(line(97)) && /#102/.test(line(97)))
   assert.ok(/autoissue/.test(line(98)) && /development installation/.test(line(98)) && /issue of each failure/.test(line(98)))
   assert.ok(/four steps/.test(line(103)) && /\/aether:setup/.test(line(103)) && /Sonnet or Haiku/.test(line(103)))
+  assert.ok(/aether:audit/.test(line(105)) && /spec 026/.test(line(105)) && /issue 148/.test(line(105)))
   assert.ok(/whole/.test(line(104)) && /parts/.test(line(104)) && /Opus/.test(line(104)) && /issues 139/.test(line(104)) && /every prompt/.test(line(104)))
   assert.ok(/own words/.test(line(99)) && /Sonnet or Opus/.test(line(99)) && /every delegate still starts on Haiku/.test(line(99)))
   for (const n of [18, 36, 87]) assert.ok(/Update \(A93\)/.test(line(n)), `A${n} has its update note`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const allVersions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(allVersions[0].startsWith('Version 0.30.3: ') && allVersions[0].includes('automatic observation'), allVersions[0])
-  assert.ok(allVersions[1].startsWith('Version 0.30.2: ') && allVersions[1].includes('issue 145'), allVersions[1])
-  const versions = allVersions.slice(2)
+  assert.ok(allVersions[0].startsWith('Version 0.31.0: ') && allVersions[0].includes('A105'), allVersions[0])
+  assert.ok(allVersions[1].startsWith('Version 0.30.3: ') && allVersions[1].includes('automatic observation'), allVersions[1])
+  assert.ok(allVersions[2].startsWith('Version 0.30.2: ') && allVersions[2].includes('issue 145'), allVersions[2])
+  const versions = allVersions.slice(3)
   assert.ok(versions[0].startsWith('Version 0.30.1: ') && versions[0].includes('A104') && versions[0].includes('spec 025'), versions[0])
   assert.ok(versions[1].startsWith('Version 0.30.0: ') && versions[1].includes('A103'), versions[1])
   assert.ok(versions[2].startsWith('Version 0.29.0: ') && versions[2].includes('A102'), versions[2])
