@@ -709,7 +709,8 @@ test('R16: no page gives aether-exam a list verb', () => {
 
 test('R17: no page presents Tier or Ladder as a field of the plan, and the contributing example checks clean', (t) => {
   for (const page of ['docs/methodology.md', 'docs/getting-started.md', 'docs/contributing.md', 'docs/purpose.md', 'docs/roadmap.md', 'docs/guide/design-seats.md', 'docs/guide/troubleshooting.md', 'docs/guide/models-by-role.md']) {
-    const text = read(page).replace(/[^\n]*\bTier\b[^\n]*(?:ignorado|ignored)[^\n]*/g, '')
+    // Only the sentence that says a Tier line is ignored is exempt, not the whole line around it.
+    const text = read(page).replace(/[^.\n]*\bTier\b[^.\n]*(?:ignorado|ignored)[^.\n]*\./g, '')
     assert.doesNotMatch(text, /\bTier\b/, `${page} names Tier`)
     assert.doesNotMatch(text, /- (Tier|Ladder):/, `${page} shows a Tier or Ladder line`)
   }
