@@ -1486,6 +1486,7 @@ test('R22: the Lead rules load and use EnterPlanMode and ExitPlanMode in an inte
 - Area: autonomy
 - Owns: `plugins/aether/lib/autonomy.js`, `plugins/aether/lib/autonomy-command.js`, `plugins/aether/skills/autonomous-runs/SKILL.md`, `docs/guide/autonomy.md`, `tests/autonomy.test.js`, `tests/aether-autonomy.test.js`, `tests/autonomous-runs-skill.test.js`
 - Depends on: Task 1 — comparte `autonomy.js` y sus pruebas con ella (ya fusionada en la rama)
+- Depends on: Task 16 — comparte `docs/guide/autonomy.md` con ella (ya fusionada en la rama)
 - Serves: R26, R24
 
 **Interfaces:**
