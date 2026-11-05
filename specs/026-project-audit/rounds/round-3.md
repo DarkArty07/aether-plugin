@@ -26,3 +26,7 @@ The English answer did not change the delivery's language: the owner's Claude Co
 2. **An audit is a sample, not a sweep.** On the unchanged `aether-plugin`, round 3 found again only 1 of the 31 items of round 2 (and 30 were not found again); on the small `constancias-escolares`, 20 of 29. The reviewers, with about 20 tool calls each, look at different places each time. Nothing was changed in this round; the proposal is that an audit re-verifies the earlier audit's open items of its topics, so «still» is checked rather than left to chance.
 
 No defect of the earlier rounds came back.
+
+### After the round: R18 amended and the exam regenerated
+
+Round 2's first defect changed what «resolved» means, so R18 was amended (`38a8f16`) and the change went through three short reviews of the Judge: scenario 6, C7's evidence and R21 item 6 were amended with it; the report now states the basis next to the number («N resueltos (ya no aparecen, y su código cambió o su comprobación volvió a correr)») and names the items not found again; a branch is resolved only when it is gone; and the analysis's own findings are resolved when their step ran again without them (`bcc0e1b`, `fda5247`, `5688dae`). The third review's findings were mechanical (shapes and wording of `tasks.md`) and the Lead applied them without a fourth review. The Examiner rewrote the hidden exam's «R18, scenario 6» to the amended rule: it fails on the tree before the amendment and passes on `feat/audit-skill`.
