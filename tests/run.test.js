@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { newRunId, isRunId, assertRunId, assertTaskId, ensureExcluded } = require('../plugins/aether/lib/run.js')
+const { newRunId, isRunId, assertRunId, assertTaskId, ensureExcluded, writeJson, readJson } = require('../plugins/aether/lib/run.js')
 const { tempDir } = require('./helpers.js')
 
 test('newRunId has a date, a time and four hex characters', () => {
@@ -32,6 +32,43 @@ test('ensureExcluded keeps the existing content', (t) => {
   fs.writeFileSync(path.join(dir, 'info', 'exclude'), 'node_modules')
   ensureExcluded(dir)
   assert.equal(fs.readFileSync(path.join(dir, 'info', 'exclude'), 'utf8'), 'node_modules\n/.aether/\n/.aether-tmp/\n/.aether-exam/\n')
+})
+
+test('writeJson writes a temporary file beside the target and renames it over the target (R8)', (t) => {
+  const dir = tempDir(t)
+  const target = path.join(dir, 'nested', 'units.json')
+  writeJson(target, { a: 1 })
+  assert.deepEqual(readJson(target), { a: 1 })
+  assert.deepEqual(fs.readdirSync(path.dirname(target)), ['units.json'])
+
+  const real = fs.writeFileSync
+  const written = []
+  t.mock.method(fs, 'writeFileSync', (file, ...rest) => {
+    written.push(String(file))
+    return real(file, ...rest)
+  })
+  writeJson(target, { a: 2 })
+  t.mock.restoreAll()
+  assert.equal(written.length, 1)
+  assert.notEqual(written[0], target, 'it never writes the target in place')
+  assert.equal(path.dirname(written[0]), path.dirname(target), 'the temporary file is in the same directory')
+  assert.deepEqual(readJson(target), { a: 2 })
+  assert.deepEqual(fs.readdirSync(path.dirname(target)), ['units.json'])
+})
+
+test('a crash while writing leaves the previous file whole and no temporary file (R8)', (t) => {
+  const dir = tempDir(t)
+  const target = path.join(dir, 'graph.json')
+  writeJson(target, { a: 1 })
+  const real = fs.writeFileSync
+  t.mock.method(fs, 'writeFileSync', (file, data, ...rest) => {
+    real(file, String(data).slice(0, 4), ...rest)
+    throw new Error('simulated crash')
+  })
+  assert.throws(() => writeJson(target, { a: 2, big: 'x'.repeat(100) }), /simulated crash/)
+  t.mock.restoreAll()
+  assert.deepEqual(readJson(target), { a: 1 })
+  assert.deepEqual(fs.readdirSync(dir), ['graph.json'])
 })
 
 // ---- dataDir (installable spec R11) ----
