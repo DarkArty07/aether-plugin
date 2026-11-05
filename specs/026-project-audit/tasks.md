@@ -183,6 +183,13 @@ test('the help names /aether:audit, with its argument and the fact that it chang
 test('the plugin has the skill in the folder that the other skills use', () => {
   assert.ok(fs.existsSync(path.join(PLUGIN, 'skills', 'audit', 'SKILL.md')))
 })
+
+test('every delegate id carries the audit stamp, so two audits never share a task (round 2)', () => {
+  const ids = [...skill.matchAll(/AETHER-TASK: (\S+)/g)].map((m) => m[1]).filter((id) => !id.startsWith('<id>'))
+  assert.ok(ids.length >= 2, 'the briefs name their task ids')
+  for (const id of ids) assert.match(id, /^audit-<stamp>-/, id)
+  assert.match(skill, /a launch with an id another audit already used is taken as a correction/)
+})
 ```
 
 **Acceptance:**
@@ -278,9 +285,9 @@ Forma de la entrada de `render`:
 ```
 meta     = { date, topics: [id], leftOut: [{ topic, reason }], durationSeconds, costUsd: number | null, waits: [text], assumptions: [text],
              reviewers: { notLooked: [{ topic, items: [text] }], exhausted: [topic] }, radar: text, cost: { readable: boolean, text?: text } }
-analysis = { project: { name, key, identity, remote, root }, checks: { tests, lint, dependencies, secrets, todos, branches, issues, prs, hotspots },
+analysis = { project: { name, key, identity, remote, root, head }, checks: { tests, lint, dependencies, secrets, todos, branches, issues, prs, hotspots },
              changes: { changed, attributed, unattributable: [{ between: [a, b], items: [{ kind, files? }] }] } }
-triage   = { counts: { candidates, verified }, list: [item], unverified: [item], sinceLast: { previous: null | { date }, resolved: [{ causeKey, title, topic }], notReaudited: [...] },
+triage   = { counts: { candidates, verified }, list: [item], unverified: [item], sinceLast: { previous: null | { date }, resolved: [{ causeKey, title, topic }], notReaudited: [...], notFoundAgain: [...] },
              discarded: [{ id, reason, ... }], issueComparison: { state: 'done' | 'could-not', reason?, removed }, ... }
 item (list)       = { number, id, topic, type, verification, title, claim, locations, causeKey, mark, priority, severity, reason, size, how, regression, waitCost }
 item (unverified) = { id, topic, title, claim, locations, reason }
@@ -314,7 +321,7 @@ Etiquetas en español: tema (bugs Bug, security Seguridad, dependencies Dependen
 
 Líneas de «No cubrí», en este orden: por cada revisión del análisis que no sea `result` (en el orden de la tabla anterior): `{revisión}: no se corrió: {reason}` si `notRun`, `{revisión}: no aplica: {reason}` si `not-applicable`, `{revisión}: no se pudo: {reason}` si `could-not`; por cada revisión `result` con `truncated: true`: `{revisión}: se leyó solo una parte`; por cada `meta.leftOut`: `{tema}: tema fuera: {reason}`; por cada `meta.reviewers.notLooked`: `{tema}: no miré {items separados por coma}`; por cada `meta.reviewers.exhausted`: `Revisor agotado: {tema}`.
 
-Inglés (cualquier `lang` que no empiece por `es`): `**Audit of {name} · {date} · {n} topics · {candidates} findings, {verified} survived verification**`, `**Awaiting your yes**`, `**Assumptions**`, `- (none)`, `- Unattributable change during the audit (between {a} and {b}): {files}`, `**P0 · Now**`, `**P1 · Soon**`, `**P2 · Schedulable**`, `**P3 · When you can / ideas**`, `*Why P0:*`, `**Unverified (not ranked)**`, `**Since the last audit ({date}):** {n} new, {s} still open, {r} resolved.` / `**Since the last audit:** there is no earlier audit.`, `**Discarded:** {total} ({reason}: {n}, ...).`, ` I could not compare with the open issues ({reason}).`, ` The full list is in the saved report: {savedTo}`, `**Not covered:**`, `{check}: not run: {reason}` / `not applicable:` / `could not:` / `only part was read` / `{topic}: left out: {reason}` / `{topic}: I did not look at {items}` / `Reviewer ran out: {topic}`, `**RADAR:** {radar}`, `I could not read the session cost; I give no figure.`, `**Which do you take?** For example: «1, 2 and 3».` / `**Which do you take?** There are no verified findings to take.`, tamaños Small, Medium, Large, marcas new y still, verificación proven, confirmed by reading, proposal, descarte `refuted`, `covered by an issue`, `merged`, `no location`, `no evidence`; temas Bug, Security, Dependencies, Tests, Reliability, Performance, Accessibility, Architecture, Docs, Releases, Hygiene, Opportunity; tipos Bug, Risk, Debt, Docs, Opportunity, Other.
+Inglés (cualquier `lang` que no empiece por `es`): `**Audit of {name} · {date} · {n} topics · {candidates} findings, {verified} survived verification**`, `**Awaiting your yes**`, `**Assumptions**`, `- (none)`, `- Unattributable change during the audit (between {a} and {b}): {files}`, `**P0 · Now**`, `**P1 · Soon**`, `**P2 · Schedulable**`, `**P3 · When you can / ideas**`, `*Why P0:*`, `**Unverified (not ranked)**`, `**Since the last audit ({date}):** {n} new, {s} still open, {r} resolved (no longer found, and their code changed).` followed, when there are any, by ` {n} not found again, though their code did not change.`, ` {k} not re-audited, because their topics were left out.` and the line `- Not found again: {titles}` / `**Since the last audit:** there is no earlier audit.`, `**Discarded:** {total} ({reason}: {n}, ...).`, ` I could not compare with the open issues ({reason}).`, ` The full list is in the saved report: {savedTo}`, `**Not covered:**`, `{check}: not run: {reason}` / `not applicable:` / `could not:` / `only part was read` / `{topic}: left out: {reason}` / `{topic}: I did not look at {items}` / `Reviewer ran out: {topic}`, `**RADAR:** {radar}`, `I could not read the session cost; I give no figure.`, `**Which do you take?** For example: «1, 2 and 3».` / `**Which do you take?** There are no verified findings to take.`, tamaños Small, Medium, Large, marcas new y still, verificación proven, confirmed by reading, proposal, descarte `refuted`, `covered by an issue`, `merged`, `no location`, `no evidence`; temas Bug, Security, Dependencies, Tests, Reliability, Performance, Accessibility, Architecture, Docs, Releases, Hygiene, Opportunity; tipos Bug, Risk, Debt, Docs, Opportunity, Other.
 
 `data` (lo que guarda `report.json`): `{ project: analysis.project, date: meta.date, meta: { durationSeconds, costUsd, topics, leftOut }, counts: triage.counts, list: triage.list, unverified: triage.unverified, sinceLast: triage.sinceLast, discarded: { total, byReason: { <razón>: n }, items: triage.discarded }, issueComparison: triage.issueComparison, notCovered: [las líneas de «No cubrí»], waits, assumptions, radar, cost: meta.cost, sections }`.
 
@@ -569,7 +576,7 @@ test('what is unverified has no level and no number, and the since-last, discard
   assert.ok(unverified.includes('Possible stock race') && unverified.includes('`src/orders/stock.js:30`'))
   assert.doesNotMatch(unverified, /\bP[0-3]\b/)
   assert.doesNotMatch(unverified, /^\d+\./m)
-  assert.ok(md.includes('**Desde la última auditoría (2026-10-12):** 3 nuevos, 1 siguen, 1 resueltos.'))
+  assert.ok(md.includes('**Desde la última auditoría (2026-10-12):** 3 nuevos, 1 siguen, 1 resueltos (ya no aparecen y su código cambió).'))
   const discarded = between(md, '**Descartados', '**No cubrí')
   assert.ok(discarded.includes('**Descartados:** 5 (refutados: 2, cubiertos por un issue: 1, repetidos: 1, sin ubicación: 1).'))
   assert.ok(discarded.includes('No pude comparar con los issues abiertos (gh is not installed).'))
@@ -619,9 +626,24 @@ test('the first audit says there is no earlier one, a band with no points is lef
 test('the line since the last audit counts the items not re-audited because their topics were left out, in Spanish and in English', () => {
   const later = fixture()
   later.triage.sinceLast = { previous: { date: '2026-10-12' }, resolved: [], notReaudited: [{ causeKey: 'doc', title: 'Doc drift', topic: 'docs' }, { causeKey: 'rel', title: 'Two versions', topic: 'releases' }] }
-  assert.ok(report.render(later, 'es').markdown.includes('3 nuevos, 1 siguen, 0 resueltos. 2 sin revisar esta vez, porque sus temas quedaron fuera.'))
-  assert.ok(report.render(later, 'en').markdown.includes('3 new, 1 still open, 0 resolved. 2 not re-audited, because their topics were left out.'))
+  assert.ok(report.render(later, 'es').markdown.includes('3 nuevos, 1 siguen, 0 resueltos (ya no aparecen y su código cambió). 2 sin revisar esta vez, porque sus temas quedaron fuera.'))
+  assert.ok(report.render(later, 'en').markdown.includes('3 new, 1 still open, 0 resolved (no longer found, and their code changed). 2 not re-audited, because their topics were left out.'))
   assert.doesNotMatch(report.render(fixture(), 'es').markdown, /sin revisar esta vez/)
+})
+
+test('the since-last line names items not found again when their code did not change, in Spanish and in English', () => {
+  const later = fixture()
+  later.triage.sinceLast = { previous: { date: '2026-10-12' }, resolved: [{ causeKey: 'old', title: 'An old bug', topic: 'bugs' }], notReaudited: [], notFoundAgain: [{ causeKey: 'a', title: 'Bug A', topic: 'bugs' }, { causeKey: 'b', title: 'Bug B', topic: 'bugs' }] }
+  assert.ok(report.render(later, 'es').markdown.includes('1 resueltos (ya no aparecen y su código cambió). 2 no se volvieron a encontrar, pero su código no cambió.'))
+  assert.ok(report.render(later, 'en').markdown.includes('1 resolved (no longer found, and their code changed). 2 not found again, though their code did not change.'))
+  assert.ok(report.render(later, 'es').markdown.includes('- No se volvieron a encontrar: Bug A; Bug B'))
+  assert.ok(report.render(later, 'en').markdown.includes('- Not found again: Bug A; Bug B'))
+  const many = fixture()
+  many.triage.sinceLast = { ...later.triage.sinceLast, notFoundAgain: Array.from({ length: 12 }, (_, i) => ({ causeKey: `k${i}`, title: `T${i}`, topic: 'bugs' })) }
+  assert.ok(report.render(many, 'es').markdown.includes('; T9, y 2 más'))
+  assert.doesNotMatch(report.render(many, 'es').markdown, /T10/)
+  assert.doesNotMatch(report.render(fixture(), 'es').markdown, /no se volvieron a encontrar/)
+  assert.doesNotMatch(report.render(fixture(), 'en').markdown, /not found again/)
 })
 
 test('the path of the saved report is said only when there is one', () => {
@@ -702,6 +724,29 @@ test('--out writes the whole result outside the project and prints a summary; a 
   const missing = runBin(BIN, ['report', '--meta', path.join(work, 'nope.json'), '--analysis', files.analysis, '--triage', files.triage], repo.dir)
   assert.equal(missing.status, 1)
   assert.match(missing.json.error, /nope\.json/)
+})
+
+test('a failed subcommand with --out prints its own failure, never a success line, and writes no file', (t) => {
+  const repo = makeRepo(t)
+  const work = tempDir(t, 'aether-work-')
+  const files = writeInputs(work, fixture())
+  const out = path.join(work, 'never.json')
+  const r = runBin(BIN, ['report', '--meta', path.join(work, 'nope.json'), '--analysis', files.analysis, '--triage', files.triage, '--out', out], repo.dir)
+  assert.equal(r.status, 1)
+  assert.equal(r.json.ok, false)
+  assert.match(r.json.error, /nope\.json/)
+  assert.equal(fs.existsSync(out), false)
+})
+
+test('«No cubrí» lists the checks with no result first and the partial ones after, each in the order of the checks', () => {
+  const f = fixture()
+  f.analysis.checks.tests = { state: 'result', truncated: true }
+  f.analysis.checks.lint = { state: 'could-not', reason: 'eslint crashed' }
+  const section = between(report.render(f, 'es').markdown, '**No cubrí', '**RADAR')
+  const lint = section.indexOf('Linter: no se pudo: eslint crashed')
+  const tests = section.indexOf('Tests: se leyó solo una parte')
+  assert.ok(lint > -1 && tests > -1, section)
+  assert.ok(lint < tests, section)
 })
 ```
 
@@ -1011,6 +1056,34 @@ test('branches: the age, the lead over the default branch and whether each is me
   assert.equal(r.stale, 1)
 })
 
+test('branches: a remote branch is compared with the default of its own remote, and a clone without a local default does not fail (R4)', (t) => {
+  const repo = makeRepo(t)
+  repo.git('switch', '-q', 'main')
+  const head = repo.git('rev-parse', 'HEAD')
+  repo.git('update-ref', 'refs/remotes/origin/main', head)
+  repo.git('switch', '-q', '-c', 'topic')
+  commitOn(repo, 'f.txt', 'x', 'feature work', daysAgo(90))
+  repo.git('update-ref', 'refs/remotes/origin/topic', repo.git('rev-parse', 'HEAD'))
+  repo.git('switch', '-q', 'main')
+  const r = scan.branches(repo.dir, { now: new Date() })
+  const by = Object.fromEntries(r.items.map((i) => [i.name, i]))
+  assert.deepEqual([by['origin/main'].stale, by['origin/main'].merged, by['origin/main'].aheadOfDefault], [false, true, 0])
+  assert.deepEqual([by['origin/topic'].stale, by['origin/topic'].merged, by['origin/topic'].aheadOfDefault], [true, false, 1])
+  repo.git('switch', '-q', '--detach', 'HEAD')
+  repo.git('branch', '-q', '-D', 'main', 'topic', 'feature/x')
+  const orphan = scan.branches(repo.dir, { now: new Date() })
+  assert.equal(orphan.state, 'result')
+  assert.equal(orphan.default, 'main')
+  const remoteOnly = Object.fromEntries(orphan.items.map((i) => [i.name, i]))
+  assert.deepEqual([remoteOnly['origin/topic'].aheadOfDefault, remoteOnly['origin/main'].stale], [1, false])
+})
+
+test('withSnapshots with no steps reports no change', async (t) => {
+  const repo = makeRepo(t)
+  const out = await snap.withSnapshots(repo.dir, [])
+  assert.deepEqual(out, { results: [], changes: { changed: false, attributed: [], unattributable: [] } })
+})
+
 const issuesJson = JSON.stringify([{ number: 41, title: 'Export CSV', createdAt: daysAgo(100), labels: [{ name: 'enhancement' }], url: 'https://github.com/o/r/issues/41' }])
 const prsJson = JSON.stringify([{ number: 7, title: 'Fix stock', createdAt: daysAgo(3), isDraft: true, headRefName: 'fix/stock', url: 'https://github.com/o/r/pull/7' }])
 
@@ -1050,6 +1123,16 @@ test('github: no GitHub remote is not applicable, a missing gh and a failing gh 
   assert.match(failing.reason, /gh failed: HTTP 401: bad credentials/)
   const garbage = await github.prs(repo.dir, { exec: fake({ status: 0, stdout: 'not json', stderr: '', timedOut: false }), env: {} })
   assert.deepEqual([garbage.state, garbage.reason], ['could-not', 'gh output not understood'])
+})
+
+test('the snapshot leaves out the worktrees Aether makes under .aether/ for its delegates (R25)', (t) => {
+  const repo = makeRepo(t)
+  const before = snap.snapshot(repo.dir)
+  repo.git('worktree', 'add', '-q', '--detach', path.join(repo.dir, '.aether', 'delegates', 'audit-bugs', 'wt'))
+  const after = snap.snapshot(repo.dir)
+  assert.deepEqual(snap.diffSnapshots(before, after).items.filter((item) => item.kind === 'worktrees'), [])
+  repo.git('worktree', 'add', '-q', '--detach', path.join(tempDir(t, 'aether-other-'), 'wt'))
+  assert.equal(snap.diffSnapshots(before, snap.snapshot(repo.dir)).items.filter((item) => item.kind === 'worktrees').length, 1)
 })
 ```
 
@@ -1221,6 +1304,32 @@ const CASES = [
   ['a composer script that migrates', { 'composer.json': JSON.stringify({ scripts: { test: ['@migrate', 'phpunit'], migrate: 'php artisan migrate' } }) }, 'composer test', 'migrates'],
   ['a tox command that migrates', { 'tox.ini': '[testenv]\ncommands_pre = python manage.py migrate\ncommands = pytest\n' }, 'tox', 'migrates'],
   ['a raw command that deploys', {}, 'make deploy', 'deploys'],
+  ['a VAR assignment before the script call', { 'package.json': pkg({ test: 'FOO=1 npm run build', build: 'git push origin main' }) }, 'npm test', 'deploys'],
+  ['env before the script call', { 'package.json': pkg({ test: 'env FOO=1 npm run build', build: 'git push origin main' }) }, 'npm test', 'deploys'],
+  ['cross-env before the script call', { 'package.json': pkg({ test: 'cross-env FOO=1 npm run build', build: 'git push origin main' }) }, 'npm test', 'deploys'],
+  ['flags between run and the script name', { 'package.json': pkg({ test: 'npm run --silent build', build: 'git push origin main' }) }, 'npm test', 'deploys'],
+  ['a pnpm shorthand script call', { 'package.json': pkg({ test: 'pnpm build', build: 'git push origin main' }) }, 'npm test', 'deploys'],
+  ['a yarn shorthand script call', { 'package.json': pkg({ test: 'yarn build', build: 'git push origin main' }) }, 'npm test', 'deploys'],
+  ['a bun shorthand script call', { 'package.json': pkg({ test: 'bun build', build: 'git push origin main' }) }, 'npm test', 'deploys'],
+  ['a makefile target line with an inline recipe', { Makefile: 'test: ; git push origin main\n' }, 'make test', 'deploys'],
+  ['a makefile recipe with an at prefix', { Makefile: 'test:\n\t@git push origin main\n' }, 'make test', 'deploys'],
+  ['a makefile recipe with a dash prefix', { Makefile: 'test:\n\t-git push origin main\n' }, 'make test', 'deploys'],
+  ['a makefile recipe with a plus prefix', { Makefile: 'test:\n\t+git push origin main\n' }, 'make test', 'deploys'],
+  ['a makefile recipe that calls make with a prefix', { Makefile: 'test:\n\t@$(MAKE) deploy\n\ndeploy:\n\tgit push origin main\n' }, 'make test', 'deploys'],
+  ['a composer reference the manifest does not define', { 'composer.json': JSON.stringify({ scripts: { test: ['@missing', 'phpunit'] } }) }, 'composer test', 'unresolved'],
+  ["composer's own @php and @no_additional_args (Laravel's test script)", { 'composer.json': JSON.stringify({ scripts: { test: ['@php artisan config:clear --ansi @no_additional_args', '@php artisan test'] } }) }, 'composer test', null],
+  ['a migration behind @php', { 'composer.json': JSON.stringify({ scripts: { test: ['@php artisan migrate --force', '@php artisan test'] } }) }, 'composer test', 'migrates'],
+  ['@putenv is a composer command, not a script', { 'composer.json': JSON.stringify({ scripts: { test: ['@putenv APP_ENV=testing', 'phpunit'] } }) }, 'composer test', null],
+  ['@composer with a built-in command it does not know is refused', { 'composer.json': JSON.stringify({ scripts: { test: ['@composer dump-autoload', 'phpunit'] } }) }, 'composer test', 'unresolved'],
+  ['make with a directory flag', { Makefile: 'test:\n\tgit push origin main\n' }, 'make -C subdir test', 'deploys'],
+  ['make with a file flag', { Makefile: 'test:\n\tgit push origin main\n' }, 'make -f other.mk test', 'deploys'],
+  ['make with an include flag', { Makefile: 'test:\n\tgit push origin main\n' }, 'make -I inc test', 'deploys'],
+  ['a risky prelint under npm run lint', { 'package.json': pkg({ lint: 'eslint .', prelint: 'npm publish' }) }, 'npm run lint', 'deploys'],
+  ['a risky postlint under npm run lint', { 'package.json': pkg({ lint: 'eslint .', postlint: 'git push origin main' }) }, 'npm run lint', 'deploys'],
+  ['a global prefix flag with a value before run', { 'package.json': pkg({ build: 'git push origin main' }) }, 'npm --prefix app run build', 'deploys'],
+  ['a global loglevel flag with a value before the verb', { 'package.json': pkg({ pretest: 'git push origin main', test: 'node --test' }) }, 'npm --loglevel silent test', 'deploys'],
+  ['an unknown global flag fails closed', { 'package.json': pkg({ test: 'node --test' }) }, 'npm --frobnicate test', 'unresolved'],
+  ['a target line with an assignment after its colon', { Makefile: 'FOO = bar\ntest: NODE_ENV=test\n\tgit push origin main\nall: test\n' }, 'make all', 'deploys'],
 ]
 
 for (const [label, files, command, expected] of CASES) {
@@ -1233,6 +1342,16 @@ for (const [label, files, command, expected] of CASES) {
     }
   })
 }
+
+test('npm run follows the pre and post hooks of the script', (t) => {
+  const pre = risk.assess(projectDir(t, { 'package.json': pkg({ lint: 'eslint .', prelint: 'npm publish' }) }), 'npm run lint')
+  assert.equal(pre.runnable, false)
+  const preDeploy = pre.reasons.find((r) => r.id === 'deploys')
+  assert.deepEqual(preDeploy.via, ['npm run lint', 'prelint'])
+  const post = risk.assess(projectDir(t, { 'package.json': pkg({ lint: 'eslint .', postlint: 'git push origin main' }) }), 'npm run lint')
+  assert.equal(post.runnable, false)
+  assert.ok(post.reasons.some((r) => r.id === 'deploys' && r.via.includes('postlint')))
+})
 
 test('assess names the path through pretest to the script that seeds', (t) => {
   const out = risk.assess(projectDir(t, { 'package.json': pkg({ pretest: 'npm run db:seed', test: 'node --test', 'db:seed': 'node scripts/seed.js' }) }), 'npm test')
@@ -1335,6 +1454,16 @@ test('runTests: --no-tests, no tests declared, missing dependencies, a cap that 
   assert.match(noTool.reason, /not installed/)
 })
 
+test('a shell command-not-found (status 127) is the tool not installed, not a failed result', async (t) => {
+  const dir = projectDir(t, { 'package.json': pkg({ test: 'node --test' }) })
+  const missing = await tools.runTests(dir, { exec: fake({ status: 127, stdout: '', stderr: 'sh: 1: vitest: not found\n', timedOut: false }), env: {} })
+  assert.deepEqual([missing.state, missing.reason], ['could-not', 'the tool is not installed'])
+  const lintMissing = await tools.runLint(projectDir(t, { 'package.json': pkg({ lint: 'eslint .' }) }), { exec: fake({ status: 127, stdout: '', stderr: 'sh: 1: eslint: not found\n', timedOut: false }), env: {} })
+  assert.deepEqual([lintMissing.state, lintMissing.reason], ['could-not', 'the tool is not installed'])
+  const auditMissing = await tools.runAudit(projectDir(t, { 'package.json': pkg({}), 'package-lock.json': '{}' }), { exec: fake({ status: 127, stdout: '', stderr: 'sh: 1: npm: not found\n', timedOut: false }), env: {} })
+  assert.deepEqual([auditMissing.state, auditMissing.reason], ['could-not', 'the tool is not installed'])
+})
+
 test('runTests redacts a secret that the test output prints (R7)', async (t) => {
   const dir = projectDir(t, { 'package.json': pkg({ test: 'node --test' }) })
   const check = await tools.runTests(dir, { exec: fake({ ...OK, stdout: `loaded key ${AWS}\n` }), env: {} })
@@ -1350,6 +1479,31 @@ test('runLint runs the linter, and does not run one that fixes', async (t) => {
   assert.deepEqual([fixing.state, fixing.notRun], ['could-not', true])
   assert.match(fixing.reason, /fix/)
   assert.equal((await tools.runLint(projectDir(t, {}), { exec: never, env: {} })).state, 'not-applicable')
+})
+
+test('the runners put the project .venv/bin or venv/bin first on the PATH', async (t) => {
+  const pip = JSON.stringify({ dependencies: [{ name: 'flask', version: '1.0', vulns: [{ id: 'PYSEC-1' }] }] })
+  const reply = (file, args) => (args.join(' ').includes('pip-audit') ? { status: 1, stdout: pip, stderr: '', timedOut: false } : OK)
+  const dir = projectDir(t, { 'pyproject.toml': '[tool.pytest.ini_options]\n', 'ruff.toml': '', 'requirements.txt': 'flask\n' })
+  fs.mkdirSync(path.join(dir, '.venv', 'bin'), { recursive: true })
+  const exec = fake(reply)
+  const env = { PATH: '/usr/bin' }
+  assert.equal((await tools.runTests(dir, { exec, env })).state, 'result')
+  assert.equal((await tools.runLint(dir, { exec, env })).state, 'result')
+  assert.equal((await tools.runAudit(dir, { exec, env })).state, 'result')
+  assert.equal(exec.calls.length, 3)
+  for (const call of exec.calls) {
+    assert.ok(call.opts.env.PATH.startsWith(`${path.join(dir, '.venv', 'bin')}${path.delimiter}`), call.opts.env.PATH)
+  }
+  const plain = projectDir(t, { 'pyproject.toml': '[tool.pytest.ini_options]\n' })
+  const execPlain = fake(OK)
+  await tools.runTests(plain, { exec: execPlain, env })
+  assert.equal(execPlain.calls[0].opts.env.PATH, '/usr/bin')
+  const legacy = projectDir(t, { 'pyproject.toml': '[tool.pytest.ini_options]\n' })
+  fs.mkdirSync(path.join(legacy, 'venv', 'bin'), { recursive: true })
+  const execLegacy = fake(OK)
+  await tools.runTests(legacy, { exec: execLegacy, env })
+  assert.ok(execLegacy.calls[0].opts.env.PATH.startsWith(`${path.join(legacy, 'venv', 'bin')}${path.delimiter}`))
 })
 
 test('runAudit counts what the ecosystem tool prints, whatever its exit code, and never runs a fix (R4, R6)', async (t) => {
@@ -1403,6 +1557,13 @@ test('analyze of a repository with nothing in it: every project tool is not appl
   assert.equal(a.changes.changed, false)
   assert.deepEqual(a.selfFindings, [])
   assert.deepEqual(a.estimate, { samples: 1, perTopic: { minutes: [2, 2], usd: [0.5, 0.5] } })
+})
+
+test('analyze records the full sha of HEAD in project.head', async (t) => {
+  const repo = makeRepo(t)
+  const a = await analyze.analyze(repo.dir, {}, ctxFor(t, never))
+  assert.equal(a.project.head, repo.git('rev-parse', 'HEAD'))
+  assert.match(a.project.head, /^[0-9a-f]{40}$/)
 })
 
 test('analyze: a test command that writes a tracked file is a finding of the audit, an ignored file is not, and the step is named (R6)', async (t) => {
@@ -1561,12 +1722,16 @@ async function command(args, ctx) {}
 // 2. Issues (R17): when analysis.checks.issues.state is 'result', a finding (or merged group) with coveredBy that is the number of an issue in analysis.checks.issues.open is removed and goes to
 //    discarded as { id, title, topic, reason: 'covered-by-issue', issue: <number> }. A coveredBy that is not an open issue keeps the finding and adds note: `issue #<n> is not open`.
 //    issueComparison = { state: 'done', removed: [{ id, issue }] }; when the check is not 'result': { state: 'could-not', reason: <its reason>, removed: [] } and nothing is removed.
-// 3. Previous audit (R18): previousReport(dataDir, analysis.project.key) of audit-store.js. With none, sinceLast = { previous: null, resolved: [], notReaudited: [] } and every mark is null.
-//    With one, each verified finding gets mark 'still' when its causeKey is a causeKey of the previous report's list, else 'new'. sinceLast = { previous: { date }, resolved, notReaudited }:
-//    resolved = the previous list items whose causeKey is not among the current verified findings, nor among the ones removed for an open issue, and whose topic is in `topics`;
-//    notReaudited = the previous list items whose topic is not in `topics`. Each item is { causeKey, title, topic }. A previous item whose causeKey is
-//    `audit-changed-project-<step>` (the audit's own; step is tests, lint or dependencies) counts as re-audited, whatever `topics` says, only when this analysis's
-//    checks[<step>].state is 'result': then it is resolved or still, never notReaudited. When that step did not run (--no-tests, a refused chain, no linter), it is notReaudited.
+// 3. Previous audit (R18, as amended after round 2): previousReport(dataDir, analysis.project.key) of audit-store.js. With none, sinceLast =
+//    { previous: null, resolved: [], notReaudited: [], notFoundAgain: [] } and every mark is null. With one, each verified finding gets mark 'still' when its
+//    causeKey is a causeKey of the previous report's list, else 'new'. sinceLast = { previous: { date }, resolved, notReaudited, notFoundAgain }, each item
+//    { causeKey, title, topic }. A previous item whose topic is not in `topics` is notReaudited. One whose topic is in `topics` and whose causeKey is not among
+//    the current verified findings nor the ones removed for an open issue was not found again: it is resolved only when its code changed, that is when a file
+//    of its locations differs between the earlier report's project.head and this analysis's project.head (git diff --quiet in project.root), or when a
+//    location {file: <branch>, commit} names a branch that is gone; otherwise (unchanged, no earlier head, git cannot tell, a branch that still exists) it is
+//    notFoundAgain. A file located by a commit (a secret in the history) is compared as a file. A previous item whose causeKey is
+//    `audit-changed-project-<step>` (the audit's own; step is tests, lint or dependencies) is checked again by the same deterministic step whatever `topics`
+//    says: when checks[<step>].state is 'result' and it was not found again it is resolved; when that step did not run it is notReaudited.
 // Output: findings = the verified ones that remain; unverified = the unverified ones that remain (no mark); discarded = the input's discarded then merged then covered ones;
 // counts = the input's counts.
 function clean(settled, analysis, options) {}
@@ -1604,7 +1769,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { PLUGIN, makeRepo, tempDir, runBin } = require('./helpers.js')
+const { PLUGIN, makeRepo, tempDir, runBin, commitIn } = require('./helpers.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-audit')
 const lib = (name) => require(path.join(PLUGIN, 'lib', name))
@@ -1713,7 +1878,7 @@ test('the cleanup removes what an open issue covers and says which, and says it 
   assert.deepEqual(blind.issueComparison, { state: 'could-not', reason: 'gh is not installed', removed: [] })
 })
 
-test('the cleanup takes in the analysis's own findings as verified findings, so a change the audit made reaches the list (R6)', (t) => {
+test('the cleanup takes in the analysis\'s own findings as verified findings, so a change the audit made reaches the list (R6)', (t) => {
   const dataDir = tempDir(t, 'aether-data-')
   const self = {
     id: 'AUDIT-1', topic: 'hygiene', title: 'Running the tests changed the project', claim: 'the test command wrote notes.txt', location: { file: 'notes.txt', line: 1 },
@@ -1733,7 +1898,7 @@ test('the cleanup compares with the previous audit of the same project: new, sti
   const dataDir = tempDir(t, 'aether-data-')
   const key = 'repo-0123456789ab'
   const first = clean.clean(settled([fnd('F1')]), analysisWith(OPEN, key), { topics: ['bugs'], dataDir })
-  assert.deepEqual(first.sinceLast, { previous: null, resolved: [], notReaudited: [] })
+  assert.deepEqual(first.sinceLast, { previous: null, resolved: [], notReaudited: [], notFoundAgain: [] })
   assert.equal(first.findings[0].mark, null)
   store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), {
     list: [
@@ -1747,11 +1912,12 @@ test('the cleanup compares with the previous audit of the same project: new, sti
   const out = clean.clean(settled([fnd('F1'), fnd('F9'), fnd('F4', { coveredBy: 41 })]), analysisWith(OPEN, key), { topics: ['bugs', 'tests'], dataDir })
   assert.deepEqual(out.findings.map((f) => [f.id, f.mark]), [['F1', 'still'], ['F9', 'new']])
   assert.equal(out.sinceLast.previous.date, '2026-10-12')
-  assert.deepEqual(out.sinceLast.resolved, [{ causeKey: 'old-fixed', title: 'Old fixed bug', topic: 'bugs' }])
+  assert.deepEqual(out.sinceLast.resolved, [])
+  assert.deepEqual(out.sinceLast.notFoundAgain, [{ causeKey: 'old-fixed', title: 'Old fixed bug', topic: 'bugs' }])
   assert.deepEqual(out.sinceLast.notReaudited, [{ causeKey: 'other-topic', title: 'Doc drift', topic: 'docs' }])
 })
 
-test('an earlier item of the audit's own counts as re-audited only when this analysis ran the same step (R18)', (t) => {
+test('an earlier item of the audit\'s own counts as re-audited only when this analysis ran the same step (R18)', (t) => {
   const dataDir = tempDir(t, 'aether-data-')
   const key = 'repo-0123456789ab'
   store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), {
@@ -1763,14 +1929,72 @@ test('an earlier item of the audit's own counts as re-audited only when this ana
   const analysis = { ...analysisWith(OPEN, key), checks: { issues: OPEN, tests: { state: 'result' }, lint: { state: 'not-applicable', reason: 'no linter declared' } } }
   const out = clean.clean(settled([fnd('F1')]), analysis, { topics: ['bugs'], dataDir })
   assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), ['audit-changed-project-tests'])
+  assert.deepEqual(out.sinceLast.notFoundAgain.map((r) => r.causeKey), [])
   assert.deepEqual(out.sinceLast.notReaudited.map((r) => r.causeKey), ['audit-changed-project-lint'])
+})
+
+test('a missing earlier item is resolved only when its files changed since the earlier head, else it is notFoundAgain', (t) => {
+  const repo = makeRepo(t)
+  commitIn(repo, repo.dir, 'src/a.js', 'a v1\n', 'add a')
+  commitIn(repo, repo.dir, 'src/b.js', 'b v1\n', 'add b')
+  const firstHead = repo.git('rev-parse', 'HEAD')
+  const key = 'repo-0123456789ab'
+  const list = [
+    { causeKey: 'cause-A', title: 'Bug A', topic: 'bugs', locations: [{ file: 'src/a.js', line: 1 }] },
+    { causeKey: 'cause-B', title: 'Bug B', topic: 'bugs', locations: [{ file: 'src/b.js', line: 1 }] },
+  ]
+  const dataDir = tempDir(t, 'aether-data-')
+  store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), { project: { head: firstHead }, list }, '')
+  commitIn(repo, repo.dir, 'src/a.js', 'a v2\n', 'change a')
+  const secondHead = repo.git('rev-parse', 'HEAD')
+  const analysis = { project: { key, head: secondHead, root: repo.dir }, checks: { issues: { state: 'result', open: [] } } }
+  const out = clean.clean(settled([]), analysis, { topics: ['bugs'], dataDir })
+  assert.deepEqual(out.sinceLast.resolved, [{ causeKey: 'cause-A', title: 'Bug A', topic: 'bugs' }])
+  assert.deepEqual(out.sinceLast.notFoundAgain, [{ causeKey: 'cause-B', title: 'Bug B', topic: 'bugs' }])
+  const noHeadDir = tempDir(t, 'aether-data-')
+  store.writeReport(store.nextReportDir(noHeadDir, key, '2026-10-12'), { list }, '')
+  const blind = clean.clean(settled([]), analysis, { topics: ['bugs'], dataDir: noHeadDir })
+  assert.deepEqual(blind.sinceLast.resolved, [])
+  assert.deepEqual(blind.sinceLast.notFoundAgain, [
+    { causeKey: 'cause-A', title: 'Bug A', topic: 'bugs' },
+    { causeKey: 'cause-B', title: 'Bug B', topic: 'bugs' },
+  ])
+})
+
+test('a branch located by its tip is resolved only when the branch is gone, and a file located by a commit is compared as a file', (t) => {
+  const repo = makeRepo(t)
+  commitIn(repo, repo.dir, 'src/a.js', 'a v1\n', 'add a')
+  commitIn(repo, repo.dir, 'config/dev.env', 'X=1\n', 'add env')
+  const envCommit = repo.git('rev-parse', 'HEAD')
+  repo.git('rm', '-q', 'config/dev.env')
+  repo.git('commit', '-q', '-m', 'drop env')
+  for (const name of ['moved', 'kept', 'gone']) repo.git('branch', name)
+  const tip = repo.git('rev-parse', 'HEAD')
+  const firstHead = tip
+  const key = 'repo-0123456789ab'
+  const list = [
+    { causeKey: 'moved', title: 'Moved', topic: 'hygiene', locations: [{ file: 'moved', commit: tip }] },
+    { causeKey: 'kept', title: 'Kept', topic: 'hygiene', locations: [{ file: 'kept', commit: tip }] },
+    { causeKey: 'gone', title: 'Gone', topic: 'hygiene', locations: [{ file: 'gone', commit: tip }] },
+    { causeKey: 'secret', title: 'Secret in history', topic: 'security', locations: [{ file: 'config/dev.env', commit: envCommit }] },
+  ]
+  const dataDir = tempDir(t, 'aether-data-')
+  store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), { project: { head: firstHead }, list }, '')
+  repo.git('switch', '-q', 'moved')
+  commitIn(repo, repo.dir, 'm.txt', 'm\n', 'move the branch')
+  repo.git('switch', '-q', 'main')
+  repo.git('branch', '-q', '-D', 'gone')
+  const analysis = { project: { key, head: repo.git('rev-parse', 'HEAD'), root: repo.dir }, checks: { issues: { state: 'result', open: [] } } }
+  const out = clean.clean(settled([]), analysis, { topics: ['hygiene', 'security'], dataDir })
+  assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), ['gone'])
+  assert.deepEqual(out.sinceLast.notFoundAgain.map((r) => r.causeKey), ['moved', 'kept', 'secret'])
 })
 
 const judgment = (over = {}) => ({ severity: 'high', priority: 'P1', reason: 'a reason', size: 'S', how: 'one agent', regression: false, waitCost: 'medium', ...over })
 const cleaned = (findings, unverified = []) => ({
   findings: findings.map((f) => ({ ...f, locations: [f.location], mergedFrom: [f.id], mark: null })),
   unverified, discarded: [{ id: 'D1', reason: 'refuted' }], counts: { candidates: 9, verified: findings.length },
-  issueComparison: { state: 'done', removed: [] }, sinceLast: { previous: null, resolved: [], notReaudited: [] },
+  issueComparison: { state: 'done', removed: [] }, sinceLast: { previous: null, resolved: [], notReaudited: [], notFoundAgain: [] },
 })
 
 test('the order inside a level is regression first, then the cost of waiting, then the cost of doing it, then arrival (R20, C5)', () => {
@@ -1841,6 +2065,25 @@ test('the four stages chain through files and the bin: candidates, verdicts, cle
   assert.equal(incomplete.status, 1)
   assert.deepEqual(incomplete.json.incomplete, [{ id: 'A', missing: ['judgment'] }])
   assert.equal(repo.git('status', '--porcelain'), '')
+})
+
+test('a hand-edited intermediate file that lost its discarded list or its counts is refused with an error that names the file', (t) => {
+  const repo = makeRepo(t)
+  const work = tempDir(t, 'aether-work-')
+  const gated = path.join(work, 'gated.json')
+  const verdictsFile = path.join(work, 'verdicts.json')
+  fs.writeFileSync(gated, JSON.stringify({ accepted: [] }))
+  fs.writeFileSync(verdictsFile, '[]')
+  const v = runBin(BIN, ['verdicts', gated, verdictsFile], repo.dir)
+  assert.equal(v.status, 1)
+  assert.match(v.json.error, /gated\.json/)
+  const settledFile = path.join(work, 'settled.json')
+  const analysisFile = path.join(work, 'analysis.json')
+  fs.writeFileSync(settledFile, JSON.stringify({ findings: [] }))
+  fs.writeFileSync(analysisFile, JSON.stringify({ project: { key: 'k-0123456789ab' }, checks: {} }))
+  const c = runBin(BIN, ['clean', settledFile, '--analysis', analysisFile, '--topics', 'bugs'], repo.dir)
+  assert.equal(c.status, 1)
+  assert.match(c.json.error, /settled\.json/)
 })
 ```
 
