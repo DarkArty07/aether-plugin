@@ -30,6 +30,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 ## Guías en español
 
 - [Qué agrega Aether](es/que-agrega-aether.md): todo lo que el plugin agrega a tu Claude Code, punto por punto, con una hoja de atajos.
+- [Auditar un proyecto](es/guias/auditar-un-proyecto.md): pide al Lead una auditoría de solo lectura del proyecto y recibe una sola lista ordenada de lo más a lo menos urgente.
 - [Instalar y arrancar Aether](es/guias/instalar-y-arrancar.md): instala el plugin, contesta dos preguntas y abre el modo Aether con un comando corto.
 - [Tu primera petición](es/guias/primera-peticion.md): dale al Lead una tarea pequeña y síguela hasta el brief corto del final.
 - [Una feature completa](es/guias/feature-completa.md): pide un trabajo más grande y síguelo por las preguntas, el diseño, la construcción y el brief.
@@ -44,6 +45,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 - [Options](guide/options.md): every option the plugin has, its default and how to set it.
 - [Lanes](guide/lanes.md): delegating volume to other harnesses and their models, and how the quota is spent.
 - [Delegates](guide/delegates.md): how a delegate task of the Lead starts on Haiku and climbs to Sonnet and Opus, how a correction works on the work done, who judges it, where it runs and which pair is chosen, and the log.
+- [Audit a project](guide/audit.md): ask the Lead for a read-only audit of the project and get back one list ordered from most to least urgent, then take what you want.
 - [Models by role](guide/models-by-role.md): which model and effort each role runs on, how a task climbs, what each costs, why it is set this way and how to tell whether it should change.
 - [Design seats](guide/design-seats.md): which model sits in the Judge, the Writer and the Examiner seats, and how to choose.
 - [Autonomy](guide/autonomy.md): how much the Lead does without asking, and the owner's grants that widen it.
