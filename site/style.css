@@ -217,7 +217,7 @@ button.b-later:hover{background:var(--v2)}
 .tl::before{content:"";position:absolute;left:3%;right:3%;top:13px;height:2px;background:var(--v2)}
 .tl li{position:relative;display:grid;gap:12px;justify-items:center;text-align:center;padding-inline:2px;font:400 12px/1.2 var(--mono);color:var(--dim);cursor:default}
 .tl li::before{content:"";width:14px;height:14px;background:var(--ink);border:2px solid var(--v1);transform:rotate(45deg);position:relative;z-index:1;margin-top:6px;transition:background .2s,border-color .2s,box-shadow .2s}
-.tl-n{order:3;font-size:11px;letter-spacing:.14em;color:var(--faint)}
+.tl-n{order:3;font-size:11px;letter-spacing:.14em;color:var(--dim)}
 .tl b{font:700 clamp(15px,1.5vw,21px)/1.05 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--dim);transition:color .2s}
 .tl li.on::before{background:var(--pink);border-color:var(--pink);box-shadow:0 0 18px rgba(245,194,231,.7)}
 .tl li.on b{color:var(--pink)}
@@ -345,7 +345,7 @@ html.anim .yes-win:not(.has) .yes-empty{animation:fadein .5s ease both}
 html:not(.anim) .tl-all{display:grid;gap:8px;font-size:14px;color:#b9bfdc}
 html:not(.anim) .tl-text,html:not(.anim) #tl-num{display:none}
 .tl-all li{display:grid;grid-template-columns:34px 1fr;gap:8px}
-.tl-all i{font:400 11px var(--mono);font-style:normal;color:var(--faint);padding-top:3px}
+.tl-all i{font:400 11px var(--mono);font-style:normal;color:var(--dim);padding-top:3px}
 html.anim .net .base{transition:stroke-dashoffset 1s cubic-bezier(.45,0,.2,1);transition-delay:calc(var(--j)*.18s)}
 html.anim .net:not(.drawn) .base{stroke-dashoffset:1}
 html.anim .net:not(.drawn) .nd{opacity:0}
