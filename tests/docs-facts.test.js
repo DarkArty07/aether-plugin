@@ -732,3 +732,15 @@ test('R18: contributing.md tells apart npm test and npm run test:mod, and states
   assert.match(text, /`npm run test:mod` runs `claude plugin test plugins\/aether`: the mod, with the usage meter, ops and delegation, on the test engine with a simulated model\./)
   assert.match(text, /While the major version is 0, a minor version \(`0\.Y\.0`\) may break compatibility, and the changelog says so explicitly\./)
 })
+
+test('R22: the Lead rules load and use EnterPlanMode and ExitPlanMode in an interactive session, never in claude -p, a subagent or an autonomous run', () => {
+  const skill = read('plugins/aether/skills/using-aether/SKILL.md')
+  const plans = skill.slice(skill.indexOf('## Plans'), skill.indexOf('## The execution method'))
+  for (const word of ['ToolSearch', 'EnterPlanMode', 'ExitPlanMode', 'claude -p', 'subagent', 'autonomous run']) {
+    assert.ok(plans.includes(word), `the Plans section names ${word}`)
+  }
+  assert.match(read('docs/guide/autonomy.md'), /plan mode/i)
+  assert.match(read('docs/es/guias/feature-completa.md'), /modo plan/i)
+  const unreleased = read('docs/changelog.md').split('\n## ').find((section) => section.startsWith('Unreleased'))
+  assert.ok(unreleased && /plan mode/i.test(unreleased), 'the changelog says it under Unreleased')
+})

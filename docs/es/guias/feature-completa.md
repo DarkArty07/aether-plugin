@@ -54,6 +54,8 @@ Lo que sigue depende de tu permiso:
 - **Sin permiso para trabajar por horas,** el Lead se detiene en el plan con un brief corto que recomienda cómo construir. Tu sí inicia la construcción.
 - **Con él,** por ejemplo «trabaja por horas», el Lead construye por su cuenta dentro de sus topes. [Trabajar por horas](trabajar-horas.md) tiene los detalles.
 
+Fuera de una corrida autónoma, en una sesión interactiva, el Lead entra por su cuenta al modo plan de Claude Code para mostrarte el plan y sale de él tras tu sí; no lo hace en `claude -p` ni dentro de una corrida autónoma.
+
 Puedes ignorar la mecánica del swarm: las oleadas, los worktrees, el supervisor y las subidas de Haiku a Sonnet y a Opus. Las unidades aprobadas se integran una a la vez, una revisión final cubre toda la corrida y no queda ningún worktree atrás. Cuando termina la construcción, el examen oculto corre sobre la rama que la contiene. Un test que falla es un hallazgo bloqueante del brief.
 
 ### 7. Lee el brief

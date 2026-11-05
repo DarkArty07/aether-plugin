@@ -6,6 +6,10 @@ order: 31
 
 # Changelog
 
+## Unreleased
+
+- **Plan mode.** Outside an autonomous run, in an interactive session, the Lead enters Claude Code's plan mode on its own to present the plan and leaves it after the owner's yes. It never enters plan mode in `claude -p`, a subagent or an autonomous run.
+
 ## Status
 
 Version 0.31.1: nine fixes of open issues, found in the first audit of this repository and in real runs (issues 119, 122, 123, 124, 135, 137, 144, 148 and 150). What changed since 0.31.0:

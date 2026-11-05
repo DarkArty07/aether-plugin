@@ -29,7 +29,6 @@ test('the roadmap and the purpose page no longer say every retry runs at xhigh',
 
 test('the changelog records this change in version 0.21.0', () => {
   const text = read('docs/changelog.md')
-  assert.doesNotMatch(text, /^## Unreleased/m)
   const first = text.split('\n').find((line) => line.startsWith('Version 0.21.0: '))
   for (const word of ['xhigh', 'A93', 'models-by-role.md']) assert.ok(first.includes(word), word)
 })
