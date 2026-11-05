@@ -153,6 +153,20 @@ test('a number changed in the ladder the verb is given changes its answer, with 
   assert.equal(judged(s2, 'fix', fix('b'), { ladder: tight }).step, SONNET.step)
 })
 
+test('a relaunch also gives a new ladder to a unit that was blocked twice for the same cause, and keeps the old state (issue 135)', (t) => {
+  const { repo, args } = setup(t)
+  const view = (task) => ladderCommand(repo.dir, args.runId, task)
+  view('task-1')
+  const dir = path.join(args.runDir, 'ladder')
+  const blocked = JSON.parse(fs.readFileSync(path.join(dir, 'task-1.json'), 'utf8'))
+  blocked.state.status = 'blocked'
+  blocked.next = { step: null, kind: 'blocked', cause: 'blocked-same-cause', reason: 'cannot go green inside Owns', effort: null, carry: true }
+  fs.writeFileSync(path.join(dir, 'task-1.json'), JSON.stringify(blocked))
+  assert.deepEqual(resetSpent(args.runDir, ['task-1']), ['task-1'])
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['task-1.spent-1.json'])
+  assert.equal(view('task-1').model, HAIKU.step, 'the unit starts again on the first rung')
+})
+
 test('a relaunch gives a unit with a spent ladder a new one and keeps the old state; an open ladder is never touched', (t) => {
   const { repo, args } = setup(t)
   const view = (task) => ladderCommand(repo.dir, args.runId, task)
