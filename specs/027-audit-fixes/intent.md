@@ -3,7 +3,7 @@
 - **Dueño:** Christopher
 - **Fecha:** 2026-11-04
 - **Origen:** la auditoría del 2026-11-04 (`/aether:audit`, 9 temas, 29 hallazgos, 26 verificados, 25 ordenados de P1 a P3). El informe guardado está en `~/.claude/plugins/data/aether-aether-plugin/audits/aether-plugin-d50407450eb9/2026-11-04`. Los números de abajo son los de ese informe.
-- **Confirmada por el dueño** al aprobar el plan en el modo plan (`/home/darkarty/.claude/plans/pero-necesito-que-hagas-snuggly-penguin.md`).
+- **Confirmada por el dueño** al aprobar el plan en el modo plan (`~/.claude/plans/pero-necesito-que-hagas-snuggly-penguin.md`).
 
 ## 1. Las palabras del dueño
 
