@@ -8,13 +8,13 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
 const { git, repoPaths, currentBranch, head } = require('./git.js')
 const { matchesAny } = require('./globs.js')
 const run = require('./run.js')
 const { killGroup, killMarked } = require('./lanes.js')
 const { judge } = require('./baseline.js')
-const { exists, nulEntries, pidAlive: processAlive, sleepSync } = require('./common.js')
+const common = require('./common.js')
+const { exists, nulEntries, pidAlive: processAlive, sleepSync } = common
 
 function loadGraph(mainRoot, runId) {
   run.assertRunId(runId)
@@ -669,13 +669,8 @@ function readBaseline(mainRoot, runId) {
 // undone only while it is still the tip. `rerun` marks a call that did not merge again, and the
 // commit it returns is the marked one, not whatever the worktree's head is afterwards.
 function settleMerge(mainRoot, graph, runId, taskId, integration, before, { timeoutMs, rerun = false, commit = null }) {
-  const tests = spawnSync(graph.testCommand, {
-    cwd: integration,
-    shell: true,
-    encoding: 'utf8',
-    timeout: timeoutMs,
-    maxBuffer: 64 * 1024 * 1024,
-  })
+  const maxBuffer = 64 * 1024 * 1024
+  const tests = common.runShell(graph.testCommand, { cwd: integration, timeoutMs, maxBuffer })
   const kept = (extra) => {
     clearUnverifiedMarker(mainRoot, runId, taskId)
     const result = { merged: true, commit: rerun && commit ? commit : head(integration) }
@@ -979,16 +974,36 @@ function wasInterrupted(mainRoot, runId) {
 // Saves, as removeUnit does, the work of each unit of a run that is not merged or not committed.
 // In an interrupted run, a unit that unitStatus (or mergedUnits) does not count as merged first
 // commits on its branch what its Owns covers, and its branch is kept: it is in `saved`, with its tip.
-// Returns the patch files, the saved branches, and the units whose work could not be saved (their
-// base is unknown, or their commit failed), whose worktree and branch stay.
+// Returns the patch files, the saved branches, the units whose work could not be saved (their
+// base is unknown, or their commit failed), whose worktree and branch stay, and `retained`: the
+// tasks whose branch is not integrated in the integration branch, or that cannot be judged because
+// the graph cannot be read. The patch of each retained task is still written.
 function savePatches(mainRoot, runId, interrupted) {
   const patches = []
   const kept = new Set()
   const saved = []
   const graphFile = path.join(run.runDir(mainRoot, runId), 'graph.json')
-  const graph = exists(graphFile) ? run.readJson(graphFile) : null
-  if (!graph && !interrupted) return { patches, kept, saved }
+  let graph = null
+  let graphUnreadable = false
+  if (exists(graphFile)) {
+    try {
+      graph = run.readJson(graphFile)
+    } catch {
+      graphUnreadable = true
+    }
+  }
   const branches = aetherBranches(mainRoot, runId)
+  const taskOf = (branch) => branch.split('/')[2]
+  // Without a readable graph nothing can be judged: when the run directory is still there the
+  // branches are retained so no work is lost (R6). When the run directory is already gone there
+  // is no state to preserve, so leftovers are still swept.
+  if (!graph || graphUnreadable) {
+    if (!exists(run.runDir(mainRoot, runId))) return { patches, kept, saved, retained: [] }
+    if ((!graph && !interrupted) || graphUnreadable) {
+      const retained = branches.map(({ branch }) => taskOf(branch)).sort()
+      return { patches, kept, saved, retained }
+    }
+  }
   const unitWorktree = (taskId) => {
     const worktree = run.unitWorktree(mainRoot, runId, taskId)
     return isWorktreeRoot(worktree) ? worktree : null
@@ -1036,7 +1051,27 @@ function savePatches(mainRoot, runId, interrupted) {
     }
     if (marked && !kept.has(taskId)) saved.push({ task: taskId, branch, head: git(['rev-parse', branch], mainRoot).stdout })
   }
-  return { patches, kept, saved }
+  // Tasks whose branch is not integrated, or that cannot be judged: their branch is retained
+  // by sweepRun and their patch was written above (R6). An adopted unit counts as integrated.
+  const adopted = orEmpty(() => {
+    const file = path.join(run.runDir(mainRoot, runId), 'adopted.json')
+    return exists(file) ? run.readJson(file) : {}
+  }, {})
+  const retained = []
+  for (const { branch } of branches) {
+    const taskId = taskOf(branch)
+    if (adopted && typeof adopted === 'object' && adopted[taskId]) continue
+    let unmerged = false
+    try {
+      if (unverifiedCommit(mainRoot, graph, runId, taskId) !== null) unmerged = true
+      else if (!isMerged(mainRoot, graph, branch)) unmerged = true
+    } catch {
+      unmerged = true
+    }
+    if (unmerged) retained.push(taskId)
+  }
+  retained.sort()
+  return { patches, kept, saved, retained }
 }
 
 // Stops the processes of a run's lane calls: the lane's own and the agy it started, by their pid
@@ -1091,17 +1126,20 @@ function removeLaneCopies(mainRoot, runId) {
 // Removes a run's unit worktrees and branches, after saving their unsaved work as patches. A unit
 // whose work cannot be saved is kept, and so is the run directory then. In an interrupted run
 // (wasInterrupted), each unmerged unit's work is committed on its branch and the branch is kept, in
-// `savedBranches`; the run directory stays then too. With `finish`, the run directory goes when
-// nothing is kept, and `finished` says it went. The run's lane processes are stopped and its lane
-// copies removed first, so nothing is still writing when the units are saved.
+// `savedBranches`; the run directory stays then too. A branch of a task in `retained` (not
+// integrated, R6) is never deleted. With `finish`, the run directory goes only when nothing is
+// kept: no retained task, no saved branch, no live unverified marker, no file in patches/, and no
+// worktree or branch remaining; `finished` says it went. The run's lane processes are stopped and
+// its lane copies removed first, so nothing is still writing when the units are saved.
 function sweepRun(cwd, runId, { finish = false } = {}) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
   const stopped = stopLaneProcesses(mainRoot, runId)
   const copies = removeLaneCopies(mainRoot, runId)
   const dir = run.worktreesDir(mainRoot, runId)
-  const { patches, kept, saved } = savePatches(mainRoot, runId, wasInterrupted(mainRoot, runId))
+  const { patches, kept, saved, retained = [] } = savePatches(mainRoot, runId, wasInterrupted(mainRoot, runId))
   const savedTasks = new Set(saved.map(({ task }) => task))
+  const retainedTasks = new Set(retained)
   const removedWorktrees = []
   const { paths, registered } = runWorktrees(mainRoot, runId)
   for (const worktree of paths) {
@@ -1113,9 +1151,10 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
     fs.rmSync(dir, { recursive: true, force: true })
   }
   const removedBranches = []
-  for (const { branch } of aetherBranches(mainRoot, runId)) {
+  const sweepBranches = aetherBranches(mainRoot, runId).map(({ branch }) => branch)
+  for (const branch of sweepBranches) {
     const taskId = branch.split('/')[2]
-    if (kept.has(taskId) || savedTasks.has(taskId)) continue
+    if (kept.has(taskId) || savedTasks.has(taskId) || retainedTasks.has(taskId)) continue
     git(['branch', '-D', branch], mainRoot)
     removedBranches.push(branch)
   }
@@ -1124,7 +1163,14 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
   // A live marker is the only record that its commit is untested. finalize reaches this with
   // finish set; deleting the directory would make that commit count as merged (issue #2).
   const live = liveUnverified(mainRoot, runId)
-  if (finish && kept.size === 0 && saved.length === 0 && live.length === 0 && exists(runDir)) {
+  const retainedBranches = sweepBranches.filter((branch) => retainedTasks.has(branch.split('/')[2])).sort()
+  const remainingWorktrees = runWorktrees(mainRoot, runId).paths.map((worktree) => path.basename(worktree))
+  const remainingBranches = aetherBranches(mainRoot, runId).map(({ branch }) => branch)
+  const patchesDir = path.join(runDir, 'patches')
+  const hasPatches = isDirectory(patchesDir) && fs.readdirSync(patchesDir).length > 0
+  const keepRunDir =
+    kept.size > 0 || saved.length > 0 || live.length > 0 || retained.length > 0 || hasPatches || remainingWorktrees.length > 0 || remainingBranches.length > 0
+  if (finish && !keepRunDir && exists(runDir)) {
     assertInside(runDir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(runDir, { recursive: true, force: true })
     finished = true
@@ -1134,11 +1180,12 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
     removedBranches,
     patches,
     remaining: {
-      worktrees: runWorktrees(mainRoot, runId).paths.map((worktree) => path.basename(worktree)),
-      branches: aetherBranches(mainRoot, runId).map(({ branch }) => branch),
+      worktrees: remainingWorktrees,
+      branches: remainingBranches,
     },
     lanes: { stopped, removed: copies.removed, remaining: copies.remaining },
     savedBranches: saved,
+    retainedBranches,
     finished,
   }
   if (!finished && live.length > 0) result.unverified = true
@@ -1184,6 +1231,8 @@ function lastRecordStatus(runId, dir = run.dataDir()) {
 // run's unit worktrees. Each removal is recorded, with the tip of every branch it deletes taken
 // before the deletion. A run whose sweep keeps saved branches (an interrupted run) is not removed:
 // it is recorded once as interrupted-saved, and its run directory stays for the relaunch.
+// A run whose sweep keeps retained branches, patches, worktrees, branches or a live marker (R7)
+// keeps its run directory too, is not counted in `swept`, and is recorded as abandoned only once.
 function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
   const { mainRoot } = repoPaths(cwd)
   const ids = new Set()
@@ -1226,17 +1275,24 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     const live = liveUnverified(mainRoot, id)
     const interrupted = wasInterrupted(mainRoot, id)
     const lastStatus = lastRecordStatus(id)
-    if (!interrupted && live.length === 0) run.appendRecord(abandoned)
+    if (!interrupted && live.length === 0 && lastStatus !== 'abandoned' && lastStatus !== 'finalized') run.appendRecord(abandoned)
     else if (!interrupted && live.length > 0 && lastStatus !== 'finalized' && lastStatus !== 'abandoned') {
       run.appendRecord(abandoned)
     }
-    const { savedBranches } = sweepRun(cwd, id)
+    const sweep = sweepRun(cwd, id)
+    const { savedBranches } = sweep
     if (savedBranches.length > 0) {
       // Its branches wait for the relaunch: the run is recorded once, and its directory stays.
       if (lastStatus !== 'interrupted-saved') run.appendRecord({ runId: id, status: 'interrupted-saved', sweptAt, repo: mainRoot })
       continue
     }
     if (live.length > 0) continue
+    // Unmerged work kept as patches and retained branches, or any worktree or branch remaining,
+    // keeps the run directory with its graph and patches (R7): not swept, abandoned recorded once.
+    const patchesDir = path.join(dir, 'patches')
+    const hasPatches = isDirectory(patchesDir) && fs.readdirSync(patchesDir).length > 0
+    if ((sweep.retainedBranches && sweep.retainedBranches.length > 0) || hasPatches) continue
+    if (sweep.remaining.worktrees.length > 0 || sweep.remaining.branches.length > 0) continue
     if (interrupted && lastStatus !== 'finalized' && lastStatus !== 'abandoned') run.appendRecord(abandoned)
     assertInside(dir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(dir, { recursive: true, force: true })
@@ -1267,4 +1323,5 @@ module.exports = {
   writeUnverifiedMarker,
   abortUnfinishedMerge,
   readBaseline,
+  savePatches,
 }

@@ -10,6 +10,7 @@ const { task, plan } = require('./plan-fixtures.js')
 const { ensure, merge, unitStatus, mergedUnits, removeUnit, sweepRun, sweepStale, writeUnverifiedMarker, abortUnfinishedMerge } = require('../plugins/aether/lib/worktrees.js')
 const { finalize } = require('../plugins/aether/lib/report.js')
 const run = require('../plugins/aether/lib/run.js')
+const common = require('../plugins/aether/lib/common.js')
 
 function setup(t, options) {
   const repo = makeRepo(t, options)
@@ -762,6 +763,30 @@ test('finalize and sweepStale keep a run directory whose unverified commit is on
     .filter((r) => r.runId === args.runId)
   assert.equal(records.filter((r) => r.status === 'abandoned').length, countBefore, 'sweepStale on a finalized run must append no abandoned record')
   assert.equal(records[records.length - 1].status, 'finalized')
+})
+
+test('merge stops the whole process group of a test run that timed out (R9)', (t) => {
+  const { repo, args, unit } = setup(t)
+  const pidFile = path.join(args.runDir, 'child.pid')
+  setTestCommand(args.runDir, `sleep 60 & echo $! > '${pidFile}'; wait`)
+  writeBaseline(args.runDir, [])
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  const started = Date.now()
+  const r = merge(repo.dir, args.runId, 'task-1', { timeoutMs: 500 })
+  assert.equal(r.merged, false)
+  assert.equal(r.timedOut, true)
+  assert.ok(Date.now() - started < 10000)
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+  let alive = true
+  for (let i = 0; i < 100 && alive; i++) {
+    try {
+      process.kill(pid, 0)
+      common.sleepSync(20)
+    } catch {
+      alive = false
+    }
+  }
+  assert.equal(alive, false)
 })
 
 test('merge does not judge a test run that timed out, even when its output names only known failures', (t) => {
