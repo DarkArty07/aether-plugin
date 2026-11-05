@@ -135,13 +135,12 @@ function findingsFile(dataDir, external) {
   return file
 }
 
-// The earlier work a correction or a rise starts from: the patch of the task's latest result, when `carry` is on.
+// The earlier work a correction or a rise starts from: the patch of the same entry the brief describes, when `carry`
+// is on (lib/delegate-log.js). A patch the entry names but whose file is gone carries nothing.
 function carryFile(dataDir, external) {
   if (typeof external.carry === 'string' && external.carry !== '') return external.carry
   if (external.carry !== true) return null
-  const results = log.readEntries(dataDir, { task: external.id }).filter((entry) => entry.kind === 'result' && entry.task === external.id && isText(entry.patch))
-  for (let i = results.length - 1; i >= 0; i--) if (fs.existsSync(results[i].patch)) return results[i].patch
-  return null
+  return log.previousWork(log.readEntries(dataDir, { task: external.id, session: external.session ?? null }))?.patch ?? null
 }
 
 // The delegate's work as one patch: what it committed since base and what it left uncommitted, new files included. A

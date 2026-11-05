@@ -213,3 +213,39 @@ test('the bin: an unknown verb is an error, wait on an id never started says unk
   assert.equal(JSON.parse(waited.stdout.trim()).status, 'unknown')
   assert.equal(spawnSync(process.execPath, [BIN, 'verdict', '--task', 'x'], { encoding: 'utf8', env }).status, 1)
 })
+
+test('previous work keeps text and patch from the latest entry, even with a missing patch (issue 144)', (t) => {
+  const dir = tempDir(t)
+  const patch = path.join(dir, 'old.patch')
+  fs.writeFileSync(patch, 'old')
+  const entries = [{ kind: 'result', patch }, { kind: 'answer', text: 'Claude work' }]
+  assert.deepEqual(log.previousWork(entries), { text: 'Claude work', patch: null })
+  const latest = path.join(dir, 'latest.patch')
+  fs.writeFileSync(latest, 'latest')
+  entries.push({ kind: 'result', patch: latest })
+  assert.equal(log.previousWork(entries).patch, latest)
+  assert.match(log.previousWork(entries).text, /latest\.patch/)
+  entries.push({ kind: 'result', patch: path.join(dir, 'missing.patch') })
+  assert.equal(log.previousWork(entries).patch, null)
+  assert.match(log.previousWork(entries).text, /missing\.patch/)
+})
+
+test('a correction never carries an older lane patch past Claude work or a missing latest patch (issue 144)', async (t) => {
+  const dataDir = tempDir(t)
+  const patch = path.join(dataDir, 'old.patch')
+  fs.writeFileSync(patch, 'old')
+  const external = path.join(dataDir, 'delegates', 'external', 't1.json')
+  fs.mkdirSync(path.dirname(external), { recursive: true })
+  fs.writeFileSync(external, JSON.stringify({ session: 's1', attempt: 3, edits: true, carry: true, owns: [] }))
+  log.appendEntry(dataDir, { kind: 'result', session: 's1', task: 't1', attempt: 1, patch })
+  log.appendEntry(dataDir, { kind: 'answer', session: 's1', task: 't1', attempt: 2, text: 'Claude work' })
+  const seen = []
+  const run = () => dr.runTask({ id: 't1', cwd: dataDir, dataDir }, {
+    delegateCommand: async (_cwd, flags) => { seen.push(flags); return { status: 'no-candidate' } },
+  })
+  await run()
+  assert.equal(seen[0].carry, undefined)
+  log.appendEntry(dataDir, { kind: 'result', session: 's1', task: 't1', attempt: 3, patch: path.join(dataDir, 'missing.patch') })
+  await run()
+  assert.equal(seen[1].carry, undefined)
+})
