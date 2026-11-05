@@ -236,8 +236,8 @@ test('the README images exist in assets/readme/ and every image path of the READ
 test('the workflow deploys only site/, with the permissions and the concurrency group Pages needs', () => {
   const yml = read(ROOT, '.github', 'workflows', 'pages.yml')
   assert.match(yml, /^\s*-\s*'site\/\*\*'/m)
-  assert.match(yml, /actions\/upload-pages-artifact@v3/)
-  assert.match(yml, /actions\/deploy-pages@v4/)
+  assert.match(yml, /actions\/upload-pages-artifact@[0-9a-f]{40}\b/)
+  assert.match(yml, /actions\/deploy-pages@[0-9a-f]{40}\b/)
   assert.match(yml, /^\s*path:\s*site\s*$/m)
   assert.match(yml, /^\s*pages:\s*write/m)
   assert.match(yml, /^\s*id-token:\s*write/m)
@@ -245,6 +245,48 @@ test('the workflow deploys only site/, with the permissions and the concurrency 
   assert.match(yml, /^\s*group:\s*pages\s*$/m)
   assert.match(yml, /name:\s*github-pages/)
   assert.doesNotMatch(yml, /secrets\./, 'the workflow uses no secrets')
+})
+
+test('R19: the motion button keeps an accessible name at every width and in both languages', () => {
+  assert.match(read(SITE, 'index.html'), /<button[^>]*id="motion"[^>]*aria-label="Pausar animación"/)
+  const js = read(SITE, 'app.js')
+  assert.equal((js.match(/\$\('#motion'\)\.setAttribute\('aria-label'/g) || []).length >= 2, true, 'applyLang and setMode both set it')
+})
+
+test('R20: the step numbers of the flow meet WCAG AA and the 404 page is still by default', () => {
+  const css = read(SITE, 'style.css')
+  const color = (name) => css.match(new RegExp(`${name}:(#[0-9a-fA-F]{6})`))[1]
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const ratio = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05)
+  for (const selector of ['.tl-n', '.tl-all i']) {
+    const rule = css.match(new RegExp(`${selector.replace('.', '\\.')}\\{([^}]*)\\}`))[1]
+    const used = rule.match(/color:var\(--(\w+)\)/)[1]
+    assert.ok(ratio(color(`--${used}`), color('--ink')) >= 4.5, `${selector} uses --${used}`)
+    assert.ok(ratio(color(`--${used}`), color('--v3')) >= 4.5, `${selector} on --v3`)
+  }
+  const html = withoutComments(read(SITE, '404.html'))
+  const img = html.match(/<img\b[^>]*id="lost"[^>]*>/)[0]
+  assert.match(img, /\ssrc="assets\/img\/hero\.png"/)
+  assert.match(img, /\sdata-src="assets\/img\/px\/lost\.gif\?v=8"/)
+  assert.doesNotMatch(img, /\ssrc="[^"]*\.gif/)
+  assert.match(html, /id="play-lost"/)
+})
+
+test('R21: pages.yml pins its actions by SHA and gives each job only the permissions it uses', () => {
+  const yml = read(ROOT, '.github', 'workflows', 'pages.yml')
+  const uses = [...yml.matchAll(/^\s*(?:-\s+)?uses:\s*(\S+)/gm)].map((m) => m[1])
+  assert.equal(uses.length, 3)
+  for (const use of uses) assert.match(use, /^actions\/(checkout|upload-pages-artifact|deploy-pages)@[0-9a-f]{40}$/, use)
+  assert.match(yml, /^permissions: \{\}\s*$/m)
+  const build = yml.slice(yml.indexOf('\n  build:'), yml.indexOf('\n  deploy:'))
+  const deploy = yml.slice(yml.indexOf('\n  deploy:'))
+  assert.match(build, /permissions:\s*\n\s+contents: read/)
+  assert.doesNotMatch(build, /pages: write|id-token: write/)
+  assert.match(deploy, /permissions:\s*\n\s+pages: write\s*\n\s+id-token: write/)
+  assert.doesNotMatch(yml.slice(0, yml.indexOf('\njobs:')), /contents: read|pages: write|id-token: write/)
 })
 
 test('the site names Muse wherever it lists the harnesses, in both languages, and counts none as four', () => {

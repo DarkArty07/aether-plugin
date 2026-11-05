@@ -376,6 +376,7 @@
     $$('[data-i18n-label]').forEach(function (el) { el.setAttribute('aria-label', t(el.getAttribute('data-i18n-label'))); });
     $$('[data-lang]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-lang') === S.lang)); });
     $('#motion-l').textContent = t(S.run ? 'motion.pause' : 'motion.play');
+    $('#motion').setAttribute('aria-label', t(S.run ? 'motion.pause' : 'motion.play'));
     langHooks.forEach(function (fn) { fn(); });
   }
 
@@ -522,6 +523,7 @@
     b.setAttribute('aria-pressed', String(!on));
     $('.motion-i', b).textContent = on ? '❚❚' : '▶';
     $('#motion-l').textContent = t(on ? 'motion.pause' : 'motion.play');
+    $('#motion').setAttribute('aria-label', t(on ? 'motion.pause' : 'motion.play'));
     updateNote();
     pxImgs.forEach(pxSync);
     comps.forEach(function (c) { c.done = false; c.sync(); });
