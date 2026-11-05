@@ -158,3 +158,56 @@ test('a task that starts on Opus has one correction and then is exhausted; one t
   })
   assert.deepEqual(sonnetAnswers.map((a) => [a.next.kind, a.next.step]), [['fix', 'sonnet'], ['fix', 'sonnet'], ['rise', 'opus']])
 })
+
+test('consecutive blocked attempts with the same normalized cause stop the unit', () => {
+  const attempt = (status, reason) => ({ kind: 'attempt', status, reason })
+  let state = ladder.newState(L)
+  let answer = ladder.judge(state, attempt('BLOCKED', ' Cannot fix\n Tests '), L)
+  assert.equal(answer.accepted, true, answer.error)
+  assert.equal(answer.state.status, 'open')
+  answer = ladder.judge(answer.state, attempt('BLOCKED', 'cannot FIX tests'), L)
+  assert.equal(answer.state.status, 'blocked')
+  assert.equal(answer.next.cause, 'blocked-same-cause')
+  assert.equal(answer.next.reason, 'cannot FIX tests')
+  state = ladder.judge(ladder.newState(L), attempt('BLOCKED', 'first'), L).state
+  state = ladder.judge(state, attempt('BLOCKED', 'second'), L).state
+  assert.equal(state.status, 'open')
+  state = ladder.judge(state, attempt('DONE', ''), L).state
+  assert.equal(ladder.judge(state, attempt('BLOCKED', 'second'), L).state.status, 'open')
+})
+
+test('blocked attempt threshold is read from the ladder file', (t) => {
+  const file = path.join(tempDir(t), 'ladder.json')
+  fs.writeFileSync(file, JSON.stringify({ ...L, repeatBlocked: 3 }))
+  const configured = ladder.loadLadder(file)
+  let state = ladder.newState(configured)
+  for (let i = 0; i < 3; i++) {
+    const answer = ladder.judge(state, { kind: 'attempt', status: 'BLOCKED', reason: 'same' }, configured)
+    state = answer.state
+    assert.equal(state.status, i === 2 ? 'blocked' : 'open')
+  }
+})
+
+test('blocked reports survive review verdicts and a rung rise, but empty causes reset the streak', () => {
+  const blocked = { kind: 'attempt', status: 'BLOCKED', reason: 'outside owns' }
+  let state = ladder.judge(ladder.newState(L), blocked, L).state
+  state = ladder.judge(state, { kind: 'infeasible', reason: 'try next rung' }, L).state
+  const stopped = ladder.judge(state, blocked, L)
+  assert.equal(stopped.next.cause, 'blocked-same-cause')
+  assert.equal(stopped.state.attempts, 2)
+  assert.equal(ladder.judge(stopped.state, APPROVE, L).accepted, false)
+  state = ladder.judge(ladder.newState(L), blocked, L).state
+  state = ladder.judge(state, { ...blocked, reason: '   ' }, L).state
+  assert.equal(ladder.judge(state, blocked, L).state.status, 'open')
+})
+
+test('repeatBlocked defaults to two and rejects invalid configured counts', (t) => {
+  const file = path.join(tempDir(t), 'ladder.json')
+  const { repeatBlocked, ...legacy } = L
+  fs.writeFileSync(file, JSON.stringify(legacy))
+  assert.equal(ladder.loadLadder(file).repeatBlocked, 2)
+  for (const invalid of [0, -1, 1.5, '2']) {
+    fs.writeFileSync(file, JSON.stringify({ ...L, repeatBlocked: invalid }))
+    assert.throws(() => ladder.loadLadder(file), /repeatBlocked/)
+  }
+})

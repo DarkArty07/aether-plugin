@@ -55,8 +55,10 @@ function buildView(state, next, ladder, taskId) {
     effort,
     kind: next.kind,
     cause: next.cause,
+    ...(next.reason ? { reason: next.reason } : {}),
     attempts: state.attempts,
     correctionsUsed: state.correctionsUsed,
+    ...(state.blockedCount ? { blockedCount: state.blockedCount } : {}),
     corrections,
   }
 }
@@ -73,7 +75,7 @@ function ladderCommand(cwd, runId, taskId, opts = {}) {
   const stateFile = ladderFile(runDir, taskId)
 
   if (opts.verdict !== undefined) {
-    if (!['approve', 'fix', 'infeasible'].includes(opts.verdict)) {
+    if (!['approve', 'fix', 'infeasible', 'attempt'].includes(opts.verdict)) {
       throw new Error(`unknown verdict: ${opts.verdict}`)
     }
     if (opts.payload === undefined) {
@@ -132,6 +134,7 @@ function ladderCommand(cwd, runId, taskId, opts = {}) {
     kind: opts.verdict,
     findings: body.findings,
     reason: body.reason,
+    status: body.status,
   }
 
   const result = judge(record.state, verdict, ladder)
@@ -139,12 +142,12 @@ function ladderCommand(cwd, runId, taskId, opts = {}) {
     return { accepted: false, rejection: result.error }
   }
 
-  const updatedRecord = { state: result.state, next: result.next }
+  const updatedRecord = { state: result.state, next: result.next || record.next }
   run.writeJson(stateFile, updatedRecord)
 
   return {
     accepted: true,
-    ...buildView(result.state, result.next, ladder, taskId),
+    ...buildView(result.state, updatedRecord.next, ladder, taskId),
   }
 }
 
