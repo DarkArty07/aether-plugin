@@ -102,4 +102,23 @@ test('changedFiles with no base diffs against HEAD and sees staged files', (t) =
   assert.deepEqual(checks.changedFiles(repo.dir), ['staged.txt'])
 })
 
+test('runTests leaves no process alive after a timeout, whatever the shell started (R9)', (t) => {
+  const repo = makeRepo(t)
+  const pidFile = path.join(repo.dir, 'child.pid')
+  const r = checks.runTests(repo.dir, `sleep 60 & echo $! > '${pidFile}'; wait`, { timeoutMs: 400 })
+  assert.equal(r.timedOut, true)
+  assert.equal(r.passed, false)
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+  let alive = true
+  for (let i = 0; i < 100 && alive; i++) {
+    try {
+      process.kill(pid, 0)
+      require('../plugins/aether/lib/common.js').sleepSync(20)
+    } catch {
+      alive = false
+    }
+  }
+  assert.equal(alive, false)
+})
+
 

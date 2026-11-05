@@ -6,8 +6,8 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
-const { spawnSync } = require('node:child_process')
 const { git, repoPaths } = require('./git.js')
+const { runShell } = require('./common.js')
 const run = require('./run.js')
 const { EXAMINER_SCHEMA, validate } = require('./lane-schemas.js')
 
@@ -103,7 +103,7 @@ function tail(text) {
 }
 
 function runTest(command, cwd, timeoutSeconds) {
-  const r = spawnSync('sh', ['-c', command], { cwd, encoding: 'utf8', timeout: timeoutSeconds * 1000, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024 })
+  const r = runShell(command, { cwd, timeoutMs: timeoutSeconds * 1000, maxBuffer: 16 * 1024 * 1024 })
   const timedOut = r.error?.code === 'ETIMEDOUT' || (r.status === null && r.signal === 'SIGKILL')
   return { exitCode: r.status, timedOut, output: tail(`${r.stdout || ''}${r.stderr || ''}`) }
 }

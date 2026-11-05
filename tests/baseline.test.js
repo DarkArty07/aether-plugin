@@ -2,6 +2,9 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { tempDir } = require('./helpers.js')
 const { failureSignatures, judge } = require('../plugins/aether/lib/baseline.js')
 
 test('TAP and node:test failures are named, with the number dropped and file or suite lines included', () => {
@@ -162,6 +165,25 @@ test('judge treats a baseline with no signatures as one with no known failures',
     reason: 'new failures',
     new: ['a'],
   })
+})
+
+test('recordBaseline stops the whole process group of a test run that outlives its timeout (R9)', (t) => {
+  const dir = tempDir(t)
+  const pidFile = path.join(dir, 'base.pid')
+  const { recordBaseline } = require('../plugins/aether/lib/plan-compile.js')
+  const result = recordBaseline(dir, `sleep 60 & echo $! > '${pidFile}'; wait`, { timeoutMs: 400 })
+  assert.equal(result.timedOut, true)
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+  let alive = true
+  for (let i = 0; i < 100 && alive; i++) {
+    try {
+      process.kill(pid, 0)
+      require('../plugins/aether/lib/common.js').sleepSync(20)
+    } catch {
+      alive = false
+    }
+  }
+  assert.equal(alive, false)
 })
 
 test("unittest's closing FAILED line and log lines that start with ERROR name no failure", () => {
