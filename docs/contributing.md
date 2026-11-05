@@ -18,10 +18,10 @@ That loads the tree for one session, in place of the installed release; with the
 
     npm test              # node --test "tests/*.test.js": bins, libraries, workflow scenarios and the fake model
     npm run test:mod      # claude plugin test plugins/aether: the mod (usage meter and ops)
-
-`npm test` runs the bins, the libraries, the workflow scenarios and the documentation facts; it does not run the mod. `npm run test:mod` runs `claude plugin test plugins/aether`: the mod, with the usage meter, ops and delegation, on the test engine with a simulated model.
     npm run validate      # claude plugin validate, on the plugin and on the marketplace
     npm run check         # all three
+
+`npm test` runs the bins, the libraries, the workflow scenarios and the documentation facts; it does not run the mod. `npm run test:mod` runs `claude plugin test plugins/aether`: the mod, with the usage meter, ops and delegation, on the test engine with a simulated model.
 
 Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens. `scripts/refresh-lanes.js` updates the lane table from Artificial Analysis; it reads `ARTIFICIAL_ANALYSIS_API_KEY`, or else the `.env` file its header comment names.
 
