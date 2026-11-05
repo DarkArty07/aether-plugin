@@ -897,6 +897,10 @@ function patchBase(mainRoot, graph, runId, taskId, branch) {
 // Saves the unit's work that is not in the integration branch as a patch for `git apply`.
 // When the worktree is there, the patch also covers its uncommitted and untracked files.
 function writePatch(mainRoot, graph, runId, taskId, worktree) {
+  const file = path.join(run.runDir(mainRoot, runId), 'patches', `${taskId}.patch`)
+  // Once the worktree is gone, its patch may be the only copy of uncommitted work.
+  // A branch-only diff cannot reconstruct it, so repeated sweeps must keep it intact.
+  if (!worktree && exists(file)) return file
   const branch = run.unitBranch(runId, taskId)
   const base = patchBase(mainRoot, graph, runId, taskId, branch)
   let diff
@@ -906,7 +910,6 @@ function writePatch(mainRoot, graph, runId, taskId, worktree) {
   } else {
     diff = git(['diff', '--binary', `${base}..${branch}`], mainRoot, { raw: true })
   }
-  const file = path.join(run.runDir(mainRoot, runId), 'patches', `${taskId}.patch`)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, diff.bytes)
   return file
@@ -999,11 +1002,13 @@ function savePatches(mainRoot, runId, interrupted) {
   // is no state to preserve, so leftovers are still swept.
   if (!graph || graphUnreadable) {
     if (!exists(run.runDir(mainRoot, runId))) return { patches, kept, saved, retained: [] }
-    if ((!graph && !interrupted) || graphUnreadable) {
-      const retained = branches.map(({ branch }) => taskOf(branch)).sort()
-      return { patches, kept, saved, retained }
-    }
+    // With no trustworthy base a patch cannot be produced. Keep every worktree,
+    // including directories without a branch, rather than discarding unsaved files.
+    for (const worktree of runWorktrees(mainRoot, runId).paths) kept.add(path.basename(worktree))
+    const retained = branches.map(({ branch }) => taskOf(branch)).sort()
+    return { patches, kept, saved, retained }
   }
+
   const unitWorktree = (taskId) => {
     const worktree = run.unitWorktree(mainRoot, runId, taskId)
     return isWorktreeRoot(worktree) ? worktree : null

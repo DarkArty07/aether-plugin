@@ -360,3 +360,52 @@ test("sweepRun ends every process marked as one of the run's calls, in sessions 
   await Promise.all([implement.exited, review.exited])
   assert.deepEqual([alive(otherRun.pid), alive(unmarked.pid)], [true, true])
 })
+
+for (const interrupted of [false, true]) {
+  test(`repeated sweeps preserve committed, uncommitted and untracked work (interrupted=${interrupted})`, (t) => {
+    const repo = makeRepo(t)
+    const args = compile(repo, plan([task(1)]))
+    const unit = ensure(repo.dir, args.runId, 'task-1')
+    commitIn(repo, unit.path, 'src/t1/a.js', 'committed\n', 'unit work')
+    fs.writeFileSync(path.join(unit.path, 'src/t1/a.js'), 'committed\nuncommitted\n')
+    fs.writeFileSync(path.join(unit.path, 'outside-owns.txt'), 'untracked\n')
+    if (interrupted) fs.writeFileSync(path.join(args.runDir, 'saved.json'), '{}')
+    const first = sweepRun(repo.dir, args.runId, { finish: true })
+    const patch = path.join(args.runDir, 'patches/task-1.patch')
+    const contents = fs.readFileSync(patch)
+    assert.match(contents.toString(), /\+uncommitted/)
+    assert.match(contents.toString(), /\+untracked/)
+    assert.equal(fs.existsSync(unit.path), false)
+    assert.equal(first.finished, false)
+    const second = sweepRun(repo.dir, args.runId, { finish: true })
+    assert.equal(second.finished, false)
+    assert.deepEqual(fs.readFileSync(patch), contents)
+    repo.git('apply', '--check', patch)
+    assert.notEqual(repo.git('branch', '--list', unit.branch), '')
+  })
+}
+
+for (const graphState of ['missing', 'malformed']) {
+  for (const interrupted of [false, true]) {
+    test(`sweep keeps dirty worktrees when graph is ${graphState} (interrupted=${interrupted})`, (t) => {
+      const repo = makeRepo(t)
+      const args = compile(repo, plan([task(1)]))
+      const unit = ensure(repo.dir, args.runId, 'task-1')
+      commitIn(repo, unit.path, 'src/t1/a.js', 'committed\n', 'unit work')
+      fs.writeFileSync(path.join(unit.path, 'src/t1/a.js'), 'dirty\n')
+      fs.writeFileSync(path.join(unit.path, 'untracked.txt'), 'untracked\n')
+      if (interrupted) fs.writeFileSync(path.join(args.runDir, 'saved.json'), '{}')
+      const graph = path.join(args.runDir, 'graph.json')
+      if (graphState === 'missing') fs.unlinkSync(graph)
+      else fs.writeFileSync(graph, '{broken')
+      for (let i = 0; i < 2; i++) {
+        const result = sweepRun(repo.dir, args.runId, { finish: true })
+        assert.equal(result.finished, false)
+        assert.ok(result.remaining.worktrees.includes('task-1'))
+        assert.ok(result.remaining.branches.includes(unit.branch))
+        assert.equal(fs.readFileSync(path.join(unit.path, 'src/t1/a.js'), 'utf8'), 'dirty\n')
+        assert.equal(fs.readFileSync(path.join(unit.path, 'untracked.txt'), 'utf8'), 'untracked\n')
+      }
+    })
+  }
+}
