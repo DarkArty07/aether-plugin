@@ -32,7 +32,7 @@
 - [ ] T012 [US4, US5] Conservar el trabajo sin integrar en `sweepRun` y `sweepStale`, y matar el grupo en `settleMerge`, en `plugins/aether/lib/worktrees.js` → Task 12
 - [ ] T013 [US5] Archivar bajo bloqueo y archivar las líneas `outcome` del registro de delegados en `spend-archive.js` y `spend.js` → Task 13
 - [ ] T014 [US5] Resumir y podar la observación bajo bloqueo, en `plugins/aether/lib/observe-digest.js` → Task 14
-- [ ] T015 [US5] Podar el registro de delegados a 30 días archivando antes sus `outcome`, en `delegate-log.js` y `session-start.js` → Task 15
+- [ ] T015 [US5] Podar el registro de delegados a 30 días archivando antes sus `outcome`, en `delegate-prune.js`, `delegate-log.js` y `session-start.js` → Task 15
 - [ ] T016 [US9] Enseñar al Lead a entrar y salir del modo plan, en `skills/using-aether/SKILL.md` y las guías → Task 16
 
 ---
@@ -218,7 +218,7 @@ En `plugins/aether/lib/guard.js`, `decideBash(input, env)`:
   
   **Se exceptúan de 1 a 3 (no de 4)** las órdenes de solo lectura: `echo`, `printf`, `cat`, `less`, `more`, `head`, `tail`, `grep`, `egrep`, `fgrep`, `rg`, `ls`, `stat`, `file`, `wc`, `diff`, `cmp`, `jq`, `test`, `[`, `sed` sin `-i`/`--in-place`, `sort` sin `-o`, `find` sin `-delete`/`-exec`/`-execdir`/`-fprint`, `git` salvo `clean`, `rm`, `mv`, `restore` y `checkout`, y `gh`. También se exceptúa `aether-autonomy` (la orden, o `node` cuyo primer argumento que no es una opción termina en `/aether-autonomy`), que es el escritor autorizado de los registros. Una orden que no está en esas listas y nombra un archivo protegido (1 o 2) se rechaza, haga lo que haga.
   
-  **Límites conocidos, que se documentan en un comentario de `guard.js` y que NO son hallazgos de esta tarea ni hay que cerrarlos:** un nombre que el comando construye al ejecutarse (variables como `${F}nts.json`, sustituciones de comando, `eval`, un programa que arma la ruta, escritura por cifrado o por `printf` de partes), y `cd .aether/autonomy` seguido de un patrón que no nombra los archivos (`rm *`). No sigas `cd`, ni subshells, ni `&&`/`||`, ni resuelvas rutas contra `cwd`: la regla funciona por los nombres precisamente para no tener que hacerlo.
+  **Límites conocidos, que se documentan en un comentario de `guard.js` y que NO son hallazgos de esta tarea ni hay que cerrarlos:** un nombre que el comando construye al ejecutarse (variables como `${F}nts.json`, sustituciones de comando, `eval`, un programa que arma la ruta, escritura por cifrado o por `printf` de partes), `cd .aether/autonomy` seguido de un patrón que no nombra los archivos (`rm *`), y el falso positivo de que, en una sesión de Aether, cualquier orden fuera de la lista de solo lectura que nombre otro archivo llamado `grants.json` o `run.json` (por ejemplo, `python train.py --config run.json` en un proyecto del dueño) también se rechaza. No sigas `cd`, ni subshells, ni `&&`/`||`, ni resuelvas rutas contra `cwd`: la regla funciona por los nombres precisamente para no tener que hacerlo.
   
   Leer esos archivos (`cat`, `grep`, `ls`), escribir `diary.md`, `brief.md` o un archivo de nombre parecido (`grants.json.bak`), y `mkdir .aether/runs/x` o `rm -rf .aether/worktrees/old` siguen permitidos.
 
@@ -1201,14 +1201,25 @@ test('three processes pruning the same directory at once keep every session and 
     seed(dir, id, old)
     age(dir, id, old)
   }
+  const go = path.join(dir, 'go')
   const script = `
+    const fs = require('node:fs')
     const digest = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'observe-digest.js'))})
-    digest.pruneObserve(process.argv[1], { days: 30, now: Number(process.argv[2]) })`
-  await Promise.all(ids.map(() => new Promise((resolve, reject) => {
-    const child = require('node:child_process').spawn(process.execPath, ['-e', script, dir, String(now)], { stdio: 'ignore' })
+    const [dir, now, ready, go] = process.argv.slice(1)
+    fs.writeFileSync(ready, '')
+    const wait = new Int32Array(new SharedArrayBuffer(4))
+    while (!fs.existsSync(go)) Atomics.wait(wait, 0, 0, 2)
+    digest.pruneObserve(dir, { days: 30, now: Number(now) })`
+  const readyFiles = ids.map((id) => path.join(dir, `ready-${id}`))
+  const children = ids.map((id, i) => new Promise((resolve, reject) => {
+    const child = require('node:child_process').spawn(process.execPath, ['-e', script, dir, String(now), readyFiles[i], go], { stdio: 'ignore' })
     child.on('error', reject)
     child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))))
-  })))
+  }))
+  const wait = new Int32Array(new SharedArrayBuffer(4))
+  while (!readyFiles.every((f) => fs.existsSync(f))) Atomics.wait(wait, 0, 0, 5)
+  fs.writeFileSync(go, '')
+  await Promise.all(children)
   const sessions = digest.readSummary(dir).sessions
   assert.deepEqual(Object.keys(sessions).sort(), ids)
   for (const id of ids) {
@@ -1239,6 +1250,8 @@ test('four processes digesting different sessions at once keep every session in 
 })
 ```
 
+La primera prueba (`digestSession and pruneObserve hold the summary lock while they write the summary (R11)`) es la que falla de forma determinista antes del arreglo; la segunda retiene a los tres hijos en el archivo `go` hasta que los tres han cargado el módulo y están listos para entrar en `pruneObserve` a la vez.
+
 **Acceptance:**
 
 - `node --test tests/observe-digest.test.js tests/observe.test.js tests/observe-read.test.js tests/observe-guarantees.test.js tests/guards-observe-1.test.js tests/guards-observe-2.test.js` pasa en verde.
@@ -1251,7 +1264,7 @@ test('four processes digesting different sessions at once keep every session in 
 **Aether:**
 - Review: xhigh — borra líneas del registro de delegados; un error pierde gasto o líneas que un delegado en marcha acaba de escribir
 - Area: delegate
-- Owns: `plugins/aether/lib/delegate-log.js`, `plugins/aether/lib/session-start.js`, `tests/delegate-log.test.js`, `tests/session-start.test.js`
+- Owns: `plugins/aether/lib/delegate-log.js`, `plugins/aether/lib/delegate-prune.js`, `plugins/aether/lib/session-start.js`, `tests/delegate-log.test.js`, `tests/session-start.test.js`
 - Depends on: Task 5 — usa `withLock` de `lib/common.js`
 - Depends on: Task 13 — archiva con `archiveOutcomes` de `lib/spend-archive.js` y `spend.js` lee ese archivo
 - Serves: R12, R24
@@ -1260,21 +1273,51 @@ test('four processes digesting different sessions at once keep every session in 
 
 En `plugins/aether/lib/delegate-log.js`:
 
-- `appendEntry(dataDir, entry)` toma `common.withLock(path.join(dataDir, 'delegates', '.log'), fn, { waitMs: 10000, staleMs: 60000 })` (el archivo de bloqueo es `delegates/.log.lock`) alrededor de su `appendFileSync`; conserva su conducta de devolver `false` sin lanzar.
-- `pruneDelegateLog(dataDir, { days = 30, now = Date.now() } = {})` devuelve `{ pruned: [<sesión>, ...] }` (orden alfabético):
+- `appendEntry(dataDir, entry)` toma `common.withLock(path.join(dataDir, 'delegates', '.log'), fn, { waitMs: 10000, staleMs: 60000 })` (el archivo de bloqueo es `delegates/.log.lock`) alrededor de su `appendFileSync`; conserva su conducta de devolver `false` sin lanzar. `delegate-log.js` solo importa `node:fs`, `node:path`, `./run.js` y `./common.js`: nunca `spend.js` ni `spend-archive.js`, porque `spend.js` ya importa `delegate-log.js` y `tests/layers.test.js` prohíbe cualquier ciclo de `require` en `lib/`, incluidos los perezosos.
+
+En el archivo nuevo `plugins/aether/lib/delegate-prune.js` (comentario de cabecera descriptivo de al menos 6 palabras con `// Family: delegate.`, importa `node:fs`, `node:path`, `./delegate-log.js`, `./spend-archive.js`, `./spend.js` y `./common.js`, sin dejar ningún nombre ni `require` sin usar):
+
+- `pruneDelegateLog(dataDir, { days = 30, now = Date.now() } = {})` devuelve `{ pruned: [<sesión>, ...] }` (orden alfabético) y se exporta:
   - una sesión está vencida cuando la mayor `time` numérica de sus entradas es anterior a `now - days * 86400000`; una sesión sin ninguna `time` numérica, y las entradas sin `session`, se conservan;
-  - para cada sesión vencida con identificador válido (`isSessionId` de `lib/spend.js`) llama a `archiveOutcomes(dataDir, session)` (carga perezosa de `./spend-archive.js`, como hace `lanes.pruneLog`); si lanza, deja rastro con `noteFailure(dataDir, 'delegates/<session>', err, now)` y conserva la sesión; si pasa, `clearFailure`;
-  - después, bajo `withLock(<dataDir>/delegates/.log, …)` con los mismos plazos que `appendEntry`, y para cada sesión archivada: vuelve a llamar a `archiveOutcomes(dataDir, session)` (es idempotente y recoge cualquier `outcome` llegado entre la primera llamada y el bloqueo; si lanza, esa sesión se conserva), relee `delegates/log.jsonl`, quita las líneas de las sesiones archivadas (las líneas de otras sesiones, también las añadidas mientras tanto, y las que no se leen como JSON, se conservan tal cual y en su orden) y lo reescribe con `writeAtomic`. `withLock` no es reentrante: no llames a `appendEntry` desde dentro;
+  - para cada sesión vencida con identificador válido (`isSessionId` de `./spend.js`) llama a `archiveOutcomes(dataDir, session)` de `./spend-archive.js`; si lanza, deja rastro con `noteFailure(dataDir, 'delegates/<session>', err, now)` y conserva la sesión; si pasa, `clearFailure(dataDir, 'delegates/<session>')`;
+  - después, bajo `common.withLock(path.join(dataDir, 'delegates', '.log'), …)` con los mismos plazos que `appendEntry` (`{ waitMs: 10000, staleMs: 60000 }`), y para cada sesión archivada: vuelve a llamar a `archiveOutcomes(dataDir, session)` (es idempotente y recoge cualquier `outcome` llegado entre la primera llamada y el bloqueo; si lanza, deja rastro con `noteFailure` y esa sesión se conserva), relee `delegates/log.jsonl`, quita las líneas de las sesiones archivadas (las líneas de otras sesiones, también las añadidas mientras tanto, y las que no se leen como JSON, se conservan tal cual y en su orden) y lo reescribe con `common.writeAtomic`. `withLock` no es reentrante: no llames a `appendEntry` desde dentro;
   - borra por antigüedad (`mtime` anterior a `now - days * 86400000`) los archivos de `delegates/in/`, `delegates/briefs/` y `delegates/external/`.
 - `aether-report --delegates` no cambia: sigue leyendo `delegates/log.jsonl` y muestra solo las sesiones retenidas; el gasto de las podadas lo conserva `spend/<id>.outcomes.jsonl`, que `aether-report --spend` ya lee (tarea 13).
 
-En `plugins/aether/lib/session-start.js`, `pruneOldFiles`: llama a `pruneDelegateLog(dir, { days: 30 })` junto con `prune`, `pruneLog` y `pruneSessions`, dentro del mismo `try` y con su rastro `session-start`.
+En `plugins/aether/lib/session-start.js`, `pruneOldFiles`: importa `{ pruneDelegateLog }` de `./delegate-prune.js` y llama a `pruneDelegateLog(dir, { days: 30 })` junto con `prune`, `pruneLog` y `pruneSessions`, dentro del mismo `try` y con su rastro `session-start`.
 
 **Tests (write first):**
 
-En `tests/delegate-log.test.js` (usa `log`; añade los `require` que falten: `fs`, `path`, `tempDir`, `spendReport` de `lib/spend.js`, `outcomesFile` de `lib/spend.js`, y `PRICES`, `T0`, `MIN`, `outcome`, `usdOf` de `./spend-fixtures.js`; define `close` como en `tests/spend-races.test.js`):
+En `tests/delegate-log.test.js` (usa `log`; añade los `require` que falten: `fs`, `path`, `tempDir`, `{ pruneDelegateLog }` de `../plugins/aether/lib/delegate-prune.js`, `{ spendReport, outcomesFile }` de `../plugins/aether/lib/spend.js`, y `{ PRICES, T0, MIN, outcome, usdOf }` de `./spend-fixtures.js`; define `close` como en `tests/spend-races.test.js`):
 
 ```js
+test('appendEntry and pruneDelegateLog hold delegates/.log.lock while they write or rename log.jsonl (R12)', (t) => {
+  const dataDir = tempDir(t, 'aether-del-lock-')
+  const DAY = 86400000
+  const now = T0 + 40 * DAY
+  const file = log.logFile(dataDir)
+  const lock = path.join(dataDir, 'delegates', '.log.lock')
+  const realAppend = fs.appendFileSync
+  const realRename = fs.renameSync
+  let heldOnAppend = null
+  let heldOnRewrite = null
+  t.mock.method(fs, 'appendFileSync', function (target, ...rest) {
+    if (String(target) === file) heldOnAppend = fs.existsSync(lock)
+    return realAppend.call(this, target, ...rest)
+  })
+  t.mock.method(fs, 'renameSync', function (from, to, ...rest) {
+    if (String(to) === file) heldOnRewrite = fs.existsSync(lock)
+    return realRename.call(this, from, to, ...rest)
+  })
+  assert.equal(log.appendEntry(dataDir, { kind: 'launch', task: 't-old', attempt: 1, session: 's-old', time: T0, step: 'haiku' }), true)
+  assert.equal(heldOnAppend, true)
+  assert.equal(fs.existsSync(lock), false)
+  assert.deepEqual(pruneDelegateLog(dataDir, { days: 30, now }), { pruned: ['s-old'] })
+  t.mock.restoreAll()
+  assert.equal(heldOnRewrite, true)
+  assert.equal(fs.existsSync(lock), false)
+})
+
 test('pruneDelegateLog archives the outcomes of sessions idle past the window, keeps a line appended meanwhile, and leaves --spend exact (R12)', (t) => {
   const dataDir = tempDir(t, 'aether-del-prune-')
   const DAY = 86400000
@@ -1295,7 +1338,7 @@ test('pruneDelegateLog archives the outcomes of sessions idle past the window, k
     }
     return out
   })
-  const res = log.pruneDelegateLog(dataDir, { days: 30, now })
+  const res = pruneDelegateLog(dataDir, { days: 30, now })
   t.mock.restoreAll()
 
   assert.deepEqual(res, { pruned: ['s-old'] })
@@ -1305,7 +1348,7 @@ test('pruneDelegateLog archives the outcomes of sessions idle past the window, k
   close(after.usd, price)
   assert.equal(after.harness.calls, 1)
   assert.equal(after.complete, true)
-  assert.deepEqual(log.pruneDelegateLog(dataDir, { days: 30, now }), { pruned: [] })
+  assert.deepEqual(pruneDelegateLog(dataDir, { days: 30, now }), { pruned: [] })
 })
 
 test('an outcome of an idle session that arrives while the prune runs is archived too, never lost (R12)', (t) => {
@@ -1314,14 +1357,19 @@ test('an outcome of an idle session that arrives while the prune runs is archive
   const now = T0 + 40 * DAY
   const first = outcome(dataDir, 's-old', 1, 'm-b', 'output')
   const file = log.logFile(dataDir)
+  const archived = outcomesFile(dataDir, 's-old')
   const late = { kind: 'outcome', id: 'd-5', time: T0 + 5 * MIN, session: 's-old', status: 'ok', harness: 'agy', model: 'm-b', effort: 'low', durationMs: 1, usage: { output: 1e6 }, attempt: 1 }
-  const real = fs.readFileSync
-  let reads = 0
-  t.mock.method(fs, 'readFileSync', function (target, ...rest) {
-    if (target === file && ++reads === 2) fs.appendFileSync(file, JSON.stringify(late) + '\n')
-    return real.call(this, target, ...rest)
+  const real = fs.renameSync
+  let injected = false
+  t.mock.method(fs, 'renameSync', function (from, to, ...rest) {
+    const out = real.call(this, from, to, ...rest)
+    if (!injected && String(to) === archived) {
+      injected = true
+      fs.appendFileSync(file, JSON.stringify(late) + '\n')
+    }
+    return out
   })
-  const res = log.pruneDelegateLog(dataDir, { days: 30, now })
+  const res = pruneDelegateLog(dataDir, { days: 30, now })
   t.mock.restoreAll()
   assert.deepEqual(res, { pruned: ['s-old'] })
   assert.equal(log.readEntries(dataDir).some((e) => e.session === 's-old'), false)
@@ -1344,7 +1392,7 @@ test('pruneDelegateLog keeps a session whose outcomes cannot be archived, and re
   fs.writeFileSync(freshIn, '{}')
   fs.utimesSync(oldIn, new Date(now - 31 * DAY), new Date(now - 31 * DAY))
   fs.utimesSync(freshIn, new Date(now - DAY), new Date(now - DAY))
-  const res = log.pruneDelegateLog(dataDir, { days: 30, now })
+  const res = pruneDelegateLog(dataDir, { days: 30, now })
   assert.deepEqual(res, { pruned: [] })
   assert.equal(log.readEntries(dataDir, { session: 's-stuck' }).length, 1)
   assert.equal(fs.existsSync(oldIn), false)
