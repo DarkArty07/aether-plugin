@@ -55,8 +55,10 @@ function buildView(state, next, ladder, taskId) {
     effort,
     kind: next.kind,
     cause: next.cause,
+    ...(next.reason ? { reason: next.reason } : {}),
     attempts: state.attempts,
     correctionsUsed: state.correctionsUsed,
+    ...(state.blockedCount ? { blockedCount: state.blockedCount } : {}),
     corrections,
   }
 }
@@ -73,7 +75,7 @@ function ladderCommand(cwd, runId, taskId, opts = {}) {
   const stateFile = ladderFile(runDir, taskId)
 
   if (opts.verdict !== undefined) {
-    if (!['approve', 'fix', 'infeasible'].includes(opts.verdict)) {
+    if (!['approve', 'fix', 'infeasible', 'attempt'].includes(opts.verdict)) {
       throw new Error(`unknown verdict: ${opts.verdict}`)
     }
     if (opts.payload === undefined) {
@@ -132,6 +134,7 @@ function ladderCommand(cwd, runId, taskId, opts = {}) {
     kind: opts.verdict,
     findings: body.findings,
     reason: body.reason,
+    status: body.status,
   }
 
   const result = judge(record.state, verdict, ladder)
@@ -139,24 +142,26 @@ function ladderCommand(cwd, runId, taskId, opts = {}) {
     return { accepted: false, rejection: result.error }
   }
 
-  const updatedRecord = { state: result.state, next: result.next }
+  const updatedRecord = { state: result.state, next: result.next || record.next }
   run.writeJson(stateFile, updatedRecord)
 
   return {
     accepted: true,
-    ...buildView(result.state, result.next, ladder, taskId),
+    ...buildView(result.state, updatedRecord.next, ladder, taskId),
   }
 }
 
 // A relaunch that names a unit whose ladder is spent starts it a new one: the spent state is kept next to it as
-// <task>.spent-<n>.json, so nothing is lost and the report still counts it. An open ladder is never touched (R3).
+// <task>.spent-<n>.json, so nothing is lost and the report still counts it. A ladder is spent when it is exhausted
+// or when the unit was blocked twice for the same cause (the Lead fixes the plan, then relaunches). An open ladder
+// is never touched (R3).
 function resetSpent(runDir, taskIds) {
   const reset = []
   for (const taskId of taskIds) {
     const file = ladderFile(runDir, taskId)
     if (!fs.existsSync(file)) continue
     const record = run.readJson(file)
-    if (!record || !record.state || record.state.status !== 'exhausted') continue
+    if (!record || !record.state || !['exhausted', 'blocked'].includes(record.state.status)) continue
     let n = 1
     while (fs.existsSync(path.join(runDir, 'ladder', `${taskId}.spent-${n}.json`))) n++
     fs.renameSync(file, path.join(runDir, 'ladder', `${taskId}.spent-${n}.json`))

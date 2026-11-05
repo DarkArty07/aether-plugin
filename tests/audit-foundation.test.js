@@ -216,6 +216,20 @@ test('the Spanish report has the eleven sections of R21 in order, with the shape
   assert.ok(md.endsWith('**¿Cuáles tomas?** Por ejemplo: «1, 2 y 3».') || md.trimEnd().endsWith('**¿Cuáles tomas?** Por ejemplo: «1, 2 y 3».'))
 })
 
+test('an ecosystem of the dependency audit that could not run is listed as not covered although another gave a result (issue 150)', () => {
+  const f = fixture()
+  f.analysis.checks.dependencies = {
+    state: 'result', tool: 'npm audit', counts: { critical: 0, high: 0, moderate: 0, low: 0, unknown: 0, total: 0 }, top: [],
+    ecosystems: [{ ecosystem: 'npm', tool: 'npm audit', state: 'result' }, { ecosystem: 'composer', tool: 'composer audit', state: 'could-not', reason: 'the tool is not installed' }],
+  }
+  const es = report.render(f, 'es').markdown
+  assert.ok(between(es, '**No cubrí', '**RADAR').includes('Dependencias (composer audit): no se pudo: the tool is not installed'))
+  const en = report.render(f, 'en').markdown
+  assert.ok(en.includes('Dependencies (composer audit): could not: the tool is not installed'))
+  const whole = fixture()
+  assert.ok(!between(report.render(whole, 'es').markdown, '**No cubrí', '**RADAR').includes('composer audit'))
+})
+
 test('what is unverified has no level and no number, and the since-last, discarded and not-covered sections say what R21 and R22 ask', () => {
   const md = report.render(fixture(), 'es').markdown
   const unverified = between(md, '**Sin verificar', '**Desde la última auditoría')

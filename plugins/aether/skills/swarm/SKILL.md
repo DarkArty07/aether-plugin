@@ -33,7 +33,9 @@ Codex's quota is read without a model call.
 
 From the integration worktree:
 
-    aether-plan compile <plan.md>
+    ${CLAUDE_PLUGIN_ROOT}/bin/aether-plan compile <plan.md>
+
+Call it by this absolute path because the `aether-plan` on PATH may be an older release.
 
 It prints one line of JSON: the run's arguments. Warnings go to stderr. Keep the `runId`; every later command needs it.
 

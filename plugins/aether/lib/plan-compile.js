@@ -13,6 +13,7 @@ const { spawnSync } = require('node:child_process')
 
 const { parsePlan, buildGraph, renderBrief, specObjective, requirementsOf, traceability } = require('./plan.js')
 const { applyGroups } = require('./plan-groups.js')
+const { earlierMergedUnits } = require('./plan-scope.js')
 const { planWarnings } = require('./plan-warnings.js')
 const { repoPaths, currentBranch, head } = require('./git.js')
 const run = require('./run.js')
@@ -229,6 +230,9 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     tasks[id] = { ...graph.tasks[id], brief }
   }
 
+  // What the earlier launches merged, for the final review of this one (issue 122): a workflow cannot read the disk.
+  // The previous launch's result.json is still in place here; it is renamed to result-<k>.json below.
+  const earlierUnits = earlierMergedUnits(dir, tasks)
   // Units branch from the current head, but the run's first launch is where its changes begin.
   const base = head(cwd)
   const args = {
@@ -251,6 +255,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     waves: graph.waves,
     tasks,
     ...(alreadyMerged ? { alreadyMerged } : {}),
+    ...(earlierUnits.length > 0 ? { earlierUnits } : {}),
     lanes: laneArgs,
   }
 

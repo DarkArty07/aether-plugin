@@ -99,6 +99,38 @@ function readAllEntries(dataDir, { task = null, session = null, since = 0 } = {}
   return sources.flat().sort((a, b) => timeOf(a) - timeOf(b))
 }
 
+// The earlier work a correction or a rise builds on, for both the prompt and any carried patch, from one log entry:
+// the latest answer recorded on Claude, or otherwise the latest result. A result carries its patch when the patch file
+// still exists, and only its description when the file is gone; a result with an answer carries that answer.
+function previousWork(entries) {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i]
+    if (e.kind === 'answer' && typeof e.text === 'string' && e.text.trim()) return { text: e.text, patch: null }
+    if (e.kind !== 'result') continue
+    if (typeof e.patch === 'string' && e.patch) {
+      const patch = fs.existsSync(e.patch) ? e.patch : null
+      const text = patch
+        ? `The patch of your previous attempt is ${e.patch}. It is not applied in your worktree: before anything else, run \`git apply ${e.patch}\` there, and go on from that work. Only when it does not apply, rebuild what it describes.`
+        : `The patch of your previous attempt is unavailable: ${e.patch}. Rebuild that work.`
+      return { text, patch }
+    }
+    if (typeof e.answer === 'string' && e.answer) {
+      let text
+      try { text = fs.readFileSync(e.answer, 'utf8') } catch { /* the answer may have been removed */ }
+      return { text: text && text.trim() ? text : `Your previous answer is in ${e.answer}`, patch: null }
+    }
+  }
+  return null
+}
+
+// Session and task identifiers use the same safe filename alphabet. The length prefix keeps
+// separators inside either identifier from producing the same key for different pairs.
+function fileKey(session, id) {
+  const valid = /^[A-Za-z0-9_-]+$/
+  if (typeof id !== 'string' || !valid.test(id) || (session != null && (typeof session !== 'string' || !valid.test(session)))) throw new Error('invalid delegate session or task id')
+  return session == null ? id : `${session.length}-${session}--${id}`
+}
+
 // A launch entry in the delegate log that opened an attempt (not a refused relaunch).
 const isLaunch = (entry) => entry.kind === 'launch' && entry.launchKind !== 'refused'
 
@@ -109,4 +141,6 @@ module.exports = {
   readEntries,
   readAllEntries,
   isLaunch,
+  previousWork,
+  fileKey,
 }

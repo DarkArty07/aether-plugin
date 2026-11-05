@@ -55,6 +55,9 @@ function rowOfTask(id, entries) {
   return row
 }
 
+// Two sessions may use the same task id (issue 148): a task is its session and its id.
+const taskKey = (session, id) => `${session ?? ''}\u0000${id}`
+
 function stepCounts(rung, entries) {
   const launches = entries.filter((e) => e.kind === 'launch' && e.step === rung.step)
   const verdicts = entries.filter((e) => e.kind === 'verdict' && e.step === rung.step)
@@ -65,7 +68,7 @@ function stepCounts(rung, entries) {
   }
   return {
     step: rung.step,
-    tasks: new Set(launches.map((e) => e.task)).size,
+    tasks: new Set(launches.map((e) => taskKey(e.session, e.task))).size,
     attempts: launches.length,
     corrections: launches.filter((e) => e.launchKind === 'fix').length,
     approved: verdicts.filter((v) => v.verdict === 'approved').length,
@@ -81,10 +84,11 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } 
     // An `outcome` entry names its task in `id`; the others in `task`.
     const id = entry.kind === 'outcome' ? entry.id : entry.task
     if (id === undefined || id === null) continue
-    if (!byTask.has(id)) byTask.set(id, [])
-    byTask.get(id).push(entry)
+    const key = taskKey(entry.session, id)
+    if (!byTask.has(key)) byTask.set(key, { id, list: [] })
+    byTask.get(key).list.push(entry)
   }
-  const delegations = [...byTask].filter(([, list]) => list.some(isLaunch)).map(([id, list]) => rowOfTask(id, list))
+  const delegations = [...byTask.values()].filter(({ list }) => list.some(isLaunch)).map(({ id, list }) => rowOfTask(id, list))
   const ladder = loadLadder()
   return {
     delegations,

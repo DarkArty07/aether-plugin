@@ -160,6 +160,10 @@ function readArgs(raw) {
   // `review: true` runs the final review even when this launch did not merge every unit, including a
   // launch whose waves are empty (issues #5 and #33). Anything else that is set is refused.
   if (input.review !== undefined && typeof input.review !== 'boolean') bad.push('review')
+  // What the earlier launches of the run merged (issue 122), as aether-plan compile --run reads it from the run
+  // directory. Args of a first launch, or of an older compile, lack it.
+  const earlierOk = (u) => isObject(u) && text(u.id) && text(u.title) && Array.isArray(u.owns) && Array.isArray(u.minors) && Array.isArray(u.tiers)
+  if (input.earlierUnits !== undefined && !(Array.isArray(input.earlierUnits) && input.earlierUnits.every(earlierOk))) bad.push('earlierUnits')
   if (bad.length) throw new Error(`aether:run args are missing or invalid: ${bad.join(', ')}`)
   const seen = new Set()
   for (const id of input.waves.flat()) {
@@ -184,6 +188,8 @@ function readArgs(raw) {
 
 const input = readArgs(args)
 const { runId, repoRoot, runDir, integration, testCommand, maxAgents, waves, tasks } = input
+// The units the earlier launches merged, for the final review of a relaunch (issue 122).
+const earlierUnits = Array.isArray(input.earlierUnits) ? input.earlierUnits : []
 // The run's lanes, or null when every call runs native.
 const lanes = input.lanes || null
 // The bins of the version that compiled the run: implementers run them by path, and the ops
@@ -334,6 +340,7 @@ function opsPrompt(command, { payload = null, long = false } = {}) {
 
 // An ops reply that says so itself: the agent did not run the command (issue 004). Only such a
 // reply is retried — a command that may have run is never run twice on a guess.
+const MODEL_UNKNOWN_EXIT = -1
 const NOT_RUN = /did not run|didn't run|not run it|refus|cannot run|can't run|won't run|no (corr[ií]|ejecut)/i
 
 async function opsOnce(command, { phase, label, payload = null, long = false }) {
@@ -354,7 +361,10 @@ async function opsOnce(command, { phase, label, payload = null, long = false }) 
     return error
   }
   if (out.error) return { error: out.error }
-  if (reply.exitCode !== 0) return { error: `${command} exited with ${reply.exitCode}` }
+  // A model that ran the command can report "exitCode": -1 for a command that succeeded and printed the bin's own
+  // line (issue 123). No process exits with -1 and the line has no error, so the line is the answer; any other
+  // nonzero exit code is a failure.
+  if (reply.exitCode !== 0 && reply.exitCode !== MODEL_UNKNOWN_EXIT) return { error: `${command} exited with ${reply.exitCode}` }
   return out
 }
 
@@ -765,20 +775,22 @@ function reviewerPrompt(pkg, { lane = false, slice = null } = {}) {
     lines.push(
       '',
       `This review is in ${slice.total} slices; yours is slice ${slice.n}. Review only these units: ${slice.units.map((u) => u.id).join(', ')}.`,
-      `Read the parts of the package that touch the files they own: ${[...new Set(slice.units.flatMap((u) => tasks[u.id].owns))].join(', ') || 'unknown files'}.`,
+      `Read the parts of the package that touch the files they own: ${[...new Set(slice.units.flatMap((u) => ownsOf(u)))].join(', ') || 'unknown files'}.`,
       'Another reviewer takes each other slice. Note an integration problem only when your units are one side of it.',
     )
   }
   if (input.plan) lines.push(`Plan: ${lane ? inIntegration(input.plan) : input.plan}`)
   if (input.spec) lines.push(`Spec: ${input.spec} (in the integration worktree)`)
   lines.push('', '## Units')
-  for (const u of Object.values(units)) {
+  // Every unit of this launch with its status, plus what the earlier launches merged (issue 122).
+  for (const u of [...Object.values(units), ...earlierUnits]) {
     lines.push(`- ${u.id} (${u.title}): ${u.status}${u.tiers.length ? ` on ${u.tiers.join(' → ')}` : ''}${u.reason ? `: ${u.reason}` : ''}`)
   }
   const minors = []
-  for (const u of Object.values(units)) {
-    if (u.status !== 'merged') continue
-    for (const f of u.rounds[u.rounds.length - 1].findings) if (f.severity === 'minor') minors.push(`- ${u.id}: ${f.title} (${f.file})`)
+  for (const u of reviewScope()) {
+    // An earlier launch's unit carries its deferred minors; this launch's are in its last round.
+    const findings = tasks[u.id] ? u.rounds[u.rounds.length - 1].findings : u.minors
+    for (const f of findings) if (f.severity === 'minor') minors.push(`- ${u.id}: ${f.title} (${f.file})`)
   }
   if (minors.length) lines.push('', '## Minor findings the supervisors deferred', ...minors)
   return lines.join('\n')
@@ -1234,6 +1246,7 @@ async function work(unit, task) {
   let view = await ladderRead(unit)
   if (view.error) return finish(unit, 'blocked', `the ladder could not be read: ${view.error}`)
   if (view.kind === 'exhausted' || view.status === 'exhausted') return finish(unit, 'blocked', 'the ladder is spent (exhausted)')
+  if (view.status === 'blocked' && view.cause === 'blocked-same-cause') return finish(unit, 'blocked', `${view.cause}: ${view.reason}`)
   if (view.status !== 'open' || !view.model) return finish(unit, 'blocked', `the ladder is not open (${view.status})`)
 
   const wasCleanStart = view.attempts === 0
@@ -1242,6 +1255,7 @@ async function work(unit, task) {
   let context = null
   let mergeRetry = false
   let lastPair = null
+  let previousBlocked = Boolean(view.blockedCount)
 
   for (;;) {
     if (modelAgentsSpent() >= maxAgents) return finish(unit, 'not-run', 'the agent budget is spent')
@@ -1325,6 +1339,15 @@ async function work(unit, task) {
       ...(attempt.split ? { split: true, subAttempts: attempt.subAttempts } : {}),
     }
     unit.rounds.push(round)
+
+    if (round.status === 'BLOCKED' || previousBlocked) {
+      const attemptCheck = await applyVerdict(unit, 'attempt', {
+        status: round.status, reason: round.question.trim() || round.concerns,
+      })
+      if (attemptCheck.error || attemptCheck.accepted === false) return finish(unit, 'blocked', `the ladder could not record the attempt: ${attemptCheck.error || attemptCheck.rejection}`)
+      if (attemptCheck.status === 'blocked') return finish(unit, 'blocked', `${attemptCheck.cause}: ${attemptCheck.reason}`)
+      previousBlocked = Boolean(attemptCheck.blockedCount)
+    }
 
     if (!report) {
       if (!(attempt.split && attempt.failure)) {
@@ -1619,6 +1642,14 @@ async function runUnit(id) {
   if (unit.status === 'blocked') blockHint(unit)
 }
 
+// Every merged unit the final review covers: this launch's plus the earlier launches' (issue 122).
+function reviewScope() {
+  return [...Object.values(units).filter((u) => u.status === 'merged'), ...earlierUnits]
+}
+// This launch's review field and owns come from its tasks; an earlier launch's unit carries them.
+const reviewOf = (u) => (tasks[u.id] ? tasks[u.id].review : u.review)
+const ownsOf = (u) => (tasks[u.id] ? tasks[u.id].owns : u.owns)
+
 // A relaunch is a launch after the run's first one: its firstBase, the base of the first launch, differs
 // from its base. A first launch has the two equal, or no firstBase at all.
 function isRelaunch() {
@@ -1626,15 +1657,15 @@ function isRelaunch() {
   return typeof firstBase === 'string' && firstBase !== '' && firstBase !== integration.base
 }
 
-// The final review's model and effort follow the run's risk, judged from the review fields of the merged units:
-// Opus at xhigh when a merged unit asks for review xhigh or max; Sonnet at high for 1 to 3 units
-// that all ask for high reviews; Opus at high otherwise. A relaunch's review covers the earlier
-// launches too, so it is never Sonnet.
+// The final review's model and effort follow the run's risk, judged from the review fields of the merged units
+// across launches (issue 122): Opus at xhigh when a merged unit asks for review xhigh or max; Sonnet at
+// high for 1 to 3 units that all ask for high reviews; Opus at high otherwise. A relaunch's review covers
+// the earlier launches too, so it is never Sonnet.
 function reviewPlan() {
-  const merged = Object.values(units).filter((u) => u.status === 'merged')
-  const highReview = merged.find((u) => tasks[u.id].review === 'xhigh' || tasks[u.id].review === 'max')
-  if (highReview) return { model: 'opus', effort: 'xhigh', reason: `${highReview.id} reviews at ${tasks[highReview.id].review}` }
+  const highReview = reviewScope().find((u) => reviewOf(u) === 'xhigh' || reviewOf(u) === 'max')
+  if (highReview) return { model: 'opus', effort: 'xhigh', reason: `${highReview.id} reviews at ${reviewOf(highReview)}` }
   if (isRelaunch()) return { model: 'opus', effort: 'high', reason: 'a relaunch: the final review covers the earlier launches too' }
+  const merged = Object.values(units).filter((u) => u.status === 'merged')
   if (merged.length >= 1 && merged.length <= 3 && merged.every((u) => tasks[u.id].review === 'high')) {
     return { model: 'sonnet', effort: 'high', reason: 'a small run: 1 to 3 merged units, all asking for a high review' }
   }
@@ -1779,7 +1810,9 @@ async function reviewRun(force = false) {
   // Every result that names a review carries the model and effort it was run on, or would have been.
   if (pkg.error) return { status: 'failed', reason: `package: ${pkg.error}`, reviewModel: model, reviewEffort: effort }
   const merged = Object.values(units).filter((u) => u.status === 'merged')
-  if (!lanes) return reviewNative(pkg, reviewSlices(merged), model, effort)
+  // The review covers the whole run: this launch's merged units plus the earlier launches' (issue 122).
+  const scope = reviewScope()
+  if (!lanes) return reviewNative(pkg, reviewSlices(scope), model, effort)
   // One decision for the whole review, before it is sliced (R5, R17, R18): a pair reviews the whole package in one
   // call, and without one the review runs on the decision's native pair, which differs from the author — sliced,
   // each slice first asks the pairs on its own, at that pair (see reviewRunSliced).
@@ -1801,7 +1834,7 @@ async function reviewRun(force = false) {
     return { status: 'failed', reason: `lane: ${outcome.detail}`, ...ranOn }
   }
   const { native } = routed.decision
-  const result = await reviewNative(pkg, reviewSlices(merged), native.model, native.effort)
+  const result = await reviewNative(pkg, reviewSlices(scope), native.model, native.effort)
   tookNative('final-review', routed, where)
   return result
 }

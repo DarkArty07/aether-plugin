@@ -118,6 +118,22 @@ test('a failing command answers its exit code and standard output, as the model 
   expect(counts.modelSteps).toBe(0)
 })
 
+// The mod ran the command itself, so its exit code is the process's own: a bin that exits nonzero with a JSON line is
+// not turned into a success (issue 123: only a model-reported exit code is questioned, and that is the workflow's).
+for (const stdout of ['', '{"error":"failed"}\n', '{"error":null}\n', 'not JSON\n', '[{}]\n', '{"merged":true}\ntrailing text\n', '{"merged":false}\n']) {
+  test(`a nonzero exit code of a command the mod ran is reported as it is (${JSON.stringify(stdout)})`, async ($, on) => {
+    const { writes } = stubs(on, { answer: { exitCode: -1, stdout } })
+    await spawn($, opsPrompt(`aether-wt merge ${RUN} task-1`))
+    const { chunks } = await step($)
+    const input = answered(chunks).input
+    expect(input.exitCode).toBe(-1)
+    if (stdout !== '') expect(input.stdout).toBe(stdout)
+    else expect(JSON.parse(input.stdout).error).toContain('exited -1 and printed nothing')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(writes.some((w) => w.path.includes('/observe/faults/'))).toBe(false)
+  })
+}
+
 test("a lane start saves its payload at spawn, then runs aether-lane with the payload's text left out", async ($, on) => {
   const { runs, writes } = stubs(on, { answer: { exitCode: 0, stdout: '{"started":true}\n' } })
   const command = `aether-lane start ${RUN} task-1-1-implement --role implementer --task task-1 --model gemini-3.8-flash --effort high --digest 0a1b2c3d:12`

@@ -354,7 +354,11 @@ async function armResume($, brake, run, resumeAt) {
   brake.armedFor = armedFor
   const ms = at - (await $.clock.now())
   if (ms <= 0) {
-    await $.prompt.submit({ text: resumePromptFor({ run, resumeAt }) })
+    try {
+      void Promise.resolve($.prompt.submit({ text: resumePromptFor({ run, resumeAt }) })).catch(() => {})
+    } catch {
+      // The session ended before the prompt could be submitted.
+    }
     return
   }
   $.clock.after(ms, async () => {
@@ -393,10 +397,14 @@ async function brakeRecorded($, state, crossing, record) {
   const wasPaused = brake.pausedResetsAt === crossing.resetsAt
   if (record && crossing.kind === 'five_hour' && record.reason !== 'no-run') brake.pausedResetsAt = crossing.resetsAt
   if (!record || crossing.kind !== 'five_hour' || record.paused !== true || !record.run || !record.resumeAt) return
-  if (record.duplicate !== true && !wasPaused) {
-    await $.prompt.submit({ text: brakePromptFor({ ...crossing, threshold: brake.settings.threshold, run: record.run, resumeAt: record.resumeAt }) })
-  }
   await armResume($, brake, record.run, record.resumeAt)
+  if (record.duplicate !== true && !wasPaused) {
+    try {
+      void Promise.resolve($.prompt.submit({ text: brakePromptFor({ ...crossing, threshold: brake.settings.threshold, run: record.run, resumeAt: record.resumeAt }) })).catch(() => {})
+    } catch {
+      // The session ended before the prompt could be submitted.
+    }
+  }
 }
 
 // The quota brake after one metered step. The first step asks aether-autonomy for the brake's settings (a

@@ -57,6 +57,21 @@ test('session and since filter the report', (t) => {
   assert.equal(delegatesReport({ dataDir, session: 'other' }).delegations.length, 1)
 })
 
+test('two sessions that used the same task id are two rows, each with its own attempts (issue 148)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const mine = (e) => ({ session: 'a', ...e })
+  const other = (e) => ({ session: 'b', ...e })
+  const entries = [
+    mine({ kind: 'launch', task: 'same', time: 1, step: 'haiku', attempt: 1, launchKind: 'first', description: 'mine' }),
+    other({ kind: 'launch', task: 'same', time: 2, step: 'haiku', attempt: 1, launchKind: 'first', description: 'theirs' }),
+    other({ kind: 'launch', task: 'same', time: 3, step: 'haiku', attempt: 2, launchKind: 'fix', description: 'theirs' }),
+  ]
+  entries.forEach((e) => log.appendEntry(dataDir, e))
+  const { delegations, ladder } = delegatesReport({ dataDir })
+  assert.deepEqual(delegations.map((d) => [d.id, d.session, d.description, d.attempts]).sort(), [['same', 'a', 'mine', 1], ['same', 'b', 'theirs', 2]])
+  assert.equal(ladder.steps[0].tasks, 2, 'two tasks of two sessions are two tasks')
+})
+
 test('aether-report --delegates prints the report as one JSON line', (t) => {
   const dataDir = world(t)
   const out = spawnSync(process.execPath, [BIN, '--delegates', '--session', 's1'], { encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dataDir } })

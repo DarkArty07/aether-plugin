@@ -296,7 +296,9 @@ async function ops(command, { phase, label, payload = null, long = false, anyExi
     return { error: `unreadable output from ${command} (the ops agent may have refused or not run it): ${String(reply.stdout).slice(0, 300)}` }
   }
   if (out.error) return { error: String(out.error) }
-  if (reply.exitCode !== 0 && !anyExit) return { error: `${command} exited with ${reply.exitCode}` }
+  // A model that ran the command can report "exitCode": -1 for a command that succeeded and printed the bin's own
+  // line (issue 123): no process exits with -1, so that line is the answer.
+  if (reply.exitCode !== 0 && reply.exitCode !== -1 && !anyExit) return { error: `${command} exited with ${reply.exitCode}` }
   return out
 }
 

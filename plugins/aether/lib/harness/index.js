@@ -20,8 +20,8 @@ function unregisterAdapter(name) {
 
 // The adapter of harness name, built from its table entry. Throws, naming the harness, when the name
 // is not known or its module cannot be loaded.
-function createAdapter(name, settings) {
-  const options = { command: settings.command, groups: settings.groups }
+function createAdapter(name, settings, dataDir = null) {
+  const options = { command: settings.command, groups: settings.groups, dataDir }
   if (registered.has(name)) return registered.get(name)(options)
   if (!HARNESS_NAMES.includes(name)) throw new Error(`unknown harness: ${name}`)
   let factory

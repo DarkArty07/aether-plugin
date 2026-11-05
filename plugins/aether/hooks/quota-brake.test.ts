@@ -15,7 +15,7 @@ type Run = { argv: string[] }
 
 // Answers what the brake asks Claude Code for: settings and crossings come from `aether-autonomy` by process,
 // the windows from `session.usage`, and every side effect is kept.
-function stubs(on, { marked = true, settings = SETTINGS as any, crossing = PAUSED as any, notifyFails = false, notifyThrows = false, usageThrows = false, crossingFails = false } = {}) {
+function stubs(on, { marked = true, settings = SETTINGS as any, crossing = PAUSED as any, notifyFails = false, notifyThrows = false, usageThrows = false, crossingFails = false, submitMode = 'normal' } = {}) {
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/home/u', AETHER_DATA_DIR: '/home/u/aether-data' })
   const writes: { path: string; text: string }[] = []
@@ -46,7 +46,13 @@ function stubs(on, { marked = true, settings = SETTINGS as any, crossing = PAUSE
     return { value: sessionUsage }
   })
   on('ui.notify', ($, e) => { if (notifyThrows) throw new Error('notify broke'); notes.push({ text: e.text, opts: e.opts ?? e.init ?? e }); return { value: notifyFails ? { isSent: false, reason: 'disabled' } : { isSent: true, channel: 'test' } } })
-  on('prompt.submit', ($, e) => { prompts.push(e); return { text: e.text } })
+  on('prompt.submit', ($, e) => {
+    prompts.push(e)
+    if (submitMode === 'pending' && prompts.length === 1) return new Promise(() => {})
+    if (submitMode === 'reject') return Promise.reject(new Error('submit failed'))
+    if (submitMode === 'throw') throw new Error('submit failed')
+    return { text: e.text }
+  })
   return {
     clock, writes, runs, notes, prompts,
     setLimits(rateLimits: any) { sessionUsage = { rateLimits } },
@@ -59,6 +65,42 @@ async function step($, fields: Record<string, unknown> = {}) {
   let s = await stream.next()
   while (s.done !== true) s = await stream.next()
   return s.value
+}
+
+test('a pending brake prompt does not hold the step or prevent the wake-up', async ($, on) => {
+  const s = stubs(on, { submitMode: 'pending' })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 96.5, resetsAt: RESET }])
+  const result = await Promise.race([step($).then(() => 'returned'), new Promise(resolve => setTimeout(() => resolve('blocked'), 10000))])
+  expect(result).toBe('returned')
+  await s.clock.advance(Date.parse(RESUME) - NOW)
+  expect(s.prompts).toHaveLength(2)
+})
+
+test('a rejected prompt does not disrupt the step', async ($, on) => {
+  const s = stubs(on, { submitMode: 'reject' })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 96.5, resetsAt: RESET }])
+  expect((await step($)).answer).toBe('ok')
+  await s.clock.advance(Date.parse(RESUME) - NOW)
+  expect(s.prompts).toHaveLength(2)
+})
+
+test('a synchronously thrown prompt does not disrupt the step', async ($, on) => {
+  const s = stubs(on, { submitMode: 'throw' })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 96.5, resetsAt: RESET }])
+  expect((await step($)).answer).toBe('ok')
+  await s.clock.advance(Date.parse(RESUME) - NOW)
+  expect(s.prompts).toHaveLength(2)
+})
+
+for (const submitMode of ['pending', 'reject', 'throw']) {
+  test(`a resume hour already past does not hold or disrupt the step (${submitMode})`, async ($, on) => {
+    const resumeAt = new Date(NOW - 1000).toISOString()
+    const s = stubs(on, { submitMode, settings: { ...SETTINGS, paused: { run: RUN, resetsAt: RESET, resumeAt } } })
+    const result = await Promise.race([step($).then(() => 'returned'), new Promise(resolve => setTimeout(() => resolve('blocked'), 10000))])
+    expect(result).toBe('returned')
+    expect(s.prompts).toHaveLength(1)
+    expect(s.prompts[0].text).toContain('has reset')
+  })
 }
 
 test('a five-hour crossing warns once, records the pause and wakes the Lead after the reset', async ($, on) => {
@@ -279,7 +321,8 @@ test('a resume hour that has already passed submits the resume at once', async (
   const s = stubs(on, { crossing: { ...PAUSED, resumeAt: past } })
   s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
   await step($)
-  expect(s.prompts.map((p) => p.text.includes('has reset'))).toEqual([false, true])
+  // The resume is armed before the brake's prompt is submitted (issue 124), so the resume line comes first.
+  expect(s.prompts.map((p) => p.text.includes('has reset'))).toEqual([true, false])
 })
 
 test('steps that overlap settle one crossing: one settings call, one notice, one recording', async ($, on) => {

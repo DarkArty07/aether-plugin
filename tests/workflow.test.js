@@ -929,3 +929,20 @@ test('a firstBase that is not a non-empty string is refused before any agent sta
     assert.equal(run.calls.length, 0)
   }
 })
+
+test('two blocked reports with the same cause stop at attempt two', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args, {
+    implementer: (call, done) => call.unit === 'task-1'
+      ? { status: 'BLOCKED', summary: 'Cannot proceed', head: '', tests: '', concerns: '', question: call.n === 1 ? 'Outside   Owns' : 'outside owns' }
+      : done(call),
+    ops: (call, wt) => call.kind === 'ops:gate' && call.unit === 'task-1'
+      ? { pass: false, findings: [{ file: 'npm test', what: 'failed' }] }
+      : wt(call),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units.find((u) => u.id === 'task-1')
+  assert.equal(unit.status, 'blocked')
+  assert.match(unit.reason, /blocked-same-cause.*outside owns/i)
+  assert.equal(attemptsOf(run, 'task-1').length, 2)
+})

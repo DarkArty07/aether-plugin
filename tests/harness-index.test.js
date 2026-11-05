@@ -47,7 +47,7 @@ test('createAdapter throws, naming the harness, for a name that is not known', (
   assert.throws(() => harnesses.createAdapter('../lanes', SETTINGS), /unknown harness: \.\.\/lanes/)
 })
 
-test('registerAdapter adds a factory under any name, called with the command and groups, and unregisterAdapter removes it', () => {
+test('registerAdapter adds a factory under any name, called with the command, groups and data directory, and unregisterAdapter removes it', () => {
   const seen = []
   harnesses.registerAdapter('fake', (options) => {
     seen.push(options)
@@ -55,7 +55,10 @@ test('registerAdapter adds a factory under any name, called with the command and
   })
   try {
     assert.deepEqual(harnesses.createAdapter('fake', SETTINGS), { name: 'fake' })
-    assert.deepEqual(seen, [{ command: '/opt/x', groups: { g: 'G' } }])
+    assert.deepEqual(seen, [{ command: '/opt/x', groups: { g: 'G' }, dataDir: null }])
+    const dataDir = path.join(__dirname, '..', '.aether-tmp', 'adapter-data')
+    harnesses.createAdapter('fake', SETTINGS, dataDir)
+    assert.deepEqual(seen[1], { command: '/opt/x', groups: { g: 'G' }, dataDir })
   } finally {
     harnesses.unregisterAdapter('fake')
   }

@@ -5,9 +5,9 @@
 // aether-delegate verdict --task <id> --verdict approve|fix|infeasible [--reason <text>] [--finding <file[:line]: what is missing>]...
 //   [--from-scratch] [--worktree <path>] [--session <id>] [--ignore <glob>]...
 // aether-delegate authorize --model <model> --quote <text> (--task <id> | --scope session) [--session <id>]
-// aether-delegate start --id <id>
-// aether-delegate run --id <id>
-// aether-delegate wait --id <id> --seconds <n>
+// aether-delegate start --id <id> [--session <id>]
+// aether-delegate run --id <id> [--session <id>]
+// aether-delegate wait --id <id> --seconds <n> [--session <id>]
 // aether-delegate answer --session <id> --task <id> --attempt <n> --text <text>
 // aether-delegate renew --harness <agy|codex|grok|muse>
 //
@@ -34,9 +34,9 @@ const VERBS = {
     required: ['task', 'verdict'],
   },
   authorize: { usage: 'authorize --model <model> --quote <text> (--task <id> | --scope session) [--session <id>]', flags: ['model', 'quote', 'task', 'scope', 'session'], required: ['model', 'quote'] },
-  start: { usage: 'start --id <id>', flags: ['id'], required: ['id'] },
-  run: { usage: 'run --id <id>', flags: ['id'], required: ['id'] },
-  wait: { usage: 'wait --id <id> --seconds <n>', flags: ['id', 'seconds'], required: ['id', 'seconds'] },
+  start: { usage: 'start --id <id> [--session <id>]', flags: ['id', 'session'], required: ['id'] },
+  run: { usage: 'run --id <id> [--session <id>]', flags: ['id', 'session'], required: ['id'] },
+  wait: { usage: 'wait --id <id> --seconds <n> [--session <id>]', flags: ['id', 'seconds', 'session'], required: ['id', 'seconds'] },
   answer: { usage: 'answer --session <id> --task <id> --attempt <n> --text <text>', flags: ['session', 'task', 'attempt', 'text'], required: ['task', 'attempt'] },
   renew: { usage: 'renew --harness <agy|codex|grok|muse>', flags: ['harness'], required: ['harness'] },
 }
@@ -105,24 +105,24 @@ async function authorizeCommand(flags, dataDir) {
 }
 
 async function startCommand(flags, dataDir) {
-  return lib('delegate-run.js').start({ id: flags.id, cwd: process.cwd(), dataDir })
+  return lib('delegate-run.js').start({ id: flags.id, session: flags.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null, cwd: process.cwd(), dataDir })
 }
 
 async function runCommand(flags, dataDir) {
-  return lib('delegate-run.js').runTask({ id: flags.id, cwd: process.cwd(), dataDir })
+  return lib('delegate-run.js').runTask({ id: flags.id, session: flags.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null, cwd: process.cwd(), dataDir })
 }
 
 async function waitCommand(flags, dataDir) {
   const seconds = Number(flags.seconds)
   if (flags.seconds.trim() === '' || !Number.isFinite(seconds) || seconds < 0) throw new Error(`--seconds needs a number of seconds\n${usageOf('wait')}`)
-  return lib('delegate-run.js').wait({ id: flags.id, dataDir, seconds })
+  return lib('delegate-run.js').wait({ id: flags.id, session: flags.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null, dataDir, seconds })
 }
 
 async function answerCommand(flags, dataDir) {
   if (!/^[A-Za-z0-9_-]+$/.test(flags.task)) throw new Error(`the task id is letters, digits, - and _\n${usageOf('answer')}`)
   const attempt = Number(flags.attempt)
   if (!/^\d+$/.test(flags.attempt) || attempt < 1) throw new Error(`--attempt needs a whole number from 1\n${usageOf('answer')}`)
-  return lib('delegate-run.js').recordAnswer({ task: flags.task, attempt, text: flags.text ?? '', session: flags.session ?? null, dataDir })
+  return lib('delegate-run.js').recordAnswer({ task: flags.task, attempt, text: flags.text ?? '', session: flags.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null, dataDir })
 }
 
 async function renewCommand(flags, dataDir) {

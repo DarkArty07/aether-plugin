@@ -213,3 +213,92 @@ test('the bin: an unknown verb is an error, wait on an id never started says unk
   assert.equal(JSON.parse(waited.stdout.trim()).status, 'unknown')
   assert.equal(spawnSync(process.execPath, [BIN, 'verdict', '--task', 'x'], { encoding: 'utf8', env }).status, 1)
 })
+
+test('previous work keeps text and patch from the latest attempt, including missing patches (issue 144)', (t) => {
+  const dir = tempDir(t)
+  const patch = path.join(dir, 'old.patch')
+  fs.writeFileSync(patch, 'old')
+  const entries = [{ kind: 'result', patch }, { kind: 'answer', text: 'Claude work' }]
+  assert.deepEqual(log.previousWork(entries), { text: 'Claude work', patch: null })
+  const latest = path.join(dir, 'latest.patch')
+  fs.writeFileSync(latest, 'latest')
+  entries.push({ kind: 'result', patch: latest })
+  assert.equal(log.previousWork(entries).patch, latest)
+  assert.match(log.previousWork(entries).text, /latest\.patch/)
+  entries.push({ kind: 'result', patch: path.join(dir, 'missing.patch') })
+  assert.equal(log.previousWork(entries).patch, null)
+  assert.match(log.previousWork(entries).text, /missing\.patch/)
+})
+
+test('wait isolates results for sessions with the same task id (issue 148)', async (t) => {
+  const dataDir = tempDir(t)
+  const dir = path.join(dataDir, 'delegates', 'results')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, '2-s1--t1.json'), JSON.stringify({ ok: true, status: 'ok', text: 'one' }))
+  fs.writeFileSync(path.join(dir, '2-s2--t1.json'), JSON.stringify({ ok: true, status: 'ok', text: 'two' }))
+  assert.equal((await dr.wait({ id: 't1', session: 's1', dataDir, seconds: 0 })).text, 'one')
+  assert.equal((await dr.wait({ id: 't1', session: 's2', dataDir, seconds: 0 })).text, 'two')
+})
+
+test('two sessions run and wait for their own external attempt (issue 148)', async (t) => {
+  const dataDir = tempDir(t)
+  const dir = path.join(dataDir, 'delegates', 'external')
+  fs.mkdirSync(dir, { recursive: true })
+  for (const session of ['s1', 's2']) {
+    fs.writeFileSync(path.join(dir, `${session.length}-${session}--t1.json`), JSON.stringify({ session, attempt: 1, edits: false, task: {}, owns: [] }))
+  }
+  const runChain = async ({ session }) => ({ ok: true, status: 'ok', text: `answer ${session}`, attribution: '', attempts: [] })
+  await Promise.all(['s1', 's2'].map((session) => dr.runTask({ id: 't1', session, cwd: dataDir, dataDir }, { runChain })))
+  for (const session of ['s1', 's2']) {
+    assert.match((await dr.wait({ id: 't1', session, dataDir, seconds: 0 })).text, new RegExp(`answer ${session}`))
+  }
+})
+
+test('a correction never carries an older lane patch past Claude work or a missing latest patch (issue 144)', async (t) => {
+  const dataDir = tempDir(t)
+  const patch = path.join(dataDir, 'old.patch')
+  fs.writeFileSync(patch, 'old')
+  const external = path.join(dataDir, 'delegates', 'external', '2-s1--t1.json')
+  fs.mkdirSync(path.dirname(external), { recursive: true })
+  fs.writeFileSync(external, JSON.stringify({ session: 's1', attempt: 3, edits: true, carry: true, owns: [] }))
+  fs.copyFileSync(external, path.join(path.dirname(external), 't1.json')) // An in-flight legacy launch has the same description.
+  log.appendEntry(dataDir, { kind: 'result', session: 's1', task: 't1', attempt: 1, patch })
+  log.appendEntry(dataDir, { kind: 'answer', session: 's1', task: 't1', attempt: 2, text: 'Claude work' })
+  const seen = []
+  const run = () => dr.runTask({ id: 't1', session: 's1', cwd: dataDir, dataDir }, {
+    delegateCommand: async (_cwd, flags) => { seen.push(flags); return { status: 'no-candidate' } },
+  })
+  await run()
+  assert.equal(seen[0].carry, undefined)
+  log.appendEntry(dataDir, { kind: 'result', session: 's1', task: 't1', attempt: 3, patch: path.join(dataDir, 'missing.patch') })
+  await run()
+  assert.equal(seen[1].carry, undefined)
+})
+
+test('session file keys cannot collide and reject unsafe identifiers (issue 148)', () => {
+  assert.notEqual(log.fileKey('a--b', 'c'), log.fileKey('a', 'b--c'))
+  for (const value of ['../outside', '', 'bad/session']) assert.throws(() => log.fileKey(value, 't1'))
+})
+
+test('a session ignores an unscoped legacy result without crashing (issue 148)', async (t) => {
+  const dataDir = tempDir(t)
+  const dir = path.join(dataDir, 'delegates', 'results')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 't1.json'), JSON.stringify({ ok: true, text: 'another session' }))
+  assert.equal((await dr.wait({ id: 't1', session: 's1', dataDir, seconds: 0 })).status, 'unknown')
+})
+
+test('start clears only its session result and forwards the session to run (issue 148)', (t) => {
+  const dataDir = tempDir(t)
+  const results = path.join(dataDir, 'delegates', 'results')
+  fs.mkdirSync(results, { recursive: true })
+  for (const session of ['s1', 's2']) fs.writeFileSync(path.join(results, `${log.fileKey(session, 't1')}.json`), '{}')
+  const calls = []
+  dr.start({ id: 't1', session: 's1', cwd: dataDir, dataDir }, {
+    spawn: (_command, args) => { calls.push(args); return { pid: 4242, unref() {} } },
+  })
+  assert.deepEqual(calls[0].slice(-5), ['run', '--id', 't1', '--session', 's1'])
+  assert.equal(fs.existsSync(path.join(results, '2-s1--t1.json')), false)
+  assert.equal(fs.existsSync(path.join(results, '2-s2--t1.json')), true)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'run', '2-s1--t1.json'), 'utf8')).pid, 4242)
+})

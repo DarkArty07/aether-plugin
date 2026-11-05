@@ -292,7 +292,7 @@ async function runWorkflow(args, overrides = {}, options = {}) {
       const handler = isLane ? overrides.lane || defaults.lane : overrides[role] || defaults[role]
       const answer = await handler(call, isLane ? defaults.lane : defaults[role])
       if (role !== 'ops' || answer === null) return answer
-      if (custom && answer.raw) return answer.raw
+      if (answer.raw) return answer.raw
       if (typeof answer === 'string') return { exitCode: 0, stdout: answer }
       return { exitCode: answer.error ? 1 : 0, stdout: `${JSON.stringify(answer)}\n` }
     } finally {

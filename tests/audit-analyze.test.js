@@ -287,6 +287,43 @@ test('runAudit: no network, a missing tool, output it does not understand and no
   assert.equal(none.state, 'not-applicable')
 })
 
+test('discoverAudits lists every ecosystem whose lockfile is present, and discoverAudit still answers with the first (issue 150)', (t) => {
+  const all = (files) => tools.discoverAudits(projectDir(t, files))
+  assert.deepEqual(all({ 'package.json': pkg({}), 'package-lock.json': '{}', 'composer.lock': '{}' }).map((e) => [e.ecosystem, e.found]), [['npm', true], ['composer', true]])
+  assert.deepEqual(all({ 'package.json': pkg({}), 'composer.lock': '{}', 'Cargo.lock': '' }).map((e) => [e.ecosystem, e.found]), [['npm', false], ['composer', true], ['cargo', true]])
+  assert.equal(all({ 'package.json': pkg({}) })[0].reason, 'package.json has no lockfile')
+  assert.deepEqual(all({}), [])
+  const dir = projectDir(t, { 'package.json': pkg({}), 'package-lock.json': '{}', 'composer.lock': '{}' })
+  assert.equal(tools.discoverAudit(dir).command, 'npm audit --json')
+  assert.deepEqual(tools.discoverAudit(projectDir(t, {})), { found: false, reason: 'no supported dependency manifest' })
+})
+
+test('runAudit runs the audit of every ecosystem and merges them into one check that says what each one found (issue 150)', async (t) => {
+  const npm = JSON.stringify({ vulnerabilities: { lodash: { name: 'lodash', severity: 'low' } } })
+  const composer = JSON.stringify({ advisories: { 'vendor/pkg': [{ advisoryId: 'PKSA-1', title: 'RCE', severity: 'high' }, { advisoryId: 'PKSA-2', title: 'XSS', severity: 'moderate' }] } })
+  const byTool = (replies) => fake((file, args) => (args[1].startsWith('npm audit') ? replies.npm : replies.composer))
+  const dir = projectDir(t, { 'package.json': pkg({}), 'package-lock.json': '{}', 'composer.lock': '{}' })
+  const both = await tools.runAudit(dir, { exec: byTool({ npm: { status: 1, stdout: npm, stderr: '', timedOut: false }, composer: { status: 1, stdout: composer, stderr: '', timedOut: false } }), env: {} })
+  assert.deepEqual([both.state, both.tool, both.counts.total, both.counts.high, both.counts.low], ['result', 'npm audit + composer audit', 3, 1, 1])
+  assert.deepEqual(both.ecosystems.map((e) => [e.ecosystem, e.state, e.counts.total]), [['npm', 'result', 1], ['composer', 'result', 2]])
+  assert.deepEqual(both.top.map((x) => x.severity), ['high', 'moderate', 'low'])
+  // One ecosystem could not run: the others' result stands, and the check says which one and why.
+  const partial = await tools.runAudit(dir, { exec: byTool({ npm: { status: 1, stdout: npm, stderr: '', timedOut: false }, composer: { status: 127, stdout: '', stderr: 'sh: composer: not found', timedOut: false } }), env: {} })
+  assert.deepEqual([partial.state, partial.tool, partial.counts.total], ['result', 'npm audit', 1])
+  assert.deepEqual(partial.ecosystems.map((e) => [e.ecosystem, e.state, e.reason ?? null]), [['npm', 'result', null], ['composer', 'could-not', 'the tool is not installed']])
+  // None gave a result: the reasons are joined.
+  const none = await tools.runAudit(dir, { exec: byTool({ npm: { status: 1, stdout: '', stderr: 'ENOTFOUND', timedOut: false }, composer: { status: 127, stdout: '', stderr: '', timedOut: false } }), env: {} })
+  assert.equal(none.state, 'could-not')
+  assert.ok(none.reason.includes('npm audit: no network') && none.reason.includes('composer audit: the tool is not installed'), none.reason)
+  // A single ecosystem keeps the shape it had, and names itself.
+  const single = await tools.runAudit(projectDir(t, { 'composer.lock': '{}' }), { exec: byTool({ composer: { status: 1, stdout: composer, stderr: '', timedOut: false } }), env: {} })
+  assert.deepEqual([single.state, single.tool, single.counts.total, single.ecosystems.length], ['result', 'composer audit', 2, 1])
+  // A package.json with no lockfile does not hide the ecosystem that has one.
+  const mixed = await tools.runAudit(projectDir(t, { 'package.json': pkg({}), 'composer.lock': '{}' }), { exec: byTool({ composer: { status: 1, stdout: composer, stderr: '', timedOut: false } }), env: {} })
+  assert.deepEqual([mixed.state, mixed.counts.total], ['result', 2])
+  assert.deepEqual(mixed.ecosystems.map((e) => [e.ecosystem, e.state]), [['npm', 'not-applicable'], ['composer', 'result']])
+})
+
 function ctxFor(t, exec, extra = {}) {
   return { exec, env: { PATH: '/usr/bin' }, now: () => new Date('2026-11-04T12:00:00Z'), dataDir: tempDir(t, 'aether-data-'), ...extra }
 }

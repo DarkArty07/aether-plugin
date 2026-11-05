@@ -105,6 +105,10 @@ test('an external delegate is the first step of its agent: started, waited for, 
   const second = await generator.next()
   assert.deepEqual(second.value, { kind: 'text', index: 0, text: '[Aether: the delegate is still working, 18 min so far]\n' })
   assert.deepEqual(runs(), ['begin', 'start', 'wait', 'wait'], 'the second beat comes before the third wait')
+  // The files of a delegate are keyed by session and id (issue 148): the mod hands its session to start and to every wait.
+  const startArgv = calls.runs[1].argv
+  assert.deepEqual(startArgv.slice(startArgv.indexOf('--session')), ['--session', CTX.session])
+  assert.ok(calls.runs.slice(2).every((run) => run.argv.includes('--session') && run.argv.includes(CTX.session)), 'every wait carries the session')
   const answer = await generator.next()
   assert.deepEqual(answer.value, { kind: 'text', index: 0, text: 'branch aether/r/task-1' })
   const stop = await generator.next()
