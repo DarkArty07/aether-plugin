@@ -659,6 +659,12 @@ export function register(on, options) {
         }
       }
       if (out) {
+        // Trust the bin's own final object when the reported exit code contradicts its success line.
+        const line = jsonFrom(out.stdout)
+        if (out.exitCode !== 0 && line && !Object.prototype.hasOwnProperty.call(line, 'error')) {
+          void recordFault($, state, 'register.ops-run', 'exit-code-overridden')
+          out = { ...out, exitCode: 0 }
+        }
         // The answer the model would give: one StructuredOutput call. It records no usage.
         state.ops.set(e.agentId, ANSWERED)
         const input = { exitCode: out.exitCode, stdout: out.stdout }
