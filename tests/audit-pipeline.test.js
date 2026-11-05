@@ -198,6 +198,35 @@ test('a missing earlier item is resolved only when its files changed since the e
   ])
 })
 
+test('a branch located by its tip is resolved when the tip moved or the branch is gone, and a file located by a commit is compared as a file', (t) => {
+  const repo = makeRepo(t)
+  commitIn(repo, repo.dir, 'src/a.js', 'a v1\n', 'add a')
+  commitIn(repo, repo.dir, 'config/dev.env', 'X=1\n', 'add env')
+  const envCommit = repo.git('rev-parse', 'HEAD')
+  repo.git('rm', '-q', 'config/dev.env')
+  repo.git('commit', '-q', '-m', 'drop env')
+  for (const name of ['moved', 'kept', 'gone']) repo.git('branch', name)
+  const tip = repo.git('rev-parse', 'HEAD')
+  const firstHead = tip
+  const key = 'repo-0123456789ab'
+  const list = [
+    { causeKey: 'moved', title: 'Moved', topic: 'hygiene', locations: [{ file: 'moved', commit: tip }] },
+    { causeKey: 'kept', title: 'Kept', topic: 'hygiene', locations: [{ file: 'kept', commit: tip }] },
+    { causeKey: 'gone', title: 'Gone', topic: 'hygiene', locations: [{ file: 'gone', commit: tip }] },
+    { causeKey: 'secret', title: 'Secret in history', topic: 'security', locations: [{ file: 'config/dev.env', commit: envCommit }] },
+  ]
+  const dataDir = tempDir(t, 'aether-data-')
+  store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), { project: { head: firstHead }, list }, '')
+  repo.git('switch', '-q', 'moved')
+  commitIn(repo, repo.dir, 'm.txt', 'm\n', 'move the branch')
+  repo.git('switch', '-q', 'main')
+  repo.git('branch', '-q', '-D', 'gone')
+  const analysis = { project: { key, head: repo.git('rev-parse', 'HEAD'), root: repo.dir }, checks: { issues: { state: 'result', open: [] } } }
+  const out = clean.clean(settled([]), analysis, { topics: ['hygiene', 'security'], dataDir })
+  assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), ['moved', 'gone'])
+  assert.deepEqual(out.sinceLast.notFoundAgain.map((r) => r.causeKey), ['kept', 'secret'])
+})
+
 const judgment = (over = {}) => ({ severity: 'high', priority: 'P1', reason: 'a reason', size: 'S', how: 'one agent', regression: false, waitCost: 'medium', ...over })
 const cleaned = (findings, unverified = []) => ({
   findings: findings.map((f) => ({ ...f, locations: [f.location], mergedFrom: [f.id], mark: null })),

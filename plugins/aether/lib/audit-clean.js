@@ -126,20 +126,23 @@ function missingLocations(item) {
   return []
 }
 
-function branchChangedSince(location, root) {
-  if (!location || typeof location.file !== 'string' || typeof location.commit !== 'string' || location.commit === '') return false
-  let ref = null
+// The tip of a ref, or null when the name is not a ref (a file path, or a branch that is gone).
+function refTip(name, root) {
   try {
-    ref = git(['rev-parse', '--verify', '--quiet', location.file], root, { allowFail: true })
+    const ref = git(['rev-parse', '--verify', '--quiet', `${name}^{commit}`], root, { allowFail: true })
+    return ref !== null && ref.status === 0 && ref.stdout !== '' ? ref.stdout : null
+  } catch {
+    return null
+  }
+}
+
+// Whether a path existed in a commit's tree.
+function pathIn(commit, file, root) {
+  try {
+    return git(['cat-file', '-e', `${commit}:${file}`], root, { allowFail: true }).status === 0
   } catch {
     return false
   }
-  if (ref === null || ref.status !== 0 || ref.stdout === '') return false
-  const tip = ref.stdout
-  const want = String(location.commit)
-  if (tip.toLowerCase() === want.toLowerCase()) return false
-  if (tip.toLowerCase().startsWith(want.toLowerCase())) return false
-  return true
 }
 
 function filesDifferSince(files, earlierHead, currentHead, root) {
@@ -164,17 +167,14 @@ function evidenceChangedSince(item, earlierHead, currentHead, root) {
   for (const location of locations) {
     if (!location || typeof location.file !== 'string') continue
     if (typeof location.commit === 'string' && location.commit !== '') {
-      let isBranch = false
-      try {
-        const ref = git(['rev-parse', '--verify', '--quiet', location.file], root, { allowFail: true })
-        isBranch = ref !== null && ref.status === 0 && ref.stdout !== ''
-      } catch {
-        isBranch = false
-      }
-      if (isBranch) {
-        if (branchChangedSince(location, root)) return true
+      // A branch located by its tip: changed when the tip moved, or when the branch is gone. A file located by a commit
+      // (a secret in the history) is a path of that commit's tree, and is compared as a file below.
+      const tip = refTip(location.file, root)
+      if (tip !== null) {
+        if (!tip.toLowerCase().startsWith(location.commit.toLowerCase())) return true
         continue
       }
+      if (!pathIn(location.commit, location.file, root)) return true
     }
     files.push(location.file)
   }

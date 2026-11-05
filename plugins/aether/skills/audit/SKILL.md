@@ -104,7 +104,7 @@ In `$W/settled.json`, add to each finding a `causeKey`: a short slug of its root
 
     aether-audit clean "$W/settled.json" --analysis "$W/analysis.json" --topics <the confirmed topic ids, comma-separated> --out "$W/clean.json"
 
-It adds the analysis's own findings (a change the audit's commands made to the project), merges the findings of one cause, removes what an open issue covers, and marks each one «new» or «still» against the earlier audit, listing the resolved ones.
+It adds the analysis's own findings (a change the audit's commands made to the project), merges the findings of one cause, removes what an open issue covers, and marks each one «new» or «still» against the earlier audit. An earlier item not found again counts as resolved only when its code changed since; when it did not, the report says it was not found again, since reviewers are models and miss things.
 
 ## 6. Triage
 

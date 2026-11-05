@@ -110,7 +110,7 @@ async function analyze(root, opts = {}, ctx = {}) {
     remote: identity.remote,
     root: identity.root,
     defaultBranch: branches.state === 'result' ? branches.default : null,
-    head: analysisHead(identity.root),
+    head: analysisHead(root),
   }
   const checkByStep = { tests, lint, dependencies }
   const selfFindings = changes.attributed.map((entry, index) => findingOfStep(entry.step, entry.items, checkByStep[entry.step] || null, index))
