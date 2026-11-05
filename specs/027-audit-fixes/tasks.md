@@ -20,7 +20,7 @@
 
 - [ ] T001 [P] [US3] Rechazar citas del dueño dentro de una frase que niega la acción, en `plugins/aether/lib/autonomy.js` → Task 1
 - [ ] T002 [P] [US1] Evaluar todas las clases irreversibles de la línea y analizar los heredocs de shell, en `plugins/aether/lib/guard.js` → Task 2
-- [ ] T003 [US1, US2] Exigir permiso por clase, proteger `grants.json` y `run.json` y fallar cerrado, en `plugins/aether/lib/guard.js` → Task 3
+- [ ] T003 [US1, US2] Exigir permiso por clase, proteger `grants.json` y `run.json` por mención y fallar cerrado, en `plugins/aether/lib/guard.js` → Task 3
 - [ ] T004 [P] [US4] Escribir el estado del run de forma atómica, en `plugins/aether/lib/run.js` → Task 4
 - [ ] T005 [P] [US5] Crear `runShell` y `withLock` en `plugins/aether/lib/common.js` → Task 5
 - [ ] T006 [P] [US6] Probar la paridad de los globs del workflow con `lib/globs.js`, en `tests/globs.test.js` → Task 6
@@ -34,6 +34,7 @@
 - [ ] T014 [US5] Resumir y podar la observación bajo bloqueo, en `plugins/aether/lib/observe-digest.js` → Task 14
 - [ ] T015 [US5] Podar el registro de delegados a 30 días archivando antes sus `outcome`, en `delegate-log.js` y `session-start.js` → Task 15
 - [ ] T016 [US9] Enseñar al Lead a entrar y salir del modo plan, en `skills/using-aether/SKILL.md` y las guías → Task 16
+- [ ] T017 [US1] Apartar un registro o estado corrupto con `aether-autonomy quarantine`, en `plugins/aether/lib/autonomy.js` y la skill `autonomous-runs` → Task 17
 
 ---
 
@@ -194,12 +195,12 @@ test('a heredoc that no shell runs as a script stays text (R2)', () => {
 
 ---
 
-### Task 3: Exigir permiso por clase, proteger `grants.json` y `run.json` y fallar cerrado
+### Task 3: Exigir permiso por clase, proteger `grants.json` y `run.json` por mención y fallar cerrado
 
 **Aether:**
 - Review: xhigh — es la barrera que decide si una acción irreversible corre sin permiso y si un agente puede falsificar permisos
 - Area: guard
-- Owns: `plugins/aether/lib/guard.js`, `plugins/aether/skills/autonomous-runs/SKILL.md`, `tests/guard.test.js`, `tests/guard-intent.test.js`, `tests/guard-merge-main.test.js`, `tests/autonomous-runs-skill.test.js`
+- Owns: `plugins/aether/lib/guard.js`, `tests/guard.test.js`, `tests/guard-intent.test.js`, `tests/guard-merge-main.test.js`
 - Depends on: Task 2 — `decideBash` usa `irreversibleClasses` y la lectura de heredocs que esa tarea crea en el mismo archivo
 - Serves: R1, R3, R4, R24
 
@@ -210,22 +211,19 @@ En `plugins/aether/lib/guard.js`, `decideBash(input, env)`:
 - **Una clase a la vez (R1).** Para cada clase de `irreversibleClasses(command, cwd)` consulta `check(mainRoot, cls, { session })`. Cada clase sin permiso vigente deja una entrada en `.aether/pending.jsonl` (una por clase, en orden, con `command` redactado y `mode`). Con `AETHER_IRREVERSIBLE=enforce` el comando se rechaza con el motivo de la primera clase sin permiso (el texto de hoy, con su clase). Si todas tienen permiso, devuelve `null` sin escribir nada.
 - **Fuera de un repositorio (R4).** Si `repoPaths(cwd)` falla, permite sin registrar, como hoy. Ese `try` no cubre a `check`. Solo hay que llamar a `repoPaths` cuando hay alguna clase irreversible: un comando corriente no arranca procesos de `git`.
 - **Registro ilegible (R4).** Si `check` lanza (JSON inválido, estructura inválida), la clase cuenta como sin permiso: se registra y, en `enforce`, se rechaza. En modo `log` se registra y se permite.
-- **Escrituras protegidas (R3): una regla por mención, que no resuelve rutas ni sigue `cd`.** Un análisis de cada orden (qué argumento es el destino, qué opción lo adjunta, en qué directorio corre) dejó abierto un frente nuevo en cada ronda de la versión anterior de esta tarea: opciones adjuntas (`-t`), directorios, globs, `cd` en subshells y condicionales. Esta regla no entiende lo que hace la orden: mira los nombres. Rechaza siempre (con o sin `AETHER_IRREVERSIBLE`, solo en una sesión de Aether, como hoy; fuera de ella el guard no actúa) cualquier segmento que `segmentsOf` entrega (scripts anidados y cuerpos de heredoc de shell incluidos; un cuerpo de heredoc hacia otra orden no cuenta) cuando se cumple una de estas cuatro cosas, con el motivo: ``Aether's autonomy registry and run states are written only by aether-autonomy. Use `aether-autonomy` (grant, revoke, start, spend, end) instead of editing <lo que el segmento nombra>.``
+- **Escrituras protegidas (R3): una regla por mención, sin excepción para `mv`, que no resuelve rutas ni sigue `cd`.** Un análisis de cada orden (qué argumento es el destino, qué opción lo adjunta, en qué directorio corre) dejó abierto un frente nuevo en cada ronda de la versión anterior de esta tarea, y una excepción para apartar con `mv` un registro corrupto abría otro (leer el origen, `cd`, envoltorios). Esta regla no entiende lo que hace la orden: mira los nombres. Exporta una función pura `protectedMention(command)` que devuelve lo que el comando nombra (una cadena) o `null`, y `decideBash` rechaza siempre (con o sin `AETHER_IRREVERSIBLE`, solo en una sesión de Aether, como hoy; fuera de ella el guard no actúa) cuando devuelve algo, con el motivo: ``Aether's autonomy registry and run states are written only by aether-autonomy. Use `aether-autonomy` (grant, revoke, start, spend, end, quarantine) instead of editing <lo que nombra>.`` Mira cada segmento que `segmentsOf` entrega (scripts anidados y cuerpos de heredoc de shell incluidos; un cuerpo de heredoc hacia otra orden no cuenta) y se cumple una de estas cuatro cosas:
   1. **Nombra un archivo protegido.** El texto del segmento, tal cual y sin quitar comillas, contiene `grants.json` o `run.json` con límite de nombre: ni precedido ni seguido de una letra, cifra, `_`, `.` o `-` (así `grants.json.bak` y `grants.jsonl` no cuentan). Esto incluye un segmento que solo asigna (`F=grants.json`), un `node -e` o un `python -c` cuyo código lo nombra, y un nombre relativo (`cd .aether/autonomy && echo x > grants.json`).
-  2. **Nombra con un patrón.** Una palabra del segmento (sin comillas, y quitado un prefijo de opción como `-t` o `--target-directory=`) que contiene `*`, `?`, `[` o `{a,b}` y alguno de los componentes `.aether` o `autonomy` alcanza `.aether/autonomy/grants.json`, `.aether/autonomy/auto-20261009-200000-ab12/run.json` o el directorio `.aether/autonomy`. Para la coincidencia usa `globToRegExp` de `lib/globs.js` sobre cada alternativa de la llave (se expande un nivel de `{a,b}`; sin anidar), convirtiendo además las clases de caracteres `[...]` que `globToRegExp` escapa (`\\\[(!|\^)?([^\]]+)\\\]` → `[` + (`^` si llevaba `!` o `^`) + cuerpo + `]`), con el final de la ruta anclado (o seguido de `/` o `/*`) y un prefijo cualquiera permitido. Ejemplos que se rechazan: `.aether/autonomy/grants.?son`, `.aether/autonomy/grants.[j]son`, `.aether/autonomy/*.json`, `.aether/autonomy/*/run.json`, `.aether/autonomy/{grants,x}.json`, `rm -rf .aether/auto*`.
-  3. **Orden que borra, mueve o copia, con el directorio.** La orden (tras `dropWrappers` y `nameOf`) es una de `rm`, `rmdir`, `unlink`, `mv`, `cp`, `rsync`, `install`, `ln`, `chmod`, `chown`, `chgrp`, `truncate`, `shred`, `dd`, `tar`, `unzip`, `patch`, o `find` con `-delete`, `-exec` o `-execdir`, y una palabra del segmento, quitadas las comillas, un prefijo de opción como `-t` o `--target-directory=` y un `/`, `/.` o `/*` final, termina en `.aether` o en `.aether/autonomy`, o es `autonomy`. Esto cubre `rm -rf .aether`, `mv .aether /tmp/x`, `cp -r /tmp/autonomy .aether/`, `cp -ft.aether/autonomy /tmp/x`, `cp --target-directory=.aether/autonomy /tmp/x`, `chmod -R 777 .aether`, `cd .aether && rm -r autonomy`.
-  4. **Una redirección** (`>`, `>>`, `>|`, `&>`, `&>>`, con un descriptor delante o sin él) cuyo destino cumple 1, 2 o 3, sea cual sea la orden y aunque el segmento no tenga orden (`> .aether/autonomy/grants.json`). Las redirecciones de entrada (`<`, `<<`, `<&`, `0<&0`, `3</dev/null`) nunca cuentan, y un número de descriptor delante de `<` o `>` no es un argumento ni un nombre de script: lo que viene después sigue siendo la orden y su heredoc.
-  
-  **Se exceptúan de 1 a 3 (no de 4)** las órdenes de solo lectura: `echo`, `printf`, `cat`, `less`, `more`, `head`, `tail`, `grep`, `egrep`, `fgrep`, `rg`, `ls`, `stat`, `file`, `wc`, `diff`, `cmp`, `jq`, `test`, `[`, `sed` sin `-i`/`--in-place`, `sort` sin `-o`, `find` sin `-delete`/`-exec`/`-execdir`/`-fprint`, `git` salvo `clean`, `rm`, `mv`, `restore` y `checkout`, y `gh`. También se exceptúa `aether-autonomy` (la orden, o `node` cuyo primer argumento que no es una opción termina en `/aether-autonomy`), que es el escritor autorizado de los registros. Y se exceptúa con nombre la recuperación de un registro o estado corrupto mediante `mv` (tras `dropWrappers` y `nameOf`) de `grants.json`, `run.json` o su carpeta de corrida hacia `.aether/broken-runs/`: aplica únicamente cuando el segmento no tiene redirecciones de salida, el destino está bajo `.aether/broken-runs/` (es `.aether/broken-runs` o empieza por `.aether/broken-runs/`, sin `..`, ya sea como último operando posicional o como valor de una única opción `-t <dest>`, `-t<dest>`, `--target-directory=<dest>` o `--target-directory <dest>`, incluidas agrupaciones cortas terminadas en `t` como `-ft`), hay al menos un operando de origen y todo operando de origen (sin que ninguno esté bajo `.aether/broken-runs/`, por lo que el movimiento inverso se rechaza siempre) es `.aether/autonomy/grants.json`, `.aether/autonomy/<id>/run.json` o una carpeta de corrida `.aether/autonomy/<id>` (resueltos contra `cwd`), y `aether-guard` lee antes en disco cada origen y comprueba que el archivo correspondiente (`grants.json` o `<origen>/run.json` cuando el origen es la carpeta de la corrida) existe como archivo regular y falla la lectura o validación de `aether-autonomy` (para `grants.json`, `JSON.parse` lanza o no cumple `isObject(v) && Array.isArray(v.grants) && Array.isArray(v.revoked)`; para `run.json`, `JSON.parse` lanza o no cumple `isObject(v) && Array.isArray(v.spend)`). Un `grants.json` o `run.json` legible o inexistente no se aparta con Bash. Una orden que no entra en esas excepciones y cumple 1, 2 o 3 se rechaza, haga lo que haga.
-  
-  **Límites conocidos, que se documentan en un comentario de `guard.js` y que NO son hallazgos de esta tarea ni hay que cerrarlos:** un nombre que el comando construye al ejecutarse (variables como `${F}nts.json`, sustituciones de comando, `eval`, un programa que arma la ruta, escritura por cifrado o por `printf` de partes), `cd .aether/autonomy` seguido de un patrón que no nombra los archivos (`rm *`), las órdenes sobre la carpeta de una corrida `.aether/autonomy/<id>` cuando no se nombra `run.json`, y el falso positivo conocido cuando una orden que no es de solo lectura nombra un `grants.json` o `run.json` ajeno del proyecto del usuario (`node build.js > dist/run.json`). No sigas `cd`, ni subshells, ni `&&`/`||`, ni resuelvas rutas contra `cwd` (salvo para leer en disco el origen de la excepción `mv` hacia `.aether/broken-runs/`): la regla funciona por los nombres precisamente para no tener que hacerlo.
-  
-  Leer esos archivos (`cat`, `grep`, `ls`), escribir `diary.md`, `brief.md` o un archivo de nombre parecido (`grants.json.bak`), y `mkdir .aether/runs/x` o `rm -rf .aether/worktrees/old` siguen permitidos.
+  2. **Nombra con un patrón.** Una palabra del segmento (sin comillas) que contiene `*`, `?`, `[` o `{a,b}` y alguno de los componentes `.aether` o `autonomy` alcanza `.aether/autonomy/grants.json`, `.aether/autonomy/auto-20261009-200000-ab12/run.json` o el directorio `.aether/autonomy`. Expande un nivel de `{a,b}` (sin anidar). Para `*` y `?` usa `globToRegExp` de `lib/globs.js`; `lib/globs.js` escapa `[` como literal, así que las clases `[...]` se resuelven con un pequeño comparador propio dentro de `guard.js` (o convirtiendo la clase a una alternativa antes de llamar a `globToRegExp`). Con el final de la ruta anclado y un prefijo cualquiera permitido. Ejemplos que se rechazan: `.aether/autonomy/grants.?son`, `.aether/autonomy/gran[t]s.json`, `.aether/autonomy/*.json`, `.aether/autonomy/*/run.json`, `.aether/autonomy/{grants,x}.json`, `.aether/auto*`, `.aether/autonomy/*`.
+  3. **Una orden que borra, mueve o copia, con el directorio.** Alguna palabra del segmento (cualquiera, no solo la primera: así los envoltorios que `dropWrappers` no entiende, como `env -C . mv …`, `sudo -D . rm …`, `xargs rm`, no esconden la orden) es una de `rm`, `rmdir`, `unlink`, `mv`, `cp`, `rsync`, `install`, `ln`, `chmod`, `chown`, `chgrp`, `truncate`, `shred`, `dd`, `tar`, `unzip`, `patch`, o `find` con `-delete`, `-exec` o `-execdir`; y una palabra del segmento, quitadas las comillas y un `/`, `/.` o `/*` final, es: o termina en `.aether` o en `.aether/autonomy`, o es `autonomy`, o contiene `.aether/autonomy/` (una ruta en o bajo el directorio, incluida una carpeta de corrida `.aether/autonomy/<id>`), o es un identificador de corrida solo (`auto-AAAAMMDD-HHMMSS-xxxx` o `manual-…`). Esto cubre `rm -rf .aether`, `mv .aether /tmp/x`, `cp -r /tmp/autonomy .aether/`, `cp -ft.aether/autonomy /tmp/x`, `cp --target-directory=.aether/autonomy /tmp/x`, `chmod -R 777 .aether`, `cd .aether && rm -r autonomy`, `rm -rf .aether/autonomy/<id>`, `cd plugins && mv ../.aether/autonomy/<id> /tmp/x`, `cd .aether/autonomy && mv <id> /tmp/x`.
+  4. **Una redirección** (`>`, `>>`, `>|`, `&>`, `&>>`, con un descriptor delante o sin él) cuyo destino cumple 1, 2 o la parte de nombres de 3 (termina en `.aether`, `.aether/autonomy` o contiene `.aether/autonomy/`), sea cual sea la orden y aunque el segmento no tenga orden (`> .aether/autonomy/grants.json`). Las redirecciones de entrada (`<`, `<<`, `<&`, `0<&0`, `3</dev/null`) nunca cuentan, y un número de descriptor delante de `<` o `>` no es un argumento ni un nombre de script: lo que viene después sigue siendo la orden y su heredoc.
 
-En `plugins/aether/skills/autonomous-runs/SKILL.md` (línea 50, párrafo `**An unreadable run state.**`):
+  **Se exceptúan de 1 a 3 (no de 4)** las órdenes de solo lectura cuando son la orden del segmento tras quitar los envoltorios que `dropWrappers` entiende: `echo`, `printf`, `cat`, `less`, `more`, `head`, `tail`, `grep`, `egrep`, `fgrep`, `rg`, `ls`, `stat`, `file`, `wc`, `diff`, `cmp`, `jq`, `test`, `[`, `sed` sin `-i`/`--in-place`, `sort` sin `-o`, `find` sin `-delete`/`-exec`/`-execdir`/`-fprint`, `git` salvo `clean`, `rm`, `mv`, `restore` y `checkout`, y `gh`. También se exceptúa `aether-autonomy` (la orden, o `node` cuyo primer argumento que no es una opción termina en `/aether-autonomy`), que es el escritor autorizado de los registros. Una orden que no está en esas listas y nombra un archivo protegido (1 o 2) se rechaza, haga lo que haga.
 
-- Actualiza el párrafo para fijar `.aether/broken-runs/` como ese destino requerido (no como un ejemplo con `for example`) y dejar escrito exactamente:
-  `**An unreadable run state.** When an \`aether-autonomy\` command fails naming a \`run.json\` or \`grants.json\` it cannot read, \`aether-guard\` refuses an edit of that file and allows \`mv\` into \`.aether/broken-runs/\` only when that file cannot be read. Move it aside with \`mv\` into \`.aether/broken-runs/\`, a \`run.json\` with its run's folder and \`grants.json\` alone, never the whole \`.aether/autonomy/\`, write what you moved and why in the diary, and go on. Do not treat it as a reason to stop.`
+  **Falla cerrado.** Un error del propio análisis (`protectedMention` lanza) rechaza el comando con el mismo motivo: va en su propio `try`, y su `catch` rechaza, fuera del `catch` general de `decideBash` que hoy permite el comando ante cualquier error. `decideBash` llama a la función como `module.exports.protectedMention(...)` (no como una referencia local) para que la prueba pueda sustituirla.
+
+  **Límites conocidos, que se documentan en un comentario de `guard.js` y que NO son hallazgos de esta tarea ni hay que cerrarlos:** un nombre que el comando construye al ejecutarse (variables como `${F}nts.json`, sustituciones de comando, `eval`, un programa que arma la ruta, escritura por `printf` de partes), `cd .aether/autonomy` seguido de un patrón o de un nombre que no contiene `grants.json`, `run.json` ni un identificador de corrida (`rm *`), y el falso positivo que se acepta: una orden que no es de solo lectura y nombra un `grants.json` o `run.json` de otro proyecto (`node build.js > dist/run.json`). No sigas `cd`, ni subshells, ni `&&`/`||`, ni resuelvas rutas contra `cwd`: la regla funciona por los nombres precisamente para no tener que hacerlo.
+
+  Leer esos archivos (`cat`, `grep`, `ls`, `jq`), escribir `diary.md`, `brief.md` o un archivo de nombre parecido (`echo x > …/grants.json.bak`), y `mkdir .aether/runs/x` o `rm -rf .aether/worktrees/old` siguen permitidos. Apartar un registro corrupto se hace con `aether-autonomy quarantine` (tarea 17), no con Bash.
 
 **Tests (write first):**
 
@@ -258,7 +256,8 @@ test('with no grant at all, each class of a chain is recorded and the command is
 
 test('Bash cannot name the autonomy registry or a run state unless it only reads them (R3)', (t) => {
   const repo = makeRepo(t)
-  const run = '.aether/autonomy/auto-20261009-200000-ab12/run.json'
+  const id = 'auto-20261009-200000-ab12'
+  const run = `.aether/autonomy/${id}/run.json`
   for (const command of [
     'echo "{}" > .aether/autonomy/grants.json',
     'cat extra >> .aether/autonomy/grants.json',
@@ -278,21 +277,30 @@ test('Bash cannot name the autonomy registry or a run state unless it only reads
     "cd .aether/autonomy && (cd /tmp); echo '{}' > grants.json",
     "cd .aether/autonomy || cd /tmp; echo '{}' > grants.json",
     "printf '{}' | tee .aether/autonomy/grants.?son",
-    'rm .aether/autonomy/grants.[j]son',
+    'tee .aether/autonomy/gran[t]s.json < /dev/null',
     'tee .aether/autonomy/*/run.json < /dev/null',
     'rm .aether/autonomy/{grants,x}.json',
-    'rm -rf .aether/auto*',
     "F=grants.json; echo '{}' > .aether/autonomy/$F",
     `python3 -c "open('.aether/autonomy/grants.json','w').write('{}')"`,
     `node -e "require('fs').writeFileSync('.aether/autonomy/grants.json','{}')"`,
     'rm -rf .aether',
     'rm -rf .aether/autonomy',
+    'rm -rf .aether/auto*',
+    'rm -rf .aether/autonomy/*',
     'mv .aether /tmp/saved-aether',
     'chmod -R 777 .aether',
     'cp -r /tmp/autonomy .aether/',
     'cp -ft.aether/autonomy /tmp/fake.json',
     'cp --target-directory=.aether/autonomy /tmp/fake.json',
     'cd .aether && rm -r autonomy',
+    `rm -rf .aether/autonomy/${id}`,
+    `mv .aether/autonomy/${id} .aether/broken-runs/`,
+    `mv .aether/autonomy/${id} /tmp/x`,
+    `env -C . mv .aether/autonomy/${id} /tmp/x`,
+    `sudo -D . mv .aether/autonomy/${id} /tmp/x`,
+    `cd plugins && mv ../.aether/autonomy/${id} /tmp/x`,
+    `cd .aether/autonomy && mv ${id} /tmp/x`,
+    'mv .aether/autonomy/grants.json .aether/broken-runs/',
   ]) {
     const r = guardBash(t, command, { cwd: repo.dir })
     const out = JSON.parse(r.stdout)
@@ -305,14 +313,16 @@ test('Bash cannot name the autonomy registry or a run state unless it only reads
     'ls .aether/autonomy',
     'echo note >> .aether/autonomy/auto-20261009-200000-ab12/diary.md',
     'echo x > .aether/autonomy/grants.json.bak',
-    'rm -f .aether/autonomy/grants.json.bak',
     'git commit -m "document grants.json"',
     'gh issue create --body "grants.json and run.json"',
     'echo grants.json',
     'node plugins/aether/bin/aether-autonomy grant --class push --quote "no toques grants.json"',
+    'node plugins/aether/bin/aether-autonomy quarantine grants',
     'mkdir -p .aether/runs/x',
     'rm -rf .aether/worktrees/old',
     'rm *.json',
+    'mv a.txt b.txt',
+    'cp -r src dst',
     'jq . .aether/autonomy/grants.json',
   ]) {
     assert.equal(guardBash(t, command, { cwd: repo.dir }).stdout, '', command)
@@ -320,54 +330,14 @@ test('Bash cannot name the autonomy registry or a run state unless it only reads
   assert.equal(guardBash(t, 'echo "{}" > .aether/autonomy/grants.json', { cwd: repo.dir, marked: false }).stdout, '')
 })
 
-test('mv to .aether/broken-runs/ is allowed only when grants.json or run.json exists and cannot be read or validated (R3)', (t) => {
+test('an error of the mention analysis refuses the command instead of allowing it (R3)', (t) => {
+  const guard = require('../plugins/aether/lib/guard.js')
   const repo = makeRepo(t)
-  const runId = 'auto-20261009-200000-ab12'
-  const grantsPath = path.join(repo.dir, '.aether', 'autonomy', 'grants.json')
-  const runDir = path.join(repo.dir, '.aether', 'autonomy', runId)
-  const runPath = path.join(runDir, 'run.json')
-  fs.mkdirSync(runDir, { recursive: true })
-
-  // Readable files cannot be moved aside with Bash.
-  fs.writeFileSync(grantsPath, JSON.stringify({ grants: [], revoked: [] }))
-  fs.writeFileSync(runPath, JSON.stringify({ id: runId, spend: [], ended: null }))
-  for (const command of [
-    'mv .aether/autonomy/grants.json .aether/broken-runs/',
-    `mv .aether/autonomy/${runId}/run.json .aether/broken-runs/`,
-    `mv .aether/autonomy/${runId} .aether/broken-runs/`,
-    'mv -t .aether/broken-runs/ .aether/autonomy/grants.json',
-  ]) {
-    const r = guardBash(t, command, { cwd: repo.dir })
-    assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, 'deny', command)
-  }
-
-  // Unreadable or invalid grants.json and run.json may be moved to .aether/broken-runs/.
-  fs.writeFileSync(grantsPath, '{ not json')
-  fs.writeFileSync(runPath, JSON.stringify({ id: runId, spend: 'not-an-array' }))
-  for (const command of [
-    'mv .aether/autonomy/grants.json .aether/broken-runs/',
-    'mv .aether/autonomy/grants.json .aether/broken-runs/grants.json',
-    'mv -t .aether/broken-runs/ .aether/autonomy/grants.json',
-    'mv --target-directory=.aether/broken-runs .aether/autonomy/grants.json',
-    `mv .aether/autonomy/${runId}/run.json .aether/broken-runs/`,
-    `mv .aether/autonomy/${runId} .aether/broken-runs/`,
-  ]) {
-    assert.equal(guardBash(t, command, { cwd: repo.dir }).stdout, '', command)
-  }
-
-  // Reverse moves from .aether/broken-runs/, -t/--target-directory to a protected destination, and cp/ln to .aether/broken-runs/ are always refused.
-  for (const command of [
-    'mv .aether/broken-runs/grants.json .aether/autonomy/grants.json',
-    `mv .aether/broken-runs/run.json .aether/autonomy/${runId}/run.json`,
-    'mv -t .aether/autonomy .aether/broken-runs/grants.json',
-    'mv --target-directory=.aether/autonomy .aether/broken-runs/grants.json',
-    'cp .aether/autonomy/grants.json .aether/broken-runs/',
-    'ln .aether/autonomy/grants.json .aether/broken-runs/',
-    `cp -r .aether/autonomy/${runId}/run.json .aether/broken-runs/`,
-  ]) {
-    const r = guardBash(t, command, { cwd: repo.dir })
-    assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, 'deny', command)
-  }
+  t.mock.method(guard, 'protectedMention', () => {
+    throw new Error('boom')
+  })
+  const res = guard.decideBash({ session_id: 's1', cwd: repo.dir, tool_input: { command: 'ls' } }, {})
+  assert.ok(res && /written only by aether-autonomy/.test(res.reason), 'a failing analysis refuses')
 })
 
 test('a grant registry that cannot be read fails closed: the command is recorded, and refused in enforce mode (R4)', (t) => {
@@ -383,20 +353,9 @@ test('a grant registry that cannot be read fails closed: the command is recorded
 })
 ```
 
-En `tests/autonomous-runs-skill.test.js`:
-
-```js
-test('an unreadable run state or grant registry is moved with mv into .aether/broken-runs/, which is the required destination and not an example (R3)', () => {
-  const line = SKILL.split('\n').find((l) => l.startsWith('**An unreadable run state.**'))
-  assert.ok(line, 'the skill has the unreadable run state paragraph')
-  assert.doesNotMatch(line, /for example into `\.aether\/broken-runs\/`/i)
-  assert.match(line, /`mv` into `\.aether\/broken-runs\/`/)
-})
-```
-
 **Acceptance:**
 
-- `node --test tests/guard.test.js tests/guard-heredoc.test.js tests/guard-intent.test.js tests/guard-merge-main.test.js tests/autonomous-runs-skill.test.js tests/bootstrap-names.test.js tests/copies-classes.test.js tests/guards.test.js tests/layers.test.js` pasa en verde.
+- `node --test tests/guard.test.js tests/guard-heredoc.test.js tests/guard-intent.test.js tests/guard-merge-main.test.js tests/copies-classes.test.js tests/guards.test.js tests/layers.test.js` pasa en verde.
 - Fuera de un repositorio git sigue permitiendo sin registrar (la prueba existente «outside a git repository a push is allowed silently» sigue en verde).
 - Cada línea de las dos listas de la prueba R3 es un caso que la regla debe resolver tal como está escrito. Si una línea de la lista de rechazo no se rechaza, o una de la lista de permiso se rechaza, la tarea no está terminada; si el revisor propone otro caso fuera de estas listas y de la sección de límites conocidos, es una propuesta, no un bloqueo.
 
@@ -1519,3 +1478,112 @@ test('R22: the Lead rules load and use EnterPlanMode and ExitPlanMode in an inte
 
 - `node --test tests/docs-facts.test.js tests/session-start-parts.test.js tests/bootstrap-design.test.js tests/bootstrap-names.test.js` pasa en verde.
 - Ningún cambio toca `plugins/aether/agents/lead.md` ni el lanzador (están fuera del alcance de la spec).
+
+### Task 17: Apartar un registro o estado corrupto con `aether-autonomy quarantine`
+
+**Aether:**
+- Review: high — mueve el estado de una corrida: un error aparta una corrida legible (saltándose sus topes) o pisa un archivo
+- Area: autonomy
+- Owns: `plugins/aether/lib/autonomy.js`, `plugins/aether/lib/autonomy-command.js`, `plugins/aether/skills/autonomous-runs/SKILL.md`, `docs/guide/autonomy.md`, `tests/autonomy.test.js`, `tests/aether-autonomy.test.js`, `tests/autonomous-runs-skill.test.js`
+- Depends on: Task 1 — comparte `autonomy.js` y sus pruebas con ella (ya fusionada en la rama)
+- Serves: R26, R24
+
+**Interfaces:**
+
+Como `aether-guard` rechaza (tarea 3) cualquier comando de Bash que nombre `grants.json` o `run.json` y no sea de solo lectura, el único modo de apartar un registro o estado corrupto es un verbo de `aether-autonomy`, el escritor autorizado. El bin no cambia (`bin/aether-autonomy` solo llama a `lib/autonomy-command.js`).
+
+En `plugins/aether/lib/autonomy.js`, exporta `quarantine(mainRoot, { target, id = null }, { now = Date.now() } = {})` → `{ ok: true, from, to }` o `{ ok: false, reason }`. «Legible» es exactamente lo que `readGrants` y `readRun` (las funciones de este archivo) aceptan; no escribas otra validación.
+- `target: 'grants'`: si `.aether/autonomy/grants.json` no existe, `{ ok: false, reason }` («there is no grants.json to set aside»). Si `readGrants(mainRoot)` no lanza, `{ ok: false, reason }` que dice que el archivo se puede leer y remite a `aether-autonomy grant`, `revoke` y `end`. Si lanza, mueve el archivo a `.aether/broken-runs/grants.json-<AAAAMMDD-HHMMSS>-<4 hex>`.
+- `target: 'run'`: `id` debe cumplir `/^(auto|manual)-[A-Za-z0-9-]+$/` (si no, `{ ok: false, reason }`); la carpeta `.aether/autonomy/<id>` debe existir y tener `run.json` (si no, `{ ok: false, reason }`); si `readRun(<run.json>)` no lanza, `{ ok: false, reason }` («the run can be read: end it with aether-autonomy end»); si lanza, mueve la carpeta entera a `.aether/broken-runs/<id>-<AAAAMMDD-HHMMSS>-<4 hex>`.
+- El destino se crea con `fs.mkdirSync(..., { recursive: true })` y `fs.renameSync`; nunca sobrescribe (si el nombre existe, cambia el sufijo y vuelve a probar). No necesita que el resto del registro sea legible: para `run` no lee `grants.json`, y para `grants` no lee ninguna corrida. La hora sale de `now`.
+
+En `plugins/aether/lib/autonomy-command.js`: los verbos `quarantine grants` y `quarantine run <id>` (con `ensureExcluded(gitCommonDir)` como los demás que escriben). Éxito: exit 0 y `{ quarantined: { from, to } }` con las rutas relativas a la raíz del repositorio. Negativa de `quarantine`: exit 2 y `{ quarantined: false, reason }`. Argumentos que faltan o sobran: el error de uso de siempre (exit 1). Añade ` | quarantine grants|run <id>` al final de la cadena `USAGE`, y actualiza la constante `USAGE` de `tests/aether-autonomy.test.js` y cualquier otra prueba tuya que la repita.
+
+En `plugins/aether/skills/autonomous-runs/SKILL.md` (el párrafo que empieza por `**An unreadable run state.**`, línea 50), sustituye el texto a partir de `Move it aside with Bash` hasta `and go on.` por: ``Set that file aside with `aether-autonomy quarantine grants`, or `aether-autonomy quarantine run <id>` for a run (never with Bash: aether-guard refuses every Bash command that names `grants.json` or `run.json`, and the verb only moves a file that cannot be read, so a readable run cannot be set aside to reset its ceilings). It moves the file, or the run's folder, into `.aether/broken-runs/`. Write what you moved and why in the diary, and go on.`` y deja intacto el resto del párrafo (`Do not treat it as a reason to stop.`). Mantén el título en negrita, que `tests/autonomous-runs-skill.test.js` busca.
+
+En `docs/guide/autonomy.md`, añade a la viñeta de `Standing authorizations` o a una nueva viñeta corta una frase que diga que un `grants.json` o `run.json` corrupto se aparta con `aether-autonomy quarantine` (y que Bash no puede tocarlos: lo rechaza aether-guard).
+
+**Tests (write first):**
+
+En `tests/autonomy.test.js` (usa `makeRepo`, `tempDir` y los ayudantes del archivo; añade lo que falte a los `require`):
+
+```js
+test('quarantine sets aside an unreadable grants.json and refuses a readable one (R26)', (t) => {
+  const repo = makeRepo(t)
+  const dir = path.join(repo.dir, '.aether', 'autonomy')
+  fs.mkdirSync(dir, { recursive: true })
+  assert.equal(autonomy.quarantine(repo.dir, { target: 'grants' }).ok, false, 'no file: nothing to set aside')
+  fs.writeFileSync(path.join(dir, 'grants.json'), JSON.stringify({ grants: [], revoked: [] }))
+  const readable = autonomy.quarantine(repo.dir, { target: 'grants' })
+  assert.equal(readable.ok, false)
+  assert.match(readable.reason, /aether-autonomy/)
+  assert.equal(fs.existsSync(path.join(dir, 'grants.json')), true)
+  fs.writeFileSync(path.join(dir, 'grants.json'), '{ not json')
+  const moved = autonomy.quarantine(repo.dir, { target: 'grants' }, { now: Date.UTC(2026, 10, 5, 12, 0, 0) })
+  assert.equal(moved.ok, true)
+  assert.equal(fs.existsSync(path.join(dir, 'grants.json')), false)
+  assert.equal(fs.readFileSync(moved.to, 'utf8'), '{ not json')
+  assert.match(path.relative(repo.dir, moved.to), /^\.aether\/broken-runs\/grants\.json-20261105-120000-[0-9a-f]{4}$/)
+})
+
+test('quarantine sets aside the folder of a run whose run.json cannot be read, and never a readable or missing one (R26)', (t) => {
+  const repo = makeRepo(t)
+  const id = 'auto-20261009-200000-ab12'
+  const dir = path.join(repo.dir, '.aether', 'autonomy', id)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'diary.md'), 'the diary')
+  assert.equal(autonomy.quarantine(repo.dir, { target: 'run', id }).ok, false, 'a folder with no run.json')
+  fs.writeFileSync(path.join(dir, 'run.json'), JSON.stringify({ id, spend: [] }))
+  assert.equal(autonomy.quarantine(repo.dir, { target: 'run', id }).ok, false, 'a readable run is not set aside')
+  assert.equal(fs.existsSync(dir), true)
+  for (const bad of ['../x', 'grants', 'auto-1/../../x', '']) assert.equal(autonomy.quarantine(repo.dir, { target: 'run', id: bad }).ok, false, bad)
+  assert.equal(autonomy.quarantine(repo.dir, { target: 'run', id: 'auto-20990101-000000-ffff' }).ok, false, 'a run that does not exist')
+  fs.writeFileSync(path.join(dir, 'run.json'), '{ broken')
+  const moved = autonomy.quarantine(repo.dir, { target: 'run', id })
+  assert.equal(moved.ok, true)
+  assert.equal(fs.existsSync(dir), false)
+  assert.equal(fs.readFileSync(path.join(moved.to, 'diary.md'), 'utf8'), 'the diary')
+})
+```
+
+En `tests/aether-autonomy.test.js` (usa `setup` y `cli`; actualiza la constante `USAGE`):
+
+```js
+test('quarantine through the bin: a corrupt grants.json is set aside, a readable one is refused with exit 2 (R26)', (t) => {
+  const { repo, cli } = setup(t)
+  const file = path.join(repo.dir, '.aether', 'autonomy', 'grants.json')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ grants: [], revoked: [] }))
+  const refused = cli(['quarantine', 'grants'])
+  assert.equal(refused.status, 2)
+  assert.equal(refused.json.quarantined, false)
+  fs.writeFileSync(file, '{ not json')
+  const moved = cli(['quarantine', 'grants'])
+  assert.equal(moved.status, 0, moved.stderr)
+  assert.match(moved.json.quarantined.to, /broken-runs\/grants\.json-/)
+  assert.equal(fs.existsSync(file), false)
+  assert.equal(cli(['quarantine']).status, 1)
+  assert.equal(cli(['quarantine', 'run']).status, 1)
+})
+```
+
+En `tests/autonomous-runs-skill.test.js`:
+
+```js
+test('an unreadable run state is set aside with aether-autonomy quarantine, not with Bash (R26)', () => {
+  const line = SKILL.split('\n').find((l) => l.startsWith('**An unreadable run state.**'))
+  assert.ok(line)
+  assert.match(line, /aether-autonomy quarantine grants/)
+  assert.match(line, /aether-autonomy quarantine run <id>/)
+  assert.doesNotMatch(line, /Move it aside with Bash/)
+  assert.match(line, /Do not treat it as a reason to stop\./)
+})
+```
+
+**Acceptance:**
+
+- `node --test tests/autonomy.test.js tests/aether-autonomy.test.js tests/autonomous-runs-skill.test.js tests/docs-facts.test.js tests/docs-claims.test.js tests/guards.test.js tests/layers.test.js` pasa en verde.
+- Un `grants.json` o un `run.json` legible nunca se aparta con este verbo, y el verbo no sobrescribe un destino.
+
+---
+
