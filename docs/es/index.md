@@ -23,6 +23,7 @@ Si es tu primera vez, léelas en este orden:
 6. [Otros harnesses](guias/otros-harnesses.md): mandar trabajo a Codex, agy, Grok, Cursor o Muse mientras dure su cuota.
 7. [Ver el gasto](guias/ver-el-gasto.md): cuánto cuesta una sesión, con `/spend` y desde la terminal.
 8. [Actualizar y desinstalar](guias/actualizar-y-desinstalar.md): mantener Aether al día, fijar una versión y quitarlo.
+9. [Auditar un proyecto](guias/auditar-un-proyecto.md): pide al Lead una auditoría de solo lectura y recibe una sola lista ordenada de lo más a lo menos urgente.
 
 ## La referencia está en inglés
 

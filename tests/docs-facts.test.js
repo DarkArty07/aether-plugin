@@ -62,11 +62,11 @@ const README = 'README.md'
 const PAGES = [
   'docs/index.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/guide/options.md',
   'docs/guide/lanes.md', 'docs/guide/design-seats.md', 'docs/guide/autonomy.md', 'docs/guide/ops.md',
-  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/delegates.md', 'docs/reference/components.md', 'docs/changelog.md',
+  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/delegates.md', 'docs/guide/audit.md', 'docs/reference/components.md', 'docs/changelog.md',
   'docs/contributing.md', 'docs/roadmap.md',
   'docs/what-aether-adds.md', 'docs/tutorials/install-and-start.md', 'docs/tutorials/first-request.md', 'docs/tutorials/whole-feature.md',
   'docs/tutorials/read-the-brief.md', 'docs/tutorials/work-for-hours.md', 'docs/tutorials/other-harnesses.md', 'docs/tutorials/see-the-spend.md',
-  'docs/tutorials/update-and-uninstall.md', 'docs/es/index.md', 'docs/es/que-agrega-aether.md', 'docs/es/guias/instalar-y-arrancar.md',
+  'docs/tutorials/update-and-uninstall.md', 'docs/es/index.md', 'docs/es/que-agrega-aether.md', 'docs/es/guias/auditar-un-proyecto.md', 'docs/es/guias/instalar-y-arrancar.md',
   'docs/es/guias/primera-peticion.md', 'docs/es/guias/feature-completa.md', 'docs/es/guias/leer-el-brief.md', 'docs/es/guias/trabajar-horas.md',
   'docs/es/guias/otros-harnesses.md', 'docs/es/guias/ver-el-gasto.md', 'docs/es/guias/actualizar-y-desinstalar.md',
 ]

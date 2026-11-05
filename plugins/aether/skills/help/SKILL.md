@@ -57,6 +57,7 @@ The person called `/aether:help`, maybe with a topic, as in `/aether:help spend`
 
 ## Audit a project
 - To learn what is pending in the project, from the most urgent to the least: `/aether:audit [topics] [--no-tests]`. The Lead runs the automated analysis (tests, dependencies, secrets, hotspots), asks once which topics to audit, reviews and verifies with read-only delegates, and hands back one list from P0 to P3 for you to choose from. It changes nothing in the project and fixes nothing; what you choose becomes a GitHub issue.
+- Guide: https://github.com/DarkArty07/aether-plugin/blob/main/docs/guide/audit.md, https://github.com/DarkArty07/aether-plugin/blob/main/docs/es/guias/auditar-un-proyecto.md
 
 ## Spec Kit skills and workflows
 - Write a spec by hand: `/aether:specify`, then `/aether:plan`, then `/aether:tasks`. The project's principles: `/aether:constitution`. The Lead usually does these through the design.
