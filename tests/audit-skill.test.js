@@ -87,3 +87,10 @@ test('the help names /aether:audit, with its argument and the fact that it chang
 test('the plugin has the skill in the folder that the other skills use', () => {
   assert.ok(fs.existsSync(path.join(PLUGIN, 'skills', 'audit', 'SKILL.md')))
 })
+
+test('every delegate id carries the audit stamp, so two audits never share a task (round 2)', () => {
+  const ids = [...skill.matchAll(/AETHER-TASK: (\S+)/g)].map((m) => m[1]).filter((id) => !id.startsWith('<id>'))
+  assert.ok(ids.length >= 2, 'the briefs name their task ids')
+  for (const id of ids) assert.match(id, /^audit-<stamp>-/, id)
+  assert.match(skill, /a launch with an id another audit already used is taken as a correction/)
+})

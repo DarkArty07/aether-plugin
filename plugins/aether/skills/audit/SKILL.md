@@ -16,7 +16,7 @@ The person called this to learn what is pending in the project, from the most ur
 - **Read-only.** You never edit, create or delete a file of the project, and never make a commit, a branch, a stash or a worktree of your own in it. You run no `git fetch`, `git pull`, `--fix`, install or migration. Aether's own delegate machinery is the one exception: the temporary worktree of each external delegate, removed when it ends, the exclude lines in `.git/info/exclude` and the `.aether/` folder they hide.
 - **Work files** go in one directory outside the project, made once at the start with `mktemp -d`. Below, `$W` stands for the path it printed: write that path out in every later command, because a shell variable does not survive from one command to the next. Write every JSON file of the phases there, and nowhere else.
 - **Secrets.** Never print, quote, copy or repeat the value of a secret, in a message, a file or a brief: only its type, its file, its line or its commit. Every brief you write says the same.
-- **Delegates.** Every reviewer and verifier is a read-only delegate: one `Agent` call with `subagent_type: "general-purpose"` and `run_in_background: true`, a brief that starts with `AETHER-TASK: <id>` and has no `AETHER-OWNS` line. You do not choose the model: pass neither `model` nor `effort`, and the system picks. Launch each phase's delegates in one message, in parallel. When a result arrives, judge it with `aether-delegate verdict --task <id> --verdict approve` when its answer holds the JSON block the brief asks for; otherwise `--verdict fix --finding 'answer: <what is missing>'` once, and after that take it as a reviewer that ran out. Every delegate result names where it ran (a harness and a model, or Claude): keep it.
+- **Delegates.** Every reviewer and verifier is a read-only delegate: one `Agent` call with `subagent_type: "general-purpose"` and `run_in_background: true`, a brief that starts with `AETHER-TASK: <id>` and has no `AETHER-OWNS` line. Every id carries this audit's stamp, `<stamp>` (phase 1): the system keys a task by its id across sessions and projects, and a launch with an id another audit already used is taken as a correction of that task, with its work and findings carried into the brief. Reuse an id only to correct or relaunch the same delegate of this audit. You do not choose the model: pass neither `model` nor `effort`, and the system picks. Launch each phase's delegates in one message, in parallel. When a result arrives, judge it with `aether-delegate verdict --task <id> --verdict approve` when its answer holds the JSON block the brief asks for; otherwise `--verdict fix --finding 'answer: <what is missing>'` once, and after that take it as a reviewer that ran out. Every delegate result names where it ran (a harness and a model, or Claude): keep it.
 - **No Workflow needed.** The audit does not need the Workflow tool: it works the same in a session with or without it, and you never ask the person to turn it on.
 - **A headless session** (`claude -p`) that ended before its delegates answered is resumed with `--resume`: relaunch, with the same `AETHER-TASK` id, each delegate that did not answer.
 - **No issues on your own.** You create a GitHub issue with `gh issue create` only after the person chooses items, one per chosen item, and only when the project has a GitHub remote and `gh` answers. Otherwise you give the chosen items as text.
@@ -28,7 +28,7 @@ Run, in the project's root:
     mktemp -d && date +%s
     aether-audit analyze --out "$W/analysis.json"
 
-(the first line gives the work directory and the start time, for the duration of phase 7)
+(the first line gives the work directory and the start time: the start time is the audit's `<stamp>` in every delegate id, and the start of the duration of phase 7)
 
 Add `--no-tests` when the person asked for it. The command reads the manifests and build files for the test command, runs the project's tests with a time limit (it reads the whole chain of scripts first and does not run one that deploys, migrates, seeds, publishes, runs end to end against a live service or needs credentials), the linter the project declares, the ecosystem's dependency audit, and reads git for secrets (in every branch and the history), TODO and FIXME, branches, hotspots, and the open issues and pull requests when `gh` answers. It installs nothing and fixes nothing, and it never prints a secret's value. Each check ends as a result, «not applicable» or «could not», with why; a check that could not run never counts as clean.
 
@@ -52,7 +52,7 @@ Take the answer as it comes: «yes» is the proposed list; numbers or names remo
 
 One reviewer per confirmed topic. A reviewer has about 20 tool calls and ten minutes, so give it a bounded scope: the hotspots and the files the analysis points to for its topic, then what is nearest to them. What it does not get to goes to «not covered». Give each one only what it needs:
 
-    AETHER-TASK: audit-<topic>
+    AETHER-TASK: audit-<stamp>-<topic>
 
     You review one topic of a read-only audit of a project. Change, create or delete no file of the project and run no command that changes it (no git fetch or pull, no --fix, no install). Never print, quote or copy the value of a secret: name its type, file and line only.
 
@@ -79,7 +79,7 @@ Join every reviewer's candidates into one array in `$W/candidates.json` (the ana
 
 It discards a candidate with no location or no evidence. Then each accepted candidate goes to a verifier in a fresh context, which gets the claim and the location, not the reviewer's reasoning. A verifier may take up to four claims of the same area, each judged on its own:
 
-    AETHER-TASK: audit-verify-<n>
+    AETHER-TASK: audit-<stamp>-verify-<n>
 
     You verify claims of a read-only audit. You did not make them, and you try to refute each one. Change, create or delete no file of the project and run no command that changes it. Never print, quote or copy the value of a secret.
 
