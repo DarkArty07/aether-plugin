@@ -418,6 +418,21 @@ test('neither mas nor más ends a clause, and negators keep their accent folding
   })
 })
 
+test('a quote that starts in the middle of a word is read with the negator it cuts (R5)', (t) => {
+  const denied = { ok: false, reason: "the quote is in a negated clause of the owner's message" }
+  for (const [text, quote] of [
+    ['No hagas push a origin.', 'o hagas push a origin'],
+    ['Never push to origin tonight.', 'ever push to origin tonight'],
+    ["Don't push to origin tonight.", "t push to origin tonight"],
+  ]) {
+    const { configDir } = setup(t, { [SESSION]: [human(text, '2026-10-09T19:00:00.000Z')] })
+    assert.deepEqual(autonomy.verifyQuote(SESSION, quote, { configDir }), denied, quote)
+    assert.equal(autonomy.verifyQuote(SESSION, quote, { configDir, allowNegation: true }).ok, true, quote)
+  }
+  const { configDir } = setup(t, { [SESSION]: [human('Haz push a origin cuando acaben.', '2026-10-09T19:00:00.000Z')] })
+  assert.equal(autonomy.verifyQuote(SESSION, 'az push a origin cuando acaben', { configDir }).ok, true, 'a mid-word cut with no negator is accepted')
+})
+
 test('a negator before a clause boundary does not negate a quote after it (R5)', (t) => {
   const cases = [
     ['No hagas push a main, haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],

@@ -80,6 +80,7 @@ function foldNeg(text) {
   return String(text).normalize('NFKD').replace(/[\u0300-\u036f]/gu, '').toLowerCase().replace(/[’‘]/gu, "'")
 }
 
+const WORD_CHAR = /[A-Za-z0-9\u00C0-\u024F\u1E00-\u1EFF'’]/
 const WORD_SOURCE = "[A-Za-z0-9\\u00C0-\\u024F\\u1E00-\\u1EFF'’]+"
 
 function foldedWordsOf(text) {
@@ -113,12 +114,16 @@ function clauseAround(text, index) {
 // clause before the appearance, a negator as the quote's first word, or `ni`
 // anywhere in the quote. A `no` inside the quote past its first word does not negate.
 function occurrenceNegated(text, index, quote) {
-  const quoteWords = foldedWordsOf(quote)
+  // A quote that starts in the middle of a word ('o hagas push a origin' out of 'No hagas push a origin') is read with
+  // the whole word it cuts: the negator it removed must not hide.
+  let start = index
+  while (start > 0 && WORD_CHAR.test(text[start - 1])) start -= 1
+  const quoteWords = foldedWordsOf(text.slice(start, index) + quote)
   if (quoteWords.length > 0 && SINGLE_NEGATORS.has(quoteWords[0])) return true
   if (quoteWords.length > 1 && quoteWords[0] === 'do' && quoteWords[1] === 'not') return true
   if (quoteWords.includes('ni')) return true
-  const [from] = clauseAround(text, index)
-  const before = foldedWordsOf(text.slice(from, index))
+  const [from] = clauseAround(text, start)
+  const before = foldedWordsOf(text.slice(Math.min(from, start), start))
   for (const word of before) {
     if (SINGLE_NEGATORS.has(word)) return true
   }
