@@ -357,12 +357,20 @@ function shellReadsStdin(args) {
   let hasC = false
   let hasS = false
   let file = false
-  for (const a of args) {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
     if (/^[0-9]+[<>]/.test(a)) continue
+    // Options that take their value in the next word: -o/+o (set -o name), -O/+O (shopt name), also inside a
+    // cluster such as -euo, and --rcfile/--init-file. The value is not a script file.
+    if ((a === '--rcfile' || a === '--init-file') && i + 1 < args.length) {
+      i += 1
+      continue
+    }
     if (a.startsWith('--')) continue
-    if (a.startsWith('-') && a.length > 1) {
-      if (/^-[^-]*c/.test(a)) hasC = true
-      if (/^-[^-]*s/.test(a)) hasS = true
+    if ((a.startsWith('-') || a.startsWith('+')) && a.length > 1) {
+      if (a.startsWith('-') && /^-[^-]*c/.test(a)) hasC = true
+      if (a.startsWith('-') && /^-[^-]*s/.test(a)) hasS = true
+      if (/^[-+][^-+]*[oO]/.test(a) && i + 1 < args.length) i += 1
     } else if (a !== '' && a !== '-') {
       file = true
     }
@@ -815,22 +823,67 @@ function directoryMention(word) {
   return /(?:^|\/)\.aether(?:\/autonomy)?$/.test(w) || w === 'autonomy' || w.includes('.aether/autonomy/') || /^auto-\d{8}-\d{6}-[a-z0-9]{4}$/.test(w) || /(?:=|-[^-]*t)\.aether\/autonomy$/.test(w)
 }
 
+// The paths a wildcard word must not reach: the directory, the registry and a run state.
+const PATTERN_TARGETS = ['.aether/autonomy', '.aether/autonomy/grants.json', '.aether/autonomy/auto-20261009-200000-ab12/run.json']
+
+// A glob component as a regular expression: * and ** (any run), ? (one character), [...] with ranges and ! or ^
+// negation, everything else literal. It does not expand classes, so its cost does not grow with their number.
+function globPart(part) {
+  let re = ''
+  for (let i = 0; i < part.length; i++) {
+    const c = part[i]
+    if (c === '*') {
+      if (part[i + 1] === '*') {
+        while (part[i + 1] === '*') i++
+        re += '.*'
+      } else {
+        re += '[^/]*'
+      }
+    } else if (c === '?') {
+      re += '[^/]'
+    } else if (c === '[') {
+      const close = part.indexOf(']', i + 2)
+      if (close < 0) {
+        re += '\\['
+      } else {
+        let cls = part.slice(i + 1, close).replace(/\\/g, '\\\\')
+        if (cls[0] === '!') cls = '^' + cls.slice(1)
+        re += '[' + cls + ']'
+        i = close
+      }
+    } else {
+      re += c.replace(/[.+^${}()|\\\]]/g, '\\$&')
+    }
+  }
+  return re
+}
+
+// The word with its first {a,b} group replaced by each alternative, until none is left (at most 64 words).
+function braceAlternatives(word) {
+  const found = word.match(/\{([^{}]*,[^{}]*)\}/)
+  if (!found) return [word]
+  const out = []
+  for (const alternative of found[1].split(',')) {
+    for (const expanded of braceAlternatives(word.replace(found[0], alternative))) {
+      if (out.length < 64) out.push(expanded)
+    }
+  }
+  return out
+}
+
+// A word with a wildcard that can reach a protected path. A pattern carries its own prefix (an absolute path, ../,
+// $PWD/), so every suffix of the pattern, from each /, is tested against the paths: the end is anchored and any
+// prefix is allowed.
 function patternMention(word) {
   const w = word.replace(/\/+/g, '/').replace(/(^|\/)\.\//g, '$1')
-  if (!/[*?\[{]/.test(w) || !/(?:\.aether|autonomy)/.test(w)) return false
-  const brace = w.match(/\{([^{}]*,[^{}]*)\}/)
-  const alternatives = brace ? brace[1].split(',').map((x) => w.replace(brace[0], x)) : [w]
-  const { globToRegExp } = require('./globs.js')
-  return alternatives.some((pattern) => {
-    // Expand simple character classes before using the shared glob converter.
-    const expand = (p) => {
-      const m = p.match(/\[([^\]]+)\]/)
-      return m ? [...m[1]].flatMap((c) => expand(p.replace(m[0], c))) : [p]
+  if (!/[*?[{]/.test(w) || !/(?:\.aether|autonomy)/.test(w)) return false
+  return braceAlternatives(w).some((alternative) => {
+    const parts = alternative.split('/')
+    for (let k = 0; k < parts.length; k++) {
+      const re = new RegExp('^' + parts.slice(k).map(globPart).join('/') + '$')
+      if (PATTERN_TARGETS.some((target) => re.test(target))) return true
     }
-    return expand(pattern).some((p) => {
-      const re = globToRegExp('**/' + p)
-      return ['.aether/autonomy', '.aether/autonomy/grants.json', '.aether/autonomy/auto-20261009-200000-ab12/run.json'].some((target) => re.test(target))
-    })
+    return false
   })
 }
 

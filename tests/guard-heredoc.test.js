@@ -21,6 +21,11 @@ test('a shell that takes its script from a heredoc is read like bash -c (R2)', (
     ['zsh <<"END"\nnpm publish\nEND', 'publish'],
     ['dash <<\\END\nkubectl apply -f x.yaml\nEND', 'deploy'],
     ['bash -s <<EOF\nnpm publish\nEOF', 'publish'],
+    ["bash -euo pipefail <<'EOF'\nnpm publish\nEOF", 'publish'],
+    ["bash -o pipefail <<'EOF'\ngit push origin main\nEOF", 'push'],
+    ['bash +o history <<EOF\nnpm publish\nEOF', 'publish'],
+    ['bash -O extglob <<EOF\nnpm publish\nEOF', 'publish'],
+    ['bash --rcfile rc.sh <<EOF\nnpm publish\nEOF', 'publish'],
     ["bash <<'A'\nbash <<'B'\nnpm publish\nB\nA", 'publish'],
     ["bash <<'EOF' | tee out.log\ngit push origin main\nEOF", 'push'],
   ]) {
