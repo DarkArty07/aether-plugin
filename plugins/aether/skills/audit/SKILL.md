@@ -92,7 +92,7 @@ It discards a candidate with no location or no evidence. Then each accepted cand
     End your answer with one fenced json block of valid JSON (no trailing comma, no comment), and nothing after it:
     {"verdicts": [{"id": "...", "verdict": "...", "rootCause": "...", "trigger": "...", "impact": "...", "evidence": "...", "reproduction": "..."}]}
 
-Write every verdict into one array in `$W/verdicts.json`, adding to each `ranOn`: `"claude"` when its result says it ran on Claude, else the harness's name. A verifier that ran out or did not answer leaves its claims with no verdict. Copy each verdict as the verifier gave it: never change one, and never make one stronger. When a verifier's own evidence contradicts its verdict, write that claim's verdict as `"unverified"` with the contradiction as its `reason`, and say so under «Assumptions». Run:
+Write every verdict into one array in `$W/verdicts.json`, adding to each `ranOn`: `"claude"` when its result says it ran on Claude, else the harness's name. A verifier that ran out or did not answer leaves its claims with no verdict. Copy each verdict as the verifier gave it: never change one, and never make one stronger. When a verifier's own evidence contradicts its verdict, write that claim's verdict as `"unverified"` with the contradiction as its `reason`, and say so under «Assumptions». A verifier that ran on another harness cannot prove: when it says `proven`, write `"read-confirmed"` (the weaker verdict) and keep what it ran in `evidence`; the command would otherwise leave the claim unverified. Run:
 
     aether-audit verdicts "$W/gated.json" "$W/verdicts.json" --out "$W/settled.json"
 
