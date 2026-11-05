@@ -308,6 +308,13 @@ test('analyze of a repository with nothing in it: every project tool is not appl
   assert.deepEqual(a.estimate, { samples: 1, perTopic: { minutes: [2, 2], usd: [0.5, 0.5] } })
 })
 
+test('analyze records the full sha of HEAD in project.head', async (t) => {
+  const repo = makeRepo(t)
+  const a = await analyze.analyze(repo.dir, {}, ctxFor(t, never))
+  assert.equal(a.project.head, repo.git('rev-parse', 'HEAD'))
+  assert.match(a.project.head, /^[0-9a-f]{40}$/)
+})
+
 test('analyze: a test command that writes a tracked file is a finding of the audit, an ignored file is not, and the step is named (R6)', async (t) => {
   const repo = makeRepo(t)
   commitIn(repo, repo.dir, '.gitignore', 'coverage/\n', 'ignore coverage')

@@ -277,6 +277,15 @@ test('the line since the last audit counts the items not re-audited because thei
   assert.doesNotMatch(report.render(fixture(), 'es').markdown, /sin revisar esta vez/)
 })
 
+test('the since-last line names items not found again when their code did not change, in Spanish and in English', () => {
+  const later = fixture()
+  later.triage.sinceLast = { previous: { date: '2026-10-12' }, resolved: [{ causeKey: 'old', title: 'An old bug', topic: 'bugs' }], notReaudited: [], notFoundAgain: [{ causeKey: 'a', title: 'Bug A', topic: 'bugs' }, { causeKey: 'b', title: 'Bug B', topic: 'bugs' }] }
+  assert.ok(report.render(later, 'es').markdown.includes('1 resueltos. 2 no se volvieron a encontrar, pero su código no cambió.'))
+  assert.ok(report.render(later, 'en').markdown.includes('1 resolved. 2 not found again, though their code did not change.'))
+  assert.doesNotMatch(report.render(fixture(), 'es').markdown, /no se volvieron a encontrar/)
+  assert.doesNotMatch(report.render(fixture(), 'en').markdown, /not found again/)
+})
+
 test('the path of the saved report is said only when there is one', () => {
   const withPath = report.render(fixture(), 'es', { savedTo: '/data/audits/k/2026-11-04' }).markdown
   assert.ok(withPath.includes('La lista completa está en el reporte guardado: /data/audits/k/2026-11-04'))
