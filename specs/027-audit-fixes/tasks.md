@@ -664,7 +664,7 @@ Antes de escribirlo, quien implementa mira cómo el motor de pruebas dispara `to
 **Interfaces:**
 
 - `docs/reference/components.md`, fila de `aether-exam`: dice `` Keeps an exam outside the repository (`store`) and runs it on a commit in a disposable worktree (`run`) ``; ninguna mención a `list`.
-- `docs/methodology.md`, `docs/getting-started.md`, `docs/purpose.md`, `docs/roadmap.md`, `docs/guide/design-seats.md`, `docs/guide/troubleshooting.md` y `docs/guide/models-by-role.md`: ninguna línea ni frase presenta `Tier` o `Ladder` como campo del plan. Donde decían que la tarea elige su modelo, dicen lo que hace el sistema: el swarm arranca toda unidad en el primer peldaño de `config/ladder.json` (Haiku `high`), una corrección sube el esfuerzo y un fallo repetido sube de modelo, y `Review` (`high`, `xhigh` o `max`) fija el esfuerzo del supervisor y de la revisión final. El ejemplo de `getting-started.md` (línea con `- Tier:`) pierde esa línea. `troubleshooting.md` deja de enseñar los errores `missing Tier` y la línea `Ladder`, y da los mensajes que hoy emite `aether-plan check` (los de `plugins/aether/lib/plan.js` y `plan-compile.js`, entre ellos el aviso de que `Tier` y `Ladder` se ignoran).
+- `docs/methodology.md`, `docs/getting-started.md`, `docs/purpose.md`, `docs/roadmap.md`, `docs/guide/design-seats.md`, `docs/guide/troubleshooting.md` y `docs/guide/models-by-role.md`: ninguna línea ni frase presenta `Tier` o `Ladder` como campo del plan. Donde decían que la tarea elige su modelo, dicen lo que hace el sistema: el swarm arranca toda unidad en el primer peldaño de `config/ladder.json` (Haiku `high`), una corrección sube el esfuerzo y un fallo repetido sube de modelo, y `Review` (`high`, `xhigh` o `max`) fija el esfuerzo del supervisor y de la revisión final. El ejemplo de `getting-started.md` (línea con `- Tier:`) pierde esa línea. `troubleshooting.md` deja de enseñar los errores `missing Tier` y la línea `Ladder`, y da los mensajes que hoy emite `aether-plan check` (los de `plugins/aether/lib/plan.js` y `plan-compile.js`).
 - `docs/contributing.md`:
   - el ejemplo de `tasks.md` pierde las líneas `- Tier:` y `- Ladder:`; al correr `aether-plan check` da exactamente `{"ok":true,"tasks":2,"waves":[["task-1","task-2"]],"warnings":[]}`, que es lo que la página muestra;
   - dice, tal cual, ``` `npm test` runs the bins, the libraries, the workflow scenarios and the documentation facts; it does not run the mod. ``` y ``` `npm run test:mod` runs `claude plugin test plugins/aether`: the mod, with the usage meter, ops and delegation, on the test engine with a simulated model. ```;
@@ -688,7 +688,7 @@ test('R16: no page gives aether-exam a list verb', () => {
 
 test('R17: no page presents Tier or Ladder as a field of the plan, and the contributing example checks clean', (t) => {
   for (const page of ['docs/methodology.md', 'docs/getting-started.md', 'docs/contributing.md', 'docs/purpose.md', 'docs/roadmap.md', 'docs/guide/design-seats.md', 'docs/guide/troubleshooting.md', 'docs/guide/models-by-role.md']) {
-    const text = read(page)
+    const text = read(page).replace(/[^\n]*\bTier\b[^\n]*(?:ignorado|ignored)[^\n]*/g, '')
     assert.doesNotMatch(text, /\bTier\b/, `${page} names Tier`)
     assert.doesNotMatch(text, /- (Tier|Ladder):/, `${page} shows a Tier or Ladder line`)
   }
@@ -732,13 +732,27 @@ test('R18: contributing.md tells apart npm test and npm run test:mod, and states
 
 - **R19.** El botón `#motion` de `site/index.html` lleva `aria-label="Pausar animación"` (el texto visible inicial). En `site/app.js`, `applyLang()` y `setMode()` asignan `$('#motion').setAttribute('aria-label', t(S.run ? 'motion.pause' : 'motion.play'))` y, en `setMode`, con `on` en lugar de `S.run`, el mismo texto que ponen en `#motion-l`. La regla `.motion span:last-child{display:none}` de pantallas estrechas no cambia.
 - **R20.** En `site/style.css` (no `styles.css`: el archivo real), `.tl-n` y `.tl-all i` pasan de `color:var(--faint)` a `color:var(--dim)`. `--dim` es `#9a93c4` sobre `--ink` `#0d0b1c`, con relación de contraste mayor que 6 a 1. En `site/404.html`, la imagen `#lost` lleva `src="assets/img/hero.png"` y `data-src="assets/img/px/lost.gif?v=8"`, con un texto alternativo que describe la imagen fija; junto a ella un `<button type="button" id="play-lost">` con el texto «Ver animación / Play animation» que, al pulsarlo, pone `img.src = img.getAttribute('data-src')`. El GIF no se carga solo; el script de `prefers-reduced-motion` que había se borra porque ya no hace falta.
-- **R21.** En `.github/workflows/pages.yml`: `actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4`, `actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3` y `actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4`; `permissions: {}` en la raíz del workflow; `permissions: { contents: read }` en el job `build`; `permissions: { pages: write, id-token: write }` en el job `deploy`.
+- **R21.** En `.github/workflows/pages.yml`: `actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4`, `actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3` y `actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4`; `permissions: {}` en la raíz del workflow; `permissions:` con `contents: read` en el job `build`; `permissions:` con `pages: write` e `id-token: write` en el job `deploy`.
 
 **Tests (write first):**
 
-En `tests/site.test.js` (usa `read`, `ROOT`, `SITE` y `withoutComments` del archivo):
+En `tests/site.test.js` (usa `read`, `ROOT`, `SITE` y `withoutComments` del archivo). Reescribe la prueba existente «the workflow deploys only site/, with the permissions and the concurrency group Pages needs» (`tests/site.test.js` líneas 236–248) para que acepte las acciones fijadas por SHA y los permisos por job, y añade las pruebas de R19–R21:
 
 ```js
+test('the workflow deploys only site/, with the permissions and the concurrency group Pages needs', () => {
+  const yml = read(ROOT, '.github', 'workflows', 'pages.yml')
+  assert.match(yml, /^\s*-\s*'site\/\*\*'/m)
+  assert.match(yml, /actions\/upload-pages-artifact@[0-9a-f]{40}\b/)
+  assert.match(yml, /actions\/deploy-pages@[0-9a-f]{40}\b/)
+  assert.match(yml, /^\s*path:\s*site\s*$/m)
+  assert.match(yml, /^\s*pages:\s*write/m)
+  assert.match(yml, /^\s*id-token:\s*write/m)
+  assert.match(yml, /^\s*contents:\s*read/m)
+  assert.match(yml, /^\s*group:\s*pages\s*$/m)
+  assert.match(yml, /name:\s*github-pages/)
+  assert.doesNotMatch(yml, /secrets\./, 'the workflow uses no secrets')
+})
+
 test('R19: the motion button keeps an accessible name at every width and in both languages', () => {
   assert.match(read(SITE, 'index.html'), /<button[^>]*id="motion"[^>]*aria-label="Pausar animación"/)
   const js = read(SITE, 'app.js')
