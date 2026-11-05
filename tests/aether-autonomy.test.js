@@ -194,11 +194,55 @@ test('quarantine through the bin: a corrupt grants.json is set aside, a readable
   const refused = cli(['quarantine', 'grants'])
   assert.equal(refused.status, 2)
   assert.equal(refused.json.quarantined, false)
+  assert.equal(fs.readFileSync(file, 'utf8'), JSON.stringify({ grants: [], revoked: [] }))
   fs.writeFileSync(file, '{ not json')
   const moved = cli(['quarantine', 'grants'])
   assert.equal(moved.status, 0, moved.stderr)
   assert.match(moved.json.quarantined.to, /broken-runs\/grants\.json-/)
+  assert.equal(moved.json.quarantined.from, path.join('.aether', 'autonomy', 'grants.json'))
+  assert.equal(path.isAbsolute(moved.json.quarantined.to), false)
+  assert.equal(fs.readFileSync(path.join(repo.dir, moved.json.quarantined.to), 'utf8'), '{ not json')
   assert.equal(fs.existsSync(file), false)
   assert.equal(cli(['quarantine']).status, 1)
   assert.equal(cli(['quarantine', 'run']).status, 1)
+})
+
+test('quarantine run through the bin preserves a readable folder and moves a corrupt folder with relative paths (R26)', (t) => {
+  const { repo, cli } = setup(t)
+  const id = 'auto-20261009-200000-ab12'
+  const relative = path.join('.aether', 'autonomy', id)
+  const dir = path.join(repo.dir, relative)
+  const run = JSON.stringify({ id, spend: [] })
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'run.json'), run)
+  fs.writeFileSync(path.join(dir, 'diary.md'), 'the diary')
+  const refused = cli(['quarantine', 'run', id])
+  assert.equal(refused.status, 2, refused.stdout + refused.stderr)
+  assert.equal(refused.json.quarantined, false)
+  assert.match(refused.json.reason, /aether-autonomy end/)
+  assert.equal(fs.readFileSync(path.join(dir, 'run.json'), 'utf8'), run)
+  assert.equal(fs.readFileSync(path.join(dir, 'diary.md'), 'utf8'), 'the diary')
+
+  fs.writeFileSync(path.join(dir, 'run.json'), '{ broken')
+  const moved = cli(['quarantine', 'run', id])
+  assert.equal(moved.status, 0, moved.stdout + moved.stderr)
+  assert.equal(moved.json.quarantined.from, relative)
+  assert.equal(path.isAbsolute(moved.json.quarantined.to), false)
+  assert.match(moved.json.quarantined.to, /^\.aether\/broken-runs\/auto-20261009-200000-ab12-\d{8}-\d{6}-[0-9a-f]{4}$/)
+  assert.equal(fs.existsSync(dir), false)
+  const destination = path.join(repo.dir, moved.json.quarantined.to)
+  assert.equal(fs.readFileSync(path.join(destination, 'run.json'), 'utf8'), '{ broken')
+  assert.equal(fs.readFileSync(path.join(destination, 'diary.md'), 'utf8'), 'the diary')
+})
+
+test('quarantine rejects extra arguments for both targets with the usage error (R26)', (t) => {
+  const { cli } = setup(t)
+  for (const args of [
+    ['quarantine', 'grants', 'extra'],
+    ['quarantine', 'run', 'auto-20261009-200000-ab12', 'extra'],
+  ]) {
+    const result = cli(args)
+    assert.equal(result.status, 1, args.join(' '))
+    assert.deepEqual(result.json, { error: USAGE }, args.join(' '))
+  }
 })
