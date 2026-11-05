@@ -285,7 +285,7 @@ Forma de la entrada de `render`:
 ```
 meta     = { date, topics: [id], leftOut: [{ topic, reason }], durationSeconds, costUsd: number | null, waits: [text], assumptions: [text],
              reviewers: { notLooked: [{ topic, items: [text] }], exhausted: [topic] }, radar: text, cost: { readable: boolean, text?: text } }
-analysis = { project: { name, key, identity, remote, root, head }, checks: { tests, lint, dependencies, secrets, todos, branches, issues, prs, hotspots },
+analysis = { project: { name, key, identity, remote, root, defaultBranch, head }, checks: { tests, lint, dependencies, secrets, todos, branches, issues, prs, hotspots },
              changes: { changed, attributed, unattributable: [{ between: [a, b], items: [{ kind, files? }] }] } }
 triage   = { counts: { candidates, verified }, list: [item], unverified: [item], sinceLast: { previous: null | { date }, resolved: [{ causeKey, title, topic }], notReaudited: [...], notFoundAgain: [...] },
              discarded: [{ id, reason, ... }], issueComparison: { state: 'done' | 'could-not', reason?, removed }, ... }
@@ -308,7 +308,7 @@ El texto de cada sección (la forma del prototipo). Español; las etiquetas entr
    *Por qué P0:* {reason} · {tamaño} · {how}{ · nuevo | · sigue}
 **Sin verificar (no los ordené)**
 - **[{tema}]** {title} (`{file}:{line}`): {reason}
-**Desde la última auditoría ({previous.date}):** {nuevos} nuevos, {siguen} siguen, {resueltos} resueltos (ya no aparecen y su código cambió).{ {n} no se volvieron a encontrar, pero su código no cambió.}{ {k} sin revisar esta vez, porque sus temas quedaron fuera.}     (las dos frases finales solo cuando sinceLast.notFoundAgain o sinceLast.notReaudited tienen elementos; después, una línea `- No se volvieron a encontrar: {títulos separados por «; »}` con a lo más diez títulos y `, y {m} más`; en inglés `{r} resolved (no longer found, and their code changed).`, ` {n} not found again, though their code did not change.`, ` {k} not re-audited, because their topics were left out.`, `- Not found again: {titles}`, `, and {m} more`; sin anterior: **Desde la última auditoría:** no hay una auditoría anterior.)
+**Desde la última auditoría ({previous.date}):** {nuevos} nuevos, {siguen} siguen, {resueltos} resueltos (ya no aparecen, y su código cambió o su comprobación volvió a correr).{ {n} no se volvieron a encontrar, pero su código no cambió.}{ {k} sin revisar esta vez, porque sus temas quedaron fuera.}     (las dos frases finales solo cuando sinceLast.notFoundAgain o sinceLast.notReaudited tienen elementos; después, una línea `- No se volvieron a encontrar: {títulos separados por «; »}` con a lo más diez títulos y `, y {m} más`; en inglés `{r} resolved (no longer found, after their code changed or their check ran again).`, ` {n} not found again, though their code did not change.`, ` {k} not re-audited, because their topics were left out.`, `- Not found again: {titles}`, `, and {m} more`; sin anterior: **Desde la última auditoría:** no hay una auditoría anterior.)
 **Descartados:** {total} ({razón}: {n}, ...).{ No pude comparar con los issues abiertos ({reason}).}{ La lista completa está en el reporte guardado: {savedTo}}
 **No cubrí:**
 - {línea}                                 (sin líneas: - (nada))
@@ -321,7 +321,7 @@ Etiquetas en español: tema (bugs Bug, security Seguridad, dependencies Dependen
 
 Líneas de «No cubrí», en este orden: por cada revisión del análisis que no sea `result` (en el orden de la tabla anterior): `{revisión}: no se corrió: {reason}` si `notRun`, `{revisión}: no aplica: {reason}` si `not-applicable`, `{revisión}: no se pudo: {reason}` si `could-not`; por cada revisión `result` con `truncated: true`: `{revisión}: se leyó solo una parte`; por cada `meta.leftOut`: `{tema}: tema fuera: {reason}`; por cada `meta.reviewers.notLooked`: `{tema}: no miré {items separados por coma}`; por cada `meta.reviewers.exhausted`: `Revisor agotado: {tema}`.
 
-Inglés (cualquier `lang` que no empiece por `es`): `**Audit of {name} · {date} · {n} topics · {candidates} findings, {verified} survived verification**`, `**Awaiting your yes**`, `**Assumptions**`, `- (none)`, `- Unattributable change during the audit (between {a} and {b}): {files}`, `**P0 · Now**`, `**P1 · Soon**`, `**P2 · Schedulable**`, `**P3 · When you can / ideas**`, `*Why P0:*`, `**Unverified (not ranked)**`, `**Since the last audit ({date}):** {n} new, {s} still open, {r} resolved (no longer found, and their code changed).` followed, when there are any, by ` {n} not found again, though their code did not change.`, ` {k} not re-audited, because their topics were left out.` and the line `- Not found again: {titles}` / `**Since the last audit:** there is no earlier audit.`, `**Discarded:** {total} ({reason}: {n}, ...).`, ` I could not compare with the open issues ({reason}).`, ` The full list is in the saved report: {savedTo}`, `**Not covered:**`, `{check}: not run: {reason}` / `not applicable:` / `could not:` / `only part was read` / `{topic}: left out: {reason}` / `{topic}: I did not look at {items}` / `Reviewer ran out: {topic}`, `**RADAR:** {radar}`, `I could not read the session cost; I give no figure.`, `**Which do you take?** For example: «1, 2 and 3».` / `**Which do you take?** There are no verified findings to take.`, tamaños Small, Medium, Large, marcas new y still, verificación proven, confirmed by reading, proposal, descarte `refuted`, `covered by an issue`, `merged`, `no location`, `no evidence`; temas Bug, Security, Dependencies, Tests, Reliability, Performance, Accessibility, Architecture, Docs, Releases, Hygiene, Opportunity; tipos Bug, Risk, Debt, Docs, Opportunity, Other.
+Inglés (cualquier `lang` que no empiece por `es`): `**Audit of {name} · {date} · {n} topics · {candidates} findings, {verified} survived verification**`, `**Awaiting your yes**`, `**Assumptions**`, `- (none)`, `- Unattributable change during the audit (between {a} and {b}): {files}`, `**P0 · Now**`, `**P1 · Soon**`, `**P2 · Schedulable**`, `**P3 · When you can / ideas**`, `*Why P0:*`, `**Unverified (not ranked)**`, `**Since the last audit ({date}):** {n} new, {s} still open, {r} resolved (no longer found, after their code changed or their check ran again).` followed, when there are any, by ` {n} not found again, though their code did not change.`, ` {k} not re-audited, because their topics were left out.` and the line `- Not found again: {titles}` / `**Since the last audit:** there is no earlier audit.`, `**Discarded:** {total} ({reason}: {n}, ...).`, ` I could not compare with the open issues ({reason}).`, ` The full list is in the saved report: {savedTo}`, `**Not covered:**`, `{check}: not run: {reason}` / `not applicable:` / `could not:` / `only part was read` / `{topic}: left out: {reason}` / `{topic}: I did not look at {items}` / `Reviewer ran out: {topic}`, `**RADAR:** {radar}`, `I could not read the session cost; I give no figure.`, `**Which do you take?** For example: «1, 2 and 3».` / `**Which do you take?** There are no verified findings to take.`, tamaños Small, Medium, Large, marcas new y still, verificación proven, confirmed by reading, proposal, descarte `refuted`, `covered by an issue`, `merged`, `no location`, `no evidence`; temas Bug, Security, Dependencies, Tests, Reliability, Performance, Accessibility, Architecture, Docs, Releases, Hygiene, Opportunity; tipos Bug, Risk, Debt, Docs, Opportunity, Other.
 
 `data` (lo que guarda `report.json`): `{ project: analysis.project, date: meta.date, meta: { durationSeconds, costUsd, topics, leftOut }, counts: triage.counts, list: triage.list, unverified: triage.unverified, sinceLast: triage.sinceLast, discarded: { total, byReason: { <razón>: n }, items: triage.discarded }, issueComparison: triage.issueComparison, notCovered: [las líneas de «No cubrí»], waits, assumptions, radar, cost: meta.cost, sections }`.
 
@@ -576,7 +576,7 @@ test('what is unverified has no level and no number, and the since-last, discard
   assert.ok(unverified.includes('Possible stock race') && unverified.includes('`src/orders/stock.js:30`'))
   assert.doesNotMatch(unverified, /\bP[0-3]\b/)
   assert.doesNotMatch(unverified, /^\d+\./m)
-  assert.ok(md.includes('**Desde la última auditoría (2026-10-12):** 3 nuevos, 1 siguen, 1 resueltos (ya no aparecen y su código cambió).'))
+  assert.ok(md.includes('**Desde la última auditoría (2026-10-12):** 3 nuevos, 1 siguen, 1 resueltos (ya no aparecen, y su código cambió o su comprobación volvió a correr).'))
   const discarded = between(md, '**Descartados', '**No cubrí')
   assert.ok(discarded.includes('**Descartados:** 5 (refutados: 2, cubiertos por un issue: 1, repetidos: 1, sin ubicación: 1).'))
   assert.ok(discarded.includes('No pude comparar con los issues abiertos (gh is not installed).'))
@@ -626,16 +626,16 @@ test('the first audit says there is no earlier one, a band with no points is lef
 test('the line since the last audit counts the items not re-audited because their topics were left out, in Spanish and in English', () => {
   const later = fixture()
   later.triage.sinceLast = { previous: { date: '2026-10-12' }, resolved: [], notReaudited: [{ causeKey: 'doc', title: 'Doc drift', topic: 'docs' }, { causeKey: 'rel', title: 'Two versions', topic: 'releases' }] }
-  assert.ok(report.render(later, 'es').markdown.includes('3 nuevos, 1 siguen, 0 resueltos (ya no aparecen y su código cambió). 2 sin revisar esta vez, porque sus temas quedaron fuera.'))
-  assert.ok(report.render(later, 'en').markdown.includes('3 new, 1 still open, 0 resolved (no longer found, and their code changed). 2 not re-audited, because their topics were left out.'))
+  assert.ok(report.render(later, 'es').markdown.includes('3 nuevos, 1 siguen, 0 resueltos (ya no aparecen, y su código cambió o su comprobación volvió a correr). 2 sin revisar esta vez, porque sus temas quedaron fuera.'))
+  assert.ok(report.render(later, 'en').markdown.includes('3 new, 1 still open, 0 resolved (no longer found, after their code changed or their check ran again). 2 not re-audited, because their topics were left out.'))
   assert.doesNotMatch(report.render(fixture(), 'es').markdown, /sin revisar esta vez/)
 })
 
 test('the since-last line names items not found again when their code did not change, in Spanish and in English', () => {
   const later = fixture()
   later.triage.sinceLast = { previous: { date: '2026-10-12' }, resolved: [{ causeKey: 'old', title: 'An old bug', topic: 'bugs' }], notReaudited: [], notFoundAgain: [{ causeKey: 'a', title: 'Bug A', topic: 'bugs' }, { causeKey: 'b', title: 'Bug B', topic: 'bugs' }] }
-  assert.ok(report.render(later, 'es').markdown.includes('1 resueltos (ya no aparecen y su código cambió). 2 no se volvieron a encontrar, pero su código no cambió.'))
-  assert.ok(report.render(later, 'en').markdown.includes('1 resolved (no longer found, and their code changed). 2 not found again, though their code did not change.'))
+  assert.ok(report.render(later, 'es').markdown.includes('1 resueltos (ya no aparecen, y su código cambió o su comprobación volvió a correr). 2 no se volvieron a encontrar, pero su código no cambió.'))
+  assert.ok(report.render(later, 'en').markdown.includes('1 resolved (no longer found, after their code changed or their check ran again). 2 not found again, though their code did not change.'))
   assert.ok(report.render(later, 'es').markdown.includes('- No se volvieron a encontrar: Bug A; Bug B'))
   assert.ok(report.render(later, 'en').markdown.includes('- Not found again: Bug A; Bug B'))
   const many = fixture()
@@ -1227,12 +1227,13 @@ async function runAudit(root, ctx) {}
 
 ```js
 // analyze(root, opts = { noTests, testsCommand, timeoutSeconds }, ctx = { exec, env, now, dataDir }) -> Promise<analysis>
-// analysis = { ok: true, version: 1, generatedAt, project: { name, key, identity, remote, root, defaultBranch },
+// analysis = { ok: true, version: 1, generatedAt, project: { name, key, identity, remote, root, defaultBranch, head },
 //   checks: { tests, lint, dependencies, secrets, todos, branches, issues, prs, hotspots },   // each a Check
 //   changes: { changed, attributed, unattributable },                                            // withSnapshots of audit-snapshot.js
 //   selfFindings: [Finding], estimate: store.estimate(dataDir) }
 // The project's own tools (runTests, runLint, runAudit) run as the three steps of withSnapshots, in that order, even when a step is not applicable.
-// The other checks only read. project comes from identityOf(root); defaultBranch from the branches check.
+// The other checks only read. project comes from identityOf(root); defaultBranch from the branches check; head is the full sha of
+// `git rev-parse HEAD` in root, read after the three tool steps (null when the repository has no commit).
 // selfFindings: one per attributed step, shaped as an established Finding:
 //   { id: 'AUDIT-<n>', topic: 'hygiene', title: `Running the ${label} changed the project`, claim, location: { file: <first changed file, or '.git'>, line: 1 }, type: 'risk',
 //     trigger: `the audit ran ${command or step}`, evidence: <the kinds and files of the diff>, impact, rootCause, verification: 'proven', status: 'verified',
@@ -1713,7 +1714,7 @@ async function command(args, ctx) {}
 ```js
 // clean(settled, analysis, { topics, dataDir }) -> { findings, unverified, discarded, counts, issueComparison, sinceLast }
 // settled = the output of verdicts, with the fields the Lead added to each finding: causeKey (default: the id) and coveredBy (an issue number, optional).
-// analysis = the output of analyze (only project.key, checks.issues, selfFindings and, for the date of the audit, generatedAt are read).
+// analysis = the output of analyze (only project.key, project.head, project.root, checks.issues, checks.tests, checks.lint, checks.dependencies, selfFindings and, for the date of the audit, generatedAt are read; and the earlier report's project.head and list).
 // 0. The audit's own findings (R6): each of analysis.selfFindings (already established by the analysis: status 'verified', verification 'proven', source 'analysis')
 //    is appended to the settled findings before step 1, and counts.candidates and counts.verified each grow by their number. A missing selfFindings is [].
 // 1. Merge (R16): findings with the same causeKey AND the same status become one. The survivor is the first in the input; it gets locations (the unique locations of all, as Location[]),

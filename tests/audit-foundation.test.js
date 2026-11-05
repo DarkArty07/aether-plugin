@@ -222,7 +222,7 @@ test('what is unverified has no level and no number, and the since-last, discard
   assert.ok(unverified.includes('Possible stock race') && unverified.includes('`src/orders/stock.js:30`'))
   assert.doesNotMatch(unverified, /\bP[0-3]\b/)
   assert.doesNotMatch(unverified, /^\d+\./m)
-  assert.ok(md.includes('**Desde la última auditoría (2026-10-12):** 3 nuevos, 1 siguen, 1 resueltos (ya no aparecen y su código cambió).'))
+  assert.ok(md.includes('**Desde la última auditoría (2026-10-12):** 3 nuevos, 1 siguen, 1 resueltos (ya no aparecen, y su código cambió o su comprobación volvió a correr).'))
   const discarded = between(md, '**Descartados', '**No cubrí')
   assert.ok(discarded.includes('**Descartados:** 5 (refutados: 2, cubiertos por un issue: 1, repetidos: 1, sin ubicación: 1).'))
   assert.ok(discarded.includes('No pude comparar con los issues abiertos (gh is not installed).'))
@@ -272,16 +272,16 @@ test('the first audit says there is no earlier one, a band with no points is lef
 test('the line since the last audit counts the items not re-audited because their topics were left out, in Spanish and in English', () => {
   const later = fixture()
   later.triage.sinceLast = { previous: { date: '2026-10-12' }, resolved: [], notReaudited: [{ causeKey: 'doc', title: 'Doc drift', topic: 'docs' }, { causeKey: 'rel', title: 'Two versions', topic: 'releases' }] }
-  assert.ok(report.render(later, 'es').markdown.includes('3 nuevos, 1 siguen, 0 resueltos (ya no aparecen y su código cambió). 2 sin revisar esta vez, porque sus temas quedaron fuera.'))
-  assert.ok(report.render(later, 'en').markdown.includes('3 new, 1 still open, 0 resolved (no longer found, and their code changed). 2 not re-audited, because their topics were left out.'))
+  assert.ok(report.render(later, 'es').markdown.includes('3 nuevos, 1 siguen, 0 resueltos (ya no aparecen, y su código cambió o su comprobación volvió a correr). 2 sin revisar esta vez, porque sus temas quedaron fuera.'))
+  assert.ok(report.render(later, 'en').markdown.includes('3 new, 1 still open, 0 resolved (no longer found, after their code changed or their check ran again). 2 not re-audited, because their topics were left out.'))
   assert.doesNotMatch(report.render(fixture(), 'es').markdown, /sin revisar esta vez/)
 })
 
 test('the since-last line names items not found again when their code did not change, in Spanish and in English', () => {
   const later = fixture()
   later.triage.sinceLast = { previous: { date: '2026-10-12' }, resolved: [{ causeKey: 'old', title: 'An old bug', topic: 'bugs' }], notReaudited: [], notFoundAgain: [{ causeKey: 'a', title: 'Bug A', topic: 'bugs' }, { causeKey: 'b', title: 'Bug B', topic: 'bugs' }] }
-  assert.ok(report.render(later, 'es').markdown.includes('1 resueltos (ya no aparecen y su código cambió). 2 no se volvieron a encontrar, pero su código no cambió.'))
-  assert.ok(report.render(later, 'en').markdown.includes('1 resolved (no longer found, and their code changed). 2 not found again, though their code did not change.'))
+  assert.ok(report.render(later, 'es').markdown.includes('1 resueltos (ya no aparecen, y su código cambió o su comprobación volvió a correr). 2 no se volvieron a encontrar, pero su código no cambió.'))
+  assert.ok(report.render(later, 'en').markdown.includes('1 resolved (no longer found, after their code changed or their check ran again). 2 not found again, though their code did not change.'))
   assert.ok(report.render(later, 'es').markdown.includes('- No se volvieron a encontrar: Bug A; Bug B'))
   assert.ok(report.render(later, 'en').markdown.includes('- Not found again: Bug A; Bug B'))
   const many = fixture()
