@@ -309,7 +309,7 @@ function timeOfBroken(line) {
 // attempts share its id). Reads delegates/log.jsonl or spend/<id>.outcomes.jsonl. A line that cannot be read
 // makes this session incomplete only when it falls inside the session's span: the readable lines that are the
 // session's, of any kind. By its time when the broken line shows one, by its place in the file when not. An outcome
-// whose line is in `earlier` (the counted outcomes of an earlier install) is left out, and this file's are added to it.
+// whose line is in `earlier` is left out, and each newly counted line is added to it immediately.
 function readOutcomesIn(file, id, prices, earlier = new Set()) {
   const out = { events: [], complete: true }
   let text
@@ -320,7 +320,6 @@ function readOutcomesIn(file, id, prices, earlier = new Set()) {
     return out
   }
   const broken = []
-  const counted = []
   const span = { first: Infinity, last: -Infinity, early: Infinity, late: -Infinity }
   text.split('\n').forEach((line, position) => {
     if (!line.trim()) return
@@ -344,11 +343,10 @@ function readOutcomesIn(file, id, prices, earlier = new Set()) {
     if (entry.kind === 'outcome') {
       const key = line
       if (earlier.has(key)) return
-      counted.push(key)
+      earlier.add(key)
       out.events.push(harnessEvent('outcome', entry, prices))
     }
   })
-  for (const key of counted) earlier.add(key)
   const timed = span.early <= span.late
   for (const line of broken) {
     // A broken line that shows a time is placed by that time among the session's times. When it shows none, or when the

@@ -360,3 +360,78 @@ test('archiveOutcomes holds and releases the lock, and throws if its saved lines
   assert.equal(fs.existsSync(lock), false)
   assert.equal(fs.existsSync(path.join(dataDir, 'delegates', 'log.jsonl')), true)
 })
+
+test('duplicate outcome lines in one log count once before and after pruning', (t) => {
+  const dataDir = useDataDir(t)
+  const price = outcome(dataDir, 's-duplicate', 1, 'm-b', 'output')
+  const log = path.join(dataDir, 'delegates', 'log.jsonl')
+  fs.appendFileSync(log, fs.readFileSync(log, 'utf8'))
+  const before = report(dataDir, 's-duplicate')
+  close(before.usd, price)
+  assert.equal(before.harness.calls, 1)
+  assert.deepEqual(archiveOutcomes(dataDir, 's-duplicate'), { archived: true, lines: 1 })
+  fs.rmSync(log)
+  assert.deepEqual(report(dataDir, 's-duplicate'), before)
+})
+
+test('archiving new outcomes preserves older archived lines absent from the log', (t) => {
+  const dataDir = useDataDir(t)
+  const oldPrice = outcome(dataDir, 's-old', 1, 'm-b', 'output')
+  const log = path.join(dataDir, 'delegates', 'log.jsonl')
+  const oldLine = fs.readFileSync(log, 'utf8')
+  assert.deepEqual(archiveOutcomes(dataDir, 's-old'), { archived: true, lines: 1 })
+  fs.rmSync(log)
+  const newPrice = outcome(dataDir, 's-old', 2, 'm-b', 'output')
+  const newLine = fs.readFileSync(log, 'utf8')
+  assert.deepEqual(archiveOutcomes(dataDir, 's-old'), { archived: true, lines: 1 })
+  assert.equal(fs.readFileSync(outcomesFile(dataDir, 's-old'), 'utf8'), oldLine + newLine)
+  fs.rmSync(log)
+  close(report(dataDir, 's-old').usd, oldPrice + newPrice)
+})
+
+test('a readable log with no matching outcome produces no archive', (t) => {
+  const dataDir = useDataDir(t)
+  outcome(dataDir, 'other', 1, 'm-b', 'output')
+  assert.deepEqual(archiveOutcomes(dataDir, 's-absent'), { archived: false, lines: 0 })
+  assert.equal(fs.existsSync(outcomesFile(dataDir, 's-absent')), false)
+})
+
+test('an atomic outcome archive write failure throws and leaves the log intact', (t) => {
+  const dataDir = useDataDir(t)
+  outcome(dataDir, 's-write', 1, 'm-b', 'output')
+  const log = path.join(dataDir, 'delegates', 'log.jsonl')
+  const original = fs.readFileSync(log, 'utf8')
+  wrap(t, 'renameSync', (file) => file.includes('.s-write.outcomes.jsonl.'), () => { throw new Error('write failed') })
+  assert.throws(() => archiveOutcomes(dataDir, 's-write'), /write failed/)
+  assert.equal(fs.readFileSync(log, 'utf8'), original)
+  assert.equal(fs.existsSync(outcomesFile(dataDir, 's-write')), false)
+})
+
+test('report reads every log before archives during an archive and delete race', (t) => {
+  const root = tempDir(t, 'aether-installs-')
+  const home = path.join(root, 'data', 'aether-aether-plugin')
+  const other = path.join(root, 'data', 'aether-inline')
+  const price = outcome(other, 's-race', 1, 'm-b', 'output')
+  const logs = [home, other].map((dir) => path.join(dir, 'delegates', 'log.jsonl'))
+  const archives = [home, other].map((dir) => outcomesFile(dir, 's-race'))
+  const seen = []
+  const real = fs.readFileSync
+  let racing = false
+  t.mock.method(fs, 'readFileSync', function (file, ...args) {
+    if (!racing && (logs.includes(file) || archives.includes(file))) {
+      seen.push(file)
+      if (archives.includes(file) && !racing) {
+        racing = true
+        assert.deepEqual(archiveOutcomes(other, 's-race'), { archived: true, lines: 1 })
+        fs.rmSync(logs[1])
+      }
+    }
+    return real.call(this, file, ...args)
+  })
+  const result = report(home, 's-race')
+  assert.deepEqual(new Set(seen.slice(0, 2)), new Set(logs))
+  assert.ok(archives.includes(seen[2]))
+  close(result.usd, price)
+  assert.equal(result.harness.calls, 1)
+  assert.equal(result.complete, true)
+})
