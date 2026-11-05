@@ -350,36 +350,68 @@ function landsOnMain(git, sequence) {
   return MAIN_BRANCHES.has(branchOf(sequence, gitDirOf(sequence, git.dirs)))
 }
 
-// The match of one command's words: its class and the words of its subcommand, or null. A shell or eval
-// is matched by the script it runs, one level deeper. When wanted is given, only that class matches.
-function matchWords(words, depth, wanted, sequence) {
+// Whether a shell's words after its name read the script from stdin: the shell has -s, or it has
+// neither -c nor a script file. The words are already past dropWrappers and nameOf, so "env bash"
+// reads as ["bash"]. A lone "-" reads stdin too, while "--" ends the options.
+function shellReadsStdin(args) {
+  let hasC = false
+  let hasS = false
+  let file = false
+  for (const a of args) {
+    if (a.startsWith('--')) continue
+    if (a.startsWith('-') && a.length > 1) {
+      if (/^-[^-]*c/.test(a)) hasC = true
+      if (/^-[^-]*s/.test(a)) hasS = true
+    } else if (a !== '' && a !== '-') {
+      file = true
+    }
+  }
+  return hasS || (!hasC && !file)
+}
+
+// The matches of one command's words, appended to out: at most one per class, in reading order. A
+// shell or eval is matched by the script it runs, one level deeper, and a shell that takes its
+// script from a heredoc is matched the same way by each heredoc body it started. A heredoc to any
+// other command stays text. When wanted is given, only that class is appended.
+function collectWords(words, depth, wanted, sequence, out) {
   const unwrapped = dropWrappers(words)
   // A command run by its path, such as /usr/bin/git, is matched by its name.
   const named = unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
   followSegment(named, sequence)
+  const started = Array.isArray(words.heredocs) ? words.heredocs : []
+  if (started.length > 0 && SHELLS.has(named[0]) && shellReadsStdin(named.slice(1)) && depth < MAX_NESTING) {
+    for (const body of started) collectCommand(body.text, depth + 1, wanted, sequence, out)
+  }
   const command = dropGitOptions(named)
   const script = scriptOf(command)
-  if (script !== null) return depth < MAX_NESTING ? matchCommand(script, depth + 1, wanted, sequence) : null
+  if (script !== null) {
+    if (depth < MAX_NESTING) collectCommand(script, depth + 1, wanted, sequence, out)
+    return
+  }
   const git = gitCall(named)
   const mergesToMain = git !== null && landsOnMain(git, sequence)
   const found = mergesToMain ? { cls: 'merge-main', head: ['git', 'merge'] } : subcommandOf(command)
-  return found !== null && (wanted === null || found.cls === wanted) ? found : null
+  if (found !== null && (wanted === null || found.cls === wanted) && !out.some((f) => f.cls === found.cls)) out.push(found)
+}
+
+// The matches among a command's segments, appended to out in reading order.
+function collectCommand(command, depth, wanted, sequence, out) {
+  if (typeof command !== 'string') return
+  for (const words of segmentsOf(command)) collectWords(words, depth, wanted, sequence, out)
 }
 
 // The first match among a command's segments, or the first of class wanted when it is given.
 function matchCommand(command, depth, wanted = null, sequence = sequenceOf()) {
-  if (typeof command !== 'string') return null
-  for (const words of segmentsOf(command)) {
-    const found = matchWords(words, depth, wanted, sequence)
-    if (found !== null) return found
-  }
-  return null
+  const out = []
+  collectCommand(command, depth, wanted, sequence, out)
+  return out.length === 0 ? null : out[0]
 }
 
-// Reads the delimiter of a heredoc whose "<<" ends just before start, and queues it. Its quotes come off,
-// a "-" before it means the body's leading tabs are ignored, and a quoted delimiter (a quote or a backslash
-// in it) keeps the body from expanding. Returns the index of the last character read.
-function readHeredoc(command, start, heredocs) {
+// Reads the delimiter of a heredoc whose "<<" ends just before start, and queues it with the words
+// that started it, so the body can later be attached to that segment. Its quotes come off, a "-"
+// before it means the body's leading tabs are ignored, and a quoted delimiter (a quote or a
+// backslash in it) keeps the body from expanding. Returns the index of the last character read.
+function readHeredoc(command, start, heredocs, owner) {
   let i = start
   const strip = command[i] === '-'
   if (strip) i++
@@ -404,7 +436,7 @@ function readHeredoc(command, start, heredocs) {
     }
   }
   if (word === '') return start - 1
-  heredocs.push({ word, strip, quoted })
+  heredocs.push({ word, strip, quoted, owner })
   return i - 1
 }
 
@@ -578,7 +610,9 @@ function heredocSegments(body, depth) {
 // backquote still runs: its segments, read one level deeper, sit where it appears, an arithmetic
 // expansion runs nothing, and a "\$" or "\`" is literal. Single quotes are text throughout. A heredoc
 // body is text, from the line after the command line that starts it up to its delimiter, except the
-// substitutions and backquotes that a body with an unquoted delimiter expands.
+// substitutions and backquotes that a body with an unquoted delimiter expands. Each body is also
+// attached to the words that started it, as their "heredocs" property, so the matcher can read a
+// shell's script from it.
 function segmentsOf(command, depth = 0) {
   const segments = []
   let words = []
@@ -654,11 +688,19 @@ function segmentsOf(command, depth = 0) {
     } else if (ch === '\n') {
       endSegment()
       if (heredocs.length > 0) {
-        const bodies = heredocBodies(command, i + 1, heredocs.splice(0))
+        const queued = heredocs.splice(0)
+        const bodies = heredocBodies(command, i + 1, queued)
         i = bodies.end
-        for (const body of bodies.bodies) {
+        bodies.bodies.forEach((body, index) => {
+          // Each body reaches the segment that started it, so the matcher can read a shell's
+          // script from its heredoc; every other heredoc stays text but for its expansions.
+          const owner = queued[index].owner
+          if (owner !== null && owner !== undefined && segments.includes(owner)) {
+            if (owner.heredocs === undefined) owner.heredocs = []
+            owner.heredocs.push(body)
+          }
           if (!body.quoted && depth < MAX_NESTING) segments.push(...heredocSegments(body.text, depth))
-        }
+        })
       }
     } else if (ch === ';' || ch === '(' || ch === ')' || ch === '`') {
       endSegment()
@@ -675,7 +717,7 @@ function segmentsOf(command, depth = 0) {
       i += 2
     } else if (ch === '<' && next === '<') {
       endWord()
-      i = readHeredoc(command, i + 2, heredocs)
+      i = readHeredoc(command, i + 2, heredocs, words)
     } else {
       word = (word ?? '') + ch
     }
@@ -684,13 +726,20 @@ function segmentsOf(command, depth = 0) {
   return segments
 }
 
-// The irreversible class of a Bash command: push, merge-main, publish, deploy, delete, credentials or
-// paid-call (other paid calls are not detected),
-// or null. The first segment that matches decides. A git merge needs cwd, the directory the command runs in,
-// to know its branch: without it, only a checkout or switch to main earlier in the line makes it merge-main.
+// The distinct irreversible classes of a Bash command, in order of appearance: 'merge-main', 'push',
+// 'publish', 'deploy', 'delete' and 'credentials' (the guard does not detect paid calls). Every
+// segment counts, including sequences, pipes, subshells, substitutions and nested scripts, in the
+// order they run. A git merge needs cwd, the directory the command runs in, to know its branch:
+// without it, only a checkout or switch to main earlier in the line makes it merge-main.
+function irreversibleClasses(command, cwd) {
+  const out = []
+  collectCommand(command, 0, null, sequenceOf(cwd), out)
+  return out.map((found) => found.cls)
+}
+
+// The irreversible class of a Bash command, or null. The first class of the line decides.
 function irreversibleClass(command, cwd) {
-  const found = matchCommand(command, 0, null, sequenceOf(cwd))
-  return found === null ? null : found.cls
+  return irreversibleClasses(command, cwd)[0] ?? null
 }
 
 // The secret values that the owner's list must not keep: a NAME=value word whose name holds one of these,
@@ -748,4 +797,4 @@ function decideBash(input, env = process.env) {
   }
 }
 
-module.exports = { decide, decideBash, irreversibleClass, redactCommand }
+module.exports = { decide, decideBash, irreversibleClass, irreversibleClasses, redactCommand }
