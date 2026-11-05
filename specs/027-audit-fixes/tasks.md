@@ -223,6 +223,8 @@ En `plugins/aether/lib/guard.js`, `decideBash(input, env)`:
 
   **Límites conocidos, que se documentan en un comentario de `guard.js` y que NO son hallazgos de esta tarea ni hay que cerrarlos (la lista es completa):** (a) un nombre que el comando construye al ejecutarse (variables como `${F}nts.json`, sustituciones que calculan el nombre, `eval`, codificación, un programa que arma la ruta); (b) `cd .aether/autonomy` seguido de un patrón o de un nombre que no contiene `grants.json`, `run.json` ni un identificador de corrida (`rm *`); (c) una construcción en varias líneas de comando que nunca escribe los nombres juntos (una lista que un comando guarda en un archivo y otro consume). **Falsos positivos que se aceptan:** un `git commit -m` o un `gh issue create` cuyo texto nombra `grants.json` o `run.json`; `sed`, `sort`, `find`, `git`, `gh`, `less` o `rg` sobre esos archivos; la redirección hacia `diary.md` o `brief.md` bajo `.aether/autonomy/`, o una orden de 3 sobre ellos (el Lead los escribe con `Write` o `Edit`); una línea con una orden de 3 y, en otro segmento, cualquier operando de 3 (`cp a b; ls .aether`, `cp a b; ls autonomy`); y un `grants.json` o `run.json` de otro proyecto nombrado por una línea que no es de solo lectura (`node build.js > dist/run.json`). No sigas `cd`, ni subshells, ni `&&`/`||`, ni resuelvas rutas contra `cwd`: la regla funciona por los nombres precisamente para no tener que hacerlo. Es un cable trampa contra el accidente y la falsificación torpe, no una barrera contra un agente decidido a esquivarla.
 
+  **Normalización y nombre base.** Antes de comparar, cada palabra se normaliza: se juntan las barras repetidas (`.aether//autonomy`), se quitan los componentes `.` (`.aether/./autonomy`) y se quitan repetidamente `/`, `/.` y `/*` finales. Las órdenes de 3 se comparan por su nombre base (`/bin/rm` y `/usr/bin/mv` cuentan como `rm` y `mv`). La palabra `aether-autonomy` sola se exceptúa sea cual sea el binario que el `PATH` resuelva (en un árbol de desarrollo, el de la versión instalada), y una asignación de entorno delante (`FOO=1 aether-autonomy …`) la deja sin excepción. Añade a los límites conocidos, para el comentario de `guard.js`: (d) el borrado del directorio por un programa que no es una de las órdenes de 3 (`git clean -fdx .aether`, un `node -e` o `python -c` que nombra `.aether` sin nombrar `grants.json` ni `run.json`) y las órdenes de todo el árbol que no nombran nada (`git clean -fdX`); (e) funciones o alias de shell que una llamada anterior haya definido, si el shell los conserva. Y a los falsos positivos: cualquier `;`, `&`, `<` o `>` dentro de comillas hace que la línea no sea de solo lectura (`grep "a;b" .aether/autonomy/grants.json` se rechaza).
+
   Leer esos archivos con una línea de solo lectura (`cat`, `grep`, `ls`, `jq`), y `mkdir .aether/runs/x` o `rm -rf .aether/worktrees/old`, siguen permitidos. Apartar un registro corrupto se hace con `aether-autonomy quarantine` (tarea 17), no con Bash.
 
 **Tests (write first):**
@@ -309,6 +311,12 @@ test('Bash cannot name the autonomy registry or a run state unless it only reads
     'ls -d .aether/autonomy/* > /tmp/l; xargs rm -rf < /tmp/l',
     'ls -d .aether/autonomy/* | xargs rm -rf',
     'echo .aether | xargs rm -rf',
+    '/bin/rm -rf .aether',
+    'rm -rf .aether//autonomy',
+    'rm -rf .aether/./autonomy',
+    'rm -rf .aether//',
+    `/usr/bin/mv .aether/autonomy/${id} /tmp/x`,
+    'grep "a;b" .aether/autonomy/grants.json',
     'cp a b; ls .aether',
     'cp a b; ls autonomy',
     `node -e "require('fs').rmSync('.aether/autonomy/grants.json')" ${AUTONOMY_BIN}`,
