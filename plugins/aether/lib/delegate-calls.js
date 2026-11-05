@@ -188,7 +188,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   if (!isObject(settings.models) || !Object.hasOwn(settings.models, rung.model)) return outcome('unavailable', { detail: `${harness} has no model ${rung.model}` })
   let cli = adapter
   try {
-    cli ??= createAdapter(harness, settings)
+    cli ??= createAdapter(harness, settings, dataDir)
   } catch (err) {
     return outcome('unavailable', { detail: err.message })
   }
