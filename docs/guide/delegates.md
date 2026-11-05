@@ -125,7 +125,7 @@ A pair that fails to serve a call is not the same as a correction that did not w
 
 ## The log
 
-Every launch, result, call, verdict and authorization is a line of `<dataDir>/delegates/log.jsonl`, where `<dataDir>` is the plugin's data directory (see [Data](maintenance.md#data)). The log is append-only and shared by every session, each entry is one write, so two sessions at once do not clash, and a text value of more than 4000 characters is trimmed before it is written. Each entry carries its `time` and its `session`, and these are the kinds:
+Every launch, result, call, verdict and authorization is a line of `<dataDir>/delegates/log.jsonl`, where `<dataDir>` is the plugin's data directory (see [Data](maintenance.md#data)). The log is shared by every session, each entry is one write under a lock, so two sessions at once do not clash, and a text value of more than 4000 characters is trimmed before it is written. Each entry carries its `time` and its `session`, and these are the kinds:
 
 - `launch`: each attempt of a task: its step, its number, how it was launched (`first`, `fix`, `rise`, `unjudged` for a launch with no verdict on the last attempt, which spends no correction, or `refused` for a task already closed), the effort, whether it edits, the files it owns, its tests, what the Lead asked for as model and effort and whether that was ignored, and the commit it started from. When the owner's authorization covers the model, the line also carries `authorized: { model, scope, task, quote, quoteTime }`.
 - `authorize`: the owner's words that place a task, or the session, on a model: the scope, the task, the model, the quote and its time. It precedes the `launch` lines it covers.
@@ -135,7 +135,7 @@ Every launch, result, call, verdict and authorization is a line of `<dataDir>/de
 - `relaunch`: a launch with a new id that matches an earlier task that did not end approved, and the task it relaunches.
 - `answer`: the final answer of a read-only delegate that ran on Claude, written by the mod through `aether-delegate answer`.
 
-The files of each launch are under `<dataDir>/delegates/`: `external/<id>.json` (how an attempt on another harness runs), `briefs/`, `results/<id>.json`, `patches/` (the work of an editing attempt, which a correction starts from), `answers/`, `run/<id>.json` (the process of a started attempt and its log) and `in/` (the `Agent` call the mod hands to `begin`). None of it is pruned. `aether-report --spend` and `/spend` price a session from `usage/`, `lanes/` and the `outcome` lines of this log (`plugins/aether/lib/spend.js`). They do not read an older router journal.
+The files of each launch are under `<dataDir>/delegates/`: `external/<id>.json` (how an attempt on another harness runs), `briefs/`, `results/<id>.json`, `patches/` (the work of an editing attempt, which a correction starts from), `answers/`, `run/<id>.json` (the process of a started attempt and its log) and `in/` (the `Agent` call the mod hands to `begin`). Sessions idle for 30 days are pruned from `delegates/log.jsonl` at session start after their `outcome` lines are archived in `spend/<id>.outcomes.jsonl`, and launch files older than 30 days are deleted too. `aether-report --spend` and `/spend` price a session from `usage/`, `lanes/`, the `outcome` lines of this log and `spend/<id>.outcomes.jsonl` (`plugins/aether/lib/spend.js`), while `aether-report --delegates` reads the retained log. They do not read an older router journal.
 
 ## Reading the log
 

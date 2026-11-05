@@ -174,11 +174,13 @@ function pruneOldFiles(env) {
     const { pruneUsage: prune } = require('./report.js')
     const { pruneLog } = require('./lanes.js')
     const { pruneSessions } = require('./session.js')
+    const { pruneDelegateLog } = require('./delegate-prune.js')
     const { dataDir } = require('./run.js')
     dir = dataDir(env)
     prune(dir, { days: 30 })
     pruneLog(dir, { days: 30 })
     pruneSessions(dir, { days: 30 })
+    pruneDelegateLog(dir, { days: 30 })
     require('./spend-archive.js').clearFailure(dir, 'session-start')
   } catch (err) {
     // Pruning is housekeeping: it never blocks the session. What stopped it is left in the trace, which does not
