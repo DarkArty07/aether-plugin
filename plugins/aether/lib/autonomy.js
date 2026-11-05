@@ -58,18 +58,110 @@ function transcriptLines(sessionId, configDir) {
   }
 }
 
+const NEGATED_REASON = "the quote is in a negated clause of the owner's message"
+
+// Single-word negators, folded without accents or capitals. `do not` is checked as a
+// word pair; `sin` and `without` are not negators.
+const SINGLE_NEGATORS = new Set([
+  'no', 'nunca', 'jamas', 'tampoco', 'ni', 'not', 'never',
+  "don't", 'dont', "doesn't", 'cannot', "can't", "won't",
+])
+
+// Words that end a clause, compared case-insensitively but with accents kept:
+// `mas` ends a clause, `más` does not. Negators above keep the accent folding.
+const CLAUSE_WORDS = new Set(['pero', 'sino', 'aunque', 'mas', 'but', 'however', 'although'])
+
+function foldClause(word) {
+  return String(word).normalize('NFC').toLowerCase()
+}
+
+function foldNeg(text) {
+  return String(text).normalize('NFKD').replace(/[\u0300-\u036f]/gu, '').toLowerCase().replace(/[’‘]/gu, "'")
+}
+
+const WORD_SOURCE = "[A-Za-z0-9\\u00C0-\\u024F\\u1E00-\\u1EFF'’]+"
+
+function foldedWordsOf(text) {
+  const found = String(text).match(new RegExp(WORD_SOURCE, 'gu')) || []
+  return found.map((word) => foldNeg(word))
+}
+
+// The clause of text around index: from the end of the previous separator to the
+// start of the next one. Separators are `.`, `;`, `:`, `!`, `?`, `,`, a line break
+// or a clause word. An index inside a separator reads as an empty clause start.
+function clauseAround(text, index) {
+  const splits = []
+  const punct = /[.;:!?,\n\r]+/g
+  let hit
+  while ((hit = punct.exec(text)) !== null) splits.push([hit.index, hit.index + hit[0].length])
+  const words = new RegExp(WORD_SOURCE, 'gu')
+  while ((hit = words.exec(text)) !== null) {
+    if (CLAUSE_WORDS.has(foldClause(hit[0]))) splits.push([hit.index, hit.index + hit[0].length])
+  }
+  splits.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]))
+  let start = 0
+  for (const [from, to] of splits) {
+    if (index < from) return [start, from]
+    if (index < to) return [to, to]
+    start = Math.max(start, to)
+  }
+  return [start, text.length]
+}
+
+// Whether the appearance of quote at index in text is negated: a negator in its
+// clause before the appearance, a negator as the quote's first word, or `ni`
+// anywhere in the quote. A `no` inside the quote past its first word does not negate.
+function occurrenceNegated(text, index, quote) {
+  const quoteWords = foldedWordsOf(quote)
+  if (quoteWords.length > 0 && SINGLE_NEGATORS.has(quoteWords[0])) return true
+  if (quoteWords.length > 1 && quoteWords[0] === 'do' && quoteWords[1] === 'not') return true
+  if (quoteWords.includes('ni')) return true
+  const [from] = clauseAround(text, index)
+  const before = foldedWordsOf(text.slice(from, index))
+  for (const word of before) {
+    if (SINGLE_NEGATORS.has(word)) return true
+  }
+  for (let i = 0; i + 1 < before.length; i++) {
+    if (before[i] === 'do' && before[i + 1] === 'not') return true
+  }
+  return false
+}
+
 // verifyQuote, with the transcript lines supplied by linesOf(sessionId).
-function verifyWith(sessionId, quote, linesOf) {
+function verifyWith(sessionId, quote, linesOf, { allowNegation = false } = {}) {
   if (Array.from(normalize(quote)).length < MIN_QUOTE) return { ok: false, reason: `the quote must have at least ${MIN_QUOTE} characters` }
   const lines = linesOf(sessionId)
   if (lines === null) return { ok: false, reason: `${NO_TRANSCRIPT}${sessionId}` }
-  const found = findQuote(lines, quote)
-  if (!found) return { ok: false, reason: `the quote is not in the owner's messages of session ${sessionId}` }
-  return { ok: true, time: found.time }
+  const wanted = normalize(quote)
+  const pattern = new RegExp(
+    wanted.split(' ').map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'),
+    'gi',
+  )
+  let seen = false
+  for (const message of ownerMessages(lines, { maxChars: Infinity })) {
+    if (!normalize(message.text).includes(wanted)) continue
+    seen = true
+    if (allowNegation) return { ok: true, time: message.time }
+    // NFC so the pattern and the clause analysis see the same composed words
+    // the normalize/includes check above saw; a quote the pattern cannot
+    // locate stays refused instead of failing open.
+    const nfc = message.text.normalize('NFC')
+    pattern.lastIndex = 0
+    let plain = false
+    let hit
+    while ((hit = pattern.exec(nfc)) !== null) {
+      if (!occurrenceNegated(nfc, hit.index, quote)) plain = true
+      if (hit[0].length === 0) pattern.lastIndex += 1
+      if (plain) break
+    }
+    if (plain) return { ok: true, time: message.time }
+  }
+  if (!seen) return { ok: false, reason: `the quote is not in the owner's messages of session ${sessionId}` }
+  return { ok: false, reason: NEGATED_REASON }
 }
 
-function verifyQuote(sessionId, quote, { configDir } = {}) {
-  return verifyWith(sessionId, quote, (id) => transcriptLines(id, configDir))
+function verifyQuote(sessionId, quote, { configDir, allowNegation = false } = {}) {
+  return verifyWith(sessionId, quote, (id) => transcriptLines(id, configDir), { allowNegation })
 }
 
 // A grant's status, reading each session's transcript at most once per statusReader.
@@ -156,7 +248,7 @@ function grant(mainRoot, { class: cls, quote, session, scope = 'repo' }, { confi
 function revoke(mainRoot, { class: cls, quote, session, all = false }, { configDir, now = Date.now() } = {}) {
   assertClass(cls)
   const registry = readGrants(mainRoot)
-  const verified = verifyQuote(session, quote, { configDir })
+  const verified = verifyQuote(session, quote, { configDir, allowNegation: true })
   if (!verified.ok) return { ok: false, reason: verified.reason }
   // The narrow form (the default, for the one-time procedure) removes only this
   // session's session-scoped grants of the class. Repository grants and other
