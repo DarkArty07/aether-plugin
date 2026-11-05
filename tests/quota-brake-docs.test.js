@@ -29,7 +29,7 @@ test('resuming tells a fresh session what a paused run is waiting for', () => {
 })
 
 test('the swarm skill saves before a relaunch and a sweep keeps the branch', () => {
-  assert.ok(swarm.includes('A sweep of an interrupted run (one with saved.json, or a recorded quota pause that names the run) commits each unmerged unit\'s uncommitted work on its unit branch, keeps that branch and a patch, and removes the units that merged. Any other sweep removes unmerged branches after saving a patch.'))
+  assert.ok(swarm.includes('A sweep of an interrupted run (one with saved.json, or a recorded quota pause that names the run) commits each unmerged unit\'s uncommitted work on its unit branch, keeps that branch and a patch, and removes the units that merged. Any other sweep saves a patch for each unmerged unit and keeps the branch of any work that is not integrated'))
   assert.ok(swarm.includes('After an interruption (the quota brake, the session limit, a crash, the owner), first run `aether-wt save <runId>`: every unit\'s uncommitted work is committed on its branch before any worktree is removed or reused. Then relaunch with the same run id and no `--only`: `aether-plan compile <plan.md> --run <runId>` leaves out the units already merged, and each saved unit continues from its branch.'))
   assert.ok(!swarm.includes("saves each unit's unmerged or uncommitted work as a patch"))
 })
