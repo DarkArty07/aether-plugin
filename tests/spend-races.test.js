@@ -9,10 +9,10 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { useDataDir } = require('./helpers.js')
-const { MIN, T0, PRICES, meter, writeParts, laneCall, summaryOf, writeSummary, archivedTally, ageFile } = require('./spend-fixtures.js')
-const { spendReport, readUsageEvents } = require('../plugins/aether/lib/spend.js')
-const { archiveSpend } = require('../plugins/aether/lib/spend-archive.js')
+const { useDataDir, tempDir } = require('./helpers.js')
+const { MIN, T0, PRICES, meter, writeParts, laneCall, summaryOf, writeSummary, archivedTally, ageFile, outcome } = require('./spend-fixtures.js')
+const { spendReport, readUsageEvents, outcomesFile } = require('../plugins/aether/lib/spend.js')
+const { archiveSpend, archiveOutcomes } = require('../plugins/aether/lib/spend-archive.js')
 const { pruneUsage } = require('../plugins/aether/lib/report.js')
 const { pruneLog, logFile } = require('../plugins/aether/lib/lanes.js')
 
@@ -90,7 +90,7 @@ test('archiveSpend writes nothing when a part vanished before it was read: anoth
   const second = path.join(dataDir, 'usage', 's1', '1.json')
   wrap(t, 'readFileSync', isFile(second), () => fs.rmSync(second))
   assert.deepEqual(archiveSpend(dataDir, 's1', 'usage', { prices: PRICES }), { archived: false, events: 0 })
-  assert.equal(fs.existsSync(path.join(dataDir, 'spend')), false)
+  assert.deepEqual(fs.existsSync(path.join(dataDir, 'spend')) ? fs.readdirSync(path.join(dataDir, 'spend')) : [], [])
   assert.equal(fs.existsSync(path.join(dataDir, 'usage', 's1', '0.json')), true)
 })
 
@@ -100,7 +100,7 @@ test('archiveSpend writes nothing when the lane log vanished before it was read'
   const file = logFile(dataDir, 's1')
   wrap(t, 'readFileSync', isFile(file), () => fs.rmSync(file))
   assert.deepEqual(archiveSpend(dataDir, 's1', 'lanes', { prices: PRICES }), { archived: false, events: 0 })
-  assert.equal(fs.existsSync(path.join(dataDir, 'spend')), false)
+  assert.deepEqual(fs.existsSync(path.join(dataDir, 'spend')) ? fs.readdirSync(path.join(dataDir, 'spend')) : [], [])
 })
 
 test('a prune whose session was archived and deleted by another prune meanwhile does not throw and does not count it twice', (t) => {
@@ -109,8 +109,8 @@ test('a prune whose session was archived and deleted by another prune meanwhile 
   ageFile(logFile(dataDir, 's1'), 31 * 24)
   const figure = report(dataDir, 's1')
   const file = logFile(dataDir, 's1')
-  // The other prune does all of its work between our stat and our read of the log.
-  wrap(t, 'readFileSync', isFile(file), () => {
+  // The other prune archives and deletes before this prune takes the session lock.
+  wrap(t, 'statSync', isFile(file), () => {
     archiveSpend(dataDir, 's1', 'lanes', { prices: PRICES })
     fs.rmSync(file)
   })
@@ -128,7 +128,7 @@ test('a prune skips a log that another prune deleted between the listing and the
   let result
   assert.doesNotThrow(() => (result = pruneLog(dataDir, { days: 30, prices: PRICES })))
   assert.deepEqual(result, { pruned: [] })
-  assert.equal(fs.existsSync(path.join(dataDir, 'spend')), false)
+  assert.deepEqual(fs.existsSync(path.join(dataDir, 'spend')) ? fs.readdirSync(path.join(dataDir, 'spend')) : [], [])
 })
 
 test('a prune skips a usage session that another prune deleted between the listing and the stat', (t) => {
@@ -141,7 +141,7 @@ test('a prune skips a usage session that another prune deleted between the listi
   let result
   assert.doesNotThrow(() => (result = pruneUsage(dataDir, { days: 30, prices: PRICES })))
   assert.deepEqual(result, { pruned: [] })
-  assert.equal(fs.existsSync(path.join(dataDir, 'spend')), false)
+  assert.deepEqual(fs.existsSync(path.join(dataDir, 'spend')) ? fs.readdirSync(path.join(dataDir, 'spend')) : [], [])
 })
 
 test('a figure read while a prune archives and deletes is each event once: the read goes again', (t) => {
@@ -271,4 +271,167 @@ test('a part that vanished is not read a second time', (t) => {
   const read = readUsageEvents(dataDir, 's1', { prices: PRICES })
   assert.equal(reads, 1)
   assert.deepEqual([read.vanished, read.complete], [true, true])
+})
+
+test('archiveSpend holds the session lock while it renames the summary, and releases it (R10)', (t) => {
+  const dataDir = useDataDir(t)
+  writeParts(dataDir, 's1', [{ entries: [meter(0, 'm-a', null, 'input')] }])
+  const lock = path.join(dataDir, 'spend', '.s1.lock')
+  let heldDuringRename = null
+  wrap(t, 'renameSync', (file) => file.startsWith(summaryPath(dataDir, 's1')), () => { heldDuringRename = fs.existsSync(lock) })
+  assert.deepEqual(archiveSpend(dataDir, 's1', 'usage', { prices: PRICES }), { archived: true, events: 1 })
+  assert.equal(heldDuringRename, true)
+  assert.equal(fs.existsSync(lock), false)
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'spend-archive.js'), 'utf8'), /nobody prunes it|no lock is added/)
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'spend.js'), 'utf8'), /nobody prunes them/)
+})
+
+test('a stale session lock does not stop archiveSpend (R10)', (t) => {
+  const dataDir = useDataDir(t)
+  writeParts(dataDir, 's1', [{ entries: [meter(0, 'm-a', null, 'input')] }])
+  const lock = path.join(dataDir, 'spend', '.s1.lock')
+  fs.mkdirSync(path.dirname(lock), { recursive: true })
+  fs.writeFileSync(lock, '')
+  ageFile(lock, 1)
+  assert.deepEqual(archiveSpend(dataDir, 's1', 'usage', { prices: PRICES }), { archived: true, events: 1 })
+})
+
+test('archiveOutcomes keeps the outcomes of a session in its own file, and the report counts them once while the log holds them and after it is gone (R12)', (t) => {
+  const dataDir = useDataDir(t)
+  const price = outcome(dataDir, 's-d', 3, 'm-b', 'output')
+  close(report(dataDir, 's-d').usd, price)
+  assert.deepEqual(archiveOutcomes(dataDir, 's-d'), { archived: true, lines: 1 })
+  assert.deepEqual(archiveOutcomes(dataDir, 's-d'), { archived: true, lines: 0 })
+  assert.equal(fs.readFileSync(outcomesFile(dataDir, 's-d'), 'utf8').trim().split('\n').length, 1)
+  for (const phase of ['log still holds the outcome', 'log is gone']) {
+    const after = report(dataDir, 's-d')
+    close(after.usd, price)
+    assert.equal(after.harness.calls, 1, phase)
+    assert.equal(after.complete, true, phase)
+    fs.rmSync(path.join(dataDir, 'delegates', 'log.jsonl'), { force: true })
+  }
+  assert.deepEqual(archiveOutcomes(dataDir, 's-d'), { archived: false, lines: 0 })
+})
+
+test('the same outcome in two installs is counted once, and a different one is never hidden (R12)', (t) => {
+  const root = tempDir(t, 'aether-installs-')
+  const home = path.join(root, 'data', 'aether-aether-plugin')
+  const other = path.join(root, 'data', 'aether-inline')
+  const same = outcome(home, 's-x', 2, 'm-b', 'output')
+  outcome(other, 's-x', 2, 'm-b', 'output')
+  const apart = outcome(other, 's-x', 1, 'm-b', 'output')
+  close(report(home, 's-x').usd, same + apart)
+  assert.deepEqual(archiveOutcomes(home, 's-x'), { archived: true, lines: 1 })
+  fs.rmSync(path.join(home, 'delegates', 'log.jsonl'), { force: true })
+  close(report(home, 's-x').usd, same + apart)
+  close(report(other, 's-x').usd, same + apart)
+})
+
+test('archiveOutcomes throws when the log cannot be read, so the caller keeps it (R12)', (t) => {
+  const dataDir = useDataDir(t)
+  fs.mkdirSync(path.join(dataDir, 'delegates', 'log.jsonl'), { recursive: true })
+  assert.throws(() => archiveOutcomes(dataDir, 's-e'))
+  assert.equal(fs.existsSync(outcomesFile(dataDir, 's-e')), false)
+})
+
+test('archiveOutcomes preserves exact lines, skips other sessions and malformed JSON, and rejects invalid ids', (t) => {
+  const dataDir = useDataDir(t)
+  assert.deepEqual(archiveOutcomes(dataDir, '../bad'), { archived: false, lines: 0 })
+  outcome(dataDir, 's-exact', 1, 'm-b', 'output')
+  const file = path.join(dataDir, 'delegates', 'log.jsonl')
+  const original = fs.readFileSync(file, 'utf8').trim()
+  const distinct = ' ' + original
+  fs.appendFileSync(file, distinct + '\n{broken\n' + JSON.stringify({ kind: 'outcome', session: 'other' }) + '\n')
+  assert.deepEqual(archiveOutcomes(dataDir, 's-exact'), { archived: true, lines: 2 })
+  assert.equal(fs.readFileSync(outcomesFile(dataDir, 's-exact'), 'utf8'), original + '\n' + distinct + '\n')
+  assert.equal(report(dataDir, 's-exact').harness.calls, 2)
+})
+
+test('archiveOutcomes holds and releases the lock, and throws if its saved lines cannot be verified', (t) => {
+  const dataDir = useDataDir(t)
+  outcome(dataDir, 's-verify', 1, 'm-b', 'output')
+  const file = outcomesFile(dataDir, 's-verify')
+  const lock = path.join(dataDir, 'spend', '.s-verify.lock')
+  wrap(t, 'renameSync', (temporary) => temporary.includes('.s-verify.outcomes.jsonl.'), () => assert.equal(fs.existsSync(lock), true))
+  wrap(t, 'readFileSync', isFile(file), (calls) => {
+    if (calls === 2) fs.writeFileSync(file, '')
+  }, { every: true })
+  assert.throws(() => archiveOutcomes(dataDir, 's-verify'), /verification failed/)
+  assert.equal(fs.existsSync(lock), false)
+  assert.equal(fs.existsSync(path.join(dataDir, 'delegates', 'log.jsonl')), true)
+})
+
+test('duplicate outcome lines in one log count once before and after pruning', (t) => {
+  const dataDir = useDataDir(t)
+  const price = outcome(dataDir, 's-duplicate', 1, 'm-b', 'output')
+  const log = path.join(dataDir, 'delegates', 'log.jsonl')
+  fs.appendFileSync(log, fs.readFileSync(log, 'utf8'))
+  const before = report(dataDir, 's-duplicate')
+  close(before.usd, price)
+  assert.equal(before.harness.calls, 1)
+  assert.deepEqual(archiveOutcomes(dataDir, 's-duplicate'), { archived: true, lines: 1 })
+  fs.rmSync(log)
+  assert.deepEqual(report(dataDir, 's-duplicate'), before)
+})
+
+test('archiving new outcomes preserves older archived lines absent from the log', (t) => {
+  const dataDir = useDataDir(t)
+  const oldPrice = outcome(dataDir, 's-old', 1, 'm-b', 'output')
+  const log = path.join(dataDir, 'delegates', 'log.jsonl')
+  const oldLine = fs.readFileSync(log, 'utf8')
+  assert.deepEqual(archiveOutcomes(dataDir, 's-old'), { archived: true, lines: 1 })
+  fs.rmSync(log)
+  const newPrice = outcome(dataDir, 's-old', 2, 'm-b', 'output')
+  const newLine = fs.readFileSync(log, 'utf8')
+  assert.deepEqual(archiveOutcomes(dataDir, 's-old'), { archived: true, lines: 1 })
+  assert.equal(fs.readFileSync(outcomesFile(dataDir, 's-old'), 'utf8'), oldLine + newLine)
+  fs.rmSync(log)
+  close(report(dataDir, 's-old').usd, oldPrice + newPrice)
+})
+
+test('a readable log with no matching outcome produces no archive', (t) => {
+  const dataDir = useDataDir(t)
+  outcome(dataDir, 'other', 1, 'm-b', 'output')
+  assert.deepEqual(archiveOutcomes(dataDir, 's-absent'), { archived: false, lines: 0 })
+  assert.equal(fs.existsSync(outcomesFile(dataDir, 's-absent')), false)
+})
+
+test('an atomic outcome archive write failure throws and leaves the log intact', (t) => {
+  const dataDir = useDataDir(t)
+  outcome(dataDir, 's-write', 1, 'm-b', 'output')
+  const log = path.join(dataDir, 'delegates', 'log.jsonl')
+  const original = fs.readFileSync(log, 'utf8')
+  wrap(t, 'renameSync', (file) => file.includes('.s-write.outcomes.jsonl.'), () => { throw new Error('write failed') })
+  assert.throws(() => archiveOutcomes(dataDir, 's-write'), /write failed/)
+  assert.equal(fs.readFileSync(log, 'utf8'), original)
+  assert.equal(fs.existsSync(outcomesFile(dataDir, 's-write')), false)
+})
+
+test('report reads every log before archives during an archive and delete race', (t) => {
+  const root = tempDir(t, 'aether-installs-')
+  const home = path.join(root, 'data', 'aether-aether-plugin')
+  const other = path.join(root, 'data', 'aether-inline')
+  const price = outcome(other, 's-race', 1, 'm-b', 'output')
+  const logs = [home, other].map((dir) => path.join(dir, 'delegates', 'log.jsonl'))
+  const archives = [home, other].map((dir) => outcomesFile(dir, 's-race'))
+  const seen = []
+  const real = fs.readFileSync
+  let racing = false
+  t.mock.method(fs, 'readFileSync', function (file, ...args) {
+    if (!racing && (logs.includes(file) || archives.includes(file))) {
+      seen.push(file)
+      if (archives.includes(file) && !racing) {
+        racing = true
+        assert.deepEqual(archiveOutcomes(other, 's-race'), { archived: true, lines: 1 })
+        fs.rmSync(logs[1])
+      }
+    }
+    return real.call(this, file, ...args)
+  })
+  const result = report(home, 's-race')
+  assert.deepEqual(new Set(seen.slice(0, 2)), new Set(logs))
+  assert.ok(archives.includes(seen[2]))
+  close(result.usd, price)
+  assert.equal(result.harness.calls, 1)
+  assert.equal(result.complete, true)
 })
