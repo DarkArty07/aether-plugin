@@ -116,27 +116,33 @@ function discoverLint(root) {
   return { found: false, reason: 'no linter declared' }
 }
 
-// discoverAudit(root) -> the command that audits the dependencies of the project.
-function discoverAudit(root) {
+// discoverAudits(root) -> every ecosystem of the project, in a fixed order, each with the command that audits
+// its dependencies or with the reason it cannot be audited. A project can have several (npm and composer).
+function discoverAudits(root) {
+  const entries = []
   if (fs.existsSync(path.join(root, 'package-lock.json'))) {
-    return { found: true, command: 'npm audit --json', tool: 'npm audit', ecosystem: 'npm' }
-  }
-  if (fs.existsSync(path.join(root, 'pnpm-lock.yaml'))) {
-    return { found: true, command: 'pnpm audit --json', tool: 'pnpm audit', ecosystem: 'pnpm' }
-  }
-  if (hasManifest(root, 'package.json')) {
-    return { found: false, reason: 'package.json has no lockfile' }
+    entries.push({ found: true, command: 'npm audit --json', tool: 'npm audit', ecosystem: 'npm' })
+  } else if (fs.existsSync(path.join(root, 'pnpm-lock.yaml'))) {
+    entries.push({ found: true, command: 'pnpm audit --json', tool: 'pnpm audit', ecosystem: 'pnpm' })
+  } else if (hasManifest(root, 'package.json')) {
+    entries.push({ found: false, tool: 'npm audit', ecosystem: 'npm', reason: 'package.json has no lockfile' })
   }
   if (rootFiles(root).some((file) => /^requirements.*\.txt$/.test(file)) || fs.existsSync(path.join(root, 'pyproject.toml'))) {
-    return { found: true, command: 'pip-audit -f json', tool: 'pip-audit', ecosystem: 'pip' }
+    entries.push({ found: true, command: 'pip-audit -f json', tool: 'pip-audit', ecosystem: 'pip' })
   }
   if (fs.existsSync(path.join(root, 'composer.lock'))) {
-    return { found: true, command: 'composer audit --format=json', tool: 'composer audit', ecosystem: 'composer' }
+    entries.push({ found: true, command: 'composer audit --format=json', tool: 'composer audit', ecosystem: 'composer' })
   }
   if (fs.existsSync(path.join(root, 'Cargo.lock'))) {
-    return { found: true, command: 'cargo audit --json', tool: 'cargo audit', ecosystem: 'cargo' }
+    entries.push({ found: true, command: 'cargo audit --json', tool: 'cargo audit', ecosystem: 'cargo' })
   }
-  return { found: false, reason: 'no supported dependency manifest' }
+  return entries
+}
+
+// discoverAudit(root) -> the first of those, or why there is none.
+function discoverAudit(root) {
+  const [first] = discoverAudits(root)
+  return first === undefined ? { found: false, reason: 'no supported dependency manifest' } : first
 }
 
 // The bin folders of the project's own virtual environments, when they exist.
@@ -331,35 +337,60 @@ function mentionsNetwork(text) {
   return /(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|network)/.test(text)
 }
 
-// runAudit(root, ctx) -> the Check of the ecosystem's dependency audit.
-async function runAudit(root, ctx) {
+// The outcome of the audit of one ecosystem: a Check that also names its ecosystem.
+async function runOneAudit(root, ctx, found) {
   const timeoutMs = ctx.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : ctx.timeoutMs
-  const found = discoverAudit(root)
-  if (!found.found) return { state: 'not-applicable', reason: found.reason }
+  const named = (check) => ({ ecosystem: found.ecosystem, ...check })
+  if (!found.found) return named({ state: 'not-applicable', tool: found.tool, reason: found.reason })
   const reply = await ctx.exec('sh', ['-c', found.command], { cwd: root, env: toolEnv(root, ctx.env), timeoutMs })
   if (reply.error !== undefined && reply.error !== null && reply.error.code === 'ENOENT') {
-    return { state: 'could-not', tool: found.tool, reason: 'the tool is not installed' }
+    return named({ state: 'could-not', tool: found.tool, reason: 'the tool is not installed' })
   }
   if (reply.timedOut === true) {
-    return { state: 'could-not', tool: found.tool, timedOut: true, reason: `the audit ran past the cap of ${capSeconds(timeoutMs)} s` }
+    return named({ state: 'could-not', tool: found.tool, timedOut: true, reason: `the audit ran past the cap of ${capSeconds(timeoutMs)} s` })
   }
   if (reply.status === 127) {
-    return { state: 'could-not', tool: found.tool, reason: 'the tool is not installed' }
+    return named({ state: 'could-not', tool: found.tool, reason: 'the tool is not installed' })
   }
   const parsed = parseAuditOutput(found.ecosystem, reply.stdout || '')
   if (parsed !== null) {
-    return { state: 'result', tool: found.tool, counts: parsed.counts, top: parsed.top }
+    return named({ state: 'result', tool: found.tool, counts: parsed.counts, top: parsed.top })
   }
   if (mentionsNetwork(`${reply.stdout || ''}\n${reply.stderr || ''}`)) {
-    return { state: 'could-not', tool: found.tool, reason: 'no network' }
+    return named({ state: 'could-not', tool: found.tool, reason: 'no network' })
   }
-  return { state: 'could-not', tool: found.tool, reason: 'output not understood' }
+  return named({ state: 'could-not', tool: found.tool, reason: 'output not understood' })
+}
+
+// runAudit(root, ctx) -> the Check of the dependency audit: one run for each ecosystem the project has, merged.
+// With one ecosystem the Check is that ecosystem's outcome; with several, the counts and the worst advisories
+// of those that ran are added together, and `ecosystems` says what each one found or why it could not run.
+async function runAudit(root, ctx) {
+  const entries = discoverAudits(root)
+  if (entries.length === 0) return { state: 'not-applicable', reason: 'no supported dependency manifest' }
+  const outcomes = []
+  for (const found of entries) outcomes.push(await runOneAudit(root, ctx, found))
+  if (outcomes.length === 1) return { ...outcomes[0], ecosystems: outcomes }
+  const results = outcomes.filter((outcome) => outcome.state === 'result')
+  if (results.length === 0) {
+    const state = outcomes.every((outcome) => outcome.state === 'not-applicable') ? 'not-applicable' : 'could-not'
+    const reason = outcomes.map((outcome) => `${outcome.tool || outcome.ecosystem}: ${outcome.reason}`).join('; ')
+    return { state, reason, ecosystems: outcomes }
+  }
+  const counts = emptyCounts()
+  const top = []
+  for (const outcome of results) {
+    for (const key of Object.keys(counts)) counts[key] += outcome.counts[key]
+    top.push(...outcome.top)
+  }
+  return { state: 'result', tool: results.map((outcome) => outcome.tool).join(' + '), counts, top: sortTop(top), ecosystems: outcomes }
 }
 
 module.exports = {
   discoverTests,
   discoverLint,
   discoverAudit,
+  discoverAudits,
   runTests,
   runLint,
   runAudit,

@@ -190,6 +190,16 @@ function notCoveredLines(T, meta, analysis) {
     const check = checks[key]
     if (check && check.state === 'result' && check.truncated) lines.push(T.truncated(T.checks[key]))
   }
+  // A check that gave a result for some of its ecosystems (the dependency audit) still says which ones it could not cover.
+  for (const key of CHECK_ORDER) {
+    const check = checks[key]
+    if (!check || check.state !== 'result' || !Array.isArray(check.ecosystems)) continue
+    for (const part of check.ecosystems) {
+      if (!part || part.state === 'result') continue
+      const label = `${T.checks[key]} (${part.tool || part.ecosystem})`
+      lines.push(part.state === 'not-applicable' ? T.notApplicable(label, part.reason) : T.couldNot(label, part.reason))
+    }
+  }
   for (const entry of (meta && meta.leftOut) || []) {
     lines.push(T.leftOut(T.topics[entry.topic] || entry.topic, entry.reason))
   }
