@@ -14,7 +14,7 @@ const { isObject } = require('./common.js')
 const delegateCalls = require('./delegate-calls.js')
 const lanes = require('./lanes.js')
 const { retryCliSeconds } = require('./delegate-limits.js')
-const { appendEntry, readEntries } = require('./delegate-log.js')
+const { appendEntry, readEntries, fileKey } = require('./delegate-log.js')
 const { markRefusal, readAllMarks, refusalOf } = require('./router-marks.js')
 const { markSlow, slowPairIds } = require('./router-slow.js')
 
@@ -62,9 +62,10 @@ function attributionOf(answered, earlier) {
   return `Aether delegate: ${lead} ${answered.rung.model} at ${answered.rung.effort} on ${answered.harness}, run in a disposable copy of the checkout. Claude Code lists no tool uses or tokens for it because Aether handed you the answer without a Claude request.`
 }
 
-// How many outcome entries the task already has: the first attempt of this chain is the next one.
-function outcomesSoFar(dataDir, id) {
-  return readEntries(dataDir, { task: id }).filter((entry) => entry.kind === 'outcome' && entry.id === id).length
+// How many outcome entries the task already has in this session: the first attempt of this chain is the next one.
+// Another session's outcomes of the same task id must not move this chain's attempt numbers.
+function outcomesSoFar(dataDir, id, session) {
+  return readEntries(dataDir, { task: id, session }).filter((entry) => entry.kind === 'outcome' && entry.id === id).length
 }
 
 // Runs the primary pair of `external` and then its alternates, as far as the rules above allow. Resolves to
@@ -73,7 +74,7 @@ function outcomesSoFar(dataDir, id) {
 // attempt ended ok, and journaled says whether the last outcome entry was written.
 async function runChain({ cwd, id, session = null, external, config, dataDir }, { runDelegate = delegateCalls.runDelegate, now = Date.now } = {}) {
   const startedAt = now()
-  const before = outcomesSoFar(dataDir, id)
+  const before = outcomesSoFar(dataDir, id, session ?? null)
   const queue = [{ harness: external.harness, rung: external.rung }, ...alternatesOf(external)]
   const known = lanes.groupKnown(config)
   const attempts = []
@@ -99,7 +100,7 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
     const attemptStart = now()
     let result
     try {
-      result = await runDelegate({ cwd, id, harness, rung, task: external.task, config, dataDir, ...(maxCliSeconds === null ? {} : { maxCliSeconds }) })
+      result = await runDelegate({ cwd, id: fileKey(session, id), harness, rung, task: external.task, config, dataDir, ...(maxCliSeconds === null ? {} : { maxCliSeconds }) })
     } catch (err) {
       result = thrownAttempt(err, rung, now() - attemptStart)
     }

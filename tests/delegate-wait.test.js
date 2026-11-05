@@ -44,6 +44,7 @@ test('waitSteps yields a beat after every wait that did not end, before it waits
   const first = await steps.next()
   assert.deepEqual([first.done, first.value], [false, { beat: true, waitedMs: 540000 }])
   assert.equal(state.runs.length, 1, 'the first beat comes before the second wait')
+  assert.deepEqual(state.runs[0].argv.slice(-2), ['--session', 's1'])
   const second = await steps.next()
   assert.deepEqual([second.done, second.value], [false, { beat: true, waitedMs: 1080000 }])
   assert.equal(state.runs.length, 2)
