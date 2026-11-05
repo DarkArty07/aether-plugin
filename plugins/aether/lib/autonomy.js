@@ -67,9 +67,9 @@ const SINGLE_NEGATORS = new Set([
   "don't", 'dont', "doesn't", 'cannot', "can't", "won't",
 ])
 
-// Words that end a clause, compared case-insensitively but with accents kept:
-// `mas` ends a clause, `más` does not. Negators above keep the accent folding.
-const CLAUSE_WORDS = new Set(['pero', 'sino', 'aunque', 'mas', 'but', 'however', 'although'])
+// Words that end a clause, compared case-insensitively. `mas` is not one of them: typed without its accent it is
+// the common «más» (more), and «ya no hagas mas push» must stay negated. Negators above keep the accent folding.
+const CLAUSE_WORDS = new Set(['pero', 'sino', 'aunque', 'but', 'however', 'although'])
 
 function foldClause(word) {
   return String(word).normalize('NFC').toLowerCase()

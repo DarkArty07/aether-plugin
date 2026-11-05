@@ -405,9 +405,11 @@ test('an accented más does not end a clause, so the prohibition stays refused (
   }
 })
 
-test('the bare word mas ends a clause, and negators keep their accent folding (R5)', (t) => {
-  const split = setup(t, { [SESSION]: [human('No hagas push a main mas haz push a origin cuando acaben.', '2026-10-09T19:00:00.000Z')] })
-  assert.equal(autonomy.verifyQuote(SESSION, 'haz push a origin cuando acaben', { configDir: split.configDir }).ok, true)
+test('neither mas nor más ends a clause, and negators keep their accent folding (R5)', (t) => {
+  for (const text of ['Ya no hagas mas push a origin.', 'Ya no hagas más push a origin.']) {
+    const kept = setup(t, { [SESSION]: [human(text, '2026-10-09T19:00:00.000Z')] })
+    assert.deepEqual(autonomy.verifyQuote(SESSION, 'push a origin', { configDir: kept.configDir }), { ok: false, reason: "the quote is in a negated clause of the owner's message" }, text)
+  }
   const folded = setup(t, { [SESSION]: [human('Jamás publiques sin avisar hoy mismo.', '2026-10-09T19:00:00.000Z')] })
   assert.deepEqual(autonomy.verifyQuote(SESSION, 'publiques sin avisar hoy mismo', { configDir: folded.configDir }), {
     ok: false,
