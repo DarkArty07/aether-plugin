@@ -36,9 +36,12 @@ function statusOf(root) {
   return rows
 }
 
+// The worktrees of the repository, without Aether's own under <root>/.aether/: the temporary worktree each external
+// delegate gets is machinery R25 allows, and it comes and goes while the audit runs.
 function worktreesOf(root) {
   const out = git(['worktree', 'list', '--porcelain'], root)
-  return out.stdout.split('\n').filter((line) => line.startsWith('worktree ')).map((line) => line.slice('worktree '.length))
+  const own = `${path.join(root, '.aether')}${path.sep}`
+  return out.stdout.split('\n').filter((line) => line.startsWith('worktree ')).map((line) => line.slice('worktree '.length)).filter((dir) => !dir.startsWith(own))
 }
 
 function branchesOf(root) {

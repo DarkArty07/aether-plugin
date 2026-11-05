@@ -59,7 +59,7 @@ function findingOfStep(step, items, check, index) {
     trigger: redact(`the audit ran ${(check !== null && check.command) || step}`),
     evidence: kinds,
     impact: 'the audit changed the project instead of only reading it',
-    rootCause: `the ${label} writes a tracked file`,
+    rootCause: `running the ${label} changes the ${[...new Set(items.map((item) => item.kind))].join(", ")} of the project`,
     verification: 'proven',
     status: 'verified',
     causeKey: `audit-changed-project-${step}`,

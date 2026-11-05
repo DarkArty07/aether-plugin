@@ -376,9 +376,18 @@ function assess(root, commandLine) {
     if (!claimSlot(nodeVia)) return
     const body = scripts[name]
     const commands = Array.isArray(body) ? body : [body]
-    for (const entry of commands) {
-      if (typeof entry !== 'string' || entry === '') continue
-      const atRef = /^@(\S+)/.exec(entry.trim())
+    for (const raw of commands) {
+      if (typeof raw !== 'string' || raw === '') continue
+      // Composer's own tokens: @no_additional_args and @additional_args shape the arguments, and @php, @composer and
+      // @putenv are commands of composer itself, not references to scripts of the manifest.
+      const entry = raw.replace(/(^|\s)@(no_)?additional_args(?=\s|$)/g, ' ').trim()
+      if (entry === '') continue
+      const builtin = /^@(php|composer|putenv)(\s|$)/.exec(entry)
+      if (builtin !== null) {
+        followSegments(builtin[1] === 'putenv' ? entry.slice(builtin[0].length) : entry.slice(1), level + 1, nodeVia)
+        continue
+      }
+      const atRef = /^@(\S+)/.exec(entry)
       if (atRef !== null) {
         if (Object.hasOwn(scripts, atRef[1])) {
           resolveComposer(atRef[1], level + 1, nodeVia)

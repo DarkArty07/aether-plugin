@@ -271,3 +271,13 @@ test('github: no GitHub remote is not applicable, a missing gh and a failing gh 
   const garbage = await github.prs(repo.dir, { exec: fake({ status: 0, stdout: 'not json', stderr: '', timedOut: false }), env: {} })
   assert.deepEqual([garbage.state, garbage.reason], ['could-not', 'gh output not understood'])
 })
+
+test('the snapshot leaves out the worktrees Aether makes under .aether/ for its delegates (R25)', (t) => {
+  const repo = makeRepo(t)
+  const before = snap.snapshot(repo.dir)
+  repo.git('worktree', 'add', '-q', '--detach', path.join(repo.dir, '.aether', 'delegates', 'audit-bugs', 'wt'))
+  const after = snap.snapshot(repo.dir)
+  assert.deepEqual(snap.diffSnapshots(before, after).items.filter((item) => item.kind === 'worktrees'), [])
+  repo.git('worktree', 'add', '-q', '--detach', path.join(tempDir(t, 'aether-other-'), 'wt'))
+  assert.equal(snap.diffSnapshots(before, snap.snapshot(repo.dir)).items.filter((item) => item.kind === 'worktrees').length, 1)
+})
