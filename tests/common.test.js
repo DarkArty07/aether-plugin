@@ -82,6 +82,17 @@ test('runShell returns spawnSync-shaped output and the exit status (R9)', (t) =>
   assert.equal(bad.status, 3)
 })
 
+test('runShell reports an output over maxBuffer as ENOBUFS with status null, and keeps the tail (R9)', (t) => {
+  const dir = tempDir(t)
+  const over = common.runShell(`node -e "process.stdout.write('A'.repeat(3000) + 'END')"`, { cwd: dir, timeoutMs: 5000, maxBuffer: 100 })
+  assert.equal(over.status, null)
+  assert.equal(over.error.code, 'ENOBUFS')
+  assert.equal(over.stdout.length, 100)
+  assert.ok(over.stdout.endsWith('END'))
+  const fits = common.runShell('echo hi', { cwd: dir, timeoutMs: 5000, maxBuffer: 100 })
+  assert.deepEqual([fits.status, fits.error, fits.stdout], [0, undefined, 'hi\n'])
+})
+
 test('runShell kills the whole process group when the timeout ends, and does not wait for a grandchild that holds the output (R9)', (t) => {
   const dir = tempDir(t)
   const pidFile = path.join(dir, 'child.pid')

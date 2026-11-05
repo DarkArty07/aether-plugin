@@ -121,6 +121,24 @@ function nulEntries(text) {
   return text.split('\0').filter((entry) => entry !== '')
 }
 
+// The last maxBuffer bytes of a file as text, and whether the file held more. A file that cannot be read is empty.
+function readTail(file, maxBuffer) {
+  try {
+    const size = fs.statSync(file).size
+    const length = Math.min(size, maxBuffer)
+    const fd = fs.openSync(file, 'r')
+    try {
+      const buffer = Buffer.alloc(length)
+      fs.readSync(fd, buffer, 0, length, size - length)
+      return { text: buffer.toString('utf8'), overflow: size > maxBuffer }
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return { text: '', overflow: false }
+  }
+}
+
 // Runs sh -c <command> as a process-group leader with stdout and stderr to temporary files, so a grandchild
 // that inherits them cannot keep the call hanging on a pipe. Returns a spawnSync-shaped object with stdout and
 // stderr as text, and never throws. On timeoutMs spawnSync kills the shell itself with SIGKILL (killSignal, so a
@@ -162,17 +180,17 @@ function runShell(command, { cwd, timeoutMs, env = process.env, maxBuffer = 64 *
       // group (background children, grandchildren) still needs killing.
       killGroup(result.pid)
     }
-    let stdout = ''
-    let stderr = ''
-    try {
-      stdout = fs.readFileSync(outFile, 'utf8')
-    } catch {}
-    try {
-      stderr = fs.readFileSync(errFile, 'utf8')
-    } catch {}
-    if (Buffer.byteLength(stdout, 'utf8') > maxBuffer) stdout = Buffer.from(stdout, 'utf8').slice(0, maxBuffer).toString('utf8')
-    if (Buffer.byteLength(stderr, 'utf8') > maxBuffer) stderr = Buffer.from(stderr, 'utf8').slice(0, maxBuffer).toString('utf8')
-    return { status: result.status, signal: result.signal, stdout, stderr, error: result.error, pid: result.pid }
+    // At most maxBuffer bytes of each file, the last ones (every caller keeps the tail). More than that is what
+    // spawnSync calls ENOBUFS: the call did not finish as far as the caller can tell, so status is null.
+    const out = readTail(outFile, maxBuffer)
+    const err = readTail(errFile, maxBuffer)
+    let error = result.error
+    if (!error && (out.overflow || err.overflow)) {
+      error = new Error(`${out.overflow ? 'stdout' : 'stderr'} maxBuffer length exceeded`)
+      error.code = 'ENOBUFS'
+    }
+    const status = error && error.code === 'ENOBUFS' ? null : result.status
+    return { status, signal: result.signal, stdout: out.text, stderr: err.text, error, pid: result.pid }
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))
     if (error.code === undefined) error.code = 'SPAWN'
