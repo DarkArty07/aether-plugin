@@ -12,7 +12,7 @@ const MERGE = 'apruebo merge a main en todas las futuras ocasiones'
 const HOURS = 'trabaja por horas y no cuentes conmigo hasta acabar'
 const REVOKE = 'ya no fusiones a main sin preguntarme'
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json>'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quarantine grants|run <id>'
 
 const human = (text, time) =>
   JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })
@@ -184,4 +184,21 @@ test('the registry stays out of git status', (t) => {
   const { repo, cli } = setup(t)
   assert.equal(cli(['grant', '--class', 'merge-main', '--quote', MERGE]).status, 0)
   assert.equal(repo.git('status', '--porcelain'), '')
+})
+
+test('quarantine through the bin: a corrupt grants.json is set aside, a readable one is refused with exit 2 (R26)', (t) => {
+  const { repo, cli } = setup(t)
+  const file = path.join(repo.dir, '.aether', 'autonomy', 'grants.json')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ grants: [], revoked: [] }))
+  const refused = cli(['quarantine', 'grants'])
+  assert.equal(refused.status, 2)
+  assert.equal(refused.json.quarantined, false)
+  fs.writeFileSync(file, '{ not json')
+  const moved = cli(['quarantine', 'grants'])
+  assert.equal(moved.status, 0, moved.stderr)
+  assert.match(moved.json.quarantined.to, /broken-runs\/grants\.json-/)
+  assert.equal(fs.existsSync(file), false)
+  assert.equal(cli(['quarantine']).status, 1)
+  assert.equal(cli(['quarantine', 'run']).status, 1)
 })

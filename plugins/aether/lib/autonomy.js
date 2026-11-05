@@ -6,6 +6,7 @@
 // Family: none.
 
 const fs = require('node:fs')
+const crypto = require('node:crypto')
 const path = require('node:path')
 const { ownerMessages, findTranscript } = require('./voice.js')
 const { newRunId, isRunId, dataDir: runDataDir } = require('./run.js')
@@ -292,6 +293,46 @@ function list(mainRoot, { configDir } = {}) {
 
 function readRun(file) {
   return readJsonFile(file, (v) => (isObject(v) && Array.isArray(v.spend) ? null : 'a run must be an object with a spend array'))
+}
+
+function quarantine(mainRoot, { target, id = null }, { now = Date.now() } = {}) {
+  let from
+  let file
+  if (target === 'grants') {
+    from = grantsPath(mainRoot)
+    file = from
+    if (!fs.existsSync(file)) return { ok: false, reason: 'there is no grants.json to set aside' }
+  } else if (target === 'run') {
+    if (typeof id !== 'string' || !/^auto-[0-9]{8}-[0-9]{6}-[0-9a-f]+$/.test(id)) return { ok: false, reason: 'invalid run id' }
+    from = path.join(autonomyDir(mainRoot), id)
+    file = path.join(from, 'run.json')
+    if (!fs.existsSync(file)) return { ok: false, reason: 'there is no run.json to set aside' }
+  } else {
+    return { ok: false, reason: 'invalid quarantine target' }
+  }
+
+  let readable = true
+  try {
+    if (target === 'grants') readGrants(mainRoot)
+    else readRun(file)
+  } catch {
+    readable = false
+  }
+  if (readable) return { ok: false, reason: target === 'grants'
+    ? 'grants.json is readable; use aether-autonomy grant, revoke and end'
+    : 'the run is readable; use aether-autonomy end' }
+
+  const date = new Date(now)
+  const pad = (n) => String(n).padStart(2, '0')
+  const stamp = `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}`
+  const broken = path.join(mainRoot, '.aether', 'broken-runs')
+  fs.mkdirSync(broken, { recursive: true })
+  let to
+  do {
+    to = path.join(broken, `${target === 'grants' ? 'grants.json' : id}-${stamp}-${crypto.randomBytes(2).toString('hex')}`)
+  } while (fs.existsSync(to))
+  fs.renameSync(from, to)
+  return { ok: true, from, to }
 }
 
 // A run written before the quota brake has none of its fields; it reads as if they were empty.
@@ -632,6 +673,7 @@ module.exports = {
   runPaths,
   loadCeilings,
   readGrants,
+  quarantine,
   grant,
   revoke,
   check,
