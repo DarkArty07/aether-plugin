@@ -103,6 +103,27 @@ test('runShell kills the whole process group when the timeout ends, and does not
   assert.equal(alive, false, 'the background child is dead')
 })
 
+test('runShell kills a shell that ignores SIGTERM and its background child on timeout (R9)', (t) => {
+  const dir = tempDir(t)
+  const pidFile = path.join(dir, 'term-child.pid')
+  const started = Date.now()
+  const r = common.runShell(`trap '' TERM; sleep 60 & echo $! > '${pidFile}'; wait`, { cwd: dir, timeoutMs: 400 })
+  assert.ok(Date.now() - started < 10000, 'the call returns soon after the timeout')
+  assert.equal(r.status, null)
+  assert.equal(r.error.code, 'ETIMEDOUT')
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+  let alive = true
+  for (let i = 0; i < 100 && alive; i++) {
+    try {
+      process.kill(pid, 0)
+      common.sleepSync(20)
+    } catch {
+      alive = false
+    }
+  }
+  assert.equal(alive, false, 'the background child is dead')
+})
+
 test('withLock holds <target>.lock while fn runs and removes it after (R10)', (t) => {
   const target = path.join(tempDir(t), 'x.json')
   const seen = common.withLock(target, () => fs.existsSync(`${target}.lock`) && 'held')

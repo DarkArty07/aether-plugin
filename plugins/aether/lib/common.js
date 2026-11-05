@@ -123,16 +123,15 @@ function nulEntries(text) {
 
 // Runs sh -c <command> as a process-group leader with stdout and stderr to temporary files, so a grandchild
 // that inherits them cannot keep the call hanging on a pipe. Returns a spawnSync-shaped object with stdout and
-// stderr as text, and never throws. On timeoutMs the shell and then the whole group are killed with killGroup;
-// then status is null and error.code is 'ETIMEDOUT'.
+// stderr as text, and never throws. On timeoutMs spawnSync kills the shell itself with SIGKILL (killSignal, so a
+// shell that traps or ignores SIGTERM cannot hold the call), then the rest of the group is killed with
+// killGroup(pid); then status is null and error.code is 'ETIMEDOUT'.
 function runShell(command, { cwd, timeoutMs, env = process.env, maxBuffer = 64 * 1024 * 1024 } = {}) {
   let tmpDir = null
   try {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-runShell-'))
     const outFile = path.join(tmpDir, 'stdout')
     const errFile = path.join(tmpDir, 'stderr')
-    fs.writeFileSync(outFile, '')
-    fs.writeFileSync(errFile, '')
     const outFd = fs.openSync(outFile, 'w')
     let errFd = null
     try {
@@ -145,7 +144,7 @@ function runShell(command, { cwd, timeoutMs, env = process.env, maxBuffer = 64 *
     }
     let result = null
     try {
-      const options = { cwd, env, detached: true, stdio: ['ignore', outFd, errFd] }
+      const options = { cwd, env, detached: true, stdio: ['ignore', outFd, errFd], killSignal: 'SIGKILL' }
       if (timeoutMs !== undefined && timeoutMs !== null) options.timeout = timeoutMs
       result = spawnSync('sh', ['-c', command], options)
     } finally {
@@ -159,9 +158,8 @@ function runShell(command, { cwd, timeoutMs, env = process.env, maxBuffer = 64 *
       }
     }
     if (result.error && result.error.code === 'ETIMEDOUT' && typeof result.pid === 'number') {
-      try {
-        process.kill(result.pid, 'SIGKILL')
-      } catch {}
+      // The shell is already dead: spawnSync killed it with SIGKILL at the deadline. Only the rest of the
+      // group (background children, grandchildren) still needs killing.
       killGroup(result.pid)
     }
     let stdout = ''
