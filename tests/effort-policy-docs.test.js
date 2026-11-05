@@ -9,12 +9,13 @@ const { PLUGIN } = require('./helpers.js')
 const ROOT = path.join(PLUGIN, '..', '..')
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 
-test('the methodology says the effort of a task defaults to high and how a retry and a rise run', () => {
+test('the methodology says the system holds the model and how a correction and a rise run', () => {
   const text = read('docs/methodology.md')
   assert.doesNotMatch(text, /The effort defaults to `xhigh`/)
-  assert.match(text, /The effort defaults to `high`/)
-  assert.match(text, /a retry on the task's own Tier runs at `xhigh` on Haiku and at the task's effort on Sonnet and Opus/)
-  assert.match(text, /every attempt on a model the unit moved up to runs at `high`/)
+  assert.match(text, /The plan names no model/)
+  assert.match(text, /starts every unit on the first rung of `config\/ladder\.json` \(Haiku `high`\)/)
+  assert.match(text, /A correction raises the effort, and a repeated failure raises the model/)
+  assert.match(text, /`Review` \(`high`, `xhigh` or `max`\) sets the effort of the supervisor/)
   assert.match(text, /models-by-role\.md/)
 })
 
