@@ -16,6 +16,7 @@
 // aether-autonomy brake-off --quote <text> [--session <id>]
 // aether-autonomy brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>]
 // aether-autonomy quota-saved --from <saved.json>
+// aether-autonomy quarantine grants|run <id>
 
 const fs = require('node:fs')
 const path = require('node:path')

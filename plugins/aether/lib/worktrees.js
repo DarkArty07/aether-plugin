@@ -1249,7 +1249,8 @@ function hasRecordStatus(runId, status, dir = run.dataDir()) {
 }
 
 // Removes runs that were never finalized and have had no activity for `hours`, plus leftovers
-// whose run directory is already gone. Activity is any change in the run directory or in the
+// whose run directory is already gone (only the unit worktrees and the branches whose work is integrated: a branch with
+// work that is not integrated, or a patch of a task not integrated, is kept). Activity is any change in the run directory or in the
 // run's unit worktrees. Each removal is recorded, with the tip of every branch it deletes taken
 // before the deletion. A run whose sweep keeps saved branches (an interrupted run) is not removed:
 // it is recorded once as interrupted-saved, and its run directory stays for the relaunch.

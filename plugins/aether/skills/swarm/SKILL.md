@@ -66,9 +66,9 @@ The workflow returns:
   - `provider` and `reviewProvider` in each round: `native`, or `<harness> <model>`, such as `agy gemini-3.8-flash`, for the lane that ran the attempt and its review. `laneFailure`: set when a lane began the attempt and another agent finished it (the last failure; the next pair is tried before the native agent), with the harness, the model and the reason;
   - `failures`: the failed attempts in order, `no report` or the blocking findings of a retry or an escalation;
   - `commit`, `reason`, `question` and `patch`;
-  - `closeError`, when the unit could not be closed. The final sweep then removes it, after saving its work as a patch.
+  - `closeError`, when the unit could not be closed. The final sweep saves its work as a patch and removes its worktree, and keeps its branch when that work is not integrated.
 - **`finalReview`:** a `status` of `done`, `skipped`, `failed` or `deferred`. When it is done, it also has the `verdict`, `findings`, `declined` and `summary`. A `failed` review has a `reason`: the reviewer ended without its answer, which may be a diff too large for its turns, or it failed with an error's text. That is never a verdict. A `deferred` review did not run: `deferred` is not a failure and not a verdict, and its `reason` says how many units are blocked, skipped or not run (see "Final review deferred" in §5). `reviewModel` and `reviewEffort` say what a review that ran was run on, which follows the run's risk: Opus at `xhigh` when a merged unit has `Review: xhigh` or `max`; Sonnet at `high` when one to three units merged and all review at `high`, never on a relaunch; and Opus at `high` otherwise.
-- **`cleanup`:** what the sweep removed. Its `remaining` lists must be empty.
+- **`cleanup`:** what the sweep removed. Its `remaining` lists are empty when every unit is integrated. A branch whose work is not integrated stays in `remaining.branches` and in `retainedBranches`, with its patch, and `finished: false` says the run directory stays too: integrate or adopt that work, and the next sweep clears it.
 - **`agents`:** the agent count, by role and by model.
 - **`lanes`:** `{ calls, ok, failed, quota, violation, blocked, unavailable }`. It is null when the run had no lanes.
 - **`error`:** set only when the script itself failed.
@@ -126,7 +126,7 @@ Report from it:
   - Fix the critical and important ones: a short fix yourself on the integration branch, with its test, when it fits the direct path; a longer one through a delegate task or a relaunch; a design-level one through the Writer and `/aether:design` in short mode.
   - Defer the minor ones: list them in the report, or in a run in the brief. They are not worked.
   - Rule on each `declined` line.
-- **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep of an interrupted run (one with saved.json, or a recorded quota pause that names the run) commits each unmerged unit's uncommitted work on its unit branch, keeps that branch and a patch, and removes the units that merged. Any other sweep removes unmerged branches after saving a patch. A unit whose work it cannot save stays in place for you to handle.
+- **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep of an interrupted run (one with saved.json, or a recorded quota pause that names the run) commits each unmerged unit's uncommitted work on its unit branch, keeps that branch and a patch, and removes the units that merged. Any other sweep saves a patch for each unmerged unit and keeps the branch of any work that is not integrated (`retainedBranches`), instead of deleting it; only branches whose work is in the integration branch are removed. A unit whose work it cannot save stays in place for you to handle. After you integrate or adopt a retained unit (`aether-wt adopt`), `aether-wt sweep --run <runId> --finish` removes its branch and, once no other unit is waiting, the run directory.
 
 To relaunch, keep the run id and name the tasks:
 
