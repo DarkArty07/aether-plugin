@@ -358,6 +358,7 @@ function shellReadsStdin(args) {
   let hasS = false
   let file = false
   for (const a of args) {
+    if (/^[0-9]+[<>]/.test(a)) continue
     if (a.startsWith('--')) continue
     if (a.startsWith('-') && a.length > 1) {
       if (/^-[^-]*c/.test(a)) hasC = true
@@ -704,6 +705,8 @@ function segmentsOf(command, depth = 0) {
       }
     } else if (ch === ';' || ch === '(' || ch === ')' || ch === '`') {
       endSegment()
+    } else if (ch === '&' && i > 0 && '<>'.includes(command[i - 1])) {
+      word = (word ?? '') + ch
     } else if (ch === '|' || ch === '&') {
       // A doubled operator, || && or |&, is one separator.
       endSegment()
@@ -767,34 +770,139 @@ function redactCommand(command, cls) {
   return cls === 'credentials' ? '[redacted]' : redactValues(command)
 }
 
-// A Bash call: null to allow, or { reason } to deny. Any error allows the command. The guard runs on
-// every Bash call, so the modules that read git and the grants load only for an irreversible command.
+// These checks are a tripwire, not a shell interpreter. They cannot see names built at runtime,
+// relative names after cd, names assembled across commands, unlisted programs deleting directories,
+// whole-tree commands without operands, or functions and aliases retained by a shell.
+const READ_COMMANDS = new Set('echo printf cat more head tail grep egrep fgrep ls stat wc diff cmp jq test ['.split(' '))
+const WRITE_COMMANDS = new Set('rm rmdir unlink mv cp rsync install ln chmod chown chgrp truncate shred dd tar unzip patch'.split(' '))
+
+function lineShape(command) {
+  let plain = true
+  let quote = null
+  let word = ''
+  let active = false
+  let words = []
+  const commands = []
+  const endWord = () => { if (active) words.push(word); word = ''; active = false }
+  const endCommand = () => { endWord(); if (words.length) commands.push(words); words = [] }
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i], next = command[i + 1]
+    if (ch === '\\' && quote !== "'") { active = true; if (next !== undefined) word += command[++i]; continue }
+    if (quote) {
+      if (ch === quote) { quote = null; continue }
+      if (';&<>'.includes(ch) || (quote !== "'" && (ch === '`' || (ch === '$' && next === '(')))) plain = false
+      word += ch; active = true; continue
+    }
+    if (ch === "'" || ch === '"') { quote = ch; active = true; continue }
+    if (ch === '`' || (ch === '$' && next === '(') || ch === ';' || ch === '&' || ch === '>' || (ch === '<' && next === '(')) plain = false
+    if (ch === '\n') { if (command.slice(i + 1).trim()) plain = false; endCommand(); continue }
+    if (ch === '|' && next === '|') { plain = false; endCommand(); i++; continue }
+    if (ch === '|') { endCommand(); if (next === '&') i++; continue }
+    if (/\s/.test(ch)) { endWord(); continue }
+    word += ch; active = true
+  }
+  if (quote) plain = false
+  endCommand()
+  return { plain, commands }
+}
+
+function normalizeMention(word) {
+  return word.replace(/\/+/g, '/').replace(/(^|\/)\.\//g, '$1').replace(/(?:\/\.?|\/\*)+$/, '')
+}
+
+function directoryMention(word) {
+  const w = normalizeMention(word)
+  return /(?:^|\/)\.aether(?:\/autonomy)?$/.test(w) || w === 'autonomy' || w.includes('.aether/autonomy/') || /^auto-\d{8}-\d{6}-[a-z0-9]{4}$/.test(w) || /(?:=|-[^-]*t)\.aether\/autonomy$/.test(w)
+}
+
+function patternMention(word) {
+  const w = word.replace(/\/+/g, '/').replace(/(^|\/)\.\//g, '$1')
+  if (!/[*?\[{]/.test(w) || !/(?:\.aether|autonomy)/.test(w)) return false
+  const brace = w.match(/\{([^{}]*,[^{}]*)\}/)
+  const alternatives = brace ? brace[1].split(',').map((x) => w.replace(brace[0], x)) : [w]
+  const { globToRegExp } = require('./globs.js')
+  return alternatives.some((pattern) => {
+    // Expand simple character classes before using the shared glob converter.
+    const expand = (p) => {
+      const m = p.match(/\[([^\]]+)\]/)
+      return m ? [...m[1]].flatMap((c) => expand(p.replace(m[0], c))) : [p]
+    }
+    return expand(pattern).some((p) => {
+      const re = globToRegExp('**/' + p)
+      return ['.aether/autonomy', '.aether/autonomy/grants.json', '.aether/autonomy/auto-20261009-200000-ab12/run.json'].some((target) => re.test(target))
+    })
+  })
+}
+
+function protectedMention(command, cwd = process.cwd()) {
+  const shape = lineShape(command)
+  const single = shape.commands.length === 1 ? shape.commands[0] : []
+  const authorized = single[0] === 'aether-autonomy' || (single[0] === 'node' && single[1] && path.resolve(cwd, single[1]) === path.resolve(__dirname, '../bin/aether-autonomy'))
+  const exempt = shape.plain && (shape.commands.length > 0 && shape.commands.every((c) => READ_COMMANDS.has(c[0])) || (authorized && !command.includes('<<')))
+  const segments = []
+  const visit = (text, depth) => {
+    for (const words of segmentsOf(text)) {
+      segments.push(words)
+      if (depth >= MAX_NESTING) continue
+      const unwrapped = dropWrappers(words)
+      const named = unwrapped.length ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
+      const script = scriptOf(named)
+      if (script !== null) visit(script, depth + 1)
+      if (SHELLS.has(named[0]) && shellReadsStdin(named.slice(1))) {
+        for (const body of words.heredocs || []) visit(body.text, depth + 1)
+      }
+    }
+  }
+  visit(command, 0)
+  const words = segments.flat()
+  const name = (w) => /(^|[^A-Za-z0-9_.-])(grants\.json|run\.json)(?![A-Za-z0-9_.-])/.test(w)
+  // Output redirections also protect other files and directories beneath autonomy.
+  for (const segment of segments) {
+    for (let i = 0; i < segment.length; i++) {
+      const match = segment[i].match(/(?:^|[^<])(?:\d*|&)(?:>>|>\||>)(.*)$/)
+      if (match) {
+        const target = match[1] || segment[i + 1] || ''
+        if (name(target) || patternMention(target) || directoryMention(target)) return target
+      }
+    }
+  }
+  if (exempt) return null
+  const direct = words.find((w) => name(w) || patternMention(w))
+  if (direct) return direct
+  const writer = words.some((w) => WRITE_COMMANDS.has(nameOf(w))) || (words.some((w) => nameOf(w) === 'find') && words.some((w) => ['-delete', '-exec', '-execdir'].includes(w)))
+  return writer ? words.find(directoryMention) || null : null
+}
+
+// A Bash call: null to allow, or { reason } to deny.
 function decideBash(input, env = process.env) {
+  const command = input.tool_input?.command
+  const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
+  let mention
+  try { mention = module.exports.protectedMention(command, cwd) } catch { mention = 'the protected files' }
+  if (mention) return { reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end, quarantine) instead of editing ${mention}.` }
   try {
-    const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
-    const cls = irreversibleClass(input.tool_input?.command, cwd)
-    if (cls === null) return null
+    const classes = irreversibleClasses(command, cwd)
+    if (!classes.length) return null
     const { repoPaths } = require('./git.js')
+    let paths
+    try { paths = repoPaths(cwd) } catch { return null }
     const { check } = require('./autonomy.js')
     const { appendPending } = require('./pending.js')
     const { ensureExcluded } = require('./run.js')
-    // Outside a git repository this throws, and the command is allowed unrecorded.
-    const { mainRoot, gitCommonDir } = repoPaths(cwd)
-    if (check(mainRoot, cls, { session: input.session_id }) !== null) return null
     const mode = env.AETHER_IRREVERSIBLE === 'enforce' ? 'enforce' : 'log'
-    const entry = { time: Date.now(), session: input.session_id, class: cls, command: redactCommand(input.tool_input.command, cls), cwd: input.cwd, mode }
-    // The list holds the command, so git must ignore its directory before the first line is written.
-    ensureExcluded(gitCommonDir)
-    // A command that cannot be recorded is allowed: a refusal the owner cannot see is not kept.
-    if (!appendPending(mainRoot, entry)) return null
-    if (mode === 'log') return null
-    return {
-      reason: `Aether added this ${cls} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".`,
+    let first = null
+    for (const cls of classes) {
+      let granted = false
+      try { granted = check(paths.mainRoot, cls, { session: input.session_id }) !== null } catch { /* malformed registry fails closed */ }
+      if (granted) continue
+      const entry = { time: Date.now(), session: input.session_id, class: cls, command: redactCommand(command, cls), cwd: input.cwd, mode }
+      ensureExcluded(paths.gitCommonDir)
+      if (!appendPending(paths.mainRoot, entry)) return null
+      if (first === null) first = cls
     }
-  } catch {
-    // Outside a git repository, or a grant registry that cannot be read: the command is allowed.
-    return null
-  }
+    if (mode === 'log' || first === null) return null
+    return { reason: `Aether added this ${first} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".` }
+  } catch { return null }
 }
 
-module.exports = { decide, decideBash, irreversibleClass, irreversibleClasses, redactCommand }
+module.exports = { decide, decideBash, irreversibleClass, irreversibleClasses, redactCommand, protectedMention, lineShape }
