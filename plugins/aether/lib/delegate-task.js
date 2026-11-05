@@ -202,7 +202,7 @@ function touchedSince(cwd, launch) {
 // (--findings) and applies the patch in its worktree before it starts (--carry), saying so in the prompt, so its brief
 // carries neither (issue 142).
 function sectionsOf(verdict, entries) {
-  if (!verdict) return { sections: [], laneSections: [], findings: null, carry: null }
+  if (!verdict) return { sections: [], laneSections: [], findings: null, carry: null, work: null }
   const input = isObject(verdict.input) ? verdict.input : {}
   const reason = isText(verdict.reason) ? verdict.reason : null
   const carry = Boolean(verdict.next && verdict.next.carry)
@@ -217,14 +217,15 @@ function sectionsOf(verdict, entries) {
     sections.push(`## Reason\n\n${reason}`)
     laneSections.push(`## Reason\n\n${reason}`)
   }
+  // Read once: the text of the brief and the patch the external file carries come from the same read.
+  const work = carry ? log.previousWork(entries) : null
   if (carry) {
-    const work = log.previousWork(entries)
     if (work) {
       sections.push(`## Your previous work\n\n${work.text}`)
       if (!work.patch) laneSections.push(`## Your previous work\n\n${work.text}`)
     }
   }
-  return { sections, laneSections, findings, carry }
+  return { sections, laneSections, findings, carry, work }
 }
 
 function withSections(prompt, sections) {
@@ -414,7 +415,7 @@ async function begin(input, deps = {}) {
     const covered = authorized !== null && auth.namedRung(r.ladder, event.model)?.model === args.model
     const { requested, ignored } = requestedOf(event, args, covered)
     if (launchKind === 'first' && placed) notes.push(placementNote(id, placed.rung, cover, args, brief))
-    const { sections, laneSections, findings, carry } = sectionsOf(next.verdict, entries)
+    const { sections, laneSections, findings, carry, work } = sectionsOf(next.verdict, entries)
     const fullPrompt = withSections(prompt, sections)
     const base = headOf(r.cwd)
     // The prompt of the call is what a delegate on Claude reads, the rescue of an external pair too; the brief file of an
@@ -456,7 +457,7 @@ async function begin(input, deps = {}) {
         fs.writeFileSync(briefFile, externalPrompt)
         writeJson(path.join(r.dataDir, 'delegates', 'external', `${log.fileKey(session, id)}.json`), {
           id, session, cwd: r.cwd, attempt, step, effort, launchKind, edits, owns: brief.owns, tests: brief.tests,
-          brief: briefFile, findings, carry: carry ? log.previousWork(entries)?.patch ?? null : null, pin, base, harness: pick.harness,
+          brief: briefFile, findings, carry: carry && work ? work.patch : null, pin, base, harness: pick.harness,
           rung: { model: pick.model, effort: pick.effort, group: pick.group },
           task: { description, prompt: externalPrompt },
           alternates,
