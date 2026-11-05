@@ -695,3 +695,40 @@ test('R21: every page that gives the default of superdelegation in the form of R
   }
   assert.ok(seen > 0, 'a page repeats the default of superdelegation')
 })
+
+test('R16: no page gives aether-exam a list verb', () => {
+  const row = read('docs/reference/components.md').split('\n').find((line) => line.startsWith('| `aether-exam` |'))
+  assert.ok(row, 'components.md has the aether-exam row')
+  assert.match(row, /`store`/)
+  assert.match(row, /`run`/)
+  assert.doesNotMatch(row, /`list`/)
+  for (const file of FILES.filter((f) => f !== 'docs/changelog.md')) {
+    assert.doesNotMatch(read(file), /aether-exam list/, file)
+  }
+})
+
+test('R17: no page presents Tier or Ladder as a field of the plan, and the contributing example checks clean', (t) => {
+  for (const page of ['docs/methodology.md', 'docs/getting-started.md', 'docs/contributing.md', 'docs/purpose.md', 'docs/roadmap.md', 'docs/guide/design-seats.md', 'docs/guide/troubleshooting.md', 'docs/guide/models-by-role.md']) {
+    const text = read(page).replace(/[^\n]*\bTier\b[^\n]*(?:ignorado|ignored)[^\n]*/g, '')
+    assert.doesNotMatch(text, /\bTier\b/, `${page} names Tier`)
+    assert.doesNotMatch(text, /- (Tier|Ladder):/, `${page} shows a Tier or Ladder line`)
+  }
+  const contributing = read('docs/contributing.md')
+  const example = contributing.match(/```\n(# Tasks:[\s\S]*?)```/)
+  const shown = contributing.match(/```\n(\{"ok":true[^\n]*)\n```/)
+  assert.ok(example && shown, 'the page has the example and its output')
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-contrib-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  fs.writeFileSync(path.join(dir, 'tasks.md'), example[1])
+  const r = require('node:child_process').spawnSync(process.execPath, [path.join(PLUGIN, 'bin', 'aether-plan'), 'check', path.join(dir, 'tasks.md')], { encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout.trim(), shown[1])
+  assert.match(shown[1], /"warnings":\[\]\}$/)
+})
+
+test('R18: contributing.md tells apart npm test and npm run test:mod, and states the 0.x policy', () => {
+  const text = read('docs/contributing.md')
+  assert.match(text, /`npm test` runs the bins, the libraries, the workflow scenarios and the documentation facts; it does not run the mod\./)
+  assert.match(text, /`npm run test:mod` runs `claude plugin test plugins\/aether`: the mod, with the usage meter, ops and delegation, on the test engine with a simulated model\./)
+  assert.match(text, /While the major version is 0, a minor version \(`0\.Y\.0`\) may break compatibility, and the changelog says so explicitly\./)
+})

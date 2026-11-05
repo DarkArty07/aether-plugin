@@ -144,12 +144,11 @@ The swarm needs:
 - **a plan with Aether fields** on every task:
 
       **Aether:**
-      - Tier: haiku high — exact tests and interfaces pin the task down
       - Area: backend
       - Owns: `src/api/**`, `test/api.test.js`
       - Depends on: none
 
-- **an `## Aether Execution` section**, holding the test command, the ladder and the agent budget;
+- **an `## Aether Execution` section**, holding the test command and the agent budget;
 - **a separate integration worktree on a feature branch.** The Lead creates it with `git worktree add <path> -b <branch>`;
 - **permissions that let the agents run `git`, `aether-wt`, `aether-lane` and the tests**, and edit files under `.aether/worktrees/`, without asking each time.
 

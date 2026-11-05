@@ -16,7 +16,7 @@ This page says which model and effort each role of Aether runs on, how a task cl
 | Writer | `sonnet high` | `sonnet high` | It already does its work at `high`. |
 | Judge | `opus high` | `opus high` | It is the role of most risk and spends little. |
 | Examiner | `opus high` | `opus high` | There is no evidence in either sense, so it stays until there is. |
-| Implementer, first attempt | the plan's Tier at `high` | the first rung of `config/ladder.json` (Haiku `high`) | A correction raises the effort before the model, starting at `high`. |
+| Implementer, first attempt | the task's model at `high` | the first rung of `config/ladder.json` (Haiku `high`) | A correction raises the effort before the model, starting at `high`. |
 | Implementer, a retry | `xhigh` in Haiku, Sonnet and Opus | `haiku xhigh` in Haiku; `high` in Sonnet and Opus | In Sonnet and Opus a retry gains the supervisor's findings, not a dearer effort. |
 | Implementer, after a rise | `xhigh` | the next model at `high` | A rise already changes the model, so it does not also raise the effort. |
 | Supervisor | `xhigh` in US$38 of US$43, by the plan's Review (Sonnet US$24, Opus US$14) | `sonnet high` | The plan's Review now reserves `xhigh` for where an error would reach data, security or concurrency. |

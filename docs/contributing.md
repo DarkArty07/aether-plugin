@@ -18,6 +18,8 @@ That loads the tree for one session, in place of the installed release; with the
 
     npm test              # node --test "tests/*.test.js": bins, libraries, workflow scenarios and the fake model
     npm run test:mod      # claude plugin test plugins/aether: the mod (usage meter and ops)
+
+`npm test` runs the bins, the libraries, the workflow scenarios and the documentation facts; it does not run the mod. `npm run test:mod` runs `claude plugin test plugins/aether`: the mod, with the usage meter, ops and delegation, on the test engine with a simulated model.
     npm run validate      # claude plugin validate, on the plugin and on the marketplace
     npm run check         # all three
 
@@ -35,7 +37,6 @@ When you change the plan checker, the compiler or the format of a task, check th
 ### Task 1: The greeting function
 
 **Aether:**
-- Tier: haiku high — a pure function with exact tests
 - Area: greeting
 - Owns: `src/greeting.js`, `test/greeting.test.js`
 - Depends on: none
@@ -45,7 +46,6 @@ Write `greet(name)` in `src/greeting.js`. It returns `Hello, <name>!`.
 ### Task 2: The farewell function
 
 **Aether:**
-- Tier: haiku high — a pure function with exact tests
 - Area: farewell
 - Owns: `src/farewell.js`, `test/farewell.test.js`
 - Depends on: none
@@ -55,7 +55,6 @@ Write `farewell(name)` in `src/farewell.js`. It returns `Goodbye, <name>!`.
 ## Aether Execution
 
 - Test command: `npm test`
-- Ladder: haiku 2, sonnet 2, opus 1
 - Max agents: 20
 ```
 
@@ -76,6 +75,8 @@ It prints one line of JSON and exits 0 when the plan is sound. For this plan it 
 The commands of the plugin's `bin/` folder are on the `PATH` of the Bash tool in a session that has the plugin, so inside a session you type `aether-plan check tasks.md`. In a shell outside a session they are not on the `PATH`, and you run the file by its path. In a clone of this repository that is `node plugins/aether/bin/aether-plan check tasks.md`. If you installed from GitHub, the plugin's copy is in the Claude config dir, and the path is `node ~/.claude/plugins/cache/aether-plugin/aether/<version>/bin/aether-plan check tasks.md`, where `<version>` is the one `claude plugin list` shows. If you set `CLAUDE_CONFIG_DIR`, write that folder in place of `~/.claude`. If you installed from a clone's path, the plugin loads from the clone itself, so the clone's path above is the one.
 
 ### Release
+
+While the major version is 0, a minor version (`0.Y.0`) may break compatibility, and the changelog says so explicitly.
 
 1. bump `"version"` in `plugins/aether/.claude-plugin/plugin.json`, the version that `tests/launcher.test.js` pins, the `Version X.Y.Z` line of the README, and the first `Version X.Y.Z:` line of the [changelog](changelog.md); tests/docs-facts.test.js checks the last two; turn the changelog's `## Unreleased` entry into part of that new `Version X.Y.Z:` line;
 2. run `npm run check`;
