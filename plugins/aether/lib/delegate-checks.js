@@ -4,8 +4,7 @@
 // and read-only invariants before an approve verdict.
 // Family: delegate.
 
-const { spawnSync } = require('node:child_process')
-const { nulEntries } = require('./common.js')
+const { nulEntries, runShell } = require('./common.js')
 const { git, repoPaths } = require('./git.js')
 const { matchesAny } = require('./globs.js')
 
@@ -19,14 +18,7 @@ function changedFiles(worktree, base) {
 }
 
 function runTests(worktree, command, { timeoutMs = 900000, tailChars = 4000 } = {}) {
-  const r = spawnSync(command, {
-    cwd: worktree,
-    shell: true,
-    timeout: timeoutMs,
-    killSignal: 'SIGKILL',
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  })
+  const r = runShell(command, { cwd: worktree, timeoutMs })
   const timedOut = Boolean(r.error && r.error.code === 'ETIMEDOUT')
   const fullOutput = (r.stdout || '') + (r.stderr || '')
   const outputTail = fullOutput.slice(-tailChars)

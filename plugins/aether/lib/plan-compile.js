@@ -9,7 +9,6 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
 
 const { parsePlan, buildGraph, renderBrief, specObjective, requirementsOf, traceability } = require('./plan.js')
 const { applyGroups } = require('./plan-groups.js')
@@ -20,6 +19,7 @@ const run = require('./run.js')
 const lanes = require('./lanes.js')
 const superdelegation = require('./superdelegation.js')
 const { loadPairs } = require('./pairs.js')
+const { runShell } = require('./common.js')
 const baseline = require('./baseline.js')
 const wt = require('./worktrees.js')
 
@@ -113,15 +113,9 @@ const BASELINE_TIMEOUT_MS = 10 * 60 * 1000
 
 // Runs the test command once, in the integration worktree, before the run's first merge. The failing
 // tests it names are the baseline: a merge is blocked only by a failure that is not among them.
-function recordBaseline(cwd, testCommand) {
+function recordBaseline(cwd, testCommand, { timeoutMs = BASELINE_TIMEOUT_MS } = {}) {
   const started = Date.now()
-  const r = spawnSync(testCommand, {
-    cwd,
-    shell: true,
-    encoding: 'utf8',
-    timeout: BASELINE_TIMEOUT_MS,
-    maxBuffer: 64 * 1024 * 1024,
-  })
+  const r = runShell(testCommand, { cwd, timeoutMs })
   return {
     recordedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
@@ -320,4 +314,5 @@ module.exports = {
   compile,
   load,
   baselineMessage,
+  recordBaseline,
 }
