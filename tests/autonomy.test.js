@@ -395,3 +395,79 @@ test('a quote that is negated in one message and plain in another is accepted (R
   })
   assert.equal(autonomy.verifyQuote(SESSION, 'push a origin', { configDir }).ok, true)
 })
+
+test('an accented más does not end a clause, so the prohibition stays refused (R5)', (t) => {
+  const denied = { ok: false, reason: "the quote is in a negated clause of the owner's message" }
+  for (const text of ['No hagas más push a origin.', 'No quiero más push a origin sin que yo lo pida.']) {
+    const { configDir } = setup(t, { [SESSION]: [human(text, '2026-10-09T19:00:00.000Z')] })
+    assert.deepEqual(autonomy.verifyQuote(SESSION, 'push a origin', { configDir }), denied, text)
+    assert.equal(autonomy.verifyQuote(SESSION, 'push a origin', { configDir, allowNegation: true }).ok, true, text)
+  }
+})
+
+test('the bare word mas ends a clause, and negators keep their accent folding (R5)', (t) => {
+  const split = setup(t, { [SESSION]: [human('No hagas push a main mas haz push a origin cuando acaben.', '2026-10-09T19:00:00.000Z')] })
+  assert.equal(autonomy.verifyQuote(SESSION, 'haz push a origin cuando acaben', { configDir: split.configDir }).ok, true)
+  const folded = setup(t, { [SESSION]: [human('Jamás publiques sin avisar hoy mismo.', '2026-10-09T19:00:00.000Z')] })
+  assert.deepEqual(autonomy.verifyQuote(SESSION, 'publiques sin avisar hoy mismo', { configDir: folded.configDir }), {
+    ok: false,
+    reason: "the quote is in a negated clause of the owner's message",
+  })
+})
+
+test('a negator before a clause boundary does not negate a quote after it (R5)', (t) => {
+  const cases = [
+    ['No hagas push a main, haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main. Haz push a origin cuando acaben.', 'Haz push a origin cuando acaben'],
+    ['No hagas push a main; haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main: haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main! Haz push a origin cuando acaben.', 'Haz push a origin cuando acaben'],
+    ['No hagas push a main? Haz push a origin cuando acaben.', 'Haz push a origin cuando acaben'],
+    ['No hagas push a main pero haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main sino haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main aunque haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['Do not push to main but push to origin when tests pass.', 'push to origin when tests pass'],
+    ['Do not push to main however push to origin when tests pass.', 'push to origin when tests pass'],
+    ['Do not push to main although push to origin when tests pass.', 'push to origin when tests pass'],
+    ['No hagas push a main\nhaz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+  ]
+  for (const [text, quote] of cases) {
+    const { configDir } = setup(t, { [SESSION]: [human(text, '2026-10-09T19:00:00.000Z')] })
+    assert.equal(autonomy.verifyQuote(SESSION, quote, { configDir }).ok, true, text)
+  }
+})
+
+test('a quote whose first word is a negator is refused (R5)', (t) => {
+  const { configDir } = setup(t, {
+    [SESSION]: [human('Haz lo que quieras, no hagas push a origin.', '2026-10-09T19:00:00.000Z')],
+  })
+  assert.deepEqual(autonomy.verifyQuote(SESSION, 'no hagas push a origin', { configDir }), {
+    ok: false,
+    reason: "the quote is in a negated clause of the owner's message",
+  })
+})
+
+test('a quote containing ni is refused with no negator before it (R5)', (t) => {
+  const { configDir } = setup(t, {
+    [SESSION]: [human('Sube la rama ni te detengas.', '2026-10-09T19:00:00.000Z')],
+  })
+  assert.deepEqual(autonomy.verifyQuote(SESSION, 'Sube la rama ni te detengas', { configDir }), {
+    ok: false,
+    reason: "the quote is in a negated clause of the owner's message",
+  })
+  assert.equal(autonomy.verifyQuote(SESSION, 'Sube la rama ni te detengas', { configDir, allowNegation: true }).ok, true)
+})
+
+test('do not as a pair negates, while a no inside the quote does not (R5)', (t) => {
+  const refused = setup(t, {
+    [SESSION]: [human('Please do not push to origin tonight.', '2026-10-09T19:00:00.000Z')],
+  })
+  assert.deepEqual(autonomy.verifyQuote(SESSION, 'push to origin tonight', { configDir: refused.configDir }), {
+    ok: false,
+    reason: "the quote is in a negated clause of the owner's message",
+  })
+  const plain = setup(t, {
+    [SESSION]: [human('Usa el modo manual o no presencial esta noche.', '2026-10-09T19:00:00.000Z')],
+  })
+  assert.equal(autonomy.verifyQuote(SESSION, 'el modo manual o no presencial esta noche', { configDir: plain.configDir }).ok, true)
+})

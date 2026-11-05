@@ -67,8 +67,13 @@ const SINGLE_NEGATORS = new Set([
   "don't", 'dont', "doesn't", 'cannot', "can't", "won't",
 ])
 
-// Words that end a clause, folded without accents or capitals.
+// Words that end a clause, compared case-insensitively but with accents kept:
+// `mas` ends a clause, `más` does not. Negators above keep the accent folding.
 const CLAUSE_WORDS = new Set(['pero', 'sino', 'aunque', 'mas', 'but', 'however', 'although'])
+
+function foldClause(word) {
+  return String(word).normalize('NFC').toLowerCase()
+}
 
 function foldNeg(text) {
   return String(text).normalize('NFKD').replace(/[\u0300-\u036f]/gu, '').toLowerCase().replace(/[’‘]/gu, "'")
@@ -91,7 +96,7 @@ function clauseAround(text, index) {
   while ((hit = punct.exec(text)) !== null) splits.push([hit.index, hit.index + hit[0].length])
   const words = new RegExp(WORD_SOURCE, 'gu')
   while ((hit = words.exec(text)) !== null) {
-    if (CLAUSE_WORDS.has(foldNeg(hit[0]))) splits.push([hit.index, hit.index + hit[0].length])
+    if (CLAUSE_WORDS.has(foldClause(hit[0]))) splits.push([hit.index, hit.index + hit[0].length])
   }
   splits.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]))
   let start = 0
@@ -137,17 +142,19 @@ function verifyWith(sessionId, quote, linesOf, { allowNegation = false } = {}) {
     if (!normalize(message.text).includes(wanted)) continue
     seen = true
     if (allowNegation) return { ok: true, time: message.time }
+    // NFC so the pattern and the clause analysis see the same composed words
+    // the normalize/includes check above saw; a quote the pattern cannot
+    // locate stays refused instead of failing open.
+    const nfc = message.text.normalize('NFC')
     pattern.lastIndex = 0
-    let located = false
     let plain = false
     let hit
-    while ((hit = pattern.exec(message.text)) !== null) {
-      located = true
-      if (!occurrenceNegated(message.text, hit.index, quote)) plain = true
+    while ((hit = pattern.exec(nfc)) !== null) {
+      if (!occurrenceNegated(nfc, hit.index, quote)) plain = true
       if (hit[0].length === 0) pattern.lastIndex += 1
       if (plain) break
     }
-    if (plain || !located) return { ok: true, time: message.time }
+    if (plain) return { ok: true, time: message.time }
   }
   if (!seen) return { ok: false, reason: `the quote is not in the owner's messages of session ${sessionId}` }
   return { ok: false, reason: NEGATED_REASON }
@@ -620,7 +627,6 @@ module.exports = {
   RESUME_MARGIN_MS,
   normalize,
   findQuote,
-  verifyWith,
   verifyQuote,
   autonomyDir,
   runPaths,
