@@ -341,3 +341,13 @@ test('the cover reads the log of the session it is asked for, and a null session
   assert.equal(auth.coverOf(lines, { session: SESSION, task: 'any', rung, ladder, configDir: w.configDir })?.scope, 'session')
   assert.equal(auth.coverOf(lines, { session: null, task: 'any', rung, ladder, configDir: w.configDir }), null)
 })
+
+test('authorize refuses an owner quote taken from a negated sentence, and writes nothing (R5)', (t) => {
+  const w = world(t, { sessions: { [SESSION]: ['Por favor no uses Sonnet en esta tarea ni pases a Opus.', SONNET_WORDS] } })
+  const refused = authorized(w, { model: 'sonnet', quote: 'uses Sonnet en esta tarea', task: 't-neg' })
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /negated clause/)
+  assert.equal(authorizeLines(w.dataDir).length, 0)
+  const accepted = authorized(w, { model: 'sonnet', quote: 'pásalo a Sonnet para esto', task: 't-neg' })
+  assert.equal(accepted.ok, true)
+})

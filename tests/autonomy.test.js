@@ -362,3 +362,36 @@ test('a run.json that cannot be read is an error', (t) => {
   fs.writeFileSync(path.join(dir, 'run.json'), 'nope')
   assert.throws(() => autonomy.openRun(mainRoot), /cannot read .*run\.json/)
 })
+
+test('a quote taken from a negated clause is refused, and sin, a plain repeat and a negated revocation are not (R5)', (t) => {
+  const NEGATED = 'Por ahora no hagas push a origin ni publiques nada.'
+  const SIN = 'Haz push sin preguntarme cuando terminen las pruebas.'
+  const NIGHT = 'Trabaja toda la noche sin parar hasta cerrar la lista.'
+  const EN = "Please don't run all night on this branch, never push anything."
+  const lines = [NEGATED, SIN, NIGHT, EN, 'ya no fusiones a main sin preguntarme', HOURS].map((text, i) => human(text, `2026-10-09T19:0${i}:00.000Z`))
+  const { configDir, mainRoot } = setup(t, { [SESSION]: lines })
+  const denied = { ok: false, reason: "the quote is in a negated clause of the owner's message" }
+
+  for (const quote of ['hagas push a origin ni publiques nada', 'publiques nada', 'push a origin', 'run all night on this branch', 'push anything']) {
+    assert.deepEqual(autonomy.verifyQuote(SESSION, quote, { configDir }), denied, quote)
+    assert.equal(autonomy.verifyQuote(SESSION, quote, { configDir, allowNegation: true }).ok, true, quote)
+  }
+  assert.deepEqual(autonomy.grant(mainRoot, { class: 'push', quote: 'hagas push a origin ni publiques nada', session: SESSION }, { configDir, now: T0 }), denied)
+  assert.equal(fs.existsSync(grantsFile(mainRoot)), false, 'a refused grant writes nothing')
+  assert.deepEqual(autonomy.start(mainRoot, { quote: 'run all night on this branch', session: SESSION }, { configDir, now: T0 }), denied)
+  assert.equal(autonomy.openRun(mainRoot), null)
+
+  for (const quote of ['Haz push sin preguntarme', 'Trabaja toda la noche sin parar', HOURS]) {
+    assert.equal(autonomy.verifyQuote(SESSION, quote, { configDir }).ok, true, quote)
+  }
+  assert.equal(autonomy.grant(mainRoot, { class: 'push', quote: 'Haz push sin preguntarme', session: SESSION }, { configDir, now: T0 }).ok, true)
+  assert.equal(autonomy.start(mainRoot, { quote: 'Trabaja toda la noche sin parar', session: SESSION }, { configDir, now: T0 }).ok, true)
+  assert.equal(autonomy.revoke(mainRoot, { class: 'merge-main', quote: 'ya no fusiones a main sin preguntarme', session: SESSION }, { configDir, now: T0 }).ok, true)
+})
+
+test('a quote that is negated in one message and plain in another is accepted (R5)', (t) => {
+  const { configDir } = setup(t, {
+    [SESSION]: [human('No hagas push a origin todavia.', '2026-10-09T19:00:00.000Z'), human('Ahora sí, puedes hacer push a origin cuando quieras.', '2026-10-09T19:05:00.000Z')],
+  })
+  assert.equal(autonomy.verifyQuote(SESSION, 'push a origin', { configDir }).ok, true)
+})
