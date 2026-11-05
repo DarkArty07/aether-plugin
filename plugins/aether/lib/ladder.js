@@ -40,7 +40,9 @@ function loadLadder(file = LADDER_FILE) {
   const steps = data.rungs.map((rung) => rung.step)
   if (new Set(steps).size !== steps.length) throw new Error('ladder: two rungs have the same step')
   if (!isCount(data.repeatFindings)) throw new Error('ladder: repeatFindings is not an integer >= 0')
-  return { rungs: data.rungs, repeatFindings: data.repeatFindings }
+  const repeatBlocked = data.repeatBlocked ?? 2
+  if (!Number.isInteger(repeatBlocked) || repeatBlocked < 1) throw new Error('ladder: repeatBlocked is not an integer >= 1')
+  return { rungs: data.rungs, repeatFindings: data.repeatFindings, repeatBlocked }
 }
 
 function rungIndex(ladder, step) {
@@ -111,7 +113,7 @@ function rise(state, ladder, cause, carry) {
     return { accepted: true, state: closed, next: { step: null, kind: 'exhausted', cause: 'exhausted', effort: null, carry } }
   }
   const step = ladder.rungs[index + 1].step
-  const raised = { step, attempts, correctionsUsed: 0, repeats: 0, lastKeys: null, status: 'open' }
+  const raised = { ...state, step, attempts, correctionsUsed: 0, repeats: 0, lastKeys: null, status: 'open' }
   return { accepted: true, state: raised, next: { step, kind: 'rise', cause, effort: effortFor(ladder, step, 'rise'), carry } }
 }
 
@@ -136,6 +138,18 @@ function judgeFix(state, verdict, ladder, carry) {
 // Judges the Lead's verdict on the state the earlier verdicts left.
 function judge(state, verdict, ladder) {
   if (state.status !== 'open') return rejected(`the task is ${state.status}: no verdict is accepted after it`)
+  // Attempt reports track blockers separately from review verdicts: a review between launches
+  // must not break the streak, and a rise must carry it to the next rung.
+  if (verdict && verdict.kind === 'attempt') {
+    const reason = typeof verdict.reason === 'string' ? verdict.reason.trim() : ''
+    const key = verdict.status === 'BLOCKED' && reason ? reason.replace(/\s+/g, ' ').toLowerCase() : null
+    const count = key ? (state.blockedKey === key ? state.blockedCount + 1 : 1) : 0
+    const updated = { ...state, blockedKey: key, blockedCount: count }
+    if (key && count >= (ladder.repeatBlocked ?? 2)) {
+      return { accepted: true, state: { ...updated, attempts: state.attempts + 1, status: 'blocked' }, next: { step: null, kind: 'blocked', cause: 'blocked-same-cause', reason, effort: null, carry: true } }
+    }
+    return { accepted: true, state: updated, next: null }
+  }
   const error = checkVerdict(verdict)
   if (error) return rejected(error)
   if (verdict.kind === 'approve') {

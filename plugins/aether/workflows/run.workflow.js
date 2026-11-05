@@ -1234,6 +1234,7 @@ async function work(unit, task) {
   let view = await ladderRead(unit)
   if (view.error) return finish(unit, 'blocked', `the ladder could not be read: ${view.error}`)
   if (view.kind === 'exhausted' || view.status === 'exhausted') return finish(unit, 'blocked', 'the ladder is spent (exhausted)')
+  if (view.status === 'blocked' && view.cause === 'blocked-same-cause') return finish(unit, 'blocked', `${view.cause}: ${view.reason}`)
   if (view.status !== 'open' || !view.model) return finish(unit, 'blocked', `the ladder is not open (${view.status})`)
 
   const wasCleanStart = view.attempts === 0
@@ -1242,6 +1243,7 @@ async function work(unit, task) {
   let context = null
   let mergeRetry = false
   let lastPair = null
+  let previousBlocked = Boolean(view.blockedCount)
 
   for (;;) {
     if (modelAgentsSpent() >= maxAgents) return finish(unit, 'not-run', 'the agent budget is spent')
@@ -1325,6 +1327,15 @@ async function work(unit, task) {
       ...(attempt.split ? { split: true, subAttempts: attempt.subAttempts } : {}),
     }
     unit.rounds.push(round)
+
+    if (round.status === 'BLOCKED' || previousBlocked) {
+      const attemptCheck = await applyVerdict(unit, 'attempt', {
+        status: round.status, reason: round.question.trim() || round.concerns,
+      })
+      if (attemptCheck.error || attemptCheck.accepted === false) return finish(unit, 'blocked', `the ladder could not record the attempt: ${attemptCheck.error || attemptCheck.rejection}`)
+      if (attemptCheck.status === 'blocked') return finish(unit, 'blocked', `${attemptCheck.cause}: ${attemptCheck.reason}`)
+      previousBlocked = Boolean(attemptCheck.blockedCount)
+    }
 
     if (!report) {
       if (!(attempt.split && attempt.failure)) {

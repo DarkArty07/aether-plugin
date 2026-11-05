@@ -20,5 +20,6 @@ test('the ladder has the three rungs and the repeat count it had', () => {
   const ladder = LADDER()
   assert.deepEqual(ladder.rungs.map((rung) => [rung.step, rung.corrections]), [['haiku', 5], ['sonnet', 2], ['opus', 1]])
   assert.equal(ladder.repeatFindings, 2)
-  assert.deepEqual(Object.keys(ladder).sort(), ['repeatFindings', 'rungs'])
+  assert.equal(ladder.repeatBlocked, 2)
+  assert.deepEqual(Object.keys(ladder).sort(), ['repeatBlocked', 'repeatFindings', 'rungs'])
 })
