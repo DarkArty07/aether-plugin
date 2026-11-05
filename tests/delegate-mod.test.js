@@ -2,7 +2,10 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+const { makeRepo, tempDir, PLUGIN, NO_LANES_CONFIG } = require('./helpers.js')
 
 const HOOKS = path.join(__dirname, '..', 'plugins', 'aether', 'hooks')
 let createDelegates
@@ -257,4 +260,57 @@ test('a later step of the same agent is never taken over', async () => {
   let asked = 0
   await collect(delegates.step($, { index: 1, agentId: 'agent-1', turnId: 't' }, async function* () { asked += 1; return {} }, CTX))
   assert.equal(asked, 1)
+})
+
+test('the whole delegation cycle with the real aether-delegate: begin on haiku, approve refused, fix, repeated finding rises to sonnet, approve (R13)', async (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-e2e-deleg-')
+  fs.mkdirSync(path.join(dataDir, 'sessions'), { recursive: true })
+  fs.writeFileSync(
+    path.join(dataDir, 'sessions', 's-e2e.delegate.json'),
+    JSON.stringify({ lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }),
+  )
+  const env = { ...process.env, AETHER_DATA_DIR: dataDir, AETHER_LANES_CONFIG: NO_LANES_CONFIG }
+  const ctx = { session: 's-e2e', dataDir, root: PLUGIN }
+  const $ = {
+    clock: { now: async () => Date.now() },
+    fs: { write: async (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text, 'utf8') } },
+    process: {
+      run: async (argv, init = {}) => {
+        const r = spawnSync(argv[0], argv.slice(1), { cwd: (init && init.cwd) || repo.dir, env, encoding: 'utf8', timeout: (init && init.timeoutMs) || 30000 })
+        return { exitCode: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' }
+      },
+    },
+  }
+  const verdict = (...args) => {
+    const r = spawnSync(process.execPath, [path.join(PLUGIN, 'bin', 'aether-delegate'), 'verdict', '--session', 's-e2e', '--task', 't-e2e', ...args], { cwd: repo.dir, env, encoding: 'utf8' })
+    return JSON.parse(r.stdout.trim().split('\n').pop())
+  }
+  const brief = 'AETHER-TASK: t-e2e\nAETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\nImplement src/a.js.'
+  const delegates = createDelegates()
+  const seen = []
+  const launch = (extra = {}) => delegates.toolCall($, { subagent_type: 'general-purpose', description: 'e2e', prompt: brief, ...extra }, async (event) => (seen.push(event), {}), ctx)
+
+  await launch({ model: 'opus', effort: 'max' })
+  assert.deepEqual([seen[0].model, seen[0].effort], ['haiku', 'high'])
+
+  const refused = verdict('--verdict', 'approve', '--worktree', repo.dir)
+  assert.equal(refused.ok, false, 'an approve with no edited file is refused')
+
+  const finding = 'src/a.js:1: missing module.exports'
+  const first = verdict('--verdict', 'fix', '--finding', finding)
+  assert.deepEqual([first.ok, first.next.kind, first.next.step], [true, 'fix', 'haiku'])
+  await launch()
+  assert.deepEqual([seen[1].model, seen[1].effort], ['haiku', 'xhigh'])
+  assert.match(seen[1].prompt, /## Findings to fix/)
+
+  const second = verdict('--verdict', 'fix', '--finding', finding)
+  assert.deepEqual([second.ok, second.next.kind, second.next.step, second.next.cause], [true, 'rise', 'sonnet', 'repeated'])
+  await launch()
+  assert.deepEqual([seen[2].model, seen[2].effort], ['sonnet', 'high'])
+
+  fs.mkdirSync(path.join(repo.dir, 'src'), { recursive: true })
+  fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'module.exports = 1\n')
+  const approved = verdict('--verdict', 'approve', '--worktree', repo.dir)
+  assert.equal(approved.ok, true, JSON.stringify(approved))
 })

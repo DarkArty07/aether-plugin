@@ -13,7 +13,7 @@ test('the methodology says the effort of a task defaults to high and how a retry
   const text = read('docs/methodology.md')
   assert.doesNotMatch(text, /The effort defaults to `xhigh`/)
   assert.match(text, /The effort defaults to `high`/)
-  assert.match(text, /a retry on the task's own Tier runs at `xhigh` on Haiku and at the task's effort on Sonnet and Opus/)
+  assert.match(text, /a correction runs at `xhigh` on Haiku and at `high` on Sonnet and Opus/)
   assert.match(text, /every attempt on a model the unit moved up to runs at `high`/)
   assert.match(text, /models-by-role\.md/)
 })
@@ -29,7 +29,6 @@ test('the roadmap and the purpose page no longer say every retry runs at xhigh',
 
 test('the changelog records this change in version 0.21.0', () => {
   const text = read('docs/changelog.md')
-  assert.doesNotMatch(text, /^## Unreleased/m)
   const first = text.split('\n').find((line) => line.startsWith('Version 0.21.0: '))
   for (const word of ['xhigh', 'A93', 'models-by-role.md']) assert.ok(first.includes(word), word)
 })

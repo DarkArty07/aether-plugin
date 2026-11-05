@@ -350,36 +350,77 @@ function landsOnMain(git, sequence) {
   return MAIN_BRANCHES.has(branchOf(sequence, gitDirOf(sequence, git.dirs)))
 }
 
-// The match of one command's words: its class and the words of its subcommand, or null. A shell or eval
-// is matched by the script it runs, one level deeper. When wanted is given, only that class matches.
-function matchWords(words, depth, wanted, sequence) {
+// Whether a shell's words after its name read the script from stdin: the shell has -s, or it has
+// neither -c nor a script file. The words are already past dropWrappers and nameOf, so "env bash"
+// reads as ["bash"]. A lone "-" reads stdin too, while "--" ends the options.
+function shellReadsStdin(args) {
+  let hasC = false
+  let hasS = false
+  let file = false
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (/^[0-9]+[<>]/.test(a)) continue
+    // Options that take their value in the next word: -o/+o (set -o name), -O/+O (shopt name), also inside a
+    // cluster such as -euo, and --rcfile/--init-file. The value is not a script file.
+    if ((a === '--rcfile' || a === '--init-file') && i + 1 < args.length) {
+      i += 1
+      continue
+    }
+    if (a.startsWith('--')) continue
+    if ((a.startsWith('-') || a.startsWith('+')) && a.length > 1) {
+      if (a.startsWith('-') && /^-[^-]*c/.test(a)) hasC = true
+      if (a.startsWith('-') && /^-[^-]*s/.test(a)) hasS = true
+      if (/^[-+][^-+]*[oO]/.test(a) && i + 1 < args.length) i += 1
+    } else if (a !== '' && a !== '-') {
+      file = true
+    }
+  }
+  return hasS || (!hasC && !file)
+}
+
+// The matches of one command's words, appended to out: at most one per class, in reading order. A
+// shell or eval is matched by the script it runs, one level deeper, and a shell that takes its
+// script from a heredoc is matched the same way by each heredoc body it started. A heredoc to any
+// other command stays text. When wanted is given, only that class is appended.
+function collectWords(words, depth, wanted, sequence, out) {
   const unwrapped = dropWrappers(words)
   // A command run by its path, such as /usr/bin/git, is matched by its name.
   const named = unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
   followSegment(named, sequence)
+  const started = Array.isArray(words.heredocs) ? words.heredocs : []
+  if (started.length > 0 && SHELLS.has(named[0]) && shellReadsStdin(named.slice(1)) && depth < MAX_NESTING) {
+    for (const body of started) collectCommand(body.text, depth + 1, wanted, sequence, out)
+  }
   const command = dropGitOptions(named)
   const script = scriptOf(command)
-  if (script !== null) return depth < MAX_NESTING ? matchCommand(script, depth + 1, wanted, sequence) : null
+  if (script !== null) {
+    if (depth < MAX_NESTING) collectCommand(script, depth + 1, wanted, sequence, out)
+    return
+  }
   const git = gitCall(named)
   const mergesToMain = git !== null && landsOnMain(git, sequence)
   const found = mergesToMain ? { cls: 'merge-main', head: ['git', 'merge'] } : subcommandOf(command)
-  return found !== null && (wanted === null || found.cls === wanted) ? found : null
+  if (found !== null && (wanted === null || found.cls === wanted) && !out.some((f) => f.cls === found.cls)) out.push(found)
+}
+
+// The matches among a command's segments, appended to out in reading order.
+function collectCommand(command, depth, wanted, sequence, out) {
+  if (typeof command !== 'string') return
+  for (const words of segmentsOf(command)) collectWords(words, depth, wanted, sequence, out)
 }
 
 // The first match among a command's segments, or the first of class wanted when it is given.
 function matchCommand(command, depth, wanted = null, sequence = sequenceOf()) {
-  if (typeof command !== 'string') return null
-  for (const words of segmentsOf(command)) {
-    const found = matchWords(words, depth, wanted, sequence)
-    if (found !== null) return found
-  }
-  return null
+  const out = []
+  collectCommand(command, depth, wanted, sequence, out)
+  return out.length === 0 ? null : out[0]
 }
 
-// Reads the delimiter of a heredoc whose "<<" ends just before start, and queues it. Its quotes come off,
-// a "-" before it means the body's leading tabs are ignored, and a quoted delimiter (a quote or a backslash
-// in it) keeps the body from expanding. Returns the index of the last character read.
-function readHeredoc(command, start, heredocs) {
+// Reads the delimiter of a heredoc whose "<<" ends just before start, and queues it with the words
+// that started it, so the body can later be attached to that segment. Its quotes come off, a "-"
+// before it means the body's leading tabs are ignored, and a quoted delimiter (a quote or a
+// backslash in it) keeps the body from expanding. Returns the index of the last character read.
+function readHeredoc(command, start, heredocs, owner) {
   let i = start
   const strip = command[i] === '-'
   if (strip) i++
@@ -404,7 +445,7 @@ function readHeredoc(command, start, heredocs) {
     }
   }
   if (word === '') return start - 1
-  heredocs.push({ word, strip, quoted })
+  heredocs.push({ word, strip, quoted, owner })
   return i - 1
 }
 
@@ -578,7 +619,9 @@ function heredocSegments(body, depth) {
 // backquote still runs: its segments, read one level deeper, sit where it appears, an arithmetic
 // expansion runs nothing, and a "\$" or "\`" is literal. Single quotes are text throughout. A heredoc
 // body is text, from the line after the command line that starts it up to its delimiter, except the
-// substitutions and backquotes that a body with an unquoted delimiter expands.
+// substitutions and backquotes that a body with an unquoted delimiter expands. Each body is also
+// attached to the words that started it, as their "heredocs" property, so the matcher can read a
+// shell's script from it.
 function segmentsOf(command, depth = 0) {
   const segments = []
   let words = []
@@ -654,14 +697,24 @@ function segmentsOf(command, depth = 0) {
     } else if (ch === '\n') {
       endSegment()
       if (heredocs.length > 0) {
-        const bodies = heredocBodies(command, i + 1, heredocs.splice(0))
+        const queued = heredocs.splice(0)
+        const bodies = heredocBodies(command, i + 1, queued)
         i = bodies.end
-        for (const body of bodies.bodies) {
+        bodies.bodies.forEach((body, index) => {
+          // Each body reaches the segment that started it, so the matcher can read a shell's
+          // script from its heredoc; every other heredoc stays text but for its expansions.
+          const owner = queued[index].owner
+          if (owner !== null && owner !== undefined && segments.includes(owner)) {
+            if (owner.heredocs === undefined) owner.heredocs = []
+            owner.heredocs.push(body)
+          }
           if (!body.quoted && depth < MAX_NESTING) segments.push(...heredocSegments(body.text, depth))
-        }
+        })
       }
     } else if (ch === ';' || ch === '(' || ch === ')' || ch === '`') {
       endSegment()
+    } else if (ch === '&' && i > 0 && '<>'.includes(command[i - 1])) {
+      word = (word ?? '') + ch
     } else if (ch === '|' || ch === '&') {
       // A doubled operator, || && or |&, is one separator.
       endSegment()
@@ -675,7 +728,7 @@ function segmentsOf(command, depth = 0) {
       i += 2
     } else if (ch === '<' && next === '<') {
       endWord()
-      i = readHeredoc(command, i + 2, heredocs)
+      i = readHeredoc(command, i + 2, heredocs, words)
     } else {
       word = (word ?? '') + ch
     }
@@ -684,13 +737,20 @@ function segmentsOf(command, depth = 0) {
   return segments
 }
 
-// The irreversible class of a Bash command: push, merge-main, publish, deploy, delete, credentials or
-// paid-call (other paid calls are not detected),
-// or null. The first segment that matches decides. A git merge needs cwd, the directory the command runs in,
-// to know its branch: without it, only a checkout or switch to main earlier in the line makes it merge-main.
+// The distinct irreversible classes of a Bash command, in order of appearance: 'merge-main', 'push',
+// 'publish', 'deploy', 'delete' and 'credentials' (the guard does not detect paid calls). Every
+// segment counts, including sequences, pipes, subshells, substitutions and nested scripts, in the
+// order they run. A git merge needs cwd, the directory the command runs in, to know its branch:
+// without it, only a checkout or switch to main earlier in the line makes it merge-main.
+function irreversibleClasses(command, cwd) {
+  const out = []
+  collectCommand(command, 0, null, sequenceOf(cwd), out)
+  return out.map((found) => found.cls)
+}
+
+// The irreversible class of a Bash command, or null. The first class of the line decides.
 function irreversibleClass(command, cwd) {
-  const found = matchCommand(command, 0, null, sequenceOf(cwd))
-  return found === null ? null : found.cls
+  return irreversibleClasses(command, cwd)[0] ?? null
 }
 
 // The secret values that the owner's list must not keep: a NAME=value word whose name holds one of these,
@@ -718,34 +778,184 @@ function redactCommand(command, cls) {
   return cls === 'credentials' ? '[redacted]' : redactValues(command)
 }
 
-// A Bash call: null to allow, or { reason } to deny. Any error allows the command. The guard runs on
-// every Bash call, so the modules that read git and the grants load only for an irreversible command.
+// These checks are a tripwire, not a shell interpreter. They cannot see names built at runtime,
+// relative names after cd, names assembled across commands, unlisted programs deleting directories,
+// whole-tree commands without operands, or functions and aliases retained by a shell.
+const READ_COMMANDS = new Set('echo printf cat more head tail grep egrep fgrep ls stat wc diff cmp jq test ['.split(' '))
+const WRITE_COMMANDS = new Set('rm rmdir unlink mv cp rsync install ln chmod chown chgrp truncate shred dd tar unzip patch'.split(' '))
+
+function lineShape(command) {
+  let plain = true
+  let quote = null
+  let word = ''
+  let active = false
+  let words = []
+  const commands = []
+  const endWord = () => { if (active) words.push(word); word = ''; active = false }
+  const endCommand = () => { endWord(); if (words.length) commands.push(words); words = [] }
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i], next = command[i + 1]
+    if (ch === '\\' && quote !== "'") { active = true; if (next !== undefined) word += command[++i]; continue }
+    if (quote) {
+      if (ch === quote) { quote = null; continue }
+      if (';&<>'.includes(ch) || (quote !== "'" && (ch === '`' || (ch === '$' && next === '(')))) plain = false
+      word += ch; active = true; continue
+    }
+    if (ch === "'" || ch === '"') { quote = ch; active = true; continue }
+    if (ch === '`' || (ch === '$' && next === '(') || ch === ';' || ch === '&' || ch === '>' || (ch === '<' && next === '(')) plain = false
+    if (ch === '\n') { if (command.slice(i + 1).trim()) plain = false; endCommand(); continue }
+    if (ch === '|' && next === '|') { plain = false; endCommand(); i++; continue }
+    if (ch === '|') { endCommand(); if (next === '&') i++; continue }
+    if (/\s/.test(ch)) { endWord(); continue }
+    word += ch; active = true
+  }
+  if (quote) plain = false
+  endCommand()
+  return { plain, commands }
+}
+
+function normalizeMention(word) {
+  return word.replace(/\/+/g, '/').replace(/(^|\/)\.\//g, '$1').replace(/(?:\/\.?|\/\*)+$/, '')
+}
+
+function directoryMention(word) {
+  const w = normalizeMention(word)
+  return /(?:^|\/)\.aether(?:\/autonomy)?$/.test(w) || w === 'autonomy' || w.includes('.aether/autonomy/') || /^auto-\d{8}-\d{6}-[a-z0-9]{4}$/.test(w) || /(?:=|-[^-]*t)\.aether\/autonomy$/.test(w)
+}
+
+// The paths a wildcard word must not reach: the directory, the registry and a run state.
+const PATTERN_TARGETS = ['.aether/autonomy', '.aether/autonomy/grants.json', '.aether/autonomy/auto-20261009-200000-ab12/run.json']
+
+// A glob component as a regular expression: * and ** (any run), ? (one character), [...] with ranges and ! or ^
+// negation, everything else literal. It does not expand classes, so its cost does not grow with their number.
+function globPart(part) {
+  let re = ''
+  for (let i = 0; i < part.length; i++) {
+    const c = part[i]
+    if (c === '*') {
+      if (part[i + 1] === '*') {
+        while (part[i + 1] === '*') i++
+        re += '.*'
+      } else {
+        re += '[^/]*'
+      }
+    } else if (c === '?') {
+      re += '[^/]'
+    } else if (c === '[') {
+      const close = part.indexOf(']', i + 2)
+      if (close < 0) {
+        re += '\\['
+      } else {
+        let cls = part.slice(i + 1, close).replace(/\\/g, '\\\\')
+        if (cls[0] === '!') cls = '^' + cls.slice(1)
+        re += '[' + cls + ']'
+        i = close
+      }
+    } else {
+      re += c.replace(/[.+^${}()|\\\]]/g, '\\$&')
+    }
+  }
+  return re
+}
+
+// The word with its first {a,b} group replaced by each alternative, until none is left (at most 64 words).
+function braceAlternatives(word) {
+  const found = word.match(/\{([^{}]*,[^{}]*)\}/)
+  if (!found) return [word]
+  const out = []
+  for (const alternative of found[1].split(',')) {
+    for (const expanded of braceAlternatives(word.replace(found[0], alternative))) {
+      if (out.length < 64) out.push(expanded)
+    }
+  }
+  return out
+}
+
+// A word with a wildcard that can reach a protected path. A pattern carries its own prefix (an absolute path, ../,
+// $PWD/), so every suffix of the pattern, from each /, is tested against the paths: the end is anchored and any
+// prefix is allowed.
+function patternMention(word) {
+  const w = word.replace(/\/+/g, '/').replace(/(^|\/)\.\//g, '$1')
+  if (!/[*?[{]/.test(w) || !/(?:\.aether|autonomy)/.test(w)) return false
+  return braceAlternatives(w).some((alternative) => {
+    const parts = alternative.split('/')
+    for (let k = 0; k < parts.length; k++) {
+      const re = new RegExp('^' + parts.slice(k).map(globPart).join('/') + '$')
+      if (PATTERN_TARGETS.some((target) => re.test(target))) return true
+    }
+    return false
+  })
+}
+
+function protectedMention(command, cwd = process.cwd()) {
+  const shape = lineShape(command)
+  const single = shape.commands.length === 1 ? shape.commands[0] : []
+  const authorized = single[0] === 'aether-autonomy' || (single[0] === 'node' && single[1] && path.resolve(cwd, single[1]) === path.resolve(__dirname, '../bin/aether-autonomy'))
+  const exempt = shape.plain && (shape.commands.length > 0 && shape.commands.every((c) => READ_COMMANDS.has(c[0])) || (authorized && !command.includes('<<')))
+  const segments = []
+  const visit = (text, depth) => {
+    for (const words of segmentsOf(text)) {
+      segments.push(words)
+      if (depth >= MAX_NESTING) continue
+      const unwrapped = dropWrappers(words)
+      const named = unwrapped.length ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
+      const script = scriptOf(named)
+      if (script !== null) visit(script, depth + 1)
+      if (SHELLS.has(named[0]) && shellReadsStdin(named.slice(1))) {
+        for (const body of words.heredocs || []) visit(body.text, depth + 1)
+      }
+    }
+  }
+  visit(command, 0)
+  const words = segments.flat()
+  const name = (w) => /(^|[^A-Za-z0-9_.-])(grants\.json|run\.json)(?![A-Za-z0-9_.-])/.test(w)
+  // Output redirections also protect other files and directories beneath autonomy.
+  for (const segment of segments) {
+    for (let i = 0; i < segment.length; i++) {
+      const match = segment[i].match(/(?:^|[^<])(?:\d*|&)(?:>>|>\||>)(.*)$/)
+      if (match) {
+        const target = match[1] || segment[i + 1] || ''
+        if (name(target) || patternMention(target) || directoryMention(target)) return target
+      }
+    }
+  }
+  if (exempt) return null
+  const direct = words.find((w) => name(w) || patternMention(w))
+  if (direct) return direct
+  const writer = words.some((w) => WRITE_COMMANDS.has(nameOf(w))) || (words.some((w) => nameOf(w) === 'find') && words.some((w) => ['-delete', '-exec', '-execdir'].includes(w)))
+  return writer ? words.find(directoryMention) || null : null
+}
+
+// A Bash call: null to allow, or { reason } to deny.
 function decideBash(input, env = process.env) {
+  const command = input.tool_input?.command
+  const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
+  let mention
+  try { mention = module.exports.protectedMention(command, cwd) } catch { mention = 'the protected files' }
+  if (mention) return { reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end, quarantine) instead of editing ${mention}.` }
   try {
-    const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
-    const cls = irreversibleClass(input.tool_input?.command, cwd)
-    if (cls === null) return null
+    const classes = irreversibleClasses(command, cwd)
+    if (!classes.length) return null
     const { repoPaths } = require('./git.js')
+    let paths
+    try { paths = repoPaths(cwd) } catch { return null }
     const { check } = require('./autonomy.js')
     const { appendPending } = require('./pending.js')
     const { ensureExcluded } = require('./run.js')
-    // Outside a git repository this throws, and the command is allowed unrecorded.
-    const { mainRoot, gitCommonDir } = repoPaths(cwd)
-    if (check(mainRoot, cls, { session: input.session_id }) !== null) return null
     const mode = env.AETHER_IRREVERSIBLE === 'enforce' ? 'enforce' : 'log'
-    const entry = { time: Date.now(), session: input.session_id, class: cls, command: redactCommand(input.tool_input.command, cls), cwd: input.cwd, mode }
-    // The list holds the command, so git must ignore its directory before the first line is written.
-    ensureExcluded(gitCommonDir)
-    // A command that cannot be recorded is allowed: a refusal the owner cannot see is not kept.
-    if (!appendPending(mainRoot, entry)) return null
-    if (mode === 'log') return null
-    return {
-      reason: `Aether added this ${cls} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".`,
+    let first = null
+    for (const cls of classes) {
+      let granted = false
+      try { granted = check(paths.mainRoot, cls, { session: input.session_id }) !== null } catch { /* malformed registry fails closed */ }
+      if (granted) continue
+      const entry = { time: Date.now(), session: input.session_id, class: cls, command: redactCommand(command, cls), cwd: input.cwd, mode }
+      ensureExcluded(paths.gitCommonDir)
+      if (!appendPending(paths.mainRoot, entry)) return null
+      if (first === null) first = cls
     }
-  } catch {
-    // Outside a git repository, or a grant registry that cannot be read: the command is allowed.
-    return null
-  }
+    if (mode === 'log' || first === null) return null
+    return { reason: `Aether added this ${first} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".` }
+  } catch { return null }
 }
 
-module.exports = { decide, decideBash, irreversibleClass, redactCommand }
+module.exports = { decide, decideBash, irreversibleClass, irreversibleClasses, redactCommand, protectedMention, lineShape }

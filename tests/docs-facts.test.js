@@ -596,7 +596,7 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A105 are recorded and the changelog opens with 0.31.1, then 0.31.0, then 0.30.3, then 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
+test('R15: the decisions A50 to A105 are recorded and the changelog opens with 0.31.2, then 0.31.1, then 0.31.0, then 0.30.3, then 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
   const decisions = read('docs/decisions.md')
   const LAST_DECISION = 105
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
@@ -643,11 +643,12 @@ test('R15: the decisions A50 to A105 are recorded and the changelog opens with 0
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const allVersions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(allVersions[0].startsWith('Version 0.31.1: ') && allVersions[0].includes('issues 119') && allVersions[0].includes('150'), allVersions[0])
-  assert.ok(allVersions[1].startsWith('Version 0.31.0: ') && allVersions[1].includes('A105'), allVersions[1])
-  assert.ok(allVersions[2].startsWith('Version 0.30.3: ') && allVersions[2].includes('automatic observation'), allVersions[2])
-  assert.ok(allVersions[3].startsWith('Version 0.30.2: ') && allVersions[3].includes('issue 145'), allVersions[3])
-  const versions = allVersions.slice(4)
+  assert.ok(allVersions[0].startsWith('Version 0.31.2: ') && allVersions[0].includes('issues 153') && allVersions[0].includes('177'), allVersions[0])
+  assert.ok(allVersions[1].startsWith('Version 0.31.1: ') && allVersions[1].includes('issues 119') && allVersions[1].includes('150'), allVersions[1])
+  assert.ok(allVersions[2].startsWith('Version 0.31.0: ') && allVersions[2].includes('A105'), allVersions[2])
+  assert.ok(allVersions[3].startsWith('Version 0.30.3: ') && allVersions[3].includes('automatic observation'), allVersions[3])
+  assert.ok(allVersions[4].startsWith('Version 0.30.2: ') && allVersions[4].includes('issue 145'), allVersions[4])
+  const versions = allVersions.slice(5)
   assert.ok(versions[0].startsWith('Version 0.30.1: ') && versions[0].includes('A104') && versions[0].includes('spec 025'), versions[0])
   assert.ok(versions[1].startsWith('Version 0.30.0: ') && versions[1].includes('A103'), versions[1])
   assert.ok(versions[2].startsWith('Version 0.29.0: ') && versions[2].includes('A102'), versions[2])
@@ -694,4 +695,54 @@ test('R21: every page that gives the default of superdelegation in the form of R
     }
   }
   assert.ok(seen > 0, 'a page repeats the default of superdelegation')
+})
+
+test('R16: no page gives aether-exam a list verb', () => {
+  const row = read('docs/reference/components.md').split('\n').find((line) => line.startsWith('| `aether-exam` |'))
+  assert.ok(row, 'components.md has the aether-exam row')
+  assert.match(row, /`store`/)
+  assert.match(row, /`run`/)
+  assert.doesNotMatch(row, /`list`/)
+  for (const file of FILES.filter((f) => f !== 'docs/changelog.md')) {
+    assert.doesNotMatch(read(file), /aether-exam list/, file)
+  }
+})
+
+test('R17: no page presents Tier or Ladder as a field of the plan, and the contributing example checks clean', (t) => {
+  for (const page of ['docs/methodology.md', 'docs/getting-started.md', 'docs/contributing.md', 'docs/purpose.md', 'docs/roadmap.md', 'docs/guide/design-seats.md', 'docs/guide/troubleshooting.md', 'docs/guide/models-by-role.md']) {
+    // Only the sentence that says a Tier line is ignored is exempt, not the whole line around it.
+    const text = read(page).replace(/[^.\n]*\bTier\b[^.\n]*(?:ignorado|ignored)[^.\n]*\./g, '')
+    assert.doesNotMatch(text, /\bTier\b/, `${page} names Tier`)
+    assert.doesNotMatch(text, /- (Tier|Ladder):/, `${page} shows a Tier or Ladder line`)
+  }
+  const contributing = read('docs/contributing.md')
+  const example = contributing.match(/```\n(# Tasks:[\s\S]*?)```/)
+  const shown = contributing.match(/```\n(\{"ok":true[^\n]*)\n```/)
+  assert.ok(example && shown, 'the page has the example and its output')
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-contrib-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  fs.writeFileSync(path.join(dir, 'tasks.md'), example[1])
+  const r = require('node:child_process').spawnSync(process.execPath, [path.join(PLUGIN, 'bin', 'aether-plan'), 'check', path.join(dir, 'tasks.md')], { encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout.trim(), shown[1])
+  assert.match(shown[1], /"warnings":\[\]\}$/)
+})
+
+test('R18: contributing.md tells apart npm test and npm run test:mod, and states the 0.x policy', () => {
+  const text = read('docs/contributing.md')
+  assert.match(text, /`npm test` runs the bins, the libraries, the workflow scenarios and the documentation facts; it does not run the mod\./)
+  assert.match(text, /`npm run test:mod` runs `claude plugin test plugins\/aether`: the mod, with the usage meter, ops and delegation, on the test engine with a simulated model\./)
+  assert.match(text, /While the major version is 0, a minor version \(`0\.Y\.0`\) may break compatibility, and the changelog says so explicitly\./)
+})
+
+test('R22: the Lead rules load and use EnterPlanMode and ExitPlanMode in an interactive session, never in claude -p, a subagent or an autonomous run', () => {
+  const skill = read('plugins/aether/skills/using-aether/SKILL.md')
+  const plans = skill.slice(skill.indexOf('## Plans'), skill.indexOf('## The execution method'))
+  for (const word of ['ToolSearch', 'EnterPlanMode', 'ExitPlanMode', 'claude -p', 'subagent', 'autonomous run']) {
+    assert.ok(plans.includes(word), `the Plans section names ${word}`)
+  }
+  assert.match(read('docs/guide/autonomy.md'), /plan mode/i)
+  assert.match(read('docs/es/guias/feature-completa.md'), /modo plan/i)
+  const versions = read('docs/changelog.md').split(/\n(?=Version \d+\.\d+\.\d+: )/).filter((section) => /^Version \d/.test(section))
+  assert.ok(/plan mode/i.test(versions[0]), 'the changelog says it in the release that ships it')
 })

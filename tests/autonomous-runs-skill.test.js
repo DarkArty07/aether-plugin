@@ -36,3 +36,12 @@ test('the swarm skill reads the lanes counts without dry groups', () => {
   assert.ok(!swarm.includes('overflow'))
   assert.ok(!/each wave's `dry` groups/.test(swarm))
 })
+
+test('an unreadable run state is set aside with aether-autonomy quarantine, not with Bash (R26)', () => {
+  const line = SKILL.split('\n').find((l) => l.startsWith('**An unreadable run state.**'))
+  assert.ok(line)
+  assert.match(line, /aether-autonomy quarantine grants/)
+  assert.match(line, /aether-autonomy quarantine run <id>/)
+  assert.doesNotMatch(line, /Move it aside with Bash/)
+  assert.match(line, /Do not treat it as a reason to stop\./)
+})

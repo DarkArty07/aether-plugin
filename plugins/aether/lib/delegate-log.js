@@ -1,12 +1,16 @@
 'use strict'
 
 // The delegate log (R16): <dataDir>/delegates/log.jsonl, one JSON entry per line,
-// append-only across sessions. Text values longer than MAX_TEXT are trimmed.
+// written under a lock across sessions; delegate-prune.js prunes it after 30 days of session inactivity, once the
+// outcomes are archived in spend/<id>.outcomes.jsonl. Text values longer than MAX_TEXT are trimmed.
 // Family: delegate.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const run = require('./run.js')
+const { withLock } = require('./common.js')
+
+const LOCK_OPTIONS = { waitMs: 10000, staleMs: 60000 }
 
 const MAX_TEXT = 4000
 
@@ -38,9 +42,10 @@ function sanitizeValue(value) {
 function appendEntry(dataDir, entry) {
   try {
     const file = logFile(dataDir)
-    fs.mkdirSync(path.dirname(file), { recursive: true })
     const sanitized = sanitizeValue(entry)
-    fs.appendFileSync(file, JSON.stringify(sanitized) + '\n')
+    withLock(path.join(dataDir, 'delegates', '.log'), () => {
+      fs.appendFileSync(file, JSON.stringify(sanitized) + '\n')
+    }, LOCK_OPTIONS)
     return true
   } catch {
     return false

@@ -779,14 +779,169 @@ test('a session grant for another session does not cover this one', (t) => {
   assert.deepEqual(readPending(repo.dir).map((e) => [e.session, e.mode]), [['s1', 'log']])
 })
 
-test('a grant registry that cannot be read allows the command and records nothing', (t) => {
+test('a chain needs a grant for every irreversible class it holds, heredocs included (R1, R2)', (t) => {
+  const repo = makeRepo(t)
+  const configDir = tempDir(t, 'aether-claude-')
+  ownerTranscript(configDir, 's1', PUSH_QUOTE)
+  assert.equal(autonomy.grant(repo.dir, { class: 'push', quote: PUSH_QUOTE, session: 's1' }, { configDir }).ok, true)
+
+  const alone = guardBash(t, 'git push origin main', { cwd: repo.dir, mode: 'enforce', configDir })
+  assert.equal(alone.stdout, '')
+  assert.equal(fs.existsSync(pendingFile(repo.dir)), false)
+
+  const chained = guardBash(t, 'git push origin main && npm publish', { cwd: repo.dir, mode: 'enforce', configDir })
+  assert.equal(JSON.parse(chained.stdout).hookSpecificOutput.permissionDecisionReason, REASON('publish'))
+  const heredoc = guardBash(t, "bash <<'EOF'\nnpm publish\nEOF", { cwd: repo.dir, mode: 'enforce', configDir })
+  assert.equal(JSON.parse(heredoc.stdout).hookSpecificOutput.permissionDecision, 'deny')
+  assert.deepEqual(readPending(repo.dir).map((e) => e.class), ['publish', 'publish'])
+})
+
+test('with no grant at all, each class of a chain is recorded and the command is allowed in log mode (R1)', (t) => {
+  const repo = makeRepo(t)
+  const r = guardBash(t, 'git push origin main && npm publish', { cwd: repo.dir })
+  assert.equal(r.stdout, '')
+  assert.deepEqual(readPending(repo.dir).map((e) => [e.class, e.mode]), [['push', 'log'], ['publish', 'log']])
+})
+
+test('Bash cannot name the autonomy registry or a run state unless it only reads them (R3)', (t) => {
+  const repo = makeRepo(t)
+  const AUTONOMY_BIN = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-autonomy')
+  const id = 'auto-20261009-200000-ab12'
+  const run = `.aether/autonomy/${id}/run.json`
+  for (const command of [
+    'echo "{}" > .aether/autonomy/grants.json',
+    'cat extra >> .aether/autonomy/grants.json',
+    'tee .aether/autonomy/grants.json </dev/null',
+    'cp /tmp/fake.json .aether/autonomy/grants.json',
+    'mv .aether/autonomy/grants.json /tmp/saved.json',
+    `mv /tmp/fake.json ${run}`,
+    'rm -f .aether/autonomy/grants.json',
+    `sed -i 's/a/b/' ${run}`,
+    `truncate -s 0 ${path.join(repo.dir, '.aether/autonomy/grants.json')}`,
+    '> .aether/autonomy/grants.json',
+    "bash <<'EOF'\ncat > .aether/autonomy/grants.json\nEOF",
+    'bash -c "echo {} > .aether/autonomy/grants.json"',
+    "bash 3</dev/null <<'EOF'\necho x > .aether/autonomy/grants.json\nEOF",
+    "bash 0<&0 <<'EOF'\necho x > .aether/autonomy/grants.json\nEOF",
+    "cd .aether/autonomy && echo '{}' > grants.json",
+    "cd .aether/autonomy && (cd /tmp); echo '{}' > grants.json",
+    "cd .aether/autonomy || cd /tmp; echo '{}' > grants.json",
+    "printf '{}' | tee .aether/autonomy/grants.?son",
+    'tee .aether/autonomy/gran[t]s.json < /dev/null',
+    'tee .aether/autonomy/*/run.json < /dev/null',
+    'rm .aether/autonomy/{grants,x}.json',
+    "F=grants.json; echo '{}' > .aether/autonomy/$F",
+    `python3 -c "open('.aether/autonomy/grants.json','w').write('{}')"`,
+    `node -e "require('fs').writeFileSync('.aether/autonomy/grants.json','{}')"`,
+    'rm -rf .aether',
+    'rm -rf .aether/autonomy',
+    'rm -rf .aether/auto*',
+    'rm -rf .aether/autonomy/*',
+    'mv .aether /tmp/saved-aether',
+    'chmod -R 777 .aether',
+    'cp -r /tmp/autonomy .aether/',
+    'cp -ft.aether/autonomy /tmp/fake.json',
+    'cp --target-directory=.aether/autonomy /tmp/fake.json',
+    'cd .aether && rm -r autonomy',
+    `printf '{}' | tee ${path.join(repo.dir, '.aether/autonomy/grants.?son')}`,
+    'tee ../.aether/autonomy/gran[t]s.json < /dev/null',
+    'tee .aether/autonomy/gran[a-z]s.json < /dev/null',
+    'tee $PWD/.aether/autonomy/*.json < /dev/null',
+    'tee .aether/autonomy/gran[!x]s.json < /dev/null',
+    'tee .aether/autonomy/auto-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]/run.json < /dev/null',
+    "bash -euo pipefail <<'EOF'\necho {} > .aether/autonomy/grants.json\nEOF",
+    `rm -rf .aether/autonomy/${id}`,
+    `mv .aether/autonomy/${id} .aether/broken-runs/`,
+    `mv .aether/autonomy/${id} /tmp/x`,
+    `env -C . mv .aether/autonomy/${id} /tmp/x`,
+    `sudo -D . mv .aether/autonomy/${id} /tmp/x`,
+    `cd plugins && mv ../.aether/autonomy/${id} /tmp/x`,
+    `cd .aether/autonomy && mv ${id} /tmp/x`,
+    'mv .aether/autonomy/grants.json .aether/broken-runs/',
+    `echo note >> .aether/autonomy/${id}/diary.md`,
+    'echo x > .aether/autonomy/grants.json.bak',
+    'git commit -m "document grants.json"',
+    'gh issue create --body "grants.json and run.json"',
+    'ls -d .aether/autonomy/* > /tmp/l; xargs rm -rf < /tmp/l',
+    'ls -d .aether/autonomy/* | xargs rm -rf',
+    'echo .aether | xargs rm -rf',
+    '/bin/rm -rf .aether',
+    'rm -rf .aether//autonomy',
+    'rm -rf .aether/./autonomy',
+    'rm -rf .aether//',
+    `/usr/bin/mv .aether/autonomy/${id} /tmp/x`,
+    'grep "a;b" .aether/autonomy/grants.json',
+    'cp a b; ls .aether',
+    "grep 'a;b' .aether/autonomy/grants.json",
+    "echo 'a; b' grants.json",
+    'grep "x .aether/autonomy/grants.json',
+    'bash -c "rm -rf .aether"',
+    'cp a b; ls autonomy',
+    `node -e "require('fs').rmSync('.aether/autonomy/grants.json')" ${AUTONOMY_BIN}`,
+    `node -e "require('fs').rmSync('.aether/autonomy/grants.json')" x/aether-autonomy`,
+    './aether-autonomy grant --quote "grants.json"',
+    `FOO=1 node ${AUTONOMY_BIN} grant --quote "grants.json"`,
+    `node ${AUTONOMY_BIN} grant --quote "grants.json"; ls`,
+    'ls .aether/autonomy; rm x',
+    'cat .aether/autonomy/grants.json && rm x',
+    'cat .aether/autonomy/grants.json $(rm x)',
+    "echo 'rm .aether/autonomy/grants.json' > /tmp/x.sh; sh /tmp/x.sh",
+    'echo "rm -f .aether/autonomy/grants.json" | sh',
+    'rm "$(echo .aether/autonomy/grants.json)"',
+    'rg --pre rm x .aether/autonomy/grants.json',
+    "sed -n 'w .aether/autonomy/grants.json' x",
+    'cat .aether/autonomy/grants.json > /tmp/copy',
+  ]) {
+    const r = guardBash(t, command, { cwd: repo.dir })
+    const out = JSON.parse(r.stdout)
+    assert.equal(out.hookSpecificOutput.permissionDecision, 'deny', command)
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /written only by aether-autonomy/, command)
+  }
+  for (const command of [
+    'cat .aether/autonomy/grants.json',
+    'grep push .aether/autonomy/grants.json',
+    'ls .aether/autonomy',
+    'echo grants.json',
+    'cat .aether/autonomy/grants.json | jq .',
+    'ls /tmp/*.json',
+    'tee .aether/autonomy/gran[x-z]s.json < /dev/null',
+    'cat .aether/autonomy/grants.json |& jq .',
+    `node ${AUTONOMY_BIN} grant --class push --quote "no toques grants.json"`,
+    `node ${AUTONOMY_BIN} quarantine grants`,
+    'aether-autonomy grant --class push --quote "no toques grants.json"',
+    'cat .aether/autonomy/grants.json | grep push | wc -l',
+    'mkdir -p .aether/runs/x',
+    'rm -rf .aether/worktrees/old',
+    'rm *.json',
+    'mv a.txt b.txt',
+    'cp -r src dst',
+    'jq . .aether/autonomy/grants.json',
+  ]) {
+    assert.equal(guardBash(t, command, { cwd: repo.dir }).stdout, '', command)
+  }
+  assert.equal(guardBash(t, 'echo "{}" > .aether/autonomy/grants.json', { cwd: repo.dir, marked: false }).stdout, '')
+})
+
+test('an error of the mention analysis refuses the command instead of allowing it (R3)', (t) => {
+  const guard = require('../plugins/aether/lib/guard.js')
+  const repo = makeRepo(t)
+  t.mock.method(guard, 'protectedMention', () => {
+    throw new Error('boom')
+  })
+  const res = guard.decideBash({ session_id: 's1', cwd: repo.dir, tool_input: { command: 'ls' } }, {})
+  assert.ok(res && /written only by aether-autonomy/.test(res.reason), 'a failing analysis refuses')
+})
+
+test('a grant registry that cannot be read fails closed: the command is recorded, and refused in enforce mode (R4)', (t) => {
   const repo = makeRepo(t)
   fs.mkdirSync(path.join(repo.dir, '.aether', 'autonomy'), { recursive: true })
   fs.writeFileSync(path.join(repo.dir, '.aether', 'autonomy', 'grants.json'), '{ not json')
-  const r = guardBash(t, 'git push origin main', { cwd: repo.dir, mode: 'enforce' })
-  assert.equal(r.status, 0, r.stderr)
-  assert.equal(r.stdout, '')
-  assert.equal(fs.existsSync(pendingFile(repo.dir)), false)
+  const enforced = guardBash(t, 'git push origin main', { cwd: repo.dir, mode: 'enforce' })
+  assert.equal(enforced.status, 0, enforced.stderr)
+  assert.equal(JSON.parse(enforced.stdout).hookSpecificOutput.permissionDecision, 'deny')
+  const logged = guardBash(t, 'git push origin main', { cwd: repo.dir })
+  assert.equal(logged.stdout, '')
+  assert.deepEqual(readPending(repo.dir).map((e) => [e.class, e.mode]), [['push', 'enforce'], ['push', 'log']])
 })
 
 test('the first record keeps .aether/ out of git, so the owner\'s list is not committed', (t) => {

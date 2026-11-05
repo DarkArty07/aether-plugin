@@ -15,11 +15,11 @@ This page describes how Aether turns an intent into a reviewed spec, a plan, a b
 - **The Judge** (`aether:judge`, Opus at `high`, read-only) reviews the spec, the plan and the tasks, and rules `approve`, `revise` or `reject`, with at most ten findings, each typed `missing`, `extra` or `wrong`. Sonnet writes; Opus decides.
 - **The Examiner** (`aether:examiner`, Opus at `high`) writes the hidden acceptance exam of an approved spec and plan, from the spec and the plan's public interfaces and never from `tasks.md`. The exam is kept outside the repository, so the swarm never sees it, and a failing test is a blocking finding of the brief.
 - **The swarm:** when parallel work pays off, the Lead hands the plan to `/aether:run`. In the swarm:
-  - an implementer starts on the Tier its plan task names, Haiku for work that exact tests and interfaces pin down and that touches few files, and climbs the ladder to Sonnet and Opus when its attempts fail;
+  - an implementer starts on the first rung of `config/ladder.json` (Haiku `high`) and climbs the ladder to Sonnet and Opus when its attempts fail: a correction raises the effort, and a repeated failure raises the model;
   - a supervisor on Sonnet reviews every attempt, and grades each criterion from evidence;
   - approved units merge one at a time, and only a test failure that is new undoes a merge;
   - a unit whose supervisor returns the same findings three times, or that ends twice without its report, stops, and asks for a split or a redesign;
-  - a final review, by `aether:reviewer`, on Opus, or on Sonnet for a small all-Haiku run, at `high`, and at `xhigh` only when a unit is of Tier Opus, covers the whole run;
+  - a final review, by `aether:reviewer`, on Opus, or on Sonnet for a small all-Haiku run, at `high`, and at `xhigh` only when a merged unit has `Review: xhigh` or `max`, covers the whole run;
   - the workflow's own `aether-wt` and `aether-lane` commands go to an `ops` agent on Haiku at `low`, which the mod answers without a model request while `ops` is on (`ops`, on by default; see [Ops without a model](guide/ops.md));
   - code deletes every unit worktree and branch as soon as it is no longer used.
 - **Superdelegation** runs everything that is not the Lead, in the swarm and in the design, on other coding harnesses while their quota lasts, with native Claude as the fallback: agy today, and Codex, Grok, Cursor and Muse once the owner turns each one on. `superdelegation`, off by default; the [Lanes](guide/lanes.md#lanes) guide has the rule.
@@ -41,7 +41,7 @@ The owner sits above all of them: they confirm the Lead's understanding of what 
 **The three paths.** The Lead takes one of three paths for each piece of work. A delegate task starts on Haiku and climbs a ladder of models that the system holds, not the Lead (the [Delegates](guide/delegates.md) guide has it):
 - **Direct:** a very bounded change, about five tool calls and no edit-test-fix loop. The Lead does it inline, on the model it runs on.
 - **Delegate task:** bounded work that is still a real task, such as an edit-test-fix loop, a cleanup, a research sweep, or each task of a plan of one or two tasks. One subagent in the background, with a self-contained brief, that starts on Haiku. The system holds its step; the Lead judges the result and cannot skip a step. It is never inherited from the session.
-- **Swarm:** long, costly or complex work: an approved plan of three or more tasks, or with a task of Tier opus. `/aether:run`, with each task on its Tier.
+- **Swarm:** long, costly or complex work: an approved plan of three or more tasks. `/aether:run`, with each unit starting on the first rung of `config/ladder.json`.
 
 ```text
 owner ── states the intent, may give permission to work for hours, answers one list, reviews the brief
@@ -52,7 +52,7 @@ Lead (main session, starts on Sonnet, xhigh): the intent, the card, the route an
 /aether:design (dynamic workflow, no Lead turn): approved, clarify, dispute or failed
   │  Writer (aether:writer, Sonnet, high) ⇄ Judge (aether:judge, Opus, high, read-only)
   │  each seat native, or, with superdelegation on, on a model of another harness (aether-lane seat-start, seat-wait)
-  │  spec.md, then plan.md and tasks.md, with Aether fields: tier and effort, area, owned files, dependencies, Serves
+  │  spec.md, then plan.md and tasks.md, with Aether fields: area, owned files, dependencies, Serves, and an optional Review
   │  aether-plan check / compile (and the run's test baseline)
   │  Examiner (aether:examiner, Opus, high): the hidden exam, kept outside the repository (aether-exam store)
   ▼
@@ -71,7 +71,7 @@ aether-report: speed, cost (OpenRouter prices), quality, calls by harness, and t
 aether-report finalize: a record in runs.jsonl, and the run's directory deleted
 ```
 
-The diagram shows the swarm path. The Judge reviews the spec before the plan is written, and again the plan and the tasks the Writer produces, all inside `/aether:design`; a delegate task replaces the `/aether:run` box when the plan has one or two tasks, none of them of Tier opus.
+The diagram shows the swarm path. The Judge reviews the spec before the plan is written, and again the plan and the tasks the Writer produces, all inside `/aether:design`; a delegate task replaces the `/aether:run` box when the plan has one or two tasks.
 
 Specs, plans and tasks follow the layout of [GitHub Spec Kit](https://github.com/github/spec-kit), `specs/NNN-<topic>/`, through an Aether preset shipped in the plugin. Spec Kit's own CLI is not required, and neither is superpowers. Plain `claude` stays normal mode, unless a repository makes `aether:lead` its default agent (see [Start](getting-started.md#start)). Aether Plugin is the successor to [Aether Agents](https://github.com/DarkArty07/Aether-Agents): the same method, rebuilt on a harness made for software.
 
@@ -120,7 +120,7 @@ The design needs the Workflow tool: with workflows off, the Lead tells the owner
 The Lead chooses every model on purpose, for quality, cost and speed together, from a models index. The [Models by role](guide/models-by-role.md) guide lists the model and the effort of each role, what each costs and why each is set as it is.
 
 - **The index.** `plugins/aether/config/models/models.json` lists each model Aether uses, native and on the lanes: its harness, the id or alias to pass, the efforts its harness takes, its scores at those efforts, its price and its profile. Its `excluded` list says which models are left out, and why. Three rules govern it: only the newest generation of each line is used (Sonnet 5.5, not Sonnet 5); only a model its harness's own CLI lists is used; and each model in use has a profile written from its maker's pages, so a model's purpose, tier or price is never inferred from its name.
-- **The task's model, in a plan.** Each plan task carries a Tier (`haiku`, `sonnet` or `opus`) and an effort, with the reason, and an optional Review that raises its supervisor's effort from `high`. The effort defaults to `high`, and is raised to `xhigh` only where the tests cannot pin the behavior down and a mistake would cost more than the extra effort. The swarm runs a unit on its Tier and climbs a ladder when an attempt fails: by default Haiku 2 attempts, Sonnet 2, Opus 1, then blocked. The first attempt runs at the task's effort; a retry on the task's own Tier runs at `xhigh` on Haiku and at the task's effort on Sonnet and Opus (or at `max` when the task asked for `max`), and every attempt on a model the unit moved up to runs at `high`.
+- **The unit's model, held by the system.** The plan names no model: the swarm starts every unit on the first rung of `config/ladder.json` (Haiku `high`). A correction raises the effort, and a repeated failure raises the model. `Review` (`high`, `xhigh` or `max`) sets the effort of the supervisor and of the final review. A `Tier` line left in an old plan is ignored, and so is a `Ladder` line: neither chooses a model. What the ladder does instead is fixed. The effort defaults to `high`; a correction runs at `xhigh` on Haiku and at `high` on Sonnet and Opus, and every attempt on a model the unit moved up to runs at `high`.
 - **A delegate task's model.** The system holds it, not the Lead. A delegate task starts on Haiku; a correction goes to the same model with its own work and concrete findings; it rises to Sonnet and then Opus only when the corrections of its step are spent, the same findings come back, or the Lead declares it infeasible for that model and writes the reason. The Lead does not name its model, it is never inherited from the session, and a fork, which ignores `model`, is never used. The [Delegates](guide/delegates.md) guide has the ladder.
 
   | Model | Price in USD per million tokens, input / output | Speed | Use it for |
@@ -132,6 +132,6 @@ The Lead chooses every model on purpose, for quality, cost and speed together, f
 
   Efforts: Haiku `medium` for listings and lookups, `high` for mechanical edits; Sonnet and Opus `high`, with `xhigh` only where a mistake would cost more than the extra effort. `max` only with a reason the task needs it.
 - **Climbing.** The swarm climbs its own ladder, above. A delegate task climbs the ladder of [Delegates](guide/delegates.md), held by the system: Haiku 5 corrections, Sonnet 2, Opus 1 (`config/ladder.json`), and each rise carries the work done and the findings. In Sonnet and Opus a correction and a rise run at `high`. After Opus, the Lead defers the task.
-- **Aether's own agents** keep the model and effort of their definition: the Lead passes neither when it starts `aether:judge`, `aether:writer`, `aether:examiner` or `aether:reviewer`. The swarm's agents take their task's Tier and Review from the workflow.
+- **Aether's own agents** keep the model and effort of their definition: the Lead passes neither when it starts `aether:judge`, `aether:writer`, `aether:examiner` or `aether:reviewer`. The swarm's agents take their task's Review from the workflow.
 - **Superdelegation.** It spends other plans' quota. A call asks for the points of its native reference pair, and any external pair that reaches them is a candidate; the quota whose weekly window renews first goes first, then the lower cost per task, never speed. A call runs native only when no candidate is left. The [Lanes](guide/lanes.md#lanes) guide has the rule: the order, the reserve and the fallbacks.
 - **Design seats.** A seat is a call like the others, with the reference pair of its native agent (Opus `high` for the Judge and the Examiner, Sonnet `high` for the Writer), under the same rule, and the model that wrote a document never reviews it. With `superdelegation` off every seat is the native agent. The [Design seats](guide/design-seats.md#design-seats) guide says how a round is taken, and the full table of options and their defaults is in [Options](guide/options.md#options).

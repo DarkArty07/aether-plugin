@@ -799,7 +799,8 @@ function aetherVersion() {
   return run.readJson(path.join(__dirname, '..', '.claude-plugin', 'plugin.json')).version
 }
 
-// Records the run in runs.jsonl, then removes its worktrees, branches and run directory.
+// Records the run in runs.jsonl, then removes its worktrees, the branches whose work is integrated and, when nothing is
+// waiting (no retained branch, no patch of a task not integrated), its run directory.
 function finalize(cwd, runId, options = {}) {
   const { now = Date.now(), dataDir = run.dataDir() } = options
   const r = report(cwd, runId, { ...options, dataDir })

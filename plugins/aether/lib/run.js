@@ -101,8 +101,20 @@ function installDirs(dataDir) {
 }
 
 function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n')
+  const dir = path.dirname(file)
+  fs.mkdirSync(dir, { recursive: true })
+  const temporary = path.join(dir, `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`)
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n')
+    fs.renameSync(temporary, file)
+  } catch (err) {
+    try {
+      fs.unlinkSync(temporary)
+    } catch {
+      // The temporary file may not exist; the target is left intact either way.
+    }
+    throw err
+  }
 }
 
 // The units every launch of a run has selected, by task id. A relaunch rewrites graph.json with the

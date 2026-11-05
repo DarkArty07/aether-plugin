@@ -51,9 +51,14 @@ test('the guide gives the three causes of a rise, the verdicts, the checks that 
   }
 })
 
-test('the guide says where the log is, what a delegate shows as, and what the report counts', () => {
-  for (const needed of ['delegates/log.jsonl', 'append-only', 'agent', 'worktree', 'unit worktree', 'aether-wt merge', 'relaunch', 'attempts']) {
+test('the guide says where the log is, how it is pruned after 30 days, what a delegate shows as, and what the report counts (R12)', () => {
+  for (const needed of ['delegates/log.jsonl', 'spend/<id>.outcomes.jsonl', '30 days', 'agent', 'worktree', 'unit worktree', 'aether-wt merge', 'relaunch', 'attempts']) {
     assert.ok(page.includes(needed), needed)
+  }
+  const maintenance = read('docs', 'guide', 'maintenance.md')
+  assert.ok(maintenance.includes('spend/<id>.outcomes.jsonl'))
+  for (const text of [page, maintenance, read('plugins', 'aether', 'lib', 'delegate-log.js')]) {
+    assert.doesNotMatch(text, /none of it is pruned|append-only/i)
   }
 })
 

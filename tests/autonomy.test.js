@@ -3,8 +3,9 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const crypto = require('node:crypto')
 const path = require('node:path')
-const { tempDir, PLUGIN } = require('./helpers.js')
+const { tempDir, makeRepo, PLUGIN } = require('./helpers.js')
 const autonomy = require('../plugins/aether/lib/autonomy.js')
 
 const SESSION = 'sess-owner-1'
@@ -361,4 +362,190 @@ test('a run.json that cannot be read is an error', (t) => {
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'run.json'), 'nope')
   assert.throws(() => autonomy.openRun(mainRoot), /cannot read .*run\.json/)
+})
+
+test('a quote taken from a negated clause is refused, and sin, a plain repeat and a negated revocation are not (R5)', (t) => {
+  const NEGATED = 'Por ahora no hagas push a origin ni publiques nada.'
+  const SIN = 'Haz push sin preguntarme cuando terminen las pruebas.'
+  const NIGHT = 'Trabaja toda la noche sin parar hasta cerrar la lista.'
+  const EN = "Please don't run all night on this branch, never push anything."
+  const lines = [NEGATED, SIN, NIGHT, EN, 'ya no fusiones a main sin preguntarme', HOURS].map((text, i) => human(text, `2026-10-09T19:0${i}:00.000Z`))
+  const { configDir, mainRoot } = setup(t, { [SESSION]: lines })
+  const denied = { ok: false, reason: "the quote is in a negated clause of the owner's message" }
+
+  for (const quote of ['hagas push a origin ni publiques nada', 'publiques nada', 'push a origin', 'run all night on this branch', 'push anything']) {
+    assert.deepEqual(autonomy.verifyQuote(SESSION, quote, { configDir }), denied, quote)
+    assert.equal(autonomy.verifyQuote(SESSION, quote, { configDir, allowNegation: true }).ok, true, quote)
+  }
+  assert.deepEqual(autonomy.grant(mainRoot, { class: 'push', quote: 'hagas push a origin ni publiques nada', session: SESSION }, { configDir, now: T0 }), denied)
+  assert.equal(fs.existsSync(grantsFile(mainRoot)), false, 'a refused grant writes nothing')
+  assert.deepEqual(autonomy.start(mainRoot, { quote: 'run all night on this branch', session: SESSION }, { configDir, now: T0 }), denied)
+  assert.equal(autonomy.openRun(mainRoot), null)
+
+  for (const quote of ['Haz push sin preguntarme', 'Trabaja toda la noche sin parar', HOURS]) {
+    assert.equal(autonomy.verifyQuote(SESSION, quote, { configDir }).ok, true, quote)
+  }
+  assert.equal(autonomy.grant(mainRoot, { class: 'push', quote: 'Haz push sin preguntarme', session: SESSION }, { configDir, now: T0 }).ok, true)
+  assert.equal(autonomy.start(mainRoot, { quote: 'Trabaja toda la noche sin parar', session: SESSION }, { configDir, now: T0 }).ok, true)
+  assert.equal(autonomy.revoke(mainRoot, { class: 'merge-main', quote: 'ya no fusiones a main sin preguntarme', session: SESSION }, { configDir, now: T0 }).ok, true)
+})
+
+test('a quote that is negated in one message and plain in another is accepted (R5)', (t) => {
+  const { configDir } = setup(t, {
+    [SESSION]: [human('No hagas push a origin todavia.', '2026-10-09T19:00:00.000Z'), human('Ahora sí, puedes hacer push a origin cuando quieras.', '2026-10-09T19:05:00.000Z')],
+  })
+  assert.equal(autonomy.verifyQuote(SESSION, 'push a origin', { configDir }).ok, true)
+})
+
+test('an accented más does not end a clause, so the prohibition stays refused (R5)', (t) => {
+  const denied = { ok: false, reason: "the quote is in a negated clause of the owner's message" }
+  for (const text of ['No hagas más push a origin.', 'No quiero más push a origin sin que yo lo pida.']) {
+    const { configDir } = setup(t, { [SESSION]: [human(text, '2026-10-09T19:00:00.000Z')] })
+    assert.deepEqual(autonomy.verifyQuote(SESSION, 'push a origin', { configDir }), denied, text)
+    assert.equal(autonomy.verifyQuote(SESSION, 'push a origin', { configDir, allowNegation: true }).ok, true, text)
+  }
+})
+
+test('neither mas nor más ends a clause, and negators keep their accent folding (R5)', (t) => {
+  for (const text of ['Ya no hagas mas push a origin.', 'Ya no hagas más push a origin.']) {
+    const kept = setup(t, { [SESSION]: [human(text, '2026-10-09T19:00:00.000Z')] })
+    assert.deepEqual(autonomy.verifyQuote(SESSION, 'push a origin', { configDir: kept.configDir }), { ok: false, reason: "the quote is in a negated clause of the owner's message" }, text)
+  }
+  const folded = setup(t, { [SESSION]: [human('Jamás publiques sin avisar hoy mismo.', '2026-10-09T19:00:00.000Z')] })
+  assert.deepEqual(autonomy.verifyQuote(SESSION, 'publiques sin avisar hoy mismo', { configDir: folded.configDir }), {
+    ok: false,
+    reason: "the quote is in a negated clause of the owner's message",
+  })
+})
+
+test('a quote that starts in the middle of a word is read with the negator it cuts (R5)', (t) => {
+  const denied = { ok: false, reason: "the quote is in a negated clause of the owner's message" }
+  for (const [text, quote] of [
+    ['No hagas push a origin.', 'o hagas push a origin'],
+    ['Never push to origin tonight.', 'ever push to origin tonight'],
+    ["Don't push to origin tonight.", "t push to origin tonight"],
+  ]) {
+    const { configDir } = setup(t, { [SESSION]: [human(text, '2026-10-09T19:00:00.000Z')] })
+    assert.deepEqual(autonomy.verifyQuote(SESSION, quote, { configDir }), denied, quote)
+    assert.equal(autonomy.verifyQuote(SESSION, quote, { configDir, allowNegation: true }).ok, true, quote)
+  }
+  const { configDir } = setup(t, { [SESSION]: [human('Haz push a origin cuando acaben.', '2026-10-09T19:00:00.000Z')] })
+  assert.equal(autonomy.verifyQuote(SESSION, 'az push a origin cuando acaben', { configDir }).ok, true, 'a mid-word cut with no negator is accepted')
+})
+
+test('a negator before a clause boundary does not negate a quote after it (R5)', (t) => {
+  const cases = [
+    ['No hagas push a main, haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main. Haz push a origin cuando acaben.', 'Haz push a origin cuando acaben'],
+    ['No hagas push a main; haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main: haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main! Haz push a origin cuando acaben.', 'Haz push a origin cuando acaben'],
+    ['No hagas push a main? Haz push a origin cuando acaben.', 'Haz push a origin cuando acaben'],
+    ['No hagas push a main pero haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main sino haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['No hagas push a main aunque haz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+    ['Do not push to main but push to origin when tests pass.', 'push to origin when tests pass'],
+    ['Do not push to main however push to origin when tests pass.', 'push to origin when tests pass'],
+    ['Do not push to main although push to origin when tests pass.', 'push to origin when tests pass'],
+    ['No hagas push a main\nhaz push a origin cuando acaben.', 'haz push a origin cuando acaben'],
+  ]
+  for (const [text, quote] of cases) {
+    const { configDir } = setup(t, { [SESSION]: [human(text, '2026-10-09T19:00:00.000Z')] })
+    assert.equal(autonomy.verifyQuote(SESSION, quote, { configDir }).ok, true, text)
+  }
+})
+
+test('a quote whose first word is a negator is refused (R5)', (t) => {
+  const { configDir } = setup(t, {
+    [SESSION]: [human('Haz lo que quieras, no hagas push a origin.', '2026-10-09T19:00:00.000Z')],
+  })
+  assert.deepEqual(autonomy.verifyQuote(SESSION, 'no hagas push a origin', { configDir }), {
+    ok: false,
+    reason: "the quote is in a negated clause of the owner's message",
+  })
+})
+
+test('a quote containing ni is refused with no negator before it (R5)', (t) => {
+  const { configDir } = setup(t, {
+    [SESSION]: [human('Sube la rama ni te detengas.', '2026-10-09T19:00:00.000Z')],
+  })
+  assert.deepEqual(autonomy.verifyQuote(SESSION, 'Sube la rama ni te detengas', { configDir }), {
+    ok: false,
+    reason: "the quote is in a negated clause of the owner's message",
+  })
+  assert.equal(autonomy.verifyQuote(SESSION, 'Sube la rama ni te detengas', { configDir, allowNegation: true }).ok, true)
+})
+
+test('do not as a pair negates, while a no inside the quote does not (R5)', (t) => {
+  const refused = setup(t, {
+    [SESSION]: [human('Please do not push to origin tonight.', '2026-10-09T19:00:00.000Z')],
+  })
+  assert.deepEqual(autonomy.verifyQuote(SESSION, 'push to origin tonight', { configDir: refused.configDir }), {
+    ok: false,
+    reason: "the quote is in a negated clause of the owner's message",
+  })
+  const plain = setup(t, {
+    [SESSION]: [human('Usa el modo manual o no presencial esta noche.', '2026-10-09T19:00:00.000Z')],
+  })
+  assert.equal(autonomy.verifyQuote(SESSION, 'el modo manual o no presencial esta noche', { configDir: plain.configDir }).ok, true)
+})
+
+test('quarantine sets aside an unreadable grants.json and refuses a readable one (R26)', (t) => {
+  const repo = makeRepo(t)
+  const dir = path.join(repo.dir, '.aether', 'autonomy')
+  fs.mkdirSync(dir, { recursive: true })
+  assert.equal(autonomy.quarantine(repo.dir, { target: 'grants' }).ok, false, 'no file: nothing to set aside')
+  fs.writeFileSync(path.join(dir, 'grants.json'), JSON.stringify({ grants: [], revoked: [] }))
+  const readable = autonomy.quarantine(repo.dir, { target: 'grants' })
+  assert.equal(readable.ok, false)
+  assert.match(readable.reason, /aether-autonomy/)
+  assert.equal(fs.existsSync(path.join(dir, 'grants.json')), true)
+  fs.writeFileSync(path.join(dir, 'grants.json'), '{ not json')
+  const moved = autonomy.quarantine(repo.dir, { target: 'grants' }, { now: Date.UTC(2026, 10, 5, 12, 0, 0) })
+  assert.equal(moved.ok, true)
+  assert.equal(fs.existsSync(path.join(dir, 'grants.json')), false)
+  assert.equal(fs.readFileSync(moved.to, 'utf8'), '{ not json')
+  assert.match(path.relative(repo.dir, moved.to), /^\.aether\/broken-runs\/grants\.json-20261105-120000-[0-9a-f]{4}$/)
+})
+
+test('quarantine never overwrites a destination that already exists, it picks another suffix (R26)', (t) => {
+  const repo = makeRepo(t)
+  const dir = path.join(repo.dir, '.aether', 'autonomy')
+  const broken = path.join(repo.dir, '.aether', 'broken-runs')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.mkdirSync(broken, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'grants.json'), '{ not json')
+  const taken = path.join(broken, 'grants.json-20261105-120000-abcd')
+  fs.writeFileSync(taken, 'keep me')
+  let calls = 0
+  t.mock.method(crypto, 'randomBytes', () => Buffer.from(calls++ === 0 ? [0xab, 0xcd] : [0x12, 0x34]))
+  const moved = autonomy.quarantine(repo.dir, { target: 'grants' }, { now: Date.UTC(2026, 10, 5, 12, 0, 0) })
+  t.mock.restoreAll()
+  assert.equal(moved.ok, true)
+  assert.equal(fs.readFileSync(taken, 'utf8'), 'keep me', 'the file that was already there is kept')
+  assert.notEqual(moved.to, taken)
+  assert.match(moved.to, /grants\.json-20261105-120000-1234$/)
+  assert.equal(fs.readFileSync(moved.to, 'utf8'), '{ not json')
+  assert.equal(fs.existsSync(path.join(dir, 'grants.json')), false)
+})
+
+test('quarantine sets aside the folder of a run whose run.json cannot be read, and never a readable or missing one (R26)', (t) => {
+  const repo = makeRepo(t)
+  const id = 'auto-20261009-200000-ab12'
+  const dir = path.join(repo.dir, '.aether', 'autonomy', id)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'diary.md'), 'the diary')
+  assert.equal(autonomy.quarantine(repo.dir, { target: 'run', id }).ok, false, 'a folder with no run.json')
+  fs.writeFileSync(path.join(dir, 'run.json'), JSON.stringify({ id, spend: [] }))
+  const readableRun = autonomy.quarantine(repo.dir, { target: 'run', id })
+  assert.equal(readableRun.ok, false, 'a readable run is not set aside')
+  assert.match(readableRun.reason, /aether-autonomy end/)
+  assert.equal(fs.existsSync(dir), true)
+  for (const bad of ['../x', 'grants', 'auto-1/../../x', '']) assert.equal(autonomy.quarantine(repo.dir, { target: 'run', id: bad }).ok, false, bad)
+  assert.equal(autonomy.quarantine(repo.dir, { target: 'run', id: 'auto-20990101-000000-ffff' }).ok, false, 'a run that does not exist')
+  fs.writeFileSync(path.join(dir, 'run.json'), '{ broken')
+  const moved = autonomy.quarantine(repo.dir, { target: 'run', id })
+  assert.equal(moved.ok, true)
+  assert.equal(fs.existsSync(dir), false)
+  assert.equal(fs.readFileSync(path.join(moved.to, 'diary.md'), 'utf8'), 'the diary')
 })

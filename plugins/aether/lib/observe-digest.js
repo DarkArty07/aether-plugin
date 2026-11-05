@@ -8,7 +8,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { isObject, numberOrZero: finite, writeFileAtomic: writeAtomic } = require('./common.js')
+const { withLock, isObject, numberOrZero: finite, writeFileAtomic: writeAtomic } = require('./common.js')
 const { eventsFile, faultsDir, devDir, summaryFile, readEvents, readFaults } = require('./observe.js')
 const { logFile, laneTokens } = require('./lanes.js')
 const { loadPrices, priceEntry } = require('./prices.js')
@@ -223,12 +223,19 @@ function freshFor(sources, id, prices) {
 // Recomputes the entry of one session from what is on disk and stores it; returns it. With no source the entry
 // that existed stays as it was (and is returned), or the entry is the empty one when there was none.
 function digestSession(dataDir, session, { prices = loadPrices() } = {}) {
-  const sources = sourcesOf(dataDir)
-  const stored = store(dataDir, new Map([[session, freshFor(sources, session, prices)]]))
-  return stored.get(session) || merge(undefined, {})
+  return withLock(path.join(dataDir, 'observe', '.summary'), () => {
+    const sources = sourcesOf(dataDir)
+    const stored = store(dataDir, new Map([[session, freshFor(sources, session, prices)]]))
+    return stored.get(session) || merge(undefined, {})
+  }, { waitMs: 10000, staleMs: 60000 })
 }
 
 function digestAll(dataDir, { prices = loadPrices() } = {}) {
+  return withLock(path.join(dataDir, 'observe', '.summary'), () => digestAllUnlocked(dataDir, prices), { waitMs: 10000, staleMs: 60000 })
+}
+
+// Internal merge for callers that already hold the non-reentrant summary lock.
+function digestAllUnlocked(dataDir, prices) {
   const sources = sourcesOf(dataDir)
   const ids = [...new Set([...sources.events.keys(), ...sources.faults.keys(), ...sources.lanes.keys()])].sort()
   store(dataDir, new Map(ids.map((id) => [id, freshFor(sources, id, prices)])))
@@ -238,7 +245,11 @@ function digestAll(dataDir, { prices = loadPrices() } = {}) {
 // Digests everything, then removes what is older than `days`: event lines by their time, fault files and dev
 // folders by their modification time. The lane log and the usage files are pruned by their own modules, after this.
 function pruneObserve(dataDir, { days = 30, now = Date.now() } = {}) {
-  digestAll(dataDir)
+  return withLock(path.join(dataDir, 'observe', '.summary'), () => pruneObserveUnlocked(dataDir, days, now), { waitMs: 10000, staleMs: 60000 })
+}
+
+function pruneObserveUnlocked(dataDir, days, now) {
+  digestAllUnlocked(dataDir, loadPrices())
   const cutoff = now - days * DAY_MS
   const removed = { events: 0, faults: 0, dev: 0 }
 
@@ -287,6 +298,8 @@ function pruneObserve(dataDir, { days = 30, now = Date.now() } = {}) {
       }
       writeAtomic(summaryFile(dataDir), `${JSON.stringify({ version: 1, sessions: Object.fromEntries(sessions) })}\n`)
     }
+    // appendEvent does not take this lock: an event appended during this rewrite can be lost.
+    // Serializing digests and prunes does not cover that known hot-path limitation.
     if (removed.events) writeAtomic(eventsFile(dataDir), kept.length ? `${kept.join('\n')}\n` : '')
   }
 

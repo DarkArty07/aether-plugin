@@ -587,3 +587,19 @@ test('clear, compact, resume and bootstrap parts leave startup notices pending',
   }
   assert.equal(takeNotices(dir)[0].number, 42)
 })
+
+test('session start prunes the delegate log of sessions idle for 30 days and archives their outcomes first (R12)', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-data-')
+  const delegateLog = require('../plugins/aether/lib/delegate-log.js')
+  const day = 24 * 3600 * 1000
+  const oldTime = Date.now() - 40 * day
+  delegateLog.appendEntry(data, { kind: 'outcome', id: 'd-1', task: 't-old', attempt: 1, session: 'old-session', time: oldTime, status: 'ok', harness: 'agy', model: 'some-model', effort: 'low', durationMs: 1, usage: { input: 1000, output: 1000 } })
+  delegateLog.appendEntry(data, { kind: 'launch', task: 't-new', attempt: 1, session: 'new-session', time: Date.now() - day, step: 'haiku' })
+  const r = start(repo.dir, data)
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual([...new Set(delegateLog.readEntries(data).map((e) => e.session))], ['new-session'])
+  const archived = fs.readFileSync(path.join(data, 'spend', 'old-session.outcomes.jsonl'), 'utf8').trim().split('\n')
+  assert.equal(archived.length, 1)
+  assert.equal(JSON.parse(archived[0]).session, 'old-session')
+})

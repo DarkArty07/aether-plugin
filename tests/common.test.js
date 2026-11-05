@@ -6,8 +6,8 @@ const path = require('node:path')
 const { tempDir, makeRepo } = require('./helpers.js')
 const common = require('../plugins/aether/lib/common.js')
 
-test('common exports exactly the nineteen helpers', () => {
-  assert.deepEqual(Object.keys(common).sort(), ['exists', 'isExecutableFile', 'isNumber', 'isObject', 'isText', 'killGroup', 'messageOf', 'nulEntries', 'numberOrZero', 'parseJson', 'pidAlive', 'readJson', 'readJsonOrNull', 'readTextOrEmpty', 'removeWorktree', 'sleep', 'sleepSync', 'writeAtomic', 'writeFileAtomic'])
+test('common exports exactly the twenty-one helpers', () => {
+  assert.deepEqual(Object.keys(common).sort(), ['exists', 'isExecutableFile', 'isNumber', 'isObject', 'isText', 'killGroup', 'messageOf', 'nulEntries', 'numberOrZero', 'parseJson', 'pidAlive', 'readJson', 'readJsonOrNull', 'readTextOrEmpty', 'removeWorktree', 'runShell', 'sleep', 'sleepSync', 'withLock', 'writeAtomic', 'writeFileAtomic'])
 })
 
 test('the predicates', () => {
@@ -72,6 +72,107 @@ test('sleep resolves later', async () => {
   const started = Date.now()
   await common.sleep(30)
   assert.ok(Date.now() - started >= 25)
+})
+
+test('runShell returns spawnSync-shaped output and the exit status (R9)', (t) => {
+  const dir = tempDir(t)
+  const ok = common.runShell('echo out; echo err 1>&2', { cwd: dir, timeoutMs: 5000 })
+  assert.deepEqual([ok.status, ok.stdout, ok.stderr, ok.error], [0, 'out\n', 'err\n', undefined])
+  const bad = common.runShell('exit 3', { cwd: dir, timeoutMs: 5000 })
+  assert.equal(bad.status, 3)
+})
+
+test('runShell reports an output over maxBuffer as ENOBUFS with status null, and keeps the tail (R9)', (t) => {
+  const dir = tempDir(t)
+  const over = common.runShell(`node -e "process.stdout.write('A'.repeat(3000) + 'END')"`, { cwd: dir, timeoutMs: 5000, maxBuffer: 100 })
+  assert.equal(over.status, null)
+  assert.equal(over.error.code, 'ENOBUFS')
+  assert.equal(over.stdout.length, 100)
+  assert.ok(over.stdout.endsWith('END'))
+  const fits = common.runShell('echo hi', { cwd: dir, timeoutMs: 5000, maxBuffer: 100 })
+  assert.deepEqual([fits.status, fits.error, fits.stdout], [0, undefined, 'hi\n'])
+})
+
+test('runShell kills the whole process group when the timeout ends, and does not wait for a grandchild that holds the output (R9)', (t) => {
+  const dir = tempDir(t)
+  const pidFile = path.join(dir, 'child.pid')
+  const started = Date.now()
+  const r = common.runShell(`sleep 60 & echo $! > '${pidFile}'; wait`, { cwd: dir, timeoutMs: 400 })
+  assert.ok(Date.now() - started < 10000, 'the call returns soon after the timeout')
+  assert.equal(r.status, null)
+  assert.equal(r.error.code, 'ETIMEDOUT')
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+  let alive = true
+  for (let i = 0; i < 100 && alive; i++) {
+    try {
+      process.kill(pid, 0)
+      common.sleepSync(20)
+    } catch {
+      alive = false
+    }
+  }
+  assert.equal(alive, false, 'the background child is dead')
+})
+
+test('runShell kills a shell that ignores SIGTERM and its background child on timeout (R9)', (t) => {
+  const dir = tempDir(t)
+  const pidFile = path.join(dir, 'term-child.pid')
+  const started = Date.now()
+  const r = common.runShell(`trap '' TERM; sleep 60 & echo $! > '${pidFile}'; wait`, { cwd: dir, timeoutMs: 400 })
+  assert.ok(Date.now() - started < 10000, 'the call returns soon after the timeout')
+  assert.equal(r.status, null)
+  assert.equal(r.error.code, 'ETIMEDOUT')
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+  let alive = true
+  for (let i = 0; i < 100 && alive; i++) {
+    try {
+      process.kill(pid, 0)
+      common.sleepSync(20)
+    } catch {
+      alive = false
+    }
+  }
+  assert.equal(alive, false, 'the background child is dead')
+})
+
+test('withLock holds <target>.lock while fn runs and removes it after (R10)', (t) => {
+  const target = path.join(tempDir(t), 'x.json')
+  const seen = common.withLock(target, () => fs.existsSync(`${target}.lock`) && 'held')
+  assert.equal(seen, 'held')
+  assert.equal(fs.existsSync(`${target}.lock`), false)
+  assert.throws(() => common.withLock(target, () => { throw new Error('boom') }), /boom/)
+  assert.equal(fs.existsSync(`${target}.lock`), false, 'the lock goes even when fn throws')
+})
+
+test('withLock breaks a stale lock and runs without the lock when it cannot get it (R10)', (t) => {
+  const target = path.join(tempDir(t), 'x.json')
+  fs.writeFileSync(`${target}.lock`, '')
+  const old = new Date(Date.now() - 60 * 1000)
+  fs.utimesSync(`${target}.lock`, old, old)
+  assert.equal(common.withLock(target, () => 'ran'), 'ran')
+  assert.equal(fs.existsSync(`${target}.lock`), false, 'the stale lock was broken and then released')
+  fs.writeFileSync(`${target}.lock`, '')
+  assert.equal(common.withLock(target, () => 'ran', { waitMs: 50 }), 'ran')
+  assert.equal(fs.existsSync(`${target}.lock`), true, 'a lock that is not ours is left alone')
+})
+
+test('withLock serialises four processes that read, add one and write a counter (R10)', async (t) => {
+  const dir = tempDir(t)
+  const counter = path.join(dir, 'counter')
+  fs.writeFileSync(counter, '0')
+  const script = `
+    const common = require(${JSON.stringify(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'common.js'))})
+    for (let i = 0; i < 50; i++) common.withLock(process.argv[1], () => {
+      const n = Number(require('node:fs').readFileSync(process.argv[1], 'utf8'))
+      common.sleepSync(1)
+      require('node:fs').writeFileSync(process.argv[1], String(n + 1))
+    }, { waitMs: 60000 })`
+  await Promise.all([0, 1, 2, 3].map(() => new Promise((resolve, reject) => {
+    const child = require('node:child_process').spawn(process.execPath, ['-e', script, counter], { stdio: 'ignore' })
+    child.on('error', reject)
+    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))))
+  })))
+  assert.equal(fs.readFileSync(counter, 'utf8'), '200')
 })
 
 test('removeWorktree removes a worktree and its folder', (t) => {

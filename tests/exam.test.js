@@ -136,6 +136,27 @@ test('a test that outlives its timeout fails, without a second run', (t) => {
   assert.equal(result.tests[0].timedOut, true)
 })
 
+test('a timed-out exam test leaves no process alive (R9)', (t) => {
+  const repo = repoWithSpec(t)
+  const data = tempDir(t, 'aether-data-')
+  const pidFile = path.join(tempDir(t), 'exam-child.pid')
+  const slow = { id: 'slow-tree', criterion: 'C1', command: `sleep 60 & echo $! > '${pidFile}'; wait`, files: [] }
+  exam.store(repo.dir, FEATURE, writeExam(path.join(tempDir(t), 'exam'), [slow]), { dataDir: data })
+  const result = exam.runExam(repo.dir, FEATURE, { dataDir: data, timeoutSeconds: 1 })
+  assert.equal(result.tests[0].timedOut, true)
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+  let alive = true
+  for (let i = 0; i < 100 && alive; i++) {
+    try {
+      process.kill(pid, 0)
+      require('../plugins/aether/lib/common.js').sleepSync(20)
+    } catch {
+      alive = false
+    }
+  }
+  assert.equal(alive, false)
+})
+
 function examCli(cwd, args, env) {
   const r = spawnSync(process.execPath, [EXAM_BIN, ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...env } })
   return { status: r.status, json: JSON.parse(r.stdout.trim().split('\n').pop()) }

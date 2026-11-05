@@ -36,6 +36,7 @@ function isSessionId(id) {
 }
 
 const spendDir = (dataDir) => path.join(dataDir, 'spend')
+const outcomesFile = (dataDir, id) => path.join(spendDir(dataDir), `${id}.outcomes.jsonl`)
 const summaryFile = (dataDir, id) => path.join(spendDir(dataDir), `${id}.json`)
 const usageDir = (dataDir, id) => path.join(dataDir, 'usage', id)
 const laneFile = (dataDir, id) => path.join(dataDir, 'lanes', `${id}.jsonl`)
@@ -305,10 +306,10 @@ function timeOfBroken(line) {
 }
 
 // The `outcome` entries of session `id` in one JSON-lines file, one event each (a delegation writes one per attempt, and
-// attempts share its id). The file holds every session's lines and nobody prunes them, so a line that cannot be read
+// attempts share its id). Reads delegates/log.jsonl or spend/<id>.outcomes.jsonl. A line that cannot be read
 // makes this session incomplete only when it falls inside the session's span: the readable lines that are the
 // session's, of any kind. By its time when the broken line shows one, by its place in the file when not. An outcome
-// whose line is in `earlier` (the counted outcomes of an earlier install) is left out, and this file's are added to it.
+// whose line is in `earlier` is left out, and each newly counted line is added to it immediately.
 function readOutcomesIn(file, id, prices, earlier = new Set()) {
   const out = { events: [], complete: true }
   let text
@@ -319,7 +320,6 @@ function readOutcomesIn(file, id, prices, earlier = new Set()) {
     return out
   }
   const broken = []
-  const counted = []
   const span = { first: Infinity, last: -Infinity, early: Infinity, late: -Infinity }
   text.split('\n').forEach((line, position) => {
     if (!line.trim()) return
@@ -341,13 +341,12 @@ function readOutcomesIn(file, id, prices, earlier = new Set()) {
       span.late = Math.max(span.late, entry.time)
     }
     if (entry.kind === 'outcome') {
-      const key = JSON.stringify(entry)
+      const key = line
       if (earlier.has(key)) return
-      counted.push(key)
+      earlier.add(key)
       out.events.push(harnessEvent('outcome', entry, prices))
     }
   })
-  for (const key of counted) earlier.add(key)
   const timed = span.early <= span.late
   for (const line of broken) {
     // A broken line that shows a time is placed by that time among the session's times. When it shows none, or when the
@@ -360,13 +359,15 @@ function readOutcomesIn(file, id, prices, earlier = new Set()) {
   return out
 }
 
-// The `outcome` entries of session `id` in the delegate log of every install (run.installDirs), an identical one once.
+// Reads all install delegate logs before all session outcome archives, counting identical lines once.
 function readOutcomeEvents(dataDir, id, { prices = loadPrices() } = {}) {
   const out = { events: [], complete: true }
   if (!isSessionId(id)) return out
   const earlier = new Set()
-  for (const dir of run.installDirs(dataDir)) {
-    const fresh = readOutcomesIn(delegateLog.logFile(dir), id, prices, earlier)
+  const dirs = run.installDirs(dataDir)
+  const files = [...dirs.map((dir) => delegateLog.logFile(dir)), ...dirs.map((dir) => outcomesFile(dir, id))]
+  for (const file of files) {
+    const fresh = readOutcomesIn(file, id, prices, earlier)
     out.events.push(...fresh.events)
     out.complete = out.complete && fresh.complete
   }
@@ -559,6 +560,7 @@ module.exports = {
   isSessionId,
   spendDir,
   summaryFile,
+  outcomesFile,
   emptyTally,
   tallyOf,
   mergeTallies,

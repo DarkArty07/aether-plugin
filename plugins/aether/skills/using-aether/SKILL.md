@@ -249,6 +249,8 @@ Before one, run `aether-autonomy check <class>`.
 
 The Writer writes plans with the Aether fields (an optional Review where risk warrants, Area, Owns, Depends on, and the `## Aether Execution` section) in `tasks.md`, and checks them with `aether-plan check`.
 
+When the owner explicitly asks for a plan, or before you build through "Spec and plan" or "Short design" in an interactive session outside an autonomous run, load the deferred tools with `ToolSearch` (`select:EnterPlanMode,ExitPlanMode`), call `EnterPlanMode` yourself, present the plan to the owner and, with their approval, call `ExitPlanMode` and build. Never call `EnterPlanMode` in a session without a terminal (`claude -p`), in a subagent, or inside an autonomous run.
+
 ## The execution method
 
 When the plan is approved, choose its path (see "The three paths"). Plan tasks you build as delegate tasks follow "The delegate ladder".

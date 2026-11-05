@@ -16,14 +16,16 @@
 // aether-autonomy brake-off --quote <text> [--session <id>]
 // aether-autonomy brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>]
 // aether-autonomy quota-saved --from <saved.json>
+// aether-autonomy quarantine grants|run <id>
 
 const fs = require('node:fs')
+const path = require('node:path')
 const { repoPaths } = require('./git.js')
 const { ensureExcluded, dataDir } = require('./run.js')
 const autonomy = require('./autonomy.js')
 
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json>'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quarantine grants|run <id>'
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -73,13 +75,22 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
   const all = sub === 'revoke' && argv.includes('--all')
   const rest = argv.slice(1).filter((a) => !(sub === 'revoke' && a === '--all'))
 
-  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'spend', 'status', 'end', 'brake-settings', 'brake-off', 'brake-crossing', 'quota-saved'].includes(sub)) {
+  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'spend', 'status', 'end', 'brake-settings', 'brake-off', 'brake-crossing', 'quota-saved', 'quarantine'].includes(sub)) {
     throw new Error(USAGE)
   }
+
+  if (sub === 'quarantine' && !((rest[0] === 'grants' && rest.length === 1) || (rest[0] === 'run' && rest.length === 2 && !rest[1].startsWith('--')))) throw new Error(USAGE)
 
   assertFlags(rest)
 
   const { mainRoot, gitCommonDir } = repoPaths(cwd)
+
+  if (sub === 'quarantine') {
+    ensureExcluded(gitCommonDir)
+    const res = autonomy.quarantine(mainRoot, { target: rest[0], id: rest[1] })
+    if (!res.ok) return { code: 2, out: { quarantined: false, reason: res.reason } }
+    return { code: 0, out: { quarantined: { from: path.relative(mainRoot, res.from), to: path.relative(mainRoot, res.to) } } }
+  }
 
   if (sub === 'grant') {
     const cls = value(rest, '--class')

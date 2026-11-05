@@ -57,7 +57,7 @@ test('remove commits the unit before deleting its worktree', (t) => {
   assert.equal(repo.git('branch', '--list', one.branch), '')
 })
 
-test('sweep --finish without a marker removes the branch', (t) => {
+test('sweep --finish without a marker keeps the patch and the run directory (R6)', (t) => {
   const { repo, args, one } = unit(t)
   const junk = path.join(repo.dir, '.aether', 'autonomy', 'auto-20261021-100000-eeee')
   fs.mkdirSync(junk, { recursive: true })
@@ -66,20 +66,44 @@ test('sweep --finish without a marker removes the branch', (t) => {
   const r = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.deepEqual(r.json.savedBranches, [])
-  assert.equal(r.json.finished, true)
-  assert.equal(fs.existsSync(args.runDir), false)
+  assert.equal(r.json.finished, false)
+  assert.equal(fs.existsSync(args.runDir), true)
+  const patch = path.join(args.runDir, 'patches', 'task-1.patch')
+  assert.deepEqual(r.json.patches, [patch])
+  assert.match(fs.readFileSync(patch, 'utf8'), /wip/)
   assert.deepEqual(r.json.remaining, { worktrees: [], branches: [] })
+  assert.deepEqual(r.json.retainedBranches, [])
 })
 
-test('commits past the base, with no marker, are still swept', (t) => {
+test('the patch of a unit the Lead adopted does not keep the run directory (R7)', (t) => {
+  const { repo, args, one } = unit(t)
+  commitIn(repo, one.path, owned('src', 't1', 'a.js'), 'a\n', 'add a')
+  const removed = runBin(WT_BIN, ['remove', args.runId, 'task-1'], repo.dir)
+  assert.equal(fs.existsSync(removed.json.patch), true)
+  const kept = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
+  assert.equal(kept.json.finished, false, 'while the unit is not integrated its patch keeps the run')
+  commitIn(repo, repo.dir, owned('src', 't1', 'a.js'), 'a\n', 'apply task 1 by hand')
+  const adopted = runBin(WT_BIN, ['adopt', args.runId, 'task-1', '--commit', repo.git('rev-parse', 'HEAD').trim(), '--reason', 'by hand'], repo.dir)
+  assert.equal(adopted.status, 0, adopted.stdout + adopted.stderr)
+  const r = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.finished, true)
+  assert.equal(fs.existsSync(args.runDir), false)
+})
+
+test('commits past the base, with no marker, are retained with their patch (R6)', (t) => {
   const { repo, args, one } = unit(t)
   commitIn(repo, one.path, owned('src', 't1', 'a.js'), 'a\n', 'add a')
   const r = runBin(WT_BIN, ['sweep', '--run', args.runId, '--finish'], repo.dir)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.deepEqual(r.json.savedBranches, [])
-  assert.equal(r.json.finished, true)
-  assert.equal(repo.git('branch', '--list', one.branch), '')
-  assert.equal(fs.existsSync(args.runDir), false)
+  assert.equal(r.json.finished, false)
+  assert.deepEqual(r.json.retainedBranches, [one.branch])
+  assert.notEqual(repo.git('branch', '--list', one.branch), '')
+  assert.equal(fs.existsSync(args.runDir), true)
+  const patch = path.join(args.runDir, 'patches', 'task-1.patch')
+  assert.deepEqual(r.json.patches, [patch])
+  assert.match(fs.readFileSync(patch, 'utf8'), /\+a/)
 })
 
 test('a recorded pause keeps a branch that only points at its base', (t) => {
