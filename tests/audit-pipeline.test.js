@@ -6,7 +6,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { PLUGIN, makeRepo, tempDir, runBin } = require('./helpers.js')
+const { PLUGIN, makeRepo, tempDir, runBin, commitIn } = require('./helpers.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-audit')
 const lib = (name) => require(path.join(PLUGIN, 'lib', name))
@@ -135,7 +135,7 @@ test('the cleanup compares with the previous audit of the same project: new, sti
   const dataDir = tempDir(t, 'aether-data-')
   const key = 'repo-0123456789ab'
   const first = clean.clean(settled([fnd('F1')]), analysisWith(OPEN, key), { topics: ['bugs'], dataDir })
-  assert.deepEqual(first.sinceLast, { previous: null, resolved: [], notReaudited: [] })
+  assert.deepEqual(first.sinceLast, { previous: null, resolved: [], notReaudited: [], notFoundAgain: [] })
   assert.equal(first.findings[0].mark, null)
   store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), {
     list: [
@@ -149,7 +149,8 @@ test('the cleanup compares with the previous audit of the same project: new, sti
   const out = clean.clean(settled([fnd('F1'), fnd('F9'), fnd('F4', { coveredBy: 41 })]), analysisWith(OPEN, key), { topics: ['bugs', 'tests'], dataDir })
   assert.deepEqual(out.findings.map((f) => [f.id, f.mark]), [['F1', 'still'], ['F9', 'new']])
   assert.equal(out.sinceLast.previous.date, '2026-10-12')
-  assert.deepEqual(out.sinceLast.resolved, [{ causeKey: 'old-fixed', title: 'Old fixed bug', topic: 'bugs' }])
+  assert.deepEqual(out.sinceLast.resolved, [])
+  assert.deepEqual(out.sinceLast.notFoundAgain, [{ causeKey: 'old-fixed', title: 'Old fixed bug', topic: 'bugs' }])
   assert.deepEqual(out.sinceLast.notReaudited, [{ causeKey: 'other-topic', title: 'Doc drift', topic: 'docs' }])
 })
 
@@ -164,15 +165,44 @@ test('an earlier item of the audit\'s own counts as re-audited only when this an
   }, '')
   const analysis = { ...analysisWith(OPEN, key), checks: { issues: OPEN, tests: { state: 'result' }, lint: { state: 'not-applicable', reason: 'no linter declared' } } }
   const out = clean.clean(settled([fnd('F1')]), analysis, { topics: ['bugs'], dataDir })
-  assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), ['audit-changed-project-tests'])
+  assert.deepEqual(out.sinceLast.resolved.map((r) => r.causeKey), [])
+  assert.deepEqual(out.sinceLast.notFoundAgain.map((r) => r.causeKey), ['audit-changed-project-tests'])
   assert.deepEqual(out.sinceLast.notReaudited.map((r) => r.causeKey), ['audit-changed-project-lint'])
+})
+
+test('a missing earlier item is resolved only when its files changed since the earlier head, else it is notFoundAgain', (t) => {
+  const repo = makeRepo(t)
+  commitIn(repo, repo.dir, 'src/a.js', 'a v1\n', 'add a')
+  commitIn(repo, repo.dir, 'src/b.js', 'b v1\n', 'add b')
+  const firstHead = repo.git('rev-parse', 'HEAD')
+  const key = 'repo-0123456789ab'
+  const list = [
+    { causeKey: 'cause-A', title: 'Bug A', topic: 'bugs', locations: [{ file: 'src/a.js', line: 1 }] },
+    { causeKey: 'cause-B', title: 'Bug B', topic: 'bugs', locations: [{ file: 'src/b.js', line: 1 }] },
+  ]
+  const dataDir = tempDir(t, 'aether-data-')
+  store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), { project: { head: firstHead }, list }, '')
+  commitIn(repo, repo.dir, 'src/a.js', 'a v2\n', 'change a')
+  const secondHead = repo.git('rev-parse', 'HEAD')
+  const analysis = { project: { key, head: secondHead, root: repo.dir }, checks: { issues: { state: 'result', open: [] } } }
+  const out = clean.clean(settled([]), analysis, { topics: ['bugs'], dataDir })
+  assert.deepEqual(out.sinceLast.resolved, [{ causeKey: 'cause-A', title: 'Bug A', topic: 'bugs' }])
+  assert.deepEqual(out.sinceLast.notFoundAgain, [{ causeKey: 'cause-B', title: 'Bug B', topic: 'bugs' }])
+  const noHeadDir = tempDir(t, 'aether-data-')
+  store.writeReport(store.nextReportDir(noHeadDir, key, '2026-10-12'), { list }, '')
+  const blind = clean.clean(settled([]), analysis, { topics: ['bugs'], dataDir: noHeadDir })
+  assert.deepEqual(blind.sinceLast.resolved, [])
+  assert.deepEqual(blind.sinceLast.notFoundAgain, [
+    { causeKey: 'cause-A', title: 'Bug A', topic: 'bugs' },
+    { causeKey: 'cause-B', title: 'Bug B', topic: 'bugs' },
+  ])
 })
 
 const judgment = (over = {}) => ({ severity: 'high', priority: 'P1', reason: 'a reason', size: 'S', how: 'one agent', regression: false, waitCost: 'medium', ...over })
 const cleaned = (findings, unverified = []) => ({
   findings: findings.map((f) => ({ ...f, locations: [f.location], mergedFrom: [f.id], mark: null })),
   unverified, discarded: [{ id: 'D1', reason: 'refuted' }], counts: { candidates: 9, verified: findings.length },
-  issueComparison: { state: 'done', removed: [] }, sinceLast: { previous: null, resolved: [], notReaudited: [] },
+  issueComparison: { state: 'done', removed: [] }, sinceLast: { previous: null, resolved: [], notReaudited: [], notFoundAgain: [] },
 })
 
 test('the order inside a level is regression first, then the cost of waiting, then the cost of doing it, then arrival (R20, C5)', () => {

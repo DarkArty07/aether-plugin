@@ -39,6 +39,7 @@ const ES = {
   why: (priority) => `*Por qué ${priority}:*`,
   unattributable: (first, second, files) => `- Cambio no atribuible durante la auditoría (entre ${first} y ${second}): ${files}`,
   sinceLast: (date, news, stills, resolved) => `**Desde la última auditoría (${date}):** ${news} nuevos, ${stills} siguen, ${resolved} resueltos.`,
+  sinceLastNotFound: (count) => ` ${count} no se volvieron a encontrar, pero su código no cambió.`,
   sinceLastExtra: (left) => ` ${left} sin revisar esta vez, porque sus temas quedaron fuera.`,
   discarded: (total, parts) => `**Descartados:** ${total}${parts ? ` (${parts})` : ''}.`,
   noCompare: (reason) => ` No pude comparar con los issues abiertos (${reason}).`,
@@ -77,6 +78,7 @@ const EN = {
   why: (priority) => `*Why ${priority}:*`,
   unattributable: (first, second, files) => `- Unattributable change during the audit (between ${first} and ${second}): ${files}`,
   sinceLast: (date, news, stills, resolved) => `**Since the last audit (${date}):** ${news} new, ${stills} still open, ${resolved} resolved.`,
+  sinceLastNotFound: (count) => ` ${count} not found again, though their code did not change.`,
   sinceLastExtra: (left) => ` ${left} not re-audited, because their topics were left out.`,
   discarded: (total, parts) => `**Discarded:** ${total}${parts ? ` (${parts})` : ''}.`,
   noCompare: (reason) => ` I could not compare with the open issues (${reason}).`,
@@ -123,8 +125,10 @@ function sinceLastSection(T, sinceLast) {
   if (!sinceLast || !sinceLast.previous) return T.sinceLastNone
   const counts = sinceLast.counts || {}
   const resolved = Array.isArray(sinceLast.resolved) ? sinceLast.resolved.length : 0
+  const notFound = Array.isArray(sinceLast.notFoundAgain) ? sinceLast.notFoundAgain : []
   const notReaudited = Array.isArray(sinceLast.notReaudited) ? sinceLast.notReaudited : []
   let line = T.sinceLast(sinceLast.previous.date, counts.new, counts.still, resolved)
+  if (notFound.length > 0) line += T.sinceLastNotFound(notFound.length)
   if (notReaudited.length > 0) line += T.sinceLastExtra(notReaudited.length)
   return line
 }

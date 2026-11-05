@@ -8,6 +8,7 @@ const { TOPICS, parseArgs, usageError } = require('./audit-common.js')
 const { messageOf } = require('./common.js')
 const { previousReport } = require('./audit-store.js')
 const { dataDir } = require('./run.js')
+const { git } = require('./git.js')
 
 const VERIFICATION_RANK = { proven: 3, 'read-confirmed': 2, proposal: 1 }
 
@@ -119,33 +120,102 @@ function ownStep(causeKey) {
   return match ? match[1] : null
 }
 
+function missingLocations(item) {
+  if (Array.isArray(item.locations)) return item.locations
+  if (item.location && typeof item.location === 'object') return [item.location]
+  return []
+}
+
+function branchChangedSince(location, root) {
+  if (!location || typeof location.file !== 'string' || typeof location.commit !== 'string' || location.commit === '') return false
+  let ref = null
+  try {
+    ref = git(['rev-parse', '--verify', '--quiet', location.file], root, { allowFail: true })
+  } catch {
+    return false
+  }
+  if (ref === null || ref.status !== 0 || ref.stdout === '') return false
+  const tip = ref.stdout
+  const want = String(location.commit)
+  if (tip.toLowerCase() === want.toLowerCase()) return false
+  if (tip.toLowerCase().startsWith(want.toLowerCase())) return false
+  return true
+}
+
+function filesDifferSince(files, earlierHead, currentHead, root) {
+  const unique = [...new Set(files.filter((file) => typeof file === 'string' && file !== ''))]
+  if (unique.length === 0) return false
+  let out = null
+  try {
+    out = git(['diff', '--quiet', earlierHead, currentHead, '--', ...unique], root, { allowFail: true })
+  } catch {
+    return false
+  }
+  if (out === null) return false
+  return out.status === 1
+}
+
+function evidenceChangedSince(item, earlierHead, currentHead, root) {
+  if (typeof earlierHead !== 'string' || earlierHead === '') return false
+  if (typeof currentHead !== 'string' || currentHead === '') return false
+  if (typeof root !== 'string' || root === '') return false
+  const locations = missingLocations(item)
+  const files = []
+  for (const location of locations) {
+    if (!location || typeof location.file !== 'string') continue
+    if (typeof location.commit === 'string' && location.commit !== '') {
+      let isBranch = false
+      try {
+        const ref = git(['rev-parse', '--verify', '--quiet', location.file], root, { allowFail: true })
+        isBranch = ref !== null && ref.status === 0 && ref.stdout !== ''
+      } catch {
+        isBranch = false
+      }
+      if (isBranch) {
+        if (branchChangedSince(location, root)) return true
+        continue
+      }
+    }
+    files.push(location.file)
+  }
+  return filesDifferSince(files, earlierHead, currentHead, root)
+}
+
 function comparePrevious(analysis, findings, removed, topics, storeDir) {
   const key = analysis && analysis.project && analysis.project.key
   const previous = key === undefined ? null : previousReport(storeDir, key)
   if (!previous) {
     for (const finding of findings) finding.mark = null
-    return { previous: null, resolved: [], notReaudited: [] }
+    return { previous: null, resolved: [], notReaudited: [], notFoundAgain: [] }
   }
   const list = (previous.report && previous.report.list) || []
   const known = new Set(list.map((item) => item.causeKey))
   const current = new Set(findings.map((finding) => effectiveKey(finding)))
   for (const finding of findings) finding.mark = known.has(effectiveKey(finding)) ? 'still' : 'new'
   const checks = (analysis && analysis.checks) || {}
+  const earlierHead = previous.report && previous.report.project && previous.report.project.head
+  const currentHead = analysis && analysis.project && analysis.project.head
+  const root = analysis && analysis.project && analysis.project.root
   const resolved = []
   const notReaudited = []
+  const notFoundAgain = []
+  const settleMissing = (item) => {
+    if (evidenceChangedSince(item, earlierHead, currentHead, root)) resolved.push(pickPrevious(item))
+    else notFoundAgain.push(pickPrevious(item))
+  }
   for (const item of list) {
     const step = ownStep(item.causeKey)
     if (step !== null) {
       const ran = checks[step] && checks[step].state === 'result'
       if (!ran) notReaudited.push(pickPrevious(item))
-      else if (!current.has(item.causeKey) && !removed.has(item.causeKey)) resolved.push(pickPrevious(item))
+      else if (!current.has(item.causeKey) && !removed.has(item.causeKey)) settleMissing(item)
     } else if (!topics.includes(item.topic)) {
       notReaudited.push(pickPrevious(item))
     } else if (!current.has(item.causeKey) && !removed.has(item.causeKey)) {
-      resolved.push(pickPrevious(item))
+      settleMissing(item)
     }
   }
-  return { previous: { date: previous.date }, resolved, notReaudited }
+  return { previous: { date: previous.date }, resolved, notReaudited, notFoundAgain }
 }
 
 // command(args, ctx): <settled.json> --analysis <file> --topics <a,b,c>; the data directory is run.dataDir(ctx.env).

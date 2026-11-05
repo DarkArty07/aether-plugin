@@ -34,6 +34,16 @@ function resolveNow(now) {
   return new Date()
 }
 
+function analysisHead(root) {
+  try {
+    const out = git(['rev-parse', 'HEAD'], root, { allowFail: true })
+    if (out === null || out.status !== 0 || out.stdout === '') return null
+    return out.stdout
+  } catch {
+    return null
+  }
+}
+
 function changedFiles(items) {
   const files = []
   for (const item of items) {
@@ -100,6 +110,7 @@ async function analyze(root, opts = {}, ctx = {}) {
     remote: identity.remote,
     root: identity.root,
     defaultBranch: branches.state === 'result' ? branches.default : null,
+    head: analysisHead(identity.root),
   }
   const checkByStep = { tests, lint, dependencies }
   const selfFindings = changes.attributed.map((entry, index) => findingOfStep(entry.step, entry.items, checkByStep[entry.step] || null, index))
