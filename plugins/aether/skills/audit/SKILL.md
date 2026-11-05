@@ -34,6 +34,8 @@ Add `--no-tests` when the person asked for it. The command reads the manifests a
 
 When no manifest declares tests and the README names a test command, run the analysis once more with `--tests-command '<that command>'`: the command reads it the same way before it runs it.
 
+The dependency audit covers one ecosystem, the first it finds (npm, pnpm, pip, composer, cargo, in that order). When the project has another one's lockfile, run that ecosystem's audit yourself, read-only (`composer audit --locked --format=json`, `pip-audit -f json`, `cargo audit --json`; never one that fixes or installs), and add what it says to the summary and to the dependencies reviewer's brief.
+
 Read the line it prints, and from `$W/analysis.json` what you need: `checks` (each check), `checks.hotspots` (where to start), `changes` (anything that changed in the project while the analysis ran), `selfFindings` (findings the analysis established itself) and `estimate`. Read the README and the manifest too, for what the project is.
 
 ## 2. Topic question
