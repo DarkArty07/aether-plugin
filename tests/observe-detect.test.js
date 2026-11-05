@@ -56,6 +56,19 @@ test('a refusal for quota neither adds to a streak of failures nor breaks it (a 
   assert.equal(d.detectPairFailures([outcome('a', 1, 'failed'), outcome('b', 2, 'failed'), outcome('c', 3, 'quota')], CFG).length, 0)
 })
 
+test('dirty checkout refusals neither count as pair failures nor break a failure streak', () => {
+  const dirty = Array.from({ length: 10 }, (_, i) => outcome(`dirty-${i}`, i * 2 + 1, 'dirty'))
+  const failures = Array.from({ length: 10 }, (_, i) => outcome(`failed-${i}`, i * 2, i % 2 ? 'timeout' : 'failed'))
+  assert.deepEqual(d.detectPairFailures(dirty, CFG), [])
+  const real = d.detectPairFailures(failures, CFG)
+  assert.equal(real[0].numbers.failures, 10)
+  const mixed = d.detectPairFailures([...failures.slice(0, 5), ...dirty.slice(0, 5)], CFG)
+  assert.equal(mixed.length, 1)
+  assert.equal(mixed[0].numbers.failures, 5)
+  assert.deepEqual(mixed[0].numbers.tasks, failures.slice(0, 5).map((entry) => entry.id))
+  assert.equal(mixed[0].evidence.length, 5)
+})
+
 test('a ScheduleWakeup while a delegate task of its session is open breaks the rule (E4)', () => {
   const delegateEntries = [launch(1, 't1', 'haiku', 'first', 100, 1), verdict(2, 't1', 'haiku', 'approved', { kind: 'done' }, 300), launch(3, 't2', 'haiku', 'first', 400, 1)]
   const events = [
