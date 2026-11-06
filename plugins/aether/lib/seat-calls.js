@@ -131,7 +131,7 @@ function start(cwd, flags, { env = process.env } = {}) {
   })
   runner.unref()
   fs.writeFileSync(paths.pid, `${runner.pid}\n`)
-  return { started: true, id }
+  return { started: true, id, at: Date.now() }
 }
 
 // ---- The runner ----
@@ -190,8 +190,30 @@ function runnerAlive(paths) {
   }
 }
 
-// The result of a round, with the time it took (durationMs), or { done: false, elapsedMs } when it still runs after
+// A Writer or Examiner round that is still running: how long since its newest allowed write, or null when
+// nothing it may write has changed, the baseline is not there yet, or the worktree is gone. A Judge has no key.
+function changedMsOf(paths, id, at) {
+  const call = readJsonOrNull(paths.call) || {}
+  const seat = typeof call.seat === 'string' ? call.seat : String(id).split('-')[0]
+  if (seat !== 'writer' && seat !== 'examiner') return undefined
+  return seats.changedAge(path.join(paths.dir, 'wt'), readJsonOrNull(path.join(paths.dir, 'baseline.json')), seat, call.feature, call.doc ?? null, at)
+}
+
+// Still running. elapsedMs is absent when the start time was not recorded. changedMs is absent for a Judge.
+function runningReply(paths, id) {
+  const at = Date.now()
+  const startedAt = readJsonOrNull(paths.call)?.startedAt
+  const out = { done: false }
+  if (Number.isFinite(startedAt)) out.elapsedMs = Math.max(0, at - startedAt)
+  const changedMs = changedMsOf(paths, id, at)
+  if (changedMs !== undefined) out.changedMs = changedMs
+  out.at = at
+  return out
+}
+
+// The result of a round, with the time it took (durationMs), or { done: false, elapsedMs, at } when it still runs after
 // maxSeconds, with the time since it started: the workflow has no clock, and takes its time caps from these (issue 62).
+// A Writer or an Examiner round also names changedMs. Every reply names at, this bin's clock.
 // A round whose runner is gone and left no result is a result too, an exit-1 one, so that nobody waits for it.
 async function wait(cwd, id, { maxSeconds = null } = {}) {
   const paths = seatPaths(cwd, id)
@@ -199,14 +221,15 @@ async function wait(cwd, id, { maxSeconds = null } = {}) {
   const deadline = Date.now() + (maxSeconds ?? SEAT_WAIT_SECONDS) * 1000
   const startedAt = readJsonOrNull(paths.call)?.startedAt
   const elapsed = () => (Number.isFinite(startedAt) ? Math.max(0, Date.now() - startedAt) : null)
+  const stamp = (value) => ({ ...value, at: Date.now() })
   for (;;) {
     const done = finishedResult(paths)
-    if (done) return done
+    if (done) return stamp(done)
     if (!runnerAlive(paths)) {
       // The runner writes its result and then drops its pid: a result that came between the two reads is the answer.
-      return finishedResult(paths) ?? { done: true, exitCode: 1, value: { error: `the seat round ${id} ended without a result` }, durationMs: elapsed() }
+      return stamp(finishedResult(paths) ?? { done: true, exitCode: 1, value: { error: `the seat round ${id} ended without a result` }, durationMs: elapsed() })
     }
-    if (Date.now() >= deadline) return elapsed() === null ? { done: false } : { done: false, elapsedMs: elapsed() }
+    if (Date.now() >= deadline) return runningReply(paths, id)
     await sleep(Math.min(POLL_MS, Math.max(0, deadline - Date.now())))
   }
 }
@@ -221,10 +244,21 @@ function stop(cwd, id) {
   // The pair the round ran on, when it had one: the workflow leaves it out of the next try after a round it ended at its cap.
   const pair = readJsonOrNull(paths.pair)?.pair
   const out = { stopped: runner.killed || marked.length > 0, ...(typeof pair === 'string' ? { pair } : {}) }
-  // A Judge or an Examiner writes neither file, so its stop stays { stopped, pair }. continued is named only when
-  // this Writer round started from a partial. partial is named only when partial.json was written: a runner killed
+  // A Judge writes neither file, so its stop stays { stopped, pair }. continued is named only when this round
+  // started from a partial. The Writer's partial is named only when partial.json was written: a runner killed
   // before the save finished must not be reported as having left nothing, so the workflow keeps what it holds.
-  // An empty list means the try left nothing.
+  // An empty list means the try left nothing. An Examiner names paths and the folder, never the text, and only
+  // once partial-paths.json is written: a missing file keeps what the workflow holds, and an empty list clears it.
+  // That file, not continued.json, is the save. The signal can finish the save before continued.json exists.
+  if (String(id).startsWith('examiner-')) {
+    if (fs.existsSync(paths.continued) && readJsonOrNull(paths.continued)?.continued === true) out.continued = true
+    const saved = readJsonOrNull(path.join(paths.dir, 'partial-paths.json'))
+    if (saved && Array.isArray(saved.partialPaths)) {
+      out.partialPaths = saved.partialPaths
+      if (saved.partialPaths.length > 0 && typeof saved.partialDir === 'string' && saved.partialDir !== '') out.partialDir = saved.partialDir
+    }
+    return out
+  }
   if (!fs.existsSync(paths.continued)) return out
   if (readJsonOrNull(paths.continued)?.continued === true) out.continued = true
   if (!fs.existsSync(paths.partial)) return out

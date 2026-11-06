@@ -1,8 +1,8 @@
 'use strict'
 
 // Issue 68, design-seat half: a Writer round that fails after writing part of its document hands that
-// partial to the next pair, and to the native Writer when no pair is left. The Judge and the Examiner
-// keep nothing.
+// partial to the next pair, and to the native Writer when no pair is left. The Judge keeps nothing.
+// Issue 103: an Examiner round keeps the paths of its tests, never their text.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -24,6 +24,7 @@ const laneEnv = (t, opts = {}) => rawLaneEnv(t, {
   },
 })
 const lanes = require('../plugins/aether/lib/lanes.js')
+const examLib = require('../plugins/aether/lib/exam.js')
 
 const FEATURE = 'specs/001-demo'
 const SPEC = `${FEATURE}/spec.md`
@@ -31,6 +32,7 @@ const PLAN = `${FEATURE}/plan.md`
 const TASKS = `${FEATURE}/tasks.md`
 const ORIGINAL = '# Demo\n\n## Criteria\n\n- C1: it works.\n'
 const CONTINUATION = 'An earlier writer began this round. Its partial document is in the worktree. It may be incomplete or wrong. Continue from it after checking it against the intent.'
+const EXAMINER_CONTINUATION = 'An earlier examiner began this exam. Its partial tests are in the worktree. They may be incomplete or wrong. Continue from them after checking them against the spec and the plan.'
 const DAY = 86400000
 const geminiFirst = () => ({
   'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * DAY).toISOString()],
@@ -403,31 +405,42 @@ test('a Writer that then succeeds does not leave the partial for the round after
   assert.equal(turns[2].prompt.includes(CONTINUATION), false)
 })
 
-test('a failed Judge round and a failed Examiner round carry nothing (issue 68)', (t) => {
+test('a failed Judge round carries nothing (issue 68)', (t) => {
   // This file grants the judge and examiner roles to agy Opus. Opus high is 51.7, which meets the floor.
   // Argon is 50.4, below it, so Opus is the only external pair. The try after it has nowhere to carry a partial.
   const judge = seatOf(t, 'judge', lines('Review.', `FAKE-AGY: write ${SPEC} REWRITTEN`, 'FAKE-AGY: exit-error boom'))
   assert.equal(judge.first.json.decision.picked.id, 'agy/claude-opus-5-5@high')
   assert.equal(judge.first.json.partial, undefined)
   assert.equal(judge.first.json.continued, undefined)
+  assert.equal(judge.first.json.timedOut, undefined)
+  assert.equal(fs.existsSync(path.join(judge.repo.dir, '.aether', 'seats', judge.first.json.id, 'baseline.json')), false, 'a Judge round writes no baseline')
   assert.equal(judge.turns.length, 1)
   assert.equal(judge.turns[0].files[SPEC], ORIGINAL)
   assert.equal(judge.turns[0].prompt.includes(CONTINUATION), false)
   assert.equal(judge.second.status, 3, judge.second.stdout + judge.second.stderr)
   assert.equal(judge.second.json.unavailable, 'no-external')
   assert.equal(fs.readFileSync(path.join(judge.repo.dir, SPEC), 'utf8'), ORIGINAL)
-
-  const exam = seatOf(t, 'examiner', lines('Write the exam.', 'FAKE-AGY: write .aether-exam/note.txt EXAM-PARTIAL', 'FAKE-AGY: exit-error boom'))
-  assert.equal(exam.first.json.decision.picked.id, 'agy/claude-opus-5-5@high')
-  assert.equal(exam.first.json.partial, undefined)
-  assert.equal(exam.first.json.continued, undefined)
-  assert.equal(exam.turns.length, 1)
-  assert.equal(exam.turns[0].files['.aether-exam/note.txt'], undefined)
-  assert.equal(exam.turns[0].prompt.includes(CONTINUATION), false)
-  assert.equal(exam.second.status, 3, exam.second.stdout + exam.second.stderr)
-  assert.equal(exam.second.json.unavailable, 'no-external')
-  assert.equal(fs.existsSync(path.join(exam.repo.dir, '.aether-exam')), false)
 })
+
+const EXAM_REL = '.aether-exam/nested/c1.js'
+const EXAM_OTHER = '.aether-exam/nested/c2.js'
+const EXAM_BODY = 'EXAM-SECRET-BODY-103\n'
+const EXAM_ONE = 'EXAM-CARRY-ONE'
+const EXAM_TWO = 'EXAM-CARRY-TWO'
+
+// No file under the seat directory holds the exam's text. Replies name paths only.
+function seatTreeHas(dir, needle) {
+  if (!fs.existsSync(dir)) return false
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name)
+    const st = fs.lstatSync(full)
+    if (st.isSymbolicLink()) continue
+    if (st.isDirectory()) {
+      if (seatTreeHas(full, needle)) return true
+    } else if (st.isFile() && fs.readFileSync(full, 'utf8').includes(needle)) return true
+  }
+  return false
+}
 
 test('seat-wait reports whether the Writer round started from a partial, and a stopped round keeps the file for the next pair (issue 68)', async (t) => {
   const repo = seatRepo(t)
@@ -592,6 +605,334 @@ test('a symlinked folder inside the worktree is not followed when a partial is a
   assert.equal(fs.existsSync(path.join(outside, '001-demo')), false)
   assert.equal(fs.readFileSync(path.join(outside, 'MARKER'), 'utf8'), 'keep\n')
   assert.equal(JSON.stringify(turnsOf(witness).at(-1).files).includes('PARTIAL-SPEC'), false)
+})
+
+test('the baseline is taken after the checkout and after an offer is applied (issue 103)', (t) => {
+  const message = 'Write the spec.\n'
+  const { repo, first, second } = sameMessageTurns(t, [
+    lines(`FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: exit-error boom'),
+    lines('FAKE-AGY: exit-error boom'),
+  ], message)
+  assert.equal(first.status, 4, first.stdout + first.stderr)
+  const firstBaseline = JSON.parse(fs.readFileSync(path.join(seatDirOf(repo, first.json.id), 'baseline.json'), 'utf8'))
+  assert.equal(firstBaseline.files[SPEC].size, Buffer.byteLength(ORIGINAL), 'the checkout is the baseline, not the later write')
+  assert.equal(typeof firstBaseline.files[SPEC].mtimeMs, 'number')
+  const secondBaseline = JSON.parse(fs.readFileSync(path.join(seatDirOf(repo, second.json.id), 'baseline.json'), 'utf8'))
+  assert.equal(secondBaseline.files[SPEC].size, Buffer.byteLength('PARTIAL-SPEC\n'), 'the applied offer is in the baseline')
+})
+
+test('a failed Examiner round keeps paths only, and the next try of the same round receives the files (issue 103)', (t) => {
+  const message = 'Write the exam.\n'
+  const secret = EXAM_BODY.trim()
+  const { command, witness } = scriptedCommand(t, [
+    lines(`FAKE-AGY: write ${EXAM_REL} ${secret}`, 'FAKE-AGY: write-empty .aether-exam/empty.txt', 'FAKE-AGY: exit-error boom'),
+    lines(`FAKE-AGY: write ${EXAM_REL} ${secret}`, 'FAKE-AGY: exit-error later'),
+    lines('FAKE-AGY: exit-error other-round'),
+  ])
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const base = ['examiner', '--session', 's1', '--feature', FEATURE]
+  const first = seat(repo.dir, base, env, message)
+  assert.equal(first.status, 4, first.stdout + first.stderr)
+  assert.equal(first.json.continued, false)
+  assert.equal(first.json.partial, undefined, 'an Examiner reply never carries partial texts')
+  assert.equal(first.json.timedOut, undefined)
+  assert.deepEqual(first.json.partialPaths, [EXAM_REL])
+  assert.equal(typeof first.json.partialDir, 'string')
+  assert.ok(path.isAbsolute(first.json.partialDir), first.json.partialDir)
+  assert.ok(first.json.partialDir.includes(`${path.sep}exam-carry${path.sep}`), first.json.partialDir)
+  assert.equal(JSON.stringify(first.json).includes(secret), false)
+  const seatDir = seatDirOf(repo, first.json.id)
+  assert.equal(seatTreeHas(seatDir, secret), false, 'no exam text under the seat directory')
+  const recorded = JSON.parse(fs.readFileSync(path.join(seatDir, 'partial-paths.json'), 'utf8'))
+  assert.deepEqual(recorded, { partialPaths: [EXAM_REL], partialDir: first.json.partialDir })
+  assert.equal(JSON.stringify(recorded).includes(secret), false)
+  const carried = path.join(first.json.partialDir, EXAM_REL)
+  assert.equal(fs.readFileSync(carried, 'utf8'), `${secret}\n`)
+  assert.equal(fs.readFileSync(path.join(first.json.partialDir, 'round'), 'utf8'), lanes.digest(message))
+  assert.equal(fs.existsSync(path.join(first.json.partialDir, '.aether-exam', 'empty.txt')), false, 'an empty file is not kept')
+  const listed = examLib.list(repo.dir, { dataDir: env.AETHER_DATA_DIR })
+  assert.deepEqual(listed, [], 'a carry folder is not an exam exam.list shows')
+
+  const second = seat(repo.dir, base, env, message)
+  assert.equal(second.status, 4, second.stdout + second.stderr)
+  assert.equal(second.json.continued, true)
+  const turn = turnsOf(witness).at(-1)
+  assert.equal(turn.files[EXAM_REL], `${secret}\n`)
+  assert.ok(turn.prompt.includes(EXAMINER_CONTINUATION), turn.prompt.slice(-400))
+
+  const other = seat(repo.dir, base, env, 'Write a different exam.\n')
+  assert.equal(other.status, 4, other.stdout + other.stderr)
+  assert.equal(other.json.continued, false)
+  assert.deepEqual(other.json.partialPaths, [], 'a finished save that kept nothing clears what the workflow holds')
+  assert.equal(other.json.partialDir, undefined)
+  assert.equal(turnsOf(witness).at(-1).files[EXAM_REL], undefined)
+  assert.equal(fs.existsSync(first.json.partialDir), false)
+})
+
+test('seat-stop of an Examiner names partialPaths and partialDir and no text (issue 103)', async (t) => {
+  const message = 'Write the exam.\n'
+  const secret = EXAM_BODY.trim()
+  const { command, witness } = scriptedCommand(t, [
+    lines(`FAKE-AGY: write ${EXAM_REL} ${secret}`, 'FAKE-AGY: sleep 30'),
+    lines('FAKE-AGY: exit-error boom'),
+  ])
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const digest = writeMessage(repo, message)
+  const started = runBin(LANE_BIN, ['seat-start', 'examiner', '--session', 's1', '--feature', FEATURE, '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, env)
+  assert.equal(started.status, 0, started.stdout + started.stderr)
+  assert.ok(Number.isInteger(started.json.at))
+  const id = started.json.id
+  const file = path.join(seatDirOf(repo, id), 'wt', EXAM_REL)
+  const deadline = Date.now() + 20000
+  while (Date.now() < deadline && !(fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes(secret))) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  assert.ok(fs.existsSync(file), 'the pair wrote before the stop')
+  const stopped = runBin(LANE_BIN, ['seat-stop', id], repo.dir, env)
+  assert.equal(stopped.json.stopped, true, JSON.stringify(stopped.json))
+  assert.equal(stopped.json.continued, undefined)
+  assert.equal(stopped.json.partial, undefined)
+  assert.deepEqual(stopped.json.partialPaths, [EXAM_REL])
+  assert.equal(fs.readFileSync(path.join(stopped.json.partialDir, EXAM_REL), 'utf8'), `${secret}\n`)
+  assert.equal(JSON.stringify(stopped.json).includes(secret), false)
+  assert.equal(seatTreeHas(seatDirOf(repo, id), secret), false)
+  const waited = runBin(LANE_BIN, ['seat-wait', id, '--max', '0'], repo.dir, env)
+  assert.equal(waited.json.done, true)
+  assert.ok(Number.isInteger(waited.json.at))
+
+  const next = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], env, message)
+  assert.equal(next.status, 4, next.stdout + next.stderr)
+  assert.equal(next.json.continued, true)
+  assert.equal(turnsOf(witness).at(-1).files[EXAM_REL], `${secret}\n`)
+  assert.ok(turnsOf(witness).at(-1).prompt.includes(EXAMINER_CONTINUATION))
+})
+
+function offerText(dir, rel) {
+  return fs.readFileSync(path.join(dir, rel), 'utf8')
+}
+
+// Two Examiner tries of one message. The scripts differ; the digest does not, so the second is a continuation.
+function examinerContinuation(t, scripts, message = 'Write the exam.\n') {
+  const { command, witness } = scriptedCommand(t, scripts)
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const base = ['examiner', '--session', 's1', '--feature', FEATURE]
+  // The digest carries the partial. Excluding the pair would leave the Examiner with no external candidate.
+  const first = seat(repo.dir, base, env, message)
+  assert.equal(first.status, 4, first.stdout + first.stderr)
+  const second = seat(repo.dir, base, env, message)
+  assert.equal(second.status, 4, second.stdout + second.stderr)
+  return { first, second, turns: turnsOf(witness) }
+}
+
+test('a continuation that fails before writing keeps every carried exam file in the offer (issue 103)', (t) => {
+  const message = 'Write the exam.\n'
+  const { first, second, turns } = examinerContinuation(t, [
+    lines(`FAKE-AGY: write ${EXAM_REL} ${EXAM_ONE}`, `FAKE-AGY: write ${EXAM_OTHER} ${EXAM_TWO}`, 'FAKE-AGY: exit-error boom'),
+    lines('FAKE-AGY: exit-error boom'),
+  ], message)
+  assert.equal(first.json.continued, false)
+  assert.deepEqual(first.json.partialPaths, [EXAM_REL, EXAM_OTHER])
+  assert.equal(second.json.continued, true)
+  assert.deepEqual(second.json.partialPaths, [EXAM_REL, EXAM_OTHER])
+  assert.equal(typeof second.json.partialDir, 'string')
+  assert.equal(offerText(second.json.partialDir, EXAM_REL), `${EXAM_ONE}\n`)
+  assert.equal(offerText(second.json.partialDir, EXAM_OTHER), `${EXAM_TWO}\n`)
+  assert.equal(JSON.stringify(second.json).includes(EXAM_ONE), false)
+  assert.equal(JSON.stringify(second.json).includes(EXAM_TWO), false)
+  const carried = turns.at(-1)
+  assert.equal(carried.files[EXAM_REL], `${EXAM_ONE}\n`)
+  assert.equal(carried.files[EXAM_OTHER], `${EXAM_TWO}\n`)
+  assert.ok(carried.prompt.includes(EXAMINER_CONTINUATION))
+})
+
+test('a continuation that edits one exam file keeps the carried files it left untouched (issue 103)', (t) => {
+  const { second } = examinerContinuation(t, [
+    lines(`FAKE-AGY: write ${EXAM_REL} ${EXAM_ONE}`, `FAKE-AGY: write ${EXAM_OTHER} ${EXAM_TWO}`, 'FAKE-AGY: exit-error boom'),
+    lines(`FAKE-AGY: write ${EXAM_REL} ${EXAM_ONE}-EDITED`, 'FAKE-AGY: exit-error boom'),
+  ])
+  assert.equal(second.json.continued, true)
+  assert.deepEqual(second.json.partialPaths, [EXAM_REL, EXAM_OTHER])
+  assert.equal(offerText(second.json.partialDir, EXAM_REL), `${EXAM_ONE}-EDITED\n`)
+  assert.equal(offerText(second.json.partialDir, EXAM_OTHER), `${EXAM_TWO}\n`)
+  assert.equal(JSON.stringify(second.json).includes(EXAM_ONE), false)
+  assert.equal(JSON.stringify(second.json).includes(EXAM_TWO), false)
+})
+
+test('an Examiner exit 4 that kept nothing carries partialPaths as an empty list (issue 103)', (t) => {
+  const { command } = witnessingCommand(t)
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const failed = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], env, lines('Write the exam.', 'FAKE-AGY: exit-error boom'))
+  assert.equal(failed.status, 4, failed.stdout + failed.stderr)
+  assert.equal(failed.json.continued, false)
+  assert.equal(failed.json.partial, undefined)
+  assert.deepEqual(failed.json.partialPaths, [])
+  assert.equal(Object.hasOwn(failed.json, 'partialDir'), false, JSON.stringify(failed.json))
+  const recorded = JSON.parse(fs.readFileSync(path.join(seatDirOf(repo, failed.json.id), 'partial-paths.json'), 'utf8'))
+  assert.deepEqual(recorded, { partialPaths: [], partialDir: null })
+})
+
+test('an Examiner exit 4 omits partialPaths when the save does not finish (issue 103)', (t) => {
+  const dir = tempDir(t, 'aether-seat-lock-')
+  const command = path.join(dir, 'lock-agy.js')
+  const source = [
+    '#!/usr/bin/env node',
+    "'use strict'",
+    "const fs = require('node:fs')",
+    "const { spawnSync } = require('node:child_process')",
+    'const argv = process.argv.slice(2)',
+    "const at = (name) => { const i = argv.indexOf(name); return i === -1 ? null : argv[i + 1] }",
+    "if (argv[0] === '--version' || at('-p') === null || at('-p') === '/usage') {",
+    `  const r = spawnSync(process.execPath, [${JSON.stringify(FAKE_AGY)}, ...argv], { stdio: 'inherit' })`,
+    '  process.exit(r.status === null ? 1 : r.status)',
+    '}',
+    `const r = spawnSync(process.execPath, [${JSON.stringify(FAKE_AGY)}, ...argv], { stdio: 'inherit' })`,
+    // The worktree is gone before the runner can save, so the save never finishes.
+    'fs.rmSync(process.cwd(), { recursive: true, force: true })',
+    'process.exit(r.status === null ? 1 : r.status)',
+    '',
+  ].join('\n')
+  fs.writeFileSync(command, source)
+  fs.chmodSync(command, 0o755)
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const failed = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], env, lines('Write the exam.', 'FAKE-AGY: exit-error boom'))
+  assert.equal(failed.status, 4, failed.stdout + failed.stderr)
+  assert.equal(failed.json.continued, false)
+  assert.equal(Object.hasOwn(failed.json, 'partialPaths'), false, JSON.stringify(failed.json))
+  assert.equal(Object.hasOwn(failed.json, 'partialDir'), false)
+  assert.equal(failed.json.partial, undefined)
+  assert.equal(fs.existsSync(path.join(seatDirOf(repo, failed.json.id), 'partial-paths.json')), false)
+})
+
+test('seat-stop of an Examiner that kept nothing carries partialPaths as an empty list (issue 103)', async (t) => {
+  const repo = seatRepo(t)
+  const { command } = witnessingCommand(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const message = lines('Write the exam.', 'FAKE-AGY: sleep 30')
+  const digest = writeMessage(repo, message)
+  const started = runBin(LANE_BIN, ['seat-start', 'examiner', '--session', 's1', '--feature', FEATURE, '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, env)
+  assert.equal(started.status, 0, started.stdout + started.stderr)
+  const id = started.json.id
+  const dir = seatDirOf(repo, id)
+  const continued = path.join(dir, 'continued.json')
+  const deadline = Date.now() + 20000
+  while (Date.now() < deadline && !fs.existsSync(continued)) await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.ok(fs.existsSync(continued), 'the round got as far as recording that it is an examiner')
+  const stopped = runBin(LANE_BIN, ['seat-stop', id], repo.dir, env)
+  assert.equal(stopped.json.stopped, true, JSON.stringify(stopped.json))
+  assert.equal(stopped.json.continued, undefined)
+  assert.equal(stopped.json.partial, undefined)
+  assert.deepEqual(stopped.json.partialPaths, [])
+  assert.equal(Object.hasOwn(stopped.json, 'partialDir'), false, JSON.stringify(stopped.json))
+  const recorded = JSON.parse(fs.readFileSync(path.join(dir, 'partial-paths.json'), 'utf8'))
+  assert.deepEqual(recorded, { partialPaths: [], partialDir: null })
+})
+
+test('seat-stop of an Examiner reports a finished save when continued.json is absent (issue 103)', (t) => {
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst() })
+  const emptyId = 'examiner-20261106-120000-ab12'
+  const emptyDir = seatDirOf(repo, emptyId)
+  fs.mkdirSync(emptyDir, { recursive: true })
+  fs.writeFileSync(path.join(emptyDir, 'partial-paths.json'), `${JSON.stringify({ partialPaths: [], partialDir: null })}\n`)
+  const empty = runBin(LANE_BIN, ['seat-stop', emptyId], repo.dir, env)
+  assert.deepEqual(empty.json.partialPaths, [])
+  assert.equal(Object.hasOwn(empty.json, 'partialDir'), false, JSON.stringify(empty.json))
+  assert.equal(Object.hasOwn(empty.json, 'continued'), false)
+  assert.equal(Object.hasOwn(empty.json, 'partial'), false)
+
+  const keptId = 'examiner-20261106-120001-ab13'
+  const keptDir = seatDirOf(repo, keptId)
+  fs.mkdirSync(keptDir, { recursive: true })
+  const partialDir = path.join(keptDir, 'carry')
+  fs.writeFileSync(path.join(keptDir, 'partial-paths.json'), `${JSON.stringify({ partialPaths: [EXAM_REL], partialDir })}\n`)
+  const kept = runBin(LANE_BIN, ['seat-stop', keptId], repo.dir, env)
+  assert.deepEqual(kept.json.partialPaths, [EXAM_REL])
+  assert.equal(kept.json.partialDir, partialDir)
+  assert.equal(JSON.stringify(kept.json).includes(EXAM_ONE), false)
+})
+
+test('seat-stop of an Examiner omits partialPaths when the save never finished (issue 103)', async (t) => {
+  const repo = seatRepo(t)
+  const { command } = witnessingCommand(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const message = lines('Write the exam.', `FAKE-AGY: write ${EXAM_REL} ${EXAM_ONE}`, 'FAKE-AGY: sleep 30')
+  const digest = writeMessage(repo, message)
+  const started = runBin(LANE_BIN, ['seat-start', 'examiner', '--session', 's1', '--feature', FEATURE, '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, env)
+  assert.equal(started.status, 0, started.stdout + started.stderr)
+  const id = started.json.id
+  const dir = seatDirOf(repo, id)
+  const continued = path.join(dir, 'continued.json')
+  const deadline = Date.now() + 20000
+  while (Date.now() < deadline && !fs.existsSync(continued)) await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.ok(fs.existsSync(continued), 'the round got as far as recording that it is an examiner')
+  const pid = Number.parseInt(fs.readFileSync(path.join(dir, 'pid'), 'utf8'), 10)
+  try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ }
+  try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
+  const until = Date.now() + 2000
+  while (Date.now() < until) {
+    try { process.kill(pid, 0) } catch { break }
+  }
+  assert.equal(fs.existsSync(path.join(dir, 'partial-paths.json')), false, 'killed before the partial was recorded')
+  const stopped = runBin(LANE_BIN, ['seat-stop', id], repo.dir, env)
+  assert.equal(Object.hasOwn(stopped.json, 'partialPaths'), false, JSON.stringify(stopped.json))
+  assert.equal(Object.hasOwn(stopped.json, 'partialDir'), false)
+  assert.equal(Object.hasOwn(stopped.json, 'partial'), false)
+  releaseRepo(repo, id)
+})
+
+test('an Examiner round that finishes clears its offer (issue 103)', (t) => {
+  const message = 'Write the exam.\n'
+  const answer = { tests: [{ id: 'c2-readme', criterion: 'C2', command: 'test -f README.md', files: [] }], notes: 'none' }
+  const { command, witness } = scriptedCommand(t, [
+    lines(`FAKE-AGY: write ${EXAM_REL} ${EXAM_BODY.trim()}`, 'FAKE-AGY: exit-error boom'),
+    lines(`FAKE-AGY: answer ${JSON.stringify(answer)}`),
+    lines('FAKE-AGY: exit-error again'),
+  ])
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { command, quota: geminiFirst() })
+  const base = ['examiner', '--session', 's1', '--feature', FEATURE]
+  const failed = seat(repo.dir, base, env, message)
+  assert.equal(failed.status, 4, failed.stdout + failed.stderr)
+  assert.ok(fs.existsSync(path.join(failed.json.partialDir, EXAM_REL)))
+  const done = seat(repo.dir, base, env, message)
+  assert.equal(done.status, 0, done.stdout + done.stderr)
+  assert.equal(fs.existsSync(failed.json.partialDir), false, 'a finished round clears the offer')
+  const again = seat(repo.dir, base, env, message)
+  assert.equal(again.status, 4, again.stdout + again.stderr)
+  assert.equal(again.json.continued, false)
+  assert.equal(turnsOf(witness).at(-1).files[EXAM_REL], undefined)
+  assert.equal(turnsOf(witness).at(-1).prompt.includes(EXAMINER_CONTINUATION), false)
+})
+
+function withTimeout(t, seatName, seconds) {
+  return (cfg) => {
+    cfg.harnesses.agy.timeouts[seatName] = seconds
+  }
+}
+
+test('a fast Examiner failure does not set timedOut, and one that runs past the timeout margin does (issue 103)', (t) => {
+  const fast = seatOf(t, 'examiner', lines('Write the exam.', 'FAKE-AGY: exit-error boom'))
+  assert.equal(fast.first.json.timedOut, undefined, JSON.stringify(fast.first.json.detail))
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst(), mutate: withTimeout(t, 'examiner', 32) })
+  const slow = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], env, lines('Write the exam.', 'FAKE-AGY: sleep 3', 'FAKE-AGY: exit-error boom'))
+  assert.equal(slow.status, 4, slow.stdout + slow.stderr)
+  assert.equal(slow.json.timedOut, true, JSON.stringify(slow.json))
+})
+
+test('a harness killed by the runner timer yields timedOut (issue 103)', (t) => {
+  const repo = seatRepo(t)
+  const env = laneEnv(t, { quota: geminiFirst(), mutate: withTimeout(t, 'examiner', 1) })
+  const started = Date.now()
+  const killed = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], env, lines('Write the exam.', 'FAKE-AGY: sleep 120'))
+  assert.equal(killed.status, 4, killed.stdout + killed.stderr)
+  assert.equal(killed.json.timedOut, true, JSON.stringify(killed.json))
+  assert.ok(Date.now() - started < 90000, 'the timer is the lane timeout plus the grace, not the sleep')
 })
 
 test('docs/guide/design-seats.md says a failed Writer hands its partial document to the next pair (issue 68)', () => {

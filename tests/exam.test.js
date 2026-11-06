@@ -59,6 +59,29 @@ test('store keeps an exam outside the repository, in place of an earlier one, an
   assert.equal(exam.list(repo.dir, { dataDir: data })[0].tests, 1)
 })
 
+test('store clears the Examiner carry of that feature for every session, and list ignores a carry folder', (t) => {
+  const repo = repoWithSpec(t)
+  const data = tempDir(t, 'aether-data-')
+  const key = exam.repoKey(repo.dir)
+  const carry = (session, feature) => path.join(data, 'exam-carry', key, session, feature)
+  for (const session of ['s1', 's2']) {
+    const dir = carry(session, '001-demo')
+    fs.mkdirSync(path.join(dir, '.aether-exam'), { recursive: true })
+    fs.writeFileSync(path.join(dir, '.aether-exam', 'c1.js'), 'secret\n')
+    fs.writeFileSync(path.join(dir, 'round'), 'digest\n')
+  }
+  const other = carry('s1', '002-other')
+  fs.mkdirSync(other, { recursive: true })
+  fs.writeFileSync(path.join(other, 'round'), 'keep\n')
+  assert.deepEqual(exam.list(repo.dir, { dataDir: data }), [])
+  exam.store(repo.dir, FEATURE, writeExam(path.join(tempDir(t), 'exam'), [README_TEST]), { dataDir: data })
+  assert.equal(fs.existsSync(carry('s1', '001-demo')), false)
+  assert.equal(fs.existsSync(carry('s2', '001-demo')), false)
+  assert.equal(fs.readFileSync(path.join(other, 'round'), 'utf8'), 'keep\n')
+  assert.equal(exam.list(repo.dir, { dataDir: data }).length, 1)
+  assert.equal(exam.list(repo.dir, { dataDir: data })[0].feature, FEATURE)
+})
+
 test('store refuses an exam it cannot run', (t) => {
   const repo = repoWithSpec(t)
   const data = tempDir(t, 'aether-data-')
