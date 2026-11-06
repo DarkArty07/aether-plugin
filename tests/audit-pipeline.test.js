@@ -12,6 +12,7 @@ const BIN = path.join(PLUGIN, 'bin', 'aether-audit')
 const lib = (name) => require(path.join(PLUGIN, 'lib', name))
 const verify = lib('audit-verify.js')
 const clean = lib('audit-clean.js')
+const reverify = lib('audit-reverify.js')
 const triage = lib('audit-triage.js')
 const store = lib('audit-store.js')
 
@@ -196,6 +197,84 @@ test('a missing earlier item is resolved only when its files changed since the e
     { causeKey: 'cause-A', title: 'Bug A', topic: 'bugs' },
     { causeKey: 'cause-B', title: 'Bug B', topic: 'bugs' },
   ])
+})
+
+test('a reverify verdict for an earlier item whose code changed moves it out of resolved: sigue stays open, resuelto is resolved on evidence', (t) => {
+  const repo = makeRepo(t)
+  commitIn(repo, repo.dir, 'src/a.js', 'a v1\n', 'add a')
+  commitIn(repo, repo.dir, 'src/b.js', 'b v1\n', 'add b')
+  const firstHead = repo.git('rev-parse', 'HEAD')
+  const key = 'repo-0123456789ab'
+  const list = [
+    { causeKey: 'cause-A', title: 'Bug A', topic: 'bugs', locations: [{ file: 'src/a.js', line: 1 }] },
+    { causeKey: 'cause-B', title: 'Bug B', topic: 'bugs', locations: [{ file: 'src/b.js', line: 1 }] },
+  ]
+  const dataDir = tempDir(t, 'aether-data-')
+  store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), { project: { head: firstHead }, list }, '')
+  commitIn(repo, repo.dir, 'src/a.js', 'a v2\n', 'change a')
+  commitIn(repo, repo.dir, 'src/b.js', 'b v2\n', 'change b')
+  const secondHead = repo.git('rev-parse', 'HEAD')
+  const analysis = { project: { key, head: secondHead, root: repo.dir }, checks: { issues: { state: 'result', open: [] } } }
+  // Without reverify both land in resolved, since their files changed.
+  const plain = clean.clean(settled([]), analysis, { topics: ['bugs'], dataDir })
+  assert.deepEqual(plain.sinceLast.resolved.map((r) => r.causeKey), ['cause-A', 'cause-B'])
+  const reverified = {
+    previous: { date: '2026-10-12' }, ceiling: { maxVerifiers: 8, itemsPerVerifier: 4 }, cut: 0,
+    items: [
+      { id: 'R1', causeKey: 'cause-A', title: 'Bug A', topic: 'bugs', reverify: 'sigue', evidence: 'src/a.js:1 still posts without a key' },
+      { id: 'R2', causeKey: 'cause-B', title: 'Bug B', topic: 'bugs', reverify: 'resuelto', evidence: 'src/b.js:88 now sends the key' },
+    ],
+    counts: { items: 2, sigue: 1, resuelto: 1, notFoundAgain: 0 },
+  }
+  const out = clean.clean(settled([]), analysis, { topics: ['bugs'], dataDir, reverified })
+  assert.deepEqual(out.sinceLast.resolved, [])
+  assert.deepEqual(out.sinceLast.reverified, [{ causeKey: 'cause-A', title: 'Bug A', topic: 'bugs' }])
+  assert.deepEqual(out.sinceLast.refuted, [{ causeKey: 'cause-B', title: 'Bug B', topic: 'bugs' }])
+  assert.deepEqual(out.sinceLast.notFoundAgain, [])
+})
+
+test('a failed re-verification never resolves: a code-changed item with an unverified or missing verdict lands in not found again, not in resolved', (t) => {
+  const repo = makeRepo(t)
+  commitIn(repo, repo.dir, 'src/a.js', 'a v1\n', 'add a')
+  commitIn(repo, repo.dir, 'src/b.js', 'b v1\n', 'add b')
+  commitIn(repo, repo.dir, 'src/c.js', 'c v1\n', 'add c')
+  const firstHead = repo.git('rev-parse', 'HEAD')
+  const key = 'repo-0123456789ab'
+  const list = [
+    { causeKey: 'cause-A', title: 'Bug A', topic: 'bugs', locations: [{ file: 'src/a.js', line: 1 }] },
+    { causeKey: 'cause-B', title: 'Bug B', topic: 'bugs', locations: [{ file: 'src/b.js', line: 1 }] },
+    { causeKey: 'cause-C', title: 'Bug C', topic: 'bugs', locations: [{ file: 'src/c.js', line: 1 }] },
+  ]
+  const dataDir = tempDir(t, 'aether-data-')
+  store.writeReport(store.nextReportDir(dataDir, key, '2026-10-12'), { project: { head: firstHead }, list }, '')
+  commitIn(repo, repo.dir, 'src/a.js', 'a v2\n', 'change a')
+  commitIn(repo, repo.dir, 'src/b.js', 'b v2\n', 'change b')
+  commitIn(repo, repo.dir, 'src/c.js', 'c v2\n', 'change c')
+  const secondHead = repo.git('rev-parse', 'HEAD')
+  const analysis = { project: { key, head: secondHead, root: repo.dir }, checks: { issues: { state: 'result', open: [] } } }
+  // Without reverify all three land in resolved, since their files changed.
+  const plain = clean.clean(settled([]), analysis, { topics: ['bugs'], dataDir })
+  assert.deepEqual(plain.sinceLast.resolved.map((r) => r.causeKey), ['cause-A', 'cause-B', 'cause-C'])
+  // B's verifier could not decide (unverified) and C's never answered (no verdict): settleReverify maps both to not-found-again.
+  const set = {
+    previous: { date: '2026-10-12' }, ceiling: { maxVerifiers: 8, itemsPerVerifier: 4 },
+    items: [
+      { id: 'R1', causeKey: 'cause-A', title: 'Bug A', topic: 'bugs' },
+      { id: 'R2', causeKey: 'cause-B', title: 'Bug B', topic: 'bugs' },
+      { id: 'R3', causeKey: 'cause-C', title: 'Bug C', topic: 'bugs' },
+    ],
+    groups: [], counts: { eligible: 3, selected: 3, cut: 0, groups: 1 },
+  }
+  const reverified = reverify.settleReverify(set, [
+    { id: 'R1', verdict: 'sigue', evidence: 'src/a.js:1 still posts without a key' },
+    { id: 'R2', verdict: 'unverified', reason: 'the file moved and I ran out of calls' },
+    // R3: no verdict at all
+  ])
+  const out = clean.clean(settled([]), analysis, { topics: ['bugs'], dataDir, reverified })
+  assert.deepEqual(out.sinceLast.resolved, [])
+  assert.deepEqual(out.sinceLast.reverified, [{ causeKey: 'cause-A', title: 'Bug A', topic: 'bugs' }])
+  assert.deepEqual(out.sinceLast.refuted, [])
+  assert.deepEqual(out.sinceLast.notFoundAgain.map((item) => item.causeKey), ['cause-B', 'cause-C'])
 })
 
 test('a branch located by its tip is resolved only when the branch is gone, and a file located by a commit is compared as a file', (t) => {

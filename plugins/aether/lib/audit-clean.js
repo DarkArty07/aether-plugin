@@ -13,7 +13,7 @@ const { git } = require('./git.js')
 const VERIFICATION_RANK = { proven: 3, 'read-confirmed': 2, proposal: 1 }
 
 function effectiveKey(finding) {
-  return finding.causeKey || finding.id
+  return finding && (finding.causeKey || finding.id)
 }
 
 function sameLocation(first, second) {
@@ -101,6 +101,7 @@ function clean(settled, analysis, options) {
     ? { state: 'done', removed }
     : { state: 'could-not', reason: issues.reason, removed: [] }
   const sinceLast = comparePrevious(analysis, findings, removedKeys, topics, options.dataDir)
+  if (options.reverified) applyReverify(sinceLast, findings, options.reverified)
   return {
     findings,
     unverified,
@@ -217,9 +218,47 @@ function comparePrevious(analysis, findings, removed, topics, storeDir) {
   return { previous: { date: previous.date }, resolved, notReaudited, notFoundAgain }
 }
 
-// command(args, ctx): <settled.json> --analysis <file> --topics <a,b,c>; the data directory is run.dataDir(ctx.env).
+// A reverify outcome for an item the reviewers did report again is already in the list: it stays out of the
+// reverify lists, which hold only items no candidate matched.
+function applyReverify(sinceLast, findings, reverified) {
+  const outcome = new Map()
+  for (const item of reverified.items || []) {
+    if (item && typeof item.causeKey === 'string') outcome.set(item.causeKey, item.reverify)
+  }
+  const current = new Set(findings.map((finding) => effectiveKey(finding)))
+  sinceLast.reverified = []
+  sinceLast.refuted = []
+  // A sigue or resuelto outcome moves the item out of not found again and out of the resolved list alike: an
+  // earlier item whose location files changed went through reverify too, and its verdict decides. A sigue item
+  // is reported as still open, a resuelto one as resolved on evidence. A failed verification never resolves:
+  // a not-found-again outcome moves the item out of the resolved list back into not found again.
+  const moveOut = (list, fromResolved = false) => {
+    const kept = []
+    for (const item of list || []) {
+      const state = outcome.get(item.causeKey)
+      if ((state === 'sigue' || state === 'resuelto') && !current.has(item.causeKey)) {
+        (state === 'sigue' ? sinceLast.reverified : sinceLast.refuted).push(item)
+      } else if (fromResolved && state === 'not-found-again' && !current.has(item.causeKey)) {
+        sinceLast.notFoundAgain.push(item)
+      } else {
+        kept.push(item)
+      }
+    }
+    return kept
+  }
+  sinceLast.notFoundAgain = moveOut(sinceLast.notFoundAgain)
+  sinceLast.resolved = moveOut(sinceLast.resolved, true)
+  // The cut travels nested as counts.cut; a top-level cut only survives from older files. Nested first here,
+  // as in cutOf, so both readers agree.
+  const nested = reverified && reverified.counts && reverified.counts.cut
+  const top = reverified && reverified.cut
+  sinceLast.reverifyCut = Number.isInteger(nested) && nested >= 0 ? nested : Number.isInteger(top) && top >= 0 ? top : 0
+  sinceLast.reverifyCeiling = reverified.ceiling || null
+}
+
+// command(args, ctx): <settled.json> --analysis <file> --topics <a,b,c> [--reverified <file>]; the data directory is run.dataDir(ctx.env).
 async function command(args, ctx) {
-  const parsed = parseArgs(args, { values: ['analysis', 'topics'], booleans: [], positionals: [1, 1] })
+  const parsed = parseArgs(args, { values: ['analysis', 'topics', 'reverified'], booleans: [], positionals: [1, 1] })
   if (!parsed.values.analysis) throw usageError('needs --analysis <file>')
   if (!parsed.values.topics) throw usageError('needs --topics <a,b,c>')
   const topics = parsed.values.topics.split(',').filter((name) => name !== '')
@@ -236,11 +275,20 @@ async function command(args, ctx) {
   } catch (err) {
     throw new Error(`${settledFile} or ${analysisFile}: ${messageOf(err)}`)
   }
+  let reverified = null
+  if (parsed.values.reverified) {
+    try {
+      reverified = JSON.parse(fs.readFileSync(parsed.values.reverified, 'utf8'))
+    } catch (err) {
+      throw new Error(`${parsed.values.reverified}: ${messageOf(err)}`)
+    }
+    if (!reverified || !Array.isArray(reverified.items)) throw new Error(`${parsed.values.reverified}: not a reverify-verdicts output`)
+  }
   const counted = settled && settled.counts && Number.isInteger(settled.counts.candidates) && Number.isInteger(settled.counts.verified)
   if (!settled || !Array.isArray(settled.findings) || !Array.isArray(settled.discarded) || !counted || !analysis || typeof analysis !== 'object') {
     throw new Error(`${settledFile} or ${analysisFile}: not a settled output and an analysis`)
   }
-  const result = clean(settled, analysis, { topics, dataDir: dataDir(ctx.env) })
+  const result = clean(settled, analysis, { topics, dataDir: dataDir(ctx.env), reverified })
   return {
     code: 0,
     result,
@@ -251,4 +299,6 @@ async function command(args, ctx) {
 module.exports = {
   clean,
   command,
+  effectiveKey,
+  missingLocations,
 }
