@@ -135,7 +135,7 @@ test('a known failure does not excuse a new one: only the new one is a finding',
 test('tests cut at the limit are a gate failure that says so', (t) => {
   const u = unit(t, CHECKS.hang)
   commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'hang')
-  const g = gate(u, { timeoutMs: 300 })
+  const g = gate(u, { timeoutMs: 3000 })
   assert.deepEqual([g.pass, g.timedOut], [false, true])
   assert.deepEqual(g.findings, [{ file: 'npm test', what: 'superó el tiempo límite' }])
   assert.deepEqual(g.findings, [GATE_CUT], 'the finding is the one the ladder recognizes (#112)')

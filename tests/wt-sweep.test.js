@@ -118,6 +118,30 @@ test('a recorded pause keeps a branch that only points at its base', (t) => {
   assert.deepEqual(r.json.remaining, { worktrees: [], branches: [one.branch] })
 })
 
+test('a second sweepStale soon after the first walks /proc no more, and the first still sweeps stale runs (issue 180)', (t) => {
+  const { sweepStale } = require('../plugins/aether/lib/worktrees.js')
+  const { repo, args, one } = unit(t)
+  // A lane call's directory, so the first sweep has lane processes to look for and walks /proc.
+  fs.mkdirSync(path.join(args.runDir, 'lanes', 'call-1'), { recursive: true })
+  ageRun(args, 48)
+  const data = tempDir(t, 'aether-data-')
+  let walks = 0
+  const real = fs.readdirSync
+  t.mock.method(fs, 'readdirSync', function (dir, ...rest) {
+    if (dir === '/proc') walks++
+    return real.call(this, dir, ...rest)
+  })
+  const first = sweepStale(repo.dir, { now: Date.now(), dataDir: data })
+  assert.deepEqual(first, { swept: [args.runId] })
+  assert.ok(walks >= 1, 'the first sweep looks for lane processes')
+  assert.equal(fs.existsSync(one.path), false, 'the stale worktree is swept')
+  assert.ok(Number.isFinite(JSON.parse(fs.readFileSync(path.join(data, 'sweep-stale.json'), 'utf8')).at), 'the sweep leaves its stamp in the data directory')
+  const seen = walks
+  const second = sweepStale(repo.dir, { now: Date.now(), dataDir: data })
+  assert.deepEqual(second, { swept: [] })
+  assert.equal(walks, seen, 'the second sweep walks /proc no more')
+})
+
 test('after save, sweep keeps the branch and stale records the run once', (t) => {
   const data = tempDir(t, 'aether-data-')
   const { repo, args, one } = unit(t)

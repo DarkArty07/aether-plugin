@@ -922,6 +922,47 @@ test('Bash cannot name the autonomy registry or a run state unless it only reads
   assert.equal(guardBash(t, 'echo "{}" > .aether/autonomy/grants.json', { cwd: repo.dir, marked: false }).stdout, '')
 })
 
+test('a quoted > is text, not a redirection: a read that only quotes it is allowed (issue 180)', (t) => {
+  const repo = makeRepo(t)
+  for (const command of [
+    'grep ">" .aether/autonomy/grants.json',
+    "grep '>' .aether/autonomy/grants.json",
+    'cat .aether/autonomy/grants.json | grep ">"',
+    'grep "a > b" .aether/autonomy/grants.json',
+    'echo "a > b"',
+    'echo "x > .aether/autonomy/grants.json"',
+    "echo 'x > .aether/autonomy/grants.json'",
+    'echo "x > .aether/autonomy/other.json"',
+  ]) {
+    assert.equal(guardBash(t, command, { cwd: repo.dir }).stdout, '', command)
+  }
+})
+
+test('a real redirection to a protected file is still refused, quoted text around it or not (issue 180)', (t) => {
+  const repo = makeRepo(t)
+  for (const command of [
+    'echo x > .aether/autonomy/grants.json',
+    'echo "a" > .aether/autonomy/grants.json',
+    "echo 'a > b' > .aether/autonomy/grants.json",
+    'echo x 2> .aether/autonomy/grants.json',
+    'cat extra >> .aether/autonomy/grants.json',
+    '> .aether/autonomy/grants.json',
+    'bash -c "echo x > .aether/autonomy/grants.json"',
+    'echo "unbalanced > .aether/autonomy/grants.json',
+    "echo 'unbalanced > .aether/autonomy/grants.json",
+    'echo x > .aether/autonomy/other.json',
+    'echo "unbalanced > .aether/autonomy/other.json',
+    "echo 'unbalanced > .aether/autonomy/other.json",
+    'echo "unbalanced > .aether/autonomy/',
+    'grep ">" .aether/autonomy/grants.json > /tmp/out',
+  ]) {
+    const r = guardBash(t, command, { cwd: repo.dir })
+    const out = JSON.parse(r.stdout)
+    assert.equal(out.hookSpecificOutput.permissionDecision, 'deny', command)
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /written only by aether-autonomy/, command)
+  }
+})
+
 test('an error of the mention analysis refuses the command instead of allowing it (R3)', (t) => {
   const guard = require('../plugins/aether/lib/guard.js')
   const repo = makeRepo(t)

@@ -125,10 +125,11 @@ function welcome(root, env) {
   return `${name} · Lead ready · tell me what you want, or type /aether:help to see what I can do`
 }
 
-function sweepNote(cwd) {
+function sweepNote(cwd, env) {
   try {
     const { sweepStale } = require('./worktrees.js')
-    const { swept } = sweepStale(cwd)
+    const { dataDir } = require('./run.js')
+    const { swept } = sweepStale(cwd, { dataDir: dataDir(env) })
     return swept.length ? `Aether swept ${swept.length} stale run(s): ${swept.join(', ')}.` : ''
   } catch (err) {
     if (/not a git repository/i.test(err.message)) return ''
@@ -255,7 +256,7 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     'Aether mode is active.',
     passed ? '' : "Aether could not pass the superdelegation option to this session's commands, so superdelegation is off.",
     markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
-    sweepNote(cwd),
+    sweepNote(cwd, env),
     autonomyNote(cwd),
   ].filter(Boolean).join('\n\n')
   const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }
