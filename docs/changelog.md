@@ -6,11 +6,14 @@ order: 31
 
 # Changelog
 
-## Unreleased
-
-- **Plan mode gates autonomous work (issue 182, decision A108).** In an interactive session the Lead enters Claude Code's plan mode when the owner asks for a plan in any words, when the owner gives permission to work on its own, whatever the size of the work (the run opens only on the owner's approval, with the hours and dollars set there), before writing the intent card of large or policy-level work, and before building an approved design. The plan has the same parts every time, with a Resources part. Its approval is not a grant of an irreversible class. The Lead never enters plan mode in `claude -p`, a subagent or a run that has already started.
-
 ## Status
+
+Version 0.33.0: plan mode gates autonomous work, and its plan carries the run's resources (issue 182, decision A108). What changed since 0.32.1:
+- **Plan mode gates autonomous work (issue 182, decision A108).** In an interactive session the Lead enters Claude Code's plan mode when the owner asks for a plan in any words, when the owner gives permission to work on its own, whatever the size of the work (the run opens only on the owner's approval, with the hours and dollars set there), before writing the intent card of large or policy-level work, and before building an approved design. The plan has the same parts every time, with a Resources part. Its approval is not a grant of an irreversible class. The Lead never enters plan mode in `claude -p`, a subagent or a run that has already started.
+- **Size.** The Lead's rules may weigh up to 31,000 bytes, from 30,000; they weigh 30,929.
+- **Verification.** `npm run check` passed (mod tests and strict validation included). A live A/B test with the same words in throwaway repositories: with «trabaja autónomamente», 0.32.0 built a one-function task directly with no plan and no run, and this version entered plan mode, took the owner's changed ceilings (1 hour, US$ 5) and only then opened the run; with «hazme un plan» both entered plan mode. Five test sessions cost US$ 1.24 at list price.
+- **Not verified:** plan mode's exploration agents against the delegate mod, and `claude -p` after the change.
+- **Compatibility.** Nothing breaks. A permission to work on its own now stops once at the plan in an interactive session.
 
 Version 0.32.1: the engine's refusals of an Agent spawn stay local friction, and the Lead gets `aether-wt settle` to settle an unverified merge commit that is no longer the tip (issues 152 and 78, decision A107). What changed since 0.32.0:
 - **Observation (issue 152).** A source whose faults are all `spawn-failed`, a refusal by the engine of Claude Code, is a friction of the reading and not a failure: it is counted and shown, and no issue is drafted or filed for it, because the text of the error is never kept and nobody could act on the issue. A source that also holds another class of fault stays a failure.
