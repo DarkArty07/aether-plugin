@@ -32,3 +32,12 @@ test('docs/decisions.md names no retired option, journal or legacy variable', ()
   const found = hits(['options', 'journal'], { docs: true }).filter((hit) => hit.file === 'docs/decisions.md')
   assert.deepEqual(found, [])
 })
+
+test('docs/decisions.md has no repeated decision number', () => {
+  const ids = TEXT.split('\n')
+    .map((line) => line.match(/^\| (A\d+) \|/))
+    .filter(Boolean)
+    .map((m) => m[1])
+  const repeats = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))]
+  assert.deepEqual(repeats, [], `repeated decision numbers: ${repeats.join(', ')}`)
+})

@@ -85,6 +85,8 @@ While the major version is 0, a minor version (`0.Y.0`) may break compatibility,
 5. push `main` and the tag;
 6. users update with `claude plugin update aether@aether-plugin`.
 
+Take the number of a new `docs/decisions.md` entry when the change is integrated, not when the branch starts: if `main` moved since and the number is taken, renumber to the next free number before merging. `tests/docs-decisions.test.js` fails on a repeated number.
+
 ## The website
 
 `site/` is the project's landing page: static HTML, CSS and JavaScript with no build step and no dependencies, which also opens straight from `file://`. `index.html` holds the page and its Spanish copy, `app.js` holds both languages and the animations, `404.html` is the page GitHub Pages shows for a missing address, and `assets/` holds the images and the fonts with their licence texts. Nothing in it refers to a file outside `site/`.
