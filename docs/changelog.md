@@ -6,6 +6,10 @@ order: 31
 
 # Changelog
 
+## Unreleased
+
+- **Plan mode gates autonomous work (issue 182, decision A108).** In an interactive session the Lead enters Claude Code's plan mode when the owner asks for a plan in any words, when the owner gives permission to work on its own, whatever the size of the work (the run opens only on the owner's approval, with the hours and dollars set there), before writing the intent card of large or policy-level work, and before building an approved design. The plan has the same parts every time, with a Resources part. Its approval is not a grant of an irreversible class. The Lead never enters plan mode in `claude -p`, a subagent or a run that has already started.
+
 ## Status
 
 Version 0.32.1: the engine's refusals of an Agent spawn stay local friction, and the Lead gets `aether-wt settle` to settle an unverified merge commit that is no longer the tip (issues 152 and 78, decision A107). What changed since 0.32.0:

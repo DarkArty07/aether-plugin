@@ -59,7 +59,7 @@ Understand the intent first:
 
 Offer the intent card only after the owner confirms that write-back; while they explore or say they do not know, ask one question.
 
-The owner confirms it, for example with «sí, es buena idea», or with their permission to work for hours. A correction that leaves the intent as it was goes into the note; one that changes it means a new note, written back once more.
+The owner confirms it, for example with «sí, es buena idea», by approving your plan in plan mode, or with their permission to work for hours. A correction that leaves the intent as it was goes into the note; one that changes it means a new note, written back once more.
 
 Once the owner confirms the intent, you work on your own.
 
@@ -213,7 +213,7 @@ When the same fallback fails twice on the same step, the repetition rule of "Aut
 
 ## Autonomous runs
 
-The owner may give you permission to work for hours, for example «trabaja por horas» or «no cuentes conmigo hasta acabar». That permission, in their own words, confirms the intent and the ceilings: you do not ask again. Without it there is no run: you design as in "Designing", and stop at the plan with the short brief.
+The owner may give you permission to work for hours, for example «trabaja por horas», «trabaja autónomamente» or «no cuentes conmigo hasta acabar». That permission, in their own words, confirms the intent, whatever the size of the work: even a task you would build directly opens a run, once the owner approves its plan and ceilings in plan mode (see "Plans"); then you do not ask again. Without it there is no run: you design as in "Designing", and stop at the plan with the short brief.
 
 When the owner gives that permission, or session start says a run is open, load the `aether:autonomous-runs` skill and follow it.
 
@@ -249,7 +249,7 @@ Before one, run `aether-autonomy check <class>`.
 
 The Writer writes plans with the Aether fields (an optional Review where risk warrants, Area, Owns, Depends on, and the `## Aether Execution` section) in `tasks.md`, and checks them with `aether-plan check`.
 
-When the owner explicitly asks for a plan, or before you build through "Spec and plan" or "Short design" in an interactive session outside an autonomous run, load the deferred tools with `ToolSearch` (`select:EnterPlanMode,ExitPlanMode`), call `EnterPlanMode` yourself, present the plan to the owner and, with their approval, call `ExitPlanMode` and build. Never call `EnterPlanMode` in a session without a terminal (`claude -p`), in a subagent, or inside an autonomous run.
+**Plan mode** is Claude Code's page the owner approves before you act, not Spec Kit's `plan.md` nor the Writer's `aether:plan` skill: «hazme un plan», in any words, means it. In an interactive session enter it yourself when the owner asks for a plan; when they give permission to work on their own («trabaja autónomamente», «trabaja por horas»), whatever the size of the work, before the run opens and before any edit; before the intent card of large or policy-level work, for your write-back; and before you build an approved design outside an autonomous run. Load `select:EnterPlanMode,ExitPlanMode` with `ToolSearch`, call `EnterPlanMode`, write the plan file, call `ExitPlanMode`. Its parts, in the owner's language: **Intención** (their quotes) · **Criterios** · **Recursos** (hours and dollars, 8 h and US$ 50 unless they said others; harnesses and models) · **Ruta** · **Supuestos** · **Qué esperará de ti** · **Costo y tiempo estimados**. Changes they answer with go into the plan, with their words, before `ExitPlanMode` again. The approval is not a grant of any irreversible class. Never call `EnterPlanMode` in a session without a terminal (`claude -p`), in a subagent, or inside an autonomous run that has already started.
 
 ## The execution method
 

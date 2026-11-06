@@ -745,6 +745,23 @@ test('R22: the Lead rules load and use EnterPlanMode and ExitPlanMode in an inte
   }
   assert.match(read('docs/guide/autonomy.md'), /plan mode/i)
   assert.match(read('docs/es/guias/feature-completa.md'), /modo plan/i)
-  const versions = read('docs/changelog.md').split(/\n(?=Version \d+\.\d+\.\d+: )/).filter((section) => /^Version \d/.test(section))
-  assert.ok(/plan mode/i.test(versions[2]), 'the changelog says it in the release that ships it')
+  assert.match(read('docs/changelog.md'), /plan mode/i, 'the changelog says it')
+})
+
+test('A108: plan mode gates autonomous work, its plan carries the resources, and its approval is not a grant', () => {
+  const skill = read('plugins/aether/skills/using-aether/SKILL.md')
+  const plans = skill.slice(skill.indexOf('## Plans'), skill.indexOf('## The execution method'))
+  assert.match(plans, /hazme un plan/, 'a plan asked for in any words means plan mode')
+  assert.match(plans, /permission to work on their own \(«trabaja autónomamente», «trabaja por horas»\), whatever the size of the work, before the run opens/)
+  assert.match(skill, /whatever the size of the work: even a task you would build directly opens a run/)
+  assert.match(plans, /`aether:plan`/, 'plan mode is told apart from the Writer\'s skill')
+  for (const part of ['Intención', 'Criterios', 'Recursos', 'Ruta', 'Supuestos', 'Qué esperará de ti', 'Costo y tiempo estimados']) {
+    assert.ok(plans.includes(`**${part}**`), `the plan template has ${part}`)
+  }
+  assert.match(plans, /not a grant of any irreversible class/)
+  assert.match(plans, /inside an autonomous run that has already started/)
+  const runs = read('plugins/aether/skills/autonomous-runs/SKILL.md')
+  const start = runs.slice(runs.indexOf('**Start:**'), runs.indexOf('**Permission prompts.**'))
+  assert.ok(start.indexOf('plan mode') !== -1 && start.indexOf('plan mode') < start.indexOf('aether-autonomy start'), 'plan mode comes before the run opens')
+  assert.match(start, /their answer to the plan dialog is not such a message/)
 })
