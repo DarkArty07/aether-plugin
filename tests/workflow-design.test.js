@@ -632,6 +632,41 @@ test('issue 67: a revision names the findings and where they touch, and the Writ
   assert.ok(guide.includes('names no line'))
 })
 
+test('from the second review on, the Judge brief carries the whole previous list, and the answering rule stays in judge.md (#103)', async () => {
+  const first = [
+    { severity: 'major', type: 'wrong', title: 'first gap', evidence: '`R1`', fix: 'name it' },
+    { severity: 'minor', type: 'extra', title: 'first extra', evidence: '`R2`', fix: 'drop it' },
+  ]
+  const second = [
+    { severity: 'major', type: 'wrong', title: 'second gap', evidence: '`R3`', fix: 'name it' },
+  ]
+  let n = 0
+  const judge = (call, fallback) => {
+    if (!/ review \d$/.test(call.label)) return fallback(call)
+    if (call.label.startsWith('plan:')) return fallback(call)
+    n++
+    if (n === 1) return { verdict: 'revise', findings: first, openQuestions: [] }
+    if (n === 2) return { verdict: 'revise', findings: second, openQuestions: [] }
+    return fallback(call)
+  }
+  const run = await go(ARGS, { judge })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  const prompt = (label) => run.calls.find((c) => c.label === label).prompt
+  const review2 = prompt('spec: judge review 2')
+  assert.ok(review2.includes('The earlier verdict, of review 1: revise'))
+  for (const title of ['first gap', 'first extra']) assert.ok(review2.includes(title), `review 2 carries: ${title}`)
+  const review3 = prompt('spec: judge review 3')
+  assert.ok(review3.includes('The earlier verdict, of review 2: revise'))
+  assert.ok(review3.includes('second gap'), 'review 3 carries the whole list of review 2')
+  // Spec 025: the prompts carry data, the rules live in the agent bodies. The answering rule is judge.md's,
+  // and no review brief repeats it.
+  ruleIsInBody(run, 'spec: judge review 2', 'judge', ['Answer for each finding of that list whether it is resolved or still open'])
+  for (const label of ['spec: judge review 2', 'spec: judge review 3']) {
+    assert.equal(prompt(label).includes('counts as still open'), false, `${label} carries the list, not the rule`)
+  }
+})
+
 test('the design workflow holds no copy of the seat profiles and no native correction by rule', () => {
   const source = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
   for (const gone of ['SEAT_CHOICES', 'nativeRevision', 'with no seat round', "'balanced'", "'robust'", 'input.seats', 'input.lanes']) assert.equal(source.includes(gone), false, gone)
