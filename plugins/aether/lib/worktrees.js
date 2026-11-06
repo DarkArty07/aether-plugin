@@ -1248,6 +1248,37 @@ function hasRecordStatus(runId, status, dir = run.dataDir()) {
   })
 }
 
+// How often session start may sweep stale runs: a second start within this interval finds the
+// stamp the sweep before it left in the data directory and does nothing, so old runs no longer cost
+// a /proc walk at every start (issue 180).
+const SWEEP_STALE_INTERVAL_MS = 10 * 60 * 1000
+
+// The stamp the last sweep left in the data directory, written the way the other state files are.
+function sweepStampFile(dataDir) {
+  return path.join(dataDir, 'sweep-stale.json')
+}
+
+// Whether a sweep is due: a missing or unreadable stamp, or one older than the interval, says so.
+// A stamp from the future (the clock moved back) says so too: sweeping is the safe default. Never throws.
+function sweepDue(dataDir, now) {
+  let at = null
+  try {
+    const stamp = JSON.parse(fs.readFileSync(sweepStampFile(dataDir), 'utf8'))
+    if (Number.isFinite(stamp?.at)) at = stamp.at
+  } catch {
+    // No stamp: due.
+  }
+  return at === null || now < at || now - at >= SWEEP_STALE_INTERVAL_MS
+}
+
+function writeSweepStamp(dataDir, now) {
+  try {
+    run.writeJson(sweepStampFile(dataDir), { at: now })
+  } catch {
+    // Housekeeping: a stamp that cannot be written never blocks the sweep.
+  }
+}
+
 // Removes runs that were never finalized and have had no activity for `hours`, plus leftovers
 // whose run directory is already gone (only the unit worktrees and the branches whose work is integrated: a branch with
 // work that is not integrated, or a patch of a task not integrated, is kept). Activity is any change in the run directory or in the
@@ -1256,7 +1287,9 @@ function hasRecordStatus(runId, status, dir = run.dataDir()) {
 // it is recorded once as interrupted-saved, and its run directory stays for the relaunch.
 // A run whose sweep keeps retained branches, patches, worktrees, branches or a live marker (R7)
 // keeps its run directory too, is not counted in `swept`, and is recorded as abandoned only once.
-function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
+// A second call within SWEEP_STALE_INTERVAL_MS of the last sweep does nothing.
+function sweepStale(cwd, { hours = 24, now = Date.now(), dataDir = run.dataDir() } = {}) {
+  if (!sweepDue(dataDir, now)) return { swept: [] }
   const { mainRoot } = repoPaths(cwd)
   const ids = new Set()
   for (const sub of ['runs', 'worktrees', 'lanes']) {
@@ -1285,7 +1318,7 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     // A live marker keeps the run directory; the sweep does not remove marker files.
     const live = liveUnverified(mainRoot, id)
     const interrupted = wasInterrupted(mainRoot, id)
-    const lastStatus = lastRecordStatus(id)
+    const lastStatus = lastRecordStatus(id, dataDir)
     const sweep = sweepRun(cwd, id)
     const removed = new Set(sweep.removedBranches)
     const abandoned = {
@@ -1297,12 +1330,12 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
       removedBranches: sweep.removedBranches.length,
       branches: branches.filter(({ branch }) => removed.has(branch)),
     }
-    const alreadyAbandoned = hasRecordStatus(id, 'abandoned')
-    if (!interrupted && !alreadyAbandoned && lastStatus !== 'finalized') run.appendRecord(abandoned)
+    const alreadyAbandoned = hasRecordStatus(id, 'abandoned', dataDir)
+    if (!interrupted && !alreadyAbandoned && lastStatus !== 'finalized') run.appendRecord(abandoned, dataDir)
     const { savedBranches } = sweep
     if (savedBranches.length > 0) {
       // Its branches wait for the relaunch: the run is recorded once, and its directory stays.
-      if (!hasRecordStatus(id, 'interrupted-saved')) run.appendRecord({ runId: id, status: 'interrupted-saved', sweptAt, repo: mainRoot })
+      if (!hasRecordStatus(id, 'interrupted-saved', dataDir)) run.appendRecord({ runId: id, status: 'interrupted-saved', sweptAt, repo: mainRoot }, dataDir)
       continue
     }
     if (live.length > 0) continue
@@ -1312,11 +1345,12 @@ function sweepStale(cwd, { hours = 24, now = Date.now() } = {}) {
     const hasPatches = pendingPatches(mainRoot, id, patchesDir).length > 0
     if ((sweep.retainedBranches && sweep.retainedBranches.length > 0) || hasPatches) continue
     if (sweep.remaining.worktrees.length > 0 || sweep.remaining.branches.length > 0) continue
-    if (interrupted && lastStatus !== 'finalized' && !alreadyAbandoned) run.appendRecord(abandoned)
+    if (interrupted && lastStatus !== 'finalized' && !alreadyAbandoned) run.appendRecord(abandoned, dataDir)
     assertInside(dir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(dir, { recursive: true, force: true })
     swept.push(id)
   }
+  writeSweepStamp(dataDir, now)
   return { swept }
 }
 
@@ -1334,6 +1368,7 @@ module.exports = {
   removeUnit,
   sweepRun,
   sweepStale,
+  SWEEP_STALE_INTERVAL_MS,
   loadGraph,
   uncommittedFiles,
   changedFiles,

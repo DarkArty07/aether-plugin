@@ -1,7 +1,7 @@
 'use strict'
 
 // The orchestrator of the audit family: it takes --out out of argv, checks it stays outside the audited project,
-// dispatches the six subcommands to their module, and prints one JSON line.
+// dispatches the eight subcommands to their module, and prints one JSON line.
 // Family: audit.
 
 const path = require('node:path')
@@ -22,6 +22,14 @@ function runVerdicts(args, ctx) {
   return require('./audit-verify.js').command(args, { ...ctx, subcommand: 'verdicts' })
 }
 
+function runReverify(args, ctx) {
+  return require('./audit-reverify.js').command(args, { ...ctx, subcommand: 'reverify' })
+}
+
+function runReverifyVerdicts(args, ctx) {
+  return require('./audit-reverify.js').command(args, { ...ctx, subcommand: 'reverify-verdicts' })
+}
+
 function runClean(args, ctx) {
   return require('./audit-clean.js').command(args, ctx)
 }
@@ -34,12 +42,14 @@ function runReport(args, ctx) {
   return require('./audit-report.js').command(args, ctx)
 }
 
-const VERBS = ['analyze', 'candidates', 'verdicts', 'clean', 'triage', 'report']
+const VERBS = ['analyze', 'candidates', 'verdicts', 'reverify', 'reverify-verdicts', 'clean', 'triage', 'report']
 
 const RUNNERS = {
   analyze: runAnalyze,
   candidates: runCandidates,
   verdicts: runVerdicts,
+  reverify: runReverify,
+  'reverify-verdicts': runReverifyVerdicts,
   clean: runClean,
   triage: runTriage,
   report: runReport,
@@ -79,10 +89,11 @@ function takeOut(argv) {
 //    (git rev-parse --show-toplevel, through lib/git.js; no root, no check); inside it, the exit code is 2 and the error says
 //    "--out must be outside the audited project". This check comes before the subcommand runs.
 // 2. Loads the module of the subcommand when it is asked for, with a literal require inside a function per subcommand:
-//    analyze -> audit-analyze.js, candidates and verdicts -> audit-verify.js, clean -> audit-clean.js, triage -> audit-triage.js, report -> audit-report.js.
+//    analyze -> audit-analyze.js, candidates and verdicts -> audit-verify.js, reverify and reverify-verdicts -> audit-reverify.js,
+//    clean -> audit-clean.js, triage -> audit-triage.js, report -> audit-report.js.
 //    Each exports command(args, ctx) -> Promise<{ code?: number, result: object, summary?: object }> and gets ctx = { cwd, env, subcommand, now: () => new Date() }.
 // 3. Prints the result; with --out writes the result there (writeAtomic) and prints { ok: true, out, summary } instead.
-// An error with exitCode 2 (usageError) gives exit 2; any other error gives { ok: false, error } and exit 1; an unknown or missing subcommand gives exit 2 and an error that names the six subcommands.
+// An error with exitCode 2 (usageError) gives exit 2; any other error gives { ok: false, error } and exit 1; an unknown or missing subcommand gives exit 2 and an error that names the eight subcommands.
 async function main(argv, { cwd = process.cwd(), env = process.env, stdout = process.stdout } = {}) {
   let rest
   let out

@@ -60,3 +60,13 @@ test('the Judge names the inputs its helpers are assumed to return, in the plan 
 test('the Judge names the existing tests each task touches, and flags a task that contradicts one (#92)', () => {
   has('judge', ['the existing tests that exercise the files the task changes', 'a task whose brief contradicts one of them'])
 })
+
+test('the Judge lists everything in round one, and from round two on answers for each earlier finding (#103)', () => {
+  has('judge', [
+    'list every finding you can find',
+    'Do not stop at the first few',
+    'Answer for each finding of that list whether it is resolved or still open',
+    'a finding you leave unanswered counts as still open',
+    'Add a new finding only when the revision introduced it or you could not have seen it before',
+  ])
+})

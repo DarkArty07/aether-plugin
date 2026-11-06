@@ -25,6 +25,8 @@ That loads the tree for one session, in place of the installed release; with the
 
 Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens. `scripts/refresh-lanes.js` updates the lane table from Artificial Analysis; it reads `ARTIFICIAL_ANALYSIS_API_KEY`, or else the `.env` file its header comment names.
 
+Take the number of a new `docs/decisions.md` entry when the change is integrated, not when the branch starts: if `main` moved since and the number is taken, renumber to the next free number before merging. `tests/docs-decisions.test.js` fails on a repeated number.
+
 ### Check the plan format
 
 When you change the plan checker, the compiler or the format of a task, check that the plan format Aether builds from still reads correctly. Save this two-task plan as `tasks.md` anywhere. It is what the Writer produces for a plan, shortened: every task has the Aether fields, and there is an `## Aether Execution` section.

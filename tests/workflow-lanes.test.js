@@ -278,7 +278,7 @@ test('changes outside Owns cost the attempt, and the next one, picked without th
   assert.deepEqual(unit.failures, ['no report'])
 })
 
-test('changes outside Owns on every attempt exhaust the ladder and block the unit', async (t) => {
+test('changes outside Owns on every attempt block the unit as a plan error, without climbing (issue 179)', async (t) => {
   const run = await runWorkflow(lanesRun(t), {
     lane: onPairs(
       (call, fallback) =>
@@ -288,18 +288,14 @@ test('changes outside Owns on every attempt exhaust the ladder and block the uni
   })
   ok(run)
   const unit = run.result.units[0]
-  assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent (exhausted)'])
-  assert.equal(unit.attempts, 6)
-  assert.deepEqual(starts(run, 'implementer').map((c) => c.lane.model), [
-    'gemini-3.8-flash',
-    'claude-sonnet-5-5',
-    'gemini-3.8-flash',
-    'claude-sonnet-5-5',
-    'gemini-3.8-flash',
-    'claude-sonnet-5-5',
-  ])
+  assert.equal(unit.status, 'blocked')
+  assert.match(unit.reason, /blocked-outside-owns/)
+  assert.match(unit.reason, /plan error/)
+  assert.match(unit.reason, /other\/x\.js/)
+  assert.equal(unit.attempts, 2)
+  assert.deepEqual(starts(run, 'implementer').map((c) => c.lane.model), ['gemini-3.8-flash', 'claude-sonnet-5-5'])
   assert.equal(run.calls.some((c) => c.kind === 'ops:lane-start' && c.lane.role === 'supervisor'), false)
-  assert.equal(run.result.lanes.violation, 6)
+  assert.equal(run.result.lanes.violation, 2)
 })
 
 test('a lane that finds the integration worktree changed blocks the unit', async (t) => {

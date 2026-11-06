@@ -460,6 +460,11 @@ async function step(unit, kind, body) {
   if (verdictResult.kind === 'exhausted' || verdictResult.status === 'exhausted') {
     return { blocked: 'the ladder is spent (exhausted)' }
   }
+  // The ladder blocks the unit itself on a repeated plan error (issue 179): the reason says what to fix.
+  if (verdictResult.kind === 'blocked' || verdictResult.status === 'blocked') {
+    const why = verdictResult.reason ? `${verdictResult.cause}: ${verdictResult.reason}` : 'the ladder is blocked'
+    return { blocked: why }
+  }
   if (kind === 'fix') {
     unit.ladder.corrections++
   }

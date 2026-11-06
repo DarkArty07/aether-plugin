@@ -117,16 +117,47 @@ function rise(state, ladder, cause, carry) {
   return { accepted: true, state: raised, next: { step, kind: 'rise', cause, effort: effortFor(ladder, step, 'rise'), carry } }
 }
 
+// Whether the finding says the change fell outside Owns, in the Spanish the gate and the merge write or in
+// the English a supervisor writes: 'fuera de Owns', or 'changes outside Owns' with the file named or not.
+const OUTSIDE_OWNS = /outside(\s+the(\s+task's)?)?\s+owns|fuera\s+de\s+owns/
+function isOutsideOwns(finding) {
+  return OUTSIDE_OWNS.test(String(finding.what).replace(/\s+/g, ' ').trim().toLowerCase())
+}
+
+// The file a finding names, normalized the way findingKey normalizes it: an outside-Owns finding
+// rephrased between attempts is still the same repeat when it names the same file (issue 179).
+function fileKey(finding) {
+  return String(finding.file).replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
 function judgeFix(state, verdict, ladder, carry) {
   // The gate cut is left out of the keys (#112). A verdict that is only a cut is no repeat: it neither adds to a streak
   // of the real findings nor breaks it, so a cut between two verdicts of the same finding does not hide the repetition,
   // and two cuts in a row never rise by the repeat rule. A cut mixed with a real finding counts as that finding alone.
-  const keys = [...new Set(verdict.findings.map(findingKey))].filter((key) => key !== GATE_CUT_KEY).sort()
+  const real = verdict.findings.filter((finding) => findingKey(finding) !== GATE_CUT_KEY)
+  // A verdict of nothing but outside-Owns findings repeats by file alone: the gate writes 'fuera de Owns'
+  // and a supervisor 'changes outside Owns', so keying by file and wording would miss the repetition.
+  const allOutside = real.length > 0 && real.every(isOutsideOwns)
+  const keys = [...new Set(allOutside ? real.map(fileKey) : real.map(findingKey))].sort()
   const cutOnly = keys.length === 0
   const same = state.lastKeys !== null && state.lastKeys.length === keys.length && state.lastKeys.every((key, i) => key === keys[i])
   // repeats: how many verdicts in a row, this one included, gave the same real findings.
   const repeats = cutOnly ? state.repeats : same ? state.repeats + 1 : 1
-  if (!cutOnly && repeats >= ladder.repeatFindings) return rise(state, ladder, 'repeated', carry)
+  if (!cutOnly && repeats >= ladder.repeatFindings) {
+    // The same change outside Owns again is a plan error (issue 179): the brief and an existing test
+    // disagree, or the file is missing from Owns, so no model can fix it. The unit is blocked at once,
+    // without climbing; the repeat count is the ladder file's, the same one as the repeated rule.
+    if (same && allOutside) {
+      const files = [...new Set(real.map((finding) => finding.file))].join(', ')
+      const reason =
+        `the same change outside Owns came back again (${files}): a plan error, not a model error; ` +
+        'the brief and an existing test disagree, or the file is missing from Owns. ' +
+        'Add the file to Owns or change the brief, then relaunch.'
+      const blocked = { ...state, attempts: state.attempts + 1, status: 'blocked' }
+      return { accepted: true, state: blocked, next: { step: null, kind: 'blocked', cause: 'blocked-outside-owns', reason, effort: null, carry: true } }
+    }
+    return rise(state, ladder, 'repeated', carry)
+  }
   const cap = ladder.rungs[rungIndex(ladder, state.step)].corrections
   // Every fix spends a correction, the same findings again included: the step's cap is hard (R2).
   if (state.correctionsUsed >= cap) return rise(state, ladder, 'exhausted', carry)

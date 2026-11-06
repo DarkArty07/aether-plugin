@@ -111,8 +111,16 @@ test('a quota refusal gives null and writes nothing', async (t) => {
 
 test('a timeout gives null and writes nothing', async (t) => {
   const dataDir = useDataDir(t)
-  useFake(t, { sleepMs: 10000, stdout: out(completed('ok'), usage(allowance(10, 10))) })
-  assert.equal(await refresh({ timeoutMs: 300 }), null)
+  // The probe throws on a timeout, so an exec that throws as it does proves the timeout path with no real waiting.
+  let seen = null
+  const exec = async (argv, opts) => {
+    seen = opts
+    const err = new Error('spawn ETIMEDOUT')
+    err.code = 'ETIMEDOUT'
+    throw err
+  }
+  assert.equal(await refresh({ exec, timeoutMs: 3000 }), null)
+  assert.equal(seen.timeoutMs, 3000, 'the timeout reaches the probe')
   assert.equal(fs.existsSync(observedFile(dataDir)), false)
 })
 

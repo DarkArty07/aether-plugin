@@ -621,33 +621,59 @@ function heredocSegments(body, depth) {
 // body is text, from the line after the command line that starts it up to its delimiter, except the
 // substitutions and backquotes that a body with an unquoted delimiter expands. Each body is also
 // attached to the words that started it, as their "heredocs" property, so the matcher can read a
-// shell's script from it.
+// shell's script from it. A quote left unterminated fails closed: the masks after its opener read
+// as unquoted, so a redirection hiding in it is still refused (issue 180).
 function segmentsOf(command, depth = 0) {
   const segments = []
   let words = []
   // null between words; a quoted empty string is still a word.
   let word = null
   let quote = null
+  // Where the currently open quote began, so an unterminated quote fails closed for redirection
+  // purposes (issue 180): every character after its unmatched opener counts as unquoted.
+  let openRef = null
+  // Parallel to words and word: for each character, whether quotes held it. A `>` read inside
+  // quotes is text (issue 180), not a redirection; the mention check reads the masks it needs.
+  let wordMasks = []
+  let marks = null
+  // Appends text to the current word, remembering for each character whether quotes held it.
+  const add = (text, wasQuoted) => {
+    word = (word ?? '') + text
+    marks = marks ?? []
+    for (let k = 0; k < text.length; k++) marks.push(wasQuoted)
+  }
+  const resetWord = () => {
+    word = ''
+    marks = []
+  }
   // The heredocs that the current command line started, whose bodies follow its newline.
   const heredocs = []
   const endWord = () => {
-    if (word !== null) words.push(word)
+    if (word !== null) {
+      words.push(word)
+      wordMasks.push(marks ?? [])
+    }
     word = null
+    marks = null
   }
   const endSegment = () => {
     endWord()
-    if (words.length > 0) segments.push(words)
+    if (words.length > 0) {
+      words.masks = wordMasks
+      segments.push(words)
+    }
     words = []
+    wordMasks = []
   }
   for (let i = 0; i < command.length; i++) {
     const ch = command[i]
     const next = command[i + 1]
     if (quote === "'") {
-      if (ch === "'") quote = null
-      else word += ch
+      if (ch === "'") { quote = null; openRef = null }
+      else add(ch, true)
     } else if (quote === '"') {
-      if (ch === '"') quote = null
-      else if (ch === '\\' && i + 1 < command.length && '"\\$`'.includes(command[i + 1])) word += command[++i]
+      if (ch === '"') { quote = null; openRef = null }
+      else if (ch === '\\' && i + 1 < command.length && '"\\$`'.includes(command[i + 1])) add(command[++i], true)
       else if (ch === '$' && next === '(' && command[i + 2] === '(' && arithmeticEnd(command, i) !== -1) {
         const end = arithmeticEnd(command, i)
         const inner = command.slice(i + 3, end - 2)
@@ -655,43 +681,56 @@ function segmentsOf(command, depth = 0) {
         if (subs.length > 0) {
           endSegment()
           segments.push(...subs)
-          word = ''
+          resetWord()
         } else {
-          word = (word ?? '') + command.slice(i, end)
+          add(command.slice(i, end), true)
         }
         i = end - 1
       } else if (ch === '$' && next === '(') {
         if (depth >= MAX_NESTING) {
           endSegment()
           quote = null
-          word = ''
+          openRef = null
+          resetWord()
           continue
         }
         const sub = readSubstitution(command, i + 2)
         endSegment()
-        segments.push(...segmentsOf(sub.inner, depth + 1))
-        word = ''
+        // Nested segments carry their own level's balance: an unterminated outer quote
+        // must not unmask them (issue 180).
+        for (const nested of segmentsOf(sub.inner, depth + 1)) {
+          nested.nested = true
+          segments.push(nested)
+        }
+        resetWord()
         i = sub.end
       } else if (ch === '`') {
         if (depth >= MAX_NESTING) {
           endSegment()
           quote = null
-          word = ''
+          openRef = null
+          resetWord()
           continue
         }
         const sub = readBacktick(command, i + 1)
         endSegment()
-        segments.push(...segmentsOf(sub.inner, depth + 1))
-        word = ''
+        for (const nested of segmentsOf(sub.inner, depth + 1)) {
+          nested.nested = true
+          segments.push(nested)
+        }
+        resetWord()
         i = sub.end
-      } else word += ch
+      } else add(ch, true)
     } else if (ch === '\\' && i + 1 < command.length) {
       // A backslash-newline continues the line; any other escaped character is taken literally.
+      // An escaped `>` still counts as unquoted: when in doubt the guard refuses.
       i++
-      if (command[i] !== '\n') word = (word ?? '') + command[i]
+      if (command[i] !== '\n') add(command[i], false)
     } else if (ch === "'" || ch === '"') {
       quote = ch
       word = word ?? ''
+      marks = marks ?? []
+      openRef = { segCount: segments.length, words, masks: wordMasks, wordIdx: words.length, markLen: marks.length }
     } else if (ch === ' ' || ch === '\t' || ch === '\r') {
       endWord()
     } else if (ch === '\n') {
@@ -714,7 +753,7 @@ function segmentsOf(command, depth = 0) {
     } else if (ch === ';' || ch === '(' || ch === ')' || ch === '`') {
       endSegment()
     } else if (ch === '&' && i > 0 && '<>'.includes(command[i - 1])) {
-      word = (word ?? '') + ch
+      add(ch, false)
     } else if (ch === '|' || ch === '&') {
       // A doubled operator, || && or |&, is one separator.
       endSegment()
@@ -730,11 +769,56 @@ function segmentsOf(command, depth = 0) {
       endWord()
       i = readHeredoc(command, i + 2, heredocs, words)
     } else {
-      word = (word ?? '') + ch
+      add(ch, false)
+    }
+  }
+  if (quote !== null && openRef !== null) {
+    // An unterminated quote fails closed: a `>` read inside it counts as unquoted, so a
+    // redirection to a protected target is still refused (issue 180). Only the characters
+    // after the unmatched opener are unmasked; a balanced quoted `>` stays text.
+    const unmaskFrom = (maskArr, from) => {
+      for (let k = from; k < maskArr.length; k++) maskArr[k] = false
+    }
+    if (openRef.masks === wordMasks) {
+      // No segment ended inside the unterminated quote.
+      if (word !== null && words.length === openRef.wordIdx) {
+        unmaskFrom(marks ?? [], openRef.markLen)
+      } else {
+        if (openRef.wordIdx < openRef.masks.length) unmaskFrom(openRef.masks[openRef.wordIdx], openRef.markLen)
+        for (let k = openRef.wordIdx + 1; k < openRef.masks.length; k++) unmaskFrom(openRef.masks[k], 0)
+        if (word !== null) unmaskFrom(marks ?? [], 0)
+      }
+    } else {
+      // A segment ended inside the unterminated quote (a substitution in double quotes):
+      // unmask the opener word's tail and everything after it.
+      if (openRef.wordIdx < openRef.masks.length) unmaskFrom(openRef.masks[openRef.wordIdx], openRef.markLen)
+      for (let k = openRef.wordIdx + 1; k < openRef.masks.length; k++) unmaskFrom(openRef.masks[k], 0)
+      for (let s = openRef.segCount; s < segments.length; s++) {
+        if (segments[s] !== openRef.words && !segments[s].nested && segments[s].masks) {
+          for (const maskArr of segments[s].masks) unmaskFrom(maskArr, 0)
+        }
+      }
+      for (const maskArr of wordMasks) unmaskFrom(maskArr, 0)
+      if (word !== null) unmaskFrom(marks ?? [], 0)
     }
   }
   endSegment()
   return segments
+}
+
+// The text after the first unquoted `>` redirection of a shell word (`>>` and `>|` count as one
+// operator), or null when the word holds none. A `>` read inside single or double quotes is text
+// (issue 180), not a redirection; so is one with `<` before it (a heredoc or here-string), exactly
+// as the match before it read them. `mask` marks each character that quotes held, as segmentsOf
+// reads it. An escaped `>` outside quotes counts as unquoted: when in doubt the guard refuses.
+function unquotedRedirection(word, mask) {
+  for (let i = 0; i < word.length; i++) {
+    if (word[i] !== '>' || (mask && mask[i])) continue
+    if (i > 0 && word[i - 1] === '<') continue
+    const pair = word[i + 1] === '>' || word[i + 1] === '|' ? word.slice(i, i + 2) : '>'
+    return word.slice(i + pair.length)
+  }
+  return null
 }
 
 // The distinct irreversible classes of a Bash command, in order of appearance: 'merge-main', 'push',
@@ -798,7 +882,9 @@ function lineShape(command) {
     if (ch === '\\' && quote !== "'") { active = true; if (next !== undefined) word += command[++i]; continue }
     if (quote) {
       if (ch === quote) { quote = null; continue }
-      if (';&<>'.includes(ch) || (quote !== "'" && (ch === '`' || (ch === '$' && next === '(')))) plain = false
+      // A `>` inside quotes is text, not a redirection (issue 180): it keeps a read plain.
+      // Every other shell character there still ends it, as does a quote left unbalanced.
+      if (';&<'.includes(ch) || (quote !== "'" && (ch === '`' || (ch === '$' && next === '(')))) plain = false
       word += ch; active = true; continue
     }
     if (ch === "'" || ch === '"') { quote = ch; active = true; continue }
@@ -909,12 +995,14 @@ function protectedMention(command, cwd = process.cwd()) {
   visit(command, 0)
   const words = segments.flat()
   const name = (w) => /(^|[^A-Za-z0-9_.-])(grants\.json|run\.json)(?![A-Za-z0-9_.-])/.test(w)
-  // Output redirections also protect other files and directories beneath autonomy.
+  // Output redirections also protect other files and directories beneath autonomy. A `>` inside
+  // quotes is text, not a redirection (issue 180): only an unquoted one counts. The text after a
+  // `>` read inside an unterminated quote starts with its space, which the matchers must not see.
   for (const segment of segments) {
     for (let i = 0; i < segment.length; i++) {
-      const match = segment[i].match(/(?:^|[^<])(?:\d*|&)(?:>>|>\||>)(.*)$/)
-      if (match) {
-        const target = match[1] || segment[i + 1] || ''
+      const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
+      if (after !== null) {
+        const target = (after || segment[i + 1] || '').trim()
         if (name(target) || patternMention(target) || directoryMention(target)) return target
       }
     }

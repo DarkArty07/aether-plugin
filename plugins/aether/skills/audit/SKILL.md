@@ -100,13 +100,38 @@ Write every verdict into one array in `$W/verdicts.json`, adding to each `ranOn`
 
 A finding whose verification failed in any way is «unverified», never verified: the command decides that, not you.
 
+Then re-verify what the reviewers did not report again. Give each accepted candidate its causeKey when it is the same problem as an item of the earlier audit (that report is `report.json` under the audits folder of the data directory): a short slug of its root cause, the same for candidates of the same cause, the earlier item's key when it is the same problem. Run:
+
+    aether-audit reverify "$W/gated.json" --analysis "$W/analysis.json" --topics <the confirmed topic ids, comma-separated> --out "$W/reverify.json"
+
+It takes the earlier audit's still-open P0 to P2 items of the audited topics that no candidate matches by cause key, oldest first within each priority, up to the ceiling of `plugins/aether/config/audit.json` (`reverifyMaxVerifiers` verifiers of up to `reverifyItemsPerVerifier` claims each), and prints them in groups of up to `reverifyItemsPerVerifier` claims with only the claim and the location, never the earlier reasoning. Each group goes to one more verifier in a fresh context, one `Agent` call each, launched in parallel in the background:
+
+    AETHER-TASK: audit-<stamp>-reverify-<n>
+
+    You re-verify claims of a read-only audit. You did not make them, and the reviewers of this audit did not report them again. Change, create or delete no file of the project and run no command that changes it. Never print, quote or copy the value of a secret.
+
+    For each claim: (1) restate it from the code, in your own words. (2) Try to reproduce it, or to refute it by reading the location, its callers and the tests and configuration around it. Reproduce only if you run on Claude and can do it without touching the project, in a directory made with `mktemp -d` outside the project. On another harness, do not reproduce.
+
+    Verdicts: sigue (it still holds: you reproduced it or the code shows it; give the evidence), resuelto (it does not hold anymore; give the evidence that makes it false), unverified (you could not settle it; say why).
+
+    Claims: <id, claim and location of each>
+
+    End your answer with one fenced json block of valid JSON (no trailing comma, no comment), and nothing after it:
+    {"verdicts": [{"id": "...", "verdict": "sigue|resuelto|unverified", "evidence": "...", "reason": "..."}]}
+
+Write every verdict into one array in `$W/reverify-verdicts.json`, adding nothing: a verifier that ran out or did not answer leaves its claims with no verdict. Copy each verdict as the verifier gave it. Run:
+
+    aether-audit reverify-verdicts "$W/reverify.json" "$W/reverify-verdicts.json" --out "$W/reverified.json"
+
+A reverify item that still holds is sigue; one refuted on evidence is resuelto; a verification that failed in any way leaves the item not found again, never resolved: the command decides that, not you.
+
 ## 5. Cleanup
 
-In `$W/settled.json`, add to each finding a `causeKey`: a short slug of its root cause, the same for findings with the same cause, and the one of the earlier audit's item when it is the same problem (the earlier report is `report.json` under the audits folder of the data directory, which the next command finds by itself). Add `coveredBy: <issue number>` when an open issue of `checks.issues` already covers it. Then run:
+In `$W/settled.json`, add to each finding a `causeKey`: a short slug of its root cause, the same for findings with the same cause, and the one of the earlier audit's item when it is the same problem (the earlier report is `report.json` under the audits folder of the data directory, which the next command finds by itself; the reverify set of phase 4 already used these keys). Add `coveredBy: <issue number>` when an open issue of `checks.issues` already covers it. Then run:
 
-    aether-audit clean "$W/settled.json" --analysis "$W/analysis.json" --topics <the confirmed topic ids, comma-separated> --out "$W/clean.json"
+    aether-audit clean "$W/settled.json" --analysis "$W/analysis.json" --topics <the confirmed topic ids, comma-separated> --reverified "$W/reverified.json" --out "$W/clean.json"
 
-It adds the analysis's own findings (a change the audit's commands made to the project), merges the findings of one cause, removes what an open issue covers, and marks each one «new» or «still» against the earlier audit. An earlier item not found again counts as resolved only when its code changed since; when it did not, the report says it was not found again, since reviewers are models and miss things.
+It adds the analysis's own findings (a change the audit's commands made to the project), merges the findings of one cause, removes what an open issue covers, and marks each one «new» or «still» against the earlier audit. The reverify outcomes move out of not found again and out of the resolved list (an earlier item whose code changed still went through reverify, and its verdict decides): a sigue item lands in the reverified list, a resuelto one in the refuted list, and the report says how many the ceiling cut. An earlier item not found again counts as resolved only when its code changed since; when it did not, the report says it was not found again, since reviewers are models and miss things. Omit `--reverified` only when no reverify ran.
 
 ## 6. Triage
 

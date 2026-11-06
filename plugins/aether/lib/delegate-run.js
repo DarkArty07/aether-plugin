@@ -175,11 +175,11 @@ function editsChecks(worktree, base, owns, tests) {
   }
 }
 
-function editsText(external, done, checks, patch) {
+function editsText(external, done, checks, patch, checkBase) {
   const pair = pairOf(done.pair)
   return [
     `Aether delegate task ${external.id}, attempt ${external.attempt} (step ${external.step}): the work of ${pair ? `${pair.model} at ${pair.effort} on ${pair.harness} (pair ${pair.id})` : 'an external pair'}.`,
-    `Branch: ${done.branch} at ${done.head}, in the worktree ${done.worktree}, from base ${done.base}.`,
+    `Branch: ${done.branch} at ${done.head}, in the worktree ${done.worktree}, from base ${done.base}, checked against ${checkBase ?? done.base}.`,
     ...(isText(done.summary) ? [`Summary: ${done.summary}`] : []),
     testsLine(done.tests),
     ...reviewLines(done.review),
@@ -214,18 +214,22 @@ async function runEdits(external, { cwd, dataDir }, delegateCommand) {
   }
   if (!isObject(done) || done.status !== 'done') {
     const status = isObject(done) && isText(done.status) ? done.status : 'failed'
-    return { result: { ok: false, status, text: null, checks: null }, entry: { pair: null, branch: null, worktree: null, base: null, head: null, patch: null, answer: null, review: null } }
+    return { result: { ok: false, status, text: null, checks: null }, entry: { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null } }
   }
-  const checks = editsChecks(done.worktree, done.base, external.owns, done.tests)
+  // The commit the delegate's branch was built on, not the launch base: when the Lead committed
+  // between the launch and the harvest, the branch forked later, and those commits do not count
+  // (issue 178). The result records it as checkBase.
+  const checkBase = checksLib.forkBase(done.worktree, done.base)
+  const checks = editsChecks(done.worktree, checkBase, external.owns, done.tests)
   let patch = null
   try {
-    patch = savePatch(done.worktree, done.base, path.join(delegatesDir(dataDir), 'patches', `${log.fileKey(external.session ?? null, external.id)}-${external.attempt}.patch`))
+    patch = savePatch(done.worktree, checkBase, path.join(delegatesDir(dataDir), 'patches', `${log.fileKey(external.session ?? null, external.id)}-${external.attempt}.patch`))
   } catch {
     // A patch that cannot be saved costs a later correction its starting point, not this attempt its result.
   }
   return {
-    result: { ok: true, status: 'done', text: editsText(external, done, checks, patch), checks },
-    entry: { pair: pairOf(done.pair), branch: done.branch ?? null, worktree: done.worktree ?? null, base: done.base ?? null, head: done.head ?? null, patch, answer: null, review: done.review ?? null },
+    result: { ok: true, status: 'done', text: editsText(external, done, checks, patch, checkBase), checks },
+    entry: { pair: pairOf(done.pair), branch: done.branch ?? null, worktree: done.worktree ?? null, base: done.base ?? null, checkBase: checkBase ?? null, head: done.head ?? null, patch, answer: null, review: done.review ?? null },
   }
 }
 
@@ -235,7 +239,7 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
   const last = Array.isArray(chain.attempts) && chain.attempts.length > 0 ? chain.attempts[chain.attempts.length - 1] : null
   const pair = last ? pairOf(last) : null
   const changed = Array.isArray(chain.changed) ? chain.changed : []
-  const none = { pair, branch: null, worktree: null, base: null, head: null, patch: null, answer: null, review: null }
+  const none = { pair, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null }
   if (chain.status === 'violation') {
     const checks = checksLib.checkReadOnly({ files: changed })
     return { result: { ok: false, status: 'violation', text: null, checks }, entry: none }
@@ -284,7 +288,7 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
     outcome = { result: { ok: false, status: 'failed', text: null, checks: null }, entry: {} }
   }
   const result = { ...outcome.result, attempt }
-  const empty = { pair: null, branch: null, worktree: null, base: null, head: null, patch: null, answer: null, review: null }
+  const empty = { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null }
   log.appendEntry(dataDir, { kind: 'result', time: now(), session, task: id, attempt, ok: result.ok, status: result.status, ...empty, ...outcome.entry, checks: result.checks })
   try {
     if (typeof id === 'string' && ID.test(id)) writeAtomic(resultFile(dataDir, id, pathSession), `${JSON.stringify(result)}\n`)

@@ -371,7 +371,21 @@ function placementOf(r, entries, session, event, brief) {
 }
 
 // What a launch records of the authorization that places its task: the line's own fields, never the whole line.
-const authorizedLine = (line) => ({ model: line.model, scope: line.scope, task: line.task, quote: line.quote, quoteTime: line.quoteTime })
+const authorizedLine = (line) => {
+  const kept = { model: line.model, scope: line.scope, task: line.task, quote: line.quote, quoteTime: line.quoteTime }
+  if (line.effort !== undefined && line.effort !== null) kept.effort = line.effort
+  return kept
+}
+
+// The effort of a launch the owner's authorization covers (issue 141): the first launch runs at the authorized effort
+// instead of the ladder's, even when it is lower; a correction or an unjudged launch keeps it unless the ladder
+// raises it further, never lowering it; a rise to a higher step goes back to the ladder's effort for that step.
+// Without an authorized effort the ladder's effort stands, as before.
+function coveredEffort(ladderEffort, ownerEffort, launchKind) {
+  if (ownerEffort === null || launchKind === 'rise') return ladderEffort
+  if (launchKind === 'first') return ownerEffort
+  return EFFORTS[Math.max(EFFORTS.indexOf(ladderEffort), EFFORTS.indexOf(ownerEffort))]
+}
 
 // The note the Lead reads on a first launch the owner asked to place above the first rung.
 function placementNote(id, rung, cover, args, brief) {
@@ -408,10 +422,12 @@ async function begin(input, deps = {}) {
     if (next.status !== 'open') return refusedPlan(r, ctx, next.status)
 
     const { step, launchKind, attempt } = next
-    const effort = ladderLib.effortFor(r.ladder, step, launchKind)
-    const args = { model: rungOf(r.ladder, step).model, effort }
     // The owner's placement of this task: the authorization of its first launch (spec 021), kept by every later attempt.
     const authorized = cover && launchKind === 'first' ? authorizedLine(cover) : auth.authorizedOf(entries)
+    const storedEffort = isObject(authorized) && typeof authorized.effort === 'string' ? authorized.effort.trim().toLowerCase() : null
+    const ownerEffort = storedEffort !== null && EFFORTS.includes(storedEffort) ? storedEffort : null
+    const effort = coveredEffort(ladderLib.effortFor(r.ladder, step, launchKind), ownerEffort, launchKind)
+    const args = { model: rungOf(r.ladder, step).model, effort }
     const covered = authorized !== null && auth.namedRung(r.ladder, event.model)?.model === args.model
     const { requested, ignored } = requestedOf(event, args, covered)
     if (launchKind === 'first' && placed) notes.push(placementNote(id, placed.rung, cover, args, brief))
@@ -536,7 +552,12 @@ function approveError(r, entries, launch, worktree, ignore = []) {
   if (editsOf(launch)) {
     if (!isText(worktree)) return NO_WORKTREE
     const tests = isText(launch.tests) ? checks.runTests(worktree, launch.tests) : null
-    const check = checks.checkEdits({ files: checks.changedFiles(worktree, launch.base), owns, tests })
+    // What the delegate changed relative to the commit its work was built on, not the launch
+    // base: the worktree's start before its own commits (its HEAD reflog), so work it committed
+    // counts, while the files of the branch the worktree started from stay out (issues 143
+    // and 178). The Lead's own commits after the launch land in the Lead's checkout, not in the
+    // delegate's worktree, so they never count.
+    const check = checks.checkEdits({ files: checks.changedFiles(worktree, checks.worktreeBase(worktree, launch.base)), owns, tests })
     return check.ok ? null : `checks failed: ${editsFailure(check, tests).join('; ')}`
   }
   const answer = lastOf(entries, (e) => e.kind === 'answer' && e.attempt === attempt).entry
