@@ -188,6 +188,71 @@ test('blocked attempt threshold is read from the ladder file', (t) => {
   }
 })
 
+test('the same change outside Owns twice blocks the unit as a plan error, without climbing (issue 179)', () => {
+  const outside = (file) => ({ file, line: null, what: 'fuera de Owns' })
+  const verdict = (findings) => ({ kind: 'fix', findings, reason: null, fromScratch: false })
+  const [first, second] = run([verdict([outside('tests/a.test.js')]), verdict([outside('tests/a.test.js')])])
+  assert.equal(first.next.kind, 'fix')
+  assert.deepEqual([second.next.kind, second.next.step, second.state.status], ['blocked', null, 'blocked'])
+  assert.equal(second.next.cause, 'blocked-outside-owns')
+  assert.match(second.next.reason, /tests\/a\.test\.js/)
+  assert.match(second.next.reason, /plan error/)
+  assert.match(second.next.reason, /missing from Owns/)
+  assert.equal(ladder.judge(second.state, fix(1), L).accepted, false, 'nothing is accepted after the block')
+})
+
+test('the outside-Owns block reads the same way however the verdict writes it, in either language (issue 179)', () => {
+  const verdict = (findings) => ({ kind: 'fix', findings, reason: null, fromScratch: false })
+  const variants = [
+    [{ file: 'tests/a.test.js', line: 3, what: 'changes outside Owns' }],
+    [{ file: 'tests/a.test.js', line: null, what: 'Changes   Outside Owns: tests/a.test.js' }],
+  ]
+  for (const findings of variants) {
+    const [, second] = run([verdict(findings), verdict(findings)])
+    assert.equal(second.next.kind, 'blocked', JSON.stringify(findings))
+    assert.equal(second.next.cause, 'blocked-outside-owns')
+  }
+})
+
+test('the same outside-Owns file rephrased between attempts still blocks (issue 179)', () => {
+  const verdict = (findings) => ({ kind: 'fix', findings, reason: null, fromScratch: false })
+  const spanish = [{ file: 'tests/a.test.js', line: null, what: 'fuera de Owns' }]
+  const english = [{ file: 'tests/a.test.js', line: 3, what: 'changes outside Owns: tests/a.test.js' }]
+  for (const [first, second] of [[spanish, english], [english, spanish]]) {
+    const [one, two] = run([verdict(first), verdict(second)])
+    assert.equal(one.next.kind, 'fix')
+    assert.deepEqual([two.next.kind, two.next.cause, two.state.status], ['blocked', 'blocked-outside-owns', 'blocked'])
+  }
+})
+
+test('two different outside-Owns files do not block, and a repeated mixed verdict still rises (issue 179)', () => {
+  const outside = (file) => ({ file, line: null, what: 'fuera de Owns' })
+  const verdict = (findings) => ({ kind: 'fix', findings, reason: null, fromScratch: false })
+  const [, second] = run([verdict([outside('tests/a.test.js')]), verdict([outside('tests/b.test.js')])])
+  assert.equal(second.next.kind, 'fix')
+  assert.equal(second.next.cause, 'fix')
+  const mixed = [outside('tests/a.test.js'), F(1)]
+  const [, risen] = run([verdict(mixed), verdict(mixed)])
+  assert.deepEqual([risen.next.kind, risen.next.cause], ['rise', 'repeated'])
+})
+
+test('the outside-Owns repeat count comes from the ladder file, not from code (issue 179)', (t) => {
+  const file = path.join(tempDir(t), 'ladder.json')
+  fs.writeFileSync(file, JSON.stringify({ ...L, repeatFindings: 3 }))
+  const configured = ladder.loadLadder(file)
+  const outside = () => ({ file: 'tests/a.test.js', line: null, what: 'fuera de Owns' })
+  const verdict = () => ({ kind: 'fix', findings: [outside()], reason: null, fromScratch: false })
+  let state = ladder.newState(configured)
+  for (let i = 0; i < 2; i++) {
+    const answer = ladder.judge(state, verdict(), configured)
+    state = answer.state
+    assert.equal(answer.next.kind, 'fix', `attempt ${i + 1} is still a correction with repeatFindings 3`)
+  }
+  const blocked = ladder.judge(state, verdict(), configured)
+  assert.equal(blocked.next.kind, 'blocked')
+  assert.equal(blocked.next.cause, 'blocked-outside-owns')
+})
+
 test('blocked reports survive review verdicts and a rung rise, but empty causes reset the streak', () => {
   const blocked = { kind: 'attempt', status: 'BLOCKED', reason: 'outside owns' }
   let state = ladder.judge(ladder.newState(L), blocked, L).state

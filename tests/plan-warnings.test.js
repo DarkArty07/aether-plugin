@@ -117,6 +117,60 @@ test('no test file, a test in node_modules, or a test that names nothing warns a
   assert.deepEqual(testWarningsOf(t, { 'src/foo.js': '', 'tests/other.test.js': 'x\n' }, [task(1, { owns: '`src/foo.js`' })]), [])
 })
 
+// The doc warnings of a check (issue 179): a task that owns or names a doc, a changelog or a
+// config file warns about the test that reads it, when no task owns that test.
+function docWarningsOf(t, files, tasks) {
+  const repo = makeRepo(t)
+  for (const [file, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(repo.dir, file)), { recursive: true })
+    fs.writeFileSync(path.join(repo.dir, file), text)
+  }
+  const r = runBin(PLAN_BIN, ['check', writePlan(repo.dir, plan(tasks))], repo.dir)
+  assert.equal(r.status, 0, r.stdout)
+  return r.json.warnings.filter((w) => w.includes(' but not the tests that read them'))
+}
+
+const CHANGELOG = { 'docs/changelog.md': '# Changelog\n' }
+const POLICY_TEST = {
+  'tests/effort-policy-docs.test.js': "const text = fs.readFileSync('docs/changelog.md', 'utf8')\nassert.doesNotMatch(text, /^## Unreleased/m)\n",
+}
+
+test('a task that owns a changelog warns about the test that reads it, which no task owns (issue 179)', (t) => {
+  assert.deepEqual(docWarningsOf(t, { ...CHANGELOG, ...POLICY_TEST }, [task(1, { owns: '`docs/changelog.md`' })]), [
+    'Task 1 changes docs/changelog.md but not the tests that read them, which it and the tasks it depends on do not own: tests/effort-policy-docs.test.js (no task owns it)',
+  ])
+})
+
+test('no doc warning when the test is in Owns, or when no test reads the file (issue 179)', (t) => {
+  assert.deepEqual(
+    docWarningsOf(t, { ...CHANGELOG, ...POLICY_TEST }, [task(1, { owns: '`docs/changelog.md`, `tests/effort-policy-docs.test.js`' })]),
+    [],
+  )
+  assert.deepEqual(docWarningsOf(t, { ...CHANGELOG, 'tests/other.test.js': 'x\n' }, [task(1, { owns: '`docs/changelog.md`' })]), [])
+})
+
+test('a test owned by another task names that task, and a file the brief names warns too (issue 179)', (t) => {
+  assert.deepEqual(
+    docWarningsOf(t, { ...CHANGELOG, ...POLICY_TEST }, [
+      task(1, { owns: '`tests/effort-policy-docs.test.js`' }),
+      task(2, { owns: '`docs/changelog.md`' }),
+    ]),
+    [
+      'Task 2 changes docs/changelog.md but not the tests that read them, which it and the tasks it depends on do not own: tests/effort-policy-docs.test.js (task 1 owns it)',
+    ],
+  )
+  const namesDoc = `${task(1, { owns: '`src/t1/a.js`' })}\nAdd a \`## Unreleased\` section to \`docs/changelog.md\`.\n`
+  assert.deepEqual(docWarningsOf(t, { ...CHANGELOG, ...POLICY_TEST, 'src/t1/a.js': '' }, [namesDoc]), [
+    'Task 1 changes docs/changelog.md but not the tests that read them, which it and the tasks it depends on do not own: tests/effort-policy-docs.test.js (no task owns it)',
+  ])
+})
+
+test('a folder in Owns warns about the tests that read the docs under it (issue 179)', (t) => {
+  assert.deepEqual(docWarningsOf(t, { ...CHANGELOG, ...POLICY_TEST }, [task(1, { owns: '`docs/`' })]), [
+    'Task 1 changes docs/changelog.md but not the tests that read them, which it and the tasks it depends on do not own: tests/effort-policy-docs.test.js (no task owns it)',
+  ])
+})
+
 // The syntax warnings of a check of one plan, with the tasks' code given as the text of each task.
 function syntaxWarningsOf(t, markdown) {
   const repo = makeRepo(t)

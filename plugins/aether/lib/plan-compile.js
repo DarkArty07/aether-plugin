@@ -14,6 +14,7 @@ const { parsePlan, buildGraph, renderBrief, specObjective, requirementsOf, trace
 const { applyGroups } = require('./plan-groups.js')
 const { earlierMergedUnits } = require('./plan-scope.js')
 const { planWarnings } = require('./plan-warnings.js')
+const { isGlob, matchesAny } = require('./globs.js')
 const { repoPaths, currentBranch, head } = require('./git.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
@@ -95,12 +96,162 @@ function specRequirements(parsedSpec, planPath, cwd) {
   }
 }
 
+// A doc, a changelog or a config file: the non-code files a task changes. A test that reads one must be
+// in reach, or the merge refuses the unit that edits it and the ladder climbs a plan error (issue 179).
+const DOC_SKIP_DIRECTORIES = new Set(['node_modules', '.git', '.worktrees', '.claude'])
+const DOC_MAX_SCANNED_FILES = 2000
+const DOC_MAX_TEST_BYTES = 512 * 1024
+const DOC_TEST_PATH = /(^|\/)tests\/|\.(test|spec)\.[^/]+$/
+const DOC_PATH = /\.(md|mdx|txt|rst|adoc)$/i
+const DOC_CONFIG_PATH = /\.(json|ya?ml|toml)$/i
+
+function docIsTest(file) {
+  return DOC_TEST_PATH.test(file)
+}
+
+function docIsDoc(file) {
+  return !docIsTest(file) && (DOC_PATH.test(file) || DOC_CONFIG_PATH.test(file))
+}
+
+// The repo-relative paths of the files under root, in sorted order, up to the scan's limit.
+function docFilesOf(root) {
+  const files = []
+  const visit = (dir) => {
+    let entries
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (files.length >= DOC_MAX_SCANNED_FILES) return
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (!DOC_SKIP_DIRECTORIES.has(entry.name)) visit(full)
+      } else if (entry.isFile()) {
+        files.push(full)
+      }
+    }
+  }
+  visit(root)
+  return files.map((file) => path.relative(root, file).split(path.sep).join('/'))
+}
+
+// The test files of the checkout under root, each with its path relative to root.
+function docTestFilesOf(root) {
+  return docFilesOf(root)
+    .filter(docIsTest)
+    .filter((rel) => {
+      try {
+        return fs.statSync(path.join(root, rel)).size < DOC_MAX_TEST_BYTES
+      } catch {
+        return false
+      }
+    })
+}
+
+// (No separate escape or dependency helpers here: the guard forbids duplicating the ones in
+// plan-warnings.js, so both are inlined where they are used.)
+
+// A path the brief names in backticks: the same shape the graph reads for its size warnings.
+const DOC_NAMED_FILE = /(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9]+/g
+
+function docNormalize(file) {
+  return String(file).replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/+$/, '')
+}
+
+// The doc files a task changes: a literal Owns entry, a glob Owns entry read against the checkout,
+// or a path its brief names. A folder Owns entry holds every doc under it.
+function docsOf(task, repoDocs) {
+  const named = new Set()
+  for (const pattern of task.owns) {
+    if (isGlob(pattern)) {
+      for (const doc of repoDocs) if (matchesAny(doc, [pattern])) named.add(doc)
+    } else {
+      const file = docNormalize(pattern)
+      if (file === '') continue
+      if (docIsDoc(file)) named.add(file)
+      // A folder entry (docs/ normalizes to docs) names no doc file itself: it holds every doc under
+      // it, matched the folder-aware way matchesAny matches a literal (globs.js). A literal doc file
+      // matches only itself here, so reading both branches is harmless.
+      for (const doc of repoDocs) if (matchesAny(doc, [pattern])) named.add(doc)
+    }
+  }
+  for (const match of String(task.text || '').matchAll(DOC_NAMED_FILE)) {
+    const file = docNormalize(match[0])
+    if (docIsDoc(file)) named.add(file)
+  }
+  return named
+}
+
+// Whether the test's text reads the doc: the doc's repo-relative path in quotes, with the `./` and
+// `../` prefixes a read from the test's folder needs. A bare mention without quotes is not a read.
+function readsDoc(text, doc) {
+  const quoted = String(doc).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const pattern = new RegExp(`['"\`](?:\\.{1,2}/)*${quoted}['"\`]`)
+  return pattern.test(text)
+}
+
+// One warning lists at most this many files; the rest are counted.
+const DOC_LISTED = 5
+const docListed = (items) =>
+  (items.length > DOC_LISTED ? [...items.slice(0, DOC_LISTED), `and ${items.length - DOC_LISTED} more`] : items).join(', ')
+
+// Each changed doc must come with the tests that read it: a test that reads a doc the task changes,
+// and that the task and the tasks it depends on do not own, is warned about, one warning for each task.
+// A heuristic: it reads names in quotes only, so a test that only mentions the doc stays quiet.
+function docWarnings(parsed, root) {
+  const repoDocs = docFilesOf(root).filter(docIsDoc)
+  const tests = docTestFilesOf(root)
+  const texts = new Map()
+  const byNumber = new Map(parsed.tasks.map((task) => [task.number, task]))
+  const warnings = []
+  for (const task of parsed.tasks) {
+    const docs = docsOf(task, repoDocs)
+    if (docs.size === 0) continue
+    // The tasks this one depends on, transitively, collected inline so no helper is duplicated.
+    const seen = new Set()
+    const stack = (task.dependsOn || []).map((d) => d.number)
+    while (stack.length > 0) {
+      const dep = stack.pop()
+      if (seen.has(dep)) continue
+      seen.add(dep)
+      const found = byNumber.get(dep)
+      if (found && Array.isArray(found.dependsOn)) for (const next of found.dependsOn) stack.push(next.number)
+    }
+    const covering = [task, ...[...seen].map((n) => byNumber.get(n)).filter(Boolean)]
+    const sources = new Set()
+    const left = new Map()
+    for (const test of tests) {
+      if (covering.some((owner) => matchesAny(test, owner.owns))) continue
+      if (!texts.has(test)) {
+        try {
+          texts.set(test, fs.readFileSync(path.join(root, test), 'utf8'))
+        } catch {
+          continue
+        }
+      }
+      for (const doc of docs) {
+        if (!readsDoc(texts.get(test), doc)) continue
+        sources.add(doc)
+        const owner = parsed.tasks.find((other) => matchesAny(test, other.owns))
+        left.set(test, owner ? `task ${owner.number} owns it` : 'no task owns it')
+      }
+    }
+    if (left.size === 0) continue
+    const items = [...left].map(([test, why]) => `${test} (${why})`)
+    warnings.push(`Task ${task.number} changes ${docListed([...sources])} but not the tests that read them, which it and the tasks it depends on do not own: ${docListed(items)}`)
+  }
+  return warnings
+}
+
 function check(planArg, { cwd = process.cwd(), stdout = process.stdout } = {}) {
   const { planPath, parsed } = load(planArg, stdout)
   const graph = buildGraph(parsed)
   const trace = traceability(parsed, specRequirements(parsed.spec, planPath, cwd))
   const errors = [...parsed.errors, ...graph.errors, ...trace.errors]
-  const warnings = [...parsed.warnings, ...graph.warnings, ...trace.warnings, ...planWarnings(parsed, worktreeOf(path.dirname(planPath)))]
+  const root = worktreeOf(path.dirname(planPath))
+  const warnings = [...parsed.warnings, ...graph.warnings, ...trace.warnings, ...planWarnings(parsed, root), ...docWarnings(parsed, root)]
   if (errors.length) fail(errors, warnings, stdout)
   // A plan with "Merges with" lines also says which tasks each unit holds.
   const groups = parsed.groups.map((g) => ({ unit: `task-${g.unit}`, tasks: g.members }))
@@ -287,7 +438,8 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     compiledAt: previous && previous.compiledAt ? previous.compiledAt : new Date().toISOString(),
     launches: previous ? (previous.launches || 1) + 1 : 1,
   })
-  const warnings = [...parsed.warnings, ...graph.warnings, ...planWarnings(parsed, worktreeOf(path.dirname(planPath)))]
+  const compileRoot = worktreeOf(path.dirname(planPath))
+  const warnings = [...parsed.warnings, ...graph.warnings, ...planWarnings(parsed, compileRoot), ...docWarnings(parsed, compileRoot)]
   if (repo.worktree === repo.mainRoot) {
     warnings.push(
       'the integration worktree is the main checkout, so the unit worktrees under .aether/worktrees/ sit inside it, and a test command that searches the whole tree also runs their unfinished tests at merge time. Prefer a separate integration worktree (git worktree add <path> -b <branch>).',
