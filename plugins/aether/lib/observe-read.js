@@ -18,6 +18,10 @@ const { loadPairs } = require('./pairs.js')
 const { readPending } = require('./pending.js')
 
 const RANK = { failure: 0, calibration: 1, friction: 2 }
+// The classes of fault that are the engine's own refusals: the mod only saw the engine say no, and the text of the error
+// is never kept (R10), so nobody can diagnose or fix one from an issue. A source whose faults are all of these stays local
+// friction (issue 152): it is counted and shown in the reading, and no issue is drafted or filed for it.
+const ENGINE_FAULT_CLASSES = new Set(['spawn-failed'])
 const SESSION_FOLDER = /^[A-Za-z0-9-]+$/
 const DELEGATE_FIELDS = ['kind', 'time', 'session', 'task', 'id', 'step', 'attempt', 'launchKind', 'status', 'harness', 'model', 'verdict']
 const NEXT_FIELDS = ['kind', 'cause', 'step']
@@ -146,9 +150,10 @@ function faultFindings(totals, faults) {
     }
     const evidence = [`Source ${name} recorded ${total.value} silent faults in ${total.sessions.length} sessions`]
     for (const [cls, n] of [...classes].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) evidence.push(`Class ${cls}: ${n} faults still on disk${kindsText(kinds.get(cls))}`)
+    const engineOnly = classes.size > 0 && [...classes.keys()].every((cls) => ENGINE_FAULT_CLASSES.has(cls))
     findings.push({
       id: `fault:${name}`,
-      kind: 'failure',
+      kind: engineOnly ? 'friction' : 'failure',
       type: 'fault',
       title: `Silent faults in ${name}`,
       evidence,

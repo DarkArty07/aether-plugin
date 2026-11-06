@@ -817,9 +817,9 @@ function describeMerge(out) {
     case 'empty':
       return `refused: the unit branch has no commits to merge${out.uncommitted ? `; uncommitted files: ${list(out.uncommitted)}. Commit your work` : ''}`
     case 'unverified-buried':
-      return `refused: the unverified merge commit is buried under newer commits on ${integration.branch}`
+      return `refused: the unverified merge commit is buried under newer commits on ${integration.branch}. The Lead's exit is aether-wt settle <run> <task>, which runs the plan's tests at the current tip and clears the marker only when they pass`
     case 'unverified-moved':
-      return 'refused: the unit branch has commits that are not in the unverified merge commit'
+      return "refused: the unit branch has commits that are not in the unverified merge commit. The Lead's exit is aether-wt settle <run> <task>, which runs the plan's tests at the current tip and clears the marker only when they pass"
     case 'unverified-other':
       return `refused: another unit (${out.task || 'unknown'}) has an unverified merge commit on ${integration.branch}`
     default:

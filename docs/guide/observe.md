@@ -39,7 +39,7 @@ The detection runs by itself when a Lead session ends: the `SessionEnd` hook dig
 The reading is an ordered list of findings, each with its evidence and its numbers. A finding is one of three kinds:
 - a **failure**, such as a task that climbs a step with no reason, a pair that fails run after run, a rule of the Lead that is broken, or a silent fault of the mod that now leaves a trace; for each one the reading drafts the text of an issue under `observe/issues/`, not opened by the reading (the development mode can file it, see below);
 - a **calibration**, such as a step that almost never approves, a pair or a model that no longer performs as its record says, a design role that asks for too many rounds, or an estimated cost far from the real one; it proposes the adjustment with its numbers and applies none of it: `config/ladder.json`, `config/pairs.json` and the other tables are never changed by the plugin;
-- a **friction**, such as a tool that keeps failing or a context that is compacted again and again.
+- a **friction**, such as a tool that keeps failing, a context that is compacted again and again, or a source whose only faults are refusals by the engine of Claude Code (`spawn-failed`): the mod only sees the engine say no and the text of the error is never kept, so nobody could act on an issue about it; it is counted in the reading and no issue is drafted or filed.
 
 The thresholds are data in `config/observe.json`.
 

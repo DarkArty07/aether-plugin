@@ -360,6 +360,9 @@ test('first merge refused with unverified-* gives an explicit sentence in round 
     assert.equal(unit.status, 'blocked', reason)
     assert.match(unit.reason, /^merge refused:/, reason)
     assert.doesNotMatch(unit.reason, new RegExp(`^merge refused: ${reason}$`), 'must give an explicit sentence, not just the raw reason')
+    if (reason === 'unverified-buried' || reason === 'unverified-moved') {
+      assert.match(unit.reason, /aether-wt settle/, reason)
+    }
   }
 })
 
@@ -383,6 +386,7 @@ test('the guide says a merge cut at 10 minutes is unverified until its tests pas
     assert.match(text, /never commit/)
     assert.match(text, /no longer the tip/)
     assert.match(text, /fixes forward/)
+    assert.match(text, /aether-wt settle/)
     assert.match(text, /\.aether\/runs\/<run>\/unverified\/<task>\.json/)
     assert.match(text, /--only/)
     assert.match(text, /out of the graph/)
