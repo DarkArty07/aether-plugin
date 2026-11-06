@@ -236,7 +236,7 @@ test('the sources of the bootstrap and the swarm skill name no path of this repo
   }
 })
 
-test('the bootstrap sends every delegate through Agent, judges it with aether-delegate verdict, merges an editing one by hand, and stays under 31000 bytes', () => {
+test('the bootstrap sends every delegate through Agent, judges it with aether-delegate verdict, merges an editing one by hand, and stays under 32000 bytes', () => {
   const text = USING_SOURCE
   for (const needed of [
     '**Delegates go through `Agent`:**',
