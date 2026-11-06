@@ -8,9 +8,10 @@ description: Use in Aether mode when the owner gives permission to work for hour
 The permission that opens a run, the irreversible classes, the grant registry, the repetition rule and the opening of every brief are in the "Autonomous runs" section of the Aether mode bootstrap (`using-aether`).
 
 **Start:**
-1. Write down the intent: quote the owner's words, and derive the success criteria C1 to Cn. Ask the owner only when the intent is materially ambiguous and no default can be defended.
-2. Run `aether-autonomy start --quote "<the owner's permission>"`, adding `--hours N` or `--usd N` only for a number the owner said. The defaults are 8 hours and US$ 50. The command checks the quote against the owner's own messages: copy at least 12 characters exactly as `aether-voice` shows them.
-3. It prints the run's id and its diary. Fill in "Intención" with the owner's quotes and C1 to Cn, and start.
+1. In an interactive session, show the owner the run's plan in plan mode first, as "Plans" in the bootstrap says: the intent with their quotes, the criteria, the resources (hours and dollars), the route, the assumptions, what will wait for them, and the estimated cost and time. The run opens only when they approve it; when they answer with changes, put them in the plan and present it again. Skip this step in a session without a terminal (`claude -p`) and when resuming a run.
+2. Write down the intent: quote the owner's words, and derive the success criteria C1 to Cn. Ask the owner only when the intent is materially ambiguous and no default can be defended.
+3. Run `aether-autonomy start --quote "<the owner's permission>"`, adding `--hours N` or `--usd N` only for a number the owner said, in a message or in their answer to the plan. The defaults are 8 hours and US$ 50. The command checks the quote against the owner's own messages: copy at least 12 characters of a message they typed, exactly as `aether-voice` shows them; their answer to the plan dialog is not such a message.
+4. It prints the run's id and its diary. Fill in "Intención" with the owner's quotes and C1 to Cn, and start.
 
 **Permission prompts.** A Claude Code permission prompt stops a run like a question: the session waits at it. A run assumes the owner started the session so that its tools do not prompt, with a permission mode or allow rules of their choice (what the swarm needs is under "Permissions" in the `aether:swarm` skill). Never turn permissions off or change the session's permission mode on your own. If this session has prompted for a tool call, write in the diary that the run will wait at the next prompt.
 

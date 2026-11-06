@@ -596,9 +596,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A107 are recorded and the changelog opens with 0.32.1, then 0.32.0, then 0.31.2, then 0.31.1, then 0.31.0, then 0.30.3, then 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
+test('R15: the decisions A50 to A108 are recorded and the changelog opens with 0.33.0, then 0.32.1, then 0.32.0, then 0.31.2, then 0.31.1, then 0.31.0, then 0.30.3, then 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 107
+  const LAST_DECISION = 108
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -643,14 +643,15 @@ test('R15: the decisions A50 to A107 are recorded and the changelog opens with 0
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
   const allVersions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(allVersions[0].startsWith('Version 0.32.1: ') && allVersions[0].includes('issues 152') && allVersions[0].includes('A107'), allVersions[0])
-  assert.ok(allVersions[1].startsWith('Version 0.32.0: ') && allVersions[1].includes('issues 141') && allVersions[1].includes('A106'), allVersions[1])
-  assert.ok(allVersions[2].startsWith('Version 0.31.2: ') && allVersions[2].includes('issues 153') && allVersions[2].includes('177'), allVersions[2])
-  assert.ok(allVersions[3].startsWith('Version 0.31.1: ') && allVersions[3].includes('issues 119') && allVersions[3].includes('150'), allVersions[3])
-  assert.ok(allVersions[4].startsWith('Version 0.31.0: ') && allVersions[4].includes('A105'), allVersions[4])
-  assert.ok(allVersions[5].startsWith('Version 0.30.3: ') && allVersions[5].includes('automatic observation'), allVersions[5])
-  assert.ok(allVersions[6].startsWith('Version 0.30.2: ') && allVersions[6].includes('issue 145'), allVersions[6])
-  const versions = allVersions.slice(7)
+  assert.ok(allVersions[0].startsWith('Version 0.33.0: ') && allVersions[0].includes('issue 182') && allVersions[0].includes('A108'), allVersions[0])
+  assert.ok(allVersions[1].startsWith('Version 0.32.1: ') && allVersions[1].includes('issues 152') && allVersions[1].includes('A107'), allVersions[1])
+  assert.ok(allVersions[2].startsWith('Version 0.32.0: ') && allVersions[2].includes('issues 141') && allVersions[2].includes('A106'), allVersions[2])
+  assert.ok(allVersions[3].startsWith('Version 0.31.2: ') && allVersions[3].includes('issues 153') && allVersions[3].includes('177'), allVersions[3])
+  assert.ok(allVersions[4].startsWith('Version 0.31.1: ') && allVersions[4].includes('issues 119') && allVersions[4].includes('150'), allVersions[4])
+  assert.ok(allVersions[5].startsWith('Version 0.31.0: ') && allVersions[5].includes('A105'), allVersions[5])
+  assert.ok(allVersions[6].startsWith('Version 0.30.3: ') && allVersions[6].includes('automatic observation'), allVersions[6])
+  assert.ok(allVersions[7].startsWith('Version 0.30.2: ') && allVersions[7].includes('issue 145'), allVersions[7])
+  const versions = allVersions.slice(8)
   assert.ok(versions[0].startsWith('Version 0.30.1: ') && versions[0].includes('A104') && versions[0].includes('spec 025'), versions[0])
   assert.ok(versions[1].startsWith('Version 0.30.0: ') && versions[1].includes('A103'), versions[1])
   assert.ok(versions[2].startsWith('Version 0.29.0: ') && versions[2].includes('A102'), versions[2])
@@ -745,6 +746,23 @@ test('R22: the Lead rules load and use EnterPlanMode and ExitPlanMode in an inte
   }
   assert.match(read('docs/guide/autonomy.md'), /plan mode/i)
   assert.match(read('docs/es/guias/feature-completa.md'), /modo plan/i)
-  const versions = read('docs/changelog.md').split(/\n(?=Version \d+\.\d+\.\d+: )/).filter((section) => /^Version \d/.test(section))
-  assert.ok(/plan mode/i.test(versions[2]), 'the changelog says it in the release that ships it')
+  assert.match(read('docs/changelog.md'), /plan mode/i, 'the changelog says it')
+})
+
+test('A108: plan mode gates autonomous work, its plan carries the resources, and its approval is not a grant', () => {
+  const skill = read('plugins/aether/skills/using-aether/SKILL.md')
+  const plans = skill.slice(skill.indexOf('## Plans'), skill.indexOf('## The execution method'))
+  assert.match(plans, /hazme un plan/, 'a plan asked for in any words means plan mode')
+  assert.match(plans, /permission to work on their own \(«trabaja autónomamente», «trabaja por horas»\), whatever the size of the work, before the run opens/)
+  assert.match(skill, /whatever the size of the work: even a task you would build directly opens a run/)
+  assert.match(plans, /`aether:plan`/, 'plan mode is told apart from the Writer\'s skill')
+  for (const part of ['Intención', 'Criterios', 'Recursos', 'Ruta', 'Supuestos', 'Qué esperará de ti', 'Costo y tiempo estimados']) {
+    assert.ok(plans.includes(`**${part}**`), `the plan template has ${part}`)
+  }
+  assert.match(plans, /not a grant of any irreversible class/)
+  assert.match(plans, /inside an autonomous run that has already started/)
+  const runs = read('plugins/aether/skills/autonomous-runs/SKILL.md')
+  const start = runs.slice(runs.indexOf('**Start:**'), runs.indexOf('**Permission prompts.**'))
+  assert.ok(start.indexOf('plan mode') !== -1 && start.indexOf('plan mode') < start.indexOf('aether-autonomy start'), 'plan mode comes before the run opens')
+  assert.match(start, /their answer to the plan dialog is not such a message/)
 })
