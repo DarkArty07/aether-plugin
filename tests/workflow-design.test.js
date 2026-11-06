@@ -1393,7 +1393,7 @@ test('issue 103: an Examiner partial reaches the native Examiner as a folder and
   assert.equal(rejectedNative.prompt.includes('secret.test.js'), false)
 })
 
-test('issue 103: times holds each stage, complete is false when the last stage ended native, and null with superdelegation off', async () => {
+test('issue 103: times holds each stage, complete is false when the last stage ended native, and null when no reply is dated', async () => {
   let t = 0
   const stamp = (call, fallback) => {
     const out = fallback(call)
