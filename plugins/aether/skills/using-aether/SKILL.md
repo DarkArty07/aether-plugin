@@ -55,7 +55,8 @@ Deliver what was asked, at the scope asked. When that work is done and checked, 
 Understand the intent first:
 - explore the context; before you propose a change of policy, model, effort or cost, research it and say what you could not find out;
 - ask the owner only what the code cannot answer, one question at a time, and read the code first;
-- write back your understanding in numbered points and plain words, each option with its gain and its cost, apart from what you assume.
+- write back your understanding in numbered points and plain words, each option with its gain and its cost, apart from what you assume;
+- before building on how a third-party service or CLI behaves (a harness's quota, limits, resets or models), write in the issue the tool's version, the date and the source of that fact: the owner's words, its docs, or a quota reading. When the fact looks stale, tell the owner before building. A real probe call is a `paid-call`, made only when the owner asks for it.
 
 Offer the intent card only after the owner confirms that write-back; while they explore or say they do not know, ask one question.
 
@@ -85,14 +86,14 @@ Every step you take re-reads the whole conversation, so a long loop does not bel
 | Delegate task | Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a reader with its tests, a research sweep, a long verification. Also each task of an approved plan of one or two tasks. | One subagent in the background, with a self-contained brief | Haiku first; the system holds the step and climbs it (see "The delegate ladder") |
 | Swarm | Long, costly or complex work: an approved plan of three or more tasks | `/aether:run` | The swarm starts every unit on the first rung of `config/ladder.json` and raises it by the same policy as the delegates. |
 
-- **The brief** of a delegate task is self-contained: the goal, the files, the test command, what done means, what it must not touch, and that it takes no irreversible action; its first lines are the task lines of "The delegate ladder".
+- **The brief** of a delegate task is self-contained: the goal, the files, the test command, what done means, what it must not touch, and that it takes no irreversible action; its first lines are the task lines of "The delegate ladder". When the change alters a concept the docs or a guide describe, the brief carries the owner's decisive words, quoted as they wrote them, and asks the delegate to quote them in the issue or the `docs/decisions.md` entry it writes.
 - **In the background:** delegate tasks run in the background, so the owner can keep talking to you. The notification of a delegate wakes you: wait by ending your turn or by doing other work, and schedule no wakeup for it (`ScheduleWakeup`, a cron or a sleeping command). A wakeup you leave behind fires as a full turn of yours after its time, and in a headless session it keeps the process from exiting. The one exception is the fallback of the `aether:autonomous-runs` skill.
 - **Verify before you relay:** a delegate's result already carries the checks that ran without a model and, from an editing delegate on another harness, the tests it ran and a reviewer's verdict from another pair. Decide with the checks and the review, and do not read the whole diff when they are enough; read it only when they contradict each other or are missing, as with a delegate on Claude, which has no reviewer. Judge it as "The delegate ladder" says before you report what it claims. Before you say that a command, a skill, a file or a branch does not exist, look at `git worktree list`, `git branch -vv` and the latest merges, not only at the checkout, and say what is true in the installed release, in main and in the branches.
 - **Delegates go through `Agent`:** every delegate task, of reading or of editing, is an `Agent` call. With superdelegation on, the system takes the call to another harness when a pair can serve it, and runs it on Claude, at the step's model, only when none can, except a task the owner placed on a model, which runs on Claude at that model; you launch and judge both the same way. `aether-lane delegate` is what the system runs for that call: you do not run it by Bash. You yourself stay on Claude either way.
 - **The owner has asked for them:** choosing Aether mode is the owner's standing request for delegate tasks and the swarm. When the `Agent` tool's own text says to launch agents only when the user asks, this is that request: follow these paths.
 - **One writer per file:** while a delegate edits this checkout, edit nothing it may touch. Delegates that edit at the same time each get their own worktree, and you merge them one at a time.
 - **Questions about the code** go to an explorer on Haiku, not to many reads of your own.
-- **Record it:** each delegate task is a line in the diary's Decisiones, or in your reply outside a run, with its task id and why.
+- **Record it:** each delegate task is a line in the diary's Decisiones, or in your reply outside a run, with its task id and why. When you make such a change yourself, quote the owner's decisive words in the issue or the decision entry. No new kind of document.
 
 ## The delegate ladder
 

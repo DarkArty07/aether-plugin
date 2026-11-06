@@ -253,8 +253,8 @@ test('the bootstrap sends every delegate through Agent, judges it with aether-de
     'it spends none of the step\'s corrections',
     'Plan tasks you build as delegate tasks follow "The delegate ladder"',
   ]) assert.ok(text.includes(needed), needed)
-  // The 29,470 bytes of 0.10.0 plus the owner's placement rule of spec 021 (A99) and the plan-mode gate (A108), with the same cap as bootstrap-design.test.js.
-  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')).size < 31000)
+  // The 29,470 bytes of 0.10.0 plus the owner's placement rule of spec 021 (A99), the plan-mode gate (A108) and the issue 50 rules (the owner's words in small fixes, and the version, date and source of a third-party fact), with the same cap as bootstrap-design.test.js.
+  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')).size < 32000)
 })
 
 test('every flag of aether-delegate verdict that the bootstrap shows is in the usage of the command', (t) => {
