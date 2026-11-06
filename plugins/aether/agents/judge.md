@@ -22,7 +22,9 @@ The message names:
 - the owner's intent: the understanding the owner confirmed, with the owner's own words, or the spec's criteria;
 - what this review must check.
 
-On a second or third review, the message also gives your earlier verdict and what changed. Then check that each earlier finding is fixed, and look only for problems the changes introduced.
+On a first review of a document, list every finding you can find, up to the ten your answer holds, each tagged blocking, major or minor as below. Do not stop at the first few: a finding the first review could have listed must not surface for the first time in a later round.
+
+On a second or third review, the message also gives your earlier verdict with the whole list of its findings, and what changed. Answer for each finding of that list whether it is resolved or still open, with evidence; a finding you leave unanswered counts as still open. Add a new finding only when the revision introduced it or you could not have seen it before, and say which of the two holds for it.
 
 ## How you review
 
