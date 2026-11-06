@@ -64,7 +64,7 @@ A delegate that edits and runs on Claude works with `isolation: "worktree"`, whi
 
 The Lead decides whether the work is good. Before it does, the checks that need no model run, and the result brings them.
 
-- **For a task that edits:** the tests the task named, the files touched outside what the task owns, and an empty task, one that changed nothing.
+- **For a task that edits:** the tests the task named, the files touched outside what the task owns — measured against the commit the work was built on (for a delegate on Claude, where its worktree stood before its own commits, falling back to the commit the launch recorded; for one on another harness, the commit its branch was built on), not the commit the launch recorded — and an empty task, one that changed nothing. Work the delegate itself committed counts.
 - **For a read-only task:** that nothing in the checkout changed, where any file touched counts as outside what the task owns, and that the answer is not empty.
 - **From another harness** an editing delegate also brings the tests it ran and the verdict of a review by a pair that did not write it. The Lead reads the whole diff only when the checks and the review contradict each other or are missing, as they are for a delegate on Claude, which has no review.
 

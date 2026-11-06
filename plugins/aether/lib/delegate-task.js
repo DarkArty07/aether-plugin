@@ -536,7 +536,12 @@ function approveError(r, entries, launch, worktree, ignore = []) {
   if (editsOf(launch)) {
     if (!isText(worktree)) return NO_WORKTREE
     const tests = isText(launch.tests) ? checks.runTests(worktree, launch.tests) : null
-    const check = checks.checkEdits({ files: checks.changedFiles(worktree, launch.base), owns, tests })
+    // What the delegate changed relative to the commit its work was built on, not the launch
+    // base: the worktree's start before its own commits (its HEAD reflog), so work it committed
+    // counts, while the files of the branch the worktree started from stay out (issues 143
+    // and 178). The Lead's own commits after the launch land in the Lead's checkout, not in the
+    // delegate's worktree, so they never count.
+    const check = checks.checkEdits({ files: checks.changedFiles(worktree, checks.worktreeBase(worktree, launch.base)), owns, tests })
     return check.ok ? null : `checks failed: ${editsFailure(check, tests).join('; ')}`
   }
   const answer = lastOf(entries, (e) => e.kind === 'answer' && e.attempt === attempt).entry
