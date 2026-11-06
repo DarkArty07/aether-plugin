@@ -104,7 +104,7 @@ Then re-verify what the reviewers did not report again. Give each accepted candi
 
     aether-audit reverify "$W/gated.json" --analysis "$W/analysis.json" --topics <the confirmed topic ids, comma-separated> --out "$W/reverify.json"
 
-It takes the earlier audit's still-open P0 to P2 items of the audited topics that no candidate matches by cause key, oldest first within each priority, up to the ceiling of `plugins/aether/config/audit.json` (`reverifyMaxVerifiers` verifiers of up to `reverifyItemsPerVerifier` claims each), and prints them in groups of up to four with only the claim and the location, never the earlier reasoning. Each group goes to one more verifier in a fresh context, one `Agent` call each, launched in parallel in the background:
+It takes the earlier audit's still-open P0 to P2 items of the audited topics that no candidate matches by cause key, oldest first within each priority, up to the ceiling of `plugins/aether/config/audit.json` (`reverifyMaxVerifiers` verifiers of up to `reverifyItemsPerVerifier` claims each), and prints them in groups of up to `reverifyItemsPerVerifier` claims with only the claim and the location, never the earlier reasoning. Each group goes to one more verifier in a fresh context, one `Agent` call each, launched in parallel in the background:
 
     AETHER-TASK: audit-<stamp>-reverify-<n>
 
