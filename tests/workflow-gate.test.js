@@ -80,6 +80,18 @@ test('a file outside Owns found by the gate goes back with its name', async (t) 
   assert.match(attempts(run)[1].prompt, /fuera de Owns/)
 })
 
+test('the same file outside Owns twice blocks the unit as a plan error, without climbing (issue 179)', async (t) => {
+  const run = await runWorkflow(one(t), { ops: gateOn(9, failing('src/other/x.js', 'fuera de Owns')) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(attempts(run).map((c) => c.model), [HAIKU.model, HAIKU.model])
+  assert.equal(supervisions(run).length, 0)
+  const u = unitOf(run)
+  assert.equal(u.status, 'blocked')
+  assert.match(u.reason, /blocked-outside-owns/)
+  assert.match(u.reason, /plan error/)
+  assert.match(u.reason, /src\/other\/x\.js/)
+})
+
 test('the gate also runs on an attempt that was rescued without its report', async (t) => {
   const run = await runWorkflow(one(t), {
     implementer: () => null,
