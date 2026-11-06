@@ -32,14 +32,14 @@ function world(t, extra = {}) {
 }
 
 test('an editing delegate runs aether-lane delegate with the step model and effort, and comes back as a branch with tests, review and checks (C10, E1)', async (t) => {
-  const { repo, dataDir, done } = world(t)
+  const { repo, dataDir, base, done } = world(t)
   const seen = []
   const result = await dr.runTask({ id: 't1', cwd: repo.dir, dataDir }, { delegateCommand: async (cwd, flags) => (seen.push({ cwd, flags }), done) })
   assert.equal(seen.length, 1)
   assert.deepEqual([seen[0].flags.model, seen[0].flags.effort, seen[0].flags.owns, seen[0].flags.tests, seen[0].flags.session], ['haiku', 'high', 'src/**', 'npm test', 's1'])
   assert.equal(seen[0].flags.pair, undefined)
   assert.equal(result.ok, true)
-  for (const part of ['aether/run1/task-1', 'ready', 'aether-wt merge run1 task-1', 'aether-delegate verdict --task t1']) assert.ok(result.text.includes(part), part)
+  for (const part of ['aether/run1/task-1', 'ready', 'aether-wt merge run1 task-1', 'aether-delegate verdict --task t1', `from base ${base}, checked against`]) assert.ok(result.text.includes(part), part)
   assert.equal(result.checks.ok, true)
   const written = log.readEntries(dataDir, { task: 't1' }).find((e) => e.kind === 'result')
   assert.deepEqual([written.ok, written.pair.id, written.branch, written.base], [true, PAIR.id, 'aether/run1/task-1', done.base])
@@ -286,6 +286,93 @@ test('a session ignores an unscoped legacy result without crashing (issue 148)',
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 't1.json'), JSON.stringify({ ok: true, text: 'another session' }))
   assert.equal((await dr.wait({ id: 't1', session: 's1', dataDir, seconds: 0 })).status, 'unknown')
+})
+
+// ---- the commit the branch was built on (issue 178) ----
+
+// An external file as `begin` wrote it at launch, but the Lead committed before the lane command
+// harvested: the unit branch was built on the harvest commit, and the lane reports that older base.
+function staleWorld(t) {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const launch = repo.git('rev-parse', 'HEAD')
+  fs.writeFileSync(path.join(repo.dir, 'lead.txt'), 'lead\n')
+  repo.git('add', 'lead.txt')
+  repo.git('commit', '-q', '-m', 'lead commits between launch and harvest')
+  const harvest = repo.git('rev-parse', 'HEAD')
+  repo.git('switch', '-q', '-c', 'aether/stale/task-1')
+  fs.mkdirSync(path.join(repo.dir, 'src'))
+  fs.writeFileSync(path.join(repo.dir, 'src', 'new.js'), 'hello\n')
+  repo.git('add', 'src/new.js')
+  repo.git('commit', '-q', '-m', 'delegate work')
+  const head = repo.git('rev-parse', 'HEAD')
+  const brief = path.join(dataDir, 'delegates', 'briefs', 't1-1.md')
+  fs.mkdirSync(path.dirname(brief), { recursive: true })
+  fs.writeFileSync(brief, 'Write src/new.js.')
+  const file = path.join(dataDir, 'delegates', 'external', 't1.json')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ id: 't1', session: 's1', cwd: repo.dir, attempt: 1, step: 'haiku', effort: 'high', launchKind: 'first', edits: true, owns: ['src/**'], tests: null, brief, findings: null, carry: null, pin: null, base: launch, harness: 'grok', rung: { model: 'grok-4.7', effort: 'high', group: 'grok' }, task: { description: 'd', prompt: 'P' }, alternates: [], timeoutMs: 570000 }))
+  const done = { status: 'done', id: 'run1', run: 'run1', branch: 'aether/stale/task-1', worktree: repo.dir, head, base: launch, pair: PAIR, summary: 'wrote it', tests: null, review: null, merge: 'aether-wt merge run1 task-1' }
+  return { repo, dataDir, launch, harvest, head, done }
+}
+
+test('issue 178: the checks of an editing delegate use the commit its branch was built on, and the result records it', async (t) => {
+  const { dataDir, launch, harvest, done } = staleWorld(t)
+  const result = await dr.runTask({ id: 't1', cwd: dataDir, dataDir }, { delegateCommand: async () => done })
+  assert.equal(result.ok, true)
+  assert.equal(result.checks.ok, true, JSON.stringify(result.checks))
+  const written = log.readEntries(dataDir, { task: 't1' }).find((e) => e.kind === 'result')
+  assert.equal(written.checkBase, harvest, 'the result records the commit the branch was built on')
+  assert.match(result.text, new RegExp(`from base ${launch}, checked against ${harvest}`), 'the text names both commits')
+})
+
+// The unit branch was created at the launch base and reset to the harvest commit after it was
+// created: with no reflog entry at the fork, the checks still use the harvest commit.
+function resetWorld(t) {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const launch = repo.git('rev-parse', 'HEAD')
+  repo.git('switch', '-q', '-c', 'aether/reset/task-1')
+  repo.git('switch', '-q', 'feature/x')
+  fs.writeFileSync(path.join(repo.dir, 'lead.txt'), 'lead\n')
+  repo.git('add', 'lead.txt')
+  repo.git('commit', '-q', '-m', 'lead commits between launch and harvest')
+  const harvest = repo.git('rev-parse', 'HEAD')
+  repo.git('switch', '-q', 'aether/reset/task-1')
+  repo.git('reset', '-q', '--hard', harvest)
+  fs.mkdirSync(path.join(repo.dir, 'src'))
+  fs.writeFileSync(path.join(repo.dir, 'src', 'new.js'), 'hello\n')
+  repo.git('add', 'src/new.js')
+  repo.git('commit', '-q', '-m', 'delegate work')
+  const head = repo.git('rev-parse', 'HEAD')
+  const brief = path.join(dataDir, 'delegates', 'briefs', 't1-1.md')
+  fs.mkdirSync(path.dirname(brief), { recursive: true })
+  fs.writeFileSync(brief, 'Write src/new.js.')
+  const file = path.join(dataDir, 'delegates', 'external', 't1.json')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ id: 't1', session: 's1', cwd: repo.dir, attempt: 1, step: 'haiku', effort: 'high', launchKind: 'first', edits: true, owns: ['src/**'], tests: null, brief, findings: null, carry: null, pin: null, base: launch, harness: 'grok', rung: { model: 'grok-4.7', effort: 'high', group: 'grok' }, task: { description: 'd', prompt: 'P' }, alternates: [], timeoutMs: 570000 }))
+  const done = { status: 'done', id: 'run1', run: 'run1', branch: 'aether/reset/task-1', worktree: repo.dir, head, base: launch, pair: PAIR, summary: 'wrote it', tests: null, review: null, merge: 'aether-wt merge run1 task-1' }
+  return { repo, dataDir, launch, harvest, head, done }
+}
+
+test('issue 178: a unit branch reset to the harvest commit after creation is checked against it', async (t) => {
+  const { dataDir, launch, harvest, done } = resetWorld(t)
+  const result = await dr.runTask({ id: 't1', cwd: dataDir, dataDir }, { delegateCommand: async () => done })
+  assert.equal(result.ok, true)
+  assert.equal(result.checks.ok, true, JSON.stringify(result.checks))
+  const written = log.readEntries(dataDir, { task: 't1' }).find((e) => e.kind === 'result')
+  assert.equal(written.checkBase, harvest, 'the result records the commit the branch was built on')
+  assert.match(result.text, new RegExp(`from base ${launch}, checked against ${harvest}`), 'the text names both commits')
+})
+
+test('issue 178: a file the delegate really changed outside Owns still fails, naming only that file', async (t) => {
+  const { repo, dataDir, done } = staleWorld(t)
+  fs.writeFileSync(path.join(repo.dir, 'notes.txt'), 'outside owns\n')
+  const result = await dr.runTask({ id: 't1', cwd: dataDir, dataDir }, { delegateCommand: async () => done })
+  assert.equal(result.checks.ok, false)
+  assert.deepEqual(result.checks.outside, ['notes.txt'])
+  assert.match(result.text, /notes\.txt/)
+  assert.doesNotMatch(result.text, /lead\.txt/, 'the Lead commit between launch and harvest is not charged')
 })
 
 test('start clears only its session result and forwards the session to run (issue 148)', (t) => {
