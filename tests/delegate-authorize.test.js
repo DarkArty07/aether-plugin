@@ -342,6 +342,74 @@ test('the cover reads the log of the session it is asked for, and a null session
   assert.equal(auth.coverOf(lines, { session: null, task: 'any', rung, ladder, configDir: w.configDir }), null)
 })
 
+// ---- owner effort (issue 141) ----
+
+const OPUS_MAX_WORDS = 'ponlo en Opus a max esfuerzo por favor'
+const SONNET_MAX_WORDS = 'pásalo a Sonnet a max por favor ya'
+const OPUS_LOW_WORDS = 'hazlo en Opus con low effort porfa ya'
+
+test('authorize refuses an effort the model does not take, or that the quote does not name, and writes nothing (owner effort)', (t) => {
+  const w = world(t, { sessions: { [SESSION]: [OPUS_MAX_WORDS, OPUS_WORDS] } })
+  const cases = [
+    [{ model: 'opus', effort: 'ultra', quote: OPUS_MAX_WORDS, task: 'e1' }, /does not take ultra/],
+    [{ model: 'opus', effort: 'max', quote: OPUS_WORDS, task: 'e1' }, /does not name max/],
+    [{ model: 'opus', effort: 'MAX', quote: OPUS_WORDS, task: 'e1' }, /does not name/i],
+  ]
+  for (const [input, error] of cases) {
+    const res = authorized(w, input)
+    assert.equal(res.ok, false, JSON.stringify(input))
+    assert.match(res.error, error)
+    assert.equal(authorizeLines(w.dataDir).length, 0, 'a refusal writes no line')
+  }
+})
+
+test('authorize records the effort when the quote names the model and the effort (owner effort)', (t) => {
+  const w = world(t, { sessions: { [SESSION]: [OPUS_MAX_WORDS] } })
+  const res = authorized(w, { model: 'opus', effort: 'max', quote: 'en Opus a MAX esfuerzo', task: 'e2' })
+  assert.equal(res.ok, true, res.error)
+  assert.equal(res.authorized.effort, 'max')
+  assert.deepEqual(authorizeLines(w.dataDir), [res.authorized])
+})
+
+test('a covered first launch runs at the authorized effort, not at the ladder effort (owner effort)', async (t) => {
+  const w = world(t, { sessions: { [SESSION]: [OPUS_MAX_WORDS] } })
+  assert.equal(authorized(w, { model: 'opus', effort: 'max', quote: 'en Opus a max esfuerzo', task: 'o-eff' }).ok, true)
+  const plan = await task.begin(call(BRIEF('o-eff'), { model: 'opus' }), w.deps)
+  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['opus', 'first', 'opus', 'max'])
+  assert.equal(entries(w.dataDir, 'o-eff').find((e) => e.kind === 'launch').effort, 'max')
+})
+
+test('a correction keeps the authorized effort unless the ladder raises it further, and a rise returns to the step effort (owner effort)', async (t) => {
+  const w = world(t, { sessions: { [SESSION]: [SONNET_MAX_WORDS, OPUS_LOW_WORDS] } })
+  assert.equal(authorized(w, { model: 'sonnet', effort: 'max', quote: 'a Sonnet a max por favor', task: 's-eff' }).ok, true)
+  await task.begin(call(BRIEF('s-eff'), { model: 'sonnet' }), w.deps)
+  await task.verdict({ task: 's-eff', verdict: 'fix', findings: [F(1)] }, w.deps)
+  const fixed = await task.begin(call(BRIEF('s-eff'), { model: 'sonnet' }), w.deps)
+  assert.deepEqual([fixed.kind, fixed.args.model, fixed.args.effort], ['fix', 'sonnet', 'max'])
+  await task.verdict({ task: 's-eff', verdict: 'fix', findings: [F(2)] }, w.deps)
+  await task.verdict({ task: 's-eff', verdict: 'fix', findings: [F(3)] }, w.deps)
+  const risen = await task.begin(call(BRIEF('s-eff'), { model: 'sonnet' }), w.deps)
+  assert.deepEqual([risen.kind, risen.args.model, risen.args.effort], ['rise', 'opus', 'high'])
+
+  assert.equal(authorized(w, { model: 'opus', effort: 'low', quote: 'en Opus con low effort', task: 'o-low' }).ok, true)
+  const low = await task.begin(call(BRIEF('o-low'), { model: 'opus' }), w.deps)
+  assert.equal(low.args.effort, 'low')
+  await task.verdict({ task: 'o-low', verdict: 'fix', findings: [F(1)] }, w.deps)
+  const raised = await task.begin(call(BRIEF('o-low'), { model: 'opus' }), w.deps)
+  assert.deepEqual([raised.kind, raised.args.effort], ['fix', 'high'], 'the ladder raises a lower authorized effort')
+})
+
+test('an authorization without an effort keeps the old behaviour (owner effort)', async (t) => {
+  const w = world(t)
+  const res = authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'o-plain' })
+  assert.equal(res.ok, true, res.error)
+  assert.equal('effort' in res.authorized, false, 'no effort is recorded')
+  const plan = await task.begin(call(BRIEF('o-plain'), { model: 'opus' }), w.deps)
+  assert.deepEqual([plan.step, plan.args.model, plan.args.effort], ['opus', 'opus', 'high'])
+  await task.verdict({ task: 'o-plain', verdict: 'fix', findings: [F(1)] }, w.deps)
+  assert.equal((await task.begin(call(BRIEF('o-plain')), w.deps)).args.effort, 'high')
+})
+
 test('authorize refuses an owner quote taken from a negated sentence, and writes nothing (R5)', (t) => {
   const w = world(t, { sessions: { [SESSION]: ['Por favor no uses Sonnet en esta tarea ni pases a Opus.', SONNET_WORDS] } })
   const refused = authorized(w, { model: 'sonnet', quote: 'uses Sonnet en esta tarea', task: 't-neg' })

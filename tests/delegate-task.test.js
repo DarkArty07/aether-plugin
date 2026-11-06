@@ -572,3 +572,22 @@ test('work an editing delegate committed itself counts: outside Owns fails namin
   assert.match(refused.error, /notes\.txt/)
   assert.doesNotMatch(refused.error, /a\.js/, 'the inside-Owns file is not named')
 })
+
+// An authorization the log carries with an effort floors the task's effort: a correction keeps it (owner effort, issue 141).
+test('a task whose recorded authorization carries an effort keeps it on a correction and drops it on a rise (owner effort)', async (t) => {
+  const { deps, dataDir } = world(t)
+  const firstLaunch = (task_, step, effort, authorized) => ({
+    kind: 'launch', time: 1000, session: 's1', task: task_, step, attempt: 1, launchKind: 'first',
+    effort, edits: false, owns: [], tests: null, description: 'd', requested: null, ignored: false,
+    pin: null, base: null, dirty: null, authorized,
+  })
+  const ownerSays = (task_, model) => ({ model, scope: 'task', task: task_, quote: `the owner said ${model} at max here`, quoteTime: 'x' })
+  log.appendEntry(dataDir, firstLaunch('m1', 'sonnet', 'max', { ...ownerSays('m1', 'sonnet'), effort: 'max' }))
+  await task.verdict({ task: 'm1', verdict: 'fix', findings: [FINDING] }, deps)
+  const fixed = await task.begin(call(BRIEF('m1')), deps)
+  assert.deepEqual([fixed.kind, fixed.args.model, fixed.args.effort], ['fix', 'sonnet', 'max'])
+  await task.verdict({ task: 'm1', verdict: 'fix', findings: [F(2)] }, deps)
+  await task.verdict({ task: 'm1', verdict: 'fix', findings: [F(3)] }, deps)
+  const risen = await task.begin(call(BRIEF('m1')), deps)
+  assert.deepEqual([risen.kind, risen.args.model, risen.args.effort], ['rise', 'opus', 'high'])
+})

@@ -7,6 +7,8 @@
 // its first launch. None of them throws.
 // Family: delegate.
 
+const fs = require('node:fs')
+const path = require('node:path')
 const autonomy = require('./autonomy.js')
 const log = require('./delegate-log.js')
 const ladderLib = require('./ladder.js')
@@ -25,6 +27,26 @@ const wordsOf = (text) => fold(text).replace(/[^a-z0-9]+/g, ' ').trim()
 function namesModel(text, model) {
   const name = wordsOf(model)
   return name !== '' && ` ${wordsOf(text)} `.includes(` ${name} `)
+}
+
+// Whether the text names the effort as a word, accents and case folded the same way: «max», «at max effort» and
+// «en MAX» name max; «maximal» and «máximo» do not.
+function namesEffort(text, effort) {
+  const name = wordsOf(effort)
+  return name !== '' && ` ${wordsOf(text)} `.includes(` ${name} `)
+}
+
+const MODELS_FILE = path.join(__dirname, '..', 'config', 'models', 'models.json')
+
+// The efforts the placed model takes on Claude, read from the models index (never written here, issue 141).
+function effortsOf(model) {
+  try {
+    const data = JSON.parse(fs.readFileSync(MODELS_FILE, 'utf8'))
+    const entry = (data.models || []).find((row) => row.harness === 'claude' && (row.alias === model || row.model === model))
+    return Array.isArray(entry && entry.efforts) ? entry.efforts : null
+  } catch {
+    return null
+  }
 }
 
 const indexOfStep = (ladder, step) => ladder.rungs.findIndex((rung) => rung.step === step)
@@ -56,7 +78,7 @@ function resolve(deps) {
 function authorize(input, deps = {}) {
   const refuse = (error) => ({ ok: false, error })
   try {
-    const { model, quote, task, scope, session } = isObject(input) ? input : {}
+    const { model, effort, quote, task, scope, session } = isObject(input) ? input : {}
     const r = resolve(deps)
     if (!isText(session)) return refuse('no session: pass --session <id> or set CLAUDE_CODE_SESSION_ID')
     const rung = namedRung(r.ladder, model)
@@ -68,13 +90,25 @@ function authorize(input, deps = {}) {
     if (!hasTask && scope !== 'session') return refuse('name the grant: --task <id> or --scope session')
     if (hasTask && !(typeof task === 'string' && ID_RE.test(task))) return refuse('the task id is letters, digits, - and _')
     if (!isText(quote)) return refuse('the owner\'s words are needed: pass --quote <text>')
+    // The owner's effort, only when their words name one: it must be one the placed model takes (read from the
+    // models index), and the quote must name it as it names the model. A refused effort writes nothing.
+    let wantedEffort = null
+    if (effort !== undefined && effort !== null) {
+      wantedEffort = wordsOf(effort)
+      if (wantedEffort === '') return refuse('the effort is needed: pass --effort <low|medium|high|xhigh|max>')
+      const taken = effortsOf(rung.model)
+      if (taken === null) return refuse(`could not read the efforts ${rung.model} takes`)
+      if (!taken.includes(wantedEffort)) return refuse(`${rung.model} does not take ${wantedEffort}: it takes ${taken.join(', ')}`)
+    }
     const verified = autonomy.verifyQuote(session, quote, { configDir: r.configDir })
     if (!verified.ok) return refuse(verified.reason)
     if (!namesModel(quote, rung.model)) return refuse(`the quote does not name ${rung.model}: write the owner's words with the model's name`)
+    if (wantedEffort !== null && !namesEffort(quote, wantedEffort)) return refuse(`the quote does not name ${wantedEffort}: write the owner's words with the effort's name`)
     const line = {
       kind: 'authorize', time: r.now(), session, scope: hasTask ? 'task' : 'session', task: hasTask ? task : null,
       model: rung.model, quote, quoteTime: verified.time,
     }
+    if (wantedEffort !== null) line.effort = wantedEffort
     if (!log.appendEntry(r.dataDir, line)) return refuse('could not write the delegate log')
     return { ok: true, authorized: line }
   } catch (err) {
@@ -82,12 +116,19 @@ function authorize(input, deps = {}) {
   }
 }
 
-// Whether an authorize line still holds: its quote is in the owner's messages of its session and names its model. An
-// unreadable transcript does not hold it (a line is only honored on a readable check).
+// Whether an authorize line still holds: its quote is in the owner's messages of its session and names its model,
+// and its effort when it carries one. An unreadable transcript does not hold it (a line is only honored on a
+// readable check).
 function holds(line, ladder, configDir) {
   if (!isText(line.quote)) return false
   const rung = ladder.rungs.find((x) => x.model === line.model)
   if (!rung) return false
+  if (line.effort !== undefined && line.effort !== null) {
+    if (!isText(line.effort)) return false
+    const taken = effortsOf(line.model)
+    if (taken === null || !taken.includes(wordsOf(line.effort))) return false
+    if (!namesEffort(line.quote, line.effort)) return false
+  }
   const verified = autonomy.verifyQuote(line.session, line.quote, { configDir })
   return verified.ok && namesModel(line.quote, rung.model)
 }
@@ -131,7 +172,10 @@ function startStepOf(entries, ladder, configDir) {
   const verified = autonomy.verifyQuote(first.session, quote, { configDir })
   if (!verified.ok && verified.reason.startsWith(NO_TRANSCRIPT)) return first.step
   if (!verified.ok) return floor
-  return namesModel(quote, named.model) ? first.step : floor
+  if (!namesModel(quote, named.model)) return floor
+  const kept = first.authorized.effort
+  if (kept !== undefined && kept !== null && !namesEffort(quote, kept)) return floor
+  return first.step
 }
 
-module.exports = { authorize, coverOf, authorizedOf, startStepOf, namedRung, requestedRung, namesModel }
+module.exports = { authorize, coverOf, authorizedOf, startStepOf, namedRung, requestedRung, namesModel, namesEffort }
