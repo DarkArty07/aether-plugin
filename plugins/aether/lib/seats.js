@@ -8,7 +8,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { spawn, spawnSync } = require('node:child_process')
 const { git, repoPaths } = require('./git.js')
-const { killGroup, readTextOrEmpty, removeWorktree } = require('./common.js')
+const { killGroup, readJsonOrNull, readTextOrEmpty, removeWorktree } = require('./common.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
 const schemas = require('./lane-schemas.js')
@@ -28,6 +28,8 @@ const MAX_FINDINGS = 10
 const EXAM_DIR = '.aether-exam'
 // What the next Writer is told when its worktree already holds an earlier pair's partial. The guide quotes this line.
 const CONTINUATION_LINE = 'An earlier writer began this round. Its partial document is in the worktree. It may be incomplete or wrong. Continue from it after checking it against the intent.'
+// What the next Examiner is told when its worktree already holds an earlier pair's tests. The design quotes this line.
+const EXAMINER_CONTINUATION_LINE = 'An earlier examiner began this exam. Its partial tests are in the worktree. They may be incomplete or wrong. Continue from them after checking them against the spec and the plan.'
 
 // The native pair each seat asks the points of: the Judge and the Examiner review as Opus high, the Writer
 // writes as Sonnet high.
@@ -250,9 +252,9 @@ function allowedFor(seat, feature, doc) {
   return () => false
 }
 
-// A non-empty regular file at rel inside root. A symlink is not one, and neither is a path that resolves outside
-// root: the partial is the document the pair wrote, not a pointer at something else.
-function textInside(root, rel) {
+// A regular file at rel inside root, or null. A symlink is not one, and neither is a path that resolves outside
+// root: what a seat wrote is the file itself, not a pointer at something else. Exported so seat-wait can reuse it.
+function fileInside(root, rel) {
   if (typeof rel !== 'string' || rel === '' || path.isAbsolute(rel) || rel.split('/').includes('..')) return null
   const full = path.join(root, rel)
   let st
@@ -261,7 +263,7 @@ function textInside(root, rel) {
   } catch {
     return null
   }
-  if (!st.isFile() || st.size === 0) return null
+  if (!st.isFile()) return null
   let realFile
   let realRoot
   try {
@@ -272,9 +274,17 @@ function textInside(root, rel) {
   }
   const relative = path.relative(realRoot, realFile)
   if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null
+  return st
+}
+
+// A non-empty regular file at rel inside root. A symlink is not one, and neither is a path that resolves outside
+// root: the partial is the document the pair wrote, not a pointer at something else.
+function textInside(root, rel) {
+  const st = fileInside(root, rel)
+  if (st === null || st.size === 0) return null
   let text
   try {
-    text = fs.readFileSync(full, 'utf8')
+    text = fs.readFileSync(path.join(root, rel), 'utf8')
   } catch {
     return null
   }
@@ -327,6 +337,144 @@ function loadOffer(mainRoot, session, feature, doc, digest) {
   const files = []
   for (const rel of documentPaths(feature, doc)) {
     const text = textInside(dir, path.basename(rel))
+    if (text !== null) files.push({ path: rel, text })
+  }
+  return files
+}
+
+// Regular files under dir, as paths that start with relRoot. A symlink is not followed and is not listed.
+function regularFiles(dir, relRoot) {
+  let st
+  try {
+    st = fs.lstatSync(dir)
+  } catch {
+    return []
+  }
+  if (!st.isDirectory()) return []
+  const out = []
+  const walk = (current, rel) => {
+    let entries
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const childRel = rel === '' ? entry.name : `${rel}/${entry.name}`
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) walk(path.join(current, entry.name), childRel)
+      else if (entry.isFile()) out.push(childRel)
+    }
+  }
+  walk(dir, relRoot)
+  return out.sort()
+}
+
+// Every regular file the Examiner may write, relative to the worktree. Nothing outside .aether-exam/.
+function examFiles(worktree) {
+  return regularFiles(path.join(worktree, EXAM_DIR), EXAM_DIR)
+}
+
+// Where an Examiner's partial waits, outside the checkout and outside exams/ (whose folders exam.list reads).
+// Null when session or feature could not be a path there.
+function examOfferDir(dataDir, mainRoot, session, feature) {
+  if (!/^[A-Za-z0-9-]+$/.test(String(session))) return null
+  if (!/^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(feature))) return null
+  const { repoKey } = require('./exam.js')
+  return path.join(dataDir, 'exam-carry', repoKey(mainRoot), session, path.basename(feature))
+}
+
+function examOfferDigest(dataDir, mainRoot, session, feature) {
+  const dir = examOfferDir(dataDir, mainRoot, session, feature)
+  if (dir === null) return null
+  try {
+    const text = fs.readFileSync(path.join(dir, 'round'), 'utf8').trim()
+    return text === '' ? null : text
+  } catch {
+    return null
+  }
+}
+
+function clearExamOffer(dataDir, mainRoot, session, feature) {
+  const dir = examOfferDir(dataDir, mainRoot, session, feature)
+  if (dir !== null) fs.rmSync(dir, { recursive: true, force: true })
+}
+
+// Keeps each file at its worktree-relative path. The digest is written last, so a save cut short is not loaded.
+// Returns the folder, or null when the partial cannot live there. An empty save removes the folder.
+function saveExamOffer(dataDir, mainRoot, session, feature, files, digest) {
+  const dir = examOfferDir(dataDir, mainRoot, session, feature)
+  if (dir === null) return null
+  fs.rmSync(dir, { recursive: true, force: true })
+  const kept = Array.isArray(files)
+    ? files.filter((file) => typeof file.path === 'string' && file.path.startsWith(`${EXAM_DIR}/`) && !file.path.split('/').includes('..') && typeof file.text === 'string' && file.text !== '')
+    : []
+  if (kept.length === 0 || typeof digest !== 'string' || digest === '') return dir
+  fs.mkdirSync(dir, { recursive: true })
+  for (const file of kept) {
+    const full = path.join(dir, file.path)
+    fs.mkdirSync(path.dirname(full), { recursive: true })
+    fs.writeFileSync(full, file.text)
+  }
+  fs.writeFileSync(path.join(dir, 'round'), digest)
+  return dir
+}
+
+function loadExamOffer(dataDir, mainRoot, session, feature, digest) {
+  const dir = examOfferDir(dataDir, mainRoot, session, feature)
+  if (dir === null || examOfferDigest(dataDir, mainRoot, session, feature) !== digest) return []
+  const files = []
+  for (const rel of regularFiles(dir, '')) {
+    if (rel === 'round') continue
+    const text = textInside(dir, rel)
+    if (text !== null) files.push({ path: rel, text })
+  }
+  return files
+}
+
+// The files the seat may write, as they are now: the Writer's documents, or every regular file under .aether-exam/.
+function seatSnapshot(worktree, seat, feature, doc) {
+  const rels = seat === 'writer' ? documentPaths(feature, doc) : seat === 'examiner' ? examFiles(worktree) : []
+  const allowed = allowedFor(seat, feature, doc)
+  const files = {}
+  for (const rel of rels) {
+    if (!allowed(rel)) continue
+    const st = fileInside(worktree, rel)
+    if (st === null) continue
+    files[rel] = { size: st.size, mtimeMs: st.mtimeMs }
+  }
+  return { files }
+}
+
+// How long ago the newest file the seat may write changed, against the baseline, or null when nothing has.
+// at and mtimeMs share the machine's clock. Never below 0.
+function changedAge(worktree, baseline, seat, feature, doc, at) {
+  if (seat !== 'writer' && seat !== 'examiner') return null
+  if (!fs.existsSync(worktree) || baseline === null || typeof baseline !== 'object' || typeof baseline.files !== 'object' || baseline.files === null) return null
+  const rels = seat === 'writer' ? documentPaths(feature, doc) : examFiles(worktree)
+  const allowed = allowedFor(seat, feature, doc)
+  let newest = null
+  for (const rel of rels) {
+    if (!allowed(rel)) continue
+    const st = fileInside(worktree, rel)
+    if (st === null) continue
+    const before = baseline.files[rel]
+    if (before && before.size === st.size && before.mtimeMs === st.mtimeMs) continue
+    if (newest === null || st.mtimeMs > newest) newest = st.mtimeMs
+  }
+  if (newest === null) return null
+  return Math.max(0, at - newest)
+}
+
+// Every non-empty regular file under .aether-exam/. A carried file this try did not touch is kept too:
+// the applied offer is already in the baseline, and dropping it would replace the offer with only what
+// this try rewrote. The baseline is for changedMs. textInside keeps the inside-the-root checks: a regular
+// file inside the worktree, not a symlink and not an empty file.
+function salvageExam(worktree) {
+  const files = []
+  for (const rel of examFiles(worktree)) {
+    if (!allowedFor('examiner', null, null)(rel)) continue
+    const text = textInside(worktree, rel)
     if (text !== null) files.push({ path: rel, text })
   }
   return files
@@ -558,7 +706,7 @@ function seatPrompt({ seat, harness, adapter, message, workdir, feature, doc = '
 // ---- Running the harness ----
 
 // Runs argv in cwd to its end, in a group of its own, killing the group when it outlives the timeout.
-// Resolves to its exit code.
+// Resolves to its exit code and whether this timer fired. The flag is set before the kill.
 function runHarness(argv, { cwd, marker, stdoutFile, stderrFile, timeoutSeconds, onSpawn }) {
   const out = fs.openSync(stdoutFile, 'w')
   const err = fs.openSync(stderrFile, 'w')
@@ -571,17 +719,21 @@ function runHarness(argv, { cwd, marker, stdoutFile, stderrFile, timeoutSeconds,
   }
   return new Promise((resolve, reject) => {
     let timer = null
+    let timedOut = false
     child.once('error', (error) => {
       clearTimeout(timer)
       reject(new Error(`${argv[0]} did not start: ${error.message}`))
     })
     child.once('spawn', () => {
       onSpawn(child.pid)
-      timer = setTimeout(() => killGroup(child.pid), (timeoutSeconds + KILL_GRACE_SECONDS) * 1000)
+      timer = setTimeout(() => {
+        timedOut = true
+        killGroup(child.pid)
+      }, (timeoutSeconds + KILL_GRACE_SECONDS) * 1000)
     })
     child.once('exit', (code, signal) => {
       clearTimeout(timer)
-      resolve(code ?? 128 + (os.constants.signals[signal] || 0))
+      resolve({ exitCode: code ?? 128 + (os.constants.signals[signal] || 0), timedOut })
     })
   })
 }
@@ -783,8 +935,11 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   // commit (issue 68). The same digest, and not --exclude, is what makes a try a continuation: a stop that names
   // no pair leaves the exclusion empty, and the next try of this round must still receive what this one saved.
   const roundDigest = lanes.digest(message)
-  const sameRound = seat === 'writer' && offerDigest(mainRoot, session, feature, doc) === roundDigest
+  const sameRound = seat === 'writer'
+    ? offerDigest(mainRoot, session, feature, doc) === roundDigest
+    : seat === 'examiner' && examOfferDigest(dataDir, mainRoot, session, feature) === roundDigest
   if (seat === 'writer' && !sameRound) clearOffer(mainRoot, session, feature, doc)
+  if (seat === 'examiner' && !sameRound) clearExamOffer(dataDir, mainRoot, session, feature)
   // The pair this round runs on, for `seat-stop` to name when the workflow ends the round at its time cap (issue 62), so
   // that the next try leaves it out.
   if (typeof decision?.picked?.id === 'string') fs.writeFileSync(path.join(dir, 'pair.json'), `${JSON.stringify({ pair: decision.picked.id })}\n`)
@@ -797,13 +952,37 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   let settled = false
   let carried = []
   let continued = false
+  let harnessCut = false
+  let partialDir = null
   // Once, before the worktree goes. A round that finished clears the partial, so a later round does not paste it
   // back over the document it just committed. A round that did not replaces the partial with what it left, which
   // is nothing when it left nothing worth keeping. A second call, or a worktree already gone, does not clear it:
   // the signal and the finally both reach this, and the one that finds no worktree must not drop what the other saved.
   const settlePartial = () => {
-    if (settled || seat !== 'writer') return
+    if (settled || (seat !== 'writer' && seat !== 'examiner')) return
     settled = true
+    if (seat === 'examiner') {
+      if (outcome && outcome.status === 'ok') {
+        clearExamOffer(dataDir, mainRoot, session, feature)
+        carried = []
+        partialDir = null
+        writeJsonAtomic(path.join(dir, 'partial-paths.json'), { partialPaths: [], partialDir: null })
+        return
+      }
+      if (!fs.existsSync(worktree)) return
+      try {
+        carried = salvageExam(worktree)
+        partialDir = saveExamOffer(dataDir, mainRoot, session, feature, carried, roundDigest)
+        const paths = carried.map((file) => file.path)
+        // Written only when the save finishes. seat-stop and the exit-4 reply omit partialPaths when it is absent,
+        // and carry an empty list when the try left nothing, so the workflow can clear what it holds.
+        writeJsonAtomic(path.join(dir, 'partial-paths.json'), { partialPaths: paths, partialDir: paths.length > 0 ? partialDir : null })
+      } catch {
+        carried = []
+        partialDir = null
+      }
+      return
+    }
     if (outcome && outcome.status === 'ok') {
       clearOffer(mainRoot, session, feature, doc)
       carried = []
@@ -833,16 +1012,21 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
   let refusal = null
   let roundMessage = message
   try {
-    if (seat === 'writer') {
+    if (seat === 'writer' || seat === 'examiner') {
       // sameRound was decided before pair.json, from the digest. A partial of another round was cleared then.
       if (sameRound) {
-        const offered = loadOffer(mainRoot, session, feature, doc, roundDigest)
+        const offered = seat === 'writer'
+          ? loadOffer(mainRoot, session, feature, doc, roundDigest)
+          : loadExamOffer(dataDir, mainRoot, session, feature, roundDigest)
+        const line = seat === 'writer' ? CONTINUATION_LINE : EXAMINER_CONTINUATION_LINE
         if (offered.length > 0 && applyOffer(worktree, offered).length > 0) {
           continued = true
-          roundMessage = `${message.replace(/\s+$/, '')}\n\n${CONTINUATION_LINE}\n`
+          roundMessage = `${message.replace(/\s+$/, '')}\n\n${line}\n`
         }
       }
-      // Written even when this round did not continue, so seat-stop can tell a Writer from a Judge.
+      // After the checkout and after any offer, so an applied offer is not this round's first write.
+      writeJsonAtomic(path.join(dir, 'baseline.json'), seatSnapshot(worktree, seat, feature, doc))
+      // Written even when this round did not continue, so seat-stop can tell these seats from a Judge.
       writeJsonAtomic(path.join(dir, 'continued.json'), { continued })
     }
     const schemaFile = path.join(dir, 'schema.json')
@@ -850,7 +1034,8 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     const prompt = seatPrompt({ seat, harness: external.harness, adapter, message: roundMessage, workdir: worktree, feature, doc })
     fs.writeFileSync(path.join(dir, 'prompt.md'), prompt)
     const argv = adapter.argv({ model: external.model, level: external.level, schemaFile, timeoutSeconds: external.timeoutSeconds, prompt })
-    const exitCode = await runHarness(argv, {
+    const harnessStarted = Date.now()
+    const harness = await runHarness(argv, {
       cwd: worktree,
       marker,
       stdoutFile: path.join(dir, 'stdout'),
@@ -860,6 +1045,10 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
         child = pid
       },
     })
+    const exitCode = harness.exitCode
+    // The runner's timer, or a harness that ended on its own within 30s of the lane's hard timeout.
+    const ranMs = Date.now() - harnessStarted
+    harnessCut = harness.timedOut === true || ranMs >= (external.timeoutSeconds - 30) * 1000
     killGroup(child)
     lanes.killMarked(marker)
     // The output is parsed before the quota is read: a harness that keeps in parse what the call reported of its quota
@@ -955,6 +1144,17 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
       failed.continued = continued
       if (carried.length > 0) failed.partial = carried
     }
+    if (seat === 'examiner') {
+      failed.continued = continued
+      // partial-paths.json exists only when the save finished. A missing file keeps what the workflow holds.
+      // An empty list means this try left nothing and clears it. partialDir is named only with files.
+      const saved = readJsonOrNull(path.join(dir, 'partial-paths.json'))
+      if (saved && Array.isArray(saved.partialPaths)) {
+        failed.partialPaths = saved.partialPaths
+        if (saved.partialPaths.length > 0 && typeof saved.partialDir === 'string' && saved.partialDir !== '') failed.partialDir = saved.partialDir
+      }
+    }
+    if (harnessCut) failed.timedOut = true
     return reply(4, failed)
   }
   const groupLabel = settings.groups[external.group] ?? external.group
@@ -1071,4 +1271,4 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   })
 }
 
-module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, authorModel, excludeList, chooseSeat, offeredByListing, changedPaths, judgeText, windowUsed, findingTouch, revisionBrief, seatPrompt, seatCommand }
+module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, authorModel, excludeList, chooseSeat, offeredByListing, changedPaths, allowedFor, fileInside, changedAge, judgeText, windowUsed, findingTouch, revisionBrief, seatPrompt, seatCommand }

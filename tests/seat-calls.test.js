@@ -69,9 +69,11 @@ test('an external Judge round starts in the background and its answer comes by s
   const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`, OPTIONS, ['--author', 'sonnet'])
   assert.equal(started.status, 0, started.stdout)
   assert.equal(started.json.started, true)
+  assert.ok(Number.isInteger(started.json.at) && Math.abs(Date.now() - started.json.at) < 60000, String(started.json.at))
   assert.match(started.json.id, /^judge-\d{8}-\d{6}-[0-9a-f]{4}$/)
   const done = waitDone(repo, started.json.id, env)
   assert.equal(done.exitCode, 0, JSON.stringify(done))
+  assert.ok(Number.isInteger(done.at) && Math.abs(Date.now() - done.at) < 60000, String(done.at))
   assert.equal(done.value.id, started.json.id)
   assert.equal(done.value.model, 'claude-opus-5-5')
   assert.deepEqual(done.value.result, JUDGE_ANSWER)
@@ -118,11 +120,14 @@ test('seat-wait answers { done: false } while a round runs, and seat-stop ends i
   const runnerEnv = fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0')
   assert.ok(runnerEnv.includes('AETHER_SUPERDELEGATION=on'), 'AETHER_SUPERDELEGATION')
   assert.ok(runnerEnv.includes('AETHER_LANE_HARNESSES=agy'), 'AETHER_LANE_HARNESSES')
-  // A round that still runs says how long it has (the workflow has no clock: its time caps read this, issue 62).
+  // A Judge that still runs says how long it has, and when the reply was made. It has no changedMs: a Judge
+  // writes nothing the workflow could watch (issue 103).
   const running = lane(repo, ['seat-wait', id, '--max', '0'], env).json
-  assert.deepEqual(Object.keys(running).sort(), ['done', 'elapsedMs'])
+  assert.deepEqual(Object.keys(running).sort(), ['at', 'done', 'elapsedMs'])
   assert.equal(running.done, false)
+  assert.equal(Object.hasOwn(running, 'changedMs'), false)
   assert.ok(Number.isInteger(running.elapsedMs) && running.elapsedMs >= 0 && running.elapsedMs < 60000, String(running.elapsedMs))
+  assert.ok(Number.isInteger(running.at) && Math.abs(Date.now() - running.at) < 60000, String(running.at))
   // seat-stop names the pair the round ran on, for the next try to leave it out.
   assert.deepEqual(lane(repo, ['seat-stop', id], env).json, { stopped: true, pair: 'agy/claude-opus-5-5@high' })
   assert.ok(await until(() => !fs.existsSync(worktree)), 'the worktree is gone')
@@ -244,4 +249,34 @@ test('the Writer of a spec round is forwarded its document', (t) => {
   const done = waitDone(repo, started.json.id, env)
   assert.equal(done.exitCode, 0, JSON.stringify(done))
   assert.equal(done.value.result.commit, repo.git('rev-parse', 'HEAD'))
+})
+
+test('seat-wait reports changedMs null for an unchanged document, a number after a write, and ignores other files (issue 103)', async (t) => {
+  const repo = seatRepo(t)
+  const env = modEnv(t)
+  const spec = `${FEATURE}/spec.md`
+  const message = `Write.\nFAKE-AGY: sleep 2\nFAKE-AGY: write README.md NOT-A-DOCUMENT\nFAKE-AGY: sleep 3\nFAKE-AGY: write ${spec} CHANGED-SPEC\nFAKE-AGY: sleep 30\n`
+  const started = start(repo, env, 'writer', message, ['--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy'])
+  assert.equal(started.status, 0, started.stdout + started.stderr)
+  const id = started.json.id
+  const wt = path.join(repo.dir, '.aether', 'seats', id, 'wt')
+  const baselineFile = path.join(repo.dir, '.aether', 'seats', id, 'baseline.json')
+  assert.ok(await until(() => fs.existsSync(baselineFile)), 'the baseline is written after the checkout')
+  const baseline = JSON.parse(fs.readFileSync(baselineFile, 'utf8'))
+  assert.equal(baseline.files[spec].size, fs.statSync(path.join(repo.dir, spec)).size)
+  const read = () => lane(repo, ['seat-wait', id, '--max', '0'], env).json
+  const untouched = read()
+  assert.equal(untouched.done, false)
+  assert.equal(untouched.changedMs, null, JSON.stringify(untouched))
+  assert.ok(await until(() => fs.existsSync(path.join(wt, 'README.md'))), 'the disallowed file was written')
+  assert.equal(read().changedMs, null, 'a file the Writer may not write does not count')
+  assert.ok(await until(() => {
+    const file = path.join(wt, spec)
+    return fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes('CHANGED-SPEC')
+  }), 'the document was written')
+  const changed = read()
+  assert.equal(typeof changed.changedMs, 'number', JSON.stringify(changed))
+  assert.ok(changed.changedMs >= 0 && changed.changedMs < 60000, String(changed.changedMs))
+  assert.ok(Number.isInteger(changed.at))
+  lane(repo, ['seat-stop', id], env)
 })

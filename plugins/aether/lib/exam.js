@@ -73,8 +73,20 @@ function store(mainRoot, feature, from, { dataDir = run.dataDir(), move = false 
   fs.mkdirSync(path.dirname(dir), { recursive: true })
   fs.cpSync(from, dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'stored.json'), `${JSON.stringify({ feature, storedAt: Date.now(), repo: run.safeRealpath(mainRoot) })}\n`)
+  clearExamCarry(dataDir, mainRoot, feature)
   if (move) fs.rmSync(from, { recursive: true, force: true })
   return { feature, dir, tests: exam.tests.length }
+}
+
+// An exam is stored, so no session still needs the Examiner's offer of this feature.
+function clearExamCarry(dataDir, mainRoot, feature) {
+  const root = path.join(dataDir, 'exam-carry', repoKey(mainRoot))
+  if (!fs.existsSync(root)) return
+  const name = path.basename(feature)
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    fs.rmSync(path.join(root, entry.name, name), { recursive: true, force: true })
+  }
 }
 
 // The stored exams of a repository, by feature.
