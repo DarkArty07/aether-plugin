@@ -424,7 +424,8 @@ async function begin(input, deps = {}) {
     const { step, launchKind, attempt } = next
     // The owner's placement of this task: the authorization of its first launch (spec 021), kept by every later attempt.
     const authorized = cover && launchKind === 'first' ? authorizedLine(cover) : auth.authorizedOf(entries)
-    const ownerEffort = isObject(authorized) && typeof authorized.effort === 'string' && EFFORTS.includes(authorized.effort) ? authorized.effort : null
+    const storedEffort = isObject(authorized) && typeof authorized.effort === 'string' ? authorized.effort.trim().toLowerCase() : null
+    const ownerEffort = storedEffort !== null && EFFORTS.includes(storedEffort) ? storedEffort : null
     const effort = coveredEffort(ladderLib.effortFor(r.ladder, step, launchKind), ownerEffort, launchKind)
     const args = { model: rungOf(r.ladder, step).model, effort }
     const covered = authorized !== null && auth.namedRung(r.ladder, event.model)?.model === args.model
