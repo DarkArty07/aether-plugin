@@ -42,10 +42,11 @@ test('the procedure of a run is in the skill, and what holds outside a run stays
 })
 
 // The 29,470 bytes of 0.10.0 (R10, C4), plus the owner's placement rule of spec 021 (A99), raised to 30,000 on 2026-10-29,
-// plus the plan-mode gate of autonomous work the owner asked for (A108, issue 182), raised to 31,000 on 2026-11-05.
-test('the bootstrap carries the scope instruction and weighs less than 31,000 bytes (R10, C4, spec 021, A108)', () => {
+// plus the plan-mode gate of autonomous work the owner asked for (A108, issue 182), raised to 31,000 on 2026-11-05,
+// plus the issue 50 rules (the owner's words in small fixes, and the version, date and source of a third-party fact), raised to 32,000 on 2026-11-06.
+test('the bootstrap carries the scope instruction and weighs less than 32,000 bytes (R10, C4, spec 021, A108)', () => {
   assert.ok(BOOTSTRAP.includes(SCOPE))
-  assert.ok(fs.statSync(FILE).size < 31000, `${fs.statSync(FILE).size} bytes`)
+  assert.ok(fs.statSync(FILE).size < 32000, `${fs.statSync(FILE).size} bytes`)
 })
 
 test('understanding the intent: research before a policy change, plain numbered write-back, and the card only after the owner confirms it (issue 96)', () => {

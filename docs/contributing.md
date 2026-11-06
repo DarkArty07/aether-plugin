@@ -25,7 +25,7 @@ That loads the tree for one session, in place of the installed release; with the
 
 Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens. `scripts/refresh-lanes.js` updates the lane table from Artificial Analysis; it reads `ARTIFICIAL_ANALYSIS_API_KEY`, or else the `.env` file its header comment names.
 
-Take the number of a new `docs/decisions.md` entry when the change is integrated, not when the branch starts: if `main` moved since and the number is taken, renumber to the next free number before merging. `tests/docs-decisions.test.js` fails on a repeated number.
+Take the number of a new `docs/decisions.md` entry when the change is integrated, not when the branch starts: if `main` moved since and the number is taken, renumber to the next free number before merging. `tests/docs-decisions.test.js` fails on a repeated number. A decision or issue about a change to a documented concept quotes the owner's decisive words; an issue about a third-party service gives the version, the date and the source of the fact it rests on.
 
 ### Check the plan format
 
