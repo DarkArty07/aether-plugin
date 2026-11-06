@@ -37,3 +37,8 @@ test('the Lead waits for a delegate by its notification and schedules no wakeup 
   assert.match(SKILL, /schedule no wakeup[^.\n]*ScheduleWakeup/i)
   assert.match(SKILL, /exception is the fallback of the `aether:autonomous-runs` skill/i)
 })
+
+test('the bootstrap records the owner effort with the placement (issue 141)', () => {
+  assert.ok(SKILL.includes('authorize --model <sonnet|opus> [--effort <low|medium|high|xhigh|max>]'))
+  assert.ok(SKILL.includes('at the recorded effort when the words name one'))
+})

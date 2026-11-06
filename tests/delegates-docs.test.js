@@ -71,3 +71,13 @@ test('the page speaks of one switch, superdelegation, and not of the retired pro
   for (const pattern of [/`balanced`/, /`robust`/, /`seats`/, /\bseats option\b/, /--seats\b/, new RegExp('AETHER_' + 'SEATS'), new RegExp('AETHER_' + 'LAN' + 'ES\\b'), /`replaces`/, /the `lanes` option/]) assert.doesNotMatch(page, pattern, `delegates.md still says ${pattern}`)
   assert.ok(page.includes('`superdelegation`'), 'delegates.md names the switch')
 })
+
+test('the guide records the owner effort: the authorize usage, the naming rule and the effort a covered task runs at (issue 141)', () => {
+  for (const needed of [
+    'authorize --model <sonnet|opus> [--effort <low|medium|high|xhigh|max>]',
+    "The effort is the owner's only when their words name it",
+    'at the authorized effort when the record names one',
+    'a correction keeps it unless the ladder raises it further',
+    'the effort when the owner',
+  ]) assert.ok(page.includes(needed), needed)
+})
