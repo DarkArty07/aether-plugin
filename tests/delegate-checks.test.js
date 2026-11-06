@@ -4,7 +4,8 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { makeRepo } = require('./helpers.js')
+const { tempDir, makeRepo } = require('./helpers.js')
+const { commitIn } = require('./helpers.js')
 const checks = require('../plugins/aether/lib/delegate-checks.js')
 
 function repoWithChanges(t) {
@@ -119,6 +120,54 @@ test('runTests leaves no process alive after a timeout, whatever the shell start
     }
   }
   assert.equal(alive, false)
+})
+
+// ---- the commit the work was built on (issues 143 and 178) ----
+
+test('worktreeBase is the worktree HEAD, or the fallback when HEAD cannot be read', (t) => {
+  const repo = makeRepo(t)
+  const head = repo.git('rev-parse', 'HEAD')
+  assert.equal(checks.worktreeBase(repo.dir, 'fallback'), head)
+  fs.writeFileSync(path.join(repo.dir, 'new.txt'), 'uncommitted\n')
+  assert.equal(checks.worktreeBase(repo.dir, 'fallback'), head, 'uncommitted changes do not move it')
+  assert.equal(checks.worktreeBase(path.join(repo.dir, 'no-such-dir'), 'fallback'), 'fallback')
+})
+
+test('worktreeBase starts before the commits the delegate made itself', (t) => {
+  const repo = makeRepo(t)
+  const base = repo.git('rev-parse', 'HEAD')
+  commitIn(repo, repo.dir, 'src/a.js', 'a\n', 'delegate work')
+  assert.equal(checks.worktreeBase(repo.dir, base), base)
+})
+
+test('worktreeBase in the delegate worktree starts where the worktree was made', (t) => {
+  const repo = makeRepo(t)
+  const base = repo.git('rev-parse', 'HEAD')
+  const wt = path.join(tempDir(t, 'aether-wt-'), 'wt')
+  repo.git('worktree', 'add', '--detach', wt, base)
+  assert.equal(checks.worktreeBase(wt, base), base)
+  commitIn(repo, wt, 'src/a.js', 'a\n', 'delegate work')
+  assert.equal(checks.worktreeBase(wt, base), base, 'the delegate commit does not move the start')
+})
+
+test('forkBase moves the check base forward to where the branch was built (issue 178)', (t) => {
+  const repo = makeRepo(t)
+  const launch = repo.git('rev-parse', 'HEAD')
+  fs.writeFileSync(path.join(repo.dir, 'lead.txt'), 'lead\n')
+  repo.git('add', 'lead.txt')
+  repo.git('commit', '-q', '-m', 'lead commits after the launch')
+  const harvest = repo.git('rev-parse', 'HEAD')
+  repo.git('switch', '-q', '-c', 'unit')
+  fs.writeFileSync(path.join(repo.dir, 'work.txt'), 'work\n')
+  repo.git('add', 'work.txt')
+  repo.git('commit', '-q', '-m', 'delegate work')
+  const head = repo.git('rev-parse', 'HEAD')
+  assert.equal(checks.forkBase(repo.dir, launch), harvest, 'the Lead commit between launch and harvest does not count')
+  assert.equal(checks.forkBase(repo.dir, harvest), harvest, 'a base already at the fork stays')
+  assert.equal(checks.forkBase(repo.dir, head), head, 'the base never moves backwards')
+  assert.equal(checks.forkBase(repo.dir, 'not-a-commit'), 'not-a-commit', 'an unreadable base is kept as is')
+  repo.git('checkout', '-q', '--detach', head)
+  assert.equal(checks.forkBase(repo.dir, launch), launch, 'a detached worktree keeps the base')
 })
 
 

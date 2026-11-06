@@ -475,3 +475,100 @@ test('the bin parses a repeated --ignore and judges through the same check; a ba
   assert.equal(both.status, 0)
   assert.equal(JSON.parse(both.stdout.trim()).ok, true, both.stdout)
 })
+
+// ---- the commit the work was built on (issues 143 and 178) ----
+
+// An editing delegate on Claude works in a worktree of its own, made from the recorded base. A
+// file the Lead commits in the Lead's checkout after the launch is not in that worktree's
+// history, so it is not charged to the delegate (issue 178, a).
+test('a commit the Lead made after the launch is not charged to an editing delegate on Claude', async (t) => {
+  const repo = makeRepo(t)
+  const { deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('after', 'AETHER-OWNS: src/**\n')), deps)
+  const base = repo.git('rev-parse', 'HEAD')
+  const wt = path.join(tempDir(t, 'aether-wt-'), 'wt')
+  repo.git('worktree', 'add', '--detach', wt, base)
+  fs.mkdirSync(path.join(repo.dir, 'ops'))
+  fs.writeFileSync(path.join(repo.dir, 'ops', 'note.md'), 'lead work after the launch\n')
+  repo.git('add', 'ops/note.md')
+  repo.git('commit', '-q', '-m', 'lead commits after the launch')
+  fs.mkdirSync(path.join(wt, 'src'))
+  fs.writeFileSync(path.join(wt, 'src', 'a.js'), 'a\n')
+  const approved = await task.verdict({ task: 'after', verdict: 'approve', worktree: wt }, deps)
+  assert.equal(approved.ok, true, approved.error)
+})
+
+// A delegate worktree made from a branch with extra files keeps those files out of the check:
+// only what the delegate changed counts (issue 143, b).
+test('a worktree that started from a branch with extra files charges an editing delegate only with its own changes', async (t) => {
+  const repo = makeRepo(t)
+  repo.git('switch', '-q', '-c', 'feature/big')
+  fs.mkdirSync(path.join(repo.dir, 'docs'))
+  fs.writeFileSync(path.join(repo.dir, 'docs', 'big.md'), 'feature work\n')
+  repo.git('add', 'docs/big.md')
+  repo.git('commit', '-q', '-m', 'feature work the delegate started from')
+  const fork = repo.git('rev-parse', 'HEAD')
+  repo.git('switch', '-q', 'feature/x')
+  const { deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('branched', 'AETHER-OWNS: src/**\n')), deps)
+  const wt = path.join(tempDir(t, 'aether-wt-'), 'wt')
+  repo.git('worktree', 'add', '--detach', wt, fork)
+  fs.mkdirSync(path.join(wt, 'src'))
+  fs.writeFileSync(path.join(wt, 'src', 'a.js'), 'a\n')
+  const approved = await task.verdict({ task: 'branched', verdict: 'approve', worktree: wt }, deps)
+  assert.equal(approved.ok, true, approved.error)
+})
+
+// But a file the delegate really changed outside Owns still fails the check, and the refusal names
+// only that file: the committed files of the branch it started from stay out (issue 143, c).
+test('a file an editing delegate really changed outside Owns still fails, naming only that file', async (t) => {
+  const repo = makeRepo(t)
+  repo.git('switch', '-q', '-c', 'feature/big')
+  fs.mkdirSync(path.join(repo.dir, 'docs'))
+  fs.writeFileSync(path.join(repo.dir, 'docs', 'big.md'), 'feature work\n')
+  repo.git('add', 'docs/big.md')
+  repo.git('commit', '-q', '-m', 'feature work the delegate started from')
+  const fork = repo.git('rev-parse', 'HEAD')
+  repo.git('switch', '-q', 'feature/x')
+  const { deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('outside', 'AETHER-OWNS: src/**\n')), deps)
+  const wt = path.join(tempDir(t, 'aether-wt-'), 'wt')
+  repo.git('worktree', 'add', '--detach', wt, fork)
+  fs.mkdirSync(path.join(wt, 'src'))
+  fs.writeFileSync(path.join(wt, 'src', 'a.js'), 'a\n')
+  fs.writeFileSync(path.join(wt, 'notes.txt'), 'outside owns\n')
+  const refused = await task.verdict({ task: 'outside', verdict: 'approve', worktree: wt }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /notes\.txt/)
+  assert.doesNotMatch(refused.error, /big\.md/, 'the committed files of the starting branch are not charged')
+})
+
+// Work the delegate itself committed counts: the check starts before its own commits, so
+// committed inside-Owns-only work with a clean tree passes.
+test('work an editing delegate committed itself counts: inside Owns only passes', async (t) => {
+  const repo = makeRepo(t)
+  const { deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('committed', 'AETHER-OWNS: src/**\n')), deps)
+  fs.mkdirSync(path.join(repo.dir, 'src'))
+  fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'a\n')
+  repo.git('add', 'src/a.js')
+  repo.git('commit', '-q', '-m', 'delegate work')
+  const approved = await task.verdict({ task: 'committed', verdict: 'approve', worktree: repo.dir }, deps)
+  assert.equal(approved.ok, true, approved.error)
+})
+
+// And a file it committed outside Owns fails the check, naming only that file.
+test('work an editing delegate committed itself counts: outside Owns fails naming only that file', async (t) => {
+  const repo = makeRepo(t)
+  const { deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('committed-out', 'AETHER-OWNS: src/**\n')), deps)
+  fs.writeFileSync(path.join(repo.dir, 'notes.txt'), 'outside owns\n')
+  repo.git('add', 'notes.txt')
+  repo.git('commit', '-q', '-m', 'delegate work outside owns')
+  fs.mkdirSync(path.join(repo.dir, 'src'))
+  fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'a\n')
+  const refused = await task.verdict({ task: 'committed-out', verdict: 'approve', worktree: repo.dir }, deps)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /notes\.txt/)
+  assert.doesNotMatch(refused.error, /a\.js/, 'the inside-Owns file is not named')
+})
