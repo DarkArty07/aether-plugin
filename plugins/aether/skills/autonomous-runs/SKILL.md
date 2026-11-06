@@ -61,7 +61,7 @@ A new figure for a label already recorded replaces the old one. The figure cover
     ## Criterios
     - C1 <criterio>: cumplido | parcial | no — <evidencia>
     ## RADAR
-    - Rápido: <tiempo, reintentos y subidas de modelo>
+    - Rápido: <tiempo, reintentos y subidas de modelo, y the `times` of each `/aether:design`>
     - Autónomo: <veces que te interrumpí y por qué>
     - Delegación: <llamadas y tokens en otros harness; por grupo de cuota, el saldo al empezar y al terminar y su próximo reinicio (aether-report: lanes.run.groups.<grupo>.balance); asientos ocupados por modelos externos, de cuántas rondas>
     - Asequible: <US$, cuota usada, y el modelo y el esfuerzo de cada tarea delegada>

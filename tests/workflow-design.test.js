@@ -997,36 +997,36 @@ const stopNaming = (pair, ops) => (call, fallback) => (call.command.verb === 'se
 const took = (ms, reply) => ({ ...reply, durationMs: ms })
 const silentRound = () => ({ done: false })
 
-test('a spec round that reaches 10 minutes is stopped and counts as failed: the next pair is asked, and the first pair is left out (issue 62)', async () => {
+test('a spec round with no changedMs still stops at 10 minutes, and that cut goes straight to the native Writer (issue 62, issue 103)', async () => {
+  // The second reply would be the next pair. A time cut must not ask for it.
   const replies = [silentRound, (id) => took(184000, answeredWait('writer', id, GROK, SPEC_ANSWER))]
   const run = await go(ON, { ops: stopNaming(AGY, scripted(SPEC_WRITER, replies)) })
   assert.equal(run.error, null, run.error && run.error.stack)
   assert.equal(run.result.status, 'approved')
-  assert.deepEqual(specStarts(run).map(exclusionOf), [null, AGY])
-  // The first round was waited for 540 s and then the 60 s that were left of the 600.
+  assert.equal(specStarts(run).length, 1, 'a round cut for time does not ask for the next pair')
+  // The round was waited for 540 s and then the 60 s that were left of the 600.
   assert.deepEqual(maxes(run, 'writer-20261015-120001'), ['540', '60'])
   assert.equal(opsCalls(run, 'seat-stop').filter((c) => c.command.rest[0] === 'writer-20261015-120001-ab12').length, 1)
-  assert.equal(nativeCalls(run).some((c) => c.label.startsWith('spec: writer')), false, 'no native Writer wrote the spec')
+  assert.equal(nativeCalls(run).filter((c) => c.label.startsWith('spec: writer')).length, 1)
   const record = run.result.rounds[0]
-  assert.equal(record.provider, 'grok grok-4.7')
-  assert.match(record.tries[0].reason, /reached its time cap of 10 min/)
-  assert.deepEqual([record.tries[0].pair, record.tries[0].next, record.tries[0].durationMs], [AGY, true, 600000])
-  // The duration of each round is in the result.
-  assert.deepEqual(record.durations, [600000, 184000])
-  assert.equal(record.durationMs, 784000)
+  assert.equal(record.provider, 'native')
+  assert.match(record.note, /reached its time cap of 10 min/)
+  assert.equal('tries' in record, false, 'the next pair was never asked')
+  assert.deepEqual(record.durations, [600000])
+  assert.equal(record.durationMs, 600000)
 })
 
-test('a plan round has 25 minutes: the waits are 540, 540 and what is left', async () => {
+test('a plan round with no changedMs has 25 minutes: the waits are 540, 540 and what is left, then the native Writer', async () => {
   const replies = [silentRound, (id) => took(300000, answeredWait('writer', id, GROK, PLAN_ANSWER))]
   const run = await go(ON, { ops: stopNaming(AGY, scripted(PLAN_WRITER, replies)) })
   assert.equal(run.error, null, run.error && run.error.stack)
   const plans = opsCalls(run, 'seat-start').filter(PLAN_WRITER)
-  assert.deepEqual(plans.map(exclusionOf), [null, AGY])
+  assert.equal(plans.length, 1, 'a round cut for time does not ask for the next pair')
   const planRound = run.result.rounds.find((x) => x.document === 'plan' && x.seat === 'writer')
-  assert.match(planRound.tries[0].reason, /reached its time cap of 25 min/)
-  assert.deepEqual(planRound.durations, [1500000, 300000])
-  const firstPlan = opsCalls(run, 'seat-start').filter(PLAN_WRITER).length
-  assert.equal(firstPlan, 2)
+  assert.match(planRound.note, /reached its time cap of 25 min/)
+  assert.equal(planRound.provider, 'native')
+  assert.equal('tries' in planRound, false)
+  assert.deepEqual(planRound.durations, [1500000])
   assert.deepEqual(maxes(run, 'writer-20261015-120003'), ['540', '540', '420'])
 })
 
@@ -1036,24 +1036,27 @@ test('the time of a round that seat-wait reports (elapsedMs) is the clock, not t
   const run = await go(ON, { ops: stopNaming(AGY, scripted(SPEC_WRITER, replies)) })
   assert.equal(run.error, null, run.error && run.error.stack)
   assert.deepEqual(maxes(run, 'writer-20261015-120001'), ['540', '40'])
-  assert.equal(run.result.rounds[0].tries[0].durationMs, 601000)
+  assert.equal(specStarts(run).length, 1, 'crossing the cap goes to the native Writer, not the next pair')
+  assert.deepEqual(run.result.rounds[0].durations, [601000])
+  assert.equal(run.result.rounds[0].provider, 'native')
 })
 
-test('a round whose stop names no pair is retried with the same exclusion, three tries at most, then the native agent takes it', async () => {
+test('a round whose stop names no pair is a time cut: the native agent takes it, with no second start', async () => {
   const run = await go(ON, { ops: scripted(SPEC_WRITER, [silentRound, silentRound, silentRound]) })
   assert.equal(run.error, null, run.error && run.error.stack)
-  assert.equal(specStarts(run).length, 3)
-  assert.deepEqual(specStarts(run).map(exclusionOf), [null, null, null])
+  assert.equal(specStarts(run).length, 1)
   assert.equal(nativeCalls(run).filter((c) => c.label.startsWith('spec: writer')).length, 1)
+  assert.equal('tries' in run.result.rounds[0], false)
   assert.equal(run.result.status, 'approved')
 })
 
-test('the Judge of a spec has 10 minutes too, and the Judge of a plan 25', async () => {
+test('the Judge of a spec has 10 minutes too, and the Judge of a plan 25, and each cut goes native at once', async () => {
   const run = await go(ARGS, { ops: waitFor('judge', silentRound) })
   const judgeWaits = opsCalls(run, 'seat-wait').filter((c) => c.command.rest[0].startsWith('judge'))
-  // Three tries of 540 + 60 for the spec, then three of 540 + 540 + 420 for the plan.
-  assert.deepEqual(judgeWaits.map((c) => flag(c, '--max')), ['540', '60', '540', '60', '540', '60', '540', '540', '420', '540', '540', '420', '540', '540', '420'])
-  assert.equal(opsCalls(run, 'seat-stop').filter((c) => c.command.rest[0].startsWith('judge')).length, 6)
+  // One try of 540 + 60 for the spec, then one of 540 + 540 + 420 for the plan. A cut does not ask for the next pair.
+  assert.deepEqual(judgeWaits.map((c) => flag(c, '--max')), ['540', '60', '540', '540', '420'])
+  assert.equal(opsCalls(run, 'seat-stop').filter((c) => c.command.rest[0].startsWith('judge')).length, 2)
+  assert.equal(opsCalls(run, 'seat-start').filter((c) => c.command.rest[0] === 'judge').length, 2)
   assert.equal(run.calls.filter((c) => c.role === 'judge').length, 2)
   assert.equal(run.result.status, 'approved')
 })
@@ -1110,32 +1113,37 @@ test('issue 68: a Writer try that leaves no partial drops the earlier one, so th
   assert.equal(native.prompt.includes(NATIVE_PARTIAL), false)
 })
 
-test('issue 68: a stop that omits partial keeps the partial the round already holds', async () => {
+test('issue 68: a stop that omits partial keeps the partial the round already holds, and a cap asks for no further pair', async () => {
   const held = writerPartial('held partial')
-  let stops = 0
-  const stopOmits = (ops) => (call, fallback) => {
-    if (call.command.verb !== 'seat-stop') return ops(call, fallback)
-    stops += 1
-    // The first stop recorded a partial. The next was killed before partial.json existed, so it names none.
-    if (stops === 1) return { stopped: true, pair: AGY, partial: held }
-    return { stopped: true }
-  }
-  const run = await go(ON, { ops: stopOmits(scripted(SPEC_WRITER, [silentRound, silentRound, () => noneLeft('writer')])) })
+  // An exit 4 that is not a timeout still asks for the next pair and keeps the partial. The next try is cut for
+  // time; its stop names no partial, so the round keeps the one it holds, and there is no third start.
+  const stopOmits = (ops) => (call, fallback) => (call.command.verb === 'seat-stop' ? { stopped: true } : ops(call, fallback))
+  const replies = [
+    (id) => withPartial(failedWait('writer', id, AGY, { status: 'quota', detail: QUOTA }), held),
+    silentRound,
+    (id) => answeredWait('writer', id, MUSE, SPEC_ANSWER),
+  ]
+  const run = await go(ON, { ops: stopOmits(scripted(SPEC_WRITER, replies)) })
   assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(specStarts(run).length, 2, 'the time cut ends the external tries')
+  assert.deepEqual(specStarts(run).map(exclusionOf), [null, AGY])
   const native = nativeCalls(run).find((call) => call.label === 'spec: writer write')
   assert.ok(native.prompt.includes(NATIVE_PARTIAL))
   assert.ok(native.prompt.includes('held partial'))
   assert.equal(native.prompt.includes('capped partial'), false)
+  assert.equal(run.result.rounds[0].continued, true)
 })
 
-test('issue 68: a Writer round stopped at its cap keeps the partial seat-stop names, for the native Writer', async () => {
+test('issue 68: a Writer round stopped at its cap goes straight to the native Writer with the partial seat-stop names', async () => {
   const partial = writerPartial('capped partial')
   const stopPartial = (ops) => (call, fallback) => (call.command.verb === 'seat-stop' ? { stopped: true, pair: AGY, partial } : ops(call, fallback))
   const run = await go(ON, { ops: stopPartial(scripted(SPEC_WRITER, [silentRound, () => noneLeft('writer')])) })
   assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(specStarts(run).length, 1, 'a cap does not ask for the next pair')
   const record = run.result.rounds[0]
-  assert.equal(record.tries[0].continued, false)
+  assert.equal('tries' in record, false)
   assert.equal(record.continued, true)
+  assert.equal(record.provider, 'native')
   const native = nativeCalls(run).find((call) => call.label === 'spec: writer write')
   assert.ok(native.prompt.includes('capped partial'))
   assert.ok(native.prompt.includes(NATIVE_PARTIAL))
@@ -1202,4 +1210,235 @@ test('issue 68: a failed Judge round does not hand a partial to the native Judge
   assert.equal(native.prompt.includes('SECRET-PARTIAL'), false)
   assert.equal(native.prompt.includes(NATIVE_PARTIAL), false)
   assert.equal(run.result.rounds[1].continued, undefined)
+})
+
+// --- Issue 103: a seat that is still writing is not cut, and a time cut keeps the work ---
+
+// One seat-start's waits all call the same reply function, so a round that changes across waits counts here.
+const noWrite = () => ({ done: false, changedMs: null })
+const EXAMINER_LINE = 'An earlier examiner began this exam. Its partial tests are in'
+const EXAM_SECRET = 'EXAM TEXT THAT MUST NOT TRAVEL'
+
+test('issue 103: a Writer that is still changing is not stopped past its old cap', async () => {
+  let n = 0
+  const replies = [(id) => {
+    n += 1
+    if (n === 1) return { done: false, elapsedMs: 700000, changedMs: 1000 }
+    return answeredWait('writer', id, GROK, SPEC_ANSWER)
+  }]
+  const run = await go(ON, { ops: scripted(SPEC_WRITER, replies) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(specStarts(run).length, 1)
+  assert.equal(opsCalls(run, 'seat-stop').filter((c) => c.command.rest[0].startsWith('writer-20261015-120001')).length, 0)
+  assert.deepEqual(maxes(run, 'writer-20261015-120001'), ['540', '540'])
+  assert.equal(run.result.rounds[0].provider, 'grok grok-4.7')
+  assert.equal(nativeCalls(run).some((c) => c.label.startsWith('spec: writer')), false)
+})
+
+test('issue 103: a Writer with changedMs at 10 minutes is stopped for inactivity, not for the first-write cap', async () => {
+  const replies = [() => ({ done: false, elapsedMs: 700000, changedMs: 600000 })]
+  const run = await go(ON, { ops: stopNaming(AGY, scripted(SPEC_WRITER, replies)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(specStarts(run).length, 1)
+  assert.match(run.result.rounds[0].note, /no change for 10 min/)
+  assert.equal(run.result.rounds[0].note.includes('no first write'), false)
+  assert.equal(run.result.rounds[0].provider, 'native')
+})
+
+test('issue 103: a Writer with changedMs null is stopped at its first-write cap', async () => {
+  const run = await go(ON, { ops: scripted(SPEC_WRITER, [noWrite]) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(specStarts(run).length, 1)
+  assert.deepEqual(maxes(run, 'writer-20261015-120001'), ['540', '60'])
+  assert.match(run.result.rounds[0].note, /no first write in 10 min/)
+  assert.equal(run.result.rounds[0].provider, 'native')
+})
+
+test('issue 103: a plan Writer with changedMs null is stopped at 25 minutes', async () => {
+  const run = await go(ON, { ops: scripted(PLAN_WRITER, [noWrite]) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(maxes(run, 'writer-20261015-120003'), ['540', '540', '420'])
+  const planRound = run.result.rounds.find((round) => round.document === 'plan' && round.seat === 'writer')
+  assert.match(planRound.note, /no first write in 25 min/)
+  assert.equal(opsCalls(run, 'seat-start').filter(PLAN_WRITER).length, 1)
+})
+
+test('issue 103: an Examiner with changedMs null is stopped at 25 minutes and goes native, with no second start', async () => {
+  const run = await go(ON, { ops: scripted(EXAMINER, [noWrite, (id) => answeredWait('examiner', id, GROK, EXAM)]) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(opsCalls(run, 'seat-start').filter(EXAMINER).length, 1)
+  assert.deepEqual(maxes(run, 'examiner-'), ['540', '540', '420'])
+  const record = run.result.rounds.find((round) => round.seat === 'examiner')
+  assert.match(record.note, /no first write in 25 min/)
+  assert.equal(record.provider, 'native')
+  assert.ok(run.calls.some((call) => call.label === 'exam: examiner'))
+})
+
+test('issue 103: a Judge is still stopped at its total cap', async () => {
+  const run = await go(ON, { ops: scripted(FIRST_JUDGE, [silentRound]) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const starts = opsCalls(run, 'seat-start').filter(FIRST_JUDGE)
+  assert.equal(starts.length, 1)
+  assert.deepEqual(maxes(run, 'judge-20261015-120002'), ['540', '60'])
+  assert.match(run.result.rounds[1].note, /reached its time cap of 10 min/)
+  assert.equal(run.calls.some((call) => call.label === 'spec: judge review 1'), true)
+})
+
+test('issue 103: a try that reported a change and then changedMs null is cut for inactivity, not the first-write cap', async () => {
+  const steps = [
+    { done: false, elapsedMs: 200000, changedMs: 0 },
+    { done: false, elapsedMs: 700000, changedMs: null },
+    { done: false, elapsedMs: 800000, changedMs: null },
+  ]
+  let n = 0
+  const run = await go(ON, { ops: scripted(SPEC_WRITER, [() => steps[n++]]) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(specStarts(run).length, 1)
+  // The second wait is already past the 10 minute first-write cap, and the round is still going.
+  assert.deepEqual(maxes(run, 'writer-20261015-120001'), ['540', '540', '540'])
+  assert.match(run.result.rounds[0].note, /no change for 10 min/)
+  assert.equal(run.result.rounds[0].note.includes('no first write'), false)
+  assert.equal(run.result.rounds[0].provider, 'native')
+})
+
+test('issue 103: an exit 4 with timedOut goes straight to the native agent, and one without still asks for the next pair', async () => {
+  const timed = (id) => {
+    const reply = failedWait('writer', id, AGY)
+    reply.value.timedOut = true
+    return reply
+  }
+  const cut = await go(ON, { ops: scripted(SPEC_WRITER, [timed, (id) => answeredWait('writer', id, GROK, SPEC_ANSWER)]) })
+  assert.equal(cut.error, null, cut.error && cut.error.stack)
+  assert.equal(specStarts(cut).length, 1)
+  assert.equal(cut.result.rounds[0].provider, 'native')
+  assert.equal(nativeCalls(cut).filter((call) => call.label === 'spec: writer write').length, 1)
+
+  const plain = (id) => failedWait('writer', id, AGY)
+  const again = await go(ON, { ops: scripted(SPEC_WRITER, [plain, (id) => answeredWait('writer', id, GROK, SPEC_ANSWER)]) })
+  assert.equal(again.error, null, again.error && again.error.stack)
+  assert.deepEqual(specStarts(again).map(exclusionOf), [null, AGY])
+  assert.equal(again.result.rounds[0].provider, 'grok grok-4.7')
+  assert.equal(nativeCalls(again).some((call) => call.label.startsWith('spec: writer')), false)
+})
+
+test('issue 103: each seat cut by the workflow goes to the native agent with no second seat-start', async () => {
+  const writer = await go(ON, { ops: scripted(SPEC_WRITER, [() => ({ done: false, elapsedMs: 600000, changedMs: 600000 })]) })
+  assert.equal(specStarts(writer).length, 1)
+  assert.equal(writer.result.rounds[0].provider, 'native')
+
+  const judge = await go(ON, { ops: scripted(FIRST_JUDGE, [silentRound, (id) => answeredWait('judge', id, GROK, APPROVE, verdictText)]) })
+  assert.equal(opsCalls(judge, 'seat-start').filter(FIRST_JUDGE).length, 1)
+  assert.ok(judge.calls.some((call) => call.label === 'spec: judge review 1'))
+
+  const examiner = await go(ON, { ops: scripted(EXAMINER, [() => ({ done: false, elapsedMs: 1500000, changedMs: null })]) })
+  assert.equal(opsCalls(examiner, 'seat-start').filter(EXAMINER).length, 1)
+  assert.equal(examiner.result.rounds.find((round) => round.seat === 'examiner').provider, 'native')
+})
+
+test('issue 103: an Examiner partial reaches the native Examiner as a folder and paths, and the exam text is nowhere else', async () => {
+  const dir = '/data/exam-carry/repo/sess-1/007-demo'
+  const paths = ['.aether-exam/c1.test.js', '.aether-exam/nested/c2.test.js']
+  const leaked = (value) => {
+    const reply = { ...value }
+    reply.examText = EXAM_SECRET
+    return reply
+  }
+  const timed = (id) => {
+    const reply = failedWait('examiner', id, AGY)
+    reply.value.timedOut = true
+    reply.value.continued = true
+    reply.value.partialPaths = paths
+    reply.value.partialDir = dir
+    reply.value.examText = EXAM_SECRET
+    return leaked(reply)
+  }
+  const fromReply = await go(ON, { ops: scripted(EXAMINER, [timed]) })
+  assert.equal(fromReply.error, null, fromReply.error && fromReply.error.stack)
+  const native = fromReply.calls.find((call) => call.label === 'exam: examiner')
+  assert.ok(native.prompt.includes(`${EXAMINER_LINE} ${dir}:`))
+  for (const filePath of paths) assert.ok(native.prompt.includes(filePath))
+  assert.ok(native.prompt.includes('Read them there.'))
+  assert.equal(native.prompt.includes(EXAM_SECRET), false)
+  const packed = JSON.stringify({ rounds: fromReply.result.rounds, result: fromReply.result })
+  assert.equal(packed.includes(EXAM_SECRET), false)
+  for (const call of fromReply.calls) {
+    if (call.label === 'exam: examiner') continue
+    assert.equal(String(call.prompt).includes(EXAM_SECRET), false, call.label)
+  }
+  assert.equal(opsCalls(fromReply, 'seat-start').filter(EXAMINER).length, 1)
+
+  const stopNames = (ops) => (call, fallback) => {
+    if (call.command.verb !== 'seat-stop') return ops(call, fallback)
+    return { stopped: true, pair: AGY, continued: true, partialPaths: paths, partialDir: dir, examText: EXAM_SECRET }
+  }
+  const fromStop = await go(ON, { ops: stopNames(scripted(EXAMINER, [noWrite])) })
+  assert.equal(fromStop.error, null, fromStop.error && fromStop.error.stack)
+  const stoppedNative = fromStop.calls.find((call) => call.label === 'exam: examiner')
+  assert.ok(stoppedNative.prompt.includes(dir))
+  for (const filePath of paths) assert.ok(stoppedNative.prompt.includes(filePath))
+  assert.equal(JSON.stringify(fromStop.result).includes(EXAM_SECRET), false)
+  assert.equal(stoppedNative.prompt.includes(EXAM_SECRET), false)
+
+  const bad = (id) => {
+    const reply = failedWait('examiner', id, AGY)
+    reply.value.timedOut = true
+    reply.value.partialPaths = ['../secret.test.js']
+    reply.value.partialDir = dir
+    reply.value.examText = EXAM_SECRET
+    return reply
+  }
+  const rejected = await go(ON, { ops: scripted(EXAMINER, [bad]) })
+  const rejectedNative = rejected.calls.find((call) => call.label === 'exam: examiner')
+  assert.equal(rejectedNative.prompt.includes(EXAMINER_LINE), false)
+  assert.equal(rejectedNative.prompt.includes('secret.test.js'), false)
+})
+
+test('issue 103: times holds each stage, complete is false when the last stage ended native, and null with superdelegation off', async () => {
+  let t = 0
+  const stamp = (call, fallback) => {
+    const out = fallback(call)
+    if (out && !out.error && (call.command.verb === 'seat-start' || call.command.verb === 'seat-wait')) {
+      t += 1000
+      out.at = t
+    }
+    return out
+  }
+  const run = await go(ON, { ops: stamp })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const times = run.result.times
+  assert.deepEqual(times.map((row) => row.stage), ['spec', 'plan', 'exam'])
+  assert.deepEqual(times.map((row) => row.providers), [['native', 'native'], ['native', 'native'], ['native']])
+  assert.equal(times[0].startedAt, 1000)
+  assert.equal(times[0].endedAt, times[1].startedAt)
+  assert.equal(times[0].durationMs, times[0].endedAt - times[0].startedAt)
+  assert.equal(times[0].complete, true)
+  assert.equal(times[1].complete, true)
+  assert.equal(times[1].durationMs, times[1].endedAt - times[1].startedAt)
+  assert.equal(times[2].complete, false)
+  assert.equal(times[2].durationMs, times[2].endedAt - times[2].startedAt)
+  assert.ok(times[2].endedAt > times[2].startedAt)
+
+  const off = await go(ARGS)
+  assert.equal(off.error, null, off.error && off.error.stack)
+  assert.deepEqual(off.result.times.map((row) => [row.stage, row.startedAt, row.endedAt, row.durationMs, row.complete]), [
+    ['spec', null, null, null, true],
+    ['plan', null, null, null, true],
+    ['exam', null, null, null, true],
+  ])
+
+  const externalExam = (call, fallback) => {
+    if (call.command.verb === 'seat-wait' && call.command.rest[0].startsWith('examiner')) {
+      const reply = answeredWait('examiner', call.command.rest[0], AGY, EXAM)
+      reply.value.stored = '/data/exams/007-demo'
+      return reply
+    }
+    return fallback(call)
+  }
+  t = 0
+  const finished = await go(ON, { ops: (call, fallback) => stamp(call, (inner) => externalExam(inner, fallback)) })
+  assert.equal(finished.error, null, finished.error && finished.error.stack)
+  const exam = finished.result.times.find((row) => row.stage === 'exam')
+  assert.deepEqual(exam.providers, ['agy gemini-4-argon'])
+  assert.equal(exam.complete, true)
+  assert.equal(typeof exam.durationMs, 'number')
 })
