@@ -41,7 +41,14 @@ const ES = {
   sinceLast: (date, news, stills, resolved) => `**Desde la última auditoría (${date}):** ${news} nuevos, ${stills} siguen, ${resolved} resueltos (ya no aparecen, y su código cambió o su comprobación volvió a correr).`,
   sinceLastNotFound: (count) => ` ${count} no se volvieron a encontrar, pero su código no cambió.`,
   sinceLastExtra: (left) => ` ${left} sin revisar esta vez, porque sus temas quedaron fuera.`,
+  sinceLastReverified: (count) => ` ${count} reverificados (siguen).`,
+  sinceLastRefuted: (count) => ` ${count} resueltos con evidencia.`,
+  reverifyCut: (cut, max, per) => (Number.isInteger(max) && Number.isInteger(per)
+    ? ` ${cut} sin reverificar por el tope (${max} verificadores de hasta ${per}).`
+    : ` ${cut} sin reverificar por el tope.`),
   notFoundList: (titles) => `- No se volvieron a encontrar: ${titles}`,
+  reverifiedList: (titles) => `- Reverificados (siguen): ${titles}`,
+  reresolvedList: (titles) => `- Resueltos con evidencia: ${titles}`,
   andMore: (count) => `, y ${count} más`,
   discarded: (total, parts) => `**Descartados:** ${total}${parts ? ` (${parts})` : ''}.`,
   noCompare: (reason) => ` No pude comparar con los issues abiertos (${reason}).`,
@@ -82,7 +89,14 @@ const EN = {
   sinceLast: (date, news, stills, resolved) => `**Since the last audit (${date}):** ${news} new, ${stills} still open, ${resolved} resolved (no longer found, after their code changed or their check ran again).`,
   sinceLastNotFound: (count) => ` ${count} not found again, though their code did not change.`,
   sinceLastExtra: (left) => ` ${left} not re-audited, because their topics were left out.`,
+  sinceLastReverified: (count) => ` ${count} re-verified (still open).`,
+  sinceLastRefuted: (count) => ` ${count} resolved on evidence.`,
+  reverifyCut: (cut, max, per) => (Number.isInteger(max) && Number.isInteger(per)
+    ? ` ${cut} not re-verified because of the ceiling (${max} verifiers of up to ${per}).`
+    : ` ${cut} not re-verified because of the ceiling.`),
   notFoundList: (titles) => `- Not found again: ${titles}`,
+  reverifiedList: (titles) => `- Re-verified (still open): ${titles}`,
+  reresolvedList: (titles) => `- Resolved on evidence: ${titles}`,
   andMore: (count) => `, and ${count} more`,
   discarded: (total, parts) => `**Discarded:** ${total}${parts ? ` (${parts})` : ''}.`,
   noCompare: (reason) => ` I could not compare with the open issues (${reason}).`,
@@ -131,13 +145,30 @@ function sinceLastSection(T, sinceLast) {
   const resolved = Array.isArray(sinceLast.resolved) ? sinceLast.resolved.length : 0
   const notFound = Array.isArray(sinceLast.notFoundAgain) ? sinceLast.notFoundAgain : []
   const notReaudited = Array.isArray(sinceLast.notReaudited) ? sinceLast.notReaudited : []
+  const reverified = Array.isArray(sinceLast.reverified) ? sinceLast.reverified : []
+  const refuted = Array.isArray(sinceLast.refuted) ? sinceLast.refuted : []
   let line = T.sinceLast(sinceLast.previous.date, counts.new, counts.still, resolved)
   if (notFound.length > 0) line += T.sinceLastNotFound(notFound.length)
+  if (reverified.length > 0) line += T.sinceLastReverified(reverified.length)
+  if (refuted.length > 0) line += T.sinceLastRefuted(refuted.length)
   if (notReaudited.length > 0) line += T.sinceLastExtra(notReaudited.length)
+  const cut = sinceLast.reverifyCut || 0
+  if (cut > 0) {
+    const ceiling = sinceLast.reverifyCeiling || {}
+    line += T.reverifyCut(cut, ceiling.maxVerifiers, ceiling.itemsPerVerifier)
+  }
   // The titles of the items not found again, so the person sees what may still be pending: at most ten, then a count.
   if (notFound.length > 0) {
     const shown = notFound.slice(0, 10).map((item) => item.title).join('; ')
     line += `\n${T.notFoundList(shown + (notFound.length > 10 ? T.andMore(notFound.length - 10) : ''))}`
+  }
+  if (reverified.length > 0) {
+    const shown = reverified.slice(0, 10).map((item) => item.title).join('; ')
+    line += `\n${T.reverifiedList(shown + (reverified.length > 10 ? T.andMore(reverified.length - 10) : ''))}`
+  }
+  if (refuted.length > 0) {
+    const shown = refuted.slice(0, 10).map((item) => item.title).join('; ')
+    line += `\n${T.reresolvedList(shown + (refuted.length > 10 ? T.andMore(refuted.length - 10) : ''))}`
   }
   return line
 }

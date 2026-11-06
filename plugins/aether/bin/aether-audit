@@ -5,6 +5,8 @@
 // aether-audit analyze [--no-tests] [--tests-command <cmd>] [--timeout-seconds <n>] [--out <file>]
 // aether-audit candidates <candidates.json> [--out <file>]
 // aether-audit verdicts <gated.json> <verdicts.json> [--out <file>]
+// aether-audit reverify <gated.json> --analysis <analysis.json> --topics <a,b,c> [--out <file>]
+// aether-audit reverify-verdicts <reverify.json> <verdicts.json> [--out <file>]
 // aether-audit clean <settled.json> --analysis <analysis.json> --topics <a,b,c> [--out <file>]
 // aether-audit triage <clean.json> <judgments.json> [--out <file>]
 // aether-audit report --meta <meta.json> --analysis <analysis.json> --triage <triage.json> [--lang <l>] [--save] [--out <file>]

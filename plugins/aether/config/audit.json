@@ -1,0 +1,4 @@
+{
+  "reverifyMaxVerifiers": 8,
+  "reverifyItemsPerVerifier": 4
+}
