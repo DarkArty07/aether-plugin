@@ -7,7 +7,7 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { makeRepo, compile, commitIn, WT_BIN, NO_LANES_CONFIG, PLAN_BIN, runBin, writePlan, useDataDir, ageRun } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
-const { ensure, merge, unitStatus, mergedUnits, removeUnit, sweepRun, sweepStale, writeUnverifiedMarker, abortUnfinishedMerge } = require('../plugins/aether/lib/worktrees.js')
+const { ensure, merge, settleUnit, unitStatus, mergedUnits, removeUnit, sweepRun, sweepStale, writeUnverifiedMarker, abortUnfinishedMerge } = require('../plugins/aether/lib/worktrees.js')
 const { finalize } = require('../plugins/aether/lib/report.js')
 const run = require('../plugins/aether/lib/run.js')
 const common = require('../plugins/aether/lib/common.js')
@@ -876,4 +876,274 @@ test('abortUnfinishedMerge leaves a MERGE_HEAD of another branch alone (issue #2
   assert.equal(r.merged, false)
   assert.equal(r.reason, 'dirty-integration')
   assert.equal(fs.existsSync(mergeHead), true, 'MERGE_HEAD of other-branch must not be aborted')
+})
+
+function integrationWorktree(repo, args) {
+  return run.readJson(path.join(run.runDir(repo.dir, args.runId), 'graph.json')).integration.worktree
+}
+
+function mergeLockPath(args) {
+  return path.join(args.runDir, 'merging')
+}
+
+// A merge cut during its tests, then one commit on the integration branch: the marker's commit is buried.
+async function buriedUnverified(t, repo, args, unit) {
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  const worktree = integrationWorktree(repo, args)
+  commitIn(repo, worktree, 'src/t2/note.js', 'note\n', 'land on top of the unverified merge')
+  return { mergeCommit, tip: repo.git('rev-parse', 'HEAD'), worktree }
+}
+
+test('settle clears a buried unverified commit when the tests pass (issue #78)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  const { mergeCommit, tip } = await buriedUnverified(t, repo, args, unit)
+  setTestCommand(args.runDir, 'true')
+  assert.deepEqual(settleUnit(repo.dir, args.runId, 'task-1'), { settled: true, task: 'task-1', commit: mergeCommit, tip })
+  assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), false)
+  assert.equal(unitStatus(repo.dir, args.runId, 'task-1').merged, true)
+  assert.equal(repo.git('rev-parse', 'HEAD'), tip)
+})
+
+test('settle keeps a buried marker and the tip when the tests fail (issue #78)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  const { mergeCommit, tip } = await buriedUnverified(t, repo, args, unit)
+  setTestCommand(args.runDir, 'echo boom; exit 3')
+  const { output, ...r } = settleUnit(repo.dir, args.runId, 'task-1')
+  assert.match(output, /boom/)
+  assert.deepEqual(r, { settled: false, reason: 'tests', exitCode: 3, timedOut: false })
+  assert.equal(repo.git('rev-parse', 'HEAD'), tip)
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't1', 'a.js'), 'utf8'), 'one\n')
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 't2', 'note.js'), 'utf8'), 'note\n')
+})
+
+test('settle clears an unverified-moved marker and does not count the new unit commit as merged (issue #78)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  commitIn(repo, unit.path, 'src/t1/b.js', 'more\n', 'commit after the cut')
+  const moved = merge(repo.dir, args.runId, 'task-1')
+  assert.deepEqual(moved, { merged: false, reason: 'unverified-moved', commit: mergeCommit })
+  setTestCommand(args.runDir, 'true')
+  assert.deepEqual(settleUnit(repo.dir, args.runId, 'task-1'), {
+    settled: true,
+    task: 'task-1',
+    commit: mergeCommit,
+    tip: mergeCommit,
+  })
+  assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), false)
+  const status = unitStatus(repo.dir, args.runId, 'task-1')
+  assert.equal(status.merged, false)
+  assert.equal(status.unverified, undefined)
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit)
+  assert.notEqual(repo.git('rev-parse', unit.branch), mergeCommit)
+})
+
+test('settle runs the tests for a marker that names only before when the merge commit is on the branch (issue #78)', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  assert.equal(merge(repo.dir, args.runId, 'task-1').merged, true)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  const before = repo.git('rev-parse', 'HEAD^1')
+  writeUnverifiedMarker(repo.dir, args.runId, 'task-1', null, before)
+  const signal = path.join(args.runDir, 'settle-ran')
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+  assert.deepEqual(settleUnit(repo.dir, args.runId, 'task-1'), { settled: true, task: 'task-1', commit: null, tip: mergeCommit })
+  assert.equal(fs.existsSync(signal), true)
+  assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), false)
+})
+
+test('settle runs the tests for a marker with neither commit nor before, and clears it only on a pass (issue #78)', (t) => {
+  for (const content of ['{}\n', '{\n']) {
+    const { repo, args } = setup(t)
+    const file = markerFile(args.runDir, 'task-1')
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, content)
+    const tip = repo.git('rev-parse', 'HEAD')
+    const signal = path.join(args.runDir, 'settle-ran')
+    setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+    assert.deepEqual(settleUnit(repo.dir, args.runId, 'task-1'), { settled: true, task: 'task-1', commit: null, tip }, content)
+    assert.equal(fs.existsSync(signal), true, content)
+    assert.equal(fs.existsSync(file), false, content)
+  }
+  const { repo, args } = setup(t)
+  const file = markerFile(args.runDir, 'task-1')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, '{\n')
+  const tip = repo.git('rev-parse', 'HEAD')
+  setTestCommand(args.runDir, 'echo boom; exit 3')
+  const failed = settleUnit(repo.dir, args.runId, 'task-1')
+  assert.equal(failed.settled, false)
+  assert.equal(failed.reason, 'tests')
+  assert.equal(fs.readFileSync(file, 'utf8'), '{\n')
+  assert.equal(repo.git('rev-parse', 'HEAD'), tip)
+})
+
+test('settle refuses a marker that is not live and clears nothing (issue #78)', async (t) => {
+  const reset = setup(t)
+  commitIn(reset.repo, reset.unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, reset.repo, reset.args)
+  const mergeCommit = reset.repo.git('rev-parse', 'HEAD')
+  const parent = reset.repo.git('rev-parse', 'HEAD^1')
+  reset.repo.git('reset', '--hard', parent)
+  const resetAway = settleUnit(reset.repo.dir, reset.args.runId, 'task-1')
+  assert.equal(resetAway.settled, false)
+  assert.equal(resetAway.reason, 'not-live')
+  assert.equal(typeof resetAway.detail, 'string')
+  assert.equal(readMarker(reset.args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(reset.repo.git('rev-parse', 'HEAD'), parent)
+
+  const { repo, args } = setup(t)
+  const before = repo.git('rev-parse', 'HEAD')
+  writeUnverifiedMarker(repo.dir, args.runId, 'task-1', null, before)
+  const absent = settleUnit(repo.dir, args.runId, 'task-1')
+  assert.equal(absent.settled, false)
+  assert.equal(absent.reason, 'not-live')
+  assert.equal(readMarker(args.runDir, 'task-1').before, before)
+  assert.equal(repo.git('rev-parse', 'HEAD'), before)
+})
+
+test('settle refuses before it judges the marker, and changes nothing (issue #78)', async (t) => {
+  const none = setup(t)
+  const noneHead = none.repo.git('rev-parse', 'HEAD')
+  setTestCommand(none.args.runDir, `touch ${shQuote(path.join(none.args.runDir, 'ran'))}; true`)
+  assert.deepEqual(settleUnit(none.repo.dir, none.args.runId, 'task-1'), { settled: false, reason: 'no-marker' })
+  assert.equal(fs.existsSync(path.join(none.args.runDir, 'ran')), false)
+  assert.equal(none.repo.git('rev-parse', 'HEAD'), noneHead)
+
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  const signal = path.join(args.runDir, 'ran')
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+
+  fs.writeFileSync(path.join(repo.dir, 'README.md'), 'uncommitted\n')
+  const dirty = settleUnit(repo.dir, args.runId, 'task-1')
+  assert.equal(dirty.settled, false)
+  assert.equal(dirty.reason, 'dirty-integration')
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(fs.existsSync(signal), false)
+  fs.writeFileSync(path.join(repo.dir, 'README.md'), 'fixture\n')
+
+  const mergeHead = mergeHeadPath(repo)
+  fs.writeFileSync(mergeHead, `${mergeCommit}\n`)
+  const mid = settleUnit(repo.dir, args.runId, 'task-1')
+  assert.equal(mid.settled, false)
+  assert.equal(mid.reason, 'merge-in-progress')
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(fs.existsSync(signal), false)
+  fs.rmSync(mergeHead, { force: true })
+
+  const indexLock = path.resolve(repo.dir, repo.git('rev-parse', '--git-path', 'index.lock'))
+  fs.writeFileSync(indexLock, '')
+  const locked = settleUnit(repo.dir, args.runId, 'task-1')
+  assert.equal(locked.settled, false)
+  assert.equal(locked.reason, 'index-locked')
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit)
+  assert.equal(fs.existsSync(signal), false)
+  fs.rmSync(indexLock, { force: true })
+
+  repo.git('switch', '-q', 'main')
+  const other = settleUnit(repo.dir, args.runId, 'task-1')
+  assert.equal(other.settled, false)
+  assert.equal(other.reason, 'wrong-branch')
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(repo.git('rev-parse', '--abbrev-ref', 'HEAD'), 'main')
+  repo.git('switch', '-q', 'feature/x')
+
+  const graphFile = path.join(args.runDir, 'graph.json')
+  const graph = JSON.parse(fs.readFileSync(graphFile, 'utf8'))
+  graph.integration.worktree = path.join(repo.dir, 'missing-integration')
+  fs.writeFileSync(graphFile, JSON.stringify(graph))
+  const missing = settleUnit(repo.dir, args.runId, 'task-1')
+  assert.equal(missing.settled, false)
+  assert.equal(missing.reason, 'missing-integration')
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  assert.equal(repo.git('rev-parse', 'HEAD'), mergeCommit)
+})
+
+test('a dirty worktree with a marker that names no commit is refused and the marker stays (issue #78)', (t) => {
+  const { repo, args } = setup(t)
+  const file = markerFile(args.runDir, 'task-1')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, '{}\n')
+  fs.writeFileSync(path.join(repo.dir, 'README.md'), 'uncommitted\n')
+  const tip = repo.git('rev-parse', 'HEAD')
+  const signal = path.join(args.runDir, 'ran')
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+  const r = settleUnit(repo.dir, args.runId, 'task-1')
+  assert.equal(r.settled, false)
+  assert.equal(r.reason, 'dirty-integration')
+  assert.equal(fs.readFileSync(file, 'utf8'), '{}\n')
+  assert.equal(repo.git('rev-parse', 'HEAD'), tip)
+  assert.equal(fs.existsSync(signal), false)
+})
+
+test('settle works for a task that --only dropped from the graph (issue #78)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  await cutDuringTests(t, repo, args)
+  const mergeCommit = repo.git('rev-parse', 'HEAD')
+  const narrowed = compile(repo, plan([task(1), task(2)]), ['--run', args.runId, '--only', 'task-2'])
+  assert.equal(narrowed.tasks['task-1'], undefined)
+  assert.equal(readMarker(args.runDir, 'task-1').commit, mergeCommit)
+  const signal = path.join(args.runDir, 'settle-ran')
+  setTestCommand(args.runDir, `touch ${shQuote(signal)}; true`)
+  assert.deepEqual(settleUnit(repo.dir, args.runId, 'task-1'), { settled: true, task: 'task-1', commit: mergeCommit, tip: mergeCommit })
+  assert.equal(fs.existsSync(signal), true)
+  assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), false)
+})
+
+test('settle takes the merge lock and drops it, also when it refuses (issue #78)', async (t) => {
+  const refused = setup(t)
+  const stale = mergeLockPath(refused.args)
+  fs.writeFileSync(stale, JSON.stringify({ pid: 2147483646, time: Date.now() }))
+  assert.deepEqual(settleUnit(refused.repo.dir, refused.args.runId, 'task-1'), { settled: false, reason: 'no-marker' })
+  assert.equal(fs.existsSync(stale), false)
+
+  const { repo, args, unit } = setup(t)
+  const { mergeCommit, tip } = await buriedUnverified(t, repo, args, unit)
+  const lock = mergeLockPath(args)
+  setTestCommand(args.runDir, `test -f ${shQuote(lock)}`)
+  assert.deepEqual(settleUnit(repo.dir, args.runId, 'task-1'), { settled: true, task: 'task-1', commit: mergeCommit, tip })
+  assert.equal(fs.existsSync(lock), false)
+})
+
+test('aether-wt settle prints the result and exits 0, and exits 1 for an invalid task id (issue #78)', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  assert.equal(merge(repo.dir, args.runId, 'task-1').merged, true)
+  const commit = repo.git('rev-parse', 'HEAD')
+  writeUnverifiedMarker(repo.dir, args.runId, 'task-1', commit)
+  const passed = runBin(WT_BIN, ['settle', args.runId, 'task-1'], repo.dir)
+  assert.equal(passed.status, 0, passed.stdout)
+  assert.equal(passed.stdout.trim().split('\n').length, 1)
+  assert.deepEqual(passed.json, { settled: true, task: 'task-1', commit, tip: commit })
+  const refused = runBin(WT_BIN, ['settle', args.runId, 'task-1'], repo.dir)
+  assert.equal(refused.status, 0, refused.stdout)
+  assert.deepEqual(refused.json, { settled: false, reason: 'no-marker' })
+  const bad = runBin(WT_BIN, ['settle', args.runId, 'nope'], repo.dir)
+  assert.equal(bad.status, 1)
+  assert.match(bad.json.error, /invalid task id/)
+})
+
+test('settle passes on the baseline of known failures and names them (issue #78)', async (t) => {
+  const { repo, args, unit } = setup(t)
+  const { mergeCommit, tip } = await buriedUnverified(t, repo, args, unit)
+  setTestCommand(args.runDir, failingTests('known'))
+  writeBaseline(args.runDir, ['known'])
+  assert.deepEqual(settleUnit(repo.dir, args.runId, 'task-1'), {
+    settled: true,
+    task: 'task-1',
+    commit: mergeCommit,
+    tip,
+    knownFailures: ['known'],
+  })
+  assert.equal(fs.existsSync(markerFile(args.runDir, 'task-1')), false)
+  assert.equal(repo.git('rev-parse', 'HEAD'), tip)
 })
