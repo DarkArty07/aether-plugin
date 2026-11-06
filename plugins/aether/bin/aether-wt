@@ -4,6 +4,7 @@
 // aether-wt ensure <run> <task>
 // aether-wt diff <run> <task> | aether-wt diff <run> --final
 // aether-wt merge <run> <task>
+// aether-wt settle <run> <task>
 // aether-wt status <run> <task>
 // aether-wt salvage <run> <task>
 // aether-wt save <run>
@@ -18,7 +19,7 @@ const wt = require(path.join(__dirname, '..', 'lib', 'worktrees.js'))
 const wtLadder = require(path.join(__dirname, '..', 'lib', 'wt-ladder.js'))
 const wtGate = require(path.join(__dirname, '..', 'lib', 'wt-gate.js'))
 
-const USAGE = 'usage: aether-wt ensure|diff|merge|status|salvage|remove <run> <task> | aether-wt save <run> | aether-wt adopt <run> <task> --commit <sha> --reason <text> [--keep-patch] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N] | aether-wt ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>] | aether-wt gate <run> <task>'
+const USAGE = 'usage: aether-wt ensure|diff|merge|settle|status|salvage|remove <run> <task> | aether-wt save <run> | aether-wt adopt <run> <task> --commit <sha> --reason <text> [--keep-patch] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N] | aether-wt ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>] | aether-wt gate <run> <task>'
 
 function sweep(rest) {
   if (rest[0] === '--run') return wt.sweepRun(process.cwd(), rest[1], { finish: rest.includes('--finish') })
@@ -44,6 +45,7 @@ try {
   else if (command === 'diff' && rest[1] === '--final') result = wt.finalPackage(process.cwd(), rest[0])
   else if (command === 'diff') result = wt.diffPackage(process.cwd(), rest[0], rest[1])
   else if (command === 'merge') result = wt.merge(process.cwd(), rest[0], rest[1])
+  else if (command === 'settle') result = wt.settleUnit(process.cwd(), rest[0], rest[1])
   else if (command === 'status') result = wt.unitStatus(process.cwd(), rest[0], rest[1])
   else if (command === 'salvage') result = wt.salvageUnit(process.cwd(), rest[0], rest[1])
   else if (command === 'save') result = wt.saveRun(process.cwd(), rest[0])

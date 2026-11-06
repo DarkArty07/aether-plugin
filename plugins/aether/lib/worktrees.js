@@ -653,6 +653,105 @@ function merge(cwd, runId, taskId, options = {}) {
   }
 }
 
+// The Lead's exit for a marker whose commit is on the integration branch but that merge will not
+// rerun (unverified-buried, unverified-moved, or a task --only dropped). It verifies the branch
+// as it is and never changes it. A marker is removed only after a passing run at a tip that
+// contains its commit (issue #78). The marker file is the list: graph.tasks is not consulted.
+function settleUnit(cwd, runId, taskId, options = {}) {
+  run.assertTaskId(taskId)
+  const { mainRoot } = repoPaths(cwd)
+  const graph = loadGraph(mainRoot, runId)
+  const file = mergeLockFile(mainRoot, runId)
+  const lock = takeMergeLock(file)
+  try {
+    return settleMarked(mainRoot, graph, runId, taskId, options)
+  } finally {
+    dropMergeLock(file, lock)
+  }
+}
+
+// Refusals come before any judgment of the marker. A dirty worktree, a half merge or an index.lock
+// can mean a git process is still at work, and the merge lock goes stale when its node process dies.
+function settleMarked(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
+  if (!markerRecord(mainRoot, runId, taskId)) return { settled: false, reason: 'no-marker' }
+  const integration = graph.integration.worktree
+  if (!isDirectory(integration)) {
+    return { settled: false, reason: 'missing-integration', detail: `the integration worktree ${integration} is missing` }
+  }
+  const current = currentBranch(integration)
+  if (current !== graph.integration.branch) {
+    return {
+      settled: false,
+      reason: 'wrong-branch',
+      detail: `the integration worktree is on ${current || 'a detached HEAD'}, not ${graph.integration.branch}`,
+    }
+  }
+  if (git(['status', '--porcelain', '--untracked-files=no'], integration).stdout !== '') {
+    return { settled: false, reason: 'dirty-integration', detail: 'the integration worktree has uncommitted changes' }
+  }
+  if (mergeHeadFile(integration)) {
+    return { settled: false, reason: 'merge-in-progress', detail: 'the integration worktree has MERGE_HEAD' }
+  }
+  const indexLock = indexLockFile(integration)
+  if (indexLock) {
+    return { settled: false, reason: 'index-locked', detail: `index.lock is present at ${indexLock}` }
+  }
+  const live = classifyMarker(mainRoot, graph, runId, taskId)
+  if (!live.live) return { settled: false, reason: 'not-live', detail: live.detail }
+  return runSettleTests(mainRoot, graph, runId, taskId, integration, live.commit, timeoutMs)
+}
+
+// The path of index.lock in the integration worktree's git directory, or null when it is absent.
+// `git rev-parse --git-path` names the file whether or not it exists.
+function indexLockFile(integration) {
+  const found = git(['rev-parse', '--git-path', 'index.lock'], integration, { allowFail: true })
+  if (found.status !== 0 || found.stdout === '') return null
+  const file = path.resolve(integration, found.stdout)
+  return exists(file) ? file : null
+}
+
+// A marker is live when its commit is on the integration branch, when `before` names a merge commit
+// that is, or when it names neither (a half-written file: a merge commit may exist that it never
+// recorded). Anything else blocks nothing and is not cleared. `commit` in the result is the marked
+// commit, or null when the marker named none.
+function classifyMarker(mainRoot, graph, runId, taskId) {
+  const marker = markerRecord(mainRoot, runId, taskId)
+  if (!marker) return { live: false, detail: 'the task has no marker' }
+  if (marker.commit) {
+    const sha = unverifiedCommit(mainRoot, graph, runId, taskId)
+    if (sha) return { live: true, commit: sha }
+    return { live: false, detail: 'the marked commit is not on the integration branch' }
+  }
+  if (!marker.before) return { live: true, commit: null }
+  if (unverifiedCommit(mainRoot, graph, runId, taskId)) return { live: true, commit: null }
+  return { live: false, detail: 'the marker names no commit on the integration branch' }
+}
+
+// The plan's tests at the current tip, with the same timeout, buffer and baseline judgment as
+// settleMerge. A pass clears the marker. A failure or a kill keeps it and resets nothing.
+function runSettleTests(mainRoot, graph, runId, taskId, integration, commit, timeoutMs) {
+  const maxBuffer = 64 * 1024 * 1024
+  const tip = head(integration)
+  const tests = common.runShell(graph.testCommand, { cwd: integration, timeoutMs, maxBuffer })
+  const passed = (extra) => {
+    clearUnverifiedMarker(mainRoot, runId, taskId)
+    const result = { settled: true, task: taskId, commit, tip }
+    if (extra) Object.assign(result, extra)
+    return result
+  }
+  if (tests.status === 0) return passed()
+  const output = `${tests.stdout || ''}\n${tests.stderr || ''}`
+  const verdict = tests.status === null ? { pass: false } : judge(readBaseline(mainRoot, runId), { exitCode: tests.status, output })
+  if (verdict.pass) return passed({ knownFailures: verdict.known })
+  return {
+    settled: false,
+    reason: 'tests',
+    exitCode: tests.status,
+    timedOut: Boolean(tests.error && tests.error.code === 'ETIMEDOUT'),
+    output: `${tests.stdout || ''}${tests.stderr || ''}`.slice(-4000),
+  }
+}
+
 // The run's test baseline, or null when it is missing or unreadable.
 function readBaseline(mainRoot, runId) {
   try {
@@ -1364,6 +1463,7 @@ module.exports = {
   mergedUnits,
   saveRun,
   merge,
+  settleUnit,
   betweenMerges,
   removeUnit,
   sweepRun,
