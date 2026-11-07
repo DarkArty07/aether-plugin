@@ -3632,7 +3632,7 @@ test('the Writer and the plan skill name the art direction before the plan; ther
 
 **Aether:**
 - Area: lead-rules
-- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/hooks/hooks.json`, `CLAUDE.md`, `tests/using-aether-030.test.js`, `tests/session-start-parts.test.js`, `tests/copies-classes.test.js`
+- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `plugins/aether/hooks/hooks.json`, `CLAUDE.md`, `tests/using-aether-030.test.js`, `tests/session-start-parts.test.js`, `tests/copies-classes.test.js`
 - Depends on: Task 29 — las reglas nombran las skills `aether:skills` y `aether:art-direction`
 - Depends on: Task 26 — las reglas describen lo que la guarda hace con las skills
 - Depends on: Task 28 — y los avisos que los hooks dan tras escribir
@@ -3647,7 +3647,7 @@ test('the Writer and the plan skill name the art direction before the plan; ther
 - **Orden del proyecto.** `AGENTS.md` es el mapa y `CLAUDE.md` es `@AGENTS.md` más lo que es solo de Claude; si el aviso de arranque nombra desorden, ofrece `aether:tidy` y no mueve ni borra nada sin el sí del dueño.
 - **Rutas.** Los lugares de `.aether/` que el texto actual nombra pasan a los nuevos: `.aether/tmp/` en lugar de `.aether-tmp/` y `.aether/exam/` en lugar de `.aether-exam/`, y se agrega que `.aether/README.md` es el mapa.
 - Una feature visual: el Writer escribe `art-direction.md` antes del plan (una línea; la regla es de la skill `plan` y del Writer).
-- **Herramientas (issue #187, palabras del dueño: «no puede vovler a pasar que el lead no trabje con todas sus herramientas que se necesita»).** Al empezar una sesión, y antes de cualquier diseño o corrida autónoma, el Lead comprueba que `Workflow` está entre sus herramientas; si falta, se lo dice al dueño en su primera respuesta, en palabras simples y antes de cualquier plan, con el arreglo (Dynamic workflows en `/config` y una sesión nueva; una corrida se retoma desde su diario), y espera su respuesta en lugar de planear alrededor. Esta regla reemplaza la frase actual que solo dice avisarle. `tests/using-aether-030.test.js` comprueba que el bootstrap nombra `Workflow`, `/config` y una sesión nueva en esa regla.
+- **Herramientas (issue #187, palabras del dueño: «no puede vovler a pasar que el lead no trabje con todas sus herramientas que se necesita»).** Una sección nueva `## Tools` del bootstrap, en inglés como el resto: al empezar una sesión, y antes de cualquier diseño o corrida autónoma, el Lead comprueba que tiene todas las herramientas que el método necesita, `Workflow` primero (`/aether:design` y `/aether:run`) y `Agent` (las tareas delegadas); si falta una, se lo dice al dueño en su primera respuesta («first reply»), en palabras simples y antes de cualquier plan («before any plan»), con el arreglo (Dynamic workflows en `/config` y una sesión nueva; una corrida se retoma desde su diario), y espera su respuesta («wait for the owner's answer») en lugar de planear alrededor. La frase actual del punto `failed` de «Designing» («When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session.») se cambia por un remite corto a «Tools». En `plugins/aether/skills/swarm/SKILL.md`, el punto **Workflows** deja de ofrecer construir tarea por tarea mientras tanto: dice que el Lead avisa como dice «Tools» de `using-aether`, espera la respuesta del dueño, y solo si el dueño lo pide construye el plan tarea por tarea con delegados.
 
 `CLAUDE.md` cambia solo si esta tarea agrega `--part 6` a `hooks/hooks.json`: entonces su frase «`--part 1` to `--part 5`» pasa a nombrar las seis partes.
 
@@ -3672,6 +3672,18 @@ test('the rules tell the Lead how to handle skills, continuity and the order of 
   }
   assert.ok(!text.includes('.aether-tmp') && !text.includes('.aether-exam'), 'the old folders are not named as the places to use')
   assert.ok(!/onboard/i.test(text))
+})
+
+test('the Lead checks its tools first and waits for the owner when one is missing (issue 187)', () => {
+  const tools = text.split(/\n(?=## )/).find((section) => section.startsWith('## Tools'))
+  assert.ok(tools, 'the bootstrap has a ## Tools section')
+  for (const token of ['`Workflow`', '`Agent`', 'first reply', 'before any plan', "wait for the owner's answer", '/config', 'new session']) {
+    assert.ok(tools.includes(token), `the Tools section names ${token}`)
+  }
+  assert.ok(!text.includes('When this session has no `Workflow` tool, workflows are off: tell the owner to turn on Dynamic workflows in `/config` and to start a new session.'), 'the old footnote sentence is gone')
+  const swarm = fs.readFileSync(path.join(PLUGIN, 'skills', 'swarm', 'SKILL.md'), 'utf8')
+  assert.ok(!swarm.includes('offer to build it meanwhile task by task'), 'the swarm skill no longer plans around a missing Workflow tool')
+  assert.ok(/Tools/.test(swarm) && /using-aether/.test(swarm), 'the swarm skill points at the Tools rule')
 })
 
 test('the bootstrap goes in as many parts as hooks.json has commands for, each whole output within the limit, also from a long install path (R44)', () => {
