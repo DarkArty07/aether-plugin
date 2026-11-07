@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { LEAD_AGENT, markerFile, markSession, isAetherSession, opsOffFile, pruneSessions, delegateFile, parseDeadlines } = require('../plugins/aether/lib/session.js')
+const { LEAD_AGENT, markerFile, markSession, isAetherSession, opsOffFile, pruneSessions, delegateFile, parseDeadlines, touchSession, readMark, repoSessions, oldStyleMarks, OLD_MARK_MS } = require('../plugins/aether/lib/session.js')
 
 test('the Lead agent is aether:lead', () => {
   assert.equal(LEAD_AGENT, 'aether:lead')
@@ -119,5 +119,70 @@ test('pruneSessions leaves a router file of an older version, and removes the fi
 test('parseDeadlines reads quota and ignores every other key', () => {
   assert.equal(parseDeadlines('other=5,quota=2').quotaMs, 2000)
   assert.equal(parseDeadlines('other=5,another=2').quotaMs, 3000)
+})
+
+function fakeProc(root, procs) {
+  for (const [pid, { comm, ppid, start }] of Object.entries(procs)) {
+    const dir = path.join(root, pid)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'comm'), `${comm}\n`)
+    fs.writeFileSync(path.join(dir, 'stat'), [pid, `(${comm})`, 'S', ppid, ...Array(17).fill('0'), start, '0'].join(' ') + '\n')
+  }
+}
+
+test('markSession keeps the old marker without the new options, and with them adds the repository, the process and the last activity (R19)', (t) => {
+  const data = tempDir(t)
+  markSession(data, 's1', 1000)
+  assert.deepEqual(readMark(data, 's1'), { session: 's1', startedAt: 1000 })
+  markSession(data, 's2', 2000, { repo: '/work/app', claude: { pid: 100, start: 555 } })
+  assert.deepEqual(readMark(data, 's2'), { session: 's2', startedAt: 2000, repo: '/work/app', claude: { pid: 100, start: 555 }, lastActivity: 2000 })
+  markSession(data, 's3', 3000, { repo: '/work/app', claude: null })
+  assert.deepEqual(readMark(data, 's3'), { session: 's3', startedAt: 3000, repo: '/work/app', claude: null, lastActivity: 3000 })
+  assert.equal(readMark(data, 'missing'), null)
+  assert.equal(readMark(data, '../x'), null)
+})
+
+test('touchSession refreshes lastActivity and never throws (R19)', (t) => {
+  const data = tempDir(t)
+  markSession(data, 's1', 1000, { repo: '/work/app', claude: null })
+  assert.equal(touchSession(data, 's1', 5000), true)
+  assert.equal(readMark(data, 's1').lastActivity, 5000)
+  assert.equal(readMark(data, 's1').startedAt, 1000)
+  assert.equal(touchSession(data, 'nobody', 5000), false)
+  assert.equal(touchSession(data, '../x', 5000), false)
+  fs.writeFileSync(path.join(data, 'sessions', 'bad.json'), '{')
+  assert.equal(touchSession(data, 'bad', 5000), false)
+})
+
+test('repoSessions lists the marks of one repository with the state of their process, without the excluded session (R6, R19)', (t) => {
+  const data = tempDir(t)
+  const proc = tempDir(t, 'aether-proc-')
+  fakeProc(proc, { 100: { comm: 'claude', ppid: 1, start: 555 }, 200: { comm: 'claude', ppid: 1, start: 777 } })
+  markSession(data, 'alive', 1000, { repo: '/work/app', claude: { pid: 100, start: 555 } })
+  markSession(data, 'reused', 2000, { repo: '/work/app', claude: { pid: 200, start: 1 } })
+  markSession(data, 'gone', 3000, { repo: '/work/app', claude: { pid: 300, start: 1 } })
+  markSession(data, 'unknown', 4000, { repo: '/work/app', claude: null })
+  markSession(data, 'elsewhere', 5000, { repo: '/work/other', claude: { pid: 100, start: 555 } })
+  markSession(data, 'plain', 6000)
+  const listed = repoSessions(data, '/work/app', { except: 'unknown', procRoot: proc })
+  assert.deepEqual(listed.map((s) => [s.session, s.state]), [['gone', 'gone'], ['reused', 'gone'], ['alive', 'alive']])
+  assert.deepEqual(repoSessions(data, '/work/app', { procRoot: path.join(proc, 'nope') }).map((s) => s.state), ['unknown', 'unknown', 'unknown', 'unknown'])
+  assert.deepEqual(repoSessions(tempDir(t), '/work/app'), [])
+  const cleared = repoSessions(data, '/work/app', { except: 'unknown', exceptProcess: { pid: 100, start: 555 }, procRoot: proc })
+  assert.deepEqual(cleared.map((s) => s.session), ['gone', 'reused'], 'a mark of the same claude process (a /clear) is not another session')
+})
+
+test('oldStyleMarks lists the marks without a repository that are younger than 12 hours (R19 b, A18)', (t) => {
+  const data = tempDir(t)
+  const now = Date.now()
+  markSession(data, 'fresh', now)
+  markSession(data, 'stale', now)
+  markSession(data, 'modern', now, { repo: '/work/app', claude: null })
+  const hours = (n) => new Date(now - n * 3600 * 1000)
+  fs.utimesSync(markerFile(data, 'fresh'), hours(1), hours(1))
+  fs.utimesSync(markerFile(data, 'stale'), hours(13), hours(13))
+  assert.equal(OLD_MARK_MS, 12 * 3600 * 1000)
+  assert.deepEqual(oldStyleMarks(data, { now }), ['fresh'])
+  assert.deepEqual(oldStyleMarks(tempDir(t), { now }), [])
 })
 

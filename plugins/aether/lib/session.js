@@ -2,15 +2,20 @@
 
 // Session state, marker files and option persistence for Aether sessions under the plugin data directory.
 // Manages active session markers, ops suppression, delegate settings, quota brake configuration,
-// and session directory pruning.
+// and session directory pruning. A marker also records the repository, the claude process and the last
+// activity of its session (spec 030 R19), and lists the sessions of one repository (spec 030 R6).
 // Family: session.
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { processState } = require('./continuity-store.js')
+const { isObject, readJsonOrNull, writeFileAtomic } = require('./common.js')
 
 const LEAD_AGENT = 'aether:lead'
 const SESSION_ID_RE = /^[A-Za-z0-9-]+$/
 const DAY_MS = 24 * 60 * 60 * 1000
+// A marker without a repository that was written less than this long ago belongs to a session of the older version (spec 030 R19, A18).
+const OLD_MARK_MS = 12 * 3600 * 1000
 
 const DEFAULT_DEADLINES = Object.freeze({ quotaMs: 3000 })
 const MAX_DEADLINE_MS = 10000
@@ -133,15 +138,101 @@ function readBrakeSettings(dataDir, sessionId) {
   }
 }
 
+// The marker's object, or null when the file is missing, unreadable or not an object, or the id is invalid; never throws.
+function readMark(dataDir, sessionId) {
+  try {
+    const mark = readJsonOrNull(markerFile(dataDir, sessionId))
+    return isObject(mark) ? mark : null
+  } catch {
+    return null
+  }
+}
+
+// Sets lastActivity of the marker to now, writing it atomically. True when the marker was read and written; false for an
+// invalid id, a missing or unreadable marker, or a failed write. Never throws (spec 030 R19).
+function touchSession(dataDir, sessionId, now = Date.now()) {
+  try {
+    const file = markerFile(dataDir, sessionId)
+    const mark = readMark(dataDir, sessionId)
+    if (!mark) return false
+    writeFileAtomic(file, JSON.stringify({ ...mark, lastActivity: now }) + '\n')
+    return true
+  } catch {
+    return false
+  }
+}
+
+// The marker's ids of the sessions folder, in alphabetical order, with the valid ones only. [] when the folder does not exist.
+function markerIds(dataDir) {
+  let names
+  try {
+    names = fs.readdirSync(path.join(dataDir, 'sessions'))
+  } catch {
+    return []
+  }
+  return names
+    .filter((name) => name.endsWith('.json') && isValidSessionId(name.slice(0, -'.json'.length)))
+    .map((name) => name.slice(0, -'.json'.length))
+    .sort()
+}
+
+// The same claude process: both are set and name the same pid and start time.
+const sameProcess = (a, b) => Boolean(a && b && a.pid === b.pid && a.start === b.start)
+
+// The last activity of a marker, or its start when it has none, for the order of the lists.
+const activityOf = (mark) => (typeof mark.lastActivity === 'number' ? mark.lastActivity : Number(mark.startedAt) || 0)
+
+// The markers of the sessions of one repository, the most recent activity first, each with the state of its claude
+// process (continuity-store processState). `except` leaves out one session id; `exceptProcess` ({ pid, start }) leaves out
+// the sessions of one claude process, since /clear opens a new id in the same process, which is not another session.
+function repoSessions(dataDir, repo, { except = null, exceptProcess = null, procRoot = '/proc' } = {}) {
+  const rows = []
+  for (const id of markerIds(dataDir)) {
+    if (id === except) continue
+    const mark = readMark(dataDir, id)
+    if (!mark || mark.repo !== repo || sameProcess(mark.claude, exceptProcess)) continue
+    rows.push({
+      session: id,
+      startedAt: mark.startedAt,
+      lastActivity: mark.lastActivity,
+      claude: mark.claude ?? null,
+      state: processState(mark.claude ?? null, { procRoot }),
+    })
+  }
+  return rows.sort((a, b) => activityOf(b) - activityOf(a))
+}
+
+// The ids of the markers without a repository field (written by the older version) whose file was modified less than
+// maxAgeMs ago, in alphabetical order. A marker that cannot be read is not listed (spec 030 R19 b).
+function oldStyleMarks(dataDir, { now = Date.now(), maxAgeMs = OLD_MARK_MS } = {}) {
+  const ids = []
+  for (const id of markerIds(dataDir)) {
+    let stat
+    try {
+      stat = fs.statSync(markerFile(dataDir, id))
+    } catch {
+      continue
+    }
+    if (!stat.isFile() || now - stat.mtimeMs >= maxAgeMs) continue
+    const mark = readMark(dataDir, id)
+    if (mark && !('repo' in mark)) ids.push(id)
+  }
+  return ids
+}
+
 // Writes {"session": sessionId, "startedAt": now} to the marker file, creating its directory. Throws on a bad id (before writing anything) or a failed write.
+// With repo (a text) or claude ({ pid, start }) given, the marker also holds { repo, claude, lastActivity: now } (spec 030 R19).
 // With opsInMod false it also writes the ops-off file, and with it true it removes a stale one, so a session
 // resumed with the option changed follows the option it has now. With delegate given it writes the delegate file,
 // and with it null it removes a stale one, for the same reason. The same goes for brake and its file.
-function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, delegate = null, brake = null } = {}) {
+function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, delegate = null, brake = null, repo = null, claude = null } = {}) {
   const file = markerFile(dataDir, sessionId)
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(file, JSON.stringify({ session: sessionId, startedAt: now }) + '\n')
+  const mark = repo !== null || claude !== null
+    ? { session: sessionId, startedAt: now, repo, claude, lastActivity: now }
+    : { session: sessionId, startedAt: now }
+  fs.writeFileSync(file, JSON.stringify(mark) + '\n')
   const off = opsOffFile(dataDir, sessionId)
   if (opsInMod) fs.rmSync(off, { force: true })
   else fs.writeFileSync(off, '')
@@ -211,7 +302,12 @@ module.exports = {
   brakeSettingsFrom,
   readDelegateSettings,
   readBrakeSettings,
+  OLD_MARK_MS,
   markSession,
+  readMark,
+  touchSession,
+  repoSessions,
+  oldStyleMarks,
   isAetherSession,
   pruneSessions,
 }
