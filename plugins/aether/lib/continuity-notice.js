@@ -159,7 +159,8 @@ function notice({ cwd, session, source, dataDir, dir, env = process.env, procRoo
     const spanish = isSpanish(env)
     const t = (english, spanishText) => (spanish ? spanishText : english)
     const previous = readNotes(dir).find((note) => note.session !== session)
-    if (!previous) return { lines: [t('No earlier session in this project.', 'No hay una sesión anterior en este proyecto.')] }
+    // `first` lets session start show this one line to the person only: there is nothing to tell the Lead.
+    if (!previous) return { lines: [t('No earlier session in this project.', 'No hay una sesión anterior en este proyecto.')], first: true }
     const branch = safely(() => currentBranch(cwd) || DETACHED, DETACHED)
     const context = { cwd, branch, t }
     const lines = [

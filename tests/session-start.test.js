@@ -448,7 +448,8 @@ test('R9: without a readable plugin.json the welcome line has no version and the
 test('R9: clear and compact keep the output as it was: the context and no welcome line', (t) => {
   const clear = welcomeOf(t, { LANG: 'es_MX.UTF-8' }, { ...AETHER, source: 'clear' })
   assert.match(clear.out.hookSpecificOutput.additionalContext, /^Aether mode is active\./)
-  assert.equal(clear.out.systemMessage, NOTICE_ES)
+  // A first session has nothing to tell after a clear: its one line is shown only at startup (spec 030, Lead's fix).
+  assert.equal(clear.out.systemMessage, undefined)
   assert.doesNotMatch(clear.stdout, /\/aether:help to see|para ver qué puedo hacer/)
 
   const compact = welcomeOf(t, { LANG: 'es_MX.UTF-8' }, { ...AETHER, source: 'compact' })

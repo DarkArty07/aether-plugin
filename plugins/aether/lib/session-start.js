@@ -313,7 +313,8 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
       const dir = continuityDir({ cwd, env })
       const selfProcess = claudeProcess({ procRoot, from })
       const res = notice({ cwd, session: input.session_id, source, dataDir: dataDir(env), dir, env, procRoot, selfProcess })
-      noticeLines = Array.isArray(res?.lines) ? [...res.lines] : []
+      // A fork with no earlier session has nothing to tell anyone.
+      noticeLines = Array.isArray(res?.lines) && !res.first ? [...res.lines] : []
       openNote(noteInput, { env, procRoot, from, source, fork: true })
     } catch {}
 
@@ -332,6 +333,9 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   }
 
   let noticeLines = []
+  // A first session in a project (no earlier note): its one line goes only to the person at startup, never to the
+  // Lead's context, so a project with no notes keeps the context it always had.
+  let firstSession = false
   let dir = null
   if (NOTICE_SOURCES.includes(source)) {
     try {
@@ -343,6 +347,7 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
       const selfProcess = claudeProcess({ procRoot, from })
       const res = notice({ cwd, session: input.session_id, source, dataDir: dataDir(env), dir, env, procRoot, selfProcess })
       noticeLines = Array.isArray(res?.lines) ? [...res.lines] : []
+      firstSession = Boolean(res?.first)
       openNote(noteInput, { env, procRoot, from, source, fork: false })
     } catch {}
   }
@@ -360,8 +365,10 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     passed ? '' : "Aether could not pass the superdelegation option to this session's commands, so superdelegation is off.",
     markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
     sweepNote(cwd, env),
-    autonomyNote(cwd),
   ].filter(Boolean).join('\n\n')
+  // The open run's note stays the last thing of the context (tests/session-start-autonomy.test.js): the continuity notice
+  // goes before it.
+  const runNote = autonomyNote(cwd)
 
   // The welcome line is for the person and only at startup: a clear or a compact inside a session adds none. At startup the
   // notices of confirmed issues (spec 020) are shown too, oldest first, claiming only those that keep the whole output within
@@ -370,13 +377,14 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   let noticeLine = () => ''
   const buildPayload = (lines, issueNotices = []) => {
     const noticeText = lines.join('\n')
-    const additionalContext = [baseContext, noticeText].filter(Boolean).join('\n\n')
+    const contextNotice = firstSession ? '' : noticeText
+    const additionalContext = [baseContext, contextNotice, runNote].filter(Boolean).join('\n\n')
     const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext } }
     if (welcomeLine !== null) {
       const sysLines = [welcomeLine, ...lines, ...issueNotices.map((n) => noticeLine(n))].filter((s) => typeof s === 'string' && s !== '')
       output.systemMessage = sysLines.join('\n')
-    } else if (source === 'clear') {
-      output.systemMessage = noticeText
+    } else if (source === 'clear' && contextNotice) {
+      output.systemMessage = contextNotice
     }
     return JSON.stringify(output) + '\n'
   }
