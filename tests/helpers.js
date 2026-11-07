@@ -39,6 +39,18 @@ for (const name of Object.keys(process.env)) if (name.startsWith('AETHER_')) del
 delete process.env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV
 delete process.env.CLAUDE_PLUGIN_OPTION_AUTOISSUE
 
+// The owner's real home comes from the account, not from HOME, and is read before HOME moves. A test must never write
+// under it: the Claude config folder and the home point at a temporary folder (removed when the process exits), so the
+// continuity notes and the memory folders of the owner's projects stay untouched (spec 030 R44). git still reads the
+// owner's global configuration (name, mail, default branch) from the real file, named by GIT_CONFIG_GLOBAL.
+const REAL_HOME = os.userInfo().homedir
+const REAL_GIT_CONFIG = process.env.GIT_CONFIG_GLOBAL || path.join(REAL_HOME, '.gitconfig')
+const SCRATCH_HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'aether-test-home-')))
+process.on('exit', () => fs.rmSync(SCRATCH_HOME, { recursive: true, force: true }))
+process.env.GIT_CONFIG_GLOBAL = REAL_GIT_CONFIG
+process.env.HOME = SCRATCH_HOME
+process.env.CLAUDE_CONFIG_DIR = path.join(SCRATCH_HOME, '.claude')
+
 function tempDir(t, prefix = 'aether-test-') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
@@ -178,6 +190,7 @@ function leadParts(cwd, env, input = LEAD_START) {
 
 module.exports = {
   PLUGIN,
+  REAL_HOME,
   PLAN_BIN,
   WT_BIN,
   SESSION_BIN,
