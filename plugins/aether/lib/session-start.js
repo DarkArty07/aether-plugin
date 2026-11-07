@@ -198,10 +198,13 @@ const NOTICE_SOURCES = ['startup', 'clear', 'fork']
 // Marks the session; returns the reason it could not, or '' when it did.
 function mark(sessionId, env, { cwd = process.cwd(), procRoot = '/proc', from = process.ppid } = {}) {
   try {
-    const { markSession, delegateSettingsFrom, brakeSettingsFrom } = require('./session.js')
+    const { markSession, delegateSettingsFrom, brakeSettingsFrom, readMark, markerFile } = require('./session.js')
     const { dataDir } = require('./run.js')
     const { repoPaths } = require('./git.js')
     const { claudeProcess } = require('./continuity-store.js')
+    const { writeFileAtomic } = require('./common.js')
+    const dir = dataDir(env)
+    const noteDir = readMark(dir, sessionId)?.noteDir
     let repo = null
     try {
       repo = repoPaths(cwd).mainRoot
@@ -213,13 +216,18 @@ function mark(sessionId, env, { cwd = process.cwd(), procRoot = '/proc', from = 
     // The superdelegation option, the harnesses and the quota deadline go to the session's delegate file, which
     // aether-delegate reads.
     // The brake settings go to the session's brake file.
-    markSession(dataDir(env), sessionId, Date.now(), {
+    markSession(dir, sessionId, Date.now(), {
       opsInMod: env.CLAUDE_PLUGIN_OPTION_OPS !== 'false',
       delegate: delegateSettingsFrom(env),
       brake: brakeSettingsFrom(env),
       repo,
       claude,
     })
+    // Resume and compact reuse the note: keep its recorded folder when refreshing the mark, so SessionEnd
+    // can still close it without git (spec 030 R3).
+    if (typeof noteDir === 'string' && noteDir !== '') {
+      writeFileAtomic(markerFile(dir, sessionId), JSON.stringify({ ...readMark(dir, sessionId), noteDir }) + '\n')
+    }
     return ''
   } catch (err) {
     return (err && err.message) || String(err)

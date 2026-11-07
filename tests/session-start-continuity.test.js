@@ -6,7 +6,9 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { SESSION_BIN, PLUGIN, tempDir, makeRepo } = require('./helpers.js')
 const store = require('../plugins/aether/lib/continuity-store.js')
-const { PART_LIMIT } = require('../plugins/aether/lib/session-start.js')
+const { PART_LIMIT, main } = require('../plugins/aether/lib/session-start.js')
+const { readMark } = require('../plugins/aether/lib/session.js')
+const { handle } = require('../plugins/aether/lib/continuity-hook.js')
 
 function world(t) {
   const repo = makeRepo(t)
@@ -124,3 +126,32 @@ test('a session that is not the Lead prints nothing and writes nothing (R40)', (
   assert.deepEqual(fs.readdirSync(w.dir), ['prev-session.json'])
   assert.deepEqual(fs.existsSync(path.join(w.data, 'sessions')) ? fs.readdirSync(path.join(w.data, 'sessions')) : [], [])
 })
+
+for (const source of ['resume', 'compact']) {
+  test(`${source} keeps the recorded note folder so SessionEnd can close the session (R3)`, (t) => {
+    const cwd = tempDir(t)
+    const data = tempDir(t, 'aether-data-')
+    const configDir = tempDir(t, 'aether-config-')
+    const procRoot = tempDir(t, 'aether-proc-')
+    const env = { ...process.env, AETHER_DATA_DIR: data, CLAUDE_CONFIG_DIR: configDir }
+    delete env.CLAUDE_ENV_FILE
+    const input = { session_id: 'recorded-session', agent_type: 'aether:lead', cwd }
+    let output = ''
+    const options = { env, cwd, procRoot, from: 100, stdout: { write(text) { output += text } } }
+    main({ ...options, input: { ...input, source: 'startup' } })
+    const dir = store.continuityDir({ cwd, env })
+    assert.equal(readMark(data, input.session_id).noteDir, dir)
+    store.updateNote(dir, input.session_id, { lastMessage: 'Work saved before restarting', compactSummary: 'Keep this summary' })
+
+    output = ''
+    main({ ...options, input: { ...input, source } })
+    if (source === 'resume') assert.equal(output, '')
+    assert.equal(readMark(data, input.session_id).noteDir, dir)
+    const note = store.readNote(dir, input.session_id)
+    assert.equal(note.lastMessage, 'Work saved before restarting')
+    assert.equal(note.compactSummary, 'Keep this summary')
+
+    handle('sessionend', { ...input, reason: 'prompt_input_exit' }, { env, procRoot, from: 100 })
+    assert.equal(store.readNote(dir, input.session_id).closed.reason, 'prompt_input_exit')
+  })
+}
