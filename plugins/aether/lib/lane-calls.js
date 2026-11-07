@@ -52,9 +52,9 @@ const READ_ONLY_RULE = (harness) =>
 
 // The note of each role's lane call, naming the harness that runs it.
 const LANE_NOTE_TEXT = {
-  implementer: (harness) => `## You run in an external harness\n\nYou are an Aether implementer, run by the ${harness} CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether-tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
-  supervisor: (harness) => `## You run in an external harness\n\nYou are an Aether supervisor, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether-tmp/ folder. ${READ_ONLY_RULE(harness)} ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
-  reviewer: (harness) => `## You run in an external harness\n\nYou are the Aether final reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. ${READ_ONLY_RULE(harness)} ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+  implementer: (harness) => `## You run in an external harness\n\nYou are an Aether implementer, run by the ${harness} CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether/tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+  supervisor: (harness) => `## You run in an external harness\n\nYou are an Aether supervisor, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether/tmp/ folder. ${READ_ONLY_RULE(harness)} ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
+  reviewer: (harness) => `## You run in an external harness\n\nYou are the Aether final reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether/tmp/ folder. ${READ_ONLY_RULE(harness)} ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`,
 }
 
 // The lane note of role, naming the harness that runs the call. agy is the default, as it was before harnesses.
@@ -64,7 +64,7 @@ function laneNote(role, harness = 'agy') {
 
 // The note of a reviewer call that carries a task: it reviews the unit, not the merged run.
 function unitReviewerNote(harness = 'agy') {
-  return `## You run in an external harness\n\nYou are an Aether reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch, not of the integration branch; the unit's brief (brief.md) and the review package (package.diff) are in its .aether-tmp/ folder. ${READ_ONLY_RULE(harness)} ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+  return `## You run in an external harness\n\nYou are an Aether reviewer, run by the ${harness} CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch, not of the integration branch; the unit's brief (brief.md) and the review package (package.diff) are in its .aether/tmp/ folder. ${READ_ONLY_RULE(harness)} ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
 }
 
 // ---- Prompts ----

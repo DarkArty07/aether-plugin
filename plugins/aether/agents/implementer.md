@@ -19,7 +19,7 @@ Read the brief first. It is the task text from the plan: the files you own, the 
 
 1. Run the `aether-wt ensure` command from the message. Work only inside the unit worktree it prints.
    - Never edit the integration worktree, the main checkout, or another unit's worktree.
-   - Temporary files go in the worktree's `.aether-tmp/` folder and nowhere else.
+   - Temporary files go in the worktree's `.aether/tmp/` folder and nowhere else.
 2. Set up the worktree the way the project needs before you run any test. A fresh worktree has no installed dependencies: for example, run `npm ci` when the project has a `package-lock.json` and the worktree has no `node_modules`.
 3. Write the tests the brief gives. Run them and watch them fail for the reason the brief expects.
 4. Write the code that makes them pass, within the brief's Interfaces. Change only the files your task owns.

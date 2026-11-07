@@ -37,6 +37,22 @@ function aetherDir(mainRoot) {
   return path.join(mainRoot, '.aether')
 }
 
+function tmpDir(base) {
+  return path.join(aetherDir(base), 'tmp')
+}
+
+function laneCopiesDir(mainRoot) {
+  return path.join(aetherDir(mainRoot), 'worktrees', 'lanes')
+}
+
+function examCopiesDir(mainRoot) {
+  return path.join(aetherDir(mainRoot), 'worktrees', 'exams')
+}
+
+function workDir(mainRoot, kind, id) {
+  return path.join(aetherDir(mainRoot), 'work', kind, id)
+}
+
 function runDir(mainRoot, runId) {
   return path.join(aetherDir(mainRoot), 'runs', runId)
 }
@@ -153,6 +169,10 @@ module.exports = {
   assertTaskId,
   newRunId,
   aetherDir,
+  tmpDir,
+  laneCopiesDir,
+  examCopiesDir,
+  workDir,
   runDir,
   worktreesDir,
   unitWorktree,

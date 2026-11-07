@@ -43,7 +43,7 @@ const print = (value) => process.stdout.write(`${JSON.stringify(value)}\n`)
 
 function log() {
   if (!process.env.AETHER_FAKE_AGY_LOG) return
-  const tmp = path.join(process.cwd(), '.aether-tmp')
+  const tmp = path.join(process.cwd(), '.aether', 'tmp')
   const head = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' })
   fs.appendFileSync(
     process.env.AETHER_FAKE_AGY_LOG,

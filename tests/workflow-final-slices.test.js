@@ -62,7 +62,7 @@ test('no pair for the whole package and pairs for the slices: every slice runs o
   const [first] = starts(run, 'final-review-slice-1')
   assert.deepEqual([first.lane.role, first.lane.task, first.lane.model, first.lane.effort], ['reviewer', undefined, 'claude-sonnet-5-5', 'high'])
   assert.equal(first.label, 'final review (slice 1/2) via agy claude-sonnet-5-5: start')
-  assert.ok(first.payload.text.includes('Review package: .aether-tmp/package.diff (base '))
+  assert.ok(first.payload.text.includes('Review package: .aether/tmp/package.diff (base '))
   assert.ok(first.payload.text.includes('yours is slice 1'))
   const review = run.result.finalReview
   assert.equal(review.status, 'done')

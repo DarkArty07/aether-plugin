@@ -192,9 +192,9 @@ test('buildPrompt puts the role, the lane note and the CLAUDE.md files before th
   fs.mkdirSync(path.join(home, '.claude'))
   fs.writeFileSync(path.join(home, '.claude', 'CLAUDE.md'), 'user rules\n')
   fs.writeFileSync(path.join(work, 'CLAUDE.md'), 'project rules\n\n')
-  const supervisorNote = `## You run in an external harness\n\nYou are an Aether supervisor, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
-  const implementerNote = `## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether-tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
-  const reviewerNote = `## You run in an external harness\n\nYou are the Aether final reviewer, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether-tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+  const supervisorNote = `## You run in an external harness\n\nYou are an Aether supervisor, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the unit's branch; the brief and the review package are in its .aether/tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+  const implementerNote = `## You run in an external harness\n\nYou are an Aether implementer, run by the agy CLI rather than Claude Code. Your unit worktree is the current directory; the harness created it and copied your brief to .aether/tmp/brief.md. Skip the \`aether-wt ensure\` and \`aether-wt diff\` steps of your role: the harness packages your diff and reads your head from git. Never edit the integration worktree, the main checkout, or another unit's worktree. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
+  const reviewerNote = `## You run in an external harness\n\nYou are the Aether final reviewer, run by the agy CLI rather than Claude Code. The current directory is a disposable copy of the integration branch; the review package is in its .aether/tmp/ folder. Your review is read-only: do not run commands, and do not change any file. ${WORKDIR_RULE} Every other rule of your role holds. Answer with the structured output your harness asks for.`
   assert.equal(
     buildPrompt({ role: 'supervisor', message: 'THE MESSAGE', workdir: work, home }),
     [
@@ -426,7 +426,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   assert.deepEqual(done.lane.usage, { input: 1000, output: 200, thinking: 0, cacheRead: 500, total: 1200 })
   assert.equal(done.digest, lanes.resultDigest({ result: done.result, lane: done.lane }))
   assert.ok(fs.readFileSync(path.join(args.runDir, 'packages', 'task-1.diff'), 'utf8').includes(`Head: ${head}`))
-  assert.equal(fs.readFileSync(path.join(unit, '.aether-tmp', 'brief.md'), 'utf8'), fs.readFileSync(args.tasks['task-1'].brief, 'utf8'))
+  assert.equal(fs.readFileSync(path.join(unit, '.aether', 'tmp', 'brief.md'), 'utf8'), fs.readFileSync(args.tasks['task-1'].brief, 'utf8'))
 
   const [turn] = fx.agyTurns(env)
   assert.equal(turn.cwd, unit)
