@@ -105,7 +105,7 @@ function witnessingFake(t, { failModels = [], quotaModels = [], writes = {}, wit
     'function listTree(dir, prefix) {',
     '  const out = {}',
     '  for (const name of fs.readdirSync(dir)) {',
-    "    if (name === '.git' || name === '.aether-tmp') continue",
+    "    if (name === '.git' || name === '.aether') continue",
     "    const rel = prefix ? prefix + '/' + name : name",
     '    const full = path.join(dir, name)',
     '    if (fs.statSync(full).isDirectory()) Object.assign(out, listTree(full, rel))',

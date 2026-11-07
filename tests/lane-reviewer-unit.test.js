@@ -36,7 +36,7 @@ test('a reviewer call with a task reviews a disposable copy of the unit branch, 
   assert.deepEqual([turn.head, turn.files], [fx.git(unit, 'rev-parse', 'HEAD'), ['brief.md', 'package.diff']])
   assert.equal(fx.argAfter(turn.argv, '--print-timeout'), '1200s', "the reviewer's own timeout")
   assert.ok(turn.argv[1].startsWith(fx.roleBody('reviewer')))
-  assert.ok(turn.argv[1].includes("a disposable copy of the unit's branch, not of the integration branch; the unit's brief (brief.md) and the review package (package.diff) are in its .aether-tmp/ folder"), 'the unit note')
+  assert.ok(turn.argv[1].includes("a disposable copy of the unit's branch, not of the integration branch; the unit's brief (brief.md) and the review package (package.diff) are in its .aether/tmp/ folder"), 'the unit note')
   assert.ok(!turn.argv[1].includes('Aether final reviewer'), 'the unit reviewer is not told it is the final reviewer')
   assert.equal(fs.existsSync(copy), false)
   assert.equal(fx.git(args.repoRoot, 'worktree', 'list').includes(copy), false)

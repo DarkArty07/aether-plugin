@@ -120,7 +120,7 @@ test('with a pair for every call, the implementer, the supervisor and the final 
   assert.match(implement.prompt, /^Run this command with the Bash tool, once, exactly as written, with the Bash tool's timeout set to 600000:\n\ncd '/)
   assert.equal(implement.payload.path, path.join(args.runDir, 'lanes', 'task-1-1-implement', 'prompt.md'))
   assert.match(implement.payload.text, /^You are implementing task-1: Task 1 title\.\n/)
-  assert.ok(implement.payload.text.includes('\nBrief: .aether-tmp/brief.md\n'))
+  assert.ok(implement.payload.text.includes('\nBrief: .aether/tmp/brief.md\n'))
   // The message gives the lane's data; how to commit is implementer.md's, and what the harness does in place of the
   // aether-wt steps is the lane note's (aether-lane.test.js pins both), so the message repeats neither.
   assert.ok(implement.payload.text.includes(`\n## Workspace\n- Unit worktree: the current directory, on branch aether/${args.runId}/task-1.\n- Test command: \``))
@@ -138,7 +138,7 @@ test('with a pair for every call, the implementer, the supervisor and the final 
     'high',
   ])
   assert.equal(supervise.label, 'task-1: supervise via agy claude-sonnet-5-5 (attempt 1): start')
-  assert.ok(supervise.payload.text.includes('\nReview package: .aether-tmp/package.diff\n'))
+  assert.ok(supervise.payload.text.includes('\nReview package: .aether/tmp/package.diff\n'))
   // The messages name the pair that ran, not only the ladder's rung.
   assert.match(implement.payload.text, /, attempt 1, on agy gemini-3\.8-flash high\.\n/)
   assert.match(supervise.payload.text, /Attempt 1 ran on agy gemini-3\.8-flash-high \(rung haiku high\)\./)
@@ -151,7 +151,7 @@ test('with a pair for every call, the implementer, the supervisor and the final 
     'high',
   ])
   assert.equal(review.label, 'final review via agy claude-sonnet-5-5: start')
-  assert.ok(review.payload.text.includes('Review package: .aether-tmp/package.diff (base '))
+  assert.ok(review.payload.text.includes('Review package: .aether/tmp/package.diff (base '))
   assert.equal(native(run, 'implementer').length + native(run, 'supervisor').length + native(run, 'reviewer').length, 0)
   const unit = run.result.units[0]
   assert.equal(unit.status, 'merged')

@@ -26,7 +26,7 @@ function readerDir(mainRoot, runId, call) {
 }
 
 function tmpDir(workdir) {
-  const dir = path.join(workdir, '.aether-tmp')
+  const dir = run.tmpDir(workdir)
   fs.mkdirSync(dir, { recursive: true })
   return dir
 }

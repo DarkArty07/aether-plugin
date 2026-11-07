@@ -670,7 +670,7 @@ function roundLines(round) {
 }
 
 // The message carries the data of the attempt; implementer.md holds how to work. The lane variant runs in the unit
-// worktree the harness prepared, with the brief in .aether-tmp/; its lane note (lib/lane-calls.js) says what the
+// worktree the harness prepared, with the brief in .aether/tmp/; its lane note (lib/lane-calls.js) says what the
 // harness does in place of the aether-wt steps. `on` is what the attempt runs on. `limit` is one item of a split pass
 // (issue 14): this attempt works only that file.
 function implementerPrompt(unit, task, on, context, { lane = false, limit = null } = {}) {
@@ -685,7 +685,7 @@ function implementerPrompt(unit, task, on, context, { lane = false, limit = null
     `You are implementing ${unit.id}: ${task.title}.`,
     `Run ${runId}, attempt ${unit.attempts}, on ${on}.`,
     '',
-    `Brief: ${lane ? '.aether-tmp/brief.md' : task.brief}`,
+    `Brief: ${lane ? '.aether/tmp/brief.md' : task.brief}`,
     '',
     '## Workspace',
     ...workspace,
@@ -710,7 +710,7 @@ function implementerPrompt(unit, task, on, context, { lane = false, limit = null
   return lines.join('\n')
 }
 
-// The lane variant runs in a disposable copy of the unit branch, with the brief and the package in .aether-tmp/.
+// The lane variant runs in a disposable copy of the unit branch, with the brief and the package in .aether/tmp/.
 function supervisorPrompt(unit, task, rung, report, view, gate, opts = {}) {
   const actualGate = gate
   const lane = Boolean(opts.lane)
@@ -718,8 +718,8 @@ function supervisorPrompt(unit, task, rung, report, view, gate, opts = {}) {
   const lines = [
     `You supervise ${unit.id}: ${task.title} (area ${task.area}), run ${runId}. Attempt ${unit.attempts} ran on ${current ? ranOn(current) : rung}.`,
     '',
-    `Brief: ${lane ? '.aether-tmp/brief.md' : task.brief}`,
-    `Review package: ${lane ? '.aether-tmp/package.diff' : `${runDir}/packages/${unit.id}.diff`}`,
+    `Brief: ${lane ? '.aether/tmp/brief.md' : task.brief}`,
+    `Review package: ${lane ? '.aether/tmp/package.diff' : `${runDir}/packages/${unit.id}.diff`}`,
     `Unit worktree: ${lane ? `the current directory, a disposable copy of branch aether/${runId}/${unit.id}` : `${repoRoot}/.aether/worktrees/${runId}/${unit.id}`}`,
     `Owns: ${task.owns.join(', ')}`,
     '',
@@ -767,13 +767,13 @@ function inIntegration(file) {
 }
 
 // The message carries the data of the review; reviewer.md holds how to review, its reading plan included (issues 011,
-// 022). The lane variant runs in a disposable copy of the integration branch, with the package in .aether-tmp/.
+// 022). The lane variant runs in a disposable copy of the integration branch, with the package in .aether/tmp/.
 // A slice reviews only its units' part of the package (issue 022).
 function reviewerPrompt(pkg, { lane = false, slice = null } = {}) {
   const lines = [
     `Final review of run ${runId} on ${integration.branch}.`,
     '',
-    `Review package: ${lane ? '.aether-tmp/package.diff' : pkg.path} (base ${pkg.base}, head ${pkg.head})`,
+    `Review package: ${lane ? '.aether/tmp/package.diff' : pkg.path} (base ${pkg.base}, head ${pkg.head})`,
     `Integration worktree: ${lane ? `the current directory, a disposable copy of ${integration.branch} at ${pkg.head}` : integration.worktree}`,
   ]
   if (slice) {

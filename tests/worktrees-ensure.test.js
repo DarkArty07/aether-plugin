@@ -17,7 +17,7 @@ test('ensure creates the unit worktree and branch from the integration branch', 
   assert.equal(r.path, path.join(args.repoRoot, '.aether', 'worktrees', args.runId, 'task-1'))
   assert.equal(repo.git('-C', r.path, 'branch', '--show-current'), r.branch)
   assert.equal(repo.git('rev-parse', r.branch), repo.git('rev-parse', 'feature/x'))
-  assert.ok(fs.existsSync(path.join(r.path, '.aether-tmp')))
+  assert.ok(fs.existsSync(path.join(r.path, '.aether', 'tmp')))
   assert.match(fs.readFileSync(path.join(repo.dir, '.git', 'info', 'exclude'), 'utf8'), /^\/\.aether-tmp\/$/m)
   assert.equal(repo.git('-C', r.path, 'status', '--porcelain'), '')
   assert.deepEqual(ensure(repo.dir, args.runId, 'task-1'), { ...r, created: false })

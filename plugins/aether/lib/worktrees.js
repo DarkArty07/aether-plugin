@@ -128,7 +128,7 @@ function ensure(cwd, runId, taskId) {
   // --force also reuses a registry entry of this path whose directory was deleted by hand.
   if (branchExists(mainRoot, branch)) git(['worktree', 'add', '--force', worktree, branch], mainRoot)
   else git(['worktree', 'add', '--force', '-b', branch, worktree, graph.integration.branch], mainRoot)
-  fs.mkdirSync(path.join(worktree, '.aether-tmp'), { recursive: true })
+  fs.mkdirSync(run.tmpDir(worktree), { recursive: true })
   return { path: worktree, branch, created: true, salvaged: false }
 }
 
