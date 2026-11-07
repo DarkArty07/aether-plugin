@@ -285,7 +285,18 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
         openNote(noteInput, { env, procRoot, from, source: 'resume', fork: false })
       }
       const selfProcess = claudeProcess({ procRoot, from })
-      updateNote(dir, id, { source: 'resume', process: selfProcess, closed: null, cut: null })
+      const refreshed = updateNote(dir, id, { source: 'resume', process: selfProcess, closed: null, cut: null })
+      // A note can outlive its session marker. Reconnect it so SessionEnd can close it without git.
+      if (refreshed) {
+        const { dataDir } = require('./run.js')
+        const { readMark, markerFile } = require('./session.js')
+        const { writeFileAtomic } = require('./common.js')
+        const data = dataDir(env)
+        const marker = readMark(data, id)
+        if (marker && marker.noteDir !== dir) {
+          writeFileAtomic(markerFile(data, id), JSON.stringify({ ...marker, noteDir: dir }) + '\n')
+        }
+      }
     } catch {}
     return
   }

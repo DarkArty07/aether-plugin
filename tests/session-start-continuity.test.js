@@ -155,3 +155,29 @@ for (const source of ['resume', 'compact']) {
     assert.equal(store.readNote(dir, input.session_id).closed.reason, 'prompt_input_exit')
   })
 }
+
+test('resume reconnects an existing note when its session marker is missing (R3, R5)', (t) => {
+  const cwd = tempDir(t)
+  const data = tempDir(t, 'aether-data-')
+  const configDir = tempDir(t, 'aether-config-')
+  const procRoot = tempDir(t, 'aether-proc-')
+  const env = { AETHER_DATA_DIR: data, CLAUDE_CONFIG_DIR: configDir }
+  const input = { session_id: 'resumed-session', agent_type: 'aether:lead', cwd, source: 'resume' }
+  const dir = store.continuityDir({ cwd, env })
+  store.writeNote(dir, {
+    session: input.session_id, source: 'startup', lastMessage: 'Saved work', compactSummary: 'Saved summary',
+    process: { pid: 200, start: 22 }, closed: { at: 1, reason: 'other' }, cut: { at: 2, reason: 'network' },
+  })
+  fs.mkdirSync(path.join(procRoot, '100'))
+  fs.writeFileSync(path.join(procRoot, '100', 'stat'), ['100', '(claude)', 'S', 1, ...Array(17).fill('0'), 555, 0].join(' '))
+
+  let output = ''
+  main({ input, env, cwd, procRoot, from: 100, stdout: { write(text) { output += text } } })
+  assert.equal(output, '')
+  const note = store.readNote(dir, input.session_id)
+  assert.deepEqual([note.source, note.process, note.closed, note.cut], ['resume', { pid: 100, start: 555 }, null, null])
+  assert.deepEqual([note.lastMessage, note.compactSummary], ['Saved work', 'Saved summary'])
+  assert.equal(readMark(data, input.session_id).noteDir, dir)
+  handle('sessionend', { ...input, reason: 'prompt_input_exit' }, { env, procRoot, from: 100 })
+  assert.equal(store.readNote(dir, input.session_id).closed.reason, 'prompt_input_exit')
+})
