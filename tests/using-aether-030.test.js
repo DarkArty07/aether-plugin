@@ -30,7 +30,19 @@ test('the Lead checks its tools first and waits for the owner when one is missin
 
 test('the bootstrap goes in as many parts as hooks.json has commands for, each whole output within the limit, also from a long install path (R44)', () => {
   const root = path.join('/', 'x'.repeat(400), 'plugins', 'aether')
-  const parts = bootstrapParts(root)
+  const read = fs.readFileSync
+  fs.readFileSync = (target, ...rest) => {
+    if (typeof target === 'string' && target.endsWith(path.join('skills', 'using-aether', 'SKILL.md'))) {
+      return read.call(fs, path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md'), ...rest)
+    }
+    return read.call(fs, target, ...rest)
+  }
+  let parts
+  try {
+    parts = bootstrapParts(root)
+  } finally {
+    fs.readFileSync = read
+  }
   const { PART_COMMANDS } = require('./helpers.js')
   assert.ok(parts.length >= 1 && parts.length <= PART_COMMANDS.length, `${parts.length} parts for ${PART_COMMANDS.length} commands`)
   for (const part of parts) assert.ok(part.output.length <= PART_LIMIT, `part of ${part.output.length} characters`)

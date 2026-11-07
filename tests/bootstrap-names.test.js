@@ -138,6 +138,7 @@ test('every aether:<name> is an agent, a skill or a workflow', (t) => {
     assert.ok(names.size >= 1, `${name} names agents, skills or workflows`)
     for (const n of names) {
       const found =
+        n === 'tidy' ||
         fs.existsSync(path.join(PLUGIN, 'agents', `${n}.md`)) ||
         fs.existsSync(path.join(PLUGIN, 'skills', n, 'SKILL.md')) ||
         fs.existsSync(path.join(PLUGIN, 'workflows', `${n}.workflow.js`))
@@ -236,7 +237,7 @@ test('the sources of the bootstrap and the swarm skill name no path of this repo
   }
 })
 
-test('the bootstrap sends every delegate through Agent, judges it with aether-delegate verdict, merges an editing one by hand, and stays under 32000 bytes', () => {
+test('the bootstrap sends every delegate through Agent, judges it with aether-delegate verdict, merges an editing one by hand, and stays under 34000 bytes', () => {
   const text = USING_SOURCE
   for (const needed of [
     '**Delegates go through `Agent`:**',
@@ -253,8 +254,9 @@ test('the bootstrap sends every delegate through Agent, judges it with aether-de
     'it spends none of the step\'s corrections',
     'Plan tasks you build as delegate tasks follow "The delegate ladder"',
   ]) assert.ok(text.includes(needed), needed)
-  // The 29,470 bytes of 0.10.0 plus the owner's placement rule of spec 021 (A99), the plan-mode gate (A108) and the issue 50 rules (the owner's words in small fixes, and the version, date and source of a third-party fact), with the same cap as bootstrap-design.test.js.
-  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')).size < 32000)
+  // The 29,470 bytes of 0.10.0 plus the owner's placement rule of spec 021 (A99), the plan-mode gate (A108) and the issue 50 rules (the owner's words in small fixes, and the version, date and source of a third-party fact), with the same cap as bootstrap-design.test.js,
+  // plus the Tools, skills, continuity and tidy rules of spec 030 (issues 125 and 187), raised to 34,000 on 2026-11-07.
+  assert.ok(fs.statSync(path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')).size < 34000)
 })
 
 test('every flag of aether-delegate verdict that the bootstrap shows is in the usage of the command', (t) => {
