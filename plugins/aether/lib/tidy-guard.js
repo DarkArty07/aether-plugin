@@ -8,8 +8,8 @@
 const os = require('node:os')
 const { emptiesTidyFile, tidyTargetsIn } = require('./guard.js')
 
-// The paths that rm, mv, rmdir, unlink, git rm and git mv name in a command and that aether:tidy orders moved or
-// removed, in order of appearance. The home folder is the one that ~ and $HOME name.
+// The paths and patterns that removal or move commands (including find actions and xargs) name and that can
+// reach what aether:tidy orders moved or removed, in order of appearance. The home folder is what ~ and $HOME name.
 function tidyTargets(command, { cwd, home = os.homedir() } = {}) {
   return tidyTargetsIn(command, cwd, { ...process.env, HOME: home })
 }
