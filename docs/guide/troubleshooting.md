@@ -195,6 +195,8 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 
 **Why.** The final review runs once per run, when a launch ends with all its units merged, on the whole change from the first compile's base to the integration branch. A launch that leaves a unit `blocked`, `skipped` or `not-run` defers it, and so does a launch that runs no unit. A relaunch in between does not review again. `deferred` is not a failure, and it is not a review that was skipped because nothing merged.
 
+**What to do.** The Lead relaunches the units that are blocked, skipped or not run. When that launch merges all of them, the review runs once. To review what is already merged and stop without the units still open, the Lead adds `"review": true` to the workflow args and launches again. A compile that finds every unit already merged prints empty `waves`; that launch reviews only when `review` is true.
+
 ## Session start says "where it is for now"
 
 **What you see.** At session start, a message says `Aether left the old state of .aether/ where it is for now: <reasons>`.
@@ -213,5 +215,3 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 **Why.** The previous session ended abruptly (such as an API rate limit, power loss, terminal crash, or close without a finish mark) before the Lead could write its final brief.
 
 **What to do.** To pick up the interrupted conversation with its context intact, run `claude --resume <id>` (or `aeth --resume <id>`) with the session id given in the notice.
-
-**What to do.** The Lead relaunches the units that are blocked, skipped or not run. When that launch merges all of them, the review runs once. To review what is already merged and stop without the units still open, the Lead adds `"review": true` to the workflow args and launches again. A compile that finds every unit already merged prints empty `waves`; that launch reviews only when `review` is true.
