@@ -3,7 +3,7 @@
 // The workspaces of lane calls and the checks that run from outside them. An external agent is
 // trusted with nothing: the implementer works in its unit worktree, a read-only role works in a
 // disposable copy, and these functions look at git afterwards to see what really changed.
-// Only paths under <repo>/.aether/lanes/ are removed here.
+// Only paths under <repo>/.aether/worktrees/lanes/ are removed here.
 // Family: lane.
 
 const fs = require('node:fs')
@@ -18,11 +18,11 @@ const { ensure, loadGraph, uncommittedFiles, changedFiles, unitBase, isWorktreeR
 const COMMIT_MESSAGE = 'lanes: commit the work the external agent left uncommitted'
 const CALL_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
 
-// A read-only role's disposable copy lives in <repo>/.aether/lanes/<run>/<call>.
+// A read-only role's disposable copy lives in <repo>/.aether/worktrees/lanes/<run>/<call>.
 function readerDir(mainRoot, runId, call) {
   run.assertRunId(runId)
   if (!CALL_ID.test(String(call))) throw new Error(`invalid call id: ${call}`)
-  return path.join(run.aetherDir(mainRoot), 'lanes', runId, call)
+  return path.join(run.laneCopiesDir(mainRoot), runId, call)
 }
 
 function tmpDir(workdir) {
