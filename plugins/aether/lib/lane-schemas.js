@@ -143,7 +143,7 @@ const EXAMINER_SCHEMA = {
           id: { type: 'string', description: 'a short kebab-case name' },
           criterion: { type: 'string', description: 'the criterion or requirement of the spec it proves, such as C2 or R5' },
           command: { type: 'string', description: 'the shell command that runs this test from the repository root; exit 0 means it passes' },
-          files: { type: 'array', items: { type: 'string' }, description: 'the files it needs, relative to .aether-exam/' },
+          files: { type: 'array', items: { type: 'string' }, description: 'the files it needs, relative to .aether/exam/' },
         },
       },
     },

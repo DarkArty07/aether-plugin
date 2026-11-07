@@ -422,8 +422,8 @@ test('a failed Judge round carries nothing (issue 68)', (t) => {
   assert.equal(fs.readFileSync(path.join(judge.repo.dir, SPEC), 'utf8'), ORIGINAL)
 })
 
-const EXAM_REL = '.aether-exam/nested/c1.js'
-const EXAM_OTHER = '.aether-exam/nested/c2.js'
+const EXAM_REL = '.aether/exam/nested/c1.js'
+const EXAM_OTHER = '.aether/exam/nested/c2.js'
 const EXAM_BODY = 'EXAM-SECRET-BODY-103\n'
 const EXAM_ONE = 'EXAM-CARRY-ONE'
 const EXAM_TWO = 'EXAM-CARRY-TWO'
@@ -625,7 +625,7 @@ test('a failed Examiner round keeps paths only, and the next try of the same rou
   const message = 'Write the exam.\n'
   const secret = EXAM_BODY.trim()
   const { command, witness } = scriptedCommand(t, [
-    lines(`FAKE-AGY: write ${EXAM_REL} ${secret}`, 'FAKE-AGY: write-empty .aether-exam/empty.txt', 'FAKE-AGY: exit-error boom'),
+    lines(`FAKE-AGY: write ${EXAM_REL} ${secret}`, 'FAKE-AGY: write-empty .aether/exam/empty.txt', 'FAKE-AGY: exit-error boom'),
     lines(`FAKE-AGY: write ${EXAM_REL} ${secret}`, 'FAKE-AGY: exit-error later'),
     lines('FAKE-AGY: exit-error other-round'),
   ])
@@ -650,7 +650,7 @@ test('a failed Examiner round keeps paths only, and the next try of the same rou
   const carried = path.join(first.json.partialDir, EXAM_REL)
   assert.equal(fs.readFileSync(carried, 'utf8'), `${secret}\n`)
   assert.equal(fs.readFileSync(path.join(first.json.partialDir, 'round'), 'utf8'), lanes.digest(message))
-  assert.equal(fs.existsSync(path.join(first.json.partialDir, '.aether-exam', 'empty.txt')), false, 'an empty file is not kept')
+  assert.equal(fs.existsSync(path.join(first.json.partialDir, '.aether/exam', 'empty.txt')), false, 'an empty file is not kept')
   const listed = examLib.list(repo.dir, { dataDir: env.AETHER_DATA_DIR })
   assert.deepEqual(listed, [], 'a carry folder is not an exam exam.list shows')
 

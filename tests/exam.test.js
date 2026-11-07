@@ -35,7 +35,7 @@ function writeExam(dir, tests, files = {}, notes = 'none') {
   return dir
 }
 
-const FEATURE_TEST = { id: 'c1-feature', criterion: 'C1', command: 'node .aether-exam/c1.js', files: ['c1.js'] }
+const FEATURE_TEST = { id: 'c1-feature', criterion: 'C1', command: 'node .aether/exam/c1.js', files: ['c1.js'] }
 const README_TEST = { id: 'c2-readme', criterion: 'C2', command: 'test -f README.md', files: [] }
 const C1_SCRIPT = "process.exit(require('node:fs').existsSync('src/feature.js') ? 0 : 1)\n"
 
@@ -66,8 +66,8 @@ test('store clears the Examiner carry of that feature for every session, and lis
   const carry = (session, feature) => path.join(data, 'exam-carry', key, session, feature)
   for (const session of ['s1', 's2']) {
     const dir = carry(session, '001-demo')
-    fs.mkdirSync(path.join(dir, '.aether-exam'), { recursive: true })
-    fs.writeFileSync(path.join(dir, '.aether-exam', 'c1.js'), 'secret\n')
+    fs.mkdirSync(path.join(dir, '.aether/exam'), { recursive: true })
+    fs.writeFileSync(path.join(dir, '.aether/exam', 'c1.js'), 'secret\n')
     fs.writeFileSync(path.join(dir, 'round'), 'digest\n')
   }
   const other = carry('s1', '002-other')
@@ -98,7 +98,7 @@ test('store refuses an exam it cannot run', (t) => {
     [() => writeExam(dir(), [{ ...README_TEST, command: 7 }]), /exam\.json: tests\[0\]\.command must be a string$/],
     [() => writeExam(dir(), []), /exam\.json has no tests$/],
     [() => writeExam(dir(), [FEATURE_TEST]), /test c1-feature names c1\.js, which is not in the exam$/],
-    [() => writeExam(dir(), [{ ...README_TEST, files: ['../secret'] }]), /names \.\.\/secret, which is not under \.aether-exam\//],
+    [() => writeExam(dir(), [{ ...README_TEST, files: ['../secret'] }]), /names \.\.\/secret, which is not under \.aether\/exam\//],
     [() => writeExam(dir(), [README_TEST, README_TEST]), /test id c2-readme is used twice$/],
     [() => writeExam(dir(), [{ ...README_TEST, id: 'two words' }]), /must be a short name/],
   ]
@@ -112,8 +112,8 @@ test('store refuses an exam it cannot run', (t) => {
 test('runExam runs every test on a commit in a disposable worktree, runs a failure again, and leaves the checkout as it was', (t) => {
   const repo = repoWithSpec(t)
   const data = tempDir(t, 'aether-data-')
-  const flaky = { id: 'flaky', criterion: 'C2', command: 'node .aether-exam/flaky.js', files: ['flaky.js'] }
-  const FLAKY = "const fs = require('node:fs'); const f = '.aether-exam/ran'; if (fs.existsSync(f)) process.exit(0); fs.writeFileSync(f, '1'); console.log('first run fails'); process.exit(1)\n"
+  const flaky = { id: 'flaky', criterion: 'C2', command: 'node .aether/exam/flaky.js', files: ['flaky.js'] }
+  const FLAKY = "const fs = require('node:fs'); const f = '.aether/exam/ran'; if (fs.existsSync(f)) process.exit(0); fs.writeFileSync(f, '1'); console.log('first run fails'); process.exit(1)\n"
   exam.store(repo.dir, FEATURE, writeExam(path.join(tempDir(t), 'exam'), [FEATURE_TEST, README_TEST, flaky], { 'c1.js': C1_SCRIPT, 'flaky.js': FLAKY }), { dataDir: data })
   const base = repo.git('rev-parse', 'HEAD')
 
@@ -185,7 +185,7 @@ function examCli(cwd, args, env) {
   return { status: r.status, json: JSON.parse(r.stdout.trim().split('\n').pop()) }
 }
 
-test("aether-exam stores the checkout's .aether-exam/ and removes it, and runs it", (t) => {
+test("aether-exam stores the checkout's .aether/exam/ and removes it, and runs it", (t) => {
   const repo = repoWithSpec(t)
   const env = { AETHER_DATA_DIR: tempDir(t, 'aether-data-') }
   // The Lead asks for the seat first; with superdelegation off the native Examiner takes it, in this checkout.
@@ -193,18 +193,33 @@ test("aether-exam stores the checkout's .aether-exam/ and removes it, and runs i
   assert.equal(asked.status, 3)
   assert.equal(asked.json.unavailable, 'superdelegation-off')
   assert.equal(asked.json.native.agent, 'aether:examiner')
-  writeExam(path.join(repo.dir, '.aether-exam'), [README_TEST])
-  assert.equal(repo.git('status', '--porcelain'), '', '.aether-exam/ is out of git')
+  writeExam(path.join(repo.dir, '.aether/exam'), [README_TEST])
+  assert.equal(repo.git('status', '--porcelain'), '', '.aether/exam/ is out of git')
   const stored = examCli(repo.dir, ['store', `${FEATURE}/`], env)
   assert.equal(stored.status, 0, JSON.stringify(stored.json))
   assert.equal(stored.json.tests, 1)
-  assert.equal(fs.existsSync(path.join(repo.dir, '.aether-exam')), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether/exam')), false)
   const ran = examCli(repo.dir, ['run', FEATURE], env)
   assert.equal(ran.status, 0)
   assert.equal(ran.json.ok, true)
   const bad = examCli(repo.dir, ['run'], env)
   assert.equal(bad.status, 1)
   assert.match(bad.json.error, /^usage: aether-exam/)
+})
+
+test('store defaults to the new folder, falling back to the legacy folder', (t) => {
+  const repo = repoWithSpec(t)
+  const env = { AETHER_DATA_DIR: tempDir(t, 'aether-data-') }
+  const legacy = writeExam(path.join(repo.dir, '.aether-exam'), [README_TEST])
+  const current = writeExam(path.join(repo.dir, '.aether/exam'), [FEATURE_TEST], { 'c1.js': C1_SCRIPT })
+  const first = examCli(repo.dir, ['store', FEATURE], env)
+  assert.equal(first.status, 0, JSON.stringify(first.json))
+  assert.equal(fs.existsSync(current), false)
+  assert.equal(fs.existsSync(legacy), true)
+  assert.equal(exam.list(repo.dir, { dataDir: env.AETHER_DATA_DIR })[0].tests, 1)
+  const second = examCli(repo.dir, ['store', FEATURE], env)
+  assert.equal(second.status, 0, JSON.stringify(second.json))
+  assert.equal(fs.existsSync(legacy), false)
 })
 
 // ---- The Examiner seat ----
@@ -229,11 +244,11 @@ function seat(cwd, args, env, input) {
   return { status: r.status, json: JSON.parse(r.stdout.trim().split('\n').pop()), stderr: r.stderr }
 }
 
-test('an external Examiner writes the exam under .aether-exam/, and Aether stores it outside the repository', (t) => {
+test('an external Examiner writes the exam under .aether/exam/, and Aether stores it outside the repository', (t) => {
   const repo = repoWithSpec(t)
   const env = laneEnv(t, { quota: geminiFirst(), mutate: grantOpusSeats })
-  const answer = { tests: [README_TEST, { ...README_TEST, id: 'c1-file', criterion: 'C1', command: 'node .aether-exam/c1.js', files: ['c1.js'] }], notes: 'C3 needs a GPU.' }
-  const input = `Write the exam of ${FEATURE}.\nFAKE-AGY: write .aether-exam/c1.js process.exit(1)\nFAKE-AGY: answer ${JSON.stringify(answer)}\n`
+  const answer = { tests: [README_TEST, { ...README_TEST, id: 'c1-file', criterion: 'C1', command: 'node .aether/exam/c1.js', files: ['c1.js'] }], notes: 'C3 needs a GPU.' }
+  const input = `Write the exam of ${FEATURE}.\nFAKE-AGY: write .aether/exam/c1.js process.exit(1)\nFAKE-AGY: answer ${JSON.stringify(answer)}\n`
   const r = seat(repo.dir, ['examiner', '--session', 's1', '--author', 'sonnet', '--feature', FEATURE], env, input)
   assert.equal(r.status, 0, JSON.stringify(r.json) + r.stderr)
   assert.equal(r.json.model, 'claude-opus-5-5')
@@ -242,14 +257,14 @@ test('an external Examiner writes the exam under .aether-exam/, and Aether store
   assert.ok(r.json.answer.includes('- Tests: 2 (C2 1, C1 1)\n## Notes\nC3 needs a GPU.\n- Lane: agy claude-opus-5-5-high'))
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(r.json.stored, 'exam.json'), 'utf8')), answer)
   assert.equal(fs.readFileSync(path.join(r.json.stored, 'c1.js'), 'utf8'), 'process.exit(1)\n')
-  assert.equal(fs.existsSync(path.join(repo.dir, '.aether-exam')), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether/exam')), false)
   assert.equal(repo.git('status', '--porcelain'), '')
 
   const ran = exam.runExam(repo.dir, FEATURE, { dataDir: env.AETHER_DATA_DIR })
   assert.deepEqual(ran.tests.map((x) => [x.id, x.status]), [['c2-readme', 'pass'], ['c1-file', 'fail']])
 })
 
-test('an Examiner that writes outside .aether-exam/, or names a file it did not write, gives the round back', (t) => {
+test('an Examiner that writes outside .aether/exam/, or names a file it did not write, gives the round back', (t) => {
   const repo = repoWithSpec(t)
   const answer = { tests: [{ ...README_TEST, files: ['missing.js'] }], notes: '' }
   const outside = seat(repo.dir, ['examiner', '--session', 's1', '--feature', FEATURE], laneEnv(t, { quota: geminiFirst(), mutate: grantOpusSeats }), `FAKE-AGY: write tests/x.test.js x\nFAKE-AGY: answer ${JSON.stringify({ tests: [README_TEST], notes: '' })}\n`)
@@ -266,15 +281,29 @@ test('an Examiner that writes outside .aether-exam/, or names a file it did not 
 test('an Examiner on the shipped agy table finds no external pair at Opus high, so nothing is written or stored', (t) => {
   const repo = repoWithSpec(t)
   const env = laneEnv(t, { quota: geminiFirst() })
-  const answer = { tests: [README_TEST, { ...README_TEST, id: 'c1-file', criterion: 'C1', command: 'node .aether-exam/c1.js', files: ['c1.js'] }], notes: 'C3 needs a GPU.' }
-  const input = `Write the exam of ${FEATURE}.\nFAKE-AGY: write .aether-exam/c1.js process.exit(1)\nFAKE-AGY: answer ${JSON.stringify(answer)}\n`
+  const answer = { tests: [README_TEST, { ...README_TEST, id: 'c1-file', criterion: 'C1', command: 'node .aether/exam/c1.js', files: ['c1.js'] }], notes: 'C3 needs a GPU.' }
+  const input = `Write the exam of ${FEATURE}.\nFAKE-AGY: write .aether/exam/c1.js process.exit(1)\nFAKE-AGY: answer ${JSON.stringify(answer)}\n`
   const r = seat(repo.dir, ['examiner', '--session', 's1', '--author', 'sonnet', '--feature', FEATURE], env, input)
   assert.equal(r.status, 3, JSON.stringify(r.json) + r.stderr)
   assert.equal(r.json.unavailable, 'no-external')
   assert.equal(r.json.native.agent, 'aether:examiner')
   assert.equal(r.json.native.model, 'opus', 'the author is sonnet, so the native examiner stays opus')
   assert.equal(r.json.native.intelligence, 51.7)
-  assert.equal(fs.existsSync(path.join(repo.dir, '.aether-exam')), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether/exam')), false)
   assert.equal(repo.git('status', '--porcelain'), '')
   assert.equal(fs.existsSync(path.join(env.AETHER_DATA_DIR, 'exams')), false)
 })
+
+for (const folder of ['.aether-exam', '.aether/exam']) {
+  test(`runExam supports ${folder} commands in the new copies directory`, (t) => {
+    const repo = repoWithSpec(t)
+    const data = tempDir(t, 'aether-data-')
+    const command = `node --test ${folder}/c1.test.js`
+    const script = `const assert = require('node:assert/strict'); assert.match(process.cwd(), /\\.aether\\/worktrees\\/exams\\//); assert.ok(require('node:fs').existsSync('.aether/exam/c1.test.js'))
+`
+    const from = writeExam(path.join(tempDir(t), 'exam'), [{ id: 'c1', criterion: 'C1', command, files: ['c1.test.js'] }], { 'c1.test.js': script })
+    exam.store(repo.dir, FEATURE, from, { dataDir: data })
+    const result = exam.runExam(repo.dir, FEATURE, { dataDir: data })
+    assert.equal(result.ok, true, JSON.stringify(result.tests))
+  })
+}

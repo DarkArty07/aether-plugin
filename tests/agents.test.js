@@ -93,7 +93,7 @@ test('the Examiner runs on Opus at high effort, writes only its exam, and never 
     ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
   )
   assert.ok(body.includes('**Never read `tasks.md`**'))
-  assert.ok(body.includes('- Write only under `.aether-exam/`.'))
+  assert.ok(body.includes('- Write only under `.aether/exam/`.'))
   assert.ok(body.includes('**One command per test,** run from the repository root'))
-  assert.ok(body.includes('`.aether-exam/exam.json`'))
+  assert.ok(body.includes('`.aether/exam/exam.json`'))
 })
