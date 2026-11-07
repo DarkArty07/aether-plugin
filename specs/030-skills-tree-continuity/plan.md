@@ -128,7 +128,7 @@ Aether se publica como plugin; esta feature no despliega nada por sí misma. El 
 3. **Mover las fotos del estado** del índice de la memoria de este repositorio a `memory/archive/` y listar lo movido en el brief (R48); las preferencias generales a `~/.claude/rules/` esperan su sí.
 4. **El brief le pide al dueño** aprobar `anthropics` y `vercel-labs` con `aether-autonomy trust --author anthropics --quote "<sus palabras>"` (R47).
 5. **La migración del estado viejo** corre de verdad solo cuando el dueño instala la versión; durante la construcción no se toca ningún `.aether/` real.
-6. **El brief le pide al dueño confirmar la enmienda a R23** (P7): una skill de Aether dentro del repositorio de la sesión se puede editar, y sin esa excepción el Lead no podría desarrollar Aether en este repositorio.
+6. **El brief le pide al dueño confirmar las enmiendas a R23 (P7) y a R5 (P13):** una skill de Aether dentro del repositorio de la sesión se puede editar, porque sin esa excepción el Lead no podría desarrollar Aether en este repositorio; y `resume` no da aviso de continuidad.
 7. **El ajuste de `tests/docs-facts.test.js` y los pines de versión** los hace la tarea 39; el Lead solo comprueba `npm run check`.
 
 ## Assumptions
@@ -145,7 +145,7 @@ Aether se publica como plugin; esta feature no despliega nada por sí misma. El 
 - **P10. El aviso de continuidad va en el `systemMessage` (lo ve el dueño) y en el `additionalContext` (lo lee el Lead)**, con el mismo texto, dentro del tope de `PART_LIMIT`.
 - **P11. Una delegación del Lead que ya trae `AETHER-SKILLS:` solo se rechaza al empezar** (`begin`); una corrección de la misma tarea vuelve a pegar las mismas skills, porque el encargo se vuelve a leer.
 - **P12. Los tests de rutas viejas que cambian con D6 los corrige la tarea que mueve el código** (tareas 12, 13, 40 y 41), dentro de su `Owns`.
-- **P13. `resume` no da aviso de continuidad** (decisión del Lead, sobre R5): la conversación se restaura y el arranque solo refresca la nota; el aviso sale en `startup`, `clear` y `fork`. Reversible: es un elemento de `NOTICE_SOURCES`.
+- **P13. `resume` no da aviso de continuidad.** Es una **enmienda a R5 que el dueño debe confirmar**, como P7: R5 aprobado dice que el hook corre en `startup`, `resume`, `clear` y `fork`. La conversación se restaura con `resume`, el arranque solo refresca la nota, y las pruebas existentes (`tests/session-start.test.js:261-270`, `:461-475`) piden que un `resume` del Lead no imprima nada. El aviso sale en `startup`, `clear` y `fork`. Reversible: es un elemento de `NOTICE_SOURCES`. El Lead lo pone en el brief.
 - **P14. `/clear` abre otro id de sesión en el mismo proceso `claude`:** una marca o nota del mismo proceso no cuenta como otra sesión activa ni frena la migración.
 - **P15. Si las reglas nuevas del Lead no caben en cinco partes de 9.800 caracteres, la tarea 30 agrega la orden `--part 6` a `hooks.json`.**
 
