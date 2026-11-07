@@ -1393,6 +1393,24 @@ test('issue 103: an Examiner partial reaches the native Examiner as a folder and
   assert.equal(rejectedNative.prompt.includes('secret.test.js'), false)
 })
 
+test('an Examiner legacy partial path reaches the native Examiner', async () => {
+  const dir = '/data/exam-carry/repo/sess-1/007-demo'
+  const paths = ['.aether-exam/c1.test.js']
+  const timed = (id) => {
+    const reply = failedWait('examiner', id, AGY)
+    reply.value.timedOut = true
+    reply.value.partialPaths = paths
+    reply.value.partialDir = dir
+    return reply
+  }
+  const result = await go(ON, { ops: scripted(EXAMINER, [timed]) })
+  assert.equal(result.error, null, result.error && result.error.stack)
+  const native = result.calls.find((call) => call.label === 'exam: examiner')
+  assert.ok(native.prompt.includes(`${EXAMINER_LINE} ${dir}:`))
+  assert.ok(native.prompt.includes(paths[0]))
+  assert.ok(native.prompt.includes('Read them there.'))
+})
+
 test('issue 103: times holds each stage, complete is false when the last stage ended native, and null when no reply is dated', async () => {
   let t = 0
   const stamp = (call, fallback) => {

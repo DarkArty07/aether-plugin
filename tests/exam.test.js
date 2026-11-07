@@ -303,7 +303,16 @@ for (const folder of ['.aether-exam', '.aether/exam']) {
 `
     const from = writeExam(path.join(tempDir(t), 'exam'), [{ id: 'c1', criterion: 'C1', command, files: ['c1.test.js'] }], { 'c1.test.js': script })
     exam.store(repo.dir, FEATURE, from, { dataDir: data })
-    const result = exam.runExam(repo.dir, FEATURE, { dataDir: data })
+    // A nested node:test runner must be independent of this runner's IPC context.
+    const context = process.env.NODE_TEST_CONTEXT
+    delete process.env.NODE_TEST_CONTEXT
+    let result
+    try {
+      result = exam.runExam(repo.dir, FEATURE, { dataDir: data })
+    } finally {
+      if (context !== undefined) process.env.NODE_TEST_CONTEXT = context
+    }
     assert.equal(result.ok, true, JSON.stringify(result.tests))
+    assert.equal(result.tests[0].status, 'pass', JSON.stringify(result.tests))
   })
 }
