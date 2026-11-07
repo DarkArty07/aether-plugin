@@ -84,3 +84,22 @@ test('the Examiner writes under .aether/exam/ and under the old .aether-exam/, a
   assert.ok(decide(file(w, path.join(w.repo.dir, '.aether', 'tmp', 'x'), examiner)))
   assert.equal(decide(file(w, path.join(w.repo.dir, '.aether', 'exam', 'c1.test.js'), { agent_type: 'aether:implementer', agent_id: 'i1' })), null, 'only the Examiner is limited to the exam folder')
 })
+
+test('a repository that git cannot read still refuses the settings and the hooks, and passes other writes (R21)', (t) => {
+  const dir = tempDir(t, 'aether-broken-repo-')
+  fs.mkdirSync(path.join(dir, '.git'))
+  fs.writeFileSync(path.join(dir, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+  const broken = { repo: { dir } }
+  const agents = [
+    { agent_type: 'aether:lead' },
+    { agent_type: 'aether:writer', agent_id: 'w1' },
+    { agent_type: 'aether:implementer', agent_id: 'i1' },
+  ]
+  for (const target of [path.join(dir, '.claude', 'settings.json'), path.join(dir, '.claude', 'hooks', 'x.sh')]) {
+    for (const who of agents) {
+      const decision = decide(file(broken, target, who))
+      assert.ok(decision && REASON.test(decision.reason), `${target} ${JSON.stringify(who)}`)
+    }
+  }
+  for (const who of agents) assert.equal(decide(file(broken, path.join(dir, 'src', 'a.js'), who)), null, JSON.stringify(who))
+})

@@ -7,6 +7,8 @@
 // Records irreversible Bash commands across the classes: merge-main, push, publish, deploy, delete,
 // and credentials. The paid-call class is in CLASSES of autonomy.js, but the guard does not detect it;
 // it is only granted and checked with aether-autonomy. Redacts secret values from logged commands.
+// Refuses every agent's writes to Claude Code's settings and hooks (spec 030 R21), and confines the
+// Examiner to .aether/exam/ (and the old .aether-exam/).
 // Family: none.
 
 const path = require('node:path')
@@ -24,6 +26,8 @@ const LEAD = 'aether:lead'
 const WRITER = 'aether:writer'
 const EXAMINER = 'aether:examiner'
 const EXAM_PATH = /(^|\/)(\.aether-exam|\.aether\/exam)\//
+// Claude Code's settings and hooks by their text alone (spec 030 R21). Used only when git cannot classify the path.
+const CLAUDE_CONFIG_TEXT = /(^|\/)\.claude\/(settings\.json|settings\.local\.json|hooks(\/|$))/
 const INTENT_CARD = /(^|\/)specs\/\d{3}-[^/]+\/intent\.md$/
 
 // decide(input) gives null to allow, or { reason } to deny.
@@ -43,15 +47,10 @@ function decide(input) {
     }
   }
 
-  try {
-    const claude = classifyClaudePath(target, { cwd: base })
-    if (claude && claude.kind === 'config') {
-      return {
-        reason: `In Aether mode no agent writes Claude Code's settings or hooks (${target}).`,
-      }
+  if (isClaudeConfigTarget(target, base, normalized)) {
+    return {
+      reason: `In Aether mode no agent writes Claude Code's settings or hooks (${target}).`,
     }
-  } catch {
-    // classifyClaudePath can throw on broken repositories or ELOOP; ignore
   }
 
   // The Examiner's exam must stay out of the repository and of the swarm's sight, so it writes nothing else.
@@ -74,6 +73,18 @@ function decide(input) {
 
   return {
     reason: `In Aether mode only the Lead and the Writer write specs, plans and tasks. Hand this change to the Lead, or to the aether:writer agent, instead of editing ${resolved} yourself.`,
+  }
+}
+
+// Whether a file-tool target is Claude Code's settings or hooks (spec 030 R21). classifyClaudePath throws on a
+// broken repository or an ELOOP path. Then the text decides: a path that names the settings or the hooks stays
+// refused, so an unreadable repository cannot open them, and any other path passes, so ordinary writes still work.
+function isClaudeConfigTarget(target, base, normalized) {
+  try {
+    const claude = classifyClaudePath(target, { cwd: base })
+    return Boolean(claude && claude.kind === 'config')
+  } catch {
+    return CLAUDE_CONFIG_TEXT.test(normalized)
   }
 }
 
