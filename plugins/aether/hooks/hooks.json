@@ -1,9 +1,9 @@
 {
-  "description": "Aether: the SessionStart notes and stale-run sweep and the bootstrap in five part commands, the guard before writes and shell commands, the five observation hooks (PostToolUse of ScheduleWakeup, PostToolUseFailure, StopFailure, PreCompact and SessionEnd), and the usage meter mod",
+  "description": "Aether: the SessionStart notes and stale-run sweep and the bootstrap in five part commands, the guard before writes and shell commands, the five observation hooks (PostToolUse of ScheduleWakeup, PostToolUseFailure, StopFailure, PreCompact and SessionEnd), the session-note hooks of aether-continuity (Stop, StopFailure, PreCompact, PostCompact, SessionEnd, PostToolUse of the writes and Bash, and PermissionRequest of the writes), and the usage meter mod",
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume|clear|compact",
+        "matcher": "startup|resume|clear|compact|fork",
         "hooks": [
           {
             "type": "command",
@@ -61,6 +61,15 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-continuity\" posttool"
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
@@ -73,12 +82,30 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-continuity\" stop"
+          }
+        ]
+      }
+    ],
     "StopFailure": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-continuity\" stopfailure"
           }
         ]
       }
@@ -91,6 +118,35 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-continuity\" precompact"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-continuity\" postcompact"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-continuity\" permission"
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -100,6 +156,14 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-observe\" hook",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-continuity\" sessionend"
           }
         ]
       }

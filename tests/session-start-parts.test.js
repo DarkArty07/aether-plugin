@@ -107,7 +107,7 @@ test('(d) the bootstrap needs five parts or fewer, also from a long plugin path,
 test('(e) hooks.json runs the notes command and parts 1 to 5 in one SessionStart entry, with one matcher', () => {
   const entries = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks.SessionStart
   assert.equal(entries.length, 1)
-  assert.equal(entries[0].matcher, 'startup|resume|clear|compact')
+  assert.equal(entries[0].matcher, 'startup|resume|clear|compact|fork')
   const bin = 'node "${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start"'
   assert.deepEqual(
     entries[0].hooks.map((hook) => [hook.type, hook.command]),
