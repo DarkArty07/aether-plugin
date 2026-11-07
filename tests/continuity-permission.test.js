@@ -146,15 +146,15 @@ test('through the bin: the decision is allow for the Lead, and nothing for the s
   const data = tempDir(t, 'aether-data-')
   markSession(data, 's1', 1000, { repo: w.repo.dir, claude: null })
   const bin = path.join(PLUGIN, 'bin', 'aether-continuity')
-  const ask = (session, file) => spawnSync(process.execPath, [bin, 'permission'], { input: JSON.stringify({ hook_event_name: 'PermissionRequest', ...input(w, file), session_id: session }), encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: data } })
+  const ask = (session, file) => spawnSync(process.execPath, [bin, 'permission'], { input: JSON.stringify({ hook_event_name: 'PermissionRequest', ...input(w, file), session_id: session }), encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: data, HOME: w.home } })
   const allowed = ask('s1', path.join(w.claude, 'skills', 'x', 'SKILL.md'))
   assert.equal(allowed.status, 0)
   assert.deepEqual(JSON.parse(allowed.stdout), { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } })
   assert.deepEqual([ask('s1', path.join(w.claude, 'settings.json')).stdout, ask('s1', path.join(w.claude, 'settings.json')).status], ['', 0])
-  const before = [w.repo.dir, w.home, w.outside, data, process.env.HOME].map(snapshot)
+  const before = [w.repo.dir, w.home, w.outside, data].map(snapshot)
   const plain = ask('plain-session', path.join(w.claude, 'skills', 'x', 'SKILL.md'))
   assert.deepEqual([plain.status, plain.stdout, plain.stderr], [0, '', ''])
-  assert.deepEqual([w.repo.dir, w.home, w.outside, data, process.env.HOME].map(snapshot), before)
+  assert.deepEqual([w.repo.dir, w.home, w.outside, data].map(snapshot), before)
 })
 
 test('a project alias of home does not allow personal Claude files outside git', (t) => {
@@ -168,4 +168,45 @@ test('a project alias of home does not allow personal Claude files outside git',
     assert.equal(classifyClaudePath(file, { cwd, home }).kind, 'other')
     assert.equal(permission({ tool_name: 'Write', cwd, tool_input: { file_path: file } }, { home }), false)
   }
+})
+
+
+test('folder links, folder itself and written traversal never grant access', (t) => {
+  const w = world(t)
+  for (const folder of ['skills', 'rules']) {
+    const dir = path.join(w.claude, folder)
+    assert.equal(kind(w, dir), 'other')
+    assert.equal(kind(w, `./.claude/${folder}`), 'other')
+    assert.equal(permission(input(w, dir), {}), false)
+    fs.rmSync(dir, { recursive: true })
+    assert.equal(permission(input(w, dir), {}), false, 'missing folder')
+    fs.symlinkSync(w.home, dir)
+    assert.equal(kind(w, `${dir}/settings.json`), 'escape')
+    assert.equal(permission(input(w, `${dir}/settings.json`), { home: w.home }), false)
+    fs.unlinkSync(dir)
+    fs.writeFileSync(dir, 'file')
+    assert.equal(permission(input(w, dir), {}), false)
+  }
+  for (const file of ['./.claude/skills/../agents/a.md', '.claude/rules/../skills/x.md']) {
+    assert.equal(kind(w, file), 'escape', file)
+    assert.equal(permission(input(w, file), {}), false)
+  }
+})
+
+test('outside git uses cwd, while a git execution error fails closed', (t) => {
+  const w = world(t)
+  const outside = tempDir(t, 'aether-nongit-')
+  assert.equal(classifyClaudePath('.claude/rules/a.md', { cwd: outside, home: w.home }).kind, 'rules')
+  const sub = path.join(w.repo.dir, 'src')
+  fs.mkdirSync(sub)
+  const fake = tempDir(t, 'aether-fake-git-')
+  fs.writeFileSync(path.join(fake, 'git'), '#!/bin/sh\nexit 126\n', { mode: 0o755 })
+  const script = `const { permission } = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'continuity-permission.js'))}); console.log(permission({tool_name:'Write', cwd:process.argv[1], tool_input:{file_path:'.claude/rules/a.md'}}, {}))`
+  const result = spawnSync(process.execPath, ['-e', script, sub], { encoding: 'utf8', env: { ...process.env, PATH: fake, HOME: w.home } })
+  assert.equal(result.status, 0)
+  assert.equal(result.stdout.trim(), 'false')
+  const denied = `require('node:child_process').spawnSync = () => ({error: Object.assign(new Error('denied'), {code:'EPERM'})}); ${script}`
+  const eperm = spawnSync(process.execPath, ['-e', denied, sub], { encoding: 'utf8', env: { ...process.env, HOME: w.home } })
+  assert.equal(eperm.status, 0)
+  assert.equal(eperm.stdout.trim(), 'false')
 })

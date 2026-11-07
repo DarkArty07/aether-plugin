@@ -49,7 +49,10 @@ function classifyClaudePath(file, { cwd, home = os.homedir() }) {
   try {
     const repo = repoPaths(cwd)
     roots = [repo.worktree, repo.mainRoot]
-  } catch { roots = [path.resolve(cwd)] }
+  } catch (err) {
+    if (!/^git rev-parse --show-toplevel failed: fatal: not a git repository(?: |$)/.test(err.message)) throw err
+    roots = [path.resolve(cwd)]
+  }
   const homeClaude = path.join(path.resolve(home), '.claude')
   const realHomeClaude = realResolve(homeClaude)
   const projects = [...new Set(roots.map((root) => path.resolve(root)))].map((root) => path.join(root, '.claude')).filter((dir) => dir !== homeClaude && realResolve(dir) !== realHomeClaude)
@@ -60,14 +63,31 @@ function classifyClaudePath(file, { cwd, home = os.homedir() }) {
       if (candidate === path.join(base, 'settings.json') || candidate === path.join(base, 'settings.local.json') || inside(candidate, path.join(base, 'hooks'))) return { kind: 'config', real }
     }
   }
-  for (const dir of projects) {
-    for (const kind of ['skills', 'rules']) {
-      const folder = path.join(dir, kind)
-      // Keep the unnormalized spelling to detect attempts to leave the folder with .. .
-      if (inside(normalized, folder) || written === folder || written.startsWith(`${folder}${path.sep}`)) {
-        return { kind: inside(real, realResolve(folder)) ? kind : 'escape', real }
+  // Preserve traversal after entering a permitted folder, including a later re-entry.
+  const parts = written.split(path.sep)
+  let prefix = path.parse(written).root
+  let entered = null
+  let escaped = false
+  let descendant = false
+  for (const part of parts) {
+    if (!part || part === '.') continue
+    if (entered) descendant = true
+    prefix = path.resolve(prefix, part)
+    if (entered && !inside(prefix, entered.folder)) escaped = true
+    if (!entered) {
+      for (const dir of projects) {
+        for (const kind of ['skills', 'rules']) {
+          const folder = path.join(dir, kind)
+          if (prefix === folder) entered = { folder, kind, dir }
+        }
       }
     }
+  }
+  if (entered && descendant) {
+    const realFolder = realResolve(entered.folder)
+    const expectedFolder = path.join(realResolve(entered.dir), entered.kind)
+    if (escaped || realFolder !== expectedFolder || real === realFolder || !inside(real, realFolder)) return { kind: 'escape', real }
+    return { kind: entered.kind, real }
   }
   return { kind: 'other', real }
 }
