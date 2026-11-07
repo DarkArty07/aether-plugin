@@ -32,8 +32,8 @@
 - [ ] T009 [US10] Revisar `CLAUDE.md` y `AGENTS.md` tras editarlos, en `plugins/aether/lib/tree-check.js` → Task 9
 - [ ] T010 [P] [US11] Llevar `AGENTS.md` en las llamadas a otros harness, en `plugins/aether/lib/lane-calls.js` → Task 10
 - [ ] T011 [US16, US15] Rechazar escribir la configuración y los hooks de Claude Code y vigilar el examen en su lugar nuevo, en `plugins/aether/lib/guard.js` → Task 11
-- [ ] T012 [US12] Mover copias de lanes y lo temporal a su lugar nuevo de `.aether/`, en `lib/run.js`, `lib/worktrees.js` y `lib/lane-work.js` → Task 12
-- [ ] T013 [US12] Mover seats, delegados y examen a su lugar nuevo de `.aether/`, en `lib/seats.js`, `lib/delegate-calls.js` y `lib/exam.js` → Task 13
+- [ ] T012 [US12] Mover lo temporal de las copias de trabajo a `.aether/tmp/`, en `lib/run.js`, `lib/worktrees.js` y `lib/lane-work.js` → Task 12
+- [ ] T013 [US12] Mover el examen a `.aether/exam/`, en `lib/exam.js` y `lib/seats.js` → Task 13
 - [ ] T014 [US12] Escribir el mapa `.aether/README.md` y comprobar que cada ruta está en él, en `plugins/aether/lib/tree-map.js` → Task 14
 - [ ] T015 [US13] Limpiar el arranque y llevar el sello por proyecto, en `plugins/aether/lib/tree-clean.js` → Task 15
 - [ ] T016 [US14] Migrar el estado viejo de `.aether/` sin perder trabajo, en `plugins/aether/lib/tree-migrate.js` → Task 16
@@ -60,6 +60,8 @@
 - [ ] T037 [US6, US8, US12] Poner al día las páginas de rutas y hooks, medir la huella dormida y probar que nada corre fuera del Lead → Task 37
 - [ ] T038 [US9] Registrar las decisiones A111 en adelante, en `docs/decisions.md` → Task 38
 - [ ] T039 [US9] Subir la versión a 0.35.0 en todos los lugares donde vive y escribir el changelog → Task 39
+- [ ] T040 [US12] Mover las copias de lanes a `.aether/worktrees/lanes/` y barrerlas en los dos lugares, en `lib/worktrees.js` y `lib/lane-work.js` → Task 40
+- [ ] T041 [US12] Mover el trabajo de seats y delegados y el mensaje de una ronda a su lugar nuevo, en `lib/seats.js`, `lib/seat-calls.js` y `lib/delegate-calls.js` → Task 41
 
 ---
 
@@ -67,9 +69,9 @@
 
 **Aether:**
 - Area: continuity
-- Owns: `plugins/aether/lib/continuity-store.js`, `tests/continuity-store.test.js`, `docs/reference/components.md`
+- Owns: `plugins/aether/lib/continuity-store.js`, `tests/continuity-store.test.js`, `docs/reference/components.md`, `tests/helpers.js`, `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/session-start-autonomy.test.js`, `tests/no-real-config.test.js`
 - Depends on: none
-- Serves: R1, R8
+- Serves: R1, R8, R44
 
 **Interfaces:**
 
@@ -87,6 +89,8 @@ En `plugins/aether/lib/continuity-store.js` (`// Family: continuity.`), todo exp
 - `updateNote(dir, sessionId, patch)` lee la nota, le mezcla `patch` (con `updatedAt: Date.now()` si `patch` no lo trae), la escribe y la devuelve; `null` si la nota no existe.
 - `readNotes(dir)` devuelve las notas legibles de `dir` (`*.json` con la versión vigente), la más reciente primero por `updatedAt`; `[]` si `dir` no existe.
 - `pruneNotes(dir, { cwd, now = Date.now(), days = NOTE_DAYS } = {})` borra las notas de más de `days` días y las de trabajo fusionado, nunca la más reciente, y devuelve los ids borrados. Una nota es de trabajo fusionado cuando existe otra más nueva y su `commit` es ancestro de la punta de la rama principal de `cwd` (`origin/HEAD` si existe; si no `main`; si no `master`), comprobado con `git merge-base --is-ancestor`; sin `commit` o sin rama principal no se tiene por fusionada.
+
+**Aislamiento de las pruebas (antes de que exista ningún código de continuidad).** Las pruebas existentes pasan `process.env` a los hooks y a los bins, y desde la tarea 3 esos procesos escriben notas bajo `<configDir>/projects/…/memory/continuity/` y leen `~/.agents/`: sin cambio, una corrida de `npm test` escribiría en el `~/.claude/projects/` real. Por eso esta tarea hace que `tests/helpers.js`, igual que ya borra las variables `AETHER_*` y apunta `AETHER_LANES_CONFIG` a un archivo que falta, apunte por defecto `CLAUDE_CONFIG_DIR` y `HOME` a una carpeta temporal (`fs.mkdtempSync` en `os.tmpdir()`, creada al cargar el archivo y borrada al salir el proceso con `process.on('exit', …)`), exporte `REAL_HOME` (el `os.userInfo().homedir` de antes del cambio) y deje que una prueba que necesita otra carpeta las ponga a propósito. Los constructores de entorno de `tests/session-start.test.js` (`hookEnv`), `tests/session-start-parts.test.js` y `tests/session-start-autonomy.test.js` (y el `run` de `tests/helpers.js`) conservan esas dos variables: no las borran ni las vuelven a apuntar a la carpeta real. Las tareas siguientes cuentan con este aislamiento.
 
 En `docs/reference/components.md`, la tabla «Library families» gana cuatro filas, con orquestador `none`: `continuity` (prefijo `continuity-`; miembros `continuity-store.js`, `continuity-hook.js`, `continuity-notice.js`, `continuity-posttool.js`, `continuity-permission.js`), `tree` (`tree-`; `tree-paths.js`, `tree-check.js`, `tree-map.js`, `tree-clean.js`, `tree-migrate.js`), `skill` (`skill-`; `skill-rules.js`, `skill-registry.js`, `skill-brief.js`, `skill-review.js`, `skill-repeat.js`, `skill-idle.js`) y `tidy` (`tidy-`; `tidy-detect.js`, `tidy-report.js`, `tidy-guard.js`). Ningún otro cambio en esa página.
 
@@ -218,11 +222,47 @@ test('pruneNotes deletes notes of more than 30 days and of merged work with a ne
 })
 ```
 
+`tests/no-real-config.test.js`:
+
+```js
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { REAL_HOME, SESSION_BIN, PLUGIN, LEAD_START, makeRepo, tempDir, runSessionStart } = require('./helpers.js')
+
+const realProjects = path.join(REAL_HOME, '.claude', 'projects')
+const continuityFiles = () => (fs.existsSync(realProjects) ? fs.readdirSync(realProjects, { recursive: true }).filter((e) => e.includes(`${path.sep}continuity${path.sep}`)).sort() : [])
+
+test('a test run points the Claude config folder and the home at a temporary folder, not at the real ones', () => {
+  assert.ok(REAL_HOME && REAL_HOME !== os.tmpdir())
+  for (const name of ['CLAUDE_CONFIG_DIR', 'HOME']) {
+    assert.ok(process.env[name] && process.env[name].startsWith(fs.realpathSync(os.tmpdir())) , `${name} is ${process.env[name]}`)
+    assert.ok(!process.env[name].startsWith(REAL_HOME), `${name} is not under the real home`)
+  }
+  assert.equal(os.homedir(), process.env.HOME)
+})
+
+test('a Lead session started through the helpers writes nothing under the real ~/.claude/projects (R44)', (t) => {
+  const before = continuityFiles()
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-data-')
+  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }
+  const r = runSessionStart(repo.dir, env, { ...LEAD_START, session_id: 'isolation-check' })
+  assert.equal(r.status, 0)
+  assert.deepEqual(continuityFiles(), before)
+  assert.ok(SESSION_BIN)
+})
+```
+
 En `tests/components-docs.test.js` o `tests/docs-facts.test.js` no se agrega nada: las pruebas existentes de `docs/reference/components.md` (`tests/components-docs.test.js`, `tests/guards.test.js` R16) deben seguir pasando con las cuatro filas nuevas.
 
 **Acceptance:**
 
-- `node --test tests/continuity-store.test.js` pasa, y `npm test` completo pasa (en particular `tests/guards.test.js`: la cabecera, la familia declarada y los nombres sin uso).
+- `node --test tests/continuity-store.test.js tests/no-real-config.test.js` pasa, y `npm test` completo pasa (en particular `tests/guards.test.js`: la cabecera, la familia declarada y los nombres sin uso).
+- Después de esta tarea, ninguna prueba que herede el entorno de `tests/helpers.js` puede escribir bajo el `~/.claude/` real; `tests/no-real-config.test.js` lo comprueba y falla si una corrida lo hace.
 - `continuity-store.js` no llama a un modelo, no lee la conversación y no escribe fuera de la carpeta que se le da. Todas sus funciones aceptan `procRoot` o `dir` por parámetro: ninguna prueba usa el `/proc` real ni una carpeta de memoria real.
 - Las cuatro familias nuevas están en `docs/reference/components.md` con los miembros que nombra el plan.
 
@@ -243,7 +283,7 @@ En `plugins/aether/lib/session.js`:
 - `markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, delegate = null, brake = null, repo = null, claude = null } = {})`. Con `repo` (un texto) o `claude` (`{ pid, start }` o `null`) dados, la marca es `{ session, startedAt, repo, claude, lastActivity: now }`; sin ninguno de los dos, la marca sigue siendo exactamente `{ session, startedAt }` (la prueba que ya existe lo fija).
 - `touchSession(dataDir, sessionId, now = Date.now())` pone `lastActivity: now` en la marca si existe y es legible (escritura atómica), devuelve `true`, y `false` en cualquier otro caso (id inválido, marca ausente o ilegible). Nunca lanza.
 - `readMark(dataDir, sessionId)` devuelve el objeto de la marca o `null`; nunca lanza.
-- `repoSessions(dataDir, repo, { except = null, procRoot = '/proc' } = {})` devuelve, por cada marca con `repo` igual a `repo` y distinta de `except`, `{ session, startedAt, lastActivity, claude, state }` con `state` el de `processState(claude, { procRoot })`, ordenadas por `lastActivity` (o `startedAt`) de la más reciente a la más antigua.
+- `repoSessions(dataDir, repo, { except = null, exceptProcess = null, procRoot = '/proc' } = {})` devuelve, por cada marca con `repo` igual a `repo`, distinta de `except` y cuyo `claude` no es el mismo proceso que `exceptProcess` (`{ pid, start }`: `/clear` abre otro id de sesión en el mismo proceso `claude`, y esa marca no es «otra sesión»), `{ session, startedAt, lastActivity, claude, state }` con `state` el de `processState(claude, { procRoot })`, ordenadas por `lastActivity` (o `startedAt`) de la más reciente a la más antigua.
 - `oldStyleMarks(dataDir, { now = Date.now(), maxAgeMs = OLD_MARK_MS } = {})` devuelve los ids de las marcas sin campo `repo` cuya fecha de modificación es de menos de `maxAgeMs` (exportado `OLD_MARK_MS = 12 * 3600 * 1000`), en orden alfabético.
 - `pruneSessions` y el resto no cambian.
 
@@ -299,6 +339,8 @@ test('repoSessions lists the marks of one repository with the state of their pro
   assert.deepEqual(listed.map((s) => [s.session, s.state]), [['gone', 'gone'], ['reused', 'gone'], ['alive', 'alive']])
   assert.deepEqual(repoSessions(data, '/work/app', { procRoot: path.join(proc, 'nope') }).map((s) => s.state), ['unknown', 'unknown', 'unknown', 'unknown'])
   assert.deepEqual(repoSessions(tempDir(t), '/work/app'), [])
+  const cleared = repoSessions(data, '/work/app', { except: 'unknown', exceptProcess: { pid: 100, start: 555 }, procRoot: proc })
+  assert.deepEqual(cleared.map((s) => s.session), ['gone', 'reused'], 'a mark of the same claude process (a /clear) is not another session')
 })
 
 test('oldStyleMarks lists the marks without a repository that are younger than 12 hours (R19 b, A18)', (t) => {
@@ -529,7 +571,7 @@ test('the bin has the fifteen commands the pages count and is executable', () =>
 
 **Acceptance:**
 
-- `node --test tests/continuity-hook.test.js` pasa, `npm test` completo pasa, `npm run validate` pasa (el registro de los hooks nuevos es válido para `claude plugin validate --strict`).
+- `node --test tests/continuity-hook.test.js` pasa, `npm test` completo pasa, `npm run validate` pasa: es `claude plugin validate --strict` local, sin llamada a un modelo, y comprueba que el matcher `fork` de SessionStart y la entrada `PermissionRequest` son válidos.
 - Con una sesión que no es del Lead, cada verbo sale con 0, sin salida y sin escribir ningún archivo.
 - `sessionend` no corre `git` (la prueba lo hace con `PATH` vacío) y no abre ningún archivo fuera de la nota y la marca.
 - Ningún hook de esta tarea escribe en `MEMORY.md`, y el almacén de `aether-observe` no guarda texto de la conversación.
@@ -549,7 +591,7 @@ test('the bin has the fifteen commands the pages count and is executable', () =>
 
 En `plugins/aether/lib/continuity-notice.js` (`// Family: continuity.`):
 
-- `notice({ cwd, session, source, dataDir, dir, env = process.env, now = Date.now(), procRoot = '/proc' })` devuelve `{ lines }`, un arreglo de textos. `dir` es la carpeta de notas (`continuityDir`). Nunca lanza: ante cualquier error devuelve `{ lines: [] }`.
+- `notice({ cwd, session, source, dataDir, dir, env = process.env, now = Date.now(), procRoot = '/proc', selfProcess = null })` devuelve `{ lines }`, un arreglo de textos. `dir` es la carpeta de notas (`continuityDir`). Nunca lanza: ante cualquier error devuelve `{ lines: [] }`.
   - Con `source === 'compact'`, devuelve `{ lines: [] }` (A11).
   - La nota anterior es la más reciente de `readNotes(dir)` cuya `session` no es `session`. Sin ninguna (o con notas ilegibles solamente), devuelve exactamente una línea: `No earlier session in this project.` (`No hay una sesión anterior en este proyecto.` si `isSpanish(env)`).
   - Con nota anterior, devuelve de 3 a 5 líneas, en este orden:
@@ -557,6 +599,7 @@ En `plugins/aether/lib/continuity-notice.js` (`// Family: continuity.`):
     2. Qué cambió en git desde entonces, con el repositorio de `cwd`: `Since then: <n> commit(s) and <m> file(s) changed on <rama actual>.` con singular y plural (`1 commit`, `2 commits`; `1 file`, `3 files`), ; sin cambios, `Since then: nothing changed in git.` (`Desde entonces: …`, `Desde entonces: nada cambió en git.`). En los dos casos, si la rama actual no es la de la nota, se agrega al final de la línea ` The branch moved from <rama de la nota> to <rama actual>.` (` La rama pasó de … a ….`). Con una nota sin `commit` o un commit que ya no existe: `Since then: the commit of that session is not in this repository.`
     3. El estado de esa sesión, por `processState(nota.process, { procRoot })`: con `nota.closed`, `The session ended normally.`; sin cierre y `gone`, `The session was cut off (<motivo de nota.cut.reason, o «no close mark»>): claude --resume <id completo>`; sin cierre y `alive`, `That session is still active in another window.`; sin cierre y `unknown`, `That session has no close mark; this machine cannot tell whether it was cut off.` (nunca el comando de retomar).
     4. Solo si hay algo: ramas con trabajo sin fusionar y delegados sin resultado en **una** línea: `Unmerged work: <rama>, <rama> (+<n> more). Delegates without a result: <tarea>, <tarea>.` (cada mitad solo si no está vacía; hasta 3 nombres y `(+n more)` el resto). Las ramas sin fusionar son las de `git for-each-ref refs/heads` que no están en la rama principal (`git branch --no-merged <principal>`; principal = `origin/HEAD`, si no `main`, si no `master`), y los delegados sin resultado son las tareas con un `launch` de la sesión anterior en `<dataDir>/delegates/log.jsonl` y ningún `result` de la misma tarea y el mismo `attempt` (se saltan las líneas que no son JSON).
+    Una nota anterior cuyo `process` es el mismo que `selfProcess` (un `/clear`: otro id de sesión en el mismo proceso `claude`) no se llama activa ni cortada: la línea 3 dice `That session ended in this same window (it was cleared).` (`Esa sesión terminó en esta misma ventana (se limpió).`), y esa sesión no cuenta en la línea 5.
     5. Solo si hay otras sesiones activas (A17): `Other sessions active: <id de 8>, <id de 8>.` con las de `repoSessions(dataDir, repo, { except: session, procRoot })` en estado `alive`, y las notas de la misma carpeta que, sin marca, tienen `process` vivo; no incluye la anterior.
   - Cada línea tiene a lo más 300 caracteres.
 
@@ -668,6 +711,16 @@ test('the other active sessions of the repository are named, from their marks, a
   assert.ok(others.includes('other-on') && others.includes('other-tw') && !others.includes('now-ses'), others)
   assert.ok(lines.length <= 5 && lines.every((l) => l.length <= 300), lines.map((l) => l.length).join(','))
   assert.ok(lines[0].includes('…'))
+})
+
+test('after a /clear the previous session of the same claude process is not called active or cut, and is not listed as another active session (R6)', (t) => {
+  const w = world(t)
+  fakeProc(w.proc, { 100: { comm: 'claude', ppid: 1, start: 555 } })
+  markSession(w.dataDir, 'prev-session', NOW, { repo: w.repo.dir, claude: { pid: 100, start: 555 } })
+  w.put({})
+  const { lines } = w.run({ selfProcess: { pid: 100, start: 555 } })
+  const text = lines.join('\n')
+  assert.ok(text.includes('ended in this same window') && !text.includes('--resume') && !text.includes('still active') && !text.includes('Other sessions active'), text)
 })
 
 test('a compact adds no notice (A11)', (t) => {
@@ -794,7 +847,7 @@ test('through the bin: the reminder is the additionalContext of PostToolUse, and
 **Aether:**
 - Review: xhigh — un fallo aquí rompe el arranque de toda sesión del Lead, y la salida tiene un tope duro de caracteres
 - Area: session
-- Owns: `plugins/aether/lib/session-start.js`, `tests/session-start-continuity.test.js`
+- Owns: `plugins/aether/lib/session-start.js`, `tests/session-start-continuity.test.js`, `tests/session-start.test.js`
 - Depends on: Task 3 — abre la nota con `openNote` y los hooks y el matcher de `fork` ya están registrados
 - Depends on: Task 4 — el aviso lo compone `notice`
 - Serves: R5, R7, R8
@@ -803,13 +856,14 @@ test('through the bin: the reminder is the additionalContext of PostToolUse, and
 
 En `plugins/aether/lib/session-start.js` (`main` conserva su forma `main({ input, part, env, cwd, stdout })` y gana `procRoot = '/proc'`, `from = process.ppid`):
 
-- `const NOTICE_SOURCES = ['startup', 'resume', 'clear', 'fork']`. El comportamiento actual para `startup`, `clear` y `compact` (las partes del arranque, `pruneOldFiles`, `sweepNote`, `autonomyNote`) no cambia.
+- `const NOTICE_SOURCES = ['startup', 'clear', 'fork']`. **`resume` no da aviso** (decisión del Lead: la conversación misma se restaura) y sigue sin imprimir nada, como hoy: las pruebas de `tests/session-start.test.js` de `resume` (`:261-270`, `:461-475`) no cambian. El comportamiento actual para `startup`, `clear` y `compact` (las partes del arranque, `pruneOldFiles`, `sweepNote`, `autonomyNote`) no cambia.
 - En un arranque del Lead, tras marcar la sesión (la marca guarda ahora `repo: repoPaths(cwd).mainRoot` y `claude: claudeProcess({ procRoot, from })`, fuera de git `repo` es `null` y se escribe la marca de siempre), si `source` está en `NOTICE_SOURCES`:
-  1. calcula `notice({ cwd, session: input.session_id, source, dataDir, dir: continuityDir(...), env, procRoot })` **antes** de abrir la nota de esta sesión;
+  1. calcula `notice({ cwd, session: input.session_id, source, dataDir, dir: continuityDir(...), env, procRoot, selfProcess: claudeProcess({ procRoot, from }) })` **antes** de abrir la nota de esta sesión;
   2. abre la nota con `openNote(input, { env, procRoot, from, source, fork: source === 'fork' })` (en un `fork` no toca la nota de ninguna otra sesión);
   3. con `startup` y `clear`, poda las notas con `pruneNotes(dir, { cwd })` junto a las demás podas.
+- Con `resume`, sin imprimir nada, la nota de la sesión se refresca para que su proceso sea el nuevo: `updateNote(dir, id, { source: 'resume', process: <el de ahora>, closed: null, cut: null })`, y se abre una si no existe (si no, la sesión retomada se vería como cortada en el arranque siguiente).
 - Con `compact` no se calcula aviso ni se abre nota (la sesión es la misma).
-- Las líneas del aviso se unen con saltos de línea. En `startup` y `clear` se agregan al final del `additionalContext` (después de las notas) y, tras la línea de bienvenida en `startup`, al `systemMessage`; en `clear` el `systemMessage` son solo las líneas. En `resume` y `fork`, que no inyectan las partes, el hook imprime una sola línea JSON con `hookSpecificOutput.additionalContext` y `systemMessage` iguales a las líneas del aviso (y nada más: ni «Aether mode is active.» ni partes). Si la salida entera pasa de `PART_LIMIT`, se quitan líneas del final (nunca la primera) hasta que quepa.
+- Las líneas del aviso se unen con saltos de línea. En `startup` y `clear` se agregan al final del `additionalContext` (después de las notas) y al `systemMessage`: en `startup` el `systemMessage` es la línea de bienvenida seguida de las líneas del aviso (el dueño las ve; `tests/session-start.test.js:388-390`, que hoy fija el `systemMessage` igual a la bienvenida sola, se reescribe: ahora debe empezar por la bienvenida y seguir con el aviso); en `clear` son solo las líneas. En `fork`, que no inyecta las partes, el hook imprime una sola línea JSON con `hookSpecificOutput.additionalContext` y `systemMessage` iguales a las líneas del aviso (y nada más: ni «Aether mode is active.» ni partes). Si la salida entera pasa de `PART_LIMIT`, se quitan líneas del final (nunca la primera) hasta que quepa.
 - Una nota ilegible, un error de git o un fallo al abrir la nota no detienen el arranque ni se imprimen.
 
 **Tests (write first):**
@@ -863,6 +917,13 @@ test('startup shows the previous session in 3 to 5 lines, in the context and in 
   assert.deepEqual([mine.source, mine.fork, mine.branch], ['startup', false, 'feature/x'])
 })
 
+test('the message of startup is the welcome line followed by the notice, never the welcome alone (R5)', (t) => {
+  const w = world(t)
+  const lines = w.start('startup').out.systemMessage.split('\n')
+  assert.match(lines[0], /^Aether .*\/aether:help/)
+  assert.ok(lines.length >= 2)
+})
+
 test('a first session in a project shows one line and fails nothing (H1 scenario 6)', (t) => {
   const w = world(t)
   const { status, out } = w.start('startup')
@@ -870,19 +931,24 @@ test('a first session in a project shows one line and fails nothing (H1 scenario
   assert.ok(out.systemMessage.split('\n').includes('No earlier session in this project.'))
 })
 
-test('resume and fork print only the notice, and a fork opens its own note without touching the other (A11, H1 scenario 5)', (t) => {
-  for (const source of ['resume', 'fork']) {
-    const w = world(t)
-    w.prior({ closed: { at: 1, reason: 'other' } })
-    const before = fs.readFileSync(path.join(w.dir, 'prev-session.json'), 'utf8')
-    const { status, out } = w.start(source, `s-${source}`)
-    assert.equal(status, 0)
-    assert.equal(out.hookSpecificOutput.additionalContext, out.systemMessage)
-    assert.ok(!out.systemMessage.includes('Aether mode is active'))
-    assert.ok(out.systemMessage.includes('ended normally'))
-    assert.equal(store.readNote(w.dir, `s-${source}`).fork, source === 'fork')
-    assert.equal(fs.readFileSync(path.join(w.dir, 'prev-session.json'), 'utf8'), before)
-  }
+test('a fork prints only the notice and opens its own note without touching the other; resume prints nothing and only refreshes its own note (A11, H1 scenario 5)', (t) => {
+  const f = world(t)
+  f.prior({ closed: { at: 1, reason: 'other' } })
+  const before = fs.readFileSync(path.join(f.dir, 'prev-session.json'), 'utf8')
+  const fork = f.start('fork', 's-fork')
+  assert.equal(fork.status, 0)
+  assert.equal(fork.out.hookSpecificOutput.additionalContext, fork.out.systemMessage)
+  assert.ok(!fork.out.systemMessage.includes('Aether mode is active'))
+  assert.ok(fork.out.systemMessage.includes('ended normally'))
+  assert.equal(store.readNote(f.dir, 's-fork').fork, true)
+  assert.equal(fs.readFileSync(path.join(f.dir, 'prev-session.json'), 'utf8'), before)
+  const r = world(t)
+  r.prior({ closed: { at: 1, reason: 'other' } })
+  store.writeNote(r.dir, { session: 'now-session', branch: 'feature/x', commit: 'c', updatedAt: Date.now() - 1000, source: 'startup', process: { pid: 2147483000, start: 1 }, closed: { at: 5, reason: 'prompt_input_exit' }, cut: null })
+  const resume = r.start('resume')
+  assert.deepEqual([resume.status, resume.stdout], [0, ''])
+  const note = store.readNote(r.dir, 'now-session')
+  assert.deepEqual([note.source, note.closed, note.cut], ['resume', null, null])
 })
 
 test('a compact repeats no notice and opens no note (A11, H1 scenario 3)', (t) => {
@@ -954,7 +1020,7 @@ test('a session that is not the Lead prints nothing and writes nothing (R40)', (
 - Se borra la carpeta `plugins/aether/skills/onboard/`.
 - `plugins/aether/skills/help/SKILL.md` ya no lista `/aether:onboard` (la línea 56 y lo que la acompañe).
 - `docs/reference/components.md` (la fila de la skill `onboard` y la frase del párrafo de huella que la nombra), `docs/what-aether-adds.md` (las líneas 16 y 91) y `docs/es/que-agrega-aether.md` (las líneas 16 y 91) y `docs/roadmap.md` ya no mencionan `/aether:onboard` ni la skill `onboard` como vigentes. `docs/changelog.md` y `docs/decisions.md` conservan su historia: **no se editan en esta tarea** (el texto del retiro lo escribe la tarea 39).
-- `tests/docs-facts.test.js`: `RETIRED_NAMES` gana `onboard: ['docs/changelog.md']` y el comentario de su cabecera lista `aether:onboard` entre los nombres retirados que un registro conserva, con su motivo (la skill de 0.12.7 a 0.34.0, retirada en 0.35.0; el changelog conserva su nombre en las palabras de la versión que la publicó).
+- `tests/docs-facts.test.js`: `RETIRED_NAMES` gana `onboard: ['docs/changelog.md', 'docs/decisions.md']` (la decisión A116 de la tarea 38 también lo nombra) y el comentario de su cabecera lista `aether:onboard` entre los nombres retirados que un registro conserva, con su motivo (la skill de 0.12.7 a 0.34.0, retirada en 0.35.0; el changelog conserva su nombre en las palabras de la versión que la publicó).
 - `tests/help.test.js:71` y `tests/audit-skill.test.js` dejan de depender de `onboard` (la primera comprueba otra skill que existe, por ejemplo `audit`; la segunda cambia el nombre de la prueba y el comentario que dicen «the front matter of onboard» por «of the audit skill», sin cambiar lo que comprueba).
 
 **Tests (write first):**
@@ -1156,6 +1222,7 @@ test('through the bin: the decision is allow for the Lead, and nothing for the s
 - Area: tree
 - Owns: `plugins/aether/lib/tree-check.js`, `plugins/aether/lib/continuity-posttool.js`, `tests/tree-check.test.js`
 - Depends on: Task 5 — el despachador de PostToolUse y su lista de manejadores
+- Depends on: Task 6 — la historia H2 empieza cuando H1 está fusionada
 - Serves: R12, R40
 
 **Interfaces:**
@@ -1371,7 +1438,7 @@ test('the AGENTS.md of the main checkout is added when a copy of the working tre
 En `plugins/aether/lib/guard.js`:
 
 - `decide(input)` (herramientas de archivos): después de la protección del registro de autonomía, si `classifyClaudePath(target, { cwd }).kind === 'config'`, devuelve `{ reason }` para cualquier agente (el Lead, el Writer, un implementador o la sesión principal). El texto empieza por `In Aether mode no agent writes Claude Code's settings or hooks` y nombra la ruta.
-- `decideBash(input, env)`: antes de las clases irreversibles, si el comando nombra una de las rutas de configuración (`.claude/settings.json`, `.claude/settings.local.json`, `.claude/hooks` o algo dentro, con cualquier prefijo de ruta, también con `./` o `$PWD/`) y no es un comando de solo lectura (los de la lista `READ_COMMANDS` que ya usa la guarda, como `cat`, `ls`, `grep`, `head`, `tail`, `git status`), devuelve `{ reason }` con el mismo texto. Un comando de solo lectura sobre esas rutas pasa. Una redirección `>` o `>>` a esas rutas se rechaza aunque el comando sea de lectura. Escribir en `.claude/skills/` o `.claude/rules/` por Bash pasa.
+- `decideBash(input, env)`: antes de las clases irreversibles, si el comando nombra una de las rutas de configuración (`.claude/settings.json`, `.claude/settings.local.json`, `.claude/hooks` o algo dentro, con cualquier prefijo de ruta, también con `./` o `$PWD/`) y no es un comando de solo lectura (los de la lista `READ_COMMANDS` que ya usa la guarda: `echo`, `printf`, `cat`, `more`, `head`, `tail`, `grep`, `ls`, `stat`, `wc`, `diff`, `jq` y los demás de esa lista; `git status` no está en ella, y no nombra esas rutas, así que pasa por otra razón), devuelve `{ reason }` con el mismo texto. Un comando de solo lectura sobre esas rutas pasa. Una redirección `>` o `>>` a esas rutas se rechaza aunque el comando sea de lectura. Escribir en `.claude/skills/` o `.claude/rules/` por Bash pasa.
 - El Examinador escribe solo bajo `.aether/exam/` en la raíz del repositorio, y también bajo `.aether-exam/` (el estado viejo): `EXAM_PATH` acepta los dos y el mensaje de rechazo nombra `.aether/exam/`.
 - Lo demás de la guarda no cambia.
 
@@ -1475,30 +1542,28 @@ test('the Examiner writes under .aether/exam/ and under the old .aether-exam/, a
 
 ---
 
-### Task 12: Mover las copias de lanes y lo temporal a su lugar nuevo de `.aether/`
+### Task 12: Mover lo temporal de las copias de trabajo a `.aether/tmp/`
 
 **Aether:**
 - Area: layout
-- Owns: `plugins/aether/lib/run.js`, `plugins/aether/lib/worktrees.js`, `plugins/aether/lib/lane-work.js`, `plugins/aether/workflows/run.workflow.js`, `plugins/aether/agents/implementer.md`, `tests/layout-copies.test.js`, `tests/run.test.js`, `tests/worktrees-ensure.test.js`, `tests/worktrees-cleanup.test.js`, `tests/wt-sweep.test.js`, `tests/lane-work.test.js`, `tests/lane-reviewer-unit.test.js`, `tests/workflow-lanes.test.js`, `tests/workflow-final-slices.test.js`, `tests/retired-excludes.test.js`, `tests/aether-lane.test.js`, `tests/lane-delegate.test.js`, `tests/install-dirs.test.js`, `tests/aether-plan.test.js`, `tests/fixtures/fake-agy.js`
+- Owns: `plugins/aether/lib/run.js`, `plugins/aether/lib/worktrees.js`, `plugins/aether/lib/lane-work.js`, `plugins/aether/workflows/run.workflow.js`, `plugins/aether/agents/implementer.md`, `tests/layout-copies.test.js`, `tests/run.test.js`, `tests/worktrees-ensure.test.js`, `tests/lane-work.test.js`, `tests/lane-reviewer-unit.test.js`, `tests/workflow-lanes.test.js`, `tests/workflow-final-slices.test.js`, `tests/aether-lane.test.js`, `tests/lane-delegate.test.js`, `tests/retired-excludes.test.js`, `tests/fixtures/fake-agy.js`
 - Depends on: Task 6 — la historia H2 empieza cuando H1 está fusionada
 - Serves: R15
 
 **Interfaces:**
 
-Diseño D6 del plan. En `plugins/aether/lib/run.js` (nuevas, exportadas):
+Diseño D6 del plan, en la parte de «lo temporal» (las copias de lanes y los demás lugares los mueven las tareas 40, 13 y 41). En `plugins/aether/lib/run.js` (nuevas, exportadas; esta tarea define las cuatro, las demás las usan):
 
 - `tmpDir(base)` → `<base>/.aether/tmp` (`base` es la raíz de un checkout o de una copia de trabajo).
-- `laneCopiesDir(mainRoot)` → `<mainRoot>/.aether/worktrees/lanes`.
-- `examCopiesDir(mainRoot)` → `<mainRoot>/.aether/worktrees/exams`.
-- `workDir(mainRoot, kind, id)` → `<mainRoot>/.aether/work/<kind>/<id>` con `kind` `seats` o `delegates` (la tarea 13 la usa).
+- `laneCopiesDir(mainRoot)` → `<mainRoot>/.aether/worktrees/lanes`, `examCopiesDir(mainRoot)` → `<mainRoot>/.aether/worktrees/exams` y `workDir(mainRoot, kind, id)` → `<mainRoot>/.aether/work/<kind>/<id>` con `kind` `seats` o `delegates` (las usan las tareas 40, 13 y 41).
 - `EXCLUDES` no cambia: `['/.aether/', '/.aether-tmp/', '/.aether-exam/']` (las dos últimas cubren el estado viejo).
 
-Cambios de comportamiento:
+Cambios de comportamiento de esta tarea:
 
-- `lib/worktrees.js`: `laneCopiesRoot(mainRoot)` pasa a `run.laneCopiesDir(mainRoot)` (`.aether/worktrees/lanes`); `ensure` crea `<copia>/.aether/tmp/` y no `.aether-tmp/`; `sweepStale` y `sweepRun` hallan y barren las copias de lanes del lugar nuevo y también las del viejo `.aether/lanes/<run>` (se lee el viejo, se escribe solo el nuevo); una copia bajo `worktrees/lanes/` o `worktrees/exams/` no se cuenta como copia de unidad (los nombres `lanes` y `exams` no son ids de run).
-- `lib/lane-work.js`: `readerDir` queda en `<raíz>/.aether/worktrees/lanes/<run>/<call>` y `tmpDir(workdir)` en `<workdir>/.aether/tmp`.
+- `lib/worktrees.js`: `ensure` crea `<copia>/.aether/tmp/` y no `.aether-tmp/`.
+- `lib/lane-work.js`: `tmpDir(workdir)` es `<workdir>/.aether/tmp` (lo usan el implementador y las copias de lectura: `brief.md` y `package.diff`). Dónde está la copia de lectura no cambia aquí.
 - `workflows/run.workflow.js` y `agents/implementer.md`: `.aether-tmp/brief.md`, `.aether-tmp/package.diff` y «the worktree's `.aether-tmp/` folder» pasan a `.aether/tmp/…`.
-- Las pruebas de la lista de `Owns` que nombran `.aether-tmp`, `.aether/lanes` o `.aether/exams` se actualizan al lugar nuevo; ninguna prueba pierde lo que comprueba.
+- Las pruebas de la lista de `Owns` que nombran `.aether-tmp` se actualizan al lugar nuevo sin perder lo que comprueban (`tests/worktrees-ensure.test.js`, `tests/lane-work.test.js`, `tests/aether-lane.test.js`, `tests/lane-delegate.test.js`, `tests/workflow-lanes.test.js`, `tests/workflow-final-slices.test.js`, `tests/lane-reviewer-unit.test.js`, `tests/fixtures/fake-agy.js`); `tests/run.test.js` y `tests/retired-excludes.test.js` siguen fijando las líneas de exclusión viejas.
 
 **Tests (write first):**
 
@@ -1510,10 +1575,10 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { makeRepo, compile, commitIn, tempDir } = require('./helpers.js')
+const { makeRepo, compile, commitIn } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const run = require('../plugins/aether/lib/run.js')
-const { ensure, diffPackage, sweepStale } = require('../plugins/aether/lib/worktrees.js')
+const { ensure, diffPackage } = require('../plugins/aether/lib/worktrees.js')
 const work = require('../plugins/aether/lib/lane-work.js')
 
 test('run.js names the places of the new layout and keeps the old exclusions (R15)', () => {
@@ -1535,7 +1600,7 @@ test('a unit worktree keeps its temporary files in .aether/tmp and git does not 
   assert.equal(repo.git('-C', unit, 'status', '--porcelain'), '')
 })
 
-test('the lane copy and the brief of an implementer on another harness live in the new places (R15)', (t) => {
+test('the brief of an implementer on another harness and the files of a reader copy live in .aether/tmp (R15)', (t) => {
   const repo = makeRepo(t)
   const args = compile(repo, plan([task(1)]))
   const { workdir, brief } = work.prepareImplementer(repo.dir, args.runId, 'task-1')
@@ -1544,65 +1609,48 @@ test('the lane copy and the brief of an implementer on another harness live in t
   commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'add a')
   diffPackage(repo.dir, args.runId, 'task-1')
   const copy = work.prepareReader(repo.dir, args.runId, 'task-1-1-supervise', { taskId: 'task-1' })
-  assert.equal(copy.workdir, path.join(repo.dir, '.aether', 'worktrees', 'lanes', args.runId, 'task-1-1-supervise'))
   assert.deepEqual(fs.readdirSync(path.join(copy.workdir, '.aether', 'tmp')).sort(), ['brief.md', 'package.diff'])
   assert.equal(work.removeReader(repo.dir, args.runId, 'task-1-1-supervise'), true)
-  assert.equal(fs.existsSync(copy.workdir), false)
 })
 
-test('sweepStale finds a lane copy left in the old .aether/lanes folder and one in the new place, and removes both (R15, R19)', (t) => {
-  const repo = makeRepo(t)
-  const args = compile(repo, plan([task(1)]))
-  const unit = ensure(repo.dir, args.runId, 'task-1').path
-  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'add a')
-  diffPackage(repo.dir, args.runId, 'task-1')
-  const call = work.prepareReader(repo.dir, args.runId, 'task-1-1-supervise', { taskId: 'task-1' })
-  const old = path.join(repo.dir, '.aether', 'lanes', args.runId, 'task-1-9-leftover')
-  fs.mkdirSync(old, { recursive: true })
-  fs.writeFileSync(path.join(old, 'junk.txt'), 'x')
-  const aged = new Date(Date.now() - 48 * 3600 * 1000)
-  for (const dir of [args.runDir, path.join(repo.dir, '.aether', 'worktrees', args.runId), path.join(repo.dir, '.aether', 'lanes', args.runId), old, call.workdir]) {
-    for (const entry of fs.readdirSync(dir, { recursive: true })) try { fs.utimesSync(path.join(dir, entry), aged, aged) } catch { /* a link that is gone */ }
-    fs.utimesSync(dir, aged, aged)
-  }
-  sweepStale(repo.dir, { dataDir: tempDir(t, 'aether-stamp-'), now: Date.now() })
-  assert.equal(fs.existsSync(old), false)
-  assert.equal(fs.existsSync(call.workdir), false)
+test('the run workflow and the implementer prompt name .aether/tmp/ and no longer .aether-tmp/ (R15)', () => {
+  const plugin = path.join(__dirname, '..', 'plugins', 'aether')
+  const flow = fs.readFileSync(path.join(plugin, 'workflows', 'run.workflow.js'), 'utf8')
+  const prompt = fs.readFileSync(path.join(plugin, 'agents', 'implementer.md'), 'utf8')
+  assert.ok(flow.includes('.aether/tmp/brief.md') && flow.includes('.aether/tmp/package.diff'))
+  assert.ok(prompt.includes('.aether/tmp/'))
+  assert.ok(!flow.includes('.aether-tmp') && !prompt.includes('.aether-tmp'))
 })
 ```
 
 **Acceptance:**
 
 - `node --test tests/layout-copies.test.js` pasa y `npm test` completo pasa; todas las pruebas de `Owns` que cambiaron comprueban lo mismo que antes en el lugar nuevo.
-- Con el estado viejo en disco (`.aether/lanes/<run>/…`), el código nuevo lo lee y lo barre; solo escribe en los lugares nuevos.
-- `git status` de una copia de unidad sigue limpio con `.aether/tmp/` dentro.
+- `git status` de una copia de unidad sigue limpio con `.aether/tmp/` dentro. La carpeta de las copias de lanes y los barridos no cambian en esta tarea.
 
 ---
 
-### Task 13: Mover seats, delegados y examen a su lugar nuevo de `.aether/`
+### Task 13: Mover el examen a `.aether/exam/`
 
 **Aether:**
 - Area: layout
-- Owns: `plugins/aether/lib/seats.js`, `plugins/aether/lib/seat-calls.js`, `plugins/aether/lib/delegate-calls.js`, `plugins/aether/lib/exam.js`, `plugins/aether/lib/lane-schemas.js`, `plugins/aether/lib/lane-command.js`, `plugins/aether/bin/aether-exam`, `plugins/aether/workflows/design.workflow.js`, `plugins/aether/agents/examiner.md`, `plugins/aether/hooks/ops-command.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/ops.test.ts`, `tests/layout-work.test.js`, `tests/seats.test.js`, `tests/seat-calls.test.js`, `tests/seat-partial.test.js`, `tests/exam.test.js`, `tests/workflow-design.test.js`, `tests/ops-command-design.test.js`, `tests/delegate-calls.test.js`, `tests/delegate-chain.test.js`, `tests/agents.test.js`, `tests/harness-index.test.js`, `tests/guards-bins.test.js`, `tests/launcher.test.js`
-- Depends on: Task 12 — usa `run.workDir` y `run.examCopiesDir` que esa tarea define
+- Owns: `plugins/aether/lib/exam.js`, `plugins/aether/lib/seats.js`, `plugins/aether/lib/lane-schemas.js`, `plugins/aether/bin/aether-exam`, `plugins/aether/workflows/design.workflow.js`, `plugins/aether/agents/examiner.md`, `tests/layout-exam.test.js`, `tests/exam.test.js`, `tests/seat-partial.test.js`, `tests/workflow-design.test.js`, `tests/agents.test.js`, `tests/guards-bins.test.js`, `tests/launcher.test.js`
+- Depends on: Task 12 — usa `run.examCopiesDir` que esa tarea define
 - Serves: R15
 
 **Interfaces:**
 
-Diseño D6 del plan, en los archivos de seats, delegados y examen:
+Diseño D6 del plan, en lo del examen:
 
-- `lib/seats.js` (`runRound`): el trabajo de una ronda va en `run.workDir(mainRoot, 'seats', id)` (con su copia `wt`); `EXAM_DIR` es `'.aether/exam'`.
-- `lib/delegate-calls.js`: el trabajo de un delegado va en `run.workDir(mainRoot, 'delegates', id)`; `TMP_DIR` es `'.aether/tmp/'`.
-- `lib/seat-calls.js`: `messageFile(top, session)` es `<top>/.aether/tmp/seats/<session>/message.md`.
 - `lib/exam.js`: `EXAM_DIR` es `'.aether/exam'`; las copias donde corre el examen van en `run.examCopiesDir(mainRoot)`; `aether-exam store` toma por defecto `<raíz>/.aether/exam/`, y si no existe, la vieja `<raíz>/.aether-exam/`; `runExam` copia el examen guardado a `<copia>/.aether/exam/` y, cuando algún comando del examen guardado nombra `.aether-exam/` (un examen de una versión anterior), también a `<copia>/.aether-exam/`.
-- `workflows/design.workflow.js`: `MESSAGE_PATH` bajo `.aether/tmp/seats/…`; el Examinador escribe bajo `${repoRoot}/.aether/exam/`; la validación de rutas del examen acepta `.aether/exam/` (y, al leer, `.aether-exam/`); la descripción de `files` en `lane-schemas.js` y en el workflow dice «relative to .aether/exam/».
-- `agents/examiner.md`: todo `.aether-exam/` pasa a `.aether/exam/` (los comandos de ejemplo son `node --test .aether/exam/c1-login.test.js`).
-- `hooks/ops-command.mjs`: `PAYLOAD_PATH` acepta `…/.aether/tmp/seats/<…>/message.md` y también la ruta vieja `…/.aether-tmp/seats/<…>/message.md`; el resto de lo que acepta no cambia. `hooks/register.js`, `bin/aether-exam` y `lib/lane-command.js` actualizan sus comentarios y su texto de uso.
-- Las pruebas de la lista de `Owns` que nombran las rutas viejas se actualizan al lugar nuevo, sin perder lo que comprueban.
+- `lib/seats.js`: `EXAM_DIR` es `'.aether/exam'` (solo esa constante: el trabajo de las rondas lo mueve la tarea 41).
+- `workflows/design.workflow.js`: el Examinador escribe bajo `${repoRoot}/.aether/exam/`, y la validación de rutas del examen acepta `.aether/exam/` (y, al leer, `.aether-exam/`); la descripción de `files` («relative to .aether/exam/») en `lib/lane-schemas.js` y en el workflow. El mensaje de una ronda no cambia aquí.
+- `agents/examiner.md`: todo `.aether-exam/` pasa a `.aether/exam/` (los comandos de ejemplo son `node --test .aether/exam/c1-login.test.js`). `bin/aether-exam`: su cabecera y su uso dicen la carpeta nueva.
+- Las pruebas de la lista de `Owns` que nombran `.aether-exam` se actualizan al lugar nuevo, sin perder lo que comprueban.
 
 **Tests (write first):**
 
-`tests/layout-work.test.js`:
+`tests/layout-exam.test.js`:
 
 ```js
 'use strict'
@@ -1610,37 +1658,17 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { pathToFileURL } = require('node:url')
 const { PLUGIN } = require('./helpers.js')
 const exam = require('../plugins/aether/lib/exam.js')
-const seatCalls = require('../plugins/aether/lib/seat-calls.js')
 
-test('the exam folder and the message of a design round are inside .aether/ (R15)', () => {
+test('the exam folder is .aether/exam, in the library and in the prompt of the Examiner (R15)', () => {
   assert.equal(exam.EXAM_DIR, '.aether/exam')
-  assert.equal(seatCalls.messageFile('/repo', 'sess-1'), path.join('/repo', '.aether', 'tmp', 'seats', 'sess-1', 'message.md'))
-})
-
-test('the mod accepts the message of a round in the new place and in the old one, and nothing else changes (R15, R19)', async () => {
-  const { PAYLOAD_PATH } = await import(pathToFileURL(path.join(PLUGIN, 'hooks', 'ops-command.mjs')).href)
-  const SESSION = 'abc-123'
-  assert.ok(PAYLOAD_PATH.test(`/repo/.aether/tmp/seats/${SESSION}/message.md`))
-  assert.ok(PAYLOAD_PATH.test(`/repo/.aether-tmp/seats/${SESSION}/message.md`))
-  assert.ok(!PAYLOAD_PATH.test(`/repo/.aether/tmp/seats/${SESSION}/other.md`))
-  assert.ok(!PAYLOAD_PATH.test('/repo/.aether/tmp/x/message.md'))
-})
-
-test('the Examiner and its example commands use .aether/exam/, and no prompt names the old folder as the place to write (R15)', () => {
-  const examiner = fs.readFileSync(path.join(PLUGIN, 'agents', 'examiner.md'), 'utf8')
-  assert.ok(examiner.includes('.aether/exam/'))
-  assert.ok(!examiner.includes('.aether-exam'))
-  const design = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
-  assert.ok(design.includes('.aether/exam/') && design.includes('.aether/tmp/seats/'))
-  assert.ok(!/Write the exam under \$\{repoRoot\}\/\.aether-exam/.test(design))
-})
-
-test('a stored exam of an older version, whose commands name .aether-exam/, still has its files where those commands look (R19)', () => {
-  assert.equal(typeof exam.runExam, 'function')
   assert.equal(exam.EXAM_FILE, 'exam.json')
+  const examiner = fs.readFileSync(path.join(PLUGIN, 'agents', 'examiner.md'), 'utf8')
+  assert.ok(examiner.includes('.aether/exam/') && !examiner.includes('.aether-exam'))
+  const design = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
+  assert.ok(design.includes('.aether/exam/'))
+  assert.ok(!/Write the exam under \$\{repoRoot\}\/\.aether-exam/.test(design))
 })
 ```
 
@@ -1648,9 +1676,8 @@ Más: ampliar `tests/exam.test.js` con una prueba que guarda un examen cuyos com
 
 **Acceptance:**
 
-- `node --test tests/layout-work.test.js` pasa; `npm test` y `npm run test:mod` completos pasan.
+- `node --test tests/layout-exam.test.js tests/exam.test.js` pasa; `npm test` completo pasa.
 - Un examen guardado por una versión anterior sigue corriendo; el Examinador nuevo escribe solo en `.aether/exam/`.
-- Ninguna ruta de seats, delegados o mensajes queda escrita en `.aether/seats`, `.aether/delegates` ni `.aether-tmp/` por código nuevo (solo se leen los lugares viejos).
 
 ---
 
@@ -1661,6 +1688,8 @@ Más: ampliar `tests/exam.test.js` con una prueba que guarda un examen cuyos com
 - Owns: `plugins/aether/lib/tree-map.js`, `tests/tree-map.test.js`
 - Depends on: Task 12 — el mapa describe los lugares que esa tarea mueve
 - Depends on: Task 13 — y los que mueve esta otra
+- Depends on: Task 40 — y las copias de lanes
+- Depends on: Task 41 — y los trabajos de seats y delegados
 - Serves: R14
 
 **Interfaces:**
@@ -1758,7 +1787,9 @@ test('ensureReadme creates .aether/ and the file once, and leaves a current file
 - Area: layout
 - Owns: `plugins/aether/lib/tree-clean.js`, `plugins/aether/lib/worktrees.js`, `tests/tree-clean.test.js`, `tests/wt-sweep.test.js`
 - Depends on: Task 12 — comparten `lib/worktrees.js` y `tests/wt-sweep.test.js`, y los lugares nuevos
-- Depends on: Task 13 — la limpieza barre `work/seats` y `work/delegates` de ese diseño
+- Depends on: Task 13 — la limpieza no corre sobre un examen a medio mover
+- Depends on: Task 40 — comparte `lib/worktrees.js` (el barrido de las copias de lanes) y su prueba
+- Depends on: Task 41 — la limpieza barre `work/seats` y `work/delegates` de ese diseño
 - Serves: R17, R18
 
 **Interfaces:**
@@ -1899,7 +1930,9 @@ En `tests/wt-sweep.test.js`: las pruebas del sello cambian de `sweep-stale.json`
 - Area: layout
 - Owns: `plugins/aether/lib/tree-migrate.js`, `tests/tree-migrate.test.js`
 - Depends on: Task 2 — la puerta usa las marcas de sesión (`repoSessions`, `oldStyleMarks`)
-- Depends on: Task 13 — la migración mueve hacia el diseño que esa tarea cierra
+- Depends on: Task 13 — la migración mueve hacia el diseño que cierran estas tareas
+- Depends on: Task 40 — (las copias de lanes)
+- Depends on: Task 41 — (los trabajos de seats y delegados y el mensaje)
 - Serves: R19
 
 **Interfaces:**
@@ -1907,7 +1940,7 @@ En `tests/wt-sweep.test.js`: las pruebas del sello cambian de `sweep-stale.json`
 En `plugins/aether/lib/tree-migrate.js` (`// Family: tree.`):
 
 - `ACTIVITY_MS = 2 * 3600 * 1000` (A18; las 12 horas de una marca vieja son `OLD_MARK_MS` de `lib/session.js`).
-- `migrationGate(mainRoot, { dataDir, now = Date.now(), selfSession = null, procRoot = '/proc' })` devuelve `{ move, reasons }`. `reasons` contiene, sin repetir y en este orden, cada condición que se cumple: `live-session` (una marca de este repositorio, distinta de `selfSession`, cuyo proceso está vivo; `repoSessions(..., { except: selfSession })` con `state === 'alive'`), `old-mark` (`oldStyleMarks(dataDir, { now })` no está vacío; una marca sin campo `repo` de menos de 12 horas, sin contar la de `selfSession`) y `recent-writes` (algún archivo o carpeta bajo `<mainRoot>/.aether/`, `.aether-tmp/` o `.aether-exam/`, a cualquier profundidad, tiene una modificación de las últimas `ACTIVITY_MS`, sin contar la propia carpeta raíz ni `.aether/README.md`). `move` es `reasons.length === 0`. No escribe nada.
+- `migrationGate(mainRoot, { dataDir, now = Date.now(), selfSession = null, selfProcess = null, procRoot = '/proc' })` devuelve `{ move, reasons }`. `reasons` contiene, sin repetir y en este orden, cada condición que se cumple: `live-session` (una marca de este repositorio, distinta de `selfSession` y que no es del mismo proceso `claude` que `selfProcess` —un `/clear` abre otro id en el mismo proceso—, cuyo proceso está vivo; `repoSessions(..., { except: selfSession, exceptProcess: selfProcess })` con `state === 'alive'`), `old-mark` (`oldStyleMarks(dataDir, { now })` no está vacío; una marca sin campo `repo` de menos de 12 horas, sin contar la de `selfSession`) y `recent-writes` (algún archivo o carpeta bajo `<mainRoot>/.aether/`, `.aether-tmp/` o `.aether-exam/`, a cualquier profundidad, tiene una modificación de las últimas `ACTIVITY_MS`, sin contar la propia carpeta raíz ni `.aether/README.md`). `move` es `reasons.length === 0`. No escribe nada.
 - `migrate(mainRoot, { gate })` hace el movimiento solo si `gate.move`; si no, no cambia nada y devuelve `{ moved: [], kept: [], deferred: gate.reasons }`. Mueve, de `<mainRoot>`: `.aether/lanes` → `.aether/worktrees/lanes`, `.aether/exams` → `.aether/worktrees/exams`, `.aether/seats` → `.aether/work/seats`, `.aether/delegates` → `.aether/work/delegates`, `.aether-tmp` → `.aether/tmp`, `.aether-exam` → `.aether/exam`. Una carpeta vieja que el destino aún no tiene se mueve entera con `fs.renameSync`; si el destino existe, se mueven sus hijos que el destino no tiene. Una copia de trabajo registrada en git (cualquier carpeta que `git worktree list` nombra, a cualquier profundidad bajo la vieja) se mueve con `git worktree move <de> <a>`, así sigue registrada con sus cambios sin guardar. Lo que no se puede mover (un destino que ya tiene ese nombre, una copia bloqueada, un error de git o de sistema) se queda donde está y se anota en `kept` con el motivo, y `from` es la ruta más honda que no se pudo mover (un archivo cuyo nombre el destino ya tiene, o una copia de trabajo); lo demás de esa carpeta vieja se mueve igual. Una carpeta vieja que queda vacía se quita con `rmdir`. **No borra ningún archivo ni ninguna carpeta con contenido** y no toca los restos del CLI viejo ni `.aether/worktrees/<run>/<task>`. Devuelve `{ moved: [{ from, to }], kept: [{ from, why }], deferred: [] }`.
 
 **Tests (write first):**
@@ -1979,6 +2012,7 @@ test('a mark of this repository with a live process defers the move, and the sta
   markSession(w.dataDir, 'other', NOW, { repo: w.repo.dir, claude: { pid: 100, start: 555 } })
   assert.deepEqual(w.gate(), { move: false, reasons: ['live-session'] })
   assert.deepEqual(w.gate({ selfSession: 'other' }), { move: true, reasons: [] })
+  assert.deepEqual(w.gate({ selfSession: 'cleared-new-id', selfProcess: { pid: 100, start: 555 } }), { move: true, reasons: [] }, 'a /clear: the mark of the same claude process is not another session')
   markSession(w.dataDir, 'dead', NOW, { repo: w.repo.dir, claude: { pid: 999, start: 1 } })
   markSession(w.dataDir, 'elsewhere', NOW, { repo: '/another/repo', claude: { pid: 100, start: 555 } })
   assert.deepEqual(w.gate({ selfSession: 'other' }), { move: true, reasons: [] })
@@ -2075,7 +2109,7 @@ test('what cannot be moved stays where it is and is reported: a locked copy and 
 
 En `plugins/aether/lib/session-start.js`, en un arranque del Lead que corre las podas (`startup`, `clear`, `compact`), el orden es este y una prueba lo fija:
 
-1. **Antes de que esta sesión escriba nada** (ni la marca, ni el mapa, ni el sello, ni la limpieza): `gate = migrationGate(mainRoot, { dataDir, now, selfSession: input.session_id, procRoot })`.
+1. **Antes de que esta sesión escriba nada** (ni la marca, ni el mapa, ni el sello, ni la limpieza): `gate = migrationGate(mainRoot, { dataDir, now, selfSession: input.session_id, selfProcess: claudeProcess({ procRoot, from }), procRoot })`.
 2. `mark(...)` (la marca de la sesión), `passSuperdelegation`.
 3. Si `gate.move`, `migrate(mainRoot, { gate })`; la nota de arranque dice `Aether moved the old state of .aether/ to its new places (<n> folders).` (y `Aether left <k> old folder(s) of .aether/ where they are: <motivos>.` si hubo `kept`). Si `!gate.move` y existe alguna carpeta vieja, `Aether left the old state of .aether/ where it is for now: <motivos>.` (las razones, separadas por comas). Sin estado viejo, ninguna nota.
 4. `ensureReadme(mainRoot)`.
@@ -2147,15 +2181,16 @@ test('a quiet project: the decision comes before the starting session writes any
   assert.equal(readMark(w.data, 's1').repo, w.repo.dir)
 })
 
-test('the starting session does not count its own mark as a live session: a later start in the same session moves what is left once the folders are quiet again (R19)', (t) => {
+test('the starting session does not count its own mark as a live session, and a /clear (a new session id in the same claude process) does not count the mark of the one it cleared (R19)', (t) => {
   const w = world(t)
   w.start('s1')
   fs.mkdirSync(path.join(w.repo.dir, '.aether', 'delegates', 'd9'), { recursive: true })
   fs.writeFileSync(path.join(w.repo.dir, '.aether', 'delegates', 'd9', 'brief.md'), 'b')
   quiet(path.join(w.repo.dir, '.aether'))
-  const again = w.start('s1', 'clear')
+  const again = w.start('s2', 'clear')
   assert.ok(again.hookSpecificOutput.additionalContext.includes('moved the old state'))
   assert.equal(fs.readFileSync(path.join(w.repo.dir, '.aether', 'work', 'delegates', 'd9', 'brief.md'), 'utf8'), 'b')
+  assert.deepEqual(readMark(w.data, 's1').claude, readMark(w.data, 's2').claude, 'both marks name the same claude process')
 })
 
 test('another session of the repository with a live process defers the move and says so; the README is still written (R19 a)', (t) => {
@@ -3597,7 +3632,7 @@ test('the Writer and the plan skill name the art direction before the plan; ther
 
 **Aether:**
 - Area: lead-rules
-- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `tests/using-aether-030.test.js`, `tests/session-start-parts.test.js`, `tests/copies-classes.test.js`
+- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/hooks/hooks.json`, `tests/using-aether-030.test.js`, `tests/session-start-parts.test.js`, `tests/copies-classes.test.js`
 - Depends on: Task 29 — las reglas nombran las skills `aether:skills` y `aether:art-direction`
 - Depends on: Task 26 — las reglas describen lo que la guarda hace con las skills
 - Depends on: Task 28 — y los avisos que los hooks dan tras escribir
@@ -3605,7 +3640,7 @@ test('the Writer and the plan skill name the art direction before the plan; ther
 
 **Interfaces:**
 
-`plugins/aether/skills/using-aether/SKILL.md` (el bootstrap, que se entrega en partes de a lo más 9.800 caracteres y en a lo más cinco partes; se sigue dividiendo por encabezados de sección) gana, en su estilo de reglas cortas y con estas expresiones literales:
+`plugins/aether/skills/using-aether/SKILL.md` (el bootstrap, que se entrega en partes de a lo más 9.800 caracteres; se sigue dividiendo por encabezados de sección) gana, en su estilo de reglas cortas y con estas expresiones literales:
 
 - **Skills.** El Lead crea skills para los agentes por su cuenta (cuando un error se repite, cuando el proyecto tiene un método propio, cuando el dueño lo pide): las de proyecto en `.agents/skills/` sin pedir permiso y las cuenta en el brief; las permanentes en `~/.agents/skills/` esperan el sí del dueño (clase `skill-install`). No edita una skill de Aether ni una bajada: la copia con otro nombre a `.agents/skills/`. Solo el Lead busca y baja (`aether:skills`); de un autor de la lista de confianza baja sin preguntar, y lo demás (`-g`, un autor fuera de la lista, una fuente sin autor) espera el sí. Elige hasta 3 skills por tarea con el campo `Skills:` de `tasks.md` o la línea `AETHER-SKILLS:` del encargo. Cuando un hook le avisa de un hallazgo repetido o de una skill sin uso, lo considera. Carga `aether:skills` antes de buscar, bajar o crear una.
 - **Continuidad.** El aviso de arranque de 3 a 5 líneas dice dónde se quedó el trabajo; si dice que la sesión anterior se cortó, ofrece `claude --resume <id>` al dueño; no escribe el estado de una versión en la memoria de Claude, porque la nota de continuidad lo guarda sola.
@@ -3636,20 +3671,21 @@ test('the rules tell the Lead how to handle skills, continuity and the order of 
   assert.ok(!/onboard/i.test(text))
 })
 
-test('the bootstrap still goes in at most five parts, each whole output within the limit, also from a long install path (R44)', () => {
+test('the bootstrap goes in as many parts as hooks.json has commands for, each whole output within the limit, also from a long install path (R44)', () => {
   const root = path.join('/', 'x'.repeat(400), 'plugins', 'aether')
   const parts = bootstrapParts(root)
-  assert.ok(parts.length >= 1 && parts.length <= 5, `${parts.length} parts`)
+  const { PART_COMMANDS } = require('./helpers.js')
+  assert.ok(parts.length >= 1 && parts.length <= PART_COMMANDS.length, `${parts.length} parts for ${PART_COMMANDS.length} commands`)
   for (const part of parts) assert.ok(part.output.length <= PART_LIMIT, `part of ${part.output.length} characters`)
 })
 ```
 
-Más: `tests/session-start-parts.test.js` y `tests/copies-classes.test.js` (la tabla de clases de la skill sigue igual que `CLASSES`) pasan sin cambios, o con el ajuste mínimo que pida el número de partes.
+**Cuántas partes.** La tarea mide el bootstrap con `tests/session-start-parts.test.js` (el tamaño de cada parte contra 9.800 caracteres, también desde una ruta de instalación de 400). Si las reglas nuevas caben en cinco partes, no toca `hooks.json`. Si no caben, esta tarea también agrega la entrada `node "${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start" --part 6` a `hooks/hooks.json`, y ajusta lo que cuenta las partes (el encabezado `Aether mode, part k of n.`, `tests/session-start-parts.test.js` y `tests/helpers.js` leen las órdenes de `hooks.json`), y deja dicho en su informe que `docs/reference/components.md` («k from 1 to 5») lo corrige la tarea 37. `tests/copies-classes.test.js` (la tabla de clases de la skill sigue igual que `CLASSES`) pasa.
 
 **Acceptance:**
 
 - `node --test tests/using-aether-030.test.js tests/session-start-parts.test.js tests/copies-classes.test.js` pasa y `npm test` completo pasa.
-- Ninguna parte pasa de 9.800 caracteres y no hay una sexta parte (no hace falta tocar `hooks.json`).
+- Ninguna parte pasa de 9.800 caracteres, y hay una orden `--part k` en `hooks.json` por cada parte que el bootstrap tiene (cinco, o seis si hizo falta).
 
 ---
 
@@ -4248,7 +4284,7 @@ test('the guide gives the four kinds of skill, where they are downloaded, the tr
 
 - `docs/reference/components.md`: la tabla «The pieces» gana las filas de las skills `skills`, `art-direction` y `tidy` (`aether:skills`, `aether:art-direction`, `aether:tidy`, con qué hacen y que `tidy` y `skills` no agregan entrada a la lista de skills si fijan `disable-model-invocation`, según corresponda a lo que las skills fijan de verdad), la fila de `aether-continuity` ya existe (tarea 3) y se completa con `posttool` y `permission` y con los manejadores de PostToolUse; la fila de «SessionStart hook» dice que ahora corre también en `resume` y `fork`, abre la nota, avisa y limpia; el párrafo «What Aether adds to a normal session» gana un párrafo con la huella dormida de 0.35.0 **medida** (ver abajo); la lista de clases irreversibles que `components.md` repita incluye `skill-install`; las familias están declaradas (tarea 1).
 - Medición de la huella dormida (método que la tabla ya usa: procesos `node` por evento y su costo local, en una sesión que no es del Lead). El delegado corre, con una entrada de una sesión que no es del Lead y un directorio de datos desechable, cada verbo de `aether-continuity` y las seis órdenes de `aether-session-start`, 20 veces cada una, y escribe en `components.md` un párrafo con esta forma, con los números que midió: `Version 0.35.0 adds seven hook entries that run \`aether-continuity\` (Stop, PreCompact, PostCompact, StopFailure, SessionEnd, PostToolUse of Write, Edit, MultiEdit and Bash, and PermissionRequest of the file tools), and SessionStart also runs on fork. In a session that is not the Lead's each one finds no Lead and exits with no output and no file, as tests/dormant-030.test.js proves; measured on <fecha>, on <Node y sistema>, a call took a median of <n> ms (<min> to <max> ms in 20 runs), so one Write adds about <n> ms of process time and a turn about <n> ms. This is a local measurement, not a real session.`
-- `docs/guide/maintenance.md` (dónde están los datos: las notas de continuidad en `memory/continuity/` y su poda de 30 días, `.aether/README.md`, el diseño nuevo de `.aether/`, la limpieza por proyecto y su sello, la migración y cuándo se aplaza), `docs/guide/troubleshooting.md` (la clase `skill-install` y su lista en `.aether/pending.jsonl`; qué hacer cuando una sesión muestra `where it is for now`; `claude --resume <id>`; que una guarda rechaza editar skills de Aether o bajadas), `docs/guide/observe.md` (una frase: la nota de continuidad guarda texto de la conversación, en la máquina del dueño, y la observación sigue sin guardarlo), `docs/guide/delegates.md` (la línea `AETHER-SKILLS:` del encargo y que `uses.jsonl` y el registro `launch` anotan las skills), `docs/guide/autonomy.md` (ocho clases, `skill-install` y `aether-autonomy trust`), `docs/guide/design-seats.md` y `docs/methodology.md` (`.aether/exam/` y `.aether/tmp/` en lugar de `.aether-exam/` y `.aether-tmp/`), `docs/what-aether-adds.md` y `docs/es/que-agrega-aether.md` (lo nuevo: la continuidad, el ordenado con `/aether:tidy`, las skills, y que ya no existe `/aether:onboard`: la nota automática lo reemplaza). `docs/guide/options.md` no cambia: no hay opciones nuevas.
+- `docs/guide/maintenance.md` (dónde están los datos: las notas de continuidad en `memory/continuity/` y su poda de 30 días, `.aether/README.md`, el diseño nuevo de `.aether/`, la limpieza por proyecto y su sello, la migración y cuándo se aplaza), `docs/guide/troubleshooting.md` (la clase `skill-install` y su lista en `.aether/pending.jsonl`; qué hacer cuando una sesión muestra `where it is for now`; `claude --resume <id>`; que una guarda rechaza editar skills de Aether o bajadas), `docs/guide/observe.md` (una frase: la nota de continuidad guarda texto de la conversación, en la máquina del dueño, y la observación sigue sin guardarlo), `docs/guide/delegates.md` (la línea `AETHER-SKILLS:` del encargo y que `uses.jsonl` y el registro `launch` anotan las skills), `docs/guide/autonomy.md` (ocho clases, `skill-install` y `aether-autonomy trust`), `docs/guide/design-seats.md` y `docs/methodology.md` (`.aether/exam/` y `.aether/tmp/` en lugar de `.aether-exam/` y `.aether-tmp/`), `docs/what-aether-adds.md` y `docs/es/que-agrega-aether.md` (lo nuevo: la continuidad, el ordenado con `/aether:tidy` y las skills; **no nombran `/aether:onboard`**: solo el changelog y `docs/decisions.md` lo nombran, como historia, C4). `docs/guide/options.md` no cambia: no hay opciones nuevas.
 
 **Tests (write first):**
 
@@ -4334,7 +4370,7 @@ test('the guides say where things live now and what changed (R43)', () => {
   const autonomy = read('docs/guide/autonomy.md')
   assert.ok(autonomy.includes('`skill-install`') && autonomy.includes('`aether-autonomy trust`'))
   assert.ok(read('docs/guide/design-seats.md').includes('.aether/exam/'))
-  for (const rel of ['docs/what-aether-adds.md', 'docs/es/que-agrega-aether.md']) assert.ok(read(rel).includes('/aether:tidy'), rel)
+  for (const rel of ['docs/what-aether-adds.md', 'docs/es/que-agrega-aether.md']) assert.ok(read(rel).includes('/aether:tidy') && !/onboard/i.test(read(rel)), rel)
 })
 
 test('no page gives the old folders as the place to use (R15, R43)', () => {
@@ -4436,3 +4472,136 @@ test('the changelog says that /aether:onboard was retired and why, and keeps the
 - `npm test`, `npm run test:mod`, `npm run validate` y `npm run check` completos pasan.
 - La versión es 0.35.0 en `plugin.json`, `tests/launcher.test.js`, `README.md`, `docs/changelog.md`, `docs/roadmap.md`, `site/index.html`, `tests/codex-release.test.js` y `tests/docs-facts.test.js`; `grep -rn "0\.34\.0"` solo la deja en el changelog, en el historial y en los documentos de `specs/` y `docs/handoff/`.
 - El changelog dice que `/aether:onboard` se retiró y por qué.
+
+---
+
+### Task 40: Mover las copias de lanes a `.aether/worktrees/lanes/` y barrerlas en los dos lugares
+
+**Aether:**
+- Area: layout
+- Owns: `plugins/aether/lib/worktrees.js`, `plugins/aether/lib/lane-work.js`, `tests/layout-lanes.test.js`, `tests/lane-work.test.js`, `tests/worktrees-cleanup.test.js`, `tests/wt-sweep.test.js`
+- Depends on: Task 12 — comparten `lib/worktrees.js`, `lib/lane-work.js` y `tests/lane-work.test.js`, y usa `run.laneCopiesDir`
+- Serves: R15
+
+**Interfaces:**
+
+- `lib/worktrees.js`: `laneCopiesRoot(mainRoot)` pasa a `run.laneCopiesDir(mainRoot)` (`.aether/worktrees/lanes`); `sweepStale` y `sweepRun` hallan y barren las copias de lanes del lugar nuevo y también las del viejo `.aether/lanes/<run>` (se lee el viejo, se escribe solo el nuevo); una copia bajo `worktrees/lanes/` o `worktrees/exams/` no se cuenta como copia de unidad (`lanes` y `exams` no son ids de run, y `aetherWorktrees` y el barrido de ids las ignoran).
+- `lib/lane-work.js`: `readerDir(mainRoot, runId, call)` es `<raíz>/.aether/worktrees/lanes/<run>/<call>`.
+- Las pruebas de `Owns` que nombran `.aether/lanes` (`tests/worktrees-cleanup.test.js:285-286` y `:317`, `tests/lane-work.test.js:166`, `tests/wt-sweep.test.js`) se actualizan al lugar nuevo, y una comprueba además el viejo.
+
+**Tests (write first):**
+
+`tests/layout-lanes.test.js`:
+
+```js
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { makeRepo, compile, commitIn, tempDir } = require('./helpers.js')
+const { task, plan } = require('./plan-fixtures.js')
+const { ensure, diffPackage, sweepStale } = require('../plugins/aether/lib/worktrees.js')
+const work = require('../plugins/aether/lib/lane-work.js')
+
+test('the copy of a read-only lane lives under .aether/worktrees/lanes/<run>/<call> (R15)', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1').path
+  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'add a')
+  diffPackage(repo.dir, args.runId, 'task-1')
+  const copy = work.prepareReader(repo.dir, args.runId, 'task-1-1-supervise', { taskId: 'task-1' })
+  assert.equal(copy.workdir, path.join(repo.dir, '.aether', 'worktrees', 'lanes', args.runId, 'task-1-1-supervise'))
+  assert.equal(copy.workdir, work.readerDir(repo.dir, args.runId, 'task-1-1-supervise'))
+  assert.equal(work.removeReader(repo.dir, args.runId, 'task-1-1-supervise'), true)
+  assert.equal(fs.existsSync(copy.workdir), false)
+})
+
+test('sweepStale finds a lane copy left in the old .aether/lanes folder and one in the new place, and removes both (R15, R19)', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1').path
+  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'add a')
+  diffPackage(repo.dir, args.runId, 'task-1')
+  const call = work.prepareReader(repo.dir, args.runId, 'task-1-1-supervise', { taskId: 'task-1' })
+  const old = path.join(repo.dir, '.aether', 'lanes', args.runId, 'task-1-9-leftover')
+  fs.mkdirSync(old, { recursive: true })
+  fs.writeFileSync(path.join(old, 'junk.txt'), 'x')
+  const aged = new Date(Date.now() - 48 * 3600 * 1000)
+  for (const dir of [args.runDir, path.join(repo.dir, '.aether', 'worktrees', args.runId), path.join(repo.dir, '.aether', 'lanes', args.runId), old, call.workdir]) {
+    for (const entry of fs.readdirSync(dir, { recursive: true })) try { fs.utimesSync(path.join(dir, entry), aged, aged) } catch { /* a link that is gone */ }
+    fs.utimesSync(dir, aged, aged)
+  }
+  sweepStale(repo.dir, { dataDir: tempDir(t, 'aether-stamp-'), now: Date.now() })
+  assert.equal(fs.existsSync(old), false)
+  assert.equal(fs.existsSync(call.workdir), false)
+})
+```
+
+**Acceptance:**
+
+- `node --test tests/layout-lanes.test.js` pasa y `npm test` completo pasa.
+- Con el estado viejo en disco (`.aether/lanes/<run>/…`), el código nuevo lo lee y lo barre; solo escribe en el lugar nuevo.
+
+---
+
+### Task 41: Mover el trabajo de seats y delegados y el mensaje de una ronda a su lugar nuevo
+
+**Aether:**
+- Area: layout
+- Owns: `plugins/aether/lib/seats.js`, `plugins/aether/lib/seat-calls.js`, `plugins/aether/lib/delegate-calls.js`, `plugins/aether/lib/lane-command.js`, `plugins/aether/workflows/design.workflow.js`, `plugins/aether/hooks/ops-command.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/ops.test.ts`, `tests/layout-work.test.js`, `tests/seats.test.js`, `tests/seat-calls.test.js`, `tests/seat-partial.test.js`, `tests/ops-command-design.test.js`, `tests/workflow-design.test.js`, `tests/delegate-calls.test.js`, `tests/delegate-chain.test.js`
+- Depends on: Task 13 — comparten `lib/seats.js`, `workflows/design.workflow.js` y sus pruebas, y el examen ya está en su lugar
+- Depends on: Task 12 — usa `run.workDir` que esa tarea define
+- Serves: R15
+
+**Interfaces:**
+
+- `lib/seats.js` (`runRound`): el trabajo de una ronda va en `run.workDir(mainRoot, 'seats', id)` (con su copia `wt`).
+- `lib/delegate-calls.js`: el trabajo de un delegado va en `run.workDir(mainRoot, 'delegates', id)`; `TMP_DIR` es `'.aether/tmp/'`.
+- `lib/seat-calls.js`: `messageFile(top, session)` es `<top>/.aether/tmp/seats/<session>/message.md`; `workflows/design.workflow.js`: `MESSAGE_PATH` bajo `.aether/tmp/seats/…`.
+- `hooks/ops-command.mjs`: `PAYLOAD_PATH` acepta `…/.aether/tmp/seats/<…>/message.md` y también la ruta vieja `…/.aether-tmp/seats/<…>/message.md`; el resto de lo que acepta no cambia. `hooks/register.js` y `lib/lane-command.js` actualizan sus comentarios.
+- Las pruebas de `Owns` que nombran `.aether-tmp/seats`, `.aether/seats` o `.aether/delegates` se actualizan al lugar nuevo, sin perder lo que comprueban; `hooks/ops.test.ts` gana el caso de la ruta nueva y conserva el de la vieja.
+
+**Tests (write first):**
+
+`tests/layout-work.test.js`:
+
+```js
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { pathToFileURL } = require('node:url')
+const { PLUGIN } = require('./helpers.js')
+const seatCalls = require('../plugins/aether/lib/seat-calls.js')
+
+test('the message of a design round is inside .aether/tmp/ (R15)', () => {
+  assert.equal(seatCalls.messageFile('/repo', 'sess-1'), path.join('/repo', '.aether', 'tmp', 'seats', 'sess-1', 'message.md'))
+  const design = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
+  assert.ok(design.includes('.aether/tmp/seats/') && !design.includes('.aether-tmp/seats'))
+})
+
+test('the mod accepts the message of a round in the new place and in the old one, and nothing else changes (R15, R19)', async () => {
+  const { PAYLOAD_PATH } = await import(pathToFileURL(path.join(PLUGIN, 'hooks', 'ops-command.mjs')).href)
+  const SESSION = 'abc-123'
+  assert.ok(PAYLOAD_PATH.test(`/repo/.aether/tmp/seats/${SESSION}/message.md`))
+  assert.ok(PAYLOAD_PATH.test(`/repo/.aether-tmp/seats/${SESSION}/message.md`))
+  assert.ok(!PAYLOAD_PATH.test(`/repo/.aether/tmp/seats/${SESSION}/other.md`))
+  assert.ok(!PAYLOAD_PATH.test('/repo/.aether/tmp/x/message.md'))
+})
+
+test('the work of a round and of a delegate is named in .aether/work/ and no code writes the old seats and delegates folders (R15)', () => {
+  const lib = path.join(PLUGIN, 'lib')
+  for (const file of ['seats.js', 'delegate-calls.js']) {
+    const text = fs.readFileSync(path.join(lib, file), 'utf8')
+    assert.ok(/workDir\(/.test(text), `${file} uses run.workDir`)
+    assert.ok(!/aetherDir\(mainRoot\), '(seats|delegates)'/.test(text), `${file} no longer builds the old folder`)
+  }
+})
+```
+
+**Acceptance:**
+
+- `node --test tests/layout-work.test.js` pasa; `npm test` y `npm run test:mod` completos pasan.
+- Ninguna ruta de seats, delegados o mensajes queda escrita en `.aether/seats`, `.aether/delegates` ni `.aether-tmp/` por código nuevo (solo se leen los lugares viejos).
