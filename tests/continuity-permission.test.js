@@ -210,3 +210,48 @@ test('outside git uses cwd, while a git execution error fails closed', (t) => {
   assert.equal(eperm.status, 0)
   assert.equal(eperm.stdout.trim(), 'false')
 })
+
+test('project Claude aliases cannot grant outside or personal descendants', (t) => {
+  const w = world(t)
+  const stranger = makeRepo(t)
+  const personal = path.join(w.home, '.claude', 'plugins', 'cache', 'vendor')
+  fs.mkdirSync(personal, { recursive: true })
+  fs.mkdirSync(path.join(stranger.dir, '.claude'), { recursive: true })
+  fs.rmSync(w.claude, { recursive: true })
+  for (const target of [personal, path.join(stranger.dir, '.claude')]) {
+    fs.symlinkSync(target, w.claude)
+    assert.equal(permission(input(w, '.claude/skills/x.md'), { home: w.home }), false)
+    fs.unlinkSync(w.claude)
+  }
+})
+
+test('symlinked project root preserves classification including symlinked settings', (t) => {
+  const w = world(t)
+  const alias = path.join(tempDir(t, 'aether-root-alias-'), 'repo')
+  fs.symlinkSync(w.repo.dir, alias)
+  fs.unlinkSync(path.join(w.claude, 'settings.json'))
+  fs.symlinkSync(path.join(w.outside, 'settings.json'), path.join(w.claude, 'settings.json'))
+  assert.equal(classifyClaudePath('.claude/rules/a.md', { cwd: alias, home: w.home }).kind, 'rules')
+  assert.equal(classifyClaudePath('.claude/settings.json', { cwd: alias, home: w.home }).kind, 'config')
+})
+
+test('in-project skills and rules folder links allow only their resolved contents', (t) => {
+  const w = world(t)
+  for (const folder of ['skills', 'rules']) {
+    const dir = path.join(w.claude, folder)
+    fs.rmSync(dir, { recursive: true })
+    fs.mkdirSync(path.join(w.claude, `shared-${folder}`))
+    fs.symlinkSync(`shared-${folder}`, dir)
+    assert.equal(kind(w, `${dir}/new.md`), folder)
+    assert.equal(permission(input(w, `${dir}/new.md`), { home: w.home }), true)
+  }
+})
+
+test('localized non-Git errors fall back to cwd, while Git failures fail closed', (t) => {
+  const w = world(t)
+  const outside = tempDir(t, 'aether-nongit-local-')
+  const script = `const cp = require('node:child_process'); const original = cp.spawnSync; cp.spawnSync = (...args) => { const r = original(...args); if (r.status === 128) r.stderr = 'fatal: localized error'; return r }; const { permission } = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'continuity-permission.js'))}); console.log(permission({tool_name:'Write', cwd:process.argv[1], tool_input:{file_path:'.claude/rules/a.md'}}, {}))`
+  const result = spawnSync(process.execPath, ['-e', script, outside], { encoding: 'utf8', env: { ...process.env, HOME: w.home } })
+  assert.equal(result.status, 0)
+  assert.equal(result.stdout.trim(), 'true')
+})
