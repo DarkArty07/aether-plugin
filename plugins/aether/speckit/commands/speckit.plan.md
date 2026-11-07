@@ -17,6 +17,7 @@ Never stop to ask. Where a choice is open, pick a reasonable default and record 
 2. **Load the context:**
    - `.specify/memory/constitution.md`, when it exists;
    - `<folder>/spec.md`. Do not change the spec. If it is wrong, say so under Risks.
+   - `<folder>/art-direction.md`, when it exists.
 
 3. Write `<folder>/plan.md` in this order, in the language of the spec:
    - `## Technical context`: the stack, the dependencies and the project structure.

@@ -23,6 +23,8 @@ const EXCLUDED = {
   'using-aether': 'the Lead\'s bootstrap, injected at session start; nobody invokes it',
   swarm: 'the Lead loads it itself when it runs the swarm',
   'autonomous-runs': 'the Lead loads it itself when the owner gives permission to work for hours',
+  skills: 'the Lead loads it itself; nobody invokes it by name',
+  'art-direction': 'the Writer loads it itself; nobody invokes it by name',
   help: 'this skill itself',
   'first-setup': 'being renamed to setup, which the help names; if the directory is gone, this entry is harmless',
 }
@@ -75,7 +77,7 @@ test('the help names every skill the person invokes as /aether:<name>', () => {
   // The ones that other tasks of spec 024 write are named even if their directory is not there yet.
   for (const name of REQUIRED) assert.ok(names(`/aether:${name}`), `the help names /aether:${name}`)
   // The excluded ones are not offered to the person as commands.
-  for (const name of ['using-aether', 'swarm', 'autonomous-runs']) assert.ok(!names(`/aether:${name}`), `the help does not offer /aether:${name}`)
+  for (const name of ['using-aether', 'swarm', 'autonomous-runs', 'skills', 'art-direction']) assert.ok(!names(`/aether:${name}`), `the help does not offer /aether:${name}`)
 })
 
 test('the help names every workflow as /aether:<name>, and the panels /harnesses and /spend', () => {
