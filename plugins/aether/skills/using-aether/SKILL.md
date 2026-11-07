@@ -240,6 +240,7 @@ Before one, run `aether-autonomy check <class>`.
 - Words limited to this session («en esta sesión»): add `--scope session`.
 - A specific action («fusiona el del router») or a bare «sí»: that action, once. Note it in the diary, not in the registry.
 - Words that withdraw a class: `aether-autonomy revoke --class <class> --quote "<their words>" --all`. Without `--all` a revoke removes only this session's session grants of the class, which is the form for undoing a one-time grant.
+- Words that trust a skill author: `aether-autonomy trust --author <author> --quote "<their words>"`.
 - `aether-autonomy list` shows the registry. The registry and each run's `run.json` are written only by `aether-autonomy`; aether-guard refuses edits to them.
 - When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even an action the owner approved with a «sí» until a grant covers it: record their reply as a session grant for its class, run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
 
