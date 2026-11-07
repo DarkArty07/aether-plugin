@@ -77,7 +77,7 @@ El Lead le propuso estas doce conductas, cada una con el hook que la hace cumpli
 
 - **¿De dónde se bajan?** De skills.sh: instala, guarda fuente y huella, y tiene búsqueda y auditorías parciales. VoltAgent sirve como lista de autores; SkillsMP queda para después (cita 7 y la comparación que el dueño aprobó).
 - **¿Quién busca y baja?** Solo el Lead; los agentes pueden proponer.
-- **¿Lista de confianza inicial?** *Supuesto del Lead:* Anthropic (`anthropics`) y Vercel (`vercel-labs`). El dueño agrega más.
+- **¿Lista de confianza inicial?** *Supuesto del Lead, tras la revisión del Judge:* empieza vacía, porque los autores eran ejemplos y elegirlos es decisión de seguridad del dueño; hasta que él apruebe autores, toda bajada espera su sí. El brief le pide aprobar Anthropic (`anthropics`) y Vercel (`vercel-labs`) con el comando exacto.
 - **¿Las skills de los agentes son por tarea o fijas?** El Lead decide por tarea; si una sirve a todas las tareas de un rol en un proyecto, lo anota como regla del proyecto (cita 11).
 - **¿Dónde vive la continuidad?** En la memoria de Claude, `memory/continuity/`, fuera del índice; el dueño preguntó «sobre la contuidad es un archivo de memoria no?» y aprobó la propuesta.
 - **¿`.aether` y `.claude` se juntan?** No: `.claude` es de Claude Code, está protegida y casi todo va a git; `.aether` es estado local de Aether.
