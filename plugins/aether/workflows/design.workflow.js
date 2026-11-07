@@ -153,7 +153,7 @@ const EXAMINER_SCHEMA = {
           id: { type: 'string', description: 'a short kebab-case name' },
           criterion: { type: 'string', description: 'the criterion or requirement of the spec it proves, such as C2 or R5' },
           command: { type: 'string', description: 'the shell command that runs this test from the repository root; exit 0 means it passes' },
-          files: { type: 'array', items: { type: 'string' }, description: 'the files it needs, relative to .aether-exam/' },
+          files: { type: 'array', items: { type: 'string' }, description: 'the files it needs, relative to .aether/exam/' },
         },
       },
     },
@@ -351,7 +351,7 @@ function judgeText(result) {
 // in a disposable worktree of its own.
 function nativeLines(seat) {
   const lines = [`Your checkout is ${repoRoot}: the paths above are relative to it.`]
-  if (seat === 'examiner') lines.push(`Write the exam under ${repoRoot}/.aether-exam/ and nothing else.`)
+  if (seat === 'examiner') lines.push(`Write the exam under ${repoRoot}/.aether/exam/ and nothing else.`)
   return lines.join('\n')
 }
 
@@ -387,13 +387,13 @@ function partialForNative(files) {
 }
 
 // The Examiner's partial is paths and a folder, never the text of the exam. Accepted only when every path is under
-// .aether-exam/ and the folder is absolute, and neither walks up with '..'. An empty list clears the partial.
+// .aether/exam/ or the legacy .aether-exam/ and the folder is absolute, and neither walks up with '..'. An empty list clears the partial.
 function acceptExamPartial(paths, dir) {
   if (!Array.isArray(paths)) return { named: false }
   if (paths.length === 0) return { named: true, value: null }
   const inside = (part) => typeof part === 'string' && part !== '' && !part.split('/').includes('..')
   const validDir = inside(dir) && dir.startsWith('/')
-  const validPaths = paths.every((filePath) => inside(filePath) && filePath.startsWith('.aether-exam/'))
+  const validPaths = paths.every((filePath) => inside(filePath) && (filePath.startsWith('.aether/exam/') || filePath.startsWith('.aether-exam/')))
   if (!validDir || !validPaths) return { named: false }
   return { named: true, value: { partialPaths: paths.slice(), partialDir: dir } }
 }

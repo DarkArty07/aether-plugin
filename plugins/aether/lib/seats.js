@@ -25,7 +25,7 @@ const PLUGIN_BIN = path.join(__dirname, '..', 'bin')
 const SKILLS_DIR = path.join(__dirname, '..', 'skills')
 const KILL_GRACE_SECONDS = 60
 const MAX_FINDINGS = 10
-const EXAM_DIR = '.aether-exam'
+const EXAM_DIR = '.aether/exam'
 // What the next Writer is told when its worktree already holds an earlier pair's partial. The guide quotes this line.
 const CONTINUATION_LINE = 'An earlier writer began this round. Its partial document is in the worktree. It may be incomplete or wrong. Continue from it after checking it against the intent.'
 // What the next Examiner is told when its worktree already holds an earlier pair's tests. The design quotes this line.
@@ -370,7 +370,7 @@ function regularFiles(dir, relRoot) {
   return out.sort()
 }
 
-// Every regular file the Examiner may write, relative to the worktree. Nothing outside .aether-exam/.
+// Every regular file the Examiner may write, relative to the worktree. Nothing outside .aether/exam/.
 function examFiles(worktree) {
   return regularFiles(path.join(worktree, EXAM_DIR), EXAM_DIR)
 }
@@ -432,7 +432,7 @@ function loadExamOffer(dataDir, mainRoot, session, feature, digest) {
   return files
 }
 
-// The files the seat may write, as they are now: the Writer's documents, or every regular file under .aether-exam/.
+// The files the seat may write, as they are now: the Writer's documents, or every regular file under .aether/exam/.
 function seatSnapshot(worktree, seat, feature, doc) {
   const rels = seat === 'writer' ? documentPaths(feature, doc) : seat === 'examiner' ? examFiles(worktree) : []
   const allowed = allowedFor(seat, feature, doc)
@@ -466,7 +466,7 @@ function changedAge(worktree, baseline, seat, feature, doc, at) {
   return Math.max(0, at - newest)
 }
 
-// Every non-empty regular file under .aether-exam/. A carried file this try did not touch is kept too:
+// Every non-empty regular file under .aether/exam/. A carried file this try did not touch is kept too:
 // the applied offer is already in the baseline, and dropping it would replace the offer with only what
 // this try rewrote. The baseline is for changedMs. textInside keeps the inside-the-root checks: a regular
 // file inside the worktree, not a symlink and not an empty file.
@@ -1208,7 +1208,7 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   const exclude = excludeList(opts.exclude)
   const cwd = path.resolve(callerCwd, opts.cwd ?? '.')
   const { worktree: top, mainRoot, gitCommonDir } = repoPaths(cwd)
-  // Before any answer: a native Examiner writes its exam under .aether-exam/ in this checkout, and git must not see it.
+  // Before any answer: a native Examiner writes its exam under .aether/exam/ in this checkout, and git must not see it.
   run.ensureExcluded(gitCommonDir)
   const session = opts.session
   const dataDir = run.dataDir(env)

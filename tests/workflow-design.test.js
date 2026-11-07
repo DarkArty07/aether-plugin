@@ -32,7 +32,7 @@ const SPEC_ANSWER = { spec: `${FEATURE}/spec.md`, commit: 'c1', clarify: [], ass
 const PLAN_ANSWER = { plan: `${FEATURE}/plan.md`, tasks: `${FEATURE}/tasks.md`, commit: 'c2', check: '{"ok":true}', complexity: '| Violation | Why needed | Simpler alternative rejected because |', assumptions: [], questions: [], disagreements: [] }
 const APPROVE = { verdict: 'approve', findings: [], openQuestions: [] }
 const finding = (title) => ({ severity: 'major', type: 'wrong', title, evidence: '`R1`', fix: `fix ${title}` })
-const EXAM = { tests: [{ id: 'c1', criterion: 'C1', command: 'node --test .aether-exam/c1.test.js', files: ['c1.test.js'] }], notes: 'none' }
+const EXAM = { tests: [{ id: 'c1', criterion: 'C1', command: 'node --test .aether/exam/c1.test.js', files: ['c1.test.js'] }], notes: 'none' }
 const CHECK_OK = { ok: true, tasks: 3, waves: [['task-1', 'task-2', 'task-3']], warnings: [] }
 const nativeSeat = (seat) => ({ unavailable: 'no-external', seat, native: { ...seats.NATIVE[seat] }, tried: [] })
 const handedBack = (seat) => ({ done: true, exitCode: 3, value: nativeSeat(seat) })
@@ -306,7 +306,7 @@ test('the messages carry what each seat needs, and the scope instruction reaches
   assert.ok(prompt('exam: examiner').includes(`${FEATURE}/intent.md`) && prompt('exam: examiner').includes(`${FEATURE}/plan.md`))
   ruleIsInBody(run, 'exam: examiner', 'examiner', ['**Never read `tasks.md`**', 'Do not commit'])
   assert.equal(prompt('exam: examiner').includes('tasks.md'), false, 'the Examiner is not pointed at tasks.md')
-  assert.ok(prompt('exam: examiner').includes('Write the exam under /repo/.aether-exam/ and nothing else.'))
+  assert.ok(prompt('exam: examiner').includes('Write the exam under /repo/.aether/exam/ and nothing else.'))
   assert.ok(prompt('spec: writer write').includes('Your checkout is /repo: the paths above are relative to it.'))
 })
 
@@ -1337,7 +1337,7 @@ test('issue 103: each seat cut by the workflow goes to the native agent with no 
 
 test('issue 103: an Examiner partial reaches the native Examiner as a folder and paths, and the exam text is nowhere else', async () => {
   const dir = '/data/exam-carry/repo/sess-1/007-demo'
-  const paths = ['.aether-exam/c1.test.js', '.aether-exam/nested/c2.test.js']
+  const paths = ['.aether/exam/c1.test.js', '.aether/exam/nested/c2.test.js']
   const leaked = (value) => {
     const reply = { ...value }
     reply.examText = EXAM_SECRET
@@ -1391,6 +1391,24 @@ test('issue 103: an Examiner partial reaches the native Examiner as a folder and
   const rejectedNative = rejected.calls.find((call) => call.label === 'exam: examiner')
   assert.equal(rejectedNative.prompt.includes(EXAMINER_LINE), false)
   assert.equal(rejectedNative.prompt.includes('secret.test.js'), false)
+})
+
+test('an Examiner legacy partial path reaches the native Examiner', async () => {
+  const dir = '/data/exam-carry/repo/sess-1/007-demo'
+  const paths = ['.aether-exam/c1.test.js']
+  const timed = (id) => {
+    const reply = failedWait('examiner', id, AGY)
+    reply.value.timedOut = true
+    reply.value.partialPaths = paths
+    reply.value.partialDir = dir
+    return reply
+  }
+  const result = await go(ON, { ops: scripted(EXAMINER, [timed]) })
+  assert.equal(result.error, null, result.error && result.error.stack)
+  const native = result.calls.find((call) => call.label === 'exam: examiner')
+  assert.ok(native.prompt.includes(`${EXAMINER_LINE} ${dir}:`))
+  assert.ok(native.prompt.includes(paths[0]))
+  assert.ok(native.prompt.includes('Read them there.'))
 })
 
 test('issue 103: times holds each stage, complete is false when the last stage ended native, and null when no reply is dated', async () => {

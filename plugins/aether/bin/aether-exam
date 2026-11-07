@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-exam store <specs/NNN-topic> [--from <dir>]   keeps an exam (default: .aether-exam/ of this
+// aether-exam store <specs/NNN-topic> [--from <dir>]   keeps an exam (default: .aether/exam/ of this
 //                                                        checkout, which is removed once it is kept)
 // aether-exam run <specs/NNN-topic> [--ref <commit>]    runs it on a commit (default: HEAD) in a disposable
 //                                                        worktree; ok is false when a test failed twice
@@ -10,10 +10,9 @@
 
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
-const { repoPaths } = require(path.join(lib, 'git.js'))
 const exam = require(path.join(lib, 'exam.js'))
 
-const USAGE = 'usage: aether-exam store <specs/NNN-topic> [--from <dir>] | run <specs/NNN-topic> [--ref <commit>]'
+const USAGE = 'usage: aether-exam store <specs/NNN-topic> [--from <dir> (default: .aether/exam/)] | run <specs/NNN-topic> [--ref <commit>]'
 
 function value(args, flag) {
   const i = args.indexOf(flag)
@@ -29,10 +28,8 @@ function main(argv) {
   if (!['store', 'run'].includes(verb) || !feature || feature.startsWith('--')) throw new Error(USAGE)
   const normalized = feature.replace(/\/+$/, '')
   if (verb === 'store') {
-    const { worktree, mainRoot } = repoPaths(cwd)
     const from = value(rest, '--from')
-    const source = from === null ? path.join(worktree, exam.EXAM_DIR) : path.resolve(cwd, from)
-    return exam.store(mainRoot, normalized, source, { move: from === null })
+    return exam.storeCheckout(cwd, normalized, from)
   }
   return exam.runExam(cwd, normalized, { ref: value(rest, '--ref') ?? 'HEAD' })
 }

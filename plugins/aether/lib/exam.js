@@ -11,7 +11,7 @@ const { runShell } = require('./common.js')
 const run = require('./run.js')
 const { EXAMINER_SCHEMA, validate } = require('./lane-schemas.js')
 
-const EXAM_DIR = '.aether-exam'
+const EXAM_DIR = '.aether/exam'
 const EXAM_FILE = 'exam.json'
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const TEST_TIMEOUT_SECONDS = 600
@@ -78,6 +78,16 @@ function store(mainRoot, feature, from, { dataDir = run.dataDir(), move = false 
   return { feature, dir, tests: exam.tests.length }
 }
 
+// Resolves the checkout's exam source, retaining the old folder as a fallback.
+function storeCheckout(cwd, feature, from = null) {
+  const { worktree, mainRoot } = repoPaths(cwd)
+  const current = path.join(worktree, EXAM_DIR)
+  const source = from === null
+    ? (fs.existsSync(current) ? current : path.join(worktree, '.aether-exam'))
+    : path.resolve(cwd, from)
+  return store(mainRoot, feature, source, { move: from === null })
+}
+
 // An exam is stored, so no session still needs the Examiner's offer of this feature.
 function clearExamCarry(dataDir, mainRoot, feature) {
   const root = path.join(dataDir, 'exam-carry', repoKey(mainRoot))
@@ -120,7 +130,7 @@ function runTest(command, cwd, timeoutSeconds) {
   return { exitCode: r.status, timedOut, output: tail(`${r.stdout || ''}${r.stderr || ''}`) }
 }
 
-// Runs feature's exam on ref, in a disposable worktree that gets the exam's files under .aether-exam/.
+// Runs feature's exam on ref, in a disposable worktree that gets the exam's files under .aether/exam/.
 // Every test runs; one that fails runs once more. ok is true when no test failed.
 function runExam(cwd, feature, { ref = 'HEAD', dataDir = run.dataDir(), timeoutSeconds = TEST_TIMEOUT_SECONDS } = {}) {
   const { mainRoot, gitCommonDir } = repoPaths(cwd)
@@ -130,12 +140,16 @@ function runExam(cwd, feature, { ref = 'HEAD', dataDir = run.dataDir(), timeoutS
   const commit = git(['rev-parse', '--verify', `${ref}^{commit}`], cwd, { allowFail: true })
   if (commit.status !== 0) throw new Error(`${ref} is not a commit`)
   run.ensureExcluded(gitCommonDir)
-  const worktree = path.join(run.aetherDir(mainRoot), 'exams', `${path.basename(feature)}-${run.newRunId()}`)
+  const worktree = path.join(run.examCopiesDir(mainRoot), `${path.basename(feature)}-${run.newRunId()}`)
   fs.mkdirSync(path.dirname(worktree), { recursive: true })
   git(['worktree', 'add', '-q', '--detach', worktree, commit.stdout], cwd)
   try {
     const target = path.join(worktree, EXAM_DIR)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.cpSync(dir, target, { recursive: true })
+    if (exam.tests.some((t) => t.command.includes('.aether-exam/'))) {
+      fs.cpSync(dir, path.join(worktree, '.aether-exam'), { recursive: true })
+    }
     const tests = []
     for (const t of exam.tests) {
       const first = runTest(t.command, worktree, timeoutSeconds)
@@ -159,4 +173,4 @@ function runExam(cwd, feature, { ref = 'HEAD', dataDir = run.dataDir(), timeoutS
   }
 }
 
-module.exports = { EXAM_DIR, EXAM_FILE, repoKey, examDir, examProblem, store, list, runExam }
+module.exports = { EXAM_DIR, EXAM_FILE, repoKey, examDir, examProblem, store, storeCheckout, list, runExam }
