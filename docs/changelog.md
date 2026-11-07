@@ -8,6 +8,16 @@ order: 31
 
 ## Status
 
+Version 0.35.0: skills with a place and a rule, an ordered tree of files for Aether's own state, a note of continuity between sessions, and the order of existing projects (issues 125 and 186, decisions A111 to A116). What changed since 0.34.0:
+- **Session continuity (decision A111).** The `Stop`, `PreCompact`, `PostCompact`, `StopFailure` and `SessionEnd` hooks of `aether-continuity` record the session's continuity note under `memory/continuity/` outside the index; the owner sees a 3- to 5-line startup notice telling where work was left, what changed and how to resume; old notes and merged work notes are automatically pruned.
+- **Ordered `.aether/` layout and project seal (issue 186, decision A112).** A new layout for `.aether/` with its map in `.aether/README.md`, an automatic migration that loses no work, and a project seal that isolates runs and worktrees per project.
+- **Skill and rule permission guard (decision A115).** A permission hook for `.claude/skills/` and `.claude/rules/` that rejects writes to configuration (`settings.json`) and hooks.
+- **Skill classes and trusted authors (decision A113).** Four classes of skills, the irreversible `skill-install` class, and a trusted authors list managed via `aether-autonomy trust`.
+- **Task skills (decision A114).** Tasks declare their required skills (`Skills:` and `AETHER-SKILLS:`), compiled into `uses.jsonl` with a limit of at most 3 skills.
+- **Skills tools (decisions A114 and A116).** Added `aether:skills`, `aether:art-direction` and `aether:tidy`.
+- **Harness context.** `AGENTS.md` is passed in calls to other harnesses.
+- **Retirement of `/aether:onboard` (decision A116).** `/aether:onboard` was retired: the automatic note does what it did; to go deeper, the owner can ask the Lead with words.
+
 Version 0.34.0: a design seat that is still writing is not cut, a cut round goes straight to the native agent with what was written, the Examiner's partial tests are kept, and small fixes keep the owner's words (issues 103 and 50, decisions A110 and A109). What changed since 0.33.0:
 - **Design seats (issue 103, decision A110).** In `/aether:design`, a Writer or an Examiner round on an external pair is no longer stopped at a total time cap: once it has written, it is stopped only after 10 minutes with no change to what it may write, which `aether-lane seat-wait` reports as `changedMs`, measured against a baseline written after the checkout. Before its first write the Writer keeps its old cap (10 minutes for a spec, 25 for a plan) and the Examiner gets 25 minutes. A Judge keeps its total cap. A round the workflow stopped, or one killed by the lane's hard timeout (`timedOut`, also when the harness times itself out, as agy does), goes straight to the native agent with what was written, instead of trying another external pair that can be cut again.
 - **The Examiner's work (issue 103).** The tests an Examiner wrote before its round was cut or failed now travel to the next try, as the Writer's partial does. They are kept only under `<data dir>/exam-carry/`, never as text in a reply or under `.aether/`, so the exam stays hidden from the swarm; `aether-exam store` clears them once the exam is stored.
