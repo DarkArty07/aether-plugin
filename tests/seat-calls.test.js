@@ -37,7 +37,7 @@ function seatRepo(t) {
 
 // What the mod does before seat-start: it saves the message where the bin looks for it. Returns the digest.
 function writeMessage(repo, text, session = 's1') {
-  const dir = path.join(repo.dir, '.aether-tmp', 'seats', session)
+  const dir = path.join(repo.dir, '.aether', 'tmp', 'seats', session)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'message.md'), text)
   return lanes.digest(text)
@@ -113,10 +113,10 @@ test('seat-wait answers { done: false } while a round runs, and seat-stop ends i
   const env = modEnv(t, grantOpusSeats)
   const started = start(repo, env, 'judge', `Review.\nFAKE-AGY: sleep 30\nFAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`)
   const id = started.json.id
-  const worktree = path.join(repo.dir, '.aether', 'seats', id, 'wt')
+  const worktree = path.join(repo.dir, '.aether', 'work', 'seats', id, 'wt')
   assert.ok(await until(() => fs.existsSync(worktree)), 'the round started its worktree')
   // The runner is told the options by the flags, whatever the environment of the mod holds.
-  const pid = fs.readFileSync(path.join(repo.dir, '.aether', 'seats', id, 'pid'), 'utf8').trim()
+  const pid = fs.readFileSync(path.join(repo.dir, '.aether', 'work', 'seats', id, 'pid'), 'utf8').trim()
   const runnerEnv = fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0')
   assert.ok(runnerEnv.includes('AETHER_SUPERDELEGATION=on'), 'AETHER_SUPERDELEGATION')
   assert.ok(runnerEnv.includes('AETHER_LANE_HARNESSES=agy'), 'AETHER_LANE_HARNESSES')
@@ -155,7 +155,7 @@ test('a Judge round on the shipped agy table finds no external pair at Opus high
 test('a round whose runner is dead is reported, and bad arguments are refused', (t) => {
   const repo = seatRepo(t)
   const env = modEnv(t)
-  const dir = path.join(repo.dir, '.aether', 'seats', ID)
+  const dir = path.join(repo.dir, '.aether', 'work', 'seats', ID)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'call.json'), '{}')
   fs.writeFileSync(path.join(dir, 'pid'), '999999\n')
@@ -213,7 +213,7 @@ test('seat-start refuses a malformed --exclude as a usage error and starts nothi
     assert.equal(r.status, 1, value)
     assert.match(r.json.error, /--exclude must be pair ids like agy\/model@effort/, value)
   }
-  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'seats')), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'work', 'seats')), false)
 })
 
 test('seat-start keeps the author rule when a pair is excluded', (t) => {
@@ -259,8 +259,8 @@ test('seat-wait reports changedMs null for an unchanged document, a number after
   const started = start(repo, env, 'writer', message, ['--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy'])
   assert.equal(started.status, 0, started.stdout + started.stderr)
   const id = started.json.id
-  const wt = path.join(repo.dir, '.aether', 'seats', id, 'wt')
-  const baselineFile = path.join(repo.dir, '.aether', 'seats', id, 'baseline.json')
+  const wt = path.join(repo.dir, '.aether', 'work', 'seats', id, 'wt')
+  const baselineFile = path.join(repo.dir, '.aether', 'work', 'seats', id, 'baseline.json')
   assert.ok(await until(() => fs.existsSync(baselineFile)), 'the baseline is written after the checkout')
   const baseline = JSON.parse(fs.readFileSync(baselineFile, 'utf8'))
   assert.equal(baseline.files[spec].size, fs.statSync(path.join(repo.dir, spec)).size)

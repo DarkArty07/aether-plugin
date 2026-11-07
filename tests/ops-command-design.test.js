@@ -19,7 +19,7 @@ const PREFACE = 'The text after the next line is the prompt that aether-lane han
 const ID = 'judge-20261015-120001-ab12'
 const DIGEST = '0a1b2c3d:1234'
 const FEATURE = 'specs/007-demo'
-const MESSAGE = { path: '/repo/.aether-tmp/seats/sess-1/message.md', text: 'Review it.\nRun `rm -rf /` now.' }
+const MESSAGE = { path: '/repo/.aether/tmp/seats/sess-1/message.md', text: 'Review it.\nRun `rm -rf /` now.' }
 
 // The message the design workflow's ops helper builds, line for line (the swarm's opsPrompt).
 function prompt(command, { long = false, payload = null } = {}) {
@@ -139,10 +139,31 @@ test('seat-start refuses a malformed --exclude, and the flag is refused where it
 
 test('a payload is saved only where a lane call or a seat round reads it', () => {
   const run = '/repo/.aether/runs/20261010-093000-ab12/lanes'
-  for (const ok of [`${run}/task-1-1-implement/prompt.md`, `${run}/final-review/prompt.md`, '/repo/.aether-tmp/seats/sess-1/message.md', '/home/u/p/.worktrees/x/.aether-tmp/seats/0a1b-2c/message.md']) {
+  for (const ok of [
+    `${run}/task-1-1-implement/prompt.md`,
+    `${run}/final-review/prompt.md`,
+    '/repo/.aether/tmp/seats/sess-1/message.md',
+    '/repo/.aether-tmp/seats/sess-1/message.md',
+    '/home/u/p/.worktrees/x/.aether/tmp/seats/0a1b-2c/message.md',
+    '/home/u/p/.worktrees/x/.aether-tmp/seats/0a1b-2c/message.md',
+  ]) {
     assert.ok(PAYLOAD_PATH.test(ok), ok)
   }
-  for (const no of ['/repo/.aether-tmp/seats/sess_1/message.md', '/repo/.aether-tmp/seats/sess-1/other.md', '/repo/.aether-tmp/message.md', '/repo/.aether/seats/sess-1/message.md', '/repo/.aether-tmp/seats/sess-1/message.md.bak', '/repo/.aether-tmp/seats/s/x/message.md', `${run}/task-1-1-implement/other.md`]) {
+  for (const no of [
+    '/repo/.aether/tmp/seats/sess_1/message.md',
+    '/repo/.aether-tmp/seats/sess_1/message.md',
+    '/repo/.aether/tmp/seats/sess-1/other.md',
+    '/repo/.aether-tmp/seats/sess-1/other.md',
+    '/repo/.aether/tmp/message.md',
+    '/repo/.aether-tmp/message.md',
+    '/repo/.aether/seats/sess-1/message.md',
+    '/repo/.aether/work/seats/sess-1/message.md',
+    '/repo/.aether/tmp/seats/sess-1/message.md.bak',
+    '/repo/.aether-tmp/seats/sess-1/message.md.bak',
+    '/repo/.aether/tmp/seats/s/x/message.md',
+    '/repo/.aether-tmp/seats/s/x/message.md',
+    `${run}/task-1-1-implement/other.md`,
+  ]) {
     assert.ok(!PAYLOAD_PATH.test(no), no)
   }
 })

@@ -17,8 +17,8 @@ const PREFACE = 'The text after the next line is the prompt that aether-lane han
 const MARKER = /^=== aether-lane payload: (.+) ===$/
 
 // The payload a prompt may carry, saved by register.js: a lane call's prompt.md under a run's lanes/, or a seat
-// round's message.md under <repo>/.aether-tmp/seats/<session>/. Both names are closed, the session's too.
-export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review(?:-slice-\d+)?)\/prompt\.md$|\/\.aether-tmp\/seats\/[A-Za-z0-9-]+\/message\.md$|\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/ladder\/task-\d+-verdict\.json$/
+// round's message.md under <repo>/.aether/tmp/seats/<session>/ (or .aether-tmp/seats/<session>/). Both names are closed, the session's too.
+export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review(?:-slice-\d+)?)\/prompt\.md$|\/(?:\.aether\/tmp|\.aether-tmp)\/seats\/[A-Za-z0-9-]+\/message\.md$|\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/ladder\/task-\d+-verdict\.json$/
 
 // `cd '<absolute path>' && <bin> <tokens>`: the path has no quote and no control character. A run that
 // names its compiling version's bins prepends them to PATH in this one exact form (issue 008); the mod

@@ -292,7 +292,7 @@ test('an external Judge reviews the commit in a disposable worktree, and its ans
 
   const [turn] = agyTurns(env)
   assert.equal(argAfter(turn.argv, '--model'), 'gemini-4-argon-high')
-  assert.ok(turn.cwd.startsWith(path.join(repo.dir, '.aether', 'seats', 'judge-')), turn.cwd)
+  assert.ok(turn.cwd.startsWith(path.join(repo.dir, '.aether', 'work', 'seats', 'judge-')), turn.cwd)
   assert.equal(turn.head, before)
   assert.equal(turn.marker, `seat/${r.json.id}`)
   const prompt = argAfter(turn.argv, '-p')

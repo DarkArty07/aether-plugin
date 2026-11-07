@@ -38,7 +38,7 @@ const START_FLAGS = ['seat', 'session', 'author', 'feature', 'doc', 'superdelega
 function seatPaths(cwd, id) {
   if (!SEAT_ID.test(String(id))) throw new Error(`invalid seat round id: ${id}`)
   const { mainRoot } = repoPaths(cwd)
-  const dir = path.join(run.aetherDir(mainRoot), 'seats', id)
+  const dir = run.workDir(mainRoot, 'seats', id)
   const file = (name) => path.join(dir, name)
   return {
     dir,
@@ -91,9 +91,9 @@ function checkedFlags(flags) {
   return { seat, session, author, feature, doc, superdelegation, harnesses, digest, exclude }
 }
 
-// The message the Lead saved for a round, where the mod's bins look for it: <checkout>/.aether-tmp/seats/<session>/message.md.
+// The message the Lead saved for a round, where the mod's bins look for it: <checkout>/.aether/tmp/seats/<session>/message.md.
 function messageFile(top, session) {
-  return path.join(top, '.aether-tmp', 'seats', session, 'message.md')
+  return path.join(top, '.aether', 'tmp', 'seats', session, 'message.md')
 }
 
 // Starts a round in the background. flags are the verb's flags by name, with the seat as flags.seat. The mod runs
@@ -267,4 +267,4 @@ function stop(cwd, id) {
   return out
 }
 
-module.exports = { SEAT_WAIT_SECONDS, COMMANDS, start, wait, stop, runSeat }
+module.exports = { SEAT_WAIT_SECONDS, COMMANDS, messageFile, start, wait, stop, runSeat }

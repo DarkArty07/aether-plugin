@@ -297,7 +297,7 @@ function offerDir(mainRoot, session, feature, doc) {
   if (!/^[A-Za-z0-9-]+$/.test(String(session))) return null
   if (!/^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(feature))) return null
   if (doc !== 'spec' && doc !== 'plan') return null
-  return path.join(run.aetherDir(mainRoot), 'seats', 'carry', session, feature, doc)
+  return path.join(run.workDir(mainRoot, 'seats', 'carry'), session, feature, doc)
 }
 
 // The digest of the round this partial belongs to, or null when there is none. Written last, so a save that
@@ -921,7 +921,7 @@ function logEntry(dataDir, session, entry) {
 // so the next pair can continue from it.
 async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenId, message, external, decision, config, adapter, dataDir, note = null }) {
   const id = givenId ?? `${seat}-${run.newRunId()}`
-  const dir = path.join(run.aetherDir(mainRoot), 'seats', id)
+  const dir = run.workDir(mainRoot, 'seats', id)
   const worktree = path.join(dir, 'wt')
   const marker = `seat/${id}`
   const settings = config.harnesses[external.harness]

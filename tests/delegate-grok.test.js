@@ -70,11 +70,11 @@ test('a read-only delegate runs on grok in the disposable worktree, with the sch
   assert.ok(!call.argv.some((arg) => arg.startsWith('--') && arg.includes('schema')), 'grok takes no schema file')
   assert.ok(call.prompt.includes('You run as a read-only delegate'))
   assert.ok(call.prompt.includes('"required": [\n    "answer"\n  ]'), 'the answer schema is in the prompt, since the CLI takes none')
-  assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', 'g-1', 'wt')), call.cwd)
+  assert.ok(call.cwd.endsWith(path.join('.aether', 'work', 'delegates', 'g-1', 'wt')), call.cwd)
   assert.equal(call.marker, 'delegate/g-1')
   assert.equal(s.repo.git('rev-parse', 'HEAD'), head)
   assert.equal(worktrees(s), 1, 'the disposable worktree is gone')
-  assert.equal(fs.existsSync(path.join(s.repo.dir, '.aether', 'delegates', 'g-1')), false, 'and so is the temporary directory')
+  assert.equal(fs.existsSync(path.join(s.repo.dir, '.aether', 'work', 'delegates', 'g-1')), false, 'and so is the temporary directory')
 })
 
 test('a delegate on grok that changes a file is a violation, and the change never reaches the repository (R19)', async (t) => {
@@ -85,5 +85,5 @@ test('a delegate on grok that changes a file is a violation, and the change neve
   assert.equal(out.text, '')
   assert.equal(fs.existsSync(path.join(s.repo.dir, 'notes.txt')), false)
   assert.equal(worktrees(s), 1)
-  assert.equal(fs.existsSync(path.join(s.repo.dir, '.aether', 'delegates', 'g-1')), false)
+  assert.equal(fs.existsSync(path.join(s.repo.dir, '.aether', 'work', 'delegates', 'g-1')), false)
 })

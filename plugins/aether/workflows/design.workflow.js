@@ -235,7 +235,7 @@ const PLAN = `${feature}/plan.md`
 const TASKS = `${feature}/tasks.md`
 const INTENT = `${feature}/intent.md`
 // Where the mod saves a seat round's message, for seat-start to read (lib/seat-calls.js).
-const MESSAGE_PATH = `${repoRoot}/.aether-tmp/seats/${session}/message.md`
+const MESSAGE_PATH = `${repoRoot}/.aether/tmp/seats/${session}/message.md`
 
 // Every verdict of the Judge as it was given, and every round with who took it.
 const verdicts = []

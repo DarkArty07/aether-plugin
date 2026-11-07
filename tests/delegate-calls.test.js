@@ -61,10 +61,10 @@ test('a read-only delegate runs on agy with the model of the rung, and its answe
   assert.equal(call.argv[call.argv.indexOf('--model') + 1], 'gemini-3.8-flash-medium')
   assert.equal(call.argv[call.argv.indexOf('--print-timeout') + 1], `${CLI_MAX_SECONDS}s`, 'the reviewer timeout of the table, 1200 s, is cut to the most a delegate may run')
   assert.ok(call.argv.includes('--dangerously-skip-permissions'))
-  assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', DEFAULT_ID, 'wt')))
+  assert.ok(call.cwd.endsWith(path.join('.aether', 'work', 'delegates', DEFAULT_ID, 'wt')))
   assert.equal(s.repo.git('rev-parse', 'HEAD'), head)
   assert.equal(worktrees(s), 1, 'the disposable worktree is gone')
-  assert.equal(fs.existsSync(path.join(s.repo.dir, '.aether', 'delegates', DEFAULT_ID, 'wt')), false)
+  assert.equal(fs.existsSync(path.join(s.repo.dir, '.aether', 'work', 'delegates', DEFAULT_ID, 'wt')), false)
 })
 
 test('a checkout with uncommitted work is dirty: the disposable copy would not see it, so nothing is read or launched', async (t) => {
@@ -81,7 +81,7 @@ test('a checkout with uncommitted work is dirty: the disposable copy would not s
   assert.equal(edited.modelCalls().length, 0)
   assert.equal(edited.usageCalls().length, 0, 'the check comes before the quota reading')
   assert.equal(worktrees(edited), 1)
-  assert.equal(fs.existsSync(path.join(edited.repo.dir, '.aether', 'delegates', DEFAULT_ID)), false)
+  assert.equal(fs.existsSync(path.join(edited.repo.dir, '.aether', 'work', 'delegates', DEFAULT_ID)), false)
 
   const added = setup(t)
   fs.writeFileSync(path.join(added.repo.dir, 'notes.txt'), 'new, not committed\n')
@@ -104,8 +104,8 @@ test('a checkout with uncommitted work is dirty: the disposable copy would not s
 test('a committed checkout runs; the directories Aether keeps in it, and the files git ignores, do not make it dirty', async (t) => {
   const s = setup(t)
   // Another delegate going on at the same time has its directory in .aether/; the repository does not ignore it yet.
-  fs.mkdirSync(path.join(s.repo.dir, '.aether', 'delegates', 'other'), { recursive: true })
-  fs.writeFileSync(path.join(s.repo.dir, '.aether', 'delegates', 'other', 'stdout'), 'busy\n')
+  fs.mkdirSync(path.join(s.repo.dir, '.aether', 'work', 'delegates', 'other'), { recursive: true })
+  fs.writeFileSync(path.join(s.repo.dir, '.aether', 'work', 'delegates', 'other', 'stdout'), 'busy\n')
   fs.writeFileSync(path.join(s.repo.dir, '.gitignore'), 'scratch/\n')
   s.repo.git('add', '.gitignore')
   s.repo.git('commit', '-q', '-m', 'ignore scratch')
@@ -260,7 +260,7 @@ test('a read-only delegate runs on muse with the model of the pair, and its answ
   const [call] = fs.readFileSync(process.env.AETHER_FAKE_MUSE_LOG, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
   assert.ok(call.argv.includes('muse-wonder-full-1.0'), call.argv.join(' '))
   assert.equal(call.metaApiKey, false, 'no key of the owner reaches the call')
-  assert.ok(call.cwd.endsWith(path.join('.aether', 'delegates', DEFAULT_ID, 'wt')), 'in the disposable worktree')
+  assert.ok(call.cwd.endsWith(path.join('.aether', 'work', 'delegates', DEFAULT_ID, 'wt')), 'in the disposable worktree')
   assert.equal(s.repo.git('rev-parse', 'HEAD'), head)
   assert.equal(worktrees(s), 1, 'the disposable worktree is gone')
 })
@@ -294,7 +294,7 @@ test('a read-only delegate runs on codex with the model of the pair, and its ans
   const execs = fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line)).filter((entry) => entry.kind === 'exec')
   assert.equal(execs.length, 1)
   assert.ok(execs[0].argv.includes('--model') && execs[0].argv[execs[0].argv.indexOf('--model') + 1] === 'gpt-6.1-terra', execs[0].argv.join(' '))
-  assert.ok(execs[0].cwd.endsWith(path.join('.aether', 'delegates', DEFAULT_ID, 'wt')), 'in the disposable worktree')
+  assert.ok(execs[0].cwd.endsWith(path.join('.aether', 'work', 'delegates', DEFAULT_ID, 'wt')), 'in the disposable worktree')
 })
 
 test('the id must be a plain name', async (t) => {

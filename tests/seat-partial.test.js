@@ -160,14 +160,14 @@ function scriptedCommand(t, scripts) {
 }
 
 function writeMessage(repo, text, session = 's1') {
-  const dir = path.join(repo.dir, '.aether-tmp', 'seats', session)
+  const dir = path.join(repo.dir, '.aether', 'tmp', 'seats', session)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'message.md'), text)
   return lanes.digest(text)
 }
 
 function seatDirOf(repo, id) {
-  return path.join(repo.dir, '.aether', 'seats', id)
+  return path.join(repo.dir, '.aether', 'work', 'seats', id)
 }
 
 // Kills the runner the moment `file` appears. pair.json is written before the signal handler is installed,
@@ -268,7 +268,7 @@ test('a Writer that writes part of spec.md and then fails leaves that file in th
   assert.ok(turns[1].prompt.includes(CONTINUATION), 'the next pair is told to continue from the partial')
   assert.equal(fs.readFileSync(path.join(repo.dir, SPEC), 'utf8'), ORIGINAL, 'the Lead checkout is unchanged')
   assert.equal(repo.git('status', '--porcelain'), '')
-  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'seats', first.json.id, 'wt')), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'work', 'seats', first.json.id, 'wt')), false)
 })
 
 test('a Writer that writes part of spec.md and then runs out of quota leaves that file in the next worktree (issue 68)', (t) => {
@@ -413,7 +413,7 @@ test('a failed Judge round carries nothing (issue 68)', (t) => {
   assert.equal(judge.first.json.partial, undefined)
   assert.equal(judge.first.json.continued, undefined)
   assert.equal(judge.first.json.timedOut, undefined)
-  assert.equal(fs.existsSync(path.join(judge.repo.dir, '.aether', 'seats', judge.first.json.id, 'baseline.json')), false, 'a Judge round writes no baseline')
+  assert.equal(fs.existsSync(path.join(judge.repo.dir, '.aether', 'work', 'seats', judge.first.json.id, 'baseline.json')), false, 'a Judge round writes no baseline')
   assert.equal(judge.turns.length, 1)
   assert.equal(judge.turns[0].files[SPEC], ORIGINAL)
   assert.equal(judge.turns[0].prompt.includes(CONTINUATION), false)
@@ -455,7 +455,7 @@ test('seat-wait reports whether the Writer round started from a partial, and a s
   const started = runBin(LANE_BIN, ['seat-start', 'writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, env)
   assert.equal(started.status, 0, started.stdout + started.stderr)
   const id = started.json.id
-  const spec = path.join(repo.dir, '.aether', 'seats', id, 'wt', SPEC)
+  const spec = path.join(repo.dir, '.aether', 'work', 'seats', id, 'wt', SPEC)
   const deadline = Date.now() + 20000
   while (Date.now() < deadline && !(fs.existsSync(spec) && fs.readFileSync(spec, 'utf8').includes('PARTIAL-SPEC'))) {
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -465,7 +465,7 @@ test('seat-wait reports whether the Writer round started from a partial, and a s
   assert.equal(stopped.json.stopped, true)
   assert.equal(stopped.json.continued, undefined, 'this round did not start from a partial')
   assert.deepEqual(stopped.json.partial, [{ path: SPEC, text: 'PARTIAL-SPEC\n' }])
-  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'seats', id, 'wt')), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'work', 'seats', id, 'wt')), false)
   const waited = runBin(LANE_BIN, ['seat-wait', id, '--max', '5'], repo.dir, env)
   assert.equal(waited.json.done, true)
   assert.equal(waited.json.exitCode, 1, 'a round stopped before it could write a result')

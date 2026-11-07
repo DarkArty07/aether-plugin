@@ -2,7 +2,7 @@
 // subagents' and workflow agents') with its tokens and timing, so aether-report can price a run.
 // The meter only observes: a failure in it never changes, delays past a write, or blocks a request.
 // It also saves each aether-lane payload an ops agent carries to the file its marker names (lanes spec §6.1):
-// a lane call's prompt, or a design round's message to <repo>/.aether-tmp/seats/<session>/message.md.
+// a lane call's prompt, or a design round's message to <repo>/.aether/tmp/seats/<session>/message.md (or .aether-tmp/seats/<session>/message.md).
 //
 // The mod answers an accepted ops prompt without a model (decision A30). When a workflow spawns
 // aether:ops with a prompt that ops-command.mjs accepts, the agent's first step runs that aether-wt,
