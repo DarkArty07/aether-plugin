@@ -374,7 +374,6 @@ function copyAdvice(info) {
 
 module.exports = {
   ALIASES,
-  defaultPluginRoot,
   trustedFile,
   readTrusted,
   authorOf,
