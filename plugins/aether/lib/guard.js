@@ -1218,20 +1218,107 @@ const TIDY_COMMANDS = new Set(['rm', 'mv', 'rmdir', 'unlink'])
 const TIDY_GIT_COMMANDS = new Set(['rm', 'mv'])
 const TIDY_FILES = new Set(['CLAUDE.md', 'AGENTS.md'])
 const TARGET_DIR_FLAGS = ['-t', '--target-directory']
+const XARGS_VALUED = ['-a', '-d', '-E', '-I', '-L', '-n', '-P', '-s', '--arg-file', '--delimiter',
+  '--max-lines', '--max-args', '--max-procs', '--max-chars', '--process-slot-var']
 const SKILLS_FOLDER = /(?:^|\/)\.(?:claude|agents)\/skills(?:\/|$)/
+const SKILLS_PARENT = /(?:^|\/)\.(?:claude|agents)$/
+// The arbitrary-prefix suffixes recognized by OLD_CLI_PATTERNS in tidy-detect.js.
+const OLD_CLI_SUFFIXES = ['.draft.md', '.lock']
 
 function isOldCliName(name) {
   return OLD_CLI_NAMES.includes(name) || OLD_CLI_PATTERNS.some((pattern) => pattern.test(name))
 }
 
-// Whether a path that a command names is one that aether:tidy orders removed or moved. It is read once, as one
-// normalized path, resolved from cwd when cwd is known.
+// Whether a filename glob can end with an old CLI suffix. Each leading component of the glob can be part of the
+// arbitrary prefix; a character class stays one component. This avoids relying on one invented draft or lock name.
+function oldCliPattern(name) {
+  for (let i = 0; i < name.length; i++) {
+    const re = new RegExp('^' + globPart(name.slice(i)) + '$')
+    if (OLD_CLI_SUFFIXES.some((suffix) => re.test(suffix))) return true
+    if (name[i] === '[') {
+      const close = name.indexOf(']', i + 2)
+      if (close >= 0) i = close
+    }
+  }
+  return false
+}
+
+// Whether a candidate path relative to repository root or home matches a tidy target pattern.
+function matchesTidyRelative(candidate) {
+  const parts = candidate.split('/')
+  // 1. Root tidy files: CLAUDE.md or AGENTS.md in repo root, or .claude / .agents parent
+  if (parts.length === 1) {
+    try {
+      const re = new RegExp('^' + globPart(parts[0]) + '$')
+      if (['CLAUDE.md', 'AGENTS.md', '.claude', '.agents'].some((t) => re.test(t))) return true
+    } catch { return false }
+    return false
+  }
+  // 2. Parents and skills under .claude or .agents
+  try {
+    const folderRe = new RegExp('^' + globPart(parts[0]) + '$')
+    if (['.claude', '.agents'].some((t) => folderRe.test(t))) {
+      if (parts.length === 2 && parts[1] === '*') return true
+      const skillsRe = new RegExp('^' + globPart(parts[1]) + '$')
+      if (skillsRe.test('skills')) return true
+      return false
+    }
+  } catch { return false }
+  // 3. Old CLI files directly under .aether
+  try {
+    const aetherRe = new RegExp('^' + globPart(parts[0]) + '$')
+    if (parts.length === 2 && aetherRe.test('.aether')) {
+      const fileRe = new RegExp('^' + globPart(parts[1]) + '$')
+      if (OLD_CLI_NAMES.some((name) => fileRe.test(name))) return true
+      if (oldCliPattern(parts[1])) return true
+      return false
+    }
+  } catch { return false }
+  return false
+}
+
+// Whether a path that a command names can reach one that aether:tidy orders removed or moved. Brace alternatives
+// are normalized and resolved from cwd when known; glob components use the registry's pattern matcher.
 function isTidyTarget(word, cwd, home) {
+  const alternatives = braceAlternatives(word)
+  if (alternatives.length !== 1 || alternatives[0] !== word) {
+    return alternatives.some((alternative) => isTidyTarget(alternative, cwd, home))
+  }
   const text = expandHome(word, home).replace(/\\/g, '/')
   const full = (cwd ? path.resolve(cwd, text) : path.posix.normalize(text)).split(path.sep).join('/')
   const name = path.posix.basename(full)
   const parent = path.posix.basename(path.posix.dirname(full))
-  return TIDY_FILES.has(name) || (parent === '.aether' && isOldCliName(name)) || SKILLS_FOLDER.test(full)
+  if (TIDY_FILES.has(name) || (parent === '.aether' && isOldCliName(name)) || SKILLS_FOLDER.test(full) || SKILLS_PARENT.test(full)) return true
+  if (!/[*?[{]/.test(text)) return false
+
+  const clean = text.replace(/\/+/g, '/').replace(/(^|\/)\.\//g, '$1')
+  const candidates = []
+  if (!path.posix.isAbsolute(clean)) {
+    const rel = clean.replace(/^\.\//, '')
+    candidates.push(rel)
+    if (cwd && path.posix.basename(cwd) === '.aether' && !rel.startsWith('.aether')) {
+      candidates.push(`.aether/${rel}`)
+    }
+    if (cwd && ['.claude', '.agents'].includes(path.posix.basename(cwd))) {
+      candidates.push(`${path.posix.basename(cwd)}/${rel}`)
+    }
+  } else {
+    if (cwd) {
+      const relCwd = path.posix.relative(cwd.split(path.sep).join('/'), clean)
+      if (!relCwd.startsWith('..')) candidates.push(relCwd)
+    }
+    if (home) {
+      const relHome = path.posix.relative(home.split(path.sep).join('/'), clean)
+      if (!relHome.startsWith('..')) candidates.push(relHome)
+    }
+    for (const prefix of ['.aether', '.agents', '.claude']) {
+      const idx = clean.indexOf('/' + prefix + '/')
+      if (idx !== -1) candidates.push(clean.slice(idx + 1))
+      if (clean.endsWith('/' + prefix)) candidates.push(prefix)
+    }
+  }
+
+  return candidates.some((candidate) => matchesTidyRelative(candidate))
 }
 
 // The operands of a command after its options. A "--" ends the options, and -t or --target-directory names its
@@ -1251,8 +1338,44 @@ function operandsOf(args) {
 }
 
 // The tidy targets among the operands of one command segment, in order. The words are past the wrappers and
-// git's options, as collectWords leaves them; a git command counts only as git rm or git mv.
+// git's options, as collectWords leaves them; a git command counts only as git rm or git mv. find and xargs
+// count only when their action removes or moves paths.
 function tidyTargetsOf(command, cwd, home) {
+  if (command[0] === 'find') {
+    const deleting = command.includes('-delete') || command.some((word, i) =>
+      (word === '-exec' || word === '-execdir') && TIDY_COMMANDS.has(nameOf(command[i + 1] || '')))
+    if (!deleting) return []
+    const targets = operandsOf(command.slice(1)).filter((word) => word !== '{}' && isTidyTarget(word, cwd, home))
+    // A -name may match at any depth below a search root, including inside .aether or at a skills folder.
+    const roots = []
+    let index = 1
+    while (index < command.length && ['-H', '-L', '-P'].includes(command[index])) index++
+    while (index < command.length && !command[index].startsWith('-') && !['(', '!'].includes(command[index])) {
+      roots.push(command[index++])
+    }
+    if (roots.length === 0) roots.push('.')
+    for (; index < command.length; index++) {
+      if (command[index] !== '-name' || index + 1 >= command.length) continue
+      const name = command[++index]
+      for (const root of roots) {
+        const paths = [`${root}/${name}`, `${root}/.aether/${name}`, `${root}/.agents/${name}`]
+        if (!targets.includes(name) && paths.some((candidate) => isTidyTarget(candidate, cwd, home))) targets.push(name)
+      }
+    }
+    return targets
+  }
+  if (command[0] === 'xargs') {
+    // Only the command xargs runs is a verb; an option value or an echo argument named rm is not.
+    let index = 1
+    while (index < command.length && command[index].startsWith('-')) {
+      const option = command[index++]
+      if (option === '--') break
+      if (XARGS_VALUED.includes(option)) index++
+    }
+    if (!TIDY_COMMANDS.has(nameOf(command[index] || ''))) return []
+    // Without a named operand, the input is a runtime-built path (A14), as with other guard classes.
+    return operandsOf(command.slice(index + 1)).filter((word) => isTidyTarget(word, cwd, home))
+  }
   const git = command[0] === 'git'
   const verb = git ? command[1] : command[0]
   if (!(git ? TIDY_GIT_COMMANDS.has(verb) : TIDY_COMMANDS.has(verb))) return []
