@@ -996,11 +996,8 @@ function patternMention(word) {
   })
 }
 
-function protectedMention(command, cwd = process.cwd()) {
-  const shape = lineShape(command)
-  const single = shape.commands.length === 1 ? shape.commands[0] : []
-  const authorized = single[0] === 'aether-autonomy' || (single[0] === 'node' && single[1] && path.resolve(cwd, single[1]) === path.resolve(__dirname, '../bin/aether-autonomy'))
-  const exempt = shape.plain && (shape.commands.length > 0 && shape.commands.every((c) => READ_COMMANDS.has(c[0])) || (authorized && !command.includes('<<')))
+// Every simple command of a Bash line, including the commands a script or a shell heredoc runs, up to MAX_NESTING deep.
+function commandSegments(command) {
   const segments = []
   const visit = (text, depth) => {
     for (const words of segmentsOf(text)) {
@@ -1016,6 +1013,15 @@ function protectedMention(command, cwd = process.cwd()) {
     }
   }
   visit(command, 0)
+  return segments
+}
+
+function protectedMention(command, cwd = process.cwd()) {
+  const shape = lineShape(command)
+  const single = shape.commands.length === 1 ? shape.commands[0] : []
+  const authorized = single[0] === 'aether-autonomy' || (single[0] === 'node' && single[1] && path.resolve(cwd, single[1]) === path.resolve(__dirname, '../bin/aether-autonomy'))
+  const exempt = shape.plain && (shape.commands.length > 0 && shape.commands.every((c) => READ_COMMANDS.has(c[0])) || (authorized && !command.includes('<<')))
+  const segments = commandSegments(command)
   const words = segments.flat()
   const name = (w) => /(^|[^A-Za-z0-9_.-])(grants\.json|run\.json)(?![A-Za-z0-9_.-])/.test(w)
   // Output redirections also protect other files and directories beneath autonomy. A `>` inside
@@ -1047,21 +1053,7 @@ function claudeConfigPath(str) {
 // Limit A14 (spec 030): commands that assemble the path at runtime (e.g. a script building .claude/ dynamically) cannot be detected.
 function claudeConfigWrite(command) {
   if (typeof command !== 'string') return null
-  const segments = []
-  const visit = (text, depth) => {
-    for (const words of segmentsOf(text)) {
-      segments.push(words)
-      if (depth >= MAX_NESTING) continue
-      const unwrapped = dropWrappers(words)
-      const named = unwrapped.length ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
-      const script = scriptOf(named)
-      if (script !== null) visit(script, depth + 1)
-      if (SHELLS.has(named[0]) && shellReadsStdin(named.slice(1))) {
-        for (const body of words.heredocs || []) visit(body.text, depth + 1)
-      }
-    }
-  }
-  visit(command, 0)
+  const segments = commandSegments(command)
 
   for (const segment of segments) {
     for (let i = 0; i < segment.length; i++) {
