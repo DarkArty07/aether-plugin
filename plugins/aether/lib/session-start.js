@@ -279,12 +279,19 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     return
   }
 
+  // mainRoot is the main checkout, where the notes, the runs and the .aether/ state are kept and idle skills are counted.
+  // workRoot is the top of the working copy the Lead starts in, where the project's own files (CLAUDE.md, AGENTS.md,
+  // skills) are read for the disorder notice. Both are null outside git.
   let mainRoot = null
+  let workRoot = null
   try {
     const { repoPaths } = require('./git.js')
-    mainRoot = repoPaths(cwd).mainRoot
+    const paths = repoPaths(cwd)
+    mainRoot = paths.mainRoot
+    workRoot = paths.worktree
   } catch {
     mainRoot = null
+    workRoot = null
   }
 
   // 1. Before this session writes anything: evaluate the migration gate (spec 030 R19).
@@ -444,6 +451,36 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     } catch {}
   }
 
+  let tidyLines = []
+  let idleLines = []
+  if (source === 'startup' || source === 'clear') {
+    try {
+      const os = require('node:os')
+      const { isSpanish } = require('./continuity-store.js')
+      const { detect, noticeLines: tidyNoticeLines } = require('./tidy-detect.js')
+      const home = env.HOME || os.homedir()
+      const spanish = isSpanish(env)
+      const findings = detect(workRoot ?? cwd, { home })?.findings || []
+      const lines = tidyNoticeLines(findings, { spanish })
+      if (Array.isArray(lines) && lines.length > 0) {
+        tidyLines = [...lines]
+      }
+    } catch {}
+    if (mainRoot !== null) {
+      try {
+        const { dataDir } = require('./run.js')
+        const { isSpanish } = require('./continuity-store.js')
+        const { idleSkills, idleLine } = require('./skill-idle.js')
+        const spanish = isSpanish(env)
+        const idle = idleSkills(dataDir(env), { repo: mainRoot, now })
+        const line = idleLine(idle.map((s) => s.name), { spanish })
+        if (line) {
+          idleLines = [line]
+        }
+      } catch {}
+    }
+  }
+
   const baseContext = [
     'Aether mode is active.',
     passed ? '' : "Aether could not pass the superdelegation option to this session's commands, so superdelegation is off.",
@@ -461,10 +498,16 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   // PART_LIMIT: one that does not fit stays pending without holding back a smaller later one.
   const welcomeLine = source === 'startup' ? welcome(root, env) : null
   let noticeLine = () => ''
+  // The continuity notice that goes to the Lead's context (none for a project's first session), and the whole context.
+  const contextOf = (lines) => {
+    const contextNotice = firstSession ? '' : lines.join('\n')
+    const additionalContext = [baseContext, contextNotice, tidyLines.join('\n'), idleLines.join('\n'), runNote]
+      .filter(Boolean)
+      .join('\n\n')
+    return { contextNotice, additionalContext }
+  }
   const buildPayload = (lines, issueNotices = []) => {
-    const noticeText = lines.join('\n')
-    const contextNotice = firstSession ? '' : noticeText
-    const additionalContext = [baseContext, contextNotice, runNote].filter(Boolean).join('\n\n')
+    const { contextNotice, additionalContext } = contextOf(lines)
     const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext } }
     if (welcomeLine !== null) {
       const sysLines = [welcomeLine, ...lines, ...issueNotices.map((n) => noticeLine(n))].filter((s) => typeof s === 'string' && s !== '')
@@ -473,6 +516,15 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
       output.systemMessage = contextNotice
     }
     return JSON.stringify(output) + '\n'
+  }
+
+  // The payload holds the whole context, so its length is the one to check: the disorder and idle lines go first.
+  while ((tidyLines.length > 0 || idleLines.length > 0) && buildPayload(noticeLines).length > PART_LIMIT) {
+    if (idleLines.length > 0) {
+      idleLines.pop()
+    } else {
+      tidyLines.pop()
+    }
   }
 
   while (noticeLines.length > 1 && buildPayload(noticeLines).length > PART_LIMIT) {
