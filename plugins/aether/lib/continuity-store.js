@@ -169,9 +169,20 @@ function mainTip(cwd) {
   return null
 }
 
-// A note's work is merged when its commit is an ancestor of the main tip. A note without a commit, or without a main branch, is not.
-function isMerged(note, cwd, tip) {
+// The names of the main branch: `main`, `master`, and the branch origin/HEAD points to.
+function mainBranchNames(cwd) {
+  const names = new Set(['main', 'master'])
+  const r = git(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], cwd, { allowFail: true })
+  if (r.status === 0 && r.stdout) names.add(r.stdout.replace(/^origin\//, ''))
+  return names
+}
+
+// A note's work is merged when its branch is not the main branch and its commit is an ancestor of the main tip (A12: "the
+// branch it recorded is merged"). A note taken on the main branch itself is never merged work: its commit is always in main,
+// and deleting it would lose where work on main was left. A note without a commit, or without a main branch, is not merged.
+function isMerged(note, cwd, tip, mainNames = mainBranchNames(cwd)) {
   if (!tip || typeof note.commit !== 'string' || !/^[0-9a-f]{7,64}$/i.test(note.commit)) return false
+  if (typeof note.branch === 'string' && mainNames.has(note.branch)) return false
   return git(['merge-base', '--is-ancestor', note.commit, tip], cwd, { allowFail: true }).status === 0
 }
 
@@ -181,12 +192,13 @@ function pruneNotes(dir, { cwd, now = Date.now(), days = NOTE_DAYS } = {}) {
   const entries = readEntries(dir)
   if (entries.length < 2) return []
   const tip = mainTip(cwd)
+  const mainNames = tip ? mainBranchNames(cwd) : new Set()
   const removed = []
   for (const entry of entries.slice(1)) {
     const { note, file } = entry
     const age = now - numberOrZero(note.updatedAt)
     const newer = entries.some((other) => numberOrZero(other.note.updatedAt) > numberOrZero(note.updatedAt))
-    if (age > days * DAY_MS || (newer && isMerged(note, cwd, tip))) {
+    if (age > days * DAY_MS || (newer && isMerged(note, cwd, tip, mainNames))) {
       fs.rmSync(file, { force: true })
       removed.push(note.session)
     }

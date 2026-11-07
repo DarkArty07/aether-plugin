@@ -96,6 +96,18 @@ test('writeNote, readNote, updateNote and readNotes keep one JSON file per sessi
   for (const bad of ['', '../x', 'a/b', 'a\\b', null, 42]) assert.throws(() => store.noteFile(dir, bad), /invalid session id/, String(bad))
 })
 
+test('pruneNotes keeps a note taken on the main branch, though its commit is in main (R8, A12)', (t) => {
+  const repo = makeRepo(t)
+  const base = repo.git('rev-parse', 'main')
+  const dir = path.join(tempDir(t), 'continuity')
+  const now = Date.parse('2026-11-07T12:00:00Z')
+  store.writeNote(dir, { session: 'on-main', commit: base, branch: 'main', updatedAt: now - 2 * 86400000 })
+  store.writeNote(dir, { session: 'merged-branch', commit: base, branch: 'feat/done', updatedAt: now - 86400000 })
+  store.writeNote(dir, { session: 'newest', commit: base, branch: 'feat/other', updatedAt: now })
+  assert.deepEqual(store.pruneNotes(dir, { cwd: repo.dir, now }), ['merged-branch'])
+  assert.deepEqual(store.readNotes(dir).map((n) => n.session).sort(), ['newest', 'on-main'])
+})
+
 test('pruneNotes deletes notes of more than 30 days and of merged work with a newer note, and never the newest note (R8, A12)', (t) => {
   const repo = makeRepo(t)
   const base = repo.git('rev-parse', 'HEAD')
