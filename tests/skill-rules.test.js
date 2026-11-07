@@ -133,3 +133,43 @@ test('copyAdvice tells how to copy an Aether skill and a downloaded one, with an
   assert.equal(rules.copyAdvice({ type: 'aether', name: 'tidy', dir: '/p/skills/tidy' }), "This is a skill of Aether, and Aether's skills are not edited: copy it with another name into .agents/skills/ and change the copy (for example: cp -r /p/skills/tidy .agents/skills/tidy-mine).")
   assert.equal(rules.copyAdvice({ type: 'downloaded', name: 'pdf', dir }), 'This skill was downloaded from the internet, and downloaded skills are not edited: copy it with another name into .agents/skills/ and change the copy (for example: cp -r /x/skills/pdf .agents/skills/pdf-mine).')
 })
+
+test('every install of a command is checked, so a trusted one cannot carry an untrusted one (R25, R47)', (t) => {
+  const data = tempDir(t, 'aether-data-')
+  put(rules.trustedFile(data), JSON.stringify({ authors: ['anthropics'] }))
+  const hold = (command) => rules.installClass(command, { dataDir: data })
+  assert.equal(hold('npx skills add anthropics/skills && npx skills add someone/skills'), 'skill-install')
+  assert.equal(hold('npx skills add anthropics/skills; npx skills add'), 'skill-install')
+  assert.equal(hold('npx skills add anthropics/skills | bunx skills add ./local'), 'skill-install')
+  assert.equal(hold('npx skills add anthropics/skills && npx skills find pdf'), null)
+  assert.deepEqual(rules.parseInstall('npx skills add a/b && bunx skills add c/d').sources, ['a/b', 'c/d'])
+})
+
+test('a link outside any skills folder is classified by the skill it reaches, through its real path (C8, R22)', (t) => {
+  const w = world(t)
+  const link = path.join(w.repo.dir, 'tools', 'helper')
+  fs.mkdirSync(path.dirname(link), { recursive: true })
+  fs.symlinkSync(path.join(w.home, '.agents', 'skills', 'mine-global'), link)
+  assert.deepEqual(typeOf(w, w.repo.dir, 'tools', 'helper', 'SKILL.md'), ['owner', 'mine-global', true, 'skill-install'])
+})
+
+test('the skill is the folder after the skills folder of its root, even when the skill keeps a folder named skills (R22)', (t) => {
+  const w = world(t)
+  const file = path.join(w.repo.dir, '.agents', 'skills', 'mine', 'skills', 'inner', 'SKILL.md')
+  put(file)
+  const info = rules.classifySkillPath(file, w.opts)
+  assert.equal(info.name, 'mine')
+  assert.equal(info.dir, path.join(fs.realpathSync(w.repo.dir), '.agents', 'skills', 'mine'))
+})
+
+test('the home folder is not a project when it is the working folder: its skills stay the owner\'s (R22, R25)', (t) => {
+  const w = world(t)
+  const info = rules.classifySkillPath(path.join(w.home, '.agents', 'skills', 'mine-global', 'SKILL.md'), { cwd: w.home, home: w.home, pluginRoots: [w.plugin] })
+  assert.deepEqual([info.type, info.editable, info.grant], ['owner', true, 'skill-install'])
+})
+
+test('a working folder that is gone does not stop the classification (R22)', (t) => {
+  const w = world(t)
+  const info = rules.classifySkillPath(path.join(w.plugin, 'skills', 'tidy', 'SKILL.md'), { cwd: path.join(w.repo.dir, 'removed'), home: w.home, pluginRoots: [w.plugin] })
+  assert.deepEqual([info.type, info.editable], ['aether', false])
+})

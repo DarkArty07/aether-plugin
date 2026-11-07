@@ -20,6 +20,9 @@ if (process.env.CLAUDE_PLUGIN_ROOT && !defaultRoots.includes(process.env.CLAUDE_
   defaultRoots.push(process.env.CLAUDE_PLUGIN_ROOT)
 }
 
+const SKILLS_PACKAGE = /^skills(?:@.+)?$/
+const VALUE_OPTIONS = new Set(['-s', '--skill', '-a', '--agent', '--ref'])
+
 function trustedFile(dataDir) {
   return path.join(dataDir, 'skills', 'trusted.json')
 }
@@ -73,6 +76,7 @@ function authorOf(source) {
   return owner.toLowerCase()
 }
 
+// Splits a command into its segments at `&&`, `||`, `;`, `|` and newlines, but not inside quotes.
 function splitSegments(cmd) {
   const segments = []
   let current = ''
@@ -135,6 +139,7 @@ function splitSegments(cmd) {
   return segments
 }
 
+// The words of one segment, with quotes removed and the quoted text kept as one word.
 function tokenizeSegment(seg) {
   const tokens = []
   let current = ''
@@ -182,73 +187,78 @@ function tokenizeSegment(seg) {
   return tokens
 }
 
-function parseInstall(command) {
-  if (typeof command !== 'string' || !command.trim()) return null
-  const segments = splitSegments(command)
-  for (const seg of segments) {
-    const tokens = tokenizeSegment(seg)
-    if (tokens.length === 0) continue
-    let launcher = null
-    let afterLauncherIdx = 0
-
-    if (tokens[0] === 'pnpm' && tokens[1] === 'dlx' && /^skills(?:@.+)?$/.test(tokens[2] || '')) {
-      launcher = 'pnpm dlx'
-      afterLauncherIdx = 3
-    } else if (tokens[0] === 'bunx' && /^skills(?:@.+)?$/.test(tokens[1] || '')) {
-      launcher = 'bunx'
-      afterLauncherIdx = 2
-    } else if (tokens[0] === 'npx') {
-      if (['-y', '--yes'].includes(tokens[1]) && /^skills(?:@.+)?$/.test(tokens[2] || '')) {
-        launcher = 'npx'
-        afterLauncherIdx = 3
-      } else if (/^skills(?:@.+)?$/.test(tokens[1] || '')) {
-        launcher = 'npx'
-        afterLauncherIdx = 2
-      }
-    } else if (tokens[0] === 'skills') {
-      launcher = 'skills'
-      afterLauncherIdx = 1
+// The install that one segment's words make, or null when the segment does not start with a skills launcher and `add`.
+function installOf(tokens) {
+  let launcher = null
+  let afterLauncher = 0
+  if (tokens[0] === 'pnpm' && tokens[1] === 'dlx' && SKILLS_PACKAGE.test(tokens[2] || '')) {
+    launcher = 'pnpm dlx'
+    afterLauncher = 3
+  } else if (tokens[0] === 'bunx' && SKILLS_PACKAGE.test(tokens[1] || '')) {
+    launcher = 'bunx'
+    afterLauncher = 2
+  } else if (tokens[0] === 'npx') {
+    if (['-y', '--yes'].includes(tokens[1]) && SKILLS_PACKAGE.test(tokens[2] || '')) {
+      launcher = 'npx'
+      afterLauncher = 3
+    } else if (SKILLS_PACKAGE.test(tokens[1] || '')) {
+      launcher = 'npx'
+      afterLauncher = 2
     }
-
-    if (!launcher) continue
-    if (tokens[afterLauncherIdx] !== 'add') continue
-
-    const args = tokens.slice(afterLauncherIdx + 1)
-    let global = false
-    const sources = []
-    const valOptions = new Set(['-s', '--skill', '-a', '--agent', '--ref'])
-
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i]
-      if (arg === '-g' || arg === '--global') {
-        global = true
-      } else if (valOptions.has(arg)) {
-        i++
-      } else if (arg.startsWith('-')) {
-        continue
-      } else {
-        sources.push(arg)
-      }
-    }
-
-    const authors = sources.map(authorOf)
-    return { launcher, sources, authors, global }
+  } else if (tokens[0] === 'skills') {
+    launcher = 'skills'
+    afterLauncher = 1
   }
-  return null
+  if (!launcher || tokens[afterLauncher] !== 'add') return null
+
+  const args = tokens.slice(afterLauncher + 1)
+  let global = false
+  const sources = []
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === '-g' || arg === '--global') {
+      global = true
+    } else if (VALUE_OPTIONS.has(arg)) {
+      i++
+    } else if (!arg.startsWith('-')) {
+      sources.push(arg)
+    }
+  }
+  return { launcher, sources, authors: sources.map(authorOf), global }
 }
 
-function installClass(command, { dataDir } = {}) {
-  const parsed = parseInstall(command)
-  if (!parsed) return null
-  if (parsed.global) return 'skill-install'
-  if (parsed.sources.length === 0) return 'skill-install'
-  const trusted = new Set(readTrusted(dataDir))
-  for (const author of parsed.authors) {
-    if (!author || !trusted.has(author)) {
-      return 'skill-install'
-    }
+// Every install of a command, one for each segment that installs. A command can install twice (`&&`, `;`, `|`),
+// so each install is kept apart for installClass to check.
+function installsOf(command) {
+  if (typeof command !== 'string' || !command.trim()) return []
+  return splitSegments(command)
+    .map((seg) => installOf(tokenizeSegment(seg)))
+    .filter(Boolean)
+}
+
+// The installs of a command merged into one: the first launcher, every source and author, and `global` when any install
+// is global. A command that installs nothing gives null. A bare `add` adds no source here; installClass still holds it.
+function parseInstall(command) {
+  const installs = installsOf(command)
+  if (installs.length === 0) return null
+  return {
+    launcher: installs[0].launcher,
+    sources: installs.flatMap((install) => install.sources),
+    authors: installs.flatMap((install) => install.authors),
+    global: installs.some((install) => install.global),
   }
-  return null
+}
+
+// `skill-install` when some install of the command is held (R25, R47): global, with no source, or with a source whose
+// author is not trusted. Every install is checked on its own, so a trusted one cannot carry an untrusted one.
+function installClass(command, { dataDir } = {}) {
+  const installs = installsOf(command)
+  if (installs.length === 0) return null
+  const trusted = new Set(readTrusted(dataDir))
+  const held = installs.some((install) =>
+    install.global || install.sources.length === 0 || install.authors.some((author) => !author || !trusted.has(author)),
+  )
+  return held ? 'skill-install' : null
 }
 
 function isDescendant(target, parent) {
@@ -256,17 +266,18 @@ function isDescendant(target, parent) {
   return rel.length > 0 && !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel)
 }
 
+// The real path of the repository the session works in, or null when there is none or git cannot run there.
 function getSessionRepo(cwd) {
-  if (!cwd) return null
-  const probe = git(['rev-parse', '--show-toplevel'], cwd, { allowFail: true })
-  if (probe.status === 0 && probe.stdout) {
-    return realResolve(probe.stdout)
+  try {
+    const probe = git(['rev-parse', '--show-toplevel'], cwd, { allowFail: true })
+    return probe.status === 0 && probe.stdout ? realResolve(probe.stdout) : null
+  } catch {
+    return null
   }
-  return null
 }
 
+// The real worktree and the real main checkout of the working folder; the folder itself when it is not a repository.
 function getProjectRoots(cwd) {
-  if (!cwd) return []
   try {
     const paths = repoPaths(cwd)
     return [...new Set([realResolve(paths.worktree), realResolve(paths.mainRoot)])]
@@ -275,91 +286,76 @@ function getProjectRoots(cwd) {
   }
 }
 
-function isProjectLocked(projectRoots, skillName) {
-  for (const root of projectRoots) {
-    const lockFile = path.join(root, 'skills-lock.json')
-    try {
-      if (fs.existsSync(lockFile)) {
-        const raw = fs.readFileSync(lockFile, 'utf8')
-        const data = JSON.parse(raw)
-        if (data && data.skills && Object.prototype.hasOwnProperty.call(data.skills, skillName)) {
-          return true
-        }
-      }
-    } catch {
-      // unreadable
-    }
-  }
-  return false
-}
-
-function isHomeLocked(homeDir, skillName) {
-  const homeLock = path.join(homeDir, '.agents', '.skill-lock.json')
+// Whether a skills lock file lists the skill: its `skills` object holds the name as a key. A missing or unreadable lock lists nothing.
+function isLocked(lockFile, name) {
   try {
-    if (fs.existsSync(homeLock)) {
-      const raw = fs.readFileSync(homeLock, 'utf8')
-      const data = JSON.parse(raw)
-      if (data && data.skills && Object.prototype.hasOwnProperty.call(data.skills, skillName)) {
-        return true
-      }
-    }
+    const data = JSON.parse(fs.readFileSync(lockFile, 'utf8'))
+    return Boolean(data && data.skills && Object.prototype.hasOwnProperty.call(data.skills, name))
   } catch {
-    // unreadable
+    return false
   }
-  return false
 }
 
+// The skill that `real` belongs to under `skillsFolder`: its name is the folder right after the skills folder.
+function skillIn(skillsFolder, real) {
+  if (!isDescendant(real, skillsFolder)) return null
+  const name = path.relative(skillsFolder, real).split(path.sep)[0]
+  return { name, dir: path.join(skillsFolder, name) }
+}
+
+// The plugin cache holds skills as `<cache>/<marketplace>/<plugin>/<version>/skills/<name>`: the skills folder is the first `skills` below the cache.
+function cachedSkill(cacheDir, real) {
+  if (!isDescendant(real, cacheDir)) return null
+  const parts = path.relative(cacheDir, real).split(path.sep)
+  const at = parts.indexOf('skills')
+  if (at === -1) return null
+  return skillIn(path.join(cacheDir, ...parts.slice(0, at + 1)), real)
+}
+
+// The first skill hit of the real path among the skills folders given, or null.
+function firstHit(folders, real) {
+  for (const folder of folders) {
+    const hit = skillIn(realResolve(folder), real)
+    if (hit) return hit
+  }
+  return null
+}
+
+function skillInfo(type, hit, real, editable, grant) {
+  return { type, name: hit.name, dir: hit.dir, real, editable, grant }
+}
+
+// Classify the file of a skill by its real path (R22, R23, R24): aether, downloaded, project or owner, or null when the
+// path is in no skills folder. A file under a link is classified by the folder the link reaches.
 function classifySkillPath(file, { cwd, home = os.homedir(), pluginRoots = defaultRoots } = {}) {
   if (typeof file !== 'string' || !file.trim()) return null
   const workingDir = cwd || process.cwd()
   const written = path.isAbsolute(file) ? file : path.resolve(workingDir, file)
-
-  const parts = written.split(path.sep)
-  const skillsIdx = parts.lastIndexOf('skills')
-  if (skillsIdx === -1 || skillsIdx === parts.length - 1) {
-    return null
-  }
-  const name = parts[skillsIdx + 1]
-  if (!name) return null
-  const dir = parts.slice(0, skillsIdx + 2).join(path.sep)
   const real = realResolve(written)
 
-  const roots = Array.isArray(pluginRoots) ? pluginRoots : defaultRoots
-  for (const pRoot of roots) {
-    const pSkills = realResolve(path.join(pRoot, 'skills'))
-    if (isDescendant(real, pSkills)) {
-      const sessionRepo = getSessionRepo(workingDir)
-      const editable = Boolean(sessionRepo && (real === sessionRepo || isDescendant(real, sessionRepo)))
-      return { type: 'aether', name, dir, real, editable, grant: null }
-    }
-  }
-
-  const cacheDir = realResolve(path.join(home, '.claude', 'plugins', 'cache'))
-  if (isDescendant(real, cacheDir)) {
+  const aetherFolders = (Array.isArray(pluginRoots) ? pluginRoots : defaultRoots).map((root) => path.join(root, 'skills'))
+  const aetherHit = firstHit(aetherFolders, real) || cachedSkill(realResolve(path.join(home, '.claude', 'plugins', 'cache')), real)
+  if (aetherHit) {
     const sessionRepo = getSessionRepo(workingDir)
-    const editable = Boolean(sessionRepo && (real === sessionRepo || isDescendant(real, sessionRepo)))
-    return { type: 'aether', name, dir, real, editable, grant: null }
+    const editable = Boolean(sessionRepo && isDescendant(real, sessionRepo))
+    return skillInfo('aether', aetherHit, real, editable, null)
   }
 
-  const projectRoots = getProjectRoots(workingDir)
-  for (const root of projectRoots) {
-    const projAgents = realResolve(path.join(root, '.agents', 'skills'))
-    const projClaude = realResolve(path.join(root, '.claude', 'skills'))
-    if (isDescendant(real, projAgents) || isDescendant(real, projClaude)) {
-      if (isProjectLocked(projectRoots, name)) {
-        return { type: 'downloaded', name, dir, real, editable: false, grant: null }
-      }
-      return { type: 'project', name, dir, real, editable: true, grant: null }
+  // The home folder is the owner's, never a project, even when it is the working folder.
+  const homeReal = realResolve(home)
+  for (const root of getProjectRoots(workingDir)) {
+    if (root === homeReal) continue
+    const hit = firstHit([path.join(root, '.agents', 'skills'), path.join(root, '.claude', 'skills')], real)
+    if (hit) {
+      if (isLocked(path.join(root, 'skills-lock.json'), hit.name)) return skillInfo('downloaded', hit, real, false, null)
+      return skillInfo('project', hit, real, true, null)
     }
   }
 
-  const homeAgents = realResolve(path.join(home, '.agents', 'skills'))
-  const homeClaude = realResolve(path.join(home, '.claude', 'skills'))
-  if (isDescendant(real, homeAgents) || isDescendant(real, homeClaude)) {
-    if (isHomeLocked(home, name)) {
-      return { type: 'downloaded', name, dir, real, editable: false, grant: null }
-    }
-    return { type: 'owner', name, dir, real, editable: true, grant: 'skill-install' }
+  const homeHit = firstHit([path.join(home, '.agents', 'skills'), path.join(home, '.claude', 'skills')], real)
+  if (homeHit) {
+    if (isLocked(path.join(home, '.agents', '.skill-lock.json'), homeHit.name)) return skillInfo('downloaded', homeHit, real, false, null)
+    return skillInfo('owner', homeHit, real, true, 'skill-install')
   }
 
   return null
