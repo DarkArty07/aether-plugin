@@ -45,6 +45,7 @@ function groupTask(group, byNumber, unitOf) {
     dependsOn: remapDependsOn(members.flatMap((t) => t.dependsOn), unitOf, group.unit),
     mergesWith: group.members.slice(1),
     members: group.members,
+    skills: [...new Set(members.flatMap((t) => t.skills || []))],
   }
 }
 
@@ -77,7 +78,7 @@ function applyGroups(parsed) {
   const groups = [...members.entries()]
     .filter(([, list]) => list.length > 1)
     .map(([unit, list]) => ({ unit, members: list.sort((a, b) => a - b) }))
-  if (groups.length === 0) return { ...parsed, groups, errors }
+  if (groups.length === 0) return { ...parsed, allTasks: parsed.tasks, groups, errors }
 
   const byNumber = new Map(parsed.tasks.map((t) => [t.number, t]))
   const groupByUnit = new Map(groups.map((g) => [g.unit, g]))
@@ -88,7 +89,7 @@ function applyGroups(parsed) {
       const group = groupByUnit.get(t.number)
       return group ? groupTask(group, byNumber, unitOf) : { ...t, dependsOn: remapDependsOn(t.dependsOn, unitOf, null) }
     })
-  return { ...parsed, tasks, groups, errors }
+  return { ...parsed, tasks, allTasks: parsed.tasks, groups, errors }
 }
 
 module.exports = { applyGroups, listNumbers }
