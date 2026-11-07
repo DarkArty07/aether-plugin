@@ -2425,7 +2425,7 @@ test('copyAdvice tells how to copy an Aether skill and a downloaded one, with an
 **Aether:**
 - Review: xhigh — la lista de autores de confianza decide qué skills de internet se instalan sin preguntar, y solo las palabras verificadas del dueño pueden escribirla
 - Area: autonomy
-- Owns: `plugins/aether/lib/autonomy.js`, `plugins/aether/lib/autonomy-command.js`, `plugins/aether/bin/aether-autonomy`, `tests/autonomy.test.js`, `tests/autonomy-trust.test.js`, `tests/copies-classes.test.js`, `CLAUDE.md`, `plugins/aether/skills/using-aether/SKILL.md`
+- Owns: `plugins/aether/lib/autonomy.js`, `plugins/aether/lib/autonomy-command.js`, `plugins/aether/bin/aether-autonomy`, `tests/autonomy.test.js`, `tests/autonomy-trust.test.js`, `tests/aether-autonomy.test.js`, `tests/copies-classes.test.js`, `CLAUDE.md`, `plugins/aether/skills/using-aether/SKILL.md`
 - Depends on: Task 17 — la historia H3 empieza cuando H2 está fusionada
 - Serves: R25, R47
 
@@ -2434,6 +2434,7 @@ test('copyAdvice tells how to copy an Aether skill and a downloaded one, with an
 - `CLASSES` de `lib/autonomy.js` pasa a `['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call', 'skill-install']`. `grant`, `revoke`, `check` y `list` la aceptan como a las demás.
 - `trustAuthor(dataDir, { author, quote, session, remove = false }, { configDir, now = Date.now() } = {})` en `lib/autonomy.js`: verifica `quote` con `verifyQuote(session, quote, { configDir, allowNegation: remove })` (quitar a un autor admite una frase negada: «ya no confío en …»; agregar no), valida el autor (`/^[A-Za-z0-9][A-Za-z0-9-]*$/`, de a lo más 39 caracteres; se guarda en minúsculas), y escribe de forma atómica `<dataDir>/skills/trusted.json` con la forma `{ "authors": [..sin repetir, en orden de alta..], "log": [{ "action": "add"|"remove", "author", "quote", "session", "time", "added" }] }`. Devuelve `{ ok: true, authors }` o `{ ok: false, reason }` (el motivo de la verificación, o `invalid author: <texto>`). Quitar a quien no está es un éxito sin cambios.
 - `aether-autonomy trust --author <autor> --quote <texto> [--session <id>] [--remove]`: imprime `{ "trusted": { "authors": [...] } }` y sale con 0; una verificación que falla imprime `{ "verified": false, "reason": … }` y sale con 2; un autor inválido o un uso incorrecto imprime `{ "error": … }` y sale con 1. Funciona fuera de un repositorio git (no lee ni escribe `.aether/`). El texto de uso (`USAGE`) y la cabecera de `bin/aether-autonomy` y de `lib/autonomy-command.js` lo listan (`// aether-autonomy trust …`).
+- `aether-autonomy USAGE` está fijado palabra por palabra en `tests/aether-autonomy.test.js` (la constante `USAGE`): la tarea agrega ` | trust --author <autor> --quote <texto> [--session <id>] [--remove]` al final de esa constante y no cambia nada más de esa prueba. `tests/commands.test.js` exige un llamador del verbo en una skill desde que existe: en «Recording the owner's authorizations» de `skills/using-aether/SKILL.md`, antes de la viñeta de `aether-autonomy list`, va la línea ``- Words that trust a skill author: `aether-autonomy trust --author <author> --quote "<their words>"`.`` (la tarea 30 la conserva).
 - `CLAUDE.md`: la línea que lista las clases irreversibles de `aether-guard` incluye `` `skill-install` ``. En `skills/using-aether/SKILL.md` la tabla de clases gana la fila `| `skill-install` | installing a skill from the internet from an author that is not trusted, or for all projects, and writing a permanent skill in `~/.agents/skills/` or `~/.claude/skills/` |` al final, y el texto de esa sección que cuenta las clases dice ocho; no se cambia nada más de esa skill en esta tarea (la tarea 30 escribe las reglas).
 - `tests/copies-classes.test.js`: `GRANT_ONLY` gana `'skill-install': 'the guard detects it from the install command in task 26; until then it is only granted and checked with aether-autonomy check'` (la tarea 26 lo mueve a `SAMPLE`).
 
@@ -3632,13 +3633,15 @@ test('the Writer and the plan skill name the art direction before the plan; ther
 
 **Aether:**
 - Area: lead-rules
-- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `plugins/aether/hooks/hooks.json`, `CLAUDE.md`, `tests/using-aether-030.test.js`, `tests/session-start-parts.test.js`, `tests/copies-classes.test.js`, `tests/roles.test.js`
+- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `plugins/aether/hooks/hooks.json`, `CLAUDE.md`, `tests/using-aether-030.test.js`, `tests/session-start-parts.test.js`, `tests/copies-classes.test.js`, `tests/roles.test.js`, `tests/bootstrap-design.test.js`, `tests/bootstrap-names.test.js`
 - Depends on: Task 29 — las reglas nombran las skills `aether:skills` y `aether:art-direction`
 - Depends on: Task 26 — las reglas describen lo que la guarda hace con las skills
 - Depends on: Task 28 — y los avisos que los hooks dan tras escribir
 - Serves: R30, R34, R35
 
 **Interfaces:**
+
+**Tope de tamaño.** Tras la tarea 19 el bootstrap pesa 31.958 bytes, y `tests/bootstrap-design.test.js:49` y `tests/bootstrap-names.test.js:257` lo topan en 32.000. La tarea sube el tope de ambas pruebas a 34.000 (`< 34000`), cambia el título de la de `bootstrap-design` a «weighs less than 34,000 bytes (R10, C4, spec 021, A108, spec 030)» y el de la de `bootstrap-names` a «stays under 34000 bytes», y suma al comentario de cada una la línea «plus the Tools, skills, continuity and tidy rules of spec 030 (issues 125 and 187), raised to 34,000 on 2026-11-07»; el bootstrap queda por debajo de 34.000 y cada parte sigue de a lo más 9.800 caracteres.
 
 `plugins/aether/skills/using-aether/SKILL.md` (el bootstrap, que se entrega en partes de a lo más 9.800 caracteres; se sigue dividiendo por encabezados de sección) gana, en su estilo de reglas cortas y con estas expresiones literales:
 

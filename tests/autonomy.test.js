@@ -48,10 +48,18 @@ function setup(t, sessions = { [SESSION]: OWNER_LINES }) {
 const grantsFile = (mainRoot) => path.join(mainRoot, '.aether', 'autonomy', 'grants.json')
 
 test("the classes, the scopes, the outcomes and the shortest quote are the spec's", () => {
-  assert.deepEqual(autonomy.CLASSES, ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call'])
+  assert.deepEqual(autonomy.CLASSES, ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call', 'skill-install'])
   assert.deepEqual(autonomy.SCOPES, ['repo', 'session'])
   assert.deepEqual(autonomy.OUTCOMES, ['done', 'ceiling', 'incomplete'])
   assert.equal(autonomy.MIN_QUOTE, 12)
+})
+
+test('skill-install is granted and checked like the other classes (R25)', (t) => {
+  const quote = 'apruebo instalar skills en esta ocasion y en todas las futuras ocasiones'
+  const { configDir, mainRoot } = setup(t, { [SESSION]: [human(quote, '2026-10-09T19:32:31.611Z')] })
+  assert.equal(autonomy.grant(mainRoot, { class: 'skill-install', quote, session: SESSION }, { configDir }).ok, true)
+  assert.equal(autonomy.check(mainRoot, 'skill-install', { configDir }).status, 'verified')
+  assert.equal(autonomy.check(mainRoot, 'push', { configDir }), null)
 })
 
 test('normalize folds whitespace and case, and composes accents', () => {

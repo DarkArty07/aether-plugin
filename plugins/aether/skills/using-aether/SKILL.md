@@ -218,7 +218,7 @@ The owner may give you permission to work for hours, for example «trabaja por h
 
 When the owner gives that permission, or session start says a run is open, load the `aether:autonomous-runs` skill and follow it.
 
-**Irreversible actions.** These classes need the owner's authorization. Everything local and reversible goes ahead without asking.
+**Irreversible actions.** These eight classes need the owner's authorization. Everything local and reversible goes ahead without asking.
 
 | Class | Covers |
 |---|---|
@@ -229,6 +229,7 @@ When the owner gives that permission, or session start says a run is open, load 
 | `delete` | deleting data, or files and branches outside the run's worktrees |
 | `credentials` | creating, copying, widening or rotating credentials and tokens |
 | `paid-call` | real, paid model calls outside the swarm |
+| `skill-install` | installing a skill from the internet from an author that is not trusted, or for all projects, and writing a permanent skill in `~/.agents/skills/` or `~/.claude/skills/` |
 
 Before one, run `aether-autonomy check <class>`.
 - **Exit 0:** it is covered. Act, and cite the grant in the diary.
@@ -239,6 +240,7 @@ Before one, run `aether-autonomy check <class>`.
 - Words limited to this session («en esta sesión»): add `--scope session`.
 - A specific action («fusiona el del router») or a bare «sí»: that action, once. Note it in the diary, not in the registry.
 - Words that withdraw a class: `aether-autonomy revoke --class <class> --quote "<their words>" --all`. Without `--all` a revoke removes only this session's session grants of the class, which is the form for undoing a one-time grant.
+- Words that trust a skill author: `aether-autonomy trust --author <author> --quote "<their words>"`.
 - `aether-autonomy list` shows the registry. The registry and each run's `run.json` are written only by `aether-autonomy`; aether-guard refuses edits to them.
 - When aether-guard enforces (`AETHER_IRREVERSIBLE=enforce`), it refuses even an action the owner approved with a «sí» until a grant covers it: record their reply as a session grant for its class, run the action, then revoke the grant. The quote needs at least 12 of their characters; when the reply is shorter, put the exact command in the brief for the owner to run.
 
