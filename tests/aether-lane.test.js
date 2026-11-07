@@ -596,7 +596,7 @@ test('a supervisor call reviews in a disposable copy of the unit branch, then th
   const done = fx.waitDone(args, call, env)
   assert.equal(done.status, 'ok', done.detail)
   assert.equal(done.result.verdict, 'approve')
-  const copy = path.join(args.repoRoot, '.aether', 'lanes', args.runId, call)
+  const copy = path.join(args.repoRoot, '.aether', 'worktrees', 'lanes', args.runId, call)
   const [turn] = fx.agyTurns(env)
   assert.deepEqual([turn.cwd, turn.head, turn.files], [copy, fx.git(unit, 'rev-parse', 'HEAD'), ['brief.md', 'package.diff']])
   assert.equal(fx.argAfter(turn.argv, '--print-timeout'), '900s')
@@ -613,7 +613,7 @@ test('a supervisor call that writes to the real unit worktree is blocked', (t) =
   fx.lane(args, 'start', [call, ...flags(digest, { role: 'supervisor', model: 'claude-sonnet-5-5', effort: 'high' })], env)
   const done = fx.waitDone(args, call, env)
   assert.deepEqual([done.status, done.detail, done.result], ['blocked', 'the unit worktree changed during a read-only lane call', null])
-  assert.equal(fs.existsSync(path.join(args.repoRoot, '.aether', 'lanes', args.runId, call)), false)
+  assert.equal(fs.existsSync(path.join(args.repoRoot, '.aether', 'worktrees', 'lanes', args.runId, call)), false)
 })
 
 test("the final reviewer reads a disposable copy of the integration branch with the run's package", (t) => {

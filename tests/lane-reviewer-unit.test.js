@@ -30,7 +30,7 @@ test('a reviewer call with a task reviews a disposable copy of the unit branch, 
   assert.deepEqual(start.json, { started: true, model: 'claude-opus-5-5-high', group: 'claude' })
   const done = fx.waitDone(args, call, env)
   assert.deepEqual([done.status, done.result.verdict], ['ok', 'ready'])
-  const copy = path.join(args.repoRoot, '.aether', 'lanes', args.runId, call)
+  const copy = path.join(args.repoRoot, '.aether', 'worktrees', 'lanes', args.runId, call)
   const turn = fx.agyTurns(env).find((turn) => turn.cwd === copy)
   assert.ok(turn, 'the reviewer ran in the unit copy')
   assert.deepEqual([turn.head, turn.files], [fx.git(unit, 'rev-parse', 'HEAD'), ['brief.md', 'package.diff']])
