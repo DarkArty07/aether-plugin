@@ -39,6 +39,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 - [Otros harnesses](es/guias/otros-harnesses.md): manda trabajo a agy, Codex, Grok, Cursor o Muse mientras dure su cuota.
 - [Ver el gasto](es/guias/ver-el-gasto.md): lee lo que costó una sesión a precio de lista con el panel `/spend` y `aether-report`.
 - [Actualizar y desinstalar](es/guias/actualizar-y-desinstalar.md): actualiza Aether, cambia lo que elegiste, fija o revierte una versión, y desinstala el plugin y el comando `aeth`.
+- [Archivos, skills y continuidad](es/guias/archivos-skills-y-continuidad.md): la regla de AGENTS.md y CLAUDE.md, el mapa de .aether/, los cuatro tipos de skills, la continuidad de sesión y el ordenado.
 
 ## If you use Aether
 
@@ -53,6 +54,7 @@ This is where the pages of Aether live, grouped by who is reading. The [README](
 - [Maintenance](guide/maintenance.md): the platforms, updating, pinning, rolling back and uninstalling, where the data lives and upgrading from 0.6.
 - [Self-observation](guide/observe.md): how the plugin finds its own faults and out-of-date settings in a Lead session, what the standard and the development installations gather, the `aether-observe` commands, and why nothing leaves your machine, but for the automatic issues of its development mode.
 - [Troubleshooting](guide/troubleshooting.md): what to check when something does not work as the guide says.
+- [Project files, skills, and continuity](guide/project-files-and-skills.md): the rule of AGENTS.md and CLAUDE.md, the map of .aether/, the four kinds of skills, session continuity, and project tidying.
 - [Components](reference/components.md): the agents, skills, commands, hooks and workflows the plugin ships.
 
 ## If you contribute

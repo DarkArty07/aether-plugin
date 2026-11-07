@@ -24,6 +24,7 @@ Si es tu primera vez, léelas en este orden:
 7. [Ver el gasto](guias/ver-el-gasto.md): cuánto cuesta una sesión, con `/spend` y desde la terminal.
 8. [Actualizar y desinstalar](guias/actualizar-y-desinstalar.md): mantener Aether al día, fijar una versión y quitarlo.
 9. [Auditar un proyecto](guias/auditar-un-proyecto.md): pide al Lead una auditoría de solo lectura y recibe una sola lista ordenada de lo más a lo menos urgente.
+10. [Archivos, skills y continuidad](guias/archivos-skills-y-continuidad.md): las reglas de AGENTS.md y CLAUDE.md, el mapa de .aether/, los cuatro tipos de skills, la continuidad y cómo ordenar con tidy.
 
 ## La referencia está en inglés
 
