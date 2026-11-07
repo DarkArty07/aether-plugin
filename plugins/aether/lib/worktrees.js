@@ -15,6 +15,7 @@ const { killGroup, killMarked } = require('./lanes.js')
 const { judge } = require('./baseline.js')
 const common = require('./common.js')
 const { exists, nulEntries, pidAlive: processAlive, sleepSync } = common
+const { stampDue, writeStamp, STAMP_INTERVAL_MS: SWEEP_STALE_INTERVAL_MS } = require('./tree-clean.js')
 
 function loadGraph(mainRoot, runId) {
   run.assertRunId(runId)
@@ -1353,37 +1354,6 @@ function hasRecordStatus(runId, status, dir = run.dataDir()) {
   })
 }
 
-// How often session start may sweep stale runs: a second start within this interval finds the
-// stamp the sweep before it left in the data directory and does nothing, so old runs no longer cost
-// a /proc walk at every start (issue 180).
-const SWEEP_STALE_INTERVAL_MS = 10 * 60 * 1000
-
-// The stamp the last sweep left in the data directory, written the way the other state files are.
-function sweepStampFile(dataDir) {
-  return path.join(dataDir, 'sweep-stale.json')
-}
-
-// Whether a sweep is due: a missing or unreadable stamp, or one older than the interval, says so.
-// A stamp from the future (the clock moved back) says so too: sweeping is the safe default. Never throws.
-function sweepDue(dataDir, now) {
-  let at = null
-  try {
-    const stamp = JSON.parse(fs.readFileSync(sweepStampFile(dataDir), 'utf8'))
-    if (Number.isFinite(stamp?.at)) at = stamp.at
-  } catch {
-    // No stamp: due.
-  }
-  return at === null || now < at || now - at >= SWEEP_STALE_INTERVAL_MS
-}
-
-function writeSweepStamp(dataDir, now) {
-  try {
-    run.writeJson(sweepStampFile(dataDir), { at: now })
-  } catch {
-    // Housekeeping: a stamp that cannot be written never blocks the sweep.
-  }
-}
-
 // Removes runs that were never finalized and have had no activity for `hours`, plus leftovers
 // whose run directory is already gone (only the unit worktrees and the branches whose work is integrated: a branch with
 // work that is not integrated, or a patch of a task not integrated, is kept). Activity is any change in the run directory or in the
@@ -1394,8 +1364,8 @@ function writeSweepStamp(dataDir, now) {
 // keeps its run directory too, is not counted in `swept`, and is recorded as abandoned only once.
 // A second call within SWEEP_STALE_INTERVAL_MS of the last sweep does nothing.
 function sweepStale(cwd, { hours = 24, now = Date.now(), dataDir = run.dataDir() } = {}) {
-  if (!sweepDue(dataDir, now)) return { swept: [] }
   const { mainRoot } = repoPaths(cwd)
+  if (!stampDue(dataDir, mainRoot, 'stale', now)) return { swept: [] }
   const ids = new Set()
   for (const sub of ['runs', 'worktrees', 'lanes']) {
     const dir = path.join(run.aetherDir(mainRoot), sub)
@@ -1466,7 +1436,7 @@ function sweepStale(cwd, { hours = 24, now = Date.now(), dataDir = run.dataDir()
     fs.rmSync(dir, { recursive: true, force: true })
     swept.push(id)
   }
-  writeSweepStamp(dataDir, now)
+  writeStamp(dataDir, mainRoot, 'stale', now)
   return { swept }
 }
 

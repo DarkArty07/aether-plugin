@@ -7,6 +7,7 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { WT_BIN, makeRepo, compile, commitIn, runBin, tempDir, ageRun } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
+const { stampFile } = require('../plugins/aether/lib/tree-clean.js')
 
 const show = (repo, spec) => spawnSync('git', ['show', spec], { cwd: repo.dir, encoding: 'utf8' }).stdout
 const owned = (...parts) => parts.join('/')
@@ -135,11 +136,26 @@ test('a second sweepStale soon after the first walks /proc no more, and the firs
   assert.deepEqual(first, { swept: [args.runId] })
   assert.ok(walks >= 1, 'the first sweep looks for lane processes')
   assert.equal(fs.existsSync(one.path), false, 'the stale worktree is swept')
-  assert.ok(Number.isFinite(JSON.parse(fs.readFileSync(path.join(data, 'sweep-stale.json'), 'utf8')).at), 'the sweep leaves its stamp in the data directory')
+  assert.ok(Number.isFinite(JSON.parse(fs.readFileSync(stampFile(data, repo.dir, 'stale'), 'utf8')).at), 'the sweep leaves its stamp in the data directory')
   const seen = walks
   const second = sweepStale(repo.dir, { now: Date.now(), dataDir: data })
   assert.deepEqual(second, { swept: [] })
   assert.equal(walks, seen, 'the second sweep walks /proc no more')
+})
+
+test('the stamp of one repository does not keep another repository from being swept (R18, issue 186)', (t) => {
+  const { sweepStale } = require('../plugins/aether/lib/worktrees.js')
+  const { repo: repoA, args: argsA, one: oneA } = unit(t)
+  const { repo: repoB, args: argsB, one: oneB } = unit(t)
+  ageRun(argsA, 48)
+  ageRun(argsB, 48)
+  const data = tempDir(t, 'aether-data-')
+  const firstA = sweepStale(repoA.dir, { now: Date.now(), dataDir: data })
+  assert.deepEqual(firstA, { swept: [argsA.runId] })
+  assert.equal(fs.existsSync(oneA.path), false)
+  const firstB = sweepStale(repoB.dir, { now: Date.now(), dataDir: data })
+  assert.deepEqual(firstB, { swept: [argsB.runId] })
+  assert.equal(fs.existsSync(oneB.path), false)
 })
 
 test('after save, sweep keeps the branch and stale records the run once', (t) => {
