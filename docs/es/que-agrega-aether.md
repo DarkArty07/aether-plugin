@@ -13,7 +13,6 @@ Esta página es para quien ya instaló Aether. Enumera, punto por punto, lo que 
 - `/aether:setup`: la configuración guiada. Córrela una vez después de instalar: revisa tu máquina, pregunta solo lo que no puede detectar (cómo maneja `aeth` los permisos y, si encuentra otros harnesses instalados, si les manda trabajo), guarda tus opciones, instala `aeth` y termina en una pantalla que dice qué escribir. Córrela otra vez para cambiar lo que elegiste.
 - `/aether:doctor`: una revisión de solo lectura de la instalación (Claude Code, Node, git, el comando `aeth`, los workflows, los harnesses). Escríbela cuando algo falle: muestra qué revisó, qué falló y el arreglo exacto, y no cambia nada.
 - `/aether:help [tema]`: un mapa de lo que agrega Aether, organizado por lo que quieres hacer, con el comando de cada cosa y la guía que leer. `/aether:help spend` responde un tema.
-- `/aether:onboard [tema]`: haz que el Lead entienda el proyecto antes de pedirle nada. Solo lee (el README, `CLAUDE.md`, git, el handoff más reciente, la feature abierta) y termina con un brief de 5 a 8 líneas.
 - `/aether:audit [temas] [--no-tests]`: una auditoría de solo lectura del proyecto (tests, secretos, hotspots, doce temas). El Lead pregunta una vez qué temas cubrir, revisa y verifica con delegados de solo lectura, y te entrega una sola lista de P0 a P3 para que elijas (mira [Auditar un proyecto](guias/auditar-un-proyecto.md)).
 - `/aether:design`: el workflow de diseño. Convierte la tarjeta de intención del Lead en una spec, un plan y unas tareas aprobados, más un examen oculto, y termina en un solo resultado: `approved`, `clarify`, `dispute` o `failed`. El Lead lo lanza por ti; necesita la herramienta Workflow de Claude Code.
 - `/aether:run`: el workflow del enjambre. Construye un plan aprobado en oleadas paralelas, con una cola de merges y una revisión final. El Lead lo lanza cuando el plan tiene tres tareas o más.
@@ -88,7 +87,6 @@ Están en el `PATH` de la herramienta Bash en una sesión con el plugin, así qu
 | Saber por qué algo falla | `/aether:doctor` |
 | Cambiar mis permisos, mis harnesses o el nombre del comando | Corre `/aether:setup` otra vez |
 | Ver qué puede hacer Aether | `/aether:help`; agrega un tema, como en `/aether:help spend` |
-| Que el Lead conozca primero el proyecto | `/aether:onboard` |
 | Saber qué está pendiente, lo más urgente primero | `/aether:audit` ([guía](guias/auditar-un-proyecto.md)) |
 | Pedir un primer trabajo | Díselo al Lead con tus palabras ([guía](guias/primera-peticion.md)) |
 | Que se construya una feature completa | Di lo que quieres y contesta sus preguntas; diseña, construye y reporta ([guía](guias/feature-completa.md)) |

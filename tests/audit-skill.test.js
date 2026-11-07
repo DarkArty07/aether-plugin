@@ -1,6 +1,6 @@
 'use strict'
 
-// Spec 026 (R1, R2, R9, R26, R28): the skill audit has the front matter of onboard, names the seven phases and the twelve topics
+// Spec 026 (R1, R2, R9, R26, R28): the skill audit has the front matter of the audit skill, names the seven phases and the twelve topics
 // of its catalog (each with a source that research.md holds), does not depend on the Workflow tool, and the help names it.
 
 const test = require('node:test')
@@ -25,7 +25,7 @@ function frontMatter(text) {
   return Object.fromEntries(block[1].split('\n').map((line) => [line.slice(0, line.indexOf(':')), line.slice(line.indexOf(':') + 1).trim()]))
 }
 
-test('the front matter is the one of onboard: name, description, argument-hint and disable-model-invocation (R1, R28)', () => {
+test('the front matter is the one of the audit skill: name, description, argument-hint and disable-model-invocation (R1, R28)', () => {
   const front = frontMatter(skill)
   assert.deepEqual(Object.keys(front), ['name', 'description', 'argument-hint', 'disable-model-invocation'])
   assert.equal(front.name, 'audit')

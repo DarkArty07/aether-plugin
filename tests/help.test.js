@@ -68,7 +68,7 @@ test('the help names every skill the person invokes as /aether:<name>', () => {
   const skills = fs.readdirSync(path.join(PLUGIN, 'skills'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(PLUGIN, 'skills', entry.name, 'SKILL.md')))
     .map((entry) => entry.name)
-  assert.ok(skills.includes('onboard'), 'the plugin has skills')
+  assert.ok(skills.includes('audit'), 'the plugin has skills')
   for (const [name, reason] of Object.entries(EXCLUDED)) assert.ok(reason.length > 0, `${name} is excluded with a reason`)
   const missing = skills.filter((name) => !(name in EXCLUDED) && !names(`/aether:${name}`))
   assert.deepEqual(missing, [], `the help does not name /aether:${missing.join(', /aether:')}`)

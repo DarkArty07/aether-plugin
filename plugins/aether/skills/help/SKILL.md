@@ -52,9 +52,6 @@ The person called `/aether:help`, maybe with a topic, as in `/aether:help spend`
 - This session's list-price spend, by model, effort and role, plus the calls to other harnesses: `/spend`. As JSON: ask the Lead to run `aether-report --spend`; in a plain terminal it is not on the `PATH`, so run its file by the path the guide gives. The delegate tasks and how each climbed: `aether-report --delegates`, the same way.
 - Guide: https://github.com/DarkArty07/aether-plugin/blob/main/docs/tutorials/see-the-spend.md, https://github.com/DarkArty07/aether-plugin/blob/main/docs/es/guias/ver-el-gasto.md
 
-## Get oriented in a project
-- At the start of a session, so the Lead knows the project before you ask for anything: `/aether:onboard`, or `/aether:onboard <topic>` to go deeper on one thing. It only reads and ends with a short brief.
-
 ## Audit a project
 - To learn what is pending in the project, from the most urgent to the least: `/aether:audit [topics] [--no-tests]`. The Lead runs the automated analysis (tests, dependencies, secrets, hotspots), asks once which topics to audit, reviews and verifies with read-only delegates, and hands back one list from P0 to P3 for you to choose from. It changes nothing in the project and fixes nothing; what you choose becomes a GitHub issue.
 - Guide: https://github.com/DarkArty07/aether-plugin/blob/main/docs/guide/audit.md, https://github.com/DarkArty07/aether-plugin/blob/main/docs/es/guias/auditar-un-proyecto.md

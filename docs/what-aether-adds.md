@@ -13,7 +13,6 @@ This page is for someone who has installed Aether. It lists, point by point, wha
 - `/aether:setup`: the guided setup. Run it once after installing: it checks your machine, asks only what it cannot detect (how `aeth` handles permissions and, if it finds other harnesses installed, whether to send work to them), saves your options, installs `aeth` and ends on a screen that says what to type. Run it again to change your choices.
 - `/aether:doctor`: a read-only check of the install (Claude Code, Node, git, the `aeth` command, workflows, harnesses). Type it when something fails: it prints what it checked, what failed and the exact fix, and changes nothing.
 - `/aether:help [topic]`: a map of what Aether adds, organized by what you want to do, with the command of each thing and the guide to read. `/aether:help spend` answers one topic.
-- `/aether:onboard [topic]`: have the Lead understand the project before you ask for anything. It only reads (the README, `CLAUDE.md`, git, the newest handoff, the open feature) and ends with a brief of 5 to 8 lines.
 - `/aether:audit [topics] [--no-tests]`: a read-only audit of the project (tests, secrets, hotspots, twelve topics). The Lead asks once which topics to cover, reviews and verifies with read-only delegates, and hands back one list from P0 to P3 for you to choose from (see [Audit a project](guide/audit.md)).
 - `/aether:design`: the design workflow. It turns the Lead's intent card into an approved spec, plan and tasks, plus a hidden exam, and ends in one result: `approved`, `clarify`, `dispute` or `failed`. The Lead launches it for you; it needs Claude Code's Workflow tool.
 - `/aether:run`: the swarm workflow. It builds an approved plan in parallel waves, with a merge queue and a final review. The Lead launches it when the plan has three or more tasks.
@@ -88,7 +87,6 @@ These are on the Bash tool's `PATH` in a session with the plugin, so the Lead ru
 | Find out why something fails | `/aether:doctor` |
 | Change my permissions, harnesses or the command's name | Run `/aether:setup` again |
 | See what Aether can do | `/aether:help`; add a topic, as in `/aether:help spend` |
-| Have the Lead learn the project first | `/aether:onboard` |
 | Know what is pending, most urgent first | `/aether:audit` ([guide](guide/audit.md)) |
 | Ask for a first piece of work | Tell the Lead in your own words ([guide](tutorials/first-request.md)) |
 | Get a whole feature built | Say what you want and answer its questions; it designs, builds and reports ([guide](tutorials/whole-feature.md)) |
