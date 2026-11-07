@@ -74,3 +74,45 @@ test('custom limits appear in finding text and fenced imports are ignored', (t) 
   assert.match(check.findingText(findings[2], { spanish: true }), /tope es 2/)
   assert.equal(check.importsAgents('@AGENTS.md extra text\n'), true)
 })
+
+test('Write, Edit and MultiEdit warn for both roots from a linked worktree without changing files (R12)', (t) => {
+  const repo = makeRepo(t)
+  const linked = path.join(tempDir(t), 'linked')
+  repo.git('worktree', 'add', '-q', '-b', 'linked', linked)
+  const cwd = path.join(linked, 'nested')
+  fs.mkdirSync(cwd)
+  const ctx = { env: { LANG: 'en_US.UTF-8' }, home: tempDir(t) }
+  const snapshots = new Map()
+  for (const root of [repo.dir, linked]) {
+    put(root, 'CLAUDE.md', lines(201))
+    put(root, 'AGENTS.md', lines(root === linked ? 202 : 203))
+    for (const name of ['CLAUDE.md', 'AGENTS.md']) {
+      const file = path.join(root, name)
+      snapshots.set(file, fs.readFileSync(file, 'utf8'))
+    }
+  }
+  const before = repo.git('status', '--porcelain', '--untracked-files=all')
+  const linkedBefore = repo.git('-C', linked, 'status', '--porcelain', '--untracked-files=all')
+  for (const tool_name of ['Write', 'Edit', 'MultiEdit']) {
+    for (const root of [repo.dir, linked]) {
+      const expected = [
+        'CLAUDE.md does not import AGENTS.md: add the line @AGENTS.md to CLAUDE.md.',
+        'CLAUDE.md has 201 lines (the limit is 200): move what is not Claude-only to AGENTS.md or to .claude/rules/.',
+        `AGENTS.md has ${root === linked ? 202 : 203} lines (the limit is 200): split it and keep it a map.`,
+      ].join('\n')
+      for (const name of ['CLAUDE.md', 'AGENTS.md']) {
+        const absolute = path.join(root, name)
+        for (const file_path of [absolute, path.relative(cwd, absolute)]) {
+          assert.deepEqual(posttool.posttool({ cwd, tool_name, tool_input: { file_path } }, ctx),
+            { additionalContext: expected }, `${tool_name}: ${file_path}`)
+        }
+      }
+    }
+    put(cwd, 'CLAUDE.md', lines(201))
+    assert.equal(posttool.posttool({ cwd, tool_name, tool_input: { file_path: 'CLAUDE.md' } }, ctx), null)
+  }
+  fs.unlinkSync(path.join(cwd, 'CLAUDE.md'))
+  for (const [file, text] of snapshots) assert.equal(fs.readFileSync(file, 'utf8'), text, file)
+  assert.equal(repo.git('status', '--porcelain', '--untracked-files=all'), before)
+  assert.equal(repo.git('-C', linked, 'status', '--porcelain', '--untracked-files=all'), linkedBefore)
+})
