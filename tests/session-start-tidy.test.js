@@ -23,7 +23,7 @@ function world(t) {
     const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: dir, input: JSON.stringify(input), encoding: 'utf8', env })
     return { status: r.status, stdout: r.stdout, out: r.stdout ? JSON.parse(r.stdout) : null }
   }
-  return { repo, data, home, start }
+  return { repo, data, home, configDir, start }
 }
 
 test('a project with leftovers of the old CLI and a CLAUDE.md that does not import AGENTS.md gets a short notice that names aether:tidy (C13, H4 scenario 27)', (t) => {
@@ -92,6 +92,68 @@ test('the notices stay within the limit and never push out the continuity notice
   const { stdout, out } = w.start('startup')
   assert.ok(stdout.length <= PART_LIMIT, `${stdout.length} characters`)
   assert.ok(out.systemMessage.includes('No earlier session in this project.'))
+})
+
+test('oversized optional notices are trimmed before the continuity notice (R36, R7)', (t) => {
+  const w = world(t)
+  const store = require('../plugins/aether/lib/continuity-store.js')
+  const dir = store.continuityDir({ cwd: w.repo.dir, env: { CLAUDE_CONFIG_DIR: w.configDir }, home: w.home })
+  store.writeNote(dir, {
+    session: 'previous-session', branch: 'main', commit: w.repo.git('rev-parse', 'HEAD'),
+    updatedAt: Date.now() - 3600000, lastMessage: 'Continue the migration',
+    process: { pid: 99999999, start: 1 }, cut: { at: Date.now() - 1000, reason: 'rate_limit' }, closed: null,
+  })
+  const runFile = path.join(w.repo.dir, '.aether', 'autonomy', 'auto-test', 'run.json')
+  const reset = 'Nov 07 2998 12:00:00 GMT'
+  const run = {
+    id: 'auto-test', session: 'old', started: new Date().toISOString(), ended: null,
+    ceilings: { hours: 8, usd: 50 }, spend: [],
+    quotaPauses: [{ resetsAt: reset, resumeAt: '2999-01-01T00:00:00Z' }],
+  }
+  put(runFile, JSON.stringify(run))
+  put(path.join(w.repo.dir, '.aether', 'aether.db'))
+  const skillPath = path.join(w.repo.dir, '.agents', 'skills', 'idle')
+  put(path.join(skillPath, 'SKILL.md'))
+  put(path.join(w.data, 'skills', 'created.jsonl'), JSON.stringify({ time: Date.now() - 40 * 86400000, repo: w.repo.dir, name: 'idle', path: skillPath }) + '\n')
+
+  const baseline = w.start('startup')
+  assert.equal(baseline.status, 0)
+  assert.ok(baseline.out.hookSpecificOutput.additionalContext.includes(`resets ${reset} and the run resumes`), 'the fixture produces the run note')
+  assert.ok(baseline.out.hookSpecificOutput.additionalContext.includes('Continue the migration'), 'the fixture produces the continuity notice')
+  const sections = baseline.out.hookSpecificOutput.additionalContext.split('\n\n')
+  const tidy = sections.find((line) => line.startsWith('Tidy:'))
+  const idle = sections.find((line) => line.startsWith('Skills nobody used in 30 days:'))
+  assert.ok(tidy, 'the fixture produces a tidy notice')
+  assert.ok(idle, 'the fixture produces an idle-skill notice')
+
+  // Each notice occurs once in the JSON context, preceded by two escaped newlines. Pad the valid reset
+  // date so the core payload fits by one character, but neither notice can fit alongside it.
+  const jsonLength = (text) => JSON.stringify(`\n\n${text}`).length - 2
+  const coreLength = baseline.stdout.length - jsonLength(tidy) - jsonLength(idle)
+  const padding = PART_LIMIT - coreLength - 1
+  assert.ok(padding > 0)
+  run.quotaPauses[0].resetsAt = reset.replace(' 12:', `${' '.repeat(padding)} 12:`)
+  assert.ok(Number.isFinite(Date.parse(run.quotaPauses[0].resetsAt)))
+  const untrimmedLength = baseline.stdout.length + padding
+  assert.ok(untrimmedLength > PART_LIMIT, `${untrimmedLength} characters before trimming`)
+  assert.ok(untrimmedLength - jsonLength(idle) > PART_LIMIT, 'tidy alone also exceeds the limit')
+  put(runFile, JSON.stringify(run))
+
+  const { status, stdout, out } = w.start('startup')
+  assert.equal(status, 0)
+  const context = out.hookSpecificOutput.additionalContext
+  for (const line of [
+    'Last session (previous, branch main) stopped at: Continue the migration',
+    'Since then: nothing changed in git. The branch moved from main to feature/x.',
+    'The session was cut off (rate_limit): claude --resume previous-session',
+  ]) {
+    assert.ok(context.includes(line), `context keeps: ${line}; got ${JSON.stringify(context.slice(0, 500))}`)
+    assert.ok(out.systemMessage.includes(line), `system message keeps: ${line}`)
+  }
+  assert.ok(context.includes(run.quotaPauses[0].resetsAt), 'the long run note is present')
+  assert.ok(!context.includes('Tidy:'))
+  assert.ok(!context.includes('Skills nobody used in 30 days:'))
+  assert.ok(stdout.length <= PART_LIMIT, `${stdout.length} characters exceeds ${PART_LIMIT}`)
 })
 
 test('a session that is not the Lead prints nothing (R40)', (t) => {
