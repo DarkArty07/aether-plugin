@@ -57,6 +57,7 @@ Every delegate call carries these lines in its brief:
 
 - `AETHER-TASK: <id>`: the task's name, of letters, digits, `-` and `_`. A correction or a rise is launched with the same id, and the system adds the earlier work and the findings to the brief; a new id is a new task. A call with no such line gets an id from the system, and a note to the Lead names it, because a verdict is made on an id.
 - `AETHER-OWNS: <globs>` and `AETHER-TESTS: <command>`, when the task edits: the files it may touch, comma-separated, and the command that proves it works. Without `AETHER-OWNS:` the task is read-only: touching any file of the checkout fails it, and so does an empty answer.
+- `AETHER-SKILLS: <skills>`: at most three skills assigned to the task, comma-separated. A task with `AETHER-SKILLS:` has those skills injected into the delegate's instructions, and both `uses.jsonl` in the data directory and the delegate log's `launch` record note the skills used.
 
 A delegate that edits and runs on Claude works with `isolation: "worktree"`, which the system puts on the call.
 

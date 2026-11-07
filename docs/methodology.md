@@ -96,7 +96,7 @@ Reviews are bounded:
 - a document gets at most two revisions. When a third review still does not approve, `/aether:design` ends with a `dispute` that holds both positions; when the Judge rejects the approach, it holds the Judge's direction. The Lead rethinks the card, or puts both positions and their cost into the owner's list and goes on with the work that does not depend on them. The Lead never silently overrides the Judge;
 - a later change to a spec, a plan or tasks goes through `/aether:design` in short mode on the changed document, and a plan that changes after its exam was written gets a new exam.
 
-Only the Lead and the Writer write specs, plans and tasks, and only the Lead writes the intent card: aether-guard refuses every other writer. The Examiner writes only under `.aether-exam/`.
+Only the Lead and the Writer write specs, plans and tasks, and only the Lead writes the intent card: aether-guard refuses every other writer. The Examiner writes only under `.aether/exam/`.
 
 ## The brakes and the four results
 
