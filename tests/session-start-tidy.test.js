@@ -18,9 +18,9 @@ function world(t) {
   const home = tempDir(t, 'aether-home-')
   const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data, CLAUDE_CONFIG_DIR: configDir, HOME: home, LANG: 'en_US.UTF-8' }
   for (const key of ['LC_ALL', 'LC_MESSAGES', 'CLAUDE_ENV_FILE']) delete env[key]
-  const start = (source, agent = 'aether:lead') => {
+  const start = (source, agent = 'aether:lead', dir = repo.dir) => {
     const input = { hook_event_name: 'SessionStart', session_id: 's1', source, ...(agent ? { agent_type: agent } : {}) }
-    const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: repo.dir, input: JSON.stringify(input), encoding: 'utf8', env })
+    const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: dir, input: JSON.stringify(input), encoding: 'utf8', env })
     return { status: r.status, stdout: r.stdout, out: r.stdout ? JSON.parse(r.stdout) : null }
   }
   return { repo, data, home, start }
@@ -58,6 +58,32 @@ test('a skill the Lead created more than 30 days ago that no task received is na
   const context = w.start('startup').out.hookSpecificOutput.additionalContext
   assert.ok(context.includes("Skills nobody used in 30 days: old-method. Consider removing them, with the owner's yes (aether:skills)."))
   assert.equal(fs.existsSync(path.join(dir, 'SKILL.md')), true)
+})
+
+test('a Lead started in a linked worktree reads the disorder of that worktree, not of the main checkout (R36)', (t) => {
+  const w = world(t)
+  put(path.join(w.repo.dir, 'AGENTS.md'), 'map\n')
+  put(path.join(w.repo.dir, 'CLAUDE.md'), 'claude only\n')
+  const linked = path.join(tempDir(t, 'aether-linked-'), 'copy')
+  w.repo.git('worktree', 'add', '-q', '-b', 'feature/tidy', linked)
+  put(path.join(linked, 'AGENTS.md'), 'map\n')
+  put(path.join(linked, 'CLAUDE.md'), '@AGENTS.md\n')
+  const { status, stdout, out } = w.start('startup', 'aether:lead', linked)
+  assert.equal(status, 0)
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('Aether mode is active.'))
+  assert.ok(!stdout.includes('Tidy:'), 'the main checkout is untidy, the working copy is not')
+})
+
+test('a Lead started in an untidy linked worktree gets its notice even when the main checkout is tidy (R36)', (t) => {
+  const w = world(t)
+  put(path.join(w.repo.dir, 'AGENTS.md'), 'map\n')
+  put(path.join(w.repo.dir, 'CLAUDE.md'), '@AGENTS.md\n')
+  const linked = path.join(tempDir(t, 'aether-linked-'), 'copy')
+  w.repo.git('worktree', 'add', '-q', '-b', 'feature/untidy', linked)
+  put(path.join(linked, 'AGENTS.md'), 'map\n')
+  put(path.join(linked, 'CLAUDE.md'), 'claude only\n')
+  const context = w.start('startup', 'aether:lead', linked).out.hookSpecificOutput.additionalContext
+  assert.ok(context.includes('Tidy: CLAUDE.md does not import AGENTS.md.'))
 })
 
 test('the notices stay within the limit and never push out the continuity notice (R36, R7)', (t) => {
