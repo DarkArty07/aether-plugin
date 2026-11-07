@@ -19,6 +19,7 @@ const { isObject } = require('./common.js')
 const { dataDir: getDataDir } = require('./run.js')
 const { classifySkillPath, copyAdvice, installClass, trustedFile } = require('./skill-rules.js')
 const { classifyClaudePath } = require('./tree-paths.js')
+const { tidyTargets, emptiesTidyFile } = require('./tidy-guard.js')
 
 const CHECKED_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const PROTECTED = [
@@ -50,6 +51,11 @@ function decide(input, env = process.env) {
     return {
       reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end) instead of editing ${resolved}.`,
     }
+  }
+
+  if (emptiesTidyFile(input)) {
+    const items = [{ cls: 'delete', command: `Write ${target}` }]
+    return recordAndDecide(items, { cwd: base, session: input.session_id, env })
   }
 
   if (isTrustedTarget(target, base, env)) {
@@ -909,7 +915,13 @@ function unquotedRedirection(word, mask) {
 function irreversibleClasses(command, cwd, env = process.env) {
   const out = []
   collectCommand(command, 0, null, sequenceOf(cwd), out, env)
-  return out.map((found) => found.cls)
+  const classes = out.map((found) => found.cls)
+  const home = (env && env.HOME) || os.homedir()
+  const targets = tidyTargets(command, { cwd, home })
+  if (targets.length > 0 && !classes.includes('delete')) {
+    classes.push('delete')
+  }
+  return classes
 }
 
 // The irreversible class of a Bash command, or null. The first class of the line decides.
