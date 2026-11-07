@@ -59,6 +59,8 @@ test('the Writer runs on Sonnet at high effort, and writes plans with Aether fie
   for (const needle of [
     '`aether:plan`',
     '`aether:tasks`',
+    '`aether:art-direction`',
+    'art-direction.md',
     '**Aether:**',
     '## Aether Execution',
     'aether-plan check',
