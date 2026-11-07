@@ -11,6 +11,7 @@
 
 const path = require('node:path')
 const { isObject } = require('./common.js')
+const { classifyClaudePath } = require('./tree-paths.js')
 
 const CHECKED_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const PROTECTED = [
@@ -22,7 +23,7 @@ const AUTONOMY_PROTECTED = /(^|\/)\.aether\/autonomy\/(grants\.json|[^/]+\/run\.
 const LEAD = 'aether:lead'
 const WRITER = 'aether:writer'
 const EXAMINER = 'aether:examiner'
-const EXAM_PATH = /(^|\/)\.aether-exam\//
+const EXAM_PATH = /(^|\/)(\.aether-exam|\.aether\/exam)\//
 const INTENT_CARD = /(^|\/)specs\/\d{3}-[^/]+\/intent\.md$/
 
 // decide(input) gives null to allow, or { reason } to deny.
@@ -42,10 +43,21 @@ function decide(input) {
     }
   }
 
+  try {
+    const claude = classifyClaudePath(target, { cwd: base })
+    if (claude && claude.kind === 'config') {
+      return {
+        reason: `In Aether mode no agent writes Claude Code's settings or hooks (${target}).`,
+      }
+    }
+  } catch {
+    // classifyClaudePath can throw on broken repositories or ELOOP; ignore
+  }
+
   // The Examiner's exam must stay out of the repository and of the swarm's sight, so it writes nothing else.
   if (input.agent_type === EXAMINER && !EXAM_PATH.test(normalized)) {
     return {
-      reason: `In Aether mode the Examiner writes only its exam, under .aether-exam/ at the repository root. Write ${path.basename(resolved)} there instead of ${resolved}.`,
+      reason: `In Aether mode the Examiner writes only its exam, under .aether/exam/ at the repository root. Write ${path.basename(resolved)} there instead of ${resolved}.`,
     }
   }
 
@@ -1014,6 +1026,54 @@ function protectedMention(command, cwd = process.cwd()) {
   return writer ? words.find(directoryMention) || null : null
 }
 
+const CLAUDE_CONFIG = /(?:^|[\s'"`;|&()=,<>])((?:[^\s'"`;|&()=,<>]+\/)?\.claude\/(?:settings\.json|settings\.local\.json|hooks(?:\/[^\s'"`;|&()<>]*)?))(?=$|[\s'"`;|&()=,<>])/
+
+function claudeConfigPath(str) {
+  const m = typeof str === 'string' && str.match(CLAUDE_CONFIG)
+  return m ? m[1] : null
+}
+
+// Limit A14 (spec 030): commands that assemble the path at runtime (e.g. a script building .claude/ dynamically) cannot be detected.
+function claudeConfigWrite(command) {
+  if (typeof command !== 'string') return null
+  const segments = []
+  const visit = (text, depth) => {
+    for (const words of segmentsOf(text)) {
+      segments.push(words)
+      if (depth >= MAX_NESTING) continue
+      const unwrapped = dropWrappers(words)
+      const named = unwrapped.length ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
+      const script = scriptOf(named)
+      if (script !== null) visit(script, depth + 1)
+      if (SHELLS.has(named[0]) && shellReadsStdin(named.slice(1))) {
+        for (const body of words.heredocs || []) visit(body.text, depth + 1)
+      }
+    }
+  }
+  visit(command, 0)
+
+  for (const segment of segments) {
+    for (let i = 0; i < segment.length; i++) {
+      const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
+      if (after !== null) {
+        const target = (after || segment[i + 1] || '').trim()
+        const configTarget = claudeConfigPath(target)
+        if (configTarget) return configTarget
+      }
+    }
+
+    const unwrapped = dropWrappers(segment)
+    const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
+    if (!READ_COMMANDS.has(cmd)) {
+      for (const w of segment) {
+        const found = claudeConfigPath(w)
+        if (found) return found
+      }
+    }
+  }
+  return null
+}
+
 // A Bash call: null to allow, or { reason } to deny.
 function decideBash(input, env = process.env) {
   const command = input.tool_input?.command
@@ -1021,6 +1081,8 @@ function decideBash(input, env = process.env) {
   let mention
   try { mention = module.exports.protectedMention(command, cwd) } catch { mention = 'the protected files' }
   if (mention) return { reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end, quarantine) instead of editing ${mention}.` }
+  const claudeConfig = claudeConfigWrite(command)
+  if (claudeConfig) return { reason: `In Aether mode no agent writes Claude Code's settings or hooks (${claudeConfig}).` }
   try {
     const classes = irreversibleClasses(command, cwd)
     if (!classes.length) return null
