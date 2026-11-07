@@ -47,16 +47,19 @@ const writes = (file) => [
   ['MultiEdit', { file_path: file, edits: [] }],
 ]
 
-test('the Examiner writes only under .aether-exam/, and nothing else, a spec included', () => {
+test('the Examiner writes only under .aether/exam/ and under the old .aether-exam/, and nothing else, a spec included', () => {
   const examiner = { agent_id: 'a4', agent_type: 'aether:examiner' }
   assert.equal(decide(call('Write', { file_path: '.aether-exam/c1.test.js', content: 'x' }, examiner)), null)
+  assert.equal(decide(call('Write', { file_path: '.aether/exam/c1.test.js', content: 'x' }, examiner)), null)
   assert.equal(decide(call('Edit', { file_path: '/repo/.aether-exam/exam.json', old_string: 'a', new_string: 'b' }, examiner)), null)
-  for (const file of ['src/app.js', 'specs/001-login/spec.md', '.aether-examples/x.js', '/elsewhere/.aether-exam-not/x']) {
+  assert.equal(decide(call('Edit', { file_path: '/repo/.aether/exam/exam.json', old_string: 'a', new_string: 'b' }, examiner)), null)
+  for (const file of ['src/app.js', 'specs/001-login/spec.md', '.aether-examples/x.js', '/elsewhere/.aether-exam-not/x', '.aether/examples/x.js', '.aether/exam-not/x']) {
     const d = decide(call('Write', { file_path: file, content: 'x' }, examiner))
     assert.ok(d, file)
-    assert.match(d.reason, /^In Aether mode the Examiner writes only its exam, under \.aether-exam\/ at the repository root\./, file)
+    assert.match(d.reason, /^In Aether mode the Examiner writes only its exam, under \.aether\/exam\/ at the repository root\./, file)
   }
   assert.equal(decide(call('Write', { file_path: '.aether-exam/c1.test.js', content: 'x' }, implementer)), null, 'the rule is the Examiner\'s alone')
+  assert.equal(decide(call('Write', { file_path: '.aether/exam/c1.test.js', content: 'x' }, implementer)), null, 'the rule is the Examiner\'s alone')
 })
 
 test('the main session may write, edit and multi-edit the old and the new paths', () => {

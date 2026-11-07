@@ -7,10 +7,13 @@
 // Records irreversible Bash commands across the classes: merge-main, push, publish, deploy, delete,
 // and credentials. The paid-call class is in CLASSES of autonomy.js, but the guard does not detect it;
 // it is only granted and checked with aether-autonomy. Redacts secret values from logged commands.
+// Refuses every agent's writes to Claude Code's settings and hooks (spec 030 R21), and confines the
+// Examiner to .aether/exam/ (and the old .aether-exam/).
 // Family: none.
 
 const path = require('node:path')
 const { isObject } = require('./common.js')
+const { classifyClaudePath } = require('./tree-paths.js')
 
 const CHECKED_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const PROTECTED = [
@@ -22,7 +25,9 @@ const AUTONOMY_PROTECTED = /(^|\/)\.aether\/autonomy\/(grants\.json|[^/]+\/run\.
 const LEAD = 'aether:lead'
 const WRITER = 'aether:writer'
 const EXAMINER = 'aether:examiner'
-const EXAM_PATH = /(^|\/)\.aether-exam\//
+const EXAM_PATH = /(^|\/)(\.aether-exam|\.aether\/exam)\//
+// Claude Code's settings and hooks by their text alone (spec 030 R21). Used only when git cannot classify the path.
+const CLAUDE_CONFIG_TEXT = /(^|\/)\.claude\/(settings\.json|settings\.local\.json|hooks(\/|$))/
 const INTENT_CARD = /(^|\/)specs\/\d{3}-[^/]+\/intent\.md$/
 
 // decide(input) gives null to allow, or { reason } to deny.
@@ -42,10 +47,16 @@ function decide(input) {
     }
   }
 
+  if (isClaudeConfigTarget(target, base, normalized)) {
+    return {
+      reason: `In Aether mode no agent writes Claude Code's settings or hooks (${target}).`,
+    }
+  }
+
   // The Examiner's exam must stay out of the repository and of the swarm's sight, so it writes nothing else.
   if (input.agent_type === EXAMINER && !EXAM_PATH.test(normalized)) {
     return {
-      reason: `In Aether mode the Examiner writes only its exam, under .aether-exam/ at the repository root. Write ${path.basename(resolved)} there instead of ${resolved}.`,
+      reason: `In Aether mode the Examiner writes only its exam, under .aether/exam/ at the repository root. Write ${path.basename(resolved)} there instead of ${resolved}.`,
     }
   }
 
@@ -62,6 +73,18 @@ function decide(input) {
 
   return {
     reason: `In Aether mode only the Lead and the Writer write specs, plans and tasks. Hand this change to the Lead, or to the aether:writer agent, instead of editing ${resolved} yourself.`,
+  }
+}
+
+// Whether a file-tool target is Claude Code's settings or hooks (spec 030 R21). classifyClaudePath throws on a
+// broken repository or an ELOOP path. Then the text decides: a path that names the settings or the hooks stays
+// refused, so an unreadable repository cannot open them, and any other path passes, so ordinary writes still work.
+function isClaudeConfigTarget(target, base, normalized) {
+  try {
+    const claude = classifyClaudePath(target, { cwd: base })
+    return Boolean(claude && claude.kind === 'config')
+  } catch {
+    return CLAUDE_CONFIG_TEXT.test(normalized)
   }
 }
 
@@ -973,11 +996,8 @@ function patternMention(word) {
   })
 }
 
-function protectedMention(command, cwd = process.cwd()) {
-  const shape = lineShape(command)
-  const single = shape.commands.length === 1 ? shape.commands[0] : []
-  const authorized = single[0] === 'aether-autonomy' || (single[0] === 'node' && single[1] && path.resolve(cwd, single[1]) === path.resolve(__dirname, '../bin/aether-autonomy'))
-  const exempt = shape.plain && (shape.commands.length > 0 && shape.commands.every((c) => READ_COMMANDS.has(c[0])) || (authorized && !command.includes('<<')))
+// Every simple command of a Bash line, including the commands a script or a shell heredoc runs, up to MAX_NESTING deep.
+function commandSegments(command) {
   const segments = []
   const visit = (text, depth) => {
     for (const words of segmentsOf(text)) {
@@ -993,6 +1013,15 @@ function protectedMention(command, cwd = process.cwd()) {
     }
   }
   visit(command, 0)
+  return segments
+}
+
+function protectedMention(command, cwd = process.cwd()) {
+  const shape = lineShape(command)
+  const single = shape.commands.length === 1 ? shape.commands[0] : []
+  const authorized = single[0] === 'aether-autonomy' || (single[0] === 'node' && single[1] && path.resolve(cwd, single[1]) === path.resolve(__dirname, '../bin/aether-autonomy'))
+  const exempt = shape.plain && (shape.commands.length > 0 && shape.commands.every((c) => READ_COMMANDS.has(c[0])) || (authorized && !command.includes('<<')))
+  const segments = commandSegments(command)
   const words = segments.flat()
   const name = (w) => /(^|[^A-Za-z0-9_.-])(grants\.json|run\.json)(?![A-Za-z0-9_.-])/.test(w)
   // Output redirections also protect other files and directories beneath autonomy. A `>` inside
@@ -1014,6 +1043,40 @@ function protectedMention(command, cwd = process.cwd()) {
   return writer ? words.find(directoryMention) || null : null
 }
 
+const CLAUDE_CONFIG = /(?:^|[\s'"`;|&()=,<>])((?:[^\s'"`;|&()=,<>]+\/)?\.claude\/(?:settings\.json|settings\.local\.json|hooks(?:\/[^\s'"`;|&()<>]*)?))(?=$|[\s'"`;|&()=,<>])/
+
+function claudeConfigPath(str) {
+  const m = typeof str === 'string' && str.match(CLAUDE_CONFIG)
+  return m ? m[1] : null
+}
+
+// Limit A14 (spec 030): commands that assemble the path at runtime (e.g. a script building .claude/ dynamically) cannot be detected.
+function claudeConfigWrite(command) {
+  if (typeof command !== 'string') return null
+  const segments = commandSegments(command)
+
+  for (const segment of segments) {
+    for (let i = 0; i < segment.length; i++) {
+      const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
+      if (after !== null) {
+        const target = (after || segment[i + 1] || '').trim()
+        const configTarget = claudeConfigPath(target)
+        if (configTarget) return configTarget
+      }
+    }
+
+    const unwrapped = dropWrappers(segment)
+    const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
+    if (!READ_COMMANDS.has(cmd)) {
+      for (const w of segment) {
+        const found = claudeConfigPath(w)
+        if (found) return found
+      }
+    }
+  }
+  return null
+}
+
 // A Bash call: null to allow, or { reason } to deny.
 function decideBash(input, env = process.env) {
   const command = input.tool_input?.command
@@ -1021,6 +1084,8 @@ function decideBash(input, env = process.env) {
   let mention
   try { mention = module.exports.protectedMention(command, cwd) } catch { mention = 'the protected files' }
   if (mention) return { reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end, quarantine) instead of editing ${mention}.` }
+  const claudeConfig = claudeConfigWrite(command)
+  if (claudeConfig) return { reason: `In Aether mode no agent writes Claude Code's settings or hooks (${claudeConfig}).` }
   try {
     const classes = irreversibleClasses(command, cwd)
     if (!classes.length) return null
