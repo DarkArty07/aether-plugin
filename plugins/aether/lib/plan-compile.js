@@ -8,6 +8,7 @@
 // aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline]
 
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 
 const { parsePlan, buildGraph, renderBrief, specObjective, requirementsOf, traceability } = require('./plan.js')
@@ -16,6 +17,7 @@ const { earlierMergedUnits } = require('./plan-scope.js')
 const { planWarnings } = require('./plan-warnings.js')
 const { isGlob, matchesAny } = require('./globs.js')
 const { repoPaths, currentBranch, head } = require('./git.js')
+const { resolveSkill, loadSkills, recordUse } = require('./skill-brief.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
 const superdelegation = require('./superdelegation.js')
@@ -250,6 +252,24 @@ function check(planArg, { cwd = process.cwd(), stdout = process.stdout } = {}) {
   const graph = buildGraph(parsed)
   const trace = traceability(parsed, specRequirements(parsed.spec, planPath, cwd))
   const errors = [...parsed.errors, ...graph.errors, ...trace.errors]
+  for (const t of (parsed.allTasks || parsed.tasks)) {
+    if (t.skills && t.skills.length > 0) {
+      if (t.skills.length > 3) {
+        errors.push(`Task ${t.number}: Skills lists ${t.skills.length} skills (at most 3).`)
+      }
+      for (const name of t.skills) {
+        if (!resolveSkill(name, { cwd, home: process.env.HOME || os.homedir() })) {
+          errors.push(`Task ${t.number}: skill "${name}" does not exist.`)
+        }
+      }
+    }
+  }
+  for (const t of parsed.tasks) {
+    if (t.members && t.skills && t.skills.length > 3) {
+      const msg = `Task ${t.number}: Skills lists ${t.skills.length} skills (at most 3).`
+      if (!errors.includes(msg)) errors.push(msg)
+    }
+  }
   const root = worktreeOf(path.dirname(planPath))
   const warnings = [...parsed.warnings, ...graph.warnings, ...trace.warnings, ...planWarnings(parsed, root), ...docWarnings(parsed, root)]
   if (errors.length) fail(errors, warnings, stdout)
@@ -325,6 +345,22 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
   const errors = [...parsed.errors, ...graph.errors]
   if (errors.length) fail(errors, [...parsed.warnings, ...graph.warnings], stdout)
 
+  const loadedSkills = new Map()
+  const skillErrors = []
+  for (const t of parsed.tasks) {
+    const id = `task-${t.number}`
+    if (!graph.tasks[id]) continue
+    if (t.skills && t.skills.length > 0) {
+      const res = loadSkills(t.skills, { cwd: repo.worktree, home: process.env.HOME || os.homedir() })
+      if (!res.ok) {
+        skillErrors.push(res.error)
+      } else {
+        loadedSkills.set(id, res.skills)
+      }
+    }
+  }
+  if (skillErrors.length > 0) fail(skillErrors, [...parsed.warnings, ...graph.warnings], stdout)
+
   // A unit named again after its ladder was spent (the task was fixed and reviewed) starts a new ladder.
   if (runValue !== null) {
     for (const id of require('./wt-ladder.js').resetSpent(dir, Object.keys(graph.tasks || {}))) {
@@ -366,12 +402,32 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout }
     }
   }
   const tasks = {}
+  const dataDir = run.dataDir()
   for (const t of parsed.tasks) {
     const id = `task-${t.number}`
     if (!graph.tasks[id]) continue
+    const unitSkills = loadedSkills.get(id) || []
     const brief = path.join(dir, 'briefs', `${id}.md`)
     fs.mkdirSync(path.dirname(brief), { recursive: true })
-    fs.writeFileSync(brief, renderBrief(t, { planPath, spec, globalConstraints: parsed.globalConstraints, objective }))
+    fs.writeFileSync(
+      brief,
+      renderBrief(t, {
+        planPath,
+        spec,
+        globalConstraints: parsed.globalConstraints,
+        objective,
+        skills: unitSkills,
+      }),
+    )
+    if (unitSkills.length > 0) {
+      recordUse(dataDir, {
+        session: process.env.CLAUDE_CODE_SESSION_ID || null,
+        kind: 'run',
+        run: runId,
+        task: id,
+        skills: unitSkills.map((s) => s.name),
+      })
+    }
     tasks[id] = { ...graph.tasks[id], brief }
   }
 

@@ -8,6 +8,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { normalizePattern, patternsOverlap } = require('./globs.js')
 const { listNumbers } = require('./plan-groups.js')
+const { parseSkillNames, skillsSection } = require('./skill-brief.js')
 
 const DEFAULT_REVIEW = 'high'
 // A Review line names the reviewer's effort, which is never below high.
@@ -198,6 +199,8 @@ function parseAetherFields(task, body, bodyCode, errors, warnings) {
     } else if ((m = line.match(/^\s*-\s*Serves:\s*(.*?)\s*$/i))) {
       // Tokens are requirement ids, separated by commas or spaces. traceability judges them, not the parser.
       task.serves.push(...m[1].split(/[\s,]+/).filter(Boolean).map((token) => token.toUpperCase()))
+    } else if ((m = line.match(/^\s*-\s*Skills:\s*(.*?)\s*$/i))) {
+      task.skills = parseSkillNames(m[1])
     } else if ((m = line.match(/^\s*-\s*Depends on:\s*(.*?)\s*$/i))) {
       sawDepends = true
       if (/^none$/i.test(m[1])) continue
@@ -276,6 +279,7 @@ function parsePlan(markdown) {
       dependsOn: [],
       serves: [],
       mergesWith: [],
+      skills: [],
     }
     parseAetherFields(task, body, bodyCode, errors, taskWarnings)
     tasks.push(task)
@@ -457,7 +461,7 @@ function inWorktree(file) {
   }
 }
 
-function renderBrief(task, { planPath, spec, globalConstraints, objective = null }) {
+function renderBrief(task, { planPath, spec, globalConstraints, objective = null, skills = [] }) {
   const parts = [
     // A unit of several tasks has its tasks named in the title already.
     task.members ? `# Brief: ${task.title}` : `# Brief: Task ${task.number}: ${task.title}`,
@@ -466,10 +470,16 @@ function renderBrief(task, { planPath, spec, globalConstraints, objective = null
     `- Spec: ${spec || 'not named in the plan'}`,
     `- Area: ${task.area}`,
     `- Owns: ${task.owns.join(', ')}`,
+  ]
+  if (skills && skills.length > 0) {
+    const names = skills.map((s) => (typeof s === 'string' ? s : s.name)).join(', ')
+    parts.push(`- AETHER-SKILLS: ${names}`)
+  }
+  parts.push(
     '',
     'Change only the files your task owns. Exact values in the task text are requirements: use them verbatim.',
     '',
-  ]
+  )
   if (globalConstraints) parts.push('## Global Constraints', '', globalConstraints, '')
   if (objective) {
     parts.push(
@@ -480,6 +490,10 @@ function renderBrief(task, { planPath, spec, globalConstraints, objective = null
       objective,
       '',
     )
+  }
+  if (skills && skills.length > 0) {
+    const section = skillsSection(skills)
+    if (section) parts.push(section.trimEnd(), '')
   }
   parts.push('## Task', '', task.text, '')
   return parts.join('\n')
