@@ -156,3 +156,16 @@ test('through the bin: the decision is allow for the Lead, and nothing for the s
   assert.deepEqual([plain.status, plain.stdout, plain.stderr], [0, '', ''])
   assert.deepEqual([w.repo.dir, w.home, w.outside, data, process.env.HOME].map(snapshot), before)
 })
+
+test('a project alias of home does not allow personal Claude files outside git', (t) => {
+  const home = tempDir(t, 'aether-home-')
+  const holder = tempDir(t, 'aether-alias-')
+  const alias = path.join(holder, 'home')
+  fs.symlinkSync(home, alias)
+  fs.mkdirSync(path.join(home, '.claude', 'rules'), { recursive: true })
+  for (const cwd of [home, alias]) {
+    const file = path.join(cwd, '.claude', 'rules', 'new.md')
+    assert.equal(classifyClaudePath(file, { cwd, home }).kind, 'other')
+    assert.equal(permission({ tool_name: 'Write', cwd, tool_input: { file_path: file } }, { home }), false)
+  }
+})

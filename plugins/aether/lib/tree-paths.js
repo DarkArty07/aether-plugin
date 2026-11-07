@@ -51,7 +51,8 @@ function classifyClaudePath(file, { cwd, home = os.homedir() }) {
     roots = [repo.worktree, repo.mainRoot]
   } catch { roots = [path.resolve(cwd)] }
   const homeClaude = path.join(path.resolve(home), '.claude')
-  const projects = [...new Set(roots.map((root) => path.resolve(root)))].map((root) => path.join(root, '.claude')).filter((dir) => dir !== homeClaude)
+  const realHomeClaude = realResolve(homeClaude)
+  const projects = [...new Set(roots.map((root) => path.resolve(root)))].map((root) => path.join(root, '.claude')).filter((dir) => dir !== homeClaude && realResolve(dir) !== realHomeClaude)
   for (const dir of projects) {
     const realDir = realResolve(dir)
     for (const candidate of [normalized, real]) {
