@@ -36,6 +36,18 @@ function realResolve(file) {
   return current
 }
 
+// A `.git` entry that git could read as a repository: a file (a gitdir pointer) or a link, or a directory with a HEAD.
+// An empty leftover directory is not a repository, so it does not make a folder count as inside Git.
+function gitMarker(dir) {
+  const marker = path.join(dir, '.git')
+  let stat
+  try { stat = fs.lstatSync(marker) } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false
+    throw err
+  }
+  return !stat.isDirectory() || fs.existsSync(path.join(marker, 'HEAD'))
+}
+
 function inside(file, dir) {
   const relative = path.relative(dir, file)
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
@@ -56,12 +68,7 @@ function classifyClaudePath(file, { cwd, home = os.homedir() }) {
     if (probe.status !== 128) throw err
     let ancestor = realResolve(cwd)
     for (;;) {
-      try {
-        fs.lstatSync(path.join(ancestor, '.git'))
-        throw err
-      } catch (markerError) {
-        if (markerError.code !== 'ENOENT') throw markerError
-      }
+      if (gitMarker(ancestor)) throw err
       const parent = path.dirname(ancestor)
       if (parent === ancestor) break
       ancestor = parent

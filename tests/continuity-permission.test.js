@@ -211,6 +211,16 @@ test('outside git uses cwd, while a git execution error fails closed', (t) => {
   assert.equal(eperm.stdout.trim(), 'false')
 })
 
+test('an empty leftover .git folder is not a repository, while a .git that git cannot read fails closed', (t) => {
+  const w = world(t)
+  const dir = tempDir(t, 'aether-leftover-')
+  fs.mkdirSync(path.join(dir, '.git'))
+  assert.equal(classifyClaudePath('.claude/rules/a.md', { cwd: dir, home: w.home }).kind, 'rules')
+  fs.writeFileSync(path.join(dir, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+  assert.throws(() => classifyClaudePath('.claude/rules/a.md', { cwd: dir, home: w.home }))
+  assert.equal(permission({ tool_name: 'Write', cwd: dir, tool_input: { file_path: '.claude/rules/a.md' } }, { home: w.home }), false)
+})
+
 test('project Claude aliases cannot grant outside or personal descendants', (t) => {
   const w = world(t)
   const stranger = makeRepo(t)
