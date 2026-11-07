@@ -5,14 +5,19 @@
 // and the intent card (specs/NNN-<topic>/intent.md). Protection of docs/superpowers/specs/ and
 // docs/superpowers/plans/ stays in force even though that folder is not in the tree.
 // Records irreversible Bash commands across the classes: merge-main, push, publish, deploy, delete,
-// and credentials. The paid-call class is in CLASSES of autonomy.js, but the guard does not detect it;
-// it is only granted and checked with aether-autonomy. Redacts secret values from logged commands.
-// Refuses every agent's writes to Claude Code's settings and hooks (spec 030 R21), and confines the
+// credentials, and skill-install (spec 030 R25 R30). The paid-call class is in CLASSES of autonomy.js,
+// but the guard does not detect it; it is only granted and checked with aether-autonomy. Redacts secret
+// values from logged commands. Refuses writes to Aether skills, downloaded skills (spec 030 R23),
+// trusted.json (spec 030 R47), and Claude Code's settings and hooks (spec 030 R21), and confines the
 // Examiner to .aether/exam/ (and the old .aether-exam/).
 // Family: none.
 
+const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { isObject } = require('./common.js')
+const { dataDir: getDataDir } = require('./run.js')
+const { classifySkillPath, copyAdvice, installClass, trustedFile } = require('./skill-rules.js')
 const { classifyClaudePath } = require('./tree-paths.js')
 
 const CHECKED_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
@@ -30,8 +35,8 @@ const EXAM_PATH = /(^|\/)(\.aether-exam|\.aether\/exam)\//
 const CLAUDE_CONFIG_TEXT = /(^|\/)\.claude\/(settings\.json|settings\.local\.json|hooks(\/|$))/
 const INTENT_CARD = /(^|\/)specs\/\d{3}-[^/]+\/intent\.md$/
 
-// decide(input) gives null to allow, or { reason } to deny.
-function decide(input) {
+// decide(input, env = process.env) gives null to allow, or { reason } to deny.
+function decide(input, env = process.env) {
   if (!isObject(input) || !CHECKED_TOOLS.has(input.tool_name) || !isObject(input.tool_input)) return null
 
   const target = input.tool_name === 'NotebookEdit' ? input.tool_input.notebook_path : input.tool_input.file_path
@@ -44,6 +49,12 @@ function decide(input) {
   if (AUTONOMY_PROTECTED.test(normalized)) {
     return {
       reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end) instead of editing ${resolved}.`,
+    }
+  }
+
+  if (isTrustedTarget(target, base, env)) {
+    return {
+      reason: `The list of trusted skill authors is written only by aether-autonomy trust. Use \`aether-autonomy trust\` instead of editing ${resolved}.`,
     }
   }
 
@@ -68,12 +79,45 @@ function decide(input) {
     }
   }
 
+  const home = (env && env.HOME) || os.homedir()
+  const dataDir = getDataDir(env)
+  let skillInfo = null
+  try {
+    skillInfo = classifySkillPath(target, { cwd: base, home, dataDir })
+  } catch {
+    skillInfo = null
+  }
+  if (skillInfo) {
+    if ((skillInfo.type === 'aether' || skillInfo.type === 'downloaded') && !skillInfo.editable) {
+      return { reason: copyAdvice(skillInfo) }
+    }
+    if (skillInfo.grant) {
+      const items = [{ cls: skillInfo.grant, command: `Write ${target}` }]
+      return recordAndDecide(items, { cwd: base, session: input.session_id, env })
+    }
+    return null
+  }
+
   if (!PROTECTED.some((re) => re.test(normalized))) return null
   if (mayWriteDocs(input)) return null
 
   return {
     reason: `In Aether mode only the Lead and the Writer write specs, plans and tasks. Hand this change to the Lead, or to the aether:writer agent, instead of editing ${resolved} yourself.`,
   }
+}
+
+// Whether a target path names the trusted skill authors file (spec 030 R47).
+function isTrustedTarget(str, cwd, env = process.env) {
+  if (typeof str !== 'string' || !str) return false
+  const clean = str.replace(/^['"]|['"]$/g, '').trim()
+  if (!/(^|[^A-Za-z0-9_.-])trusted\.json(?![A-Za-z0-9_.-])/.test(clean)) return false
+  const dataDir = getDataDir(env)
+  const expected = dataDir ? path.resolve(trustedFile(dataDir)) : null
+  const base = cwd || process.cwd()
+  const resolved = path.isAbsolute(clean) ? path.resolve(clean) : path.resolve(base, clean)
+  if (expected && resolved === expected) return true
+  const normalized = resolved.split(path.sep).join('/')
+  return /(^|\/)skills\/trusted\.json$/.test(normalized)
 }
 
 // Whether a file-tool target is Claude Code's settings or hooks (spec 030 R21). classifyClaudePath throws on a
@@ -405,37 +449,40 @@ function shellReadsStdin(args) {
 // shell or eval is matched by the script it runs, one level deeper, and a shell that takes its
 // script from a heredoc is matched the same way by each heredoc body it started. A heredoc to any
 // other command stays text. When wanted is given, only that class is appended.
-function collectWords(words, depth, wanted, sequence, out) {
+function collectWords(words, depth, wanted, sequence, out, env = process.env) {
   const unwrapped = dropWrappers(words)
   // A command run by its path, such as /usr/bin/git, is matched by its name.
   const named = unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
   followSegment(named, sequence)
   const started = Array.isArray(words.heredocs) ? words.heredocs : []
   if (started.length > 0 && SHELLS.has(named[0]) && shellReadsStdin(named.slice(1)) && depth < MAX_NESTING) {
-    for (const body of started) collectCommand(body.text, depth + 1, wanted, sequence, out)
+    for (const body of started) collectCommand(body.text, depth + 1, wanted, sequence, out, env)
   }
   const command = dropGitOptions(named)
   const script = scriptOf(command)
   if (script !== null) {
-    if (depth < MAX_NESTING) collectCommand(script, depth + 1, wanted, sequence, out)
+    if (depth < MAX_NESTING) collectCommand(script, depth + 1, wanted, sequence, out, env)
     return
   }
   const git = gitCall(named)
   const mergesToMain = git !== null && landsOnMain(git, sequence)
-  const found = mergesToMain ? { cls: 'merge-main', head: ['git', 'merge'] } : subcommandOf(command)
+  let found = mergesToMain ? { cls: 'merge-main', head: ['git', 'merge'] } : subcommandOf(command)
+  if (found === null && isSkillInstallSegment(words, env)) {
+    found = { cls: 'skill-install', head: named.slice(0, 2) }
+  }
   if (found !== null && (wanted === null || found.cls === wanted) && !out.some((f) => f.cls === found.cls)) out.push(found)
 }
 
 // The matches among a command's segments, appended to out in reading order.
-function collectCommand(command, depth, wanted, sequence, out) {
+function collectCommand(command, depth, wanted, sequence, out, env = process.env) {
   if (typeof command !== 'string') return
-  for (const words of segmentsOf(command)) collectWords(words, depth, wanted, sequence, out)
+  for (const words of segmentsOf(command)) collectWords(words, depth, wanted, sequence, out, env)
 }
 
 // The first match among a command's segments, or the first of class wanted when it is given.
-function matchCommand(command, depth, wanted = null, sequence = sequenceOf()) {
+function matchCommand(command, depth, wanted = null, sequence = sequenceOf(), env = process.env) {
   const out = []
-  collectCommand(command, depth, wanted, sequence, out)
+  collectCommand(command, depth, wanted, sequence, out, env)
   return out.length === 0 ? null : out[0]
 }
 
@@ -845,19 +892,26 @@ function unquotedRedirection(word, mask) {
 }
 
 // The distinct irreversible classes of a Bash command, in order of appearance: 'merge-main', 'push',
-// 'publish', 'deploy', 'delete' and 'credentials' (the guard does not detect paid calls). Every
-// segment counts, including sequences, pipes, subshells, substitutions and nested scripts, in the
-// order they run. A git merge needs cwd, the directory the command runs in, to know its branch:
-// without it, only a checkout or switch to main earlier in the line makes it merge-main.
-function irreversibleClasses(command, cwd) {
+// 'publish', 'deploy', 'delete', 'credentials', and 'skill-install' (spec 030 R25 R30; the guard does
+// not detect paid calls). Every segment counts, including sequences, pipes, subshells, substitutions
+// and nested scripts, in the order they run. A git merge needs cwd, the directory the command runs in,
+// to know its branch: without it, only a checkout or switch to main earlier in the line makes it merge-main.
+function irreversibleClasses(command, cwd, env = process.env) {
   const out = []
-  collectCommand(command, 0, null, sequenceOf(cwd), out)
-  return out.map((found) => found.cls)
+  collectCommand(command, 0, null, sequenceOf(cwd), out, env)
+  const classes = out.map((found) => found.cls)
+  const dataDir = getDataDir(env)
+  const isInstall = typeof command === 'string' && installClass(command, { dataDir }) === 'skill-install'
+  const isPersonalWrite = personalSkillsWrite(command, env)
+  if ((isInstall || isPersonalWrite) && !classes.includes('skill-install')) {
+    classes.push('skill-install')
+  }
+  return classes
 }
 
 // The irreversible class of a Bash command, or null. The first class of the line decides.
-function irreversibleClass(command, cwd) {
-  return irreversibleClasses(command, cwd)[0] ?? null
+function irreversibleClass(command, cwd, env = process.env) {
+  return irreversibleClasses(command, cwd, env)[0] ?? null
 }
 
 // The secret values that the owner's list must not keep: a NAME=value word whose name holds one of these,
@@ -1077,6 +1131,125 @@ function claudeConfigWrite(command) {
   return null
 }
 
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function isPersonalSkillPath(str, home) {
+  if (typeof str !== 'string' || !str) return false
+  const homes = new Set()
+  if (home) {
+    homes.add(home.replace(/\/+$/, ''))
+    try {
+      const real = fs.realpathSync(home)
+      if (real) homes.add(real.replace(/\/+$/, ''))
+    } catch { /* ignore */ }
+  }
+  const alts = ['~', '\\$HOME', '\\$\\{HOME\\}']
+  for (const h of homes) {
+    alts.push(escapeRegex(h))
+  }
+  const re = new RegExp(`(^|[\\s'"=])(?:${alts.join('|')})/\\.(?:agents|claude)/skills(?:/|$|[\\s'"\`;|&()])`)
+  return re.test(str)
+}
+
+// Limit A14 (spec 030): commands that assemble the personal skills path at runtime (e.g. a script building ~/.agents/skills/ dynamically) cannot be detected.
+function personalSkillsWrite(command, env = process.env) {
+  if (typeof command !== 'string') return false
+  const home = (env && env.HOME) || os.homedir()
+  const segments = commandSegments(command)
+
+  for (const segment of segments) {
+    for (let i = 0; i < segment.length; i++) {
+      const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
+      if (after !== null) {
+        const target = (after || segment[i + 1] || '').trim()
+        if (isPersonalSkillPath(target, home)) return true
+      }
+    }
+
+    const unwrapped = dropWrappers(segment)
+    const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
+    if (!READ_COMMANDS.has(cmd)) {
+      for (const w of segment) {
+        if (isPersonalSkillPath(w, home)) return true
+      }
+    }
+  }
+  return false
+}
+
+function isSkillInstallSegment(words, env) {
+  const home = (env && env.HOME) || os.homedir()
+  for (let i = 0; i < words.length; i++) {
+    const after = unquotedRedirection(words[i], words.masks && words.masks[i])
+    if (after !== null) {
+      const target = (after || words[i + 1] || '').trim()
+      if (isPersonalSkillPath(target, home)) return true
+    }
+  }
+  const unwrapped = dropWrappers(words)
+  const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
+  if (!READ_COMMANDS.has(cmd)) {
+    for (const w of words) {
+      if (isPersonalSkillPath(w, home)) return true
+    }
+  }
+  const dataDir = getDataDir(env)
+  const cmdText = words.map((w) => /[\s"']/.test(w) ? JSON.stringify(w) : w).join(' ')
+  return installClass(cmdText, { dataDir }) === 'skill-install'
+}
+
+function trustedWrite(command, cwd = process.cwd(), env = process.env) {
+  if (typeof command !== 'string') return null
+  const shape = lineShape(command)
+  const single = shape.commands.length === 1 ? shape.commands[0] : []
+  const authorized = single[0] === 'aether-autonomy' || (single[0] === 'node' && single[1] && path.resolve(cwd, single[1]) === path.resolve(__dirname, '../bin/aether-autonomy'))
+  const exempt = shape.plain && (shape.commands.length > 0 && shape.commands.every((c) => READ_COMMANDS.has(c[0])) || (authorized && !command.includes('<<')))
+  if (exempt) return null
+
+  const segments = commandSegments(command)
+  for (const segment of segments) {
+    for (let i = 0; i < segment.length; i++) {
+      const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
+      if (after !== null) {
+        const target = (after || segment[i + 1] || '').trim()
+        if (isTrustedTarget(target, cwd, env)) return target
+      }
+    }
+    const unwrapped = dropWrappers(segment)
+    const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
+    if (!READ_COMMANDS.has(cmd)) {
+      for (const w of segment) {
+        if (isTrustedTarget(w, cwd, env)) return w
+      }
+    }
+  }
+  return null
+}
+
+function recordAndDecide(items, { cwd, session, env = process.env }) {
+  const { repoPaths } = require('./git.js')
+  let paths
+  try { paths = repoPaths(cwd) } catch { return null }
+  const { check } = require('./autonomy.js')
+  const { appendPending } = require('./pending.js')
+  const { ensureExcluded } = require('./run.js')
+  const mode = env.AETHER_IRREVERSIBLE === 'enforce' ? 'enforce' : 'log'
+  let first = null
+  for (const { cls, command } of items) {
+    let granted = false
+    try { granted = check(paths.mainRoot, cls, { session }) !== null } catch { /* malformed registry fails closed */ }
+    if (granted) continue
+    const entry = { time: Date.now(), session, class: cls, command, cwd, mode }
+    ensureExcluded(paths.gitCommonDir)
+    if (!appendPending(paths.mainRoot, entry)) return null
+    if (first === null) first = cls
+  }
+  if (mode === 'log' || first === null) return null
+  return { reason: `Aether added this ${first} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".` }
+}
+
 // A Bash call: null to allow, or { reason } to deny.
 function decideBash(input, env = process.env) {
   const command = input.tool_input?.command
@@ -1086,28 +1259,13 @@ function decideBash(input, env = process.env) {
   if (mention) return { reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end, quarantine) instead of editing ${mention}.` }
   const claudeConfig = claudeConfigWrite(command)
   if (claudeConfig) return { reason: `In Aether mode no agent writes Claude Code's settings or hooks (${claudeConfig}).` }
+  const trustedMention = trustedWrite(command, cwd, env)
+  if (trustedMention) return { reason: `The list of trusted skill authors is written only by aether-autonomy trust. Use \`aether-autonomy trust\` instead of editing ${trustedMention}.` }
   try {
-    const classes = irreversibleClasses(command, cwd)
+    const classes = irreversibleClasses(command, cwd, env)
     if (!classes.length) return null
-    const { repoPaths } = require('./git.js')
-    let paths
-    try { paths = repoPaths(cwd) } catch { return null }
-    const { check } = require('./autonomy.js')
-    const { appendPending } = require('./pending.js')
-    const { ensureExcluded } = require('./run.js')
-    const mode = env.AETHER_IRREVERSIBLE === 'enforce' ? 'enforce' : 'log'
-    let first = null
-    for (const cls of classes) {
-      let granted = false
-      try { granted = check(paths.mainRoot, cls, { session: input.session_id }) !== null } catch { /* malformed registry fails closed */ }
-      if (granted) continue
-      const entry = { time: Date.now(), session: input.session_id, class: cls, command: redactCommand(command, cls), cwd: input.cwd, mode }
-      ensureExcluded(paths.gitCommonDir)
-      if (!appendPending(paths.mainRoot, entry)) return null
-      if (first === null) first = cls
-    }
-    if (mode === 'log' || first === null) return null
-    return { reason: `Aether added this ${first} command to the owner's list (.aether/pending.jsonl): it is irreversible and no grant covers it. Go on with the work that does not depend on it, and put it in your brief's "Espera tu sí".` }
+    const items = classes.map((cls) => ({ cls, command: redactCommand(command, cls) }))
+    return recordAndDecide(items, { cwd, session: input.session_id, env })
   } catch { return null }
 }
 
