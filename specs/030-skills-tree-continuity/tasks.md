@@ -4564,7 +4564,7 @@ test('sweepStale finds a lane copy left in the old .aether/lanes folder and one 
 
 **Aether:**
 - Area: layout
-- Owns: `plugins/aether/lib/seats.js`, `plugins/aether/lib/seat-calls.js`, `plugins/aether/lib/delegate-calls.js`, `plugins/aether/lib/lane-command.js`, `plugins/aether/workflows/design.workflow.js`, `plugins/aether/hooks/ops-command.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/ops.test.ts`, `tests/layout-work.test.js`, `tests/seats.test.js`, `tests/seat-calls.test.js`, `tests/seat-partial.test.js`, `tests/ops-command-design.test.js`, `tests/workflow-design.test.js`, `tests/delegate-calls.test.js`, `tests/delegate-chain.test.js`
+- Owns: `plugins/aether/lib/seats.js`, `plugins/aether/lib/seat-calls.js`, `plugins/aether/lib/delegate-calls.js`, `plugins/aether/lib/lane-command.js`, `plugins/aether/workflows/design.workflow.js`, `plugins/aether/hooks/ops-command.mjs`, `plugins/aether/hooks/register.js`, `plugins/aether/hooks/ops.test.ts`, `tests/layout-work.test.js`, `tests/seats.test.js`, `tests/seat-calls.test.js`, `tests/seat-partial.test.js`, `tests/ops-command-design.test.js`, `tests/workflow-design.test.js`, `tests/delegate-calls.test.js`, `tests/delegate-chain.test.js`, `tests/delegate-grok.test.js`
 - Depends on: Task 13 — comparten `lib/seats.js`, `workflows/design.workflow.js` y sus pruebas, y el examen ya está en su lugar
 - Depends on: Task 12 — usa `run.workDir` que esa tarea define
 - Serves: R15
