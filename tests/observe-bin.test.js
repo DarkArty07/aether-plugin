@@ -69,7 +69,7 @@ test('hooks.json runs the five new hooks and the manifest gains no option (R3, R
 
 test('the components page counts thirteen bins and describes aether-observe (R16)', () => {
   const components = fs.readFileSync(path.join(__dirname, '..', 'docs', 'reference', 'components.md'), 'utf8')
-  assert.ok(components.includes('the fourteen commands of `bin/`'))
+  assert.ok(components.includes('the fifteen commands of `bin/`'))
   assert.ok(components.split('\n').some((line) => line.startsWith('| `aether-observe` |')))
-  assert.equal(fs.readdirSync(path.join(PLUGIN, 'bin')).length, 14)
+  assert.equal(fs.readdirSync(path.join(PLUGIN, 'bin')).length, 15)
 })

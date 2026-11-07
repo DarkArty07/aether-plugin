@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+'use strict'
+
+// aether-continuity stop
+// aether-continuity precompact
+// aether-continuity postcompact
+// aether-continuity stopfailure
+// aether-continuity sessionend
+// aether-continuity posttool
+// aether-continuity permission
+// The hooks of the session note (spec 030): reads the hook's JSON from stdin and acts only in a Lead session.
+// The five note verbs write the note and print nothing; posttool prints its additionalContext and permission its allow
+// decision, when they have one. Always exits 0: a session that is not the Lead's, a bad input or an unknown verb prints
+// nothing and writes nothing.
+
+const { readFileSync } = require('node:fs')
+const path = require('node:path')
+const lib = path.join(__dirname, '..', 'lib')
+
+const NOTE_VERBS = new Set(['stop', 'precompact', 'postcompact', 'stopfailure', 'sessionend'])
+
+function readInput() {
+  try {
+    const parsed = JSON.parse(readFileSync(0, 'utf8'))
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function print(hookSpecificOutput) {
+  process.stdout.write(`${JSON.stringify({ hookSpecificOutput })}\n`)
+}
+
+function main(verb) {
+  try {
+    const input = readInput()
+    if (!input) return 0
+    const { isAetherSession } = require(path.join(lib, 'session.js'))
+    const hook = require(path.join(lib, 'continuity-hook.js'))
+    const ctx = hook.context()
+    if (!isAetherSession(ctx.dataDir, input.session_id)) return 0
+    if (NOTE_VERBS.has(verb)) {
+      hook.handle(verb, input, ctx)
+    } else if (verb === 'posttool') {
+      const out = require(path.join(lib, 'continuity-posttool.js')).posttool(input, ctx)
+      if (out && typeof out.additionalContext === 'string') print({ hookEventName: 'PostToolUse', additionalContext: out.additionalContext })
+    } else if (verb === 'permission') {
+      if (require(path.join(lib, 'continuity-permission.js')).permission(input, ctx) === true) {
+        print({ hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } })
+      }
+    }
+  } catch {
+    // A hook never fails or prints for an error of its own.
+  }
+  return 0
+}
+
+process.exitCode = main(process.argv[2])

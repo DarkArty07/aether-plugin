@@ -266,7 +266,7 @@ test('hooks.json runs aether-guard before Write, Edit, MultiEdit and NotebookEdi
   assert.equal(entries[1].matcher, 'Bash')
   assert.deepEqual(entries[1].hooks, guardHook)
   // The SessionStart hook and the usage meter stay as they were.
-  assert.equal(hooks.hooks.SessionStart[0].matcher, 'startup|resume|clear|compact')
+  assert.equal(hooks.hooks.SessionStart[0].matcher, 'startup|resume|clear|compact|fork')
   assert.deepEqual(hooks.modules, ['./register.js'])
 })
 
