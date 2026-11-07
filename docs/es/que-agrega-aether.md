@@ -13,6 +13,7 @@ Esta página es para quien ya instaló Aether. Enumera, punto por punto, lo que 
 - `/aether:setup`: la configuración guiada. Córrela una vez después de instalar: revisa tu máquina, pregunta solo lo que no puede detectar (cómo maneja `aeth` los permisos y, si encuentra otros harnesses instalados, si les manda trabajo), guarda tus opciones, instala `aeth` y termina en una pantalla que dice qué escribir. Córrela otra vez para cambiar lo que elegiste.
 - `/aether:doctor`: una revisión de solo lectura de la instalación (Claude Code, Node, git, el comando `aeth`, los workflows, los harnesses). Escríbela cuando algo falle: muestra qué revisó, qué falló y el arreglo exacto, y no cambia nada.
 - `/aether:help [tema]`: un mapa de lo que agrega Aether, organizado por lo que quieres hacer, con el comando de cada cosa y la guía que leer. `/aether:help spend` responde un tema.
+- `/aether:tidy [proyecto o carpeta]`: inspecciona los archivos del proyecto y la estructura de skills, reporta qué mover o borrar, y no cambia nada sin tu confirmación.
 - `/aether:audit [temas] [--no-tests]`: una auditoría de solo lectura del proyecto (tests, secretos, hotspots, doce temas). El Lead pregunta una vez qué temas cubrir, revisa y verifica con delegados de solo lectura, y te entrega una sola lista de P0 a P3 para que elijas (mira [Auditar un proyecto](guias/auditar-un-proyecto.md)).
 - `/aether:design`: el workflow de diseño. Convierte la tarjeta de intención del Lead en una spec, un plan y unas tareas aprobados, más un examen oculto, y termina en un solo resultado: `approved`, `clarify`, `dispute` o `failed`. El Lead lo lanza por ti; necesita la herramienta Workflow de Claude Code.
 - `/aether:run`: el workflow del enjambre. Construye un plan aprobado en oleadas paralelas, con una cola de merges y una revisión final. El Lead lo lanza cuando el plan tiene tres tareas o más.
@@ -44,10 +45,12 @@ Quién hace qué en el modo Aether ([Components](../reference/components.md) tra
 
 ## Lo que te protege
 
-- `aether-guard`: un hook que actúa solo en una sesión de Aether. Deja las specs, los planes, las tareas y la constitución escribibles solo para el Lead y el Writer, y al Examiner dentro de `.aether-exam/`. Antes de cada comando de Bash reconoce las clases irreversibles (`push`, `merge-main`, `publish`, `deploy`, `delete`, `credentials`): sin un permiso tuyo registra el comando en tu lista, `.aether/pending.jsonl`, y el lanzador hace que lo rechace. En cualquier otra sesión lo permite todo.
+- `aether-guard`: un hook que actúa solo en una sesión de Aether. Deja las specs, los planes, las tareas y la constitución escribibles solo para el Lead y el Writer, y al Examiner dentro de `.aether/exam/`. Antes de cada comando de Bash reconoce las clases irreversibles (`push`, `merge-main`, `publish`, `deploy`, `delete`, `credentials`, `paid-call`, `skill-install`): sin un permiso tuyo registra el comando en tu lista, `.aether/pending.jsonl`, y el lanzador hace que lo rechace. En cualquier otra sesión lo permite todo.
 - «Espera tu sí»: la primera lista de cada brief: lo que solo tú puedes decidir y las acciones irreversibles que nadie autorizó, cada una con por qué, qué pasa si dices que no, cómo se revierte y el comando exacto. Contestas con palabras normales; un «sí» general también registra un permiso permanente (mira [Autonomy](../guide/autonomy.md), en inglés).
 - El examen oculto: el Examiner lo escribe cuando el diseño queda aprobado y lo guarda fuera del repositorio. El enjambre nunca lo ve, así que un error que las pruebas del enjambre comparten con su código no se le escapa.
 - El freno de cuota: cerca del límite de la ventana de cinco horas de tu cuenta, te avisa una vez, y en una corrida autónoma se detiene en orden, guarda el trabajo y sigue solo cuando la ventana se reinicia.
+- Continuidad de sesión: las notas de sesión en `memory/continuity/` guardan el avance, los cortes y cierres sin llenar la memoria permanente de Claude (`MEMORY.md`), y al arrancar la sesión te dice en 3 a 5 líneas dónde se quedó el trabajo y qué cambió.
+- Skills y orden del proyecto: las skills se organizan en sus cuatro tipos, las de terceros instaladas con `npx skills` exigen autores de confianza, y `/aether:tidy` reporta el desorden sin modificar nada sin tu confirmación.
 
 ## Las opciones
 
@@ -87,6 +90,7 @@ Están en el `PATH` de la herramienta Bash en una sesión con el plugin, así qu
 | Saber por qué algo falla | `/aether:doctor` |
 | Cambiar mis permisos, mis harnesses o el nombre del comando | Corre `/aether:setup` otra vez |
 | Ver qué puede hacer Aether | `/aether:help`; agrega un tema, como en `/aether:help spend` |
+| Ordenar archivos del proyecto y skills | `/aether:tidy` |
 | Saber qué está pendiente, lo más urgente primero | `/aether:audit` ([guía](guias/auditar-un-proyecto.md)) |
 | Pedir un primer trabajo | Díselo al Lead con tus palabras ([guía](guias/primera-peticion.md)) |
 | Que se construya una feature completa | Di lo que quieres y contesta sus preguntas; diseña, construye y reporta ([guía](guias/feature-completa.md)) |

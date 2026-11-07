@@ -87,7 +87,7 @@ Its limits:
 
 ## Conversation content, and its three exemptions
 
-The standard installation does not read, keep or write conversation content: what you type, what the model answers (with the prompts and commands it writes) and what a file holds. From the files that already exist it reads fields only (identifiers, classes, dates and counts) and compares commands by a fingerprint, without copying their text.
+The standard installation does not read, keep or write conversation content: what you type, what the model answers (with the prompts and commands it writes) and what a file holds. From the files that already exist it reads fields only (identifiers, classes, dates and counts) and compares commands by a fingerprint, without copying their text. The continuity note keeps conversation text locally in the project's memory folder on the owner's machine to restore context across sessions, while the observation store of `aether-observe` continues to keep no conversation text.
 
 Three functions of Aether that existed before the observation are exempt, because each one is a thing you use by hand and not observation, and none was removed:
 - `aether-voice` and `aether-autonomy start --quote` read the transcript only when you give the command, to check a quote of your own words;

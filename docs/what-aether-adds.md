@@ -13,6 +13,7 @@ This page is for someone who has installed Aether. It lists, point by point, wha
 - `/aether:setup`: the guided setup. Run it once after installing: it checks your machine, asks only what it cannot detect (how `aeth` handles permissions and, if it finds other harnesses installed, whether to send work to them), saves your options, installs `aeth` and ends on a screen that says what to type. Run it again to change your choices.
 - `/aether:doctor`: a read-only check of the install (Claude Code, Node, git, the `aeth` command, workflows, harnesses). Type it when something fails: it prints what it checked, what failed and the exact fix, and changes nothing.
 - `/aether:help [topic]`: a map of what Aether adds, organized by what you want to do, with the command of each thing and the guide to read. `/aether:help spend` answers one topic.
+- `/aether:tidy [project or folder]`: inspects project files and skills layout, reports what to move or delete, and changes nothing without your yes.
 - `/aether:audit [topics] [--no-tests]`: a read-only audit of the project (tests, secrets, hotspots, twelve topics). The Lead asks once which topics to cover, reviews and verifies with read-only delegates, and hands back one list from P0 to P3 for you to choose from (see [Audit a project](guide/audit.md)).
 - `/aether:design`: the design workflow. It turns the Lead's intent card into an approved spec, plan and tasks, plus a hidden exam, and ends in one result: `approved`, `clarify`, `dispute` or `failed`. The Lead launches it for you; it needs Claude Code's Workflow tool.
 - `/aether:run`: the swarm workflow. It builds an approved plan in parallel waves, with a merge queue and a final review. The Lead launches it when the plan has three or more tasks.
@@ -44,10 +45,12 @@ Who does what, in Aether mode ([Components](reference/components.md) has the mod
 
 ## What protects you
 
-- `aether-guard`: a hook that acts only in an Aether session. It keeps specs, plans, tasks and the constitution writable only by the Lead and the Writer, and the Examiner inside `.aether-exam/`. Before each Bash command it recognizes the irreversible classes (`push`, `merge-main`, `publish`, `deploy`, `delete`, `credentials`): with no grant of yours it records the command in your list, `.aether/pending.jsonl`, and the launcher makes it refuse the command. In any other session it allows everything.
+- `aether-guard`: a hook that acts only in an Aether session. It keeps specs, plans, tasks and the constitution writable only by the Lead and the Writer, and the Examiner inside `.aether/exam/`. Before each Bash command it recognizes the irreversible classes (`push`, `merge-main`, `publish`, `deploy`, `delete`, `credentials`, `paid-call`, `skill-install`): with no grant of yours it records the command in your list, `.aether/pending.jsonl`, and the launcher makes it refuse the command. In any other session it allows everything.
 - «Espera tu sí»: the first list of every brief: what only you can decide and the irreversible actions nobody authorized, each with why, what happens if you say no, how to undo it and the exact command. You answer in plain words; a general «sí» also records a standing grant (see [Autonomy](guide/autonomy.md)).
 - The hidden exam: the Examiner writes it after the design is approved and keeps it outside the repository. The swarm never sees it, so a mistake that the swarm's tests share with its code does not hide from it.
 - The quota brake: near the limit of your account's five-hour window, it warns you once, and in an autonomous run it stops in order, saves the work and resumes by itself when the window resets.
+- Continuity: session notes in `memory/continuity/` preserve session progress, cuts and closures without filling Claude's memory (`MEMORY.md`), and session start tells you in 3 to 5 lines where work was left off and what changed.
+- Skills and hygiene: skills are kept in standard locations, third-party skills installed via `npx skills` require trusted authors, and `/aether:tidy` reports disorder without modifying files without your consent.
 
 ## The options
 
@@ -87,6 +90,7 @@ These are on the Bash tool's `PATH` in a session with the plugin, so the Lead ru
 | Find out why something fails | `/aether:doctor` |
 | Change my permissions, harnesses or the command's name | Run `/aether:setup` again |
 | See what Aether can do | `/aether:help`; add a topic, as in `/aether:help spend` |
+| Clean up project layout and skills | `/aether:tidy` |
 | Know what is pending, most urgent first | `/aether:audit` ([guide](guide/audit.md)) |
 | Ask for a first piece of work | Tell the Lead in your own words ([guide](tutorials/first-request.md)) |
 | Get a whole feature built | Say what you want and answer its questions; it designs, builds and reports ([guide](tutorials/whole-feature.md)) |

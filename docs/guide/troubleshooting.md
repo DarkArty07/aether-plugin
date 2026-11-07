@@ -71,24 +71,25 @@ Three other causes end in a swarm that is not running:
 
 **What you see.** A Bash command was refused with a message that starts `Aether added this ... command to the owner's list (.aether/pending.jsonl)`, or it ran and a line appeared in `.aether/pending.jsonl` in the main checkout, one JSON line for each command.
 
-**Why.** In an Aether session, aether-guard watches every Bash call for six irreversible classes, each by the commands it recognizes:
+**Why.** In an Aether session, aether-guard watches every Bash call for irreversible classes, each by the commands it recognizes:
 - `push`: `git push`, except a dry run;
 - `merge-main`: `gh pr merge`, and a `git merge` that lands on `main` or `master` (the branch is read from the command's directory, after any `git checkout main` or `cd` earlier in the same line);
 - `publish`: `npm publish`, `cargo publish`, `docker push`, `gh release create` and the like;
 - `deploy`: `kubectl apply`, `terraform apply`, `helm upgrade`, `fly deploy`, `vercel --prod` and the like;
-- `delete`: `git reset --hard`, `git clean -f`, `git branch -D`, and `rm -rf` of a wide target such as `/`, `~` or `.`;
-- `credentials`: `gh auth login`, `gh secret set`, `npm token create`, `aws configure` and the like.
+- `delete`: `git reset --hard`, `git clean -f`, `git branch -D`, removals and renames ordered by `/aether:tidy`, and `rm -rf` of a wide target such as `/`, `~` or `.`;
+- `credentials`: `gh auth login`, `gh secret set`, `npm token create`, `aws configure` and the like;
+- `skill-install`: `npx skills add` with no source, a global install, or an author not in `trusted.json`, and direct writes to personal skills folders (`~/.claude/skills/`, `~/.agents/skills/`). Commands of this class are recorded in `.aether/pending.jsonl` unless covered by an autonomy grant or trusted author list (`aether-autonomy trust`).
 
 A command of one of these classes that no grant covers is appended to the list with its class, the command, its working directory and its `mode`, and its secret values are redacted. What happens next depends on `AETHER_IRREVERSIBLE`:
 - `enforce`: the command is refused, and the Lead puts the entry in the "Espera tu sí" of its brief. `scripts/aether-lead` sets it unless your shell already did.
 - anything else, `log` by default: the command is only recorded, and it runs. The Lead reports it under "Hice" in its brief.
 
-A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not recorded. Outside a git repository the command is allowed unrecorded. `aether-autonomy` has a seventh class, `paid-call`, for real paid model calls outside the swarm: the Lead honours it, and the guard detects none of them by command.
+A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not recorded. Outside a git repository the command is allowed unrecorded. `aether-autonomy` also knows `paid-call`, for real paid model calls outside the swarm, making eight irreversible classes in all: the Lead honours it, and the guard detects none of them by command.
 
 **What to do.**
-- To let such an action run, say so to the Lead in your own words. A general authorization, such as «todos los merges a main», is recorded by the Lead with `aether-autonomy grant --class <class> --quote "<your words>"`, and holds in the repository until revoked; add `--scope session` for your words «en esta sesión». The quote must be at least 12 characters, found in your own messages of the session: a quote that is not there is rejected. `aether-autonomy list` shows the registry, and `aether-autonomy revoke --class <class> --quote "<your words>" --all` withdraws every grant of a class; without `--all` it removes only the current session's session grants.
+- To let such an action run, say so to the Lead in your own words. A general authorization, such as «todos los merges a main», is recorded by the Lead with `aether-autonomy grant --class <class> --quote "<your words>"`, and holds in the repository until revoked; add `--scope session` for your words «en esta sesión». The quote must be at least 12 characters, found in your own messages of the session: a quote that is not there is rejected. `aether-autonomy list` shows the registry, and `aether-autonomy revoke --class <class> --quote "<your words>" --all` withdraws every grant of a class; without `--all` it removes only the current session's session grants. To trust a skill author so their skills install without prompts, use `aether-autonomy trust --author <name> --quote "<your words>"`.
 - An authorization of one action, such as a bare «sí», covers that action once. Under `enforce` the guard still refuses it until a grant covers its class, so the Lead records a session grant, runs the action, and revokes the grant. When your reply is shorter than 12 characters, the Lead puts the exact command in the brief for you to run yourself.
-- The registry and each run's `run.json` under `.aether/autonomy/` are written only by `aether-autonomy`; aether-guard refuses a direct edit of them. It also refuses an edit of a spec, a plan or a task file, or of the constitution, by any agent other than the Lead and the Writer.
+- The registry and each run's `run.json` under `.aether/autonomy/` are written only by `aether-autonomy`; aether-guard refuses a direct edit of them. It also refuses an edit of a spec, a plan or a task file, or of the constitution, by any agent other than the Lead and the Writer. Furthermore, aether-guard refuses Write, Edit and MultiEdit on Aether's own shipped skills, on downloaded skills tracked in `.agents/.skill-lock.json`, on `.claude/skills/trusted.json`, and on Claude Code settings and hooks.
 
 ## Nothing runs on a lane
 
@@ -193,5 +194,24 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 **What you see.** A run's result has `finalReview.status` of `deferred`, and `aether-report` shows the same status with its reason. No reviewer ran. The reason counts how many units are blocked, skipped or not run.
 
 **Why.** The final review runs once per run, when a launch ends with all its units merged, on the whole change from the first compile's base to the integration branch. A launch that leaves a unit `blocked`, `skipped` or `not-run` defers it, and so does a launch that runs no unit. A relaunch in between does not review again. `deferred` is not a failure, and it is not a review that was skipped because nothing merged.
+
+## Session start says "where it is for now"
+
+**What you see.** At session start, a message says `Aether left the old state of .aether/ where it is for now: <reasons>`.
+
+**Why.** State migration of legacy `.aether` folders was deferred by the migration gate. The gate waits when it finds:
+- `live-session`: another Aether session is still active in the repository;
+- `old-mark`: session marks from older versions without process tracking exist;
+- `recent-writes`: a file or folder under `.aether/` was modified within the last 2 hours.
+
+**What to do.** Wait for active sessions to close and background processes to end, or let the 2-hour quiet window pass without writes. Starting a new session afterwards migrates the folders automatically.
+
+## The previous session was cut off
+
+**What you see.** At session start, the startup notice says `The session was cut off (<reason>): claude --resume <id>`.
+
+**Why.** The previous session ended abruptly (such as an API rate limit, power loss, terminal crash, or close without a finish mark) before the Lead could write its final brief.
+
+**What to do.** To pick up the interrupted conversation with its context intact, run `claude --resume <id>` (or `aeth --resume <id>`) with the session id given in the notice.
 
 **What to do.** The Lead relaunches the units that are blocked, skipped or not run. When that launch merges all of them, the review runs once. To review what is already merged and stop without the units still open, the Lead adds `"review": true` to the workflow args and launches again. A compile that finds every unit already merged prints empty `waves`; that launch reviews only when `review` is true.

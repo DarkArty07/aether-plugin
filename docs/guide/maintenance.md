@@ -42,11 +42,25 @@ Aether keeps its data in `~/.claude/plugins/data/aether-aether-plugin/`. Set `AE
 - `delegates/` holds the delegate log, `delegates/log.jsonl`, and the files of each launch (briefs, results, patches, answers). The log is shared by every session and kept for 30 days of inactivity per session: before a session's lines are pruned, its `outcome` lines are archived in `spend/<id>.outcomes.jsonl`, and launch files older than 30 days are deleted too. `aether-report --spend` and `/spend` read `usage/`, `lanes/`, this delegate log and `spend/<id>.outcomes.jsonl` in every install's directory (`plugins/aether/lib/spend.js`); they do not read an older router journal. See [Delegates](delegates.md#the-log);
 - `sessions/` marks the Aether sessions, kept for 30 days;
 - `exams/` holds the Examiner's hidden exams, one folder per repository and feature, so uninstalling without `--keep-data` deletes them;
-- `lanes/` also holds the dry marks (`lanes/marks/`) and the kept quota readings (`lanes/quota/`).
+- `lanes/` also holds the dry marks (`lanes/marks/`) and the kept quota readings (`lanes/quota/`);
+- continuity notes live in the project's Claude memory directory under `memory/continuity/` (one JSON file per session, recording the last assistant message, branch, commit, compaction summary, cuts and closures). Old notes not touched for 30 days and notes belonging to branches already merged into the main branch are pruned automatically on SessionStart; they are never kept in `MEMORY.md`.
 
 A swarm run's final review is `deferred` until it runs. It runs when a launch ends with every unit of that launch merged, once, on the whole change. [The final review has not run](troubleshooting.md#the-final-review-has-not-run) says how that looks and how the review is run on what is already merged.
 
-The autonomy registry and run states live in the repository itself, under `.aether/autonomy/` in its main checkout, and so does the owner's list of irreversible commands, `.aether/pending.jsonl`.
+Project state lives in the repository itself under `.aether/` in its main checkout:
+- `.aether/README.md` documents the `.aether/` directory layout and retention policies; `aether-session-start` writes and maintains it;
+- `autonomy/`: the autonomy registry (`grants.json`) and run states (`run.json`, `diary.md`, `brief.md`);
+- `pending.jsonl`: the owner's list of irreversible commands waiting for authorization;
+- `runs/`: state directories for active and completed runs;
+- `broken-runs/`: quarantined corrupted or interrupted runs;
+- `worktrees/`: unit worktrees (`worktrees/<run>/<task>`), lane worktrees (`worktrees/lanes/`), and exam worktrees (`worktrees/exams/`);
+- `work/`: design seat rounds (`work/seats/`) and harness delegates (`work/delegates/`), kept for 7 days;
+- `tmp/`: temporary briefs, packages and seat messages, kept for 24 hours;
+- `exam/`: hidden acceptance exam while drafted by the Examiner.
+
+Per-project cleaning and migration:
+- **Per-project cleaning:** SessionStart cleans temporary and stale project items every 10 minutes, tracked by a timestamp stamp in the data directory (`clean` stamp). It removes temporary files in `.aether/tmp/` older than 24 hours and finished seats/delegates in `.aether/work/` older than 7 days, never touching uncommitted work or registered worktrees.
+- **Migration:** Legacy folders from earlier releases (`.aether-tmp`, `.aether-exam`, and old `.aether/` folders like `.aether/lanes`, `.aether/exams`, `.aether/seats`, `.aether/delegates`) migrate automatically into `.aether/tmp/`, `.aether/exam/`, `.aether/worktrees/`, and `.aether/work/`. Migration is deferred when a live session is detected, when old-style session marks exist, or when any write occurred under the roots in the last 2 hours (`recent-writes`).
 
 ### Upgrading from 0.6
 
