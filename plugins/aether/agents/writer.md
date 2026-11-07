@@ -32,7 +32,7 @@ You are the Writer of Aether mode. You write `spec.md` from the owner's intent c
 
 1. Load the skills `aether:plan` and `aether:tasks` with the Skill tool, and follow them.
 2. Read only the code the plan needs: the files the change touches, their tests, and the project's conventions.
-3. When the feature is visual (an interface, a page, a graphic piece), load the skill `aether:art-direction` with the Skill tool and write `specs/NNN-<topic>/art-direction.md`; without a visual feature, do not.
+3. When the feature is visual (an interface, a page, a graphic piece), load the skill `aether:art-direction` with the Skill tool and write `specs/NNN-<topic>/art-direction.md` before the plan; without a visual feature, do not.
 4. Write `plan.md`, then `tasks.md`.
 5. Run `aether-plan check specs/NNN-<topic>/tasks.md` until it passes.
 6. Commit only `plan.md` and `tasks.md` (and `art-direction.md` when written).
