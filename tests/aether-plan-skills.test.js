@@ -39,7 +39,7 @@ test('compile writes AETHER-SKILLS and the content of the skills in the brief of
   const r = runBin(PLAN_BIN, ['compile', writePlan(w.repo.dir, plan([withSkills(1, 'erebus-ui, patron-api'), task(2)]))], w.repo.dir, env(w))
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const brief = fs.readFileSync(r.json.tasks['task-1'].brief, 'utf8')
-  assert.match(brief, /^- AETHER-SKILLS: erebus-ui, patron-api$/m)
+  assert.match(brief, /^AETHER-SKILLS: erebus-ui, patron-api$/m)
   assert.ok(brief.indexOf('## Skills for this task') < brief.indexOf('## Task'))
   assert.ok(brief.includes('rule 1 of erebus-ui') && brief.includes('rule 3 of patron-api'))
   const plain = fs.readFileSync(r.json.tasks['task-2'].brief, 'utf8')
@@ -65,5 +65,5 @@ test('the skills of the members of a unit that builds several tasks together are
   const r = runBin(PLAN_BIN, ['compile', writePlan(w.repo.dir, md)], w.repo.dir, env(w))
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const unit = Object.values(r.json.tasks)[0]
-  assert.match(fs.readFileSync(unit.brief, 'utf8'), /^- AETHER-SKILLS: a1, a2$/m)
+  assert.match(fs.readFileSync(unit.brief, 'utf8'), /^AETHER-SKILLS: a1, a2$/m)
 })

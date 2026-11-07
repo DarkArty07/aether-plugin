@@ -471,9 +471,10 @@ function renderBrief(task, { planPath, spec, globalConstraints, objective = null
     `- Area: ${task.area}`,
     `- Owns: ${task.owns.join(', ')}`,
   ]
+  // The same line a delegate's brief carries (R27, R45): a line of its own that starts with AETHER-SKILLS:, not a list item.
   if (skills && skills.length > 0) {
     const names = skills.map((s) => (typeof s === 'string' ? s : s.name)).join(', ')
-    parts.push(`- AETHER-SKILLS: ${names}`)
+    parts.push('', `AETHER-SKILLS: ${names}`)
   }
   parts.push(
     '',
