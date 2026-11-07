@@ -192,20 +192,42 @@ function pruneOldFiles(env) {
   }
 }
 
+// The sources that calculate and display a continuity notice (spec 030 R5, R7).
+const NOTICE_SOURCES = ['startup', 'clear', 'fork']
+
 // Marks the session; returns the reason it could not, or '' when it did.
-function mark(sessionId, env) {
+function mark(sessionId, env, { cwd = process.cwd(), procRoot = '/proc', from = process.ppid } = {}) {
   try {
-    const { markSession, delegateSettingsFrom, brakeSettingsFrom } = require('./session.js')
+    const { markSession, delegateSettingsFrom, brakeSettingsFrom, readMark, markerFile } = require('./session.js')
     const { dataDir } = require('./run.js')
+    const { repoPaths } = require('./git.js')
+    const { claudeProcess } = require('./continuity-store.js')
+    const { writeFileAtomic } = require('./common.js')
+    const dir = dataDir(env)
+    const noteDir = readMark(dir, sessionId)?.noteDir
+    let repo = null
+    try {
+      repo = repoPaths(cwd).mainRoot
+    } catch {
+      repo = null
+    }
+    const claude = repo !== null ? claudeProcess({ procRoot, from }) : null
     // The ops option is on unless it is exactly false: the mod reads the session's ops-off file.
     // The superdelegation option, the harnesses and the quota deadline go to the session's delegate file, which
     // aether-delegate reads.
     // The brake settings go to the session's brake file.
-    markSession(dataDir(env), sessionId, Date.now(), {
+    markSession(dir, sessionId, Date.now(), {
       opsInMod: env.CLAUDE_PLUGIN_OPTION_OPS !== 'false',
       delegate: delegateSettingsFrom(env),
       brake: brakeSettingsFrom(env),
+      repo,
+      claude,
     })
+    // Resume and compact reuse the note: keep its recorded folder when refreshing the mark, so SessionEnd
+    // can still close it without git (spec 030 R3).
+    if (typeof noteDir === 'string' && noteDir !== '') {
+      writeFileAtomic(markerFile(dir, sessionId), JSON.stringify({ ...readMark(dir, sessionId), noteDir }) + '\n')
+    }
     return ''
   } catch (err) {
     return (err && err.message) || String(err)
@@ -230,7 +252,7 @@ function passSuperdelegation(env) {
   }
 }
 
-function main({ input = null, part = null, env = process.env, cwd = process.cwd(), stdout = process.stdout } = {}) {
+function main({ input = null, part = null, env = process.env, cwd = process.cwd(), stdout = process.stdout, procRoot = '/proc', from = process.ppid } = {}) {
   if (!input) return
   const { LEAD_AGENT } = require('./session.js')
   if (input.agent_type !== LEAD_AGENT) return
@@ -247,40 +269,144 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     return
   }
 
-  const markFailure = mark(input.session_id, env)
+  const markFailure = mark(input.session_id, env, { cwd, procRoot, from })
   const passed = passSuperdelegation(env)
-  if (!injects) return
+
+  const noteInput = input.cwd ? input : { ...input, cwd }
+
+  // Resume gives no notice and prints nothing, but refreshes its session note process (spec 030 R5).
+  if (source === 'resume') {
+    try {
+      const { continuityDir, claudeProcess, readNote, updateNote } = require('./continuity-store.js')
+      const { openNote } = require('./continuity-hook.js')
+      const dir = continuityDir({ cwd, env })
+      const id = input.session_id
+      if (!readNote(dir, id)) {
+        openNote(noteInput, { env, procRoot, from, source: 'resume', fork: false })
+      }
+      const selfProcess = claudeProcess({ procRoot, from })
+      const refreshed = updateNote(dir, id, { source: 'resume', process: selfProcess, closed: null, cut: null })
+      // A note can outlive its session marker. Reconnect it so SessionEnd can close it without git.
+      if (refreshed) {
+        const { dataDir } = require('./run.js')
+        const { readMark, markerFile } = require('./session.js')
+        const { writeFileAtomic } = require('./common.js')
+        const data = dataDir(env)
+        const marker = readMark(data, id)
+        if (marker && marker.noteDir !== dir) {
+          writeFileAtomic(markerFile(data, id), JSON.stringify({ ...marker, noteDir: dir }) + '\n')
+        }
+      }
+    } catch {}
+    return
+  }
+
+  if (!NOTICE_SOURCES.includes(source) && source !== 'compact') return
+
+  if (source === 'fork') {
+    let noticeLines = []
+    try {
+      const { continuityDir, claudeProcess } = require('./continuity-store.js')
+      const { notice } = require('./continuity-notice.js')
+      const { openNote } = require('./continuity-hook.js')
+      const { dataDir } = require('./run.js')
+      const dir = continuityDir({ cwd, env })
+      const selfProcess = claudeProcess({ procRoot, from })
+      const res = notice({ cwd, session: input.session_id, source, dataDir: dataDir(env), dir, env, procRoot, selfProcess })
+      // A fork with no earlier session has nothing to tell anyone.
+      noticeLines = Array.isArray(res?.lines) && !res.first ? [...res.lines] : []
+      openNote(noteInput, { env, procRoot, from, source, fork: true })
+    } catch {}
+
+    const buildForkPayload = (lines) => {
+      const text = lines.join('\n')
+      return JSON.stringify({
+        hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text },
+        systemMessage: text,
+      }) + '\n'
+    }
+    while (noticeLines.length > 1 && buildForkPayload(noticeLines).length > PART_LIMIT) {
+      noticeLines.pop()
+    }
+    stdout.write(buildForkPayload(noticeLines))
+    return
+  }
+
+  let noticeLines = []
+  // A first session in a project (no earlier note): its one line goes only to the person at startup, never to the
+  // Lead's context, so a project with no notes keeps the context it always had.
+  let firstSession = false
+  let dir = null
+  if (NOTICE_SOURCES.includes(source)) {
+    try {
+      const { continuityDir, claudeProcess } = require('./continuity-store.js')
+      const { notice } = require('./continuity-notice.js')
+      const { openNote } = require('./continuity-hook.js')
+      const { dataDir } = require('./run.js')
+      dir = continuityDir({ cwd, env })
+      const selfProcess = claudeProcess({ procRoot, from })
+      const res = notice({ cwd, session: input.session_id, source, dataDir: dataDir(env), dir, env, procRoot, selfProcess })
+      noticeLines = Array.isArray(res?.lines) ? [...res.lines] : []
+      firstSession = Boolean(res?.first)
+      openNote(noteInput, { env, procRoot, from, source, fork: false })
+    } catch {}
+  }
 
   pruneOldFiles(env)
-  const context = [
+  if (dir && (source === 'startup' || source === 'clear')) {
+    try {
+      const { pruneNotes } = require('./continuity-store.js')
+      pruneNotes(dir, { cwd })
+    } catch {}
+  }
+
+  const baseContext = [
     'Aether mode is active.',
     passed ? '' : "Aether could not pass the superdelegation option to this session's commands, so superdelegation is off.",
     markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
     sweepNote(cwd, env),
-    autonomyNote(cwd),
   ].filter(Boolean).join('\n\n')
-  const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }
+  // The open run's note stays the last thing of the context (tests/session-start-autonomy.test.js): the continuity notice
+  // goes before it.
+  const runNote = autonomyNote(cwd)
+
   // The welcome line is for the person and only at startup: a clear or a compact inside a session adds none. At startup the
   // notices of confirmed issues (spec 020) are shown too, oldest first, claiming only those that keep the whole output within
   // PART_LIMIT: one that does not fit stays pending without holding back a smaller later one.
   const welcomeLine = source === 'startup' ? welcome(root, env) : null
   let noticeLine = () => ''
-  const message = (list) => JSON.stringify(welcomeLine === null
-    ? output
-    : { ...output, systemMessage: [welcomeLine, ...list.map((notice) => noticeLine(notice))].join('\n') }) + '\n'
-  let notices = []
+  const buildPayload = (lines, issueNotices = []) => {
+    const noticeText = lines.join('\n')
+    const contextNotice = firstSession ? '' : noticeText
+    const additionalContext = [baseContext, contextNotice, runNote].filter(Boolean).join('\n\n')
+    const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext } }
+    if (welcomeLine !== null) {
+      const sysLines = [welcomeLine, ...lines, ...issueNotices.map((n) => noticeLine(n))].filter((s) => typeof s === 'string' && s !== '')
+      output.systemMessage = sysLines.join('\n')
+    } else if (source === 'clear' && contextNotice) {
+      output.systemMessage = contextNotice
+    }
+    return JSON.stringify(output) + '\n'
+  }
+
+  while (noticeLines.length > 1 && buildPayload(noticeLines).length > PART_LIMIT) {
+    noticeLines.pop()
+  }
+
+  let issueNotices = []
   if (welcomeLine !== null) {
     try {
       const { dataDir } = require('./run.js')
       const store = require('./observe-notice.js')
       noticeLine = store.noticeLine
-      notices = store.takeNotices(dataDir(env), (list) => message(list).length <= PART_LIMIT)
+      issueNotices = store.takeNotices(dataDir(env), (list) => buildPayload(noticeLines, list).length <= PART_LIMIT)
     } catch { /* A notice must never stop startup. */ }
   }
-  stdout.write(message(notices))
+  stdout.write(buildPayload(noticeLines, issueNotices))
 }
 
 module.exports = {
+  NOTICE_SOURCES,
   PART_LIMIT,
   bootstrapParts,
   splitParts,
