@@ -39,8 +39,10 @@ test('rm, mv, git rm, git mv, rmdir and unlink on the files aether:tidy orders a
     'rm .aether/aether.db', 'rm -rf .aether/objective-contracts', 'rm .aether/project.toml .aether/CONTEXT.md', 'rm .aether/run.draft.md',
     'git rm CLAUDE.md', 'git mv AGENTS.md docs/AGENTS.md', 'mv CLAUDE.md CLAUDE.old', 'rm sub/AGENTS.md',
     'rm -r .agents/skills/x', 'rmdir .claude/skills/x', 'unlink .claude/skills/x', 'rm -r ~/.agents/skills/x', `mv ${path.join(w.home, '.claude', 'skills', 'x')} /tmp/x`, 'rm -rf $HOME/.claude/skills/old', 'sudo rm CLAUDE.md', 'bash -c "rm AGENTS.md"',
+    'sudo -n rm CLAUDE.md', 'time -p rm CLAUDE.md', 'command -p rm CLAUDE.md', 'env -i rm CLAUDE.md', 'nohup rm CLAUDE.md', 'timeout -s KILL 5 rm CLAUDE.md',
+    '/bin/rm CLAUDE.md', 'eval "rm CLAUDE.md"', 'rm -- CLAUDE.md', 'mv -t dir CLAUDE.md', '$(rm CLAUDE.md)', 'git -C .claude/skills rm x',
   ]) assert.ok(named(command).length > 0, command)
-  for (const command of ['rm -r notes', 'rm -f notes', 'rm src/a.js', 'rm -rf .aether/runs', 'cp CLAUDE.md x', 'ls CLAUDE.md', 'cat AGENTS.md', 'git status', 'git rm src/a.js', 'echo CLAUDE.md']) assert.deepEqual(named(command), [], command)
+  for (const command of ['rm -r notes', 'rm -f notes', 'rm src/a.js', 'rm -rf .aether/runs', 'cp CLAUDE.md x', 'ls CLAUDE.md', 'cat AGENTS.md', 'git status', 'git rm src/a.js', 'echo CLAUDE.md', 'sudo -n ls CLAUDE.md', 'env -i cat AGENTS.md']) assert.deepEqual(named(command), [], command)
 })
 
 test('the guard classes them as delete: held without the owner permission, recorded and allowed with it, and the rule of today does not change (C13, R38, H4 scenario 29)', (t) => {
@@ -77,4 +79,40 @@ test('a Write that leaves CLAUDE.md or AGENTS.md empty is a delete; one with con
   assert.ok(held && held.reason.includes('delete'))
   assert.equal(w.write(path.join(w.repo.dir, 'CLAUDE.md'), '@AGENTS.md\n'), null)
   assert.equal(w.write(path.join(w.repo.dir, 'notes.md'), ''), null)
+})
+
+test('a wrapper with options, a shell script and a substitution do not hide a tidy delete from the classes (C13, R38)', (t) => {
+  const w = world(t)
+  assert.deepEqual(irreversibleClasses('sudo -n rm CLAUDE.md', w.repo.dir, w.enforce), ['delete'])
+  assert.deepEqual(irreversibleClasses('env -i bash -c "rm AGENTS.md"', w.repo.dir, w.enforce), ['delete'])
+  assert.deepEqual(irreversibleClasses('echo $(rm CLAUDE.md)', w.repo.dir, w.enforce), ['delete'])
+  assert.deepEqual(irreversibleClasses('sudo -n ls CLAUDE.md', w.repo.dir, w.enforce), [])
+})
+
+test('the delete class keeps its place among the classes of a line, in order of appearance (C13, R38)', (t) => {
+  const w = world(t)
+  assert.deepEqual(irreversibleClasses('git push origin main; rm AGENTS.md', w.repo.dir, w.enforce), ['push', 'delete'])
+  assert.deepEqual(irreversibleClasses('rm CLAUDE.md; git push origin main', w.repo.dir, w.enforce), ['delete', 'push'])
+  assert.deepEqual(irreversibleClasses('rm -rf ~; rm CLAUDE.md', w.repo.dir, w.enforce), ['delete'])
+})
+
+test('tidy targets follow cd, git -C and heredoc scripts as the guard reads them (C13, R38)', (t) => {
+  const w = world(t)
+  assert.ok(tidyTargets('cd .aether && rm aether.db', w.opts).length > 0)
+  assert.ok(tidyTargets('cd ~/.claude/skills && rm -r x', w.opts).length > 0)
+  assert.deepEqual(tidyTargets('cd notes && rm -r x', w.opts), [])
+  assert.ok(tidyTargets("bash <<'EOF'\nrm CLAUDE.md\nEOF", w.opts).length > 0)
+  assert.deepEqual(tidyTargets("cat <<'EOF'\nrm CLAUDE.md\nEOF", w.opts), [])
+})
+
+test('an empty CLAUDE.md or AGENTS.md write that the delete class lets through still meets the later checks (C13, R38)', (t) => {
+  const w = world(t)
+  const file = path.join(w.repo.dir, 'CLAUDE.md')
+  const examiner = { cwd: w.repo.dir, session_id: 's1', tool_name: 'Write', agent_type: 'aether:examiner', tool_input: { file_path: file, content: '' } }
+  const logMode = { ...process.env, AETHER_IRREVERSIBLE: 'log' }
+  const confined = decide(examiner, logMode)
+  assert.ok(confined && confined.reason.includes('Examiner'), 'the Examiner confinement still refuses it')
+  assert.ok(w.write(file, '').reason.includes('delete'))
+  assert.equal(decide({ cwd: w.repo.dir, session_id: 's1', tool_name: 'Write', tool_input: { file_path: file, content: '' } }, logMode), null)
+  assert.equal(readPending(w.repo.dir).length, 3)
 })
