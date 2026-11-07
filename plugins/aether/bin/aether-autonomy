@@ -2,6 +2,7 @@
 'use strict'
 
 // aether-autonomy: manages authorizations and run state.
+// aether-autonomy trust --author <autor> --quote <texto> [--session <id>] [--remove]
 // Calls lib/autonomy-command.js to handle the autonomy commands.
 
 const path = require('node:path')
