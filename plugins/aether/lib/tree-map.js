@@ -18,7 +18,7 @@ const LAYOUT = [
   },
   {
     path: 'autonomy/',
-    what: 'Autonomy grants, ceilings and trusted authors registry',
+    what: 'Autonomy grants, runs, ceilings and diaries',
     writer: 'aether-autonomy',
     lasts: 'permanent',
     git: 'never',

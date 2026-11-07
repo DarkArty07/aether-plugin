@@ -474,8 +474,7 @@ test('R12: the range of decisions the pages name runs to the last decision', () 
   for (const rel of FILES) {
     for (const m of read(rel).matchAll(/\bA1[–-]A(\d+)\b/g)) {
       seen++
-      const expected = rel === 'docs/index.md' && Number(m[1]) === 110 ? 110 : last
-      assert.equal(Number(m[1]), expected, `${rel} says A1-A${m[1]}, and the last decision is A${last}`)
+      assert.equal(Number(m[1]), last,`${rel} says A1-A${m[1]}, and the last decision is A${last}`)
     }
   }
   assert.ok(seen > 0, 'a page names the range of decisions')

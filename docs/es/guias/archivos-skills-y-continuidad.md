@@ -27,7 +27,7 @@ La estructura interna sigue el mapa definido en `plugins/aether/lib/tree-map.js`
 | Ruta | Contenido | Escritor | Duración | En Git |
 |---|---|---|---|---|
 | `README.md` | Mapa del directorio de estado .aether y políticas | aether-session-start | permanente | nunca |
-| `autonomy/` | Registro de permisos de autonomía, topes y autores de confianza | aether-autonomy | permanente | nunca |
+| `autonomy/` | Permisos de autonomía, corridas, topes y diarios | aether-autonomy | permanente | nunca |
 | `broken-runs/` | Estado en cuarentena de corridas corruptas o interrumpidas | aether-plan | hasta limpiar | nunca |
 | `pending.jsonl` | Registro de comandos irreversibles pendientes del sí del dueño | aether-guard | permanente | nunca |
 | `runs/` | Directorios de estado de corridas activas y completadas | aether-plan | hasta limpiar | nunca |

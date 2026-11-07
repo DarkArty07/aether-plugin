@@ -27,7 +27,7 @@ The state directory follows a documented layout maintained by `plugins/aether/li
 | Path | What it holds | Writer | Duration | In Git |
 |---|---|---|---|---|
 | `README.md` | Map of the .aether state directory layout and policies | aether-session-start | permanent | never |
-| `autonomy/` | Autonomy grants, ceilings and trusted authors registry | aether-autonomy | permanent | never |
+| `autonomy/` | Autonomy grants, runs, ceilings and diaries | aether-autonomy | permanent | never |
 | `broken-runs/` | Quarantined state of corrupted or interrupted runs | aether-plan | until cleaned | never |
 | `pending.jsonl` | Log of irreversible commands pending owner grant | aether-guard | permanent | never |
 | `runs/` | State directories for active and completed runs | aether-plan | until cleaned | never |

@@ -42,11 +42,13 @@ Present the concrete list of actions (files to delete or move) and ask the owner
 - Never execute changes without the owner's approval.
 - The owner may approve all proposed actions or select only a subset.
 
-When the owner approves in their own words (e.g. "approve deleting and moving these tidy files"), record the permission:
+The owner's yes covers that list once, in this session. When they approve in their own words (e.g. "approve deleting and moving these tidy files"), record it as a session grant, apply the list, then revoke the grant:
 ```bash
-aether-autonomy grant --class delete "<owner's exact words>"
+aether-autonomy grant --class delete --scope session --quote "<owner's exact words>"
+# apply the approved list (step 4)
+aether-autonomy revoke --class delete --quote "<owner's exact words>"
 ```
-Aether's guard enforces this: the guard intercepts and stops any deletion or movement of these files without a grant.
+The quote needs at least 12 characters of the owner's own message; when the reply is shorter, give them the commands to run themselves. Never record the grant without `--scope session`: a repository grant would let every later delete pass without a new yes. Aether's guard enforces this: it stops any deletion or movement of these files that no grant covers.
 
 ## 4. Apply Only the Approved List
 
