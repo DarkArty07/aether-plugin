@@ -67,3 +67,57 @@ test('a folder that does not exist or cannot be read gives no finding and does n
   assert.deepEqual(detect.detect(path.join(tempDir(t), 'missing'), { home: tempDir(t) }), { findings: [] })
   assert.deepEqual(detect.oldCliLeftovers(path.join(tempDir(t), 'missing')), [])
 })
+
+test('a same-content Claude skill copy is the supported fallback, while a changed copy is a finding', (t) => {
+  const root = tempDir(t), home = tempDir(t)
+  skill(root, '.agents/skills', 'mine')
+  skill(root, '.claude/skills', 'mine')
+  assert.deepEqual(detect.duplicateSkills(root, { home }), [])
+  assert.deepEqual(detect.detect(root, { home }).findings, [])
+  skill(root, '.claude/skills', 'mine', 'changed\n')
+  assert.equal(detect.duplicateSkills(root, { home })[0].by, 'name')
+})
+
+test('fallback equality includes supporting skill files', (t) => {
+  const root = tempDir(t)
+  const home = tempDir(t)
+  for (const where of ['.agents/skills', '.claude/skills']) {
+    skill(root, where, 'mine')
+    put(path.join(root, where, 'mine', 'scripts', 'run.js'), 'original')
+  }
+  assert.deepEqual(detect.duplicateSkills(root, { home }), [])
+  put(path.join(root, '.claude/skills/mine/scripts/run.js'), 'edited')
+  assert.equal(detect.duplicateSkills(root, { home })[0].by, 'name')
+})
+
+test('fallback equality includes symbolic links', (t) => {
+  const root = tempDir(t), home = tempDir(t)
+  for (const where of ['.agents/skills', '.claude/skills']) skill(root, where, 'mine')
+  fs.symlinkSync('first', path.join(root, '.agents/skills/mine/reference'))
+  fs.symlinkSync('second', path.join(root, '.claude/skills/mine/reference'))
+  assert.equal(detect.duplicateSkills(root, { home })[0].by, 'name')
+})
+
+test('identical relative links do not hide different referenced content in fallback copies', (t) => {
+  const root = tempDir(t), home = tempDir(t)
+  for (const where of ['.agents/skills', '.claude/skills']) {
+    skill(root, where, 'mine')
+    put(path.join(root, where, 'reference.md'), 'same reference')
+    fs.symlinkSync('../reference.md', path.join(root, where, 'mine/reference.md'))
+  }
+  assert.deepEqual(detect.duplicateSkills(root, { home }), [])
+  put(path.join(root, '.claude/skills/reference.md'), 'edited reference')
+  assert.equal(detect.duplicateSkills(root, { home })[0].by, 'name')
+})
+
+test('fallback comparison handles link cycles and missing targets', (t) => {
+  const root = tempDir(t), home = tempDir(t)
+  for (const where of ['.agents/skills', '.claude/skills']) {
+    skill(root, where, 'mine')
+    fs.symlinkSync('.', path.join(root, where, 'mine/self'))
+    fs.symlinkSync('../missing.md', path.join(root, where, 'mine/reference.md'))
+  }
+  assert.deepEqual(detect.duplicateSkills(root, { home }), [])
+  put(path.join(root, '.claude/skills/missing.md'), 'only one reference exists')
+  assert.equal(detect.duplicateSkills(root, { home })[0].by, 'name')
+})

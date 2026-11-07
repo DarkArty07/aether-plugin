@@ -18,14 +18,7 @@ const { LAYOUT_NAMES } = require('./tree-map.js')
 const { checkProjectFiles } = require('./tree-check.js')
 const { computedHash } = require('./skill-registry.js')
 
-const LEGACY_FOLDERS = [
-  { from: path.join('.aether', 'lanes'), to: path.join('.aether', 'worktrees', 'lanes') },
-  { from: path.join('.aether', 'exams'), to: path.join('.aether', 'worktrees', 'exams') },
-  { from: path.join('.aether', 'seats'), to: path.join('.aether', 'work', 'seats') },
-  { from: path.join('.aether', 'delegates'), to: path.join('.aether', 'work', 'delegates') },
-  { from: '.aether-tmp', to: path.join('.aether', 'tmp') },
-  { from: '.aether-exam', to: path.join('.aether', 'exam') },
-]
+const { MIGRATION_MAP, listWorktrees, renameSafety } = require('./tree-migrate.js')
 
 function projectsIn(folder) {
   try {
@@ -225,7 +218,8 @@ function report(roots, { home = os.homedir() } = {}) {
       })
     }
 
-    for (const item of LEGACY_FOLDERS) {
+    const worktrees = listWorktrees(root)
+    for (const item of MIGRATION_MAP) {
       const src = path.join(root, item.from)
       let exists = false
       try {
@@ -233,27 +227,41 @@ function report(roots, { home = os.homedir() } = {}) {
         exists = true
       } catch {}
       if (exists) {
-        addAction({
-          action: 'move',
-          path: item.from,
-          to: item.to,
-          why: 'legacy folder'
-        })
+        let why
+        try {
+          why = renameSafety(src, path.join(root, item.to), worktrees)
+        } catch (err) {
+          why = `cannot check migration safety: ${err.message}`
+        }
+        addAction(why
+          ? { action: 'edit', path: item.from, why }
+          : { action: 'move', path: item.from, to: item.to, why: 'legacy folder' })
       }
     }
 
     const dups = duplicateSkills(root, { home })
+    const conflicts = new Set(dups.filter((dup) => dup.by === 'name').flatMap((dup) => dup.paths))
     for (const dup of dups) {
       if (dup.paths && dup.paths.length > 1) {
         const firstRel = path.relative(root, dup.paths[0])
         for (const candPath of dup.paths.slice(1)) {
           const rel = path.relative(root, candPath)
           if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+            if (dup.by === 'hash' && conflicts.has(candPath)) continue
+            if (dup.by === 'hash' && path.dirname(rel) === path.join('.agents', 'skills')) {
+              try {
+                fs.lstatSync(path.join(root, '.claude', 'skills', path.basename(rel)))
+                addAction({ action: 'edit', path: rel, why: `resolve duplicate with ${firstRel}; Claude uses this skill` })
+                continue
+              } catch {}
+            }
             addAction({
-              action: 'delete',
+              action: dup.by === 'name' ? 'edit' : 'delete',
               path: rel,
-              why: `duplicate of ${firstRel}; keep one`
+              why: dup.by === 'name' ? `resolve skill conflict with ${firstRel}` : `duplicate of ${firstRel}; keep one`
             })
+          } else if (dup.by === 'name' && !firstRel.startsWith('..') && !path.isAbsolute(firstRel)) {
+            addAction({ action: 'edit', path: firstRel, why: `resolve skill conflict with ${candPath}` })
           }
         }
       }
@@ -335,7 +343,7 @@ function tidyCommand(args, { cwd = process.cwd(), home = os.homedir() } = {}) {
     }
   }
 
-  if (roots.length === 0) {
+  if (args.length === 0) {
     roots.push(cwd)
   }
 

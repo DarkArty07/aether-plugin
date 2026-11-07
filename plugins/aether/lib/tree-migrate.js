@@ -111,6 +111,18 @@ function mayHoldCopy(dir) {
   )
 }
 
+// The reason a plain rename is unsafe, or null when safe. Errors leave the caller to keep the source.
+function renameSafety(src, dst, worktrees) {
+  const stat = fs.lstatSync(src)
+  if (stat.isSymbolicLink()) return 'symbolic link, not moved'
+  if (exists(dst)) return 'destination already exists'
+  if (!stat.isDirectory()) return null
+  const real = realPath(src)
+  if (worktrees && [...worktrees].some((wt) => wt === real || wt.startsWith(real + path.sep))) return 'registered worktree inside; use startup migration'
+  if (mayHoldCopy(src)) return 'possible copy or .git entry inside; use startup migration'
+  return null
+}
+
 function keep(ctx, from, why) {
   ctx.kept.push({ from, why })
   return false
@@ -158,8 +170,7 @@ function moveDirectory(src, dst, ctx) {
   if (exists(path.join(src, '.git'))) {
     return keep(ctx, src, ctx.worktrees ? 'holds a .git entry but is not a registered worktree' : 'worktree list unavailable')
   }
-  const registeredInside = ctx.worktrees ? [...ctx.worktrees].some((wt) => wt.startsWith(real + path.sep)) : false
-  if (!exists(dst) && !registeredInside && !mayHoldCopy(src)) {
+  if (!renameSafety(src, dst, ctx.worktrees)) {
     fs.mkdirSync(path.dirname(dst), { recursive: true })
     fs.renameSync(src, dst)
     ctx.moved.push({ from: src, to: dst })
@@ -210,6 +221,9 @@ function migrate(mainRoot, { gate } = {}) {
 
 module.exports = {
   ACTIVITY_MS,
+  MIGRATION_MAP,
+  listWorktrees,
+  renameSafety,
   migrationGate,
   migrate,
 }
