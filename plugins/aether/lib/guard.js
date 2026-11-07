@@ -5,9 +5,10 @@
 // and the intent card (specs/NNN-<topic>/intent.md). Protection of docs/superpowers/specs/ and
 // docs/superpowers/plans/ stays in force even though that folder is not in the tree.
 // Records irreversible Bash commands across the classes: merge-main, push, publish, deploy, delete,
-// credentials, and skill-install (spec 030 R25 R30). The paid-call class is in CLASSES of autonomy.js,
-// but the guard does not detect it; it is only granted and checked with aether-autonomy. Redacts secret
-// values from logged commands. Refuses writes to Aether skills, downloaded skills (spec 030 R23),
+// credentials, and skill-install (spec 030 R25 R30). The delete class also holds the removals and renames that
+// aether:tidy orders, and a Write that empties CLAUDE.md or AGENTS.md (spec 030 R38). The paid-call class is in
+// CLASSES of autonomy.js, but the guard does not detect it; it is only granted and checked with aether-autonomy.
+// Redacts secret values from logged commands. Refuses writes to Aether skills, downloaded skills (spec 030 R23),
 // trusted.json (spec 030 R47), and Claude Code's settings and hooks (spec 030 R21), and confines the
 // Examiner to .aether/exam/ (and the old .aether-exam/).
 // Family: none.
@@ -19,6 +20,7 @@ const { isObject } = require('./common.js')
 const { dataDir: getDataDir } = require('./run.js')
 const { classifySkillPath, copyAdvice, installClass, trustedFile } = require('./skill-rules.js')
 const { classifyClaudePath } = require('./tree-paths.js')
+const { OLD_CLI_NAMES, OLD_CLI_PATTERNS } = require('./tidy-detect.js')
 
 const CHECKED_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const PROTECTED = [
@@ -50,6 +52,13 @@ function decide(input, env = process.env) {
     return {
       reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end) instead of editing ${resolved}.`,
     }
+  }
+
+  // A Write that empties CLAUDE.md or AGENTS.md is a delete (spec 030 R38). A refusal ends it; otherwise the
+  // checks below still apply to the write.
+  if (emptiesTidyFile(input)) {
+    const refused = recordAndDecide([{ cls: 'delete', command: `Write ${target}` }], { cwd: base, session: input.session_id, env })
+    if (refused) return refused
   }
 
   if (isTrustedTarget(target, base, env)) {
@@ -330,24 +339,31 @@ function subcommandOf(words) {
   return null
 }
 
-// What a command line leaves for the merge-main class, read segment by segment in order: here, the directory
-// the next segment runs in (null when it is not known), and branches, the branch that a git checkout or switch
-// left current in each directory. A directory not in branches is read from git once, when a merge needs it.
-function sequenceOf(cwd) {
-  return { here: typeof cwd === 'string' && cwd !== '' ? path.resolve(cwd) : null, branches: new Map() }
+// What a command line leaves, read segment by segment in order: here, the directory the next segment runs in
+// (null when it is not known); branches, the branch that a git checkout or switch left current in each directory
+// (a directory not in branches is read from git once, when a merge needs it); home, the folder that ~ and $HOME
+// name; and targets, the tidy targets named so far (spec 030 R38, read by tidyTargetsIn).
+function sequenceOf(cwd, home = null) {
+  return { here: typeof cwd === 'string' && cwd !== '' ? path.resolve(cwd) : null, branches: new Map(), home, targets: [] }
 }
 
-// The directory that dir names when run from base, or null when that cannot be told: "~", "$" and "-" paths,
-// and a relative path with no base.
-function resolveDir(base, dir) {
-  if (/^[-~$]/.test(dir)) return null
-  if (path.isAbsolute(dir)) return dir
-  return base === null ? null : path.resolve(base, dir)
+// The word with a leading ~, $HOME or ${HOME} replaced by the home folder, when the home folder is known.
+function expandHome(word, home) {
+  return home ? word.replace(/^(?:~|\$HOME|\$\{HOME\})(?=\/|$)/, () => home) : word
+}
+
+// The directory that dir names when run from base, or null when that cannot be told: "$" and "-" paths, "~" paths
+// without a home folder, and a relative path with no base.
+function resolveDir(base, dir, home = null) {
+  const expanded = expandHome(dir, home)
+  if (/^[-~$]/.test(expanded)) return null
+  if (path.isAbsolute(expanded)) return expanded
+  return base === null ? null : path.resolve(base, expanded)
 }
 
 // The directory a git command runs in: the cwd of the line, moved by each of its -C options in turn.
 function gitDirOf(sequence, dirs) {
-  return dirs.reduce((base, dir) => resolveDir(base, dir), sequence.here)
+  return dirs.reduce((base, dir) => resolveDir(base, dir, sequence.home), sequence.here)
 }
 
 // The branch current in dir, or null when there is none: detached, not a repository, or not known.
@@ -404,7 +420,7 @@ function switchedTo(args, dir) {
 // git switch changes the branch of the directory it runs in. Any other segment leaves the sequence as it is.
 function followSegment(words, sequence) {
   if (words[0] === 'cd') {
-    sequence.here = words.length > 1 ? resolveDir(sequence.here, words[1]) : null
+    sequence.here = words.length > 1 ? resolveDir(sequence.here, words[1], sequence.home) : null
     return
   }
   const git = gitCall(words)
@@ -477,8 +493,12 @@ function collectWords(words, depth, wanted, sequence, out, env = process.env) {
   const mergesToMain = git !== null && landsOnMain(git, sequence)
   const found = mergesToMain ? { cls: 'merge-main', head: ['git', 'merge'] } : subcommandOf(command)
   const install = isSkillInstallSegment(words, named, sequence.here, env) ? { cls: 'skill-install', head: named.slice(0, 2) } : null
+  // The tidy targets of this segment, read in the directory it runs in (spec 030 R38). Its first one makes the delete class.
+  const tidy = tidyTargetsOf(command, git !== null ? gitDirOf(sequence, git.dirs) : sequence.here, sequence.home)
+  sequence.targets.push(...tidy)
+  const removal = tidy.length > 0 ? { cls: 'delete', head: command.slice(0, command[0] === 'git' ? 2 : 1) } : null
   // A segment can be two classes at once, such as a push that names the personal skills folder: each is kept once.
-  for (const match of [found, install]) {
+  for (const match of [found, install, removal]) {
     if (match !== null && (wanted === null || match.cls === wanted) && !out.some((f) => f.cls === match.cls)) out.push(match)
   }
 }
@@ -903,12 +923,14 @@ function unquotedRedirection(word, mask) {
 
 // The distinct irreversible classes of a Bash command, in order of appearance: 'merge-main', 'push',
 // 'publish', 'deploy', 'delete', 'credentials', and 'skill-install' (spec 030 R25 R30; the guard does
-// not detect paid calls). Every segment counts, including sequences, pipes, subshells, substitutions
-// and nested scripts, in the order they run. A git merge needs cwd, the directory the command runs in,
-// to know its branch: without it, only a checkout or switch to main earlier in the line makes it merge-main.
+// not detect paid calls). The delete class also comes from the removals and renames that aether:tidy
+// orders (spec 030 R38, tidyTargetsOf), at the place of the segment that names the first one. Every
+// segment counts, including sequences, pipes, subshells, substitutions and nested scripts, in the order
+// they run. A git merge needs cwd, the directory the command runs in, to know its branch: without it,
+// only a checkout or switch to main earlier in the line makes it merge-main.
 function irreversibleClasses(command, cwd, env = process.env) {
   const out = []
-  collectCommand(command, 0, null, sequenceOf(cwd), out, env)
+  collectCommand(command, 0, null, sequenceOf(cwd, (env && env.HOME) || os.homedir()), out, env)
   return out.map((found) => found.cls)
 }
 
@@ -1188,6 +1210,72 @@ function isSkillInstallSegment(words, named, here, env) {
   return installClass(named.map(spelledWord).join(' '), { dataDir: getDataDir(env) }) === 'skill-install'
 }
 
+// Tidy deletions (spec 030 R38). aether:tidy orders these removals and renames: the old CLI's leftovers directly
+// inside .aether/, any CLAUDE.md or AGENTS.md, and what is in the skills folders. collectWords reads each segment
+// with the same wrappers, scripts and substitutions as every other class, so a wrapper's options or a shell's -c
+// do not hide them.
+const TIDY_COMMANDS = new Set(['rm', 'mv', 'rmdir', 'unlink'])
+const TIDY_GIT_COMMANDS = new Set(['rm', 'mv'])
+const TIDY_FILES = new Set(['CLAUDE.md', 'AGENTS.md'])
+const TARGET_DIR_FLAGS = ['-t', '--target-directory']
+const SKILLS_FOLDER = /(?:^|\/)\.(?:claude|agents)\/skills(?:\/|$)/
+
+function isOldCliName(name) {
+  return OLD_CLI_NAMES.includes(name) || OLD_CLI_PATTERNS.some((pattern) => pattern.test(name))
+}
+
+// Whether a path that a command names is one that aether:tidy orders removed or moved. It is read once, as one
+// normalized path, resolved from cwd when cwd is known.
+function isTidyTarget(word, cwd, home) {
+  const text = expandHome(word, home).replace(/\\/g, '/')
+  const full = (cwd ? path.resolve(cwd, text) : path.posix.normalize(text)).split(path.sep).join('/')
+  const name = path.posix.basename(full)
+  const parent = path.posix.basename(path.posix.dirname(full))
+  return TIDY_FILES.has(name) || (parent === '.aether' && isOldCliName(name)) || SKILLS_FOLDER.test(full)
+}
+
+// The operands of a command after its options. A "--" ends the options, and -t or --target-directory names its
+// directory as an operand too, so that mv -t dir CLAUDE.md still names CLAUDE.md.
+function operandsOf(args) {
+  const operands = []
+  let inOptions = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (inOptions && arg === '--') inOptions = false
+    else if (inOptions && TARGET_DIR_FLAGS.includes(arg)) {
+      if (i + 1 < args.length) operands.push(args[++i])
+    } else if (inOptions && arg.startsWith('--target-directory=')) operands.push(arg.slice('--target-directory='.length))
+    else if (!inOptions || !arg.startsWith('-')) operands.push(arg)
+  }
+  return operands.filter((arg) => arg !== '')
+}
+
+// The tidy targets among the operands of one command segment, in order. The words are past the wrappers and
+// git's options, as collectWords leaves them; a git command counts only as git rm or git mv.
+function tidyTargetsOf(command, cwd, home) {
+  const git = command[0] === 'git'
+  const verb = git ? command[1] : command[0]
+  if (!(git ? TIDY_GIT_COMMANDS.has(verb) : TIDY_COMMANDS.has(verb))) return []
+  return operandsOf(command.slice(git ? 2 : 1)).filter((word) => isTidyTarget(word, cwd, home))
+}
+
+// Whether a Write leaves CLAUDE.md or AGENTS.md empty: its base name is one of them and its content is blank.
+function emptiesTidyFile(input) {
+  if (!input || input.tool_name !== 'Write' || !input.tool_input) return false
+  const filePath = input.tool_input.file_path
+  if (typeof filePath !== 'string') return false
+  if (!TIDY_FILES.has(path.posix.basename(filePath.replace(/\\/g, '/')))) return false
+  const content = input.tool_input.content
+  return typeof content === 'string' && content.trim() === ''
+}
+
+// The tidy targets that a whole command line names, in order: the walk that irreversibleClasses makes.
+function tidyTargetsIn(command, cwd, env = process.env) {
+  const sequence = sequenceOf(cwd, (env && env.HOME) || os.homedir())
+  collectCommand(command, 0, null, sequence, [], env)
+  return sequence.targets
+}
+
 function trustedWrite(command, cwd = process.cwd(), env = process.env) {
   if (typeof command !== 'string') return null
   const shape = lineShape(command)
@@ -1245,4 +1333,4 @@ function decideBash(input, env = process.env) {
   } catch { return null }
 }
 
-module.exports = { decide, decideBash, irreversibleClass, irreversibleClasses, redactCommand, protectedMention, lineShape }
+module.exports = { decide, decideBash, emptiesTidyFile, irreversibleClass, irreversibleClasses, redactCommand, protectedMention, lineShape, tidyTargetsIn }
