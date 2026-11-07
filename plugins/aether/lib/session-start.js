@@ -196,7 +196,7 @@ function pruneOldFiles(env) {
 const NOTICE_SOURCES = ['startup', 'clear', 'fork']
 
 // Marks the session; returns the reason it could not, or '' when it did.
-function mark(sessionId, env, { cwd = process.cwd(), procRoot = '/proc', from = process.ppid } = {}) {
+function mark(sessionId, env, { cwd = process.cwd(), procRoot = '/proc', from = process.ppid, now = Date.now() } = {}) {
   try {
     const { markSession, delegateSettingsFrom, brakeSettingsFrom, readMark, markerFile } = require('./session.js')
     const { dataDir } = require('./run.js')
@@ -216,7 +216,7 @@ function mark(sessionId, env, { cwd = process.cwd(), procRoot = '/proc', from = 
     // The superdelegation option, the harnesses and the quota deadline go to the session's delegate file, which
     // aether-delegate reads.
     // The brake settings go to the session's brake file.
-    markSession(dir, sessionId, Date.now(), {
+    markSession(dir, sessionId, now, {
       opsInMod: env.CLAUDE_PLUGIN_OPTION_OPS !== 'false',
       delegate: delegateSettingsFrom(env),
       brake: brakeSettingsFrom(env),
@@ -252,7 +252,17 @@ function passSuperdelegation(env) {
   }
 }
 
-function main({ input = null, part = null, env = process.env, cwd = process.cwd(), stdout = process.stdout, procRoot = '/proc', from = process.ppid } = {}) {
+// The legacy folders migrate checks (spec 030 R19).
+const OLD_MIGRATION_FOLDERS = [
+  path.join('.aether', 'lanes'),
+  path.join('.aether', 'exams'),
+  path.join('.aether', 'seats'),
+  path.join('.aether', 'delegates'),
+  '.aether-tmp',
+  '.aether-exam',
+]
+
+function main({ input = null, part = null, env = process.env, cwd = process.cwd(), stdout = process.stdout, procRoot = '/proc', from = process.ppid, now = Date.now() } = {}) {
   if (!input) return
   const { LEAD_AGENT } = require('./session.js')
   if (input.agent_type !== LEAD_AGENT) return
@@ -269,7 +279,33 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     return
   }
 
-  const markFailure = mark(input.session_id, env, { cwd, procRoot, from })
+  let mainRoot = null
+  try {
+    const { repoPaths } = require('./git.js')
+    mainRoot = repoPaths(cwd).mainRoot
+  } catch {
+    mainRoot = null
+  }
+
+  // 1. Before this session writes anything: evaluate the migration gate (spec 030 R19).
+  let gate = null
+  if (mainRoot !== null && injects) {
+    try {
+      const { migrationGate } = require('./tree-migrate.js')
+      const { claudeProcess } = require('./continuity-store.js')
+      const { dataDir } = require('./run.js')
+      gate = migrationGate(mainRoot, {
+        dataDir: dataDir(env),
+        now,
+        selfSession: input.session_id,
+        selfProcess: claudeProcess({ procRoot, from }),
+        procRoot,
+      })
+    } catch {}
+  }
+
+  // 2. Mark the session and pass superdelegation.
+  const markFailure = mark(input.session_id, env, { cwd, procRoot, from, now })
   const passed = passSuperdelegation(env)
 
   const noteInput = input.cwd ? input : { ...input, cwd }
@@ -332,6 +368,53 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     return
   }
 
+  // 3. Migrate legacy state if gate allows (spec 030 R19).
+  let migrationNote = ''
+  if (mainRoot !== null && injects && gate) {
+    try {
+      const { migrate } = require('./tree-migrate.js')
+      if (gate.move) {
+        const res = migrate(mainRoot, { gate })
+        if (res.moved.length > 0) {
+          migrationNote = `Aether moved the old state of .aether/ to its new places (${res.moved.length} folders).`
+          if (res.kept.length > 0) {
+            const why = res.kept.map((k) => k.why || String(k)).join(', ')
+            migrationNote += ` Aether left ${res.kept.length} old folder(s) of .aether/ where they are: ${why}.`
+          }
+        } else if (res.kept.length > 0) {
+          const why = res.kept.map((k) => k.why || String(k)).join(', ')
+          migrationNote = `Aether left ${res.kept.length} old folder(s) of .aether/ where they are: ${why}.`
+        }
+      } else {
+        const hasOld = OLD_MIGRATION_FOLDERS.some((f) => fs.existsSync(path.join(mainRoot, f)))
+        if (hasOld) {
+          migrationNote = `Aether left the old state of .aether/ where it is for now: ${gate.reasons.join(', ')}.`
+        }
+      }
+    } catch {}
+  }
+
+  // 4. Ensure README map exists (spec 030 R14).
+  if (mainRoot !== null && injects) {
+    try {
+      const { ensureReadme } = require('./tree-map.js')
+      ensureReadme(mainRoot)
+    } catch {}
+  }
+
+  // 5. Clean project temporary and stale items (spec 030 R17).
+  let cleanNote = ''
+  if (mainRoot !== null && injects) {
+    try {
+      const { cleanProject } = require('./tree-clean.js')
+      const { dataDir } = require('./run.js')
+      const cleanRes = cleanProject(cwd, { dataDir: dataDir(env), now })
+      if (cleanRes?.removed?.length > 0) {
+        cleanNote = `Aether cleaned ${cleanRes.removed.length} old item(s) of .aether/.`
+      }
+    } catch {}
+  }
+
   let noticeLines = []
   // A first session in a project (no earlier note): its one line goes only to the person at startup, never to the
   // Lead's context, so a project with no notes keeps the context it always had.
@@ -352,6 +435,7 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     } catch {}
   }
 
+  // 6. Prune old files and notes.
   pruneOldFiles(env)
   if (dir && (source === 'startup' || source === 'clear')) {
     try {
@@ -364,6 +448,8 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     'Aether mode is active.',
     passed ? '' : "Aether could not pass the superdelegation option to this session's commands, so superdelegation is off.",
     markFailure ? `Aether could not mark this session (${markFailure}): the spec and plan guard and the usage meter are off in it.` : '',
+    migrationNote,
+    cleanNote,
     sweepNote(cwd, env),
   ].filter(Boolean).join('\n\n')
   // The open run's note stays the last thing of the context (tests/session-start-autonomy.test.js): the continuity notice
