@@ -17,3 +17,6 @@ The command is `aether-doctor`, on the Bash tool's `PATH`. It prints one JSON ob
    - Then, when a check with status `warn` or `error` has a `fix`, a "To fix" list with one item per such check, with the `fix` exactly as given.
 
 A check with status `info` is not a problem: if it has a `fix`, put it at the end of its line as a hint, not in the list.
+
+The order of a project is not part of this report: `aether-doctor tidy` prints it, and the `tidy` skill runs it.
+

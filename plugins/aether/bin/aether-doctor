@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
+// aether-doctor tidy [--projects <folder>] [<project>...]
 // aether-doctor [--name <name>]
 // Checks that Aether can run here (Claude Code, Node, git, the installed release, the command that starts Aether mode,
 // dynamic workflows, the other harnesses and the folder) and says how to fix what cannot. It reads and writes nothing.
@@ -10,6 +11,7 @@
 
 const path = require('node:path')
 const doctor = require(path.join(__dirname, '..', 'lib', 'doctor.js'))
+const { tidyCommand } = require(path.join(__dirname, '..', 'lib', 'tidy-report.js'))
 
 const USAGE = 'usage: aether-doctor [--name <name>]'
 
@@ -33,12 +35,18 @@ function parse(args) {
 
 function main(args) {
   try {
+    const verb = args[0]
+    if (verb === 'tidy') {
+      const result = tidyCommand(args.slice(1))
+      process.stdout.write(`${JSON.stringify({ tidy: result })}\n`)
+      return 0
+    }
     const report = doctor.run(parse(args))
     process.stdout.write(`${JSON.stringify(report)}\n`)
     return report.ok ? 0 : 1
   } catch (err) {
     process.stdout.write(`${JSON.stringify({ error: err.message })}\n`)
-    return err instanceof doctor.DoctorError ? err.exitCode : 1
+    return err instanceof doctor.DoctorError ? err.exitCode : (err.exitCode || 1)
   }
 }
 
