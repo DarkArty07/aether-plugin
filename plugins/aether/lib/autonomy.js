@@ -12,6 +12,7 @@ const { ownerMessages, findTranscript } = require('./voice.js')
 const { newRunId, isRunId, dataDir: runDataDir } = require('./run.js')
 const { readBrakeSettings } = require('./session.js')
 const { isObject } = require('./common.js')
+const { trustedFile } = require('./skill-rules.js')
 
 const CLASSES = ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call', 'skill-install']
 const SCOPES = ['repo', 'session']
@@ -671,16 +672,12 @@ function isValidAuthor(author) {
   return typeof author === 'string' && author.length > 0 && author.length <= 39 && AUTHOR_PATTERN.test(author)
 }
 
-function trustedPath(dataDir) {
-  return path.join(dataDir, 'skills', 'trusted.json')
-}
-
 function trustAuthor(dataDir, { author, quote, session, remove = false }, { configDir, now = Date.now() } = {}) {
   if (!isValidAuthor(author)) return { ok: false, reason: `invalid author: ${author}` }
   const verified = verifyQuote(session, quote, { configDir, allowNegation: remove })
   if (!verified.ok) return { ok: false, reason: verified.reason }
 
-  const file = trustedPath(dataDir)
+  const file = trustedFile(dataDir)
   let data = { authors: [], log: [] }
   if (fs.existsSync(file)) {
     try {
