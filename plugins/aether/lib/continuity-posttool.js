@@ -5,6 +5,9 @@
 
 const path = require('node:path')
 const treeCheck = require('./tree-check.js')
+const skillRegistry = require('./skill-registry.js')
+const skillReview = require('./skill-review.js')
+const skillRepeat = require('./skill-repeat.js')
 const { isSpanish, memoryDir } = require('./continuity-store.js')
 
 const REMINDER_EN =
@@ -33,7 +36,13 @@ function memoryReminder(input, ctx = {}) {
   return isSpanish(ctx.env) ? REMINDER_ES : REMINDER_EN
 }
 
-const HANDLERS = [memoryReminder, treeCheck.posttool]
+const HANDLERS = [
+  memoryReminder,
+  treeCheck.posttool,
+  skillRegistry.posttool,
+  skillReview.posttool,
+  skillRepeat.posttool,
+]
 
 function posttool(input, ctx = {}) {
   const texts = []
