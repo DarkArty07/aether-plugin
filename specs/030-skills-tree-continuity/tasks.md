@@ -1429,7 +1429,7 @@ test('the AGENTS.md of the main checkout is added when a copy of the working tre
 **Aether:**
 - Review: xhigh — la guarda es lo único que impide que un agente cambie la configuración o los hooks de Claude Code
 - Area: guard
-- Owns: `plugins/aether/lib/guard.js`, `tests/guard-claude.test.js`
+- Owns: `plugins/aether/lib/guard.js`, `tests/guard-claude.test.js`, `tests/guard.test.js`
 - Depends on: Task 8 — usa `classifyClaudePath` de `lib/tree-paths.js`
 - Serves: R21, R15
 
@@ -1439,7 +1439,7 @@ En `plugins/aether/lib/guard.js`:
 
 - `decide(input)` (herramientas de archivos): después de la protección del registro de autonomía, si `classifyClaudePath(target, { cwd }).kind === 'config'`, devuelve `{ reason }` para cualquier agente (el Lead, el Writer, un implementador o la sesión principal). El texto empieza por `In Aether mode no agent writes Claude Code's settings or hooks` y nombra la ruta.
 - `decideBash(input, env)`: antes de las clases irreversibles, si el comando nombra una de las rutas de configuración (`.claude/settings.json`, `.claude/settings.local.json`, `.claude/hooks` o algo dentro, con cualquier prefijo de ruta, también con `./` o `$PWD/`) y no es un comando de solo lectura (los de la lista `READ_COMMANDS` que ya usa la guarda: `echo`, `printf`, `cat`, `more`, `head`, `tail`, `grep`, `ls`, `stat`, `wc`, `diff`, `jq` y los demás de esa lista; `git status` no está en ella, y no nombra esas rutas, así que pasa por otra razón), devuelve `{ reason }` con el mismo texto. Un comando de solo lectura sobre esas rutas pasa. Una redirección `>` o `>>` a esas rutas se rechaza aunque el comando sea de lectura. Escribir en `.claude/skills/` o `.claude/rules/` por Bash pasa.
-- El Examinador escribe solo bajo `.aether/exam/` en la raíz del repositorio, y también bajo `.aether-exam/` (el estado viejo): `EXAM_PATH` acepta los dos y el mensaje de rechazo nombra `.aether/exam/`.
+- El Examinador escribe solo bajo `.aether/exam/` en la raíz del repositorio, y también bajo `.aether-exam/` (el estado viejo): `EXAM_PATH` acepta los dos y el mensaje de rechazo nombra `.aether/exam/`. `tests/guard.test.js:50-59` fija el mensaje viejo («under .aether-exam/ at the repository root»): la tarea reescribe solo esa prueba para el mensaje nuevo y deja que acepte las dos carpetas; el resto del archivo no cambia.
 - Lo demás de la guarda no cambia.
 
 **Tests (write first):**
