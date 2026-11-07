@@ -3647,6 +3647,7 @@ test('the Writer and the plan skill name the art direction before the plan; ther
 - **Orden del proyecto.** `AGENTS.md` es el mapa y `CLAUDE.md` es `@AGENTS.md` más lo que es solo de Claude; si el aviso de arranque nombra desorden, ofrece `aether:tidy` y no mueve ni borra nada sin el sí del dueño.
 - **Rutas.** Los lugares de `.aether/` que el texto actual nombra pasan a los nuevos: `.aether/tmp/` en lugar de `.aether-tmp/` y `.aether/exam/` en lugar de `.aether-exam/`, y se agrega que `.aether/README.md` es el mapa.
 - Una feature visual: el Writer escribe `art-direction.md` antes del plan (una línea; la regla es de la skill `plan` y del Writer).
+- **Herramientas (issue #187, palabras del dueño: «no puede vovler a pasar que el lead no trabje con todas sus herramientas que se necesita»).** Al empezar una sesión, y antes de cualquier diseño o corrida autónoma, el Lead comprueba que `Workflow` está entre sus herramientas; si falta, se lo dice al dueño en su primera respuesta, en palabras simples y antes de cualquier plan, con el arreglo (Dynamic workflows en `/config` y una sesión nueva; una corrida se retoma desde su diario), y espera su respuesta en lugar de planear alrededor. Esta regla reemplaza la frase actual que solo dice avisarle. `tests/using-aether-030.test.js` comprueba que el bootstrap nombra `Workflow`, `/config` y una sesión nueva en esa regla.
 
 `CLAUDE.md` cambia solo si esta tarea agrega `--part 6` a `hooks/hooks.json`: entonces su frase «`--part 1` to `--part 5`» pasa a nombrar las seis partes.
 
