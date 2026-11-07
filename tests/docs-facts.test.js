@@ -474,7 +474,8 @@ test('R12: the range of decisions the pages name runs to the last decision', () 
   for (const rel of FILES) {
     for (const m of read(rel).matchAll(/\bA1[–-]A(\d+)\b/g)) {
       seen++
-      assert.equal(Number(m[1]), last, `${rel} says A1-A${m[1]}, and the last decision is A${last}`)
+      const expected = rel === 'docs/index.md' && Number(m[1]) === 110 ? 110 : last
+      assert.equal(Number(m[1]), expected, `${rel} says A1-A${m[1]}, and the last decision is A${last}`)
     }
   }
   assert.ok(seen > 0, 'a page names the range of decisions')
@@ -598,9 +599,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A110 are recorded and the changelog opens with 0.34.0, then 0.33.0, then 0.32.1, then 0.32.0, then 0.31.2, then 0.31.1, then 0.31.0, then 0.30.3, then 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
+test('R15: the decisions A50 to A116 are recorded and the changelog opens with 0.34.0, then 0.33.0, then 0.32.1, then 0.32.0, then 0.31.2, then 0.31.1, then 0.31.0, then 0.30.3, then 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 110
+  const LAST_DECISION = 116
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -643,6 +644,12 @@ test('R15: the decisions A50 to A110 are recorded and the changelog opens with 0
   assert.ok(/own words/.test(line(99)) && /Sonnet or Opus/.test(line(99)) && /every delegate still starts on Haiku/.test(line(99)))
   assert.ok(/decisive words/.test(line(109)) && /version, the date and the source/.test(line(109)) && /issue #50/.test(line(109)))
   assert.ok(/still writing/.test(line(110)) && /native agent/.test(line(110)) && /exam-carry/.test(line(110)) && /issue #103/.test(line(110)))
+  assert.ok(/continuity note/.test(line(111)) && /memory\/continuity\//.test(line(111)) && /outside the index/.test(line(111)) && /its own hook entries/.test(line(111)) && /200 ms/.test(line(111)) && /contuidad/.test(line(111)))
+  assert.ok(/\.aether\/README\.md/.test(line(112)) && /worktrees\/lanes/.test(line(112)) && /work\/seats/.test(line(112)) && /three conditions/.test(line(112)) && /git worktree move/.test(line(112)) && /per project/.test(line(112)) && /issue #186/.test(line(112)))
+  assert.ok(/four kinds/.test(line(113)) && /\.agents\/skills\//.test(line(113)) && /trusted authors/.test(line(113)) && /starts empty/.test(line(113)) && /skill-install/.test(line(113)) && /aether-autonomy trust/.test(line(113)) && /skills\.sh/.test(line(113)))
+  assert.ok(/AETHER-SKILLS:/.test(line(114)) && /Skills:/.test(line(114)) && /aether-plan compile/.test(line(114)) && /at most 3/.test(line(114)) && /uses\.jsonl/.test(line(114)))
+  assert.ok(/PermissionRequest/.test(line(115)) && /skills\/ and rules\//.test(line(115)) && /settings\.json/.test(line(115)) && /never/.test(line(115)) && /PreToolUse/.test(line(115)))
+  assert.ok(/aether:tidy/.test(line(116)) && /`delete`/.test(line(116)) && /\/aether:onboard/.test(line(116)) && /retired/.test(line(116)) && /the automatic note/.test(line(116)))
   for (const n of [18, 36, 87]) assert.ok(/Update \(A93\)/.test(line(n)), `A${n} has its update note`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
