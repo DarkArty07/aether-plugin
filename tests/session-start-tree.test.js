@@ -5,7 +5,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { PLUGIN, tempDir, makeRepo } = require('./helpers.js')
 const { main } = require('../plugins/aether/lib/session-start.js')
-const { markSession, readMark } = require('../plugins/aether/lib/session.js')
+const { markSession, readMark, markerFile } = require('../plugins/aether/lib/session.js')
 
 const NOW = Date.now()
 const hours = (n) => new Date(NOW - n * 3600 * 1000)
@@ -42,6 +42,19 @@ function world(t) {
     return out === '' ? null : JSON.parse(out)
   }
   return { repo, data, proc, env, start }
+}
+
+// Calls `before` each time the module's function `name` runs, then runs the function. session-start.js reads each
+// step's function from its module when the step runs, so the wrapper in the module's exports is the one that runs.
+function beforeStep(t, mod, name, before) {
+  const original = mod[name]
+  mod[name] = (...args) => {
+    before(...args)
+    return original(...args)
+  }
+  t.after(() => {
+    mod[name] = original
+  })
 }
 
 test('a quiet project: the decision comes before the starting session writes anything, so the old state moves, and the README and the mark follow (R19, C6)', (t) => {
@@ -110,4 +123,36 @@ test('outside git nothing of this runs and the start does not fail', (t) => {
   main({ input: { hook_event_name: 'SessionStart', session_id: 's9', source: 'startup', agent_type: 'aether:lead' }, env: { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: data }, cwd: dir, stdout: { write: (s) => { out += s } } })
   assert.ok(JSON.parse(out).hookSpecificOutput.additionalContext.startsWith('Aether mode is active.'))
   assert.equal(fs.existsSync(path.join(dir, '.aether')), false)
+})
+
+test('the startup steps run in this order: the gate, the mark, the migration, the README, the cleanup; the gate sees nothing of this session yet (R19, R14, R17)', (t) => {
+  const w = world(t)
+  const aether = path.join(w.repo.dir, '.aether')
+  const steps = []
+  const atGate = {}
+  beforeStep(t, require('../plugins/aether/lib/tree-migrate.js'), 'migrationGate', () => {
+    steps.push('gate')
+    atGate.mark = fs.existsSync(markerFile(w.data, 's1'))
+    atGate.readme = fs.existsSync(path.join(aether, 'README.md'))
+    atGate.tmp = fs.existsSync(path.join(aether, 'tmp'))
+  })
+  beforeStep(t, require('../plugins/aether/lib/tree-migrate.js'), 'migrate', () => steps.push('migrate'))
+  beforeStep(t, require('../plugins/aether/lib/session.js'), 'markSession', () => steps.push('mark'))
+  beforeStep(t, require('../plugins/aether/lib/tree-map.js'), 'ensureReadme', () => steps.push('readme'))
+  beforeStep(t, require('../plugins/aether/lib/tree-clean.js'), 'cleanProject', () => steps.push('clean'))
+  const out = w.start('s1')
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('moved the old state of .aether/'))
+  assert.deepEqual(atGate, { mark: false, readme: false, tmp: false })
+  assert.deepEqual(steps, ['gate', 'mark', 'migrate', 'readme', 'clean'])
+})
+
+test('a session that is not the Lead writes neither the README nor a mark and runs no migration (R40)', (t) => {
+  const w = world(t)
+  let out = ''
+  main({ input: { hook_event_name: 'SessionStart', session_id: 's6', source: 'startup', agent_type: 'aether:other' }, env: w.env, cwd: w.repo.dir, procRoot: w.proc, from: 301, stdout: { write: (s) => { out += s } } })
+  assert.equal(out, '')
+  assert.equal(fs.existsSync(path.join(w.repo.dir, '.aether', 'README.md')), false)
+  assert.equal(readMark(w.data, 's6'), null)
+  assert.equal(fs.existsSync(path.join(w.repo.dir, '.aether', 'seats', 'judge-1', 'pair.json')), true)
+  assert.equal(fs.existsSync(path.join(w.repo.dir, '.aether-tmp', 'old.md')), true)
 })
