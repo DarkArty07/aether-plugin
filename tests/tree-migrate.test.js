@@ -243,3 +243,34 @@ test('the copies that already sit in .aether/worktrees/<run>/<task> are not move
   assert.ok(w.repo.git('worktree', 'list', '--porcelain').includes(unit))
   assert.ok(result.moved.every((m) => !m.from.includes(path.join('worktrees', 'run1'))))
 })
+
+test('plain rename safety protects registered descendants, copies, links and destinations', (t) => {
+  const root = tempDir(t)
+  const src = path.join(root, 'legacy')
+  const dst = path.join(root, 'new')
+  fs.mkdirSync(src)
+  assert.equal(migrate.renameSafety(src, dst, new Set()), null)
+  assert.match(migrate.renameSafety(src, dst, new Set([path.join(src, 'nested')])), /registered worktree/)
+  assert.match(migrate.renameSafety(src, dst, new Set([src])), /registered worktree/)
+  fs.writeFileSync(path.join(src, '.git'), 'gitdir: missing')
+  assert.match(migrate.renameSafety(src, dst, null), /possible copy|\.git/)
+  fs.unlinkSync(path.join(src, '.git'))
+  fs.symlinkSync(root, path.join(src, 'link'))
+  assert.match(migrate.renameSafety(src, dst, new Set()), /possible copy/)
+  fs.mkdirSync(dst)
+  assert.match(migrate.renameSafety(src, dst, new Set()), /destination already exists/)
+})
+
+test('a dangling destination link blocks a plain rename', (t) => {
+  const root = tempDir(t)
+  const src = path.join(root, 'legacy')
+  const dst = path.join(root, 'new')
+  fs.mkdirSync(src)
+  fs.symlinkSync('missing', dst)
+  assert.match(migrate.renameSafety(src, dst, new Set()), /destination already exists/)
+})
+
+test('a safety check that cannot inspect the source fails closed', (t) => {
+  const root = tempDir(t)
+  assert.throws(() => migrate.renameSafety(path.join(root, 'missing'), path.join(root, 'new'), new Set()), { code: 'ENOENT' })
+})

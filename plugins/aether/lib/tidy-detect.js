@@ -136,9 +136,47 @@ function collectCandidateSkills(root, home) {
   return skills
 }
 
+// Compare every entry, including links and files the registry hash deliberately ignores.
+function sameSkillContents(a, b, seen = new Set()) {
+  try {
+    const left = fs.lstatSync(a)
+    const right = fs.lstatSync(b)
+    if (left.isSymbolicLink() && right.isSymbolicLink()) {
+      if (fs.readlinkSync(a) !== fs.readlinkSync(b)) return false
+      const resolve = (link) => {
+        try { return { path: fs.realpathSync(link) } } catch (err) {
+          if (err.code === 'ENOENT' || err.code === 'ELOOP') return { error: err.code }
+          throw err
+        }
+      }
+      const leftTarget = resolve(a), rightTarget = resolve(b)
+      if (leftTarget.error || rightTarget.error) return leftTarget.error === rightTarget.error
+      if (leftTarget.path === rightTarget.path) return true
+      return sameSkillContents(leftTarget.path, rightTarget.path, seen)
+    }
+    if (left.isFile() && right.isFile()) return fs.readFileSync(a).equals(fs.readFileSync(b))
+    if (!left.isDirectory() || !right.isDirectory()) return false
+    const pair = `${fs.realpathSync(a)}\0${fs.realpathSync(b)}`
+    if (seen.has(pair)) return true
+    seen.add(pair)
+    const names = fs.readdirSync(a).sort()
+    const other = fs.readdirSync(b).sort()
+    return names.length === other.length && names.every((name, i) =>
+      name === other[i] && sameSkillContents(path.join(a, name), path.join(b, name), seen))
+  } catch {
+    return false
+  }
+}
+
 function duplicateSkills(root, { home = os.homedir() } = {}) {
   try {
-    const skills = collectCandidateSkills(root, home)
+    const candidates = collectCandidateSkills(root, home)
+    // R22 permits a real Claude copy when linking to the canonical project skill fails.
+    const skills = candidates.filter((s) => {
+      const agentsPath = path.join(root, '.agents', 'skills', s.name)
+      if (s.path !== path.join(root, '.claude', 'skills', s.name)) return true
+      return !candidates.some((other) => other.path === agentsPath && sameSkillContents(other.path, s.path))
+    })
     if (!skills.some((s) => s.isProject)) return []
 
     const duplicates = []
