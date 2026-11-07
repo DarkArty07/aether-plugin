@@ -78,6 +78,16 @@ function store(mainRoot, feature, from, { dataDir = run.dataDir(), move = false 
   return { feature, dir, tests: exam.tests.length }
 }
 
+// Resolves the checkout's exam source, retaining the old folder as a fallback.
+function storeCheckout(cwd, feature, from = null) {
+  const { worktree, mainRoot } = repoPaths(cwd)
+  const current = path.join(worktree, EXAM_DIR)
+  const source = from === null
+    ? (fs.existsSync(current) ? current : path.join(worktree, '.aether-exam'))
+    : path.resolve(cwd, from)
+  return store(mainRoot, feature, source, { move: from === null })
+}
+
 // An exam is stored, so no session still needs the Examiner's offer of this feature.
 function clearExamCarry(dataDir, mainRoot, feature) {
   const root = path.join(dataDir, 'exam-carry', repoKey(mainRoot))
@@ -163,4 +173,4 @@ function runExam(cwd, feature, { ref = 'HEAD', dataDir = run.dataDir(), timeoutS
   }
 }
 
-module.exports = { EXAM_DIR, EXAM_FILE, repoKey, examDir, examProblem, store, list, runExam }
+module.exports = { EXAM_DIR, EXAM_FILE, repoKey, examDir, examProblem, store, storeCheckout, list, runExam }

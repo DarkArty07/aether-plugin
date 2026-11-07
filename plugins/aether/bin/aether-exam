@@ -9,9 +9,7 @@
 // Prints one JSON line. Exits 1 only when the command itself fails.
 
 const path = require('node:path')
-const fs = require('node:fs')
 const lib = path.join(__dirname, '..', 'lib')
-const { repoPaths } = require(path.join(lib, 'git.js'))
 const exam = require(path.join(lib, 'exam.js'))
 
 const USAGE = 'usage: aether-exam store <specs/NNN-topic> [--from <dir> (default: .aether/exam/)] | run <specs/NNN-topic> [--ref <commit>]'
@@ -30,11 +28,8 @@ function main(argv) {
   if (!['store', 'run'].includes(verb) || !feature || feature.startsWith('--')) throw new Error(USAGE)
   const normalized = feature.replace(/\/+$/, '')
   if (verb === 'store') {
-    const { worktree, mainRoot } = repoPaths(cwd)
     const from = value(rest, '--from')
-    const current = path.join(worktree, exam.EXAM_DIR)
-    const source = from === null ? (fs.existsSync(current) ? current : path.join(worktree, '.aether-exam')) : path.resolve(cwd, from)
-    return exam.store(mainRoot, normalized, source, { move: from === null })
+    return exam.storeCheckout(cwd, normalized, from)
   }
   return exam.runExam(cwd, normalized, { ref: value(rest, '--ref') ?? 'HEAD' })
 }
