@@ -3814,7 +3814,7 @@ test('a folder that does not exist or cannot be read gives no finding and does n
 
 **Aether:**
 - Area: tidy
-- Owns: `plugins/aether/lib/tidy-report.js`, `plugins/aether/bin/aether-doctor`, `tests/tidy-report.test.js`
+- Owns: `plugins/aether/lib/tidy-report.js`, `plugins/aether/bin/aether-doctor`, `tests/tidy-report.test.js`, `plugins/aether/skills/doctor/SKILL.md`
 - Depends on: Task 31 — usa el detector
 - Depends on: Task 14 — y `LAYOUT_NAMES` para hallar lo suelto de `.aether/`
 - Serves: R37, R39
@@ -3828,6 +3828,8 @@ En `plugins/aether/lib/tidy-report.js` (`// Family: tidy.`):
   - `stray`: `[{ project, path }]` con lo que hay directamente en `<proyecto>/.aether/` y no está en `LAYOUT_NAMES` de `lib/tree-map.js` ni es un resto del CLI viejo (en este repositorio, los tres comprimidos del experimento del #125 y `runs-local/`).
   - `crossDuplicates`: `[{ name, projects }]`: las skills de proyecto que están en más de una de las raíces, por nombre o por huella.
 - `projectsIn(folder)` devuelve las subcarpetas inmediatas de `folder` que no empiezan por `.`, en orden alfabético.
+
+**Llamador del verbo (enmienda del Lead, issue 188).** `tests/commands.test.js` exige un llamador concreto de `aether-doctor tidy` desde que el verbo existe, y la skill `tidy` llega recién en la tarea 34. Al final de `skills/doctor/SKILL.md` va este párrafo, y nada más cambia en esa skill: ``The order of a project is not part of this report: `aether-doctor tidy` prints it, and the `tidy` skill runs it.``
 
 `bin/aether-doctor`: gana el verbo `tidy`. `aether-doctor tidy [--projects <carpeta>] [<proyecto>...]` imprime una línea JSON `{ "tidy": { projects, stray, crossDuplicates } }`, sale con 0 y **no escribe nada**; sin argumentos informa del directorio actual; con `--projects` informa de cada subcarpeta (`projectsIn`); una ruta que no es una carpeta imprime `{ "error": … }` y sale con 2. La cabecera del bin gana la línea `// aether-doctor tidy [--projects <folder>] [<project>...]`. El resto de `aether-doctor` (`--name`) no cambia.
 
@@ -4051,12 +4053,14 @@ test('a Write that leaves CLAUDE.md or AGENTS.md empty is a delete; one with con
 
 **Aether:**
 - Area: skills-docs
-- Owns: `plugins/aether/skills/tidy/SKILL.md`, `plugins/aether/skills/help/SKILL.md`, `tests/tidy-skill.test.js`, `tests/help.test.js`
+- Owns: `plugins/aether/skills/tidy/SKILL.md`, `plugins/aether/skills/help/SKILL.md`, `tests/tidy-skill.test.js`, `tests/help.test.js`, `docs/reference/components.md`
 - Depends on: Task 32 — la skill corre `aether-doctor tidy`
 - Depends on: Task 33 — y cuenta que la guarda frena lo que no está en la lista aprobada
 - Serves: R37
 
 **Interfaces:**
+
+- **Página de componentes (enmienda del Lead, issue 188).** `tests/docs-facts.test.js` (R15) exige que `docs/reference/components.md` nombre cada skill desde que existe. La tarea agrega, después de la fila de la skill `art-direction`, la fila ``| `tidy` skill | `/aether:tidy`: reports what it would move or delete in a project, with `aether-doctor tidy`, and changes nothing without the owner's yes (spec 030) |``, y no cambia nada más de esa página.
 
 - `plugins/aether/skills/tidy/SKILL.md`: front matter `name: tidy`, `description` de a lo más 200 caracteres que dice que ordena un proyecto y que solo informa sin el sí del dueño, `argument-hint: "[project or folder]"` y `disable-model-invocation: true` (lo invoca la persona con `/aether:tidy`; el Lead lo ofrece cuando el aviso de arranque nombra desorden). En inglés. Dice, con estas expresiones literales: corre `aether-doctor tidy` (con `--projects <carpeta>` para una carpeta de proyectos, sobre la que también busca skills duplicadas entre proyectos); muestra al dueño la lista de lo que movería o borraría por proyecto, con las reglas que la sostienen (`AGENTS.md` es el mapa y `CLAUDE.md` es `@AGENTS.md` más lo solo de Claude, `.aether/README.md` es el mapa de `.aether/`, los cuatro tipos de skill); pide el sí del dueño a una lista, y aplica **solo** esa lista, con `git mv`, `git rm` o `mv` y `rm` (la guarda frena cualquier otro borrado o movimiento de esos archivos, y el sí se registra con `aether-autonomy grant --class delete` con sus palabras); no toca los restos del CLI viejo sin ese sí; no mueve `.aether/` (eso lo hace la migración del arranque); y termina diciendo qué cambió.
 - `plugins/aether/skills/help/SKILL.md` lista `/aether:tidy` (una línea, con la descripción de qué hace, en el estilo de las demás entradas) y sigue sin nombrar `onboard`.
@@ -4300,6 +4304,7 @@ test('the guide gives the four kinds of skill, where they are downloaded, the tr
 
 **Interfaces:**
 
+- Las filas de las skills `skills` y `art-direction` (tarea 29) y `tidy` (tarea 34) ya existen: la tarea las corrige en su lugar con lo que pide el punto siguiente, y nunca escribe una segunda fila.
 - `docs/reference/components.md`: la tabla «The pieces» gana las filas de las skills `skills`, `art-direction` y `tidy` (`aether:skills`, `aether:art-direction`, `aether:tidy`, con qué hacen y que `tidy` y `skills` no agregan entrada a la lista de skills si fijan `disable-model-invocation`, según corresponda a lo que las skills fijan de verdad), la fila de `aether-continuity` ya existe (tarea 3) y se completa con `posttool` y `permission` y con los manejadores de PostToolUse; la fila de «SessionStart hook» dice que ahora corre también en `resume` y `fork`, abre la nota, avisa y limpia; el párrafo «What Aether adds to a normal session» gana un párrafo con la huella dormida de 0.35.0 **medida** (ver abajo); la lista de clases irreversibles que `components.md` repita incluye `skill-install`; las familias están declaradas (tarea 1).
 - Medición de la huella dormida (método que la tabla ya usa: procesos `node` por evento y su costo local, en una sesión que no es del Lead). El delegado corre, con una entrada de una sesión que no es del Lead y un directorio de datos desechable, cada verbo de `aether-continuity` y las seis órdenes de `aether-session-start`, 20 veces cada una, y escribe en `components.md` un párrafo con esta forma, con los números que midió: `Version 0.35.0 adds seven hook entries that run \`aether-continuity\` (Stop, PreCompact, PostCompact, StopFailure, SessionEnd, PostToolUse of Write, Edit, MultiEdit and Bash, and PermissionRequest of the file tools), and SessionStart also runs on fork. In a session that is not the Lead's each one finds no Lead and exits with no output and no file, as tests/dormant-030.test.js proves; measured on <fecha>, on <Node y sistema>, a call took a median of <n> ms (<min> to <max> ms in 20 runs), so one Write adds about <n> ms of process time and a turn about <n> ms. This is a local measurement, not a real session.`
 - `docs/guide/maintenance.md` (dónde están los datos: las notas de continuidad en `memory/continuity/` y su poda de 30 días, `.aether/README.md`, el diseño nuevo de `.aether/`, la limpieza por proyecto y su sello, la migración y cuándo se aplaza), `docs/guide/troubleshooting.md` (la clase `skill-install` y su lista en `.aether/pending.jsonl`; qué hacer cuando una sesión muestra `where it is for now`; `claude --resume <id>`; que una guarda rechaza editar skills de Aether o bajadas), `docs/guide/observe.md` (una frase: la nota de continuidad guarda texto de la conversación, en la máquina del dueño, y la observación sigue sin guardarlo), `docs/guide/delegates.md` (la línea `AETHER-SKILLS:` del encargo y que `uses.jsonl` y el registro `launch` anotan las skills), `docs/guide/autonomy.md` (ocho clases, `skill-install` y `aether-autonomy trust`), `docs/guide/design-seats.md` y `docs/methodology.md` (`.aether/exam/` y `.aether/tmp/` en lugar de `.aether-exam/` y `.aether-tmp/`), `docs/what-aether-adds.md` y `docs/es/que-agrega-aether.md` (lo nuevo: la continuidad, el ordenado con `/aether:tidy` y las skills; **no nombran `/aether:onboard`**: solo el changelog y `docs/decisions.md` lo nombran, como historia, C4). `docs/guide/options.md` no cambia: no hay opciones nuevas.
