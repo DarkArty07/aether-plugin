@@ -21,6 +21,7 @@ The person called `/aether:help`, maybe with a topic, as in `/aether:help spend`
 - Continue the last conversation: `aeth -c`. Pick an older one: `aeth --resume`. One task, with no screen: `aeth -p "<task>"`.
 - Set up or change the choices (permissions, harnesses, command name): `/aether:setup`. It can be run again.
 - Something fails or is missing (Claude Code, Node, git, the command, the workflows): `/aether:doctor`.
+- Tidy a project: `/aether:tidy [project or folder]`. Reports what it would move or delete and changes nothing without your yes.
 - The long form, with no setup: `claude --agent aether:lead --effort xhigh`. It lacks the launcher's extras: Claude Code's own permission mode applies, and aether-guard only records an irreversible command instead of refusing it.
 - Guide: https://github.com/DarkArty07/aether-plugin/blob/main/docs/tutorials/install-and-start.md, https://github.com/DarkArty07/aether-plugin/blob/main/docs/es/guias/instalar-y-arrancar.md
 
