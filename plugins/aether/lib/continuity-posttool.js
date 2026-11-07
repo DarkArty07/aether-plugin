@@ -4,6 +4,7 @@
 // Family: continuity.
 
 const path = require('node:path')
+const treeCheck = require('./tree-check.js')
 const { isSpanish, memoryDir } = require('./continuity-store.js')
 
 const REMINDER_EN =
@@ -32,7 +33,7 @@ function memoryReminder(input, ctx = {}) {
   return isSpanish(ctx.env) ? REMINDER_ES : REMINDER_EN
 }
 
-const HANDLERS = [memoryReminder]
+const HANDLERS = [memoryReminder, treeCheck.posttool]
 
 function posttool(input, ctx = {}) {
   const texts = []
