@@ -282,8 +282,8 @@ test("sweepRun stops a run's lane processes and removes its lane copies", async 
   assert.deepEqual(r.lanes, { stopped: ['task-1-1-implement'], removed: ['task-1-1-supervise'], remaining: [] })
   await lane.exited
   assert.equal(fs.existsSync(copy.workdir), false)
-  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'lanes', args.runId)), false)
-  assert.equal(repo.git('worktree', 'list').includes('.aether/lanes'), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'worktrees', 'lanes', args.runId)), false)
+  assert.equal(repo.git('worktree', 'list').includes('.aether/worktrees/lanes'), false)
   assert.deepEqual(r.remaining, { worktrees: [], branches: [] })
 })
 
@@ -314,7 +314,7 @@ test('sweepRun drops the registration of a lane copy whose directory was deleted
   fs.rmSync(copy.workdir, { recursive: true, force: true })
   const r = sweepRun(repo.dir, args.runId)
   assert.deepEqual(r.lanes, { stopped: [], removed: ['task-1-1-supervise'], remaining: [] })
-  assert.equal(repo.git('worktree', 'list').includes('.aether/lanes'), false)
+  assert.equal(repo.git('worktree', 'list').includes('.aether/worktrees/lanes'), false)
   fs.renameSync(moved, userWt)
   assert.equal(repo.git('-C', userWt, 'branch', '--show-current'), 'user/topic')
 })

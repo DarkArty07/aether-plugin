@@ -43,9 +43,9 @@ function unitsDir(mainRoot) {
   return path.join(run.aetherDir(mainRoot), 'worktrees')
 }
 
-// A read-only lane role's disposable copies live in <repo>/.aether/lanes/<run>/<call>.
+// A read-only lane role's disposable copies live under .aether/worktrees/lanes/.
 function laneCopiesRoot(mainRoot) {
-  return path.join(run.aetherDir(mainRoot), 'lanes')
+  return run.laneCopiesDir(mainRoot)
 }
 
 
@@ -77,7 +77,10 @@ function registeredWorktrees(mainRoot) {
 // The registered worktrees under .aether/worktrees/, or under .aether/worktrees/<run>/ for one run.
 function aetherWorktrees(mainRoot, runId = null) {
   const root = runId ? run.worktreesDir(mainRoot, runId) : unitsDir(mainRoot)
-  return registeredWorktrees(mainRoot).filter((worktree) => isInside(worktree, root))
+  return registeredWorktrees(mainRoot).filter((worktree) => {
+    const id = path.relative(unitsDir(mainRoot), worktree).split(path.sep)[0]
+    return isInside(worktree, root) && run.isRunId(id)
+  })
 }
 
 // True when `dir` is itself the root of a git worktree. In any other directory of the repository,
@@ -1197,8 +1200,8 @@ function stopLaneProcesses(mainRoot, runId) {
 }
 
 // The lane copies of a run: those in git's registry, plus any directory left in the run's folder.
-function laneCopyNames(mainRoot, runId) {
-  const dir = path.join(laneCopiesRoot(mainRoot), runId)
+function laneCopyNames(mainRoot, runId, root) {
+  const dir = path.join(root, runId)
   const names = new Set()
   for (const worktree of registeredWorktrees(mainRoot)) {
     if (isInside(worktree, dir)) names.add(path.relative(dir, worktree).split(path.sep)[0])
@@ -1211,19 +1214,22 @@ function laneCopyNames(mainRoot, runId) {
 // by path: git's registry is not pruned as a whole, so another worktree that happens to be
 // unreachable keeps its entry.
 function removeLaneCopies(mainRoot, runId) {
-  const root = laneCopiesRoot(mainRoot)
-  const dir = path.join(root, runId)
+  const roots = [laneCopiesRoot(mainRoot), path.join(run.aetherDir(mainRoot), 'lanes')]
   const registered = new Set(registeredWorktrees(mainRoot))
-  const removed = []
-  for (const name of laneCopyNames(mainRoot, runId)) {
-    const copy = path.join(dir, name)
-    if (removeWorktreePath(mainRoot, copy, registered.has(copy), root)) removed.push(name)
+  const removed = new Set()
+  for (const root of roots) {
+    const dir = path.join(root, runId)
+    for (const name of laneCopyNames(mainRoot, runId, root)) {
+      const copy = path.join(dir, name)
+      if (removeWorktreePath(mainRoot, copy, registered.has(copy), root)) removed.add(name)
+    }
+    if (exists(dir)) {
+      assertInside(dir, root)
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   }
-  if (exists(dir)) {
-    assertInside(dir, root)
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-  return { removed, remaining: laneCopyNames(mainRoot, runId) }
+  const remaining = new Set(roots.flatMap((root) => laneCopyNames(mainRoot, runId, root)))
+  return { removed: [...removed].sort(), remaining: [...remaining].sort() }
 }
 
 // The files of a run's patches/ that still hold work no integration branch has: those of tasks that are not merged or
@@ -1395,6 +1401,17 @@ function sweepStale(cwd, { hours = 24, now = Date.now(), dataDir = run.dataDir()
     const dir = path.join(run.aetherDir(mainRoot), sub)
     if (fs.existsSync(dir)) {
       for (const name of fs.readdirSync(dir)) if (run.isRunId(name)) ids.add(name)
+    }
+  }
+  const copiesRoot = laneCopiesRoot(mainRoot)
+  if (isDirectory(copiesRoot)) {
+    for (const name of fs.readdirSync(copiesRoot)) if (run.isRunId(name)) ids.add(name)
+  }
+  for (const worktree of registeredWorktrees(mainRoot)) {
+    for (const root of [copiesRoot, path.join(run.aetherDir(mainRoot), 'lanes')]) {
+      if (!isInside(worktree, root)) continue
+      const id = path.relative(root, worktree).split(path.sep)[0]
+      if (run.isRunId(id)) ids.add(id)
     }
   }
   for (const worktree of aetherWorktrees(mainRoot)) {
