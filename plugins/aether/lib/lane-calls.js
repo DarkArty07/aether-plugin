@@ -9,7 +9,7 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawn, execFileSync } = require('node:child_process')
 const { repoPaths } = require('./git.js')
 const { readJsonOrNull, readTextOrEmpty, sleep, killGroup: killAgyGroup } = require('./common.js')
 const run = require('./run.js')
@@ -78,7 +78,39 @@ function roleBody(role) {
 
 function claudeMdSections(workdir, home) {
   const files = [path.join(home, '.claude', 'CLAUDE.md'), path.join(workdir, 'CLAUDE.md'), path.join(workdir, '.claude', 'CLAUDE.md')]
-  return files.filter((file) => fs.existsSync(file)).map((file) => `## Instructions from ${file}\n\n${fs.readFileSync(file, 'utf8').trimEnd()}`)
+  const sections = []
+  for (const [index, file] of files.entries()) {
+    if (!fs.existsSync(file)) continue
+    let content = fs.readFileSync(file, 'utf8')
+    if (index > 0) {
+      let fence = null
+      content = content.split('\n').filter((line) => {
+        const marker = line.match(/^ {0,3}(`{3,}|~{3,})/)
+        if (marker) {
+          if (!fence) fence = marker[1]
+          else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && /^ {0,3}(`+|~+)\s*$/.test(line)) fence = null
+          return true
+        }
+        return fence || !/^\s*@(?:\.\/)?AGENTS\.md\s*$/.test(line)
+      }).join('\n')
+    }
+    content = content.trimEnd()
+    if (index === 0 || content.trim()) sections.push(`## Instructions from ${file}\n\n${content}`)
+  }
+  const local = path.join(workdir, 'AGENTS.md')
+  const localContent = fs.existsSync(local) ? fs.readFileSync(local, 'utf8') : null
+  if (localContent !== null) sections.push(`## Instructions from ${local}\n\n${localContent.trimEnd()}`)
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: workdir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    const main = path.join(path.dirname(common), 'AGENTS.md')
+    if (path.resolve(main) !== path.resolve(local) && fs.existsSync(main)) {
+      const content = fs.readFileSync(main, 'utf8')
+      if (content !== localContent) sections.push(`## Instructions from ${main}\n\n${content.trimEnd()}`)
+    }
+  } catch {
+    // A directory outside a repository has no main checkout instructions.
+  }
+  return sections
 }
 
 function buildPrompt({ role, message, workdir, home, note, harness = 'agy' }) {
