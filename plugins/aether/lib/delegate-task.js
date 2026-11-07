@@ -11,6 +11,7 @@
 
 const crypto = require('node:crypto')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { isObject, isText, messageOf, sleep: realSleep } = require('./common.js')
 const log = require('./delegate-log.js')
@@ -30,11 +31,13 @@ const { startRenewal } = require('./router-renewal.js')
 const { slowPairIds } = require('./router-slow.js')
 const { readDelegateSettings } = require('./session.js')
 const { matchesAny } = require('./globs.js')
+const { loadSkills, skillsSection, recordUse, parseSkillNames } = require('./skill-brief.js')
 
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const TASK_PREFIX = 'AETHER-TASK:'
 const OWNS_PREFIX = 'AETHER-OWNS:'
 const TESTS_PREFIX = 'AETHER-TESTS:'
+const SKILLS_PREFIX = 'AETHER-SKILLS:'
 // The agents whose call an external harness may take: the ones with no system prompt or tool limits of their own.
 const PLAIN_AGENTS = ['general-purpose', 'Explore']
 // A refused launch still has to run something, and does nothing: the cheapest call, which only says why.
@@ -50,11 +53,12 @@ const isId = (value) => typeof value === 'string' && ID_RE.test(value)
 // ---- the brief ----
 
 function parseBrief(prompt) {
-  const brief = { task: null, owns: [], tests: null }
+  const brief = { task: null, owns: [], tests: null, skills: [] }
   if (typeof prompt !== 'string') return brief
   let seenTask = false
   let seenOwns = false
   let seenTests = false
+  let seenSkills = false
   for (const raw of prompt.split(/\r?\n/)) {
     const line = raw.trimStart()
     if (!seenTask && line.startsWith(TASK_PREFIX)) {
@@ -68,6 +72,9 @@ function parseBrief(prompt) {
       seenTests = true
       const command = line.slice(TESTS_PREFIX.length).trim()
       if (command) brief.tests = command
+    } else if (!seenSkills && line.startsWith(SKILLS_PREFIX)) {
+      seenSkills = true
+      brief.skills = parseSkillNames(line)
     }
   }
   return brief
@@ -116,7 +123,15 @@ function resolve(deps) {
   const dataDir = deps.dataDir || require('./run.js').dataDir()
   const now = deps.now || Date.now
   // configDir is the Claude config directory the owner's transcripts are read from (by default, CLAUDE_CONFIG_DIR).
-  return { dataDir, now, cwd: deps.cwd || process.cwd(), configDir: deps.configDir, ladder: deps.ladder || ladderLib.loadLadder() }
+  return {
+    dataDir,
+    now,
+    cwd: deps.cwd || process.cwd(),
+    configDir: deps.configDir,
+    ladder: deps.ladder || ladderLib.loadLadder(),
+    home: deps.home || os.homedir(),
+    pluginRoot: deps.pluginRoot || path.resolve(__dirname, '..'),
+  }
 }
 
 // What begin reads besides: the session's settings, the id of a task with none, and the pair step.
@@ -290,9 +305,7 @@ function refusedText(id, status) {
   return `Aether delegate task ${id} is exhausted: every step of the ladder spent its corrections, and there is no other step. Do not do any work. Answer only that the task is exhausted, and that the Lead must defer it or take it to the owner's list.`
 }
 
-// The launch of a task whose ladder is closed: no step opens, and the call only says so.
-function refusedPlan(r, ctx, status) {
-  const prompt = refusedText(ctx.id, status)
+function refusedLaunchPlan(r, ctx, prompt, note) {
   const args = { ...REFUSED_ARGS, prompt }
   const { requested, ignored } = requestedOf(ctx.event, args)
   log.appendEntry(r.dataDir, {
@@ -300,9 +313,21 @@ function refusedPlan(r, ctx, status) {
     effort: args.effort, edits: ctx.edits, owns: ctx.brief.owns, tests: ctx.brief.tests, description: ctx.description,
     requested, ignored, pin: null, base: null, dirty: null,
   })
-  const what = status === 'approved' ? 'Give new work a new AETHER-TASK id.' : "Defer it or take it to the owner's list."
-  const notes = [...ctx.notes, `Aether delegate task ${ctx.id} is ${status}: no step opens. ${what}`]
+  const notes = [...ctx.notes, note]
   return emptyPlan({ id: ctx.id, kind: 'refused', attempt: ctx.attempt, args, notes })
+}
+
+// The launch of a task whose ladder is closed: no step opens, and the call only says so.
+function refusedPlan(r, ctx, status) {
+  const prompt = refusedText(ctx.id, status)
+  const what = status === 'approved' ? 'Give new work a new AETHER-TASK id.' : "Defer it or take it to the owner's list."
+  const note = `Aether delegate task ${ctx.id} is ${status}: no step opens. ${what}`
+  return refusedLaunchPlan(r, ctx, prompt, note)
+}
+
+function skillRefusedPlan(r, ctx, error) {
+  const prompt = `Aether delegate task ${ctx.id} was not launched: ${error}. Fix the AETHER-SKILLS line and call again.`
+  return refusedLaunchPlan(r, ctx, prompt, prompt)
 }
 
 // A new task with the owned paths and the tests of a task of the same session that did not end approved.
@@ -421,6 +446,13 @@ async function begin(input, deps = {}) {
     const ctx = { id, session, event, brief, edits, description, notes, attempt: next.attempt }
     if (next.status !== 'open') return refusedPlan(r, ctx, next.status)
 
+    let loadedSkills = null
+    if (brief.skills.length > 0) {
+      const res = loadSkills(brief.skills, { cwd: r.cwd, home: r.home, pluginRoot: r.pluginRoot })
+      if (!res.ok) return skillRefusedPlan(r, ctx, res.error)
+      loadedSkills = res.skills
+    }
+
     const { step, launchKind, attempt } = next
     // The owner's placement of this task: the authorization of its first launch (spec 021), kept by every later attempt.
     const authorized = cover && launchKind === 'first' ? authorizedLine(cover) : auth.authorizedOf(entries)
@@ -436,8 +468,13 @@ async function begin(input, deps = {}) {
     const base = headOf(r.cwd)
     // The prompt of the call is what a delegate on Claude reads, the rescue of an external pair too; the brief file of an
     // external pair is `externalPrompt`, whose branch the lane command makes from the base.
-    const claudePrompt = edits && base !== null ? withSections(prompt, [...sections, startSection(base)]) : fullPrompt
-    const externalPrompt = edits ? withSections(prompt, laneSections) : fullPrompt
+    let claudePrompt = edits && base !== null ? withSections(prompt, [...sections, startSection(base)]) : fullPrompt
+    let externalPrompt = edits ? withSections(prompt, laneSections) : fullPrompt
+    if (loadedSkills && loadedSkills.length > 0) {
+      const skillsText = skillsSection(loadedSkills).trimEnd()
+      claudePrompt = `${claudePrompt.trimEnd()}\n\n${skillsText}`
+      externalPrompt = `${externalPrompt.trimEnd()}\n\n${skillsText}`
+    }
     if (claudePrompt !== prompt) args.prompt = claudePrompt
     if (edits) args.isolation = 'worktree'
 
@@ -493,7 +530,11 @@ async function begin(input, deps = {}) {
       description, requested, ignored, pin, base, dirty,
     }
     if (launchKind === 'first' && authorized !== null) launch.authorized = authorized
+    if (loadedSkills && loadedSkills.length > 0) launch.skills = loadedSkills.map((s) => s.name)
     log.appendEntry(r.dataDir, launch)
+    if (loadedSkills && loadedSkills.length > 0) {
+      recordUse(r.dataDir, { session, kind: 'delegate', task: id, skills: launch.skills, time })
+    }
     if (launchKind === 'first') {
       const of = relaunchOf(r.dataDir, session, id, brief)
       if (of !== null) log.appendEntry(r.dataDir, { kind: 'relaunch', time, session, task: id, of })
