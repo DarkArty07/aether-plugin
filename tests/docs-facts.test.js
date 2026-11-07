@@ -46,6 +46,8 @@
 //   Retired plugin names that a record keeps (RETIRED_NAMES, read by the test of R11 on plugin names):
 //     aether:first-setup         the skill of 0.12.4 to 0.29.0, renamed setup in 0.30.0 (spec 024); docs/changelog.md
 //                                and docs/roadmap.md keep its name in the words of the releases that shipped it
+//     aether:onboard             the skill of 0.12.7 to 0.34.0, retired in 0.35.0; docs/changelog.md and docs/decisions.md
+//                                keep its name in the words of the version that published it
 //
 // One word is not a count: the article in "the commands of `bin/`", which docs/reference/components.md writes in the list
 // of what the 0.7.0 measurement found, and whose number it does not repeat there (the measurement counted eight, bin/ has
@@ -194,7 +196,7 @@ const commandsIn = (text) =>
 // An aether:<name>, but not the one inside custom:aether:<theme>, which selects a theme (see the exceptions).
 const AETHER_NAME = /(?<!custom:)\baether:([a-z][a-z0-9-]*)/g
 // A retired name, and the records that may keep it (see the header).
-const RETIRED_NAMES = { 'first-setup': ['docs/changelog.md', 'docs/roadmap.md'] }
+const RETIRED_NAMES = { 'first-setup': ['docs/changelog.md', 'docs/roadmap.md'], onboard: ['docs/changelog.md', 'docs/decisions.md'] }
 
 const pluginNamesIn = (text) =>
   codeSpans(text).flatMap((span) => [...span.matchAll(AETHER_NAME)].map((name) => name[1]))
