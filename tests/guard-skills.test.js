@@ -120,3 +120,64 @@ test('trusted.json is written only by aether-autonomy trust: edits are refused, 
   assert.equal(w.bash('aether-autonomy trust --author anthropics --quote "confio en anthropics" --session s1'), null)
   assert.equal(w.bash(`cat ${list}`), null)
 })
+
+// The install forms that a wrapper, an assignment, a shell or a path puts in front of `npx skills add <source>`.
+const wrapped = (source) => [
+  `CI=1 npx skills add ${source}`,
+  `env FOO=1 npx skills add ${source}`,
+  `sudo npx skills add ${source}`,
+  `timeout 60 npx skills add ${source}`,
+  `nice npx skills add ${source}`,
+  `/usr/bin/npx skills add ${source}`,
+  `bash -c "CI=1 npx skills add ${source}"`,
+]
+
+test('a skill install behind a wrapper, an assignment or a path is classed as the bare command (R25)', (t) => {
+  const w = world(t)
+  const classes = (command) => irreversibleClasses(command, w.repo.dir, w.enforce)
+  for (const command of [...wrapped('someone/skills'), 'sudo npx skills add -g anthropics/skills@pdf', 'env FOO=1 npx skills add -g anthropics/skills@pdf']) {
+    assert.deepEqual(classes(command), ['skill-install'], command)
+  }
+  w.trust('anthropics')
+  for (const command of wrapped('anthropics/skills@pdf')) assert.deepEqual(classes(command), [], command)
+  for (const command of ['CI=1 npx skills find pdf', 'env FOO=1 npx skills find pdf', 'sudo npx skills find pdf']) assert.deepEqual(classes(command), [], command)
+})
+
+test('a wrapped install from an untrusted source is held and recorded in the owner\'s list (R25)', (t) => {
+  const w = world(t)
+  const held = w.bash('env FOO=1 npx skills add someone/skills')
+  assert.ok(held && held.reason.includes('skill-install'))
+  assert.deepEqual(readPending(w.repo.dir).map((e) => e.class), ['skill-install'])
+  assert.equal(w.bash('timeout 60 npx skills find pdf'), null)
+})
+
+test('an aether-autonomy grant that quotes the personal skills folder is not a write there; a copy into the folder still is (R30)', (t) => {
+  const w = world(t)
+  const quote = '"si, instalala en ~/.agents/skills"'
+  const grant = `aether-autonomy grant --class skill-install --quote ${quote} --session s1`
+  const bin = path.join(ROOT, 'plugins', 'aether', 'bin', 'aether-autonomy')
+  assert.deepEqual(irreversibleClasses(grant, w.repo.dir, w.enforce), [])
+  assert.deepEqual(irreversibleClasses(`node ${bin} grant --class skill-install --quote ${quote} --session s1`, w.repo.dir, w.enforce), [])
+  assert.equal(w.bash(grant), null)
+  assert.deepEqual(irreversibleClasses('cp x ~/.agents/skills/y', w.repo.dir, w.enforce), ['skill-install'])
+  assert.deepEqual(irreversibleClasses(`aether-autonomy grant --quote x > ${path.join(w.home, '.agents', 'skills', 'y')}`, w.repo.dir, w.enforce), ['skill-install'])
+})
+
+test('a path that classifySkillPath cannot resolve is judged by its text: an owner skill folder is held, another path passes (R23, R30)', (t) => {
+  const w = world(t)
+  // A link that points at itself makes the real path unresolvable: classifySkillPath throws.
+  const loop = path.join(w.home, '.agents', 'skills', 'loop')
+  fs.symlinkSync(loop, loop)
+  const held = decide(w.file(path.join(loop, 'SKILL.md')), w.enforce)
+  assert.ok(held && held.reason.includes('skill-install'))
+  assert.deepEqual(readPending(w.repo.dir).map((e) => e.class), ['skill-install'])
+  const elsewhere = path.join(w.repo.dir, 'loop')
+  fs.symlinkSync(elsewhere, elsewhere)
+  assert.equal(decide(w.file(path.join(elsewhere, 'notes.md')), w.enforce), null)
+})
+
+test('a command that is irreversible and also writes into the personal skill folders keeps both classes (R30)', (t) => {
+  const w = world(t)
+  assert.deepEqual(irreversibleClasses('npm publish ~/.agents/skills/mine', w.repo.dir, w.enforce), ['publish', 'skill-install'])
+  assert.deepEqual(irreversibleClasses('git push origin main && cp x ~/.agents/skills/y', w.repo.dir, w.enforce), ['push', 'skill-install'])
+})

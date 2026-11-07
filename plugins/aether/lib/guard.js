@@ -85,7 +85,7 @@ function decide(input, env = process.env) {
   try {
     skillInfo = classifySkillPath(target, { cwd: base, home, dataDir })
   } catch {
-    skillInfo = null
+    skillInfo = ownerSkillByText(normalized, home)
   }
   if (skillInfo) {
     if ((skillInfo.type === 'aether' || skillInfo.type === 'downloaded') && !skillInfo.editable) {
@@ -130,6 +130,15 @@ function isClaudeConfigTarget(target, base, normalized) {
   } catch {
     return CLAUDE_CONFIG_TEXT.test(normalized)
   }
+}
+
+// The owner's skill for a path that classifySkillPath cannot resolve (it throws on ELOOP and EACCES), judged by its
+// text as isClaudeConfigTarget judges the settings: a path under the home folder's .agents/skills or .claude/skills
+// is an owner's skill that waits for the owner (spec 030 R30). Any other path is no skill here, so it passes.
+function ownerSkillByText(normalized, home) {
+  const homeFolder = home.split(path.sep).join('/').replace(/\/+$/, '')
+  const owned = ['.agents', '.claude'].some((dir) => normalized.startsWith(`${homeFolder}/${dir}/skills/`))
+  return owned ? { type: 'owner', editable: true, grant: 'skill-install' } : null
 }
 
 // The main session's hook input names no agent. An input that names one, by agent_id or agent_type,
@@ -466,11 +475,12 @@ function collectWords(words, depth, wanted, sequence, out, env = process.env) {
   }
   const git = gitCall(named)
   const mergesToMain = git !== null && landsOnMain(git, sequence)
-  let found = mergesToMain ? { cls: 'merge-main', head: ['git', 'merge'] } : subcommandOf(command)
-  if (found === null && isSkillInstallSegment(words, env)) {
-    found = { cls: 'skill-install', head: named.slice(0, 2) }
+  const found = mergesToMain ? { cls: 'merge-main', head: ['git', 'merge'] } : subcommandOf(command)
+  const install = isSkillInstallSegment(words, named, sequence.here, env) ? { cls: 'skill-install', head: named.slice(0, 2) } : null
+  // A segment can be two classes at once, such as a push that names the personal skills folder: each is kept once.
+  for (const match of [found, install]) {
+    if (match !== null && (wanted === null || match.cls === wanted) && !out.some((f) => f.cls === match.cls)) out.push(match)
   }
-  if (found !== null && (wanted === null || found.cls === wanted) && !out.some((f) => f.cls === found.cls)) out.push(found)
 }
 
 // The matches among a command's segments, appended to out in reading order.
@@ -899,14 +909,7 @@ function unquotedRedirection(word, mask) {
 function irreversibleClasses(command, cwd, env = process.env) {
   const out = []
   collectCommand(command, 0, null, sequenceOf(cwd), out, env)
-  const classes = out.map((found) => found.cls)
-  const dataDir = getDataDir(env)
-  const isInstall = typeof command === 'string' && installClass(command, { dataDir }) === 'skill-install'
-  const isPersonalWrite = personalSkillsWrite(command, env)
-  if ((isInstall || isPersonalWrite) && !classes.includes('skill-install')) {
-    classes.push('skill-install')
-  }
-  return classes
+  return out.map((found) => found.cls)
 }
 
 // The irreversible class of a Bash command, or null. The first class of the line decides.
@@ -1104,28 +1107,32 @@ function claudeConfigPath(str) {
   return m ? m[1] : null
 }
 
+// The redirection targets of a segment, in order: the word after each unquoted > operator, or the word after the
+// operator when it stands alone. A > read inside quotes is text, and is no target.
+function redirectTargets(segment) {
+  const targets = []
+  for (let i = 0; i < segment.length; i++) {
+    const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
+    if (after !== null) targets.push((after || segment[i + 1] || '').trim())
+  }
+  return targets
+}
+
+// The words of a segment that a write can name: its redirection targets, then, unless the command is read-only
+// (READ_COMMANDS, by its name after the wrappers), every word of the segment.
+function writeTargets(segment) {
+  const unwrapped = dropWrappers(segment)
+  const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
+  return READ_COMMANDS.has(cmd) ? redirectTargets(segment) : [...redirectTargets(segment), ...segment]
+}
+
 // Limit A14 (spec 030): commands that assemble the path at runtime (e.g. a script building .claude/ dynamically) cannot be detected.
 function claudeConfigWrite(command) {
   if (typeof command !== 'string') return null
-  const segments = commandSegments(command)
-
-  for (const segment of segments) {
-    for (let i = 0; i < segment.length; i++) {
-      const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
-      if (after !== null) {
-        const target = (after || segment[i + 1] || '').trim()
-        const configTarget = claudeConfigPath(target)
-        if (configTarget) return configTarget
-      }
-    }
-
-    const unwrapped = dropWrappers(segment)
-    const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
-    if (!READ_COMMANDS.has(cmd)) {
-      for (const w of segment) {
-        const found = claudeConfigPath(w)
-        if (found) return found
-      }
+  for (const segment of commandSegments(command)) {
+    for (const target of writeTargets(segment)) {
+      const configTarget = claudeConfigPath(target)
+      if (configTarget) return configTarget
     }
   }
   return null
@@ -1153,51 +1160,32 @@ function isPersonalSkillPath(str, home) {
   return re.test(str)
 }
 
-// Limit A14 (spec 030): commands that assemble the personal skills path at runtime (e.g. a script building ~/.agents/skills/ dynamically) cannot be detected.
-function personalSkillsWrite(command, env = process.env) {
-  if (typeof command !== 'string') return false
-  const home = (env && env.HOME) || os.homedir()
-  const segments = commandSegments(command)
+// The path of this plugin's aether-autonomy bin. A call to it names the folders its grants allow without writing there.
+const AUTONOMY_BIN = path.resolve(__dirname, '../bin/aether-autonomy')
 
-  for (const segment of segments) {
-    for (let i = 0; i < segment.length; i++) {
-      const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
-      if (after !== null) {
-        const target = (after || segment[i + 1] || '').trim()
-        if (isPersonalSkillPath(target, home)) return true
-      }
-    }
-
-    const unwrapped = dropWrappers(segment)
-    const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
-    if (!READ_COMMANDS.has(cmd)) {
-      for (const w of segment) {
-        if (isPersonalSkillPath(w, home)) return true
-      }
-    }
-  }
-  return false
+// Whether a segment calls aether-autonomy: by its bare name, or as node runs that file from the working folder here.
+function isAutonomyCall(words, here) {
+  if (words[0] === 'aether-autonomy') return true
+  return words[0] === 'node' && typeof words[1] === 'string' && here !== null && path.resolve(here, words[1]) === AUTONOMY_BIN
 }
 
-function isSkillInstallSegment(words, env) {
+// A word spelled so that installClass reads it back as one word. An empty word has no spelling the parser keeps, so it
+// becomes a dot: a source that names no author, which holds the install instead of shifting the words after it.
+function spelledWord(word) {
+  if (word === '') return '.'
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `"${word.replace(/["\\]/g, '\\$&')}"`
+}
+
+// Limit A14 (spec 030): commands that assemble the personal skills path or an install at runtime (e.g. a script building
+// ~/.agents/skills/ dynamically, or $X skills add) cannot be detected.
+// Whether a segment is a skill install or writes into the owner's skill folders (spec 030 R25 R30). The install is read from
+// the words after the wrappers (named), so `CI=1 npx skills add`, `sudo npx ...` and `/usr/bin/npx ...` are the install of
+// `npx skills add`. A call to aether-autonomy names the folders in its quotes without writing there: only its redirections count.
+function isSkillInstallSegment(words, named, here, env) {
   const home = (env && env.HOME) || os.homedir()
-  for (let i = 0; i < words.length; i++) {
-    const after = unquotedRedirection(words[i], words.masks && words.masks[i])
-    if (after !== null) {
-      const target = (after || words[i + 1] || '').trim()
-      if (isPersonalSkillPath(target, home)) return true
-    }
-  }
-  const unwrapped = dropWrappers(words)
-  const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
-  if (!READ_COMMANDS.has(cmd)) {
-    for (const w of words) {
-      if (isPersonalSkillPath(w, home)) return true
-    }
-  }
-  const dataDir = getDataDir(env)
-  const cmdText = words.map((w) => /[\s"']/.test(w) ? JSON.stringify(w) : w).join(' ')
-  return installClass(cmdText, { dataDir }) === 'skill-install'
+  const naming = isAutonomyCall(words, here) ? redirectTargets(words) : writeTargets(words)
+  if (naming.some((target) => isPersonalSkillPath(target, home))) return true
+  return installClass(named.map(spelledWord).join(' '), { dataDir: getDataDir(env) }) === 'skill-install'
 }
 
 function trustedWrite(command, cwd = process.cwd(), env = process.env) {
@@ -1208,21 +1196,9 @@ function trustedWrite(command, cwd = process.cwd(), env = process.env) {
   const exempt = shape.plain && (shape.commands.length > 0 && shape.commands.every((c) => READ_COMMANDS.has(c[0])) || (authorized && !command.includes('<<')))
   if (exempt) return null
 
-  const segments = commandSegments(command)
-  for (const segment of segments) {
-    for (let i = 0; i < segment.length; i++) {
-      const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
-      if (after !== null) {
-        const target = (after || segment[i + 1] || '').trim()
-        if (isTrustedTarget(target, cwd, env)) return target
-      }
-    }
-    const unwrapped = dropWrappers(segment)
-    const cmd = unwrapped.length ? nameOf(unwrapped[0]) : ''
-    if (!READ_COMMANDS.has(cmd)) {
-      for (const w of segment) {
-        if (isTrustedTarget(w, cwd, env)) return w
-      }
+  for (const segment of commandSegments(command)) {
+    for (const target of writeTargets(segment)) {
+      if (isTrustedTarget(target, cwd, env)) return target
     }
   }
   return null
