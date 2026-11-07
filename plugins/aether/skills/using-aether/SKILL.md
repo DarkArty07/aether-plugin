@@ -218,7 +218,7 @@ The owner may give you permission to work for hours, for example «trabaja por h
 
 When the owner gives that permission, or session start says a run is open, load the `aether:autonomous-runs` skill and follow it.
 
-**Irreversible actions.** These classes need the owner's authorization. Everything local and reversible goes ahead without asking.
+**Irreversible actions.** These eight classes need the owner's authorization. Everything local and reversible goes ahead without asking.
 
 | Class | Covers |
 |---|---|
@@ -229,6 +229,7 @@ When the owner gives that permission, or session start says a run is open, load 
 | `delete` | deleting data, or files and branches outside the run's worktrees |
 | `credentials` | creating, copying, widening or rotating credentials and tokens |
 | `paid-call` | real, paid model calls outside the swarm |
+| `skill-install` | installing a skill from the internet from an author that is not trusted, or for all projects, and writing a permanent skill in `~/.agents/skills/` or `~/.claude/skills/` |
 
 Before one, run `aether-autonomy check <class>`.
 - **Exit 0:** it is covered. Act, and cite the grant in the diary.

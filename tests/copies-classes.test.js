@@ -8,7 +8,10 @@ const { irreversibleClass } = require('../plugins/aether/lib/guard.js')
 
 const ROOT = path.join(__dirname, '..')
 const SAMPLE = { 'merge-main': 'gh pr merge 12', push: 'git push origin main', publish: 'npm publish', deploy: 'terraform apply', delete: 'git branch -D old', credentials: 'gh auth login' }
-const GRANT_ONLY = { 'paid-call': 'guard.js does not detect paid calls: the class is only granted and checked with aether-autonomy check' }
+const GRANT_ONLY = {
+  'paid-call': 'guard.js does not detect paid calls: the class is only granted and checked with aether-autonomy check',
+  'skill-install': 'the guard detects it from the install command in task 26; until then it is only granted and checked with aether-autonomy check',
+}
 const skillTable = () => [...fs.readFileSync(path.join(ROOT, 'plugins/aether/skills/using-aether/SKILL.md'), 'utf8').matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1])
 const check = (source, copy) => assert.deepEqual(copy, source)
 

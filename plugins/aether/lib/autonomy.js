@@ -13,7 +13,7 @@ const { newRunId, isRunId, dataDir: runDataDir } = require('./run.js')
 const { readBrakeSettings } = require('./session.js')
 const { isObject } = require('./common.js')
 
-const CLASSES = ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call']
+const CLASSES = ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call', 'skill-install']
 const SCOPES = ['repo', 'session']
 const OUTCOMES = ['done', 'ceiling', 'incomplete']
 const MIN_QUOTE = 12
@@ -665,6 +665,60 @@ function recordSaved(mainRoot, saved, { now = Date.now() } = {}) {
   return { recorded: true, run: run.id, savedUnits: entries }
 }
 
+const AUTHOR_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*$/
+
+function isValidAuthor(author) {
+  return typeof author === 'string' && author.length > 0 && author.length <= 39 && AUTHOR_PATTERN.test(author)
+}
+
+function trustedPath(dataDir) {
+  return path.join(dataDir, 'skills', 'trusted.json')
+}
+
+function trustAuthor(dataDir, { author, quote, session, remove = false }, { configDir, now = Date.now() } = {}) {
+  if (!isValidAuthor(author)) return { ok: false, reason: `invalid author: ${author}` }
+  const verified = verifyQuote(session, quote, { configDir, allowNegation: remove })
+  if (!verified.ok) return { ok: false, reason: verified.reason }
+
+  const file = trustedPath(dataDir)
+  let data = { authors: [], log: [] }
+  if (fs.existsSync(file)) {
+    try {
+      const read = JSON.parse(fs.readFileSync(file, 'utf8'))
+      if (isObject(read)) {
+        if (Array.isArray(read.authors)) data.authors = read.authors
+        if (Array.isArray(read.log)) data.log = read.log
+      }
+    } catch {
+      data = { authors: [], log: [] }
+    }
+  }
+
+  const normalizedAuthor = author.toLowerCase()
+  if (remove) {
+    if (!data.authors.includes(normalizedAuthor)) {
+      return { ok: true, authors: data.authors }
+    }
+    data.authors = data.authors.filter((a) => a !== normalizedAuthor)
+  } else {
+    if (!data.authors.includes(normalizedAuthor)) {
+      data.authors.push(normalizedAuthor)
+    }
+  }
+
+  data.log.push({
+    action: remove ? 'remove' : 'add',
+    author: normalizedAuthor,
+    quote,
+    session,
+    time: verified.time,
+    added: new Date(now).toISOString(),
+  })
+
+  writeJsonFile(file, data)
+  return { ok: true, authors: data.authors }
+}
+
 module.exports = {
   CLASSES,
   SCOPES,
@@ -692,4 +746,5 @@ module.exports = {
   recordCrossing,
   brakeOff,
   recordSaved,
+  trustAuthor,
 }
