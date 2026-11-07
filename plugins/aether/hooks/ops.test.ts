@@ -328,3 +328,22 @@ test('a lane payload under a path containing "ladder" still writes prompt.md and
   await spawn($, opsPrompt(command, { cwd: repo, long: true, payload: 'You are implementing task-1.\n', marker }))
   expect(writes.map((w) => w.path)).toEqual([marker, `${laneDir}/spawn.json`])
 })
+
+for (const [name, marker] of [
+  ['new path', '/repo/.aether/tmp/seats/sess-1/message.md'],
+  ['old path', '/repo/.aether-tmp/seats/sess-1/message.md'],
+]) {
+  test(`a seat-start saves its message payload at spawn (${name}), then runs aether-lane`, async ($, on) => {
+    const { runs, writes } = stubs(on, { answer: { exitCode: 0, stdout: '{"started":true}\n' } })
+    const command = 'aether-lane seat-start judge --session sess-1 --author sonnet --feature specs/001-demo --superdelegation on --harnesses agy --digest 0a1b2c3d:12'
+    await spawn($, opsPrompt(command, { long: true, payload: 'Review the spec.\n', marker }))
+    const dir = marker.slice(0, marker.lastIndexOf('/'))
+    expect(writes.map((w) => w.path)).toEqual([marker, `${dir}/spawn.json`])
+    expect(writes[0].text).toBe('Review the spec.\n')
+    const { chunks } = await step($)
+    expect(runs[0].argv[0]).toBe('node')
+    expect(runs[0].argv[1].endsWith('/bin/aether-lane')).toBe(true)
+    expect(runs[0].argv.slice(2)).toEqual(command.split(' ').slice(1))
+    expect(answered(chunks).input).toEqual({ exitCode: 0, stdout: '{"started":true}\n' })
+  })
+}

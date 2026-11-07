@@ -27,7 +27,7 @@
 //   failed and was undone, 1 the command broke)
 // aether-lane seat-start <judge|writer|examiner> --session <id> [--author <model>] --feature specs/NNN-<topic> [--doc <spec|plan>]
 //   --superdelegation <on|off> --harnesses <h1,h2> [--exclude <id>[,<id>...]] --digest <digest>
-//   (the same round as seat, in the background: the message is the file the mod saved at <checkout>/.aether-tmp/seats/<session>/message.md,
+//   (the same round as seat, in the background: the message is the file the mod saved at <checkout>/.aether/tmp/seats/<session>/message.md,
 //   and the options come in flags because the mod's bins have none of the session's exports; prints { started, id },
 //   or { unavailable: message | digest } when the file is missing or is not the one the digest names)
 // aether-lane seat-wait <id> [--max <seconds>]   (the round's { done, exitCode, value }, with seat's exit and answer as

@@ -26,7 +26,7 @@ const HARNESSES = ['agy', 'codex', 'grok', 'muse']
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
 const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP']
 // What a delegate may leave in its worktree without breaking its rule: the temporary files of its tools.
-const TMP_DIR = '.aether-tmp/'
+const TMP_DIR = '.aether/tmp/'
 
 const DELEGATE_SCHEMA = { type: 'object', required: ['answer'], additionalProperties: false, properties: { answer: { type: 'string' } } }
 
@@ -85,7 +85,7 @@ function nulList(args, cwd) {
 }
 
 // What the delegate changed in its worktree: files committed since start, and files changed or new (not ignored)
-// outside .aether-tmp/; and whether HEAD moved.
+// outside .aether/tmp/; and whether HEAD moved.
 function worktreeChanges(worktree, start) {
   const head = git(['rev-parse', 'HEAD'], worktree).stdout
   const files = new Set()
@@ -231,7 +231,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   }
 
   // 4. The disposable worktree, the schema and the prompt.
-  const dir = path.join(run.aetherDir(mainRoot), 'delegates', id)
+  const dir = run.workDir(mainRoot, 'delegates', id)
   const worktree = path.join(dir, 'wt')
   const marker = `delegate/${id}`
   fs.mkdirSync(path.dirname(dir), { recursive: true })

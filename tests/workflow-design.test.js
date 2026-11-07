@@ -155,7 +155,7 @@ test('an external answer is the verdict as it is, the switch travels in flags, a
   const start = startOf(run, 'judge')
   assert.deepEqual(['--session', '--author', '--feature', '--superdelegation', '--harnesses'].map((f) => flag(start, f)), ['sess-1', 'sonnet', FEATURE, 'on', 'agy'])
   assert.equal(flag(start, '--digest'), lanes.digest(start.payload.text))
-  assert.equal(start.payload.path, '/repo/.aether-tmp/seats/sess-1/message.md')
+  assert.equal(start.payload.path, '/repo/.aether/tmp/seats/sess-1/message.md')
 })
 
 for (const [exit, wait] of [
