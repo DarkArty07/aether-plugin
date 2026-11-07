@@ -79,6 +79,60 @@ test('realResolve follows the links of the part that exists and keeps the rest (
   assert.equal(realResolve(path.join(w.repo.dir, 'missing', 'a.md')), path.join(w.repo.dir, 'missing', 'a.md'))
 })
 
+test('dangling links resolve their missing targets and cannot grant protected or outside writes', (t) => {
+  const w = world(t)
+  for (const folder of ['skills', 'rules']) {
+    for (const [name, target, expected] of [
+      ['local', '../settings.local.json', 'config'],
+      ['hook', '../hooks/missing.sh', 'config'],
+      ['outside', path.join(w.outside, 'missing.md'), 'escape'],
+    ]) {
+      const file = path.join(w.claude, folder, name)
+      fs.symlinkSync(target, file)
+      const real = path.resolve(path.dirname(file), target)
+      assert.equal(fs.existsSync(real), false)
+      assert.equal(realResolve(file), real)
+      assert.deepEqual(classifyClaudePath(file, { cwd: w.repo.dir, home: w.home }), { kind: expected, real })
+      assert.equal(permission(input(w, file), {}), false)
+    }
+  }
+})
+
+test('cyclic links fail closed while repeated noncyclic links resolve', (t) => {
+  const w = world(t)
+  const folder = path.join(w.claude, 'skills')
+  fs.symlinkSync('b', path.join(folder, 'a'))
+  fs.symlinkSync('a', path.join(folder, 'b'))
+  fs.symlinkSync('self', path.join(folder, 'self'))
+  for (const name of ['a', 'b', 'self']) {
+    const file = path.join(folder, name, 'new.md')
+    assert.throws(() => realResolve(file), { code: 'ELOOP' })
+    assert.equal(permission(input(w, file), {}), false)
+  }
+  assert.equal(realResolve(`${folder}/up/skills/up/rules/new.md`), path.join(w.claude, 'rules', 'new.md'))
+})
+
+// Record entries, link destinations, metadata and bytes without following links.
+function snapshot(dir) {
+  const stat = fs.lstatSync(dir)
+  const entry = { mode: stat.mode, size: stat.size, mtime: stat.mtimeMs, ctime: stat.ctimeMs }
+  if (stat.isSymbolicLink()) entry.link = fs.readlinkSync(dir)
+  else if (stat.isDirectory()) entry.children = Object.fromEntries(fs.readdirSync(dir).sort().map((name) => [name, snapshot(path.join(dir, name))]))
+  else entry.bytes = fs.readFileSync(dir).toString('base64')
+  return entry
+}
+
+test('classification leaves all fixture filesystem state unchanged', (t) => {
+  const w = world(t)
+  const before = [w.repo.dir, w.home, w.outside].map(snapshot)
+  for (const file of [
+    '.claude/skills/new/SKILL.md', '.claude/rules/new.md', '.claude/settings.local.json',
+    '.claude/hooks/new.sh', '.claude/skills/up/settings.json', '.claude/skills/out/new.md',
+    path.join(w.home, '.claude/skills/new.md'),
+  ]) classifyClaudePath(file, { cwd: w.repo.dir, home: w.home })
+  assert.deepEqual([w.repo.dir, w.home, w.outside].map(snapshot), before)
+})
+
 test('other tools and bad inputs are not allowed and never throw', (t) => {
   const w = world(t)
   assert.equal(permission({ tool_name: 'Bash', cwd: w.repo.dir, tool_input: { command: 'touch .claude/rules/a.md' } }, {}), false)
@@ -97,6 +151,8 @@ test('through the bin: the decision is allow for the Lead, and nothing for the s
   assert.equal(allowed.status, 0)
   assert.deepEqual(JSON.parse(allowed.stdout), { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } })
   assert.deepEqual([ask('s1', path.join(w.claude, 'settings.json')).stdout, ask('s1', path.join(w.claude, 'settings.json')).status], ['', 0])
+  const before = [w.repo.dir, w.home, w.outside, data, process.env.HOME].map(snapshot)
   const plain = ask('plain-session', path.join(w.claude, 'skills', 'x', 'SKILL.md'))
-  assert.deepEqual([plain.status, plain.stdout], [0, ''])
+  assert.deepEqual([plain.status, plain.stdout, plain.stderr], [0, '', ''])
+  assert.deepEqual([w.repo.dir, w.home, w.outside, data, process.env.HOME].map(snapshot), before)
 })

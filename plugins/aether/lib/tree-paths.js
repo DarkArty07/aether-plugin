@@ -11,12 +11,27 @@ const { repoPaths } = require('./git.js')
 function realResolve(file) {
   const absolute = path.isAbsolute(file) ? file : `${process.cwd()}${path.sep}${file}`
   let current = path.parse(absolute).root
-  for (const part of absolute.slice(current.length).split(path.sep)) {
+  const pending = absolute.slice(current.length).split(path.sep)
+  let links = 0
+  while (pending.length) {
+    const part = pending.shift()
     if (!part || part === '.') continue
-    current = path.join(current, part)
-    try { current = fs.realpathSync(current) } catch (err) {
+    const next = path.join(current, part)
+    let stat
+    try { stat = fs.lstatSync(next) } catch (err) {
       if (err.code !== 'ENOENT' && err.code !== 'ENOTDIR') throw err
     }
+    if (stat?.isSymbolicLink()) {
+      // Inspect links even when their targets are missing; realpath cannot resolve them.
+      if (++links > 40) {
+        const err = new Error('Too many symbolic links while resolving path')
+        err.code = 'ELOOP'
+        throw err
+      }
+      const target = fs.readlinkSync(next)
+      if (path.isAbsolute(target)) current = path.parse(target).root
+      pending.unshift(...target.split(path.sep))
+    } else current = next
   }
   return current
 }
