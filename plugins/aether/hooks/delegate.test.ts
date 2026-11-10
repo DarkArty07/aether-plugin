@@ -170,3 +170,23 @@ test('a begin that fails leaves the call as the Lead made it', async ($, on) => 
   expect(out.result).toEqual({ context: ['earlier'] })
   expect(runs.map((r) => r.argv[2])).toEqual(['begin'])
 })
+
+test('the rescue of an editing external delegate records the end of its attempt with answer', async ($, on) => {
+  const { runs, toolCalls, counts } = stubs(on, {
+    verbs: {
+      begin: [{ ...PLAN, external: EXTERNAL }],
+      start: [{ started: true, id: 't1', pid: 1 }],
+      wait: [{ done: true, ok: false, status: 'off', text: null }],
+      answer: [{ recorded: true }],
+    },
+  })
+  await call($, 'AETHER-TASK: t1\nAETHER-OWNS: src/**\nDo it.')
+  const spawned = await spawn($, toolCalls[0].prompt)
+  const rescued = await step($, { index: 0, agentId: spawned.agentId })
+  expect(rescued.result.answer).toBe('from the model')
+  expect(counts.modelSteps).toBe(1)
+  const answered = runs.filter((r) => r.argv[2] === 'answer')
+  expect(answered.length).toBe(1)
+  expect(answered[0].argv.slice(answered[0].argv.indexOf('--task'))).toEqual(['--task', 't1', '--attempt', '1', '--text', 'from the model'])
+  expect(answered[0].init.timeoutMs).toBeLessThanOrEqual(15000)
+})

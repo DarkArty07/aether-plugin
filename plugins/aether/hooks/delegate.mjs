@@ -6,7 +6,7 @@
 // `aether-delegate begin`. The plan that comes back fixes the model and the effort of the call (the step of the ladder
 // is the system's, never the Lead's) and may rewrite its prompt (a correction on Claude carries the findings) and put an
 // isolation on it. Its notes are added to the call's result, for the Lead. A plan with `external` names a delegate that
-// runs on another harness; a plan with `answerOf` names a read-only delegate that runs on Claude. The call is
+// runs on another harness; a plan with `answerOf` names a delegate that runs on Claude. The call is
 // remembered by its final prompt with either.
 //
 // agent.spawn and turn.step: the spawn binds the agent to the call by its prompt. The first step of an `external`
@@ -15,7 +15,7 @@
 // 600 s (Task 17 measured it). The delegate's text is the agent's answer, with no model request. A delegate that fails
 // is left to the model, at the model of the plan, which is already the one of the step. Every later step of an
 // `external` agent and every step of an `answerOf` agent goes through the model unchanged, and the last one records
-// its answer with `aether-delegate answer`: it is the answer that `verdict` checks (R6).
+// its end with `aether-delegate answer`: read-only answers are checked by `verdict` (R6).
 //
 // Any failure of the mod (an exception, a non-zero exit, a line that is not JSON, a skipped plan) leaves the call as the
 // Lead made it, and leaves a trace through ctx.fault (fault-trace.mjs), which the caller may not give.
@@ -71,7 +71,7 @@ const notesOf = (plan) => (Array.isArray(plan.notes) ? plan.notes.filter(isText)
 
 // The delegate of an external harness: the whole first step of its agent. Yields a heartbeat after every wait that did
 // not end, before it waits again, and the delegate's text as the answer when it delivers; any other end is the model's,
-// which records the answer of the attempt like any read-only step on Claude (answerOf: { task, attempt }).
+// which records the end of the attempt like any step on Claude (answerOf: { task, attempt }).
 async function* runExternal($, e, next, ctx, external, answerOf) {
   let delivered = null
   try {
@@ -98,8 +98,8 @@ async function* runExternal($, e, next, ctx, external, answerOf) {
   return { turnId: e.turnId, index: e.index, answer: delivered, toolUses: [], stopReason: 'end_turn', usage: null }
 }
 
-// One step of a read-only delegate on Claude: the model's, unchanged. When the step ends the agent's turn, its answer
-// is recorded for the verdict. A failed record never changes the step.
+// One step of a delegate on Claude: the model's, unchanged. When the step ends the agent's turn, its answer
+// is sent for recording. A failed record never changes the step.
 async function* runAnswering($, e, next, ctx, answerOf) {
   const result = yield* next(e)
   if (answerOf !== null && isObject(result) && typeof result.stopReason === 'string' && result.stopReason !== 'tool_use' && typeof result.answer === 'string') {
@@ -206,10 +206,8 @@ export function createDelegates() {
     async *step($, e, next, ctx) {
       const routed = isObject(e) && isText(e.agentId) ? byAgent.get(e.agentId) : undefined
       if (!routed) return yield* next(e)
-      // A read-only external route answers as an answerOf one does: the model's last step records the attempt's answer. An
-      // editing one has none: `verdict` judges it by the checks of its worktree, and a text would replace its earlier patch
-      // as the work a rise carries.
-      const answerOf = routed.external === null ? routed.answerOf : routed.external.edits === true ? null : { task: routed.id, attempt: routed.attempt }
+      // A rescued external route records its end on the model's last step, as a Claude route does.
+      const answerOf = routed.external === null ? routed.answerOf : { task: routed.id, attempt: routed.attempt }
       // The delegate runs once, and only as the first step of its agent; the route stays for the later steps.
       if (routed.external !== null && e.index === 0) return yield* runExternal($, e, next, ctx, routed.external, answerOf)
       return yield* runAnswering($, e, next, ctx, answerOf)

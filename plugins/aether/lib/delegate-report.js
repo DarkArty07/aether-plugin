@@ -59,12 +59,13 @@ function rowOfTask(id, entries) {
 // Two sessions may use the same task id (issue 148): a task is its session and its id.
 const taskKey = (session, id) => `${session ?? ''}\u0000${id}`
 
-// Log position decides what followed the latest launch, even when timestamps are out of order.
+// Arrivals must follow the latest launch in log order and time; Claude completions must name its attempt.
 function isUnverdictedTask(entries) {
   const latest = last(entries.filter(isLaunch))
   const after = entries.slice(entries.lastIndexOf(latest) + 1)
-  return after.some((entry) => entry.kind === 'answer' ||
-    (entry.kind === 'result' && entry.ok === true) || (entry.kind === 'outcome' && entry.status === 'ok')) &&
+  return after.some((entry) => entry.time >= latest.time && (
+    (['answer', 'ended'].includes(entry.kind) && (latest.attempt === undefined || entry.attempt === latest.attempt)) ||
+    (entry.kind === 'result' && entry.ok === true) || (entry.kind === 'outcome' && entry.status === 'ok'))) &&
     !after.some((entry) => entry.kind === 'verdict')
 }
 

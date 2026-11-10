@@ -1,5 +1,8 @@
 'use strict'
 
+const log = require('../plugins/aether/lib/delegate-log.js')
+const { unverdictedDelegates } = require('../plugins/aether/lib/delegate-report.js')
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -196,14 +199,29 @@ test('a read-only external delegate that delivers records no answer: the agent e
   assert.equal(answersOf(calls).length, 0, 'the delegate delivered: nothing to answer')
 })
 
-test('the rescue of an editing external delegate records no answer: its checks come from its worktree, not from a text', async () => {
-  const { $, calls } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: false, status: 'off', text: null }] })
+test('the rescue of an editing external delegate records the end of its attempt once, at its last step (spec 031, C1)', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: false, status: 'off', text: null }], answer: [{ recorded: true }] })
   const delegates = createDelegates()
   await delegates.toolCall($, EV, recorder().next, CTX)
   delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
   const model = async function* () { return { answer: 'done, in the worktree', stopReason: 'end_turn' } }
   const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
   assert.equal(result.answer, 'done, in the worktree')
+  const recorded = answersOf(calls)
+  assert.equal(recorded.length, 1)
+  assert.deepEqual(recorded[0].argv.slice(recorded[0].argv.indexOf('--task')), ['--task', 't1', '--attempt', '1', '--text', 'done, in the worktree'])
+})
+
+test('an editing external delegate that delivers records no end: its result line is the arrival (spec 031, C1)', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: true, status: 'ok', text: 'branch aether/r/task-1' }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  let asked = 0
+  const model = async function* () { asked += 1; return { answer: 'from the model', stopReason: 'end_turn' } }
+  const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.equal(result.answer, 'branch aether/r/task-1')
+  assert.equal(asked, 0)
   assert.equal(answersOf(calls).length, 0)
 })
 
@@ -313,4 +331,43 @@ test('the whole delegation cycle with the real aether-delegate: begin on haiku, 
   fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'module.exports = 1\n')
   const approved = verdict('--verdict', 'approve', '--worktree', repo.dir)
   assert.equal(approved.ok, true, JSON.stringify(approved))
+})
+
+test('an editing delegate on Claude leaves an ended line when its agent ends, and the real verdict still checks its worktree (spec 031, C1)', async (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-e2e-ended-')
+  fs.mkdirSync(path.join(dataDir, 'sessions'), { recursive: true })
+  fs.writeFileSync(path.join(dataDir, 'sessions', 's-end.delegate.json'), JSON.stringify({ lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }))
+  const env = { ...process.env, AETHER_DATA_DIR: dataDir, AETHER_LANES_CONFIG: NO_LANES_CONFIG }
+  const ctx = { session: 's-end', dataDir, root: PLUGIN }
+  const $ = {
+    clock: { now: async () => Date.now() },
+    fs: { write: async (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text, 'utf8') } },
+    process: {
+      run: async (argv, init = {}) => {
+        const r = spawnSync(argv[0], argv.slice(1), { cwd: (init && init.cwd) || repo.dir, env, encoding: 'utf8', timeout: (init && init.timeoutMs) || 30000 })
+        return { exitCode: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' }
+      },
+    },
+  }
+  const brief = 'AETHER-TASK: t-end\nAETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\nImplement src/a.js.'
+  const delegates = createDelegates()
+  const seen = []
+  await delegates.toolCall($, { subagent_type: 'general-purpose', description: 'end', prompt: brief }, async (event) => (seen.push(event), {}), ctx)
+  delegates.bind($, seen[0], 'agent-end', ctx)
+  assert.equal(delegates.has('agent-end'), true, 'the mod routes an attempt that edits on Claude')
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's-end' }), [], 'while the agent runs, nothing has arrived')
+
+  const model = async function* () { return { answer: 'done, in the worktree', stopReason: 'end_turn' } }
+  await collect(delegates.step($, { index: 0, agentId: 'agent-end', turnId: 't' }, model, ctx))
+  const written = log.readEntries(dataDir, { task: 't-end' }).filter((e) => e.kind !== 'launch')
+  assert.deepEqual(written.map((e) => [e.kind, e.attempt, e.session, Object.hasOwn(e, 'text')]), [['ended', 1, 's-end', false]])
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's-end' }), [{ task: 't-end', session: 's-end', attempt: 1, step: 'haiku' }])
+
+  fs.mkdirSync(path.join(repo.dir, 'src'), { recursive: true })
+  fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'module.exports = 1\n')
+  const judged = spawnSync(process.execPath, [path.join(PLUGIN, 'bin', 'aether-delegate'), 'verdict', '--session', 's-end', '--task', 't-end', '--verdict', 'approve', '--worktree', repo.dir], { cwd: repo.dir, env, encoding: 'utf8' })
+  const approved = JSON.parse(judged.stdout.trim().split('\n').pop())
+  assert.equal(approved.ok, true, JSON.stringify(approved))
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's-end' }), [])
 })

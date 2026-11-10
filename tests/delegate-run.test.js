@@ -389,3 +389,53 @@ test('start clears only its session result and forwards the session to run (issu
   assert.equal(fs.existsSync(path.join(results, '2-s2--t1.json')), true)
   assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'run', '2-s1--t1.json'), 'utf8')).pid, 4242)
 })
+
+test('answer writes an ended line, with no text, for an attempt that edits, and an answer line for a read-only one (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const launch = (task, attempt, edits) => ({ kind: 'launch', time: 1, session: 's1', task, step: 'haiku', attempt, launchKind: 'first', description: 'd', effort: 'high', edits })
+  log.appendEntry(dataDir, launch('e1', 1, true))
+  log.appendEntry(dataDir, launch('r1', 1, false))
+  assert.deepEqual(dr.recordAnswer({ task: 'e1', attempt: 1, text: 'done, in the worktree', session: 's1', dataDir, now: () => 7 }), { recorded: true })
+  assert.deepEqual(dr.recordAnswer({ task: 'r1', attempt: 1, text: 'found it', session: 's1', dataDir, now: () => 8 }), { recorded: true })
+  assert.deepEqual(log.readEntries(dataDir, { task: 'e1' }).at(-1), { kind: 'ended', time: 7, session: 's1', task: 'e1', attempt: 1 })
+  assert.deepEqual(log.readEntries(dataDir, { task: 'r1' }).at(-1), { kind: 'answer', time: 8, session: 's1', task: 'r1', attempt: 1, text: 'found it' })
+})
+
+test('the kind of line follows the latest launch of that attempt in that session; with no launch it is an answer (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const launch = (time, session, attempt, launchKind, edits) => ({ kind: 'launch', time, session, task: 't1', step: 'haiku', attempt, launchKind, description: 'd', effort: 'high', edits })
+  log.appendEntry(dataDir, launch(1, 's1', 1, 'first', true))
+  log.appendEntry(dataDir, launch(2, 's1', 2, 'fix', false))
+  log.appendEntry(dataDir, launch(3, 's2', 1, 'first', false))
+  for (const [session, attempt, time] of [['s1', 1, 10], ['s1', 2, 11], ['s2', 1, 12], ['s1', 9, 13]]) {
+    dr.recordAnswer({ task: 't1', attempt, text: 'x', session, dataDir, now: () => time })
+  }
+  const written = log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind !== 'launch').map((e) => [e.session, e.attempt, e.kind])
+  assert.deepEqual(written, [['s1', 1, 'ended'], ['s1', 2, 'answer'], ['s2', 1, 'answer'], ['s1', 9, 'answer']])
+})
+
+test('the bin: answer on an attempt that edits writes an ended line and says it recorded (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  log.appendEntry(dataDir, { kind: 'launch', time: 1, session: 's1', task: 'e1', step: 'haiku', attempt: 1, launchKind: 'first', description: 'd', effort: 'high', edits: true })
+  const env = { ...process.env, AETHER_DATA_DIR: dataDir }
+  const out = spawnSync(process.execPath, [BIN, 'answer', '--session', 's1', '--task', 'e1', '--attempt', '1', '--text', 'done'], { encoding: 'utf8', env })
+  assert.deepEqual(JSON.parse(out.stdout.trim()), { recorded: true })
+  const last = log.readEntries(dataDir, { task: 'e1' }).at(-1)
+  assert.deepEqual([last.kind, last.attempt, Object.hasOwn(last, 'text')], ['ended', 1, false])
+})
+
+
+test('answer uses the last matching launch and a null session searches across sessions', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const launch = (session, edits) => ({ kind: 'launch', time: 1, session, task: 't1', attempt: 1, step: 'haiku', edits })
+  log.appendEntry(dataDir, launch('s1', false))
+  log.appendEntry(dataDir, launch('s1', true))
+  dr.recordAnswer({ task: 't1', attempt: 1, text: 'private', session: 's1', dataDir, now: () => 2 })
+  assert.equal(log.readEntries(dataDir).at(-1).kind, 'ended')
+  log.appendEntry(dataDir, launch('s2', false))
+  dr.recordAnswer({ task: 't1', attempt: 1, text: 'public', session: null, dataDir, now: () => 3 })
+  assert.deepEqual(log.readEntries(dataDir).at(-1), { kind: 'answer', time: 3, session: null, task: 't1', attempt: 1, text: 'public' })
+  log.appendEntry(dataDir, launch('s2', true))
+  dr.recordAnswer({ task: 't1', attempt: 1, text: 'private', session: null, dataDir, now: () => 4 })
+  assert.deepEqual(log.readEntries(dataDir).at(-1), { kind: 'ended', time: 4, session: null, task: 't1', attempt: 1 })
+})

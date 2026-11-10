@@ -237,7 +237,7 @@ test('a read-only delegate on Claude is approved only with its answer, not empty
   const said = (id, text) => log.appendEntry(dataDir, { kind: 'answer', task: id, attempt: 1, session: 's1', time: 5000, text })
   const plan = await task.begin(call(BRIEF('r1')), deps)
   assert.deepEqual(plan.answerOf, { task: 'r1', attempt: 1 })
-  assert.equal((await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), deps)).answerOf, null, 'a task that edits has no answer to record')
+  assert.deepEqual((await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), deps)).answerOf, { task: 'e1', attempt: 1 }, 'a task that edits on Claude names its attempt too, so the mod records when it ends')
   const none = await task.verdict({ task: 'r1', verdict: 'approve' }, deps)
   assert.deepEqual([none.ok, /answer/.test(none.error)], [false, true], 'no answer recorded: not approved')
   said('r1', '   ')
@@ -684,4 +684,57 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
   assert.equal(byCost.stop, 'cost')
   assert.equal(byCost.run, startedCost.run.id)
   assert.match(byCost.notes.join('\n'), /aether-autonomy end --outcome ceiling/)
+})
+
+test('an attempt that edits and runs on Claude names its end like a read-only one; one on an external pair does not (spec 031, C1)', async (t) => {
+  const more = 'AETHER-OWNS: src/**\n'
+  const native = world(t)
+  const onClaude = await task.begin(call(BRIEF('e1', more)), native.deps)
+  assert.equal(onClaude.external, null)
+  assert.deepEqual(onClaude.answerOf, { task: 'e1', attempt: 1 })
+  const repo = makeRepo(t)
+  const external = world(t, { settings: EXTERNAL, pick: GROK, cwd: repo.dir })
+  const delegated = await task.begin(call(BRIEF('e2', more)), external.deps)
+  assert.equal(delegated.external.edits, true)
+  assert.equal(delegated.answerOf, null, 'the external pair writes its own result')
+})
+
+test('the correction of an attempt that edits on Claude is the same with or without its ended line (spec 031, C1)', async (t) => {
+  const more = 'AETHER-OWNS: src/**\n'
+  const cycle = async (withEnded) => {
+    const { deps, dataDir } = world(t)
+    await task.begin(call(BRIEF('e1', more)), deps)
+    if (withEnded) log.appendEntry(dataDir, { kind: 'ended', task: 'e1', attempt: 1, session: 's1', time: 5000 })
+    const judged = await task.verdict({ task: 'e1', verdict: 'fix', findings: [FINDING] }, deps)
+    const again = await task.begin(call(BRIEF('e1', more)), deps)
+    return { judged, again }
+  }
+  const plain = await cycle(false)
+  const ended = await cycle(true)
+  assert.equal(ended.judged.ok, true)
+  assert.deepEqual([ended.judged.next, ended.judged.corrections], [plain.judged.next, plain.judged.corrections])
+  assert.deepEqual([ended.again.step, ended.again.kind, ended.again.args], [plain.again.step, plain.again.kind, plain.again.args])
+  assert.deepEqual([ended.again.kind, ended.again.args.effort], ['fix', 'xhigh'])
+  assert.ok(ended.again.args.prompt.includes(FINDING))
+  assert.deepEqual(ended.again.answerOf, { task: 'e1', attempt: 2 })
+})
+
+test('an approve of an attempt that edits on Claude checks its worktree with its ended line in the log (spec 031, C1)', async (t) => {
+  const repo = makeRepo(t)
+  const { deps, dataDir } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\n')), deps)
+  log.appendEntry(dataDir, { kind: 'ended', task: 'e1', attempt: 1, session: 's1', time: 5000 })
+  const none = await task.verdict({ task: 'e1', verdict: 'approve' }, deps)
+  assert.equal(none.ok, false)
+  assert.match(none.error, /worktree/, 'the ended line is not an answer to check: the edits are')
+  fs.mkdirSync(path.join(repo.dir, 'src'))
+  fs.mkdirSync(path.join(repo.dir, 'docs'))
+  fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'a\n')
+  fs.writeFileSync(path.join(repo.dir, 'docs', 'x.md'), 'x\n')
+  const outside = await task.verdict({ task: 'e1', verdict: 'approve', worktree: repo.dir }, deps)
+  assert.equal(outside.ok, false)
+  assert.match(outside.error, /docs\/x\.md/)
+  fs.rmSync(path.join(repo.dir, 'docs'), { recursive: true })
+  const approved = await task.verdict({ task: 'e1', verdict: 'approve', worktree: repo.dir }, deps)
+  assert.equal(approved.ok, true, approved.error)
 })

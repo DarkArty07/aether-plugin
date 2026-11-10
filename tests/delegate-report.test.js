@@ -183,10 +183,10 @@ test('unverdicted helpers isolate sessions and use log order after the latest la
   ]
   entries.forEach((entry) => log.appendEntry(dataDir, entry))
   const expected = [{ task: 'same', session: 'a', attempt: 1, step: 'haiku' }]
-  assert.deepEqual(unverdictedTasks(entries), [...expected, { task: 'same', session: 'b', attempt: 1, step: 'sonnet' }])
+  assert.deepEqual(unverdictedTasks(entries), expected)
   assert.deepEqual(unverdictedDelegates({ dataDir, session: 'a' }), expected)
-  assert.deepEqual(unverdictedDelegates({ dataDir, session: 'b' }), [{ task: 'same', session: 'b', attempt: 1, step: 'sonnet' }])
-  assert.deepEqual(unverdictedDelegates({ dataDir, since: 11 }), [{ task: 'same', session: 'b', attempt: 1, step: 'sonnet' }])
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 'b' }), [])
+  assert.deepEqual(unverdictedDelegates({ dataDir, since: 11 }), [])
 })
 
 test('failed outcomes and results remain in flight until an outcome or result succeeds', (t) => {
@@ -215,14 +215,14 @@ test('since preserves the latest launch attempt number in unverdicted', (t) => {
   const dataDir = tempDir(t, 'aether-del-since-')
   const first = launch('retry', 'haiku', 1, 'first')
   const latest = launch('retry', 'sonnet', 2, 'rise')
-  for (const entry of [first, latest, at({ kind: 'answer', task: 'retry' })]) log.appendEntry(dataDir, entry)
+  for (const entry of [first, latest, at({ kind: 'answer', task: 'retry', attempt: 2 })]) log.appendEntry(dataDir, entry)
   assert.deepEqual(delegatesReport({ dataDir, since: latest.time }).unverdicted,
     [{ task: 'retry', session: 's1', attempt: 2, step: 'sonnet' }])
 })
 
 test('aether-report --delegates prints unverdicted tasks in its JSON', (t) => {
   const dataDir = tempDir(t, 'aether-del-cli-')
-  for (const entry of [launch('pending', 'haiku', 3, 'fix'), at({ kind: 'answer', task: 'pending' })]) log.appendEntry(dataDir, entry)
+  for (const entry of [launch('pending', 'haiku', 3, 'fix'), at({ kind: 'answer', task: 'pending', attempt: 3 })]) log.appendEntry(dataDir, entry)
   const out = spawnSync(process.execPath, [BIN, '--delegates'], { encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dataDir } })
   assert.ifError(out.error)
   assert.equal(out.status, 0, out.stderr)
@@ -254,3 +254,44 @@ for (const decision of ['fix', 'infeasible']) {
     assert.equal(report.delegations[0].unverdicted, false)
   })
 }
+
+const editing = (task, attempt, launchKind) => ({ ...launch(task, 'haiku', attempt, launchKind), edits: true })
+
+test('an attempt that edits on Claude is unverdicted once its ended line is in the log, and not before it or after its verdict (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-del-ended-')
+  log.appendEntry(dataDir, editing('e-running', 1, 'first'))
+  log.appendEntry(dataDir, editing('e-ended', 1, 'first'))
+  log.appendEntry(dataDir, at({ kind: 'ended', task: 'e-ended', attempt: 1 }))
+  log.appendEntry(dataDir, editing('e-judged', 1, 'first'))
+  log.appendEntry(dataDir, at({ kind: 'ended', task: 'e-judged', attempt: 1 }))
+  log.appendEntry(dataDir, verdict('e-judged', 'haiku', 1, 'approved', { step: null, kind: 'done', cause: null }))
+
+  const report = delegatesReport({ dataDir, session: 's1' })
+  assert.deepEqual(report.unverdicted, [{ task: 'e-ended', session: 's1', attempt: 1, step: 'haiku' }])
+  const byId = new Map(report.delegations.map((d) => [d.id, d]))
+  assert.deepEqual(['e-running', 'e-ended', 'e-judged'].map((id) => byId.get(id).unverdicted), [false, true, false])
+  assert.deepEqual([byId.get('e-ended').applied, byId.get('e-ended').ranOn], ['rewritten', { harness: 'claude', model: 'haiku', effort: 'high' }])
+})
+
+test('a fix verdict and a new launch hide the earlier ended line until the new attempt ends too (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-del-ended-fix-')
+  log.appendEntry(dataDir, editing('t1', 1, 'first'))
+  log.appendEntry(dataDir, at({ kind: 'ended', task: 't1', attempt: 1 }))
+  log.appendEntry(dataDir, verdict('t1', 'haiku', 1, 'fix', { step: 'haiku', kind: 'fix', cause: 'fix' }))
+  log.appendEntry(dataDir, editing('t1', 2, 'fix'))
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's1' }), [])
+  log.appendEntry(dataDir, at({ kind: 'ended', task: 't1', attempt: 2 }))
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's1' }), [{ task: 't1', session: 's1', attempt: 2, step: 'haiku' }])
+})
+
+test('late results from an earlier attempt do not mark the latest attempt unverdicted', (t) => {
+  for (const kind of ['ended', 'answer']) {
+    const dataDir = tempDir(t, 'aether-del-late-')
+    log.appendEntry(dataDir, editing('t1', 1, 'first'))
+    log.appendEntry(dataDir, editing('t1', 2, 'fix'))
+    log.appendEntry(dataDir, at({ kind, task: 't1', attempt: 1 }))
+    assert.deepEqual(unverdictedDelegates({ dataDir, session: 's1' }), [])
+    log.appendEntry(dataDir, at({ kind, task: 't1', attempt: 2 }))
+    assert.equal(unverdictedDelegates({ dataDir, session: 's1' }).length, 1)
+  }
+})
