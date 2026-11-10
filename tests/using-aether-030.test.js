@@ -47,3 +47,12 @@ test('the bootstrap goes in as many parts as hooks.json has commands for, each w
   assert.ok(parts.length >= 1 && parts.length <= PART_COMMANDS.length, `${parts.length} parts for ${PART_COMMANDS.length} commands`)
   for (const part of parts) assert.ok(part.output.length <= PART_LIMIT, `part of ${part.output.length} characters`)
 })
+
+test('the bootstrap keeps the canonical rule and corrections of #204 (R6, R9, R10)', () => {
+  const rule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
+  assert.ok(text.includes(rule))
+  assert.doesNotMatch(text, /about five tool calls|many reads of your own|one effort up|a fork always runs on your model|`aether-exam store`/)
+  for (const token of ['aether:models', 'aether:designing', ["at the step's correction effort in `config", 'ladder.json`'].join('/'), 'ignores `model` on a fork and would run on your model with your whole conversation', 'every `Agent` call whose `subagent_type` is not `aether:*`', 'claude-code-guide', '--ignore <glob>', 'aether-autonomy trust --author <author> --quote "<their words>"', 'aether-exam store specs/NNN-<topic>', 'relaunching an approved or exhausted task id launches a Haiku agent', 'passing more than 3 skills, an unknown skill name, or a skill over the line limit in `AETHER-SKILLS:` rejects the whole launch']) assert.ok(text.includes(token), token)
+  const total = bootstrapParts(PLUGIN).reduce((sum, part) => sum + part.context.length, 0)
+  assert.ok(total <= 25000, `the injected bootstrap weighs ${total} characters`)
+})
