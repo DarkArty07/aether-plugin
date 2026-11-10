@@ -129,6 +129,14 @@ function directTurnBudget(input, ctx) {
     const note = readNote(continuityDir({ cwd: input.cwd, env: ctx.env, home: ctx.home }), input.session_id)
     const noteAt = typeof note?.updatedAt === 'number' ? note.updatedAt : null
     let state = readJsonOrNull(file)
+    if (!state) {
+      try {
+        fs.statSync(file)
+        return null // An unreadable or invalid existing state must not be replaced.
+      } catch (error) {
+        if (error.code !== 'ENOENT') return null
+      }
+    }
     if (!state || (typeof input.prompt_id === 'string' && input.prompt_id !== state.promptId) ||
         (noteAt !== null && (state.sinceNoteAt === null || noteAt > state.sinceNoteAt))) {
       state = { promptId: input.prompt_id ?? null, sinceNoteAt: noteAt, edits: 0, reads: 0, notified: false }

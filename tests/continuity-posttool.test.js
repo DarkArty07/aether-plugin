@@ -117,6 +117,7 @@ test('a state read failure returns null without breaking posttool (R7)', (t) => 
   const edit = () => call('Edit', { file_path: file('src', 'a.js') })
   assert.equal(edit(), null)
   assert.equal(edit(), null)
+  const before = fs.readFileSync(stateFile, 'utf8')
   const readFileSync = fs.readFileSync
   const mock = t.mock.method(fs, 'readFileSync', function (target, ...args) {
     if (target === stateFile) throw Object.assign(new Error('state read denied'), { code: 'EACCES' })
@@ -124,8 +125,17 @@ test('a state read failure returns null without breaking posttool (R7)', (t) => 
   })
   assert.equal(edit(), null)
   mock.mock.restore()
-  assert.equal(edit(), null)
+  assert.equal(fs.readFileSync(stateFile, 'utf8'), before)
   assert.ok(edit())
+  const notified = fs.readFileSync(stateFile, 'utf8')
+  const secondMock = t.mock.method(fs, 'readFileSync', function (target, ...args) {
+    if (target === stateFile) throw Object.assign(new Error('state read denied'), { code: 'EACCES' })
+    return readFileSync.call(this, target, ...args)
+  })
+  assert.equal(edit(), null)
+  secondMock.mock.restore()
+  assert.equal(fs.readFileSync(stateFile, 'utf8'), notified)
+  assert.equal(edit(), null)
 })
 
 test('a state write failure suppresses the notice and a later call can retry (R7)', (t) => {
@@ -228,6 +238,10 @@ test('posttool counts reads of code and searches, not reads of notes, specs or d
     ['Grep', { pattern: 'foo', path: file('docs') }],
     ['Bash', { command: "sed -n '1,5p' specs/031-demo/plan.md" }],
     ['Bash', { command: 'git status' }],
+    ['Bash', { command: 'stat src/a.js' }],
+    ['Bash', { command: 'diff src/a.js src/a.js' }],
+    ['Bash', { command: 'cmp src/a.js src/a.js' }],
+    ['Bash', { command: 'git log' }],
     ['Bash', { command: 'ls -la' }],
     ['Bash', { command: 'wc -l src/a.js' }],
     ['Bash', { command: 'aether-autonomy status | grep stop' }],
@@ -269,6 +283,10 @@ test('from a linked worktree the diary of the run in the main checkout and the s
   for (let i = 0; i < 5; i++) {
     // The diary is at <main checkout>/.aether/autonomy/<id>/diary.md, which a relative path from the worktree does not reach.
     assert.equal(here('Write', { file_path: path.join(w.repo.dir, '.aether', 'autonomy', 'x', 'diary.md') }), null)
+    assert.equal(here('Read', { file_path: path.join(w.repo.dir, '.aether', 'autonomy', 'x', 'diary.md') }), null)
+    assert.equal(here('Read', { file_path: path.join(w.repo.dir, '.specify', 'feature.json') }), null)
+    assert.equal(here('Read', { file_path: path.join(w.repo.dir, 'AGENTS.md') }), null)
+    assert.equal(here('Read', { file_path: path.join(path.dirname(scratch), 'notes', `n${i}.js`) }), null)
     // The folder above scratchpad_dir is the session's temporary folder, whatever the extension of the file.
     assert.equal(here('Write', { file_path: path.join(path.dirname(scratch), 'notes', `n${i}.js`) }), null)
   }
