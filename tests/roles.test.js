@@ -30,7 +30,7 @@ test('the swarm skill sends plan fixes to the Writer and to /aether:design in sh
 test('in an autonomous run the swarm checks the ceilings, records its cost, and leaves unauthorized steps to the brief', () => {
   const swarm = read('skills', 'swarm', 'SKILL.md')
   for (const needle of [
-    'aether-autonomy status',
+    'aether-autonomy end --outcome ceiling',
     'aether-autonomy spend <lanes.totals.run.totalUsd> --source <runId>',
     'aether-autonomy check merge-main',
     'aether-autonomy check push',
