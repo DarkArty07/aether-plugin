@@ -39,7 +39,7 @@ The owner sits above all of them: they confirm the Lead's understanding of what 
 7. **The examination and the brief.** When the build ends, `aether-exam run` runs the hidden exam on the branch that holds the build, and the Lead gives the owner one brief that opens with "Espera tu sí", the list of what waits for their yes, and "Supuestos".
 
 **The three paths.** The Lead takes one of three paths for each piece of work. A delegate task starts on Haiku and climbs a ladder of models that the system holds, not the Lead (the [Delegates](guide/delegates.md) guide has it):
-- **Direct:** a very bounded change, about five tool calls and no edit-test-fix loop. The Lead does it inline, on the model it runs on.
+- **Direct:** a very bounded change: at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count. The Lead does it inline, on the model it runs on.
 - **Delegate task:** bounded work that is still a real task, such as an edit-test-fix loop, a cleanup, a research sweep, or each task of a plan of one or two tasks. One subagent in the background, with a self-contained brief, that starts on Haiku. The system holds its step; the Lead judges the result and cannot skip a step. It is never inherited from the session.
 - **Swarm:** long, costly or complex work: an approved plan of three or more tasks. `/aether:run`, with each unit starting on the first rung of `config/ladder.json`.
 
