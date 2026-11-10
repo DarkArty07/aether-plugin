@@ -598,9 +598,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A116 are recorded and the changelog opens with 0.35.0, then 0.34.0, then 0.33.0, then 0.32.1, then 0.32.0, then 0.31.2, then 0.31.1, then 0.31.0, then 0.30.3, then 0.30.2, then 0.30.1, then 0.30.0, then 0.29.0, then 0.28.0, then 0.27.0, then 0.26.0, then 0.25.1, then 0.25.0, then 0.24.3, 0.24.2, then 0.24.1, then 0.24.0, 0.23.0, 0.22.0, 0.21.0, 0.20.1, 0.20.0, 0.19.2, 0.19.1 and 0.19.0', () => {
+test('R15: the decisions A50 to A120 are recorded in docs/decisions.md with the owner\'s words where the card had them', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 116
+  const LAST_DECISION = 120
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -815,3 +815,18 @@ test('the two tutorials state the canonical countable rule of the direct path in
   assert.doesNotMatch(es, /unas cinco llamadas a herramientas/)
 })
 
+test('decisions A117 to A120 are recorded with the owner quotes, the index names the range, and the historical line stays intact (R12)', () => {
+  const decisions = read('docs/decisions.md')
+  const rowOf = (id) => decisions.split('\n').find((line) => line.startsWith(`| ${id} |`)) || ''
+  for (const [id, quote] of [
+    ['A117', 'catalgoar y ñistar comportamientos esperados por si alguno no se cumple por ingeneiria de prompts'],
+    ['A118', 'vas a corregir como se comprota el lead autnoamente'],
+    ['A119', 'vas a corregir como se comprota el lead autnoamente'],
+    ['A120', 'le quiero dar higieien al comportamiento del lead a los prompts etc'],
+  ]) {
+    assert.match(decisions, new RegExp(`^\\| ${id} \\|`, 'm'), id)
+    assert.ok(rowOf(id).includes(quote), `${id} quotes the owner: ${quote}`)
+  }
+  assert.match(decisions, /about five tool calls/)
+  assert.match(read('docs/index.md'), /A1–A120/)
+})
