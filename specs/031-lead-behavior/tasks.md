@@ -30,6 +30,7 @@
 - [ ] Task 11: Hacer independientes del orden las partes de `aether-session-start` y reducir `hooks.json` a 3 partes
 - [ ] Task 12: Registrar las decisiones A117 a A120 en `docs/decisions.md` y el rango de `docs/index.md`
 - [ ] Task 13: Actualizar `CLAUDE.md`, las guías, `docs/reference/components.md` y la huella durmiente
+- [ ] Task 14: Registrar el fin de todo intento que corre en Claude y contarlo como resultado llegado
 
 ---
 
@@ -1518,6 +1519,7 @@ Actualizar `CLAUDE.md`, `docs/methodology.md`, `docs/reference/components.md`, `
    - Actualizar el número de entradas de `SessionStart` a 4 (`aether-session-start` + `--part 1` a `--part 3`, total 11 comandos de hook) y quitar `--part 5` de la frase de `CLAUDE.md`.
    - Documentar `aether:designing` y `aether:models` en la lista de skills de `CLAUDE.md` (la página de componentes ya las tiene, por la Tarea 3).
    - Documentar `unverdicted` en `aether-report --delegates`, el aviso en `Stop`, el aviso en `PostToolUse` a las 3 ediciones o 10 lecturas, el rechazo automático por topes/pausa y la exigencia de plan mode en `aether-autonomy start` interactivo.
+   - Documentar en `CLAUDE.md` y en `docs/guide/delegates.md` que el registro de delegados tiene ahora una línea `ended` (sin texto) para el fin de un intento que edita en Claude, junto a `answer`, que sigue siendo la del intento de solo lectura.
    - Medir y actualizar en la página de componentes (`## What Aether adds to a normal session`, conservando la frase histórica `Version 0.35.0 adds seven hook entries...`, que `tests/docs-030.test.js` fija) la huella durmiente fuera de una sesión del Lead: `SessionStart` corre 4 procesos cortos en vez de 6, y `PostToolUse` (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Read`, `Grep`, `Glob`, `Bash`) corre 1 proceso corto de `aether-continuity` (~33 ms en Node 22 sobre Linux/WSL2) por llamada, con `0 B` en `stdout` y `0` archivos escritos cuando `!isAetherSession`, en una sola oración que nombre `PostToolUse`, `Read`, `Grep` y `Glob` en ese orden.
 3. Las pruebas de `Owns` son las que nombran entre comillas alguna de las seis páginas; las que pasan por un ayudante `read(...)` se buscaron por los fragmentos de lo que esta tarea cambia («six `node` processes», «five part commands», `--part 5`, «about five tool calls», `seven hook entries`, `A116`): solo fijan `docs-030` (`seven hook entries`, que se conserva) y `docs-facts`. `tests/docs-facts.test.js` es también de las Tareas 4 y 12.
 
@@ -1567,3 +1569,265 @@ test('the canonical countable rule is identical across the six places of R6, CLA
 - `tests/docs-facts.test.js` comprueba que la frase canónica en inglés y en español de la regla contable aparece idéntica en los seis lugares de R6.
 - La página de componentes refleja la medición de `PostToolUse` por lectura en una sesión normal, y `tests/dormant-030.test.js` comprueba que los 11 comandos del archivo de hooks tienen huella de 0 bytes fuera de una sesión del Lead.
 - `npm test` pasa entero.
+
+---
+
+### Task 14: Registrar el fin de todo intento que corre en Claude y contarlo como resultado llegado
+
+**Aether:**
+- Area: delegates
+- Owns: `plugins/aether/lib/delegate-task.js`, `plugins/aether/lib/delegate-run.js`, `plugins/aether/lib/delegate-report.js`, `plugins/aether/hooks/delegate.mjs`, `plugins/aether/bin/aether-delegate`, `tests/delegate-task.test.js`, `tests/delegate-run.test.js`, `tests/delegate-report.test.js`, `tests/delegate-mod.test.js`, `plugins/aether/hooks/delegate.test.ts`
+- Depends on: Task 6 — comparte `plugins/aether/lib/delegate-task.js` y `tests/delegate-task.test.js`
+- Depends on: Task 1 — comparte `plugins/aether/lib/delegate-report.js` y `tests/delegate-report.test.js`, y cambia la función `isUnverdictedTask` que esa tarea escribió
+- Serves: R1, R2
+
+**Goal:**
+Hacer que el fin de todo intento que corre en Claude deje una línea en el registro de delegados, también cuando el intento edita, para que `isUnverdictedTask` lo cuente como resultado llegado y el listado `unverdicted` de `aether-report --delegates` y el aviso de `Stop` (Tarea 5) vean a los delegados que editan en Claude, que con `superdelegation` apagada (el valor por defecto) son toda tarea de código en Haiku. Hasta ahora ese camino no escribía ni `result`, ni `answer`, ni `outcome`: `begin` devolvía `answerOf` solo para un intento de solo lectura en Claude, el mod no enrutaba una llamada con `external === null` y `answerOf === null`, y el intento terminaba sin dejar ninguna línea. No añade ningún comando, opción ni entrada de hook, y no cambia cómo funcionan la corrección ni el veredicto de un intento que edita.
+
+**Interfaces:**
+1. En `plugins/aether/lib/delegate-task.js`, `begin`: el plan devuelto lleva `answerOf: { task: id, attempt }` en todo intento cuyo `external` es `null`, de solo lectura o que edita, y `answerOf: null` cuando `external` no es `null` (la variable `onClaudeReadOnly` desaparece: sus dos usos eran esa condición y `dirty`, que sigue dependiendo de `!edits`). Un plan rechazado (`refusedLaunchPlan`) y un plan con `error` siguen con `answerOf: null`. `TASK_KINDS` no cambia a propósito: `taskEntries` descarta `ended`, y ni la escalera (`nextLaunch`, `stateOf`), ni `sectionsOf` ni `verdict` deben verla.
+2. En `plugins/aether/lib/delegate-run.js`, `recordAnswer({ task, attempt, text, session, dataDir, now = Date.now })` conserva firma y retorno (`{ recorded: boolean }`, nunca lanza). Busca el último lanzamiento (`isLaunch` de `delegate-log.js`) de esa tarea, ese intento y esa sesión (con `session` nulo, de cualquier sesión) en `log.readEntries(dataDir, { task, session: session ?? null })`: si existe y su `edits === true`, escribe `{ kind: 'ended', time: now(), session: session ?? null, task, attempt }`, sin `text`; en cualquier otro caso (lanzamiento de solo lectura, otro intento, otra sesión o ningún lanzamiento) escribe el `answer` de siempre, `{ kind: 'answer', time, session, task, attempt, text }`. Se actualiza el comentario de la función (hoy dice «of a read-only delegate»). No se exporta nada nuevo.
+3. En `plugins/aether/hooks/delegate.mjs`, método `step` de `createDelegates`: el rescate de un intento externo pasa siempre `answerOf: { task: routed.id, attempt: routed.attempt }` (hoy pasa `null` cuando `routed.external.edits === true`); un intento sin `external` sigue usando `routed.answerOf`. Se actualizan el comentario de cabecera (líneas 9 y 15 a 18) y el de `step` («An editing one has none…»). El mod sigue sin importar `lib/`, y `remember` no cambia: ahora recibe `answerOf` en todo plan con `external === null`. `aether-delegate answer` recibe también el texto de un intento que edita, y es `recordAnswer` quien no lo guarda.
+4. En `plugins/aether/lib/delegate-report.js`, `isUnverdictedTask(entries)` cuenta como resultado llegado, después del último lanzamiento y con `entry.time >= latest.time`: una entrada `ended`, una `answer`, un `outcome` con `status === 'ok'` o un `result` con `ok === true` (la regla de `ok` ya está en el árbol cuando se construye esta tarea; esta solo añade `ended`), y sigue exigiendo que no haya ningún `verdict` después de ese lanzamiento. `rowOfTask`, `stepCounts` y `delegatesReport` no cambian: la fila de un intento que edita en Claude sigue diciendo `applied: 'rewritten'` y `ranOn` de Claude.
+5. En `plugins/aether/bin/aether-delegate`, solo el comentario de cabecera (líneas 11 y 18 a 19): `answer` registra el fin de un intento en Claude, el `answer` de uno de solo lectura o la marca de fin de uno que edita.
+
+**Lectores revisados:** `TASK_KINDS` y `taskEntries` (`delegate-task.js`) descartan una clase desconocida, así que `nextLaunch`, `stateOf`, `sectionsOf` y `verdict` no ven `ended`; `previousWork` (`delegate-log`, también desde `delegate-run.js`) solo mira `answer` con texto y `result`, y `relaunchOf`, `placementOf` y `sessionOf` solo `launch`, `verdict` y `authorize`; `delegate-report.js` (`rowOfTask`, `stepCounts`, `relaunches`) lee `launch`, `outcome`, `result` y `verdict`, y `groupTasks` agrupa `ended` por su `task` sin cambiar ninguna cuenta; `continuity-notice` (`workLine`, «Delegates without a result») solo mira `result`, así que `ended` no cambia lo que lista, como no lo cambia `answer`; `delegate-prune` usa solo `session` y `time` de cada línea, y `spend` y `spend-archive` solo `outcome` (una línea `ended` cuenta, como cualquier línea de su sesión, para el tramo en que `spend` ubica una línea rota); `observe-read` conserva de cada línea los campos de su lista (`kind`, `time`, `session`, `task`, `attempt`), `observe-detect`, `observe-calibrate` y `observe-baseline` filtran por `launch`, `verdict` u `outcome` (`detectRiseWithoutReason` retrocede hasta el `verdict` de la misma tarea y salta lo demás), y `observe-issue` solo recoge nombres de tarea; `skill-repeat`, `delegate-authorize` y `delegate-chain` leen `verdict`, `authorize` y `outcome`. Ninguno necesita cambio. Pruebas que fijan la forma antigua: `tests/delegate-task.test.js` línea 240 (`answerOf` es `null` para una tarea que edita: se corrige aquí) y la prueba del rescate de `tests/delegate-mod.test.js` («records no answer»: se reemplaza); se conservan `delegate-task` línea 268 (un plan con par externo sigue sin `answerOf`), `delegate-run` líneas 195 a 203 (sin lanzamiento en el registro, `recordAnswer` escribe `answer`), `delegate-mod` líneas 227 y 247 y `delegate.test.ts` línea 143 (planes armados a mano con `answerOf`). `observe-read` y `observe-guarantees` solo traen líneas `answer` como fixtures. `continuity-hook` (Tarea 5) usa líneas `result` con `ok: true`, que siguen contando.
+
+**Tests (write first):**
+1. En `tests/delegate-task.test.js`, reemplazar la línea 240 (`assert.equal((await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), deps)).answerOf, null, 'a task that edits has no answer to record')`) por:
+
+```js
+  assert.deepEqual((await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\n')), deps)).answerOf, { task: 'e1', attempt: 1 }, 'a task that edits on Claude names its attempt too, so the mod records when it ends')
+```
+
+y añadir al final del archivo (usa `world`, `call`, `BRIEF`, `entries`, `FINDING`, `EXTERNAL`, `GROK`, `makeRepo`, `log`, `fs` y `path` que el archivo ya define):
+
+```js
+test('an attempt that edits and runs on Claude names its end like a read-only one; one on an external pair does not (spec 031, C1)', async (t) => {
+  const more = 'AETHER-OWNS: src/**\n'
+  const native = world(t)
+  const onClaude = await task.begin(call(BRIEF('e1', more)), native.deps)
+  assert.equal(onClaude.external, null)
+  assert.deepEqual(onClaude.answerOf, { task: 'e1', attempt: 1 })
+  const repo = makeRepo(t)
+  const external = world(t, { settings: EXTERNAL, pick: GROK, cwd: repo.dir })
+  const delegated = await task.begin(call(BRIEF('e2', more)), external.deps)
+  assert.equal(delegated.external.edits, true)
+  assert.equal(delegated.answerOf, null, 'the external pair writes its own result')
+})
+
+test('the correction of an attempt that edits on Claude is the same with or without its ended line (spec 031, C1)', async (t) => {
+  const more = 'AETHER-OWNS: src/**\n'
+  const cycle = async (withEnded) => {
+    const { deps, dataDir } = world(t)
+    await task.begin(call(BRIEF('e1', more)), deps)
+    if (withEnded) log.appendEntry(dataDir, { kind: 'ended', task: 'e1', attempt: 1, session: 's1', time: 5000 })
+    const judged = await task.verdict({ task: 'e1', verdict: 'fix', findings: [FINDING] }, deps)
+    const again = await task.begin(call(BRIEF('e1', more)), deps)
+    return { judged, again }
+  }
+  const plain = await cycle(false)
+  const ended = await cycle(true)
+  assert.equal(ended.judged.ok, true)
+  assert.deepEqual([ended.judged.next, ended.judged.corrections], [plain.judged.next, plain.judged.corrections])
+  assert.deepEqual([ended.again.step, ended.again.kind, ended.again.args], [plain.again.step, plain.again.kind, plain.again.args])
+  assert.deepEqual([ended.again.kind, ended.again.args.effort], ['fix', 'xhigh'])
+  assert.ok(ended.again.args.prompt.includes(FINDING))
+  assert.deepEqual(ended.again.answerOf, { task: 'e1', attempt: 2 })
+})
+
+test('an approve of an attempt that edits on Claude checks its worktree with its ended line in the log (spec 031, C1)', async (t) => {
+  const repo = makeRepo(t)
+  const { deps, dataDir } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('e1', 'AETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\n')), deps)
+  log.appendEntry(dataDir, { kind: 'ended', task: 'e1', attempt: 1, session: 's1', time: 5000 })
+  const none = await task.verdict({ task: 'e1', verdict: 'approve' }, deps)
+  assert.equal(none.ok, false)
+  assert.match(none.error, /worktree/, 'the ended line is not an answer to check: the edits are')
+  fs.mkdirSync(path.join(repo.dir, 'src'))
+  fs.mkdirSync(path.join(repo.dir, 'docs'))
+  fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'a\n')
+  fs.writeFileSync(path.join(repo.dir, 'docs', 'x.md'), 'x\n')
+  const outside = await task.verdict({ task: 'e1', verdict: 'approve', worktree: repo.dir }, deps)
+  assert.equal(outside.ok, false)
+  assert.match(outside.error, /docs\/x\.md/)
+  fs.rmSync(path.join(repo.dir, 'docs'), { recursive: true })
+  const approved = await task.verdict({ task: 'e1', verdict: 'approve', worktree: repo.dir }, deps)
+  assert.equal(approved.ok, true, approved.error)
+})
+```
+
+2. En `tests/delegate-run.test.js`, añadir después de la prueba `answer records what a delegate on Claude ended with…` (usa `dr`, `log`, `tempDir`, `spawnSync`, `BIN` y `assert` que el archivo ya define):
+
+```js
+test('answer writes an ended line, with no text, for an attempt that edits, and an answer line for a read-only one (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const launch = (task, attempt, edits) => ({ kind: 'launch', time: 1, session: 's1', task, step: 'haiku', attempt, launchKind: 'first', description: 'd', effort: 'high', edits })
+  log.appendEntry(dataDir, launch('e1', 1, true))
+  log.appendEntry(dataDir, launch('r1', 1, false))
+  assert.deepEqual(dr.recordAnswer({ task: 'e1', attempt: 1, text: 'done, in the worktree', session: 's1', dataDir, now: () => 7 }), { recorded: true })
+  assert.deepEqual(dr.recordAnswer({ task: 'r1', attempt: 1, text: 'found it', session: 's1', dataDir, now: () => 8 }), { recorded: true })
+  assert.deepEqual(log.readEntries(dataDir, { task: 'e1' }).at(-1), { kind: 'ended', time: 7, session: 's1', task: 'e1', attempt: 1 })
+  assert.deepEqual(log.readEntries(dataDir, { task: 'r1' }).at(-1), { kind: 'answer', time: 8, session: 's1', task: 'r1', attempt: 1, text: 'found it' })
+})
+
+test('the kind of line follows the latest launch of that attempt in that session; with no launch it is an answer (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const launch = (time, session, attempt, launchKind, edits) => ({ kind: 'launch', time, session, task: 't1', step: 'haiku', attempt, launchKind, description: 'd', effort: 'high', edits })
+  log.appendEntry(dataDir, launch(1, 's1', 1, 'first', true))
+  log.appendEntry(dataDir, launch(2, 's1', 2, 'fix', false))
+  log.appendEntry(dataDir, launch(3, 's2', 1, 'first', false))
+  for (const [session, attempt, time] of [['s1', 1, 10], ['s1', 2, 11], ['s2', 1, 12], ['s1', 9, 13]]) {
+    dr.recordAnswer({ task: 't1', attempt, text: 'x', session, dataDir, now: () => time })
+  }
+  const written = log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind !== 'launch').map((e) => [e.session, e.attempt, e.kind])
+  assert.deepEqual(written, [['s1', 1, 'ended'], ['s1', 2, 'answer'], ['s2', 1, 'answer'], ['s1', 9, 'answer']])
+})
+
+test('the bin: answer on an attempt that edits writes an ended line and says it recorded (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  log.appendEntry(dataDir, { kind: 'launch', time: 1, session: 's1', task: 'e1', step: 'haiku', attempt: 1, launchKind: 'first', description: 'd', effort: 'high', edits: true })
+  const env = { ...process.env, AETHER_DATA_DIR: dataDir }
+  const out = spawnSync(process.execPath, [BIN, 'answer', '--session', 's1', '--task', 'e1', '--attempt', '1', '--text', 'done'], { encoding: 'utf8', env })
+  assert.deepEqual(JSON.parse(out.stdout.trim()), { recorded: true })
+  const last = log.readEntries(dataDir, { task: 'e1' }).at(-1)
+  assert.deepEqual([last.kind, last.attempt, Object.hasOwn(last, 'text')], ['ended', 1, false])
+})
+```
+
+3. En `tests/delegate-report.test.js`, añadir al final (usa `at`, `launch`, `verdict`, `log`, `tempDir`, `delegatesReport` y `unverdictedDelegates` que el archivo ya define o importa):
+
+```js
+const editing = (task, attempt, launchKind) => ({ ...launch(task, 'haiku', attempt, launchKind), edits: true })
+
+test('an attempt that edits on Claude is unverdicted once its ended line is in the log, and not before it or after its verdict (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-del-ended-')
+  log.appendEntry(dataDir, editing('e-running', 1, 'first'))
+  log.appendEntry(dataDir, editing('e-ended', 1, 'first'))
+  log.appendEntry(dataDir, at({ kind: 'ended', task: 'e-ended', attempt: 1 }))
+  log.appendEntry(dataDir, editing('e-judged', 1, 'first'))
+  log.appendEntry(dataDir, at({ kind: 'ended', task: 'e-judged', attempt: 1 }))
+  log.appendEntry(dataDir, verdict('e-judged', 'haiku', 1, 'approved', { step: null, kind: 'done', cause: null }))
+
+  const report = delegatesReport({ dataDir, session: 's1' })
+  assert.deepEqual(report.unverdicted, [{ task: 'e-ended', session: 's1', attempt: 1, step: 'haiku' }])
+  const byId = new Map(report.delegations.map((d) => [d.id, d]))
+  assert.deepEqual(['e-running', 'e-ended', 'e-judged'].map((id) => byId.get(id).unverdicted), [false, true, false])
+  assert.deepEqual([byId.get('e-ended').applied, byId.get('e-ended').ranOn], ['rewritten', { harness: 'claude', model: 'haiku', effort: 'high' }])
+})
+
+test('a fix verdict and a new launch hide the earlier ended line until the new attempt ends too (spec 031, C1)', (t) => {
+  const dataDir = tempDir(t, 'aether-del-ended-fix-')
+  log.appendEntry(dataDir, editing('t1', 1, 'first'))
+  log.appendEntry(dataDir, at({ kind: 'ended', task: 't1', attempt: 1 }))
+  log.appendEntry(dataDir, verdict('t1', 'haiku', 1, 'fix', { step: 'haiku', kind: 'fix', cause: 'fix' }))
+  log.appendEntry(dataDir, editing('t1', 2, 'fix'))
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's1' }), [])
+  log.appendEntry(dataDir, at({ kind: 'ended', task: 't1', attempt: 2 }))
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's1' }), [{ task: 't1', session: 's1', attempt: 2, step: 'haiku' }])
+})
+```
+
+4. En `tests/delegate-mod.test.js`: añadir arriba `const log = require('../plugins/aether/lib/delegate-log.js')` y `const { unverdictedDelegates } = require('../plugins/aether/lib/delegate-report.js')` junto a los demás `require`; reemplazar la prueba `the rescue of an editing external delegate records no answer: its checks come from its worktree, not from a text` por las dos siguientes (usa `make`, `recorder`, `collect`, `answersOf`, `EV`, `CTX`, `PLAN`, `EXTERNAL`, `PLUGIN`, `NO_LANES_CONFIG`, `makeRepo`, `tempDir`, `spawnSync`, `fs` y `path` del archivo):
+
+```js
+test('the rescue of an editing external delegate records the end of its attempt once, at its last step (spec 031, C1)', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: false, status: 'off', text: null }], answer: [{ recorded: true }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  const model = async function* () { return { answer: 'done, in the worktree', stopReason: 'end_turn' } }
+  const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.equal(result.answer, 'done, in the worktree')
+  const recorded = answersOf(calls)
+  assert.equal(recorded.length, 1)
+  assert.deepEqual(recorded[0].argv.slice(recorded[0].argv.indexOf('--task')), ['--task', 't1', '--attempt', '1', '--text', 'done, in the worktree'])
+})
+
+test('an editing external delegate that delivers records no end: its result line is the arrival (spec 031, C1)', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: true, status: 'ok', text: 'branch aether/r/task-1' }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  let asked = 0
+  const model = async function* () { asked += 1; return { answer: 'from the model', stopReason: 'end_turn' } }
+  const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.equal(result.answer, 'branch aether/r/task-1')
+  assert.equal(asked, 0)
+  assert.equal(answersOf(calls).length, 0)
+})
+```
+
+y añadir al final del archivo la prueba con el `aether-delegate` real:
+
+```js
+test('an editing delegate on Claude leaves an ended line when its agent ends, and the real verdict still checks its worktree (spec 031, C1)', async (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-e2e-ended-')
+  fs.mkdirSync(path.join(dataDir, 'sessions'), { recursive: true })
+  fs.writeFileSync(path.join(dataDir, 'sessions', 's-end.delegate.json'), JSON.stringify({ lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }))
+  const env = { ...process.env, AETHER_DATA_DIR: dataDir, AETHER_LANES_CONFIG: NO_LANES_CONFIG }
+  const ctx = { session: 's-end', dataDir, root: PLUGIN }
+  const $ = {
+    clock: { now: async () => Date.now() },
+    fs: { write: async (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text, 'utf8') } },
+    process: {
+      run: async (argv, init = {}) => {
+        const r = spawnSync(argv[0], argv.slice(1), { cwd: (init && init.cwd) || repo.dir, env, encoding: 'utf8', timeout: (init && init.timeoutMs) || 30000 })
+        return { exitCode: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' }
+      },
+    },
+  }
+  const brief = 'AETHER-TASK: t-end\nAETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\nImplement src/a.js.'
+  const delegates = createDelegates()
+  const seen = []
+  await delegates.toolCall($, { subagent_type: 'general-purpose', description: 'end', prompt: brief }, async (event) => (seen.push(event), {}), ctx)
+  delegates.bind($, seen[0], 'agent-end', ctx)
+  assert.equal(delegates.has('agent-end'), true, 'the mod routes an attempt that edits on Claude')
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's-end' }), [], 'while the agent runs, nothing has arrived')
+
+  const model = async function* () { return { answer: 'done, in the worktree', stopReason: 'end_turn' } }
+  await collect(delegates.step($, { index: 0, agentId: 'agent-end', turnId: 't' }, model, ctx))
+  const written = log.readEntries(dataDir, { task: 't-end' }).filter((e) => e.kind !== 'launch')
+  assert.deepEqual(written.map((e) => [e.kind, e.attempt, e.session, Object.hasOwn(e, 'text')]), [['ended', 1, 's-end', false]])
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's-end' }), [{ task: 't-end', session: 's-end', attempt: 1, step: 'haiku' }])
+
+  fs.mkdirSync(path.join(repo.dir, 'src'), { recursive: true })
+  fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'module.exports = 1\n')
+  const judged = spawnSync(process.execPath, [path.join(PLUGIN, 'bin', 'aether-delegate'), 'verdict', '--session', 's-end', '--task', 't-end', '--verdict', 'approve', '--worktree', repo.dir], { cwd: repo.dir, env, encoding: 'utf8' })
+  const approved = JSON.parse(judged.stdout.trim().split('\n').pop())
+  assert.equal(approved.ok, true, JSON.stringify(approved))
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's-end' }), [])
+})
+```
+
+5. En `plugins/aether/hooks/delegate.test.ts`, añadir después de `a read-only delegate on Claude goes through the model, and its last answer is recorded with answer` (usa `stubs`, `call`, `spawn`, `step`, `PLAN` y `EXTERNAL` del archivo):
+
+```ts
+test('the rescue of an editing external delegate records the end of its attempt with answer', async ($, on) => {
+  const { runs, toolCalls, counts } = stubs(on, {
+    verbs: {
+      begin: [{ ...PLAN, external: EXTERNAL }],
+      start: [{ started: true, id: 't1', pid: 1 }],
+      wait: [{ done: true, ok: false, status: 'off', text: null }],
+      answer: [{ recorded: true }],
+    },
+  })
+  await call($, 'AETHER-TASK: t1\nAETHER-OWNS: src/**\nDo it.')
+  const spawned = await spawn($, toolCalls[0].prompt)
+  const rescued = await step($, { index: 0, agentId: spawned.agentId })
+  expect(rescued.result.answer).toBe('from the model')
+  expect(counts.modelSteps).toBe(1)
+  const answered = runs.filter((r) => r.argv[2] === 'answer')
+  expect(answered.length).toBe(1)
+  expect(answered[0].argv.slice(answered[0].argv.indexOf('--task'))).toEqual(['--task', 't1', '--attempt', '1', '--text', 'from the model'])
+  expect(answered[0].init.timeoutMs).toBeLessThanOrEqual(15000)
+})
+```
+
+**Acceptance:**
+- Un intento de una tarea que edita y corre en Claude deja, al terminar su agente, una línea `ended` (`{ kind, time, session, task, attempt }`, sin texto) en `<dataDir>/delegates/log.jsonl`, y entonces sale en `unverdicted` de `aether-report --delegates` y en el aviso de `Stop` hasta que recibe su veredicto; un intento de solo lectura sigue escribiendo su `answer` como hasta ahora.
+- Un intento que edita en otro arnés y que Claude rescata deja también su `ended`; uno que el otro arnés entrega no deja ninguna línea nueva, y su `result` es la llegada.
+- La corrección de un intento que edita (`fix`, su relanzamiento, su esfuerzo y su encargo) y su veredicto con `--worktree` se comportan igual con la línea `ended` en el registro que sin ella.
+- Ningún lector del registro cambia lo que informa: `node --test tests/delegate-task.test.js tests/delegate-run.test.js tests/delegate-report.test.js tests/delegate-mod.test.js tests/continuity-hook.test.js tests/delegate-log.test.js` pasa.
+- `npm run test:mod` pasa (la prueba de `plugins/aether/hooks/delegate.test.ts` corre con esa orden y no con `npm test`), y `npm test` pasa entero, con los verificadores estructurales (`guards`, `guards-delegate-1`, `guards-delegate-2`, `guards-bins`) que ninguna tarea edita.
