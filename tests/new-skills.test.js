@@ -50,3 +50,36 @@ test('the Writer and the plan skill name the art direction before the plan; ther
   const hooks = fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')
   assert.ok(!/art-direction/.test(hooks))
 })
+
+test('the components page names the models and designing skills', () => {
+  const components = fs.readFileSync(path.join(PLUGIN, '..', '..', 'docs', 'reference', 'components.md'), 'utf8')
+  for (const name of ['models', 'designing']) assert.ok(components.includes(`\`aether:${name}\``), `components.md names aether:${name}`)
+})
+
+test('models and designing skills exist with valid frontmatter and expected content', () => {
+  const models = read('skills', 'models', 'SKILL.md')
+  const designing = read('skills', 'designing', 'SKILL.md')
+
+  assert.equal(frontMatter(models).name, 'models')
+  assert.ok(frontMatter(models).description.length > 20)
+  assert.ok(models.includes('\n## Models\n'))
+  assert.ok(models.includes('| Model | Price | Speed | Its maker says |'))
+  assert.ok(models.includes(['config', 'models', 'models.json'].join('/')))
+  assert.ok(models.includes(['config', 'prices.json'].join('/')))
+  assert.match(models, /Haiku 5\.5/)
+  assert.match(models, /Opus 5\.5/)
+
+  assert.equal(frontMatter(designing).name, 'designing')
+  assert.ok(frontMatter(designing).description.length > 20)
+  assert.match(designing, /specs\/NNN-<topic>\/intent\.md/)
+  assert.match(designing, /\/aether:design/)
+  assert.match(designing, /aether-exam store specs\/NNN-<topic>/)
+  assert.doesNotMatch(designing, /`aether-exam store`/)
+})
+
+test('skills skill uses --author flag in aether-autonomy trust command', () => {
+  const text = read('skills', 'skills', 'SKILL.md')
+  assert.match(text, /aether-autonomy trust --author <author> --quote "<their words>"/)
+  assert.doesNotMatch(text, /aether-autonomy trust <author>/)
+})
+

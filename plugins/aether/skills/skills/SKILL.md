@@ -41,7 +41,7 @@ Installing skills is governed by the `skill-install` irreversible autonomy class
 - The trusted authors list is stored at `<data dir>/skills/trusted.json`. It starts empty.
 - To trust an author, the owner runs or authorizes:
   ```bash
-  aether-autonomy trust <author>
+  aether-autonomy trust --author <author> --quote "<their words>"
   ```
   Only `aether-autonomy trust` writes to `trusted.json`, verifying the owner's exact words.
 - When downloading from an author in `trusted.json` into a project, `npx skills add` proceeds without interactive confirmation.
