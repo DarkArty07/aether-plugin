@@ -228,7 +228,12 @@ function readArgs(raw) {
   }
 }
 
-const input = readArgs(args)
+let input
+try {
+  input = readArgs(args)
+} catch (err) {
+  return { status: 'failed', step: 'validation', reason: err.message, skill: 'aether:designing' }
+}
 const { feature, session, repoRoot, mode, binDir } = input
 const SPEC = `${feature}/spec.md`
 const PLAN = `${feature}/plan.md`
@@ -508,6 +513,7 @@ async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
     label: `${base}: start`,
     payload: { path: MESSAGE_PATH, text },
   })
+  if (started && started.refused === true) return { id: null, refused: true, stop: started.stop, run: started.run, note: started.reason || 'autonomous run ceiling reached' }
   if (started.error || started.started !== true || !matches(SEAT_ID, started.id) || !started.id.startsWith(`${seat}-`)) {
     return { id: null, note: `the seat round did not start: ${started.error || JSON.stringify(started).slice(0, 300)}`, startFailed: true }
   }
@@ -629,6 +635,10 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   let value = {}
   for (let n = 1; ; n++) {
     const waited = await awaitSeat({ seat, doc, base: n === 1 ? base : `${base} (try ${n})`, flags, exclude: excluded, text, phase })
+    if (waited.refused === true) {
+      record.note = waited.note
+      return { failed: waited.note, refused: true, stop: waited.stop, run: waited.run }
+    }
     if (waited.id !== null) record.id = waited.id
     if (Number.isFinite(waited.durationMs)) {
       durations.push(waited.durationMs)
@@ -850,7 +860,7 @@ function examinerMessage() {
 
 // --- steps -----------------------------------------------------------------------------------
 
-const failure = (step, reason) => ({ end: { status: 'failed', failed: { step, reason } } })
+const failure = (step, reason, extra = {}) => ({ end: { status: 'failed', failed: { step, reason }, ...(extra.refused ? { step, reason, stop: extra.stop, run: extra.run } : {}) } })
 
 // aether-plan check on the tasks, read even when it exits 1: { ok, errors, printed }, or { error } when the command
 // did not run.
@@ -867,7 +877,7 @@ async function checkedAfter(step, text, retry) {
   if (checked.error) return failure('plan-check', `aether-plan check did not run: ${checked.error}`)
   if (checked.ok) return { printed: checked.printed, retried: null }
   const again = await retry(`${step} (retry)`, lines(text, '', checkErrorsLines(checked.errors)))
-  if (again.failed) return failure('plan-writer', again.failed)
+  if (again.failed) return failure('plan-writer', again.failed, again)
   checked = await planCheck()
   if (checked.error) return failure('plan-check', `aether-plan check did not run: ${checked.error}`)
   if (!checked.ok) return failure('plan-check', `aether-plan check ${TASKS} failed after the Writer's second try: ${checked.errors.join(' ')}`)
@@ -891,7 +901,7 @@ async function reviews({ doc, path, phase, author, check, correct }) {
   for (let n = 1; ; n++) {
     const text = judgeMessage({ doc, path, check, earlier })
     const review = await seatRound({ seat: 'judge', doc, step: `review ${n}`, text, schema: JUDGE_SCHEMA, phase, author })
-    if (review.failed) return failure(`${doc}-judge`, review.failed)
+    if (review.failed) return failure(`${doc}-judge`, review.failed, review)
     const { verdict } = review.answer
     verdicts.push({ document: doc, round: n, seat: review.seat, verdict, text: review.text })
     if (verdict === 'approve') return { author }
@@ -930,7 +940,7 @@ function corrector(doc, path, phase) {
     const answer = isObject(review.answer) ? review.answer : {}
     const text = revisionMessage({ doc, path, n, findings: answer.findings, openQuestions: answer.openQuestions })
     const fixed = await round(step, text)
-    if (fixed.failed) return failure(`${doc}-writer`, fixed.failed)
+    if (fixed.failed) return failure(`${doc}-writer`, fixed.failed, fixed)
     if (doc !== 'plan') return { ...fixed, check: null }
     const checked = await checkedAfter(step, text, round)
     if (checked.end) return checked
@@ -942,6 +952,7 @@ function corrector(doc, path, phase) {
 // { status: 'failed', reason }. A failure here does not undo the approval.
 async function examine(author) {
   const round = await seatRound({ seat: 'examiner', doc: 'exam', step: '', text: examinerMessage(), schema: EXAMINER_SCHEMA, phase: 'Exam', author })
+  if (round.refused) return failure('examiner', round.failed, round).end
   if (round.failed) return { status: 'failed', reason: round.failed }
   if (round.seat !== 'native') {
     // An external Examiner's round stores the exam itself.
@@ -958,7 +969,7 @@ async function examine(author) {
 async function full() {
   // 1. The spec, from the card. A mark the Writer could not settle goes back to the Lead before any review.
   const spec = await seatRound({ seat: 'writer', doc: 'spec', step: 'write', text: specWriterMessage(), schema: SPEC_WRITER_SCHEMA, phase: 'Spec', writes: 'spec' })
-  if (spec.failed) return failure('spec-writer', spec.failed).end
+  if (spec.failed) return failure('spec-writer', spec.failed, spec).end
   const proposals = listOf(spec.answer.proposals)
   const clarify = listOf(spec.answer.clarify)
   if (clarify.length > 0) return { status: 'clarify', spec: SPEC, questions: clarify }
@@ -971,7 +982,7 @@ async function full() {
   const writePlan = (step, text) => seatRound({ seat: 'writer', doc: 'plan', step, text, schema: WRITER_SCHEMA, phase: 'Plan', writes: 'plan' })
   const planText = planWriterMessage()
   const plan = await writePlan('write', planText)
-  if (plan.failed) return failure('plan-writer', plan.failed).end
+  if (plan.failed) return failure('plan-writer', plan.failed, plan).end
   const checked = await checkedAfter('write', planText, writePlan)
   if (checked.end) return checked.end
   const written = checked.retried || plan
@@ -983,6 +994,7 @@ async function full() {
 
   // 5. The exam.
   const exam = await examine(planReviewed.author)
+  if (exam.stop) return exam
   return { status: 'approved', spec: SPEC, plan: PLAN, tasks: TASKS, complexity, proposals, exam }
 }
 
@@ -1003,7 +1015,10 @@ async function short() {
   const reviewed = await reviews({ doc, path: document, phase, author: input.author, check, correct: corrector(doc, document, phase) })
   if (reviewed.end) return reviewed.end
   const approved = { status: 'approved', document, complexity: '', proposals: [] }
-  if (doc === 'plan') approved.exam = await examine(reviewed.author)
+  if (doc === 'plan') {
+    approved.exam = await examine(reviewed.author)
+    if (approved.exam.stop) return approved.exam
+  }
   return approved
 }
 
@@ -1047,4 +1062,4 @@ function timesOf(records) {
 const outcome = mode === 'full' ? await full() : await short()
 log(`${feature}: ${outcome.status}`)
 const { status, ...fields } = outcome
-return { status, mode, feature, verdicts, rounds, times: timesOf(rounds), ...(writerQuestions.length > 0 ? { writerQuestions } : {}), ...fields }
+return { status, mode, feature, skill: 'aether:designing', verdicts, rounds, times: timesOf(rounds), ...(writerQuestions.length > 0 ? { writerQuestions } : {}), ...fields }

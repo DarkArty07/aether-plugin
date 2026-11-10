@@ -9,6 +9,7 @@ const { spawn } = require('node:child_process')
 const { repoPaths } = require('./git.js')
 const { readJsonOrNull, sleep } = require('./common.js')
 const run = require('./run.js')
+const autonomy = require('./autonomy.js')
 const lanes = require('./lanes.js')
 const { finishedResult } = require('./lane-calls.js')
 const seats = require('./seats.js')
@@ -99,9 +100,11 @@ function messageFile(top, session) {
 // Starts a round in the background. flags are the verb's flags by name, with the seat as flags.seat. The mod runs
 // this in Claude Code's own environment, which has none of the session's exports, so the options come in the flags
 // and the runner gets them as the variables seats.js reads.
-function start(cwd, flags, { env = process.env } = {}) {
+function start(cwd, flags, { env = process.env, now = Date.now() } = {}) {
   const checked = checkedFlags(flags)
   const { worktree: top } = repoPaths(cwd)
+  const refusal = autonomy.launchRefusal(top, { session: checked.session, dataDir: run.dataDir(env), now })
+  if (refusal) return { started: false, refused: true, stop: refusal.stop, run: refusal.id, reason: refusal.message }
   let message
   try {
     message = fs.readFileSync(messageFile(top, checked.session), 'utf8')
