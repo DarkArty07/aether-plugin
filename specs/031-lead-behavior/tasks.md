@@ -179,7 +179,7 @@ function planResult(toolUseId = 'toolu_plan_1', approved = true, timestamp = '20
   })
 }
 
-test('start in a Lead session rejects interactive cli transcript without ExitPlanMode approval, succeeds once approved, refuses reuse, and leaves non-Lead sessions unchanged', (t) => {
+test('start in a Lead session rejects interactive cli, missing-entrypoint, unknown-entrypoint and mixed transcripts without ExitPlanMode approval, succeeds once approved, resumes an open run without a new start, refuses reuse, and leaves non-Lead sessions unchanged', (t) => {
   const dataDir = useDataDir(t)
   const { markSession } = require('../plugins/aether/lib/session.js')
   const { configDir, mainRoot, transcript } = setup(t, {
@@ -206,6 +206,48 @@ test('start in a Lead session rejects interactive cli transcript without ExitPla
   )
   assert.equal(withoutPlan.ok, false)
   assert.match(withoutPlan.reason, /plan mode/i)
+
+  // Missing entrypoint (no entrypoint field in JSON) fails closed without ExitPlanMode
+  fs.writeFileSync(
+    transcript(SESSION),
+    [human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: undefined })].join('\n') + '\n'
+  )
+  const missingEntrypoint = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(missingEntrypoint.ok, false)
+  assert.match(missingEntrypoint.reason, /plan mode/i)
+
+  // Unknown entrypoint ('desktop') fails closed without ExitPlanMode
+  fs.writeFileSync(
+    transcript(SESSION),
+    [human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'desktop' })].join('\n') + '\n'
+  )
+  const desktopEntrypoint = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(desktopEntrypoint.ok, false)
+  assert.match(desktopEntrypoint.reason, /plan mode/i)
+
+  // Mixed 'sdk-cli' and 'cli' records fail closed without ExitPlanMode
+  fs.writeFileSync(
+    transcript(SESSION),
+    [
+      human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'sdk-cli' }),
+      human('continua', '2026-04-06T10:00:02.000Z', { entrypoint: 'cli' }),
+    ].join('\n') + '\n'
+  )
+  const mixedEntrypoint = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(mixedEntrypoint.ok, false)
+  assert.match(mixedEntrypoint.reason, /plan mode/i)
 
   fs.writeFileSync(
     transcript(SESSION),
@@ -236,6 +278,13 @@ test('start in a Lead session rejects interactive cli transcript without ExitPla
     { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
   )
   assert.equal(approvedPlan.ok, true)
+
+  // Resuming an open run reads status on the open run with no new start or new plan approval
+  const resumed = autonomy.status(mainRoot, { now: Date.parse('2026-04-06T10:05:00.000Z') })
+  assert.equal(resumed.open, true)
+  assert.equal(resumed.id, approvedPlan.run.id)
+  assert.equal(resumed.stop, null)
+
   autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:10:00.000Z') })
 
   const reusedApproval = autonomy.start(
@@ -376,11 +425,13 @@ test('models and designing skills exist with valid frontmatter and expected cont
   assert.match(designing, /specs\/NNN-<topic>\/intent\.md/)
   assert.match(designing, /\/aether:design/)
   assert.match(designing, /aether-exam store specs\/NNN-<topic>/)
+  assert.doesNotMatch(designing, /`aether-exam store`/)
 })
 
 test('skills skill uses --author flag in aether-autonomy trust command', () => {
   const text = read('skills', 'skills', 'SKILL.md')
   assert.match(text, /aether-autonomy trust --author <author> --quote "<their words>"/)
+  assert.doesNotMatch(text, /aether-autonomy trust <author>/)
 })
 ```
 
@@ -793,7 +844,7 @@ test('aether-plan compile refuses in a Lead session when an open autonomous run 
    - Si devuelve `refusal`, retornar `{ started: false, refused: true, stop: refusal.stop, run: refusal.id, reason: refusal.message }`.
 2. En `plugins/aether/workflows/design.workflow.js`:
    - En `awaitSeat({ seat, doc, base, flags, exclude, text, phase })`: tras `const started = parseObject(await ops(...))`, antes de `if (started.error || started.started !== true || typeof started.id !== 'string')`, si `started && started.refused === true` retornar `{ id: null, refused: true, stop: started.stop, run: started.run, note: started.reason || 'autonomous run ceiling reached' }`.
-   - En `seatRound({ seat, doc, step, text, schema, nativeSchema = schema, phase, author = null, writes = null })`: tras `const waited = await awaitSeat(...)`, si `waited.refused === true` asignar `record.note = waited.note`, hacer `rounds.push(record)` y retornar de inmediato `{ failed: waited.note, refused: true, stop: waited.stop, run: waited.run }` (sin reintentar ni llamar a `nativeAnswer`).
+   - En `seatRound({ seat, doc, step, text, schema, nativeSchema = schema, phase, author = null, writes = null })`: tras `const waited = await awaitSeat(...)`, si `waited.refused === true` asignar `record.note = waited.note` y retornar de inmediato `{ failed: waited.note, refused: true, stop: waited.stop, run: waited.run }` (sin volver a hacer `rounds.push(record)`, que ya corrió al abrir la ronda en `design.workflow.js:614`, y sin reintentar ni llamar a `nativeAnswer`).
    - En `failure(step, reason, extra = {})` y en la propagación de rondas fallidas (`spec`, `review`, `plan`, `fixed`): conservar `stop` y `run` cuando vengan en la ronda fallida.
    - En el `return` final del workflow (`return { status, mode, feature, skill: 'aether:designing', verdicts, rounds, times: timesOf(rounds), ...(writerQuestions.length > 0 ? { writerQuestions } : {}), ...fields }`) y en los retornos tempranos de validación: incluir siempre `skill: 'aether:designing'`.
 
@@ -1201,9 +1252,9 @@ Actualizar `plugins/aether/skills/autonomous-runs/SKILL.md` y `plugins/aether/sk
    - Mantener la regla `"Never run the swarm on main."` añadiendo que `aether-plan compile` tiene la bandera `--allow-main` para cuando el dueño pida explícitamente compilar en `main`, sin invitar a usarla por cuenta propia.
    - En las fusiones: nombrar `aether-wt settle <run-dir> <wave-num> <task-id> <branch> --test-cmd "<cmd>"` cuando una fusión se corta a los 600 segundos (`merge timed out after 600s`) para inspeccionar o terminar el merge antes de decidir.
    - En la escalera del supervisor:
-     - Explicar que `"the supervisor failed 3 times in a row"` ocurre cuando el supervisor termina tres veces sin devolver respuesta, mientras que un veredicto inválido (`verdict` que no es `approve`, `retry` ni `impossible`, o `retry` sin `findings`) cuenta como un intento `retry` de la tarea.
-     - Explicar que el 2.º y 3.er intento del supervisor corren siempre en Claude y que un supervisor o revisor final de Claude que permanezca callado 900 segundos se abandona.
-     - Explicar que un hallazgo del supervisor que no nombra ningún archivo recibe el primer archivo listado en el `Owns` de la tarea.
+     - En `plugins/aether/skills/swarm/SKILL.md:111`, reemplazar `"the supervisor ended three times without a valid verdict"` para explicar que `"the supervisor failed 3 times in a row"` ocurre cuando el supervisor termina tres veces sin devolver respuesta (`"the supervisor ended three times without an answer"`), mientras que un veredicto inválido (`"an invalid verdict counts as a retry"`).
+     - Explicar que el 2.º y 3.er intento del supervisor corren siempre en Claude (`"the 2nd and 3rd attempt of the supervisor always run on Claude"`) y que un supervisor o revisor final de Claude que permanezca callado 900 segundos se abandona.
+     - Explicar que un hallazgo del supervisor que no nombra ningún archivo recibe el primer archivo listado en el `Owns` de la tarea (`"first file in the task's \`Owns\`"`).
 3. Cadenas que otras pruebas fijan y esta tarea conserva literalmente: en `**Start:**`, `plan mode` antes de `aether-autonomy start` y «their answer to the plan dialog is not such a message» (`tests/docs-facts.test.js`, prueba A108, que esta tarea posee para corregirla en el mismo ciclo; no se espera edición); en la skill del enjambre, `the ladder is spent (exhausted)` (`workflow-split`), `Blocked by a lane` (`launcher`) y `Defer the minor ones` (`roles`); en `**Ceilings.**`, `Let what is running finish` una sola vez (`quota-brake-docs`).
 4. En `tests/roles.test.js`, la prueba «in an autonomous run the swarm checks the ceilings, records its cost, and leaves unauthorized steps to the brief» fija hoy la cadena `'aether-autonomy status'` en la skill del enjambre: reemplazarla por `'aether-autonomy end --outcome ceiling'`, que el enjambre sigue nombrando al explicar el rechazo. Las demás agujas de esa prueba no cambian.
 5. En `tests/quota-brake-docs.test.js`:
@@ -1227,8 +1278,12 @@ test('autonomous-runs and swarm skills describe automatic ceiling refusal and #2
   assert.match(swarmText, /Never run the swarm on `main`/)
   assert.match(swarmText, /--allow-main/)
   assert.match(swarmText, /aether-autonomy end --outcome ceiling/)
-  assert.doesNotMatch(swarmText, /run `aether-autonomy status` first/)
+  assert.doesNotMatch(swarmText, /run `aether-autonomy status` first|after the `aether-autonomy status` check of §3 in a run/)
   assert.match(swarmText, /aether-wt settle/)
+  assert.doesNotMatch(swarmText, /without a valid verdict/)
+  assert.match(swarmText, /without an answer/)
+  assert.match(swarmText, /an invalid verdict counts as a retry|an invalid verdict counts as a `retry`/)
+  assert.match(swarmText, /the 2nd and 3rd attempt of the supervisor always run on Claude/)
   assert.match(swarmText, /900/)
   assert.match(swarmText, /first file in the task's `Owns`|first path in the task's `Owns`/i)
 })
@@ -1262,13 +1317,13 @@ En `plugins/aether/skills/using-aether/SKILL.md`, resumir `## Models` y `## Desi
      (aclarando que quedan fuera de ese conteo las escrituras en el diario, `specs/NNN-<topic>/intent.md`, documentos en `specs/` o `docs/`, memoria y las corridas de pruebas).
    - En `## Models`: conservar las prohibiciones de no adivinar nombres de modelos ni precios desde los pesos, las rutas a `models.json` y a `prices.json` bajo `config` de la carpeta del plugin, la lista de harnesses (`agy, codex, grok, cursor, muse`) y la regla de cuota (`first the quota whose weekly window renews first, then the cheapest pair per task`), e indicar cargar la skill `aether:models` antes de responder sobre capacidades, esfuerzos o citas del fabricante.
    - En `## Designing`: conservar qué es diseñar, la prohibición de no escribir `spec.md`, `plan.md`, `tasks.md` ni `art-direction.md` sin `/aether:design` (salvo diseño corto pedido por el dueño), las referencias a `aether:writer`, `aether:judge`, `aether:specify`, `aether:examiner`, `At most two revisions per document`, `.aether/pending.jsonl`, `specs/NNN-<topic>/intent.md`, `/aether:design`, `aether-report --seats`, `aether-exam run` y `aether-exam store specs/NNN-<topic>`, e indicar cargar la skill `aether:designing` antes de redactar `intent.md`, lanzar `/aether:design` o procesar su respuesta.
-   - En `## The delegate ladder` (puntos de #204, R10):
-     - Explicar que cada llamada a `Agent` cuyo `subagent_type` no sea `aether:*` (incluidos `Plan`, `claude-code-guide` o llamadas sin `subagent_type`) es una tarea delegada, entra en la escalera y espera veredicto.
-     - Prohibir pasar `fork` en una tarea delegada porque la herramienta `Agent` ignora `model` en un fork y correría en el modelo del Lead con toda su conversación.
-     - Explicar que `fix` corre en el mismo modelo al esfuerzo de corrección del escalón definido en `ladder.json` (la ruta completa ya está escrita en `## The three paths` y en `## The delegate ladder`, y `delegate-skill` la fija: no se toca; no «one effort up»).
+   - En `## The delegate ladder` y `## Skills` (puntos de #204, R10):
+     - Explicar que cada llamada a `Agent` cuyo `subagent_type` no sea `aether:*` (incluidos `Plan`, `claude-code-guide` o llamadas sin `subagent_type`) es una tarea delegada, entra en la escalera y espera veredicto (`"every \`Agent\` call whose \`subagent_type\` is not \`aether:*\` (including \`Plan\`, \`claude-code-guide\`, or a call with no \`subagent_type\`) is a delegate task, climbs the ladder, and waits for a verdict"`).
+     - En la línea 114, reemplazar `"A delegate task is never a fork: a fork always runs on your model."` por `"Do not pass \`fork\` on a delegate task: \`Agent\` ignores \`model\` on a fork and would run on your model with your whole conversation."`.
+     - En la línea 124, reemplazar `"one effort up but never above its step's correction effort"` para explicar que `fix` corre en el mismo modelo al esfuerzo de corrección del escalón definido en `ladder.json` (`"at the step's correction effort"`, seguido de la ruta a `ladder.json` bajo `config`, conservando además la ruta completa de `ladder.json` en `## The three paths` y en `## The delegate ladder` que `delegate-skill` fija; no «one effort up»).
      - Incluir `--ignore <glob>` en `aether-delegate verdict` para archivos sucios ajenos a la tarea.
-     - Explicar que relanzar un `task` id ya aprobado o agotado lanza un agente mínimo en Haiku que informa que la tarea ya terminó y que debe abrirse un nuevo `task` id.
-     - Explicar que en `AETHER-SKILLS:`, pasar más de 3 skills, un nombre desconocido o una skill que supere el límite de líneas rechaza el lanzamiento entero.
+     - Explicar que relanzar un `task` id ya aprobado o agotado lanza un agente en Haiku que dice que no hay nada que hacer (`"relaunching an approved or exhausted task id launches a Haiku agent that says there is nothing to do"`).
+     - En `## Skills` (línea 59) o en `## The delegate ladder`: explicar que en `AETHER-SKILLS:`, pasar más de 3 skills, un nombre desconocido o una skill que supere el límite de líneas rechaza el lanzamiento entero (`"passing more than 3 skills, an unknown skill name, or a skill over the line limit in \`AETHER-SKILLS:\` rejects the whole launch"`).
 2. En las pruebas propietarias de esta tarea:
    - `tests/bootstrap-design.test.js`: comprobar en `plugins/aether/skills/using-aether/SKILL.md` (`## Designing`) las reglas permanentes que se quedan en el arranque (`'/aether:design'`, `'You decide no round, and you start no seat'`, `'Only you write the card: aether-guard refuses every other writer'`, `'Never override the Judge silently'`, `'aether:designing'`) y comprobar en `plugins/aether/skills/designing/SKILL.md` el procedimiento detallado trasladado allí (`'at most five questions, one at a time'`, `'hard to reverse, surprising, or a real trade-off'`, `'specs/NNN-<topic>/intent.md'`, `"the owner's words, quoted as they said them"`, `'what is out'`, `'the answers to the clarifying questions'`, `'At most two revisions per document'`, `'"session": "<CLAUDE_CODE_SESSION_ID>"'`, `'"mode": "short"'`, `'- \`approved\`:'`, `'- \`clarify\`:'`, `'- \`dispute\`:'`, `'- \`failed\`:'`, `'take the reversible side of each as an assumption, put the question in "Espera tu sí"'`, `'change the plan or tasks and launch in short mode (see "Later changes"); when \`mechanical\` is true, fix the findings yourself.'`, `'**Later changes.**'`, `'a fix after a stop at the plan stage'`, `'A changed plan gets a new exam'`, `'an approved spec is never rewritten'`).
    - `tests/bootstrap-names.test.js`: mantener la comprobación del orden de las 5 secciones `['## The route by size and risk', '## The three paths', '## The delegate ladder', '## Models', '## Designing']`, actualizar `rubric(...)` para leer la tabla de precios y citas del fabricante desde `plugins/aether/skills/models/SKILL.md`, e incluir `skills/models/SKILL.md` y `skills/designing/SKILL.md` en `sources(t)`.
@@ -1285,8 +1340,20 @@ Añadir en `tests/using-aether-030.test.js` (usando `text`, `PLUGIN` y `bootstra
 test('the bootstrap keeps the canonical rule of the direct path and the corrections of #204, points to aether:models and aether:designing, and weighs at most 25,000 characters (R6, R9, R10)', () => {
   const rule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
   assert.ok(text.includes(rule))
-  assert.ok(!/about five tool calls|many reads of your own|one effort up/.test(text))
-  for (const token of ['aether:models', 'aether:designing', '`subagent_type`', 'claude-code-guide', '--ignore <glob>', '`fork`', 'AETHER-SKILLS:']) {
+  assert.doesNotMatch(text, /about five tool calls|many reads of your own|one effort up|a fork always runs on your model|`aether-exam store`/)
+  for (const token of [
+    'aether:models',
+    'aether:designing',
+    ["at the step's correction effort in `config", 'ladder.json`'].join('/'),
+    'ignores `model` on a fork and would run on your model with your whole conversation',
+    'every `Agent` call whose `subagent_type` is not `aether:*`',
+    'claude-code-guide',
+    '--ignore <glob>',
+    'aether-autonomy trust --author <author> --quote "<their words>"',
+    'aether-exam store specs/NNN-<topic>',
+    'relaunching an approved or exhausted task id launches a Haiku agent',
+    'passing more than 3 skills, an unknown skill name, or a skill over the line limit in `AETHER-SKILLS:` rejects the whole launch',
+  ]) {
     assert.ok(text.includes(token), `the bootstrap names ${token}`)
   }
   // Each part is { heading, slice, context, output }: the context is what the Lead is given.
