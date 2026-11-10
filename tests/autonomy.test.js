@@ -850,8 +850,10 @@ test('launchRefusal reports time, cost and quota stops in a Lead session, finds 
     stop: 'quota', id: started.run.id,
     hours: quotaStatus.hours, usd: { spent: 0, ceiling: 5 },
     quota: { paused: true, brakeOff: false, resetsAt, resumeAt: quotaStatus.quota.resumeAt, percentUsed: 80 },
-    message: `autonomous run ${started.run.id} is paused by the quota brake (80% used; resumeAt ${quotaStatus.quota.resumeAt}); wait until ${quotaStatus.quota.resumeAt} or close the run with: aether-autonomy end --outcome incomplete`,
+    message: `autonomous run ${started.run.id} is paused by the quota brake (80% used; resumeAt ${quotaStatus.quota.resumeAt}); it is paused, not ended; start nothing of this run and wait until it resumes; and only an old run that another session left open is closed, with: aether-autonomy end --outcome incomplete`,
   })
+  assert.ok(byQuota.message.includes('paused, not ended'))
+  assert.ok(!byQuota.message.includes('or close the run'))
 
   // Spend ceiling (in a fresh run with a 10-hour ceiling)
   autonomy.end(mainRoot, 'incomplete', { now: t0 + 4000 })

@@ -584,7 +584,7 @@ function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date
   let message
   if (st.stop === 'time') message = `autonomous run ${st.id} reached its time ceiling (${st.hours.elapsed}h / ${st.hours.ceiling}h); close it with: aether-autonomy end --outcome ceiling`
   else if (st.stop === 'cost') message = `autonomous run ${st.id} reached its spend ceiling ($${st.usd.spent} / $${st.usd.ceiling}); close it with: aether-autonomy end --outcome ceiling`
-  else if (st.stop === 'quota') message = `autonomous run ${st.id} is paused by the quota brake (${st.quota.percentUsed}% used; resumeAt ${st.quota.resumeAt || 'pending'}); wait until ${st.quota.resumeAt || 'the quota window resets'} or close the run with: aether-autonomy end --outcome incomplete`
+  else if (st.stop === 'quota') message = `autonomous run ${st.id} is paused by the quota brake (${st.quota.percentUsed}% used; resumeAt ${st.quota.resumeAt || 'pending'}); it is paused, not ended; start nothing of this run and wait until it resumes; and only an old run that another session left open is closed, with: aether-autonomy end --outcome incomplete`
   else return null
   return { stop: st.stop, id: st.id, hours: st.hours, usd: st.usd, quota: st.quota, message }
 }
