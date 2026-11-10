@@ -96,7 +96,7 @@ The ladder is `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`. Exclude diary writes, 
 
 - **The brief** is self-contained: goal, files, tests, acceptance, exclusions, no irreversible actions, and the ladder's task lines. For conceptual changes, it includes the owner's decisive words, quoted as they wrote them, and asks the delegate to quote them in the issue or the `docs/decisions.md` entry.
 
-- **In the background:** run delegates there so the owner can keep talking. Their notification wakes you: end your turn or work; schedule no wakeup (`ScheduleWakeup`, cron or sleep), except the `aether:autonomous-runs` fallback. A wakeup costs a full turn and prevents headless exit.
+- **In the background:** the notification of a delegate wakes you: end your turn or work; schedule no wakeup (`ScheduleWakeup`, cron or sleep). The exception is the fallback of the `aether:autonomous-runs` skill. A wakeup costs a full turn and prevents headless exit.
 
 - **Verify before you relay:** results carry system checks and, for editing delegates on other harnesses, tests and another pair's review. Decide from these; do not read the whole diff when they are enough. Read it when evidence conflicts or is missing (Claude delegates have no reviewer). Give a verdict before relaying claims. Before claiming a command, skill, file or branch is absent, check `git worktree list`, `git branch -vv` and latest merges; distinguish installed release, main and branches.
 
