@@ -7,10 +7,12 @@
 
 const fs = require('node:fs')
 const crypto = require('node:crypto')
+const { spawnSync } = require('node:child_process')
 const path = require('node:path')
 const { ownerMessages, findTranscript } = require('./voice.js')
 const { newRunId, isRunId, dataDir: runDataDir } = require('./run.js')
-const { readBrakeSettings } = require('./session.js')
+const { readBrakeSettings, isAetherSession } = require('./session.js')
+const { repoPaths } = require('./git.js')
 const { isObject } = require('./common.js')
 const { trustedFile } = require('./skill-rules.js')
 
@@ -58,6 +60,54 @@ function transcriptLines(sessionId, configDir) {
   } catch {
     return null
   }
+}
+
+function readSessionRecords(configDir, sessionId) {
+  const lines = transcriptLines(sessionId, configDir)
+  if (lines === null) return { found: false, records: [] }
+  const records = []
+  for (const line of lines) {
+    try { records.push(JSON.parse(line)) } catch { /* Ignore malformed transcript lines. */ }
+  }
+  return { found: true, records }
+}
+
+function isHeadlessTranscript(records) {
+  return records.some((r) => r && r.entrypoint === 'sdk-cli') &&
+    records.every((r) => !r || typeof r.entrypoint !== 'string' || r.entrypoint === 'sdk-cli')
+}
+
+function countApprovedPlanModes(records) {
+  const uses = new Set()
+  const counted = new Set()
+  let approvals = 0
+  for (const record of records) {
+    const content = record && record.message && record.message.content
+    if (!Array.isArray(content)) continue
+    for (const block of content) {
+      if (!block || typeof block !== 'object') continue
+      if (record.type === 'assistant' && block.type === 'tool_use' && block.name === 'ExitPlanMode' && typeof block.id === 'string') uses.add(block.id)
+      if (record.type !== 'user' || block.type !== 'tool_result' || !uses.has(block.tool_use_id) || counted.has(block.tool_use_id) || block.is_error === true) continue
+      const texts = typeof block.content === 'string' ? [block.content] : Array.isArray(block.content) ? block.content.filter((part) => part && part.type === 'text' && typeof part.text === 'string').map((part) => part.text) : []
+      if (texts.some((text) => text.startsWith('User has approved your plan.') || text.includes('\nUser has approved your plan.'))) {
+        counted.add(block.tool_use_id)
+        approvals++
+      }
+    }
+  }
+  return approvals
+}
+
+function countSessionRuns(root, sessionId) {
+  const dir = autonomyDir(root)
+  if (!fs.existsSync(dir)) return 0
+  let count = 0
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const file = runPaths(root, entry.name).runFile
+    if (fs.existsSync(file) && readRun(file).session === sessionId) count++
+  }
+  return count
 }
 
 const NEGATED_REASON = "the quote is in a negated clause of the owner's message"
@@ -407,7 +457,7 @@ function diarySkeleton(run) {
   ].join('\n')
 }
 
-function start(mainRoot, { quote, session, hours = null, usd = null }, { configDir, now = Date.now() } = {}) {
+function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { configDir, dataDir = runDataDir(), now = Date.now() } = {}) {
   const defaults = loadCeilings()
   const h = ceiling(hours, defaults.hours)
   const u = ceiling(usd, defaults.usd)
@@ -415,6 +465,12 @@ function start(mainRoot, { quote, session, hours = null, usd = null }, { configD
   if (open) throw new Error(`run ${open.id} is already open`)
   const verified = verifyQuote(session, quote, { configDir })
   if (!verified.ok) return { ok: false, reason: verified.reason }
+  if (isAetherSession(resolveDataDir(dataDir), session)) {
+    const { records } = readSessionRecords(configDir, session)
+    if (!isHeadlessTranscript(records) && countApprovedPlanModes(records) <= countSessionRuns(mainRoot, session)) {
+      return { ok: false, reason: 'interactive session requires an approved plan in plan mode (ExitPlanMode) before starting an autonomous run; present the plan in plan mode and wait for the owner to approve it before running aether-autonomy start' }
+    }
+  }
   const run = {
     id: `auto-${newRunId(new Date(now))}`,
     session,
@@ -505,6 +561,29 @@ function status(mainRoot, { now = Date.now() } = {}) {
   const open = findOpenRun(mainRoot)
   if (!open) return { open: false }
   return statusOfRun(open.run, open.paths, now)
+}
+
+function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date.now() } = {}) {
+  if (!isAetherSession(resolveDataDir(dataDir), session)) return null
+  let mainRoot
+  try { mainRoot = repoPaths(cwd).mainRoot } catch (error) {
+    // Normalize only the diagnostic probe's locale; repoPaths preserves operational errors.
+    if (error.code) throw error
+    const probe = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' },
+    })
+    if (probe.error) throw probe.error
+    if (probe.status === 128 && /^fatal: not a git repository\b/.test(probe.stderr)) return null
+    throw error
+  }
+  const st = status(mainRoot, { now })
+  if (!st.open || !st.stop) return null
+  let message
+  if (st.stop === 'time') message = `autonomous run ${st.id} reached its time ceiling (${st.hours.elapsed}h / ${st.hours.ceiling}h); close it with: aether-autonomy end --outcome ceiling`
+  else if (st.stop === 'cost') message = `autonomous run ${st.id} reached its spend ceiling ($${st.usd.spent} / $${st.usd.ceiling}); close it with: aether-autonomy end --outcome ceiling`
+  else if (st.stop === 'quota') message = `autonomous run ${st.id} is paused by the quota brake (${st.quota.percentUsed}% used; resumeAt ${st.quota.resumeAt || 'pending'}); wait until ${st.quota.resumeAt || 'the quota window resets'} or close the run with: aether-autonomy end --outcome incomplete`
+  else return null
+  return { stop: st.stop, id: st.id, hours: st.hours, usd: st.usd, quota: st.quota, message }
 }
 
 function spend(mainRoot, usd, source, { now = Date.now() } = {}) {
@@ -736,6 +815,7 @@ module.exports = {
   list,
   openRun,
   start,
+  launchRefusal,
   spend,
   status,
   end,

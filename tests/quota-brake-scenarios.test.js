@@ -17,8 +17,8 @@ const SESSION = 'sess-scenarios-1'
 const HOURS = 'trabaja por horas en esto, no cuentes conmigo hasta acabar'
 const UNLIMITED = 'sigue hasta acabar aunque se acabe la cuota'
 
-const human = (text, time) =>
-  JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })
+const human = (text, time, extra = {}) =>
+  JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, entrypoint: 'sdk-cli', timestamp: time, message: { role: 'user', content: text }, ...extra })
 const show = (repo, spec) => spawnSync('git', ['show', spec], { cwd: repo.dir, encoding: 'utf8' }).stdout
 const iso = (ms) => new Date(ms).toISOString()
 

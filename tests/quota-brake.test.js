@@ -15,8 +15,8 @@ const T0 = Date.parse('2026-10-21T10:00:00.000Z')
 const RESET = '2026-10-21T12:00:00.000Z'
 const RESUME = '2026-10-21T12:02:00.000Z'
 
-const human = (text, time) =>
-  JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })
+const human = (text, time, extra = {}) =>
+  JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, entrypoint: 'sdk-cli', timestamp: time, message: { role: 'user', content: text }, ...extra })
 
 function setup(t) {
   const configDir = tempDir(t, 'aether-claude-')

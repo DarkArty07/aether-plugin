@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const crypto = require('node:crypto')
 const path = require('node:path')
-const { tempDir, makeRepo, PLUGIN } = require('./helpers.js')
+const { tempDir, makeRepo, useDataDir, PLUGIN } = require('./helpers.js')
 const autonomy = require('../plugins/aether/lib/autonomy.js')
 
 const SESSION = 'sess-owner-1'
@@ -15,11 +15,12 @@ const HOUR = 3600 * 1000
 
 const MERGE = 'apruebo merge a main en esta ocasion y en todas las futuras ocasiones'
 const HOURS = 'trabaja por horas en esto, no cuentes conmigo hasta acabar'
+const QUOTE = HOURS
 const REVOKE = 'ya no fusiones a main sin preguntarme'
 
 // Records shaped like Claude Code transcripts (see tests/voice.test.js).
-const human = (text, time) =>
-  JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })
+const human = (text, time, extra = {}) =>
+  JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, entrypoint: 'sdk-cli', timestamp: time, message: { role: 'user', content: text }, ...extra })
 const assistant = (text) =>
   JSON.stringify({ type: 'assistant', timestamp: '2026-10-09T19:00:01.000Z', message: { role: 'assistant', content: [{ type: 'text', text }] } })
 const toolResult = (text) =>
@@ -556,4 +557,379 @@ test('quarantine sets aside the folder of a run whose run.json cannot be read, a
   assert.equal(moved.ok, true)
   assert.equal(fs.existsSync(dir), false)
   assert.equal(fs.readFileSync(path.join(moved.to, 'diary.md'), 'utf8'), 'the diary')
+})
+
+function planUse(toolUseId = 'toolu_plan_1', timestamp = '2026-04-06T10:00:02.000Z') {
+  return JSON.stringify({
+    type: 'assistant',
+    entrypoint: 'cli',
+    timestamp,
+    message: {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: toolUseId, name: 'ExitPlanMode', input: {} }],
+    },
+  })
+}
+
+function planResult(toolUseId = 'toolu_plan_1', approved = true, timestamp = '2026-04-06T10:00:03.000Z') {
+  return JSON.stringify({
+    type: 'user',
+    entrypoint: 'cli',
+    timestamp,
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: toolUseId,
+          is_error: !approved,
+          content: approved
+            ? 'User has approved your plan. You can now start coding.'
+            : "The user doesn't want to proceed with this tool use.",
+        },
+      ],
+    },
+  })
+}
+
+test('start in a Lead session rejects interactive cli, missing-entrypoint, unknown-entrypoint and mixed transcripts without ExitPlanMode approval, succeeds once approved, resumes an open run without a new start, refuses reuse, and leaves non-Lead sessions unchanged', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const { configDir, mainRoot, transcript } = setup(t, {
+    [SESSION]: [human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' })],
+  })
+
+  // Outside a Lead session (not marked): works as today without ExitPlanMode (C7)
+  const plainStart = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(plainStart.ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:01:00.000Z') })
+  fs.rmSync(path.join(mainRoot, '.aether', 'autonomy'), { recursive: true, force: true })
+
+  // Mark as Lead session
+  markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+
+  const withoutPlan = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(withoutPlan.ok, false)
+  assert.match(withoutPlan.reason, /plan mode/i)
+
+  // Missing entrypoint (no entrypoint field in JSON) fails closed without ExitPlanMode
+  fs.writeFileSync(
+    transcript(SESSION),
+    [human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: undefined })].join('\n') + '\n'
+  )
+  const missingEntrypoint = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(missingEntrypoint.ok, false)
+  assert.match(missingEntrypoint.reason, /plan mode/i)
+
+  // Unknown entrypoint ('desktop') fails closed without ExitPlanMode
+  fs.writeFileSync(
+    transcript(SESSION),
+    [human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'desktop' })].join('\n') + '\n'
+  )
+  const desktopEntrypoint = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(desktopEntrypoint.ok, false)
+  assert.match(desktopEntrypoint.reason, /plan mode/i)
+
+  // Mixed 'sdk-cli' and 'cli' records fail closed without ExitPlanMode
+  fs.writeFileSync(
+    transcript(SESSION),
+    [
+      human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'sdk-cli' }),
+      human('continua', '2026-04-06T10:00:02.000Z', { entrypoint: 'cli' }),
+    ].join('\n') + '\n'
+  )
+  const mixedEntrypoint = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(mixedEntrypoint.ok, false)
+  assert.match(mixedEntrypoint.reason, /plan mode/i)
+
+  fs.writeFileSync(
+    transcript(SESSION),
+    [
+      human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+      planUse('toolu_p1'),
+      planResult('toolu_p1', false),
+    ].join('\n') + '\n'
+  )
+  const rejectedPlan = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(rejectedPlan.ok, false)
+
+  fs.writeFileSync(
+    transcript(SESSION),
+    [
+      human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+      planUse('toolu_p1'),
+      planResult('toolu_p1', true),
+    ].join('\n') + '\n'
+  )
+  const approvedPlan = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
+  )
+  assert.equal(approvedPlan.ok, true)
+
+  // Resuming an open run reads status on the open run with no new start or new plan approval
+  const resumed = autonomy.status(mainRoot, { now: Date.parse('2026-04-06T10:05:00.000Z') })
+  assert.equal(resumed.open, true)
+  assert.equal(resumed.id, approvedPlan.run.id)
+  assert.equal(resumed.stop, null)
+
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:10:00.000Z') })
+
+  const reusedApproval = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 2 },
+    { configDir, dataDir, now: Date.parse('2026-04-06T10:11:00.000Z') }
+  )
+  assert.equal(reusedApproval.ok, false)
+  assert.match(reusedApproval.reason, /plan mode/i)
+})
+
+test('interactive plan approvals require an earlier matching use and accept text blocks only once per ID', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const { configDir, mainRoot, transcript } = setup(t)
+  markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+  const owner = human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' })
+  const start = (now) => autonomy.start(mainRoot, { quote: QUOTE, session: SESSION, hours: 2 }, { configDir, dataDir, now })
+  const write = (lines) => fs.writeFileSync(transcript(SESSION), [owner, ...lines].join('\n') + '\n')
+  const errorResult = JSON.parse(planResult('p1'))
+  errorResult.message.content[0].is_error = true
+  for (const [name, lines] of [
+    ['no tool use', [planResult('p1')]],
+    ['result before use', [planResult('p1'), planUse('p1')]],
+    ['different ID', [planUse('p1'), planResult('p2')]],
+    ['error with approval text', [planUse('p1'), JSON.stringify(errorResult)]],
+  ]) {
+    write(lines)
+    const result = start(Date.parse('2026-04-06T10:00:05.000Z'))
+    assert.equal(result.ok, false, name)
+    assert.match(result.reason, /plan mode/i, name)
+  }
+
+  const blockResult = JSON.parse(planResult('p1'))
+  blockResult.message.content[0].content = [
+    { type: 'image', text: 'ignored' },
+    { type: 'text', text: 'Plan review\nUser has approved your plan. You can now start coding.' },
+  ]
+  const firstApproval = [planUse('p1'), JSON.stringify(blockResult)]
+  write(firstApproval)
+  assert.equal(start(Date.parse('2026-04-06T10:00:05.000Z')).ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:01:00.000Z') })
+
+  // Neither a repeated result nor another use of the same ID grants a second run.
+  write([...firstApproval, planResult('p1'), planUse('p1'), planResult('p1')])
+  const duplicate = start(Date.parse('2026-04-06T10:02:00.000Z'))
+  assert.equal(duplicate.ok, false)
+  assert.match(duplicate.reason, /plan mode/i)
+
+  write([...firstApproval, planUse('p2'), planResult('p2')])
+  const second = start(Date.parse('2026-04-06T10:03:00.000Z'))
+  assert.equal(second.ok, true)
+  assert.equal(autonomy.status(mainRoot).id, second.run.id)
+})
+
+test('launchRefusal reports time, cost and quota stops in a Lead session, finds the run from a linked worktree, and returns null outside a Lead session or outside git', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const { configDir } = setup(t, {
+    [SESSION]: [human(QUOTE, '2026-04-06T10:00:01.000Z')],
+  })
+  // The runs live in the main checkout of a real repository, and a linked worktree is another path into it.
+  const repo = makeRepo(t)
+  const mainRoot = repo.dir
+  const linked = path.join(tempDir(t, 'aether-linked-'), 'wt')
+  repo.git('worktree', 'add', '-q', '-b', 'linked/x', linked)
+  markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+
+  const t0 = Date.parse('2026-04-06T10:00:05.000Z')
+  assert.equal(autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 }), null)
+  const started = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 1, usd: 5 },
+    { configDir, dataDir, now: t0 }
+  )
+  assert.equal(started.ok, true)
+  assert.equal(autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 1000 }), null)
+
+  // Time ceiling
+  const byTime = autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 3601 * 1000 })
+  assert.equal(byTime.stop, 'time')
+  assert.equal(byTime.id, started.run.id)
+  assert.deepEqual(byTime, {
+    stop: 'time', id: started.run.id,
+    hours: { elapsed: 1, ceiling: 1, paused: 0 },
+    usd: { spent: 0, ceiling: 5 },
+    quota: { paused: false, brakeOff: false, resetsAt: null, resumeAt: null, percentUsed: null },
+    message: `autonomous run ${started.run.id} reached its time ceiling (1h / 1h); close it with: aether-autonomy end --outcome ceiling`,
+  })
+
+  // From a linked worktree the run of the main checkout is found all the same
+  const fromLinked = autonomy.launchRefusal(linked, { session: SESSION, dataDir, now: t0 + 3601 * 1000 })
+  assert.equal(fromLinked.stop, 'time')
+  assert.equal(fromLinked.id, started.run.id)
+  const subdir = path.join(mainRoot, 'nested')
+  fs.mkdirSync(subdir)
+  assert.deepEqual(autonomy.launchRefusal(subdir, { session: SESSION, dataDir, now: t0 + 3601 * 1000 }), byTime)
+
+  // Non-Lead session is not refused even when ceiling is reached
+  assert.equal(autonomy.launchRefusal(mainRoot, { session: 'plain-session', dataDir, now: t0 + 3601 * 1000 }), null)
+
+  // Outside a git repository there is no run to refuse
+  assert.equal(autonomy.launchRefusal(tempDir(t, 'aether-nogit-'), { session: SESSION, dataDir, now: t0 + 3601 * 1000 }), null)
+
+  // Quota pause
+  const resetsAt = new Date(t0 + 4 * 3600 * 1000).toISOString()
+  autonomy.recordCrossing(
+    mainRoot,
+    { kind: 'five_hour', percentUsed: 80, resetsAt, threshold: 80 },
+    { now: t0 + 2000, dataDir }
+  )
+  const byQuota = autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 3000 })
+  assert.equal(byQuota.stop, 'quota')
+  assert.equal(byQuota.id, started.run.id)
+  const quotaStatus = autonomy.status(mainRoot, { now: t0 + 3000 })
+  assert.deepEqual(byQuota, {
+    stop: 'quota', id: started.run.id,
+    hours: quotaStatus.hours, usd: { spent: 0, ceiling: 5 },
+    quota: { paused: true, brakeOff: false, resetsAt, resumeAt: quotaStatus.quota.resumeAt, percentUsed: 80 },
+    message: `autonomous run ${started.run.id} is paused by the quota brake (80% used; resumeAt ${quotaStatus.quota.resumeAt}); wait until ${quotaStatus.quota.resumeAt} or close the run with: aether-autonomy end --outcome incomplete`,
+  })
+
+  // Spend ceiling (in a fresh run with a 10-hour ceiling)
+  autonomy.end(mainRoot, 'incomplete', { now: t0 + 4000 })
+  const startedCost = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 10, usd: 5 },
+    { configDir, dataDir, now: t0 + 5000 }
+  )
+  assert.equal(startedCost.ok, true)
+  autonomy.spend(mainRoot, 5, 'u1', { now: t0 + 6000 })
+  const byCost = autonomy.launchRefusal(linked, { session: SESSION, dataDir, now: t0 + 7000 })
+  assert.equal(byCost.stop, 'cost')
+  assert.equal(byCost.id, startedCost.run.id)
+  assert.deepEqual(byCost, {
+    stop: 'cost', id: startedCost.run.id,
+    hours: { elapsed: 0, ceiling: 10, paused: 0 },
+    usd: { spent: 5, ceiling: 5 },
+    quota: { paused: false, brakeOff: false, resetsAt: null, resumeAt: null, percentUsed: null },
+    message: `autonomous run ${startedCost.run.id} reached its spend ceiling ($5 / $5); close it with: aether-autonomy end --outcome ceiling`,
+  })
+  autonomy.end(mainRoot, 'ceiling', { now: t0 + 8000 })
+  assert.equal(autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 9000 }), null)
+})
+
+test('interactive authorization handles transcript edge cases and runs from another session', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const { configDir, mainRoot, transcript } = setup(t, {
+    [SESSION]: [human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' })],
+    [OTHER]: [human(QUOTE, '2026-04-06T10:00:01.000Z')],
+  })
+  markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+  const start = (session = SESSION, now = Date.parse('2026-04-06T10:00:05.000Z')) =>
+    autonomy.start(mainRoot, { quote: QUOTE, session, hours: 2 }, { configDir, dataDir, now })
+  const owner = human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' })
+  const reason = 'interactive session requires an approved plan in plan mode (ExitPlanMode) before starting an autonomous run; present the plan in plan mode and wait for the owner to approve it before running aether-autonomy start'
+  const invalid = JSON.parse(planResult('p1'))
+  invalid.message.content[0].content = 'prefix User has approved your plan.'
+  for (const content of [invalid.message.content[0].content, [{ type: 'text', text: invalid.message.content[0].content }], [{ type: 'image', text: 'User has approved your plan.' }]]) {
+    invalid.message.content[0].content = content
+    fs.writeFileSync(transcript(SESSION), [owner, planUse('p1'), JSON.stringify(invalid)].join('\n'))
+    assert.deepEqual(start(), { ok: false, reason })
+  }
+  fs.writeFileSync(transcript(SESSION), [owner, '{invalid json', planUse('p1'), planResult('p1')].join('\n'))
+  assert.equal(start(OTHER).ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:01:00.000Z') })
+  assert.equal(start(SESSION, Date.parse('2026-04-06T10:02:00.000Z')).ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:03:00.000Z') })
+
+  fs.writeFileSync(transcript(SESSION), [human(QUOTE, '2026-04-06T10:00:01.000Z'), JSON.stringify({ type: 'system' }), JSON.stringify({ entrypoint: 42 })].join('\n'))
+  assert.equal(start(SESSION, Date.parse('2026-04-06T10:04:00.000Z')).ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:05:00.000Z') })
+  fs.rmSync(transcript(SESSION))
+  assert.equal(start().ok, false)
+  fs.mkdirSync(transcript(SESSION))
+  assert.equal(start().ok, false)
+})
+
+test('launchRefusal propagates operational git errors', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const repo = tempDir(t, 'aether-git-error-')
+  markSession(dataDir, SESSION, 1000, { repo, claude: null })
+  const childProcess = require('node:child_process')
+  const original = childProcess.spawnSync
+  const gitPath = require.resolve('../plugins/aether/lib/git.js')
+  const autonomyPath = require.resolve('../plugins/aether/lib/autonomy.js')
+  const gitModule = require.cache[gitPath]
+  const autonomyModule = require.cache[autonomyPath]
+  try {
+    childProcess.spawnSync = () => ({ error: Object.assign(new Error('git spawn denied'), { code: 'EPERM' }) })
+    delete require.cache[gitPath]
+    delete require.cache[autonomyPath]
+    const isolated = require(autonomyPath)
+    assert.throws(() => isolated.launchRefusal(repo, { session: SESSION, dataDir }), { code: 'EPERM' })
+  } finally {
+    childProcess.spawnSync = original
+    require.cache[gitPath] = gitModule
+    require.cache[autonomyPath] = autonomyModule
+  }
+})
+
+
+test('launchRefusal recognizes non-repository errors in a localized Git environment', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const cwd = tempDir(t, 'aether-localized-git-')
+  markSession(dataDir, SESSION, 1000, { repo: cwd, claude: null })
+  const childProcess = require('node:child_process')
+  const original = childProcess.spawnSync
+  const gitPath = require.resolve('../plugins/aether/lib/git.js')
+  const autonomyPath = require.resolve('../plugins/aether/lib/autonomy.js')
+  const gitModule = require.cache[gitPath]
+  const autonomyModule = require.cache[autonomyPath]
+  try {
+    childProcess.spawnSync = (command, args, options) => {
+      if (options.env && options.env.LC_ALL === 'C') {
+        assert.equal(command, 'git')
+        assert.deepEqual(args, ['rev-parse', '--show-toplevel'])
+        assert.equal(options.cwd, cwd)
+        return { status: 128, stdout: '', stderr: 'fatal: not a git repository (or any of the parent directories): .git' }
+      }
+      return { status: 128, stdout: '', stderr: 'fatal: no es un repositorio git (ni ninguno de los directorios superiores): .git' }
+    }
+    delete require.cache[gitPath]
+    delete require.cache[autonomyPath]
+    const isolated = require(autonomyPath)
+    assert.equal(isolated.launchRefusal(cwd, { session: SESSION, dataDir }), null)
+  } finally {
+    childProcess.spawnSync = original
+    require.cache[gitPath] = gitModule
+    require.cache[autonomyPath] = autonomyModule
+  }
 })

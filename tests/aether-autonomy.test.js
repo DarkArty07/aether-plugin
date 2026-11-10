@@ -14,8 +14,8 @@ const REVOKE = 'ya no fusiones a main sin preguntarme'
 const USAGE =
   'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
 
-const human = (text, time) =>
-  JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })
+const human = (text, time, extra = {}) =>
+  JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, entrypoint: 'sdk-cli', timestamp: time, message: { role: 'user', content: text }, ...extra })
 
 // A repository on a feature branch, and a Claude config directory holding the owner's transcript.
 function setup(t) {
