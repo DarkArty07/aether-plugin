@@ -185,11 +185,13 @@ test('a part command with a part that does not exist, or a bad argument, prints 
 test('bootstrap splits into at most 3 order-independent parts within 25,000 total injected chars', () => {
   const parts = bootstrapParts(PLUGIN)
   assert.ok(parts.length >= 1 && parts.length <= 3, `expected 1..3 parts, got ${parts.length}`)
-  let totalChars = 0
   for (const [i, part] of parts.entries()) {
-    totalChars += part.context.length
     assert.ok(part.context.startsWith("You are the Lead of Aether mode: the owner's right hand.\n" + `Aether mode bootstrap, part ${i + 1} of ${parts.length}: read all ${parts.length} parts before you act, whatever order they arrive in; if a part from 1 to ${parts.length} did not reach you, read the whole file `))
     assert.ok(part.output.length <= PART_LIMIT, `part ${i + 1} JSON is ${part.output.length} > ${PART_LIMIT}`)
   }
+  // The limit is for the text a session receives, from a folder about as long as an installed plugin's: measured
+  // from the checkout it would change with the length of the checkout's path (issue #230).
+  const installed = '/' + 'i'.repeat(63)
+  const totalChars = splitParts(source(installed), installed).reduce((sum, part) => sum + part.context.length, 0)
   assert.ok(totalChars <= 25000, `expected total injected chars <= 25000, got ${totalChars}`)
 })

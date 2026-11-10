@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { PLUGIN } = require('./helpers.js')
-const { bootstrapParts, PART_LIMIT } = require('../plugins/aether/lib/session-start.js')
+const { bootstrapParts, splitParts, PART_LIMIT } = require('../plugins/aether/lib/session-start.js')
 
 const text = fs.readFileSync(path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md'), 'utf8')
 
@@ -53,7 +53,9 @@ test('the bootstrap keeps the canonical rule and corrections of #204 (R6, R9, R1
   assert.ok(text.includes(rule))
   assert.doesNotMatch(text, /about five tool calls|many reads of your own|one effort up|a fork always runs on your model|`aether-exam store`/)
   for (const token of ['aether:models', 'aether:designing', ["at the step's correction effort in `config", 'ladder.json`'].join('/'), 'ignores `model` on a fork and would run on your model with your whole conversation', 'every `Agent` call whose `subagent_type` is not `aether:*`', 'claude-code-guide', '--ignore <glob>', 'aether-autonomy trust --author <author> --quote "<their words>"', 'aether-exam store specs/NNN-<topic>', 'relaunching an approved or exhausted task id launches a Haiku agent', 'passing more than 3 skills, an unknown skill name, or a skill over the line limit in `AETHER-SKILLS:` rejects the whole launch']) assert.ok(text.includes(token), token)
-  const total = bootstrapParts(PLUGIN).reduce((sum, part) => sum + part.context.length, 0)
+  const installed = '/' + 'i'.repeat(63)
+  const source = text.replace(/^---\n[\s\S]*?\n---\n/, '').trim().split('${CLAUDE_PLUGIN_ROOT}').join(installed)
+  const total = splitParts(source, installed).reduce((sum, part) => sum + part.context.length, 0)
   assert.ok(total <= 25000, `the injected bootstrap weighs ${total} characters`)
 })
 
@@ -64,6 +66,11 @@ function section (heading) {
   const end = rest.indexOf('\n## ', 1)
   return end < 0 ? rest : rest.slice(0, end)
 }
+
+test("the bootstrap keeps the rule that Aether's own agents take no model or effort from the Lead (R9)", () => {
+  assert.ok(section('Models').includes("Aether's own agents keep the model and effort of their definition: pass neither when you start one."))
+  assert.ok(section('The route by size and risk').includes('"A short design" of `aether:designing` names'))
+})
 
 test('the direct path excludes the specified work from its count (R6)', () => {
   const paths = section('The three paths')

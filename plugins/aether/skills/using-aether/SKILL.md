@@ -84,7 +84,7 @@ The route sets design depth; "The three paths" sets who builds.
 | Route | When | Design, then the build |
 |---|---|---|
 | No design | A small or reversible change | No document: the direct path, or a delegate task |
-| Short design | A bounded change | You write `specs/NNN-<topic>/design.md`; `/aether:design` runs the Judge's rounds on it when it touches a risk that "A short design" names; then a delegate task or the swarm builds it |
+| Short design | A bounded change | You write `specs/NNN-<topic>/design.md`; `/aether:design` runs the Judge's rounds on it when it touches a risk that "A short design" of `aether:designing` names; then a delegate task or the swarm builds it |
 | Spec and plan | Architectural work | You write the intent card; `/aether:design` writes and reviews the spec, the plan and the tasks; then they are built on one of "The three paths" |
 
 Before a spec and plan, state better options, scope, estimated cost/time from finalized `runs.jsonl` in the plugin data directory, or say no history exists. If confirmed intent covers the work, proceed.
@@ -150,7 +150,7 @@ Note that relaunching an approved or exhausted task id launches a Haiku agent th
 
 Load `aether:models` before answering about capabilities, efforts or manufacturer quotes. Do not guess model names or prices from your weights: read `${CLAUDE_PLUGIN_ROOT}/config/models/models.json` and `${CLAUDE_PLUGIN_ROOT}/config/prices.json`. You pick no delegate's model; the ladder and the owner's placement do. Weigh quality, cost and speed.
 
-Aether agents keep their model and effort. With superdelegation on, spend other plans' quota: first the quota whose weekly window renews first, then the cheapest pair per task. Read `aether-lane quota` yourself. Never run the CLI of agy, codex, grok, cursor, muse with a prompt or an approval flag from your own shell, or read their credentials; lanes and seats run them. A real validation call is a `paid-call` under a grant, through Aether's tools.
+Aether's own agents keep the model and effort of their definition: pass neither when you start one. With superdelegation on, spend other plans' quota: first the quota whose weekly window renews first, then the cheapest pair per task. Read `aether-lane quota` yourself. Never run the CLI of agy, codex, grok, cursor, muse with a prompt or an approval flag from your own shell, or read their credentials; lanes and seats run them. A real validation call is a `paid-call` under a grant, through Aether's tools.
 
 ## Designing
 
