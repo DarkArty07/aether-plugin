@@ -87,6 +87,66 @@ function leadWorld(t, session) {
   return { w, ctx, call, file }
 }
 
+test('.specify and AGENTS.md reads and writes leave both direct counters unchanged (R7)', (t) => {
+  const { w, call, file } = leadWorld(t, 's-exempt')
+  fs.mkdirSync(file('.specify'), { recursive: true })
+  fs.writeFileSync(file('.specify', 'feature.json'), '{}\n')
+  fs.writeFileSync(file('AGENTS.md'), 'instructions\n')
+  const stateFile = path.join(w.data, 'continuity', 's-exempt.json')
+  for (let pass = 0; pass < 10; pass++) {
+    for (const target of [file('.specify', 'feature.json'), file('AGENTS.md')]) {
+      for (const tool of ['Read', 'Write', 'Edit']) {
+        assert.equal(call(tool, { file_path: target }), null, `${tool} ${target}`)
+      }
+    }
+    assert.equal(call('Grep', { pattern: 'feature', path: file('.specify') }), null)
+    assert.equal(call('Bash', { command: 'cat .specify/feature.json AGENTS.md' }), null)
+    assert.equal(call('Bash', { command: 'echo x > .specify/feature.json; echo x > AGENTS.md' }), null)
+  }
+  assert.deepEqual(JSON.parse(fs.readFileSync(stateFile, 'utf8')), {
+    promptId: 'p1', sinceNoteAt: null, edits: 0, reads: 0, notified: false,
+  })
+  assert.equal(call('Edit', { file_path: file('src', 'a.js') }), null)
+  assert.equal(call('Edit', { file_path: file('src', 'a.js') }), null)
+  assert.ok(call('Edit', { file_path: file('src', 'a.js') }))
+})
+
+test('a state read failure returns null without breaking posttool (R7)', (t) => {
+  const { w, call, file } = leadWorld(t, 's-read-error')
+  const stateFile = path.join(w.data, 'continuity', 's-read-error.json')
+  const edit = () => call('Edit', { file_path: file('src', 'a.js') })
+  assert.equal(edit(), null)
+  assert.equal(edit(), null)
+  const readFileSync = fs.readFileSync
+  const mock = t.mock.method(fs, 'readFileSync', function (target, ...args) {
+    if (target === stateFile) throw Object.assign(new Error('state read denied'), { code: 'EACCES' })
+    return readFileSync.call(this, target, ...args)
+  })
+  assert.equal(edit(), null)
+  mock.mock.restore()
+  assert.equal(edit(), null)
+  assert.ok(edit())
+})
+
+test('a state write failure suppresses the notice and a later call can retry (R7)', (t) => {
+  const { w, call, file } = leadWorld(t, 's-write-error')
+  const stateFile = path.join(w.data, 'continuity', 's-write-error.json')
+  const edit = () => call('Edit', { file_path: file('src', 'a.js') })
+  assert.equal(edit(), null)
+  assert.equal(edit(), null)
+  const renameSync = fs.renameSync
+  const mock = t.mock.method(fs, 'renameSync', function (source, destination) {
+    if (destination === stateFile) throw Object.assign(new Error('state write denied'), { code: 'EACCES' })
+    return renameSync.call(this, source, destination)
+  })
+  assert.equal(edit(), null)
+  mock.mock.restore()
+  assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).edits, 2)
+  assert.deepEqual(fs.readdirSync(path.dirname(stateFile)), ['s-write-error.json'])
+  assert.ok(edit())
+  assert.equal(edit(), null)
+})
+
 test('posttool warns once on the 3rd own edit to code or tests in a turn; exempt paths, subagents and other sessions add nothing (R7)', (t) => {
   const { w, ctx, call, file } = leadWorld(t, 's-edit')
 
