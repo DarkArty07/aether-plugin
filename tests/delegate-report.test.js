@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process')
 const { tempDir } = require('./helpers.js')
 const fs = require('node:fs')
 const log = require('../plugins/aether/lib/delegate-log.js')
-const { delegatesReport } = require('../plugins/aether/lib/delegate-report.js')
+const { delegatesReport, unverdictedTasks, unverdictedDelegates } = require('../plugins/aether/lib/delegate-report.js')
 
 const BIN = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-report')
 let clock = 0
@@ -139,3 +139,78 @@ test('a row of a task the owner placed carries authorized, and no other row does
   assert.deepEqual(rows.p1.authorized, { model: 'opus', scope: 'task' })
   assert.equal(Object.hasOwn(rows.p2, 'authorized'), false)
 })
+
+test('delegatesReport lists tasks whose latest launch has an outcome or result and no verdict', (t) => {
+  const dataDir = tempDir(t, 'aether-del-unverdicted-')
+  log.appendEntry(dataDir, launch('pending-res', 'sonnet', 1, 'first'))
+  log.appendEntry(dataDir, at({ kind: 'result', task: 'pending-res', attempt: 1, ok: true, status: 'done' }))
+  log.appendEntry(dataDir, launch('in-flight', 'haiku', 1, 'first'))
+  log.appendEntry(dataDir, launch('judged-task', 'sonnet', 1, 'first'))
+  log.appendEntry(dataDir, at({ kind: 'result', task: 'judged-task', attempt: 1, ok: true, status: 'done' }))
+  log.appendEntry(dataDir, verdict('judged-task', 'sonnet', 1, 'approved', { step: null, kind: 'done', cause: null }))
+
+  const report = delegatesReport({ dataDir, session: 's1' })
+  assert.deepEqual(report.unverdicted, [{ task: 'pending-res', session: 's1', attempt: 1, step: 'sonnet' }])
+  assert.equal(Object.hasOwn(report.ladder, 'unverdicted'), false)
+  const byId = new Map(report.delegations.map((d) => [d.id, d]))
+  assert.equal(byId.get('pending-res').unverdicted, true)
+  assert.equal(byId.get('in-flight').unverdicted, false)
+  assert.equal(byId.get('judged-task').unverdicted, false)
+})
+
+test('delegatesReport flags fix attempt when verdict is followed by a new launch and answer without verdict', (t) => {
+  const dataDir = tempDir(t, 'aether-del-retry-unverdicted-')
+  log.appendEntry(dataDir, launch('t1', 'haiku', 1, 'first'))
+  log.appendEntry(dataDir, at({ kind: 'result', task: 't1', attempt: 1, ok: true, status: 'done' }))
+  log.appendEntry(dataDir, verdict('t1', 'haiku', 1, 'fix', { step: 'haiku', kind: 'fix', cause: 'fix' }))
+  log.appendEntry(dataDir, launch('t1', 'haiku', 2, 'fix'))
+  log.appendEntry(dataDir, at({ kind: 'answer', task: 't1', attempt: 2, text: 'fixed answer' }))
+
+  const report = delegatesReport({ dataDir, session: 's1' })
+  assert.deepEqual(report.unverdicted, [{ task: 't1', session: 's1', attempt: 2, step: 'haiku' }])
+})
+
+test('unverdicted helpers isolate sessions, latest launch and timestamps', (t) => {
+  const dataDir = tempDir(t, 'aether-del-pending-')
+  const entries = [
+    { kind: 'launch', task: 'same', session: 'a', time: 10, step: 'haiku' },
+    { kind: 'outcome', id: 'same', session: 'a', time: 10 },
+    { kind: 'launch', task: 'same', session: 'b', time: 20, step: 'sonnet' },
+    { kind: 'answer', task: 'same', session: 'b', time: 19 },
+    { kind: 'launch', task: 'retry', session: 'a', time: 10, step: 'haiku' },
+    { kind: 'result', task: 'retry', session: 'a', time: 11 },
+    { kind: 'launch', task: 'retry', session: 'a', time: 12, step: 'haiku' },
+  ]
+  entries.forEach((entry) => log.appendEntry(dataDir, entry))
+  const expected = [{ task: 'same', session: 'a', attempt: 1, step: 'haiku' }]
+  assert.deepEqual(unverdictedTasks(entries), expected)
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 'a' }), expected)
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 'b' }), [])
+  assert.deepEqual(unverdictedDelegates({ dataDir, since: 11 }), [])
+})
+
+test('a verdict after the launch excludes the task even with an earlier timestamp', (t) => {
+  const dataDir = tempDir(t, 'aether-del-verdict-time-')
+  const entries = [
+    { ...launch('judged', 'haiku', 1, 'first'), time: 10 },
+    at({ kind: 'result', task: 'judged', time: 11, ok: true, status: 'done' }),
+    verdict('judged', 'haiku', 1, 'approved', { step: null, kind: 'done', cause: null }, { time: 9 }),
+  ]
+  entries.forEach((entry) => log.appendEntry(dataDir, entry))
+  const report = delegatesReport({ dataDir })
+  assert.deepEqual(report.unverdicted, [])
+  assert.equal(report.delegations[0].unverdicted, false)
+})
+
+for (const decision of ['fix', 'infeasible']) {
+  test(`a ${decision} verdict without a new result excludes the task`, (t) => {
+    const dataDir = tempDir(t, 'aether-del-judged-')
+    log.appendEntry(dataDir, launch('judged', 'haiku', 1, 'first'))
+    log.appendEntry(dataDir, at({ kind: 'result', task: 'judged', ok: true, status: 'done' }))
+    log.appendEntry(dataDir, verdict('judged', 'haiku', 1, decision,
+      { step: decision === 'fix' ? 'haiku' : 'sonnet', kind: decision === 'fix' ? 'fix' : 'rise', cause: decision }))
+    const report = delegatesReport({ dataDir })
+    assert.deepEqual(report.unverdicted, [])
+    assert.equal(report.delegations[0].unverdicted, false)
+  })
+}

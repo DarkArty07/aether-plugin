@@ -49,6 +49,7 @@ function rowOfTask(id, entries) {
     fallback: external && status !== 'ok' ? `external ${status}` : null,
     step: latest.step,
     attempts: launches.length,
+    unverdicted: isUnverdictedTask(entries),
   }
   // A task the owner placed on a model (spec 021) says so; no other row has the key.
   if (isObject(first.authorized)) row.authorized = { model: first.authorized.model, scope: first.authorized.scope }
@@ -57,6 +58,37 @@ function rowOfTask(id, entries) {
 
 // Two sessions may use the same task id (issue 148): a task is its session and its id.
 const taskKey = (session, id) => `${session ?? ''}\u0000${id}`
+
+function isUnverdictedTask(entries) {
+  const latest = last(entries.filter(isLaunch))
+  const after = entries.slice(entries.lastIndexOf(latest) + 1)
+  return after.some((entry) => entry.time >= latest.time && ['result', 'answer', 'outcome'].includes(entry.kind)) &&
+    !after.some((entry) => entry.kind === 'verdict')
+}
+
+function groupTasks(entries) {
+  const byTask = new Map()
+  for (const entry of entries) {
+    const id = entry.kind === 'outcome' ? entry.id : entry.task
+    if (id === undefined || id === null) continue
+    const key = taskKey(entry.session, id)
+    if (!byTask.has(key)) byTask.set(key, { id, list: [] })
+    byTask.get(key).list.push(entry)
+  }
+  return [...byTask.values()].filter(({ list }) => list.some(isLaunch))
+}
+
+function unverdictedTasks(entries) {
+  return groupTasks(entries).filter(({ list }) => isUnverdictedTask(list)).map(({ id, list }) => {
+    const launches = list.filter(isLaunch)
+    const latest = last(launches)
+    return { task: id, session: latest.session ?? null, attempt: launches.length, step: latest.step ?? null }
+  })
+}
+
+function unverdictedDelegates({ dataDir = run.dataDir(), session = null, since = 0 } = {}) {
+  return unverdictedTasks(readAllEntries(dataDir, { session, since }))
+}
 
 function stepCounts(rung, entries) {
   const launches = entries.filter((e) => e.kind === 'launch' && e.step === rung.step)
@@ -79,19 +111,12 @@ function stepCounts(rung, entries) {
 
 function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } = {}) {
   const entries = readAllEntries(dataDir, { session, since })
-  const byTask = new Map()
-  for (const entry of entries) {
-    // An `outcome` entry names its task in `id`; the others in `task`.
-    const id = entry.kind === 'outcome' ? entry.id : entry.task
-    if (id === undefined || id === null) continue
-    const key = taskKey(entry.session, id)
-    if (!byTask.has(key)) byTask.set(key, { id, list: [] })
-    byTask.get(key).list.push(entry)
-  }
-  const delegations = [...byTask.values()].filter(({ list }) => list.some(isLaunch)).map(({ id, list }) => rowOfTask(id, list))
+  const delegations = groupTasks(entries).map(({ id, list }) => rowOfTask(id, list))
+  const unverdicted = unverdictedTasks(entries)
   const ladder = loadLadder()
   return {
     delegations,
+    unverdicted,
     ladder: {
       steps: ladder.rungs.map((rung) => stepCounts(rung, entries)),
       relaunches: entries.filter((e) => e.kind === 'relaunch').map((e) => ({ task: e.task, of: e.of })),
@@ -99,4 +124,4 @@ function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } 
   }
 }
 
-module.exports = { delegatesReport }
+module.exports = { delegatesReport, unverdictedTasks, unverdictedDelegates }
