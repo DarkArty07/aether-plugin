@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process')
 const { PLUGIN, tempDir, makeRepo } = require('./helpers.js')
 const store = require('../plugins/aether/lib/continuity-store.js')
 const hook = require('../plugins/aether/lib/continuity-hook.js')
-const { markSession, readMark } = require('../plugins/aether/lib/session.js')
+const { markSession, readMark, touchSession } = require('../plugins/aether/lib/session.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-continuity')
 const VERBS = ['stop', 'precompact', 'postcompact', 'stopfailure', 'sessionend', 'posttool', 'permission']
@@ -45,6 +45,58 @@ test('stop writes the note: the last message, the branch, the commit, the time a
   assert.equal(again.status, 0)
   assert.equal(store.readNote(w.dir, 's1').lastMessage, 'Second turn.')
   assert.ok(readMark(w.data, 's1').lastActivity > 1000, 'each hook refreshes the last activity of the mark')
+})
+
+test('stop writes the note and refreshes activity when the delegate query throws', (t) => {
+  const w = world(t)
+  hook.openNote({ session_id: 's1', cwd: w.repo.dir }, {
+    env: { ...w.env, AETHER_DATA_DIR: w.data }, home: w.configDir, now: 2000,
+  })
+  store.updateNote(w.dir, 's1', { branch: 'old-branch', commit: 'old-commit', notifiedUnverdicted: ['old@1'] })
+  // The log reader catches filesystem errors; inject a query failure in an isolated process.
+  const script = `
+    const report = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'delegate-report.js'))})
+    report.unverdictedDelegates = () => { throw new Error('query failed') }
+    const hook = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'continuity-hook.js'))})
+    const result = hook.handle('stop', { session_id: 's1', cwd: ${JSON.stringify(w.repo.dir)}, last_assistant_message: 'Saved despite failure' },
+      { env: ${JSON.stringify({ ...w.env, AETHER_DATA_DIR: w.data })}, home: ${JSON.stringify(w.configDir)}, now: 5000 })
+    require('node:assert/strict').equal(result, null)
+  `
+  const r = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  const note = store.readNote(w.dir, 's1')
+  assert.equal(note.lastMessage, 'Saved despite failure')
+  assert.equal(note.branch, 'feature/x')
+  assert.equal(note.commit, w.repo.git('rev-parse', 'HEAD'))
+  assert.equal(note.updatedAt, 5000)
+  assert.deepEqual(note.notifiedUnverdicted, ['old@1'])
+  assert.equal(readMark(w.data, 's1').lastActivity, 5000)
+})
+
+test('requiring the hook, precompact and subagent stop do not load the delegate report', (t) => {
+  const w = world(t)
+  const script = `
+    const assert = require('node:assert/strict')
+    const report = require.resolve(${JSON.stringify(path.join(PLUGIN, 'lib', 'delegate-report.js'))})
+    const hook = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'continuity-hook.js'))})
+    assert.equal(Boolean(require.cache[report]), false, 'requiring the hook loads the delegate report')
+    hook.handle('precompact', { session_id: 's1', cwd: ${JSON.stringify(w.repo.dir)} },
+      { env: ${JSON.stringify({ ...w.env, AETHER_DATA_DIR: w.data })}, home: ${JSON.stringify(w.configDir)}, now: 5000 })
+    assert.equal(Boolean(require.cache[report]), false, 'precompact loads the delegate report')
+    hook.handle('stop', { session_id: 's1', cwd: ${JSON.stringify(w.repo.dir)}, agent_id: 'sub-1' },
+      { env: ${JSON.stringify({ ...w.env, AETHER_DATA_DIR: w.data })}, home: ${JSON.stringify(w.configDir)}, now: 6000 })
+    assert.equal(Boolean(require.cache[report]), false, 'a subagent stop loads the delegate report')
+    const log = require(${JSON.stringify(path.join(PLUGIN, 'lib', 'delegate-log.js'))})
+    log.appendEntry(${JSON.stringify(w.data)}, { time: 10, session: 's1', task: 't1', attempt: 1, step: 'sonnet', launchKind: 'first', description: 't1', effort: 'medium', edits: true, kind: 'launch' })
+    log.appendEntry(${JSON.stringify(w.data)}, { time: 20, session: 's1', task: 't1', attempt: 1, ok: true, status: 'done', kind: 'result' })
+    const out = hook.handle('stop', { session_id: 's1', cwd: ${JSON.stringify(w.repo.dir)} },
+      { env: ${JSON.stringify({ ...w.env, AETHER_DATA_DIR: w.data })}, home: ${JSON.stringify(w.configDir)}, now: 7000 })
+    assert.ok(out && typeof out.additionalContext === 'string' && out.additionalContext.includes('t1'), 'stop in Lead session gives the notice')
+    assert.equal(Boolean(require.cache[report]), true, 'stop in Lead session loads the delegate report')
+  `
+  const r = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(store.readNote(w.dir, 's1').updatedAt, 7000)
 })
 
 test('precompact prints nothing; postcompact keeps the summary; stopfailure keeps the reason of the cut (C1, H1 scenario 3)', (t) => {
@@ -183,10 +235,14 @@ test('stop warns once per unverdicted delegate result in the Lead session and st
   log.appendEntry(w.data, { time: 10, session: 's1', task: 'fix-bug', attempt: 1, step: 'sonnet', launchKind: 'first', description: 'fix bug', effort: 'medium', edits: true, kind: 'launch' })
   log.appendEntry(w.data, { time: 20, session: 's1', task: 'fix-bug', attempt: 1, ok: true, status: 'done', kind: 'result' })
 
+  touchSession(w.data, 's1', 2000)
+  const activityBefore = readMark(w.data, 's1').lastActivity
+  assert.equal(activityBefore, 2000)
   const subRes = run(w, 'stop', { agent_id: 'sub-1' })
   assert.equal(subRes.status, 0)
   assert.equal(subRes.stdout, '')
   assert.equal(store.readNote(w.dir, 's1'), null)
+  assert.equal(readMark(w.data, 's1').lastActivity, activityBefore)
 
   const first = run(w, 'stop', {})
   assert.equal(first.status, 0)
