@@ -13,7 +13,7 @@ const skill = read('skills', 'autonomous-runs', 'SKILL.md')
 const swarm = read('skills', 'swarm', 'SKILL.md')
 
 test('the autonomous-runs skill splits the ceilings from the quota brake', () => {
-  assert.ok(skill.includes('**Ceilings.** Run `aether-autonomy status` before each `/aether:design` launch or relaunch, each delegate task, and each swarm launch or relaunch. When its `stop` is `time` or `cost`, start nothing new. Let what is running finish'))
+  assert.ok(skill.includes('**Ceilings.** `aether-delegate begin`, `aether-plan compile` and `/aether:design` check the open run themselves and refuse to start new work when its `stop` is `time`, `cost` or `quota`'))
   assert.ok(skill.includes('**The quota brake.** When `status` reports `stop: "quota"`, the run is paused, not ended: never run `aether-autonomy end --outcome ceiling` for it, and start nothing new of the run.'))
   assert.ok(skill.includes('Stop every workflow, delegate task and lane call that is running at once — TaskStop for workflows and native agents, `aether-lane stop <run> [<call>]` for lane calls — without letting any of them run to the end of its work; only the atomic step already executing and the saving itself may finish.'))
   assert.ok(skill.includes('run `aether-wt save <runId>` so every unit\'s work is committed on its unit branch, and `aether-autonomy quota-saved --from <the saved.json it printed>`'))

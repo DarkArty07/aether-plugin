@@ -45,3 +45,25 @@ test('an unreadable run state is set aside with aether-autonomy quarantine, not 
   assert.doesNotMatch(line, /Move it aside with Bash/)
   assert.match(line, /Do not treat it as a reason to stop\./)
 })
+
+test('autonomous-runs and swarm skills describe automatic ceiling refusal and #214 rules', () => {
+  const swarmText = read('skills', 'swarm', 'SKILL.md')
+
+  assert.match(SKILL, /ExitPlanMode/)
+  assert.match(SKILL, /aether-delegate begin/)
+  assert.match(SKILL, /aether-plan compile/)
+  assert.match(SKILL, /aether-autonomy end --outcome ceiling/)
+  assert.doesNotMatch(SKILL, /Run `aether-autonomy status` before each/)
+
+  assert.match(swarmText, /Never run the swarm on `main`/)
+  assert.match(swarmText, /--allow-main/)
+  assert.match(swarmText, /aether-autonomy end --outcome ceiling/)
+  assert.doesNotMatch(swarmText, /run `aether-autonomy status` first|after the `aether-autonomy status` check of §3 in a run/)
+  assert.match(swarmText, /aether-wt settle/)
+  assert.doesNotMatch(swarmText, /without a valid verdict/)
+  assert.match(swarmText, /without an answer/)
+  assert.match(swarmText, /an invalid verdict counts as a retry|an invalid verdict counts as a `retry`/)
+  assert.match(swarmText, /the 2nd and 3rd attempt of the supervisor always run on Claude/)
+  assert.match(swarmText, /900/)
+  assert.match(swarmText, /first file in the task's `Owns`|first path in the task's `Owns`/i)
+})

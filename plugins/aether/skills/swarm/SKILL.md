@@ -18,7 +18,7 @@ In an autonomous run (see the `aether:autonomous-runs` skill), what this skill s
 
 - **The plan.** It is approved, by you as the owner's delegate or by the owner; every task has Aether fields; and `aether-plan check <plan.md>` passes, where `<plan.md>`, here and below, is the feature's `tasks.md`.
 - **The integration worktree.**
-  - Create it with `git worktree add <path> -b <feature branch>`, on a feature branch. Never run the swarm on `main`.
+  - Create it with `git worktree add <path> -b <feature branch>`, on a feature branch. Never run the swarm on `main`. `aether-plan compile` has an `--allow-main` flag for when the owner explicitly asks to compile on `main`.
   - Keep it separate from the main checkout. The unit worktrees live under the main checkout's `.aether/worktrees/`, and a test command that searches the whole tree would run their unfinished tests at merge time. `aether-plan compile` warns when the two are the same.
   - Commit the plan there, and leave the worktree clean. A merge refuses to start while the integration worktree has uncommitted changes.
 - **Permissions.** The run's agents use Bash (`git`, `aether-wt`, `aether-lane` and the test command) and edit files under `.aether/worktrees/`. A session that asks permission for each call stalls the swarm, and an autonomous run waits at the first prompt.
@@ -43,7 +43,7 @@ Compile also runs the plan's test command once, in the integration worktree, and
 
 ## 3. Launch
 
-In an autonomous run, run `aether-autonomy status` first. When its `stop` is not null, launch nothing, and act as the `aether:autonomous-runs` skill says: a `time` or `cost` stop ends the run, a `quota` stop only pauses it.
+In an autonomous run, `aether-plan compile` refuses a launch when the run is stopped or paused. Start nothing new and act as the `aether:autonomous-runs` skill says: for `time` or `cost`, let running work finish or save it as patches, finish any merge, then run `aether-autonomy end --outcome ceiling` and give the brief. For `quota`, follow its quota brake: stop running work, save each in-flight swarm with `aether-wt save <runId>`, record `aether-autonomy quota-saved`, wait for the reset and leave the run open. Use `aether-autonomy end` only for a `time` or `cost` stop or to close an old run another session left open.
 
 Run the `aether:run` workflow with that JSON as its args, unchanged. The run works in the background, and the progress view shows its phases.
 
@@ -105,12 +105,13 @@ Report from it:
 ## 5. Act on it
 
 - **Blocked with a question:** answer it from the owner's intent, the spec and the plan when they cover it. Otherwise it goes to the owner: outside a run, ask them; in an autonomous run, it waits in the diary's "Espera tu sí" or "Decisiones", and the other units go on. Then have the Writer fix the plan task, have `/aether:design` review the fix in short mode on `tasks.md` (see "Later changes" in the `using-aether` skill), and relaunch the unit.
-- **Blocked by a merge failure:** the unit passed review but git merge or the merge tests failed after its retry. Read the rounds and check the conflict or failure. A unit that ends blocked after a refused merge (a file outside Owns, or tests that went red after its merge) carries `blockedFiles`, the files that refusal named, and its `reason` ends with the one step that integrates it by hand from its `patch`. Fix the work yourself when it fits the direct path; otherwise send it to a delegate task, whose model the ladder picks, or have the Writer fix the plan task, have `/aether:design` review the fix in short mode on `tasks.md`, and relaunch it. These have a fallback, so they never go to the owner.
+- **Blocked by a merge failure:** the unit passed review but git merge or the merge tests failed after its retry. Read the rounds and check the conflict or failure. If the merge reports `merge timed out after 600s`, use `aether-wt settle <run-dir> <wave-num> <task-id> <branch> --test-cmd "<cmd>"` to inspect or finish the merge before deciding. A unit that ends blocked after a refused merge (a file outside Owns, or tests that went red after its merge) carries `blockedFiles`, the files that refusal named, and its `reason` ends with the one step that integrates it by hand from its `patch`. Fix the work yourself when it fits the direct path; otherwise send it to a delegate task, whose model the ladder picks, or have the Writer fix the plan task, have `/aether:design` review the fix in short mode on `tasks.md`, and relaunch it. These have a fallback, so they never go to the owner.
 - **Blocked by a spent ladder or repeated failure:** read the rounds and the unit's `failures`. The causes of a block include:
   - `the ladder is spent (exhausted)`: the last rung's corrections are spent, or its findings repeated, or it was ruled infeasible (the rise causes `exhausted`, `repeated` and `infeasible`);
-  - `the supervisor failed 3 times in a row`: the supervisor ended three times without a valid verdict;
+  - `the supervisor failed 3 times in a row`: the supervisor ended three times without an answer; an invalid verdict counts as a retry;
   - a gate that fails again and again: edits outside Owns (`<archivo>: fuera de Owns`), test failures (`falló: <nombre>` or `npm test: salió con N`), or test timeouts (`npm test: superó el tiempo límite`);
   - the attempt that did not end: crashes, aborted runs or missing reports (`el intento no terminó (<causa>)`, `<archivo>: el intento no cambió ningún archivo`). When an attempt ends without a report, the next pass retries as a split pass of sub-attempts per file before synthetic findings repeat.
+  Note that the 2nd and 3rd attempt of the supervisor always run on Claude. A Claude supervisor or final reviewer that stays silent for 900 seconds is abandoned. A supervisor finding that names no file receives the first file in the task's `Owns`.
   A relaunch that names the task again (`--only`, after the Writer fixed it) gives a spent ladder a new one and keeps the old state as `<task>.spent-N.json`. A ladder that is still open continues where it was. Act as for a merge failure, above.
 - **Blocked by a lane:** a reason that starts with `lane:` means a lane changed the integration worktree or branch, or a read-only copy changed the unit. Check the integration worktree with `git status` and the branch with `git log` before you relaunch.
 - **Skipped or not-run:** relaunch these once their dependencies are merged.
@@ -134,7 +135,7 @@ To relaunch, keep the run id and name the tasks:
 
 After an interruption (the quota brake, the session limit, a crash, the owner), first run `aether-wt save <runId>`: every unit's uncommitted work is committed on its branch before any worktree is removed or reused. Then relaunch with the same run id and no `--only`: `aether-plan compile <plan.md> --run <runId>` leaves out the units already merged, and each saved unit continues from its branch. A relaunch continues each unit on its rung of `config/ladder.json`.
 
-Then launch `aether:run` again with the new JSON, after the `aether-autonomy status` check of §3 in a run. Tasks outside the selection are assumed to be merged already.
+Then launch `aether:run` again with the new JSON, subject to the compile refusal described in §3. Tasks outside the selection are assumed to be merged already.
 
 A relaunch keeps the run's first compile time, and keeps the previous launch's result as `result-<k>.json`. Save each launch's result as `result.json` again: the report adds every launch up.
 
