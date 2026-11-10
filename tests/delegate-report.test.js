@@ -170,11 +170,11 @@ test('delegatesReport flags fix attempt when verdict is followed by a new launch
   assert.deepEqual(report.unverdicted, [{ task: 't1', session: 's1', attempt: 2, step: 'haiku' }])
 })
 
-test('unverdicted helpers isolate sessions, latest launch and timestamps', (t) => {
+test('unverdicted helpers isolate sessions and use log order after the latest launch', (t) => {
   const dataDir = tempDir(t, 'aether-del-pending-')
   const entries = [
     { kind: 'launch', task: 'same', session: 'a', time: 10, step: 'haiku' },
-    { kind: 'outcome', id: 'same', session: 'a', time: 10 },
+    { kind: 'outcome', id: 'same', session: 'a', time: 10, status: 'ok' },
     { kind: 'launch', task: 'same', session: 'b', time: 20, step: 'sonnet' },
     { kind: 'answer', task: 'same', session: 'b', time: 19 },
     { kind: 'launch', task: 'retry', session: 'a', time: 10, step: 'haiku' },
@@ -183,10 +183,50 @@ test('unverdicted helpers isolate sessions, latest launch and timestamps', (t) =
   ]
   entries.forEach((entry) => log.appendEntry(dataDir, entry))
   const expected = [{ task: 'same', session: 'a', attempt: 1, step: 'haiku' }]
-  assert.deepEqual(unverdictedTasks(entries), expected)
+  assert.deepEqual(unverdictedTasks(entries), [...expected, { task: 'same', session: 'b', attempt: 1, step: 'sonnet' }])
   assert.deepEqual(unverdictedDelegates({ dataDir, session: 'a' }), expected)
-  assert.deepEqual(unverdictedDelegates({ dataDir, session: 'b' }), [])
-  assert.deepEqual(unverdictedDelegates({ dataDir, since: 11 }), [])
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 'b' }), [{ task: 'same', session: 'b', attempt: 1, step: 'sonnet' }])
+  assert.deepEqual(unverdictedDelegates({ dataDir, since: 11 }), [{ task: 'same', session: 'b', attempt: 1, step: 'sonnet' }])
+})
+
+test('failed outcomes and results remain in flight until an outcome or result succeeds', (t) => {
+  const dataDir = tempDir(t, 'aether-del-in-flight-')
+  const entries = [
+    launch('chain', 'haiku', 1, 'first'),
+    at({ kind: 'outcome', id: 'chain', status: 'quota' }),
+    launch('edit', 'haiku', 1, 'first'),
+    at({ kind: 'result', task: 'edit', ok: false, status: 'failed' }),
+  ]
+  entries.forEach((entry) => log.appendEntry(dataDir, entry))
+  let report = delegatesReport({ dataDir })
+  assert.deepEqual(report.unverdicted, [])
+  assert.ok(report.delegations.every((row) => !row.unverdicted))
+  log.appendEntry(dataDir, at({ kind: 'outcome', id: 'chain', status: 'ok' }))
+  log.appendEntry(dataDir, at({ kind: 'result', task: 'edit', ok: true, status: 'done' }))
+  report = delegatesReport({ dataDir })
+  assert.deepEqual(report.unverdicted, [
+    { task: 'chain', session: 's1', attempt: 1, step: 'haiku' },
+    { task: 'edit', session: 's1', attempt: 1, step: 'haiku' },
+  ])
+  assert.ok(report.delegations.every((row) => row.unverdicted))
+})
+
+test('since preserves the latest launch attempt number in unverdicted', (t) => {
+  const dataDir = tempDir(t, 'aether-del-since-')
+  const first = launch('retry', 'haiku', 1, 'first')
+  const latest = launch('retry', 'sonnet', 2, 'rise')
+  for (const entry of [first, latest, at({ kind: 'answer', task: 'retry' })]) log.appendEntry(dataDir, entry)
+  assert.deepEqual(delegatesReport({ dataDir, since: latest.time }).unverdicted,
+    [{ task: 'retry', session: 's1', attempt: 2, step: 'sonnet' }])
+})
+
+test('aether-report --delegates prints unverdicted tasks in its JSON', (t) => {
+  const dataDir = tempDir(t, 'aether-del-cli-')
+  for (const entry of [launch('pending', 'haiku', 3, 'fix'), at({ kind: 'answer', task: 'pending' })]) log.appendEntry(dataDir, entry)
+  const out = spawnSync(process.execPath, [BIN, '--delegates'], { encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dataDir } })
+  assert.ifError(out.error)
+  assert.equal(out.status, 0, out.stderr)
+  assert.deepEqual(JSON.parse(out.stdout).unverdicted, [{ task: 'pending', session: 's1', attempt: 3, step: 'haiku' }])
 })
 
 test('a verdict after the launch excludes the task even with an earlier timestamp', (t) => {

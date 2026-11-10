@@ -59,13 +59,16 @@ function rowOfTask(id, entries) {
 // Two sessions may use the same task id (issue 148): a task is its session and its id.
 const taskKey = (session, id) => `${session ?? ''}\u0000${id}`
 
+// Log position decides what followed the latest launch, even when timestamps are out of order.
 function isUnverdictedTask(entries) {
   const latest = last(entries.filter(isLaunch))
   const after = entries.slice(entries.lastIndexOf(latest) + 1)
-  return after.some((entry) => entry.time >= latest.time && ['result', 'answer', 'outcome'].includes(entry.kind)) &&
+  return after.some((entry) => entry.kind === 'answer' ||
+    (entry.kind === 'result' && entry.ok === true) || (entry.kind === 'outcome' && entry.status === 'ok')) &&
     !after.some((entry) => entry.kind === 'verdict')
 }
 
+// Preserve log order within each session and task so launch, result and verdict positions remain meaningful.
 function groupTasks(entries) {
   const byTask = new Map()
   for (const entry of entries) {
@@ -82,7 +85,7 @@ function unverdictedTasks(entries) {
   return groupTasks(entries).filter(({ list }) => isUnverdictedTask(list)).map(({ id, list }) => {
     const launches = list.filter(isLaunch)
     const latest = last(launches)
-    return { task: id, session: latest.session ?? null, attempt: launches.length, step: latest.step ?? null }
+    return { task: id, session: latest.session ?? null, attempt: latest.attempt ?? launches.length, step: latest.step ?? null }
   })
 }
 
