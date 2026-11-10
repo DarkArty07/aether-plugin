@@ -18,6 +18,7 @@ const log = require('./delegate-log.js')
 const { isLaunch } = log
 const ladderLib = require('./ladder.js')
 const auth = require('./delegate-authorize.js')
+const autonomy = require('./autonomy.js')
 const checks = require('./delegate-checks.js')
 const lanes = require('./lanes.js')
 const { git, repoPaths } = require('./git.js')
@@ -330,6 +331,11 @@ function skillRefusedPlan(r, ctx, error) {
   return refusedLaunchPlan(r, ctx, prompt, prompt)
 }
 
+function autonomyRefusedPlan(r, ctx, refusal) {
+  const prompt = `Aether delegate task ${ctx.id} was not launched: ${refusal.message}. Do not do any work. Tell the Lead why the launch was refused.`
+  return { ...refusedLaunchPlan(r, ctx, prompt, prompt), stop: refusal.stop, run: refusal.id }
+}
+
 // A new task with the owned paths and the tests of a task of the same session that did not end approved.
 function relaunchOf(dataDir, session, id, brief) {
   if (brief.owns.length === 0) return null
@@ -444,6 +450,8 @@ async function begin(input, deps = {}) {
     const edits = brief.owns.length > 0
     const description = typeof event.description === 'string' ? event.description : ''
     const ctx = { id, session, event, brief, edits, description, notes, attempt: next.attempt }
+    const refusal = autonomy.launchRefusal(r.cwd, { session, dataDir: r.dataDir, now: r.now() })
+    if (refusal) return autonomyRefusedPlan(r, ctx, refusal)
     if (next.status !== 'open') return refusedPlan(r, ctx, next.status)
 
     let loadedSkills = null

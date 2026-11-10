@@ -591,3 +591,88 @@ test('a task whose recorded authorization carries an effort keeps it on a correc
   const risen = await task.begin(call(BRIEF('m1')), deps)
   assert.deepEqual([risen.kind, risen.args.model, risen.args.effort], ['rise', 'opus', 'high'])
 })
+
+test('begin refuses to launch a delegate in a Lead session when an open autonomous run hit time, cost, or quota stop, also from a linked worktree, and leaves non-Lead sessions unchanged', async (t) => {
+  const autonomy = require('../plugins/aether/lib/autonomy.js')
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-del-autonomy-')
+  const configDir = tempDir(t, 'aether-cfg-autonomy-')
+  const projDir = path.join(configDir, 'projects', 'proj-del')
+  fs.mkdirSync(projDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(projDir, 'sess-1.jsonl'),
+    JSON.stringify({
+      type: 'user',
+      isSidechain: false,
+      origin: { kind: 'human' },
+      entrypoint: 'sdk-cli',
+      timestamp: '2026-04-12T10:00:00.000Z',
+      message: { role: 'user', content: 'run unattended for 1 hour' },
+    }) + '\n'
+  )
+  markSession(dataDir, 'sess-1', 1000, { repo: repo.dir, claude: null })
+  // The run is opened in the main checkout; a Lead that works in a linked worktree must be refused as well.
+  const linked = path.join(tempDir(t, 'aether-linked-'), 'wt')
+  repo.git('worktree', 'add', '-q', '-b', 'linked/x', linked)
+
+  const t0 = Date.parse('2026-04-12T10:00:00.000Z')
+  const started = autonomy.start(
+    repo.dir,
+    { quote: 'run unattended for 1 hour', session: 'sess-1', hours: 1, usd: 5 },
+    { configDir, dataDir, now: t0 }
+  )
+  assert.equal(started.ok, true)
+
+  // The deps are shaped like world(): the native settings, a pickPair and a newId, with the repository as cwd.
+  const ask = (session, id, nowMs, cwd = repo.dir) =>
+    task.begin(
+      { session, event: { subagent_type: 'general-purpose', description: 'build feature', prompt: BRIEF(id) } },
+      { dataDir, cwd, settings: NATIVE, now: () => nowMs, newId: () => `gen-${id}`, pickPair: async () => ({ pick: null, quota: [] }) }
+    )
+
+  // Time stop in Lead session
+  const byTime = await ask('sess-1', 't-time', t0 + 3605 * 1000)
+  assert.equal(byTime.kind, 'refused')
+  assert.equal(byTime.stop, 'time')
+  assert.equal(byTime.run, started.run.id)
+  assert.match(byTime.notes.join('\n'), /aether-autonomy end --outcome ceiling/)
+
+  // The same refusal from a linked worktree
+  const fromLinked = await ask('sess-1', 't-linked', t0 + 3605 * 1000, linked)
+  assert.equal(fromLinked.kind, 'refused')
+  assert.equal(fromLinked.stop, 'time')
+  assert.equal(fromLinked.run, started.run.id)
+
+  // Non-Lead session proceeds normally even when ceiling is reached (C7)
+  const nonLead = await ask('plain-session', 't-plain', t0 + 3605 * 1000)
+  assert.equal(nonLead.kind, 'first')
+
+  // Quota stop in Lead session (within time ceiling)
+  const resetsAt = new Date(t0 + 4 * 3600 * 1000).toISOString()
+  autonomy.recordCrossing(
+    repo.dir,
+    { kind: 'five_hour', percentUsed: 80, resetsAt, threshold: 80 },
+    { now: t0 + 1000, dataDir }
+  )
+  const byQuota = await ask('sess-1', 't-quota', t0 + 2000)
+  assert.equal(byQuota.kind, 'refused')
+  assert.equal(byQuota.stop, 'quota')
+  assert.equal(byQuota.run, started.run.id)
+  assert.match(byQuota.notes.join('\n'), /aether-autonomy end --outcome incomplete/)
+
+  // Cost stop in Lead session (in a fresh run with 10h ceiling)
+  autonomy.end(repo.dir, 'incomplete', { now: t0 + 3000 })
+  const startedCost = autonomy.start(
+    repo.dir,
+    { quote: 'run unattended for 1 hour', session: 'sess-1', hours: 10, usd: 5 },
+    { configDir, dataDir, now: t0 + 4000 }
+  )
+  assert.equal(startedCost.ok, true)
+  autonomy.spend(repo.dir, 5, 'u1', { now: t0 + 5000 })
+  const byCost = await ask('sess-1', 't-cost', t0 + 6000)
+  assert.equal(byCost.kind, 'refused')
+  assert.equal(byCost.stop, 'cost')
+  assert.equal(byCost.run, startedCost.run.id)
+  assert.match(byCost.notes.join('\n'), /aether-autonomy end --outcome ceiling/)
+})
