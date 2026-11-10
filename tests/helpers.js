@@ -168,8 +168,15 @@ function runSessionStart(cwd, env, input = LEAD_START, args = []) {
 // bootstrap (the parts' contexts without their heading, joined in order). It throws when a command fails, when a part
 // does not carry its heading, or when a command prints after one that printed nothing.
 // The heading of part k of n: what to do when a part is missing, with the rules' file in the plugin at root.
-const partHeading = (k, n, root) =>
-  `Aether mode, part ${k} of ${n}. If a part from 1 to ${n} did not reach you, read the whole file ${path.join(root, 'skills', 'using-aether', 'SKILL.md')} before you act.\n\n`
+function partHeading(k, n, root = PLUGIN) {
+  const file = path.join(root, 'skills', 'using-aether', 'SKILL.md')
+  return (
+    [
+      "You are the Lead of Aether mode: the owner's right hand.",
+      `Aether mode bootstrap, part ${k} of ${n}: read all ${n} parts before you act, whatever order they arrive in; if a part from 1 to ${n} did not reach you, read the whole file ${file} before you act.`,
+    ].join('\n') + '\n\n'
+  )
+}
 
 function leadParts(cwd, env, input = LEAD_START) {
   const outputs = PART_COMMANDS.map((args) => {

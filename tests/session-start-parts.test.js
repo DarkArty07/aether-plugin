@@ -53,12 +53,12 @@ test('(a) each part, as the whole output of its command, is at most 9,800 charac
   }
 })
 
-test('(b) a session that is not the Lead gets nothing from any of the six commands', (t) => {
+test('(b) a session that is not the Lead gets nothing from any of the four commands', (t) => {
   const repo = makeRepo(t)
   const data = tempDir(t, 'aether-data-')
   const envFile = path.join(tempDir(t), 'env.sh')
   const inputs = [{ ...LEAD_START, agent_type: undefined }, { ...LEAD_START, agent_type: 'Explore' }, { ...LEAD_START, agent_type: 'general-purpose' }, 'not json', '']
-  assert.equal(SESSION_COMMANDS.length, 6)
+  assert.equal(SESSION_COMMANDS.length, 4)
   for (const args of SESSION_COMMANDS) {
     for (const input of inputs) {
       const r = runSessionStart(repo.dir, hookEnv(data, { CLAUDE_ENV_FILE: envFile }), input, args)
@@ -81,22 +81,22 @@ test('(c) a part command neither marks the session nor writes the environment fi
   }
   assert.deepEqual(fs.readdirSync(data), [])
   assert.equal(fs.existsSync(envFile), false)
-  // The six commands of one start, the way hooks/hooks.json runs them.
+  // The four commands of one start, the way hooks/hooks.json runs them.
   for (const args of SESSION_COMMANDS) assert.equal(runSessionStart(repo.dir, env, LEAD_START, args).status, 0)
   assert.equal(fs.readFileSync(envFile, 'utf8'), ENV_LINES)
   assert.equal(JSON.parse(fs.readFileSync(path.join(data, 'sessions', 's1.json'), 'utf8')).session, 's1')
 })
 
-test('(d) the bootstrap needs five parts or fewer, also from a long plugin path, and hooks.json runs enough of them', (t) => {
+test('(d) the bootstrap needs three parts or fewer, also from a long plugin path, and hooks.json runs enough of them', (t) => {
   const parts = bootstrapParts(PLUGIN)
-  assert.ok(parts.length <= 5, `the bootstrap needs ${parts.length} parts`)
+  assert.ok(parts.length <= 3, `the bootstrap needs ${parts.length} parts`)
   assert.equal(leadParts(makeRepo(t).dir, hookEnv(tempDir(t, 'aether-data-'))).contexts.length, parts.length)
   // An installed plugin lives deeper than a checkout, and every heading names its folder: a folder of 200 or of 400
-  // characters still fits in five parts of at most 9,800 characters that give the bootstrap back.
+  // characters still fits in three parts of at most 9,800 characters that give the bootstrap back.
   for (const size of [200, 400]) {
     const deep = '/' + 'd'.repeat(size - 1)
     const far = splitParts(source(deep), deep)
-    assert.ok(far.length <= 5, `from a ${size}-character folder the bootstrap needs ${far.length} parts`)
+    assert.ok(far.length <= 3, `from a ${size}-character folder the bootstrap needs ${far.length} parts`)
     for (const part of far) assert.ok(part.output.length <= 9800, `from a ${size}-character folder a part prints ${part.output.length} characters`)
     assert.equal(far.map((part) => part.slice).join(''), source(deep))
     for (const [i, part] of far.entries()) assert.equal(part.heading, partHeading(i + 1, far.length, deep))
@@ -104,14 +104,14 @@ test('(d) the bootstrap needs five parts or fewer, also from a long plugin path,
   assert.ok(PART_COMMANDS.length >= parts.length)
 })
 
-test('(e) hooks.json runs the notes command and parts 1 to 5 in one SessionStart entry, with one matcher', () => {
+test('(e) hooks.json runs the notes command and parts 1 to 3 in one SessionStart entry, with one matcher', () => {
   const entries = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks.SessionStart
   assert.equal(entries.length, 1)
   assert.equal(entries[0].matcher, 'startup|resume|clear|compact|fork')
   const bin = 'node "${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start"'
   assert.deepEqual(
     entries[0].hooks.map((hook) => [hook.type, hook.command]),
-    [bin, `${bin} --part 1`, `${bin} --part 2`, `${bin} --part 3`, `${bin} --part 4`, `${bin} --part 5`].map((command) => ['command', command]),
+    [bin, `${bin} --part 1`, `${bin} --part 2`, `${bin} --part 3`].map((command) => ['command', command]),
   )
 })
 
@@ -154,7 +154,7 @@ test('(g) the notes command with no notes prints the context "Aether mode is act
   assert.match(out.systemMessage, /Lead ready/)
 })
 
-test('(h) every part opens with the same one-line heading, which says to read the whole rules file when a part is missing', (t) => {
+test('(h) every part opens with the same two-line heading, which says to read the whole rules file when a part is missing', (t) => {
   const parts = leadParts(makeRepo(t).dir, hookEnv(tempDir(t, 'aether-data-')))
   const n = parts.contexts.length
   const file = path.join(PLUGIN, 'skills', 'using-aether', 'SKILL.md')
@@ -162,8 +162,7 @@ test('(h) every part opens with the same one-line heading, which says to read th
   for (const [i, context] of parts.contexts.entries()) {
     const heading = partHeading(i + 1, n, PLUGIN)
     assert.ok(context.startsWith(heading), `part ${i + 1}: ${context.slice(0, 120)}`)
-    assert.equal(heading, `Aether mode, part ${i + 1} of ${n}. If a part from 1 to ${n} did not reach you, read the whole file ${file} before you act.\n\n`)
-    assert.equal(heading.trimEnd().includes('\n'), false, 'the heading is one line')
+    assert.equal(heading, `You are the Lead of Aether mode: the owner's right hand.\nAether mode bootstrap, part ${i + 1} of ${n}: read all ${n} parts before you act, whatever order they arrive in; if a part from 1 to ${n} did not reach you, read the whole file ${file} before you act.\n\n`)
   }
   // The heading names the folder the hook was given, not the one the code lives in.
   const other = path.join(tempDir(t), 'plugin')
@@ -181,4 +180,16 @@ test('a part command with a part that does not exist, or a bad argument, prints 
     assert.equal(r.status, 0, r.stderr)
     assert.equal(r.stdout, '', args.join(' '))
   }
+})
+
+test('bootstrap splits into at most 3 order-independent parts within 25,000 total injected chars', () => {
+  const parts = bootstrapParts(PLUGIN)
+  assert.ok(parts.length >= 1 && parts.length <= 3, `expected 1..3 parts, got ${parts.length}`)
+  let totalChars = 0
+  for (const [i, part] of parts.entries()) {
+    totalChars += part.context.length
+    assert.ok(part.context.startsWith("You are the Lead of Aether mode: the owner's right hand.\n" + `Aether mode bootstrap, part ${i + 1} of ${parts.length}: read all ${parts.length} parts before you act, whatever order they arrive in; if a part from 1 to ${parts.length} did not reach you, read the whole file `))
+    assert.ok(part.output.length <= PART_LIMIT, `part ${i + 1} JSON is ${part.output.length} > ${PART_LIMIT}`)
+  }
+  assert.ok(totalChars <= 25000, `expected total injected chars <= 25000, got ${totalChars}`)
 })
