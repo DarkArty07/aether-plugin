@@ -48,6 +48,8 @@ function sources(t) {
     ['the injected context', injectedContext(t)],
     ['the swarm skill', resolvedSwarm()],
     ['the autonomous-runs skill', RUNS_SOURCE],
+    ['the models skill', read('skills', 'models', 'SKILL.md')],
+    ['the designing skill', read('skills', 'designing', 'SKILL.md')],
   ].map(([name, text]) => [name, text.split(PLUGIN).join('<PLUGIN>')])
 }
 
@@ -84,9 +86,9 @@ function section(text, heading) {
 }
 
 // The rows of the Models table: model name, the two prices, and the maker's quote without its quote marks.
-function rubric(context) {
+function rubric() {
   const rows = new Map()
-  for (const line of section(context, 'Models').split('\n')) {
+  for (const line of section(read('skills', 'models', 'SKILL.md'), 'Models').split('\n')) {
     const cells = line.split('|').map((c) => c.trim())
     const name = /^(Haiku|Sonnet|Opus|Fable) \d/.exec(cells[1] || '')
     if (!name) continue
@@ -104,7 +106,7 @@ const modelsIndex = () => json('config', 'models', 'models.json')
 test('every aether-<x> command the bootstrap and the swarm skill name is an executable of bin/', (t) => {
   for (const [name, text] of sources(t)) {
     const commands = new Set([...text.matchAll(/(?<![\w-])aether-[a-z][a-z-]*/g)].map((m) => m[0].replace(/-+$/, '')))
-    assert.ok(commands.size >= 4, `${name} names commands`)
+    if (!name.endsWith('models skill') && !name.endsWith('designing skill')) assert.ok(commands.size >= 4, `${name} names commands`)
     for (const command of commands) {
       if (NOT_COMMANDS.has(command)) continue
       const file = path.join(PLUGIN, 'bin', command)
@@ -122,7 +124,7 @@ test('every subcommand shown in code appears in the usage its command prints wit
         if (!NOT_COMMANDS.has(m[1])) pairs.add(`${m[1]} ${m[2]}`)
       }
     }
-    assert.ok(pairs.size >= 3, `${name} shows subcommands`)
+    if (!name.endsWith('models skill') && !name.endsWith('designing skill')) assert.ok(pairs.size >= 3, `${name} shows subcommands`)
     for (const pair of pairs) {
       const [command, sub] = pair.split(' ')
       const escaped = sub.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -172,7 +174,7 @@ test('the models index named by the bootstrap parses, with a non-empty list of m
 })
 
 test('the rubric prices of Haiku, Sonnet and Opus are the ones of config/prices.json', (t) => {
-  const rows = rubric(injectedContext(t))
+  const rows = rubric()
   const prices = json('config', 'prices.json').models
   for (const [row, key] of [['Haiku', 'haiku'], ['Sonnet', 'sonnet'], ['Opus', 'opus']]) {
     assert.ok(rows.has(row), `the rubric has a row for ${row}`)
@@ -181,7 +183,7 @@ test('the rubric prices of Haiku, Sonnet and Opus are the ones of config/prices.
 })
 
 test('the rubric price of Fable 5.1 is the one of its excluded entry in the models index', (t) => {
-  const row = rubric(injectedContext(t)).get('Fable')
+  const row = rubric().get('Fable')
   assert.ok(row, 'the rubric has a row for Fable')
   const entry = (modelsIndex().excluded || []).find((e) => e.model === 'claude-fable-5-1')
   assert.ok(entry, 'the index excludes claude-fable-5-1')
@@ -191,7 +193,7 @@ test('the rubric price of Fable 5.1 is the one of its excluded entry in the mode
 })
 
 test("each rubric quote is contained, ignoring case, in the purpose of its model's profile in the models index", (t) => {
-  const rows = rubric(injectedContext(t))
+  const rows = rubric()
   assert.deepEqual([...rows.keys()].sort(), ['Fable', 'Haiku', 'Opus', 'Sonnet'])
   const index = modelsIndex()
   const entries = {
