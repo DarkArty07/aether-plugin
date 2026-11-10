@@ -24,6 +24,8 @@ const EXCLUDED = {
   swarm: 'the Lead loads it itself when it runs the swarm',
   'autonomous-runs': 'the Lead loads it itself when the owner gives permission to work for hours',
   skills: 'the Lead loads it itself; nobody invokes it by name',
+  models: 'the Lead loads it itself; nobody invokes it by name',
+  designing: 'the Lead loads it itself; nobody invokes it by name',
   'art-direction': 'the Writer loads it itself; nobody invokes it by name',
   help: 'this skill itself',
   'first-setup': 'being renamed to setup, which the help names; if the directory is gone, this entry is harmless',

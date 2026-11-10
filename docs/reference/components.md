@@ -35,6 +35,8 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | `aether-autonomy` | The owner's standing authorizations, verified against their own words (`grant`, `revoke`, `check`, `list`), and an autonomous run's state and ceilings (`start`, `spend`, `status`, `end`) |
 | `swarm` skill | The Lead's procedure: compile, launch, read the result, report, relaunch, finalize |
 | `skills` skill | `aether:skills`: the Lead's procedure for skills (spec 030): the four kinds and their places, finding and installing with `npx skills`, the trusted authors, creating a project or a permanent skill, and giving a task at most 3 skills with `Skills:` and `AETHER-SKILLS:`. It does not set `disable-model-invocation`, so it adds an entry to the skills list |
+| `models` skill | `aether:models`: the model index, pricing, ladder models and their makers’ descriptions, and rules for model selection and quota |
+| `designing` skill | `aether:designing`: the Lead’s procedure for the intent card, design workflow outcomes, and exam |
 | `art-direction` skill | `aether:art-direction`: how the Writer writes the art direction of a visual feature, `art-direction.md` in the feature folder, before the plan (spec 030) |
 | `tidy` skill | `aether:tidy`: `/aether:tidy [project or folder]`: reports what it would move or delete in a project, with `aether-doctor tidy`, and changes nothing without the owner's yes (spec 030). It sets `disable-model-invocation`, so it adds no entry to the skills list |
 | `aether-plan` | Checks a plan and compiles it into briefs and a dependency graph of waves, and records the run's test baseline. It reads a Spec Kit `tasks.md`, and the `spec.md` beside it. It refuses chain-shaped plans, and waves whose tasks own overlapping files |
