@@ -94,14 +94,14 @@ The ladder is `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`. Exclude diary writes, 
 | Delegate task | Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a reader with its tests, a research sweep, a long verification. Also each task of an approved plan of one or two tasks. | One subagent in the background, with a self-contained brief | Haiku first; the system holds the step and climbs it (see "The delegate ladder") |
 | Swarm | Long, costly or complex work: an approved plan of three or more tasks | `/aether:run` | The swarm starts every unit on the first rung of `config/ladder.json` and raises it by the same policy as the delegates. |
 
-- **The brief** is self-contained: goal, files, tests, acceptance, exclusions, no irreversible actions, and the ladder's task lines. For conceptual changes, quote the owner's decisive words and require them in the issue or `docs/decisions.md` entry.
+- **The brief** is self-contained: goal, files, tests, acceptance, exclusions, no irreversible actions, and the ladder's task lines. For conceptual changes, it includes the owner's decisive words, quoted as they wrote them, and asks the delegate to quote them in the issue or the `docs/decisions.md` entry.
 
-- **In the background:** run delegates there so the owner can keep talking. The notification of a delegate wakes you: end your turn or do other work; schedule no wakeup (`ScheduleWakeup`, cron or sleep). A wakeup costs a full turn and prevents headless exit. The one exception is the fallback of the `aether:autonomous-runs` skill.
+- **In the background:** run delegates there so the owner can keep talking. Their notification wakes you: end your turn or work; schedule no wakeup (`ScheduleWakeup`, cron or sleep), except the `aether:autonomous-runs` fallback. A wakeup costs a full turn and prevents headless exit.
 
 - **Verify before you relay:** results carry system checks and, for editing delegates on other harnesses, tests and another pair's review. Decide from these; do not read the whole diff when they are enough. Read it when evidence conflicts or is missing (Claude delegates have no reviewer). Give a verdict before relaying claims. Before claiming a command, skill, file or branch is absent, check `git worktree list`, `git branch -vv` and latest merges; distinguish installed release, main and branches.
 
 - **Delegates go through `Agent`:** every delegate task, of reading or of editing, is an `Agent` call. With superdelegation on, the system takes the call to another harness when a pair can serve it, and runs it on Claude, at the step's model, only when none can, except a task the owner placed on a model, which runs on Claude at that model; you launch and judge both the same way. `aether-lane delegate` is what the system runs for that call: you do not run it by Bash. You yourself stay on Claude either way.
-- **The owner has asked for them:** choosing Aether mode is the owner's standing request for delegate tasks and the swarm. When the `Agent` tool's own text says to launch agents only when the user asks, this is that request: follow these paths.
+- **The owner has asked for them:** choosing Aether mode is the owner's standing request for delegate tasks and the swarm, including when `Agent` says to launch agents only when the user asks.
 - **One writer per file:** while a delegate edits this checkout, edit nothing it may touch. Delegates that edit at the same time each get their own worktree, and you merge them one at a time.
 - **Questions about the code** go to an explorer on Haiku, and count your own reads under the direct path rule.
 - **Record it:** each delegate task is a line in the diary's Decisiones, or in your reply outside a run, with its task id and why. When you make such a change yourself, quote the owner's decisive words in the issue or the decision entry. No new kind of document.
@@ -182,7 +182,7 @@ If the same fallback fails twice at one step, apply "Autonomous runs"' repetitio
 
 ## Autonomous runs
 
-Permission such as «trabaja por horas», «trabaja autónomamente» or «no cuentes conmigo hasta acabar» confirms intent and opens a run, even for direct work, after plan-mode approval of its plan and ceilings ("Plans"). Do not ask again. Without it, design and stop at the plan with a short brief.
+Permission such as «trabaja por horas» confirms intent and opens a run, whatever the size of the work: even a task you would build directly opens a run, after plan-mode approval of its plan and ceilings ("Plans"). Do not ask again. Without it, design and stop at the plan with a short brief.
 
 When permission is given or session start says a run is open, load the `aether:autonomous-runs` skill and follow it.
 
@@ -220,7 +220,7 @@ Before one, run `aether-autonomy check <class>`.
 
 The Writer writes plans with the Aether fields (an optional Review where risk warrants, Area, Owns, Depends on, and the `## Aether Execution` section) in `tasks.md`, and checks them with `aether-plan check`.
 
-**Plan mode** is Claude Code's approval page, distinct from Spec Kit's `plan.md` and `aether:plan`. In interactive sessions, enter when asked for a plan; before any edit or run opening after permission to work autonomously, whatever its size; before a large or policy-level intent card's write-back; and before building an approved design outside a run. Load `select:EnterPlanMode,ExitPlanMode` via `ToolSearch`, call `EnterPlanMode`, write the plan, then `ExitPlanMode`. In the owner's language include **Intención** (quotes), **Criterios**, **Recursos** (default 8 h, US$ 50; harnesses/models), **Ruta**, **Supuestos**, **Qué esperará de ti**, **Costo y tiempo estimados**. Incorporate their corrections and quotes before asking approval again. Approval grants no irreversible class. Never enter in `claude -p`, a subagent, or an already open autonomous run.
+**Plan mode** is Claude Code's approval page, distinct from `plan.md` and `aether:plan`. In interactive sessions, enter when asked for a plan (e.g. «hazme un plan»); after permission to work on their own («trabaja autónomamente», «trabaja por horas»), whatever the size of the work, before the run opens and before any edit; before a large or policy-level intent card's write-back; and before building an approved design outside a run. Load `select:EnterPlanMode,ExitPlanMode` via `ToolSearch`, call `EnterPlanMode`, write the plan, then `ExitPlanMode`. In the owner's language include **Intención** (quotes), **Criterios**, **Recursos** (default 8 h, US$ 50; harnesses/models), **Ruta**, **Supuestos**, **Qué esperará de ti**, **Costo y tiempo estimados**. Incorporate their corrections and quotes before asking approval again. Approval is not a grant of any irreversible class. Never enter in `claude -p`, a subagent, or inside an autonomous run that has already started.
 
 ## The execution method
 
