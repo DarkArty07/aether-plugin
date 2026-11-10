@@ -747,10 +747,43 @@ test('interactive plan approvals require an earlier matching use and accept text
   assert.equal(duplicate.ok, false)
   assert.match(duplicate.reason, /plan mode/i)
 
-  write([...firstApproval, planUse('p2'), planResult('p2')])
+  write([...firstApproval, planUse('p2', '2026-04-06T10:02:00.000Z'), planResult('p2', true, '2026-04-06T10:02:01.000Z')])
   const second = start(Date.parse('2026-04-06T10:03:00.000Z'))
   assert.equal(second.ok, true)
   assert.equal(autonomy.status(mainRoot).id, second.run.id)
+})
+
+test('interactive runs require an approval later than the latest run in the session', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const { configDir, mainRoot, transcript } = setup(t)
+  markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+  const owner = human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' })
+  const lines = [owner, planUse('a1'), planResult('a1'), planUse('a2'), planResult('a2')]
+  const write = () => fs.writeFileSync(transcript(SESSION), lines.join('\n'))
+  const start = (time) => autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse(time) })
+  write()
+  assert.equal(start('2026-04-06T10:00:05.000Z').ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:01:00.000Z') })
+  assert.match(start('2026-04-06T10:02:00.000Z').reason, /plan mode/i)
+  const undated = JSON.parse(planResult('a3'))
+  delete undated.timestamp
+  lines.push(planUse('a3'), JSON.stringify(undated))
+  write()
+  assert.match(start('2026-04-06T10:02:00.000Z').reason, /plan mode/i)
+  lines.push(planUse('a4'), planResult('a4', true, '2026-04-06T10:02:01.000Z'))
+  write()
+  assert.equal(start('2026-04-06T10:03:00.000Z').ok, true)
+})
+
+test('sidechain plan approvals do not authorize an interactive run', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const sidechain = (line) => JSON.stringify({ ...JSON.parse(line), isSidechain: true })
+  const { configDir, mainRoot } = setup(t, { [SESSION]: [human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }), sidechain(planUse()), sidechain(planResult())] })
+  markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+  const result = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir })
+  assert.match(result.reason, /plan mode/i)
 })
 
 test('launchRefusal reports time, cost and quota stops in a Lead session, finds the run from a linked worktree, and returns null outside a Lead session or outside git', (t) => {

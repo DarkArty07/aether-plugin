@@ -153,7 +153,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     const usd = rawUsd !== null ? parseNumber(rawUsd, 'ceiling') : null
     const session = getSession(rest, true, env)
     ensureExcluded(gitCommonDir)
-    const res = autonomy.start(mainRoot, { quote, session, hours, usd })
+    const res = autonomy.start(mainRoot, { quote, session, hours, usd }, { dataDir: env.AETHER_DATA_DIR || dataDir(env) })
     if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }
     return {
       code: 0,

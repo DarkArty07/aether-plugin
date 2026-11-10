@@ -27,7 +27,7 @@ function setup(t) {
   fs.writeFileSync(path.join(folder, `${SESSION}.jsonl`), lines.join('\n') + '\n')
   const env = { CLAUDE_CONFIG_DIR: config, CLAUDE_CODE_SESSION_ID: SESSION }
   const cli = (args, cwd = repo.dir, extra = {}) => runBin(BIN, args, cwd, { ...env, ...extra })
-  return { repo, cli }
+  return { repo, cli, config }
 }
 
 test('the bin is executable, and a bare or unknown command prints the usage', (t) => {
@@ -117,6 +117,25 @@ test("a run starts from the owner's permission, records spend, and ends", (t) =>
   assert.equal(e.status, 0, e.stdout + e.stderr)
   assert.deepEqual([e.json.ended.id, e.json.ended.outcome], [id, 'done'])
   assert.deepEqual(cli(['status']).json, { open: false })
+})
+
+test('bin refuses an interactive Lead session without an approved plan', (t) => {
+  const { repo, cli, config } = setup(t)
+  const data = tempDir(t, 'aether-data-')
+  require('../plugins/aether/lib/session.js').markSession(data, SESSION, 1000, { repo: repo.dir, claude: null })
+  fs.writeFileSync(path.join(config, 'projects', '-repo', `${SESSION}.jsonl`), human(HOURS, '2026-10-09T19:50:00.000Z', { entrypoint: 'cli' }))
+  const result = cli(['start', '--quote', HOURS], repo.dir, { AETHER_DATA_DIR: data })
+  assert.notEqual(result.status, 0)
+  assert.match(result.json.reason, /plan mode/i)
+})
+
+test('bin opens a run for a headless Lead session without an approved plan', (t) => {
+  const { repo, cli } = setup(t)
+  const data = tempDir(t, 'aether-data-')
+  require('../plugins/aether/lib/session.js').markSession(data, SESSION, 1000, { repo: repo.dir, claude: null })
+  const result = cli(['start', '--quote', HOURS], repo.dir, { AETHER_DATA_DIR: data })
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  assert.ok(result.json.started.id)
 })
 
 test('start with words the owner did not write exits 2 and opens no run', (t) => {
