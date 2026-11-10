@@ -830,3 +830,34 @@ test('decisions A117 to A120 are recorded with the owner quotes, the index names
   assert.match(decisions, /about five tool calls/)
   assert.match(read('docs/index.md'), /A1–A120/)
 })
+
+test('the canonical countable rule is identical across the six places of R6, CLAUDE.md says three parts, and the components page measures PostToolUse on reads (R6, R8, R12)', () => {
+  const enRule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
+  const esRule = 'a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada; las pruebas que la regla pide tras una fusión no cuentan'
+  for (const file of ['plugins/aether/skills/using-aether/SKILL.md', 'docs/methodology.md', 'docs/tutorials/first-request.md', 'site/app.js']) {
+    const text = read(file)
+    assert.ok(text.includes(enRule), `${file} has the canonical English countable rule`)
+    assert.doesNotMatch(text, /about five tool calls|many reads of your own/, `${file} has no old vague rule`)
+  }
+  for (const file of ['docs/es/guias/primera-peticion.md', 'site/index.html', 'site/app.js']) {
+    const text = read(file)
+    assert.ok(text.includes(esRule), `${file} has the canonical Spanish countable rule`)
+    assert.doesNotMatch(text, /unas cinco llamadas a herramientas/, `${file} has no old vague rule`)
+  }
+  const delegates = read('docs/guide/delegates.md')
+  assert.match(delegates, /`ended`/)
+  assert.doesNotMatch(delegates, /is never a fork/)
+  assert.match(delegates, /Do not use `fork` for a delegate task/)
+  assert.doesNotMatch(delegates, /one effort up/)
+  assert.ok(delegates.includes(["at the step's correction effort in `config", 'ladder.json`'].join('/')))
+  assert.match(delegates, /prints three things as JSON/)
+  assert.doesNotMatch(delegates, /prints two things|records the final answer of a read-only delegate that ran on Claude/)
+  assert.doesNotMatch(read('docs/reference/components.md'), /records the final answer of a read-only delegate that ran on Claude/)
+  const troubleshooting = read('docs/guide/troubleshooting.md')
+  assert.doesNotMatch(troubleshooting, /The Lead runs `aether-autonomy status` before every launch/)
+  assert.match(troubleshooting, /`aether-delegate begin`, `aether-plan compile` and `\/aether:design` check the open run themselves/)
+  const claude = read('CLAUDE.md')
+  assert.match(claude, /`--part 1` to `--part 3`/)
+  assert.doesNotMatch(claude, /--part 5/)
+  assert.match(read('docs/reference/components.md'), /PostToolUse[^.\n]*Read[^.\n]*Grep[^.\n]*Glob/)
+})

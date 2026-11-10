@@ -8,6 +8,8 @@ order: 12
 
 Design seats let the models of other harnesses take the Judge, the Writer or the Examiner of `/aether:design`, under the rule of [Lanes](lanes.md#lanes); the one switch is `superdelegation`, off by default (see [Options](options.md#options)). The seats run inside `/aether:design`, the workflow that takes the owner's intent card to an approved plan: the Lead starts no round itself.
 
+`/aether:design` checks the open autonomous run and refuses to start new work at a time or cost ceiling or a quota pause.
+
 ## How a seat is taken
 
 ### Design seats

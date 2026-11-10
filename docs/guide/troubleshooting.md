@@ -40,7 +40,7 @@ Run `/aether:doctor` first: it checks the usual causes below and prints the fix 
 
 Three other causes end in a swarm that is not running:
 - **A compile on `main`.** `aether-plan compile` stops with `refusing to compile on main: run aether-plan from the integration worktree, or pass --allow-main`. The swarm never runs on `main`: create an integration worktree on a feature branch with `git worktree add <path> -b <feature branch>`, and compile from it.
-- **An autonomous run at its ceiling.** The Lead runs `aether-autonomy status` before every launch, and launches nothing while its `stop` is not null: the run's hours (`time`) or dollars (`cost`) are spent (see [Autonomy](autonomy.md#autonomy)).
+- **An autonomous run at its ceiling.** `aether-delegate begin`, `aether-plan compile` and `/aether:design` check the open run themselves and refuse to start new work while its `stop` is `time`, `cost` or `quota`: the run's hours (`time`) or dollars (`cost`) are spent, or the quota brake has paused it (see [Autonomy](autonomy.md#autonomy)).
 - **A headless session.** In `claude -p`, Claude Code stops background work 10 minutes after the last turn, and that includes the run. Start such a session with `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, which waits for the run however long it takes.
 
 ## A plan does not pass the check
