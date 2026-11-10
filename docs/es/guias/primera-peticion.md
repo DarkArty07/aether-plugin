@@ -31,7 +31,7 @@ Un cambio pequeño o reversible no necesita documento: no hay tarjeta de intenci
 ### 2. El Lead elige un camino y dice por qué
 
 El Lead toma uno de tres caminos para cada trabajo, y te dice cuál y por qué:
-- **Directo:** un cambio muy acotado, pocos archivos y unas cinco llamadas a herramientas, sin un ciclo de editar, probar y corregir. El Lead lo hace él mismo, en la conversación. Lo ves leer, editar y correr el test.
+- **Directo:** un cambio muy acotado, en pocos archivos y sin un ciclo de editar, probar y corregir: a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada; las pruebas que la regla pide tras una fusión no cuentan. El Lead lo hace él mismo, en la conversación. Lo ves leer, editar y correr el test.
 - **Tarea delegada:** trabajo acotado que sigue siendo una tarea de verdad, como un ciclo de editar, probar y corregir. Un subagente trabaja en segundo plano. Empieza en Haiku, el modelo más barato, y sube a Sonnet y después a Opus solo cuando debe. El sistema guarda ese escalón, no el Lead. Mientras tanto puedes seguir hablando con el Lead.
 - **Swarm:** un plan de tres o más tareas, construido en paralelo. Una primera petición casi nunca lo necesita. Si el Lead decide que la tuya sí, diseña primero: [Una feature completa](feature-completa.md) sigue ese camino.
 
