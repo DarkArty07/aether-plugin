@@ -3,7 +3,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawnSync, fork } = require('node:child_process')
 const { PLUGIN, tempDir, makeRepo } = require('./helpers.js')
 const store = require('../plugins/aether/lib/continuity-store.js')
 const posttool = require('../plugins/aether/lib/continuity-posttool.js')
@@ -92,7 +92,7 @@ test('.specify and AGENTS.md reads and writes leave both direct counters unchang
   fs.mkdirSync(file('.specify'), { recursive: true })
   fs.writeFileSync(file('.specify', 'feature.json'), '{}\n')
   fs.writeFileSync(file('AGENTS.md'), 'instructions\n')
-  const stateFile = path.join(w.data, 'continuity', 's-exempt.json')
+  const stateDir = path.join(w.data, 'continuity')
   for (let pass = 0; pass < 10; pass++) {
     for (const target of [file('.specify', 'feature.json'), file('AGENTS.md')]) {
       for (const tool of ['Read', 'Write', 'Edit']) {
@@ -103,56 +103,59 @@ test('.specify and AGENTS.md reads and writes leave both direct counters unchang
     assert.equal(call('Bash', { command: 'cat .specify/feature.json AGENTS.md' }), null)
     assert.equal(call('Bash', { command: 'echo x > .specify/feature.json; echo x > AGENTS.md' }), null)
   }
-  assert.deepEqual(JSON.parse(fs.readFileSync(stateFile, 'utf8')), {
-    promptId: 'p1', sinceNoteAt: null, edits: 0, reads: 0, notified: false,
-  })
+  assert.equal(fs.existsSync(stateDir), false)
   assert.equal(call('Edit', { file_path: file('src', 'a.js') }), null)
   assert.equal(call('Edit', { file_path: file('src', 'a.js') }), null)
   assert.ok(call('Edit', { file_path: file('src', 'a.js') }))
 })
 
-test('a state read failure returns null without breaking posttool (R7)', (t) => {
+test('a turn log read failure returns null without breaking posttool', (t) => {
   const { w, call, file } = leadWorld(t, 's-read-error')
-  const stateFile = path.join(w.data, 'continuity', 's-read-error.json')
   const edit = () => call('Edit', { file_path: file('src', 'a.js') })
   assert.equal(edit(), null)
   assert.equal(edit(), null)
-  const before = fs.readFileSync(stateFile, 'utf8')
-  const readFileSync = fs.readFileSync
+  const dir = path.join(w.data, 'continuity')
+  const log = path.join(dir, fs.readdirSync(dir).find((name) => name.endsWith('.log')))
+  const read = fs.readFileSync
   const mock = t.mock.method(fs, 'readFileSync', function (target, ...args) {
-    if (target === stateFile) throw Object.assign(new Error('state read denied'), { code: 'EACCES' })
-    return readFileSync.call(this, target, ...args)
+    if (target === log) throw Object.assign(new Error('denied'), { code: 'EACCES' })
+    return read.call(this, target, ...args)
   })
   assert.equal(edit(), null)
   mock.mock.restore()
-  assert.equal(fs.readFileSync(stateFile, 'utf8'), before)
+  assert.equal(fs.readFileSync(log, 'utf8'), 'edit\nedit\nedit\n')
   assert.ok(edit())
-  const notified = fs.readFileSync(stateFile, 'utf8')
-  const secondMock = t.mock.method(fs, 'readFileSync', function (target, ...args) {
-    if (target === stateFile) throw Object.assign(new Error('state read denied'), { code: 'EACCES' })
-    return readFileSync.call(this, target, ...args)
-  })
-  assert.equal(edit(), null)
-  secondMock.mock.restore()
-  assert.equal(fs.readFileSync(stateFile, 'utf8'), notified)
   assert.equal(edit(), null)
 })
 
-test('a state write failure suppresses the notice and a later call can retry (R7)', (t) => {
+test('a turn log write failure suppresses the notice and a later call can retry', (t) => {
   const { w, call, file } = leadWorld(t, 's-write-error')
-  const stateFile = path.join(w.data, 'continuity', 's-write-error.json')
   const edit = () => call('Edit', { file_path: file('src', 'a.js') })
   assert.equal(edit(), null)
   assert.equal(edit(), null)
-  const renameSync = fs.renameSync
-  const mock = t.mock.method(fs, 'renameSync', function (source, destination) {
-    if (destination === stateFile) throw Object.assign(new Error('state write denied'), { code: 'EACCES' })
-    return renameSync.call(this, source, destination)
+  const dir = path.join(w.data, 'continuity')
+  const log = path.join(dir, fs.readdirSync(dir).find((name) => name.endsWith('.log')))
+  const mock = t.mock.method(fs, 'appendFileSync', () => { throw new Error('denied') })
+  assert.equal(edit(), null)
+  mock.mock.restore()
+  assert.equal(fs.readFileSync(log, 'utf8'), 'edit\nedit\n')
+  assert.deepEqual(fs.readdirSync(dir), [path.basename(log)])
+  assert.ok(edit())
+  assert.equal(edit(), null)
+})
+
+test('a notice marker write failure returns null and a later call can retry', (t) => {
+  const { call, file } = leadWorld(t, 's-marker-error')
+  const edit = () => call('Edit', { file_path: file('src', 'a.js') })
+  assert.equal(edit(), null)
+  assert.equal(edit(), null)
+  const open = fs.openSync
+  const mock = t.mock.method(fs, 'openSync', function (target, ...args) {
+    if (typeof target === 'string' && target.endsWith('.notice')) throw Object.assign(new Error('denied'), { code: 'EACCES' })
+    return open.call(this, target, ...args)
   })
   assert.equal(edit(), null)
   mock.mock.restore()
-  assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).edits, 2)
-  assert.deepEqual(fs.readdirSync(path.dirname(stateFile)), ['s-write-error.json'])
   assert.ok(edit())
   assert.equal(edit(), null)
 })
@@ -351,3 +354,148 @@ test('Bash reads are decided per command, follow cd, and a pipeline that only fi
   assert.ok(tenth && typeof tenth.additionalContext === 'string')
   assert.match(tenth.additionalContext, /10/)
 })
+
+test('uncounted and subagent calls create no counter files', (t) => {
+  const { w, call, file } = leadWorld(t, 's-empty')
+  assert.equal(call('Edit', { file_path: file('src', 'a.js') }, { agent_id: 'sub' }), null)
+  assert.equal(call('Bash', { command: 'git status' }), null)
+  assert.equal(call('Read', { file_path: file('docs', 'x.md') }), null)
+  assert.equal(fs.existsSync(path.join(w.data, 'continuity')), false)
+})
+
+test('a new turn removes the earlier turn files', (t) => {
+  const { w, call, file } = leadWorld(t, 's-clean')
+  for (let i = 0; i < 3; i++) call('Edit', { file_path: file('src', 'a.js') })
+  const dir = path.join(w.data, 'continuity')
+  const before = fs.readdirSync(dir)
+  assert.equal(before.length, 2)
+  call('Read', { file_path: file('src', 'a.js') }, { prompt_id: 'p2' })
+  const after = fs.readdirSync(dir)
+  assert.equal(after.length, 1)
+  assert.ok(before.every((name) => !after.includes(name)))
+})
+
+test('turn keys keep distinct prompt IDs safe as file names', (t) => {
+  const { w, call, file } = leadWorld(t, 's-safe-key')
+  const edit = (prompt_id) => call('Edit', { file_path: file('src', 'a.js') }, { prompt_id })
+  for (const prompt of ['../prompt/one\n', '.._prompt_one_']) {
+    assert.equal(edit(prompt), null)
+    assert.equal(edit(prompt), null)
+    assert.ok(edit(prompt))
+    const names = fs.readdirSync(path.join(w.data, 'continuity'))
+    assert.equal(names.filter((name) => name.endsWith('.log')).length, 1)
+    assert.equal(names.filter((name) => name.endsWith('.notice')).length, 1)
+    assert.ok(names.every((name) => /^[a-zA-Z0-9_.-]+$/.test(name)))
+  }
+})
+
+test('housekeeping tolerates turn files that another hook already removed', (t) => {
+  const { w, call, file } = leadWorld(t, 's-clean-race')
+  for (let i = 0; i < 3; i++) call('Edit', { file_path: file('src', 'a.js') })
+  const dir = path.join(w.data, 'continuity')
+  const previous = fs.readdirSync(dir)
+  const unlink = fs.unlinkSync
+  const mock = t.mock.method(fs, 'unlinkSync', function (target) {
+    if (previous.some((name) => target === path.join(dir, name))) unlink.call(this, target)
+    return unlink.call(this, target)
+  })
+  assert.equal(call('Edit', { file_path: file('src', 'a.js') }, { prompt_id: 'p2' }), null)
+  mock.mock.restore()
+  assert.ok(previous.every((name) => !fs.existsSync(path.join(dir, name))))
+  const names = fs.readdirSync(dir)
+  assert.equal(names.length, 1)
+  assert.equal(fs.readFileSync(path.join(dir, names[0]), 'utf8'), 'edit\n')
+})
+
+test('a new turn prunes only old counter files and preserves another active session', (t) => {
+  const { w, call, file, ctx } = leadWorld(t, 's-prune')
+  const other = (session) => {
+    markSession(w.data, session, 1000, { repo: w.repo.dir, claude: null })
+    for (let i = 0; i < 3; i++) posttool.posttool({ session_id: session, prompt_id: 'p1', cwd: w.repo.dir, tool_name: 'Edit', tool_input: { file_path: file('src', 'a.js') } }, ctx)
+  }
+  other('s-old')
+  const dir = path.join(w.data, 'continuity')
+  const old = fs.readdirSync(dir)
+  const when = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000)
+  for (const name of old) fs.utimesSync(path.join(dir, name), when, when)
+  other('s-active')
+  assert.ok(old.every((name) => !fs.existsSync(path.join(dir, name))))
+  const active = fs.readdirSync(dir)
+  const unrelated = path.join(dir, 'unrelated.log')
+  fs.writeFileSync(unrelated, 'keep\n')
+  fs.utimesSync(unrelated, when, when)
+  assert.equal(call('Read', { file_path: file('src', 'a.js') }), null)
+  assert.ok(active.every((name) => fs.existsSync(path.join(dir, name))))
+  assert.equal(fs.readFileSync(unrelated, 'utf8'), 'keep\n')
+})
+
+for (const legacy of ['malformed', 'unreadable']) {
+  test(`${legacy === 'unreadable' ? 'an' : 'a'} ${legacy} legacy counter is ignored`, (t) => {
+    const { w, call, file } = leadWorld(t, 's-legacy')
+    const dir = path.join(w.data, 'continuity')
+    fs.mkdirSync(dir, { recursive: true })
+    const oldState = path.join(dir, 's-legacy.json')
+    if (legacy === 'malformed') fs.writeFileSync(oldState, '{broken')
+    else fs.mkdirSync(oldState) // Reading a directory as JSON fails even when the tests run as root.
+    assert.equal(call('Edit', { file_path: file('src', 'a.js') }), null)
+    assert.equal(call('Edit', { file_path: file('src', 'a.js') }), null)
+    assert.ok(call('Edit', { file_path: file('src', 'a.js') }))
+  })
+}
+
+test('the direct notice appears through the real posttool bin', (t) => {
+  const { w, call, file } = leadWorld(t, 's-bin')
+  const input = { session_id: 's-bin', prompt_id: 'p1', cwd: w.repo.dir, tool_name: 'Edit', tool_input: { file_path: file('src', 'a.js') } }
+  assert.equal(call('Edit', input.tool_input), null)
+  assert.equal(call('Edit', input.tool_input), null)
+  const result = spawnSync(process.execPath, [path.join(PLUGIN, 'bin', 'aether-continuity'), 'posttool'], {
+    input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: w.data, CLAUDE_CONFIG_DIR: w.configDir, LANG: 'en_US.UTF-8' },
+  })
+  assert.ifError(result.error)
+  assert.equal(result.status, 0)
+  assert.equal(result.stderr, '')
+  const output = JSON.parse(result.stdout).hookSpecificOutput
+  assert.equal(output.hookEventName, 'PostToolUse')
+  assert.match(output.additionalContext, /direct-path limit/)
+})
+
+for (const [tool, count] of [['Read', 12], ['Edit', 6]]) {
+  test(`parallel ${tool} calls preserve every count and reserve one notice`, { timeout: 30000 }, async (t) => {
+    const { w, file } = leadWorld(t, `s-parallel-${tool}`)
+    const modulePath = path.join(PLUGIN, 'lib', 'continuity-posttool.js')
+    const input = { session_id: `s-parallel-${tool}`, prompt_id: 'p1', cwd: w.repo.dir, tool_name: tool, tool_input: { file_path: file('src', 'a.js') } }
+    const ctx = { env: w.env, home: w.configDir, dataDir: w.data }
+    const script = `const posttool = require(${JSON.stringify(modulePath)}); process.on('message', () => { process.send(posttool.posttool(${JSON.stringify(input)}, ${JSON.stringify(ctx)})); process.disconnect() }); process.send('ready')`
+    const children = Array.from({ length: count }, () => fork('-e', [script], { silent: true, execArgv: [] }))
+    t.after(() => children.forEach((child) => { if (child.exitCode === null) child.kill() }))
+    const ready = children.map((child) => new Promise((resolve, reject) => {
+      child.once('message', (message) => {
+        if (message === 'ready') resolve()
+        else reject(new Error('child did not signal readiness'))
+      })
+      child.once('error', reject)
+      child.once('exit', () => reject(new Error('child exited before readiness')))
+    }))
+    const finished = children.map((child) => new Promise((resolve, reject) => {
+      let output
+      let stderr = ''
+      child.stderr.on('data', (chunk) => { stderr += chunk })
+      child.on('message', (message) => { if (message !== 'ready') output = message })
+      child.once('error', reject)
+      child.once('close', (code) => {
+        if (code !== 0 || output === undefined || stderr) reject(new Error(`child exited ${code}: ${stderr}`))
+        else resolve(output)
+      })
+    }))
+    const [, outputs] = await Promise.all([
+      Promise.all(ready).then(() => children.forEach((child) => child.send('go'))),
+      Promise.all(finished),
+    ])
+    assert.equal(outputs.filter(Boolean).length, 1)
+    const dir = path.join(w.data, 'continuity')
+    const logs = fs.readdirSync(dir).filter((name) => name.endsWith('.log'))
+    assert.equal(logs.length, 1)
+    assert.deepEqual(fs.readFileSync(path.join(dir, logs[0]), 'utf8').split('\n'), [...Array(count).fill(tool === 'Edit' ? 'edit' : 'read'), ''])
+    assert.equal(fs.readdirSync(dir).filter((name) => name.endsWith('.notice')).length, 1)
+  })
+}

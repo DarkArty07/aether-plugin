@@ -6,8 +6,8 @@
 const path = require('node:path')
 const fs = require('node:fs')
 const os = require('node:os')
+const { createHash } = require('node:crypto')
 const { commandSegments, dropWrappers, nameOf, redirectTargets } = require('./guard.js')
-const { readJsonOrNull, writeFileAtomic } = require('./common.js')
 const { isAetherSession } = require('./session.js')
 const treeCheck = require('./tree-check.js')
 const skillRegistry = require('./skill-registry.js')
@@ -125,33 +125,53 @@ function isDirectRead(input, ctx) {
 function directTurnBudget(input, ctx) {
   if (!input || input.agent_id || typeof input.session_id !== 'string' || !ctx.dataDir || !isAetherSession(ctx.dataDir, input.session_id)) return null
   try {
-    const file = path.join(ctx.dataDir, 'continuity', `${input.session_id}.json`)
+    const edit = isDirectEdit(input, ctx)
+    const read = isDirectRead(input, ctx)
+    if (!edit && !read) return null
     const note = readNote(continuityDir({ cwd: input.cwd, env: ctx.env, home: ctx.home }), input.session_id)
-    const noteAt = typeof note?.updatedAt === 'number' ? note.updatedAt : null
-    let state = readJsonOrNull(file)
-    if (!state) {
-      try {
-        fs.statSync(file)
-        return null // An unreadable or invalid existing state must not be replaced.
-      } catch (error) {
-        if (error.code !== 'ENOENT') return null
+    const noteAt = typeof note?.updatedAt === 'number' ? note.updatedAt : 0
+    const hash = (value) => createHash('sha256').update(value).digest('hex')
+    const session = hash(input.session_id)
+    const key = hash(JSON.stringify([typeof input.prompt_id === 'string' ? input.prompt_id : null, noteAt]))
+    const dir = path.join(ctx.dataDir, 'continuity')
+    const prefix = `${session}.`
+    const file = path.join(dir, `${prefix}${key}.log`)
+    const marker = path.join(dir, `${prefix}${key}.notice`)
+    fs.mkdirSync(dir, { recursive: true })
+    let created = false
+    try {
+      // Elect one caller to prune; existing logs are never truncated or replaced.
+      fs.closeSync(fs.openSync(file, 'wx'))
+      created = true
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error
+    }
+    if (created) {
+      const staleBefore = Date.now() - 30 * 24 * 60 * 60 * 1000
+      for (const name of fs.readdirSync(dir)) {
+        if (!/^[a-f0-9]{64}\.[a-f0-9]{64}\.(log|notice)$/.test(name)) continue
+        const target = path.join(dir, name)
+        if (target === file || target === marker) continue
+        try {
+          if (name.startsWith(prefix) || fs.statSync(target).mtimeMs < staleBefore) fs.unlinkSync(target)
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error
+        }
       }
     }
-    if (!state || (typeof input.prompt_id === 'string' && input.prompt_id !== state.promptId) ||
-        (noteAt !== null && (state.sinceNoteAt === null || noteAt > state.sinceNoteAt))) {
-      state = { promptId: input.prompt_id ?? null, sinceNoteAt: noteAt, edits: 0, reads: 0, notified: false }
-    }
-    if (isDirectEdit(input, ctx)) state.edits++
-    if (isDirectRead(input, ctx)) state.reads++
-    let text = null
-    if (!state.notified && (state.edits >= DIRECT_EDIT_LIMIT || state.reads >= DIRECT_READ_LIMIT)) {
-      state.notified = true
-      text = isSpanish(ctx.env)
+    // One small O_APPEND write per counted call preserves concurrent increments.
+    fs.appendFileSync(file, edit ? 'edit\n' : 'read\n', { flag: 'a' })
+    const lines = fs.readFileSync(file, 'utf8').split('\n')
+    const edits = lines.filter((line) => line === 'edit').length
+    const reads = lines.filter((line) => line === 'read').length
+    if (edits >= DIRECT_EDIT_LIMIT || reads >= DIRECT_READ_LIMIT) {
+      // Only the exclusive creator returns the notice; EEXIST is caught below.
+      fs.closeSync(fs.openSync(marker, 'wx'))
+      return isSpanish(ctx.env)
         ? 'Aether: se alcanzó el límite del camino directo en este turno (3 ediciones propias de código o pruebas, o 10 lecturas o búsquedas en el código). Según los tres caminos, el resto de este trabajo pasa a una tarea delegada (Agent, con un encargo AETHER-TASK), salvo que el dueño te haya pedido hacerlo a ti.'
         : 'Aether: the direct-path limit for this turn was reached (3 own edits to code or tests, or 10 reads or searches in the code). By the three paths, the rest of this work goes to a delegate task (Agent, with an AETHER-TASK brief), unless the owner asked you to do it yourself.'
     }
-    writeFileAtomic(file, `${JSON.stringify(state)}\n`)
-    return text
+    return null
   } catch { return null }
 }
 
