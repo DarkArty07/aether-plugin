@@ -101,7 +101,7 @@ test('delegatesReport flags fix attempt when verdict is followed by a new launch
 **Aether:**
 - Review: xhigh — gobierna la compuerta de autorización de corridas autónomas (`aether-autonomy start`) y el freno de seguridad de tiempo, gasto y cuota (`launchRefusal`)
 - Area: autonomy
-- Owns: `plugins/aether/lib/autonomy.js`, `tests/*autonomy*.test.js`, `tests/quota-brake*.test.js`, `tests/guard*.test.js`, `tests/copies-classes.test.js`, `tests/docs-claims.test.js`
+- Owns: `plugins/aether/lib/autonomy.js`, `tests/autonomy.test.js`, `tests/autonomy-trust.test.js`, `tests/aether-autonomy.test.js`, `tests/quota-brake.test.js`, `tests/quota-brake-scenarios.test.js`, `tests/guard.test.js`, `tests/guard-merge-main.test.js`, `tests/guard-skills.test.js`, `tests/guard-tidy.test.js`, `tests/copies-classes.test.js`, `tests/docs-claims.test.js`
 - Depends on: none
 - Serves: R3, R5, R12
 
@@ -111,13 +111,13 @@ test('delegatesReport flags fix attempt when verdict is followed by a new launch
 
 **Interfaces:**
 En `plugins/aether/lib/autonomy.js`:
-- `readSessionRecords(configDir, sessionId)`: localiza el archivo `<sessionId>.jsonl` mediante `findSessionTranscript(configDir, sessionId)` (de `voice.js`); si no existe o no puede leerse devuelve `{ found: false, records: [] }`; si se lee, parsea cada línea JSON válida y devuelve `{ found: true, records }`.
+- `readSessionRecords(configDir, sessionId)`: localiza y lee las líneas de `<sessionId>.jsonl` mediante `transcriptLines(sessionId, configDir)` (`findTranscript(sessionId, { configDir })` de `voice.js`); si no existe o no puede leerse devuelve `{ found: false, records: [] }`; si se lee, parsea cada línea JSON válida y devuelve `{ found: true, records }`.
 - `isHeadlessTranscript(records)`: devuelve `true` únicamente cuando `records.length > 0`, al menos un registro tiene `r.entrypoint === 'sdk-cli'` y ningún registro con `typeof r.entrypoint === 'string'` tiene un valor distinto de `'sdk-cli'`.
 - `countApprovedPlanModes(records)`: recorre los mensajes de `records` en orden; registra los `id` de bloques `tool_use` con `name === 'ExitPlanMode'` en mensajes `assistant`; y cuenta cuántos bloques `tool_result` en mensajes `user` posteriores referencian uno de esos `tool_use_id` (sin reutilizar el mismo `tool_use_id`), tienen `is_error !== true` y contienen texto (cadena en `content` o bloque `{ type: 'text', text }`) que empieza por `'User has approved your plan.'` (o contiene `\nUser has approved your plan.`).
 - `countSessionRuns(root, sessionId)`: cuenta cuántos archivos `run.json` bajo `.aether/autonomy/` tienen `run.session === sessionId`.
-- En `start(mainRoot, { quote, session, hours, usd } = {}, { configDir = defaultConfigDir(), dataDir = runDataDir(), now = Date.now() } = {})`:
-  - Después de verificar la cita literal del dueño (`verifyOwnerQuote`) y que no haya otra corrida abierta (`openRun`), comprueba `isAetherSession(resolveDataDir(dataDir), session)` (de `./session.js`).
-  - Solo cuando `isAetherSession(resolveDataDir(dataDir), session)` es `true`: lee `readSessionRecords(configDir, session)`. Si `!isHeadlessTranscript(records)`, calcula `approvals = countApprovedPlanModes(records)` y `priorRuns = countSessionRuns(root, session)`. Si `approvals <= priorRuns`, devuelve:
+- En `start(mainRoot, { quote, session, hours = null, usd = null } = {}, { configDir, dataDir = runDataDir(), now = Date.now() } = {})`:
+  - Después de verificar la cita literal del dueño (`verifyQuote`) y que no haya otra corrida abierta (`openRun`), comprueba `isAetherSession(resolveDataDir(dataDir), session)` (de `./session.js`).
+  - Solo cuando `isAetherSession(resolveDataDir(dataDir), session)` es `true`: lee `readSessionRecords(configDir, session)`. Si `!isHeadlessTranscript(records)`, calcula `approvals = countApprovedPlanModes(records)` y `priorRuns = countSessionRuns(mainRoot, session)`. Si `approvals <= priorRuns`, devuelve:
     `{ ok: false, reason: 'interactive session requires an approved plan in plan mode (ExitPlanMode) before starting an autonomous run; present the plan in plan mode and wait for the owner to approve it before running aether-autonomy start' }`.
   - Cuando `isAetherSession` es `false` (fuera de una sesión del Lead), no exige `ExitPlanMode` y conserva el comportamiento actual.
   - No añade campos nuevos al archivo de corrida (conserva exactamente `{ id, session, quote, quoteTime, started, ceilings, spend, brakeOff, quotaPauses, quotaCrossings, ended, outcome }`).
@@ -128,9 +128,17 @@ En `plugins/aether/lib/autonomy.js`:
   - Si `st.stop === 'cost'`, devuelve `{ stop: 'cost', id: st.id, hours: st.hours, usd: st.usd, quota: st.quota, message: \`autonomous run \${st.id} reached its spend ceiling ($\${st.usd.spent} / $\${st.usd.ceiling}); close it with: aether-autonomy end --outcome ceiling\` }`.
   - Si `st.stop === 'quota'`, devuelve `{ stop: 'quota', id: st.id, hours: st.hours, usd: st.usd, quota: st.quota, message: \`autonomous run \${st.id} is paused by the quota brake (\${st.quota.percentUsed}% used; resumeAt \${st.quota.resumeAt || 'pending'}); wait until \${st.quota.resumeAt || 'the quota window resets'} or close the run with: aether-autonomy end --outcome incomplete\` }`.
 - Exportar `launchRefusal` en `module.exports` de `plugins/aether/lib/autonomy.js`.
+- En `tests/autonomy.test.js`:
+  - Importar `useDataDir` en la línea 8: `const { tempDir, makeRepo, useDataDir, PLUGIN } = require('./helpers.js')`.
+  - Definir `const QUOTE = HOURS` junto a `HOURS`.
+  - Extender `human` en las líneas 21–22 (y en `tests/aether-autonomy.test.js`, `tests/quota-brake.test.js` y `tests/quota-brake-scenarios.test.js`) con un tercer parámetro opcional `extra = {}` y `entrypoint: 'sdk-cli'` por defecto:
+    ```js
+    const human = (text, time, extra = {}) =>
+      JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, entrypoint: 'sdk-cli', timestamp: time, message: { role: 'user', content: text }, ...extra })
+    ```
 
 **Tests (write first):**
-Añadir en `tests/autonomy.test.js` (usando los ayudantes `setup(t, sessions)`, `human(text, time, extra)`, `useDataDir(t)`, `SESSION` y `QUOTE` definidos en ese archivo, junto con `markSession` de `../plugins/aether/lib/session.js`):
+En `tests/autonomy.test.js` (tras actualizar la importación de `useDataDir`, `const QUOTE = HOURS` y la firma `human(text, time, extra = {})`):
 
 ```js
 function planUse(toolUseId = 'toolu_plan_1', timestamp = '2026-04-06T10:00:02.000Z') {
@@ -180,7 +188,7 @@ test('start in a Lead session rejects interactive cli transcript without ExitPla
     { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
   )
   assert.equal(plainStart.ok, true)
-  autonomy.end(mainRoot, { outcome: 'done', now: Date.parse('2026-04-06T10:01:00.000Z') })
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:01:00.000Z') })
   fs.rmSync(path.join(mainRoot, '.aether', 'autonomy'), { recursive: true, force: true })
 
   // Mark as Lead session
@@ -223,7 +231,7 @@ test('start in a Lead session rejects interactive cli transcript without ExitPla
     { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') }
   )
   assert.equal(approvedPlan.ok, true)
-  autonomy.end(mainRoot, { outcome: 'done', now: Date.parse('2026-04-06T10:10:00.000Z') })
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:10:00.000Z') })
 
   const reusedApproval = autonomy.start(
     mainRoot,
@@ -261,18 +269,29 @@ test('launchRefusal reports time, cost and quota stops in a Lead session and ret
   assert.equal(autonomy.launchRefusal(mainRoot, { session: 'plain-session', dataDir, now: t0 + 3601 * 1000 }), null)
 
   // Quota pause
-  const resetsAt = t0 + 4 * 3600 * 1000
-  autonomy.recordCrossing(mainRoot, { kind: 'five_hour', percentUsed: 80, resetsAt, now: t0 + 2000 })
+  const resetsAt = new Date(t0 + 4 * 3600 * 1000).toISOString()
+  autonomy.recordCrossing(
+    mainRoot,
+    { kind: 'five_hour', percentUsed: 80, resetsAt, threshold: 80 },
+    { now: t0 + 2000, dataDir }
+  )
   const byQuota = autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 3000 })
   assert.equal(byQuota.stop, 'quota')
   assert.equal(byQuota.id, started.run.id)
   assert.match(byQuota.message, /aether-autonomy end --outcome incomplete/)
 
-  // Spend ceiling (after quota window resets)
-  autonomy.spend(mainRoot, { unit: 'u1', usd: 5, now: resetsAt + 1000 })
-  const byCost = autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: resetsAt + 2000 })
+  // Spend ceiling (in a fresh run with a 10-hour ceiling)
+  autonomy.end(mainRoot, 'incomplete', { now: t0 + 4000 })
+  const startedCost = autonomy.start(
+    mainRoot,
+    { quote: QUOTE, session: SESSION, hours: 10, usd: 5 },
+    { configDir, dataDir, now: t0 + 5000 }
+  )
+  assert.equal(startedCost.ok, true)
+  autonomy.spend(mainRoot, 5, 'u1', { now: t0 + 6000 })
+  const byCost = autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 7000 })
   assert.equal(byCost.stop, 'cost')
-  assert.equal(byCost.id, started.run.id)
+  assert.equal(byCost.id, startedCost.run.id)
   assert.match(byCost.message, /aether-autonomy end --outcome ceiling/)
 })
 ```
@@ -396,7 +415,7 @@ test('p.direct.w states the canonical countable rule in Spanish and English whil
 
 **Aether:**
 - Area: continuity
-- Owns: `plugins/aether/bin/aether-continuity`, `plugins/aether/lib/continuity-hook.js`, `tests/continuity-hook.test.js`, `tests/session-start-continuity.test.js`, `tests/using-aether-030.test.js`
+- Owns: `plugins/aether/bin/aether-continuity`, `plugins/aether/lib/continuity-hook.js`, `tests/continuity-hook.test.js`, `tests/session-start-continuity.test.js`
 - Depends on: Task 1 — usa unverdictedDelegates de delegate-report.js para consultar los resultados sin veredicto de la sesión
 - Serves: R1, R12
 
@@ -518,7 +537,7 @@ test('stop warns once per unverdicted delegate result in the Lead session and st
 **Aether:**
 - Review: xhigh — impide que el delegado o el enjambre lancen agentes cuando el tope de tiempo, el tope de gasto o el freno de cuota de una corrida autónoma están activos
 - Area: autonomy-gates
-- Owns: `plugins/aether/lib/delegate-task.js`, `plugins/aether/lib/plan-compile.js`, `tests/delegate-*.test.js`, `tests/ladder-one-source.test.js`, `tests/baseline.test.js`
+- Owns: `plugins/aether/lib/delegate-task.js`, `plugins/aether/lib/plan-compile.js`, `tests/delegate-task.test.js`, `tests/delegate-authorize.test.js`, `tests/delegate-skills.test.js`, `tests/ladder-one-source.test.js`, `tests/baseline.test.js`
 - Depends on: Task 2 — usa autonomy.launchRefusal para comprobar si hay una corrida abierta con stop en time, cost o quota
 - Serves: R3, R12
 
@@ -530,11 +549,11 @@ Hacer que en una sesión del Lead `aether-delegate begin` (`plugins/aether/lib/d
    - `autonomyRefusedPlan(r, ctx, refusal)`: construye `prompt = \`Aether delegate task \${ctx.id} was not launched: \${refusal.message}. Do not do any work. Tell the Lead why the launch was refused.\`` y llama a `refusedLaunchPlan(r, ctx, prompt, prompt)` añadiendo `stop: refusal.stop` y `run: refusal.id` al plan devuelto.
    - En `begin(input, deps = {})`: tras construir `ctx` (antes de comprobar `next.status` o cargar skills), llamar a `autonomy.launchRefusal(r.cwd, { session, dataDir: r.dataDir, now: r.now() })`. Si devuelve un objeto `refusal`, retornar `autonomyRefusedPlan(r, ctx, refusal)`.
 2. En `plugins/aether/lib/plan-compile.js`:
-   - En `compile(planArg, rest, { cwd, stdout, env = process.env } = {})`: tras resolver `repo.mainRoot`, llamar a `autonomy.launchRefusal(repo.mainRoot, { session: env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_CODE_SESSION_ID || null, dataDir: run.dataDir(env) })`.
+   - En `compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, env = process.env } = {})`: tras resolver `repo.mainRoot`, llamar a `autonomy.launchRefusal(repo.mainRoot, { session: env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_CODE_SESSION_ID || null, dataDir: run.dataDir(env) })`.
    - Si devuelve `refusal`, llamar a `fail([refusal.message], [], stdout)` (sale con código 1 e imprime `{ ok: false, errors: [refusal.message], warnings: [] }`).
 
 **Tests (write first):**
-1. Añadir en `tests/delegate-task.test.js` (usando `task.begin`, `makeRepo`, `tempDir`, `BRIEF`, `autonomy` y `markSession`):
+1. Añadir en `tests/delegate-task.test.js` (usando `task.begin`, `makeRepo`, `tempDir`, `BRIEF('t1')`, `autonomy` y `markSession`):
 
 ```js
 test('begin refuses to launch a delegate in a Lead session when an open autonomous run hit time, cost, or quota stop, and leaves non-Lead sessions unchanged', async (t) => {
@@ -568,7 +587,7 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
 
   const ask = (session, nowMs) =>
     task.begin(
-      { session, event: { description: 'build feature', prompt: BRIEF } },
+      { session, event: { description: 'build feature', prompt: BRIEF('t1') } },
       { dataDir, cwd: repo.dir, settings: { enabled: false }, now: () => nowMs }
     )
 
@@ -584,8 +603,12 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
   assert.notEqual(nonLead.kind, 'refused')
 
   // Quota stop in Lead session (within time ceiling)
-  const resetsAt = t0 + 4 * 3600 * 1000
-  autonomy.recordCrossing(repo.dir, { kind: 'five_hour', percentUsed: 80, resetsAt, now: t0 + 1000 })
+  const resetsAt = new Date(t0 + 4 * 3600 * 1000).toISOString()
+  autonomy.recordCrossing(
+    repo.dir,
+    { kind: 'five_hour', percentUsed: 80, resetsAt, threshold: 80 },
+    { now: t0 + 1000, dataDir }
+  )
   const byQuota = await ask('sess-1', t0 + 2000)
   assert.equal(byQuota.kind, 'refused')
   assert.equal(byQuota.stop, 'quota')
@@ -593,13 +616,14 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
   assert.match(byQuota.notes.join('\n'), /aether-autonomy end --outcome incomplete/)
 
   // Cost stop in Lead session (in a fresh run with 10h ceiling)
-  autonomy.end(repo.dir, { outcome: 'incomplete', now: t0 + 3000 })
+  autonomy.end(repo.dir, 'incomplete', { now: t0 + 3000 })
   const startedCost = autonomy.start(
     repo.dir,
     { quote: 'run unattended for 1 hour', session: 'sess-1', hours: 10, usd: 5 },
     { configDir, dataDir, now: t0 + 4000 }
   )
-  autonomy.spend(repo.dir, { unit: 'u1', usd: 5, now: t0 + 5000 })
+  assert.equal(startedCost.ok, true)
+  autonomy.spend(repo.dir, 5, 'u1', { now: t0 + 5000 })
   const byCost = await ask('sess-1', t0 + 6000)
   assert.equal(byCost.kind, 'refused')
   assert.equal(byCost.stop, 'cost')
@@ -608,10 +632,12 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
 })
 ```
 
-2. Añadir en `tests/baseline.test.js` (usando `makeRepo`, `tempDir`, `writePlan`, `runBin`, `PLAN_BIN` definidos e importados de `./helpers.js`):
+2. Añadir en `tests/baseline.test.js` (importando `makeRepo`, `writePlan`, `runBin`, `PLAN_BIN` de `./helpers.js` y `plan`, `task` de `./plan-fixtures.js`):
 
 ```js
 test('aether-plan compile refuses in a Lead session when an open autonomous run hit time, cost, or quota stop, and leaves non-Lead sessions unchanged', (t) => {
+  const { makeRepo, writePlan, runBin, PLAN_BIN } = require('./helpers.js')
+  const { plan, task } = require('./plan-fixtures.js')
   const repo = makeRepo(t)
   const autonomy = require('../plugins/aether/lib/autonomy.js')
   const { markSession } = require('../plugins/aether/lib/session.js')
@@ -640,8 +666,7 @@ test('aether-plan compile refuses in a Lead session when an open autonomous run 
   )
   assert.equal(started.ok, true)
 
-  repo.git('checkout', '-b', 'feat/test-compile')
-  const tasksFile = writePlan(repo.dir)
+  const tasksFile = writePlan(repo.dir, plan([task(1), task(2)]))
 
   // Time stop in Lead session
   const resTime = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
@@ -649,8 +674,8 @@ test('aether-plan compile refuses in a Lead session when an open autonomous run 
     CLAUDE_CODE_SESSION_ID: 'sess-p',
   })
   assert.notEqual(resTime.status, 0)
-  assert.match(resTime.out.errors[0], new RegExp(started.run.id))
-  assert.match(resTime.out.errors[0], /aether-autonomy end --outcome ceiling/)
+  assert.match(resTime.json.errors[0], new RegExp(started.run.id))
+  assert.match(resTime.json.errors[0], /aether-autonomy end --outcome ceiling/)
 
   // Non-Lead session compiles normally (C7)
   const resPlain = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
@@ -659,35 +684,42 @@ test('aether-plan compile refuses in a Lead session when an open autonomous run 
   })
   assert.equal(resPlain.status, 0)
 
-  // Cost and quota stops in Lead session
-  autonomy.end(repo.dir, { outcome: 'ceiling', now: Date.now() - 1000 })
+  // Quota and cost stops in Lead session
+  autonomy.end(repo.dir, 'ceiling', { now: Date.now() - 1000 })
   const started2 = autonomy.start(
     repo.dir,
     { quote: 'work unattended for 1 hour', session: 'sess-p', hours: 10, usd: 5 },
     { configDir, dataDir, now: Date.now() }
   )
-  autonomy.recordCrossing(repo.dir, { kind: 'five_hour', percentUsed: 80, resetsAt: Date.now() + 3600 * 1000, now: Date.now() })
+  assert.equal(started2.ok, true)
+  const resetsAt = new Date(Date.now() + 3600 * 1000).toISOString()
+  autonomy.recordCrossing(
+    repo.dir,
+    { kind: 'five_hour', percentUsed: 80, resetsAt, threshold: 80 },
+    { now: Date.now(), dataDir }
+  )
   const resQuota = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
     AETHER_DATA_DIR: dataDir,
     CLAUDE_CODE_SESSION_ID: 'sess-p',
   })
   assert.notEqual(resQuota.status, 0)
-  assert.match(resQuota.out.errors[0], /aether-autonomy end --outcome incomplete/)
+  assert.match(resQuota.json.errors[0], /aether-autonomy end --outcome incomplete/)
 
-  autonomy.end(repo.dir, { outcome: 'incomplete', now: Date.now() })
+  autonomy.end(repo.dir, 'incomplete', { now: Date.now() })
   const started3 = autonomy.start(
     repo.dir,
     { quote: 'work unattended for 1 hour', session: 'sess-p', hours: 10, usd: 5 },
     { configDir, dataDir, now: Date.now() }
   )
-  autonomy.spend(repo.dir, { unit: 'u1', usd: 5, now: Date.now() })
+  assert.equal(started3.ok, true)
+  autonomy.spend(repo.dir, 5, 'u1', { now: Date.now() })
   const resCost = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
     AETHER_DATA_DIR: dataDir,
     CLAUDE_CODE_SESSION_ID: 'sess-p',
   })
   assert.notEqual(resCost.status, 0)
-  assert.match(resCost.out.errors[0], new RegExp(started3.run.id))
-  assert.match(resCost.out.errors[0], /aether-autonomy end --outcome ceiling/)
+  assert.match(resCost.json.errors[0], new RegExp(started3.run.id))
+  assert.match(resCost.json.errors[0], /aether-autonomy end --outcome ceiling/)
 })
 ```
 
@@ -722,10 +754,12 @@ test('aether-plan compile refuses in a Lead session when an open autonomous run 
    - En el `return` final del workflow (`return { status, mode, feature, skill: 'aether:designing', verdicts, rounds, times: timesOf(rounds), ...(writerQuestions.length > 0 ? { writerQuestions } : {}), ...fields }`) y en los retornos tempranos de validación: incluir siempre `skill: 'aether:designing'`.
 
 **Tests (write first):**
-1. Añadir en `tests/seat-calls.test.js` (usando `seatRepo`, `modEnv`, `writeMessage`, `seatCalls.start`, `autonomy` y `markSession`):
+1. Añadir en `tests/seat-calls.test.js` (usando `seatRepo`, `modEnv`, `writeMessage`, `tempDir`, `seatCalls.start`, `autonomy` y `markSession`):
 
 ```js
 test('seatCalls.start refuses in a Lead session when an open autonomous run hit time, cost, or quota stop, and leaves non-Lead sessions unchanged', (t) => {
+  const { tempDir } = require('./helpers.js')
+  const seatCalls = require('../plugins/aether/lib/seat-calls.js')
   const repo = seatRepo(t)
   const env = modEnv(t)
   const autonomy = require('../plugins/aether/lib/autonomy.js')
@@ -754,13 +788,14 @@ test('seatCalls.start refuses in a Lead session when an open autonomous run hit 
   )
   assert.equal(started.ok, true)
 
-  const msg = writeMessage(t, 'write spec')
-  const ask = (session, nowMs) =>
-    seatCalls.start(
+  const ask = (session, nowMs) => {
+    const digest = writeMessage(repo, 'write spec', session)
+    return seatCalls.start(
       repo.dir,
-      { seat: 'writer', session, feature: 'specs/010-sample', doc: 'spec', superdelegation: 'off', harnesses: 'agy', digest: msg },
+      { seat: 'writer', session, feature: FEATURE, doc: 'spec', superdelegation: 'off', harnesses: 'agy', digest },
       { env, now: nowMs }
     )
+  }
 
   // Time stop in Lead session
   const byTime = ask('s1', t0 + 3605 * 1000)
@@ -772,23 +807,30 @@ test('seatCalls.start refuses in a Lead session when an open autonomous run hit 
 
   // Non-Lead session is not refused by launchRefusal (C7)
   const nonLead = ask('plain-session', t0 + 3605 * 1000)
+  assert.equal(nonLead.started, true)
   assert.notEqual(nonLead.refused, true)
 
   // Quota stop in Lead session
-  autonomy.recordCrossing(repo.dir, { kind: 'five_hour', percentUsed: 80, resetsAt: t0 + 4 * 3600 * 1000, now: t0 + 1000 })
+  const resetsAt = new Date(t0 + 4 * 3600 * 1000).toISOString()
+  autonomy.recordCrossing(
+    repo.dir,
+    { kind: 'five_hour', percentUsed: 80, resetsAt, threshold: 80 },
+    { now: t0 + 1000, dataDir: env.AETHER_DATA_DIR }
+  )
   const byQuota = ask('s1', t0 + 2000)
   assert.equal(byQuota.refused, true)
   assert.equal(byQuota.stop, 'quota')
   assert.match(byQuota.reason, /aether-autonomy end --outcome incomplete/)
 
   // Cost stop in Lead session
-  autonomy.end(repo.dir, { outcome: 'incomplete', now: t0 + 3000 })
+  autonomy.end(repo.dir, 'incomplete', { now: t0 + 3000 })
   const startedCost = autonomy.start(
     repo.dir,
     { quote: 'run unattended for 1 hour', session: 's1', hours: 10, usd: 5 },
     { configDir, dataDir: env.AETHER_DATA_DIR, now: t0 + 4000 }
   )
-  autonomy.spend(repo.dir, { unit: 'u1', usd: 5, now: t0 + 5000 })
+  assert.equal(startedCost.ok, true)
+  autonomy.spend(repo.dir, 5, 'u1', { now: t0 + 5000 })
   const byCost = ask('s1', t0 + 6000)
   assert.equal(byCost.refused, true)
   assert.equal(byCost.stop, 'cost')
@@ -797,7 +839,7 @@ test('seatCalls.start refuses in a Lead session when an open autonomous run hit 
 })
 ```
 
-2. Añadir en `tests/workflow-design.test.js` (usando `go(ARGS, overrides)` y `ARGS` definidos en ese archivo):
+2. Añadir en `tests/workflow-design.test.js` (usando `go(ARGS, overrides)` y `ARGS` definidos en ese archivo, inyectando el rechazo a través del rol `ops` en el verbo `seat-start`):
 
 ```js
 test('design workflow aborts immediately without native fallback when seat-start is refused by time, cost, or quota stop and includes skill aether:designing', async () => {
@@ -808,13 +850,16 @@ test('design workflow aborts immediately without native fallback when seat-start
   ]) {
     let writerCalled = false
     const run = await go(ARGS, {
-      'aether-lane seat-start': () => ({
-        started: false,
-        refused: true,
-        stop,
-        run: 'run-1',
-        reason,
-      }),
+      ops: (call, fallback) =>
+        call.command.verb === 'seat-start'
+          ? {
+              started: false,
+              refused: true,
+              stop,
+              run: 'run-1',
+              reason,
+            }
+          : fallback(call),
       writer: () => {
         writerCalled = true
         return {}
@@ -851,21 +896,22 @@ Añadir en `plugins/aether/lib/continuity-posttool.js` el conteo por turno de ed
 **Interfaces:**
 En `plugins/aether/lib/continuity-posttool.js`:
 - Constantes exportadas: `DIRECT_EDIT_LIMIT = 3`, `DIRECT_READ_LIMIT = 10`.
-- `posttool(input, ctx = {})` conserva su firma y valor de retorno actuales (`null` cuando ningún manejador dispara, o `{ additionalContext: parts.join('\n') }` cuando al menos un manejador de `HANDLERS` devuelve una cadena).
+- `posttool(input, ctx = {})` conserva su firma y valor de retorno actuales (`null` cuando ningún manejador dispara, o `{ additionalContext: texts.join('\n\n') }` cuando al menos un manejador de `HANDLERS` devuelve una cadena).
 - El nuevo manejador `directTurnBudget(input, ctx)` en `HANDLERS`:
   - Retorna `null` de inmediato si `Boolean(input && input.agent_id)` (subagente) o si `!input || typeof input.session_id !== 'string' || !ctx.dataDir || !isAetherSession(ctx.dataDir, input.session_id)`.
   - Guarda el estado por sesión en `<ctx.dataDir>/continuity/<session_id>.json`: `{ promptId: string | null, sinceStopAt: number | null, edits: number, reads: number, notified: boolean }`.
-  - Reinicia a `{ promptId, sinceStopAt, edits: 0, reads: 0, notified: false }` cuando cambia `input.prompt_id` (si viene definido) o cuando la nota de continuidad en `<continuityDir>/continuity/<session_id>.json` tiene un `updatedAt` posterior al `sinceStopAt` guardado tras un `Stop`.
+  - Reinicia a `{ promptId, sinceStopAt, edits: 0, reads: 0, notified: false }` cuando cambia `input.prompt_id` (si viene definido) o cuando la nota de continuidad en `<continuityDir>/continuity/<session_id>.json` muestra un `updatedAt` registrado por `Stop` más reciente que `sinceStopAt`.
+  - `bashWriteTargets(command)`: extrae las rutas de escritura de un comando `Bash` (redirecciones `>` y `>>`, `tee`, `sed -i`, `cp`, `mv`).
   - `isExemptWriteTarget(targetPath, cwd, memoryDir)`: devuelve `true` si la ruta normalizada relativa a `cwd` (o absoluta) cae bajo `.aether/`, `.specify/`, `specs/`, `docs/`, `README.md`, `CLAUDE.md`, `AGENTS.md`, `/dev/null` o dentro de `memoryDir`.
   - `isDirectCodeEdit(input, cwd, memoryDir)`: devuelve `true` cuando:
     - `tool_name` es `'Write'`, `'Edit'`, `'MultiEdit'` o `'NotebookEdit'` y `tool_input.file_path || tool_input.notebook_path` existe y no es exento según `isExemptWriteTarget`; o
-    - `tool_name === 'Bash'` y `writeTargets(command)` (de `guard.js`) devuelve al menos una ruta que no es exenta según `isExemptWriteTarget`.
-  - `isTestOrAetherCommand(command)`: devuelve `true` cuando el comando `Bash` es una corrida de pruebas (`npm test`, `npm run test`, `npm run check`, `npm run validate`, `node --test`, `pytest`, `jest`, `vitest`, `cargo test`, `go test`) o invoca un binario `aether-*`.
+    - `tool_name === 'Bash'` y `bashWriteTargets(command)` devuelve al menos una ruta que no es exenta según `isExemptWriteTarget`.
+  - `isTestOrAetherCommand(command)`: devuelve `true` cuando el comando `Bash` es una corrida de pruebas (`npm test`, `npm run test*`, `npm run check`, `npm run validate`, `node --test`, `pytest`, `jest`, `vitest`, `cargo test`, `go test`) o invoca un binario `aether-*`.
   - `isDirectReadOrSearch(input)`: devuelve `true` cuando:
     - `tool_name` es `'Read'`, `'Grep'` o `'Glob'`; o
-    - `tool_name === 'Bash'`, `writeTargets(command)` está vacío, `!isTestOrAetherCommand(command)` y el comando invoca un comando de lectura o búsqueda (`READ_COMMANDS` de `guard.js`, `sed`, `awk`, `find`, `rg`, `grep`, `cat`, `head`, `tail`, `wc`, `ls`, `git grep`, `git show`, `git diff`, `git log`, `git status`).
+    - `tool_name === 'Bash'`, `bashWriteTargets(command)` está vacío, `!isTestOrAetherCommand(command)` y el comando invoca un comando de lectura o búsqueda (`rg`, `grep`, `egrep`, `fgrep`, `find`, `fd`, `cat`, `head`, `tail`, `less`, `more`, `wc`, `ls`, `stat`, `diff`, `cmp`, `jq`, `sed`, `awk`, `git grep`, `git show`, `git diff`, `git log`, `git status`).
   - Cuando `edits >= DIRECT_EDIT_LIMIT` o `reads >= DIRECT_READ_LIMIT` y `state.notified === false`:
-    - Marca `state.notified = true`, guarda el estado y devuelve la cadena de aviso (en inglés o en español según `store.isSpanish(ctx.env)`) indicando que se alcanzó el límite del camino directo en este turno (`3` ediciones propias o `10` lecturas/búsquedas) y que el trabajo debe pasar a una tarea delegada (`Agent`).
+    - Marca `state.notified = true`, guarda el estado y devuelve la cadena de aviso (en inglés o en español según `isSpanish(ctx.env)`) indicando que se alcanzó el límite del camino directo en este turno (`3` ediciones propias o `10` lecturas/búsquedas) y que el trabajo debe pasar a una tarea delegada (`Agent`).
 
 **Tests (write first):**
 Añadir en `tests/continuity-posttool.test.js` (usando `world(t)`, `posttool.posttool` y `markSession` de `../plugins/aether/lib/session.js`):
@@ -978,7 +1024,7 @@ test('posttool warns once on the 10th read or search in a turn and ignores test 
 
 **Aether:**
 - Area: skills
-- Owns: `plugins/aether/skills/autonomous-runs/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `tests/autonomous-runs-skill.test.js`, `tests/workflow-review-once.test.js`, `tests/workflow-split.test.js`, `tests/codex-docs.test.js`
+- Owns: `plugins/aether/skills/autonomous-runs/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `tests/autonomous-runs-skill.test.js`, `tests/quota-brake-docs.test.js`, `tests/workflow-review-once.test.js`, `tests/workflow-split.test.js`, `tests/codex-docs.test.js`
 - Depends on: Task 2 — referencia la compuerta de plan mode en aether-autonomy start y el rechazo por topes
 - Depends on: Task 4 — comparte tests/docs-facts.test.js que lee la skill autonomous-runs
 - Serves: R4, R11
@@ -998,6 +1044,8 @@ Actualizar `plugins/aether/skills/autonomous-runs/SKILL.md` y `plugins/aether/sk
      - Explicar que `"the supervisor failed 3 times in a row"` ocurre cuando el supervisor termina tres veces sin devolver respuesta, mientras que un veredicto inválido (`verdict` que no es `approve`, `retry` ni `impossible`, o `retry` sin `findings`) cuenta como un intento `retry` de la tarea.
      - Explicar que el 2.º y 3.er intento del supervisor corren siempre en Claude y que un supervisor o revisor final de Claude que permanezca callado 900 segundos se abandona.
      - Explicar que un hallazgo del supervisor que no nombra ningún archivo recibe el primer archivo listado en el `Owns` de la tarea.
+3. En `tests/quota-brake-docs.test.js`:
+   - Actualizar la aserción sobre `plugins/aether/skills/autonomous-runs/SKILL.md` (`**Ceilings.**`) para reflejar que `aether-delegate begin`, `aether-plan compile` y `/aether:design` comprueban los topes y la pausa por cuota antes de lanzar trabajo en vez de exigir correr `aether-autonomy status` antes de cada lanzamiento.
 
 **Tests (write first):**
 Añadir en `tests/autonomous-runs-skill.test.js` (usando `SKILL` y `read(...parts)` definidos en ese archivo):
@@ -1023,7 +1071,7 @@ test('autonomous-runs and swarm skills describe automatic ceiling refusal and #2
 **Acceptance:**
 - `plugins/aether/skills/autonomous-runs/SKILL.md` y `plugins/aether/skills/swarm/SKILL.md` ya no piden correr `aether-autonomy status` antes de cada lanzamiento y explican cómo responder al rechazo automático de `aether-delegate begin`, `aether-plan compile` y `/aether:design`.
 - `plugins/aether/skills/swarm/SKILL.md` cubre los 6 puntos de #214 (R4 y R11).
-- `node --test tests/autonomous-runs-skill.test.js tests/workflow-review-once.test.js tests/workflow-split.test.js` pasa.
+- `node --test tests/autonomous-runs-skill.test.js tests/quota-brake-docs.test.js tests/workflow-review-once.test.js tests/workflow-split.test.js` pasa.
 
 ---
 
@@ -1031,7 +1079,7 @@ test('autonomous-runs and swarm skills describe automatic ceiling refusal and #2
 
 **Aether:**
 - Area: bootstrap
-- Owns: `plugins/aether/lib/session-start.js`, `plugins/aether/hooks/hooks.json`, `plugins/aether/skills/using-aether/SKILL.md`, `tests/helpers.js`, `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/dormant-030.test.js`, `tests/continuity-hook.test.js`
+- Owns: `plugins/aether/lib/session-start.js`, `plugins/aether/hooks/hooks.json`, `plugins/aether/skills/using-aether/SKILL.md`, `tests/helpers.js`, `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/session-start-tidy.test.js`, `tests/session-start-tree.test.js`, `tests/using-aether-030.test.js`, `tests/bootstrap-design.test.js`, `tests/bootstrap-names.test.js`, `tests/dormant-030.test.js`, `tests/continuity-hook.test.js`, `tests/guards-helpers.test.js`
 - Depends on: Task 3 — requiere que las skills models y designing existan antes de resumirlas en using-aether
 - Depends on: Task 5 — comparte las entradas del archivo de hooks y tests/continuity-hook.test.js
 - Depends on: Task 8 — actualiza el matcher de PostToolUse en el archivo de hooks para el conteo por turno
@@ -1041,7 +1089,7 @@ test('autonomous-runs and swarm skills describe automatic ceiling refusal and #2
 **Goal:**
 1. En `plugins/aether/lib/session-start.js`, reemplazar `partHeading(k, n, root)` por el marco de dos líneas independiente del orden de llegada (R8), manteniendo todos los cortes en fronteras `## ` y cada salida JSON dentro de `PART_LIMIT` (9.800 caracteres).
 2. En `plugins/aether/skills/using-aether/SKILL.md`, resumir `## Models` y `## Designing` remitiendo a `aether:models` y `aether:designing` (conservando las reglas permanentes), reemplazar la regla vaga de cinco llamadas por la frase canónica en inglés de la regla contable (R6) y aplicar las correcciones de #204 (R10), dejando el texto total inyectado en $\le 25.000$ caracteres y 3 partes.
-3. En `plugins/aether/hooks/hooks.json`, dejar en `SessionStart` la entrada de notas y `--part 1`, `--part 2` y `--part 3` (quitando `--part 4` y `--part 5`), y actualizar el `matcher` de `PostToolUse` a `"Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash"`, actualizando en esta misma tarea `tests/helpers.js`, `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/dormant-030.test.js` y `tests/continuity-hook.test.js`.
+3. En `plugins/aether/hooks/hooks.json`, dejar en `SessionStart` la entrada de notas y `--part 1`, `--part 2` y `--part 3` (quitando `--part 4` y `--part 5`), y actualizar el `matcher` de `PostToolUse` a `"Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash"`, actualizando en esta misma tarea `tests/helpers.js`, `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/using-aether-030.test.js`, `tests/bootstrap-design.test.js`, `tests/bootstrap-names.test.js`, `tests/dormant-030.test.js` y `tests/continuity-hook.test.js`.
 
 **Interfaces:**
 1. En `plugins/aether/lib/session-start.js` y `tests/helpers.js`:
@@ -1072,8 +1120,12 @@ test('autonomous-runs and swarm skills describe automatic ceiling refusal and #2
      - Incluir `--ignore <glob>` en `aether-delegate verdict` para archivos sucios ajenos a la tarea.
      - Explicar que relanzar un `task` id ya aprobado o agotado lanza un agente mínimo en Haiku que informa que la tarea ya terminó y que debe abrirse un nuevo `task` id.
      - Explicar que en `AETHER-SKILLS:`, pasar más de 3 skills, un nombre desconocido o una skill que supere el límite de líneas rechaza el lanzamiento entero.
-4. En `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/dormant-030.test.js` y `tests/continuity-hook.test.js`:
-   - Actualizar el conteo de partes de `--part` a `3` (`4` comandos en `SessionStart`, `11` comandos totales en el archivo de hooks), el encabezado de dos líneas en cada parte y el matcher `'Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash'` de `PostToolUse`.
+4. En las pruebas propietarias de esta tarea:
+   - `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/dormant-030.test.js` y `tests/continuity-hook.test.js`: actualizar el conteo de partes de `--part` a `3` (`4` comandos en `SessionStart`, `11` comandos totales en el archivo de hooks), el encabezado de dos líneas en cada parte y el matcher `'Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash'` de `PostToolUse`.
+   - `tests/bootstrap-design.test.js`: comprobar en `plugins/aether/skills/using-aether/SKILL.md` (`## Designing`) las reglas permanentes que se quedan en el arranque (`'/aether:design'`, `'You decide no round, and you start no seat'`, `'Only you write the card: aether-guard refuses every other writer'`, `'Never override the Judge silently'`, `'aether:designing'`) y comprobar en `plugins/aether/skills/designing/SKILL.md` el procedimiento detallado trasladado allí (`'at most five questions, one at a time'`, `'hard to reverse, surprising, or a real trade-off'`, `'specs/NNN-<topic>/intent.md'`, `"the owner's words, quoted as they said them"`, `'what is out'`, `'the answers to the clarifying questions'`, `'At most two revisions per document'`, `'"session": "<CLAUDE_CODE_SESSION_ID>"'`, `'"mode": "short"'`, `'- \`approved\`:'`, `'- \`clarify\`:'`, `'- \`dispute\`:'`, `'- \`failed\`:'`, `'take the reversible side of each as an assumption, put the question in "Espera tu sí"'`, `'change the plan or tasks and launch in short mode (see "Later changes"); when \`mechanical\` is true, fix the findings yourself.'`, `'**Later changes.**'`, `'a fix after a stop at the plan stage'`, `'A changed plan gets a new exam'`, `'an approved spec is never rewritten'`).
+   - `tests/bootstrap-names.test.js`: mantener la comprobación del orden de las 5 secciones `['## The route by size and risk', '## The three paths', '## The delegate ladder', '## Models', '## Designing']`, actualizar `rubric(...)` para leer la tabla de precios y citas del fabricante desde `plugins/aether/skills/models/SKILL.md`, e incluir `skills/models/SKILL.md` y `skills/designing/SKILL.md` en `sources(t)`.
+   - `tests/using-aether-030.test.js`: verificar que las reglas de #204 están en `using-aether/SKILL.md` y que `bootstrapParts` cabe en los 3 `PART_COMMANDS` de `hooks.json`.
+   - `tests/session-start-tidy.test.js` y `tests/session-start-tree.test.js`: ejercitan `session-start.js` (`main` y `PART_LIMIT`) y se mantienen en verde sin cambios de lógica.
 
 **Tests (write first):**
 Añadir en `tests/session-start-parts.test.js` (usando `PLUGIN`, `PART_LIMIT` y `bootstrapParts` definidos en ese archivo):
@@ -1103,7 +1155,7 @@ test('bootstrap splits into at most 3 order-independent parts within 25,000 tota
 - `bootstrapParts(PLUGIN)` cabe en las 3 partes de `hooks/hooks.json`; cada parte empieza con las dos líneas de R8, corta en frontera `## `, su JSON completo mide $\le 9.800$ caracteres (incluso con ruta de 400 caracteres) y la suma de los textos inyectados mide $\le 25.000$ caracteres.
 - `plugins/aether/hooks/hooks.json` tiene 3 entradas `--part` (`1`, `2`, `3`) y ninguna entrada `--part` devuelve `{}` vacío.
 - `plugins/aether/skills/using-aether/SKILL.md` contiene la frase canónica en inglés de la regla contable (R6), remite a `aether:models` y `aether:designing` (R9) y refleja las correcciones de #204 (R10).
-- `node --test tests/session-start.test.js tests/session-start-parts.test.js tests/dormant-030.test.js tests/continuity-hook.test.js` pasa.
+- `node --test tests/session-start.test.js tests/session-start-parts.test.js tests/session-start-tidy.test.js tests/session-start-tree.test.js tests/using-aether-030.test.js tests/bootstrap-design.test.js tests/bootstrap-names.test.js tests/dormant-030.test.js tests/continuity-hook.test.js` pasa.
 
 ---
 
@@ -1111,7 +1163,7 @@ test('bootstrap splits into at most 3 order-independent parts within 25,000 tota
 
 **Aether:**
 - Area: docs
-- Owns: `CLAUDE.md`, `docs/methodology.md`, `docs/reference/components.md`, `docs/guide/delegates.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`, `docs/decisions.md`, `docs/index.md`, `tests/docs-facts.test.js`
+- Owns: `CLAUDE.md`, `docs/methodology.md`, `docs/reference/components.md`, `docs/guide/delegates.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`, `docs/decisions.md`, `docs/index.md`, `tests/docs-facts.test.js`, `tests/docs-030.test.js`, `tests/components-docs.test.js`, `tests/docs-decisions.test.js`, `tests/docs-claims-rest.test.js`, `tests/aether-lane.test.js`, `tests/audit-docs.test.js`, `tests/codex-release.test.js`, `tests/effort-policy-docs.test.js`, `tests/guards.test.js`, `tests/harness-lists.test.js`, `tests/lane-agents-md.test.js`, `tests/lanes-docs.test.js`, `tests/launcher.test.js`, `tests/models-by-role-docs.test.js`, `tests/muse-docs-overview.test.js`, `tests/no-router.test.js`, `tests/observe-docs.test.js`, `tests/onboard-retired.test.js`, `tests/project-files-docs.test.js`, `tests/retired-patterns.js`, `tests/spend-docs.test.js`, `tests/swarm-ladder-docs.test.js`, `tests/tidy-detect.test.js`, `tests/tidy-report.test.js`
 - Depends on: Task 6 — documenta el rechazo automático en aether-delegate begin y aether-plan compile
 - Depends on: Task 7 — documenta el rechazo automático y la clave skill en /aether:design
 - Depends on: Task 10 — actualiza las pruebas y guías con las 3 partes de SessionStart y el matcher de PostToolUse
@@ -1133,8 +1185,9 @@ Actualizar `CLAUDE.md`, `docs/methodology.md`, `docs/reference/components.md`, `
    - Documentar `aether:designing` y `aether:models` en la lista de skills.
    - Documentar `unverdicted` en `aether-report --delegates`, el aviso en `Stop`, el aviso en `PostToolUse` a las 3 ediciones o 10 lecturas, el rechazo automático por topes/pausa y la exigencia de plan mode en `aether-autonomy start` interactivo.
    - Medir y actualizar en `docs/reference/components.md` (`## What Aether adds to a normal session`, conservando la frase histórica `Version 0.35.0 adds seven hook entries...`) la huella durmiente fuera de una sesión del Lead: `SessionStart` corre 4 procesos cortos en vez de 6, y `PostToolUse` (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Read`, `Grep`, `Glob`, `Bash`) corre 1 proceso corto `aether-continuity posttool` (~33 ms en Node 22 sobre Linux/WSL2) por llamada, con `0 B` en `stdout` y `0` archivos escritos cuando `!isAetherSession`.
-4. En `tests/docs-facts.test.js`:
-   - Verificar que `docs/reference/components.md` documente la medición en sesión normal de `PostToolUse` para `Read`, `Grep` y `Glob`, y verificar que la frase canónica en inglés (`COUNTABLE_EN`) y la frase canónica en español (`COUNTABLE_ES`) estén presentes literalmente en los seis lugares de R6.
+4. En `tests/docs-facts.test.js` y demás pruebas de documentación propietarias de esta tarea:
+   - Verificar en `tests/docs-facts.test.js` que `docs/reference/components.md` documente la medición en sesión normal de `PostToolUse` para `Read`, `Grep` y `Glob`, y verificar que la frase canónica en inglés (`COUNTABLE_EN`) y la frase canónica en español (`COUNTABLE_ES`) estén presentes literalmente en los seis lugares de R6.
+   - Mantener en verde `tests/docs-030.test.js`, `tests/components-docs.test.js`, `tests/docs-decisions.test.js`, `tests/docs-claims-rest.test.js` y el resto de pruebas de documentación listadas en `Owns`.
 
 **Tests (write first):**
 Añadir en `tests/docs-facts.test.js` (usando `read(rel)` definido en ese archivo):
