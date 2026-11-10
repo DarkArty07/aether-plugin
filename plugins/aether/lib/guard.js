@@ -1456,4 +1456,4 @@ function decideBash(input, env = process.env) {
   } catch { return null }
 }
 
-module.exports = { decide, decideBash, emptiesTidyFile, irreversibleClass, irreversibleClasses, redactCommand, protectedMention, lineShape, tidyTargetsIn }
+module.exports = { commandSegments, dropWrappers, nameOf, redirectTargets, decide, decideBash, emptiesTidyFile, irreversibleClass, irreversibleClasses, redactCommand, protectedMention, lineShape, tidyTargetsIn }
