@@ -6,7 +6,7 @@
 
 - **Node.js 22 y CommonJS sin dependencias nuevas:** todos los módulos bajo `plugins/aether/lib/` y `plugins/aether/bin/` usan CommonJS (`'use strict'`) y módulos nativos de Node.js.
 - **Invariantes de `tests/guards.test.js`:** cada archivo en `plugins/aether/lib/` conserva su cabecera de 2 líneas con `// Family: <nombre>.`, sin funciones duplicadas ni exportaciones muertas.
-- **Verificadores estructurales:** los archivos `tests/guards*.test.js` son verificadores estructurales que ninguna tarea edita; una tarea cuyo cambio hace fallar uno de ellos corrige su propio código.
+- **Verificadores estructurales:** `tests/guards-seat.test.js`, `tests/guards-core-1.test.js`, `tests/guards-delegate-2.test.js` y `tests/guards-bins.test.js` son verificadores estructurales que ninguna tarea edita; una tarea cuyo cambio hace fallar uno de ellos corrige su propio código.
 - **Huella durmiente de 0 bytes fuera de una sesión del Lead (R12, C7):** todo hook registrado en `plugins/aether/hooks/hooks.json` sale con código 0, sin salida en `stdout`/`stderr` y sin crear ni tocar archivos cuando la sesión no pertenece al Lead de Aether o cuando corre dentro de un subagente (`input.agent_id` presente).
 - **Prohibiciones del alcance (R13, `intent.md` §4):** no tocar la versión `0.35.0`, no escribir ni modificar el changelog de `0.36.0`, no hacer merge ni `git push`, no instalar el plugin y no cerrar issues en GitHub. No tocar el atributo `alt` en `site/index.html:223` ni `p.direct.a` en `site/app.js:71,238`, ni el registro histórico en `docs/decisions.md:236`.
 
@@ -28,9 +28,8 @@
 - [ ] Task 9: Alinear las skills `aether:autonomous-runs` y `aether:swarm` con el rechazo automático y con #214
 - [ ] Task 10: Reducir `using-aether` a las reglas permanentes, remitir a `aether:models` y `aether:designing` y aplicar la regla contable y #204
 - [ ] Task 11: Hacer independientes del orden las partes de `aether-session-start` y reducir `hooks.json` a 3 partes
-- [ ] Task 12: Actualizar documentación, `CLAUDE.md`, `docs/decisions.md` y huella durmiente en `docs/reference/components.md`
-- [ ] Task 13: Mantener en verde los verificadores de patrones retirados, opciones y listas de las páginas
-- [ ] Task 14: Mantener en verde los verificadores de guías, versión, carriles y orden
+- [ ] Task 12: Registrar las decisiones A117 a A120 en `docs/decisions.md` y el rango de `docs/index.md`
+- [ ] Task 13: Actualizar `CLAUDE.md`, las guías, `docs/reference/components.md` y la huella durmiente
 
 ---
 
@@ -327,8 +326,9 @@ test('launchRefusal reports time, cost and quota stops in a Lead session, finds 
 
 **Aether:**
 - Area: skills
-- Owns: `plugins/aether/skills/models/SKILL.md`, `plugins/aether/skills/designing/SKILL.md`, `plugins/aether/skills/skills/SKILL.md`, `tests/new-skills.test.js`
-- Depends on: none
+- Owns: `plugins/aether/skills/models/SKILL.md`, `plugins/aether/skills/designing/SKILL.md`, `plugins/aether/skills/skills/SKILL.md`, `docs/reference/components.md`, `tests/new-skills.test.js`, `tests/help.test.js`, `tests/audit-docs.test.js`, `tests/codex-docs.test.js`, `tests/codex-release.test.js`, `tests/components-docs.test.js`, `tests/docs-030.test.js`, `tests/guards.test.js`, `tests/guards-helpers.test.js`, `tests/lanes-docs.test.js`, `tests/launcher.test.js`, `tests/spend-docs.test.js`, `tests/workflow-split.test.js`
+- Depends on: Task 2 — comparte la página de componentes con docs-claims.test.js, que la Tarea 2 posee
+- Depends on: Task 4 — comparte la página de componentes con docs-facts.test.js, que la Tarea 4 posee y cuya R15 lee las carpetas de skills
 - Serves: R9, R10
 
 **Goal:**
@@ -343,11 +343,23 @@ Crear `plugins/aether/skills/models/SKILL.md` (`name: models`) y `plugins/aether
    - Contiene el procedimiento completo de diseño: preguntas de aclaración, escritura de `specs/NNN-<topic>/intent.md`, invocación de `/aether:design`, resultados (`approved`, `clarify`, `dispute`, `failed`) incluyendo que en `approved` con `exam.status` `failed` si `.aether/exam/` tiene las pruebas se escribe `exam.json` y se corre `aether-exam store specs/NNN-<topic>`, diseño corto, cambios posteriores, registros (`aether-report --seats`) y examen (`aether-exam run`).
 3. `plugins/aether/skills/skills/SKILL.md`:
    - Reemplazar `aether-autonomy trust <author> --quote "<their words>"` por `aether-autonomy trust --author <author> --quote "<their words>"`.
+4. Dos carpetas de skills nuevas hacen fallar a las pruebas que listan `plugins/aether/skills/`, así que esta tarea también edita:
+   - `docs/reference/components.md`: dos filas nuevas en la tabla de piezas, junto a la de `skills`, que dicen `| \`models\` skill | \`aether:models\`: ... |` y `| \`designing\` skill | \`aether:designing\`: ... |` (la R15 de `tests/docs-facts.test.js` exige que la página nombre cada carpeta como `` `models` `` o `` `aether:models` ``). Las Tareas 12 y 13, que también poseen la página, dependen de esta.
+   - `tests/help.test.js`: añadir a `EXCLUDED` `models: 'the Lead loads it itself; nobody invokes it by name'` y `designing: 'the Lead loads it itself; nobody invokes it by name'` (la prueba «the help names every skill the person invokes» pide que cada skill figure en la ayuda o en `EXCLUDED` con una razón).
+
+**Lectores revisados:** `tests/docs-facts.test.js` lista la carpeta `skills/` en R11 y R15 y no se edita aquí (la posee la Tarea 4, de la que esta depende; la fila nueva de `components.md` basta para que R15 quede verde). Las pruebas de `Owns` que no son de skills (`audit-docs`, `codex-docs`, `codex-release`, `components-docs`, `docs-030`, `guards`, `guards-helpers`, `lanes-docs`, `launcher`, `spend-docs`, `workflow-split`) nombran la página de componentes entre comillas: se corren y no fijan nada de la tabla de skills, así que no se espera edición; si una fila nueva rompe una, se corrige aquí. Las Tareas 12 y 13 las co-poseen más adelante en la cadena; `tests/new-skills.test.js` es el único que lee `skills/skills/SKILL.md`; ninguna prueba fija la forma `trust <author>`.
 
 **Tests (write first):**
 Añadir en `tests/new-skills.test.js` (usando los ayudantes `read(...parts)` y `frontMatter(text)` definidos en ese archivo):
 
 ```js
+test('the components page names the models and designing skills, and the help excludes them because the Lead loads them itself', () => {
+  const components = fs.readFileSync(path.join(PLUGIN, '..', '..', 'docs', 'reference', 'components.md'), 'utf8')
+  for (const name of ['models', 'designing']) assert.ok(components.includes(`\`aether:${name}\``), `components.md names aether:${name}`)
+  const help = fs.readFileSync(path.join(PLUGIN, '..', '..', 'tests', 'help.test.js'), 'utf8')
+  for (const name of ['models', 'designing']) assert.match(help, new RegExp(`\\b${name}: 'the Lead loads it itself`))
+})
+
 test('models and designing skills exist with valid frontmatter and expected content', () => {
   const models = read('skills', 'models', 'SKILL.md')
   const designing = read('skills', 'designing', 'SKILL.md')
@@ -373,10 +385,11 @@ test('skills skill uses --author flag in aether-autonomy trust command', () => {
 ```
 
 **Acceptance:**
+- `docs/reference/components.md` nombra las dos skills nuevas como `aether:models` y `aether:designing`, y `tests/help.test.js` las lista en `EXCLUDED` con su razón.
 - `plugins/aether/skills/models/SKILL.md` y `plugins/aether/skills/designing/SKILL.md` existen con frontmatter válido (`name` y `description`).
 - `plugins/aether/skills/designing/SKILL.md` documenta `aether-exam store specs/NNN-<topic>`.
 - `plugins/aether/skills/skills/SKILL.md` documenta `aether-autonomy trust --author <author> --quote "<their words>"`.
-- `node --test tests/new-skills.test.js` pasa.
+- `node --test tests/new-skills.test.js tests/help.test.js` pasa.
 
 ---
 
@@ -405,6 +418,8 @@ Reemplazar la regla vaga de «about five tool calls» / «unas cinco llamadas a 
   `"Because the change is small, in one file, the Lead takes the **direct** path and makes it itself (**at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count**). Then it runs the tests and answers you with what changed."`
 - En `docs/es/guias/primera-peticion.md` (línea 34): reemplazar `"en unas cinco llamadas a herramientas"` para que la oración incluya literalmente `COUNTABLE_ES`:
   `"Como el cambio es pequeño, de un archivo, el Lead toma el camino **directo** y lo hace él mismo (**a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada; las pruebas que la regla pide tras una fusión no cuentan**). Después corre las pruebas y te responde con lo que cambió."`
+
+**Lectores revisados:** ninguna prueba fija «about five tool calls», «unas cinco llamadas», `p.direct` ni la frase del tutorial; `tests/docs-claims-rest.test.js` y `tests/codex-docs.test.js` recorren `site/index.html` en busca de patrones retirados y no fijan la regla; `tests/docs-facts.test.js` y `tests/site.test.js` están en `Owns`.
 
 **Tests (write first):**
 Añadir en `tests/site.test.js` (usando `read(SITE, ...)` definido en ese archivo):
@@ -929,6 +944,8 @@ Añadir en `plugins/aether/lib/continuity-posttool.js` el conteo por turno de ed
 **Interfaces:**
 En `plugins/aether/lib/guard.js`: añadir `commandSegments`, `dropWrappers`, `nameOf` y `redirectTargets` al `module.exports` existente, sin cambiar ninguna función. `tests/guards.test.js` rechaza las funciones duplicadas en `plugins/aether/lib/`, así que el conteo las importa de `guard.js` y no las escribe otra vez. Las pruebas que fijan `guard.js` (las tres de `Owns` y las que posee la Tarea 2) no se editan: exportar no cambia ninguna función, y solo se corren para comprobarlo.
 
+`continuity-posttool.js` pasa a importar `guard.js`, una arista nueva de `lib/`. Se comprobó con `requireGraph` y `findCycles` de `guards-helpers.js` que no cierra ningún ciclo, que es lo que piden `layers.test.js` y la R14 de `guards.test.js`; ninguna regla de `guards*.test.js` limita qué familia puede pedir otra. La importación está permitida y el diseño no cambia.
+
 En `plugins/aether/lib/continuity-posttool.js`:
 - Constantes exportadas: `DIRECT_EDIT_LIMIT = 3`, `DIRECT_READ_LIMIT = 10`.
 - `posttool(input, ctx = {})` conserva su firma y valor de retorno actuales (`null` cuando ningún manejador dispara, o `{ additionalContext: texts.join('\n\n') }` cuando al menos un manejador de `HANDLERS` devuelve una cadena).
@@ -937,12 +954,14 @@ En `plugins/aether/lib/continuity-posttool.js`:
   - Guarda el estado por sesión en `<ctx.dataDir>/continuity/<session_id>.json`: `{ promptId: string | null, sinceNoteAt: number | null, edits: number, reads: number, notified: boolean }`.
   - **Reinicio.** Lee la nota de continuidad de la sesión con `readNote(continuityDir({ cwd: input.cwd, env: ctx.env, home: ctx.home }), input.session_id)` (de `continuity-store.js`) y toma su `updatedAt` como `noteAt` (`null` si no hay nota). Reinicia a `{ promptId, sinceNoteAt: noteAt, edits: 0, reads: 0, notified: false }` cuando `typeof input.prompt_id === 'string'` y difiere de `state.promptId`, o cuando `noteAt` es un número mayor que `state.sinceNoteAt` (o `state.sinceNoteAt` es `null`), la haya escrito quien la haya escrito: `stop`, `precompact`, `postcompact`, `stopfailure` y `sessionend` escriben todos `updatedAt`, y cualquiera de ellos reinicia. El `stop` de la Tarea 5 no registra ningún campo nuevo. Cuando no hay estado guardado, lo crea con `promptId: input.prompt_id ?? null` y `sinceNoteAt: noteAt`, sin que eso cuente como un reinicio.
   - `isExemptPath(filePath, cwd, input, ctx)`: un solo predicado para ediciones y para lecturas. Resuelve `abs = path.resolve(cwd, filePath)` y devuelve `true` cuando: alguno de los segmentos de la ruta es `.aether`, `.specify`, `specs` o `docs`; o su nombre base es `README.md`, `CLAUDE.md` o `AGENTS.md`; o `abs === '/dev/null'`; o `abs` cae bajo el directorio de configuración de Claude (`ctx.env.CLAUDE_CONFIG_DIR || path.join(ctx.home || os.homedir(), '.claude')`, la misma resolución que usa `memoryDir` de `continuity-store.js`) o bajo `memoryDir({ cwd, env: ctx.env, home: ctx.home })`; o `abs` cae bajo `path.dirname(input.scratchpad_dir)` cuando `input.scratchpad_dir` es una cadena no vacía. «Cae bajo» usa el mismo idioma de `memoryReminder` (`path.relative` que no empieza por `..` ni es absoluto). No exime el directorio temporal del sistema operativo entero, porque los repositorios de las pruebas viven en él. Los segmentos se leen de `path.relative(cwd, abs)` cuando `abs` cae dentro de `cwd` y de `abs` en otro caso (supuesto A5 de `plan.md`); el último segmento cuenta porque `Grep` y `Glob` nombran directorios.
-  - `bashWriteTargets(command)`: devuelve las rutas que escribe un comando `Bash`, recorriendo `commandSegments(command)`: los destinos de `redirectTargets(segment)` (se descartan los vacíos y los que empiezan por `&`, como el de `2>&1`), los archivos de `tee` (las palabras que no son opciones tras `tee`), los archivos de `sed -i` / `sed -i.bak` / `sed --in-place` (las palabras que no son opciones tras el script, que es la primera) y el destino de `cp` y de `mv` (la última palabra que no es opción). El nombre del comando sale de `nameOf(dropWrappers(segment)[0])`.
-  - `isDirectEdit(input, ctx)`: `true` cuando `tool_name` es `Write`, `Edit`, `MultiEdit` (`tool_input.file_path`) o `NotebookEdit` (`tool_input.notebook_path`) y esa ruta existe como cadena y no es exenta; o cuando `tool_name === 'Bash'` y alguna ruta de `bashWriteTargets(command)` no es exenta.
-  - `isDirectRead(input, ctx)`: `true` cuando `tool_name === 'Read'` y `tool_input.file_path` es una cadena que no es exenta; o `tool_name` es `Grep` o `Glob` y `tool_input.path` no viene dado como cadena no vacía exenta; o `tool_name === 'Bash'` y se cumplen las tres condiciones siguientes. (1) El primer comando de la primera tubería (`commandSegments(command)[0]`), tras `dropWrappers` y `nameOf`, es uno de `rg`, `grep`, `egrep`, `fgrep`, `find`, `fd`, `cat`, `head`, `tail`, `less`, `more`, `jq`, `sed`, `awk`, o es `git` con subcomando `grep`, `show` o `diff` (el subcomando es la primera palabra tras `git` que no empieza por `-` y no es el valor de `-C` ni de `-c`); como la lista es cerrada, una corrida de pruebas (`npm test`, `node --test`, `pytest`, …) o un binario `aether-*` nunca cuenta, y un comando que solo filtra la salida de otro (`aether-autonomy status | grep stop`) tampoco, porque su primer comando no es un lector. `wc`, `ls`, `stat`, `diff`, `cmp`, `git log` y `git status` no están en la lista. (2) El comando no escribe nada: `bashWriteTargets(command)` está vacío. (3) Las palabras que no son opciones tras el nombre del comando (y tras el subcomando de `git`), resueltas desde `cwd`, que existen en disco, no son todas exentas; si ninguna existe (una búsqueda en todo el árbol, como `rg foo`), cuenta.
+  - `bashWriteTargets(command, cwd)`: devuelve las rutas absolutas que escribe un comando `Bash`. Recorre `commandSegments(command)` en orden con un directorio base que empieza en `cwd`: un segmento `cd <dir>` (la primera palabra que no es opción tras `cd`) mueve la base a `path.resolve(base, dir)` para los segmentos siguientes, y cada ruta se resuelve desde la base de su propio segmento. Las rutas son: los destinos de `redirectTargets(segment)` (se descartan los vacíos y los que empiezan por `&`, como el de `2>&1`), los archivos de `tee` (las palabras que no son opciones tras `tee`), los archivos de `sed -i` / `sed -i.bak` / `sed --in-place` (las palabras que no son opciones tras el script, que es la primera) y el destino de `cp` y de `mv` (la última palabra que no es opción). El nombre del comando sale de `nameOf(dropWrappers(segment)[0])`.
+  - `isDirectEdit(input, ctx)`: `true` cuando `tool_name` es `Write`, `Edit`, `MultiEdit` (`tool_input.file_path`) o `NotebookEdit` (`tool_input.notebook_path`) y esa ruta existe como cadena y no es exenta; o cuando `tool_name === 'Bash'` y alguna ruta de `bashWriteTargets(command, input.cwd || '.')` no es exenta.
+  - `isDirectRead(input, ctx)`: `true` cuando `tool_name === 'Read'` y `tool_input.file_path` es una cadena que no es exenta; o `tool_name` es `Grep` o `Glob` y `tool_input.path` no viene dado como cadena no vacía exenta; o `tool_name === 'Bash'`, la llamada no es una edición directa (`isDirectEdit(input, ctx)` es `false`: un destino `/dev/null` es exento y no la vuelve edición, de modo que `rg foo src 2>/dev/null` sigue siendo una lectura) y al menos uno de sus comandos cuenta. Se decide por comando, no por el primero de la línea: se recorre `commandSegments(command)` en orden con el mismo directorio base que `bashWriteTargets` (empieza en `cwd`; un segmento `cd <dir>` lo mueve para los siguientes, y `cd /repo && sed -n '1,5p' src/a.js` lee desde `/repo`). `commandSegments` ya parte cada tubería en segmentos, uno por comando (`cat src/a.js | head -5` son dos segmentos). De cada segmento: el nombre sale de `nameOf(dropWrappers(segment)[0])`, y sus rutas son las palabras que le siguen (en `git`, tras el subcomando) que no empiezan por `-`, resueltas desde la base del segmento, que existen en disco. **Lectores de archivos** (`cat`, `head`, `tail`, `less`, `more`, `jq`, `sed`, `awk`, `grep`, `egrep`, `fgrep`): cuentan solo cuando tienen al menos una ruta existente no exenta; sin ninguna ruta filtran la salida de otro comando y no cuentan. **Buscadores de árbol** (`rg`, `find`, `fd`, y `git` con subcomando `grep`, `show` o `diff`; el subcomando es la primera palabra tras `git` que no empieza por `-` y no es el valor de `-C` ni de `-c`): cuentan cuando no tienen ninguna ruta existente (una búsqueda en todo el árbol, como `rg foo`) o cuando tienen al menos una ruta existente no exenta. Por eso `cat src/a.js | head -5` suma una lectura (la de `cat`; `head -5` no tiene ruta) y `aether-autonomy status | grep stop` no suma ninguna (`aether-autonomy` no es un lector y `grep stop` no nombra ninguna ruta). `wc`, `ls`, `stat`, `diff`, `cmp`, `git log` y `git status` no están en las listas, y una corrida de pruebas (`npm test`, `node --test`, `pytest`, …) o un binario `aether-*` tampoco, así que nunca cuentan.
   - Cada llamada suma como mucho 1 a `edits` (si `isDirectEdit`) y como mucho 1 a `reads` (si `isDirectRead`), aunque un `Bash` nombre varias rutas.
-  - Cuando `edits >= DIRECT_EDIT_LIMIT` o `reads >= DIRECT_READ_LIMIT` y `state.notified === false`: marca `state.notified = true`, guarda el estado y devuelve la cadena de aviso, que no se repite en el resto del turno. En inglés: `"Aether: you reached the direct-path limit for this turn (3 own edits to code or tests, or 10 reads or searches in the code). Do not keep going by yourself: hand the rest of the work to a delegate task (Agent) with an AETHER-TASK brief."` En español (`isSpanish(ctx.env)`): `"Aether: llegaste al límite del camino directo en este turno (3 ediciones propias de código o pruebas, o 10 lecturas o búsquedas en el código). No sigas por tu cuenta: pasa el resto del trabajo a una tarea delegada (Agent) con un encargo AETHER-TASK."`
+  - Cuando `edits >= DIRECT_EDIT_LIMIT` o `reads >= DIRECT_READ_LIMIT` y `state.notified === false`: marca `state.notified = true`, guarda el estado y devuelve la cadena de aviso, que no bloquea ni se repite en el resto del turno, y que dice la regla y su excepción. En inglés: `"Aether: the direct-path limit for this turn was reached (3 own edits to code or tests, or 10 reads or searches in the code). By the three paths, the rest of this work goes to a delegate task (Agent, with an AETHER-TASK brief), unless the owner asked you to do it yourself."` En español (`isSpanish(ctx.env)`): `"Aether: se alcanzó el límite del camino directo en este turno (3 ediciones propias de código o pruebas, o 10 lecturas o búsquedas en el código). Según los tres caminos, el resto de este trabajo pasa a una tarea delegada (Agent, con un encargo AETHER-TASK), salvo que el dueño te haya pedido hacerlo a ti."`
   - El estado se guarda con `writeFileAtomic` y se lee con `readJsonOrNull` de `common.js`; un error al leer o escribir el estado no rompe la llamada (el manejador devuelve `null`).
+
+**Lectores revisados:** las pruebas que leen `continuity-posttool.js` (`continuity-posttool-skills`, `tree-check`) y las que fijan `guard.js` (`guard`, `guard-claude`, `guard-heredoc`, `guard-intent`, `guard-merge-main`, `guard-skills`, `guard-tidy`, `copies-classes`) están en `Owns` de esta tarea o de la Tarea 2; el matcher de `hooks.json` lo cambia la Tarea 11, que posee `continuity-hook`.
 
 **Tests (write first):**
 Añadir en `tests/continuity-posttool.test.js` (usando `world(t)`, `posttool.posttool`, `store` y `markSession` ya importados en ese archivo):
@@ -992,6 +1011,7 @@ test('posttool warns once on the 3rd own edit to code or tests in a turn; exempt
   assert.ok(third && typeof third.additionalContext === 'string')
   assert.match(third.additionalContext, /3/)
   assert.match(third.additionalContext, /delegate|Agent/i)
+  assert.match(third.additionalContext, /unless the owner asked you to do it yourself/) // the rule and its exception
   assert.equal(call('Edit', { file_path: file('src', 'c.js') }), null) // the notice comes once per turn
 })
 
@@ -1071,6 +1091,7 @@ test('posttool counts reads of code and searches, not reads of notes, specs or d
   assert.ok(tenth && typeof tenth.additionalContext === 'string')
   assert.match(tenth.additionalContext, /10/)
   assert.match(tenth.additionalContext, /tarea delegada/)
+  assert.match(tenth.additionalContext, /salvo que el dueño/)
   assert.equal(call('Read', { file_path: file('src', 'a.js') }), null) // once per turn
 })
 
@@ -1123,11 +1144,36 @@ test('each Bash write form counts one own edit, one call counts at most one, and
   assert.equal(quiet.call('Bash', { command: 'npm test > /dev/null 2>&1' }), null)
   assert.ok(quiet.call('Edit', { file_path: quiet.file('src', 'q3.js') }))
 })
+
+test('Bash reads are decided per command, follow cd, and a pipeline that only filters counts nothing (R7)', (t) => {
+  const { w, call } = leadWorld(t, 's-cd')
+  // None of these counts; each runs three times, so one that did count would warn before the tenth counted read.
+  const notCounted = [
+    `cd ${w.repo.dir} && sed -n '1,5p' specs/031-demo/plan.md`,
+    'aether-autonomy status | grep stop',
+  ]
+  for (let pass = 0; pass < 3; pass++) {
+    for (const command of notCounted) assert.equal(call('Bash', { command }), null, command)
+  }
+  // Each of these counts exactly one: a reader after cd, a relative path after cd, a search that redirects only stderr,
+  // and the file reader of a pipeline.
+  const counted = [
+    `cd ${w.repo.dir} && sed -n '1,5p' src/a.js`,
+    'cd src && cat a.js',
+    'rg foo src 2>/dev/null',
+    'cat src/a.js | head -5',
+  ]
+  for (let i = 0; i < 9; i++) assert.equal(call('Bash', { command: counted[i % counted.length] }), null, `${i}: ${counted[i % counted.length]}`)
+  const tenth = call('Bash', { command: counted[1] })
+  assert.ok(tenth && typeof tenth.additionalContext === 'string')
+  assert.match(tenth.additionalContext, /10/)
+})
 ```
 
 **Acceptance:**
 - `posttool.posttool(input, ctx)` devuelve `{ additionalContext }` en la 3.ª edición propia de código o pruebas o en la 10.ª lectura o búsqueda en el código del mismo turno en una sesión del Lead, y `null` en el resto de llamadas del turno.
 - No suman al contador las escrituras ni las lecturas de rutas exentas (`.aether/`, `.specify/`, `specs/`, `docs/`, `README.md`, `CLAUDE.md`, `AGENTS.md`, `/dev/null`, el directorio de configuración de Claude con la memoria, la carpeta temporal de la sesión), vistas desde la raíz principal o desde un worktree enlazado; ni `wc`, `ls`, `stat`, `diff`, `cmp`, `git log`, `git status`, las corridas de pruebas, los binarios `aether-*` y los filtros de su salida; ni las sesiones fuera del Lead ni las herramientas de subagentes (`input.agent_id` presente).
+- Un `Bash` se evalúa por comando y sigue `cd`: `cd /repo && sed -n '1,5p' src/a.js`, `cd src && cat a.js`, `rg foo src 2>/dev/null` y `cat src/a.js | head -5` suman una lectura cada uno; `cd /repo && sed -n '1,5p' specs/031-demo/plan.md` y `aether-autonomy status | grep stop` no suman ninguna.
 - El contador se reinicia cuando cambia `prompt_id` o cuando la nota de continuidad de la sesión tiene un `updatedAt` más reciente, la haya escrito quien la haya escrito; una nota igual no reinicia.
 - `node --test tests/continuity-posttool*.test.js tests/tree-check.test.js tests/guard*.test.js tests/copies-classes.test.js` pasa (los `tests/guard*.test.js` incluyen los verificadores estructurales `guards*`, que no se editan).
 
@@ -1137,9 +1183,10 @@ test('each Bash write form counts one own edit, one call counts at most one, and
 
 **Aether:**
 - Area: skills
-- Owns: `plugins/aether/skills/autonomous-runs/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `tests/autonomous-runs-skill.test.js`, `tests/quota-brake-docs.test.js`, `tests/workflow-review-once.test.js`, `tests/workflow-split.test.js`, `tests/codex-docs.test.js`
+- Owns: `plugins/aether/skills/autonomous-runs/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `tests/autonomous-runs-skill.test.js`, `tests/quota-brake-docs.test.js`, `tests/roles.test.js`, `tests/docs-facts.test.js`, `tests/workflow-review-once.test.js`
 - Depends on: Task 2 — referencia la compuerta de plan mode en aether-autonomy start y el rechazo por topes
-- Depends on: Task 4 — comparte tests/docs-facts.test.js que lee la skill autonomous-runs
+- Depends on: Task 3 — posee codex-docs.test.js y workflow-split.test.js, que leen la skill del enjambre
+- Depends on: Task 4 — comparte tests/docs-facts.test.js, que la Tarea 4 edita primero y que fija el bloque `**Start:**` de la skill autonomous-runs
 - Serves: R4, R11
 
 **Goal:**
@@ -1150,15 +1197,19 @@ Actualizar `plugins/aether/skills/autonomous-runs/SKILL.md` y `plugins/aether/sk
    - En `**Start:**`: explicar que en una sesión interactiva del Lead debes presentar el plan en plan mode (`ExitPlanMode`) y esperar la aprobación del dueño antes de correr `aether-autonomy start`, porque `aether-autonomy start` verifica la transcripción de la sesión y rechaza abrir la corrida si no consta una aprobación de `ExitPlanMode` no consumida; en una sesión sin terminal (`claude -p`, `entrypoint: "sdk-cli"`), `aether-autonomy start` verifica la cita literal del dueño como hasta ahora.
    - En `**Ceilings:**` / `## 3. Loop until a ceiling`: quitar la exigencia de correr `aether-autonomy status` antes de cada tarea delegada, cada ola o cada asiento. Explicar que `aether-delegate begin`, `aether-plan compile` y `/aether:design` comprueban por sí mismos si hay una corrida abierta con `stop` en `time`, `cost` o `quota` y rechazan lanzar trabajo nuevo indicando la corrida y el comando para cerrarla (`aether-autonomy end --outcome ceiling` en topes de tiempo o gasto; esperar hasta `resumeAt` o cerrar con `aether-autonomy end --outcome incomplete` en pausa por cuota; o `aether-autonomy end --outcome ceiling|incomplete|done` si una corrida vieja de otra sesión quedó abierta). `aether-autonomy status` queda como herramienta de consulta cuando el Lead o el dueño quieran inspeccionar el tiempo, gasto o cuota.
 2. En `plugins/aether/skills/swarm/SKILL.md`:
-   - Quitar la exigencia de correr `aether-autonomy status` antes de cada ola y explicar qué hacer cuando `aether-plan compile` rechaza por tope o pausa (`stop` en `time`, `cost` o `quota`).
+   - Quitar la exigencia de correr `aether-autonomy status` antes de cada ola (en `## 3. Launch` y en el párrafo de relanzamiento que dice «after the `aether-autonomy status` check of §3 in a run») y explicar qué hacer cuando `aether-plan compile` rechaza por tope o pausa (`stop` en `time`, `cost` o `quota`): nombrar `aether-autonomy end --outcome ceiling` (tiempo o gasto) y `aether-autonomy end --outcome incomplete` (pausa por cuota), y conservar la frase `as the \`aether:autonomous-runs\` skill says`, que fija `tests/autonomous-runs-skill.test.js`.
    - Mantener la regla `"Never run the swarm on main."` añadiendo que `aether-plan compile` tiene la bandera `--allow-main` para cuando el dueño pida explícitamente compilar en `main`, sin invitar a usarla por cuenta propia.
    - En las fusiones: nombrar `aether-wt settle <run-dir> <wave-num> <task-id> <branch> --test-cmd "<cmd>"` cuando una fusión se corta a los 600 segundos (`merge timed out after 600s`) para inspeccionar o terminar el merge antes de decidir.
    - En la escalera del supervisor:
      - Explicar que `"the supervisor failed 3 times in a row"` ocurre cuando el supervisor termina tres veces sin devolver respuesta, mientras que un veredicto inválido (`verdict` que no es `approve`, `retry` ni `impossible`, o `retry` sin `findings`) cuenta como un intento `retry` de la tarea.
      - Explicar que el 2.º y 3.er intento del supervisor corren siempre en Claude y que un supervisor o revisor final de Claude que permanezca callado 900 segundos se abandona.
      - Explicar que un hallazgo del supervisor que no nombra ningún archivo recibe el primer archivo listado en el `Owns` de la tarea.
-3. En `tests/quota-brake-docs.test.js`:
+3. Cadenas que otras pruebas fijan y esta tarea conserva literalmente: en `**Start:**`, `plan mode` antes de `aether-autonomy start` y «their answer to the plan dialog is not such a message» (`tests/docs-facts.test.js`, prueba A108, que esta tarea posee para corregirla en el mismo ciclo; no se espera edición); en la skill del enjambre, `the ladder is spent (exhausted)` (`workflow-split`), `Blocked by a lane` (`launcher`) y `Defer the minor ones` (`roles`); en `**Ceilings.**`, `Let what is running finish` una sola vez (`quota-brake-docs`).
+4. En `tests/roles.test.js`, la prueba «in an autonomous run the swarm checks the ceilings, records its cost, and leaves unauthorized steps to the brief» fija hoy la cadena `'aether-autonomy status'` en la skill del enjambre: reemplazarla por `'aether-autonomy end --outcome ceiling'`, que el enjambre sigue nombrando al explicar el rechazo. Las demás agujas de esa prueba no cambian.
+5. En `tests/quota-brake-docs.test.js`:
    - Actualizar la aserción sobre `plugins/aether/skills/autonomous-runs/SKILL.md` (`**Ceilings.**`) para reflejar que `aether-delegate begin`, `aether-plan compile` y `/aether:design` comprueban los topes y la pausa por cuota antes de lanzar trabajo en vez de exigir correr `aether-autonomy status` antes de cada lanzamiento.
+
+**Lectores revisados:** `help`, `lanes-docs`, `spend-skills`, `muse-skills`, `speckit`, `launcher`, `router-pick`, `router-marks`, `swarm-ladder-docs`, `delegate-skill`, `session-start-autonomy`, `bootstrap-names`, `bootstrap-design` y `using-aether-030` leen una de las dos skills, y se buscaron en ellas los fragmentos de lo que esta tarea cambia (`aether-autonomy status`, el bloque `**Start:**`, `**Ceilings.**`, `Never run the swarm`, el párrafo de relanzamiento, las viñetas del supervisor): solo `roles`, `quota-brake-docs`, `autonomous-runs-skill` y `docs-facts` los fijan, y están en `Owns`; los demás fijan texto que no se toca (`Prepare`, `Read the result`, el bloque `Delegación` del informe).
 
 **Tests (write first):**
 Añadir en `tests/autonomous-runs-skill.test.js` (usando `SKILL` y `read(...parts)` definidos en ese archivo):
@@ -1175,16 +1226,20 @@ test('autonomous-runs and swarm skills describe automatic ceiling refusal and #2
 
   assert.match(swarmText, /Never run the swarm on `main`/)
   assert.match(swarmText, /--allow-main/)
+  assert.match(swarmText, /aether-autonomy end --outcome ceiling/)
+  assert.doesNotMatch(swarmText, /run `aether-autonomy status` first/)
   assert.match(swarmText, /aether-wt settle/)
   assert.match(swarmText, /900/)
   assert.match(swarmText, /first file in the task's `Owns`|first path in the task's `Owns`/i)
 })
 ```
 
+Y en `tests/roles.test.js`, primero: en la lista de agujas de la prueba «in an autonomous run the swarm checks the ceilings, records its cost, and leaves unauthorized steps to the brief», cambiar `'aether-autonomy status',` por `'aether-autonomy end --outcome ceiling',`.
+
 **Acceptance:**
 - `plugins/aether/skills/autonomous-runs/SKILL.md` y `plugins/aether/skills/swarm/SKILL.md` ya no piden correr `aether-autonomy status` antes de cada lanzamiento y explican cómo responder al rechazo automático de `aether-delegate begin`, `aether-plan compile` y `/aether:design`.
 - `plugins/aether/skills/swarm/SKILL.md` cubre los 6 puntos de #214 (R4 y R11).
-- `node --test tests/autonomous-runs-skill.test.js tests/quota-brake-docs.test.js tests/workflow-review-once.test.js tests/workflow-split.test.js` pasa.
+- `node --test tests/autonomous-runs-skill.test.js tests/quota-brake-docs.test.js tests/roles.test.js tests/docs-facts.test.js tests/workflow-review-once.test.js` pasa.
 
 ---
 
@@ -1205,12 +1260,12 @@ En `plugins/aether/skills/using-aether/SKILL.md`, resumir `## Models` y `## Desi
    - En el párrafo introductorio, `## The three paths` y `## The delegate ladder`: reemplazar `"about five tool calls"` y `"many reads of your own"` usando la frase canónica en inglés (`COUNTABLE_EN`):
      `"at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count"`
      (aclarando que quedan fuera de ese conteo las escrituras en el diario, `specs/NNN-<topic>/intent.md`, documentos en `specs/` o `docs/`, memoria y las corridas de pruebas).
-   - En `## Models`: conservar las prohibiciones de no adivinar nombres de modelos ni precios desde los pesos, las rutas a `models.json` y `prices.json` bajo `${CLAUDE_PLUGIN_ROOT}/config`, la lista de harnesses (`agy, codex, grok, cursor, muse`) y la regla de cuota (`first the quota whose weekly window renews first, then the cheapest pair per task`), e indicar cargar la skill `aether:models` antes de responder sobre capacidades, esfuerzos o citas del fabricante.
+   - En `## Models`: conservar las prohibiciones de no adivinar nombres de modelos ni precios desde los pesos, las rutas a `models.json` y a `prices.json` bajo `config` de la carpeta del plugin, la lista de harnesses (`agy, codex, grok, cursor, muse`) y la regla de cuota (`first the quota whose weekly window renews first, then the cheapest pair per task`), e indicar cargar la skill `aether:models` antes de responder sobre capacidades, esfuerzos o citas del fabricante.
    - En `## Designing`: conservar qué es diseñar, la prohibición de no escribir `spec.md`, `plan.md`, `tasks.md` ni `art-direction.md` sin `/aether:design` (salvo diseño corto pedido por el dueño), las referencias a `aether:writer`, `aether:judge`, `aether:specify`, `aether:examiner`, `At most two revisions per document`, `.aether/pending.jsonl`, `specs/NNN-<topic>/intent.md`, `/aether:design`, `aether-report --seats`, `aether-exam run` y `aether-exam store specs/NNN-<topic>`, e indicar cargar la skill `aether:designing` antes de redactar `intent.md`, lanzar `/aether:design` o procesar su respuesta.
    - En `## The delegate ladder` (puntos de #204, R10):
      - Explicar que cada llamada a `Agent` cuyo `subagent_type` no sea `aether:*` (incluidos `Plan`, `claude-code-guide` o llamadas sin `subagent_type`) es una tarea delegada, entra en la escalera y espera veredicto.
      - Prohibir pasar `fork` en una tarea delegada porque la herramienta `Agent` ignora `model` en un fork y correría en el modelo del Lead con toda su conversación.
-     - Explicar que `fix` corre en el mismo modelo al esfuerzo de corrección del escalón definido en `ladder.json` bajo `${CLAUDE_PLUGIN_ROOT}/config` (no «one effort up»).
+     - Explicar que `fix` corre en el mismo modelo al esfuerzo de corrección del escalón definido en `ladder.json` (la ruta completa ya está escrita en `## The three paths` y en `## The delegate ladder`, y `delegate-skill` la fija: no se toca; no «one effort up»).
      - Incluir `--ignore <glob>` en `aether-delegate verdict` para archivos sucios ajenos a la tarea.
      - Explicar que relanzar un `task` id ya aprobado o agotado lanza un agente mínimo en Haiku que informa que la tarea ya terminó y que debe abrirse un nuevo `task` id.
      - Explicar que en `AETHER-SKILLS:`, pasar más de 3 skills, un nombre desconocido o una skill que supere el límite de líneas rechaza el lanzamiento entero.
@@ -1218,6 +1273,10 @@ En `plugins/aether/skills/using-aether/SKILL.md`, resumir `## Models` y `## Desi
    - `tests/bootstrap-design.test.js`: comprobar en `plugins/aether/skills/using-aether/SKILL.md` (`## Designing`) las reglas permanentes que se quedan en el arranque (`'/aether:design'`, `'You decide no round, and you start no seat'`, `'Only you write the card: aether-guard refuses every other writer'`, `'Never override the Judge silently'`, `'aether:designing'`) y comprobar en `plugins/aether/skills/designing/SKILL.md` el procedimiento detallado trasladado allí (`'at most five questions, one at a time'`, `'hard to reverse, surprising, or a real trade-off'`, `'specs/NNN-<topic>/intent.md'`, `"the owner's words, quoted as they said them"`, `'what is out'`, `'the answers to the clarifying questions'`, `'At most two revisions per document'`, `'"session": "<CLAUDE_CODE_SESSION_ID>"'`, `'"mode": "short"'`, `'- \`approved\`:'`, `'- \`clarify\`:'`, `'- \`dispute\`:'`, `'- \`failed\`:'`, `'take the reversible side of each as an assumption, put the question in "Espera tu sí"'`, `'change the plan or tasks and launch in short mode (see "Later changes"); when \`mechanical\` is true, fix the findings yourself.'`, `'**Later changes.**'`, `'a fix after a stop at the plan stage'`, `'A changed plan gets a new exam'`, `'an approved spec is never rewritten'`).
    - `tests/bootstrap-names.test.js`: mantener la comprobación del orden de las 5 secciones `['## The route by size and risk', '## The three paths', '## The delegate ladder', '## Models', '## Designing']`, actualizar `rubric(...)` para leer la tabla de precios y citas del fabricante desde `plugins/aether/skills/models/SKILL.md`, e incluir `skills/models/SKILL.md` y `skills/designing/SKILL.md` en `sources(t)`.
    - `tests/using-aether-030.test.js`: verificar que las reglas de #204 están en `using-aether/SKILL.md` y que `bootstrapParts` cabe en los `PART_COMMANDS` de `hooks.json` (5 mientras la Tarea 11 no los reduzca a 3).
+
+3. Cadenas que otras pruebas fijan y esta tarea conserva literalmente: en `## Models`, `first the quota whose weekly window renews first, then the cheapest pair per task` y `agy, codex, grok, cursor, muse` (`lanes-docs`); en `## Designing`, `/aether:design`, `aether-exam run`, `aether-report --seats`, `aether:examiner`, `aether:judge`, `aether:writer`, `At most two revisions per document` y `.aether/pending.jsonl` (`launcher`); en la escalera, `AETHER-TASK:`, `AETHER-OWNS:`, `AETHER-TESTS:`, `aether-delegate verdict`, la ruta completa de `ladder.json`, `--from-scratch` e `isolation: "worktree"` (`delegate-skill`); y la frase de `swarm-ladder-docs` (la frase «The swarm starts every unit on the first rung of … and raises it by the same policy as the delegates.», entera).
+
+**Lectores revisados:** `codex-docs`, `autonomous-runs-skill`, `docs-facts`, `delegate-skill`, `copies-classes`, `help`, `roles`, `muse-skills`, `session-start-parts`, `spend-skills`, `lanes-docs`, `launcher`, `swarm-ladder-docs` y `tests/helpers.js` leen `using-aether/SKILL.md`. Se buscó en cada uno qué cadenas fija que viva solo en `## Models`, `## Designing` o en las frases que esta tarea cambia («about five tool calls», «many reads of your own», «one effort up»): ninguno fija esas frases, y las cadenas que fijan de las dos secciones son las de arriba, que se conservan, así que ninguno necesita edición. `bootstrap-design`, `bootstrap-names` y `using-aether-030` sí fijan el contenido movido y están en `Owns`.
 
 **Tests (write first):**
 Añadir en `tests/using-aether-030.test.js` (usando `text`, `PLUGIN` y `bootstrapParts` ya definidos en ese archivo):
@@ -1247,7 +1306,7 @@ test('the bootstrap keeps the canonical rule of the direct path and the correcti
 
 **Aether:**
 - Area: bootstrap
-- Owns: `plugins/aether/lib/session-start.js`, `plugins/aether/hooks/hooks.json`, `tests/helpers.js`, `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/session-start-tidy.test.js`, `tests/session-start-tree.test.js`, `tests/dormant-030.test.js`, `tests/continuity-hook.test.js`
+- Owns: `plugins/aether/lib/session-start.js`, `plugins/aether/hooks/hooks.json`, `tests/helpers.js`, `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/session-start-tidy.test.js`, `tests/session-start-tree.test.js`, `tests/dormant-030.test.js`, `tests/continuity-hook.test.js`, `tests/guards-helpers.test.js`
 - Depends on: Task 10 — el texto de using-aether ya cabe en 3 partes; sin ese recorte, bajar a 3 comandos dejaría texto sin entregar
 - Depends on: Task 5 — comparte tests/continuity-hook.test.js
 - Depends on: Task 8 — el nuevo matcher de PostToolUse solo tiene sentido cuando el manejador del camino directo cuenta esas herramientas
@@ -1277,6 +1336,10 @@ test('the bootstrap keeps the canonical rule of the direct path and the correcti
 3. En las pruebas propietarias de esta tarea:
    - `tests/session-start.test.js`, `tests/session-start-parts.test.js`, `tests/dormant-030.test.js` y `tests/continuity-hook.test.js`: actualizar el conteo de partes de `--part` a `3` (`4` comandos en `SessionStart`, `11` comandos totales en el archivo de hooks: `dormant-030` pide hoy al menos 13), el encabezado de dos líneas en cada parte, y el `matcher` `'Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash'` de `PostToolUse` que fija `continuity-hook.test.js`.
    - `tests/session-start-tidy.test.js` y `tests/session-start-tree.test.js`: ejercitan `session-start.js` (`main` y `PART_LIMIT`) y se mantienen en verde sin cambios de lógica.
+
+4. `tests/guards-helpers.test.js` lee `hooks.json` en un árbol de ejemplo (una cadena, no el archivo real) y no fija nada de lo que esta tarea cambia; está en `Owns` solo para que un rojo de esa prueba se corrija dentro de la tarea, sin editar los verificadores `guards-seat`, `guards-core-1`, `guards-delegate-2` y `guards-bins`.
+
+**Lectores revisados:** los demás lectores de `hooks.json` (`guard`: las entradas de `aether-guard`; `observe-bin`: `PostToolUse[0]` es `ScheduleWakeup` y las cinco entradas de `aether-observe`; `new-skills`: el archivo no nombra `art-direction`) fijan entradas que esta tarea no toca. Los lectores de `session-start.js` (`autonomous-runs-skill`, `commands`, `fault-trace`, `fault-sites`, `guards-bins`, `observe-digest`, `observe-issue`, `observe-notice`, `retired-options`, `session-start-continuity`, `session-start-autonomy`, `spend-prune`, `using-aether-030`) usan solo el comando de notas, `PART_LIMIT` o el número de comandos; solo `session-start`, `session-start-parts` y `helpers.js` fijan el encabezado de las partes (`partHeading`), y están en `Owns`; `bootstrap-names` usa `leadParts` de `helpers.js`.
 
 **Tests (write first):**
 Añadir en `tests/session-start-parts.test.js` (usando `PLUGIN`, `PART_LIMIT` y `bootstrapParts` definidos en ese archivo; cada parte es `{ heading, slice, context, output }`, donde `context` es lo que recibe el Lead y `output` la salida completa del comando):
@@ -1325,49 +1388,79 @@ La prueba `(d)` del mismo archivo pasa de «cinco partes o menos» a «tres part
 
 ---
 
-### Task 12: Actualizar documentación, `CLAUDE.md`, `docs/decisions.md` y huella durmiente en `docs/reference/components.md`
+### Task 12: Registrar las decisiones A117 a A120 en `docs/decisions.md` y el rango de `docs/index.md`
 
 **Aether:**
 - Area: docs
-- Owns: `CLAUDE.md`, `docs/methodology.md`, `docs/reference/components.md`, `docs/guide/delegates.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`, `docs/decisions.md`, `docs/index.md`, `tests/docs-facts.test.js`, `tests/docs-030.test.js`, `tests/components-docs.test.js`, `tests/docs-decisions.test.js`
-- Depends on: Task 4 — comparte tests/docs-facts.test.js y la frase canónica del sitio y de los tutoriales
-- Depends on: Task 6 — documenta el rechazo automático en aether-delegate begin y aether-plan compile
-- Depends on: Task 7 — documenta el rechazo automático y la clave skill en /aether:design
+- Owns: `docs/decisions.md`, `docs/index.md`, `tests/docs-facts.test.js`, `tests/docs-decisions.test.js`, `tests/audit-docs.test.js`, `tests/codex-release.test.js`, `tests/docs-claims-rest.test.js`, `tests/harness-lists.test.js`, `tests/lanes-docs.test.js`, `tests/launcher.test.js`, `tests/models-by-role-docs.test.js`, `tests/no-router.test.js`, `tests/onboard-retired.test.js`, `tests/project-files-docs.test.js`, `tests/spend-docs.test.js`
+- Depends on: Task 3 — comparte con ella las pruebas que leen la página de componentes y las que recorren las decisiones
+- Depends on: Task 4 — comparte tests/docs-facts.test.js
+- Depends on: Task 6 — A118 registra el rechazo en aether-delegate begin y aether-plan compile
+- Depends on: Task 7 — A118 registra el rechazo en /aether:design
+- Depends on: Task 11 — A120 registra las 3 partes del arranque y el aviso por lectura
+- Serves: R12, R13
+
+**Goal:**
+Registrar en `docs/decisions.md` las decisiones `A117` a `A120` de los cuatro comportamientos nuevos y de la higiene del arranque, con las citas del dueño, y subir el rango que nombra `docs/index.md` a `A1–A120`, sin tocar el changelog de la versión `0.36.0`. Las páginas de las guías, `CLAUDE.md` y la página de componentes las actualiza la Tarea 13.
+
+**Interfaces:**
+1. `docs/decisions.md`:
+   - Conservar intacta la línea histórica `docs/decisions.md:236` (`about five tool calls`).
+   - Añadir al final las decisiones `A117` (aviso único en `Stop` e informe de delegados con resultado sin veredicto), `A118` (rechazo en código en `aether-delegate begin`, `aether-plan compile` y `/aether:design` ante tope de tiempo, gasto o pausa por cuota), `A119` (exigencia de aprobación `ExitPlanMode` en la transcripción antes de `aether-autonomy start` en sesiones interactivas) y `A120` (límite contable de 3 ediciones propias o 10 lecturas por turno con aviso único en `PostToolUse`, partes de arranque independientes del orden y extracción de `aether:designing` y `aether:models`). Cada una es una fila `| A<n> | **...** ... |` como las anteriores, sin patrones retirados ni listas cerradas de arneses.
+2. `docs/index.md`: el rango `A1–A116` pasa a `A1–A120` (la prueba «R12: the range of decisions the pages name runs to the last decision» exige que coincida con la última decisión).
+3. `tests/docs-facts.test.js`: `LAST_DECISION = 116` pasa a `LAST_DECISION = 120` en la prueba «R15: the decisions A50 to A116 are recorded …».
+
+**Lectores revisados:** las pruebas de `Owns` son las que nombran entre comillas `docs/decisions.md` o `docs/index.md` (`docs-decisions`, `docs-facts`, `codex-release`, `harness-lists`, `lanes-docs`, `onboard-retired`, `audit-docs`, `docs-claims-rest`, `launcher`, `models-by-role-docs`, `no-router`, `project-files-docs`, `spend-docs`); las filas nuevas solo se añaden al final y fijan nada de lo existente, y las pruebas que recorren las decisiones en busca de patrones retirados (`docs-decisions`, `harness-lists`, `lanes-docs`, `onboard-retired`) leen también las filas nuevas, por eso están aquí. `guards-helpers` la posee la Tarea 3. Ninguna prueba fija `A1–A116` fuera de `docs-facts`.
+
+**Tests (write first):**
+En `tests/docs-facts.test.js`, primero: `LAST_DECISION = 120` (la prueba R15 queda roja hasta que existan las filas). Y añadir (usando `read(rel)` definido en ese archivo):
+
+```js
+test('decisions A117 to A120 are recorded, the index names the range, and the historical line stays intact (R12)', () => {
+  const decisions = read('docs/decisions.md')
+  for (const id of ['A117', 'A118', 'A119', 'A120']) assert.match(decisions, new RegExp(`^\\| ${id} \\|`, 'm'), id)
+  assert.match(decisions, /about five tool calls/)
+  assert.match(read('docs/index.md'), /A1–A120/)
+})
+```
+
+**Acceptance:**
+- `docs/decisions.md` conserva `"about five tool calls"` en su registro histórico y añade `A117` a `A120`; `docs/index.md` dice `A1–A120`.
+- `node --test tests/docs-facts.test.js tests/docs-decisions.test.js tests/audit-docs.test.js tests/codex-release.test.js tests/docs-claims-rest.test.js tests/harness-lists.test.js tests/lanes-docs.test.js tests/launcher.test.js tests/models-by-role-docs.test.js tests/no-router.test.js tests/onboard-retired.test.js tests/project-files-docs.test.js tests/spend-docs.test.js` pasa.
+
+---
+
+### Task 13: Actualizar `CLAUDE.md`, las guías, `docs/reference/components.md` y la huella durmiente
+
+**Aether:**
+- Area: docs
+- Owns: `CLAUDE.md`, `docs/methodology.md`, `docs/reference/components.md`, `docs/guide/delegates.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`, `tests/docs-facts.test.js`, `tests/docs-030.test.js`, `tests/components-docs.test.js`, `tests/docs-claims-rest.test.js`, `tests/effort-policy-docs.test.js`, `tests/guards.test.js`, `tests/harness-lists.test.js`, `tests/aether-lane.test.js`, `tests/lane-agents-md.test.js`, `tests/lanes-docs.test.js`, `tests/launcher.test.js`, `tests/muse-docs-overview.test.js`, `tests/no-router.test.js`, `tests/observe-docs.test.js`, `tests/project-files-docs.test.js`, `tests/spend-docs.test.js`, `tests/swarm-ladder-docs.test.js`, `tests/tidy-detect.test.js`, `tests/tidy-report.test.js`, `tests/audit-docs.test.js`, `tests/codex-release.test.js`, `tests/retired-patterns.js`
+- Depends on: Task 3 — añadió las dos filas de skills a la página de componentes y posee con ella las pruebas que la leen
+- Depends on: Task 10 — la prueba de los seis lugares lee la frase canónica de using-aether
 - Depends on: Task 11 — documenta las 3 partes de SessionStart y el matcher de PostToolUse
+- Depends on: Task 12 — comparte con ella las pruebas de documentación
 - Serves: R6, R8, R9, R10, R11, R12, R13
 
 **Goal:**
-Actualizar `CLAUDE.md`, `docs/methodology.md`, `docs/reference/components.md`, `docs/guide/delegates.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`, `docs/decisions.md` y `docs/index.md` (y `tests/docs-facts.test.js`) para reflejar los cuatro comportamientos nuevos, la frase canónica de la regla contable verificada en todos los lugares, las decisiones `A117`–`A120`, las 3 partes de `SessionStart`, las dos skills nuevas (`aether:designing`, `aether:models`) y la huella durmiente medida (incluyendo el proceso corto de `PostToolUse` por lectura en sesión normal), sin tocar el changelog de la versión `0.36.0`.
+Actualizar `CLAUDE.md`, `docs/methodology.md`, `docs/reference/components.md`, `docs/guide/delegates.md`, `docs/guide/autonomy.md` y `docs/guide/design-seats.md` para reflejar los cuatro comportamientos nuevos, la frase canónica de la regla contable en todos los lugares, las 3 partes de `SessionStart`, las dos skills nuevas (`aether:designing`, `aether:models`) y la huella durmiente medida (incluyendo el proceso corto de `PostToolUse` por lectura en sesión normal), sin tocar el changelog de la versión `0.36.0`. Son seis páginas; el resto de las rutas son las pruebas que las leen, que esta tarea posee para poder corregir dentro de ella un rojo de su propia puerta.
 
 **Interfaces:**
 1. `docs/methodology.md`: reemplazar `"about five tool calls"` por la frase canónica en inglés (`COUNTABLE_EN`):
    `"at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count"` (R6).
-2. `docs/decisions.md` y `docs/index.md`:
-   - Conservar intacta la línea histórica `docs/decisions.md:236` (`about five tool calls`).
-   - Añadir al final de `docs/decisions.md` las decisiones `A117` (aviso único en `Stop` e informe de delegados con resultado sin veredicto), `A118` (rechazo en código en `aether-delegate begin`, `aether-plan compile` y `/aether:design` ante tope de tiempo, gasto o pausa por cuota), `A119` (exigencia de aprobación `ExitPlanMode` en la transcripción antes de `aether-autonomy start` en sesiones interactivas) y `A120` (límite contable de 3 ediciones propias o 10 lecturas por turno con aviso único en `PostToolUse`, partes de arranque independientes del orden y extracción de `aether:designing` y `aether:models`).
-   - En `docs/index.md`: actualizar el rango `A1–A116` a `A1–A120` y añadir las dos skills nuevas `aether:designing` y `aether:models` en la tabla de skills si se listan allí.
-   - En `tests/docs-facts.test.js`: actualizar `LAST_DECISION = 120`.
-3. `CLAUDE.md`, `docs/reference/components.md`, `docs/guide/delegates.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`:
-   - Actualizar el número de entradas de `SessionStart` a 4 (`aether-session-start` + `--part 1` a `--part 3`, total 11 comandos de hook).
-   - Documentar `aether:designing` y `aether:models` en la lista de skills.
+2. `CLAUDE.md`, `docs/reference/components.md`, `docs/guide/delegates.md`, `docs/guide/autonomy.md`, `docs/guide/design-seats.md`:
+   - Actualizar el número de entradas de `SessionStart` a 4 (`aether-session-start` + `--part 1` a `--part 3`, total 11 comandos de hook) y quitar `--part 5` de la frase de `CLAUDE.md`.
+   - Documentar `aether:designing` y `aether:models` en la lista de skills de `CLAUDE.md` (la página de componentes ya las tiene, por la Tarea 3).
    - Documentar `unverdicted` en `aether-report --delegates`, el aviso en `Stop`, el aviso en `PostToolUse` a las 3 ediciones o 10 lecturas, el rechazo automático por topes/pausa y la exigencia de plan mode en `aether-autonomy start` interactivo.
-   - Medir y actualizar en `docs/reference/components.md` (`## What Aether adds to a normal session`, conservando la frase histórica `Version 0.35.0 adds seven hook entries...`) la huella durmiente fuera de una sesión del Lead: `SessionStart` corre 4 procesos cortos en vez de 6, y `PostToolUse` (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Read`, `Grep`, `Glob`, `Bash`) corre 1 proceso corto `aether-continuity posttool` (~33 ms en Node 22 sobre Linux/WSL2) por llamada, con `0 B` en `stdout` y `0` archivos escritos cuando `!isAetherSession`.
-4. En `tests/docs-facts.test.js` y demás pruebas de documentación propietarias de esta tarea (`tests/docs-030.test.js`, `tests/components-docs.test.js` y `tests/docs-decisions.test.js`; las demás pruebas de documentación están en las Tareas 13 y 14):
-   - Verificar en `tests/docs-facts.test.js` que `docs/reference/components.md` documente la medición en sesión normal de `PostToolUse` para `Read`, `Grep` y `Glob`, y verificar que la frase canónica en inglés (`COUNTABLE_EN`) y la frase canónica en español (`COUNTABLE_ES`) estén presentes literalmente en los seis lugares de R6 (`using-aether/SKILL.md` ya la lleva por la Tarea 10, el sitio y los tutoriales por la Tarea 4).
-   - Mantener en verde `tests/docs-030.test.js`, `tests/components-docs.test.js` y `tests/docs-decisions.test.js`.
+   - Medir y actualizar en la página de componentes (`## What Aether adds to a normal session`, conservando la frase histórica `Version 0.35.0 adds seven hook entries...`, que `tests/docs-030.test.js` fija) la huella durmiente fuera de una sesión del Lead: `SessionStart` corre 4 procesos cortos en vez de 6, y `PostToolUse` (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Read`, `Grep`, `Glob`, `Bash`) corre 1 proceso corto de `aether-continuity` (~33 ms en Node 22 sobre Linux/WSL2) por llamada, con `0 B` en `stdout` y `0` archivos escritos cuando `!isAetherSession`, en una sola oración que nombre `PostToolUse`, `Read`, `Grep` y `Glob` en ese orden.
+3. Las pruebas de `Owns` son las que nombran entre comillas alguna de las seis páginas; las que pasan por un ayudante `read(...)` se buscaron por los fragmentos de lo que esta tarea cambia («six `node` processes», «five part commands», `--part 5`, «about five tool calls», `seven hook entries`, `A116`): solo fijan `docs-030` (`seven hook entries`, que se conserva) y `docs-facts`. `tests/docs-facts.test.js` es también de las Tareas 4 y 12.
+
+**Lectores revisados:** `aether-lane`, `lane-agents-md`, `tidy-detect` y `tidy-report` nombran `CLAUDE.md` como archivo de ejemplo de sus fixtures y no leen el de este repositorio: están en `Owns` solo porque el aviso de `aether-plan check` no distingue ese uso; `continuity-posttool-skills`, `docs-claims`, `guard-tidy`, `session-start-tidy` y `tree-check` hacen lo mismo y las poseen las Tareas 2, 8 y 11, de las que esta depende. `quota-brake-docs` (Tarea 9) fija el bloque de ceilings de `autonomy.md` que esta tarea no quita.
 
 **Tests (write first):**
 Añadir en `tests/docs-facts.test.js` (usando `read(rel)` definido en ese archivo):
 
 ```js
-test('decisions A117 to A120 are recorded, historical line 236 stays intact, and the canonical countable rule is identical across all six places (R6)', () => {
-  const decisions = read('docs/decisions.md')
-  assert.match(decisions, /\| A117 \|/)
-  assert.match(decisions, /\| A118 \|/)
-  assert.match(decisions, /\| A119 \|/)
-  assert.match(decisions, /\| A120 \|/)
-  assert.match(decisions, /about five tool calls/)
-
+test('the canonical countable rule is identical across the six places of R6, CLAUDE.md says three parts, and the components page measures PostToolUse on reads (R6, R8, R12)', () => {
   const enRule =
     'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
   const esRule =
@@ -1394,71 +1487,16 @@ test('decisions A117 to A120 are recorded, historical line 236 stays intact, and
     assert.ok(text.includes(esRule), `${file} has the canonical Spanish countable rule`)
     assert.doesNotMatch(text, /unas cinco llamadas a herramientas/, `${file} has no old vague rule`)
   }
+
+  const claude = read('CLAUDE.md')
+  assert.match(claude, /`--part 1` to `--part 3`/)
+  assert.doesNotMatch(claude, /--part 5/)
+  assert.match(read('docs/reference/components.md'), /PostToolUse[^.\n]*Read[^.\n]*Grep[^.\n]*Glob/)
 })
 ```
 
 **Acceptance:**
-- `node --test tests/docs-facts.test.js tests/docs-030.test.js tests/components-docs.test.js tests/docs-decisions.test.js` pasa.
-- `docs/decisions.md` conserva `"about five tool calls"` en su registro histórico de A32 y añade `A117`–`A120`.
+- `node --test tests/docs-facts.test.js tests/docs-030.test.js tests/components-docs.test.js tests/docs-claims-rest.test.js tests/effort-policy-docs.test.js tests/guards.test.js tests/harness-lists.test.js tests/aether-lane.test.js tests/lane-agents-md.test.js tests/lanes-docs.test.js tests/launcher.test.js tests/muse-docs-overview.test.js tests/no-router.test.js tests/observe-docs.test.js tests/project-files-docs.test.js tests/spend-docs.test.js tests/swarm-ladder-docs.test.js tests/tidy-detect.test.js tests/tidy-report.test.js tests/audit-docs.test.js tests/codex-release.test.js` pasa.
 - `tests/docs-facts.test.js` comprueba que la frase canónica en inglés y en español de la regla contable aparece idéntica en los seis lugares de R6.
-- `docs/reference/components.md` refleja la medición de `PostToolUse` por lectura en una sesión normal y `tests/dormant-030.test.js` comprueba que los 11 comandos del archivo de hooks tienen huella de 0 bytes fuera de una sesión del Lead.
-
----
-
-### Task 13: Mantener en verde los verificadores de patrones retirados, opciones y listas de las páginas
-
-**Aether:**
-- Area: docs
-- Owns: `tests/retired-patterns.js`, `tests/docs-claims-rest.test.js`, `tests/harness-lists.test.js`, `tests/no-router.test.js`, `tests/onboard-retired.test.js`, `tests/effort-policy-docs.test.js`, `tests/models-by-role-docs.test.js`, `tests/muse-docs-overview.test.js`, `tests/project-files-docs.test.js`, `tests/audit-docs.test.js`
-- Depends on: Task 10 — using-aether y las skills nuevas ya tienen su texto final, que estas pruebas recorren
-- Depends on: Task 12 — las páginas ya dicen los cuatro comportamientos, las 3 partes y las decisiones nuevas
-- Serves: R12, R13
-
-**Goal:**
-Mantener en verde, con el texto final de las Tareas 3, 9, 10, 11 y 12, los verificadores que recorren `plugins/aether/`, `docs/` y el README en busca de patrones retirados, opciones retiradas, listas cerradas de arneses y páginas sin enlazar (`tests/retired-patterns.js` y las pruebas que lo usan).
-
-**Interfaces:**
-Ninguna interfaz nueva: la tarea no agrega comportamiento ni archivos, solo cuida que las pruebas de `Owns` sigan diciendo lo que el árbol dice después de las Tareas 3, 9, 10, 11 y 12.
-
-**Tests (write first):**
-No hay prueba nueva: el contrato son las pruebas de `Owns`, que ya existen. Se corren primero, antes de tocar nada:
-
-```
-node --test tests/docs-claims-rest.test.js tests/harness-lists.test.js tests/no-router.test.js tests/onboard-retired.test.js tests/effort-policy-docs.test.js tests/models-by-role-docs.test.js tests/muse-docs-overview.test.js tests/project-files-docs.test.js tests/audit-docs.test.js
-```
-
-Si una falla porque fija una frase que esta feature movió a propósito (las tres partes del arranque, `A117` a `A120`, la frase canónica de la regla contable, las dos skills nuevas), se corrige la prueba y solo esa frase. Si falla porque el texto nuevo de otra tarea reintroduce un patrón retirado, una opción retirada o una lista cerrada de arneses, la prueba no se toca: la tarea termina con ese hallazgo en su informe para que el dueño de ese texto lo corrija.
-
-**Acceptance:**
-- `node --test tests/docs-claims-rest.test.js tests/harness-lists.test.js tests/no-router.test.js tests/onboard-retired.test.js tests/effort-policy-docs.test.js tests/models-by-role-docs.test.js tests/muse-docs-overview.test.js tests/project-files-docs.test.js tests/audit-docs.test.js` pasa.
-- `npm test` pasa entero.
-
----
-
-### Task 14: Mantener en verde los verificadores de guías, versión, carriles y orden
-
-**Aether:**
-- Area: docs
-- Owns: `tests/lanes-docs.test.js`, `tests/launcher.test.js`, `tests/observe-docs.test.js`, `tests/spend-docs.test.js`, `tests/swarm-ladder-docs.test.js`, `tests/codex-release.test.js`, `tests/aether-lane.test.js`, `tests/lane-agents-md.test.js`, `tests/tidy-detect.test.js`, `tests/tidy-report.test.js`
-- Depends on: Task 10 — using-aether y las skills nuevas ya tienen su texto final, que estas pruebas recorren
-- Depends on: Task 12 — las páginas ya dicen los cuatro comportamientos, las 3 partes y las decisiones nuevas
-- Serves: R12, R13
-
-**Goal:**
-Mantener en verde, con el texto final de las Tareas 3, 9, 10, 11 y 12, los verificadores de las guías de carriles, de gasto, de observación y de la escalera del enjambre, el que fija la versión `0.35.0` y las pruebas de carriles y de orden que leen `CLAUDE.md`, `AGENTS.md` o las páginas.
-
-**Interfaces:**
-Ninguna interfaz nueva: la tarea no agrega comportamiento ni archivos, solo cuida que las pruebas de `Owns` sigan diciendo lo que el árbol dice después de las Tareas 3, 9, 10, 11 y 12.
-
-**Tests (write first):**
-No hay prueba nueva: el contrato son las pruebas de `Owns`, que ya existen. Se corren primero, antes de tocar nada:
-
-```
-node --test tests/lanes-docs.test.js tests/launcher.test.js tests/observe-docs.test.js tests/spend-docs.test.js tests/swarm-ladder-docs.test.js tests/codex-release.test.js tests/aether-lane.test.js tests/lane-agents-md.test.js tests/tidy-detect.test.js tests/tidy-report.test.js
-```
-
-Si una falla porque fija una frase que esta feature movió a propósito (las tres partes del arranque, `A117` a `A120`, la frase canónica de la regla contable, las dos skills nuevas), se corrige la prueba y solo esa frase. Si falla porque el texto nuevo de otra tarea reintroduce un patrón retirado, una opción retirada o una lista cerrada de arneses, la prueba no se toca: la tarea termina con ese hallazgo en su informe para que el dueño de ese texto lo corrija.
-
-**Acceptance:**
-- `node --test tests/lanes-docs.test.js tests/launcher.test.js tests/observe-docs.test.js tests/spend-docs.test.js tests/swarm-ladder-docs.test.js tests/codex-release.test.js tests/aether-lane.test.js tests/lane-agents-md.test.js tests/tidy-detect.test.js tests/tidy-report.test.js` pasa.
+- La página de componentes refleja la medición de `PostToolUse` por lectura en una sesión normal, y `tests/dormant-030.test.js` comprueba que los 11 comandos del archivo de hooks tienen huella de 0 bytes fuera de una sesión del Lead.
 - `npm test` pasa entero.
