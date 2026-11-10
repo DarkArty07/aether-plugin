@@ -709,6 +709,50 @@ test('start in a Lead session rejects interactive cli, missing-entrypoint, unkno
   assert.match(reusedApproval.reason, /plan mode/i)
 })
 
+test('interactive plan approvals require an earlier matching use and accept text blocks only once per ID', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const { configDir, mainRoot, transcript } = setup(t)
+  markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+  const owner = human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' })
+  const start = (now) => autonomy.start(mainRoot, { quote: QUOTE, session: SESSION, hours: 2 }, { configDir, dataDir, now })
+  const write = (lines) => fs.writeFileSync(transcript(SESSION), [owner, ...lines].join('\n') + '\n')
+  const errorResult = JSON.parse(planResult('p1'))
+  errorResult.message.content[0].is_error = true
+  for (const [name, lines] of [
+    ['no tool use', [planResult('p1')]],
+    ['result before use', [planResult('p1'), planUse('p1')]],
+    ['different ID', [planUse('p1'), planResult('p2')]],
+    ['error with approval text', [planUse('p1'), JSON.stringify(errorResult)]],
+  ]) {
+    write(lines)
+    const result = start(Date.parse('2026-04-06T10:00:05.000Z'))
+    assert.equal(result.ok, false, name)
+    assert.match(result.reason, /plan mode/i, name)
+  }
+
+  const blockResult = JSON.parse(planResult('p1'))
+  blockResult.message.content[0].content = [
+    { type: 'image', text: 'ignored' },
+    { type: 'text', text: 'Plan review\nUser has approved your plan. You can now start coding.' },
+  ]
+  const firstApproval = [planUse('p1'), JSON.stringify(blockResult)]
+  write(firstApproval)
+  assert.equal(start(Date.parse('2026-04-06T10:00:05.000Z')).ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:01:00.000Z') })
+
+  // Neither a repeated result nor another use of the same ID grants a second run.
+  write([...firstApproval, planResult('p1'), planUse('p1'), planResult('p1')])
+  const duplicate = start(Date.parse('2026-04-06T10:02:00.000Z'))
+  assert.equal(duplicate.ok, false)
+  assert.match(duplicate.reason, /plan mode/i)
+
+  write([...firstApproval, planUse('p2'), planResult('p2')])
+  const second = start(Date.parse('2026-04-06T10:03:00.000Z'))
+  assert.equal(second.ok, true)
+  assert.equal(autonomy.status(mainRoot).id, second.run.id)
+})
+
 test('launchRefusal reports time, cost and quota stops in a Lead session, finds the run from a linked worktree, and returns null outside a Lead session or outside git', (t) => {
   const dataDir = useDataDir(t)
   const { markSession } = require('../plugins/aether/lib/session.js')
@@ -723,6 +767,7 @@ test('launchRefusal reports time, cost and quota stops in a Lead session, finds 
   markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
 
   const t0 = Date.parse('2026-04-06T10:00:05.000Z')
+  assert.equal(autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 }), null)
   const started = autonomy.start(
     mainRoot,
     { quote: QUOTE, session: SESSION, hours: 1, usd: 5 },
@@ -735,7 +780,13 @@ test('launchRefusal reports time, cost and quota stops in a Lead session, finds 
   const byTime = autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 3601 * 1000 })
   assert.equal(byTime.stop, 'time')
   assert.equal(byTime.id, started.run.id)
-  assert.match(byTime.message, /aether-autonomy end --outcome ceiling/)
+  assert.deepEqual(byTime, {
+    stop: 'time', id: started.run.id,
+    hours: { elapsed: 1, ceiling: 1, paused: 0 },
+    usd: { spent: 0, ceiling: 5 },
+    quota: { paused: false, brakeOff: false, resetsAt: null, resumeAt: null, percentUsed: null },
+    message: `autonomous run ${started.run.id} reached its time ceiling (1h / 1h); close it with: aether-autonomy end --outcome ceiling`,
+  })
 
   // From a linked worktree the run of the main checkout is found all the same
   const fromLinked = autonomy.launchRefusal(linked, { session: SESSION, dataDir, now: t0 + 3601 * 1000 })
@@ -758,7 +809,13 @@ test('launchRefusal reports time, cost and quota stops in a Lead session, finds 
   const byQuota = autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 3000 })
   assert.equal(byQuota.stop, 'quota')
   assert.equal(byQuota.id, started.run.id)
-  assert.match(byQuota.message, /aether-autonomy end --outcome incomplete/)
+  const quotaStatus = autonomy.status(mainRoot, { now: t0 + 3000 })
+  assert.deepEqual(byQuota, {
+    stop: 'quota', id: started.run.id,
+    hours: quotaStatus.hours, usd: { spent: 0, ceiling: 5 },
+    quota: { paused: true, brakeOff: false, resetsAt, resumeAt: quotaStatus.quota.resumeAt, percentUsed: 80 },
+    message: `autonomous run ${started.run.id} is paused by the quota brake (80% used; resumeAt ${quotaStatus.quota.resumeAt}); wait until ${quotaStatus.quota.resumeAt} or close the run with: aether-autonomy end --outcome incomplete`,
+  })
 
   // Spend ceiling (in a fresh run with a 10-hour ceiling)
   autonomy.end(mainRoot, 'incomplete', { now: t0 + 4000 })
@@ -772,5 +829,13 @@ test('launchRefusal reports time, cost and quota stops in a Lead session, finds 
   const byCost = autonomy.launchRefusal(linked, { session: SESSION, dataDir, now: t0 + 7000 })
   assert.equal(byCost.stop, 'cost')
   assert.equal(byCost.id, startedCost.run.id)
-  assert.match(byCost.message, /aether-autonomy end --outcome ceiling/)
+  assert.deepEqual(byCost, {
+    stop: 'cost', id: startedCost.run.id,
+    hours: { elapsed: 0, ceiling: 10, paused: 0 },
+    usd: { spent: 5, ceiling: 5 },
+    quota: { paused: false, brakeOff: false, resetsAt: null, resumeAt: null, percentUsed: null },
+    message: `autonomous run ${startedCost.run.id} reached its spend ceiling ($5 / $5); close it with: aether-autonomy end --outcome ceiling`,
+  })
+  autonomy.end(mainRoot, 'ceiling', { now: t0 + 8000 })
+  assert.equal(autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 9000 }), null)
 })
