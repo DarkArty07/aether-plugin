@@ -77,11 +77,11 @@ function isHeadlessTranscript(records) {
     records.every((r) => !r || typeof r.entrypoint !== 'string' || r.entrypoint === 'sdk-cli')
 }
 
-function countApprovedPlanModes(records) {
+function hasApprovedPlanMode(records, latestStarted) {
   const uses = new Set()
   const counted = new Set()
-  let approvals = 0
   for (const record of records) {
+    if (record && record.isSidechain === true) continue
     const content = record && record.message && record.message.content
     if (!Array.isArray(content)) continue
     for (const block of content) {
@@ -91,23 +91,11 @@ function countApprovedPlanModes(records) {
       const texts = typeof block.content === 'string' ? [block.content] : Array.isArray(block.content) ? block.content.filter((part) => part && part.type === 'text' && typeof part.text === 'string').map((part) => part.text) : []
       if (texts.some((text) => text.startsWith('User has approved your plan.') || text.includes('\nUser has approved your plan.'))) {
         counted.add(block.tool_use_id)
-        approvals++
+        if (latestStarted === null || Date.parse(record.timestamp) > latestStarted) return true
       }
     }
   }
-  return approvals
-}
-
-function countSessionRuns(root, sessionId) {
-  const dir = autonomyDir(root)
-  if (!fs.existsSync(dir)) return 0
-  let count = 0
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue
-    const file = runPaths(root, entry.name).runFile
-    if (fs.existsSync(file) && readRun(file).session === sessionId) count++
-  }
-  return count
+  return false
 }
 
 const NEGATED_REASON = "the quote is in a negated clause of the owner's message"
@@ -399,23 +387,38 @@ function ensureBrakeFields(run) {
   return run
 }
 
-// The open run and the folder it lives in (its files are written there, whatever its id says).
-function findOpenRun(mainRoot) {
+// Each run and the folder it lives in (its files are written there, whatever its id says).
+function * runs(mainRoot) {
   const root = autonomyDir(mainRoot)
-  if (!fs.existsSync(root)) return null
-  const names = fs
-    .readdirSync(root, { withFileTypes: true })
+  if (!fs.existsSync(root)) return
+  const names = fs.readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
-  let open = null
   for (const name of names) {
     const paths = runPaths(mainRoot, name)
     if (!fs.existsSync(paths.runFile)) continue
-    const run = ensureBrakeFields(readRun(paths.runFile))
-    if (run.ended === null) open = { run, paths }
+    yield { run: ensureBrakeFields(readRun(paths.runFile)), paths }
+  }
+}
+
+function findOpenRun(mainRoot) {
+  let open = null
+  for (const item of runs(mainRoot)) {
+    if (item.run.ended === null) open = item
   }
   return open
+}
+
+function latestSessionRunStart(mainRoot, session) {
+  let latest = null
+  for (const { run } of runs(mainRoot)) {
+    if (run.session !== session) continue
+    const started = Date.parse(run.started)
+    if (!Number.isFinite(started)) return Infinity
+    if (latest === null || started > latest) latest = started
+  }
+  return latest
 }
 
 function openRun(mainRoot) {
@@ -467,7 +470,7 @@ function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { co
   if (!verified.ok) return { ok: false, reason: verified.reason }
   if (isAetherSession(resolveDataDir(dataDir), session)) {
     const { records } = readSessionRecords(configDir, session)
-    if (!isHeadlessTranscript(records) && countApprovedPlanModes(records) <= countSessionRuns(mainRoot, session)) {
+    if (!isHeadlessTranscript(records) && !hasApprovedPlanMode(records, latestSessionRunStart(mainRoot, session))) {
       return { ok: false, reason: 'interactive session requires an approved plan in plan mode (ExitPlanMode) before starting an autonomous run; present the plan in plan mode and wait for the owner to approve it before running aether-autonomy start' }
     }
   }
