@@ -5,7 +5,7 @@
 // Family: session.
 
 // SessionStart hook. It acts only for the Lead (agent_type aether:lead): any other session
-// gets no output, no file and no sweep. hooks/hooks.json runs it six times in one entry (issue #139):
+// gets no output, no file and no sweep. hooks/hooks.json runs it four times in one entry (issue #139):
 // - with no --part, the notes command marks the session, hands the superdelegation option to the session's
 //   commands through CLAUDE_ENV_FILE, and, on startup, clear and compact, prunes old usage files, lane logs,
 //   observation files and session markers (the observation digest keeps their counts first), sweeps stale runs
@@ -20,6 +20,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const PLUGIN_ROOT = path.join(__dirname, '..')
 
 // The most characters of a part command's whole standard output, the JSON with its escapes and its newline:
 // under Claude Code's 10,000-character cut per hook output, measured in issue #139.
@@ -42,8 +43,15 @@ function contextOutput(context) {
 
 // Each part command is a process of its own, and one that fails or times out leaves no trace in the session: every
 // part's heading says what to do when a part is missing.
-const partHeading = (k, n, root) =>
-  `Aether mode, part ${k} of ${n}. If a part from 1 to ${n} did not reach you, read the whole file ${skillFile(root)} before you act.\n\n`
+function partHeading(k, n, root = PLUGIN_ROOT) {
+  const file = path.join(root, 'skills', 'using-aether', 'SKILL.md')
+  return (
+    [
+      "You are the Lead of Aether mode: the owner's right hand.",
+      `Aether mode bootstrap, part ${k} of ${n}: read all ${n} parts before you act, whatever order they arrive in; if a part from 1 to ${n} did not reach you, read the whole file ${file} before you act.`,
+    ].join('\n') + '\n\n'
+  )
+}
 
 // The offsets of text where a line starts that matches the pattern, after offset 0.
 function lineStarts(text, pattern) {

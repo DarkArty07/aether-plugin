@@ -1,5 +1,5 @@
 {
-  "description": "Aether: the SessionStart notes and stale-run sweep and the bootstrap in five part commands, the guard before writes and shell commands, the five observation hooks (PostToolUse of ScheduleWakeup, PostToolUseFailure, StopFailure, PreCompact and SessionEnd), the session-note hooks of aether-continuity (Stop, StopFailure, PreCompact, PostCompact, SessionEnd, PostToolUse of the writes and Bash, and PermissionRequest of the writes), and the usage meter mod",
+  "description": "Aether: the SessionStart notes and stale-run sweep and the bootstrap in three part commands, the guard before writes and shell commands, the five observation hooks (PostToolUse of ScheduleWakeup, PostToolUseFailure, StopFailure, PreCompact and SessionEnd), the session-note hooks of aether-continuity (Stop, StopFailure, PreCompact, PostCompact, SessionEnd, PostToolUse of the writes, reads and Bash, and PermissionRequest of the writes), and the usage meter mod",
   "hooks": {
     "SessionStart": [
       {
@@ -20,14 +20,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 3"
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 4"
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 5"
           }
         ]
       }
@@ -63,7 +55,7 @@
         ]
       },
       {
-        "matcher": "Write|Edit|MultiEdit|Bash",
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash",
         "hooks": [
           {
             "type": "command",

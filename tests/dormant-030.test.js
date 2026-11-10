@@ -19,7 +19,7 @@ test('every hook of the feature, in a session that is not the Lead, exits 0, pri
   const home = tempDir(t, 'aether-home-')
   const watched = [repo.dir, data, configDir, home]
   const before = watched.map(listing)
-  assert.ok(commands.length >= 13, `${commands.length} commands`)
+  assert.ok(commands.length >= 11, `${commands.length} commands`)
   for (const command of commands) {
     const args = command.replace(/^node "\$\{CLAUDE_PLUGIN_ROOT\}\//, '').replace(/"/g, '').split(/\s+/)
     for (const source of SOURCES) {

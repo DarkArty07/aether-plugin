@@ -171,7 +171,7 @@ test('a session that is not Aether gets nothing: no output, no file, no environm
     '"aether:lead"',
   ]
   // Every SessionStart command of hooks/hooks.json: the notes command and the part commands.
-  assert.equal(SESSION_COMMANDS.length, 6)
+  assert.equal(SESSION_COMMANDS.length, 4)
   for (const args of SESSION_COMMANDS) {
     for (const input of inputs) {
       const r = start(repo.dir, data, { input, args, env: { CLAUDE_ENV_FILE: envFile, [OLD_LANES]: 'true' } })

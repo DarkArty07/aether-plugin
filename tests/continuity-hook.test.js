@@ -218,7 +218,7 @@ test('hooks.json registers one aether-continuity entry per verb, apart from the 
   }
   for (const event of ['PreCompact', 'StopFailure', 'SessionEnd']) assert.ok(entriesOf(event).some((h) => h.command.includes('aether-observe')), `${event} keeps the observation entry`)
   assert.equal(mine('SessionEnd')[0].timeout, undefined)
-  assert.equal(mine('PostToolUse')[0].matcher, 'Write|Edit|MultiEdit|Bash')
+  assert.equal(mine('PostToolUse')[0].matcher, 'Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash')
   assert.equal(mine('PermissionRequest')[0].matcher, 'Write|Edit|MultiEdit|NotebookEdit')
   assert.equal(hooks.SessionStart[0].matcher, 'startup|resume|clear|compact|fork')
   assert.equal(hooks.WorktreeCreate, undefined, 'Aether registers no WorktreeCreate hook: the copies of Claude Code stay in .claude/worktrees/ (R16)')
@@ -263,4 +263,23 @@ test('stop warns once per unverdicted delegate result in the Lead session and st
   const out3 = JSON.parse(third.stdout)
   assert.match(out3.hookSpecificOutput.additionalContext, /Continuidad de Aether/)
   assert.match(out3.hookSpecificOutput.additionalContext, /fix-bug \(attempt 2\)/)
+})
+
+test('the real hooks.json sends Read, Grep and Glob to the posttool counter: its matcher selects them and its command prints the notice on the tenth read (spec 031, R7)', (t) => {
+  const w = world(t)
+  const group = hooks.PostToolUse.find((g) => g.hooks.some((h) => h.command.endsWith('/bin/aether-continuity" posttool')))
+  assert.ok(group, 'hooks.json has a PostToolUse entry for aether-continuity posttool')
+  const selects = (tool) => new RegExp(`^(?:${group.matcher})$`).test(tool)
+  for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'Grep', 'Glob', 'Bash']) assert.ok(selects(tool), `${tool} reaches the counter`)
+  for (const tool of ['WebFetch', 'Agent', 'ScheduleWakeup']) assert.ok(!selects(tool), `${tool} does not`)
+  const file = path.join(w.repo.dir, 'src', 'a.js')
+  const outputs = []
+  for (const tool of ['Read', 'Grep', 'Glob', 'Read', 'Grep', 'Glob', 'Read', 'Grep', 'Glob', 'Read']) {
+    assert.ok(selects(tool))
+    const r = run(w, 'posttool', { hook_event_name: 'PostToolUse', prompt_id: 'p1', tool_name: tool, tool_input: tool === 'Read' ? { file_path: file } : { pattern: 'x' } }, { LC_ALL: '', LC_MESSAGES: '', LANG: 'en_US.UTF-8' })
+    assert.equal(r.status, 0)
+    outputs.push(r.stdout)
+  }
+  assert.deepEqual(outputs.slice(0, 9), Array(9).fill(''), 'nine reads and searches print nothing')
+  assert.match(JSON.parse(outputs[9]).hookSpecificOutput.additionalContext, /direct-path limit/)
 })
