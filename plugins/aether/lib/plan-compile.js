@@ -19,6 +19,7 @@ const { isGlob, matchesAny } = require('./globs.js')
 const { repoPaths, currentBranch, head } = require('./git.js')
 const { resolveSkill, loadSkills, recordUse } = require('./skill-brief.js')
 const run = require('./run.js')
+const autonomy = require('./autonomy.js')
 const lanes = require('./lanes.js')
 const superdelegation = require('./superdelegation.js')
 const { loadPairs } = require('./pairs.js')
@@ -306,13 +307,15 @@ function baselineMessage({ exitCode, signatures }) {
   return 'the test command failed and names no test, so any failure blocks a merge'
 }
 
-function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout } = {}) {
+function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, env = process.env } = {}) {
   const { planPath, parsed } = load(planArg, stdout)
   const onlyValue = flagValue(rest, '--only', '--only needs a comma-separated list of tasks, such as task-2,task-3.', stdout)
   let only = onlyValue === null ? null : onlyValue.split(',').map((s) => s.trim()).filter(Boolean)
   const runValue = flagValue(rest, '--run', '--run needs a run id.', stdout)
 
   const repo = repoPaths(cwd)
+  const refusal = autonomy.launchRefusal(cwd, { session: env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_CODE_SESSION_ID || null, dataDir: run.dataDir(env) })
+  if (refusal) fail([refusal.message], [], stdout)
   const branch = currentBranch(cwd)
   if (!branch) fail(['the integration worktree has a detached HEAD; check out the integration branch first'], [], stdout)
   if (['main', 'master'].includes(branch) && !rest.includes('--allow-main')) {
