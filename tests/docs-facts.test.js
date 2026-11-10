@@ -803,3 +803,15 @@ test('issue 50: small fixes quote the owner\'s words, and third-party facts carr
   assert.match(contributing, /[Aa] decision or issue about a change to a documented concept quotes the owner's decisive words/, 'contributing.md has the owner-words rule')
   assert.match(contributing, /an issue about a third-party service gives the version, the date and the source/, 'contributing.md has the third-party rule')
 })
+
+test('the two tutorials state the canonical countable rule of the direct path instead of "about five tool calls" (R6)', () => {
+  const enRule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
+  const esRule = 'a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada; las pruebas que la regla pide tras una fusión no cuentan'
+  const en = read('docs/tutorials/first-request.md')
+  const es = read('docs/es/guias/primera-peticion.md')
+  assert.ok(en.includes(enRule))
+  assert.ok(es.includes(esRule))
+  assert.doesNotMatch(en, /about five tool calls/)
+  assert.doesNotMatch(es, /unas cinco llamadas a herramientas/)
+})
+

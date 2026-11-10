@@ -375,3 +375,16 @@ test('R18: the version the page shows (hero chip and footer) is the version of p
   for (const found of shown) assert.equal(found, version, `index.html shows v${found}, plugin.json says ${version}`)
   assert.match(html, /\/\/ PLUGIN · v\d+\.\d+\.\d+/, 'the footer shows the version')
 })
+
+test('p.direct.w states the canonical countable rule in Spanish and English while p.direct.a alt stays unchanged', () => {
+  const html = read(SITE, 'index.html')
+  const appSrc = read(SITE, 'app.js')
+  const esRule = 'a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada; las pruebas que la regla pide tras una fusión no cuentan'
+  const enRule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
+  assert.ok(!html.includes('unas cinco llamadas a herramientas'))
+  assert.ok(html.includes(esRule))
+  assert.ok(appSrc.includes(esRule))
+  assert.ok(appSrc.includes(enRule))
+  assert.ok(html.includes('alt="Clawd hace cinco llamadas a herramientas en su propia sesión, de READ a RUN, y la bandera del resultado sube"'))
+})
+

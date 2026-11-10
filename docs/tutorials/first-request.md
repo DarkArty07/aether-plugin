@@ -31,7 +31,7 @@ A small or reversible change needs no document: there is no intent card, no spec
 ### 2. The Lead chooses a path and says why
 
 The Lead takes one of three paths for each piece of work, and tells you which and why:
-- **Direct:** a very bounded change, a few files and about five tool calls, with no edit-test-fix loop. The Lead does it itself, in the conversation. You see it read, edit and run the test.
+- **Direct:** a very bounded change in a few files, with no edit-test-fix loop: at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count. The Lead does it itself, in the conversation. You see it read, edit and run the test.
 - **Delegate task:** bounded work that is still a real task, such as an edit-test-fix loop. One subagent works in the background. It starts on Haiku, the cheapest model, and rises to Sonnet and then to Opus only when it must. The system holds that step, not the Lead. You can keep talking to the Lead meanwhile.
 - **Swarm:** a plan of three or more tasks, built in parallel. A first request rarely needs it. If the Lead decides yours does, it designs first: [A whole feature](whole-feature.md) follows that route.
 
