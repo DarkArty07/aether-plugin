@@ -228,7 +228,12 @@ function readArgs(raw) {
   }
 }
 
-const input = readArgs(args)
+let input
+try {
+  input = readArgs(args)
+} catch (err) {
+  return { status: 'failed', step: 'validation', reason: err.message, skill: 'aether:designing' }
+}
 const { feature, session, repoRoot, mode, binDir } = input
 const SPEC = `${feature}/spec.md`
 const PLAN = `${feature}/plan.md`

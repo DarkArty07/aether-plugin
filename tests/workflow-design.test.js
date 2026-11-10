@@ -88,6 +88,7 @@ test('one run takes the card to an approved plan with no turn of the Lead in bet
   assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'judge', 'examiner'])
   const r = run.result
   assert.equal(r.status, 'approved')
+  assert.equal(r.skill, 'aether:designing')
   assert.deepEqual([r.spec, r.plan, r.tasks], [`${FEATURE}/spec.md`, `${FEATURE}/plan.md`, `${FEATURE}/tasks.md`])
   assert.deepEqual(r.verdicts.map((v) => [v.document, v.round, v.seat, v.verdict]), [['spec', 1, 'native', 'approve'], ['plan', 1, 'native', 'approve']])
   assert.equal(r.verdicts[0].text, '## Verdict\napprove\n## Findings\nnone\n## Open questions\n- none')
@@ -459,7 +460,15 @@ test('a design whose Writers raise no questions has no writerQuestions key', asy
 })
 
 test('the args are checked', async () => {
-  const bad = (change) => go({ ...ARGS, ...change }).then((run) => run.error && run.error.message)
+  const bad = async (change) => {
+    const run = await go({ ...ARGS, ...change })
+    assert.equal(run.error, null)
+    assert.equal(run.result.status, 'failed')
+    assert.equal(run.result.step, 'validation')
+    assert.equal(run.result.skill, 'aether:designing')
+    assert.equal(run.calls.length, 0)
+    return run.result.reason
+  }
   for (const change of [{ feature: 'docs/x' }, { session: 'a b' }, { repoRoot: 'repo' }, { superdelegation: 'maybe' }, { superdelegation: true }, { harnesses: 'AGY' }, { mode: 'short' }, { mode: 'short', document: `${FEATURE}/other.md`, intent: 'i' }]) {
     assert.match(await bad(change), /^aether:design args are missing or invalid: /, JSON.stringify(change))
   }
@@ -468,11 +477,13 @@ test('the args are checked', async () => {
 test('a refusal says the args are a JSON object that the Lead builds, for a bare path and for a bad field (issue 90)', async () => {
   const shape = /must be a JSON object \{feature, session, repoRoot, superdelegation, harnesses, binDir\?\}.*Lead builds.*bare feature path/
   const barePath = await go(FEATURE)
-  assert.match(barePath.error && barePath.error.message, /^aether:design args are missing or invalid: args\. /)
-  assert.match(barePath.error.message, shape)
+  assert.match(barePath.result && barePath.result.reason, /^aether:design args are missing or invalid: args\. /)
+  assert.match(barePath.result.reason, shape)
+  assert.equal(barePath.result.skill, 'aether:designing')
+  assert.equal(barePath.calls.length, 0)
   const badField = await go({ ...ARGS, session: 'a b' })
-  assert.match(badField.error && badField.error.message, /^aether:design args are missing or invalid: session\. /)
-  assert.match(badField.error.message, shape)
+  assert.match(badField.result && badField.result.reason, /^aether:design args are missing or invalid: session\. /)
+  assert.match(badField.result.reason, shape)
 })
 
 test('the workflow description, which the skill listing shows, says the Lead launches it with a JSON object (issue 90)', async () => {
@@ -497,7 +508,10 @@ test('a seat round is started with --superdelegation and --harnesses, and never 
 test('args with seats or lanes, or a superdelegation that is neither on nor off, are refused before any agent starts', async () => {
   for (const bad of [{ ['sea' + 'ts']: 'bal' + 'anced' }, { lanes: 'on' }, { superdelegation: 'maybe' }, { superdelegation: undefined }]) {
     const run = await go({ ...ARGS, superdelegation: 'on', ...bad })
-    assert.ok(run.error, JSON.stringify(bad))
+    assert.equal(run.error, null, JSON.stringify(bad))
+    assert.equal(run.result.status, 'failed')
+    assert.equal(run.result.skill, 'aether:designing')
+    assert.match(run.result.reason, /^aether:design args are missing or invalid: /)
     assert.equal(run.calls.length, 0, JSON.stringify(bad))
   }
 })
