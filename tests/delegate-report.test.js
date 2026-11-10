@@ -188,3 +188,29 @@ test('unverdicted helpers isolate sessions, latest launch and timestamps', (t) =
   assert.deepEqual(unverdictedDelegates({ dataDir, session: 'b' }), [])
   assert.deepEqual(unverdictedDelegates({ dataDir, since: 11 }), [])
 })
+
+test('a verdict after the launch excludes the task even with an earlier timestamp', (t) => {
+  const dataDir = tempDir(t, 'aether-del-verdict-time-')
+  const entries = [
+    { ...launch('judged', 'haiku', 1, 'first'), time: 10 },
+    at({ kind: 'result', task: 'judged', time: 11, ok: true, status: 'done' }),
+    verdict('judged', 'haiku', 1, 'approved', { step: null, kind: 'done', cause: null }, { time: 9 }),
+  ]
+  entries.forEach((entry) => log.appendEntry(dataDir, entry))
+  const report = delegatesReport({ dataDir })
+  assert.deepEqual(report.unverdicted, [])
+  assert.equal(report.delegations[0].unverdicted, false)
+})
+
+for (const decision of ['fix', 'infeasible']) {
+  test(`a ${decision} verdict without a new result excludes the task`, (t) => {
+    const dataDir = tempDir(t, 'aether-del-judged-')
+    log.appendEntry(dataDir, launch('judged', 'haiku', 1, 'first'))
+    log.appendEntry(dataDir, at({ kind: 'result', task: 'judged', ok: true, status: 'done' }))
+    log.appendEntry(dataDir, verdict('judged', 'haiku', 1, decision,
+      { step: decision === 'fix' ? 'haiku' : 'sonnet', kind: decision === 'fix' ? 'fix' : 'rise', cause: decision }))
+    const report = delegatesReport({ dataDir })
+    assert.deepEqual(report.unverdicted, [])
+    assert.equal(report.delegations[0].unverdicted, false)
+  })
+}

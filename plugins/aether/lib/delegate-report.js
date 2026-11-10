@@ -61,8 +61,8 @@ const taskKey = (session, id) => `${session ?? ''}\u0000${id}`
 
 function isUnverdictedTask(entries) {
   const latest = last(entries.filter(isLaunch))
-  const after = entries.slice(entries.lastIndexOf(latest) + 1).filter((entry) => entry.time >= latest.time)
-  return after.some((entry) => ['result', 'answer', 'outcome'].includes(entry.kind)) &&
+  const after = entries.slice(entries.lastIndexOf(latest) + 1)
+  return after.some((entry) => entry.time >= latest.time && ['result', 'answer', 'outcome'].includes(entry.kind)) &&
     !after.some((entry) => entry.kind === 'verdict')
 }
 
