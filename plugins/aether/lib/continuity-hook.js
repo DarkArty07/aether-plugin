@@ -5,11 +5,12 @@
 // Family: continuity.
 
 const os = require('node:os')
-const { claudeProcess, continuityDir, readNote, updateNote, writeNote } = require('./continuity-store.js')
+const { claudeProcess, continuityDir, isSpanish, readNote, updateNote, writeNote } = require('./continuity-store.js')
 const { currentBranch, head, repoPaths } = require('./git.js')
 const { markerFile, readMark, touchSession } = require('./session.js')
 const { writeFileAtomic } = require('./common.js')
 const { dataDir } = require('./run.js')
+const { unverdictedDelegates } = require('./delegate-report.js')
 
 // Reads one fact of the repository at cwd; null when it cannot be read (outside git, no commit, a detached HEAD).
 function gitFact(cwd, read) {
@@ -84,22 +85,42 @@ function openNote(input, { env = process.env, home = os.homedir(), now = Date.no
   return readNote(dir, input.session_id)
 }
 
+function unverdictedStopMessage(items, es) {
+  const list = items.map((item) => `${item.task} (attempt ${item.attempt})`).join(', ')
+  return es
+    ? `Continuidad de Aether: hay resultado(s) de tareas delegadas sin veredicto en esta sesión: ${list}. Juzga cada resultado y ejecuta: aether-delegate verdict --task <id> --verdict approve|fix|infeasible antes de dar el trabajo por cerrado.`
+    : `Aether continuity: delegated task result(s) arrived without a verdict in this session: ${list}. Judge each result and run: aether-delegate verdict --task <id> --verdict approve|fix|infeasible before closing the work.`
+}
+
 // Writes the hook's part into the note of input.session_id (creating the note when it is missing), then refreshes the
 // last activity of the session's mark. sessionend runs no git: it writes into the folder the mark recorded, and when no
-// folder is recorded it writes nothing. Prints nothing; an unknown event writes nothing.
-function handle(event, input, { env = process.env, home = os.homedir(), now = Date.now(), procRoot = '/proc', from = process.ppid } = {}) {
-  if (!Object.hasOwn(PATCHES, event)) return
-  const data = dataDir(env)
+// folder is recorded it writes nothing. Stop returns context for newly unverdicted results; an unknown event writes nothing.
+function handle(event, input, { env = process.env, home = os.homedir(), now = Date.now(), procRoot = '/proc', from = process.ppid, dataDir: data = dataDir(env) } = {}) {
+  if (event === 'stop' && input && input.agent_id) return null
+  if (!Object.hasOwn(PATCHES, event)) return null
+  let result = null
   if (event === 'sessionend') {
     const dir = recordedFolder(data, input.session_id)
     if (dir) updateNote(dir, input.session_id, PATCHES.sessionend(input, now))
   } else {
     const dir = continuityDir({ cwd: input.cwd, env, home })
     if (!readNote(dir, input.session_id)) openNote(input, { env, home, now, procRoot, from })
-    updateNote(dir, input.session_id, PATCHES[event](input, now))
+    const prior = readNote(dir, input.session_id)
+    const patch = PATCHES[event](input, now)
+    if (event === 'stop') {
+      const notified = Array.isArray(prior.notifiedUnverdicted) ? prior.notifiedUnverdicted : []
+      const fresh = unverdictedDelegates({ dataDir: data, session: input.session_id })
+        .filter((item) => !notified.includes(`${item.task}@${item.attempt}`))
+      if (fresh.length) {
+        patch.notifiedUnverdicted = [...notified, ...fresh.map((item) => `${item.task}@${item.attempt}`)]
+        result = { additionalContext: unverdictedStopMessage(fresh, isSpanish(env)) }
+      }
+    }
+    updateNote(dir, input.session_id, patch)
     recordFolder(data, input.session_id, dir)
   }
   touchSession(data, input.session_id, now)
+  return result
 }
 
 // The context a hook runs with: its environment, the home folder, the time and the plugin's data directory.
@@ -107,4 +128,4 @@ function context(env = process.env) {
   return { env, home: os.homedir(), now: Date.now(), dataDir: dataDir(env) }
 }
 
-module.exports = { handle, openNote, context }
+module.exports = { handle, openNote, context, unverdictedStopMessage }

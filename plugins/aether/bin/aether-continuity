@@ -9,8 +9,8 @@
 // aether-continuity posttool
 // aether-continuity permission
 // The hooks of the session note (spec 030): reads the hook's JSON from stdin and acts only in a Lead session.
-// The five note verbs write the note and print nothing; posttool prints its additionalContext and permission its allow
-// decision, when they have one. Always exits 0: a session that is not the Lead's, a bad input or an unknown verb prints
+// The note verbs write the note; stop and posttool print their additionalContext, and permission its allow decision,
+// when they have one. Always exits 0: a session that is not the Lead's, a bad input or an unknown verb prints
 // nothing and writes nothing.
 
 const { readFileSync } = require('node:fs')
@@ -41,7 +41,8 @@ function main(verb) {
     const ctx = hook.context()
     if (!isAetherSession(ctx.dataDir, input.session_id)) return 0
     if (NOTE_VERBS.has(verb)) {
-      hook.handle(verb, input, ctx)
+      const out = hook.handle(verb, input, ctx)
+      if (verb === 'stop' && out && typeof out.additionalContext === 'string') print({ hookEventName: 'Stop', additionalContext: out.additionalContext })
     } else if (verb === 'posttool') {
       const out = require(path.join(lib, 'continuity-posttool.js')).posttool(input, ctx)
       if (out && typeof out.additionalContext === 'string') print({ hookEventName: 'PostToolUse', additionalContext: out.additionalContext })
