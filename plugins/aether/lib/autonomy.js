@@ -565,7 +565,10 @@ function status(mainRoot, { now = Date.now() } = {}) {
 function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date.now() } = {}) {
   if (!isAetherSession(resolveDataDir(dataDir), session)) return null
   let mainRoot
-  try { mainRoot = repoPaths(cwd).mainRoot } catch { return null }
+  try { mainRoot = repoPaths(cwd).mainRoot } catch (error) {
+    if (/^git rev-parse --show-toplevel failed: fatal: not a git repository\b/.test(error.message)) return null
+    throw error
+  }
   const st = status(mainRoot, { now })
   if (!st.open || !st.stop) return null
   let message

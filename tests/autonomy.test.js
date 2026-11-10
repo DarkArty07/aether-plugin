@@ -792,6 +792,9 @@ test('launchRefusal reports time, cost and quota stops in a Lead session, finds 
   const fromLinked = autonomy.launchRefusal(linked, { session: SESSION, dataDir, now: t0 + 3601 * 1000 })
   assert.equal(fromLinked.stop, 'time')
   assert.equal(fromLinked.id, started.run.id)
+  const subdir = path.join(mainRoot, 'nested')
+  fs.mkdirSync(subdir)
+  assert.deepEqual(autonomy.launchRefusal(subdir, { session: SESSION, dataDir, now: t0 + 3601 * 1000 }), byTime)
 
   // Non-Lead session is not refused even when ceiling is reached
   assert.equal(autonomy.launchRefusal(mainRoot, { session: 'plain-session', dataDir, now: t0 + 3601 * 1000 }), null)
@@ -838,4 +841,62 @@ test('launchRefusal reports time, cost and quota stops in a Lead session, finds 
   })
   autonomy.end(mainRoot, 'ceiling', { now: t0 + 8000 })
   assert.equal(autonomy.launchRefusal(mainRoot, { session: SESSION, dataDir, now: t0 + 9000 }), null)
+})
+
+test('interactive authorization handles transcript edge cases and runs from another session', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const { configDir, mainRoot, transcript } = setup(t, {
+    [SESSION]: [human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' })],
+    [OTHER]: [human(QUOTE, '2026-04-06T10:00:01.000Z')],
+  })
+  markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+  const start = (session = SESSION, now = Date.parse('2026-04-06T10:00:05.000Z')) =>
+    autonomy.start(mainRoot, { quote: QUOTE, session, hours: 2 }, { configDir, dataDir, now })
+  const owner = human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' })
+  const reason = 'interactive session requires an approved plan in plan mode (ExitPlanMode) before starting an autonomous run; present the plan in plan mode and wait for the owner to approve it before running aether-autonomy start'
+  const invalid = JSON.parse(planResult('p1'))
+  invalid.message.content[0].content = 'prefix User has approved your plan.'
+  for (const content of [invalid.message.content[0].content, [{ type: 'text', text: invalid.message.content[0].content }], [{ type: 'image', text: 'User has approved your plan.' }]]) {
+    invalid.message.content[0].content = content
+    fs.writeFileSync(transcript(SESSION), [owner, planUse('p1'), JSON.stringify(invalid)].join('\n'))
+    assert.deepEqual(start(), { ok: false, reason })
+  }
+  fs.writeFileSync(transcript(SESSION), [owner, '{invalid json', planUse('p1'), planResult('p1')].join('\n'))
+  assert.equal(start(OTHER).ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:01:00.000Z') })
+  assert.equal(start(SESSION, Date.parse('2026-04-06T10:02:00.000Z')).ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:03:00.000Z') })
+
+  fs.writeFileSync(transcript(SESSION), [human(QUOTE, '2026-04-06T10:00:01.000Z'), JSON.stringify({ type: 'system' }), JSON.stringify({ entrypoint: 42 })].join('\n'))
+  assert.equal(start(SESSION, Date.parse('2026-04-06T10:04:00.000Z')).ok, true)
+  autonomy.end(mainRoot, 'done', { now: Date.parse('2026-04-06T10:05:00.000Z') })
+  fs.rmSync(transcript(SESSION))
+  assert.equal(start().ok, false)
+  fs.mkdirSync(transcript(SESSION))
+  assert.equal(start().ok, false)
+})
+
+test('launchRefusal propagates operational git errors', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const repo = tempDir(t, 'aether-git-error-')
+  markSession(dataDir, SESSION, 1000, { repo, claude: null })
+  const childProcess = require('node:child_process')
+  const original = childProcess.spawnSync
+  const gitPath = require.resolve('../plugins/aether/lib/git.js')
+  const autonomyPath = require.resolve('../plugins/aether/lib/autonomy.js')
+  const gitModule = require.cache[gitPath]
+  const autonomyModule = require.cache[autonomyPath]
+  try {
+    childProcess.spawnSync = () => ({ error: Object.assign(new Error('git spawn denied'), { code: 'EPERM' }) })
+    delete require.cache[gitPath]
+    delete require.cache[autonomyPath]
+    const isolated = require(autonomyPath)
+    assert.throws(() => isolated.launchRefusal(repo, { session: SESSION, dataDir }), { code: 'EPERM' })
+  } finally {
+    childProcess.spawnSync = original
+    require.cache[gitPath] = gitModule
+    require.cache[autonomyPath] = autonomyModule
+  }
 })
