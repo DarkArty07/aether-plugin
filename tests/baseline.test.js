@@ -222,14 +222,21 @@ test('aether-plan compile refuses in a Lead session when an open autonomous run 
   )
   markSession(dataDir, 'sess-p', 1000, { repo: repo.dir, claude: null })
 
+  const tasksFile = writePlan(repo.dir, plan([task(1), task(2)]))
+  // A marked Lead without an autonomous run still compiles normally.
+  const resWithoutRun = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
+    AETHER_DATA_DIR: dataDir,
+    CLAUDE_CODE_SESSION_ID: 'sess-p',
+  })
+  assert.equal(resWithoutRun.status, 0)
+  assert.ok(resWithoutRun.json.runId)
+
   const started = autonomy.start(
     repo.dir,
     { quote: 'work unattended for 1 hour', session: 'sess-p', hours: 1, usd: 5 },
     { configDir, dataDir, now: t0 }
   )
   assert.equal(started.ok, true)
-
-  const tasksFile = writePlan(repo.dir, plan([task(1), task(2)]))
 
   // Time stop in Lead session
   const resTime = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
@@ -255,6 +262,15 @@ test('aether-plan compile refuses in a Lead session when an open autonomous run 
     { configDir, dataDir, now: Date.now() }
   )
   assert.equal(started2.ok, true)
+  // An open run with no stop also allows compilation.
+  assert.equal(autonomy.status(repo.dir).stop, null)
+  const resWithinCeilings = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
+    AETHER_DATA_DIR: dataDir,
+    CLAUDE_CODE_SESSION_ID: 'sess-p',
+  })
+  assert.equal(resWithinCeilings.status, 0)
+  assert.ok(resWithinCeilings.json.runId)
+
   const resetsAt = new Date(Date.now() + 3600 * 1000).toISOString()
   autonomy.recordCrossing(
     repo.dir,

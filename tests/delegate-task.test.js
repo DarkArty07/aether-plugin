@@ -617,6 +617,17 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
   repo.git('worktree', 'add', '-q', '-b', 'linked/x', linked)
 
   const t0 = Date.parse('2026-04-12T10:00:00.000Z')
+  // The deps are shaped like world(): the native settings, a pickPair and a newId, with the repository as cwd.
+  const ask = (session, id, nowMs, cwd = repo.dir) =>
+    task.begin(
+      { session, event: { subagent_type: 'general-purpose', description: 'build feature', prompt: BRIEF(id) } },
+      { dataDir, cwd, settings: NATIVE, now: () => nowMs, newId: () => `gen-${id}`, pickPair: async () => ({ pick: null, quota: [] }) }
+    )
+
+  // A marked Lead without an autonomous run still launches normally.
+  const withoutRun = await ask('sess-1', 't-no-run', t0)
+  assert.equal(withoutRun.kind, 'first')
+
   const started = autonomy.start(
     repo.dir,
     { quote: 'run unattended for 1 hour', session: 'sess-1', hours: 1, usd: 5 },
@@ -624,12 +635,10 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
   )
   assert.equal(started.ok, true)
 
-  // The deps are shaped like world(): the native settings, a pickPair and a newId, with the repository as cwd.
-  const ask = (session, id, nowMs, cwd = repo.dir) =>
-    task.begin(
-      { session, event: { subagent_type: 'general-purpose', description: 'build feature', prompt: BRIEF(id) } },
-      { dataDir, cwd, settings: NATIVE, now: () => nowMs, newId: () => `gen-${id}`, pickPair: async () => ({ pick: null, quota: [] }) }
-    )
+  // An open run with no stop also allows new work.
+  assert.equal(autonomy.status(repo.dir, { now: t0 + 1000 }).stop, null)
+  const withinCeilings = await ask('sess-1', 't-active', t0 + 1000)
+  assert.equal(withinCeilings.kind, 'first')
 
   // Time stop in Lead session
   const byTime = await ask('sess-1', 't-time', t0 + 3605 * 1000)
