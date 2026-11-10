@@ -900,3 +900,36 @@ test('launchRefusal propagates operational git errors', (t) => {
     require.cache[autonomyPath] = autonomyModule
   }
 })
+
+
+test('launchRefusal recognizes non-repository errors in a localized Git environment', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const cwd = tempDir(t, 'aether-localized-git-')
+  markSession(dataDir, SESSION, 1000, { repo: cwd, claude: null })
+  const childProcess = require('node:child_process')
+  const original = childProcess.spawnSync
+  const gitPath = require.resolve('../plugins/aether/lib/git.js')
+  const autonomyPath = require.resolve('../plugins/aether/lib/autonomy.js')
+  const gitModule = require.cache[gitPath]
+  const autonomyModule = require.cache[autonomyPath]
+  try {
+    childProcess.spawnSync = (command, args, options) => {
+      if (options.env && options.env.LC_ALL === 'C') {
+        assert.equal(command, 'git')
+        assert.deepEqual(args, ['rev-parse', '--show-toplevel'])
+        assert.equal(options.cwd, cwd)
+        return { status: 128, stdout: '', stderr: 'fatal: not a git repository (or any of the parent directories): .git' }
+      }
+      return { status: 128, stdout: '', stderr: 'fatal: no es un repositorio git (ni ninguno de los directorios superiores): .git' }
+    }
+    delete require.cache[gitPath]
+    delete require.cache[autonomyPath]
+    const isolated = require(autonomyPath)
+    assert.equal(isolated.launchRefusal(cwd, { session: SESSION, dataDir }), null)
+  } finally {
+    childProcess.spawnSync = original
+    require.cache[gitPath] = gitModule
+    require.cache[autonomyPath] = autonomyModule
+  }
+})

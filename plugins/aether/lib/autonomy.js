@@ -7,6 +7,7 @@
 
 const fs = require('node:fs')
 const crypto = require('node:crypto')
+const { spawnSync } = require('node:child_process')
 const path = require('node:path')
 const { ownerMessages, findTranscript } = require('./voice.js')
 const { newRunId, isRunId, dataDir: runDataDir } = require('./run.js')
@@ -566,7 +567,13 @@ function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date
   if (!isAetherSession(resolveDataDir(dataDir), session)) return null
   let mainRoot
   try { mainRoot = repoPaths(cwd).mainRoot } catch (error) {
-    if (/^git rev-parse --show-toplevel failed: fatal: not a git repository\b/.test(error.message)) return null
+    // Normalize only the diagnostic probe's locale; repoPaths preserves operational errors.
+    if (error.code) throw error
+    const probe = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' },
+    })
+    if (probe.error) throw probe.error
+    if (probe.status === 128 && /^fatal: not a git repository\b/.test(probe.stderr)) return null
     throw error
   }
   const st = status(mainRoot, { now })
