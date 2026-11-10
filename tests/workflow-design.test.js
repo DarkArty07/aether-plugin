@@ -1460,3 +1460,37 @@ test('issue 103: times holds each stage, complete is false when the last stage e
   assert.equal(exam.complete, true)
   assert.equal(typeof exam.durationMs, 'number')
 })
+
+test('design workflow aborts without native fallback on autonomous run refusal', async () => {
+  for (const stop of ['time', 'cost', 'quota']) {
+    const reason = `autonomous run stopped: ${stop}`
+    let writerCalled = false
+    const run = await go(ARGS, {
+      ops: (call, fallback) => call.command.verb === 'seat-start' ? { started: false, refused: true, stop, run: 'run-1', reason } : fallback(call),
+      writer: () => { writerCalled = true; return {} },
+    })
+    assert.equal(writerCalled, false)
+    assert.equal(run.result.status, 'failed')
+    assert.equal(run.result.stop, stop)
+    assert.equal(run.result.run, 'run-1')
+    assert.equal(run.result.skill, 'aether:designing')
+    assert.equal(run.result.reason, reason)
+  }
+})
+
+test('refusals in later seats retain their stop and do not invoke that native seat', async () => {
+  for (const target of [2, 3, 4, 5]) {
+    let starts = 0
+    const run = await go(ARGS, {
+      ops: (call, fallback) => {
+        if (call.command.verb === 'seat-start' && ++starts === target) return { started: false, refused: true, stop: 'quota', run: 'run-1', reason: 'paused' }
+        return fallback(call)
+      },
+    })
+    assert.equal(run.result.status, 'failed')
+    assert.equal(run.result.stop, 'quota')
+    assert.equal(run.result.run, 'run-1')
+    assert.equal(run.result.reason, 'paused')
+    assert.equal(run.result.rounds.length, target)
+  }
+})
