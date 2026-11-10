@@ -530,7 +530,6 @@ async function begin(input, deps = {}) {
 
     // A read-only attempt, on an external pair or on Claude, works in the Lead's checkout (its rescue does on Claude): what
     // was already changed there is not its doing.
-    const onClaudeReadOnly = external === null && !edits
     const dirty = !edits && base !== null ? dirtyOf(r.cwd, base) : null
     const time = r.now()
     const launch = {
@@ -548,7 +547,7 @@ async function begin(input, deps = {}) {
       if (of !== null) log.appendEntry(r.dataDir, { kind: 'relaunch', time, session, task: id, of })
     }
     notes.push(stepNote(id, step, attempt, launchKind, args, pick))
-    return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: onClaudeReadOnly ? { task: id, attempt } : null })
+    return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: external === null ? { task: id, attempt } : null })
   } catch (err) {
     return emptyPlan({ id: isId(id) ? id : null, error: messageOf(err) })
   }

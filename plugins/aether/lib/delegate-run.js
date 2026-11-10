@@ -300,10 +300,13 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
 
 // ---- answer ----
 
-// Records the final answer of a read-only delegate that ran on Claude, as the mod saw it. Never throws.
+// Records the end of a delegate that ran on Claude, preserving text only for read-only attempts. Never throws.
 function recordAnswer({ task, attempt, text, session, dataDir, now = Date.now }) {
   try {
-    const recorded = log.appendEntry(dataDir, { kind: 'answer', time: now(), session: session ?? null, task, attempt, text: typeof text === 'string' ? text : '' })
+    const launch = log.readEntries(dataDir, { task, session: session ?? null }).filter((entry) => log.isLaunch(entry) && entry.attempt === attempt).at(-1)
+    const entry = { kind: launch?.edits === true ? 'ended' : 'answer', time: now(), session: session ?? null, task, attempt }
+    if (entry.kind === 'answer') entry.text = typeof text === 'string' ? text : ''
+    const recorded = log.appendEntry(dataDir, entry)
     return { recorded }
   } catch {
     return { recorded: false }
