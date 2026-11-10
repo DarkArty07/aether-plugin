@@ -10,7 +10,6 @@ const { currentBranch, head, repoPaths } = require('./git.js')
 const { markerFile, readMark, touchSession } = require('./session.js')
 const { writeFileAtomic } = require('./common.js')
 const { dataDir } = require('./run.js')
-const { unverdictedDelegates } = require('./delegate-report.js')
 
 // Reads one fact of the repository at cwd; null when it cannot be read (outside git, no commit, a detached HEAD).
 function gitFact(cwd, read) {
@@ -109,8 +108,14 @@ function handle(event, input, { env = process.env, home = os.homedir(), now = Da
     const patch = PATCHES[event](input, now)
     if (event === 'stop') {
       const notified = Array.isArray(prior.notifiedUnverdicted) ? prior.notifiedUnverdicted : []
-      const fresh = unverdictedDelegates({ dataDir: data, session: input.session_id })
-        .filter((item) => !notified.includes(`${item.task}@${item.attempt}`))
+      let fresh = []
+      try {
+        const { unverdictedDelegates } = require('./delegate-report.js')
+        fresh = unverdictedDelegates({ dataDir: data, session: input.session_id })
+          .filter((item) => !notified.includes(`${item.task}@${item.attempt}`))
+      } catch {
+        // A failed notice must not prevent the continuity note from being written.
+      }
       if (fresh.length) {
         patch.notifiedUnverdicted = [...notified, ...fresh.map((item) => `${item.task}@${item.attempt}`)]
         result = { additionalContext: unverdictedStopMessage(fresh, isSpanish(env)) }
