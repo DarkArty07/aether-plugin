@@ -4,7 +4,7 @@
 // Called by bin/aether-session-start when a Claude Code session begins.
 // Family: session.
 
-// SessionStart hook. It acts only for the Lead (agent_type aether:lead): any other session
+// SessionStart hook. It acts only for the Lead (agent_type aether:lead), not a subagent: any other session
 // gets no output, no file and no sweep. hooks/hooks.json runs it four times in one entry (issue #139):
 // - with no --part, the notes command marks the session, hands the superdelegation option to the session's
 //   commands through CLAUDE_ENV_FILE, and, on startup, clear and compact, prunes old usage files, lane logs,
@@ -273,7 +273,7 @@ const OLD_MIGRATION_FOLDERS = [
 function main({ input = null, part = null, env = process.env, cwd = process.cwd(), stdout = process.stdout, procRoot = '/proc', from = process.ppid, now = Date.now() } = {}) {
   if (!input) return
   const { LEAD_AGENT } = require('./session.js')
-  if (input.agent_type !== LEAD_AGENT) return
+  if (input.agent_id || input.agent_type !== LEAD_AGENT) return
 
   const root = env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..')
   const source = input.source === undefined ? 'startup' : input.source

@@ -18,6 +18,26 @@ const OLD_LANES = 'CLAUDE_PLUGIN_OPTION_' + 'LAN' + 'ES'
 const OLD_SEATS = 'CLAUDE_PLUGIN_OPTION_' + 'SEA' + 'TS'
 const OLD_LEGACY = 'AETHER_SUPERDELEGATION_' + 'LEG' + 'ACY'
 
+test('session start is silent and leaves no files for a subagent even when its agent type is the Lead', (t) => {
+  const { main } = require('../plugins/aether/lib/session-start.js')
+  for (const part of [1, 2, 3, null]) {
+    const dir = tempDir(t)
+    let output = ''
+    main({
+      input: { ...AETHER, agent_id: 'sub-1' },
+      part,
+      cwd: dir,
+      env: { CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: dir, CLAUDE_ENV_FILE: path.join(dir, 'env') },
+      stdout: { write(s) { output += s } },
+    })
+    assert.equal(output.length, 0, `part ${part} prints nothing`)
+    assert.deepEqual(fs.readdirSync(dir), [], `part ${part} leaves no files`)
+  }
+  let leadOutput = ''
+  main({ input: AETHER, part: 1, env: { CLAUDE_PLUGIN_ROOT: PLUGIN }, stdout: { write(s) { leadOutput += s } } })
+  assert.match(JSON.parse(leadOutput).hookSpecificOutput.additionalContext, /^You are the Lead of Aether mode:/)
+})
+
 // The values of options a user may still have saved from before spec 013 removed them, as an environment. The names
 // are built from their parts: the scan for the removed identifiers (tests/no-router.test.js) is for what the plugin
 // uses, and these tests only prove that a saved value changes nothing.
