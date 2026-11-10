@@ -176,3 +176,35 @@ test('the bin has the fifteen commands the pages count and is executable', () =>
   assert.equal(fs.readdirSync(path.join(PLUGIN, 'bin')).length, 15)
   assert.ok(fs.statSync(BIN).mode & 0o111)
 })
+
+test('stop warns once per unverdicted delegate result in the Lead session and stays silent on repeat or subagent', (t) => {
+  const w = world(t)
+  const log = require('../plugins/aether/lib/delegate-log.js')
+  log.appendEntry(w.data, { time: 10, session: 's1', task: 'fix-bug', attempt: 1, step: 'sonnet', launchKind: 'first', description: 'fix bug', effort: 'medium', edits: true, kind: 'launch' })
+  log.appendEntry(w.data, { time: 20, session: 's1', task: 'fix-bug', attempt: 1, ok: true, status: 'done', kind: 'result' })
+
+  const subRes = run(w, 'stop', { agent_id: 'sub-1' })
+  assert.equal(subRes.status, 0)
+  assert.equal(subRes.stdout, '')
+  assert.equal(store.readNote(w.dir, 's1'), null)
+
+  const first = run(w, 'stop', {})
+  assert.equal(first.status, 0)
+  const out1 = JSON.parse(first.stdout)
+  assert.equal(out1.hookSpecificOutput.hookEventName, 'Stop')
+  assert.match(out1.hookSpecificOutput.additionalContext, /fix-bug/)
+  assert.match(out1.hookSpecificOutput.additionalContext, /aether-delegate verdict/)
+
+  const second = run(w, 'stop', {})
+  assert.equal(second.status, 0)
+  assert.equal(second.stdout, '')
+
+  log.appendEntry(w.data, { time: 30, session: 's1', task: 'fix-bug', attempt: 1, step: 'sonnet', verdict: 'fix', next: { step: 'sonnet', kind: 'fix', cause: 'fix' }, kind: 'verdict' })
+  log.appendEntry(w.data, { time: 40, session: 's1', task: 'fix-bug', attempt: 2, step: 'sonnet', launchKind: 'fix', description: 'fix bug', effort: 'high', edits: true, kind: 'launch' })
+  log.appendEntry(w.data, { time: 50, session: 's1', task: 'fix-bug', attempt: 2, ok: true, status: 'done', kind: 'result' })
+  const third = run(w, 'stop', {}, { LANG: 'es_ES.UTF-8', LC_ALL: '', LC_MESSAGES: '' })
+  assert.equal(third.status, 0)
+  const out3 = JSON.parse(third.stdout)
+  assert.match(out3.hookSpecificOutput.additionalContext, /Continuidad de Aether/)
+  assert.match(out3.hookSpecificOutput.additionalContext, /fix-bug \(attempt 2\)/)
+})
