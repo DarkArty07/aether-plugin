@@ -3,9 +3,8 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
-const { PLAN_BIN, makeRepo, writePlan, runBin } = require('./helpers.js')
+const { PLAN_BIN, makeRepo, tempDir, writePlan, runBin } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 
 const ROOT = path.join(__dirname, '..')
@@ -172,12 +171,14 @@ test('a folder in Owns warns about the tests that read the docs under it (issue 
 })
 
 // The syntax warnings of a check of one plan, with the tasks' code given as the text of each task.
+// The check runs with TMPDIR set to a folder of this test, so the other test processes and the other
+// checks running at the same time on the shared os.tmpdir() cannot put a folder into the listing (issue 190).
 function syntaxWarningsOf(t, markdown) {
   const repo = makeRepo(t)
-  const before = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('aether-syntax-'))
-  const r = runBin(PLAN_BIN, ['check', writePlan(repo.dir, markdown)], repo.dir)
+  const tmp = tempDir(t)
+  const r = runBin(PLAN_BIN, ['check', writePlan(repo.dir, markdown)], repo.dir, { TMPDIR: tmp })
   assert.equal(r.status, 0, r.stdout)
-  const leftover = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('aether-syntax-') && !before.includes(name))
+  const leftover = fs.readdirSync(tmp).filter((name) => name.startsWith('aether-syntax-'))
   assert.deepEqual(leftover, [], 'the temporary files of the check are removed')
   return r.json.warnings.filter((w) => w.includes('syntax error'))
 }
