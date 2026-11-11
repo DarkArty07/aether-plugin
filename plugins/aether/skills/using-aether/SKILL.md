@@ -111,7 +111,7 @@ The ladder is `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`. Exclude diary writes, 
 | Delegate task | Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a reader with its tests, a research sweep, a long verification. Also each task of an approved plan of one or two tasks. | One subagent in the background, with a self-contained brief | Haiku first; the system holds the step and climbs it (see "The delegate ladder") |
 | Swarm | Long, costly or complex work: an approved plan of three or more tasks | `/aether:run` | The swarm starts every unit on the first rung of `config/ladder.json` and raises it by the same policy as the delegates. |
 
-- **The brief** is self-contained: goal, files, tests, acceptance, exclusions, no irreversible actions, and the ladder's task lines. For conceptual changes, it includes the owner's decisive words, quoted as they wrote them, and asks the delegate to quote them in the issue or the `docs/decisions.md` entry.
+- **The brief** is self-contained: goal, files, tests, acceptance, exclusions, no irreversible actions, and task lines. For conceptual changes, it includes the owner's decisive words, quoted as they wrote them, and asks the delegate to quote them in the issue or the `docs/decisions.md` entry.
 
 - **In the background:** the notification of a delegate wakes you: end your turn or work; schedule no wakeup (`ScheduleWakeup`, cron or sleep). The exception is the fallback of the `aether:autonomous-runs` skill. A wakeup costs a full turn and prevents headless exit.
 
@@ -119,13 +119,13 @@ The ladder is `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`. Exclude diary writes, 
 
 - **Delegates go through `Agent`:** every delegate task, of reading or of editing, is an `Agent` call. With superdelegation on, the system takes the call to another harness when a pair can serve it, and runs it on Claude, at the step's model, only when none can, except a task the owner placed on a model, which runs on Claude at that model; you launch and judge both the same way. `aether-lane delegate` is what the system runs for that call: you do not run it by Bash. You yourself stay on Claude either way.
 - **The owner has asked for them:** choosing Aether mode is the owner's standing request for delegate tasks and the swarm, including when `Agent` says to launch agents only when the user asks.
-- **One writer per file:** while a delegate edits this checkout, edit nothing it may touch. Delegates that edit at the same time each get their own worktree, and you merge them one at a time.
-- **Questions about the code** go to an explorer on Haiku, and count your own reads under the direct path rule.
+- **One writer per file:** edit nothing a delegate may touch while it edits. Concurrent editing delegates get their own worktrees, merged one at a time.
+- **Questions about the code** go to an explorer on Haiku; count your own reads under the direct path rule.
 - **Record it:** each delegate task is a line in the diary's Decisiones, or in your reply outside a run, with its task id and why. When you make such a change yourself, quote the owner's decisive words in the issue or the decision entry. No new kind of document.
 
 ## The delegate ladder
 
-The ladder is the Pareto frontier over Artificial Analysis, stored in `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`: Haiku `high`, Haiku `xhigh`, Sonnet `high`, Opus `high`, Opus `xhigh`. The system holds the step; delegates start on Haiku `high`. Pass neither `model` nor `effort` on `Agent`, except the `model` placed by the owner; the system sets both. Do not pass `fork` on a delegate task: `Agent` ignores `model` on a fork and would run on your model with your whole conversation. In addition, every `Agent` call whose `subagent_type` is not `aether:*` (including `Plan`, `claude-code-guide`, or a call with no `subagent_type`) is a delegate task, climbs the ladder, and waits for a verdict.
+The ladder is the Pareto frontier over Artificial Analysis, stored in `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`: Haiku `high`, Haiku `xhigh`, Sonnet `high`, Opus `high`, Opus `xhigh`. The system holds the step; every delegate starts on Haiku `high`. Pass neither `model` nor `effort` on `Agent`, except the `model` placed by the owner; the system sets both. Do not pass `fork` on a delegate task: `Agent` ignores `model` on a fork and would run on your model with your whole conversation. In addition, every `Agent` call whose `subagent_type` is not `aether:*` (including `Plan`, `claude-code-guide`, or a call with no `subagent_type`) is a delegate task, climbs the ladder, and waits for a verdict.
 
 **The call.** Every delegate call carries these lines in its brief:
 - `AETHER-TASK: <id>`: the task's name. Launch the next attempt, a rise, with the same id, and the system adds the earlier work and the findings to its brief; a new id is a new task.
@@ -144,7 +144,7 @@ Note that relaunching an approved or exhausted task id launches a Haiku agent th
 
 **Replaced, not repeated.** A pair failing at start for quota or time is replaced, never repeated: it does not climb a rung; the system picks the next pair.
 
-**The owner's placement.** Only words naming Sonnet or Opus move a task above Haiku; else ask which. Record them: `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate authorize --model <sonnet|opus> [--effort <low|medium|high|xhigh|max>] --quote '<their words>' (--task <id> | --scope session)`. Task grants match `AETHER-TASK`; session grants cover all session delegates; Opus covers Sonnet too. Opus without effort runs on rung 4 (Opus high), with xhigh on rung 5 (Opus xhigh); unlisted efforts take the model's first step at that effort, climbing from there. A model without a step is refused. Pass `model`: it runs on Claude at that model, climbing from there. Never invent quotes or raise a model for your own reason (`infeasible` still rises one step). Report these on Asequible.
+**The owner's placement.** Only words naming Sonnet or Opus move a task above Haiku; else ask which. Record them: `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate authorize --model <sonnet|opus> [--effort <low|medium|high|xhigh|max>] --quote '<their words>' (--task <id> | --scope session)`. Task grants match `AETHER-TASK`; session grants cover all session delegates; Opus covers Sonnet too. Opus without effort runs on rung 4 (Opus high), with xhigh on rung 5 (Opus xhigh); unlisted efforts take the model's first step at that effort, climbing from there. A model without a step is refused. Pass `model`: it runs on Claude at that model at the recorded effort when the words name one, climbing from there. Never invent quotes or raise a model for your own reason (`infeasible` still rises one step). Report these on Asequible.
 
 ## Models
 
