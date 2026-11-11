@@ -470,7 +470,7 @@ async function step(unit, kind, body) {
 }
 
 // A salvaged attempt (its report rebuilt from the branch) and a merge-conflict retry are not a first try, though the
-// ladder spends no correction on either.
+// ladder climbs no rung on either.
 function isFirstTry(unit, wasCleanStart) {
   const { rises, gateRejections } = unit.ladder
   return (

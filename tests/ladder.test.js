@@ -83,6 +83,34 @@ test('the effort of a rung is the rung\'s, and stateOf folds the recorded verdic
   assert.deepEqual([state.step, state.attempts, state.status], ['opus-xhigh', 2, 'open'])
 })
 
+test('repeatBlocked defaults to two and rejects invalid configured counts', () => {
+  const fs = require('node:fs')
+  const os = require('node:os')
+  const path = require('node:path')
+  const write = (data) => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aether-ladder-')), 'ladder.json')
+    fs.writeFileSync(file, JSON.stringify(data))
+    return file
+  }
+  const { repeatBlocked, ...withoutCount } = L
+  assert.equal(loadLadder(write(withoutCount)).repeatBlocked, 2)
+  for (const bad of [0, -1, 1.5, 'two']) {
+    assert.throws(() => loadLadder(write({ ...L, repeatBlocked: bad })), /ladder: repeatBlocked/, `${bad}`)
+  }
+})
+
+test('an attempt report with an empty cause resets the BLOCKED streak instead of blocking', () => {
+  const blocked = (reason) => ({ kind: 'attempt', status: 'BLOCKED', reason })
+  const first = judge(newState(L), blocked('the test I cannot touch fails'), L)
+  assert.equal(first.next, null)
+  const reset = judge(first.state, blocked(''), L)
+  assert.equal(reset.next, null)
+  assert.deepEqual([reset.state.blockedKey, reset.state.blockedCount], [null, 0])
+  const again = judge(reset.state, blocked('the test I cannot touch fails'), L)
+  assert.equal(again.next, null)
+  assert.equal(again.state.blockedCount, 1)
+})
+
 test('loadLadder reads the stored ladder and refuses a rung with no effort, an effort that does not exist and a repeated step', () => {
   const shipped = loadLadder()
   assert.deepEqual(shipped.rungs.map((r) => r.step), ['haiku-high', 'haiku-xhigh', 'sonnet-high', 'opus-high', 'opus-xhigh'])

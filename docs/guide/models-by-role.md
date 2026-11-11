@@ -16,11 +16,11 @@ This page says which model and effort each role of Aether runs on, how a task cl
 | Writer | `sonnet high` | `sonnet high` | It already does its work at `high`. |
 | Judge | `opus high` | `opus high` | It is the role of most risk and spends little. |
 | Examiner | `opus high` | `opus high` | There is no evidence in either sense, so it stays until there is. |
-| Implementer, first attempt | the task's model at `high` | the first rung of `config/ladder.json` (Haiku `high`) | A correction raises the effort before the model, starting at `high`. |
-| Implementer, a retry | `xhigh` in Haiku, Sonnet and Opus | `haiku xhigh` in Haiku; `high` in Sonnet and Opus | In Sonnet and Opus a retry gains the supervisor's findings, not a dearer effort. |
-| Implementer, after a rise | `xhigh` | the next model at `high` | A rise already changes the model, so it does not also raise the effort. |
-| Supervisor | `xhigh` in US$38 of US$43, by the plan's Review (Sonnet US$24, Opus US$14) | `sonnet high` | The plan's Review now reserves `xhigh` for where an error would reach data, security or concurrency. |
-| Supervisor of Sonnet's work | `opus xhigh` | `opus high` | It stays Opus because nobody reviews their own work, and it runs at the effort of the pair it replaces. This holds with `superdelegation` on, when no other harness takes the review; with it off, a Sonnet supervisor reviews Sonnet's work. |
+| Implementer, first attempt | the task's model at `high` | the first rung of `config/ladder.json` (Haiku `high`) | Every rejected attempt rises one rung, each at its rung's effort. |
+| Implementer, a retry | `xhigh` in Haiku, Sonnet and Opus | the next rung of `config/ladder.json`, at that rung's effort | A retry runs where the ladder puts it: one step up per rejected attempt. |
+| Implementer, after a rise | `xhigh` | the next rung of `config/ladder.json`, at that rung's effort | Each rung carries its own effort from the law. |
+| Supervisor | `xhigh` in US$38 of US$43, by the plan's Review (Sonnet US$24, Opus US$14) | Sonnet `high` on rungs 1 and 2, Opus `high` on rung 3, Opus `xhigh` on rungs 4 and 5 | The system computes the supervisor from the rung: the next rung, never below rung 3 and never weaker than the author. The plan's Review now reserves `xhigh` for where an error would reach data, security or concurrency. |
+| Supervisor of Sonnet's work | `opus xhigh` | Opus `high` on rung 3, Opus `xhigh` above | It stays Opus because nobody reviews their own work, and it runs at the supervisor effort of the author's rung. This holds with `superdelegation` on, when no other harness takes the review; with it off, a Sonnet supervisor reviews Sonnet's work. |
 | Final review | `opus xhigh` in 7 of the 8 runs | `opus high`, and `opus xhigh` only if a merged unit has `Review: xhigh` or `max` | The reviewer (`aether:reviewer`) is the last net: it runs on `opus high`, and `xhigh` stays for units with `Review: xhigh` or `max`, where an error costs most. |
 | Ops | `haiku low` | `haiku low` | Ops runs as plain code with no model call, and this agent is only the fallback. |
 
@@ -80,7 +80,7 @@ The full justification, with the alternatives that were ruled out, what each cha
 
 Opus remains in four places, each with its reason:
 
-- **The last step of a task that Haiku and Sonnet did not solve,** at `opus high`: it scores 57 in code against the 44 of Sonnet `high`, and by then the cheaper models have already had their attempts and their corrections.
+- **The last step of a task that Haiku and Sonnet did not solve,** at `opus high`: it scores 57 in code against the 44 of Sonnet `high`, and by then the cheaper rungs have already had their attempts.
 - **The Judge and the Examiner,** at `opus high`. The Judge is the role of most risk, because a plan it approves with an error carries that error to every unit, and it spends almost nothing (2 % of the Opus spend of the 8 runs). Of the Examiner there is no evidence in either sense, so it is not moved on a guess. With `superdelegation` on (see [Options](options.md)), both seats go first to a pair of another harness and only fall back to the native agent (see [Design seats](design-seats.md)), so the Opus pair is the reference a call asks for, not always the pair that runs.
 - **The final review,** at `opus high`: it is the last net over the whole run, read as one change. It rises to `opus xhigh` only when a merged unit has `Review: xhigh` or `max`.
 - **The supervisor of a Sonnet author,** at `opus high`: it is Opus only by the rule that nobody reviews their own work, and it runs at `high`, the effort of the pair it replaces.
@@ -109,5 +109,5 @@ What cannot be measured today: the runs do not keep what each supervisor approve
 
 - The Lead, the Writer, the Judge and the Examiner keep their model and their effort.
 - The rule that nobody reviews their own work.
-- The numbers of the ladder: 5, 2 and 1 corrections, and the same findings twice before a task climbs.
+- The numbers of the ladder: five rungs from the law, one step up per rejected attempt, the same blocked cause twice blocks the task on its rung, and the fifth rung's failure ends the task exhausted.
 - The order of the design seats: a pair of another harness first, the native agent as the fallback. An external model takes a role only when that role is in the model's `roles` list; when none lists it, the native pair takes the call (`allowsRole` in `plugins/aether/lib/superdelegation.js`).

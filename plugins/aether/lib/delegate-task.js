@@ -1,11 +1,11 @@
 'use strict'
 
 // One delegate task of the Lead on the ladder. `begin` takes the Agent call the mod caught and says how this attempt
-// runs: the step's model and effort (never what the Lead asked), the sections a correction or a rise adds to the brief,
+// runs: the step's model and effort (never what the Lead asked), the sections a rise adds to the brief,
 // and, with superdelegation on, the external pair of the one choice function that reaches the points of the step.
 // `verdict` takes the Lead's judgment of the last attempt, runs the objective checks before an approve, and asks the
 // ladder (lib/ladder.js) what the next launch is. Everything goes to the delegate log (lib/delegate-log.js), which is
-// the only state: the step, the corrections spent and the next launch are read back from it. Neither function throws.
+// the only state: the step and the next launch are read back from it. Neither function throws.
 // No number of the ladder is written here: they come from config/ladder.json.
 // Family: delegate.
 
@@ -213,7 +213,7 @@ function touchedSince(cwd, launch) {
 
 // ---- the brief of an attempt that follows a verdict ----
 
-// The sections a correction or a rise adds: `sections` for a delegate on Claude and for a read-only external pair, and
+// The sections a rise adds: `sections` for a delegate on Claude and for a read-only external pair, and
 // `laneSections` for the brief of an editing external pair. `aether-lane delegate` gives that pair the findings itself
 // (--findings) and applies the patch in its worktree before it starts (--carry), saying so in the prompt, so its brief
 // carries neither (issue 142).
@@ -367,8 +367,8 @@ function nextLaunch(entries, ladder, { firstStep, configDir }) {
   return { status: 'open', step: state.step, launchKind: kind === 'rise' ? 'rise' : 'first', verdict: lastVerdict.entry, attempt }
 }
 
-// The pair of a correction: the harness and model of the pair that did the earlier attempt, one effort up when the table
-// has it and the ladder's effort for a correction allows it, else the same effort; only a pair the choice of this launch
+// The pair of an unjudged launch: the harness and model of the pair that did the earlier attempt, one effort up when the table
+// has it and the ladder's effort for the step allows it, else the same effort; only a pair the choice of this launch
 // found able to serve (a candidate that was picked or ranked next). Null when none is, and the choice stands (the owner's
 // word, issue 87: improve the effort, not so aggressively, and do not change the model).
 function sameModelPair(pairs, previous, limit, quota) {
@@ -414,7 +414,7 @@ const authorizedLine = (line) => {
 }
 
 // The effort of a launch the owner's authorization covers (issue 141): the first launch runs at the authorized effort
-// instead of the ladder's, even when it is lower; a correction or an unjudged launch keeps it unless the ladder
+// instead of the ladder's, even when it is lower; an unjudged launch keeps it unless the ladder
 // raises it further, never lowering it; a rise to a higher step goes back to the ladder's effort for that step.
 // Without an authorized effort the ladder's effort stands, as before.
 function coveredEffort(ladderEffort, ownerEffort, launchKind) {
@@ -506,7 +506,7 @@ async function begin(input, deps = {}) {
       pick = chosen && isObject(chosen.pick) ? chosen.pick : null
       let alternates = alternatesOf(chosen && chosen.quota, r.pairs)
       if (pick && previous) {
-        // A correction keeps the model of the earlier attempt and raises its effort a step; the pair the choice made
+        // An unjudged launch keeps the model of the earlier attempt and raises its effort a step; the pair the choice made
         // stays the next candidate. A task that edits is pinned to it, and the lane command drops the pin if it cannot serve.
         const kept = sameModelPair(r.pairs, previous, effort, chosen.quota)
         if (kept) {

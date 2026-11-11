@@ -1,7 +1,7 @@
 'use strict'
 
-// The delegate ladder: which model a task's delegate runs on, how many corrections each model gets before the
-// step rises, and what the Lead's verdict on a result makes of the next launch. A pure function over the data in
+// The delegate ladder: which model a task's delegate runs on, how one rejected attempt rises one step,
+// and what the Lead's verdict on a result makes of the next launch. A pure function over the data in
 // config/ladder.json: no number of the ladder is written here.
 // Family: delegate.
 
