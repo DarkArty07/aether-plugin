@@ -87,14 +87,157 @@ function escapeRegExp(text) {
 // foo.test.ts beside it; or when its text imports the module (require, import or from, with the source's folder and
 // base name in the specifier). A test that only mentions the path in a string, or whose name only starts like the
 // source's, is not taken for one: those matches were most of the warnings of a real plan.
+function textOf(test, root, texts) {
+  if (!texts.has(test)) texts.set(test, fs.readFileSync(path.join(root, test), 'utf8'))
+  return texts.get(test)
+}
+
 function exercises(test, source, root, texts) {
   const { dir, name } = path.posix.parse(source)
   if (new RegExp('^' + escapeRegExp(name) + '\\.(test|spec)\\.[^.]+$').test(path.posix.basename(test))) return true
-  if (!texts.has(test)) texts.set(test, fs.readFileSync(path.join(root, test), 'utf8'))
   const parent = path.posix.basename(dir)
   const module = parent === '' || parent === '.' ? escapeRegExp(name) : `${escapeRegExp(parent)}/${escapeRegExp(name)}`
   const specifier = new RegExp('(?:require\\(|\\bfrom\\s+|\\bimport\\()\\s*[\'"`](?:[^\'"`\\n]*/)?' + module + '(?:\\.[cm]?[jt]s)?[\'"`]')
-  return specifier.test(texts.get(test))
+  return specifier.test(textOf(test, root, texts))
+}
+
+// The bins of the checkout and the libs each one loads directly (issue 188): a relative require of a .js file, and a
+// path.join(__dirname, ...) whose segments are literal strings. A bin is a file in a folder named bin. The libs a lib
+// loads are not followed: a test that runs a bin exercises the libs that bin loads itself, not every lib under them.
+const BIN_FOLDER = 'bin'
+const REQUIRE_RELATIVE = /require\(\s*['"`](\.{1,2}\/[^'"`]+)['"`]\s*\)/g
+const REQUIRE_JOINED = /require\(\s*path\.join\(\s*__dirname((?:\s*,\s*['"`][^'"`]*['"`])+)\s*\)\s*\)/g
+const LITERAL = /['"`]([^'"`]*)['"`]/g
+const isBin = (file) => path.posix.basename(path.posix.dirname(file)) === BIN_FOLDER
+
+// A Map from each lib (a repo-relative path) to the bins that load it directly, each bin named by its file name.
+function binsLoadingLibs(root, files) {
+  const known = new Set(files)
+  const loads = new Map()
+  for (const bin of files) {
+    if (!isBin(bin)) continue
+    const dir = path.posix.dirname(bin)
+    let text
+    try {
+      if (fs.statSync(path.join(root, bin)).size >= MAX_TEST_BYTES) continue
+      text = fs.readFileSync(path.join(root, bin), 'utf8')
+    } catch {
+      continue
+    }
+    const targets = [...text.matchAll(REQUIRE_RELATIVE)].map((m) => path.posix.join(dir, m[1]))
+    for (const m of text.matchAll(REQUIRE_JOINED)) {
+      targets.push(path.posix.join(dir, ...[...m[1].matchAll(LITERAL)].map((s) => s[1])))
+    }
+    for (const target of targets) {
+      const lib = known.has(target) ? target : `${target}.js`
+      if (!lib.endsWith('.js') || !known.has(lib)) continue
+      if (!loads.has(lib)) loads.set(lib, new Set())
+      loads.get(lib).add(path.posix.basename(bin))
+    }
+  }
+  return loads
+}
+
+// The helper files of the test folder (issue 188): a file under tests/ that a test requires and that is not a test
+// itself. A helper names a bin in a top-level constant, `const X = path.join(..., 'aether-x')` whose last argument is
+// the bin's file name, and a test whose text uses X runs that bin. A top-level function of a helper whose body uses
+// such a constant stands for that bin too, when a test imports the function by name from the helper. Nothing further
+// is followed: a function that reaches the constant through another function does not count.
+const TEST_FILE = /\.(test|spec)\.[^/]+$/
+const isHelper = (file) => isTest(file) && !TEST_FILE.test(file)
+const REQUIRE_DESTRUCTURED = /(?:const|let|var)\s*\{([^}]*)\}\s*=\s*require\(\s*['"`](\.{1,2}\/[^'"`]+)['"`]\s*\)/g
+const BIN_CONSTANT = /^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*path\.(?:join|resolve)\(([^\n;]*)\)/gm
+const TOP_LEVEL = /^(?=(?:async\s+)?function\b|(?:const|let|var|class)\b|module\.exports\b)/gm
+const IDENTIFIER_EDGE = '\\w$'
+const FILE_NAME_EDGE = '\\w-'
+
+// A regular expression for name as a whole word: no character of edge may sit beside it, so a test of aether-thing-extra
+// does not name aether-thing, and OLD_THING_BIN does not name THING_BIN.
+const wordOf = (name, edge) => new RegExp(`(?<![${edge}])${escapeRegExp(name)}(?![${edge}])`)
+
+// The repo-relative path that a relative require names, with or without .js, or null when the checkout has no such file.
+function resolveRequire(from, spec, known) {
+  const base = path.posix.join(path.posix.dirname(from), spec)
+  return [base, `${base}.js`].find((file) => known.has(file)) || null
+}
+
+// The file name that a path call names: its last argument when that is a string literal, after its last slash.
+function binNamedBy(args) {
+  const m = /['"`]([^'"`]*)['"`]\s*$/.exec(args)
+  return m ? m[1].split('/').pop() : null
+}
+
+// The top-level declarations of a file, each from its first line to the next declaration.
+function topLevelChunks(text) {
+  const starts = [...text.matchAll(TOP_LEVEL)].map((m) => m.index)
+  return starts.map((start, i) => text.slice(start, i + 1 < starts.length ? starts[i + 1] : text.length))
+}
+
+// What the helper files of the checkout stand for: the constants that name a bin (a Map from the identifier to a Set of
+// bins), and the functions of each helper whose body uses one (a Map from the helper to a Map from the function to a Set).
+function helperIndexOf(root, files, tests, texts) {
+  const known = new Set(files)
+  const binNames = new Set(files.filter(isBin).map((file) => path.posix.basename(file)))
+  const helpers = new Set()
+  for (const test of tests) {
+    for (const m of textOf(test, root, texts).matchAll(REQUIRE_RELATIVE)) {
+      const file = resolveRequire(test, m[1], known)
+      if (file !== null && isHelper(file)) helpers.add(file)
+    }
+  }
+  const constants = new Map()
+  for (const helper of helpers) {
+    for (const m of textOf(helper, root, texts).matchAll(BIN_CONSTANT)) {
+      const bin = binNamedBy(m[2])
+      if (bin === null || !binNames.has(bin)) continue
+      if (!constants.has(m[1])) constants.set(m[1], new Set())
+      constants.get(m[1]).add(bin)
+    }
+  }
+  const functions = new Map()
+  for (const helper of helpers) {
+    const named = new Map()
+    for (const chunk of topLevelChunks(textOf(helper, root, texts))) {
+      const fn = /^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/.exec(chunk)
+      if (!fn) continue
+      for (const [name, bins] of constants) {
+        if (!wordOf(name, IDENTIFIER_EDGE).test(chunk)) continue
+        if (!named.has(fn[1])) named.set(fn[1], new Set())
+        for (const bin of bins) named.get(fn[1]).add(bin)
+      }
+    }
+    functions.set(helper, named)
+  }
+  return { binNames, known, constants, functions }
+}
+
+// The bins a test runs, by file name (issue 188): a bin whose file name the test's text names as a whole word; a bin
+// that a helper's constant stands for, when the text uses the constant; and a bin that a helper's function stands for,
+// when the test imports that function by name from the helper.
+function runsOf(test, root, texts, index) {
+  const text = textOf(test, root, texts)
+  const runs = new Set([...index.binNames].filter((bin) => wordOf(bin, FILE_NAME_EDGE).test(text)))
+  for (const [name, bins] of index.constants) {
+    if (wordOf(name, IDENTIFIER_EDGE).test(text)) for (const bin of bins) runs.add(bin)
+  }
+  for (const m of text.matchAll(REQUIRE_DESTRUCTURED)) {
+    const named = index.functions.get(resolveRequire(test, m[2], index.known))
+    if (!named) continue
+    for (const item of m[1].split(',')) {
+      const key = item.split(':')[0].trim()
+      if (named.has(key)) for (const bin of named.get(key)) runs.add(bin)
+    }
+  }
+  return runs
+}
+
+// The bin that a test runs and that loads the source directly, or null (issue 188): the first of the source's bins that
+// the test runs (see runsOf).
+function binRunning(source, bins, runs) {
+  for (const bin of bins.get(source) || []) {
+    if (runs.has(bin)) return bin
+  }
+  return null
 }
 
 // The task numbers a task depends on, directly or through other dependencies.
@@ -117,12 +260,20 @@ const listed = (items) => (items.length > LISTED ? [...items.slice(0, LISTED), `
 
 // Each changed source must come with the tests that exercise it: a test that is no task's, or that the
 // task and the tasks it depends on do not own, is warned about, one warning for each task. A heuristic: it
-// reads names and imports.
+// reads names and imports, and the runs of a bin that loads the source (issue 188).
 function testWarnings(parsed, root) {
   const changing = parsed.tasks.filter((task) => sourcesOf(task).length > 0)
   if (changing.length === 0) return []
   const tests = testFilesOf(root)
+  const files = filesOf(root)
+  const bins = binsLoadingLibs(root, files)
   const texts = new Map()
+  const index = helperIndexOf(root, files, tests, texts)
+  const runs = new Map()
+  const runsOfTest = (test) => {
+    if (!runs.has(test)) runs.set(test, runsOf(test, root, texts, index))
+    return runs.get(test)
+  }
   const byNumber = new Map(parsed.tasks.map((task) => [task.number, task]))
   const warnings = []
   for (const task of changing) {
@@ -131,11 +282,16 @@ function testWarnings(parsed, root) {
     const left = new Map()
     for (const source of sourcesOf(task)) {
       for (const test of tests) {
-        if (!exercises(test, source, root, texts)) continue
+        const direct = exercises(test, source, root, texts)
+        const bin = direct ? null : binRunning(source, bins, runsOfTest(test))
+        if (!direct && bin === null) continue
         if (covering.some((owner) => matchesAny(test, owner.owns))) continue
         sources.add(source)
+        // A test found by its own require or name is listed as such, even when a bin also runs it.
+        if (!direct && left.has(test)) continue
         const owner = parsed.tasks.find((other) => matchesAny(test, other.owns))
-        left.set(test, owner ? `task ${owner.number} owns it` : 'no task owns it')
+        const why = owner ? `task ${owner.number} owns it` : 'no task owns it'
+        left.set(test, bin === null ? why : `${why}; runs the lib through its bin ${bin}`)
       }
     }
     if (left.size === 0) continue
