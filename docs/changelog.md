@@ -8,7 +8,7 @@ order: 31
 
 ## Status
 
-Unreleased: the Claude model ladder is computed by the Pareto frontier of quality and cost over Artificial Analysis figures, delegates and swarm units climb one rung per rejected attempt automatically, and the supervisor floor ensures the supervisor is never weaker than the author (issues 194 and 233, spec 032, decision A121).
+Version 0.37.0: the Claude model ladder is computed by the Pareto frontier of quality and cost over Artificial Analysis figures, delegates and swarm units climb one rung per rejected attempt automatically, and the supervisor floor ensures the supervisor is never weaker than the author; this version changes the shape of config/ladder.json (no corrections, repeatFindings or per-correction efforts: a law, the supervisor floor and rungs) and requires the three code fields in the Claude rows of a custom pairs table (issues 194 and 233, decision A121). What changed since 0.36.0:
 - **The Pareto ladder (decision A121).** The ladder of Claude models is derived from a fixed law over Artificial Analysis figures rather than written by hand. Today it has five rungs (Haiku `high`, Haiku `xhigh`, Sonnet `high`, Opus `high`, and Opus `xhigh`).
 - **Autonomous climb and blocking.** Units climb one rung per attempt on failure; repeated causes that do not depend on the model block the unit instead of wasting higher rungs.
 - **Supervisor floor.** The supervisor model is never weaker than the author.
