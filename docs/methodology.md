@@ -113,7 +113,7 @@ The design is held to what the owner asked. The brakes are in the documents and 
 - **`dispute`:** both positions after a third review that did not approve, or the Judge's verdict and direction after a `reject`.
 - **`failed`:** the step and the reason.
 
-The design needs the Workflow tool: with workflows off, the Lead tells the owner to turn on Dynamic workflows in `/config` and does not design by hand.
+The design needs the Workflow tool: with workflows off, the Lead tells the owner to turn on Dynamic workflows in `/config` and does not design by hand. The plugin also says it by itself, once per session, without depending on the Lead.
 
 ## How the model and the harness are chosen
 

@@ -36,7 +36,7 @@ Run `/aether:doctor` first: it checks the usual causes below and prints the fix 
 
 **Why.** `/aether:design` and the swarm are dynamic workflows. A session with dynamic workflows off has no `Workflow` tool, so there is nothing for the Lead to launch.
 
-**What to do.** Turn on Dynamic workflows in `/config` and start a new session. Meanwhile the Lead does not design by hand. If a plan is already approved, the Lead offers to build it task by task, each as a delegate task, which starts on Haiku and climbs only when it must.
+**What to do.** Turn on Dynamic workflows in `/config` and start a new session. The plugin tells you once per session when a Lead session has no `Workflow` tool, and `aether-doctor` names the cause when the stored login says Pro while the profile says Max: log in again with `claude auth login`, or set `enableWorkflows: true` in the settings file. Meanwhile the Lead does not design by hand. If a plan is already approved, the Lead offers to build it task by task, each as a delegate task, which starts on Haiku and climbs only when it must.
 
 Three other causes end in a swarm that is not running:
 - **A compile on `main`.** `aether-plan compile` stops with `refusing to compile on main: run aether-plan from the integration worktree, or pass --allow-main`. The swarm never runs on `main`: create an integration worktree on a feature branch with `git worktree add <path> -b <feature branch>`, and compile from it.
