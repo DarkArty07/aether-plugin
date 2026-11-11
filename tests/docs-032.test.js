@@ -28,6 +28,21 @@ test('the changelog has an unreleased entry about the ladder and the version sta
   assert.match(changelog, /Pareto/)
   assert.match(changelog.split('\n').find((line) => /^Version \d/.test(line)), /^Version 0\.36\.0:/)
   assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.36.0')
+  assert.match(changelog, /AETHER_PAIRS_CONFIG/)
+  assert.match(changelog, /codeCostPerTaskUsd/)
+  assert.match(changelog, /codeMinutesPerTask/)
+  assert.match(changelog, /codeChecked/)
+  assert.match(changelog, /loadPairs/)
+})
+
+test('the repetition rule in using-aether describes the ladder rungs and repeated causes, not corrections or after Opus', () => {
+  const skill = read('plugins/aether/skills/using-aether/SKILL.md')
+  const repetition = skill.slice(skill.indexOf('**Repetition.**'), skill.indexOf('\n\n**Every brief,**'))
+  assert.doesNotMatch(repetition, /correction/i, 'repetition has no correction')
+  assert.doesNotMatch(repetition, /after Opus\b/i, 'repetition does not say after Opus')
+  assert.match(repetition, /Opus `xhigh`/)
+  assert.match(repetition, /fifth|last rung/i)
+  assert.match(repetition, /two attempts/i)
 })
 
 test('methodology.md and roadmap.md no longer describe the old climb by correction and rise (R16)', () => {
