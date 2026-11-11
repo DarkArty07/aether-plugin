@@ -17,11 +17,15 @@ AA measures every model at every effort on the same tasks and publishes the inte
 | **Model pages** (`https://artificialanalysis.ai/models/<slug>`) | Per benchmark: score, output tokens and cost of one task; the cost of an index task split by token type (answer, reasoning, cache write, cache read, input); AA-Briefcase (Elo, rubric pass rate, analytical quality, presentation) | A figure for a model that AA does not publish at that effort (Gemini 3.8 Flash `low` has no cost; Muse is measured only at `max`) |
 | **Website charts** (Intelligence, Capability Indexes, Benchmarks, Token Use, Cost, Speed, Latency) | The same figures for the 28 models the owner picks, and the Pareto line of each chart | Anything for a model that is not selected: the owner adds it with "Add model from specific provider" |
 
-The key is `ARTIFICIAL_ANALYSIS_API_KEY`, in the environment or in the `.env` of `~/.local/share/aether-plugin/` (what `scripts/refresh-lanes.js` reads). Never print it.
+The key is `ARTIFICIAL_ANALYSIS_API_KEY`, in the environment or in the `.env` of `~/.local/share/aether-plugin/`, used when querying the index via the API (`scripts/build-models-index.js`). Never print it.
 
 ## Run it
 
-`node .claude/skills/artificial-analysis/aa-api.js ["name regex"] [--json]` lists what the API gives for the matching models (default: Claude 5.5). It reads the API only.
+Table refresh reads model pages (`aa-api.js`, `scripts/refresh-lanes.js`), only when the owner requests it and without an API key. It writes only the code figures of Claude rows (`code`, `codeCostPerTaskUsd`, `codeMinutesPerTask`, `codeChecked`); intelligence and cost per task are refreshed together in part 2. The stored ladder only changes with the owner's approval and is never written automatically.
+
+`node .claude/skills/artificial-analysis/aa-api.js <slug>...` reads the model pages without a key and prints the code figures for each slug.
+
+`node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]` reads the model pages of Claude rows without a key, updates their code figures (with `--write`), and shows the recalculated ladder against the stored ladder.
 
 `node .claude/skills/artificial-analysis/aa-pages.js api ["name regex"]` does the same.
 

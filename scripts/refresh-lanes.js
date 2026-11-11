@@ -1,14 +1,11 @@
 #!/usr/bin/env node
 'use strict'
 
-// Usage: node scripts/refresh-lanes.js [--config <path>] [--pairs <path>] [--write]
+// Usage: node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]
 //
-// Refreshes the Artificial Analysis figures of the lane table from the Artificial Analysis API, and the
-// intelligence of each row of the pairs table (by the row's slug; its cost per task and every other field are
-// left alone). The pairs table is --pairs, or else pairs.json beside the lane table when there is one.
-// Prints each figure that changed; with --write, also writes the tables back. The API key comes
-// from ARTIFICIAL_ANALYSIS_API_KEY, or else from .env in the data directory (AETHER_DATA_DIR, or
-// ~/.local/share/aether-plugin), and is never printed.
+// Refreshes the code figures of Claude rows in the pairs table from their Artificial Analysis model pages.
+// Intelligence and cost per task are not touched. The stored ladder is recalculated and compared, but never
+// written automatically.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -16,74 +13,9 @@ const path = require('node:path')
 
 const KEY = 'ARTIFICIAL_ANALYSIS_API_KEY'
 const MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
-const DEFAULT_CONFIG = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'lanes.json')
-const USAGE = 'usage: node scripts/refresh-lanes.js [--config <path>] [--pairs <path>] [--write]'
-
-// Sets each model's aa figures from the Artificial Analysis models list. Works on `config` in
-// place and returns it, with one line per changed figure (or per missing slug) in table order.
-function refresh(config, models, { checked }) {
-  const changes = []
-  for (const harness of Object.values(config.harnesses)) {
-    for (const [id, model] of Object.entries(harness.models)) {
-      if (!model.aa || !model.aa.slug) continue
-      const entry = models.find((candidate) => candidate.slug === model.aa.slug)
-      if (!entry) {
-        changes.push(`${id}: slug ${model.aa.slug} not found`)
-        continue
-      }
-      const figures = {
-        intelligence: round(entry.evaluations.artificial_analysis_intelligence_index, 1),
-        terminalBench: round(entry.evaluations.terminalbench_v4_0, 2),
-      }
-      for (const field of ['intelligence', 'terminalBench']) {
-        if (model.aa[field] !== figures[field]) changes.push(`${id}: ${field} ${model.aa[field]} → ${figures[field]}`)
-        model.aa[field] = figures[field]
-      }
-      model.aa.checked = checked
-    }
-  }
-  return { config, changes }
-}
-
-// Sets the intelligence of each pair from the Artificial Analysis models list, by the pair's slug. Works on
-// `table` in place and returns it, with one line per changed figure (or per missing slug) in table order.
-function refreshPairs(table, models) {
-  const changes = []
-  for (const pair of table.pairs) {
-    const entry = models.find((candidate) => candidate.slug === pair.slug)
-    if (!entry) {
-      changes.push(`${pair.id}: slug ${pair.slug} not found`)
-      continue
-    }
-    const measured = entry.evaluations?.artificial_analysis_intelligence_index
-    if (typeof measured !== 'number' || !Number.isFinite(measured)) {
-      changes.push(`${pair.id}: slug ${pair.slug} has no intelligence`)
-      continue
-    }
-    const intelligence = round(measured, 1)
-    if (pair.intelligence !== intelligence) changes.push(`${pair.id}: intelligence ${pair.intelligence} → ${intelligence}`)
-    pair.intelligence = intelligence
-  }
-  return { table, changes }
-}
-
-// The pairs file text with the intelligence of each pair replaced on its own line, so the file keeps its layout.
-// Null when a pair is not on a line of its own with an intelligence to replace.
-function patchPairsText(text, table) {
-  const lines = text.split('\n')
-  for (const pair of table.pairs) {
-    const at = lines.findIndex((line) => line.includes(`"id": ${JSON.stringify(pair.id)}`))
-    const found = /"intelligence": (-?[\d.]+)/.exec(lines[at] ?? '')
-    if (!found) return null
-    if (Number(found[1]) !== pair.intelligence) lines[at] = lines[at].replace(found[0], `"intelligence": ${pair.intelligence}`)
-  }
-  return lines.join('\n')
-}
-
-function round(value, digits) {
-  const factor = 10 ** digits
-  return Math.round(value * factor) / factor
-}
+const DEFAULT_PAIRS = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json')
+const DEFAULT_LADDER = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'ladder.json')
+const USAGE = 'usage: node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]'
 
 // The key from the environment when set, else from the first ARTIFICIAL_ANALYSIS_API_KEY line of
 // the .env text, without one pair of surrounding quotes. Null when neither has it.
@@ -122,57 +54,147 @@ function envFileFor(env, envFile) {
 }
 
 function parseArgs(argv) {
-  let configPath = DEFAULT_CONFIG
-  let pairsPath = null
+  let pairsPath = DEFAULT_PAIRS
+  let ladderPath = DEFAULT_LADDER
   let write = false
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--write') write = true
-    else if (argv[i] === '--config' && i + 1 < argv.length) configPath = argv[++i]
-    else if (argv[i] === '--pairs' && i + 1 < argv.length) pairsPath = argv[++i]
-    else return null
+    if (argv[i] === '--write') {
+      write = true
+    } else if (argv[i] === '--pairs' && i + 1 < argv.length) {
+      pairsPath = path.resolve(argv[++i])
+    } else if (argv[i] === '--ladder' && i + 1 < argv.length) {
+      ladderPath = path.resolve(argv[++i])
+    } else {
+      return null
+    }
   }
-  configPath = path.resolve(configPath)
-  return { configPath, pairsPath: pairsPath ? path.resolve(pairsPath) : path.join(path.dirname(configPath), 'pairs.json'), explicitPairs: pairsPath !== null, write }
+  return { pairsPath, ladderPath, write }
 }
 
-async function main(argv, { env = process.env, fetch = globalThis.fetch, now = Date.now, envFile } = {}) {
+function patchRowLine(line, values) {
+  let updated = line
+  const missing = []
+  const fields = ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask', 'codeChecked']
+  for (const field of fields) {
+    if (!(field in values)) continue
+    const valStr = JSON.stringify(values[field])
+    const regex = new RegExp(`("${field}":\\s*)(?:"[^"]*"|[^,}]+)`)
+    if (regex.test(updated)) {
+      updated = updated.replace(regex, `"${field}": ${valStr}`)
+    } else {
+      missing.push(`"${field}": ${valStr}`)
+    }
+  }
+  if (missing.length > 0) {
+    const additions = ', ' + missing.join(', ')
+    updated = updated.replace(/\s*\}(,?)\s*$/, `${additions} }$1`)
+  }
+  return updated
+}
+
+function patchPairsText(text, rowUpdates) {
+  const lines = text.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!line.includes('"harness": "claude"')) continue
+    const match = /"id":\s*"([^"]+)"/.exec(line)
+    if (!match) continue
+    const id = match[1]
+    if (rowUpdates.has(id)) {
+      lines[i] = patchRowLine(line, rowUpdates.get(id))
+    }
+  }
+  return lines.join('\n')
+}
+
+async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const args = parseArgs(argv)
   if (!args) return { exitCode: 2, stdout: `${USAGE}\n` }
 
-  const key = keyFrom(env, envFileFor(env, envFile))
-  if (!key) {
-    return { exitCode: 1, stdout: `${KEY} is not set, and ${keyFile(env)} does not have it.\n` }
-  }
+  const { ladderFrom, diffLadder } = require(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'pareto.js'))
+  const { readPages } = require(path.join(__dirname, '..', '.claude', 'skills', 'artificial-analysis', 'aa-api.js'))
 
-  const config = JSON.parse(fs.readFileSync(args.configPath, 'utf8'))
-  const response = await fetch(MODELS_URL, { headers: { 'x-api-key': key } })
-  if (!response.ok) return { exitCode: 1, stdout: `Artificial Analysis answered ${response.status}.\n` }
-  const body = await response.json()
-  const models = Array.isArray(body) ? body : body.data
+  const ladder = JSON.parse(fs.readFileSync(args.ladderPath, 'utf8'))
+  const pairsText = fs.readFileSync(args.pairsPath, 'utf8')
+  const pairsTable = JSON.parse(pairsText)
 
-  const checked = new Date(now()).toISOString().slice(0, 10)
-  const { changes } = refresh(config, models, { checked })
-  // The pairs table: the one asked for, or the one beside the lane table when it is there.
-  let pairsText = null
-  let pairs = null
-  if (args.explicitPairs || fs.existsSync(args.pairsPath)) {
-    pairsText = fs.readFileSync(args.pairsPath, 'utf8')
-    pairs = JSON.parse(pairsText)
-    changes.push(...refreshPairs(pairs, models).changes)
-  }
-  let stdout = changes.length > 0 ? changes.map((line) => `${line}\n`).join('') : 'No figure changed.\n'
-  if (args.write) {
-    fs.writeFileSync(args.configPath, `${JSON.stringify(config, null, 2)}\n`)
-    stdout += `written to ${args.configPath}\n`
-    if (pairs) {
-      fs.writeFileSync(args.pairsPath, patchPairsText(pairsText, pairs) ?? `${JSON.stringify(pairs, null, 2)}\n`)
-      stdout += `written to ${args.pairsPath}\n`
+  const claudeRows = pairsTable.pairs.filter((row) => row.harness === 'claude')
+  const slugs = [...new Set(claudeRows.map((row) => row.slug))]
+  const pages = await readPages(slugs, { fetch, pause })
+
+  const changes = []
+  const failures = []
+  const rowUpdates = new Map()
+  let hadError = false
+  const today = new Date(now()).toISOString().slice(0, 10)
+
+  for (const row of claudeRows) {
+    const figures = pages.get(row.slug)
+    if (!figures) {
+      failures.push(`${row.id}: the page of ${row.slug} has no code figure`)
+      continue
     }
+    if (figures.error) {
+      failures.push(`${row.id}: ${figures.error}`)
+      hadError = true
+      continue
+    }
+
+    for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) {
+      const before = row[field] ?? 'none'
+      const after = figures[field]
+      if (row[field] !== after) {
+        changes.push(`${row.id}: ${field} ${before} → ${after}`)
+      }
+      row[field] = after
+    }
+    row.codeChecked = today
+    rowUpdates.set(row.id, {
+      code: figures.code,
+      codeCostPerTaskUsd: figures.codeCostPerTaskUsd,
+      codeMinutesPerTask: figures.codeMinutesPerTask,
+      codeChecked: today,
+    })
   }
-  return { exitCode: 0, stdout }
+
+  let stdout = ''
+  if (changes.length > 0) {
+    stdout += changes.map((line) => `${line}\n`).join('')
+  } else {
+    stdout += 'No figure changed.\n'
+  }
+  for (const line of failures) {
+    stdout += `${line}\n`
+  }
+
+  if (args.write) {
+    const updatedText = patchPairsText(pairsText, rowUpdates)
+    fs.writeFileSync(args.pairsPath, updatedText)
+    stdout += `written to ${args.pairsPath}\n`
+  }
+
+  stdout += 'The intelligence and the cost per task of the table were not refreshed: they are refreshed together in part 2.\n'
+
+  const recalculated = ladderFrom(pairsTable.pairs, ladder.law)
+  const ladderStr = recalculated.length === 0 ? 'none' : recalculated.map((r) => `${r.model} ${r.effort}`).join(' > ')
+  stdout += `Recalculated ladder: ${ladderStr}\n`
+
+  const diff = diffLadder(ladder.rungs, recalculated)
+  if (diff.length === 0) {
+    stdout += 'Stored ladder: unchanged\n'
+  } else {
+    stdout += 'Stored ladder: changed\n'
+    for (const line of diff) {
+      stdout += `  ${line}\n`
+    }
+    stdout += `The stored ladder was not written: to approve the recalculated one, edit ${args.ladderPath} in a commit.\n`
+  }
+
+  return { exitCode: hadError ? 1 : 0, stdout }
 }
 
-module.exports = { refresh, refreshPairs, keyFrom, keyFile, envFileFor, KEY, MODELS_URL, main }
+// Exported for scripts/build-models-index.js, which imports them from this file.
+module.exports = { keyFrom, keyFile, envFileFor, KEY, MODELS_URL, main }
 
 if (require.main === module) {
   main(process.argv.slice(2)).then(({ exitCode, stdout }) => {
