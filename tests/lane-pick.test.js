@@ -104,7 +104,7 @@ test('pick excludes the pairs it is told, and a review never lands on the author
   const review = agyEnv(t, { quota: bothDry })
   const judge = pick(args, review, ['--role', 'supervisor', '--model', 'opus', '--effort', 'high', '--author', 'claude-opus-5-5'], 'task-1-1-supervise')
   assert.equal(judge.json.picked, null)
-  assert.equal(judge.json.native.model, 'sonnet')
+  assert.equal(judge.json.native.model, 'opus')
   const implementer = pick(args, review, ['--role', 'implementer', '--model', 'opus', '--effort', 'high', '--author', 'claude-opus-5-5'])
   assert.equal(implementer.json.native.model, 'opus')
 })

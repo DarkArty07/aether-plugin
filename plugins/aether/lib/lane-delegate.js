@@ -67,7 +67,7 @@ function checkFlags(cwd, flags) {
   for (const name of Object.keys(flags ?? {})) if (!known.includes(name)) throw usageError()
   const { brief, model, effort, owns, tests, pair, carry, findings, session } = flags ?? {}
   if (typeof brief !== 'string' || brief === '') throw usageError()
-  if (!pairs.NATIVE_MODELS.includes(model)) throw usageError()
+  if (!pairs.nativeModels(pairs.loadPairs().pairs).includes(model)) throw usageError()
   if (!pairs.EFFORTS.includes(effort)) throw usageError()
   if (typeof owns !== 'string' || owns === '') throw usageError()
   const entries = owns.split(',').map(normalizePattern).filter(Boolean)
