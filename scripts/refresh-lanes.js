@@ -12,7 +12,6 @@ const os = require('node:os')
 const path = require('node:path')
 
 const KEY = 'ARTIFICIAL_ANALYSIS_API_KEY'
-const MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
 const DEFAULT_PAIRS = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json')
 const DEFAULT_LADDER = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'ladder.json')
 const USAGE = 'usage: node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]'
@@ -194,7 +193,7 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
 }
 
 // Exported for scripts/build-models-index.js, which imports them from this file.
-module.exports = { keyFrom, keyFile, envFileFor, KEY, MODELS_URL, main }
+module.exports = { keyFrom, keyFile, envFileFor, KEY, main }
 
 if (require.main === module) {
   main(process.argv.slice(2)).then(({ exitCode, stdout }) => {

@@ -128,5 +128,5 @@ test('the file still exports the key helpers that scripts/build-models-index.js 
   fs.copyFileSync(path.join(__dirname, '..', 'scripts', 'refresh-lanes.js'), path.join(tree, 'scripts', 'refresh-lanes.js'))
   const copy = require(path.join(tree, 'scripts', 'refresh-lanes.js'))
   for (const name of ['keyFrom', 'keyFile', 'envFileFor']) assert.equal(typeof copy[name], 'function', name)
-  assert.deepEqual([typeof copy.KEY, typeof copy.MODELS_URL, typeof copy.main], ['string', 'string', 'function'])
+  assert.deepEqual([typeof copy.KEY, typeof copy.main], ['string', 'function'])
 })

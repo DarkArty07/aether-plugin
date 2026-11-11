@@ -8,8 +8,10 @@
 // families released since a date, each with its effort variants, of which the ones that are the newest of
 // their line and that the CLI of a chosen harness lists are the models in use. The harnesses are the
 // native one (claude) and the lanes (agy, grok by default; codex, cursor and muse on request).
-// Without --from it asks the AA API (the key comes from where refresh-lanes.js looks for it, and is
-// never printed); with --from it reads a saved answer of the same API. It prints a short summary; with
+// Without --from it reads AA's free list of models, page by page (the key comes from where refresh-lanes.js
+// looks for it, and is never printed); with --from it reads saved answers of the same list, one page each
+// (--from may repeat, in page order). A figure the list does not give is not written, and the summary names
+// it. It prints a short summary; with
 // --write it also writes models.json (the models in use, each with its scores at the efforts its harness
 // takes and its profile, the models the owner keeps out, and what was left out) in --out, which is the
 // plugin's config/models folder (it ships with the plugin, so a session in any project reads it), and the
@@ -21,7 +23,12 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { keyFrom, keyFile, envFileFor, KEY, MODELS_URL } = require('./refresh-lanes.js')
+const { keyFrom, keyFile, envFileFor, KEY } = require('./refresh-lanes.js')
+
+// AA's free list of language models (the same key). The legacy data address of AA's API answers 410 since 2026-11-04.
+const MODELS_URL = 'https://artificialanalysis.ai/api/v2/language/models/free'
+// The most pages read in one run: a list that still says it has more after this many is refused, not read in part.
+const MAX_PAGES = 20
 
 const DEFAULT_SINCE = '2026-01-01'
 const DEFAULT_LANES = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'lanes.json')
@@ -29,7 +36,7 @@ const DEFAULT_PAIRS = path.join(__dirname, '..', 'plugins', 'aether', 'config', 
 const DEFAULT_OUT = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models')
 const DEFAULT_DOCS = path.join(__dirname, '..', 'docs', 'models')
 const USAGE =
-  'usage: node scripts/build-models-index.js [--from <raw.json>] [--since YYYY-MM-DD] [--harnesses claude,agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--pairs <pairs.json>] [--harness <file>] [--out <dir>] [--docs <dir>]'
+  'usage: node scripts/build-models-index.js [--from <raw.json>]... [--since YYYY-MM-DD] [--harnesses claude,agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--pairs <pairs.json>] [--harness <file>] [--out <dir>] [--docs <dir>]'
 // claude is the native harness, the first: its models are not lanes. The others are lanes.
 const HARNESSES = ['claude', 'agy', 'codex', 'grok', 'cursor', 'muse']
 // The chosen harnesses, whose models the index keeps. Another comes in with --harnesses once its listing is in harness-models.json.
@@ -76,6 +83,7 @@ function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels =
     const family = familyRecord(key, entries, since)
     if (family) families.set(key, family)
   }
+  const notGiven = figuresNotGiven(models.filter((model) => model && typeof model.slug === 'string').map(describe))
 
   // A model is in the index when the harness's own CLI lists it. A model only the lane table names is not offered.
   const unmatched = []
@@ -116,7 +124,19 @@ function buildIndex(models, { since = DEFAULT_SINCE, lanes = {}, harnessModels =
     families: list,
     unmatched,
     notOffered,
+    notGiven,
   }
+}
+
+// The figures the index reads that the source gives in no row: absent or null in every row of the answer. Each is
+// left out of models.json (a null or a 0 would be a figure the source never gave); the summary names them.
+const FIGURES = [
+  ['coding', (entry) => entry.evaluations.artificial_analysis_coding_index],
+  ['terminalBench', (entry) => entry.evaluations.terminalbench_v4_0],
+]
+function figuresNotGiven(entries) {
+  if (entries.length === 0) return []
+  return FIGURES.filter(([, read]) => entries.every((entry) => read(entry) === undefined || read(entry) === null)).map(([name]) => name)
 }
 
 // The day a harness's listing was captured: its own date, or the file's when the file has one for all.
@@ -163,8 +183,8 @@ function describe(model) {
     releaseDate: typeof model.release_date === 'string' && model.release_date !== '' ? model.release_date : (typeof model.release === 'string' && model.release !== '' ? model.release : null),
     evaluations,
     pricing,
-    tokensPerSecond: model.median_output_tokens_per_second ?? model.tokens_per_s,
-    ttftSeconds: model.median_time_to_first_token_seconds ?? model.ttft_s,
+    tokensPerSecond: model.performance?.median_output_tokens_per_second ?? model.median_output_tokens_per_second ?? model.tokens_per_s,
+    ttftSeconds: model.performance?.median_time_to_first_token_seconds ?? model.median_time_to_first_token_seconds ?? model.ttft_s,
   }
 }
 
@@ -582,7 +602,7 @@ function scoreRecord(variant) {
     effort: variant.effort,
     intelligence: variant.intelligence,
     ...(variant.coding === null ? {} : { coding: variant.coding }),
-    terminalBench: variant.terminalBench,
+    ...(variant.terminalBench === null ? {} : { terminalBench: variant.terminalBench }),
     priceInput: variant.priceInput,
     priceOutput: variant.priceOutput,
     tokensPerSecond: variant.tokensPerSecond,
@@ -731,10 +751,11 @@ function readJson(file) {
 }
 
 function parseArgs(argv) {
-  const args = { from: null, since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, pairs: DEFAULT_PAIRS, pairsGiven: false, harness: null, out: DEFAULT_OUT, docs: DEFAULT_DOCS, harnesses: DEFAULT_HARNESSES.join(','), profiles: null }
-  const flags = { '--from': 'from', '--since': 'since', '--lanes': 'lanes', '--pairs': 'pairs', '--harness': 'harness', '--harnesses': 'harnesses', '--profiles': 'profiles', '--out': 'out', '--docs': 'docs' }
+  const args = { from: [], since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, pairs: DEFAULT_PAIRS, pairsGiven: false, harness: null, out: DEFAULT_OUT, docs: DEFAULT_DOCS, harnesses: DEFAULT_HARNESSES.join(','), profiles: null }
+  const flags = { '--since': 'since', '--lanes': 'lanes', '--pairs': 'pairs', '--harness': 'harness', '--harnesses': 'harnesses', '--profiles': 'profiles', '--out': 'out', '--docs': 'docs' }
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--write') args.write = true
+    else if (argv[i] === '--from' && i + 1 < argv.length) args.from.push(argv[++i])
     else if (flags[argv[i]] && i + 1 < argv.length) {
       if (argv[i] === '--pairs') args.pairsGiven = true
       args[flags[argv[i]]] = argv[++i]
@@ -758,13 +779,13 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   const args = parseArgs(argv)
   if (!args) return { exitCode: 2, stdout: `${USAGE}\n` }
 
-  let lanes, pairs, harnessModels, profiles, body
+  let lanes, pairs, harnessModels, profiles, bodies
   try {
     lanes = readJson(args.lanes)
     pairs = readPairs(args.pairs, args.pairsGiven)
     harnessModels = readJson(args.harness)
     profiles = readProfiles(args.profiles)
-    if (args.from) body = readJson(path.resolve(args.from))
+    if (args.from.length > 0) bodies = args.from.map((file) => readJson(path.resolve(file)))
   } catch (err) {
     return { exitCode: 1, stdout: `${err.message}\n` }
   }
@@ -772,22 +793,18 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
   if (unlisted.length > 0) return { exitCode: 1, stdout: `${unlisted.join('\n')}\n` }
   const bad = badListings(harnessModels, args.harnesses)
   if (bad.length > 0) return { exitCode: 1, stdout: `${bad.join('\n')}\n` }
-  if (!args.from) {
+  let read
+  if (bodies) {
+    read = savedPages(bodies)
+  } else {
     const key = keyFrom(env, envFileFor(env, envFile))
     if (!key) {
       return { exitCode: 1, stdout: `${KEY} is not set, and ${keyFile(env)} does not have it.\n` }
     }
-    let response
-    try {
-      response = await fetch(MODELS_URL, { headers: { 'x-api-key': key } })
-    } catch (err) {
-      return { exitCode: 1, stdout: `Artificial Analysis could not be reached: ${err.cause?.code ?? err.message}.\n` }
-    }
-    if (!response.ok) return { exitCode: 1, stdout: `Artificial Analysis answered ${response.status}.\n` }
-    body = await response.json()
+    read = await readFreePages(fetch, key)
   }
-  const models = modelsOf(body)
-  if (!models) return { exitCode: 1, stdout: 'Artificial Analysis gave no list of models.\n' }
+  if (read.error) return { exitCode: 1, stdout: read.error }
+  const models = read.models
 
   const generatedAt = localDate(new Date(now()))
   const index = buildIndex(models, { since: args.since, lanes, harnessModels, generatedAt, harnesses: args.harnesses, pairs })
@@ -812,6 +829,50 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
     stdout += `written to ${modelsFile} and ${readmeFile}\n`
   }
   return { exitCode, stdout }
+}
+
+// Every page of AA's free list, read in order: page 1 at MODELS_URL, the rest at ?page=N, until pagination.has_more is
+// false. Either the whole list comes back as { models }, or { error } with the message: a page that does not answer, a
+// 410 (the address is retired), an answer with no list or no pagination, or a list that still has more after MAX_PAGES.
+// Nothing is returned for a part of the list, so an index is never built from some of its pages.
+async function readFreePages(fetch, key) {
+  const models = []
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const url = page === 1 ? MODELS_URL : `${MODELS_URL}?page=${page}`
+    let response
+    try {
+      response = await fetch(url, { headers: { 'x-api-key': key } })
+    } catch (err) {
+      return { error: `Artificial Analysis could not be reached: ${err.cause?.code ?? err.message}.\n` }
+    }
+    if (response.status === 410) return { error: `Artificial Analysis answered 410 for ${url}: that address is retired. Nothing was built.\n` }
+    if (!response.ok) return { error: `Artificial Analysis answered ${response.status}.\n` }
+    let body
+    try {
+      body = await response.json()
+    } catch {
+      return { error: 'Artificial Analysis gave no list of models.\n' }
+    }
+    const list = modelsOf(body)
+    if (!list) return { error: 'Artificial Analysis gave no list of models.\n' }
+    if (typeof body.pagination?.has_more !== 'boolean') return { error: 'Artificial Analysis gave a list with no pagination.\n' }
+    models.push(...list)
+    if (!body.pagination.has_more) return { models }
+  }
+  return { error: `Artificial Analysis has more than ${MAX_PAGES} pages of models. Nothing was built.\n` }
+}
+
+// The models of saved answers, in page order. A saved answer of the free list says how many pages it has: those must
+// all be given, so that the index is not built from some of them. An answer with no pagination (the list itself, or an
+// answer of the old address) is taken whole.
+function savedPages(bodies) {
+  const lists = bodies.map(modelsOf)
+  if (lists.some((list) => list === null)) return { error: 'Artificial Analysis gave no list of models.\n' }
+  const total = bodies.find((body) => Number.isInteger(body?.pagination?.total_pages))?.pagination.total_pages
+  if (total !== undefined && bodies.length !== total) {
+    return { error: `The saved answers are ${bodies.length} page(s), and the answer has ${total}. Give every page with --from, in page order.\n` }
+  }
+  return { models: lists.flat() }
 }
 
 // The rows of the pairs table at `file`. The shipped table is optional (a copy of the script in a tree without
@@ -898,7 +959,8 @@ function summary(index) {
     `Offered with no figures (${noFigures.length}): ${named(noFigures)}.\n` +
     `Offered and out of scope, released before ${index.since} (${outOfScope.length}): ${named(outOfScope)}.\n` +
     `Named by the lane table and not offered (${index.notOffered.length}): ${named(index.notOffered)}.\n` +
-    (excluded.length > 0 ? `Offered and excluded by the owner (${excluded.length}): ${named(excluded)}.\n` : '')
+    (excluded.length > 0 ? `Offered and excluded by the owner (${excluded.length}): ${named(excluded)}.\n` : '') +
+    (index.notGiven.length > 0 ? `Not given by the source in any row, so left out of models.json: ${index.notGiven.join(', ')}.\n` : '')
   )
 }
 

@@ -13,7 +13,7 @@ AA measures every model at every effort on the same tasks and publishes the inte
 
 | Source | Gives | Does not give |
 |---|---|---|
-| **API** (`/api/v2/data/llms/models`, header `x-api-key`) | Intelligence index, Terminal-Bench 4.0, long-context reasoning (LCR), HLE, SciCode, price per token, speed, first-token time | Cost per task, tokens per task, AA-Briefcase, GDPval, CritPt, AA-Omniscience; the coding index, IFBench and TB hard are null for the 5.5 models |
+| **API** (`/api/v2/language/models/free`, header `x-api-key`, paged with `?page=N`) | Intelligence index and its six area indexes, cost per task of the index, price per token, speed, first-token time | The coding index and the agentic index (null in every row), Terminal-Bench 4.0, long-context reasoning (LCR), HLE and SciCode, which are on the model pages; tokens per task, AA-Briefcase, GDPval, CritPt, AA-Omniscience |
 | **Model pages** (`https://artificialanalysis.ai/models/<slug>`) | Per benchmark: score, output tokens and cost of one task; the cost of an index task split by token type (answer, reasoning, cache write, cache read, input); AA-Briefcase (Elo, rubric pass rate, analytical quality, presentation) | A figure for a model that AA does not publish at that effort (Gemini 3.8 Flash `low` has no cost; Muse is measured only at `max`) |
 | **Website charts** (Intelligence, Capability Indexes, Benchmarks, Token Use, Cost, Speed, Latency) | The same figures for the 28 models the owner picks, and the Pareto line of each chart | Anything for a model that is not selected: the owner adds it with "Add model from specific provider" |
 
@@ -39,10 +39,10 @@ Table refresh reads model pages (`aa-api.js`, `scripts/refresh-lanes.js`), only 
 - **A page carries 27 models.** Its first AA-Briefcase block is not the page's own for the `max` pages. The script picks the block whose nearest `"slug"` before it is the page's slug; if it finds none it says "own block not found" and you must not take the first one.
 - **Two costs.** The cost per index task (`costPerTaskUsd` of `pairs.json`) is weighted across all the evaluations of the index. The cost of one Terminal-Bench or Briefcase task is not weighted and is several times larger. Never compare one with the other.
 - **Cache is most of the cost.** In an index task, cache reads and writes are about 52 to 67 % of the dollars; the effort changes the reasoning tokens and, through the longer loops, the cache too.
-- **Units.** The API gives benchmark scores as fractions (Terminal-Bench 0.60), the pages too; Briefcase and GDPval are Elo.
+- **Units.** The model pages give benchmark scores as fractions (Terminal-Bench 0.60); Briefcase and GDPval are Elo.
 - **Speed.** `max` efforts have first-token times of minutes (Sonnet `max` 322 s, Opus `max` 621 s, Haiku `max` 279 s). Speed is out of the policy, but a deadline can cut a call that is slow to start.
 - **The page can change.** The data is a script's JSON, not a public contract. If a field is missing, say so, and say which source the figure came from.
-- **The scores move.** AA re-scored its models between 2026-10-26 and 2026-10-29 (Haiku 5.5 `max` 43.4 to 36.2, GPT-6 Luna `max` 38.1 to 27.8, GPT-6 Astra `max` 52.7 to 56.9). Compare two models only with figures read on the same day from the same source; a row of `pairs.json` set against today's API is not a comparison. The table of pairs was refreshed on 2026-10-30 (spec 023) and is on the scale of 2026-10-29; its costs per task are still those read on 2026-10-26, because the API gives no cost and the pages may not be read without the owner's yes.
+- **The scores move.** AA re-scored its models between 2026-10-26 and 2026-10-29 (Haiku 5.5 `max` 43.4 to 36.2, GPT-6 Luna `max` 38.1 to 27.8, GPT-6 Astra `max` 52.7 to 56.9). Compare two models only with figures read on the same day from the same source; a row of `pairs.json` set against today's API is not a comparison. The table of pairs was refreshed on 2026-10-30 (spec 023) and is on the scale of 2026-10-29; its costs per task are still those read on 2026-10-26, because the API gave no cost then and the pages may not be read without the owner's yes.
 
 ## Reading it for a role
 
