@@ -3,182 +3,130 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { refresh, refreshPairs, keyFrom, keyFile, main } = require('../scripts/refresh-lanes.js')
+const { main } = require('../scripts/refresh-lanes.js')
+const { block, page } = require('./aa-page-fixtures.js')
 
-const CONFIG = {
-  reserve: 0.05,
-  harnesses: {
-    agy: {
-      models: {
-        'gemini-3.8-flash': { aa: { slug: 'gemini-3-8-flash', intelligence: 40.9, terminalBench: 0.2, checked: '2026-10-08' } },
-        'claude-opus-5-5': { aa: { slug: 'claude-opus-5-5-high', intelligence: 53.6, terminalBench: 0.57, checked: '2026-10-08' } },
-        'no-aa': { group: 'x' },
-      },
-    },
-  },
+const row = (id, over = {}) => {
+  const [harness, rest] = id.split('/')
+  const [model, effort] = rest.split('@')
+  return { id, slug: `${harness}-${model}-${effort}`, harness, model, family: `${harness}-${model}`, effort, group: harness === 'claude' ? null : 'g', intelligence: 20, costPerTaskUsd: 0.1, outputTokensPerSecond: 90, timeToFirstTokenS: 2, ...over }
 }
-const AA = [
-  { slug: 'gemini-3-8-flash', evaluations: { artificial_analysis_intelligence_index: 41.04, terminalbench_v4_0: 0.2121 } },
-  { slug: 'claude-opus-5-5-high', evaluations: { artificial_analysis_intelligence_index: 53.6, terminalbench_v4_0: 0.565656 } },
-]
-const NOW = () => Date.parse('2026-11-01T10:00:00Z')
+// A row on one line in the style of the real plugins/aether/config/pairs.json: `{ "id": "…", "slug": "…" }`, spaces after the braces, the colons and the commas.
+const spaced = (r) => `{ ${Object.entries(r).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(', ')} }`
+const CLAUDE_HIGH = row('claude/a@high', { code: 10, codeCostPerTaskUsd: 0.1, codeMinutesPerTask: 5, codeChecked: '2026-11-10' })
+const CLAUDE_XHIGH = row('claude/a@xhigh', { intelligence: 30, costPerTaskUsd: 0.2 })
+// Rows of other harnesses: one that reuses the slug of a Claude row, as the agy rows with Claude models and muse-wonder-full do.
+const OTHER = row('agy/b@high', { intelligence: 44.4, costPerTaskUsd: null })
+const REUSED = row('agy/claude-a@high', { slug: 'claude-a-high', intelligence: 20, checked: '2026-10-30' })
+const LADDER = { law: { candidateEfforts: ['high', 'xhigh'], minJumpPoints: 2 }, supervisorFloor: 1, repeatBlocked: 2, rungs: [{ step: 'a-high', model: 'a', effort: 'high' }, { step: 'a-xhigh', model: 'a', effort: 'xhigh' }] }
 
-test("refresh writes the latest figures into each model's aa block and lists what changed", () => {
-  const { config, changes } = refresh(structuredClone(CONFIG), AA, { checked: '2026-11-01' })
-  assert.deepEqual(config.harnesses.agy.models['gemini-3.8-flash'].aa, { slug: 'gemini-3-8-flash', intelligence: 41, terminalBench: 0.21, checked: '2026-11-01' })
-  assert.deepEqual(config.harnesses.agy.models['claude-opus-5-5'].aa, { slug: 'claude-opus-5-5-high', intelligence: 53.6, terminalBench: 0.57, checked: '2026-11-01' })
-  assert.deepEqual(config.harnesses.agy.models['no-aa'], { group: 'x' })
-  assert.deepEqual(changes, ['gemini-3.8-flash: intelligence 40.9 → 41', 'gemini-3.8-flash: terminalBench 0.2 → 0.21'])
+function setup(t) {
+  const dir = tempDir(t, 'aether-refresh-')
+  const files = { pairs: path.join(dir, 'pairs.json'), ladder: path.join(dir, 'ladder.json') }
+  const lines = [CLAUDE_HIGH, CLAUDE_XHIGH, OTHER, REUSED].map((r) => `    ${spaced(r)}`)
+  fs.writeFileSync(files.pairs, `{\n  "fetchedAt": "2026-10-19",\n  "pairs": [\n${lines.join(',\n')}\n  ]\n}\n`)
+  fs.writeFileSync(files.ladder, `${JSON.stringify(LADDER, null, 2)}\n`)
+  return files
+}
+const NOW = () => Date.UTC(2026, 10, 12)
+const serve = (figures, asked = []) => async (url) => {
+  const slug = url.split('/').pop()
+  asked.push(slug)
+  return figures[slug] ? { ok: true, status: 200, text: async () => page(block(slug, figures[slug])) } : { ok: false, status: 404, text: async () => '' }
+}
+// intelligence and cost are on the page, and the refresh must not write them; seconds / 60 is the minutes of a code task.
+const fig = (intelligence, cost, code, codeCost, seconds) => ({ intelligence, cost, code, codeCost, seconds })
+const GOOD = { 'claude-a-high': fig(21, 0.11, 0.11, 0.12, 330), 'claude-a-xhigh': fig(31, 0.21, 0.22, 0.22, 500) }
+const run = (files, fetch, extra = []) => main(['--pairs', files.pairs, '--ladder', files.ladder, ...extra], { fetch, now: NOW, pause: async () => {} })
+const rowsOf = (files) => JSON.parse(fs.readFileSync(files.pairs, 'utf8')).pairs
+
+test('the refresh writes only the code figures of the Claude rows, says the rest was not refreshed, shows the ladder and says it did not change', async (t) => {
+  const files = setup(t)
+  const out = await run(files, serve(GOOD), ['--write'])
+  assert.equal(out.exitCode, 0)
+  assert.match(out.stdout, /claude\/a@high: code 10 → 11\n/)
+  assert.match(out.stdout, /claude\/a@high: codeCostPerTaskUsd 0\.1 → 0\.12\n/)
+  assert.match(out.stdout, /claude\/a@high: codeMinutesPerTask 5 → 5\.5\n/)
+  assert.match(out.stdout, /claude\/a@xhigh: code none → 22\n/)
+  assert.match(out.stdout, /The intelligence and the cost per task of the table were not refreshed: they are refreshed together in part 2\.\n/)
+  assert.match(out.stdout, /Recalculated ladder: a high > a xhigh\nStored ladder: unchanged\n/)
+  assert.equal(/intelligence \d/.test(out.stdout), false)
+  const table = JSON.parse(fs.readFileSync(files.pairs, 'utf8'))
+  assert.deepEqual(Object.keys(table), ['fetchedAt', 'pairs'])
+  assert.equal(table.fetchedAt, '2026-10-19')
+  const [high, xhigh] = rowsOf(files)
+  assert.deepEqual([high.code, high.codeCostPerTaskUsd, high.codeMinutesPerTask, high.codeChecked], [11, 0.12, 5.5, '2026-11-12'])
+  assert.deepEqual([xhigh.code, xhigh.codeCostPerTaskUsd, xhigh.codeMinutesPerTask, xhigh.codeChecked], [22, 0.22, 8.3, '2026-11-12'])
+  // The page says 21 and 0.11 for the first row and 31 and 0.21 for the second: neither is written, and no row gains a checked.
+  assert.deepEqual([high.intelligence, high.costPerTaskUsd, xhigh.intelligence, xhigh.costPerTaskUsd], [20, 0.1, 30, 0.2])
+  assert.equal(rowsOf(files).some((r) => Object.hasOwn(r, 'checked') && r.harness === 'claude'), false)
+  // Byte for byte: a refreshed line keeps its style, the figure that was there is replaced in place, the ones that were not are added at the end, and none is written twice.
+  const text = fs.readFileSync(files.pairs, 'utf8')
+  const written = text.split('\n')
+  assert.ok(written.includes(`    ${spaced({ ...CLAUDE_HIGH, code: 11, codeCostPerTaskUsd: 0.12, codeMinutesPerTask: 5.5, codeChecked: '2026-11-12' })},`))
+  assert.ok(written.includes(`    ${spaced({ ...CLAUDE_XHIGH, code: 22, codeCostPerTaskUsd: 0.22, codeMinutesPerTask: 8.3, codeChecked: '2026-11-12' })},`))
+  for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask', 'codeChecked']) assert.equal(text.split(`"${field}":`).length - 1, 2, field)
 })
 
-test('a slug Artificial Analysis no longer lists is reported and left alone', () => {
-  const { config, changes } = refresh(structuredClone(CONFIG), AA.slice(1), { checked: '2026-11-01' })
-  assert.deepEqual(config.harnesses.agy.models['gemini-3.8-flash'].aa, CONFIG.harnesses.agy.models['gemini-3.8-flash'].aa)
-  assert.deepEqual(changes, ['gemini-3.8-flash: slug gemini-3-8-flash not found'])
+test('a ladder that changed is shown with what enters and leaves, and the stored ladder stays as it was, even with --write', async (t) => {
+  const files = setup(t)
+  const before = fs.readFileSync(files.ladder, 'utf8')
+  // a@xhigh is now 0.5 points above a@high in code: not a step of its own, and the cheaper (a@high) stays.
+  const out = await run(files, serve({ ...GOOD, 'claude-a-xhigh': fig(31, 0.21, 0.115, 0.22, 500) }), ['--write'])
+  assert.match(out.stdout, /Recalculated ladder: a high\nStored ladder: changed\n  extra rung 2: a xhigh\n/)
+  assert.match(out.stdout, /The stored ladder was not written: to approve the recalculated one, edit .*ladder\.json in a commit\./)
+  assert.equal(fs.readFileSync(files.ladder, 'utf8'), before)
 })
 
-test('keyFrom takes the environment first, then the .env file, and never invents one', () => {
-  assert.equal(keyFrom({ ARTIFICIAL_ANALYSIS_API_KEY: 'from-env' }, 'ARTIFICIAL_ANALYSIS_API_KEY=from-file\n'), 'from-env')
-  assert.equal(keyFrom({}, '# comment\nOTHER=1\nARTIFICIAL_ANALYSIS_API_KEY="from-file"\n'), 'from-file')
-  assert.equal(keyFrom({}, "ARTIFICIAL_ANALYSIS_API_KEY='single'\n"), 'single')
-  assert.equal(keyFrom({}, ''), null)
-  assert.equal(keyFrom({}, null), null)
+test('without --write nothing is written, and with it the rows of the other harnesses are left byte for byte, also the one that reuses a Claude slug', async (t) => {
+  const files = setup(t)
+  const before = fs.readFileSync(files.pairs, 'utf8')
+  const asked = []
+  const dry = await run(files, serve(GOOD, asked))
+  assert.equal(fs.readFileSync(files.pairs, 'utf8'), before)
+  assert.match(dry.stdout, /claude\/a@xhigh: code none → 22/)
+  assert.deepEqual(asked, ['claude-a-high', 'claude-a-xhigh'], 'the pages of the Claude rows only: no request for an agy row with the same slug')
+  await run(files, serve(GOOD), ['--write'])
+  const after = fs.readFileSync(files.pairs, 'utf8').split('\n')
+  assert.ok(after.includes(`    ${spaced(OTHER)},`))
+  assert.ok(after.includes(`    ${spaced(REUSED)}`))
+  assert.equal(after.filter((line) => line.includes('"harness": "claude"')).length, 2)
 })
 
-test('main fetches with the key, prints the changes without the key, and writes only with --write', async (t) => {
-  const file = path.join(tempDir(t), 'lanes.json')
-  fs.writeFileSync(file, JSON.stringify(CONFIG))
+test('a page with no code figure and a page that does not answer leave their rows alone, the second with exit code 1', async (t) => {
+  const files = setup(t)
+  const noCode = async (url) => ({ ok: true, status: 200, text: async () => page(block(url.split('/').pop(), GOOD['claude-a-xhigh']).replace('terminalbench-4-0', 'other-bench')) })
+  const absent = await run(files, async (url) => (url.endsWith('claude-a-high') ? serve(GOOD)(url) : noCode(url)), ['--write'])
+  assert.equal(absent.exitCode, 0)
+  assert.match(absent.stdout, /claude\/a@xhigh: the page of claude-a-xhigh has no code figure/)
+  assert.equal(rowsOf(files)[1].code, undefined)
+  const out = await run(files, serve({ 'claude-a-high': GOOD['claude-a-high'] }), ['--write'])
+  assert.equal(out.exitCode, 1)
+  assert.match(out.stdout, /claude\/a@xhigh: the page answered 404/)
+  assert.equal(rowsOf(files)[1].code, undefined)
+})
+
+test('the refresh needs no key and sends none, and no longer reads or writes the lane table', async (t) => {
+  const files = setup(t)
   const seen = []
-  const fetch = async (url, init) => {
-    seen.push([url, init.headers['x-api-key']])
-    return { ok: true, status: 200, json: async () => ({ data: AA }) }
-  }
-  const env = { ARTIFICIAL_ANALYSIS_API_KEY: 'secret-key' }
-  const dry = await main(['--config', file], { env, fetch, now: NOW })
-  assert.equal(dry.exitCode, 0)
-  assert.deepEqual(seen, [['https://artificialanalysis.ai/api/v2/data/llms/models', 'secret-key']])
-  assert.equal(dry.stdout.includes('secret-key'), false)
-  assert.equal(dry.stdout, 'gemini-3.8-flash: intelligence 40.9 → 41\ngemini-3.8-flash: terminalBench 0.2 → 0.21\n')
-  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), CONFIG)
-
-  const wrote = await main(['--config', file, '--write'], { env, fetch, now: NOW })
-  assert.ok(wrote.stdout.endsWith(`written to ${file}\n`))
-  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).harnesses.agy.models['gemini-3.8-flash'].aa.checked, '2026-11-01')
-
-  const again = await main(['--config', file], { env, fetch: async () => ({ ok: true, status: 200, json: async () => AA }), now: NOW })
-  assert.equal(again.stdout, 'No figure changed.\n')
-
-  const empty = tempDir(t, 'aether refresh data ')
-  const none = await main(['--config', file], { env: { AETHER_DATA_DIR: empty }, fetch, now: NOW })
-  assert.deepEqual(none, { exitCode: 1, stdout: `ARTIFICIAL_ANALYSIS_API_KEY is not set, and ${path.join(empty, '.env')} does not have it.\n` })
-
-  const refused = await main(['--config', file], { env, fetch: async () => ({ ok: false, status: 401 }), now: NOW })
-  assert.deepEqual(refused, { exitCode: 1, stdout: 'Artificial Analysis answered 401.\n' })
+  const env = process.env.ARTIFICIAL_ANALYSIS_API_KEY
+  delete process.env.ARTIFICIAL_ANALYSIS_API_KEY
+  t.after(() => { if (env !== undefined) process.env.ARTIFICIAL_ANALYSIS_API_KEY = env })
+  const out = await main(['--pairs', files.pairs, '--ladder', files.ladder], { fetch: async (url, options) => (seen.push([url, options]), serve(GOOD)(url)), now: NOW, pause: async () => {} })
+  assert.equal(out.exitCode, 0)
+  assert.equal(seen.length, 2)
+  assert.ok(seen.every(([url, options]) => url.startsWith('https://artificialanalysis.ai/models/') && !JSON.stringify(options ?? {}).includes('key')))
+  const unknown = await main(['--config', 'x'], { fetch: async () => { throw new Error('no') } })
+  assert.deepEqual([unknown.exitCode, unknown.stdout], [2, 'usage: node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]\n'])
 })
 
-test('keyFile is .env in the data directory: AETHER_DATA_DIR, or else ~/.local/share/aether-plugin', () => {
-  assert.equal(keyFile({ AETHER_DATA_DIR: '/data/aether' }), path.join('/data/aether', '.env'))
-  assert.equal(keyFile({}), path.join(os.homedir(), '.local', 'share', 'aether-plugin', '.env'))
-})
-
-test('main reads the key from the data directory when the environment has none, and never prints it', async (t) => {
-  const file = path.join(tempDir(t), 'lanes.json')
-  fs.writeFileSync(file, JSON.stringify(CONFIG))
-  const data = tempDir(t, 'aether refresh data ')
-  fs.writeFileSync(path.join(data, '.env'), '# Artificial Analysis\nARTIFICIAL_ANALYSIS_API_KEY="from-data-dir"\n', { mode: 0o600 })
-  const seen = []
-  const fetch = async (url, init) => {
-    seen.push(init.headers['x-api-key'])
-    return { ok: true, status: 200, json: async () => ({ data: AA }) }
-  }
-  const r = await main(['--config', file], { env: { AETHER_DATA_DIR: data }, fetch, now: NOW })
-  assert.equal(r.exitCode, 0)
-  assert.deepEqual(seen, ['from-data-dir'])
-  assert.equal(r.stdout.includes('from-data-dir'), false)
-})
-
-test('the script no longer looks in the repository for the key', () => {
-  const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'refresh-lanes.js'), 'utf8')
-  assert.doesNotMatch(source, /repoPaths|mainRoot|main checkout/)
-})
-
-const PAIR_ROW = (id, slug, intelligence, extra = '') =>
-  `    { "id": "${id}", "slug": "${slug}", "harness": "x", "intelligence": ${intelligence}, "costPerTaskUsd": 0.5, "outputTokensPerSecond": 90, "timeToFirstTokenS": 1.5${extra} },`
-const PAIRS_TEXT = [
-  '{',
-  '  "fetchedAt": "2026-10-19",',
-  '  "pairs": [',
-  PAIR_ROW('claude/opus@high', 'claude-opus-5-5-high', 53.1),
-  PAIR_ROW('agy/claude-opus-5-5@high', 'claude-opus-5-5-high', 53.1),
-  PAIR_ROW('muse/wonder@high', 'claude-opus-5-5-high', 53.1, ', "ownerDecision": "his words"'),
-  PAIR_ROW('agy/gemini-3.8-flash@low', 'gemini-3-8-flash-low', 30),
-  PAIR_ROW('agy/gone@low', 'gone-slug', 12.3),
-  '  ]',
-  '}',
-  '',
-].join('\n').replace(',\n  ]', '\n  ]')
-const PAIRS_AA = [
-  { slug: 'claude-opus-5-5-high', evaluations: { artificial_analysis_intelligence_index: 53.64, terminalbench_v4_0: 0.5 } },
-  { slug: 'gemini-3-8-flash-low', evaluations: { artificial_analysis_intelligence_index: 30, terminalbench_v4_0: 0.1 } },
-]
-
-test('refreshPairs sets the intelligence of each pair by its slug, reports what changed, and touches nothing else', () => {
-  const table = JSON.parse(PAIRS_TEXT)
-  const { changes } = refreshPairs(table, PAIRS_AA)
-  assert.deepEqual(changes, [
-    'claude/opus@high: intelligence 53.1 → 53.6',
-    'agy/claude-opus-5-5@high: intelligence 53.1 → 53.6',
-    'muse/wonder@high: intelligence 53.1 → 53.6',
-    'agy/gone@low: slug gone-slug not found',
-  ])
-  const before = JSON.parse(PAIRS_TEXT)
-  for (const [at, pair] of table.pairs.entries()) {
-    assert.deepEqual({ ...pair, intelligence: null }, { ...before.pairs[at], intelligence: null }, pair.id)
-  }
-  assert.deepEqual(table.pairs.map((pair) => pair.intelligence), [53.6, 53.6, 53.6, 30, 12.3])
-  assert.equal(table.fetchedAt, before.fetchedAt)
-})
-
-test('refresh-lanes refreshes the intelligence of the pairs by slug and leaves their cost per task alone', async (t) => {
-  const dir = tempDir(t)
-  const file = path.join(dir, 'lanes.json')
-  const pairsFile = path.join(dir, 'pairs.json')
-  fs.writeFileSync(file, JSON.stringify(CONFIG))
-  fs.writeFileSync(pairsFile, PAIRS_TEXT)
-  const fetch = async () => ({ ok: true, status: 200, json: async () => ({ data: [...AA, ...PAIRS_AA] }) })
-  const env = { ARTIFICIAL_ANALYSIS_API_KEY: 'secret-key' }
-
-  const dry = await main(['--config', file, '--pairs', pairsFile], { env, fetch, now: NOW })
-  assert.equal(dry.exitCode, 0)
-  assert.ok(dry.stdout.includes('muse/wonder@high: intelligence 53.1 → 53.6\n'), dry.stdout)
-  assert.ok(dry.stdout.includes('agy/gone@low: slug gone-slug not found\n'), dry.stdout)
-  assert.equal(fs.readFileSync(pairsFile, 'utf8'), PAIRS_TEXT)
-
-  const wrote = await main(['--config', file, '--pairs', pairsFile, '--write'], { env, fetch, now: NOW })
-  assert.ok(wrote.stdout.includes(`written to ${pairsFile}\n`), wrote.stdout)
-  // The file keeps its layout: only the intelligence numbers of the three pairs that moved differ, and the Muse row is the Opus row.
-  assert.equal(fs.readFileSync(pairsFile, 'utf8'), PAIRS_TEXT.replaceAll('"intelligence": 53.1', '"intelligence": 53.6'))
-  const pairs = JSON.parse(fs.readFileSync(pairsFile, 'utf8')).pairs
-  assert.deepEqual(pairs.map((pair) => pair.costPerTaskUsd), [0.5, 0.5, 0.5, 0.5, 0.5])
-  assert.equal(pairs[2].intelligence, pairs[0].intelligence)
-
-  const again = await main(['--config', file, '--pairs', pairsFile], { env, fetch, now: NOW })
-  assert.equal(again.stdout.includes('intelligence 53.1'), false)
-})
-
-test('without --pairs the pairs table beside the lane table is refreshed, and none is when there is none', async (t) => {
-  const dir = tempDir(t)
-  const file = path.join(dir, 'lanes.json')
-  fs.writeFileSync(file, JSON.stringify(CONFIG))
-  const fetch = async () => ({ ok: true, status: 200, json: async () => ({ data: [...AA, ...PAIRS_AA] }) })
-  const env = { ARTIFICIAL_ANALYSIS_API_KEY: 'secret-key' }
-  const alone = await main(['--config', file], { env, fetch, now: NOW })
-  assert.equal(alone.stdout, 'gemini-3.8-flash: intelligence 40.9 → 41\ngemini-3.8-flash: terminalBench 0.2 → 0.21\n')
-  fs.writeFileSync(path.join(dir, 'pairs.json'), PAIRS_TEXT)
-  const beside = await main(['--config', file, '--write'], { env, fetch, now: NOW })
-  assert.ok(beside.stdout.includes('claude/opus@high: intelligence 53.1 → 53.6\n'), beside.stdout)
-  assert.ok(beside.stdout.includes(`written to ${path.join(dir, 'pairs.json')}\n`), beside.stdout)
+test('the file still exports the key helpers that scripts/build-models-index.js imports, and loads from a tree of two scripts', (t) => {
+  const tree = tempDir(t, 'aether-refresh-tree-')
+  fs.mkdirSync(path.join(tree, 'scripts'))
+  fs.copyFileSync(path.join(__dirname, '..', 'scripts', 'refresh-lanes.js'), path.join(tree, 'scripts', 'refresh-lanes.js'))
+  const copy = require(path.join(tree, 'scripts', 'refresh-lanes.js'))
+  for (const name of ['keyFrom', 'keyFile', 'envFileFor']) assert.equal(typeof copy[name], 'function', name)
+  assert.deepEqual([typeof copy.KEY, typeof copy.MODELS_URL, typeof copy.main], ['string', 'string', 'function'])
 })
