@@ -303,7 +303,7 @@ function refusedText(id, status) {
   if (status === 'approved') {
     return `Aether delegate task ${id} was approved already: no step of the ladder opens for it again. Do not do any work. Answer only that the task is approved, and that new work needs a new AETHER-TASK id.`
   }
-  return `Aether delegate task ${id} is exhausted: every step of the ladder spent its corrections, and there is no other step. Do not do any work. Answer only that the task is exhausted, and that the Lead must defer it or take it to the owner's list.`
+  return `Aether delegate task ${id} is exhausted: every step of the ladder was tried, and there is no other step. Do not do any work. Answer only that the task is exhausted, and that the Lead must defer it or take it to the owner's list.`
 }
 
 function refusedLaunchPlan(r, ctx, prompt, note) {
@@ -364,7 +364,7 @@ function nextLaunch(entries, ladder, { firstStep, configDir }) {
   const lastVerdict = lastOf(entries, (e) => e.kind === 'verdict')
   if (lastVerdict.index < lastLaunch.index) return { status: 'open', step: state.step, launchKind: 'unjudged', verdict: lastVerdict.entry, attempt }
   const kind = lastVerdict.entry.next && lastVerdict.entry.next.kind
-  return { status: 'open', step: state.step, launchKind: kind === 'rise' ? 'rise' : 'fix', verdict: lastVerdict.entry, attempt }
+  return { status: 'open', step: state.step, launchKind: kind === 'rise' ? 'rise' : 'first', verdict: lastVerdict.entry, attempt }
 }
 
 // The pair of a correction: the harness and model of the pair that did the earlier attempt, one effort up when the table
@@ -395,10 +395,15 @@ function stepNote(id, step, attempt, launchKind, args, pick) {
 // or the call asks for no such rung.
 function placementOf(r, entries, session, event, brief) {
   if (entries.some(isLaunch)) return null
-  const rung = auth.requestedRung(r.ladder, event.model)
-  if (!rung) return null
+  const modelName = isText(event.model) ? event.model : null
+  if (!modelName) return null
+  const callRung = auth.namedRung(r.ladder, modelName)
+  if (!callRung) return null
   const lines = log.readEntries(r.dataDir, { session })
-  return { rung, cover: auth.coverOf(lines, { session, task: brief.task, rung, ladder: r.ladder, configDir: r.configDir }) }
+  const cover = auth.coverOf(lines, { session, task: brief.task, rung: callRung, ladder: r.ladder, configDir: r.configDir })
+  const placedRung = cover ? auth.rungFor(r.ladder, callRung.model, cover.effort) : callRung
+  if (r.ladder.rungs.findIndex((x) => x.step === placedRung.step) === 0) return null
+  return { rung: placedRung, cover }
 }
 
 // What a launch records of the authorization that places its task: the line's own fields, never the whole line.
@@ -466,8 +471,9 @@ async function begin(input, deps = {}) {
     const authorized = cover && launchKind === 'first' ? authorizedLine(cover) : auth.authorizedOf(entries)
     const storedEffort = isObject(authorized) && typeof authorized.effort === 'string' ? authorized.effort.trim().toLowerCase() : null
     const ownerEffort = storedEffort !== null && EFFORTS.includes(storedEffort) ? storedEffort : null
-    const effort = coveredEffort(ladderLib.effortFor(r.ladder, step, launchKind), ownerEffort, launchKind)
-    const args = { model: rungOf(r.ladder, step).model, effort }
+    const effort = coveredEffort(ladderLib.effortFor(r.ladder, step), ownerEffort, launchKind)
+    const rung = rungOf(r.ladder, step)
+    const args = { model: rung.model, effort }
     const covered = authorized !== null && auth.namedRung(r.ladder, event.model)?.model === args.model
     const { requested, ignored } = requestedOf(event, args, covered)
     if (launchKind === 'first' && placed) notes.push(placementNote(id, placed.rung, cover, args, brief))
@@ -486,7 +492,7 @@ async function begin(input, deps = {}) {
     if (claudePrompt !== prompt) args.prompt = claudePrompt
     if (edits) args.isolation = 'worktree'
 
-    const correcting = launchKind === 'fix' || launchKind === 'unjudged'
+    const correcting = launchKind === 'unjudged'
     const lastResult = lastOf(entries, (e) => e.kind === 'result').entry
     const previous = correcting && lastResult && isObject(lastResult.pair) && isText(lastResult.pair.id) ? lastResult.pair : null
     let pin = null
@@ -495,7 +501,7 @@ async function begin(input, deps = {}) {
     let external = null
     // A task the owner placed on a model runs on Claude in every attempt: the pair choice is not asked for it (spec 021).
     if (r.settings.lanes && namedAgent(event) === null && r.pickPair && authorized === null) {
-      const chosen = await r.pickPair({ model: step, effort })
+      const chosen = await r.pickPair({ model: rung.model, effort: rung.effort })
       if (chosen && typeof chosen.error === 'string') notes.push(`Aether delegate task ${id}: the pair choice failed (${chosen.error}); this attempt runs on Claude.`)
       pick = chosen && isObject(chosen.pick) ? chosen.pick : null
       let alternates = alternatesOf(chosen && chosen.quota, r.pairs)
@@ -506,8 +512,8 @@ async function begin(input, deps = {}) {
         if (kept) {
           pin = kept.id
           if (kept.id !== pick.id) {
-            const rung = (row) => ({ harness: row.harness, rung: { model: row.model, effort: row.effort, group: row.group } })
-            alternates = [rung(pick), ...alternates.filter((a) => !(a.harness === kept.harness && a.rung.model === kept.model && a.rung.effort === kept.effort))]
+            const rungFn = (row) => ({ harness: row.harness, rung: { model: row.model, effort: row.effort, group: row.group } })
+            alternates = [rungFn(pick), ...alternates.filter((a) => !(a.harness === kept.harness && a.rung.model === kept.model && a.rung.effort === kept.effort))]
             pick = kept
           }
         }
@@ -600,11 +606,6 @@ function approveError(r, entries, launch, worktree, ignore = []) {
   if (editsOf(launch)) {
     if (!isText(worktree)) return NO_WORKTREE
     const tests = isText(launch.tests) ? checks.runTests(worktree, launch.tests) : null
-    // What the delegate changed relative to the commit its work was built on, not the launch
-    // base: the worktree's start before its own commits (its HEAD reflog), so work it committed
-    // counts, while the files of the branch the worktree started from stay out (issues 143
-    // and 178). The Lead's own commits after the launch land in the Lead's checkout, not in the
-    // delegate's worktree, so they never count.
     const check = checks.checkEdits({ files: checks.changedFiles(worktree, checks.worktreeBase(worktree, launch.base)), owns, tests })
     return check.ok ? null : `checks failed: ${editsFailure(check, tests).join('; ')}`
   }
@@ -627,10 +628,6 @@ function parsedFindings(findings) {
   return { parsed }
 }
 
-function correctionsOf(ladder, state) {
-  return { used: state.correctionsUsed, cap: rungOf(ladder, state.step).corrections }
-}
-
 // The session a verdict belongs to: the one it names, or the one of the task's last launch.
 function sessionOf(dataDir, task, session) {
   if (typeof session === 'string' && session) return session
@@ -640,7 +637,7 @@ function sessionOf(dataDir, task, session) {
 
 async function verdict(input, deps = {}) {
   const { task, verdict: kind, reason, findings, fromScratch, worktree, session: named, ignore } = isObject(input) ? input : {}
-  const refuse = (error, extra = {}) => ({ ok: false, task: isId(task) ? task : null, verdict: null, step: null, next: null, corrections: null, error, ...extra })
+  const refuse = (error, extra = {}) => ({ ok: false, task: isId(task) ? task : null, verdict: null, step: null, next: null, error, ...extra })
   try {
     if (!isId(task)) return refuse('unknown task')
     const r = resolve(deps)
@@ -649,7 +646,7 @@ async function verdict(input, deps = {}) {
     const launch = lastOf(entries, isLaunch).entry
     if (!launch) return refuse('unknown task')
     const state = ladderLib.stateOf(verdictInputs(entries), r.ladder, auth.startStepOf(entries, r.ladder, r.configDir))
-    const at = { step: state.step, corrections: correctionsOf(r.ladder, state) }
+    const at = { step: state.step }
     if (!VERDICTS.includes(kind)) return refuse('the verdict must be approve, fix or infeasible', at)
     const ignored = ignoreOf(ignore)
     if (ignored.error) return refuse(ignored.error, at)
@@ -674,7 +671,7 @@ async function verdict(input, deps = {}) {
       kind: 'verdict', time: r.now(), session, task, attempt: launch.attempt, step: state.step, verdict: label,
       input: verdictInput, reason: verdictInput.reason, cause: next.cause, next, ignore: ignored.globs,
     })
-    return { ok: true, task, verdict: label, step: judged.state.step, next, corrections: correctionsOf(r.ladder, judged.state) }
+    return { ok: true, task, verdict: label, step: judged.state.step, next }
   } catch (err) {
     return refuse(messageOf(err))
   }

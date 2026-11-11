@@ -18,23 +18,28 @@ const verdict = (task, step, attempt, v, next, extra = {}) => at({ kind: 'verdic
 function world(t) {
   const dataDir = tempDir(t, 'aether-data-')
   const add = (...entries) => entries.forEach((e) => log.appendEntry(dataDir, e))
-  add(launch('t1', 'haiku', 1, 'first'), verdict('t1', 'haiku', 1, 'approved', { step: null, kind: 'done', cause: null }))
-  add(launch('t2', 'haiku', 1, 'first'), verdict('t2', 'haiku', 1, 'fix', { step: 'haiku', kind: 'fix', cause: 'fix' }),
-    launch('t2', 'haiku', 2, 'fix'), verdict('t2', 'haiku', 2, 'approved', { step: null, kind: 'done', cause: null }))
-  add(launch('t3', 'haiku', 1, 'first'), verdict('t3', 'haiku', 1, 'infeasible', { step: 'sonnet', kind: 'rise', cause: 'infeasible' }, { reason: 'wrong layer' }),
-    launch('t3', 'sonnet', 2, 'rise'), verdict('t3', 'sonnet', 2, 'approved', { step: null, kind: 'done', cause: null }))
-  add(launch('t4', 'haiku', 1, 'first'), at({ kind: 'relaunch', task: 't4', of: 't3' }))
+  add(launch('t1', 'haiku-high', 1, 'first'), verdict('t1', 'haiku-high', 1, 'approved', { step: null, kind: 'done', cause: null }))
+  add(launch('t2', 'haiku-high', 1, 'first'), verdict('t2', 'haiku-high', 1, 'fix', { step: 'haiku-xhigh', kind: 'rise', cause: 'failed' }),
+    launch('t2', 'haiku-xhigh', 2, 'rise'), verdict('t2', 'haiku-xhigh', 2, 'approved', { step: null, kind: 'done', cause: null }))
+  add(launch('t3', 'haiku-high', 1, 'first'), verdict('t3', 'haiku-high', 1, 'infeasible', { step: 'haiku-xhigh', kind: 'rise', cause: 'infeasible' }, { reason: 'wrong layer' }),
+    launch('t3', 'haiku-xhigh', 2, 'rise'), verdict('t3', 'haiku-xhigh', 2, 'approved', { step: null, kind: 'done', cause: null }))
+  add(launch('t4', 'haiku-high', 1, 'first'), at({ kind: 'relaunch', task: 't4', of: 't3' }))
   return dataDir
 }
 
-test('per step: the tasks, the attempts, the corrections, the approved, the rises with their cause and the infeasible with their reason (C11, R17)', (t) => {
+test('per step: the tasks, the attempts, the approved, the rises with their cause and the infeasible with their reason (C11, R17)', (t) => {
   const { ladder } = delegatesReport({ dataDir: world(t) })
-  const [haiku, sonnet, opus] = ladder.steps
-  assert.deepEqual([haiku.step, haiku.tasks, haiku.attempts, haiku.corrections, haiku.approved], ['haiku', 4, 5, 1, 2])
-  assert.deepEqual(haiku.rises, { exhausted: 0, repeated: 0, infeasible: 1 })
-  assert.deepEqual(haiku.infeasible, [{ task: 't3', reason: 'wrong layer' }])
-  assert.deepEqual([sonnet.tasks, sonnet.attempts, sonnet.approved], [1, 1, 1])
-  assert.deepEqual([opus.step, opus.tasks, opus.attempts], ['opus', 0, 0])
+  assert.equal(ladder.steps.length, 5)
+  const [hHigh, hXhigh, sHigh, oHigh, oXhigh] = ladder.steps
+  assert.deepEqual([hHigh.step, hHigh.tasks, hHigh.attempts, hHigh.approved], ['haiku-high', 4, 4, 1])
+  assert.equal('corrections' in hHigh, false)
+  assert.deepEqual(hHigh.rises, { failed: 1, infeasible: 1 })
+  assert.deepEqual(hHigh.infeasible, [{ task: 't3', reason: 'wrong layer' }])
+  assert.deepEqual([hXhigh.step, hXhigh.tasks, hXhigh.attempts, hXhigh.approved], ['haiku-xhigh', 2, 2, 2])
+  assert.deepEqual(hXhigh.rises, { failed: 0, infeasible: 0 })
+  assert.deepEqual([sHigh.step, sHigh.tasks, sHigh.attempts], ['sonnet-high', 0, 0])
+  assert.deepEqual([oHigh.step, oHigh.tasks, oHigh.attempts], ['opus-high', 0, 0])
+  assert.deepEqual([oXhigh.step, oXhigh.tasks, oXhigh.attempts], ['opus-xhigh', 0, 0])
 })
 
 test('a relaunch under another id shows linked to the first task (R1)', (t) => {
@@ -47,12 +52,12 @@ test('the rows keep the fields the /harnesses panel reads', (t) => {
   const row = delegations.find((d) => d.id === 't3')
   assert.equal(row.description, 'd-t3')
   assert.equal(typeof row.time, 'number')
-  assert.deepEqual([row.applied, row.ranOn.harness, row.ranOn.model], ['rewritten', 'claude', 'sonnet'])
+  assert.deepEqual([row.applied, row.ranOn.harness, row.ranOn.model], ['rewritten', 'claude', 'haiku'])
 })
 
 test('session and since filter the report', (t) => {
   const dataDir = world(t)
-  log.appendEntry(dataDir, { kind: 'launch', task: 'z', session: 'other', time: 1, step: 'haiku', attempt: 1, launchKind: 'first', description: 'z' })
+  log.appendEntry(dataDir, { kind: 'launch', task: 'z', session: 'other', time: 1, step: 'haiku-high', attempt: 1, launchKind: 'first', description: 'z' })
   assert.equal(delegatesReport({ dataDir, session: 's1' }).delegations.length, 4)
   assert.equal(delegatesReport({ dataDir, session: 'other' }).delegations.length, 1)
 })
@@ -62,9 +67,9 @@ test('two sessions that used the same task id are two rows, each with its own at
   const mine = (e) => ({ session: 'a', ...e })
   const other = (e) => ({ session: 'b', ...e })
   const entries = [
-    mine({ kind: 'launch', task: 'same', time: 1, step: 'haiku', attempt: 1, launchKind: 'first', description: 'mine' }),
-    other({ kind: 'launch', task: 'same', time: 2, step: 'haiku', attempt: 1, launchKind: 'first', description: 'theirs' }),
-    other({ kind: 'launch', task: 'same', time: 3, step: 'haiku', attempt: 2, launchKind: 'fix', description: 'theirs' }),
+    mine({ kind: 'launch', task: 'same', time: 1, step: 'haiku-high', attempt: 1, launchKind: 'first', description: 'mine' }),
+    other({ kind: 'launch', task: 'same', time: 2, step: 'haiku-high', attempt: 1, launchKind: 'first', description: 'theirs' }),
+    other({ kind: 'launch', task: 'same', time: 3, step: 'haiku-high', attempt: 2, launchKind: 'rise', description: 'theirs' }),
   ]
   entries.forEach((e) => log.appendEntry(dataDir, e))
   const { delegations, ladder } = delegatesReport({ dataDir })
@@ -76,15 +81,15 @@ test('aether-report --delegates prints the report as one JSON line', (t) => {
   const dataDir = world(t)
   const out = spawnSync(process.execPath, [BIN, '--delegates', '--session', 's1'], { encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dataDir } })
   assert.equal(out.status, 0)
-  assert.equal(JSON.parse(out.stdout.trim()).ladder.steps.length, 3)
+  assert.equal(JSON.parse(out.stdout.trim()).ladder.steps.length, 5)
 })
 
 test('a task whose external delegate ended ok ran on its pair; one that did not ran on Claude with the reason (R18)', (t) => {
   const dataDir = tempDir(t, 'aether-data-')
   const outcome = (id, status) => at({ kind: 'outcome', id, attempt: 1, status, harness: 'agy', model: 'm-a', effort: 'low' })
-  log.appendEntry(dataDir, launch('ok', 'haiku', 1, 'first'))
+  log.appendEntry(dataDir, launch('ok', 'haiku-high', 1, 'first'))
   log.appendEntry(dataDir, outcome('ok', 'ok'))
-  log.appendEntry(dataDir, launch('bad', 'haiku', 1, 'first'))
+  log.appendEntry(dataDir, launch('bad', 'haiku-high', 1, 'first'))
   log.appendEntry(dataDir, outcome('bad', 'failed'))
   const { delegations } = delegatesReport({ dataDir })
   const ok = delegations.find((d) => d.id === 'ok')
@@ -95,12 +100,12 @@ test('a task whose external delegate ended ok ran on its pair; one that did not 
 
 test('a refused relaunch is not an attempt and not where the task ran (issue 85)', (t) => {
   const dataDir = tempDir(t, 'aether-data-')
-  const first = launch('done', 'haiku', 1, 'first')
+  const first = launch('done', 'haiku-high', 1, 'first')
   const outcome = at({ kind: 'outcome', id: 'done', attempt: 1, status: 'ok', harness: 'agy', model: 'm-a', effort: 'low' })
   const refused = at({ kind: 'launch', task: 'done', step: null, attempt: 2, launchKind: 'refused', description: 'again', effort: 'low', edits: false })
-  for (const entry of [first, outcome, verdict('done', 'haiku', 1, 'approved', { step: null, kind: 'done', cause: null }), refused]) log.appendEntry(dataDir, entry)
+  for (const entry of [first, outcome, verdict('done', 'haiku-high', 1, 'approved', { step: null, kind: 'done', cause: null }), refused]) log.appendEntry(dataDir, entry)
   const row = delegatesReport({ dataDir }).delegations.find((d) => d.id === 'done')
-  assert.deepEqual([row.attempts, row.step, row.applied, row.ranOn.harness, row.ranOn.model, row.fallback], [1, 'haiku', 'external', 'agy', 'm-a', null])
+  assert.deepEqual([row.attempts, row.step, row.applied, row.ranOn.harness, row.ranOn.model, row.fallback], [1, 'haiku-high', 'external', 'agy', 'm-a', null])
   assert.equal(delegatesReport({ dataDir }).ladder.steps[0].attempts, 1)
   // A task with nothing but a refused launch in the window has no row.
   const other = tempDir(t, 'aether-data-')

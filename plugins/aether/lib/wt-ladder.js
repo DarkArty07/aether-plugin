@@ -8,7 +8,7 @@ const path = require('node:path')
 const { repoPaths } = require('./git.js')
 const run = require('./run.js')
 const { digest: computeDigest } = require('./lanes.js')
-const { loadLadder, newState, effortFor, judge } = require('./ladder.js')
+const { loadLadder, newState, supervisorOf, judge } = require('./ladder.js')
 const { loadGraph } = require('./worktrees.js')
 
 function ladderFile(runDir, taskId) {
@@ -20,13 +20,13 @@ function expectedVerdictFile(runDir, taskId) {
 }
 
 function initialRecord(ladder) {
-  const firstStep = ladder.rungs[0].step
+  const firstRung = ladder.rungs[0]
   const state = newState(ladder)
   const next = {
-    step: firstStep,
+    step: firstRung.step,
     kind: 'first',
     cause: null,
-    effort: effortFor(ladder, firstStep, 'first'),
+    effort: firstRung.effort,
     carry: false,
   }
   return { state, next }
@@ -37,14 +37,19 @@ function buildView(state, next, ladder, taskId) {
   let step = null
   let model = null
   let effort = null
-  let corrections = null
+  let supervisor = null
+  let position = null
+  const of = ladder.rungs.length
 
   if (isOpen) {
-    const rung = ladder.rungs.find((r) => r.step === state.step)
+    const idx = ladder.rungs.findIndex((r) => r.step === state.step)
+    const rung = ladder.rungs[idx]
     step = rung.step
     model = rung.model
-    effort = next.effort
-    corrections = rung.corrections
+    effort = rung.effort
+    const sup = supervisorOf(ladder, rung.step)
+    supervisor = { model: sup.model, effort: sup.effort }
+    position = idx + 1
   }
 
   return {
@@ -53,13 +58,14 @@ function buildView(state, next, ladder, taskId) {
     step,
     model,
     effort,
+    supervisor,
+    position,
+    of,
     kind: next.kind,
     cause: next.cause,
     ...(next.reason ? { reason: next.reason } : {}),
     attempts: state.attempts,
-    correctionsUsed: state.correctionsUsed,
     ...(state.blockedCount ? { blockedCount: state.blockedCount } : {}),
-    corrections,
   }
 }
 

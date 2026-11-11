@@ -9,9 +9,7 @@ const { loadLadder } = require('../plugins/aether/lib/ladder.js')
 const delegates = require('../plugins/aether/lib/delegate-task.js')
 
 const L = loadLadder()
-const [HAIKU, SONNET] = L.rungs
-// The same ladder with one number changed: the first rung allows one correction.
-const TIGHT = { ...L, rungs: L.rungs.map((rung, i) => (i === 0 ? { ...rung, corrections: 1 } : rung)) }
+const SHORT = { ...L, rungs: L.rungs.slice(2) }
 
 const finding = (n) => ({ severity: 'important', title: `gap ${n}`, file: 'src/t1/a.js:3', evidence: `evidence ${n}` })
 const retry = (call) => ({ verdict: 'retry', findings: [finding(call.n)], ruling: `Retry: gap ${call.n}.`, guidance: 'fix it', question: '' })
@@ -35,9 +33,13 @@ const delegateSteps = async (t, ladder) => {
   return steps
 }
 
-test('one number changed in one ladder changes the swarm and the delegates together', async (t) => {
-  assert.deepEqual(await swarmModels(t, undefined), [HAIKU.model, HAIKU.model, HAIKU.model])
-  assert.deepEqual(await swarmModels(t, TIGHT), [HAIKU.model, HAIKU.model, SONNET.model])
-  assert.deepEqual(await delegateSteps(t, undefined), [HAIKU.step, HAIKU.step])
-  assert.deepEqual(await delegateSteps(t, TIGHT), [HAIKU.step, SONNET.step])
+test('a shorter ladder changes the swarm and the delegates together', async (t) => {
+  assert.deepEqual(await swarmModels(t, undefined), ['haiku', 'haiku', 'sonnet'])
+  assert.deepEqual(await swarmModels(t, SHORT), ['sonnet', 'opus', 'opus'])
+  assert.deepEqual(await delegateSteps(t, undefined), ['haiku-xhigh', 'sonnet-high'])
+  assert.deepEqual(await delegateSteps(t, SHORT), ['opus-high', 'opus-xhigh'])
+})
+
+test('the keys of the ladder are exactly four', () => {
+  assert.deepEqual(Object.keys(L).sort(), ['law', 'repeatBlocked', 'rungs', 'supervisorFloor'])
 })

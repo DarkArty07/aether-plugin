@@ -35,9 +35,9 @@ test('every delegate of every task starts on Haiku, whatever the Lead asks (C1, 
   const { deps, dataDir } = world(t)
   const plans = []
   for (const id of ['a', 'b', 'c']) plans.push(await task.begin(call(BRIEF(id)), deps))
-  for (const plan of plans) assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['haiku', 'first', 'haiku', 'high'])
+  for (const plan of plans) assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['haiku-high', 'first', 'haiku', 'high'])
   const asked = await task.begin(call(BRIEF('d'), { model: 'opus', effort: 'max' }), deps)
-  assert.deepEqual([asked.args.model, asked.args.effort, asked.step], ['haiku', 'high', 'haiku'])
+  assert.deepEqual([asked.args.model, asked.args.effort, asked.step], ['haiku', 'high', 'haiku-high'])
   const launch = entries(dataDir, 'd').find((e) => e.kind === 'launch')
   assert.deepEqual([launch.ignored, launch.requested], [true, { model: 'opus', effort: 'max' }])
 })
@@ -49,13 +49,14 @@ test('a call with no AETHER-TASK gets a generated id and says so', async (t) => 
   assert.ok(plan.notes.join(' ').includes(plan.id))
 })
 
-test('a correction goes to the same step with its findings and the xhigh effort; the step does not move (C2, E3)', async (t) => {
+test('a rejected attempt rises to the next step with its findings and that step\'s effort (C2, E3)', async (t) => {
   const { deps } = world(t)
   await task.begin(call(BRIEF('t1')), deps)
   const answer = await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
-  assert.deepEqual([answer.ok, answer.next.kind, answer.next.step, answer.corrections], [true, 'fix', 'haiku', { used: 1, cap: 5 }])
+  assert.deepEqual([answer.ok, answer.next.kind, answer.next.step, answer.next.cause], [true, 'rise', 'haiku-xhigh', 'failed'])
+  assert.equal('corrections' in answer, false)
   const again = await task.begin(call(BRIEF('t1')), deps)
-  assert.deepEqual([again.step, again.kind, again.args.model, again.args.effort], ['haiku', 'fix', 'haiku', 'xhigh'])
+  assert.deepEqual([again.step, again.kind, again.args.model, again.args.effort], ['haiku-xhigh', 'rise', 'haiku', 'xhigh'])
   assert.ok(again.args.prompt.includes('## Findings to fix') && again.args.prompt.includes(FINDING))
 })
 
@@ -93,23 +94,20 @@ test('the brief of an editing external pair leaves the patch and the findings to
   assert.ok(again.args.prompt.includes(`git apply ${patch}`) && again.args.prompt.includes(FINDING), 'the rescue on Claude applies the patch itself and reads the findings (issue 88)')
 })
 
-test('five corrections of Haiku, and the sixth failure rises to Sonnet with the work and the findings (C3, E5)', async (t) => {
+test('four rises through the ladder, and the fifth failure leaves the task exhausted (C3, E5)', async (t) => {
   const { deps } = world(t)
   await task.begin(call(BRIEF('t1')), deps)
-  for (let n = 1; n <= 5; n++) assert.equal((await task.verdict({ task: 't1', verdict: 'fix', findings: [F(n)] }, deps)).next.kind, 'fix')
-  const sixth = await task.verdict({ task: 't1', verdict: 'fix', findings: [F(6)] }, deps)
-  assert.deepEqual([sixth.next.kind, sixth.next.step, sixth.next.cause], ['rise', 'sonnet', 'exhausted'])
-  const plan = await task.begin(call(BRIEF('t1')), deps)
-  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['sonnet', 'rise', 'sonnet', 'high'])
-  assert.ok(plan.args.prompt.includes(F(6)))
+  for (let n = 1; n <= 4; n++) assert.equal((await task.verdict({ task: 't1', verdict: 'fix', findings: [F(n)] }, deps)).next.kind, 'rise')
+  const fifth = await task.verdict({ task: 't1', verdict: 'fix', findings: [F(5)] }, deps)
+  assert.deepEqual([fifth.next.kind, fifth.next.step, fifth.next.cause], ['exhausted', null, 'exhausted'])
 })
 
-test('the same findings twice rise to Sonnet though Haiku has corrections left (E4)', async (t) => {
+test('the same findings twice are two rises, not repeated cause (E4)', async (t) => {
   const { deps } = world(t)
   await task.begin(call(BRIEF('t1')), deps)
   await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
   const second = await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
-  assert.deepEqual([second.next.kind, second.next.cause], ['rise', 'repeated'])
+  assert.deepEqual([second.next.kind, second.next.cause, second.next.step], ['rise', 'failed', 'sonnet-high'])
 })
 
 test('an infeasible declaration without a reason is rejected and the step stays; with one it rises and the log keeps the reason (C3, E6)', async (t) => {
@@ -118,9 +116,9 @@ test('an infeasible declaration without a reason is rejected and the step stays;
   const rejected = await task.verdict({ task: 't1', verdict: 'infeasible' }, deps)
   assert.equal(rejected.ok, false)
   assert.match(rejected.error, /reason/)
-  assert.equal((await task.begin(call(BRIEF('t1')), deps)).step, 'haiku')
+  assert.equal((await task.begin(call(BRIEF('t1')), deps)).step, 'haiku-high')
   const ok = await task.verdict({ task: 't1', verdict: 'infeasible', reason: 'wrong layer for this model' }, deps)
-  assert.deepEqual([ok.ok, ok.next.step, ok.next.cause], [true, 'sonnet', 'infeasible'])
+  assert.deepEqual([ok.ok, ok.next.step, ok.next.cause], [true, 'haiku-xhigh', 'infeasible'])
   assert.equal(entries(dataDir, 't1').find((e) => e.kind === 'verdict' && e.verdict === 'infeasible').reason, 'wrong layer for this model')
 })
 
@@ -136,16 +134,16 @@ test('starting from scratch drops the earlier work and keeps the reason in the l
   assert.equal(entries(dataDir, 't1').find((e) => e.kind === 'verdict').input.fromScratch, true)
 })
 
-test('after Opus nothing opens a fourth step: the task is exhausted (C5, E8)', async (t) => {
+test('after the last rung nothing opens a sixth step: the task is exhausted (C5, E8)', async (t) => {
   const { deps } = world(t)
   await task.begin(call(BRIEF('t1')), deps)
   let last
-  for (let n = 1; n <= 11; n++) last = await task.verdict({ task: 't1', verdict: 'fix', findings: [F(n)] }, deps)
+  for (let n = 1; n <= 5; n++) last = await task.verdict({ task: 't1', verdict: 'fix', findings: [F(n)] }, deps)
   assert.deepEqual([last.next.kind, last.next.step], ['exhausted', null])
   const plan = await task.begin(call(BRIEF('t1')), deps)
   assert.deepEqual([plan.args.model, plan.args.effort, plan.external], ['haiku', 'low', null])
   assert.match(plan.args.prompt, /exhausted/)
-  assert.equal((await task.verdict({ task: 't1', verdict: 'fix', findings: [F(12)] }, deps)).ok, false)
+  assert.equal((await task.verdict({ task: 't1', verdict: 'fix', findings: [F(6)] }, deps)).ok, false)
 })
 
 test('a finding with no file or no what is not accepted as a correction (R2)', async (t) => {
@@ -303,46 +301,45 @@ test('a new id with the same owns and tests as a task of the session that did no
   assert.equal(log.readEntries(dataDir).filter((e) => e.kind === 'relaunch').length, 1)
 })
 
-test('each step asks the pair of the points of its own model, and a correction keeps the model and raises the effort a step (C8, R11, issue 87)', async (t) => {
-  const quota = [{ id: GROK.id, outcome: 'picked' }, { id: 'grok/grok-4.7@xhigh', outcome: 'next', rank: 2 }]
-  const { deps, asked, dataDir } = world(t, { settings: EXTERNAL, pick: GROK, quota })
+test('each step asks the pair of the points of its own model, and an unjudged launch keeps the model and raises the effort a step (C8, R11, issue 87)', async (t) => {
+  const GROK_MED = { id: 'grok/grok-4.7@medium', harness: 'grok', model: 'grok-4.7', effort: 'medium', group: 'grok' }
+  const quota = [{ id: GROK_MED.id, outcome: 'picked' }, { id: 'grok/grok-4.7@high', outcome: 'next', rank: 2 }]
+  const { deps, asked, dataDir } = world(t, { settings: EXTERNAL, pick: GROK_MED, quota })
   const more = 'AETHER-OWNS: src/**\nAETHER-TESTS: npm test\n'
   const first = await task.begin(call(BRIEF('t1', more)), deps)
   assert.deepEqual(asked[0], { model: 'haiku', effort: 'high' })
   assert.deepEqual([first.external.id, first.external.edits, first.external.pin], ['t1', true, null])
   assert.deepEqual(first.args, { model: 'haiku', effort: 'high', isolation: 'worktree' }, 'the rescue on Claude is the same step, isolated because the task edits')
   const file = JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'external', '2-s1--t1.json'), 'utf8'))
-  assert.deepEqual([file.edits, file.owns, file.tests, file.step, file.harness], [true, ['src/**'], 'npm test', 'haiku', 'grok'])
-  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: GROK, checks: { ok: true } })
-  await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
+  assert.deepEqual([file.edits, file.owns, file.tests, file.step, file.harness], [true, ['src/**'], 'npm test', 'haiku-high', 'grok'])
+  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: GROK_MED, checks: { ok: true } })
   const fixed = await task.begin(call(BRIEF('t1', more)), deps)
-  assert.deepEqual(asked[1], { model: 'haiku', effort: 'xhigh' })
-  assert.equal(fixed.external.pin, 'grok/grok-4.7@xhigh', 'the same model, one effort up')
+  assert.deepEqual(asked[1], { model: 'haiku', effort: 'high' })
+  assert.equal(fixed.external.pin, 'grok/grok-4.7@high', 'the same model, one effort up')
   const corrected = JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'external', '2-s1--t1.json'), 'utf8'))
-  assert.deepEqual([corrected.harness, corrected.rung.model, corrected.rung.effort, corrected.pin], ['grok', 'grok-4.7', 'xhigh', 'grok/grok-4.7@xhigh'])
-  assert.deepEqual(corrected.alternates[0], { harness: 'grok', rung: { model: 'grok-4.7', effort: 'high', group: 'grok' } }, 'the pair the choice made stays the next candidate')
+  assert.deepEqual([corrected.harness, corrected.rung.model, corrected.rung.effort, corrected.pin], ['grok', 'grok-4.7', 'high', 'grok/grok-4.7@high'])
+  assert.deepEqual(corrected.alternates[0], { harness: 'grok', rung: { model: 'grok-4.7', effort: 'medium', group: 'grok' } }, 'the pair the choice made stays the next candidate')
   await task.verdict({ task: 't1', verdict: 'infeasible', reason: 'too hard for Haiku' }, deps)
   const risen = await task.begin(call(BRIEF('t1', more)), deps)
-  assert.deepEqual(asked[2], { model: 'sonnet', effort: 'high' })
+  assert.deepEqual(asked[2], { model: 'haiku', effort: 'xhigh' })
   assert.equal(risen.external.pin, null)
 })
 
 const FLASH_MEDIUM = { id: 'agy/gemini-3.8-flash@medium', harness: 'agy', model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' }
 const SONNET_PICK = { id: 'agy/claude-sonnet-5-5@medium', harness: 'agy', model: 'claude-sonnet-5-5', effort: 'medium', group: 'claude' }
 
-// One correction of a task that edited on FLASH_MEDIUM, for a choice that made `pick` and found `quota` able to serve.
+// One unjudged launch of a task that edited on FLASH_MEDIUM, for a choice that made `pick` and found `quota` able to serve.
 async function corrected(t, { pick, quota, edits = true }) {
   const { deps, dataDir } = world(t, { settings: EXTERNAL, pick, quota })
   const more = edits ? 'AETHER-OWNS: src/**\nAETHER-TESTS: npm test\n' : ''
   await task.begin(call(BRIEF('t1', more)), deps)
   log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: FLASH_MEDIUM, checks: { ok: true } })
-  await task.verdict({ task: 't1', verdict: 'fix', findings: [FINDING] }, deps)
   const plan = await task.begin(call(BRIEF('t1', more)), deps)
   const file = JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'external', '2-s1--t1.json'), 'utf8'))
   return { plan, file }
 }
 
-test('a correction goes to the same model one effort up, whatever model the choice would pick, and the note says so (issue 87)', async (t) => {
+test('an unjudged launch goes to the same model one effort up, whatever model the choice would pick, and the note says so (issue 87)', async (t) => {
   const quota = [{ id: SONNET_PICK.id, outcome: 'picked' }, { id: 'agy/gemini-3.8-flash@high', outcome: 'next', rank: 2 }, { id: 'agy/gemini-3.8-flash@medium', outcome: 'next', rank: 3 }]
   for (const edits of [true, false]) {
     const { plan, file } = await corrected(t, { pick: SONNET_PICK, quota, edits })
@@ -353,7 +350,7 @@ test('a correction goes to the same model one effort up, whatever model the choi
   }
 })
 
-test('when the raised pair cannot serve the correction keeps the earlier pair, and when neither can the choice stands (issue 87)', async (t) => {
+test('when the raised pair cannot serve the unjudged launch keeps the earlier pair, and when neither can the choice stands (issue 87)', async (t) => {
   const sameOnly = await corrected(t, { pick: SONNET_PICK, quota: [{ id: SONNET_PICK.id, outcome: 'picked' }, { id: FLASH_MEDIUM.id, outcome: 'next', rank: 2 }] })
   assert.deepEqual([sameOnly.file.rung.model, sameOnly.file.rung.effort, sameOnly.file.pin], ['gemini-3.8-flash', 'medium', FLASH_MEDIUM.id])
   const none = await corrected(t, { pick: SONNET_PICK, quota: [{ id: SONNET_PICK.id, outcome: 'picked' }, { id: 'agy/gemini-3.8-flash@high', outcome: 'passed', why: 'harness-off' }] })
@@ -573,8 +570,8 @@ test('work an editing delegate committed itself counts: outside Owns fails namin
   assert.doesNotMatch(refused.error, /a\.js/, 'the inside-Owns file is not named')
 })
 
-// An authorization the log carries with an effort floors the task's effort: a correction keeps it (owner effort, issue 141).
-test('a task whose recorded authorization carries an effort keeps it on a correction and drops it on a rise (owner effort)', async (t) => {
+// An authorization the log carries with an effort floors the task's effort: an unjudged launch keeps it, a rise drops it (owner effort, issue 141).
+test('a task whose recorded authorization carries an effort keeps it on an unjudged launch and drops it on a rise (owner effort)', async (t) => {
   const { deps, dataDir } = world(t)
   const firstLaunch = (task_, step, effort, authorized) => ({
     kind: 'launch', time: 1000, session: 's1', task: task_, step, attempt: 1, launchKind: 'first',
@@ -582,12 +579,10 @@ test('a task whose recorded authorization carries an effort keeps it on a correc
     pin: null, base: null, dirty: null, authorized,
   })
   const ownerSays = (task_, model) => ({ model, scope: 'task', task: task_, quote: `the owner said ${model} at max here`, quoteTime: 'x' })
-  log.appendEntry(dataDir, firstLaunch('m1', 'sonnet', 'max', { ...ownerSays('m1', 'sonnet'), effort: 'max' }))
-  await task.verdict({ task: 'm1', verdict: 'fix', findings: [FINDING] }, deps)
+  log.appendEntry(dataDir, firstLaunch('m1', 'sonnet-high', 'max', { ...ownerSays('m1', 'sonnet'), effort: 'max' }))
   const fixed = await task.begin(call(BRIEF('m1')), deps)
-  assert.deepEqual([fixed.kind, fixed.args.model, fixed.args.effort], ['fix', 'sonnet', 'max'])
-  await task.verdict({ task: 'm1', verdict: 'fix', findings: [F(2)] }, deps)
-  await task.verdict({ task: 'm1', verdict: 'fix', findings: [F(3)] }, deps)
+  assert.deepEqual([fixed.kind, fixed.args.model, fixed.args.effort], ['unjudged', 'sonnet', 'max'])
+  await task.verdict({ task: 'm1', verdict: 'fix', findings: [FINDING] }, deps)
   const risen = await task.begin(call(BRIEF('m1')), deps)
   assert.deepEqual([risen.kind, risen.args.model, risen.args.effort], ['rise', 'opus', 'high'])
 })
@@ -712,9 +707,10 @@ test('the correction of an attempt that edits on Claude is the same with or with
   const plain = await cycle(false)
   const ended = await cycle(true)
   assert.equal(ended.judged.ok, true)
-  assert.deepEqual([ended.judged.next, ended.judged.corrections], [plain.judged.next, plain.judged.corrections])
+  assert.deepEqual(ended.judged.next, plain.judged.next)
+  assert.equal('corrections' in ended.judged, false)
   assert.deepEqual([ended.again.step, ended.again.kind, ended.again.args], [plain.again.step, plain.again.kind, plain.again.args])
-  assert.deepEqual([ended.again.kind, ended.again.args.effort], ['fix', 'xhigh'])
+  assert.deepEqual([ended.again.kind, ended.again.args.effort], ['rise', 'xhigh'])
   assert.ok(ended.again.args.prompt.includes(FINDING))
   assert.deepEqual(ended.again.answerOf, { task: 'e1', attempt: 2 })
 })

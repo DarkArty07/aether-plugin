@@ -59,7 +59,7 @@ function detectRiseWithoutReason(entries = []) {
       lastVerdict &&
       lastVerdict.next &&
       lastVerdict.next.kind === 'rise' &&
-      ['exhausted', 'repeated', 'infeasible'].includes(lastVerdict.next.cause)
+      ['failed', 'infeasible', 'exhausted', 'repeated'].includes(lastVerdict.next.cause)
 
     if (!legitimate) {
       const evidence = []

@@ -2,277 +2,101 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const fs = require('node:fs')
-const path = require('node:path')
-const { tempDir } = require('./helpers.js')
-const ladder = require('../plugins/aether/lib/ladder.js')
+const { loadLadder, newState, effortFor, judge, stateOf } = require('../plugins/aether/lib/ladder.js')
 
-const L = ladder.loadLadder()
-const F = (n) => ({ file: `src/f${n}.js`, line: n, what: `missing case ${n}` })
-const fix = (...ns) => ({ kind: 'fix', findings: ns.map(F), reason: null, fromScratch: false })
-const APPROVE = { kind: 'approve', findings: [], reason: null, fromScratch: false }
-
-// Judges the verdicts in order, each on the state the one before left; returns every answer.
-function run(verdicts, ladderValue = L) {
-  let state = ladder.newState(ladderValue)
-  return verdicts.map((verdict) => {
-    const answer = ladder.judge(state, verdict, ladderValue)
-    if (answer.accepted) state = answer.state
-    return answer
-  })
+const L = {
+  law: { candidateEfforts: ['high', 'xhigh'], minJumpPoints: 2 },
+  supervisorFloor: 3,
+  repeatBlocked: 2,
+  rungs: [
+    { step: 'haiku-high', model: 'haiku', effort: 'high' },
+    { step: 'haiku-xhigh', model: 'haiku', effort: 'xhigh' },
+    { step: 'sonnet-high', model: 'sonnet', effort: 'high' },
+    { step: 'opus-high', model: 'opus', effort: 'high' },
+    { step: 'opus-xhigh', model: 'opus', effort: 'xhigh' },
+  ],
 }
+const fix = (file, what) => ({ kind: 'fix', findings: [{ file, what }] })
+const OUT = (file) => fix(file, 'changes outside Owns')
 
-test('the shipped file holds the numbers the owner approved (R15, D1, D7)', () => {
-  assert.deepEqual(L.rungs.map((r) => [r.step, r.model, r.corrections]), [['haiku', 'haiku', 5], ['sonnet', 'sonnet', 2], ['opus', 'opus', 1]])
-  assert.equal(L.repeatFindings, 2)
-  assert.equal(ladder.effortFor(L, 'haiku', 'first'), 'high')
-  assert.equal(ladder.effortFor(L, 'haiku', 'fix'), 'xhigh')
-  assert.equal(ladder.effortFor(L, 'sonnet', 'fix'), 'high')
-  assert.equal(ladder.effortFor(L, 'sonnet', 'rise'), 'high')
-  assert.equal(ladder.effortFor(L, 'opus', 'fix'), 'high')
-  assert.equal(ladder.effortFor(L, 'opus', 'rise'), 'high')
-})
-
-test('Haiku has five corrections, and the step rises right after the fifth (C2)', () => {
-  const answers = run([1, 2, 3, 4, 5, 6].map((n) => fix(n)))
-  assert.deepEqual(answers.slice(0, 5).map((a) => [a.next.kind, a.next.step]), Array(5).fill(['fix', 'haiku']))
-  assert.equal(answers[4].state.correctionsUsed, 5)
-  assert.deepEqual([answers[5].next.kind, answers[5].next.step, answers[5].next.cause], ['rise', 'sonnet', 'exhausted'])
-  assert.equal(answers[5].next.effort, 'high')
-  assert.equal(answers[5].next.carry, true)
-})
-
-test('Sonnet has two corrections and Opus one; after Opus there is no fourth step (C2, C5, E8)', () => {
-  const answers = run(Array.from({ length: 11 }, (_, n) => fix(n + 1)))
-  assert.equal(answers[5].next.step, 'sonnet')
-  assert.deepEqual(answers.slice(6, 8).map((a) => a.next.kind), ['fix', 'fix'])
-  assert.deepEqual([answers[8].next.kind, answers[8].next.step], ['rise', 'opus'])
-  assert.deepEqual([answers[9].next.kind, answers[9].next.step], ['fix', 'opus'])
-  assert.deepEqual([answers[10].next.kind, answers[10].next.step, answers[10].state.status], ['exhausted', null, 'exhausted'])
-  assert.equal(ladder.judge(answers[10].state, fix(12), L).accepted, false)
-})
-
-test('the same findings twice in a row rise, though corrections are left (C3, E4)', () => {
-  const [first, second] = run([fix(1), fix(1)])
-  assert.equal(first.next.kind, 'fix')
-  assert.deepEqual([second.next.kind, second.next.step, second.next.cause], ['rise', 'sonnet', 'repeated'])
-  assert.equal(second.state.correctionsUsed, 0)
-})
-
-test('the same findings in another order or on another line are the same; one more finding is not', () => {
-  assert.equal(run([fix(1, 2), fix(2, 1)])[1].next.cause, 'repeated')
-  const moved = { ...fix(1), findings: [{ ...F(1), line: 99 }] }
-  assert.equal(run([fix(1), moved])[1].next.cause, 'repeated')
-  assert.equal(run([fix(1), fix(1, 2)])[1].next.kind, 'fix')
-})
-
-test('an infeasible declaration needs a written reason; without one it is rejected and the step does not move (C3, E6)', () => {
-  const none = { kind: 'infeasible', findings: [], reason: null, fromScratch: false }
-  const blank = { ...none, reason: '   ' }
-  const [a, b, ok] = run([none, blank, { ...none, reason: 'the design is wrong for this model' }])
-  assert.equal(a.accepted, false)
-  assert.equal(b.accepted, false)
-  assert.match(a.error, /reason/)
-  assert.deepEqual([ok.accepted, ok.next.kind, ok.next.step, ok.next.cause], [true, 'rise', 'sonnet', 'infeasible'])
-})
-
-test('starting from scratch needs a reason and drops the carry; a plain rise carries the work (C4, E7)', () => {
-  const scratch = { kind: 'infeasible', findings: [], reason: 'wrong approach', fromScratch: true }
-  const [rejected, accepted] = run([{ ...scratch, reason: null }, scratch])
-  assert.equal(rejected.accepted, false)
-  assert.equal(accepted.next.carry, false)
-  assert.equal(run([{ ...scratch, fromScratch: false }])[0].next.carry, true)
-})
-
-test('a finding with no file or no what is not a correction (R2)', () => {
-  assert.equal(ladder.judge(ladder.newState(L), { ...fix(1), findings: [{ file: '', line: 1, what: 'x' }] }, L).accepted, false)
-  assert.equal(ladder.judge(ladder.newState(L), { ...fix(1), findings: [{ file: 'a.js', line: null, what: '' }] }, L).accepted, false)
-  assert.equal(ladder.judge(ladder.newState(L), { ...fix(1), findings: [] }, L).accepted, false)
-  assert.equal(ladder.judge(ladder.newState(L), { ...fix(1), findings: [{ file: 'a.js', line: null, what: 'no line is fine' }] }, L).accepted, true)
-})
-
-test('parseFinding', () => {
-  assert.deepEqual(ladder.parseFinding('src/a.js:12: missing check'), { file: 'src/a.js', line: 12, what: 'missing check' })
-  assert.deepEqual(ladder.parseFinding('src/a.js: missing check'), { file: 'src/a.js', line: null, what: 'missing check' })
-  assert.equal(ladder.parseFinding('missing check'), null)
-  assert.equal(ladder.parseFinding('src/a.js:12:'), null)
-})
-
-test('approve closes the task and nothing is accepted after it', () => {
-  const [done, after] = run([APPROVE, fix(1)])
-  assert.deepEqual([done.accepted, done.next.kind, done.state.status], [true, 'done', 'approved'])
-  assert.equal(after.accepted, false)
-})
-
-test('the caps come from the file: a ladder with one correction each rises on the second fix (C11)', (t) => {
-  const file = path.join(tempDir(t), 'ladder.json')
-  const small = { rungs: L.rungs.map((r) => ({ ...r, corrections: 1 })), repeatFindings: 3 }
-  fs.writeFileSync(file, JSON.stringify(small))
-  const loaded = ladder.loadLadder(file)
-  const [first, second] = run([fix(1), fix(2)], loaded)
-  assert.deepEqual([first.next.kind, second.next.kind, second.next.cause], ['fix', 'rise', 'exhausted'])
-  // the same findings twice, below repeatFindings 3, still spend the step's only correction: the cap rises, not the repeat rule
-  const [one, again] = run([fix(1), fix(1)], loaded)
-  assert.deepEqual([one.next.kind, again.next.kind, again.next.cause], ['fix', 'rise', 'exhausted'])
-  const roomy = { rungs: L.rungs.map((r) => ({ ...r, corrections: 2 })), repeatFindings: 3 }
-  assert.equal(run([fix(1), fix(1)], roomy)[1].next.kind, 'fix', 'repeatFindings 3 does not rise on two when the cap leaves room')
-})
-
-test('a ladder file with a missing step or a bad cap is refused', (t) => {
-  const dir = tempDir(t)
-  const bad = path.join(dir, 'bad.json')
-  fs.writeFileSync(bad, JSON.stringify({ rungs: [{ step: 'haiku', model: 'haiku', corrections: -1, effort: { first: 'high', retry: 'xhigh' } }], repeatFindings: 2 }))
-  assert.throws(() => ladder.loadLadder(bad))
-})
-
-test('stateOf folds the recorded inputs to the state the judging left', () => {
-  const inputs = [1, 2, 3, 4, 5, 6, 7].map((n) => fix(n))
-  const direct = run(inputs).at(-1).state
-  assert.deepEqual(ladder.stateOf(inputs, L), direct)
-  assert.equal(ladder.stateOf(inputs, L).step, 'sonnet')
-})
-
-test('newState and stateOf take the step a task starts on; without one, or with an unknown one, the first rung (spec 021, item 10)', () => {
-  assert.deepEqual(ladder.newState(L), ladder.newState(L, null))
-  assert.equal(ladder.newState(L, 'opus').step, 'opus')
-  assert.equal(ladder.newState(L, 'nope').step, 'haiku')
-  const inputs = [1, 2, 3].map((n) => fix(n))
-  assert.deepEqual(ladder.stateOf(inputs, L, undefined), ladder.stateOf(inputs, L))
-  assert.equal(ladder.stateOf([], L, 'sonnet').step, 'sonnet')
-  assert.equal(ladder.stateOf([], L, 'nope').step, 'haiku')
-})
-
-test('a task that starts on Opus has one correction and then is exhausted; one that starts on Sonnet has two and rises to Opus (spec 021, item 10)', () => {
-  let state = ladder.newState(L, 'opus')
-  const opusAnswers = [fix(1), fix(2)].map((v) => {
-    const answer = ladder.judge(state, v, L)
-    if (answer.accepted) state = answer.state
-    return answer
-  })
-  assert.deepEqual(opusAnswers.map((a) => [a.next.kind, a.next.step, a.next.cause]), [['fix', 'opus', 'fix'], ['exhausted', null, 'exhausted']])
-  state = ladder.newState(L, 'sonnet')
-  const sonnetAnswers = [fix(1), fix(2), fix(3)].map((v) => {
-    const answer = ladder.judge(state, v, L)
-    if (answer.accepted) state = answer.state
-    return answer
-  })
-  assert.deepEqual(sonnetAnswers.map((a) => [a.next.kind, a.next.step]), [['fix', 'sonnet'], ['fix', 'sonnet'], ['rise', 'opus']])
-})
-
-test('consecutive blocked attempts with the same normalized cause stop the unit', () => {
-  const attempt = (status, reason) => ({ kind: 'attempt', status, reason })
-  let state = ladder.newState(L)
-  let answer = ladder.judge(state, attempt('BLOCKED', ' Cannot fix\n Tests '), L)
-  assert.equal(answer.accepted, true, answer.error)
-  assert.equal(answer.state.status, 'open')
-  answer = ladder.judge(answer.state, attempt('BLOCKED', 'cannot FIX tests'), L)
-  assert.equal(answer.state.status, 'blocked')
-  assert.equal(answer.next.cause, 'blocked-same-cause')
-  assert.equal(answer.next.reason, 'cannot FIX tests')
-  state = ladder.judge(ladder.newState(L), attempt('BLOCKED', 'first'), L).state
-  state = ladder.judge(state, attempt('BLOCKED', 'second'), L).state
-  assert.equal(state.status, 'open')
-  state = ladder.judge(state, attempt('DONE', ''), L).state
-  assert.equal(ladder.judge(state, attempt('BLOCKED', 'second'), L).state.status, 'open')
-})
-
-test('blocked attempt threshold is read from the ladder file', (t) => {
-  const file = path.join(tempDir(t), 'ladder.json')
-  fs.writeFileSync(file, JSON.stringify({ ...L, repeatBlocked: 3 }))
-  const configured = ladder.loadLadder(file)
-  let state = ladder.newState(configured)
-  for (let i = 0; i < 3; i++) {
-    const answer = ladder.judge(state, { kind: 'attempt', status: 'BLOCKED', reason: 'same' }, configured)
+test('every rejected attempt rises one rung with that rung\'s effort, and the fifth leaves the task exhausted', () => {
+  let state = newState(L)
+  const seen = []
+  for (let n = 1; n <= 5; n++) {
+    const answer = judge(state, fix(`src/f${n}.js`, `missing case ${n}`), L)
+    assert.equal(answer.accepted, true)
     state = answer.state
-    assert.equal(state.status, i === 2 ? 'blocked' : 'open')
+    seen.push([answer.next.kind, answer.next.cause, answer.next.step, answer.next.effort])
   }
+  assert.deepEqual(seen, [
+    ['rise', 'failed', 'haiku-xhigh', 'xhigh'], ['rise', 'failed', 'sonnet-high', 'high'], ['rise', 'failed', 'opus-high', 'high'],
+    ['rise', 'failed', 'opus-xhigh', 'xhigh'], ['exhausted', 'exhausted', null, null],
+  ])
+  assert.deepEqual([state.status, state.attempts], ['exhausted', 5])
+  assert.equal(judge(state, { kind: 'approve' }, L).accepted, false)
 })
 
-test('the same change outside Owns twice blocks the unit as a plan error, without climbing (issue 179)', () => {
-  const outside = (file) => ({ file, line: null, what: 'fuera de Owns' })
-  const verdict = (findings) => ({ kind: 'fix', findings, reason: null, fromScratch: false })
-  const [first, second] = run([verdict([outside('tests/a.test.js')]), verdict([outside('tests/a.test.js')])])
-  assert.equal(first.next.kind, 'fix')
-  assert.deepEqual([second.next.kind, second.next.step, second.state.status], ['blocked', null, 'blocked'])
-  assert.equal(second.next.cause, 'blocked-outside-owns')
-  assert.match(second.next.reason, /tests\/a\.test\.js/)
-  assert.match(second.next.reason, /plan error/)
-  assert.match(second.next.reason, /missing from Owns/)
-  assert.equal(ladder.judge(second.state, fix(1), L).accepted, false, 'nothing is accepted after the block')
+test('the same findings twice are two rises, not a block: there is no rise by repeated findings any more', () => {
+  const a = judge(newState(L), fix('src/a.js', 'missing case'), L)
+  const b = judge(a.state, fix('src/a.js', 'missing case'), L)
+  assert.deepEqual([a.next.step, b.next.step, b.next.cause], ['haiku-xhigh', 'sonnet-high', 'failed'])
 })
 
-test('the outside-Owns block reads the same way however the verdict writes it, in either language (issue 179)', () => {
-  const verdict = (findings) => ({ kind: 'fix', findings, reason: null, fromScratch: false })
-  const variants = [
-    [{ file: 'tests/a.test.js', line: 3, what: 'changes outside Owns' }],
-    [{ file: 'tests/a.test.js', line: null, what: 'Changes   Outside Owns: tests/a.test.js' }],
-  ]
-  for (const findings of variants) {
-    const [, second] = run([verdict(findings), verdict(findings)])
-    assert.equal(second.next.kind, 'blocked', JSON.stringify(findings))
-    assert.equal(second.next.cause, 'blocked-outside-owns')
+test('infeasible with a reason rises one rung; without a reason it is refused', () => {
+  assert.equal(judge(newState(L), { kind: 'infeasible' }, L).accepted, false)
+  const answer = judge(newState(L), { kind: 'infeasible', reason: 'the brief asks for a file nobody owns' }, L)
+  assert.deepEqual([answer.next.kind, answer.next.cause, answer.next.step], ['rise', 'infeasible', 'haiku-xhigh'])
+})
+
+test('the same change outside Owns twice blocks the task on the rung it is on, across a rise', () => {
+  const first = judge(newState(L), OUT('tests/x.test.js'), L)
+  assert.equal(first.next.kind, 'rise')
+  const second = judge(first.state, OUT('tests/x.test.js'), L)
+  assert.deepEqual([second.next.kind, second.next.cause, second.state.status, second.state.step], ['blocked', 'blocked-outside-owns', 'blocked', 'haiku-xhigh'])
+  assert.match(second.next.reason, /outside Owns/)
+})
+
+test('a change outside Owns in two different files is two rises, and the repeat count is data', () => {
+  const first = judge(newState(L), OUT('tests/x.test.js'), L)
+  assert.equal(judge(first.state, OUT('tests/y.test.js'), L).next.kind, 'rise')
+  const loose = { ...L, repeatBlocked: 3 }
+  const a = judge(newState(loose), OUT('tests/x.test.js'), loose)
+  const b = judge(a.state, OUT('tests/x.test.js'), loose)
+  assert.equal(b.next.kind, 'rise')
+  assert.equal(judge(b.state, OUT('tests/x.test.js'), loose).next.kind, 'blocked')
+})
+
+test('the same reason in two BLOCKED attempt reports blocks the task, with a rise between them', () => {
+  const attempt = { kind: 'attempt', status: 'BLOCKED', reason: 'the test I cannot touch fails' }
+  const first = judge(newState(L), attempt, L)
+  assert.equal(first.next, null)
+  const risen = judge(first.state, fix('src/a.js', 'missing case'), L)
+  assert.equal(risen.next.step, 'haiku-xhigh')
+  const second = judge(risen.state, attempt, L)
+  assert.deepEqual([second.next.kind, second.next.cause, second.state.status, second.state.step], ['blocked', 'blocked-same-cause', 'blocked', 'haiku-xhigh'])
+})
+
+test('the effort of a rung is the rung\'s, and stateOf folds the recorded verdicts from the rung a task starts on', () => {
+  assert.equal(effortFor(L, 'sonnet-high'), 'high')
+  assert.throws(() => effortFor(L, 'nope'), /unknown step nope/)
+  const state = stateOf([fix('src/a.js', 'one'), fix('src/b.js', 'two')], L, 'sonnet-high')
+  assert.deepEqual([state.step, state.attempts, state.status], ['opus-xhigh', 2, 'open'])
+})
+
+test('loadLadder reads the stored ladder and refuses a rung with no effort, an effort that does not exist and a repeated step', () => {
+  const shipped = loadLadder()
+  assert.deepEqual(shipped.rungs.map((r) => r.step), ['haiku-high', 'haiku-xhigh', 'sonnet-high', 'opus-high', 'opus-xhigh'])
+  assert.deepEqual([shipped.repeatBlocked, shipped.supervisorFloor, shipped.law.minJumpPoints], [2, 3, 2])
+  const fs = require('node:fs')
+  const os = require('node:os')
+  const path = require('node:path')
+  const write = (data) => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aether-ladder-')), 'ladder.json')
+    fs.writeFileSync(file, JSON.stringify(data))
+    return file
   }
-})
-
-test('the same outside-Owns file rephrased between attempts still blocks (issue 179)', () => {
-  const verdict = (findings) => ({ kind: 'fix', findings, reason: null, fromScratch: false })
-  const spanish = [{ file: 'tests/a.test.js', line: null, what: 'fuera de Owns' }]
-  const english = [{ file: 'tests/a.test.js', line: 3, what: 'changes outside Owns: tests/a.test.js' }]
-  for (const [first, second] of [[spanish, english], [english, spanish]]) {
-    const [one, two] = run([verdict(first), verdict(second)])
-    assert.equal(one.next.kind, 'fix')
-    assert.deepEqual([two.next.kind, two.next.cause, two.state.status], ['blocked', 'blocked-outside-owns', 'blocked'])
-  }
-})
-
-test('two different outside-Owns files do not block, and a repeated mixed verdict still rises (issue 179)', () => {
-  const outside = (file) => ({ file, line: null, what: 'fuera de Owns' })
-  const verdict = (findings) => ({ kind: 'fix', findings, reason: null, fromScratch: false })
-  const [, second] = run([verdict([outside('tests/a.test.js')]), verdict([outside('tests/b.test.js')])])
-  assert.equal(second.next.kind, 'fix')
-  assert.equal(second.next.cause, 'fix')
-  const mixed = [outside('tests/a.test.js'), F(1)]
-  const [, risen] = run([verdict(mixed), verdict(mixed)])
-  assert.deepEqual([risen.next.kind, risen.next.cause], ['rise', 'repeated'])
-})
-
-test('the outside-Owns repeat count comes from the ladder file, not from code (issue 179)', (t) => {
-  const file = path.join(tempDir(t), 'ladder.json')
-  fs.writeFileSync(file, JSON.stringify({ ...L, repeatFindings: 3 }))
-  const configured = ladder.loadLadder(file)
-  const outside = () => ({ file: 'tests/a.test.js', line: null, what: 'fuera de Owns' })
-  const verdict = () => ({ kind: 'fix', findings: [outside()], reason: null, fromScratch: false })
-  let state = ladder.newState(configured)
-  for (let i = 0; i < 2; i++) {
-    const answer = ladder.judge(state, verdict(), configured)
-    state = answer.state
-    assert.equal(answer.next.kind, 'fix', `attempt ${i + 1} is still a correction with repeatFindings 3`)
-  }
-  const blocked = ladder.judge(state, verdict(), configured)
-  assert.equal(blocked.next.kind, 'blocked')
-  assert.equal(blocked.next.cause, 'blocked-outside-owns')
-})
-
-test('blocked reports survive review verdicts and a rung rise, but empty causes reset the streak', () => {
-  const blocked = { kind: 'attempt', status: 'BLOCKED', reason: 'outside owns' }
-  let state = ladder.judge(ladder.newState(L), blocked, L).state
-  state = ladder.judge(state, { kind: 'infeasible', reason: 'try next rung' }, L).state
-  const stopped = ladder.judge(state, blocked, L)
-  assert.equal(stopped.next.cause, 'blocked-same-cause')
-  assert.equal(stopped.state.attempts, 2)
-  assert.equal(ladder.judge(stopped.state, APPROVE, L).accepted, false)
-  state = ladder.judge(ladder.newState(L), blocked, L).state
-  state = ladder.judge(state, { ...blocked, reason: '   ' }, L).state
-  assert.equal(ladder.judge(state, blocked, L).state.status, 'open')
-})
-
-test('repeatBlocked defaults to two and rejects invalid configured counts', (t) => {
-  const file = path.join(tempDir(t), 'ladder.json')
-  const { repeatBlocked, ...legacy } = L
-  fs.writeFileSync(file, JSON.stringify(legacy))
-  assert.equal(ladder.loadLadder(file).repeatBlocked, 2)
-  for (const invalid of [0, -1, 1.5, '2']) {
-    fs.writeFileSync(file, JSON.stringify({ ...L, repeatBlocked: invalid }))
-    assert.throws(() => ladder.loadLadder(file), /repeatBlocked/)
-  }
+  assert.throws(() => loadLadder(write({ ...L, rungs: [{ step: 'a', model: 'a' }] })), /ladder: rungs\[0\]/)
+  assert.throws(() => loadLadder(write({ ...L, rungs: [{ step: 'a', model: 'a', effort: 'huge' }] })), /effort/)
+  assert.throws(() => loadLadder(write({ ...L, rungs: [L.rungs[0], L.rungs[0]] })), /same step/)
+  assert.throws(() => loadLadder(write({ ...L, supervisorFloor: 0 })), /supervisorFloor/)
 })

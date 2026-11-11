@@ -7,11 +7,10 @@ const path = require('node:path')
 const { WT_BIN, makeRepo, compile, runBin } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
-const { loadLadder, effortFor, GATE_CUT } = require('../plugins/aether/lib/ladder.js')
+const { loadLadder, GATE_CUT } = require('../plugins/aether/lib/ladder.js')
 const { ladderCommand, resetSpent } = require('../plugins/aether/lib/wt-ladder.js')
 
 const L = loadLadder()
-const [HAIKU, SONNET, OPUS] = L.rungs
 
 function setup(t) {
   const repo = makeRepo(t)
@@ -31,42 +30,26 @@ const fix = (what) => ({ findings: [{ file: 'src/t1/a.js', line: 3, what }] })
 const judged = (s, verdict, body, opts = {}, id = 'task-1') => ladderCommand(s.repo.dir, s.args.runId, id, { verdict, ...carry(s.args, id, body), ...opts })
 const view = (s, id = 'task-1', opts = {}) => ladderCommand(s.repo.dir, s.args.runId, id, opts)
 
-test('a unit with no state starts on the first rung, and reading it creates its state file', (t) => {
+test('a unit with no state starts on the first rung, and its view names the rung, its place and its supervisor', (t) => {
   const s = setup(t)
   assert.deepEqual(view(s), {
-    task: 'task-1', status: 'open', step: HAIKU.step, model: HAIKU.model, effort: HAIKU.effort.first,
-    kind: 'first', cause: null, attempts: 0, correctionsUsed: 0, corrections: HAIKU.corrections,
+    task: 'task-1', status: 'open', step: 'haiku-high', model: 'haiku', effort: 'high', supervisor: { model: 'sonnet', effort: 'high' },
+    position: 1, of: 5, kind: 'first', cause: null, attempts: 0,
   })
   assert.ok(fs.existsSync(path.join(s.args.runDir, 'ladder', 'task-1.json')))
 })
 
-test('a fix is a correction on the same rung, at the rung\'s retry effort', (t) => {
+test('every rejected attempt moves the unit one rung up with the supervisor of that rung, and the fifth leaves it exhausted', (t) => {
   const s = setup(t)
-  const answer = judged(s, 'fix', fix('missing case'))
-  assert.equal(answer.accepted, true)
-  assert.deepEqual([answer.step, answer.kind, answer.effort, answer.correctionsUsed, answer.attempts], [HAIKU.step, 'fix', HAIKU.effort.retry, 1, 1])
-})
-
-test('the same findings as often as the ladder says rise to the next rung', (t) => {
-  const s = setup(t)
-  let answer
-  for (let i = 0; i < L.repeatFindings; i++) answer = judged(s, 'fix', fix('missing case'))
-  assert.deepEqual([answer.step, answer.kind, answer.cause, answer.effort], [SONNET.step, 'rise', 'repeated', effortFor(L, SONNET.step, 'rise')])
-})
-
-test('two gate cuts in a row are two corrections on the same rung, not a repeat (#112)', (t) => {
-  const s = setup(t)
-  const cut = { findings: [{ ...GATE_CUT }] }
-  const first = judged(s, 'fix', cut)
-  const second = judged(s, 'fix', cut)
-  assert.deepEqual([first.kind, second.kind, second.step, second.cause, second.correctionsUsed], ['fix', 'fix', HAIKU.step, 'fix', 2])
-})
-
-test('the corrections of a rung are spent, then the next fix rises', (t) => {
-  const s = setup(t)
-  for (let i = 1; i <= HAIKU.corrections; i++) assert.equal(judged(s, 'fix', fix(`gap ${i}`)).step, HAIKU.step)
-  const answer = judged(s, 'fix', fix('one more gap'))
-  assert.deepEqual([answer.step, answer.kind, answer.cause], [SONNET.step, 'rise', 'exhausted'])
+  const seen = []
+  for (let n = 1; n <= 5; n++) {
+    const a = judged(s, 'fix', fix(`missing case ${n}`))
+    seen.push([a.step, a.effort, a.supervisor && `${a.supervisor.model} ${a.supervisor.effort}`, a.status])
+  }
+  assert.deepEqual(seen, [
+    ['haiku-xhigh', 'xhigh', 'sonnet high', 'open'], ['sonnet-high', 'high', 'opus high', 'open'], ['opus-high', 'high', 'opus xhigh', 'open'],
+    ['opus-xhigh', 'xhigh', 'opus xhigh', 'open'], [null, null, null, 'exhausted'],
+  ])
 })
 
 test('infeasible needs a reason: with one it rises, without one the verdict is rejected and nothing changes', (t) => {
@@ -77,13 +60,13 @@ test('infeasible needs a reason: with one it rises, without one the verdict is r
   assert.match(rejected.rejection, /reason/)
   assert.deepEqual(view(s), before)
   const answer = judged(s, 'infeasible', { reason: 'beyond this model' })
-  assert.deepEqual([answer.accepted, answer.step, answer.cause], [true, SONNET.step, 'infeasible'])
+  assert.deepEqual([answer.accepted, answer.step, answer.cause], [true, 'haiku-xhigh', 'infeasible'])
 })
 
 test('approve closes the unit, and no later verdict is accepted', (t) => {
   const s = setup(t)
   const done = judged(s, 'approve', {})
-  assert.deepEqual([done.accepted, done.status, done.kind, done.step, done.model, done.effort], [true, 'approved', 'done', null, null, null])
+  assert.deepEqual([done.accepted, done.status, done.kind, done.step, done.model, done.effort, done.supervisor, done.position], [true, 'approved', 'done', null, null, null, null, null])
   const late = judged(s, 'fix', fix('too late'))
   assert.equal(late.accepted, false)
   assert.match(late.rejection, /approved/)
@@ -94,7 +77,7 @@ test('an infeasible declaration on the last rung exhausts the ladder', (t) => {
   let answer
   for (let i = 0; i < L.rungs.length; i++) answer = judged(s, 'infeasible', { reason: `too hard ${i}` })
   assert.deepEqual([answer.status, answer.kind, answer.step, answer.model], ['exhausted', 'exhausted', null, null])
-  assert.equal(L.rungs[L.rungs.length - 1].step, OPUS.step)
+  assert.equal(L.rungs[L.rungs.length - 1].step, 'opus-xhigh')
 })
 
 test('the state is on disk: another process reads the rung the unit reached, and the units are independent', (t) => {
@@ -102,8 +85,8 @@ test('the state is on disk: another process reads the rung the unit reached, and
   judged(s, 'fix', fix('gap 1'))
   const bin = runBin(WT_BIN, ['ladder', s.args.runId, 'task-1'], s.repo.dir)
   assert.equal(bin.status, 0, bin.stdout)
-  assert.deepEqual([bin.json.step, bin.json.kind, bin.json.effort, bin.json.correctionsUsed], [HAIKU.step, 'fix', HAIKU.effort.retry, 1])
-  assert.deepEqual([view(s, 'task-2').kind, view(s, 'task-2').correctionsUsed], ['first', 0])
+  assert.deepEqual([bin.json.step, bin.json.kind, bin.json.effort, bin.json.attempts], ['haiku-xhigh', 'rise', 'xhigh', 1])
+  assert.deepEqual([view(s, 'task-2').kind, view(s, 'task-2').attempts], ['first', 0])
 })
 
 test('the bin applies a verdict from its payload file', (t) => {
@@ -111,7 +94,7 @@ test('the bin applies a verdict from its payload file', (t) => {
   const { payload, digest } = carry(s.args, 'task-1', fix('gap'))
   const r = runBin(WT_BIN, ['ladder', s.args.runId, 'task-1', '--verdict', 'fix', '--payload', payload, '--digest', digest], s.repo.dir)
   assert.equal(r.status, 0, r.stdout)
-  assert.deepEqual([r.json.accepted, r.json.kind, r.json.correctionsUsed], [true, 'fix', 1])
+  assert.deepEqual([r.json.accepted, r.json.kind, r.json.attempts], [true, 'rise', 1])
 })
 
 test('a wrong digest, another path, an unknown verdict or a missing file is an error, and nothing is read or changed', (t) => {
@@ -133,7 +116,7 @@ test('a wrong digest, another path, an unknown verdict or a missing file is an e
   fs.rmSync(payload)
   r = run(['--verdict', 'fix', '--payload', payload, '--digest', digest])
   assert.equal(r.status, 1)
-  assert.equal(view(s).correctionsUsed, 0)
+  assert.equal(view(s).attempts, 0)
 })
 
 test('a task that is not in the run is an error', (t) => {
@@ -141,22 +124,19 @@ test('a task that is not in the run is an error', (t) => {
   assert.throws(() => view(s, 'task-9'), /task-9/)
 })
 
-test('a number changed in the ladder the verb is given changes its answer, with no code changed', (t) => {
+test('a shorter ladder given in options changes the rungs of the unit', (t) => {
+  const short = { ...L, rungs: L.rungs.slice(3) }
   const s = setup(t)
-  const tolerant = { ...L, repeatFindings: L.repeatFindings + 1 }
-  let answer
-  for (let i = 0; i < L.repeatFindings; i++) answer = judged(s, 'fix', fix('same'), { ladder: tolerant })
-  assert.equal(answer.step, HAIKU.step, 'the same findings do not rise yet')
-  const tight = { ...L, rungs: L.rungs.map((rung, i) => (i === 0 ? { ...rung, corrections: 1 } : rung)) }
-  const s2 = setup(t)
-  judged(s2, 'fix', fix('a'), { ladder: tight })
-  assert.equal(judged(s2, 'fix', fix('b'), { ladder: tight }).step, SONNET.step)
+  const a = judged(s, 'fix', fix('a'), { ladder: short })
+  assert.equal(a.step, 'opus-xhigh')
+  const b = judged(s, 'fix', fix('b'), { ladder: short })
+  assert.equal(b.status, 'exhausted')
 })
 
 test('a relaunch also gives a new ladder to a unit that was blocked twice for the same cause, and keeps the old state (issue 135)', (t) => {
   const { repo, args } = setup(t)
-  const view = (task) => ladderCommand(repo.dir, args.runId, task)
-  view('task-1')
+  const viewTask = (task) => ladderCommand(repo.dir, args.runId, task)
+  viewTask('task-1')
   const dir = path.join(args.runDir, 'ladder')
   const blocked = JSON.parse(fs.readFileSync(path.join(dir, 'task-1.json'), 'utf8'))
   blocked.state.status = 'blocked'
@@ -164,22 +144,22 @@ test('a relaunch also gives a new ladder to a unit that was blocked twice for th
   fs.writeFileSync(path.join(dir, 'task-1.json'), JSON.stringify(blocked))
   assert.deepEqual(resetSpent(args.runDir, ['task-1']), ['task-1'])
   assert.deepEqual(fs.readdirSync(dir).sort(), ['task-1.spent-1.json'])
-  assert.equal(view('task-1').model, HAIKU.step, 'the unit starts again on the first rung')
+  assert.equal(viewTask('task-1').model, 'haiku', 'the unit starts again on the first rung')
 })
 
 test('a relaunch gives a unit with a spent ladder a new one and keeps the old state; an open ladder is never touched', (t) => {
   const { repo, args } = setup(t)
-  const view = (task) => ladderCommand(repo.dir, args.runId, task)
-  view('task-1')
-  view('task-2')
+  const viewTask = (task) => ladderCommand(repo.dir, args.runId, task)
+  viewTask('task-1')
+  viewTask('task-2')
   const dir = path.join(args.runDir, 'ladder')
   const spent = JSON.parse(fs.readFileSync(path.join(dir, 'task-1.json'), 'utf8'))
   spent.state.status = 'exhausted'
   fs.writeFileSync(path.join(dir, 'task-1.json'), JSON.stringify(spent))
   assert.deepEqual(resetSpent(args.runDir, ['task-1', 'task-2', 'task-9']), ['task-1'])
   assert.deepEqual(fs.readdirSync(dir).sort(), ['task-1.spent-1.json', 'task-2.json'])
-  assert.equal(view('task-1').model, HAIKU.step, 'the unit starts again on the first rung')
-  assert.equal(view('task-1').attempts, 0)
+  assert.equal(viewTask('task-1').model, 'haiku', 'the unit starts again on the first rung')
+  assert.equal(viewTask('task-1').attempts, 0)
   // A second spent ladder keeps its own copy.
   const again = JSON.parse(fs.readFileSync(path.join(dir, 'task-1.json'), 'utf8'))
   again.state.status = 'exhausted'

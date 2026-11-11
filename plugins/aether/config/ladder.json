@@ -1,9 +1,12 @@
 {
+  "law": { "candidateEfforts": ["high", "xhigh"], "minJumpPoints": 2 },
+  "supervisorFloor": 3,
+  "repeatBlocked": 2,
   "rungs": [
-    { "step": "haiku", "model": "haiku", "corrections": 5, "effort": { "first": "high", "retry": "xhigh" } },
-    { "step": "sonnet", "model": "sonnet", "corrections": 2, "effort": { "first": "high", "retry": "high" } },
-    { "step": "opus", "model": "opus", "corrections": 1, "effort": { "first": "high", "retry": "high" } }
-  ],
-  "repeatFindings": 2,
-  "repeatBlocked": 2
+    { "step": "haiku-high", "model": "haiku", "effort": "high" },
+    { "step": "haiku-xhigh", "model": "haiku", "effort": "xhigh" },
+    { "step": "sonnet-high", "model": "sonnet", "effort": "high" },
+    { "step": "opus-high", "model": "opus", "effort": "high" },
+    { "step": "opus-xhigh", "model": "opus", "effort": "xhigh" }
+  ]
 }
