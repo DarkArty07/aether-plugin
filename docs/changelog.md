@@ -8,6 +8,12 @@ order: 31
 
 ## Status
 
+Unreleased: the Claude model ladder is computed by the Pareto frontier of quality and cost over Artificial Analysis figures, delegates and swarm units climb one rung per rejected attempt automatically, and the supervisor floor ensures the supervisor is never weaker than the author (issues 194 and 233, spec 032, decision A121).
+- **The Pareto ladder (decision A121).** The ladder of Claude models is derived from a fixed law over Artificial Analysis figures rather than written by hand. Today it has five rungs (Haiku `high`, Haiku `xhigh`, Sonnet `high`, Opus `high`, and Opus `xhigh`).
+- **Autonomous climb and blocking.** Units climb one rung per attempt on failure; repeated causes that do not depend on the model block the unit instead of wasting higher rungs.
+- **Supervisor floor.** The supervisor model is never weaker than the author.
+- **Model page refresh.** `scripts/refresh-lanes.js` reads model pages without an API key to update Claude code figures in `config/pairs.json`, without touching intelligence or cost per task, and never overwrites the stored ladder automatically.
+
 Version 0.36.0: the Lead's behaviour is held by the system instead of by its memory: a notice of delegate results without a verdict, refusal at the ceilings, an approved plan to open an interactive run and a notice of the Lead's own cycle, with lighter rules that arrive in any order (issues 192, 199, 200, 204, 214 and 217, decisions A117 to A120). What changed since 0.35.0:
 - **Delegate results without a verdict (issue 192, decision A117).** At `Stop`, `aether-continuity` names once each delegate result that arrived and has no verdict, and `aether-report --delegates` lists them under `unverdicted`. An editing attempt on Claude now leaves an `ended` line in the delegate log, so its end counts as arrived.
 - **The ceilings refuse by themselves (decision A118).** `aether-delegate begin`, `aether-plan compile` and `/aether:design` refuse new work when the open run has passed its hours or dollars ceiling or is paused by the quota brake; the refusal of a quota pause says the run is paused, not ended. The skills no longer ask for `aether-autonomy status` before each launch.

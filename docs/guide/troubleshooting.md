@@ -184,7 +184,7 @@ A dry run (`--dry-run`, or `-n` for `git push`) is not irreversible and is not r
 - **`the verdict must be approve, fix or infeasible`.** `--verdict` takes one of those three words.
 - **`unknown task`.** The id has no launch in the log: the id of the verdict must be the one of the `AETHER-TASK:` line, or the one the system gave the call in its note.
 - **`the task is approved` or `the task is exhausted`.** The task is closed: no verdict is accepted after it, and new work takes a new id.
-- **It does not climb.** A step climbs when its corrections are spent, when the same findings come back twice in a row, or on a declaration of infeasible with a reason. Findings that differ each time spend a correction each; `plugins/aether/config/ladder.json` holds how many.
+- **It does not climb.** When a result is rejected, the task rises one rung on the ladder unless it is blocked: the same cause repeated twice in a row (such as files outside `Owns` or an external gate failure) blocks the task on its rung instead of climbing, to avoid spending stronger models on a bad plan. A task can also rise on a declaration of infeasible with a reason.
 - **A model the Lead asked for was not used.** The system holds the step: what a call passes as model or effort is ignored, and the `launch` entry of the log keeps it.
 
 **What to do.** Fix the verdict as the error says and send it again. `aether-report --delegates` shows, per step, what happened to each task, and `<dataDir>/delegates/log.jsonl` holds every entry (see [Data](maintenance.md#data)).

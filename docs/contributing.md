@@ -23,7 +23,7 @@ That loads the tree for one session, in place of the installed release; with the
 
 `npm test` runs the bins, the libraries, the workflow scenarios and the documentation facts; it does not run the mod. `npm run test:mod` runs `claude plugin test plugins/aether`: the mod, with the usage meter, ops and delegation, on the test engine with a simulated model.
 
-Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens. `scripts/refresh-lanes.js` updates the lane table from Artificial Analysis; it reads `ARTIFICIAL_ANALYSIS_API_KEY`, or else the `.env` file its header comment names.
+Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens. `node scripts/refresh-lanes.js [--write]` reads Artificial Analysis model pages without an API key, only when the owner asks, writes only the code figures of the Claude rows of `config/pairs.json`, displays the recalculated ladder and does not save it; `scripts/build-models-index.js` is the only code that asks the API with its key. The intelligence and cost per task of `config/pairs.json` will be refreshed in part 2.
 
 Take the number of a new `docs/decisions.md` entry when the change is integrated, not when the branch starts: if `main` moved since and the number is taken, renumber to the next free number before merging. `tests/docs-decisions.test.js` fails on a repeated number. A decision or issue about a change to a documented concept quotes the owner's decisive words; an issue about a third-party service gives the version, the date and the source of the fact it rests on.
 

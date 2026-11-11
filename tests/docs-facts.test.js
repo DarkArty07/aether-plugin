@@ -598,9 +598,9 @@ test('R15: the pages describe the design flow and the brakes', () => {
   for (const text of ['Complexity', 'NEEDS CLARIFICATION']) assert.ok(read('docs/methodology.md').includes(text), text)
 })
 
-test('R15: the decisions A50 to A120 are recorded in docs/decisions.md with the owner\'s words where the card had them', () => {
+test('R15: the decisions A50 to A121 are recorded in docs/decisions.md with the owner\'s words where the card had them', () => {
   const decisions = read('docs/decisions.md')
-  const LAST_DECISION = 120
+  const LAST_DECISION = 121
   for (let n = 50; n <= LAST_DECISION; n++) assert.match(decisions, new RegExp(`^\\| A${n} \\|`, 'm'), `A${n}`)
   const line = (n) => decisions.split('\n').find((row) => row.startsWith(`| A${n} |`))
   assert.ok(/Muse Code/.test(line(64)) && /fifth lane harness/.test(line(64)))
@@ -829,7 +829,7 @@ test('decisions A117 to A120 are recorded with the owner quotes, the index names
     assert.ok(rowOf(id).includes(quote), `${id} quotes the owner: ${quote}`)
   }
   assert.match(decisions, /about five tool calls/)
-  assert.match(read('docs/index.md'), /A1–A120/)
+  assert.match(read('docs/index.md'), /A1–A121/)
 })
 
 test('the canonical countable rule is identical across the six places of R6, CLAUDE.md says three parts, and the components page measures PostToolUse on reads (R6, R8, R12)', () => {

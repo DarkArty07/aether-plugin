@@ -13,8 +13,7 @@ test('the methodology says the effort of a task defaults to high and how a retry
   const text = read('docs/methodology.md')
   assert.doesNotMatch(text, /The effort defaults to `xhigh`/)
   assert.match(text, /The effort defaults to `high`/)
-  assert.match(text, /a correction runs at `xhigh` on Haiku and at `high` on Sonnet and Opus/)
-  assert.match(text, /every attempt on a model the unit moved up to runs at `high`/)
+  assert.match(text, /a failed attempt moves the unit up one rung of the ladder, and each rung runs at its own effort/i)
   assert.match(text, /models-by-role\.md/)
 })
 
