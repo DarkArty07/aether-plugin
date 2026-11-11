@@ -86,6 +86,40 @@ test('a pair that is not up by the minimum jump in both figures does not make a 
     ['haiku-5 high', 'haiku-5 xhigh', 'sonnet-5b high', 'sonnet-5 high', 'opus-6 high', 'opus-6 xhigh'])
 })
 
+test('replacement compares repeatedly against earlier kept rungs until the minimum jump holds', () => {
+  // Equal costs keep all rows on the frontier; the last row then replaces two
+  // rungs because its code is lower, before qualifying against the first rung.
+  const table = [
+    row('alpha', 'high', 8, 1, 5, 1),
+    row('beta', 'high', 10, 1, 10, 1),
+    row('gamma', 'high', 12, 1, 12, 1),
+    row('delta', 'high', 13, 1, 9, 1),
+  ]
+  assert.deepEqual(names(ladderFrom(table.slice(0, 3), LAW)), ['alpha high', 'beta high', 'gamma high'])
+  assert.deepEqual(names(ladderFrom(table, LAW)), ['alpha high', 'delta high'])
+  // Recomparison must also work when every earlier rung is replaced.
+  assert.deepEqual(names(ladderFrom(table.slice(1), LAW)), ['delta high'])
+})
+
+test('equal cost prefers higher intelligence when the minimum jump is not met', () => {
+  const table = [row('alpha', 'high', 10, 1, 20, 1), row('beta', 'high', 11, 1, 21, 1)]
+  assert.deepEqual(names(ladderFrom(table, LAW)), ['beta high'])
+  assert.deepEqual(names(ladderFrom([...table].reverse(), LAW)), ['beta high'])
+})
+
+test('integer hundredths make an exact 2.00 jump qualify in both figures', () => {
+  const first = row('alpha', 'high', 10.104, 1, 20.004, 1)
+  const second = row('beta', 'high', 12.103, 2, 22.003, 2)
+  // Raw subtraction is below two; rounding each figure to hundredths gives 2.00.
+  assert.ok(second.intelligence - first.intelligence < 2)
+  assert.ok(second.code - first.code < 2)
+  assert.deepEqual(names(ladderFrom([first, second], LAW)), ['alpha high', 'beta high'])
+  for (const field of ['intelligence', 'code']) {
+    const below = { ...second, [field]: first[field] + 1.99 }
+    assert.deepEqual(names(ladderFrom([first, below], LAW)), ['alpha high'], field)
+  }
+})
+
 test('a pair that goes up in one figure and down in the other is not a step above: the cheaper stays', () => {
   const sideways = row('zeta', 'high', 45, 1.5, 30, 0.5)
   assert.deepEqual(names(ladderFrom([...BASE, ...OPUS_6, sideways], LAW)), names(ladderFrom([...BASE, ...OPUS_6], LAW)))
