@@ -57,7 +57,7 @@ Create project skills in `.agents/skills/` when errors repeat, the project has a
 
 The session-start notice keeps continuity; if the previous session was cut off, offer `claude --resume <id>`. Keep release/project state out of Claude memory.
 
-`AGENTS.md` is the map; `CLAUDE.md` is `@AGENTS.md` plus Claude-only instructions. If session start notes disorder, offer `aether:tidy`; moving/deleting needs approval. `.aether/README.md` maps `.aether/`; use `.aether/tmp/` for temporary files and `.aether/exam/` for exams.
+`AGENTS.md` is the map; `CLAUDE.md` is `@AGENTS.md` plus Claude-only instructions. If session start notes disorder, offer `aether:tidy`; moving/deleting needs approval, except inside `.aether/`, which Aether tidies by itself at session start. `.aether/README.md` maps `.aether/`; use `.aether/tmp/` for temporary files and `.aether/exam/` for exams.
 
 ## Understanding the intent
 
