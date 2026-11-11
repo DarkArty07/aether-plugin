@@ -23,11 +23,11 @@ test('decision A121 is recorded with the owner\'s words, and the index names the
   assert.match(read('docs/index.md'), /A1–A121/)
 })
 
-test('the changelog has an unreleased entry about the ladder and the version stays 0.36.0 (R16)', () => {
+test('the changelog has the Pareto ladder entry for version 0.37.0 (R16)', () => {
   const changelog = read('docs/changelog.md')
   assert.match(changelog, /Pareto/)
-  assert.match(changelog.split('\n').find((line) => /^Version \d/.test(line)), /^Version 0\.36\.0:/)
-  assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.36.0')
+  assert.match(changelog.split('\n').find((line) => /^Version \d/.test(line)), /^Version 0\.37\.0:/)
+  assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.37.0')
   assert.match(changelog, /AETHER_PAIRS_CONFIG/)
   assert.match(changelog, /codeCostPerTaskUsd/)
   assert.match(changelog, /codeMinutesPerTask/)
