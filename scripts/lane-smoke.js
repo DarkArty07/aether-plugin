@@ -48,7 +48,7 @@ const EDIT_PROMPT = [
   '})',
   '',
   'Then run: node --test probe.test.js',
-  'Then answer with only this JSON object and nothing else: {"status":"done","file":"probe.test.js","tests":"pass"} when the test passed, or {"status":"done","file":"probe.test.js","tests":"fail","detail":"<the error the test printed>"} when it did not. Do not change the test to make it pass.',
+  'Then answer with only this JSON object and nothing else: {"status":"done","file":"probe.test.js","tests":"pass","detail":""} when the test passed, or {"status":"done","file":"probe.test.js","tests":"fail","detail":"<the error the test printed>"} when it did not. Do not change the test to make it pass.',
 ].join('\n')
 const EDIT_PROBE = 'probe.test.js'
 const EDIT_SCHEMA = {
@@ -59,7 +59,10 @@ const EDIT_SCHEMA = {
     tests: { type: 'string' },
     detail: { type: 'string' },
   },
-  required: ['status', 'file', 'tests'],
+  // Every property is required: Codex's structured output refuses a schema with an optional one (the first real call
+  // of 2026-11-11 answered 400, «'schema.required' is required to include every key in properties. Missing 'detail'»).
+  // A passing probe answers with an empty detail.
+  required: ['status', 'file', 'tests', 'detail'],
   additionalProperties: false,
 }
 
@@ -134,7 +137,7 @@ function main(argv) {
     // The same test, run here outside the sandbox: a failure here is a wrong test, not a refusing sandbox.
     const outside = spawnSync(process.execPath, ['--test', EDIT_PROBE], { cwd: work, encoding: 'utf8', timeout: TIMEOUT_MS })
     const report = { ok, harness: args.harness, model, effort: args.effort, seconds, clean: parsed.clean, reason: parsed.reason, structured: parsed.structured, usage: parsed.usage, edits: true, tests: answer.tests ?? null }
-    if (answer.detail !== undefined) report.detail = answer.detail
+    if (answer.detail) report.detail = answer.detail
     report.testsOutside = outside.status === 0 ? 'pass' : 'fail'
     report.networkOpen = argvOfCall.some((arg) => arg.includes('network_access=true'))
     report.dir = dir

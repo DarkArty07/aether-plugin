@@ -53,7 +53,7 @@ function printed(r) {
 
 test('--edits: a probe that runs its child process passes, the report says so, and the call is ok (issue 189)', (t) => {
   const { env, log } = setup(t, {
-    answer: '{"status":"done","file":"probe.test.js","tests":"pass"}',
+    answer: '{"status":"done","file":"probe.test.js","tests":"pass","detail":""}',
     files: { 'probe.test.js': PROBE },
   })
   const r = spawnSync(process.execPath, [SMOKE, 'codex', 'gpt-6-luna', '--edits'], { env, encoding: 'utf8' })
@@ -86,7 +86,7 @@ test('--edits: a probe the answer marks as failed exits 1 and the report carries
 
 test('--edits: an answer of pass without the probe file is not ok', (t) => {
   const { env } = setup(t, {
-    answer: '{"status":"done","file":"probe.test.js","tests":"pass"}',
+    answer: '{"status":"done","file":"probe.test.js","tests":"pass","detail":""}',
   })
   const r = spawnSync(process.execPath, [SMOKE, 'codex', 'gpt-6-luna', '--edits'], { env, encoding: 'utf8' })
   assert.equal(r.status, 1, r.stdout + r.stderr)
