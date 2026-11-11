@@ -223,6 +223,6 @@ Before one, run `aether-autonomy check <class>`.
 - Read with `aether-autonomy list`. Only `aether-autonomy` writes the registry and `run.json`; aether-guard refuses edits.
 - In `AETHER_IRREVERSIBLE=enforce`, even an approved action needs a covering grant: record the reply as a session grant, act, revoke. Quotes require 12 owner characters; for shorter replies, give the owner the exact command to run.
 
-**Repetition.** Stop work without progress: the same task redesigned twice, unit relaunched twice unsuccessfully, or third correction of the same finding. Record the defect, defer that task as the smallest reversible path, and continue the rest. Delegate corrections follow the ladder; this rule applies after Opus.
+**Repetition.** Stop work without progress: the same task redesigned twice or unit relaunched twice unsuccessfully. Record the defect, defer that task as the smallest reversible path, and continue the rest. Delegate failures follow the ladder (each rejected attempt climbs one rung, and a cause that repeats in two attempts blocks the task on its rung without climbing); this rule applies after the last rung, the fifth (Opus `xhigh`).
 
 **Every brief,** in a run or not, opens with "Espera tu sí" and "Supuestos", ordered by veto likelihood. Outside a run the brief is short: intent, spec/plan paths with about five lines each, decisions, owner's list, assumptions, unverified work and applicable RADAR lines. Stop at the plan; put execution and your recommended method in "Espera tu sí".
