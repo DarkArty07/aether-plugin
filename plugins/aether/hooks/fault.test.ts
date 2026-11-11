@@ -22,6 +22,8 @@ function stubs(on, { failAll = false } = {}) {
   on('turn.complete', () => ({ text: '' }))
   on('session.end', () => ({ sessionId: 's1' }))
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }))
+  // The Lead's first main request names its tools (issue 187): the engine's answer, with Workflow among them.
+  on('tool.list', () => ({ value: [{ name: 'Workflow', description: '', mcp: false }] }))
   on('turn.step', async function* ($, e) {
     return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: e.model } }
   })

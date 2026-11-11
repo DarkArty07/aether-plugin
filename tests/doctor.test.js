@@ -494,6 +494,106 @@ test('workflows: the same settings file is read once when the project is the hom
 })
 
 // ---- harnesses and the saved options
+// ---- plan: the plan the stored login reports against the plan the cached profile holds (issue 187, part 3)
+// `claude auth status` prints the login's plan as JSON; the profile in .claude.json holds the organization's type. Only
+// that one field of the file is read, and the tests give the file other fields and check that none of them reaches the report.
+const PROFILE_SECRETS = ['owner@example.test', 'uuid-secret', 'Secret Name']
+function profile(dir, organizationType) {
+  return put(dir, '.claude.json', JSON.stringify({ numStartups: 3, oauthAccount: { emailAddress: PROFILE_SECRETS[0], accountUuid: PROFILE_SECRETS[1], displayName: PROFILE_SECRETS[2], organizationType } }), 0o644)
+}
+const login = (plan) => JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: plan })
+
+// A runner like fakeExec, and an answer of its own for `claude auth status`: text, a status number, null, or an error to throw.
+function authExec(answer) {
+  const base = fakeExec()
+  const exec = (command, args, options) => {
+    if (command === 'claude' && args[0] === 'auth') {
+      exec.authCalls.push({ args, options })
+      if (answer instanceof Error) throw answer
+      if (answer === null) return { status: null, stdout: '' }
+      if (typeof answer === 'number') return { status: answer, stdout: '' }
+      return { status: 0, stdout: `${answer}\n` }
+    }
+    return base(command, args, options)
+  }
+  exec.authCalls = []
+  exec.calls = base.calls
+  return exec
+}
+
+test('plan: a login and a profile that agree report nothing', (t) => {
+  for (const [plan, organization] of [['pro', 'claude_pro'], ['max', 'claude_max_5x'], ['max', 'claude_max']]) {
+    const box = sandbox(t)
+    profile(box.config, organization)
+    assert.equal(byId(report(box, { exec: authExec(login(plan)) }), 'plan'), undefined, `${plan} with ${organization}`)
+  }
+})
+
+test('plan: a login that says pro while the profile says a Max organization is a warning with the cause and both fixes', (t) => {
+  const box = sandbox(t)
+  profile(box.config, 'claude_max_5x')
+  const r = report(box, { exec: authExec(login('pro')) })
+  const entry = byId(r, 'plan')
+  assert.equal(entry.status, 'warn')
+  assert.ok(entry.detail.includes('older than the plan'), entry.detail)
+  assert.ok(entry.detail.includes('Dynamic workflows are off on Pro') && entry.detail.includes('enableWorkflows: true'), entry.detail)
+  assert.ok(entry.fix.includes('claude auth login') && entry.fix.includes('enableWorkflows: true') && entry.fix.includes(path.join(box.config, 'settings.json')), entry.fix)
+  assert.deepEqual(r.checks.map((c) => c.id).slice(5, 7), ['workflows', 'plan'], 'it sits after the workflows check')
+  assert.equal(r.ok, true, 'a warning is not an error')
+  const text = JSON.stringify(r)
+  assert.ok(text.includes('claude_max_5x'))
+  for (const secret of PROFILE_SECRETS) assert.ok(!text.includes(secret), 'no other field of the profile is in the report')
+})
+
+test('plan: any Max organization name counts as Max, and a Pro or Team profile does not', (t) => {
+  for (const organization of ['claude_max', 'claude_max_20x']) {
+    const box = sandbox(t)
+    profile(box.config, organization)
+    assert.equal(byId(report(box, { exec: authExec(login('pro')) }), 'plan').status, 'warn', organization)
+  }
+  for (const organization of ['claude_pro', 'claude_team', 'claude_enterprise', null]) {
+    const box = sandbox(t)
+    profile(box.config, organization)
+    assert.equal(byId(report(box, { exec: authExec(login('pro')) }), 'plan'), undefined, String(organization))
+  }
+})
+
+test('plan: the profile is CLAUDE_CONFIG_DIR/.claude.json, or HOME/.claude.json without CLAUDE_CONFIG_DIR', (t) => {
+  const box = sandbox(t)
+  profile(box.config, 'claude_pro')
+  profile(box.home, 'claude_max_5x')
+  // With CLAUDE_CONFIG_DIR set, its file is the one read: it says Pro, so nothing is reported.
+  assert.equal(byId(report(box, { exec: authExec(login('pro')) }), 'plan'), undefined)
+  // Without it, the home directory's file is read.
+  const r = report(box, { env: { CLAUDE_CONFIG_DIR: undefined }, exec: authExec(login('pro')) })
+  assert.equal(byId(r, 'plan').status, 'warn')
+  assert.ok(byId(r, 'plan').fix.includes(path.join(box.home, '.claude', 'settings.json')), byId(r, 'plan').fix)
+})
+
+test('plan: nothing is reported when claude is missing or fails, its output is not a login JSON, or the profile is missing or not JSON', (t) => {
+  const box = sandbox(t)
+  profile(box.config, 'claude_max_5x')
+  const answers = [null, new Error('spawn claude ENOENT'), 1, 'Logged in as someone@example.test', '{"loggedIn":true}', '[1,2]', '']
+  for (const answer of answers) {
+    assert.equal(byId(report(box, { exec: authExec(answer) }), 'plan'), undefined, JSON.stringify(answer))
+  }
+  fs.rmSync(path.join(box.config, '.claude.json'))
+  assert.equal(byId(report(box, { exec: authExec(login('pro')) }), 'plan'), undefined, 'no profile')
+  fs.writeFileSync(path.join(box.config, '.claude.json'), '{not json')
+  assert.equal(byId(report(box, { exec: authExec(login('pro')) }), 'plan'), undefined, 'a profile that is not JSON')
+})
+
+test('plan: claude auth status is asked with its arguments and a time limit of at most 10 seconds, and the rest of the report is unchanged', (t) => {
+  const box = sandbox(t)
+  profile(box.config, 'claude_max_5x')
+  const exec = authExec(login('pro'))
+  report(box, { exec })
+  assert.equal(exec.authCalls.length, 1)
+  assert.deepEqual(exec.authCalls[0].args, ['auth', 'status'])
+  const timeout = exec.authCalls[0].options && exec.authCalls[0].options.timeoutMs
+  assert.ok(timeout > 0 && timeout <= 10000, String(timeout))
+})
+
 test('harnesses: the CLIs found on the PATH are listed in a fixed order, and only the ones that can run', (t) => {
   const box = sandbox(t)
   const none = report(box)

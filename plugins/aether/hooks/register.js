@@ -46,6 +46,10 @@
 // the Lead through the plugin's own prompt to stop the run's work, and arms a wake-up for the window's reset. The brake
 // only observes a step: no failure in it changes the step's answer.
 //
+// It also tells a Lead session whose first main request has no Workflow tool, once, that /aether:design and /aether:run
+// cannot start (issue 187, workflow-check.mjs): the owner by a notice, the Lead by a prompt of the plugin's own. Nothing
+// else of the request is read or changed.
+//
 // Files: <data dir>/usage/<session>/<n>.json, each { session, part, claudeCode, agents, entries }
 // with up to PART_SIZE entries. A reloaded module starts after the parts already on disk.
 
@@ -56,6 +60,7 @@ import { brakePromptFor, crossingsOf, initialBrakeState, jsonFrom, notifyFor, re
 import { createDelegates } from './delegate.mjs'
 import { errorKind, readDataDir, recordFault } from './fault-trace.mjs'
 import { withoutSpawnRule } from './agent-text.mjs'
+import { NO_WORKFLOW_TEXT, NO_WORKFLOW_TITLE, workflowToolState } from './workflow-check.mjs'
 
 const PART_SIZE = 1000
 const FLUSH_EVERY = 20
@@ -498,6 +503,27 @@ async function brakeStepOnce($, state) {
   }
 }
 
+// The Workflow check (issue 187): the first main request of a Lead session names its tools through the engine, the tools the
+// model can call now. When Workflow is not among them, the owner is told by a notice and the Lead by a prompt, once per
+// session; the answer is kept for the session, so later requests ask nothing. Observing only: a failure leaves the request as
+// it was, and a session with no answer (no list) is asked again at its next request.
+async function workflowStep($, state) {
+  if (state.workflowTools !== undefined) return
+  try {
+    const listed = await $.tool.list()
+    const verdict = workflowToolState(Array.isArray(listed) ? listed.map((tool) => (tool && tool.name)) : null)
+    if (verdict === null) return
+    state.workflowTools = verdict
+    if (verdict === 'present') return
+    await $.ui.notify(NO_WORKFLOW_TEXT, { title: NO_WORKFLOW_TITLE })
+    // The prompt can wait for the turn to end, so the step does not wait for it.
+    void Promise.resolve($.prompt.submit({ text: NO_WORKFLOW_TEXT })).catch(() => {})
+  } catch (err) {
+    void recordFault($, state, 'register.workflow-check', 'handler-threw', errorKind(err))
+    // Observing only: the request goes on as it was.
+  }
+}
+
 // A handler that failed: it leaves its trace when the session is Aether's, and the event goes on as it was.
 async function recordEventFault($, source) {
   const state = await currentSession($)
@@ -670,6 +696,8 @@ export function register(on, options) {
       // $.process.run refused or could not start the command, or the bin failed to load: the model runs the prompt.
     }
     const result = yield* meteredStep($, state, e, next)
+    // The main agent's requests only: a subagent's loop carries its own agentId.
+    if (!e.agentId) await workflowStep($, state)
     await brakeStep($, state)
     return result
   })
