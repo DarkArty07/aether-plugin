@@ -10,7 +10,6 @@ const { isObject, isNumber } = require('./common.js')
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'pairs.json')
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
-const NATIVE_MODELS = ['haiku', 'sonnet', 'opus']
 const NATIVE_HARNESS = 'claude'
 
 function pairsPath(env = process.env) {
@@ -32,10 +31,13 @@ function validatePair(pair, index) {
   if (!isObject(pair)) throw new Error(`${label}: must be an object`)
   if (!isText(pair.harness)) fail('harness', 'must be a non-empty string')
   if (!isText(pair.model)) fail('model', 'must be a non-empty string')
-  if (pair.harness === NATIVE_HARNESS && !NATIVE_MODELS.includes(pair.model)) fail('model', `must be one of ${NATIVE_MODELS.join(', ')} for ${NATIVE_HARNESS}`)
   if (!EFFORTS.includes(pair.effort)) fail('effort', `must be one of ${EFFORTS.join(', ')}`)
   if (!isText(pair.family)) fail('family', 'must be a non-empty string')
   if (pair.harness === NATIVE_HARNESS) {
+    if (!isNumber(pair.code) || pair.code < 0 || pair.code > 100) fail('code', 'must be a number from 0 to 100')
+    for (const field of ['codeCostPerTaskUsd', 'codeMinutesPerTask']) {
+      if (!isNumber(pair[field]) || pair[field] < 0) fail(field, 'must be a number of at least 0')
+    }
     if (pair.group !== null) fail('group', `must be null for ${NATIVE_HARNESS}`)
   } else if (!isText(pair.group)) {
     fail('group', 'must be a non-empty string for an external harness')
@@ -46,6 +48,7 @@ function validatePair(pair, index) {
   if (!isNumberOrNull(pair.outputTokensPerSecond)) fail('outputTokensPerSecond', 'must be a number of at least 0, or null')
   if (!isNumberOrNull(pair.timeToFirstTokenS)) fail('timeToFirstTokenS', 'must be a number of at least 0, or null')
   if (Object.hasOwn(pair, 'ownerDecision') && !isText(pair.ownerDecision)) fail('ownerDecision', 'must be a non-empty string when present')
+  if (Object.hasOwn(pair, 'codeChecked') && !isText(pair.codeChecked)) fail('codeChecked', 'must be a non-empty string when present')
   if (Object.hasOwn(pair, 'checked') && !isText(pair.checked)) fail('checked', 'must be a non-empty string when present')
   if (Object.hasOwn(pair, 'costEstimate') && !isText(pair.costEstimate)) fail('costEstimate', 'must be a non-empty string when present')
   const id = pairId(pair.harness, pair.model, pair.effort)
@@ -75,6 +78,11 @@ function loadPairs(file = pairsPath()) {
   }
 }
 
+// The models of the Claude rows, in table order, without repeats.
+function nativeModels(pairs) {
+  return [...new Set(pairs.filter((pair) => pair.harness === NATIVE_HARNESS).map((pair) => pair.model))]
+}
+
 // The native pair a call names by its model alias and effort: the points it asks for.
 function referenceOf(pairs, { model, effort }) {
   const found = pairs.find((pair) => pair.harness === NATIVE_HARNESS && pair.model === model && pair.effort === effort)
@@ -85,7 +93,7 @@ function referenceOf(pairs, { model, effort }) {
 module.exports = {
   CONFIG_FILE,
   EFFORTS,
-  NATIVE_MODELS,
+  nativeModels,
   NATIVE_HARNESS,
   pairsPath,
   loadPairs,

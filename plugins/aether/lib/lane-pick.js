@@ -23,7 +23,6 @@ const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 
 const CALL = /^(task-\d+-\d+-(implement|supervise|supervisor|reviewer)|final-review(-slice-\d+)?)$/
 const ROLES = ['implementer', 'supervisor', 'reviewer']
-const MODELS = pairs.NATIVE_MODELS
 const PAIR_ID = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*@(low|medium|high|xhigh|max)$/
 const FAMILY = /^[a-z][a-z0-9.-]*$/
 const BY = /^(native|[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$/
@@ -129,13 +128,13 @@ async function pickCommand(cwd, runId, call, flags, { now = Date.now() } = {}) {
   checkCall(call)
   checkFlags(flags, ['role', 'model', 'effort', 'exclude', 'author'])
   const role = oneOf(flags.role, ROLES, 'role')
-  const model = oneOf(flags.model, MODELS, 'model')
+  const table = pairs.loadPairs().pairs
+  const model = oneOf(flags.model, pairs.nativeModels(table), 'model')
   const effort = oneOf(flags.effort, pairs.EFFORTS, 'effort')
   const exclude = excludeList(flags.exclude)
   const authors = authorList(flags.author)
 
   const config = calls.loadTable()
-  const table = pairs.loadPairs().pairs
   const enabled = calls.enabledFor(cwd, runId)
   const dataDir = run.dataDir()
   const latest = await latestReadings(config, enabled, { dataDir, now })

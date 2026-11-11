@@ -2,7 +2,7 @@
 
 // Superdelegation: the one switch that sends every call but the Lead's to an external harness first, and the
 // one rule that picks the pair for a call. A call asks for the points of its native reference pair; an external
-// pair reaches it at those points minus TOLERANCE_POINTS; within a quota a pair that gives no more points than a
+// pair reaches it at those points minus TOLERANCE_POINTS (or the exact points for a supervisor); within a quota a pair that gives no more points than a
 // cheaper candidate is dominated; the quota that renews first takes the call, at its cheapest pair. Speed is
 // never read. authorRule is 'bar' (the default, for the swarm, the final review and aether-lane delegate: a pair
 // of an author's family is not a candidate) or 'reserve' (the design seats: a pair of another family first, then
@@ -13,7 +13,7 @@
 // Family: none.
 
 const { isNumber } = require('./common.js')
-const { NATIVE_HARNESS, NATIVE_MODELS, referenceOf } = require('./pairs.js')
+const { NATIVE_HARNESS, referenceOf } = require('./pairs.js')
 
 const TOLERANCE_POINTS = 1
 const ROLES = ['implementer', 'supervisor', 'reviewer']
@@ -108,14 +108,16 @@ const pairPoints = (pair) => ({ id: pair.id, model: pair.model, effort: pair.eff
 
 // The native agent of the call: the reference pair, or, for a call that reviews the work of an author model,
 // the Claude model at the same effort that is not an author and whose points are closest to the ones asked
-// (the stronger on a tie). When all three Claude models are authors the reference stays, marked `none`.
-function nativeFor(pairs, ref, { authors, nativeDiffers }) {
+// (the stronger on a tie). When all other Claude models are authors the reference stays, marked `none`.
+function nativeFor(pairs, ref, { authors, nativeDiffers, role }) {
   if (!nativeDiffers || !authors.includes(ref.family)) return { pair: ref, swapped: false, none: false }
   const asked = tenths(ref.intelligence)
   const others = pairs.filter((pair) => pair.harness === NATIVE_HARNESS && pair.effort === ref.effort &&
-    NATIVE_MODELS.includes(pair.model) && pair.model !== ref.model && !authors.includes(pair.family) && isNumber(pair.intelligence))
+    pair.model !== ref.model && !authors.includes(pair.family) && isNumber(pair.intelligence))
   if (others.length === 0) return { pair: ref, swapped: false, none: true }
-  const best = [...others].sort((a, b) =>
+  const eligible = role === 'supervisor' ? others.filter((pair) => pair.intelligence >= ref.intelligence) : others
+  if (eligible.length === 0) return { pair: ref, swapped: false, none: false, weaker: true }
+  const best = [...eligible].sort((a, b) =>
     (Math.abs(tenths(a.intelligence) - asked) - Math.abs(tenths(b.intelligence) - asked)) || (tenths(b.intelligence) - tenths(a.intelligence)))[0]
   return { pair: best, swapped: true, none: false }
 }
@@ -126,7 +128,7 @@ function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativ
   if (authorRule !== 'bar' && authorRule !== 'reserve') throw new Error(`authorRule must be bar or reserve, not ${JSON.stringify(authorRule)}`)
   const ref = referenceOf(pairs, reference)
   const requested = ref.intelligence
-  const floor = tenths(requested) - TOLERANCE_TENTHS
+  const floor = tenths(requested) - (role === 'supervisor' ? 0 : TOLERANCE_TENTHS)
   const external = pairs.map((pair, index) => ({ pair, index })).filter(({ pair }) => pair.harness !== NATIVE_HARNESS)
   const context = { harnesses: harnesses || {}, exclude, authors, floor, authorRule, role, lanes }
   const barred = external.map((entry) => ({ ...entry, why: firstBar(entry.pair, context) }))
@@ -151,7 +153,7 @@ function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativ
     ...passed.map((entry) => describe(entry, null, 'passed', entry.why)),
   ]
   const picked = ranked.length > 0 ? { ...ranked[0].pair } : null
-  const native = nativeFor(pairs, ref, { authors, nativeDiffers })
+  const native = nativeFor(pairs, ref, { authors, nativeDiffers, role })
 
   const minimum = floor / 10
   let reason
@@ -167,6 +169,7 @@ function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativ
       : `native ${native.pair.id}: no external pair is a candidate for ${requested} points (at least ${minimum})`
   }
   if (native.swapped) reason += `; the native fallback is ${native.pair.model}, not ${ref.model}, which is an author`
+  if (native.weaker) reason += `; the native fallback stays ${ref.model}: the Claude models free of the authors give fewer points than the level`
   if (native.none) reason += `; no other Claude model is free of the authors, so the native fallback stays ${ref.model}`
 
   return {
