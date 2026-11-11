@@ -64,6 +64,19 @@ function requestedRung(ladder, text) {
   return rung && indexOfStep(ladder, rung.step) > 0 ? rung : null
 }
 
+// The rung an owner's placement names: the rung of that model with that effort; when no effort is named, or the effort is not
+// a rung of the model, the first rung of that model; null when the model has no rung in the ladder.
+function rungFor(ladder, model, effort = null) {
+  if (!isText(model)) return null
+  const rungsOfModel = ladder.rungs.filter((r) => namesModel(model, r.model))
+  if (rungsOfModel.length === 0) return null
+  if (isText(effort)) {
+    const match = rungsOfModel.find((r) => namesEffort(effort, r.effort))
+    if (match) return match
+  }
+  return rungsOfModel[0]
+}
+
 function resolve(deps) {
   return {
     dataDir: deps.dataDir || run.dataDir(),
@@ -81,25 +94,31 @@ function authorize(input, deps = {}) {
     const { model, effort, quote, task, scope, session } = isObject(input) ? input : {}
     const r = resolve(deps)
     if (!isText(session)) return refuse('no session: pass --session <id> or set CLAUDE_CODE_SESSION_ID')
-    const rung = namedRung(r.ladder, model)
-    if (!rung) return refuse(`${String(model)} is not a rung of the ladder (${r.ladder.rungs.map((x) => x.step).join(', ')})`)
-    if (indexOfStep(r.ladder, rung.step) === 0) return refuse(`${rung.model} is the first rung: it needs no authorization`)
+    const modelsWithStep = [...new Set(r.ladder.rungs.map((x) => x.model))]
+    const hasStep = modelsWithStep.some((m) => namesModel(model, m))
+    if (!hasStep) return refuse(`${String(model)} has no step in the ladder: the models with a step are ${modelsWithStep.join(', ')}`)
     if (scope !== undefined && scope !== null && scope !== 'session') return refuse('--scope needs session')
     const hasTask = task !== undefined && task !== null
     if (hasTask && scope === 'session') return refuse('--task and --scope session cannot be given together')
     if (!hasTask && scope !== 'session') return refuse('name the grant: --task <id> or --scope session')
     if (hasTask && !(typeof task === 'string' && ID_RE.test(task))) return refuse('the task id is letters, digits, - and _')
     if (!isText(quote)) return refuse('the owner\'s words are needed: pass --quote <text>')
+
     // The owner's effort, only when their words name one: it must be one the placed model takes (read from the
     // models index), and the quote must name it as it names the model. A refused effort writes nothing.
     let wantedEffort = null
     if (effort !== undefined && effort !== null) {
       wantedEffort = wordsOf(effort)
       if (wantedEffort === '') return refuse('the effort is needed: pass --effort <low|medium|high|xhigh|max>')
-      const taken = effortsOf(rung.model)
-      if (taken === null) return refuse(`could not read the efforts ${rung.model} takes`)
-      if (!taken.includes(wantedEffort)) return refuse(`${rung.model} does not take ${wantedEffort}: it takes ${taken.join(', ')}`)
+      const baseRung = namedRung(r.ladder, model)
+      const taken = effortsOf(baseRung ? baseRung.model : model)
+      if (taken === null) return refuse(`could not read the efforts ${model} takes`)
+      if (!taken.includes(wantedEffort)) return refuse(`${model} does not take ${wantedEffort}: it takes ${taken.join(', ')}`)
     }
+
+    const rung = rungFor(r.ladder, model, wantedEffort)
+    if (indexOfStep(r.ladder, rung.step) === 0) return refuse(`${rung.model} is the first rung: it needs no authorization`)
+
     const verified = autonomy.verifyQuote(session, quote, { configDir: r.configDir })
     if (!verified.ok) return refuse(verified.reason)
     if (!namesModel(quote, rung.model)) return refuse(`the quote does not name ${rung.model}: write the owner's words with the model's name`)
@@ -121,7 +140,7 @@ function authorize(input, deps = {}) {
 // readable check).
 function holds(line, ladder, configDir) {
   if (!isText(line.quote)) return false
-  const rung = ladder.rungs.find((x) => x.model === line.model)
+  const rung = rungFor(ladder, line.model, line.effort)
   if (!rung) return false
   if (line.effort !== undefined && line.effort !== null) {
     if (!isText(line.effort)) return false
@@ -144,7 +163,8 @@ function coverOf(entries, { session, task, rung, ladder, configDir }) {
     if (!isObject(line) || line.kind !== 'authorize' || line.session !== session) continue
     const scoped = line.scope === 'session' || (line.scope === 'task' && isText(task) && line.task === task)
     if (!scoped) continue
-    if (ladder.rungs.findIndex((x) => x.model === line.model) < wanted) continue
+    const lineRung = rungFor(ladder, line.model, line.effort)
+    if (!lineRung || indexOfStep(ladder, lineRung.step) < wanted) continue
     if (!holds(line, ladder, configDir)) continue
     return line
   }
@@ -165,17 +185,17 @@ function startStepOf(entries, ladder, configDir) {
   const first = entries.find((entry) => log.isLaunch(entry))
   if (!first || !isObject(first.authorized)) return floor
   const at = indexOfStep(ladder, first.step)
-  const named = ladder.rungs.find((rung) => rung.model === first.authorized.model)
-  if (at <= 0 || !named || at > indexOfStep(ladder, named.step)) return floor
+  const authRung = rungFor(ladder, first.authorized.model, first.authorized.effort)
+  if (at <= 0 || !authRung || at > indexOfStep(ladder, authRung.step)) return floor
   const quote = first.authorized.quote
   if (!isText(quote)) return floor
   const verified = autonomy.verifyQuote(first.session, quote, { configDir })
   if (!verified.ok && verified.reason.startsWith(NO_TRANSCRIPT)) return first.step
   if (!verified.ok) return floor
-  if (!namesModel(quote, named.model)) return floor
+  if (!namesModel(quote, authRung.model)) return floor
   const kept = first.authorized.effort
   if (kept !== undefined && kept !== null && !namesEffort(quote, kept)) return floor
   return first.step
 }
 
-module.exports = { authorize, coverOf, authorizedOf, startStepOf, namedRung, requestedRung, namesModel, namesEffort }
+module.exports = { authorize, coverOf, authorizedOf, startStepOf, namedRung, requestedRung, rungFor, namesModel, namesEffort }

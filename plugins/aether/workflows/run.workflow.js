@@ -21,7 +21,6 @@ export const meta = {
 // it runs on the native agent of the decision when no pair takes it, or every pair that began it failed it
 // (three at most). A call starts at once on its pair: a harness has no limit on its calls in flight.
 
-const TIERS = ['haiku', 'sonnet', 'opus']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const LANE_ROLES = ['implementer', 'supervisor', 'reviewer']
 const RUN_ID = /^\d{8}-\d{6}-[0-9a-f]{4}$/
@@ -217,8 +216,7 @@ for (const id of waves.flat()) {
     ladder: {
       steps: [],
       firstTry: false,
-      corrections: 0,
-      rises: { exhausted: 0, repeated: 0, infeasible: 0 },
+      rises: { failed: 0, infeasible: 0 },
       gateRejections: 0,
       filled: 0,
     },
@@ -465,9 +463,6 @@ async function step(unit, kind, body) {
     const why = verdictResult.reason ? `${verdictResult.cause}: ${verdictResult.reason}` : 'the ladder is blocked'
     return { blocked: why }
   }
-  if (kind === 'fix') {
-    unit.ladder.corrections++
-  }
   if (verdictResult.kind === 'rise') {
     unit.ladder.rises[verdictResult.cause] = (unit.ladder.rises[verdictResult.cause] || 0) + 1
   }
@@ -475,16 +470,14 @@ async function step(unit, kind, body) {
 }
 
 // A salvaged attempt (its report rebuilt from the branch) and a merge-conflict retry are not a first try, though the
-// ladder spends no correction on either.
+// ladder climbs no rung on either.
 function isFirstTry(unit, wasCleanStart) {
-  const { corrections, rises, gateRejections } = unit.ladder
+  const { rises, gateRejections } = unit.ladder
   return (
     wasCleanStart &&
     !unit.mergeRetried &&
     !unit.rounds.some((round) => round.salvaged) &&
-    corrections === 0 &&
-    rises.exhausted === 0 &&
-    rises.repeated === 0 &&
+    rises.failed === 0 &&
     rises.infeasible === 0 &&
     gateRejections === 0
   )
@@ -518,7 +511,7 @@ async function decide({ role, model, effort, id, exclude = [], author = null, ph
   if (author) flags.push(`--author ${author}`)
   const out = await picked(() => ops(`aether-lane pick ${runId} ${id} ${flags.join(' ')}`, { phase, label: `${label}: pick`, long: true }))
   const native = isObject(out) && isObject(out.native) ? out.native : null
-  if (out.error || !native || !TIERS.includes(native.model) || !EFFORTS.includes(native.effort)) {
+  if (out.error || !native || !/^[a-z][a-z0-9-]*$/.test(native.model) || !EFFORTS.includes(native.effort)) {
     log(`${label}: no decision from aether-lane pick, so it runs native on ${model} ${effort}: ${out.error || JSON.stringify(out).slice(0, 200)}`)
     return { picked: null, native: { model, effort, family: null } }
   }
@@ -756,7 +749,7 @@ function supervisorPrompt(unit, task, rung, report, view, gate, opts = {}) {
     }
   }
   // What the ladder does with a ruling is in supervisor.md; the message gives only where the unit stands on it.
-  lines.push('', '## Ladder', `Rung: ${view.step} ${view.effort}. Corrections used on this rung: ${view.correctionsUsed} of ${view.corrections}.`)
+  lines.push('', '## Ladder', `Rung ${view.position} of ${view.of}: ${view.step}, on ${view.model} ${view.effort}. A failed attempt rises one rung; the last rung's failure ends the unit.`)
   return lines.join('\n')
 }
 
@@ -1181,13 +1174,15 @@ async function supervise(unit, task, rung, report, view, author, gate = null, tr
   const n = unit.attempts
   const id = `${unit.id}-${n}-supervise`
   const where = { phase: 'Supervise', label: `${unit.id}: supervise attempt ${n}${tries > 1 ? ` (try ${tries})` : ''}` }
-  let native = { model: 'sonnet', effort: task.review }
+  const supervisorModel = view.supervisor.model
+  const supervisorEffort = EFFORTS[Math.max(EFFORTS.indexOf(view.supervisor.effort), EFFORTS.indexOf(task.review))]
+  let native = { model: supervisorModel, effort: supervisorEffort }
   let routed = null
   if (lanes && tries === 1) {
     routed = await external({
       role: 'supervisor',
-      model: 'sonnet',
-      effort: task.review,
+      model: supervisorModel,
+      effort: supervisorEffort,
       id,
       author,
       ...where,

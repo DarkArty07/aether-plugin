@@ -8,7 +8,7 @@ const { runWorkflow } = require('./workflow-harness.js')
 const { loadLadder } = require('../plugins/aether/lib/ladder.js')
 
 const L = loadLadder()
-const [HAIKU, SONNET] = L.rungs
+const [RUNG1, RUNG2, RUNG3] = L.rungs
 const LONG = "Run this command with the Bash tool, once, exactly as written, with the Bash tool's timeout set to 600000:"
 
 const one = (t) => compile(makeRepo(t), plan([task(1)]))
@@ -20,7 +20,7 @@ const supervisions = (run) => run.calls.filter((c) => c.role === 'supervisor' &&
 const gates = (run) => run.calls.filter((c) => c.kind === 'ops:gate' && c.unit === 'task-1')
 const unitOf = (run) => run.result.units.find((u) => u.id === 'task-1')
 
-test('a gate that fails sends the attempt back with its findings, calls no supervisor and spends a correction', async (t) => {
+test('a gate that fails sends the attempt back with its findings, calls no supervisor and rises one rung', async (t) => {
   const run = await runWorkflow(one(t), { ops: gateOn(1, failing('tests/a.test.js', 'falló: adds', 'AssertionError at line 9')) })
   assert.equal(run.error, null, run.error && run.error.stack)
   assert.equal(attempts(run).length, 2)
@@ -28,9 +28,10 @@ test('a gate that fails sends the attempt back with its findings, calls no super
   assert.match(attempts(run)[1].prompt, /tests\/a\.test\.js/)
   assert.match(attempts(run)[1].prompt, /falló: adds/)
   assert.match(attempts(run)[1].prompt, /AssertionError at line 9/)
-  assert.deepEqual(attempts(run).map((c) => c.effort), [HAIKU.effort.first, HAIKU.effort.retry])
+  assert.deepEqual(attempts(run).map((c) => c.effort), [RUNG1.effort, RUNG2.effort])
   const u = unitOf(run)
-  assert.deepEqual([u.status, u.ladder.gateRejections, u.ladder.corrections], ['merged', 1, 1])
+  assert.deepEqual([u.status, u.ladder.gateRejections, u.ladder.rises.failed], ['merged', 1, 1])
+  assert.equal('corrections' in u.ladder, false)
 })
 
 test('the gate is sent with the long timeout, after the implementer and before the supervisor', async (t) => {
@@ -64,14 +65,14 @@ test('a test run cut at the limit is a gate failure with the finding npm test: s
   const run = await runWorkflow(one(t), { ops: gateOn(1, cut) })
   assert.match(attempts(run)[1].prompt, /npm test/)
   assert.match(attempts(run)[1].prompt, /superó el tiempo límite/)
-  assert.equal(unitOf(run).ladder.corrections, 1)
+  assert.equal(unitOf(run).ladder.rises.failed, 1)
 })
 
-test('the same gate finding twice raises the model, like any repeated finding', async (t) => {
-  const run = await runWorkflow(one(t), { ops: gateOn(L.repeatFindings, failing('tests/a.test.js', 'la prueba falló')) })
-  assert.deepEqual(attempts(run).map((c) => c.model), [...Array(L.repeatFindings).fill(HAIKU.model), SONNET.model])
+test('the same gate finding twice rises two rungs without blocking', async (t) => {
+  const run = await runWorkflow(one(t), { ops: gateOn(2, failing('tests/a.test.js', 'la prueba falló')) })
+  assert.deepEqual(attempts(run).map((c) => c.model), [RUNG1.model, RUNG2.model, RUNG3.model])
   assert.equal(supervisions(run).length, 1)
-  assert.equal(unitOf(run).ladder.rises.repeated, 1)
+  assert.deepEqual(unitOf(run).ladder.rises, { failed: 2, infeasible: 0 })
 })
 
 test('a file outside Owns found by the gate goes back with its name', async (t) => {
@@ -83,7 +84,7 @@ test('a file outside Owns found by the gate goes back with its name', async (t) 
 test('the same file outside Owns twice blocks the unit as a plan error, without climbing (issue 179)', async (t) => {
   const run = await runWorkflow(one(t), { ops: gateOn(9, failing('src/other/x.js', 'fuera de Owns')) })
   assert.equal(run.error, null, run.error && run.error.stack)
-  assert.deepEqual(attempts(run).map((c) => c.model), [HAIKU.model, HAIKU.model])
+  assert.deepEqual(attempts(run).map((c) => c.model), [RUNG1.model, RUNG2.model])
   assert.equal(supervisions(run).length, 0)
   const u = unitOf(run)
   assert.equal(u.status, 'blocked')
@@ -113,7 +114,8 @@ test('a retry after a merge conflict runs the gate again', async (t) => {
     ops: (call, wt) => (call.kind === 'ops:merge' && call.n === 1 ? { merged: false, reason: 'conflict', files: ['src/shared.js'], detail: 'CONFLICT' } : wt(call)),
   })
   assert.equal(gates(run).length, 2)
-  assert.equal(unitOf(run).ladder.corrections, 0)
+  assert.deepEqual(unitOf(run).ladder.rises, { failed: 0, infeasible: 0 })
+  assert.equal('corrections' in unitOf(run).ladder, false)
 })
 
 test('no more than two gates run at once, and every unit still gets its turn', async (t) => {

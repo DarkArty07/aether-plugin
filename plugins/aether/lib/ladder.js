@@ -1,7 +1,7 @@
 'use strict'
 
-// The delegate ladder: which model a task's delegate runs on, how many corrections each model gets before the
-// step rises, and what the Lead's verdict on a result makes of the next launch. A pure function over the data in
+// The delegate ladder: which model a task's delegate runs on, how one rejected attempt rises one step,
+// and what the Lead's verdict on a result makes of the next launch. A pure function over the data in
 // config/ladder.json: no number of the ladder is written here.
 // Family: delegate.
 
@@ -11,25 +11,19 @@ const { isText } = require('./common.js')
 
 const LADDER_FILE = path.join(__dirname, '..', 'config', 'ladder.json')
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
-const EFFORT_KEY = { first: 'first', fix: 'retry', rise: 'retry', unjudged: 'retry' }
+
 // The finding wt-gate.js gives a test run that was cut at its time limit. It says nothing of the code, so it is no
 // repeated finding (#112): see judgeFix.
 const GATE_CUT = Object.freeze({ file: 'npm test', what: 'superó el tiempo límite' })
-
-function isCount(value) {
-  return Number.isInteger(value) && value >= 0
-}
 
 function checkRung(rung, index) {
   const where = `rungs[${index}]`
   if (!rung || typeof rung !== 'object') throw new Error(`ladder: ${where} is not an object`)
   if (!isText(rung.step)) throw new Error(`ladder: ${where} has no step`)
   if (!isText(rung.model)) throw new Error(`ladder: ${where} (${rung.step}) has no model`)
-  if (!isCount(rung.corrections)) throw new Error(`ladder: ${where} (${rung.step}) corrections is not an integer >= 0`)
-  for (const key of ['first', 'retry']) {
-    if (!EFFORTS.includes(rung.effort && rung.effort[key])) {
-      throw new Error(`ladder: ${where} (${rung.step}) effort.${key} is not one of ${EFFORTS.join('|')}`)
-    }
+  if (!isText(rung.effort)) throw new Error(`ladder: ${where} (${rung.step}) has no effort`)
+  if (!EFFORTS.includes(rung.effort)) {
+    throw new Error(`ladder: ${where} (${rung.step}) effort is not one of ${EFFORTS.join('|')}`)
   }
 }
 
@@ -39,10 +33,16 @@ function loadLadder(file = LADDER_FILE) {
   data.rungs.forEach(checkRung)
   const steps = data.rungs.map((rung) => rung.step)
   if (new Set(steps).size !== steps.length) throw new Error('ladder: two rungs have the same step')
-  if (!isCount(data.repeatFindings)) throw new Error('ladder: repeatFindings is not an integer >= 0')
   const repeatBlocked = data.repeatBlocked ?? 2
   if (!Number.isInteger(repeatBlocked) || repeatBlocked < 1) throw new Error('ladder: repeatBlocked is not an integer >= 1')
-  return { rungs: data.rungs, repeatFindings: data.repeatFindings, repeatBlocked }
+  const supervisorFloor = data.supervisorFloor ?? 1
+  if (!Number.isInteger(supervisorFloor) || supervisorFloor < 1) throw new Error('ladder: supervisorFloor is not an integer >= 1')
+  return {
+    law: data.law ?? {},
+    repeatBlocked,
+    rungs: data.rungs,
+    supervisorFloor,
+  }
 }
 
 function rungIndex(ladder, step) {
@@ -51,17 +51,25 @@ function rungIndex(ladder, step) {
   return index
 }
 
-// The state of a task that has not been judged yet. `step` is the rung the task starts on (spec 021); without one, or with
+// The state of a task that has not been judged yet. `step` is the rung the task starts on; without one, or with
 // one the ladder does not have, it is the first rung.
 function newState(ladder, step = null) {
   const start = ladder.rungs.some((rung) => rung.step === step) ? step : ladder.rungs[0].step
-  return { step: start, attempts: 0, correctionsUsed: 0, repeats: 0, lastKeys: null, status: 'open' }
+  return { step: start, attempts: 0, repeats: 0, lastKeys: null, blockedKey: null, blockedCount: 0, status: 'open' }
 }
 
-function effortFor(ladder, step, launchKind) {
-  const key = EFFORT_KEY[launchKind]
-  if (!key) throw new Error(`ladder: unknown launch kind ${launchKind}`)
-  return ladder.rungs[rungIndex(ladder, step)].effort[key]
+function effortFor(ladder, step) {
+  const idx = rungIndex(ladder, step)
+  return ladder.rungs[idx].effort
+}
+
+function supervisorOf(ladder, step) {
+  const i = rungIndex(ladder, step)
+  const n = ladder.rungs.length
+  const floor = ladder.supervisorFloor ?? 1
+  const supervisorIndex = Math.max(Math.min(i + 1, n - 1), Math.min(floor, n) - 1)
+  const rung = ladder.rungs[supervisorIndex]
+  return { step: rung.step, model: rung.model, effort: rung.effort }
 }
 
 // 'src/a.js:12: what is missing' -> { file, line: 12, what }; the line is optional; no file or no what -> null.
@@ -105,16 +113,16 @@ function checkVerdict(verdict) {
 }
 
 // The next step up from the state's step: a rise, or exhausted when it was the last one.
-function rise(state, ladder, cause, carry) {
+function rise(state, ladder, cause, carry, repeats = state.repeats, lastKeys = state.lastKeys) {
   const index = rungIndex(ladder, state.step)
   const attempts = state.attempts + 1
   if (index + 1 >= ladder.rungs.length) {
-    const closed = { ...state, attempts, status: 'exhausted' }
+    const closed = { ...state, attempts, repeats, lastKeys, status: 'exhausted' }
     return { accepted: true, state: closed, next: { step: null, kind: 'exhausted', cause: 'exhausted', effort: null, carry } }
   }
   const step = ladder.rungs[index + 1].step
-  const raised = { ...state, step, attempts, correctionsUsed: 0, repeats: 0, lastKeys: null, status: 'open' }
-  return { accepted: true, state: raised, next: { step, kind: 'rise', cause, effort: effortFor(ladder, step, 'rise'), carry } }
+  const raised = { ...state, step, attempts, repeats, lastKeys, status: 'open' }
+  return { accepted: true, state: raised, next: { step, kind: 'rise', cause, effort: effortFor(ladder, step), carry } }
 }
 
 // Whether the finding says the change fell outside Owns, in the Spanish the gate and the merge write or in
@@ -135,35 +143,24 @@ function judgeFix(state, verdict, ladder, carry) {
   // of the real findings nor breaks it, so a cut between two verdicts of the same finding does not hide the repetition,
   // and two cuts in a row never rise by the repeat rule. A cut mixed with a real finding counts as that finding alone.
   const real = verdict.findings.filter((finding) => findingKey(finding) !== GATE_CUT_KEY)
-  // A verdict of nothing but outside-Owns findings repeats by file alone: the gate writes 'fuera de Owns'
-  // and a supervisor 'changes outside Owns', so keying by file and wording would miss the repetition.
   const allOutside = real.length > 0 && real.every(isOutsideOwns)
   const keys = [...new Set(allOutside ? real.map(fileKey) : real.map(findingKey))].sort()
   const cutOnly = keys.length === 0
   const same = state.lastKeys !== null && state.lastKeys.length === keys.length && state.lastKeys.every((key, i) => key === keys[i])
-  // repeats: how many verdicts in a row, this one included, gave the same real findings.
   const repeats = cutOnly ? state.repeats : same ? state.repeats + 1 : 1
-  if (!cutOnly && repeats >= ladder.repeatFindings) {
-    // The same change outside Owns again is a plan error (issue 179): the brief and an existing test
-    // disagree, or the file is missing from Owns, so no model can fix it. The unit is blocked at once,
-    // without climbing; the repeat count is the ladder file's, the same one as the repeated rule.
-    if (same && allOutside) {
-      const files = [...new Set(real.map((finding) => finding.file))].join(', ')
-      const reason =
-        `the same change outside Owns came back again (${files}): a plan error, not a model error; ` +
-        'the brief and an existing test disagree, or the file is missing from Owns. ' +
-        'Add the file to Owns or change the brief, then relaunch.'
-      const blocked = { ...state, attempts: state.attempts + 1, status: 'blocked' }
-      return { accepted: true, state: blocked, next: { step: null, kind: 'blocked', cause: 'blocked-outside-owns', reason, effort: null, carry: true } }
-    }
-    return rise(state, ladder, 'repeated', carry)
-  }
-  const cap = ladder.rungs[rungIndex(ladder, state.step)].corrections
-  // Every fix spends a correction, the same findings again included: the step's cap is hard (R2).
-  if (state.correctionsUsed >= cap) return rise(state, ladder, 'exhausted', carry)
-  const next = { step: state.step, kind: 'fix', cause: 'fix', effort: effortFor(ladder, state.step, 'fix'), carry }
   const lastKeys = cutOnly ? state.lastKeys : keys
-  return { accepted: true, state: { ...state, attempts: state.attempts + 1, correctionsUsed: state.correctionsUsed + 1, repeats, lastKeys }, next }
+
+  if (same && allOutside && repeats >= (ladder.repeatBlocked ?? 2)) {
+    const files = [...new Set(real.map((finding) => finding.file))].join(', ')
+    const reason =
+      `the same change outside Owns came back again (${files}): a plan error, not a model error; ` +
+      'the brief and an existing test disagree, or the file is missing from Owns. ' +
+      'Add the file to Owns or change the brief, then relaunch.'
+    const blocked = { ...state, attempts: state.attempts + 1, repeats, lastKeys, status: 'blocked' }
+    return { accepted: true, state: blocked, next: { step: null, kind: 'blocked', cause: 'blocked-outside-owns', reason, effort: null, carry: true } }
+  }
+
+  return rise(state, ladder, 'failed', carry, repeats, lastKeys)
 }
 
 // Judges the Lead's verdict on the state the earlier verdicts left.
@@ -203,4 +200,4 @@ function stateOf(inputs, ladder, step = null) {
   return state
 }
 
-module.exports = { loadLadder, newState, parseFinding, findingKey, effortFor, judge, stateOf, GATE_CUT }
+module.exports = { loadLadder, newState, parseFinding, findingKey, effortFor, supervisorOf, judge, stateOf, GATE_CUT }

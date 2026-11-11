@@ -12,8 +12,7 @@ test('the bootstrap describes the ladder (R19, C2, C3, C5)', () => {
     assert.ok(SKILL.includes(phrase), phrase)
   }
   assert.match(SKILL, /always start on Haiku|starts on Haiku/i)
-  assert.match(SKILL, /after Opus[^.\n]*(defer|owner's list)/i)
-  assert.match(SKILL, /same findings/i)
+  assert.match(SKILL, /after (Opus|the fifth rung)[^.\n]*(defer|owner's list)/i)
 })
 
 test('the old rules are gone', () => {

@@ -88,8 +88,8 @@ test('authorize refuses, and writes nothing, for a model that is the first rung 
   const cases = [
     [{ model: 'haiku', quote: OPUS_WORDS, task: 'a1' }, /first rung/],
     [{ model: 'claude-haiku-5', quote: OPUS_WORDS, task: 'a1' }, /first rung/],
-    [{ model: 'gpt-9', quote: OPUS_WORDS, task: 'a1' }, /not a rung of the ladder/],
-    [{ model: undefined, quote: OPUS_WORDS, task: 'a1' }, /not a rung of the ladder/],
+    [{ model: 'gpt-9', quote: OPUS_WORDS, task: 'a1' }, /has no step in the ladder/],
+    [{ model: undefined, quote: OPUS_WORDS, task: 'a1' }, /has no step in the ladder/],
     [{ model: 'opus', quote: OPUS_WORDS }, /--task <id> or --scope session/],
     [{ model: 'opus', quote: OPUS_WORDS, task: 'a1', scope: 'session' }, /cannot be given together/],
     [{ model: 'opus', quote: OPUS_WORDS, scope: 'repo' }, /--scope needs session/],
@@ -107,9 +107,9 @@ test('authorize refuses, and writes nothing, for a model that is the first rung 
 
 // ---- 2: acceptance and the recorded line ----
 
-test('authorize accepts the owner\'s words that name Opus in any case or with 5.5, and records the scope, task, quote and time (test 2)', (t) => {
+test('authorize accepts the owner\'s words that name Opus in any case, and records the scope, task, quote and time (test 2)', (t) => {
   const w = world(t, { sessions: { [SESSION]: ['redáctalo en Opus 5.5 por favor', 'en opus, en español natural'] } })
-  const byTask = authorized(w, { model: 'claude-OPUS-5-5', quote: 'redáctalo en Opus 5.5 por favor', task: 'a2' })
+  const byTask = authorized(w, { model: 'opus', quote: 'redáctalo en Opus 5.5 por favor', task: 'a2' })
   assert.equal(byTask.ok, true, byTask.error)
   assert.deepEqual(byTask.authorized, {
     kind: 'authorize', time: 500, session: SESSION, scope: 'task', task: 'a2', model: 'opus',
@@ -127,12 +127,12 @@ test('a task permission covers its own task and no other of the session; a sessi
   assert.equal(authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'a3' }).ok, true)
   const covered = await task.begin(call(BRIEF('a3'), { model: 'opus' }), w.deps)
   const sibling = await task.begin(call(BRIEF('a4'), { model: 'opus' }), w.deps)
-  assert.deepEqual([covered.step, sibling.step], ['opus', 'haiku'])
+  assert.deepEqual([covered.step, sibling.step], ['opus-high', 'haiku-high'])
 
   assert.equal(authorized(w, { model: 'opus', quote: OPUS_WORDS, scope: 'session' }).ok, true)
-  assert.equal((await task.begin(call(BRIEF('a5'), { model: 'opus' }), w.deps)).step, 'opus')
+  assert.equal((await task.begin(call(BRIEF('a5'), { model: 'opus' }), w.deps)).step, 'opus-high')
   const elsewhere = await task.begin(call(BRIEF('a6'), { model: 'opus' }, 'other'), w.deps)
-  assert.equal(elsewhere.step, 'haiku', 'a session permission does not cover another session')
+  assert.equal(elsewhere.step, 'haiku-high', 'a session permission does not cover another session')
 })
 
 // ---- 4: a covered first launch ----
@@ -141,7 +141,7 @@ test('a covered first launch starts on the rung at its first effort, notes the o
   const w = world(t, { settings: SUPER, pick: GROK })
   assert.equal(authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'c4' }).ok, true)
   const plan = await task.begin(call(BRIEF('c4'), { model: 'opus' }), w.deps)
-  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['opus', 'first', 'opus', 'high'])
+  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['opus-high', 'first', 'opus', 'high'])
   assert.deepEqual(w.asked, [], 'superdelegation is on and a pair is free, yet the pair choice is not asked')
   assert.equal(plan.external, null)
   assert.match(plan.notes.join(' '), /owner/)
@@ -163,11 +163,11 @@ test('an Opus permission covers a request for Sonnet; a Sonnet permission does n
   const w = world(t, { sessions: { [SESSION]: [OPUS_WORDS, SONNET_WORDS] } })
   authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'p5' })
   const sonnet = await task.begin(call(BRIEF('p5'), { model: 'sonnet' }), w.deps)
-  assert.deepEqual([sonnet.step, sonnet.args.model, sonnet.args.effort], ['sonnet', 'sonnet', 'high'])
+  assert.deepEqual([sonnet.step, sonnet.args.model, sonnet.args.effort], ['sonnet-high', 'sonnet', 'high'])
 
   authorized(w, { model: 'sonnet', quote: SONNET_WORDS, task: 'p6' })
   const opus = await task.begin(call(BRIEF('p6'), { model: 'opus' }), w.deps)
-  assert.deepEqual([opus.step, opus.args.model], ['haiku', 'haiku'])
+  assert.deepEqual([opus.step, opus.args.model], ['haiku-high', 'haiku'])
   assert.match(opus.notes.join(' '), /no owner authorization covers/)
 })
 
@@ -176,7 +176,7 @@ test('an Opus permission covers a request for Sonnet; a Sonnet permission does n
 test('without a cover the request is ignored as before, with a note on how to record one; haiku or a name with no rung gets no note (test 6)', async (t) => {
   const w = world(t)
   const plan = await task.begin(call(BRIEF('n6'), { model: 'opus' }), w.deps)
-  assert.deepEqual([plan.step, plan.args.model], ['haiku', 'haiku'])
+  assert.deepEqual([plan.step, plan.args.model], ['haiku-high', 'haiku'])
   assert.equal(entries(w.dataDir, 'n6').find((e) => e.kind === 'launch').ignored, true)
   const note = plan.notes.join(' ')
   assert.match(note, /no owner authorization covers opus/)
@@ -192,52 +192,63 @@ test('without a cover the request is ignored as before, with a note on how to re
 test('an authorization recorded after the first launch changes nothing for that task (test 7)', async (t) => {
   const w = world(t)
   const first = await task.begin(call(BRIEF('l7'), { model: 'opus' }), w.deps)
-  assert.equal(first.step, 'haiku')
+  assert.equal(first.step, 'haiku-high')
   assert.equal(authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'l7' }).ok, true)
   await task.verdict({ task: 'l7', verdict: 'fix', findings: [FINDING] }, w.deps)
   const again = await task.begin(call(BRIEF('l7'), { model: 'opus' }), w.deps)
-  assert.deepEqual([again.step, again.kind, again.args.model], ['haiku', 'fix', 'haiku'])
+  assert.deepEqual([again.step, again.kind, again.args.model], ['haiku-xhigh', 'rise', 'haiku'])
 })
 
-// ---- 8: exhaustion from the placed rung ----
+// ---- 8: exhaustion from the placed rung (R18) ----
 
-test('an Opus task has one correction and then is exhausted; a Sonnet task has two and rises to Opus, with the rung it is on (test 8)', async (t) => {
-  const w = world(t, { sessions: { [SESSION]: [OPUS_WORDS, SONNET_WORDS] } })
-  authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'o8' })
-  await task.begin(call(BRIEF('o8'), { model: 'opus' }), w.deps)
-  const once = await task.verdict({ task: 'o8', verdict: 'fix', findings: [F(1)] }, w.deps)
-  assert.deepEqual([once.ok, once.next.kind, once.next.step, once.corrections], [true, 'fix', 'opus', { used: 1, cap: 1 }])
-  const spent = await task.verdict({ task: 'o8', verdict: 'fix', findings: [F(2)] }, w.deps)
-  assert.deepEqual([spent.next.kind, spent.next.step, spent.next.cause], ['exhausted', null, 'exhausted'])
-  assert.equal((await task.begin(call(BRIEF('o8'), { model: 'opus' }), w.deps)).kind, 'refused')
+const OPUS_XHIGH_WORDS = 'despliega un agente que lo haga en Opus con esfuerzo xhigh, en español natural'
+const OPUS_MEDIUM_WORDS = 'despliega un agente que lo haga en Opus con esfuerzo medium, en español natural'
+const ranOn = (plan) => `${plan.step} ${plan.args.model} ${plan.args.effort}`
 
-  authorized(w, { model: 'sonnet', quote: SONNET_WORDS, task: 's8' })
-  const sonnet = await task.begin(call(BRIEF('s8'), { model: 'sonnet' }), w.deps)
-  assert.deepEqual([sonnet.step, sonnet.args.model, sonnet.args.effort], ['sonnet', 'sonnet', 'high'])
-  const c1 = await task.verdict({ task: 's8', verdict: 'fix', findings: [F(1)] }, w.deps)
-  assert.deepEqual([c1.next.step, c1.corrections], ['sonnet', { used: 1, cap: 2 }])
-  const c2 = await task.verdict({ task: 's8', verdict: 'fix', findings: [F(2)] }, w.deps)
-  assert.deepEqual([c2.next.step, c2.corrections], ['sonnet', { used: 2, cap: 2 }])
-  const risen = await task.verdict({ task: 's8', verdict: 'fix', findings: [F(3)] }, w.deps)
-  assert.deepEqual([risen.next.kind, risen.next.step, risen.next.cause, risen.step, risen.corrections], ['rise', 'opus', 'exhausted', 'opus', { used: 0, cap: 1 }])
-  const plan = await task.begin(call(BRIEF('s8'), { model: 'sonnet' }), w.deps)
-  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['opus', 'rise', 'opus', 'high'])
+test('R18: Opus without an effort places the task on step 4, then step 5, and after it the task is exhausted', async (t) => {
+  const w = world(t)
+  assert.equal(authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'p1' }).ok, true)
+  const seen = [ranOn(await task.begin(call(BRIEF('p1'), { model: 'opus' }), w.deps))]
+  assert.equal((await task.verdict({ task: 'p1', verdict: 'fix', findings: [F(1)], session: SESSION }, w.deps)).next.step, 'opus-xhigh')
+  seen.push(ranOn(await task.begin(call(BRIEF('p1'), { model: 'opus' }), w.deps)))
+  assert.equal((await task.verdict({ task: 'p1', verdict: 'fix', findings: [F(2)], session: SESSION }, w.deps)).verdict, 'exhausted')
+  assert.deepEqual(seen, ['opus-high opus high', 'opus-xhigh opus xhigh'])
+})
+
+test('R18: Opus at xhigh places the task on step 5; an effort that is not a step takes the first step of the model at the owner\'s effort', async (t) => {
+  const w = world(t, { sessions: { [SESSION]: [OPUS_XHIGH_WORDS, OPUS_MEDIUM_WORDS] } })
+  assert.equal(authorized(w, { model: 'opus', effort: 'xhigh', quote: OPUS_XHIGH_WORDS, task: 'p2' }).ok, true)
+  assert.equal(ranOn(await task.begin(call(BRIEF('p2'), { model: 'opus' }), w.deps)), 'opus-xhigh opus xhigh')
+  assert.equal(authorized(w, { model: 'opus', effort: 'medium', quote: OPUS_MEDIUM_WORDS, task: 'p3' }).ok, true)
+  assert.equal(ranOn(await task.begin(call(BRIEF('p3'), { model: 'opus' }), w.deps)), 'opus-high opus medium')
+  assert.equal((await task.verdict({ task: 'p3', verdict: 'fix', findings: [F(1)], session: SESSION }, w.deps)).next.step, 'opus-xhigh')
+})
+
+test('R18: a model with no step in the ladder is refused, naming the models that have one, and nothing is written', (t) => {
+  const w = world(t)
+  const noSonnet = { ...ladderLib.loadLadder(), rungs: ladderLib.loadLadder().rungs.filter((r) => r.model !== 'sonnet') }
+  const answer = auth.authorize({ session: SESSION, model: 'sonnet', quote: SONNET_WORDS, task: 'p4' }, { dataDir: w.dataDir, configDir: w.configDir, now: () => 500, ladder: noSonnet })
+  assert.deepEqual([answer.ok, answer.error], [false, 'sonnet has no step in the ladder: the models with a step are haiku, opus'])
+  assert.equal(authorizeLines(w.dataDir).length, 0)
+})
+
+test('R18: the first model needs no authorization without an effort, and with an effort above its first step it is a placement', (t) => {
+  const w = world(t, { sessions: { [SESSION]: ['hazlo en Haiku con esfuerzo xhigh, por favor gracias'] } })
+  const refused = authorized(w, { model: 'haiku', quote: 'hazlo en Haiku con esfuerzo xhigh, por favor gracias', task: 'p5' })
+  assert.deepEqual([refused.ok, refused.error], [false, 'haiku is the first rung: it needs no authorization'])
+  assert.equal(authorized(w, { model: 'haiku', effort: 'xhigh', quote: 'hazlo en Haiku con esfuerzo xhigh, por favor gracias', task: 'p5' }).ok, true)
 })
 
 // ---- 9: a placed task stays on Claude ----
 
-test('a task the owner placed runs on Claude in every attempt, corrections and rises included, with the pair choice on (test 9)', async (t) => {
+test('a task the owner placed runs on Claude in every attempt, rises included, with the pair choice on (test 9)', async (t) => {
   const w = world(t, { settings: SUPER, pick: GROK, sessions: { [SESSION]: [SONNET_WORDS] } })
   authorized(w, { model: 'sonnet', quote: SONNET_WORDS, task: 'z9' })
   const first = await task.begin(call(BRIEF('z9'), { model: 'sonnet' }), w.deps)
   assert.deepEqual([first.external, first.args.model], [null, 'sonnet'])
   await task.verdict({ task: 'z9', verdict: 'fix', findings: [F(1)] }, w.deps)
   const fixed = await task.begin(call(BRIEF('z9'), { model: 'sonnet' }), w.deps)
-  assert.deepEqual([fixed.external, fixed.args.model, fixed.args.effort], [null, 'sonnet', 'high'])
-  await task.verdict({ task: 'z9', verdict: 'fix', findings: [F(2)] }, w.deps)
-  await task.verdict({ task: 'z9', verdict: 'fix', findings: [F(3)] }, w.deps)
-  const risen = await task.begin(call(BRIEF('z9'), { model: 'sonnet' }), w.deps)
-  assert.deepEqual([risen.kind, risen.external, risen.args.model], ['rise', null, 'opus'])
+  assert.deepEqual([fixed.external, fixed.args.model, fixed.args.effort], [null, 'opus', 'high'])
   assert.deepEqual(w.asked, [], 'the pair choice is never asked for the placed task')
 })
 
@@ -247,13 +258,13 @@ test('a forged authorize line whose quote is not in the transcript covers nothin
   const w = world(t)
   log.appendEntry(w.dataDir, { kind: 'authorize', time: 400, session: SESSION, scope: 'task', task: 'f12', model: 'opus', quote: 'una frase que el dueño nunca escribió', quoteTime: '2026-10-29T10:00:00.000Z' })
   const forged = await task.begin(call(BRIEF('f12'), { model: 'opus' }), w.deps)
-  assert.equal(forged.step, 'haiku')
+  assert.equal(forged.step, 'haiku-high')
   assert.match(forged.notes.join(' '), /no owner authorization covers opus/)
 
   assert.equal(authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'f12b' }).ok, true)
   log.appendEntry(w.dataDir, { kind: 'authorize', time: 600, session: SESSION, scope: 'task', task: 'f12b', model: 'opus', quote: 'una frase que el dueño nunca escribió', quoteTime: '2026-10-29T10:00:00.000Z' })
   const above = await task.begin(call(BRIEF('f12b'), { model: 'opus' }), w.deps)
-  assert.equal(above.step, 'opus', 'the last line fails, the earlier one passes')
+  assert.equal(above.step, 'opus-high', 'the last line fails, the earlier one passes')
 })
 
 test('a call without AETHER-TASK gets a generated id that a task permission does not cover, while a session permission does (test 12 b)', async (t) => {
@@ -263,47 +274,47 @@ test('a call without AETHER-TASK gets a generated id that a task permission does
   authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'gen-1' })
   const generated = await task.begin(call('Do the work.', { model: 'opus' }), w.deps)
   assert.equal(generated.id, 'gen-1', 'the generated id is the one the permission names, and still not covered')
-  assert.equal(generated.step, 'haiku')
+  assert.equal(generated.step, 'haiku-high')
   authorized(w, { model: 'opus', quote: OPUS_WORDS, scope: 'session' })
   const bySession = await task.begin(call('Do the work.', { model: 'opus' }), w.deps)
-  assert.equal(bySession.step, 'opus')
+  assert.equal(bySession.step, 'opus-high')
 })
 
 test('a request for the full name claude-opus-5-5, covered by an Opus permission, is honored (test 12 c)', async (t) => {
   const w = world(t)
   authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'h12' })
   const plan = await task.begin(call(BRIEF('h12'), { model: 'claude-opus-5-5' }), w.deps)
-  assert.equal(plan.step, 'opus')
+  assert.equal(plan.step, 'opus-high')
   const launch = entries(w.dataDir, 'h12').find((e) => e.kind === 'launch')
   assert.deepEqual([launch.requested.model, launch.ignored], ['claude-opus-5-5', false])
 })
 
 test('a launch added by hand does not move a task off its first step: a fake step, a bad or wrong-model quote discard it, a readable transcript that changed discards it, an unreadable one keeps it (test 12 d)', async (t) => {
   const w = world(t, { sessions: { [SESSION]: [OPUS_WORDS, SONNET_WORDS] } })
-  const launchLine = (task_, extra = {}) => ({ kind: 'launch', time: 300, session: SESSION, task: task_, step: 'opus', attempt: 1, launchKind: 'first', effort: 'high', edits: false, owns: [], tests: null, description: 'd', requested: null, ignored: false, pin: null, base: null, dirty: null, ...extra })
+  const launchLine = (task_, extra = {}) => ({ kind: 'launch', time: 300, session: SESSION, task: task_, step: 'opus-high', attempt: 1, launchKind: 'first', effort: 'high', edits: false, owns: [], tests: null, description: 'd', requested: null, ignored: false, pin: null, base: null, dirty: null, ...extra })
 
   log.appendEntry(w.dataDir, launchLine('d-plain'))
-  assert.equal((await task.begin(call(BRIEF('d-plain')), w.deps)).step, 'haiku', 'a launch with no authorized is not an opus start')
+  assert.equal((await task.begin(call(BRIEF('d-plain')), w.deps)).step, 'haiku-high', 'a launch with no authorized is not an opus start')
 
   const fakeQuote = { model: 'opus', scope: 'task', task: 'd-fake', quote: 'una frase que el dueño nunca escribió', quoteTime: 'x' }
   log.appendEntry(w.dataDir, launchLine('d-fake', { authorized: fakeQuote }))
-  assert.equal((await task.begin(call(BRIEF('d-fake')), w.deps)).step, 'haiku', 'a quote that is not in a readable transcript discards the step')
+  assert.equal((await task.begin(call(BRIEF('d-fake')), w.deps)).step, 'haiku-high', 'a quote that is not in a readable transcript discards the step')
 
   const wrongModel = { model: 'opus', scope: 'task', task: 'd-wrong', quote: SONNET_WORDS, quoteTime: 'x' }
   log.appendEntry(w.dataDir, launchLine('d-wrong', { authorized: wrongModel }))
-  assert.equal((await task.begin(call(BRIEF('d-wrong')), w.deps)).step, 'haiku', 'a quote that does not name the model discards the step')
+  assert.equal((await task.begin(call(BRIEF('d-wrong')), w.deps)).step, 'haiku-high', 'a quote that does not name the model discards the step')
 
   assert.equal(authorized(w, { model: 'opus', quote: OPUS_WORDS, task: 'd-keep' }).ok, true)
-  assert.equal((await task.begin(call(BRIEF('d-keep'), { model: 'opus' }), w.deps)).step, 'opus')
+  assert.equal((await task.begin(call(BRIEF('d-keep'), { model: 'opus' }), w.deps)).step, 'opus-high')
   fs.renameSync(w.file(SESSION), `${w.file(SESSION)}.moved`)
   const moved = await task.begin(call(BRIEF('d-keep'), { model: 'opus' }), w.deps)
-  assert.deepEqual([moved.step, moved.kind], ['opus', 'unjudged'], 'a transcript that cannot be read does not discard the step')
+  assert.deepEqual([moved.step, moved.kind], ['opus-high', 'unjudged'], 'a transcript that cannot be read does not discard the step')
   fs.renameSync(`${w.file(SESSION)}.moved`, w.file(SESSION))
   fs.writeFileSync(w.file(SESSION), JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: '2026-10-29T11:00:00.000Z', message: { role: 'user', content: 'otro mensaje sin cita' } }) + '\n')
   const changed = await task.begin(call(BRIEF('d-keep'), { model: 'opus' }), w.deps)
-  assert.deepEqual([changed.step, changed.kind], ['haiku', 'unjudged'], 'a readable transcript without the quote discards the step of the first launch')
+  assert.deepEqual([changed.step, changed.kind], ['haiku-high', 'unjudged'], 'a readable transcript without the quote discards the step of the first launch')
   const fresh = await task.begin(call(BRIEF('d-keep2'), { model: 'opus' }), w.deps)
-  assert.equal(fresh.step, 'haiku', 'a new task has no cover from the permission of another task')
+  assert.equal(fresh.step, 'haiku-high', 'a new task has no cover from the permission of another task')
 })
 
 // ---- 13: the bin ----
@@ -375,19 +386,15 @@ test('a covered first launch runs at the authorized effort, not at the ladder ef
   const w = world(t, { sessions: { [SESSION]: [OPUS_MAX_WORDS] } })
   assert.equal(authorized(w, { model: 'opus', effort: 'max', quote: 'en Opus a max esfuerzo', task: 'o-eff' }).ok, true)
   const plan = await task.begin(call(BRIEF('o-eff'), { model: 'opus' }), w.deps)
-  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['opus', 'first', 'opus', 'max'])
+  assert.deepEqual([plan.step, plan.kind, plan.args.model, plan.args.effort], ['opus-high', 'first', 'opus', 'max'])
   assert.equal(entries(w.dataDir, 'o-eff').find((e) => e.kind === 'launch').effort, 'max')
 })
 
-test('a correction keeps the authorized effort unless the ladder raises it further, and a rise returns to the step effort (owner effort)', async (t) => {
+test('a rise returns to the step effort (owner effort)', async (t) => {
   const w = world(t, { sessions: { [SESSION]: [SONNET_MAX_WORDS, OPUS_LOW_WORDS] } })
   assert.equal(authorized(w, { model: 'sonnet', effort: 'max', quote: 'a Sonnet a max por favor', task: 's-eff' }).ok, true)
   await task.begin(call(BRIEF('s-eff'), { model: 'sonnet' }), w.deps)
   await task.verdict({ task: 's-eff', verdict: 'fix', findings: [F(1)] }, w.deps)
-  const fixed = await task.begin(call(BRIEF('s-eff'), { model: 'sonnet' }), w.deps)
-  assert.deepEqual([fixed.kind, fixed.args.model, fixed.args.effort], ['fix', 'sonnet', 'max'])
-  await task.verdict({ task: 's-eff', verdict: 'fix', findings: [F(2)] }, w.deps)
-  await task.verdict({ task: 's-eff', verdict: 'fix', findings: [F(3)] }, w.deps)
   const risen = await task.begin(call(BRIEF('s-eff'), { model: 'sonnet' }), w.deps)
   assert.deepEqual([risen.kind, risen.args.model, risen.args.effort], ['rise', 'opus', 'high'])
 
@@ -396,7 +403,7 @@ test('a correction keeps the authorized effort unless the ladder raises it furth
   assert.equal(low.args.effort, 'low')
   await task.verdict({ task: 'o-low', verdict: 'fix', findings: [F(1)] }, w.deps)
   const raised = await task.begin(call(BRIEF('o-low'), { model: 'opus' }), w.deps)
-  assert.deepEqual([raised.kind, raised.args.effort], ['fix', 'high'], 'the ladder raises a lower authorized effort')
+  assert.deepEqual([raised.kind, raised.args.effort], ['rise', 'xhigh'])
 })
 
 test('an authorization without an effort keeps the old behaviour (owner effort)', async (t) => {
@@ -405,9 +412,9 @@ test('an authorization without an effort keeps the old behaviour (owner effort)'
   assert.equal(res.ok, true, res.error)
   assert.equal('effort' in res.authorized, false, 'no effort is recorded')
   const plan = await task.begin(call(BRIEF('o-plain'), { model: 'opus' }), w.deps)
-  assert.deepEqual([plan.step, plan.args.model, plan.args.effort], ['opus', 'opus', 'high'])
+  assert.deepEqual([plan.step, plan.args.model, plan.args.effort], ['opus-high', 'opus', 'high'])
   await task.verdict({ task: 'o-plain', verdict: 'fix', findings: [F(1)] }, w.deps)
-  assert.equal((await task.begin(call(BRIEF('o-plain')), w.deps)).args.effort, 'high')
+  assert.equal((await task.begin(call(BRIEF('o-plain')), w.deps)).args.effort, 'xhigh')
 })
 
 test('authorize refuses an owner quote taken from a negated sentence, and writes nothing (R5)', (t) => {

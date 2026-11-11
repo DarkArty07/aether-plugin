@@ -52,7 +52,7 @@ test('the bootstrap keeps the canonical rule and corrections of #204 (R6, R9, R1
   const rule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
   assert.ok(text.includes(rule))
   assert.doesNotMatch(text, /about five tool calls|many reads of your own|one effort up|a fork always runs on your model|`aether-exam store`/)
-  for (const token of ['aether:models', 'aether:designing', ["at the step's correction effort in `config", 'ladder.json`'].join('/'), 'ignores `model` on a fork and would run on your model with your whole conversation', 'every `Agent` call whose `subagent_type` is not `aether:*`', 'claude-code-guide', '--ignore <glob>', 'aether-autonomy trust --author <author> --quote "<their words>"', 'aether-exam store specs/NNN-<topic>', 'relaunching an approved or exhausted task id launches a Haiku agent', 'passing more than 3 skills, an unknown skill name, or a skill over the line limit in `AETHER-SKILLS:` rejects the whole launch']) assert.ok(text.includes(token), token)
+  for (const token of ['aether:models', 'aether:designing', ["to the next rung in `config", 'ladder.json`'].join('/'), 'ignores `model` on a fork and would run on your model with your whole conversation', 'every `Agent` call whose `subagent_type` is not `aether:*`', 'claude-code-guide', '--ignore <glob>', 'aether-autonomy trust --author <author> --quote "<their words>"', 'aether-exam store specs/NNN-<topic>', 'relaunching an approved or exhausted task id launches a Haiku agent', 'passing more than 3 skills, an unknown skill name, or a skill over the line limit in `AETHER-SKILLS:` rejects the whole launch']) assert.ok(text.includes(token), token)
   const installed = '/' + 'i'.repeat(63)
   const source = text.replace(/^---\n[\s\S]*?\n---\n/, '').trim().split('${CLAUDE_PLUGIN_ROOT}').join(installed)
   const total = splitParts(source, installed).reduce((sum, part) => sum + part.context.length, 0)
@@ -105,7 +105,7 @@ test('the delegate rules cover every #204 case and its consequence (R10)', () =>
   for (const rule of [
     'every `Agent` call whose `subagent_type` is not `aether:*` (including `Plan`, `claude-code-guide`, or a call with no `subagent_type`) is a delegate task, climbs the ladder, and waits for a verdict',
     'Do not pass `fork` on a delegate task: `Agent` ignores `model` on a fork and would run on your model with your whole conversation.',
-    "`fix` sends the work back to the same model, at the step's correction effort in `config/ladder.json`",
+    "`fix` sends the work to the next rung in `config/ladder.json`",
     'Pass `--ignore <glob>` for dirty files unrelated to the task.',
     'relaunching an approved or exhausted task id launches a Haiku agent that says there is nothing to do',
     '`${CLAUDE_PLUGIN_ROOT}/config/ladder.json`',

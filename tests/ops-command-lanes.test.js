@@ -46,6 +46,8 @@ const PAIR = 'agy/claude-opus-5-5@medium'
 test('pick, took and pause parse to their argument vectors', () => {
   const forms = [
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model opus --effort high`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model opus-6 --effort high`,
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh --exclude ${PAIR}`,
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort xhigh --exclude ${PAIR},grok/grok-4.7@low,muse/muse-wonder-full-1.0@high`,
     `aether-lane pick ${RUN} task-1-1-supervise --role supervisor --model sonnet --effort high --author claude-sonnet-5-5`,
@@ -65,7 +67,8 @@ test('pick, took and pause parse to their argument vectors', () => {
 test('pick, took and pause refuse a value or an order they do not take', () => {
   const refused = [
     `aether-lane pick ${RUN} ${CALL} --role judge --model sonnet --effort high`,
-    `aether-lane pick ${RUN} ${CALL} --role implementer --model gpt --effort high`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model 'op us' --effort high`,
+    `aether-lane pick ${RUN} ${CALL} --role implementer --model 'Opus;rm' --effort high`,
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort ultra`,
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort high --exclude agy/x`,
     `aether-lane pick ${RUN} ${CALL} --role implementer --model sonnet --effort high --author A;B`,

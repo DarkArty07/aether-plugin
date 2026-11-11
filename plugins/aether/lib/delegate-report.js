@@ -10,7 +10,7 @@ const { isObject } = require('./common.js')
 const { isLaunch, readAllEntries } = require('./delegate-log.js')
 const { loadLadder } = require('./ladder.js')
 
-const CAUSES = ['exhausted', 'repeated', 'infeasible']
+const CAUSES = ['failed', 'infeasible']
 
 const last = (list) => list[list.length - 1]
 
@@ -19,7 +19,7 @@ const last = (list) => list[list.length - 1]
 // editing one writes only a `result`, whose `pair` says where it ran. An external attempt that did not end ok was rerun
 // on Claude (the step's model, the launch's effort) and the row says why in `fallback`; a launch with neither ran on
 // Claude, rewritten.
-function rowOfTask(id, entries) {
+function rowOfTask(id, entries, ladder = loadLadder()) {
   const launches = entries.filter(isLaunch)
   const first = launches[0]
   const latest = last(launches)
@@ -28,7 +28,9 @@ function rowOfTask(id, entries) {
   const results = entries.filter((e) => e.kind === 'result' && since(e))
   const outcome = outcomes.length > 0 ? last(outcomes) : null
   const result = outcome === null && results.length > 0 ? last(results) : null
-  const onClaude = { harness: 'claude', model: latest.step, effort: latest.effort ?? null }
+  const rung = ladder.rungs.find((r) => r.step === latest.step)
+  const claudeModel = rung ? rung.model : (latest.step ? latest.step.split('-')[0] : null)
+  const onClaude = { harness: 'claude', model: claudeModel, effort: latest.effort ?? null }
   let ranOn = onClaude
   let status = 'ok'
   if (outcome) {
@@ -104,9 +106,10 @@ function stepCounts(rung, entries) {
   }
   return {
     step: rung.step,
+    model: rung.model,
+    effort: rung.effort,
     tasks: new Set(launches.map((e) => taskKey(e.session, e.task))).size,
     attempts: launches.length,
-    corrections: launches.filter((e) => e.launchKind === 'fix').length,
     approved: verdicts.filter((v) => v.verdict === 'approved').length,
     rises,
     infeasible: verdicts.filter((v) => v.verdict === 'infeasible').map((v) => ({ task: v.task, reason: v.reason ?? null })),
@@ -115,9 +118,9 @@ function stepCounts(rung, entries) {
 
 function delegatesReport({ dataDir = run.dataDir(), session = null, since = 0 } = {}) {
   const entries = readAllEntries(dataDir, { session, since })
-  const delegations = groupTasks(entries).map(({ id, list }) => rowOfTask(id, list))
-  const unverdicted = unverdictedTasks(entries)
   const ladder = loadLadder()
+  const delegations = groupTasks(entries).map(({ id, list }) => rowOfTask(id, list, ladder))
+  const unverdicted = unverdictedTasks(entries)
   return {
     delegations,
     unverdicted,

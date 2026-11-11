@@ -251,9 +251,9 @@ test('the bootstrap sends every delegate through Agent, judges it with aether-de
     'record the `merge-main` grant when it is `main` or `master`',
     'run the task\'s test command once on your branch',
     'do not read the whole diff when they are enough',
-    'Launch a correction or a rise with the same id',
+    'Launch the next attempt, a rise, with the same id',
     'with a reason, to a verdict only to throw that work away',
-    'it spends none of the step\'s corrections',
+    'it does not climb a rung',
     'Plan tasks you build as delegate tasks follow "The delegate ladder"',
   ]) assert.ok(text.includes(needed), needed)
   // The 29,470 bytes of 0.10.0 plus the owner's placement rule of spec 021 (A99), the plan-mode gate (A108) and the issue 50 rules (the owner's words in small fixes, and the version, date and source of a third-party fact), with the same cap as bootstrap-design.test.js,

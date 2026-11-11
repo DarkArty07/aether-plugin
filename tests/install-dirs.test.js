@@ -104,7 +104,7 @@ test('the --spend session written to last is looked up in every install', (t) =>
 
 test('the delegate report counts a launch that is only in the other install, and one in both once', (t) => {
   const { installed, inline } = installs(t)
-  const launch = { kind: 'launch', task: 'other', session: 's1', time: 5, step: 'haiku', attempt: 1, launchKind: 'first', description: 'relaunched', effort: 'low', edits: false }
+  const launch = { kind: 'launch', task: 'other', session: 's1', time: 5, step: 'haiku-high', attempt: 1, launchKind: 'first', description: 'relaunched', effort: 'low', edits: false }
   delegateLog.appendEntry(inline, launch)
   delegateLog.appendEntry(installed, { ...launch, task: 'both', time: 6 })
   delegateLog.appendEntry(inline, { ...launch, task: 'both', time: 6 })
@@ -130,7 +130,7 @@ test('one install keeps every line it holds, an identical pair included: only a 
   appendLog(installed, 's1', call)
   appendLog(installed, 's1', call)
   assert.equal(seatsReport({ dataDir: installed, prices: PRICES }).rounds, 2)
-  const launch = { kind: 'launch', task: 'pair', session: 's1', time: 9, step: 'haiku', attempt: 1, launchKind: 'first', description: 'twice', effort: 'low', edits: false }
+  const launch = { kind: 'launch', task: 'pair', session: 's1', time: 9, step: 'haiku-high', attempt: 1, launchKind: 'first', description: 'twice', effort: 'low', edits: false }
   delegateLog.appendEntry(installed, launch)
   delegateLog.appendEntry(installed, launch)
   assert.equal(delegatesReport({ dataDir: installed }).ladder.steps[0].attempts, 2)
@@ -140,9 +140,9 @@ test('one install keeps every line it holds, an identical pair included: only a 
 // the entries another install holds for the same id; only a report sums (readAllEntries).
 test('the ladder reads the delegate log of its own install alone, and a report reads every install', (t) => {
   const { installed, inline } = installs(t)
-  const launch = { kind: 'launch', task: 'fix-1', session: 's1', time: 5, step: 'haiku', attempt: 1, launchKind: 'first', description: 'same id', effort: 'low', edits: false }
+  const launch = { kind: 'launch', task: 'fix-1', session: 's1', time: 5, step: 'haiku-high', attempt: 1, launchKind: 'first', description: 'same id', effort: 'low', edits: false }
   delegateLog.appendEntry(installed, launch)
-  delegateLog.appendEntry(inline, { ...launch, session: 's2', time: 6, step: 'sonnet', attempt: 3 })
+  delegateLog.appendEntry(inline, { ...launch, session: 's2', time: 6, step: 'sonnet-high', attempt: 3 })
   assert.deepEqual(delegateLog.readEntries(installed, { task: 'fix-1' }).map((e) => e.attempt), [1])
   assert.deepEqual(delegateLog.readEntries(inline, { task: 'fix-1' }).map((e) => e.attempt), [3])
   assert.deepEqual(delegateLog.readAllEntries(installed, { task: 'fix-1' }).map((e) => e.attempt), [1, 3])

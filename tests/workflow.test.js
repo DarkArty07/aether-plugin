@@ -527,8 +527,8 @@ test('an implementer that returns no report twice blocks the unit after two atte
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
   assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent (exhausted)'])
-  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'sonnet', 'opus', 'opus'])
-  assert.deepEqual(unit.tiers, ['haiku high', 'haiku xhigh', 'sonnet high', 'opus high'])
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'opus', 'opus'])
+  assert.deepEqual(unit.tiers, ['haiku high', 'haiku xhigh', 'sonnet high', 'opus high', 'opus xhigh'])
   assert.equal(run.calls.some((c) => c.role === 'supervisor' && c.unit === 'task-2'), false)
   assert.equal(run.result.units[0].status, 'merged')
 })
@@ -541,12 +541,8 @@ test('different findings each time keep the ladder: every rung runs, then the la
   assert.equal(run.error, null, run.error && run.error.stack)
   const unit = run.result.units[1]
   assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent (exhausted)'])
-  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), [
-    'haiku', 'haiku', 'haiku', 'haiku', 'haiku', 'haiku',
-    'sonnet', 'sonnet', 'sonnet',
-    'opus', 'opus',
-  ])
-  assert.equal(unit.ladder.rises.exhausted, 2)
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'opus', 'opus'])
+  assert.equal(unit.ladder.rises.failed, 4)
 })
 
 test('the same findings twice raise the model from haiku to sonnet, and the unit merges', async (t) => {
@@ -563,7 +559,7 @@ test('the same findings twice raise the model from haiku to sonnet, and the unit
   const unit = run.result.units[1]
   assert.equal(unit.status, 'merged')
   assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet'])
-  assert.equal(unit.ladder.rises.repeated, 1)
+  assert.equal(unit.ladder.rises.failed, 2)
 })
 
 test('a retry without findings is completed with the ruling and first Owns entry, and the repeated finding raises the model', async (t) => {
@@ -651,7 +647,7 @@ test('an unknown verdict every time counts as a retry and exhausts the ladder', 
   const unit = run.result.units[1]
   assert.equal(unit.status, 'blocked')
   assert.equal(unit.reason, 'the ladder is spent (exhausted)')
-  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'sonnet', 'opus', 'opus'])
+  assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'opus', 'opus'])
   assert.equal(run.calls.some((c) => c.kind === 'ops:merge' && c.unit === 'task-2'), false)
 })
 
@@ -754,10 +750,10 @@ test("a retry on haiku runs at xhigh, and an escalation runs the next model at h
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   assert.deepEqual(rungs(run, 'task-1'), ['haiku high', 'haiku xhigh'])
-  assert.deepEqual(rungs(run, 'task-2'), ['haiku high', 'sonnet high'])
+  assert.deepEqual(rungs(run, 'task-2'), ['haiku high', 'haiku xhigh'])
   assert.deepEqual(run.result.units.map((u) => u.tiers), [
     ['haiku high', 'haiku xhigh'],
-    ['haiku high', 'sonnet high'],
+    ['haiku high', 'haiku xhigh'],
   ])
   assert.match(attemptsOf(run, 'task-1')[1].prompt, /- Attempt 1 on haiku high: DONE\./)
 })
@@ -805,7 +801,7 @@ test('the retry after a merge conflict keeps the model and the effort', async (t
   ])
 })
 
-test("the supervisor's Ladder section names the rung and corrections used", async (t) => {
+test("the supervisor's Ladder section names the rung and policy", async (t) => {
   const args = twoTasks(t)
   const run = await runWorkflow(args, {
     supervisor: (call, approve) => (call.unit === 'task-1' && call.n <= 2 ? retry(`gap ${call.n}`) : approve(call)),
@@ -814,12 +810,12 @@ test("the supervisor's Ladder section names the rung and corrections used", asyn
   const ladders = run.calls.filter((c) => c.role === 'supervisor' && c.unit === 'task-1').map((c) => c.prompt.split('\n## Ladder\n')[1])
   // The section is data: what the ladder does with a ruling lives once, in supervisor.md (pinned in swarm-ladder-agents.test.js).
   assert.deepEqual(ladders, [
-    'Rung: haiku high. Corrections used on this rung: 0 of 5.',
-    'Rung: haiku xhigh. Corrections used on this rung: 1 of 5.',
-    'Rung: haiku xhigh. Corrections used on this rung: 2 of 5.',
+    "Rung 1 of 5: haiku-high, on haiku high. A failed attempt rises one rung; the last rung's failure ends the unit.",
+    "Rung 2 of 5: haiku-xhigh, on haiku xhigh. A failed attempt rises one rung; the last rung's failure ends the unit.",
+    "Rung 3 of 5: sonnet-high, on sonnet high. A failed attempt rises one rung; the last rung's failure ends the unit.",
   ])
   const body = fs.readFileSync(path.join(PLUGIN, 'agents', 'supervisor.md'), 'utf8')
-  assert.ok(body.includes('The ladder raises the model by itself: when the corrections of the rung are spent'))
+  assert.ok(body.includes('The ladder rises one rung after each failed attempt.'))
 })
 
 test("every task starts on haiku high, ignoring plan tier and effort", async (t) => {

@@ -22,10 +22,10 @@ const verdict = (task, step, label, time, next = { kind: 'done' }) => ({ kind: '
 
 function build(dir) {
   const log = [
-    launch('a', 'haiku', 'first', 1, 1), out('a', 1, 'gemini-3.8-flash', 2), verdict('a', 'haiku', 'approved', 3),
-    launch('b', 'haiku', 'first', 1, 4), out('b', 1, 'gemini-3.8-flash', 5), verdict('b', 'haiku', 'fix', 6, { kind: 'rise', cause: 'repeated', step: 'sonnet' }),
-    launch('b', 'sonnet', 'rise', 2, 7), out('b', 2, 'gemini-4-argon', 8), verdict('b', 'sonnet', 'approved', 9),
-    launch('c', 'haiku', 'first', 1, 10), out('c', 1, 'mystery-model', 11), verdict('c', 'haiku', 'approved', 12),
+    launch('a', 'haiku-high', 'first', 1, 1), out('a', 1, 'gemini-3.8-flash', 2), verdict('a', 'haiku-high', 'approved', 3),
+    launch('b', 'haiku-high', 'first', 1, 4), out('b', 1, 'gemini-3.8-flash', 5), verdict('b', 'haiku-high', 'fix', 6, { kind: 'rise', cause: 'failed', step: 'sonnet-high' }),
+    launch('b', 'sonnet-high', 'rise', 2, 7), out('b', 2, 'gemini-4-argon', 8), verdict('b', 'sonnet-high', 'approved', 9),
+    launch('c', 'haiku-high', 'first', 1, 10), out('c', 1, 'mystery-model', 11), verdict('c', 'haiku-high', 'approved', 12),
   ]
   fs.mkdirSync(path.join(dir, 'delegates'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'delegates', 'log.jsonl'), log.map((e) => JSON.stringify(e)).join('\n') + '\n')
@@ -76,8 +76,8 @@ test('the baseline answers the three questions in numbers and reads another dire
   assert.deepEqual(snapshot(repoRoot), beforeRepo)
   assert.equal(JSON.stringify(result).includes('ZEBRA'), false)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(to, 'observe', 'baseline.json'), 'utf8')), result)
-  assert.deepEqual(result.approvalsByStep.haiku, { launches: 3, approved: 2, fixes: 0, rises: 0 })
-  assert.deepEqual(result.approvalsByStep.sonnet, { launches: 1, approved: 1, fixes: 0, rises: 1 })
+  assert.deepEqual(result.approvalsByStep['haiku-high'], { launches: 3, approved: 2, fixes: 0, rises: 0 })
+  assert.deepEqual(result.approvalsByStep['sonnet-high'], { launches: 1, approved: 1, fixes: 0, rises: 1 })
   assert.deepEqual(result.noCandidate, { count: 2, calls: 1 })
   assert.deepEqual(result.runs, { finalized: 2, abandoned: 1, usd: { count: 2, min: 10, median: 20, max: 30 } })
   assert.deepEqual(result.usage, { sessions: 1, parts: 2 })
@@ -124,24 +124,24 @@ test('haikuCost joins outcomes to the last preceding launch in log order and rep
   const to = tempDir(t)
   const log = [
     // Task h: approved on Haiku; chain tried two pairs (attempt 1 failed, attempt 2 ok), both under launch attempt 1
-    launch('h', 'haiku', 'first', 1, 1),
+    launch('h', 'haiku-high', 'first', 1, 1),
     out('h', 1, 'gemini-3.8-flash', 2, 'failed'),
     out('h', 2, 'gemini-3.8-flash', 3, 'ok'),
-    verdict('h', 'haiku', 'approved', 4),
+    verdict('h', 'haiku-high', 'approved', 4),
 
     // Task s: rose to Sonnet and approved; attempts 1 and 2 ran under Haiku launch, attempts 3 and 4 ran under Sonnet launch
-    launch('s', 'haiku', 'first', 1, 5),
+    launch('s', 'haiku-high', 'first', 1, 5),
     out('s', 1, 'gemini-3.8-flash', 6, 'failed'),
     out('s', 2, 'gemini-3.8-flash', 7, 'ok'),
-    verdict('s', 'haiku', 'fix', 8, { kind: 'rise', cause: 'repeated', step: 'sonnet' }),
-    launch('s', 'sonnet', 'rise', 2, 9),
+    verdict('s', 'haiku-high', 'fix', 8, { kind: 'rise', cause: 'failed', step: 'sonnet-high' }),
+    launch('s', 'sonnet-high', 'rise', 2, 9),
     out('s', 3, 'gemini-4-argon', 10, 'failed'),
     out('s', 4, 'gemini-4-argon', 11, 'ok'),
-    verdict('s', 'sonnet', 'approved', 12),
+    verdict('s', 'sonnet-high', 'approved', 12),
 
     // Task e: approved on Haiku, but has no outcome at all (e.g. editing delegate)
-    launch('e', 'haiku', 'first', 1, 13),
-    verdict('e', 'haiku', 'approved', 14),
+    launch('e', 'haiku-high', 'first', 1, 13),
+    verdict('e', 'haiku-high', 'approved', 14),
 
     // Orphan outcome with no preceding launch
     out('orphan', 1, 'gemini-3.8-flash', 15),
