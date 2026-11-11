@@ -13,7 +13,7 @@ AA measures every model at every effort on the same tasks and publishes the inte
 
 | Source | Gives | Does not give |
 |---|---|---|
-| **API** (`/api/v2/language/models/free`, header `x-api-key`, paged with `?page=N`) | Intelligence index and its six area indexes, cost per task of the index, price per token, speed, first-token time | The coding index and the agentic index (null in every row), Terminal-Bench 4.0, long-context reasoning (LCR), HLE and SciCode, which are on the model pages; tokens per task, AA-Briefcase, GDPval, CritPt, AA-Omniscience |
+| **API** (`/api/v2/language/models/free`, header `x-api-key`, paged with `?page=N`) | Intelligence index and its six area indexes, cost per task of the index, price per token, speed, first-token time | The coding index and the agentic index (null in every row of the API, and not figures on the model pages either, read on 2026-11-11), Terminal-Bench 4.0, long-context reasoning (LCR), HLE and SciCode, which are on the model pages; tokens per task, AA-Briefcase, GDPval, CritPt, AA-Omniscience |
 | **Model pages** (`https://artificialanalysis.ai/models/<slug>`) | Per benchmark: score, output tokens and cost of one task; the cost of an index task split by token type (answer, reasoning, cache write, cache read, input); AA-Briefcase (Elo, rubric pass rate, analytical quality, presentation) | A figure for a model that AA does not publish at that effort (Gemini 3.8 Flash `low` has no cost; Muse is measured only at `max`) |
 | **Website charts** (Intelligence, Capability Indexes, Benchmarks, Token Use, Cost, Speed, Latency) | The same figures for the 28 models the owner picks, and the Pareto line of each chart | Anything for a model that is not selected: the owner adds it with "Add model from specific provider" |
 
@@ -26,6 +26,8 @@ Table refresh reads model pages (`aa-api.js`, `scripts/refresh-lanes.js`), only 
 `node .claude/skills/artificial-analysis/aa-api.js <slug>...` reads the model pages without a key and prints the code figures for each slug.
 
 `node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]` reads the model pages of Claude rows without a key, updates their code figures (with `--write`), and shows the recalculated ladder against the stored ladder.
+
+`node scripts/build-models-index.js --pages` reads the model page of each offered model for Terminal-Bench, which the free API no longer gives; it reads the website only with that flag, and only when the owner asks.
 
 `node .claude/skills/artificial-analysis/aa-pages.js api ["name regex"]` asks the free API with the key and prints, for each model whose name matches, the intelligence index, the cost per task, the price per token and the speed.
 

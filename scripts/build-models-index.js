@@ -3,6 +3,12 @@
 
 // Usage: node scripts/build-models-index.js [--from <raw.json>] [--since 2026-01-01] [--harnesses claude,agy,grok] [--write]
 //                                           [--lanes <lanes.json>] [--pairs <pairs.json>] [--harness <file>] [--profiles <file>] [--out <dir>] [--docs <dir>]
+//                                           [--pages] [--cache <dir>]
+//
+// With --pages, after the list is read, the model page of each offered model (one request per page, 1.5 s apart at least, each
+// answer saved in --cache, by default a folder under the system's temporary folder) gives its Terminal-Bench, which the free list no
+// longer gives. Neither the list nor the pages give a coding index, so none is written. A 403 or 429 stops the pass: nothing is written
+// and the exit code is 1. Without --pages the pages are not read at all.
 //
 // Builds the list of the models our harnesses offer, from the Artificial Analysis (AA) models list: the
 // families released since a date, each with its effort variants, of which the ones that are the newest of
@@ -22,11 +28,15 @@
 // list takes its efforts from the rows of the pairs table (config/pairs.json) of its harness and model.
 
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { keyFrom, keyFile, envFileFor, KEY } = require('./refresh-lanes.js')
+const { PAGE_URL, indexesOf, readPages } = require('../.claude/skills/artificial-analysis/aa-api.js')
 
 // AA's free list of language models (the same key). The legacy data address of AA's API answers 410 since 2026-11-04.
 const MODELS_URL = 'https://artificialanalysis.ai/api/v2/language/models/free'
+// Where --pages keeps each model page it reads, unless --cache names another folder.
+const DEFAULT_CACHE = path.join(os.tmpdir(), 'aether-models-index-pages')
 // The most pages read in one run: a list that still says it has more after this many is refused, not read in part.
 const MAX_PAGES = 20
 
@@ -36,7 +46,7 @@ const DEFAULT_PAIRS = path.join(__dirname, '..', 'plugins', 'aether', 'config', 
 const DEFAULT_OUT = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models')
 const DEFAULT_DOCS = path.join(__dirname, '..', 'docs', 'models')
 const USAGE =
-  'usage: node scripts/build-models-index.js [--from <raw.json>]... [--since YYYY-MM-DD] [--harnesses claude,agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--pairs <pairs.json>] [--harness <file>] [--out <dir>] [--docs <dir>]'
+  'usage: node scripts/build-models-index.js [--from <raw.json>]... [--since YYYY-MM-DD] [--harnesses claude,agy,grok] [--profiles <file>] [--write] [--lanes <lanes.json>] [--pairs <pairs.json>] [--harness <file>] [--out <dir>] [--docs <dir>] [--pages] [--cache <dir>]'
 // claude is the native harness, the first: its models are not lanes. The others are lanes.
 const HARNESSES = ['claude', 'agy', 'codex', 'grok', 'cursor', 'muse']
 // The chosen harnesses, whose models the index keeps. Another comes in with --harnesses once its listing is in harness-models.json.
@@ -751,10 +761,11 @@ function readJson(file) {
 }
 
 function parseArgs(argv) {
-  const args = { from: [], since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, pairs: DEFAULT_PAIRS, pairsGiven: false, harness: null, out: DEFAULT_OUT, docs: DEFAULT_DOCS, harnesses: DEFAULT_HARNESSES.join(','), profiles: null }
-  const flags = { '--since': 'since', '--lanes': 'lanes', '--pairs': 'pairs', '--harness': 'harness', '--harnesses': 'harnesses', '--profiles': 'profiles', '--out': 'out', '--docs': 'docs' }
+  const args = { from: [], since: DEFAULT_SINCE, write: false, lanes: DEFAULT_LANES, pairs: DEFAULT_PAIRS, pairsGiven: false, harness: null, out: DEFAULT_OUT, docs: DEFAULT_DOCS, harnesses: DEFAULT_HARNESSES.join(','), profiles: null, pages: false, cache: DEFAULT_CACHE }
+  const flags = { '--since': 'since', '--lanes': 'lanes', '--pairs': 'pairs', '--harness': 'harness', '--harnesses': 'harnesses', '--profiles': 'profiles', '--out': 'out', '--docs': 'docs', '--cache': 'cache' }
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--write') args.write = true
+    else if (argv[i] === '--pages') args.pages = true
     else if (argv[i] === '--from' && i + 1 < argv.length) args.from.push(argv[++i])
     else if (flags[argv[i]] && i + 1 < argv.length) {
       if (argv[i] === '--pairs') args.pairsGiven = true
@@ -768,6 +779,7 @@ function parseArgs(argv) {
   args.harnesses = HARNESSES.filter((name) => args.harnesses.includes(name))
   args.out = path.resolve(args.out)
   args.docs = path.resolve(args.docs)
+  args.cache = path.resolve(args.cache)
   args.harness = path.resolve(args.harness ?? (fs.existsSync(path.join(args.out, 'harness-models.json')) ? path.join(args.out, 'harness-models.json') : path.join(DEFAULT_OUT, 'harness-models.json')))
   args.profiles = path.resolve(args.profiles ?? (fs.existsSync(path.join(args.out, 'profiles.json')) ? path.join(args.out, 'profiles.json') : path.join(DEFAULT_OUT, 'profiles.json')))
   args.lanes = path.resolve(args.lanes)
@@ -775,7 +787,7 @@ function parseArgs(argv) {
   return args
 }
 
-async function main(argv, { env = process.env, fetch = globalThis.fetch, now = Date.now, envFile } = {}) {
+async function main(argv, { env = process.env, fetch = globalThis.fetch, now = Date.now, envFile, pause } = {}) {
   const args = parseArgs(argv)
   if (!args) return { exitCode: 2, stdout: `${USAGE}\n` }
 
@@ -808,10 +820,18 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
 
   const generatedAt = localDate(new Date(now()))
   const index = buildIndex(models, { since: args.since, lanes, harnessModels, generatedAt, harnesses: args.harnesses, pairs })
+  let pages = null
+  if (args.pages) {
+    try {
+      pages = await fillFromPages(index, { fetch, pause, cache: args.cache })
+    } catch (err) {
+      return { exitCode: 1, stdout: `${err.message}\nNothing was written.\n` }
+    }
+  }
 
   const file = buildModels(index, profiles)
   const missing = missingProfiles(file)
-  let stdout = summary(index)
+  let stdout = summary(index, pages)
   if (missing.length > 0) {
     stdout += `Without a profile (${missing.length}): ${missing.join(', ')}. Read each maker's page and add it to ${args.profiles}.\n`
   }
@@ -829,6 +849,28 @@ async function main(argv, { env = process.env, fetch = globalThis.fetch, now = D
     stdout += `written to ${modelsFile} and ${readmeFile}\n`
   }
   return { exitCode, stdout }
+}
+
+// Fills the Terminal-Bench of each variant the index offers, from its model page (one page per variant slug), where the free list gives
+// none. A figure a page does not give stays null, so models.json leaves it out. The coding index stays as the list gives it (null): no
+// page gives one. The index then cites the list and the pages. Returns what the pass read, for the summary; throws (a 403 or 429, or a
+// failed request) so that nothing is written.
+async function fillFromPages(index, { fetch, pause, cache }) {
+  const variants = index.families.flatMap((family) => family.variants)
+  const slugs = [...new Set(variants.map((variant) => variant.slug))]
+  const report = {}
+  const pages = await readPages(slugs, { fetch, pause, cacheDir: cache, parse: indexesOf, report })
+  const problems = []
+  const noTerminalBench = []
+  for (const variant of variants) {
+    const figures = pages.get(variant.slug)
+    if (figures?.error) problems.push(`${variant.slug} (${figures.error})`)
+    else if (figures === null) problems.push(`${variant.slug} (the page has no block for the model)`)
+    variant.terminalBench ??= figures?.terminalBench ?? null
+    if (variant.terminalBench === null) noTerminalBench.push(variant.slug)
+  }
+  index.source = `${MODELS_URL} and the model pages ${PAGE_URL}<slug>`
+  return { report, cache, problems, noTerminalBench, pages: slugs.length }
 }
 
 // Every page of AA's free list, read in order: page 1 at MODELS_URL, the rest at ?page=N, until pagination.has_more is
@@ -941,7 +983,19 @@ function localDate(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
-function summary(index) {
+// The lines of a pass over the model pages: how many were asked and how many came from the cache, that neither the API nor the pages
+// give a coding index, the offered models whose page gave no Terminal-Bench, and the pages that were not a model page.
+function pagesSummary(pages) {
+  const list = (slugs) => slugs.join(', ') || 'none'
+  return (
+    `Pages: ${pages.report.network} read from the network, ${pages.report.cached} from the cache (${pages.cache}).\n` +
+    'Neither the API nor the model pages give a coding index: coding is left out of models.json.\n' +
+    `Offered models whose page gave no Terminal-Bench (${pages.noTerminalBench.length}): ${list(pages.noTerminalBench)}.\n` +
+    (pages.problems.length > 0 ? `Not a model page (${pages.problems.length}): ${pages.problems.join(', ')}.\n` : '')
+  )
+}
+
+function summary(index, pages = null) {
   const reached = index.harnesses.map((name) => {
     const count = index.families.filter((family) => family.available.some((entry) => entry.harness === name)).length
     return `${name} ${count}`
@@ -960,7 +1014,7 @@ function summary(index) {
     `Offered and out of scope, released before ${index.since} (${outOfScope.length}): ${named(outOfScope)}.\n` +
     `Named by the lane table and not offered (${index.notOffered.length}): ${named(index.notOffered)}.\n` +
     (excluded.length > 0 ? `Offered and excluded by the owner (${excluded.length}): ${named(excluded)}.\n` : '') +
-    (index.notGiven.length > 0 ? `Not given by the source in any row, so left out of models.json: ${index.notGiven.join(', ')}.\n` : '')
+    (pages ? pagesSummary(pages) : index.notGiven.length > 0 ? `Not given by the source in any row, so left out of models.json: ${index.notGiven.join(', ')}.\n` : '')
   )
 }
 

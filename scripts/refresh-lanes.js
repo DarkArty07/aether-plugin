@@ -119,7 +119,13 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
 
   const claudeRows = pairsTable.pairs.filter((row) => row.harness === 'claude')
   const slugs = [...new Set(claudeRows.map((row) => row.slug))]
-  const pages = await readPages(slugs, { fetch, pause })
+  let pages
+  try {
+    pages = await readPages(slugs, { fetch, pause })
+  } catch (err) {
+    // A 403 or 429 stops the pass at the page it names: nothing is written, and the exit code is 1.
+    return { exitCode: 1, stdout: `${err.message}\nNothing was written.\n` }
+  }
 
   const changes = []
   const failures = []

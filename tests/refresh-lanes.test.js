@@ -108,6 +108,25 @@ test('a page with no code figure and a page that does not answer leave their row
   assert.equal(rowsOf(files)[1].code, undefined)
 })
 
+test('a 403 or a 429 from a page stops the refresh: the page is named, no later page is asked, nothing is written, and the exit code is 1', async (t) => {
+  for (const status of [403, 429]) {
+    const files = setup(t)
+    const before = fs.readFileSync(files.pairs, 'utf8')
+    const asked = []
+    const blocked = async (url) => {
+      asked.push(url)
+      if (url.endsWith('claude-a-xhigh')) return { ok: false, status, text: async () => '' }
+      return serve(GOOD)(url)
+    }
+    const out = await run(files, blocked, ['--write'])
+    assert.equal(out.exitCode, 1, out.stdout)
+    assert.ok(out.stdout.includes(`answered ${status} for https://artificialanalysis.ai/models/claude-a-xhigh`), out.stdout)
+    assert.ok(out.stdout.includes('Nothing was written.'), out.stdout)
+    assert.deepEqual(asked, ['https://artificialanalysis.ai/models/claude-a-high', 'https://artificialanalysis.ai/models/claude-a-xhigh'])
+    assert.equal(fs.readFileSync(files.pairs, 'utf8'), before)
+  }
+})
+
 test('the refresh needs no key and sends none, and no longer reads or writes the lane table', async (t) => {
   const files = setup(t)
   const seen = []
