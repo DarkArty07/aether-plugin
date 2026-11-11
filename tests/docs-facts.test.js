@@ -830,7 +830,7 @@ test('decisions A117 to A120 are recorded with the owner quotes, the index names
     assert.ok(rowOf(id).includes(quote), `${id} quotes the owner: ${quote}`)
   }
   assert.match(decisions, /about five tool calls/)
-  assert.match(read('docs/index.md'), /A1–A121/)
+  assert.match(read('docs/index.md'), /A1–A122/)
 })
 
 test('the canonical countable rule is identical across the six places of R6, AGENTS.md says three parts, and the components page measures PostToolUse on reads (R6, R8, R12)', () => {
