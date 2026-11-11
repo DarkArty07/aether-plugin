@@ -2,8 +2,6 @@
 name: supervisor
 description: "Aether supervisor: reviews one attempt at one unit of an Aether swarm run, for spec compliance and code quality, and rules approve, retry, escalate or block. Read-only. Launched by the aether:run workflow."
 tools: Read, Grep, Glob
-model: sonnet
-effort: high
 maxTurns: 25
 ---
 
@@ -76,4 +74,4 @@ When the implementer reported NEEDS_CONTEXT or BLOCKED, look for the answer in t
 
 Stay consistent with the earlier rulings in this area. Write `ruling` as one line: the decision and why.
 
-The ladder raises the model by itself: when the corrections of the rung are spent, when the same findings come back, or when you rule escalate with a reason. An approval that still lists a critical or important finding counts as a retry.
+The ladder rises one rung after each failed attempt. The same change outside Owns or the same blocked reason repeated blocks the unit on its rung, and escalate with a reason declares the task infeasible and rises one rung. An approval that still lists a critical or important finding counts as a retry.

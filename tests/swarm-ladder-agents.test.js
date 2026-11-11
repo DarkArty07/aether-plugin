@@ -34,7 +34,7 @@ test('the supervisor demands a file and what is missing in each finding of a ret
   const text = read('agents', 'supervisor.md')
   assert.ok(text.includes('Every finding of a retry names a file and what is missing.'))
   assert.ok(text.includes('the Gate evidence section of your message shows their result'))
-  assert.ok(text.includes('The ladder raises the model by itself: when the corrections of the rung are spent, when the same findings come back, or when you rule escalate with a reason.'))
+  assert.ok(text.includes('The ladder rises one rung after each failed attempt.'))
   assert.doesNotMatch(text, /You cannot run commands\./)
   assert.doesNotMatch(text, /The workflow enforces the ladder/)
   assert.doesNotMatch(text, /on a Haiku task|on a Sonnet or Opus task/)

@@ -29,7 +29,7 @@ const RUN = /^\d{8}-\d{6}-[0-9a-f]{4}$/
 const TASK = /^task-\d+$/
 const CALL = /^(task-\d+-\d+-(implement|supervise)|final-review(-slice-\d+)?)$/
 const ROLES = ['implementer', 'supervisor', 'reviewer']
-const TIERS = ['haiku', 'sonnet', 'opus']
+const NATIVE_MODEL = /^[a-z][a-z0-9-]*$/
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/
 const DIGEST = /^[0-9a-f]{8}:\d+$/
@@ -59,7 +59,7 @@ const word = (expected) => (token) => token === expected
 
 // The four shapes of `aether-lane pick`: --exclude and --author are optional, and --exclude goes first.
 function pickForms() {
-  const head = [word('pick'), is(RUN), is(CALL), word('--role'), oneOf(ROLES), word('--model'), oneOf(TIERS), word('--effort'), oneOf(EFFORTS)]
+  const head = [word('pick'), is(RUN), is(CALL), word('--role'), oneOf(ROLES), word('--model'), is(NATIVE_MODEL), word('--effort'), oneOf(EFFORTS)]
   const exclude = [word('--exclude'), is(PAIR_IDS)]
   const author = [word('--author'), is(FAMILY)]
   return [head, [...head, ...exclude], [...head, ...author], [...head, ...exclude, ...author]].map((checks) => ({ checks }))

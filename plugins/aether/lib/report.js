@@ -222,8 +222,7 @@ function ladderOf(results) {
           id: unit.id,
           steps: [],
           lastFirstTry: false,
-          corrections: Number(0),
-          rises: { exhausted: 0, repeated: 0, infeasible: 0 },
+          rises: { failed: 0, infeasible: 0 },
           gateRejections: 0,
           filled: 0,
         }
@@ -237,12 +236,10 @@ function ladderOf(results) {
           }
         }
         if ('firstTry' in b) item.lastFirstTry = Boolean(b.firstTry)
-        item.corrections += typeof b.corrections === 'number' ? b.corrections : Number(0)
         item.gateRejections += typeof b.gateRejections === 'number' ? b.gateRejections : 0
         item.filled += typeof b.filled === 'number' ? b.filled : 0
         if (b.rises && typeof b.rises === 'object') {
-          item.rises.exhausted += typeof b.rises.exhausted === 'number' ? b.rises.exhausted : 0
-          item.rises.repeated += typeof b.rises.repeated === 'number' ? b.rises.repeated : 0
+          item.rises.failed += typeof b.rises.failed === 'number' ? b.rises.failed : 0
           item.rises.infeasible += typeof b.rises.infeasible === 'number' ? b.rises.infeasible : 0
         }
       }
@@ -257,7 +254,6 @@ function ladderOf(results) {
       id: item.id,
       steps: item.steps,
       firstTry,
-      corrections: item.corrections,
       rises: { ...item.rises },
       gateRejections: item.gateRejections,
       filled: item.filled,
@@ -266,10 +262,8 @@ function ladderOf(results) {
 
   return {
     firstTry: unitList.filter((u) => u.firstTry).length,
-    corrections: unitList.reduce((sum, u) => sum + u.corrections, 0),
     rises: {
-      exhausted: unitList.reduce((sum, u) => sum + u.rises.exhausted, 0),
-      repeated: unitList.reduce((sum, u) => sum + u.rises.repeated, 0),
+      failed: unitList.reduce((sum, u) => sum + u.rises.failed, 0),
       infeasible: unitList.reduce((sum, u) => sum + u.rises.infeasible, 0),
     },
     gateRejections: unitList.reduce((sum, u) => sum + u.gateRejections, 0),

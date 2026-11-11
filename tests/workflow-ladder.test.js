@@ -7,12 +7,12 @@ const path = require('node:path')
 const { makeRepo, compile, PLUGIN } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { runWorkflow, laneAnswer, laneOf } = require('./workflow-harness.js')
-const { loadLadder, effortFor } = require('../plugins/aether/lib/ladder.js')
+const { loadLadder } = require('../plugins/aether/lib/ladder.js')
 
 const L = loadLadder()
-const [HAIKU, SONNET] = L.rungs
-const FIRST = `${HAIKU.model} ${HAIKU.effort.first}`
-const RETRY = `${HAIKU.model} ${HAIKU.effort.retry}`
+const RUNGS = L.rungs
+const FIRST = `${RUNGS[0].model} ${RUNGS[0].effort}`
+const SECOND = `${RUNGS[1].model} ${RUNGS[1].effort}`
 
 const build = (t, tasks) => compile(makeRepo(t), plan(tasks))
 const one = (t, options = {}) => build(t, [task(1, options)])
@@ -23,6 +23,39 @@ const attempts = (run, unitId = 'task-1') => run.calls.filter((c) => c.role === 
 const rungs = (run, unitId = 'task-1') => attempts(run, unitId).map((c) => `${c.model} ${c.effort}`)
 const supervisions = (run, unitId = 'task-1') => run.calls.filter((c) => c.role === 'supervisor' && c.unit === unitId)
 const unitOf = (run, id = 'task-1') => run.result.units.find((u) => u.id === id)
+const level = (run, unitId = 'task-1') => supervisions(run, unitId).map((c) => `${c.model} ${c.effort}`)
+
+test('a unit that fails four times climbs the five rungs, and its supervisor follows the author: Sonnet high, Sonnet high, Opus high, Opus xhigh, Opus xhigh', async (t) => {
+  const run = await runWorkflow(one(t), { supervisor: (call, approve) => (call.n <= 4 ? retry(`gap ${call.n}`) : approve(call)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(rungs(run), ['haiku high', 'haiku xhigh', 'sonnet high', 'opus high', 'opus xhigh'])
+  assert.deepEqual(level(run), ['sonnet high', 'sonnet high', 'opus high', 'opus xhigh', 'opus xhigh'])
+  assert.deepEqual(unitOf(run).ladder.rises, { failed: 4, infeasible: 0 })
+  assert.equal('corrections' in unitOf(run).ladder, false)
+})
+
+test('a unit that fails five times is blocked with the ladder spent, and no sixth attempt runs', async (t) => {
+  const run = await runWorkflow(one(t), { supervisor: (call) => retry(`gap ${call.n}`) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(rungs(run).length, 5)
+  assert.equal(unitOf(run).status, 'blocked')
+  assert.match(unitOf(run).reason, /the ladder is spent \(exhausted\)/)
+})
+
+test('the same change outside Owns twice blocks the unit on its second rung and spends no costlier one', async (t) => {
+  const outside = () => ({ ...retry('changes outside Owns'), findings: [{ severity: 'important', title: 'changes outside Owns', file: 'tests/x.test.js', evidence: 'x' }] })
+  const run = await runWorkflow(one(t), { supervisor: () => outside() })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(rungs(run), ['haiku high', 'haiku xhigh'])
+  assert.equal(unitOf(run).status, 'blocked')
+})
+
+test('a task whose Review is xhigh is supervised at xhigh on every rung; a Review under the level changes nothing', async (t) => {
+  const high = await runWorkflow(one(t, { review: 'xhigh — critical security' }), { supervisor: (call, approve) => (call.n <= 4 ? retry(`gap ${call.n}`) : approve(call)) })
+  assert.deepEqual(level(high), ['sonnet xhigh', 'sonnet xhigh', 'opus xhigh', 'opus xhigh', 'opus xhigh'])
+  const plain = await runWorkflow(one(t, { review: 'high — standard review' }), { supervisor: (call, approve) => (call.n <= 4 ? retry(`gap ${call.n}`) : approve(call)) })
+  assert.deepEqual(level(plain), ['sonnet high', 'sonnet high', 'opus high', 'opus xhigh', 'opus xhigh'])
+})
 
 test('every unit starts on the first rung of the ladder, whatever the plan asks for', async (t) => {
   const args = build(t, [task(1, { tier: 'haiku — x' }), task(2, { tier: 'sonnet xhigh — wiring' }), task(3, { tier: 'opus max — security' })])
@@ -45,30 +78,6 @@ test('args without tier, effort or ladder run: the script reads none of them', a
   assert.equal(unitOf(run).status, 'merged')
 })
 
-test('a retry with findings raises the effort of Haiku and keeps the model', async (t) => {
-  const run = await runWorkflow(one(t), { supervisor: (call, approve) => (call.n === 1 ? retry('gap') : approve(call)) })
-  assert.deepEqual(rungs(run), [FIRST, RETRY])
-  const u = unitOf(run)
-  assert.deepEqual([u.status, u.ladder.corrections, u.ladder.firstTry, u.ladder.steps], ['merged', 1, false, [HAIKU.model]])
-  assert.deepEqual(u.tiers, [FIRST, RETRY])
-})
-
-test('the same findings twice raise the model, and the rise is counted by its cause', async (t) => {
-  const run = await runWorkflow(one(t), { supervisor: (call, approve) => (call.n <= L.repeatFindings ? retry('same gap') : approve(call)) })
-  const models = attempts(run).map((c) => c.model)
-  assert.deepEqual(models, [...Array(L.repeatFindings).fill(HAIKU.model), SONNET.model])
-  assert.equal(attempts(run).pop().effort, effortFor(L, SONNET.step, 'rise'))
-  const u = unitOf(run)
-  assert.deepEqual([u.ladder.rises.repeated, u.ladder.rises.exhausted, u.ladder.steps], [1, 0, [HAIKU.model, SONNET.model]])
-})
-
-test('different findings spend the corrections of the rung, then the model rises', async (t) => {
-  const cap = HAIKU.corrections + 1
-  const run = await runWorkflow(one(t), { supervisor: (call, approve) => (call.n <= cap ? retry(`gap ${call.n}`) : approve(call)) })
-  assert.deepEqual(attempts(run).map((c) => c.model), [...Array(cap).fill(HAIKU.model), SONNET.model])
-  assert.equal(unitOf(run).ladder.rises.exhausted, 1)
-})
-
 test('a retry without a file is completed with the first Owns entry and the ruling, and counted', async (t) => {
   for (const findings of [[], [{ ...finding('no file'), file: '' }]]) {
     const run = await runWorkflow(one(t), {
@@ -83,9 +92,9 @@ test('a retry without a file is completed with the first Owns entry and the ruli
 
 test('escalate with a ruling is infeasible: the model rises with the reason, counted as infeasible', async (t) => {
   const run = await runWorkflow(one(t), { supervisor: (call, approve) => (call.n === 1 ? verdict('escalate', 'Beyond this model: needs a parser.') : approve(call)) })
-  assert.deepEqual(attempts(run).map((c) => c.model), [HAIKU.model, SONNET.model])
+  assert.deepEqual(attempts(run).map((c) => `${c.model} ${c.effort}`), [FIRST, SECOND])
   assert.match(attempts(run)[1].prompt, /Beyond this model: needs a parser\./)
-  assert.equal(unitOf(run).ladder.rises.infeasible, 1)
+  assert.deepEqual(unitOf(run).ladder.rises, { failed: 0, infeasible: 1 })
 })
 
 test('escalate without a ruling is a supervisor failure: asked again twice, then the unit is blocked, with no new attempt', async (t) => {
@@ -100,7 +109,7 @@ test('a supervisor agent that fails is asked again, outside the ladder, and a th
   let run = await runWorkflow(one(t), { supervisor: (call, approve) => (call.n <= 2 ? null : approve(call)) })
   assert.equal(unitOf(run).status, 'merged')
   assert.equal(attempts(run).length, 1)
-  assert.equal(unitOf(run).ladder.corrections, 0)
+  assert.deepEqual(unitOf(run).ladder.rises, { failed: 0, infeasible: 0 })
   run = await runWorkflow(one(t), { supervisor: () => null })
   assert.equal(supervisions(run).length, 3)
   assert.equal(unitOf(run).status, 'blocked')
@@ -109,10 +118,10 @@ test('a supervisor agent that fails is asked again, outside the ladder, and a th
 
 test('an implementer that fails twice is two equal findings: the second one raises the model', async (t) => {
   const run = await runWorkflow(one(t), { implementer: (call, done) => (call.n <= 2 ? null : done(call)) })
-  assert.deepEqual(attempts(run).map((c) => c.model), [HAIKU.model, HAIKU.model, SONNET.model])
+  assert.deepEqual(attempts(run).map((c) => `${c.model} ${c.effort}`), [FIRST, SECOND, `${RUNGS[2].model} ${RUNGS[2].effort}`])
   assert.match(unitOf(run).rounds[0].findings[0].title, /el intento no terminó/)
   assert.equal(unitOf(run).rounds[0].findings[0].file, 'src/t1/**')
-  assert.equal(unitOf(run).ladder.rises.repeated, 1)
+  assert.equal(unitOf(run).ladder.rises.failed, 2)
 })
 
 test('escalate every time walks the ladder to its end, and the unit is blocked with the ladder\'s cause', async (t) => {
@@ -120,26 +129,26 @@ test('escalate every time walks the ladder to its end, and the unit is blocked w
   assert.equal(attempts(run).length, L.rungs.length)
   assert.equal(unitOf(run).status, 'blocked')
   assert.match(unitOf(run).reason, /exhausted/)
-  assert.equal(unitOf(run).ladder.rises.infeasible, L.rungs.length - 1)
+  assert.deepEqual(unitOf(run).ladder.rises, { failed: 0, infeasible: L.rungs.length - 1 })
 })
 
-test('a merge that is refused for files outside Owns is a correction with a synthetic finding', async (t) => {
+test('a merge that is refused for files outside Owns is a rise with a synthetic finding', async (t) => {
   const run = await runWorkflow(one(t), {
     ops: (call, wt) => (call.kind === 'ops:merge' && call.n === 1 ? { merged: false, reason: 'ownership', files: ['src/other/x.js'] } : wt(call)),
   })
   assert.equal(unitOf(run).status, 'merged')
   assert.match(attempts(run)[1].prompt, /src\/other\/x\.js/)
   assert.match(attempts(run)[1].prompt, /fuera de Owns/)
-  assert.equal(unitOf(run).ladder.corrections, 1)
+  assert.equal(unitOf(run).ladder.rises.failed, 1)
 })
 
-test('a merge that is refused for no changes is a correction with a synthetic finding, and merges', async (t) => {
+test('a merge that is refused for no changes is a rise with a synthetic finding, and merges', async (t) => {
   const run = await runWorkflow(one(t), {
     ops: (call, wt) => (call.kind === 'ops:merge' && call.n === 1 ? { merged: false, reason: 'empty' } : wt(call)),
   })
   assert.equal(unitOf(run).status, 'merged')
   assert.match(attempts(run)[1].prompt, /el intento no cambió ningún archivo/)
-  assert.equal(unitOf(run).ladder.corrections, 1)
+  assert.equal(unitOf(run).ladder.rises.failed, 1)
 })
 
 test('a clean run has ladder.firstTry === true', async (t) => {
@@ -225,7 +234,7 @@ test('a merge conflict still gets one retry outside the ladder: no correction is
     ops: (call, wt) => (call.kind === 'ops:merge' && call.n === 1 ? { merged: false, reason: 'conflict', files: ['src/shared.js'], detail: 'CONFLICT' } : wt(call)),
   })
   assert.equal(unitOf(run).status, 'merged')
-  assert.equal(unitOf(run).ladder.corrections, 0)
+  assert.deepEqual(unitOf(run).ladder.rises, { failed: 0, infeasible: 0 })
   assert.deepEqual(rungs(run), [FIRST, FIRST])
 })
 
@@ -234,7 +243,7 @@ test('the ladder state survives a relaunch: the unit goes on at the effort it ha
   const first = await runWorkflow(args, { supervisor: (call) => (call.n === 1 ? retry('gap') : verdict('block', 'Block: needs the owner.', { question: 'Which format?' })) })
   assert.equal(unitOf(first).status, 'blocked')
   const again = await runWorkflow(args)
-  assert.equal(rungs(again)[0], RETRY)
+  assert.equal(rungs(again)[0], SECOND)
   assert.equal(unitOf(again).ladder.firstTry, false)
   assert.ok(fs.existsSync(path.join(args.runDir, 'ladder', 'task-1.json')))
 })
@@ -256,7 +265,7 @@ test('a relaunch with --only goes on at the effort the unit had reached, and lea
   assert.deepEqual(args.waves, [['task-1']])
   const again = await runWorkflow(args)
   assert.equal(again.error, null, again.error && again.error.stack)
-  assert.equal(rungs(again)[0], RETRY)
+  assert.equal(rungs(again)[0], SECOND)
   assert.equal(unitOf(again).ladder.firstTry, false)
   assert.equal(attempts(again, 'task-2').length, 0)
 })
@@ -281,8 +290,8 @@ test('the final review is Sonnet high for up to three units that review at high,
 
 test('the supervisor\'s message shows the rung and the corrections used, with no prediction of what a retry would do', async (t) => {
   const run = await runWorkflow(one(t), { supervisor: (call, approve) => (call.n === 1 ? retry('gap') : approve(call)) })
-  assert.match(supervisions(run)[0].prompt, new RegExp(`Corrections used on this rung: 0 of ${HAIKU.corrections}`))
-  assert.match(supervisions(run)[1].prompt, new RegExp(`Corrections used on this rung: 1 of ${HAIKU.corrections}`))
+  assert.match(supervisions(run)[0].prompt, /Rung 1 of 5: haiku-high, on haiku high\. A failed attempt rises one rung; the last rung's failure ends the unit\./)
+  assert.match(supervisions(run)[1].prompt, /Rung 2 of 5: haiku-xhigh, on haiku xhigh\. A failed attempt rises one rung; the last rung's failure ends the unit\./)
   assert.doesNotMatch(supervisions(run)[0].prompt, /A retry runs on|blocks the unit: the ladder is spent/)
 })
 
