@@ -234,7 +234,7 @@ test('diffLadder names the step that is missing, extra or changed, and is empty 
    function nativeModels(pairs) // string[]
    ```
 3. **`lib/lane-pick.js` y `lib/lane-delegate.js`.** `--model` de `aether-lane pick` y de `aether-lane delegate` se valida contra `nativeModels(<tabla cargada>)` y no contra una lista fija. El texto de uso de `DELEGATE_USAGE` puede seguir diciendo `<haiku|sonnet|opus>`. `reviewerReference` y el campo `ladder` del `graph.json` de `lane-delegate.js` no se tocan.
-4. **`lib/superdelegation.js`.** `choose` ya no usa `NATIVE_MODELS` (las filas nativas son las del harness `claude`). Para `role === 'supervisor'`: (a) el suelo de las elecciones externas es **estricto**: `floor = tenths(requested)`, sin restar `TOLERANCE_TENTHS`; (b) `nativeFor` solo toma un reemplazo que no es autor si su `intelligence` es al menos la del par de referencia; si ninguno lo es, se conserva el par de referencia, marcado `none` como hoy cuando todos son autores. Para los demás roles nada cambia. Es la regla que el dueño aprobó: el supervisor nunca es más débil que el autor (R19).
+4. **`lib/superdelegation.js`.** `choose` ya no usa `NATIVE_MODELS` (las filas nativas son las del harness `claude`). Para `role === 'supervisor'`: (a) el suelo de las elecciones externas es **estricto**: `floor = tenths(requested)`, sin restar `TOLERANCE_TENTHS`; (b) `nativeFor` solo toma un reemplazo que no es autor si su `intelligence` es al menos la del par de referencia; si ninguno lo es, se conserva el par de referencia. `none` **no** se marca en ese caso: sigue significando solo que todos los modelos de Claude son autores (como hoy, con su línea `no other Claude model is free of the authors, so the native fallback stays <modelo>`, que sería falsa aquí); `nativeFor` recibe el `role` y marca aparte `weaker` cuando hay un modelo que no es autor pero da menos puntos, y la línea de la razón de `choose` pasa a ser `; the native fallback stays <modelo de referencia>: the Claude models free of the authors give fewer points than the level` (por ejemplo, `…stays opus: the Claude models free of the authors give fewer points than the level`). Para los demás roles nada cambia. Es la regla que el dueño aprobó: el supervisor nunca es más débil que el autor (R19).
 
 **Tests (write first):**
 `tests/pairs-claude.test.js` (nuevo):
@@ -356,7 +356,12 @@ test('a pair at the level of the supervisor is a candidate for it', () => {
 test('the replacement of an author model for the supervisor never gives fewer points than the level', () => {
   const pairs = [claude('opus', 'high', 51.7, 3.465), claude('sonnet', 'high', 41.1, 1.636)]
   const authors = ['claude-opus']
-  assert.equal(ask(pairs, 'supervisor', { authors, nativeDiffers: true }).native.id, 'claude/opus@high')
+  const weak = ask(pairs, 'supervisor', { authors, nativeDiffers: true })
+  assert.equal(weak.native.id, 'claude/opus@high')
+  assert.match(weak.reason, /the native fallback stays opus: the Claude models free of the authors give fewer points than the level/)
+  assert.equal(weak.reason.includes('no other Claude model is free'), false)
+  // When every Claude model is an author the old line stays.
+  assert.match(ask(pairs, 'supervisor', { authors: ['claude-opus', 'claude-sonnet'], nativeDiffers: true }).reason, /no other Claude model is free of the authors, so the native fallback stays opus/)
   // Any other role keeps the replacement by closest points, as before.
   assert.equal(ask(pairs, 'reviewer', { authors, nativeDiffers: true }).native.id, 'claude/sonnet@high')
   // A replacement that is not weaker is taken.
@@ -904,9 +909,9 @@ function figuresOf(html, slug) // { code, codeCostPerTaskUsd, codeMinutesPerTask
 async function readPages(slugs, { fetch = globalThis.fetch, pause = (ms) => new Promise((r) => setTimeout(r, ms)), pauseMs = 1200 } = {}) // Map slug -> figures | { error } | null
 module.exports = { PAGE_URL, figuresOf, readPages }
 ```
-La línea de comandos del archivo (`node aa-api.js <slug>...`) imprime esas cifras por slug; sin clave. El script no corre solo: solo cuando el dueño lo pide.
+La línea de comandos del archivo (`node aa-api.js <slug>...`) imprime esas cifras por slug; sin clave. Hoy el archivo lee `process.argv` y hace la petición al cargarse y no exporta nada: la línea de comandos pasa a una función `cli(argv)` que corre **solo bajo `if (require.main === module)`**, para que `require` del archivo (las pruebas y `refresh-lanes.js`) no lea `process.argv` ni haga ninguna petición. El script no corre solo: solo cuando el dueño lo pide.
 
-`scripts/refresh-lanes.js`: `node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]` (por defecto `plugins/aether/config/pairs.json` y `plugins/aether/config/ladder.json`). Lee las filas `claude/*` de la tabla (las de `harness === 'claude'`) y las empareja con su página por su `slug`; las filas de otros harness no se leen ni se piden, aunque reutilicen un slug de Claude (las `agy/claude-*` y `muse/muse-wonder-full-1.0`). De cada fila de Claude escribe **solo** `code`, `codeCostPerTaskUsd`, `codeMinutesPerTask` y `codeChecked` (la fecha de `now`, `AAAA-MM-DD`); no reescribe `intelligence`, `costPerTaskUsd` ni `checked` de ninguna fila, ni el `fetchedAt` de nivel superior, no añade ninguna clave de nivel superior, no crea filas y no toca `config/lanes.json`. Las demás filas quedan idénticas byte a byte; en cada fila de Claude se reescribe solo su línea (una fila por línea): el valor de cada campo de código que ya está se cambia en su sitio y los que faltan se añaden al final de la línea, con el estilo de esa línea. Ya no pide `ARTIFICIAL_ANALYSIS_API_KEY`: `main` no lee ninguna clave ni la envía, y salen `refresh` y `refreshPairs`. **Siguen exportados `keyFrom`, `keyFile`, `envFileFor`, `KEY` y `MODELS_URL`**, que ya no usa el refresco pero que `scripts/build-models-index.js` (fuera de esta spec) importa de este archivo; el archivo lo dice en un comentario. Los `require` de `plugins/aether/lib/pareto.js` y de `.claude/skills/artificial-analysis/aa-api.js` van **dentro de `main`**, no al inicio del archivo: `tests/models-index.test.js` copia `refresh-lanes.js` a un árbol que solo tiene dos scripts, y un `require` al inicio lo rompería. La escalera guardada se lee con `JSON.parse` de `--ladder` (no con `lib/ladder.js`).
+`scripts/refresh-lanes.js`: `node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]` (por defecto `plugins/aether/config/pairs.json` y `plugins/aether/config/ladder.json`). Lee las filas `claude/*` de la tabla (las de `harness === 'claude'`) y las empareja con su página por su `slug`; las filas de otros harness no se leen ni se piden, aunque reutilicen un slug de Claude (las `agy/claude-*` y `muse/muse-wonder-full-1.0`). De cada fila de Claude escribe **solo** `code`, `codeCostPerTaskUsd`, `codeMinutesPerTask` y `codeChecked` (la fecha de `now`, `AAAA-MM-DD`); no reescribe `intelligence`, `costPerTaskUsd` ni `checked` de ninguna fila, ni el `fetchedAt` de nivel superior, no añade ninguna clave de nivel superior, no crea filas y no toca `config/lanes.json`. Las demás filas quedan idénticas byte a byte; en cada fila de Claude se reescribe solo su línea (una fila por línea): el valor de cada campo de código que ya está se cambia en su sitio y los que faltan se añaden al final de la línea, con el estilo de esa línea. Ya no pide `ARTIFICIAL_ANALYSIS_API_KEY`: `main` no lee ninguna clave ni la envía, y salen `refresh` y `refreshPairs`. **Siguen exportados `keyFrom`, `keyFile`, `envFileFor`, `KEY` y `MODELS_URL`**, que ya no usa el refresco pero que `scripts/build-models-index.js` (fuera de esta spec) importa de este archivo; el archivo lo dice en un comentario. Los `require` de `plugins/aether/lib/pareto.js` y de `.claude/skills/artificial-analysis/aa-api.js` van **dentro de `main`**, no al inicio del archivo: `tests/models-index.test.js` copia `refresh-lanes.js` a un árbol que solo tiene dos scripts, y un `require` al inicio lo rompería. La escalera guardada se lee con `JSON.parse` de `--ladder` (no con `lib/ladder.js`), y la tabla de `--pairs` también con `JSON.parse` del texto, **no** con `loadPairs` de `lib/pairs.js`: el refresco es quien añade las cifras de código que pueden faltar, y `loadPairs` rechaza una fila de Claude que no las tiene (Task 3). El archivo real escribe cada fila en una línea con espacios, `{ "id": "claude/haiku@low", "slug": "…", … }` (un espacio tras `{`, tras `:` y `,`, y antes de `}`): el reescritor de líneas busca `"id": "<id>"` y cada campo de código como `"<campo>": <valor>` con ese estilo, y los campos que faltan se añaden antes de ` }` como `, "<campo>": <valor>`; las pruebas escriben las filas en ese mismo estilo.
 
 `main(argv, { fetch, now, pause })` devuelve `{ exitCode, stdout }`, con estas líneas en este orden: las cifras de código que cambian (`<id>: <campo> <antes> → <ahora>`, con `none` cuando el campo no estaba), o `No figure changed.` si ninguna cambió; `<id>: the page of <slug> has no code figure` (la fila no se toca) o `<id>: the page answered <status>` (la fila no se toca) por cada página que falla; con `--write`, `written to <ruta de pairs>`; la línea de aviso, siempre, exactamente:
 ```
@@ -990,6 +995,8 @@ const row = (id, over = {}) => {
   const [model, effort] = rest.split('@')
   return { id, slug: `${harness}-${model}-${effort}`, harness, model, family: `${harness}-${model}`, effort, group: harness === 'claude' ? null : 'g', intelligence: 20, costPerTaskUsd: 0.1, outputTokensPerSecond: 90, timeToFirstTokenS: 2, ...over }
 }
+// A row on one line in the style of the real plugins/aether/config/pairs.json: `{ "id": "…", "slug": "…" }`, spaces after the braces, the colons and the commas.
+const spaced = (r) => `{ ${Object.entries(r).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(', ')} }`
 const CLAUDE_HIGH = row('claude/a@high', { code: 10, codeCostPerTaskUsd: 0.1, codeMinutesPerTask: 5, codeChecked: '2026-11-10' })
 const CLAUDE_XHIGH = row('claude/a@xhigh', { intelligence: 30, costPerTaskUsd: 0.2 })
 // Rows of other harnesses: one that reuses the slug of a Claude row, as the agy rows with Claude models and muse-wonder-full do.
@@ -1000,7 +1007,7 @@ const LADDER = { law: { candidateEfforts: ['high', 'xhigh'], minJumpPoints: 2 },
 function setup(t) {
   const dir = tempDir(t, 'aether-refresh-')
   const files = { pairs: path.join(dir, 'pairs.json'), ladder: path.join(dir, 'ladder.json') }
-  const lines = [CLAUDE_HIGH, CLAUDE_XHIGH, OTHER, REUSED].map((r) => `    ${JSON.stringify(r)}`)
+  const lines = [CLAUDE_HIGH, CLAUDE_XHIGH, OTHER, REUSED].map((r) => `    ${spaced(r)}`)
   fs.writeFileSync(files.pairs, `{\n  "fetchedAt": "2026-10-19",\n  "pairs": [\n${lines.join(',\n')}\n  ]\n}\n`)
   fs.writeFileSync(files.ladder, `${JSON.stringify(LADDER, null, 2)}\n`)
   return files
@@ -1037,6 +1044,12 @@ test('the refresh writes only the code figures of the Claude rows, says the rest
   // The page says 21 and 0.11 for the first row and 31 and 0.21 for the second: neither is written, and no row gains a checked.
   assert.deepEqual([high.intelligence, high.costPerTaskUsd, xhigh.intelligence, xhigh.costPerTaskUsd], [20, 0.1, 30, 0.2])
   assert.equal(rowsOf(files).some((r) => Object.hasOwn(r, 'checked') && r.harness === 'claude'), false)
+  // Byte for byte: a refreshed line keeps its style, the figure that was there is replaced in place, the ones that were not are added at the end, and none is written twice.
+  const text = fs.readFileSync(files.pairs, 'utf8')
+  const written = text.split('\n')
+  assert.ok(written.includes(`    ${spaced({ ...CLAUDE_HIGH, code: 11, codeCostPerTaskUsd: 0.12, codeMinutesPerTask: 5.5, codeChecked: '2026-11-12' })},`))
+  assert.ok(written.includes(`    ${spaced({ ...CLAUDE_XHIGH, code: 22, codeCostPerTaskUsd: 0.22, codeMinutesPerTask: 8.3, codeChecked: '2026-11-12' })},`))
+  for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask', 'codeChecked']) assert.equal(text.split(`"${field}":`).length - 1, 2, field)
 })
 
 test('a ladder that changed is shown with what enters and leaves, and the stored ladder stays as it was, even with --write', async (t) => {
@@ -1059,9 +1072,9 @@ test('without --write nothing is written, and with it the rows of the other harn
   assert.deepEqual(asked, ['claude-a-high', 'claude-a-xhigh'], 'the pages of the Claude rows only: no request for an agy row with the same slug')
   await run(files, serve(GOOD), ['--write'])
   const after = fs.readFileSync(files.pairs, 'utf8').split('\n')
-  assert.ok(after.includes(`    ${JSON.stringify(OTHER)}`))
-  assert.ok(after.includes(`    ${JSON.stringify(REUSED)}`))
-  assert.equal(after.filter((line) => line.includes('"harness":"claude"')).length, 2)
+  assert.ok(after.includes(`    ${spaced(OTHER)},`))
+  assert.ok(after.includes(`    ${spaced(REUSED)}`))
+  assert.equal(after.filter((line) => line.includes('"harness": "claude"')).length, 2)
 })
 
 test('a page with no code figure and a page that does not answer leave their rows alone, the second with exit code 1', async (t) => {
