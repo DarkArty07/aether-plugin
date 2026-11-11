@@ -1,0 +1,398 @@
+{
+  "tier": "free",
+  "intelligence_index_version": 5,
+  "pagination": {
+    "page": 1,
+    "page_size": 200,
+    "total_pages": 4,
+    "has_more": true
+  },
+  "data": [
+    {
+      "id": "042e8a37-fcd0-40f4-8f41-99215fb68eda",
+      "name": "Claude Sonnet 5.5 (Medium, Default Fallback)",
+      "slug": "claude-sonnet-5-5-medium",
+      "release_date": "2026-09-28",
+      "model_creator": {
+        "id": "f0aa413f-e8ae-4fcd-9c48-0e049f4f3128",
+        "name": "Anthropic"
+      },
+      "evaluations": {
+        "artificial_analysis_intelligence_index": 30.8,
+        "artificial_analysis_coding_index": null,
+        "artificial_analysis_agentic_index": null,
+        "artificial_analysis_finance_and_accounting_index": 40.7,
+        "artificial_analysis_strategy_and_ops_index": 46.7,
+        "artificial_analysis_legal_index": 38.8,
+        "artificial_analysis_healthcare_and_medical_index": 40.2,
+        "artificial_analysis_engineering_index": 37.3,
+        "artificial_analysis_economics_index": 39.2
+      },
+      "artificial_analysis_intelligence_index_cost": {
+        "total_cost": 679.16,
+        "cost_per_task": {
+          "total_cost": 0.7807
+        }
+      },
+      "pricing": {
+        "price_1m_input_tokens": 2,
+        "price_1m_output_tokens": 10,
+        "price_1m_cache_hit_tokens": 0.1,
+        "price_1m_cache_write_tokens": 2.5
+      },
+      "performance": {
+        "median_output_tokens_per_second": 100.2,
+        "median_time_to_first_token_seconds": 3.56,
+        "median_time_to_first_answer_token_seconds": 3.56,
+        "median_end_to_end_response_time_seconds": 8.55
+      },
+      "performance_v3": {
+        "mean_output_tokens_per_second": 138.18,
+        "mean_time_to_first_token_seconds": 5.22,
+        "mean_time_to_first_answer_token_seconds": 5.22
+      }
+    },
+    {
+      "id": "0c9b4e05-9259-42cc-b40e-d6acbbeaa7e8",
+      "name": "Claude Fable 5.2 (Medium, Default Fallback)",
+      "slug": "claude-fable-5-2-medium",
+      "release_date": "2026-11-09",
+      "model_creator": {
+        "id": "f0aa413f-e8ae-4fcd-9c48-0e049f4f3128",
+        "name": "Anthropic"
+      },
+      "evaluations": {
+        "artificial_analysis_intelligence_index": 56.4,
+        "artificial_analysis_coding_index": null,
+        "artificial_analysis_agentic_index": null,
+        "artificial_analysis_finance_and_accounting_index": 60,
+        "artificial_analysis_strategy_and_ops_index": 62.1,
+        "artificial_analysis_legal_index": 58.4,
+        "artificial_analysis_healthcare_and_medical_index": null,
+        "artificial_analysis_engineering_index": 64.8,
+        "artificial_analysis_economics_index": 60.3
+      },
+      "artificial_analysis_intelligence_index_cost": {
+        "total_cost": 3359.66,
+        "cost_per_task": {
+          "total_cost": 3.8026
+        }
+      },
+      "pricing": {
+        "price_1m_input_tokens": 8,
+        "price_1m_output_tokens": 40,
+        "price_1m_cache_hit_tokens": 0.2,
+        "price_1m_cache_write_tokens": 10
+      },
+      "performance": {
+        "median_output_tokens_per_second": 78.85,
+        "median_time_to_first_token_seconds": 18.25,
+        "median_time_to_first_answer_token_seconds": 18.25,
+        "median_end_to_end_response_time_seconds": 24.59
+      },
+      "performance_v3": {
+        "mean_output_tokens_per_second": 93.33,
+        "mean_time_to_first_token_seconds": 11.96,
+        "mean_time_to_first_answer_token_seconds": 11.96
+      }
+    },
+    {
+      "id": "20829974-af06-497e-9f42-77fb958d43b9",
+      "name": "Claude Haiku 5.5 (High)",
+      "slug": "claude-haiku-5-5-high",
+      "release_date": "2026-10-07",
+      "model_creator": {
+        "id": "f0aa413f-e8ae-4fcd-9c48-0e049f4f3128",
+        "name": "Anthropic"
+      },
+      "evaluations": {
+        "artificial_analysis_intelligence_index": 29.9,
+        "artificial_analysis_coding_index": null,
+        "artificial_analysis_agentic_index": null,
+        "artificial_analysis_finance_and_accounting_index": 37.8,
+        "artificial_analysis_strategy_and_ops_index": 37.1,
+        "artificial_analysis_legal_index": 35,
+        "artificial_analysis_healthcare_and_medical_index": 32.2,
+        "artificial_analysis_engineering_index": 36.5,
+        "artificial_analysis_economics_index": 37.9
+      },
+      "artificial_analysis_intelligence_index_cost": {
+        "total_cost": 121.41,
+        "cost_per_task": {
+          "total_cost": 0.1586
+        }
+      },
+      "pricing": {
+        "price_1m_input_tokens": 0.1,
+        "price_1m_output_tokens": 0.5,
+        "price_1m_cache_hit_tokens": 0.01,
+        "price_1m_cache_write_tokens": 0.125
+      },
+      "performance": {
+        "median_output_tokens_per_second": 180.87,
+        "median_time_to_first_token_seconds": 29.27,
+        "median_time_to_first_answer_token_seconds": 29.27,
+        "median_end_to_end_response_time_seconds": 32.03
+      },
+      "performance_v3": {
+        "mean_output_tokens_per_second": 227.86,
+        "mean_time_to_first_token_seconds": 22.8,
+        "mean_time_to_first_answer_token_seconds": 22.8
+      }
+    },
+    {
+      "id": "268525e2-f873-4178-bc07-e6a0ee1f002d",
+      "name": "Claude Sonnet 5.5 (High, Default Fallback)",
+      "slug": "claude-sonnet-5-5-high",
+      "release_date": "2026-09-28",
+      "model_creator": {
+        "id": "f0aa413f-e8ae-4fcd-9c48-0e049f4f3128",
+        "name": "Anthropic"
+      },
+      "evaluations": {
+        "artificial_analysis_intelligence_index": 41.5,
+        "artificial_analysis_coding_index": null,
+        "artificial_analysis_agentic_index": null,
+        "artificial_analysis_finance_and_accounting_index": 44.5,
+        "artificial_analysis_strategy_and_ops_index": 51.2,
+        "artificial_analysis_legal_index": 44.1,
+        "artificial_analysis_healthcare_and_medical_index": 43.9,
+        "artificial_analysis_engineering_index": 46.2,
+        "artificial_analysis_economics_index": 44.6
+      },
+      "artificial_analysis_intelligence_index_cost": {
+        "total_cost": 1268.3,
+        "cost_per_task": {
+          "total_cost": 1.6361
+        }
+      },
+      "pricing": {
+        "price_1m_input_tokens": 2,
+        "price_1m_output_tokens": 10,
+        "price_1m_cache_hit_tokens": 0.1,
+        "price_1m_cache_write_tokens": 2.5
+      },
+      "performance": {
+        "median_output_tokens_per_second": 99.11,
+        "median_time_to_first_token_seconds": 12.33,
+        "median_time_to_first_answer_token_seconds": 12.33,
+        "median_end_to_end_response_time_seconds": 17.37
+      },
+      "performance_v3": {
+        "mean_output_tokens_per_second": 140.15,
+        "mean_time_to_first_token_seconds": 10.66,
+        "mean_time_to_first_answer_token_seconds": 10.66
+      }
+    },
+    {
+      "id": "2f3c4dc9-a450-4303-8697-0237257cf08f",
+      "name": "Claude Opus 5.5 (Max, Default Fallback)",
+      "slug": "claude-opus-5-5",
+      "release_date": "2026-09-22",
+      "model_creator": {
+        "id": "f0aa413f-e8ae-4fcd-9c48-0e049f4f3128",
+        "name": "Anthropic"
+      },
+      "evaluations": {
+        "artificial_analysis_intelligence_index": 59.1,
+        "artificial_analysis_coding_index": null,
+        "artificial_analysis_agentic_index": null,
+        "artificial_analysis_finance_and_accounting_index": 59.4,
+        "artificial_analysis_strategy_and_ops_index": 61.4,
+        "artificial_analysis_legal_index": 58,
+        "artificial_analysis_healthcare_and_medical_index": 57.9,
+        "artificial_analysis_engineering_index": 65.3,
+        "artificial_analysis_economics_index": 60.3
+      },
+      "artificial_analysis_intelligence_index_cost": {
+        "total_cost": 8909.67,
+        "cost_per_task": {
+          "total_cost": 10.0364
+        }
+      },
+      "pricing": {
+        "price_1m_input_tokens": 4,
+        "price_1m_output_tokens": 20,
+        "price_1m_cache_hit_tokens": 0.2,
+        "price_1m_cache_write_tokens": 5
+      },
+      "performance": {
+        "median_output_tokens_per_second": 92.46,
+        "median_time_to_first_token_seconds": 726.24,
+        "median_time_to_first_answer_token_seconds": 726.24,
+        "median_end_to_end_response_time_seconds": 731.65
+      },
+      "performance_v3": {
+        "mean_output_tokens_per_second": 115.44,
+        "mean_time_to_first_token_seconds": 353.58,
+        "mean_time_to_first_answer_token_seconds": 353.58
+      }
+    },
+    {
+      "id": "41b5bf5e-daf6-42d9-b8d1-60e340a3028d",
+      "name": "Claude Haiku 5.5 (Xhigh)",
+      "slug": "claude-haiku-5-5-xhigh",
+      "release_date": "2026-10-07",
+      "model_creator": {
+        "id": "f0aa413f-e8ae-4fcd-9c48-0e049f4f3128",
+        "name": "Anthropic"
+      },
+      "evaluations": {
+        "artificial_analysis_intelligence_index": 34.6,
+        "artificial_analysis_coding_index": null,
+        "artificial_analysis_agentic_index": null,
+        "artificial_analysis_finance_and_accounting_index": 41.1,
+        "artificial_analysis_strategy_and_ops_index": 39.1,
+        "artificial_analysis_legal_index": 37.1,
+        "artificial_analysis_healthcare_and_medical_index": 34.1,
+        "artificial_analysis_engineering_index": 40.6,
+        "artificial_analysis_economics_index": 41
+      },
+      "artificial_analysis_intelligence_index_cost": {
+        "total_cost": 192.7,
+        "cost_per_task": {
+          "total_cost": 0.2484
+        }
+      },
+      "pricing": {
+        "price_1m_input_tokens": 0.1,
+        "price_1m_output_tokens": 0.5,
+        "price_1m_cache_hit_tokens": 0.01,
+        "price_1m_cache_write_tokens": 0.125
+      },
+      "performance": {
+        "median_output_tokens_per_second": 177.86,
+        "median_time_to_first_token_seconds": 73.44,
+        "median_time_to_first_answer_token_seconds": 73.44,
+        "median_end_to_end_response_time_seconds": 76.25
+      },
+      "performance_v3": {
+        "mean_output_tokens_per_second": 236.48,
+        "mean_time_to_first_token_seconds": 58.02,
+        "mean_time_to_first_answer_token_seconds": 58.02
+      }
+    },
+    {
+      "id": "42908ae3-d3bd-4934-be19-fbff93d3fde8",
+      "name": "Claude Haiku 5.5 (Low)",
+      "slug": "claude-haiku-5-5-low",
+      "release_date": "2026-10-07",
+      "model_creator": {
+        "id": "f0aa413f-e8ae-4fcd-9c48-0e049f4f3128",
+        "name": "Anthropic"
+      },
+      "evaluations": {
+        "artificial_analysis_intelligence_index": 18.6,
+        "artificial_analysis_coding_index": null,
+        "artificial_analysis_agentic_index": null,
+        "artificial_analysis_finance_and_accounting_index": 28.5,
+        "artificial_analysis_strategy_and_ops_index": 27.3,
+        "artificial_analysis_legal_index": 27.1,
+        "artificial_analysis_healthcare_and_medical_index": 24.8,
+        "artificial_analysis_engineering_index": 26.8,
+        "artificial_analysis_economics_index": 28.6
+      },
+      "artificial_analysis_intelligence_index_cost": {
+        "total_cost": 39.6,
+        "cost_per_task": {
+          "total_cost": 0.0438
+        }
+      },
+      "pricing": {
+        "price_1m_input_tokens": 0.1,
+        "price_1m_output_tokens": 0.5,
+        "price_1m_cache_hit_tokens": 0.01,
+        "price_1m_cache_write_tokens": 0.125
+      },
+      "performance": {
+        "median_output_tokens_per_second": 164.23,
+        "median_time_to_first_token_seconds": 9.27,
+        "median_time_to_first_answer_token_seconds": 9.27,
+        "median_end_to_end_response_time_seconds": 12.32
+      },
+      "performance_v3": {
+        "mean_output_tokens_per_second": 219.9,
+        "mean_time_to_first_token_seconds": 7.57,
+        "mean_time_to_first_answer_token_seconds": 7.57
+      }
+    },
+    {
+      "id": "0081ab31-d10a-44a0-a10d-eee5533fec65",
+      "name": "GLM-4.5V (Non-reasoning)",
+      "slug": "glm-4-5v",
+      "release_date": "2025-08-11",
+      "model_creator": {
+        "id": "67437eb6-7dc1-4e93-befd-22c8b8ec2065",
+        "name": "Z AI"
+      },
+      "evaluations": {
+        "artificial_analysis_intelligence_index": null,
+        "artificial_analysis_coding_index": null,
+        "artificial_analysis_agentic_index": null,
+        "artificial_analysis_finance_and_accounting_index": null,
+        "artificial_analysis_strategy_and_ops_index": null,
+        "artificial_analysis_legal_index": null,
+        "artificial_analysis_healthcare_and_medical_index": null,
+        "artificial_analysis_engineering_index": null,
+        "artificial_analysis_economics_index": null
+      },
+      "artificial_analysis_intelligence_index_cost": null,
+      "pricing": {
+        "price_1m_input_tokens": 0.6,
+        "price_1m_output_tokens": 1.8,
+        "price_1m_cache_hit_tokens": 0.11,
+        "price_1m_cache_write_tokens": null
+      },
+      "performance": {
+        "median_output_tokens_per_second": 58.8,
+        "median_time_to_first_token_seconds": 3.31,
+        "median_time_to_first_answer_token_seconds": 3.31,
+        "median_end_to_end_response_time_seconds": 11.81
+      },
+      "performance_v3": {
+        "mean_output_tokens_per_second": 47.42,
+        "mean_time_to_first_token_seconds": 4.84,
+        "mean_time_to_first_answer_token_seconds": 4.84
+      }
+    },
+    {
+      "id": "0097ebf5-124f-42f6-9463-33b00e711f03",
+      "name": "Gemini 3.5 Flash (High)",
+      "slug": "gemini-3-5-flash",
+      "release_date": "2026-05-19",
+      "model_creator": {
+        "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+        "name": "Google"
+      },
+      "evaluations": {
+        "artificial_analysis_intelligence_index": null,
+        "artificial_analysis_coding_index": null,
+        "artificial_analysis_agentic_index": null,
+        "artificial_analysis_finance_and_accounting_index": null,
+        "artificial_analysis_strategy_and_ops_index": null,
+        "artificial_analysis_legal_index": null,
+        "artificial_analysis_healthcare_and_medical_index": null,
+        "artificial_analysis_engineering_index": null,
+        "artificial_analysis_economics_index": null
+      },
+      "artificial_analysis_intelligence_index_cost": null,
+      "pricing": {
+        "price_1m_input_tokens": 1.5,
+        "price_1m_output_tokens": 9,
+        "price_1m_cache_hit_tokens": 0.15,
+        "price_1m_cache_write_tokens": null
+      },
+      "performance": {
+        "median_output_tokens_per_second": 187.48,
+        "median_time_to_first_token_seconds": 16.19,
+        "median_time_to_first_answer_token_seconds": 16.19,
+        "median_end_to_end_response_time_seconds": 18.85
+      },
+      "performance_v3": {
+        "mean_output_tokens_per_second": 172.13,
+        "mean_time_to_first_token_seconds": 12.63,
+        "mean_time_to_first_answer_token_seconds": 12.63
+      }
+    }
+  ]
+}
