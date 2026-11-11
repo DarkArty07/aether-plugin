@@ -527,13 +527,13 @@ test('main without --from asks the API with the key, never prints it, and says w
   const seen = []
   const fetch = async (url, init) => {
     seen.push([url, init.headers['x-api-key']])
-    return { ok: true, status: 200, json: async () => ({ data: RAW }) }
+    return { ok: true, status: 200, json: async () => ({ data: RAW, pagination: { page: 1, page_size: 200, total_pages: 1, has_more: false } }) }
   }
   const env = { ARTIFICIAL_ANALYSIS_API_KEY: 'secret-key' }
 
   const live = await main([...args, '--write'], { env, fetch, now: NOW })
   assert.equal(live.exitCode, 0)
-  assert.deepEqual(seen, [['https://artificialanalysis.ai/api/v2/data/llms/models', 'secret-key']])
+  assert.deepEqual(seen, [['https://artificialanalysis.ai/api/v2/language/models/free', 'secret-key']])
   assert.equal(live.stdout.includes('secret-key'), false)
   for (const file of [path.join('out', 'models.json'), path.join('docs', 'README.md')]) {
     assert.equal(fs.readFileSync(path.join(dir, file), 'utf8').includes('secret-key'), false)

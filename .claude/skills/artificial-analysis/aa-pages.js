@@ -18,7 +18,8 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
+// AA's free list of language models, paged (?page=N from page 2). The legacy data address answers 410 since 2026-11-04.
+const MODELS_URL = 'https://artificialanalysis.ai/api/v2/language/models/free'
 const PAGE_URL = 'https://artificialanalysis.ai/models/'
 const PAIRS = path.join(__dirname, '..', '..', '..', 'plugins', 'aether', 'config', 'pairs.json')
 const PAUSE_MS = 1200
@@ -39,17 +40,35 @@ function apiKey() {
 
 const pct = (v) => (v === null || v === undefined ? '-' : (v <= 1 ? v * 100 : v).toFixed(0))
 
+// Every page of the free list, in order, until pagination.has_more is false (at most 20 pages). A 410 or any other answer
+// that is not a page of the list ends the read with an error: no part of the list is returned.
+async function freeModels(key) {
+  const rows = []
+  for (let page = 1; page <= 20; page++) {
+    const response = await fetch(page === 1 ? MODELS_URL : `${MODELS_URL}?page=${page}`, { headers: { 'x-api-key': key } })
+    if (response.status === 410) throw new Error('the API answered 410: that address is retired')
+    if (!response.ok) throw new Error(`the API answered ${response.status}`)
+    const body = await response.json()
+    if (!Array.isArray(body.data) || typeof body.pagination?.has_more !== 'boolean') throw new Error('the API gave a page with no list or no pagination')
+    rows.push(...body.data)
+    if (!body.pagination.has_more) return rows
+  }
+  throw new Error('the API has more than 20 pages of models')
+}
+
+const num = (v, digits) => (typeof v === 'number' ? v.toFixed(digits) : '-')
+
 async function api(filter = 'Claude (Haiku|Sonnet|Opus) 5\\.5') {
-  const response = await fetch(MODELS_URL, { headers: { 'x-api-key': apiKey() } })
-  if (!response.ok) throw new Error(`the API answered ${response.status}`)
-  const body = await response.json()
-  const list = body.data || body
+  const list = await freeModels(apiKey())
   const re = new RegExp(filter, 'i')
-  console.log(`${list.length} models. Per model the API gives: id, name, slug, release_date, model_creator, evaluations, pricing, speed and first-token times.`)
-  console.log('name'.padEnd(46), 'intel  TB4.0  LCR  HLE  SciCode   (a null field means the API has no figure)')
+  console.log(`${list.length} models. Per model the API gives: id, name, slug, release_date, model_creator, evaluations (the intelligence index and six area indexes), the cost per task of the index, pricing, and speed and first-token times. Not given: the coding and agentic indexes, Terminal-Bench, LCR, HLE and SciCode, which are on the model pages.`)
+  console.log('name'.padEnd(46), 'intel  cost/task  $in/M  $out/M   tok/s  ttft s')
   for (const m of list.filter((x) => re.test(x.name))) {
-    const e = m.evaluations
-    console.log(m.name.padEnd(46), String(e.artificial_analysis_intelligence_index).padStart(5), pct(e.terminalbench_v4_0).padStart(6), pct(e.lcr).padStart(5), pct(e.hle).padStart(4), pct(e.scicode).padStart(8))
+    const e = m.evaluations ?? {}
+    const p = m.pricing ?? {}
+    const perf = m.performance ?? {}
+    console.log(m.name.padEnd(46), String(e.artificial_analysis_intelligence_index).padStart(5), num(m.artificial_analysis_intelligence_index_cost?.cost_per_task?.total_cost, 3).padStart(10),
+      num(p.price_1m_input_tokens, 2).padStart(6), num(p.price_1m_output_tokens, 2).padStart(7), num(perf.median_output_tokens_per_second, 1).padStart(7), num(perf.median_time_to_first_token_seconds, 2).padStart(7))
   }
 }
 
