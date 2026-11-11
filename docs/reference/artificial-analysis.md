@@ -10,6 +10,8 @@ Aether picks models and efforts with the figures of [Artificial Analysis](https:
 
 ## The free API
 
+**The address below was retired on 2026-11-04** and answers HTTP 410 since then. Aether's scripts now ask `GET https://artificialanalysis.ai/api/v2/language/models/free` with the same header. Checked on 2026-11-11: the answer has `tier` (`free`), `intelligence_index_version` (5), `pagination` and `data`, 734 models in four pages of 200, the later pages asked with `?page=N`. Each entry gives `id`, `name`, `slug`, `release_date`, `model_creator`, `evaluations` (the intelligence index and six area indexes; the coding index and the agentic index are null in every row), the cost per task of the index, `pricing` and `performance`. Terminal-Bench, LCR, HLE and SciCode no longer come in the answer. The rest of this section describes the old answer, as checked on 2026-10-26.
+
 `GET https://artificialanalysis.ai/api/v2/data/llms/models`, with the key in the `x-api-key` header. AA documents 1,000 requests a day for the free tier. The answer has `status`, `prompt_options` (`parallel_queries: 1`, `prompt_length: 1000`: the speed and latency are measured with one query at a time and a prompt of about 1,000 tokens) and `data`, one entry for each model. On the day it was checked: 709 models, released from 2022-11-30 to 2026-10-23, 326 of them since 2026-01-01.
 
 Each entry has these fields:

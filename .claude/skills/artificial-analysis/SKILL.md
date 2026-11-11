@@ -27,7 +27,7 @@ Table refresh reads model pages (`aa-api.js`, `scripts/refresh-lanes.js`), only 
 
 `node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]` reads the model pages of Claude rows without a key, updates their code figures (with `--write`), and shows the recalculated ladder against the stored ladder.
 
-`node .claude/skills/artificial-analysis/aa-pages.js api ["name regex"]` does the same.
+`node .claude/skills/artificial-analysis/aa-pages.js api ["name regex"]` asks the free API with the key and prints, for each model whose name matches, the intelligence index, the cost per task, the price per token and the speed.
 
 `node .claude/skills/artificial-analysis/aa-pages.js pages [slug ...] [--json]` reads the pages (default: every slug of `pairs.json`), 1.2 s apart, and prints Briefcase, Terminal-Bench and the cost split of each. See the terms of use above before you run it.
 
