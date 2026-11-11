@@ -125,26 +125,26 @@ The ladder is `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`. Exclude diary writes, 
 
 ## The delegate ladder
 
-A delegate task climbs three steps, Haiku, Sonnet and Opus, and the system holds the step, not you. Every delegate starts on Haiku. Pass neither `model` nor `effort` on its `Agent` call, except the `model` the owner placed a task on (see "The owner's placement"); otherwise the system sets both from the step, and what you pass is ignored and logged. Do not pass `fork` on a delegate task: `Agent` ignores `model` on a fork and would run on your model with your whole conversation. Moreover, every `Agent` call whose `subagent_type` is not `aether:*` (including `Plan`, `claude-code-guide`, or a call with no `subagent_type`) is a delegate task, climbs the ladder, and waits for a verdict.
+The ladder is the Pareto frontier over Artificial Analysis, stored in `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`: Haiku `high`, Haiku `xhigh`, Sonnet `high`, Opus `high`, Opus `xhigh`. The system holds the step; delegates start on Haiku `high`. Pass neither `model` nor `effort` on `Agent`, except the `model` placed by the owner; the system sets both. Do not pass `fork` on a delegate task: `Agent` ignores `model` on a fork and would run on your model with your whole conversation. In addition, every `Agent` call whose `subagent_type` is not `aether:*` (including `Plan`, `claude-code-guide`, or a call with no `subagent_type`) is a delegate task, climbs the ladder, and waits for a verdict.
 
 **The call.** Every delegate call carries these lines in its brief:
-- `AETHER-TASK: <id>`: the task's name. Launch a correction or a rise with the same id, and the system adds the earlier work and the findings to its brief; a new id is a new task.
+- `AETHER-TASK: <id>`: the task's name. Launch the next attempt, a rise, with the same id, and the system adds the earlier work and the findings to its brief; a new id is a new task.
 - `AETHER-OWNS: <globs>` and `AETHER-TESTS: <command>`, when it edits. Without them the task is read-only: touching any file of the checkout fails it, and so does an empty answer.
 
 A delegate that edits on Claude works with `isolation: "worktree"`, which the system puts on the call. When you judge it, pass that worktree's path with `--worktree`: without it, or without the checks of a result, an `approve` is refused.
 
 **The verdict.** Judge every result with `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate verdict --task <id> --verdict approve|fix|infeasible`; a verdict that does not go through it does not count. Pass `--ignore <glob>` for dirty files unrelated to the task.
 - `approve` closes the task, and is refused when a check failed. Then merge an editing delegate's branch yourself, one at a time: with the `aether-wt merge` line its result gives, or with git from its worktree when it ran on Claude. Check first which branch you are on and record the `merge-main` grant when it is `main` or `master` and none covers it yet, only from the owner's own words that authorize that merge; without them it waits in the owner's list. Then run the task's test command once on your branch.
-- `fix` sends the work back to the same model, at the step's correction effort in `config/ladder.json`, with concrete findings, each `--finding 'file:line: what is missing'`; a finding with no file or no "what is missing" is refused.
+- `fix` sends the work to the next rung in `config/ladder.json` with concrete findings, each `--finding 'file:line: what is missing'`; a finding with no file or no "what is missing" is refused.
 - `infeasible --reason <text>` declares the task out of reach of this model, and is refused without a reason.
 
-**Climbing.** Rise only after the step's corrections are spent, the same findings return, or `infeasible` with a reason. Limits live in `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`. The next step receives earlier work, findings and reason; add `--from-scratch`, with a reason, to a verdict only to throw that work away. After Opus the task is exhausted and deferred under "Autonomous runs".
+**Climbing.** A rejected attempt rises one rung. Limits live in `config/ladder.json`. The next step receives earlier work, findings and reason; add `--from-scratch`, with a reason, to a verdict only to throw that work away. Repeating changes outside Owns or the same blocked cause blocks the task on its rung. After the fifth rung the task is exhausted and deferred.
 
 Note that relaunching an approved or exhausted task id launches a Haiku agent that says there is nothing to do.
 
-**Replaced, not repeated.** A pair failing at start for quota or time is replaced, never repeated: it spends none of the step's corrections; the system picks the next pair.
+**Replaced, not repeated.** A pair failing at start for quota or time is replaced, never repeated: it does not climb a rung; the system picks the next pair.
 
-**The owner's placement.** Only their words naming Sonnet or Opus move a task above Haiku; otherwise ask which. Record them exactly: `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate authorize --model <sonnet|opus> [--effort <low|medium|high|xhigh|max>] --quote '<their words>' (--task <id> | --scope session)`. Task grants match `AETHER-TASK`; session grants cover all session delegates; Opus also covers Sonnet. Pass `model`: it runs on Claude at that model at the recorded effort when the words name one, climbing from there. Never invent quotes or raise a model for your own reason (`infeasible` still rises one step). Report these tasks on Asequible.
+**The owner's placement.** Only words naming Sonnet or Opus move a task above Haiku; else ask which. Record them: `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate authorize --model <sonnet|opus> [--effort <low|medium|high|xhigh|max>] --quote '<their words>' (--task <id> | --scope session)`. Task grants match `AETHER-TASK`; session grants cover all session delegates; Opus covers Sonnet too. Opus without effort runs on rung 4 (Opus high), with xhigh on rung 5 (Opus xhigh); unlisted efforts take the model's first step at that effort, climbing from there. A model without a step is refused. Pass `model`: it runs on Claude at that model, climbing from there. Never invent quotes or raise a model for your own reason (`infeasible` still rises one step). Report these on Asequible.
 
 ## Models
 

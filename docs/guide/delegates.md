@@ -17,39 +17,39 @@ A delegate task is bounded work that the Lead hands to one subagent. The system,
 
 ## The ladder
 
-The ladder is three steps, and their numbers are data in `plugins/aether/config/ladder.json`, not code. A change to a number there is all a change takes.
+The ladder is calculated by a fixed law over Artificial Analysis figures (the Pareto frontier of quality and cost: a candidate that another pair matches or beats for less cost is dropped; the rest ordered by intelligence, each rung gaining at least 2 points in code and intelligence) and stored in `plugins/aether/config/ladder.json`.
 
-| Step | Corrections | Effort at first | Effort on a correction or a rise |
-|---|---|---|---|
-| Haiku | 5 | `high` | `xhigh` |
-| Sonnet | 2 | `high` | `high` |
-| Opus | 1 | `high` | `high` |
+| Step | Model | Effort |
+|---|---|---|
+| haiku-high | Haiku | `high` |
+| haiku-xhigh | Haiku | `xhigh` |
+| sonnet-high | Sonnet | `high` |
+| opus-high | Opus | `high` |
+| opus-xhigh | Opus | `xhigh` |
 
-In Sonnet and Opus a correction and a rise run at `high`, the same effort as at first: there a correction changes what the model knows (its own earlier work and the Lead's findings), not how hard it thinks. The next effort costs 2.5 times more in Sonnet and 1.7 times more in Opus (the cost per task of the Artificial Analysis index, in `config/pairs.json`) for 13 and 3 more points in code (Terminal-Bench 4.0). So the ladder's effort for a correction in those two steps is `high`. Decision A87 still applies: a correction raises the effort a step where the ladder allows it, which happens in Haiku, from `high` to `xhigh`. A task reaches Sonnet or Opus by a rise, which lands at the effort the ladder allows for a correction, so there was no step to take there when that effort was `xhigh` either; what changed is the effort itself, from `xhigh` to `high`. The swarm does the same: a retry in Haiku rises from `high` to `xhigh`, and in Sonnet and Opus stays at `high` (see [Models by role](models-by-role.md)). The ladder's part is two numbers of `config/ladder.json`, and they are reverted there.
+Sonnet `xhigh` is not on the ladder today because Opus `high` gives 51.7 intelligence versus 49.6 for Sonnet `xhigh`, for US$ 3.465 versus US$ 4.092 per task (the figures from `config/pairs.json`): Opus `high` beats Sonnet `xhigh` on quality for less cost, so Sonnet `xhigh` drops from the Pareto frontier. The swarm supervisor runs on Sonnet `high` for rungs 1 and 2, Opus `high` for rung 3, and Opus `xhigh` for rungs 4 and 5, calculated by the system so that the supervisor is never weaker than the author.
 
-The same file holds how many times the same findings may come back before the task climbs, `repeatFindings`, which is 2. The owner chose these numbers and asked to watch them, so that they can be calibrated later if they need to be: the report shows how often each step approves.
-
-- **A correction works on top of what was done.** When a result is not good enough the Lead does not climb: it asks the same model (same harness and model, at the step's correction effort in `config/ladder.json`, capped at that effort when the step is already there) to correct it. The delegate receives its own earlier work, the patch of an editing task or the earlier answer of a read-only one, and the Lead's findings, each with a file, a line when it has one and what is missing. A finding with no file, or with no "what is missing", is refused. Each step has its corrections, and a correction is spent by a verdict, not by a launch.
-- **A task climbs for three causes, and only these:**
-  1. the corrections of the step are spent and the last attempt is still not good (`exhausted`);
-  2. the same findings come back, twice in a row (`repeated`), even when the step has corrections left;
-  3. the Lead declares the task infeasible for that model and writes the reason (`infeasible`). A declaration with no reason is refused, and the step does not move.
-- **A rise hands over the earlier work.** The next step receives the patch or the answer of the work before, the Lead's findings and the reason for the rise, because a model that is given the earlier work and what is wrong with it can fix it, and throwing it away costs time and money. The Lead may instead declare, with a reason, that the work must start from scratch (`--from-scratch`): then the next launch receives no patch and no findings, only the reason, and the log notes it.
-- **After Opus there is no step.** When Opus has spent its correction and the result is still not good, or the Lead declares it infeasible on Opus, the verdict is `exhausted` and the delegate task ends. The Lead defers the task, or puts it on the owner's list, by its repetition rule. A launch of that id afterwards only answers that the task is exhausted; an id that was approved is closed the same way, and new work takes a new id.
+- **A rejected attempt rises one step.** When a result is not approved, the task rises one step to the next rung on the ladder, running at that rung's effort. The next launch receives its own earlier work, the patch of an editing task or the earlier answer of a read-only one, and the Lead's findings.
+- **A task climbs or blocks for these causes:**
+  1. a rejected attempt (`fix`) or an infeasible verdict with a reason rises one step (`failed` or `infeasible`);
+  2. repeating the same change outside Owns or the same blocked cause twice blocks the task on the rung it is on (`blocked-outside-owns` or `blocked-same-cause`);
+  3. the Lead declares the task infeasible for that model and writes a reason (`infeasible`). A declaration without a reason is refused, and the step does not move.
+- **A rise hands over the earlier work.** The next step receives the patch or answer from before, the Lead's findings and the reason for the rise. The Lead may instead declare, with a reason, that the work must start from scratch (`--from-scratch`): then the next launch receives no patch and no findings, only the reason, and the log notes it.
+- **After Opus xhigh there is no step.** When the fifth rung has failed, the verdict is `exhausted` and the delegate task ends. The Lead defers the task, or puts it on the owner's list, by its repetition rule. A launch of that id afterwards only answers that the task is exhausted; an id that was approved is closed the same way, and new work takes a new id.
 - **A relaunch under another id is noted.** A launch with a new id whose owned files and tests match those of a task of the same session that did not end approved is written in the log as a relaunch of that task, and `aether-report --delegates` lists it.
 
 ## Placing a task
 
 The owner can put one delegate task on Sonnet or Opus. Every delegate still starts on Haiku: a task moves up only when the owner's own words name the model and the Lead records them. The design is [spec 021](../../specs/021-owner-model-authorization/design.md), and its decision is A99.
 
-- **Asking.** The owner names the model in their own words, for example «redacta ese archivo de nuevo en español natural; despliega un agente que lo haga en Opus». Words such as «el más fuerte» name no model: the Lead asks which one, and records nothing until the owner does.
+- **Asking.** The owner names the model in their own words, for example «redacta ese archivo de nuevo en español natural; despliega un agente que lo haga en Opus». Words such as «el más fuerte» name no model: the Lead asks which one, and records nothing until the owner does. A model with no step in the ladder is refused, naming the models with a step.
 - **Recording.** The Lead runs `aether-delegate authorize --model <sonnet|opus> [--effort <low|medium|high|xhigh|max>] --quote '<their words>' (--task <id> | --scope session)`. A task scope covers only the task whose `AETHER-TASK` id matches; a session scope covers every delegate task of the session. Words about one piece of work are a task scope, and general words about the session's delegates are a session scope. An Opus record also covers asking for Sonnet; a Sonnet record does not cover Opus. The effort is the owner's only when their words name it as they name the model: a record with an effort the model does not take, or one the quote does not name, is refused and nothing is recorded.
 - **What is checked.** The quote must be in the messages the owner wrote in this session's transcript, be at least 12 characters, and name the model as a whole word. The check runs again every time a record is used, because the delegates' log is not guarded by `aether-guard`: a line added by hand, with a quote the owner did not write, covers nothing. A failed check writes nothing and prints the error.
-- **Launching.** The Lead passes `model` on the `Agent` call of a task that a record covers. The task starts on that model at the authorized effort when the record names one, else at the effort of its step, and its first `launch` line carries `authorized`. A record made after the task's first launch does not move it; a new id is a new task. When no record covers the call, the task starts on Haiku as usual, the model is ignored and logged, and the Lead gets a note that says so and how to record an authorization.
-- **Climbing.** The task then climbs the same ladder from its step: Opus has one correction and is then exhausted, and Sonnet has two corrections and then rises to Opus. The Lead never raises a model on its own reason alone; declaring a task infeasible with a reason still raises it one step.
+- **Launching.** The Lead passes `model` on the `Agent` call of a task that a record covers. Opus without an effort runs on rung 4 (Opus high), with `xhigh` on rung 5 (Opus xhigh); an effort that is not a step takes the first step of the model at the owner's effort. The task starts at the authorized effort when the record names one, else at the effort of its step, and its first `launch` line carries `authorized`. A record made after the task's first launch does not move it; a new id is a new task. When no record covers the call, the task starts on Haiku as usual, the model is ignored and logged, and the Lead gets a note that says so and how to record an authorization.
+- **Climbing.** The task then climbs the same ladder from its step: from rung 4 it rises to rung 5, and after rung 5 it is exhausted. The Lead never raises a model on its own reason alone; declaring a task infeasible with a reason still raises it one step.
 - **Where it runs.** A task the owner placed runs on Claude, at its model, for every attempt, even with `superdelegation` on. No other harness takes it, and no pair is chosen for it.
 - **In the log and the report.** The `authorize` line of `delegates/log.jsonl` holds the scope, the task, the model, the effort when the owner's words name one, the quote and its time. In `aether-report --delegates`, the row of such a task carries `authorized: { model, scope }`, and the brief's Asequible line counts these tasks.
-- **Limits.** The effort stays the ladder's unless the owner's own words name one (see Recording): the first launch then runs at that effort, a correction keeps it unless the ladder raises it further, and a rise runs at the ladder's effort for its step. There is no standing permission for a repository, only for a task or for a session. The swarm and the design seats do not change; this covers the Lead's delegate tasks only.
+- **Limits.** The effort stays the ladder's unless the owner's own words name one (see Recording): the first launch then runs at that effort, an unjudged launch keeps it unless the ladder raises it further, and a rise returns to the ladder's effort for its step. There is no standing permission for a repository, only for a task or for a session. The swarm and the design seats do not change; this covers the Lead's delegate tasks only.
 
 ## The brief of a call
 

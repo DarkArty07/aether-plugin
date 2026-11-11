@@ -26,13 +26,12 @@ test('every relative link of the page resolves', () => {
 test('the ladder table is config/ladder.json', () => {
   const ladder = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'config', 'ladder.json'), 'utf8'))
   for (const rung of ladder.rungs) {
-    const name = rung.step[0].toUpperCase() + rung.step.slice(1)
-    const row = page.split('\n').find((line) => line.startsWith(`| ${name} |`))
-    assert.ok(row, `${name} has a row`)
-    const [, corrections, first, retry] = cells(row)
-    assert.equal(Number(corrections), rung.corrections, name)
-    assert.equal(first.replace(/`/g, ''), rung.effort.first, name)
-    assert.equal(retry.replace(/`/g, ''), rung.effort.retry, name)
+    const row = page.split('\n').find((line) => line.includes(`| ${rung.step} |`))
+    assert.ok(row, `${rung.step} has a row`)
+    const [step, model, effort] = cells(row)
+    assert.equal(step, rung.step)
+    assert.equal(model.toLowerCase(), rung.model)
+    assert.equal(effort.replace(/`/g, ''), rung.effort)
   }
 })
 
@@ -41,7 +40,7 @@ test('the page says the swarm starts on the first rung of the ladder', () => {
 })
 
 test('the After column names the model and effort of each agent file', () => {
-  const roles = { Writer: 'writer', Judge: 'judge', Examiner: 'examiner', Supervisor: 'supervisor', 'Final review': 'reviewer', Ops: 'ops' }
+  const roles = { Writer: 'writer', Judge: 'judge', Examiner: 'examiner', 'Final review': 'reviewer', Ops: 'ops' }
   for (const [label, file] of Object.entries(roles)) {
     const agent = read(`plugins/aether/agents/${file}.md`)
     const pair = `\`${front(agent, 'model')} ${front(agent, 'effort')}\``

@@ -26,15 +26,17 @@ This page says which model and effort each role of Aether runs on, how a task cl
 
 ## The ladder
 
-| Step | Corrections | Effort at first | Effort on a correction or a rise |
-|---|---|---|---|
-| Haiku | 5 | `high` | `xhigh` |
-| Sonnet | 2 | `high` | `high` |
-| Opus | 1 | `high` | `high` |
+| Step | Model | Effort |
+|---|---|---|
+| haiku-high | Haiku | `high` |
+| haiku-xhigh | Haiku | `xhigh` |
+| sonnet-high | Sonnet | `high` |
+| opus-high | Opus | `high` |
+| opus-xhigh | Opus | `xhigh` |
 
-A delegate task of the Lead (see [Delegates](delegates.md)) starts on Haiku at `high`. A correction goes back to the same model with its own earlier work and the findings against it: in Haiku the correction rises to `xhigh`, and in Sonnet and in Opus it stays at `high`, because there the next step is another model, not a dearer effort on the same one. A rise passes the task to the next model, and it arrives at `high`.
+A delegate task of the Lead (see [Delegates](delegates.md)) starts on Haiku at `high`. A rejected attempt rises one step to the next rung on the ladder, running at that rung's effort. After the fifth rung the task is exhausted and deferred.
 
-The swarm starts every unit on the first rung of `config/ladder.json` and raises it by the same policy as the delegates. A unit starts on Haiku at `high`. A retry in Haiku runs at `xhigh`, and a retry in Sonnet or in Opus runs at `high`. A rise to the next model lands at `high`.
+The swarm starts every unit on the first rung of `config/ladder.json` and raises it by the same policy as the delegates. The supervisor of each step is determined by the system from the rung (Sonnet `high`, Sonnet `high`, Opus `high`, Opus `xhigh`, Opus `xhigh`), never weaker than the author.
 
 ## Where the spend went
 

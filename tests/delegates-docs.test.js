@@ -26,26 +26,21 @@ test('the page has its front matter and the index links it', () => {
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'docs', 'guide', 'router.md')), false)
 })
 
-test('the table of steps is config/ladder.json: each step, its model and its corrections, and the repeat count', () => {
-  const rows = page.split('\n').filter((line) => /^\| (Haiku|Sonnet|Opus) \|/.test(line)).map((line) => line.split('|').map((cell) => cell.trim()))
+const stepRows = (text) => text.split('\n').filter((line) => /^\| `?(haiku|sonnet|opus)/i.test(line)).map((line) => line.split('|').map((cell) => cell.trim()))
+
+test('the table of steps is config/ladder.json: each step, its model and its effort', () => {
+  const rows = stepRows(read('docs', 'guide', 'delegates.md'))
   assert.equal(rows.length, ladder.rungs.length, 'one row per step')
   ladder.rungs.forEach((rung, index) => {
-    const [, name, corrections, first, retry] = rows[index]
-    assert.equal(name.toLowerCase(), rung.step, `row ${index + 1} is the step ${rung.step}`)
-    assert.equal(Number(corrections), rung.corrections, `${rung.step} corrections`)
-    assert.equal(first, `\`${rung.effort.first}\``, `${rung.step} effort at first`)
-    assert.equal(retry, `\`${rung.effort.retry}\``, `${rung.step} effort on a correction`)
+    const [, step, model, effort] = rows[index]
+    assert.deepEqual([step, model.toLowerCase(), effort], [rung.step, rung.model, `\`${rung.effort}\``], `row ${index + 1}`)
   })
-  assert.equal(ladder.repeatFindings, 2, 'the page says twice; change it with the file')
-  assert.ok(page.includes('twice in a row'), 'the page says how often the same findings may come back')
 })
 
-test('the guide gives the three causes of a rise, the verdicts, the checks that run first and what comes after Opus', () => {
-  const section = page.slice(page.indexOf('## The ladder'), page.indexOf('## The brief'))
-  for (const needed of ['the corrections of the step are spent', 'the same findings', 'infeasible', 'a reason', 'from scratch', 'exhausted', 'defer']) {
-    assert.ok(section.includes(needed), `The ladder: ${needed}`)
-  }
-  const judge = page.slice(page.indexOf('## Who judges'), page.indexOf('## aether-delegate'))
+test('the guide says what makes a task rise, be blocked or be exhausted, with the words of the new policy', () => {
+  const text = read('docs', 'guide', 'delegates.md')
+  for (const needed of ['Pareto', 'one step', 'outside Owns', 'infeasible', 'a reason', 'from scratch', 'exhausted', 'defer']) assert.ok(text.includes(needed), needed)
+  const judge = text.slice(text.indexOf('## Who judges'), text.indexOf('## aether-delegate'))
   for (const needed of ['without a model', 'before the verdict', 'approve', 'fix', 'infeasible', 'does not count', 'outside what the task owns', 'empty']) {
     assert.ok(judge.includes(needed), `Who judges: ${needed}`)
   }
@@ -77,7 +72,7 @@ test('the guide records the owner effort: the authorize usage, the naming rule a
     'authorize --model <sonnet|opus> [--effort <low|medium|high|xhigh|max>]',
     "The effort is the owner's only when their words name it",
     'at the authorized effort when the record names one',
-    'a correction keeps it unless the ladder raises it further',
+    'keeps it unless the ladder raises it further',
     'the effort when the owner',
   ]) assert.ok(page.includes(needed), needed)
 })
