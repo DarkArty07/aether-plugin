@@ -5,6 +5,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const crypto = require('node:crypto')
 const { spawn } = require('node:child_process')
 const { repoPaths } = require('./git.js')
 const { readJsonOrNull, sleep } = require('./common.js')
@@ -146,6 +147,17 @@ function writeResult(paths, outcome) {
   fs.renameSync(temporary, paths.result)
 }
 
+// The value an Examiner's round keeps in result.json once its exam is stored: the digest of the stored exam.json and
+// the count of its tests, never the tests (issue 184). Only a stored exam has a `stored` path, so a Judge's or a
+// Writer's value comes back as it is. A stored exam that cannot be read throws: the round then ends as an exit 1.
+function withoutExamTests(value) {
+  if (!value || typeof value.stored !== 'string' || typeof value.result !== 'object' || value.result === null) return value
+  const bytes = fs.readFileSync(path.join(value.stored, 'exam.json'))
+  const { tests } = JSON.parse(bytes)
+  const digest = crypto.createHash('sha256').update(bytes).digest('hex')
+  return { ...value, result: { redacted: true, testCount: tests.length, digest } }
+}
+
 // Runs the round that start prepared, through the same code as `aether-lane seat`, and records its reply as the
 // result. It does not catch the signal stop sends: seats.js does that while a round runs, kills the harness and
 // removes the worktree. It never throws; whatever breaks becomes an exit-1 result.
@@ -162,7 +174,7 @@ async function runSeat(cwd, id) {
     const exclude = Array.isArray(call.exclude) && call.exclude.length > 0 ? ['--exclude', call.exclude.join(',')] : []
     const argv = [call.seat, '--session', call.session, '--id', id, '--feature', call.feature, ...author, ...doc, ...exclude]
     const { exitCode, value } = await seats.seatCommand(argv, { input: message, env: process.env, cwd })
-    outcome = { exitCode, value }
+    outcome = { exitCode, value: withoutExamTests(value) }
   } catch (err) {
     outcome = { exitCode: 1, value: { error: err.message } }
   }
@@ -214,6 +226,22 @@ function runningReply(paths, id) {
   return out
 }
 
+// The reply a workflow reads. An Examiner's result.json names its exam by digest and count (withoutExamTests), so the
+// tests come back here from the stored exam, when its exam.json still has that digest (issue 184). When it does not,
+// the reply keeps the digest alone: that fits no answer, and the workflow asks for another try.
+function withExamTests(done) {
+  const value = done.value
+  if (typeof value !== 'object' || value === null || typeof value.stored !== 'string') return done
+  if (typeof value.result !== 'object' || value.result === null || value.result.redacted !== true) return done
+  try {
+    const bytes = fs.readFileSync(path.join(value.stored, 'exam.json'))
+    if (crypto.createHash('sha256').update(bytes).digest('hex') !== value.result.digest) return done
+    return { ...done, value: { ...value, result: JSON.parse(bytes) } }
+  } catch {
+    return done
+  }
+}
+
 // The result of a round, with the time it took (durationMs), or { done: false, elapsedMs, at } when it still runs after
 // maxSeconds, with the time since it started: the workflow has no clock, and takes its time caps from these (issue 62).
 // A Writer or an Examiner round also names changedMs. Every reply names at, this bin's clock.
@@ -227,10 +255,11 @@ async function wait(cwd, id, { maxSeconds = null } = {}) {
   const stamp = (value) => ({ ...value, at: Date.now() })
   for (;;) {
     const done = finishedResult(paths)
-    if (done) return stamp(done)
+    if (done) return stamp(withExamTests(done))
     if (!runnerAlive(paths)) {
       // The runner writes its result and then drops its pid: a result that came between the two reads is the answer.
-      return stamp(finishedResult(paths) ?? { done: true, exitCode: 1, value: { error: `the seat round ${id} ended without a result` }, durationMs: elapsed() })
+      const finished = finishedResult(paths)
+      return stamp(finished ? withExamTests(finished) : { done: true, exitCode: 1, value: { error: `the seat round ${id} ended without a result` }, durationMs: elapsed() })
     }
     if (Date.now() >= deadline) return runningReply(paths, id)
     await sleep(Math.min(POLL_MS, Math.max(0, deadline - Date.now())))

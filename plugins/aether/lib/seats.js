@@ -886,6 +886,23 @@ function finishSpec(cwd, worktree, feature, seatLabel) {
   return { ok: true, spec: file, commit: git(['rev-parse', 'HEAD'], cwd).stdout }
 }
 
+// Once an Examiner's exam is stored, the harness's stdout (every adapter prints its answer, the exam included, as JSON)
+// and its stderr (a harness may echo its transcript there) no longer hold it: each file names where the exam went, and
+// the tests stay in the data directory (issue 184). The exam is already stored, so a file that cannot be replaced is
+// not a failed round: it keeps its text, and the caller still reports the round as finished.
+function dropExamFromOutput(dir, stored) {
+  const note = `The exam was stored at ${stored}. The harness's output, which held its tests, is not kept in this round.\n`
+  for (const name of ['stdout', 'stderr']) {
+    const file = path.join(dir, name)
+    if (name === 'stderr' && !fs.existsSync(file)) continue
+    try {
+      fs.writeFileSync(file, note)
+    } catch {
+      // Left as the harness wrote it: the exam is stored, and only this file keeps its text.
+    }
+  }
+}
+
 // Writes the Examiner's answer beside its test files and stores the exam where the swarm does not see it.
 function finishExaminer(mainRoot, worktree, feature, result, dataDir) {
   const dir = path.join(worktree, EXAM_DIR)
@@ -1083,6 +1100,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
       } else if (seat === 'examiner') {
         const done = finishExaminer(mainRoot, worktree, feature, parsed.structured, dataDir)
         outcome = done.ok ? { status: 'ok', text: examinerText(parsed.structured, done), result: parsed.structured, stored: done.stored } : { status: 'failed', detail: done.detail }
+        if (done.ok) dropExamFromOutput(dir, done.stored)
       } else {
         outcome = { status: 'ok', text: judgeText(parsed.structured), result: parsed.structured }
       }
