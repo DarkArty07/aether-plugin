@@ -1,6 +1,6 @@
 'use strict'
 
-// Spec 013 (R10, R22): the components page, the README, the getting-started page and CLAUDE.md describe the delegate ladder
+// Spec 013 (R10, R22): the components page, the README, the getting-started page and AGENTS.md describe the delegate ladder
 // and name nothing of the retired router. The counts they give (options, commands) are read from the tree, not repeated here.
 
 const test = require('node:test')
@@ -30,19 +30,19 @@ test('the components page names aether-delegate and no retired decider command (
   assert.equal(components.includes('`' + OLD_BIN + '`'), false)
 })
 
-test('the README and the CLAUDE.md name no retired decider command and point to the delegates guide (R10)', () => {
-  for (const file of ['README.md', 'CLAUDE.md']) assert.equal(read(file).includes(OLD_BIN), false, file)
-  assert.ok(read('CLAUDE.md').includes('aether-delegate'))
+test('the README and the AGENTS.md name no retired decider command and point to the delegates guide (R10)', () => {
+  for (const file of ['README.md', 'AGENTS.md']) assert.equal(read(file).includes(OLD_BIN), false, file)
+  assert.ok(read('AGENTS.md').includes('aether-delegate'))
 })
 
-test('the README, the getting-started page and CLAUDE.md link the delegates guide (R10)', () => {
-  for (const [file, link] of [['README.md', 'docs/guide/delegates.md'], ['docs/getting-started.md', 'guide/delegates.md'], ['CLAUDE.md', 'docs/guide/delegates.md']]) {
+test('the README, the getting-started page and AGENTS.md link the delegates guide (R10)', () => {
+  for (const [file, link] of [['README.md', 'docs/guide/delegates.md'], ['docs/getting-started.md', 'guide/delegates.md'], ['AGENTS.md', 'docs/guide/delegates.md']]) {
     assert.ok(read(...file.split('/')).includes(`](${link}`), `${file} links ${link}`)
   }
 })
 
 test('the four documents name none of the identifiers of the retired router (R10)', () => {
-  for (const file of ['README.md', 'CLAUDE.md', 'docs/getting-started.md', 'docs/reference/components.md']) {
+  for (const file of ['README.md', 'AGENTS.md', 'docs/getting-started.md', 'docs/reference/components.md']) {
     read(...file.split('/')).split('\n').forEach((line, i) => {
       for (const pattern of RETIRED) assert.doesNotMatch(line, pattern, `${file}:${i + 1} still says ${pattern}`)
     })
@@ -60,20 +60,20 @@ test('the README and the getting-started page count the options of the manifest 
   for (const name of options) assert.ok(started.includes(`\`${name}\``), `getting-started names ${name}`)
 })
 
-test('the Config line of CLAUDE.md names the options of the manifest and none that is gone (R22)', () => {
-  const claude = read('CLAUDE.md')
+test('the Config line of AGENTS.md names the options of the manifest and none that is gone (R22)', () => {
+  const claude = read('AGENTS.md')
   const config = claude.split('\n').find((line) => line.startsWith('- **Config.**'))
-  assert.ok(config, 'CLAUDE.md has a Config line')
+  assert.ok(config, 'AGENTS.md has a Config line')
   const options = Object.entries(manifest().userConfig).filter(([, option]) => !/\(legacy\)$/.test(option.title)).map(([name]) => name)
   for (const name of options) assert.ok(config.includes(name), `the Config line names ${name}`)
   assert.doesNotMatch(config, /\b(router|decider|fallback)\b/, 'the Config line names none of the options that are gone')
   assert.ok(config.includes('config/ladder.json'), 'the Config line lists the ladder data')
 })
 
-test('CLAUDE.md describes aether-delegate, the ladder, its data and its log (R22)', () => {
-  const claude = read('CLAUDE.md')
+test('AGENTS.md describes aether-delegate, the ladder, its data and its log (R22)', () => {
+  const claude = read('AGENTS.md')
   for (const text of ['`aether-delegate`', 'lib/ladder.js', 'config/ladder.json', 'delegates/log.jsonl', 'hooks/delegate.mjs']) {
-    assert.ok(claude.includes(text), `CLAUDE.md names ${text}`)
+    assert.ok(claude.includes(text), `AGENTS.md names ${text}`)
   }
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'ladder.js')))
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'ladder.json')))

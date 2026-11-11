@@ -8,7 +8,7 @@ const path = require('node:path')
 const ROOT = path.join(__dirname, '..')
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 const OTHERS = ['agy', 'codex', 'grok', 'cursor']
-const FILES = ['README.md', 'CLAUDE.md', 'docs/methodology.md', 'docs/purpose.md']
+const FILES = ['README.md', 'AGENTS.md', 'docs/methodology.md', 'docs/purpose.md']
 const names = (line) => OTHERS.filter((name) => new RegExp(`\\b${name}`, 'i').test(line))
 const listsMuse = (text) => text.split('\n').some((line) => /\bmuse\b/i.test(line) && names(line).length >= 2)
 

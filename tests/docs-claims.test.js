@@ -9,8 +9,8 @@ const ROOT = path.join(__dirname, '..')
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 const { CLASSES } = require('../plugins/aether/lib/autonomy.js')
 
-test('CLAUDE.md lists exactly the irreversible classes the guard and the grants know', () => {
-  const line = read('CLAUDE.md').split('\n').find((l) => l.includes('aether-guard') && l.includes('irreversible'))
+test('AGENTS.md lists exactly the irreversible classes the guard and the grants know', () => {
+  const line = read('AGENTS.md').split('\n').find((l) => l.includes('aether-guard') && l.includes('irreversible'))
   assert.ok(line)
   for (const cls of CLASSES) assert.ok(line.includes(`\`${cls}\``), cls)
 })
@@ -20,8 +20,8 @@ test('every bin of plugins/aether/bin is named by docs/reference/components.md',
   for (const bin of fs.readdirSync(path.join(ROOT, 'plugins/aether/bin'))) assert.ok(text.includes(bin), bin)
 })
 
-test('CLAUDE.md no longer says the old options stay as legacy keys, and names the modules the layers added', () => {
-  const text = read('CLAUDE.md')
+test('AGENTS.md no longer says the old options stay as legacy keys, and names the modules the layers added', () => {
+  const text = read('AGENTS.md')
   assert.doesNotMatch(text, /legacy keys/)
   for (const name of ['common.js', 'lane-process.js', 'plan-compile.js']) assert.ok(text.includes(name) || read('docs/reference/components.md').includes(name), name)
 })
@@ -51,7 +51,7 @@ test('lanes.md does not say the session start or aether-report reports old optio
   }
 })
 
-test('the README, CLAUDE.md, the guides and the reference name no retired option, journal or legacy variable', () => {
-  const files = ['README.md', 'CLAUDE.md', 'docs/reference/components.md', ...fs.readdirSync(path.join(ROOT, 'docs/guide')).map((f) => `docs/guide/${f}`)]
+test('the README, AGENTS.md, the guides and the reference name no retired option, journal or legacy variable', () => {
+  const files = ['README.md', 'AGENTS.md', 'docs/reference/components.md', ...fs.readdirSync(path.join(ROOT, 'docs/guide')).map((f) => `docs/guide/${f}`)]
   assert.deepEqual(hits(['options', 'journal'], { docs: true }).filter((hit) => files.includes(hit.file)), [])
 })

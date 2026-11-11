@@ -7,19 +7,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\"",
+            "timeout": 60
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 1"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 1",
+            "timeout": 60
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 2"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 2",
+            "timeout": 60
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 3"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/aether-session-start\" --part 3",
+            "timeout": 60
           }
         ]
       }

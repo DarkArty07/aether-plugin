@@ -28,11 +28,11 @@ test('the guide names the three exemptions of R10 with their reason and the rule
   assert.match(page, /only with your (yes|word|go-ahead)/i)
 })
 
-test('the index, the README and CLAUDE.md point to the guide and the bin', () => {
+test('the index, the README and AGENTS.md point to the guide and the bin', () => {
   assert.ok(read('docs', 'index.md').includes('guide/observe.md'))
   assert.ok(read('README.md').includes('docs/guide/observe.md'))
   assert.ok(read('README.md').split('\n').length <= 160)
-  assert.ok(read('CLAUDE.md').includes('aether-observe'))
+  assert.ok(read('AGENTS.md').includes('aether-observe'))
 })
 
 test('the components page says the observation hooks do nothing in a plain session (R13)', () => {
