@@ -631,6 +631,37 @@ function superdelegationOf(env) {
   return { on: on === 'on' ? true : on === 'off' ? false : null }
 }
 
+// When a swarm run was compiled, in ms: the state's compiledAt, or the graph's modification time when the state has none.
+// It starts the run's window in report(), and it places the run among an autonomous run's (lib/autonomy.js).
+function runStartOf(dir) {
+  const state = readIfThere(path.join(dir, 'state.json'))
+  return state && state.compiledAt ? Date.parse(state.compiledAt) : fs.statSync(path.join(dir, 'graph.json')).mtimeMs
+}
+
+// The records of the swarm runs finalized into the data directory's runs.jsonl, of every install (run.installDirs). A
+// line that is not JSON is skipped, and so is a file that cannot be read.
+function finalizedRecords(dataDir) {
+  const records = []
+  for (const install of run.installDirs(dataDir)) {
+    let text
+    try {
+      text = fs.readFileSync(path.join(install, 'runs.jsonl'), 'utf8')
+    } catch {
+      continue
+    }
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      try {
+        const record = JSON.parse(line)
+        if (record && record.status === 'finalized') records.push(record)
+      } catch {
+        // A line that is not JSON is skipped.
+      }
+    }
+  }
+  return records
+}
+
 // The run's window starts when the plan was compiled and ends when the result was saved, or now.
 function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDir(), prices = loadPrices(), now = Date.now(), env = process.env } = {}) {
   run.assertRunId(runId)
@@ -639,14 +670,13 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   const graphFile = path.join(dir, 'graph.json')
   if (!fs.existsSync(graphFile)) throw new Error(`run ${runId} not found in ${mainRoot}`)
   const graph = run.readJson(graphFile)
-  const state = readIfThere(path.join(dir, 'state.json'))
   const resultFile = path.join(dir, 'result.json')
   const results = readResults(dir)
   const saved = fs.existsSync(resultFile)
   const notes = []
   if (!saved) notes.push('no result.json in the run directory: save the workflow result there for quality counts and the end of the window')
 
-  const start = state && state.compiledAt ? Date.parse(state.compiledAt) : fs.statSync(graphFile).mtimeMs
+  const start = runStartOf(dir)
   const end = saved ? fs.statSync(resultFile).mtimeMs : now
   const sessions = readUsage(dataDir, { since: start })
   let usage = null
@@ -814,4 +844,4 @@ function finalize(cwd, runId, options = {}) {
   return { record, cleanup: sweepRun(cwd, runId, { finish: true }) }
 }
 
-module.exports = { readUsage, pickSession, report, finalize, pruneUsage, seatsReport }
+module.exports = { readUsage, pickSession, report, finalize, pruneUsage, seatsReport, runStartOf, finalizedRecords }
