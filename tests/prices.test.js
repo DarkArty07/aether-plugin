@@ -32,6 +32,16 @@ test('grok-4.7 is priced at the OpenRouter list of its xAI endpoint, and its cac
   close(priceEntry({ model: 'grok-4.7', agent: 'lane', input: 1e6, output: 1e6, cacheRead: 1e6, cacheWrite: 0 }, prices), 2 + 6 + 0.5)
 })
 
+// Issue 205: a Lead on Fable 5.2 counted US$ 0. The row prices the spend report only; the models index still keeps
+// Fable out of the ladder (A43). Figures: OpenRouter's Anthropic endpoint, equal to Anthropic's own pricing page.
+test('Fable 5.2 is priced at the OpenRouter list of its Anthropic endpoint, so a Lead that runs on it has a cost', () => {
+  assert.deepEqual(prices.models.fable, { ids: ['claude-fable-5-2'], input: 8, output: 40, cacheRead: 0.2, cacheWrite5m: 10, cacheWrite1h: 16, checked: '2026-11-11' })
+  assert.equal(prices.sources.fable, 'https://openrouter.ai/api/v1/models/anthropic/claude-fable-5.2/endpoints')
+  assert.equal(ratesFor(prices, 'claude-fable-5-2').family, 'fable')
+  assert.equal(ratesFor(prices, 'claude-fable-5-1'), null)
+  close(priceEntry({ model: 'claude-fable-5-2', agent: 'lane', input: 1e6, output: 1e6, cacheRead: 1e6, cacheWrite: 0 }, prices), 8 + 40 + 0.2)
+})
+
 test('ratesFor matches exact ids and ids with a suffix, and nothing else', () => {
   assert.equal(ratesFor(prices, 'claude-sonnet-5-5').family, 'sonnet')
   assert.equal(ratesFor(prices, 'claude-sonnet-5-5-20261001').family, 'sonnet')
