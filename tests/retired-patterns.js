@@ -84,7 +84,7 @@ function shouldSearch(file, docs) {
     return true
   }
   if (docs) {
-    if (file === 'README.md' || file === 'CLAUDE.md' || file.startsWith('site/') || file.startsWith('docs/')) {
+    if (file === 'README.md' || file === 'AGENTS.md' || file === 'CLAUDE.md' || file.startsWith('site/') || file.startsWith('docs/')) {
       return true
     }
   }

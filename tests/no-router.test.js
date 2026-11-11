@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const ROOT = path.join(__dirname, '..')
-const SCAN = ['plugins/aether', 'docs/guide', 'docs/reference', 'docs/index.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/contributing.md', 'README.md', 'CLAUDE.md', 'scripts', 'tests']
+const SCAN = ['plugins/aether', 'docs/guide', 'docs/reference', 'docs/index.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/contributing.md', 'README.md', 'AGENTS.md', 'CLAUDE.md', 'scripts', 'tests']
 // The files that may keep a name or a word, each with its reason (spec 013, C7).
 const ALLOWED = {
   'plugins/aether/lib/spend.js': 'reads the old journal (R18)',

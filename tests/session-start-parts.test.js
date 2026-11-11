@@ -113,6 +113,7 @@ test('(e) hooks.json runs the notes command and parts 1 to 3 in one SessionStart
     entries[0].hooks.map((hook) => [hook.type, hook.command]),
     [bin, `${bin} --part 1`, `${bin} --part 2`, `${bin} --part 3`].map((command) => ['command', command]),
   )
+  for (const hook of entries[0].hooks) assert.equal(hook.timeout, 60, hook.command)
 })
 
 test('(f) a whole section that fits in a part is never split, and only a section too long for any part is cut at its blank lines', () => {

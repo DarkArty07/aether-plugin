@@ -833,7 +833,7 @@ test('decisions A117 to A120 are recorded with the owner quotes, the index names
   assert.match(read('docs/index.md'), /A1–A121/)
 })
 
-test('the canonical countable rule is identical across the six places of R6, CLAUDE.md says three parts, and the components page measures PostToolUse on reads (R6, R8, R12)', () => {
+test('the canonical countable rule is identical across the six places of R6, AGENTS.md says three parts, and the components page measures PostToolUse on reads (R6, R8, R12)', () => {
   const enRule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
   const esRule = 'a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada; las pruebas que la regla pide tras una fusión no cuentan'
   for (const file of ['plugins/aether/skills/using-aether/SKILL.md', 'docs/methodology.md', 'docs/tutorials/first-request.md', 'site/app.js']) {
@@ -859,7 +859,7 @@ test('the canonical countable rule is identical across the six places of R6, CLA
   const troubleshooting = read('docs/guide/troubleshooting.md')
   assert.doesNotMatch(troubleshooting, /The Lead runs `aether-autonomy status` before every launch/)
   assert.match(troubleshooting, /`aether-delegate begin`, `aether-plan compile` and `\/aether:design` check the open run themselves/)
-  const claude = read('CLAUDE.md')
+  const claude = read('AGENTS.md')
   assert.match(claude, /`--part 1` to `--part 3`/)
   assert.doesNotMatch(claude, /--part 5/)
   assert.match(read('docs/reference/components.md'), /PostToolUse[^.\n]*Read[^.\n]*Grep[^.\n]*Glob/)

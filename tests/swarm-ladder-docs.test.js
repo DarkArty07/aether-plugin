@@ -16,7 +16,7 @@ test('the guides and the skills say the swarm uses the one ladder, starting on i
 })
 
 test('no document or skill says the plan picks the model a task starts on', () => {
-  const files = [['docs', 'guide', 'models-by-role.md'], ['docs', 'guide', 'delegates.md'], ['plugins', 'aether', 'skills', 'swarm', 'SKILL.md'], ['plugins', 'aether', 'skills', 'using-aether', 'SKILL.md'], ['CLAUDE.md'], ['docs', 'reference', 'components.md']]
+  const files = [['docs', 'guide', 'models-by-role.md'], ['docs', 'guide', 'delegates.md'], ['plugins', 'aether', 'skills', 'swarm', 'SKILL.md'], ['plugins', 'aether', 'skills', 'using-aether', 'SKILL.md'], ['AGENTS.md'], ['docs', 'reference', 'components.md']]
   for (const file of files) {
     let text = read(...file)
     if (file.join('/') === 'docs/guide/models-by-role.md') {
