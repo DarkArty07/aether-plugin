@@ -27,8 +27,8 @@ const BRIEF = (id, more = '') => `AETHER-TASK: ${id}\n${more}Do the work.`
 const entries = (dataDir, id) => log.readEntries(dataDir, { task: id })
 
 test('parseBrief reads the task id, the owned paths and the tests; the first line of each wins', () => {
-  assert.deepEqual(task.parseBrief('AETHER-TASK: t-1\nAETHER-OWNS: src/**, tests/a.test.js\nAETHER-TESTS: npm test\nAETHER-TASK: t-2\nbody'), { task: 't-1', owns: ['src/**', 'tests/a.test.js'], tests: 'npm test', skills: [] })
-  assert.deepEqual(task.parseBrief('just a brief'), { task: null, owns: [], tests: null, skills: [] })
+  assert.deepEqual(task.parseBrief('AETHER-TASK: t-1\nAETHER-OWNS: src/**, tests/a.test.js\nAETHER-TESTS: npm test\nAETHER-TASK: t-2\nbody'), { task: 't-1', owns: ['src/**', 'tests/a.test.js'], tests: 'npm test', skills: [], tree: null })
+  assert.deepEqual(task.parseBrief('just a brief'), { task: null, owns: [], tests: null, skills: [], tree: null })
 })
 
 test('every delegate of every task starts on Haiku, whatever the Lead asks (C1, E1, E2)', async (t) => {

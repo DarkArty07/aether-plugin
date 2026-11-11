@@ -28,6 +28,7 @@ const { loadPairs } = require('./pairs.js')
 const { pairStep } = require('./router-pick.js')
 const { readAllMarks } = require('./router-marks.js')
 const { peekReadings, EXTERNAL } = require('./router-quota.js')
+const { EXCLUDES } = require('./run.js')
 const { startRenewal } = require('./router-renewal.js')
 const { slowPairIds } = require('./router-slow.js')
 const { readDelegateSettings } = require('./session.js')
@@ -39,6 +40,7 @@ const TASK_PREFIX = 'AETHER-TASK:'
 const OWNS_PREFIX = 'AETHER-OWNS:'
 const TESTS_PREFIX = 'AETHER-TESTS:'
 const SKILLS_PREFIX = 'AETHER-SKILLS:'
+const TREE_PREFIX = 'AETHER-TREE:'
 // The agents whose call an external harness may take: the ones with no system prompt or tool limits of their own.
 const PLAIN_AGENTS = ['general-purpose', 'Explore']
 // A refused launch still has to run something, and does nothing: the cheapest call, which only says why.
@@ -54,12 +56,13 @@ const isId = (value) => typeof value === 'string' && ID_RE.test(value)
 // ---- the brief ----
 
 function parseBrief(prompt) {
-  const brief = { task: null, owns: [], tests: null, skills: [] }
+  const brief = { task: null, owns: [], tests: null, skills: [], tree: null }
   if (typeof prompt !== 'string') return brief
   let seenTask = false
   let seenOwns = false
   let seenTests = false
   let seenSkills = false
+  let seenTree = false
   for (const raw of prompt.split(/\r?\n/)) {
     const line = raw.trimStart()
     if (!seenTask && line.startsWith(TASK_PREFIX)) {
@@ -76,6 +79,10 @@ function parseBrief(prompt) {
     } else if (!seenSkills && line.startsWith(SKILLS_PREFIX)) {
       seenSkills = true
       brief.skills = parseSkillNames(line)
+    } else if (!seenTree && line.startsWith(TREE_PREFIX)) {
+      seenTree = true
+      const tree = line.slice(TREE_PREFIX.length).trim()
+      if (tree) brief.tree = tree
     }
   }
   return brief
@@ -331,6 +338,11 @@ function skillRefusedPlan(r, ctx, error) {
   return refusedLaunchPlan(r, ctx, prompt, prompt)
 }
 
+function treeRefusedPlan(r, ctx, error) {
+  const prompt = `Aether delegate task ${ctx.id} was not launched: ${error}. Fix the AETHER-TREE line and call again.`
+  return refusedLaunchPlan(r, ctx, prompt, prompt)
+}
+
 function autonomyRefusedPlan(r, ctx, refusal) {
   const prompt = `Aether delegate task ${ctx.id} was not launched: ${refusal.message}. Do not do any work. Tell the Lead why the launch was refused.`
   return { ...refusedLaunchPlan(r, ctx, prompt, prompt), stop: refusal.stop, run: refusal.id }
@@ -432,6 +444,106 @@ function placementNote(id, rung, cover, args, brief) {
   return `Aether delegate task ${id}: no owner authorization covers ${rung.model}, so it started on ${args.model} and the request is ignored. To place it on ${rung.model}, record the owner's words that name it: aether-delegate authorize --model ${rung.model} --quote <the owner's words> (${grant}).`
 }
 
+// ---- the tree of a read-only copy and what it cannot hold (spec 033, D4 and D5) ----
+
+const realOf = (file) => {
+  try {
+    return fs.realpathSync(file)
+  } catch {
+    return null
+  }
+}
+
+// The worktrees of the repository the checkout `cwd` belongs to, as git lists them.
+function worktreesOf(cwd) {
+  const listed = git(['worktree', 'list', '--porcelain'], cwd, { allowFail: true })
+  if (listed.status !== 0) return []
+  return listed.stdout.split('\n').filter((line) => line.startsWith('worktree ')).map((line) => line.slice('worktree '.length))
+}
+
+// The real path of the worktree the brief names with AETHER-TREE:, or the error that refuses the launch.
+function treeNamed(cwd, named) {
+  const worktrees = worktreesOf(cwd)
+  const wanted = realOf(path.resolve(cwd, named))
+  if (wanted !== null && worktrees.map(realOf).includes(wanted)) return { ok: true, tree: wanted }
+  return { ok: false, error: `AETHER-TREE: ${named} is not a worktree of this repository (the worktrees are ${worktrees.join(', ')})` }
+}
+
+// The real path of the top level of the checkout `dir`, or null when it is not in a repository.
+function rootOf(dir) {
+  const top = git(['rev-parse', '--show-toplevel'], dir, { allowFail: true })
+  return top.status === 0 && top.stdout !== '' ? realOf(top.stdout) : null
+}
+
+// The Lead's brief without its AETHER- lines, which name the task and its tests and not the work, split into words.
+function briefWords(prompt) {
+  return prompt.split(/\r?\n/).filter((line) => !line.trimStart().startsWith('AETHER-')).join('\n').split(/\s+/)
+}
+
+// A word with the quotes, brackets and final punctuation around it taken off, and a line suffix (`:12`, `:12:4`,
+// `:12-20`, `#12`).
+const OPEN_MARK = /^[`"'([{<]+/
+const CLOSE_MARK = /[`"')\]}>.,;:!?]+$/
+const LINE_SUFFIX = /(?::\d+(?::\d+)?|:\d+-\d+|#\d+)$/
+function pathWord(word) {
+  let current = word
+  for (;;) {
+    const next = current.replace(OPEN_MARK, '').replace(CLOSE_MARK, '').replace(LINE_SUFFIX, '')
+    if (next === current) return current
+    current = next
+  }
+}
+
+// A word that may name a path: absolute, `~/`, `./`, `../`, or with a `/` inside it.
+const isCandidate = (word) => word.startsWith('/') || word.startsWith('~/') || word.startsWith('./') || word.startsWith('../') || word.includes('/')
+const SKIPPED_COMMANDS = ['/usr/bin/env', '/bin/sh', '/bin/bash']
+const SKIPPED_ROOTS = ['/dev', '/proc', '/sys']
+const OWN_FOLDERS = EXCLUDES.map((pattern) => pattern.replace(/^\/|\/$/g, ''))
+const isEnvName = (name) => name === '.env' || name.startsWith('.env.')
+
+// Whether the path is a command word of the brief that is not a file the copy would lack (a device, or a system command).
+function isSkipped(word, abs) {
+  if (SKIPPED_COMMANDS.includes(word)) return true
+  if (SKIPPED_ROOTS.some((root) => abs === root || abs.startsWith(`${root}/`))) return true
+  try {
+    const stat = fs.statSync(abs)
+    return stat.isCharacterDevice() || stat.isBlockDevice()
+  } catch {
+    return false
+  }
+}
+
+// Whether the copy of the tree at `root` (a real path) cannot hold the existing path `abs`: it lies outside the tree, in
+// another repository or worktree under it, under one of Aether's folders at the root, a `.env` file, or ignored by git.
+// Git's own check-ignore reports a tracked file as not ignored, which is right: the copy holds it.
+function notHeld(abs, root) {
+  const real = realOf(abs)
+  if (real === null) return false
+  const rel = path.relative(root, real)
+  if (rel === '') return false
+  if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return true
+  const dir = fs.statSync(real).isDirectory() ? real : path.dirname(real)
+  if (rootOf(dir) !== root) return true
+  const parts = rel.split(path.sep)
+  if (OWN_FOLDERS.includes(parts[0])) return true
+  if (isEnvName(parts[parts.length - 1])) return true
+  return git(['check-ignore', '-q', '--', parts.join('/')], root, { allowFail: true }).status === 0
+}
+
+// The first path of the Lead's brief that the copy of the tree at `root` cannot hold, or null. Only a path that exists
+// counts; a `~/` path is taken from `home`, a relative one from the tree.
+function outsideOf(prompt, { root, home }) {
+  if (!root) return null
+  for (const raw of briefWords(prompt)) {
+    const word = pathWord(raw)
+    if (!isCandidate(word)) continue
+    const abs = word.startsWith('~/') ? path.join(home, word.slice(2)) : path.resolve(root, word)
+    if (!fs.existsSync(abs) || isSkipped(word, abs)) continue
+    if (notHeld(abs, root)) return abs
+  }
+  return null
+}
+
 async function begin(input, deps = {}) {
   let id = null
   try {
@@ -464,6 +576,19 @@ async function begin(input, deps = {}) {
       const res = loadSkills(brief.skills, { cwd: r.cwd, home: r.home, pluginRoot: r.pluginRoot })
       if (!res.ok) return skillRefusedPlan(r, ctx, res.error)
       loadedSkills = res.skills
+    }
+
+    // The tree the copy is of, and whether the copy can hold what the brief names (spec 033, D4 and D5). Both are decided
+    // here, before a pair is picked or a quota is read. A task that edits ignores AETHER-TREE: it is checked by AETHER-OWNS.
+    let tree = null
+    let outside = null
+    if (!edits) {
+      if (brief.tree !== null) {
+        const named = treeNamed(r.cwd, brief.tree)
+        if (!named.ok) return treeRefusedPlan(r, ctx, named.error)
+        tree = named.tree
+      }
+      outside = outsideOf(prompt, { root: tree ?? rootOf(r.cwd), home: r.home })
     }
 
     const { step, launchKind, attempt } = next
@@ -500,7 +625,7 @@ async function begin(input, deps = {}) {
     let pick = null
     let external = null
     // A task the owner placed on a model runs on Claude in every attempt: the pair choice is not asked for it (spec 021).
-    if (r.settings.lanes && namedAgent(event) === null && r.pickPair && authorized === null) {
+    if (r.settings.lanes && namedAgent(event) === null && r.pickPair && authorized === null && outside === null) {
       const chosen = await r.pickPair({ model: rung.model, effort: rung.effort })
       if (chosen && typeof chosen.error === 'string') notes.push(`Aether delegate task ${id}: the pair choice failed (${chosen.error}); this attempt runs on Claude.`)
       pick = chosen && isObject(chosen.pick) ? chosen.pick : null
@@ -523,7 +648,7 @@ async function begin(input, deps = {}) {
         fs.mkdirSync(path.dirname(briefFile), { recursive: true })
         fs.writeFileSync(briefFile, externalPrompt)
         writeJson(path.join(r.dataDir, 'delegates', 'external', `${log.fileKey(session, id)}.json`), {
-          id, session, cwd: r.cwd, attempt, step, effort, launchKind, edits, owns: brief.owns, tests: brief.tests,
+          id, session, cwd: r.cwd, tree, attempt, step, effort, launchKind, edits, owns: brief.owns, tests: brief.tests,
           brief: briefFile, findings, carry: carry && work ? work.patch : null, pin, base, harness: pick.harness,
           rung: { model: pick.model, effort: pick.effort, group: pick.group },
           task: { description, prompt: externalPrompt },
@@ -544,6 +669,8 @@ async function begin(input, deps = {}) {
     }
     if (launchKind === 'first' && authorized !== null) launch.authorized = authorized
     if (loadedSkills && loadedSkills.length > 0) launch.skills = loadedSkills.map((s) => s.name)
+    if (tree !== null) launch.tree = tree
+    if (outside !== null) launch.outside = outside
     log.appendEntry(r.dataDir, launch)
     if (loadedSkills && loadedSkills.length > 0) {
       recordUse(r.dataDir, { session, kind: 'delegate', task: id, skills: launch.skills, time })
@@ -552,6 +679,7 @@ async function begin(input, deps = {}) {
       const of = relaunchOf(r.dataDir, session, id, brief)
       if (of !== null) log.appendEntry(r.dataDir, { kind: 'relaunch', time, session, task: id, of })
     }
+    if (outside !== null) notes.push(`Aether delegate task ${id}: the brief names ${outside}, which the copy of the tree does not hold (it lies outside the tree, in another repository, is ignored by git, is a .env file or is one of Aether's folders), so this attempt runs on claude ${args.model} ${args.effort} and no other harness.`)
     notes.push(stepNote(id, step, attempt, launchKind, args, pick))
     return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: external === null ? { task: id, attempt } : null })
   } catch (err) {
