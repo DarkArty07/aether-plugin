@@ -31,7 +31,7 @@ test('in an autonomous run the swarm checks the ceilings, records its cost, and 
   const swarm = read('skills', 'swarm', 'SKILL.md')
   for (const needle of [
     'aether-autonomy end --outcome ceiling',
-    'aether-autonomy spend <lanes.totals.run.totalUsd> --source <runId>',
+    'reads the cost of each swarm launch by itself',
     'aether-autonomy check merge-main',
     'aether-autonomy check push',
     '"Espera tu sí"',

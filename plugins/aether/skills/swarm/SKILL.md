@@ -83,9 +83,7 @@ Save the result as `<runDir>/result.json`, then run `aether-report --run <runId>
 - **`lanes`:** each group's calls, tokens, dollars and quota consumed per window, its `balance` (the share left of each window at the start and the end of the run, and the next reset; `usedPercentAbsent` when a share was read as 0% used), what every call chose (`run.choices`), by model, by role and by harness (`byHarness`), and `totals`: native dollars, lane dollars and the share the plans covered.
 - **`radar`:** the figures of the owner's five goals: `rapid` (the run's time, attempts, climbs and escalations), `autonomous` (questions that reached the owner), `delegation` (lane calls, by harness, and the share the plans covered), `affordable` (dollars) and `robust` (merged, blocked, tests, findings and the final verdict). A figure that was not measured is null.
 
-In an autonomous run, record the run's cost after every launch:
-
-    aether-autonomy spend <lanes.totals.run.totalUsd> --source <runId>
+In an autonomous run you record nothing after a launch: `aether-autonomy status` reads the cost of each swarm launch by itself, finished or stopped.
 
 Report from it:
 - the units merged, climbed, escalated and blocked;
@@ -146,7 +144,7 @@ Finish when every unit is merged or adopted, the final review's status is `done`
 
 1. First, include this session's spend in the closing report from `aether-report --spend --session <id de esta sesión>` in the format of `using-aether`; in an autonomous run, with the clause «y no es la cifra del tope»:
    Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.
-2. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first, and in a run record the last cost with `aether-autonomy spend` before it. It appends the report to `runs.jsonl` in the plugin's data directory, with the Aether and Claude Code versions and that of each lane harness that ran. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
+2. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first. It appends the report to `runs.jsonl` in the plugin's data directory, with the Aether and Claude Code versions and that of each lane harness that ran. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
 3. Finish the branch yourself, as the owner's delegate:
    - **merge to `main`** only when `aether-autonomy check merge-main` passes, or the owner authorized this merge once in their own words;
    - **push or open a pull request** only when `aether-autonomy check push` passes, or the owner authorized it once;
