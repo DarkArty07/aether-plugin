@@ -66,13 +66,16 @@ test('a change outside Owns in two different files is two rises, and the repeat 
   assert.equal(judge(b.state, OUT('tests/x.test.js'), loose).next.kind, 'blocked')
 })
 
-test('the same reason in two BLOCKED attempt reports blocks the task, with a rise between them', () => {
-  const attempt = { kind: 'attempt', status: 'BLOCKED', reason: 'the test I cannot touch fails' }
-  const first = judge(newState(L), attempt, L)
+test('the same gate evidence in two BLOCKED attempt reports blocks the task, with a rise between them (issue 188)', () => {
+  // The key is the gate's red tests, not the sentence (see tests/ladder-blocked-key.test.js). The rise between the two
+  // reports keeps blockedKey and blockedCount (rise spreads the state), so the second report still counts as a repeat.
+  const RED = [{ file: 'npm test', what: 'falló: a' }]
+  const attempt = (reason) => ({ kind: 'attempt', status: 'BLOCKED', reason, findings: RED })
+  const first = judge(newState(L), attempt('the test I cannot touch fails'), L)
   assert.equal(first.next, null)
   const risen = judge(first.state, fix('src/a.js', 'missing case'), L)
   assert.equal(risen.next.step, 'haiku-xhigh')
-  const second = judge(risen.state, attempt, L)
+  const second = judge(risen.state, attempt('a different wording of the same red test'), L)
   assert.deepEqual([second.next.kind, second.next.cause, second.state.status, second.state.step], ['blocked', 'blocked-same-cause', 'blocked', 'haiku-xhigh'])
 })
 
@@ -99,16 +102,16 @@ test('repeatBlocked defaults to two and rejects invalid configured counts', () =
   }
 })
 
-test('an attempt report with an empty cause resets the BLOCKED streak instead of blocking', () => {
-  const blocked = (reason) => ({ kind: 'attempt', status: 'BLOCKED', reason })
+test('an empty sentence is no reset of the BLOCKED streak: with no red test the key is one fixed value (issue 188)', () => {
+  const blocked = (reason) => ({ kind: 'attempt', status: 'BLOCKED', reason, findings: [] })
   const first = judge(newState(L), blocked('the test I cannot touch fails'), L)
   assert.equal(first.next, null)
-  const reset = judge(first.state, blocked(''), L)
-  assert.equal(reset.next, null)
-  assert.deepEqual([reset.state.blockedKey, reset.state.blockedCount], [null, 0])
-  const again = judge(reset.state, blocked('the test I cannot touch fails'), L)
-  assert.equal(again.next, null)
-  assert.equal(again.state.blockedCount, 1)
+  const again = judge(first.state, blocked(''), L)
+  assert.deepEqual([again.next.kind, again.next.cause], ['blocked', 'blocked-same-cause'])
+  assert.equal(again.state.blockedCount, 2)
+  // A DONE report (not BLOCKED) is what clears the streak: the workflow sends it as an attempt with that status.
+  const cleared = judge(first.state, { kind: 'attempt', status: 'DONE', reason: '', findings: [] }, L)
+  assert.deepEqual([cleared.state.blockedKey, cleared.state.blockedCount], [null, 0])
 })
 
 test('loadLadder reads the stored ladder and refuses a rung with no effort, an effort that does not exist and a repeated step', () => {
