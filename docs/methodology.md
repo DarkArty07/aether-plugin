@@ -15,7 +15,7 @@ This page describes how Aether turns an intent into a reviewed spec, a plan, a b
 - **The Judge** (`aether:judge`, Opus at `high`, read-only) reviews the spec, the plan and the tasks, and rules `approve`, `revise` or `reject`, with at most ten findings, each typed `missing`, `extra` or `wrong`. Sonnet writes; Opus decides.
 - **The Examiner** (`aether:examiner`, Opus at `high`) writes the hidden acceptance exam of an approved spec and plan, from the spec and the plan's public interfaces and never from `tasks.md`. The exam is kept outside the repository, so the swarm never sees it, and a failing test is a blocking finding of the brief.
 - **The swarm:** when parallel work pays off, the Lead hands the plan to `/aether:run`. In the swarm:
-  - an implementer starts on the first rung of `config/ladder.json` (Haiku `high`) and climbs the ladder to Sonnet and Opus when its attempts fail: a correction raises the effort, and a repeated failure raises the model;
+  - an implementer starts on the first rung of `config/ladder.json` (Haiku `high`) and climbs the ladder when its attempts fail: a failed attempt moves the unit up one rung of the ladder, and each rung runs at its own effort;
   - a supervisor on Sonnet reviews every attempt, and grades each criterion from evidence;
   - approved units merge one at a time, and only a test failure that is new undoes a merge;
   - a unit whose supervisor returns the same findings three times, or that ends twice without its report, stops, and asks for a split or a redesign;

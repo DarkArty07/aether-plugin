@@ -30,6 +30,14 @@ test('the changelog has an unreleased entry about the ladder and the version sta
   assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.36.0')
 })
 
+test('methodology.md and roadmap.md no longer describe the old climb by correction and rise (R16)', () => {
+  for (const file of ['docs/methodology.md', 'docs/roadmap.md']) {
+    assert.doesNotMatch(read(file), /a correction raises the effort|a rise lands on the next model/i, file)
+  }
+  assert.doesNotMatch(read('docs/roadmap.md'), /runs again at `xhigh`; on Sonnet and Opus/i)
+  assert.match(read('docs/roadmap.md'), /The default is `high` on every model/)
+})
+
 test('the texts say the refresh reads the model pages, writes only the code figures of the Claude rows, and needs no key (R16, R12)', () => {
   assert.doesNotMatch(read('CLAUDE.md'), /refreshes the lane table \(needs `ARTIFICIAL_ANALYSIS_API_KEY`\)/)
   assert.match(read('CLAUDE.md'), /model pages/)

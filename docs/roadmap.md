@@ -11,8 +11,8 @@ order: 32
 The RADAR roadmap: version 0.8 builds its phases 1, 2a and 2b. What remains waits for the owner: a real call per harness and role on Cursor, and turning each one on (Grok's one role was checked on 2026-10-13, and Codex's models on 2026-10-30; turning them on is in Now above); a measured design session with the Writer and the Judge against the 0.7 Designer; and a rerun of trial 2 in Aether mode with its techniques.
 
 **Effort.** Every unit starts on the first rung of `config/ladder.json` (Haiku `high`).
-- The default is `high` on every model. A correction raises the effort where a mistake would cost more than the extra effort, and a rise lands on the next model at `high`.
-- A failed attempt on Haiku runs again at `xhigh`; on Sonnet and Opus it runs again at the same effort, and a unit that moves up a model starts there at `high`.
+- The default is `high` on every model. A failed attempt moves the unit up one rung of the ladder, and each rung runs at its own effort.
+- Each rung of `config/ladder.json` runs at its own effort; after the fifth rung the task is deferred.
 - The supervisor reviews at `high`, and a task's Review line can raise it.
 - `aether-report` shows the cost and the time of each role, model and effort. `scripts/check-effort.js` checks, from a session's transcripts, that each agent ran at the effort its call asked for.
 
