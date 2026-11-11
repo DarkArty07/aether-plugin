@@ -23,6 +23,8 @@ function stubs(on, { env = { HOME: '/home/u', AETHER_DATA_DIR: '/home/u/aether-d
   on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'agent-1' }))
   on('turn.complete', () => ({ text: '' }))
   on('session.end', () => ({ sessionId: 's1' }))
+  // The Lead's first main request names its tools (issue 187): the engine's answer, with Workflow among them.
+  on('tool.list', () => ({ value: [{ name: 'Workflow', description: '', mcp: false }] }))
   on('turn.step', async function* ($, e) {
     return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: { ...USAGE, model: e.model } }
   })

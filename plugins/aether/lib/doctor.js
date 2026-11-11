@@ -1,8 +1,9 @@
 'use strict'
 
 // Doctor: checks that Aether can run on this machine and says how to fix what cannot. It reads and writes nothing: it
-// looks at the PATH, the plugin cache, three settings files and the version of `claude` and `git`, and returns one
-// object. The checks are plain functions over what run() is given (the environment, the working directory and a command
+// looks at the PATH, the plugin cache, three settings files, the plan of the stored login (`claude auth status`) against
+// the organization type of the cached profile (.claude.json, one field of it), and the version of `claude` and `git`, and
+// returns one object. The checks are plain functions over what run() is given (the environment, the working directory and a command
 // runner), so the tests need no network, no model and no real `claude`.
 // Family: none.
 
@@ -27,6 +28,8 @@ const MAX_NAME_LENGTH = 64
 const FORBIDDEN_NAME = 'claude'
 const EXIT_USAGE = 2
 const COMMAND_TIMEOUT_MS = 10 * 1000
+// The login's plan is one line of JSON from `claude auth status`: a short wait, and nothing when it is slower.
+const AUTH_TIMEOUT_MS = 5 * 1000
 // A stub is a few lines; a file larger than this is not one, and is not read.
 const MAX_STUB_BYTES = 64 * 1024
 const MAX_SETTINGS_BYTES = 1024 * 1024
@@ -54,10 +57,12 @@ function validateName(name) {
   if (name === FORBIDDEN_NAME) throw usageError(`invalid name "${name}": the launcher runs \`claude\`, so a command of that name would call itself`)
 }
 
-// The runner of commands: never a shell, a limit of time, the environment it is given for the lookup on the PATH.
+// The runner of commands: never a shell, a limit of time (options.timeoutMs, else the default), the environment it is given
+// for the lookup on the PATH.
 function defaultExec(env) {
-  return (command, args) => {
-    const r = spawnSync(command, args, { encoding: 'utf8', timeout: COMMAND_TIMEOUT_MS, env, stdio: ['ignore', 'pipe', 'ignore'] })
+  return (command, args, options) => {
+    const timeout = options && options.timeoutMs > 0 ? options.timeoutMs : COMMAND_TIMEOUT_MS
+    const r = spawnSync(command, args, { encoding: 'utf8', timeout, env, stdio: ['ignore', 'pipe', 'ignore'] })
     return { status: r.error ? null : r.status, stdout: r.stdout || '' }
   }
 }
@@ -284,6 +289,47 @@ function pluginVersion() {
   }
 }
 
+// The plan the stored login reports (`subscriptionType` of `claude auth status`), or null when claude is missing or fails,
+// or prints no login JSON with that field. It never throws, and it keeps nothing else of what it printed.
+function loginPlan(exec) {
+  try {
+    const r = exec('claude', ['auth', 'status'], { timeoutMs: AUTH_TIMEOUT_MS })
+    if (!r || r.status !== 0) return null
+    const value = JSON.parse(String(r.stdout ?? '').trim())
+    return value !== null && typeof value === 'object' && typeof value.subscriptionType === 'string' ? value.subscriptionType : null
+  } catch {
+    return null
+  }
+}
+
+// The organization type of the cached profile: oauthAccount.organizationType in .claude.json, in CLAUDE_CONFIG_DIR, or in the
+// home directory without it. That is the only field read, and the file is not kept.
+function cachedOrganization(env) {
+  const file = env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(homeOf(env), '.claude.json')
+  const profile = readSettings(file)
+  const account = profile && profile.oauthAccount
+  const type = account !== null && typeof account === 'object' ? account.organizationType : null
+  return typeof type === 'string' && type !== '' ? type : null
+}
+
+// The stored login is older than the plan when it says Pro and the cached profile says a Max organization (the login was
+// made before the upgrade): Dynamic workflows are off on Pro, so the Workflow tool is missing. Any other pair, or a missing
+// piece, reports nothing.
+function planCheck(exec, env, configDir) {
+  const login = loginPlan(exec)
+  if (login === null) return null
+  const organization = cachedOrganization(env)
+  if (organization === null) return null
+  if (login.toLowerCase() !== 'pro' || !organization.startsWith('claude_max')) return null
+  const settingsFile = path.join(configDir, 'settings.json')
+  return check(
+    'plan',
+    'warn',
+    `the stored login is older than the plan: it says Pro, and the profile says ${organization}. Dynamic workflows are off on Pro unless enableWorkflows: true is set, so the Workflow tool is missing`,
+    `claude auth login, or set enableWorkflows: true in ${settingsFile}`,
+  )
+}
+
 // The report: { ok, version, installed, harnesses (option names), options, command, checks }. ok is false when a check has status error.
 function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec = defaultExec(env), nodeVersion = process.versions.node } = {}) {
   validateName(name)
@@ -300,6 +346,7 @@ function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec
     aetherCheck(release, configDir),
     commandCheck,
     workflowsCheck(env, settingsSources(configDir, cwd)),
+    ...[planCheck(exec, env, configDir)].filter(Boolean),
     harnessesCheck(found, options),
     projectCheck(exec, cwd, name),
   ]

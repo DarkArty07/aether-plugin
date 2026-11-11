@@ -29,6 +29,7 @@ export const FAULT_SOURCES = [
   'register.on-agent-spawn',
   'register.on-tool-describe',
   'register.ops-run',
+  'register.workflow-check',
   'delegate.step',
   'delegate.answer',
   'delegate.begin',
