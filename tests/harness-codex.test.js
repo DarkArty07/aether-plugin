@@ -62,6 +62,16 @@ test('the prompt carries the note that keeps the owner\'s AGENTS.md orders out, 
   assert.equal(argv.some((arg) => arg.startsWith('project_doc_max_bytes')), false, 'the option that did not work is gone')
 })
 
+test('the prompt tells the worker that the sandbox cannot start child processes with pipes, so it does not report that as a blocker (issue 189)', () => {
+  const argv = createCodex({ groups: GROUPS }).argv({ model: 'm', level: 'low', prompt: 'DO THE TASK' })
+  const prompt = argv[2]
+  for (const sentence of ['cannot start a child process with pipes', 'do not report it as a blocker', 'runs the task\'s tests outside the sandbox']) {
+    assert.ok(prompt.includes(sentence), sentence)
+  }
+  assert.equal(argv[argv.indexOf('--sandbox') + 1], 'workspace-write')
+  assert.equal(argv.some((arg) => arg.includes('network_access')), false, 'the network stays closed on purpose (issue 189)')
+})
+
 test('the effort goes to codex under the name of the pair, for each of the five levels', () => {
   const codex = createCodex({ groups: GROUPS })
   for (const level of ['low', 'medium', 'high', 'xhigh', 'max']) {
