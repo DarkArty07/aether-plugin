@@ -69,7 +69,7 @@ The first such path goes into the detail. A candidate that is a device file or l
 - A nested repository inside the tree is not copied: git records it as a link, not as files.
 - Every launch hashes every tracked file of the tree again, because the temporary index has no stat data. The cost grows with the size of the tree and is accepted: seeding it from the Lead's index would make that index a source, which C3 forbids.
 - A brief really about a system path (`/etc`, `/usr`, `/var`, `/tmp`, a device) is sent out, because D5 skips those paths so that the commands in a brief do not send it to Claude.
-- Other files that may hold secrets (`.envrc`, `.npmrc`, key files) are held back like any other new file, and are not held back: only `.env` names are, as the owner named only `.env`. Widening the list is a later decision of his.
+- Other files that may hold secrets (`.envrc`, `.npmrc`, key files) travel like any other new file: only `.env` names are held back, as the owner named only `.env`. Widening the list is a later decision of his.
 - `git add` runs the clean filters the repository configures, as any `git add` of the owner's does.
 
 ## Tests
