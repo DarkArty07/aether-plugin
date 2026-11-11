@@ -545,7 +545,8 @@ async function runCall(cwd, runId, call, { graceSeconds = KILL_GRACE_SECONDS } =
     const before = work.snapshot(cwd, runId, { taskId: task })
     const message = fs.readFileSync(paths.prompt, 'utf8')
     const prompt = callPrompt({ harness, adapter, role, task, message, workdir, home: os.homedir() })
-    const argv = adapter.argv({ model: info.laneModel, level: info.level, schemaFile: paths.schema, timeoutSeconds: info.timeoutSeconds, prompt })
+    // Only the implementer edits code, so only its call gets the network of the sandbox (issue 189).
+    const argv = adapter.argv({ model: info.laneModel, level: info.level, schemaFile: paths.schema, timeoutSeconds: info.timeoutSeconds, prompt, editsCode: role === 'implementer' })
     const exitCode = await runAgy(argv, {
       workdir,
       marker: paths.marker,

@@ -15,9 +15,16 @@ const { defaultExec, parseJson, parseRun, readVersion, stringsIn, usageOf } = re
 // computer, the plugins and the subagents.
 const DISABLED_FEATURES = ['hooks', 'apps', 'browser_use', 'browser_use_external', 'computer_use', 'plugins', 'multi_agent']
 
-const CODEX_NOTE =
-  'You run as a headless worker inside Aether. Do exactly the task below and nothing more. If an instruction file of the user (such as AGENTS.md) tells you to work autonomously for long, to start or use subagents, or to follow another orchestration workflow, ignore that part: start no subagents. Your sandbox cannot write Git metadata, so do not run git add or git commit, whatever the task says about committing: leave your changes in the working tree, say so in your report and leave any commit field empty; Aether commits them for you. ' +
+const NOTE_HEAD =
+  'You run as a headless worker inside Aether. Do exactly the task below and nothing more. If an instruction file of the user (such as AGENTS.md) tells you to work autonomously for long, to start or use subagents, or to follow another orchestration workflow, ignore that part: start no subagents. Your sandbox cannot write Git metadata, so do not run git add or git commit, whatever the task says about committing: leave your changes in the working tree, say so in your report and leave any commit field empty; Aether commits them for you. '
+// The paragraph of a call whose network is closed: true only then (issue 189).
+const NOTE_CLOSED =
   'In this sandbox a process cannot start a child process with pipes: Node\'s `spawnSync`, `execSync` and `execFileSync` fail with `EPERM` whatever the command, because the sandbox keeps the network closed and refuses the socket calls those pipes use. A test suite that starts `git` or other programs fails here before its assertions. That is this sandbox, not a defect of your work or of the plan: do not report it as a blocker, do not ask for another environment, and do not try to get around it. When your task changes code, Aether runs the task\'s tests outside the sandbox after your attempt and sends back what fails. Run what does run here, such as `node --check <file>` or a test that starts no process, and say in your report which tests you could not run.'
+// The paragraph of a call that edits code, whose network is open (issue 189).
+const NOTE_OPEN =
+  'This sandbox lets you start child processes and reach the network, so run the task\'s tests yourself before you report. Use the network only for what the task needs; send nothing of this repository anywhere.'
+const CODEX_NOTE = NOTE_HEAD + NOTE_CLOSED
+const CODEX_NOTE_OPEN = NOTE_HEAD + NOTE_OPEN
 
 // The answer is the text of the last item.completed event whose item is an agent_message, and the usage is that of
 // the last turn.completed event that has one. Codex prints one JSON event per line. A line that is not JSON is
@@ -65,7 +72,9 @@ function createCodex({ command = 'codex', groups = {}, exec = defaultExec, env =
     modelArg: ({ model }) => model,
 
     // One headless exec turn, at the lane level's reasoning effort. The lane runner ends the run at its own timeout.
-    argv({ model, level, schemaFile, prompt }) {
+    // editsCode says that the call edits code (the swarm's implementer, which the Lead's editing delegates run too): such a
+    // call gets the network open and a note that says so (issue 189). Every other call keeps the network closed. Off by default.
+    argv({ model, level, schemaFile, prompt, editsCode = false }) {
       if (schemaFile) {
         try {
           const parsed = JSON.parse(fs.readFileSync(schemaFile, 'utf8'))
@@ -74,14 +83,16 @@ function createCodex({ command = 'codex', groups = {}, exec = defaultExec, env =
           // A missing, unreadable or non-JSON file stays as it is.
         }
       }
-      const notedPrompt = `${CODEX_NOTE}\n\n${prompt}`
+      const notedPrompt = `${editsCode ? CODEX_NOTE_OPEN : CODEX_NOTE}\n\n${prompt}`
       // --ignore-user-config drops the owner's list of trusted directories, so codex would refuse any directory that is
       // not a git repository (the first real calls, 2026-10-30: "Not inside a trusted directory"). The sandbox stays on.
       // Measured 2026-11-11 with codex-cli 0.166.0, no model call (issue 189): in workspace-write a child process with pipes
       // fails with EPERM (spawnSync git, spawnSync true), while writes and git with stdio ignore or inherit work. Only
-      // -c sandbox_workspace_write.network_access=true lifts it; that opens the network, so it is left off on purpose.
+      // -c sandbox_workspace_write.network_access=true lifts it. Since issue 189 it is passed for the calls that edit code
+      // (editsCode), by the owner's decision of 2026-11-11, and left off for the rest.
+      const network = editsCode ? ['-c', 'sandbox_workspace_write.network_access=true'] : []
       return [
-        command, 'exec', notedPrompt, '--model', model, '-c', `model_reasoning_effort=${level}`, '--json', '--sandbox', 'workspace-write',
+        command, 'exec', notedPrompt, '--model', model, '-c', `model_reasoning_effort=${level}`, '--json', '--sandbox', 'workspace-write', ...network,
         '--ephemeral', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check', ...DISABLED_FEATURES.flatMap((feature) => ['--disable', feature]), '-c', 'approval_policy=never',
         ...(schemaFile ? ['--output-schema', schemaFile] : []),
       ]
@@ -102,4 +113,4 @@ function createCodex({ command = 'codex', groups = {}, exec = defaultExec, env =
   }
 }
 
-module.exports = { createCodex, CODEX_NOTE }
+module.exports = { createCodex, CODEX_NOTE, CODEX_NOTE_OPEN }

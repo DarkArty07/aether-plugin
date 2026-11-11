@@ -69,7 +69,9 @@ test('the prompt tells the worker that the sandbox cannot start child processes 
     assert.ok(prompt.includes(sentence), sentence)
   }
   assert.equal(argv[argv.indexOf('--sandbox') + 1], 'workspace-write')
-  assert.equal(argv.some((arg) => arg.includes('network_access')), false, 'the network stays closed on purpose (issue 189)')
+  assert.equal(argv.some((arg) => arg.includes('network_access')), false, 'a call that does not edit code keeps the network closed (issue 189)')
+  const editing = createCodex({ groups: GROUPS }).argv({ model: 'm', level: 'low', prompt: 'DO THE TASK', editsCode: true })
+  assert.ok(editing.includes('sandbox_workspace_write.network_access=true'), 'a call that edits code opens the network (issue 189)')
 })
 
 test('the effort goes to codex under the name of the pair, for each of the five levels', () => {
