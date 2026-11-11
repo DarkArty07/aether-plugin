@@ -55,7 +55,7 @@ function rungIndex(ladder, step) {
 // one the ladder does not have, it is the first rung.
 function newState(ladder, step = null) {
   const start = ladder.rungs.some((rung) => rung.step === step) ? step : ladder.rungs[0].step
-  return { step: start, attempts: 0, repeats: 0, lastKeys: null, blockedKey: null, blockedCount: 0, status: 'open' }
+  return { step: start, attempts: 0, repeats: 0, lastKeys: null, blockedKey: null, blockedCount: 0, blockedReason: null, status: 'open' }
 }
 
 function effortFor(ladder, step) {
@@ -163,17 +163,33 @@ function judgeFix(state, verdict, ladder, carry) {
   return rise(state, ladder, 'failed', carry, repeats, lastKeys)
 }
 
+// The key of a BLOCKED attempt report (issue 188): the gate's red tests, keyed as judgeFix keys a fix verdict, sorted and
+// joined; or one fixed value when the gate found no red test (none, or only its time-limit cut). The model's sentence is
+// no part of it: each implementer words the same cause its own way.
+const NO_RED_TEST_KEY = 'blocked with no red test'
+function blockedKeyOf(findings) {
+  const real = (Array.isArray(findings) ? findings : [])
+    .filter((finding) => finding && isText(finding.file) && isText(finding.what))
+    .map(findingKey)
+    .filter((key) => key !== GATE_CUT_KEY)
+  const keys = [...new Set(real)].sort()
+  return keys.length ? keys.join('\n') : NO_RED_TEST_KEY
+}
+
 // Judges the Lead's verdict on the state the earlier verdicts left.
 function judge(state, verdict, ladder) {
   if (state.status !== 'open') return rejected(`the task is ${state.status}: no verdict is accepted after it`)
   // Attempt reports track blockers separately from review verdicts: a review between launches
   // must not break the streak, and a rise must carry it to the next rung.
   if (verdict && verdict.kind === 'attempt') {
-    const reason = typeof verdict.reason === 'string' ? verdict.reason.trim() : ''
-    const key = verdict.status === 'BLOCKED' && reason ? reason.replace(/\s+/g, ' ').toLowerCase() : null
+    const sentence = typeof verdict.reason === 'string' ? verdict.reason.trim() : ''
+    const blocked = verdict.status === 'BLOCKED'
+    const key = blocked ? blockedKeyOf(verdict.findings) : null
     const count = key ? (state.blockedKey === key ? state.blockedCount + 1 : 1) : 0
-    const updated = { ...state, blockedKey: key, blockedCount: count }
+    const updated = { ...state, blockedKey: key, blockedCount: count, blockedReason: blocked ? sentence : null }
     if (key && count >= (ladder.repeatBlocked ?? 2)) {
+      const evidence = key === NO_RED_TEST_KEY ? 'no red test' : `the same red tests came back: ${key.split('\n').join(', ')}`
+      const reason = sentence || evidence
       return { accepted: true, state: { ...updated, attempts: state.attempts + 1, status: 'blocked' }, next: { step: null, kind: 'blocked', cause: 'blocked-same-cause', reason, effort: null, carry: true } }
     }
     return { accepted: true, state: updated, next: null }

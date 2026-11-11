@@ -1238,6 +1238,13 @@ async function salvage(unit) {
   }
 }
 
+// The findings of a gate that failed, as the ladder and the fix verdict take them: the gate's own, or one on the first
+// owned file when it names none. A gate that passed, or did not run, has none (issue 188).
+function gateFindingsOf(gate, task) {
+  if (!gate || gate.error || gate.pass !== false) return []
+  return gate.findings && gate.findings.length ? gate.findings : [{ file: task.owns[0], what: gate.checks || 'la puerta falló' }]
+}
+
 // The unit loop. Returns when the unit is merged, blocked, skipped or not run.
 async function work(unit, task) {
   const dep = task.dependsOn.find((d) => units[d] && units[d].status !== 'merged')
@@ -1256,6 +1263,7 @@ async function work(unit, task) {
   let mergeRetry = false
   let lastPair = null
   let previousBlocked = Boolean(view.blockedCount)
+  const runGate = () => gated(() => ops(`aether-wt gate ${runId} ${unit.id}`, { phase: 'Supervise', label: `${unit.id}: gate`, long: true }))
 
   for (;;) {
     if (modelAgentsSpent() >= maxAgents) return finish(unit, 'not-run', 'the agent budget is spent')
@@ -1340,9 +1348,15 @@ async function work(unit, task) {
     }
     unit.rounds.push(round)
 
-    if (round.status === 'BLOCKED' || previousBlocked) {
+    // A BLOCKED report, or a report after one, is keyed by the red tests the gate found, not by the model's wording
+    // (issue 188), so its gate runs before the attempt is judged. Every other round runs the gate after its own checks,
+    // where it always ran. A report without a body (no report) has no gate.
+    const afterBlock = round.status === 'BLOCKED' || previousBlocked
+    let gate = report && afterBlock ? await runGate() : null
+
+    if (afterBlock) {
       const attemptCheck = await applyVerdict(unit, 'attempt', {
-        status: round.status, reason: round.question.trim() || round.concerns,
+        status: round.status, reason: round.question.trim() || round.concerns, findings: gateFindingsOf(gate, task),
       })
       if (attemptCheck.error || attemptCheck.accepted === false) return finish(unit, 'blocked', `the ladder could not record the attempt: ${attemptCheck.error || attemptCheck.rejection}`)
       if (attemptCheck.status === 'blocked') return finish(unit, 'blocked', `${attemptCheck.cause}: ${attemptCheck.reason}`)
@@ -1373,10 +1387,10 @@ async function work(unit, task) {
       continue
     }
 
-    const gate = await gated(() => ops(`aether-wt gate ${runId} ${unit.id}`, { phase: 'Supervise', label: `${unit.id}: gate`, long: true }))
+    if (gate === null) gate = await runGate()
     if (!gate.error && gate.pass === false) {
       unit.ladder.gateRejections++
-      const findings = gate.findings && gate.findings.length ? gate.findings : [{ file: task.owns[0], what: gate.checks || 'la puerta falló' }]
+      const findings = gateFindingsOf(gate, task)
       round.findings = findings.map((f) => ({
         severity: 'important',
         title: `${f.file}: ${f.what}`,

@@ -530,6 +530,7 @@ test('an implementer that returns no report twice blocks the unit after two atte
   assert.deepEqual(attemptsOf(run, 'task-2').map((c) => c.model), ['haiku', 'haiku', 'sonnet', 'opus', 'opus'])
   assert.deepEqual(unit.tiers, ['haiku high', 'haiku xhigh', 'sonnet high', 'opus high', 'opus xhigh'])
   assert.equal(run.calls.some((c) => c.role === 'supervisor' && c.unit === 'task-2'), false)
+  assert.equal(gatesOf(run, 'task-2').length, 0, 'a round with no report runs no gate')
   assert.equal(run.result.units[0].status, 'merged')
 })
 
@@ -945,4 +946,35 @@ test('two blocked reports with the same cause stop at attempt two', async (t) =>
   assert.equal(unit.status, 'blocked')
   assert.match(unit.reason, /blocked-same-cause.*outside owns/i)
   assert.equal(attemptsOf(run, 'task-1').length, 2)
+})
+
+// The gate calls of one unit, as the harness records them (one per round that ran it).
+const gatesOf = (run, unit) => run.calls.filter((c) => c.kind === 'ops:gate' && c.unit === unit)
+
+test('two BLOCKED attempts with two sentences and the same red test block the unit after the second, one gate per round (issue 188)', async (t) => {
+  const args = threeTasks(t)
+  const sentences = ['the test is not mine', 'a fixture I cannot write']
+  const RED = [{ file: 'npm test', what: 'falló: the same red test' }]
+  const run = await runWorkflow(args, {
+    implementer: (call, done) => (call.unit === 'task-1'
+      ? { status: 'BLOCKED', summary: 'Cannot proceed', head: '', tests: '', concerns: '', question: sentences[call.n - 1] ?? 'a third try' }
+      : done(call)),
+    ops: (call, wt) => (call.kind === 'ops:gate' && call.unit === 'task-1' ? { pass: false, findings: RED } : wt(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = run.result.units.find((u) => u.id === 'task-1')
+  assert.deepEqual([unit.status, unit.reason], ['blocked', 'blocked-same-cause: a fixture I cannot write'])
+  assert.equal(attemptsOf(run, 'task-1').length, 2, 'no third implementer is launched')
+  assert.equal(gatesOf(run, 'task-1').length, 2, 'the gate ran once per round')
+  assert.equal(run.result.units.find((u) => u.id === 'task-2').status, 'merged')
+})
+
+test('a round that reports DONE and passes runs the gate once, between its implementer and its supervisor (issue 188)', async (t) => {
+  const args = threeTasks(t)
+  const run = await runWorkflow(args)
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(['task-1', 'task-2', 'task-3'].map((u) => gatesOf(run, u).length), [1, 1, 1])
+  const at = (key) => run.events.indexOf(key)
+  assert.ok(at('end implementer task-1') < at('start ops:gate task-1'))
+  assert.ok(at('end ops:gate task-1') < at('start supervisor task-1'))
 })
