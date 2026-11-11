@@ -6,6 +6,14 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const { loadPairs, nativeModels } = require('../plugins/aether/lib/pairs.js')
+const { ladderFrom } = require('../plugins/aether/lib/pareto.js')
+
+test('the live pairs table derives the five required Claude rungs', () => {
+  const rungs = ladderFrom(loadPairs().pairs, { candidateEfforts: ['high', 'xhigh'], minJumpPoints: 2 })
+  assert.deepEqual(rungs.map(({ model, effort }) => `${model}-${effort}`), [
+    'haiku-high', 'haiku-xhigh', 'sonnet-high', 'opus-high', 'opus-xhigh',
+  ])
+})
 
 const EVIDENCE = path.join(__dirname, '..', 'specs', '032-pareto-ladder', 'evidence', 'aa-pages-claude-2026-11-10.json')
 const PAIRS_FILE = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json')
