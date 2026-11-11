@@ -179,8 +179,8 @@ test('a model with no code figures neither enters nor knocks anybody out, howeve
 })
 
 test('a pair that is not up by the minimum jump in both figures does not make a step of its own: the cheaper stays', () => {
-  // Intelligence 39 and code 36 at cost 0.9 against sonnet-5 high at 40 and 35 at cost 1: one point apart, so the cheaper stays.
-  const nearer = row('sonnet-5b', 'high', 39, 0.9, 36, 1.2)
+  // Intelligence 39 and code 34 at costs 0.9 and 0.95 against sonnet-5 high at 40 and 35 at cost 1: neither knocks the other out, and sonnet-5 high is up one point in both figures, so the cheaper stays.
+  const nearer = row('sonnet-5b', 'high', 39, 0.9, 34, 0.95)
   assert.deepEqual(names(ladderFrom([...BASE, ...OPUS_6, nearer], LAW)), ['haiku-5 high', 'haiku-5 xhigh', 'sonnet-5b high', 'opus-6 high', 'opus-6 xhigh'])
   // The minimum is data: with a minimum of 0.5 both stay, in the order of intelligence.
   assert.deepEqual(names(ladderFrom([...BASE, ...OPUS_6, nearer], { ...LAW, minJumpPoints: 0.5 })),
@@ -629,7 +629,7 @@ test('every rejected attempt moves the unit one rung up with the supervisor of t
     seen.push([a.step, a.effort, a.supervisor && `${a.supervisor.model} ${a.supervisor.effort}`, a.status])
   }
   assert.deepEqual(seen, [
-    ['haiku-xhigh', 'xhigh', 'sonnet high', 'open'], ['sonnet-high', 'high', 'sonnet high', 'open'], ['opus-high', 'high', 'opus high', 'open'],
+    ['haiku-xhigh', 'xhigh', 'sonnet high', 'open'], ['sonnet-high', 'high', 'opus high', 'open'], ['opus-high', 'high', 'opus xhigh', 'open'],
     ['opus-xhigh', 'xhigh', 'opus xhigh', 'open'], [null, null, null, 'exhausted'],
   ])
 })
@@ -1059,14 +1059,14 @@ test('the refresh needs no key and sends none, and no longer reads or writes the
 
 **Aether:**
 - Area: docs-ladder
-- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `plugins/aether/skills/models/SKILL.md`, `docs/guide/delegates.md`, `docs/guide/models-by-role.md`, `docs/reference/components.md`, `tests/delegates-docs.test.js`, `tests/delegate-docs.test.js`, `tests/models-by-role-docs.test.js`, `tests/swarm-ladder-docs.test.js`, `tests/using-aether-030.test.js`, `tests/components-docs.test.js`, `tests/docs-facts.test.js`
+- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `plugins/aether/skills/models/SKILL.md`, `docs/guide/delegates.md`, `docs/guide/models-by-role.md`, `docs/reference/components.md`, `tests/delegates-docs.test.js`, `tests/delegate-docs.test.js`, `tests/models-by-role-docs.test.js`, `tests/swarm-ladder-docs.test.js`, `tests/using-aether-030.test.js`, `tests/components-docs.test.js`, `tests/docs-facts.test.js`, `tests/bootstrap-names.test.js`
 - Depends on: Task 2 — la ley que el texto describe
 - Merges with: Task 4
 - Serves: R16
 
 **Interfaces:**
 Solo texto y las pruebas que lo sujetan; tiene que ir en la misma unidad que el cambio de `config/ladder.json` porque esas pruebas leen el archivo (la tabla de escalones de la guía y las frases de las reglas del Lead). Qué debe decir cada página, en su idioma:
-- **`skills/using-aether/SKILL.md`** (las reglas del Lead; sus partes de `aether-session-start` siguen en 9.800 caracteres o menos y el total en el límite de `tests/using-aether-030.test.js`): la escalera se calcula con una ley fija sobre las cifras de Artificial Analysis (la frontera de Pareto de calidad y costo: un candidato que otro par iguala o supera por menos costo sale; los demás se ordenan por inteligencia y cada escalón sube al menos 2 puntos en código y en inteligencia) y se guarda en `config/ladder.json`; hoy son cinco escalones (Haiku `high`, Haiku `xhigh`, Sonnet `high`, Opus `high`, Opus `xhigh`); un intento rechazado sube un escalón y tras el quinto la tarea queda agotada y diferida; el mismo cambio fuera de `Owns` o el mismo motivo bloqueado repetido bloquean la tarea en su escalón; `infeasible` con motivo sube; el Lead no nombra modelo ni esfuerzo salvo el que el dueño colocó con sus palabras, que corre en el escalón con ese modelo (Opus sin esfuerzo, escalón 4) y de ahí sube. Salen las frases de «correcciones por escalón», «el esfuerzo de corrección» y «subir cuando los hallazgos se repiten».
+- **`skills/using-aether/SKILL.md`** (las reglas del Lead; sus partes de `aether-session-start` siguen en 9.800 caracteres o menos y el total en el límite de `tests/using-aether-030.test.js`): la escalera se calcula con una ley fija sobre las cifras de Artificial Analysis (la frontera de Pareto de calidad y costo: un candidato que otro par iguala o supera por menos costo sale; los demás se ordenan por inteligencia y cada escalón sube al menos 2 puntos en código y en inteligencia) y se guarda en `config/ladder.json`; hoy son cinco escalones (Haiku `high`, Haiku `xhigh`, Sonnet `high`, Opus `high`, Opus `xhigh`); un intento rechazado sube un escalón y tras el quinto la tarea queda agotada y diferida; el mismo cambio fuera de `Owns` o el mismo motivo bloqueado repetido bloquean la tarea en su escalón; `infeasible` con motivo sube; el Lead no nombra modelo ni esfuerzo salvo el que el dueño colocó con sus palabras, que corre en el escalón con ese modelo (Opus sin esfuerzo, escalón 4) y de ahí sube. Salen las frases de «correcciones por escalón», «el esfuerzo de corrección» y «subir cuando los hallazgos se repiten». Las dos frases que `tests/bootstrap-names.test.js` exige de estas reglas pasan al texto nuevo: `Launch a correction or a rise with the same id` pasa a `Launch the next attempt, a rise, with the same id` (la regla de `AETHER-TASK`: el sistema añade el trabajo anterior y los hallazgos al encargo; un id nuevo es una tarea nueva), y `it spends none of the step's corrections` pasa a `it does not climb a rung` (la regla «Replaced, not repeated»: un par que falla al arrancar por cuota o tiempo se reemplaza y no sube la tarea). Las demás frases de esa lista y el límite de 34.000 bytes quedan como están.
 - **`skills/swarm/SKILL.md`:** el enjambre usa la misma escalera; el supervisor corre en Sonnet `high` (escalones 1 y 2), Opus `high` (3) y Opus `xhigh` (4 y 5), calculado por el sistema; el bloque `ladder` de cada unidad es `{ steps, firstTry, rises: { failed, infeasible }, gateRejections, filled }`; las causas del bloqueo por escalera agotada o repetida.
 - **`docs/guide/delegates.md`:** la tabla de escalones lista cada escalón de `config/ladder.json` (`step`, modelo, esfuerzo); la ley y por qué Sonnet `xhigh` no está hoy; la colocación por palabra del dueño («Placing a task»): Opus sin esfuerzo corre en el escalón 4, con `xhigh` en el 5, un esfuerzo que no es escalón en el primero del modelo, y un modelo sin escalón se rechaza; el supervisor del enjambre.
 - **`skills/models/SKILL.md`, `docs/guide/models-by-role.md` y `docs/reference/components.md`:** las frases que repiten la escalera de tres escalones con correcciones por modelo pasan a la escalera de la ley; la tabla de la escalera de `models-by-role.md` sale de `config/ladder.json`; `components.md` describe `aether-delegate` y `aether-report` sin «correcciones».
@@ -1090,6 +1090,7 @@ test('the guide says what makes a task rise, be blocked or be exhausted, with th
 })
 ```
 `tests/models-by-role-docs.test.js` (la tabla de la escalera es `config/ladder.json`, una fila por escalón con modelo y esfuerzo), `tests/swarm-ladder-docs.test.js` (la regla de la skill del enjambre y la guía dicen que el enjambre usa la misma escalera y el supervisor por escalón), `tests/using-aether-030.test.js` (las fichas de reglas del Lead que nombraban «el esfuerzo de corrección del escalón» nombran la escalera de la ley y el escalón siguiente), `tests/components-docs.test.js` y `tests/docs-facts.test.js` (la línea 853 y las que citan la frase vieja) se adaptan igual.
+`tests/bootstrap-names.test.js`: en la lista de frases que exige de `using-aether/SKILL.md`, `'Launch a correction or a rise with the same id'` pasa a `'Launch the next attempt, a rise, with the same id'` y `'it spends none of the step\'s corrections'` pasa a `'it does not climb a rung'`; ninguna otra aserción cambia y el tope de 34.000 bytes se mantiene.
 
 **Acceptance:**
 - Se construye en una sola unidad con las tareas 4, 5 y 6; al fusionarse, `npm test` pasa entero, con las partes del bootstrap de 9.800 caracteres o menos.
@@ -1102,7 +1103,7 @@ test('the guide says what makes a task rise, be blocked or be exhausted, with th
 
 **Aether:**
 - Area: docs
-- Owns: `docs/*.md`, `docs/guide/*.md`, `docs/reference/*.md`, `CLAUDE.md`, `tests/docs-*.test.js`, `tests/lanes-docs.test.js`, `tests/observe-docs.test.js`, `tests/spend-docs.test.js`
+- Owns: `docs/*.md`, `docs/guide/*.md`, `docs/reference/*.md`, `CLAUDE.md`, `tests/docs-*.test.js`, `tests/lanes-docs.test.js`, `tests/observe-docs.test.js`, `tests/spend-docs.test.js`, `tests/effort-policy-docs.test.js`
 - Depends on: Task 4 — la escalera, la ley y el supervisor que el texto describe (la unidad de las tareas 4, 5, 6 y 8)
 - Depends on: Task 7 — el refresco que el texto describe
 - Serves: R16
@@ -1154,6 +1155,8 @@ test('CLAUDE.md no longer says the refresh needs the API key', () => {
 })
 ```
 En `tests/docs-facts.test.js`, `LAST_DECISION` pasa de 120 a 121 y el título de la prueba (`A50 to A120`) a `A50 to A121`; las pruebas de las otras páginas de `docs/` que fijan frases viejas se adaptan sin relajar las que fijan otra cosa.
+
+`docs/methodology.md` (párrafo «The unit's model, held by the system») pasa a decir: `A failed attempt moves the unit up one rung of the ladder, and each rung runs at its own effort`; sigue diciendo `The effort defaults to \`high\`` y que `models-by-role.md` tiene la tabla. Sale la frase de «una corrección sube el esfuerzo». `tests/effort-policy-docs.test.js`, primera prueba, pasa de las dos aserciones `a correction runs at \`xhigh\` on Haiku and at \`high\` on Sonnet and Opus` y `every attempt on a model the unit moved up to runs at \`high\`` a una sola, `/a failed attempt moves the unit up one rung of the ladder, and each rung runs at its own effort/i`; las otras aserciones (`The effort defaults to \`high\``, no `xhigh` por defecto, `models-by-role.md`) y las otras pruebas del archivo no cambian.
 
 **Acceptance:**
 - `npm run check` pasa (`npm test`, `npm run test:mod`, `npm run validate`), incluidos `tests/docs-facts.test.js` (enlaces, anclas, front matter, rango de decisiones) y las partes del bootstrap de 9.800 caracteres o menos.
