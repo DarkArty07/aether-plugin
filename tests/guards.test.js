@@ -89,5 +89,9 @@ test('R21: the retired document folders are gone and the last handoff stays', ()
   const handoffs = docs.filter((f) => f.startsWith('docs/handoff/'))
   assert.ok(handoffs.length > 0)
   assert.deepEqual(handoffs.filter((f) => !/^docs\/handoff\/\d{4}-\d{2}-\d{2}-.+\.md$/.test(f)), [])
-  assert.deepEqual(tracked('specs').filter((f) => /\/evidence\//.test(f)), [])
+  // The evidence a spec names as its source stays tracked (spec 032, R17); no other evidence folder under specs/ does.
+  const KEPT_EVIDENCE = /^specs\/032-pareto-ladder\/evidence\/aa-pages-(claude|other-harnesses)-2026-11-10\.json$/
+  const evidence = tracked('specs').filter((f) => /\/evidence\//.test(f))
+  assert.deepEqual(evidence.filter((f) => !KEPT_EVIDENCE.test(f)), [])
+  assert.ok(evidence.includes('specs/032-pareto-ladder/evidence/aa-pages-claude-2026-11-10.json'))
 })
