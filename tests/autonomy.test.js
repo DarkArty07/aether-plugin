@@ -305,6 +305,7 @@ test('status measures the hours and the spend, and stops on time first, then on 
     started: '2026-10-09T20:00:00.000Z',
     hours: { elapsed: 1.5, ceiling: 8, paused: 0 },
     usd: { spent: 0, ceiling: 50 },
+    swarms: { runs: [], unreadable: [] },
     idleMinutes: 0,
     idle: false,
     stop: null,

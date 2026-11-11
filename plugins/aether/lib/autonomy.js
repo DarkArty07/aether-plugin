@@ -10,11 +10,12 @@ const crypto = require('node:crypto')
 const { spawnSync } = require('node:child_process')
 const path = require('node:path')
 const { ownerMessages, findTranscript } = require('./voice.js')
-const { newRunId, isRunId, dataDir: runDataDir } = require('./run.js')
+const { newRunId, isRunId, dataDir: runDataDir, aetherDir, runDir } = require('./run.js')
 const { readBrakeSettings, isAetherSession } = require('./session.js')
 const { repoPaths } = require('./git.js')
 const { isObject } = require('./common.js')
 const { trustedFile } = require('./skill-rules.js')
+const { report: reportRun, runStartOf, finalizedRecords } = require('./report.js')
 
 const CLASSES = ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call', 'skill-install']
 const SCOPES = ['repo', 'session']
@@ -526,12 +527,72 @@ function pausedMsOf(run, now) {
   return total
 }
 
-function statusOfRun(run, paths, now) {
+// The swarm runs of this repository that belong to the open run: compiled at or after the run started and before it
+// ended (issue 191). Each one's figure is the lanes total of aether-report --run, read now from the usage meter and the
+// lane logs, or from its record in runs.jsonl once it is finalized; the larger reading counts when both exist. A run
+// with no readable figure is named in `unreadable` and counts as 0. Writes nothing.
+function swarmSpend(mainRoot, run, { dataDir, now }) {
+  const from = Date.parse(run.started)
+  const until = run.ended ? Date.parse(run.ended) : Infinity
+  const inWindow = (start) => Number.isFinite(start) && start >= from && start < until
+  const figures = new Map()
+  const failed = new Set()
+  const keep = (id, usd) => { if (typeof usd === 'number' && Number.isFinite(usd)) figures.set(id, Math.max(figures.get(id) ?? 0, usd)) }
+  let ids = []
+  try {
+    ids = fs.readdirSync(path.join(aetherDir(mainRoot), 'runs')).filter(isRunId)
+  } catch {
+    // No swarm run has been compiled in this repository yet.
+  }
+  for (const id of ids) {
+    const dir = runDir(mainRoot, id)
+    if (!fs.existsSync(path.join(dir, 'graph.json'))) continue
+    let start
+    try {
+      start = runStartOf(dir)
+    } catch {
+      failed.add(id)
+      continue
+    }
+    if (!inWindow(start)) continue
+    try {
+      keep(id, reportRun(mainRoot, id, { tests: false, dataDir, now }).lanes.totals.run.totalUsd)
+    } catch {
+      failed.add(id)
+    }
+  }
+  for (const record of finalizedRecords(dataDir)) {
+    if (record.repo !== mainRoot || !isRunId(record.runId)) continue
+    const report = record.report || {}
+    if (!inWindow(Date.parse(report.speed && report.speed.run && report.speed.run.start))) continue
+    keep(record.runId, report.lanes && report.lanes.totals && report.lanes.totals.run && report.lanes.totals.run.totalUsd)
+  }
+  return {
+    runs: [...figures.keys()].sort().map((id) => ({ run: id, usd: round2(figures.get(id)) })),
+    unreadable: [...failed].filter((id) => !figures.has(id)).sort(),
+  }
+}
+
+// The spend of the open run in USD: each recorded figure, except that a swarm run's own figure is read here and the
+// larger of it and its recorded figure counts once (issue 191).
+function spentOf(run, swarms) {
+  const counted = new Map(swarms.runs.map((entry) => [entry.run, entry.usd]))
+  let total = 0
+  for (const entry of run.spend) if (!counted.has(entry.source)) total += entry.usd
+  for (const [id, usd] of counted) {
+    const recorded = run.spend.filter((entry) => entry.source === id).map((entry) => entry.usd)
+    total += Math.max(usd, ...recorded)
+  }
+  return round2(total)
+}
+
+function statusOfRun(run, paths, now, { mainRoot = null, dataDir = runDataDir() } = {}) {
   ensureBrakeFields(run)
   const pausedMs = pausedMsOf(run, now)
   const elapsed = round2((now - Date.parse(run.started) - pausedMs) / 3600000)
   const paused = round2(pausedMs / 3600000)
-  const spent = round2(run.spend.reduce((sum, entry) => sum + entry.usd, 0))
+  const swarms = mainRoot ? swarmSpend(mainRoot, run, { dataDir, now }) : { runs: [], unreadable: [] }
+  const spent = spentOf(run, swarms)
   const idleMinutes = Math.max(0, Math.floor((now - lastActivity(run, paths)) / 60000))
   const quotaPaused = !run.brakeOff && run.quotaPauses.some((pause) => Date.parse(pause.resumeAt) > now)
   let stop = null
@@ -547,6 +608,7 @@ function statusOfRun(run, paths, now) {
     started: run.started,
     hours: { elapsed, ceiling: run.ceilings.hours, paused },
     usd: { spent, ceiling: run.ceilings.usd },
+    swarms,
     idleMinutes,
     idle: now - lastActivity(run, paths) >= IDLE_MS,
     stop,
@@ -560,10 +622,10 @@ function statusOfRun(run, paths, now) {
   }
 }
 
-function status(mainRoot, { now = Date.now() } = {}) {
+function status(mainRoot, { now = Date.now(), dataDir = runDataDir() } = {}) {
   const open = findOpenRun(mainRoot)
   if (!open) return { open: false }
-  return statusOfRun(open.run, open.paths, now)
+  return statusOfRun(open.run, open.paths, now, { mainRoot, dataDir: resolveDataDir(dataDir) })
 }
 
 function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date.now() } = {}) {
@@ -579,7 +641,7 @@ function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date
     if (probe.status === 128 && /^fatal: not a git repository\b/.test(probe.stderr)) return null
     throw error
   }
-  const st = status(mainRoot, { now })
+  const st = status(mainRoot, { now, dataDir: resolveDataDir(dataDir) })
   if (!st.open || !st.stop) return null
   let message
   if (st.stop === 'time') message = `autonomous run ${st.id} reached its time ceiling (${st.hours.elapsed}h / ${st.hours.ceiling}h); close it with: aether-autonomy end --outcome ceiling`
@@ -589,7 +651,7 @@ function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date
   return { stop: st.stop, id: st.id, hours: st.hours, usd: st.usd, quota: st.quota, message }
 }
 
-function spend(mainRoot, usd, source, { now = Date.now() } = {}) {
+function spend(mainRoot, usd, source, { now = Date.now(), dataDir = runDataDir() } = {}) {
   if (typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0) throw new Error(`invalid spend: ${usd}`)
   if (typeof source !== 'string' || source === '') throw new Error('a spend needs a source')
   const open = findOpenRun(mainRoot)
@@ -600,7 +662,7 @@ function spend(mainRoot, usd, source, { now = Date.now() } = {}) {
   if (index === -1) run.spend.push(entry)
   else run.spend[index] = entry
   writeJsonFile(paths.runFile, run)
-  return statusOfRun(run, paths, now)
+  return statusOfRun(run, paths, now, { mainRoot, dataDir: resolveDataDir(dataDir) })
 }
 
 function end(mainRoot, outcome, { now = Date.now() } = {}) {
