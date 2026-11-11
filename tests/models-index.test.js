@@ -987,6 +987,9 @@ test('without --docs the README is written to docs/models next to the script', a
   const tree = tempDir(t, 'models-index-tree-')
   fs.mkdirSync(path.join(tree, 'scripts'))
   for (const name of ['build-models-index.js', 'refresh-lanes.js']) fs.copyFileSync(path.join(ROOT, 'scripts', name), path.join(tree, 'scripts', name))
+  // The script reads AA's page reader from the skill's folder (for --pages), so the copy has it too.
+  fs.mkdirSync(path.join(tree, '.claude', 'skills', 'artificial-analysis'), { recursive: true })
+  fs.copyFileSync(path.join(ROOT, '.claude', 'skills', 'artificial-analysis', 'aa-api.js'), path.join(tree, '.claude', 'skills', 'artificial-analysis', 'aa-api.js'))
   fs.mkdirSync(path.join(tree, 'docs', 'models'), { recursive: true })
   fs.writeFileSync(path.join(tree, 'docs', 'models', 'README.md'), '# Mine\n\n<!-- models-index:start -->\nold\n<!-- models-index:end -->\n\nkept\n')
   const copy = require(path.join(tree, 'scripts', 'build-models-index.js'))

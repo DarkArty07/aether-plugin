@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { figuresOf, readPages, PAGE_URL } = require('../.claude/skills/artificial-analysis/aa-api.js')
+const { figuresOf, indexesOf, readPages, PAGE_URL } = require('../.claude/skills/artificial-analysis/aa-api.js')
 const { block, page } = require('./aa-page-fixtures.js')
 
 const OWN = { intelligence: 51.8421, cost: 3.4646622, code: 0.565656565656566, codeCost: 5.118905, seconds: 955.9325 }
@@ -13,6 +13,13 @@ test('figuresOf reads the code figures of the block of the page\'s own model, no
   assert.deepEqual(figuresOf(html, 'claude-opus-5-5-high'), { code: 56.57, codeCostPerTaskUsd: 5.119, codeMinutesPerTask: 15.9 })
   assert.equal(figuresOf(html, 'claude-missing-5-5'), null)
   assert.equal(figuresOf(page(block('claude-opus-5-5-high', OWN).replace('terminalbench-4-0', 'other-bench')), 'claude-opus-5-5-high'), null)
+})
+
+test('indexesOf takes only Terminal-Bench from the block of the page\'s own model: no coding figure, and null for a slug the page does not have', () => {
+  const html = page(block('claude-other-5-5', NEIGHBOUR), block('claude-opus-5-5-high', OWN))
+  assert.deepEqual(indexesOf(html, 'claude-opus-5-5-high'), { terminalBench: 0.566 })
+  assert.equal(indexesOf(html, 'claude-missing-5-5'), null)
+  assert.deepEqual(indexesOf(page(block('claude-opus-5-5-high', OWN).replace('terminalbench-4-0', 'other-bench')), 'claude-opus-5-5-high'), { terminalBench: null })
 })
 
 test('readPages asks one page per slug with a pause between two, sends no key, and reports a page that does not answer', async () => {
