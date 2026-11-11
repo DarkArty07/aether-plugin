@@ -78,7 +78,7 @@ test('an attempt that ends without a report and left nothing still counts, and t
   const unit = run.result.units[1]
   assert.equal(unit.status, 'blocked')
   assert.equal(unit.reason, 'the ladder is spent (exhausted)')
-  assert.equal(run.calls.filter((c) => c.kind === 'ops:salvage' && c.unit === 'task-2').length, 6)
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:salvage' && c.unit === 'task-2').length, 5)
   assert.equal(run.calls.some((c) => c.role === 'supervisor' && c.unit === 'task-2'), false)
   assert.ok(run.logs.some((l) => /task-2: no report, nothing to salvage/.test(l)), run.logs.join('\n'))
 })

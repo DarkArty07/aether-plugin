@@ -79,12 +79,12 @@ test('four skills, a skill that does not exist and a skill that is too big are n
   assert.deepEqual(uses(w.dataDir), [])
 })
 
-test('a correction that repeats the AETHER-SKILLS line pastes the same skills again (R29)', async (t) => {
+test('a rise that repeats the AETHER-SKILLS line pastes the same skills again (R29)', async (t) => {
   const w = world(t)
   skill(w.cwd, 'erebus-ui')
   await task.begin(call(BRIEF('t4', 'erebus-ui')), w.deps)
   await task.verdict({ task: 't4', verdict: 'fix', findings: ['src/a.js:3: the empty case is missing'] }, w.deps)
   const again = await task.begin(call(BRIEF('t4', 'erebus-ui')), w.deps)
-  assert.equal(again.kind, 'fix')
+  assert.equal(again.kind, 'rise')
   assert.ok(again.args.prompt.includes('rule 1 of erebus-ui') && again.args.prompt.includes('## Findings to fix'))
 })

@@ -162,7 +162,7 @@ test('a sub-attempt that ends without a report counts the pass as a missing repo
   const prompts = attemptsOf(run, 'task-1').map((call) => limitOf(call.prompt))
   assert.deepEqual(prompts.slice(0, 3), [null, 'src/a.js', 'src/b.js'])
   assert.deepEqual(unit.failures, Array(unit.attempts).fill('no report'))
-  assert.equal(unit.attempts, 6)
+  assert.equal(unit.attempts, 5)
   assert.deepEqual([unit.status, unit.reason], ['blocked', 'the ladder is spent (exhausted)'])
   assert.equal(run.calls.some((call) => call.role === 'supervisor' && call.unit === 'task-1'), false)
   assert.equal(unit.rounds[1].split, true)

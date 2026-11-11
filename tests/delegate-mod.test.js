@@ -280,7 +280,7 @@ test('a later step of the same agent is never taken over', async () => {
   assert.equal(asked, 1)
 })
 
-test('the whole delegation cycle with the real aether-delegate: begin on haiku, approve refused, fix, repeated finding rises to sonnet, approve (R13)', async (t) => {
+test('the whole delegation cycle with the real aether-delegate: begin on haiku-high, approve refused, fix rises to haiku-xhigh, then sonnet-high, approve (R13)', async (t) => {
   const repo = makeRepo(t)
   const dataDir = tempDir(t, 'aether-e2e-deleg-')
   fs.mkdirSync(path.join(dataDir, 'sessions'), { recursive: true })
@@ -317,13 +317,13 @@ test('the whole delegation cycle with the real aether-delegate: begin on haiku, 
 
   const finding = 'src/a.js:1: missing module.exports'
   const first = verdict('--verdict', 'fix', '--finding', finding)
-  assert.deepEqual([first.ok, first.next.kind, first.next.step], [true, 'fix', 'haiku'])
+  assert.deepEqual([first.ok, first.next.kind, first.next.step, first.next.cause], [true, 'rise', 'haiku-xhigh', 'failed'])
   await launch()
   assert.deepEqual([seen[1].model, seen[1].effort], ['haiku', 'xhigh'])
   assert.match(seen[1].prompt, /## Findings to fix/)
 
   const second = verdict('--verdict', 'fix', '--finding', finding)
-  assert.deepEqual([second.ok, second.next.kind, second.next.step, second.next.cause], [true, 'rise', 'sonnet', 'repeated'])
+  assert.deepEqual([second.ok, second.next.kind, second.next.step, second.next.cause], [true, 'rise', 'sonnet-high', 'failed'])
   await launch()
   assert.deepEqual([seen[2].model, seen[2].effort], ['sonnet', 'high'])
 
@@ -362,7 +362,7 @@ test('an editing delegate on Claude leaves an ended line when its agent ends, an
   await collect(delegates.step($, { index: 0, agentId: 'agent-end', turnId: 't' }, model, ctx))
   const written = log.readEntries(dataDir, { task: 't-end' }).filter((e) => e.kind !== 'launch')
   assert.deepEqual(written.map((e) => [e.kind, e.attempt, e.session, Object.hasOwn(e, 'text')]), [['ended', 1, 's-end', false]])
-  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's-end' }), [{ task: 't-end', session: 's-end', attempt: 1, step: 'haiku' }])
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's-end' }), [{ task: 't-end', session: 's-end', attempt: 1, step: 'haiku-high' }])
 
   fs.mkdirSync(path.join(repo.dir, 'src'), { recursive: true })
   fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'module.exports = 1\n')
