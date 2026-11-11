@@ -12,7 +12,7 @@ The RADAR roadmap: version 0.8 builds its phases 1, 2a and 2b. What remains wait
 
 **Effort.** Every unit starts on the first rung of `config/ladder.json` (Haiku `high`).
 - The default is `high` on every model. A failed attempt moves the unit up one rung of the ladder, and each rung runs at its own effort.
-- Each rung of `config/ladder.json` runs at its own effort; after the fifth rung the task is deferred.
+- After the fifth rung the task is deferred.
 - The supervisor reviews at `high`, and a task's Review line can raise it.
 - `aether-report` shows the cost and the time of each role, model and effort. `scripts/check-effort.js` checks, from a session's transcripts, that each agent ran at the effort its call asked for.
 
