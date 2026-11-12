@@ -102,7 +102,7 @@ function gateUnit(t) {
   const repo = makeRepo(t)
   const check = "if (require('fs').existsSync('src/t1/bad.js')) { console.log('not ok 1 - tests/new.test.js'); process.exit(1) }\nconsole.log('# pass 12')\n"
   commitIn(repo, repo.dir, 'check.js', check, 'add the check')
-  const args = compile(repo, plan([task(1), task(2)], { execution: ['- Test command: `node check.js`'] }))
+  const args = compile(repo, plan([task(1), task(2)], { execution: ['- Test command: `node check.js`'] }), ['--no-baseline'])
   const created = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
   return { repo, args, wt: created.path }
 }

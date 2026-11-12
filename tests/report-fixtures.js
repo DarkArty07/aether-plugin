@@ -81,6 +81,7 @@ function finishedRun(t, { result = true, testCommand = 'true' } = {}) {
   const args = compile(
     repo,
     plan([task(1), task(2), task(3, { depends: 'Task 1 — uses it' })], { execution: [`- Test command: \`${testCommand}\``] }),
+    ['--no-baseline'],
   )
   const stateFile = path.join(args.runDir, 'state.json')
   writeJson(stateFile, { ...readJson(stateFile), compiledAt: new Date(T0).toISOString() })
