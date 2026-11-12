@@ -80,8 +80,8 @@ function forkBase(worktree, base) {
   }
 }
 
-function runTests(worktree, command, { timeoutMs = 900000, tailChars = 4000 } = {}) {
-  const r = runShell(command, { cwd: worktree, timeoutMs })
+function runTests(worktree, command, { timeoutMs = 900000, tailChars = 4000, env = process.env, ...rest } = {}) {
+  const r = runShell(command, { cwd: worktree, timeoutMs, env: { ...env, PYTHONDONTWRITEBYTECODE: '1' }, ...rest })
   const timedOut = Boolean(r.error && r.error.code === 'ETIMEDOUT')
   const fullOutput = (r.stdout || '') + (r.stderr || '')
   const outputTail = fullOutput.slice(-tailChars)
@@ -90,8 +90,13 @@ function runTests(worktree, command, { timeoutMs = 900000, tailChars = 4000 } = 
   return { command, exitCode, passed, timedOut, outputTail }
 }
 
+function isPythonBytecode(filePath) {
+  if (typeof filePath !== 'string' || filePath === '') return false
+  return /(?:^|[\\/])__pycache__(?:[\\/]|$)/.test(filePath) || filePath.endsWith('.pyc') || filePath.endsWith('.pyo')
+}
+
 function checkEdits({ files = [], owns = [], tests = null } = {}) {
-  const fileList = files || []
+  const fileList = (files || []).filter((f) => !isPythonBytecode(f))
   const empty = fileList.length === 0
   const outside = fileList.filter((f) => !matchesAny(f, owns || []))
   let testStatus = 'none'
@@ -147,4 +152,5 @@ module.exports = {
   runTests,
   checkEdits,
   checkReadOnly,
+  isPythonBytecode,
 }
