@@ -595,12 +595,13 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
     const report = record.report || {}
     const recordStart = Date.parse(report.speed && report.speed.run && report.speed.run.start)
     if (!inWindow(recordStart)) {
-      // A record with no finite start cannot be placed by its window; it stays
-      // when nothing proves it outside the run (a finite finalizedAt must lie
-      // inside), so the deduplication below can fall back to its standalone figure.
+      // A record with no finite start cannot be placed by its window; it counts only
+      // when a finite finalizedAt places it inside the run, so the deduplication below
+      // can fall back to its standalone figure. A record with neither time could be any
+      // old run of this repository, and is left out.
       if (Number.isFinite(recordStart)) continue
       const finalizedAt = Date.parse(record.finalizedAt)
-      if (Number.isFinite(finalizedAt) && !inWindow(finalizedAt)) continue
+      if (!inWindow(finalizedAt)) continue
     }
     keep(record.runId, report)
   }

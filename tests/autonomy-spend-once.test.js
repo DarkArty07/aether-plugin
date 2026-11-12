@@ -324,6 +324,38 @@ test('runs with no finite start fall back to their standalone native figures (is
   assert.deepEqual(st.swarms.runs, ghosts.map((g) => ({ run: g.runId, usd: g.totalUsd })).sort((a, b) => a.run.localeCompare(b.run)))
 })
 
+test('a finalized record with no finite start counts only when its finalizedAt falls inside the run (issue 252)', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const { repo } = finishedRun(t)
+  fs.rmSync(path.join(repo.dir, '.aether', 'runs'), { recursive: true, force: true })
+  const ghosts = [
+    { runId: '20261008-015000-cc33', finalizedAt: undefined },
+    { runId: '20261008-016000-dd44', finalizedAt: new Date(T0 - 3 * HOUR).toISOString() },
+  ]
+  for (const g of ghosts) {
+    appendRecord({
+      runId: g.runId,
+      status: 'finalized',
+      ...(g.finalizedAt ? { finalizedAt: g.finalizedAt } : {}),
+      repo: repo.dir,
+      plan: 'x',
+      versions: {},
+      report: {
+        usage: { session: 'run-session' },
+        speed: { run: {} },
+        lanes: { totals: { run: { nativeUsd: 40, lanesUsd: 10, totalUsd: 50, coveredShare: 0.2 } } },
+      },
+    }, dataDir)
+  }
+  const configDir = ownerConfig(t)
+  const started = autonomy.start(repo.dir, { quote: HOURS, session: SESSION, usd: 500 }, { configDir, now: T0 - HOUR, dataDir })
+  assert.equal(started.ok, true)
+  const st = autonomy.status(repo.dir, { now: T0 + 50 * MIN, dataDir })
+  assert.equal(st.usd.spent, 0)
+  assert.deepEqual(st.swarms.runs, [])
+})
+
 test('a usage read failure falls back to the per-run figures and names the runs, without throwing', (t) => {
   const s = twoOverlappingRuns(t)
   // Finalize both runs so their figures survive the usage files, then break the usage root.
