@@ -7,8 +7,10 @@ const { execFileSync } = require('node:child_process')
 
 const ROOT = path.join(__dirname, '..')
 const PLUGIN = path.join(ROOT, 'plugins', 'aether')
-// Kept by name (R19 b): the whole of aether-report, the hook entry points, and the verb hook of aether-observe.
-const BY_NAME = new Set(['aether-report', 'aether-guard', 'aether-session-start', 'aether-observe hook'])
+// Kept by name (R19 b): the whole of aether-report, the hook entry points, and the verbs hook and proposals of
+// aether-observe. proposals is a read-only verb the Lead runs by hand from the start-up notes (spec 036 R21);
+// nothing in the system launches it, so it is not internal to another verb.
+const BY_NAME = new Set(['aether-report', 'aether-guard', 'aether-session-start', 'aether-observe hook', 'aether-observe proposals'])
 // Internal verbs: launched in a process of their own by a verb that stays (the caller is that verb).
 const INTERNAL = { 'aether-lane _runner': 'aether-lane start', 'aether-lane _seat': 'aether-lane seat-start', 'aether-delegate run': 'aether-delegate start', 'aether-delegate renew': 'aether-delegate begin', 'aether-observe file-issues': 'aether-observe hook' }
 
