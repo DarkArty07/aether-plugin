@@ -24,6 +24,7 @@ const calls = require('./lane-calls.js')
 const work = require('./lane-work.js')
 const wt = require('./worktrees.js')
 const { normalizePattern } = require('./globs.js')
+const { failureSignatures } = require('./baseline.js')
 
 const ALLOWED_HARNESSES = ['agy', 'codex', 'grok', 'muse']
 const DELEGATE_USAGE = 'delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--pair <pair id>] [--carry <patch file>] [--findings <file>] [--session <id>]'
@@ -172,12 +173,16 @@ function reviewerPrompt({ implementer, tests }) {
 // Runs the charge's test command inside the unit worktree, as merge runs its own.
 function runTests(worktree, command) {
   const done = spawnSync(command, { cwd: worktree, shell: true, encoding: 'utf8', timeout: TEST_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 })
+  const output = `${done.stdout || ''}${done.stderr || ''}`
+  const passed = done.status === 0
+  const failures = !passed ? failureSignatures(output) : []
   return {
     command,
     exitCode: done.status,
-    passed: done.status === 0,
+    passed,
     timedOut: Boolean(done.error && done.error.code === 'ETIMEDOUT'),
-    outputTail: `${done.stdout || ''}${done.stderr || ''}`.slice(-OUTPUT_TAIL_CHARS),
+    outputTail: output.slice(-OUTPUT_TAIL_CHARS),
+    failures,
   }
 }
 

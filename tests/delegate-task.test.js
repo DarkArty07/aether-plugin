@@ -291,6 +291,25 @@ test('an approve of an external result uses the checks its run recorded (C6)', a
   assert.deepEqual([refused.ok, /tests failed/.test(refused.error)], [false, true])
 })
 
+test('an approve of an external result naming failing tests shows them, and re-tests when given --worktree (issue 249)', async (t) => {
+  const repo = makeRepo(t)
+  const { deps, dataDir } = world(t, { cwd: repo.dir })
+  const owns = 'AETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\n'
+  await task.begin(call(BRIEF('t1', owns)), deps)
+  fs.mkdirSync(path.join(repo.dir, 'src'))
+  fs.writeFileSync(path.join(repo.dir, 'src', 'a.js'), 'a\n')
+  log.appendEntry(dataDir, {
+    kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: null,
+    checks: { kind: 'edits', ok: false, empty: false, outside: [], tests: 'fail', failures: ['bad_test'], reasons: ['tests failed (not ok: bad_test)'] },
+  })
+  const withoutWt = await task.verdict({ task: 't1', verdict: 'approve' }, deps)
+  assert.equal(withoutWt.ok, false)
+  assert.equal(withoutWt.error, 'checks failed: tests failed (not ok: bad_test)')
+
+  const withWt = await task.verdict({ task: 't1', verdict: 'approve', worktree: repo.dir }, deps)
+  assert.equal(withWt.ok, true, withWt.error)
+})
+
 test('a new id with the same owns and tests as a task of the session that did not end approved is a relaunch (R1)', async (t) => {
   const { deps, dataDir } = world(t)
   const more = 'AETHER-OWNS: src/**\nAETHER-TESTS: npm test\n'

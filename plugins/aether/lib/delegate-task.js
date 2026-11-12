@@ -694,7 +694,20 @@ function editsFailure(check, tests) {
   const reasons = []
   if (check.empty) reasons.push('empty task: no changes')
   if (check.outside.length > 0) reasons.push(`files outside owns: ${check.outside.join(', ')}`)
-  if (check.tests === 'fail') reasons.push(tests.timedOut ? `tests timed out: ${tests.command}` : `tests failed: ${tests.command} exited ${tests.exitCode}`)
+  if (check.tests === 'fail') {
+    const failures = Array.isArray(tests?.failures) && tests.failures.length > 0
+      ? tests.failures
+      : (Array.isArray(check.failures) && check.failures.length > 0 ? check.failures : [])
+    if (tests?.timedOut) {
+      reasons.push(`tests timed out: ${tests.command}`)
+    } else if (failures.length > 0) {
+      reasons.push(`tests failed (not ok: ${checks.formatFailures(failures)})`)
+    } else if (tests?.command && tests?.exitCode !== undefined && tests?.exitCode !== null) {
+      reasons.push(`tests failed: ${tests.command} exited ${tests.exitCode}`)
+    } else {
+      reasons.push('tests failed')
+    }
+  }
   return reasons
 }
 
@@ -717,6 +730,18 @@ function ignoreOf(ignore) {
   return { globs: list.map((glob) => glob.trim()) }
 }
 
+// Whether a result's checks failed only because of the tests.
+function failedOnlyOnTests(c) {
+  if (!isObject(c) || c.ok === true) return false
+  if (c.empty === true) return false
+  if (Array.isArray(c.outside) && c.outside.length > 0) return false
+  if (c.tests === 'fail') return true
+  if (Array.isArray(c.reasons) && c.reasons.length > 0) {
+    return c.reasons.every((r) => typeof r === 'string' && r.startsWith('tests failed'))
+  }
+  return false
+}
+
 // The objective checks of an approve, by how the last attempt ran. Returns null when they pass, or the error.
 function approveError(r, entries, launch, worktree, ignore = []) {
   const attempt = launch.attempt
@@ -727,7 +752,16 @@ function approveError(r, entries, launch, worktree, ignore = []) {
     // A read-only result charged with files another writer of the checkout changed (issue 100) passes when --ignore covers all of them.
     const charged = own !== null && own.kind === 'read-only' && own.empty !== true && Array.isArray(own.outside) && own.outside.length > 0
     if (charged && ignore.length > 0 && own.outside.every((file) => matchesAny(file, ignore))) return null
-    const reasons = own && Array.isArray(own.reasons) && own.reasons.length > 0 ? own.reasons : ['the result has no passing checks']
+    if (failedOnlyOnTests(own) && isText(worktree)) {
+      const owns = Array.isArray(launch.owns) ? launch.owns : []
+      const tests = isText(launch.tests) ? checks.runTests(worktree, launch.tests) : null
+      const check = checks.checkEdits({ files: checks.changedFiles(worktree, checks.worktreeBase(worktree, launch.base)), owns, tests })
+      return check.ok ? null : `checks failed: ${editsFailure(check, tests).join('; ')}`
+    }
+    let reasons = own && Array.isArray(own.reasons) && own.reasons.length > 0 ? own.reasons : ['the result has no passing checks']
+    if (Array.isArray(own?.failures) && own.failures.length > 0) {
+      reasons = reasons.map((reason) => (reason === 'tests failed' ? `tests failed (not ok: ${checks.formatFailures(own.failures)})` : reason))
+    }
     const hint = charged ? ` (if another writer of this checkout changed those files, judge again with --ignore '<glob>' for each, for example --ignore '${own.outside[0]}')` : ''
     return `checks failed: ${reasons.join('; ')}${hint}`
   }
