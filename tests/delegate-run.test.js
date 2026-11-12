@@ -173,7 +173,7 @@ test('wait: not done while the delegate lives; its result once written; died whe
   assert.deepEqual(await dr.wait({ id: 't1', dataDir, seconds: 0.3 }), { done: false })
   fs.mkdirSync(path.join(dataDir, 'delegates', 'results'), { recursive: true })
   fs.writeFileSync(path.join(dataDir, 'delegates', 'results', 't1.json'), JSON.stringify({ ok: true, status: 'ok', text: 'branch' }))
-  assert.deepEqual(await dr.wait({ id: 't1', dataDir, seconds: 0.3 }), { done: true, ok: true, status: 'ok', text: 'branch' })
+  assert.deepEqual(await dr.wait({ id: 't1', dataDir, seconds: 0.3 }), { done: true, ok: true, status: 'ok', text: 'branch', reason: null })
   fs.rmSync(path.join(dataDir, 'delegates', 'results', 't1.json'))
   const died = await dr.wait({ id: 't1', dataDir, seconds: 0.3, alive: () => false })
   assert.deepEqual(died, { done: true, ok: false, status: 'died', text: null })
@@ -260,7 +260,7 @@ test('a correction never carries an older lane patch past Claude work or a missi
   fs.writeFileSync(patch, 'old')
   const external = path.join(dataDir, 'delegates', 'external', '2-s1--t1.json')
   fs.mkdirSync(path.dirname(external), { recursive: true })
-  fs.writeFileSync(external, JSON.stringify({ session: 's1', attempt: 3, edits: true, carry: true, owns: [] }))
+  fs.writeFileSync(external, JSON.stringify({ session: 's1', attempt: 3, edits: true, carry: true, owns: [], step: 'haiku-high' }))
   fs.copyFileSync(external, path.join(path.dirname(external), 't1.json')) // An in-flight legacy launch has the same description.
   log.appendEntry(dataDir, { kind: 'result', session: 's1', task: 't1', attempt: 1, patch })
   log.appendEntry(dataDir, { kind: 'answer', session: 's1', task: 't1', attempt: 2, text: 'Claude work' })

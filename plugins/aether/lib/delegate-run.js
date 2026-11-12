@@ -15,12 +15,13 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { isObject, isText, messageOf, pidAlive, sleep: realSleep } = require('./common.js')
-const { pairId } = require('./pairs.js')
+const { pairId, nativeModels, loadPairs } = require('./pairs.js')
 const log = require('./delegate-log.js')
 const checksLib = require('./delegate-checks.js')
 const delegateChain = require('./delegate-chain.js')
 const laneDelegate = require('./lane-delegate.js')
 const lanes = require('./lanes.js')
+const { loadLadder } = require('./ladder.js')
 const { readDelegateSettings } = require('./session.js')
 
 const BIN = path.join(__dirname, '..', 'bin', 'aether-delegate')
@@ -28,6 +29,8 @@ const ID = /^[A-Za-z0-9_-]+$/
 const POLL_MS = 250
 // The longest single wait: under the engine's limit on one step, so the mod asks again rather than being cut off.
 const MAX_WAIT_SECONDS = 540
+// The longest reason an attempt records (issue 240): one line of the cause, never the brief or an answer.
+const REASON_MAX = 300
 
 // ---- the files of a launch ----
 
@@ -39,6 +42,16 @@ const runLog = (dataDir, id, session) => path.join(delegatesDir(dataDir), 'run',
 
 function assertId(id) {
   if (typeof id !== 'string' || !ID.test(id)) throw new Error(`the delegate id must be letters, digits, - and _, not ${JSON.stringify(id)}`)
+}
+
+// The first of the candidates that is text, as one line of at most REASON_MAX characters; null when none is.
+function reasonOf(...candidates) {
+  for (const value of candidates) {
+    if (!isText(value)) continue
+    const line = value.replace(/\s+/g, ' ').trim()
+    return line.length > REASON_MAX ? `${line.slice(0, REASON_MAX - 3)}...` : line
+  }
+  return null
 }
 
 let writeCounter = 0
@@ -61,6 +74,16 @@ function readJson(file) {
   } catch (err) {
     return { found: err.code !== 'ENOENT', value: null }
   }
+}
+
+// The Claude model an editing charge runs on: the model of its rung in config/ladder.json, found by the step. A step
+// that is already a native model name (an external file written before 0.37.0) stands for itself. Null when the ladder
+// has no such step (issue 240: `aether-lane delegate` takes the model, never the step).
+function claudeModelOf(step) {
+  if (!isText(step)) return null
+  if (nativeModels(loadPairs().pairs).includes(step)) return step
+  const rung = loadLadder().rungs.find((entry) => entry.step === step)
+  return rung ? rung.model : null
 }
 
 // ---- start ----
@@ -193,7 +216,12 @@ function editsText(external, done, checks, patch, checkBase) {
 }
 
 async function runEdits(external, { cwd, dataDir }, delegateCommand) {
-  const flags = { brief: external.brief, model: external.step, effort: external.effort, owns: external.owns.join(',') }
+  const model = claudeModelOf(external.step)
+  if (model === null) {
+    const named = isText(external.step) ? external.step : 'none'
+    return { result: { ok: false, status: 'failed', text: null, checks: null, reason: reasonOf(`the step ${named} is not a rung of config/ladder.json`) }, entry: { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null } }
+  }
+  const flags = { brief: external.brief, model, effort: external.effort, owns: external.owns.join(',') }
   if (isText(external.tests)) flags.tests = external.tests
   if (isText(external.session)) flags.session = external.session
   if (isText(external.pin)) flags.pair = external.pin
@@ -214,7 +242,8 @@ async function runEdits(external, { cwd, dataDir }, delegateCommand) {
   }
   if (!isObject(done) || done.status !== 'done') {
     const status = isObject(done) && isText(done.status) ? done.status : 'failed'
-    return { result: { ok: false, status, text: null, checks: null }, entry: { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null } }
+    const reason = isObject(done) ? reasonOf(done.reason, done.cause) : null
+    return { result: { ok: false, status, text: null, checks: null, reason }, entry: { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null } }
   }
   // The commit the delegate's branch was built on, not the launch base: when the Lead committed
   // between the launch and the harvest, the branch forked later, and those commits do not count
@@ -228,7 +257,7 @@ async function runEdits(external, { cwd, dataDir }, delegateCommand) {
     // A patch that cannot be saved costs a later correction its starting point, not this attempt its result.
   }
   return {
-    result: { ok: true, status: 'done', text: editsText(external, done, checks, patch, checkBase), checks },
+    result: { ok: true, status: 'done', text: editsText(external, done, checks, patch, checkBase), checks, reason: null },
     entry: { pair: pairOf(done.pair), branch: done.branch ?? null, worktree: done.worktree ?? null, base: done.base ?? null, checkBase: checkBase ?? null, head: done.head ?? null, patch, answer: null, review: done.review ?? null },
   }
 }
@@ -239,7 +268,7 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
   // ends the attempt: the checkout is never copied in its place, because the answer would be about the wrong tree (issue 185).
   const tree = isText(external.tree) ? external.tree : null
   if (tree !== null && !fs.existsSync(tree)) {
-    return { result: { ok: false, status: 'failed', text: null, checks: null }, entry: { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null } }
+    return { result: { ok: false, status: 'failed', text: null, checks: null, reason: reasonOf(`tree not found: ${tree}`) }, entry: { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null } }
   }
   const chain = await runChain({ cwd: tree ?? cwd, id: external.id, session: external.session ?? null, external, config, dataDir })
   const last = Array.isArray(chain.attempts) && chain.attempts.length > 0 ? chain.attempts[chain.attempts.length - 1] : null
@@ -248,9 +277,9 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
   const none = { pair, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null }
   if (chain.status === 'violation') {
     const checks = checksLib.checkReadOnly({ files: changed })
-    return { result: { ok: false, status: 'violation', text: null, checks }, entry: none }
+    return { result: { ok: false, status: 'violation', text: null, checks, reason: reasonOf(chain.reason, last?.detail, chain.detail) }, entry: none }
   }
-  if (!chain.ok) return { result: { ok: false, status: chain.status ?? 'failed', text: null, checks: null }, entry: none }
+  if (!chain.ok) return { result: { ok: false, status: chain.status ?? 'failed', text: null, checks: null, reason: reasonOf(chain.reason, last?.detail, chain.detail) }, entry: none }
   const answer = typeof chain.text === 'string' ? chain.text : ''
   const checks = checksLib.checkReadOnly({ answer, files: changed })
   const answerPath = path.join(delegatesDir(dataDir), 'answers', `${log.fileKey(external.session ?? null, external.id)}-${external.attempt}.md`)
@@ -263,7 +292,7 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
     // The Lead still reads the answer in the text.
   }
   const text = [chain.attribution, '', answer, '', checksLine(checks), judgeLine(external.id)].filter((part) => part !== null && part !== undefined).join('\n')
-  return { result: { ok: true, status: chain.status ?? 'ok', text, checks }, entry: { ...none, answer: saved } }
+  return { result: { ok: true, status: chain.status ?? 'ok', text, checks, reason: null }, entry: { ...none, answer: saved } }
 }
 
 // Runs the attempt the external file of `id` describes, and writes its result to results/<session-task-key>.json and to the log. The
@@ -278,7 +307,7 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
     const read = readJson(externalFile(dataDir, id, session))
     const external = isObject(read.value) ? { ...read.value, id } : null
     if (!external) {
-      outcome = { result: { ok: false, status: 'unavailable', text: null, checks: null }, entry: {} }
+      outcome = { result: { ok: false, status: 'unavailable', text: null, checks: null, reason: reasonOf('the external file of the task is missing or unreadable') }, entry: {} }
     } else {
       attempt = Number.isInteger(external.attempt) ? external.attempt : null
       session = isText(external.session) ? external.session : null
@@ -289,13 +318,13 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
       outcome = external.edits ? await runEdits(external, { cwd: workDir, dataDir }, delegateCommand) : await runReadOnly(external, { cwd: workDir, dataDir }, runChain)
     }
   } catch (err) {
-    // Under `start`, stderr is the run's log (run/<session-task-key>.log): the reason stays there.
-    process.stderr.write(`aether-delegate run ${id}: ${messageOf(err)}\n`)
-    outcome = { result: { ok: false, status: 'failed', text: null, checks: null }, entry: {} }
+    outcome = { result: { ok: false, status: 'failed', text: null, checks: null, reason: reasonOf(messageOf(err)) }, entry: {} }
   }
-  const result = { ...outcome.result, attempt }
+  const result = { ...outcome.result, attempt, reason: outcome.result.reason ?? null }
+  // Under `start`, stderr is the run's log (run/<session-task-key>.log): the reason of a failed attempt stays there.
+  if (result.reason !== null) process.stderr.write(`aether-delegate run ${id}: ${result.reason}\n`)
   const empty = { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null }
-  log.appendEntry(dataDir, { kind: 'result', time: now(), session, task: id, attempt, ok: result.ok, status: result.status, ...empty, ...outcome.entry, checks: result.checks })
+  log.appendEntry(dataDir, { kind: 'result', time: now(), session, task: id, attempt, ok: result.ok, status: result.status, ...empty, ...outcome.entry, checks: result.checks, reason: result.reason })
   try {
     if (typeof id === 'string' && ID.test(id)) writeAtomic(resultFile(dataDir, id, pathSession), `${JSON.stringify(result)}\n`)
   } catch {
@@ -323,7 +352,7 @@ function recordAnswer({ task, attempt, text, session, dataDir, now = Date.now })
 
 function finished(read) {
   const value = isObject(read.value) ? read.value : {}
-  return { done: true, ok: value.ok === true, status: isText(value.status) ? value.status : 'failed', text: typeof value.text === 'string' ? value.text : null }
+  return { done: true, ok: value.ok === true, status: isText(value.status) ? value.status : 'failed', text: typeof value.text === 'string' ? value.text : null, reason: isText(value.reason) ? value.reason : null }
 }
 
 // Polls for the result of `id` for up to `seconds` (at most MAX_WAIT_SECONDS). A run whose process is gone without a
