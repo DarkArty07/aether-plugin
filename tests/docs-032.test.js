@@ -52,11 +52,19 @@ test('methodology.md and roadmap.md no longer describe the old climb by correcti
   assert.match(read('docs/roadmap.md'), /The default is `high` on every model/)
 })
 
-test('the texts say the refresh reads the model pages, writes only the code figures of the Claude rows, and needs no key (R16, R12)', () => {
+test('the texts say the refresh reads every row with a page, writes their figures together, and still does not save the ladder (spec 036 R9)', () => {
   assert.doesNotMatch(read('AGENTS.md'), /refreshes the lane table \(needs `ARTIFICIAL_ANALYSIS_API_KEY`\)/)
   assert.match(read('AGENTS.md'), /model pages/)
-  assert.match(read('AGENTS.md'), /code figures/)
+  assert.match(read('AGENTS.md'), /every row with a page/)
+  assert.match(read('AGENTS.md'), /does not save it/)
   assert.doesNotMatch(read('docs/contributing.md'), /refresh-lanes\.js` updates the lane table[^\n]*ARTIFICIAL_ANALYSIS_API_KEY/)
+  assert.doesNotMatch(read('docs/contributing.md'), /part 2/)
+  assert.match(read('docs/contributing.md'), /every row with a page/)
+  assert.match(read('docs/contributing.md'), /does not save it/)
   assert.doesNotMatch(read('docs/reference/artificial-analysis.md'), /`scripts\/refresh-lanes\.js` and `scripts\/build-models-index\.js` are the only code that asks the API/)
+  assert.doesNotMatch(read('docs/reference/artificial-analysis.md'), /part 2/)
   assert.match(read('docs/reference/artificial-analysis.md'), /model pages/)
+  assert.match(read('docs/reference/artificial-analysis.md'), /does not save it/)
+  assert.match(read('docs/guide/lanes.md'), /every row with a page/)
+  assert.match(read('docs/guide/lanes.md'), /never saves it/)
 })

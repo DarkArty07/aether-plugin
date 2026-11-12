@@ -451,13 +451,41 @@ function checkUnitUnchanged(cwd, runId, taskId, before) {
   return same ? { ok: true } : { ok: false, detail: 'the unit worktree changed during a read-only lane call' }
 }
 
+// Called after an attempt of an implementer on another harness, before checkOwns and before the package is made.
+// worktree: path; branch: the unit's branch. HEAD attached to `branch`: { moved: false }.
+// HEAD detached, ahead of the branch and the branch is its ancestor: runs `git branch -f <branch> HEAD`, then
+//   `git checkout <branch>` in the worktree (uncommitted files stay in the working tree), returns { moved: true, head: <sha> }.
+// HEAD detached and not a descendant of the branch (and not equal to it): returns
+//   { rejected: true, reason: 'HEAD <sha7> is detached and does not descend from <branch> (<sha7>); its commit is not on the unit branch' }.
+function reattachDetached(worktree, branch) {
+  if (git(['branch', '--show-current'], worktree).stdout === branch) return { moved: false }
+  const headSha = git(['rev-parse', 'HEAD'], worktree).stdout
+  const branchSha = git(['rev-parse', branch], worktree).stdout
+  if (headSha === branchSha) {
+    git(['checkout', branch], worktree)
+    return { moved: false }
+  }
+  if (git(['merge-base', '--is-ancestor', branch, headSha], worktree, { allowFail: true }).status === 0) {
+    git(['branch', '-f', branch, headSha], worktree)
+    git(['checkout', branch], worktree)
+    return { moved: true, head: git(['rev-parse', branch], worktree).stdout }
+  }
+  const short = (sha) => sha.slice(0, 7)
+  return { rejected: true, reason: `HEAD ${short(headSha)} is detached and does not descend from ${branch} (${short(branchSha)}); its commit is not on the unit branch` }
+}
+
 // Commits what the external agent left in the unit worktree, then packages the unit for review.
+// The work is re-attached to the unit's branch first, so a commit lands on the branch and the
+// head named is the commit the branch is at, not the worktree's HEAD.
 function finishImplementer(cwd, runId, taskId) {
   run.assertTaskId(taskId)
   const { mainRoot } = repoPaths(cwd)
+  const branch = run.unitBranch(runId, taskId)
   const worktree = run.unitWorktree(mainRoot, runId, taskId)
   // In any other directory, git would act on the checkout around it.
   if (!isWorktreeRoot(worktree)) throw new Error(`${worktree} is not a worktree; run aether-wt ensure first`)
+  const reattached = reattachDetached(worktree, branch)
+  if (reattached.rejected) throw new Error(reattached.reason)
   let committed = false
   if (uncommittedFiles(worktree).length > 0) {
     git(['add', '-A'], worktree)
@@ -465,7 +493,7 @@ function finishImplementer(cwd, runId, taskId) {
     committed = true
   }
   const packageFile = diffPackage(cwd, runId, taskId).path
-  return { head: git(['rev-parse', 'HEAD'], worktree).stdout, package: packageFile, committed }
+  return { head: git(['rev-parse', branch], worktree).stdout, package: packageFile, committed }
 }
 
 module.exports = {
@@ -478,6 +506,7 @@ module.exports = {
   checkIntegration,
   checkOwns,
   checkUnitUnchanged,
+  reattachDetached,
   finishImplementer,
   CARRY_UNAPPLICABLE,
   patchHasDiff,

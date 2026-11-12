@@ -104,7 +104,7 @@ function readAllEntries(dataDir, { task = null, session = null, since = 0 } = {}
   return sources.flat().sort((a, b) => timeOf(a) - timeOf(b))
 }
 
-// The earlier work a correction or a rise builds on, for both the prompt and any carried patch, from one log entry:
+// The earlier work a rung or a rise builds on, for both the prompt and any carried patch, from one log entry:
 // the latest answer recorded on Claude, or otherwise the latest result. A result carries its patch when the patch file
 // still exists, and only its description when the file is gone; a result with an answer carries that answer.
 function previousWork(entries) {

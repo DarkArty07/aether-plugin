@@ -124,6 +124,16 @@ test('a task that is not in the run is an error', (t) => {
   assert.throws(() => view(s, 'task-9'), /task-9/)
 })
 
+test('a state whose step is absent from the rungs throws ladder: unknown step, not a TypeError', (t) => {
+  const s = setup(t)
+  view(s)
+  const file = path.join(s.args.runDir, 'ladder', 'task-1.json')
+  const record = JSON.parse(fs.readFileSync(file, 'utf8'))
+  record.state.step = 'no-such-step'
+  fs.writeFileSync(file, JSON.stringify(record))
+  assert.throws(() => view(s), /ladder: unknown step no-such-step/)
+})
+
 test('a shorter ladder given in options changes the rungs of the unit', (t) => {
   const short = { ...L, rungs: L.rungs.slice(3) }
   const s = setup(t)

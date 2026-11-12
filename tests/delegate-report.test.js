@@ -278,6 +278,25 @@ test('an attempt that edits on Claude is unverdicted once its ended line is in t
   assert.deepEqual([byId.get('e-ended').applied, byId.get('e-ended').ranOn], ['rewritten', { harness: 'claude', model: 'haiku', effort: 'high' }])
 })
 
+test('a launch recorded in one install and its result in another report as one task (#232 17)', (t) => {
+  const root = tempDir(t, 'aether-installs-')
+  const dataA = path.join(root, 'data', 'aether-aether-plugin')
+  const dataB = path.join(root, 'data', 'aether-inline')
+  const launchEntry = at({ kind: 'launch', task: 'cross', step: 'haiku', attempt: 1, launchKind: 'first', description: 'd-cross', effort: 'high', edits: true })
+  const pair = { id: 'agy/gemini-3.8-flash@medium', harness: 'agy', model: 'gemini-3.8-flash', effort: 'medium' }
+  const resultEntry = at({ kind: 'result', task: 'cross', attempt: 1, ok: true, status: 'done', pair })
+  log.appendEntry(dataA, launchEntry)
+  log.appendEntry(dataB, resultEntry)
+  for (const dataDir of [dataA, dataB]) {
+    const { delegations } = delegatesReport({ dataDir })
+    assert.equal(delegations.length, 1, `one task from ${dataDir}`)
+    const row = delegations[0]
+    assert.equal(row.id, 'cross')
+    assert.deepEqual([row.applied, row.ranOn], ['external', { harness: 'agy', model: 'gemini-3.8-flash', effort: 'medium' }])
+    assert.equal(row.fallback, null)
+  }
+})
+
 test('a fix verdict and a new launch hide the earlier ended line until the new attempt ends too (spec 031, C1)', (t) => {
   const dataDir = tempDir(t, 'aether-del-ended-fix-')
   log.appendEntry(dataDir, editing('t1', 1, 'first'))

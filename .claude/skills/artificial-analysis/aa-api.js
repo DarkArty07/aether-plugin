@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// Reads the figures of models from their Artificial Analysis pages: the code figures for scripts/refresh-lanes.js, and Terminal-Bench
+// Reads the figures of models from their Artificial Analysis pages: the pair figures for scripts/refresh-lanes.js, and Terminal-Bench
 // for scripts/build-models-index.js --pages.
 //
 //   node aa-api.js <slug>...
@@ -23,10 +23,12 @@ function round(value, digits) {
 
 // The block of the page's own model: the first AA-Briefcase block whose nearest model start before it is `slug`. Its text runs
 // from that start (the scalars come before the evals) and its evals are read into { score, outputTokens, costUsd, seconds } by
-// their slug. Null when the page has no block for the slug.
+// their slug, with the intelligence index and the cost per task of the block alongside (null when the page does not carry
+// them as numbers). Null when the page has no block for the slug.
 function ownBlock(html, slug) {
   const text = html.replace(/\\"/g, '"')
   const starts = [...text.matchAll(/"slug":"([a-z0-9.-]+)","name":"([^"]+)","shortName":"([^"]+)"/g)]
+  const finiteOrNull = (value) => (Number.isFinite(value) ? value : null)
   for (const b of text.matchAll(/"briefcaseBreakdown":/g)) {
     const start = [...starts].reverse().find((s) => s.index < b.index)
     if (!start || start[1] !== slug) continue
@@ -35,7 +37,9 @@ function ownBlock(html, slug) {
     for (const m of segment.matchAll(/\{"slug":"([^"]+)","score":(-?[\d.]+),"outputTokensPerTask":(-?[\d.]+),"costPerTask":(-?[\d.e-]+),"timePerTask":(-?[\d.]+)\}/g)) {
       evals[m[1]] = { score: +m[2], outputTokens: Math.round(+m[3]), costUsd: +m[4], seconds: +m[5] }
     }
-    return { evals }
+    const intelligence = /"scalars":\{"intelligenceIndex":(-?[\d.e-]+|null)/.exec(segment)
+    const cost = /"intelligenceIndexCostPerTask":\{"cost":\{"total":(-?[\d.e-]+|null)/.exec(segment)
+    return { evals, intelligence: finiteOrNull(intelligence ? +intelligence[1] : NaN), costPerTaskUsd: finiteOrNull(cost ? +cost[1] : NaN) }
   }
   return null
 }
@@ -134,7 +138,25 @@ async function cli(argv) {
   }
 }
 
-module.exports = { PAGE_URL, figuresOf, indexesOf, readPages, cli }
+// The figures the pairs table keeps for a row, from the block of the page's own model: intelligence (1 decimal),
+// cost per task (3), code (2), code cost (3) and code minutes (1). Null when the page has no block for the slug;
+// the code triple is null when the block has no Terminal-Bench, and intelligence or cost is null when the page
+// does not carry it as a number.
+function pairFiguresOf(html, slug) {
+  const own = ownBlock(html, slug)
+  if (!own) return null
+  const tb = own.evals['terminalbench-4-0']
+  const hasCode = tb && Number.isFinite(tb.score) && Number.isFinite(tb.costUsd) && Number.isFinite(tb.seconds)
+  return {
+    intelligence: own.intelligence === null ? null : round(own.intelligence, 1),
+    costPerTaskUsd: own.costPerTaskUsd === null ? null : round(own.costPerTaskUsd, 3),
+    code: hasCode ? round(tb.score * 100, 2) : null,
+    codeCostPerTaskUsd: hasCode ? round(tb.costUsd, 3) : null,
+    codeMinutesPerTask: hasCode ? round(tb.seconds / 60, 1) : null,
+  }
+}
+
+module.exports = { PAGE_URL, figuresOf, indexesOf, pairFiguresOf, readPages }
 
 if (require.main === module) {
   cli(process.argv.slice(2)).catch((error) => {

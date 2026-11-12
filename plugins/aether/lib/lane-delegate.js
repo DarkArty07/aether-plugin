@@ -14,7 +14,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { repoPaths, currentBranch, head } = require('./git.js')
+const { git, repoPaths, currentBranch, head } = require('./git.js')
 const run = require('./run.js')
 const lanes = require('./lanes.js')
 const pairs = require('./pairs.js')
@@ -504,6 +504,10 @@ async function delegateWithEnv(cwd, flags, deps) {
 
     const implementer = written.result
     const worktree = run.unitWorktree(paths.mainRoot, id, TASK_ID)
+    const unitBranch = run.unitBranch(id, TASK_ID)
+    // The implementer call already ran reattachDetached before its Owns check. This loop returns a
+    // result only when that call's status is ok, so a detached HEAD off the branch never arrives here:
+    // it is a failed attempt, and its reason is already `written.reason`.
     const tests = charge.tests === null ? null : runTests(worktree, charge.tests)
     const reviewed = await runLoop(ctx, {
       role: 'reviewer',
@@ -522,10 +526,10 @@ async function delegateWithEnv(cwd, flags, deps) {
       status: 'done',
       id,
       run: id,
-      branch: run.unitBranch(id, TASK_ID),
+      branch: unitBranch,
       worktree,
       base,
-      head: typeof implementer.head === 'string' && implementer.head !== '' ? implementer.head : head(worktree),
+      head: typeof implementer.head === 'string' && implementer.head !== '' ? implementer.head : git(['rev-parse', unitBranch], paths.mainRoot).stdout,
       pair: pairOf(written.picked),
       reason: written.reason,
       summary: implementer.summary,

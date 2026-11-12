@@ -73,9 +73,7 @@ Return the structured report the workflow asks for:
   - `BLOCKED`: you cannot complete the task.
 - `summary`: what you built, the files you changed, and what your self-review found.
 - `head`: the commit your unit branch ends on (`git rev-parse HEAD` in the worktree). Leave it empty if you made no commit.
-- `tests`:
-  - RED: the command and the failing output you expected;
-  - GREEN: the command and the passing output.
+- `tests`: the test commands you ran and their results.
 - `concerns` and `question`: empty unless they apply.
 
 Never quietly hand in work you are unsure about.
