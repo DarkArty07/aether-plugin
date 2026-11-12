@@ -250,7 +250,7 @@ test('a mark the Writer could not settle goes back as a clarify, before any revi
 test('an agent that ends without an answer is tried again once, and the second time the design fails (R3)', async () => {
   const none = await go(ARGS, { writer: (call, fallback) => (call.label.startsWith('spec: writer write') ? null : fallback(call)) })
   assert.equal(none.result.status, 'failed')
-  assert.equal(none.result.failed.step, 'spec-writer')
+  assert.equal(none.result.step, 'spec-writer')
   assert.deepEqual(nativeCalls(none).map((c) => c.label), ['spec: writer write', 'spec: writer write (retry)'])
   let first = true
   const once = await go(ARGS, { judge: (call, fallback) => (first && call.label === 'spec: judge review 1' ? ((first = false), null) : fallback(call)) })
@@ -262,8 +262,8 @@ test('a plan that fails aether-plan check gets one more try with the errors, the
   const error = 'Task 2 serves no requirement: add a "- Serves: R1" line to its Aether block.'
   const failing = (call, fallback) => (call.command.verb === 'check' ? { raw: { exitCode: 1, stdout: `${JSON.stringify({ ok: false, errors: [error], warnings: [] })}\n` } } : fallback(call))
   const run = await go(ARGS, { ops: failing })
-  assert.deepEqual([run.result.status, run.result.failed.step], ['failed', 'plan-check'])
-  assert.ok(run.result.failed.reason.includes(error))
+  assert.deepEqual([run.result.status, run.result.step], ['failed', 'plan-check'])
+  assert.ok(run.result.reason.includes(error))
   const writes = nativeCalls(run).filter((c) => c.label.startsWith('plan: writer'))
   assert.deepEqual(writes.map((c) => c.label), ['plan: writer write', 'plan: writer write (retry)'])
   assert.ok(writes[1].prompt.includes(error))
@@ -1507,4 +1507,59 @@ test('refusals in later seats retain their stop and do not invoke that native se
     assert.equal(run.result.reason, 'paused')
     assert.equal(run.result.rounds.length, target)
   }
+})
+
+// #232 8: every failed design has { status: 'failed', step, reason }. The rows reuse the
+// failure situations this file already builds: a seat that never answers, a Judge that never
+// answers, an Examiner that never answers, and a seat-start the autonomous run refuses.
+test('every failed design has status, a string step and a string reason (#232 8)', async () => {
+  const refusal = { started: false, refused: true, stop: 'quota', run: 'run-1', reason: 'paused' }
+  const cases = [
+    ['seat failure', { writer: () => null }, (run) => run.result],
+    ['judge failure', { judge: () => null }, (run) => run.result],
+    // A failed exam does not undo the approval: the failed return is the exam field.
+    ['exam failure', { examiner: () => null }, (run) => run.result.exam],
+    ['refusal', { ops: (call, fallback) => (call.command.verb === 'seat-start' ? refusal : fallback(call)) }, (run) => run.result],
+  ]
+  for (const [name, overrides, failedOf] of cases) {
+    const run = await go(ARGS, overrides)
+    assert.equal(run.error, null, run.error && run.error.stack)
+    const result = failedOf(run)
+    assert.equal(result.status, 'failed', `${name}: ${JSON.stringify(run.result)}`)
+    assert.equal(typeof result.step, 'string', name)
+    assert.equal(typeof result.reason, 'string', name)
+    assert.ok(result.step.length > 0, name)
+    assert.ok(result.reason.length > 0, name)
+  }
+})
+
+// #232 10: a refused seat-start is recorded before the try returns, and must not look native.
+test('a refused seat-start records provider null and refused, never native (#232 10)', async () => {
+  const run = await go(ARGS, {
+    ops: (call, fallback) => (call.command.verb === 'seat-start' ? { started: false, refused: true, stop: 'time', run: 'run-1', reason: 'autonomous run stopped: time' } : fallback(call)),
+  })
+  assert.equal(run.result.status, 'failed')
+  assert.equal(run.result.rounds.length, 1)
+  const round = run.result.rounds[0]
+  assert.equal(round.provider, null)
+  assert.equal(round.refused, true)
+  assert.notEqual(round.provider, 'native')
+})
+
+// #232 12: the comment above seatRound names the refused { stop, run } path.
+test('the seatRound comment names the refused stop and run path (#232 12)', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'workflows', 'design.workflow.js'), 'utf8')
+  const at = source.indexOf('async function seatRound(')
+  assert.ok(at > 0)
+  const lines = source.slice(0, at).split('\n')
+  const comment = []
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim()
+    if (line === '') continue
+    if (!line.startsWith('//')) break
+    comment.unshift(line)
+  }
+  const text = comment.join('\n')
+  assert.match(text, /\bstop\b/)
+  assert.match(text, /\brun\b/)
 })
