@@ -64,7 +64,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | plan | `plan-` | `plan-compile.js`, `plan-scope.js` | `plan.js` |
 | session | `session-` | `session-start.js` | `session.js` |
 | harness | `lib/harness/` | `index.js`, `structured.js`, `agy.js`, `codex.js`, `cursor.js`, `grok.js`, `muse.js`, `muse-quota.js` | `index.js` |
-| wt | `wt-` | `wt-gate.js`, `wt-ladder.js` | none |
+| wt | `wt-` | `wt-config.js`, `wt-gate.js`, `wt-ladder.js`, `wt-stuck.js`, `wt-watch.js` | none |
 | audit | `audit-` | `audit-analyze.js`, `audit-clean.js`, `audit-common.js`, `audit-exec.js`, `audit-github.js`, `audit-report.js`, `audit-risk.js`, `audit-scan.js`, `audit-snapshot.js`, `audit-store.js`, `audit-tools.js`, `audit-triage.js`, `audit-verify.js` | `audit.js` |
 | continuity | `continuity-` | `continuity-store.js`, `continuity-hook.js`, `continuity-notice.js`, `continuity-posttool.js`, `continuity-permission.js` | `none` |
 | tree | `tree-` | `tree-paths.js`, `tree-check.js`, `tree-map.js`, `tree-clean.js`, `tree-migrate.js` | `none` |
@@ -72,6 +72,8 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | tidy | `tidy-` | `tidy-detect.js`, `tidy-report.js`, `tidy-guard.js` | `none` |
 
 Loose modules (no family): `autonomy.js`, `autonomy-command.js`, `baseline.js`, `common.js`, `doctor.js`, `exam.js`, `first-setup.js`, `git.js`, `globs.js`, `guard.js`, `pairs.js`, `pareto.js`, `pending.js`, `prices.js`, `quota-refusal.js`, `report.js`, `run.js`, `superdelegation.js`, `voice.js` and `worktrees.js`; lane-command.js is a member of the lane family. (`autonomy-command.js` is declared loose: its prefix is not a family with more members.)
+
+Configuration data (read by the libraries, not options): `config/ladder.json`, `config/lanes.json`, `config/pairs.json`, `config/models/models.json`, `config/prices.json`, `config/autonomy.json`, `config/observe.json` and `config/swarm.json`.
 
 The `<dataDir>/router/` directory and `source: 'router'` keep that name, the same as the family.
 
