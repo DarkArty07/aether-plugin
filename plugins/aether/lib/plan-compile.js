@@ -26,6 +26,7 @@ const { loadPairs } = require('./pairs.js')
 const { runShell } = require('./common.js')
 const baseline = require('./baseline.js')
 const wt = require('./worktrees.js')
+const { loadSwarmConfig } = require('./wt-config.js')
 
 const USAGE =
   'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline]'
@@ -456,6 +457,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
     },
     testCommand: parsed.execution.testCommand,
     maxAgents: parsed.execution.maxAgents,
+    stuckWaitSeconds: loadSwarmConfig().stuckWaitSeconds,
     waves: graph.waves,
     tasks,
     ...(alreadyMerged ? { alreadyMerged } : {}),
@@ -476,6 +478,9 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
       )
     }
   }
+  fs.rmSync(run.stuckDir(repo.mainRoot, runId), { recursive: true, force: true })
+  fs.rmSync(run.heartbeatFile(repo.mainRoot, runId), { force: true })
+  fs.rmSync(run.launchEndFile(repo.mainRoot, runId), { force: true })
   run.writeJson(graphFile, args)
   // graph.json keeps only this launch's units; units.json keeps every launch's, for the next compile (issue #111).
   run.extendUnits(dir, graph.tasks)

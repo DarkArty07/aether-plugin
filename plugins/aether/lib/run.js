@@ -57,6 +57,26 @@ function runDir(mainRoot, runId) {
   return path.join(aetherDir(mainRoot), 'runs', runId)
 }
 
+function stuckDir(mainRoot, runId) {
+  return path.join(runDir(mainRoot, runId), 'stuck')
+}
+
+function stuckFile(mainRoot, runId, taskId) {
+  return path.join(stuckDir(mainRoot, runId), `${taskId}.json`)
+}
+
+function heartbeatFile(mainRoot, runId) {
+  return path.join(runDir(mainRoot, runId), 'heartbeat.json')
+}
+
+function launchEndFile(mainRoot, runId) {
+  return path.join(runDir(mainRoot, runId), 'launch-end.json')
+}
+
+function stuckPayloadFile(mainRoot, runId, taskId) {
+  return path.join(runDir(mainRoot, runId), 'ladder', `${taskId}-stuck.json`)
+}
+
 function worktreesDir(mainRoot, runId) {
   return path.join(aetherDir(mainRoot), 'worktrees', runId)
 }
@@ -174,6 +194,11 @@ module.exports = {
   examCopiesDir,
   workDir,
   runDir,
+  stuckDir,
+  stuckFile,
+  heartbeatFile,
+  launchEndFile,
+  stuckPayloadFile,
   worktreesDir,
   unitWorktree,
   unitBranch,
