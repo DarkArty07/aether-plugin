@@ -67,38 +67,27 @@ test('a read-only delegate runs on agy with the model of the rung, and its answe
   assert.equal(fs.existsSync(path.join(s.repo.dir, '.aether', 'work', 'delegates', DEFAULT_ID, 'wt')), false)
 })
 
-test('a checkout with uncommitted work is dirty: the disposable copy would not see it, so nothing is read or launched', async (t) => {
+test('a checkout with uncommitted work is not refused: its copy holds that work, so the delegate runs on it (issues 198 and 185)', async (t) => {
   const edited = setup(t)
   fs.writeFileSync(path.join(edited.repo.dir, 'README.md'), 'fixture, edited by the Lead\n')
   const out = await run(edited, 'Audit.\nFAKE-AGY: answer {"answer": "x"}')
-  assert.equal(out.status, 'dirty')
-  assert.match(out.detail, /uncommitted/)
-  assert.match(out.detail, /README\.md/)
-  assert.match(out.detail, /would not see/)
-  assert.equal(out.text, '')
-  assert.equal(out.quotaBefore, null, 'the quota was not read')
-  assert.deepEqual(out.quotaSpent, [])
-  assert.equal(edited.modelCalls().length, 0)
-  assert.equal(edited.usageCalls().length, 0, 'the check comes before the quota reading')
+  assert.equal(out.status, 'ok', out.detail)
+  assert.equal(out.text, 'x')
+  assert.equal(out.uncommitted, true, 'the copy carried uncommitted work')
+  assert.equal(edited.modelCalls().length, 1, 'the delegate ran on agy')
   assert.equal(worktrees(edited), 1)
   assert.equal(fs.existsSync(path.join(edited.repo.dir, '.aether', 'work', 'delegates', DEFAULT_ID)), false)
 
   const added = setup(t)
   fs.writeFileSync(path.join(added.repo.dir, 'notes.txt'), 'new, not committed\n')
-  const untracked = await run(added, 'Audit.')
-  assert.equal(untracked.status, 'dirty', 'an untracked file is work the copy would not have')
-  assert.match(untracked.detail, /notes\.txt/)
+  const untracked = await run(added, 'Audit.\nFAKE-AGY: answer {"answer": "y"}')
+  assert.equal(untracked.status, 'ok', untracked.detail)
+  assert.equal(untracked.uncommitted, true, 'an untracked file is in the copy')
 
   const staged = setup(t)
   fs.writeFileSync(path.join(staged.repo.dir, 'staged.txt'), 'staged\n')
   staged.repo.git('add', 'staged.txt')
-  assert.equal((await run(staged, 'Audit.')).status, 'dirty', 'a staged change is not committed either')
-
-  const many = setup(t)
-  for (let i = 1; i <= 8; i++) fs.writeFileSync(path.join(many.repo.dir, `f${i}.txt`), 'x\n')
-  const detail = (await run(many, 'Audit.')).detail
-  assert.match(detail, /3 more/, 'the detail names the first files and counts the rest')
-  assert.ok(detail.length < 400)
+  assert.equal((await run(staged, 'Audit.\nFAKE-AGY: answer {"answer": "z"}')).status, 'ok', 'a staged change is in the copy too')
 })
 
 test('a committed checkout runs; the directories Aether keeps in it, and the files git ignores, do not make it dirty', async (t) => {
@@ -201,7 +190,7 @@ test('issue 035: every outcome that did not run out of time says so, launched or
   assert.equal((await run(under, 'Audit.')).timedOut, false)
   const dirty = setup(t)
   fs.writeFileSync(path.join(dirty.repo.dir, 'README.md'), 'edited\n')
-  assert.equal((await run(dirty, 'Audit.')).timedOut, false)
+  assert.equal((await run(dirty, 'Audit.\nFAKE-AGY: answer {"answer": "x"}')).timedOut, false)
 })
 
 test('a group under the reserve is a quota failure, and agy is not launched (R26)', async (t) => {

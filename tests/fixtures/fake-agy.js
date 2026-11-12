@@ -14,6 +14,9 @@
 //   detach <pid file> <seconds>         starts `sleep <seconds>` in a session of its own, as agy starts
 //                                       its commands, and writes its pid to <pid file>
 //   env <absolute path>                 writes its environment there, as a JSON object
+//   export <absolute dir>               copies the working directory's files (not .git) to that directory, and writes
+//                                       there git-log.txt (the last 3 subjects), git-show.txt (the last commit's stat) and
+//                                       git-objects.txt (cat-file --batch-all-objects), as git sees them from here
 //   answer <json>                       the structured output
 //   usage <input> <output> <thinking> <cacheRead>   this turn's tokens (default 1000 200 0 500)
 //   exit-error [<text...>]              agy's answer to an invalid model: exit 1, status ERROR, with
@@ -80,6 +83,16 @@ if (prompt === '/usage') {
   process.exit(0)
 }
 
+// export: what the copy holds, and what git sees from the copy's directory (its own history and every object).
+function exportTree(dir) {
+  fs.mkdirSync(dir, { recursive: true })
+  fs.cpSync(process.cwd(), dir, { recursive: true, filter: (source) => path.basename(source) !== '.git' })
+  const git = (args) => spawnSync('git', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }).stdout
+  fs.writeFileSync(path.join(dir, 'git-log.txt'), git(['log', '--format=%s', '-3']))
+  fs.writeFileSync(path.join(dir, 'git-show.txt'), git(['show', '--stat', 'HEAD']))
+  fs.writeFileSync(path.join(dir, 'git-objects.txt'), git(['cat-file', '--batch-all-objects', '--batch']))
+}
+
 let structured = null
 let turn = [1000, 200, 0, 500]
 let mode = 'answer'
@@ -114,6 +127,8 @@ for (const line of prompt.split('\n')) {
     child.unref()
   } else if (verb === 'env') {
     fs.writeFileSync(rest[0], JSON.stringify(process.env))
+  } else if (verb === 'export') {
+    exportTree(rest[0])
   } else if (verb === 'answer') {
     structured = JSON.parse(rest.join(' '))
   } else if (verb === 'usage') {

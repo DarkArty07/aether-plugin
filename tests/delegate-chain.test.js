@@ -73,7 +73,7 @@ test('a refusal at the start tries the next candidate: both outcomes are journal
   assert.deepEqual([second.attempt, second.status, second.harness, second.model], [2, 'ok', 'grok', 'grok-4.7-high'])
   assert.ok(first.markedUntil > s.clock.t, 'the refusal wrote its mark')
   assert.equal(second.markedUntil, null)
-  assert.deepEqual(Object.keys(first).sort(), ['attempt', 'detail', 'durationMs', 'effort', 'harness', 'id', 'kind', 'markedUntil', 'model', 'quotaSpent', 'session', 'status', 'time', 'usage'], 'today\'s fields and the attempt')
+  assert.deepEqual(Object.keys(first).sort(), ['attempt', 'detail', 'durationMs', 'effort', 'envHeldBack', 'harness', 'id', 'kind', 'markedUntil', 'model', 'quotaSpent', 'session', 'status', 'time', 'tree', 'uncommitted', 'usage'], 'the fields of an attempt, with what its copy held (spec 033, D7)')
   assert.equal(first.session, 's1')
   const held = marks.readAllMarks(s.dataDir, s.clock.t)
   assert.deepEqual(held.map((m) => [m.harness, m.group, m.source]), [['agy', 'gemini', 'router']])

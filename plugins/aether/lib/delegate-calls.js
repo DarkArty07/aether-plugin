@@ -1,16 +1,16 @@
 'use strict'
 
 // A read-only delegate of the Lead on agy, codex, grok or muse, outside a run: one call of the harness's CLI, with the model
-// and the native effort of the pair the router chose, in a disposable worktree of the current commit. It is judged from
-// outside, as a design seat's round is (lib/seats.js): anything the delegate changed undoes its answer, and the
-// worktree is removed whatever happens. A checkout with uncommitted work is not delegated at all (the copy would
-// answer about older code). This module writes no log entry and no quota mark: the bin does.
+// and the native effort of the pair the router chose, in a disposable worktree of a snapshot of the tree: its HEAD plus
+// the uncommitted work that the copy may hold (spec 033, D1 to D3). It is judged from outside, as a design seat's round is
+// (lib/seats.js): anything the delegate changed undoes its answer, and the worktree is removed whatever happens. This
+// module writes no log entry and no quota mark: the bin does, and lib/delegate-chain.js writes the outcome's facts.
 // Family: delegate.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { isObject, killGroup, nulEntries, readTextOrEmpty, removeWorktree } = require('./common.js')
 const { git, repoPaths } = require('./git.js')
 const run = require('./run.js')
@@ -38,7 +38,9 @@ const DELEGATE_TOOL_BUDGET = 20
 const DELEGATE_NOTE = [
   '## You run as a read-only delegate',
   '',
-  'The current directory is a disposable copy of the repository. Your work is read-only: read files and run read-only commands such as `git log` or `grep`, but never change, create or delete a file, and never commit; any change undoes your answer.',
+  // Spec 033 D6: what the copy holds.
+  'The current directory is a disposable copy of the repository, taken at launch: the uncommitted changes of its tree are in one commit on top of the repository\'s history (`git show HEAD` shows them, when there are any). The copy has no files that git ignores, and no new .env files or uncommitted edits to them. An absolute path of the task that lies under the tree is the same file under the current directory.',
+  'Your work is read-only: read files and run read-only commands such as `git log` or `grep`, but never change, create or delete a file, and never commit; any change undoes your answer.',
   WORKDIR_RULE,
   `You have a few minutes, not an open-ended search: use at most about ${DELEGATE_TOOL_BUDGET} tool calls (every read and search counts), then stop and answer with the best you have, saying in the answer what you did not check.`,
   'Answer with one JSON object that matches this schema, and nothing else: {"answer": "<string>"}, where answer holds everything you found.',
@@ -97,19 +99,63 @@ function worktreeChanges(worktree, start) {
   return { files: [...files].sort(), head, moved: head !== start }
 }
 
-// The paths of the checkout that are not committed: changed, staged or new (not ignored). The disposable copy is
-// built from HEAD, so it has none of them. --no-optional-locks keeps this read from touching the index of a
-// checkout the Lead is editing.
-function uncommittedPaths(top) {
-  return nulList(['--no-optional-locks', 'status', '--porcelain', '-z', '--no-renames'], top).map((entry) => entry.slice(3))
+// ---- The snapshot ----
+
+// The copy holds the tree as it stands, not only its last commit (spec 033, D1, D2). A temporary index, the file
+// GIT_INDEX_FILE names in the environment of the three steps below only, starts from HEAD, takes in every change of the
+// working tree except what git ignores, Aether's own folders and the .env files, and is written as one commit on top of
+// HEAD. The Lead's own index is never read or written. `ENV_EXCLUDES` keep the .env names out at any depth, and
+// `ENV_NAMES` count them.
+const SNAPSHOT_IDENTITY = { GIT_AUTHOR_NAME: 'aether-delegate', GIT_AUTHOR_EMAIL: 'aether-delegate@localhost', GIT_COMMITTER_NAME: 'aether-delegate', GIT_COMMITTER_EMAIL: 'aether-delegate@localhost' }
+const ENV_EXCLUDES = [':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*']
+const ENV_NAMES = [':(glob)**/.env', ':(glob)**/.env.*']
+
+// git with its own environment: the snapshot's three steps differ from every other git call by GIT_INDEX_FILE alone.
+function gitWith(args, cwd, env) {
+  const r = spawnSync('git', args, { cwd, env: { ...process.env, ...env }, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  if (r.error) throw r.error
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${(r.stderr || r.stdout).trim()}`)
+  return r.stdout.trim()
 }
 
-const NAMED_CHANGES = 5
+// Whether git ignores `name` at the root of `top`, by the ignore rules alone (--no-index, so the answer does not depend on
+// the index of the Lead). Exit 0 is ignored, 1 is not, anything else throws. A name that is absent is not ignored: its
+// ignore line matches only a folder (spec 033, D1, step 2). This check runs in the Lead's own environment, not in the
+// snapshot's: it is not one of the three steps.
+function ignoredByGit(top, name) {
+  const r = spawnSync('git', ['check-ignore', '-q', '--no-index', '--', name], { cwd: top, encoding: 'utf8' })
+  if (r.error) throw r.error
+  if (r.status === 0) return true
+  if (r.status === 1) return false
+  throw new Error(`git check-ignore ${name} failed: ${(r.stderr || '').trim()}`)
+}
 
-function dirtyDetail(files) {
-  const named = files.slice(0, NAMED_CHANGES).join(', ')
-  const rest = files.length > NAMED_CHANGES ? ` and ${files.length - NAMED_CHANGES} more` : ''
-  return `the checkout has uncommitted changes (${named}${rest}): the disposable copy is built from the last commit and would not see them, so the delegate would answer about older code`
+// The exclude pathspecs of Aether's own folders (run.EXCLUDES holds `/<name>/`) for the tree `top`. A folder that git
+// already ignores gets none: `git add -A` leaves it out by its own rule, and git refuses an exclude pathspec that names
+// an ignored folder. A folder that git does not ignore gets `:(exclude,top)<name>/`: `top` roots it at the tree, so a
+// folder of the same name deeper down stays in the copy.
+function aetherExcludes(top) {
+  return run.EXCLUDES
+    .map((entry) => entry.replace(/^\/|\/$/g, ''))
+    .filter((name) => !ignoredByGit(top, name))
+    .map((name) => `:(exclude,top)${name}/`)
+}
+
+// Builds the snapshot of the tree `top` in `indexFile`. Resolves to what the copy holds: `commit` (the snapshot, or HEAD
+// when the tree has nothing uncommitted that the copy may hold), `uncommitted` (whether the snapshot is a commit of its
+// own) and `envHeldBack`, the number of .env paths left as they are in HEAD or out. That count runs with
+// --no-optional-locks, so it does not touch the Lead's index.
+function snapshotOf(top, indexFile) {
+  const head = git(['rev-parse', 'HEAD'], top).stdout
+  const headTree = git(['rev-parse', 'HEAD^{tree}'], top).stdout
+  const temporary = { GIT_INDEX_FILE: indexFile }
+  gitWith(['read-tree', 'HEAD'], top, temporary)
+  gitWith(['add', '-A', '--', '.', ...ENV_EXCLUDES, ...aetherExcludes(top)], top, temporary)
+  const tree = gitWith(['write-tree'], top, temporary)
+  const envHeldBack = nulList(['--no-optional-locks', 'status', '--porcelain', '-z', '--no-renames', '--', ...ENV_NAMES], top).length
+  const uncommitted = tree !== headTree
+  const commit = uncommitted ? gitWith(['commit-tree', tree, '-p', head, '-m', 'aether delegate snapshot'], top, SNAPSHOT_IDENTITY) : head
+  return { commit, uncommitted, envHeldBack }
 }
 
 // ---- Running the CLI ----
@@ -155,13 +201,15 @@ function usageOf(usage) {
   return { input: count('input'), output: count('output'), thinking: count('thinking'), cacheRead: count('cacheRead') }
 }
 
-// One read-only delegate of the task on the rung, in a disposable worktree of cwd's HEAD. Resolves to its Outcome,
-// whose status is ok, quota, failed, violation, unavailable (nothing launched) or dirty (the checkout has uncommitted
-// work; nothing launched, no quota read); a violation also has `changed`, the files it touched. It throws only for an
-// id that is not a plain name. maxCliSeconds, when it is given, caps the CLI's limit below what the harness's settings allow: a later attempt of a delegate has only the time
-// the earlier ones left (lib/delegate-chain.js). graceSeconds is the grace before the kill; only a test shortens it.
-// `timedOut` says the call was killed at its limit: such a call is `failed`, never `quota` (it says nothing of the
-// quota), and the router keeps its pair out of the choice for a while (lib/router-slow.js).
+// One read-only delegate of the task on the rung, in a disposable worktree of a snapshot of the tree `cwd` (its HEAD and
+// its uncommitted work, spec 033 D1). Resolves to its Outcome, whose status is ok, quota, failed, violation or unavailable
+// (nothing launched); a violation also has `changed`, the files it touched. Every outcome that copied the tree has
+// `tree` (the directory copied), `uncommitted` (whether the copy carried uncommitted work) and `envHeldBack` (the number
+// of .env paths held back); the others have them null. It throws only for an id that is not a plain name.
+// maxCliSeconds, when it is given, caps the CLI's limit below what the harness's settings allow: a later attempt of a
+// delegate has only the time the earlier ones left (lib/delegate-chain.js). graceSeconds is the grace before the kill;
+// only a test shortens it. `timedOut` says the call was killed at its limit: such a call is `failed`, never `quota` (it
+// says nothing of the quota), and the router keeps its pair out of the choice for a while (lib/router-slow.js).
 async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adapter = null, now = Date.now, maxCliSeconds = null, graceSeconds = KILL_GRACE_SECONDS }) {
   if (typeof id !== 'string' || !ID.test(id)) throw new Error(`the delegate id must be a plain name (${ID}), not ${JSON.stringify(id)}`)
   const startedAt = now()
@@ -179,6 +227,9 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     quotaAfter: null,
     quotaSpent: [],
     timedOut: false,
+    tree: null,
+    uncommitted: null,
+    envHeldBack: null,
     ...fields,
   })
 
@@ -195,8 +246,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   if (typeof cli.modelArg === 'function') modelArg = cli.modelArg({ model: rung.model, level: rung.effort })
   if (!cli.installed()) return outcome('unavailable', { detail: `${harness} is not installed` })
 
-  // 2. The checkout is committed. This comes before anything is read or launched: the Lead edits before it delegates,
-  // and a copy of HEAD would not hold those edits.
+  // 2. The tree is read where it stands: its uncommitted work goes into the snapshot of step 4, and nothing is refused.
   let paths
   try {
     paths = repoPaths(cwd)
@@ -208,15 +258,8 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     // Aether's own directories (a delegate going on at the same time has one in .aether/) are not the Lead's work.
     run.ensureExcluded(gitCommonDir)
   } catch {
-    // If git does not ignore them, they show below as changes, and the delegate runs on Claude.
+    // The snapshot leaves Aether's directories out whether or not git ignores them (spec 033, D1).
   }
-  let uncommitted
-  try {
-    uncommitted = uncommittedPaths(top)
-  } catch (err) {
-    return outcome('failed', { detail: `delegate: ${err.message}` })
-  }
-  if (uncommitted.length > 0) return outcome('dirty', { detail: dirtyDetail(uncommitted) })
 
   // 3. The quota before, served from the saved reading while it holds.
   let quotaBefore = null
@@ -242,11 +285,14 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     return outcome('failed', { detail: `${dir} already exists: another delegate has the id ${id}`, quotaBefore })
   }
 
+  // The temporary index of the snapshot lives in the delegate's directory: it goes with the worktree, here and on a signal.
+  const indexFile = path.join(dir, 'index')
   let child = null
   const cleanUp = () => {
     if (child !== null) killGroup(child)
     if (child !== null) lanes.killMarked(marker)
     removeWorktree(mainRoot, worktree)
+    fs.rmSync(indexFile, { force: true })
     fs.rmSync(dir, { recursive: true, force: true })
   }
   const onSignal = (signal) => {
@@ -260,8 +306,12 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   let quotaAfter = null
   const limit = { killed: false }
   let timeoutSeconds = null
+  let snapshot = null
+  let start = null
   try {
-    const start = git(['rev-parse', 'HEAD'], top).stdout
+    // The copy is the snapshot of the tree (D1); the judging measures from it too (D3).
+    snapshot = snapshotOf(top, indexFile)
+    start = snapshot.commit
     git(['worktree', 'add', '-q', '--detach', worktree, start], top)
     const schemaFile = path.join(dir, 'schema.json')
     fs.writeFileSync(schemaFile, `${JSON.stringify(DELEGATE_SCHEMA, null, 2)}\n`)
@@ -331,6 +381,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     quotaSpent: quotaSpent(quotaBefore, quotaAfter),
     timedOut: limit.killed,
     ...(result.status === 'violation' ? { changed: result.changed } : {}),
+    ...(snapshot === null ? {} : { tree: top, uncommitted: snapshot.uncommitted, envHeldBack: snapshot.envHeldBack }),
   })
 }
 
