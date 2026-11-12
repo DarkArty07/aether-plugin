@@ -16,6 +16,7 @@ const work = require('../plugins/aether/lib/lane-work.js')
 const wt = require('../plugins/aether/lib/worktrees.js')
 const run = require('../plugins/aether/lib/run.js')
 const dr = require('../plugins/aether/lib/delegate-run.js')
+const dt = require('../plugins/aether/lib/delegate-task.js')
 
 const LANE_BIN = fx.LANE_BIN
 const IMPLEMENT = 'task-1-1-implement'
@@ -299,5 +300,42 @@ test('an attached HEAD moves nothing, and the result line names the branch and i
   const result = await dr.runTask({ id: 't1', cwd: attached.repo.dir, dataDir }, { delegateCommand: async () => done })
   assert.equal(result.ok, true)
   assert.ok(result.text.includes(`Branch: aether/run1/task-1 at ${head}`), result.text)
+})
+
+test('the brief of an editing delegate on another harness never asks for checkout --detach', async (t) => {
+  const dataDir = tempDir(t, 'aether-data-')
+  const cwd = tempDir(t, 'aether-cwd-')
+  const home = tempDir(t, 'aether-home-')
+  let n = 0
+  const deps = {
+    dataDir, cwd, home,
+    now: () => 1000 + (n += 1),
+    settings: { lanes: true, harnesses: ['grok'], deadlines: { quotaMs: 1 } },
+    newId: () => `gen-${n}`,
+    pickPair: async () => ({ pick: { id: 'grok/grok-4.7@high', harness: 'grok', model: 'grok-4.7', effort: 'high', group: 'grok' }, quota: [] }),
+  }
+  const prompt = 'AETHER-TASK: t-detach\nAETHER-OWNS: src/**\nWrite src/new.js saying hello and commit it.'
+  const plan = await dt.begin({ session: 's1', event: { subagent_type: 'general-purpose', description: 'd', prompt } }, deps)
+  assert.ok(plan.external, 'the task runs on another harness')
+  const briefs = path.join(dataDir, 'delegates', 'briefs')
+  const names = fs.readdirSync(briefs)
+  assert.equal(names.length, 1, 'the system assembled one brief file')
+  const briefText = fs.readFileSync(path.join(briefs, names[0]), 'utf8')
+  assert.ok(!briefText.includes('checkout --detach'), 'the assembled brief never asks for checkout --detach')
+  const externals = path.join(dataDir, 'delegates', 'external')
+  const ext = JSON.parse(fs.readFileSync(path.join(externals, fs.readdirSync(externals)[0]), 'utf8'))
+  assert.ok(!ext.task.prompt.includes('checkout --detach'), 'the external task prompt never asks for checkout --detach')
+  // The Lead rules shipped as skills must not ask for it either.
+  const skills = path.join(__dirname, '..', 'plugins', 'aether', 'skills')
+  const found = []
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.isFile() && entry.name === 'SKILL.md' && fs.readFileSync(full, 'utf8').includes('checkout --detach')) found.push(path.relative(skills, full))
+    }
+  }
+  walk(skills)
+  assert.deepEqual(found, [], 'no skill asks for checkout --detach')
 })
 
