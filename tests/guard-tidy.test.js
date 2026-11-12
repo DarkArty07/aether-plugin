@@ -9,7 +9,7 @@ const { tidyTargets, emptiesTidyFile } = require('../plugins/aether/lib/tidy-gua
 const { readPending } = require('../plugins/aether/lib/pending.js')
 const autonomy = require('../plugins/aether/lib/autonomy.js')
 
-const human = (text, time, entrypoint) => JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, ...(entrypoint ? { entrypoint } : {}), timestamp: time, message: { role: 'user', content: text } })
+const human = (text, time) => JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })
 
 function world(t) {
   const repo = makeRepo(t)
@@ -26,7 +26,7 @@ function world(t) {
   const allow = (quote) => {
     const dir = path.join(configDir, 'projects', '-p')
     fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, 's1.jsonl'), human(quote, '2026-11-07T10:00:00.000Z', 'cli') + '\n')
+    fs.writeFileSync(path.join(dir, 's1.jsonl'), human(quote, '2026-11-07T10:00:00.000Z') + '\n')
     return autonomy.grant(repo.dir, { class: 'delete', quote, session: 's1', scope: 'session' }, { configDir })
   }
   return { repo, home, enforce, bash, write, allow, opts: { cwd: repo.dir, home } }

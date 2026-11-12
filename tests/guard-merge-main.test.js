@@ -145,7 +145,7 @@ test('a merge on main that a grant for merge-main covers is allowed silently, in
   const quote = 'apruebo merge a main en esta ocasion'
   const projects = path.join(configDir, 'projects', '-home-owner-project')
   fs.mkdirSync(projects, { recursive: true })
-  const message = { type: 'user', isSidechain: false, origin: { kind: 'human' }, entrypoint: 'cli', timestamp: '2026-10-09T19:32:31.611Z', message: { role: 'user', content: quote } }
+  const message = { type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: '2026-10-09T19:32:31.611Z', message: { role: 'user', content: quote } }
   fs.writeFileSync(path.join(projects, 's1.jsonl'), JSON.stringify(message) + '\n')
   assert.equal(autonomy.grant(repo.dir, { class: 'merge-main', quote, session: 's1' }, { configDir }).ok, true)
   for (const mode of [undefined, 'enforce']) {

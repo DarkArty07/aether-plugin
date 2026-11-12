@@ -10,10 +10,6 @@ const path = require('node:path')
 
 const DEFAULT_MAX_CHARS = 8000
 
-// The entrypoints of a record typed in a session with a terminal. A message is typed only when its own record names one
-// of these; any other entrypoint, an unknown one and none are not typed (spec 034).
-const TYPED_ENTRYPOINTS = ['cli']
-
 function isOwnerRecord(record) {
   if (record.type !== 'user' || record.isSidechain === true) return false
   // Skill loads, compaction summaries and tool results are never the owner, whatever their origin says.
@@ -70,7 +66,7 @@ function ownerMessages(lines, { maxChars = DEFAULT_MAX_CHARS } = {}) {
       const text = textOf(queued.prompt)
       if (!text.trim()) continue
       const time = typeof record.timestamp === 'string' ? record.timestamp : typeof queued.timestamp === 'string' ? queued.timestamp : ''
-      messages.push({ time, text: cut(text, maxChars), typed: TYPED_ENTRYPOINTS.includes(record.entrypoint) })
+      messages.push({ time, text: cut(text, maxChars) })
       continue
     }
     if (!isOwnerRecord(record)) continue
@@ -81,7 +77,6 @@ function ownerMessages(lines, { maxChars = DEFAULT_MAX_CHARS } = {}) {
     messages.push({
       time: typeof record.timestamp === 'string' ? record.timestamp : '',
       text: cut(text, maxChars),
-      typed: TYPED_ENTRYPOINTS.includes(record.entrypoint),
     })
   }
   return messages

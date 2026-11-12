@@ -9,12 +9,11 @@ const autonomy = require('../plugins/aether/lib/autonomy.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-autonomy')
 const SESSION = 'sess-trust-1'
-// entrypoint is the record's entrypoint: adding an author takes words typed in a session with a terminal, cli (spec 034).
-const human = (text, time, entrypoint) => JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, ...(entrypoint ? { entrypoint } : {}), timestamp: time, message: { role: 'user', content: text } })
+const human = (text, time) => JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })
 const TRUST = 'confio en anthropics y en vercel-labs como autores de skills'
 const NEGATED = 'no confio en anthropics todavia'
 
-function world(t, lines = [human(TRUST, '2026-11-07T10:00:00.000Z', 'cli'), human(NEGATED, '2026-11-07T11:00:00.000Z', 'cli')]) {
+function world(t, lines = [human(TRUST, '2026-11-07T10:00:00.000Z'), human(NEGATED, '2026-11-07T11:00:00.000Z')]) {
   const configDir = tempDir(t, 'aether-claude-')
   const folder = path.join(configDir, 'projects', '-home-owner-project')
   fs.mkdirSync(folder, { recursive: true })

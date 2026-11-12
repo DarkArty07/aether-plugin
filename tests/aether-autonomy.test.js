@@ -17,14 +17,13 @@ const USAGE =
 const human = (text, time, extra = {}) =>
   JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, entrypoint: 'sdk-cli', timestamp: time, message: { role: 'user', content: text }, ...extra })
 
-// A repository on a feature branch, and a Claude config directory holding the owner's transcript. entrypoint is the
-// entrypoint of its records: a grant, a trusted author or a brake-off needs cli (a session with a terminal, spec 034).
-function setup(t, entrypoint = 'sdk-cli') {
+// A repository on a feature branch, and a Claude config directory holding the owner's transcript.
+function setup(t) {
   const repo = makeRepo(t)
   const config = tempDir(t, 'aether-claude-')
   const folder = path.join(config, 'projects', '-repo')
   fs.mkdirSync(folder, { recursive: true })
-  const lines = [human(MERGE, '2026-10-09T19:32:31.611Z', { entrypoint }), human(HOURS, '2026-10-09T19:50:00.000Z', { entrypoint }), human(REVOKE, '2026-10-09T21:00:00.000Z', { entrypoint })]
+  const lines = [human(MERGE, '2026-10-09T19:32:31.611Z'), human(HOURS, '2026-10-09T19:50:00.000Z'), human(REVOKE, '2026-10-09T21:00:00.000Z')]
   fs.writeFileSync(path.join(folder, `${SESSION}.jsonl`), lines.join('\n') + '\n')
   const env = { CLAUDE_CONFIG_DIR: config, CLAUDE_CODE_SESSION_ID: SESSION }
   const cli = (args, cwd = repo.dir, extra = {}) => runBin(BIN, args, cwd, { ...env, ...extra })
@@ -42,7 +41,7 @@ test('the bin is executable, and a bare or unknown command prints the usage', (t
 })
 
 test("grant records the owner's words, and check covers the class from any worktree of the repository", (t) => {
-  const { repo, cli } = setup(t, 'cli')
+  const { repo, cli } = setup(t)
   const g = cli(['grant', '--class', 'merge-main', '--quote', MERGE])
   assert.equal(g.status, 0, g.stdout + g.stderr)
   assert.deepEqual(Object.keys(g.json), ['granted'])
@@ -70,7 +69,7 @@ test('grant with words the owner did not write exits 2 and writes nothing', (t) 
 })
 
 test('a session-scoped grant covers only its session, and revoke takes it away', (t) => {
-  const { cli } = setup(t, 'cli')
+  const { cli } = setup(t)
   assert.equal(cli(['grant', '--class', 'merge-main', '--quote', MERGE, '--scope', 'session']).status, 0)
   assert.equal(cli(['check', 'merge-main']).status, 0)
   assert.equal(cli(['check', 'merge-main', '--session', 'sess-other']).status, 2)
@@ -81,7 +80,7 @@ test('a session-scoped grant covers only its session, and revoke takes it away',
 })
 
 test('revoke keeps the repository grant, and --all takes it too (issue 017)', (t) => {
-  const { cli } = setup(t, 'cli')
+  const { cli } = setup(t)
   assert.equal(cli(['grant', '--class', 'merge-main', '--quote', MERGE]).status, 0)
   assert.equal(cli(['grant', '--class', 'merge-main', '--quote', MERGE, '--scope', 'session']).status, 0)
   const narrow = cli(['revoke', '--class', 'merge-main', '--quote', REVOKE])
@@ -148,7 +147,7 @@ test('start with words the owner did not write exits 2 and opens no run', (t) =>
 })
 
 test('revoke with words the owner did not write exits 2 and changes nothing', (t) => {
-  const { cli } = setup(t, 'cli')
+  const { cli } = setup(t)
   assert.equal(cli(['grant', '--class', 'merge-main', '--quote', MERGE]).status, 0)
   const r = cli(['revoke', '--class', 'merge-main', '--quote', 'palabras inventadas por mi'])
   assert.equal(r.status, 2)
@@ -201,7 +200,7 @@ test('bad input exits 1 with an error', (t) => {
 })
 
 test('the registry stays out of git status', (t) => {
-  const { repo, cli } = setup(t, 'cli')
+  const { repo, cli } = setup(t)
   assert.equal(cli(['grant', '--class', 'merge-main', '--quote', MERGE]).status, 0)
   assert.equal(repo.git('status', '--porcelain'), '')
 })

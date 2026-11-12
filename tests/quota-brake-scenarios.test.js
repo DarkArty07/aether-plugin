@@ -27,7 +27,7 @@ function setup(t) {
   const config = tempDir(t, 'aether-claude-')
   const folder = path.join(config, 'projects', '-repo')
   fs.mkdirSync(folder, { recursive: true })
-  fs.writeFileSync(path.join(folder, `${SESSION}.jsonl`), [human(HOURS, '2026-10-21T09:00:00.000Z'), human(UNLIMITED, '2026-10-21T09:05:00.000Z', { entrypoint: 'cli' })].join('\n') + '\n')
+  fs.writeFileSync(path.join(folder, `${SESSION}.jsonl`), [human(HOURS, '2026-10-21T09:00:00.000Z'), human(UNLIMITED, '2026-10-21T09:05:00.000Z')].join('\n') + '\n')
   const dataDir = tempDir(t, 'aether-data-')
   const env = { CLAUDE_CONFIG_DIR: config, CLAUDE_CODE_SESSION_ID: SESSION, AETHER_DATA_DIR: dataDir }
   const cli = (args) => runBin(AUTONOMY, args, repo.dir, env)

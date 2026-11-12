@@ -690,14 +690,13 @@ function guardBash(t, command, { cwd, mode, marked = true, configDir = tempDir(t
 }
 
 // A transcript with one message from the owner, which a grant's quote is verified against.
-function ownerTranscript(configDir, sessionId, text, entrypoint) {
+function ownerTranscript(configDir, sessionId, text) {
   const folder = path.join(configDir, 'projects', '-home-owner-project')
   fs.mkdirSync(folder, { recursive: true })
   const message = {
     type: 'user',
     isSidechain: false,
     origin: { kind: 'human' },
-    ...(entrypoint ? { entrypoint } : {}),
     timestamp: '2026-10-09T19:32:31.611Z',
     message: { role: 'user', content: text },
   }
@@ -763,7 +762,7 @@ test('outside a git repository a push is allowed silently and nothing is written
 test('a grant that covers the command lets it through silently, in either mode, and records nothing', (t) => {
   const repo = makeRepo(t)
   const configDir = tempDir(t, 'aether-claude-')
-  ownerTranscript(configDir, 's1', PUSH_QUOTE, 'cli')
+  ownerTranscript(configDir, 's1', PUSH_QUOTE)
   assert.equal(autonomy.grant(repo.dir, { class: 'push', quote: PUSH_QUOTE, session: 's1' }, { configDir }).ok, true)
   for (const mode of [undefined, 'enforce']) {
     const r = guardBash(t, 'git push origin main', { cwd: repo.dir, mode, configDir })
@@ -776,7 +775,7 @@ test('a grant that covers the command lets it through silently, in either mode, 
 test('a session grant for another session does not cover this one', (t) => {
   const repo = makeRepo(t)
   const configDir = tempDir(t, 'aether-claude-')
-  ownerTranscript(configDir, 's2', PUSH_QUOTE, 'cli')
+  ownerTranscript(configDir, 's2', PUSH_QUOTE)
   assert.equal(autonomy.grant(repo.dir, { class: 'push', quote: PUSH_QUOTE, session: 's2', scope: 'session' }, { configDir }).ok, true)
   const r = guardBash(t, 'git push origin main', { cwd: repo.dir, configDir })
   assert.equal(r.stdout, '')
@@ -786,7 +785,7 @@ test('a session grant for another session does not cover this one', (t) => {
 test('a chain needs a grant for every irreversible class it holds, heredocs included (R1, R2)', (t) => {
   const repo = makeRepo(t)
   const configDir = tempDir(t, 'aether-claude-')
-  ownerTranscript(configDir, 's1', PUSH_QUOTE, 'cli')
+  ownerTranscript(configDir, 's1', PUSH_QUOTE)
   assert.equal(autonomy.grant(repo.dir, { class: 'push', quote: PUSH_QUOTE, session: 's1' }, { configDir }).ok, true)
 
   const alone = guardBash(t, 'git push origin main', { cwd: repo.dir, mode: 'enforce', configDir })

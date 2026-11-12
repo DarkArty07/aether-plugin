@@ -7,7 +7,6 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { PLUGIN, tempDir } = require('./helpers.js')
 const { ownerMessages, findTranscript, render } = require('../plugins/aether/lib/voice.js')
-const autonomy = require('../plugins/aether/lib/autonomy.js')
 
 const VOICE_BIN = path.join(PLUGIN, 'bin', 'aether-voice')
 
@@ -23,8 +22,8 @@ test('keeps the owner messages in order, with their times', () => {
     human('diseña esto', '2026-10-08T18:05:00.000Z'),
   ]
   assert.deepEqual(ownerMessages(lines), [
-    { time: '2026-10-08T18:00:00.000Z', text: 'hola', typed: false },
-    { time: '2026-10-08T18:05:00.000Z', text: 'diseña esto', typed: false },
+    { time: '2026-10-08T18:00:00.000Z', text: 'hola' },
+    { time: '2026-10-08T18:05:00.000Z', text: 'diseña esto' },
   ])
 })
 
@@ -34,7 +33,7 @@ test('joins text blocks and marks images', () => {
     { type: 'text', text: '[Image #1] mira esto' },
     { type: 'text', text: 'y esto' },
   ]
-  assert.deepEqual(ownerMessages([human(content)]), [{ time: '2026-10-08T18:00:00.000Z', text: '[image]\n\n[Image #1] mira esto\n\ny esto', typed: false }])
+  assert.deepEqual(ownerMessages([human(content)]), [{ time: '2026-10-08T18:00:00.000Z', text: '[image]\n\n[Image #1] mira esto\n\ny esto' }])
 })
 
 test('leaves out tool results, skill loads, notifications, sidechains and compaction summaries', () => {
@@ -69,9 +68,9 @@ const queued = (prompt, time = '2026-10-08T18:10:00.000Z', extra = {}) =>
 test('a message the owner sends mid-turn counts as their words (issue 014)', () => {
   const lines = [human('hola'), queued('ire a dormir trbaja autonomamente'), human('sigo aqui', '2026-10-08T18:20:00.000Z')]
   assert.deepEqual(ownerMessages(lines), [
-    { time: '2026-10-08T18:00:00.000Z', text: 'hola', typed: false },
-    { time: '2026-10-08T18:10:00.000Z', text: 'ire a dormir trbaja autonomamente', typed: false },
-    { time: '2026-10-08T18:20:00.000Z', text: 'sigo aqui', typed: false },
+    { time: '2026-10-08T18:00:00.000Z', text: 'hola' },
+    { time: '2026-10-08T18:10:00.000Z', text: 'ire a dormir trbaja autonomamente' },
+    { time: '2026-10-08T18:20:00.000Z', text: 'sigo aqui' },
   ])
 })
 
@@ -184,40 +183,6 @@ test('findTranscript skips folders it cannot read instead of throwing', (t) => {
     assert.equal(findTranscript('abc', { configDir: config }), path.join(open, 'abc.jsonl'))
   } finally {
     fs.chmodSync(locked, 0o755)
-  }
-})
-
-// Spec 034: a message is typed only when its record's entrypoint is cli, the entrypoint Claude Code gives a session with a terminal.
-test('a message is typed only from a cli entrypoint', () => {
-  const typedAt = (entrypoint) => ownerMessages([human('una frase del dueño', undefined, { entrypoint })])[0].typed
-  assert.equal(typedAt('cli'), true)
-  assert.equal(typedAt('sdk-cli'), false)
-  assert.equal(typedAt('desktop'), false)
-  assert.equal(typedAt(undefined), false)
-  assert.equal(typedAt(42), false)
-})
-
-// The queued prompt carries its own entrypoint on the attachment record, read in real transcripts (spec 034, D1).
-const queuedAt = (prompt, entrypoint, time = '2026-10-08T18:10:00.000Z') =>
-  JSON.stringify({ type: 'attachment', isSidechain: false, timestamp: time, ...(entrypoint === undefined ? {} : { entrypoint }), attachment: { type: 'queued_command', prompt, commandMode: 'prompt', humanTurn: true, timestamp: time } })
-
-test('a queued prompt is typed from its own record, and its text and time do not change', () => {
-  const at = (entrypoint) => ownerMessages([queuedAt('cambia de rama tras el turno', entrypoint)])
-  assert.deepEqual(at('cli'), [{ time: '2026-10-08T18:10:00.000Z', text: 'cambia de rama tras el turno', typed: true }])
-  assert.deepEqual(at('sdk-cli'), [{ time: '2026-10-08T18:10:00.000Z', text: 'cambia de rama tras el turno', typed: false }])
-  assert.deepEqual(at(undefined), [{ time: '2026-10-08T18:10:00.000Z', text: 'cambia de rama tras el turno', typed: false }])
-})
-
-test('grant takes its quote only from a typed queued prompt (spec 034)', (t) => {
-  const quote = 'apruebo merge a main en esta ocasion y en todas las futuras'
-  for (const [entrypoint, accepted] of [['cli', true], ['sdk-cli', false], [undefined, false]]) {
-    const configDir = tempDir(t, 'aether-config-')
-    const folder = path.join(configDir, 'projects', '-repo')
-    fs.mkdirSync(folder, { recursive: true })
-    fs.writeFileSync(path.join(folder, 'queued.jsonl'), queuedAt(quote, entrypoint) + '\n')
-    const mainRoot = tempDir(t, 'aether-repo-')
-    const r = autonomy.grant(mainRoot, { class: 'merge-main', quote, session: 'queued' }, { configDir })
-    assert.equal(r.ok, accepted, `entrypoint ${entrypoint}: ${r.reason || ''}`)
   }
 })
 

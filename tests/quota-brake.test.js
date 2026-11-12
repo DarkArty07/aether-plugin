@@ -22,7 +22,7 @@ function setup(t) {
   const configDir = tempDir(t, 'aether-claude-')
   const folder = path.join(configDir, 'projects', '-repo')
   fs.mkdirSync(folder, { recursive: true })
-  fs.writeFileSync(path.join(folder, `${SESSION}.jsonl`), [human(HOURS, '2026-10-21T09:00:00.000Z'), human(UNLIMITED, '2026-10-21T09:05:00.000Z', { entrypoint: 'cli' })].join('\n') + '\n')
+  fs.writeFileSync(path.join(folder, `${SESSION}.jsonl`), [human(HOURS, '2026-10-21T09:00:00.000Z'), human(UNLIMITED, '2026-10-21T09:05:00.000Z')].join('\n') + '\n')
   const mainRoot = tempDir(t, 'aether-repo-')
   const dataDir = tempDir(t, 'aether-data-')
   fs.mkdirSync(path.join(dataDir, 'sessions'), { recursive: true })
@@ -163,7 +163,7 @@ test('the bin drives the brake verbs end to end', (t) => {
   const config = tempDir(t, 'aether-claude-')
   const folder = path.join(config, 'projects', '-repo')
   fs.mkdirSync(folder, { recursive: true })
-  fs.writeFileSync(path.join(folder, `${SESSION}.jsonl`), [human(HOURS, '2026-10-21T09:00:00.000Z'), human(UNLIMITED, '2026-10-21T09:05:00.000Z', { entrypoint: 'cli' })].join('\n') + '\n')
+  fs.writeFileSync(path.join(folder, `${SESSION}.jsonl`), [human(HOURS, '2026-10-21T09:00:00.000Z'), human(UNLIMITED, '2026-10-21T09:05:00.000Z')].join('\n') + '\n')
   const dataDir = tempDir(t, 'aether-data-')
   const env = { CLAUDE_CONFIG_DIR: config, CLAUDE_CODE_SESSION_ID: SESSION, AETHER_DATA_DIR: dataDir }
   const cli = (args) => runBin(BIN, args, repo.dir, env)
