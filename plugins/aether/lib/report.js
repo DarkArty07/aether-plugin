@@ -286,12 +286,16 @@ function qualityOf(results, adopted = {}) {
     return Object.fromEntries(unknown.map((key) => [key, null]))
   }
   const units = new Map()
+  const fixedUnits = new Map()
   const reviewFindings = []
   let agents = null
   let review = null
   let reviews = 0
   for (const result of results) {
     for (const unit of result.units || []) {
+      if (unit && unit.fixedByLead && typeof unit.fixedByLead === 'object') {
+        fixedUnits.set(unit.id, { id: unit.id, commit: unit.fixedByLead.commit, reason: unit.fixedByLead.reason })
+      }
       const before = units.get(unit.id)
       const tiers = unit.tiers || []
       const models = tiers.map(modelOf)
@@ -328,6 +332,7 @@ function qualityOf(results, adopted = {}) {
     adopted: count('adopted'),
     integrated: count('merged') + count('adopted'),
     adoptedUnits,
+    ...(fixedUnits.size > 0 ? { fixedUnits: [...fixedUnits.values()] } : {}),
     blocked: count('blocked'),
     questions: all.filter((unit) => unit.status === 'blocked' && isQuestion(unit.question)).length,
     skipped: count('skipped'),
@@ -707,6 +712,9 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   quality.ladder = ladderOf(results)
   for (const unit of quality.adoptedUnits || []) {
     notes.push(`${unit.id} was integrated by hand at ${String(unit.commit).slice(0, 10)}: ${unit.reason}`)
+  }
+  for (const unit of quality.fixedUnits || []) {
+    notes.push(`${unit.id} was fixed in flight by the Lead at ${String(unit.commit).slice(0, 10)}: ${unit.reason}`)
   }
   // A retry that ran as one sub-attempt per owned file (issue 14). The quality counts are unchanged:
   // the pass is still one attempt of the unit.
